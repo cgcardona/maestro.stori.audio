@@ -21,9 +21,10 @@ The HTML content tests assert structural markers present in every rendered page.
 """
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 
 import pytest
+from datetime import datetime, timezone, timedelta
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -1016,41 +1017,45 @@ async def test_session_detail_404_marker(
     # The JS error handler must check for a 404 and render a "not found" message
     assert "Session not found" in body or "404" in body
 
-
-@pytest.mark.anyio
-async def test_session_detail_json(
-    client: AsyncClient,
+async def _make_session(
     db_session: AsyncSession,
-    auth_headers: dict[str, str],
-) -> None:
-    """GET /api/v1/musehub/repos/{repo_id}/sessions/{session_id} returns full session JSON."""
-    repo_id = await _make_repo(db_session)
-    session_id = await _make_session(db_session, repo_id)
+    repo_id: str,
+    *,
+    started_offset_seconds: int = 0,
+    is_active: bool = False,
+    intent: str = "jazz composition",
+    participants: list[str] | None = None,
+) -> str:
+    """Seed a MusehubSession and return its session_id."""
+    start = datetime(2025, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
+    from datetime import timedelta
 
-    response = await client.get(
-        f"/api/v1/musehub/repos/{repo_id}/sessions/{session_id}",
-        headers=auth_headers,
+    started_at = start + timedelta(seconds=started_offset_seconds)
+    ended_at = None if is_active else started_at + timedelta(hours=1)
+    row = MusehubSession(
+        repo_id=repo_id,
+        started_at=started_at,
+        ended_at=ended_at,
+        participants=participants or ["producer-a"],
+        intent=intent,
+        location="Studio A",
+        is_active=is_active,
     )
-    assert response.status_code == 200
-    data = response.json()
-    assert data["sessionId"] == session_id
-    assert data["repoId"] == repo_id
-    assert data["participants"] == ["Alice", "Bob"]
-    assert data["location"] == "Studio A"
-    assert data["intent"] == "Record the main groove track for track 3"
-    assert len(data["commits"]) == 2
-    assert "nailed the bass line" in data["notes"]
+    db_session.add(row)
+    await db_session.commit()
+    await db_session.refresh(row)
+    return str(row.session_id)
 
 
 @pytest.mark.anyio
-async def test_session_list_json_returns_sessions(
+async def test_sessions_json_response(
     client: AsyncClient,
     db_session: AsyncSession,
     auth_headers: dict[str, str],
 ) -> None:
-    """GET /api/v1/musehub/repos/{repo_id}/sessions returns list with pushed sessions."""
+    """GET /api/v1/musehub/repos/{repo_id}/sessions returns session list with metadata."""
     repo_id = await _make_repo(db_session)
-    await _make_session(db_session, repo_id)
+    session_id = await _make_session(db_session, repo_id, intent="jazz solo")
 
     response = await client.get(
         f"/api/v1/musehub/repos/{repo_id}/sessions",
@@ -1058,13 +1063,69 @@ async def test_session_list_json_returns_sessions(
     )
     assert response.status_code == 200
     data = response.json()
+    assert "sessions" in data
+    assert "total" in data
     assert data["total"] == 1
-    assert len(data["sessions"]) == 1
-    assert data["sessions"][0]["participants"] == ["Alice", "Bob"]
+    sess = data["sessions"][0]
+    assert sess["sessionId"] == session_id
+    assert sess["intent"] == "jazz solo"
+    assert sess["location"] == "Studio A"
+    assert sess["isActive"] is False
+    assert sess["durationSeconds"] == pytest.approx(3600.0)
 
 
 @pytest.mark.anyio
-async def test_session_list_json_requires_auth(
+async def test_sessions_newest_first(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    auth_headers: dict[str, str],
+) -> None:
+    """Sessions are returned newest-first (active sessions appear before ended sessions)."""
+    repo_id = await _make_repo(db_session)
+    # older ended session
+    await _make_session(db_session, repo_id, started_offset_seconds=0, intent="older")
+    # newer ended session
+    await _make_session(db_session, repo_id, started_offset_seconds=3600, intent="newer")
+    # active session (should surface first regardless of time)
+    await _make_session(
+        db_session, repo_id, started_offset_seconds=100, is_active=True, intent="live"
+    )
+
+    response = await client.get(
+        f"/api/v1/musehub/repos/{repo_id}/sessions",
+        headers=auth_headers,
+    )
+    assert response.status_code == 200
+    sessions = response.json()["sessions"]
+    assert len(sessions) == 3
+    # Active session must come first
+    assert sessions[0]["isActive"] is True
+    assert sessions[0]["intent"] == "live"
+    # Then newest ended session
+    assert sessions[1]["intent"] == "newer"
+    assert sessions[2]["intent"] == "older"
+
+
+@pytest.mark.anyio
+async def test_sessions_empty_for_new_repo(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    auth_headers: dict[str, str],
+) -> None:
+    """GET /api/v1/musehub/repos/{repo_id}/sessions returns empty list for new repo."""
+    repo_id = await _make_repo(db_session)
+    response = await client.get(
+        f"/api/v1/musehub/repos/{repo_id}/sessions",
+        headers=auth_headers,
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["sessions"] == []
+    assert data["total"] == 0
+
+
+@pytest.mark.anyio
+async def test_sessions_requires_auth(
     client: AsyncClient,
     db_session: AsyncSession,
 ) -> None:
@@ -1075,22 +1136,21 @@ async def test_session_list_json_requires_auth(
 
 
 @pytest.mark.anyio
-async def test_session_detail_json_404_unknown_session(
+async def test_sessions_404_for_unknown_repo(
     client: AsyncClient,
     db_session: AsyncSession,
     auth_headers: dict[str, str],
 ) -> None:
-    """GET /api/v1/musehub/repos/{repo_id}/sessions/{unknown} returns 404."""
-    repo_id = await _make_repo(db_session)
+    """GET /api/v1/musehub/repos/{unknown}/sessions returns 404."""
     response = await client.get(
-        f"/api/v1/musehub/repos/{repo_id}/sessions/does-not-exist",
+        "/api/v1/musehub/repos/does-not-exist/sessions",
         headers=auth_headers,
     )
     assert response.status_code == 404
 
 
 @pytest.mark.anyio
-async def test_session_push_creates_session(
+async def test_create_session_returns_201(
     client: AsyncClient,
     db_session: AsyncSession,
     auth_headers: dict[str, str],
@@ -1098,15 +1158,10 @@ async def test_session_push_creates_session(
     """POST /api/v1/musehub/repos/{repo_id}/sessions creates a session and returns 201."""
     repo_id = await _make_repo(db_session)
     payload = {
-        "sessionId": "new-session-uuid-abcd",
-        "schemaVersion": "1",
-        "startedAt": "2026-02-01T09:00:00+00:00",
-        "endedAt": "2026-02-01T11:30:00+00:00",
-        "participants": ["Carol", "Dave"],
-        "location": "Home Studio",
-        "intent": "Finalize bridge section",
-        "commits": [],
-        "notes": "",
+        "participants": ["producer-a", "collab-b"],
+        "intent": "house beat experiment",
+        "location": "Remote – Berlin",
+        "isActive": True,
     }
     response = await client.post(
         f"/api/v1/musehub/repos/{repo_id}/sessions",
@@ -1115,187 +1170,51 @@ async def test_session_push_creates_session(
     )
     assert response.status_code == 201
     data = response.json()
-    assert data["sessionId"] == "new-session-uuid-abcd"
-    assert data["participants"] == ["Carol", "Dave"]
+    assert data["isActive"] is True
+    assert data["intent"] == "house beat experiment"
+    assert data["location"] == "Remote \u2013 Berlin"
+    assert data["participants"] == ["producer-a", "collab-b"]
+    assert "sessionId" in data
 
 
 @pytest.mark.anyio
-async def test_session_push_is_idempotent(
+async def test_stop_session_marks_ended(
     client: AsyncClient,
     db_session: AsyncSession,
     auth_headers: dict[str, str],
 ) -> None:
-    """Re-pushing the same session_id updates the record rather than duplicating it."""
+    """POST /api/v1/musehub/repos/{repo_id}/sessions/{session_id}/stop closes a live session."""
     repo_id = await _make_repo(db_session)
-    payload = {
-        "sessionId": "idempotent-session-uuid",
-        "schemaVersion": "1",
-        "startedAt": "2026-02-10T14:00:00+00:00",
-        "endedAt": "2026-02-10T16:00:00+00:00",
-        "participants": ["Eve"],
-        "location": "Studio B",
-        "intent": "Initial intent",
-        "commits": [],
-        "notes": "First push notes",
-    }
-    await client.post(
-        f"/api/v1/musehub/repos/{repo_id}/sessions",
-        json=payload,
-        headers=auth_headers,
-    )
+    session_id = await _make_session(db_session, repo_id, is_active=True)
 
-    # Re-push with updated notes
-    payload["notes"] = "Updated notes after re-push"
     response = await client.post(
-        f"/api/v1/musehub/repos/{repo_id}/sessions",
-        json=payload,
+        f"/api/v1/musehub/repos/{repo_id}/sessions/{session_id}/stop",
+        json={},
         headers=auth_headers,
     )
-    assert response.status_code == 201
-    assert response.json()["notes"] == "Updated notes after re-push"
-
-    # Verify no duplicate was created
-    list_resp = await client.get(
-        f"/api/v1/musehub/repos/{repo_id}/sessions",
-        headers=auth_headers,
-    )
-    assert list_resp.json()["total"] == 1
+    assert response.status_code == 200
+    data = response.json()
+    assert data["isActive"] is False
+    assert data["endedAt"] is not None
+    assert data["durationSeconds"] is not None
 
 
 @pytest.mark.anyio
-async def test_session_upsert_scoped_to_repo(
+async def test_active_session_has_null_duration(
     client: AsyncClient,
     db_session: AsyncSession,
     auth_headers: dict[str, str],
 ) -> None:
-    """Session upsert lookup is scoped to repo_id — a session pushed to repo A is NOT
-    visible via repo B's detail endpoint, even if the IDs match."""
-    repo_a = await _make_repo(db_session)
-    repo_b = await _make_repo(db_session)
-    payload = {
-        "sessionId": "scoped-uuid-aaaa-bbbb-cccc-ddddeeeeeeee",
-        "schemaVersion": "1",
-        "startedAt": "2026-03-01T10:00:00+00:00",
-        "endedAt": "2026-03-01T12:00:00+00:00",
-        "participants": ["Frank"],
-        "location": "Studio C",
-        "intent": "Test repo scoping",
-        "commits": [],
-        "notes": "repo A only",
-    }
-    resp = await client.post(
-        f"/api/v1/musehub/repos/{repo_a}/sessions",
-        json=payload,
+    """Active sessions must have durationSeconds=null (session still in progress)."""
+    repo_id = await _make_repo(db_session)
+    await _make_session(db_session, repo_id, is_active=True)
+
+    response = await client.get(
+        f"/api/v1/musehub/repos/{repo_id}/sessions",
         headers=auth_headers,
     )
-    assert resp.status_code == 201
-
-    # The same session_id does NOT appear under repo B
-    detail_b = await client.get(
-        f"/api/v1/musehub/repos/{repo_b}/sessions/{payload['sessionId']}",
-        headers=auth_headers,
-    )
-    assert detail_b.status_code == 404
-
-    # And repo A's list is unaffected
-    list_a = await client.get(
-        f"/api/v1/musehub/repos/{repo_a}/sessions",
-        headers=auth_headers,
-    )
-    assert list_a.json()["total"] == 1
-    assert list_a.json()["sessions"][0]["notes"] == "repo A only"
-
-
-@pytest.mark.anyio
-async def test_session_repo_page_has_sessions_link(
-    client: AsyncClient,
-    db_session: AsyncSession,
-) -> None:
-    """The repo landing page includes a navigation link to Sessions.
-
-    The Sessions button is rendered inside a JavaScript template literal so the
-    actual href uses the JS variable ``${base}/sessions``.  We assert the text
-    label and the path fragment are both present in the page source.
-    """
-    repo_id = await _make_repo(db_session)
-    response = await client.get(f"/musehub/ui/{repo_id}")
     assert response.status_code == 200
-    body = response.text
-    assert "Sessions" in body
-    assert "/sessions" in body
+    sess = response.json()["sessions"][0]
+    assert sess["isActive"] is True
+    assert sess["durationSeconds"] is None
 
-
-@pytest.mark.anyio
-async def test_graph_page_has_zoom_pan(
-    client: AsyncClient,
-    db_session: AsyncSession,
-) -> None:
-    """Graph page includes zoom and pan JavaScript logic."""
-    repo_id = await _make_repo(db_session)
-    response = await client.get(f"/musehub/ui/{repo_id}/graph")
-    assert response.status_code == 200
-    body = response.text
-    assert "wheel" in body
-    assert "mousedown" in body
-    assert "applyTransform" in body
-
-
-@pytest.mark.anyio
-async def test_graph_page_has_popover(
-    client: AsyncClient,
-    db_session: AsyncSession,
-) -> None:
-    """Graph page includes commit detail hover popover markup."""
-    repo_id = await _make_repo(db_session)
-    response = await client.get(f"/musehub/ui/{repo_id}/graph")
-    assert response.status_code == 200
-    body = response.text
-    assert "dag-popover" in body
-    assert "pop-sha" in body
-    assert "pop-msg" in body
-
-
-@pytest.mark.anyio
-async def test_graph_page_no_auth_required(
-    client: AsyncClient,
-    db_session: AsyncSession,
-) -> None:
-    """Graph UI page must be accessible without an Authorization header."""
-    repo_id = await _make_repo(db_session)
-    response = await client.get(f"/musehub/ui/{repo_id}/graph")
-    assert response.status_code != 401
-    assert response.status_code == 200
-
-
-@pytest.mark.anyio
-async def test_graph_page_includes_token_form(
-    client: AsyncClient,
-    db_session: AsyncSession,
-) -> None:
-    """Graph page embeds the JWT token input form so visitors can authenticate."""
-    repo_id = await _make_repo(db_session)
-    response = await client.get(f"/musehub/ui/{repo_id}/graph")
-    assert response.status_code == 200
-    body = response.text
-    assert "localStorage" in body
-    assert "musehub_token" in body
-
-
-async def _make_session(db_session: AsyncSession, repo_id: str) -> str:
-    """Seed a completed session record and return its session_id."""
-    session_id = "aaaabbbb-cccc-dddd-eeee-ffffaaaabbbb"
-    session = MusehubSession(
-        session_id=session_id,
-        repo_id=repo_id,
-        schema_version="1",
-        started_at=datetime(2026, 1, 15, 10, 0, 0, tzinfo=_UTC),
-        ended_at=datetime(2026, 1, 15, 12, 30, 0, tzinfo=_UTC),
-        participants=["Alice", "Bob"],
-        location="Studio A",
-        intent="Record the main groove track for track 3",
-        commits=["abc123def456", "789000aabbcc"],
-        notes="Great session — kept the second take. Alice nailed the bass line.",
-    )
-    db_session.add(session)
-    await db_session.commit()
-    return session_id

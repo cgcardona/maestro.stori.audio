@@ -29,17 +29,18 @@ logger = logging.getLogger(__name__)
 
 def _to_response(session: MusehubSession) -> SessionResponse:
     """Convert an ORM session row to its wire representation."""
+    duration: float | None = None
+    if session.ended_at is not None:
+        duration = (session.ended_at - session.started_at).total_seconds()
     return SessionResponse(
         session_id=session.session_id,
-        repo_id=session.repo_id,
-        schema_version=session.schema_version,
         started_at=session.started_at,
         ended_at=session.ended_at,
+        duration_seconds=duration,
         participants=list(session.participants),
         location=session.location,
         intent=session.intent,
-        commits=list(session.commits),
-        notes=session.notes,
+        is_active=getattr(session, "is_active", session.ended_at is None),
         created_at=session.created_at,
     )
 
@@ -49,54 +50,21 @@ async def upsert_session(
     repo_id: str,
     data: SessionCreate,
 ) -> SessionResponse:
-    """Persist a session record for the given repo (insert or update).
-
-    If a session with the same ``session_id`` already exists in ``repo_id``,
-    all mutable fields are overwritten.  This makes re-push idempotent — a
-    session whose notes were edited after the initial push will always reflect
-    the latest state.
-
-    Args:
-        db: Active async database session.
-        repo_id: The target Muse Hub repo ID.
-        data: Session payload from the CLI push.
-
-    Returns:
-        The persisted session as a ``SessionResponse``.
-    """
-    _existing_q = select(MusehubSession).where(
-        MusehubSession.session_id == data.session_id,
-        MusehubSession.repo_id == repo_id,
-    )
-    existing = (await db.execute(_existing_q)).scalar_one_or_none()
-    if existing is not None:
-        existing.schema_version = data.schema_version
-        existing.started_at = data.started_at
-        existing.ended_at = data.ended_at
-        existing.participants = list(data.participants)
-        existing.location = data.location
-        existing.intent = data.intent
-        existing.commits = list(data.commits)
-        existing.notes = data.notes
-        logger.info("✅ Updated session %s in repo %s", data.session_id, repo_id)
-        return _to_response(existing)
-
+    """Create a new session record for the given repo."""
+    import uuid as _uuid
     session = MusehubSession(
-        session_id=data.session_id,
+        session_id=str(_uuid.uuid4()),
         repo_id=repo_id,
-        schema_version=data.schema_version,
-        started_at=data.started_at,
-        ended_at=data.ended_at,
+        started_at=data.started_at or datetime.now(tz=timezone.utc),
         participants=list(data.participants),
         location=data.location,
         intent=data.intent,
-        commits=list(data.commits),
-        notes=data.notes,
+        is_active=True,
         created_at=datetime.now(tz=timezone.utc),
     )
     db.add(session)
     await db.flush()
-    logger.info("✅ Created session %s in repo %s", data.session_id, repo_id)
+    logger.info("\u2705 Created session in repo %s", repo_id)
     return _to_response(session)
 
 

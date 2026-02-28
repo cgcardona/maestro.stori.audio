@@ -422,6 +422,8 @@ class MusehubSession(Base):
     # JSON list of Muse commit IDs made during this session
     commits: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
     notes: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    # True if session is currently active; False after stop
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, index=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=_utc_now
     )

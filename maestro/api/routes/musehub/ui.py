@@ -1,22 +1,22 @@
 """Muse Hub web UI route handlers.
 
-Serves browser-readable HTML pages for navigating a Muse Hub repo —
+Serves browser-readable HTML pages for navigating a Muse Hub repo --
 analogous to GitHub's repository browser but for music projects.
 
 Endpoint summary:
-  GET /musehub/ui/search                           — global cross-repo search page
-  GET /musehub/ui/{repo_id}                        — repo page (branch selector + commit log)
-  GET /musehub/ui/{repo_id}/commits/{commit_id}    — commit detail page (metadata + artifacts)
-  GET /musehub/ui/{repo_id}/graph                  — interactive DAG commit graph
-  GET /musehub/ui/{repo_id}/pulls                  — pull request list page
-  GET /musehub/ui/{repo_id}/pulls/{pr_id}          — PR detail page (with merge button)
-  GET /musehub/ui/{repo_id}/issues                 — issue list page
-  GET /musehub/ui/{repo_id}/issues/{number}        — issue detail page (with close button)
-  GET /musehub/ui/{repo_id}/credits                — dynamic credits page (album liner notes)
-  GET /musehub/ui/{repo_id}/embed/{ref}            — embeddable player widget (no auth, iframe-safe)
-  GET /musehub/ui/{repo_id}/search                 — in-repo search page (four modes)
+  GET /musehub/ui/search                           -- global cross-repo search page
+  GET /musehub/ui/{repo_id}                        -- repo page (branch selector + commit log)
+  GET /musehub/ui/{repo_id}/commits/{commit_id}    -- commit detail page (metadata + artifacts)
+  GET /musehub/ui/{repo_id}/graph                  -- interactive DAG commit graph
+  GET /musehub/ui/{repo_id}/pulls                  -- pull request list page
+  GET /musehub/ui/{repo_id}/pulls/{pr_id}          -- PR detail page (with merge button)
+  GET /musehub/ui/{repo_id}/issues                 -- issue list page
+  GET /musehub/ui/{repo_id}/issues/{number}        -- issue detail page (with close button)
+  GET /musehub/ui/{repo_id}/credits                -- dynamic credits page (album liner notes)
+  GET /musehub/ui/{repo_id}/embed/{ref}            -- embeddable player widget (no auth, iframe-safe)
+  GET /musehub/ui/{repo_id}/search                 -- in-repo search page (four modes)
 
-These routes require NO JWT auth — they return static HTML shells whose
+These routes require NO JWT auth -- they return static HTML shells whose
 embedded JavaScript fetches data from the authed JSON API
 (``/api/v1/musehub/...``) using a token stored in ``localStorage``.
 
@@ -71,6 +71,17 @@ h2 { font-size: 16px; color: #e6edf3; margin-bottom: 8px; }
 .badge-open { background: #1f6feb; color: #e6edf3; }
 .badge-closed { background: #8b949e; color: #e6edf3; }
 .badge-merged { background: #6e40c9; color: #e6edf3; }
+.badge-active { background: #238636; color: #e6edf3; }
+.session-row {
+  border-bottom: 1px solid #21262d; padding: 12px 0;
+  display: flex; align-items: flex-start; gap: 12px;
+}
+.session-row:last-child { border-bottom: none; }
+.session-live {
+  display: inline-block; width: 8px; height: 8px; border-radius: 50%;
+  background: #3fb950; box-shadow: 0 0 6px #3fb950; margin-right: 4px;
+  vertical-align: middle;
+}
 .commit-row {
   border-bottom: 1px solid #21262d; padding: 10px 0;
   display: flex; align-items: flex-start; gap: 12px;
@@ -150,7 +161,7 @@ function authHeaders() {
 async function apiFetch(path, opts = {}) {
   const res = await fetch(API + path, { ...opts, headers: { ...authHeaders(), ...(opts.headers||{}) } });
   if (res.status === 401 || res.status === 403) {
-    showTokenForm('Session expired or invalid token — please re-enter your JWT.');
+    showTokenForm('Session expired or invalid token -- please re-enter your JWT.');
     throw new Error('auth');
   }
   if (!res.ok) {
@@ -183,12 +194,12 @@ function saveToken() {
 }
 
 function fmtDate(iso) {
-  if (!iso) return '—';
+  if (!iso) return '--';
   const d = new Date(iso);
   return d.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
 }
 
-function shortSha(sha) { return sha ? sha.substring(0, 8) : '—'; }
+function shortSha(sha) { return sha ? sha.substring(0, 8) : '--'; }
 """
 
 
@@ -199,7 +210,7 @@ def _page(title: str, breadcrumb: str, body_script: str, extra_css: str = "") ->
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{title} — Muse Hub</title>
+  <title>{title} -- Muse Hub</title>
   <style>{_CSS}</style>
 </head>
 <body>
@@ -249,7 +260,7 @@ async def global_search_page(
     Query parameters are pre-filled into the search form so that a browser
     navigation or a URL share lands with the last query already populated.
     These parameters are sanitised client-side before being rendered into the
-    DOM — ``escHtml`` prevents XSS from adversarial query strings.
+    DOM -- ``escHtml`` prevents XSS from adversarial query strings.
     """
     safe_q = q.replace("'", "\\'").replace('"', '\\"').replace("\n", "").replace("\r", "")
     safe_mode = mode if mode in ("keyword", "pattern") else "keyword"
@@ -400,10 +411,11 @@ async def repo_page(repo_id: str) -> HTMLResponse:
 
       async function load(branch) {{
         try {{
-          const [repoData, branchData, commitData] = await Promise.all([
+          const [repoData, branchData, commitData, sessionData] = await Promise.all([
             apiFetch('/repos/' + repoId),
             apiFetch('/repos/' + repoId + '/branches'),
             apiFetch('/repos/' + repoId + '/commits' + (branch ? '?branch=' + encodeURIComponent(branch) + '&limit=20' : '?limit=20')),
+            apiFetch('/repos/' + repoId + '/sessions?limit=1').catch(() => ({{total: 0}})),
           ]);
 
           const branches = branchData.branches || [];
@@ -433,7 +445,9 @@ async def repo_page(repo_id: str) -> HTMLResponse:
                 <a href="${{base}}/issues" class="btn btn-secondary">Issues</a>
                 <a href="${{base}}/releases" class="btn btn-secondary">Releases</a>
                 <a href="${{base}}/credits" class="btn btn-secondary">&#127926; Credits</a>
-                <a href="${{base}}/sessions" class="btn btn-secondary">Sessions</a>
+                <a href="${{base}}/sessions" class="btn btn-secondary">
+                  Sessions (${{sessionData.total || 0}})
+                </a>
                 <a href="${{base}}/search" class="btn btn-secondary">&#128269; Search</a>
               </div>
               <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
@@ -617,7 +631,7 @@ async def graph_page(repo_id: str) -> HTMLResponse:
     - Virtualised rendering: only nodes within the visible viewport are
       painted, keeping 100+ commit graphs smooth
 
-    No external CDN dependencies — the entire renderer is inline JavaScript.
+    No external CDN dependencies -- the entire renderer is inline JavaScript.
     """
     script = f"""
       const repoId = {repr(repo_id)};
@@ -670,7 +684,7 @@ async def graph_page(repo_id: str) -> HTMLResponse:
         const {{ nodes, edges, headCommitId }} = data;
         if (!nodes.length) {{
           document.getElementById('content').innerHTML =
-            '<div class="card"><p class="loading">No commits yet — nothing to graph.</p></div>';
+            '<div class="card"><p class="loading">No commits yet -- nothing to graph.</p></div>';
           return;
         }}
 
@@ -1156,7 +1170,7 @@ async def context_page(repo_id: str, ref: str) -> HTMLResponse:
       const base   = '/musehub/ui/' + repoId;
 
       function escHtml(s) {{
-        if (s === null || s === undefined) return '—';
+        if (s === null || s === undefined) return '--';
         return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
       }}
 
@@ -1239,7 +1253,7 @@ async def context_page(repo_id: str, ref: str) -> HTMLResponse:
                 This is the musical context document that the AI agent receives
                 when generating music for this repo at commit
                 <code style="font-size:12px;background:#0d1117;padding:2px 6px;border-radius:4px">${{shortSha(ref)}}</code>.
-                Every composition decision — key, tempo, arrangement, what to add next —
+                Every composition decision -- key, tempo, arrangement, what to add next --
                 is guided by this document.
               </p>
             </div>
@@ -1255,7 +1269,7 @@ async def context_page(repo_id: str, ref: str) -> HTMLResponse:
                   <span class="meta-label">Active Tracks</span>
                   <div style="margin-top:4px">${{trackList}}</div>
                 </div>
-                ${{musicalDims ? '<div class="meta-row" style="margin-top:12px">' + musicalDims + '</div>' : '<p style="font-size:13px;color:#8b949e">Musical dimensions (key, tempo, etc.) require MIDI analysis — not yet available.</p>'}}
+                ${{musicalDims ? '<div class="meta-row" style="margin-top:12px">' + musicalDims + '</div>' : '<p style="font-size:13px;color:#8b949e">Musical dimensions (key, tempo, etc.) require MIDI analysis -- not yet available.</p>'}}
               </div>
             </div>
 
@@ -1503,7 +1517,7 @@ def _embed_page(title: str, repo_id: str, ref: str, body_script: str) -> str:
     """Assemble a compact embed player HTML page.
 
     Designed for iframe embedding on external sites.  No chrome, no token
-    form — just the player widget.  ``X-Frame-Options`` is set by the
+    form -- just the player widget.  ``X-Frame-Options`` is set by the
     route handler, not here, since this function only produces the body.
     """
     listen_url = f"/musehub/ui/{repo_id}"
@@ -1512,7 +1526,7 @@ def _embed_page(title: str, repo_id: str, ref: str, body_script: str) -> str:
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{title} — Muse Hub</title>
+  <title>{title} -- Muse Hub</title>
   <style>{_EMBED_CSS}</style>
 </head>
 <body>
@@ -1665,7 +1679,7 @@ async def embed_page(repo_id: str, ref: str) -> Response:
     The oEmbed endpoint (``GET /oembed``) auto-generates this iframe tag.
 
     Contract:
-    - No JWT required — public repos can be embedded without auth.
+    - No JWT required -- public repos can be embedded without auth.
     - Returns ``X-Frame-Options: ALLOWALL`` so browsers permit cross-origin framing.
     - ``ref`` is a commit SHA or branch name used to label the track.
     - Audio is fetched from ``/api/v1/musehub/repos/{repo_id}/objects`` at
@@ -1699,7 +1713,7 @@ async def embed_page(repo_id: str, ref: str) -> Response:
     summary="Muse Hub dynamic credits page",
 )
 async def credits_page(repo_id: str) -> HTMLResponse:
-    """Render the dynamic credits page — album liner notes for the repo.
+    """Render the dynamic credits page -- album liner notes for the repo.
 
     Fetches ``GET /api/v1/musehub/repos/{repo_id}/credits`` and displays
     every contributor with their session count, inferred roles, and activity
@@ -1721,7 +1735,7 @@ async def credits_page(repo_id: str) -> HTMLResponse:
       }}
 
       function fmtYear(iso) {{
-        if (!iso) return '—';
+        if (!iso) return '--';
         return new Date(iso).getFullYear();
       }}
 
@@ -1824,10 +1838,10 @@ async def search_page(repo_id: str) -> HTMLResponse:
     """Render the in-repo search page with four mode tabs.
 
     Modes map to the JSON API at ``GET /api/v1/musehub/repos/{repo_id}/search``:
-    - Musical Properties (``mode=property``) — filter by harmony/rhythm/melody/etc.
-    - Natural Language (``mode=ask``) — free-text question over commit history.
-    - Keyword (``mode=keyword``) — keyword overlap scored search.
-    - Pattern (``mode=pattern``) — substring match against messages and branches.
+    - Musical Properties (``mode=property``) -- filter by harmony/rhythm/melody/etc.
+    - Natural Language (``mode=ask``) -- free-text question over commit history.
+    - Keyword (``mode=keyword``) -- keyword overlap scored search.
+    - Pattern (``mode=pattern``) -- substring match against messages and branches.
 
     Results render as commit rows with SHA, message, author, timestamp, and an
     audio preview link for any ``mp3``/``wav``/``ogg`` artifact on that commit.
@@ -2153,11 +2167,11 @@ async def profile_page(username: str) -> HTMLResponse:
 
     Displays: bio, avatar, pinned repos, all public repos with last-activity,
     a GitHub-style contribution heatmap (52 weeks of daily commit counts), and
-    aggregated session credits.  Auth is handled client-side — the profile
+    aggregated session credits.  Auth is handled client-side -- the profile
     itself is public; editing controls appear only when the visitor's JWT
     matches the profile owner.
 
-    Returns 200 with an HTML shell even when the API returns 404 — the JS
+    Returns 200 with an HTML shell even when the API returns 404 -- the JS
     renders the 404 message inline so the browser gets a proper HTML response.
     """
     script = f"""
@@ -2653,7 +2667,7 @@ def _explore_page_html(title: str, breadcrumb: str, default_sort: str) -> str:
     """Render the explore or trending page HTML shell.
 
     The page calls the public ``GET /api/v1/musehub/discover/repos`` JSON API
-    from the browser — no JWT required for browsing. Star/unstar actions require
+    from the browser -- no JWT required for browsing. Star/unstar actions require
     a JWT stored in localStorage but are optional (unauthenticated visitors can
     browse without starring).
     """
@@ -2663,7 +2677,7 @@ def _explore_page_html(title: str, breadcrumb: str, default_sort: str) -> str:
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{title} — Muse Hub</title>
+  <title>{title} -- Muse Hub</title>
   <style>{css}</style>
 </head>
 <body>
@@ -2724,7 +2738,7 @@ def _explore_page_html(title: str, breadcrumb: str, default_sort: str) -> str:
 
 @router.get("/explore", response_class=HTMLResponse, summary="Muse Hub explore page")
 async def explore_page() -> HTMLResponse:
-    """Render the explore/discover page — a filterable grid of all public repos.
+    """Render the explore/discover page -- a filterable grid of all public repos.
 
     No JWT required. The page fetches from the public
     ``GET /api/v1/musehub/discover/repos`` endpoint. Filter controls are
@@ -2742,7 +2756,7 @@ async def explore_page() -> HTMLResponse:
 
 @router.get("/trending", response_class=HTMLResponse, summary="Muse Hub trending page")
 async def trending_page() -> HTMLResponse:
-    """Render the trending page — public repos sorted by star count by default.
+    """Render the trending page -- public repos sorted by star count by default.
 
     No JWT required. Identical shell to the explore page but pre-selected
     to sort by stars, surfacing the most-starred compositions first.
@@ -2757,14 +2771,14 @@ async def trending_page() -> HTMLResponse:
 
 
 # ---------------------------------------------------------------------------
-# Route handlers — per-repo pages (no auth required)
+# Route handlers -- per-repo pages (no auth required)
 # ---------------------------------------------------------------------------
 
 
 @router.get(
     "/{repo_id}/timeline",
     response_class=HTMLResponse,
-    summary="Muse Hub timeline page — chronological evolution",
+    summary="Muse Hub timeline page -- chronological evolution",
 )
 async def timeline_page(repo_id: str) -> HTMLResponse:
     """Render the timeline page: layered chronological visualisation of a repo.
@@ -3104,14 +3118,14 @@ async def timeline_page(repo_id: str) -> HTMLResponse:
       load();
     """
     css_with_timeline = _CSS + _TIMELINE_CSS
-    title = f"Timeline — {repo_id[:8]}"
+    title = f"Timeline -- {repo_id[:8]}"
     breadcrumb = f'<a href="/musehub/ui/{repo_id}">{repo_id[:8]}</a> / timeline'
     html = f"""<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{title} — Muse Hub</title>
+  <title>{title} -- Muse Hub</title>
   <style>{css_with_timeline}</style>
 </head>
 <body>
@@ -3386,14 +3400,17 @@ async def release_detail_page(repo_id: str, tag: str) -> HTMLResponse:
 @router.get(
     "/{repo_id}/sessions",
     response_class=HTMLResponse,
-    summary="Muse Hub session list page",
+    summary="Muse Hub session log page",
 )
-async def session_list_page(repo_id: str) -> HTMLResponse:
-    """Render the session list page: recording sessions newest first.
+async def sessions_page(repo_id: str) -> HTMLResponse:
+    """Render the session log page -- all recording sessions newest first.
 
-    Fetches ``GET /api/v1/musehub/repos/{repo_id}/sessions`` and displays
-    each session's start time, duration, participants, and intent.  Links to
-    the session detail page for full metadata.
+    Lists every recording session for the repo with: start/end times, duration,
+    participants, intent, and location. Active sessions are highlighted with a
+    live green indicator at the top of the list.
+
+    Fetches ``GET /api/v1/musehub/repos/{repo_id}/sessions?limit=100``.
+    Active sessions surface first; the rest are ordered by ``started_at`` desc.
     """
     script = f"""
       const repoId = {repr(repo_id)};
@@ -3404,39 +3421,67 @@ async def session_list_page(repo_id: str) -> HTMLResponse:
         return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
       }}
 
-      function fmtDuration(startIso, endIso) {{
-        if (!startIso || !endIso) return '—';
-        const ms = new Date(endIso) - new Date(startIso);
-        if (ms < 0) return '—';
-        const h = Math.floor(ms / 3600000);
-        const m = Math.floor((ms % 3600000) / 60000);
-        return h > 0 ? h + 'h ' + m + 'm' : m + 'm';
+      function fmtDuration(secs) {{
+        if (secs === null || secs === undefined) return 'live';
+        const h = Math.floor(secs / 3600);
+        const m = Math.floor((secs % 3600) / 60);
+        const s = Math.floor(secs % 60);
+        if (h > 0) return h + 'h ' + m + 'm';
+        if (m > 0) return m + 'm ' + s + 's';
+        return s + 's';
       }}
 
       async function load() {{
         try {{
-          const data = await apiFetch('/repos/' + repoId + '/sessions?limit=50');
+          const data     = await apiFetch('/repos/' + repoId + '/sessions?limit=100');
           const sessions = data.sessions || [];
+          const total    = data.total    || 0;
 
           const rows = sessions.length === 0
-            ? '<p class="loading">No sessions pushed to this repo yet.</p>'
-            : sessions.map(s => `
-              <div class="commit-row">
-                <a class="commit-sha" href="${{base}}/sessions/${{s.sessionId}}">${{escHtml(s.sessionId.substring(0,8))}}</a>
-                <div class="commit-msg" style="flex:1">
-                  <a href="${{base}}/sessions/${{s.sessionId}}">
-                    ${{escHtml(s.intent) || '<em style="color:#8b949e">no intent recorded</em>'}}
-                  </a>
-                  <div style="font-size:12px;color:#8b949e;margin-top:2px">
-                    ${{(s.participants||[]).map(p => '<span class="label">' + escHtml(p) + '</span>').join('')}}
-                    ${{s.location ? '&nbsp;&bull;&nbsp;' + escHtml(s.location) : ''}}
-                  </div>
-                </div>
-                <div class="commit-meta">
-                  <div>${{fmtDate(s.startedAt)}}</div>
-                  <div style="color:#8b949e;font-size:11px">${{fmtDuration(s.startedAt, s.endedAt)}}</div>
-                </div>
-              </div>`).join('');
+            ? '<p class="loading">No sessions recorded yet.</p>'
+            : sessions.map(s => {{
+                const liveIndicator = s.isActive
+                  ? '<span class="session-live" title="Active"></span>'
+                  : '';
+                const badge = s.isActive
+                  ? '<span class="badge badge-active">live</span>'
+                  : '<span class="badge badge-closed">ended</span>';
+                const participants = (s.participants || []).length > 0
+                  ? escHtml(s.participants.join(', '))
+                  : '<span style="color:#8b949e">--</span>';
+                const intent = s.intent
+                  ? escHtml(s.intent)
+                  : '<span style="color:#8b949e">--</span>';
+                const location = s.location
+                  ? escHtml(s.location)
+                  : '<span style="color:#8b949e">--</span>';
+                return `
+                  <div class="session-row">
+                    ${{badge}}
+                    <div style="flex:1">
+                      <div style="font-size:14px;color:#e6edf3;margin-bottom:4px">
+                        ${{liveIndicator}}
+                        <strong>${{fmtDate(s.startedAt)}}</strong>
+                        ${{s.endedAt ? ' &rarr; ' + fmtDate(s.endedAt) : ''}}
+                        <span style="color:#8b949e;font-size:12px;margin-left:8px">
+                          ${{fmtDuration(s.durationSeconds)}}
+                        </span>
+                      </div>
+                      <div style="font-size:13px;color:#8b949e;margin-top:2px">
+                        <strong style="color:#c9d1d9">Intent:</strong> ${{intent}}
+                      </div>
+                      <div style="font-size:13px;color:#8b949e;margin-top:2px">
+                        <strong style="color:#c9d1d9">Participants:</strong> ${{participants}}
+                      </div>
+                      <div style="font-size:13px;color:#8b949e;margin-top:2px">
+                        <strong style="color:#c9d1d9">Location:</strong> ${{location}}
+                      </div>
+                    </div>
+                    <span style="font-family:monospace;font-size:12px;color:#8b949e">
+                      ${{s.sessionId.substring(0,8)}}
+                    </span>
+                  </div>`;
+              }}).join('');
 
           document.getElementById('content').innerHTML = `
             <div style="margin-bottom:12px">
@@ -3444,8 +3489,8 @@ async def session_list_page(repo_id: str) -> HTMLResponse:
             </div>
             <div class="card">
               <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px">
-                <h1 style="margin:0">Recording Sessions</h1>
-                <span style="color:#8b949e;font-size:13px">${{data.total}} total</span>
+                <h1 style="margin:0">Sessions</h1>
+                <span style="color:#8b949e;font-size:14px">${{total}} total</span>
               </div>
               ${{rows}}
             </div>`;
@@ -3463,6 +3508,7 @@ async def session_list_page(repo_id: str) -> HTMLResponse:
         body_script=script,
     )
     return HTMLResponse(content=html)
+
 
 
 @router.get(
@@ -3492,9 +3538,9 @@ async def session_detail_page(repo_id: str, session_id: str) -> HTMLResponse:
       }}
 
       function fmtDuration(startIso, endIso) {{
-        if (!startIso || !endIso) return '—';
+        if (!startIso || !endIso) return '--';
         const ms = new Date(endIso) - new Date(startIso);
-        if (ms < 0) return '—';
+        if (ms < 0) return '--';
         const h = Math.floor(ms / 3600000);
         const m = Math.floor((ms % 3600000) / 60000);
         return h > 0 ? h + 'h ' + m + 'm' : m + 'm';
@@ -3582,7 +3628,7 @@ async def session_detail_page(repo_id: str, session_id: str) -> HTMLResponse:
                 </div>
                 <div class="meta-item">
                   <span class="meta-label">Ended</span>
-                  <span class="meta-value">${{session.endedAt ? fmtDate(session.endedAt) : '—'}}</span>
+                  <span class="meta-value">${{session.endedAt ? fmtDate(session.endedAt) : '--'}}</span>
                 </div>
                 <div class="meta-item">
                   <span class="meta-label">Duration</span>

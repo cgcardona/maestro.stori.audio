@@ -6199,6 +6199,40 @@ Defined in `maestro/models/musehub.py`.
 **Producer:** `search.search_repo` route handler
 **Consumer:** Muse Hub search page (renders result rows); AI agents finding commits by musical property
 
+<<<<<<< HEAD
+### `SessionResponse`
+
+Defined in `maestro/models/musehub.py`.
+
+Wire representation of a single recording session entry.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `session_id` | `str` | UUID for this session |
+| `started_at` | `datetime` | When the session started (UTC) |
+| `ended_at` | `datetime \| None` | When the session ended; `null` if still active |
+| `duration_seconds` | `float \| None` | Derived duration; `null` for active sessions |
+| `participants` | `list[str]` | Participant identifiers or display names |
+| `intent` | `str` | Free-text creative goal for this session |
+| `location` | `str` | Studio or location label |
+| `is_active` | `bool` | True while session is open (no stop event received) |
+| `created_at` | `datetime` | When the Hub record was created (UTC) |
+
+**Producer:** `musehub_repository.create_session()` / `list_sessions()` / `get_session()` → `repos.create_session` / `list_sessions` / `get_session` route handlers
+**Consumer:** Muse Hub sessions page UI; CLI `muse session log`; AI agents reviewing creative history
+
+### `SessionListResponse`
+
+Wrapper returned by `GET /api/v1/musehub/repos/{repo_id}/sessions`.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `sessions` | `list[SessionResponse]` | Sessions ordered: active first, then newest-by-started_at |
+| `total` | `int` | Total session count for the repo (ignores `limit`) |
+
+**Producer:** `repos.list_sessions` route handler
+**Consumer:** Muse Hub sessions page UI; AI agents auditing studio activity across time
+=======
 ### `DagNode`
 
 A single commit node in the repo's directed acyclic graph. Defined in `maestro/models/musehub.py`.
@@ -6246,6 +6280,7 @@ Returned by `GET /api/v1/musehub/repos/{repo_id}/dag`.
 
 **Producer:** `repos.get_commit_dag` route handler
 **Consumer:** Interactive DAG graph UI page; AI agents inspecting project history topology
+>>>>>>> origin/dev
 
 ---
 

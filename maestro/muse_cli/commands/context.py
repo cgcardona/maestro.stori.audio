@@ -102,7 +102,7 @@ async def _context_async(
 
     if fmt == OutputFormat.yaml:
         try:
-            import yaml  # type: ignore[import-untyped]  # PyYAML ships no py.typed marker
+            import yaml  # PyYAML ships no py.typed marker
 
             typer.echo(yaml.dump(data, sort_keys=False, allow_unicode=True))
         except ImportError:

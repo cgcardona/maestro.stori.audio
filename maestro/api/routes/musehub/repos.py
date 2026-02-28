@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import logging
 
-import yaml  # type: ignore[import-untyped]  # PyYAML ships no py.typed marker
+import yaml  # PyYAML ships no py.typed marker
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -36,12 +36,13 @@ from maestro.models.musehub import (
     SessionCreate,
     SessionListResponse,
     SessionResponse,
+    SessionStop,
 )
 from maestro.models.musehub_context import (
     ContextDepth,
     ContextFormat,
 )
-from maestro.services import musehub_context, musehub_credits, musehub_divergence, musehub_repository, musehub_sessions
+from maestro.services import musehub_context, musehub_credits, musehub_divergence, musehub_repository
 
 logger = logging.getLogger(__name__)
 
@@ -392,28 +393,33 @@ async def get_commit_dag(
     "/repos/{repo_id}/sessions",
     response_model=SessionResponse,
     status_code=status.HTTP_201_CREATED,
-    summary="Push a recording session record to the hub",
+    summary="Create a recording session entry",
 )
-async def push_session(
+async def create_session(
     repo_id: str,
     body: SessionCreate,
     db: AsyncSession = Depends(get_db),
     _: TokenClaims = Depends(require_valid_token),
 ) -> SessionResponse:
-    """Upsert a session record for the given repo.
+    """Register a new recording session on the Hub.
 
-    Accepts a ``MuseSessionRecord`` JSON payload pushed by ``muse session end``.
-    If a session with the same ``session_id`` already exists, it is updated —
-    re-push is idempotent.  Returns 404 if the repo does not exist.
+    Called by the CLI on ``muse session start``. Returns the persisted session
+    including its server-assigned ``session_id``.
     """
     repo = await musehub_repository.get_repo(db, repo_id)
     if repo is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repo not found")
 
-    session = await musehub_sessions.upsert_session(db, repo_id, body)
+    session_resp = await musehub_repository.create_session(
+        db,
+        repo_id,
+        started_at=body.started_at,
+        participants=body.participants,
+        intent=body.intent,
+        location=body.location,
+    )
     await db.commit()
-    logger.info("✅ Session %s pushed to repo %s", body.session_id, repo_id)
-    return session
+    return session_resp
 
 
 @router.get(
@@ -436,7 +442,7 @@ async def list_sessions(
     if repo is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repo not found")
 
-    sessions, total = await musehub_sessions.list_sessions(db, repo_id, limit=limit)
+    sessions, total = await musehub_repository.list_sessions(db, repo_id, limit=limit)
     return SessionListResponse(sessions=sessions, total=total)
 
 
@@ -460,7 +466,34 @@ async def get_session(
     if repo is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repo not found")
 
-    session = await musehub_sessions.get_session(db, repo_id, session_id)
+    session = await musehub_repository.get_session(db, repo_id, session_id)
     if session is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
     return session
+
+@router.post(
+    "/repos/{repo_id}/sessions/{session_id}/stop",
+    response_model=SessionResponse,
+    summary="Mark a recording session as ended",
+)
+async def stop_session(
+    repo_id: str,
+    session_id: str,
+    body: SessionStop,
+    db: AsyncSession = Depends(get_db),
+    _: TokenClaims = Depends(require_valid_token),
+) -> SessionResponse:
+    """Close an active session and record its end time.
+
+    Called by the CLI on ``muse session stop``. Idempotent — calling stop on
+    an already-stopped session updates ``ended_at`` and returns the session.
+    """
+    repo = await musehub_repository.get_repo(db, repo_id)
+    if repo is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repo not found")
+
+    sess = await musehub_repository.stop_session(db, repo_id, session_id, body.ended_at)
+    if sess is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
+    await db.commit()
+    return sess

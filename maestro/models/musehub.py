@@ -904,46 +904,50 @@ class DagGraphResponse(CamelModel):
 class SessionCreate(CamelModel):
     """Body for POST /musehub/repos/{repo_id}/sessions.
 
-    Accepts a session record pushed from ``muse session end``.  The
-    ``session_id`` field uses the local UUID so the same session can be
-    pushed multiple times idempotently (upsert semantics in the service).
+    Sent by the CLI on ``muse session start`` to register a new session.
+    ``started_at`` defaults to the server's current time when absent.
     """
 
-    session_id: str = Field(..., description="UUIDv4 from the local .muse/sessions/<id>.json")
-    schema_version: str = Field("1", description="JSON schema version string")
-    started_at: datetime = Field(..., description="ISO-8601 UTC session start timestamp")
-    ended_at: datetime | None = Field(None, description="ISO-8601 UTC session end timestamp")
-    participants: list[str] = Field(default_factory=list, description="Ordered participant names")
-    location: str = Field("", description="Recording location or studio name")
-    intent: str = Field("", description="Creative intent declared at session start")
-    commits: list[str] = Field(default_factory=list, description="Muse commit IDs from this session")
-    notes: str = Field("", description="Closing notes added by muse session end --notes")
+    started_at: datetime | None = None
+    participants: list[str] = Field(
+        default_factory=list, description="Participant identifiers or display names"
+    )
+    intent: str = Field("", description="Free-text creative goal for this session")
+    location: str = Field("", max_length=255, description="Studio or location label")
+    is_active: bool = Field(True, description="True if the session is currently live")
+
+
+class SessionStop(CamelModel):
+    """Body for POST /musehub/repos/{repo_id}/sessions/{session_id}/stop.
+
+    Sent by the CLI on ``muse session stop`` to mark a session as ended.
+    """
+
+    ended_at: datetime | None = None
 
 
 class SessionResponse(CamelModel):
-    """Wire representation of a pushed Muse Hub recording session.
+    """Wire representation of a single recording session.
 
-    Returned by GET /musehub/repos/{repo_id}/sessions and
-    GET /musehub/repos/{repo_id}/sessions/{session_id}.  Agents use this
-    to reconstruct creative context — who was present, what was intended,
-    which commits were produced, and any post-session notes.
+    ``duration_seconds`` is derived from ``started_at`` and ``ended_at``;
+    None when the session is still active (``ended_at`` is null).
+    ``is_active`` is True while the session is open — used by the Hub UI to
+    render a live indicator.
     """
 
     session_id: str
-    repo_id: str
-    schema_version: str
     started_at: datetime
-    ended_at: datetime | None
+    ended_at: datetime | None = None
+    duration_seconds: float | None = None
     participants: list[str]
-    location: str
     intent: str
-    commits: list[str]
-    notes: str
+    location: str
+    is_active: bool
     created_at: datetime
 
 
 class SessionListResponse(CamelModel):
-    """Paginated list of sessions for a repo, newest first."""
+    """Paginated list of sessions for a repo (newest first)."""
 
     sessions: list[SessionResponse]
     total: int

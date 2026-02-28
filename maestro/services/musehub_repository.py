@@ -10,6 +10,7 @@ Boundary rules:
 - May import Pydantic response models from maestro.models.musehub.
 """
 from __future__ import annotations
+from datetime import datetime, timezone
 
 import logging
 import re
@@ -21,6 +22,8 @@ from sqlalchemy.sql.elements import ColumnElement
 
 from maestro.db import musehub_models as db
 from maestro.models.musehub import (
+    SessionListResponse,
+    SessionResponse,
     BranchResponse,
     CommitResponse,
     GlobalSearchCommitMatch,
@@ -827,3 +830,121 @@ async def get_context_for_commit(
         missing_elements=missing,
         suggestions=suggestions,
     )
+
+
+def _to_session_response(s: db.MusehubSession) -> SessionResponse:
+    """Compute derived fields and return a SessionResponse."""
+    duration: float | None = None
+    if s.ended_at is not None:
+        # Normalize to offset-naive UTC before subtraction (SQLite strips tz info on round-trip)
+        ended = s.ended_at.replace(tzinfo=None) if s.ended_at.tzinfo else s.ended_at
+        started = s.started_at.replace(tzinfo=None) if s.started_at.tzinfo else s.started_at
+        duration = (ended - started).total_seconds()
+    return SessionResponse(
+        session_id=s.session_id,
+        started_at=s.started_at,
+        ended_at=s.ended_at,
+        duration_seconds=duration,
+        participants=s.participants or [],
+        intent=s.intent,
+        location=s.location,
+        is_active=s.is_active,
+        created_at=s.created_at,
+    )
+
+
+async def create_session(
+    session: AsyncSession,
+    repo_id: str,
+    started_at: datetime | None,
+    participants: list[str],
+    intent: str,
+    location: str,
+) -> SessionResponse:
+    """Create and persist a new recording session."""
+    import uuid
+
+    new_session = db.MusehubSession(
+        session_id=str(uuid.uuid4()),
+        repo_id=repo_id,
+        started_at=started_at or datetime.now(timezone.utc),
+        participants=participants,
+        intent=intent,
+        location=location,
+        is_active=True,
+    )
+    session.add(new_session)
+    await session.flush()
+    return _to_session_response(new_session)
+
+
+async def stop_session(
+    session: AsyncSession,
+    repo_id: str,
+    session_id: str,
+    ended_at: datetime | None,
+) -> SessionResponse:
+    """Mark a session as ended; idempotent if already stopped."""
+    from sqlalchemy import select
+
+    result = await session.execute(
+        select(db.MusehubSession).where(
+            db.MusehubSession.session_id == session_id,
+            db.MusehubSession.repo_id == repo_id,
+        )
+    )
+    row = result.scalar_one_or_none()
+    if row is None:
+        raise ValueError(f"session {session_id} not found")
+    if row.is_active:
+        row.ended_at = ended_at or datetime.now(timezone.utc)
+        row.is_active = False
+        await session.flush()
+    return _to_session_response(row)
+
+
+async def list_sessions(
+    session: AsyncSession,
+    repo_id: str,
+    limit: int = 50,
+    offset: int = 0,
+) -> tuple[list[SessionResponse], int]:
+    """Return sessions for a repo, newest first, with total count."""
+    from sqlalchemy import func, select
+
+    total_result = await session.execute(
+        select(func.count(db.MusehubSession.session_id)).where(
+            db.MusehubSession.repo_id == repo_id
+        )
+    )
+    total = total_result.scalar_one()
+
+    result = await session.execute(
+        select(db.MusehubSession)
+        .where(db.MusehubSession.repo_id == repo_id)
+        .order_by(db.MusehubSession.is_active.desc(), db.MusehubSession.started_at.desc())
+        .limit(limit)
+        .offset(offset)
+    )
+    rows = result.scalars().all()
+    return [_to_session_response(s) for s in rows], total
+
+
+async def get_session(
+    session: AsyncSession,
+    repo_id: str,
+    session_id: str,
+) -> SessionResponse | None:
+    """Fetch a single session by id."""
+    from sqlalchemy import select
+
+    result = await session.execute(
+        select(db.MusehubSession).where(
+            db.MusehubSession.session_id == session_id,
+            db.MusehubSession.repo_id == repo_id,
+        )
+    )
+    row = result.scalar_one_or_none()
+    if row is None:
+        return None
+    return _to_session_response(row)
