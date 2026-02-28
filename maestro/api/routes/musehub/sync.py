@@ -29,6 +29,7 @@ from maestro.models.musehub import (
     PushResponse,
 )
 from maestro.services import musehub_repository, musehub_sync
+from maestro.services.musehub_render_pipeline import trigger_render_background
 from maestro.services.musehub_sync import embed_push_commits
 from maestro.services.musehub_webhook_dispatcher import dispatch_event_background
 
@@ -100,6 +101,16 @@ async def push(
         branch=body.branch,
         author=author,
         is_public=is_public,
+    )
+
+    # Schedule render pipeline — auto-generate MP3 stubs and piano-roll images
+    # for any MIDI objects in this push.  Idempotent: re-pushing the same
+    # commit SHA skips a duplicate render.
+    background_tasks.add_task(
+        trigger_render_background,
+        repo_id=repo_id,
+        commit_id=body.head_commit_id,
+        objects=body.objects,
     )
 
     push_payload: PushEventPayload = {

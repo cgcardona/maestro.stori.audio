@@ -1299,3 +1299,45 @@ class GrooveCheckResponse(CamelModel):
         default_factory=list,
         description="Per-commit metrics, oldest-first",
     )
+
+
+# ── Render pipeline ────────────────────────────────────────────────────────
+
+
+class RenderStatusResponse(CamelModel):
+    """Render job status for a single commit's auto-generated artifacts.
+
+    Returned by ``GET /api/v1/musehub/repos/{repo_id}/commits/{sha}/render-status``.
+
+    ``status`` lifecycle: ``pending`` → ``rendering`` → ``complete`` | ``failed``.
+    ``mp3_object_ids`` and ``image_object_ids`` are populated only when
+    status is ``complete``; both lists may be empty when no MIDI files were
+    pushed with the commit.
+
+    When no render job exists for the given commit SHA, the endpoint returns
+    ``status="not_found"`` with empty artifact lists rather than a 404, so
+    callers do not need to distinguish between "never pushed" and "not yet
+    rendered".
+    """
+
+    commit_id: str = Field(..., description="Muse commit SHA")
+    status: str = Field(
+        ...,
+        description="Render job status: pending | rendering | complete | failed | not_found",
+    )
+    midi_count: int = Field(
+        default=0,
+        description="Number of MIDI objects found in the commit",
+    )
+    mp3_object_ids: list[str] = Field(
+        default_factory=list,
+        description="Object IDs of generated MP3 (or stub) artifacts",
+    )
+    image_object_ids: list[str] = Field(
+        default_factory=list,
+        description="Object IDs of generated piano-roll PNG artifacts",
+    )
+    error_message: str | None = Field(
+        default=None,
+        description="Error details when status is 'failed'; null otherwise",
+    )
