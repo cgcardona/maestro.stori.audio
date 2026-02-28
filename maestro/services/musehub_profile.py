@@ -275,7 +275,9 @@ async def get_full_profile(
     """Assemble a complete ProfileResponse for the given username.
 
     Returns None if no profile with that username exists.
-    Runs three concurrent aggregate queries: repos, contribution graph, credits.
+    Runs three sequential aggregate queries (repos, contribution graph, credits)
+    against the shared AsyncSession — concurrent access to a single session is
+    unsafe with SQLAlchemy's async driver.
     """
     profile = await get_profile_by_username(session, username)
     if profile is None:
