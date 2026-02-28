@@ -1,0 +1,104 @@
+{% extends "musehub/base.html" %}
+
+{% block title %}Credits{% endblock %}
+{% block breadcrumb %}
+  <a href="/musehub/ui/{{ owner }}/{{ repo_slug }}">{{ owner }}/{{ repo_slug }}</a> / credits
+{% endblock %}
+{% block repo_nav %}{% include "musehub/partials/repo_nav.html" %}{% endblock %}
+
+{% block page_data %}
+const repoId = {{ repo_id | tojson }};
+const base   = {{ base_url | tojson }};
+{% endblock %}
+
+{% block page_script %}
+{% raw %}
+function fmtYear(iso) {
+  if (!iso) return '--';
+  return new Date(iso).getFullYear();
+}
+
+function contributorRow(c) {
+  const roles = (c.contributionTypes || []).map(r =>
+    '<span class="label">' + escHtml(r) + '</span>'
+  ).join(' ');
+  const window = fmtDate(c.firstActive) + ' &ndash; ' + fmtDate(c.lastActive);
+  return `
+    <div class="commit-row" style="align-items:flex-start;flex-direction:column;gap:6px">
+      <div style="display:flex;align-items:center;gap:10px;width:100%">
+        <span style="font-size:15px;color:#e6edf3;font-weight:600;flex:1">
+          ${escHtml(c.author)}
+        </span>
+        <span class="badge badge-open" style="font-size:12px;background:#1a3a5c">
+          ${c.sessionCount} session${c.sessionCount !== 1 ? 's' : ''}
+        </span>
+      </div>
+      <div>${roles}</div>
+      <div style="font-size:12px;color:#8b949e">${window}</div>
+    </div>`;
+}
+
+function injectJsonLd(credits) {
+  const contributors = (credits.contributors || []).map(c => ({
+    '@type': 'Person',
+    name: c.author,
+    roleName: (c.contributionTypes || []).join(', '),
+  }));
+  const ld = {
+    '@context': 'https://schema.org',
+    '@type': 'MusicComposition',
+    identifier: credits.repoId,
+    contributor: contributors,
+  };
+  const el = document.createElement('script');
+  el.type = 'application/ld+json';
+  el.textContent = JSON.stringify(ld, null, 2);
+  document.head.appendChild(el);
+}
+
+async function load(sort) {
+  initRepoNav(repoId);
+  try {
+    const credits = await apiFetch('/repos/' + repoId + '/credits?sort=' + sort);
+    const contributors = credits.contributors || [];
+
+    injectJsonLd(credits);
+
+    const rows = contributors.length === 0
+      ? '<p class="loading">No sessions recorded yet. Start a session with <code>muse session start</code>.</p>'
+      : contributors.map(contributorRow).join('');
+
+    document.getElementById('content').innerHTML = `
+      <div style="margin-bottom:12px">
+        <a href="${base}">&larr; Back to repo</a>
+      </div>
+      <div class="card">
+        <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;flex-wrap:wrap">
+          <h1 style="margin:0">&#127926; Credits</h1>
+          <span style="flex:1"></span>
+          <span style="font-size:13px;color:#8b949e">
+            ${credits.totalContributors} contributor${credits.totalContributors !== 1 ? 's' : ''}
+          </span>
+          <label style="font-size:13px;color:#8b949e;display:flex;align-items:center;gap:6px">
+            Sort:
+            <select onchange="load(this.value)">
+              <option value="count"   ${sort==='count'  ?'selected':''}>Most prolific</option>
+              <option value="recency" ${sort==='recency'?'selected':''}>Most recent</option>
+              <option value="alpha"   ${sort==='alpha'  ?'selected':''}>A &ndash; Z</option>
+            </select>
+          </label>
+        </div>
+        ${rows}
+      </div>
+      <p style="font-size:11px;color:#8b949e;margin-top:8px;text-align:center">
+        Machine-readable credits embedded as JSON-LD (schema.org/MusicComposition)
+      </p>`;
+  } catch(e) {
+    if (e.message !== 'auth')
+      document.getElementById('content').innerHTML = '<p class="error">&#10005; ' + escHtml(e.message) + '</p>';
+  }
+}
+
+load('count');
+{% endraw %}
+{% endblock %}

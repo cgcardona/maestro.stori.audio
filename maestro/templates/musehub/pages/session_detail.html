@@ -1,0 +1,285 @@
+{% extends "musehub/base.html" %}
+
+{% block title %}Session {{ session_id[:8] }}{% endblock %}
+{% block breadcrumb %}
+  <a href="/musehub/ui/{{ owner }}/{{ repo_slug }}">{{ owner }}/{{ repo_slug }}</a> /
+  <a href="/musehub/ui/{{ owner }}/{{ repo_slug }}/sessions">sessions</a> / {{ session_id[:8] }}
+{% endblock %}
+{% block repo_nav %}{% include "musehub/partials/repo_nav.html" %}{% endblock %}
+
+{% block page_data %}
+const repoId    = {{ repo_id | tojson }};
+const sessionId = {{ session_id | tojson }};
+const base      = {{ base_url | tojson }};
+const owner     = {{ owner | tojson }};
+const repoSlug  = {{ repo_slug | tojson }};
+{% endblock %}
+
+{% block extra_css %}
+<style>
+.participant-cards-grid { display: flex; flex-wrap: wrap; gap: 12px; margin: 16px 0; }
+.participant-card {
+  display: flex; align-items: center; gap: 10px;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 8px; padding: 10px 14px;
+  text-decoration: none; color: inherit;
+  min-width: 180px; max-width: 260px;
+  transition: border-color 0.15s;
+}
+.participant-card:hover { border-color: var(--accent); }
+.participant-avatar-img { width: 40px; height: 40px; border-radius: 50%; object-fit: cover; flex-shrink: 0; }
+.participant-avatar-init {
+  width: 40px; height: 40px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  color: white; font-weight: 600; font-size: 14px; flex-shrink: 0;
+}
+.participant-info { display: flex; flex-direction: column; min-width: 0; }
+.participant-name { font-weight: 600; font-size: 14px; color: var(--text-primary); }
+.participant-bio { font-size: 12px; color: var(--text-muted); margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.session-commits-list { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+.session-commit-card {
+  display: grid; grid-template-columns: 80px 1fr auto;
+  align-items: center; gap: 8px;
+  padding: 8px 12px; background: var(--surface);
+  border: 1px solid var(--border); border-radius: 6px;
+  text-decoration: none; color: inherit; font-size: 13px;
+}
+.session-commit-card:hover { border-color: var(--accent); }
+.commit-sha { font-family: monospace; color: var(--accent); font-size: 12px; }
+.commit-msg { color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.commit-meta { font-size: 11px; color: var(--text-muted); white-space: nowrap; }
+
+.session-notes-block {
+  margin-top: 8px; font-size: 14px; line-height: 1.6;
+  color: var(--text-secondary);
+}
+</style>
+{% endblock %}
+
+{% block page_script %}
+{% raw %}
+function fmtDuration(startIso, endIso) {
+  if (!startIso || !endIso) return '--';
+  const ms = new Date(endIso) - new Date(startIso);
+  if (ms < 0) return '--';
+  const h = Math.floor(ms / 3600000);
+  const m = Math.floor((ms % 3600000) / 60000);
+  return h > 0 ? h + 'h ' + m + 'm' : m + 'm';
+}
+
+async function loadSessionCounts() {
+  try {
+    const data = await apiFetch('/repos/' + repoId + '/sessions?limit=200');
+    const sessions = data.sessions || [];
+    const counts = {};
+    sessions.forEach(s => {
+      (s.participants || []).forEach(p => {
+        counts[p] = (counts[p] || 0) + 1;
+      });
+    });
+    return counts;
+  } catch(e) {
+    return {};
+  }
+}
+
+async function loadParticipantCards(participants) {
+  const container = document.getElementById('participant-cards');
+  if (!container || !participants.length) {
+    if (container) container.innerHTML = '<p style="color:#8b949e;font-size:14px">No participants recorded.</p>';
+    return;
+  }
+  const profiles = await Promise.all(
+    participants.map(name =>
+      apiFetch('/users/' + name).catch(() => ({ username: name, bio: '', avatar_url: '' }))
+    )
+  );
+  container.innerHTML = profiles.map(p => {
+    const username = p.username || '?';
+    const initials = username.slice(0, 2).toUpperCase();
+    const hue = [...username].reduce((h, c) => h + c.charCodeAt(0), 0) % 360;
+    const avatar = p.avatar_url
+      ? `<img src="${p.avatar_url}" class="participant-avatar-img" alt="${escHtml(username)}">`
+      : `<div class="participant-avatar-init" style="background:hsl(${hue},60%,45%)">${initials}</div>`;
+    const bio = p.bio || '';
+    const bioPreview = bio.length > 60 ? bio.slice(0, 60) + '…' : bio;
+    return `<a href="/musehub/ui/users/${encodeURIComponent(username)}" class="participant-card">
+      ${avatar}
+      <div class="participant-info">
+        <span class="participant-name">${escHtml(username)}</span>
+        ${bioPreview ? `<span class="participant-bio" title="${escHtml(bio)}">${escHtml(bioPreview)}</span>` : ''}
+      </div>
+    </a>`;
+  }).join('');
+}
+
+async function loadSessionCommits(commitIds) {
+  const container = document.getElementById('session-commits');
+  if (!container || !commitIds.length) {
+    if (container) container.innerHTML = '<p style="color:#8b949e;font-size:14px">No commits associated with this session.</p>';
+    return;
+  }
+  const commits = await Promise.all(
+    commitIds.map(cid =>
+      apiFetch('/repos/' + repoId + '/commits/' + cid).catch(() => null)
+    )
+  );
+  const cards = commits.filter(Boolean).map(c => {
+    const msg = c.message || '';
+    const firstLine = escHtml(msg.split('\n')[0]);
+    const short = c.commit_id ? c.commit_id.slice(0, 8) : (c.commitId ? c.commitId.slice(0, 8) : '');
+    const ts = c.timestamp ? new Date(c.timestamp).toLocaleDateString() : '';
+    const author = escHtml(c.author || '');
+    const meta = [author, ts].filter(Boolean).join(' · ');
+    return `<a href="${base}/commits/${encodeURIComponent(short)}" class="session-commit-card">
+      <code class="commit-sha">${short}</code>
+      <span class="commit-msg">${firstLine || '<em style="color:#8b949e">no message</em>'}</span>
+      <span class="commit-meta">${meta}</span>
+    </a>`;
+  });
+
+  if (cards.length === 0) {
+    container.innerHTML = '<p style="color:#8b949e;font-size:14px">No commits associated with this session.</p>';
+  } else {
+    container.innerHTML = cards.join('');
+  }
+}
+
+async function load() {
+  initRepoNav(repoId);
+  try {
+    const [session, counts] = await Promise.all([
+      apiFetch('/repos/' + repoId + '/sessions/' + sessionId),
+      loadSessionCounts(),
+    ]);
+
+    const duration = fmtDuration(session.startedAt, session.endedAt);
+
+    const notes = session.notes || '';
+    const notesHtml = notes
+      ? `<div class="session-notes-block">${escHtml(notes).replace(/\n/g, '<br>')}</div>`
+      : '<p style="color:#8b949e;font-size:14px">No closing notes.</p>';
+
+    const allSessions = await apiFetch('/repos/' + repoId + '/sessions?limit=200')
+      .then(d => d.sessions || []).catch(() => []);
+    const idx = allSessions.findIndex(s => s.sessionId === sessionId);
+    const prevSession = idx >= 0 && idx + 1 < allSessions.length ? allSessions[idx + 1] : null;
+    const nextSession = idx > 0 ? allSessions[idx - 1] : null;
+
+    const navHtml = `
+      <div style="display:flex;justify-content:space-between;margin-top:12px;font-size:13px">
+        <span>
+          ${prevSession
+            ? '<a href="' + base + '/sessions/' + prevSession.sessionId + '">&larr; Previous session</a>'
+            : '<span style="color:#8b949e">No previous session</span>'}
+        </span>
+        <span>
+          ${nextSession
+            ? '<a href="' + base + '/sessions/' + nextSession.sessionId + '">Next session &rarr;</a>'
+            : '<span style="color:#8b949e">No next session</span>'}
+        </span>
+      </div>`;
+
+    const isLive = !session.endedAt;
+    const participants = session.participants || [];
+    const commitIds = session.commits || [];
+
+    document.getElementById('content').innerHTML = `
+      <div class="card">
+        <div style="display:flex;align-items:center;gap:var(--space-3);margin-bottom:var(--space-4);flex-wrap:wrap">
+          <h1 style="margin:0">Recording Session</h1>
+          ${isLive ? '<span class="badge badge-active" style="font-size:13px;animation:pulse 1.5s ease-in-out infinite">🔴 Live</span>' : ''}
+          <a href="${base}/sessions" class="btn btn-ghost btn-sm" style="margin-left:auto">&larr; All sessions</a>
+        </div>
+        <div class="meta-row">
+          <div class="meta-item">
+            <span class="meta-label">Started</span>
+            <span class="meta-value">${fmtDate(session.startedAt)}</span>
+          </div>
+          <div class="meta-item">
+            <span class="meta-label">Ended</span>
+            <span class="meta-value">${session.endedAt ? fmtDate(session.endedAt) : '<em class="text-muted">in progress</em>'}</span>
+          </div>
+          <div class="meta-item">
+            <span class="meta-label">Duration</span>
+            <span class="meta-value">${session.endedAt ? duration : fmtRelative(session.startedAt)}</span>
+          </div>
+          ${session.location ? `
+          <div class="meta-item">
+            <span class="meta-label">Location</span>
+            <span class="meta-value">${escHtml(session.location)}</span>
+          </div>` : ''}
+          <div class="meta-item">
+            <span class="meta-label">Session ID</span>
+            <span class="meta-value text-mono text-sm">${shortSha(session.sessionId)}</span>
+          </div>
+        </div>
+        ${session.intent ? `
+        <div style="margin-top:var(--space-3)">
+          <span class="meta-label">&#127358; Intent</span>
+          <p style="margin-top:4px;font-size:var(--font-size-sm);color:var(--text-secondary)">${escHtml(session.intent)}</p>
+        </div>` : ''}
+        ${navHtml}
+      </div>
+      <div class="card">
+        <h2>Participants (${participants.length})</h2>
+        <div id="participant-cards" class="participant-cards-grid">Loading participants…</div>
+      </div>
+      <div class="card">
+        <h2>Commits (${commitIds.length})</h2>
+        <div id="session-commits" class="session-commits-list">Loading commits…</div>
+      </div>
+      <div class="card">
+        <h2>Closing Notes</h2>
+        <div style="margin-top:8px">${notesHtml}</div>
+      </div>`;
+
+    // Load rich cards after DOM is set
+    await Promise.all([
+      loadParticipantCards(participants),
+      loadSessionCommits(commitIds),
+    ]);
+
+  } catch(e) {
+    if (e.message !== 'auth') {
+      const msg = e.message.startsWith('404') ? 'Session not found.' : escHtml(e.message);
+      document.getElementById('content').innerHTML =
+        '<div style="margin-bottom:12px"><a href="' + base + '/sessions">&larr; Back to sessions</a></div>' +
+        '<p class="error">&#10005; ' + msg + '</p>';
+    }
+  }
+}
+
+let _liveTimer = null;
+
+async function startLivePolling() {
+  // Poll every 10 seconds for live sessions; stop when session ends
+  _liveTimer = setInterval(async () => {
+    try {
+      const session = await apiFetch('/repos/' + repoId + '/sessions/' + sessionId);
+      if (session.endedAt) {
+        clearInterval(_liveTimer);
+        // Reload to show final state
+        load();
+        return;
+      }
+      // Update participant list and commit count live
+      const liveEl = document.getElementById('live-commit-count');
+      if (liveEl) liveEl.textContent = (session.commits || []).length + ' commits so far';
+    } catch(e) { /* non-fatal */ }
+  }, 10000);
+}
+
+async function loadAndMaybePoll() {
+  await load();
+  // Check if session is live after load completes
+  try {
+    const session = await apiFetch('/repos/' + repoId + '/sessions/' + sessionId);
+    if (!session.endedAt) startLivePolling();
+  } catch(e) { /* non-fatal */ }
+}
+
+loadAndMaybePoll();
+{% endraw %}
+{% endblock %}

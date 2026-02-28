@@ -1,0 +1,169 @@
+{% extends "musehub/base.html" %}
+
+{% block title %}@{{ username }}{% endblock %}
+{% block breadcrumb %}<a href="/musehub/ui/users/{{ username }}">@{{ username }}</a>{% endblock %}
+
+{% block page_data %}
+const username    = {{ username | tojson }};
+const API_PROFILE = '/api/v1/musehub/users/' + username;
+{% endblock %}
+
+{% block page_script %}
+{% raw %}
+function escHtml(s) {
+  if (!s) return '';
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function bucketCount(n) {
+  if (n === 0) return 0;
+  if (n <= 2)  return 1;
+  if (n <= 5)  return 2;
+  if (n <= 9)  return 3;
+  return 4;
+}
+
+function buildContribGraph(graph) {
+  const weeks = [];
+  let week = [];
+  graph.forEach((d, i) => {
+    week.push(d);
+    if (week.length === 7) { weeks.push(week); week = []; }
+  });
+  if (week.length) weeks.push(week);
+
+  const weeksHtml = weeks.map(w => {
+    const days = w.map(d => {
+      const b = bucketCount(d.count);
+      return `<div class="contrib-day" data-count="${b}" title="${d.date}: ${d.count} commit${d.count !== 1 ? 's' : ''}"></div>`;
+    }).join('');
+    return `<div class="contrib-week">${days}</div>`;
+  }).join('');
+
+  return `<div class="contrib-graph">${weeksHtml}</div>`;
+}
+
+function repoCardHtml(r) {
+  const lastAct = r.lastActivityAt ? fmtDate(r.lastActivityAt) : 'No commits yet';
+  return `<div class="repo-card">
+    <h3><a href="/musehub/ui/${r.owner}/${r.slug}">${escHtml(r.name)}</a></h3>
+    <div class="repo-meta">
+      <span class="badge badge-${r.visibility}">${r.visibility}</span>
+      &bull; Last activity: ${lastAct}
+    </div>
+  </div>`;
+}
+
+async function toggleFollow() {
+  const btn = document.getElementById('follow-btn');
+  if (!btn) return;
+  const isFollowing = btn.dataset.following === 'true';
+  try {
+    if (isFollowing) {
+      await fetch('/api/v1/musehub/users/' + username + '/follow', { method: 'DELETE', headers: authHeaders() });
+      btn.dataset.following = 'false';
+      btn.textContent = 'Follow';
+      btn.classList.remove('following');
+    } else {
+      await fetch('/api/v1/musehub/users/' + username + '/follow', { method: 'POST', headers: authHeaders() });
+      btn.dataset.following = 'true';
+      btn.textContent = 'Following';
+      btn.classList.add('following');
+    }
+  } catch(e) { /* non-critical */ }
+}
+
+async function loadFollowState() {
+  try {
+    const data = await fetch('/api/v1/musehub/users/' + username + '/followers', { headers: authHeaders() }).then(r => r.json());
+    const countEl = document.getElementById('follower-count');
+    if (countEl) countEl.textContent = (data.follower_count || 0) + ' followers';
+    if (getToken() && document.getElementById('follow-btn')) {
+      document.getElementById('follow-btn').style.display = '';
+      document.getElementById('follow-btn').dataset.following = data.following ? 'true' : 'false';
+      document.getElementById('follow-btn').textContent = data.following ? 'Following' : 'Follow';
+      if (data.following) document.getElementById('follow-btn').classList.add('following');
+    }
+  } catch(e) { /* non-critical */ }
+}
+
+async function load() {
+  loadFollowState();
+  let profile;
+  try {
+    profile = await fetch(API_PROFILE).then(r => {
+      if (r.status === 404) throw new Error('404');
+      if (!r.ok) throw new Error(r.status);
+      return r.json();
+    });
+  } catch(e) {
+    if (e.message === '404') {
+      document.getElementById('content').innerHTML =
+        '<div class="card"><p class="error">&#10005; No profile found for <strong>' + escHtml(username) + '</strong>.</p></div>';
+    } else {
+      document.getElementById('content').innerHTML =
+        '<p class="error">Failed to load profile: ' + escHtml(e.message) + '</p>';
+    }
+    return;
+  }
+
+  const avatarHtml = profile.avatarUrl
+    ? `<img src="${escHtml(profile.avatarUrl)}" alt="avatar" />`
+    : '&#127925;';
+
+  const pinnedRepos = (profile.repos || []).filter(r => (profile.pinnedRepoIds || []).includes(r.repoId));
+  const publicRepos = profile.repos || [];
+
+  const pinnedSection = pinnedRepos.length > 0 ? `
+    <div class="card">
+      <h2 style="margin-bottom:12px">&#128204; Pinned</h2>
+      <div class="repo-grid">${pinnedRepos.map(repoCardHtml).join('')}</div>
+    </div>` : '';
+
+  const reposSection = publicRepos.length > 0 ? `
+    <div class="card">
+      <h2 style="margin-bottom:12px">&#127963; Public Repositories (${publicRepos.length})</h2>
+      <div class="repo-grid">${publicRepos.map(repoCardHtml).join('')}</div>
+    </div>` : '<div class="card"><p class="loading">No public repositories yet.</p></div>';
+
+  const graphSection = `
+    <div class="card">
+      <h2 style="margin-bottom:12px">&#128200; Contribution Activity (last 52 weeks)</h2>
+      ${buildContribGraph(profile.contributionGraph || [])}
+      <p style="font-size:12px;color:#8b949e;margin-top:8px">
+        Less &nbsp;
+        <span style="display:inline-flex;gap:2px;vertical-align:middle">
+          ${[0,1,2,3,4].map(n => '<span class="contrib-day" data-count="' + n + '" style="display:inline-block"></span>').join('')}
+        </span>
+        &nbsp; More
+      </p>
+    </div>`;
+
+  document.getElementById('content').innerHTML = `
+    <div class="card profile-header">
+      <div class="avatar">${avatarHtml}</div>
+      <div class="profile-meta">
+        <div style="display:flex;align-items:center;gap:var(--space-3);flex-wrap:wrap">
+          <h1 style="margin:0">${escHtml(profile.username)}</h1>
+          <button class="follow-btn" id="follow-btn" style="display:none"
+                  onclick="toggleFollow()">Follow</button>
+        </div>
+        ${profile.bio ? '<p class="bio">' + escHtml(profile.bio) + '</p>' : ''}
+        <div style="display:flex;gap:var(--space-4);align-items:center;flex-wrap:wrap;margin-top:var(--space-2)">
+          <div class="credits-badge">
+            <span class="num">${profile.sessionCredits || 0}</span>
+            <span>session credits</span>
+          </div>
+          <span class="text-muted text-sm" id="follower-count"></span>
+        </div>
+      </div>
+    </div>
+    ${pinnedSection}
+    ${graphSection}
+    ${reposSection}
+  `;
+}
+
+load();
+{% endraw %}
+{% endblock %}

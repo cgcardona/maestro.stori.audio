@@ -37,7 +37,7 @@ async def _create_repo(
     """Create a repo via the API and return its repo_id."""
     response = await client.post(
         "/api/v1/musehub/repos",
-        json={"name": name},
+        json={"name": name, "owner": "testuser"},
         headers=auth_headers,
     )
     assert response.status_code == 201
@@ -294,19 +294,27 @@ async def test_release_detail_body_preserved(
 
 
 @pytest.mark.anyio
-async def test_release_requires_auth(client: AsyncClient) -> None:
-    """All release endpoints return 401 without a Bearer token."""
-    endpoints = [
-        ("POST", "/api/v1/musehub/repos/some-repo/releases"),
-        ("GET", "/api/v1/musehub/repos/some-repo/releases"),
-        ("GET", "/api/v1/musehub/repos/some-repo/releases/v1.0"),
+async def test_release_write_requires_auth(client: AsyncClient) -> None:
+    """POST release endpoint returns 401 without a Bearer token (always requires auth)."""
+    response = await client.post("/api/v1/musehub/repos/some-repo/releases", json={})
+    assert response.status_code == 401, "POST /releases should require auth"
+
+
+@pytest.mark.anyio
+async def test_release_read_endpoints_return_404_for_nonexistent_repo_without_auth(
+    client: AsyncClient,
+) -> None:
+    """GET release endpoints return 404 for non-existent repos without a token.
+
+    Read endpoints use optional_token — auth is visibility-based; missing repo → 404.
+    """
+    read_endpoints = [
+        "/api/v1/musehub/repos/non-existent-repo/releases",
+        "/api/v1/musehub/repos/non-existent-repo/releases/v1.0",
     ]
-    for method, url in endpoints:
-        if method == "POST":
-            response = await client.post(url, json={})
-        else:
-            response = await client.get(url)
-        assert response.status_code == 401, f"{method} {url} should require auth"
+    for url in read_endpoints:
+        response = await client.get(url)
+        assert response.status_code == 404, f"GET {url} should return 404 for non-existent repo"
 
 
 # ---------------------------------------------------------------------------
@@ -320,6 +328,7 @@ async def test_create_release_service_persists_to_db(db_session: AsyncSession) -
     repo = await musehub_repository.create_repo(
         db_session,
         name="service-release-repo",
+        owner="testuser",
         visibility="private",
         owner_user_id="user-001",
     )
@@ -351,6 +360,7 @@ async def test_create_release_duplicate_tag_raises_value_error(
     repo = await musehub_repository.create_repo(
         db_session,
         name="dup-tag-svc-repo",
+        owner="testuser",
         visibility="private",
         owner_user_id="user-002",
     )
@@ -383,6 +393,7 @@ async def test_list_releases_newest_first_service(db_session: AsyncSession) -> N
     repo = await musehub_repository.create_repo(
         db_session,
         name="list-svc-repo",
+        owner="testuser",
         visibility="private",
         owner_user_id="user-003",
     )
@@ -410,6 +421,7 @@ async def test_get_latest_release_returns_newest(db_session: AsyncSession) -> No
     repo = await musehub_repository.create_repo(
         db_session,
         name="latest-svc-repo",
+        owner="testuser",
         visibility="private",
         owner_user_id="user-004",
     )
@@ -438,6 +450,7 @@ async def test_get_latest_release_empty_repo_returns_none(
     repo = await musehub_repository.create_repo(
         db_session,
         name="no-releases-repo",
+        owner="testuser",
         visibility="private",
         owner_user_id="user-005",
     )

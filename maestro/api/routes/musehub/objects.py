@@ -19,14 +19,17 @@ from __future__ import annotations
 import logging
 import mimetypes
 import os
+import uuid
+from datetime import datetime, timezone
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import FileResponse, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from maestro.auth.dependencies import TokenClaims, require_valid_token
+from maestro.auth.dependencies import TokenClaims, optional_token, require_valid_token
 from maestro.db import get_db
+from maestro.db.musehub_models import MusehubDownloadEvent
 from maestro.models.musehub import ObjectMetaListResponse
 from maestro.services import musehub_repository
 from maestro.services.musehub_exporter import ExportFormat, export_repo_at_ref
@@ -61,7 +64,7 @@ def _content_type(path: str) -> str:
 async def list_objects(
     repo_id: str,
     db: AsyncSession = Depends(get_db),
-    _: TokenClaims = Depends(require_valid_token),
+    claims: TokenClaims | None = Depends(optional_token),
 ) -> ObjectMetaListResponse:
     """Return metadata (path, size, object_id) for all objects in the repo.
 
@@ -72,7 +75,12 @@ async def list_objects(
     repo = await musehub_repository.get_repo(db, repo_id)
     if repo is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repo not found")
-
+    if repo.visibility != "public" and claims is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required to access private repos.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
     objects = await musehub_repository.list_objects(db, repo_id)
     return ObjectMetaListResponse(objects=objects)
 
@@ -86,7 +94,7 @@ async def get_object_content(
     repo_id: str,
     object_id: str,
     db: AsyncSession = Depends(get_db),
-    _: TokenClaims = Depends(require_valid_token),
+    claims: TokenClaims | None = Depends(optional_token),
 ) -> FileResponse:
     """Stream the raw bytes of a stored artifact from disk.
 
@@ -98,7 +106,12 @@ async def get_object_content(
     repo = await musehub_repository.get_repo(db, repo_id)
     if repo is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repo not found")
-
+    if repo.visibility != "public" and claims is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required to access private repos.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
     obj = await musehub_repository.get_object_row(db, repo_id, object_id)
     if obj is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Object not found")
@@ -145,7 +158,7 @@ async def export_artifacts(
         ),
     ] = None,
     db: AsyncSession = Depends(get_db),
-    _: TokenClaims = Depends(require_valid_token),
+    _claims: TokenClaims = Depends(require_valid_token),
 ) -> Response:
     """Return a downloadable export of stored artifacts at the given commit ref.
 
@@ -195,6 +208,21 @@ async def export_artifacts(
         format.value,
         len(result.content),
     )
+    # Record download event for analytics
+    caller = _claims.get("sub") if _claims else None
+    dl = MusehubDownloadEvent(
+        dl_id=str(uuid.uuid4()),
+        repo_id=repo_id,
+        ref=ref,
+        downloader_id=caller,
+        created_at=datetime.now(tz=timezone.utc),
+    )
+    db.add(dl)
+    try:
+        await db.commit()
+    except Exception:
+        await db.rollback()  # analytics failure must not block the download
+
     return Response(
         content=result.content,
         media_type=result.content_type,

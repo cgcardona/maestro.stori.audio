@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ title }} — Muse Hub</title>
+  <link rel="stylesheet" href="/musehub/static/embed.css">
+</head>
+<body>
+  <div class="player" id="player">
+    <div class="player-header">
+      <span class="logo-mark">&#127925;</span>
+      <div class="track-info">
+        <div class="track-title" id="track-title">Loading&#8230;</div>
+        <div class="track-sub" id="track-sub">Muse Hub</div>
+      </div>
+    </div>
+    <div class="controls">
+      <button class="play-btn" id="play-btn" disabled title="Play / Pause">&#9654;</button>
+      <div class="progress-wrap">
+        <div class="progress-bar" id="progress-bar">
+          <div class="progress-fill" id="progress-fill"></div>
+        </div>
+        <div class="time-row">
+          <span id="time-cur">0:00</span>
+          <span id="time-dur">0:00</span>
+        </div>
+      </div>
+    </div>
+    <div class="footer-link">
+      <a href="{{ listen_url }}" target="_blank" rel="noopener">
+        &#127925; View on Muse Hub
+      </a>
+    </div>
+  </div>
+  <audio id="audio-el" preload="metadata"></audio>
+  <script>
+    (function() {
+      const repoId = {{ repo_id | tojson }};
+      const ref    = {{ ref | tojson }};
+      const API    = '/api/v1/musehub';
+
+      const audio      = document.getElementById('audio-el');
+      const playBtn    = document.getElementById('play-btn');
+      const fill       = document.getElementById('progress-fill');
+      const bar        = document.getElementById('progress-bar');
+      const timeCur    = document.getElementById('time-cur');
+      const timeDur    = document.getElementById('time-dur');
+      const trackTitle = document.getElementById('track-title');
+      const trackSub   = document.getElementById('track-sub');
+
+      function fmtTime(s) {
+        if (!isFinite(s)) return '0:00';
+        const m = Math.floor(s / 60);
+        const sec = Math.floor(s % 60);
+        return m + ':' + (sec < 10 ? '0' : '') + sec;
+      }
+
+      function setStatus(msg, isError) {
+        trackTitle.textContent = isError ? msg : (trackTitle.textContent || msg);
+        if (isError) trackTitle.classList.add('error');
+      }
+
+      audio.addEventListener('timeupdate', function() {
+        const pct = audio.duration ? (audio.currentTime / audio.duration) * 100 : 0;
+        fill.style.width = pct + '%';
+        timeCur.textContent = fmtTime(audio.currentTime);
+      });
+
+      audio.addEventListener('durationchange', function() {
+        timeDur.textContent = fmtTime(audio.duration);
+      });
+
+      audio.addEventListener('ended', function() {
+        playBtn.innerHTML = '&#9654;';
+        fill.style.width = '0%';
+        audio.currentTime = 0;
+      });
+
+      audio.addEventListener('canplay', function() {
+        playBtn.disabled = false;
+      });
+
+      audio.addEventListener('error', function() {
+        setStatus('Audio unavailable', true);
+      });
+
+      playBtn.addEventListener('click', function() {
+        if (audio.paused) {
+          audio.play();
+          playBtn.innerHTML = '&#9646;&#9646;';
+        } else {
+          audio.pause();
+          playBtn.innerHTML = '&#9654;';
+        }
+      });
+
+      bar.addEventListener('click', function(e) {
+        if (!audio.duration) return;
+        const rect = bar.getBoundingClientRect();
+        const pct  = (e.clientX - rect.left) / rect.width;
+        audio.currentTime = pct * audio.duration;
+      });
+
+      async function loadTrack() {
+        try {
+          const objRes = await fetch(API + '/repos/' + repoId + '/objects');
+          if (!objRes.ok) throw new Error('objects ' + objRes.status);
+          const objData = await objRes.json();
+          const objects = objData.objects || [];
+
+          const audio_exts = ['mp3', 'ogg', 'wav', 'm4a'];
+          const audioObj = objects.find(function(o) {
+            const ext = o.path.split('.').pop().toLowerCase();
+            return audio_exts.indexOf(ext) !== -1;
+          });
+
+          if (!audioObj) {
+            trackTitle.textContent = 'No audio in this commit';
+            trackSub.textContent = 'ref: ' + ref.substring(0, 8);
+            return;
+          }
+
+          const name = audioObj.path.split('/').pop();
+          trackTitle.textContent = name;
+          trackSub.textContent = 'ref: ' + ref.substring(0, 8);
+
+          const audioUrl = API + '/repos/' + repoId + '/objects/' + audioObj.objectId + '/content';
+          audio.src = audioUrl;
+          audio.load();
+        } catch(e) {
+          setStatus('Could not load track', true);
+          trackSub.textContent = e.message;
+        }
+      }
+
+      loadTrack();
+    })();
+  </script>
+</body>
+</html>

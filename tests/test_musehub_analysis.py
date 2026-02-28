@@ -31,6 +31,7 @@ from maestro.models.musehub_analysis import (
     HarmonyData,
     KeyData,
     MeterData,
+    MotifEntry,
     MotifsData,
     SimilarityData,
     TempoData,
@@ -51,7 +52,7 @@ async def _create_repo(client: AsyncClient, auth_headers: dict[str, str]) -> str
     """Create a test repo and return its repo_id."""
     resp = await client.post(
         "/api/v1/musehub/repos",
-        json={"name": "analysis-test-repo", "visibility": "private"},
+        json={"name": "analysis-test-repo", "owner": "testuser", "visibility": "private"},
         headers=auth_headers,
     )
     assert resp.status_code == 201
@@ -88,6 +89,85 @@ def test_compute_dimension_motifs_returns_motifs_data() -> None:
     assert result.total_motifs == len(result.motifs)
     for motif in result.motifs:
         assert motif.occurrence_count == len(motif.occurrences)
+
+
+def test_motifs_data_has_extended_fields() -> None:
+    """MotifsData now carries sections, all_tracks for grid rendering."""
+    result = compute_dimension("motifs", "main")
+    assert isinstance(result, MotifsData)
+    assert isinstance(result.sections, list)
+    assert len(result.sections) > 0
+    assert isinstance(result.all_tracks, list)
+    assert len(result.all_tracks) > 0
+
+
+def test_motif_entry_has_contour_label() -> None:
+    """Every MotifEntry must carry a melodic contour label."""
+    result = compute_dimension("motifs", "main")
+    assert isinstance(result, MotifsData)
+    valid_labels = {
+        "ascending-step",
+        "descending-step",
+        "arch",
+        "valley",
+        "oscillating",
+        "static",
+    }
+    for motif in result.motifs:
+        assert isinstance(motif, MotifEntry)
+        assert motif.contour_label in valid_labels, (
+            f"Unknown contour label: {motif.contour_label!r}"
+        )
+
+
+def test_motif_entry_has_transformations() -> None:
+    """Each MotifEntry must include at least one transformation."""
+    result = compute_dimension("motifs", "main")
+    assert isinstance(result, MotifsData)
+    for motif in result.motifs:
+        assert isinstance(motif, MotifEntry)
+        assert len(motif.transformations) > 0
+        for xform in motif.transformations:
+            assert xform.transformation_type in {
+                "inversion",
+                "retrograde",
+                "retrograde-inversion",
+                "transposition",
+            }
+            assert isinstance(xform.intervals, list)
+            assert isinstance(xform.occurrences, list)
+
+
+def test_motif_entry_has_recurrence_grid() -> None:
+    """recurrence_grid is a flat list of cells covering every track x section pair."""
+    result = compute_dimension("motifs", "main")
+    assert isinstance(result, MotifsData)
+    expected_cells = len(result.all_tracks) * len(result.sections)
+    for motif in result.motifs:
+        assert isinstance(motif, MotifEntry)
+        assert len(motif.recurrence_grid) == expected_cells, (
+            f"Expected {expected_cells} cells, got {len(motif.recurrence_grid)} "
+            f"for motif {motif.motif_id!r}"
+        )
+        for cell in motif.recurrence_grid:
+            assert cell.track in result.all_tracks
+            assert cell.section in result.sections
+            assert isinstance(cell.present, bool)
+            assert cell.occurrence_count >= 0
+
+
+def test_motif_entry_tracks_cross_track() -> None:
+    """MotifEntry.tracks lists all tracks where the motif or its transforms appear."""
+    result = compute_dimension("motifs", "main")
+    assert isinstance(result, MotifsData)
+    for motif in result.motifs:
+        assert isinstance(motif, MotifEntry)
+        assert len(motif.tracks) > 0
+        # Every track in the list must appear in the global all_tracks roster
+        for track in motif.tracks:
+            assert track in result.all_tracks, (
+                f"motif.tracks references unknown track {track!r}"
+            )
 
 
 def test_compute_dimension_form_returns_form_data() -> None:
@@ -425,11 +505,16 @@ async def test_analysis_aggregate_cache_headers(
 @pytest.mark.anyio
 async def test_analysis_requires_auth(
     client: AsyncClient,
-    db_session: AsyncSession,
+    auth_headers: dict[str, str],
 ) -> None:
-    """Analysis endpoint returns 401 without a Bearer token."""
+    """Analysis endpoint returns 401 without a Bearer token for private repos.
+
+    Pre-existing fix: the route must check auth AFTER confirming the repo exists,
+    so the test creates a real private repo first to reach the auth gate.
+    """
+    repo_id = await _create_repo(client, auth_headers)
     resp = await client.get(
-        "/api/v1/musehub/repos/some-id/analysis/main/harmony",
+        f"/api/v1/musehub/repos/{repo_id}/analysis/main/harmony",
     )
     assert resp.status_code == 401
 
@@ -437,11 +522,16 @@ async def test_analysis_requires_auth(
 @pytest.mark.anyio
 async def test_analysis_aggregate_requires_auth(
     client: AsyncClient,
-    db_session: AsyncSession,
+    auth_headers: dict[str, str],
 ) -> None:
-    """Aggregate analysis endpoint returns 401 without a Bearer token."""
+    """Aggregate analysis endpoint returns 401 without a Bearer token for private repos.
+
+    Pre-existing fix: the route must check auth AFTER confirming the repo exists,
+    so the test creates a real private repo first to reach the auth gate.
+    """
+    repo_id = await _create_repo(client, auth_headers)
     resp = await client.get(
-        "/api/v1/musehub/repos/some-id/analysis/main",
+        f"/api/v1/musehub/repos/{repo_id}/analysis/main",
     )
     assert resp.status_code == 401
 
@@ -462,3 +552,87 @@ async def test_analysis_all_13_dimensions_individually(
         assert resp.status_code == 200, f"Dimension {dim!r} returned {resp.status_code}"
         body = resp.json()
         assert body["dimension"] == dim, f"Expected dimension={dim!r}, got {body['dimension']!r}"
+
+
+@pytest.mark.anyio
+async def test_contour_track_filter(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+    db_session: AsyncSession,
+) -> None:
+    """Track filter is applied and reflected in filtersApplied for the contour dimension.
+
+    Verifies issue #228 acceptance criterion: contour analysis respects the
+    ``?track=`` query parameter so melodists can view per-instrument contour.
+    """
+    repo_id = await _create_repo(client, auth_headers)
+    resp = await client.get(
+        f"/api/v1/musehub/repos/{repo_id}/analysis/main/contour?track=lead",
+        headers=auth_headers,
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["dimension"] == "contour"
+    assert body["filtersApplied"]["track"] == "lead"
+    data = body["data"]
+    assert "shape" in data
+    assert "pitchCurve" in data
+    assert len(data["pitchCurve"]) > 0
+
+
+@pytest.mark.anyio
+async def test_tempo_section_filter(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+    db_session: AsyncSession,
+) -> None:
+    """Section filter is applied and reflected in filtersApplied for the tempo dimension.
+
+    Verifies that tempo analysis scoped to a named section returns valid TempoData
+    and records the section filter in the response envelope.
+    """
+    repo_id = await _create_repo(client, auth_headers)
+    resp = await client.get(
+        f"/api/v1/musehub/repos/{repo_id}/analysis/main/tempo?section=chorus",
+        headers=auth_headers,
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["dimension"] == "tempo"
+    assert body["filtersApplied"]["section"] == "chorus"
+    data = body["data"]
+    assert data["bpm"] > 0
+    assert 0.0 <= data["stability"] <= 1.0
+
+
+@pytest.mark.anyio
+async def test_analysis_aggregate_endpoint_returns_all_dimensions(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+    db_session: AsyncSession,
+) -> None:
+    """GET /api/v1/musehub/repos/{repo_id}/analysis/{ref} returns all 13 dimensions.
+
+    Regression test for issue #221: the aggregate endpoint must return all 13
+    musical dimensions so the analysis dashboard can render summary cards for each
+    in a single round-trip — agents must not have to query dimensions individually.
+    """
+    repo_id = await _create_repo(client, auth_headers)
+    resp = await client.get(
+        f"/api/v1/musehub/repos/{repo_id}/analysis/main",
+        headers=auth_headers,
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["ref"] == "main"
+    assert body["repoId"] == repo_id
+    assert "dimensions" in body
+    assert len(body["dimensions"]) == 13
+    returned_dims = {d["dimension"] for d in body["dimensions"]}
+    assert returned_dims == set(ALL_DIMENSIONS)
+    for dim_entry in body["dimensions"]:
+        assert "dimension" in dim_entry
+        assert "ref" in dim_entry
+        assert "computedAt" in dim_entry
+        assert "data" in dim_entry
+        assert "filtersApplied" in dim_entry

@@ -1,0 +1,387 @@
+{% extends "musehub/base.html" %}
+
+{% block title %}Insights · {{ owner }}/{{ repo_slug }}{% endblock %}
+{% block extra_css %}
+<style>
+.traffic-chart-container { background: var(--bg-surface, var(--surface)); border-radius: 8px; padding: 16px; }
+.branch-bar-row { display: flex; align-items: center; gap: var(--space-3); margin-bottom: var(--space-2); }
+.branch-bar-label { width: 160px; font-size: var(--font-size-xs, 11px); color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex-shrink: 0; }
+.branch-bar-track { flex: 1; background: var(--bg-overlay); border-radius: var(--radius-full); height: 10px; overflow: hidden; }
+.branch-bar-fill { height: 100%; border-radius: var(--radius-full); }
+.branch-bar-count { font-size: var(--font-size-xs, 11px); color: var(--text-muted); flex-shrink: 0; width: 80px; text-align: right; }
+.issue-health-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: var(--space-3); }
+@media (max-width: 600px) { .issue-health-grid { grid-template-columns: repeat(2, 1fr); } }
+</style>
+{% endblock %}
+{% block breadcrumb %}
+  <a href="/musehub/ui/{{ owner }}">{{ owner }}</a> /
+  <a href="{{ base_url }}">{{ repo_slug }}</a> /
+  Insights
+{% endblock %}
+
+{% block repo_nav %}
+{% include "musehub/partials/repo_nav.html" %}
+{% endblock %}
+
+{% block page_data %}
+const repoId = {{ repo_id | tojson }};
+const base   = {{ base_url | tojson }};
+{% endblock %}
+
+{% block page_script %}
+{% raw %}
+function buildHeatmap(commits) {
+  // Build a 52-week commit frequency heatmap (GitHub contribution calendar style)
+  const now = new Date();
+  const counts = {};
+
+  commits.forEach(c => {
+    const d = new Date(c.timestamp);
+    const key = d.toISOString().split('T')[0];
+    counts[key] = (counts[key] || 0) + 1;
+  });
+
+  // Generate last 52 weeks (364 days)
+  const days = [];
+  for (let i = 363; i >= 0; i--) {
+    const d = new Date(now);
+    d.setDate(d.getDate() - i);
+    const key = d.toISOString().split('T')[0];
+    days.push({ key, count: Math.min(counts[key] || 0, 4) });
+  }
+
+  // Group into weeks
+  const weeks = [];
+  for (let i = 0; i < days.length; i += 7) {
+    weeks.push(days.slice(i, i + 7));
+  }
+
+  return `<div class="heatmap-grid">
+    ${weeks.map(week => `
+      <div class="heatmap-week">
+        ${week.map(day => `<div class="heatmap-day" data-count="${day.count}" title="${day.key}: ${day.count} commit${day.count !== 1 ? 's' : ''}"></div>`).join('')}
+      </div>
+    `).join('')}
+  </div>`;
+}
+
+function buildBpmTimeline(commits) {
+  // Extract BPM across commits and render a simple SVG line chart
+  const bpmData = commits
+    .filter(c => {
+      const m = c.message.match(/bpm:(\d+)|tempo:(\d+)/i);
+      return !!m;
+    })
+    .map(c => {
+      const m = c.message.match(/bpm:(\d+)|tempo:(\d+)/i);
+      return { date: new Date(c.timestamp), bpm: parseInt(m[1] || m[2]), msg: c.message.split('\n')[0] };
+    })
+    .reverse();
+
+  if (bpmData.length === 0)
+    return '<p class="text-muted text-sm">No BPM data in commit messages yet. Add <code>bpm:120</code> to your commit messages.</p>';
+
+  const W = 600, H = 100, pad = 20;
+  const bpms = bpmData.map(d => d.bpm);
+  const minBpm = Math.min(...bpms) - 5;
+  const maxBpm = Math.max(...bpms) + 5;
+  const xStep = bpmData.length > 1 ? (W - pad * 2) / (bpmData.length - 1) : 0;
+
+  const points = bpmData.map((d, i) => {
+    const x = pad + i * xStep;
+    const y = H - pad - ((d.bpm - minBpm) / (maxBpm - minBpm)) * (H - pad * 2);
+    return `${x},${y}`;
+  }).join(' ');
+
+  const circles = bpmData.map((d, i) => {
+    const x = pad + i * xStep;
+    const y = H - pad - ((d.bpm - minBpm) / (maxBpm - minBpm)) * (H - pad * 2);
+    return `<circle cx="${x}" cy="${y}" r="4" fill="var(--color-accent)" title="${d.bpm} BPM — ${escHtml(d.msg.substring(0,30))}"/>`;
+  }).join('');
+
+  return `<div style="overflow-x:auto">
+    <svg viewBox="0 0 ${W} ${H}" style="width:100%;max-width:${W}px;height:${H}px">
+      <polyline points="${points}" fill="none" stroke="var(--color-accent)" stroke-width="2" opacity="0.8"/>
+      ${circles}
+      <text x="${pad}" y="${H - 4}" font-size="10" fill="var(--text-muted)">${minBpm} BPM</text>
+      <text x="${pad}" y="${pad}" font-size="10" fill="var(--text-muted)">${maxBpm} BPM</text>
+    </svg>
+  </div>`;
+}
+
+function branchColor(name) {
+  if (name === 'main' || name === 'master') return '#22c55e';
+  if (name.startsWith('feat/') || name.startsWith('feature/')) return '#3b82f6';
+  if (name.startsWith('fix/') || name.startsWith('bugfix/') || name.startsWith('hotfix/')) return '#ef4444';
+  if (name.startsWith('experiment/') || name.startsWith('exp/')) return '#eab308';
+  return '#6b7280';
+}
+
+function buildBranchActivity(commits) {
+  if (!commits || commits.length === 0)
+    return '<p class="text-muted text-sm">No commit data yet.</p>';
+
+  const branchMap = {};
+  commits.forEach(c => {
+    const b = c.branch || 'unknown';
+    if (!branchMap[b]) branchMap[b] = { count: 0, lastDate: null };
+    branchMap[b].count++;
+    const ts = new Date(c.timestamp);
+    if (!branchMap[b].lastDate || ts > branchMap[b].lastDate) branchMap[b].lastDate = ts;
+  });
+
+  const sorted = Object.entries(branchMap).sort((a, b) => b[1].count - a[1].count);
+  const maxCount = sorted[0][1].count || 1;
+
+  return sorted.map(([name, info]) => {
+    const pct = Math.round((info.count / maxCount) * 100);
+    const color = branchColor(name);
+    const lastStr = info.lastDate ? fmtRelative(info.lastDate.toISOString()) : '—';
+    return `
+      <div class="branch-bar-row">
+        <div class="branch-bar-label" title="${escHtml(name)}">${escHtml(name)}</div>
+        <div class="branch-bar-track">
+          <div class="branch-bar-fill" style="width:${pct}%;background:${color}"></div>
+        </div>
+        <div class="branch-bar-count">${info.count} commit${info.count !== 1 ? 's' : ''} &middot; ${lastStr}</div>
+      </div>`;
+  }).join('');
+}
+
+function buildContributorChart(credits) {
+  if (!credits || credits.length === 0)
+    return '<p class="text-muted text-sm">No contributor data yet.</p>';
+
+  const total = credits.reduce((s, c) => s + (c.sessionCount || 0), 0) || 1;
+  return credits.slice(0, 10).map(c => {
+    const pct = Math.round(((c.sessionCount || 0) / total) * 100);
+    return `
+      <div style="margin-bottom:var(--space-3)">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
+          <a href="/musehub/ui/users/${escHtml(c.name)}" class="text-sm">${escHtml(c.name)}</a>
+          <span class="text-xs text-muted">${c.sessionCount || 0} sessions</span>
+        </div>
+        <div style="background:var(--bg-overlay);border-radius:var(--radius-full);height:6px;overflow:hidden">
+          <div style="width:${pct}%;height:100%;background:var(--color-accent);border-radius:var(--radius-full)"></div>
+        </div>
+      </div>`;
+  }).join('');
+}
+
+async function loadTrafficChart() {
+  try {
+    const data = await apiFetch('/repos/' + repoId + '/analytics/views?days=30');
+    if (!data || !data.length) {
+      document.getElementById('traffic-chart').textContent = 'No view data yet.';
+      return;
+    }
+    const max = Math.max(...data.map(d => d.count), 1);
+    const w = 500, h = 60, pad = 4;
+    const xs = data.map((_, i) => pad + i * (w - 2 * pad) / (data.length - 1 || 1));
+    const ys = data.map(d => h - pad - (d.count / max) * (h - 2 * pad));
+    const pts = xs.map((x, i) => x + ',' + ys[i]).join(' ');
+    const total = data.reduce((s, d) => s + d.count, 0);
+    document.getElementById('traffic-chart').innerHTML = `
+      <svg viewBox="0 0 ${w} ${h}" style="width:100%;height:60px">
+        <polyline points="${pts}" fill="none" stroke="var(--color-accent)" stroke-width="2"/>
+        ${data.map((d, i) => `<circle cx="${xs[i]}" cy="${ys[i]}" r="2" fill="var(--color-accent)">
+          <title>${escHtml(d.date)}: ${d.count} views</title></circle>`).join('')}
+      </svg>
+      <div style="font-size:var(--font-size-xs,11px);color:var(--text-muted);margin-top:4px">
+        Last 30 days — ${total} total views
+      </div>`;
+  } catch (_) {}
+}
+
+async function load() {
+  initRepoNav(repoId);
+  try {
+    const [repoData, commitsData, creditsData, sessionsData, openIssuesData, closedIssuesData, openPrsData, mergedPrsData] = await Promise.all([
+      apiFetch('/repos/' + repoId),
+      apiFetch('/repos/' + repoId + '/commits?limit=200'),
+      apiFetch('/repos/' + repoId + '/credits').catch(() => ({ credits: [] })),
+      apiFetch('/repos/' + repoId + '/sessions?limit=100').catch(() => ({ sessions: [], total: 0 })),
+      apiFetch('/repos/' + repoId + '/issues?state=open').catch(() => ({ issues: [] })),
+      apiFetch('/repos/' + repoId + '/issues?state=closed').catch(() => ({ issues: [] })),
+      apiFetch('/repos/' + repoId + '/pull-requests?state=open').catch(() => ({ pullRequests: [] })),
+      apiFetch('/repos/' + repoId + '/pull-requests?state=merged').catch(() => ({ pullRequests: [] })),
+    ]);
+
+    const commits  = commitsData.commits  || [];
+    const credits  = creditsData.credits  || [];
+    const sessions = sessionsData.sessions || [];
+    const totalSessions = sessionsData.total || sessions.length;
+
+    const openIssues  = (openIssuesData.issues   || []).length;
+    const closedIssues = (closedIssuesData.issues || []).length;
+    const openPrs     = (openPrsData.pullRequests   || []).length;
+    const mergedPrs   = (mergedPrsData.pullRequests || []).length;
+
+    // Fetch analytics in parallel (non-blocking — failures silently ignored)
+    apiFetch('/repos/' + repoId + '/analytics').then(a => {
+      const views = document.getElementById('stat-views');
+      const dls   = document.getElementById('stat-downloads');
+      if (views) views.textContent = a.view_count ?? 0;
+      if (dls)   dls.textContent   = a.download_count ?? 0;
+    }).catch(() => {});
+    loadTrafficChart();
+
+    // Key signature distribution
+    const keyMap = {};
+    commits.forEach(c => {
+      const m = c.message.match(/\bkey:([\w#b]+\s*(?:major|minor|maj|min)?)\b/i);
+      if (m) {
+        const k = m[1].trim();
+        keyMap[k] = (keyMap[k] || 0) + 1;
+      }
+    });
+
+    const keyDistribution = Object.entries(keyMap)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5)
+      .map(([k, n]) => `<span class="nav-meta-pill">♩ ${escHtml(k)} &times;${n}</span>`)
+      .join('') || '<span class="text-muted text-sm">No key data in commits yet</span>';
+
+    // Author distribution
+    const authorMap = {};
+    commits.forEach(c => {
+      authorMap[c.author] = (authorMap[c.author] || 0) + 1;
+    });
+    const topAuthors = Object.entries(authorMap).sort((a,b) => b[1]-a[1]).slice(0, 5);
+
+    document.getElementById('content').innerHTML = `
+      <!-- Summary stats -->
+      <div class="insights-grid" style="margin-bottom:var(--space-4)">
+        <div class="stat-card">
+          <span class="stat-value">${commits.length}</span>
+          <div class="stat-label">Total Commits</div>
+        </div>
+        <div class="stat-card">
+          <span class="stat-value">${credits.length}</span>
+          <div class="stat-label">Contributors</div>
+        </div>
+        <div class="stat-card">
+          <span class="stat-value">${totalSessions}</span>
+          <div class="stat-label">Recording Sessions</div>
+        </div>
+        <div class="stat-card">
+          <span class="stat-value">${repoData.tempoBpm || '—'}</span>
+          <div class="stat-label">Current BPM</div>
+        </div>
+        <div class="stat-card">
+          <span class="stat-value">${escHtml(repoData.keySignature || '—')}</span>
+          <div class="stat-label">Current Key</div>
+        </div>
+        <div class="stat-card">
+          <span class="stat-value">${repoData.starCount || 0}</span>
+          <div class="stat-label">Stars</div>
+        </div>
+        <div class="stat-card">
+          <span class="stat-value" id="stat-views">—</span>
+          <span class="stat-label">👁 Views</span>
+        </div>
+        <div class="stat-card">
+          <span class="stat-value" id="stat-downloads">—</span>
+          <span class="stat-label">⬇️ Downloads</span>
+        </div>
+      </div>
+
+      <!-- Commit frequency heatmap -->
+      <div class="card">
+        <h2 style="margin-bottom:var(--space-3)">Commit Activity</h2>
+        <p class="text-xs text-muted" style="margin-bottom:var(--space-3)">Past 52 weeks</p>
+        ${buildHeatmap(commits)}
+      </div>
+
+      <!-- 30-day traffic -->
+      <div class="card">
+        <h2 style="margin-bottom:var(--space-3)">Traffic</h2>
+        <div id="traffic-chart" class="traffic-chart-container">Loading…</div>
+      </div>
+
+      <!-- BPM evolution -->
+      <div class="card">
+        <h2 style="margin-bottom:var(--space-3)">BPM Evolution</h2>
+        ${buildBpmTimeline(commits)}
+      </div>
+
+      <!-- Keys used -->
+      <div class="card">
+        <h2 style="margin-bottom:var(--space-3)">Keys Used</h2>
+        <div style="display:flex;gap:var(--space-2);flex-wrap:wrap">
+          ${keyDistribution}
+        </div>
+      </div>
+
+      <!-- Contributors -->
+      <div class="card">
+        <h2 style="margin-bottom:var(--space-3)">Contributors</h2>
+        ${buildContributorChart(credits)}
+        <div style="margin-top:var(--space-3)">
+          <h3 style="margin-bottom:var(--space-2)">Commit counts</h3>
+          ${topAuthors.map(([author, count]) => `
+            <div style="display:flex;justify-content:space-between;padding:var(--space-1) 0;border-bottom:1px solid var(--border-subtle)">
+              <a href="/musehub/ui/users/${escHtml(author)}" class="text-sm">${escHtml(author)}</a>
+              <span class="text-xs text-muted">${count} commit${count !== 1 ? 's' : ''}</span>
+            </div>`).join('')}
+        </div>
+      </div>
+
+      <!-- Branch Activity -->
+      <div class="card">
+        <h2 style="margin-bottom:var(--space-2)">Branch Activity</h2>
+        <p class="text-xs text-muted" style="margin-bottom:var(--space-3)">Commit count per branch · last 200 commits</p>
+        ${buildBranchActivity(commits)}
+      </div>
+
+      <!-- Issue Health -->
+      <div class="card">
+        <h2 style="margin-bottom:var(--space-3)">Issue &amp; PR Health</h2>
+        <div class="issue-health-grid">
+          <div class="stat-card">
+            <span class="stat-value" style="color:#22c55e">${openIssues}</span>
+            <div class="stat-label">Open Issues</div>
+          </div>
+          <div class="stat-card">
+            <span class="stat-value" style="color:var(--text-muted)">${closedIssues}</span>
+            <div class="stat-label">Closed Issues</div>
+          </div>
+          <div class="stat-card">
+            <span class="stat-value" style="color:#3b82f6">${openPrs}</span>
+            <div class="stat-label">Open PRs</div>
+          </div>
+          <div class="stat-card">
+            <span class="stat-value" style="color:#a855f7">${mergedPrs}</span>
+            <div class="stat-label">Merged PRs</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Recent sessions -->
+      <div class="card">
+        <h2 style="margin-bottom:var(--space-3)">Recent Sessions</h2>
+        ${sessions.length === 0
+          ? '<p class="text-muted text-sm">No sessions yet.</p>'
+          : sessions.slice(0, 5).map(s => `
+            <div class="session-row">
+              <div class="session-info">
+                <a href="${base}/sessions/${s.sessionId}" class="text-sm">${escHtml(s.title || 'Untitled session')}</a>
+                <span class="text-xs text-muted">
+                  ${fmtRelative(s.startedAt)}
+                  ${s.endedAt ? '' : '<span class="badge badge-active" style="margin-left:4px">Live</span>'}
+                </span>
+              </div>
+            </div>`).join('')}
+        <div style="margin-top:var(--space-3)">
+          <a href="${base}/sessions" class="btn btn-ghost btn-sm">View all sessions &rarr;</a>
+        </div>
+      </div>`;
+  } catch(e) {
+    if (e.message !== 'auth')
+      document.getElementById('content').innerHTML = '<p class="error">&#10005; ' + escHtml(e.message) + '</p>';
+  }
+}
+
+load();
+{% endraw %}
+{% endblock %}

@@ -1481,6 +1481,40 @@ content analysis will be wired in once Storpheus exposes per-dimension introspec
 
 **Type alias:** `DimensionData = HarmonyData | DynamicsData | ... | DivergenceData` (union of all 13 model types).
 
+### `DynamicArc`
+
+**Path:** `maestro/models/musehub_analysis.py`
+
+`Literal["flat", "terraced", "crescendo", "decrescendo", "swell", "hairpin"]` — vocabulary of per-track dynamic arc shapes. Used in `TrackDynamicsProfile.arc` and rendered as badges on the dynamics analysis UI page.
+
+### `TrackDynamicsProfile`
+
+**Path:** `maestro/models/musehub_analysis.py`
+
+Per-track velocity analysis result returned by `compute_dynamics_page_data`. Consumed by the dynamics analysis UI page (`GET /{repo_id}/analysis/{ref}/dynamics`) and the JSON endpoint (`GET /repos/{repo_id}/analysis/{ref}/dynamics/page`).
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `track` | `str` | Track name (e.g. `"piano"`, `"bass"`) |
+| `peak_velocity` | `int` | Maximum MIDI velocity (0–127) observed in track |
+| `min_velocity` | `int` | Minimum MIDI velocity (0–127) observed in track |
+| `mean_velocity` | `float` | Mean MIDI velocity across all events |
+| `dynamic_range` | `int` | `peak_velocity - min_velocity` |
+| `arc` | `DynamicArc` | Classified shape of the velocity envelope over time |
+| `curve` | `list[int]` | Downsampled velocity time-series (up to 32 points) for SVG sparkline |
+
+### `DynamicsPageData`
+
+**Path:** `maestro/models/musehub_analysis.py`
+
+Aggregate container returned by `compute_dynamics_page_data`. Feeds the dynamics analysis HTML page and its JSON content-negotiation response.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `repo_id` | `str` | Repository identifier |
+| `ref` | `str` | Commit SHA or branch ref |
+| `tracks` | `list[TrackDynamicsProfile]` | Per-track dynamics profiles, one per active track |
+
 ---
 
 ## Variation Layer
@@ -6019,6 +6053,61 @@ Wrapper returned by `GET /api/v1/musehub/repos/{repo_id}/objects`.
 **Producer:** `objects.list_objects` route handler
 **Consumer:** Muse Hub web UI; any agent inspecting which artifacts are available for a repo
 
+### `SessionCreate`
+
+Defined in `maestro/models/musehub.py`.
+
+Request body for `POST /api/v1/musehub/repos/{repo_id}/sessions`. Accepts a session record pushed from `muse session end`. Push is idempotent — same `session_id` updates the existing record.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `session_id` | `str` | UUIDv4 from the local `.muse/sessions/<id>.json` |
+| `schema_version` | `str` | JSON schema version (currently `"1"`) |
+| `started_at` | `datetime` | ISO-8601 UTC session start |
+| `ended_at` | `datetime \| None` | ISO-8601 UTC session end; `None` while active |
+| `participants` | `list[str]` | Ordered participant names |
+| `location` | `str` | Recording location or studio name |
+| `intent` | `str` | Creative intent declared at session start |
+| `commits` | `list[str]` | Muse commit IDs made during this session |
+| `notes` | `str` | Closing notes from `muse session end --notes` |
+
+**Producer:** CLI `muse session end` (future push command)
+**Consumer:** `repos.push_session` route handler → `musehub_sessions.upsert_session`
+
+### `SessionResponse`
+
+Defined in `maestro/models/musehub.py`.
+
+Returned by `GET /api/v1/musehub/repos/{repo_id}/sessions/{session_id}` and as items in `SessionListResponse`.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `session_id` | `str` | UUIDv4 session identifier |
+| `repo_id` | `str` | Hub repo this session belongs to |
+| `schema_version` | `str` | JSON schema version string |
+| `started_at` | `datetime` | Session start timestamp |
+| `ended_at` | `datetime \| None` | Session end timestamp |
+| `participants` | `list[str]` | Ordered participant name list |
+| `location` | `str` | Recording location |
+| `intent` | `str` | Creative intent |
+| `commits` | `list[str]` | Muse commit IDs associated with this session |
+| `notes` | `str` | Closing notes |
+| `created_at` | `datetime` | When the record was pushed to the Hub |
+
+**Producer:** `musehub_sessions.upsert_session`, `musehub_sessions.get_session`, `musehub_sessions.list_sessions`
+**Consumer:** Muse Hub session detail UI page; any agent reasoning about session creative context
+
+### `SessionListResponse`
+
+Wrapper returned by `GET /api/v1/musehub/repos/{repo_id}/sessions`.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `sessions` | `list[SessionResponse]` | Sessions ordered newest-first by `started_at` |
+| `total` | `int` | Total session count for the repo (pre-limit) |
+
+**Producer:** `repos.list_sessions` route handler
+**Consumer:** Muse Hub session list UI page; agents computing per-participant session counts
 ### `ContributorCredits`
 
 Defined in `maestro/models/musehub.py`.
@@ -6144,6 +6233,40 @@ Defined in `maestro/models/musehub.py`.
 **Producer:** `search.search_repo` route handler
 **Consumer:** Muse Hub search page (renders result rows); AI agents finding commits by musical property
 
+<<<<<<< HEAD
+### `SessionResponse`
+
+Defined in `maestro/models/musehub.py`.
+
+Wire representation of a single recording session entry.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `session_id` | `str` | UUID for this session |
+| `started_at` | `datetime` | When the session started (UTC) |
+| `ended_at` | `datetime \| None` | When the session ended; `null` if still active |
+| `duration_seconds` | `float \| None` | Derived duration; `null` for active sessions |
+| `participants` | `list[str]` | Participant identifiers or display names |
+| `intent` | `str` | Free-text creative goal for this session |
+| `location` | `str` | Studio or location label |
+| `is_active` | `bool` | True while session is open (no stop event received) |
+| `created_at` | `datetime` | When the Hub record was created (UTC) |
+
+**Producer:** `musehub_repository.create_session()` / `list_sessions()` / `get_session()` → `repos.create_session` / `list_sessions` / `get_session` route handlers
+**Consumer:** Muse Hub sessions page UI; CLI `muse session log`; AI agents reviewing creative history
+
+### `SessionListResponse`
+
+Wrapper returned by `GET /api/v1/musehub/repos/{repo_id}/sessions`.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `sessions` | `list[SessionResponse]` | Sessions ordered: active first, then newest-by-started_at |
+| `total` | `int` | Total session count for the repo (ignores `limit`) |
+
+**Producer:** `repos.list_sessions` route handler
+**Consumer:** Muse Hub sessions page UI; AI agents auditing studio activity across time
+=======
 ### `DagNode`
 
 A single commit node in the repo's directed acyclic graph. Defined in `maestro/models/musehub.py`.
@@ -6191,6 +6314,91 @@ Returned by `GET /api/v1/musehub/repos/{repo_id}/dag`.
 
 **Producer:** `repos.get_commit_dag` route handler
 **Consumer:** Interactive DAG graph UI page; AI agents inspecting project history topology
+>>>>>>> origin/dev
+
+---
+
+## Muse Hub Timeline Types
+
+Defined in `maestro/models/musehub.py`. Returned by `GET /api/v1/musehub/repos/{repo_id}/timeline`.
+
+### `TimelineCommitEvent`
+
+One commit plotted as a point on the timeline.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `event_type` | `str` | Always `"commit"` — discriminator for client-side layer routing |
+| `commit_id` | `str` | Full commit SHA |
+| `branch` | `str` | Branch the commit belongs to |
+| `message` | `str` | Full commit message |
+| `author` | `str` | Author identifier |
+| `timestamp` | `datetime` | UTC timestamp of the commit |
+| `parent_ids` | `list[str]` | Parent commit SHAs (two for merge commits) |
+
+**Producer:** `musehub_repository.get_timeline_events()`
+**Consumer:** Muse Hub timeline UI; AI agents reasoning about project history
+
+### `TimelineEmotionEvent`
+
+Deterministic emotion vector derived from the commit SHA.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `event_type` | `str` | Always `"emotion"` |
+| `commit_id` | `str` | Commit this vector is derived from |
+| `timestamp` | `datetime` | Same timestamp as the parent commit |
+| `valence` | `float` | Pleasantness [0.0, 1.0] — derived from SHA bytes 0–3 |
+| `energy` | `float` | Intensity [0.0, 1.0] — derived from SHA bytes 4–7 |
+| `tension` | `float` | Dissonance [0.0, 1.0] — derived from SHA bytes 8–11 |
+
+**Producer:** `musehub_repository._derive_emotion()`
+**Consumer:** Timeline UI line chart overlay; agents tracking emotional arc of a composition
+
+### `TimelineSectionEvent`
+
+A section-change marker extracted from a commit message via keyword heuristics.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `event_type` | `str` | Always `"section"` |
+| `commit_id` | `str` | Commit whose message triggered this event |
+| `timestamp` | `datetime` | Same as parent commit |
+| `section_name` | `str` | Detected section keyword (e.g. `"chorus"`, `"verse"`, `"bridge"`) |
+| `action` | `str` | `"added"` or `"removed"` — inferred from verb in commit message |
+
+**Producer:** `musehub_repository._extract_section_events()`
+**Consumer:** Timeline UI section layer; agents understanding song structure evolution
+
+### `TimelineTrackEvent`
+
+A track add/remove marker extracted from a commit message via keyword heuristics.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `event_type` | `str` | Always `"track"` |
+| `commit_id` | `str` | Commit whose message triggered this event |
+| `timestamp` | `datetime` | Same as parent commit |
+| `track_name` | `str` | Detected track keyword (e.g. `"bass"`, `"drums"`, `"keys"`) |
+| `action` | `str` | `"added"` or `"removed"` — inferred from verb in commit message |
+
+**Producer:** `musehub_repository._extract_track_events()`
+**Consumer:** Timeline UI track layer; agents tracking instrumentation changes over time
+
+### `TimelineResponse`
+
+Top-level response for `GET /api/v1/musehub/repos/{repo_id}/timeline`.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `commits` | `list[TimelineCommitEvent]` | All visible commits, oldest-first |
+| `emotion` | `list[TimelineEmotionEvent]` | One emotion entry per commit |
+| `sections` | `list[TimelineSectionEvent]` | Section-change events across all commits |
+| `tracks` | `list[TimelineTrackEvent]` | Track add/remove events across all commits |
+| `total_commits` | `int` | Total commit count for the repo (may exceed `len(commits)` if `limit` was applied) |
+
+**Producer:** `musehub_repository.get_timeline_events()`
+**Consumer:** `GET /musehub/ui/{repo_id}/timeline` SVG renderer; AI agents reasoning about project creative arc
 
 ---
 
