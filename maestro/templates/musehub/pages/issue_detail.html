@@ -5,6 +5,7 @@
   <a href="/musehub/ui/{{ owner }}/{{ repo_slug }}">{{ owner }}/{{ repo_slug }}</a> /
   <a href="/musehub/ui/{{ owner }}/{{ repo_slug }}/issues">issues</a> / #{{ issue_number }}
 {% endblock %}
+{% block repo_nav %}{% include "musehub/partials/repo_nav.html" %}{% endblock %}
 
 {% block page_data %}
 const repoId = {{ repo_id | tojson }};
@@ -14,11 +15,6 @@ const base   = {{ base_url | tojson }};
 
 {% block page_script %}
 {% raw %}
-function escHtml(s) {
-  if (!s) return '';
-  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-}
-
 async function closeIssue() {
   if (!confirm('Close issue #' + number + '?')) return;
   try {
@@ -31,6 +27,7 @@ async function closeIssue() {
 }
 
 async function load() {
+  initRepoNav(repoId);
   try {
     const issue = await apiFetch('/repos/' + repoId + '/issues/' + number);
 

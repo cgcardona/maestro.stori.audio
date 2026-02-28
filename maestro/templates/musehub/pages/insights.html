@@ -1,0 +1,249 @@
+{% extends "musehub/base.html" %}
+
+{% block title %}Insights · {{ owner }}/{{ repo_slug }}{% endblock %}
+{% block breadcrumb %}
+  <a href="/musehub/ui/{{ owner }}">{{ owner }}</a> /
+  <a href="{{ base_url }}">{{ repo_slug }}</a> /
+  Insights
+{% endblock %}
+
+{% block repo_nav %}
+{% include "musehub/partials/repo_nav.html" %}
+{% endblock %}
+
+{% block page_data %}
+const repoId = {{ repo_id | tojson }};
+const base   = {{ base_url | tojson }};
+{% endblock %}
+
+{% block page_script %}
+{% raw %}
+function buildHeatmap(commits) {
+  // Build a 52-week commit frequency heatmap (GitHub contribution calendar style)
+  const now = new Date();
+  const counts = {};
+
+  commits.forEach(c => {
+    const d = new Date(c.timestamp);
+    const key = d.toISOString().split('T')[0];
+    counts[key] = (counts[key] || 0) + 1;
+  });
+
+  // Generate last 52 weeks (364 days)
+  const days = [];
+  for (let i = 363; i >= 0; i--) {
+    const d = new Date(now);
+    d.setDate(d.getDate() - i);
+    const key = d.toISOString().split('T')[0];
+    days.push({ key, count: Math.min(counts[key] || 0, 4) });
+  }
+
+  // Group into weeks
+  const weeks = [];
+  for (let i = 0; i < days.length; i += 7) {
+    weeks.push(days.slice(i, i + 7));
+  }
+
+  return `<div class="heatmap-grid">
+    ${weeks.map(week => `
+      <div class="heatmap-week">
+        ${week.map(day => `<div class="heatmap-day" data-count="${day.count}" title="${day.key}: ${day.count} commit${day.count !== 1 ? 's' : ''}"></div>`).join('')}
+      </div>
+    `).join('')}
+  </div>`;
+}
+
+function buildBpmTimeline(commits) {
+  // Extract BPM across commits and render a simple SVG line chart
+  const bpmData = commits
+    .filter(c => {
+      const m = c.message.match(/bpm:(\d+)|tempo:(\d+)/i);
+      return !!m;
+    })
+    .map(c => {
+      const m = c.message.match(/bpm:(\d+)|tempo:(\d+)/i);
+      return { date: new Date(c.timestamp), bpm: parseInt(m[1] || m[2]), msg: c.message.split('\n')[0] };
+    })
+    .reverse();
+
+  if (bpmData.length === 0)
+    return '<p class="text-muted text-sm">No BPM data in commit messages yet. Add <code>bpm:120</code> to your commit messages.</p>';
+
+  const W = 600, H = 100, pad = 20;
+  const bpms = bpmData.map(d => d.bpm);
+  const minBpm = Math.min(...bpms) - 5;
+  const maxBpm = Math.max(...bpms) + 5;
+  const xStep = bpmData.length > 1 ? (W - pad * 2) / (bpmData.length - 1) : 0;
+
+  const points = bpmData.map((d, i) => {
+    const x = pad + i * xStep;
+    const y = H - pad - ((d.bpm - minBpm) / (maxBpm - minBpm)) * (H - pad * 2);
+    return `${x},${y}`;
+  }).join(' ');
+
+  const circles = bpmData.map((d, i) => {
+    const x = pad + i * xStep;
+    const y = H - pad - ((d.bpm - minBpm) / (maxBpm - minBpm)) * (H - pad * 2);
+    return `<circle cx="${x}" cy="${y}" r="4" fill="var(--color-accent)" title="${d.bpm} BPM — ${escHtml(d.msg.substring(0,30))}"/>`;
+  }).join('');
+
+  return `<div style="overflow-x:auto">
+    <svg viewBox="0 0 ${W} ${H}" style="width:100%;max-width:${W}px;height:${H}px">
+      <polyline points="${points}" fill="none" stroke="var(--color-accent)" stroke-width="2" opacity="0.8"/>
+      ${circles}
+      <text x="${pad}" y="${H - 4}" font-size="10" fill="var(--text-muted)">${minBpm} BPM</text>
+      <text x="${pad}" y="${pad}" font-size="10" fill="var(--text-muted)">${maxBpm} BPM</text>
+    </svg>
+  </div>`;
+}
+
+function buildContributorChart(credits) {
+  if (!credits || credits.length === 0)
+    return '<p class="text-muted text-sm">No contributor data yet.</p>';
+
+  const total = credits.reduce((s, c) => s + (c.sessionCount || 0), 0) || 1;
+  return credits.slice(0, 10).map(c => {
+    const pct = Math.round(((c.sessionCount || 0) / total) * 100);
+    return `
+      <div style="margin-bottom:var(--space-3)">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
+          <a href="/musehub/ui/users/${escHtml(c.name)}" class="text-sm">${escHtml(c.name)}</a>
+          <span class="text-xs text-muted">${c.sessionCount || 0} sessions</span>
+        </div>
+        <div style="background:var(--bg-overlay);border-radius:var(--radius-full);height:6px;overflow:hidden">
+          <div style="width:${pct}%;height:100%;background:var(--color-accent);border-radius:var(--radius-full)"></div>
+        </div>
+      </div>`;
+  }).join('');
+}
+
+async function load() {
+  initRepoNav(repoId);
+  try {
+    const [repoData, commitsData, creditsData, sessionsData] = await Promise.all([
+      apiFetch('/repos/' + repoId),
+      apiFetch('/repos/' + repoId + '/commits?limit=200'),
+      apiFetch('/repos/' + repoId + '/credits').catch(() => ({ credits: [] })),
+      apiFetch('/repos/' + repoId + '/sessions?limit=100').catch(() => ({ sessions: [], total: 0 })),
+    ]);
+
+    const commits  = commitsData.commits  || [];
+    const credits  = creditsData.credits  || [];
+    const sessions = sessionsData.sessions || [];
+    const totalSessions = sessionsData.total || sessions.length;
+
+    // Key signature distribution
+    const keyMap = {};
+    commits.forEach(c => {
+      const m = c.message.match(/\bkey:([\w#b]+\s*(?:major|minor|maj|min)?)\b/i);
+      if (m) {
+        const k = m[1].trim();
+        keyMap[k] = (keyMap[k] || 0) + 1;
+      }
+    });
+
+    const keyDistribution = Object.entries(keyMap)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5)
+      .map(([k, n]) => `<span class="nav-meta-pill">♩ ${escHtml(k)} &times;${n}</span>`)
+      .join('') || '<span class="text-muted text-sm">No key data in commits yet</span>';
+
+    // Author distribution
+    const authorMap = {};
+    commits.forEach(c => {
+      authorMap[c.author] = (authorMap[c.author] || 0) + 1;
+    });
+    const topAuthors = Object.entries(authorMap).sort((a,b) => b[1]-a[1]).slice(0, 5);
+
+    document.getElementById('content').innerHTML = `
+      <!-- Summary stats -->
+      <div class="insights-grid" style="margin-bottom:var(--space-4)">
+        <div class="stat-card">
+          <span class="stat-value">${commits.length}</span>
+          <div class="stat-label">Total Commits</div>
+        </div>
+        <div class="stat-card">
+          <span class="stat-value">${credits.length}</span>
+          <div class="stat-label">Contributors</div>
+        </div>
+        <div class="stat-card">
+          <span class="stat-value">${totalSessions}</span>
+          <div class="stat-label">Recording Sessions</div>
+        </div>
+        <div class="stat-card">
+          <span class="stat-value">${repoData.tempoBpm || '—'}</span>
+          <div class="stat-label">Current BPM</div>
+        </div>
+        <div class="stat-card">
+          <span class="stat-value">${escHtml(repoData.keySignature || '—')}</span>
+          <div class="stat-label">Current Key</div>
+        </div>
+        <div class="stat-card">
+          <span class="stat-value">${repoData.starCount || 0}</span>
+          <div class="stat-label">Stars</div>
+        </div>
+      </div>
+
+      <!-- Commit frequency heatmap -->
+      <div class="card">
+        <h2 style="margin-bottom:var(--space-3)">Commit Activity</h2>
+        <p class="text-xs text-muted" style="margin-bottom:var(--space-3)">Past 52 weeks</p>
+        ${buildHeatmap(commits)}
+      </div>
+
+      <!-- BPM evolution -->
+      <div class="card">
+        <h2 style="margin-bottom:var(--space-3)">BPM Evolution</h2>
+        ${buildBpmTimeline(commits)}
+      </div>
+
+      <!-- Keys used -->
+      <div class="card">
+        <h2 style="margin-bottom:var(--space-3)">Keys Used</h2>
+        <div style="display:flex;gap:var(--space-2);flex-wrap:wrap">
+          ${keyDistribution}
+        </div>
+      </div>
+
+      <!-- Contributors -->
+      <div class="card">
+        <h2 style="margin-bottom:var(--space-3)">Contributors</h2>
+        ${buildContributorChart(credits)}
+        <div style="margin-top:var(--space-3)">
+          <h3 style="margin-bottom:var(--space-2)">Commit counts</h3>
+          ${topAuthors.map(([author, count]) => `
+            <div style="display:flex;justify-content:space-between;padding:var(--space-1) 0;border-bottom:1px solid var(--border-subtle)">
+              <a href="/musehub/ui/users/${escHtml(author)}" class="text-sm">${escHtml(author)}</a>
+              <span class="text-xs text-muted">${count} commit${count !== 1 ? 's' : ''}</span>
+            </div>`).join('')}
+        </div>
+      </div>
+
+      <!-- Recent sessions -->
+      <div class="card">
+        <h2 style="margin-bottom:var(--space-3)">Recent Sessions</h2>
+        ${sessions.length === 0
+          ? '<p class="text-muted text-sm">No sessions yet.</p>'
+          : sessions.slice(0, 5).map(s => `
+            <div class="session-row">
+              <div class="session-info">
+                <a href="${base}/sessions/${s.sessionId}" class="text-sm">${escHtml(s.title || 'Untitled session')}</a>
+                <span class="text-xs text-muted">
+                  ${fmtRelative(s.startedAt)}
+                  ${s.endedAt ? '' : '<span class="badge badge-active" style="margin-left:4px">Live</span>'}
+                </span>
+              </div>
+            </div>`).join('')}
+        <div style="margin-top:var(--space-3)">
+          <a href="${base}/sessions" class="btn btn-ghost btn-sm">View all sessions &rarr;</a>
+        </div>
+      </div>`;
+  } catch(e) {
+    if (e.message !== 'auth')
+      document.getElementById('content').innerHTML = '<p class="error">&#10005; ' + escHtml(e.message) + '</p>';
+  }
+}
+
+load();
+{% endraw %}
+{% endblock %}

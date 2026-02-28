@@ -5,6 +5,7 @@
   <a href="/musehub/ui/{{ owner }}/{{ repo_slug }}">{{ owner }}/{{ repo_slug }}</a> /
   <a href="/musehub/ui/{{ owner }}/{{ repo_slug }}/pulls">pulls</a> / {{ pr_id[:8] }}
 {% endblock %}
+{% block repo_nav %}{% include "musehub/partials/repo_nav.html" %}{% endblock %}
 
 {% block page_data %}
 const repoId = {{ repo_id | tojson }};
@@ -14,11 +15,6 @@ const base   = {{ base_url | tojson }};
 
 {% block page_script %}
 {% raw %}
-function escHtml(s) {
-  if (!s) return '';
-  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-}
-
 async function mergePr() {
   if (!confirm('Merge this pull request?')) return;
   try {
@@ -34,6 +30,7 @@ async function mergePr() {
 }
 
 async function load() {
+  initRepoNav(repoId);
   try {
     const pr = await apiFetch('/repos/' + repoId + '/pull-requests/' + prId);
 

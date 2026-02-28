@@ -4,6 +4,7 @@
 {% block breadcrumb %}
   <a href="/musehub/ui/{{ owner }}/{{ repo_slug }}">{{ owner }}/{{ repo_slug }}</a> / credits
 {% endblock %}
+{% block repo_nav %}{% include "musehub/partials/repo_nav.html" %}{% endblock %}
 
 {% block page_data %}
 const repoId = {{ repo_id | tojson }};
@@ -12,11 +13,6 @@ const base   = {{ base_url | tojson }};
 
 {% block page_script %}
 {% raw %}
-function escHtml(s) {
-  if (!s) return '';
-  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-}
-
 function fmtYear(iso) {
   if (!iso) return '--';
   return new Date(iso).getFullYear();
@@ -61,6 +57,7 @@ function injectJsonLd(credits) {
 }
 
 async function load(sort) {
+  initRepoNav(repoId);
   try {
     const credits = await apiFetch('/repos/' + repoId + '/credits?sort=' + sort);
     const contributors = credits.contributors || [];

@@ -5,6 +5,7 @@
   <a href="/musehub/ui/{{ owner }}/{{ repo_slug }}">{{ owner }}/{{ repo_slug }}</a> /
   context / {{ ref[:8] }}
 {% endblock %}
+{% block repo_nav %}{% include "musehub/partials/repo_nav.html" %}{% endblock %}
 
 {% block page_data %}
 const repoId = {{ repo_id | tojson }};
@@ -14,11 +15,6 @@ const base   = {{ base_url | tojson }};
 
 {% block page_script %}
 {% raw %}
-function escHtml(s) {
-  if (s === null || s === undefined) return '--';
-  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-}
-
 function copyJson() {
   const text = document.getElementById('raw-json').textContent;
   navigator.clipboard.writeText(text).then(() => {
@@ -37,6 +33,7 @@ function toggleSection(id) {
 }
 
 async function load() {
+  initRepoNav(repoId);
   try {
     const ctx = await apiFetch('/repos/' + repoId + '/context/' + ref);
 

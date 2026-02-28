@@ -22,11 +22,12 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from maestro.auth.dependencies import TokenClaims, require_valid_token
+from maestro.auth.dependencies import TokenClaims, optional_token, require_valid_token
 from maestro.db import get_db
 from maestro.models.musehub import (
     BranchListResponse,
     CommitListResponse,
+    CommitResponse,
     CreateRepoRequest,
     DivergenceDimensionResponse,
     DivergenceResponse,
@@ -49,6 +50,18 @@ from maestro.services import musehub_context, musehub_credits, musehub_divergenc
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+
+def _guard_visibility(repo: RepoResponse | None, claims: TokenClaims | None) -> None:
+    """Raise 404 when the repo doesn't exist; 401 when it's private and unauthenticated."""
+    if repo is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repo not found")
+    if repo.visibility != "public" and claims is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required to access private repos.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
 
 
 @router.post(
@@ -100,13 +113,12 @@ async def create_repo(
 async def get_repo(
     repo_id: str,
     db: AsyncSession = Depends(get_db),
-    _: TokenClaims = Depends(require_valid_token),
+    claims: TokenClaims | None = Depends(optional_token),
 ) -> RepoResponse:
     """Return metadata for the given repo. Returns 404 if not found."""
     repo = await musehub_repository.get_repo(db, repo_id)
-    if repo is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repo not found")
-    return repo
+    _guard_visibility(repo, claims)
+    return repo  # type: ignore[return-value]  # _guard_visibility raises if None
 
 
 @router.get(
@@ -117,13 +129,11 @@ async def get_repo(
 async def list_branches(
     repo_id: str,
     db: AsyncSession = Depends(get_db),
-    _: TokenClaims = Depends(require_valid_token),
+    claims: TokenClaims | None = Depends(optional_token),
 ) -> BranchListResponse:
     """Return all branch pointers for a repo, ordered by name."""
     repo = await musehub_repository.get_repo(db, repo_id)
-    if repo is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repo not found")
-
+    _guard_visibility(repo, claims)
     branches = await musehub_repository.list_branches(db, repo_id)
     return BranchListResponse(branches=branches)
 
@@ -138,18 +148,43 @@ async def list_commits(
     branch: str | None = Query(None, description="Filter by branch name"),
     limit: int = Query(50, ge=1, le=200, description="Max commits to return"),
     db: AsyncSession = Depends(get_db),
-    _: TokenClaims = Depends(require_valid_token),
+    claims: TokenClaims | None = Depends(optional_token),
 ) -> CommitListResponse:
     """Return commits for a repo, newest first. Optionally filter by branch."""
     repo = await musehub_repository.get_repo(db, repo_id)
-    if repo is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repo not found")
-
+    _guard_visibility(repo, claims)
     commits, total = await musehub_repository.list_commits(
         db, repo_id, branch=branch, limit=limit
     )
     return CommitListResponse(commits=commits, total=total)
 
+
+@router.get(
+    "/repos/{repo_id}/commits/{commit_id}",
+    response_model=CommitResponse,
+    summary="Get a single commit by ID",
+)
+async def get_commit(
+    repo_id: str,
+    commit_id: str,
+    db: AsyncSession = Depends(get_db),
+    claims: TokenClaims | None = Depends(optional_token),
+) -> CommitResponse:
+    """Return a single commit by its ID.
+
+    Returns 404 if the commit does not exist in this repo.
+    Raises 401 if the repo is private and the caller is unauthenticated.
+    """
+    repo = await musehub_repository.get_repo(db, repo_id)
+    _guard_visibility(repo, claims)
+    commits, _ = await musehub_repository.list_commits(db, repo_id, limit=500)
+    commit = next((c for c in commits if c.commit_id == commit_id), None)
+    if commit is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Commit '{commit_id}' not found in repo '{repo_id}'",
+        )
+    return commit
 
 
 @router.get(
@@ -161,7 +196,7 @@ async def get_timeline(
     repo_id: str,
     limit: int = Query(200, ge=1, le=500, description="Max commits to include in the timeline"),
     db: AsyncSession = Depends(get_db),
-    _: TokenClaims = Depends(require_valid_token),
+    claims: TokenClaims | None = Depends(optional_token),
 ) -> TimelineResponse:
     """Return a chronological timeline of musical evolution for a repo.
 
@@ -177,9 +212,7 @@ async def get_timeline(
     endpoint directly to understand the creative arc of a project.
     """
     repo = await musehub_repository.get_repo(db, repo_id)
-    if repo is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repo not found")
-
+    _guard_visibility(repo, claims)
     return await musehub_repository.get_timeline_events(db, repo_id, limit=limit)
 
 @router.get(
@@ -192,7 +225,7 @@ async def get_divergence(
     branch_a: str = Query(..., description="First branch name"),
     branch_b: str = Query(..., description="Second branch name"),
     db: AsyncSession = Depends(get_db),
-    _: TokenClaims = Depends(require_valid_token),
+    claims: TokenClaims | None = Depends(optional_token),
 ) -> DivergenceResponse:
     """Return a five-dimension musical divergence report between two branches.
 
@@ -214,9 +247,7 @@ async def get_divergence(
         422: If either branch has no commits in this repo.
     """
     repo = await musehub_repository.get_repo(db, repo_id)
-    if repo is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repo not found")
-
+    _guard_visibility(repo, claims)
     try:
         result = await musehub_divergence.compute_hub_divergence(
             db,
@@ -262,7 +293,7 @@ async def get_credits(
         description="Sort order: 'count' (most prolific), 'recency' (most recent), 'alpha' (A–Z)",
     ),
     db: AsyncSession = Depends(get_db),
-    _: TokenClaims = Depends(require_valid_token),
+    claims: TokenClaims | None = Depends(optional_token),
 ) -> CreditsResponse:
     """Return dynamic contributor credits aggregated from all commits in a repo.
 
@@ -279,8 +310,7 @@ async def get_credits(
     Returns an empty ``contributors`` list when no commits have been pushed yet.
     """
     repo = await musehub_repository.get_repo(db, repo_id)
-    if repo is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repo not found")
+    _guard_visibility(repo, claims)
     return await musehub_credits.aggregate_credits(db, repo_id, sort=sort)
 
 
@@ -293,7 +323,7 @@ async def get_context(
     repo_id: str,
     ref: str,
     db: AsyncSession = Depends(get_db),
-    _: TokenClaims = Depends(require_valid_token),
+    claims: TokenClaims | None = Depends(optional_token),
 ) -> MuseHubContextResponse:
     """Return a structured musical context document for the given commit ref.
 
@@ -304,9 +334,7 @@ async def get_context(
     Raises 404 if either the repo or the commit does not exist.
     """
     repo = await musehub_repository.get_repo(db, repo_id)
-    if repo is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repo not found")
-
+    _guard_visibility(repo, claims)
     context = await musehub_repository.get_context_for_commit(db, repo_id, ref)
     if context is None:
         raise HTTPException(
@@ -339,7 +367,7 @@ async def get_agent_context(
         description="Response format: 'json' or 'yaml'",
     ),
     db: AsyncSession = Depends(get_db),
-    _: TokenClaims = Depends(require_valid_token),
+    claims: TokenClaims | None = Depends(optional_token),
 ) -> Response:
     """Return a complete musical context briefing for AI agent consumption.
 
@@ -351,6 +379,8 @@ async def get_agent_context(
     Use ``?depth=verbose`` for full bodies and extended history.
     Use ``?format=yaml`` for human-readable output (e.g. in agent logs).
     """
+    repo = await musehub_repository.get_repo(db, repo_id)
+    _guard_visibility(repo, claims)
     context = await musehub_context.build_agent_context(
         db,
         repo_id=repo_id,
@@ -382,7 +412,7 @@ async def get_agent_context(
 async def get_commit_dag(
     repo_id: str,
     db: AsyncSession = Depends(get_db),
-    _: TokenClaims = Depends(require_valid_token),
+    claims: TokenClaims | None = Depends(optional_token),
 ) -> DagGraphResponse:
     """Return the full commit history as a topologically sorted directed acyclic graph.
 
@@ -399,9 +429,7 @@ async def get_commit_dag(
     client-side renderer virtualises visible nodes.
     """
     repo = await musehub_repository.get_repo(db, repo_id)
-    if repo is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repo not found")
-
+    _guard_visibility(repo, claims)
     return await musehub_repository.list_commits_dag(db, repo_id)
 
 
@@ -447,7 +475,7 @@ async def list_sessions(
     repo_id: str,
     limit: int = Query(50, ge=1, le=200, description="Max sessions to return"),
     db: AsyncSession = Depends(get_db),
-    _: TokenClaims = Depends(require_valid_token),
+    claims: TokenClaims | None = Depends(optional_token),
 ) -> SessionListResponse:
     """Return sessions for a repo, sorted newest-first by started_at.
 
@@ -455,9 +483,7 @@ async def list_sessions(
     session histories (default 50, max 200).
     """
     repo = await musehub_repository.get_repo(db, repo_id)
-    if repo is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repo not found")
-
+    _guard_visibility(repo, claims)
     sessions, total = await musehub_repository.list_sessions(db, repo_id, limit=limit)
     return SessionListResponse(sessions=sessions, total=total)
 
@@ -471,7 +497,7 @@ async def get_session(
     repo_id: str,
     session_id: str,
     db: AsyncSession = Depends(get_db),
-    _: TokenClaims = Depends(require_valid_token),
+    claims: TokenClaims | None = Depends(optional_token),
 ) -> SessionResponse:
     """Return a single session record.
 
@@ -479,9 +505,7 @@ async def get_session(
     must be an exact match — the hub does not support prefix lookups.
     """
     repo = await musehub_repository.get_repo(db, repo_id)
-    if repo is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repo not found")
-
+    _guard_visibility(repo, claims)
     session = await musehub_repository.get_session(db, repo_id, session_id)
     if session is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
@@ -527,7 +551,7 @@ async def get_repo_by_owner_slug(
     owner: str,
     repo_slug: str,
     db: AsyncSession = Depends(get_db),
-    _: TokenClaims = Depends(require_valid_token),
+    claims: TokenClaims | None = Depends(optional_token),
 ) -> RepoResponse:
     """Return metadata for the repo identified by its canonical /{owner}/{slug} path.
 
@@ -540,4 +564,5 @@ async def get_repo_by_owner_slug(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Repo '{owner}/{repo_slug}' not found",
         )
+    _guard_visibility(repo, claims)
     return repo

@@ -257,10 +257,13 @@ async def test_list_prs_filter_by_open(
 
 
 @pytest.mark.anyio
-async def test_list_prs_requires_auth(client: AsyncClient) -> None:
-    """GET /pull-requests returns 401 without a Bearer token."""
-    response = await client.get("/api/v1/musehub/repos/any-id/pull-requests")
-    assert response.status_code == 401
+async def test_list_prs_nonexistent_repo_returns_404_without_auth(client: AsyncClient) -> None:
+    """GET /pull-requests returns 404 for non-existent repo without a token.
+
+    Uses optional_token — auth is visibility-based; missing repo → 404.
+    """
+    response = await client.get("/api/v1/musehub/repos/non-existent-repo-id/pull-requests")
+    assert response.status_code == 404
 
 
 # ---------------------------------------------------------------------------
@@ -315,10 +318,13 @@ async def test_get_pr_unknown_id_returns_404(
 
 
 @pytest.mark.anyio
-async def test_get_pr_requires_auth(client: AsyncClient) -> None:
-    """GET /pull-requests/{pr_id} returns 401 without a Bearer token."""
-    response = await client.get("/api/v1/musehub/repos/r/pull-requests/p")
-    assert response.status_code == 401
+async def test_get_pr_nonexistent_returns_404_without_auth(client: AsyncClient) -> None:
+    """GET /pull-requests/{pr_id} returns 404 for non-existent resource without a token.
+
+    Uses optional_token — auth is visibility-based; missing repo/PR → 404.
+    """
+    response = await client.get("/api/v1/musehub/repos/non-existent-repo/pull-requests/non-existent-pr")
+    assert response.status_code == 404
 
 
 # ---------------------------------------------------------------------------

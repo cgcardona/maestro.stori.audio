@@ -4,6 +4,7 @@
 {% block breadcrumb %}
   <a href="/musehub/ui/{{ owner }}/{{ repo_slug }}">{{ owner }}/{{ repo_slug }}</a> / divergence
 {% endblock %}
+{% block repo_nav %}{% include "musehub/partials/repo_nav.html" %}{% endblock %}
 
 {% block page_data %}
 const repoId  = {{ repo_id | tojson }};
@@ -13,11 +14,6 @@ const uiBase  = {{ base_url | tojson }};
 
 {% block page_script %}
 {% raw %}
-function escHtml(s) {
-  if (!s) return '';
-  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-}
-
 const DIMENSIONS  = ['melodic','harmonic','rhythmic','structural','dynamic'];
 const LEVEL_COLOR = { NONE:'#1f6feb', LOW:'#388bfd', MED:'#f0883e', HIGH:'#f85149' };
 const LEVEL_BG    = { NONE:'#0d2942', LOW:'#102a4c', MED:'#341a00', HIGH:'#3d0000' };
@@ -163,6 +159,7 @@ async function loadDivergence(bA, bB) {
 }
 
 async function load() {
+  initRepoNav(repoId);
   const branches = await loadBranches();
   const opts = branches.map(b =>
     '<option value="' + escHtml(b) + '">' + escHtml(b) + '</option>').join('');

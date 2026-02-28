@@ -5,6 +5,7 @@
   <a href="/musehub/ui/{{ owner }}/{{ repo_slug }}">{{ owner }}/{{ repo_slug }}</a> /
   analysis / {{ ref[:8] }} / tempo
 {% endblock %}
+{% block repo_nav %}{% include "musehub/partials/repo_nav.html" %}{% endblock %}
 
 {% block page_data %}
 const repoId = {{ repo_id | tojson }};
@@ -14,11 +15,6 @@ const base   = {{ base_url | tojson }};
 
 {% block page_script %}
 {% raw %}
-function escHtml(s) {
-  if (s === null || s === undefined) return '';
-  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-}
-
 function tempoChangeSvg(changes, baseBpm) {
   if (!changes || changes.length === 0) {
     return '<p style="font-size:13px;color:#8b949e">&#10003; Constant tempo — no tempo changes detected.</p>';
@@ -69,6 +65,7 @@ function stabilityBar(stability) {
 }
 
 async function load() {
+  initRepoNav(repoId);
   try {
     const data = await apiFetch('/repos/' + repoId + '/analysis/' + encodeURIComponent(ref) + '/tempo');
     const d = data.data;

@@ -8,31 +8,35 @@ All pages are rendered via Jinja2 templates stored in
 (repo_id, owner, slug) and pass a minimal context dict to the template
 engine; all HTML, CSS, and JavaScript lives in the template files, not here.
 
-Endpoint summary:
+Endpoint summary (fixed-path):
   GET /musehub/ui/search                                  -- global cross-repo search page
   GET /musehub/ui/explore                                 -- public repo discovery grid
   GET /musehub/ui/trending                                -- repos sorted by stars
   GET /musehub/ui/users/{username}                        -- public user profile
-  GET /musehub/ui/{owner}/{repo_slug}                     -- repo landing page
-  GET /musehub/ui/{owner}/{repo_slug}/commits/{commit_id} -- commit detail + artifacts
-  GET /musehub/ui/{owner}/{repo_slug}/graph               -- interactive DAG commit graph
-  GET /musehub/ui/{owner}/{repo_slug}/pulls               -- pull request list
-  GET /musehub/ui/{owner}/{repo_slug}/pulls/{pr_id}       -- PR detail + merge button
-  GET /musehub/ui/{owner}/{repo_slug}/issues              -- issue list
-  GET /musehub/ui/{owner}/{repo_slug}/issues/{number}     -- issue detail + close button
-  GET /musehub/ui/{owner}/{repo_slug}/context/{ref}       -- AI context viewer
-  GET /musehub/ui/{owner}/{repo_slug}/credits             -- dynamic credits (liner notes)
-  GET /musehub/ui/{owner}/{repo_slug}/embed/{ref}         -- iframe-safe audio player
-  GET /musehub/ui/{owner}/{repo_slug}/search              -- in-repo search (4 modes)
-  GET /musehub/ui/{owner}/{repo_slug}/divergence          -- branch divergence radar chart
-  GET /musehub/ui/{owner}/{repo_slug}/timeline            -- chronological SVG timeline
-  GET /musehub/ui/{owner}/{repo_slug}/releases            -- release list
-  GET /musehub/ui/{owner}/{repo_slug}/releases/{tag}      -- release detail + downloads
-  GET /musehub/ui/{owner}/{repo_slug}/sessions            -- recording session log
-  GET /musehub/ui/{owner}/{repo_slug}/sessions/{id}       -- session detail
-  GET /musehub/ui/{owner}/{repo_slug}/analysis/{ref}/contour   -- melodic contour analysis
-  GET /musehub/ui/{owner}/{repo_slug}/analysis/{ref}/tempo     -- tempo analysis
-  GET /musehub/ui/{owner}/{repo_slug}/analysis/{ref}/dynamics  -- dynamics analysis
+
+Endpoint summary (repo-scoped):
+  GET /musehub/ui/{owner}/{repo_slug}                           -- repo landing page
+  GET /musehub/ui/{owner}/{repo_slug}/commits/{commit_id}       -- commit detail + artifacts
+  GET /musehub/ui/{owner}/{repo_slug}/commits/{commit_id}/diff  -- musical diff view
+  GET /musehub/ui/{owner}/{repo_slug}/graph                     -- interactive DAG commit graph
+  GET /musehub/ui/{owner}/{repo_slug}/pulls                     -- pull request list
+  GET /musehub/ui/{owner}/{repo_slug}/pulls/{pr_id}             -- PR detail + merge button
+  GET /musehub/ui/{owner}/{repo_slug}/issues                    -- issue list
+  GET /musehub/ui/{owner}/{repo_slug}/issues/{number}           -- issue detail + close button
+  GET /musehub/ui/{owner}/{repo_slug}/context/{ref}             -- AI context viewer
+  GET /musehub/ui/{owner}/{repo_slug}/credits                   -- dynamic credits (liner notes)
+  GET /musehub/ui/{owner}/{repo_slug}/embed/{ref}               -- iframe-safe audio player
+  GET /musehub/ui/{owner}/{repo_slug}/search                    -- in-repo search (4 modes)
+  GET /musehub/ui/{owner}/{repo_slug}/divergence                -- branch divergence radar chart
+  GET /musehub/ui/{owner}/{repo_slug}/timeline                  -- chronological SVG timeline
+  GET /musehub/ui/{owner}/{repo_slug}/releases                  -- release list
+  GET /musehub/ui/{owner}/{repo_slug}/releases/{tag}            -- release detail + downloads
+  GET /musehub/ui/{owner}/{repo_slug}/sessions                  -- recording session log
+  GET /musehub/ui/{owner}/{repo_slug}/sessions/{id}             -- session detail
+  GET /musehub/ui/{owner}/{repo_slug}/insights                  -- repo insights dashboard
+  GET /musehub/ui/{owner}/{repo_slug}/analysis/{ref}/contour    -- melodic contour analysis
+  GET /musehub/ui/{owner}/{repo_slug}/analysis/{ref}/tempo      -- tempo analysis
+  GET /musehub/ui/{owner}/{repo_slug}/analysis/{ref}/dynamics   -- dynamics analysis
 
 These routes require NO JWT auth -- they return HTML shells whose embedded
 JavaScript fetches data from the authed JSON API (``/api/v1/musehub/...``)
@@ -47,7 +51,7 @@ from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi import status as http_status
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -96,6 +100,12 @@ async def _resolve_repo(
 # ---------------------------------------------------------------------------
 # Fixed-path routes (registered before wildcard routes in main.py)
 # ---------------------------------------------------------------------------
+
+
+@fixed_router.get("/feed", response_class=HTMLResponse, summary="Muse Hub activity feed")
+async def feed_page(request: Request) -> HTMLResponse:
+    """Render the activity feed page — events from followed users and watched repos."""
+    return templates.TemplateResponse(request, "musehub/pages/feed.html", {"title": "Feed"})
 
 
 @fixed_router.get("/search", response_class=HTMLResponse, summary="Muse Hub global search page")
@@ -156,6 +166,24 @@ async def trending_page(request: Request) -> HTMLResponse:
 
 
 @fixed_router.get(
+    "/{username}",
+    response_class=HTMLResponse,
+    summary="Muse Hub user profile shortcut — redirects to /users/{username}",
+)
+async def profile_redirect(username: str) -> RedirectResponse:
+    """Redirect /musehub/ui/{username} → /musehub/ui/users/{username}.
+
+    This lets breadcrumb links like /musehub/ui/gabriel resolve to the profile
+    page instead of 404-ing (the two-segment /{owner}/{repo_slug} pattern only
+    matches when two segments are present).
+    """
+    return RedirectResponse(
+        url=f"/musehub/ui/users/{username}",
+        status_code=http_status.HTTP_302_FOUND,
+    )
+
+
+@fixed_router.get(
     "/users/{username}",
     response_class=HTMLResponse,
     summary="Muse Hub user profile page",
@@ -207,6 +235,7 @@ async def repo_page(
             "repo_slug": repo_slug,
             "repo_id": repo_id,
             "base_url": base_url,
+            "current_page": "commits",
         },
     )
 
@@ -240,6 +269,40 @@ async def commit_page(
             "repo_id": repo_id,
             "commit_id": commit_id,
             "base_url": base_url,
+            "current_page": "commits",
+        },
+    )
+
+
+@router.get(
+    "/{owner}/{repo_slug}/commits/{commit_id}/diff",
+    response_class=HTMLResponse,
+    summary="Muse Hub musical diff view",
+)
+async def diff_page(
+    request: Request,
+    owner: str,
+    repo_slug: str,
+    commit_id: str,
+    db: AsyncSession = Depends(get_db),
+) -> HTMLResponse:
+    """Render the musical diff between a commit and its parent.
+
+    Shows key/tempo/time-signature deltas, tracks added/removed/modified,
+    and side-by-side artifact comparison. Fetches commit and parent metadata
+    from the API client-side.
+    """
+    repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
+    return templates.TemplateResponse(
+        request,
+        "musehub/pages/diff.html",
+        {
+            "owner": owner,
+            "repo_slug": repo_slug,
+            "repo_id": repo_id,
+            "commit_id": commit_id,
+            "base_url": base_url,
+            "current_page": "commits",
         },
     )
 
@@ -269,6 +332,7 @@ async def graph_page(
             "repo_slug": repo_slug,
             "repo_id": repo_id,
             "base_url": base_url,
+            "current_page": "graph",
         },
     )
 
@@ -294,6 +358,7 @@ async def pr_list_page(
             "repo_slug": repo_slug,
             "repo_id": repo_id,
             "base_url": base_url,
+            "current_page": "pulls",
         },
     )
 
@@ -326,6 +391,7 @@ async def pr_detail_page(
             "repo_id": repo_id,
             "pr_id": pr_id,
             "base_url": base_url,
+            "current_page": "pulls",
         },
     )
 
@@ -351,6 +417,7 @@ async def issue_list_page(
             "repo_slug": repo_slug,
             "repo_id": repo_id,
             "base_url": base_url,
+            "current_page": "issues",
         },
     )
 
@@ -382,6 +449,7 @@ async def context_page(
             "repo_id": repo_id,
             "ref": ref,
             "base_url": base_url,
+            "current_page": "analysis",
         },
     )
 
@@ -414,6 +482,7 @@ async def issue_detail_page(
             "repo_id": repo_id,
             "issue_number": number,
             "base_url": base_url,
+            "current_page": "issues",
         },
     )
 
@@ -485,6 +554,7 @@ async def credits_page(
             "repo_slug": repo_slug,
             "repo_id": repo_id,
             "base_url": base_url,
+            "current_page": "credits",
         },
     )
 
@@ -517,6 +587,7 @@ async def search_page(
             "repo_slug": repo_slug,
             "repo_id": repo_id,
             "base_url": base_url,
+            "current_page": "search",
         },
     )
 
@@ -546,6 +617,7 @@ async def divergence_page(
             "repo_slug": repo_slug,
             "repo_id": repo_id,
             "base_url": base_url,
+            "current_page": "analysis",
         },
     )
 
@@ -576,6 +648,7 @@ async def timeline_page(
             "repo_slug": repo_slug,
             "repo_id": repo_id,
             "base_url": base_url,
+            "current_page": "timeline",
         },
     )
 
@@ -601,6 +674,7 @@ async def release_list_page(
             "repo_slug": repo_slug,
             "repo_id": repo_id,
             "base_url": base_url,
+            "current_page": "releases",
         },
     )
 
@@ -633,6 +707,7 @@ async def release_detail_page(
             "repo_id": repo_id,
             "tag": tag,
             "base_url": base_url,
+            "current_page": "releases",
         },
     )
 
@@ -661,6 +736,7 @@ async def sessions_page(
             "repo_slug": repo_slug,
             "repo_id": repo_id,
             "base_url": base_url,
+            "current_page": "sessions",
         },
     )
 
@@ -693,6 +769,38 @@ async def session_detail_page(
             "repo_id": repo_id,
             "session_id": session_id,
             "base_url": base_url,
+            "current_page": "sessions",
+        },
+    )
+
+
+@router.get(
+    "/{owner}/{repo_slug}/insights",
+    response_class=HTMLResponse,
+    summary="Muse Hub repo insights dashboard",
+)
+async def insights_page(
+    request: Request,
+    owner: str,
+    repo_slug: str,
+    db: AsyncSession = Depends(get_db),
+) -> HTMLResponse:
+    """Render the repo insights dashboard.
+
+    Shows commit frequency heatmap, contributor breakdown, musical evolution
+    timeline (key/BPM/energy across commits), branch activity, and download
+    statistics.
+    """
+    repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
+    return templates.TemplateResponse(
+        request,
+        "musehub/pages/insights.html",
+        {
+            "owner": owner,
+            "repo_slug": repo_slug,
+            "repo_id": repo_id,
+            "base_url": base_url,
+            "current_page": "insights",
         },
     )
 
@@ -724,6 +832,7 @@ async def contour_page(
             "repo_id": repo_id,
             "ref": ref,
             "base_url": base_url,
+            "current_page": "analysis",
         },
     )
 
@@ -754,6 +863,7 @@ async def tempo_page(
             "repo_id": repo_id,
             "ref": ref,
             "base_url": base_url,
+            "current_page": "analysis",
         },
     )
 
@@ -785,5 +895,6 @@ async def dynamics_analysis_page(
             "repo_id": repo_id,
             "ref": ref,
             "base_url": base_url,
+            "current_page": "analysis",
         },
     )

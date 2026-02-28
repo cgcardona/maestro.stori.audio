@@ -4,6 +4,7 @@
 {% block breadcrumb %}
   <a href="/musehub/ui/{{ owner }}/{{ repo_slug }}">{{ owner }}/{{ repo_slug }}</a> / timeline
 {% endblock %}
+{% block repo_nav %}{% include "musehub/partials/repo_nav.html" %}{% endblock %}
 
 {% block extra_css %}
 <style>
@@ -78,11 +79,6 @@ const COMMIT_Y   = PAD_TOP + CHART_H * 0.5;
 const EMOTION_Y0 = PAD_TOP + CHART_H * 0.1;
 const EMOTION_YH = CHART_H * 0.35;
 const MARKER_Y   = PAD_TOP + CHART_H * 0.72;
-
-function escHtml(s) {
-  if (!s) return '';
-  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-}
 
 function msForZoom(z) {
   switch(z) {
@@ -296,6 +292,7 @@ function setZoom(z) {
 }
 
 async function load() {
+  initRepoNav(repoId);
   try {
     const data = await apiFetch('/repos/' + repoId + '/timeline?limit=200');
     tlData = data;

@@ -178,10 +178,15 @@ async def _make_search_commit(
 
 
 @pytest.mark.anyio
-async def test_similar_search_requires_auth(client: AsyncClient) -> None:
-    """GET /musehub/search/similar without token returns 401."""
-    resp = await client.get("/api/v1/musehub/search/similar?commit=abc123")
-    assert resp.status_code == 401
+async def test_similar_search_unknown_commit_returns_404_without_auth(
+    client: AsyncClient,
+) -> None:
+    """GET /musehub/search/similar returns 404 for an unknown commit without a token.
+
+    Uses optional_token — the endpoint is public; a non-existent commit → 404.
+    """
+    resp = await client.get("/api/v1/musehub/search/similar?commit=non-existent-commit-id")
+    assert resp.status_code == 404
 
 
 # ---------------------------------------------------------------------------
@@ -497,13 +502,17 @@ async def test_global_search_page_pre_fills_query(
 
 
 @pytest.mark.anyio
-async def test_global_search_requires_auth(
+async def test_global_search_accessible_without_auth(
     client: AsyncClient,
     db_session: AsyncSession,
 ) -> None:
-    """GET /api/v1/musehub/search returns 401 without a JWT."""
+    """GET /api/v1/musehub/search returns 200 without a JWT.
+
+    Global search is a public endpoint — uses optional_token, so unauthenticated
+    requests are allowed and return results for public repos.
+    """
     response = await client.get("/api/v1/musehub/search?q=jazz")
-    assert response.status_code == 401
+    assert response.status_code == 200
 
 
 @pytest.mark.anyio

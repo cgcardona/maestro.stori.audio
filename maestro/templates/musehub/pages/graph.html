@@ -4,6 +4,7 @@
 {% block breadcrumb %}
   <a href="/musehub/ui/{{ owner }}/{{ repo_slug }}">{{ owner }}/{{ repo_slug }}</a> / graph
 {% endblock %}
+{% block repo_nav %}{% include "musehub/partials/repo_nav.html" %}{% endblock %}
 
 {% block page_data %}
 const repoId = {{ repo_id | tojson }};
@@ -24,11 +25,6 @@ function branchColor(name) {
   const c = BRANCH_COLORS[Math.abs(h) % BRANCH_COLORS.length];
   _branchColorCache[name] = c;
   return c;
-}
-
-function escHtml(s) {
-  if (!s) return '';
-  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
 
 const NODE_R   = 10;
@@ -239,6 +235,7 @@ function renderGraph(data) {
 }
 
 async function load() {
+  initRepoNav(repoId);
   try {
     const data = await apiFetch('/repos/' + repoId + '/dag');
     renderGraph(data);
