@@ -49,8 +49,9 @@ from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from maestro.db.musehub_models import MusehubCommit, MusehubRepo
+from maestro.main import app
 from maestro.muse_cli.models import MuseCliCommit, MuseCliSnapshot
-from maestro.services.musehub_qdrant import SimilarCommitResult
+from maestro.services.musehub_qdrant import SimilarCommitResult, get_qdrant_client
 
 
 # ---------------------------------------------------------------------------
@@ -253,15 +254,16 @@ async def test_similar_search_returns_results(
         _make_similar_result("similar-001", score=0.95),
         _make_similar_result("similar-002", score=0.87),
     ]
-    with patch("maestro.api.routes.musehub.search._get_qdrant_client") as mock_get_client:
-        mock_qdrant = MagicMock()
-        mock_qdrant.search_similar.return_value = mock_results
-        mock_get_client.return_value = mock_qdrant
-
+    mock_qdrant = MagicMock()
+    mock_qdrant.search_similar.return_value = mock_results
+    app.dependency_overrides[get_qdrant_client] = lambda: mock_qdrant
+    try:
         search_resp = await client.get(
             f"/api/v1/musehub/search/similar?commit={commit_id}&limit=5",
             headers=auth_headers,
         )
+    finally:
+        app.dependency_overrides.pop(get_qdrant_client, None)
 
     assert search_resp.status_code == 200
     data = search_resp.json()
@@ -305,15 +307,16 @@ async def test_similar_search_public_only_enforced(
             headers=auth_headers,
         )
 
-    with patch("maestro.api.routes.musehub.search._get_qdrant_client") as mock_get:
-        mock_qdrant = MagicMock()
-        mock_qdrant.search_similar.return_value = []
-        mock_get.return_value = mock_qdrant
-
+    mock_qdrant = MagicMock()
+    mock_qdrant.search_similar.return_value = []
+    app.dependency_overrides[get_qdrant_client] = lambda: mock_qdrant
+    try:
         resp = await client.get(
             f"/api/v1/musehub/search/similar?commit={commit_id}",
             headers=auth_headers,
         )
+    finally:
+        app.dependency_overrides.pop(get_qdrant_client, None)
 
     assert resp.status_code == 200
     call_kwargs = mock_qdrant.search_similar.call_args.kwargs
@@ -354,15 +357,16 @@ async def test_similar_search_excludes_query_commit(
             headers=auth_headers,
         )
 
-    with patch("maestro.api.routes.musehub.search._get_qdrant_client") as mock_get:
-        mock_qdrant = MagicMock()
-        mock_qdrant.search_similar.return_value = []
-        mock_get.return_value = mock_qdrant
-
+    mock_qdrant = MagicMock()
+    mock_qdrant.search_similar.return_value = []
+    app.dependency_overrides[get_qdrant_client] = lambda: mock_qdrant
+    try:
         await client.get(
             f"/api/v1/musehub/search/similar?commit={commit_id}",
             headers=auth_headers,
         )
+    finally:
+        app.dependency_overrides.pop(get_qdrant_client, None)
 
     call_kwargs = mock_qdrant.search_similar.call_args.kwargs
     assert call_kwargs.get("exclude_commit_id") == commit_id
@@ -402,15 +406,16 @@ async def test_similar_search_503_when_qdrant_unavailable(
             headers=auth_headers,
         )
 
-    with patch("maestro.api.routes.musehub.search._get_qdrant_client") as mock_get:
-        mock_qdrant = MagicMock()
-        mock_qdrant.search_similar.side_effect = ConnectionError("Qdrant down")
-        mock_get.return_value = mock_qdrant
-
+    mock_qdrant = MagicMock()
+    mock_qdrant.search_similar.side_effect = ConnectionError("Qdrant down")
+    app.dependency_overrides[get_qdrant_client] = lambda: mock_qdrant
+    try:
         resp = await client.get(
             f"/api/v1/musehub/search/similar?commit={commit_id}",
             headers=auth_headers,
         )
+    finally:
+        app.dependency_overrides.pop(get_qdrant_client, None)
 
     assert resp.status_code == 503
 
@@ -449,18 +454,82 @@ async def test_similar_search_limit_respected(
             headers=auth_headers,
         )
 
-    with patch("maestro.api.routes.musehub.search._get_qdrant_client") as mock_get:
-        mock_qdrant = MagicMock()
-        mock_qdrant.search_similar.return_value = []
-        mock_get.return_value = mock_qdrant
-
+    mock_qdrant = MagicMock()
+    mock_qdrant.search_similar.return_value = []
+    app.dependency_overrides[get_qdrant_client] = lambda: mock_qdrant
+    try:
         await client.get(
             f"/api/v1/musehub/search/similar?commit={commit_id}&limit=3",
             headers=auth_headers,
         )
+    finally:
+        app.dependency_overrides.pop(get_qdrant_client, None)
 
     call_kwargs = mock_qdrant.search_similar.call_args.kwargs
     assert call_kwargs.get("limit") == 3
+
+
+# ---------------------------------------------------------------------------
+# Similarity search — DI override (regression for issue #272)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.anyio
+async def test_similar_search_qdrant_injected_via_dependency_override(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+) -> None:
+    """Qdrant client is injected via FastAPI dependency_overrides, not module patching.
+
+    Regression test for issue #272: confirms that get_qdrant_client is a proper
+    FastAPI dependency so tests can override it without patching module internals.
+    """
+    create_resp = await client.post(
+        "/api/v1/musehub/repos",
+        json={"name": "di-test-repo", "owner": "testuser", "visibility": "public"},
+        headers=auth_headers,
+    )
+    assert create_resp.status_code == 201
+    repo_id = create_resp.json()["repoId"]
+    commit_id = "di-test-commit-001"
+
+    with patch("maestro.api.routes.musehub.sync.embed_push_commits"):
+        await client.post(
+            f"/api/v1/musehub/repos/{repo_id}/push",
+            json={
+                "branch": "main",
+                "headCommitId": commit_id,
+                "commits": [
+                    {
+                        "commitId": commit_id,
+                        "parentIds": [],
+                        "message": "DI refactor test commit in Cmaj",
+                        "timestamp": "2024-01-01T00:00:00Z",
+                    }
+                ],
+                "objects": [],
+                "force": False,
+            },
+            headers=auth_headers,
+        )
+
+    mock_qdrant = MagicMock()
+    mock_qdrant.search_similar.return_value = [_make_similar_result("di-result-001", score=0.88)]
+    app.dependency_overrides[get_qdrant_client] = lambda: mock_qdrant
+    try:
+        resp = await client.get(
+            f"/api/v1/musehub/search/similar?commit={commit_id}&limit=5",
+            headers=auth_headers,
+        )
+    finally:
+        app.dependency_overrides.pop(get_qdrant_client, None)
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["queryCommit"] == commit_id
+    assert len(data["results"]) == 1
+    assert data["results"][0]["commitId"] == "di-result-001"
+    assert mock_qdrant.search_similar.called
 
 
 # ---------------------------------------------------------------------------
