@@ -393,36 +393,6 @@ class MusehubStar(Base):
 
     repo: Mapped[MusehubRepo] = relationship("MusehubRepo", back_populates="stars")
 
-class MusehubProfile(Base):
-    """Public user profile for Muse Hub — a musical portfolio page.
-
-    One profile per user, keyed by ``user_id`` (the JWT ``sub`` claim).
-    ``username`` is a unique, URL-friendly display handle chosen by the user.
-    When no profile exists for a user, their repos are still accessible by
-    ``owner_user_id`` but they have no public profile page.
-
-    ``pinned_repo_ids`` is a JSON list of up to 6 repo_ids the user has
-    chosen to highlight on their profile. Order is preserved.
-    """
-
-    __tablename__ = "musehub_profiles"
-    __table_args__ = (UniqueConstraint("username", name="uq_musehub_profiles_username"),)
-
-    # PK is the JWT sub — same value used in musehub_repos.owner_user_id
-    user_id: Mapped[str] = mapped_column(String(36), primary_key=True)
-    # URL-friendly handle, e.g. "gabriel" → /musehub/ui/users/gabriel
-    username: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
-    bio: Mapped[str | None] = mapped_column(Text, nullable=True)
-    avatar_url: Mapped[str | None] = mapped_column(String(2048), nullable=True)
-    # JSON list of repo_ids (up to 6) pinned by the user
-    pinned_repo_ids: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, default=_utc_now
-    )
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, default=_utc_now, onupdate=_utc_now
-    )
-
 
 class MusehubSession(Base):
     """A recording session record pushed to Muse Hub from the CLI.

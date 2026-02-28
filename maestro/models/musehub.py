@@ -338,6 +338,95 @@ class ObjectMetaListResponse(CamelModel):
     objects: list[ObjectMetaResponse]
 
 
+# ── Timeline models ───────────────────────────────────────────────────────────
+
+
+class TimelineCommitEvent(CamelModel):
+    """A commit plotted as a point on the timeline.
+
+    Every pushed commit becomes a commit event regardless of its message content.
+    The ``commit_id`` is the canonical identifier for audio-preview lookup and
+    deep-linking to the commit detail page.
+    """
+
+    event_type: str = "commit"
+    commit_id: str
+    branch: str
+    message: str
+    author: str
+    timestamp: datetime
+    parent_ids: list[str]
+
+
+class TimelineEmotionEvent(CamelModel):
+    """An emotion-vector data point overlaid on the timeline as a line chart.
+
+    Emotion values are derived deterministically from the commit SHA so the
+    timeline is always reproducible without external inference. Each field is
+    in the range [0.0, 1.0]. Agents use these values to understand how the
+    emotional character of the composition shifted over time.
+    """
+
+    event_type: str = "emotion"
+    commit_id: str
+    timestamp: datetime
+    valence: float
+    energy: float
+    tension: float
+
+
+class TimelineSectionEvent(CamelModel):
+    """A detected section change plotted as a marker on the timeline.
+
+    Section names are extracted from commit messages using keyword heuristics
+    (e.g. "added chorus", "intro complete", "bridge removed"). The ``action``
+    field is either ``"added"`` or ``"removed"``.
+    """
+
+    event_type: str = "section"
+    commit_id: str
+    timestamp: datetime
+    section_name: str
+    action: str
+
+
+class TimelineTrackEvent(CamelModel):
+    """A detected track addition or removal plotted as a marker on the timeline.
+
+    Track changes are extracted from commit messages using keyword heuristics
+    (e.g. "added bass", "removed keys", "new drums track"). The ``action``
+    field is either ``"added"`` or ``"removed"``.
+    """
+
+    event_type: str = "track"
+    commit_id: str
+    timestamp: datetime
+    track_name: str
+    action: str
+
+
+class TimelineResponse(CamelModel):
+    """Chronological timeline of musical evolution for a repo.
+
+    Contains four parallel event streams that the client renders as
+    independently toggleable layers:
+    - ``commits``: every pushed commit (always present)
+    - ``emotion``: emotion-vector data points per commit (always present)
+    - ``sections``: section change events derived from commit messages
+    - ``tracks``: track add/remove events derived from commit messages
+
+    Agent use case: call this endpoint to understand how a project evolved --
+    when sections were introduced, when the emotional character shifted, and
+    which instruments were added or removed over time.
+    """
+
+    commits: list[TimelineCommitEvent]
+    emotion: list[TimelineEmotionEvent]
+    sections: list[TimelineSectionEvent]
+    tracks: list[TimelineTrackEvent]
+    total_commits: int
+
+
 # ── Divergence visualization models ───────────────────────────────────────────
 
 
