@@ -96,18 +96,18 @@ cd "$REPO"
 DEV_SHA=$(git rev-parse dev)
 
 # --- define issues (confirmed independent — zero file overlap) ---
-# Batch: #104–#111 (new muse CLI commands)
+# Batch: #96–#103 (new muse CLI commands)
 # Known shared file: maestro/muse_cli/app.py (each agent adds one app.add_typer line)
 # Resolution: pre-push sync in STEP 4 handles app.py conflicts — keep both sides.
 declare -a ISSUES=(
-  "111|feat: muse tempo-scale <factor> [<commit>] — stretch or compress timing across a commit"
-  "110|feat: muse form [<commit>] — analyze and display the musical form of a commit"
-  "109|feat: muse chord-map <commit> — visualize the chord progression embedded in a commit"
-  "108|feat: muse similarity <commit-a> <commit-b> — compute musical similarity score between two commits"
-  "107|feat: muse humanize [<commit>] — apply humanization to quantized MIDI"
-  "106|feat: muse key [<commit>] [--set <key>] — read or annotate the musical key of a commit"
-  "105|feat: muse contour [<commit>] — analyze melodic contour and phrase shape"
-  "104|feat: muse diff — add music-dimension diff flags (--harmonic, --rhythmic, --melodic, --structural, --dynamic)"
+  "103|feat: muse harmony [<commit>] — analyze and query harmonic content across commits"
+  "102|feat: muse transpose <interval> [<commit>] — apply transposition as a Muse commit"
+  "101|feat: muse motif — identify, track, and compare recurring melodic motifs across commits"
+  "100|feat: muse emotion-diff <commit-a> <commit-b> — compare emotion vectors between commits"
+  "99|feat: muse validate — check musical integrity of the working tree"
+  "98|feat: muse inspect — print structured JSON of the Muse commit graph"
+  "97|feat: muse timeline — visualize musical evolution chronologically"
+  "96|feat: muse render-preview [<commit>] — generate an audio preview of a commit's snapshot"
 )
 
 # --- create worktrees + task files ---
