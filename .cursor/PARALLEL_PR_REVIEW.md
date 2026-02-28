@@ -76,12 +76,12 @@ cd "$REPO"
 DEV_SHA=$(git rev-parse dev)
 
 # --- define PRs ---
-# Batch: #155, #154, #153, #152
+# Batch: #259, #260, #261, #262 (MuseHub Phase 8 — Sessions, Search, Context Viewer)
 declare -a PRS=(
-  "155|feat: muse update-ref <ref> <new-value> — update a ref (branch or tag pointer)"
-  "154|feat: muse write-tree — write the current muse-work/ state as a snapshot (tree) object"
-  "153|feat: muse cat-object <object-id> — read and display a stored object"
-  "152|feat: muse harmony [<commit>] — analyze and query harmonic content across commits"
+  "259|feat(musehub): session detail page — full session view with participants, commits, and notes"
+  "260|feat(musehub): cross-repo search — global search across all public repos with result grouping"
+  "261|feat(musehub): in-repo search — musical property, natural language, keyword, and pattern search"
+  "262|feat: context viewer — human-readable view of the AI musical context document"
 )
 
 # --- create worktrees + task files ---
@@ -141,12 +141,10 @@ REPO=$(git worktree list | head -1 | awk '{print $1}')
 WTNAME=$(basename "$(pwd)")
 
 # mypy
-cd "$REPO" && docker compose exec maestro sh -c \
-  "PYTHONPATH=/worktrees/$WTNAME mypy /worktrees/$WTNAME/maestro/ /worktrees/$WTNAME/tests/"
+cd "$REPO" && docker compose exec maestro sh -c "PYTHONPATH=/worktrees/$WTNAME mypy /worktrees/$WTNAME/maestro/ /worktrees/$WTNAME/tests/"
 
 # pytest (specific file)
-cd "$REPO" && docker compose exec maestro sh -c \
-  "PYTHONPATH=/worktrees/$WTNAME pytest /worktrees/$WTNAME/tests/path/to/test_file.py -v"
+cd "$REPO" && docker compose exec maestro sh -c "PYTHONPATH=/worktrees/$WTNAME pytest /worktrees/$WTNAME/tests/path/to/test_file.py -v"
 ```
 
 **⚠️ NEVER copy files into the main repo** for testing purposes. That pollutes
@@ -312,8 +310,7 @@ STEP 3 — CHECKOUT & SYNC (only if STEP 2 shows the PR is open and unreviewed):
   │                                                                              │
   │ STEP E — Re-run mypy only if resolved files contain Python changes:         │
   │   app.py changed → run mypy. Markdown-only conflicts → skip mypy.          │
-  │   cd "$REPO" && docker compose exec maestro sh -c \                         │
-  │     "PYTHONPATH=/worktrees/$WTNAME mypy /worktrees/$WTNAME/maestro/"        │
+  │   cd "$REPO" && docker compose exec maestro sh -c "PYTHONPATH=/worktrees/$WTNAME mypy /worktrees/$WTNAME/maestro/"        │
   │                                                                              │
   │ STEP F — Advanced diagnostics if needed:                                    │
   │   git log --oneline origin/dev...HEAD  ← commits this PR adds              │
@@ -339,8 +336,7 @@ STEP 4 — REGRESSION CHECK (before review):
   git diff HEAD..origin/dev --name-only
 
   # If overlap found, run full suite:
-  cd "$REPO" && docker compose exec maestro sh -c \
-    "PYTHONPATH=/worktrees/$WTNAME pytest /worktrees/$WTNAME/tests/ -v --timeout=60"
+  cd "$REPO" && docker compose exec maestro sh -c "PYTHONPATH=/worktrees/$WTNAME pytest /worktrees/$WTNAME/tests/ -v --timeout=60"
 
 STEP 5 — REVIEW:
   Read and follow every step in .github/PR_REVIEW_PROMPT.md exactly.
