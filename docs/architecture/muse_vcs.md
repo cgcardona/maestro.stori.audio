@@ -1410,25 +1410,26 @@ maestro/
 ├── db/musehub_models.py                  — SQLAlchemy ORM models
 ├── models/musehub.py                     — Pydantic v2 request/response models (incl. SearchCommitMatch, SearchResponse)
 ├── services/musehub_repository.py        — Async DB queries for repos/branches/commits
+├── services/musehub_credits.py           — Credits aggregation from commit history
 ├── services/musehub_issues.py            — Async DB queries for issues (single point of DB access)
 ├── services/musehub_pull_requests.py     — Async DB queries for PRs (single point of DB access)
 ├── services/musehub_search.py            — In-repo search service (property / ask / keyword / pattern)
 ├── services/musehub_sync.py              — Push/pull sync protocol (ingest_push, compute_pull_delta)
 └── api/routes/musehub/
     ├── __init__.py                       — Composes sub-routers under /musehub prefix
-    ├── repos.py                          — Repo/branch/commit route handlers
+    ├── repos.py                          — Repo/branch/commit/credits route handlers
     ├── issues.py                         — Issue tracking route handlers
     ├── pull_requests.py                  — Pull request route handlers
     ├── search.py                         — In-repo search route handler
     ├── sync.py                           — Push/pull sync route handlers
     ├── objects.py                        — Artifact list + content-by-object-id endpoints (auth required)
     ├── raw.py                            — Raw file download by path (public repos: no auth)
-    └── ui.py                             — HTML UI pages (incl. /search page with mode tabs)
+    └── ui.py                             — HTML UI pages (incl. credits and /search pages)
 ```
 
 ### Endpoints
 
-#### Repos, Branches, Commits
+#### Repos, Branches, Commits, Credits
 
 | Method | Path | Description |
 |--------|------|-------------|
@@ -1436,6 +1437,37 @@ maestro/
 | GET | `/api/v1/musehub/repos/{id}` | Get repo metadata |
 | GET | `/api/v1/musehub/repos/{id}/branches` | List branches |
 | GET | `/api/v1/musehub/repos/{id}/commits` | List commits (newest first) |
+| GET | `/api/v1/musehub/repos/{id}/credits` | Aggregated contributor credits (`?sort=count\|recency\|alpha`) |
+
+#### Credits Page
+
+`GET /api/v1/musehub/repos/{repo_id}/credits` returns a `CreditsResponse` — the full contributor roll aggregated from commit history, analogous to dynamic album liner notes.
+
+**Sort options:**
+
+| `sort` value | Ordering |
+|---|---|
+| `count` (default) | Most prolific contributor first |
+| `recency` | Most recently active contributor first |
+| `alpha` | Alphabetical by author name |
+
+**Result type:** `CreditsResponse` — fields: `repo_id`, `contributors` (list of `ContributorCredits`), `sort`, `total_contributors`.
+
+**`ContributorCredits` fields:**
+
+| Field | Type | Description |
+|---|---|---|
+| `author` | `str` | Contributor name (from commit `author` field) |
+| `session_count` | `int` | Number of commits attributed to this author |
+| `contribution_types` | `list[str]` | Inferred roles: composer, arranger, producer, performer, mixer, editor, lyricist, sound designer |
+| `first_active` | `datetime` | Timestamp of earliest commit |
+| `last_active` | `datetime` | Timestamp of most recent commit |
+
+**Contribution type inference:** Roles are inferred from commit message keywords using `_ROLE_KEYWORDS` in `musehub_credits.py`. No role matched → falls back to `["contributor"]`. The list evolves as musicians describe their work more richly in commit messages.
+
+**Machine-readable credits:** The UI page (`GET /musehub/ui/{repo_id}/credits`) injects a `<script type="application/ld+json">` block using schema.org `MusicComposition` vocabulary for embeddable, machine-readable attribution.
+
+**Agent use case:** An AI agent generating release notes or liner notes calls `GET /api/v1/musehub/repos/{id}/credits?sort=count` to enumerate all contributors and their roles, then formats the result as attribution text. The JSON-LD block is ready for schema.org consumers (streaming platforms, metadata aggregators).
 | GET | `/api/v1/musehub/repos/{id}/dag` | Full commit DAG (topologically sorted nodes + edges) |
 | GET | `/api/v1/musehub/repos/{id}/context/{ref}` | Musical context document for a commit (JSON) |
 

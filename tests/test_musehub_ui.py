@@ -23,7 +23,11 @@ Covers acceptance criteria from issue #233 (user profile page):
 - test_profile_json_response            — JSON includes repos and credits
 - test_profile_no_auth_required_ui      — UI page accessible without JWT
 - test_profile_create_and_update        — POST + PUT profile lifecycle
-
+Covers issue #241 (credits page):
+- test_credits_page_renders            — GET /musehub/ui/{repo_id}/credits returns 200 HTML
+- test_credits_json_response           — GET /api/v1/musehub/repos/{repo_id}/credits returns JSON
+- test_credits_empty_state             — empty state message when no commits exist
+- test_credits_no_auth_required        — credits UI page is accessible without JWT
 UI routes require no JWT auth (they return HTML shells whose JS handles auth).
 The HTML content tests assert structural markers present in every rendered page.
 """
@@ -320,11 +324,18 @@ async def _make_public_repo(db_session: AsyncSession) -> str:
 
 # ---------------------------------------------------------------------------
 # Context viewer helpers (issue #232)
-# DAG graph UI page tests (issue #229)
+# Credits UI page tests (issue #241)# DAG graph UI page tests (issue #229)
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.anyio
+async def test_credits_page_renders(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """GET /musehub/ui/{repo_id}/credits returns 200 HTML without requiring a JWT."""
+    repo_id = await _make_repo(db_session)
+    response = await client.get(f"/musehub/ui/{repo_id}/credits")
 async def test_graph_page_renders(
     client: AsyncClient,
     db_session: AsyncSession,
@@ -544,6 +555,67 @@ async def test_context_page_renders(
     assert "text/html" in response.headers["content-type"]
     body = response.text
     assert "Muse Hub" in body
+    assert "Credits" in body
+    assert repo_id[:8] in body
+
+
+@pytest.mark.anyio
+async def test_credits_page_contains_json_ld_injection(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Credits page embeds JSON-LD injection logic for machine-readable attribution."""
+    repo_id = await _make_repo(db_session)
+    response = await client.get(f"/musehub/ui/{repo_id}/credits")
+    assert response.status_code == 200
+    body = response.text
+    assert "application/ld+json" in body
+    assert "schema.org" in body
+    assert "MusicComposition" in body
+
+
+@pytest.mark.anyio
+async def test_credits_page_contains_sort_options(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Credits page includes sort dropdown with count, recency, and alpha options."""
+    repo_id = await _make_repo(db_session)
+    response = await client.get(f"/musehub/ui/{repo_id}/credits")
+    assert response.status_code == 200
+    body = response.text
+    assert "Most prolific" in body
+    assert "Most recent" in body
+    assert "A" in body  # "A – Z" option
+
+
+@pytest.mark.anyio
+async def test_credits_empty_state_message_in_page(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Credits page JS includes empty-state message for repos with no sessions."""
+    repo_id = await _make_repo(db_session)
+    response = await client.get(f"/musehub/ui/{repo_id}/credits")
+    assert response.status_code == 200
+    body = response.text
+    assert "muse session start" in body
+
+
+@pytest.mark.anyio
+async def test_credits_no_auth_required(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Credits UI page must be accessible without an Authorization header (HTML shell)."""
+    repo_id = await _make_repo(db_session)
+    response = await client.get(f"/musehub/ui/{repo_id}/credits")
+    assert response.status_code == 200
+    assert response.status_code != 401
+
+
+@pytest.mark.anyio
+async def test_credits_json_response(
     assert "What the Agent Sees" in body
     assert commit_id[:8] in body
 
@@ -612,6 +684,10 @@ async def test_context_json_response(
     db_session: AsyncSession,
     auth_headers: dict[str, str],
 ) -> None:
+    """GET /api/v1/musehub/repos/{repo_id}/credits returns JSON with required fields."""
+    repo_id = await _make_repo(db_session)
+    response = await client.get(
+        f"/api/v1/musehub/repos/{repo_id}/credits",
     """GET /api/v1/musehub/repos/{repo_id}/context/{ref} returns MuseHubContextResponse."""
     repo_id, commit_id = await _make_repo_with_commit(db_session)
     response = await client.get(
@@ -620,6 +696,17 @@ async def test_context_json_response(
     )
     assert response.status_code == 200
     body = response.json()
+    assert "repoId" in body
+    assert "contributors" in body
+    assert "sort" in body
+    assert "totalContributors" in body
+    assert body["repoId"] == repo_id
+    assert isinstance(body["contributors"], list)
+    assert body["sort"] == "count"
+
+
+@pytest.mark.anyio
+async def test_credits_empty_state_json(
     assert body["repoId"] == repo_id
     assert body["currentBranch"] == "main"
     assert "headCommit" in body
@@ -637,6 +724,16 @@ async def test_context_includes_musical_state(
     db_session: AsyncSession,
     auth_headers: dict[str, str],
 ) -> None:
+    """Repo with no commits returns empty contributors list and totalContributors=0."""
+    repo_id = await _make_repo(db_session)
+    response = await client.get(
+        f"/api/v1/musehub/repos/{repo_id}/credits",
+        headers=auth_headers,
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["contributors"] == []
+    assert body["totalContributors"] == 0
     """Context response includes musicalState with an activeTracks field."""
     repo_id, commit_id = await _make_repo_with_commit(db_session)
     response = await client.get(

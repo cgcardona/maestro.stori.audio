@@ -218,6 +218,38 @@ class PRMergeResponse(CamelModel):
     merge_commit_id: str
 
 
+# ── Credits models ────────────────────────────────────────────────────────────
+
+
+class ContributorCredits(CamelModel):
+    """Wire representation of a single contributor's credit record.
+
+    Aggregated from commit history — one record per unique author string.
+    Contribution types are inferred from commit message keywords so that an
+    agent or a human can understand each collaborator's role at a glance.
+    """
+
+    author: str
+    session_count: int
+    contribution_types: list[str]
+    first_active: datetime
+    last_active: datetime
+
+
+class CreditsResponse(CamelModel):
+    """Wire representation of the full credits roll for a repo.
+
+    Returned by ``GET /api/v1/musehub/repos/{repo_id}/credits``.
+    The ``sort`` field echoes back the sort order applied to the list.
+    An empty ``contributors`` list means no commits have been pushed yet.
+    """
+
+    repo_id: str
+    contributors: list[ContributorCredits]
+    sort: str
+    total_contributors: int
+
+
 # ── Object metadata model ─────────────────────────────────────────────────────
 
 
