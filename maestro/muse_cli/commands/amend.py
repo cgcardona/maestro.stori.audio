@@ -185,7 +185,7 @@ async def _amend_async(
     await session.flush()
 
     # ── Persist amended commit ────────────────────────────────────────────
-    author = "" if not reset_author else ""  # stub: no user-identity system yet
+    author = ""  # stub: no user-identity system yet; reset_author is a no-op for now
     new_commit = MuseCliCommit(
         commit_id=new_commit_id,
         repo_id=repo_id,
