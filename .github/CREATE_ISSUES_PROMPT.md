@@ -308,7 +308,7 @@ git diff origin/dev...origin/<branch-B> --name-only
 
 **Docs:** `docs/guides/integrate.md` — add note that budget limits apply to both stream and MCP entry points.
 
-**Labels:** `bug`, `budget`, `mcp`, `security`
+**Labels:** `bug`, `ai-pipeline`
 
 ---
 
@@ -321,8 +321,37 @@ For each bug in the input list, output:
 3. Suggested labels.
 4. Whether a `[HANDOFF REQUIRED]` flag applies (SSE protocol or MCP schema change).
 
-You can output multiple issues in one response. The user (or an agent) can then create each via:
+You can output multiple issues in one response. The user (or an agent) can then create each via
+the **two-step pattern** — never pass `--label` to `gh issue create` directly, because a single
+missing label causes the entire command to fail:
 
 ```bash
-gh issue create --title "Fix: ..." --body "$(cat issue-body.md)" --label "bug,mcp"
+# Step 1: create the issue (never fails due to labels)
+ISSUE_URL=$(gh issue create --title "Fix: ..." --body "$(cat issue-body.md)")
+
+# Step 2: apply each label separately — || true makes each non-fatal
+gh issue edit "$ISSUE_URL" --add-label "bug" 2>/dev/null || true
+gh issue edit "$ISSUE_URL" --add-label "ai-pipeline" 2>/dev/null || true
 ```
+
+**Valid labels for this repo** (only pick from this list — never invent labels):
+
+| Label | When to use |
+|-------|------------|
+| `bug` | Something is broken |
+| `enhancement` | New feature or improvement |
+| `documentation` | Docs-only change |
+| `performance` | Speed, caching, cost optimisation |
+| `ai-pipeline` | LLM/AI pipeline architecture |
+| `muse` | Muse VCS — versioned music graph |
+| `muse-cli` | Muse CLI commands |
+| `muse-hub` | Muse Hub remote server |
+| `muse-music-extensions` | Music-aware extensions (emotion-diff, groove-check, etc.) |
+| `storpheus` | MIDI generation service |
+| `maestro-integration` | Maestro ↔ Muse integration |
+| `mypy` | Type errors or mypy compliance |
+| `cli` | CLI tooling |
+| `testing` | Test coverage |
+| `multimodal` | Vision, audio, video input |
+| `help wanted` | Extra attention needed |
+| `good first issue` | Good for newcomers |
