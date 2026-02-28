@@ -337,41 +337,93 @@ class ObjectMetaListResponse(CamelModel):
     objects: list[ObjectMetaResponse]
 
 
+# ── Timeline models ───────────────────────────────────────────────────────────
 
 
-# ── Semantic search models ─────────────────────────────────────────────────────
+class TimelineCommitEvent(CamelModel):
+    """A commit plotted as a point on the timeline.
 
-
-class SimilarCommitResponse(CamelModel):
-    """A single result from a MuseHub semantic similarity search.
-
-    The score is cosine similarity in [0.0, 1.0] — higher is more similar.
-    Results are pre-sorted descending by score.
+    Every pushed commit becomes a commit event regardless of its message content.
+    The ``commit_id`` is the canonical identifier for audio-preview lookup and
+    deep-linking to the commit detail page.
     """
 
-    commit_id: str = Field(..., description="Commit SHA of the matching commit")
-    repo_id: str = Field(..., description="UUID of the repo containing this commit")
-    score: float = Field(..., ge=0.0, le=1.0, description="Cosine similarity score")
-    branch: str = Field(..., description="Branch the commit lives on")
-    author: str = Field(..., description="Commit author identifier")
+    event_type: str = "commit"
+    commit_id: str
+    branch: str
+    message: str
+    author: str
+    timestamp: datetime
+    parent_ids: list[str]
 
 
-class SimilarSearchResponse(CamelModel):
-    """Response for GET /musehub/search/similar.
+class TimelineEmotionEvent(CamelModel):
+    """An emotion-vector data point overlaid on the timeline as a line chart.
 
-    Contains the query commit SHA and a ranked list of musically similar commits.
-    Only public repos appear in results — enforced server-side by Qdrant filter.
+    Emotion values are derived deterministically from the commit SHA so the
+    timeline is always reproducible without external inference. Each field is
+    in the range [0.0, 1.0]. Agents use these values to understand how the
+    emotional character of the composition shifted over time.
     """
 
-    query_commit: str = Field(..., description="The commit SHA used as the search query")
-    results: list[SimilarCommitResponse] = Field(
-        default_factory=list,
-        description="Ranked results, most similar first",
-    )
+    event_type: str = "emotion"
+    commit_id: str
+    timestamp: datetime
+    valence: float
+    energy: float
+    tension: float
 
 
+class TimelineSectionEvent(CamelModel):
+    """A detected section change plotted as a marker on the timeline.
+
+    Section names are extracted from commit messages using keyword heuristics
+    (e.g. "added chorus", "intro complete", "bridge removed"). The ``action``
+    field is either ``"added"`` or ``"removed"``.
+    """
+
+    event_type: str = "section"
+    commit_id: str
+    timestamp: datetime
+    section_name: str
+    action: str
 
 
+class TimelineTrackEvent(CamelModel):
+    """A detected track addition or removal plotted as a marker on the timeline.
+
+    Track changes are extracted from commit messages using keyword heuristics
+    (e.g. "added bass", "removed keys", "new drums track"). The ``action``
+    field is either ``"added"`` or ``"removed"``.
+    """
+
+    event_type: str = "track"
+    commit_id: str
+    timestamp: datetime
+    track_name: str
+    action: str
+
+
+class TimelineResponse(CamelModel):
+    """Chronological timeline of musical evolution for a repo.
+
+    Contains four parallel event streams that the client renders as
+    independently toggleable layers:
+    - ``commits``: every pushed commit (always present)
+    - ``emotion``: emotion-vector data points per commit (always present)
+    - ``sections``: section change events derived from commit messages
+    - ``tracks``: track add/remove events derived from commit messages
+
+    Agent use case: call this endpoint to understand how a project evolved —
+    when sections were introduced, when the emotional character shifted, and
+    which instruments were added or removed over time.
+    """
+
+    commits: list[TimelineCommitEvent]
+    emotion: list[TimelineEmotionEvent]
+    sections: list[TimelineSectionEvent]
+    tracks: list[TimelineTrackEvent]
+    total_commits: int
 # ── Divergence visualization models ───────────────────────────────────────────
 
 
@@ -423,15 +475,13 @@ class ExploreRepoResult(CamelModel):
     repo_id: str
     name: str
     owner_user_id: str
-    description: str | None = None
-    tags: list[str] = []
-    key_signature: str | None = None
-    tempo_bpm: int | None = None
-    star_count: int = 0
-    commit_count: int = 0
+    description: str
+    tags: list[str]
+    key_signature: str | None
+    tempo_bpm: int | None
+    star_count: int
+    commit_count: int
     created_at: datetime
-
-
 # ── Profile models ────────────────────────────────────────────────────────────
 
 
@@ -461,8 +511,6 @@ class ProfileRepoSummary(CamelModel):
     star_count: int = 0
     last_activity_at: datetime | None = None
     created_at: datetime
-
-
 class ExploreResponse(CamelModel):
     """Paginated response from GET /api/v1/musehub/discover/repos.
 
@@ -480,9 +528,7 @@ class StarResponse(CamelModel):
     """Confirmation that a star was added or removed."""
 
     starred: bool
-    star_count: int = 0
-
-
+    star_count: int
 class ContributionDay(CamelModel):
     """A single day in the contribution heatmap.
 
@@ -901,3 +947,31 @@ class SessionListResponse(CamelModel):
 
     sessions: list[SessionResponse]
     total: int
+
+
+class SimilarCommitResponse(CamelModel):
+    """A single result from a MuseHub semantic similarity search.
+
+    The score is cosine similarity in [0.0, 1.0] — higher is more similar.
+    Results are pre-sorted descending by score.
+    """
+
+    commit_id: str = Field(..., description="Commit SHA of the matching commit")
+    repo_id: str = Field(..., description="UUID of the repo containing this commit")
+    score: float = Field(..., ge=0.0, le=1.0, description="Cosine similarity score")
+    branch: str = Field(..., description="Branch the commit lives on")
+    author: str = Field(..., description="Commit author identifier")
+
+
+class SimilarSearchResponse(CamelModel):
+    """Response for GET /musehub/search/similar.
+
+    Contains the query commit SHA and a ranked list of musically similar commits.
+    Only public repos appear in results — enforced server-side by Qdrant filter.
+    """
+
+    query_commit: str = Field(..., description="The commit SHA used as the search query")
+    results: list[SimilarCommitResponse] = Field(
+        default_factory=list,
+        description="Ranked results, most similar first",
+    )

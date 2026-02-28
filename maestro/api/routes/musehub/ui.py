@@ -4,14 +4,8 @@ Serves browser-readable HTML pages for navigating a Muse Hub repo —
 analogous to GitHub's repository browser but for music projects.
 
 Endpoint summary:
-  GET /musehub/ui/explore                          — discover public repos with filters
-  GET /musehub/ui/trending                         — trending public repos (sorted by stars)
   GET /musehub/ui/search                           — global cross-repo search page
   GET /musehub/ui/{repo_id}                        — repo page (branch selector + commit log)
-  GET /musehub/ui/{repo_id}/releases               — release list page
-  GET /musehub/ui/{repo_id}/releases/{tag}         — release detail page (notes + downloads)
-  GET /musehub/ui/users/{username}                 — user profile page (public repos, contribution graph, credits)
-  GET /musehub/ui/search                           — global cross-repo search page  GET /musehub/ui/{repo_id}                        — repo page (branch selector + commit log)
   GET /musehub/ui/{repo_id}/commits/{commit_id}    — commit detail page (metadata + artifacts)
   GET /musehub/ui/{repo_id}/graph                  — interactive DAG commit graph
   GET /musehub/ui/{repo_id}/pulls                  — pull request list page
@@ -23,8 +17,7 @@ Endpoint summary:
   GET /musehub/ui/{repo_id}/search                 — in-repo search page (four modes)
 
 These routes require NO JWT auth — they return static HTML shells whose
-embedded JavaScript fetches data from the public JSON API
-(``/api/v1/musehub/discover/repos``) or the authed JSON API
+embedded JavaScript fetches data from the authed JSON API
 (``/api/v1/musehub/...``) using a token stored in ``localStorage``.
 
 The embed route is intentionally designed for cross-origin iframe embedding:
@@ -47,51 +40,6 @@ router = APIRouter(prefix="/musehub/ui", tags=["musehub-ui"])
 # ---------------------------------------------------------------------------
 # Shared HTML scaffolding
 # ---------------------------------------------------------------------------
-
-_PROFILE_CSS = """
-.profile-header {
-  display: flex; align-items: flex-start; gap: 24px; margin-bottom: 24px;
-}
-.avatar {
-  width: 80px; height: 80px; border-radius: 50%;
-  background: #21262d; border: 2px solid #30363d;
-  display: flex; align-items: center; justify-content: center;
-  font-size: 32px; flex-shrink: 0;
-}
-.avatar img { width: 100%; height: 100%; border-radius: 50%; object-fit: cover; }
-.profile-meta { flex: 1; }
-.profile-meta h1 { font-size: 22px; color: #e6edf3; margin-bottom: 4px; }
-.bio { font-size: 14px; color: #8b949e; margin-bottom: 12px; }
-.contrib-graph {
-  display: flex; gap: 2px; flex-wrap: wrap; overflow-x: auto;
-}
-.contrib-week { display: flex; flex-direction: column; gap: 2px; }
-.contrib-day {
-  width: 10px; height: 10px; border-radius: 2px; background: #161b22;
-  border: 1px solid #30363d;
-}
-.contrib-day[data-count="0"] { background: #161b22; }
-.contrib-day[data-count="1"] { background: #0e4429; border-color: #0e4429; }
-.contrib-day[data-count="2"] { background: #006d32; border-color: #006d32; }
-.contrib-day[data-count="3"] { background: #26a641; border-color: #26a641; }
-.contrib-day[data-count="4"] { background: #39d353; border-color: #39d353; }
-.repo-grid {
-  display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  gap: 12px;
-}
-.repo-card {
-  background: #161b22; border: 1px solid #30363d; border-radius: 6px;
-  padding: 14px; display: flex; flex-direction: column; gap: 6px;
-}
-.repo-card h3 { font-size: 15px; margin: 0; }
-.repo-card .repo-meta { font-size: 12px; color: #8b949e; }
-.credits-badge {
-  display: inline-flex; align-items: center; gap: 8px;
-  background: #1f6feb22; border: 1px solid #1f6feb; border-radius: 6px;
-  padding: 8px 14px; font-size: 14px;
-}
-.credits-badge .num { font-size: 22px; font-weight: 700; color: #58a6ff; }
-"""
 
 _CSS = """
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -252,7 +200,7 @@ def _page(title: str, breadcrumb: str, body_script: str, extra_css: str = "") ->
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{title} — Muse Hub</title>
-  <style>{_CSS}{extra_css}</style>
+  <style>{_CSS}</style>
 </head>
 <body>
   <header>
@@ -284,393 +232,8 @@ def _page(title: str, breadcrumb: str, body_script: str, extra_css: str = "") ->
 
 
 # ---------------------------------------------------------------------------
-# Route handlers — explore / discover (no auth required)
+# Route handlers
 # ---------------------------------------------------------------------------
-
-_EXPLORE_SCRIPT = """
-const DISCOVER_API = '/api/v1/musehub/discover/repos';
-
-function escHtml(s) {
-  if (!s) return '';
-  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-}
-
-function tagHtml(tag) {
-  return '<span class="label">' + escHtml(tag) + '</span>';
-}
-
-function repoCard(r) {
-  const tags = (r.tags || []).map(tagHtml).join('');
-  const key  = r.keySignature ? escHtml(r.keySignature) : '';
-  const bpm  = r.tempoBpm ? r.tempoBpm + ' BPM' : '';
-  const meta = [key, bpm].filter(Boolean).join(' &bull; ');
-  return `
-    <div class="repo-card">
-      <div class="repo-card-title">
-        <a href="/musehub/ui/${escHtml(r.repoId)}">${escHtml(r.name)}</a>
-      </div>
-      <div class="repo-card-owner">${escHtml(r.ownerUserId)}</div>
-      ${r.description ? '<div class="repo-card-desc">' + escHtml(r.description) + '</div>' : ''}
-      <div class="repo-card-tags">${tags}</div>
-      <div class="repo-card-meta">
-        ${meta ? '<span>' + meta + '</span>' : ''}
-        <span>&#9733; ${r.starCount}</span>
-        <span>&#128190; ${r.commitCount} commits</span>
-      </div>
-    </div>`;
-}
-
-async function loadExplore(page, sort, genre, key, tempoMin, tempoMax, instrumentation) {
-  const params = new URLSearchParams({ page: page, page_size: 24, sort: sort });
-  if (genre)         params.set('genre', genre);
-  if (key)           params.set('key', key);
-  if (tempoMin)      params.set('tempo_min', tempoMin);
-  if (tempoMax)      params.set('tempo_max', tempoMax);
-  if (instrumentation) params.set('instrumentation', instrumentation);
-
-  try {
-    const res  = await fetch(DISCOVER_API + '?' + params.toString());
-    if (!res.ok) throw new Error(res.status + ': ' + await res.text());
-    const data = await res.json();
-    const repos = data.repos || [];
-    const total = data.total || 0;
-    const pages = Math.ceil(total / 24) || 1;
-
-    const grid = repos.length === 0
-      ? '<p class="loading">No repos found matching these filters.</p>'
-      : repos.map(repoCard).join('');
-
-    const pager = pages > 1 ? `
-      <div class="pager">
-        ${page > 1 ? '<button class="btn btn-secondary" onclick="go(' + (page-1) + ')">&#8592; Prev</button>' : ''}
-        <span style="color:#8b949e;font-size:13px">Page ${page} of ${pages} &bull; ${total} repos</span>
-        ${page < pages ? '<button class="btn btn-secondary" onclick="go(' + (page+1) + ')">Next &#8594;</button>' : ''}
-      </div>` : '<div class="pager" style="color:#8b949e;font-size:13px">' + total + ' repos</div>';
-
-    document.getElementById('repo-grid').innerHTML = grid;
-    document.getElementById('pager').innerHTML = pager;
-  } catch(e) {
-    document.getElementById('repo-grid').innerHTML =
-      '<p class="error">&#10005; ' + escHtml(e.message) + '</p>';
-  }
-}
-
-function currentState() {
-  return {
-    page: parseInt(document.getElementById('cur-page').value || '1'),
-    sort: document.getElementById('sort-sel').value,
-    genre: document.getElementById('genre-inp').value.trim(),
-    key:   document.getElementById('key-inp').value.trim(),
-    tempoMin: document.getElementById('tempo-min').value.trim(),
-    tempoMax: document.getElementById('tempo-max').value.trim(),
-    instr: document.getElementById('instr-inp').value.trim(),
-  };
-}
-
-function go(page) {
-  document.getElementById('cur-page').value = page;
-  const s = currentState();
-  loadExplore(page, s.sort, s.genre, s.key, s.tempoMin, s.tempoMax, s.instr);
-}
-
-function applyFilters() { go(1); }
-"""
-
-_EXPLORE_CSS_EXTRA = """
-.filter-bar {
-  display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-end;
-  background: #161b22; border: 1px solid #30363d; border-radius: 6px;
-  padding: 12px; margin-bottom: 16px;
-}
-.filter-group { display: flex; flex-direction: column; gap: 4px; }
-.filter-label { font-size: 11px; color: #8b949e; text-transform: uppercase; letter-spacing: 0.5px; }
-.filter-group input {
-  background: #0d1117; color: #c9d1d9; border: 1px solid #30363d;
-  border-radius: 6px; padding: 6px 10px; font-size: 13px; width: 140px;
-}
-.filter-group input:focus { outline: none; border-color: #58a6ff; }
-.repo-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  gap: 12px;
-}
-.repo-card {
-  background: #161b22; border: 1px solid #30363d; border-radius: 6px;
-  padding: 14px; display: flex; flex-direction: column; gap: 6px;
-  transition: border-color 0.15s;
-}
-.repo-card:hover { border-color: #58a6ff; }
-.repo-card-title { font-size: 15px; font-weight: 600; }
-.repo-card-owner { font-size: 12px; color: #8b949e; }
-.repo-card-desc  { font-size: 13px; color: #c9d1d9; }
-.repo-card-tags  { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
-.repo-card-meta  {
-  display: flex; gap: 12px; flex-wrap: wrap;
-  font-size: 12px; color: #8b949e; margin-top: 4px;
-}
-.pager {
-  display: flex; align-items: center; justify-content: center;
-  gap: 12px; margin-top: 20px;
-}
-"""
-
-
-def _explore_page_html(title: str, breadcrumb: str, default_sort: str) -> str:
-    """Render the explore or trending page HTML shell.
-
-    The page calls the public ``GET /api/v1/musehub/discover/repos`` JSON API
-    from the browser — no JWT required for browsing. Star/unstar actions require
-    a JWT stored in localStorage but are optional (unauthenticated visitors can
-    browse without starring).
-    """
-    css = _CSS + _EXPLORE_CSS_EXTRA
-    return f"""<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{title} — Muse Hub</title>
-  <style>{css}</style>
-</head>
-<body>
-  <header>
-    <span class="logo">&#127925; Muse Hub</span>
-    <span class="breadcrumb">{breadcrumb}</span>
-    <span style="flex:1"></span>
-    <a href="/musehub/ui/explore" class="btn btn-secondary" style="font-size:12px">Explore</a>
-    &nbsp;
-    <a href="/musehub/ui/trending" class="btn btn-secondary" style="font-size:12px">Trending</a>
-  </header>
-  <div class="container" style="max-width:1200px">
-    <div class="filter-bar">
-      <div class="filter-group">
-        <span class="filter-label">Genre</span>
-        <input id="genre-inp" type="text" placeholder="jazz, lo-fi…" oninput="applyFilters()"/>
-      </div>
-      <div class="filter-group">
-        <span class="filter-label">Key</span>
-        <input id="key-inp" type="text" placeholder="F# minor" oninput="applyFilters()"/>
-      </div>
-      <div class="filter-group">
-        <span class="filter-label">BPM min</span>
-        <input id="tempo-min" type="number" min="20" max="300" placeholder="80" oninput="applyFilters()"/>
-      </div>
-      <div class="filter-group">
-        <span class="filter-label">BPM max</span>
-        <input id="tempo-max" type="number" min="20" max="300" placeholder="140" oninput="applyFilters()"/>
-      </div>
-      <div class="filter-group">
-        <span class="filter-label">Instrument</span>
-        <input id="instr-inp" type="text" placeholder="bass, drums…" oninput="applyFilters()"/>
-      </div>
-      <div class="filter-group">
-        <span class="filter-label">Sort by</span>
-        <select id="sort-sel" onchange="applyFilters()">
-          <option value="created" {'selected' if default_sort == 'created' else ''}>Newest</option>
-          <option value="stars"   {'selected' if default_sort == 'stars'   else ''}>Stars</option>
-          <option value="activity"{'selected' if default_sort == 'activity' else ''}>Activity</option>
-          <option value="commits" {'selected' if default_sort == 'commits'  else ''}>Commits</option>
-        </select>
-      </div>
-    </div>
-    <input type="hidden" id="cur-page" value="1"/>
-    <div id="repo-grid" class="repo-grid"><p class="loading">Loading&#8230;</p></div>
-    <div id="pager"></div>
-  </div>
-  <script>
-    {_EXPLORE_SCRIPT}
-    window.addEventListener('DOMContentLoaded', function() {{
-      const s = currentState();
-      loadExplore(1, s.sort, s.genre, s.key, s.tempoMin, s.tempoMax, s.instr);
-    }});
-  </script>
-</body>
-</html>"""
-
-
-@router.get("/explore", response_class=HTMLResponse, summary="Muse Hub explore page")
-async def explore_page() -> HTMLResponse:
-    """Render the explore/discover page — a filterable grid of all public repos.
-
-    No JWT required. The page fetches from the public
-    ``GET /api/v1/musehub/discover/repos`` endpoint. Filter controls are
-    rendered in the browser; filter state lives in the query URL so pages
-    are bookmarkable.
-    """
-    return HTMLResponse(
-        content=_explore_page_html(
-            title="Explore",
-            breadcrumb="Explore",
-            default_sort="created",
-        )
-    )
-
-
-@router.get("/trending", response_class=HTMLResponse, summary="Muse Hub trending page")
-async def trending_page() -> HTMLResponse:
-    """Render the trending page — public repos sorted by star count by default.
-
-    No JWT required. Identical shell to the explore page but pre-selected
-    to sort by stars, surfacing the most-starred compositions first.
-    """
-    return HTMLResponse(
-        content=_explore_page_html(
-            title="Trending",
-            breadcrumb="Trending",
-            default_sort="stars",
-        )
-    )
-
-
-# ---------------------------------------------------------------------------
-# Route handlers — per-repo pages (no auth required)
-# ---------------------------------------------------------------------------
-
-
-
-
-@router.get(
-    "/users/{username}",
-    response_class=HTMLResponse,
-    summary="Muse Hub user profile page",
-)
-async def profile_page(username: str) -> HTMLResponse:
-    """Render the public user profile page.
-
-    Displays: bio, avatar, pinned repos, all public repos with last-activity,
-    a GitHub-style contribution heatmap (52 weeks of daily commit counts), and
-    aggregated session credits.  Auth is handled client-side via localStorage JWT.
-
-    Returns 200 with an HTML shell even when the API returns 404 -- the JS
-    renders the 404 message inline so the browser gets a proper HTML response.
-    """
-    script = f"""
-      const username = {repr(username)};
-      const API_PROFILE = '/api/v1/musehub/users/' + username;
-
-      function escHtml(s) {{
-        if (!s) return '';
-        return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-      }}
-
-      function bucketCount(n) {{
-        if (n === 0) return 0;
-        if (n <= 2)  return 1;
-        if (n <= 5)  return 2;
-        if (n <= 9)  return 3;
-        return 4;
-      }}
-
-      function buildContribGraph(graph) {{
-        // Group days into weeks (7 days per column)
-        const weeks = [];
-        let week = [];
-        graph.forEach((d, i) => {{
-          week.push(d);
-          if (week.length === 7) {{ weeks.push(week); week = []; }}
-        }});
-        if (week.length) weeks.push(week);
-
-        const weeksHtml = weeks.map(w => {{
-          const days = w.map(d => {{
-            const b = bucketCount(d.count);
-            return `<div class="contrib-day" data-count="${{b}}" title="${{d.date}}: ${{d.count}} commit${{d.count !== 1 ? 's' : ''}}"></div>`;
-          }}).join('');
-          return `<div class="contrib-week">${{days}}</div>`;
-        }}).join('');
-
-        return `<div class="contrib-graph">${{weeksHtml}}</div>`;
-      }}
-
-      function repoCardHtml(r) {{
-        const lastAct = r.lastActivityAt ? fmtDate(r.lastActivityAt) : 'No commits yet';
-        return `<div class="repo-card">
-          <h3><a href="/musehub/ui/${{r.repoId}}">${{escHtml(r.name)}}</a></h3>
-          <div class="repo-meta">
-            <span class="badge badge-${{r.visibility}}">${{r.visibility}}</span>
-            &bull; Last activity: ${{lastAct}}
-          </div>
-        </div>`;
-      }}
-
-      async function load() {{
-        let profile;
-        try {{
-          profile = await fetch(API_PROFILE).then(r => {{
-            if (r.status === 404) throw new Error('404');
-            if (!r.ok) throw new Error(r.status);
-            return r.json();
-          }});
-        }} catch(e) {{
-          if (e.message === '404') {{
-            document.getElementById('content').innerHTML =
-              '<div class="card"><p class="error">&#10005; No profile found for <strong>' + escHtml(username) + '</strong>.</p></div>';
-          }} else {{
-            document.getElementById('content').innerHTML =
-              '<p class="error">Failed to load profile: ' + escHtml(e.message) + '</p>';
-          }}
-          return;
-        }}
-
-        const avatarHtml = profile.avatarUrl
-          ? `<img src="${{escHtml(profile.avatarUrl)}}" alt="avatar" />`
-          : '&#127925;';
-
-        const pinnedRepos = (profile.repos || []).filter(r => (profile.pinnedRepoIds || []).includes(r.repoId));
-        const publicRepos = profile.repos || [];
-
-        const pinnedSection = pinnedRepos.length > 0 ? `
-          <div class="card">
-            <h2 style="margin-bottom:12px">&#128204; Pinned</h2>
-            <div class="repo-grid">${{pinnedRepos.map(repoCardHtml).join('')}}</div>
-          </div>` : '';
-
-        const reposSection = publicRepos.length > 0 ? `
-          <div class="card">
-            <h2 style="margin-bottom:12px">&#127963; Public Repositories (${{publicRepos.length}})</h2>
-            <div class="repo-grid">${{publicRepos.map(repoCardHtml).join('')}}</div>
-          </div>` : '<div class="card"><p class="loading">No public repositories yet.</p></div>';
-
-        const graphSection = `
-          <div class="card">
-            <h2 style="margin-bottom:12px">&#128200; Contribution Activity (last 52 weeks)</h2>
-            ${{buildContribGraph(profile.contributionGraph || [])}}
-            <p style="font-size:12px;color:#8b949e;margin-top:8px">
-              Less &nbsp;
-              <span style="display:inline-flex;gap:2px;vertical-align:middle">
-                ${{[0,1,2,3,4].map(n => '<span class="contrib-day" data-count="' + n + '" style="display:inline-block"></span>').join('')}}
-              </span>
-              &nbsp; More
-            </p>
-          </div>`;
-
-        document.getElementById('content').innerHTML = `
-          <div class="card profile-header">
-            <div class="avatar">${{avatarHtml}}</div>
-            <div class="profile-meta">
-              <h1>${{escHtml(profile.username)}}</h1>
-              ${{profile.bio ? '<p class="bio">' + escHtml(profile.bio) + '</p>' : ''}}
-              <div class="credits-badge">
-                <span class="num">${{profile.sessionCredits || 0}}</span>
-                <span>session credits</span>
-              </div>
-            </div>
-          </div>
-          ${{pinnedSection}}
-          ${{graphSection}}
-          ${{reposSection}}
-        `;
-      }}
-
-      load();
-    """
-    html = _page(
-        title=f"@{username}",
-        breadcrumb=f'<a href="/musehub/ui/users/{username}">@{username}</a>',
-        body_script=script,
-        extra_css=_PROFILE_CSS,
-    )
-    return HTMLResponse(content=html)
 
 
 @router.get("/search", response_class=HTMLResponse, summary="Muse Hub global search page")
@@ -686,18 +249,18 @@ async def global_search_page(
     Query parameters are pre-filled into the search form so that a browser
     navigation or a URL share lands with the last query already populated.
     These parameters are sanitised client-side before being rendered into the
-    DOM (``escHtml`` prevents XSS from adversarial query strings).
+    DOM — ``escHtml`` prevents XSS from adversarial query strings.
     """
     safe_q = q.replace("'", "\\'").replace('"', '\\"').replace("\n", "").replace("\r", "")
     safe_mode = mode if mode in ("keyword", "pattern") else "keyword"
     script = f"""
       const INITIAL_Q    = {repr(safe_q)};
       const INITIAL_MODE = {repr(safe_mode)};
+
       function escHtml(s) {{
         if (!s) return '';
         return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
       }}
-      function shortSha(s) {{ return s ? s.substring(0, 8) : ''; }}
 
       function audioHtml(groupId, audioOid) {{
         if (!audioOid) return '';
@@ -1562,237 +1125,6 @@ async def issue_list_page(repo_id: str) -> HTMLResponse:
     html = _page(
         title="Issues",
         breadcrumb=f'<a href="/musehub/ui/{repo_id}">{repo_id[:8]}</a> / issues',
-        body_script=script,
-    )
-    return HTMLResponse(content=html)
-
-
-@router.get(
-    "/{repo_id}/divergence",
-    response_class=HTMLResponse,
-    summary="Muse Hub divergence visualization page",
-)
-async def divergence_page(repo_id: str) -> HTMLResponse:
-    """Render the divergence visualization page: radar chart + dimension detail panels.
-
-    Fetches ``GET /api/v1/musehub/repos/{repo_id}/divergence?branch_a=...&branch_b=...``
-    for the raw data, then renders:
-    - A five-axis radar chart (melodic/harmonic/rhythmic/structural/dynamic)
-    - Level labels (NONE/LOW/MED/HIGH) per dimension
-    - Overall divergence score as a percentage
-    - Per-dimension detail panels (click to expand)
-
-    Auth is handled client-side via localStorage JWT.  No Jinja2 required.
-    """
-    script = f"""
-      const repoId = {repr(repo_id)};
-      const apiBase = '/api/v1/musehub/repos/' + repoId;
-      const uiBase  = '/musehub/ui/' + repoId;
-
-      function escHtml(s) {{
-        if (!s) return '';
-        return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-      }}
-
-      const DIMENSIONS = ['melodic','harmonic','rhythmic','structural','dynamic'];
-      const LEVEL_COLOR = {{ NONE:'#1f6feb', LOW:'#388bfd', MED:'#f0883e', HIGH:'#f85149' }};
-      const LEVEL_BG    = {{ NONE:'#0d2942', LOW:'#102a4c', MED:'#341a00', HIGH:'#3d0000' }};
-      const AXIS_LABELS = {{
-        melodic:'Melodic', harmonic:'Harmonic', rhythmic:'Rhythmic',
-        structural:'Structural', dynamic:'Dynamic'
-      }};
-
-      function levelBadge(level) {{
-        const color = LEVEL_COLOR[level] || '#8b949e';
-        return `<span style="display:inline-block;padding:1px 7px;border-radius:10px;
-          font-size:11px;font-weight:700;color:#fff;background:${{color}}">${{level}}</span>`;
-      }}
-
-      function radarSvg(dims) {{
-        const cx = 180, cy = 180, r = 140;
-        const n = dims.length;
-        const pts = dims.map((d, i) => {{
-          const angle = (i / n) * 2 * Math.PI - Math.PI / 2;
-          const sr = d.score * r;
-          return {{ x: cx + sr * Math.cos(angle), y: cy + sr * Math.sin(angle) }};
-        }});
-        const bgPts = DIMENSIONS.map((_, i) => {{
-          const angle = (i / n) * 2 * Math.PI - Math.PI / 2;
-          return `${{cx + r * Math.cos(angle)}},${{cy + r * Math.sin(angle)}}`;
-        }}).join(' ');
-        const scorePoly = pts.map(p => `${{p.x}},${{p.y}}`).join(' ');
-
-        const axisLines = DIMENSIONS.map((_, i) => {{
-          const angle = (i / n) * 2 * Math.PI - Math.PI / 2;
-          const ex = cx + r * Math.cos(angle), ey = cy + r * Math.sin(angle);
-          return `<line x1="${{cx}}" y1="${{cy}}" x2="${{ex}}" y2="${{ey}}"
-            stroke="#30363d" stroke-width="1"/>`;
-        }}).join('');
-
-        const gridLines = [0.25, 0.5, 0.75, 1.0].map(frac => {{
-          const gPts = DIMENSIONS.map((_, i) => {{
-            const angle = (i / n) * 2 * Math.PI - Math.PI / 2;
-            return `${{cx + frac * r * Math.cos(angle)}},${{cy + frac * r * Math.sin(angle)}}`;
-          }}).join(' ');
-          return `<polygon points="${{gPts}}" fill="none" stroke="#21262d" stroke-width="1"/>`;
-        }}).join('');
-
-        const labels = dims.map((d, i) => {{
-          const angle = (i / n) * 2 * Math.PI - Math.PI / 2;
-          const lx = cx + (r + 22) * Math.cos(angle);
-          const ly = cy + (r + 22) * Math.sin(angle);
-          const color = LEVEL_COLOR[d.level] || '#8b949e';
-          return `<text x="${{lx}}" y="${{ly + 4}}" text-anchor="middle"
-            font-size="12" fill="${{color}}" font-family="system-ui">${{AXIS_LABELS[d.dimension]}}</text>`;
-        }}).join('');
-
-        const dots = pts.map((p, i) => {{
-          const color = LEVEL_COLOR[dims[i].level] || '#58a6ff';
-          return `<circle cx="${{p.x}}" cy="${{p.y}}" r="4" fill="${{color}}" stroke="#0d1117" stroke-width="2"/>`;
-        }}).join('');
-
-        return `<svg viewBox="0 0 360 360" xmlns="http://www.w3.org/2000/svg"
-            style="width:100%;max-width:360px;display:block;margin:0 auto">
-          ${{gridLines}}${{axisLines}}
-          <polygon points="${{bgPts}}" fill="rgba(88,166,255,0.04)" stroke="#30363d" stroke-width="1"/>
-          <polygon points="${{scorePoly}}" fill="rgba(248,81,73,0.18)" stroke="#f85149" stroke-width="2"/>
-          ${{labels}}${{dots}}
-        </svg>`;
-      }}
-
-      function dimensionPanel(d, expanded) {{
-        const bg = LEVEL_BG[d.level] || '#161b22';
-        const id = 'dim-' + d.dimension;
-        const detail = expanded ? `
-          <div style="margin-top:10px;font-size:13px;color:#8b949e">
-            <div>${{escHtml(d.description)}}</div>
-            <div style="margin-top:6px;display:flex;gap:16px">
-              <span>Branch A: <b style="color:#e6edf3">${{d.branchACommits}} commit(s)</b></span>
-              <span>Branch B: <b style="color:#e6edf3">${{d.branchBCommits}} commit(s)</b></span>
-            </div>
-          </div>` : '';
-        const pct = Math.round(d.score * 100);
-        return `<div id="${{id}}" class="card" style="background:${{bg}};cursor:pointer;margin-bottom:8px"
-            onclick="toggleDim('${{d.dimension}}')">
-          <div style="display:flex;align-items:center;gap:12px">
-            <span style="font-size:14px;color:#e6edf3;font-weight:600;min-width:90px">
-              ${{AXIS_LABELS[d.dimension]}}</span>
-            ${{levelBadge(d.level)}}
-            <div style="flex:1;height:6px;background:#21262d;border-radius:3px;overflow:hidden">
-              <div style="height:100%;width:${{pct}}%;background:${{LEVEL_COLOR[d.level] || '#58a6ff'}};
-                border-radius:3px;transition:width .3s"></div>
-            </div>
-            <span style="font-size:13px;color:#8b949e;white-space:nowrap">${{pct}}%</span>
-          </div>
-          ${{detail}}
-        </div>`;
-      }}
-
-      const _expanded = {{}};
-      function toggleDim(dim) {{
-        _expanded[dim] = !_expanded[dim];
-        renderDims(window._lastDims || []);
-      }}
-
-      function renderDims(dims) {{
-        window._lastDims = dims;
-        document.getElementById('dim-panels').innerHTML =
-          dims.map(d => dimensionPanel(d, !!_expanded[d.dimension])).join('');
-      }}
-
-      const params = new URLSearchParams(location.search);
-      let _branchA = params.get('branch_a') || '';
-      let _branchB = params.get('branch_b') || '';
-
-      async function loadBranches() {{
-        try {{
-          const data = await apiFetch('/repos/' + repoId + '/branches');
-          return (data.branches || []).map(b => b.name);
-        }} catch(e) {{ return []; }}
-      }}
-
-      async function loadDivergence(bA, bB) {{
-        if (!bA || !bB) {{
-          document.getElementById('radar-area').innerHTML =
-            '<p class="loading">Select two branches to compare.</p>';
-          document.getElementById('dim-panels').innerHTML = '';
-          document.getElementById('overall-area').innerHTML = '';
-          return;
-        }}
-        document.getElementById('radar-area').innerHTML = '<p class="loading">Computing&#8230;</p>';
-        try {{
-          const d = await apiFetch('/repos/' + repoId + '/divergence?branch_a=' +
-            encodeURIComponent(bA) + '&branch_b=' + encodeURIComponent(bB));
-          const pct = Math.round((d.overallScore || 0) * 100);
-          document.getElementById('radar-area').innerHTML = radarSvg(d.dimensions || []);
-          document.getElementById('overall-area').innerHTML = `
-            <div style="text-align:center;margin:12px 0">
-              <div style="font-size:32px;font-weight:700;color:#e6edf3">${{pct}}%</div>
-              <div style="font-size:12px;color:#8b949e;margin-top:2px">overall divergence</div>
-              ${{d.commonAncestor ? `<div style="font-size:11px;color:#8b949e;margin-top:4px;font-family:monospace">
-                base: ${{d.commonAncestor.substring(0,8)}}</div>` : ''}}
-            </div>`;
-          renderDims(d.dimensions || []);
-        }} catch(e) {{
-          if (e.message !== 'auth')
-            document.getElementById('radar-area').innerHTML =
-              '<p class="error">&#10005; ' + escHtml(e.message) + '</p>';
-        }}
-      }}
-
-      async function load() {{
-        const branches = await loadBranches();
-        const opts = branches.map(b =>
-          '<option value="' + escHtml(b) + '">' + escHtml(b) + '</option>').join('');
-
-        document.getElementById('content').innerHTML = `
-          <div style="margin-bottom:12px">
-            <a href="${{uiBase}}">&larr; Back to repo</a>
-          </div>
-          <div class="card">
-            <h1 style="margin-bottom:12px">Divergence Visualization</h1>
-            <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px">
-              <div>
-                <div class="meta-label" style="font-size:11px;color:#8b949e;margin-bottom:4px">BRANCH A</div>
-                <select id="sel-a" onchange="onBranchChange()">
-                  <option value="">Select branch&#8230;</option>${{opts}}
-                </select>
-              </div>
-              <div style="display:flex;align-items:flex-end;padding-bottom:4px;font-size:18px;color:#8b949e">
-                vs
-              </div>
-              <div>
-                <div class="meta-label" style="font-size:11px;color:#8b949e;margin-bottom:4px">BRANCH B</div>
-                <select id="sel-b" onchange="onBranchChange()">
-                  <option value="">Select branch&#8230;</option>${{opts}}
-                </select>
-              </div>
-            </div>
-            <div id="radar-area"><p class="loading">Select two branches to compare.</p></div>
-            <div id="overall-area"></div>
-          </div>
-          <div id="dim-panels"></div>`;
-
-        if (_branchA) document.getElementById('sel-a').value = _branchA;
-        if (_branchB) document.getElementById('sel-b').value = _branchB;
-        if (_branchA && _branchB) loadDivergence(_branchA, _branchB);
-      }}
-
-      function onBranchChange() {{
-        _branchA = document.getElementById('sel-a').value;
-        _branchB = document.getElementById('sel-b').value;
-        const url = new URL(location.href);
-        url.searchParams.set('branch_a', _branchA);
-        url.searchParams.set('branch_b', _branchB);
-        history.replaceState(null,'',url.toString());
-        loadDivergence(_branchA, _branchB);
-      }}
-
-      load();
-    """
-    html = _page(
-        title="Divergence",
-        breadcrumb=f'<a href="/musehub/ui/{repo_id}">{repo_id[:8]}</a> / divergence',
         body_script=script,
     )
     return HTMLResponse(content=html)
@@ -2718,6 +2050,1171 @@ async def search_page(repo_id: str) -> HTMLResponse:
         body_script=script,
     )
     return HTMLResponse(content=html)
+
+
+_PROFILE_CSS = """
+.profile-header {
+  display: flex; align-items: flex-start; gap: 24px; margin-bottom: 24px;
+}
+.avatar {
+  width: 80px; height: 80px; border-radius: 50%;
+  background: #21262d; border: 2px solid #30363d;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 32px; flex-shrink: 0;
+}
+.avatar img { width: 100%; height: 100%; border-radius: 50%; object-fit: cover; }
+.profile-meta { flex: 1; }
+.profile-meta h1 { font-size: 22px; color: #e6edf3; margin-bottom: 4px; }
+.bio { font-size: 14px; color: #8b949e; margin-bottom: 12px; }
+.contrib-graph {
+  display: flex; gap: 2px; flex-wrap: wrap; overflow-x: auto;
+}
+.contrib-week { display: flex; flex-direction: column; gap: 2px; }
+.contrib-day {
+  width: 10px; height: 10px; border-radius: 2px; background: #161b22;
+  border: 1px solid #30363d;
+}
+.contrib-day[data-count="0"] { background: #161b22; }
+.contrib-day[data-count="1"] { background: #0e4429; border-color: #0e4429; }
+.contrib-day[data-count="2"] { background: #006d32; border-color: #006d32; }
+.contrib-day[data-count="3"] { background: #26a641; border-color: #26a641; }
+.contrib-day[data-count="4"] { background: #39d353; border-color: #39d353; }
+.repo-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 12px;
+}
+.repo-card {
+  background: #161b22; border: 1px solid #30363d; border-radius: 6px;
+  padding: 14px; display: flex; flex-direction: column; gap: 6px;
+}
+.repo-card h3 { font-size: 15px; margin: 0; }
+.repo-card .repo-meta { font-size: 12px; color: #8b949e; }
+.credits-badge {
+  display: inline-flex; align-items: center; gap: 8px;
+  background: #1f6feb22; border: 1px solid #1f6feb; border-radius: 6px;
+  padding: 8px 14px; font-size: 14px;
+}
+.credits-badge .num { font-size: 22px; font-weight: 700; color: #58a6ff; }
+"""
+
+
+_TIMELINE_CSS = """
+.timeline-toolbar {
+  display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+  margin-bottom: 16px; padding: 12px 16px;
+  background: #161b22; border: 1px solid #30363d; border-radius: 6px;
+}
+.layer-toggle {
+  display: flex; align-items: center; gap: 6px; cursor: pointer;
+  font-size: 13px; color: #c9d1d9; user-select: none;
+}
+.layer-toggle input[type=checkbox] { cursor: pointer; accent-color: #58a6ff; }
+.zoom-select { display: flex; align-items: center; gap: 8px; margin-left: auto; }
+#timeline-svg-container {
+  overflow-x: auto; background: #0d1117;
+  border: 1px solid #30363d; border-radius: 6px; padding: 0;
+}
+#timeline-svg { display: block; }
+.scrubber-bar {
+  height: 4px; background: #30363d; border-radius: 2px; margin: 12px 16px;
+  cursor: pointer; position: relative;
+}
+.scrubber-thumb {
+  width: 14px; height: 14px; background: #58a6ff; border-radius: 50%;
+  position: absolute; top: -5px; transform: translateX(-50%);
+  cursor: grab; box-shadow: 0 0 0 2px #0d1117;
+}
+.tooltip {
+  position: fixed; background: #21262d; border: 1px solid #30363d;
+  border-radius: 6px; padding: 8px 12px; font-size: 12px; color: #c9d1d9;
+  pointer-events: none; z-index: 1000; max-width: 260px;
+  display: none;
+}
+.audio-modal {
+  position: fixed; inset: 0; background: rgba(0,0,0,.6);
+  display: flex; align-items: center; justify-content: center; z-index: 2000;
+}
+.audio-modal-box {
+  background: #161b22; border: 1px solid #30363d; border-radius: 8px;
+  padding: 24px; min-width: 300px; max-width: 480px;
+}
+.audio-modal-box h3 { margin-bottom: 12px; color: #e6edf3; font-size: 15px; }
+.audio-modal-box audio { width: 100%; margin-bottom: 12px; }
+"""
+
+
+@router.get(
+    "/users/{username}",
+    response_class=HTMLResponse,
+    summary="Muse Hub user profile page",
+)
+async def profile_page(username: str) -> HTMLResponse:
+    """Render the public user profile page.
+
+    Displays: bio, avatar, pinned repos, all public repos with last-activity,
+    a GitHub-style contribution heatmap (52 weeks of daily commit counts), and
+    aggregated session credits.  Auth is handled client-side — the profile
+    itself is public; editing controls appear only when the visitor's JWT
+    matches the profile owner.
+
+    Returns 200 with an HTML shell even when the API returns 404 — the JS
+    renders the 404 message inline so the browser gets a proper HTML response.
+    """
+    script = f"""
+      const username = {repr(username)};
+      const API_PROFILE = '/api/v1/musehub/users/' + username;
+
+      function escHtml(s) {{
+        if (!s) return '';
+        return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+      }}
+
+      function bucketCount(n) {{
+        if (n === 0) return 0;
+        if (n <= 2)  return 1;
+        if (n <= 5)  return 2;
+        if (n <= 9)  return 3;
+        return 4;
+      }}
+
+      function buildContribGraph(graph) {{
+        // Group days into weeks (7 days per column)
+        const weeks = [];
+        let week = [];
+        graph.forEach((d, i) => {{
+          week.push(d);
+          if (week.length === 7) {{ weeks.push(week); week = []; }}
+        }});
+        if (week.length) weeks.push(week);
+
+        const weeksHtml = weeks.map(w => {{
+          const days = w.map(d => {{
+            const b = bucketCount(d.count);
+            return `<div class="contrib-day" data-count="${{b}}" title="${{d.date}}: ${{d.count}} commit${{d.count !== 1 ? 's' : ''}}"></div>`;
+          }}).join('');
+          return `<div class="contrib-week">${{days}}</div>`;
+        }}).join('');
+
+        return `<div class="contrib-graph">${{weeksHtml}}</div>`;
+      }}
+
+      function repoCardHtml(r) {{
+        const lastAct = r.lastActivityAt ? fmtDate(r.lastActivityAt) : 'No commits yet';
+        return `<div class="repo-card">
+          <h3><a href="/musehub/ui/${{r.repoId}}">${{escHtml(r.name)}}</a></h3>
+          <div class="repo-meta">
+            <span class="badge badge-${{r.visibility}}">${{r.visibility}}</span>
+            &bull; Last activity: ${{lastAct}}
+          </div>
+        </div>`;
+      }}
+
+      async function load() {{
+        let profile;
+        try {{
+          profile = await fetch(API_PROFILE).then(r => {{
+            if (r.status === 404) throw new Error('404');
+            if (!r.ok) throw new Error(r.status);
+            return r.json();
+          }});
+        }} catch(e) {{
+          if (e.message === '404') {{
+            document.getElementById('content').innerHTML =
+              '<div class="card"><p class="error">&#10005; No profile found for <strong>' + escHtml(username) + '</strong>.</p></div>';
+          }} else {{
+            document.getElementById('content').innerHTML =
+              '<p class="error">Failed to load profile: ' + escHtml(e.message) + '</p>';
+          }}
+          return;
+        }}
+
+        const avatarHtml = profile.avatarUrl
+          ? `<img src="${{escHtml(profile.avatarUrl)}}" alt="avatar" />`
+          : '&#127925;';
+
+        const pinnedRepos = (profile.repos || []).filter(r => (profile.pinnedRepoIds || []).includes(r.repoId));
+        const publicRepos = profile.repos || [];
+
+        const pinnedSection = pinnedRepos.length > 0 ? `
+          <div class="card">
+            <h2 style="margin-bottom:12px">&#128204; Pinned</h2>
+            <div class="repo-grid">${{pinnedRepos.map(repoCardHtml).join('')}}</div>
+          </div>` : '';
+
+        const reposSection = publicRepos.length > 0 ? `
+          <div class="card">
+            <h2 style="margin-bottom:12px">&#127963; Public Repositories (${{publicRepos.length}})</h2>
+            <div class="repo-grid">${{publicRepos.map(repoCardHtml).join('')}}</div>
+          </div>` : '<div class="card"><p class="loading">No public repositories yet.</p></div>';
+
+        const graphSection = `
+          <div class="card">
+            <h2 style="margin-bottom:12px">&#128200; Contribution Activity (last 52 weeks)</h2>
+            ${{buildContribGraph(profile.contributionGraph || [])}}
+            <p style="font-size:12px;color:#8b949e;margin-top:8px">
+              Less &nbsp;
+              <span style="display:inline-flex;gap:2px;vertical-align:middle">
+                ${{[0,1,2,3,4].map(n => '<span class="contrib-day" data-count="' + n + '" style="display:inline-block"></span>').join('')}}
+              </span>
+              &nbsp; More
+            </p>
+          </div>`;
+
+        document.getElementById('content').innerHTML = `
+          <div class="card profile-header">
+            <div class="avatar">${{avatarHtml}}</div>
+            <div class="profile-meta">
+              <h1>${{escHtml(profile.username)}}</h1>
+              ${{profile.bio ? '<p class="bio">' + escHtml(profile.bio) + '</p>' : ''}}
+              <div class="credits-badge">
+                <span class="num">${{profile.sessionCredits || 0}}</span>
+                <span>session credits</span>
+              </div>
+            </div>
+          </div>
+          ${{pinnedSection}}
+          ${{graphSection}}
+          ${{reposSection}}
+        `;
+      }}
+
+      load();
+    """
+    html = _page(
+        title=f"@{username}",
+        breadcrumb=f'<a href="/musehub/ui/users/{username}">@{username}</a>',
+        body_script=script,
+        extra_css=_PROFILE_CSS,
+    )
+    return HTMLResponse(content=html)
+
+
+@router.get(
+    "/{repo_id}/divergence",
+    response_class=HTMLResponse,
+    summary="Muse Hub divergence visualization page",
+)
+async def divergence_page(repo_id: str) -> HTMLResponse:
+    """Render the divergence visualization page: radar chart + dimension detail panels.
+
+    Fetches ``GET /api/v1/musehub/repos/{repo_id}/divergence?branch_a=...&branch_b=...``
+    for the raw data, then renders:
+    - A five-axis radar chart (melodic/harmonic/rhythmic/structural/dynamic)
+    - Level labels (NONE/LOW/MED/HIGH) per dimension
+    - Overall divergence score as a percentage
+    - Per-dimension detail panels (click to expand)
+
+    Auth is handled client-side via localStorage JWT.  No Jinja2 required.
+    """
+    script = f"""
+      const repoId = {repr(repo_id)};
+      const apiBase = '/api/v1/musehub/repos/' + repoId;
+      const uiBase  = '/musehub/ui/' + repoId;
+
+      function escHtml(s) {{
+        if (!s) return '';
+        return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+      }}
+
+      const DIMENSIONS = ['melodic','harmonic','rhythmic','structural','dynamic'];
+      const LEVEL_COLOR = {{ NONE:'#1f6feb', LOW:'#388bfd', MED:'#f0883e', HIGH:'#f85149' }};
+      const LEVEL_BG    = {{ NONE:'#0d2942', LOW:'#102a4c', MED:'#341a00', HIGH:'#3d0000' }};
+      const AXIS_LABELS = {{
+        melodic:'Melodic', harmonic:'Harmonic', rhythmic:'Rhythmic',
+        structural:'Structural', dynamic:'Dynamic'
+      }};
+
+      function levelBadge(level) {{
+        const color = LEVEL_COLOR[level] || '#8b949e';
+        return `<span style="display:inline-block;padding:1px 7px;border-radius:10px;
+          font-size:11px;font-weight:700;color:#fff;background:${{color}}">${{level}}</span>`;
+      }}
+
+      function radarSvg(dims) {{
+        const cx = 180, cy = 180, r = 140;
+        const n = dims.length;
+        const pts = dims.map((d, i) => {{
+          const angle = (i / n) * 2 * Math.PI - Math.PI / 2;
+          const sr = d.score * r;
+          return {{ x: cx + sr * Math.cos(angle), y: cy + sr * Math.sin(angle) }};
+        }});
+        const bgPts = DIMENSIONS.map((_, i) => {{
+          const angle = (i / n) * 2 * Math.PI - Math.PI / 2;
+          return `${{cx + r * Math.cos(angle)}},${{cy + r * Math.sin(angle)}}`;
+        }}).join(' ');
+        const scorePoly = pts.map(p => `${{p.x}},${{p.y}}`).join(' ');
+
+        const axisLines = DIMENSIONS.map((_, i) => {{
+          const angle = (i / n) * 2 * Math.PI - Math.PI / 2;
+          const ex = cx + r * Math.cos(angle), ey = cy + r * Math.sin(angle);
+          return `<line x1="${{cx}}" y1="${{cy}}" x2="${{ex}}" y2="${{ey}}"
+            stroke="#30363d" stroke-width="1"/>`;
+        }}).join('');
+
+        const gridLines = [0.25, 0.5, 0.75, 1.0].map(frac => {{
+          const gPts = DIMENSIONS.map((_, i) => {{
+            const angle = (i / n) * 2 * Math.PI - Math.PI / 2;
+            return `${{cx + frac * r * Math.cos(angle)}},${{cy + frac * r * Math.sin(angle)}}`;
+          }}).join(' ');
+          return `<polygon points="${{gPts}}" fill="none" stroke="#21262d" stroke-width="1"/>`;
+        }}).join('');
+
+        const labels = dims.map((d, i) => {{
+          const angle = (i / n) * 2 * Math.PI - Math.PI / 2;
+          const lx = cx + (r + 22) * Math.cos(angle);
+          const ly = cy + (r + 22) * Math.sin(angle);
+          const color = LEVEL_COLOR[d.level] || '#8b949e';
+          return `<text x="${{lx}}" y="${{ly + 4}}" text-anchor="middle"
+            font-size="12" fill="${{color}}" font-family="system-ui">${{AXIS_LABELS[d.dimension]}}</text>`;
+        }}).join('');
+
+        const dots = pts.map((p, i) => {{
+          const color = LEVEL_COLOR[dims[i].level] || '#58a6ff';
+          return `<circle cx="${{p.x}}" cy="${{p.y}}" r="4" fill="${{color}}" stroke="#0d1117" stroke-width="2"/>`;
+        }}).join('');
+
+        return `<svg viewBox="0 0 360 360" xmlns="http://www.w3.org/2000/svg"
+            style="width:100%;max-width:360px;display:block;margin:0 auto">
+          ${{gridLines}}${{axisLines}}
+          <polygon points="${{bgPts}}" fill="rgba(88,166,255,0.04)" stroke="#30363d" stroke-width="1"/>
+          <polygon points="${{scorePoly}}" fill="rgba(248,81,73,0.18)" stroke="#f85149" stroke-width="2"/>
+          ${{labels}}${{dots}}
+        </svg>`;
+      }}
+
+      function dimensionPanel(d, expanded) {{
+        const bg = LEVEL_BG[d.level] || '#161b22';
+        const id = 'dim-' + d.dimension;
+        const detail = expanded ? `
+          <div style="margin-top:10px;font-size:13px;color:#8b949e">
+            <div>${{escHtml(d.description)}}</div>
+            <div style="margin-top:6px;display:flex;gap:16px">
+              <span>Branch A: <b style="color:#e6edf3">${{d.branchACommits}} commit(s)</b></span>
+              <span>Branch B: <b style="color:#e6edf3">${{d.branchBCommits}} commit(s)</b></span>
+            </div>
+          </div>` : '';
+        const pct = Math.round(d.score * 100);
+        return `<div id="${{id}}" class="card" style="background:${{bg}};cursor:pointer;margin-bottom:8px"
+            onclick="toggleDim('${{d.dimension}}')">
+          <div style="display:flex;align-items:center;gap:12px">
+            <span style="font-size:14px;color:#e6edf3;font-weight:600;min-width:90px">
+              ${{AXIS_LABELS[d.dimension]}}</span>
+            ${{levelBadge(d.level)}}
+            <div style="flex:1;height:6px;background:#21262d;border-radius:3px;overflow:hidden">
+              <div style="height:100%;width:${{pct}}%;background:${{LEVEL_COLOR[d.level] || '#58a6ff'}};
+                border-radius:3px;transition:width .3s"></div>
+            </div>
+            <span style="font-size:13px;color:#8b949e;white-space:nowrap">${{pct}}%</span>
+          </div>
+          ${{detail}}
+        </div>`;
+      }}
+
+      const _expanded = {{}};
+      function toggleDim(dim) {{
+        _expanded[dim] = !_expanded[dim];
+        renderDims(window._lastDims || []);
+      }}
+
+      function renderDims(dims) {{
+        window._lastDims = dims;
+        document.getElementById('dim-panels').innerHTML =
+          dims.map(d => dimensionPanel(d, !!_expanded[d.dimension])).join('');
+      }}
+
+      const params = new URLSearchParams(location.search);
+      let _branchA = params.get('branch_a') || '';
+      let _branchB = params.get('branch_b') || '';
+
+      async function loadBranches() {{
+        try {{
+          const data = await apiFetch('/repos/' + repoId + '/branches');
+          return (data.branches || []).map(b => b.name);
+        }} catch(e) {{ return []; }}
+      }}
+
+      async function loadDivergence(bA, bB) {{
+        if (!bA || !bB) {{
+          document.getElementById('radar-area').innerHTML =
+            '<p class="loading">Select two branches to compare.</p>';
+          document.getElementById('dim-panels').innerHTML = '';
+          document.getElementById('overall-area').innerHTML = '';
+          return;
+        }}
+        document.getElementById('radar-area').innerHTML = '<p class="loading">Computing&#8230;</p>';
+        try {{
+          const d = await apiFetch('/repos/' + repoId + '/divergence?branch_a=' +
+            encodeURIComponent(bA) + '&branch_b=' + encodeURIComponent(bB));
+          const pct = Math.round((d.overallScore || 0) * 100);
+          document.getElementById('radar-area').innerHTML = radarSvg(d.dimensions || []);
+          document.getElementById('overall-area').innerHTML = `
+            <div style="text-align:center;margin:12px 0">
+              <div style="font-size:32px;font-weight:700;color:#e6edf3">${{pct}}%</div>
+              <div style="font-size:12px;color:#8b949e;margin-top:2px">overall divergence</div>
+              ${{d.commonAncestor ? `<div style="font-size:11px;color:#8b949e;margin-top:4px;font-family:monospace">
+                base: ${{d.commonAncestor.substring(0,8)}}</div>` : ''}}
+            </div>`;
+          renderDims(d.dimensions || []);
+        }} catch(e) {{
+          if (e.message !== 'auth')
+            document.getElementById('radar-area').innerHTML =
+              '<p class="error">&#10005; ' + escHtml(e.message) + '</p>';
+        }}
+      }}
+
+      async function load() {{
+        const branches = await loadBranches();
+        const opts = branches.map(b =>
+          '<option value="' + escHtml(b) + '">' + escHtml(b) + '</option>').join('');
+
+        document.getElementById('content').innerHTML = `
+          <div style="margin-bottom:12px">
+            <a href="${{uiBase}}">&larr; Back to repo</a>
+          </div>
+          <div class="card">
+            <h1 style="margin-bottom:12px">Divergence Visualization</h1>
+            <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px">
+              <div>
+                <div class="meta-label" style="font-size:11px;color:#8b949e;margin-bottom:4px">BRANCH A</div>
+                <select id="sel-a" onchange="onBranchChange()">
+                  <option value="">Select branch&#8230;</option>${{opts}}
+                </select>
+              </div>
+              <div style="display:flex;align-items:flex-end;padding-bottom:4px;font-size:18px;color:#8b949e">
+                vs
+              </div>
+              <div>
+                <div class="meta-label" style="font-size:11px;color:#8b949e;margin-bottom:4px">BRANCH B</div>
+                <select id="sel-b" onchange="onBranchChange()">
+                  <option value="">Select branch&#8230;</option>${{opts}}
+                </select>
+              </div>
+            </div>
+            <div id="radar-area"><p class="loading">Select two branches to compare.</p></div>
+            <div id="overall-area"></div>
+          </div>
+          <div id="dim-panels"></div>`;
+
+        if (_branchA) document.getElementById('sel-a').value = _branchA;
+        if (_branchB) document.getElementById('sel-b').value = _branchB;
+        if (_branchA && _branchB) loadDivergence(_branchA, _branchB);
+      }}
+
+      function onBranchChange() {{
+        _branchA = document.getElementById('sel-a').value;
+        _branchB = document.getElementById('sel-b').value;
+        const url = new URL(location.href);
+        url.searchParams.set('branch_a', _branchA);
+        url.searchParams.set('branch_b', _branchB);
+        history.replaceState(null,'',url.toString());
+        loadDivergence(_branchA, _branchB);
+      }}
+
+      load();
+    """
+    html = _page(
+        title="Divergence",
+        breadcrumb=f'<a href="/musehub/ui/{repo_id}">{repo_id[:8]}</a> / divergence',
+        body_script=script,
+    )
+    return HTMLResponse(content=html)
+
+
+_EXPLORE_CSS_EXTRA = """
+.filter-bar {
+  display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-end;
+  background: #161b22; border: 1px solid #30363d; border-radius: 6px;
+  padding: 12px; margin-bottom: 16px;
+}
+.filter-group { display: flex; flex-direction: column; gap: 4px; }
+.filter-label { font-size: 11px; color: #8b949e; text-transform: uppercase; letter-spacing: 0.5px; }
+.filter-group input {
+  background: #0d1117; color: #c9d1d9; border: 1px solid #30363d;
+  border-radius: 6px; padding: 6px 10px; font-size: 13px; width: 140px;
+}
+.filter-group input:focus { outline: none; border-color: #58a6ff; }
+.repo-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 12px;
+}
+.repo-card {
+  background: #161b22; border: 1px solid #30363d; border-radius: 6px;
+  padding: 14px; display: flex; flex-direction: column; gap: 6px;
+  transition: border-color 0.15s;
+}
+.repo-card:hover { border-color: #58a6ff; }
+.repo-card-title { font-size: 15px; font-weight: 600; }
+.repo-card-owner { font-size: 12px; color: #8b949e; }
+.repo-card-desc  { font-size: 13px; color: #c9d1d9; }
+.repo-card-tags  { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+.repo-card-meta  {
+  display: flex; gap: 12px; flex-wrap: wrap;
+  font-size: 12px; color: #8b949e; margin-top: 4px;
+}
+.pager {
+  display: flex; align-items: center; justify-content: center;
+  gap: 12px; margin-top: 20px;
+}
+"""
+
+
+_EXPLORE_SCRIPT = """
+const DISCOVER_API = '/api/v1/musehub/discover/repos';
+
+function escHtml(s) {
+  if (!s) return '';
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function tagHtml(tag) {
+  return '<span class="label">' + escHtml(tag) + '</span>';
+}
+
+function repoCard(r) {
+  const tags = (r.tags || []).map(tagHtml).join('');
+  const key  = r.keySignature ? escHtml(r.keySignature) : '';
+  const bpm  = r.tempoBpm ? r.tempoBpm + ' BPM' : '';
+  const meta = [key, bpm].filter(Boolean).join(' &bull; ');
+  return `
+    <div class="repo-card">
+      <div class="repo-card-title">
+        <a href="/musehub/ui/${escHtml(r.repoId)}">${escHtml(r.name)}</a>
+      </div>
+      <div class="repo-card-owner">${escHtml(r.ownerUserId)}</div>
+      ${r.description ? '<div class="repo-card-desc">' + escHtml(r.description) + '</div>' : ''}
+      <div class="repo-card-tags">${tags}</div>
+      <div class="repo-card-meta">
+        ${meta ? '<span>' + meta + '</span>' : ''}
+        <span>&#9733; ${r.starCount}</span>
+        <span>&#128190; ${r.commitCount} commits</span>
+      </div>
+    </div>`;
+}
+
+async function loadExplore(page, sort, genre, key, tempoMin, tempoMax, instrumentation) {
+  const params = new URLSearchParams({ page: page, page_size: 24, sort: sort });
+  if (genre)         params.set('genre', genre);
+  if (key)           params.set('key', key);
+  if (tempoMin)      params.set('tempo_min', tempoMin);
+  if (tempoMax)      params.set('tempo_max', tempoMax);
+  if (instrumentation) params.set('instrumentation', instrumentation);
+
+  try {
+    const res  = await fetch(DISCOVER_API + '?' + params.toString());
+    if (!res.ok) throw new Error(res.status + ': ' + await res.text());
+    const data = await res.json();
+    const repos = data.repos || [];
+    const total = data.total || 0;
+    const pages = Math.ceil(total / 24) || 1;
+
+    const grid = repos.length === 0
+      ? '<p class="loading">No repos found matching these filters.</p>'
+      : repos.map(repoCard).join('');
+
+    const pager = pages > 1 ? `
+      <div class="pager">
+        ${page > 1 ? '<button class="btn btn-secondary" onclick="go(' + (page-1) + ')">&#8592; Prev</button>' : ''}
+        <span style="color:#8b949e;font-size:13px">Page ${page} of ${pages} &bull; ${total} repos</span>
+        ${page < pages ? '<button class="btn btn-secondary" onclick="go(' + (page+1) + ')">Next &#8594;</button>' : ''}
+      </div>` : '<div class="pager" style="color:#8b949e;font-size:13px">' + total + ' repos</div>';
+
+    document.getElementById('repo-grid').innerHTML = grid;
+    document.getElementById('pager').innerHTML = pager;
+  } catch(e) {
+    document.getElementById('repo-grid').innerHTML =
+      '<p class="error">&#10005; ' + escHtml(e.message) + '</p>';
+  }
+}
+
+function currentState() {
+  return {
+    page: parseInt(document.getElementById('cur-page').value || '1'),
+    sort: document.getElementById('sort-sel').value,
+    genre: document.getElementById('genre-inp').value.trim(),
+    key:   document.getElementById('key-inp').value.trim(),
+    tempoMin: document.getElementById('tempo-min').value.trim(),
+    tempoMax: document.getElementById('tempo-max').value.trim(),
+    instr: document.getElementById('instr-inp').value.trim(),
+  };
+}
+
+function go(page) {
+  document.getElementById('cur-page').value = page;
+  const s = currentState();
+  loadExplore(page, s.sort, s.genre, s.key, s.tempoMin, s.tempoMax, s.instr);
+}
+
+function applyFilters() { go(1); }
+"""
+
+
+def _explore_page_html(title: str, breadcrumb: str, default_sort: str) -> str:
+    """Render the explore or trending page HTML shell.
+
+    The page calls the public ``GET /api/v1/musehub/discover/repos`` JSON API
+    from the browser — no JWT required for browsing. Star/unstar actions require
+    a JWT stored in localStorage but are optional (unauthenticated visitors can
+    browse without starring).
+    """
+    css = _CSS + _EXPLORE_CSS_EXTRA
+    return f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{title} — Muse Hub</title>
+  <style>{css}</style>
+</head>
+<body>
+  <header>
+    <span class="logo">&#127925; Muse Hub</span>
+    <span class="breadcrumb">{breadcrumb}</span>
+    <span style="flex:1"></span>
+    <a href="/musehub/ui/explore" class="btn btn-secondary" style="font-size:12px">Explore</a>
+    &nbsp;
+    <a href="/musehub/ui/trending" class="btn btn-secondary" style="font-size:12px">Trending</a>
+  </header>
+  <div class="container" style="max-width:1200px">
+    <div class="filter-bar">
+      <div class="filter-group">
+        <span class="filter-label">Genre</span>
+        <input id="genre-inp" type="text" placeholder="jazz, lo-fi…" oninput="applyFilters()"/>
+      </div>
+      <div class="filter-group">
+        <span class="filter-label">Key</span>
+        <input id="key-inp" type="text" placeholder="F# minor" oninput="applyFilters()"/>
+      </div>
+      <div class="filter-group">
+        <span class="filter-label">BPM min</span>
+        <input id="tempo-min" type="number" min="20" max="300" placeholder="80" oninput="applyFilters()"/>
+      </div>
+      <div class="filter-group">
+        <span class="filter-label">BPM max</span>
+        <input id="tempo-max" type="number" min="20" max="300" placeholder="140" oninput="applyFilters()"/>
+      </div>
+      <div class="filter-group">
+        <span class="filter-label">Instrument</span>
+        <input id="instr-inp" type="text" placeholder="bass, drums…" oninput="applyFilters()"/>
+      </div>
+      <div class="filter-group">
+        <span class="filter-label">Sort by</span>
+        <select id="sort-sel" onchange="applyFilters()">
+          <option value="created" {'selected' if default_sort == 'created' else ''}>Newest</option>
+          <option value="stars"   {'selected' if default_sort == 'stars'   else ''}>Stars</option>
+          <option value="activity"{'selected' if default_sort == 'activity' else ''}>Activity</option>
+          <option value="commits" {'selected' if default_sort == 'commits'  else ''}>Commits</option>
+        </select>
+      </div>
+    </div>
+    <input type="hidden" id="cur-page" value="1"/>
+    <div id="repo-grid" class="repo-grid"><p class="loading">Loading&#8230;</p></div>
+    <div id="pager"></div>
+  </div>
+  <script>
+    {_EXPLORE_SCRIPT}
+    window.addEventListener('DOMContentLoaded', function() {{
+      const s = currentState();
+      loadExplore(1, s.sort, s.genre, s.key, s.tempoMin, s.tempoMax, s.instr);
+    }});
+  </script>
+</body>
+</html>"""
+
+
+@router.get("/explore", response_class=HTMLResponse, summary="Muse Hub explore page")
+async def explore_page() -> HTMLResponse:
+    """Render the explore/discover page — a filterable grid of all public repos.
+
+    No JWT required. The page fetches from the public
+    ``GET /api/v1/musehub/discover/repos`` endpoint. Filter controls are
+    rendered in the browser; filter state lives in the query URL so pages
+    are bookmarkable.
+    """
+    return HTMLResponse(
+        content=_explore_page_html(
+            title="Explore",
+            breadcrumb="Explore",
+            default_sort="created",
+        )
+    )
+
+
+@router.get("/trending", response_class=HTMLResponse, summary="Muse Hub trending page")
+async def trending_page() -> HTMLResponse:
+    """Render the trending page — public repos sorted by star count by default.
+
+    No JWT required. Identical shell to the explore page but pre-selected
+    to sort by stars, surfacing the most-starred compositions first.
+    """
+    return HTMLResponse(
+        content=_explore_page_html(
+            title="Trending",
+            breadcrumb="Trending",
+            default_sort="stars",
+        )
+    )
+
+
+# ---------------------------------------------------------------------------
+# Route handlers — per-repo pages (no auth required)
+# ---------------------------------------------------------------------------
+
+
+@router.get(
+    "/{repo_id}/timeline",
+    response_class=HTMLResponse,
+    summary="Muse Hub timeline page — chronological evolution",
+)
+async def timeline_page(repo_id: str) -> HTMLResponse:
+    """Render the timeline page: layered chronological visualisation of a repo.
+
+    Fetches ``GET /api/v1/musehub/repos/{repo_id}/timeline`` and renders four
+    independently toggleable layers onto an SVG canvas:
+    - Commits: markers with message on hover; click to preview audio
+    - Emotion: valence/energy/tension line chart overlaid on the timeline
+    - Sections: coloured section-change markers
+    - Tracks: track add/remove markers
+
+    A time scrubber at the bottom allows scrubbing through history.
+    Zoom controls (day/week/month/all-time) adjust the visible window.
+    Auth is handled client-side via localStorage JWT.
+    """
+    script = f"""
+      const repoId = {repr(repo_id)};
+      const base   = '/musehub/ui/' + repoId;
+      const API_TL = '/api/v1/musehub/repos/' + repoId + '/timeline';
+
+      // ── State ───────────────────────────────────────────────────────────────
+      let tlData = null;       // raw TimelineResponse from API
+      let zoom   = 'all';      // day | week | month | all
+      let layers = {{ commits: true, emotion: true, sections: true, tracks: true }};
+      let scrubPct = 1.0;      // 0.0 = oldest, 1.0 = newest
+
+      // SVG dimensions
+      const SVG_H      = 320;
+      const PAD_L      = 48;
+      const PAD_R      = 24;
+      const PAD_TOP    = 40;
+      const PAD_BOT    = 40;
+      const CHART_H    = SVG_H - PAD_TOP - PAD_BOT;  // usable vertical span
+      const COMMIT_Y   = PAD_TOP + CHART_H * 0.5;    // baseline for commit markers
+      const EMOTION_Y0 = PAD_TOP + CHART_H * 0.1;    // top of emotion area
+      const EMOTION_YH = CHART_H * 0.35;             // height of emotion chart
+      const MARKER_Y   = PAD_TOP + CHART_H * 0.72;   // section/track markers row
+
+      function escHtml(s) {{
+        if (!s) return '';
+        return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+      }}
+
+      // ── Zoom filtering ───────────────────────────────────────────────────────
+      function msForZoom(z) {{
+        switch(z) {{
+          case 'day':   return 24 * 3600 * 1000;
+          case 'week':  return 7  * 24 * 3600 * 1000;
+          case 'month': return 30 * 24 * 3600 * 1000;
+          default:      return Infinity;
+        }}
+      }}
+
+      function visibleCommits() {{
+        if (!tlData || !tlData.commits || tlData.commits.length === 0) return [];
+        const all = tlData.commits;
+        const span = msForZoom(zoom);
+        if (span === Infinity) return all;
+        const newest = new Date(all[all.length - 1].timestamp).getTime();
+        return all.filter(c => newest - new Date(c.timestamp).getTime() <= span);
+      }}
+
+      // ── SVG rendering ────────────────────────────────────────────────────────
+      function tsToX(ts, tMin, tMax, svgW) {{
+        if (tMax === tMin) return PAD_L + (svgW - PAD_L - PAD_R) / 2;
+        return PAD_L + ((ts - tMin) / (tMax - tMin)) * (svgW - PAD_L - PAD_R);
+      }}
+
+      function renderTimeline() {{
+        const container = document.getElementById('timeline-svg-container');
+        if (!tlData) {{ container.innerHTML = '<p class="loading" style="padding:16px">Loading&#8230;</p>'; return; }}
+
+        const vcs = visibleCommits();
+        if (vcs.length === 0) {{
+          container.innerHTML = '<p class="loading" style="padding:16px">No commits in this zoom window.</p>';
+          return;
+        }}
+
+        const svgW = Math.max(container.clientWidth || 800, PAD_L + PAD_R + vcs.length * 28);
+        const timestamps = vcs.map(c => new Date(c.timestamp).getTime());
+        const tMin = Math.min(...timestamps);
+        const tMax = Math.max(...timestamps);
+
+        const visibleIds = new Set(vcs.map(c => c.commitId));
+
+        let paths = '';
+        let markers = '';
+        let axisLabels = '';
+
+        // ── Axis labels ──────────────────────────────────────────────────────
+        const labelCount = Math.min(6, vcs.length);
+        for (let i = 0; i < labelCount; i++) {{
+          const idx = Math.round(i * (vcs.length - 1) / Math.max(1, labelCount - 1));
+          const c = vcs[idx];
+          const x = tsToX(new Date(c.timestamp).getTime(), tMin, tMax, svgW);
+          const d = new Date(c.timestamp);
+          const label = d.toLocaleDateString(undefined, {{ month:'short', day:'numeric' }});
+          axisLabels += `<text x="${{x}}" y="${{SVG_H - 8}}" text-anchor="middle"
+            font-size="10" fill="#8b949e">${{escHtml(label)}}</text>`;
+        }}
+
+        // ── Emotion line chart ───────────────────────────────────────────────
+        if (layers.emotion && tlData.emotion) {{
+          const visEmo = tlData.emotion.filter(e => visibleIds.has(e.commitId));
+          const lineFor = (field, colour) => {{
+            if (visEmo.length < 2) return '';
+            const pts = visEmo.map(e => {{
+              const x = tsToX(new Date(e.timestamp).getTime(), tMin, tMax, svgW);
+              const y = EMOTION_Y0 + EMOTION_YH * (1 - e[field]);
+              return x + ',' + y;
+            }}).join(' ');
+            return `<polyline points="${{pts}}" fill="none" stroke="${{colour}}"
+              stroke-width="1.5" opacity="0.8" />`;
+          }};
+          paths += lineFor('valence', '#58a6ff');
+          paths += lineFor('energy',  '#3fb950');
+          paths += lineFor('tension', '#f78166');
+          paths += `<text x="${{PAD_L}}" y="${{EMOTION_Y0 - 6}}" font-size="10" fill="#8b949e">Emotion</text>
+            <circle cx="${{PAD_L + 52}}" cy="${{EMOTION_Y0 - 8}}" r="3" fill="#58a6ff"/>
+            <text x="${{PAD_L + 58}}" y="${{EMOTION_Y0 - 5}}" font-size="9" fill="#58a6ff">valence</text>
+            <circle cx="${{PAD_L + 102}}" cy="${{EMOTION_Y0 - 8}}" r="3" fill="#3fb950"/>
+            <text x="${{PAD_L + 108}}" y="${{EMOTION_Y0 - 5}}" font-size="9" fill="#3fb950">energy</text>
+            <circle cx="${{PAD_L + 148}}" cy="${{EMOTION_Y0 - 8}}" r="3" fill="#f78166"/>
+            <text x="${{PAD_L + 154}}" y="${{EMOTION_Y0 - 5}}" font-size="9" fill="#f78166">tension</text>`;
+        }}
+
+        // ── Commit markers ───────────────────────────────────────────────────
+        if (layers.commits) {{
+          vcs.forEach(c => {{
+            const x = tsToX(new Date(c.timestamp).getTime(), tMin, tMax, svgW);
+            const sha = c.commitId.substring(0, 8);
+            const msg = escHtml((c.message || '').substring(0, 60));
+            const author = escHtml(c.author || '');
+            const ts = new Date(c.timestamp).toLocaleString();
+            markers += `
+              <g class="commit-marker" data-id="${{c.commitId}}"
+                 onclick="openAudioModal('${{c.commitId}}', '${{sha}}')"
+                 style="cursor:pointer"
+                 onmouseenter="showTip(event, '${{sha}}<br>${{msg}}<br>${{author}} &bull; ${{ts}}')"
+                 onmouseleave="hideTip()">
+                <line x1="${{x}}" y1="${{COMMIT_Y - 12}}" x2="${{x}}" y2="${{COMMIT_Y + 12}}"
+                  stroke="#30363d" stroke-width="1" />
+                <circle cx="${{x}}" cy="${{COMMIT_Y}}" r="6" fill="#58a6ff"
+                  stroke="#0d1117" stroke-width="2" />
+              </g>`;
+          }});
+          if (vcs.length > 1) {{
+            const x0 = tsToX(tMin, tMin, tMax, svgW);
+            const x1 = tsToX(tMax, tMin, tMax, svgW);
+            paths = `<line x1="${{x0}}" y1="${{COMMIT_Y}}" x2="${{x1}}" y2="${{COMMIT_Y}}"
+              stroke="#30363d" stroke-width="1.5" />` + paths;
+          }}
+        }}
+
+        // ── Section markers ──────────────────────────────────────────────────
+        if (layers.sections && tlData.sections) {{
+          const visSec = tlData.sections.filter(s => visibleIds.has(s.commitId));
+          visSec.forEach(s => {{
+            const x = tsToX(new Date(s.timestamp).getTime(), tMin, tMax, svgW);
+            const label = escHtml(s.sectionName);
+            const action = s.action === 'removed' ? '−' : '+';
+            const colour = s.action === 'removed' ? '#f78166' : '#3fb950';
+            markers += `
+              <g onmouseenter="showTip(event, '${{action}} ${{label}} section')" onmouseleave="hideTip()">
+                <rect x="${{x - 5}}" y="${{MARKER_Y - 10}}" width="10" height="10"
+                  fill="${{colour}}" rx="2" opacity="0.9"/>
+                <text x="${{x}}" y="${{MARKER_Y + 16}}" text-anchor="middle"
+                  font-size="9" fill="${{colour}}">${{label}}</text>
+              </g>`;
+          }});
+        }}
+
+        // ── Track markers ────────────────────────────────────────────────────
+        if (layers.tracks && tlData.tracks) {{
+          const visTrk = tlData.tracks.filter(t => visibleIds.has(t.commitId));
+          visTrk.forEach((t, i) => {{
+            const x = tsToX(new Date(t.timestamp).getTime(), tMin, tMax, svgW);
+            const label = escHtml(t.trackName);
+            const action = t.action === 'removed' ? '−' : '+';
+            const colour = t.action === 'removed' ? '#e3b341' : '#a371f7';
+            const yOff = MARKER_Y + 32 + (i % 2) * 14;
+            markers += `
+              <g onmouseenter="showTip(event, '${{action}} ${{label}} track')" onmouseleave="hideTip()">
+                <circle cx="${{x}}" cy="${{yOff}}" r="4" fill="${{colour}}" opacity="0.85"/>
+                <text x="${{x + 6}}" y="${{yOff + 4}}" font-size="9" fill="${{colour}}">${{label}}</text>
+              </g>`;
+          }});
+        }}
+
+        container.innerHTML = `
+          <svg id="timeline-svg" width="${{svgW}}" height="${{SVG_H}}"
+               xmlns="http://www.w3.org/2000/svg">
+            <rect width="${{svgW}}" height="${{SVG_H}}" fill="#0d1117"/>
+            ${{paths}}
+            ${{markers}}
+            ${{axisLabels}}
+          </svg>`;
+
+        const thumb = document.getElementById('scrubber-thumb');
+        if (thumb) thumb.style.left = (scrubPct * 100) + '%';
+      }}
+
+      // ── Tooltip ──────────────────────────────────────────────────────────────
+      const tip = document.getElementById('tooltip');
+      function showTip(evt, html) {{
+        tip.innerHTML = html;
+        tip.style.display = 'block';
+        tip.style.left = (evt.clientX + 12) + 'px';
+        tip.style.top  = (evt.clientY - 8) + 'px';
+      }}
+      function hideTip() {{ tip.style.display = 'none'; }}
+
+      // ── Audio modal ──────────────────────────────────────────────────────────
+      function openAudioModal(commitId, sha) {{
+        const existing = document.getElementById('audio-modal');
+        if (existing) existing.remove();
+        const modal = document.createElement('div');
+        modal.id = 'audio-modal';
+        modal.className = 'audio-modal';
+        modal.innerHTML = `
+          <div class="audio-modal-box">
+            <h3>&#9654; Preview at commit ${{sha}}</h3>
+            <p style="font-size:12px;color:#8b949e;margin-bottom:12px">
+              Audio artifacts from this commit state.
+              Audio playback requires MP3 artifacts to be stored for this repo.
+            </p>
+            <audio controls>
+              <source src="/api/v1/musehub/repos/${{repoId}}/commits/${{commitId}}/audio" type="audio/mpeg">
+              No audio available for this commit.
+            </audio>
+            <div style="text-align:right;margin-top:8px">
+              <a href="${{base}}/commits/${{commitId}}" class="btn btn-secondary" style="font-size:12px">
+                View commit
+              </a>
+              &nbsp;
+              <button class="btn btn-secondary" onclick="document.getElementById('audio-modal').remove()"
+                style="font-size:12px">Close</button>
+            </div>
+          </div>`;
+        modal.addEventListener('click', e => {{ if (e.target === modal) modal.remove(); }});
+        document.body.appendChild(modal);
+      }}
+
+      // ── Scrubber ─────────────────────────────────────────────────────────────
+      function initScrubber() {{
+        const bar = document.getElementById('scrubber-bar');
+        if (!bar) return;
+        let dragging = false;
+        function updateFromEvent(e) {{
+          const rect = bar.getBoundingClientRect();
+          const pct  = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+          scrubPct = pct;
+          const thumb = document.getElementById('scrubber-thumb');
+          if (thumb) thumb.style.left = (pct * 100) + '%';
+        }}
+        bar.addEventListener('mousedown', e => {{ dragging = true; updateFromEvent(e); }});
+        document.addEventListener('mousemove', e => {{ if (dragging) updateFromEvent(e); }});
+        document.addEventListener('mouseup', () => {{ dragging = false; }});
+      }}
+
+      // ── Layer toggles ─────────────────────────────────────────────────────────
+      function toggleLayer(name, checked) {{
+        layers[name] = checked;
+        renderTimeline();
+      }}
+
+      // ── Zoom ─────────────────────────────────────────────────────────────────
+      function setZoom(z) {{
+        zoom = z;
+        document.querySelectorAll('.zoom-btn').forEach(b => {{
+          b.style.background = b.dataset.zoom === z ? '#1f6feb' : '#21262d';
+        }});
+        renderTimeline();
+      }}
+
+      // ── Load ─────────────────────────────────────────────────────────────────
+      async function load() {{
+        try {{
+          const data = await apiFetch('/repos/' + repoId + '/timeline?limit=200');
+          tlData = data;
+
+          const total = data.totalCommits || 0;
+          document.getElementById('content').innerHTML = `
+            <div style="margin-bottom:12px;display:flex;align-items:center;gap:12px">
+              <a href="${{base}}">&larr; Back to repo</a>
+              <span style="color:#8b949e;font-size:13px">${{total}} commit${{total !== 1 ? 's' : ''}}</span>
+            </div>
+
+            <div class="timeline-toolbar">
+              <label class="layer-toggle">
+                <input type="checkbox" checked onchange="toggleLayer('commits', this.checked)"> Commits
+              </label>
+              <label class="layer-toggle">
+                <input type="checkbox" checked onchange="toggleLayer('emotion', this.checked)"> Emotion
+              </label>
+              <label class="layer-toggle">
+                <input type="checkbox" checked onchange="toggleLayer('sections', this.checked)"> Sections
+              </label>
+              <label class="layer-toggle">
+                <input type="checkbox" checked onchange="toggleLayer('tracks', this.checked)"> Tracks
+              </label>
+              <div class="zoom-select">
+                <span style="font-size:12px;color:#8b949e">Zoom:</span>
+                <button class="btn zoom-btn" data-zoom="day" onclick="setZoom('day')"
+                  style="font-size:11px;padding:3px 10px;background:#21262d">Day</button>
+                <button class="btn zoom-btn" data-zoom="week" onclick="setZoom('week')"
+                  style="font-size:11px;padding:3px 10px;background:#21262d">Week</button>
+                <button class="btn zoom-btn" data-zoom="month" onclick="setZoom('month')"
+                  style="font-size:11px;padding:3px 10px;background:#21262d">Month</button>
+                <button class="btn zoom-btn" data-zoom="all" onclick="setZoom('all')"
+                  style="font-size:11px;padding:3px 10px;background:#1f6feb">All</button>
+              </div>
+            </div>
+
+            <div id="timeline-svg-container"></div>
+
+            <div class="scrubber-bar" id="scrubber-bar">
+              <div class="scrubber-thumb" id="scrubber-thumb" style="left:100%"></div>
+            </div>
+
+            <div style="display:flex;gap:24px;flex-wrap:wrap;margin-top:12px;font-size:12px;color:#8b949e">
+              <span>&#9679; <span style="color:#58a6ff">blue</span> = commit marker (click to preview audio)</span>
+              <span>&#9632; <span style="color:#3fb950">green</span> = section added</span>
+              <span>&#9632; <span style="color:#f78166">red</span> = section removed</span>
+              <span>&#9679; <span style="color:#a371f7">purple</span> = track added</span>
+              <span>&#9679; <span style="color:#e3b341">yellow</span> = track removed</span>
+            </div>`;
+
+          initScrubber();
+          renderTimeline();
+        }} catch(e) {{
+          if (e.message !== 'auth')
+            document.getElementById('content').innerHTML = '<p class="error">&#10005; ' + escHtml(e.message) + '</p>';
+        }}
+      }}
+
+      load();
+    """
+    css_with_timeline = _CSS + _TIMELINE_CSS
+    title = f"Timeline — {repo_id[:8]}"
+    breadcrumb = f'<a href="/musehub/ui/{repo_id}">{repo_id[:8]}</a> / timeline'
+    html = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{title} — Muse Hub</title>
+  <style>{css_with_timeline}</style>
+</head>
+<body>
+  <header>
+    <span class="logo">&#127925; Muse Hub</span>
+    <span class="breadcrumb">{breadcrumb}</span>
+    <span style="flex:1"></span>
+    <button class="btn btn-secondary" style="font-size:12px"
+            onclick="clearToken();location.reload()">Sign out</button>
+  </header>
+  <div class="container">
+    <div class="token-form" id="token-form" style="display:none">
+      <p id="token-msg">Enter your Maestro JWT to browse this repo.</p>
+      <input type="password" id="token-input" placeholder="eyJ..." />
+      <button class="btn btn-primary" onclick="saveToken()">Save &amp; Load</button>
+      &nbsp;
+      <button class="btn btn-secondary" onclick="clearToken();location.reload()">Clear</button>
+    </div>
+    <div id="content"><p class="loading">Loading&#8230;</p></div>
+  </div>
+  <div class="tooltip" id="tooltip"></div>
+  <script>
+    {_TOKEN_SCRIPT}
+    window.addEventListener('DOMContentLoaded', function() {{
+      if (!getToken()) {{ showTokenForm(); return; }}
+      {script}
+    }});
+  </script>
+</body>
+</html>"""
+    return HTMLResponse(content=html)
+
+
+# ---------------------------------------------------------------------------
+# Embed CSS (compact dark theme, no chrome)
+# ---------------------------------------------------------------------------
+
+_EMBED_CSS = """
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  background: #0d1117; color: #c9d1d9;
+  height: 100vh; display: flex; align-items: center; justify-content: center;
+}
+.player {
+  width: 100%; max-width: 100%; padding: 16px 20px;
+  background: #161b22; border: 1px solid #30363d; border-radius: 8px;
+  display: flex; flex-direction: column; gap: 12px;
+}
+.player-header {
+  display: flex; align-items: center; gap: 12px;
+}
+.logo-mark {
+  font-size: 20px; flex-shrink: 0;
+}
+.track-info { flex: 1; overflow: hidden; }
+.track-title {
+  font-size: 14px; font-weight: 600; color: #e6edf3;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.track-sub {
+  font-size: 11px; color: #8b949e; margin-top: 2px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.controls {
+  display: flex; align-items: center; gap: 10px;
+}
+.play-btn {
+  width: 36px; height: 36px; border-radius: 50%;
+  background: #238636; border: none; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0; font-size: 14px; color: #fff;
+  transition: background 0.15s;
+}
+.play-btn:hover { background: #2ea043; }
+.play-btn:disabled { background: #30363d; cursor: not-allowed; }
+.progress-wrap {
+  flex: 1; display: flex; flex-direction: column; gap: 4px;
+}
+.progress-bar {
+  width: 100%; height: 4px; background: #30363d; border-radius: 2px;
+  cursor: pointer; position: relative; overflow: hidden;
+}
+.progress-fill {
+  height: 100%; width: 0%; background: #58a6ff;
+  border-radius: 2px; transition: width 0.1s linear;
+  pointer-events: none;
+}
+.time-row {
+  display: flex; justify-content: space-between;
+  font-size: 11px; color: #8b949e;
+}
+.footer-link {
+  display: flex; justify-content: flex-end; align-items: center;
+}
+.footer-link a {
+  font-size: 11px; color: #58a6ff; text-decoration: none;
+  display: flex; align-items: center; gap: 4px;
+}
+.footer-link a:hover { text-decoration: underline; }
+.status { font-size: 12px; color: #8b949e; text-align: center; padding: 8px 0; }
+.status.error { color: #f85149; }
+"""
 
 
 @router.get(

@@ -1472,6 +1472,7 @@ maestro/
 | GET | `/api/v1/musehub/repos/{id}` | Get repo metadata |
 | GET | `/api/v1/musehub/repos/{id}/branches` | List branches |
 | GET | `/api/v1/musehub/repos/{id}/commits` | List commits (newest first) |
+| GET | `/api/v1/musehub/repos/{id}/timeline` | Chronological timeline with emotion/section/track layers |
 | GET | `/api/v1/musehub/repos/{id}/divergence` | Five-dimension musical divergence between two branches (`?branch_a=...&branch_b=...`) |
 | GET | `/api/v1/musehub/repos/{id}/credits` | Aggregated contributor credits (`?sort=count\|recency\|alpha`) |
 
@@ -1737,6 +1738,9 @@ Issues let musicians track production problems and creative tasks within a repo,
 - **States:** `open` (default on creation) → `closed` (via the close endpoint). No re-open at MVP.
 - **Filtering:** `GET /issues?state=all` includes both open and closed; `?label=bug` narrows by label.
 
+### Timeline — Chronological Evolution View
+
+The timeline view lets musicians (and AI agents) see how a project evolved over time, with four independently toggleable layers:
 ### Release System
 
 Releases publish a specific version of a composition as a named snapshot that listeners and collaborators can download in multiple formats.
@@ -1792,6 +1796,93 @@ The divergence endpoint and UI let producers compare two branches across five mu
 #### API Endpoint
 
 ```
+GET /api/v1/musehub/repos/{repo_id}/timeline?limit=200
+Authorization: Bearer <token>
+```
+
+**Response shape (`TimelineResponse`):**
+
+```json
+{
+  "commits": [
+    {
+      "eventType": "commit",
+      "commitId": "deadbeef...",
+      "branch": "main",
+      "message": "added chorus",
+      "author": "musician",
+      "timestamp": "2026-02-01T12:00:00Z",
+      "parentIds": ["..."]
+    }
+  ],
+  "emotion": [
+    {
+      "eventType": "emotion",
+      "commitId": "deadbeef...",
+      "timestamp": "2026-02-01T12:00:00Z",
+      "valence": 0.8711,
+      "energy": 0.3455,
+      "tension": 0.2190
+    }
+  ],
+  "sections": [
+    {
+      "eventType": "section",
+      "commitId": "deadbeef...",
+      "timestamp": "2026-02-01T12:00:00Z",
+      "sectionName": "chorus",
+      "action": "added"
+    }
+  ],
+  "tracks": [
+    {
+      "eventType": "track",
+      "commitId": "deadbeef...",
+      "timestamp": "2026-02-01T12:00:00Z",
+      "trackName": "bass",
+      "action": "added"
+    }
+  ],
+  "totalCommits": 42
+}
+```
+
+**Layer descriptions:**
+
+| Layer | Source | Description |
+|-------|--------|-------------|
+| `commits` | DB: `musehub_commits` | Every pushed commit — always present. Oldest-first for temporal rendering. |
+| `emotion` | Derived from commit SHA | Deterministic valence/energy/tension in [0,1] — reproducible without ML inference. |
+| `sections` | Commit message heuristics | Keywords: intro, verse, chorus, bridge, outro, hook, etc. Action inferred from verb (added/removed). |
+| `tracks` | Commit message heuristics | Keywords: bass, drums, keys, guitar, synth, etc. Action inferred from verb (added/removed). |
+
+**Emotion derivation:** Three non-overlapping 4-hex-character windows of the commit SHA are converted to floats in [0,1]. This is deterministic, fast, and requires no model — sufficient for visualisation. Future versions may substitute ML-derived vectors without changing the API shape.
+
+**Section/track heuristics:** Verb patterns (`add`, `remove`, `delete`, `create`, etc.) in the commit message determine `action`. No NLP is required — keyword scanning is fast and sufficient for commit message conventions used by `muse commit`.
+
+#### Web UI Page
+
+```
+GET /musehub/ui/{repo_id}/timeline
+```
+
+No auth required — HTML shell whose JS fetches the JSON API using the JWT from `localStorage`.
+
+**Features:**
+- Horizontal SVG canvas with commit markers on a time spine
+- Emotion line chart (valence = blue, energy = green, tension = red) overlaid above the spine
+- Section-change markers (green = added, red = removed) below the spine
+- Track add/remove markers (purple = added, yellow = removed) at the bottom
+- Toggleable layers via checkboxes in the toolbar
+- Zoom controls: Day / Week / Month / All-time
+- Time scrubber to navigate through history
+- Click any commit marker to open an audio preview modal
+
+**Agent use case:** An AI agent calls `GET /api/v1/musehub/repos/{id}/timeline --json` to understand the creative arc of a project before generating new material — identifying when the emotional character shifted, when sections were introduced, and which instruments were layered in. The deterministic emotion vectors give agents a structured signal without requiring audio analysis.
+
+**Result types:** `TimelineResponse`, `TimelineCommitEvent`, `TimelineEmotionEvent`, `TimelineSectionEvent`, `TimelineTrackEvent` — see `docs/reference/type_contracts.md § Muse Hub Timeline Types`.
+
+---
 GET /api/v1/musehub/repos/{repo_id}/divergence?branch_a=<name>&branch_b=<name>
 ```
 
