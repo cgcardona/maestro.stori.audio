@@ -313,3 +313,38 @@ class MuseHubContextResponse(CamelModel):
     history: list[MuseHubContextHistoryEntry]
     missing_elements: list[str]
     suggestions: dict[str, str]
+
+
+# ── In-repo search models ─────────────────────────────────────────────────────
+
+
+class SearchCommitMatch(CamelModel):
+    """A single commit returned by a search query.
+
+    Carries enough metadata to render a result row and launch an audio preview.
+    The ``score`` field is populated by keyword/recall modes (0–1 overlap ratio);
+    property and grep modes always return 1.0.
+    """
+
+    commit_id: str
+    branch: str
+    message: str
+    author: str
+    timestamp: datetime
+    score: float = Field(1.0, ge=0.0, le=1.0, description="Match score (0–1); always 1.0 for exact-match modes")
+    match_source: str = Field("message", description="Where the match was found: 'message', 'branch', or 'property'")
+
+
+class SearchResponse(CamelModel):
+    """Response envelope for all four in-repo search modes.
+
+    ``mode`` echoes back the requested search mode so clients can render
+    mode-appropriate headers.  ``total_scanned`` is the number of commits
+    examined before limit was applied; useful for indicating search depth.
+    """
+
+    mode: str
+    query: str
+    matches: list[SearchCommitMatch]
+    total_scanned: int
+    limit: int
