@@ -104,6 +104,7 @@ maestro/muse_cli/
     ├── checkout.py       — muse checkout (stub — issue #34)
     ├── merge.py          — muse merge   ✅ fast-forward + 3-way merge (issue #35)
     ├── remote.py         — muse remote (add, -v)
+    ├── fetch.py          — muse fetch
     ├── push.py           — muse push
     ├── pull.py           — muse pull
     ├── open_cmd.py       — muse open    ✅ macOS artifact preview (issue #45)
@@ -1558,6 +1559,69 @@ The divergence warning is informational — it does not block further commands.
 
 **Agent use case:** Before generating a new arrangement, an agent pulls to ensure
 it is working from the latest shared composition state.
+
+---
+
+### `muse fetch`
+
+**Purpose:** Update remote-tracking refs to reflect the current state of the remote
+without modifying the local branch or muse-work/.  Use `muse fetch` when you want
+to inspect what collaborators have pushed before deciding whether to merge.  This
+is the non-destructive alternative to `muse pull` (fetch + merge).
+
+**Usage:**
+```bash
+muse fetch
+muse fetch --all
+muse fetch --prune
+muse fetch --remote staging --branch main --branch feature/bass-v2
+```
+
+**Flags:**
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--remote` | str | `origin` | Named remote to fetch from |
+| `--all` | flag | off | Fetch from every configured remote |
+| `--prune` / `-p` | flag | off | Remove local remote-tracking refs for branches deleted on the remote |
+| `--branch` / `-b` | str (repeatable) | all branches | Specific branch(es) to fetch |
+
+**Fetch algorithm:**
+1. Resolve remote URL(s) from `[remotes.<name>] url` in `.muse/config.toml`.
+2. POST `{ branches: [] }` (empty = all) to `<remote>/fetch`.
+3. For each branch in the Hub response, update `.muse/remotes/<remote>/<branch>` with the remote HEAD commit ID.
+4. If `--prune`, remove any `.muse/remotes/<remote>/<branch>` files whose branch was NOT in the Hub response.
+5. Local branches (`refs/heads/`) and `muse-work/` are NEVER modified.
+
+**Fetch vs Pull:**
+| Operation | Modifies local branch | Modifies muse-work/ | Merges remote commits |
+|-----------|----------------------|---------------------|----------------------|
+| `muse fetch` | No | No | No |
+| `muse pull` | Yes (via merge) | Yes | Yes |
+
+**Output example:**
+```
+From origin: + abc1234 feature/guitar -> origin/feature/guitar (new branch)
+From origin: + def5678 main -> origin/main
+✅ origin is already up to date.
+
+# With --all:
+From origin: + abc1234 main -> origin/main
+From staging: + xyz9999 main -> staging/main
+✅ Fetched 2 branch update(s) across all remotes.
+
+# With --prune:
+✂️  Pruned origin/deleted-branch (no longer exists on remote)
+```
+
+**Exit codes:** 0 — success; 1 — no remote configured or `--all` with no remotes; 3 — network/server error.
+
+**Result type:** `FetchRequest` / `FetchResponse` / `FetchBranchInfo` — see `maestro/muse_cli/hub_client.py`.
+
+**Agent use case:** An agent runs `muse fetch` before deciding whether to compose a new
+variation, to check if remote collaborators have pushed conflicting changes.  Since fetch
+does not modify the working tree, it is safe to run mid-composition without interrupting
+the current generation pipeline.  Follow with `muse log origin/main` to inspect what
+arrived, then `muse merge origin/main` if the agent decides to incorporate remote changes.
 
 ---
 
