@@ -1185,6 +1185,66 @@ On failure: `success=False` plus `error` (and optionally `message`).
 
 ---
 
+#### `PRCommentCreate`
+
+**Path:** `maestro/models/musehub.py`
+
+**Pydantic model** — Request body for `POST /api/v1/musehub/repos/{repo_id}/pull-requests/{pr_id}/comments`. Supports four targeting granularities so reviewers can pinpoint the exact location in the musical diff they are commenting on.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `body` | `str` | Review comment body (Markdown, min_length=1) |
+| `target_type` | `str` | Granularity: `"general"` \| `"track"` \| `"region"` \| `"note"` |
+| `target_track` | `str \| None` | Instrument track name for track/region/note targets |
+| `target_beat_start` | `float \| None` | Region start beat (inclusive, ≥ 0) |
+| `target_beat_end` | `float \| None` | Region end beat (exclusive, ≥ 0) |
+| `target_note_pitch` | `int \| None` | MIDI pitch 0–127 for note-level targets |
+| `parent_comment_id` | `str \| None` | Parent comment UUID when creating a threaded reply |
+
+---
+
+#### `PRCommentResponse`
+
+**Path:** `maestro/models/musehub.py`
+
+**Pydantic model** — Wire representation of a single PR review comment.  Self-referential: `replies` holds direct child comments (top-level only; grandchildren are attached to their own parent).
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `comment_id` | `str` | Internal UUID for this comment |
+| `pr_id` | `str` | Pull request this comment belongs to |
+| `author` | `str` | JWT `sub` / display name of the commenter |
+| `body` | `str` | Review body (Markdown) |
+| `target_type` | `str` | `"general"`, `"track"`, `"region"`, or `"note"` |
+| `target_track` | `str \| None` | Instrument track name when targeted |
+| `target_beat_start` | `float \| None` | Region start beat (inclusive) |
+| `target_beat_end` | `float \| None` | Region end beat (exclusive) |
+| `target_note_pitch` | `int \| None` | MIDI pitch for note-level targets |
+| `parent_comment_id` | `str \| None` | Parent comment UUID for threaded replies; `None` = top-level |
+| `created_at` | `datetime` | Comment creation timestamp (ISO-8601 UTC) |
+| `replies` | `list[PRCommentResponse]` | Nested replies (populated on top-level comments only) |
+
+**Note:** Forward reference resolved via `PRCommentResponse.model_rebuild()` after class definition.
+
+---
+
+#### `PRCommentListResponse`
+
+**Path:** `maestro/models/musehub.py`
+
+**Pydantic model** — Threaded list of review comments returned by both `POST` (after insert) and `GET` on the comments endpoint.  Two-level structure: `comments` contains top-level entries, each with a `replies` list.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `comments` | `list[PRCommentResponse]` | Top-level review comments with nested replies |
+| `total` | `int` | Total comment count across all levels (top-level + all replies), ≥ 0 |
+
+**Endpoints:** `POST /api/v1/musehub/repos/{repo_id}/pull-requests/{pr_id}/comments`, `GET /api/v1/musehub/repos/{repo_id}/pull-requests/{pr_id}/comments`
+
+**Agent use case:** AI agents can inspect `comments` to read peer review feedback before deciding whether a PR is safe to merge.  `total > 0` with unresolved general comments is a soft block signal.
+
+---
+
 ### `ExpressivenessResult`
 
 **Path:** `maestro/services/expressiveness.py`
