@@ -1536,6 +1536,43 @@ Renders the context document in structured HTML with:
 
 **Agent use case:** A musician debugging why the AI generated something unexpected can load the context page for that commit and see exactly what musical knowledge the agent had. The copy button lets them paste the raw JSON into a new agent conversation for direct inspection or override.
 
+#### Analysis Dashboard
+
+The analysis dashboard provides a single-page overview of all musical dimensions for a given ref.
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/musehub/ui/{owner}/{repo_slug}/analysis/{ref}` | HTML dashboard with 10 dimension summary cards (no auth required) |
+| GET | `/api/v1/musehub/repos/{repo_id}/analysis/{ref}` | Aggregate analysis JSON with all 13 dimensions (JWT required) |
+
+**Dashboard cards (10 dimensions):** Key, Tempo, Meter, Chord Map, Dynamics, Groove, Emotion, Form, Motifs, Contour.
+
+Each card shows:
+- A headline metric derived from the dimension's stub data (e.g. "C Major", "120 BPM")
+- A sub-text with confidence or range context
+- A mini sparkline bar chart for time-series dimensions (dynamics velocity curve, contour pitch curve)
+- A clickable link to the per-dimension analysis page at `/{owner}/{repo_slug}/analysis/{ref}/{dim_id}`
+
+**Branch/tag selector:** A `<select>` populated by `GET /api/v1/musehub/repos/{repo_id}/branches`. Changing the selected branch navigates to `/{owner}/{repo_slug}/analysis/{branch}`.
+
+**Missing data:** When a dimension has no analysis data, the card displays "Not yet analyzed" gracefully — no errors or empty states break the layout.
+
+**Content negotiation (API):** `GET /api/v1/musehub/repos/{repo_id}/analysis/{ref}` returns `AggregateAnalysisResponse` JSON with a `dimensions` array. All 13 dimensions are present (including similarity and divergence, which are not shown as cards but are available to agents).
+
+**Auth model:** The HTML page at `/musehub/ui/{owner}/{repo_slug}/analysis/{ref}` is a Jinja2 template shell — no server-side auth required. The embedded JavaScript fetches the API with a JWT from `localStorage`.
+
+**Agent use case:** An AI agent assessing the current musical state of a repo calls `GET /api/v1/musehub/repos/{id}/analysis/{ref}` and reads the `dimensions` array to understand key, tempo, emotion, and harmonic complexity before proposing a new composition direction.
+
+**Files:**
+| Layer | File |
+|-------|------|
+| UI handler | `maestro/api/routes/musehub/ui.py::analysis_dashboard_page()` |
+| UI template | `maestro/templates/musehub/pages/analysis.html` |
+| API handler | `maestro/api/routes/musehub/analysis.py::get_aggregate_analysis()` |
+| Service | `maestro/services/musehub_analysis.py::compute_aggregate_analysis()` |
+| Models | `maestro/models/musehub_analysis.py::AggregateAnalysisResponse` |
+| UI tests | `tests/test_musehub_ui.py` — `test_analysis_dashboard_*`, `test_analysis_aggregate_endpoint` |
+
 #### Issues
 
 | Method | Path | Description |
