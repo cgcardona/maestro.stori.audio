@@ -938,6 +938,42 @@ pre code {
   padding: 0 4px;
 }
 
+/* ---------------------------------------------------------------------------
+ * Analysis dashboard grid
+ * Used by analysis.html — 10 dimension summary cards at a glance.
+ * --------------------------------------------------------------------------- */
+.analysis-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 14px;
+  margin-top: 4px;
+}
+
+.analysis-card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  transition: border-color 0.15s, background 0.15s;
+  color: inherit;
+  text-decoration: none;
+}
+
+.analysis-card:hover {
+  border-color: var(--color-accent);
+  background: var(--color-surface-raised);
+  text-decoration: none;
+}
+
+.card-emoji  { font-size: 22px; }
+.card-dim    { font-size: 11px; color: var(--color-text-muted); text-transform: uppercase; letter-spacing: 0.6px; }
+.card-metric { font-size: 18px; font-weight: 700; color: var(--color-text); word-break: break-word; }
+.card-sub    { font-size: 12px; color: var(--color-text-muted); }
+.card-spark  { font-size: 14px; color: var(--color-success); letter-spacing: 1px; margin-top: 2px; }
+
 /* waveform placeholder */
 .waveform-bar {
   display: flex;
