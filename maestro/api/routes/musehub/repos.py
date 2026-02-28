@@ -61,6 +61,10 @@ async def create_repo(
         name=body.name,
         visibility=body.visibility,
         owner_user_id=owner_user_id,
+        description=body.description,
+        tags=body.tags,
+        key_signature=body.key_signature,
+        tempo_bpm=body.tempo_bpm,
     )
     await db.commit()
     return repo

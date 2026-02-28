@@ -6412,6 +6412,61 @@ if state is not None and state.conflict_paths:
 
 ---
 
+## ProfileResponse
+
+**Module:** `maestro.models.musehub`
+**Returned by:** `GET /api/v1/musehub/users/{username}`, `POST /api/v1/musehub/users`, `PUT /api/v1/musehub/users/{username}`
+
+Full wire representation of a Muse Hub user profile.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `user_id` | `str` | JWT sub — matches `musehub_repos.owner_user_id` |
+| `username` | `str` | URL-friendly handle |
+| `bio` | `str \| None` | Short bio (Markdown) |
+| `avatar_url` | `str \| None` | Avatar image URL |
+| `pinned_repo_ids` | `list[str]` | Up to 6 pinned repo IDs |
+| `repos` | `list[ProfileRepoSummary]` | Public repos, newest first |
+| `contribution_graph` | `list[ContributionDay]` | 52-week daily commit history |
+| `session_credits` | `int` | Total commits across all repos |
+| `created_at` | `datetime` | Profile creation timestamp |
+| `updated_at` | `datetime` | Last update timestamp |
+
+---
+
+## ProfileRepoSummary
+
+**Module:** `maestro.models.musehub`
+**Used in:** `ProfileResponse.repos`
+
+Compact repo summary shown on a user profile page.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `repo_id` | `str` | Repo UUID |
+| `name` | `str` | Repo name |
+| `visibility` | `str` | `"public"` or `"private"` |
+| `star_count` | `int` | Star count (always 0 at MVP — no star mechanism yet) |
+| `last_activity_at` | `datetime \| None` | Timestamp of most recent commit, or None |
+| `created_at` | `datetime` | Repo creation timestamp |
+
+---
+
+## ContributionDay
+
+**Module:** `maestro.models.musehub`
+**Used in:** `ProfileResponse.contribution_graph`
+
+One day in the GitHub-style contribution heatmap.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `date` | `str` | ISO-8601 date `"YYYY-MM-DD"` |
+| `count` | `int` | Number of commits on that day across all user repos |
+
+**Agent use case:** Render as a heatmap. Bucket count 0–4 for colour intensity:
+0 = none, 1 = 1–2, 2 = 3–5, 3 = 6–9, 4 = 10+.
+
 ## Muse Hub — Cross-Repo Search Types (`maestro/models/musehub.py`)
 
 ### `GlobalSearchCommitMatch`
@@ -6434,7 +6489,61 @@ cross-repo search query.  Returned inside `GlobalSearchRepoGroup.matches`.
 
 ### `GlobalSearchRepoGroup`
 
-Pydantic model grouping all matching commits for a single public repo.
+Pydantic model grouping all matching commits for a single public repo.---
+
+## ExploreRepoResult
+
+**Module:** `maestro.models.musehub`
+**Used by:** `GET /api/v1/musehub/discover/repos` → `ExploreResponse.repos`
+
+A public repo card returned by the explore/discover page. Aggregated counts
+(`star_count`, `commit_count`) are computed at query time and are not stored
+on the repo row — they reflect the live DB state at the moment of the request.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `repo_id` | `str` | UUID of the repo |
+| `name` | `str` | Human-readable repo name |
+| `owner_user_id` | `str` | UUID of the repo owner |
+| `description` | `str` | Short description (empty string if not set) |
+| `tags` | `list[str]` | Free-form tags: genre, key, instrument (e.g. `["jazz", "F# minor", "bass"]`) |
+| `key_signature` | `str \| None` | Musical key (e.g. `"F# minor"`) |
+| `tempo_bpm` | `int \| None` | Tempo in BPM |
+| `star_count` | `int` | Total stars from all users |
+| `commit_count` | `int` | Total commits in the repo |
+| `created_at` | `datetime` | UTC timestamp of repo creation |
+
+---
+
+## ExploreResponse
+
+**Module:** `maestro.models.musehub`
+**Used by:** `GET /api/v1/musehub/discover/repos`
+
+Paginated discover response. `total` is the full filtered count (not just the
+current page) so clients can render pagination controls without a second query.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `repos` | `list[ExploreRepoResult]` | Repo cards for the current page |
+| `total` | `int` | Total repos matching the filters |
+| `page` | `int` | Current page number (1-based) |
+| `page_size` | `int` | Number of results per page |
+
+---
+
+## StarResponse
+
+**Module:** `maestro.models.musehub`
+**Used by:** `POST /api/v1/musehub/repos/{id}/star`, `DELETE /api/v1/musehub/repos/{id}/star`
+
+Confirmation of a star or unstar operation with the updated count.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `starred` | `bool` | `True` after star, `False` after unstar |
+| `star_count` | `int` | Current total star count for the repo |
+
 ---
 
 ## Agent Context Models (`maestro/models/musehub_context.py`)

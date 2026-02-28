@@ -4,8 +4,12 @@ Serves browser-readable HTML pages for navigating a Muse Hub repo —
 analogous to GitHub's repository browser but for music projects.
 
 Endpoint summary:
+  GET /musehub/ui/explore                          — discover public repos with filters
+  GET /musehub/ui/trending                         — trending public repos (sorted by stars)
   GET /musehub/ui/search                           — global cross-repo search page
   GET /musehub/ui/{repo_id}                        — repo page (branch selector + commit log)
+  GET /musehub/ui/users/{username}                 — user profile page (public repos, contribution graph, credits)
+  GET /musehub/ui/search                           — global cross-repo search page  GET /musehub/ui/{repo_id}                        — repo page (branch selector + commit log)
   GET /musehub/ui/{repo_id}/commits/{commit_id}    — commit detail page (metadata + artifacts)
   GET /musehub/ui/{repo_id}/graph                  — interactive DAG commit graph
   GET /musehub/ui/{repo_id}/pulls                  — pull request list page
@@ -17,7 +21,8 @@ Endpoint summary:
   GET /musehub/ui/{repo_id}/search                 — in-repo search page (four modes)
 
 These routes require NO JWT auth — they return static HTML shells whose
-embedded JavaScript fetches data from the authed JSON API
+embedded JavaScript fetches data from the public JSON API
+(``/api/v1/musehub/discover/repos``) or the authed JSON API
 (``/api/v1/musehub/...``) using a token stored in ``localStorage``.
 
 The embed route is intentionally designed for cross-origin iframe embedding:
@@ -40,6 +45,51 @@ router = APIRouter(prefix="/musehub/ui", tags=["musehub-ui"])
 # ---------------------------------------------------------------------------
 # Shared HTML scaffolding
 # ---------------------------------------------------------------------------
+
+_PROFILE_CSS = """
+.profile-header {
+  display: flex; align-items: flex-start; gap: 24px; margin-bottom: 24px;
+}
+.avatar {
+  width: 80px; height: 80px; border-radius: 50%;
+  background: #21262d; border: 2px solid #30363d;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 32px; flex-shrink: 0;
+}
+.avatar img { width: 100%; height: 100%; border-radius: 50%; object-fit: cover; }
+.profile-meta { flex: 1; }
+.profile-meta h1 { font-size: 22px; color: #e6edf3; margin-bottom: 4px; }
+.bio { font-size: 14px; color: #8b949e; margin-bottom: 12px; }
+.contrib-graph {
+  display: flex; gap: 2px; flex-wrap: wrap; overflow-x: auto;
+}
+.contrib-week { display: flex; flex-direction: column; gap: 2px; }
+.contrib-day {
+  width: 10px; height: 10px; border-radius: 2px; background: #161b22;
+  border: 1px solid #30363d;
+}
+.contrib-day[data-count="0"] { background: #161b22; }
+.contrib-day[data-count="1"] { background: #0e4429; border-color: #0e4429; }
+.contrib-day[data-count="2"] { background: #006d32; border-color: #006d32; }
+.contrib-day[data-count="3"] { background: #26a641; border-color: #26a641; }
+.contrib-day[data-count="4"] { background: #39d353; border-color: #39d353; }
+.repo-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 12px;
+}
+.repo-card {
+  background: #161b22; border: 1px solid #30363d; border-radius: 6px;
+  padding: 14px; display: flex; flex-direction: column; gap: 6px;
+}
+.repo-card h3 { font-size: 15px; margin: 0; }
+.repo-card .repo-meta { font-size: 12px; color: #8b949e; }
+.credits-badge {
+  display: inline-flex; align-items: center; gap: 8px;
+  background: #1f6feb22; border: 1px solid #1f6feb; border-radius: 6px;
+  padding: 8px 14px; font-size: 14px;
+}
+.credits-badge .num { font-size: 22px; font-weight: 700; color: #58a6ff; }
+"""
 
 _CSS = """
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -192,7 +242,7 @@ function shortSha(sha) { return sha ? sha.substring(0, 8) : '—'; }
 """
 
 
-def _page(title: str, breadcrumb: str, body_script: str) -> str:
+def _page(title: str, breadcrumb: str, body_script: str, extra_css: str = "") -> str:
     """Assemble a complete Muse Hub HTML page with shared chrome."""
     return f"""<!DOCTYPE html>
 <html lang="en">
@@ -200,7 +250,7 @@ def _page(title: str, breadcrumb: str, body_script: str) -> str:
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{title} — Muse Hub</title>
-  <style>{_CSS}</style>
+  <style>{_CSS}{extra_css}</style>
 </head>
 <body>
   <header>
@@ -232,10 +282,269 @@ def _page(title: str, breadcrumb: str, body_script: str) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Route handlers
+# Route handlers — explore / discover (no auth required)
+# ---------------------------------------------------------------------------
+
+_EXPLORE_SCRIPT = """
+const DISCOVER_API = '/api/v1/musehub/discover/repos';
+
+function escHtml(s) {
+  if (!s) return '';
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function tagHtml(tag) {
+  return '<span class="label">' + escHtml(tag) + '</span>';
+}
+
+function repoCard(r) {
+  const tags = (r.tags || []).map(tagHtml).join('');
+  const key  = r.keySignature ? escHtml(r.keySignature) : '';
+  const bpm  = r.tempoBpm ? r.tempoBpm + ' BPM' : '';
+  const meta = [key, bpm].filter(Boolean).join(' &bull; ');
+  return `
+    <div class="repo-card">
+      <div class="repo-card-title">
+        <a href="/musehub/ui/${escHtml(r.repoId)}">${escHtml(r.name)}</a>
+      </div>
+      <div class="repo-card-owner">${escHtml(r.ownerUserId)}</div>
+      ${r.description ? '<div class="repo-card-desc">' + escHtml(r.description) + '</div>' : ''}
+      <div class="repo-card-tags">${tags}</div>
+      <div class="repo-card-meta">
+        ${meta ? '<span>' + meta + '</span>' : ''}
+        <span>&#9733; ${r.starCount}</span>
+        <span>&#128190; ${r.commitCount} commits</span>
+      </div>
+    </div>`;
+}
+
+async function loadExplore(page, sort, genre, key, tempoMin, tempoMax, instrumentation) {
+  const params = new URLSearchParams({ page: page, page_size: 24, sort: sort });
+  if (genre)         params.set('genre', genre);
+  if (key)           params.set('key', key);
+  if (tempoMin)      params.set('tempo_min', tempoMin);
+  if (tempoMax)      params.set('tempo_max', tempoMax);
+  if (instrumentation) params.set('instrumentation', instrumentation);
+
+  try {
+    const res  = await fetch(DISCOVER_API + '?' + params.toString());
+    if (!res.ok) throw new Error(res.status + ': ' + await res.text());
+    const data = await res.json();
+    const repos = data.repos || [];
+    const total = data.total || 0;
+    const pages = Math.ceil(total / 24) || 1;
+
+    const grid = repos.length === 0
+      ? '<p class="loading">No repos found matching these filters.</p>'
+      : repos.map(repoCard).join('');
+
+    const pager = pages > 1 ? `
+      <div class="pager">
+        ${page > 1 ? '<button class="btn btn-secondary" onclick="go(' + (page-1) + ')">&#8592; Prev</button>' : ''}
+        <span style="color:#8b949e;font-size:13px">Page ${page} of ${pages} &bull; ${total} repos</span>
+        ${page < pages ? '<button class="btn btn-secondary" onclick="go(' + (page+1) + ')">Next &#8594;</button>' : ''}
+      </div>` : '<div class="pager" style="color:#8b949e;font-size:13px">' + total + ' repos</div>';
+
+    document.getElementById('repo-grid').innerHTML = grid;
+    document.getElementById('pager').innerHTML = pager;
+  } catch(e) {
+    document.getElementById('repo-grid').innerHTML =
+      '<p class="error">&#10005; ' + escHtml(e.message) + '</p>';
+  }
+}
+
+function currentState() {
+  return {
+    page: parseInt(document.getElementById('cur-page').value || '1'),
+    sort: document.getElementById('sort-sel').value,
+    genre: document.getElementById('genre-inp').value.trim(),
+    key:   document.getElementById('key-inp').value.trim(),
+    tempoMin: document.getElementById('tempo-min').value.trim(),
+    tempoMax: document.getElementById('tempo-max').value.trim(),
+    instr: document.getElementById('instr-inp').value.trim(),
+  };
+}
+
+function go(page) {
+  document.getElementById('cur-page').value = page;
+  const s = currentState();
+  loadExplore(page, s.sort, s.genre, s.key, s.tempoMin, s.tempoMax, s.instr);
+}
+
+function applyFilters() { go(1); }
+"""
+
+_EXPLORE_CSS_EXTRA = """
+.filter-bar {
+  display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-end;
+  background: #161b22; border: 1px solid #30363d; border-radius: 6px;
+  padding: 12px; margin-bottom: 16px;
+}
+.filter-group { display: flex; flex-direction: column; gap: 4px; }
+.filter-label { font-size: 11px; color: #8b949e; text-transform: uppercase; letter-spacing: 0.5px; }
+.filter-group input {
+  background: #0d1117; color: #c9d1d9; border: 1px solid #30363d;
+  border-radius: 6px; padding: 6px 10px; font-size: 13px; width: 140px;
+}
+.filter-group input:focus { outline: none; border-color: #58a6ff; }
+.repo-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 12px;
+}
+.repo-card {
+  background: #161b22; border: 1px solid #30363d; border-radius: 6px;
+  padding: 14px; display: flex; flex-direction: column; gap: 6px;
+  transition: border-color 0.15s;
+}
+.repo-card:hover { border-color: #58a6ff; }
+.repo-card-title { font-size: 15px; font-weight: 600; }
+.repo-card-owner { font-size: 12px; color: #8b949e; }
+.repo-card-desc  { font-size: 13px; color: #c9d1d9; }
+.repo-card-tags  { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+.repo-card-meta  {
+  display: flex; gap: 12px; flex-wrap: wrap;
+  font-size: 12px; color: #8b949e; margin-top: 4px;
+}
+.pager {
+  display: flex; align-items: center; justify-content: center;
+  gap: 12px; margin-top: 20px;
+}
+"""
+
+
+def _explore_page_html(title: str, breadcrumb: str, default_sort: str) -> str:
+    """Render the explore or trending page HTML shell.
+
+    The page calls the public ``GET /api/v1/musehub/discover/repos`` JSON API
+    from the browser — no JWT required for browsing. Star/unstar actions require
+    a JWT stored in localStorage but are optional (unauthenticated visitors can
+    browse without starring).
+    """
+    css = _CSS + _EXPLORE_CSS_EXTRA
+    return f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{title} — Muse Hub</title>
+  <style>{css}</style>
+</head>
+<body>
+  <header>
+    <span class="logo">&#127925; Muse Hub</span>
+    <span class="breadcrumb">{breadcrumb}</span>
+    <span style="flex:1"></span>
+    <a href="/musehub/ui/explore" class="btn btn-secondary" style="font-size:12px">Explore</a>
+    &nbsp;
+    <a href="/musehub/ui/trending" class="btn btn-secondary" style="font-size:12px">Trending</a>
+  </header>
+  <div class="container" style="max-width:1200px">
+    <div class="filter-bar">
+      <div class="filter-group">
+        <span class="filter-label">Genre</span>
+        <input id="genre-inp" type="text" placeholder="jazz, lo-fi…" oninput="applyFilters()"/>
+      </div>
+      <div class="filter-group">
+        <span class="filter-label">Key</span>
+        <input id="key-inp" type="text" placeholder="F# minor" oninput="applyFilters()"/>
+      </div>
+      <div class="filter-group">
+        <span class="filter-label">BPM min</span>
+        <input id="tempo-min" type="number" min="20" max="300" placeholder="80" oninput="applyFilters()"/>
+      </div>
+      <div class="filter-group">
+        <span class="filter-label">BPM max</span>
+        <input id="tempo-max" type="number" min="20" max="300" placeholder="140" oninput="applyFilters()"/>
+      </div>
+      <div class="filter-group">
+        <span class="filter-label">Instrument</span>
+        <input id="instr-inp" type="text" placeholder="bass, drums…" oninput="applyFilters()"/>
+      </div>
+      <div class="filter-group">
+        <span class="filter-label">Sort by</span>
+        <select id="sort-sel" onchange="applyFilters()">
+          <option value="created" {'selected' if default_sort == 'created' else ''}>Newest</option>
+          <option value="stars"   {'selected' if default_sort == 'stars'   else ''}>Stars</option>
+          <option value="activity"{'selected' if default_sort == 'activity' else ''}>Activity</option>
+          <option value="commits" {'selected' if default_sort == 'commits'  else ''}>Commits</option>
+        </select>
+      </div>
+    </div>
+    <input type="hidden" id="cur-page" value="1"/>
+    <div id="repo-grid" class="repo-grid"><p class="loading">Loading&#8230;</p></div>
+    <div id="pager"></div>
+  </div>
+  <script>
+    {_EXPLORE_SCRIPT}
+    window.addEventListener('DOMContentLoaded', function() {{
+      const s = currentState();
+      loadExplore(1, s.sort, s.genre, s.key, s.tempoMin, s.tempoMax, s.instr);
+    }});
+  </script>
+</body>
+</html>"""
+
+
+@router.get("/explore", response_class=HTMLResponse, summary="Muse Hub explore page")
+async def explore_page() -> HTMLResponse:
+    """Render the explore/discover page — a filterable grid of all public repos.
+
+    No JWT required. The page fetches from the public
+    ``GET /api/v1/musehub/discover/repos`` endpoint. Filter controls are
+    rendered in the browser; filter state lives in the query URL so pages
+    are bookmarkable.
+    """
+    return HTMLResponse(
+        content=_explore_page_html(
+            title="Explore",
+            breadcrumb="Explore",
+            default_sort="created",
+        )
+    )
+
+
+@router.get("/trending", response_class=HTMLResponse, summary="Muse Hub trending page")
+async def trending_page() -> HTMLResponse:
+    """Render the trending page — public repos sorted by star count by default.
+
+    No JWT required. Identical shell to the explore page but pre-selected
+    to sort by stars, surfacing the most-starred compositions first.
+    """
+    return HTMLResponse(
+        content=_explore_page_html(
+            title="Trending",
+            breadcrumb="Trending",
+            default_sort="stars",
+        )
+    )
+
+
+# ---------------------------------------------------------------------------
+# Route handlers — per-repo pages (no auth required)
 # ---------------------------------------------------------------------------
 
 
+@router.get(
+    "/users/{username}",
+    response_class=HTMLResponse,
+    summary="Muse Hub user profile page",
+)
+async def profile_page(username: str) -> HTMLResponse:
+    """Render the public user profile page.
+
+    Displays: bio, avatar, pinned repos, all public repos with last-activity,
+    a GitHub-style contribution heatmap (52 weeks of daily commit counts), and
+    aggregated session credits.  Auth is handled client-side — the profile
+    itself is public; editing controls appear only when the visitor's JWT
+    matches the profile owner.
+
+    Returns 200 with an HTML shell even when the API returns 404 — the JS
+    renders the 404 message inline so the browser gets a proper HTML response.
+    """
+    script = f"""
+      const username = {repr(username)};
+      const API_PROFILE = '/api/v1/musehub/users/' + username;
 @router.get("/search", response_class=HTMLResponse, summary="Muse Hub global search page")
 async def global_search_page(
     q: str = "",
@@ -256,12 +565,127 @@ async def global_search_page(
     script = f"""
       const INITIAL_Q    = {repr(safe_q)};
       const INITIAL_MODE = {repr(safe_mode)};
-
       function escHtml(s) {{
         if (!s) return '';
         return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
       }}
 
+      function bucketCount(n) {{
+        if (n === 0) return 0;
+        if (n <= 2)  return 1;
+        if (n <= 5)  return 2;
+        if (n <= 9)  return 3;
+        return 4;
+      }}
+
+      function buildContribGraph(graph) {{
+        // Group days into weeks (7 days per column)
+        const weeks = [];
+        let week = [];
+        graph.forEach((d, i) => {{
+          week.push(d);
+          if (week.length === 7) {{ weeks.push(week); week = []; }}
+        }});
+        if (week.length) weeks.push(week);
+
+        const weeksHtml = weeks.map(w => {{
+          const days = w.map(d => {{
+            const b = bucketCount(d.count);
+            return `<div class="contrib-day" data-count="${{b}}" title="${{d.date}}: ${{d.count}} commit${{d.count !== 1 ? 's' : ''}}"></div>`;
+          }}).join('');
+          return `<div class="contrib-week">${{days}}</div>`;
+        }}).join('');
+
+        return `<div class="contrib-graph">${{weeksHtml}}</div>`;
+      }}
+
+      function repoCardHtml(r) {{
+        const lastAct = r.lastActivityAt ? fmtDate(r.lastActivityAt) : 'No commits yet';
+        return `<div class="repo-card">
+          <h3><a href="/musehub/ui/${{r.repoId}}">${{escHtml(r.name)}}</a></h3>
+          <div class="repo-meta">
+            <span class="badge badge-${{r.visibility}}">${{r.visibility}}</span>
+            &bull; Last activity: ${{lastAct}}
+          </div>
+        </div>`;
+      }}
+
+      async function load() {{
+        let profile;
+        try {{
+          profile = await fetch(API_PROFILE).then(r => {{
+            if (r.status === 404) throw new Error('404');
+            if (!r.ok) throw new Error(r.status);
+            return r.json();
+          }});
+        }} catch(e) {{
+          if (e.message === '404') {{
+            document.getElementById('content').innerHTML =
+              '<div class="card"><p class="error">&#10005; No profile found for <strong>' + escHtml(username) + '</strong>.</p></div>';
+          }} else {{
+            document.getElementById('content').innerHTML =
+              '<p class="error">Failed to load profile: ' + escHtml(e.message) + '</p>';
+          }}
+          return;
+        }}
+
+        const avatarHtml = profile.avatarUrl
+          ? `<img src="${{escHtml(profile.avatarUrl)}}" alt="avatar" />`
+          : '&#127925;';
+
+        const pinnedRepos = (profile.repos || []).filter(r => (profile.pinnedRepoIds || []).includes(r.repoId));
+        const publicRepos = profile.repos || [];
+
+        const pinnedSection = pinnedRepos.length > 0 ? `
+          <div class="card">
+            <h2 style="margin-bottom:12px">&#128204; Pinned</h2>
+            <div class="repo-grid">${{pinnedRepos.map(repoCardHtml).join('')}}</div>
+          </div>` : '';
+
+        const reposSection = publicRepos.length > 0 ? `
+          <div class="card">
+            <h2 style="margin-bottom:12px">&#127963; Public Repositories (${{publicRepos.length}})</h2>
+            <div class="repo-grid">${{publicRepos.map(repoCardHtml).join('')}}</div>
+          </div>` : '<div class="card"><p class="loading">No public repositories yet.</p></div>';
+
+        const graphSection = `
+          <div class="card">
+            <h2 style="margin-bottom:12px">&#128200; Contribution Activity (last 52 weeks)</h2>
+            ${{buildContribGraph(profile.contributionGraph || [])}}
+            <p style="font-size:12px;color:#8b949e;margin-top:8px">
+              Less &nbsp;
+              <span style="display:inline-flex;gap:2px;vertical-align:middle">
+                ${{[0,1,2,3,4].map(n => '<span class="contrib-day" data-count="' + n + '" style="display:inline-block"></span>').join('')}}
+              </span>
+              &nbsp; More
+            </p>
+          </div>`;
+
+        document.getElementById('content').innerHTML = `
+          <div class="card profile-header">
+            <div class="avatar">${{avatarHtml}}</div>
+            <div class="profile-meta">
+              <h1>${{escHtml(profile.username)}}</h1>
+              ${{profile.bio ? '<p class="bio">' + escHtml(profile.bio) + '</p>' : ''}}
+              <div class="credits-badge">
+                <span class="num">${{profile.sessionCredits || 0}}</span>
+                <span>session credits</span>
+              </div>
+            </div>
+          </div>
+          ${{pinnedSection}}
+          ${{graphSection}}
+          ${{reposSection}}
+        `;
+      }}
+
+      load();
+    """
+    html = _page(
+        title=f"@{username}",
+        breadcrumb=f'<a href="/musehub/ui/users/{username}">@{username}</a>',
+        body_script=script,
+        extra_css=_PROFILE_CSS,
       function audioHtml(groupId, audioOid) {{
         if (!audioOid) return '';
         const url = '/api/v1/musehub/repos/' + encodeURIComponent(groupId) + '/objects/' + encodeURIComponent(audioOid) + '/content';
@@ -381,8 +805,7 @@ async def global_search_page(
     html = _page(
         title="Global Search",
         breadcrumb='<a href="/musehub/ui/search">Global Search</a>',
-        body_script=full_script,
-    )
+        body_script=full_script,    )
     return HTMLResponse(content=html)
 
 
