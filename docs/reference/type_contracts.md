@@ -2061,6 +2061,23 @@ Swing comparison between HEAD and a reference commit.
 **Producer:** `_swing_compare_async()`
 **Consumer:** `_format_compare()`
 
+### `AnswerResult`
+
+**Module:** `maestro/muse_cli/commands/ask.py`
+
+Structured result from a `muse ask` query. Carries the matched commits and
+rendering context; rendering is deferred to `to_plain()` / `to_json()` so the
+core logic is testable without touching I/O.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `question` | `str` | Original natural-language question as typed by the user |
+| `total_searched` | `int` | Total number of commits examined (after branch / date filters) |
+| `matches` | `list[MuseCliCommit]` | Commits whose messages contain at least one extracted keyword |
+| `cite` | `bool` | When `True`, full 64-char commit IDs are used; otherwise 8-char prefixes |
+
+**Producer:** `_ask_async()`
+**Consumer:** `ask()` Typer command via `to_plain()` / `to_json()`
 ### `GrepMatch`
 
 **Module:** `maestro/muse_cli/commands/grep_cmd.py`
@@ -2079,6 +2096,7 @@ directly for JSON serialisation without any additional mapping step.
 
 **Producer:** `_match_commit()`, `_grep_async()`
 **Consumer:** `_render_matches()`, callers using `--json` output
+
 
 ---
 
