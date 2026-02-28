@@ -4851,3 +4851,36 @@ Returned by `build_timeline()` in `maestro/services/muse_timeline.py`.
 evolved.  `section_order` maps the structural progression of the piece.
 `entries[*].activity` can be used to weight which commits had the most
 musical change — useful for selecting seed material for generation.
+
+---
+
+## Muse Hub Object Types
+
+Defined in `maestro/models/musehub.py`.
+
+### `ObjectMetaResponse`
+
+Wire representation of a stored artifact — metadata only, no binary content.
+Returned per-object by the `GET /api/v1/musehub/repos/{repo_id}/objects` endpoint.
+Binary content is accessed via the `/content` sub-resource.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `object_id` | `str` | Content-addressed identifier, e.g. `sha256:abc123…` |
+| `path` | `str` | Client-supplied relative path hint, e.g. `tracks/jazz_4b.mid` |
+| `size_bytes` | `int` | Size of the stored binary in bytes |
+| `created_at` | `datetime` | UTC timestamp when the object was first pushed |
+
+**Producer:** `musehub_repository.list_objects()` → `objects.list_objects` route handler
+**Consumer:** Muse Hub web UI commit page — uses `path` extension to choose display treatment (`.webp` → img, `.mp3` → audio, `.mid` → download link)
+
+### `ObjectMetaListResponse`
+
+Wrapper returned by `GET /api/v1/musehub/repos/{repo_id}/objects`.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `objects` | `list[ObjectMetaResponse]` | All artifact metadata for the repo, ordered by path |
+
+**Producer:** `objects.list_objects` route handler
+**Consumer:** Muse Hub web UI; any agent inspecting which artifacts are available for a repo
