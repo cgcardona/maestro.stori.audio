@@ -3,11 +3,11 @@
 Entry point for the ``muse`` console script. Registers all MVP
 subcommands (amend, arrange, ask, checkout, chord-map, commit, commit-tree,
 context, contour, describe, diff, divergence, dynamics, emotion-diff, export,
-find, form, grep, groove-check, humanize, import, init, inspect, key, log,
-merge, meter, motif, open, play, pull, push, recall, remote, render-preview,
-resolve, revert, session, show, similarity, status, swing, symbolic-ref, tag,
-tempo, tempo-scale, timeline, update-ref, validate) as Typer sub-applications.
-"""
+find, form, grep, groove-check, harmony, humanize, import, init, inspect,
+key, log, merge, meter, motif, open, play, pull, push, recall, remote,
+render-preview, reset, resolve, revert, session, show, similarity, status,
+swing, symbolic-ref, tag, tempo, tempo-scale, timeline, update-ref, validate,
+write-tree) as Typer sub-applications."""
 from __future__ import annotations
 
 import typer
@@ -32,6 +32,7 @@ from maestro.muse_cli.commands import (
     form,
     grep_cmd,
     groove_check,
+    harmony,
     humanize,
     import_cmd,
     init,
@@ -48,6 +49,7 @@ from maestro.muse_cli.commands import (
     recall,
     remote,
     render_preview,
+    reset,
     resolve,
     revert,
     session,
@@ -62,6 +64,7 @@ from maestro.muse_cli.commands import (
     timeline,
     update_ref,
     validate,
+    write_tree,
 )
 
 cli = typer.Typer(
@@ -85,6 +88,7 @@ cli.add_typer(
 cli.add_typer(grep_cmd.app, name="grep", help="Search for a musical pattern across all commits.")
 cli.add_typer(log.app, name="log", help="Display the variation history graph.")
 cli.add_typer(find.app, name="find", help="Search commit history by musical properties.")
+cli.add_typer(harmony.app, name="harmony", help="Analyze harmonic content (key, mode, chords, tension) of a commit.")
 cli.add_typer(inspect.app, name="inspect", help="Print structured JSON of the Muse commit graph.")
 cli.add_typer(checkout.app, name="checkout", help="Checkout a historical variation.")
 cli.add_typer(merge.app, name="merge", help="Three-way merge two variation branches.")
@@ -115,14 +119,16 @@ cli.add_typer(emotion_diff.app, name="emotion-diff", help="Compare emotion vecto
 cli.add_typer(symbolic_ref.app, name="symbolic-ref", help="Read or write a symbolic ref (e.g. HEAD).")
 cli.add_typer(show.app, name="show", help="Inspect a commit: metadata, snapshot, diff, MIDI files, and audio preview.")
 cli.add_typer(render_preview.app, name="render-preview", help="Generate an audio preview of a commit's snapshot.")
+cli.add_typer(reset.app, name="reset", help="Reset the branch pointer to a prior commit.")
+cli.add_typer(resolve.app, name="resolve", help="Mark a conflicted file as resolved (--ours or --theirs).")
 cli.add_typer(groove_check.app, name="groove-check", help="Analyze rhythmic drift across commits to find groove regressions.")
 cli.add_typer(form.app, name="form", help="Analyze or annotate the formal structure (sections) of a commit.")
 cli.add_typer(similarity.app, name="similarity", help="Compare two commits by musical similarity score.")
 cli.add_typer(tempo_scale.app, name="tempo-scale", help="Stretch or compress the timing of a commit.")
-cli.add_typer(resolve.app, name="resolve", help="Mark a conflicted file as resolved (--ours or --theirs).")
 cli.add_typer(timeline.app, name="timeline", help="Visualize musical evolution chronologically.")
 cli.add_typer(update_ref.app, name="update-ref", help="Write or delete a ref (branch or tag pointer).")
 cli.add_typer(validate.app, name="validate", help="Check musical integrity of the working tree.")
+cli.add_typer(write_tree.app, name="write-tree", help="Write the current muse-work/ state as a snapshot (tree) object.")
 
 
 if __name__ == "__main__":

@@ -1571,6 +1571,101 @@ CLI contract; stub implementations are clearly marked.
 
 ---
 
+### `muse harmony`
+
+**Purpose:** Analyze the harmonic content (key center, mode, chord progression, harmonic
+rhythm, and tension profile) of a commit. The primary tool for understanding what a
+composition is doing harmonically — information that is completely invisible to Git.
+An AI agent calling `muse harmony --json` knows whether the current arrangement is in
+Eb major with a II-V-I progression and moderate tension, and can use this to make
+musically coherent generation decisions.
+
+**Usage:**
+```bash
+muse harmony [<commit>] [OPTIONS]
+```
+
+**Flags:**
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `COMMIT` | positional | HEAD | Commit ref to analyze |
+| `--track TEXT` | string | all tracks | Restrict to a named MIDI track (e.g. `--track keys`) |
+| `--section TEXT` | string | — | Restrict to a named musical section/region (planned) |
+| `--compare COMMIT` | string | — | Compare harmonic content against another commit |
+| `--range FROM..TO` | string | — | Analyze across a commit range (planned) |
+| `--progression` | flag | off | Show only the chord progression sequence |
+| `--key` | flag | off | Show only the detected key center |
+| `--mode` | flag | off | Show only the detected mode |
+| `--tension` | flag | off | Show only the harmonic tension profile |
+| `--json` | flag | off | Emit structured JSON for agent consumption |
+
+**Output example (text):**
+```
+Commit abc1234 — Harmonic Analysis
+(stub — full MIDI analysis pending)
+
+Key: Eb (confidence: 0.92)
+Mode: major
+Chord progression: Ebmaj7 | Fm7 | Bb7sus4 | Bb7 | Ebmaj7 | Abmaj7 | Gm7 | Cm7
+Harmonic rhythm: 2.1 chords/bar avg
+Tension profile: Low → Medium → High → Resolution (textbook tension-release arc)  [0.2 → 0.4 → 0.8 → 0.3]
+```
+
+**Output example (`--json`):**
+```json
+{
+  "commit_id": "abc1234",
+  "branch": "main",
+  "key": "Eb",
+  "mode": "major",
+  "confidence": 0.92,
+  "chord_progression": ["Ebmaj7", "Fm7", "Bb7sus4", "Bb7", "Ebmaj7", "Abmaj7", "Gm7", "Cm7"],
+  "harmonic_rhythm_avg": 2.1,
+  "tension_profile": [0.2, 0.4, 0.8, 0.3],
+  "track": "all",
+  "source": "stub"
+}
+```
+
+**Output example (`--compare <commit> --json`):**
+```json
+{
+  "head": { "commit_id": "abc1234", "key": "Eb", "mode": "major", ... },
+  "compare": { "commit_id": "def5678", "key": "Eb", "mode": "major", ... },
+  "key_changed": false,
+  "mode_changed": false,
+  "chord_progression_delta": []
+}
+```
+
+**Result type:** `HarmonyResult` — fields: `commit_id`, `branch`, `key`, `mode`,
+`confidence`, `chord_progression`, `harmonic_rhythm_avg`, `tension_profile`, `track`, `source`.
+Compare path returns `HarmonyCompareResult` — fields: `head`, `compare`, `key_changed`,
+`mode_changed`, `chord_progression_delta`.
+
+**Agent use case:** Before generating a new instrument layer, an agent calls
+`muse harmony --json` to discover the harmonic context. If the arrangement is in
+Eb major with a II-V-I progression, the agent ensures its generated voicings stay
+diatonic to Eb. If the tension profile shows a build toward the chorus, the agent
+adds chromatic tension at the right moment rather than resolving early.
+`muse harmony --compare HEAD~5 --json` reveals whether the composition has
+modulated, shifted mode, or changed its harmonic rhythm — all decisions an AI
+needs to make coherent musical choices across versions.
+
+**Implementation:** `maestro/muse_cli/commands/harmony.py` — `_harmony_analyze_async`
+(injectable async core), `HarmonyResult` / `HarmonyCompareResult` (TypedDict result
+entities), `_stub_harmony` (placeholder data), `_tension_label` (arc classifier),
+`_render_result_human` / `_render_result_json` / `_render_compare_human` /
+`_render_compare_json` (renderers). Exit codes: 0 success, 2 outside repo, 3 internal.
+
+> **Stub note:** Chord detection, key inference, and tension computation are placeholder
+> values derived from a static Eb major II-V-I template. Full implementation requires
+> MIDI note extraction from committed snapshot objects (future: Storpheus chord detection
+> route). The CLI contract, result types, and flag set are stable.
+
+---
+
 ### `muse dynamics`
 
 **Purpose:** Analyze the velocity (loudness) profile of a commit across all instrument
@@ -3905,6 +4000,59 @@ Use `muse update-ref refs/tags/v1.0 <commit_id>` to mark a production-ready
 snapshot with a stable tag pointer that other agents can reference by name.
 ---
 
+## `muse write-tree` — Write Current Working-Tree as a Snapshot Object
+
+### `muse write-tree`
+
+**Purpose:** Hash all files in `muse-work/`, persist the object and snapshot
+rows in the database, and print the `snapshot_id`.  This is the plumbing
+primitive that underlies `muse commit` — it writes the tree object without
+recording any history (no commit row, no branch-pointer update).  AI agents
+use it to obtain a stable, content-addressed handle to the current working-tree
+state before deciding whether to commit.
+
+**Status:** ✅ Fully implemented (issue #89)
+
+**Usage:**
+```bash
+muse write-tree [OPTIONS]
+```
+
+**Flags:**
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--prefix PATH` | string | *(none)* | Only include files whose path (relative to `muse-work/`) starts with *PATH*. Example: `--prefix drums/` snapshots only the drums sub-directory. |
+| `--missing-ok` | flag | off | Do not fail when `muse-work/` is absent or empty, or when `--prefix` matches no files. Still prints a valid (empty) `snapshot_id`. |
+
+**Output example:**
+```
+a3f92c1e8b4d5f67890abcdef1234567890abcdef1234567890abcdef12345678
+```
+(64-character sha256 hex digest of the sorted `path:object_id` pairs.)
+
+**Idempotency:** Same file content → same `snapshot_id`.  Running `muse write-tree`
+twice without changing any file makes exactly zero new DB writes (all upserts are
+no-ops).
+
+**Result type:** `snapshot_id` is a raw 64-char hex string printed to stdout.
+No named result type — the caller decides what to do with the ID (compare,
+commit, discard).
+
+**Agent use case:** An AI agent that just generated a batch of MIDI files calls
+`muse write-tree` to get the `snapshot_id` for the current working tree.  It
+then compares that ID against the last committed `snapshot_id` (via `muse log
+--json | head -1`) to decide whether the new generation is novel enough to
+commit.  If the IDs match, the files are identical to the last commit and no
+commit is needed.
+
+**Implementation:** `maestro/muse_cli/commands/write_tree.py`.  Reuses
+`build_snapshot_manifest`, `compute_snapshot_id`, `upsert_object`, and
+`upsert_snapshot` from the commit pipeline.  No new DB schema — the same
+`muse_cli_objects` and `muse_cli_snapshots` tables.
+
+---
+
 ## Command Registration Summary
 
 | Command | File | Status | Issue |
@@ -3928,10 +4076,11 @@ snapshot with a stable tag pointer that other agents can reference by name.
 | `muse motif` | `commands/motif.py` | ✅ stub (PR —) | #101 |
 | `muse symbolic-ref` | `commands/symbolic_ref.py` | ✅ implemented (issue #93) | #93 |
 | `muse tag` | `commands/tag.py` | ✅ implemented (PR #133) | #123 |
-| `muse timeline` | `commands/timeline.py` | ✅ implemented (PR #TBD) | #97 |
 | `muse tempo-scale` | `commands/tempo_scale.py` | ✅ stub (PR open) | #111 |
+| `muse timeline` | `commands/timeline.py` | ✅ implemented (PR #TBD) | #97 |
 | `muse update-ref` | `commands/update_ref.py` | ✅ implemented (PR #143) | #91 |
 | `muse validate` | `commands/validate.py` | ✅ implemented (PR #TBD) | #99 |
+| `muse write-tree` | `commands/write_tree.py` | ✅ implemented | #89 |
 
 All stub commands have stable CLI contracts. Full musical analysis (MIDI content
 parsing, vector embeddings, LLM synthesis) is tracked as follow-up issues.
@@ -4114,6 +4263,134 @@ the computed values will change when the full implementation is wired in.
 `_contour_history_async()`, `_format_detect()`, `_format_compare()`,
 `_format_history()`.  Exit codes: 0 success, 2 outside repo
 (`REPO_NOT_FOUND`), 3 internal error (`INTERNAL_ERROR`).
+
+---
+
+---
+
+## `muse reset` — Reset Branch Pointer to a Prior Commit
+
+### Purpose
+
+Move the current branch's HEAD pointer backward to a prior commit, with three
+levels of aggression mirroring git's model.  The "panic button" for music
+production: when a producer makes ten bad commits and wants to return to the
+last known-good take.
+
+### Usage
+
+```bash
+muse reset [--soft | --mixed | --hard] [--yes] <commit>
+```
+
+### Flags
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `<commit>` | positional | required | Target commit (HEAD, HEAD~N, full/abbreviated SHA) |
+| `--soft` | flag | off | Move branch pointer only; muse-work/ and object store unchanged |
+| `--mixed` | flag | on | Move branch pointer and reset index (default; equivalent to soft in current model) |
+| `--hard` | flag | off | Move branch pointer AND overwrite muse-work/ with target snapshot |
+| `--yes` / `-y` | flag | off | Skip confirmation prompt for --hard mode |
+
+### Modes
+
+**Soft** (`--soft`):
+- Updates `.muse/refs/heads/<branch>` to point to the target commit.
+- `muse-work/` files are completely untouched.
+- The next `muse commit` will capture the current working tree on top of the rewound HEAD.
+- Use when you want to re-commit with a different message or squash commits.
+
+**Mixed** (`--mixed`, default):
+- Same as soft in the current Muse model (no explicit staging area exists yet).
+- Included for API symmetry with git and forward-compatibility when a staging
+  index is added.
+
+**Hard** (`--hard`):
+- Moves the branch ref to the target commit.
+- Overwrites every file in `muse-work/` with the content from the target
+  commit's snapshot.  Files are read from `.muse/objects/<sha[:2]>/<sha[2:]>`
+  (the content-addressed blob store populated by `muse commit`).
+- Files in `muse-work/` that are NOT present in the target snapshot are deleted.
+- **Prompts for confirmation** unless `--yes` is given — this is destructive.
+- **Requires `muse commit` to have been run** at least once after repo init so
+  that object blobs are present in `.muse/objects/`.
+
+### HEAD~N Syntax
+
+```bash
+muse reset HEAD~1       # one parent back (previous commit)
+muse reset HEAD~3       # three parents back
+muse reset abc123       # abbreviated SHA prefix
+muse reset --hard HEAD~2  # two parents back + restore working tree
+```
+
+`HEAD~N` walks the primary parent chain only.  Merge parents
+(`parent2_commit_id`) are not traversed.
+
+### Guards
+
+- **Merge in progress**: blocked when `.muse/MERGE_STATE.json` exists.
+  Resolve or abort the merge before resetting.
+- **No commits on branch**: exits with `USER_ERROR` if the current branch
+  has never been committed.
+- **Missing object blobs** (hard mode): exits with `INTERNAL_ERROR` rather
+  than silently leaving `muse-work/` in a partial state.
+
+### Output Examples
+
+```
+# Soft/mixed reset:
+✅ HEAD is now at abc123de
+
+# Hard reset (2 files restored, 1 deleted):
+✅ HEAD is now at abc123de (2 files restored, 1 files deleted)
+
+# Abort:
+⚠️  muse reset --hard will OVERWRITE muse-work/ with the target snapshot.
+    All uncommitted changes will be LOST.
+Proceed? [y/N]: N
+Reset aborted.
+```
+
+### Object Store
+
+`muse commit` now writes every file's blob content to `.muse/objects/` using
+a two-level sharding layout identical to git's loose-object store:
+
+```
+.muse/objects/
+  ab/           ← first two hex chars of sha256
+    cdef1234...  ← remaining 62 chars — the raw file bytes
+```
+
+This store enables `muse reset --hard` to restore any previously committed
+snapshot without needing the live `muse-work/` files.  Objects are written
+idempotently (never overwritten once stored).
+
+### Result Type
+
+`ResetResult` — see [`docs/reference/type_contracts.md`](../reference/type_contracts.md).
+
+### Agent Use Case
+
+An AI composition agent uses `muse reset` to recover from a bad generation run:
+
+1. Agent calls `muse log --json` to identify the last known-good commit SHA.
+2. Agent calls `muse reset --hard --yes <sha>` to restore the working tree.
+3. Agent calls `muse status` to verify the working tree matches expectations.
+4. Agent resumes composition from the clean baseline.
+
+### Implementation
+
+- **Service layer:** `maestro/services/muse_reset.py` — `perform_reset()`,
+  `resolve_ref()`, `store_object()`, `object_store_path()`.
+- **CLI command:** `maestro/muse_cli/commands/reset.py` — Typer callback,
+  confirmation prompt, error display.
+- **Commit integration:** `maestro/muse_cli/commands/commit.py` — calls
+  `store_object()` for each file during commit to populate `.muse/objects/`.
+- **Exit codes:** 0 success, 1 user error (`USER_ERROR`), 2 not a repo
+  (`REPO_NOT_FOUND`), 3 internal error (`INTERNAL_ERROR`).
 
 ---
 
