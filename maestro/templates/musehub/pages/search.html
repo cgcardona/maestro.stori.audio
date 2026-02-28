@@ -4,6 +4,7 @@
 {% block breadcrumb %}
   <a href="/musehub/ui/{{ owner }}/{{ repo_slug }}">{{ owner }}/{{ repo_slug }}</a> / search
 {% endblock %}
+{% block repo_nav %}{% include "musehub/partials/repo_nav.html" %}{% endblock %}
 
 {% block page_data %}
 const repoId  = {{ repo_id | tojson }};
@@ -13,10 +14,7 @@ const apiBase = '/api/v1/musehub/repos/' + repoId;
 
 {% block page_script %}
 {% raw %}
-function escHtml(s) {
-  if (!s) return '';
-  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-}
+initRepoNav(repoId);
 
 let currentMode = 'keyword';
 

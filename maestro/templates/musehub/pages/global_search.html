@@ -3,8 +3,6 @@
 {% block title %}Search{% endblock %}
 {% block breadcrumb %}Search{% endblock %}
 
-{% block auth_guard %}{% endblock %}
-
 {% block page_data %}
 const INITIAL_Q    = {{ initial_q | tojson }};
 const INITIAL_MODE = {{ initial_mode | tojson }};

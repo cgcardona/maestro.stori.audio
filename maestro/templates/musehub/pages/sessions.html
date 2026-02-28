@@ -4,6 +4,7 @@
 {% block breadcrumb %}
   <a href="/musehub/ui/{{ owner }}/{{ repo_slug }}">{{ owner }}/{{ repo_slug }}</a> / sessions
 {% endblock %}
+{% block repo_nav %}{% include "musehub/partials/repo_nav.html" %}{% endblock %}
 
 {% block page_data %}
 const repoId = {{ repo_id | tojson }};
@@ -12,11 +13,6 @@ const base   = {{ base_url | tojson }};
 
 {% block page_script %}
 {% raw %}
-function escHtml(s) {
-  if (!s) return '';
-  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-}
-
 function fmtDuration(secs) {
   if (secs === null || secs === undefined) return 'live';
   const h = Math.floor(secs / 3600);
@@ -28,6 +24,7 @@ function fmtDuration(secs) {
 }
 
 async function load() {
+  initRepoNav(repoId);
   try {
     const data     = await apiFetch('/repos/' + repoId + '/sessions?limit=100');
     const sessions = data.sessions || [];

@@ -294,19 +294,27 @@ async def test_release_detail_body_preserved(
 
 
 @pytest.mark.anyio
-async def test_release_requires_auth(client: AsyncClient) -> None:
-    """All release endpoints return 401 without a Bearer token."""
-    endpoints = [
-        ("POST", "/api/v1/musehub/repos/some-repo/releases"),
-        ("GET", "/api/v1/musehub/repos/some-repo/releases"),
-        ("GET", "/api/v1/musehub/repos/some-repo/releases/v1.0"),
+async def test_release_write_requires_auth(client: AsyncClient) -> None:
+    """POST release endpoint returns 401 without a Bearer token (always requires auth)."""
+    response = await client.post("/api/v1/musehub/repos/some-repo/releases", json={})
+    assert response.status_code == 401, "POST /releases should require auth"
+
+
+@pytest.mark.anyio
+async def test_release_read_endpoints_return_404_for_nonexistent_repo_without_auth(
+    client: AsyncClient,
+) -> None:
+    """GET release endpoints return 404 for non-existent repos without a token.
+
+    Read endpoints use optional_token — auth is visibility-based; missing repo → 404.
+    """
+    read_endpoints = [
+        "/api/v1/musehub/repos/non-existent-repo/releases",
+        "/api/v1/musehub/repos/non-existent-repo/releases/v1.0",
     ]
-    for method, url in endpoints:
-        if method == "POST":
-            response = await client.post(url, json={})
-        else:
-            response = await client.get(url)
-        assert response.status_code == 401, f"{method} {url} should require auth"
+    for url in read_endpoints:
+        response = await client.get(url)
+        assert response.status_code == 404, f"GET {url} should return 404 for non-existent repo"
 
 
 # ---------------------------------------------------------------------------

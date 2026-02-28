@@ -5,6 +5,7 @@
   <a href="/musehub/ui/{{ owner }}/{{ repo_slug }}">{{ owner }}/{{ repo_slug }}</a> /
   analysis / {{ ref[:8] }} / dynamics
 {% endblock %}
+{% block repo_nav %}{% include "musehub/partials/repo_nav.html" %}{% endblock %}
 
 {% block page_data %}
 const repoId  = {{ repo_id | tojson }};
@@ -15,11 +16,6 @@ const apiBase = '/api/v1/musehub/repos/' + repoId;
 
 {% block page_script %}
 {% raw %}
-function escHtml(s) {
-  if (s === null || s === undefined) return '';
-  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-}
-
 const ARC_COLORS = {
   flat:        '#8b949e',
   terraced:    '#bc8cff',
@@ -153,6 +149,7 @@ function applyFilters() {
 }
 
 async function load(track, section) {
+  initRepoNav(repoId);
   document.getElementById('content').innerHTML = '<p class="loading">Loading dynamics data&#8230;</p>';
   try {
     const url = buildUrl(track, section).replace(apiBase, '');

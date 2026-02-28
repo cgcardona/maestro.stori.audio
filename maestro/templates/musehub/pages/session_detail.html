@@ -5,6 +5,7 @@
   <a href="/musehub/ui/{{ owner }}/{{ repo_slug }}">{{ owner }}/{{ repo_slug }}</a> /
   <a href="/musehub/ui/{{ owner }}/{{ repo_slug }}/sessions">sessions</a> / {{ session_id[:8] }}
 {% endblock %}
+{% block repo_nav %}{% include "musehub/partials/repo_nav.html" %}{% endblock %}
 
 {% block page_data %}
 const repoId    = {{ repo_id | tojson }};
@@ -14,11 +15,6 @@ const base      = {{ base_url | tojson }};
 
 {% block page_script %}
 {% raw %}
-function escHtml(s) {
-  if (!s) return '';
-  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-}
-
 function fmtDuration(startIso, endIso) {
   if (!startIso || !endIso) return '--';
   const ms = new Date(endIso) - new Date(startIso);
@@ -45,6 +41,7 @@ async function loadSessionCounts() {
 }
 
 async function load() {
+  initRepoNav(repoId);
   try {
     const [session, counts] = await Promise.all([
       apiFetch('/repos/' + repoId + '/sessions/' + sessionId),
@@ -95,12 +92,14 @@ async function load() {
         </span>
       </div>`;
 
+    const isLive = !session.endedAt;
     document.getElementById('content').innerHTML = `
-      <div style="margin-bottom:12px">
-        <a href="${base}/sessions">&larr; Back to sessions</a>
-      </div>
       <div class="card">
-        <h1>Recording Session</h1>
+        <div style="display:flex;align-items:center;gap:var(--space-3);margin-bottom:var(--space-4);flex-wrap:wrap">
+          <h1 style="margin:0">Recording Session</h1>
+          ${isLive ? '<span class="badge badge-active" style="font-size:13px;animation:pulse 1.5s ease-in-out infinite">🔴 Live</span>' : ''}
+          <a href="${base}/sessions" class="btn btn-ghost btn-sm" style="margin-left:auto">&larr; All sessions</a>
+        </div>
         <div class="meta-row">
           <div class="meta-item">
             <span class="meta-label">Started</span>
@@ -108,11 +107,11 @@ async function load() {
           </div>
           <div class="meta-item">
             <span class="meta-label">Ended</span>
-            <span class="meta-value">${session.endedAt ? fmtDate(session.endedAt) : '--'}</span>
+            <span class="meta-value">${session.endedAt ? fmtDate(session.endedAt) : '<em class="text-muted">in progress</em>'}</span>
           </div>
           <div class="meta-item">
             <span class="meta-label">Duration</span>
-            <span class="meta-value">${duration}</span>
+            <span class="meta-value">${session.endedAt ? duration : fmtRelative(session.startedAt)}</span>
           </div>
           ${session.location ? `
           <div class="meta-item">
@@ -121,13 +120,13 @@ async function load() {
           </div>` : ''}
           <div class="meta-item">
             <span class="meta-label">Session ID</span>
-            <span class="meta-value" style="font-family:monospace;font-size:12px">${escHtml(session.sessionId)}</span>
+            <span class="meta-value text-mono text-sm">${shortSha(session.sessionId)}</span>
           </div>
         </div>
         ${session.intent ? `
-        <div style="margin-top:8px">
-          <span class="meta-label">Intent</span>
-          <p style="margin-top:4px;font-size:14px;color:#c9d1d9">${escHtml(session.intent)}</p>
+        <div style="margin-top:var(--space-3)">
+          <span class="meta-label">&#127358; Intent</span>
+          <p style="margin-top:4px;font-size:var(--font-size-sm);color:var(--text-secondary)">${escHtml(session.intent)}</p>
         </div>` : ''}
         ${navHtml}
       </div>
@@ -153,6 +152,35 @@ async function load() {
   }
 }
 
-load();
+let _liveTimer = null;
+
+async function startLivePolling() {
+  // Poll every 10 seconds for live sessions; stop when session ends
+  _liveTimer = setInterval(async () => {
+    try {
+      const session = await apiFetch('/repos/' + repoId + '/sessions/' + sessionId);
+      if (session.endedAt) {
+        clearInterval(_liveTimer);
+        // Reload to show final state
+        load();
+        return;
+      }
+      // Update participant list and commit count live
+      const liveEl = document.getElementById('live-commit-count');
+      if (liveEl) liveEl.textContent = (session.commits || []).length + ' commits so far';
+    } catch(e) { /* non-fatal */ }
+  }, 10000);
+}
+
+async function loadAndMaybePoll() {
+  await load();
+  // Check if session is live after load completes
+  try {
+    const session = await apiFetch('/repos/' + repoId + '/sessions/' + sessionId);
+    if (!session.endedAt) startLivePolling();
+  } catch(e) { /* non-fatal */ }
+}
+
+loadAndMaybePoll();
 {% endraw %}
 {% endblock %}

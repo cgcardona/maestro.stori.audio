@@ -3,8 +3,6 @@
 {% block title %}@{{ username }}{% endblock %}
 {% block breadcrumb %}<a href="/musehub/ui/users/{{ username }}">@{{ username }}</a>{% endblock %}
 
-{% block auth_guard %}{% endblock %}
-
 {% block page_data %}
 const username    = {{ username | tojson }};
 const API_PROFILE = '/api/v1/musehub/users/' + username;
@@ -56,7 +54,41 @@ function repoCardHtml(r) {
   </div>`;
 }
 
+async function toggleFollow() {
+  const btn = document.getElementById('follow-btn');
+  if (!btn) return;
+  const isFollowing = btn.dataset.following === 'true';
+  try {
+    if (isFollowing) {
+      await fetch('/api/v1/musehub/users/' + username + '/follow', { method: 'DELETE', headers: authHeaders() });
+      btn.dataset.following = 'false';
+      btn.textContent = 'Follow';
+      btn.classList.remove('following');
+    } else {
+      await fetch('/api/v1/musehub/users/' + username + '/follow', { method: 'POST', headers: authHeaders() });
+      btn.dataset.following = 'true';
+      btn.textContent = 'Following';
+      btn.classList.add('following');
+    }
+  } catch(e) { /* non-critical */ }
+}
+
+async function loadFollowState() {
+  try {
+    const data = await fetch('/api/v1/musehub/users/' + username + '/followers', { headers: authHeaders() }).then(r => r.json());
+    const countEl = document.getElementById('follower-count');
+    if (countEl) countEl.textContent = (data.follower_count || 0) + ' followers';
+    if (getToken() && document.getElementById('follow-btn')) {
+      document.getElementById('follow-btn').style.display = '';
+      document.getElementById('follow-btn').dataset.following = data.following ? 'true' : 'false';
+      document.getElementById('follow-btn').textContent = data.following ? 'Following' : 'Follow';
+      if (data.following) document.getElementById('follow-btn').classList.add('following');
+    }
+  } catch(e) { /* non-critical */ }
+}
+
 async function load() {
+  loadFollowState();
   let profile;
   try {
     profile = await fetch(API_PROFILE).then(r => {
@@ -111,11 +143,18 @@ async function load() {
     <div class="card profile-header">
       <div class="avatar">${avatarHtml}</div>
       <div class="profile-meta">
-        <h1>${escHtml(profile.username)}</h1>
+        <div style="display:flex;align-items:center;gap:var(--space-3);flex-wrap:wrap">
+          <h1 style="margin:0">${escHtml(profile.username)}</h1>
+          <button class="follow-btn" id="follow-btn" style="display:none"
+                  onclick="toggleFollow()">Follow</button>
+        </div>
         ${profile.bio ? '<p class="bio">' + escHtml(profile.bio) + '</p>' : ''}
-        <div class="credits-badge">
-          <span class="num">${profile.sessionCredits || 0}</span>
-          <span>session credits</span>
+        <div style="display:flex;gap:var(--space-4);align-items:center;flex-wrap:wrap;margin-top:var(--space-2)">
+          <div class="credits-badge">
+            <span class="num">${profile.sessionCredits || 0}</span>
+            <span>session credits</span>
+          </div>
+          <span class="text-muted text-sm" id="follower-count"></span>
         </div>
       </div>
     </div>

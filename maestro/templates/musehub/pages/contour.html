@@ -5,6 +5,7 @@
   <a href="/musehub/ui/{{ owner }}/{{ repo_slug }}">{{ owner }}/{{ repo_slug }}</a> /
   analysis / {{ ref[:8] }} / contour
 {% endblock %}
+{% block repo_nav %}{% include "musehub/partials/repo_nav.html" %}{% endblock %}
 
 {% block page_data %}
 const repoId  = {{ repo_id | tojson }};
@@ -15,11 +16,6 @@ const apiBase = '/api/v1/musehub/repos/' + repoId;
 
 {% block page_script %}
 {% raw %}
-function escHtml(s) {
-  if (s === null || s === undefined) return '';
-  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-}
-
 function pitchCurveSvg(pitchCurve) {
   if (!pitchCurve || pitchCurve.length === 0) return '<p class="loading">No pitch data.</p>';
   const W = 700, H = 120, pad = 24;
@@ -77,6 +73,7 @@ function tessituraBar(pitchCurve) {
 }
 
 async function load(track) {
+  initRepoNav(repoId);
   try {
     let url = '/repos/' + repoId + '/analysis/' + encodeURIComponent(ref) + '/contour';
     if (track) url += '?track=' + encodeURIComponent(track);

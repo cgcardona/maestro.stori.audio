@@ -1,7 +1,11 @@
 {% extends "musehub/base.html" %}
 
 {% block title %}{{ owner }}/{{ repo_slug }}{% endblock %}
-{% block breadcrumb %}<a href="/musehub/ui/{{ owner }}/{{ repo_slug }}">{{ owner }}/{{ repo_slug }}</a>{% endblock %}
+{% block breadcrumb %}<a href="/musehub/ui/{{ owner }}">{{ owner }}</a> / <a href="{{ base_url }}">{{ repo_slug }}</a>{% endblock %}
+
+{% block repo_nav %}
+{% include "musehub/partials/repo_nav.html" %}
+{% endblock %}
 
 {% block page_data %}
 const repoId = {{ repo_id | tojson }};
@@ -10,15 +14,81 @@ const base = {{ base_url | tojson }};
 
 {% block page_script %}
 {% raw %}
-function escHtml(s) {
-  if (!s) return '';
-  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+async function loadSimilar() {
+  try {
+    const data = await apiFetch('/search/repos/similar?repo_id=' + repoId + '&limit=4');
+    const repos = (data.results || []).filter(r => r.repoId !== repoId);
+    if (repos.length === 0) return;
+    const sidebar = document.getElementById('similar-repos');
+    if (!sidebar) return;
+    sidebar.innerHTML = `
+      <div class="card">
+        <h3 style="margin-bottom:var(--space-3)">&#127799; Similar repos</h3>
+        ${repos.map(r => `
+          <div style="padding:var(--space-2) 0;border-bottom:1px solid var(--border-subtle)">
+            <a href="/musehub/ui/${escHtml(r.owner)}/${escHtml(r.slug)}" class="text-sm">
+              ${escHtml(r.owner)}/${escHtml(r.slug)}
+            </a>
+            <div class="text-xs text-muted" style="margin-top:2px">
+              ${r.keySignature ? '&#9837; ' + escHtml(r.keySignature) + ' &bull; ' : ''}
+              ${r.tempoBpm ? r.tempoBpm + ' BPM' : ''}
+            </div>
+          </div>`).join('')}
+      </div>`;
+    sidebar.style.display = '';
+  } catch(e) { /* similar repos is non-critical */ }
+}
+
+async function loadEmotionArc() {
+  try {
+    const data = await apiFetch('/repos/' + repoId + '/timeline?limit=100');
+    const emotions = (data.emotion || []);
+    if (emotions.length < 2) return;
+
+    const arcEl = document.getElementById('emotion-arc');
+    if (!arcEl) return;
+
+    const W = 600, H = 60, pad = 10;
+    const valenceData = emotions.map(e => e.valence || 0.5);
+    const energyData  = emotions.map(e => e.energy  || 0.5);
+    const tensionData = emotions.map(e => e.tension  || 0.5);
+
+    function buildLine(vals, color) {
+      if (vals.length < 2) return '';
+      const xStep = (W - pad*2) / (vals.length - 1);
+      const points = vals.map((v, i) => `${pad + i*xStep},${H - pad - v*(H-pad*2)}`).join(' ');
+      return `<polyline points="${points}" fill="none" stroke="${color}" stroke-width="2" opacity="0.8"/>`;
+    }
+
+    arcEl.innerHTML = `
+      <div class="card" style="margin-top:var(--space-4)">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:var(--space-2)">
+          <h3 style="margin:0">&#128149; Emotion Arc</h3>
+          <a href="${base}/timeline" class="btn btn-ghost btn-sm">Full timeline &rarr;</a>
+        </div>
+        <div style="overflow-x:auto">
+          <svg viewBox="0 0 ${W} ${H}" style="width:100%;max-width:${W}px;height:${H}px;display:block">
+            ${buildLine(valenceData, 'var(--color-success)')}
+            ${buildLine(energyData,  'var(--color-danger)')}
+            ${buildLine(tensionData, 'var(--color-purple)')}
+          </svg>
+        </div>
+        <div style="display:flex;gap:var(--space-4);font-size:var(--font-size-xs);color:var(--text-muted);margin-top:var(--space-2)">
+          <span><span style="color:var(--color-success)">——</span> Valence</span>
+          <span><span style="color:var(--color-danger)">——</span> Energy</span>
+          <span><span style="color:var(--color-purple)">——</span> Tension</span>
+        </div>
+      </div>`;
+    arcEl.style.display = '';
+  } catch(e) { /* emotion arc is non-critical */ }
 }
 
 async function load(branch) {
+  initRepoNav(repoId);
+  loadSimilar();
+  loadEmotionArc();
   try {
-    const [repoData, branchData, commitData, sessionData] = await Promise.all([
-      apiFetch('/repos/' + repoId),
+    const [branchData, commitData, sessionData] = await Promise.all([
       apiFetch('/repos/' + repoId + '/branches'),
       apiFetch('/repos/' + repoId + '/commits' + (branch ? '?branch=' + encodeURIComponent(branch) + '&limit=20' : '?limit=20')),
       apiFetch('/repos/' + repoId + '/sessions?limit=1').catch(() => ({total: 0})),
@@ -28,44 +98,54 @@ async function load(branch) {
     const commits  = commitData.commits  || [];
 
     const branchSel = branches.map(b =>
-      '<option value="' + b.name + '"' + (b.name === branch ? ' selected' : '') + '>' + b.name + '</option>'
+      '<option value="' + escHtml(b.name) + '"' + (b.name === branch ? ' selected' : '') + '>' + escHtml(b.name) + '</option>'
     ).join('');
 
     const commitRows = commits.length === 0
-      ? '<p class="loading">No commits yet.</p>'
-      : commits.map(c => `
+      ? `<div class="empty-state">
+           <div class="empty-icon">&#127925;</div>
+           <p class="empty-title">No commits yet</p>
+           <p class="empty-desc">Push your first session with <code>muse push</code> to see commits here.</p>
+         </div>`
+      : commits.map(c => {
+          const parsed = parseCommitMessage(c.message);
+          const typeBadge = commitTypeBadge(parsed.type);
+          const scopeBadge = commitScopeBadge(parsed.scope);
+          return `
         <div class="commit-row">
           <a class="commit-sha" href="${base}/commits/${c.commitId}">${shortSha(c.commitId)}</a>
-          <span class="commit-msg"><a href="${base}/commits/${c.commitId}">${escHtml(c.message)}</a></span>
-          <span class="commit-meta">${escHtml(c.author)} &bull; ${fmtDate(c.timestamp)}</span>
-        </div>`).join('');
+          <span class="commit-msg">
+            <a href="${base}/commits/${c.commitId}">
+              ${typeBadge}${scopeBadge}
+              ${escHtml(parsed.subject || c.message)}
+            </a>
+          </span>
+          <span class="commit-meta">${escHtml(c.author)} &bull; ${fmtRelative(c.timestamp)}</span>
+        </div>`;
+        }).join('');
 
     document.getElementById('content').innerHTML = `
-      <div class="card">
-        <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px">
-          <h1 style="margin:0">${escHtml(repoData.name)}</h1>
-          <span class="badge badge-${repoData.visibility}">${repoData.visibility}</span>
+      <div class="card" style="margin-bottom:0">
+        <div style="display:flex;align-items:center;gap:var(--space-4);margin-bottom:var(--space-4);flex-wrap:wrap">
+          <div style="display:flex;align-items:center;gap:var(--space-2)">
+            <select id="branch-sel" onchange="load(this.value)" class="form-select" style="width:auto">
+              <option value="">All branches</option>
+              ${branchSel}
+            </select>
+            <span class="text-muted text-sm">${commitData.total} commit${commitData.total !== 1 ? 's' : ''}</span>
+          </div>
+          <div style="margin-left:auto;display:flex;gap:var(--space-2)">
+            <a href="${base}/graph" class="btn btn-secondary btn-sm">&#9912; Graph</a>
+            <a href="${base}/timeline" class="btn btn-secondary btn-sm">&#8987; Timeline</a>
+          </div>
         </div>
-        <div style="display:flex;gap:12px;margin-bottom:16px;flex-wrap:wrap">
-          <a href="${base}/pulls" class="btn btn-secondary">Pull Requests</a>
-          <a href="${base}/issues" class="btn btn-secondary">Issues</a>
-          <a href="${base}/releases" class="btn btn-secondary">Releases</a>
-          <a href="${base}/credits" class="btn btn-secondary">&#127926; Credits</a>
-          <a href="${base}/sessions" class="btn btn-secondary">
-            Sessions (${sessionData.total || 0})
-          </a>
-          <a href="${base}/search" class="btn btn-secondary">&#128269; Search</a>
+        <div class="commit-list">
+          ${commitRows}
         </div>
-        <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
-          <select id="branch-sel" onchange="load(this.value)">
-            <option value="">All branches</option>
-            ${branchSel}
-          </select>
-          <span class="meta-value" style="font-size:13px;color:#8b949e">
-            ${commitData.total} commit${commitData.total !== 1 ? 's' : ''}
-          </span>
-        </div>
-        ${commitRows}
+        ${commitData.total > 20 ? `
+        <div style="margin-top:var(--space-4);text-align:center">
+          <a href="${base}/search" class="btn btn-secondary btn-sm">View all ${commitData.total} commits</a>
+        </div>` : ''}
       </div>`;
   } catch(e) {
     if (e.message !== 'auth')
@@ -76,3 +156,10 @@ async function load(branch) {
 load('');
 {% endraw %}
 {% endblock %}
+
+{% block body_extra %}
+<div id="similar-repos" style="display:none;position:fixed;top:calc(var(--header-height) + 120px);right:var(--space-6);width:220px;z-index:5">
+</div>
+<div id="emotion-arc" style="display:none"></div>
+{% endblock %}
+

@@ -61,6 +61,252 @@ header .header-actions {
 }
 
 /* -------------------------------------------------------------------------
+ * Repo header card  (shown on all repo-scoped pages)
+ * ------------------------------------------------------------------------- */
+.repo-header {
+  background: var(--bg-surface);
+  border-bottom: 1px solid var(--border-default);
+  padding: var(--space-4) var(--space-6);
+}
+
+.repo-header-inner {
+  max-width: 1280px;
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+}
+
+.repo-header-identity {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-semibold);
+  flex-shrink: 0;
+}
+
+.repo-header-owner {
+  color: var(--color-accent);
+}
+
+.repo-header-sep {
+  color: var(--text-muted);
+  font-weight: var(--font-weight-regular);
+}
+
+.repo-header-name {
+  color: var(--text-primary);
+}
+
+.repo-visibility-badge {
+  font-size: var(--font-size-xs);
+  border: 1px solid var(--border-default);
+  background: transparent;
+  color: var(--text-muted);
+  border-radius: var(--radius-full);
+  padding: 1px var(--space-2);
+}
+
+.repo-header-meta {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  flex: 1;
+}
+
+.nav-meta-pill {
+  background: var(--bg-overlay);
+  color: var(--text-muted);
+  font-size: var(--font-size-xs);
+  padding: 2px var(--space-2);
+  border-radius: var(--radius-full);
+  border: 1px solid var(--border-subtle);
+  white-space: nowrap;
+}
+
+.nav-meta-tags {
+  display: flex;
+  gap: var(--space-1);
+  flex-wrap: wrap;
+}
+
+.nav-meta-tag {
+  background: var(--bg-overlay);
+  color: var(--color-accent);
+  font-size: var(--font-size-xs);
+  padding: 2px var(--space-2);
+  border-radius: var(--radius-full);
+  border: 1px solid var(--border-subtle);
+}
+
+.repo-header-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-shrink: 0;
+}
+
+/* -------------------------------------------------------------------------
+ * Repo tab strip  (sticky below global header)
+ * ------------------------------------------------------------------------- */
+:root {
+  --header-height: 57px;  /* global header height (padding + content) */
+}
+
+.repo-tabs {
+  background: var(--bg-surface);
+  border-bottom: 1px solid var(--border-default);
+  padding: 0 var(--space-6);
+  display: flex;
+  align-items: stretch;
+  overflow-x: auto;
+  scrollbar-width: none;      /* Firefox */
+  position: sticky;
+  top: var(--header-height);
+  z-index: calc(var(--z-raised) - 1);
+  /* Fade edges on overflow */
+  -webkit-mask-image: linear-gradient(to right, transparent 0px, black 24px, black calc(100% - 24px), transparent 100%);
+          mask-image: linear-gradient(to right, transparent 0px, black 24px, black calc(100% - 24px), transparent 100%);
+}
+
+.repo-tabs::-webkit-scrollbar { display: none; }
+
+.repo-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  font-size: var(--font-size-sm);
+  color: var(--text-muted);
+  border-bottom: 2px solid transparent;
+  white-space: nowrap;
+  text-decoration: none;
+  transition: color var(--transition-fast), border-color var(--transition-fast);
+  flex-shrink: 0;
+}
+
+.repo-tab:hover {
+  color: var(--text-primary);
+  text-decoration: none;
+  background: var(--bg-hover);
+}
+
+.repo-tab.active {
+  color: var(--text-primary);
+  border-bottom-color: var(--color-accent);
+}
+
+.tab-count {
+  background: var(--bg-overlay);
+  color: var(--text-muted);
+  border-radius: var(--radius-full);
+  padding: 0 var(--space-2);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
+  min-width: 18px;
+  text-align: center;
+}
+
+.repo-tab.active .tab-count {
+  background: var(--color-accent-muted);
+  color: var(--text-primary);
+}
+
+/* -------------------------------------------------------------------------
+ * Floating audio player bar (fixed at bottom)
+ * ------------------------------------------------------------------------- */
+.audio-player {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 64px;
+  background: var(--bg-surface);
+  border-top: 1px solid var(--border-default);
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: 0 var(--space-6);
+  z-index: var(--z-modal);
+  box-shadow: 0 -4px 16px rgba(0,0,0,0.4);
+}
+
+.player-btn {
+  background: none;
+  border: 1px solid var(--border-default);
+  color: var(--text-primary);
+  border-radius: var(--radius-full);
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex-shrink: 0;
+  font-size: 16px;
+  transition: background var(--transition-fast);
+}
+
+.player-btn:hover { background: var(--bg-hover); }
+
+.player-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex-shrink: 0;
+  max-width: 200px;
+}
+
+.player-title {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.player-repo {
+  font-size: var(--font-size-xs);
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.player-progress {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex: 1;
+}
+
+.player-time {
+  font-size: var(--font-size-xs);
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  flex-shrink: 0;
+  min-width: 32px;
+}
+
+.player-seek {
+  flex: 1;
+  height: 4px;
+  cursor: pointer;
+  accent-color: var(--color-accent);
+}
+
+/* push page content up when player is visible */
+body.player-open .container,
+body.player-open .container-wide {
+  padding-bottom: 80px;
+}
+
+/* -------------------------------------------------------------------------
  * Page container
  * ------------------------------------------------------------------------- */
 .container {

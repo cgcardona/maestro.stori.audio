@@ -1,12 +1,13 @@
 """Muse Hub issue tracking route handlers.
 
 Endpoint summary:
-  POST /musehub/repos/{repo_id}/issues                   — create an issue
-  GET  /musehub/repos/{repo_id}/issues                   — list issues
-  GET  /musehub/repos/{repo_id}/issues/{issue_number}    — get a single issue
-  POST /musehub/repos/{repo_id}/issues/{issue_number}/close — close an issue
+  POST /musehub/repos/{repo_id}/issues                   — create an issue (auth required)
+  GET  /musehub/repos/{repo_id}/issues                   — list issues (public repos: no auth)
+  GET  /musehub/repos/{repo_id}/issues/{issue_number}    — get a single issue (public repos: no auth)
+  POST /musehub/repos/{repo_id}/issues/{issue_number}/close — close an issue (auth required)
 
-All endpoints require a valid JWT Bearer token.
+Read endpoints use optional_token — unauthenticated access is allowed for public repos.
+Write endpoints always require a valid JWT Bearer token.
 No business logic lives here — all persistence is delegated to
 maestro.services.musehub_issues.
 """
@@ -17,7 +18,7 @@ import logging
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from maestro.auth.dependencies import TokenClaims, require_valid_token
+from maestro.auth.dependencies import TokenClaims, optional_token, require_valid_token
 from maestro.db import get_db
 from maestro.models.musehub import IssueCreate, IssueEventPayload, IssueListResponse, IssueResponse
 from maestro.services import musehub_issues
@@ -83,7 +84,7 @@ async def list_issues(
     state: str = Query("open", pattern="^(open|closed|all)$", description="Filter by state"),
     label: str | None = Query(None, description="Filter by label string"),
     db: AsyncSession = Depends(get_db),
-    _: TokenClaims = Depends(require_valid_token),
+    claims: TokenClaims | None = Depends(optional_token),
 ) -> IssueListResponse:
     """Return issues for a repo. Defaults to open issues only.
 
@@ -93,7 +94,12 @@ async def list_issues(
     repo = await musehub_repository.get_repo(db, repo_id)
     if repo is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repo not found")
-
+    if repo.visibility != "public" and claims is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required to access private repos.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
     issues = await musehub_issues.list_issues(db, repo_id, state=state, label=label)
     return IssueListResponse(issues=issues)
 
@@ -107,13 +113,18 @@ async def get_issue(
     repo_id: str,
     issue_number: int,
     db: AsyncSession = Depends(get_db),
-    _: TokenClaims = Depends(require_valid_token),
+    claims: TokenClaims | None = Depends(optional_token),
 ) -> IssueResponse:
     """Return a single issue. Returns 404 if the repo or issue number is not found."""
     repo = await musehub_repository.get_repo(db, repo_id)
     if repo is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repo not found")
-
+    if repo.visibility != "public" and claims is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required to access private repos.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
     issue = await musehub_issues.get_issue(db, repo_id, issue_number)
     if issue is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Issue not found")

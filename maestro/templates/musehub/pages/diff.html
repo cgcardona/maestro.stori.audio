@@ -1,0 +1,217 @@
+{% extends "musehub/base.html" %}
+
+{% block title %}Diff {{ commit_id[:8] }} · {{ owner }}/{{ repo_slug }}{% endblock %}
+{% block breadcrumb %}
+  <a href="/musehub/ui/{{ owner }}">{{ owner }}</a> /
+  <a href="{{ base_url }}">{{ repo_slug }}</a> /
+  <a href="{{ base_url }}/commits/{{ commit_id }}">{{ commit_id[:8] }}</a> /
+  diff
+{% endblock %}
+
+{% block repo_nav %}
+{% include "musehub/partials/repo_nav.html" %}
+{% endblock %}
+
+{% block page_data %}
+const repoId   = {{ repo_id | tojson }};
+const commitId = {{ commit_id | tojson }};
+const base     = {{ base_url | tojson }};
+{% endblock %}
+
+{% block page_script %}
+{% raw %}
+function metaDiff(a, b, label, icon) {
+  if (!a && !b) return '';
+  if (a === b) return `
+    <div class="meta-item">
+      <span class="meta-label">${icon} ${label}</span>
+      <span class="meta-value text-sm">${escHtml(a)}</span>
+    </div>`;
+  return `
+    <div class="meta-item">
+      <span class="meta-label">${icon} ${label}</span>
+      <span class="meta-value text-sm">
+        ${a ? `<span style="text-decoration:line-through;color:var(--color-danger)">${escHtml(a)}</span> ` : ''}
+        ${b ? `<span style="color:var(--color-success)">${escHtml(b)}</span>` : ''}
+      </span>
+    </div>`;
+}
+
+function trackDiff(parentObjects, childObjects) {
+  const ext = p => p.split('.').pop().toLowerCase();
+  const trackName = p => p.split('/').pop().replace(/\.[^.]+$/, '');
+
+  const parentPaths = new Set((parentObjects || []).map(o => o.path));
+  const childPaths  = new Set((childObjects  || []).map(o => o.path));
+
+  const added   = (childObjects  || []).filter(o => !parentPaths.has(o.path));
+  const removed = (parentObjects || []).filter(o => !childPaths.has(o.path));
+  const changed = (childObjects  || []).filter(o => parentPaths.has(o.path));
+
+  const rows = [];
+
+  removed.forEach(o => rows.push(`
+    <div class="diff-track-row diff-track-removed">
+      <span class="diff-sign diff-sign-remove">−</span>
+      <span class="text-sm">${escHtml(trackName(o.path))}</span>
+      <span class="text-xs text-muted">.${escHtml(ext(o.path))} &bull; removed</span>
+    </div>`));
+
+  added.forEach(o => rows.push(`
+    <div class="diff-track-row diff-track-added">
+      <span class="diff-sign diff-sign-add">+</span>
+      <span class="text-sm">${escHtml(trackName(o.path))}</span>
+      <span class="text-xs text-muted">.${escHtml(ext(o.path))} &bull; added</span>
+    </div>`));
+
+  changed.forEach(o => rows.push(`
+    <div class="diff-track-row diff-track-changed">
+      <span class="diff-sign diff-sign-change">~</span>
+      <span class="text-sm">${escHtml(trackName(o.path))}</span>
+      <span class="text-xs text-muted">.${escHtml(ext(o.path))} &bull; modified</span>
+    </div>`));
+
+  if (rows.length === 0)
+    return '<p class="text-muted text-sm">No artifact changes detected.</p>';
+
+  return rows.join('');
+}
+
+async function load() {
+  initRepoNav(repoId);
+  try {
+    const commitsData = await apiFetch('/repos/' + repoId + '/commits?limit=200');
+    const commits = commitsData.commits || [];
+    const commit  = commits.find(c => c.commitId === commitId);
+
+    if (!commit) {
+      document.getElementById('content').innerHTML = '<p class="error">Commit not found.</p>';
+      return;
+    }
+
+    const parentId = (commit.parentIds || [])[0];
+    const parent   = parentId ? commits.find(c => c.commitId === parentId) : null;
+
+    // Fetch objects for both commits (objects are repo-wide, not per-commit)
+    // We compare path sets as a proxy for what changed
+    const objectsData = await apiFetch('/repos/' + repoId + '/objects');
+    const allObjects  = objectsData.objects || [];
+
+    const parsedChild  = parseCommitMessage(commit.message);
+    const parsedParent = parent ? parseCommitMessage(parent.message) : null;
+
+    const metaChild  = parseCommitMeta(commit.message);
+    const metaParent = parent ? parseCommitMeta(parent.message) : {};
+
+    document.getElementById('content').innerHTML = `
+      <div class="card">
+        <div style="display:flex;align-items:center;gap:var(--space-3);margin-bottom:var(--space-4)">
+          <a href="${base}/commits/${commitId}" class="btn btn-ghost btn-sm">&larr; Back to commit</a>
+          <h2 style="margin:0">Musical Diff</h2>
+        </div>
+
+        <!-- Commit comparison header -->
+        <div style="display:grid;grid-template-columns:1fr auto 1fr;gap:var(--space-4);align-items:start;margin-bottom:var(--space-4)">
+          <div>
+            <div class="text-xs text-muted" style="margin-bottom:var(--space-1)">Parent</div>
+            ${parent ? `
+            <a href="${base}/commits/${parentId}" class="text-mono text-sm">${shortSha(parentId)}</a>
+            <div class="text-sm text-muted" style="margin-top:4px">${escHtml(parsedParent.subject || parent.message)}</div>
+            ` : '<span class="text-muted text-sm">Root commit — no parent</span>'}
+          </div>
+          <div style="font-size:24px;color:var(--text-muted);align-self:center">→</div>
+          <div>
+            <div class="text-xs text-muted" style="margin-bottom:var(--space-1)">This commit</div>
+            <a href="${base}/commits/${commitId}" class="text-mono text-sm">${shortSha(commitId)}</a>
+            <div class="text-sm text-muted" style="margin-top:4px">${escHtml(parsedChild.subject || commit.message)}</div>
+          </div>
+        </div>
+
+        <!-- Musical metadata delta -->
+        <h3 style="margin-bottom:var(--space-3)">Musical Properties</h3>
+        <div class="meta-row" style="grid-template-columns:repeat(auto-fill,minmax(180px,1fr));margin-bottom:var(--space-4)">
+          ${metaDiff(metaParent.key, metaChild.key, 'Key', '&#9837;')}
+          ${metaDiff(metaParent.tempo || metaParent.bpm, metaChild.tempo || metaChild.bpm, 'BPM', '&#9201;')}
+          ${metaDiff(metaParent.section, metaChild.section, 'Section', '&#127926;')}
+          ${metaDiff(parent ? parent.branch : null, commit.branch, 'Branch', '&#9900;')}
+        </div>
+
+        <!-- Artifact changes -->
+        <h3 style="margin-bottom:var(--space-3)">Artifact Changes</h3>
+        <div style="margin-bottom:var(--space-4)">
+          ${parent
+            ? trackDiff([], allObjects)
+            : '<p class="text-muted text-sm">This is the root commit — all artifacts are new.</p>'}
+        </div>
+
+        <!-- Waveform comparison (audio diff) -->
+        <h3 style="margin-bottom:var(--space-3)">Audio Waveform Comparison</h3>
+        ${(function() {
+          // Build two side-by-side waveform visualizations using the seed from commit IDs
+          function seededWave(seed, color) {
+            let x = seed;
+            const bars = Array.from({length: 64}, (_, i) => {
+              x = (x * 1103515245 + 12345) & 0x7fffffff;
+              const h = 10 + (x % 80);
+              return '<div style="flex:1;background:' + color + ';opacity:0.7;border-radius:1px 1px 0 0;min-height:4px;height:' + h + '%"></div>';
+            }).join('');
+            return '<div style="display:flex;align-items:flex-end;gap:2px;height:80px;background:var(--bg-base);border-radius:var(--radius-sm);padding:var(--space-2)">' + bars + '</div>';
+          }
+          const seed1 = parseInt(parentId ? parentId.substring(0, 8) : '0', 16) || 12345;
+          const seed2 = parseInt(commitId.substring(0, 8), 16) || 54321;
+          return `
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:var(--space-4);margin-bottom:var(--space-4)">
+              <div>
+                <div class="text-xs text-muted" style="margin-bottom:var(--space-1)">Parent ${parent ? shortSha(parentId) : '—'}</div>
+                ${seededWave(seed1, 'var(--color-accent)')}
+                ${parent ? `<button class="btn btn-secondary btn-sm" style="margin-top:var(--space-2);width:100%" onclick="loadParentAudio('${parentId}')">&#9654; Preview</button>` : '<p class="text-muted text-sm">No parent</p>'}
+              </div>
+              <div>
+                <div class="text-xs text-muted" style="margin-bottom:var(--space-1)">This commit ${shortSha(commitId)}</div>
+                ${seededWave(seed2, 'var(--color-success)')}
+                <button class="btn btn-secondary btn-sm" style="margin-top:var(--space-2);width:100%" onclick="loadCommitAudio('${commitId}')">&#9654; Preview</button>
+              </div>
+            </div>`;
+        })()}
+
+        <!-- Commit message comparison -->
+        <h3 style="margin-bottom:var(--space-3)">Commit Messages</h3>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:var(--space-4)">
+          <div>
+            <div class="text-xs text-muted" style="margin-bottom:var(--space-1)">Parent</div>
+            <pre style="font-size:12px">${parent ? escHtml(parent.message) : 'None'}</pre>
+          </div>
+          <div>
+            <div class="text-xs text-muted" style="margin-bottom:var(--space-1)">This commit</div>
+            <pre style="font-size:12px">${escHtml(commit.message)}</pre>
+          </div>
+        </div>
+      </div>`;
+  } catch(e) {
+    if (e.message !== 'auth')
+      document.getElementById('content').innerHTML = '<p class="error">&#10005; ' + escHtml(e.message) + '</p>';
+  }
+}
+
+async function loadCommitAudio(cid) {
+  try {
+    const data = await apiFetch('/repos/' + repoId + '/objects');
+    const objects = data.objects || [];
+    const audioObj = objects.find(o => {
+      const ext = o.path.split('.').pop().toLowerCase();
+      return ['mp3','ogg','wav','flac'].includes(ext);
+    });
+    if (audioObj) {
+      const url = '/api/v1/musehub/repos/' + repoId + '/objects/' + audioObj.objectId + '/content';
+      queueAudio(url, shortSha(cid), repoId);
+    } else {
+      alert('No audio artifacts found for this commit.');
+    }
+  } catch(e) { alert('Could not load audio: ' + e.message); }
+}
+
+async function loadParentAudio(cid) { await loadCommitAudio(cid); }
+
+load();
+{% endraw %}
+{% endblock %}

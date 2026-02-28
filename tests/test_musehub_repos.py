@@ -109,10 +109,13 @@ async def test_get_repo_not_found_returns_404(
 
 
 @pytest.mark.anyio
-async def test_get_repo_requires_auth(client: AsyncClient) -> None:
-    """GET /musehub/repos/{repo_id} returns 401 without auth."""
-    response = await client.get("/api/v1/musehub/repos/any-id")
-    assert response.status_code == 401
+async def test_get_nonexistent_repo_returns_404_without_auth(client: AsyncClient) -> None:
+    """GET /musehub/repos/{repo_id} returns 404 for a non-existent repo without auth.
+
+    Uses optional_token — auth is visibility-based; missing repo → 404 before auth check.
+    """
+    response = await client.get("/api/v1/musehub/repos/non-existent-repo-id")
+    assert response.status_code == 404
 
 
 # ---------------------------------------------------------------------------
@@ -673,10 +676,13 @@ async def test_graph_dag_endpoint_topological_order(
 
 
 @pytest.mark.anyio
-async def test_graph_dag_requires_auth(client: AsyncClient) -> None:
-    """GET /dag returns 401 without a Bearer token."""
-    response = await client.get("/api/v1/musehub/repos/any-repo/dag")
-    assert response.status_code == 401
+async def test_graph_dag_nonexistent_repo_returns_404_without_auth(client: AsyncClient) -> None:
+    """GET /dag returns 404 for a non-existent repo without a token.
+
+    Uses optional_token — auth is visibility-based; missing repo → 404.
+    """
+    response = await client.get("/api/v1/musehub/repos/non-existent-repo/dag")
+    assert response.status_code == 404
 
 
 @pytest.mark.anyio
