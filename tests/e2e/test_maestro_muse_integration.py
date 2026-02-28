@@ -25,7 +25,7 @@ _SCRIPTS_E2E = pathlib.Path(__file__).parents[2] / "scripts" / "e2e"
 if str(_SCRIPTS_E2E) not in sys.path:
     sys.path.insert(0, str(_SCRIPTS_E2E))
 
-from stress_test import (  # type: ignore[import-not-found]  # noqa: E402
+from stress_test import (  # noqa: E402
     ArtifactSet,
     MuseBatchFile,
     RequestResult,
