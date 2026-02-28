@@ -41,6 +41,7 @@ Endpoint summary (repo-scoped):
   GET /musehub/ui/{owner}/{repo_slug}/analysis/{ref}/tempo      -- tempo analysis
   GET /musehub/ui/{owner}/{repo_slug}/analysis/{ref}/dynamics   -- dynamics analysis
   GET /musehub/ui/{owner}/{repo_slug}/analysis/{ref}/motifs     -- motif browser (recurring patterns, transformations)
+  GET /musehub/ui/{owner}/{repo_slug}/arrange/{ref}             -- arrangement matrix (instrument × section density grid)
   GET /musehub/ui/{owner}/{repo_slug}/piano-roll/{ref}          -- interactive piano roll (all tracks)
   GET /musehub/ui/{owner}/{repo_slug}/piano-roll/{ref}/{path}   -- interactive piano roll (single MIDI file)
 
@@ -1054,6 +1055,51 @@ async def motifs_page(
     )
 
 
+@router.get(
+    "/{owner}/{repo_slug}/arrange/{ref}",
+    response_class=HTMLResponse,
+    summary="Muse Hub arrangement matrix page",
+)
+async def arrange_page(
+    request: Request,
+    owner: str,
+    repo_slug: str,
+    ref: str,
+    db: AsyncSession = Depends(get_db),
+) -> HTMLResponse:
+    """Render the arrangement matrix page for a given commit ref.
+
+    Fetches ``GET /api/v1/musehub/repos/{repo_id}/arrange/{ref}`` and renders
+    an interactive instrument × section grid where:
+
+    - Y-axis: instruments (bass, keys, guitar, drums, lead, pads)
+    - X-axis: sections (intro, verse_1, chorus, bridge, outro)
+    - Cell colour intensity encodes note density (0 = silent, max = densest)
+    - Cell click navigates to the piano roll for that instrument + section
+    - Hover tooltip shows note count, beat range, and pitch range
+    - Row summaries show per-instrument note totals and section activity counts
+    - Column summaries show per-section note totals and active instrument counts
+
+    Content negotiation is NOT applied here — the JSON data lives at
+    ``GET /api/v1/musehub/repos/{repo_id}/arrange/{ref}`` which returns
+    :class:`~maestro.models.musehub.ArrangementMatrixResponse`.
+
+    Auth is handled client-side via localStorage JWT, matching all other UI
+    pages.  No JWT is required to render the HTML shell.
+    """
+    repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
+    return templates.TemplateResponse(
+        request,
+        "musehub/pages/arrange.html",
+        {
+            "owner": owner,
+            "repo_slug": repo_slug,
+            "repo_id": repo_id,
+            "ref": ref,
+            "base_url": base_url,
+            "current_page": "arrange",
+        },
+    )
 
 
 @router.get(
