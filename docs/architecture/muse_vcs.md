@@ -2533,6 +2533,72 @@ branch for chord voicings while preserving the guitar branch's groove patterns.
 
 ---
 
+## `muse update-ref` — Write or Delete a Ref (Branch or Tag Pointer)
+
+**Purpose:** Directly update a branch or tag pointer (`refs/heads/*` or `refs/tags/*`)
+in the `.muse/` object store.  This is the plumbing primitive scripting agents use when
+they need to advance a branch tip, retarget a tag, or remove a stale ref — without going
+through a higher-level command like `checkout` or `merge`.
+
+**Implementation:** `maestro/muse_cli/commands/update_ref.py`\
+**Status:** ✅ implemented (PR #143) — issue #91
+
+### Usage
+
+```bash
+muse update-ref <ref> <new-value> [OPTIONS]
+muse update-ref <ref> -d
+```
+
+### Flags
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `<ref>` | positional | required | Fully-qualified ref (e.g. `refs/heads/main`, `refs/tags/v1.0`) |
+| `<new-value>` | positional | required (unless `-d`) | Commit ID to write to the ref |
+| `--old-value <commit_id>` | string | off | CAS guard — only update if the current ref value matches this commit ID |
+| `-d / --delete` | flag | off | Delete the ref file instead of writing it |
+
+### Output example
+
+```
+# Standard write
+✅ refs/heads/main → 3f9ab2c1
+
+# CAS failure
+❌ CAS failure: expected '3f9ab2c1' but found 'a1b2c3d4'. Ref not updated.
+
+# Delete
+✅ Deleted ref 'refs/heads/feature'.
+
+# Commit not in DB
+❌ Commit 3f9ab2c1 not found in database.
+```
+
+### Validation
+
+- **Ref format:** Must start with `refs/heads/` or `refs/tags/`.  Any other prefix exits with `USER_ERROR`.
+- **Commit existence:** Before writing, the commit_id is looked up in `muse_cli_commits`.  If absent, exits `USER_ERROR`.
+- **CAS (`--old-value`):** Reads the current file contents and compares to the provided value.  Mismatch → `USER_ERROR`, ref unchanged.  Absent ref + any `--old-value` → `USER_ERROR`.
+- **Delete (`-d`):** Exits `USER_ERROR` when the ref file does not exist.
+
+### Result type
+
+`None` — this is a write command; output is emitted via `typer.echo`.
+
+### Agent use case
+
+An AI orchestration agent that manages multiple arrangement branches can call
+`muse update-ref refs/heads/feature/guitar <commit_id> --old-value <prev_id>`
+to atomically advance the branch tip after generating a new variation.  The CAS
+guard prevents a race condition when two generation passes complete concurrently —
+only the first one wins; the second will receive `USER_ERROR` and retry or backoff.
+
+Use `muse update-ref refs/tags/v1.0 <commit_id>` to mark a production-ready
+snapshot with a stable tag pointer that other agents can reference by name.
+
+---
+
 ## Command Registration Summary
 
 | Command | File | Status | Issue |
@@ -2550,6 +2616,7 @@ branch for chord voicings while preserving the guitar branch's groove patterns.
 | `muse session` | `commands/session.py` | ✅ implemented (PR #129) | #127 |
 | `muse swing` | `commands/swing.py` | ✅ stub (PR #131) | #121 |
 | `muse tag` | `commands/tag.py` | ✅ implemented (PR #133) | #123 |
+| `muse update-ref` | `commands/update_ref.py` | ✅ implemented (PR #143) | #91 |
 
 All stub commands have stable CLI contracts. Full musical analysis (MIDI content
 parsing, vector embeddings, LLM synthesis) is tracked as follow-up issues.
