@@ -23,7 +23,7 @@ from gradio_client import Client, handle_file
 from dataclasses import dataclass, field
 from collections import OrderedDict
 from enum import Enum
-from time import time
+from time import monotonic, time
 import uuid
 import asyncio
 import math
@@ -2784,8 +2784,6 @@ async def _do_progressive_generate(
     Returns a ``ProgressiveGenerationResult`` with per-tier results plus a
     flat ``all_notes`` list combining every tier's output.
     """
-    import time as _time_mod
-
     composition_id = request.composition_id or str(uuid.uuid4())
     tier_groups = group_instruments_by_tier(request.instruments)
 
@@ -2799,7 +2797,7 @@ async def _do_progressive_generate(
             error="No instruments provided",
         )
 
-    _run_start = _time_mod.monotonic()
+    _run_start = monotonic()
     tier_results: list[ProgressiveTierResult] = []
     all_notes: list[WireNoteDict] = []
 
@@ -2811,7 +2809,7 @@ async def _do_progressive_generate(
     )
 
     for tier, instruments in tier_groups.items():
-        _tier_start = _time_mod.monotonic()
+        _tier_start = monotonic()
         logger.info(
             f"🎵 [{tier.value.upper()}] Generating {instruments} "
             f"(composition={composition_id[:8]})"
@@ -2839,7 +2837,7 @@ async def _do_progressive_generate(
         )
 
         response = await _do_generate(tier_request)
-        elapsed = _time_mod.monotonic() - _tier_start
+        elapsed = monotonic() - _tier_start
 
         if not response.success:
             logger.error(
@@ -2850,7 +2848,7 @@ async def _do_progressive_generate(
                 composition_id=composition_id,
                 tier_results=tier_results,
                 all_notes=all_notes,
-                total_elapsed_seconds=_time_mod.monotonic() - _run_start,
+                total_elapsed_seconds=monotonic() - _run_start,
                 error=f"Tier {tier.value} failed: {response.error}",
             )
 
@@ -2872,7 +2870,7 @@ async def _do_progressive_generate(
             f"✅ [{tier.value.upper()}] {len(tier_notes)} notes in {elapsed:.1f}s"
         )
 
-    total_elapsed = _time_mod.monotonic() - _run_start
+    total_elapsed = monotonic() - _run_start
     logger.info(
         f"✅ Progressive generation complete | "
         f"composition={composition_id[:8]} "
