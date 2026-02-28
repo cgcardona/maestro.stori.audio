@@ -234,7 +234,6 @@ def divergence(
     output_json: bool = typer.Option(
         False,
         "--json",
-        is_flag=True,
         help="Output machine-readable JSON.",
     ),
 ) -> None:

@@ -366,7 +366,6 @@ def merge(
     cont: bool = typer.Option(
         False,
         "--continue",
-        is_flag=True,
         help="Finalize a paused merge after resolving all conflicts.",
     ),
 ) -> None:

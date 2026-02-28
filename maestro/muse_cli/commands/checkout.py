@@ -25,7 +25,6 @@ from __future__ import annotations
 
 import logging
 import pathlib
-from typing import Optional
 
 import typer
 
@@ -119,13 +118,12 @@ def checkout_branch(
 def checkout(
     ctx: typer.Context,
     branch: str = typer.Argument(..., help="Branch name to switch to (or create with -b)."),
-    create: Optional[bool] = typer.Option(
-        None,
+    create: bool = typer.Option(
+        False,
         "-b",
-        is_flag=True,
         help="Create the branch from the current HEAD and switch to it.",
     ),
 ) -> None:
     """Switch branches or create a new branch from the current HEAD."""
     root = require_repo()
-    checkout_branch(root=root, branch=branch, create=bool(create))
+    checkout_branch(root=root, branch=branch, create=create)
