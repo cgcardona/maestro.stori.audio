@@ -15,6 +15,7 @@ Session JSON schema::
 
     {
         "session_id": "<uuid4>",
+        "schema_version": "1",
         "started_at": "<ISO-8601>",
         "ended_at": "<ISO-8601 | null>",
         "participants": ["name", ...],
@@ -39,7 +40,7 @@ import json
 import logging
 import pathlib
 import uuid
-from typing import Annotated
+from typing import Annotated, TypedDict
 
 import typer
 
@@ -54,6 +55,44 @@ _CURRENT = "current.json"
 _SESSION_SCHEMA_VERSION = "1"
 
 
+class MuseSessionRecord(TypedDict, total=False):
+    """Wire-format for a Muse recording session stored in ``.muse/sessions/``.
+
+    Fields
+    ------
+    session_id
+        UUIDv4 string that uniquely identifies the session.
+    schema_version
+        Integer string (currently "1") for forward-compatibility.
+    started_at
+        ISO-8601 UTC timestamp written by ``muse session start``.
+    ended_at
+        ISO-8601 UTC timestamp written by ``muse session end``; ``None``
+        while the session is still active.
+    participants
+        Ordered list of participant names supplied via ``--participants``.
+    location
+        Free-form recording location or studio name.
+    intent
+        Creative intent or goal declared at session start.
+    commits
+        List of Muse commit IDs associated with this session (appended
+        externally; starts empty).
+    notes
+        Closing notes added by ``muse session end --notes``.
+    """
+
+    session_id: str
+    schema_version: str
+    started_at: str
+    ended_at: str | None
+    participants: list[str]
+    location: str
+    intent: str
+    commits: list[str]
+    notes: str
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -66,10 +105,10 @@ def _sessions_dir(repo_root: pathlib.Path) -> pathlib.Path:
     return d
 
 
-def _read_json(path: pathlib.Path) -> dict[str, object]:
-    """Read and parse a JSON file; raise typer.Exit on error."""
+def _read_session(path: pathlib.Path) -> MuseSessionRecord:
+    """Read and parse a session JSON file; raise typer.Exit on error."""
     try:
-        raw: dict[str, object] = json.loads(path.read_text())
+        raw: MuseSessionRecord = json.loads(path.read_text())
         return raw
     except json.JSONDecodeError as exc:
         typer.echo(f"❌ Corrupt session file {path.name}: {exc}")
@@ -79,7 +118,7 @@ def _read_json(path: pathlib.Path) -> dict[str, object]:
         raise typer.Exit(code=ExitCode.INTERNAL_ERROR) from exc
 
 
-def _write_json(path: pathlib.Path, data: dict[str, object]) -> None:
+def _write_session(path: pathlib.Path, data: MuseSessionRecord) -> None:
     """Write *data* as indented JSON to *path*."""
     try:
         path.write_text(json.dumps(data, indent=2) + "\n")
@@ -94,17 +133,17 @@ def _now_iso() -> str:
 
 def _load_completed_sessions(
     sessions_dir: pathlib.Path,
-) -> list[dict[str, object]]:
-    """Return all completed session dicts sorted by started_at desc."""
-    sessions: list[dict[str, object]] = []
+) -> list[MuseSessionRecord]:
+    """Return all completed session records sorted by started_at descending."""
+    sessions: list[MuseSessionRecord] = []
     for p in sessions_dir.glob("*.json"):
-        if p.name == _CURRENT:
+        if p.name == _CURRENT or p.name.startswith(".tmp-"):
             continue
         try:
-            data = _read_json(p)
+            data = _read_session(p)
             sessions.append(data)
         except SystemExit:
-            # _read_json already printed an error; skip corrupt files in log/credits
+            # _read_session already printed an error; skip corrupt files in log/credits
             logger.warning("⚠️ Skipping corrupt session file: %s", p.name)
     sessions.sort(key=lambda s: str(s.get("started_at", "")), reverse=True)
     return sessions
@@ -150,7 +189,7 @@ def start(
 
     participant_list = [p.strip() for p in participants.split(",") if p.strip()]
     session_id = str(uuid.uuid4())
-    session: dict[str, object] = {
+    session: MuseSessionRecord = {
         "session_id": session_id,
         "schema_version": _SESSION_SCHEMA_VERSION,
         "started_at": _now_iso(),
@@ -161,7 +200,7 @@ def start(
         "commits": [],
         "notes": "",
     }
-    _write_json(current_path, session)
+    _write_session(current_path, session)
 
     typer.echo(f"✅ Session started  [{session_id}]")
     if participant_list:
@@ -193,19 +232,25 @@ def end(
         typer.echo("⚠️  No active session. Run `muse session start` first.")
         raise typer.Exit(code=ExitCode.USER_ERROR)
 
-    session = _read_json(current_path)
+    session = _read_session(current_path)
     session["ended_at"] = _now_iso()
     if notes:
         session["notes"] = notes
 
     session_id = str(session.get("session_id", uuid.uuid4()))
     dest = sessions_dir / f"{session_id}.json"
-    _write_json(dest, session)
 
+    # Write to a temp file in the same directory then atomically rename so that
+    # a crash between write and cleanup never leaves both current.json and
+    # <uuid>.json present simultaneously.
+    tmp = sessions_dir / f".tmp-{session_id}.json"
+    _write_session(tmp, session)
     try:
+        tmp.rename(dest)
         current_path.unlink()
     except OSError as exc:
-        typer.echo(f"❌ Failed to remove current.json: {exc}")
+        tmp.unlink(missing_ok=True)
+        typer.echo(f"❌ Failed to finalise session: {exc}")
         raise typer.Exit(code=ExitCode.INTERNAL_ERROR) from exc
 
     typer.echo(f"✅ Session ended    [{session_id}]")
@@ -250,7 +295,7 @@ def show(
 
     matches: list[pathlib.Path] = []
     for p in sessions_dir.glob("*.json"):
-        if p.name == _CURRENT:
+        if p.name == _CURRENT or p.name.startswith(".tmp-"):
             continue
         if p.stem.startswith(session_id):
             matches.append(p)
@@ -266,7 +311,7 @@ def show(
         )
         raise typer.Exit(code=ExitCode.USER_ERROR)
 
-    session = _read_json(matches[0])
+    session = _read_session(matches[0])
     typer.echo(json.dumps(session, indent=2))
 
 
