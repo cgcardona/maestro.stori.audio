@@ -176,7 +176,7 @@ def test_embedding_computed_on_push_calls_upsert() -> None:
 
     mock_client = MagicMock()
     with patch(
-        "maestro.services.musehub_sync.MusehubQdrantClient",
+        "maestro.services.musehub_sync.get_qdrant_client",
         return_value=mock_client,
     ):
         embed_push_commits(
@@ -187,7 +187,6 @@ def test_embedding_computed_on_push_calls_upsert() -> None:
             is_public=True,
         )
 
-    mock_client.ensure_collection.assert_called_once()
     assert mock_client.upsert_embedding.call_count == 2
 
 
@@ -197,7 +196,7 @@ def test_embedding_computed_on_push_empty_commits_is_noop() -> None:
 
     mock_client = MagicMock()
     with patch(
-        "maestro.services.musehub_sync.MusehubQdrantClient",
+        "maestro.services.musehub_sync.get_qdrant_client",
         return_value=mock_client,
     ):
         embed_push_commits(
@@ -208,7 +207,6 @@ def test_embedding_computed_on_push_empty_commits_is_noop() -> None:
             is_public=True,
         )
 
-    mock_client.ensure_collection.assert_not_called()
     mock_client.upsert_embedding.assert_not_called()
 
 
@@ -236,7 +234,7 @@ def test_embedding_computed_on_push_qdrant_error_does_not_raise() -> None:
     mock_client.upsert_embedding.side_effect = RuntimeError("Qdrant unavailable")
 
     with patch(
-        "maestro.services.musehub_sync.MusehubQdrantClient",
+        "maestro.services.musehub_sync.get_qdrant_client",
         return_value=mock_client,
     ):
         embed_push_commits(
