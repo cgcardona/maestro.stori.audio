@@ -12,6 +12,7 @@ Boundary rules:
 from __future__ import annotations
 
 import logging
+from collections import deque
 
 from sqlalchemy import desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -270,9 +271,12 @@ async def list_commits_dag(
     if head_commit_id is None:
         head_commit_id = max(all_rows, key=lambda r: r.timestamp).commit_id
 
-    # Kahn's topological sort (oldest → newest)
-    # in-degree = number of children that list this commit as parent
+    # Kahn's topological sort (oldest → newest).
+    # in_degree[c] = number of c's parents that are present in this repo's commit set.
+    # Commits with in_degree == 0 are roots (no parents) — they enter the queue first,
+    # producing a parent-before-child ordering (oldest ancestor → newest commit).
     in_degree: dict[str, int] = {r.commit_id: 0 for r in all_rows}
+    # children_map[parent_id] = list of commit IDs whose parent_ids contains parent_id
     children_map: dict[str, list[str]] = {r.commit_id: [] for r in all_rows}
 
     edges: list[DagEdge] = []
@@ -280,17 +284,10 @@ async def list_commits_dag(
         for parent_id in (row.parent_ids or []):
             if parent_id in row_map:
                 edges.append(DagEdge(source=row.commit_id, target=parent_id))
-                in_degree[row.commit_id] = in_degree.get(row.commit_id, 0)
                 children_map.setdefault(parent_id, []).append(row.commit_id)
-                # Parents have their child-count tracked via in_degree of children
-                # For Kahn's on a DAG where edges go child→parent, we need the
-                # reverse: treat parent edges as dependencies of children.
-                # Re-define: in_degree[child] = number of parents child has in graph
                 in_degree[row.commit_id] += 1
 
     # Kahn's algorithm: start from commits with no parents (roots)
-    from collections import deque
-
     queue: deque[str] = deque(
         cid for cid, deg in in_degree.items() if deg == 0
     )
