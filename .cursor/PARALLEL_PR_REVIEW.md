@@ -219,6 +219,15 @@ STEP 3 — CHECKOUT & SYNC (only if STEP 2 shows the PR is open and unreviewed):
   # 3. Merge the latest dev into this feature branch NOW
   git merge origin/dev
 
+  ⚠️  If git merge reports "local changes would be overwritten":
+    - Do NOT use git stash + git rebase. That rewrites history and is Yellow-tier.
+    - Run git status to identify the unexpected modified files.
+    - If they came from the checkout (gh pr checkout left dirty files), run:
+        git checkout -- <file>   ← discard checkout-introduced changes, then retry merge
+    - If they are your own review edits committed mid-step, commit them first:
+        git add -A && git commit -m "chore: stage review edits before dev sync"
+    - Then retry: git merge origin/dev
+
   ── If git merge reports conflicts ──────────────────────────────────────────
   │ You have full command-line authority to resolve them.                     │
   │                                                                           │

@@ -284,6 +284,15 @@ STEP 4 — PRE-PUSH SYNC (critical — always run before pushing):
   ⚠️  Other agents may have merged PRs while you were implementing. Sync with dev
   NOW to catch conflicts locally rather than at merge time.
 
+  ⚠️  COMMIT GUARD — run this first, every time, no exceptions:
+  Git will abort the merge if any locally modified file is also changed on origin/dev.
+  The three most commonly shared files (app.py, muse_vcs.md, type_contracts.md) are
+  almost always modified by parallel agents. An uncommitted working tree WILL abort.
+
+  # Commit everything that is staged or unstaged before touching the remote:
+  git add -A
+  git diff --cached --quiet || git commit -m "chore: commit remaining changes before dev sync"
+
   git fetch origin
   git merge origin/dev
 
