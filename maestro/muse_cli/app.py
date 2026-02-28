@@ -2,7 +2,7 @@
 
 Entry point for the ``muse`` console script. Registers all MVP
 subcommands (init, status, commit, log, checkout, merge, remote,
-push, pull, open, play, ask) as Typer sub-applications.
+push, pull, open, play, dynamics, session, swing, ask) as Typer sub-applications.
 """
 from __future__ import annotations
 
@@ -12,6 +12,7 @@ from maestro.muse_cli.commands import (
     ask,
     checkout,
     commit,
+    dynamics,
     init,
     log,
     merge,
@@ -20,7 +21,9 @@ from maestro.muse_cli.commands import (
     pull,
     push,
     remote,
+    session,
     status,
+    swing,
 )
 
 cli = typer.Typer(
@@ -31,6 +34,7 @@ cli = typer.Typer(
 
 cli.add_typer(init.app, name="init", help="Initialise a new Muse repository.")
 cli.add_typer(status.app, name="status", help="Show working-tree drift against HEAD.")
+cli.add_typer(dynamics.app, name="dynamics", help="Analyse the dynamic (velocity) profile of a commit.")
 cli.add_typer(commit.app, name="commit", help="Record a new variation in history.")
 cli.add_typer(log.app, name="log", help="Display the variation history graph.")
 cli.add_typer(checkout.app, name="checkout", help="Checkout a historical variation.")
@@ -40,6 +44,8 @@ cli.add_typer(push.app, name="push", help="Upload local variations to a remote."
 cli.add_typer(pull.app, name="pull", help="Download remote variations locally.")
 cli.add_typer(open_cmd.app, name="open", help="Open an artifact in the system default app (macOS).")
 cli.add_typer(play.app, name="play", help="Play an audio artifact via afplay (macOS).")
+cli.add_typer(swing.app, name="swing", help="Analyze or annotate the swing factor of a composition.")
+cli.add_typer(session.app, name="session", help="Record and query recording session metadata.")
 cli.add_typer(ask.app, name="ask", help="Query musical history in natural language.")
 
 
