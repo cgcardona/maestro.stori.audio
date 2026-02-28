@@ -1,16 +1,16 @@
 # Maestro — Test & Coverage
 #
-# Runs on PRs and direct pushes targeting dev and main.
-# Migration lint runs on every PR to dev to catch parallel-agent conflict
-# artifacts before they accumulate. Full test suite runs on PRs to main.
+# Runs only on PRs and direct pushes targeting main (i.e. dev → main).
+# Feature branch → dev PRs are intentionally excluded to avoid CI noise
+# during the parallel-agent development cycle.
 # Two jobs: maestro (app/ + tests/) and storpheus (storpheus/).
 name: Test & Coverage
 
 on:
   push:
-    branches: [main, dev]
+    branches: [main]
   pull_request:
-    branches: [main, dev]
+    branches: [main]
 
 jobs:
   migration-lint:

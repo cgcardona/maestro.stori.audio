@@ -384,6 +384,33 @@ EOF
 )"
 ```
 
+### ⚠️ Verify auto-close linkage immediately after `gh pr create`
+
+GitHub only auto-closes issue `#<issue number>` when the PR is **merged into the base branch** AND the PR body contains the close keyword verbatim. Verify now — a missing keyword leaves a ghost issue open after merge with no warning.
+
+```bash
+# Replace <short-description> with your actual branch name
+PR_BODY=$(gh pr list \
+  --repo cgcardona/maestro \
+  --head fix/<short-description> \
+  --json body \
+  --jq '.[0].body')
+
+echo "$PR_BODY" | grep -i "closes #"
+# Expected: a line like "Closes #<issue number>"
+# If grep returns nothing → fix before moving on:
+gh pr edit fix/<short-description> \
+  --body "$(echo "$PR_BODY")
+
+Closes #<issue number>"
+```
+
+**Rules for the close keyword:**
+- Must be on its own line (not embedded mid-sentence)
+- Must use one of: `Closes`, `Fixes`, `Resolves` (case-insensitive)
+- Must reference the correct issue number with `#`
+- The base branch must be `dev` (or `main` for final merge) — GitHub only triggers auto-close when merged into the branch configured as the repo's default, OR the branch specified in the PR's base. Because our PRs target `dev` and `dev` is not the GitHub default branch (`main`), the issue will auto-close only when `dev` is merged to `main`, or when using `gh issue close` manually after the `dev` merge. **When in doubt, close the issue manually after merging** rather than relying on auto-close.
+
 ---
 
 ## STEP 11 — RETURN TO DEV
