@@ -139,8 +139,8 @@ async def test_ui_repo_page_returns_200(
     # Verify shared chrome is present
     assert "Muse Hub" in body
     assert repo_id[:8] in body
-    # Verify page-specific JS is injected
-    assert "branch-sel" in body or "All branches" in body
+    # Verify page-specific JS is injected (repo home page — stats bar + audio player)
+    assert "stats-bar" in body or "loadStats" in body
 
 
 @pytest.mark.anyio
