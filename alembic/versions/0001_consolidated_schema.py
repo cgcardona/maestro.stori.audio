@@ -25,7 +25,9 @@ Single source-of-truth migration for Stori Maestro. Creates:
   - musehub_repos, musehub_branches, musehub_commits, musehub_issues
   - musehub_pull_requests (PR workflow between branches)
   - musehub_objects (content-addressed binary artifact storage)
-
+  - musehub_profiles (public user profile pages — bio, avatar, pinned repos)
+  - musehub_webhooks (registered event-driven webhook subscriptions)
+  - musehub_webhook_deliveries (delivery log per dispatch attempt)
 Fresh install:
   docker compose exec maestro alembic upgrade head
 """
@@ -354,8 +356,91 @@ def upgrade() -> None:
     )
     op.create_index("ix_musehub_objects_repo_id", "musehub_objects", ["repo_id"])
 
+    # ── Muse Hub — user profiles ──────────────────────────────────────────
+    op.create_table(
+        "musehub_profiles",
+        sa.Column("user_id", sa.String(36), nullable=False),
+        sa.Column("username", sa.String(64), nullable=False),
+        sa.Column("bio", sa.Text(), nullable=True),
+        sa.Column("avatar_url", sa.String(2048), nullable=True),
+        sa.Column("pinned_repo_ids", sa.JSON(), nullable=False, server_default="[]"),
+    # ── Muse Hub — webhook subscriptions ─────────────────────────────────
+    op.create_table(
+        "musehub_webhooks",
+        sa.Column("webhook_id", sa.String(36), nullable=False),
+        sa.Column("repo_id", sa.String(36), nullable=False),
+        sa.Column("url", sa.String(2048), nullable=False),
+        sa.Column("events", sa.JSON(), nullable=False, server_default="[]"),
+        sa.Column("secret", sa.Text(), nullable=False, server_default=""),
+        sa.Column("active", sa.Boolean(), nullable=False, server_default="true"),        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            nullable=False,
+            server_default=sa.text("CURRENT_TIMESTAMP"),
+        ),
+        sa.Column(
+            "updated_at",
+        sa.ForeignKeyConstraint(["repo_id"], ["musehub_repos.repo_id"], ondelete="CASCADE"),
+        sa.PrimaryKeyConstraint("webhook_id"),
+    )
+    op.create_index("ix_musehub_webhooks_repo_id", "musehub_webhooks", ["repo_id"])
+
+    op.create_table(
+        "musehub_webhook_deliveries",
+        sa.Column("delivery_id", sa.String(36), nullable=False),
+        sa.Column("webhook_id", sa.String(36), nullable=False),
+        sa.Column("event_type", sa.String(64), nullable=False),
+        sa.Column("attempt", sa.Integer(), nullable=False, server_default="1"),
+        sa.Column("success", sa.Boolean(), nullable=False, server_default="false"),
+        sa.Column("response_status", sa.Integer(), nullable=False, server_default="0"),
+        sa.Column("response_body", sa.Text(), nullable=False, server_default=""),
+        sa.Column(
+            "delivered_at",            sa.DateTime(timezone=True),
+            nullable=False,
+            server_default=sa.text("CURRENT_TIMESTAMP"),
+        ),
+        sa.PrimaryKeyConstraint("user_id"),
+        sa.UniqueConstraint("username", name="uq_musehub_profiles_username"),
+    )
+    op.create_index("ix_musehub_profiles_username", "musehub_profiles", ["username"], unique=True)
+
 
 def downgrade() -> None:
+    # Muse Hub — user profiles
+    op.drop_index("ix_musehub_profiles_username", table_name="musehub_profiles")
+    op.drop_table("musehub_profiles")
+        sa.ForeignKeyConstraint(
+            ["webhook_id"], ["musehub_webhooks.webhook_id"], ondelete="CASCADE"
+        ),
+        sa.PrimaryKeyConstraint("delivery_id"),
+    )
+    op.create_index(
+        "ix_musehub_webhook_deliveries_webhook_id",
+        "musehub_webhook_deliveries",
+        ["webhook_id"],
+    )
+    op.create_index(
+        "ix_musehub_webhook_deliveries_event_type",
+        "musehub_webhook_deliveries",
+        ["event_type"],
+    )
+
+
+def downgrade() -> None:
+    # Muse Hub — webhook deliveries
+    op.drop_index(
+        "ix_musehub_webhook_deliveries_event_type",
+        table_name="musehub_webhook_deliveries",
+    )
+    op.drop_index(
+        "ix_musehub_webhook_deliveries_webhook_id",
+        table_name="musehub_webhook_deliveries",
+    )
+    op.drop_table("musehub_webhook_deliveries")
+
+    # Muse Hub — webhooks
+    op.drop_index("ix_musehub_webhooks_repo_id", table_name="musehub_webhooks")
+    op.drop_table("musehub_webhooks")
     # Muse Hub — binary artifact storage
     op.drop_index("ix_musehub_objects_repo_id", table_name="musehub_objects")
     op.drop_table("musehub_objects")

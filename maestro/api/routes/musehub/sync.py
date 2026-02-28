@@ -24,11 +24,13 @@ from maestro.models.musehub import (
     CommitInput,
     PullRequest,
     PullResponse,
+    PushEventPayload,
     PushRequest,
     PushResponse,
 )
 from maestro.services import musehub_repository, musehub_sync
 from maestro.services.musehub_sync import embed_push_commits
+from maestro.services.musehub_webhook_dispatcher import dispatch_event_background
 
 logger = logging.getLogger(__name__)
 
@@ -97,6 +99,20 @@ async def push(
         branch=body.branch,
         author=author,
         is_public=is_public,
+    )
+
+    push_payload: PushEventPayload = {
+        "repoId": repo_id,
+        "branch": body.branch,
+        "headCommitId": body.head_commit_id,
+        "pushedBy": author,
+        "commitCount": len(body.commits),
+    }
+    background_tasks.add_task(
+        dispatch_event_background,
+        repo_id,
+        "push",
+        push_payload,
     )
 
     return result

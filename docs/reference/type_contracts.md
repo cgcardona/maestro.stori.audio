@@ -5977,6 +5977,38 @@ Wrapper returned by `GET /api/v1/musehub/repos/{repo_id}/objects`.
 **Producer:** `objects.list_objects` route handler
 **Consumer:** Muse Hub web UI; any agent inspecting which artifacts are available for a repo
 
+### `ContributorCredits`
+
+Defined in `maestro/models/musehub.py`.
+
+One contributor record aggregated from all commits attributed to a single author.  Part of `CreditsResponse`.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `author` | `str` | Author name (from commit record) |
+| `session_count` | `int` | Total commits by this author in the repo |
+| `contribution_types` | `list[str]` | Inferred roles (composer, arranger, producer, etc.) |
+| `first_active` | `datetime` | Timestamp of earliest commit |
+| `last_active` | `datetime` | Timestamp of most recent commit |
+
+**Producer:** `musehub_credits.aggregate_credits()` → `repos.get_credits` route handler
+**Consumer:** Muse Hub credits page UI; any agent generating liner notes or attribution summaries
+
+### `CreditsResponse`
+
+Defined in `maestro/models/musehub.py`.
+
+Full contributor roll for a Muse Hub repo.  Returned by `GET /api/v1/musehub/repos/{repo_id}/credits`.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `repo_id` | `str` | Target repo ID |
+| `contributors` | `list[ContributorCredits]` | All contributors, sorted per `sort` |
+| `sort` | `str` | Echoed sort order (`count`, `recency`, or `alpha`) |
+| `total_contributors` | `int` | Total number of distinct contributors |
+
+**Producer:** `musehub_credits.aggregate_credits()` → `repos.get_credits` route handler
+**Consumer:** Muse Hub credits page UI; AI agents generating liner notes, release attribution, or schema.org `MusicComposition` JSON-LD
 ### `MuseHubContextCommitInfo`
 
 Minimal commit metadata nested inside `MuseHubContextResponse`.
@@ -6070,6 +6102,54 @@ Defined in `maestro/models/musehub.py`.
 **Producer:** `search.search_repo` route handler
 **Consumer:** Muse Hub search page (renders result rows); AI agents finding commits by musical property
 
+### `DagNode`
+
+A single commit node in the repo's directed acyclic graph. Defined in `maestro/models/musehub.py`.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `commit_id` | `str` | Full commit SHA |
+| `message` | `str` | Commit message |
+| `author` | `str` | Author display name |
+| `timestamp` | `datetime` | UTC commit timestamp |
+| `branch` | `str` | Branch the commit was pushed from |
+| `parent_ids` | `list[str]` | Parent commit SHAs (empty for root commits; two entries for merge commits) |
+| `is_head` | `bool` | `True` if this commit is the current HEAD |
+| `branch_labels` | `list[str]` | Branch ref names pointing at this commit |
+| `tag_labels` | `list[str]` | Tag ref names pointing at this commit |
+
+**Producer:** `musehub_repository.list_commits_dag()` → `repos.get_commit_dag` route handler
+**Consumer:** Interactive DAG graph renderer in `GET /musehub/ui/{repo_id}/graph`; AI agents reasoning about branching topology
+
+### `DagEdge`
+
+A directed edge in the commit DAG. Defined in `maestro/models/musehub.py`.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `source` | `str` | Child commit ID (the one that has the parent) |
+| `target` | `str` | Parent commit ID |
+
+Convention: edges flow child → parent (newest to oldest). This matches standard directed graph convention where arrows point toward ancestors.
+
+**Producer:** `musehub_repository.list_commits_dag()`
+**Consumer:** Graph renderer; agents computing reachability or common ancestors
+
+### `DagGraphResponse`
+
+Topologically sorted commit graph for a Muse Hub repo. Defined in `maestro/models/musehub.py`.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `nodes` | `list[DagNode]` | Commits in Kahn topological order (oldest ancestor first) |
+| `edges` | `list[DagEdge]` | All parent-child relationships in the graph |
+| `head_commit_id` | `str \| None` | SHA of the current HEAD commit |
+
+Returned by `GET /api/v1/musehub/repos/{repo_id}/dag`.
+
+**Producer:** `repos.get_commit_dag` route handler
+**Consumer:** Interactive DAG graph UI page; AI agents inspecting project history topology
+
 ---
 
 ## Muse Bisect Types
@@ -6147,6 +6227,110 @@ Describes a single worktree entry returned by `list_worktrees()` and `add_worktr
 
 ---
 
+## Muse Hub — Webhook Types (`maestro/models/musehub.py`, `maestro/services/musehub_webhook_dispatcher.py`)
+
+### `WebhookCreate`
+
+Pydantic v2 request body for `POST /musehub/repos/{repo_id}/webhooks`.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `url` | `str` | HTTPS endpoint to deliver events to (max 2048 chars) |
+| `events` | `list[str]` | Event types to subscribe to (min 1 element) |
+| `secret` | `str` | Optional HMAC-SHA256 signing secret (default `""`) |
+
+Valid event types: `push`, `pull_request`, `issue`, `release`, `branch`, `tag`, `session`, `analysis`.
+
+### `WebhookResponse`
+
+Wire representation of a registered webhook subscription (camelCase JSON).
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `webhook_id` | `str` | UUID primary key |
+| `repo_id` | `str` | Parent repo UUID |
+| `url` | `str` | Delivery URL |
+| `events` | `list[str]` | Subscribed event types |
+| `active` | `bool` | Whether this webhook receives events |
+| `created_at` | `datetime` | UTC creation timestamp |
+
+### `WebhookListResponse`
+
+Wrapper for `GET /musehub/repos/{repo_id}/webhooks`.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `webhooks` | `list[WebhookResponse]` | All registered webhooks for a repo |
+
+### `WebhookDeliveryResponse`
+
+Wire representation of one delivery attempt.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `delivery_id` | `str` | UUID for this attempt |
+| `webhook_id` | `str` | Parent webhook UUID |
+| `event_type` | `str` | Event that triggered delivery |
+| `attempt` | `int` | Attempt number (1 = first try, up to `_MAX_ATTEMPTS`) |
+| `success` | `bool` | True when receiver responded 2xx |
+| `response_status` | `int` | HTTP status code, 0 for network-level failures |
+| `response_body` | `str` | First 512 characters of receiver response |
+| `delivered_at` | `datetime` | UTC timestamp of this attempt |
+
+### `WebhookDeliveryListResponse`
+
+Wrapper for `GET /musehub/repos/{repo_id}/webhooks/{webhook_id}/deliveries`.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `deliveries` | `list[WebhookDeliveryResponse]` | Delivery history, newest first |
+
+### `PushEventPayload` (TypedDict)
+
+Typed payload for `event_type="push"`. Passed to `dispatch_event` / `dispatch_event_background` by the push route handler after a successful push.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `repoId` | `str` | Repo UUID |
+| `branch` | `str` | Branch name that received the push |
+| `headCommitId` | `str` | New branch head commit ID |
+| `pushedBy` | `str` | JWT sub claim of the pushing user |
+| `commitCount` | `int` | Number of commits in the push |
+
+### `IssueEventPayload` (TypedDict)
+
+Typed payload for `event_type="issue"`. Emitted on issue open and close.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `repoId` | `str` | Repo UUID |
+| `action` | `str` | `"opened"` or `"closed"` |
+| `issueId` | `str` | Issue UUID |
+| `number` | `int` | Per-repo sequential issue number |
+| `title` | `str` | Issue title |
+| `state` | `str` | Issue state after the action |
+
+### `PullRequestEventPayload` (TypedDict)
+
+Typed payload for `event_type="pull_request"`. Emitted on PR open and merge.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `repoId` | `str` | Repo UUID |
+| `action` | `str` | `"opened"` or `"merged"` |
+| `prId` | `str` | PR UUID |
+| `title` | `str` | PR title |
+| `fromBranch` | `str` | Source branch name |
+| `toBranch` | `str` | Target branch name |
+| `state` | `str` | PR state after the action |
+| `mergeCommitId` | `str` (optional) | Merge commit ID; only present when `action="merged"` |
+
+### `WebhookEventPayload` (TypeAlias)
+
+Union of all typed event payloads: `PushEventPayload | IssueEventPayload | PullRequestEventPayload`.  This is the type accepted by `dispatch_event` and `dispatch_event_background`.
+
+---
+
 ## Muse CLI — Conflict Resolution Types (`maestro/muse_cli/merge_engine.py`)
 
 ### `MergeState`
@@ -6182,6 +6366,7 @@ if state is not None and state.conflict_paths:
 **Related helpers:**
 - `apply_resolution(root, rel_path, object_id)` — copies an object from the local store to `muse-work/`; used by `--theirs` resolution and `--abort`.
 - `is_conflict_resolved(merge_state, rel_path)` — returns `True` if `rel_path` is not in `conflict_paths`.
+
 
 
 ---
@@ -6258,7 +6443,87 @@ class SimilarSearchResponse(CamelModel):
 public repos appear in results. An empty `results` list means no similar
 public compositions were found — not an error condition.
 
+
 ---
+
+## ProfileResponse
+
+**Module:** `maestro.models.musehub`
+**Returned by:** `GET /api/v1/musehub/users/{username}`, `POST /api/v1/musehub/users`, `PUT /api/v1/musehub/users/{username}`
+
+Full wire representation of a Muse Hub user profile.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `user_id` | `str` | JWT sub — matches `musehub_repos.owner_user_id` |
+| `username` | `str` | URL-friendly handle |
+| `bio` | `str \| None` | Short bio (Markdown) |
+| `avatar_url` | `str \| None` | Avatar image URL |
+| `pinned_repo_ids` | `list[str]` | Up to 6 pinned repo IDs |
+| `repos` | `list[ProfileRepoSummary]` | Public repos, newest first |
+| `contribution_graph` | `list[ContributionDay]` | 52-week daily commit history |
+| `session_credits` | `int` | Total commits across all repos |
+| `created_at` | `datetime` | Profile creation timestamp |
+| `updated_at` | `datetime` | Last update timestamp |
+
+---
+
+## ProfileRepoSummary
+
+**Module:** `maestro.models.musehub`
+**Used in:** `ProfileResponse.repos`
+
+Compact repo summary shown on a user profile page.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `repo_id` | `str` | Repo UUID |
+| `name` | `str` | Repo name |
+| `visibility` | `str` | `"public"` or `"private"` |
+| `star_count` | `int` | Star count (always 0 at MVP — no star mechanism yet) |
+| `last_activity_at` | `datetime \| None` | Timestamp of most recent commit, or None |
+| `created_at` | `datetime` | Repo creation timestamp |
+
+---
+
+## ContributionDay
+
+**Module:** `maestro.models.musehub`
+**Used in:** `ProfileResponse.contribution_graph`
+
+One day in the GitHub-style contribution heatmap.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `date` | `str` | ISO-8601 date `"YYYY-MM-DD"` |
+| `count` | `int` | Number of commits on that day across all user repos |
+
+**Agent use case:** Render as a heatmap. Bucket count 0–4 for colour intensity:
+0 = none, 1 = 1–2, 2 = 3–5, 3 = 6–9, 4 = 10+.
+
+## Muse Hub — Cross-Repo Search Types (`maestro/models/musehub.py`)
+
+### `GlobalSearchCommitMatch`
+
+Pydantic model (`CamelModel`) representing a single commit that matched a
+cross-repo search query.  Returned inside `GlobalSearchRepoGroup.matches`.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `commit_id` | `str` | Commit SHA |
+| `message` | `str` | Commit message |
+| `author` | `str` | Author identifier |
+| `branch` | `str` | Branch the commit lives on |
+| `timestamp` | `datetime` | Commit timestamp (UTC) |
+| `repo_id` | `str` | Owning repo UUID |
+| `repo_name` | `str` | Human-readable repo name |
+| `repo_owner` | `str` | Owner user ID |
+| `repo_visibility` | `str` | Always `"public"` (private repos are excluded) |
+| `audio_object_id` | `str \| None` | First `.mp3`/`.ogg`/`.wav` object ID in the repo, if any |
+
+### `GlobalSearchRepoGroup`
+
+Pydantic model grouping all matching commits for a single public repo.---
 
 ## Agent Context Models (`maestro/models/musehub_context.py`)
 
@@ -6365,6 +6630,26 @@ Top-level response from `GET /musehub/repos/{repo_id}/context`. Self-contained: 
 | Field | Type | Description |
 |-------|------|-------------|
 | `repo_id` | `str` | Repo UUID |
+| `repo_name` | `str` | Human-readable repo name |
+| `repo_owner` | `str` | Owner user ID |
+| `repo_visibility` | `str` | Always `"public"` |
+| `matches` | `list[GlobalSearchCommitMatch]` | Up to 20 matching commits, newest-first |
+| `total_matches` | `int` | Actual match count before the 20-commit cap |
+
+### `GlobalSearchResult`
+
+Top-level response model for `GET /api/v1/musehub/search`.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `query` | `str` | Original query string |
+| `mode` | `str` | `"keyword"` or `"pattern"` |
+| `groups` | `list[GlobalSearchRepoGroup]` | One entry per matching public repo (paginated) |
+| `total_repos_searched` | `int` | Count of public repos scanned (not just repos with matches) |
+| `page` | `int` | Current page number (1-based) |
+| `page_size` | `int` | Repo-groups per page |
+
+**Service function:** `musehub_repository.global_search(session, *, query, mode, page, page_size)`
 | `ref` | `str` | Resolved branch name or commit ID |
 | `depth` | `str` | Depth level used |
 | `musical_state` | `MusicalStateContext` | Current musical state |
