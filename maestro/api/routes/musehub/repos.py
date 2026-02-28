@@ -1,19 +1,20 @@
 """Muse Hub repo, branch, commit, credits, and agent context route handlers.
 
 Endpoint summary:
-  POST /musehub/repos                                      — create a new remote repo
-  GET  /musehub/repos/{repo_id}                           — get repo metadata (by internal UUID)
-  GET  /musehub/{owner}/{repo_slug}                       — get repo metadata (by owner/slug)
-  GET  /musehub/repos/{repo_id}/branches                  — list all branches
-  GET  /musehub/repos/{repo_id}/commits                   — list commits (newest first)
-  GET  /musehub/repos/{repo_id}/credits                   — aggregated contributor credits
-  GET  /musehub/repos/{repo_id}/context                   — agent context briefing
-  GET  /musehub/repos/{repo_id}/timeline                  — chronological timeline with emotion/section/track layers
-  GET  /musehub/repos/{repo_id}/form-structure/{ref}      — form and structure analysis
-  POST /musehub/repos/{repo_id}/sessions                  — push a recording session
-  GET  /musehub/repos/{repo_id}/sessions                  — list recording sessions
-  GET  /musehub/repos/{repo_id}/sessions/{session_id}     — get a single session
-  GET  /musehub/repos/{repo_id}/arrange/{ref}            — arrangement matrix (instrument × section grid)
+  POST /musehub/repos                                                     — create a new remote repo
+  GET  /musehub/repos/{repo_id}                                           — get repo metadata (by internal UUID)
+  GET  /musehub/{owner}/{repo_slug}                                       — get repo metadata (by owner/slug)
+  GET  /musehub/repos/{repo_id}/branches                                  — list all branches
+  GET  /musehub/repos/{repo_id}/commits                                   — list commits (newest first)
+  GET  /musehub/repos/{repo_id}/commits/{sha}/render-status               — render job status for a commit
+  GET  /musehub/repos/{repo_id}/credits                                   — aggregated contributor credits
+  GET  /musehub/repos/{repo_id}/context                                   — agent context briefing
+  GET  /musehub/repos/{repo_id}/timeline                                  — chronological timeline with emotion/section/track layers
+  GET  /musehub/repos/{repo_id}/form-structure/{ref}                      — form and structure analysis
+  POST /musehub/repos/{repo_id}/sessions                                  — push a recording session
+  GET  /musehub/repos/{repo_id}/sessions                                  — list recording sessions
+  GET  /musehub/repos/{repo_id}/sessions/{session_id}                     — get a single session
+  GET  /musehub/repos/{repo_id}/arrange/{ref}                             — arrangement matrix (instrument × section grid)
 
 All endpoints require a valid JWT Bearer token.
 No business logic lives here — all persistence is delegated to
@@ -31,15 +32,22 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from maestro.auth.dependencies import TokenClaims, optional_token, require_valid_token
 from maestro.db import get_db
+from maestro.db import musehub_models as db_models
+from sqlalchemy import select
 from maestro.models.musehub import (
     ArrangementMatrixResponse,
     AudioTrackEntry,
+    BranchDetailListResponse,
     BranchListResponse,
+    CommitDiffDimensionScore,
+    CommitDiffSummaryResponse,
     CommitListResponse,
     CommitResponse,
+    CompareResponse,
     CreateRepoRequest,
     DivergenceDimensionResponse,
     DivergenceResponse,
+    EmotionDiffResponse,
     TimelineResponse,
     DagGraphResponse,
     GrooveCheckResponse,
@@ -48,6 +56,7 @@ from maestro.models.musehub import (
     RepoResponse,
     RepoStatsResponse,
     CreditsResponse,
+    RenderStatusResponse,
     SessionCreate,
     SessionListResponse,
     SessionResponse,
@@ -163,6 +172,34 @@ async def list_branches(
 
 
 @router.get(
+    "/repos/{repo_id}/branches/detail",
+    response_model=BranchDetailListResponse,
+    operation_id="listRepoBranchesDetail",
+    summary="List branches with ahead/behind counts and divergence scores",
+    tags=["Branches"],
+)
+async def list_branches_detail(
+    repo_id: str,
+    db: AsyncSession = Depends(get_db),
+    claims: TokenClaims | None = Depends(optional_token),
+) -> BranchDetailListResponse:
+    """Return branches enriched with ahead/behind counts vs the default branch.
+
+    Each branch includes:
+    - ``aheadCount``: commits on this branch not yet on the default branch
+    - ``behindCount``: commits on the default branch not yet merged here
+    - ``isDefault``: whether this is the repo's default branch
+    - ``divergence``: musical divergence scores (placeholder ``null`` until computable)
+
+    Used by the MuseHub branch list page to help musicians decide which branches
+    to merge or discard.
+    """
+    repo = await musehub_repository.get_repo(db, repo_id)
+    _guard_visibility(repo, claims)
+    return await musehub_repository.list_branches_with_detail(db, repo_id)
+
+
+@router.get(
     "/repos/{repo_id}/commits",
     response_model=CommitListResponse,
     operation_id="listRepoCommits",
@@ -222,6 +259,214 @@ async def get_commit(
             detail=f"Commit '{commit_id}' not found in repo '{repo_id}'",
         )
     return commit
+
+
+@router.get(
+    "/repos/{repo_id}/commits/{commit_id}/diff-summary",
+    response_model=CommitDiffSummaryResponse,
+    operation_id="getCommitDiffSummary",
+    summary="Multi-dimensional diff summary between a commit and its parent",
+    tags=["Commits"],
+)
+async def get_commit_diff_summary(
+    repo_id: str,
+    commit_id: str,
+    db: AsyncSession = Depends(get_db),
+    claims: TokenClaims | None = Depends(optional_token),
+) -> CommitDiffSummaryResponse:
+    """Return a five-dimension musical diff summary between a commit and its parent.
+
+    Computes heuristic per-dimension change scores (harmonic, rhythmic, melodic,
+    structural, dynamic) from the commit message keywords and metadata.  Scores
+    are in [0.0, 1.0] where 0 = no change and 1 = complete replacement.
+
+    Consumed by the commit detail page to render coloured dimension-change badges
+    that help musicians understand *what* musically changed in this push.
+
+    Returns:
+        CommitDiffSummaryResponse with per-dimension scores and overall mean.
+
+    Raises:
+        404: If the commit is not found in this repo.
+    """
+    repo = await musehub_repository.get_repo(db, repo_id)
+    _guard_visibility(repo, claims)
+    commits, _ = await musehub_repository.list_commits(db, repo_id, limit=500)
+    commit = next((c for c in commits if c.commit_id == commit_id), None)
+    if commit is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Commit '{commit_id}' not found in repo '{repo_id}'",
+        )
+    parent_id = commit.parent_ids[0] if commit.parent_ids else None
+    parent = next((c for c in commits if c.commit_id == parent_id), None) if parent_id else None
+
+    dimensions = _compute_commit_diff_dimensions(commit, parent)
+    overall = sum(d.score for d in dimensions) / len(dimensions) if dimensions else 0.0
+    return CommitDiffSummaryResponse(
+        commit_id=commit_id,
+        parent_id=parent_id,
+        dimensions=dimensions,
+        overall_score=round(overall, 4),
+    )
+
+
+def _dim_label_color(score: float) -> tuple[str, str]:
+    """Map a [0,1] score to a (label, CSS-class) pair for badge rendering."""
+    if score < 0.15:
+        return "none", "dim-none"
+    if score < 0.40:
+        return "low", "dim-low"
+    if score < 0.70:
+        return "medium", "dim-medium"
+    return "high", "dim-high"
+
+
+_HARMONIC_KEYWORDS = frozenset(
+    ["key", "chord", "harmony", "harmonic", "tonal", "modulation", "progression", "pitch"]
+)
+_RHYTHMIC_KEYWORDS = frozenset(
+    ["bpm", "tempo", "beat", "rhythm", "rhythmic", "groove", "swing", "meter", "time"]
+)
+_MELODIC_KEYWORDS = frozenset(
+    ["melody", "melodic", "lead", "motif", "phrase", "contour", "scale", "mode"]
+)
+_STRUCTURAL_KEYWORDS = frozenset(
+    [
+        "section",
+        "structural",
+        "intro",
+        "verse",
+        "chorus",
+        "bridge",
+        "outro",
+        "form",
+        "arrangement",
+        "structure",
+    ]
+)
+_DYNAMIC_KEYWORDS = frozenset(
+    [
+        "dynamic",
+        "volume",
+        "velocity",
+        "loud",
+        "soft",
+        "crescendo",
+        "decrescendo",
+        "fade",
+        "mute",
+        "swell",
+    ]
+)
+
+
+def _keyword_score(message: str, keywords: frozenset[str]) -> float:
+    """Return a [0, 1] score based on keyword density in a commit message.
+
+    Presence of any keyword gives a base 0.35 score; each additional keyword
+    adds 0.15 up to a ceiling of 0.95.  Root commits (empty parent) implicitly
+    score 1.0 on all dimensions since everything is new.
+    """
+    msg_lower = message.lower()
+    hits = sum(1 for kw in keywords if kw in msg_lower)
+    if hits == 0:
+        return 0.0
+    return min(0.35 + (hits - 1) * 0.15, 0.95)
+
+
+def _compute_commit_diff_dimensions(
+    commit: CommitResponse,
+    parent: CommitResponse | None,
+) -> list[CommitDiffDimensionScore]:
+    """Derive five-dimension diff scores from commit message keyword analysis.
+
+    When ``parent`` is None the commit is a root commit — all dimensions score
+    1.0 because every musical element is being introduced for the first time.
+    """
+    DIMS: list[tuple[str, frozenset[str]]] = [
+        ("harmonic", _HARMONIC_KEYWORDS),
+        ("rhythmic", _RHYTHMIC_KEYWORDS),
+        ("melodic", _MELODIC_KEYWORDS),
+        ("structural", _STRUCTURAL_KEYWORDS),
+        ("dynamic", _DYNAMIC_KEYWORDS),
+    ]
+
+    results: list[CommitDiffDimensionScore] = []
+    for dim_name, keywords in DIMS:
+        if parent is None:
+            raw = 1.0
+        else:
+            raw = _keyword_score(commit.message, keywords)
+        label, color = _dim_label_color(raw)
+        results.append(
+            CommitDiffDimensionScore(
+                dimension=dim_name,
+                score=round(raw, 4),
+                label=label,
+                color=color,
+            )
+        )
+    return results
+
+
+
+
+@router.get(
+    "/repos/{repo_id}/commits/{commit_id}/render-status",
+    response_model=RenderStatusResponse,
+    operation_id="getCommitRenderStatus",
+    summary="Query render job status for auto-generated MP3 and piano-roll artifacts",
+    tags=["Commits"],
+)
+async def get_commit_render_status(
+    repo_id: str,
+    commit_id: str,
+    db: AsyncSession = Depends(get_db),
+    claims: TokenClaims | None = Depends(optional_token),
+) -> RenderStatusResponse:
+    """Return the render job status for a commit's auto-generated artifacts.
+
+    Called by the MuseHub UI and AI agents to poll whether the background
+    render pipeline has finished generating MP3 and piano-roll images for a
+    given commit.
+
+    Status lifecycle: ``pending`` → ``rendering`` → ``complete`` | ``failed``.
+
+    When no render job exists for the commit (e.g. the push contained no MIDI
+    objects, or the job has not been created yet), the response returns
+    ``status="not_found"`` with empty artifact lists rather than a 404.
+
+    Args:
+        repo_id: Internal repo UUID.
+        commit_id: Commit SHA to query.
+
+    Returns:
+        ``RenderStatusResponse`` with current job status and artifact IDs.
+    """
+    repo = await musehub_repository.get_repo(db, repo_id)
+    _guard_visibility(repo, claims)
+
+    stmt = select(db_models.MusehubRenderJob).where(
+        db_models.MusehubRenderJob.repo_id == repo_id,
+        db_models.MusehubRenderJob.commit_id == commit_id,
+    )
+    job = (await db.execute(stmt)).scalar_one_or_none()
+
+    if job is None:
+        return RenderStatusResponse(
+            commit_id=commit_id,
+            status="not_found",
+        )
+
+    return RenderStatusResponse(
+        commit_id=job.commit_id,
+        status=job.status,
+        midi_count=job.midi_count,
+        mp3_object_ids=list(job.mp3_object_ids or []),
+        image_object_ids=list(job.image_object_ids or []),
+        error_message=job.error_message,
+    )
 
 
 @router.get(
@@ -832,6 +1077,157 @@ async def list_listen_tracks(
         full_mix_url=_audio_url(full_mix_obj.object_id),
         tracks=tracks,
         has_renders=True,
+    )
+
+
+def _derive_emotion_vector(commit_id: str) -> tuple[float, float, float, float]:
+    """Derive a deterministic (valence, energy, tension, darkness) vector from a commit SHA.
+
+    Mirrors the algorithm in musehub_repository._derive_emotion so that the
+    compare endpoint produces values consistent with the timeline page.  Four
+    non-overlapping 4-hex-char windows of the SHA are mapped to [0.0, 1.0].
+    """
+    sha = commit_id.ljust(16, "0")
+    hex_chars = set("0123456789abcdefABCDEF")
+
+    def _window(start: int) -> float:
+        chunk = sha[start : start + 4]
+        if all(c in hex_chars for c in chunk):
+            return int(chunk, 16) / 0xFFFF
+        return 0.5
+
+    return _window(0), _window(4), _window(8), _window(12)
+
+
+def _compute_emotion_diff(
+    base_commits: list[CommitResponse],
+    head_only_commits: list[CommitResponse],
+) -> EmotionDiffResponse:
+    """Compute the emotional delta between the base ref and the head-only commits.
+
+    Each commit's emotion vector is derived deterministically from its SHA.
+    The delta is ``mean(head) − mean(base)`` per axis, clamped to [−1.0, 1.0].
+
+    When either side has no commits, that side's vector defaults to 0.5 for all axes.
+    """
+
+    def _mean_vector(commits: list[CommitResponse]) -> tuple[float, float, float, float]:
+        if not commits:
+            return 0.5, 0.5, 0.5, 0.5
+        vecs = [_derive_emotion_vector(c.commit_id) for c in commits]
+        n = len(vecs)
+        return (
+            sum(v[0] for v in vecs) / n,
+            sum(v[1] for v in vecs) / n,
+            sum(v[2] for v in vecs) / n,
+            sum(v[3] for v in vecs) / n,
+        )
+
+    bv, be, bt, bd = _mean_vector(base_commits)
+    hv, he, ht, hd = _mean_vector(head_only_commits)
+    return EmotionDiffResponse(
+        valence_delta=round(hv - bv, 4),
+        energy_delta=round(he - be, 4),
+        tension_delta=round(ht - bt, 4),
+        darkness_delta=round(hd - bd, 4),
+        base_valence=round(bv, 4),
+        base_energy=round(be, 4),
+        base_tension=round(bt, 4),
+        base_darkness=round(bd, 4),
+        head_valence=round(hv, 4),
+        head_energy=round(he, 4),
+        head_tension=round(ht, 4),
+        head_darkness=round(hd, 4),
+    )
+
+
+@router.get(
+    "/repos/{repo_id}/compare",
+    response_model=CompareResponse,
+    operation_id="compareRefs",
+    summary="Compare two refs — multi-dimensional musical diff",
+    tags=["Commits"],
+)
+async def compare_refs(
+    repo_id: str,
+    base: str = Query(..., description="Base ref (branch name or commit SHA)"),
+    head: str = Query(..., description="Head ref (branch name or commit SHA)"),
+    db: AsyncSession = Depends(get_db),
+    claims: TokenClaims | None = Depends(optional_token),
+) -> CompareResponse:
+    """Return a multi-dimensional musical comparison between two refs.
+
+    Computes five per-dimension divergence scores (melodic, harmonic, rhythmic,
+    structural, dynamic), lists commits unique to the head ref, and summarises
+    the emotional delta between the two refs.
+
+    ``base`` and ``head`` are resolved as branch names first.  If no commits
+    are found on a branch with that exact name, the ref is treated as a commit
+    SHA prefix and all commits for the repo are scanned.
+
+    Returns:
+        CompareResponse containing divergence dimensions, commit list, and
+        emotion diff.
+
+    Raises:
+        404: Repo not found.
+        422: Base or head ref resolves to zero commits.
+    """
+    repo = await musehub_repository.get_repo(db, repo_id)
+    _guard_visibility(repo, claims)
+
+    # ── Divergence (reuse existing engine; works on branch names) ────────────
+    try:
+        div_result = await musehub_divergence.compute_hub_divergence(
+            db,
+            repo_id=repo_id,
+            branch_a=base,
+            branch_b=head,
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc)
+        )
+
+    dimensions = [
+        DivergenceDimensionResponse(
+            dimension=d.dimension,
+            level=d.level.value,
+            score=d.score,
+            description=d.description,
+            branch_a_commits=d.branch_a_commits,
+            branch_b_commits=d.branch_b_commits,
+        )
+        for d in div_result.dimensions
+    ]
+
+    # ── Commits unique to head ────────────────────────────────────────────────
+    all_base_commits, _ = await musehub_repository.list_commits(db, repo_id, branch=base, limit=500)
+    all_head_commits, _ = await musehub_repository.list_commits(db, repo_id, branch=head, limit=500)
+    base_ids = {c.commit_id for c in all_base_commits}
+    head_only = [c for c in all_head_commits if c.commit_id not in base_ids]
+
+    # ── Emotion diff ──────────────────────────────────────────────────────────
+    emotion_diff = _compute_emotion_diff(all_base_commits, head_only)
+
+    # ── PR creation URL ──────────────────────────────────────────────────────
+    # repo is guaranteed non-None here — _guard_visibility raised 404 otherwise.
+    assert repo is not None
+    create_pr_url = (
+        f"/musehub/ui/{repo.owner}/{repo.slug}/pulls/new"
+        f"?base={base}&head={head}"
+    )
+
+    return CompareResponse(
+        repo_id=repo_id,
+        base_ref=base,
+        head_ref=head,
+        common_ancestor=div_result.common_ancestor,
+        dimensions=dimensions,
+        overall_score=div_result.overall_score,
+        commits=head_only,
+        emotion_diff=emotion_diff,
+        create_pr_url=create_pr_url,
     )
 
 

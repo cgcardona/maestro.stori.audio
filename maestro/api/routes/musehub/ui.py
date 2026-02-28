@@ -28,6 +28,7 @@ Endpoint summary (repo-scoped):
   GET /musehub/ui/{owner}/{repo_slug}/credits                   -- dynamic credits (liner notes)
   GET /musehub/ui/{owner}/{repo_slug}/embed/{ref}               -- iframe-safe audio player
   GET /musehub/ui/{owner}/{repo_slug}/search                    -- in-repo search (4 modes)
+  GET /musehub/ui/{owner}/{repo_slug}/compare/{base}...{head}   -- multi-dimensional musical diff between two refs
   GET /musehub/ui/{owner}/{repo_slug}/divergence                -- branch divergence radar chart
   GET /musehub/ui/{owner}/{repo_slug}/timeline                  -- chronological SVG timeline
   GET /musehub/ui/{owner}/{repo_slug}/releases                  -- release list
@@ -44,7 +45,11 @@ Endpoint summary (repo-scoped):
   GET /musehub/ui/{owner}/{repo_slug}/analysis/{ref}/motifs     -- motif browser (recurring patterns, transformations)
   GET /musehub/ui/{owner}/{repo_slug}/listen/{ref}              -- full-mix and per-track audio playback with track listing
   GET /musehub/ui/{owner}/{repo_slug}/listen/{ref}/{path}       -- single-stem playback page
+  GET /musehub/ui/{owner}/{repo_slug}/listen/{ref}             -- Wavesurfer.js audio player (full mix)
+  GET /musehub/ui/{owner}/{repo_slug}/listen/{ref}/{path}      -- Wavesurfer.js audio player (single track)
   GET /musehub/ui/{owner}/{repo_slug}/arrange/{ref}             -- arrangement matrix (instrument × section density grid)
+  GET /musehub/ui/{owner}/{repo_slug}/piano-roll/{ref}          -- interactive piano roll (all tracks)
+  GET /musehub/ui/{owner}/{repo_slug}/piano-roll/{ref}/{path}   -- interactive piano roll (single MIDI file)
 
 These routes require NO JWT auth -- they return HTML shells whose embedded
 JavaScript fetches data from the authed JSON API (``/api/v1/musehub/...``)
@@ -67,6 +72,15 @@ from starlette.responses import Response as StarletteResponse
 from maestro.api.routes.musehub.negotiate import negotiate_response
 from maestro.db import get_db
 from maestro.models.musehub import CommitListResponse, CommitResponse, RepoResponse, TrackListingResponse
+from maestro.models.musehub import (
+    BranchDetailListResponse,
+    CommitListResponse,
+    CommitResponse,
+    RepoResponse,
+    TagListResponse,
+    TagResponse,
+)
+from maestro.services import musehub_releases
 from maestro.services import musehub_repository
 
 logger = logging.getLogger(__name__)
@@ -1307,6 +1321,74 @@ async def arrange_page(
 
 
 @router.get(
+    "/{owner}/{repo_slug}/compare/{refs}",
+    response_class=HTMLResponse,
+    summary="Muse Hub compare view — multi-dimensional musical diff between two refs",
+)
+async def compare_page(
+    request: Request,
+    owner: str,
+    repo_slug: str,
+    refs: str,
+    format: str | None = Query(None, description="Force response format: 'json' or omit for HTML"),
+    db: AsyncSession = Depends(get_db),
+) -> StarletteResponse:
+    """Render the compare view for two refs (branches, tags, or commit SHAs).
+
+    The ``refs`` path segment encodes both refs separated by ``...``:
+    ``main...feature-branch`` compares ``main`` (base) against
+    ``feature-branch`` (head).
+
+    HTML (default): renders the compare page with radar chart, dimension
+    panels, piano roll, emotion diff, and commit list.
+    JSON (``Accept: application/json`` or ``?format=json``): returns the
+    full ``CompareResponse`` from the API endpoint.
+
+    Returns 404 when:
+    - The repo owner/slug is unknown.
+    - The ``refs`` value does not contain the ``...`` separator.
+    - Either ref has no commits in this repo (delegated to API response).
+    """
+    if "..." not in refs:
+        raise HTTPException(
+            status_code=http_status.HTTP_404_NOT_FOUND,
+            detail=f"Invalid compare spec '{refs}' — expected format: base...head",
+        )
+    base_ref, head_ref = refs.split("...", 1)
+    if not base_ref or not head_ref:
+        raise HTTPException(
+            status_code=http_status.HTTP_404_NOT_FOUND,
+            detail="Both base and head refs must be non-empty",
+        )
+    repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
+
+    context = {
+        "owner": owner,
+        "repo_slug": repo_slug,
+        "repo_id": repo_id,
+        "base_ref": base_ref,
+        "head_ref": head_ref,
+        "refs": refs,
+        "base_url": base_url,
+        "current_page": "compare",
+        "breadcrumb_data": _breadcrumbs(
+            (owner, f"/musehub/ui/{owner}"),
+            (repo_slug, base_url),
+            ("compare", ""),
+            (f"{base_ref}...{head_ref}", ""),
+        ),
+    }
+    return await negotiate_response(
+        request=request,
+        template_name="musehub/pages/compare.html",
+        context=context,
+        templates=templates,
+        json_data=None,
+        format_param=format,
+    )
+
+
+@router.get(
     "/{owner}/{repo_slug}/divergence",
     response_class=HTMLResponse,
     summary="Muse Hub divergence visualization page",
@@ -1726,6 +1808,116 @@ async def groove_check_page(
             "base_url": base_url,
             "current_page": "groove-check",
         },
+    )
+
+
+@router.get(
+    "/{owner}/{repo_slug}/branches",
+    summary="Muse Hub branch list page",
+)
+async def branches_page(
+    request: Request,
+    owner: str,
+    repo_slug: str,
+    format: str | None = Query(None, description="Force response format: 'json' or omit for HTML"),
+    db: AsyncSession = Depends(get_db),
+) -> StarletteResponse:
+    """Render the branch list page or return structured branch data as JSON.
+
+    HTML (default): lists all branches with HEAD commit info, ahead/behind counts,
+    musical divergence scores (placeholder), compare links, and New Pull Request buttons.
+    JSON (``Accept: application/json`` or ``?format=json``): returns
+    ``BranchDetailListResponse`` with per-branch ahead/behind counts.
+
+    Content negotiation — one URL, two audiences: musicians get rich HTML,
+    agents get structured JSON to programmatically inspect branch state.
+    """
+    repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
+    branch_data: BranchDetailListResponse = (
+        await musehub_repository.list_branches_with_detail(db, repo_id)
+    )
+    return await negotiate_response(
+        request=request,
+        template_name="musehub/pages/branches.html",
+        context={
+            "owner": owner,
+            "repo_slug": repo_slug,
+            "repo_id": repo_id,
+            "base_url": base_url,
+            "current_page": "branches",
+        },
+        templates=templates,
+        json_data=branch_data,
+        format_param=format,
+    )
+
+
+@router.get(
+    "/{owner}/{repo_slug}/tags",
+    summary="Muse Hub tag browser page",
+)
+async def tags_page(
+    request: Request,
+    owner: str,
+    repo_slug: str,
+    namespace: str | None = Query(None, description="Filter tags by namespace prefix"),
+    format: str | None = Query(None, description="Force response format: 'json' or omit for HTML"),
+    db: AsyncSession = Depends(get_db),
+) -> StarletteResponse:
+    """Render the tag browser page or return structured tag data as JSON.
+
+    Tags are sourced from repo releases.  The tag browser groups tags by their
+    namespace prefix (the text before ``:``, e.g. ``emotion``, ``genre``,
+    ``instrument``) — tags without a colon fall into the ``version`` namespace.
+
+    HTML (default): filterable list of tags grouped by namespace with commit info.
+    JSON (``Accept: application/json`` or ``?format=json``): returns
+    ``TagListResponse`` with namespace grouping and optional ``?namespace`` filtering.
+
+    Click a tag to navigate to the commit detail page for that release's commit.
+    """
+    repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
+    releases = await musehub_releases.list_releases(db, repo_id)
+
+    all_tags: list[TagResponse] = []
+    for release in releases:
+        tag_str = release.tag
+        if ":" in tag_str:
+            ns, _ = tag_str.split(":", 1)
+        else:
+            ns = "version"
+        all_tags.append(
+            TagResponse(
+                tag=tag_str,
+                namespace=ns,
+                commit_id=release.commit_id,
+                message=release.title,
+                created_at=release.created_at,
+            )
+        )
+
+    if namespace:
+        filtered_tags = [t for t in all_tags if t.namespace == namespace]
+    else:
+        filtered_tags = all_tags
+
+    namespaces: list[str] = sorted({t.namespace for t in all_tags})
+    tag_data = TagListResponse(tags=filtered_tags, namespaces=namespaces)
+
+    return await negotiate_response(
+        request=request,
+        template_name="musehub/pages/tags.html",
+        context={
+            "owner": owner,
+            "repo_slug": repo_slug,
+            "repo_id": repo_id,
+            "base_url": base_url,
+            "current_page": "tags",
+            "active_namespace": namespace or "",
+        },
+        templates=templates,
+        json_data=tag_data,
+        format_param=format,
     )
 
 
@@ -2200,3 +2392,225 @@ async def harmony_analysis_page(repo_id: str, ref: str) -> HTMLResponse:
 </body>
 </html>"""
     return HTMLResponse(content=html)
+
+
+@router.get(
+    "/{owner}/{repo_slug}/piano-roll/{ref}",
+    response_class=HTMLResponse,
+    summary="Muse Hub piano roll — all MIDI tracks",
+)
+async def piano_roll_page(
+    request: Request,
+    owner: str,
+    repo_slug: str,
+    ref: str,
+    db: AsyncSession = Depends(get_db),
+) -> HTMLResponse:
+    """Render the Canvas-based interactive piano roll for all MIDI tracks at ``ref``.
+
+    The page shell fetches a list of MIDI artifacts at the given ref from the
+    ``GET /api/v1/musehub/repos/{repo_id}/objects`` endpoint, then calls
+    ``GET /api/v1/musehub/repos/{repo_id}/objects/{id}/parse-midi`` for each
+    selected file.  The parsed note data is rendered into a Canvas element via
+    ``piano-roll.js``.
+
+    Features:
+    - Pitch on Y-axis with a piano keyboard strip
+    - Beat grid on X-axis with measure markers
+    - Per-track colour coding (design system palette)
+    - Velocity mapped to rectangle opacity
+    - Zoom controls (horizontal and vertical sliders)
+    - Pan via click-drag
+    - Hover tooltip: pitch name, velocity, beat position, duration
+
+    No JWT required — HTML shell; JS fetches authed data via localStorage token.
+    """
+    repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
+    short_ref = ref[:8] if len(ref) >= 8 else ref
+    return templates.TemplateResponse(
+        request,
+        "musehub/pages/piano_roll.html",
+        {
+            "owner": owner,
+            "repo_slug": repo_slug,
+            "repo_id": repo_id,
+            "ref": ref,
+            "short_ref": short_ref,
+            "path": None,
+            "base_url": base_url,
+            "current_page": "piano-roll",
+        },
+    )
+
+
+@router.get(
+    "/{owner}/{repo_slug}/piano-roll/{ref}/{path:path}",
+    response_class=HTMLResponse,
+    summary="Muse Hub piano roll — single MIDI track",
+)
+async def piano_roll_track_page(
+    request: Request,
+    owner: str,
+    repo_slug: str,
+    ref: str,
+    path: str,
+    db: AsyncSession = Depends(get_db),
+) -> HTMLResponse:
+    """Render the Canvas-based piano roll scoped to a single MIDI file ``path``.
+
+    Identical to :func:`piano_roll_page` but restricts the view to one specific
+    MIDI artifact identified by its repo-relative path
+    (e.g. ``tracks/bass.mid``).  The ``path`` segment is forwarded to the
+    template as a JavaScript string; the client-side code resolves the
+    matching object ID via the objects list API.
+
+    Useful for per-track deep-dive links from the tree browser or commit
+    detail page.
+    """
+    repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
+    short_ref = ref[:8] if len(ref) >= 8 else ref
+    return templates.TemplateResponse(
+        request,
+        "musehub/pages/piano_roll.html",
+        {
+            "owner": owner,
+            "repo_slug": repo_slug,
+            "repo_id": repo_id,
+            "ref": ref,
+            "short_ref": short_ref,
+            "path": path,
+            "base_url": base_url,
+            "current_page": "piano-roll",
+        },
+    )
+
+
+@router.get(
+    "/{owner}/{repo_slug}/blob/{ref}/{path:path}",
+    response_class=HTMLResponse,
+    summary="Muse Hub file blob viewer — music-aware file rendering",
+)
+async def blob_page(
+    request: Request,
+    owner: str,
+    repo_slug: str,
+    ref: str,
+    path: str,
+    db: AsyncSession = Depends(get_db),
+) -> HTMLResponse:
+    """Render the music-aware blob viewer for a single file at a given ref.
+
+    Dispatches to the appropriate rendering mode based on file extension:
+    - .mid/.midi → piano roll preview with "View in Piano Roll" quick link
+    - .mp3/.wav/.flac → <audio> player with "Listen" quick link
+    - .json → syntax-highlighted, formatted JSON with collapsible sections
+    - .webp/.png/.jpg → inline <img> display
+    - .xml → syntax-highlighted XML (MusicXML support)
+    - Other → hex dump preview with raw download link
+
+    Metadata shown: filename, size, SHA, commit date.
+    Raw download button links to /{owner}/{repo_slug}/raw/{ref}/{path}.
+
+    Auth: no JWT required for public repos.  Private-repo auth is
+    handled client-side via localStorage JWT (consistent with other
+    MuseHub UI pages).
+    """
+    repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
+    filename = path.split("/")[-1] if path else ""
+    return templates.TemplateResponse(
+        request,
+        "musehub/pages/blob.html",
+        {
+            "owner": owner,
+            "repo_slug": repo_slug,
+            "repo_id": repo_id,
+            "ref": ref,
+            "file_path": path,
+            "filename": filename,
+            "base_url": base_url,
+            "current_page": "tree",
+        },
+    )
+
+
+@router.get(
+    "/{owner}/{repo_slug}/score/{ref}",
+    response_class=HTMLResponse,
+    summary="Muse Hub score renderer — full score, all tracks",
+)
+async def score_page(
+    request: Request,
+    owner: str,
+    repo_slug: str,
+    ref: str,
+    db: AsyncSession = Depends(get_db),
+) -> HTMLResponse:
+    """Render the sheet music score page for a given commit ref (all tracks).
+
+    Displays all instrument parts as standard music notation rendered via a
+    lightweight SVG renderer.  The page fetches quantized notation JSON from
+    ``GET /api/v1/musehub/repos/{repo_id}/notation/{ref}`` and draws:
+
+    - Staff lines (treble and bass clefs as appropriate)
+    - Key signature and time signature
+    - Note heads, stems, flags, ledger lines
+    - Accidental markers (sharps and flats)
+    - Track/part selector dropdown
+
+    No JWT is required to render the HTML shell.  Auth is handled client-side
+    via localStorage JWT, matching all other UI pages.
+
+    For a single-part view use the ``score/{ref}/{path}`` variant which filters
+    to one instrument track.
+    """
+    repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
+    return templates.TemplateResponse(
+        request,
+        "musehub/pages/score.html",
+        {
+            "owner": owner,
+            "repo_slug": repo_slug,
+            "repo_id": repo_id,
+            "ref": ref,
+            "base_url": base_url,
+            "path": "",
+            "current_page": "score",
+        },
+    )
+
+
+@router.get(
+    "/{owner}/{repo_slug}/score/{ref}/{path:path}",
+    response_class=HTMLResponse,
+    summary="Muse Hub score renderer — single-track part view",
+)
+async def score_part_page(
+    request: Request,
+    owner: str,
+    repo_slug: str,
+    ref: str,
+    path: str,
+    db: AsyncSession = Depends(get_db),
+) -> HTMLResponse:
+    """Render the sheet music score page filtered to a single instrument part.
+
+    Identical to ``score/{ref}`` but the ``path`` segment identifies a specific
+    instrument track (e.g. ``piano``, ``bass``, ``guitar``).  The client-side
+    renderer pre-selects that track in the part selector on load.
+
+    No JWT is required to render the HTML shell.
+    """
+    repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
+    return templates.TemplateResponse(
+        request,
+        "musehub/pages/score.html",
+        {
+            "owner": owner,
+            "repo_slug": repo_slug,
+            "repo_id": repo_id,
+            "ref": ref,
+            "base_url": base_url,
+            "path": path,
+            "current_page": "score",
+        },
+    )

@@ -33,6 +33,8 @@ This document is the single source of truth for every named entity (TypedDict, d
    - [ReleaseArtifact](#releaseartifact)
    - [ReleaseResult](#releaseresult)
    - [RenderPreviewResult](#renderpreviewresult)
+   - [PianoRollRenderResult](#pianorollrenderresult)
+   - [RenderPipelineResult](#renderpipelineresult)
 5. [Variation Layer (`app/variation/`)](#variation-layer)
    - [Event Envelope payloads](#event-envelope-payloads)
    - [PhraseRecord](#phraserecord)
@@ -1270,6 +1272,41 @@ these to HTTP 404.
 
 ---
 
+### `PianoRollRenderResult`
+
+**Path:** `maestro/services/musehub_piano_roll_renderer.py`
+
+`dataclass(frozen=True)` — Result of a single piano-roll PNG render operation.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `output_path` | `pathlib.Path` | Absolute path of the PNG file written to disk |
+| `width_px` | `int` | Actual render width in pixels (clamped to `[64, 1920]`) |
+| `note_count` | `int` | Total number of MIDI note events rendered across all tracks |
+| `track_index` | `int` | Zero-based MIDI track index (informational; all tracks composite into one image) |
+| `stubbed` | `bool` | `True` when no note events were found or MIDI parse failed; blank canvas returned |
+
+**Agent use case:** Agents inspect `stubbed` to decide whether a useful visualization was produced. `note_count=0` with `stubbed=True` means the MIDI file was empty or unparseable.
+
+---
+
+### `RenderPipelineResult`
+
+**Path:** `maestro/services/musehub_render_pipeline.py`
+
+`dataclass(frozen=True)` — Summary of the render pipeline execution for one commit.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `commit_id` | `str` | Muse commit SHA that was rendered |
+| `status` | `str` | Final job status: `"complete"` or `"failed"` |
+| `midi_count` | `int` | Number of MIDI objects discovered in the push payload |
+| `mp3_object_ids` | `list[str]` | Object IDs of generated MP3 (or stub) artifacts |
+| `image_object_ids` | `list[str]` | Object IDs of generated piano-roll PNG artifacts |
+| `error_message` | `str` | Non-empty only when status is `"failed"` |
+
+---
+
 ### `TransposeResult`
 
 **Path:** `maestro/services/muse_transpose.py`
@@ -1806,6 +1843,120 @@ fixtures with static type-checking, without hiding intent behind `dict[str, Any]
 | `_region_cc` | `dict[str, list[CCEventDict]]` | All CC events at this version |
 | `_region_pitch_bends` | `dict[str, list[PitchBendDict]]` | All pitch bend events |
 | `_region_aftertouch` | `dict[str, list[AftertouchDict]]` | All aftertouch events |
+
+---
+
+
+### `BlobMetaResponse`
+
+**Path:** `maestro/models/musehub.py`
+
+`CamelModel` — Metadata and optional inline content for a single file in the Muse blob viewer, as returned by `GET /api/v1/musehub/repos/{repo_id}/blob/{ref}/{path}`.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `object_id` | `str` | Content-addressed ID, e.g. `sha256:abc123...` |
+| `path` | `str` | Relative path from repo root, e.g. `tracks/bass.mid` |
+| `filename` | `str` | Basename of the file, e.g. `bass.mid` |
+| `size_bytes` | `int` | File size in bytes |
+| `sha` | `str` | Content-addressed SHA identifier |
+| `created_at` | `datetime` | Timestamp when this object was pushed |
+| `raw_url` | `str` | URL to download the raw file bytes |
+| `file_type` | `str` | Rendering hint: `midi` \| `audio` \| `json` \| `image` \| `xml` \| `other` |
+| `content_text` | `str \| None` | UTF-8 content for JSON/XML files ≤ 256 KB; `None` for binary or oversized files |
+
+**Produced by:** `maestro.api.routes.musehub.objects.get_blob_meta()`
+**Consumed by:** MuseHub blob viewer UI page (`/musehub/ui/{owner}/{repo_slug}/blob/{ref}/{path}`); AI agents inspecting individual file content
+
+---
+
+## Storpheus — Inference Optimization Types (`storpheus/music_service.py`)
+
+
+### `NotationDict`
+
+**Path:** `maestro/services/musehub_notation.py`
+
+`TypedDict` — JSON-serialisable form of `NotationResult` returned by
+`notation_result_to_dict()`.  Uses camelCase field names to match the
+JavaScript convention used by all other MuseHub API responses.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `tracks` | `list[NotationTrack]` | All instrument parts |
+| `tempo` | `int` | Tempo in BPM |
+| `key` | `str` | Key signature string, e.g. `"C major"` |
+| `timeSig` | `str` | Time signature string, e.g. `"4/4"` |
+
+**Produced by:** `maestro.services.musehub_notation.notation_result_to_dict()`
+**Consumed by:** Score page client-side renderer via JSON API
+
+---
+
+
+### `NotationNote`
+
+**Path:** `maestro/services/musehub_notation.py`
+
+`TypedDict` — A single quantized note ready for SVG rendering by the score page.
+Fields are kept flat (no nested objects) to simplify JavaScript destructuring.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `pitch_name` | `str` | Pitch class, e.g. `"C"`, `"F#"`, `"Bb"` |
+| `octave` | `int` | MIDI octave number (4 = middle octave) |
+| `duration` | `str` | Duration fraction string: `"1/1"`, `"1/2"`, `"1/4"`, `"1/8"`, `"1/16"` |
+| `start_beat` | `float` | Beat position from the start of the piece (0-indexed) |
+| `velocity` | `int` | MIDI velocity 0–127 |
+| `track_id` | `int` | Source track index (matches `NotationTrack.track_id`) |
+
+**Produced by:** `maestro.services.musehub_notation._notes_for_track()`
+**Consumed by:** `NotationTrack.notes`, score page SVG renderer
+
+---
+
+
+### `NotationResult`
+
+**Path:** `maestro/services/musehub_notation.py`
+
+`NamedTuple` — Internal result type returned by `convert_ref_to_notation()`.
+Carries the same data as `NotationDict` but uses Pythonic snake_case field names.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `tracks` | `list[NotationTrack]` | All instrument parts |
+| `tempo` | `int` | Tempo in BPM (80–159 range in stub implementation) |
+| `key` | `str` | Key signature string, deterministically derived from `ref` |
+| `time_sig` | `str` | Time signature string, deterministically derived from `ref` |
+
+**Produced by:** `maestro.services.musehub_notation.convert_ref_to_notation()`
+**Consumed by:** Score page route handlers; `notation_result_to_dict()`
+
+
+---
+
+## Piano Roll / MIDI Parser Types (`maestro/services/musehub_midi_parser.py`)
+
+
+### `NotationTrack`
+
+**Path:** `maestro/services/musehub_notation.py`
+
+`TypedDict` — One instrument part with clef/key/time signature metadata and
+a list of quantized notes.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `track_id` | `int` | Zero-based track index |
+| `clef` | `str` | `"treble"` or `"bass"` |
+| `key_signature` | `str` | Key signature string, e.g. `"C major"`, `"F# minor"` |
+| `time_signature` | `str` | Time signature string, e.g. `"4/4"`, `"3/4"`, `"6/8"` |
+| `instrument` | `str` | Instrument role name, e.g. `"piano"`, `"bass"`, `"guitar"` |
+| `notes` | `list[NotationNote]` | Quantized notes ordered by `start_beat` |
+
+**Produced by:** `maestro.services.musehub_notation.convert_ref_to_notation()`
+**Consumed by:** `NotationResult.tracks`, `NotationDict.tracks`, score page SVG renderer
 
 ---
 
@@ -6844,6 +6995,42 @@ public compositions were found — not an error condition.
 
 ---
 
+## CommitDiffSummaryResponse / CommitDiffDimensionScore (Pydantic)
+
+**Module:** `maestro.models.musehub`
+**Returned by:** `GET /api/v1/musehub/repos/{repo_id}/commits/{commit_id}/diff-summary`
+
+Wire-format models for the multi-dimensional musical diff summary endpoint.
+Scores are heuristic estimates derived from commit message keyword analysis.
+
+```python
+class CommitDiffDimensionScore(CamelModel):
+    dimension: str   # "harmonic" | "rhythmic" | "melodic" | "structural" | "dynamic"
+    score: float     # [0.0, 1.0] — change magnitude
+    label: str       # "none" | "low" | "medium" | "high"
+    color: str       # CSS class: "dim-none" | "dim-low" | "dim-medium" | "dim-high"
+
+class CommitDiffSummaryResponse(CamelModel):
+    commit_id: str                              # camelCase: commitId
+    parent_id: str | None                       # camelCase: parentId; None for root commits
+    dimensions: list[CommitDiffDimensionScore]  # Always five entries (one per dimension)
+    overall_score: float                        # camelCase: overallScore; mean of all five
+```
+
+**Source:** `maestro/models/musehub.py`
+**Endpoint logic:** `maestro/api/routes/musehub/repos.py` → `get_commit_diff_summary()`
+
+**Score semantics:**
+- Root commit (no parent): all dimensions score `1.0` (everything is new)
+- Non-root commit: keyword density in commit message drives score per dimension
+- `score < 0.15` → label `"none"`, `< 0.40` → `"low"`, `< 0.70` → `"medium"`, else `"high"`
+
+**Agent contract:** Always five entries in `dimensions`, one per musical dimension.
+An `overallScore` of `0.0` means no recognized musical keywords were found in the
+commit message — not an error. `parentId` is `null` for root commits (initial push).
+
+---
+
 ## ProfileResponse
 
 **Module:** `maestro.models.musehub`
@@ -6981,6 +7168,88 @@ when the corresponding package is unavailable.
 | Field | Type | Description |
 |-------|------|-------------|
 | `releases` | `list[ReleaseResponse]` | All releases, newest first |
+
+---
+
+## `BranchDivergenceScores`
+
+**Module:** `maestro.models.musehub`
+**Used by:** `BranchDetailResponse.divergence` field.
+
+Placeholder musical divergence scores between a branch and the repo's default branch. All five dimensions mirror the `muse divergence` command output. Values are floats in `[0.0, 1.0]` where `0` = identical and `1` = maximally different. All fields are `None` until audio snapshots are attached to commits and server-side computation is implemented.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `melodic` | `float \| None` | Melodic divergence `[0–1]`; `None` = not yet computable |
+| `harmonic` | `float \| None` | Harmonic divergence `[0–1]`; `None` = not yet computable |
+| `rhythmic` | `float \| None` | Rhythmic divergence `[0–1]`; `None` = not yet computable |
+| `structural` | `float \| None` | Structural divergence `[0–1]`; `None` = not yet computable |
+| `dynamic` | `float \| None` | Dynamic divergence `[0–1]`; `None` = not yet computable |
+
+---
+
+## `BranchDetailResponse`
+
+**Module:** `maestro.models.musehub`
+**Used by:** `BranchDetailListResponse.branches`, `GET /api/v1/musehub/repos/{repo_id}/branches/detail`.
+
+Branch pointer enriched with ahead/behind counts and musical divergence scores. Ahead/behind are set-difference approximations over the `musehub_commits` table — suitable for display, not for merge-base computation.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `branch_id` | `str` | Internal UUID of the branch row |
+| `name` | `str` | Branch name (e.g. `"main"`, `"feat/jazz-bridge"`) |
+| `head_commit_id` | `str \| None` | HEAD commit ID; `None` for an empty branch |
+| `is_default` | `bool` | `True` when this is the repo's default branch |
+| `ahead_count` | `int` | Commits on this branch not yet on the default branch |
+| `behind_count` | `int` | Commits on the default branch not yet on this branch |
+| `divergence` | `BranchDivergenceScores` | Musical divergence scores vs the default branch (placeholder until computable) |
+
+---
+
+## `BranchDetailListResponse`
+
+**Module:** `maestro.models.musehub`
+**Used by:** `GET /api/v1/musehub/repos/{repo_id}/branches/detail`, `GET /musehub/ui/{owner}/{repo_slug}/branches` (JSON variant).
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `branches` | `list[BranchDetailResponse]` | All branches, sorted alphabetically by name |
+| `default_branch` | `str` | Name of the repo's default branch (prefers `"main"`, else first alphabetically) |
+
+---
+
+## `TagResponse`
+
+**Module:** `maestro.models.musehub`
+**Used by:** `TagListResponse.tags`, `GET /musehub/ui/{owner}/{repo_slug}/tags` (JSON variant).
+
+A single tag entry sourced from a `musehub_releases` row. The `namespace` field is derived from the tag name: `emotion:happy` → `emotion`; tags without a colon fall into the `version` namespace.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `tag` | `str` | Full tag string (e.g. `"emotion:happy"`, `"v1.0"`) |
+| `namespace` | `str` | Namespace prefix extracted from the tag (e.g. `"emotion"`, `"genre"`, `"version"`) |
+| `commit_id` | `str \| None` | Commit this tag is pinned to, or `None` |
+| `message` | `str` | Release title / description (empty string if unset) |
+| `created_at` | `datetime` | Tag creation timestamp (ISO-8601 UTC) |
+
+---
+
+## `TagListResponse`
+
+**Module:** `maestro.models.musehub`
+**Used by:** `GET /musehub/ui/{owner}/{repo_slug}/tags` (JSON variant, `?format=json` or `Accept: application/json`).
+
+All tags for a repo, optionally filtered by `?namespace=<ns>` server-side. The flat `tags` list is sorted by creation time (newest first from the releases table). Clients may group by the `namespace` field client-side.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `tags` | `list[TagResponse]` | Tags (filtered by `?namespace` when provided; all tags otherwise) |
+| `namespaces` | `list[str]` | Sorted list of all distinct namespace strings present in the repo (always the full set, unaffected by `?namespace` filter) |
+
+---
+
 ## ExploreRepoResult
 
 **Module:** `maestro.models.musehub`
@@ -7358,23 +7627,6 @@ Full emotion map for a Muse repo ref. Returned by `GET /musehub/repos/{repo_id}/
 
 ---
 
-### `ArrangementRowSummary`
-
-**Path:** `maestro/models/musehub.py`
-
-`CamelModel` — Aggregated stats for one instrument row across all sections in the arrangement matrix.
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `instrument` | `str` | Instrument/track name |
-| `total_notes` | `int` | Total note count across all sections |
-| `active_sections` | `int` | Number of sections where the instrument plays |
-| `mean_density` | `float` | Mean note density across all sections |
-
-**Produced by:** `maestro.services.musehub_analysis.compute_arrangement_matrix()`
-
----
-
 ### `ArrangementColumnSummary`
 
 **Path:** `maestro/models/musehub.py`
@@ -7415,6 +7667,72 @@ Full emotion map for a Muse repo ref. Returned by `GET /musehub/repos/{repo_id}/
 
 ---
 
+### `ArrangementRowSummary`
+
+**Path:** `maestro/models/musehub.py`
+
+`CamelModel` — Aggregated stats for one instrument row across all sections in the arrangement matrix.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `instrument` | `str` | Instrument/track name |
+| `total_notes` | `int` | Total note count across all sections |
+| `active_sections` | `int` | Number of sections where the instrument plays |
+| `mean_density` | `float` | Mean note density across all sections |
+
+**Produced by:** `maestro.services.musehub_analysis.compute_arrangement_matrix()`
+
+---
+
+### `CompareResponse`
+
+**Path:** `maestro/models/musehub.py`
+
+`CamelModel` — Multi-dimensional musical comparison between two refs. Combines divergence scores, commits unique to head, and emotion diff into a single payload. Returned by `GET /api/v1/musehub/repos/{repo_id}/compare?base=X&head=Y`.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `repo_id` | `str` | Repository identifier |
+| `base_ref` | `str` | Base ref (branch name, tag, or commit SHA) |
+| `head_ref` | `str` | Head ref (branch name, tag, or commit SHA) |
+| `common_ancestor` | `str \| None` | Most recent common ancestor commit ID |
+| `dimensions` | `list[DivergenceDimensionResponse]` | Five per-dimension divergence scores |
+| `overall_score` | `float` | Mean of all five dimension scores in [0.0, 1.0] |
+| `commits` | `list[CommitResponse]` | Commits in head not in base (newest first) |
+| `emotion_diff` | `EmotionDiffResponse` | Emotional delta between base and head |
+| `create_pr_url` | `str` | URL to create a pull request from this comparison |
+
+**Produced by:** `maestro.api.routes.musehub.repos.compare_refs()`
+**Consumed by:** MuseHub compare page (`/musehub/ui/{owner}/{repo_slug}/compare/{base}...{head}`); AI agents deciding whether to open a pull request
+
+---
+
+### `EmotionDiffResponse`
+
+**Path:** `maestro/models/musehub.py`
+
+`CamelModel` — Emotional delta between base and head refs in a MuseHub compare view. All delta fields are `head_value − base_value` in [−1.0, 1.0]; positive means head is more energetic/positive/tense/dark. Values are derived deterministically from commit SHA hashes.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `energy_delta` | `float` | Δenergy (head − base), in [−1.0, 1.0] |
+| `valence_delta` | `float` | Δvalence (head − base), in [−1.0, 1.0] |
+| `tension_delta` | `float` | Δtension (head − base), in [−1.0, 1.0] |
+| `darkness_delta` | `float` | Δdarkness (head − base), in [−1.0, 1.0] |
+| `base_energy` | `float` | Mean energy for base ref |
+| `base_valence` | `float` | Mean valence for base ref |
+| `base_tension` | `float` | Mean tension for base ref |
+| `base_darkness` | `float` | Mean darkness for base ref |
+| `head_energy` | `float` | Mean energy for head ref |
+| `head_valence` | `float` | Mean valence for head ref |
+| `head_tension` | `float` | Mean tension for head ref |
+| `head_darkness` | `float` | Mean darkness for head ref |
+
+**Produced by:** `maestro.api.routes.musehub.repos._compute_emotion_diff()`
+**Consumed by:** MuseHub compare page (`/musehub/ui/{owner}/{repo_slug}/compare/{base}...{head}`); AI agents evaluating the mood shift between two refs
+
+---
+
 ## Storpheus — Inference Optimization Types (`storpheus/music_service.py`)
 
 ### `GenerationTiming`
@@ -7437,3 +7755,62 @@ Full emotion map for a Muse repo ref. Returned by `GET /musehub/repos/{repo_id}/
 
 **Produced by:** `storpheus.music_service._do_generate()`
 **Consumed by:** Callers of `GenerateResponse.metadata["timing"]`; latency dashboards; A/B test comparisons via `/quality/ab-test`
+
+---
+
+## Piano Roll / MIDI Parser Types (`maestro/services/musehub_midi_parser.py`)
+
+### `MidiNote`
+
+**Path:** `maestro/services/musehub_midi_parser.py`
+
+`TypedDict` — A single sounding note extracted from a MIDI track.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `pitch` | `int` | MIDI pitch number (0–127, 60 = middle C) |
+| `start_beat` | `float` | Note-on position in quarter-note beats from the beginning of the file |
+| `duration_beats` | `float` | Sustain length in quarter-note beats (note-on to note-off) |
+| `velocity` | `int` | Note-on velocity (0–127) |
+| `track_id` | `int` | Zero-based index of the source MIDI track |
+| `channel` | `int` | MIDI channel (0–15) |
+
+**Produced by:** `maestro.services.musehub_midi_parser.parse_midi_bytes()`
+**Consumed by:** `MidiTrack.notes`; MuseHub piano roll Canvas renderer
+
+---
+
+### `MidiTrack`
+
+**Path:** `maestro/services/musehub_midi_parser.py`
+
+`TypedDict` — A single logical track extracted from a MIDI file.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `track_id` | `int` | Zero-based track index matching `MidiNote.track_id` |
+| `channel` | `int` | Dominant MIDI channel (−1 when track has no notes) |
+| `name` | `str` | Track name from `track_name` meta message, or auto-generated |
+| `notes` | `list[MidiNote]` | All notes sorted by `start_beat` |
+
+**Produced by:** `maestro.services.musehub_midi_parser.parse_midi_bytes()`
+**Consumed by:** `MidiParseResult.tracks`; MuseHub piano roll Canvas renderer
+
+---
+
+### `MidiParseResult`
+
+**Path:** `maestro/services/musehub_midi_parser.py`
+
+`TypedDict` — Top-level result returned by `parse_midi_bytes()` and serialised
+as JSON by `GET /api/v1/musehub/repos/{repo_id}/objects/{object_id}/parse-midi`.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `tracks` | `list[MidiTrack]` | Per-track note data, ordered by track index |
+| `tempo_bpm` | `float` | First tempo found in the file, in BPM (default 120.0) |
+| `time_signature` | `str` | First time signature as `"N/D"` (default `"4/4"`) |
+| `total_beats` | `float` | Total duration in quarter-note beats |
+
+**Produced by:** `maestro.services.musehub_midi_parser.parse_midi_bytes()`
+**Consumed by:** `maestro.api.routes.musehub.objects.parse_midi_object()`; MuseHub piano roll JavaScript renderer (`piano-roll.js`)

@@ -1431,6 +1431,91 @@ others → `application/octet-stream`).
 
 ---
 
+### GET /api/v1/musehub/repos/{repo_id}/objects/{object_id}/parse-midi
+
+Parse a stored MIDI artifact into a structured note representation consumed by
+the Canvas-based piano roll renderer.  Reads the binary file from disk using
+the `mido` library and converts all timing to quarter-note beats.
+
+**Authentication:** Optional — public repos need no token; private repos require `Authorization: Bearer <token>`.
+
+**Path parameters:**
+
+| Parameter   | Description                          |
+|-------------|--------------------------------------|
+| `repo_id`   | Muse Hub repository UUID             |
+| `object_id` | Object ID of the stored MIDI file    |
+
+**Response (200) — `MidiParseResult`:**
+
+```json
+{
+  "tracks": [
+    {
+      "track_id": 0,
+      "channel": 0,
+      "name": "Piano",
+      "notes": [
+        {
+          "pitch": 60,
+          "start_beat": 0.0,
+          "duration_beats": 1.0,
+          "velocity": 80,
+          "track_id": 0,
+          "channel": 0
+        }
+      ]
+    }
+  ],
+  "tempo_bpm": 120.0,
+  "time_signature": "4/4",
+  "total_beats": 32.0
+}
+```
+
+All timing is in quarter-note beats.  Notes within each track are sorted by
+`start_beat`.  The `pitch` field uses standard MIDI numbering (60 = middle C).
+
+**Errors:**
+- **404** — repo or object not found, or object is not a `.mid` / `.midi` file
+- **410** — object record exists in DB but file was removed from disk
+- **422** — object bytes cannot be parsed as a Standard MIDI File
+
+**Produced by:** `maestro.api.routes.musehub.objects.parse_midi_object()`
+**Consumed by:** MuseHub piano roll page (`/musehub/ui/{owner}/{slug}/piano-roll/{ref}`)
+
+---
+
+## Muse Hub Piano Roll UI
+
+### GET /musehub/ui/{owner}/{repo_slug}/piano-roll/{ref}
+
+Canvas-based interactive piano roll showing all MIDI tracks at a given commit
+ref.  No JWT required — HTML shell; JavaScript fetches authed data via
+`localStorage` token.
+
+**Features:**
+- Piano keyboard strip on the left Y-axis (pitch labels, C note markers)
+- Beat grid on the X-axis with measure markers
+- Per-track colour coding from the design system palette
+- Velocity mapped to rectangle opacity (soft notes appear lighter)
+- Horizontal and vertical zoom sliders
+- Click-drag panning
+- Hover tooltip: pitch name, MIDI number, velocity, beat position, duration
+
+**Path parameters:**
+
+| Parameter    | Description                                  |
+|--------------|----------------------------------------------|
+| `owner`      | Repository owner username                    |
+| `repo_slug`  | Repository slug                              |
+| `ref`        | Commit SHA or branch name                    |
+
+### GET /musehub/ui/{owner}/{repo_slug}/piano-roll/{ref}/{path}
+
+Same as above but scoped to a single MIDI file identified by its repo-relative
+`path` (e.g. `tracks/bass.mid`).  Useful for per-track links from the tree
+browser or commit detail page.
 
 ---
 
