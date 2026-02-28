@@ -6264,3 +6264,88 @@ registration index matches the filesystem.
 **Implementation:** `maestro/muse_cli/commands/worktree.py` — `prune_worktrees(root)`.
 
 ---
+
+## Muse Hub — User Profiles
+
+User profiles are the public-facing identity layer of Muse Hub, analogous to
+GitHub profile pages.  Each authenticated user may create exactly one profile,
+identified by a URL-safe username.  The profile aggregates data across all
+of the user's repos to present a musical portfolio.
+
+### Data Model
+
+**Table:** `musehub_profiles`
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `user_id` | String(36) PK | JWT `sub` — same ID used in `musehub_repos.owner_user_id` |
+| `username` | String(64) UNIQUE | URL-friendly handle (e.g. `gabriel`) |
+| `bio` | Text nullable | Short bio, Markdown supported (max 500 chars) |
+| `avatar_url` | String(2048) nullable | Avatar image URL |
+| `pinned_repo_ids` | JSON | Up to 6 repo_ids highlighted on the profile page |
+| `created_at` | DateTime(tz) | Profile creation timestamp |
+| `updated_at` | DateTime(tz) | Last update timestamp |
+
+### API Endpoints
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| `GET` | `/api/v1/musehub/users/{username}` | Public | Full profile JSON |
+| `POST` | `/api/v1/musehub/users` | JWT required | Create a profile |
+| `PUT` | `/api/v1/musehub/users/{username}` | JWT, owner only | Update bio/avatar/pins |
+| `GET` | `/musehub/ui/users/{username}` | Public HTML shell | Browser profile page |
+
+### ProfileResponse Fields
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `username` | str | URL handle |
+| `bio` | str \| None | Short bio |
+| `avatar_url` | str \| None | Avatar URL |
+| `pinned_repo_ids` | list[str] | Pinned repo IDs (order preserved) |
+| `repos` | list[ProfileRepoSummary] | Public repos, newest first |
+| `contribution_graph` | list[ContributionDay] | 52 weeks of daily commit counts |
+| `session_credits` | int | Total commits across all repos (creative sessions) |
+| `created_at` / `updated_at` | datetime | Profile timestamps |
+
+### Contribution Graph
+
+The contribution graph covers the **last 52 weeks** (364 days) ending today.
+Each day's count is the number of commits pushed across ALL repos owned by
+the user (public and private) on that date.  The browser UI renders this as
+a GitHub-style heatmap using CSS data attributes (`data-count=0–4`).
+
+### Session Credits
+
+Session credits are the total number of commits ever pushed to Muse Hub across
+all repos owned by the user.  Each commit represents one composition session
+recorded to the hub.  This is the MVP proxy; future releases may tie credits
+to token usage from `usage_logs`.
+
+### Disambiguation
+
+The profile UI page at `/musehub/ui/users/{username}` does NOT conflict with
+the repo browser at `/musehub/ui/{repo_id}` — the `users/` path segment
+ensures distinct routing.  The JSON API is namespaced at
+`/api/v1/musehub/users/{username}`.
+
+### Result Types
+
+- `ProfileResponse` — `maestro/models/musehub.py`
+- `ProfileRepoSummary` — compact per-repo entry (repo_id, name, visibility, star_count, last_activity_at, created_at)
+- `ContributionDay` — `{ date: "YYYY-MM-DD", count: int }`
+
+Registered in `docs/reference/type_contracts.md`.
+
+### Implementation Files
+
+| File | Purpose |
+|------|---------|
+| `maestro/db/musehub_models.py` | `MusehubProfile` ORM model |
+| `maestro/services/musehub_profile.py` | CRUD + aggregate queries |
+| `maestro/api/routes/musehub/users.py` | JSON API handlers |
+| `maestro/api/routes/musehub/ui.py` | `profile_page()` HTML handler |
+| `alembic/versions/0001_consolidated_schema.py` | `musehub_profiles` table |
+| `tests/test_musehub_ui.py` | Profile acceptance tests |
+
+---

@@ -6,6 +6,14 @@ Covers the minimum acceptance criteria from issue #43:
 - test_ui_pr_list_page_returns_200     — PR list page renders without error
 - test_ui_issue_list_page_returns_200  — Issue list page renders without error
 
+Covers acceptance criteria from issue #233 (user profile page):
+- test_profile_page_renders             — GET /musehub/ui/users/{username} returns 200
+- test_profile_lists_repos              — public repos appear in JSON profile
+- test_profile_unknown_user_404         — unknown username returns 404 from API
+- test_profile_json_response            — JSON includes repos and credits
+- test_profile_no_auth_required_ui      — UI page accessible without JWT
+- test_profile_create_and_update        — POST + PUT profile lifecycle
+
 UI routes require no JWT auth (they return HTML shells whose JS handles auth).
 The HTML content tests assert structural markers present in every rendered page.
 """
@@ -15,7 +23,7 @@ import pytest
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from maestro.db.musehub_models import MusehubRepo
+from maestro.db.musehub_models import MusehubProfile, MusehubRepo
 
 
 # ---------------------------------------------------------------------------
@@ -236,3 +244,196 @@ async def test_get_object_content_404_for_unknown_object(
         headers=auth_headers,
     )
     assert response.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# Profile helpers
+# ---------------------------------------------------------------------------
+
+_TEST_USER_ID = "550e8400-e29b-41d4-a716-446655440000"
+
+
+async def _make_profile(db_session: AsyncSession, username: str = "testmusician") -> MusehubProfile:
+    """Seed a minimal profile and return it."""
+    profile = MusehubProfile(
+        user_id=_TEST_USER_ID,
+        username=username,
+        bio="Test bio",
+        avatar_url=None,
+        pinned_repo_ids=[],
+    )
+    db_session.add(profile)
+    await db_session.commit()
+    await db_session.refresh(profile)
+    return profile
+
+
+async def _make_public_repo(db_session: AsyncSession) -> str:
+    """Seed a public repo for the test user and return its repo_id."""
+    repo = MusehubRepo(
+        name="public-beats",
+        visibility="public",
+        owner_user_id=_TEST_USER_ID,
+    )
+    db_session.add(repo)
+    await db_session.commit()
+    await db_session.refresh(repo)
+    return str(repo.repo_id)
+
+
+# ---------------------------------------------------------------------------
+# Profile UI page tests
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.anyio
+async def test_profile_page_renders(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """GET /musehub/ui/users/{username} returns 200 HTML for a known profile."""
+    await _make_profile(db_session, "rockstar")
+    response = await client.get("/musehub/ui/users/rockstar")
+    assert response.status_code == 200
+    assert "text/html" in response.headers["content-type"]
+    body = response.text
+    assert "Muse Hub" in body
+    assert "@rockstar" in body
+    # Contribution graph JS must be present
+    assert "contributionGraph" in body or "contrib-graph" in body
+
+
+@pytest.mark.anyio
+async def test_profile_no_auth_required_ui(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Profile UI page is publicly accessible without a JWT (returns 200, not 401)."""
+    await _make_profile(db_session, "public-user")
+    response = await client.get("/musehub/ui/users/public-user")
+    assert response.status_code == 200
+    assert response.status_code != 401
+
+
+@pytest.mark.anyio
+async def test_profile_unknown_user_404(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """GET /api/v1/musehub/users/{unknown} returns 404 for a non-existent profile."""
+    response = await client.get("/api/v1/musehub/users/does-not-exist-xyz")
+    assert response.status_code == 404
+
+
+@pytest.mark.anyio
+async def test_profile_json_response(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """GET /api/v1/musehub/users/{username} returns a valid JSON profile with required fields."""
+    await _make_profile(db_session, "jazzmaster")
+    response = await client.get("/api/v1/musehub/users/jazzmaster")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["username"] == "jazzmaster"
+    assert "repos" in data
+    assert "contributionGraph" in data
+    assert "sessionCredits" in data
+    assert isinstance(data["sessionCredits"], int)
+    assert isinstance(data["contributionGraph"], list)
+
+
+@pytest.mark.anyio
+async def test_profile_lists_repos(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """GET /api/v1/musehub/users/{username} includes public repos in the response."""
+    await _make_profile(db_session, "beatmaker")
+    repo_id = await _make_public_repo(db_session)
+    response = await client.get("/api/v1/musehub/users/beatmaker")
+    assert response.status_code == 200
+    data = response.json()
+    repo_ids = [r["repoId"] for r in data["repos"]]
+    assert repo_id in repo_ids
+
+
+@pytest.mark.anyio
+async def test_profile_create_and_update(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    auth_headers: dict[str, str],
+) -> None:
+    """POST /api/v1/musehub/users creates a profile; PUT updates it."""
+    # Create profile
+    resp = await client.post(
+        "/api/v1/musehub/users",
+        json={"username": "newartist", "bio": "Initial bio"},
+        headers=auth_headers,
+    )
+    assert resp.status_code == 201
+    data = resp.json()
+    assert data["username"] == "newartist"
+    assert data["bio"] == "Initial bio"
+
+    # Update profile
+    resp2 = await client.put(
+        "/api/v1/musehub/users/newartist",
+        json={"bio": "Updated bio"},
+        headers=auth_headers,
+    )
+    assert resp2.status_code == 200
+    assert resp2.json()["bio"] == "Updated bio"
+
+
+@pytest.mark.anyio
+async def test_profile_create_duplicate_username_409(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    auth_headers: dict[str, str],
+) -> None:
+    """POST /api/v1/musehub/users returns 409 when username is already taken."""
+    await _make_profile(db_session, "takenname")
+    resp = await client.post(
+        "/api/v1/musehub/users",
+        json={"username": "takenname"},
+        headers=auth_headers,
+    )
+    assert resp.status_code == 409
+
+
+@pytest.mark.anyio
+async def test_profile_update_403_for_wrong_owner(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    auth_headers: dict[str, str],
+) -> None:
+    """PUT /api/v1/musehub/users/{username} returns 403 when caller doesn't own the profile."""
+    # Create a profile owned by a DIFFERENT user
+    other_profile = MusehubProfile(
+        user_id="different-user-id-999",
+        username="someoneelse",
+        bio="not yours",
+        pinned_repo_ids=[],
+    )
+    db_session.add(other_profile)
+    await db_session.commit()
+
+    resp = await client.put(
+        "/api/v1/musehub/users/someoneelse",
+        json={"bio": "hijacked"},
+        headers=auth_headers,
+    )
+    assert resp.status_code == 403
+
+
+@pytest.mark.anyio
+async def test_profile_page_unknown_user_renders_404_inline(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """GET /musehub/ui/users/{unknown} returns 200 HTML (JS renders 404 inline)."""
+    response = await client.get("/musehub/ui/users/ghost-user-xyz")
+    # The HTML shell always returns 200 — the JS fetches and handles the API 404
+    assert response.status_code == 200
+    assert "text/html" in response.headers["content-type"]

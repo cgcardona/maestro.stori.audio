@@ -25,6 +25,7 @@ Single source-of-truth migration for Stori Maestro. Creates:
   - musehub_repos, musehub_branches, musehub_commits, musehub_issues
   - musehub_pull_requests (PR workflow between branches)
   - musehub_objects (content-addressed binary artifact storage)
+  - musehub_profiles (public user profile pages — bio, avatar, pinned repos)
 
 Fresh install:
   docker compose exec maestro alembic upgrade head
@@ -354,8 +355,37 @@ def upgrade() -> None:
     )
     op.create_index("ix_musehub_objects_repo_id", "musehub_objects", ["repo_id"])
 
+    # ── Muse Hub — user profiles ──────────────────────────────────────────
+    op.create_table(
+        "musehub_profiles",
+        sa.Column("user_id", sa.String(36), nullable=False),
+        sa.Column("username", sa.String(64), nullable=False),
+        sa.Column("bio", sa.Text(), nullable=True),
+        sa.Column("avatar_url", sa.String(2048), nullable=True),
+        sa.Column("pinned_repo_ids", sa.JSON(), nullable=False, server_default="[]"),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            nullable=False,
+            server_default=sa.text("CURRENT_TIMESTAMP"),
+        ),
+        sa.Column(
+            "updated_at",
+            sa.DateTime(timezone=True),
+            nullable=False,
+            server_default=sa.text("CURRENT_TIMESTAMP"),
+        ),
+        sa.PrimaryKeyConstraint("user_id"),
+        sa.UniqueConstraint("username", name="uq_musehub_profiles_username"),
+    )
+    op.create_index("ix_musehub_profiles_username", "musehub_profiles", ["username"], unique=True)
+
 
 def downgrade() -> None:
+    # Muse Hub — user profiles
+    op.drop_index("ix_musehub_profiles_username", table_name="musehub_profiles")
+    op.drop_table("musehub_profiles")
+
     # Muse Hub — binary artifact storage
     op.drop_index("ix_musehub_objects_repo_id", table_name="musehub_objects")
     op.drop_table("musehub_objects")
