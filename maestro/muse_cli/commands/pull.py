@@ -158,7 +158,7 @@ async def _rebase_commits_onto(
 
 
 def _is_ancestor(
-    commits_by_id: Mapping[str, object],
+    commits_by_id: Mapping[str, MuseCliCommit],
     ancestor_id: str,
     descendant_id: str,
 ) -> bool:
