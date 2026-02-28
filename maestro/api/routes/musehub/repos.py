@@ -34,9 +34,11 @@ from maestro.models.musehub import (
     BranchListResponse,
     CommitListResponse,
     CommitResponse,
+    CompareResponse,
     CreateRepoRequest,
     DivergenceDimensionResponse,
     DivergenceResponse,
+    EmotionDiffResponse,
     TimelineResponse,
     DagGraphResponse,
     GrooveCheckResponse,
@@ -714,6 +716,162 @@ async def get_groove_check(
         flagged_commits=result.flagged_commits,
         worst_commit=result.worst_commit,
         entries=entries,
+    )
+
+
+def _derive_emotion_vector(commit_id: str) -> tuple[float, float, float, float]:
+    """Derive a deterministic (valence, energy, tension, darkness) vector from a commit SHA.
+
+    Mirrors the algorithm in musehub_repository._derive_emotion so that the
+    compare endpoint produces values consistent with the timeline page.  Four
+    non-overlapping 4-hex-char windows of the SHA are mapped to [0.0, 1.0].
+    """
+    sha = commit_id.ljust(16, "0")
+    hex_chars = set("0123456789abcdefABCDEF")
+
+    def _window(start: int) -> float:
+        chunk = sha[start : start + 4]
+        if all(c in hex_chars for c in chunk):
+            return int(chunk, 16) / 0xFFFF
+        return 0.5
+
+    return _window(0), _window(4), _window(8), _window(12)
+
+
+def _compute_emotion_diff(
+    base_commits: list[CommitResponse],
+    head_only_commits: list[CommitResponse],
+) -> EmotionDiffResponse:
+    """Compute the emotional delta between the base ref and the head-only commits.
+
+    Each commit's emotion vector is derived deterministically from its SHA.
+    The delta is ``mean(head) − mean(base)`` per axis, clamped to [−1.0, 1.0].
+
+    When either side has no commits, that side's vector defaults to 0.5 for all axes.
+    """
+
+    def _mean_vector(commits: list[CommitResponse]) -> tuple[float, float, float, float]:
+        if not commits:
+            return 0.5, 0.5, 0.5, 0.5
+        vecs = [_derive_emotion_vector(c.commit_id) for c in commits]
+        n = len(vecs)
+        return (
+            sum(v[0] for v in vecs) / n,
+            sum(v[1] for v in vecs) / n,
+            sum(v[2] for v in vecs) / n,
+            sum(v[3] for v in vecs) / n,
+        )
+
+    bv, be, bt, bd = _mean_vector(base_commits)
+    hv, he, ht, hd = _mean_vector(head_only_commits)
+    return EmotionDiffResponse(
+        valence_delta=round(hv - bv, 4),
+        energy_delta=round(he - be, 4),
+        tension_delta=round(ht - bt, 4),
+        darkness_delta=round(hd - bd, 4),
+        base_valence=round(bv, 4),
+        base_energy=round(be, 4),
+        base_tension=round(bt, 4),
+        base_darkness=round(bd, 4),
+        head_valence=round(hv, 4),
+        head_energy=round(he, 4),
+        head_tension=round(ht, 4),
+        head_darkness=round(hd, 4),
+    )
+
+
+@router.get(
+    "/repos/{repo_id}/compare",
+    response_model=CompareResponse,
+    operation_id="compareRefs",
+    summary="Compare two refs — multi-dimensional musical diff",
+    tags=["Commits"],
+)
+async def compare_refs(
+    repo_id: str,
+    base: str = Query(..., description="Base ref (branch name or commit SHA)"),
+    head: str = Query(..., description="Head ref (branch name or commit SHA)"),
+    db: AsyncSession = Depends(get_db),
+    claims: TokenClaims | None = Depends(optional_token),
+) -> CompareResponse:
+    """Return a multi-dimensional musical comparison between two refs.
+
+    Computes five per-dimension divergence scores (melodic, harmonic, rhythmic,
+    structural, dynamic), lists commits unique to the head ref, and summarises
+    the emotional delta between the two refs.
+
+    ``base`` and ``head`` are resolved as branch names first.  If no commits
+    are found on a branch with that exact name, the ref is treated as a commit
+    SHA prefix and all commits for the repo are scanned.
+
+    Returns:
+        CompareResponse containing divergence dimensions, commit list, and
+        emotion diff.
+
+    Raises:
+        404: Repo not found.
+        422: Base or head ref resolves to zero commits.
+    """
+    repo = await musehub_repository.get_repo(db, repo_id)
+    _guard_visibility(repo, claims)
+
+    # ── Divergence (reuse existing engine; works on branch names) ────────────
+    try:
+        div_result = await musehub_divergence.compute_hub_divergence(
+            db,
+            repo_id=repo_id,
+            branch_a=base,
+            branch_b=head,
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc)
+        )
+
+    dimensions = [
+        DivergenceDimensionResponse(
+            dimension=d.dimension,
+            level=d.level.value,
+            score=d.score,
+            description=d.description,
+            branch_a_commits=d.branch_a_commits,
+            branch_b_commits=d.branch_b_commits,
+        )
+        for d in div_result.dimensions
+    ]
+
+    # ── Commits unique to head ────────────────────────────────────────────────
+    all_base_commits, _ = await musehub_repository.list_commits(db, repo_id, branch=base, limit=500)
+    all_head_commits, _ = await musehub_repository.list_commits(db, repo_id, branch=head, limit=500)
+    base_ids = {c.commit_id for c in all_base_commits}
+    head_only = [c for c in all_head_commits if c.commit_id not in base_ids]
+
+    # ── Emotion diff ──────────────────────────────────────────────────────────
+    emotion_diff = _compute_emotion_diff(all_base_commits, head_only)
+
+    # ── PR creation URL ──────────────────────────────────────────────────────
+    repo_obj = await musehub_repository.get_repo(db, repo_id)
+    if repo_obj is not None:
+        owner = repo_obj.owner
+        slug = repo_obj.slug
+    else:
+        owner = repo_id
+        slug = repo_id
+    create_pr_url = (
+        f"/musehub/ui/{owner}/{slug}/pulls/new"
+        f"?base={base}&head={head}"
+    )
+
+    return CompareResponse(
+        repo_id=repo_id,
+        base_ref=base,
+        head_ref=head,
+        common_ancestor=div_result.common_ancestor,
+        dimensions=dimensions,
+        overall_score=div_result.overall_score,
+        commits=head_only,
+        emotion_diff=emotion_diff,
+        create_pr_url=create_pr_url,
     )
 
 

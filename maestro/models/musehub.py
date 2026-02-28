@@ -1226,3 +1226,79 @@ class GrooveCheckResponse(CamelModel):
         default_factory=list,
         description="Per-commit metrics, oldest-first",
     )
+
+
+# ── Compare view models ────────────────────────────────────────────────────────
+
+
+class EmotionDiffResponse(CamelModel):
+    """Delta between the emotional character of base and head refs.
+
+    Each field is ``head_value − base_value`` in [−1.0, 1.0].  Positive
+    means head is more energetic/positive/tense/dark than base; negative
+    means the opposite.  Values are derived deterministically from commit
+    SHA hashes so they are always reproducible.
+
+    Agents use this to answer "how did the mood shift between these two
+    refs?" without running external ML inference.
+    """
+
+    energy_delta: float = Field(
+        ..., description="Δenergy (head − base), in [−1.0, 1.0]"
+    )
+    valence_delta: float = Field(
+        ..., description="Δvalence (head − base), in [−1.0, 1.0]"
+    )
+    tension_delta: float = Field(
+        ..., description="Δtension (head − base), in [−1.0, 1.0]"
+    )
+    darkness_delta: float = Field(
+        ..., description="Δdarkness (head − base), in [−1.0, 1.0]"
+    )
+    base_energy: float = Field(..., description="Mean energy score for the base ref")
+    base_valence: float = Field(..., description="Mean valence score for the base ref")
+    base_tension: float = Field(..., description="Mean tension score for the base ref")
+    base_darkness: float = Field(..., description="Mean darkness score for the base ref")
+    head_energy: float = Field(..., description="Mean energy score for the head ref")
+    head_valence: float = Field(..., description="Mean valence score for the head ref")
+    head_tension: float = Field(..., description="Mean tension score for the head ref")
+    head_darkness: float = Field(..., description="Mean darkness score for the head ref")
+
+
+class CompareResponse(CamelModel):
+    """Multi-dimensional musical comparison between two refs in a Muse Hub repo.
+
+    Returned by ``GET /musehub/repos/{repo_id}/compare?base=X&head=Y``.
+    Combines divergence scores, unique commits, and emotion diff into a single
+    payload that powers the compare page UI.
+
+    The ``commits`` list contains only commits that are reachable from ``head``
+    but not from ``base`` (i.e. commits unique to head), newest first.  This
+    mirrors GitHub's compare view: "commits you'd be adding to base."
+
+    Agents use this to decide whether to open a pull request and what the
+    musical impact of merging would be.
+    """
+
+    repo_id: str = Field(..., description="Repository identifier")
+    base_ref: str = Field(..., description="Base ref (branch name, tag, or commit SHA)")
+    head_ref: str = Field(..., description="Head ref (branch name, tag, or commit SHA)")
+    common_ancestor: str | None = Field(
+        default=None,
+        description="Most recent common ancestor commit ID, or null if histories are disjoint",
+    )
+    dimensions: list[DivergenceDimensionResponse] = Field(
+        ..., description="Five per-dimension divergence scores (melodic/harmonic/rhythmic/structural/dynamic)"
+    )
+    overall_score: float = Field(
+        ..., description="Mean of all five dimension scores in [0.0, 1.0]"
+    )
+    commits: list[CommitResponse] = Field(
+        ..., description="Commits in head not in base (newest first)"
+    )
+    emotion_diff: EmotionDiffResponse = Field(
+        ..., description="Emotional character delta between base and head"
+    )
+    create_pr_url: str = Field(
+        ..., description="URL to create a pull request from this comparison"
+    )

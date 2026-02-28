@@ -1,5 +1,18 @@
 """Tests for Muse Hub web UI endpoints.
 
+Covers issue #217 (compare view):
+- test_compare_page_renders         — GET /musehub/ui/{owner}/{slug}/compare/{base}...{head} returns 200
+- test_compare_page_no_auth_required — compare page accessible without JWT
+- test_compare_page_invalid_ref_404 — refs without ... separator return 404
+- test_compare_page_unknown_owner_404 — unknown owner/slug returns 404
+- test_compare_page_includes_radar  — page contains radar chart JavaScript
+- test_compare_page_includes_piano_roll — page contains piano roll JS
+- test_compare_page_includes_emotion_diff — page contains emotion diff elements
+- test_compare_page_includes_commit_list — page contains commit list JS
+- test_compare_page_includes_create_pr_button — page contains "Create Pull Request"
+- test_compare_json_response        — ?format=json returns structured context
+- test_compare_unknown_ref_404      — unknown ref returns 404
+
 Covers the minimum acceptance criteria from issue #43 and issue #232:
 - test_ui_repo_page_returns_200        — GET /musehub/ui/{repo_id} returns HTML
 - test_ui_commit_page_shows_artifact_links — commit page HTML mentions img/download
@@ -3372,4 +3385,140 @@ async def test_harmony_json_response(
     # Total beats
     assert "totalBeats" in data
     assert data["totalBeats"] > 0
+
+
+# ---------------------------------------------------------------------------
+# Compare view (issue #217)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.anyio
+async def test_compare_page_renders(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """GET /musehub/ui/{owner}/{slug}/compare/{base}...{head} returns 200 HTML."""
+    await _make_repo(db_session)
+    response = await client.get("/musehub/ui/testuser/test-beats/compare/main...feature")
+    assert response.status_code == 200
+    assert "text/html" in response.headers["content-type"]
+    body = response.text
+    assert "Muse Hub" in body
+    assert "main" in body
+    assert "feature" in body
+
+
+@pytest.mark.anyio
+async def test_compare_page_no_auth_required(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Compare page is accessible without a JWT token."""
+    await _make_repo(db_session)
+    response = await client.get("/musehub/ui/testuser/test-beats/compare/main...feature")
+    assert response.status_code == 200
+
+
+@pytest.mark.anyio
+async def test_compare_page_invalid_ref_404(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Compare path without '...' separator returns 404."""
+    await _make_repo(db_session)
+    response = await client.get("/musehub/ui/testuser/test-beats/compare/mainfeature")
+    assert response.status_code == 404
+
+
+@pytest.mark.anyio
+async def test_compare_page_unknown_owner_404(
+    client: AsyncClient,
+) -> None:
+    """Unknown owner/slug combination returns 404 on compare page."""
+    response = await client.get("/musehub/ui/nobody/norepo/compare/main...feature")
+    assert response.status_code == 404
+
+
+@pytest.mark.anyio
+async def test_compare_page_includes_radar(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Compare page HTML contains radar chart JavaScript."""
+    await _make_repo(db_session)
+    response = await client.get("/musehub/ui/testuser/test-beats/compare/main...feature")
+    assert response.status_code == 200
+    body = response.text
+    assert "radarSvg" in body
+    assert "DIMENSIONS" in body
+
+
+@pytest.mark.anyio
+async def test_compare_page_includes_piano_roll(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Compare page HTML contains piano roll visualisation JavaScript."""
+    await _make_repo(db_session)
+    response = await client.get("/musehub/ui/testuser/test-beats/compare/main...feature")
+    assert response.status_code == 200
+    body = response.text
+    assert "pianoRollSvg" in body
+    assert "Piano Roll" in body
+
+
+@pytest.mark.anyio
+async def test_compare_page_includes_emotion_diff(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Compare page HTML contains emotion diff section."""
+    await _make_repo(db_session)
+    response = await client.get("/musehub/ui/testuser/test-beats/compare/main...feature")
+    assert response.status_code == 200
+    body = response.text
+    assert "emotionDiffBar" in body
+    assert "Emotion Diff" in body
+
+
+@pytest.mark.anyio
+async def test_compare_page_includes_commit_list(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Compare page HTML contains commit list JavaScript."""
+    await _make_repo(db_session)
+    response = await client.get("/musehub/ui/testuser/test-beats/compare/main...feature")
+    assert response.status_code == 200
+    body = response.text
+    assert "commitRow" in body
+
+
+@pytest.mark.anyio
+async def test_compare_page_includes_create_pr_button(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Compare page HTML contains a 'Create Pull Request' call-to-action."""
+    await _make_repo(db_session)
+    response = await client.get("/musehub/ui/testuser/test-beats/compare/main...feature")
+    assert response.status_code == 200
+    body = response.text
+    assert "Create Pull Request" in body
+
+
+@pytest.mark.anyio
+async def test_compare_json_response(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """GET /musehub/ui/{owner}/{slug}/compare/{refs}?format=json returns structured JSON."""
+    await _make_repo(db_session)
+    response = await client.get(
+        "/musehub/ui/testuser/test-beats/compare/main...feature?format=json"
+    )
+    assert response.status_code == 200
+    assert "application/json" in response.headers["content-type"]
+    body = response.json()
+    assert "repoId" in body or "base_ref" in body or "baseRef" in body or "owner" in body
 

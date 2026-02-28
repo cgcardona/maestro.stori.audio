@@ -7264,6 +7264,55 @@ Full emotion map for a Muse repo ref. Returned by `GET /musehub/repos/{repo_id}/
 
 ---
 
+### `EmotionDiffResponse`
+
+**Path:** `maestro/models/musehub.py`
+
+`CamelModel` — Emotional delta between base and head refs in a MuseHub compare view. All delta fields are `head_value − base_value` in [−1.0, 1.0]; positive means head is more energetic/positive/tense/dark. Values are derived deterministically from commit SHA hashes.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `energy_delta` | `float` | Δenergy (head − base), in [−1.0, 1.0] |
+| `valence_delta` | `float` | Δvalence (head − base), in [−1.0, 1.0] |
+| `tension_delta` | `float` | Δtension (head − base), in [−1.0, 1.0] |
+| `darkness_delta` | `float` | Δdarkness (head − base), in [−1.0, 1.0] |
+| `base_energy` | `float` | Mean energy for base ref |
+| `base_valence` | `float` | Mean valence for base ref |
+| `base_tension` | `float` | Mean tension for base ref |
+| `base_darkness` | `float` | Mean darkness for base ref |
+| `head_energy` | `float` | Mean energy for head ref |
+| `head_valence` | `float` | Mean valence for head ref |
+| `head_tension` | `float` | Mean tension for head ref |
+| `head_darkness` | `float` | Mean darkness for head ref |
+
+**Produced by:** `maestro.api.routes.musehub.repos._compute_emotion_diff()`
+**Consumed by:** MuseHub compare page (`/musehub/ui/{owner}/{repo_slug}/compare/{base}...{head}`); AI agents evaluating the mood shift between two refs
+
+---
+
+### `CompareResponse`
+
+**Path:** `maestro/models/musehub.py`
+
+`CamelModel` — Multi-dimensional musical comparison between two refs. Combines divergence scores, commits unique to head, and emotion diff into a single payload. Returned by `GET /api/v1/musehub/repos/{repo_id}/compare?base=X&head=Y`.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `repo_id` | `str` | Repository identifier |
+| `base_ref` | `str` | Base ref (branch name, tag, or commit SHA) |
+| `head_ref` | `str` | Head ref (branch name, tag, or commit SHA) |
+| `common_ancestor` | `str \| None` | Most recent common ancestor commit ID |
+| `dimensions` | `list[DivergenceDimensionResponse]` | Five per-dimension divergence scores |
+| `overall_score` | `float` | Mean of all five dimension scores in [0.0, 1.0] |
+| `commits` | `list[CommitResponse]` | Commits in head not in base (newest first) |
+| `emotion_diff` | `EmotionDiffResponse` | Emotional delta between base and head |
+| `create_pr_url` | `str` | URL to create a pull request from this comparison |
+
+**Produced by:** `maestro.api.routes.musehub.repos.compare_refs()`
+**Consumed by:** MuseHub compare page (`/musehub/ui/{owner}/{repo_slug}/compare/{base}...{head}`); AI agents deciding whether to open a pull request
+
+---
+
 ## Storpheus — Inference Optimization Types (`storpheus/music_service.py`)
 
 ### `GenerationTiming`

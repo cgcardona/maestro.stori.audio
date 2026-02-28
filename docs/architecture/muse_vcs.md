@@ -7640,3 +7640,76 @@ structure is derived by splitting object `path` fields on `/`.
 | Tests | `tests/test_musehub_ui.py` — `test_tree_*` (6 tests) |
 
 ---
+
+## MuseHub Compare View (issue #217)
+
+### Motivation
+
+There was no way to compare two branches or commits on MuseHub. GitHub's compare view (`/compare/{base}...{head}`) shows a code diff. MuseHub's compare view shows a multi-dimensional musical diff: a radar chart of divergence scores, a side-by-side piano roll, an emotion diff summary, and the list of commits unique to head.
+
+### Route
+
+```
+GET /musehub/ui/{owner}/{repo_slug}/compare/{base}...{head}
+```
+
+The `{base}...{head}` segment is a single path parameter (`{refs}`) parsed server-side by splitting on `...`. Both `base` and `head` can be branch names, tags, or commit SHAs. Returns 404 when the `...` separator is absent or either segment is empty.
+
+Content negotiation: `?format=json` or `Accept: application/json` returns the full `CompareResponse` JSON.
+
+### JSON API Endpoint
+
+```
+GET /api/v1/musehub/repos/{repo_id}/compare?base=X&head=Y
+```
+
+Returns `CompareResponse` with:
+- `dimensions` — five per-dimension Jaccard divergence scores (melodic, harmonic, rhythmic, structural, dynamic)
+- `overallScore` — mean of the five scores in [0.0, 1.0]
+- `commonAncestor` — most recent common ancestor commit ID, or `null` for disjoint histories
+- `commits` — commits reachable from head but not from base (newest first)
+- `emotionDiff` — energy/valence/tension/darkness deltas (`head − base`)
+- `createPrUrl` — URL to open a pull request from this comparison
+
+Raises 422 if either ref has no commits. Raises 404 if the repo is not found.
+
+### Compare Page Features
+
+| Feature | Description |
+|---------|-------------|
+| Five-axis radar chart | Per-dimension divergence scores visualised as a pentagon, colour-coded by level (NONE/LOW/MED/HIGH) |
+| Dimension detail panels | Clickable cards that expand to show description and per-branch commit counts |
+| Piano roll comparison | Deterministic note grid derived from SHA bytes; green = added in head, red = removed |
+| Audio A/B toggle | Button pair to queue base or head audio in the player |
+| Emotion diff | Side-by-side bar charts for energy, valence, tension, darkness with delta labels |
+| Commit list | Commits unique to head with short SHA links, author, and timestamp |
+| Create PR button | Links to `/musehub/ui/{owner}/{slug}/pulls/new?base=X&head=Y` |
+
+### Emotion Vector Algorithm
+
+Each commit's emotion vector is derived deterministically from four non-overlapping 4-hex-char windows of the commit SHA:
+- `valence`  = `int(sha[0:4], 16) / 0xFFFF`
+- `energy`   = `int(sha[4:8], 16) / 0xFFFF`
+- `tension`  = `int(sha[8:12], 16) / 0xFFFF`
+- `darkness` = `int(sha[12:16], 16) / 0xFFFF`
+
+The emotion diff is `mean(head commits) − mean(base commits)` per axis, clamped to [−1.0, 1.0].
+
+### Divergence Reuse
+
+The compare endpoint reuses the existing `musehub_divergence.compute_hub_divergence()` engine. Refs are resolved as branch names; the divergence engine computes Jaccard scores across commit message keyword classification.
+
+### Implementation
+
+| Layer | File |
+|-------|------|
+| Models | `maestro/models/musehub.py` — `EmotionDiffResponse`, `CompareResponse` |
+| API endpoint | `maestro/api/routes/musehub/repos.py` — `compare_refs()`, `_compute_emotion_diff()`, `_derive_emotion_vector()` |
+| UI route | `maestro/api/routes/musehub/ui.py` — `compare_page()` |
+| Template | `maestro/templates/musehub/pages/compare.html` |
+| Tests | `tests/test_musehub_ui.py` — `test_compare_*` (10 tests) |
+| Tests | `tests/test_musehub_repos.py` — `test_compare_*` (4 tests) |
+| Type contracts | `docs/reference/type_contracts.md` — `EmotionDiffResponse`, `CompareResponse` |
+
+---
+

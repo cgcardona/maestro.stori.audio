@@ -27,6 +27,7 @@ Endpoint summary (repo-scoped):
   GET /musehub/ui/{owner}/{repo_slug}/credits                   -- dynamic credits (liner notes)
   GET /musehub/ui/{owner}/{repo_slug}/embed/{ref}               -- iframe-safe audio player
   GET /musehub/ui/{owner}/{repo_slug}/search                    -- in-repo search (4 modes)
+  GET /musehub/ui/{owner}/{repo_slug}/compare/{base}...{head}   -- multi-dimensional musical diff between two refs
   GET /musehub/ui/{owner}/{repo_slug}/divergence                -- branch divergence radar chart
   GET /musehub/ui/{owner}/{repo_slug}/timeline                  -- chronological SVG timeline
   GET /musehub/ui/{owner}/{repo_slug}/releases                  -- release list
@@ -1052,6 +1053,74 @@ async def motifs_page(
     )
 
 
+
+
+@router.get(
+    "/{owner}/{repo_slug}/compare/{refs}",
+    response_class=HTMLResponse,
+    summary="Muse Hub compare view — multi-dimensional musical diff between two refs",
+)
+async def compare_page(
+    request: Request,
+    owner: str,
+    repo_slug: str,
+    refs: str,
+    format: str | None = Query(None, description="Force response format: 'json' or omit for HTML"),
+    db: AsyncSession = Depends(get_db),
+) -> StarletteResponse:
+    """Render the compare view for two refs (branches, tags, or commit SHAs).
+
+    The ``refs`` path segment encodes both refs separated by ``...``:
+    ``main...feature-branch`` compares ``main`` (base) against
+    ``feature-branch`` (head).
+
+    HTML (default): renders the compare page with radar chart, dimension
+    panels, piano roll, emotion diff, and commit list.
+    JSON (``Accept: application/json`` or ``?format=json``): returns the
+    full ``CompareResponse`` from the API endpoint.
+
+    Returns 404 when:
+    - The repo owner/slug is unknown.
+    - The ``refs`` value does not contain the ``...`` separator.
+    - Either ref has no commits in this repo (delegated to API response).
+    """
+    if "..." not in refs:
+        raise HTTPException(
+            status_code=http_status.HTTP_404_NOT_FOUND,
+            detail=f"Invalid compare spec '{refs}' — expected format: base...head",
+        )
+    base_ref, head_ref = refs.split("...", 1)
+    if not base_ref or not head_ref:
+        raise HTTPException(
+            status_code=http_status.HTTP_404_NOT_FOUND,
+            detail="Both base and head refs must be non-empty",
+        )
+    repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
+
+    context = {
+        "owner": owner,
+        "repo_slug": repo_slug,
+        "repo_id": repo_id,
+        "base_ref": base_ref,
+        "head_ref": head_ref,
+        "refs": refs,
+        "base_url": base_url,
+        "current_page": "compare",
+        "breadcrumb_data": _breadcrumbs(
+            (owner, f"/musehub/ui/{owner}"),
+            (repo_slug, base_url),
+            ("compare", ""),
+            (f"{base_ref}...{head_ref}", ""),
+        ),
+    }
+    return await negotiate_response(
+        request=request,
+        template_name="musehub/pages/compare.html",
+        context=context,
+        templates=templates,
+        json_data=None,
+        format_param=format,
+    )
 
 
 @router.get(
