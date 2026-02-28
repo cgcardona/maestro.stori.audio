@@ -1,0 +1,111 @@
+{% extends "musehub/base.html" %}
+
+{% block title %}Commit {{ commit_id[:8] }}{% endblock %}
+{% block breadcrumb %}
+  <a href="/musehub/ui/{{ owner }}/{{ repo_slug }}">{{ owner }}/{{ repo_slug }}</a> /
+  commits / {{ commit_id[:8] }}
+{% endblock %}
+
+{% block page_data %}
+const repoId   = {{ repo_id | tojson }};
+const commitId = {{ commit_id | tojson }};
+const base     = {{ base_url | tojson }};
+const apiBase  = '/api/v1/musehub/repos/' + repoId;
+{% endblock %}
+
+{% block page_script %}
+{% raw %}
+function escHtml(s) {
+  if (!s) return '';
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function artifactHtml(obj) {
+  const ext = obj.path.split('.').pop().toLowerCase();
+  const fetchUrl = apiBase + '/objects/' + obj.objectId + '/content';
+  if (ext === 'webp' || ext === 'png' || ext === 'jpg' || ext === 'jpeg') {
+    return `<div class="artifact-card">
+      <img src="${fetchUrl}" alt="${escHtml(obj.path)}"
+           onerror="this.src='';this.alt='Preview unavailable'"
+           loading="lazy" />
+      <span class="path">${escHtml(obj.path)}</span>
+    </div>`;
+  } else if (ext === 'mp3' || ext === 'ogg' || ext === 'wav') {
+    return `<div class="artifact-card">
+      <audio controls src="${fetchUrl}"></audio>
+      <span class="path">${escHtml(obj.path)}</span>
+    </div>`;
+  } else {
+    return `<div class="artifact-card">
+      <a class="btn btn-secondary" href="${fetchUrl}" download="${escHtml(obj.path.split('/').pop())}">
+        &#11015; Download
+      </a>
+      <span class="path">${escHtml(obj.path)}</span>
+    </div>`;
+  }
+}
+
+async function load() {
+  try {
+    const [commitsData, objectsData] = await Promise.all([
+      apiFetch('/repos/' + repoId + '/commits?limit=200'),
+      apiFetch('/repos/' + repoId + '/objects'),
+    ]);
+
+    const commit = (commitsData.commits || []).find(c => c.commitId === commitId);
+    const objects = objectsData.objects || [];
+
+    const commitSection = commit ? `
+      <div class="meta-row">
+        <div class="meta-item">
+          <span class="meta-label">Author</span>
+          <span class="meta-value">${escHtml(commit.author)}</span>
+        </div>
+        <div class="meta-item">
+          <span class="meta-label">Date</span>
+          <span class="meta-value">${fmtDate(commit.timestamp)}</span>
+        </div>
+        <div class="meta-item">
+          <span class="meta-label">Branch</span>
+          <span class="meta-value">${escHtml(commit.branch)}</span>
+        </div>
+        <div class="meta-item">
+          <span class="meta-label">SHA</span>
+          <span class="meta-value" style="font-family:monospace">${escHtml(commit.commitId)}</span>
+        </div>
+        ${commit.parentIds && commit.parentIds.length > 0 ? `
+        <div class="meta-item">
+          <span class="meta-label">Parents</span>
+          <span class="meta-value">
+            ${commit.parentIds.map(p => '<a href="' + base + '/commits/' + p + '" style="font-family:monospace">' + p.substring(0,8) + '</a>').join(' ')}
+          </span>
+        </div>` : ''}
+      </div>
+      <pre>${escHtml(commit.message)}</pre>
+    ` : `<p class="error">Commit not found in recent history.</p>`;
+
+    const artifactSection = objects.length === 0
+      ? '<p class="loading" style="margin-top:8px">No artifacts stored in this repo yet.</p>'
+      : '<div class="artifact-grid">' + objects.map(artifactHtml).join('') + '</div>';
+
+    document.getElementById('content').innerHTML = `
+      <div style="margin-bottom:12px">
+        <a href="${base}">&larr; Back to repo</a>
+      </div>
+      <div class="card">
+        <h1>Commit</h1>
+        ${commitSection}
+      </div>
+      <div class="card">
+        <h2>Artifacts (${objects.length})</h2>
+        ${artifactSection}
+      </div>`;
+  } catch(e) {
+    if (e.message !== 'auth')
+      document.getElementById('content').innerHTML = '<p class="error">&#10005; ' + escHtml(e.message) + '</p>';
+  }
+}
+
+load();
+{% endraw %}
+{% endblock %}

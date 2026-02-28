@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="/musehub/static/tokens.css">
+  <link rel="stylesheet" href="/musehub/static/components.css">
+  <link rel="stylesheet" href="/musehub/static/layout.css">
+  <link rel="stylesheet" href="/musehub/static/icons.css">
+  <link rel="stylesheet" href="/musehub/static/music.css">
+  <title>{% block title %}Muse Hub{% endblock %} — Muse Hub</title>
+  {% block extra_css %}{% endblock %}
+</head>
+<body>
+  <header>
+    <span class="logo">&#127925; Muse Hub</span>
+    <span class="breadcrumb">{% block breadcrumb %}{% endblock %}</span>
+    <span class="spacer"></span>
+    {% block header_actions %}
+    <button class="btn btn-secondary" style="font-size:12px"
+            onclick="clearToken();location.reload()">Sign out</button>
+    {% endblock %}
+  </header>
+  <div class="container{% block container_extra_class %}{% endblock %}"{% block container_attrs %}{% endblock %}>
+    {% block token_form %}
+    <div class="token-form" id="token-form" style="display:none">
+      <p id="token-msg">Enter your Maestro JWT to browse this repo.</p>
+      <input type="password" id="token-input" placeholder="eyJ..." />
+      <button class="btn btn-primary" onclick="saveToken()">Save &amp; Load</button>
+      &nbsp;
+      <button class="btn btn-secondary" onclick="clearToken();location.reload()">Clear</button>
+    </div>
+    {% endblock %}
+    <div id="content"><p class="loading">Loading&#8230;</p></div>
+  </div>
+  {% block body_extra %}{% endblock %}
+  <script src="/musehub/static/musehub.js"></script>
+  <script>
+    window.addEventListener('DOMContentLoaded', function() {
+      {% block auth_guard %}
+      if (!getToken()) { showTokenForm(); return; }
+      {% endblock %}
+      {% block page_data %}{% endblock %}
+      {% block page_script %}{% endblock %}
+    });
+  </script>
+</body>
+</html>

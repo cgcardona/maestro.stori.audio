@@ -1,0 +1,86 @@
+{% extends "musehub/base.html" %}
+
+{% block title %}PR {{ pr_id[:8] }}{% endblock %}
+{% block breadcrumb %}
+  <a href="/musehub/ui/{{ owner }}/{{ repo_slug }}">{{ owner }}/{{ repo_slug }}</a> /
+  <a href="/musehub/ui/{{ owner }}/{{ repo_slug }}/pulls">pulls</a> / {{ pr_id[:8] }}
+{% endblock %}
+
+{% block page_data %}
+const repoId = {{ repo_id | tojson }};
+const prId   = {{ pr_id | tojson }};
+const base   = {{ base_url | tojson }};
+{% endblock %}
+
+{% block page_script %}
+{% raw %}
+function escHtml(s) {
+  if (!s) return '';
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+async function mergePr() {
+  if (!confirm('Merge this pull request?')) return;
+  try {
+    await apiFetch('/repos/' + repoId + '/pull-requests/' + prId + '/merge', {
+      method: 'POST',
+      body: JSON.stringify({ mergeStrategy: 'merge_commit' }),
+    });
+    location.reload();
+  } catch(e) {
+    if (e.message !== 'auth')
+      alert('Merge failed: ' + e.message);
+  }
+}
+
+async function load() {
+  try {
+    const pr = await apiFetch('/repos/' + repoId + '/pull-requests/' + prId);
+
+    const mergeSection = pr.state === 'open' ? `
+      <div style="margin-top:16px">
+        <button class="btn btn-primary" onclick="mergePr()">&#10003; Merge pull request</button>
+      </div>` : '';
+
+    document.getElementById('content').innerHTML = `
+      <div style="margin-bottom:12px">
+        <a href="${base}/pulls">&larr; Back to pull requests</a>
+      </div>
+      <div class="card">
+        <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px">
+          <h1 style="margin:0">${escHtml(pr.title)}</h1>
+          <span class="badge badge-${pr.state}">${pr.state}</span>
+        </div>
+        <div class="meta-row">
+          <div class="meta-item">
+            <span class="meta-label">From</span>
+            <span class="meta-value" style="font-family:monospace">${escHtml(pr.fromBranch)}</span>
+          </div>
+          <div class="meta-item">
+            <span class="meta-label">Into</span>
+            <span class="meta-value" style="font-family:monospace">${escHtml(pr.toBranch)}</span>
+          </div>
+          <div class="meta-item">
+            <span class="meta-label">Created</span>
+            <span class="meta-value">${fmtDate(pr.createdAt)}</span>
+          </div>
+          ${pr.mergeCommitId ? `
+          <div class="meta-item">
+            <span class="meta-label">Merge commit</span>
+            <span class="meta-value" style="font-family:monospace">
+              <a href="${base}/commits/${pr.mergeCommitId}">${pr.mergeCommitId.substring(0,8)}</a>
+            </span>
+          </div>` : ''}
+        </div>
+        ${pr.body ? '<pre>' + escHtml(pr.body) + '</pre>' : ''}
+        ${mergeSection}
+      </div>`;
+  } catch(e) {
+    if (e.message !== 'auth')
+      document.getElementById('content').innerHTML = '<p class="error">&#10005; ' + escHtml(e.message) + '</p>';
+  }
+}
+
+load();
+{% endraw %}
+{% endblock %}

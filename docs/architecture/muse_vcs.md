@@ -1689,7 +1689,7 @@ All authed endpoints require `Authorization: Bearer <token>`. See [api.md](../re
 | GET | `/musehub/ui/{owner}/{repo_slug}/sessions` | Session list (newest first) |
 | GET | `/musehub/ui/{owner}/{repo_slug}/sessions/{session_id}` | Session detail page |
 
-UI pages are HTML shells — auth is handled client-side via `localStorage` JWT. The JS fetches from the authed JSON API above.
+UI pages are Jinja2-rendered HTML shells — auth is handled client-side via `localStorage` JWT (loaded from `/musehub/static/musehub.js`). The page JavaScript fetches from the authed JSON API above.
 ### DAG Graph — Interactive Commit Graph
 
 **Purpose:** Visualise the full commit history of a Muse Hub repo as an interactive directed acyclic graph, equivalent to `muse inspect --format mermaid` but explorable in the browser.
@@ -7135,11 +7135,55 @@ that was embedded in every HTML response body.
 | `maestro/templates/musehub/static/layout.css` | `/musehub/static/layout.css` | Grid, header, responsive breakpoints |
 | `maestro/templates/musehub/static/icons.css` | `/musehub/static/icons.css` | File-type and musical concept icons |
 | `maestro/templates/musehub/static/music.css` | `/musehub/static/music.css` | Piano roll, waveform, radar chart, heatmap |
+| `maestro/templates/musehub/static/musehub.js` | `/musehub/static/musehub.js` | Shared JS: JWT helpers, `apiFetch`, token form, date/SHA formatters |
+| `maestro/templates/musehub/static/embed.css` | `/musehub/static/embed.css` | Compact dark theme for iframe embed player |
 
 Static files are served by FastAPI's `StaticFiles` mount registered in
-`maestro/main.py` at startup.  The `_page()` helper in
-`maestro/api/routes/musehub/ui.py` links to all five files in every page
-`<head>`.
+`maestro/main.py` at startup.  All CSS files and `musehub.js` are linked by
+`maestro/templates/musehub/base.html` — the Jinja2 base template that replaced
+the old `_page()` Python helper.
+
+### Jinja2 template layout
+
+All MuseHub web UI pages are rendered via Jinja2 templates
+(`jinja2>=3.1.0`, `aiofiles>=23.2.0`).  No HTML is generated inside route
+handlers; handlers resolve server-side data and pass a minimal context dict to
+the template engine.
+
+```
+maestro/templates/musehub/
+├── base.html            — main authenticated layout (extends nothing)
+├── explore_base.html    — public discover/trending layout (no auth, filter bar)
+└── pages/
+    ├── global_search.html
+    ├── profile.html
+    ├── repo.html
+    ├── commit.html
+    ├── graph.html
+    ├── pr_list.html
+    ├── pr_detail.html
+    ├── issue_list.html
+    ├── issue_detail.html
+    ├── context.html
+    ├── credits.html
+    ├── embed.html        — iframe-safe audio player (standalone, no base)
+    ├── search.html
+    ├── divergence.html
+    ├── timeline.html
+    ├── release_list.html
+    ├── release_detail.html
+    ├── sessions.html
+    ├── session_detail.html
+    ├── contour.html
+    ├── tempo.html
+    └── dynamics.html
+```
+
+**Template inheritance:** page templates extend `base.html` (or
+`explore_base.html`) using `{% extends %}` / `{% block %}`.  Server-side
+dynamic data is injected via Jinja2's `{{ var | tojson }}` filter inside
+`<script>` blocks; large JavaScript sections containing template literals are
+wrapped in `{% raw %}...{% endraw %}` to prevent Jinja2 from parsing them.
 
 ### Design tokens (`tokens.css`)
 
