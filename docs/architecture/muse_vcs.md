@@ -3034,3 +3034,109 @@ the computed values will change when the full implementation is wired in.
 (`REPO_NOT_FOUND`), 3 internal error (`INTERNAL_ERROR`).
 
 ---
+
+### `muse show`
+
+**Purpose:** Inspect any historical commit — its metadata, snapshot manifest,
+path-level diff vs parent, MIDI file list, and optionally an audio preview.
+The musician's equivalent of `git show`: lets an AI agent or producer examine
+exactly what a past creative decision looked like, at any level of detail.
+
+**Usage:**
+```bash
+muse show [COMMIT] [OPTIONS]
+```
+
+**Arguments:**
+
+| Argument | Description |
+|----------|-------------|
+| `COMMIT` | Commit ID (full or 4–64 char hex prefix), branch name, or `HEAD` (default). |
+
+**Flags:**
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--json` | flag | off | Output complete commit metadata + snapshot manifest as JSON for agent consumption. |
+| `--diff` | flag | off | Show path-level diff vs parent commit with A/M/D status markers. |
+| `--midi` | flag | off | List MIDI files (`.mid`, `.midi`, `.smf`) contained in the commit snapshot. |
+| `--audio-preview` | flag | off | Open cached audio preview WAV for this snapshot (macOS). Run `muse export <commit> --wav` first. |
+
+Multiple flags can be combined: `muse show abc1234 --diff --midi`.
+
+**Output example (default):**
+```
+commit a1b2c3d4e5f6...
+Branch:  main
+Author:  producer@stori.app
+Date:    2026-02-27 17:30:00
+Parent:  f9e8d7c6
+
+    Add bridge section with Rhodes keys
+
+Snapshot: 3 files
+  bass.mid
+  beat.mid
+  keys.mid
+```
+
+**Output example (`--diff`):**
+```
+diff f9e8d7c6..a1b2c3d4
+
+A  bass.mid
+M  beat.mid
+D  strings.mid
+
+2 path(s) changed
+```
+
+**Output example (`--midi`):**
+```
+MIDI files in snapshot a1b2c3d4 (3):
+  bass.mid  (obj_hash)
+  beat.mid  (obj_hash)
+  keys.mid  (obj_hash)
+```
+
+**Output example (`--json`):**
+```json
+{
+  "commit_id": "a1b2c3d4e5f6...",
+  "branch": "main",
+  "parent_commit_id": "f9e8d7c6...",
+  "parent2_commit_id": null,
+  "message": "Add bridge section with Rhodes keys",
+  "author": "producer@stori.app",
+  "committed_at": "2026-02-27 17:30:00",
+  "snapshot_id": "snap_sha256...",
+  "snapshot_manifest": {
+    "bass.mid": "obj_sha256_a",
+    "beat.mid": "obj_sha256_b",
+    "keys.mid": "obj_sha256_c"
+  }
+}
+```
+
+**Result types:**
+- `ShowCommitResult` (TypedDict) — full commit metadata + snapshot manifest returned by `_show_async()`.
+- `ShowDiffResult` (TypedDict) — path-level diff (added/modified/removed lists + total_changed) returned by `_diff_vs_parent_async()`.
+
+**Commit resolution order:**
+1. `HEAD` (case-insensitive) → follows the `HEAD` ref file to the current branch tip.
+2. 4–64 character hex string → exact commit ID match first, then prefix scan.
+3. Anything else → treated as a branch name; reads `.muse/refs/heads/<name>`.
+
+**Agent use case:** An AI music generation agent calls `muse show HEAD` to inspect the
+latest committed snapshot before generating the next variation — confirming which
+instruments are present, what files changed in the last commit, and whether there are
+MIDI files it can use as seeds for generation. Use `--json` for structured consumption
+in agent pipelines. Use `--diff` to understand what changed in the last session.
+Use `--midi` to enumerate MIDI seeds for the Storpheus generation pipeline.
+
+**`--audio-preview` note:** The full render-preview pipeline (Storpheus → WAV) is
+invoked via `muse export <commit> --wav`. The `--audio-preview` flag then plays the
+cached WAV via `afplay` (macOS). If no cached file exists, a clear help message is
+printed instead.
+
+---

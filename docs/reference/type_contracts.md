@@ -4539,3 +4539,49 @@ or smoother (stepwise) between two points in history.
 
 **Producer:** `_contour_compare_async()`
 **Consumer:** `_format_compare()`
+
+---
+
+### `ShowCommitResult`
+
+**Module:** `maestro/muse_cli/commands/show.py`
+
+Full commit metadata plus snapshot manifest returned by `muse show`. Designed
+for direct JSON serialisation so AI agents can consume commit state without a
+second round-trip to the database.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `commit_id` | `str` | Full 64-char SHA-256 commit ID |
+| `branch` | `str` | Branch this commit belongs to |
+| `parent_commit_id` | `Optional[str]` | Full SHA of the primary parent, `None` for root commits |
+| `parent2_commit_id` | `Optional[str]` | Full SHA of the merge parent (set by `muse merge`), else `None` |
+| `message` | `str` | Commit message |
+| `author` | `str` | Author string (empty string when not set) |
+| `committed_at` | `str` | ISO-style timestamp `"YYYY-MM-DD HH:MM:SS"` (UTC) |
+| `snapshot_id` | `str` | SHA-256 of the snapshot manifest |
+| `snapshot_manifest` | `dict[str, str]` | `{relative_path: object_id}` for every file in the snapshot |
+
+**Producer:** `_show_async()`
+**Consumer:** `_render_show()`, `_render_midi()`, `_render_audio_preview()`, `--json` serialiser
+
+---
+
+### `ShowDiffResult`
+
+**Module:** `maestro/muse_cli/commands/show.py`
+
+Path-level diff of a commit vs its parent, produced by `muse show --diff`.
+For root commits (no parent) all snapshot paths appear in `added`.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `commit_id` | `str` | Full SHA of the commit being inspected |
+| `parent_commit_id` | `Optional[str]` | Full SHA of the parent, or `None` for root commits |
+| `added` | `list[str]` | Paths present in this snapshot but not the parent's |
+| `modified` | `list[str]` | Paths present in both snapshots with different object IDs |
+| `removed` | `list[str]` | Paths present in the parent's snapshot but not this one |
+| `total_changed` | `int` | `len(added) + len(modified) + len(removed)` |
+
+**Producer:** `_diff_vs_parent_async()`
+**Consumer:** `_render_diff()`
