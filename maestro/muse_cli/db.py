@@ -3,7 +3,7 @@
 Provides:
 - ``open_session()`` — async context manager that opens and commits a
   standalone AsyncSession (for use in the CLI, outside FastAPI DI).
-- CRUD helpers called by ``commands/commit.py``.
+- CRUD helpers called by ``commands/commit.py`` and ``commands/meter.py``.
 
 The session factory created by ``open_session()`` reads DATABASE_URL
 from ``maestro.config.settings`` — the same env var used by the main
@@ -221,3 +221,45 @@ async def get_head_snapshot_manifest(
         logger.warning("⚠️ Snapshot %s referenced by HEAD not found in DB", snapshot_id[:8])
         return None
     return dict(snapshot.manifest)
+
+
+async def get_commit_extra_metadata(
+    session: AsyncSession, commit_id: str
+) -> dict[str, object] | None:
+    """Return the ``commit_metadata`` JSON blob for *commit_id*, or None.
+
+    Returns ``None`` when the commit does not exist or when no metadata has
+    been stored yet (the column is nullable).
+    """
+    commit = await session.get(MuseCliCommit, commit_id)
+    if commit is None:
+        return None
+    return dict(commit.commit_metadata) if commit.commit_metadata else None
+
+
+async def set_commit_extra_metadata_key(
+    session: AsyncSession,
+    commit_id: str,
+    key: str,
+    value: object,
+) -> bool:
+    """Set a single key in the ``commit_metadata`` blob for *commit_id*.
+
+    Merges *key* into the existing metadata dict (creating it if absent).
+    Returns ``True`` on success, ``False`` when *commit_id* is not found.
+
+    The session must be committed by the caller (``open_session()`` commits
+    on clean exit).
+    """
+    commit = await session.get(MuseCliCommit, commit_id)
+    if commit is None:
+        logger.warning("⚠️ Commit %s not found — cannot set metadata", commit_id[:8])
+        return False
+    existing: dict[str, object] = dict(commit.commit_metadata) if commit.commit_metadata else {}
+    existing[key] = value
+    commit.commit_metadata = existing
+    # Mark the column as modified so SQLAlchemy flushes the JSON change.
+    from sqlalchemy.orm.attributes import flag_modified
+    flag_modified(commit, "commit_metadata")
+    logger.debug("✅ Set %s=%r on commit %s", key, value, commit_id[:8])
+    return True

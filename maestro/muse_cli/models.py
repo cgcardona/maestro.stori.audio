@@ -3,7 +3,9 @@
 Tables:
 - muse_cli_objects: content-addressed file blobs (sha256 keyed)
 - muse_cli_snapshots: snapshot manifests mapping paths to object IDs
-- muse_cli_commits: commit history with parent linkage and branch tracking
+- muse_cli_commits: commit history with parent linkage, branch tracking,
+  and an extensible ``extra_metadata`` JSON blob for annotations such as
+  meter (time signature), tempo, key, and other compositional metadata.
 - muse_cli_tags: music-semantic tags attached to commits
 
 These tables are owned by the Muse CLI (``muse commit``) and are
