@@ -60,6 +60,9 @@ document.getElementById('content').innerHTML = `
       <!-- Emotion Arc mini -->
       <div class="sidebar-section" id="emotion-arc" style="display:none"></div>
 
+      <!-- Analytics: view count + sparkline + open issues/PRs -->
+      <div class="sidebar-section" id="analytics-section" style="display:none"></div>
+
       <!-- Similar repos -->
       <div class="sidebar-section" id="similar-section" style="display:none"></div>
 
@@ -504,6 +507,70 @@ async function loadCommits(branch) {
 }
 
 /* ═══════════════════════════════════════════════════════
+ * Sidebar: Analytics — view count sparkline + open issues/PRs
+ * ═══════════════════════════════════════════════════════ */
+async function loadAnalytics() {
+  try {
+    const el = document.getElementById('analytics-section');
+    if (!el) return;
+
+    const [summary, viewDays, issuesData, prsData] = await Promise.all([
+      apiFetch('/social/repos/' + repoId + '/analytics'),
+      apiFetch('/social/repos/' + repoId + '/analytics/views?days=7').catch(() => []),
+      apiFetch('/repos/' + repoId + '/issues?state=open').catch(() => ({ issues: [] })),
+      apiFetch('/repos/' + repoId + '/pull-requests?state=open').catch(() => ({ pull_requests: [] })),
+    ]);
+
+    const viewCount  = summary.view_count  || 0;
+    const openIssues = (issuesData.issues  || []).length;
+    const openPRs    = (prsData.pull_requests || []).length;
+
+    /* Build 7-day sparkline SVG */
+    const days = Array.isArray(viewDays) ? viewDays : [];
+    const W = 220, H = 36, pad = 4;
+    let sparklineSvg = '';
+    if (days.length >= 2) {
+      const counts  = days.map(d => d.count || 0);
+      const maxVal  = Math.max(...counts, 1);
+      const xStep   = (W - pad * 2) / (counts.length - 1);
+      const pts     = counts.map((v, i) => {
+        const x = pad + i * xStep;
+        const y = H - pad - (v / maxVal) * (H - pad * 2);
+        return { x, y };
+      });
+      const polyPts = pts.map(p => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ');
+      const dots    = pts.map(p =>
+        `<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="2.5" fill="var(--color-accent)"/>`
+      ).join('');
+      sparklineSvg = `
+        <svg viewBox="0 0 ${W} ${H}" style="width:100%;height:${H}px;display:block;margin:var(--space-2) 0"
+             aria-label="7-day view sparkline">
+          <polyline points="${polyPts}" fill="none" stroke="var(--color-accent)"
+                    stroke-width="1.5" opacity="0.7"/>
+          ${dots}
+        </svg>`;
+    }
+
+    el.innerHTML = `
+      <h3>Activity</h3>
+      <div class="about-stat-row">&#128065; <strong>${viewCount.toLocaleString()}</strong> views this month</div>
+      ${sparklineSvg}
+      <div style="display:flex;gap:var(--space-3);margin-top:var(--space-2)">
+        <a href="${base}/issues?state=open" class="text-sm"
+           style="display:flex;align-items:center;gap:var(--space-1);color:var(--text-secondary)">
+          &#128027; <strong style="color:var(--text-primary)">${openIssues}</strong>&nbsp;open issue${openIssues !== 1 ? 's' : ''}
+        </a>
+        <a href="${base}/pulls?state=open" class="text-sm"
+           style="display:flex;align-items:center;gap:var(--space-1);color:var(--text-secondary)">
+          &#x1F500; <strong style="color:var(--text-primary)">${openPRs}</strong>&nbsp;open PR${openPRs !== 1 ? 's' : ''}
+        </a>
+      </div>
+    `;
+    el.style.display = '';
+  } catch(e) { /* non-critical */ }
+}
+
+/* ═══════════════════════════════════════════════════════
  * Bootstrap — fire all loaders in parallel
  * ═══════════════════════════════════════════════════════ */
 function load() {
@@ -513,6 +580,7 @@ function load() {
   loadContributors();
   loadInstrumentBar();
   loadEmotionArc();
+  loadAnalytics();
   loadSimilar();
 }
 
