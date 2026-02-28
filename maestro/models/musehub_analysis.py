@@ -1,4 +1,4 @@
-"""Pydantic v2 models for the Muse Hub Analysis API.
+"""Pydantic v2 models for the Muse Hub Analysis API and Dynamics Page.
 
 Each musical dimension has a dedicated typed data model.  All models are
 consumed by AI agents and must be fully described so agents can reason
@@ -28,6 +28,16 @@ from typing import Literal
 from pydantic import Field
 
 from maestro.models.base import CamelModel
+
+# Arc classification labels for dynamic contour per track.
+# Each label describes the overall shape of the velocity curve:
+#   flat       — velocity is nearly constant throughout
+#   terraced   — abrupt step changes between dynamic levels
+#   crescendo  — steady or gradual increase in velocity
+#   decrescendo — steady or gradual decrease in velocity
+#   swell      — rises then falls (arch shape)
+#   hairpin    — falls then rises (valley shape)
+DynamicArc = Literal["flat", "terraced", "crescendo", "decrescendo", "swell", "hairpin"]
 
 # ---------------------------------------------------------------------------
 # Filter envelope (shared across all dimension responses)
@@ -121,19 +131,88 @@ class DynamicsData(CamelModel):
     )
 
 
+class MotifTransformation(CamelModel):
+    """A single transformation of a motif (inversion, retrograde, transposition).
+
+    Each transformation is a variant of the parent motif that has been detected
+    in the piece.  ``intervals`` is the transformed interval sequence.
+    ``transposition_semitones`` is non-zero only for transposition transformations.
+    ``occurrences`` are the beat positions where this specific transformation appears.
+    """
+
+    transformation_type: str = Field(
+        ...,
+        description="One of: inversion, retrograde, retrograde-inversion, transposition",
+    )
+    intervals: list[int] = Field(
+        ..., description="Transformed interval sequence in semitones"
+    )
+    transposition_semitones: int = Field(
+        0, description="Semitones of transposition (0 for non-transposition variants)"
+    )
+    occurrences: list[float] = Field(
+        ..., description="Beat positions where this transformation appears"
+    )
+    track: str = Field(..., description="Track where this transformation was found")
+
+
+class MotifRecurrenceCell(CamelModel):
+    """A single cell in the motif recurrence grid (track x section).
+
+    Encodes whether a motif (or one of its transformations) appears in a
+    specific track at a specific formal section.  Used by the motif browser
+    to render the recurrence heatmap.
+    """
+
+    track: str
+    section: str
+    present: bool
+    occurrence_count: int = Field(
+        0, description="How many times the motif appears in this cell"
+    )
+    transformation_types: list[str] = Field(
+        default_factory=list,
+        description="Which transformation types are present ('original', 'inversion', etc.)",
+    )
+
+
 class MotifEntry(CamelModel):
-    """A detected melodic or rhythmic motif.
+    """A detected melodic or rhythmic motif with transformation and recurrence data.
 
     ``intervals`` is the interval sequence in semitones (signed).
-    ``occurrences`` lists the beat positions where this motif starts.
+    ``occurrences`` lists the beat positions where the original motif starts.
+    ``contour_label`` classifies the melodic shape for human and agent readability.
+    ``tracks`` lists every instrument track where this motif or its transformations appear.
+    ``transformations`` captures inversion, retrograde, and transposition variants.
+    ``recurrence_grid`` provides a flat list of track×section cells for heatmap rendering.
     """
 
     motif_id: str
     intervals: list[int] = Field(..., description="Melodic intervals in semitones")
     length_beats: float
     occurrence_count: int
-    occurrences: list[float] = Field(..., description="Beat positions of each occurrence")
-    track: str = Field(..., description="Instrument track where this motif was detected")
+    occurrences: list[float] = Field(
+        ..., description="Beat positions of each original occurrence"
+    )
+    track: str = Field(..., description="Primary instrument track where this motif was detected")
+    contour_label: str = Field(
+        ...,
+        description=(
+            "Melodic contour shape: ascending-step, descending-step, arch, "
+            "valley, oscillating, or static"
+        ),
+    )
+    tracks: list[str] = Field(
+        ...,
+        description="All tracks where this motif or its transformations appear (cross-track sharing)",
+    )
+    transformations: list[MotifTransformation] = Field(
+        ..., description="Detected transformations of this motif"
+    )
+    recurrence_grid: list[MotifRecurrenceCell] = Field(
+        ...,
+        description="Flat track×section recurrence grid for heatmap rendering",
+    )
 
 
 class MotifsData(CamelModel):
@@ -141,10 +220,21 @@ class MotifsData(CamelModel):
 
     Agents use this to identify recurring themes and decide whether to
     develop, vary, or contrast a motif in the next section.
+
+    The ``sections`` field lists the formal section labels present in this
+    ref so the motif browser can render the recurrence grid column headers.
+    The ``all_tracks`` field lists every active instrument track so the
+    browser can render row headers.
     """
 
     total_motifs: int
     motifs: list[MotifEntry]
+    sections: list[str] = Field(
+        ..., description="Formal section labels (column headers for the recurrence grid)"
+    )
+    all_tracks: list[str] = Field(
+        ..., description="All active instrument tracks (row headers for the recurrence grid)"
+    )
 
 
 class SectionEntry(CamelModel):
@@ -477,6 +567,61 @@ class DivergenceData(CamelModel):
     )
     base_ref: str = Field(..., description="The ref this divergence was computed against")
     changed_dimensions: list[ChangedDimension]
+
+
+# ---------------------------------------------------------------------------
+# Per-track dynamics models (used by the Dynamics Analysis Page)
+# ---------------------------------------------------------------------------
+
+
+class TrackDynamicsProfile(CamelModel):
+    """Dynamic analysis for a single instrument track.
+
+    Used exclusively by the dynamics page endpoint so that per-track data
+    can be visualised independently. Agents that need the aggregate
+    (cross-track average) should use :class:`DynamicsData` instead.
+
+    ``arc`` classifies the overall shape of the velocity curve:
+    - ``flat``       — velocity nearly constant
+    - ``terraced``   — abrupt step changes between levels
+    - ``crescendo``  — gradual increase
+    - ``decrescendo`` — gradual decrease
+    - ``swell``      — rises then falls (arch)
+    - ``hairpin``    — falls then rises (valley)
+
+    ``velocity_curve`` samples the track at 2-beat intervals so a
+    velocity profile graph can be drawn without requiring MIDI file access.
+    """
+
+    track: str = Field(..., description="Instrument track name, e.g. 'bass', 'keys', 'drums'")
+    peak_velocity: int = Field(..., ge=0, le=127)
+    min_velocity: int = Field(..., ge=0, le=127)
+    mean_velocity: float = Field(..., ge=0.0, le=127.0)
+    velocity_range: int = Field(..., ge=0, le=127, description="peak_velocity - min_velocity")
+    arc: DynamicArc = Field(..., description="Dynamic arc classification for this track")
+    velocity_curve: list[VelocityEvent] = Field(
+        ..., description="Velocity sampled at 2-beat intervals for graphing"
+    )
+
+
+class DynamicsPageData(CamelModel):
+    """Enriched per-track dynamics data for the Dynamics Analysis page.
+
+    Returned by ``GET /musehub/repos/{repo_id}/analysis/{ref}/dynamics/page``.
+    Contains one :class:`TrackDynamicsProfile` per active instrument track,
+    plus the cross-track loudness comparison list (peak velocities sorted
+    descending) so the bar chart can be drawn directly from ``tracks``.
+
+    Agent use case: when orchestrating a mix, an agent inspects this to
+    identify dynamic imbalances — e.g. bass consistently louder than keys —
+    and adjusts generation accordingly.
+    """
+
+    ref: str
+    repo_id: str
+    computed_at: datetime
+    tracks: list[TrackDynamicsProfile]
+    filters_applied: AnalysisFilters
 
 
 # ---------------------------------------------------------------------------

@@ -87,7 +87,9 @@ async def _make_repo(
     owner: str = "test-owner",
 ) -> str:
     """Seed a MuseHub repo and return its repo_id."""
-    repo = MusehubRepo(name=name, visibility=visibility, owner_user_id=owner)
+    import re as _re
+    slug = _re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")[:64].strip("-") or "repo"
+    repo = MusehubRepo(name=name, owner="testuser", slug=slug, visibility=visibility, owner_user_id=owner)
     db_session.add(repo)
     await db_session.commit()
     await db_session.refresh(repo)
@@ -126,6 +128,8 @@ async def _make_search_repo(db: AsyncSession) -> str:
     """Seed a minimal MuseHub repo for in-repo search tests; return repo_id."""
     repo = MusehubRepo(
         name="search-test-repo",
+        owner="testuser",
+        slug="search-test-repo",
         visibility="private",
         owner_user_id="test-owner",
     )
@@ -174,10 +178,15 @@ async def _make_search_commit(
 
 
 @pytest.mark.anyio
-async def test_similar_search_requires_auth(client: AsyncClient) -> None:
-    """GET /musehub/search/similar without token returns 401."""
-    resp = await client.get("/api/v1/musehub/search/similar?commit=abc123")
-    assert resp.status_code == 401
+async def test_similar_search_unknown_commit_returns_404_without_auth(
+    client: AsyncClient,
+) -> None:
+    """GET /musehub/search/similar returns 404 for an unknown commit without a token.
+
+    Uses optional_token — the endpoint is public; a non-existent commit → 404.
+    """
+    resp = await client.get("/api/v1/musehub/search/similar?commit=non-existent-commit-id")
+    assert resp.status_code == 404
 
 
 # ---------------------------------------------------------------------------
@@ -212,7 +221,7 @@ async def test_similar_search_returns_results(
     """Successful search returns ranked SimilarCommitResponse list."""
     create_resp = await client.post(
         "/api/v1/musehub/repos",
-        json={"name": "jazz-ballad", "visibility": "public"},
+        json={"name": "jazz-ballad", "owner": "testuser", "visibility": "public"},
         headers=auth_headers,
     )
     assert create_resp.status_code == 201
@@ -269,7 +278,7 @@ async def test_similar_search_public_only_enforced(
     """search_similar is called with public_only=True — private commits excluded."""
     create_resp = await client.post(
         "/api/v1/musehub/repos",
-        json={"name": "public-jazz", "visibility": "public"},
+        json={"name": "public-jazz", "owner": "testuser", "visibility": "public"},
         headers=auth_headers,
     )
     assert create_resp.status_code == 201
@@ -319,7 +328,7 @@ async def test_similar_search_excludes_query_commit(
     """The query commit itself is passed as exclude_commit_id to avoid self-match."""
     create_resp = await client.post(
         "/api/v1/musehub/repos",
-        json={"name": "self-exclude-test", "visibility": "public"},
+        json={"name": "self-exclude-test", "owner": "testuser", "visibility": "public"},
         headers=auth_headers,
     )
     repo_id = create_resp.json()["repoId"]
@@ -367,7 +376,7 @@ async def test_similar_search_503_when_qdrant_unavailable(
     """503 is returned when Qdrant raises an exception."""
     create_resp = await client.post(
         "/api/v1/musehub/repos",
-        json={"name": "qdrant-fail-test", "visibility": "public"},
+        json={"name": "qdrant-fail-test", "owner": "testuser", "visibility": "public"},
         headers=auth_headers,
     )
     repo_id = create_resp.json()["repoId"]
@@ -414,7 +423,7 @@ async def test_similar_search_limit_respected(
     """The limit query parameter is forwarded to Qdrant search_similar."""
     create_resp = await client.post(
         "/api/v1/musehub/repos",
-        json={"name": "limit-test", "visibility": "public"},
+        json={"name": "limit-test", "owner": "testuser", "visibility": "public"},
         headers=auth_headers,
     )
     repo_id = create_resp.json()["repoId"]
@@ -493,13 +502,17 @@ async def test_global_search_page_pre_fills_query(
 
 
 @pytest.mark.anyio
-async def test_global_search_requires_auth(
+async def test_global_search_accessible_without_auth(
     client: AsyncClient,
     db_session: AsyncSession,
 ) -> None:
-    """GET /api/v1/musehub/search returns 401 without a JWT."""
+    """GET /api/v1/musehub/search returns 200 without a JWT.
+
+    Global search is a public endpoint — uses optional_token, so unauthenticated
+    requests are allowed and return results for public repos.
+    """
     response = await client.get("/api/v1/musehub/search?q=jazz")
-    assert response.status_code == 401
+    assert response.status_code == 200
 
 
 @pytest.mark.anyio
@@ -585,10 +598,13 @@ async def test_global_search_results_grouped(
         assert "repoId" in group
         assert "repoName" in group
         assert "repoOwner" in group
+        assert "repoSlug" in group  # PR #282: slug required for UI link construction
         assert "repoVisibility" in group
         assert "matches" in group
         assert "totalMatches" in group
         assert isinstance(group["matches"], list)
+        assert isinstance(group["repoSlug"], str)
+        assert group["repoSlug"] != ""
 
     group_a = next(g for g in groups if g["repoId"] == repo_a)
     assert group_a["totalMatches"] == 2
@@ -751,7 +767,7 @@ async def test_search_page_renders(
 ) -> None:
     """GET /musehub/ui/{repo_id}/search returns 200 HTML with mode tabs."""
     repo_id = await _make_search_repo(db_session)
-    response = await client.get(f"/musehub/ui/{repo_id}/search")
+    response = await client.get("/musehub/ui/testuser/search-test-repo/search")
     assert response.status_code == 200
     assert "text/html" in response.headers["content-type"]
     body = response.text
@@ -772,7 +788,7 @@ async def test_search_page_no_auth_required(
 ) -> None:
     """Search UI page is accessible without a JWT (HTML shell, JS handles auth)."""
     repo_id = await _make_search_repo(db_session)
-    response = await client.get(f"/musehub/ui/{repo_id}/search")
+    response = await client.get("/musehub/ui/testuser/search-test-repo/search")
     assert response.status_code == 200
 
 

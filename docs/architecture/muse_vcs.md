@@ -1472,6 +1472,7 @@ maestro/
 | GET | `/api/v1/musehub/repos/{id}` | Get repo metadata |
 | GET | `/api/v1/musehub/repos/{id}/branches` | List branches |
 | GET | `/api/v1/musehub/repos/{id}/commits` | List commits (newest first) |
+| GET | `/api/v1/musehub/repos/{id}/timeline` | Chronological timeline with emotion/section/track layers |
 | GET | `/api/v1/musehub/repos/{id}/divergence` | Five-dimension musical divergence between two branches (`?branch_a=...&branch_b=...`) |
 | GET | `/api/v1/musehub/repos/{id}/credits` | Aggregated contributor credits (`?sort=count\|recency\|alpha`) |
 
@@ -1501,7 +1502,7 @@ maestro/
 
 **Contribution type inference:** Roles are inferred from commit message keywords using `_ROLE_KEYWORDS` in `musehub_credits.py`. No role matched → falls back to `["contributor"]`. The list evolves as musicians describe their work more richly in commit messages.
 
-**Machine-readable credits:** The UI page (`GET /musehub/ui/{repo_id}/credits`) injects a `<script type="application/ld+json">` block using schema.org `MusicComposition` vocabulary for embeddable, machine-readable attribution.
+**Machine-readable credits:** The UI page (`GET /musehub/ui/{owner}/{repo_slug}/credits`) injects a `<script type="application/ld+json">` block using schema.org `MusicComposition` vocabulary for embeddable, machine-readable attribution.
 
 **Agent use case:** An AI agent generating release notes or liner notes calls `GET /api/v1/musehub/repos/{id}/credits?sort=count` to enumerate all contributors and their roles, then formats the result as attribution text. The JSON-LD block is ready for schema.org consumers (streaming platforms, metadata aggregators).
 | GET | `/api/v1/musehub/repos/{id}/dag` | Full commit DAG (topologically sorted nodes + edges) |
@@ -1524,7 +1525,7 @@ Returns a `MuseHubContextResponse` document with:
 - `missing_elements` — list of dimensions the agent cannot determine from stored data.
 - `suggestions` — composer-facing hints about what to work on next.
 
-**UI page:** `GET /musehub/ui/{repo_id}/context/{ref}` — no auth required (JS shell handles auth).
+**UI page:** `GET /musehub/ui/{owner}/{repo_slug}/context/{ref}` — no auth required (JS shell handles auth).
 Renders the context document in structured HTML with:
 - "What the Agent Sees" explainer at the top
 - Collapsible sections for Musical State, History, Missing Elements, and Suggestions
@@ -1534,6 +1535,43 @@ Renders the context document in structured HTML with:
 **Service:** `maestro/services/musehub_repository.py::get_context_for_commit()` — read-only, deterministic.
 
 **Agent use case:** A musician debugging why the AI generated something unexpected can load the context page for that commit and see exactly what musical knowledge the agent had. The copy button lets them paste the raw JSON into a new agent conversation for direct inspection or override.
+
+#### Analysis Dashboard
+
+The analysis dashboard provides a single-page overview of all musical dimensions for a given ref.
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/musehub/ui/{owner}/{repo_slug}/analysis/{ref}` | HTML dashboard with 10 dimension summary cards (no auth required) |
+| GET | `/api/v1/musehub/repos/{repo_id}/analysis/{ref}` | Aggregate analysis JSON with all 13 dimensions (JWT required) |
+
+**Dashboard cards (10 dimensions):** Key, Tempo, Meter, Chord Map, Dynamics, Groove, Emotion, Form, Motifs, Contour.
+
+Each card shows:
+- A headline metric derived from the dimension's stub data (e.g. "C Major", "120 BPM")
+- A sub-text with confidence or range context
+- A mini sparkline bar chart for time-series dimensions (dynamics velocity curve, contour pitch curve)
+- A clickable link to the per-dimension analysis page at `/{owner}/{repo_slug}/analysis/{ref}/{dim_id}`
+
+**Branch/tag selector:** A `<select>` populated by `GET /api/v1/musehub/repos/{repo_id}/branches`. Changing the selected branch navigates to `/{owner}/{repo_slug}/analysis/{branch}`.
+
+**Missing data:** When a dimension has no analysis data, the card displays "Not yet analyzed" gracefully — no errors or empty states break the layout.
+
+**Content negotiation (API):** `GET /api/v1/musehub/repos/{repo_id}/analysis/{ref}` returns `AggregateAnalysisResponse` JSON with a `dimensions` array. All 13 dimensions are present (including similarity and divergence, which are not shown as cards but are available to agents).
+
+**Auth model:** The HTML page at `/musehub/ui/{owner}/{repo_slug}/analysis/{ref}` is a Jinja2 template shell — no server-side auth required. The embedded JavaScript fetches the API with a JWT from `localStorage`.
+
+**Agent use case:** An AI agent assessing the current musical state of a repo calls `GET /api/v1/musehub/repos/{id}/analysis/{ref}` and reads the `dimensions` array to understand key, tempo, emotion, and harmonic complexity before proposing a new composition direction.
+
+**Files:**
+| Layer | File |
+|-------|------|
+| UI handler | `maestro/api/routes/musehub/ui.py::analysis_dashboard_page()` |
+| UI template | `maestro/templates/musehub/pages/analysis.html` |
+| API handler | `maestro/api/routes/musehub/analysis.py::get_aggregate_analysis()` |
+| Service | `maestro/services/musehub_analysis.py::compute_aggregate_analysis()` |
+| Models | `maestro/models/musehub_analysis.py::AggregateAnalysisResponse` |
+| UI tests | `tests/test_musehub_ui.py` — `test_analysis_dashboard_*`, `test_analysis_aggregate_endpoint` |
 
 #### Issues
 
@@ -1679,16 +1717,16 @@ All authed endpoints require `Authorization: Bearer <token>`. See [api.md](../re
 
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | `/musehub/ui/{repo_id}` | Repo landing page (branch selector + commit log) |
-| GET | `/musehub/ui/{repo_id}/commits/{commit_id}` | Commit detail (metadata + artifact browser) |
-| GET | `/musehub/ui/{repo_id}/pulls` | Pull request list |
-| GET | `/musehub/ui/{repo_id}/pulls/{pr_id}` | PR detail (with merge button) |
-| GET | `/musehub/ui/{repo_id}/issues` | Issue list |
-| GET | `/musehub/ui/{repo_id}/issues/{number}` | Issue detail (with close button) |
-| GET | `/musehub/ui/{repo_id}/sessions` | Session list (newest first) |
-| GET | `/musehub/ui/{repo_id}/sessions/{session_id}` | Session detail page |
+| GET | `/musehub/ui/{owner}/{repo_slug}` | Repo landing page (branch selector + commit log) |
+| GET | `/musehub/ui/{owner}/{repo_slug}/commits/{commit_id}` | Commit detail (metadata + artifact browser) |
+| GET | `/musehub/ui/{owner}/{repo_slug}/pulls` | Pull request list |
+| GET | `/musehub/ui/{owner}/{repo_slug}/pulls/{pr_id}` | PR detail (with merge button) |
+| GET | `/musehub/ui/{owner}/{repo_slug}/issues` | Issue list |
+| GET | `/musehub/ui/{owner}/{repo_slug}/issues/{number}` | Issue detail (with close button) |
+| GET | `/musehub/ui/{owner}/{repo_slug}/sessions` | Session list (newest first) |
+| GET | `/musehub/ui/{owner}/{repo_slug}/sessions/{session_id}` | Session detail page |
 
-UI pages are HTML shells — auth is handled client-side via `localStorage` JWT. The JS fetches from the authed JSON API above.
+UI pages are Jinja2-rendered HTML shells — auth is handled client-side via `localStorage` JWT (loaded from `/musehub/static/musehub.js`). The page JavaScript fetches from the authed JSON API above.
 ### DAG Graph — Interactive Commit Graph
 
 **Purpose:** Visualise the full commit history of a Muse Hub repo as an interactive directed acyclic graph, equivalent to `muse inspect --format mermaid` but explorable in the browser.
@@ -1737,6 +1775,9 @@ Issues let musicians track production problems and creative tasks within a repo,
 - **States:** `open` (default on creation) → `closed` (via the close endpoint). No re-open at MVP.
 - **Filtering:** `GET /issues?state=all` includes both open and closed; `?label=bug` narrows by label.
 
+### Timeline — Chronological Evolution View
+
+The timeline view lets musicians (and AI agents) see how a project evolved over time, with four independently toggleable layers:
 ### Release System
 
 Releases publish a specific version of a composition as a named snapshot that listeners and collaborators can download in multiple formats.
@@ -1772,7 +1813,7 @@ returns `409 Conflict`. The same tag can be reused across different repos withou
 
 #### Latest Release Badge
 
-The repo home page (`GET /musehub/ui/{repo_id}`) fetches the release list on load and
+The repo home page (`GET /musehub/ui/{owner}/{repo_slug}`) fetches the release list on load and
 displays a green "Latest: v1.0" badge in the navigation bar when at least one release exists.
 Clicking the badge navigates to the release detail page.
 
@@ -1792,6 +1833,93 @@ The divergence endpoint and UI let producers compare two branches across five mu
 #### API Endpoint
 
 ```
+GET /api/v1/musehub/repos/{repo_id}/timeline?limit=200
+Authorization: Bearer <token>
+```
+
+**Response shape (`TimelineResponse`):**
+
+```json
+{
+  "commits": [
+    {
+      "eventType": "commit",
+      "commitId": "deadbeef...",
+      "branch": "main",
+      "message": "added chorus",
+      "author": "musician",
+      "timestamp": "2026-02-01T12:00:00Z",
+      "parentIds": ["..."]
+    }
+  ],
+  "emotion": [
+    {
+      "eventType": "emotion",
+      "commitId": "deadbeef...",
+      "timestamp": "2026-02-01T12:00:00Z",
+      "valence": 0.8711,
+      "energy": 0.3455,
+      "tension": 0.2190
+    }
+  ],
+  "sections": [
+    {
+      "eventType": "section",
+      "commitId": "deadbeef...",
+      "timestamp": "2026-02-01T12:00:00Z",
+      "sectionName": "chorus",
+      "action": "added"
+    }
+  ],
+  "tracks": [
+    {
+      "eventType": "track",
+      "commitId": "deadbeef...",
+      "timestamp": "2026-02-01T12:00:00Z",
+      "trackName": "bass",
+      "action": "added"
+    }
+  ],
+  "totalCommits": 42
+}
+```
+
+**Layer descriptions:**
+
+| Layer | Source | Description |
+|-------|--------|-------------|
+| `commits` | DB: `musehub_commits` | Every pushed commit — always present. Oldest-first for temporal rendering. |
+| `emotion` | Derived from commit SHA | Deterministic valence/energy/tension in [0,1] — reproducible without ML inference. |
+| `sections` | Commit message heuristics | Keywords: intro, verse, chorus, bridge, outro, hook, etc. Action inferred from verb (added/removed). |
+| `tracks` | Commit message heuristics | Keywords: bass, drums, keys, guitar, synth, etc. Action inferred from verb (added/removed). |
+
+**Emotion derivation:** Three non-overlapping 4-hex-character windows of the commit SHA are converted to floats in [0,1]. This is deterministic, fast, and requires no model — sufficient for visualisation. Future versions may substitute ML-derived vectors without changing the API shape.
+
+**Section/track heuristics:** Verb patterns (`add`, `remove`, `delete`, `create`, etc.) in the commit message determine `action`. No NLP is required — keyword scanning is fast and sufficient for commit message conventions used by `muse commit`.
+
+#### Web UI Page
+
+```
+GET /musehub/ui/{owner}/{repo_slug}/timeline
+```
+
+No auth required — HTML shell whose JS fetches the JSON API using the JWT from `localStorage`.
+
+**Features:**
+- Horizontal SVG canvas with commit markers on a time spine
+- Emotion line chart (valence = blue, energy = green, tension = red) overlaid above the spine
+- Section-change markers (green = added, red = removed) below the spine
+- Track add/remove markers (purple = added, yellow = removed) at the bottom
+- Toggleable layers via checkboxes in the toolbar
+- Zoom controls: Day / Week / Month / All-time
+- Time scrubber to navigate through history
+- Click any commit marker to open an audio preview modal
+
+**Agent use case:** An AI agent calls `GET /api/v1/musehub/repos/{id}/timeline --json` to understand the creative arc of a project before generating new material — identifying when the emotional character shifted, when sections were introduced, and which instruments were layered in. The deterministic emotion vectors give agents a structured signal without requiring audio analysis.
+
+**Result types:** `TimelineResponse`, `TimelineCommitEvent`, `TimelineEmotionEvent`, `TimelineSectionEvent`, `TimelineTrackEvent` — see `docs/reference/type_contracts.md § Muse Hub Timeline Types`.
+
+---
 GET /api/v1/musehub/repos/{repo_id}/divergence?branch_a=<name>&branch_b=<name>
 ```
 
@@ -1841,7 +1969,7 @@ Overall score = arithmetic mean of all five dimension scores.
 #### Browser UI
 
 ```
-GET /musehub/ui/{repo_id}/divergence?branch_a=<name>&branch_b=<name>
+GET /musehub/ui/{owner}/{repo_slug}/divergence?branch_a=<name>&branch_b=<name>
 ```
 
 Renders an interactive page featuring:
@@ -5581,11 +5709,21 @@ Snapshot a3f7b891 — 3 file(s):
 **Result type:** `ReadTreeResult` — fields: `snapshot_id` (str), `files_written` (list[str]),
 `dry_run` (bool), `reset` (bool).
 
-**How objects are stored:** `muse commit` writes each committed file's raw bytes
-into `.muse/objects/<sha256>` (the local content-addressed object store). `muse
-read-tree` reads from that store to reconstruct `muse-work/`. If an object is
-missing (e.g. the snapshot was pulled from a remote without a local commit), the
-command exits with a clear error listing the missing paths.
+**How objects are stored:** `muse commit` writes each committed file via
+`maestro.muse_cli.object_store.write_object_from_path()` into a sharded layout
+that mirrors Git's loose-object store:
+
+```
+.muse/objects/
+  ab/           ← first two hex chars of sha256 (256 possible shard dirs)
+    cdef1234…   ← remaining 62 chars — the raw file bytes
+```
+
+`muse read-tree` reads from that same store via `read_object()` to reconstruct
+`muse-work/`. If an object is missing (e.g. the snapshot was pulled from a
+remote without a local commit), the command exits with a clear error listing the
+missing paths.  All Muse commands share this single canonical module —
+`maestro/muse_cli/object_store.py` — for all object I/O.
 
 **Does NOT modify:**
 - `.muse/HEAD`
@@ -6049,12 +6187,18 @@ An AI composition agent uses `muse reset` to recover from a bad generation run:
 
 ### Implementation
 
+- **Object store (canonical):** `maestro/muse_cli/object_store.py` — single
+  source of truth for all blob I/O.  Public API: `write_object()`,
+  `write_object_from_path()`, `read_object()`, `restore_object()`,
+  `has_object()`, `object_path()`.  All commands import from here exclusively.
 - **Service layer:** `maestro/services/muse_reset.py` — `perform_reset()`,
-  `resolve_ref()`, `store_object()`, `object_store_path()`.
+  `resolve_ref()`.  Uses `has_object()` and `restore_object()` from
+  `object_store`.  Contains no path-layout logic of its own.
 - **CLI command:** `maestro/muse_cli/commands/reset.py` — Typer callback,
   confirmation prompt, error display.
 - **Commit integration:** `maestro/muse_cli/commands/commit.py` — calls
-  `store_object()` for each file during commit to populate `.muse/objects/`.
+  `write_object_from_path()` for each file during commit to populate
+  `.muse/objects/` without loading large blobs into memory.
 - **Exit codes:** 0 success, 1 user error (`USER_ERROR`), 2 not a repo
   (`REPO_NOT_FOUND`), 3 internal error (`INTERNAL_ERROR`).
 
@@ -6307,8 +6451,10 @@ identify commit SHAs, then `muse show <commit>` to inspect the snapshot manifest
 before running `muse restore`.
 
 **Implementation:** `maestro/muse_cli/commands/restore.py` (CLI) and
-`maestro/services/muse_restore.py` (service).  Uses the same object store helpers
-as `muse reset --hard`.  Branch pointer is never modified.
+`maestro/services/muse_restore.py` (service).  Uses `has_object()` and
+`restore_object()` from the canonical `maestro/muse_cli/object_store.py` —
+the same module used by `muse commit`, `muse read-tree`, and `muse reset
+--hard`.  Branch pointer is never modified.
 
 ---
 
@@ -6721,7 +6867,7 @@ to token usage from `usage_logs`.
 ### Disambiguation
 
 The profile UI page at `/musehub/ui/users/{username}` does NOT conflict with
-the repo browser at `/musehub/ui/{repo_id}` — the `users/` path segment
+the repo browser at `/musehub/ui/{owner}/{repo_slug}` — the `users/` path segment
 ensures distinct routing.  The JSON API is namespaced at
 `/api/v1/musehub/users/{username}`.
 
@@ -6853,6 +6999,331 @@ GET /api/v1/musehub/search?q=F%23+minor+walking+bass&mode=keyword&page_size=5
 The grouped response lets the agent scan commit messages by repo context,
 identify matching repos by name and owner, and immediately fetch audio previews
 via `audioObjectId` without additional round-trips.
+
+---
+
+## Muse Hub — Dynamics Analysis Page (issue #223)
+
+The dynamics analysis page visualises per-track velocity profiles, dynamic arc
+classifications, and a cross-track loudness comparison for a given commit ref.
+
+### JSON endpoint
+
+```
+GET /api/v1/musehub/repos/{repo_id}/analysis/{ref}/dynamics/page
+```
+
+Requires JWT. Returns `DynamicsPageData` — a list of `TrackDynamicsProfile`
+objects, one per active track.
+
+Query params:
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `track` | `str` | (all) | Filter to a single named track |
+| `section` | `str` | (all) | Filter to a named section |
+
+Response fields: `repo_id`, `ref`, `tracks[]` (each with `track`, `peak_velocity`,
+`min_velocity`, `mean_velocity`, `dynamic_range`, `arc`, `curve`).
+
+### Browser UI
+
+```
+GET /{repo_id}/analysis/{ref}/dynamics
+```
+
+Returns a static HTML shell (no JWT required to load; JWT required to fetch
+data). Renders:
+- Per-track SVG velocity sparkline (32-point `curve` array)
+- Dynamic arc badge (`flat` / `crescendo` / `decrescendo` / `terraced` / `swell` / `hairpin`)
+- Peak velocity and velocity range metrics per track
+- Cross-track loudness comparison bar chart
+- Track and section filter dropdowns
+
+### Arc vocabulary
+
+| Arc | Meaning |
+|-----|---------|
+| `flat` | Uniform velocity throughout |
+| `terraced` | Step-wise velocity shifts (Baroque-style) |
+| `crescendo` | Monotonically increasing velocity |
+| `decrescendo` | Monotonically decreasing velocity |
+| `swell` | Rise then fall (arch shape) |
+| `hairpin` | Fall then rise (valley shape) |
+
+### Implementation
+
+| Layer | File | What it does |
+|-------|------|-------------|
+| Pydantic models | `maestro/models/musehub_analysis.py` | `DynamicArc`, `TrackDynamicsProfile`, `DynamicsPageData` |
+| Service | `maestro/services/musehub_analysis.py` | `compute_dynamics_page_data()` — builds stub profiles keyed by `(repo_id, ref)` |
+| Route | `maestro/api/routes/musehub/analysis.py` | `GET .../dynamics/page` — JWT, ETag, 404 on missing repo |
+| UI | `maestro/api/routes/musehub/ui.py` | `dynamics_analysis_page()` — static HTML + JS at `/{repo_id}/analysis/{ref}/dynamics` |
+| Tests | `tests/test_musehub_analysis.py` | Endpoint + service unit tests |
+
+### Agent use case
+
+Before composing a new layer, an agent fetches:
+
+```
+GET /api/v1/musehub/repos/{repo_id}/analysis/{ref}/dynamics/page
+```
+
+It examines the `arc` of each track to decide whether to add velocity
+variation. If all tracks are `flat`, the agent shapes the new part with a
+`crescendo`. If one track is already `crescendo`, the new layer complements it
+rather than competing.
+---
+
+## Muse Hub — Contour and Tempo Analysis Pages
+
+**Purpose:** Browser-readable visualisation of the two most structure-critical
+musical dimensions — melodic contour and tempo — derived from a Muse commit
+ref.  These pages close the gap between the CLI commands `muse contour` and
+`muse tempo --history` and the web-first MuseHub experience.
+
+### Contour Analysis Page
+
+**Route:** `GET /musehub/ui/{owner}/{repo_slug}/analysis/{ref}/contour`
+
+**Auth:** No JWT required — static HTML shell; JS fetches from the authed JSON API.
+
+**What it shows:**
+- **Shape label** — coarse melodic shape (`arch`, `ascending`, `descending`,
+  `flat`, `inverted-arch`, `wave`) rendered as a coloured badge.
+- **Pitch-curve SVG** — polyline of MIDI pitch sampled at quarter-note
+  intervals across the piece, with min/max pitch labels and beat-count axis.
+- **Tessitura bar** — horizontal range bar from lowest to highest note,
+  displaying octave span and note names (e.g. `C3` – `G5 · 2.0 oct`).
+- **Direction metadata** — `overallDirection` (up / down / flat),
+  `directionChanges` count, `peakBeat`, and `valleyBeat`.
+- **Track filter** — text input forwarded as `?track=<instrument>` to the
+  JSON API, restricting analysis to a named instrument (e.g. `lead`, `keys`).
+
+**JSON endpoint:** `GET /api/v1/musehub/repos/{repo_id}/analysis/{ref}/contour`
+
+Returns `AnalysisResponse` with `dimension = "contour"` and `data` of type
+`ContourData`:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `shape` | `str` | Coarse shape label (`arch`, `ascending`, `descending`, `flat`, `wave`) |
+| `direction_changes` | `int` | Number of melodic direction reversals |
+| `peak_beat` | `float` | Beat position of the melodic peak |
+| `valley_beat` | `float` | Beat position of the melodic valley |
+| `overall_direction` | `str` | Net direction from first to last note (`up`, `down`, `flat`) |
+| `pitch_curve` | `list[float]` | MIDI pitch sampled at quarter-note intervals |
+
+**Result type:** `ContourData` — defined in `maestro/models/musehub_analysis.py`.
+
+**Agent use case:** Before generating a melodic continuation, an AI agent
+fetches the contour page JSON to understand the shape of the existing lead
+line.  If `shape == "arch"`, the agent can elect to continue with a
+descending phrase that resolves the arch rather than restarting from the peak.
+
+### Tempo Analysis Page
+
+**Route:** `GET /musehub/ui/{owner}/{repo_slug}/analysis/{ref}/tempo`
+
+**Auth:** No JWT required — static HTML shell; JS fetches from the authed JSON API.
+
+**What it shows:**
+- **BPM display** — large primary tempo in beats per minute.
+- **Time feel** — perceptual descriptor (`straight`, `laid-back`, `rushing`).
+- **Stability bar** — colour-coded progress bar (green ≥ 80%, orange ≥ 50%,
+  red < 50%) with percentage and label (`metronomic` / `moderate` / `free tempo`).
+- **Tempo change timeline SVG** — polyline of BPM over beat position, with
+  orange dots marking each tempo change event.
+- **Tempo change table** — tabular list of beat → BPM transitions for precise
+  inspection.
+- **Cross-commit note** — guidance linking to the JSON API for BPM history
+  across multiple refs.
+
+**JSON endpoint:** `GET /api/v1/musehub/repos/{repo_id}/analysis/{ref}/tempo`
+
+Returns `AnalysisResponse` with `dimension = "tempo"` and `data` of type
+`TempoData`:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `bpm` | `float` | Primary (mean) BPM for the ref |
+| `stability` | `float` | 0 = free tempo, 1 = perfectly metronomic |
+| `time_feel` | `str` | `straight`, `laid-back`, or `rushing` |
+| `tempo_changes` | `list[TempoChange]` | Ordered list of beat-position → BPM transitions |
+
+`TempoChange` fields: `beat: float`, `bpm: float`.
+
+**Result type:** `TempoData`, `TempoChange` — defined in
+`maestro/models/musehub_analysis.py`.
+
+**Agent use case:** An AI agent generating a new section can query
+`/analysis/{ref}/tempo` to detect an accelerando near the end of a piece
+(`stability < 0.5`, ascending `tempo_changes`) and avoid locking the generated
+part to a rigid grid. For cross-commit BPM evolution, the agent compares
+`TempoData.bpm` across multiple refs to track tempo drift across a composition
+session.
+
+### Implementation
+
+| Layer | File | What it does |
+|-------|------|-------------|
+| Pydantic models | `maestro/models/musehub_analysis.py` | `ContourData`, `TempoData`, `TempoChange` |
+| Service | `maestro/services/musehub_analysis.py` | `compute_dimension("contour" \| "tempo", ...)` |
+| Analysis route | `maestro/api/routes/musehub/analysis.py` | `GET /repos/{id}/analysis/{ref}/contour` and `.../tempo` |
+| UI route | `maestro/api/routes/musehub/ui.py` | `contour_page()`, `tempo_page()` — HTML shells |
+| Tests | `tests/test_musehub_ui.py` | `test_contour_page_renders`, `test_contour_json_response`, `test_tempo_page_renders`, `test_tempo_json_response` |
+| Tests | `tests/test_musehub_analysis.py` | `test_contour_track_filter`, `test_tempo_section_filter` |
+
+---
+
+## MuseHub Design System
+
+MuseHub pages share a structured CSS framework served as static assets from
+`/musehub/static/`.  This replaces the former monolithic `_CSS` Python string
+that was embedded in every HTML response body.
+
+### File structure
+
+| File | Served at | Purpose |
+|------|-----------|---------|
+| `maestro/templates/musehub/static/tokens.css` | `/musehub/static/tokens.css` | CSS custom properties (design tokens) |
+| `maestro/templates/musehub/static/components.css` | `/musehub/static/components.css` | Reusable component classes |
+| `maestro/templates/musehub/static/layout.css` | `/musehub/static/layout.css` | Grid, header, responsive breakpoints |
+| `maestro/templates/musehub/static/icons.css` | `/musehub/static/icons.css` | File-type and musical concept icons |
+| `maestro/templates/musehub/static/music.css` | `/musehub/static/music.css` | Piano roll, waveform, radar chart, heatmap |
+| `maestro/templates/musehub/static/musehub.js` | `/musehub/static/musehub.js` | Shared JS: JWT helpers, `apiFetch`, token form, date/SHA formatters |
+| `maestro/templates/musehub/static/embed.css` | `/musehub/static/embed.css` | Compact dark theme for iframe embed player |
+
+Static files are served by FastAPI's `StaticFiles` mount registered in
+`maestro/main.py` at startup.  All CSS files and `musehub.js` are linked by
+`maestro/templates/musehub/base.html` — the Jinja2 base template that replaced
+the old `_page()` Python helper.
+
+### Jinja2 template layout
+
+All MuseHub web UI pages are rendered via Jinja2 templates
+(`jinja2>=3.1.0`, `aiofiles>=23.2.0`).  No HTML is generated inside route
+handlers; handlers resolve server-side data and pass a minimal context dict to
+the template engine.
+
+```
+maestro/templates/musehub/
+├── base.html            — main authenticated layout (extends nothing)
+├── explore_base.html    — public discover/trending layout (no auth, filter bar)
+└── pages/
+    ├── global_search.html
+    ├── profile.html
+    ├── repo.html
+    ├── commit.html
+    ├── graph.html
+    ├── pr_list.html
+    ├── pr_detail.html
+    ├── issue_list.html
+    ├── issue_detail.html
+    ├── context.html
+    ├── credits.html
+    ├── embed.html        — iframe-safe audio player (standalone, no base)
+    ├── search.html
+    ├── divergence.html
+    ├── timeline.html
+    ├── release_list.html
+    ├── release_detail.html
+    ├── sessions.html
+    ├── session_detail.html
+    ├── contour.html
+    ├── tempo.html
+    └── dynamics.html
+```
+
+**Template inheritance:** page templates extend `base.html` (or
+`explore_base.html`) using `{% extends %}` / `{% block %}`.  Server-side
+dynamic data is injected via Jinja2's `{{ var | tojson }}` filter inside
+`<script>` blocks; large JavaScript sections containing template literals are
+wrapped in `{% raw %}...{% endraw %}` to prevent Jinja2 from parsing them.
+
+### Design tokens (`tokens.css`)
+
+All component classes consume CSS custom properties exclusively — no hardcoded
+hex values in component or layout files.
+
+| Token group | Examples |
+|-------------|---------|
+| Background surfaces | `--bg-base`, `--bg-surface`, `--bg-overlay`, `--bg-hover` |
+| Borders | `--border-subtle`, `--border-default`, `--border-muted` |
+| Text | `--text-primary`, `--text-secondary`, `--text-muted` |
+| Accent / brand | `--color-accent`, `--color-success`, `--color-danger`, `--color-warning` |
+| Musical dimensions | `--dim-harmonic`, `--dim-rhythmic`, `--dim-melodic`, `--dim-structural`, `--dim-dynamic` |
+| Track palette | `--track-0` through `--track-7` (8 distinct colours) |
+| Spacing | `--space-1` (4 px) through `--space-12` (48 px) |
+| Typography | `--font-sans`, `--font-mono`, `--font-size-*`, `--font-weight-*` |
+| Radii | `--radius-sm` (4 px) through `--radius-full` (9999 px) |
+| Shadows | `--shadow-sm` through `--shadow-xl` |
+
+### Musical dimension colours
+
+Each musical dimension has a primary colour and a muted/background variant used
+in badges, radar polygons, and diff heatmap bars.
+
+| Dimension | Token | Colour | Use |
+|-----------|-------|--------|-----|
+| Harmonic | `--dim-harmonic` | Blue `#388bfd` | Chord progressions, intervals |
+| Rhythmic | `--dim-rhythmic` | Green `#3fb950` | Time, meter, swing |
+| Melodic | `--dim-melodic` | Purple `#bc8cff` | Pitch contour, motifs |
+| Structural | `--dim-structural` | Orange `#f0883e` | Form, sections, repeats |
+| Dynamic | `--dim-dynamic` | Red `#f85149` | Velocity, loudness arcs |
+
+### Component reference
+
+| Class | File | Description |
+|-------|------|-------------|
+| `.badge`, `.badge-open/closed/merged/clean/dirty` | `components.css` | Status badges |
+| `.btn`, `.btn-primary/danger/secondary/ghost` | `components.css` | Action buttons |
+| `.card` | `components.css` | Surface panel |
+| `.table` | `components.css` | Data table |
+| `.grid-auto`, `.grid-2`, `.grid-3` | `components.css` | Layout grids |
+| `.modal`, `.modal-panel`, `.modal-footer` | `components.css` | Dialog overlay |
+| `.tabs`, `.tab-list`, `.tab` | `components.css` | Tab navigation |
+| `[data-tooltip]` | `components.css` | CSS-only tooltip |
+| `.file-icon .icon-mid/mp3/wav/json/webp/xml/abc` | `icons.css` | File-type icons |
+| `.music-icon .icon-key/tempo/dynamics/…` | `icons.css` | Musical concept icons |
+| `.piano-roll` | `music.css` | Multi-track note grid |
+| `.waveform` | `music.css` | Audio waveform container |
+| `.radar-chart`, `.radar-polygon-*` | `music.css` | Dimension radar chart |
+| `.contrib-graph`, `.contrib-day` | `music.css` | Contribution heatmap |
+| `.diff-heatmap`, `.diff-dim-bar-*` | `music.css` | Commit diff visualisation |
+
+### Responsive breakpoints
+
+| Name | Width | Override behaviour |
+|------|-------|--------------------|
+| xs | < 480 px | Single-column layout; breadcrumb hidden |
+| sm | 480–767 px | Single-column layout |
+| md | 768–1023 px | Sidebar narrows to 200 px |
+| lg | ≥ 1024 px | Full layout (base styles) |
+| xl | ≥ 1280 px | Container-wide expands to 1440 px |
+
+Minimum supported width: **375 px** (iPhone SE and equivalent Android devices).
+
+### Future theme support
+
+The design system is dark-theme by default.  All colours are defined as CSS
+custom properties on `:root`.  A future light theme can be implemented by
+adding a `[data-theme="light"]` selector block to `tokens.css` that overrides
+the `--bg-*`, `--text-*`, and `--color-*` tokens — no changes to component
+files required.
+
+### Implementation
+
+| Layer | File | What it does |
+|-------|------|-------------|
+| Design tokens | `maestro/templates/musehub/static/tokens.css` | CSS custom properties |
+| Components | `maestro/templates/musehub/static/components.css` | Reusable classes |
+| Layout | `maestro/templates/musehub/static/layout.css` | Grid, header, breakpoints |
+| Icons | `maestro/templates/musehub/static/icons.css` | File-type + music concept icons |
+| Music UI | `maestro/templates/musehub/static/music.css` | Piano roll, radar, heatmap |
+| Static mount | `maestro/main.py` | `app.mount("/musehub/static", StaticFiles(...))` |
+| Page helper | `maestro/api/routes/musehub/ui.py` | `_page()` links all five CSS files |
+| Tests | `tests/test_musehub_ui.py` | `test_design_tokens_css_served`, `test_components_css_served`, `test_repo_page_uses_design_system`, `test_responsive_meta_tag_present_*` |
+
 ---
 
 ## Emotion Map Page (issue #227)

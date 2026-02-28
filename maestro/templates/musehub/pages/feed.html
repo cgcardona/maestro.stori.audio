@@ -1,0 +1,62 @@
+{% extends "musehub/base.html" %}
+
+{% block title %}Activity Feed{% endblock %}
+{% block breadcrumb %}Activity Feed{% endblock %}
+
+{% block page_script %}
+{% raw %}
+async function load() {
+  try {
+    const data = await apiFetch('/feed?limit=50');
+    const items = data || [];
+
+    if (items.length === 0) {
+      document.getElementById('content').innerHTML = `
+        <div class="empty-state">
+          <div class="empty-icon">&#127926;</div>
+          <p class="empty-title">Your feed is empty</p>
+          <p class="empty-desc">Follow musicians and watch repos to see their activity here.</p>
+          <a href="/musehub/ui/explore" class="btn btn-primary">Explore repos</a>
+        </div>`;
+      return;
+    }
+
+    const EVENT_ICONS = {
+      comment: '&#128172;',
+      mention: '&#64;',
+      pr_opened: '&#9883;',
+      pr_merged: '&#10003;',
+      issue_opened: '&#128203;',
+      issue_closed: '&#10003;',
+      new_commit: '&#128190;',
+      new_follower: '&#128101;',
+    };
+
+    document.getElementById('content').innerHTML = `
+      <h1 style="margin-bottom:var(--space-4)">Activity Feed</h1>
+      <div class="card" style="padding:0">
+        ${items.map(item => `
+          <div class="comment-item">
+            <div class="comment-avatar">${(EVENT_ICONS[item.eventType] || '&#8226;')}</div>
+            <div class="comment-body">
+              <div class="comment-meta">
+                <strong>${escHtml(item.actor)}</strong>
+                &bull; ${escHtml(item.eventType.replace(/_/g,' '))}
+                ${item.repoId ? ` &bull; <a href="/musehub/ui/explore">repo</a>` : ''}
+                &bull; ${fmtRelative(item.createdAt)}
+              </div>
+              <div class="comment-text text-sm text-muted">
+                ${JSON.stringify(item.payload || {}).substring(0, 100)}
+              </div>
+            </div>
+          </div>`).join('')}
+      </div>`;
+  } catch(e) {
+    if (e.message !== 'auth')
+      document.getElementById('content').innerHTML = '<p class="error">&#10005; ' + escHtml(e.message) + '</p>';
+  }
+}
+
+load();
+{% endraw %}
+{% endblock %}

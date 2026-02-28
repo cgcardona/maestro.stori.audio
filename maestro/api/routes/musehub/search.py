@@ -26,7 +26,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from maestro.auth.dependencies import TokenClaims, require_valid_token
+from maestro.auth.dependencies import TokenClaims, optional_token, require_valid_token
 from maestro.config import settings
 from maestro.db import get_db
 
@@ -62,7 +62,7 @@ async def global_search(
     page: int = Query(1, ge=1, description="1-based page number for repo-group pagination"),
     page_size: int = Query(10, ge=1, le=50, description="Number of repo groups per page"),
     db: AsyncSession = Depends(get_db),
-    _: TokenClaims = Depends(require_valid_token),
+    _: TokenClaims | None = Depends(optional_token),
 ) -> GlobalSearchResult:
     """Search commit messages across all public Muse Hub repos.
 
@@ -127,7 +127,7 @@ async def search_similar(
     commit: str = Query(..., description="Commit SHA to use as the similarity query"),
     limit: int = Query(10, ge=1, le=50, description="Maximum number of results"),
     db_session: AsyncSession = Depends(get_db),
-    _: TokenClaims = Depends(require_valid_token),
+    _: TokenClaims | None = Depends(optional_token),
 ) -> SimilarSearchResponse:
     """Return the N most musically similar public commits to the given commit SHA.
 
@@ -204,7 +204,7 @@ async def search_repo(
     until: datetime | None = Query(None, description="Only include commits on or before this ISO datetime"),
     limit: int = Query(20, ge=1, le=200, description="Maximum results to return"),
     db: AsyncSession = Depends(get_db),
-    _: TokenClaims = Depends(require_valid_token),
+    claims: TokenClaims | None = Depends(optional_token),
 ) -> SearchResponse:
     """Search commit history using one of four musical search modes.
 
@@ -236,6 +236,12 @@ async def search_repo(
     repo = await musehub_repository.get_repo(db, repo_id)
     if repo is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repo not found")
+    if repo.visibility != "public" and claims is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required to access private repos.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
 
     if mode == "property":
         return await musehub_search.search_by_property(

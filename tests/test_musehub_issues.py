@@ -30,7 +30,7 @@ async def _create_repo(client: AsyncClient, auth_headers: dict[str, str], name: 
     """Create a repo via the API and return its repo_id."""
     response = await client.post(
         "/api/v1/musehub/repos",
-        json={"name": name},
+        json={"name": name, "owner": "testuser"},
         headers=auth_headers,
     )
     assert response.status_code == 201
@@ -281,20 +281,33 @@ async def test_close_nonexistent_issue_returns_404(
 
 
 @pytest.mark.anyio
-async def test_issues_require_auth(client: AsyncClient) -> None:
-    """All issue endpoints return 401 without a Bearer token."""
-    endpoints = [
+async def test_issue_write_endpoints_require_auth(client: AsyncClient) -> None:
+    """POST issue endpoints return 401 without a Bearer token (always require auth)."""
+    write_endpoints = [
         ("POST", "/api/v1/musehub/repos/some-repo/issues"),
-        ("GET", "/api/v1/musehub/repos/some-repo/issues"),
-        ("GET", "/api/v1/musehub/repos/some-repo/issues/1"),
         ("POST", "/api/v1/musehub/repos/some-repo/issues/1/close"),
     ]
-    for method, url in endpoints:
-        if method == "POST":
-            response = await client.post(url, json={})
-        else:
-            response = await client.get(url)
+    for method, url in write_endpoints:
+        response = await client.post(url, json={})
         assert response.status_code == 401, f"{method} {url} should require auth"
+
+
+@pytest.mark.anyio
+async def test_issue_read_endpoints_return_404_for_nonexistent_repo_without_auth(
+    client: AsyncClient,
+) -> None:
+    """GET issue endpoints return 404 for non-existent repos without a token.
+
+    Read endpoints use optional_token — auth is visibility-based; the DB
+    lookup happens before the auth check, so a missing repo returns 404.
+    """
+    read_endpoints = [
+        "/api/v1/musehub/repos/non-existent-repo/issues",
+        "/api/v1/musehub/repos/non-existent-repo/issues/1",
+    ]
+    for url in read_endpoints:
+        response = await client.get(url)
+        assert response.status_code == 404, f"GET {url} should return 404 for non-existent repo"
 
 
 # ---------------------------------------------------------------------------
@@ -308,6 +321,7 @@ async def test_create_issue_service_persists_to_db(db_session: AsyncSession) -> 
     repo = await musehub_repository.create_repo(
         db_session,
         name="service-issue-repo",
+        owner="testuser",
         visibility="private",
         owner_user_id="user-abc",
     )
@@ -336,6 +350,7 @@ async def test_list_issues_closed_state_filter(db_session: AsyncSession) -> None
     repo = await musehub_repository.create_repo(
         db_session,
         name="filter-state-repo",
+        owner="testuser",
         visibility="private",
         owner_user_id="user-xyz",
     )

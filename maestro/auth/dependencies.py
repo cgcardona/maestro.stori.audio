@@ -152,6 +152,56 @@ async def require_valid_token(
         )
 
 
+async def optional_token(
+    credentials: HTTPAuthorizationCredentials | None = Depends(security),
+) -> TokenClaims | None:
+    """FastAPI dependency for endpoints that are publicly readable but optionally authed.
+
+    - No token → returns ``None`` (anonymous access allowed).
+    - Token present but invalid/expired/revoked → raises 401 (don't silently
+      ignore a bad credential that the caller clearly intended to use).
+    - Token present and valid → returns decoded claims like ``require_valid_token``.
+
+    Use this on GET endpoints for public resources. Pair with a visibility
+    check in the handler: if the resource is private and claims is None, raise 401.
+    """
+    if credentials is None:
+        return None
+
+    token = credentials.credentials
+
+    try:
+        claims = validate_access_code(token)
+        token_hash = hash_token(token)
+        cached = get_revocation_status(token_hash)
+        if cached is not None:
+            if cached:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Access code has been revoked.",
+                    headers={"WWW-Authenticate": "Bearer"},
+                )
+            return claims
+
+        if await _check_and_register_token(token, claims):
+            set_revocation_status(token_hash, True)
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Access code has been revoked.",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        set_revocation_status(token_hash, False)
+        return claims
+
+    except AccessCodeError as e:
+        logger.warning("Invalid optional token: %s", e)
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired access code.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+
 async def require_device_id(
     x_device_id: str | None = Header(None, alias="X-Device-ID"),
 ) -> str:

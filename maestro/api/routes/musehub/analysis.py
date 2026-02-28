@@ -30,12 +30,13 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from maestro.auth.dependencies import TokenClaims, require_valid_token
+from maestro.auth.dependencies import TokenClaims, optional_token, require_valid_token
 from maestro.db import get_db
 from maestro.models.musehub_analysis import (
     ALL_DIMENSIONS,
     AggregateAnalysisResponse,
     AnalysisResponse,
+    DynamicsPageData,
     EmotionMapResponse,
 )
 from maestro.services import musehub_analysis, musehub_repository
@@ -70,7 +71,7 @@ async def get_aggregate_analysis(
     track: str | None = Query(None, description="Instrument track filter, e.g. 'bass', 'keys'"),
     section: str | None = Query(None, description="Section filter, e.g. 'chorus', 'verse_1'"),
     db: AsyncSession = Depends(get_db),
-    _: TokenClaims = Depends(require_valid_token),
+    claims: TokenClaims | None = Depends(optional_token),
 ) -> AggregateAnalysisResponse:
     """Return all 13 dimension analyses for a Muse repo ref.
 
@@ -82,6 +83,12 @@ async def get_aggregate_analysis(
     repo = await musehub_repository.get_repo(db, repo_id)
     if repo is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repo not found")
+    if repo.visibility != "public" and claims is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required to access private repos.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
 
     result = musehub_analysis.compute_aggregate_analysis(
         repo_id=repo_id,
@@ -173,7 +180,7 @@ async def get_dimension_analysis(
     track: str | None = Query(None, description="Instrument track filter, e.g. 'bass', 'keys'"),
     section: str | None = Query(None, description="Section filter, e.g. 'chorus', 'verse_1'"),
     db: AsyncSession = Depends(get_db),
-    _: TokenClaims = Depends(require_valid_token),
+    claims: TokenClaims | None = Depends(optional_token),
 ) -> AnalysisResponse:
     """Return analysis for one musical dimension of a Muse repo ref.
 
@@ -193,6 +200,12 @@ async def get_dimension_analysis(
     repo = await musehub_repository.get_repo(db, repo_id)
     if repo is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repo not found")
+    if repo.visibility != "public" and claims is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required to access private repos.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
 
     result = musehub_analysis.compute_analysis_response(
         repo_id=repo_id,
@@ -203,6 +216,63 @@ async def get_dimension_analysis(
     )
 
     etag = _etag(repo_id, ref, dimension)
+    response.headers["ETag"] = etag
+    response.headers["Last-Modified"] = _LAST_MODIFIED
+    response.headers["Cache-Control"] = "private, max-age=60"
+    return result
+
+
+@router.get(
+    "/repos/{repo_id}/analysis/{ref}/dynamics/page",
+    response_model=DynamicsPageData,
+    summary="Per-track dynamics page data for the Dynamics Analysis page",
+    description=(
+        "Returns enriched per-track dynamic analysis: velocity profiles, arc "
+        "classifications, peak velocity, velocity range, and cross-track loudness "
+        "data.  Consumed by the Dynamics Analysis web page and by AI agents that "
+        "need per-track dynamic context for orchestration decisions. "
+        "Use ``?track=<name>`` to restrict to a single instrument track. "
+        "Use ``?section=<label>`` to restrict to a musical section."
+    ),
+)
+async def get_dynamics_page_data(
+    repo_id: str,
+    ref: str,
+    response: Response,
+    track: str | None = Query(None, description="Instrument track filter, e.g. 'bass', 'keys'"),
+    section: str | None = Query(None, description="Section filter, e.g. 'chorus', 'verse_1'"),
+    db: AsyncSession = Depends(get_db),
+    claims: TokenClaims | None = Depends(optional_token),
+) -> DynamicsPageData:
+    """Return per-track dynamics data for the Dynamics Analysis web page.
+
+    Unlike the single-dimension ``dynamics`` endpoint (which returns aggregate
+    metrics for the whole piece), this endpoint returns one
+    :class:`~maestro.models.musehub_analysis.TrackDynamicsProfile` per active
+    instrument track so the page can render individual velocity graphs and arc
+    badges.
+
+    Cache semantics match the other analysis endpoints: ETag is derived from
+    ``repo_id``, ``ref``, and the ``"dynamics-page"`` sentinel.
+    """
+    repo = await musehub_repository.get_repo(db, repo_id)
+    if repo is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repo not found")
+    if repo.visibility != "public" and claims is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required to access private repos.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    result = musehub_analysis.compute_dynamics_page_data(
+        repo_id=repo_id,
+        ref=ref,
+        track=track,
+        section=section,
+    )
+
+    etag = _etag(repo_id, ref, "dynamics-page")
     response.headers["ETag"] = etag
     response.headers["Last-Modified"] = _LAST_MODIFIED
     response.headers["Cache-Control"] = "private, max-age=60"

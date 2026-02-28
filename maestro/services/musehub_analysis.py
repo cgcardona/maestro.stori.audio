@@ -49,7 +49,9 @@ from maestro.models.musehub_analysis import (
     ContourData,
     DimensionData,
     DivergenceData,
+    DynamicArc,
     DynamicsData,
+    DynamicsPageData,
     EmotionData,
     EmotionDrift,
     EmotionMapPoint,
@@ -63,12 +65,15 @@ from maestro.models.musehub_analysis import (
     MeterData,
     ModulationPoint,
     MotifEntry,
+    MotifRecurrenceCell,
+    MotifTransformation,
     MotifsData,
     SectionEntry,
     SimilarCommit,
     SimilarityData,
     TempoChange,
     TempoData,
+    TrackDynamicsProfile,
     VelocityEvent,
 )
 
@@ -83,6 +88,10 @@ _EMOTIONS = ["joyful", "melancholic", "tense", "serene", "energetic", "brooding"
 _FORMS = ["AABA", "verse-chorus", "through-composed", "rondo", "binary", "ternary"]
 _GROOVES = ["straight", "swing", "shuffled", "half-time", "double-time"]
 _TONICS = ["C", "F", "G", "D", "Bb", "Eb"]
+_DYNAMIC_ARCS: list[DynamicArc] = [
+    "flat", "terraced", "crescendo", "decrescendo", "swell", "hairpin",
+]
+_DEFAULT_TRACKS = ["bass", "keys", "drums", "melody", "pads"]
 
 
 def _ref_hash(ref: str) -> int:
@@ -169,13 +178,141 @@ def _build_dynamics(ref: str, track: Optional[str], section: Optional[str]) -> D
     )
 
 
+_CONTOUR_LABELS = [
+    "ascending-step",
+    "descending-step",
+    "arch",
+    "valley",
+    "oscillating",
+    "static",
+]
+_TRANSFORMATION_TYPES = ["inversion", "retrograde", "retrograde-inversion", "transposition"]
+_MOTIF_TRACKS = ["melody", "bass", "keys", "strings", "brass"]
+_MOTIF_SECTIONS = ["intro", "verse_1", "chorus", "verse_2", "outro"]
+
+
+def _invert_intervals(intervals: list[int]) -> list[int]:
+    """Return the melodic inversion (negate all semitone intervals)."""
+    return [-x for x in intervals]
+
+
+def _retrograde_intervals(intervals: list[int]) -> list[int]:
+    """Return the retrograde (reversed interval sequence)."""
+    return list(reversed(intervals))
+
+
 def _build_motifs(ref: str, track: Optional[str], section: Optional[str]) -> MotifsData:
+    """Build stub motif analysis with transformations, contour, and recurrence grid.
+
+    Deterministic for a given ``ref`` value.  Produces 2–4 motifs, each with:
+    - Original interval sequence and occurrence beats
+    - Melodic contour label (arch, valley, oscillating, etc.)
+    - All tracks where the motif or its transformations appear
+    - Up to 3 transformations (inversion, retrograde, transposition)
+    - Flat track×section recurrence grid for heatmap rendering
+    """
     seed = _ref_hash(ref)
     n_motifs = 2 + (seed % 3)
+    all_tracks = _MOTIF_TRACKS[: 2 + (seed % 3)]
+    sections = _MOTIF_SECTIONS
+
     motifs: list[MotifEntry] = []
     for i in range(n_motifs):
         intervals = [2, -1, 3, -2][: 2 + i]
         occurrences = [float(j * 8 + i * 2) for j in range(2 + (seed % 2))]
+        contour_label = _pick(seed, _CONTOUR_LABELS, offset=i)
+        primary_track = track or all_tracks[i % len(all_tracks)]
+
+        # Cross-track sharing: motif appears in 1–3 tracks
+        n_sharing_tracks = 1 + (seed + i) % min(3, len(all_tracks))
+        sharing_tracks = [all_tracks[(i + k) % len(all_tracks)] for k in range(n_sharing_tracks)]
+        if primary_track not in sharing_tracks:
+            sharing_tracks = [primary_track] + sharing_tracks[: n_sharing_tracks - 1]
+
+        # Build transformations
+        transformations: list[MotifTransformation] = []
+        inv_occurrences = [float(j * 8 + i * 2 + 4) for j in range(1 + (seed % 2))]
+        transformations.append(
+            MotifTransformation(
+                transformation_type="inversion",
+                intervals=_invert_intervals(intervals),
+                transposition_semitones=0,
+                occurrences=inv_occurrences,
+                track=sharing_tracks[0],
+            )
+        )
+        if len(intervals) >= 2:
+            retro_occurrences = [float(j * 8 + i * 2 + 2) for j in range(1 + (seed % 2))]
+            transformations.append(
+                MotifTransformation(
+                    transformation_type="retrograde",
+                    intervals=_retrograde_intervals(intervals),
+                    transposition_semitones=0,
+                    occurrences=retro_occurrences,
+                    track=sharing_tracks[-1],
+                )
+            )
+        if (seed + i) % 2 == 0:
+            transpose_by = 5 if (seed % 2 == 0) else 7
+            transpo_occurrences = [float(j * 16 + i * 2) for j in range(1 + (seed % 2))]
+            transformations.append(
+                MotifTransformation(
+                    transformation_type="transposition",
+                    intervals=[x for x in intervals],
+                    transposition_semitones=transpose_by,
+                    occurrences=transpo_occurrences,
+                    track=sharing_tracks[min(1, len(sharing_tracks) - 1)],
+                )
+            )
+
+        # Build recurrence grid: track × section
+        recurrence_grid: list[MotifRecurrenceCell] = []
+        for t in all_tracks:
+            for s in sections:
+                # Original present in primary track, first two sections
+                if t == primary_track and s in sections[:2]:
+                    recurrence_grid.append(
+                        MotifRecurrenceCell(
+                            track=t,
+                            section=s,
+                            present=True,
+                            occurrence_count=1 + (seed % 2),
+                            transformation_types=["original"],
+                        )
+                    )
+                # Inversion in sharing tracks at chorus
+                elif t in sharing_tracks and s == "chorus":
+                    recurrence_grid.append(
+                        MotifRecurrenceCell(
+                            track=t,
+                            section=s,
+                            present=True,
+                            occurrence_count=1,
+                            transformation_types=["inversion"],
+                        )
+                    )
+                # Transposition in bridge / outro for certain motifs
+                elif (seed + i) % 2 == 0 and t in sharing_tracks and s == "outro":
+                    recurrence_grid.append(
+                        MotifRecurrenceCell(
+                            track=t,
+                            section=s,
+                            present=True,
+                            occurrence_count=1,
+                            transformation_types=["transposition"],
+                        )
+                    )
+                else:
+                    recurrence_grid.append(
+                        MotifRecurrenceCell(
+                            track=t,
+                            section=s,
+                            present=False,
+                            occurrence_count=0,
+                            transformation_types=[],
+                        )
+                    )
+
         motifs.append(
             MotifEntry(
                 motif_id=f"M{i + 1:02d}",
@@ -183,10 +320,20 @@ def _build_motifs(ref: str, track: Optional[str], section: Optional[str]) -> Mot
                 length_beats=float(2 + i),
                 occurrence_count=len(occurrences),
                 occurrences=occurrences,
-                track=track or ("melody" if i == 0 else "bass"),
+                track=primary_track,
+                contour_label=contour_label,
+                tracks=sharing_tracks,
+                transformations=transformations,
+                recurrence_grid=recurrence_grid,
             )
         )
-    return MotifsData(total_motifs=len(motifs), motifs=motifs)
+
+    return MotifsData(
+        total_motifs=len(motifs),
+        motifs=motifs,
+        sections=sections,
+        all_tracks=all_tracks,
+    )
 
 
 def _build_form(ref: str, track: Optional[str], section: Optional[str]) -> FormData:
@@ -449,6 +596,85 @@ def compute_analysis_response(
     )
     logger.info("✅ analysis/%s repo=%s ref=%s", dimension, repo_id[:8], ref)
     return response
+
+
+def _build_track_dynamics_profile(
+    ref: str,
+    track: str,
+    track_index: int,
+) -> TrackDynamicsProfile:
+    """Build a deterministic per-track dynamic profile for the dynamics page.
+
+    Seed is derived from ``ref`` XOR ``track_index`` so each track gets a
+    distinct but reproducible curve for the same ref.
+    """
+    seed = _ref_hash(ref) ^ (track_index * 0x9E3779B9)
+    base_vel = 50 + (seed % 50)
+    peak = min(127, base_vel + 20 + (seed % 30))
+    low = max(10, base_vel - 20 - (seed % 20))
+    mean = round(float((peak + low) / 2), 2)
+
+    curve = [
+        VelocityEvent(
+            beat=float(i * 2),
+            velocity=min(127, max(10, base_vel + (seed >> (i % 16)) % 25 - 12)),
+        )
+        for i in range(16)
+    ]
+
+    arc: DynamicArc = _DYNAMIC_ARCS[(seed + track_index) % len(_DYNAMIC_ARCS)]
+
+    return TrackDynamicsProfile(
+        track=track,
+        peak_velocity=peak,
+        min_velocity=low,
+        mean_velocity=mean,
+        velocity_range=peak - low,
+        arc=arc,
+        velocity_curve=curve,
+    )
+
+
+def compute_dynamics_page_data(
+    *,
+    repo_id: str,
+    ref: str,
+    track: Optional[str] = None,
+    section: Optional[str] = None,
+) -> DynamicsPageData:
+    """Build per-track dynamics data for the Dynamics Analysis page.
+
+    Returns one :class:`TrackDynamicsProfile` per active track, or a single
+    entry when ``track`` filter is applied.  Each profile includes a velocity
+    curve suitable for rendering a profile graph, an arc classification badge,
+    and peak/range metrics for the loudness comparison bar chart.
+
+    Args:
+        repo_id:  Muse Hub repo UUID.
+        ref:      Muse commit ref (branch name, commit ID, or tag).
+        track:    Optional track filter — if set, only that track is returned.
+        section:  Optional section filter (recorded in ``filters_applied``).
+
+    Returns:
+        :class:`DynamicsPageData` with per-track profiles.
+    """
+    tracks_to_include = [track] if track else _DEFAULT_TRACKS
+    profiles = [
+        _build_track_dynamics_profile(ref, t, i)
+        for i, t in enumerate(tracks_to_include)
+    ]
+    now = _utc_now()
+    logger.info(
+        "✅ dynamics/page repo=%s ref=%s tracks=%d",
+        repo_id[:8], ref, len(profiles),
+    )
+    return DynamicsPageData(
+        ref=ref,
+        repo_id=repo_id,
+        computed_at=now,
+        tracks=profiles,
+        filters_applied=AnalysisFilters(track=track, section=section),
+    )
 
 
 def compute_emotion_map(

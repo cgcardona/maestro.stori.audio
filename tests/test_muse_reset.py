@@ -12,10 +12,13 @@ Verifies:
 - test_muse_reset_ref_not_found                  — unknown ref returns USER_ERROR
 - test_muse_reset_hard_confirmation               — hard prompts for confirmation
 - test_muse_reset_abbreviated_sha                 — abbreviated SHA prefix resolves
-- test_store_object_idempotent                    — store_object is idempotent
 - test_resolve_ref_head                           — resolve_ref("HEAD")
 - test_resolve_ref_head_tilde_zero                — resolve_ref("HEAD~0") = HEAD
 - test_boundary_no_forbidden_imports              — AST boundary seal
+
+Object store unit tests live in ``tests/test_muse_object_store.py``.
+Cross-command round-trip tests (commit → read-tree, commit → reset) also
+live there, since they exercise the shared object store contract.
 """
 from __future__ import annotations
 
@@ -35,14 +38,13 @@ from maestro.muse_cli import models as cli_models  # noqa: F401 — register tab
 from maestro.muse_cli.errors import ExitCode
 from maestro.muse_cli.merge_engine import write_merge_state
 from maestro.muse_cli.models import MuseCliCommit, MuseCliObject, MuseCliSnapshot
+from maestro.muse_cli.object_store import object_path, write_object
 from maestro.services.muse_reset import (
     MissingObjectError,
     ResetMode,
     ResetResult,
-    object_store_path,
     perform_reset,
     resolve_ref,
-    store_object,
 )
 
 
@@ -137,45 +139,8 @@ def _read_ref(root: pathlib.Path, branch: str = "main") -> str:
 
 
 def _seed_object_store(root: pathlib.Path, object_id: str, content: bytes) -> None:
-    """Manually write a blob into the .muse/objects/ store."""
-    dest = object_store_path(root, object_id)
-    dest.parent.mkdir(parents=True, exist_ok=True)
-    dest.write_bytes(content)
-
-
-# ---------------------------------------------------------------------------
-# Unit tests — pure helpers
-# ---------------------------------------------------------------------------
-
-
-class TestStoreObject:
-
-    def test_store_object_idempotent(self, tmp_path: pathlib.Path) -> None:
-        """store_object() does not raise or overwrite when called twice."""
-        root = tmp_path
-        (root / ".muse").mkdir()
-        object_id = "a" * 64
-        src = tmp_path / "file.mid"
-        src.write_bytes(b"MIDI content")
-
-        store_object(root, object_id, src)
-        dest = object_store_path(root, object_id)
-        assert dest.exists()
-        mtime_first = dest.stat().st_mtime
-
-        store_object(root, object_id, src)
-        assert dest.stat().st_mtime == mtime_first  # not touched
-
-
-class TestObjectStorePath:
-
-    def test_sharded_by_first_two_chars(self, tmp_path: pathlib.Path) -> None:
-        """object_store_path shards by the first two hex characters."""
-        root = tmp_path
-        object_id = "ab" + "cd" * 31
-        result = object_store_path(root, object_id)
-        assert result.parent.name == "ab"
-        assert result.name == object_id[2:]
+    """Manually write a blob into the .muse/objects/ store via the canonical module."""
+    write_object(root, object_id, content)
 
 
 # ---------------------------------------------------------------------------

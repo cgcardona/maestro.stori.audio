@@ -1,0 +1,151 @@
+{% extends "musehub/base.html" %}
+
+{% block title %}Tempo {{ ref[:8] }}{% endblock %}
+{% block breadcrumb %}
+  <a href="/musehub/ui/{{ owner }}/{{ repo_slug }}">{{ owner }}/{{ repo_slug }}</a> /
+  analysis / {{ ref[:8] }} / tempo
+{% endblock %}
+{% block repo_nav %}{% include "musehub/partials/repo_nav.html" %}{% endblock %}
+
+{% block page_data %}
+const repoId = {{ repo_id | tojson }};
+const ref    = {{ ref | tojson }};
+const base   = {{ base_url | tojson }};
+{% endblock %}
+
+{% block page_script %}
+{% raw %}
+function tempoChangeSvg(changes, baseBpm) {
+  if (!changes || changes.length === 0) {
+    return '<p style="font-size:13px;color:#8b949e">&#10003; Constant tempo — no tempo changes detected.</p>';
+  }
+  const pts = [{ beat: 0, bpm: baseBpm }, ...changes];
+  const W = 700, H = 100, pad = 28;
+  const beats = pts.map(p => p.beat);
+  const bpms  = pts.map(p => p.bpm);
+  const minB = Math.min(...beats), maxB = Math.max(...beats) || 1;
+  const minBpm = Math.min(...bpms) * 0.9, maxBpm = Math.max(...bpms) * 1.05;
+  const bpmRange = maxBpm - minBpm || 1;
+
+  const coords = pts.map(p => {
+    const x = pad + ((p.beat - minB) / (maxB - minB || 1)) * (W - pad * 2);
+    const y = pad + ((maxBpm - p.bpm) / bpmRange) * (H - pad * 2);
+    return x + ',' + y;
+  }).join(' ');
+
+  const dots = pts.slice(1).map(p => {
+    const x = pad + ((p.beat - minB) / (maxB - minB || 1)) * (W - pad * 2);
+    const y = pad + ((maxBpm - p.bpm) / bpmRange) * (H - pad * 2);
+    return `<circle cx="${x}" cy="${y}" r="4" fill="#f0883e" title="beat ${p.beat}: ${p.bpm} BPM"/>`;
+  }).join('');
+
+  return `
+    <svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto;display:block" role="img"
+         aria-label="Tempo change timeline">
+      <polyline points="${coords}" fill="none" stroke="#58a6ff" stroke-width="2"/>
+      ${dots}
+      <text x="${pad}" y="${H - 6}" font-size="10" fill="#8b949e">beat ${Math.round(minB)}</text>
+      <text x="${W - pad - 20}" y="${H - 6}" font-size="10" fill="#8b949e">beat ${Math.round(maxB)}</text>
+      <text x="4" y="${pad + 4}" font-size="10" fill="#8b949e">${Math.round(maxBpm)}</text>
+      <text x="4" y="${H - pad + 4}" font-size="10" fill="#8b949e">${Math.round(minBpm)}</text>
+    </svg>`;
+}
+
+function stabilityBar(stability) {
+  const pct = Math.round(stability * 100);
+  const col = stability >= 0.8 ? '#3fb950' : stability >= 0.5 ? '#f0883e' : '#f85149';
+  const label = stability >= 0.8 ? 'metronomic' : stability >= 0.5 ? 'moderate' : 'free tempo';
+  return `
+    <div>
+      <span class="meta-label">Stability (${pct}% — ${label})</span>
+      <div style="margin-top:4px;height:8px;background:#21262d;border-radius:4px;overflow:hidden">
+        <div style="height:100%;width:${pct}%;background:${col};border-radius:4px"></div>
+      </div>
+    </div>`;
+}
+
+async function load() {
+  initRepoNav(repoId);
+  try {
+    const data = await apiFetch('/repos/' + repoId + '/analysis/' + encodeURIComponent(ref) + '/tempo');
+    const d = data.data;
+
+    const changeSvg = tempoChangeSvg(d.tempoChanges, d.bpm);
+    const stability = stabilityBar(d.stability);
+
+    const changeTable = (d.tempoChanges && d.tempoChanges.length > 0) ? `
+      <table style="width:100%;border-collapse:collapse;font-size:13px;margin-top:12px">
+        <thead>
+          <tr style="border-bottom:1px solid #30363d">
+            <th style="text-align:left;padding:4px 8px;color:#8b949e;font-weight:600">Beat</th>
+            <th style="text-align:left;padding:4px 8px;color:#8b949e;font-weight:600">BPM</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${d.tempoChanges.map(c => `
+            <tr style="border-bottom:1px solid #21262d">
+              <td style="padding:4px 8px;font-family:monospace">${c.beat}</td>
+              <td style="padding:4px 8px;color:#f0883e;font-family:monospace">${c.bpm}</td>
+            </tr>`).join('')}
+        </tbody>
+      </table>` : '';
+
+    document.getElementById('content').innerHTML = `
+      <div style="margin-bottom:12px">
+        <a href="${base}">&larr; Back to repo</a>
+      </div>
+      <div class="card">
+        <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:16px">
+          <h1 style="margin:0">&#9201; Tempo Analysis</h1>
+          <span class="meta-value" style="font-family:monospace;color:#8b949e;font-size:13px">
+            ref: ${escHtml(ref.substring(0,8))}
+          </span>
+        </div>
+
+        <div class="meta-row" style="margin-bottom:16px">
+          <div class="meta-item">
+            <span class="meta-label">BPM</span>
+            <span class="meta-value" style="font-size:28px;font-weight:700;color:#e6edf3">
+              ${Math.round(d.bpm)}
+            </span>
+          </div>
+          <div class="meta-item">
+            <span class="meta-label">Time Feel</span>
+            <span class="meta-value">${escHtml(d.timeFeel)}</span>
+          </div>
+          <div class="meta-item">
+            <span class="meta-label">Tempo Changes</span>
+            <span class="meta-value">${(d.tempoChanges || []).length}</span>
+          </div>
+        </div>
+
+        ${stability}
+
+        <div style="background:#0d1117;border:1px solid #30363d;border-radius:6px;padding:12px;margin-top:16px">
+          <span class="meta-label" style="display:block;margin-bottom:8px">
+            Tempo Changes Within Piece
+            <span style="font-size:11px;color:#8b949e;margin-left:8px">&#9632; = change event</span>
+          </span>
+          ${changeSvg}
+          ${changeTable}
+        </div>
+
+        <p style="font-size:12px;color:#8b949e;margin-top:12px">
+          &#128336; To view BPM history across commits, compare refs using the
+          <a href="${base}/analysis/${encodeURIComponent(ref)}/contour">contour page</a>
+          or the JSON API at
+          <code style="font-size:11px;background:#0d1117;padding:2px 6px;border-radius:4px">
+            /api/v1/musehub/repos/${repoId}/analysis/${encodeURIComponent(ref)}/tempo
+          </code>.
+        </p>
+      </div>`;
+  } catch(e) {
+    if (e.message !== 'auth')
+      document.getElementById('content').innerHTML =
+        '<p class="error">&#10005; ' + escHtml(e.message) + '</p>';
+  }
+}
+
+load();
+{% endraw %}
+{% endblock %}

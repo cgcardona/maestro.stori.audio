@@ -30,22 +30,22 @@ Restore reads objects from ``.muse/objects/`` exactly like ``muse reset
 and ``muse-work/`` is left unchanged (the restore is atomic per path).
 
 This module is a pure service layer — no Typer, no CLI, no StateStore.
-Import boundary: may import muse_cli.{db,models}, muse_reset (for object
-helpers), but NOT executor, maestro_handlers, mcp, or StateStore.
+Import boundary: may import muse_cli.{db,models,object_store}, muse_reset
+(for MissingObjectError and resolve_ref), but NOT executor,
+maestro_handlers, mcp, or StateStore.
 """
 from __future__ import annotations
 
 import logging
 import pathlib
-import shutil
 from dataclasses import dataclass, field
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from maestro.muse_cli.db import get_commit_snapshot_manifest
+from maestro.muse_cli.object_store import has_object, restore_object
 from maestro.services.muse_reset import (
     MissingObjectError,
-    object_store_path,
     resolve_ref,
 )
 
@@ -187,8 +187,7 @@ async def perform_restore(
     # ── Validate: every object must exist (fail-fast before touching disk) ─
     for rel_path in normalised:
         object_id = manifest[rel_path]
-        obj_path = object_store_path(root, object_id)
-        if not obj_path.exists():
+        if not has_object(root, object_id):
             raise MissingObjectError(object_id, rel_path)
 
     # ── Restore files into muse-work/ ─────────────────────────────────────
@@ -198,10 +197,8 @@ async def perform_restore(
     restored: list[str] = []
     for rel_path in normalised:
         object_id = manifest[rel_path]
-        obj_path = object_store_path(root, object_id)
         dest = workdir / rel_path
-        dest.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(obj_path, dest)
+        restore_object(root, object_id, dest)
         restored.append(rel_path)
         logger.debug(
             "✅ Restored %s from object %s (commit %s)",
