@@ -2397,6 +2397,56 @@ Named result types for Muse CLI commands. All types are `TypedDict` subclasses
 defined in their respective command modules and returned from the injectable
 async core functions (the testable layer that Typer commands wrap).
 
+### `FormSection`
+
+**Module:** `maestro/muse_cli/commands/form.py`
+
+A single structural unit within a detected or annotated musical form.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `label` | `str` | Display label for this section (e.g. `"intro"`, `"A"`, `"chorus"`) |
+| `role` | `str` | Semantic role; one of the ROLE_LABELS vocabulary or the label itself for letter-only sections |
+| `index` | `int` | Zero-based position in the section sequence |
+
+**Producer:** `_stub_form_sections()`, `_form_set_async()`
+**Consumer:** `FormAnalysisResult.sections`, `_render_form_text()`, `_render_map_text()`
+
+### `FormAnalysisResult`
+
+**Module:** `maestro/muse_cli/commands/form.py`
+
+Full form analysis for one commit. The stable schema returned by all form
+detection and annotation functions.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `commit` | `str` | Resolved commit SHA (8-char) or empty string for working-tree annotations |
+| `branch` | `str` | Current branch name |
+| `form_string` | `str` | Pipe-separated sequence of section labels, e.g. `"intro \| A \| B \| A \| outro"` |
+| `sections` | `list[FormSection]` | Ordered list of section entries |
+| `source` | `str` | `"stub"` (placeholder analysis) or `"annotation"` (explicit `--set`) |
+
+**Producer:** `_form_detect_async()`, `_form_set_async()`
+**Consumer:** `form()` Typer command, `_render_form_text()`, `_render_map_text()`, `FormHistoryEntry.result`
+
+### `FormHistoryEntry`
+
+**Module:** `maestro/muse_cli/commands/form.py`
+
+A form analysis result paired with its position in the commit history.
+Used by `_form_history_async()` to return a ranked list of structural changes.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `position` | `int` | 1-based rank in the history list (1 = newest) |
+| `result` | `FormAnalysisResult` | Full form analysis for this commit |
+
+**Producer:** `_form_history_async()`
+**Consumer:** `form()` Typer command via `--history`, `_render_history_text()`
+
+---
+
 ### `KeyDetectResult`
 
 **Module:** `maestro/muse_cli/commands/key.py`
@@ -2434,6 +2484,35 @@ One entry in a `muse key --history` listing, representing the key at a given com
 **Producer:** `_key_history_async()`
 **Consumer:** `_format_history()`, `key()` Typer command via `--history`
 
+---
+
+### `TempoScaleResult`
+
+**Module:** `maestro/muse_cli/commands/tempo_scale.py`
+
+Result of a `muse tempo-scale` operation.  Agents should treat `new_commit`
+as the SHA that replaces the source commit in the timeline.  The result is
+deterministic: same `source_commit` + `factor` + `track` + `preserve_expressions`
+always produces the same `new_commit`.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `source_commit` | `str` | Short SHA of the input commit |
+| `new_commit` | `str` | Short SHA of the newly created tempo-scaled commit |
+| `factor` | `float` | Scaling factor applied: `< 1` = slower, `> 1` = faster |
+| `source_bpm` | `float` | Tempo of the source commit in BPM (stub: 120.0) |
+| `new_bpm` | `float` | Resulting tempo after scaling (`source_bpm × factor`) |
+| `track` | `str` | MIDI track filter; `"all"` when no filter is applied |
+| `preserve_expressions` | `bool` | Whether CC/expression events were scaled proportionally |
+| `message` | `str` | Commit message for the new scaled commit |
+
+**Producer:** `_tempo_scale_async()`
+**Consumer:** `_format_result()`, `tempo_scale()` Typer command
+
+**Pure helpers:**
+- `compute_factor_from_bpm(source_bpm, target_bpm) -> float` — compute factor = target / source
+- `apply_factor(bpm, factor) -> float` — compute new BPM = bpm × factor
+
 ### `SwingDetectResult`
 
 **Module:** `maestro/muse_cli/commands/swing.py`
@@ -2466,6 +2545,65 @@ Swing comparison between HEAD and a reference commit.
 
 **Producer:** `_swing_compare_async()`
 **Consumer:** `_format_compare()`
+
+### `ChordEvent`
+
+**Module:** `maestro/muse_cli/commands/chord_map.py`
+
+A single chord occurrence in the arrangement timeline.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `bar` | `int` | Musical bar number (1-indexed). |
+| `beat` | `int` | Beat within the bar (1-indexed). |
+| `chord` | `str` | Chord symbol, e.g. `"Cmaj9"`, `"Am11"`, `"G7"`. |
+| `duration` | `float` | Duration in bars (fractional for sub-bar chords). |
+| `track` | `str` | Track/instrument the chord belongs to, or `"all"`. |
+
+**Producer:** `_stub_chord_events()`, future: Storpheus MIDI analysis route.
+**Consumer:** `ChordMapResult.chords`, renderers.
+
+---
+
+### `VoiceLeadingStep`
+
+**Module:** `maestro/muse_cli/commands/chord_map.py`
+
+Voice-leading movement from one chord to the next.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `from_chord` | `str` | Source chord symbol. |
+| `to_chord` | `str` | Target chord symbol. |
+| `from_bar` | `int` | Bar where the source chord begins. |
+| `to_bar` | `int` | Bar where the target chord begins. |
+| `movements` | `list[str]` | Per-voice motion strings, e.g. `["E->E", "G->G", "B->A"]`. |
+
+**Producer:** `_stub_voice_leading_steps()`, future: Storpheus MIDI analysis.
+**Consumer:** `ChordMapResult.voice_leading`, `_render_text()`.
+
+---
+
+### `ChordMapResult`
+
+**Module:** `maestro/muse_cli/commands/chord_map.py`
+
+Full chord-map result for a commit.  Returned by `_chord_map_async()` and
+passed to one of the three renderers.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `commit` | `str` | Short commit ref (8 chars or user-supplied). |
+| `branch` | `str` | Branch name at HEAD. |
+| `track` | `str` | Track filter applied (`"all"` if none). |
+| `section` | `str` | Section filter applied (empty string if none). |
+| `chords` | `list[ChordEvent]` | Time-ordered chord events. |
+| `voice_leading` | `list[VoiceLeadingStep]` | Voice-leading steps between consecutive chords (empty unless `--voice-leading`). |
+
+**Producer:** `_chord_map_async()`
+**Consumer:** `_render_text()`, `_render_json()`, `_render_mermaid()`
+
+---
 
 ### `AnswerResult`
 
