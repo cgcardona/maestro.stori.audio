@@ -2397,6 +2397,83 @@ Named result types for Muse CLI commands. All types are `TypedDict` subclasses
 defined in their respective command modules and returned from the injectable
 async core functions (the testable layer that Typer commands wrap).
 
+### `TempoScaleResult`
+
+**Module:** `maestro/muse_cli/commands/tempo_scale.py`
+
+Result of a `muse tempo-scale` operation.  Agents should treat `new_commit`
+as the SHA that replaces the source commit in the timeline.  The result is
+deterministic: same `source_commit` + `factor` + `track` + `preserve_expressions`
+always produces the same `new_commit`.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `source_commit` | `str` | Short SHA of the input commit |
+| `new_commit` | `str` | Short SHA of the newly created tempo-scaled commit |
+| `factor` | `float` | Scaling factor applied: `< 1` = slower, `> 1` = faster |
+| `source_bpm` | `float` | Tempo of the source commit in BPM (stub: 120.0) |
+| `new_bpm` | `float` | Resulting tempo after scaling (`source_bpm × factor`) |
+| `track` | `str` | MIDI track filter; `"all"` when no filter is applied |
+| `preserve_expressions` | `bool` | Whether CC/expression events were scaled proportionally |
+| `message` | `str` | Commit message for the new scaled commit |
+
+**Producer:** `_tempo_scale_async()`
+**Consumer:** `_format_result()`, `tempo_scale()` Typer command
+
+**Pure helpers:**
+- `compute_factor_from_bpm(source_bpm, target_bpm) -> float` — compute factor = target / source
+- `apply_factor(bpm, factor) -> float` — compute new BPM = bpm × factor
+
+---
+
+### `FormSection`
+
+**Module:** `maestro/muse_cli/commands/form.py`
+
+A single structural unit within a detected or annotated musical form.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `label` | `str` | Display label for this section (e.g. `"intro"`, `"A"`, `"chorus"`) |
+| `role` | `str` | Semantic role; one of the ROLE_LABELS vocabulary or the label itself for letter-only sections |
+| `index` | `int` | Zero-based position in the section sequence |
+
+**Producer:** `_stub_form_sections()`, `_form_set_async()`
+**Consumer:** `FormAnalysisResult.sections`, `_render_form_text()`, `_render_map_text()`
+
+### `FormAnalysisResult`
+
+**Module:** `maestro/muse_cli/commands/form.py`
+
+Full form analysis for one commit. The stable schema returned by all form
+detection and annotation functions.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `commit` | `str` | Resolved commit SHA (8-char) or empty string for working-tree annotations |
+| `branch` | `str` | Current branch name |
+| `form_string` | `str` | Pipe-separated sequence of section labels, e.g. `"intro \| A \| B \| A \| outro"` |
+| `sections` | `list[FormSection]` | Ordered list of section entries |
+| `source` | `str` | `"stub"` (placeholder analysis) or `"annotation"` (explicit `--set`) |
+
+**Producer:** `_form_detect_async()`, `_form_set_async()`
+**Consumer:** `form()` Typer command, `_render_form_text()`, `_render_map_text()`, `FormHistoryEntry.result`
+
+### `FormHistoryEntry`
+
+**Module:** `maestro/muse_cli/commands/form.py`
+
+A form analysis result paired with its position in the commit history.
+Used by `_form_history_async()` to return a ranked list of structural changes.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `position` | `int` | 1-based rank in the history list (1 = newest) |
+| `result` | `FormAnalysisResult` | Full form analysis for this commit |
+
+**Producer:** `_form_history_async()`
+**Consumer:** `form()` Typer command via `--history`, `_render_history_text()`
+
 ### `SwingDetectResult`
 
 **Module:** `maestro/muse_cli/commands/swing.py`
