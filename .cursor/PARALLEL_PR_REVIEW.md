@@ -72,16 +72,16 @@ cd "$REPO"
 DEV_SHA=$(git rev-parse dev)
 
 # --- define PRs ---
-# Batch: #136–#143 (muse CLI commands — find, export, context, arrange, divergence, meter, import, tempo)
+# Batch: #144–#151 (muse CLI commands — chord-map, form, tempo-scale, similarity, contour, diff, key, humanize)
 declare -a PRS=(
-  "136|feat: muse find — search commit history by musical properties"
-  "137|feat: muse export [<commit>] --format <format> — export a Muse snapshot to external formats"
-  "138|feat: muse context [<commit>] — output structured musical context for AI agent consumption"
-  "139|feat: muse arrange [<commit>] — display the arrangement map (instrument activity over sections)"
-  "140|feat: muse divergence <branch-a> <branch-b> — show how two branches have diverged musically"
-  "141|feat: muse meter [<commit>] [--set <time-sig>] — read or set the time signature"
-  "142|feat: muse import <file> — import a MIDI or MusicXML file as a new Muse commit"
-  "143|feat: muse tempo [<commit>] [--set <bpm>] — read or set the tempo of a commit"
+  "144|feat: muse chord-map <commit> — visualize the chord progression embedded in a commit"
+  "145|feat: muse form [<commit>] — analyze and display the musical form of a commit"
+  "146|feat: muse tempo-scale <factor> [<commit>] — stretch or compress timing across a commit"
+  "147|feat: muse similarity <commit-a> <commit-b> — compute musical similarity score between two commits"
+  "148|feat: muse contour — analyze melodic contour and phrase shape"
+  "149|feat: muse diff — add music-dimension diff flags (--harmonic, --rhythmic, --melodic, --structural, --dynamic)"
+  "150|feat: muse key [<commit>] [--set <key>] — read or annotate the musical key of a commit"
+  "151|feat: muse humanize — apply humanization to quantized MIDI"
 )
 
 # --- create worktrees + task files ---
