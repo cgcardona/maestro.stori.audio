@@ -166,6 +166,7 @@ from maestro.db.musehub_models import (
     MusehubRelease,
     MusehubRepo,
     MusehubSession,
+    MusehubStar,
 )
 
 
@@ -2001,6 +2002,151 @@ async def test_profile_page_has_forked_section_js(
     assert "forked-section" in body
     assert "API_FORKS" in body
     assert "forked from" in body
+
+
+# ---------------------------------------------------------------------------
+# Starred repos tab (issue #297)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.anyio
+async def test_profile_starred_repos_empty_list(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """GET /api/v1/musehub/users/{username}/starred returns empty list when user has no stars."""
+    await _make_profile(db_session, "freshstaruser")
+    response = await client.get("/api/v1/musehub/users/freshstaruser/starred")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["starred"] == []
+    assert data["total"] == 0
+
+
+@pytest.mark.anyio
+async def test_profile_starred_repos_returns_starred(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """GET /api/v1/musehub/users/{username}/starred returns starred repos with full metadata."""
+    await _make_profile(db_session, "stargazeruser")
+
+    repo = MusehubRepo(
+        name="awesome-groove",
+        owner="someartist",
+        slug="awesome-groove",
+        visibility="public",
+        owner_user_id="someartist-id",
+        description="A great groove",
+        key_signature="C major",
+        tempo_bpm=120,
+    )
+    db_session.add(repo)
+    await db_session.commit()
+    await db_session.refresh(repo)
+
+    star = MusehubStar(
+        repo_id=repo.repo_id,
+        user_id=_TEST_USER_ID,
+    )
+    db_session.add(star)
+    await db_session.commit()
+
+    response = await client.get("/api/v1/musehub/users/stargazeruser/starred")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["total"] == 1
+    assert len(data["starred"]) == 1
+    entry = data["starred"][0]
+    assert entry["repo"]["owner"] == "someartist"
+    assert entry["repo"]["slug"] == "awesome-groove"
+    assert entry["repo"]["description"] == "A great groove"
+    assert "starId" in entry
+    assert "starredAt" in entry
+
+
+@pytest.mark.anyio
+async def test_profile_starred_repos_404_for_unknown_user(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """GET /api/v1/musehub/users/{unknown}/starred returns 404 when user doesn't exist."""
+    response = await client.get("/api/v1/musehub/users/ghost-no-star-profile/starred")
+    assert response.status_code == 404
+
+
+@pytest.mark.anyio
+async def test_profile_starred_repos_no_auth_required(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """GET /api/v1/musehub/users/{username}/starred is publicly accessible without a JWT."""
+    await _make_profile(db_session, "public-staruser")
+    response = await client.get("/api/v1/musehub/users/public-staruser/starred")
+    assert response.status_code == 200
+    assert response.status_code != 401
+
+
+@pytest.mark.anyio
+async def test_profile_starred_repos_ordered_newest_first(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """GET /api/v1/musehub/users/{username}/starred returns stars newest first."""
+    from datetime import timezone
+
+    await _make_profile(db_session, "multistaruser")
+
+    repo_a = MusehubRepo(
+        name="track-alpha", owner="artist-a", slug="track-alpha",
+        visibility="public", owner_user_id="artist-a-id",
+    )
+    repo_b = MusehubRepo(
+        name="track-beta", owner="artist-b", slug="track-beta",
+        visibility="public", owner_user_id="artist-b-id",
+    )
+    db_session.add_all([repo_a, repo_b])
+    await db_session.commit()
+    await db_session.refresh(repo_a)
+    await db_session.refresh(repo_b)
+
+    import datetime as dt
+    star_a = MusehubStar(
+        repo_id=repo_a.repo_id,
+        user_id=_TEST_USER_ID,
+        created_at=dt.datetime(2024, 1, 1, tzinfo=timezone.utc),
+    )
+    star_b = MusehubStar(
+        repo_id=repo_b.repo_id,
+        user_id=_TEST_USER_ID,
+        created_at=dt.datetime(2024, 6, 1, tzinfo=timezone.utc),
+    )
+    db_session.add_all([star_a, star_b])
+    await db_session.commit()
+
+    response = await client.get("/api/v1/musehub/users/multistaruser/starred")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["total"] == 2
+    # newest first: star_b (June) before star_a (January)
+    assert data["starred"][0]["repo"]["slug"] == "track-beta"
+    assert data["starred"][1]["repo"]["slug"] == "track-alpha"
+
+
+@pytest.mark.anyio
+async def test_profile_page_has_starred_section_js(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Profile HTML page includes the starred repos JS (loadStarredRepos, starred-section)."""
+    await _make_profile(db_session, "jsstaruser")
+    response = await client.get("/musehub/ui/users/jsstaruser")
+    assert response.status_code == 200
+    body = response.text
+    assert "loadStarredRepos" in body
+    assert "starred-section" in body
+    assert "API_STARRED" in body
+    assert "starredRepoCardHtml" in body
 
 
 @pytest.mark.anyio
