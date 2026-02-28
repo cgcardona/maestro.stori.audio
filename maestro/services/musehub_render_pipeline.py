@@ -30,7 +30,6 @@ from __future__ import annotations
 
 import hashlib
 import logging
-import shutil
 from dataclasses import dataclass, field
 from pathlib import Path
 
