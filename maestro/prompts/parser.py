@@ -40,7 +40,7 @@ from maestro.prompts.base import (
 from maestro.prompts.errors import InvalidMaestroPrompt, UnsupportedPromptHeader
 from maestro.prompts.maestro import MaestroPrompt
 
-import yaml
+import yaml  # type: ignore[import-untyped]  # PyYAML ships no py.typed marker
 
 logger = logging.getLogger(__name__)
 
