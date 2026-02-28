@@ -3372,3 +3372,4 @@ async def test_harmony_json_response(
     # Total beats
     assert "totalBeats" in data
     assert data["totalBeats"] > 0
+
