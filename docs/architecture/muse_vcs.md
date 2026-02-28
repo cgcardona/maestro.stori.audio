@@ -7644,6 +7644,110 @@ structure is derived by splitting object `path` fields on `/`.
 
 ---
 
+## Audio Player — Listen Page (issue #211)
+
+### Motivation
+
+The bare `<audio>` element provides no waveform feedback, no A/B looping, and
+no speed control. Musicians performing critical listening on MuseHub need:
+
+- Visual waveform for precise seek-by-region.
+- A/B loop to isolate a phrase and replay it at will.
+- Playback speed control (half-time, double-time, etc.) for transcription and
+  arrangement work.
+
+### URL Pattern
+
+```
+GET /musehub/ui/{owner}/{repo_slug}/listen/{ref}
+GET /musehub/ui/{owner}/{repo_slug}/listen/{ref}/{path:path}
+```
+
+The first form lists all audio objects at `ref` and auto-loads the first track
+with an in-page track switcher. The second form deep-links to a specific audio
+file (stem, MIDI export, full mix) by its object path.
+
+### Waveform Engine
+
+Wavesurfer.js is **vendored locally** at:
+
+```
+maestro/templates/musehub/static/vendor/wavesurfer.min.js
+```
+
+Served at `/musehub/static/vendor/wavesurfer.min.js` via FastAPI `StaticFiles`.
+No external CDN is used — the library is a self-contained, lightweight
+canvas-based implementation that renders waveform bars using pseudo-random
+peaks seeded by audio duration (stable visual fingerprint per track).
+
+A `_generatePeaks()` method using Web Audio API `AudioBuffer` could be dropped
+in later to replace the seeded peaks with true amplitude data.
+
+### Audio Player Component (`audio-player.js`)
+
+A thin wrapper around WaveSurfer that wires up:
+
+| UI Element | ID | Behaviour |
+|------------|----|-----------|
+| Waveform canvas | `#waveform` | Click to seek; Shift+drag for A/B loop |
+| Play/pause button | `#play-btn` | Toggle playback |
+| Current time | `#time-cur` | Updated on every `timeupdate` event |
+| Duration | `#time-dur` | Populated on `ready` |
+| Speed selector | `#speed-sel` | Options: 0.5x 0.75x 1x 1.25x 1.5x 2x |
+| Volume slider | `#vol-slider` | Range 0.0–1.0 |
+| Loop info | `#loop-info` | Shows `Loop: MM:SS – MM:SS` when active |
+| Clear loop button | `#loop-clear-btn` | Hidden until a loop region is set |
+
+**Keyboard shortcuts:**
+
+| Key | Action |
+|-----|--------|
+| `Space` | Play / pause |
+| `←` / `→` | Seek ± 5 seconds |
+| `L` | Clear A/B loop region |
+
+### A/B Loop
+
+Shift+drag on the waveform canvas sets the loop region. While the region is
+active the `_audio.currentTime` is reset to `loopStart` whenever it reaches
+`loopEnd`. A coloured overlay with boundary markers is drawn on the canvas.
+`clearRegion()` removes the loop and hides the loop-info badge.
+
+### Track List (full-mix view)
+
+On `GET /{owner}/{repo_slug}/listen/{ref}`, the page fetches:
+
+```
+GET /api/v1/musehub/repos/{repo_id}/objects?ref={ref}
+```
+
+and filters for audio extensions (`mp3 wav ogg m4a flac aiff aif`). All
+matching objects are rendered as a clickable track list. Clicking a row loads
+that track into the WaveSurfer instance and begins playback.
+
+### Single-Track View
+
+On `GET /{owner}/{repo_slug}/listen/{ref}/{path}`, the page fetches the same
+objects endpoint and matches the first object whose `path` matches (or ends
+with) the given `path` segment. If no match is found, an inline error message
+is shown — no hard 404, allowing the user to try other refs.
+
+### No CDN Policy
+
+All external script tags are forbidden. The vendor script is served from the
+same origin as all other MuseHub assets. This keeps the page functional in
+air-gapped DAW network environments and avoids CORS complexity.
+
+### Implementation
+
+| Layer | File |
+|-------|------|
+| WaveSurfer | `maestro/templates/musehub/static/vendor/wavesurfer.min.js` |
+| AudioPlayer | `maestro/templates/musehub/static/audio-player.js` |
+| HTML template | `maestro/templates/musehub/pages/listen.html` |
+| HTML routes | `maestro/api/routes/musehub/ui.py` — `listen_page()`, `listen_track_page()` |
+| Tests | `tests/test_musehub_ui.py` — `test_listen_*` (12 tests) |
+
 ---
 
 ## Muse Hub — Arrangement Matrix Page (issue #212)
