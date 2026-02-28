@@ -16,6 +16,7 @@ Endpoint summary (fixed-path):
 
 Endpoint summary (repo-scoped):
   GET /musehub/ui/{owner}/{repo_slug}                           -- repo landing page
+  GET /musehub/ui/{owner}/{repo_slug}/commits                   -- paginated commit list with branch filter
   GET /musehub/ui/{owner}/{repo_slug}/commits/{commit_id}       -- commit detail + artifacts
   GET /musehub/ui/{owner}/{repo_slug}/commits/{commit_id}/diff  -- musical diff view
   GET /musehub/ui/{owner}/{repo_slug}/graph                     -- interactive DAG commit graph
@@ -298,32 +299,49 @@ async def commits_list_page(
     owner: str,
     repo_slug: str,
     branch: str | None = Query(None, description="Filter commits by branch name"),
-    limit: int = Query(50, ge=1, le=200, description="Max commits to return"),
+    page: int = Query(1, ge=1, description="Page number (1-indexed)"),
+    per_page: int = Query(30, ge=1, le=200, description="Commits per page"),
     format: str | None = Query(None, description="Force response format: 'json' or omit for HTML"),
     db: AsyncSession = Depends(get_db),
 ) -> StarletteResponse:
-    """Render the commits list page or return structured commit data as JSON.
+    """Render the paginated commits list page or return structured commit data as JSON.
 
-    HTML (default): renders the repo commits list via Jinja2.
+    HTML (default): renders ``commits.html`` with paginated history, branch
+    selector, inline DAG indicators, and tag badges.
     JSON (``Accept: application/json`` or ``?format=json``): returns
-    ``CommitListResponse`` with the newest commits first.
+    ``CommitListResponse`` with the newest commits first for the requested page.
 
     Agents use this to inspect a repo's commit history without navigating
     a separate ``/api/v1/...`` endpoint.
     """
     repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
+    offset = (page - 1) * per_page
     commits, total = await musehub_repository.list_commits(
-        db, repo_id, branch=branch, limit=limit
+        db, repo_id, branch=branch, limit=per_page, offset=offset
     )
+    branches = await musehub_repository.list_branches(db, repo_id)
+    total_pages = max(1, (total + per_page - 1) // per_page)
     return await negotiate_response(
         request=request,
-        template_name="musehub/pages/repo.html",
+        template_name="musehub/pages/commits.html",
         context={
             "owner": owner,
             "repo_slug": repo_slug,
             "repo_id": repo_id,
             "base_url": base_url,
             "current_page": "commits",
+            "commits": commits,
+            "total": total,
+            "page": page,
+            "per_page": per_page,
+            "total_pages": total_pages,
+            "branch": branch,
+            "branches": branches,
+            "breadcrumb_data": _breadcrumbs(
+                (owner, f"/musehub/ui/{owner}"),
+                (repo_slug, base_url),
+                ("commits", ""),
+            ),
         },
         templates=templates,
         json_data=CommitListResponse(commits=commits, total=total),

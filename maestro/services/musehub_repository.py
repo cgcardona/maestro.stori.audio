@@ -354,9 +354,11 @@ async def list_commits(
     *,
     branch: str | None = None,
     limit: int = 50,
+    offset: int = 0,
 ) -> tuple[list[CommitResponse], int]:
     """Return commits for a repo, newest first, optionally filtered by branch.
 
+    Supports offset-based pagination via ``offset``.
     Returns a tuple of (commits, total_count).
     """
     base = select(db.MusehubCommit).where(db.MusehubCommit.repo_id == repo_id)
@@ -366,7 +368,7 @@ async def list_commits(
     total_stmt = select(func.count()).select_from(base.subquery())
     total: int = (await session.execute(total_stmt)).scalar_one()
 
-    rows_stmt = base.order_by(desc(db.MusehubCommit.timestamp)).limit(limit)
+    rows_stmt = base.order_by(desc(db.MusehubCommit.timestamp)).offset(offset).limit(limit)
     rows = (await session.execute(rows_stmt)).scalars().all()
     return [_to_commit_response(r) for r in rows], total
 
