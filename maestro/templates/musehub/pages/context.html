@@ -95,6 +95,9 @@ function copyJson() {
   });
 }
 
+// ── Suggestion text store (safe index-based onclick; avoids attr injection) ──
+const _suggestionTexts = [];
+
 // ── Compose modal ────────────────────────────────────────────────────────
 let _composePreset = '';
 
@@ -211,21 +214,22 @@ async function load() {
     const missingBorderColor = missing.length > 0 ? '#f85149' : '#238636';
 
     // ── Suggestions ────────────────────────────────────────────────────
+    // Store suggestion texts by index so the onclick never embeds user content
+    // in an HTML attribute (prevents )-injection / XSS).
+    _suggestionTexts.length = 0;  // reset on each load()
     const suggestions = ctx.suggestions || {};
     const suggKeys = Object.keys(suggestions);
     const suggHtml = suggKeys.length > 0
       ? suggKeys.map(k => {
           const text = suggestions[k];
-          const safeText = escHtml(k + ': ' + text);
-          // Escape for HTML attribute usage (double-quote safe)
-          const attrText = (k + ': ' + text).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+          const idx = _suggestionTexts.push(k + ': ' + text) - 1;
           return `<div style="display:flex;align-items:flex-start;justify-content:space-between;`
             + `gap:12px;padding:12px 0;border-bottom:1px solid #21262d">`
             + `<div style="font-size:14px;color:#e6edf3;flex:1">`
             + `<strong style="color:#79c0ff">${escHtml(k)}</strong>: ${escHtml(text)}`
             + `</div>`
             + `<button class="btn btn-primary btn-sm" style="flex-shrink:0;white-space:nowrap"`
-            + ` onclick="openCompose('${attrText.replace(/"/g, '&quot;')}')">⚡ Implement</button>`
+            + ` onclick="openCompose(_suggestionTexts[${idx}])">⚡ Implement</button>`
             + `</div>`;
         }).join('')
       : `<p style="font-size:14px;color:#8b949e">No suggestions available.</p>`;
