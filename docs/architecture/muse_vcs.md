@@ -1417,10 +1417,12 @@ maestro/
 ├── services/musehub_pull_requests.py     — Async DB queries for PRs (single point of DB access)
 ├── services/musehub_search.py            — In-repo search service (property / ask / keyword / pattern)
 ├── services/musehub_sync.py              — Push/pull sync protocol (ingest_push, compute_pull_delta)
+├── services/musehub_divergence.py        — Five-dimension divergence between two remote branches
 └── api/routes/musehub/
     ├── __init__.py                       — Composes sub-routers under /musehub prefix (authed)
     ├── repos.py                          — Repo/branch/commit route handlers
     ├── __init__.py                       — Composes sub-routers under /musehub prefix
+    ├── repos.py                          — Repo/branch/commit route handlers + divergence endpoint
     ├── repos.py                          — Repo/branch/commit/credits route handlers
     ├── issues.py                         — Issue tracking route handlers
     ├── pull_requests.py                  — Pull request route handlers
@@ -1429,6 +1431,7 @@ maestro/
     ├── discover.py                       — Public discover API + authed star/unstar (registered in main.py separately)
     ├── objects.py                        — Artifact list + content-by-object-id endpoints (auth required)
     ├── raw.py                            — Raw file download by path (public repos: no auth)
+    └── ui.py                             — HTML UI pages (divergence radar chart, search mode tabs)
     └── ui.py                             — HTML shells for browser: explore, trending, repo, commit, PR, issue pages (incl. /search page with mode tabs)
     └── ui.py                             — HTML UI pages (incl. credits and /search pages)
 ```
@@ -1443,6 +1446,7 @@ maestro/
 | GET | `/api/v1/musehub/repos/{id}` | Get repo metadata |
 | GET | `/api/v1/musehub/repos/{id}/branches` | List branches |
 | GET | `/api/v1/musehub/repos/{id}/commits` | List commits (newest first) |
+| GET | `/api/v1/musehub/repos/{id}/divergence` | Five-dimension musical divergence between two branches (`?branch_a=...&branch_b=...`) |
 | GET | `/api/v1/musehub/repos/{id}/credits` | Aggregated contributor credits (`?sort=count\|recency\|alpha`) |
 
 #### Credits Page
@@ -1676,6 +1680,74 @@ Issues let musicians track production problems and creative tasks within a repo,
 - **Labels** are free-form strings — e.g. `bug`, `musical`, `timing`, `mix`. No validation at MVP.
 - **States:** `open` (default on creation) → `closed` (via the close endpoint). No re-open at MVP.
 - **Filtering:** `GET /issues?state=all` includes both open and closed; `?label=bug` narrows by label.
+
+### Divergence Visualization
+
+The divergence endpoint and UI let producers compare two branches across five musical dimensions before deciding what to merge.
+
+#### API Endpoint
+
+```
+GET /api/v1/musehub/repos/{repo_id}/divergence?branch_a=<name>&branch_b=<name>
+```
+
+Returns `DivergenceResponse` (JSON):
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `repoId` | `str` | Repository ID |
+| `branchA` | `str` | First branch name |
+| `branchB` | `str` | Second branch name |
+| `commonAncestor` | `str \| null` | Merge-base commit ID |
+| `dimensions` | `list[DivergenceDimensionResponse]` | Five dimension scores |
+| `overallScore` | `float` | Mean of dimension scores in [0.0, 1.0] |
+
+Each `DivergenceDimensionResponse`:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `dimension` | `str` | `melodic` / `harmonic` / `rhythmic` / `structural` / `dynamic` |
+| `level` | `str` | `NONE` / `LOW` / `MED` / `HIGH` |
+| `score` | `float` | Jaccard divergence in [0.0, 1.0] |
+| `description` | `str` | Human-readable summary |
+| `branchACommits` | `int` | Commits touching this dimension on branch A |
+| `branchBCommits` | `int` | Commits touching this dimension on branch B |
+
+**Level thresholds:**
+
+| Level | Score range |
+|-------|-------------|
+| NONE  | < 0.15 |
+| LOW   | 0.15–0.40 |
+| MED   | 0.40–0.70 |
+| HIGH  | ≥ 0.70 |
+
+#### Score Formula
+
+Divergence per dimension = `|symmetric_diff| / |union|` over commit IDs classified into that dimension via keyword matching on commit messages:
+
+- **melodic:** melody, lead, solo, vocal, tune, note, pitch, riff, arpeggio
+- **harmonic:** chord, harmony, key, scale, progression, voicing
+- **rhythmic:** beat, drum, rhythm, groove, perc, swing, tempo, bpm, quantize
+- **structural:** struct, form, section, bridge, chorus, verse, intro, outro, arrangement
+- **dynamic:** mix, master, volume, level, dynamic, eq, compress, reverb, fx
+
+Overall score = arithmetic mean of all five dimension scores.
+
+#### Browser UI
+
+```
+GET /musehub/ui/{repo_id}/divergence?branch_a=<name>&branch_b=<name>
+```
+
+Renders an interactive page featuring:
+- Five-axis SVG radar chart with colour-coded dimension labels (NONE=blue, LOW=teal, MED=amber, HIGH=red)
+- Overall divergence percentage display with merge-base commit reference
+- Per-dimension progress bars + level badges
+- Click-to-expand detail panels showing commit counts per branch
+- Branch selector dropdowns with URL state sync
+
+**AI agent use case:** Call `GET /divergence` before opening a PR to determine if two branches are safe to merge automatically (overall score < 0.15) or need producer review (HIGH on any dimension).
 
 ### Pull Request Workflow
 
