@@ -20,6 +20,10 @@ from maestro.db import musehub_models as db
 from maestro.models.musehub import (
     BranchResponse,
     CommitResponse,
+    MuseHubContextCommitInfo,
+    MuseHubContextHistoryEntry,
+    MuseHubContextMusicalState,
+    MuseHubContextResponse,
     ObjectMetaResponse,
     RepoResponse,
 )
@@ -210,3 +214,164 @@ async def list_commits(
     rows_stmt = base.order_by(desc(db.MusehubCommit.timestamp)).limit(limit)
     rows = (await session.execute(rows_stmt)).scalars().all()
     return [_to_commit_response(r) for r in rows], total
+
+
+# ---------------------------------------------------------------------------
+# Context document builder
+# ---------------------------------------------------------------------------
+
+_MUSIC_FILE_EXTENSIONS = frozenset(
+    {".mid", ".midi", ".mp3", ".wav", ".aiff", ".aif", ".flac"}
+)
+
+_CONTEXT_HISTORY_DEPTH = 5
+
+
+def _extract_track_names_from_objects(objects: list[db.MusehubObject]) -> list[str]:
+    """Derive human-readable track names from stored object paths.
+
+    Files with recognised music extensions whose stems do not look like raw
+    SHA-256 hashes are treated as track names.  The stem is lowercased and
+    de-duplicated, matching the convention in ``muse_context._extract_track_names``.
+    """
+    import pathlib
+
+    tracks: list[str] = []
+    for obj in objects:
+        p = pathlib.PurePosixPath(obj.path)
+        if p.suffix.lower() in _MUSIC_FILE_EXTENSIONS:
+            stem = p.stem.lower()
+            if len(stem) == 64 and all(c in "0123456789abcdef" for c in stem):
+                continue
+            tracks.append(stem)
+    return sorted(set(tracks))
+
+
+async def _get_commit_by_id(
+    session: AsyncSession, repo_id: str, commit_id: str
+) -> db.MusehubCommit | None:
+    """Fetch a raw MusehubCommit ORM row by (repo_id, commit_id)."""
+    stmt = select(db.MusehubCommit).where(
+        db.MusehubCommit.repo_id == repo_id,
+        db.MusehubCommit.commit_id == commit_id,
+    )
+    return (await session.execute(stmt)).scalars().first()
+
+
+async def _build_hub_history(
+    session: AsyncSession,
+    repo_id: str,
+    start_commit: db.MusehubCommit,
+    objects: list[db.MusehubObject],
+    depth: int,
+) -> list[MuseHubContextHistoryEntry]:
+    """Walk the parent chain, returning up to *depth* ancestor entries.
+
+    The *start_commit* (the context target) is NOT included — it is surfaced
+    separately as ``head_commit`` in the result.  Entries are newest-first.
+    The object list is reused across entries since we have no per-commit object
+    index at this layer; active tracks reflect the overall repo's artifact set.
+    """
+    entries: list[MuseHubContextHistoryEntry] = []
+    parent_ids: list[str] = list(start_commit.parent_ids or [])
+
+    while parent_ids and len(entries) < depth:
+        parent_id = parent_ids[0]
+        commit = await _get_commit_by_id(session, repo_id, parent_id)
+        if commit is None:
+            logger.warning("⚠️ Hub history chain broken at %s", parent_id[:8])
+            break
+        entries.append(
+            MuseHubContextHistoryEntry(
+                commit_id=commit.commit_id,
+                message=commit.message,
+                author=commit.author,
+                timestamp=commit.timestamp,
+                active_tracks=_extract_track_names_from_objects(objects),
+            )
+        )
+        parent_ids = list(commit.parent_ids or [])
+
+    return entries
+
+
+async def get_context_for_commit(
+    session: AsyncSession,
+    repo_id: str,
+    ref: str,
+) -> MuseHubContextResponse | None:
+    """Build a musical context document for a MuseHub commit.
+
+    Traverses the commit's parent chain (up to 5 ancestors) and derives active
+    tracks from the repo's stored objects.  Musical dimensions (key, tempo,
+    etc.) are always None until Storpheus MIDI analysis is integrated.
+
+    Args:
+        session:  Open async DB session. Read-only — no writes performed.
+        repo_id:  Hub repo identifier.
+        ref:      Target commit ID.  Must belong to this repo.
+
+    Returns:
+        ``MuseHubContextResponse`` ready for JSON serialisation, or None if the
+        commit does not exist in this repo.
+
+    The output is deterministic: for the same ``repo_id`` + ``ref``, the result
+    is always identical, making it safe to cache.
+    """
+    commit = await _get_commit_by_id(session, repo_id, ref)
+    if commit is None:
+        return None
+
+    raw_objects_stmt = select(db.MusehubObject).where(
+        db.MusehubObject.repo_id == repo_id
+    )
+    raw_objects = (await session.execute(raw_objects_stmt)).scalars().all()
+
+    active_tracks = _extract_track_names_from_objects(list(raw_objects))
+
+    head_commit_info = MuseHubContextCommitInfo(
+        commit_id=commit.commit_id,
+        message=commit.message,
+        author=commit.author,
+        branch=commit.branch,
+        timestamp=commit.timestamp,
+    )
+
+    musical_state = MuseHubContextMusicalState(active_tracks=active_tracks)
+
+    history = await _build_hub_history(
+        session, repo_id, commit, list(raw_objects), _CONTEXT_HISTORY_DEPTH
+    )
+
+    missing: list[str] = []
+    if not active_tracks:
+        missing.append("no music files found in repo")
+    for dim in ("key", "tempo_bpm", "time_signature", "form", "emotion"):
+        missing.append(dim)
+
+    suggestions: dict[str, str] = {}
+    if not active_tracks:
+        suggestions["first_track"] = (
+            "Push your first MIDI or audio file to populate the musical state."
+        )
+    else:
+        suggestions["next_section"] = (
+            f"Current tracks: {', '.join(active_tracks)}. "
+            "Consider adding harmonic or melodic variation to develop the composition."
+        )
+
+    logger.info(
+        "✅ Muse Hub context built for repo %s commit %s (tracks=%d)",
+        repo_id[:8],
+        ref[:8],
+        len(active_tracks),
+    )
+    return MuseHubContextResponse(
+        repo_id=repo_id,
+        current_branch=commit.branch,
+        head_commit=head_commit_info,
+        musical_state=musical_state,
+        history=history,
+        missing_elements=missing,
+        suggestions=suggestions,
+    )

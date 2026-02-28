@@ -84,6 +84,25 @@ separate frontend required.
 | Pull request detail (+ Merge button) | `GET /musehub/ui/{repo_id}/pulls/{pr_id}` |
 | Issue list | `GET /musehub/ui/{repo_id}/issues` |
 | Issue detail (+ Close button) | `GET /musehub/ui/{repo_id}/issues/{number}` |
+| **AI context viewer** | `GET /musehub/ui/{repo_id}/context/{ref}` |
+
+### AI context viewer
+
+The context viewer shows exactly what the AI agent sees when generating music for a given commit. Navigate to:
+
+```
+/musehub/ui/{repo_id}/context/{commit_id}
+```
+
+The page renders a structured document with:
+- **"What the Agent Sees"** — explainer banner summarising the agent's musical knowledge at this commit
+- **Musical State** — active tracks (derived from stored artifact paths) plus any available musical dimensions (key, tempo, time signature, form, emotion)
+- **History Summary** — the target commit and up to 5 ancestor commits, newest-first
+- **Missing Elements** — dimensions the agent cannot determine from stored data (e.g. key, tempo until Storpheus MIDI analysis is wired)
+- **Suggestions** — composer-facing hints for what to develop next
+- **Raw JSON** — the full `MuseHubContextResponse` with a **Copy JSON** button for pasting directly into an agent conversation
+
+**For agents:** The JSON API endpoint is `GET /api/v1/musehub/repos/{repo_id}/context/{ref}` (requires `Authorization: Bearer <token>`). It returns a `MuseHubContextResponse` with the same structure as the UI. Agents consuming this endpoint get the same musical context that the in-app generation pipeline uses.
 
 ### Authentication in the browser
 

@@ -5977,6 +5977,63 @@ Wrapper returned by `GET /api/v1/musehub/repos/{repo_id}/objects`.
 **Producer:** `objects.list_objects` route handler
 **Consumer:** Muse Hub web UI; any agent inspecting which artifacts are available for a repo
 
+### `MuseHubContextCommitInfo`
+
+Minimal commit metadata nested inside `MuseHubContextResponse`.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `commit_id` | `str` | Full 64-char commit hash |
+| `message` | `str` | Commit message |
+| `author` | `str` | Commit author (from push payload) |
+| `branch` | `str` | Branch the commit belongs to |
+| `timestamp` | `datetime` | UTC timestamp of the commit |
+
+### `MuseHubContextHistoryEntry`
+
+One ancestor commit in the evolutionary history section of `MuseHubContextResponse`.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `commit_id` | `str` | Full 64-char commit hash |
+| `message` | `str` | Commit message |
+| `author` | `str` | Commit author |
+| `timestamp` | `datetime` | UTC commit timestamp |
+| `active_tracks` | `list[str]` | Track names derived from repo objects at that point |
+
+### `MuseHubContextMusicalState`
+
+Musical state at the target commit, derived from stored artifact paths.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `active_tracks` | `list[str]` | Track names inferred from music file extensions in stored objects |
+| `key` | `str \| None` | Musical key — `null` until Storpheus MIDI analysis is integrated |
+| `mode` | `str \| None` | Modal quality (major/minor/dorian/…) — `null` until Storpheus integrated |
+| `tempo_bpm` | `int \| None` | Tempo in BPM — `null` until Storpheus integrated |
+| `time_signature` | `str \| None` | Time signature (e.g. `"4/4"`) — `null` until Storpheus integrated |
+| `form` | `str \| None` | Song form label — `null` until Storpheus integrated |
+| `emotion` | `str \| None` | Emotional quality — `null` until Storpheus integrated |
+
+### `MuseHubContextResponse`
+
+Complete musical context document for a MuseHub commit. The MuseHub equivalent of `MuseContextResult`,
+built from the remote repo's commit graph and stored objects rather than the local `.muse` filesystem.
+Returned by `GET /api/v1/musehub/repos/{repo_id}/context/{ref}`.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `repo_id` | `str` | Hub repo identifier |
+| `current_branch` | `str` | Branch name for the target commit |
+| `head_commit` | `MuseHubContextCommitInfo` | Metadata for the resolved commit (ref) |
+| `musical_state` | `MuseHubContextMusicalState` | Active tracks and musical dimensions |
+| `history` | `list[MuseHubContextHistoryEntry]` | Up to 5 ancestor commits, newest-first |
+| `missing_elements` | `list[str]` | Dimensions that could not be determined from stored data |
+| `suggestions` | `dict[str, str]` | Composer-facing hints about what to work on next |
+
+**Producer:** `musehub_repository.get_context_for_commit()` → `repos.get_context` route handler
+**Consumer:** Muse Hub web UI context page (`/musehub/ui/{repo_id}/context/{ref}`); AI agents calling the JSON endpoint directly to obtain the same context the generation pipeline uses.
+
 ### `SearchCommitMatch`
 
 A single commit returned by any of the four in-repo search modes.
