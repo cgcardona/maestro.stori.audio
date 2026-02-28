@@ -642,6 +642,75 @@ def test_render_preview_cli_json_output(tmp_path: pathlib.Path) -> None:
     assert payload["stubbed"] is True
 
 
+@pytest.mark.anyio
+async def test_render_preview_cli_ambiguous_prefix(
+    tmp_path: pathlib.Path,
+    muse_cli_db_session: AsyncSession,
+) -> None:
+    """_render_preview_async exits with USER_ERROR when the prefix matches multiple commits."""
+    from datetime import datetime, timezone
+    from unittest.mock import AsyncMock, patch as _patch
+
+    from maestro.muse_cli.db import insert_commit, upsert_object, upsert_snapshot
+    from maestro.muse_cli.models import MuseCliCommit
+    from maestro.muse_cli.snapshot import compute_commit_id, compute_snapshot_id
+
+    repo_id = _init_muse_repo(tmp_path)
+    workdir = tmp_path / "muse-work"
+    workdir.mkdir()
+    (workdir / "beat.mid").write_bytes(_make_minimal_midi())
+
+    oid = hash_file(workdir / "beat.mid")
+    manifest = {"beat.mid": oid}
+    snapshot_id = compute_snapshot_id(manifest)
+    ts = datetime(2026, 1, 1, tzinfo=timezone.utc)
+
+    await upsert_object(muse_cli_db_session, oid, 100)
+    await upsert_snapshot(muse_cli_db_session, manifest=manifest, snapshot_id=snapshot_id)
+    await muse_cli_db_session.flush()
+
+    # Insert two commits that share the same prefix
+    commit_a = compute_commit_id([], snapshot_id, "commit A", ts.isoformat())
+    commit_b = compute_commit_id([], snapshot_id, "commit B", ts.isoformat())
+    for cid, msg in [(commit_a, "commit A"), (commit_b, "commit B")]:
+        await insert_commit(
+            muse_cli_db_session,
+            MuseCliCommit(
+                commit_id=cid,
+                repo_id=repo_id,
+                branch="main",
+                parent_commit_id=None,
+                snapshot_id=snapshot_id,
+                message=msg,
+                author="",
+                committed_at=ts,
+            ),
+        )
+    await muse_cli_db_session.flush()
+    _set_head(tmp_path, commit_a)
+
+    # Patch find_commits_by_prefix to simulate an ambiguous prefix
+    with _patch(
+        "maestro.muse_cli.commands.render_preview.find_commits_by_prefix",
+        new=AsyncMock(return_value=[
+            type("C", (), {"commit_id": commit_a, "message": "commit A"})(),
+            type("C", (), {"commit_id": commit_b, "message": "commit B"})(),
+        ]),
+    ):
+        with pytest.raises(typer.Exit) as exc_info:
+            await _render_preview_async(
+                commit_ref="abc",
+                fmt=PreviewFormat.WAV,
+                output=tmp_path / "preview.wav",
+                track=None,
+                section=None,
+                root=tmp_path,
+                session=muse_cli_db_session,
+            )
+
+    assert exc_info.value.exit_code != 0
+
+
 def test_render_preview_cli_storpheus_unreachable(tmp_path: pathlib.Path) -> None:
     """muse render-preview exits with INTERNAL_ERROR when Storpheus is down."""
     from unittest.mock import patch as _patch
