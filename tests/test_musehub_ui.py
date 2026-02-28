@@ -69,6 +69,15 @@ Covers issue #227 (emotion map page):
 - test_emotion_trajectory              — cross-commit trajectory data is present and ordered
 - test_emotion_drift_distances         — drift list has one entry per consecutive commit pair
 
+Covers issue #292 (rich event cards in activity feed):
+- test_feed_page_returns_200                 — GET /musehub/ui/feed returns 200 HTML
+- test_feed_page_no_raw_json_payload         — page does not render raw JSON.stringify of payload
+- test_feed_page_has_event_meta_for_all_types — EVENT_META covers all 8 event types
+- test_feed_page_has_data_notif_id_attribute  — cards carry data-notif-id for mark-as-read hook
+- test_feed_page_has_unread_indicator        — unread highlight border logic present
+- test_feed_page_has_actor_avatar_logic      — actorAvatar / actorHsl helper present
+- test_feed_page_has_relative_timestamp      — fmtRelative called in card rendering
+
 UI routes require no JWT auth (they return HTML shells whose JS handles auth).
 The HTML content tests assert structural markers present in every rendered page.
 
@@ -5601,6 +5610,115 @@ async def test_ui_commit_page_artifact_auth_uses_blob_proxy(
     # hydrateImages and _fetchBlobUrl must be present for the blob proxy pattern
     assert "hydrateImages" in body
     assert "_fetchBlobUrl" in body
+
+
+# ---------------------------------------------------------------------------
+# Feed page tests — issue #292 (rich event cards)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.anyio
+async def test_feed_page_returns_200(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """GET /musehub/ui/feed returns 200 HTML without requiring a JWT."""
+    response = await client.get("/musehub/ui/feed")
+    assert response.status_code == 200
+    assert "text/html" in response.headers["content-type"]
+    assert "Activity Feed" in response.text
+
+
+@pytest.mark.anyio
+async def test_feed_page_no_raw_json_payload(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Feed page must not render raw JSON.stringify of notification payload.
+
+    Regression guard for issue #292: the old implementation called
+    JSON.stringify(item.payload) directly into the DOM, exposing raw JSON
+    to users. The new rich card templates must not do this.
+    """
+    response = await client.get("/musehub/ui/feed")
+    assert response.status_code == 200
+    body = response.text
+    assert "JSON.stringify(item.payload" not in body
+    assert "JSON.stringify(item" not in body
+
+
+@pytest.mark.anyio
+async def test_feed_page_has_event_meta_for_all_types(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Feed page must define EVENT_META entries for all 8 notification event types."""
+    response = await client.get("/musehub/ui/feed")
+    assert response.status_code == 200
+    body = response.text
+    for event_type in (
+        "comment",
+        "mention",
+        "pr_opened",
+        "pr_merged",
+        "issue_opened",
+        "issue_closed",
+        "new_commit",
+        "new_follower",
+    ):
+        assert event_type in body, f"EVENT_META missing entry for '{event_type}'"
+
+
+@pytest.mark.anyio
+async def test_feed_page_has_data_notif_id_attribute(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Each event card must carry a data-notif-id attribute.
+
+    This attribute is the hook that issue #293 (mark-as-read UX) will use to
+    attach action buttons to each card without restructuring the DOM.
+    """
+    response = await client.get("/musehub/ui/feed")
+    assert response.status_code == 200
+    assert "data-notif-id" in response.text
+
+
+@pytest.mark.anyio
+async def test_feed_page_has_unread_indicator(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Feed page must include logic to highlight unread cards with a left border."""
+    response = await client.get("/musehub/ui/feed")
+    assert response.status_code == 200
+    body = response.text
+    assert "is_read" in body
+    assert "color-accent" in body
+
+
+@pytest.mark.anyio
+async def test_feed_page_has_actor_avatar_logic(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Feed page must render actor avatars using the actorHsl / actorAvatar helpers."""
+    response = await client.get("/musehub/ui/feed")
+    assert response.status_code == 200
+    body = response.text
+    assert "actorHsl" in body
+    assert "actorAvatar" in body
+
+
+@pytest.mark.anyio
+async def test_feed_page_has_relative_timestamp(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Feed page must call fmtRelative to render timestamps in a human-readable form."""
+    response = await client.get("/musehub/ui/feed")
+    assert response.status_code == 200
+    assert "fmtRelative" in response.text
 
 
 # ---------------------------------------------------------------------------
