@@ -5401,3 +5401,40 @@ Wrapper returned by `GET /api/v1/musehub/repos/{repo_id}/objects`.
 
 **Producer:** `objects.list_objects` route handler
 **Consumer:** Muse Hub web UI; any agent inspecting which artifacts are available for a repo
+
+---
+
+## Muse Bisect Types
+
+Defined in `maestro/services/muse_bisect.py`.
+
+### `BisectState`
+
+Mutable snapshot of an active bisect session.  Persisted in `.muse/BISECT_STATE.json`.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `good` | `str \| None` | Commit ID of the last known-good revision |
+| `bad` | `str \| None` | Commit ID of the first known-bad revision |
+| `current` | `str \| None` | Commit ID currently checked out for testing |
+| `tested` | `dict[str, str]` | Map of commit_id → verdict (`"good"` or `"bad"`) |
+| `pre_bisect_ref` | `str` | Symbolic ref HEAD pointed at before bisect started |
+| `pre_bisect_commit` | `str` | Commit ID HEAD resolved to before bisect started |
+
+**Producer:** `write_bisect_state()` in `muse_bisect.py`
+**Consumer:** `muse bisect log --json`, `advance_bisect()`, CLI commands
+
+### `BisectStepResult`
+
+Frozen result of a single bisect step — returned by `advance_bisect()`.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `culprit` | `str \| None` | Commit ID of the first bad commit if identified, else `None` |
+| `next_commit` | `str \| None` | Commit ID to check out and test next, or `None` when done |
+| `remaining` | `int` | Estimated number of commits still to test (0 when done) |
+| `message` | `str` | Human-readable summary of this step for CLI display |
+
+**Producer:** `advance_bisect()` in `muse_bisect.py`
+**Consumer:** `muse bisect good/bad/run` command handlers; AI agent orchestrators
+
