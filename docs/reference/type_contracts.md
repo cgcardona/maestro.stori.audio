@@ -7111,3 +7111,46 @@ Top-level response model for `GET /api/v1/musehub/search`.
 
 **Produced by:** `maestro.services.musehub_context.build_agent_context()`
 **Consumed by:** AI composition agents at session start; MCP context tool (planned)
+
+---
+
+## Muse Hub — Groove Check API Types (`maestro/models/musehub.py`)
+
+### `GrooveCommitEntry`
+
+**Path:** `maestro/models/musehub.py`
+
+`CamelModel` — Per-commit groove metrics within a groove-check analysis window, as returned by `GET /repos/{repo_id}/groove-check`.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `commit` | `str` | Short commit reference (8 hex chars) |
+| `groove_score` | `float` | Average onset deviation from quantization grid, in beats |
+| `drift_delta` | `float` | Absolute change in `groove_score` vs prior commit |
+| `status` | `str` | `"OK"` / `"WARN"` / `"FAIL"` classification |
+| `track` | `str` | Track scope analysed, or `"all"` |
+| `section` | `str` | Section scope analysed, or `"all"` |
+| `midi_files` | `int` | Number of MIDI snapshots analysed |
+
+**Produced by:** `maestro.api.routes.musehub.repos.get_groove_check()`
+**Consumed by:** MuseHub groove-check UI page; AI agents auditing rhythmic consistency
+
+---
+
+### `GrooveCheckResponse`
+
+**Path:** `maestro/models/musehub.py`
+
+`CamelModel` — Aggregate rhythmic consistency dashboard data for a commit window, as returned by `GET /repos/{repo_id}/groove-check`.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `commit_range` | `str` | Commit range string that was analysed (e.g. `"HEAD~10..HEAD"`) |
+| `threshold` | `float` | Drift threshold in beats used for WARN/FAIL classification |
+| `total_commits` | `int` | Total commits in the analysis window |
+| `flagged_commits` | `int` | Number of commits with WARN or FAIL status |
+| `worst_commit` | `str` | Commit ref with the highest `drift_delta`, or empty string |
+| `entries` | `list[GrooveCommitEntry]` | Per-commit metrics, oldest-first |
+
+**Produced by:** `maestro.api.routes.musehub.repos.get_groove_check()`
+**Consumed by:** MuseHub groove-check UI page (`/musehub/ui/{owner}/{repo_slug}/groove-check`); AI agents comparing rhythmic consistency across branches
