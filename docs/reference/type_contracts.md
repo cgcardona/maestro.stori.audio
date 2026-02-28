@@ -1928,6 +1928,93 @@ These types mirror the Maestro `app/contracts/json_types.py` types but are defin
 | `flat_notes` | `list[StorpheusNoteDict]` | Flattened note list across all channels |
 | `batch_idx` | `int` | Index in the generation batch (for logging) |
 
+#### `GenreParameterPrior`
+
+`@dataclass` — Explicit per-genre parameter priors for the Orpheus model, tuned from listening tests and A/B experiments. Resolved by `get_genre_prior(genre)` in `generation_policy.py`.
+
+**Source:** `storpheus/storpheus_types.py`
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `temperature` | `float` | *(required)* | Orpheus model temperature override (0.7–1.0) |
+| `top_p` | `float` | *(required)* | Orpheus model top_p override (0.90–0.98) |
+| `density_offset` | `float` | `0.0` | Additive offset on `GenerationControlVector.density` (−0.3–0.3) |
+| `prime_ratio` | `float` | `1.0` | Fraction of max prime tokens to supply (0.5–1.0) |
+
+**Where used:**
+
+| Module | Usage |
+|--------|-------|
+| `storpheus/generation_policy.py` | Stored in `_GENRE_PRIORS`; returned by `get_genre_prior()` |
+| `storpheus/music_service.py` | Passed to `apply_controls_to_params()` in `_do_generate` |
+
+#### `GenerationTelemetryRecord`
+
+`TypedDict` — One structured telemetry record emitted per completed generation. Logged at `INFO` level as JSON under the prefix `📊 TELEMETRY`.
+
+**Source:** `storpheus/storpheus_types.py`
+
+**Required fields:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `genre` | `str` | Musical style string |
+| `tempo` | `int` | BPM |
+| `bars` | `int` | Number of bars generated |
+
+**Optional output fields (present on success):**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `instruments` | `list[str]` | Requested instrument roles |
+| `quality_preset` | `str` | `"fast"` / `"balanced"` / `"quality"` |
+| `temperature` | `float` | Actual Orpheus temperature used |
+| `top_p` | `float` | Actual Orpheus top_p used |
+| `num_prime_tokens` | `int` | Prime context tokens supplied |
+| `num_gen_tokens` | `int` | Generation tokens requested |
+| `genre_prior_applied` | `bool` | Whether a genre prior overrode control-vector defaults |
+| `note_count` | `int` | Notes in the selected candidate |
+| `pitch_range` | `int` | Max MIDI pitch − min MIDI pitch |
+| `velocity_variation` | `float` | Coefficient of variation of note velocities |
+| `quality_score` | `float` | Composite quality score 0–1 |
+| `rejection_score` | `float` | Rejection-sampling score of selected candidate |
+| `candidate_count` | `int` | Number of candidates evaluated |
+| `generation_ok` | `bool` | True = at least one candidate accepted |
+
+#### `ParameterSweepResult`
+
+`TypedDict` — Quality metrics plus the parameter set used to produce them. One entry per (temperature, top_p) point in a parameter sweep.
+
+**Source:** `storpheus/storpheus_types.py`
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `temperature` | `float` | Temperature value for this point |
+| `top_p` | `float` | top_p value for this point |
+| `quality_score` | `float` | Composite quality score 0–1 |
+| `note_count` | `int` | Total notes generated |
+| `pitch_range` | `int` | Pitch range in MIDI semitones |
+| `velocity_variation` | `float` | Coefficient of variation of velocities |
+| `rejection_score` | `float` | Rejection-sampling score |
+
+#### `SweepABTestResult`
+
+`TypedDict` — Statistical summary returned by `POST /quality/parameter-sweep`.
+
+**Source:** `storpheus/storpheus_types.py`
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `genre` | `str` | Genre from the base request |
+| `tempo` | `int` | Tempo from the base request |
+| `bars` | `int` | Bar count from the base request |
+| `sweep_results` | `list[ParameterSweepResult]` | All sweep points, sorted best-first |
+| `best_temperature` | `float` | Temperature of the highest-scoring point |
+| `best_top_p` | `float` | top_p of the highest-scoring point |
+| `best_quality_score` | `float` | Quality score of the best point |
+| `score_range` | `float` | max − min quality score across all sweep points |
+| `significant` | `bool` | `True` when `score_range ≥ 0.05` |
+
 ---
 
 ## DAW Adapter Layer
