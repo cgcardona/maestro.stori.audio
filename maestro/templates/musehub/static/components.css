@@ -17,9 +17,13 @@
  *   Modals            (.modal, .modal-backdrop, .modal-panel, .modal-header, .modal-footer)
  *   Tabs              (.tabs, .tab-list, .tab, .tab-panel)
  *   Tooltips          (.tooltip, [data-tooltip])
- *   Rows              (.commit-row, .pr-row, .issue-row, .session-row)
+ *   Rows              (.commit-row, .pr-row, .issue-row, .session-row, .session-row-active)
+ *   Session enrichment(.session-row-header, .session-row-intent, .session-notes-preview,
+ *                       .session-row-participants, .participant-stack, .participant-avatar,
+ *                       .participant-overflow, .session-no-participants,
+ *                       .session-commit-pill, .session-location-tag)
  *   Meta rows         (.meta-row, .meta-item, .meta-label, .meta-value)
- *   Misc utilities    (.loading, .error, .empty-state, .session-live)
+ *   Misc utilities    (.loading, .error, .empty-state, .session-live, .session-live-pulse)
  *   Code blocks       (pre, code)
  *   Labels            (.label, .label-*)
  */
@@ -507,6 +511,134 @@ textarea:focus {
   margin-right: var(--space-1);
   vertical-align: middle;
   flex-shrink: 0;
+}
+
+/* Pulsing animation for active sessions */
+@keyframes session-pulse {
+  0%, 100% { opacity: 1; box-shadow: 0 0 6px var(--color-success); }
+  50%       { opacity: 0.55; box-shadow: 0 0 12px var(--color-success); }
+}
+.session-live-pulse {
+  animation: session-pulse 1.6s ease-in-out infinite;
+}
+
+/* Active session row highlight */
+.session-row-active {
+  background: color-mix(in srgb, var(--color-success) 4%, transparent);
+  border-radius: var(--radius-sm);
+  padding-left: var(--space-2);
+  padding-right: var(--space-2);
+}
+
+/* Session row header line */
+.session-row-header {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  font-size: 14px;
+  color: var(--text-primary);
+  margin-bottom: 4px;
+}
+
+/* Intent line */
+.session-row-intent {
+  font-size: 13px;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+/* Notes preview — one-line subtitle below intent */
+.session-notes-preview {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-top: 3px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 600px;
+  font-style: italic;
+}
+
+/* Participant avatars row */
+.session-row-participants {
+  margin-top: 6px;
+}
+
+/* Stacked participant avatar circles */
+.participant-stack {
+  display: flex;
+  align-items: center;
+}
+
+.participant-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: var(--radius-full);
+  font-size: 11px;
+  font-weight: var(--font-weight-semibold);
+  color: #fff;
+  text-decoration: none;
+  border: 2px solid var(--bg-card);
+  margin-left: -6px;
+  transition: transform 0.15s ease, z-index 0s;
+  flex-shrink: 0;
+}
+
+.participant-avatar:first-child {
+  margin-left: 0;
+}
+
+.participant-avatar:hover {
+  transform: translateY(-2px);
+  text-decoration: none;
+}
+
+/* "+N more" overflow pill */
+.participant-overflow {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 26px;
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-full);
+  font-size: 11px;
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-muted);
+  background: var(--bg-overlay);
+  border: 2px solid var(--bg-card);
+  margin-left: -6px;
+  white-space: nowrap;
+}
+
+/* Empty participant placeholder */
+.session-no-participants {
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+/* Commit count pill */
+.session-commit-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 1px var(--space-2);
+  border-radius: var(--radius-full);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  background: var(--bg-overlay);
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+/* Location tag */
+.session-location-tag {
+  font-size: var(--font-size-xs);
+  color: var(--text-muted);
+  white-space: nowrap;
 }
 
 /* -------------------------------------------------------------------------
