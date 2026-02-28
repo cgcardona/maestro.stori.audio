@@ -2042,6 +2042,7 @@ detection).
 | `muse recall` | `commands/recall.py` | ✅ stub (PR #135) | #122 |
 | `muse tag` | `commands/tag.py` | ✅ implemented (PR #133) | #123 |
 | `muse grep` | `commands/grep_cmd.py` | ✅ stub (PR #128) | #124 |
+| `muse humanize` | `commands/humanize.py` | ✅ stub (PR #151) | #107 |
 | `muse describe` | `commands/describe.py` | ✅ stub (PR #134) | #125 |
 | `muse ask` | `commands/ask.py` | ✅ stub (PR #132) | #126 |
 | `muse session` | `commands/session.py` | ✅ implemented (PR #129) | #127 |
@@ -2496,6 +2497,42 @@ lead            79   105     38  swell
 
 ---
 
+## `muse humanize` — Apply Micro-Timing and Velocity Humanization to Quantized MIDI
+
+**Purpose:** Apply realistic human-performance variation to machine-quantized MIDI, producing a new Muse commit that sounds natural. AI agents use this after generating quantized output to make compositions feel human before presenting them to DAW users.
+
+**Usage:**
+```bash
+muse humanize [COMMIT] [OPTIONS]
+```
+
+**Flags:**
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `COMMIT` | argument | HEAD | Source commit ref to humanize |
+| `--tight` | flag | off | Subtle: timing +/-5 ms, velocity +/-5 |
+| `--natural` | flag | on | Moderate: timing +/-12 ms, velocity +/-10 (default) |
+| `--loose` | flag | off | Heavy: timing +/-20 ms, velocity +/-15 |
+| `--factor FLOAT` | float | - | Custom factor 0.0-1.0 (overrides preset) |
+| `--timing-only` | flag | off | Apply timing variation only; preserve velocities |
+| `--velocity-only` | flag | off | Apply velocity variation only; preserve timing |
+| `--track TEXT` | string | all | Restrict to one track (prefix match) |
+| `--section TEXT` | string | all | Restrict to a named section |
+| `--seed N` | int | - | Fix random seed for reproducible output |
+| `--message TEXT` | string | auto | Commit message |
+| `--json` | flag | off | Emit structured JSON for agent consumption |
+
+**Result types:** `HumanizeResult` and `TrackHumanizeResult` (both TypedDict). See `docs/reference/type_contracts.md`.
+
+**Agent use case:** After `muse commit` records a machine-generated MIDI variation, an AI agent runs `muse humanize --natural --seed 42` to add realistic performance feel. Drum groove is preserved automatically (GM channel 10 excluded from timing variation).
+
+**Implementation:** `maestro/muse_cli/commands/humanize.py`. Exit codes: 0 success, 1 flag conflict, 2 outside repo, 3 internal.
+
+> **Stub note:** Full MIDI note rewrite pending Storpheus note-level access. CLI interface is stable.
+
+---
+
 ## `muse import` — Import a MIDI or MusicXML File as a New Muse Commit
 
 ### Overview
@@ -2788,3 +2825,107 @@ arguments (`USER_ERROR`), 2 outside repo (`REPO_NOT_FOUND`), 3 internal error
 
 All stub commands have stable CLI contracts. Full musical analysis (MIDI content
 parsing, vector embeddings, LLM synthesis) is tracked as follow-up issues.
+
+## `muse contour` — Melodic Contour and Phrase Shape Analysis
+
+**Purpose:** Determines whether a melody rises, falls, arches, or waves — the
+fundamental expressive character that distinguishes two otherwise similar
+melodies.  An AI generation agent uses `muse contour --json HEAD` to
+understand the melodic shape of the current arrangement before layering a
+countermelody, ensuring complementary (not identical) contour.
+
+**Usage:**
+```bash
+muse contour [<commit>] [OPTIONS]
+```
+
+**Flags:**
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `[<commit>]` | string | HEAD | Target commit SHA to analyse |
+| `--track TEXT` | string | all tracks | Restrict to a named melodic track (e.g. `keys`, `lead`) |
+| `--section TEXT` | string | full piece | Scope analysis to a named section (e.g. `verse`, `chorus`) |
+| `--compare COMMIT` | string | — | Compare contour between HEAD (or `[<commit>]`) and this ref |
+| `--history` | flag | off | Show contour evolution across all commits |
+| `--shape` | flag | off | Print the overall shape label only (one line) |
+| `--json` | flag | off | Emit structured JSON for agent consumption |
+
+**Shape vocabulary:**
+| Label | Description |
+|-------|-------------|
+| `ascending` | Net upward movement across the full phrase |
+| `descending` | Net downward movement across the full phrase |
+| `arch` | Rises then falls (single peak) |
+| `inverted-arch` | Falls then rises (valley shape) |
+| `wave` | Multiple peaks; alternating rise and fall |
+| `static` | Narrow pitch range (< 2 semitones spread) |
+
+**Output example (text):**
+```
+Shape: Arch | Range: 2 octaves | Phrases: 4 avg 8 bars
+Commit: a1b2c3d4  Branch: main
+Track: keys  Section: all
+Angularity: 2.5 st avg interval
+(stub — full MIDI analysis pending)
+```
+
+**Output example (`--shape`):**
+```
+Shape: arch
+```
+
+**Output example (`--compare`, text):**
+```
+A (a1b2c3d4)  Shape: arch | Angularity: 2.5 st
+B (HEAD~10)   Shape: arch | Angularity: 2.5 st
+Delta  angularity +0.0 st | tessitura +0 st
+```
+
+**Output example (`--json`):**
+```json
+{
+  "shape": "arch",
+  "tessitura": 24,
+  "avg_interval": 2.5,
+  "phrase_count": 4,
+  "avg_phrase_bars": 8.0,
+  "commit": "a1b2c3d4",
+  "branch": "main",
+  "track": "keys",
+  "section": "all",
+  "source": "stub"
+}
+```
+
+**Result types:**
+- `ContourResult` — fields: `shape` (str), `tessitura` (int, semitones),
+  `avg_interval` (float, semitones), `phrase_count` (int), `avg_phrase_bars`
+  (float), `commit` (str), `branch` (str), `track` (str), `section` (str),
+  `source` (str).
+- `ContourCompareResult` — fields: `commit_a` (ContourResult), `commit_b`
+  (ContourResult), `shape_changed` (bool), `angularity_delta` (float),
+  `tessitura_delta` (int).
+
+See `docs/reference/type_contracts.md § ContourResult`.
+
+**Agent use case:** Before generating a countermelody, an agent calls
+`muse contour --json HEAD --track keys` to determine whether the existing
+melody is arch-shaped with a wide tessitura (high angularity).  It then
+generates a countermelody that is descending and narrow — complementary, not
+imitative.  The `--compare` flag lets the agent detect whether recent edits
+made a melody more angular (fragmented) or smoother (stepwise), informing
+whether the next variation should introduce or reduce leaps.
+
+**Implementation stub note:** `source: "stub"` in the JSON output indicates
+that full MIDI pitch-trajectory analysis is pending a Storpheus pitch-detection
+route.  The CLI contract (flags, output shape, result types) is stable — only
+the computed values will change when the full implementation is wired in.
+
+**Implementation:** `maestro/muse_cli/commands/contour.py` —
+`ContourResult` (TypedDict), `ContourCompareResult` (TypedDict),
+`_contour_detect_async()`, `_contour_compare_async()`,
+`_contour_history_async()`, `_format_detect()`, `_format_compare()`,
+`_format_history()`.  Exit codes: 0 success, 2 outside repo
+(`REPO_NOT_FOUND`), 3 internal error (`INTERNAL_ERROR`).
+
+---

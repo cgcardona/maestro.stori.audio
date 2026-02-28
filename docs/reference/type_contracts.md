@@ -2662,6 +2662,56 @@ commit that scored at or above the `--threshold` keyword-overlap cutoff.
 
 ---
 
+### `TrackHumanizeResult`
+
+**Module:** `maestro/muse_cli/commands/humanize.py`
+
+Per-track outcome of a `muse humanize` pass. Captures what was applied to each
+track so downstream agents can verify the humanization took effect (e.g. by
+comparing timing variance with `muse groove-check`).
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `track` | `str` | Track name (e.g. `"bass"`, `"drums"`) |
+| `timing_range_ms` | `int` | Applied timing variation range in ms (0 if `--velocity-only` or drum track) |
+| `velocity_range` | `int` | Applied velocity variation range in MIDI units (0 if `--timing-only`) |
+| `notes_affected` | `int` | Number of MIDI notes modified (stub: randomized placeholder) |
+| `drum_channel_excluded` | `bool` | `True` when the drum track was excluded from timing variation |
+
+**Producer:** `_apply_humanization()`
+**Consumer:** `HumanizeResult.tracks`, `_render_table()`, `_render_json()`
+
+---
+
+### `HumanizeResult`
+
+**Module:** `maestro/muse_cli/commands/humanize.py`
+
+Full result emitted by `muse humanize`. Contains provenance (source commit,
+preset, factor, seed) and a per-track breakdown of what was applied. Agents
+use this to confirm the operation succeeded and to audit the magnitude of
+humanization before committing downstream.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `commit` | `str` | Resolved source commit ref (8-char SHA or `"HEAD"`) |
+| `branch` | `str` | Current branch name |
+| `source_commit` | `str` | Same as `commit`; explicit alias for clarity in JSON payloads |
+| `preset` | `str` | One of `"tight"`, `"natural"`, `"loose"`, `"custom"` |
+| `factor` | `float` | Normalized humanization factor ∈ [0.0, 1.0] |
+| `seed` | `int \| None` | Random seed used; `None` = stochastic run |
+| `timing_only` | `bool` | Whether velocity humanization was skipped |
+| `velocity_only` | `bool` | Whether timing humanization was skipped |
+| `track_filter` | `str \| None` | `--track` value if provided; `None` = all tracks |
+| `section_filter` | `str \| None` | `--section` value if provided; `None` = all sections |
+| `tracks` | `list[TrackHumanizeResult]` | Per-track humanization outcomes |
+| `new_commit_id` | `str` | SHA of the newly created Muse commit |
+
+**Producer:** `_humanize_async()`
+**Consumer:** `_render_table()`, `_render_json()`, agentic `--json` pipelines
+
+---
+
 ### `DescribeResult`
 
 **Module:** `maestro/muse_cli/commands/describe.py`
@@ -4341,3 +4391,51 @@ error message via `typer.echo` before calling `typer.Exit(INTERNAL_ERROR)`.
 ```python
 class StorpheusUnavailableError(Exception): ...
 ```
+
+---
+
+### `ContourResult`
+
+**Module:** `maestro/muse_cli/commands/contour.py`
+
+Melodic contour analysis for a single commit or working tree.  Captures the
+overall pitch trajectory shape, effective range, average interval size, and
+phrase statistics.  Used by AI agents to understand a melody's expressive
+character before generating countermelodies or variations.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `shape` | `str` | Overall shape label: `ascending`, `descending`, `arch`, `inverted-arch`, `wave`, or `static` |
+| `tessitura` | `int` | Effective pitch range in semitones (e.g. 24 = 2 octaves) |
+| `avg_interval` | `float` | Mean absolute note-to-note interval in semitones; higher = more angular |
+| `phrase_count` | `int` | Number of detected melodic phrases |
+| `avg_phrase_bars` | `float` | Mean phrase length in bars |
+| `commit` | `str` | 8-char commit SHA analysed |
+| `branch` | `str` | Current branch name |
+| `track` | `str` | Track name analysed, or `"all"` |
+| `section` | `str` | Section name scoped, or `"all"` |
+| `source` | `str` | `"stub"` until full MIDI analysis is wired; `"midi"` when live |
+
+**Producer:** `_contour_detect_async()`
+**Consumer:** `_format_detect()`, `_format_history()`, `ContourCompareResult.commit_a/.commit_b`
+
+---
+
+### `ContourCompareResult`
+
+**Module:** `maestro/muse_cli/commands/contour.py`
+
+Comparison of melodic contour between two commits.  Exposes delta metrics
+that let an agent detect whether a melody became more angular (fragmented)
+or smoother (stepwise) between two points in history.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `commit_a` | `ContourResult` | Contour result for the first commit (or HEAD) |
+| `commit_b` | `ContourResult` | Contour result for the reference commit |
+| `shape_changed` | `bool` | `True` when the overall shape label differs between commits |
+| `angularity_delta` | `float` | Change in `avg_interval` (positive = more angular at A) |
+| `tessitura_delta` | `int` | Change in tessitura semitones (positive = wider range at A) |
+
+**Producer:** `_contour_compare_async()`
+**Consumer:** `_format_compare()`
