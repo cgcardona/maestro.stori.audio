@@ -4747,6 +4747,31 @@ error message via `typer.echo` before calling `typer.Exit(INTERNAL_ERROR)`.
 class StorpheusUnavailableError(Exception): ...
 ```
 
+---
+
+## Muse CLI — Symbolic Ref Types (`maestro/muse_cli/commands/symbolic_ref.py`)
+
+### `SymbolicRefResult`
+
+Slotted class returned by `read_symbolic_ref()` when the named ref file exists
+and its content starts with `refs/`.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `name` | `str` | The symbolic ref name that was queried, e.g. `HEAD`. |
+| `ref` | `str` | Full target ref string stored in the file, e.g. `refs/heads/main`. |
+| `short` | `str` | Last path component of `ref` (e.g. `main`). Computed on construction. |
+
+**Agent contract:** Callers receive `None` when the ref is absent or not
+symbolic (detached HEAD, bare SHA). Agents must guard with `if result is None`
+before accessing fields.
+
+```python
+result = read_symbolic_ref(muse_dir, "HEAD")
+if result is not None:
+    branch = result.short   # "main"
+    full   = result.ref     # "refs/heads/main"
+```
 
 ---
 

@@ -3449,6 +3449,7 @@ internally by other Muse commands that accept revision arguments.
 
 ```
 muse rev-parse <revision> [OPTIONS]
+
 ```
 
 ### Flags
@@ -3500,6 +3501,75 @@ An AI agent resolves `HEAD~1` before generating a new variation to obtain the
 parent commit ID, which it passes as a `base_commit` argument to downstream
 commands.  Use `--verify` in automation scripts to fail fast rather than
 silently producing empty output.
+
+---
+
+## `muse symbolic-ref` — Read or Write a Symbolic Ref
+
+**Purpose:** Read or write a symbolic ref (e.g. `HEAD`), answering "which branch
+is currently checked out?" — the primitive that all checkout, branch, and HEAD
+management operations depend on.
+
+**Implementation:** `maestro/muse_cli/commands/symbolic_ref.py`\
+**Status:** ✅ implemented (issue #93)
+
+### Usage
+
+```bash
+muse symbolic-ref HEAD                         # read: prints refs/heads/main
+muse symbolic-ref --short HEAD                 # read short form: prints main
+muse symbolic-ref HEAD refs/heads/feature/x   # write: update .muse/HEAD
+muse symbolic-ref --delete HEAD               # delete the symbolic ref file
+
+```
+
+### Flags
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `<name>` | positional | required | Ref name, e.g. `HEAD` or `refs/heads/main` |
+| `<ref>` | positional | none | When supplied, write this target into the ref (must start with `refs/`) |
+| `--short` | flag | off | Print just the branch name (`main`) instead of the full ref path |
+| `--delete / -d` | flag | off | Delete the symbolic ref file entirely |
+| `--quiet / -q` | flag | off | Suppress error output when the ref is not symbolic |
+
+### Output example
+
+```
+# Read
+refs/heads/main
+
+# Read --short
+main
+
+# Write
+✅ HEAD → refs/heads/feature/guitar
+
+# Delete
+✅ Deleted symbolic ref 'HEAD'
+```
+
+### Result type
+
+`SymbolicRefResult` — fields: `name` (str), `ref` (str), `short` (str).
+
+### Agent use case
+
+An AI agent inspecting the current branch before generating new variations calls
+`muse symbolic-ref --short HEAD` to confirm it is operating on the expected branch.
+Before creating a new branch it calls `muse symbolic-ref HEAD refs/heads/feature/guitar`
+to update the HEAD pointer atomically. These are pure filesystem operations — no DB
+round-trip, sub-millisecond latency.
+
+### Error handling
+
+| Scenario | Exit code | Message |
+|----------|-----------|---------|
+| Ref file does not exist | 1 (USER_ERROR) | `❌ HEAD is not a symbolic ref or does not exist` |
+| Ref content is a bare SHA (detached HEAD) | 1 (USER_ERROR) | same |
+| `<ref>` does not start with `refs/` | 1 (USER_ERROR) | `❌ Invalid symbolic-ref target '…': must start with 'refs/'` |
+| `--delete` on absent file | 1 (USER_ERROR) | `❌ HEAD: not found — nothing to delete` |
+| Not in a repo | 2 (REPO_NOT_FOUND) | Standard `require_repo()` message |
 
 ---
 
@@ -3676,6 +3746,7 @@ snapshot with a stable tag pointer that other agents can reference by name.
 | `muse rev-parse` | `commands/rev_parse.py` | ✅ implemented (PR #143) | #92 |
 | `muse session` | `commands/session.py` | ✅ implemented (PR #129) | #127 |
 | `muse swing` | `commands/swing.py` | ✅ stub (PR #131) | #121 |
+| `muse symbolic-ref` | `commands/symbolic_ref.py` | ✅ implemented (issue #93) | #93 |
 | `muse tag` | `commands/tag.py` | ✅ implemented (PR #133) | #123 |
 | `muse timeline` | `commands/timeline.py` | ✅ implemented (PR #TBD) | #97 |
 | `muse tempo-scale` | `commands/tempo_scale.py` | ✅ stub (PR open) | #111 |
