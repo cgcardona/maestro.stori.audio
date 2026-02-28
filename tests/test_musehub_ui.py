@@ -5210,3 +5210,210 @@ async def test_ui_commit_page_artifact_auth_uses_blob_proxy(
     # hydrateImages and _fetchBlobUrl must be present for the blob proxy pattern
     assert "hydrateImages" in body
     assert "_fetchBlobUrl" in body
+
+
+# ---------------------------------------------------------------------------
+# Reaction bars — issue #296
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.anyio
+async def test_reaction_bar_js_in_musehub_js(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """musehub.js must define loadReactions and toggleReaction for all detail pages."""
+    response = await client.get("/musehub/static/musehub.js")
+    assert response.status_code == 200
+    body = response.text
+    assert "loadReactions" in body
+    assert "toggleReaction" in body
+    assert "REACTION_BAR_EMOJIS" in body
+
+
+@pytest.mark.anyio
+async def test_reaction_bar_emojis_in_musehub_js(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """musehub.js reaction bar must include all 8 required emojis."""
+    response = await client.get("/musehub/static/musehub.js")
+    assert response.status_code == 200
+    body = response.text
+    for emoji in ["🔥", "❤️", "👏", "✨", "🎵", "🎸", "🎹", "🥁"]:
+        assert emoji in body, f"Emoji {emoji!r} missing from musehub.js"
+
+
+@pytest.mark.anyio
+async def test_reaction_bar_commit_page_has_load_call(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Commit detail page must call loadReactions for target_type 'commit'."""
+    await _make_repo(db_session)
+    commit_id = "abc1234567890abcdef1234567890abcdef12345678"
+    response = await client.get(f"/musehub/ui/testuser/test-beats/commits/{commit_id}")
+    assert response.status_code == 200
+    body = response.text
+    assert "loadReactions" in body
+    assert "commit-reactions" in body
+
+
+@pytest.mark.anyio
+async def test_reaction_bar_pr_detail_has_load_call(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """PR detail page must call loadReactions for target_type 'pull_request'."""
+    await _make_repo(db_session)
+    pr_id = "some-pr-uuid-1234"
+    response = await client.get(f"/musehub/ui/testuser/test-beats/pulls/{pr_id}")
+    assert response.status_code == 200
+    body = response.text
+    assert "loadReactions" in body
+    assert "pr-reactions" in body
+
+
+@pytest.mark.anyio
+async def test_reaction_bar_issue_detail_has_load_call(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Issue detail page must call loadReactions for target_type 'issue'."""
+    await _make_repo(db_session)
+    response = await client.get("/musehub/ui/testuser/test-beats/issues/1")
+    assert response.status_code == 200
+    body = response.text
+    assert "loadReactions" in body
+    assert "issue-reactions" in body
+
+
+@pytest.mark.anyio
+async def test_reaction_bar_release_detail_has_load_call(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Release detail page must call loadReactions for target_type 'release'."""
+    await _make_repo(db_session)
+    response = await client.get("/musehub/ui/testuser/test-beats/releases/v1.0")
+    assert response.status_code == 200
+    body = response.text
+    assert "loadReactions" in body
+    assert "release-reactions" in body
+
+
+@pytest.mark.anyio
+async def test_reaction_bar_session_detail_has_load_call(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Session detail page must call loadReactions for target_type 'session'."""
+    await _make_repo(db_session)
+    session_id = "some-session-uuid-1234"
+    response = await client.get(f"/musehub/ui/testuser/test-beats/sessions/{session_id}")
+    assert response.status_code == 200
+    body = response.text
+    assert "loadReactions" in body
+    assert "session-reactions" in body
+
+
+@pytest.mark.anyio
+async def test_reaction_api_allows_new_emojis(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """POST /reactions with 👏 and 🎹 (new emojis) must be accepted (not 400)."""
+    from maestro.db.musehub_models import MusehubRepo
+    repo = MusehubRepo(
+        name="reaction-test",
+        owner="testuser",
+        slug="reaction-test",
+        visibility="public",
+        owner_user_id="reaction-owner",
+    )
+    db_session.add(repo)
+    await db_session.commit()
+    await db_session.refresh(repo)
+    repo_id = str(repo.repo_id)
+
+    token_headers = {"Authorization": "Bearer test-token"}
+
+    for emoji in ["👏", "🎹"]:
+        response = await client.post(
+            f"/api/v1/musehub/repos/{repo_id}/reactions",
+            json={"target_type": "commit", "target_id": "abc123", "emoji": emoji},
+            headers=token_headers,
+        )
+        assert response.status_code not in (400, 422), (
+            f"Emoji {emoji!r} rejected by API: {response.status_code} {response.text}"
+        )
+
+
+@pytest.mark.anyio
+async def test_reaction_api_allows_release_and_session_target_types(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """POST /reactions must accept 'release' and 'session' as target_type values.
+
+    These target types were added in issue #296 to support reaction bars on
+    release_detail and session_detail pages.
+    """
+    from maestro.db.musehub_models import MusehubRepo
+    repo = MusehubRepo(
+        name="target-type-test",
+        owner="testuser",
+        slug="target-type-test",
+        visibility="public",
+        owner_user_id="target-type-owner",
+    )
+    db_session.add(repo)
+    await db_session.commit()
+    await db_session.refresh(repo)
+    repo_id = str(repo.repo_id)
+
+    token_headers = {"Authorization": "Bearer test-token"}
+
+    for target_type in ["release", "session"]:
+        response = await client.post(
+            f"/api/v1/musehub/repos/{repo_id}/reactions",
+            json={"target_type": target_type, "target_id": "some-id", "emoji": "🔥"},
+            headers=token_headers,
+        )
+        assert response.status_code not in (400, 422), (
+            f"target_type {target_type!r} rejected: {response.status_code} {response.text}"
+        )
+
+
+@pytest.mark.anyio
+async def test_reaction_bar_css_loaded_on_detail_pages(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Detail pages must load components.css which contains .reaction-bar styles."""
+    await _make_repo(db_session)
+    pages = [
+        "/musehub/ui/testuser/test-beats/pulls/pr-uuid-abc",
+        "/musehub/ui/testuser/test-beats/issues/1",
+        "/musehub/ui/testuser/test-beats/releases/v1.0",
+        "/musehub/ui/testuser/test-beats/sessions/session-uuid-abc",
+    ]
+    for page in pages:
+        response = await client.get(page)
+        assert response.status_code == 200
+        assert "components.css" in response.text, f"components.css missing from {page}"
+
+
+@pytest.mark.anyio
+async def test_reaction_bar_components_css_has_styles(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """components.css must define .reaction-bar and .reaction-btn CSS classes."""
+    response = await client.get("/musehub/static/components.css")
+    assert response.status_code == 200
+    body = response.text
+    assert ".reaction-bar" in body
+    assert ".reaction-btn" in body
+    assert ".reaction-btn--active" in body
+    assert ".reaction-count" in body

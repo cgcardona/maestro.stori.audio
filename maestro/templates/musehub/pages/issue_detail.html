@@ -36,6 +36,8 @@ async function load() {
         <button class="btn btn-danger" onclick="closeIssue()">&#10005; Close issue</button>
       </div>` : '';
 
+    const issueTargetId = String(issue.number);
+
     document.getElementById('content').innerHTML = `
       <div style="margin-bottom:12px">
         <a href="${base}/issues">&larr; Back to issues</a>
@@ -65,7 +67,12 @@ async function load() {
         </div>
         ${issue.body ? '<pre>' + escHtml(issue.body) + '</pre>' : ''}
         ${closeSection}
+      </div>
+      <div class="card" style="padding:var(--space-3) var(--space-4)">
+        <div id="issue-reactions"><p class="text-muted text-sm">Loading reactions…</p></div>
       </div>`;
+
+    loadReactions('issue', issueTargetId, 'issue-reactions');
   } catch(e) {
     if (e.message !== 'auth')
       document.getElementById('content').innerHTML = '<p class="error">&#10005; ' + escHtml(e.message) + '</p>';

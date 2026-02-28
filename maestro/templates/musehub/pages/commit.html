@@ -444,6 +444,11 @@ async function load() {
           ${artifactSection}
         </div>
 
+        <!-- Reaction bar -->
+        <div class="card" style="padding:var(--space-3) var(--space-4)">
+          <div id="commit-reactions"><p class="text-muted text-sm">Loading reactions…</p></div>
+        </div>
+
         <!-- AI summary panel (populated by loadAiSummary) -->
         <div class="card" id="ai-summary-panel" style="display:none;border-color:var(--color-accent)">
           <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:var(--space-3)">
@@ -470,6 +475,7 @@ async function load() {
     renderScorePreviews();
     // Hydrate image artifact cards with authed blob URLs to avoid 401
     hydrateImages();
+    loadReactions('commit', commitId, 'commit-reactions');
 
   } catch(e) {
     if (e.message !== 'auth')
