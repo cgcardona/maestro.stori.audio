@@ -104,6 +104,7 @@ maestro/muse_cli/
     ├── checkout.py       — muse checkout (stub — issue #34)
     ├── merge.py          — muse merge   ✅ fast-forward + 3-way merge (issue #35)
     ├── remote.py         — muse remote (add, -v)
+    ├── fetch.py          — muse fetch
     ├── push.py           — muse push
     ├── pull.py           — muse pull
     ├── open_cmd.py       — muse open    ✅ macOS artifact preview (issue #45)
@@ -1653,6 +1654,69 @@ it is working from the latest shared composition state.
 
 ---
 
+### `muse fetch`
+
+**Purpose:** Update remote-tracking refs to reflect the current state of the remote
+without modifying the local branch or muse-work/.  Use `muse fetch` when you want
+to inspect what collaborators have pushed before deciding whether to merge.  This
+is the non-destructive alternative to `muse pull` (fetch + merge).
+
+**Usage:**
+```bash
+muse fetch
+muse fetch --all
+muse fetch --prune
+muse fetch --remote staging --branch main --branch feature/bass-v2
+```
+
+**Flags:**
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--remote` | str | `origin` | Named remote to fetch from |
+| `--all` | flag | off | Fetch from every configured remote |
+| `--prune` / `-p` | flag | off | Remove local remote-tracking refs for branches deleted on the remote |
+| `--branch` / `-b` | str (repeatable) | all branches | Specific branch(es) to fetch |
+
+**Fetch algorithm:**
+1. Resolve remote URL(s) from `[remotes.<name>] url` in `.muse/config.toml`.
+2. POST `{ branches: [] }` (empty = all) to `<remote>/fetch`.
+3. For each branch in the Hub response, update `.muse/remotes/<remote>/<branch>` with the remote HEAD commit ID.
+4. If `--prune`, remove any `.muse/remotes/<remote>/<branch>` files whose branch was NOT in the Hub response.
+5. Local branches (`refs/heads/`) and `muse-work/` are NEVER modified.
+
+**Fetch vs Pull:**
+| Operation | Modifies local branch | Modifies muse-work/ | Merges remote commits |
+|-----------|----------------------|---------------------|----------------------|
+| `muse fetch` | No | No | No |
+| `muse pull` | Yes (via merge) | Yes | Yes |
+
+**Output example:**
+```
+From origin: + abc1234 feature/guitar -> origin/feature/guitar (new branch)
+From origin: + def5678 main -> origin/main
+✅ origin is already up to date.
+
+# With --all:
+From origin: + abc1234 main -> origin/main
+From staging: + xyz9999 main -> staging/main
+✅ Fetched 2 branch update(s) across all remotes.
+
+# With --prune:
+✂️  Pruned origin/deleted-branch (no longer exists on remote)
+```
+
+**Exit codes:** 0 — success; 1 — no remote configured or `--all` with no remotes; 3 — network/server error.
+
+**Result type:** `FetchRequest` / `FetchResponse` / `FetchBranchInfo` — see `maestro/muse_cli/hub_client.py`.
+
+**Agent use case:** An agent runs `muse fetch` before deciding whether to compose a new
+variation, to check if remote collaborators have pushed conflicting changes.  Since fetch
+does not modify the working tree, it is safe to run mid-composition without interrupting
+the current generation pipeline.  Follow with `muse log origin/main` to inspect what
+arrived, then `muse merge origin/main` if the agent decides to incorporate remote changes.
+
+---
+
 ## Muse CLI — Music Analysis Command Reference
 
 These commands expose musical dimensions across the commit graph — the layer that
@@ -2556,6 +2620,76 @@ commit for deeper inspection.
 > chord symbols, `--track`, `--section`, `--transposition-invariant`,
 > `--rhythm-invariant`) is reserved for a future iteration.  Flags are accepted
 > now to keep the CLI contract stable; supplying them emits a clear warning.
+
+---
+
+### `muse blame`
+
+**Purpose:** Annotate each tracked file with the commit that last changed it.
+Answers the producer's question "whose idea was this bass line?" or "which take
+introduced this change?" Output is per-file (not per-line) because MIDI and
+audio files are binary — the meaningful unit of change is the whole file.
+
+**Usage:**
+```bash
+muse blame [PATH] [OPTIONS]
+```
+
+**Flags:**
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `PATH` | positional string | — | Relative path within `muse-work/` to annotate. Omit to blame all tracked files |
+| `--track TEXT` | string | — | Filter to files whose basename matches this fnmatch glob (e.g. `bass*` or `*.mid`) |
+| `--section TEXT` | string | — | Filter to files inside this section directory (first directory component) |
+| `--line-range N,M` | string | — | Annotate sub-range (informational only — MIDI/audio are binary, not line-based) |
+| `--json` | flag | off | Emit structured JSON for agent consumption |
+
+**Output example (text):**
+```
+a1b2c3d4  producer             2026-02-27 14:30:00  (  modified)  muse-work/bass/bassline.mid
+    update bass groove
+f9e8d7c6  producer             2026-02-26 10:00:00  (     added)  muse-work/keys/melody.mid
+    initial take
+```
+
+**Output example (`--json`):**
+```json
+{
+  "path_filter": null,
+  "track_filter": null,
+  "section_filter": null,
+  "line_range": null,
+  "entries": [
+    {
+      "path": "muse-work/bass/bassline.mid",
+      "commit_id": "a1b2c3d4e5f6...",
+      "commit_short": "a1b2c3d4",
+      "author": "producer",
+      "committed_at": "2026-02-27 14:30:00",
+      "message": "update bass groove",
+      "change_type": "modified"
+    }
+  ]
+}
+```
+
+**Result type:** `BlameEntry` (TypedDict) — fields: `path` (str), `commit_id` (str),
+`commit_short` (str, 8-char), `author` (str), `committed_at` (str, `YYYY-MM-DD HH:MM:SS`),
+`message` (str), `change_type` (str: `"added"` | `"modified"` | `"unchanged"`).
+Wrapped in `BlameResult` (TypedDict) — fields: `path_filter`, `track_filter`,
+`section_filter`, `line_range` (all `str | None`), `entries` (list of `BlameEntry`).
+See `docs/reference/type_contracts.md § Muse CLI Types`.
+
+**Agent use case:** An AI composing a new bass arrangement asks `muse blame --track 'bass*' --json`
+to find the commit that last changed every bass file. It then calls `muse show <commit_id>` on
+those commits to understand what musical choices were made, before deciding whether to build on
+or diverge from the existing groove.
+
+**Implementation:** `maestro/muse_cli/commands/blame.py` —
+`BlameEntry` (TypedDict), `BlameResult` (TypedDict), `_load_commit_chain()`,
+`_load_snapshot_manifest()`, `_matches_filters()`, `_blame_async()`, `_render_blame()`.
+Exit codes: 0 success, 2 outside repo, 3 internal error.
 
 ---
 
@@ -5031,5 +5165,83 @@ muse merge --continue
 run `--continue` to record the merged arrangement as an immutable commit.
 
 **Implementation:** `maestro/muse_cli/commands/merge.py` — `_merge_continue_async(root, session)`.
+
+---
+
+### `muse release`
+
+**Purpose:** Export a tagged commit as distribution-ready release artifacts — the
+music-native publish step.  Bridges the Muse VCS world and the audio production
+world: a producer says "version 1.0 is done" and `muse release v1.0` produces
+WAV/MIDI/stem files with SHA-256 checksums for distribution.
+
+**Usage:**
+```bash
+muse release <tag> [OPTIONS]
+```
+
+**Flags:**
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `<tag>` | positional | required | Tag string (created via `muse tag add`) or short commit SHA prefix |
+| `--render-audio` | flag | off | Render all MIDI to a single audio file via Storpheus |
+| `--render-midi` | flag | off | Bundle all .mid files into a zip archive |
+| `--export-stems` | flag | off | Export each instrument track as a separate audio file |
+| `--format wav\|mp3\|flac` | option | `wav` | Audio output format |
+| `--output-dir PATH` | option | `./releases/<tag>/` | Destination directory for all artifacts |
+| `--json` | flag | off | Emit structured JSON for agent consumption |
+
+**Output layout:**
+```
+<output-dir>/
+    release-manifest.json        # always written; SHA-256 checksums
+    audio/<commit8>.<format>     # --render-audio
+    midi/midi-bundle.zip         # --render-midi
+    stems/<stem>.<format>        # --export-stems
+```
+
+**Output example:**
+```
+✅ Release artifacts for tag 'v1.0' (commit a1b2c3d4):
+   [audio] ./releases/v1.0/audio/a1b2c3d4.wav
+   [midi-bundle] ./releases/v1.0/midi/midi-bundle.zip
+   [manifest] ./releases/v1.0/release-manifest.json
+⚠️  Audio files are MIDI stubs (Storpheus /render endpoint not yet deployed).
+```
+
+**Result type:** `ReleaseResult` — fields: `tag`, `commit_id`, `output_dir`,
+`manifest_path`, `artifacts` (list of `ReleaseArtifact`), `audio_format`, `stubbed`.
+
+**`release-manifest.json` shape:**
+```json
+{
+  "tag": "v1.0",
+  "commit_id": "<full sha256>",
+  "commit_short": "<8-char>",
+  "released_at": "<ISO-8601 UTC>",
+  "audio_format": "wav",
+  "stubbed": true,
+  "files": [
+    {"path": "audio/a1b2c3d4.wav", "sha256": "...", "size_bytes": 4096, "role": "audio"},
+    {"path": "midi/midi-bundle.zip", "sha256": "...", "size_bytes": 1024, "role": "midi-bundle"},
+    {"path": "release-manifest.json", "sha256": "...", "size_bytes": 512, "role": "manifest"}
+  ]
+}
+```
+
+**Agent use case:** An AI music generation agent calls `muse release v1.0 --render-midi --json`
+after tagging a completed composition.  It reads `stubbed` from the JSON output to
+determine whether the audio files are real renders or MIDI placeholders, and inspects
+`files[*].sha256` to verify integrity before uploading to a distribution platform.
+
+**Implementation stub note:** The Storpheus `POST /render` endpoint (MIDI-in → audio-out)
+is not yet deployed.  Until it ships, `--render-audio` and `--export-stems` copy the
+source MIDI file as a placeholder and set `stubbed=true` in the manifest.  The
+`_render_midi_to_audio` function in `maestro/services/muse_release.py` is the only
+site to update when the endpoint becomes available.
+
+**Implementation:** `maestro/muse_cli/commands/release.py` — `_release_async(...)`.
+Service layer: `maestro/services/muse_release.py` — `build_release(...)`.
 
 ---
