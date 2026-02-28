@@ -1436,7 +1436,14 @@ maestro/
 | GET | `/api/v1/musehub/repos/{id}` | Get repo metadata |
 | GET | `/api/v1/musehub/repos/{id}/branches` | List branches |
 | GET | `/api/v1/musehub/repos/{id}/commits` | List commits (newest first) |
+| GET | `/api/v1/musehub/repos/{id}/dag` | Full commit DAG (topologically sorted nodes + edges) |
 | GET | `/api/v1/musehub/repos/{id}/context/{ref}` | Musical context document for a commit (JSON) |
+
+#### DAG Graph Page (UI)
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/musehub/ui/{id}/graph` | Interactive SVG commit graph (no auth required — HTML shell) |
 
 #### Context Viewer
 
@@ -1551,6 +1558,45 @@ See [api.md](../reference/api.md#get-apiv1musehub-reposrepo_idrawrefpath) for th
 full MIME type table and error reference.
 
 All other endpoints require `Authorization: Bearer <token>`. See [api.md](../reference/api.md#muse-hub-api) for full field docs.
+
+### DAG Graph — Interactive Commit Graph
+
+**Purpose:** Visualise the full commit history of a Muse Hub repo as an interactive directed acyclic graph, equivalent to `muse inspect --format mermaid` but explorable in the browser.
+
+**Routes:**
+
+| Route | Auth | Description |
+|-------|------|-------------|
+| `GET /api/v1/musehub/repos/{id}/dag` | JWT required | Returns `DagGraphResponse` JSON |
+| `GET /musehub/ui/{id}/graph` | None (HTML shell) | Interactive SVG graph page |
+
+**DAG data endpoint:** `GET /api/v1/musehub/repos/{id}/dag`
+
+Returns a `DagGraphResponse` with:
+- `nodes` — `DagNode[]` in topological order (oldest ancestor first, Kahn's algorithm)
+- `edges` — `DagEdge[]` where `source` = child commit, `target` = parent commit
+- `headCommitId` — SHA of the current HEAD (highest-timestamp branch head)
+
+Each `DagNode` carries: `commitId`, `message`, `author`, `timestamp`, `branch`, `parentIds`, `isHead`, `branchLabels`, `tagLabels`.
+
+**Client-side renderer features:**
+- Branch colour-coding: each unique branch name maps to a stable colour via a deterministic hash → palette index. Supports up to 10 distinct colours before wrapping.
+- Merge commits: nodes with `parentIds.length > 1` are rendered as rotated diamonds rather than circles.
+- HEAD node: an outer ring (orange `#f0883e`) marks the current HEAD commit.
+- Zoom: mouse-wheel scales the SVG transform around the cursor position (range 0.2× – 4×).
+- Pan: click-drag translates the SVG viewport.
+- Hover popover: shows full SHA, commit message, author, timestamp, and branch for any node.
+- Branch labels: `branchLabels` for each node are drawn as coloured badge overlays on the graph.
+- Click to navigate: clicking any node or its label navigates to the commit detail page.
+- Virtualised rendering: the SVG is positioned absolutely inside a fixed-height viewport; only the visible portion is painted by the browser.
+
+**Legend:** The top bar of the graph page shows each distinct branch name with its colour swatch, plus shape-key reminders for merge commits (♦) and HEAD (○).
+
+**Performance:** The `/dag` endpoint fetches all commits without a limit to build a complete graph. For repos with 100+ commits the response is typically < 50 KB (well within browser tolerance). The SVG renderer does not re-layout on scroll — panning is a pure CSS transform.
+
+**Result type:** `DagGraphResponse` — fields: `nodes: DagNode[]`, `edges: DagEdge[]`, `headCommitId: str | None`.
+
+**Agent use case:** An AI music generation agent can call `GET /dag` to reason about branching topology, find common ancestors between branches, determine which commits are reachable from HEAD, and identify merge points without scanning the linear commit list.
 
 ### Issue Workflow
 
@@ -6440,5 +6486,114 @@ Registered in `docs/reference/type_contracts.md`.
 | `maestro/api/routes/musehub/ui.py` | `profile_page()` HTML handler |
 | `alembic/versions/0001_consolidated_schema.py` | `musehub_profiles` table |
 | `tests/test_musehub_ui.py` | Profile acceptance tests |
+## Muse Hub — Cross-Repo Global Search
 
+### Overview
+
+Global search lets musicians and AI agents search commit messages across **all
+public Muse Hub repos** in a single query.  It is the cross-repo counterpart of
+the per-repo `muse find` command.
+
+Only `visibility='public'` repos are searched — private repos are excluded at
+the persistence layer and are never enumerated regardless of caller identity.
+
+### API
+
+```
+GET /api/v1/musehub/search?q={query}&mode={mode}&page={page}&page_size={page_size}
+Authorization: Bearer <jwt>
+```
+
+**Parameters:**
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `q` | string (required) | — | Search query (1–500 chars) |
+| `mode` | `keyword` \| `pattern` | `keyword` | Matching strategy (see below) |
+| `page` | int ≥ 1 | 1 | Repo-group page number |
+| `page_size` | int 1–50 | 10 | Repo-groups per page |
+
+**Search modes:**
+
+- **keyword** — whitespace-split OR-match of each term against commit messages
+  and repo names (case-insensitive, uses `lower()` + `LIKE %term%`).
+- **pattern** — raw SQL `LIKE` pattern applied to commit messages only.  Use
+  `%` as wildcard (e.g. `q=%minor%`).
+
+### Response shape
+
+Returns `GlobalSearchResult` (JSON, camelCase):
+
+```json
+{
+  "query": "jazz groove",
+  "mode": "keyword",
+  "totalReposSearched": 42,
+  "page": 1,
+  "pageSize": 10,
+  "groups": [
+    {
+      "repoId": "uuid",
+      "repoName": "jazz-lab",
+      "repoOwner": "alice",
+      "repoVisibility": "public",
+      "totalMatches": 3,
+      "matches": [
+        {
+          "commitId": "abc123",
+          "message": "jazz groove — walking bass variant",
+          "author": "alice",
+          "branch": "main",
+          "timestamp": "2026-02-27T12:00:00Z",
+          "repoId": "uuid",
+          "repoName": "jazz-lab",
+          "repoOwner": "alice",
+          "repoVisibility": "public",
+          "audioObjectId": "sha256:abc..."
+        }
+      ]
+    }
+  ]
+}
+```
+
+Results are **grouped by repo**.  Each group contains up to 20 matching commits
+(newest-first).  `totalMatches` reflects the actual count before the 20-commit
+cap.  Pagination (`page` / `page_size`) controls how many repo-groups appear
+per response.
+
+`audioObjectId` is populated when the repo has at least one `.mp3`, `.ogg`, or
+`.wav` artifact — the first one alphabetically by path is chosen.  Consumers
+can use this to render `<audio>` preview players without a separate API call.
+
+### Browser UI
+
+```
+GET /musehub/ui/search?q={query}&mode={mode}
+```
+
+Returns a static HTML shell (no JWT required).  The page pre-fills the search
+form from URL params, submits to the JSON API via localStorage JWT, and renders
+grouped results with audio previews and pagination.
+
+### Implementation
+
+| Layer | File | What it does |
+|-------|------|-------------|
+| Pydantic models | `maestro/models/musehub.py` | `GlobalSearchCommitMatch`, `GlobalSearchRepoGroup`, `GlobalSearchResult` |
+| Service | `maestro/services/musehub_repository.py` | `global_search()` — public-only filter, keyword/pattern predicate, group assembly, audio preview resolution |
+| Route | `maestro/api/routes/musehub/search.py` | `GET /musehub/search` — validates params, delegates to service |
+| UI | `maestro/api/routes/musehub/ui.py` | `global_search_page()` — static HTML shell at `/musehub/ui/search` |
+
+### Agent use case
+
+An AI composition agent searching for reference material can call:
+
+```
+GET /api/v1/musehub/search?q=F%23+minor+walking+bass&mode=keyword&page_size=5
+```
+
+The grouped response lets the agent scan commit messages by repo context,
+identify matching repos by name and owner, and immediately fetch audio previews
+via `audioObjectId` without additional round-trips.
 ---

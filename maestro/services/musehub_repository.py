@@ -12,14 +12,22 @@ Boundary rules:
 from __future__ import annotations
 
 import logging
+from collections import deque
 
-from sqlalchemy import desc, func, select
+from sqlalchemy import desc, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.sql.elements import ColumnElement
 
 from maestro.db import musehub_models as db
 from maestro.models.musehub import (
     BranchResponse,
     CommitResponse,
+    GlobalSearchCommitMatch,
+    GlobalSearchRepoGroup,
+    GlobalSearchResult,
+    DagEdge,
+    DagGraphResponse,
+    DagNode,
     MuseHubContextCommitInfo,
     MuseHubContextHistoryEntry,
     MuseHubContextMusicalState,
@@ -214,6 +222,284 @@ async def list_commits(
     rows_stmt = base.order_by(desc(db.MusehubCommit.timestamp)).limit(limit)
     rows = (await session.execute(rows_stmt)).scalars().all()
     return [_to_commit_response(r) for r in rows], total
+
+
+async def global_search(
+    session: AsyncSession,
+    *,
+    query: str,
+    mode: str = "keyword",
+    page: int = 1,
+    page_size: int = 10,
+) -> GlobalSearchResult:
+    """Search commit messages across all public Muse Hub repos.
+
+    Only ``visibility='public'`` repos are searched — private repos are never
+    exposed regardless of caller identity.  This enforces the public-only
+    contract at the persistence layer so no route handler can accidentally
+    bypass it.
+
+    ``mode`` controls matching strategy:
+    - ``keyword``: OR-match of whitespace-split query terms against message and
+      repo name using LIKE (case-insensitive via lower()).
+    - ``pattern``: raw SQL LIKE pattern applied to commit message only.
+
+    Results are grouped by repo and paginated by repo-group (``page_size``
+    controls how many repo-groups per page).  Within each group, up to 20
+    matching commits are returned newest-first.
+
+    An audio preview object ID is attached when the repo contains any .mp3
+    or .ogg artifact — the first one found by path ordering is used.
+
+    Args:
+        session:   Active async DB session.
+        query:     Raw search string from the user or agent.
+        mode:      "keyword" or "pattern".  Defaults to "keyword".
+        page:      1-based page number for repo-group pagination.
+        page_size: Number of repo-groups per page (1–50).
+
+    Returns:
+        GlobalSearchResult with groups, pagination metadata, and counts.
+    """
+    # ── 1. Collect all public repos ─────────────────────────────────────────
+    public_repos_stmt = (
+        select(db.MusehubRepo)
+        .where(db.MusehubRepo.visibility == "public")
+        .order_by(db.MusehubRepo.created_at)
+    )
+    public_repo_rows = (await session.execute(public_repos_stmt)).scalars().all()
+    total_repos_searched = len(public_repo_rows)
+
+    if not public_repo_rows or not query.strip():
+        return GlobalSearchResult(
+            query=query,
+            mode=mode,
+            groups=[],
+            total_repos_searched=total_repos_searched,
+            page=page,
+            page_size=page_size,
+        )
+
+    repo_ids = [r.repo_id for r in public_repo_rows]
+    repo_map: dict[str, db.MusehubRepo] = {r.repo_id: r for r in public_repo_rows}
+
+    # ── 2. Build commit filter predicate ────────────────────────────────────
+    predicate: ColumnElement[bool]
+    if mode == "pattern":
+        predicate = db.MusehubCommit.message.like(query)
+    else:
+        # keyword: OR-match each whitespace-split term against message (lower)
+        terms = [t for t in query.lower().split() if t]
+        if not terms:
+            return GlobalSearchResult(
+                query=query,
+                mode=mode,
+                groups=[],
+                total_repos_searched=total_repos_searched,
+                page=page,
+                page_size=page_size,
+            )
+        term_predicates = [
+            or_(
+                func.lower(db.MusehubCommit.message).contains(term),
+                func.lower(db.MusehubRepo.name).contains(term),
+            )
+            for term in terms
+        ]
+        predicate = or_(*term_predicates)
+
+    # ── 3. Query matching commits joined to their repo ───────────────────────
+    commits_stmt = (
+        select(db.MusehubCommit, db.MusehubRepo)
+        .join(db.MusehubRepo, db.MusehubCommit.repo_id == db.MusehubRepo.repo_id)
+        .where(
+            db.MusehubCommit.repo_id.in_(repo_ids),
+            predicate,
+        )
+        .order_by(desc(db.MusehubCommit.timestamp))
+    )
+    commit_pairs = (await session.execute(commits_stmt)).all()
+
+    # ── 4. Group commits by repo ─────────────────────────────────────────────
+    groups_map: dict[str, list[db.MusehubCommit]] = {}
+    for commit_row, _repo_row in commit_pairs:
+        groups_map.setdefault(commit_row.repo_id, []).append(commit_row)
+
+    # ── 5. Resolve audio preview objects (one per repo, first .mp3/.ogg) ────
+    audio_map: dict[str, str] = {}
+    for rid in groups_map:
+        audio_stmt = (
+            select(db.MusehubObject.object_id)
+            .where(
+                db.MusehubObject.repo_id == rid,
+                or_(
+                    db.MusehubObject.path.like("%.mp3"),
+                    db.MusehubObject.path.like("%.ogg"),
+                    db.MusehubObject.path.like("%.wav"),
+                ),
+            )
+            .order_by(db.MusehubObject.path)
+            .limit(1)
+        )
+        audio_row = (await session.execute(audio_stmt)).scalar_one_or_none()
+        if audio_row is not None:
+            audio_map[rid] = audio_row
+
+    # ── 6. Paginate repo-groups ──────────────────────────────────────────────
+    sorted_repo_ids = list(groups_map.keys())
+    offset = (page - 1) * page_size
+    page_repo_ids = sorted_repo_ids[offset : offset + page_size]
+
+    groups: list[GlobalSearchRepoGroup] = []
+    for rid in page_repo_ids:
+        repo_row = repo_map[rid]
+        all_matches = groups_map[rid]
+        audio_oid = audio_map.get(rid)
+
+        commit_matches = [
+            GlobalSearchCommitMatch(
+                commit_id=c.commit_id,
+                message=c.message,
+                author=c.author,
+                branch=c.branch,
+                timestamp=c.timestamp,
+                repo_id=rid,
+                repo_name=repo_row.name,
+                repo_owner=repo_row.owner_user_id,
+                repo_visibility=repo_row.visibility,
+                audio_object_id=audio_oid,
+            )
+            for c in all_matches[:20]
+        ]
+        groups.append(
+            GlobalSearchRepoGroup(
+                repo_id=rid,
+                repo_name=repo_row.name,
+                repo_owner=repo_row.owner_user_id,
+                repo_visibility=repo_row.visibility,
+                matches=commit_matches,
+                total_matches=len(all_matches),
+            )
+        )
+
+    return GlobalSearchResult(
+        query=query,
+        mode=mode,
+        groups=groups,
+        total_repos_searched=total_repos_searched,
+        page=page,
+        page_size=page_size,
+    )
+async def list_commits_dag(
+    session: AsyncSession,
+    repo_id: str,
+) -> DagGraphResponse:
+    """Return the full commit graph for a repo as a topologically sorted DAG.
+
+    Fetches every commit for the repo (no limit — required for correct DAG
+    traversal). Applies Kahn's algorithm to produce a topological ordering
+    from oldest ancestor to newest commit, which graph renderers can consume
+    directly without additional sorting.
+
+    Edges flow child → parent (source = child, target = parent) following the
+    standard directed graph convention where arrows point toward ancestors.
+
+    Branch head commits are identified by querying the branches table. The
+    highest-timestamp commit across all branches is designated as HEAD for
+    display purposes when no explicit HEAD ref exists.
+
+    Agent use case: call this to reason about the project's branching topology,
+    find common ancestors, or identify which branches contain a given commit.
+    """
+    # Fetch all commits for this repo
+    stmt = select(db.MusehubCommit).where(db.MusehubCommit.repo_id == repo_id)
+    all_rows = (await session.execute(stmt)).scalars().all()
+
+    if not all_rows:
+        return DagGraphResponse(nodes=[], edges=[], head_commit_id=None)
+
+    # Build lookup map
+    row_map: dict[str, db.MusehubCommit] = {r.commit_id: r for r in all_rows}
+
+    # Fetch all branches to identify HEAD candidates and branch labels
+    branch_stmt = select(db.MusehubBranch).where(db.MusehubBranch.repo_id == repo_id)
+    branch_rows = (await session.execute(branch_stmt)).scalars().all()
+
+    # Map commit_id → branch names pointing at it
+    branch_label_map: dict[str, list[str]] = {}
+    for br in branch_rows:
+        if br.head_commit_id and br.head_commit_id in row_map:
+            branch_label_map.setdefault(br.head_commit_id, []).append(br.name)
+
+    # Identify HEAD: the branch head with the most recent timestamp, or the
+    # most recent commit overall when no branches exist
+    head_commit_id: str | None = None
+    if branch_rows:
+        latest_ts = None
+        for br in branch_rows:
+            if br.head_commit_id and br.head_commit_id in row_map:
+                ts = row_map[br.head_commit_id].timestamp
+                if latest_ts is None or ts > latest_ts:
+                    latest_ts = ts
+                    head_commit_id = br.head_commit_id
+    if head_commit_id is None:
+        head_commit_id = max(all_rows, key=lambda r: r.timestamp).commit_id
+
+    # Kahn's topological sort (oldest → newest).
+    # in_degree[c] = number of c's parents that are present in this repo's commit set.
+    # Commits with in_degree == 0 are roots (no parents) — they enter the queue first,
+    # producing a parent-before-child ordering (oldest ancestor → newest commit).
+    in_degree: dict[str, int] = {r.commit_id: 0 for r in all_rows}
+    # children_map[parent_id] = list of commit IDs whose parent_ids contains parent_id
+    children_map: dict[str, list[str]] = {r.commit_id: [] for r in all_rows}
+
+    edges: list[DagEdge] = []
+    for row in all_rows:
+        for parent_id in (row.parent_ids or []):
+            if parent_id in row_map:
+                edges.append(DagEdge(source=row.commit_id, target=parent_id))
+                children_map.setdefault(parent_id, []).append(row.commit_id)
+                in_degree[row.commit_id] += 1
+
+    # Kahn's algorithm: start from commits with no parents (roots)
+    queue: deque[str] = deque(
+        cid for cid, deg in in_degree.items() if deg == 0
+    )
+    topo_order: list[str] = []
+
+    while queue:
+        cid = queue.popleft()
+        topo_order.append(cid)
+        for child_id in children_map.get(cid, []):
+            in_degree[child_id] -= 1
+            if in_degree[child_id] == 0:
+                queue.append(child_id)
+
+    # Handle cycles or disconnected commits (append remaining in timestamp order)
+    remaining = set(row_map.keys()) - set(topo_order)
+    if remaining:
+        sorted_remaining = sorted(remaining, key=lambda c: row_map[c].timestamp)
+        topo_order.extend(sorted_remaining)
+
+    nodes: list[DagNode] = []
+    for cid in topo_order:
+        row = row_map[cid]
+        nodes.append(
+            DagNode(
+                commit_id=row.commit_id,
+                message=row.message,
+                author=row.author,
+                timestamp=row.timestamp,
+                branch=row.branch,
+                parent_ids=list(row.parent_ids or []),
+                is_head=(row.commit_id == head_commit_id),
+                branch_labels=branch_label_map.get(row.commit_id, []),
+                tag_labels=[],
+            )
+        )
+
+    logger.debug("✅ Built DAG for repo %s: %d nodes, %d edges", repo_id, len(nodes), len(edges))
+    return DagGraphResponse(nodes=nodes, edges=edges, head_commit_id=head_commit_id)
 
 
 # ---------------------------------------------------------------------------

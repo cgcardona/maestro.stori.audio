@@ -203,6 +203,31 @@ async def test_ui_pages_include_token_form(
 
 
 @pytest.mark.anyio
+async def test_global_search_ui_page_returns_200(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """GET /musehub/ui/search returns 200 HTML (no auth required — HTML shell)."""
+    response = await client.get("/musehub/ui/search")
+    assert response.status_code == 200
+    assert "text/html" in response.headers["content-type"]
+    body = response.text
+    assert "Global Search" in body
+    assert "Muse Hub" in body
+
+
+@pytest.mark.anyio
+async def test_global_search_ui_page_no_auth_required(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """GET /musehub/ui/search must not return 401 — it is a static HTML shell."""
+    response = await client.get("/musehub/ui/search")
+    assert response.status_code != 401
+    assert response.status_code == 200
+
+
+@pytest.mark.anyio
 async def test_list_objects_returns_empty_for_new_repo(
     client: AsyncClient,
     db_session: AsyncSession,
@@ -295,7 +320,27 @@ async def _make_public_repo(db_session: AsyncSession) -> str:
 
 # ---------------------------------------------------------------------------
 # Context viewer helpers (issue #232)
+# DAG graph UI page tests (issue #229)
 # ---------------------------------------------------------------------------
+
+
+@pytest.mark.anyio
+async def test_graph_page_renders(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """GET /musehub/ui/{repo_id}/graph returns 200 HTML without requiring a JWT."""
+    repo_id = await _make_repo(db_session)
+    response = await client.get(f"/musehub/ui/{repo_id}/graph")
+    assert response.status_code == 200
+    assert "text/html" in response.headers["content-type"]
+    body = response.text
+    assert "Muse Hub" in body
+    assert "graph" in body.lower()
+
+
+# ---------------------------------------------------------------------------
+# Context viewer tests (issue #232)# ---------------------------------------------------------------------------
 
 _FIXED_COMMIT_ID = "aabbccdd" * 8  # 64-char hex string
 
@@ -504,6 +549,64 @@ async def test_context_page_renders(
 
 
 @pytest.mark.anyio
+async def test_graph_page_contains_dag_js(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Graph page embeds the client-side DAG renderer JavaScript."""
+    repo_id = await _make_repo(db_session)
+    response = await client.get(f"/musehub/ui/{repo_id}/graph")
+    assert response.status_code == 200
+    body = response.text
+    # Key renderer identifiers must be present
+    assert "renderGraph" in body
+    assert "dag-viewport" in body
+    assert "dag-svg" in body
+
+
+@pytest.mark.anyio
+async def test_graph_page_has_zoom_pan(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Graph page includes zoom and pan JavaScript logic."""
+    repo_id = await _make_repo(db_session)
+    response = await client.get(f"/musehub/ui/{repo_id}/graph")
+    assert response.status_code == 200
+    body = response.text
+    assert "wheel" in body
+    assert "mousedown" in body
+    assert "applyTransform" in body
+
+
+@pytest.mark.anyio
+async def test_graph_page_has_popover(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Graph page includes commit detail hover popover markup."""
+    repo_id = await _make_repo(db_session)
+    response = await client.get(f"/musehub/ui/{repo_id}/graph")
+    assert response.status_code == 200
+    body = response.text
+    assert "dag-popover" in body
+    assert "pop-sha" in body
+    assert "pop-msg" in body
+
+
+@pytest.mark.anyio
+async def test_graph_page_no_auth_required(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Graph UI page must be accessible without an Authorization header."""
+    repo_id = await _make_repo(db_session)
+    response = await client.get(f"/musehub/ui/{repo_id}/graph")
+    assert response.status_code != 401
+    assert response.status_code == 200
+
+
+@pytest.mark.anyio
 async def test_context_json_response(
     client: AsyncClient,
     db_session: AsyncSession,
@@ -601,6 +704,19 @@ async def test_context_page_no_auth_required(
     assert response.status_code != 401
     assert response.status_code == 200
 
+
+@pytest.mark.anyio
+async def test_graph_page_includes_token_form(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Graph page embeds the JWT token input form so visitors can authenticate."""
+    repo_id = await _make_repo(db_session)
+    response = await client.get(f"/musehub/ui/{repo_id}/graph")
+    assert response.status_code == 200
+    body = response.text
+    assert "localStorage" in body
+    assert "musehub_token" in body
 
 # ---------------------------------------------------------------------------
 # Embed player route tests (issue #244)
