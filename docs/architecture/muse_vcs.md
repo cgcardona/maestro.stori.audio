@@ -1599,6 +1599,63 @@ keyword match · threshold 0.60 · limit 5
 
 ---
 
+### `muse revert`
+
+**Purpose:** Create a new commit that undoes a prior commit without rewriting history. The safe undo: given commit C with parent P, `muse revert <commit>` creates a forward commit whose snapshot is P's state (the world before C was applied). An AI agent uses this after discovering a committed arrangement degraded the score — rather than resetting (which loses history), the revert preserves the full audit trail.
+
+**Usage:**
+```bash
+muse revert <commit> [OPTIONS]
+```
+
+**Flags:**
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `COMMIT` | positional | required | Commit ID to revert (full or abbreviated SHA) |
+| `--no-commit` | flag | off | Apply the inverse changes to muse-work/ without creating a new commit |
+| `--track TEXT` | string | — | Scope the revert to paths under `tracks/<track>/` only |
+| `--section TEXT` | string | — | Scope the revert to paths under `sections/<section>/` only |
+
+**Output example (full revert):**
+```
+✅ [main a1b2c3d4] Revert 'bad drum arrangement'
+```
+
+**Output example (scoped revert):**
+```
+✅ [main b2c3d4e5] Revert 'bad drum arrangement' (scoped to 2 path(s))
+```
+
+**Output example (--no-commit):**
+```
+✅ Staged revert (--no-commit). Files removed:
+   deleted: tracks/drums/fill.mid
+```
+
+**Result type:** `RevertResult` (dataclass, frozen) — fields:
+- `commit_id` (str): New commit ID (empty string when `--no-commit` or noop).
+- `target_commit_id` (str): Commit that was reverted.
+- `parent_commit_id` (str): Parent of the reverted commit (whose snapshot was restored).
+- `revert_snapshot_id` (str): Snapshot ID of the reverted state.
+- `message` (str): Auto-generated commit message (`"Revert '<original message>'"`)
+- `no_commit` (bool): Whether the revert was staged only.
+- `noop` (bool): True when reverting would produce no change.
+- `scoped_paths` (tuple[str, ...]): Paths selectively reverted (empty = full revert).
+- `paths_deleted` (tuple[str, ...]): Files removed from muse-work/ during `--no-commit`.
+- `paths_missing` (tuple[str, ...]): Files that could not be auto-restored (no object bytes).
+- `branch` (str): Branch on which the revert commit was created.
+
+**Agent use case:** An agent that evaluates generated arrangements after each commit can run `muse log --json` to detect quality regressions, then call `muse revert <bad_commit>` to undo the offending commit and resume generation from the prior good state. For instrument-specific corrections, `--track drums` limits the revert to drum tracks only, preserving bass and melodic changes.
+
+**Blocking behaviour:** Blocked during an in-progress merge with unresolved conflicts — exits 1 with a clear message directing the user to resolve conflicts first.
+
+**Object store limitation:** The Muse CLI stores file manifests (path→sha256) in Postgres but does not retain raw file bytes. For `--no-commit`, files that should be restored but whose bytes are no longer in `muse-work/` are listed as warnings in `paths_missing`. The commit-only path (default) is unaffected — it references an existing snapshot ID directly with no file restoration needed.
+
+**Implementation:** `maestro/muse_cli/commands/revert.py` (Typer CLI), `maestro/services/muse_revert.py` (`_revert_async`, `compute_revert_manifest`, `apply_revert_to_workdir`, `RevertResult`).
+
+---
+
 ### `muse grep`
 
 **Purpose:** Search all commits for a musical pattern — a note sequence, interval
@@ -3162,6 +3219,88 @@ between agent invocations and diff to detect graph changes.
 
 ---
 
+## `muse render-preview [<commit>]` — Audio Preview of a Commit Snapshot
+
+**Purpose:** Render the MIDI snapshot of any commit to an audio file, letting producers and AI agents hear what the project sounded like at any point in history — without opening a DAW session.  The musical equivalent of `git show <commit>` with audio playback.
+
+**Implementation:** `maestro/muse_cli/commands/render_preview.py`\
+**Service:** `maestro/services/muse_render_preview.py`\
+**Status:** ✅ implemented (issue #96)
+
+### Flags
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `[<commit>]` | positional string | HEAD | Short commit ID prefix to preview |
+| `--format` / `-f` | `wav\|mp3\|flac` | `wav` | Output audio format |
+| `--track TEXT` | string | all | Render only MIDI files matching this track name substring |
+| `--section TEXT` | string | all | Render only MIDI files matching this section name substring |
+| `--output` / `-o` | path | `/tmp/muse-preview-<short_id>.<fmt>` | Write the preview to this path |
+| `--open` | flag | off | Open the rendered preview in the system default audio player (macOS only) |
+| `--json` | flag | off | Emit structured JSON for agent consumption |
+
+### Output example (text mode)
+
+```
+⚠️  Preview generated (stub — Storpheus /render not yet deployed):
+   /tmp/muse-preview-abc12345.wav
+   (1 MIDI files used)
+```
+
+### JSON output example (`--json`)
+
+```json
+{
+  "commit_id": "abc12345def67890...",
+  "commit_short": "abc12345",
+  "output_path": "/tmp/muse-preview-abc12345.wav",
+  "format": "wav",
+  "midi_files_used": 1,
+  "skipped_count": 0,
+  "stubbed": true
+}
+```
+
+### Result type: `RenderPreviewResult`
+
+Defined in `maestro/services/muse_render_preview.py`.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `output_path` | `pathlib.Path` | Absolute path of the rendered audio file |
+| `format` | `PreviewFormat` | Audio format enum (`wav` / `mp3` / `flac`) |
+| `commit_id` | `str` | Full commit ID (64-char SHA) |
+| `midi_files_used` | `int` | Number of MIDI files from the snapshot used |
+| `skipped_count` | `int` | Manifest entries skipped (wrong type / filter / missing) |
+| `stubbed` | `bool` | `True` when Storpheus `/render` is not yet deployed and the file is a MIDI placeholder |
+
+### Error handling
+
+| Scenario | Exit code | Message |
+|----------|-----------|---------|
+| Not in a Muse repo | 2 (REPO_NOT_FOUND) | Standard `require_repo()` message |
+| No commits yet | 1 (USER_ERROR) | `❌ No commits yet — nothing to export.` |
+| Ambiguous commit prefix | 1 (USER_ERROR) | Lists all matching commits |
+| No MIDI files after filter | 1 (USER_ERROR) | `❌ No MIDI files found in snapshot…` |
+| Storpheus unreachable | 3 (INTERNAL_ERROR) | `❌ Storpheus not reachable — render aborted.` |
+
+### Storpheus render status
+
+The Storpheus service currently exposes MIDI *generation* at `POST /generate`.  A dedicated `POST /render` endpoint (MIDI-in → audio-out) is planned but not yet deployed.  Until it ships:
+
+- A health-check confirms Storpheus is reachable (fast probe, 3 s timeout).
+- The first matching MIDI file from the snapshot is **copied** to `output_path` as a placeholder.
+- `RenderPreviewResult.stubbed` is set to `True`.
+- The CLI prints a clear `⚠️  Preview generated (stub…)` warning.
+
+When `POST /render` is available, replace `_render_via_storpheus` in the service with a multipart POST call and set `stubbed=False`.
+
+### Agent use case
+
+An AI music generation agent uses `muse render-preview HEAD~10 --json` to obtain a path to the audio preview of a historical snapshot before deciding whether to branch from it or continue the current line.  The `stubbed` field tells the agent whether the file is a true audio render or a MIDI placeholder, so it can adjust its reasoning accordingly.
+
+---
+
 ## `muse tempo-scale` — Stretch or Compress the Timing of a Commit
 
 **Purpose:** Apply a deterministic time-scaling transformation to a commit,
@@ -3265,6 +3404,7 @@ arguments (`USER_ERROR`), 2 outside repo (`REPO_NOT_FOUND`), 3 internal error
 | `muse inspect` | `commands/inspect.py` | ✅ implemented (PR #TBD) | #98 |
 | `muse meter` | `commands/meter.py` | ✅ implemented (PR #141) | #117 |
 | `muse recall` | `commands/recall.py` | ✅ stub (PR #135) | #122 |
+| `muse render-preview` | `commands/render_preview.py` | ✅ implemented (issue #96) | #96 |
 | `muse session` | `commands/session.py` | ✅ implemented (PR #129) | #127 |
 | `muse swing` | `commands/swing.py` | ✅ stub (PR #131) | #121 |
 | `muse tag` | `commands/tag.py` | ✅ implemented (PR #133) | #123 |
@@ -3453,6 +3593,59 @@ the computed values will change when the full implementation is wired in.
 `_contour_history_async()`, `_format_detect()`, `_format_compare()`,
 `_format_history()`.  Exit codes: 0 success, 2 outside repo
 (`REPO_NOT_FOUND`), 3 internal error (`INTERNAL_ERROR`).
+
+---
+
+## `muse amend` — Amend the Most Recent Commit
+
+**Purpose:** Fold working-tree changes into the most recent commit, replacing
+it with a new commit that has the same parent.  Equivalent to
+`git commit --amend`.  The original HEAD commit becomes an orphan (unreachable
+from any branch ref) and remains in the database for forensic traceability.
+
+**Usage:**
+```bash
+muse amend [OPTIONS]
+```
+
+**Flags:**
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `-m / --message TEXT` | string | — | Replace the commit message |
+| `--no-edit` | flag | off | Keep the original commit message (default when `-m` is omitted; takes precedence over `-m` when both are provided) |
+| `--reset-author` | flag | off | Reset the author field to the current user (stub: sets to empty string until a user-identity system is implemented) |
+
+**Output example:**
+```
+✅ [main a1b2c3d4] updated groove pattern (amended)
+```
+
+**Behaviour:**
+1. Re-snapshots `muse-work/` using the same content-addressed pipeline as
+   `muse commit` (sha256 per file, deterministic snapshot_id).
+2. Computes a new `commit_id` using the *original commit's parent* (not the
+   original itself), the new snapshot, the effective message, and the current
+   timestamp.
+3. Writes the new commit row to Postgres and updates
+   `.muse/refs/heads/<branch>` to the new commit ID.
+4. **Blocked** when a merge is in progress (`.muse/MERGE_STATE.json` exists).
+5. **Blocked** when there are no commits yet on the current branch.
+6. **Blocked** when `muse-work/` does not exist or is empty.
+
+**Result types:**
+- Returns the new `commit_id` (64-char sha256 hex string) from `_amend_async`.
+- Exit codes: 0 success, 1 user error (`USER_ERROR`), 2 outside repo
+  (`REPO_NOT_FOUND`), 3 internal error (`INTERNAL_ERROR`).
+
+**Agent use case:** A producer adjusts a MIDI note quantization setting, then
+runs `muse amend --no-edit` to fold the change silently into the last commit
+without cluttering history with a second "tweak quantization" entry.  An
+automated agent can call `muse amend -m "fix: tighten quantization on drums"`
+to improve the commit message after inspection.
+
+**Implementation:** `maestro/muse_cli/commands/amend.py` —
+`_amend_async(message, no_edit, reset_author, root, session)`.
+Tests: `tests/muse_cli/test_amend.py`.
 
 ---
 

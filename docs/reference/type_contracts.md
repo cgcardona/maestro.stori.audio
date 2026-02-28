@@ -29,6 +29,7 @@ This document is the single source of truth for every named entity (TypedDict, d
    - [GrooveStatus](#groovestatuss)
    - [CommitGrooveMetrics](#commitgroovemetrics)
    - [GrooveCheckResult](#groovecheckresult)
+   - [RenderPreviewResult](#renderpreviewresult)
 5. [Variation Layer (`app/variation/`)](#variation-layer)
    - [Event Envelope payloads](#event-envelope-payloads)
    - [PhraseRecord](#phraserecord)
@@ -1092,6 +1093,27 @@ On failure: `success=False` plus `error` (and optionally `message`).
 | Property | Returns | Description |
 |----------|---------|-------------|
 | `effective_bpm` | `float \| None` | `tempo_bpm` if set; else `detected_bpm` |
+
+---
+
+### `RenderPreviewResult`
+
+**Path:** `maestro/services/muse_render_preview.py`
+
+`dataclass(frozen=True)` — Named result type for a `muse render-preview [<commit>]` operation.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `output_path` | `pathlib.Path` | Absolute path of the rendered (or stub) audio file |
+| `format` | `PreviewFormat` | Audio format enum: `wav` / `mp3` / `flac` |
+| `commit_id` | `str` | Full 64-char SHA-256 commit ID whose snapshot was rendered |
+| `midi_files_used` | `int` | Number of MIDI files from the snapshot passed to the renderer |
+| `skipped_count` | `int` | Manifest entries skipped (non-MIDI, filtered out, or missing on disk) |
+| `stubbed` | `bool` | `True` when Storpheus `/render` is not yet deployed and a MIDI file was copied in its place |
+
+**Companion enum:**
+
+`PreviewFormat(str, Enum)` — `WAV = "wav"`, `MP3 = "mp3"`, `FLAC = "flac"`.
 
 ---
 
@@ -2876,6 +2898,34 @@ commit that scored at or above the `--threshold` keyword-overlap cutoff.
 
 **Producer:** `_recall_async()`
 **Consumer:** `_render_results()`, callers using `--json` output
+
+---
+
+### `RevertResult`
+
+**Module:** `maestro/services/muse_revert.py`
+
+Outcome of a `muse revert` operation. Captures the full audit trail of what
+was (or was not) changed so callers can verify the revert succeeded.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `commit_id` | `str` | New commit ID created by the revert. Empty string when `--no-commit` or noop. |
+| `target_commit_id` | `str` | The commit that was reverted. |
+| `parent_commit_id` | `str` | Parent of the reverted commit (whose snapshot was restored). Empty string for root commits. |
+| `revert_snapshot_id` | `str` | Snapshot ID of the reverted state (may equal parent's snapshot_id for full reverts). |
+| `message` | `str` | Auto-generated commit message: `"Revert '<original message>'"`. |
+| `no_commit` | `bool` | `True` when staged to muse-work/ without creating a commit. |
+| `noop` | `bool` | `True` when reverting would produce no change (already at target state). |
+| `scoped_paths` | `tuple[str, ...]` | Paths selectively reverted via `--track`/`--section`. Empty tuple = full revert. |
+| `paths_deleted` | `tuple[str, ...]` | Files removed from muse-work/ during `--no-commit`. |
+| `paths_missing` | `tuple[str, ...]` | Files that should be restored but whose bytes are unavailable (no object store). |
+| `branch` | `str` | Branch on which the revert commit was created. |
+
+**Producer:** `_revert_async()`
+**Consumer:** `revert()` Typer command callback, tests in `tests/muse_cli/test_revert.py`
+
+**Frozen dataclass** — all fields are immutable after construction.
 
 ---
 
