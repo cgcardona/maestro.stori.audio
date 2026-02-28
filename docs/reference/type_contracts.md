@@ -1171,6 +1171,40 @@ On failure: `success=False` plus `error` (and optionally `message`).
 
 ---
 
+### `ExportResult`
+
+**Path:** `maestro/services/musehub_exporter.py`
+
+`dataclass(frozen=True)` — Fully packaged export artifact returned by `export_repo_at_ref()`.
+Ready for direct streaming to the HTTP client via `Response(content=result.content, ...)`.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `content` | `bytes` | Raw bytes of the artifact or ZIP archive |
+| `content_type` | `str` | MIME type for the HTTP `Content-Type` header |
+| `filename` | `str` | Suggested filename for `Content-Disposition: attachment` |
+
+**Companion enum:**
+
+`ExportFormat(str, Enum)` — `midi`, `json`, `musicxml`, `abc`, `wav`, `mp3`.
+
+**Companion TypedDict:**
+
+`ObjectIndexEntry(TypedDict)` — One entry in the JSON export object index (used in `format=json` responses).
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `object_id` | `str` | Muse Hub object ID |
+| `path` | `str` | Artifact path within the repo |
+| `size_bytes` | `int` | Stored artifact size in bytes |
+
+**Sentinel returns:** `export_repo_at_ref()` returns the string literal `"ref_not_found"` when
+the ref cannot be resolved to any known commit or branch, and `"no_matching_objects"` when
+no stored artifacts match the requested format + section filter. Route handlers convert
+these to HTTP 404.
+
+---
+
 ### `RenderPreviewResult`
 
 **Path:** `maestro/services/muse_render_preview.py`
