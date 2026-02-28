@@ -3909,6 +3909,165 @@ arguments (`USER_ERROR`), 2 outside repo (`REPO_NOT_FOUND`), 3 internal error
 
 ---
 
+## `muse motif` — Recurring Melodic Motif Analysis
+
+### `muse motif find`
+
+**Purpose:** Detect recurring melodic and rhythmic patterns in a single commit.
+An AI agent uses this before generating a new variation to identify the established
+motific language of the composition, ensuring new material is thematically coherent.
+
+**Usage:**
+```bash
+muse motif find [<commit>] [OPTIONS]
+```
+
+**Flags:**
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--min-length N` | int | 3 | Minimum motif length in notes |
+| `--track TEXT` | str | — | Restrict to a named MIDI track |
+| `--section TEXT` | str | — | Restrict to a named section/region |
+| `--json` | flag | off | Emit structured JSON for agent consumption |
+
+**Output example:**
+```
+Recurring motifs — commit a1b2c3d4  (HEAD -> main)
+── stub mode: full MIDI analysis pending ──
+
+#  Fingerprint            Contour             Count
+-  ----------------------  ------------------  -----
+1  [+2, +2, -1, +2]       ascending-step          3
+2  [-2, -2, +1, -2]       descending-step         2
+3  [+4, -2, +3]           arch                    2
+
+3 motif(s) found (min-length 3)
+```
+
+**Result type:** `MotifFindResult` — fields: `commit_id`, `branch`, `min_length`, `motifs` (list of `MotifGroup`), `total_found`, `source`.
+
+**Agent use case:** Call `muse motif find --json HEAD` before composing a new section.
+Parse `motifs[0].fingerprint` to retrieve the primary interval sequence, then instruct
+the generation model to build on that pattern rather than introducing unrelated material.
+
+**Implementation note:** Stub — returns realistic placeholder motifs. Full
+implementation requires MIDI note data queryable from the commit snapshot store.
+
+---
+
+### `muse motif track`
+
+**Purpose:** Search all commits in branch history for appearances of a specific motif.
+Detects not only exact transpositions but also melodic inversion, retrograde, and
+retrograde-inversion — the four canonical classical transformations.
+
+**Usage:**
+```bash
+muse motif track "<pattern>" [OPTIONS]
+```
+
+**Arguments:**
+| Argument | Description |
+|----------|-------------|
+| `pattern` | Space-separated note names (`"C D E G"`) or MIDI numbers (`"60 62 64 67"`) |
+
+**Flags:**
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--json` | flag | off | Emit structured JSON |
+
+**Output example:**
+```
+Tracking motif: 'C D E G'
+Fingerprint: [+2, +2, +3]
+Commits scanned: 12
+
+Commit      Track         Transform       Position
+----------  ------------  --------------  --------
+a1b2c3d4    melody        exact                  0
+f4e3d2c1    melody        inversion              4
+b2c3d4e5    bass          retrograde             2
+
+3 occurrence(s) found.
+```
+
+**Result type:** `MotifTrackResult` — fields: `pattern`, `fingerprint`, `occurrences` (list of `MotifOccurrence`), `total_commits_scanned`, `source`.
+
+**Agent use case:** When the agent needs to understand how a theme has evolved,
+call `muse motif track "C D E G" --json` and inspect the `transformation` field
+on each occurrence to chart the motif's journey through the composition's history.
+
+---
+
+### `muse motif diff`
+
+**Purpose:** Show how the dominant motif transformed between two commits.
+Classifies the change as one of: exact (transposition), inversion, retrograde,
+retrograde-inversion, augmentation, diminution, or approximate.
+
+**Usage:**
+```bash
+muse motif diff <commit-a> <commit-b> [OPTIONS]
+```
+
+**Flags:**
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--json` | flag | off | Emit structured JSON |
+
+**Output example:**
+```
+Motif diff: a1b2c3d4 → f4e3d2c1
+
+  A (a1b2c3d4): [+2, +2, -1, +2]  [ascending-step]
+  B (f4e3d2c1): [-2, -2, +1, -2]  [descending-step]
+
+Transformation: INVERSION
+The motif was inverted — ascending intervals became descending.
+```
+
+**Result type:** `MotifDiffResult` — fields: `commit_a` (`MotifDiffEntry`), `commit_b` (`MotifDiffEntry`), `transformation` (`MotifTransformation`), `description`, `source`.
+
+**Agent use case:** Use after detecting a structural change to understand whether
+the composer inverted or retrogressed the theme — crucial context for deciding
+how to develop material in the next variation.
+
+---
+
+### `muse motif list`
+
+**Purpose:** List all named motifs saved in `.muse/motifs/`. Named motifs are
+user-annotated melodic ideas that the composer has labelled for future recall.
+
+**Usage:**
+```bash
+muse motif list [OPTIONS]
+```
+
+**Flags:**
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--json` | flag | off | Emit structured JSON |
+
+**Output example:**
+```
+Named motifs:
+
+Name                  Fingerprint             Created                   Description
+--------------------  ----------------------  ------------------------  ------------------------------
+main-theme            [+2, +2, -1, +2]        2026-01-15T10:30:00Z      The central ascending motif…
+bass-riff             [-2, -3, +2]            2026-01-20T14:15:00Z      Chromatic bass figure…
+```
+
+**Result type:** `MotifListResult` — fields: `motifs` (list of `SavedMotif`), `source`.
+
+**Agent use case:** Load the named motif library at session start. Cross-reference
+`fingerprint` values against `muse motif find` output to check whether detected
+patterns match known named motifs before introducing new thematic material.
+---
+
+---
+
 ## `muse read-tree` — Read a Snapshot into muse-work/
 
 **Purpose:** Hydrate `muse-work/` from any historical snapshot without modifying
@@ -3966,7 +4125,6 @@ running `muse dynamics` or `muse swing`) without advancing the branch pointer. T
 is safer than `muse checkout` because it leaves all branch metadata intact.
 
 ---
-
 ## `muse update-ref` — Write or Delete a Ref (Branch or Tag Pointer)
 
 **Purpose:** Directly update a branch or tag pointer (`refs/heads/*` or `refs/tags/*`)
@@ -4030,7 +4188,6 @@ only the first one wins; the second will receive `USER_ERROR` and retry or backo
 
 Use `muse update-ref refs/tags/v1.0 <commit_id>` to mark a production-ready
 snapshot with a stable tag pointer that other agents can reference by name.
-
 ---
 
 ## `muse write-tree` — Write Current Working-Tree as a Snapshot Object
@@ -4108,6 +4265,7 @@ commit is needed.
 | `muse rev-parse` | `commands/rev_parse.py` | ✅ implemented (PR #143) | #92 |
 | `muse session` | `commands/session.py` | ✅ implemented (PR #129) | #127 |
 | `muse swing` | `commands/swing.py` | ✅ stub (PR #131) | #121 |
+| `muse motif` | `commands/motif.py` | ✅ stub (PR —) | #101 |
 | `muse symbolic-ref` | `commands/symbolic_ref.py` | ✅ implemented (issue #93) | #93 |
 | `muse tag` | `commands/tag.py` | ✅ implemented (PR #133) | #123 |
 | `muse tempo-scale` | `commands/tempo_scale.py` | ✅ stub (PR open) | #111 |

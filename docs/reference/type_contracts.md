@@ -25,6 +25,7 @@ This document is the single source of truth for every named entity (TypedDict, d
    - [ExpressivenessResult](#expressivenessresult)
    - [MuseTempoResult](#musetemporesult)
    - [MuseTempoHistoryEntry](#musetemopohistoryentry)
+   - [Muse Motif Types](#muse-motif-types-maestroservicesmuse_motifpy)
    - [Muse Validate Types](#muse-validate-types)
    - [GrooveStatus](#groovestatuss)
    - [CommitGrooveMetrics](#commitgroovemetrics)
@@ -2741,6 +2742,128 @@ Swing comparison between HEAD and a reference commit.
 
 **Producer:** `_swing_compare_async()`
 **Consumer:** `_format_compare()`
+
+### Muse Motif Types (`maestro/services/muse_motif.py`)
+
+All motif types are frozen `dataclass` instances (not TypedDicts) so they carry
+semantic labels and are safe to store in tuples.
+
+#### `MotifOccurrence`
+
+A single occurrence of a motif within a commit or pattern search.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `commit_id` | `str` | Short (8-char) commit SHA where the motif was found |
+| `track` | `str` | Track name (e.g. `"melody"`, `"bass"`) |
+| `section` | `str \| None` | Named section the occurrence falls in, or `None` |
+| `start_position` | `int` | Index of the first note of the motif |
+| `transformation` | `MotifTransformation` | Relationship to the query motif |
+| `pitch_sequence` | `tuple[int, ...]` | Literal MIDI pitch values at this occurrence |
+| `interval_fingerprint` | `IntervalSequence` | Normalised interval sequence used for matching |
+
+#### `MotifGroup`
+
+A single recurring motif and all its occurrences in a scanned commit.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `fingerprint` | `IntervalSequence` | Normalised interval sequence (the motif's identity) |
+| `count` | `int` | Number of times the motif appears |
+| `occurrences` | `tuple[MotifOccurrence, ...]` | All detected occurrences |
+| `label` | `str` | Contour label: `ascending-step`, `ascending-leap`, `descending-step`, `descending-leap`, `arch`, `valley`, `oscillating`, `static` |
+
+#### `MotifFindResult`
+
+Results from `muse motif find` — recurring patterns in a single commit.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `commit_id` | `str` | Short commit SHA analysed |
+| `branch` | `str` | Branch name |
+| `min_length` | `int` | Minimum motif length requested |
+| `motifs` | `tuple[MotifGroup, ...]` | Detected motif groups, sorted by count desc |
+| `total_found` | `int` | Total number of distinct recurring motifs |
+| `source` | `str` | `"stub"` or `"live"` |
+
+**Producer:** `find_motifs()`
+**Consumer:** `_format_find()` in `motif.py`
+
+#### `MotifTrackResult`
+
+Results from `muse motif track` — appearances of a pattern across history.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `pattern` | `str` | The original query pattern string |
+| `fingerprint` | `IntervalSequence` | Derived transposition-invariant fingerprint |
+| `occurrences` | `tuple[MotifOccurrence, ...]` | All occurrences found across commits |
+| `total_commits_scanned` | `int` | Number of commits searched |
+| `source` | `str` | `"stub"` or `"live"` |
+
+**Producer:** `track_motif()`
+**Consumer:** `_format_track()` in `motif.py`
+
+#### `MotifDiffEntry`
+
+One side of a `muse motif diff` comparison.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `commit_id` | `str` | Short commit SHA |
+| `fingerprint` | `IntervalSequence` | Interval sequence at this commit |
+| `label` | `str` | Contour label |
+| `pitch_sequence` | `tuple[int, ...]` | Literal pitches (if available) |
+
+#### `MotifDiffResult`
+
+Results from `muse motif diff` — how a motif transformed between two commits.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `commit_a` | `MotifDiffEntry` | Analysis of the motif at the first commit |
+| `commit_b` | `MotifDiffEntry` | Analysis of the motif at the second commit |
+| `transformation` | `MotifTransformation` | Detected transformation relationship |
+| `description` | `str` | Human-readable description |
+| `source` | `str` | `"stub"` or `"live"` |
+
+**Producer:** `diff_motifs()`
+**Consumer:** `_format_diff()` in `motif.py`
+
+#### `SavedMotif`
+
+A named motif stored in `.muse/motifs/`.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `name` | `str` | User-assigned motif name (e.g. `"main-theme"`) |
+| `fingerprint` | `IntervalSequence` | Stored interval fingerprint |
+| `created_at` | `str` | ISO-8601 UTC timestamp |
+| `description` | `str \| None` | Optional free-text annotation |
+
+#### `MotifListResult`
+
+Results from `muse motif list` — all named motifs in the repository.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `motifs` | `tuple[SavedMotif, ...]` | All saved named motifs |
+| `source` | `str` | `"stub"` or `"live"` |
+
+**Producer:** `list_motifs()`
+**Consumer:** `_format_list()` in `motif.py`
+
+#### `MotifTransformation` (Enum)
+
+| Value | Meaning |
+|-------|---------|
+| `EXACT` | Identical interval sequence (possibly transposed) |
+| `INVERSION` | Each interval negated (melodic mirror) |
+| `RETROGRADE` | Interval sequence reversed |
+| `RETRO_INV` | Retrograde + inversion combined |
+| `AUGMENTED` | Same intervals; note durations scaled up |
+| `DIMINISHED` | Same intervals; note durations compressed |
+| `APPROXIMATE` | Similar contour but no exact variant match |
 
 ### `ChordEvent`
 
