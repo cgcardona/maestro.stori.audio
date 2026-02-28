@@ -69,6 +69,50 @@ curl -X POST https://<your-api>/api/v1/users/register -H "Content-Type: applicat
 
 ---
 
+## Muse Hub web UI
+
+Maestro ships a built-in browser UI for navigating remote Muse repos — no
+separate frontend required.
+
+### URL structure
+
+| Page | URL |
+|------|-----|
+| Repo overview (branch selector + commit log) | `GET /musehub/ui/{repo_id}` |
+| Commit detail (metadata + artifact browser) | `GET /musehub/ui/{repo_id}/commits/{commit_id}` |
+| Pull request list | `GET /musehub/ui/{repo_id}/pulls` |
+| Pull request detail (+ Merge button) | `GET /musehub/ui/{repo_id}/pulls/{pr_id}` |
+| Issue list | `GET /musehub/ui/{repo_id}/issues` |
+| Issue detail (+ Close button) | `GET /musehub/ui/{repo_id}/issues/{number}` |
+
+### Authentication in the browser
+
+The UI routes return HTML shells — no JWT is required to load the page.
+JavaScript in each page reads a JWT from `localStorage` (key `musehub_token`) and
+passes it as a `Bearer` header when calling the JSON API. If the key is absent or
+expired the page shows a password-style input so you can paste in a token.
+
+**One-time setup in the browser:**
+1. Obtain a JWT (see [Muse Hub CLI authentication](#muse-hub-cli-authentication) below).
+2. Open any `/musehub/ui/` URL in your browser.
+3. Paste the JWT into the **"Enter your Maestro JWT"** field and click **Save & Load**.
+
+The token persists in `localStorage` until you click **Sign out** or clear browser storage.
+
+### Artifact browser
+
+The commit detail page lists all binary artifacts (`.webp` piano rolls, `.mid`
+MIDI files, `.mp3` recordings) stored in the repo. Artifacts are displayed by type:
+- **`.webp` / `.png`** — rendered inline as piano roll preview images
+- **`.mp3` / `.ogg` / `.wav`** — embedded `<audio controls>` player
+- **All other types** (`.mid`, `.zip`, …) — download link
+
+Artifacts are served from `GET /api/v1/musehub/repos/{repo_id}/objects/{object_id}/content`.
+Content-Type is inferred from the file extension; binary content is read from the
+Hub's object storage directory (`settings.musehub_objects_dir`).
+
+---
+
 ## Muse Hub CLI authentication
 
 All `/musehub/` routes require a valid JWT Bearer token. The Muse CLI reads this token from `.muse/config.toml` automatically — no `--token` flag needed on each command.
@@ -97,6 +141,67 @@ All `/musehub/` routes require a valid JWT Bearer token. The Muse CLI reads this
    ```
 
 **Security note:** The token value is never logged. Log lines use `"Bearer ***"` as a placeholder. See [security.md](security.md#muse-hub-cli-token-storage) for full storage guidance.
+
+---
+
+## Muse Hub — Remote Sync Workflow
+
+After authenticating (see above), sync local commits to the shared Hub using
+`muse remote add`, `muse push`, and `muse pull`.
+
+### Setup (once per repo)
+
+```bash
+# Register the remote Hub URL
+muse remote add origin https://story.audio/musehub/repos/<repo-id>
+
+# Verify
+muse remote -v
+# origin  https://story.audio/musehub/repos/<repo-id>
+```
+
+### Push
+
+```bash
+# Push all new commits on the current branch to origin
+muse push
+
+# Push a specific branch
+muse push --branch feature/groove-v2
+
+# Push to a non-default remote
+muse push --remote staging
+```
+
+### Pull
+
+```bash
+# Pull any commits from origin that are not yet local
+muse pull
+
+# Pull a specific branch
+muse pull --branch main
+
+# After pull, if branches diverged:
+# ⚠️  Local branch has diverged from origin/main.
+#    Run `muse merge origin/main` to integrate remote changes.
+```
+
+### Collaboration pattern
+
+```
+Gabriel (Machine A)                Rene (Machine B)
+─────────────────────              ─────────────────────
+muse commit -m "groove v1"
+muse push                          muse pull
+                                   muse ask "what changed?"
+                                   muse commit -m "variation"
+                                   muse push
+muse pull
+muse merge origin/main
+```
+
+For full CLI reference see [muse_vcs.md](../architecture/muse_vcs.md#muse-cli-remote-sync-command-reference).
 
 ---
 
