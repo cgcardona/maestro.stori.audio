@@ -4,7 +4,11 @@ Covers the minimum acceptance criteria from issue #43 and issue #232:
 - test_ui_repo_page_returns_200        — GET /musehub/ui/{repo_id} returns HTML
 - test_ui_commit_page_shows_artifact_links — commit page HTML mentions img/download
 - test_ui_pr_list_page_returns_200     — PR list page renders without error
-- test_ui_issue_list_page_returns_200  — Issue list page renders without error
+- test_ui_issue_list_page_returns_200          — Issue list page renders without error
+- test_ui_issue_list_has_open_closed_tabs      — Open/Closed tab buttons present (#299)
+- test_ui_issue_list_has_sort_controls         — Sort buttons (newest/oldest/most-commented) present (#299)
+- test_ui_issue_list_has_label_filter_js       — Client-side label filter JS present (#299)
+- test_ui_issue_list_has_body_preview_js       — Body preview helper and CSS class present (#299)
 - test_context_page_renders            — context viewer page returns 200 HTML
 - test_context_json_response           — JSON returns MuseHubContextResponse structure
 - test_context_includes_musical_state  — response includes active_tracks field
@@ -23,6 +27,15 @@ Covers acceptance criteria from issue #244 (embed player):
 - test_embed_no_auth_required          — Public embed accessible without JWT
 - test_embed_page_x_frame_options      — Response sets X-Frame-Options: ALLOWALL
 - test_embed_page_contains_player_ui   — Player elements present in embed HTML
+
+Covers issue #227 (emotion map page):
+- test_emotion_page_renders            — GET /musehub/ui/{repo_id}/analysis/{ref}/emotion returns 200
+- test_emotion_page_no_auth_required   — emotion map UI page accessible without JWT
+- test_emotion_page_includes_charts    — page embeds SVG chart and axis identifiers
+- test_emotion_page_includes_filters   — page includes track/section filter inputs
+- test_emotion_json_response           — JSON endpoint returns emotion map with required fields
+- test_emotion_trajectory              — cross-commit trajectory data is present and ordered
+- test_emotion_drift_distances         — drift list has one entry per consecutive commit pair
 
 UI routes require no JWT auth (they return HTML shells whose JS handles auth).
 The HTML content tests assert structural markers present in every rendered page.
@@ -186,6 +199,71 @@ async def test_ui_issue_list_page_returns_200(
     body = response.text
     assert "Issues" in body
     assert "Muse Hub" in body
+
+
+@pytest.mark.anyio
+async def test_ui_issue_list_has_open_closed_tabs(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Issue list page HTML includes Open and Closed tab buttons and count spans."""
+    await _make_repo(db_session)
+    response = await client.get("/musehub/ui/testuser/test-beats/issues")
+    assert response.status_code == 200
+    body = response.text
+    # Tab buttons for open and closed state
+    assert "tab-open" in body
+    assert "tab-closed" in body
+    # Tab count placeholders are rendered client-side; structural markers exist
+    assert "tab-count" in body
+    assert "Open" in body
+    assert "Closed" in body
+
+
+@pytest.mark.anyio
+async def test_ui_issue_list_has_sort_controls(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Issue list page HTML includes Newest, Oldest, and Most commented sort buttons."""
+    await _make_repo(db_session)
+    response = await client.get("/musehub/ui/testuser/test-beats/issues")
+    assert response.status_code == 200
+    body = response.text
+    assert "Newest" in body
+    assert "Oldest" in body
+    assert "Most commented" in body
+    assert "changeSort" in body
+
+
+@pytest.mark.anyio
+async def test_ui_issue_list_has_label_filter_js(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Issue list page HTML includes client-side label filter logic."""
+    await _make_repo(db_session)
+    response = await client.get("/musehub/ui/testuser/test-beats/issues")
+    assert response.status_code == 200
+    body = response.text
+    # JS function for label filtering
+    assert "setLabelFilter" in body
+    assert "label-pill" in body
+    assert "activeLabel" in body
+
+
+@pytest.mark.anyio
+async def test_ui_issue_list_has_body_preview_js(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Issue list page HTML includes bodyPreview helper for truncated body subtitles."""
+    await _make_repo(db_session)
+    response = await client.get("/musehub/ui/testuser/test-beats/issues")
+    assert response.status_code == 200
+    body = response.text
+    assert "bodyPreview" in body
+    assert "issue-preview" in body
 
 
 @pytest.mark.anyio
@@ -446,7 +524,6 @@ async def test_context_page_renders(
     assert "Muse Hub" in body
     assert "context" in body.lower()
     assert repo_id[:8] in body
-
 
 
 @pytest.mark.anyio
@@ -1806,6 +1883,158 @@ async def test_tempo_json_response(
     assert data["bpm"] > 0
     assert 0.0 <= data["stability"] <= 1.0
     assert isinstance(data["tempoChanges"], list)
+
+
+# ---------------------------------------------------------------------------
+# owner/slug navigation link correctness (regression for PR #282)
+# ---------------------------------------------------------------------------
+
+
+# ---------------------------------------------------------------------------
+# Emotion map page tests (issue #227)
+# ---------------------------------------------------------------------------
+
+_EMOTION_REF = "deadbeef12345678"
+
+
+@pytest.mark.anyio
+async def test_emotion_page_renders(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """GET /musehub/ui/{repo_id}/analysis/{ref}/emotion returns 200 HTML without auth."""
+    repo_id = await _make_repo(db_session)
+    response = await client.get(f"/musehub/ui/{repo_id}/analysis/{_EMOTION_REF}/emotion")
+    assert response.status_code == 200
+    assert "text/html" in response.headers["content-type"]
+    body = response.text
+    assert "Muse Hub" in body
+    assert "Emotion Map" in body
+    assert repo_id[:8] in body
+
+
+@pytest.mark.anyio
+async def test_emotion_page_no_auth_required(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Emotion map UI page must be accessible without an Authorization header (HTML shell)."""
+    repo_id = await _make_repo(db_session)
+    response = await client.get(f"/musehub/ui/{repo_id}/analysis/{_EMOTION_REF}/emotion")
+    assert response.status_code != 401
+    assert response.status_code == 200
+
+
+@pytest.mark.anyio
+async def test_emotion_page_includes_charts(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Emotion map page embeds SVG chart builder and four-axis colour references."""
+    repo_id = await _make_repo(db_session)
+    response = await client.get(f"/musehub/ui/{repo_id}/analysis/{_EMOTION_REF}/emotion")
+    assert response.status_code == 200
+    body = response.text
+    assert "buildLineChart" in body
+    for axis in ("energy", "valence", "tension", "darkness"):
+        assert axis in body
+
+
+@pytest.mark.anyio
+async def test_emotion_page_includes_filters(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Emotion map page includes track and section filter inputs."""
+    repo_id = await _make_repo(db_session)
+    response = await client.get(f"/musehub/ui/{repo_id}/analysis/{_EMOTION_REF}/emotion")
+    assert response.status_code == 200
+    body = response.text
+    assert "filter-track" in body
+    assert "filter-section" in body
+
+
+@pytest.mark.anyio
+async def test_emotion_json_response(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    auth_headers: dict[str, str],
+) -> None:
+    """GET /api/v1/musehub/repos/{repo_id}/analysis/{ref}/emotion-map returns required fields."""
+    repo_id = await _make_repo(db_session)
+    response = await client.get(
+        f"/api/v1/musehub/repos/{repo_id}/analysis/{_EMOTION_REF}/emotion-map",
+        headers=auth_headers,
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["repoId"] == repo_id
+    assert body["ref"] == _EMOTION_REF
+    assert "computedAt" in body
+    assert "summaryVector" in body
+    sv = body["summaryVector"]
+    for axis in ("energy", "valence", "tension", "darkness"):
+        assert axis in sv
+        assert 0.0 <= sv[axis] <= 1.0
+    assert "evolution" in body
+    assert isinstance(body["evolution"], list)
+    assert len(body["evolution"]) > 0
+    assert "narrative" in body
+    assert len(body["narrative"]) > 0
+    assert "source" in body
+
+
+@pytest.mark.anyio
+async def test_emotion_trajectory(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    auth_headers: dict[str, str],
+) -> None:
+    """Cross-commit trajectory must be a list of commit snapshots with emotion vectors."""
+    repo_id = await _make_repo(db_session)
+    response = await client.get(
+        f"/api/v1/musehub/repos/{repo_id}/analysis/{_EMOTION_REF}/emotion-map",
+        headers=auth_headers,
+    )
+    assert response.status_code == 200
+    trajectory = response.json()["trajectory"]
+    assert isinstance(trajectory, list)
+    assert len(trajectory) >= 2
+    for snapshot in trajectory:
+        assert "commitId" in snapshot
+        assert "message" in snapshot
+        assert "primaryEmotion" in snapshot
+        vector = snapshot["vector"]
+        for axis in ("energy", "valence", "tension", "darkness"):
+            assert axis in vector
+            assert 0.0 <= vector[axis] <= 1.0
+
+
+@pytest.mark.anyio
+async def test_emotion_drift_distances(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    auth_headers: dict[str, str],
+) -> None:
+    """Drift list must have exactly len(trajectory) - 1 entries."""
+    repo_id = await _make_repo(db_session)
+    response = await client.get(
+        f"/api/v1/musehub/repos/{repo_id}/analysis/{_EMOTION_REF}/emotion-map",
+        headers=auth_headers,
+    )
+    assert response.status_code == 200
+    body = response.json()
+    trajectory = body["trajectory"]
+    drift = body["drift"]
+    assert isinstance(drift, list)
+    assert len(drift) == len(trajectory) - 1
+    for entry in drift:
+        assert "fromCommit" in entry
+        assert "toCommit" in entry
+        assert "drift" in entry
+        assert entry["drift"] >= 0.0
+        assert "dominantChange" in entry
+        assert entry["dominantChange"] in ("energy", "valence", "tension", "darkness")
 
 
 # ---------------------------------------------------------------------------
