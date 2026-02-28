@@ -1,11 +1,11 @@
 """Muse CLI — Typer application root.
 
 Entry point for the ``muse`` console script. Registers all MVP
-subcommands (arrange, ask, checkout, chord-map, commit, context, contour,
-describe, diff, divergence, dynamics, export, find, grep, groove-check,
-humanize, import, init, key, log, merge, meter, open, play, pull, push,
-recall, remote, session, status, swing, tag, tempo, tempo-scale) as Typer
-sub-applications.
+subcommands (arrange, ask, checkout, chord-map, commit, commit-tree, context,
+contour, describe, diff, divergence, dynamics, export, find, form, grep,
+groove-check, humanize, import, init, key, log, merge, meter, open, play,
+pull, push, recall, remote, session, similarity, status, swing, tag, tempo,
+tempo-scale) as Typer sub-applications.
 """
 from __future__ import annotations
 
@@ -17,6 +17,7 @@ from maestro.muse_cli.commands import (
     checkout,
     chord_map,
     commit,
+    commit_tree,
     context,
     contour,
     describe,
@@ -25,6 +26,7 @@ from maestro.muse_cli.commands import (
     dynamics,
     export,
     find,
+    form,
     grep_cmd,
     groove_check,
     humanize,
@@ -41,6 +43,7 @@ from maestro.muse_cli.commands import (
     recall,
     remote,
     session,
+    similarity,
     status,
     swing,
     tag,
@@ -60,6 +63,11 @@ cli.add_typer(init.app, name="init", help="Initialise a new Muse repository.")
 cli.add_typer(status.app, name="status", help="Show working-tree drift against HEAD.")
 cli.add_typer(dynamics.app, name="dynamics", help="Analyse the dynamic (velocity) profile of a commit.")
 cli.add_typer(commit.app, name="commit", help="Record a new variation in history.")
+cli.add_typer(
+    commit_tree.app,
+    name="commit-tree",
+    help="Create a raw commit object from an existing snapshot (plumbing).",
+)
 cli.add_typer(grep_cmd.app, name="grep", help="Search for a musical pattern across all commits.")
 cli.add_typer(log.app, name="log", help="Display the variation history graph.")
 cli.add_typer(find.app, name="find", help="Search commit history by musical properties.")
@@ -87,6 +95,8 @@ cli.add_typer(humanize.app, name="humanize", help="Apply micro-timing and veloci
 cli.add_typer(context.app, name="context", help="Output structured musical context for AI agent consumption.")
 cli.add_typer(divergence.app, name="divergence", help="Show how two branches have diverged musically.")
 cli.add_typer(groove_check.app, name="groove-check", help="Analyze rhythmic drift across commits to find groove regressions.")
+cli.add_typer(form.app, name="form", help="Analyze or annotate the formal structure (sections) of a commit.")
+cli.add_typer(similarity.app, name="similarity", help="Compare two commits by musical similarity score.")
 cli.add_typer(tempo_scale.app, name="tempo-scale", help="Stretch or compress the timing of a commit.")
 
 
