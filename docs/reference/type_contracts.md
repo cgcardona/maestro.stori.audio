@@ -1653,6 +1653,30 @@ These type aliases replace the repeated pattern `dict[str, list[XxxDict]]` that 
 
 ---
 
+## Muse CLI Types (`maestro/muse_cli/`)
+
+> Added: 2026-02-27 | Types used by the `muse` CLI commands — purely local, never serialised over HTTP.
+
+### `MuseSessionRecord` (`maestro/muse_cli/commands/session.py`)
+
+`TypedDict(total=False)` — wire-format for a single recording session stored as JSON in `.muse/sessions/`.
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `session_id` | `str` | ✅ | UUIDv4 string identifying the session |
+| `schema_version` | `str` | ✅ | Schema version (currently `"1"`) |
+| `started_at` | `str` | ✅ | ISO-8601 UTC timestamp from `muse session start` |
+| `ended_at` | `str \| None` | ✅ | ISO-8601 UTC timestamp from `muse session end`; `None` while active |
+| `participants` | `list[str]` | ✅ | Ordered participant names from `--participants` |
+| `location` | `str` | ✅ | Recording location or studio name |
+| `intent` | `str` | ✅ | Creative intent declared at session start |
+| `commits` | `list[str]` | ✅ | Muse commit IDs associated with this session (starts empty) |
+| `notes` | `str` | ✅ | Closing notes from `muse session end --notes` |
+
+**Used by:** `_read_session`, `_write_session`, `_load_completed_sessions`, and all five `muse session` subcommands.
+
+---
+
 ## HTTP Response Entities
 
 > Updated: 2026-02-26 | Reflects the named-entity sweep that eliminated all `dict[str, object]` and `dict[str, str]` return types from route handlers.
@@ -1995,6 +2019,66 @@ After this point, `tempo` is `int` everywhere:
 - `CacheKeyData.tempo: int`
 - `ProjectContext.tempo: int`
 - `ProjectSnapshot.tempo: int | None`
+
+---
+
+## Muse CLI Types
+
+Named result types for Muse CLI commands. All types are `TypedDict` subclasses
+defined in their respective command modules and returned from the injectable
+async core functions (the testable layer that Typer commands wrap).
+
+### `SwingDetectResult`
+
+**Module:** `maestro/muse_cli/commands/swing.py`
+
+Swing detection result for a single commit or working tree.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `factor` | `float` | Normalized swing factor in [0.5, 0.67] |
+| `label` | `str` | Human-readable label: `Straight`, `Light`, `Medium`, or `Hard` |
+| `commit` | `str` | Resolved commit SHA (8-char) or empty string for annotations |
+| `branch` | `str` | Current branch name |
+| `track` | `str` | MIDI track filter; `"all"` when no filter is applied |
+| `source` | `str` | `"stub"` (MIDI analysis pending) or `"annotation"` (explicit `--set`) |
+
+**Producer:** `_swing_detect_async()`, `_swing_history_async()`
+**Consumer:** `_format_detect()`, `_format_history()`, `SwingCompareResult.head/.compare`
+
+### `SwingCompareResult`
+
+**Module:** `maestro/muse_cli/commands/swing.py`
+
+Swing comparison between HEAD and a reference commit.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `head` | `SwingDetectResult` | Swing result for HEAD |
+| `compare` | `SwingDetectResult` | Swing result for the reference commit |
+| `delta` | `float` | `head.factor − compare.factor`, rounded to 4 decimal places |
+
+**Producer:** `_swing_compare_async()`
+**Consumer:** `_format_compare()`
+
+### `GrepMatch`
+
+**Module:** `maestro/muse_cli/commands/grep_cmd.py`
+
+A single commit that matched the `muse grep` search pattern.  Implemented as a
+plain `dataclass` (not `TypedDict`) so that `dataclasses.asdict()` can be used
+directly for JSON serialisation without any additional mapping step.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `commit_id` | `str` | Full 64-char commit SHA |
+| `branch` | `str` | Branch name at the time of the commit |
+| `message` | `str` | Full commit message |
+| `committed_at` | `str` | ISO-8601 UTC timestamp string |
+| `match_source` | `str` | Where the pattern was found: `"message"`, `"branch"`, or `"midi_content"` (future) |
+
+**Producer:** `_match_commit()`, `_grep_async()`
+**Consumer:** `_render_matches()`, callers using `--json` output
 
 ---
 
