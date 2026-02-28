@@ -108,6 +108,7 @@ maestro/muse_cli/
     ├── pull.py           — muse pull    (stub — issue #38)
     ├── open_cmd.py       — muse open    ✅ macOS artifact preview (issue #45)
     ├── play.py           — muse play    ✅ macOS audio playback via afplay (issue #45)
+    ├── find.py           — muse find   ✅ search commit history by musical properties (issue #114)
     └── ask.py            — muse ask     ✅ natural language query over commit history (issue #126)
 ```
 
@@ -353,6 +354,63 @@ Merge commits (two parents) require `muse merge` (issue #35) — `parent2_commit
 
 ---
 
+---
+
+## `muse arrange [<commit>]` — Arrangement Map (issue #115)
+
+`muse arrange` displays the **arrangement matrix**: which instruments are active in which musical sections for a given commit.  This is the single most useful command for an AI orchestration agent — before generating a new string part, the agent can run `muse arrange --format json HEAD` to see exactly which sections already have strings, preventing doubling mistakes and enabling coherent orchestration decisions.
+
+### Path Convention
+
+Files committed to Muse must follow the three-level path convention to participate in the arrangement map:
+
+```
+muse-work/<section>/<instrument>/<filename>
+```
+
+| Level | Example | Description |
+|-------|---------|-------------|
+| `<section>` | `intro`, `verse`, `chorus`, `bridge`, `outro` | Musical section name (normalised to lowercase) |
+| `<instrument>` | `drums`, `bass`, `strings`, `piano`, `vocals` | Instrument / track name |
+| `<filename>` | `beat.mid`, `pad.mid` | The actual file |
+
+Files with fewer than three path components are excluded from the arrangement map (they carry no section metadata).
+
+Section aliases are normalised: `pre-chorus`, `pre_chorus`, and `prechoruse` all map to `prechorus`.
+
+### Output Formats
+
+**Text (default)**:
+
+```
+Arrangement Map — commit abc1234
+
+            Intro  Verse  Chorus  Bridge  Outro
+drums       ████   ████   ████    ████    ████
+bass        ░░░░   ████   ████    ████    ████
+piano       ████   ░░░░   ████    ░░░░    ████
+strings     ░░░░   ░░░░   ████    ████    ░░░░
+```
+
+`████` = active (at least one file for that section/instrument pair).
+`░░░░` = inactive (no files).
+
+**JSON (`--format json`)** — structured, AI-agent-consumable:
+
+```json
+{
+  "commit_id": "abc1234...",
+  "sections": ["intro", "verse", "chorus", "bridge", "outro"],
+  "instruments": ["bass", "drums", "piano", "strings"],
+  "arrangement": {
+    "drums": { "intro": true, "verse": true, "chorus": true },
+    "strings": { "intro": false, "verse": false, "chorus": true }
+  }
+}
+```
+
+**CSV (`--format csv`)** — spreadsheet-ready rows with `0`/`1` cells.
+
 ## `muse describe` — Structured Musical Change Description
 
 `muse describe [<commit>] [OPTIONS]` compares a commit against its parent (or two commits via `--compare`) and outputs a structured description of what changed at the snapshot level.
@@ -370,6 +428,36 @@ Note: Full harmonic/melodic analysis requires muse harmony and muse motif (plann
 
 | Flag | Default | Description |
 |------|---------|-------------|
+| `[COMMIT]` | `HEAD` | Target commit: HEAD, branch name, or commit-ID prefix |
+| `--section TEXT` | none | Show only a specific section's instrumentation |
+| `--track TEXT` | none | Show only a specific instrument's section participation |
+| `--compare A --compare B` | — | Diff two arrangements (show added/removed cells) |
+| `--density` | off | Show byte-size total per cell instead of binary active/inactive |
+| `--format text\|json\|csv` | `text` | Output format |
+
+### Compare Mode (`--compare`)
+
+```
+Arrangement Diff — abc1234 → def5678
+
+            Intro  Verse  Chorus
+drums        ████   ████   ████
+strings     ░░░░   ░░░░  +████
+piano       ████   ░░░░  -████
+```
+
+`+████` = cell added in commit-b.
+`-████` = cell removed in commit-b.
+
+### Density Mode (`--density`)
+
+Each cell shows the total byte size of all files for that (section, instrument) pair.  Byte size correlates with note density for MIDI files and serves as a useful heuristic for AI orchestration agents:
+
+```
+            Intro   Verse   Chorus
+drums       4,096   3,200   5,120
+bass            -   1,024   2,048
+```
 | `<commit>` (positional) | HEAD | Commit to describe |
 | `--compare A B` | — | Compare commit A against commit B explicitly |
 | `--depth brief\|standard\|verbose` | `standard` | Output verbosity |
@@ -389,6 +477,21 @@ Note: Full harmonic/melodic analysis requires muse harmony and muse motif (plann
 
 | Layer | File | Responsibility |
 |-------|------|----------------|
+| Service | `maestro/services/muse_arrange.py` | `build_arrangement_matrix()`, diff, renderers |
+| Command | `maestro/muse_cli/commands/arrange.py` | Typer callback + `_arrange_async` |
+| App | `maestro/muse_cli/app.py` | Registration under `arrange` subcommand |
+
+`_arrange_async` is fully injectable for unit tests (accepts a `root: pathlib.Path` and `session: AsyncSession`).
+
+Exit codes: `0` success, `1` user error (unknown format, missing reference, ambiguous prefix), `2` outside a Muse repo, `3` internal error.
+
+### Named Result Types
+
+See `docs/reference/type_contracts.md`:
+- `ArrangementCell` — per (section, instrument) data
+- `ArrangementMatrix` — full matrix for one commit
+- `ArrangementDiffCell` — change status for one cell
+- `ArrangementDiff` — full diff between two matrices
 | Command | `maestro/muse_cli/commands/describe.py` | Typer callback + `_describe_async` |
 | Diff engine | `maestro/muse_cli/commands/describe.py` | `_diff_manifests()` |
 | Renderers | `maestro/muse_cli/commands/describe.py` | `_render_brief/standard/verbose/result` |
@@ -693,6 +796,126 @@ Topologically sorted (Kahn's algorithm), deterministic tie-breaking by `(timesta
 | `note_matching` | handlers, StateStore |
 
 The boundary philosophy: Muse VCS modules are **pure data** — they consume snapshots and produce plans/reports. StateStore mutation only happens in `muse_checkout_executor` (via duck-typed store parameter) and the history controller.
+
+---
+
+## `muse find` — Search Commit History by Musical Properties
+
+`muse find` is the musical grep: it queries the full commit history for the
+current repository and returns commits whose messages match musical criteria.
+All filter flags combine with **AND logic** — a commit must satisfy every
+supplied criterion to appear in results.
+
+### Command Flags
+
+| Flag | Example | Description |
+|------|---------|-------------|
+| `--harmony <query>` | `"key=Eb"`, `"mode=minor"` | Harmonic filter |
+| `--rhythm <query>` | `"tempo=120-130"`, `"meter=7/8"` | Rhythmic filter |
+| `--melody <query>` | `"shape=arch"`, `"motif=main-theme"` | Melodic filter |
+| `--structure <query>` | `"has=bridge"`, `"form=AABA"` | Structural filter |
+| `--dynamic <query>` | `"avg_vel>80"`, `"arc=crescendo"` | Dynamic filter |
+| `--emotion <tag>` | `melancholic` | Emotion tag |
+| `--section <text>` | `"chorus"` | Named section filter |
+| `--track <text>` | `"bass"` | Track presence filter |
+| `--since <date>` | `"2026-01-01"` | Commits after this date (UTC) |
+| `--until <date>` | `"2026-03-01"` | Commits before this date (UTC) |
+| `--limit N` / `-n N` | `20` (default) | Cap results |
+| `--json` | — | Machine-readable JSON output |
+
+### Query DSL
+
+#### Equality match (default)
+
+All property filters do a **case-insensitive substring match** against the
+commit message:
+
+```
+muse find --harmony "key=F minor"
+```
+
+Finds every commit whose message contains the string `key=F minor` (any case).
+
+#### Numeric range match
+
+When the value portion of a `key=value` expression contains two numbers
+separated by a hyphen (`low-high`), the filter extracts the numeric value of
+the key from the message and checks whether it falls within the range
+(inclusive):
+
+```
+muse find --rhythm "tempo=120-130"
+```
+
+Matches commits whose message contains `tempo=<N>` where 120 ≤ N ≤ 130.
+
+### Output Formats
+
+#### Default (text)
+
+One commit block per match, newest-first:
+
+```
+commit a1b2c3d4...
+Branch: main
+Parent: f9e8d7c6
+Date:   2026-02-27 17:30:00
+
+    ambient sketch, key=F minor, tempo=90 bpm
+
+```
+
+#### `--json` output
+
+A JSON array of commit objects:
+
+```json
+[
+  {
+    "commit_id": "a1b2c3d4...",
+    "branch": "main",
+    "message": "ambient sketch, key=F minor, tempo=90 bpm",
+    "author": "",
+    "committed_at": "2026-02-27T17:30:00+00:00",
+    "parent_commit_id": "f9e8d7c6...",
+    "snapshot_id": "bac947cf..."
+  }
+]
+```
+
+### Examples
+
+```bash
+# All commits in F minor
+muse find --harmony "key=F minor"
+
+# Up-tempo commits in a date window
+muse find --rhythm "tempo=120-130" --since "2026-01-01"
+
+# Melancholic commits that include a bridge, as JSON
+muse find --emotion melancholic --structure "has=bridge" --json
+
+# Bass track presence, capped at 10 results
+muse find --track bass --limit 10
+```
+
+### Architecture
+
+- **Service:** `maestro/services/muse_find.py`
+  - `MuseFindQuery` — frozen dataclass of all search criteria
+  - `MuseFindCommitResult` — a single matching commit
+  - `MuseFindResults` — container with matches, total scanned, and the query
+  - `search_commits(session, repo_id, query)` — async search function
+- **CLI command:** `maestro/muse_cli/commands/find.py`
+  - `_find_async(root, session, query, output_json)` — injectable core (tested directly)
+  - Registered in `maestro/muse_cli/app.py` as `find`
+
+### Postgres Behaviour
+
+Read-only operation — no writes.  Plain-text filters are pushed to SQL via
+`ILIKE` for efficiency; numeric range filters are applied in Python after
+the SQL result set is fetched.  `committed_at` date range filters use SQL
+`>=` / `<=` comparisons.
 
 ---
 
@@ -1007,6 +1230,87 @@ muse commit --from-batch muse-batch.json
 
 ---
 
+## Muse CLI — Music Analysis Command Reference
+
+These commands expose musical dimensions across the commit graph — the layer that
+makes Muse fundamentally different from Git. Each command is consumed by AI agents
+to make musically coherent generation decisions. Every flag is part of a stable
+CLI contract; stub implementations are clearly marked.
+
+**Agent pattern:** Run with `--json` to get machine-readable output. Pipe into
+`muse context` for a unified musical state document.
+
+---
+
+### `muse dynamics`
+
+**Purpose:** Analyze the velocity (loudness) profile of a commit across all instrument
+tracks. The primary tool for understanding the dynamic arc of an arrangement and
+detecting flat, robotic, or over-compressed MIDI.
+
+**Usage:**
+```bash
+muse dynamics [<commit>] [OPTIONS]
+```
+
+**Flags:**
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `COMMIT` | positional | HEAD | Commit ref to analyze |
+| `--track TEXT` | string | all tracks | Case-insensitive prefix filter (e.g. `--track bass`) |
+| `--section TEXT` | string | — | Restrict to a named section/region (planned) |
+| `--compare COMMIT` | string | — | Side-by-side comparison with another commit (planned) |
+| `--history` | flag | off | Show dynamics for every commit in branch history (planned) |
+| `--peak` | flag | off | Show only tracks whose peak velocity exceeds the branch average |
+| `--range` | flag | off | Sort output by velocity range descending |
+| `--arc` | flag | off | When combined with `--track`, treat its value as an arc label filter |
+| `--json` | flag | off | Emit structured JSON for agent consumption |
+
+**Arc labels:**
+
+| Label | Meaning |
+|-------|---------|
+| `flat` | Velocity variance < 10; steady throughout |
+| `crescendo` | Monotonically rising from start to end |
+| `decrescendo` | Monotonically falling from start to end |
+| `terraced` | Step-wise plateaus; sudden jumps between stable levels |
+| `swell` | Rises then falls (arch shape) |
+
+**Output example (text):**
+```
+Dynamic profile — commit a1b2c3d4  (HEAD -> main)
+
+Track      Avg Vel  Peak  Range  Arc
+---------  -------  ----  -----  -----------
+drums           88   110     42  terraced
+bass            72    85     28  flat
+keys            64    95     56  crescendo
+lead            79   105     38  swell
+```
+
+**Output example (`--json`):**
+```json
+{
+  "commit": "a1b2c3d4",
+  "branch": "main",
+  "tracks": [
+    {"track": "drums", "avg_velocity": 88, "peak_velocity": 110, "velocity_range": 42, "arc": "terraced"}
+  ]
+}
+```
+
+**Result type:** `TrackDynamics` — fields: `name`, `avg_velocity`, `peak_velocity`, `velocity_range`, `arc`
+
+**Agent use case:** Before generating a new layer, an agent calls `muse dynamics --json` to understand the current velocity landscape. If the arrangement is `flat` across all tracks, the agent adds velocity variation to the new part. If the arc is `crescendo`, the agent ensures the new layer contributes to rather than fights the build.
+
+**Implementation:** `maestro/muse_cli/commands/dynamics.py` — `_dynamics_async` (injectable async core), `TrackDynamics` (result entity), `_render_table` / `_render_json` (renderers). Exit codes: 0 success, 2 outside repo, 3 internal.
+
+> **Stub note:** Arc classification and velocity statistics are placeholder values. Full implementation requires MIDI note velocity extraction from committed snapshot objects (future: Storpheus MIDI parse route).
+
+---
+
+### `muse swing`
 ## `muse swing` — Swing Factor Analysis and Annotation
 
 **Purpose:** Measure or annotate the swing factor of a commit — the ratio that
@@ -1049,6 +1353,68 @@ Track: all
 
 **Output example (`--json`):**
 ```json
+{"factor": 0.55, "label": "Light", "commit": "a1b2c3d4", "branch": "main", "track": "all"}
+```
+
+**Result type:** `dict` with keys `factor` (float), `label` (str), `commit` (str), `branch` (str), `track` (str). Future: typed `SwingResult` dataclass.
+
+**Agent use case:** An AI generating a bass line runs `muse swing --json` to know whether to quantize straight or add shuffle. A Medium swing result means the bass should land slightly behind the grid to stay in pocket with the existing drum performance.
+
+**Implementation:** `maestro/muse_cli/commands/swing.py` — `swing_label()`, `_swing_detect_async()`, `_swing_history_async()`, `_swing_compare_async()`, formatters. Exit codes: 0 success, 1 invalid `--set` value, 2 outside repo.
+
+> **Stub note:** Returns a placeholder factor of 0.55. Full implementation requires onset-to-onset ratio measurement from committed MIDI note events (future: Storpheus MIDI parse route).
+
+---
+
+### `muse recall`
+
+**Purpose:** Search the full commit history using natural language. Returns ranked
+commits whose messages best match the query. The musical memory retrieval command —
+"find me that arrangement I made three months ago."
+
+**Usage:**
+```bash
+muse recall "<description>" [OPTIONS]
+```
+
+**Flags:**
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `QUERY` | positional | required | Natural-language description of what to find |
+| `--limit N` | int | 5 | Maximum results to return |
+| `--threshold FLOAT` | float | 0.6 | Minimum similarity score (0.0–1.0) |
+| `--branch TEXT` | string | all branches | Restrict search to a specific branch |
+| `--since DATE` | `YYYY-MM-DD` | — | Only search commits after this date |
+| `--until DATE` | `YYYY-MM-DD` | — | Only search commits before this date |
+| `--json` | flag | off | Emit structured JSON array |
+
+**Scoring (current stub):** Normalized keyword overlap coefficient — `|Q ∩ M| / |Q|` — where Q is the set of query tokens and M is the set of message tokens. Score 1.0 means every query word appeared in the commit message.
+
+**Output example (text):**
+```
+Recall: "dark jazz bassline"
+keyword match · threshold 0.60 · limit 5
+
+  1. [a1b2c3d4]  2026-02-15 22:00  boom bap demo take 3      score 0.67
+  2. [f9e8d7c6]  2026-02-10 18:30  jazz bass overdub session  score 0.50
+```
+
+**Result type:** `RecallResult` (TypedDict) — fields: `rank` (int), `score` (float), `commit_id` (str), `date` (str), `branch` (str), `message` (str)
+
+**Agent use case:** An agent asked to "generate something like that funky bass riff from last month" calls `muse recall "funky bass" --json --limit 3` to retrieve the closest historical commits, then uses those as style references for generation.
+
+**Implementation:** `maestro/muse_cli/commands/recall.py` — `RecallResult` (TypedDict), `_tokenize()`, `_score()`, `_recall_async()`. Exit codes: 0 success, 1 bad date format, 2 outside repo.
+
+> **Stub note:** Uses keyword overlap. Full implementation: vector embeddings stored in Qdrant, cosine similarity retrieval. The CLI interface will not change when vector search is added.
+
+---
+
+### `muse grep`
+
+**Purpose:** Search all commits for a musical pattern — a note sequence, interval
+pattern, or chord symbol. Currently searches commit messages; full MIDI content
+search is the planned implementation.
 {"factor": 0.55, "label": "Light", "commit": "a1b2c3d4", "branch": "main", "track": "all", "source": "stub"}
 ```
 
@@ -1171,6 +1537,52 @@ muse grep <pattern> [OPTIONS]
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
+| `PATTERN` | positional | required | Pattern to find (note seq, interval, chord, or text) |
+| `--track TEXT` | string | — | Restrict to a named track (MIDI content search — planned) |
+| `--section TEXT` | string | — | Restrict to a named section (planned) |
+| `--transposition-invariant` | flag | on | Match in any key (planned for MIDI search) |
+| `--rhythm-invariant` | flag | off | Match regardless of rhythm (planned) |
+| `--commits` | flag | off | Output one commit ID per line instead of full table |
+| `--json` | flag | off | Emit structured JSON array |
+
+**Pattern formats (planned for MIDI content search):**
+
+| Format | Example | Matches |
+|--------|---------|---------|
+| Note sequence | `"C4 E4 G4"` | Those exact pitches in sequence |
+| Interval run | `"+4 +3"` | Major 3rd + minor 3rd (Cm arpeggio) |
+| Chord symbol | `"Cm7"` | That chord anywhere in the arrangement |
+| Text | `"verse piano"` | Commit message substring (current implementation) |
+
+**Output example (text):**
+```
+Pattern: "dark jazz" (2 matches)
+
+Commit       Branch   Committed            Message              Source
+-----------  -------  -------------------  -------------------  -------
+a1b2c3d4     main     2026-02-15 22:00     boom bap dark jazz   message
+f9e8d7c6     main     2026-02-10 18:30     dark jazz bass       message
+```
+
+**Result type:** `GrepMatch` (dataclass) — fields: `commit_id` (str), `branch` (str), `message` (str), `committed_at` (str ISO-8601), `match_source` (str: `"message"` | `"branch"` | `"midi_content"`)
+
+**Agent use case:** An agent searching for prior uses of a Cm7 chord calls `muse grep "Cm7" --commits --json` to get a list of commits containing that chord. It can then pull those commits as harmonic reference material.
+
+**Implementation:** `maestro/muse_cli/commands/grep_cmd.py` — registered as `muse grep`. `GrepMatch` (dataclass), `_load_all_commits()`, `_grep_async()`, `_render_matches()`. Exit codes: 0 success, 2 outside repo.
+
+> **Stub note:** Pattern matched against commit messages only. MIDI content scanning (parsing note events from snapshot objects) is tracked as a follow-up issue.
+
+---
+
+### `muse ask`
+
+**Purpose:** Natural language question answering over commit history. Ask questions
+in plain English; Muse searches history and returns a grounded answer citing specific
+commits. The conversational interface to musical memory.
+
+**Usage:**
+```bash
+muse ask "<question>" [OPTIONS]
 | `PATTERN` | positional | — | Pattern to search (note sequence, interval, chord, or free text) |
 | `--track TEXT` | string | — | [Future] Restrict to a named MIDI track |
 | `--section TEXT` | string | — | [Future] Restrict to a labelled section |
@@ -1360,6 +1772,23 @@ muse recall <query> [OPTIONS]
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
+| `QUESTION` | positional | required | Natural-language question about musical history |
+| `--branch TEXT` | string | all | Restrict history to a branch |
+| `--since DATE` | `YYYY-MM-DD` | — | Only consider commits after this date |
+| `--until DATE` | `YYYY-MM-DD` | — | Only consider commits before this date |
+| `--cite` | flag | off | Show full commit IDs in the answer (default: short IDs) |
+| `--json` | flag | off | Emit structured JSON response |
+
+**Output example (text):**
+```
+Based on Muse history (47 commits searched):
+Commits matching your query: 3 found
+
+  [a1b2c3d] 2026-02-15 22:00  boom bap dark jazz session
+  [f9e8d7c] 2026-02-10 18:30  Add bass overdub — minor key
+  [3b2a1f0] 2026-01-28 14:00  Initial tempo work at 118 BPM
+
+Note: Full LLM-powered answer generation is a planned enhancement.
 | `QUERY` | positional | — | Natural-language description to search for |
 | `--limit / -n INT` | integer | 5 | Maximum number of results to return |
 | `--threshold FLOAT` | float | 0.6 | Minimum keyword-overlap score (0–1) to include a commit |
@@ -1387,6 +1816,110 @@ Recall: "dark jazz bassline"
 
 **Output example (`--json`):**
 ```json
+{
+  "question": "when did we work on jazz?",
+  "total_searched": 47,
+  "matches_found": 3,
+  "commits": [{"id": "a1b2c3d4...", "short_id": "a1b2c3d", "date": "2026-02-15", "message": "..."}],
+  "stub_note": "Full LLM answer generation is a planned enhancement."
+}
+```
+
+**Result type:** `AnswerResult` (class) — fields: `question` (str), `total_searched` (int), `matches` (list[MuseCliCommit]), `cite` (bool). Methods: `.to_plain()`, `.to_json_dict()`.
+
+**Agent use case:** An AI agent composing a bridge asks `muse ask "what was the emotional arc of the chorus?" --json`. The answer grounds the agent in the actual commit history of the project before it generates, preventing stylistic drift.
+
+**Implementation:** `maestro/muse_cli/commands/ask.py` — `AnswerResult`, `_keywords()`, `_ask_async()`. Exit codes: 0 success, 1 bad date, 2 outside repo.
+
+> **Stub note:** Keyword matching over commit messages. Full implementation: RAG over Qdrant musical context embeddings + LLM answer synthesis via OpenRouter (Claude Sonnet/Opus). CLI interface is stable and will not change when LLM is wired in.
+
+---
+
+### `muse session`
+
+**Purpose:** Record and query recording session metadata — who played, when, where,
+and what they intended to create. Sessions are stored as local JSON files (not in
+Postgres), mirroring how Git stores config as plain files.
+
+**Usage:**
+```bash
+muse session <subcommand> [OPTIONS]
+```
+
+**Subcommands:**
+
+| Subcommand | Description |
+|------------|-------------|
+| `muse session start` | Open a new recording session |
+| `muse session end` | Finalize the active session |
+| `muse session log` | List all completed sessions, newest first |
+| `muse session show <id>` | Print a specific session by ID (prefix match) |
+| `muse session credits` | Aggregate participants across all sessions |
+
+**`muse session start` flags:**
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--participants TEXT` | string | — | Comma-separated participant names |
+| `--location TEXT` | string | — | Studio or location name |
+| `--intent TEXT` | string | — | Creative intent for this session |
+
+**`muse session end` flags:**
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--notes TEXT` | string | — | Session notes / retrospective |
+
+**Session JSON schema** (stored in `.muse/sessions/<uuid>.json`):
+```json
+{
+  "session_id": "<uuid4>",
+  "started_at": "2026-02-27T22:00:00+00:00",
+  "ended_at": "2026-02-27T02:30:00+00:00",
+  "participants": ["Gabriel (producer)", "Sarah (keys)"],
+  "location": "Studio A",
+  "intent": "Piano overdubs for verse sections",
+  "commits": [],
+  "notes": "Great tone on the Steinway today."
+}
+```
+
+**`muse session log` output:**
+```
+SESSION  2026-02-27T22:00  → 2026-02-27T02:30  2h30m
+  Participants: Gabriel (producer), Sarah (keys)
+  Location:     Studio A
+  Intent:       Piano overdubs for verse sections
+```
+
+**`muse session credits` output:**
+```
+Gabriel (producer)  7 sessions
+Sarah (keys)        3 sessions
+Marcus (bass)       2 sessions
+```
+
+**Agent use case:** An AI agent summarizing a project's creative history calls `muse session credits --json` to attribute musical contributions. An AI generating liner notes reads `muse session log --json` to reconstruct the session timeline.
+
+**Implementation:** `maestro/muse_cli/commands/session.py` — all synchronous (no DB, no async). Storage: `.muse/sessions/current.json` (active) → `.muse/sessions/<uuid>.json` (completed). Exit codes: 0 success, 1 user error (duplicate session, no active session, ambiguous ID), 2 outside repo, 3 internal.
+
+---
+
+### Command Registration Summary
+
+| Command | File | Status | Issue |
+|---------|------|--------|-------|
+| `muse dynamics` | `commands/dynamics.py` | ✅ stub (PR #130) | #120 |
+| `muse swing` | `commands/swing.py` | ✅ stub (PR #131) | #121 |
+| `muse recall` | `commands/recall.py` | ✅ stub (PR #135) | #122 |
+| `muse tag` | `commands/tag.py` | ✅ implemented (PR #133) | #123 |
+| `muse grep` | `commands/grep_cmd.py` | ✅ stub (PR #128) | #124 |
+| `muse describe` | `commands/describe.py` | ✅ stub (PR #134) | #125 |
+| `muse ask` | `commands/ask.py` | ✅ stub (PR #132) | #126 |
+| `muse session` | `commands/session.py` | ✅ implemented (PR #129) | #127 |
+
+All stub commands have stable CLI contracts. Full musical analysis (MIDI content
+parsing, vector embeddings, LLM synthesis) is tracked as follow-up issues.
 [
   {
     "rank": 1,
@@ -1421,3 +1954,153 @@ texture — letting the agent reuse, invert, or contrast those ideas.  The
 > scoring function will be replaced with no change to the CLI interface.
 
 ---
+## `muse dynamics` — Dynamic (Velocity) Profile Analysis
+
+**Purpose:** Analyze the velocity (loudness) profile of a commit across all instrument
+tracks. The primary tool for understanding the dynamic arc of an arrangement and
+detecting flat, robotic, or over-compressed MIDI.
+
+**Usage:**
+```bash
+muse dynamics [<commit>] [OPTIONS]
+```
+
+**Flags:**
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `COMMIT` | positional | HEAD | Commit ref to analyze |
+| `--track TEXT` | string | all tracks | Case-insensitive prefix filter (e.g. `--track bass`) |
+| `--section TEXT` | string | — | Restrict to a named section/region (planned) |
+| `--compare COMMIT` | string | — | Side-by-side comparison with another commit (planned) |
+| `--history` | flag | off | Show dynamics for every commit in branch history (planned) |
+| `--peak` | flag | off | Show only tracks whose peak velocity exceeds the branch average |
+| `--range` | flag | off | Sort output by velocity range descending |
+| `--arc` | flag | off | When combined with `--track`, treat its value as an arc label filter |
+| `--json` | flag | off | Emit structured JSON for agent consumption |
+
+**Arc labels:**
+
+| Label | Meaning |
+|-------|---------|
+| `flat` | Velocity variance < 10; steady throughout |
+| `crescendo` | Monotonically rising from start to end |
+| `decrescendo` | Monotonically falling from start to end |
+| `terraced` | Step-wise plateaus; sudden jumps between stable levels |
+| `swell` | Rises then falls (arch shape) |
+
+**Output example (text):**
+```
+Dynamic profile — commit a1b2c3d4  (HEAD -> main)
+
+Track      Avg Vel  Peak  Range  Arc
+---------  -------  ----  -----  -----------
+drums           88   110     42  terraced
+bass            72    85     28  flat
+keys            64    95     56  crescendo
+lead            79   105     38  swell
+```
+
+**Output example (`--json`):**
+```json
+{
+  "commit": "a1b2c3d4",
+  "branch": "main",
+  "tracks": [
+    {"track": "drums", "avg_velocity": 88, "peak_velocity": 110, "velocity_range": 42, "arc": "terraced"}
+  ]
+}
+```
+
+**Result type:** `TrackDynamics` — fields: `name`, `avg_velocity`, `peak_velocity`, `velocity_range`, `arc`
+
+**Agent use case:** Before generating a new layer, an agent calls `muse dynamics --json` to understand the current velocity landscape. If the arrangement is `flat` across all tracks, the agent adds velocity variation to the new part. If the arc is `crescendo`, the agent ensures the new layer contributes to rather than fights the build.
+
+**Implementation:** `maestro/muse_cli/commands/dynamics.py` — `_dynamics_async` (injectable async core), `TrackDynamics` (result entity), `_render_table` / `_render_json` (renderers). Exit codes: 0 success, 2 outside repo, 3 internal.
+
+> **Stub note:** Arc classification and velocity statistics are placeholder values. Full implementation requires MIDI note velocity extraction from committed snapshot objects (future: Storpheus MIDI parse route).
+
+---
+
+## `muse context` — Structured Musical Context for AI Agents
+
+**Purpose:** Output a structured, self-contained musical context document for AI agent consumption. This is the **primary interface between Muse VCS and AI music generation agents** — agents run `muse context` before any generation task to understand the current key, tempo, active tracks, form, harmonic profile, and evolutionary history of the composition.
+
+**Usage:**
+```bash
+muse context [<commit>] [OPTIONS]
+```
+
+**Flags:**
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `<commit>` | positional | HEAD | Target commit ID to inspect |
+| `--depth N` | int | 5 | Number of ancestor commits to include in `history` |
+| `--sections` | flag | off | Expand section-level detail in `musical_state.sections` |
+| `--tracks` | flag | off | Add per-track harmonic and dynamic breakdowns |
+| `--include-history` | flag | off | Annotate history entries with dimensional deltas (future Storpheus integration) |
+| `--format json\|yaml` | string | json | Output format |
+
+**Output example (`--format json`):**
+```json
+{
+  "repo_id": "a1b2c3d4-...",
+  "current_branch": "main",
+  "head_commit": {
+    "commit_id": "abc1234...",
+    "message": "Add piano melody to verse",
+    "author": "Gabriel",
+    "committed_at": "2026-02-27T22:00:00+00:00"
+  },
+  "musical_state": {
+    "active_tracks": ["bass", "drums", "piano"],
+    "key": null,
+    "tempo_bpm": null,
+    "sections": null,
+    "tracks": null
+  },
+  "history": [
+    {
+      "commit_id": "...",
+      "message": "Add bass line",
+      "active_tracks": ["bass", "drums"],
+      "key": null,
+      "tempo_bpm": null
+    }
+  ],
+  "missing_elements": [],
+  "suggestions": {}
+}
+```
+
+**Result type:** `MuseContextResult` — fields: `repo_id`, `current_branch`, `head_commit` (`MuseHeadCommitInfo`), `musical_state` (`MuseMusicalState`), `history` (`list[MuseHistoryEntry]`), `missing_elements`, `suggestions`. See `docs/reference/type_contracts.md`.
+
+**Agent use case:** When Maestro receives a "generate a new section" request, it runs `muse context --format json` to obtain the current musical state, passes the result to the LLM, and the LLM generates music that is harmonically, rhythmically, and structurally coherent with the existing composition. Without this command, generation decisions are musically incoherent.
+
+**Implementation notes:**
+- `active_tracks` is populated from MIDI/audio file names in the snapshot manifest (real data).
+- Musical dimensions (`key`, `tempo_bpm`, `form`, `emotion`, harmonic/dynamic/melodic profiles) are `null` until Storpheus MIDI analysis is integrated. The full schema is defined and stable.
+- `sections` and `tracks` are populated when the respective flags are passed; sections currently use a single "main" stub section containing all active tracks until MIDI region metadata is available.
+- Output is **deterministic**: for the same `commit_id` and flags, the output is always identical.
+
+**Implementation:** `maestro/services/muse_context.py` (service layer), `maestro/muse_cli/commands/context.py` (CLI command). Exit codes: 0 success, 1 user error (bad commit, no commits), 2 outside repo, 3 internal.
+
+---
+
+## Command Registration Summary
+
+| Command | File | Status | Issue |
+|---------|------|--------|-------|
+| `muse ask` | `commands/ask.py` | ✅ stub (PR #132) | #126 |
+| `muse context` | `commands/context.py` | ✅ implemented (PR #138) | #113 |
+| `muse describe` | `commands/describe.py` | ✅ stub (PR #134) | #125 |
+| `muse dynamics` | `commands/dynamics.py` | ✅ stub (PR #130) | #120 |
+| `muse grep` | `commands/grep_cmd.py` | ✅ stub (PR #128) | #124 |
+| `muse recall` | `commands/recall.py` | ✅ stub (PR #135) | #122 |
+| `muse session` | `commands/session.py` | ✅ implemented (PR #129) | #127 |
+| `muse swing` | `commands/swing.py` | ✅ stub (PR #131) | #121 |
+| `muse tag` | `commands/tag.py` | ✅ implemented (PR #133) | #123 |
+
+All stub commands have stable CLI contracts. Full musical analysis (MIDI content
+parsing, vector embeddings, LLM synthesis) is tracked as follow-up issues.
