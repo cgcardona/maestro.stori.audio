@@ -96,6 +96,11 @@ PRTREES="$HOME/.cursor/worktrees/$(basename "$REPO")"
 mkdir -p "$PRTREES"
 cd "$REPO"
 
+# Enable rerere so git caches conflict resolutions across agents.
+# When multiple agents resolve the same conflict (e.g. muse_vcs.md), rerere
+# automatically reuses the recorded resolution — no manual work needed.
+git config rerere.enabled true
+
 # Snapshot dev tip — all worktrees start here; agents branch from here in STEP 3
 DEV_SHA=$(git rev-parse dev)
 
@@ -336,7 +341,39 @@ STEP 4 — PRE-PUSH SYNC (critical — always run before pushing):
   │ STEP A — See what conflicted (one command):                                 │
   │   git status | grep "^UU"                                                   │
   │                                                                              │
-  │ STEP B — For each conflicted file, apply the matching rule:                 │
+  │ STEP A.5 — UNIVERSAL TRIAGE (run for EVERY conflict before step B):        │
+  │                                                                              │
+  │   Peek at the conflict shape for each file:                                 │
+  │     git diff --diff-filter=U -- <file> | grep -A6 "^<<<<<<<"               │
+  │                                                                              │
+  │   Apply the FIRST matching rule — stop as soon as one matches:             │
+  │                                                                              │
+  │   RULE 0 ─ ONE SIDE EMPTY (most common in parallel batches):               │
+  │   ┌──────────────────────────────────────────────────────────────────────┐  │
+  │   │  <<<<<<< HEAD                                                        │  │
+  │   │  (blank / whitespace only)        ← this side is empty              │  │
+  │   │  =======                                                             │  │
+  │   │  <real content>                   ← this side has content           │  │
+  │   │  >>>>>>> origin/dev                                                  │  │
+  │   │  — OR the reverse (HEAD has content, origin/dev is blank/stub).     │  │
+  │   │                                                                      │  │
+  │   │  Action: TAKE the non-empty side. Remove markers. Done.             │  │
+  │   │  This is always safe. The empty side is a base-file placeholder,   │  │
+  │   │  NOT intentionally deleted content. No further analysis needed.     │  │
+  │   │  Do NOT open the file to "verify" — just take the non-empty side.  │  │
+  │   └──────────────────────────────────────────────────────────────────────┘  │
+  │                                                                              │
+  │   RULE 1 ─ BOTH SIDES IDENTICAL:                                            │
+  │     Keep either side, remove markers. Done.                                │
+  │                                                                              │
+  │   RULE 2 ─ KNOWN ADDITIVE FILE → apply the file-specific rule in STEP B:  │
+  │     muse_cli/app.py  •  muse_vcs.md  •  type_contracts.md                 │
+  │                                                                              │
+  │   RULE 3 ─ ALL OTHER FILES (judgment conflict):                             │
+  │     Preserve dev's version PLUS your additions.                            │
+  │     Semantically incompatible → STOP and report to user. Never guess.     │
+  │                                                                              │
+  │ STEP B — For each conflicted file NOT resolved by STEP A.5 (Rules 0–1):   │
   │                                                                              │
   │ ┌─ maestro/muse_cli/app.py ─────────────────────────────────────────────┐  │
   │ │ Each parallel agent adds exactly one app.add_typer() line.            │  │
@@ -442,23 +479,69 @@ any protocol changes requiring handoff.
 
 ## Before launching
 
-1. **Confirm issues are open and independent** (zero file overlap between them):
-   ```bash
-   gh issue list --state open
-   # For each pair, verify no shared files:
-   gh issue view <N> --json body   # check "Files / modules" section
-   ```
-2. **Confirm `dev` is up to date:**
-   ```bash
-   git -C "$(git rev-parse --show-toplevel)" pull origin dev
-   ```
-3. Run the Setup script above — confirm worktrees appear: `git worktree list`
-4. Confirm Docker is running and the worktrees mount is live:
-   ```bash
-   REPO=$(git rev-parse --show-toplevel)
-   docker compose -f "$REPO/docker-compose.yml" ps
-   docker compose exec maestro ls /worktrees/
-   ```
+### Step 0 — File overlap pre-check (run before creating worktrees)
+
+This script lists every file currently modified by open PRs. If two proposed
+issues will touch the same file as each other **or** as an existing open PR,
+those issues must be serialized — finish the earlier one first, then run the next.
+
+```bash
+REPO=$(git rev-parse --show-toplevel)
+cd "$REPO"
+
+echo "=== Files touched by currently open PRs ==="
+gh pr list --state open --json number,title --jq '.[] | "\(.number)|\(.title)"' | \
+  while IFS='|' read -r num title; do
+    files=$(gh pr diff "$num" --name-only 2>/dev/null)
+    if [ -n "$files" ]; then
+      echo ""
+      echo "PR #$num — $title:"
+      echo "$files" | sed 's/^/  /'
+    fi
+  done
+
+echo ""
+echo "⚠️  Any file appearing in TWO entries above = conflict at merge time."
+echo "⚠️  Resolve: finish the earlier PR first, then rebase the later issue off dev."
+```
+
+**Sequential batching rule:** If any proposed issue touches a file already in
+an open PR, add it to the NEXT batch — not this one. Only launch issues with
+zero file overlap across all open PRs AND across each other.
+
+**Dependency detection:** If issue B cannot function without A's code:
+1. Note `**Depends on #A**` in B's issue body.
+2. Label B as `blocked`.
+3. Merge A first, then un-block B and add it to the next batch.
+
+A two-batch structure (`batch-1 → merge all → batch-2`) eliminates most conflicts.
+Never mix dependent issues into the same parallel batch.
+
+---
+
+### Step 1 — Confirm issues are open and independent
+
+```bash
+gh issue list --state open
+```
+
+### Step 2 — Confirm `dev` is up to date
+
+```bash
+git -C "$(git rev-parse --show-toplevel)" pull origin dev
+```
+
+### Step 3 — Run the Setup script above
+
+Confirm worktrees appear: `git worktree list`
+
+### Step 4 — Confirm Docker is running and the worktrees mount is live
+
+```bash
+REPO=$(git rev-parse --show-toplevel)
+docker compose -f "$REPO/docker-compose.yml" ps
+docker compose exec maestro ls /worktrees/
+```
 
 ---
 

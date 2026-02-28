@@ -76,6 +76,11 @@ PRTREES="$HOME/.cursor/worktrees/$(basename "$REPO")"
 mkdir -p "$PRTREES"
 cd "$REPO"
 
+# Enable rerere so git caches conflict resolutions across agents.
+# When multiple agents resolve the same conflict (e.g. muse_vcs.md), rerere
+# automatically reuses the recorded resolution — no manual work needed.
+git config rerere.enabled true
+
 # Snapshot dev tip — all worktrees start here; agents checkout their PR branch in STEP 3
 DEV_SHA=$(git rev-parse dev)
 
@@ -255,7 +260,39 @@ STEP 3 — CHECKOUT & SYNC (only if STEP 2 shows the PR is open and unreviewed):
   │ STEP A — See what conflicted (one command):                                 │
   │   git status | grep "^UU"                                                   │
   │                                                                              │
-  │ STEP B — For each conflicted file, apply the matching rule below:           │
+  │ STEP A.5 — UNIVERSAL TRIAGE (run for EVERY conflict before step B):        │
+  │                                                                              │
+  │   Peek at the conflict shape for each file:                                 │
+  │     git diff --diff-filter=U -- <file> | grep -A6 "^<<<<<<<"               │
+  │                                                                              │
+  │   Apply the FIRST matching rule — stop as soon as one matches:             │
+  │                                                                              │
+  │   RULE 0 ─ ONE SIDE EMPTY (most common in parallel batches):               │
+  │   ┌──────────────────────────────────────────────────────────────────────┐  │
+  │   │  <<<<<<< HEAD                                                        │  │
+  │   │  (blank / whitespace only)        ← this side is empty              │  │
+  │   │  =======                                                             │  │
+  │   │  <real content>                   ← this side has content           │  │
+  │   │  >>>>>>> origin/dev                                                  │  │
+  │   │  — OR the reverse (HEAD has content, origin/dev is blank/stub).     │  │
+  │   │                                                                      │  │
+  │   │  Action: TAKE the non-empty side. Remove markers. Done.             │  │
+  │   │  This is always safe. The empty side is a base-file placeholder,   │  │
+  │   │  NOT intentionally deleted content. No further analysis needed.     │  │
+  │   │  Do NOT open the file to "verify" — just take the non-empty side.  │  │
+  │   └──────────────────────────────────────────────────────────────────────┘  │
+  │                                                                              │
+  │   RULE 1 ─ BOTH SIDES IDENTICAL:                                            │
+  │     Keep either side, remove markers. Done.                                │
+  │                                                                              │
+  │   RULE 2 ─ KNOWN ADDITIVE FILE → apply the file-specific rule in STEP B:  │
+  │     muse_cli/app.py  •  muse_vcs.md  •  type_contracts.md                 │
+  │                                                                              │
+  │   RULE 3 ─ ALL OTHER FILES (judgment conflict):                             │
+  │     Preserve dev's version PLUS this PR's additions.                       │
+  │     Semantically incompatible → STOP and report to user. Never guess.     │
+  │                                                                              │
+  │ STEP B — For each conflicted file NOT resolved by STEP A.5 (Rules 0–1):   │
   │                                                                              │
   │ ┌─ maestro/muse_cli/app.py ─────────────────────────────────────────────┐  │
   │ │ Each parallel agent adds exactly one app.add_typer() line.            │  │
@@ -557,18 +594,54 @@ Report: PR number, grade, merge status, any improvements made, follow-up issues 
 
 ## Before launching
 
-1. Confirm PRs are open: `gh pr list --state open`
-2. Confirm `dev` is up to date:
-   ```bash
-   git -C "$(git rev-parse --show-toplevel)" pull origin dev
-   ```
-3. Run the Setup script above — confirm worktrees appear: `git worktree list`
-4. Confirm Docker is running and the worktrees mount is live:
-   ```bash
-   REPO=$(git rev-parse --show-toplevel)
-   docker compose -f "$REPO/docker-compose.yml" ps
-   docker compose exec maestro ls /worktrees/
-   ```
+### Step 0 — File overlap check (run before creating worktrees)
+
+Before dispatching review agents in parallel, verify the PRs in this batch
+do not share modified files with each other. Two agents merging PRs that touch
+the same file will produce conflicts during the pre-merge re-sync.
+
+```bash
+REPO=$(git rev-parse --show-toplevel)
+cd "$REPO"
+
+echo "=== Files touched by PRs in this batch ==="
+for pr in <N1> <N2> <N3>; do   # substitute actual PR numbers
+  echo ""
+  echo "PR #$pr:"
+  gh pr diff "$pr" --name-only 2>/dev/null | sed 's/^/  /'
+done
+echo ""
+echo "⚠️  Any file appearing under two PRs = merge conflict guaranteed."
+echo "⚠️  Resolve: review the earlier PR first, merge it, then review the later one."
+```
+
+If two PRs in the batch share a file:
+- Review and merge the simpler/earlier PR first.
+- Then add the second PR to the next review batch (after dev has the first merged).
+
+### Step 1 — Confirm PRs are open
+
+```bash
+gh pr list --state open
+```
+
+### Step 2 — Confirm `dev` is up to date
+
+```bash
+git -C "$(git rev-parse --show-toplevel)" pull origin dev
+```
+
+### Step 3 — Run the Setup script above
+
+Confirm worktrees appear: `git worktree list`
+
+### Step 4 — Confirm Docker is running and the worktrees mount is live
+
+```bash
+REPO=$(git rev-parse --show-toplevel)
+docker compose -f "$REPO/docker-compose.yml" ps
+docker compose exec maestro ls /worktrees/
+```
 
 ---
 
