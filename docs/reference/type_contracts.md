@@ -1958,6 +1958,41 @@ These type aliases replace the repeated pattern `dict[str, list[XxxDict]]` that 
 
 > Added: 2026-02-27 | Types used by the `muse` CLI commands — purely local, never serialised over HTTP.
 
+### `BlameEntry` (`maestro/muse_cli/commands/blame.py`)
+
+`TypedDict` — blame annotation for a single file path returned by `muse blame`.
+Identifies the most recent commit that touched the file, enabling AI agents to
+attribute musical decisions to specific commits.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `path` | `str` | Full relative path of the file (e.g. `muse-work/bass/bassline.mid`) |
+| `commit_id` | `str` | Full 64-char SHA-256 commit ID of the last-touching commit |
+| `commit_short` | `str` | 8-char abbreviated commit ID for human-readable output |
+| `author` | `str` | Author string from the commit; `"(unknown)"` if empty |
+| `committed_at` | `str` | Timestamp formatted as `YYYY-MM-DD HH:MM:SS` |
+| `message` | `str` | Commit message of the last-touching commit |
+| `change_type` | `str` | How the path changed: `"added"` \| `"modified"` \| `"unchanged"` |
+
+**Used by:** `_blame_async`, `_render_blame`.
+
+### `BlameResult` (`maestro/muse_cli/commands/blame.py`)
+
+`TypedDict` — full output of `muse blame`, wrapping a list of `BlameEntry` values
+with the active filter state.  Entries are sorted alphabetically by path.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `path_filter` | `str \| None` | Positional path filter passed to the command, or `None` |
+| `track_filter` | `str \| None` | `--track` fnmatch pattern, or `None` |
+| `section_filter` | `str \| None` | `--section` directory name, or `None` |
+| `line_range` | `str \| None` | `--line-range N,M` annotation (informational for binary files), or `None` |
+| `entries` | `list[BlameEntry]` | Blame annotations, sorted by path ascending |
+
+**Used by:** `_blame_async`, `_render_blame`, and JSON serialisation path in `blame()`.
+
+---
+
 ### `HarmonyResult` (`maestro/muse_cli/commands/harmony.py`)
 
 `TypedDict` — harmonic analysis for a single commit returned by `muse harmony`.
@@ -5245,6 +5280,50 @@ Response from the Hub's `/pull` endpoint.
 | `diverged` | `bool` | `True` when remote HEAD is not an ancestor of local HEAD |
 
 **Consumer:** `_pull_async()` — stores commits/objects in DB, updates tracking pointer, prints divergence warning when `diverged=True`.
+
+---
+
+### `FetchRequest`
+
+**Module:** `maestro/muse_cli/hub_client.py`
+
+Payload sent to the Hub's `POST /fetch` endpoint to request remote branch state.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `branches` | `list[str]` | Branch names to fetch. Empty list means "all branches". |
+
+**Producer:** `_fetch_remote_async()` in `maestro/muse_cli/commands/fetch.py`
+
+---
+
+### `FetchBranchInfo`
+
+**Module:** `maestro/muse_cli/hub_client.py`
+
+A single branch's current state on the remote, returned inside `FetchResponse`.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `branch` | `str` | Branch name (e.g. `"feature/guitar"`) |
+| `head_commit_id` | `str` | Full commit ID of the remote branch HEAD |
+| `is_new` | `bool` | `True` when this branch has no local remote-tracking ref yet |
+
+**Consumer:** `_fetch_remote_async()` — updates `.muse/remotes/<remote>/<branch>` per entry; the CLI overrides `is_new` by checking local state rather than trusting the Hub's hint.
+
+---
+
+### `FetchResponse`
+
+**Module:** `maestro/muse_cli/hub_client.py`
+
+Response from the Hub's `POST /fetch` endpoint.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `branches` | `list[FetchBranchInfo]` | All branches the Hub knows about (filtered by the request's `branches` list when non-empty) |
+
+**Consumer:** `_fetch_remote_async()` — iterates entries to update remote-tracking refs; when `--prune` is active, branches absent from this list cause stale local refs to be deleted.
 
 ---
 
