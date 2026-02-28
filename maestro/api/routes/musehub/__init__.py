@@ -26,7 +26,9 @@ router = APIRouter(
     dependencies=[Depends(require_valid_token)],
 )
 
-router.include_router(repos.router)
+# All fixed-path subrouters are included BEFORE repos.router so they are matched
+# first and are not shadowed by the /{owner}/{repo_slug} wildcard route declared
+# last in repos.py.
 router.include_router(issues.router)
 router.include_router(pull_requests.router)
 router.include_router(releases.router)
@@ -35,5 +37,7 @@ router.include_router(objects.router)
 router.include_router(search.router)
 router.include_router(analysis.router)
 router.include_router(webhooks.router)
+# repos.router last — contains the /{owner}/{repo_slug} wildcard route.
+router.include_router(repos.router)
 
 __all__ = ["router"]

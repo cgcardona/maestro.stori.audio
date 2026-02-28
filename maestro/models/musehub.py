@@ -88,9 +88,20 @@ class PullResponse(CamelModel):
 
 
 class CreateRepoRequest(CamelModel):
-    """Body for POST /musehub/repos."""
+    """Body for POST /musehub/repos.
+
+    ``owner`` is the URL-visible username that appears in /{owner}/{slug} paths.
+    ``slug`` is auto-generated from ``name`` — lowercase, hyphens, 1–64 chars.
+    """
 
     name: str = Field(..., min_length=1, max_length=255, description="Repo name")
+    owner: str = Field(
+        ...,
+        min_length=1,
+        max_length=64,
+        pattern=r"^[a-z0-9]([a-z0-9\-]{0,62}[a-z0-9])?$",
+        description="URL-safe owner username (lowercase alphanumeric + hyphens, no leading/trailing hyphens)",
+    )
     visibility: str = Field("private", pattern="^(public|private)$")
     description: str = Field("", description="Short description shown on the explore page")
     tags: list[str] = Field(
@@ -105,10 +116,16 @@ class CreateRepoRequest(CamelModel):
 
 
 class RepoResponse(CamelModel):
-    """Wire representation of a Muse Hub repo."""
+    """Wire representation of a Muse Hub repo.
+
+    ``owner`` and ``slug`` together form the canonical /{owner}/{slug} URL scheme.
+    ``repo_id`` is the internal UUID primary key — never exposed in external URLs.
+    """
 
     repo_id: str
     name: str
+    owner: str
+    slug: str
     visibility: str
     owner_user_id: str
     clone_url: str
@@ -473,10 +490,14 @@ class ExploreRepoResult(CamelModel):
     that are computed at query time for efficient pagination and sorting.
     These counts are read-only signals -- they are never persisted directly on
     the repo row to avoid write amplification on every push/star.
+
+    ``owner`` and ``slug`` together form the /{owner}/{slug} canonical URL.
     """
 
     repo_id: str
     name: str
+    owner: str
+    slug: str
     owner_user_id: str
     description: str
     tags: list[str]
@@ -508,10 +529,13 @@ class ProfileRepoSummary(CamelModel):
 
     Includes the last-activity timestamp derived from the most recent commit
     and a stub star_count (always 0 at MVP -- no star mechanism yet).
+    ``owner`` and ``slug`` form the /{owner}/{slug} canonical URL for the repo card.
     """
 
     repo_id: str
     name: str
+    owner: str
+    slug: str
     visibility: str
     star_count: int
     last_activity_at: datetime | None

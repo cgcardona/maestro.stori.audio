@@ -50,6 +50,8 @@ async def _seed_repo(session: AsyncSession) -> MusehubRepo:
     repo = MusehubRepo(
         repo_id="repo-test-001",
         name="jazz-sessions",
+        owner="testuser",
+        slug="jazz-sessions",
         visibility="public",
         owner_user_id="user-001",
         created_at=_utc(),
@@ -504,7 +506,7 @@ class TestMusehubMcpServerRouting:
         """call_tool routes musehub_browse_repo to the MuseHub executor."""
         mock_result = MusehubToolResult(
             ok=True,
-            data={"repo": {"name": "test"}, "branches": [], "recent_commits": [], "total_commits": 0, "branch_count": 0},
+            data={"repo": {"name": "test", "owner": "testuser"}, "branches": [], "recent_commits": [], "total_commits": 0, "branch_count": 0},
         )
         with patch(
             "maestro.services.musehub_mcp_executor.execute_browse_repo",

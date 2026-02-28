@@ -2,7 +2,8 @@
 
 Endpoint summary:
   POST /musehub/repos                              — create a new remote repo
-  GET  /musehub/repos/{repo_id}                   — get repo metadata
+  GET  /musehub/repos/{repo_id}                   — get repo metadata (by internal UUID)
+  GET  /musehub/{owner}/{repo_slug}               — get repo metadata (by owner/slug)
   GET  /musehub/repos/{repo_id}/branches          — list all branches
   GET  /musehub/repos/{repo_id}/commits           — list commits (newest first)
   GET  /musehub/repos/{repo_id}/timeline          — chronological timeline with emotion/section/track layers
@@ -18,6 +19,7 @@ import logging
 
 import yaml  # PyYAML ships no py.typed marker
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from maestro.auth.dependencies import TokenClaims, require_valid_token
@@ -60,20 +62,34 @@ async def create_repo(
     db: AsyncSession = Depends(get_db),
     claims: TokenClaims = Depends(require_valid_token),
 ) -> RepoResponse:
-    """Create a new remote Muse Hub repository owned by the authenticated user."""
+    """Create a new remote Muse Hub repository owned by the authenticated user.
+
+    ``slug`` is auto-generated from ``name``.  Returns 409 if the ``(owner, slug)``
+    pair already exists — the musician must rename the repo to get a distinct slug.
+    """
     owner_user_id: str = claims.get("sub") or ""
-    repo = await musehub_repository.create_repo(
-        db,
-        name=body.name,
-        visibility=body.visibility,
-        owner_user_id=owner_user_id,
-        description=body.description,
-        tags=body.tags,
-        key_signature=body.key_signature,
-        tempo_bpm=body.tempo_bpm,
-    )
-    await db.commit()
+    try:
+        repo = await musehub_repository.create_repo(
+            db,
+            name=body.name,
+            owner=body.owner,
+            visibility=body.visibility,
+            owner_user_id=owner_user_id,
+            description=body.description,
+            tags=body.tags,
+            key_signature=body.key_signature,
+            tempo_bpm=body.tempo_bpm,
+        )
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="A repo with this owner and name already exists",
+        )
     return repo
+
+
 
 
 @router.get(
@@ -497,3 +513,31 @@ async def stop_session(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
     await db.commit()
     return sess
+
+
+# ── Owner/slug resolver — declared LAST to avoid shadowing /repos/... routes ──
+
+
+@router.get(
+    "/{owner}/{repo_slug}",
+    response_model=RepoResponse,
+    summary="Get repo metadata by owner/slug",
+)
+async def get_repo_by_owner_slug(
+    owner: str,
+    repo_slug: str,
+    db: AsyncSession = Depends(get_db),
+    _: TokenClaims = Depends(require_valid_token),
+) -> RepoResponse:
+    """Return metadata for the repo identified by its canonical /{owner}/{slug} path.
+
+    Declared last so that all /repos/... fixed-prefix routes take precedence.
+    Returns 404 for unknown owner/slug combinations.
+    """
+    repo = await musehub_repository.get_repo_by_owner_slug(db, owner, repo_slug)
+    if repo is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Repo '{owner}/{repo_slug}' not found",
+        )
+    return repo

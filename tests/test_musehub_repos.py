@@ -32,7 +32,7 @@ async def test_create_repo_returns_201(
     """POST /musehub/repos creates a repo and returns all required fields."""
     response = await client.post(
         "/api/v1/musehub/repos",
-        json={"name": "my-beats", "visibility": "private"},
+        json={"name": "my-beats", "owner": "testuser", "visibility": "private"},
         headers=auth_headers,
     )
     assert response.status_code == 201
@@ -50,7 +50,7 @@ async def test_create_repo_requires_auth(client: AsyncClient) -> None:
     """POST /musehub/repos returns 401 without a Bearer token."""
     response = await client.post(
         "/api/v1/musehub/repos",
-        json={"name": "my-beats"},
+        json={"name": "my-beats", "owner": "testuser"},
     )
     assert response.status_code == 401
 
@@ -63,7 +63,7 @@ async def test_create_repo_default_visibility_is_private(
     """Omitting visibility defaults to 'private'."""
     response = await client.post(
         "/api/v1/musehub/repos",
-        json={"name": "silent-sessions"},
+        json={"name": "silent-sessions", "owner": "testuser"},
         headers=auth_headers,
     )
     assert response.status_code == 201
@@ -83,7 +83,7 @@ async def test_get_repo_returns_200(
     """GET /musehub/repos/{repo_id} returns the repo after creation."""
     create = await client.post(
         "/api/v1/musehub/repos",
-        json={"name": "jazz-sessions"},
+        json={"name": "jazz-sessions", "owner": "testuser"},
         headers=auth_headers,
     )
     assert create.status_code == 201
@@ -128,7 +128,7 @@ async def test_list_branches_empty_on_new_repo(
     """A newly created repo has an empty branches list."""
     create = await client.post(
         "/api/v1/musehub/repos",
-        json={"name": "drum-patterns"},
+        json={"name": "drum-patterns", "owner": "testuser"},
         headers=auth_headers,
     )
     repo_id = create.json()["repoId"]
@@ -167,7 +167,7 @@ async def test_list_commits_empty_on_new_repo(
     """A new repo has no commits."""
     create = await client.post(
         "/api/v1/musehub/repos",
-        json={"name": "empty-repo"},
+        json={"name": "empty-repo", "owner": "testuser"},
         headers=auth_headers,
     )
     repo_id = create.json()["repoId"]
@@ -194,7 +194,7 @@ async def test_list_commits_returns_newest_first(
     # Create repo via API
     create = await client.post(
         "/api/v1/musehub/repos",
-        json={"name": "ordered-commits"},
+        json={"name": "ordered-commits", "owner": "testuser"},
         headers=auth_headers,
     )
     repo_id = create.json()["repoId"]
@@ -244,7 +244,7 @@ async def test_list_commits_limit_param(
 
     create = await client.post(
         "/api/v1/musehub/repos",
-        json={"name": "limited-repo"},
+        json={"name": "limited-repo", "owner": "testuser"},
         headers=auth_headers,
     )
     repo_id = create.json()["repoId"]
@@ -285,6 +285,7 @@ async def test_create_repo_service_persists_to_db(db_session: AsyncSession) -> N
     repo = await musehub_repository.create_repo(
         db_session,
         name="service-test-repo",
+        owner="testuser",
         visibility="public",
         owner_user_id="user-abc",
     )
@@ -309,6 +310,7 @@ async def test_list_branches_returns_empty_for_new_repo(db_session: AsyncSession
     repo = await musehub_repository.create_repo(
         db_session,
         name="branchless",
+        owner="testuser",
         visibility="private",
         owner_user_id="user-x",
     )
@@ -333,7 +335,7 @@ async def test_divergence_endpoint_returns_five_dimensions(
 
     create = await client.post(
         "/api/v1/musehub/repos",
-        json={"name": "divergence-test-repo"},
+        json={"name": "divergence-test-repo", "owner": "testuser"},
         headers=auth_headers,
     )
     assert create.status_code == 201
@@ -394,7 +396,7 @@ async def test_divergence_overall_score_is_mean_of_dimensions(
 
     create = await client.post(
         "/api/v1/musehub/repos",
-        json={"name": "divergence-mean-repo"},
+        json={"name": "divergence-mean-repo", "owner": "testuser"},
         headers=auth_headers,
     )
     repo_id = create.json()["repoId"]
@@ -447,7 +449,7 @@ async def test_divergence_json_response_structure(
 
     create = await client.post(
         "/api/v1/musehub/repos",
-        json={"name": "divergence-struct-repo"},
+        json={"name": "divergence-struct-repo", "owner": "testuser"},
         headers=auth_headers,
     )
     repo_id = create.json()["repoId"]
@@ -516,7 +518,7 @@ async def test_divergence_endpoint_returns_422_for_empty_branch(
     """GET /divergence returns 422 when a branch has no commits."""
     create = await client.post(
         "/api/v1/musehub/repos",
-        json={"name": "empty-branch-repo"},
+        json={"name": "empty-branch-repo", "owner": "testuser"},
         headers=auth_headers,
     )
     repo_id = create.json()["repoId"]
@@ -542,7 +544,7 @@ async def test_graph_dag_endpoint_returns_empty_for_new_repo(
     """GET /dag returns empty nodes/edges for a repo with no commits."""
     create = await client.post(
         "/api/v1/musehub/repos",
-        json={"name": "dag-empty"},
+        json={"name": "dag-empty", "owner": "testuser"},
         headers=auth_headers,
     )
     repo_id = create.json()["repoId"]
@@ -569,7 +571,7 @@ async def test_graph_dag_has_edges(
 
     create = await client.post(
         "/api/v1/musehub/repos",
-        json={"name": "dag-edges"},
+        json={"name": "dag-edges", "owner": "testuser"},
         headers=auth_headers,
     )
     repo_id = create.json()["repoId"]
@@ -621,7 +623,7 @@ async def test_graph_dag_endpoint_topological_order(
 
     create = await client.post(
         "/api/v1/musehub/repos",
-        json={"name": "dag-topo"},
+        json={"name": "dag-topo", "owner": "testuser"},
         headers=auth_headers,
     )
     repo_id = create.json()["repoId"]
@@ -701,7 +703,7 @@ async def test_graph_json_response_has_required_fields(
 
     create = await client.post(
         "/api/v1/musehub/repos",
-        json={"name": "dag-fields"},
+        json={"name": "dag-fields", "owner": "testuser"},
         headers=auth_headers,
     )
     repo_id = create.json()["repoId"]
@@ -742,7 +744,9 @@ async def _seed_credits_repo(db_session: AsyncSession) -> str:
     """Create a repo with commits from two distinct authors and return repo_id."""
     from datetime import datetime, timezone, timedelta
 
-    repo = MusehubRepo(name="liner-notes", visibility="public", owner_user_id="producer-1")
+    repo = MusehubRepo(name="liner-notes",
+        owner="testuser",
+        slug="liner-notes", visibility="public", owner_user_id="producer-1")
     db_session.add(repo)
     await db_session.flush()
     repo_id = str(repo.repo_id)
@@ -900,7 +904,9 @@ async def test_credits_requires_auth(
     db_session: AsyncSession,
 ) -> None:
     """GET /api/v1/musehub/repos/{repo_id}/credits returns 401 without JWT."""
-    repo = MusehubRepo(name="auth-test-repo", visibility="private", owner_user_id="u1")
+    repo = MusehubRepo(name="auth-test-repo",
+        owner="testuser",
+        slug="auth-test-repo", visibility="private", owner_user_id="u1")
     db_session.add(repo)
     await db_session.commit()
     await db_session.refresh(repo)
@@ -915,7 +921,9 @@ async def test_credits_invalid_sort_param(
     auth_headers: dict[str, str],
 ) -> None:
     """GET /api/v1/musehub/repos/{repo_id}/credits with invalid sort returns 422."""
-    repo = MusehubRepo(name="sort-test", visibility="private", owner_user_id="u1")
+    repo = MusehubRepo(name="sort-test",
+        owner="testuser",
+        slug="sort-test", visibility="private", owner_user_id="u1")
     db_session.add(repo)
     await db_session.commit()
     await db_session.refresh(repo)
@@ -933,7 +941,9 @@ async def test_credits_aggregation_service_direct(db_session: AsyncSession) -> N
 
     from maestro.services import musehub_credits
 
-    repo = MusehubRepo(name="direct-test", visibility="private", owner_user_id="u1")
+    repo = MusehubRepo(name="direct-test",
+        owner="testuser",
+        slug="direct-test", visibility="private", owner_user_id="u1")
     db_session.add(repo)
     await db_session.flush()
     repo_id = str(repo.repo_id)

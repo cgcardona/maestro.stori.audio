@@ -30,12 +30,22 @@ from __future__ import annotations
 
 import logging
 
-from fastapi import APIRouter, Response
+from fastapi import APIRouter, Depends, Response
 from fastapi.responses import HTMLResponse
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from maestro.db import get_db
+from maestro.services import musehub_repository
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/musehub/ui", tags=["musehub-ui"])
+
+# Fixed-path routes that must be registered BEFORE the /{owner}/{repo_slug}
+# wildcard routes to prevent them from shadowing /users/, /explore, /trending.
+# Registered in main.py ahead of ``router`` via ``app.include_router(fixed_router)``.
+fixed_router = APIRouter(prefix="/musehub/ui", tags=["musehub-ui"])
+
 
 # ---------------------------------------------------------------------------
 # Shared HTML scaffolding
@@ -397,17 +407,21 @@ async def global_search_page(
     return HTMLResponse(content=html)
 
 
-@router.get("/{repo_id}", response_class=HTMLResponse, summary="Muse Hub repo page")
-async def repo_page(repo_id: str) -> HTMLResponse:
+@router.get("/{owner}/{repo_slug}", response_class=HTMLResponse, summary="Muse Hub repo page")
+async def repo_page(owner: str, repo_slug: str, db: AsyncSession = Depends(get_db)) -> HTMLResponse:
     """Render the repo landing page: branch selector + newest 20 commits.
 
-    Auth is handled client-side via localStorage JWT. The page fetches from
-    ``GET /api/v1/musehub/repos/{repo_id}/branches`` and
-    ``GET /api/v1/musehub/repos/{repo_id}/commits``.
+    Auth is handled client-side via localStorage JWT. Resolves owner+slug to
+    repo_id server-side; the JS then uses the internal repo_id for API calls.
     """
+    from fastapi import HTTPException, status as http_status
+    repo = await musehub_repository.get_repo_orm_by_owner_slug(db, owner, repo_slug)
+    if repo is None:
+        raise HTTPException(status_code=http_status.HTTP_404_NOT_FOUND, detail=f"Repo '{owner}/{repo_slug}' not found")
+    repo_id = repo.repo_id
     script = f"""
       const repoId = {repr(repo_id)};
-      const base = '/musehub/ui/' + repoId;
+      const base = '/musehub/ui/{owner}/{repo_slug}';
 
       async function load(branch) {{
         try {{
@@ -483,11 +497,11 @@ async def repo_page(repo_id: str) -> HTMLResponse:
 
 
 @router.get(
-    "/{repo_id}/commits/{commit_id}",
+    "/{owner}/{repo_slug}/commits/{commit_id}",
     response_class=HTMLResponse,
     summary="Muse Hub commit detail page",
 )
-async def commit_page(repo_id: str, commit_id: str) -> HTMLResponse:
+async def commit_page(owner: str, repo_slug: str, commit_id: str, db: AsyncSession = Depends(get_db)) -> HTMLResponse:
     """Render the commit detail page: metadata + artifact browser.
 
     Fetches ``GET /api/v1/musehub/repos/{repo_id}/commits?limit=200`` to
@@ -497,6 +511,12 @@ async def commit_page(repo_id: str, commit_id: str) -> HTMLResponse:
     - ``.mp3``  → ``<audio controls>`` player
     - ``.mid``  → download link
     """
+
+    from fastapi import HTTPException, status as _st
+    _row = await musehub_repository.get_repo_orm_by_owner_slug(db, owner, repo_slug)
+    if _row is None:
+        raise HTTPException(status_code=_st.HTTP_404_NOT_FOUND, detail=f"Repo '{owner}/{repo_slug}' not found")
+    repo_id = _row.repo_id
     script = f"""
       const repoId   = {repr(repo_id)};
       const commitId = {repr(commit_id)};
@@ -610,11 +630,11 @@ async def commit_page(repo_id: str, commit_id: str) -> HTMLResponse:
 
 
 @router.get(
-    "/{repo_id}/graph",
+    "/{owner}/{repo_slug}/graph",
     response_class=HTMLResponse,
     summary="Muse Hub interactive DAG commit graph",
 )
-async def graph_page(repo_id: str) -> HTMLResponse:
+async def graph_page(owner: str, repo_slug: str, db: AsyncSession = Depends(get_db)) -> HTMLResponse:
     """Render the interactive DAG commit graph page.
 
     Fetches ``GET /api/v1/musehub/repos/{repo_id}/dag`` which returns a
@@ -633,6 +653,12 @@ async def graph_page(repo_id: str) -> HTMLResponse:
 
     No external CDN dependencies -- the entire renderer is inline JavaScript.
     """
+
+    from fastapi import HTTPException, status as _st
+    _row = await musehub_repository.get_repo_orm_by_owner_slug(db, owner, repo_slug)
+    if _row is None:
+        raise HTTPException(status_code=_st.HTTP_404_NOT_FOUND, detail=f"Repo '{owner}/{repo_slug}' not found")
+    repo_id = _row.repo_id
     script = f"""
       const repoId = {repr(repo_id)};
       const base   = '/musehub/ui/' + repoId;
@@ -910,15 +936,21 @@ async def graph_page(repo_id: str) -> HTMLResponse:
 
 
 @router.get(
-    "/{repo_id}/pulls",
+    "/{owner}/{repo_slug}/pulls",
     response_class=HTMLResponse,
     summary="Muse Hub pull request list page",
 )
-async def pr_list_page(repo_id: str) -> HTMLResponse:
+async def pr_list_page(owner: str, repo_slug: str, db: AsyncSession = Depends(get_db)) -> HTMLResponse:
     """Render the PR list page: open/all filter + PR rows.
 
     Fetches ``GET /api/v1/musehub/repos/{repo_id}/pull-requests?state=<filter>``.
     """
+
+    from fastapi import HTTPException, status as _st
+    _row = await musehub_repository.get_repo_orm_by_owner_slug(db, owner, repo_slug)
+    if _row is None:
+        raise HTTPException(status_code=_st.HTTP_404_NOT_FOUND, detail=f"Repo '{owner}/{repo_slug}' not found")
+    repo_id = _row.repo_id
     script = f"""
       const repoId = {repr(repo_id)};
       const base   = '/musehub/ui/' + repoId;
@@ -977,16 +1009,22 @@ async def pr_list_page(repo_id: str) -> HTMLResponse:
 
 
 @router.get(
-    "/{repo_id}/pulls/{pr_id}",
+    "/{owner}/{repo_slug}/pulls/{pr_id}",
     response_class=HTMLResponse,
     summary="Muse Hub PR detail page",
 )
-async def pr_detail_page(repo_id: str, pr_id: str) -> HTMLResponse:
+async def pr_detail_page(owner: str, repo_slug: str, pr_id: str, db: AsyncSession = Depends(get_db)) -> HTMLResponse:
     """Render the PR detail page: title, body, branches, state, merge button.
 
     The merge button calls ``POST /api/v1/musehub/repos/{repo_id}/pull-requests/{pr_id}/merge``
     with ``merge_strategy: merge_commit`` and reloads the page on success.
     """
+
+    from fastapi import HTTPException, status as _st
+    _row = await musehub_repository.get_repo_orm_by_owner_slug(db, owner, repo_slug)
+    if _row is None:
+        raise HTTPException(status_code=_st.HTTP_404_NOT_FOUND, detail=f"Repo '{owner}/{repo_slug}' not found")
+    repo_id = _row.repo_id
     script = f"""
       const repoId = {repr(repo_id)};
       const prId   = {repr(pr_id)};
@@ -1073,15 +1111,21 @@ async def pr_detail_page(repo_id: str, pr_id: str) -> HTMLResponse:
 
 
 @router.get(
-    "/{repo_id}/issues",
+    "/{owner}/{repo_slug}/issues",
     response_class=HTMLResponse,
     summary="Muse Hub issue list page",
 )
-async def issue_list_page(repo_id: str) -> HTMLResponse:
+async def issue_list_page(owner: str, repo_slug: str, db: AsyncSession = Depends(get_db)) -> HTMLResponse:
     """Render the issue list page: open filter + issue rows with labels.
 
     Fetches ``GET /api/v1/musehub/repos/{repo_id}/issues?state=<filter>``.
     """
+
+    from fastapi import HTTPException, status as _st
+    _row = await musehub_repository.get_repo_orm_by_owner_slug(db, owner, repo_slug)
+    if _row is None:
+        raise HTTPException(status_code=_st.HTTP_404_NOT_FOUND, detail=f"Repo '{owner}/{repo_slug}' not found")
+    repo_id = _row.repo_id
     script = f"""
       const repoId = {repr(repo_id)};
       const base   = '/musehub/ui/' + repoId;
@@ -1145,11 +1189,11 @@ async def issue_list_page(repo_id: str) -> HTMLResponse:
 
 
 @router.get(
-    "/{repo_id}/context/{ref}",
+    "/{owner}/{repo_slug}/context/{ref}",
     response_class=HTMLResponse,
     summary="Muse Hub context viewer page",
 )
-async def context_page(repo_id: str, ref: str) -> HTMLResponse:
+async def context_page(owner: str, repo_slug: str, ref: str, db: AsyncSession = Depends(get_db)) -> HTMLResponse:
     """Render the AI context viewer for a given commit ref.
 
     Fetches ``GET /api/v1/musehub/repos/{repo_id}/context/{ref}`` and renders
@@ -1164,6 +1208,12 @@ async def context_page(repo_id: str, ref: str) -> HTMLResponse:
     - Raw JSON toggle for debugging
     - Copy-to-clipboard button for sharing with agents
     """
+
+    from fastapi import HTTPException, status as _st
+    _row = await musehub_repository.get_repo_orm_by_owner_slug(db, owner, repo_slug)
+    if _row is None:
+        raise HTTPException(status_code=_st.HTTP_404_NOT_FOUND, detail=f"Repo '{owner}/{repo_slug}' not found")
+    repo_id = _row.repo_id
     script = f"""
       const repoId = {repr(repo_id)};
       const ref    = {repr(ref)};
@@ -1359,17 +1409,23 @@ async def context_page(repo_id: str, ref: str) -> HTMLResponse:
 
 
 @router.get(
-    "/{repo_id}/issues/{number}",
+    "/{owner}/{repo_slug}/issues/{number}",
     response_class=HTMLResponse,
     summary="Muse Hub issue detail page",
 )
-async def issue_detail_page(repo_id: str, number: int) -> HTMLResponse:
+async def issue_detail_page(owner: str, repo_slug: str, number: int, db: AsyncSession = Depends(get_db)) -> HTMLResponse:
     """Render the issue detail page: title, body, labels, state, close button.
 
     The close button calls
     ``POST /api/v1/musehub/repos/{repo_id}/issues/{number}/close``
     and reloads the page on success.
     """
+
+    from fastapi import HTTPException, status as _st
+    _row = await musehub_repository.get_repo_orm_by_owner_slug(db, owner, repo_slug)
+    if _row is None:
+        raise HTTPException(status_code=_st.HTTP_404_NOT_FOUND, detail=f"Repo '{owner}/{repo_slug}' not found")
+    repo_id = _row.repo_id
     script = f"""
       const repoId = {repr(repo_id)};
       const number = {number};
@@ -1667,11 +1723,11 @@ def _embed_page(title: str, repo_id: str, ref: str, body_script: str) -> str:
 
 
 @router.get(
-    "/{repo_id}/embed/{ref}",
+    "/{owner}/{repo_slug}/embed/{ref}",
     response_class=HTMLResponse,
     summary="Embeddable MuseHub player widget",
 )
-async def embed_page(repo_id: str, ref: str) -> Response:
+async def embed_page(owner: str, repo_slug: str, ref: str, db: AsyncSession = Depends(get_db)) -> Response:
     """Render a compact, iframe-safe audio player for a MuseHub repo commit.
 
     Why this route exists: external sites (blogs, CMSes) embed MuseHub
@@ -1693,6 +1749,11 @@ async def embed_page(repo_id: str, ref: str) -> Response:
     Returns:
         HTML response with ``X-Frame-Options: ALLOWALL`` header.
     """
+    from fastapi import HTTPException, status as _st
+    _row = await musehub_repository.get_repo_orm_by_owner_slug(db, owner, repo_slug)
+    if _row is None:
+        raise HTTPException(status_code=_st.HTTP_404_NOT_FOUND, detail=f"Repo '{owner}/{repo_slug}' not found")
+    repo_id = _row.repo_id
     short_ref = ref[:8] if len(ref) >= 8 else ref
     html = _embed_page(
         title=f"Player {short_ref}",
@@ -1708,11 +1769,11 @@ async def embed_page(repo_id: str, ref: str) -> Response:
 
 
 @router.get(
-    "/{repo_id}/credits",
+    "/{owner}/{repo_slug}/credits",
     response_class=HTMLResponse,
     summary="Muse Hub dynamic credits page",
 )
-async def credits_page(repo_id: str) -> HTMLResponse:
+async def credits_page(owner: str, repo_slug: str, db: AsyncSession = Depends(get_db)) -> HTMLResponse:
     """Render the dynamic credits page -- album liner notes for the repo.
 
     Fetches ``GET /api/v1/musehub/repos/{repo_id}/credits`` and displays
@@ -1724,6 +1785,12 @@ async def credits_page(repo_id: str) -> HTMLResponse:
 
     Auth is handled client-side via localStorage JWT, matching all other UI pages.
     """
+
+    from fastapi import HTTPException, status as _st
+    _row = await musehub_repository.get_repo_orm_by_owner_slug(db, owner, repo_slug)
+    if _row is None:
+        raise HTTPException(status_code=_st.HTTP_404_NOT_FOUND, detail=f"Repo '{owner}/{repo_slug}' not found")
+    repo_id = _row.repo_id
     script = f"""
       const repoId = {repr(repo_id)};
       const base   = '/musehub/ui/' + repoId;
@@ -1821,6 +1888,12 @@ async def credits_page(repo_id: str) -> HTMLResponse:
 
       load('count');
     """
+
+    from fastapi import HTTPException, status as _st
+    _row = await musehub_repository.get_repo_orm_by_owner_slug(db, owner, repo_slug)
+    if _row is None:
+        raise HTTPException(status_code=_st.HTTP_404_NOT_FOUND, detail=f"Repo '{owner}/{repo_slug}' not found")
+    repo_id = _row.repo_id
     html = _page(
         title="Credits",
         breadcrumb=f'<a href="/musehub/ui/{repo_id}">{repo_id[:8]}</a> / credits',
@@ -1830,11 +1903,11 @@ async def credits_page(repo_id: str) -> HTMLResponse:
 
 
 @router.get(
-    "/{repo_id}/search",
+    "/{owner}/{repo_slug}/search",
     response_class=HTMLResponse,
     summary="Muse Hub in-repo search page",
 )
-async def search_page(repo_id: str) -> HTMLResponse:
+async def search_page(owner: str, repo_slug: str, db: AsyncSession = Depends(get_db)) -> HTMLResponse:
     """Render the in-repo search page with four mode tabs.
 
     Modes map to the JSON API at ``GET /api/v1/musehub/repos/{repo_id}/search``:
@@ -1847,6 +1920,12 @@ async def search_page(repo_id: str) -> HTMLResponse:
     audio preview link for any ``mp3``/``wav``/``ogg`` artifact on that commit.
     Authentication is handled client-side via localStorage JWT.
     """
+
+    from fastapi import HTTPException, status as _st
+    _row = await musehub_repository.get_repo_orm_by_owner_slug(db, owner, repo_slug)
+    if _row is None:
+        raise HTTPException(status_code=_st.HTTP_404_NOT_FOUND, detail=f"Repo '{owner}/{repo_slug}' not found")
+    repo_id = _row.repo_id
     script = f"""
       const repoId = {repr(repo_id)};
       const base   = '/musehub/ui/' + repoId;
@@ -2157,7 +2236,7 @@ _TIMELINE_CSS = """
 """
 
 
-@router.get(
+@fixed_router.get(
     "/users/{username}",
     response_class=HTMLResponse,
     summary="Muse Hub user profile page",
@@ -2304,11 +2383,11 @@ async def profile_page(username: str) -> HTMLResponse:
 
 
 @router.get(
-    "/{repo_id}/divergence",
+    "/{owner}/{repo_slug}/divergence",
     response_class=HTMLResponse,
     summary="Muse Hub divergence visualization page",
 )
-async def divergence_page(repo_id: str) -> HTMLResponse:
+async def divergence_page(owner: str, repo_slug: str, db: AsyncSession = Depends(get_db)) -> HTMLResponse:
     """Render the divergence visualization page: radar chart + dimension detail panels.
 
     Fetches ``GET /api/v1/musehub/repos/{repo_id}/divergence?branch_a=...&branch_b=...``
@@ -2320,6 +2399,11 @@ async def divergence_page(repo_id: str) -> HTMLResponse:
 
     Auth is handled client-side via localStorage JWT.  No Jinja2 required.
     """
+    from fastapi import HTTPException, status as _st
+    _row = await musehub_repository.get_repo_orm_by_owner_slug(db, owner, repo_slug)
+    if _row is None:
+        raise HTTPException(status_code=_st.HTTP_404_NOT_FOUND, detail=f"Repo '{owner}/{repo_slug}' not found")
+    repo_id = _row.repo_id
     script = f"""
       const repoId = {repr(repo_id)};
       const apiBase = '/api/v1/musehub/repos/' + repoId;
@@ -2736,7 +2820,7 @@ def _explore_page_html(title: str, breadcrumb: str, default_sort: str) -> str:
 </html>"""
 
 
-@router.get("/explore", response_class=HTMLResponse, summary="Muse Hub explore page")
+@fixed_router.get("/explore", response_class=HTMLResponse, summary="Muse Hub explore page")
 async def explore_page() -> HTMLResponse:
     """Render the explore/discover page -- a filterable grid of all public repos.
 
@@ -2754,7 +2838,7 @@ async def explore_page() -> HTMLResponse:
     )
 
 
-@router.get("/trending", response_class=HTMLResponse, summary="Muse Hub trending page")
+@fixed_router.get("/trending", response_class=HTMLResponse, summary="Muse Hub trending page")
 async def trending_page() -> HTMLResponse:
     """Render the trending page -- public repos sorted by star count by default.
 
@@ -2776,11 +2860,11 @@ async def trending_page() -> HTMLResponse:
 
 
 @router.get(
-    "/{repo_id}/timeline",
+    "/{owner}/{repo_slug}/timeline",
     response_class=HTMLResponse,
     summary="Muse Hub timeline page -- chronological evolution",
 )
-async def timeline_page(repo_id: str) -> HTMLResponse:
+async def timeline_page(owner: str, repo_slug: str, db: AsyncSession = Depends(get_db)) -> HTMLResponse:
     """Render the timeline page: layered chronological visualisation of a repo.
 
     Fetches ``GET /api/v1/musehub/repos/{repo_id}/timeline`` and renders four
@@ -2794,6 +2878,12 @@ async def timeline_page(repo_id: str) -> HTMLResponse:
     Zoom controls (day/week/month/all-time) adjust the visible window.
     Auth is handled client-side via localStorage JWT.
     """
+
+    from fastapi import HTTPException, status as _st
+    _row = await musehub_repository.get_repo_orm_by_owner_slug(db, owner, repo_slug)
+    if _row is None:
+        raise HTTPException(status_code=_st.HTTP_404_NOT_FOUND, detail=f"Repo '{owner}/{repo_slug}' not found")
+    repo_id = _row.repo_id
     script = f"""
       const repoId = {repr(repo_id)};
       const base   = '/musehub/ui/' + repoId;
@@ -3232,17 +3322,23 @@ body {
 
 
 @router.get(
-    "/{repo_id}/releases",
+    "/{owner}/{repo_slug}/releases",
     response_class=HTMLResponse,
     summary="Muse Hub release list page",
 )
-async def release_list_page(repo_id: str) -> HTMLResponse:
+async def release_list_page(owner: str, repo_slug: str, db: AsyncSession = Depends(get_db)) -> HTMLResponse:
     """Render the release list page: all published versions newest first.
 
     Fetches ``GET /api/v1/musehub/repos/{repo_id}/releases``.
     Each release shows its tag, title, creation date, and a link to the
     detail page where release notes and download packages are available.
     """
+
+    from fastapi import HTTPException, status as _st
+    _row = await musehub_repository.get_repo_orm_by_owner_slug(db, owner, repo_slug)
+    if _row is None:
+        raise HTTPException(status_code=_st.HTTP_404_NOT_FOUND, detail=f"Repo '{owner}/{repo_slug}' not found")
+    repo_id = _row.repo_id
     script = f"""
       const repoId = {repr(repo_id)};
       const base   = '/musehub/ui/' + repoId;
@@ -3296,11 +3392,11 @@ async def release_list_page(repo_id: str) -> HTMLResponse:
 
 
 @router.get(
-    "/{repo_id}/releases/{tag}",
+    "/{owner}/{repo_slug}/releases/{tag}",
     response_class=HTMLResponse,
     summary="Muse Hub release detail page",
 )
-async def release_detail_page(repo_id: str, tag: str) -> HTMLResponse:
+async def release_detail_page(owner: str, repo_slug: str, tag: str, db: AsyncSession = Depends(get_db)) -> HTMLResponse:
     """Render the release detail page: title, tag, release notes, download packages.
 
     Fetches ``GET /api/v1/musehub/repos/{repo_id}/releases/{tag}``.
@@ -3308,6 +3404,12 @@ async def release_detail_page(repo_id: str, tag: str) -> HTMLResponse:
     rendered as download cards; unavailable packages show a "not available"
     indicator instead of a broken link.
     """
+
+    from fastapi import HTTPException, status as _st
+    _row = await musehub_repository.get_repo_orm_by_owner_slug(db, owner, repo_slug)
+    if _row is None:
+        raise HTTPException(status_code=_st.HTTP_404_NOT_FOUND, detail=f"Repo '{owner}/{repo_slug}' not found")
+    repo_id = _row.repo_id
     script = f"""
       const repoId = {repr(repo_id)};
       const tag    = {repr(tag)};
@@ -3398,11 +3500,11 @@ async def release_detail_page(repo_id: str, tag: str) -> HTMLResponse:
 
 
 @router.get(
-    "/{repo_id}/sessions",
+    "/{owner}/{repo_slug}/sessions",
     response_class=HTMLResponse,
     summary="Muse Hub session log page",
 )
-async def sessions_page(repo_id: str) -> HTMLResponse:
+async def sessions_page(owner: str, repo_slug: str, db: AsyncSession = Depends(get_db)) -> HTMLResponse:
     """Render the session log page -- all recording sessions newest first.
 
     Lists every recording session for the repo with: start/end times, duration,
@@ -3412,6 +3514,12 @@ async def sessions_page(repo_id: str) -> HTMLResponse:
     Fetches ``GET /api/v1/musehub/repos/{repo_id}/sessions?limit=100``.
     Active sessions surface first; the rest are ordered by ``started_at`` desc.
     """
+
+    from fastapi import HTTPException, status as _st
+    _row = await musehub_repository.get_repo_orm_by_owner_slug(db, owner, repo_slug)
+    if _row is None:
+        raise HTTPException(status_code=_st.HTTP_404_NOT_FOUND, detail=f"Repo '{owner}/{repo_slug}' not found")
+    repo_id = _row.repo_id
     script = f"""
       const repoId = {repr(repo_id)};
       const base   = '/musehub/ui/' + repoId;
@@ -3512,11 +3620,11 @@ async def sessions_page(repo_id: str) -> HTMLResponse:
 
 
 @router.get(
-    "/{repo_id}/sessions/{session_id}",
+    "/{owner}/{repo_slug}/sessions/{session_id}",
     response_class=HTMLResponse,
     summary="Muse Hub session detail page",
 )
-async def session_detail_page(repo_id: str, session_id: str) -> HTMLResponse:
+async def session_detail_page(owner: str, repo_slug: str, session_id: str, db: AsyncSession = Depends(get_db)) -> HTMLResponse:
     """Render the full session detail page.
 
     Fetches ``GET /api/v1/musehub/repos/{repo_id}/sessions/{session_id}`` and
@@ -3527,6 +3635,12 @@ async def session_detail_page(repo_id: str, session_id: str) -> HTMLResponse:
     Renders a 404 message if the API returns 404, so agents can distinguish
     a missing session from a server error.
     """
+
+    from fastapi import HTTPException, status as _st
+    _row = await musehub_repository.get_repo_orm_by_owner_slug(db, owner, repo_slug)
+    if _row is None:
+        raise HTTPException(status_code=_st.HTTP_404_NOT_FOUND, detail=f"Repo '{owner}/{repo_slug}' not found")
+    repo_id = _row.repo_id
     script = f"""
       const repoId    = {repr(repo_id)};
       const sessionId = {repr(session_id)};
@@ -3685,11 +3799,11 @@ async def session_detail_page(repo_id: str, session_id: str) -> HTMLResponse:
     )
     return HTMLResponse(content=html)
 @router.get(
-    "/{repo_id}/analysis/{ref}/contour",
+    "/{owner}/{repo_slug}/analysis/{ref}/contour",
     response_class=HTMLResponse,
     summary="Muse Hub melodic contour analysis page",
 )
-async def contour_page(repo_id: str, ref: str) -> HTMLResponse:
+async def contour_page(owner: str, repo_slug: str, ref: str, db: AsyncSession = Depends(get_db)) -> HTMLResponse:
     """Render the melodic contour analysis page for a Muse commit ref.
 
     Visualises per-track melodic shapes, tessitura, and cross-commit contour
@@ -3702,6 +3816,12 @@ async def contour_page(repo_id: str, ref: str) -> HTMLResponse:
     Track and section filters are applied client-side via query params forwarded
     to the analysis JSON endpoint.  Auth is handled via localStorage JWT.
     """
+
+    from fastapi import HTTPException, status as _st
+    _row = await musehub_repository.get_repo_orm_by_owner_slug(db, owner, repo_slug)
+    if _row is None:
+        raise HTTPException(status_code=_st.HTTP_404_NOT_FOUND, detail=f"Repo '{owner}/{repo_slug}' not found")
+    repo_id = _row.repo_id
     script = f"""
       const repoId = {repr(repo_id)};
       const ref    = {repr(ref)};
@@ -3873,11 +3993,11 @@ async def contour_page(repo_id: str, ref: str) -> HTMLResponse:
 
 
 @router.get(
-    "/{repo_id}/analysis/{ref}/tempo",
+    "/{owner}/{repo_slug}/analysis/{ref}/tempo",
     response_class=HTMLResponse,
     summary="Muse Hub tempo analysis page",
 )
-async def tempo_page(repo_id: str, ref: str) -> HTMLResponse:
+async def tempo_page(owner: str, repo_slug: str, ref: str, db: AsyncSession = Depends(get_db)) -> HTMLResponse:
     """Render the tempo analysis page for a Muse commit ref.
 
     Displays the current BPM, time feel, tempo stability, and a timeline of
@@ -3888,6 +4008,12 @@ async def tempo_page(repo_id: str, ref: str) -> HTMLResponse:
     ``GET /api/v1/musehub/repos/{repo_id}/analysis/{ref}/tempo``.
     Auth is handled via localStorage JWT.
     """
+
+    from fastapi import HTTPException, status as _st
+    _row = await musehub_repository.get_repo_orm_by_owner_slug(db, owner, repo_slug)
+    if _row is None:
+        raise HTTPException(status_code=_st.HTTP_404_NOT_FOUND, detail=f"Repo '{owner}/{repo_slug}' not found")
+    repo_id = _row.repo_id
     script = f"""
       const repoId = {repr(repo_id)};
       const ref    = {repr(ref)};
@@ -4056,11 +4182,11 @@ async def tempo_page(repo_id: str, ref: str) -> HTMLResponse:
 
 
 @router.get(
-    "/{repo_id}/analysis/{ref}/dynamics",
+    "/{owner}/{repo_slug}/analysis/{ref}/dynamics",
     response_class=HTMLResponse,
     summary="Muse Hub dynamics analysis page",
 )
-async def dynamics_analysis_page(repo_id: str, ref: str) -> HTMLResponse:
+async def dynamics_analysis_page(owner: str, repo_slug: str, ref: str, db: AsyncSession = Depends(get_db)) -> HTMLResponse:
     """Render the dynamics analysis page for a Muse commit ref.
 
     Visualises velocity profiles, arc classifications, and per-track loudness
@@ -4080,6 +4206,12 @@ async def dynamics_analysis_page(repo_id: str, ref: str) -> HTMLResponse:
 
     No Jinja2 -- self-contained HTML string rendered server-side.
     """
+
+    from fastapi import HTTPException, status as _st
+    _row = await musehub_repository.get_repo_orm_by_owner_slug(db, owner, repo_slug)
+    if _row is None:
+        raise HTTPException(status_code=_st.HTTP_404_NOT_FOUND, detail=f"Repo '{owner}/{repo_slug}' not found")
+    repo_id = _row.repo_id
     script = f"""
       const repoId = {repr(repo_id)};
       const ref    = {repr(ref)};
