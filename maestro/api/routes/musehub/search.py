@@ -64,7 +64,7 @@ async def search_similar(
     commit: str = Query(..., description="Commit SHA to use as the similarity query"),
     limit: int = Query(10, ge=1, le=50, description="Maximum number of results"),
     db_session: AsyncSession = Depends(get_db),
-    _: object = Depends(require_valid_token),
+    _: TokenClaims = Depends(require_valid_token),
 ) -> SimilarSearchResponse:
     """Return the N most musically similar public commits to the given commit SHA.
 

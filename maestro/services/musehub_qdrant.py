@@ -17,7 +17,6 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import Any
 
 from qdrant_client import QdrantClient
 from qdrant_client.models import (
@@ -142,7 +141,7 @@ class MusehubQdrantClient:
             self.ensure_collection()
 
         point_id = _commit_id_to_int(commit_id)
-        payload: dict[str, Any] = {
+        payload: dict[str, str | bool] = {
             "commit_id": commit_id,
             "repo_id": repo_id,
             "is_public": is_public,
