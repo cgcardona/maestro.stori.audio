@@ -174,7 +174,8 @@ async def resolve_ref(
             return head_commit
 
         # Walk N parents back (primary parent only)
-        n_steps = int(tilde_match.group(1))  # type: ignore[union-attr]
+        assert tilde_match is not None  # guaranteed: tilde_match truthy → not None
+        n_steps = int(tilde_match.group(1))
         current: MuseCliCommit | None = head_commit
         for _ in range(n_steps):
             if current is None or not current.parent_commit_id:
