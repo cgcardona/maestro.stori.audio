@@ -27,7 +27,7 @@ import asyncio
 import json
 import logging
 import pathlib
-from typing import Optional
+from typing import TypedDict
 
 import typer
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -46,6 +46,29 @@ logger = logging.getLogger(__name__)
 app = typer.Typer()
 
 _DEFAULT_LIMIT = 1000
+
+
+class _TimelineEntryDict(TypedDict):
+    """JSON-serializable shape of a single timeline entry."""
+
+    commit_id: str
+    short_id: str
+    committed_at: str
+    message: str
+    emotion: str | None
+    sections: list[str]
+    tracks: list[str]
+    activity: int
+
+
+class _TimelineJsonPayload(TypedDict):
+    """JSON-serializable shape of the full timeline response."""
+
+    branch: str
+    total_commits: int
+    emotion_arc: list[str]
+    section_order: list[str]
+    entries: list[_TimelineEntryDict]
 
 # Unicode block characters for activity density bars.
 _BLOCK = "█"
@@ -161,7 +184,7 @@ def _render_text(
         typer.echo(f"Sections:    {' → '.join(result.section_order)}")
 
 
-def _entry_to_dict(entry: MuseTimelineEntry) -> dict[str, object]:
+def _entry_to_dict(entry: MuseTimelineEntry) -> _TimelineEntryDict:
     """Serialize a :class:`MuseTimelineEntry` to a JSON-safe dict."""
     return {
         "commit_id": entry.commit_id,
@@ -177,7 +200,7 @@ def _entry_to_dict(entry: MuseTimelineEntry) -> dict[str, object]:
 
 def _render_json(result: MuseTimelineResult) -> None:
     """Emit the timeline as a JSON object for UI rendering or agent consumption."""
-    payload: dict[str, object] = {
+    payload: _TimelineJsonPayload = {
         "branch": result.branch,
         "total_commits": result.total_commits,
         "emotion_arc": list(result.emotion_arc),
@@ -196,7 +219,7 @@ async def _timeline_async(
     *,
     root: pathlib.Path,
     session: AsyncSession,
-    commit_range: Optional[str],
+    commit_range: str | None,
     show_emotion: bool,
     show_sections: bool,
     show_tracks: bool,
@@ -263,7 +286,7 @@ async def _timeline_async(
 @app.callback(invoke_without_command=True)
 def timeline(
     ctx: typer.Context,
-    commit_range: Optional[str] = typer.Argument(
+    commit_range: str | None = typer.Argument(
         None,
         help="Commit range (reserved — full history is always shown for now).",
         metavar="RANGE",
