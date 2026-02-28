@@ -665,3 +665,131 @@ async def test_list_deliveries_via_api_after_dispatch(
     assert deliveries[0]["eventType"] == "push"
     assert deliveries[0]["success"] is True
     assert deliveries[0]["responseStatus"] == 200
+
+
+# ---------------------------------------------------------------------------
+# Webhook secret encryption (issue #271)
+# ---------------------------------------------------------------------------
+
+
+def test_encrypt_decrypt_roundtrip_with_key() -> None:
+    """encrypt_secret / decrypt_secret round-trips plaintext correctly when a key is set."""
+    from unittest.mock import patch
+    from cryptography.fernet import Fernet
+    from maestro.services import musehub_webhook_crypto as crypto
+
+    test_key = Fernet.generate_key().decode()
+    # Patch settings so the module picks up the test key on next initialisation.
+    with patch.object(crypto, "_fernet", None), patch.object(crypto, "_fernet_initialised", False):
+        with patch("maestro.services.musehub_webhook_crypto.settings") as mock_settings:
+            mock_settings.webhook_secret_key = test_key
+            plaintext = "super-secret-hmac-key-for-subscriber"
+            ciphertext = crypto.encrypt_secret(plaintext)
+            # Ciphertext must differ from plaintext — we encrypted it.
+            assert ciphertext != plaintext
+            # Round-trip must recover original value.
+            recovered = crypto.decrypt_secret(ciphertext)
+            assert recovered == plaintext
+
+
+def test_encrypt_decrypt_empty_secret_passthrough() -> None:
+    """Empty secrets are passed through unchanged (no encryption needed)."""
+    from maestro.services import musehub_webhook_crypto as crypto
+
+    assert crypto.encrypt_secret("") == ""
+    assert crypto.decrypt_secret("") == ""
+
+
+def test_decrypt_invalid_token_raises_value_error() -> None:
+    """decrypt_secret raises ValueError when the ciphertext is garbage."""
+    from unittest.mock import patch
+    from cryptography.fernet import Fernet
+    from maestro.services import musehub_webhook_crypto as crypto
+
+    test_key = Fernet.generate_key().decode()
+    with patch.object(crypto, "_fernet", None), patch.object(crypto, "_fernet_initialised", False):
+        with patch("maestro.services.musehub_webhook_crypto.settings") as mock_settings:
+            mock_settings.webhook_secret_key = test_key
+            # Encrypt something so fernet is initialised, then pass garbage.
+            crypto.encrypt_secret("seed")
+            with pytest.raises(ValueError, match="Failed to decrypt webhook secret"):
+                crypto.decrypt_secret("not-a-valid-fernet-token")
+
+
+def test_encrypt_decrypt_no_key_passthrough() -> None:
+    """When STORI_WEBHOOK_SECRET_KEY is absent, encrypt/decrypt are transparent."""
+    from unittest.mock import patch
+    from maestro.services import musehub_webhook_crypto as crypto
+
+    with patch.object(crypto, "_fernet", None), patch.object(crypto, "_fernet_initialised", False):
+        with patch("maestro.services.musehub_webhook_crypto.settings") as mock_settings:
+            mock_settings.webhook_secret_key = None
+            plaintext = "my-secret"
+            assert crypto.encrypt_secret(plaintext) == plaintext
+            assert crypto.decrypt_secret(plaintext) == plaintext
+
+
+@pytest.mark.anyio
+async def test_webhook_delivery_with_encrypted_secret_produces_correct_hmac(
+    db_session: AsyncSession,
+) -> None:
+    """dispatch_event decrypts the stored secret before computing the HMAC signature."""
+    from unittest.mock import patch
+    from cryptography.fernet import Fernet
+    from maestro.services import musehub_webhook_dispatcher as disp
+    from maestro.services import musehub_webhook_crypto as crypto
+
+    test_key = Fernet.generate_key().decode()
+
+    # Reset the module-level singleton so our test key is used.
+    with patch.object(crypto, "_fernet", None), patch.object(crypto, "_fernet_initialised", False):
+        with patch("maestro.services.musehub_webhook_crypto.settings") as mock_settings:
+            mock_settings.webhook_secret_key = test_key
+
+            plaintext_secret = "delivery-hmac-secret"
+            await disp.create_webhook(
+                db_session,
+                repo_id="repo-encrypted",
+                url="https://encrypted.example.com/hook",
+                events=["push"],
+                secret=plaintext_secret,
+            )
+            await db_session.flush()
+
+            received_headers: dict[str, str] = {}
+
+            async def _capture_headers(url: str, **kwargs: Any) -> MagicMock:
+                received_headers.update(kwargs.get("headers", {}))
+                mock_resp = MagicMock()
+                mock_resp.is_success = True
+                mock_resp.status_code = 200
+                mock_resp.text = "ok"
+                return mock_resp
+
+            push_payload: PushEventPayload = {
+                "repoId": "repo-encrypted",
+                "branch": "main",
+                "headCommitId": "enc123",
+                "pushedBy": "test-user",
+                "commitCount": 1,
+            }
+
+            with patch("httpx.AsyncClient") as mock_client_cls:
+                mock_client = AsyncMock()
+                mock_client.post = _capture_headers
+                mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+                mock_client.__aexit__ = AsyncMock(return_value=False)
+                mock_client_cls.return_value = mock_client
+
+                payload_bytes = json.dumps(push_payload, default=str).encode()
+                await disp.dispatch_event(
+                    db_session,
+                    repo_id="repo-encrypted",
+                    event_type="push",
+                    payload=push_payload,
+                )
+
+    # The signature header must match what the subscriber computes from the plaintext secret.
+    expected_mac = hmac.new(plaintext_secret.encode(), payload_bytes, hashlib.sha256).hexdigest()
+    expected_sig = f"sha256={expected_mac}"
+    assert received_headers.get("X-MuseHub-Signature") == expected_sig
