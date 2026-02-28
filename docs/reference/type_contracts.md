@@ -23,6 +23,8 @@ This document is the single source of truth for every named entity (TypedDict, d
    - [SampleChange](#samplechange)
    - [Muse Divergence Types](#muse-divergence-types)
    - [ExpressivenessResult](#expressivenessresult)
+   - [MuseTempoResult](#musetemporesult)
+   - [MuseTempoHistoryEntry](#musetemopohistoryentry)
 5. [Variation Layer (`app/variation/`)](#variation-layer)
    - [Event Envelope payloads](#event-envelope-payloads)
    - [PhraseRecord](#phraserecord)
@@ -1064,6 +1066,43 @@ On failure: `success=False` plus `error` (and optionally `message`).
 | `notes` | `list[NoteDict]` | Source notes with humanized velocity and timing, same key format (camelCase/snake_case) as input |
 | `cc_events` | `list[CCEventDict]` | Generated CC automation (sustain, expression, mod wheel) |
 | `pitch_bends` | `list[PitchBendDict]` | Generated pitch-bend automation |
+
+---
+
+### `MuseTempoResult`
+
+**Path:** `maestro/services/muse_tempo.py`
+
+`dataclass(frozen=True)` — Named result type for a `muse tempo [<commit>]` query.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `commit_id` | `str` | Full 64-char SHA-256 commit ID |
+| `branch` | `str` | Branch name the commit belongs to |
+| `message` | `str` | Commit message |
+| `tempo_bpm` | `float \| None` | Explicitly annotated BPM (from `muse tempo --set`) |
+| `detected_bpm` | `float \| None` | Auto-detected BPM from MIDI Set Tempo events in the snapshot |
+
+**Property:**
+
+| Property | Returns | Description |
+|----------|---------|-------------|
+| `effective_bpm` | `float \| None` | `tempo_bpm` if set; else `detected_bpm` |
+
+---
+
+### `MuseTempoHistoryEntry`
+
+**Path:** `maestro/services/muse_tempo.py`
+
+`dataclass(frozen=True)` — One row in a `muse tempo --history` traversal.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `commit_id` | `str` | Full 64-char SHA-256 commit ID |
+| `message` | `str` | Commit message |
+| `effective_bpm` | `float \| None` | Annotated BPM for this commit, or `None` |
+| `delta_bpm` | `float \| None` | Signed BPM change vs. the previous (older) commit; `None` for the oldest commit |
 
 ---
 
