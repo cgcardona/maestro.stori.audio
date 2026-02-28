@@ -1166,6 +1166,28 @@ async def test_graph_page_contains_dag_js(
 
 
 @pytest.mark.anyio
+async def test_graph_page_contains_session_ring_js(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Graph page embeds session-marker and reaction-count JavaScript.
+
+    Regression guard for issue #313: ensures the template contains the three
+    new client-side components added by this feature — SESSION_RING_COLOR (the
+    teal ring constant), buildSessionMap (commit→session index builder), and
+    fetchReactions (batch reaction fetcher).  A missing symbol means the graph
+    will silently render with no session markers or reaction counts.
+    """
+    await _make_repo(db_session)
+    response = await client.get("/musehub/ui/testuser/test-beats/graph")
+    assert response.status_code == 200
+    body = response.text
+    assert "SESSION_RING_COLOR" in body, "Teal session ring constant missing from graph page"
+    assert "buildSessionMap" in body, "buildSessionMap function missing from graph page"
+    assert "fetchReactions" in body, "fetchReactions function missing from graph page"
+
+
+@pytest.mark.anyio
 async def test_session_list_page_returns_200(
     client: AsyncClient,
     db_session: AsyncSession,
@@ -1445,6 +1467,48 @@ async def test_active_session_has_null_duration(
     sess = response.json()["sessions"][0]
     assert sess["isActive"] is True
     assert sess["durationSeconds"] is None
+
+
+@pytest.mark.anyio
+async def test_session_response_commits_field_present(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    auth_headers: dict[str, str],
+) -> None:
+    """Sessions API response includes the 'commits' field for each session.
+
+    Regression guard for issue #313: the graph page uses the session commits
+    list to build the session→commit index (buildSessionMap).  If this field
+    is absent or empty when commits exist, no session rings will appear on
+    the DAG graph.
+    """
+    repo_id = await _make_repo(db_session)
+    commit_ids = ["abc123def456abc123def456abc123de", "feedbeeffeedbeefdead000000000001"]
+    row = MusehubSession(
+        repo_id=repo_id,
+        started_at=datetime(2025, 3, 1, 10, 0, 0, tzinfo=timezone.utc),
+        ended_at=datetime(2025, 3, 1, 11, 0, 0, tzinfo=timezone.utc),
+        participants=["artist-a"],
+        intent="session with commits",
+        location="Studio B",
+        is_active=False,
+        commits=commit_ids,
+    )
+    db_session.add(row)
+    await db_session.commit()
+    await db_session.refresh(row)
+
+    response = await client.get(
+        f"/api/v1/musehub/repos/{repo_id}/sessions",
+        headers=auth_headers,
+    )
+    assert response.status_code == 200
+    sessions = response.json()["sessions"]
+    assert len(sessions) == 1
+    sess = sessions[0]
+    assert "commits" in sess, "'commits' field missing from SessionResponse"
+    assert sess["commits"] == commit_ids, "commits field does not match seeded commit IDs"
+
 
 async def test_contour_page_renders(
     client: AsyncClient,
