@@ -4,8 +4,14 @@ Serves browser-readable HTML pages for navigating a Muse Hub repo —
 analogous to GitHub's repository browser but for music projects.
 
 Endpoint summary:
+  GET /musehub/ui/explore                          — discover public repos with filters
+  GET /musehub/ui/trending                         — trending public repos (sorted by stars)
   GET /musehub/ui/search                           — global cross-repo search page
   GET /musehub/ui/{repo_id}                        — repo page (branch selector + commit log)
+  GET /musehub/ui/{repo_id}/releases               — release list page
+  GET /musehub/ui/{repo_id}/releases/{tag}         — release detail page (notes + downloads)
+  GET /musehub/ui/users/{username}                 — user profile page (public repos, contribution graph, credits)
+  GET /musehub/ui/search                           — global cross-repo search page  GET /musehub/ui/{repo_id}                        — repo page (branch selector + commit log)
   GET /musehub/ui/{repo_id}/commits/{commit_id}    — commit detail page (metadata + artifacts)
   GET /musehub/ui/{repo_id}/graph                  — interactive DAG commit graph
   GET /musehub/ui/{repo_id}/pulls                  — pull request list page
@@ -17,7 +23,8 @@ Endpoint summary:
   GET /musehub/ui/{repo_id}/search                 — in-repo search page (four modes)
 
 These routes require NO JWT auth — they return static HTML shells whose
-embedded JavaScript fetches data from the authed JSON API
+embedded JavaScript fetches data from the public JSON API
+(``/api/v1/musehub/discover/repos``) or the authed JSON API
 (``/api/v1/musehub/...``) using a token stored in ``localStorage``.
 
 The embed route is intentionally designed for cross-origin iframe embedding:
@@ -85,97 +92,6 @@ _PROFILE_CSS = """
 }
 .credits-badge .num { font-size: 22px; font-weight: 700; color: #58a6ff; }
 """
-
-
-_EXPLORE_SCRIPT = """
-const DISCOVER_API = '/api/v1/musehub/discover/repos';
-
-function escHtml(s) {
-  if (!s) return '';
-  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-}
-
-function tagHtml(tag) {
-  return '<span class="label">' + escHtml(tag) + '</span>';
-}
-
-function repoCard(r) {
-  const tags = (r.tags || []).map(tagHtml).join('');
-  const key  = r.keySignature ? escHtml(r.keySignature) : '';
-  const bpm  = r.tempoBpm ? r.tempoBpm + ' BPM' : '';
-  const meta = [key, bpm].filter(Boolean).join(' &bull; ');
-  return `
-    <div class="repo-card">
-      <div class="repo-card-title">
-        <a href="/musehub/ui/${escHtml(r.repoId)}">${escHtml(r.name)}</a>
-      </div>
-      <div class="repo-card-owner">${escHtml(r.ownerUserId)}</div>
-      ${r.description ? '<div class="repo-card-desc">' + escHtml(r.description) + '</div>' : ''}
-      <div class="repo-card-tags">${tags}</div>
-      <div class="repo-card-meta">
-        ${meta ? '<span>' + meta + '</span>' : ''}
-        <span>&#9733; ${r.starCount}</span>
-        <span>&#128190; ${r.commitCount} commits</span>
-      </div>
-    </div>`;
-}
-
-async function loadExplore(page, sort, genre, key, tempoMin, tempoMax, instrumentation) {
-  const params = new URLSearchParams({ page: page, page_size: 24, sort: sort });
-  if (genre)         params.set('genre', genre);
-  if (key)           params.set('key', key);
-  if (tempoMin)      params.set('tempo_min', tempoMin);
-  if (tempoMax)      params.set('tempo_max', tempoMax);
-  if (instrumentation) params.set('instrumentation', instrumentation);
-
-  try {
-    const res  = await fetch(DISCOVER_API + '?' + params.toString());
-    if (!res.ok) throw new Error(res.status + ': ' + await res.text());
-    const data = await res.json();
-    const repos = data.repos || [];
-    const total = data.total || 0;
-    const pages = Math.ceil(total / 24) || 1;
-
-    const grid = repos.length === 0
-      ? '<p class="loading">No repos found matching these filters.</p>'
-      : repos.map(repoCard).join('');
-
-    const pager = pages > 1 ? `
-      <div class="pager">
-        ${page > 1 ? '<button class="btn btn-secondary" onclick="go(' + (page-1) + ')">&#8592; Prev</button>' : ''}
-        <span style="color:#8b949e;font-size:13px">Page ${page} of ${pages} &bull; ${total} repos</span>
-        ${page < pages ? '<button class="btn btn-secondary" onclick="go(' + (page+1) + ')">Next &#8594;</button>' : ''}
-      </div>` : '<div class="pager" style="color:#8b949e;font-size:13px">' + total + ' repos</div>';
-
-    document.getElementById('repo-grid').innerHTML = grid;
-    document.getElementById('pager').innerHTML = pager;
-  } catch(e) {
-    document.getElementById('repo-grid').innerHTML =
-      '<p class="error">&#10005; ' + escHtml(e.message) + '</p>';
-  }
-}
-
-function currentState() {
-  return {
-    page: parseInt(document.getElementById('cur-page').value || '1'),
-    sort: document.getElementById('sort-sel').value,
-    genre: document.getElementById('genre-inp').value.trim(),
-    key:   document.getElementById('key-inp').value.trim(),
-    tempoMin: document.getElementById('tempo-min').value.trim(),
-    tempoMax: document.getElementById('tempo-max').value.trim(),
-    instr: document.getElementById('instr-inp').value.trim(),
-  };
-}
-
-function go(page) {
-  document.getElementById('cur-page').value = page;
-  const s = currentState();
-  loadExplore(page, s.sort, s.genre, s.key, s.tempoMin, s.tempoMax, s.instr);
-}
-
-function applyFilters() { go(1); }
-"""
-
 
 _CSS = """
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -368,13 +284,208 @@ def _page(title: str, breadcrumb: str, body_script: str, extra_css: str = "") ->
 
 
 # ---------------------------------------------------------------------------
-# Route handlers
-# ---------------------------------------------------------------------------
-
-
-# ---------------------------------------------------------------------------
 # Route handlers — explore / discover (no auth required)
 # ---------------------------------------------------------------------------
+
+_EXPLORE_SCRIPT = """
+const DISCOVER_API = '/api/v1/musehub/discover/repos';
+
+function escHtml(s) {
+  if (!s) return '';
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function tagHtml(tag) {
+  return '<span class="label">' + escHtml(tag) + '</span>';
+}
+
+function repoCard(r) {
+  const tags = (r.tags || []).map(tagHtml).join('');
+  const key  = r.keySignature ? escHtml(r.keySignature) : '';
+  const bpm  = r.tempoBpm ? r.tempoBpm + ' BPM' : '';
+  const meta = [key, bpm].filter(Boolean).join(' &bull; ');
+  return `
+    <div class="repo-card">
+      <div class="repo-card-title">
+        <a href="/musehub/ui/${escHtml(r.repoId)}">${escHtml(r.name)}</a>
+      </div>
+      <div class="repo-card-owner">${escHtml(r.ownerUserId)}</div>
+      ${r.description ? '<div class="repo-card-desc">' + escHtml(r.description) + '</div>' : ''}
+      <div class="repo-card-tags">${tags}</div>
+      <div class="repo-card-meta">
+        ${meta ? '<span>' + meta + '</span>' : ''}
+        <span>&#9733; ${r.starCount}</span>
+        <span>&#128190; ${r.commitCount} commits</span>
+      </div>
+    </div>`;
+}
+
+async function loadExplore(page, sort, genre, key, tempoMin, tempoMax, instrumentation) {
+  const params = new URLSearchParams({ page: page, page_size: 24, sort: sort });
+  if (genre)         params.set('genre', genre);
+  if (key)           params.set('key', key);
+  if (tempoMin)      params.set('tempo_min', tempoMin);
+  if (tempoMax)      params.set('tempo_max', tempoMax);
+  if (instrumentation) params.set('instrumentation', instrumentation);
+
+  try {
+    const res  = await fetch(DISCOVER_API + '?' + params.toString());
+    if (!res.ok) throw new Error(res.status + ': ' + await res.text());
+    const data = await res.json();
+    const repos = data.repos || [];
+    const total = data.total || 0;
+    const pages = Math.ceil(total / 24) || 1;
+
+    const grid = repos.length === 0
+      ? '<p class="loading">No repos found matching these filters.</p>'
+      : repos.map(repoCard).join('');
+
+    const pager = pages > 1 ? `
+      <div class="pager">
+        ${page > 1 ? '<button class="btn btn-secondary" onclick="go(' + (page-1) + ')">&#8592; Prev</button>' : ''}
+        <span style="color:#8b949e;font-size:13px">Page ${page} of ${pages} &bull; ${total} repos</span>
+        ${page < pages ? '<button class="btn btn-secondary" onclick="go(' + (page+1) + ')">Next &#8594;</button>' : ''}
+      </div>` : '<div class="pager" style="color:#8b949e;font-size:13px">' + total + ' repos</div>';
+
+    document.getElementById('repo-grid').innerHTML = grid;
+    document.getElementById('pager').innerHTML = pager;
+  } catch(e) {
+    document.getElementById('repo-grid').innerHTML =
+      '<p class="error">&#10005; ' + escHtml(e.message) + '</p>';
+  }
+}
+
+function currentState() {
+  return {
+    page: parseInt(document.getElementById('cur-page').value || '1'),
+    sort: document.getElementById('sort-sel').value,
+    genre: document.getElementById('genre-inp').value.trim(),
+    key:   document.getElementById('key-inp').value.trim(),
+    tempoMin: document.getElementById('tempo-min').value.trim(),
+    tempoMax: document.getElementById('tempo-max').value.trim(),
+    instr: document.getElementById('instr-inp').value.trim(),
+  };
+}
+
+function go(page) {
+  document.getElementById('cur-page').value = page;
+  const s = currentState();
+  loadExplore(page, s.sort, s.genre, s.key, s.tempoMin, s.tempoMax, s.instr);
+}
+
+function applyFilters() { go(1); }
+"""
+
+_EXPLORE_CSS_EXTRA = """
+.filter-bar {
+  display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-end;
+  background: #161b22; border: 1px solid #30363d; border-radius: 6px;
+  padding: 12px; margin-bottom: 16px;
+}
+.filter-group { display: flex; flex-direction: column; gap: 4px; }
+.filter-label { font-size: 11px; color: #8b949e; text-transform: uppercase; letter-spacing: 0.5px; }
+.filter-group input {
+  background: #0d1117; color: #c9d1d9; border: 1px solid #30363d;
+  border-radius: 6px; padding: 6px 10px; font-size: 13px; width: 140px;
+}
+.filter-group input:focus { outline: none; border-color: #58a6ff; }
+.repo-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 12px;
+}
+.repo-card {
+  background: #161b22; border: 1px solid #30363d; border-radius: 6px;
+  padding: 14px; display: flex; flex-direction: column; gap: 6px;
+  transition: border-color 0.15s;
+}
+.repo-card:hover { border-color: #58a6ff; }
+.repo-card-title { font-size: 15px; font-weight: 600; }
+.repo-card-owner { font-size: 12px; color: #8b949e; }
+.repo-card-desc  { font-size: 13px; color: #c9d1d9; }
+.repo-card-tags  { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+.repo-card-meta  {
+  display: flex; gap: 12px; flex-wrap: wrap;
+  font-size: 12px; color: #8b949e; margin-top: 4px;
+}
+.pager {
+  display: flex; align-items: center; justify-content: center;
+  gap: 12px; margin-top: 20px;
+}
+"""
+
+
+def _explore_page_html(title: str, breadcrumb: str, default_sort: str) -> str:
+    """Render the explore or trending page HTML shell.
+
+    The page calls the public ``GET /api/v1/musehub/discover/repos`` JSON API
+    from the browser — no JWT required for browsing. Star/unstar actions require
+    a JWT stored in localStorage but are optional (unauthenticated visitors can
+    browse without starring).
+    """
+    css = _CSS + _EXPLORE_CSS_EXTRA
+    return f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{title} — Muse Hub</title>
+  <style>{css}</style>
+</head>
+<body>
+  <header>
+    <span class="logo">&#127925; Muse Hub</span>
+    <span class="breadcrumb">{breadcrumb}</span>
+    <span style="flex:1"></span>
+    <a href="/musehub/ui/explore" class="btn btn-secondary" style="font-size:12px">Explore</a>
+    &nbsp;
+    <a href="/musehub/ui/trending" class="btn btn-secondary" style="font-size:12px">Trending</a>
+  </header>
+  <div class="container" style="max-width:1200px">
+    <div class="filter-bar">
+      <div class="filter-group">
+        <span class="filter-label">Genre</span>
+        <input id="genre-inp" type="text" placeholder="jazz, lo-fi…" oninput="applyFilters()"/>
+      </div>
+      <div class="filter-group">
+        <span class="filter-label">Key</span>
+        <input id="key-inp" type="text" placeholder="F# minor" oninput="applyFilters()"/>
+      </div>
+      <div class="filter-group">
+        <span class="filter-label">BPM min</span>
+        <input id="tempo-min" type="number" min="20" max="300" placeholder="80" oninput="applyFilters()"/>
+      </div>
+      <div class="filter-group">
+        <span class="filter-label">BPM max</span>
+        <input id="tempo-max" type="number" min="20" max="300" placeholder="140" oninput="applyFilters()"/>
+      </div>
+      <div class="filter-group">
+        <span class="filter-label">Instrument</span>
+        <input id="instr-inp" type="text" placeholder="bass, drums…" oninput="applyFilters()"/>
+      </div>
+      <div class="filter-group">
+        <span class="filter-label">Sort by</span>
+        <select id="sort-sel" onchange="applyFilters()">
+          <option value="created" {'selected' if default_sort == 'created' else ''}>Newest</option>
+          <option value="stars"   {'selected' if default_sort == 'stars'   else ''}>Stars</option>
+          <option value="activity"{'selected' if default_sort == 'activity' else ''}>Activity</option>
+          <option value="commits" {'selected' if default_sort == 'commits'  else ''}>Commits</option>
+        </select>
+      </div>
+    </div>
+    <input type="hidden" id="cur-page" value="1"/>
+    <div id="repo-grid" class="repo-grid"><p class="loading">Loading&#8230;</p></div>
+    <div id="pager"></div>
+  </div>
+  <script>
+    {_EXPLORE_SCRIPT}
+    window.addEventListener('DOMContentLoaded', function() {{
+      const s = currentState();
+      loadExplore(1, s.sort, s.genre, s.key, s.tempoMin, s.tempoMax, s.instr);
+    }});
+  </script>
+</body>
+</html>"""
 
 
 @router.get("/explore", response_class=HTMLResponse, summary="Muse Hub explore page")
@@ -416,16 +527,6 @@ async def trending_page() -> HTMLResponse:
 # ---------------------------------------------------------------------------
 
 
-@router.get(
-    "/users/{username}",
-    response_class=HTMLResponse,
-    summary="Muse Hub user profile page",
-)
-
-
-# ---------------------------------------------------------------------------
-# Route handlers — user profile
-# ---------------------------------------------------------------------------
 
 
 @router.get(
@@ -438,11 +539,9 @@ async def profile_page(username: str) -> HTMLResponse:
 
     Displays: bio, avatar, pinned repos, all public repos with last-activity,
     a GitHub-style contribution heatmap (52 weeks of daily commit counts), and
-    aggregated session credits.  Auth is handled client-side — the profile
-    itself is public; editing controls appear only when the visitor's JWT
-    matches the profile owner.
+    aggregated session credits.  Auth is handled client-side via localStorage JWT.
 
-    Returns 200 with an HTML shell even when the API returns 404 — the JS
+    Returns 200 with an HTML shell even when the API returns 404 -- the JS
     renders the 404 message inline so the browser gets a proper HTML response.
     """
     script = f"""
@@ -454,12 +553,6 @@ async def profile_page(username: str) -> HTMLResponse:
         return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
       }}
 
-      function fmtDate(iso) {{
-        if (!iso) return '—';
-        const d = new Date(iso);
-        return d.toLocaleDateString('en-US', {{ year:'numeric', month:'short', day:'numeric' }});
-      }}
-
       function bucketCount(n) {{
         if (n === 0) return 0;
         if (n <= 2)  return 1;
@@ -469,6 +562,7 @@ async def profile_page(username: str) -> HTMLResponse:
       }}
 
       function buildContribGraph(graph) {{
+        // Group days into weeks (7 days per column)
         const weeks = [];
         let week = [];
         graph.forEach((d, i) => {{
@@ -576,12 +670,7 @@ async def profile_page(username: str) -> HTMLResponse:
         body_script=script,
         extra_css=_PROFILE_CSS,
     )
-    return HTMLResponse(html, media_type="text/html")
-
-
-# ---------------------------------------------------------------------------
-# Route handlers — global search and repo pages
-# ---------------------------------------------------------------------------
+    return HTMLResponse(content=html)
 
 
 @router.get("/search", response_class=HTMLResponse, summary="Muse Hub global search page")
@@ -597,18 +686,18 @@ async def global_search_page(
     Query parameters are pre-filled into the search form so that a browser
     navigation or a URL share lands with the last query already populated.
     These parameters are sanitised client-side before being rendered into the
-    DOM — ``escHtml`` prevents XSS from adversarial query strings.
+    DOM (``escHtml`` prevents XSS from adversarial query strings).
     """
     safe_q = q.replace("'", "\\'").replace('"', '\\"').replace("\n", "").replace("\r", "")
     safe_mode = mode if mode in ("keyword", "pattern") else "keyword"
     script = f"""
       const INITIAL_Q    = {repr(safe_q)};
       const INITIAL_MODE = {repr(safe_mode)};
-
       function escHtml(s) {{
         if (!s) return '';
         return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
       }}
+      function shortSha(s) {{ return s ? s.substring(0, 8) : ''; }}
 
       function audioHtml(groupId, audioOid) {{
         if (!audioOid) return '';
@@ -733,6 +822,7 @@ async def global_search_page(
     )
     return HTMLResponse(content=html)
 
+
 @router.get("/{repo_id}", response_class=HTMLResponse, summary="Muse Hub repo page")
 async def repo_page(repo_id: str) -> HTMLResponse:
     """Render the repo landing page: branch selector + newest 20 commits.
@@ -778,6 +868,7 @@ async def repo_page(repo_id: str) -> HTMLResponse:
               <div style="display:flex;gap:12px;margin-bottom:16px;flex-wrap:wrap">
                 <a href="${{base}}/pulls" class="btn btn-secondary">Pull Requests</a>
                 <a href="${{base}}/issues" class="btn btn-secondary">Issues</a>
+                <a href="${{base}}/releases" class="btn btn-secondary">Releases</a>
                 <a href="${{base}}/credits" class="btn btn-secondary">&#127926; Credits</a>
                 <a href="${{base}}/search" class="btn btn-secondary">&#128269; Search</a>
               </div>
@@ -1474,927 +1565,6 @@ async def issue_list_page(repo_id: str) -> HTMLResponse:
     )
     return HTMLResponse(content=html)
 
-
-@router.get(
-    "/{repo_id}/context/{ref}",
-    response_class=HTMLResponse,
-    summary="Muse Hub context viewer page",
-)
-async def context_page(repo_id: str, ref: str) -> HTMLResponse:
-    """Render the AI context viewer for a given commit ref.
-
-    Fetches ``GET /api/v1/musehub/repos/{repo_id}/context/{ref}`` and renders
-    the MuseHubContextResponse as a structured human-readable document.
-
-    Sections:
-    - "What the agent sees" explainer
-    - Musical State (active tracks + available musical dimensions)
-    - History Summary (recent ancestor commits)
-    - Missing Elements (dimensions not yet available)
-    - Suggestions (what to compose next)
-    - Raw JSON toggle for debugging
-    - Copy-to-clipboard button for sharing with agents
-    """
-    script = f"""
-      const repoId = {repr(repo_id)};
-      const ref    = {repr(ref)};
-      const base   = '/musehub/ui/' + repoId;
-
-      function escHtml(s) {{
-        if (s === null || s === undefined) return '—';
-        return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-      }}
-
-      function copyJson() {{
-        const text = document.getElementById('raw-json').textContent;
-        navigator.clipboard.writeText(text).then(() => {{
-          const btn = document.getElementById('copy-btn');
-          btn.textContent = 'Copied!';
-          setTimeout(() => {{ btn.textContent = 'Copy JSON'; }}, 2000);
-        }});
-      }}
-
-      function toggleSection(id) {{
-        const el = document.getElementById(id);
-        if (!el) return;
-        el.style.display = el.style.display === 'none' ? '' : 'none';
-        const btn = document.querySelector('[data-target="' + id + '"]');
-        if (btn) btn.textContent = el.style.display === 'none' ? '▶ Show' : '▼ Hide';
-      }}
-
-      async function load() {{
-        try {{
-          const ctx = await apiFetch('/repos/' + repoId + '/context/' + ref);
-
-          const tracks = (ctx.musicalState.activeTracks || []);
-          const trackList = tracks.length > 0
-            ? tracks.map(t => '<span class="label">' + escHtml(t) + '</span>').join(' ')
-            : '<em style="color:#8b949e">No music files found in repo yet.</em>';
-
-          function dimRow(label, val) {{
-            return val !== null && val !== undefined
-              ? '<div class="meta-item"><span class="meta-label">' + label + '</span>'
-                + '<span class="meta-value">' + escHtml(val) + '</span></div>'
-              : '';
-          }}
-
-          const musicalDims = [
-            dimRow('Key', ctx.musicalState.key),
-            dimRow('Mode', ctx.musicalState.mode),
-            dimRow('Tempo (BPM)', ctx.musicalState.tempoBpm),
-            dimRow('Time Signature', ctx.musicalState.timeSignature),
-            dimRow('Form', ctx.musicalState.form),
-            dimRow('Emotion', ctx.musicalState.emotion),
-          ].filter(Boolean).join('');
-
-          const histEntries = (ctx.history || []);
-          const histRows = histEntries.length > 0
-            ? histEntries.map(h => `
-                <div class="commit-row">
-                  <a class="commit-sha" href="${{base}}/commits/${{h.commitId}}">${{shortSha(h.commitId)}}</a>
-                  <span class="commit-msg">${{escHtml(h.message)}}</span>
-                  <span class="commit-meta">${{escHtml(h.author)}} &bull; ${{fmtDate(h.timestamp)}}</span>
-                </div>`).join('')
-            : '<p class="loading">No ancestor commits.</p>';
-
-          const missing = (ctx.missingElements || []);
-          const missingList = missing.length > 0
-            ? '<ul style="padding-left:20px;font-size:14px">' + missing.map(m => '<li>' + escHtml(m) + '</li>').join('') + '</ul>'
-            : '<p style="color:#3fb950;font-size:14px">All musical dimensions are available.</p>';
-
-          const suggestions = ctx.suggestions || {{}};
-          const suggKeys = Object.keys(suggestions);
-          const suggList = suggKeys.length > 0
-            ? suggKeys.map(k => '<div style="margin-bottom:8px"><strong style="color:#e6edf3">' + escHtml(k) + ':</strong> ' + escHtml(suggestions[k]) + '</div>').join('')
-            : '<p class="loading">No suggestions available.</p>';
-
-          const rawJson = JSON.stringify(ctx, null, 2);
-
-          document.getElementById('content').innerHTML = `
-            <div style="margin-bottom:12px">
-              <a href="${{base}}">&larr; Back to repo</a>
-            </div>
-
-            <div class="card" style="border-color:#1f6feb">
-              <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
-                <span style="font-size:20px">&#127925;</span>
-                <h1 style="margin:0;font-size:18px">What the Agent Sees</h1>
-              </div>
-              <p style="font-size:14px;color:#8b949e;margin-bottom:0">
-                This is the musical context document that the AI agent receives
-                when generating music for this repo at commit
-                <code style="font-size:12px;background:#0d1117;padding:2px 6px;border-radius:4px">${{shortSha(ref)}}</code>.
-                Every composition decision — key, tempo, arrangement, what to add next —
-                is guided by this document.
-              </p>
-            </div>
-
-            <div class="card">
-              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
-                <h2 style="margin:0">&#127925; Musical State</h2>
-                <button class="btn btn-secondary" style="font-size:12px"
-                        data-target="musical-state-body" onclick="toggleSection('musical-state-body')">&#9660; Hide</button>
-              </div>
-              <div id="musical-state-body">
-                <div style="margin-bottom:10px">
-                  <span class="meta-label">Active Tracks</span>
-                  <div style="margin-top:4px">${{trackList}}</div>
-                </div>
-                ${{musicalDims ? '<div class="meta-row" style="margin-top:12px">' + musicalDims + '</div>' : '<p style="font-size:13px;color:#8b949e">Musical dimensions (key, tempo, etc.) require MIDI analysis — not yet available.</p>'}}
-              </div>
-            </div>
-
-            <div class="card">
-              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
-                <h2 style="margin:0">&#128337; History Summary</h2>
-                <button class="btn btn-secondary" style="font-size:12px"
-                        data-target="history-body" onclick="toggleSection('history-body')">&#9660; Hide</button>
-              </div>
-              <div id="history-body">
-                <div class="meta-row" style="margin-bottom:12px">
-                  <div class="meta-item">
-                    <span class="meta-label">Commit</span>
-                    <span class="meta-value" style="font-family:monospace">${{shortSha(ctx.headCommit.commitId)}}</span>
-                  </div>
-                  <div class="meta-item">
-                    <span class="meta-label">Branch</span>
-                    <span class="meta-value">${{escHtml(ctx.currentBranch)}}</span>
-                  </div>
-                  <div class="meta-item">
-                    <span class="meta-label">Author</span>
-                    <span class="meta-value">${{escHtml(ctx.headCommit.author)}}</span>
-                  </div>
-                  <div class="meta-item">
-                    <span class="meta-label">Date</span>
-                    <span class="meta-value">${{fmtDate(ctx.headCommit.timestamp)}}</span>
-                  </div>
-                </div>
-                <pre style="margin-bottom:12px">${{escHtml(ctx.headCommit.message)}}</pre>
-                <h2 style="font-size:14px;margin-bottom:8px">Ancestors (${{histEntries.length}})</h2>
-                ${{histRows}}
-              </div>
-            </div>
-
-            <div class="card">
-              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
-                <h2 style="margin:0">&#9888;&#65039; Missing Elements</h2>
-                <button class="btn btn-secondary" style="font-size:12px"
-                        data-target="missing-body" onclick="toggleSection('missing-body')">&#9660; Hide</button>
-              </div>
-              <div id="missing-body">
-                ${{missingList}}
-              </div>
-            </div>
-
-            <div class="card" style="border-color:#238636">
-              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
-                <h2 style="margin:0">&#127775; Suggestions</h2>
-                <button class="btn btn-secondary" style="font-size:12px"
-                        data-target="suggestions-body" onclick="toggleSection('suggestions-body')">&#9660; Hide</button>
-              </div>
-              <div id="suggestions-body">
-                ${{suggList}}
-              </div>
-            </div>
-
-            <div class="card">
-              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
-                <h2 style="margin:0">&#128196; Raw JSON</h2>
-                <div style="display:flex;gap:8px">
-                  <button id="copy-btn" class="btn btn-secondary" style="font-size:12px" onclick="copyJson()">Copy JSON</button>
-                  <button class="btn btn-secondary" style="font-size:12px"
-                          data-target="raw-json-body" onclick="toggleSection('raw-json-body')">&#9660; Hide</button>
-                </div>
-              </div>
-              <div id="raw-json-body">
-                <pre id="raw-json">${{escHtml(rawJson)}}</pre>
-              </div>
-            </div>`;
-        }} catch(e) {{
-          if (e.message !== 'auth')
-            document.getElementById('content').innerHTML = '<p class="error">&#10005; ' + escHtml(e.message) + '</p>';
-        }}
-      }}
-
-      load();
-    """
-    html = _page(
-        title=f"Context {ref[:8]}",
-        breadcrumb=(
-            f'<a href="/musehub/ui/{repo_id}">{repo_id[:8]}</a> / '
-            f"context / {ref[:8]}"
-        ),
-        body_script=script,
-    )
-    return HTMLResponse(content=html)
-
-
-@router.get(
-    "/{repo_id}/issues/{number}",
-    response_class=HTMLResponse,
-    summary="Muse Hub issue detail page",
-)
-async def issue_detail_page(repo_id: str, number: int) -> HTMLResponse:
-    """Render the issue detail page: title, body, labels, state, close button.
-
-    The close button calls
-    ``POST /api/v1/musehub/repos/{repo_id}/issues/{number}/close``
-    and reloads the page on success.
-    """
-    script = f"""
-      const repoId = {repr(repo_id)};
-      const number = {number};
-      const base   = '/musehub/ui/' + repoId;
-
-      function escHtml(s) {{
-        if (!s) return '';
-        return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-      }}
-
-      async function closeIssue() {{
-        if (!confirm('Close issue #' + number + '?')) return;
-        try {{
-          await apiFetch('/repos/' + repoId + '/issues/' + number + '/close', {{ method: 'POST' }});
-          location.reload();
-        }} catch(e) {{
-          if (e.message !== 'auth')
-            alert('Close failed: ' + e.message);
-        }}
-      }}
-
-      async function load() {{
-        try {{
-          const issue = await apiFetch('/repos/' + repoId + '/issues/' + number);
-
-          const closeSection = issue.state === 'open' ? `
-            <div style="margin-top:16px">
-              <button class="btn btn-danger" onclick="closeIssue()">&#10005; Close issue</button>
-            </div>` : '';
-
-          document.getElementById('content').innerHTML = `
-            <div style="margin-bottom:12px">
-              <a href="${{base}}/issues">&larr; Back to issues</a>
-            </div>
-            <div class="card">
-              <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px">
-                <h1 style="margin:0">${{escHtml(issue.title)}}</h1>
-                <span class="badge badge-${{issue.state}}">#${{issue.number}}</span>
-                <span class="badge badge-${{issue.state}}">${{issue.state}}</span>
-              </div>
-              <div class="meta-row">
-                <div class="meta-item">
-                  <span class="meta-label">Opened</span>
-                  <span class="meta-value">${{fmtDate(issue.createdAt)}}</span>
-                </div>
-              </div>
-              <div style="margin:8px 0">
-                ${{(issue.labels||[]).map(l => '<span class="label">' + escHtml(l) + '</span>').join('')}}
-              </div>
-              ${{issue.body ? '<pre>' + escHtml(issue.body) + '</pre>' : ''}}
-              ${{closeSection}}
-            </div>`;
-        }} catch(e) {{
-          if (e.message !== 'auth')
-            document.getElementById('content').innerHTML = '<p class="error">&#10005; ' + escHtml(e.message) + '</p>';
-        }}
-      }}
-
-      load();
-    """
-    html = _page(
-        title=f"Issue #{number}",
-        breadcrumb=(
-            f'<a href="/musehub/ui/{repo_id}">{repo_id[:8]}</a> / '
-            f'<a href="/musehub/ui/{repo_id}/issues">issues</a> / #{number}'
-        ),
-        body_script=script,
-    )
-    return HTMLResponse(content=html)
-
-
-# ---------------------------------------------------------------------------
-# Embed CSS (compact dark theme, no chrome)
-# ---------------------------------------------------------------------------
-
-_EMBED_CSS = """
-* { box-sizing: border-box; margin: 0; padding: 0; }
-body {
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-  background: #0d1117; color: #c9d1d9;
-  height: 100vh; display: flex; align-items: center; justify-content: center;
-}
-.player {
-  width: 100%; max-width: 100%; padding: 16px 20px;
-  background: #161b22; border: 1px solid #30363d; border-radius: 8px;
-  display: flex; flex-direction: column; gap: 12px;
-}
-.player-header {
-  display: flex; align-items: center; gap: 12px;
-}
-.logo-mark {
-  font-size: 20px; flex-shrink: 0;
-}
-.track-info { flex: 1; overflow: hidden; }
-.track-title {
-  font-size: 14px; font-weight: 600; color: #e6edf3;
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-}
-.track-sub {
-  font-size: 11px; color: #8b949e; margin-top: 2px;
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-}
-.controls {
-  display: flex; align-items: center; gap: 10px;
-}
-.play-btn {
-  width: 36px; height: 36px; border-radius: 50%;
-  background: #238636; border: none; cursor: pointer;
-  display: flex; align-items: center; justify-content: center;
-  flex-shrink: 0; font-size: 14px; color: #fff;
-  transition: background 0.15s;
-}
-.play-btn:hover { background: #2ea043; }
-.play-btn:disabled { background: #30363d; cursor: not-allowed; }
-.progress-wrap {
-  flex: 1; display: flex; flex-direction: column; gap: 4px;
-}
-.progress-bar {
-  width: 100%; height: 4px; background: #30363d; border-radius: 2px;
-  cursor: pointer; position: relative; overflow: hidden;
-}
-.progress-fill {
-  height: 100%; width: 0%; background: #58a6ff;
-  border-radius: 2px; transition: width 0.1s linear;
-  pointer-events: none;
-}
-.time-row {
-  display: flex; justify-content: space-between;
-  font-size: 11px; color: #8b949e;
-}
-.footer-link {
-  display: flex; justify-content: flex-end; align-items: center;
-}
-.footer-link a {
-  font-size: 11px; color: #58a6ff; text-decoration: none;
-  display: flex; align-items: center; gap: 4px;
-}
-.footer-link a:hover { text-decoration: underline; }
-.status { font-size: 12px; color: #8b949e; text-align: center; padding: 8px 0; }
-.status.error { color: #f85149; }
-"""
-
-
-def _embed_page(title: str, repo_id: str, ref: str, body_script: str) -> str:
-    """Assemble a compact embed player HTML page.
-
-    Designed for iframe embedding on external sites.  No chrome, no token
-    form — just the player widget.  ``X-Frame-Options`` is set by the
-    route handler, not here, since this function only produces the body.
-    """
-    listen_url = f"/musehub/ui/{repo_id}"
-    return f"""<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{title} — Muse Hub</title>
-  <style>{_EMBED_CSS}</style>
-</head>
-<body>
-  <div class="player" id="player">
-    <div class="player-header">
-      <span class="logo-mark">&#127925;</span>
-      <div class="track-info">
-        <div class="track-title" id="track-title">Loading&#8230;</div>
-        <div class="track-sub" id="track-sub">Muse Hub</div>
-      </div>
-    </div>
-    <div class="controls">
-      <button class="play-btn" id="play-btn" disabled title="Play / Pause">&#9654;</button>
-      <div class="progress-wrap">
-        <div class="progress-bar" id="progress-bar">
-          <div class="progress-fill" id="progress-fill"></div>
-        </div>
-        <div class="time-row">
-          <span id="time-cur">0:00</span>
-          <span id="time-dur">0:00</span>
-        </div>
-      </div>
-    </div>
-    <div class="footer-link">
-      <a href="{listen_url}" target="_blank" rel="noopener">
-        &#127925; View on Muse Hub
-      </a>
-    </div>
-  </div>
-  <audio id="audio-el" preload="metadata"></audio>
-  <script>
-    (function() {{
-      const repoId = {repr(repo_id)};
-      const ref    = {repr(ref)};
-      const API    = '/api/v1/musehub';
-
-      const audio      = document.getElementById('audio-el');
-      const playBtn    = document.getElementById('play-btn');
-      const fill       = document.getElementById('progress-fill');
-      const bar        = document.getElementById('progress-bar');
-      const timeCur    = document.getElementById('time-cur');
-      const timeDur    = document.getElementById('time-dur');
-      const trackTitle = document.getElementById('track-title');
-      const trackSub   = document.getElementById('track-sub');
-
-      function fmtTime(s) {{
-        if (!isFinite(s)) return '0:00';
-        const m = Math.floor(s / 60);
-        const sec = Math.floor(s % 60);
-        return m + ':' + (sec < 10 ? '0' : '') + sec;
-      }}
-
-      function setStatus(msg, isError) {{
-        trackTitle.textContent = isError ? msg : (trackTitle.textContent || msg);
-        if (isError) trackTitle.classList.add('error');
-      }}
-
-      audio.addEventListener('timeupdate', function() {{
-        const pct = audio.duration ? (audio.currentTime / audio.duration) * 100 : 0;
-        fill.style.width = pct + '%';
-        timeCur.textContent = fmtTime(audio.currentTime);
-      }});
-
-      audio.addEventListener('durationchange', function() {{
-        timeDur.textContent = fmtTime(audio.duration);
-      }});
-
-      audio.addEventListener('ended', function() {{
-        playBtn.innerHTML = '&#9654;';
-        fill.style.width = '0%';
-        audio.currentTime = 0;
-      }});
-
-      audio.addEventListener('canplay', function() {{
-        playBtn.disabled = false;
-      }});
-
-      audio.addEventListener('error', function() {{
-        setStatus('Audio unavailable', true);
-      }});
-
-      playBtn.addEventListener('click', function() {{
-        if (audio.paused) {{
-          audio.play();
-          playBtn.innerHTML = '&#9646;&#9646;';
-        }} else {{
-          audio.pause();
-          playBtn.innerHTML = '&#9654;';
-        }}
-      }});
-
-      bar.addEventListener('click', function(e) {{
-        if (!audio.duration) return;
-        const rect = bar.getBoundingClientRect();
-        const pct  = (e.clientX - rect.left) / rect.width;
-        audio.currentTime = pct * audio.duration;
-      }});
-
-      async function loadTrack() {{
-        try {{
-          const objRes = await fetch(API + '/repos/' + repoId + '/objects');
-          if (!objRes.ok) throw new Error('objects ' + objRes.status);
-          const objData = await objRes.json();
-          const objects = objData.objects || [];
-
-          const audio_exts = ['mp3', 'ogg', 'wav', 'm4a'];
-          const audioObj = objects.find(function(o) {{
-            const ext = o.path.split('.').pop().toLowerCase();
-            return audio_exts.indexOf(ext) !== -1;
-          }});
-
-          if (!audioObj) {{
-            trackTitle.textContent = 'No audio in this commit';
-            trackSub.textContent = 'ref: ' + ref.substring(0, 8);
-            return;
-          }}
-
-          const name = audioObj.path.split('/').pop();
-          trackTitle.textContent = name;
-          trackSub.textContent = 'ref: ' + ref.substring(0, 8);
-
-          const audioUrl = API + '/repos/' + repoId + '/objects/' + audioObj.objectId + '/content';
-          audio.src = audioUrl;
-          audio.load();
-        }} catch(e) {{
-          setStatus('Could not load track', true);
-          trackSub.textContent = e.message;
-        }}
-      }}
-
-      {body_script}
-
-      loadTrack();
-    }})();
-  </script>
-</body>
-</html>"""
-
-
-@router.get(
-    "/{repo_id}/embed/{ref}",
-    response_class=HTMLResponse,
-    summary="Embeddable MuseHub player widget",
-)
-async def embed_page(repo_id: str, ref: str) -> Response:
-    """Render a compact, iframe-safe audio player for a MuseHub repo commit.
-
-    Why this route exists: external sites (blogs, CMSes) embed MuseHub
-    compositions via ``<iframe src="/musehub/ui/{repo_id}/embed/{ref}">``.
-    The oEmbed endpoint (``GET /oembed``) auto-generates this iframe tag.
-
-    Contract:
-    - No JWT required — public repos can be embedded without auth.
-    - Returns ``X-Frame-Options: ALLOWALL`` so browsers permit cross-origin framing.
-    - ``ref`` is a commit SHA or branch name used to label the track.
-    - Audio is fetched from ``/api/v1/musehub/repos/{repo_id}/objects`` at
-      runtime; the first recognised audio file (mp3/ogg/wav/m4a) is played.
-    - Responsive: works from 300px to full viewport width.
-
-    Args:
-        repo_id: UUID of the MuseHub repository.
-        ref:     Commit SHA or branch name identifying the composition version.
-
-    Returns:
-        HTML response with ``X-Frame-Options: ALLOWALL`` header.
-    """
-    short_ref = ref[:8] if len(ref) >= 8 else ref
-    html = _embed_page(
-        title=f"Player {short_ref}",
-        repo_id=repo_id,
-        ref=ref,
-        body_script="",
-    )
-    return Response(
-        content=html,
-        media_type="text/html",
-        headers={"X-Frame-Options": "ALLOWALL"},
-    )
-
-
-@router.get(
-    "/{repo_id}/credits",
-    response_class=HTMLResponse,
-    summary="Muse Hub dynamic credits page",
-)
-async def credits_page(repo_id: str) -> HTMLResponse:
-    """Render the dynamic credits page — album liner notes for the repo.
-
-    Fetches ``GET /api/v1/musehub/repos/{repo_id}/credits`` and displays
-    every contributor with their session count, inferred roles, and activity
-    timeline.  Sort can be toggled via a dropdown (count / recency / alpha).
-
-    Embeds a ``<script type="application/ld+json">`` block for machine-readable
-    attribution using schema.org ``MusicComposition`` vocabulary.
-
-    Auth is handled client-side via localStorage JWT, matching all other UI pages.
-    """
-    script = f"""
-      const repoId = {repr(repo_id)};
-      const base   = '/musehub/ui/' + repoId;
-
-
-      function escHtml(s) {{
-        if (!s) return '';
-        return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-      }}
-
-      function fmtYear(iso) {{
-        if (!iso) return '—';
-        return new Date(iso).getFullYear();
-      }}
-
-      function contributorRow(c) {{
-        const roles = (c.contributionTypes || []).map(r =>
-          '<span class="label">' + escHtml(r) + '</span>'
-        ).join(' ');
-        const window = fmtDate(c.firstActive) + ' &ndash; ' + fmtDate(c.lastActive);
-        return `
-          <div class="commit-row" style="align-items:flex-start;flex-direction:column;gap:6px">
-            <div style="display:flex;align-items:center;gap:10px;width:100%">
-              <span style="font-size:15px;color:#e6edf3;font-weight:600;flex:1">
-                ${{escHtml(c.author)}}
-              </span>
-              <span class="badge badge-open" style="font-size:12px;background:#1a3a5c">
-                ${{c.sessionCount}} session${{c.sessionCount !== 1 ? 's' : ''}}
-              </span>
-            </div>
-            <div>${{roles}}</div>
-            <div style="font-size:12px;color:#8b949e">${{window}}</div>
-          </div>`;
-      }}
-
-      function injectJsonLd(credits) {{
-        const contributors = (credits.contributors || []).map(c => ({{
-          '@type': 'Person',
-          name: c.author,
-          roleName: (c.contributionTypes || []).join(', '),
-        }}));
-        const ld = {{
-          '@context': 'https://schema.org',
-          '@type': 'MusicComposition',
-          identifier: credits.repoId,
-          contributor: contributors,
-        }};
-        const el = document.createElement('script');
-        el.type = 'application/ld+json';
-        el.textContent = JSON.stringify(ld, null, 2);
-        document.head.appendChild(el);
-      }}
-
-      async function load(sort) {{
-        try {{
-          const credits = await apiFetch('/repos/' + repoId + '/credits?sort=' + sort);
-          const contributors = credits.contributors || [];
-
-          injectJsonLd(credits);
-
-          const rows = contributors.length === 0
-            ? '<p class="loading">No sessions recorded yet. Start a session with <code>muse session start</code>.</p>'
-            : contributors.map(contributorRow).join('');
-
-          document.getElementById('content').innerHTML = `
-            <div style="margin-bottom:12px">
-              <a href="${{base}}">&larr; Back to repo</a>
-            </div>
-            <div class="card">
-              <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;flex-wrap:wrap">
-                <h1 style="margin:0">&#127926; Credits</h1>
-                <span style="flex:1"></span>
-                <span style="font-size:13px;color:#8b949e">
-                  ${{credits.totalContributors}} contributor${{credits.totalContributors !== 1 ? 's' : ''}}
-                </span>
-                <label style="font-size:13px;color:#8b949e;display:flex;align-items:center;gap:6px">
-                  Sort:
-                  <select onchange="load(this.value)">
-                    <option value="count"   ${{sort==='count'  ?'selected':''}}>Most prolific</option>
-                    <option value="recency" ${{sort==='recency'?'selected':''}}>Most recent</option>
-                    <option value="alpha"   ${{sort==='alpha'  ?'selected':''}}>A &ndash; Z</option>
-                  </select>
-                </label>
-              </div>
-              ${{rows}}
-            </div>
-            <p style="font-size:11px;color:#8b949e;margin-top:8px;text-align:center">
-              Machine-readable credits embedded as JSON-LD (schema.org/MusicComposition)
-            </p>`;
-        }} catch(e) {{
-          if (e.message !== 'auth')
-            document.getElementById('content').innerHTML = '<p class="error">&#10005; ' + escHtml(e.message) + '</p>';
-        }}
-      }}
-
-      load('count');
-    """
-    html = _page(
-        title="Credits",
-        breadcrumb=f'<a href="/musehub/ui/{repo_id}">{repo_id[:8]}</a> / credits',
-        body_script=script,
-    )
-    return HTMLResponse(content=html)
-
-
-@router.get(
-    "/{repo_id}/search",
-    response_class=HTMLResponse,
-    summary="Muse Hub in-repo search page",
-)
-async def search_page(repo_id: str) -> HTMLResponse:
-    """Render the in-repo search page with four mode tabs.
-
-    Modes map to the JSON API at ``GET /api/v1/musehub/repos/{repo_id}/search``:
-    - Musical Properties (``mode=property``) — filter by harmony/rhythm/melody/etc.
-    - Natural Language (``mode=ask``) — free-text question over commit history.
-    - Keyword (``mode=keyword``) — keyword overlap scored search.
-    - Pattern (``mode=pattern``) — substring match against messages and branches.
-
-    Results render as commit rows with SHA, message, author, timestamp, and an
-    audio preview link for any ``mp3``/``wav``/``ogg`` artifact on that commit.
-    Authentication is handled client-side via localStorage JWT.
-    """
-    script = f"""
-      const repoId = {repr(repo_id)};
-      const base   = '/musehub/ui/' + repoId;
-      const apiBase = '/api/v1/musehub/repos/' + repoId;
-
-      function escHtml(s) {{
-        if (!s) return '';
-        return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-      }}
-
-      // ── State ──────────────────────────────────────────────────────────────
-      let currentMode = 'keyword';
-
-      function setMode(mode) {{
-        currentMode = mode;
-        document.querySelectorAll('.tab-btn').forEach(b => {{
-          b.classList.toggle('tab-active', b.dataset.mode === mode);
-        }});
-        document.querySelectorAll('.mode-panel').forEach(p => {{
-          p.style.display = p.dataset.mode === mode ? 'block' : 'none';
-        }});
-      }}
-
-      // ── Result rendering ───────────────────────────────────────────────────
-      function renderResults(data) {{
-        const matches = data.matches || [];
-        const header = `<p style="color:#8b949e;font-size:13px;margin-bottom:12px">
-          Mode: <strong>${{escHtml(data.mode)}}</strong> &bull;
-          Query: <em>${{escHtml(data.query || '(all)')}}</em> &bull;
-          ${{matches.length}} result(s) &bull; ${{data.totalScanned}} commits scanned
-        </p>`;
-
-        if (matches.length === 0) {{
-          document.getElementById('results').innerHTML = header +
-            '<p class="loading">No matching commits found.</p>';
-          return;
-        }}
-
-        const rows = matches.map(m => `
-          <div class="commit-row">
-            <a class="commit-sha" href="${{base}}/commits/${{m.commitId}}">${{shortSha(m.commitId)}}</a>
-            <div class="commit-msg" style="flex:1">
-              <a href="${{base}}/commits/${{m.commitId}}">${{escHtml(m.message)}}</a>
-              <div style="font-size:12px;color:#8b949e;margin-top:2px">
-                ${{escHtml(m.author)}} &bull; ${{fmtDate(m.timestamp)}}
-                &bull; branch: ${{escHtml(m.branch)}}
-                ${{m.score < 1.0 ? '&bull; score: ' + m.score.toFixed(3) : ''}}
-                <a href="${{base}}/commits/${{m.commitId}}"
-                   class="btn btn-secondary"
-                   style="font-size:11px;padding:2px 8px;margin-left:8px">
-                  &#9654; Preview
-                </a>
-              </div>
-            </div>
-          </div>`).join('');
-
-        document.getElementById('results').innerHTML = header +
-          '<div class="card">' + rows + '</div>';
-      }}
-
-      // ── Search dispatch ────────────────────────────────────────────────────
-      async function runSearch() {{
-        document.getElementById('results').innerHTML = '<p class="loading">Searching&#8230;</p>';
-        try {{
-          let url = apiBase + '/search?mode=' + encodeURIComponent(currentMode);
-          const limit = document.getElementById('inp-limit').value || 20;
-          const since = document.getElementById('inp-since').value;
-          const until = document.getElementById('inp-until').value;
-          url += '&limit=' + encodeURIComponent(limit);
-          if (since) url += '&since=' + encodeURIComponent(since + 'T00:00:00Z');
-          if (until) url += '&until=' + encodeURIComponent(until + 'T23:59:59Z');
-
-          if (currentMode === 'property') {{
-            const fields = ['harmony','rhythm','melody','structure','dynamic','emotion'];
-            fields.forEach(f => {{
-              const v = document.getElementById('prop-' + f).value.trim();
-              if (v) url += '&' + f + '=' + encodeURIComponent(v);
-            }});
-          }} else {{
-            const q = document.getElementById('inp-q-' + currentMode).value.trim();
-            if (q) url += '&q=' + encodeURIComponent(q);
-          }}
-
-          const data = await apiFetch(url.replace(apiBase, ''));
-          renderResults(data);
-        }} catch(e) {{
-          if (e.message !== 'auth')
-            document.getElementById('results').innerHTML =
-              '<p class="error">&#10005; ' + escHtml(e.message) + '</p>';
-        }}
-      }}
-
-      // ── Page bootstrap ─────────────────────────────────────────────────────
-      document.getElementById('content').innerHTML = `
-        <div style="margin-bottom:12px">
-          <a href="${{base}}">&larr; Back to repo</a>
-        </div>
-        <div class="card">
-          <h1 style="margin-bottom:16px">&#128269; Search Commits</h1>
-
-          <!-- Mode tabs -->
-          <div style="display:flex;gap:8px;margin-bottom:20px;flex-wrap:wrap">
-            <button class="btn tab-btn tab-active" data-mode="keyword"
-                    onclick="setMode('keyword')">Keyword</button>
-            <button class="btn tab-btn" data-mode="ask"
-                    onclick="setMode('ask')">Natural Language</button>
-            <button class="btn tab-btn" data-mode="pattern"
-                    onclick="setMode('pattern')">Pattern</button>
-            <button class="btn tab-btn" data-mode="property"
-                    onclick="setMode('property')">Musical Properties</button>
-          </div>
-
-          <!-- Shared date range + limit -->
-          <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px;align-items:flex-end">
-            <div class="meta-item">
-              <span class="meta-label">Since</span>
-              <input id="inp-since" type="date" style="background:#0d1117;color:#c9d1d9;border:1px solid #30363d;border-radius:6px;padding:6px 10px;font-size:14px" />
-            </div>
-            <div class="meta-item">
-              <span class="meta-label">Until</span>
-              <input id="inp-until" type="date" style="background:#0d1117;color:#c9d1d9;border:1px solid #30363d;border-radius:6px;padding:6px 10px;font-size:14px" />
-            </div>
-            <div class="meta-item">
-              <span class="meta-label">Limit</span>
-              <input id="inp-limit" type="number" value="20" min="1" max="200"
-                     style="width:80px;background:#0d1117;color:#c9d1d9;border:1px solid #30363d;border-radius:6px;padding:6px 10px;font-size:14px" />
-            </div>
-          </div>
-
-          <!-- Keyword panel -->
-          <div class="mode-panel" data-mode="keyword">
-            <div style="display:flex;gap:8px">
-              <input id="inp-q-keyword" type="text" placeholder="e.g. dark jazz bassline"
-                     style="flex:1;background:#0d1117;color:#c9d1d9;border:1px solid #30363d;border-radius:6px;padding:8px;font-size:14px"
-                     onkeydown="if(event.key==='Enter')runSearch()" />
-              <button class="btn btn-primary" onclick="runSearch()">Search</button>
-            </div>
-            <p style="font-size:12px;color:#8b949e;margin-top:6px">
-              Scores commits by keyword overlap. Higher score = better match.
-            </p>
-          </div>
-
-          <!-- Natural Language panel -->
-          <div class="mode-panel" data-mode="ask" style="display:none">
-            <div style="display:flex;gap:8px">
-              <input id="inp-q-ask" type="text" placeholder="e.g. when did I change to F# minor?"
-                     style="flex:1;background:#0d1117;color:#c9d1d9;border:1px solid #30363d;border-radius:6px;padding:8px;font-size:14px"
-                     onkeydown="if(event.key==='Enter')runSearch()" />
-              <button class="btn btn-primary" onclick="runSearch()">Ask</button>
-            </div>
-            <p style="font-size:12px;color:#8b949e;margin-top:6px">
-              Keyword extraction from your question. Full LLM-powered search is a planned enhancement.
-            </p>
-          </div>
-
-          <!-- Pattern panel -->
-          <div class="mode-panel" data-mode="pattern" style="display:none">
-            <div style="display:flex;gap:8px">
-              <input id="inp-q-pattern" type="text" placeholder="e.g. Cm7 or feature/hip-hop"
-                     style="flex:1;background:#0d1117;color:#c9d1d9;border:1px solid #30363d;border-radius:6px;padding:8px;font-size:14px"
-                     onkeydown="if(event.key==='Enter')runSearch()" />
-              <button class="btn btn-primary" onclick="runSearch()">Search</button>
-            </div>
-            <p style="font-size:12px;color:#8b949e;margin-top:6px">
-              Case-insensitive substring match against commit messages and branch names.
-            </p>
-          </div>
-
-          <!-- Musical Properties panel -->
-          <div class="mode-panel" data-mode="property" style="display:none">
-            <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px;margin-bottom:12px">
-              ${{['harmony','rhythm','melody','structure','dynamic','emotion'].map(f => `
-                <div class="meta-item">
-                  <span class="meta-label">${{f}}</span>
-                  <input id="prop-${{f}}" type="text" placeholder="e.g. ${{f==='harmony'?'key=Eb':f==='rhythm'?'tempo=120-130':f}}"
-                         style="background:#0d1117;color:#c9d1d9;border:1px solid #30363d;border-radius:6px;padding:6px 10px;font-size:13px;width:100%" />
-                </div>`).join('')}}
-            </div>
-            <button class="btn btn-primary" onclick="runSearch()">Filter</button>
-            <p style="font-size:12px;color:#8b949e;margin-top:6px">
-              All non-empty fields are combined with AND logic.
-              Range syntax: <code>tempo=120-130</code>.
-            </p>
-          </div>
-        </div>
-
-        <!-- Results area -->
-        <div id="results"><p class="loading" style="display:none"></p></div>
-      `;
-
-      // Apply tab styles after DOM is written.
-      document.querySelectorAll('.tab-btn').forEach(b => {{
-        b.style.background = '#21262d';
-        b.style.color = '#c9d1d9';
-        b.style.border = '1px solid #30363d';
-      }});
-
-      function applyTabActive() {{
-        document.querySelectorAll('.tab-btn').forEach(b => {{
-          const active = b.dataset.mode === currentMode;
-          b.style.background = active ? '#1f6feb' : '#21262d';
-          b.style.color = active ? '#fff' : '#c9d1d9';
-        }});
-      }}
-
-      document.querySelectorAll('.tab-btn').forEach(b => {{
-        b.addEventListener('click', applyTabActive);
-      }});
-
-      applyTabActive();
-    """
-    html = _page(
-        title="Search",
-        breadcrumb=f'<a href="/musehub/ui/{repo_id}">{repo_id[:8]}</a> / search',
-        body_script=script,
-    )
-    return HTMLResponse(content=html)
 
 @router.get(
     "/{repo_id}/divergence",
@@ -3544,6 +2714,172 @@ async def search_page(repo_id: str) -> HTMLResponse:
     html = _page(
         title="Search",
         breadcrumb=f'<a href="/musehub/ui/{repo_id}">{repo_id[:8]}</a> / search',
+        body_script=script,
+    )
+    return HTMLResponse(content=html)
+
+
+@router.get(
+    "/{repo_id}/releases",
+    response_class=HTMLResponse,
+    summary="Muse Hub release list page",
+)
+async def release_list_page(repo_id: str) -> HTMLResponse:
+    """Render the release list page: all published versions newest first.
+
+    Fetches ``GET /api/v1/musehub/repos/{repo_id}/releases``.
+    Each release shows its tag, title, creation date, and a link to the
+    detail page where release notes and download packages are available.
+    """
+    script = f"""
+      const repoId = {repr(repo_id)};
+      const base   = '/musehub/ui/' + repoId;
+
+      function escHtml(s) {{
+        if (!s) return '';
+        return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+      }}
+
+      async function load() {{
+        try {{
+          const data     = await apiFetch('/repos/' + repoId + '/releases');
+          const releases = data.releases || [];
+
+          const rows = releases.length === 0
+            ? '<p class="loading">No releases published yet.</p>'
+            : releases.map(r => `
+              <div class="release-row">
+                <span class="badge badge-release">${{escHtml(r.tag)}}</span>
+                <div style="flex:1">
+                  <a href="${{base}}/releases/${{encodeURIComponent(r.tag)}}">${{escHtml(r.title)}}</a>
+                  <div style="font-size:12px;color:#8b949e;margin-top:2px">
+                    Released ${{fmtDate(r.createdAt)}}
+                    ${{r.commitId ? ' &bull; commit <span style="font-family:monospace">' + r.commitId.substring(0,8) + '</span>' : ''}}
+                  </div>
+                </div>
+              </div>`).join('');
+
+          document.getElementById('content').innerHTML = `
+            <div style="margin-bottom:12px">
+              <a href="${{base}}">&larr; Back to repo</a>
+            </div>
+            <div class="card">
+              <h1 style="margin-bottom:16px">Releases</h1>
+              ${{rows}}
+            </div>`;
+        }} catch(e) {{
+          if (e.message !== 'auth')
+            document.getElementById('content').innerHTML = '<p class="error">&#10005; ' + escHtml(e.message) + '</p>';
+        }}
+      }}
+
+      load();
+    """
+    html = _page(
+        title="Releases",
+        breadcrumb=f'<a href="/musehub/ui/{repo_id}">{repo_id[:8]}</a> / releases',
+        body_script=script,
+    )
+    return HTMLResponse(content=html)
+
+
+@router.get(
+    "/{repo_id}/releases/{tag}",
+    response_class=HTMLResponse,
+    summary="Muse Hub release detail page",
+)
+async def release_detail_page(repo_id: str, tag: str) -> HTMLResponse:
+    """Render the release detail page: title, tag, release notes, download packages.
+
+    Fetches ``GET /api/v1/musehub/repos/{repo_id}/releases/{tag}``.
+    Download packages (MIDI bundle, stems, MP3, MusicXML, metadata) are
+    rendered as download cards; unavailable packages show a "not available"
+    indicator instead of a broken link.
+    """
+    script = f"""
+      const repoId = {repr(repo_id)};
+      const tag    = {repr(tag)};
+      const base   = '/musehub/ui/' + repoId;
+
+      function escHtml(s) {{
+        if (!s) return '';
+        return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+      }}
+
+      function downloadCard(label, desc, url) {{
+        if (url) {{
+          return `
+            <div class="download-card">
+              <span class="pkg-name">${{label}}</span>
+              <span class="pkg-desc">${{desc}}</span>
+              <a class="btn btn-secondary" href="${{escHtml(url)}}" download>&#11015; Download</a>
+            </div>`;
+        }}
+        return `
+          <div class="download-card" style="opacity:0.5">
+            <span class="pkg-name">${{label}}</span>
+            <span class="pkg-desc">${{desc}}</span>
+            <span style="font-size:12px;color:#8b949e">Not available</span>
+          </div>`;
+      }}
+
+      async function load() {{
+        try {{
+          const r = await apiFetch('/repos/' + repoId + '/releases/' + encodeURIComponent(tag));
+          const dl = r.downloadUrls || {{}};
+
+          const downloads = `
+            <div class="download-grid">
+              ${{downloadCard('Full MIDI', 'All tracks as a single .mid file', dl.midiBubdle || dl.midiBuddle || dl.midiBundle)}}
+              ${{downloadCard('MIDI Stems', 'Individual track stems (zip of .mid files)', dl.stems)}}
+              ${{downloadCard('MP3 Mix', 'Full mix audio render', dl.mp3)}}
+              ${{downloadCard('MusicXML', 'Notation export for sheet music editors', dl.musicxml)}}
+              ${{downloadCard('Metadata', 'JSON manifest: tempo, key, arrangement', dl.metadata)}}
+            </div>`;
+
+          document.getElementById('content').innerHTML = `
+            <div style="margin-bottom:12px">
+              <a href="${{base}}/releases">&larr; Back to releases</a>
+            </div>
+            <div class="card">
+              <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px">
+                <h1 style="margin:0">${{escHtml(r.title)}}</h1>
+                <span class="badge badge-release">${{escHtml(r.tag)}}</span>
+              </div>
+              <div class="meta-row">
+                <div class="meta-item">
+                  <span class="meta-label">Released</span>
+                  <span class="meta-value">${{fmtDate(r.createdAt)}}</span>
+                </div>
+                ${{r.commitId ? `
+                <div class="meta-item">
+                  <span class="meta-label">Commit</span>
+                  <span class="meta-value">
+                    <a href="${{base}}/commits/${{r.commitId}}" style="font-family:monospace">
+                      ${{r.commitId.substring(0,8)}}
+                    </a>
+                  </span>
+                </div>` : ''}}
+              </div>
+              ${{r.body ? '<h2 style="margin-top:16px;margin-bottom:8px">Release Notes</h2><pre>' + escHtml(r.body) + '</pre>' : ''}}
+              <h2 style="margin-top:16px;margin-bottom:8px">Download Packages</h2>
+              ${{downloads}}
+            </div>`;
+        }} catch(e) {{
+          if (e.message !== 'auth')
+            document.getElementById('content').innerHTML = '<p class="error">&#10005; ' + escHtml(e.message) + '</p>';
+        }}
+      }}
+
+      load();
+    """
+    safe_tag = tag[:20] if len(tag) > 20 else tag
+    html = _page(
+        title=f"Release {safe_tag}",
+        breadcrumb=(
+            f'<a href="/musehub/ui/{repo_id}">{repo_id[:8]}</a> / '
+            f'<a href="/musehub/ui/{repo_id}/releases">releases</a> / {safe_tag}'
+        ),
         body_script=script,
     )
     return HTMLResponse(content=html)
