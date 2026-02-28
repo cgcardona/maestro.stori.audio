@@ -2874,7 +2874,6 @@ must investigate the failing check before committing — a corrupted MIDI would 
 corrupt the composition history. With `--strict`, agents can enforce zero-warning quality gates.
 
 ---
-
 ## `muse diff` — Music-Dimension Diff Between Commits
 
 **Purpose:** Compare two commits across five orthogonal musical dimensions —
@@ -2979,6 +2978,117 @@ Exit codes: 0 success, 2 outside repo (`REPO_NOT_FOUND`), 3 internal error.
 
 ---
 
+## `muse inspect` — Print Structured JSON of the Muse Commit Graph
+
+**Purpose:** Serialize the full commit graph reachable from a starting reference
+into machine-readable output.  This is the primary introspection tool for AI
+agents and tooling that need to programmatically traverse or audit commit history,
+branch state, and compositional metadata without parsing human-readable output.
+
+**Implementation:** `maestro/muse_cli/commands/inspect.py`\
+**Service:** `maestro/services/muse_inspect.py`\
+**Status:** ✅ implemented (issue #98)
+
+### Usage
+
+```bash
+muse inspect                          # JSON of HEAD branch history
+muse inspect abc1234                  # start from a specific commit
+muse inspect --depth 5                # limit to 5 commits
+muse inspect --branches               # include all branch heads
+muse inspect --format dot             # Graphviz DOT graph
+muse inspect --format mermaid         # Mermaid.js graph definition
+```
+
+### Flags
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `[<ref>]` | positional | HEAD | Starting commit ID or branch name |
+| `--depth N` | int | unlimited | Limit graph traversal to N commits per branch |
+| `--branches` | flag | off | Include all branch heads and their reachable commits |
+| `--tags` | flag | off | Include tag refs in the output |
+| `--format` | enum | `json` | Output format: `json`, `dot`, `mermaid` |
+
+### Output example (JSON)
+
+```json
+{
+  "repo_id": "550e8400-e29b-41d4-a716-446655440000",
+  "current_branch": "main",
+  "branches": {
+    "main": "a1b2c3d4e5f6...",
+    "feature/guitar": "f9e8d7c6b5a4..."
+  },
+  "commits": [
+    {
+      "commit_id": "a1b2c3d4e5f6...",
+      "short_id": "a1b2c3d4",
+      "branch": "main",
+      "parent_commit_id": "f9e8d7c6b5a4...",
+      "parent2_commit_id": null,
+      "message": "boom bap demo take 2",
+      "author": "",
+      "committed_at": "2026-02-27T17:30:00+00:00",
+      "snapshot_id": "deadbeef...",
+      "metadata": {"tempo_bpm": 95.0},
+      "tags": ["emotion:melancholic", "stage:rough-mix"]
+    }
+  ]
+}
+```
+
+### Result types
+
+`MuseInspectCommit` (frozen dataclass) — one commit node in the graph.\
+`MuseInspectResult` (frozen dataclass) — full serialized graph with branch pointers.\
+`InspectFormat` (str Enum) — `json`, `dot`, `mermaid`.\
+See `docs/reference/type_contracts.md § Muse Inspect Types`.
+
+### Format: DOT
+
+Graphviz DOT directed graph.  Pipe to `dot -Tsvg` to render a visual DAG:
+
+```bash
+muse inspect --format dot | dot -Tsvg -o graph.svg
+```
+
+Each commit becomes an ellipse node labelled `<short_id>\n<message[:40]>`.
+Parent edges point child → parent (matching git convention).  Branch refs
+appear as bold rectangle nodes pointing to their HEAD commit.
+
+### Format: Mermaid
+
+Mermaid.js `graph LR` definition.  Embed in GitHub markdown:
+
+```
+muse inspect --format mermaid
+```
+
+```mermaid
+graph LR
+  a1b2c3d4["a1b2c3d4: boom bap demo take 2"]
+  f9e8d7c6["f9e8d7c6: boom bap demo take 1"]
+  a1b2c3d4 --> f9e8d7c6
+  main["main"]
+  main --> a1b2c3d4
+```
+
+### Agent use case
+
+An AI composition agent calls `muse inspect --format json` before generating
+new music to understand the full lineage of the project:
+
+1. **Branch discovery** — which creative threads exist (`branches` dict).
+2. **Graph traversal** — which commits are ancestors, which are on feature branches.
+3. **Metadata audit** — which commits have explicit tempo, meter, or emotion tags.
+4. **Divergence awareness** — combined with `muse divergence`, informs merge decisions.
+
+The JSON output is deterministic for a fixed graph state, making it safe to cache
+between agent invocations and diff to detect graph changes.
+
+---
+
 ## `muse tempo-scale` — Stretch or Compress the Timing of a Commit
 
 **Purpose:** Apply a deterministic time-scaling transformation to a commit,
@@ -3079,6 +3189,7 @@ arguments (`USER_ERROR`), 2 outside repo (`REPO_NOT_FOUND`), 3 internal error
 | `muse grep` | `commands/grep_cmd.py` | ✅ stub (PR #128) | #124 |
 | `muse groove-check` | `commands/groove_check.py` | ✅ stub (PR #143) | #95 |
 | `muse import` | `commands/import_cmd.py` | ✅ implemented (PR #142) | #118 |
+| `muse inspect` | `commands/inspect.py` | ✅ implemented (PR #TBD) | #98 |
 | `muse meter` | `commands/meter.py` | ✅ implemented (PR #141) | #117 |
 | `muse recall` | `commands/recall.py` | ✅ stub (PR #135) | #122 |
 | `muse session` | `commands/session.py` | ✅ implemented (PR #129) | #127 |
