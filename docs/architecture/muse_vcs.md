@@ -90,7 +90,7 @@ maestro/muse_cli/
 ├── repo.py              — Public re-export of _repo.py (canonical import surface, issue #46)
 └── commands/
     ├── __init__.py
-    ├── init.py           — muse init  ✅ fully implemented
+    ├── init.py           — muse init  ✅ fully implemented (--bare, --template, --default-branch added in issue #85)
     ├── status.py         — muse status  ✅ fully implemented (issue #44)
     ├── commit.py         — muse commit  ✅ fully implemented (issue #32)
     ├── log.py            — muse log    ✅ fully implemented (issue #33)
@@ -689,25 +689,60 @@ Given the same working tree state, message, and timestamp two machines produce i
 
 ```
 .muse/
-  repo.json          Repo identity: repo_id (UUID), schema_version, created_at
+  repo.json          Repo identity: repo_id (UUID), schema_version, created_at[, bare]
   HEAD               Current branch pointer, e.g. "refs/heads/main"
-  config.toml        [user], [auth], [remotes] configuration
+  config.toml        [core] (bare repos only), [user], [auth], [remotes] configuration
   objects/           Local content-addressed object store (written by muse commit)
     <object_id>      One file per unique object (sha256 of file bytes)
   refs/
     heads/
       main           Commit ID of branch HEAD (empty = no commits yet)
       <branch>       One file per branch
+muse-work/           Working-tree root (absent for --bare repos)
+```
+
+### `muse init` flags
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--bare` | flag | off | Initialise as a bare repository — no `muse-work/` checkout. Writes `bare = true` into `repo.json` and `[core] bare = true` into `config.toml`. Used for Muse Hub remote/server-side repos. |
+| `--template PATH` | path | — | Copy the contents of *PATH* into `muse-work/` after initialisation. Lets studios pre-populate a standard folder structure (e.g. `drums/`, `bass/`, `keys/`, `vocals/`) for every new project. Ignored when `--bare` is set. |
+| `--default-branch BRANCH` | text | `main` | Name of the initial branch. Sets `HEAD → refs/heads/<BRANCH>` and creates the matching ref file. |
+| `--force` | flag | off | Re-initialise even if `.muse/` already exists. Preserves the existing `repo_id` so remote-tracking metadata stays coherent. Does not overwrite `config.toml`. |
+
+**Bare repository layout** (`--bare`):
+
+```
+.muse/
+  repo.json          … bare = true …
+  HEAD               refs/heads/<branch>
+  refs/heads/<branch>
+  config.toml        [core] bare = true  + [user] [auth] [remotes] stubs
+```
+
+Bare repos are used as Muse Hub remotes — objects and refs only, no live working copy.
+
+**Usage examples:**
+
+```bash
+muse init                                     # standard repo, branch = main
+muse init --default-branch develop            # standard repo, branch = develop
+muse init --bare                              # bare repo (Hub remote)
+muse init --bare --default-branch trunk       # bare repo, branch = trunk
+muse init --template /path/to/studio-tmpl     # copy template into muse-work/
+muse init --template /studio --default-branch release  # template + custom branch
+muse init --force                             # reinitialise, preserve repo_id
 ```
 
 ### File semantics
 
 | File | Source of truth for | Notes |
 |------|-------------------|-------|
-| `repo.json` | Repo identity | `repo_id` persists across `--force` reinitialise |
-| `HEAD` | Current branch name | Always `refs/heads/<branch>` |
+| `repo.json` | Repo identity | `repo_id` persists across `--force` reinitialise; `bare = true` written for bare repos |
+| `HEAD` | Current branch name | Always `refs/heads/<branch>`; branch name set by `--default-branch` |
 | `refs/heads/<branch>` | Branch → commit pointer | Empty string = branch has no commits yet |
-| `config.toml` | User identity, auth token, remotes | Not overwritten on `--force` |
+| `config.toml` | User identity, auth token, remotes | Not overwritten on `--force`; bare repos include `[core] bare = true` |
+| `muse-work/` | Working-tree root | Created by non-bare init; populated from `--template` if provided |
 
 ### Repo-root detection
 
