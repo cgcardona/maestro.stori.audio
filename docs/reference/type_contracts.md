@@ -924,6 +924,37 @@ Full diff of two arrangement matrices.  Built by `build_arrangement_diff()`.
 
 ## Services
 
+### MuseHub MCP Executor
+
+**Path:** `maestro/services/musehub_mcp_executor.py`
+
+#### `MusehubToolResult`
+
+`dataclass(frozen=True)` — Result of executing a single `musehub_*` MCP tool. This is the
+contract between the executor functions and the MCP server's routing layer.
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `ok` | `bool` | yes | `True` on success, `False` on failure |
+| `data` | `dict[str, JSONValue]` | no | JSON-serialisable payload on success; empty dict on failure |
+| `error_code` | `MusehubErrorCode \| None` | no | Error kind on failure; `None` on success |
+| `error_message` | `str \| None` | no | Human-readable error message; `None` on success |
+
+**`MusehubErrorCode`** — `Literal["not_found", "invalid_dimension", "invalid_mode", "db_unavailable"]`
+
+| Code | When |
+|------|------|
+| `not_found` | Repo or object does not exist |
+| `invalid_dimension` | Unrecognised analysis dimension (valid: `overview`, `commits`, `objects`) |
+| `invalid_mode` | Unrecognised search mode (valid: `path`, `commit`) |
+| `db_unavailable` | DB session factory not initialised (startup race) |
+
+**Agent use case:** The MCP server calls executor functions and pattern-matches on `result.ok`
+and `result.error_code` to build the `MCPContentBlock` response. On success, `result.data`
+is JSON-serialised directly into the content block text.
+
+---
+
 ### Assets
 
 **Path:** `maestro/services/assets.py`
@@ -1137,6 +1168,40 @@ On failure: `success=False` plus `error` (and optionally `message`).
 
 **Producer:** `build_release()` in `maestro/services/muse_release.py`
 **Consumer:** `muse release` CLI command (`maestro/muse_cli/commands/release.py`)
+
+---
+
+### `ExportResult`
+
+**Path:** `maestro/services/musehub_exporter.py`
+
+`dataclass(frozen=True)` — Fully packaged export artifact returned by `export_repo_at_ref()`.
+Ready for direct streaming to the HTTP client via `Response(content=result.content, ...)`.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `content` | `bytes` | Raw bytes of the artifact or ZIP archive |
+| `content_type` | `str` | MIME type for the HTTP `Content-Type` header |
+| `filename` | `str` | Suggested filename for `Content-Disposition: attachment` |
+
+**Companion enum:**
+
+`ExportFormat(str, Enum)` — `midi`, `json`, `musicxml`, `abc`, `wav`, `mp3`.
+
+**Companion TypedDict:**
+
+`ObjectIndexEntry(TypedDict)` — One entry in the JSON export object index (used in `format=json` responses).
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `object_id` | `str` | Muse Hub object ID |
+| `path` | `str` | Artifact path within the repo |
+| `size_bytes` | `int` | Stored artifact size in bytes |
+
+**Sentinel returns:** `export_repo_at_ref()` returns the string literal `"ref_not_found"` when
+the ref cannot be resolved to any known commit or branch, and `"no_matching_objects"` when
+no stored artifacts match the requested format + section filter. Route handlers convert
+these to HTTP 404.
 
 ---
 

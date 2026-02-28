@@ -293,6 +293,36 @@ Tool list and parameters: see [api.md](../reference/api.md#tools).
 
 ---
 
+### MuseHub browsing tools (`musehub_*`)
+
+Seven server-side MCP tools let AI agents browse MuseHub repositories, inspect commit history, read artifact metadata, and query musical context — all without a connected DAW. They are always executed server-side and never forwarded to the Stori app.
+
+| Tool | Purpose | Required args |
+|------|---------|---------------|
+| `musehub_browse_repo` | Overview: metadata, branches, 10 most-recent commits | `repo_id` |
+| `musehub_list_branches` | All branches with head commit IDs | `repo_id` |
+| `musehub_list_commits` | Paginated commits, newest first | `repo_id` (opt: `branch`, `limit`) |
+| `musehub_read_file` | Artifact metadata (path, size, MIME type) | `repo_id`, `object_id` |
+| `musehub_get_analysis` | Structured analysis — `overview`, `commits`, or `objects` dimension | `repo_id` (opt: `dimension`) |
+| `musehub_search` | Substring search by file path or commit message | `repo_id`, `query` (opt: `mode`) |
+| `musehub_get_context` | Full AI context document — the primary agent entry point | `repo_id` |
+
+**Recommended agent workflow:**
+
+```
+1. musehub_get_context(repo_id=...)   → orient the agent; get the full picture
+2. musehub_list_commits(...)          → inspect recent commit history
+3. musehub_search(query="bass", ...)  → find specific artifacts
+4. musehub_read_file(object_id=...)   → read artifact metadata
+5. musehub_get_analysis(dimension="objects")  → artifact inventory by type
+```
+
+**Error codes:** All tools return structured errors with `error_code` values: `not_found` (repo or object missing), `invalid_dimension` (bad analysis dimension), `invalid_mode` (bad search mode). The MCP server surfaces these as `is_error=True` responses; `invalid_dimension` and `invalid_mode` additionally set `bad_request=True`.
+
+**Musical analysis note:** The `musical_analysis` fields (key, tempo, time_signature) in `musehub_get_analysis` and `musehub_get_context` are `null` until Storpheus MIDI analysis integration is complete. Agents should handle `null` gracefully.
+
+---
+
 ### MCP MVP: prove it works
 
 You already have: HTTP endpoints (list/call with Bearer), stdio server (`maestro.mcp.stdio_server`), WebSocket for DAW, and server-side generation tools (e.g. `stori_generate_drums`) that run without a connected DAW. To **prove the MCP idea** end-to-end:
@@ -380,9 +410,10 @@ Start with (1); then (2) if you want to demo inside Cursor; then (3) when the ap
 
 **Next steps after MCP works in Cursor**
 
-1. **Confirm from Cursor** – In chat, list tools and call one (e.g. `stori_generate_drums` or, with a DAW connected, `stori_read_project`).
+1. **Confirm from Cursor** - In chat, list tools and call one (e.g. `stori_generate_drums` or, with a DAW connected, `stori_read_project`).
 2. **Wire WebSockets on the front end** – Stori app connects to `wss://<host>/api/v1/mcp/daw?token=<jwt>`, handles `tool_call` messages, runs the action in the DAW, and sends `tool_response` with `request_id` and `result`.
 3. **Test track icon/color from Cursor** – With the DAW connected over WebSocket, ask Cursor to change a track’s icon or color. Use `stori_set_track_icon` (e.g. `icon`: `pianokeys`, `guitars`, `music.note`) or `stori_set_track_color` (e.g. `color`: `blue`, `green`). The backend forwards these to the DAW; the app must implement the handlers and respond with `tool_response`.
+
 
 ---
 
@@ -447,3 +478,66 @@ async def get_context(repo_id: str, token: str, depth: str = "standard") -> dict
         response.raise_for_status()
         return response.json()
 ```
+
+---
+
+## Embedding MuseHub Compositions on External Sites
+
+MuseHub compositions can be embedded on any website using an `<iframe>`, like SoundCloud or Spotify embeds.
+
+### Embed URL
+
+```
+GET /musehub/ui/{repo_id}/embed/{ref}
+```
+
+| Segment   | Description                                       |
+|-----------|---------------------------------------------------|
+| `repo_id` | UUID of the MuseHub repository                    |
+| `ref`     | Commit SHA or branch name (e.g. `main`, `abc123`) |
+
+- **No auth required** — publicly accessible for any repo.
+- Sets `X-Frame-Options: ALLOWALL` so browsers allow cross-origin framing.
+
+**Example iframe:**
+
+```html
+<iframe
+  src="https://musehub.stori.app/musehub/ui/aaaabbbb-cccc-dddd-eeee-ffff00001111/embed/main"
+  width="560" height="152"
+  frameborder="0" allowtransparency="true" allow="autoplay" scrolling="no">
+</iframe>
+```
+
+### oEmbed Auto-Embedding
+
+MuseHub supports the [oEmbed standard](https://oembed.com/), enabling CMSes
+(Wordpress, Ghost, Notion) to auto-embed compositions when a URL is pasted.
+
+```
+GET /oembed?url={embed_url}&maxwidth={w}&maxheight={h}
+```
+
+| Parameter   | Type   | Default  | Description                                   |
+|-------------|--------|----------|-----------------------------------------------|
+| `url`       | string | required | The MuseHub embed URL to resolve              |
+| `maxwidth`  | int    | 560      | Maximum iframe width in pixels (100 to 1200)  |
+| `maxheight` | int    | 152      | Maximum iframe height in pixels (80 to 400)   |
+| `format`    | string | `json`   | Response format; only `json` is supported     |
+
+Returns `404` if the URL does not match the embed URL pattern.
+Returns `501` if `format=xml` is requested.
+
+### Player UI Elements
+
+| Element                  | Description                                     |
+|--------------------------|-------------------------------------------------|
+| Play/Pause button        | Toggles audio playback                          |
+| Progress bar             | Clickable seek; updates in real-time            |
+| Track title              | Filename of first audio object in the commit    |
+| Time display             | Current position and total duration             |
+| "View on Muse Hub" link  | Opens full repo browser in a new tab            |
+
+Audio is fetched from `/api/v1/musehub/repos/{repo_id}/objects` at load time.
+The first `mp3`, `ogg`, `wav`, or `m4a` file found is played.
+The widget is responsive and works from 300 px to full viewport width.

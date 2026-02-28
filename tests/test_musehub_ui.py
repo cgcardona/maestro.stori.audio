@@ -10,6 +10,12 @@ Covers the minimum acceptance criteria from issue #43 and issue #232:
 - test_context_includes_musical_state  — response includes active_tracks field
 - test_context_unknown_ref_404         — nonexistent ref returns 404
 
+Covers acceptance criteria from issue #244 (embed player):
+- test_embed_page_renders              — GET /musehub/ui/{repo_id}/embed/{ref} returns 200
+- test_embed_no_auth_required          — Public embed accessible without JWT
+- test_embed_page_x_frame_options      — Response sets X-Frame-Options: ALLOWALL
+- test_embed_page_contains_player_ui   — Player elements present in embed HTML
+
 UI routes require no JWT auth (they return HTML shells whose JS handles auth).
 The HTML content tests assert structural markers present in every rendered page.
 """
@@ -391,3 +397,65 @@ async def test_context_page_no_auth_required(
     response = await client.get(f"/musehub/ui/{repo_id}/context/{commit_id}")
     assert response.status_code != 401
     assert response.status_code == 200
+
+
+# ---------------------------------------------------------------------------
+# Embed player route tests (issue #244)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.anyio
+async def test_embed_page_renders(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """GET /musehub/ui/{repo_id}/embed/{ref} returns 200 HTML."""
+    repo_id = await _make_repo(db_session)
+    ref = "abc1234567890abcdef"
+    response = await client.get(f"/musehub/ui/{repo_id}/embed/{ref}")
+    assert response.status_code == 200
+    assert "text/html" in response.headers["content-type"]
+
+
+@pytest.mark.anyio
+async def test_embed_no_auth_required(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Embed page must be accessible without an Authorization header (public embedding)."""
+    repo_id = await _make_repo(db_session)
+    ref = "deadbeef1234"
+    response = await client.get(f"/musehub/ui/{repo_id}/embed/{ref}")
+    assert response.status_code != 401
+    assert response.status_code == 200
+
+
+@pytest.mark.anyio
+async def test_embed_page_x_frame_options(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Embed page must set X-Frame-Options: ALLOWALL to permit cross-origin framing."""
+    repo_id = await _make_repo(db_session)
+    ref = "cafebabe1234"
+    response = await client.get(f"/musehub/ui/{repo_id}/embed/{ref}")
+    assert response.status_code == 200
+    assert response.headers.get("x-frame-options") == "ALLOWALL"
+
+
+@pytest.mark.anyio
+async def test_embed_page_contains_player_ui(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Embed page HTML must contain player elements: play button, progress bar, and Muse Hub link."""
+    repo_id = await _make_repo(db_session)
+    ref = "feedface0123456789ab"
+    response = await client.get(f"/musehub/ui/{repo_id}/embed/{ref}")
+    assert response.status_code == 200
+    body = response.text
+    assert "play-btn" in body
+    assert "progress-bar" in body
+    assert "View on Muse Hub" in body
+    assert "audio" in body
+    assert repo_id in body
