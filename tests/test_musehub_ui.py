@@ -84,6 +84,15 @@ Covers issue #292 (rich event cards in activity feed):
 - test_feed_page_has_actor_avatar_logic      — actorAvatar / actorHsl helper present
 - test_feed_page_has_relative_timestamp      — fmtRelative called in card rendering
 
+Covers issue #293 (mark-as-read UX in activity feed):
+- test_feed_page_has_mark_one_read_function          — markOneRead() defined for per-card action
+- test_feed_page_has_mark_all_read_function          — markAllRead() defined for bulk action
+- test_feed_page_has_decrement_nav_badge_function    — decrementNavBadge() keeps badge in sync
+- test_feed_page_mark_read_btn_targets_notification_endpoint — calls POST /notifications/{id}/read
+- test_feed_page_mark_all_btn_targets_read_all_endpoint      — calls POST /notifications/read-all
+- test_feed_page_mark_all_btn_present_in_template    — mark-all-read-btn element in page HTML
+- test_feed_page_mark_read_updates_nav_badge         — nav-notif-badge updated after mark-all
+
 UI routes require no JWT auth (they return HTML shells whose JS handles auth).
 The HTML content tests assert structural markers present in every rendered page.
 
@@ -6303,6 +6312,92 @@ async def test_feed_page_has_relative_timestamp(
     response = await client.get("/musehub/ui/feed")
     assert response.status_code == 200
     assert "fmtRelative" in response.text
+
+
+# ---------------------------------------------------------------------------
+# Mark-as-read UX tests — issue #293
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.anyio
+async def test_feed_page_has_mark_one_read_function(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Feed page must define markOneRead() for per-notification mark-as-read."""
+    response = await client.get("/musehub/ui/feed")
+    assert response.status_code == 200
+    assert "markOneRead" in response.text
+
+
+@pytest.mark.anyio
+async def test_feed_page_has_mark_all_read_function(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Feed page must define markAllRead() for bulk mark-as-read."""
+    response = await client.get("/musehub/ui/feed")
+    assert response.status_code == 200
+    assert "markAllRead" in response.text
+
+
+@pytest.mark.anyio
+async def test_feed_page_has_decrement_nav_badge_function(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Feed page must define decrementNavBadge() to keep the nav badge in sync."""
+    response = await client.get("/musehub/ui/feed")
+    assert response.status_code == 200
+    assert "decrementNavBadge" in response.text
+
+
+@pytest.mark.anyio
+async def test_feed_page_mark_read_btn_targets_notification_endpoint(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """markOneRead() must call POST /notifications/{notif_id}/read."""
+    response = await client.get("/musehub/ui/feed")
+    assert response.status_code == 200
+    body = response.text
+    assert "/notifications/" in body
+    assert "mark-read-btn" in body
+
+
+@pytest.mark.anyio
+async def test_feed_page_mark_all_btn_targets_read_all_endpoint(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """markAllRead() must call POST /notifications/read-all."""
+    response = await client.get("/musehub/ui/feed")
+    assert response.status_code == 200
+    assert "read-all" in response.text
+
+
+@pytest.mark.anyio
+async def test_feed_page_mark_all_btn_present_in_template(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Feed page must render a 'Mark all as read' button element."""
+    response = await client.get("/musehub/ui/feed")
+    assert response.status_code == 200
+    assert "mark-all-read-btn" in response.text
+
+
+@pytest.mark.anyio
+async def test_feed_page_mark_read_updates_nav_badge(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """After marking all as read, page logic must update nav-notif-badge to hidden."""
+    response = await client.get("/musehub/ui/feed")
+    assert response.status_code == 200
+    body = response.text
+    assert "nav-notif-badge" in body
+    assert "decrementNavBadge" in body
 
 
 # ---------------------------------------------------------------------------

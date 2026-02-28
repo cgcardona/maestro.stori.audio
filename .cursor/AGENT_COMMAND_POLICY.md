@@ -70,7 +70,7 @@ Clear the existing allowlist entirely, then paste the block below into
 > commands in kickoff prompts must be written as single lines.
 
 ```
-ls, ls -la, ls -lah, ls -l, pwd, cat, head, tail, echo, true, false, wc, file, which, date, basename, dirname, printf, jq, sort, uniq, tr, awk, sed, cut, xargs, tee, rg, grep, find, mkdir, cp, mv, touch, ln -s, cd, sleep, python3 -c, python3 -m, REPO=, WTNAME=, DEV_SHA=, WT=, NUM=, TITLE=, BRANCH=, PRTREES=, WORKTREE=, ENTRY=, FOLLOW_UP_URL=, ISSUE_URL=, GH_REPO=, export GH_REPO=, declare -a, declare -a ISSUES=, declare -a PRS=, for entry in, for NUM in, for WT in, git status, git log, git diff, git show, git branch, git fetch, git fetch origin, git pull, git pull origin, git pull origin dev, git stash list, git worktree list, git ls-remote, git rev-parse, git ls-files, git merge-base, git describe, git cat-file, git config rerere.enabled, git -C, git -C /Users, git worktree list --porcelain, git bisect, git bisect start, git bisect bad, git bisect good, git bisect log, git bisect reset, git checkout -b, git checkout, git add, git add -A, git commit, git merge origin/dev, git merge, git stash, git stash pop, git stash apply, git restore, git restore --staged, git push origin, git push -u origin, git push origin --delete, git worktree add, git worktree add --detach, git worktree remove --force, git worktree prune, docker compose ps, docker compose logs, docker compose config, docker compose -f, docker ps, docker inspect, docker compose exec maestro mypy, docker compose exec maestro pytest, docker compose exec maestro sh -c, docker compose exec maestro python -m coverage, docker compose exec maestro python -c, docker compose exec maestro python3 -m, docker compose exec maestro ps, docker compose exec maestro ls, docker compose exec maestro cat, docker compose exec maestro rg, docker compose exec maestro grep, docker compose exec maestro find, docker compose exec maestro alembic history, docker compose exec maestro alembic current, docker compose exec maestro alembic heads, docker compose exec maestro alembic upgrade head, docker compose exec maestro python3, docker compose exec storpheus mypy, docker compose exec storpheus pytest, docker compose exec storpheus sh -c, docker compose exec storpheus ls, docker compose exec storpheus cat, docker compose exec storpheus rg, docker compose exec storpheus grep, docker compose exec storpheus python3, docker compose exec postgres psql, gh auth status, gh repo view, gh pr view, gh pr list, gh pr diff, gh pr create, gh pr checkout, gh pr merge, gh pr comment, gh pr review, gh issue view, gh issue list, gh issue create, gh issue close, gh issue comment, gh issue edit, gh label list, gh run list, gh run view, gh release list, gh release view, gh api, ps aux, ps -ef, pgrep, nc -z, curl, REPO=$(git, WTNAME=$(basename, DEV_SHA=$(git, WT=$HOME, BRANCH=$(git
+ls, ls -la, ls -lah, ls -l, pwd, cat, head, tail, echo, true, false, wc, file, which, date, basename, dirname, printf, jq, sort, uniq, tr, awk, sed, cut, xargs, tee, rg, grep, find, mkdir, cp, mv, touch, ln -s, cd, sleep, continue, python3 -c, python3 -m, REPO=, WTNAME=, DEV_SHA=, WT=, NUM=, TITLE=, BRANCH=, PRTREES=, WORKTREE=, ENTRY=, FOLLOW_UP_URL=, ISSUE_URL=, GH_REPO=, export GH_REPO=, declare -a, declare -a ISSUES=, declare -a PRS=, for entry in, for NUM in, for WT in, git status, git log, git diff, git show, git branch, git fetch, git fetch origin, git pull, git pull origin, git pull origin dev, git stash list, git worktree list, git ls-remote, git rev-parse, git ls-files, git merge-base, git describe, git cat-file, git config rerere.enabled, git -C, git -C /Users, git worktree list --porcelain, git bisect, git bisect start, git bisect bad, git bisect good, git bisect log, git bisect reset, git checkout -b, git checkout, git add, git add -A, git commit, git merge origin/dev, git merge, git stash, git stash pop, git stash apply, git restore, git restore --staged, git push origin, git push -u origin, git push origin --delete, git worktree add, git worktree add --detach, git worktree remove --force, git worktree prune, docker compose ps, docker compose logs, docker compose config, docker compose -f, docker ps, docker inspect, docker compose exec maestro mypy, docker compose exec maestro pytest, docker compose exec maestro sh -c, docker compose exec maestro python -m coverage, docker compose exec maestro python -c, docker compose exec maestro python3 -m, docker compose exec maestro ps, docker compose exec maestro ls, docker compose exec maestro cat, docker compose exec maestro rg, docker compose exec maestro grep, docker compose exec maestro find, docker compose exec maestro alembic history, docker compose exec maestro alembic current, docker compose exec maestro alembic heads, docker compose exec maestro alembic upgrade head, docker compose exec maestro python3, docker compose exec storpheus mypy, docker compose exec storpheus pytest, docker compose exec storpheus sh -c, docker compose exec storpheus ls, docker compose exec storpheus cat, docker compose exec storpheus rg, docker compose exec storpheus grep, docker compose exec storpheus python3, docker compose exec postgres psql, gh auth status, gh repo view, gh pr view, gh pr list, gh pr diff, gh pr create, gh pr edit, gh pr checkout, gh pr merge, gh pr comment, gh pr review, gh issue view, gh issue list, gh issue create, gh issue close, gh issue comment, gh issue edit, gh label list, gh run list, gh run view, gh release list, gh release view, gh api, ps aux, ps -ef, pgrep, nc -z, curl, REPO=$(git, WTNAME=$(basename, DEV_SHA=$(git, WT=$HOME, BRANCH=$(git
 ```
 
 ---
@@ -87,6 +87,7 @@ tail -n N <file>              ← file inspection ONLY (never to filter test out
 echo
 true                          ← null-op; used as || true for safe error suppression in scripts
 false                         ← null-op complement; used in boolean control flow
+continue                      ← bash loop control (skip to next iteration); used in for loops
 wc / wc -l
 file <path>
 which <cmd>
@@ -175,9 +176,13 @@ git bisect reset
 
 ### Git — Config (rerere only — limited to this one safe key)
 ```
-git config rerere.enabled true   ← coordinator setup only; enables conflict-resolution cache
-                                  ← must be on the allowlist so it runs outside sandbox
-                                  ← ALL other git config writes are Yellow tier
+git config rerere.enabled true || true   ← coordinator setup only; enables conflict-resolution cache
+                                          ← the || true is intentional: when this command runs as
+                                          ← part of a multi-statement script block, Cursor sandboxes
+                                          ← the whole block, and the sandbox blocks .git/config writes
+                                          ← with EPERM. rerere is an optimization (not critical path),
+                                          ← so failure must be non-fatal. ALL other git config writes
+                                          ← are Yellow tier.
 ```
 
 ### Git — Safe Writes (worktree scope only — never touching dev/main directly)
@@ -228,6 +233,10 @@ gh api <GET-endpoint>              ← read-only API calls only
 ```
 gh pr checkout <N>                 ← checkout into own worktree
 gh pr create --title "..." --body "..."
+gh pr edit <N> [--base <branch>] [--title "..."] [--body "..."] [--add-label "..."]
+                                   ← safe write; needed to retarget base branch or update PR metadata
+                                   ← must be on allowlist: runs a GraphQL mutation (POST api.github.com/graphql)
+                                   ← which the sandbox blocks for non-allowlisted commands
 gh pr merge <N> --squash                   ← ONLY after "Grade: X / Approved" output; never --delete-branch (breaks with multi-worktree)
 gh pr comment <N> --body "..."
 gh pr review <N> [--approve | --request-changes | --comment]
