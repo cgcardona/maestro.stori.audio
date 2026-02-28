@@ -11,6 +11,7 @@ import typer
 from maestro.muse_cli.commands import (
     checkout,
     commit,
+    dynamics,
     init,
     log,
     merge,
@@ -31,6 +32,7 @@ cli = typer.Typer(
 
 cli.add_typer(init.app, name="init", help="Initialise a new Muse repository.")
 cli.add_typer(status.app, name="status", help="Show working-tree drift against HEAD.")
+cli.add_typer(dynamics.app, name="dynamics", help="Analyse the dynamic (velocity) profile of a commit.")
 cli.add_typer(commit.app, name="commit", help="Record a new variation in history.")
 cli.add_typer(log.app, name="log", help="Display the variation history graph.")
 cli.add_typer(checkout.app, name="checkout", help="Checkout a historical variation.")
