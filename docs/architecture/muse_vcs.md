@@ -1531,6 +1531,63 @@ keyword match · threshold 0.60 · limit 5
 
 ---
 
+### `muse revert`
+
+**Purpose:** Create a new commit that undoes a prior commit without rewriting history. The safe undo: given commit C with parent P, `muse revert <commit>` creates a forward commit whose snapshot is P's state (the world before C was applied). An AI agent uses this after discovering a committed arrangement degraded the score — rather than resetting (which loses history), the revert preserves the full audit trail.
+
+**Usage:**
+```bash
+muse revert <commit> [OPTIONS]
+```
+
+**Flags:**
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `COMMIT` | positional | required | Commit ID to revert (full or abbreviated SHA) |
+| `--no-commit` | flag | off | Apply the inverse changes to muse-work/ without creating a new commit |
+| `--track TEXT` | string | — | Scope the revert to paths under `tracks/<track>/` only |
+| `--section TEXT` | string | — | Scope the revert to paths under `sections/<section>/` only |
+
+**Output example (full revert):**
+```
+✅ [main a1b2c3d4] Revert 'bad drum arrangement'
+```
+
+**Output example (scoped revert):**
+```
+✅ [main b2c3d4e5] Revert 'bad drum arrangement' (scoped to 2 path(s))
+```
+
+**Output example (--no-commit):**
+```
+✅ Staged revert (--no-commit). Files removed:
+   deleted: tracks/drums/fill.mid
+```
+
+**Result type:** `RevertResult` (dataclass, frozen) — fields:
+- `commit_id` (str): New commit ID (empty string when `--no-commit` or noop).
+- `target_commit_id` (str): Commit that was reverted.
+- `parent_commit_id` (str): Parent of the reverted commit (whose snapshot was restored).
+- `revert_snapshot_id` (str): Snapshot ID of the reverted state.
+- `message` (str): Auto-generated commit message (`"Revert '<original message>'"`)
+- `no_commit` (bool): Whether the revert was staged only.
+- `noop` (bool): True when reverting would produce no change.
+- `scoped_paths` (tuple[str, ...]): Paths selectively reverted (empty = full revert).
+- `paths_deleted` (tuple[str, ...]): Files removed from muse-work/ during `--no-commit`.
+- `paths_missing` (tuple[str, ...]): Files that could not be auto-restored (no object bytes).
+- `branch` (str): Branch on which the revert commit was created.
+
+**Agent use case:** An agent that evaluates generated arrangements after each commit can run `muse log --json` to detect quality regressions, then call `muse revert <bad_commit>` to undo the offending commit and resume generation from the prior good state. For instrument-specific corrections, `--track drums` limits the revert to drum tracks only, preserving bass and melodic changes.
+
+**Blocking behaviour:** Blocked during an in-progress merge with unresolved conflicts — exits 1 with a clear message directing the user to resolve conflicts first.
+
+**Object store limitation:** The Muse CLI stores file manifests (path→sha256) in Postgres but does not retain raw file bytes. For `--no-commit`, files that should be restored but whose bytes are no longer in `muse-work/` are listed as warnings in `paths_missing`. The commit-only path (default) is unaffected — it references an existing snapshot ID directly with no file restoration needed.
+
+**Implementation:** `maestro/muse_cli/commands/revert.py` (Typer CLI), `maestro/services/muse_revert.py` (`_revert_async`, `compute_revert_manifest`, `apply_revert_to_workdir`, `RevertResult`).
+
+---
+
 ### `muse grep`
 
 **Purpose:** Search all commits for a musical pattern — a note sequence, interval
