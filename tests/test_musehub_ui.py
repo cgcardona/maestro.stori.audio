@@ -143,8 +143,8 @@ async def test_ui_repo_page_returns_200(
     # Verify shared chrome is present
     assert "Muse Hub" in body
     assert repo_id[:8] in body
-    # Verify page-specific JS is injected
-    assert "branch-sel" in body or "All branches" in body
+    # Verify page-specific JS is injected (repo home page — stats bar + audio player)
+    assert "stats-bar" in body or "loadStats" in body
 
 
 @pytest.mark.anyio
@@ -2492,6 +2492,94 @@ async def test_motifs_page_shows_transformation_badges(
     body = response.text
     assert "transformationsHtml" in body
     assert "inversion" in body
+
+
+# ---------------------------------------------------------------------------
+# Repo home page — issue #203
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.anyio
+async def test_repo_home_shows_name_and_owner(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """GET /musehub/ui/{owner}/{repo_slug} renders HTML with owner name and repo slug."""
+    await _make_repo(db_session)
+    response = await client.get("/musehub/ui/testuser/test-beats")
+    assert response.status_code == 200
+    assert "text/html" in response.headers["content-type"]
+    body = response.text
+    assert "Muse Hub" in body
+    assert "testuser" in body
+    assert "test-beats" in body
+
+
+@pytest.mark.anyio
+async def test_repo_home_shows_stats(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Repo home page embeds JS that fetches and renders the stats bar."""
+    await _make_repo(db_session)
+    response = await client.get("/musehub/ui/testuser/test-beats")
+    assert response.status_code == 200
+    body = response.text
+    # Stats bar container and JS that populates it must be present.
+    assert "stats-bar" in body
+    assert "loadStats" in body
+
+
+@pytest.mark.anyio
+async def test_repo_home_recent_commits(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Repo home page embeds JS that renders the recent commits section."""
+    await _make_repo(db_session)
+    response = await client.get("/musehub/ui/testuser/test-beats")
+    assert response.status_code == 200
+    body = response.text
+    assert "recent-commits" in body
+    assert "loadRecentCommits" in body
+
+
+@pytest.mark.anyio
+async def test_repo_home_json_response(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """GET /musehub/ui/{owner}/{repo_slug} with Accept: application/json returns stats + commits."""
+    await _make_repo(db_session)
+    response = await client.get(
+        "/musehub/ui/testuser/test-beats",
+        headers={"Accept": "application/json"},
+    )
+    assert response.status_code == 200
+    assert "application/json" in response.headers["content-type"]
+    data = response.json()
+    assert "stats" in data
+    assert "recent_commits" in data
+    stats = data["stats"]
+    assert "commit_count" in stats
+    assert "branch_count" in stats
+    assert "release_count" in stats
+    assert isinstance(stats["commit_count"], int)
+
+
+@pytest.mark.anyio
+async def test_repo_home_audio_player(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Repo home page embeds the audio player section and JS loader."""
+    await _make_repo(db_session)
+    response = await client.get("/musehub/ui/testuser/test-beats")
+    assert response.status_code == 200
+    body = response.text
+    # The audio player section container and its JS loader must be in the page.
+    assert "audio-player-section" in body
+    assert "loadAudioPlayer" in body
 
 
 # ---------------------------------------------------------------------------
