@@ -1901,6 +1901,93 @@ keyword match · threshold 0.60 · limit 5
 
 ---
 
+### `muse stash`
+
+**Purpose:** Temporarily shelve uncommitted muse-work/ changes so the producer can switch context without losing work-in-progress. Push saves the current working state into a filesystem stack (`.muse/stash/`) and restores HEAD; pop brings it back. An AI agent uses this when it needs to checkpoint partial generation state, switch to a different branch task, then resume exactly where it left off.
+
+**Usage:**
+```bash
+muse stash [push] [OPTIONS]      # save + restore HEAD (default subcommand)
+muse stash push [OPTIONS]        # explicit push
+muse stash pop [stash@{N}]       # apply + drop most recent entry
+muse stash apply [stash@{N}]     # apply without dropping
+muse stash list                  # list all entries
+muse stash drop [stash@{N}]      # remove a specific entry
+muse stash clear [--yes]         # remove all entries
+```
+
+**Flags (push):**
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--message / -m TEXT` | string | `"On <branch>: stash"` | Label for this stash entry |
+| `--track TEXT` | string | — | Scope to `tracks/<track>/` paths only |
+| `--section TEXT` | string | — | Scope to `sections/<section>/` paths only |
+
+**Flags (clear):**
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--yes / -y` | flag | off | Skip confirmation prompt |
+
+**Output example (push):**
+```
+Saved working directory and index state stash@{0}
+On main: half-finished chorus rearrangement
+```
+
+**Output example (pop):**
+```
+✅ Applied stash@{0}: On main: half-finished chorus rearrangement
+   3 file(s) restored.
+Dropped stash@{0}
+```
+
+**Output example (list):**
+```
+stash@{0}: On main: WIP chorus changes
+stash@{1}: On main: drums experiment
+```
+
+**Result types:**
+
+`StashPushResult` (dataclass, frozen) — fields:
+- `stash_ref` (str): Human label (e.g. `"stash@{0}"`); empty string when nothing was stashed.
+- `message` (str): Label stored in the entry.
+- `branch` (str): Branch name at the time of push.
+- `files_stashed` (int): Number of files saved into the stash.
+- `head_restored` (bool): Whether HEAD snapshot was restored to muse-work/.
+- `missing_head` (tuple[str, ...]): Paths that could not be restored from the object store after push.
+
+`StashApplyResult` (dataclass, frozen) — fields:
+- `stash_ref` (str): Human label of the entry that was applied.
+- `message` (str): The entry's label.
+- `files_applied` (int): Number of files written to muse-work/.
+- `missing` (tuple[str, ...]): Paths whose object bytes were absent from the store.
+- `dropped` (bool): True when the entry was removed (pop); False for apply.
+
+`StashEntry` (dataclass, frozen) — fields:
+- `stash_id` (str): Unique filesystem stem.
+- `index` (int): Position in the stack (0 = most recent).
+- `branch` (str): Branch at the time of stash.
+- `message` (str): Human label.
+- `created_at` (str): ISO-8601 timestamp.
+- `manifest` (dict[str, str]): `{rel_path: sha256_object_id}` of stashed files.
+- `track` (str | None): Track scope used during push (or None).
+- `section` (str | None): Section scope used during push (or None).
+
+**Storage:** Filesystem-only. Each entry is a JSON file in `.muse/stash/stash-<timestamp>-<uuid8>.json`. File content is preserved in the existing `.muse/objects/<oid[:2]>/<oid[2:]>` content-addressed blob store (same layout as `muse commit` and `muse reset --hard`). No Postgres rows are written.
+
+**Agent use case:** An AI composition agent mid-generation on the chorus wants to quickly address a client request on the intro. It calls `muse stash` to save the in-progress chorus state (files + object blobs), then `muse checkout intro-branch` to switch context, makes the intro fix, then returns and calls `muse stash pop` to restore the chorus work exactly as it was. For scoped saves, `--track drums` limits the stash to drum files only, leaving other tracks untouched in muse-work/.
+
+**Conflict strategy on apply:** Last-write-wins. Files in muse-work/ not in the stash manifest are left untouched. Files whose objects are missing from the store are reported in `missing` but do not abort the operation.
+
+**Stack ordering:** `stash@{0}` is always the most recently pushed entry. `stash@{N}` refers to the Nth entry in reverse chronological order. Multiple `push` calls build a stack; `pop` always takes from the top.
+
+**Implementation:** `maestro/muse_cli/commands/stash.py` (Typer CLI with subcommands), `maestro/services/muse_stash.py` (`push_stash`, `apply_stash`, `list_stash`, `drop_stash`, `clear_stash`, result types).
+
+---
+
 ### `muse revert`
 
 **Purpose:** Create a new commit that undoes a prior commit without rewriting history. The safe undo: given commit C with parent P, `muse revert <commit>` creates a forward commit whose snapshot is P's state (the world before C was applied). An AI agent uses this after discovering a committed arrangement degraded the score — rather than resetting (which loses history), the revert preserves the full audit trail.
