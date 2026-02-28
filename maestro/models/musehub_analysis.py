@@ -405,7 +405,7 @@ class EmotionMapResponse(CamelModel):
     )
 
     # Attribution
-    source: str = Field(
+    source: Literal["explicit", "inferred", "mixed"] = Field(
         ...,
         description="How emotion was determined: 'explicit' (tags), 'inferred' (model), or 'mixed'",
     )
