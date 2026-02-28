@@ -7,6 +7,12 @@ Covers acceptance criteria from issue #38:
 - ``.muse/remotes/origin/<branch>`` is updated after a successful pull.
 - Divergence message is printed (exit 0) when branches have diverged.
 
+Covers acceptance criteria from issue #77 (new remote sync flags):
+- ``muse pull --rebase``: fast-forwards local branch when remote is ahead.
+- ``muse pull --rebase``: rebases local commits when branches have diverged.
+- ``muse pull --ff-only``: fast-forwards local branch when remote is ahead.
+- ``muse pull --ff-only``: exits 1 when branches have diverged.
+
 All HTTP calls are mocked — no live network required.
 DB calls use the in-memory SQLite fixture from conftest.py where needed.
 """
@@ -533,3 +539,356 @@ async def test_push_pull_roundtrip(tmp_path: pathlib.Path) -> None:
 
     # dir_b now has the remote head from the push
     assert get_remote_head("origin", "main", dir_b) == head_id
+
+
+# ---------------------------------------------------------------------------
+# Issue #77 — new pull flags: --ff-only and --rebase
+# ---------------------------------------------------------------------------
+
+
+def _make_hub_session_patches(
+    local_commits: list[object] | None = None,
+    mock_store_commit: bool = True,
+) -> tuple[AsyncMock, AsyncMock, AsyncMock, AsyncMock, MagicMock]:
+    """Build the standard DB mock patches for pull tests.
+
+    Returns (mock_get_commits, mock_get_objects, mock_store_commit,
+    mock_store_object, mock_session_ctx).
+    """
+    mock_get_commits = AsyncMock(return_value=local_commits or [])
+    mock_get_objects = AsyncMock(return_value=[])
+    mock_sc = AsyncMock(return_value=True if mock_store_commit else False)
+    mock_so = AsyncMock(return_value=False)
+    ctx = MagicMock()
+    ctx.__aenter__ = AsyncMock(return_value=MagicMock())
+    ctx.__aexit__ = AsyncMock(return_value=None)
+    return mock_get_commits, mock_get_objects, mock_sc, mock_so, ctx
+
+
+@pytest.mark.anyio
+async def test_pull_ff_only_fast_forwards_when_remote_ahead(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """--ff-only updates local branch ref when remote HEAD is a fast-forward.
+
+    Regression for issue #77: pulling with --ff-only when remote is strictly
+    ahead of local should advance the local branch ref without merge.
+    """
+    root = _init_repo(tmp_path)
+    _write_config_with_token(root, "https://hub.example.com/musehub/repos/r")
+
+    local_commit_id = "local-base-001" * 4
+    remote_head_id = "remote-tip-002" * 4
+
+    # Write local branch ref at the base commit
+    _write_branch_ref(root, "main", local_commit_id)
+
+    # Remote is strictly ahead: local commit IS an ancestor of remote_head
+    # Simulate this by providing all commits in the DB including remote commit
+    local_commit_stub = _make_commit_stub(local_commit_id)
+    remote_commit_stub = _make_commit_stub(remote_head_id, parent_id=local_commit_id)
+
+    mock_response = _make_hub_pull_response(
+        remote_head=remote_head_id,
+        diverged=False,
+    )
+
+    mock_hub = MagicMock()
+    mock_hub.__aenter__ = AsyncMock(return_value=mock_hub)
+    mock_hub.__aexit__ = AsyncMock(return_value=None)
+    mock_hub.post = AsyncMock(return_value=mock_response)
+
+    all_commits = [remote_commit_stub, local_commit_stub]
+
+    with (
+        patch(
+            "maestro.muse_cli.commands.pull.get_commits_for_branch",
+            new=AsyncMock(return_value=all_commits),
+        ),
+        patch(
+            "maestro.muse_cli.commands.pull.get_all_object_ids",
+            new=AsyncMock(return_value=[]),
+        ),
+        patch(
+            "maestro.muse_cli.commands.pull.store_pulled_commit",
+            new=AsyncMock(return_value=False),
+        ),
+        patch(
+            "maestro.muse_cli.commands.pull.store_pulled_object",
+            new=AsyncMock(return_value=False),
+        ),
+        patch("maestro.muse_cli.commands.pull.open_session") as mock_open_session,
+        patch("maestro.muse_cli.commands.pull.MuseHubClient", return_value=mock_hub),
+    ):
+        ctx = MagicMock()
+        ctx.__aenter__ = AsyncMock(return_value=MagicMock())
+        ctx.__aexit__ = AsyncMock(return_value=None)
+        mock_open_session.return_value = ctx
+
+        await _pull_async(root=root, remote_name="origin", branch=None, ff_only=True)
+
+    # Local branch ref must have been fast-forwarded to remote_head
+    ref_path = root / ".muse" / "refs" / "heads" / "main"
+    assert ref_path.exists()
+    assert ref_path.read_text(encoding="utf-8").strip() == remote_head_id
+
+    captured = capsys.readouterr()
+    assert "fast-forward" in captured.out.lower()
+
+
+@pytest.mark.anyio
+async def test_pull_ff_only_fails_when_not_ff(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """--ff-only exits 1 when branches have diverged (cannot fast-forward).
+
+    Regression for issue #77: pulling with --ff-only must refuse to integrate
+    when the remote and local branches have diverged.
+    """
+    import typer
+
+    root = _init_repo(tmp_path)
+    _write_config_with_token(root, "https://hub.example.com/musehub/repos/r")
+
+    local_head_id = "local-diverged-001" * 3
+    remote_head_id = "remote-diverged-002" * 3
+    _write_branch_ref(root, "main", local_head_id)
+
+    # Both branches diverged — neither is ancestor of the other
+    local_commit = _make_commit_stub(local_head_id)
+    remote_commit = _make_commit_stub(remote_head_id)
+
+    mock_response = _make_hub_pull_response(
+        remote_head=remote_head_id,
+        diverged=True,
+    )
+
+    mock_hub = MagicMock()
+    mock_hub.__aenter__ = AsyncMock(return_value=mock_hub)
+    mock_hub.__aexit__ = AsyncMock(return_value=None)
+    mock_hub.post = AsyncMock(return_value=mock_response)
+
+    with (
+        patch(
+            "maestro.muse_cli.commands.pull.get_commits_for_branch",
+            new=AsyncMock(return_value=[local_commit, remote_commit]),
+        ),
+        patch(
+            "maestro.muse_cli.commands.pull.get_all_object_ids",
+            new=AsyncMock(return_value=[]),
+        ),
+        patch(
+            "maestro.muse_cli.commands.pull.store_pulled_commit",
+            new=AsyncMock(return_value=False),
+        ),
+        patch(
+            "maestro.muse_cli.commands.pull.store_pulled_object",
+            new=AsyncMock(return_value=False),
+        ),
+        patch("maestro.muse_cli.commands.pull.open_session") as mock_open_session,
+        patch("maestro.muse_cli.commands.pull.MuseHubClient", return_value=mock_hub),
+    ):
+        ctx = MagicMock()
+        ctx.__aenter__ = AsyncMock(return_value=MagicMock())
+        ctx.__aexit__ = AsyncMock(return_value=None)
+        mock_open_session.return_value = ctx
+
+        with pytest.raises(typer.Exit) as exc_info:
+            await _pull_async(
+                root=root, remote_name="origin", branch=None, ff_only=True
+            )
+
+    assert exc_info.value.exit_code == int(ExitCode.USER_ERROR)
+    captured = capsys.readouterr()
+    assert "diverged" in captured.out.lower() or "cannot fast-forward" in captured.out.lower()
+
+    # Local branch ref must NOT have been changed
+    ref_path = root / ".muse" / "refs" / "heads" / "main"
+    assert ref_path.read_text(encoding="utf-8").strip() == local_head_id
+
+
+@pytest.mark.anyio
+async def test_pull_rebase_fast_forwards_when_remote_ahead(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """--rebase fast-forwards local branch when remote is strictly ahead.
+
+    Regression for issue #77: when remote is simply ahead (no local commits
+    above the common base), --rebase acts like a fast-forward.
+    """
+    root = _init_repo(tmp_path)
+    _write_config_with_token(root, "https://hub.example.com/musehub/repos/r")
+
+    local_commit_id = "rebase-base-001" * 4
+    remote_head_id = "rebase-tip-002" * 4
+    _write_branch_ref(root, "main", local_commit_id)
+
+    local_commit_stub = _make_commit_stub(local_commit_id)
+    remote_commit_stub = _make_commit_stub(remote_head_id, parent_id=local_commit_id)
+
+    mock_response = _make_hub_pull_response(
+        remote_head=remote_head_id,
+        diverged=False,
+    )
+
+    mock_hub = MagicMock()
+    mock_hub.__aenter__ = AsyncMock(return_value=mock_hub)
+    mock_hub.__aexit__ = AsyncMock(return_value=None)
+    mock_hub.post = AsyncMock(return_value=mock_response)
+
+    all_commits = [remote_commit_stub, local_commit_stub]
+
+    with (
+        patch(
+            "maestro.muse_cli.commands.pull.get_commits_for_branch",
+            new=AsyncMock(return_value=all_commits),
+        ),
+        patch(
+            "maestro.muse_cli.commands.pull.get_all_object_ids",
+            new=AsyncMock(return_value=[]),
+        ),
+        patch(
+            "maestro.muse_cli.commands.pull.store_pulled_commit",
+            new=AsyncMock(return_value=False),
+        ),
+        patch(
+            "maestro.muse_cli.commands.pull.store_pulled_object",
+            new=AsyncMock(return_value=False),
+        ),
+        patch("maestro.muse_cli.commands.pull.open_session") as mock_open_session,
+        patch("maestro.muse_cli.commands.pull.MuseHubClient", return_value=mock_hub),
+    ):
+        ctx = MagicMock()
+        ctx.__aenter__ = AsyncMock(return_value=MagicMock())
+        ctx.__aexit__ = AsyncMock(return_value=None)
+        mock_open_session.return_value = ctx
+
+        await _pull_async(root=root, remote_name="origin", branch=None, rebase=True)
+
+    # Branch ref advanced to remote_head
+    ref_path = root / ".muse" / "refs" / "heads" / "main"
+    assert ref_path.read_text(encoding="utf-8").strip() == remote_head_id
+
+    captured = capsys.readouterr()
+    assert "fast-forward" in captured.out.lower()
+
+
+@pytest.mark.anyio
+async def test_pull_rebase_sends_rebase_hint_in_request(
+    tmp_path: pathlib.Path,
+) -> None:
+    """--rebase flag includes rebase=True in the pull request payload."""
+    root = _init_repo(tmp_path)
+    _write_config_with_token(root, "https://hub.example.com/musehub/repos/r")
+
+    remote_head_id = "rebase-tip-hint" * 4
+    captured_payloads: list[dict[str, object]] = []
+
+    mock_response = _make_hub_pull_response(remote_head=remote_head_id, diverged=False)
+
+    mock_hub = MagicMock()
+    mock_hub.__aenter__ = AsyncMock(return_value=mock_hub)
+    mock_hub.__aexit__ = AsyncMock(return_value=None)
+
+    async def _fake_post(path: str, **kwargs: object) -> MagicMock:
+        payload = kwargs.get("json", {})
+        if isinstance(payload, dict):
+            captured_payloads.append(payload)
+        return mock_response
+
+    mock_hub.post = _fake_post
+
+    with (
+        patch(
+            "maestro.muse_cli.commands.pull.get_commits_for_branch",
+            new=AsyncMock(return_value=[]),
+        ),
+        patch(
+            "maestro.muse_cli.commands.pull.get_all_object_ids",
+            new=AsyncMock(return_value=[]),
+        ),
+        patch(
+            "maestro.muse_cli.commands.pull.store_pulled_commit",
+            new=AsyncMock(return_value=False),
+        ),
+        patch(
+            "maestro.muse_cli.commands.pull.store_pulled_object",
+            new=AsyncMock(return_value=False),
+        ),
+        patch("maestro.muse_cli.commands.pull.open_session") as mock_open_session,
+        patch("maestro.muse_cli.commands.pull.MuseHubClient", return_value=mock_hub),
+    ):
+        ctx = MagicMock()
+        ctx.__aenter__ = AsyncMock(return_value=MagicMock())
+        ctx.__aexit__ = AsyncMock(return_value=None)
+        mock_open_session.return_value = ctx
+
+        await _pull_async(root=root, remote_name="origin", branch=None, rebase=True)
+
+    assert len(captured_payloads) == 1
+    assert captured_payloads[0].get("rebase") is True
+
+
+@pytest.mark.anyio
+async def test_pull_ff_only_sends_ff_only_hint_in_request(
+    tmp_path: pathlib.Path,
+) -> None:
+    """--ff-only flag includes ff_only=True in the pull request payload."""
+    root = _init_repo(tmp_path)
+    _write_config_with_token(root, "https://hub.example.com/musehub/repos/r")
+
+    remote_head_id = "ff-only-tip-hint" * 4
+    _write_branch_ref(root, "main", remote_head_id)
+    captured_payloads: list[dict[str, object]] = []
+
+    # Remote is same as local — no divergence, ff trivially satisfied
+    local_stub = _make_commit_stub(remote_head_id)
+    mock_response = _make_hub_pull_response(
+        remote_head=remote_head_id,
+        diverged=False,
+    )
+
+    mock_hub = MagicMock()
+    mock_hub.__aenter__ = AsyncMock(return_value=mock_hub)
+    mock_hub.__aexit__ = AsyncMock(return_value=None)
+
+    async def _fake_post(path: str, **kwargs: object) -> MagicMock:
+        payload = kwargs.get("json", {})
+        if isinstance(payload, dict):
+            captured_payloads.append(payload)
+        return mock_response
+
+    mock_hub.post = _fake_post
+
+    with (
+        patch(
+            "maestro.muse_cli.commands.pull.get_commits_for_branch",
+            new=AsyncMock(return_value=[local_stub]),
+        ),
+        patch(
+            "maestro.muse_cli.commands.pull.get_all_object_ids",
+            new=AsyncMock(return_value=[]),
+        ),
+        patch(
+            "maestro.muse_cli.commands.pull.store_pulled_commit",
+            new=AsyncMock(return_value=False),
+        ),
+        patch(
+            "maestro.muse_cli.commands.pull.store_pulled_object",
+            new=AsyncMock(return_value=False),
+        ),
+        patch("maestro.muse_cli.commands.pull.open_session") as mock_open_session,
+        patch("maestro.muse_cli.commands.pull.MuseHubClient", return_value=mock_hub),
+    ):
+        ctx = MagicMock()
+        ctx.__aenter__ = AsyncMock(return_value=MagicMock())
+        ctx.__aexit__ = AsyncMock(return_value=None)
+        mock_open_session.return_value = ctx
+
+        await _pull_async(root=root, remote_name="origin", branch=None, ff_only=True)
+
+    assert len(captured_payloads) == 1
+    assert captured_payloads[0].get("ff_only") is True
