@@ -713,7 +713,7 @@ async def test_context_page_contains_agent_explainer(
 ) -> None:
     """Context viewer page includes the 'What the Agent Sees' explainer card."""
     repo_id, commit_id = await _make_repo_with_commit(db_session)
-    response = await client.get(f"/musehub/ui/{repo_id}/context/{commit_id}")
+    response = await client.get(f"/musehub/ui/testuser/jazz-context-test/context/{commit_id}")
     assert response.status_code == 200
     body = response.text
     assert "What the Agent Sees" in body
