@@ -50,6 +50,7 @@ _REPO_VALID_MODES = frozenset({"property", "ask", "keyword", "pattern"})
 @router.get(
     "/search",
     response_model=GlobalSearchResult,
+    operation_id="globalSearch",
     summary="Global cross-repo search across all public Muse Hub repos",
 )
 async def global_search(
@@ -105,6 +106,7 @@ async def global_search(
 @router.get(
     "/search/similar",
     response_model=SimilarSearchResponse,
+    operation_id="searchSimilar",
     summary="Find musically similar commits across public repos",
 )
 async def search_similar(
@@ -172,6 +174,7 @@ async def search_similar(
 @router.get(
     "/repos/{repo_id}/search",
     response_model=SearchResponse,
+    operation_id="searchRepo",
     summary="Search Muse repo commits",
 )
 async def search_repo(

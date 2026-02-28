@@ -37,6 +37,7 @@ router = APIRouter()
     "/repos/{repo_id}/webhooks",
     response_model=WebhookResponse,
     status_code=status.HTTP_201_CREATED,
+    operation_id="createWebhook",
     summary="Register a webhook subscription for a repo",
 )
 async def create_webhook(
@@ -76,6 +77,7 @@ async def create_webhook(
 @router.get(
     "/repos/{repo_id}/webhooks",
     response_model=WebhookListResponse,
+    operation_id="listWebhooks",
     summary="List webhook subscriptions for a repo",
 )
 async def list_webhooks(
@@ -95,6 +97,7 @@ async def list_webhooks(
 @router.delete(
     "/repos/{repo_id}/webhooks/{webhook_id}",
     status_code=status.HTTP_204_NO_CONTENT,
+    operation_id="deleteWebhook",
     summary="Delete a webhook subscription",
 )
 async def delete_webhook(
@@ -117,6 +120,7 @@ async def delete_webhook(
 @router.get(
     "/repos/{repo_id}/webhooks/{webhook_id}/deliveries",
     response_model=WebhookDeliveryListResponse,
+    operation_id="listWebhookDeliveries",
     summary="List delivery history for a webhook",
 )
 async def list_deliveries(

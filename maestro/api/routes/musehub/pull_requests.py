@@ -39,6 +39,7 @@ router = APIRouter()
     "/repos/{repo_id}/pull-requests",
     response_model=PRResponse,
     status_code=status.HTTP_201_CREATED,
+    operation_id="createPullRequest",
     summary="Open a pull request against a Muse Hub repo",
 )
 async def create_pull_request(
@@ -99,6 +100,7 @@ async def create_pull_request(
 @router.get(
     "/repos/{repo_id}/pull-requests",
     response_model=PRListResponse,
+    operation_id="listPullRequests",
     summary="List pull requests for a Muse Hub repo",
 )
 async def list_pull_requests(
@@ -131,6 +133,7 @@ async def list_pull_requests(
 @router.get(
     "/repos/{repo_id}/pull-requests/{pr_id}",
     response_model=PRResponse,
+    operation_id="getPullRequest",
     summary="Get a single pull request by ID",
 )
 async def get_pull_request(
@@ -158,6 +161,7 @@ async def get_pull_request(
 @router.post(
     "/repos/{repo_id}/pull-requests/{pr_id}/merge",
     response_model=PRMergeResponse,
+    operation_id="mergePullRequest",
     summary="Merge an open pull request",
 )
 async def merge_pull_request(

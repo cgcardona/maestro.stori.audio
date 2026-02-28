@@ -19,13 +19,32 @@ from maestro.models.base import CamelModel
 class CommitInput(CamelModel):
     """A single commit record transferred in a push payload."""
 
-    commit_id: str
-    parent_ids: list[str] = Field(default_factory=list)
-    message: str
-    snapshot_id: str | None = None
-    timestamp: datetime
+    commit_id: str = Field(
+        ...,
+        description="Content-addressed commit ID (e.g. SHA-256 hex)",
+        examples=["a3f8c1d2e4b5"],
+    )
+    parent_ids: list[str] = Field(
+        default_factory=list,
+        description="Parent commit IDs; empty for the initial commit",
+        examples=[["b2a7d9e1c3f4"]],
+    )
+    message: str = Field(
+        ...,
+        description="Musical commit message describing the compositional change",
+        examples=["Add dominant 7th chord progression in the bridge — Fm7→Bb7→EbMaj7"],
+    )
+    snapshot_id: str | None = Field(
+        default=None,
+        description="Optional snapshot ID linking this commit to a stored MIDI artifact",
+    )
+    timestamp: datetime = Field(..., description="Commit creation time (ISO-8601 UTC)")
     # Optional -- falls back to the JWT ``sub`` when absent
-    author: str | None = None
+    author: str | None = Field(
+        default=None,
+        description="Commit author identifier; defaults to the JWT sub claim when absent",
+        examples=["composer@stori.com"],
+    )
 
 
 class ObjectInput(CamelModel):
@@ -43,19 +62,31 @@ class ObjectInput(CamelModel):
 class PushRequest(CamelModel):
     """Body for POST /musehub/repos/{repo_id}/push."""
 
-    branch: str
-    head_commit_id: str
-    commits: list[CommitInput] = Field(default_factory=list)
-    objects: list[ObjectInput] = Field(default_factory=list)
+    branch: str = Field(
+        ...,
+        description="Branch name to push to (e.g. 'main', 'feat/jazz-bridge')",
+        examples=["feat/jazz-bridge"],
+    )
+    head_commit_id: str = Field(
+        ...,
+        description="The commit ID that becomes the new branch head after push",
+        examples=["a3f8c1d2e4b5"],
+    )
+    commits: list[CommitInput] = Field(default_factory=list, description="New commits to push")
+    objects: list[ObjectInput] = Field(default_factory=list, description="Binary artifacts to upload")
     # Set true to allow non-fast-forward updates (overwrites remote head)
-    force: bool = False
+    force: bool = Field(False, description="Allow non-fast-forward push (overwrites remote head)")
 
 
 class PushResponse(CamelModel):
     """Response for POST /musehub/repos/{repo_id}/push."""
 
-    ok: bool
-    remote_head: str
+    ok: bool = Field(..., description="True when the push succeeded", examples=[True])
+    remote_head: str = Field(
+        ...,
+        description="The new branch head commit ID on the remote after push",
+        examples=["a3f8c1d2e4b5"],
+    )
 
 
 class PullRequest(CamelModel):
@@ -122,38 +153,42 @@ class RepoResponse(CamelModel):
     ``repo_id`` is the internal UUID primary key — never exposed in external URLs.
     """
 
-    repo_id: str
-    name: str
-    owner: str
-    slug: str
-    visibility: str
-    owner_user_id: str
-    clone_url: str
-    description: str = ""
-    tags: list[str] = Field(default_factory=list)
-    key_signature: str | None = None
-    tempo_bpm: int | None = None
-    created_at: datetime
+    repo_id: str = Field(..., description="Internal UUID primary key for this repo", examples=["e3b0c44298fc"])
+    name: str = Field(..., description="Human-readable repo name", examples=["jazz-standards-2024"])
+    owner: str = Field(..., description="URL-visible owner username", examples=["miles_davis"])
+    slug: str = Field(..., description="URL-safe slug auto-generated from name", examples=["jazz-standards-2024"])
+    visibility: str = Field(..., description="'public' or 'private'", examples=["public"])
+    owner_user_id: str = Field(..., description="UUID of the owning user account")
+    clone_url: str = Field(..., description="URL used by the CLI for push/pull", examples=["https://musehub.stori.com/api/v1/musehub/repos/e3b0c44298fc"])
+    description: str = Field("", description="Short description shown on the explore page", examples=["Classic jazz standards arranged for quartet"])
+    tags: list[str] = Field(default_factory=list, description="Free-form tags (genre, key, instrumentation)", examples=[["jazz", "F# minor", "bass"]])
+    key_signature: str | None = Field(None, description="Musical key (e.g. 'C major', 'F# minor')", examples=["F# minor"])
+    tempo_bpm: int | None = Field(None, description="Tempo in BPM", examples=[120])
+    created_at: datetime = Field(..., description="Repo creation timestamp (ISO-8601 UTC)")
 
 
 class BranchResponse(CamelModel):
     """Wire representation of a branch pointer."""
 
-    branch_id: str
-    name: str
-    head_commit_id: str | None = None
+    branch_id: str = Field(..., description="Internal UUID for this branch")
+    name: str = Field(..., description="Branch name", examples=["main", "feat/jazz-bridge"])
+    head_commit_id: str | None = Field(None, description="HEAD commit ID; null for an empty branch", examples=["a3f8c1d2e4b5"])
 
 
 class CommitResponse(CamelModel):
     """Wire representation of a pushed commit."""
 
-    commit_id: str
-    branch: str
-    parent_ids: list[str]
-    message: str
-    author: str
-    timestamp: datetime
-    snapshot_id: str | None = None
+    commit_id: str = Field(..., description="Content-addressed commit ID", examples=["a3f8c1d2e4b5"])
+    branch: str = Field(..., description="Branch this commit was pushed to", examples=["main"])
+    parent_ids: list[str] = Field(..., description="Parent commit IDs", examples=[["b2a7d9e1c3f4"]])
+    message: str = Field(
+        ...,
+        description="Musical commit message",
+        examples=["Increase tempo from 120→132 BPM in the chorus for more energy"],
+    )
+    author: str = Field(..., description="Commit author identifier", examples=["composer@stori.com"])
+    timestamp: datetime = Field(..., description="Commit creation time (ISO-8601 UTC)")
+    snapshot_id: str | None = Field(default=None, description="Optional snapshot artifact ID")
 
 
 class BranchListResponse(CamelModel):
@@ -175,22 +210,36 @@ class CommitListResponse(CamelModel):
 class IssueCreate(CamelModel):
     """Body for POST /musehub/repos/{repo_id}/issues."""
 
-    title: str = Field(..., min_length=1, max_length=500, description="Issue title")
-    body: str = Field("", description="Issue description (Markdown)")
-    labels: list[str] = Field(default_factory=list, description="Free-form label strings")
+    title: str = Field(
+        ...,
+        min_length=1,
+        max_length=500,
+        description="Issue title",
+        examples=["Verse chord progression feels unresolved — needs perfect cadence at bar 16"],
+    )
+    body: str = Field(
+        "",
+        description="Issue description (Markdown)",
+        examples=["The Dm→Am→E7→Am progression in the verse doesn't resolve — suggest Dm→G7→CMaj7."],
+    )
+    labels: list[str] = Field(
+        default_factory=list,
+        description="Free-form label strings",
+        examples=[["harmony", "needs-review"]],
+    )
 
 
 class IssueResponse(CamelModel):
     """Wire representation of a Muse Hub issue."""
 
-    issue_id: str
-    number: int
-    title: str
-    body: str
-    state: str
-    labels: list[str]
+    issue_id: str = Field(..., description="Internal UUID for this issue")
+    number: int = Field(..., description="Per-repo sequential issue number", examples=[42])
+    title: str = Field(..., description="Issue title", examples=["Verse chord progression feels unresolved"])
+    body: str = Field(..., description="Issue description (Markdown)")
+    state: str = Field(..., description="'open' or 'closed'", examples=["open"])
+    labels: list[str] = Field(..., description="Labels attached to this issue", examples=[["harmony"]])
     author: str = ""
-    created_at: datetime
+    created_at: datetime = Field(..., description="Issue creation timestamp (ISO-8601 UTC)")
 
 
 class IssueListResponse(CamelModel):
@@ -205,24 +254,46 @@ class IssueListResponse(CamelModel):
 class PRCreate(CamelModel):
     """Body for POST /musehub/repos/{repo_id}/pull-requests."""
 
-    title: str = Field(..., min_length=1, max_length=500, description="PR title")
-    from_branch: str = Field(..., min_length=1, max_length=255, description="Source branch name")
-    to_branch: str = Field(..., min_length=1, max_length=255, description="Target branch name")
-    body: str = Field("", description="PR description (Markdown)")
+    title: str = Field(
+        ...,
+        min_length=1,
+        max_length=500,
+        description="PR title",
+        examples=["Add bossa nova bridge section with 5/4 time signature"],
+    )
+    from_branch: str = Field(
+        ...,
+        min_length=1,
+        max_length=255,
+        description="Source branch name",
+        examples=["feat/bossa-nova-bridge"],
+    )
+    to_branch: str = Field(
+        ...,
+        min_length=1,
+        max_length=255,
+        description="Target branch name",
+        examples=["main"],
+    )
+    body: str = Field(
+        "",
+        description="PR description (Markdown)",
+        examples=["This branch adds an 8-bar bossa nova bridge in 5/4 with guitar and upright bass."],
+    )
 
 
 class PRResponse(CamelModel):
     """Wire representation of a Muse Hub pull request."""
 
-    pr_id: str
-    title: str
-    body: str
-    state: str
-    from_branch: str
-    to_branch: str
-    merge_commit_id: str | None = None
+    pr_id: str = Field(..., description="Internal UUID for this pull request")
+    title: str = Field(..., description="PR title", examples=["Add bossa nova bridge section"])
+    body: str = Field(..., description="PR description (Markdown)")
+    state: str = Field(..., description="'open', 'merged', or 'closed'", examples=["open"])
+    from_branch: str = Field(..., description="Source branch name", examples=["feat/bossa-nova-bridge"])
+    to_branch: str = Field(..., description="Target branch name", examples=["main"])
+    merge_commit_id: str | None = Field(default=None, description="Merge commit ID; only set after merge")
     author: str = ""
-    created_at: datetime
+    created_at: datetime = Field(..., description="PR creation timestamp (ISO-8601 UTC)")
 
 
 class PRListResponse(CamelModel):
@@ -244,8 +315,8 @@ class PRMergeRequest(CamelModel):
 class PRMergeResponse(CamelModel):
     """Confirmation that a PR was merged."""
 
-    merged: bool
-    merge_commit_id: str
+    merged: bool = Field(..., description="True when the merge succeeded", examples=[True])
+    merge_commit_id: str = Field(..., description="The new merge commit ID", examples=["c9d8e7f6a5b4"])
 
 
 # ── Release models ────────────────────────────────────────────────────────────
@@ -258,10 +329,20 @@ class ReleaseCreate(CamelModel):
     ``commit_id`` pins the release to a specific commit snapshot.
     """
 
-    tag: str = Field(..., min_length=1, max_length=100, description="Version tag, e.g. 'v1.0'")
-    title: str = Field(..., min_length=1, max_length=500, description="Release title")
-    body: str = Field("", description="Release notes (Markdown)")
-    commit_id: str | None = Field(None, description="Commit to pin this release to")
+    tag: str = Field(
+        ..., min_length=1, max_length=100, description="Version tag, e.g. 'v1.0'", examples=["v1.0"]
+    )
+    title: str = Field(
+        ..., min_length=1, max_length=500, description="Release title", examples=["Summer Sessions 2024 — Final Mix"]
+    )
+    body: str = Field(
+        "",
+        description="Release notes (Markdown)",
+        examples=["## Summer Sessions 2024\n\nFinal arrangement with full brass section and 132 BPM tempo."],
+    )
+    commit_id: str | None = Field(
+        None, description="Commit to pin this release to", examples=["a3f8c1d2e4b5"]
+    )
 
 
 class ReleaseDownloadUrls(CamelModel):
@@ -946,12 +1027,23 @@ class SessionCreate(CamelModel):
     ``started_at`` defaults to the server's current time when absent.
     """
 
-    started_at: datetime | None = None
+    started_at: datetime | None = Field(default=None, description="Session start time; defaults to server time when absent")
     participants: list[str] = Field(
-        default_factory=list, description="Participant identifiers or display names"
+        default_factory=list,
+        description="Participant identifiers or display names",
+        examples=[["miles_davis", "john_coltrane"]],
     )
-    intent: str = Field("", description="Free-text creative goal for this session")
-    location: str = Field("", max_length=255, description="Studio or location label")
+    intent: str = Field(
+        "",
+        description="Free-text creative goal for this session",
+        examples=["Finish the bossa nova bridge — add percussion and finalize the chord changes"],
+    )
+    location: str = Field(
+        "",
+        max_length=255,
+        description="Studio or location label",
+        examples=["Blue Note Studio, NYC"],
+    )
     is_active: bool = Field(True, description="True if the session is currently live")
 
 

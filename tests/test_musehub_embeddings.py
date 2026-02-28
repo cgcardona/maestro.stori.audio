@@ -161,18 +161,22 @@ def test_embedding_computed_on_push_calls_upsert() -> None:
             parent_ids=[],
             message="Jazz ballad in Db major at 72 BPM",
             timestamp=datetime(2024, 1, 1, tzinfo=timezone.utc),
+            snapshot_id=None,
+            author=None,
         ),
         CommitInput(
             commit_id="def456",
             parent_ids=["abc123"],
             message="Variation in A minor at 90 BPM",
             timestamp=datetime(2024, 1, 2, tzinfo=timezone.utc),
+            snapshot_id=None,
+            author=None,
         ),
     ]
 
     mock_client = MagicMock()
     with patch(
-        "maestro.services.musehub_sync.MusehubQdrantClient",
+        "maestro.services.musehub_sync.get_qdrant_client",
         return_value=mock_client,
     ):
         embed_push_commits(
@@ -183,7 +187,6 @@ def test_embedding_computed_on_push_calls_upsert() -> None:
             is_public=True,
         )
 
-    mock_client.ensure_collection.assert_called_once()
     assert mock_client.upsert_embedding.call_count == 2
 
 
@@ -193,7 +196,7 @@ def test_embedding_computed_on_push_empty_commits_is_noop() -> None:
 
     mock_client = MagicMock()
     with patch(
-        "maestro.services.musehub_sync.MusehubQdrantClient",
+        "maestro.services.musehub_sync.get_qdrant_client",
         return_value=mock_client,
     ):
         embed_push_commits(
@@ -204,7 +207,6 @@ def test_embedding_computed_on_push_empty_commits_is_noop() -> None:
             is_public=True,
         )
 
-    mock_client.ensure_collection.assert_not_called()
     mock_client.upsert_embedding.assert_not_called()
 
 
@@ -223,6 +225,8 @@ def test_embedding_computed_on_push_qdrant_error_does_not_raise() -> None:
             parent_ids=[],
             message="C major 120 BPM",
             timestamp=datetime(2024, 1, 1, tzinfo=timezone.utc),
+            snapshot_id=None,
+            author=None,
         )
     ]
 
@@ -230,7 +234,7 @@ def test_embedding_computed_on_push_qdrant_error_does_not_raise() -> None:
     mock_client.upsert_embedding.side_effect = RuntimeError("Qdrant unavailable")
 
     with patch(
-        "maestro.services.musehub_sync.MusehubQdrantClient",
+        "maestro.services.musehub_sync.get_qdrant_client",
         return_value=mock_client,
     ):
         embed_push_commits(
