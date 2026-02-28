@@ -1,0 +1,276 @@
+{% extends "musehub/base.html" %}
+
+{% block title %}Groove Check — {{ owner }}/{{ repo_slug }}{% endblock %}
+{% block breadcrumb %}
+  <a href="/musehub/ui/{{ owner }}/{{ repo_slug }}">{{ owner }}/{{ repo_slug }}</a> / groove-check
+{% endblock %}
+{% block repo_nav %}{% include "musehub/partials/repo_nav.html" %}{% endblock %}
+
+{% block page_data %}
+const repoId  = {{ repo_id | tojson }};
+const base    = {{ base_url | tojson }};
+{% endblock %}
+
+{% block extra_css %}
+<style>
+.groove-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 12px;
+  margin-bottom: 20px;
+}
+.groove-metric-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.groove-metric-label {
+  font-size: 11px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.groove-metric-value {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+.groove-chart-wrap {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 12px;
+  overflow-x: auto;
+  margin-bottom: 8px;
+}
+.groove-chart-legend {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 4px;
+}
+.groove-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.groove-table th {
+  text-align: left;
+  padding: 8px 6px;
+  color: var(--text-muted);
+  font-weight: 500;
+  border-bottom: 1px solid var(--border);
+}
+.groove-table td {
+  padding: 8px 6px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: middle;
+}
+.groove-table tr:last-child td { border-bottom: none; }
+.status-badge {
+  display: inline-block;
+  padding: 1px 8px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 700;
+  color: #0d1117;
+}
+.status-ok   { background: #3fb950; }
+.status-warn { background: #f0883e; }
+.status-fail { background: #f85149; }
+.groove-controls {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 20px;
+}
+.groove-controls label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+.groove-controls select,
+.groove-controls input[type="number"] {
+  background: var(--bg);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 4px 8px;
+  font-size: 13px;
+}
+</style>
+{% endblock %}
+
+{% block page_script %}
+{% raw %}
+function statusBadge(status) {
+  const cls = { OK: 'status-ok', WARN: 'status-warn', FAIL: 'status-fail' };
+  return '<span class="status-badge ' + (cls[status] || '') + '">' + escHtml(status) + '</span>';
+}
+
+function renderGrooveChart(entries, width, height) {
+  if (!entries || !entries.length) {
+    return '<p class="loading">No data to chart.</p>';
+  }
+  const maxScore = Math.max(...entries.map(e => e.grooveScore), 0.01);
+  const barW     = Math.max(4, Math.floor((width - 4) / entries.length) - 2);
+  const pad      = { left: 40, right: 8, top: 8, bottom: 28 };
+  const chartH   = height - pad.top - pad.bottom;
+  const chartW   = width  - pad.left - pad.right;
+  const STATUS_COLOR = { OK: '#3fb950', WARN: '#f0883e', FAIL: '#f85149' };
+
+  let grid = '';
+  for (let i = 0; i <= 4; i++) {
+    const y   = pad.top + (i / 4) * chartH;
+    const val = (maxScore * (1 - i / 4)).toFixed(3);
+    grid += '<line x1="' + pad.left + '" y1="' + y + '" x2="' + (width - pad.right) + '" y2="' + y
+      + '" stroke="#21262d" stroke-width="1"/>';
+    grid += '<text x="' + (pad.left - 4) + '" y="' + (y + 4) + '" font-size="9" fill="#8b949e"'
+      + ' text-anchor="end">' + val + '</text>';
+  }
+
+  let bars = '';
+  entries.forEach((e, i) => {
+    const x     = pad.left + i * (chartW / entries.length) + 1;
+    const barH  = (e.grooveScore / maxScore) * chartH;
+    const y     = pad.top + chartH - barH;
+    const color = STATUS_COLOR[e.status] || '#58a6ff';
+    bars += '<rect x="' + x + '" y="' + y + '" width="' + barW + '" height="' + barH
+      + '" fill="' + color + '" opacity="0.85" rx="1"><title>'
+      + escHtml(e.commit) + ' score: ' + e.grooveScore.toFixed(4) + ' (' + e.status + ')'
+      + '</title></rect>';
+    if (entries.length <= 14 || i % 2 === 0) {
+      bars += '<text x="' + (x + barW / 2) + '" y="' + (height - 6) + '" font-size="9" fill="#8b949e"'
+        + ' text-anchor="middle" transform="rotate(-30 ' + (x + barW / 2) + ' ' + (height - 6) + ')">'
+        + escHtml(e.commit.substring(0, 6)) + '</text>';
+    }
+  });
+
+  const axisLabel = '<text x="10" y="' + (height / 2) + '" font-size="10" fill="#8b949e"'
+    + ' transform="rotate(-90 10 ' + (height / 2) + ')" text-anchor="middle">groove score (beats)</text>';
+
+  return '<svg width="100%" viewBox="0 0 ' + width + ' ' + height
+    + '" style="display:block;overflow:visible" preserveAspectRatio="xMidYMid meet">'
+    + grid + bars + axisLabel + '</svg>';
+}
+
+async function load(threshold, limit) {
+  initRepoNav(repoId);
+  document.getElementById('content').innerHTML = '<p class="loading">Analysing groove\u2026</p>';
+  try {
+    let url = '/repos/' + repoId + '/groove-check?limit=' + limit;
+    if (threshold) url += '&threshold=' + threshold;
+    const data    = await apiFetch(url);
+    const entries = data.entries || [];
+
+    const chartHtml    = renderGrooveChart(entries, 640, 220);
+    const summaryBadge = data.flaggedCommits > 0
+      ? '<span style="color:#f0883e;font-weight:600">' + data.flaggedCommits + ' flagged</span>'
+      : '<span style="color:#3fb950;font-weight:600">All clear</span>';
+    const worstHtml = data.worstCommit
+      ? '<a href="' + base + '/commits/' + data.worstCommit + '" style="font-family:monospace">'
+        + escHtml(data.worstCommit) + '</a>'
+      : '<em style="color:#8b949e">none</em>';
+
+    const tableRows = entries.length === 0
+      ? '<tr><td colspan="6" style="text-align:center;color:#8b949e;padding:16px">No commits analysed yet.</td></tr>'
+      : entries.map(e =>
+          '<tr>'
+          + '<td style="font-family:monospace"><a href="' + base + '/commits/' + e.commit + '">'
+          + escHtml(e.commit) + '</a></td>'
+          + '<td>' + statusBadge(e.status) + '</td>'
+          + '<td>' + e.grooveScore.toFixed(4) + '</td>'
+          + '<td>' + (e.driftDelta > 0 ? '+' : '') + e.driftDelta.toFixed(4) + '</td>'
+          + '<td style="color:#8b949e">' + escHtml(e.track || '—') + '</td>'
+          + '<td style="color:#8b949e">' + e.midiFiles + '</td>'
+          + '</tr>'
+        ).join('');
+
+    document.getElementById('content').innerHTML = `
+      <div class="card">
+        <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;flex-wrap:wrap">
+          <h1 style="margin:0">&#127941; Groove Check</h1>
+          <span style="flex:1"></span>
+          <label style="font-size:13px;color:#8b949e;display:flex;align-items:center;gap:6px">
+            Limit:
+            <select id="limit-sel" onchange="load(document.getElementById('thr-inp').value, this.value)">
+              ${[5, 7, 10, 20, 30].map(n =>
+                '<option value="' + n + '"' + (n == limit ? ' selected' : '') + '>' + n + ' commits</option>'
+              ).join('')}
+            </select>
+          </label>
+          <label style="font-size:13px;color:#8b949e;display:flex;align-items:center;gap:6px">
+            Threshold:
+            <input id="thr-inp" type="number" step="0.01" min="0.01" max="1" value="${threshold}"
+              style="width:70px;background:#0d1117;color:#c9d1d9;border:1px solid #30363d;border-radius:6px;padding:4px 8px;font-size:13px"
+              onchange="load(this.value, document.getElementById('limit-sel').value)" />
+          </label>
+        </div>
+
+        <div class="groove-summary-grid">
+          <div class="groove-metric-card">
+            <span class="groove-metric-label">Range</span>
+            <span class="groove-metric-value" style="font-size:13px;font-family:monospace">${escHtml(data.commitRange)}</span>
+          </div>
+          <div class="groove-metric-card">
+            <span class="groove-metric-label">Threshold</span>
+            <span class="groove-metric-value">${data.threshold.toFixed(3)} <small style="font-size:12px;font-weight:400">beats</small></span>
+          </div>
+          <div class="groove-metric-card">
+            <span class="groove-metric-label">Commits</span>
+            <span class="groove-metric-value">${data.totalCommits}</span>
+          </div>
+          <div class="groove-metric-card">
+            <span class="groove-metric-label">Flagged</span>
+            <span class="groove-metric-value">${summaryBadge}</span>
+          </div>
+          <div class="groove-metric-card">
+            <span class="groove-metric-label">Worst Commit</span>
+            <span class="groove-metric-value" style="font-size:13px">${worstHtml}</span>
+          </div>
+        </div>
+
+        <div class="groove-chart-wrap">${chartHtml}</div>
+        <p class="groove-chart-legend">
+          Bar height = groove score (lower = tighter to quantization grid).
+          <span style="color:#3fb950">&#9646;</span> OK &nbsp;
+          <span style="color:#f0883e">&#9646;</span> WARN &nbsp;
+          <span style="color:#f85149">&#9646;</span> FAIL
+        </p>
+      </div>
+
+      <div class="card">
+        <h2 style="margin-bottom:12px">Per-Commit Metrics</h2>
+        <div style="overflow-x:auto">
+          <table class="groove-table">
+            <thead>
+              <tr>
+                <th>Commit</th>
+                <th>Status</th>
+                <th>Groove Score</th>
+                <th>Drift Delta</th>
+                <th>Track</th>
+                <th>MIDI Files</th>
+              </tr>
+            </thead>
+            <tbody>${tableRows}</tbody>
+          </table>
+        </div>
+      </div>`;
+  } catch(e) {
+    if (e.message !== 'auth')
+      document.getElementById('content').innerHTML =
+        '<p class="error">&#10005; ' + escHtml(e.message) + '</p>';
+  }
+}
+
+load(0.1, 10);
+{% endraw %}
+{% endblock %}
