@@ -2901,6 +2901,34 @@ commit that scored at or above the `--threshold` keyword-overlap cutoff.
 
 ---
 
+### `RevertResult`
+
+**Module:** `maestro/services/muse_revert.py`
+
+Outcome of a `muse revert` operation. Captures the full audit trail of what
+was (or was not) changed so callers can verify the revert succeeded.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `commit_id` | `str` | New commit ID created by the revert. Empty string when `--no-commit` or noop. |
+| `target_commit_id` | `str` | The commit that was reverted. |
+| `parent_commit_id` | `str` | Parent of the reverted commit (whose snapshot was restored). Empty string for root commits. |
+| `revert_snapshot_id` | `str` | Snapshot ID of the reverted state (may equal parent's snapshot_id for full reverts). |
+| `message` | `str` | Auto-generated commit message: `"Revert '<original message>'"`. |
+| `no_commit` | `bool` | `True` when staged to muse-work/ without creating a commit. |
+| `noop` | `bool` | `True` when reverting would produce no change (already at target state). |
+| `scoped_paths` | `tuple[str, ...]` | Paths selectively reverted via `--track`/`--section`. Empty tuple = full revert. |
+| `paths_deleted` | `tuple[str, ...]` | Files removed from muse-work/ during `--no-commit`. |
+| `paths_missing` | `tuple[str, ...]` | Files that should be restored but whose bytes are unavailable (no object store). |
+| `branch` | `str` | Branch on which the revert commit was created. |
+
+**Producer:** `_revert_async()`
+**Consumer:** `revert()` Typer command callback, tests in `tests/muse_cli/test_revert.py`
+
+**Frozen dataclass** — all fields are immutable after construction.
+
+---
+
 ### `TrackHumanizeResult`
 
 **Module:** `maestro/muse_cli/commands/humanize.py`
@@ -4757,3 +4785,44 @@ or smoother (stepwise) between two points in history.
 
 **Producer:** `_contour_compare_async()`
 **Consumer:** `_format_compare()`
+
+---
+
+## Muse Timeline Types
+
+Defined in `maestro/services/muse_timeline.py`.
+
+### `MuseTimelineEntry`
+
+A single commit in the chronological musical timeline.
+Music-semantic fields are derived from tags attached via `muse tag add`.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `commit_id` | `str` | Full 64-char commit hash. |
+| `short_id` | `str` | First 7 characters for display. |
+| `committed_at` | `datetime` | Commit timestamp (UTC). |
+| `message` | `str` | Human-authored commit message. |
+| `emotion` | `str \| None` | First `emotion:*` tag value (prefix stripped), or `None`. |
+| `sections` | `tuple[str, ...]` | All `section:*` tag values (prefix stripped). |
+| `tracks` | `tuple[str, ...]` | All `track:*` tag values (prefix stripped). |
+| `activity` | `int` | Number of tracks modified; 1 when no track tags present. |
+
+### `MuseTimelineResult`
+
+Full chronological timeline for a single repository branch.
+Returned by `build_timeline()` in `maestro/services/muse_timeline.py`.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `entries` | `tuple[MuseTimelineEntry, ...]` | Timeline entries, oldest-first. |
+| `branch` | `str` | Branch name this timeline was built from. |
+| `emotion_arc` | `tuple[str, ...]` | Ordered unique emotion labels (oldest first). |
+| `section_order` | `tuple[str, ...]` | Ordered unique section names (oldest first). |
+| `total_commits` | `int` | Total number of commits in the timeline. |
+
+**Agent use case:** An AI agent calls `muse timeline --json` and inspects
+`emotion_arc` to understand how the composition's emotional character has
+evolved.  `section_order` maps the structural progression of the piece.
+`entries[*].activity` can be used to weight which commits had the most
+musical change — useful for selecting seed material for generation.

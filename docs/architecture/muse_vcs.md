@@ -1599,6 +1599,63 @@ keyword match · threshold 0.60 · limit 5
 
 ---
 
+### `muse revert`
+
+**Purpose:** Create a new commit that undoes a prior commit without rewriting history. The safe undo: given commit C with parent P, `muse revert <commit>` creates a forward commit whose snapshot is P's state (the world before C was applied). An AI agent uses this after discovering a committed arrangement degraded the score — rather than resetting (which loses history), the revert preserves the full audit trail.
+
+**Usage:**
+```bash
+muse revert <commit> [OPTIONS]
+```
+
+**Flags:**
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `COMMIT` | positional | required | Commit ID to revert (full or abbreviated SHA) |
+| `--no-commit` | flag | off | Apply the inverse changes to muse-work/ without creating a new commit |
+| `--track TEXT` | string | — | Scope the revert to paths under `tracks/<track>/` only |
+| `--section TEXT` | string | — | Scope the revert to paths under `sections/<section>/` only |
+
+**Output example (full revert):**
+```
+✅ [main a1b2c3d4] Revert 'bad drum arrangement'
+```
+
+**Output example (scoped revert):**
+```
+✅ [main b2c3d4e5] Revert 'bad drum arrangement' (scoped to 2 path(s))
+```
+
+**Output example (--no-commit):**
+```
+✅ Staged revert (--no-commit). Files removed:
+   deleted: tracks/drums/fill.mid
+```
+
+**Result type:** `RevertResult` (dataclass, frozen) — fields:
+- `commit_id` (str): New commit ID (empty string when `--no-commit` or noop).
+- `target_commit_id` (str): Commit that was reverted.
+- `parent_commit_id` (str): Parent of the reverted commit (whose snapshot was restored).
+- `revert_snapshot_id` (str): Snapshot ID of the reverted state.
+- `message` (str): Auto-generated commit message (`"Revert '<original message>'"`)
+- `no_commit` (bool): Whether the revert was staged only.
+- `noop` (bool): True when reverting would produce no change.
+- `scoped_paths` (tuple[str, ...]): Paths selectively reverted (empty = full revert).
+- `paths_deleted` (tuple[str, ...]): Files removed from muse-work/ during `--no-commit`.
+- `paths_missing` (tuple[str, ...]): Files that could not be auto-restored (no object bytes).
+- `branch` (str): Branch on which the revert commit was created.
+
+**Agent use case:** An agent that evaluates generated arrangements after each commit can run `muse log --json` to detect quality regressions, then call `muse revert <bad_commit>` to undo the offending commit and resume generation from the prior good state. For instrument-specific corrections, `--track drums` limits the revert to drum tracks only, preserving bass and melodic changes.
+
+**Blocking behaviour:** Blocked during an in-progress merge with unresolved conflicts — exits 1 with a clear message directing the user to resolve conflicts first.
+
+**Object store limitation:** The Muse CLI stores file manifests (path→sha256) in Postgres but does not retain raw file bytes. For `--no-commit`, files that should be restored but whose bytes are no longer in `muse-work/` are listed as warnings in `paths_missing`. The commit-only path (default) is unaffected — it references an existing snapshot ID directly with no file restoration needed.
+
+**Implementation:** `maestro/muse_cli/commands/revert.py` (Typer CLI), `maestro/services/muse_revert.py` (`_revert_async`, `compute_revert_manifest`, `apply_revert_to_workdir`, `RevertResult`).
+
+---
+
 ### `muse grep`
 
 **Purpose:** Search all commits for a musical pattern — a note sequence, interval
@@ -2780,6 +2837,79 @@ An AI deciding which branch to merge calls `muse divergence feature/guitar featu
 before generation.  HIGH harmonic divergence + LOW rhythmic divergence means lean on the piano
 branch for chord voicings while preserving the guitar branch's groove patterns.
 
+### `muse timeline`
+
+**Purpose:** Render a commit-by-commit chronological view of a composition's
+creative arc — emotion transitions, section progress, and per-track activity.
+This is the "album liner notes" view that no Git command provides.  Agents
+use it to understand how a project's emotional and structural character
+evolved before making generation decisions.
+
+**Usage:**
+```bash
+muse timeline [RANGE] [OPTIONS]
+```
+
+**Flags:**
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `RANGE` | positional string | full history | Commit range (reserved — full history shown for now) |
+| `--emotion` | flag | off | Add emotion column (from `emotion:*` tags) |
+| `--sections` | flag | off | Group commits under section headers (from `section:*` tags) |
+| `--tracks` | flag | off | Show per-track activity column (from `track:*` tags) |
+| `--json` | flag | off | Emit structured JSON for UI rendering or agent consumption |
+| `--limit N` | int | 1000 | Maximum commits to walk |
+
+**Output example (text):**
+```
+Timeline — branch: main  (3 commit(s))
+
+  ── verse ──
+2026-02-01  abc1234  Initial drum arrangement    [drums]        [melancholic]  ████
+2026-02-02  def5678  Add bass line               [bass]         [melancholic]  ██████
+  ── chorus ──
+2026-02-03  ghi9012  Chorus melody               [keys,vocals]  [joyful]       █████████
+
+Emotion arc: melancholic → joyful
+Sections:    verse → chorus
+```
+
+**Output example (JSON):**
+```json
+{
+  "branch": "main",
+  "total_commits": 3,
+  "emotion_arc": ["melancholic", "joyful"],
+  "section_order": ["verse", "chorus"],
+  "entries": [
+    {
+      "commit_id": "abc1234...",
+      "short_id": "abc1234",
+      "committed_at": "2026-02-01T00:00:00+00:00",
+      "message": "Initial drum arrangement",
+      "emotion": "melancholic",
+      "sections": ["verse"],
+      "tracks": ["drums"],
+      "activity": 1
+    }
+  ]
+}
+```
+
+**Result types:** `MuseTimelineEntry`, `MuseTimelineResult` — see `docs/reference/type_contracts.md § Muse Timeline Types`.
+
+**Agent use case:** An AI agent calls `muse timeline --json` before composing a new
+section to understand the emotional arc to date (e.g. `melancholic → joyful → tense`).
+It uses `section_order` to determine what structural elements have been established
+and `emotion_arc` to decide whether to maintain or contrast the current emotional
+character.  `activity` per commit helps identify which sections were most actively
+developed.
+
+**Implementation note:** Emotion, section, and track data are derived entirely from
+tags attached via `muse tag add`.  Commits with no tags show `—` in filtered columns.
+The commit range argument (`RANGE`) is accepted but reserved for a future iteration
+that supports `HEAD~10..HEAD` syntax.
+
 ---
 
 ### `muse validate`
@@ -3278,6 +3408,7 @@ arguments (`USER_ERROR`), 2 outside repo (`REPO_NOT_FOUND`), 3 internal error
 | `muse session` | `commands/session.py` | ✅ implemented (PR #129) | #127 |
 | `muse swing` | `commands/swing.py` | ✅ stub (PR #131) | #121 |
 | `muse tag` | `commands/tag.py` | ✅ implemented (PR #133) | #123 |
+| `muse timeline` | `commands/timeline.py` | ✅ implemented (PR #TBD) | #97 |
 | `muse tempo-scale` | `commands/tempo_scale.py` | ✅ stub (PR open) | #111 |
 | `muse validate` | `commands/validate.py` | ✅ implemented (PR #TBD) | #99 |
 
@@ -3463,3 +3594,55 @@ the computed values will change when the full implementation is wired in.
 `_format_history()`.  Exit codes: 0 success, 2 outside repo
 (`REPO_NOT_FOUND`), 3 internal error (`INTERNAL_ERROR`).
 
+---
+
+## `muse amend` — Amend the Most Recent Commit
+
+**Purpose:** Fold working-tree changes into the most recent commit, replacing
+it with a new commit that has the same parent.  Equivalent to
+`git commit --amend`.  The original HEAD commit becomes an orphan (unreachable
+from any branch ref) and remains in the database for forensic traceability.
+
+**Usage:**
+```bash
+muse amend [OPTIONS]
+```
+
+**Flags:**
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `-m / --message TEXT` | string | — | Replace the commit message |
+| `--no-edit` | flag | off | Keep the original commit message (default when `-m` is omitted; takes precedence over `-m` when both are provided) |
+| `--reset-author` | flag | off | Reset the author field to the current user (stub: sets to empty string until a user-identity system is implemented) |
+
+**Output example:**
+```
+✅ [main a1b2c3d4] updated groove pattern (amended)
+```
+
+**Behaviour:**
+1. Re-snapshots `muse-work/` using the same content-addressed pipeline as
+   `muse commit` (sha256 per file, deterministic snapshot_id).
+2. Computes a new `commit_id` using the *original commit's parent* (not the
+   original itself), the new snapshot, the effective message, and the current
+   timestamp.
+3. Writes the new commit row to Postgres and updates
+   `.muse/refs/heads/<branch>` to the new commit ID.
+4. **Blocked** when a merge is in progress (`.muse/MERGE_STATE.json` exists).
+5. **Blocked** when there are no commits yet on the current branch.
+6. **Blocked** when `muse-work/` does not exist or is empty.
+
+**Result types:**
+- Returns the new `commit_id` (64-char sha256 hex string) from `_amend_async`.
+- Exit codes: 0 success, 1 user error (`USER_ERROR`), 2 outside repo
+  (`REPO_NOT_FOUND`), 3 internal error (`INTERNAL_ERROR`).
+
+**Agent use case:** A producer adjusts a MIDI note quantization setting, then
+runs `muse amend --no-edit` to fold the change silently into the last commit
+without cluttering history with a second "tweak quantization" entry.  An
+automated agent can call `muse amend -m "fix: tighten quantization on drums"`
+to improve the commit message after inspection.
+
+**Implementation:** `maestro/muse_cli/commands/amend.py` —
+`_amend_async(message, no_edit, reset_author, root, session)`.
+Tests: `tests/muse_cli/test_amend.py`.
