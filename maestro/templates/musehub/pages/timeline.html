@@ -252,7 +252,10 @@ function renderTimeline() {
     });
   }
 
-  /* PR merge markers — vertical solid purple line with triangle cap. */
+  /* PR merge markers — vertical solid purple line with triangle cap.
+     NOTE: PRResponse currently only exposes createdAt (PR open date), not mergedAt.
+     Until the backend adds merged_at to PRResponse (see issue #332), markers are
+     positioned at PR creation time rather than merge time. */
   if (layers.prs && mergedPRs.length > 0) {
     const visPRs = filterByWindow(mergedPRs, 'createdAt', tMin, tMax);
     visPRs.forEach(pr => {
@@ -448,7 +451,7 @@ async function load() {
         <span>&#9679; <span style="color:#a371f7">purple</span> = track added</span>
         <span>&#9679; <span style="color:#e3b341">yellow</span> = track removed</span>
         <span>&#9135; <span style="color:#2dd4bf">teal dashed</span> = session start</span>
-        <span>&#9650; <span style="color:#a371f7">purple &#9660;</span> = PR merge</span>
+        <span><span style="color:#a371f7">&#9660; purple</span> = PR merge</span>
         <span>&#9670; <span style="color:#e3b341">gold</span> = release</span>
       </div>`;
 
