@@ -59,7 +59,7 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-_ALLOWED_EMOJIS = {"👍", "👎", "❤️", "🎵", "🔥", "✨", "🎸", "🥁"}
+_ALLOWED_EMOJIS = {"👍", "👎", "❤️", "🎵", "🔥", "✨", "🎸", "🥁", "👏", "🎹"}
 
 
 # ---------------------------------------------------------------------------
@@ -90,7 +90,7 @@ class CommentResponse(BaseModel):
 
 
 class ReactionCreate(BaseModel):
-    target_type: str = Field(..., pattern="^(commit|pull_request|issue|comment|repo)$")
+    target_type: str = Field(..., pattern="^(commit|pull_request|issue|comment|repo|release|session)$")
     target_id: str
     emoji: str
 

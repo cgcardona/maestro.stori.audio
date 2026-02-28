@@ -410,6 +410,10 @@ async function load() {
         ${mergeSection}
       </div>
 
+      <div class="card" style="padding:var(--space-3) var(--space-4)">
+        <div id="pr-reactions"><p class="text-muted text-sm">Loading reactions…</p></div>
+      </div>
+
       <!-- ── Musical diff radar + badges ───────────────────────────────── -->
       ${dims.length > 0 ? `
       <div style="display:grid;grid-template-columns:1fr auto;gap:24px;align-items:start;
@@ -513,6 +517,7 @@ async function load() {
         </details>
       </div>`;
 
+    loadReactions('pull_request', prId, 'pr-reactions');
     await loadComments();
   } catch(e) {
     if (e.message !== 'auth')

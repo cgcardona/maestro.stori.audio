@@ -228,6 +228,10 @@ async function load() {
         ${downloads}
       </div>
 
+      <div class="card" style="padding:var(--space-3) var(--space-4)">
+        <div id="release-reactions"><p class="text-muted text-sm">Loading reactions…</p></div>
+      </div>
+
       <!-- Comment threads -->
       <div class="card" id="comments-section">
         <h2 style="margin-bottom:var(--space-3)">&#128172; Discussion</h2>
@@ -248,6 +252,7 @@ async function load() {
         </p>`}
       </div>`;
 
+    loadReactions('release', tag, 'release-reactions');
     await renderComments(releaseId);
   } catch(e) {
     if (e.message !== 'auth')
