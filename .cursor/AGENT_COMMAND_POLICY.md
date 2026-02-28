@@ -54,15 +54,17 @@ Rules for this format: commands only, no prose, no parentheses, no backticks.
 Cursor tokenises on commas and periods — keep each line to one category.
 
 ```
-ls, ls -la, ls -lah, pwd, cat, head, tail, echo, wc, file, which, date, basename, dirname, printf, jq
-sort, uniq, tr, awk, sed, cut, xargs
+ls, ls -la, ls -lah, ls -l, pwd, cat, head, tail, echo, wc, file, which, date, basename, dirname, printf, jq
+sort, uniq, tr, awk, sed, cut, xargs, tee
 rg, grep, find, mkdir -p, cp, mv, touch, ln -s
-git status, git log, git diff, git show, git branch, git fetch, git stash list, git worktree list
+cd, REPO=, WTNAME=, DEV_SHA=, WT=, NUM=, TITLE=
+git status, git log, git diff, git show, git branch, git fetch, git fetch origin, git stash list, git worktree list
 git ls-remote, git rev-parse, git ls-files, git merge-base, git describe, git cat-file
+git -C, git -C /Users, git worktree list --porcelain
 git bisect, git bisect start, git bisect bad, git bisect good, git bisect log, git bisect reset
-git checkout -b, git checkout, git add, git add -A, git commit, git merge origin/dev
+git checkout -b, git checkout, git add, git add -A, git commit, git merge origin/dev, git merge
 git stash, git stash pop, git stash apply, git push origin
-git worktree add, git worktree remove --force, git worktree prune
+git worktree add, git worktree add --detach, git worktree remove --force, git worktree prune
 docker compose ps, docker compose logs, docker compose config, docker ps, docker inspect
 docker compose exec maestro mypy, docker compose exec maestro pytest, docker compose exec maestro sh -c
 docker compose exec maestro python -m coverage, docker compose exec maestro ls, docker compose exec maestro cat
@@ -75,6 +77,7 @@ gh auth status, gh repo view, gh pr view, gh pr list, gh pr diff, gh pr create, 
 gh issue view, gh issue list, gh issue create, gh issue close, gh issue comment, gh issue edit
 gh run list, gh run view, gh release list, gh release view, gh api
 ps aux, ps -ef, pgrep, nc -z, curl
+REPO=$(git, WTNAME=$(basename, DEV_SHA=$(git, WT=$HOME
 ```
 
 ---
