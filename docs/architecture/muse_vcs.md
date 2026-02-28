@@ -353,6 +353,57 @@ Merge commits (two parents) require `muse merge` (issue #35) — `parent2_commit
 
 ---
 
+## `muse describe` — Structured Musical Change Description
+
+`muse describe [<commit>] [OPTIONS]` compares a commit against its parent (or two commits via `--compare`) and outputs a structured description of what changed at the snapshot level.
+
+### Output example (standard depth)
+
+```
+Commit abc1234: "Add piano melody to verse"
+Changed files: 2 (beat.mid, keys.mid)
+Dimensions analyzed: structural (2 files modified)
+Note: Full harmonic/melodic analysis requires muse harmony and muse motif (planned)
+```
+
+### Flags
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `<commit>` (positional) | HEAD | Commit to describe |
+| `--compare A B` | — | Compare commit A against commit B explicitly |
+| `--depth brief\|standard\|verbose` | `standard` | Output verbosity |
+| `--dimensions TEXT` | — | Comma-separated dimension labels (informational, passed through to output) |
+| `--json` | off | Output as JSON |
+| `--auto-tag` | off | Add a heuristic tag based on change scope |
+
+### Depth modes
+
+| Depth | Output |
+|-------|--------|
+| `brief` | One-line: `Commit <id>: N file changes` |
+| `standard` | Message, changed files list, inferred dimensions, LLM note |
+| `verbose` | Full commit ID, parent ID, per-file M/A/D markers, dimensions |
+
+### Implementation
+
+| Layer | File | Responsibility |
+|-------|------|----------------|
+| Command | `maestro/muse_cli/commands/describe.py` | Typer callback + `_describe_async` |
+| Diff engine | `maestro/muse_cli/commands/describe.py` | `_diff_manifests()` |
+| Renderers | `maestro/muse_cli/commands/describe.py` | `_render_brief/standard/verbose/result` |
+| DB helpers | `maestro/muse_cli/db.py` | `get_commit_snapshot_manifest()` |
+
+`_describe_async` is the injectable async core (tested directly without a running server).  Exit codes: 0 success, 1 user error (bad commit ID or wrong `--compare` count), 2 outside a Muse repo, 3 internal error.
+
+**Result type:** `DescribeResult` (class) — fields: `commit_id` (str), `message` (str), `depth` (DescribeDepth), `parent_id` (str | None), `compare_commit_id` (str | None), `changed_files` (list[str]), `added_files` (list[str]), `removed_files` (list[str]), `dimensions` (list[str]), `auto_tag` (str | None). Methods: `.file_count()` → int, `.to_dict()` → dict[str, object]. See `docs/reference/type_contracts.md § DescribeResult`.
+
+**Agent use case:** Before generating new material, an agent calls `muse describe --json` to understand what changed in the most recent commit. If a bass and melody file were both modified, the agent knows a harmonic rewrite occurred and adjusts generation accordingly. `--auto-tag` provides a quick `minor-revision` / `major-revision` signal without full MIDI analysis.
+
+> **Planned enhancement:** Full harmonic, melodic, and rhythmic analysis (chord progression diffs, motif tracking, groove scoring) is tracked as a follow-up. Current output is purely structural — file-level snapshot diffs with no MIDI parsing.
+
+---
+
 ## Commit Data Model
 
 `muse commit` persists three content-addressed table types to Postgres:
