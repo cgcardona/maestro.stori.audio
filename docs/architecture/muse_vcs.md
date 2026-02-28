@@ -7298,6 +7298,11 @@ the template engine.
 maestro/templates/musehub/
 ├── base.html            — main authenticated layout (extends nothing)
 ├── explore_base.html    — public discover/trending layout (no auth, filter bar)
+├── partials/
+│   ├── navbar.html      — global navigation bar (logo, search, user menu)
+│   ├── breadcrumbs.html — server-side breadcrumb trail from breadcrumb_data
+│   ├── repo_nav.html    — repo identity card + includes repo_tabs.html
+│   └── repo_tabs.html   — repo-level tab strip (Commits, Graph, PRs, Issues…)
 └── pages/
     ├── global_search.html
     ├── profile.html
@@ -7328,6 +7333,88 @@ maestro/templates/musehub/
 dynamic data is injected via Jinja2's `{{ var | tojson }}` filter inside
 `<script>` blocks; large JavaScript sections containing template literals are
 wrapped in `{% raw %}...{% endraw %}` to prevent Jinja2 from parsing them.
+
+### Navigation architecture
+
+Every MuseHub page renders a three-layer navigation stack:
+
+```
+┌───────────────────────────────────────────────────────────┐
+│  Global nav bar  (.musehub-navbar)                        │
+│  logo · search · explore · notifications · sign-out       │
+│  included by: base.html, explore_base.html                │
+├───────────────────────────────────────────────────────────┤
+│  Breadcrumb bar  (.breadcrumb-bar)                        │
+│  owner / repo / section / detail                          │
+│  populated via: {% block breadcrumb %} (inline HTML)       │
+│  or: breadcrumb_data list (rendered by breadcrumbs.html)  │
+├───────────────────────────────────────────────────────────┤
+│  Repo tab strip  (.repo-tabs)    — repo-scoped pages only  │
+│  Commits · Graph · PRs · Issues · Releases ·              │
+│  Sessions · Timeline · Analysis · Credits · Insights      │
+│  active tab: current_page template variable               │
+│  tab counts: loaded client-side by loadNavCounts()        │
+└───────────────────────────────────────────────────────────┘
+```
+
+#### Global nav bar (`partials/navbar.html`)
+
+Included unconditionally from `base.html` and `explore_base.html`.  Contains:
+
+- **Logo**: links to `/musehub/ui/explore`
+- **Search form**: `<form method="get" action="/musehub/ui/search">` — a plain
+  HTML GET form, no JavaScript required for basic navigation.  The `q` param is
+  pre-populated by the global search handler for sharable URLs.
+- **Explore link**: direct link to the discover grid
+- **Notification bell**: `#nav-notif-badge` populated client-side by
+  `loadNotifBadge()` in `musehub.js`
+- **Sign-out button**: `#signout-btn` shown client-side when a JWT is present
+- **Hamburger toggle**: CSS-only collapse on xs screens (checkbox trick)
+
+#### Breadcrumbs
+
+Two approaches coexist:
+
+1. **Inline block** (most pages): child templates override
+   `{% block breadcrumb %}` with hand-crafted anchor tags.  Rendered inside
+   `.breadcrumb-bar > .breadcrumb` by `base.html`.
+
+2. **Data-driven** (commit detail and future pages): route handlers pass a
+   `breadcrumb_data` list and `breadcrumbs.html` renders it:
+   ```python
+   breadcrumb_data = _breadcrumbs(
+       (owner,     f"/musehub/ui/{owner}"),
+       (repo_slug, base_url),
+       ("commits", base_url),
+       (commit_id[:8], ""),   # empty url → plain text (current page)
+   )
+   ```
+   `_breadcrumbs()` is a thin helper in `maestro/api/routes/musehub/ui.py`
+   that converts `(label, url)` tuples into a list of dicts.
+
+#### Repo tab strip (`partials/repo_tabs.html`)
+
+Shown on all repo-scoped pages via `repo_nav.html` (which also renders the
+repo identity card above the tabs).  The active tab is determined by the
+`current_page` string passed from the route handler:
+
+| `current_page` value | Highlighted tab |
+|----------------------|-----------------|
+| `commits`  | Commits |
+| `graph`    | Graph |
+| `pulls`    | Pull Requests |
+| `issues`   | Issues |
+| `releases` | Releases |
+| `sessions` | Sessions |
+| `timeline` | Timeline |
+| `analysis` | Analysis |
+| `credits`  | Credits |
+| `insights` | Insights |
+| `search`   | Search |
+
+Tab count badges (`id="nav-pr-count"`, `id="nav-issue-count"`) are populated
+client-side by `loadNavCounts()` in `musehub.js` so route handlers remain
+unauthenticated.
 
 ### Design tokens (`tokens.css`)
 

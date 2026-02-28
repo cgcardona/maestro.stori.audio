@@ -87,6 +87,16 @@ def _base_url(owner: str, repo_slug: str) -> str:
     return f"/musehub/ui/{owner}/{repo_slug}"
 
 
+def _breadcrumbs(*segments: tuple[str, str]) -> list[dict[str, str]]:
+    """Build breadcrumb_data list from (label, url) pairs.
+
+    Each dict has ``label`` (display text) and ``url`` (link target).
+    Pass an empty string for ``url`` to render the segment as plain text
+    (used for the leaf/current-page segment).
+    """
+    return [{"label": label, "url": url} for label, url in segments]
+
+
 async def _resolve_repo(
     owner: str, repo_slug: str, db: AsyncSession
 ) -> tuple[str, str]:
@@ -348,6 +358,12 @@ async def commit_page(
             "commit_id": commit_id,
             "base_url": base_url,
             "current_page": "commits",
+            "breadcrumb_data": _breadcrumbs(
+                (owner, f"/musehub/ui/{owner}"),
+                (repo_slug, base_url),
+                ("commits", base_url),
+                (commit_id[:8], ""),
+            ),
         },
         templates=templates,
         json_data=commit,
@@ -1462,6 +1478,44 @@ async def groove_check_page(
 
 
 @router.get(
+    "/{repo_id}/form-structure/{ref}",
+    response_class=HTMLResponse,
+    summary="Muse Hub form and structure page",
+)
+async def form_structure_page(
+    request: Request,
+    repo_id: str,
+    ref: str,
+) -> HTMLResponse:
+    """Render the form and structure analysis page for a commit ref.
+
+    Fetches ``GET /api/v1/musehub/repos/{repo_id}/form-structure/{ref}`` and
+    renders three structural analysis panels:
+
+    - **Section map**: SVG timeline of intro/verse/chorus/bridge/outro bars,
+      colour-coded by section type, with bar numbers and length labels.
+    - **Repetition structure**: which sections repeat, how many times, and
+      their mean pairwise similarity score.
+    - **Section comparison**: similarity heatmap rendered as an SVG grid
+      where cell colour intensity encodes the 0–1 cosine similarity between
+      every pair of formal sections.
+
+    Auth is handled client-side via localStorage JWT, matching all other UI
+    pages.  No JWT is required to load the HTML shell.
+    """
+    short_ref = ref[:8] if len(ref) >= 8 else ref
+    return templates.TemplateResponse(
+        request,
+        "musehub/pages/form_structure.html",
+        {
+            "repo_id": repo_id,
+            "ref": ref,
+            "short_ref": short_ref,
+        },
+    )
+
+
+@router.get(
     "/{repo_id}/analysis/{ref}/harmony",
     response_class=HTMLResponse,
     summary="Muse Hub harmony analysis page",
@@ -1894,3 +1948,4 @@ async def harmony_analysis_page(repo_id: str, ref: str) -> HTMLResponse:
 </body>
 </html>"""
     return HTMLResponse(content=html)
+
