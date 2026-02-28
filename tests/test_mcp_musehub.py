@@ -319,7 +319,7 @@ class TestMusehubExecutors:
         assert result.data["total_commits"] == 1
         by_author = result.data["by_author"]
         assert isinstance(by_author, dict)
-        assert by_author.get("alice") == 1  # type: ignore[index, call-overload]
+        assert by_author.get("alice") == 1
 
     @pytest.mark.anyio
     async def test_mcp_get_analysis_objects(self, db_session: AsyncSession) -> None:

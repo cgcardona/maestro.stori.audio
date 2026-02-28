@@ -24,7 +24,7 @@ class CommitInput(CamelModel):
     message: str
     snapshot_id: str | None = None
     timestamp: datetime
-    # Optional -- falls back to the JWT ``sub`` when absent
+    # Optional — falls back to the JWT ``sub`` when absent
     author: str | None = None
 
 
@@ -62,9 +62,9 @@ class PullRequest(CamelModel):
     """Body for POST /musehub/repos/{repo_id}/pull."""
 
     branch: str
-    # Commit IDs the client already has -- missing ones will be returned
+    # Commit IDs the client already has — missing ones will be returned
     have_commits: list[str] = Field(default_factory=list)
-    # Object IDs the client already has -- missing ones will be returned
+    # Object IDs the client already has — missing ones will be returned
     have_objects: list[str] = Field(default_factory=list)
 
 
@@ -95,7 +95,7 @@ class CreateRepoRequest(CamelModel):
     description: str = Field("", description="Short description shown on the explore page")
     tags: list[str] = Field(
         default_factory=list,
-        description="Free-form tags -- genre, key, instrumentation (e.g. 'jazz', 'F# minor', 'bass')",
+        description="Free-form tags — genre, key, instrumentation (e.g. 'jazz', 'F# minor', 'bass')",
     )
     key_signature: str | None = Field(None, max_length=50, description="Musical key (e.g. 'C major', 'F# minor')")
     tempo_bpm: int | None = Field(None, ge=20, le=300, description="Tempo in BPM")
@@ -218,7 +218,7 @@ class PRMergeRequest(CamelModel):
     merge_strategy: str = Field(
         "merge_commit",
         pattern="^(merge_commit)$",
-        description="Merge strategy -- only 'merge_commit' is supported at MVP",
+        description="Merge strategy — only 'merge_commit' is supported at MVP",
     )
 
 
@@ -229,13 +229,64 @@ class PRMergeResponse(CamelModel):
     merge_commit_id: str
 
 
+# ── Release models ────────────────────────────────────────────────────────────
+
+
+class ReleaseCreate(CamelModel):
+    """Body for POST /musehub/repos/{repo_id}/releases.
+
+    ``tag`` must be unique per repo (e.g. "v1.0", "v2.3.1").
+    ``commit_id`` pins the release to a specific commit snapshot.
+    """
+
+    tag: str = Field(..., min_length=1, max_length=100, description="Version tag, e.g. 'v1.0'")
+    title: str = Field(..., min_length=1, max_length=500, description="Release title")
+    body: str = Field("", description="Release notes (Markdown)")
+    commit_id: str | None = Field(None, description="Commit to pin this release to")
+
+
+class ReleaseDownloadUrls(CamelModel):
+    """Structured download package URLs for a release.
+
+    Each field is either a URL string or None if the package is not available.
+    ``midi_bundle`` is the full MIDI export (all tracks as a single .mid).
+    ``stems`` is a zip of per-track MIDI stems.
+    ``mp3`` is the full mix audio render.
+    ``musicxml`` is the notation export in MusicXML format.
+    ``metadata`` is a JSON file with tempo, key, and arrangement info.
+    """
+
+    midi_bundle: str | None = None
+    stems: str | None = None
+    mp3: str | None = None
+    musicxml: str | None = None
+    metadata: str | None = None
+
+
+class ReleaseResponse(CamelModel):
+    """Wire representation of a Muse Hub release."""
+
+    release_id: str
+    tag: str
+    title: str
+    body: str
+    commit_id: str | None = None
+    download_urls: ReleaseDownloadUrls
+    created_at: datetime
+
+
+class ReleaseListResponse(CamelModel):
+    """List of releases for a repo (newest first)."""
+
+    releases: list[ReleaseResponse]
+
 # ── Credits models ────────────────────────────────────────────────────────────
 
 
 class ContributorCredits(CamelModel):
     """Wire representation of a single contributor's credit record.
 
-    Aggregated from commit history -- one record per unique author string.
+    Aggregated from commit history — one record per unique author string.
     Contribution types are inferred from commit message keywords so that an
     agent or a human can understand each collaborator's role at a glance.
     """
@@ -265,7 +316,7 @@ class CreditsResponse(CamelModel):
 
 
 class ObjectMetaResponse(CamelModel):
-    """Wire representation of a stored artifact -- metadata only, no content bytes.
+    """Wire representation of a stored artifact — metadata only, no content bytes.
 
     Returned by GET /musehub/repos/{repo_id}/objects. Use the ``/content``
     sub-resource to download the raw bytes. The ``path`` field retains the
@@ -286,6 +337,93 @@ class ObjectMetaListResponse(CamelModel):
     objects: list[ObjectMetaResponse]
 
 
+# ── Timeline models ───────────────────────────────────────────────────────────
+
+
+class TimelineCommitEvent(CamelModel):
+    """A commit plotted as a point on the timeline.
+
+    Every pushed commit becomes a commit event regardless of its message content.
+    The ``commit_id`` is the canonical identifier for audio-preview lookup and
+    deep-linking to the commit detail page.
+    """
+
+    event_type: str = "commit"
+    commit_id: str
+    branch: str
+    message: str
+    author: str
+    timestamp: datetime
+    parent_ids: list[str]
+
+
+class TimelineEmotionEvent(CamelModel):
+    """An emotion-vector data point overlaid on the timeline as a line chart.
+
+    Emotion values are derived deterministically from the commit SHA so the
+    timeline is always reproducible without external inference. Each field is
+    in the range [0.0, 1.0]. Agents use these values to understand how the
+    emotional character of the composition shifted over time.
+    """
+
+    event_type: str = "emotion"
+    commit_id: str
+    timestamp: datetime
+    valence: float
+    energy: float
+    tension: float
+
+
+class TimelineSectionEvent(CamelModel):
+    """A detected section change plotted as a marker on the timeline.
+
+    Section names are extracted from commit messages using keyword heuristics
+    (e.g. "added chorus", "intro complete", "bridge removed"). The ``action``
+    field is either ``"added"`` or ``"removed"``.
+    """
+
+    event_type: str = "section"
+    commit_id: str
+    timestamp: datetime
+    section_name: str
+    action: str
+
+
+class TimelineTrackEvent(CamelModel):
+    """A detected track addition or removal plotted as a marker on the timeline.
+
+    Track changes are extracted from commit messages using keyword heuristics
+    (e.g. "added bass", "removed keys", "new drums track"). The ``action``
+    field is either ``"added"`` or ``"removed"``.
+    """
+
+    event_type: str = "track"
+    commit_id: str
+    timestamp: datetime
+    track_name: str
+    action: str
+
+
+class TimelineResponse(CamelModel):
+    """Chronological timeline of musical evolution for a repo.
+
+    Contains four parallel event streams that the client renders as
+    independently toggleable layers:
+    - ``commits``: every pushed commit (always present)
+    - ``emotion``: emotion-vector data points per commit (always present)
+    - ``sections``: section change events derived from commit messages
+    - ``tracks``: track add/remove events derived from commit messages
+
+    Agent use case: call this endpoint to understand how a project evolved —
+    when sections were introduced, when the emotional character shifted, and
+    which instruments were added or removed over time.
+    """
+
+    commits: list[TimelineCommitEvent]
+    emotion: list[TimelineEmotionEvent]
+    sections: list[TimelineSectionEvent]
+    tracks: list[TimelineTrackEvent]
+    total_commits: int
 # ── Divergence visualization models ───────────────────────────────────────────
 
 
@@ -330,7 +468,7 @@ class ExploreRepoResult(CamelModel):
 
     Extends RepoResponse with aggregated counts (star_count, commit_count)
     that are computed at query time for efficient pagination and sorting.
-    These counts are read-only signals -- they are never persisted directly on
+    These counts are read-only signals — they are never persisted directly on
     the repo row to avoid write amplification on every push/star.
     """
 
@@ -344,15 +482,13 @@ class ExploreRepoResult(CamelModel):
     star_count: int
     commit_count: int
     created_at: datetime
-
-
 # ── Profile models ────────────────────────────────────────────────────────────
 
 
 class ProfileUpdateRequest(CamelModel):
     """Body for PUT /api/v1/musehub/users/{username}.
 
-    All fields are optional -- send only the ones to change.
+    All fields are optional — send only the ones to change.
     """
 
     bio: str | None = Field(None, max_length=500, description="Short bio (Markdown supported)")
@@ -366,22 +502,20 @@ class ProfileRepoSummary(CamelModel):
     """Compact repo summary shown on a user's profile page.
 
     Includes the last-activity timestamp derived from the most recent commit
-    and a stub star_count (always 0 at MVP -- no star mechanism yet).
+    and a stub star_count (always 0 at MVP — no star mechanism yet).
     """
 
     repo_id: str
     name: str
     visibility: str
-    star_count: int
-    last_activity_at: datetime | None
+    star_count: int = 0
+    last_activity_at: datetime | None = None
     created_at: datetime
-
-
 class ExploreResponse(CamelModel):
     """Paginated response from GET /api/v1/musehub/discover/repos.
 
-    ``total`` reflects the full filtered result set size -- not just the current
-    page -- so clients can render pagination controls without a second query.
+    ``total`` reflects the full filtered result set size — not just the current
+    page — so clients can render pagination controls without a second query.
     """
 
     repos: list[ExploreRepoResult]
@@ -395,8 +529,6 @@ class StarResponse(CamelModel):
 
     starred: bool
     star_count: int
-
-
 class ContributionDay(CamelModel):
     """A single day in the contribution heatmap.
 
@@ -573,6 +705,7 @@ class PullRequestEventPayload(TypedDict):
 # these; callers pass the specific TypedDict for their event type.
 WebhookEventPayload = PushEventPayload | IssueEventPayload | PullRequestEventPayload
 
+
 # ── Context models ────────────────────────────────────────────────────────────
 
 
@@ -637,7 +770,7 @@ class MuseHubContextMusicalState(CamelModel):
 
     ``active_tracks`` is populated from object paths in the repo.
     All analytical fields (key, tempo, etc.) are None until Storpheus MIDI
-    analysis is integrated -- agents should treat None as "unknown."
+    analysis is integrated — agents should treat None as "unknown."
     """
 
     active_tracks: list[str]
@@ -654,7 +787,7 @@ class MuseHubContextResponse(CamelModel):
 
     Returned by ``GET /api/v1/musehub/repos/{repo_id}/context/{ref}``.
 
-    This is the MuseHub equivalent of ``MuseContextResult`` -- built from
+    This is the MuseHub equivalent of ``MuseContextResult`` — built from
     the remote repo's commit graph and stored objects rather than the local
     ``.muse`` filesystem.  The structure deliberately mirrors ``MuseContextResult``
     so that agents consuming either source see the same schema.
@@ -763,3 +896,86 @@ class DagGraphResponse(CamelModel):
     nodes: list[DagNode]
     edges: list[DagEdge]
     head_commit_id: str | None = None
+
+
+# ── Session models ─────────────────────────────────────────────────────────────
+
+
+class SessionCreate(CamelModel):
+    """Body for POST /musehub/repos/{repo_id}/sessions.
+
+    Sent by the CLI on ``muse session start`` to register a new session.
+    ``started_at`` defaults to the server's current time when absent.
+    """
+
+    started_at: datetime | None = None
+    participants: list[str] = Field(
+        default_factory=list, description="Participant identifiers or display names"
+    )
+    intent: str = Field("", description="Free-text creative goal for this session")
+    location: str = Field("", max_length=255, description="Studio or location label")
+    is_active: bool = Field(True, description="True if the session is currently live")
+
+
+class SessionStop(CamelModel):
+    """Body for POST /musehub/repos/{repo_id}/sessions/{session_id}/stop.
+
+    Sent by the CLI on ``muse session stop`` to mark a session as ended.
+    """
+
+    ended_at: datetime | None = None
+
+
+class SessionResponse(CamelModel):
+    """Wire representation of a single recording session.
+
+    ``duration_seconds`` is derived from ``started_at`` and ``ended_at``;
+    None when the session is still active (``ended_at`` is null).
+    ``is_active`` is True while the session is open — used by the Hub UI to
+    render a live indicator.
+    """
+
+    session_id: str
+    started_at: datetime
+    ended_at: datetime | None = None
+    duration_seconds: float | None = None
+    participants: list[str]
+    intent: str
+    location: str
+    is_active: bool
+    created_at: datetime
+
+
+class SessionListResponse(CamelModel):
+    """Paginated list of sessions for a repo (newest first)."""
+
+    sessions: list[SessionResponse]
+    total: int
+
+
+class SimilarCommitResponse(CamelModel):
+    """A single result from a MuseHub semantic similarity search.
+
+    The score is cosine similarity in [0.0, 1.0] — higher is more similar.
+    Results are pre-sorted descending by score.
+    """
+
+    commit_id: str = Field(..., description="Commit SHA of the matching commit")
+    repo_id: str = Field(..., description="UUID of the repo containing this commit")
+    score: float = Field(..., ge=0.0, le=1.0, description="Cosine similarity score")
+    branch: str = Field(..., description="Branch the commit lives on")
+    author: str = Field(..., description="Commit author identifier")
+
+
+class SimilarSearchResponse(CamelModel):
+    """Response for GET /musehub/search/similar.
+
+    Contains the query commit SHA and a ranked list of musically similar commits.
+    Only public repos appear in results — enforced server-side by Qdrant filter.
+    """
+
+    query_commit: str = Field(..., description="The commit SHA used as the search query")
+    results: list[SimilarCommitResponse] = Field(
+        default_factory=list,
+        description="Ranked results, most similar first",
+    )
