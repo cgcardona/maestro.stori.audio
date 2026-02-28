@@ -21,7 +21,6 @@ import datetime
 import json
 import pathlib
 import uuid
-from typing import Generator
 
 import pytest
 import typer

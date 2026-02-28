@@ -39,6 +39,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import pathlib
 from collections import deque
 from dataclasses import dataclass, field
@@ -346,7 +347,6 @@ async def advance_bisect(
     write_bisect_state(root, state)
 
     remaining = len(candidates)
-    import math
     steps = math.ceil(math.log2(remaining + 1)) if remaining > 0 else 0
 
     return BisectStepResult(

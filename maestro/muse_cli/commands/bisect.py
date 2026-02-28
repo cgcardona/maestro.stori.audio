@@ -48,10 +48,10 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import math
 import pathlib
 import shlex
 import subprocess
-from typing import Optional
 
 import typer
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -400,7 +400,6 @@ def bisect_run(
             _init_state: BisectState = current_state
 
             async def _get_initial() -> BisectStepResult:
-                import math
                 async with open_session() as session:
                     candidates = await get_commits_between(session, _init_good, _init_bad)
                     mid = pick_midpoint(candidates)
