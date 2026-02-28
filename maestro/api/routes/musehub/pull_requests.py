@@ -4,11 +4,13 @@ Endpoint summary:
   POST /musehub/repos/{repo_id}/pull-requests                              — open a PR
   GET  /musehub/repos/{repo_id}/pull-requests                              — list PRs
   GET  /musehub/repos/{repo_id}/pull-requests/{pr_id}                      — get a PR
+  GET  /musehub/repos/{repo_id}/pull-requests/{pr_id}/diff                 — musical diff (radar data)
   POST /musehub/repos/{repo_id}/pull-requests/{pr_id}/merge                — merge a PR
   POST /musehub/repos/{repo_id}/pull-requests/{pr_id}/comments             — create review comment
   GET  /musehub/repos/{repo_id}/pull-requests/{pr_id}/comments             — list review comments (threaded)
 
-All endpoints require a valid JWT Bearer token.
+All endpoints require a valid JWT Bearer token (except diff which accepts anonymous reads
+of public repos, matching the same visibility rules as get_pull_request).
 No business logic lives here — all persistence is delegated to
 maestro.services.musehub_pull_requests.
 """
@@ -25,13 +27,15 @@ from maestro.models.musehub import (
     PRCommentCreate,
     PRCommentListResponse,
     PRCreate,
+    PRDiffDimensionScore,
+    PRDiffResponse,
     PRListResponse,
     PRMergeRequest,
     PRMergeResponse,
     PRResponse,
     PullRequestEventPayload,
 )
-from maestro.services import musehub_pull_requests, musehub_repository
+from maestro.services import musehub_divergence, musehub_pull_requests, musehub_repository
 from maestro.services.musehub_webhook_dispatcher import dispatch_event_background
 
 logger = logging.getLogger(__name__)
@@ -160,6 +164,122 @@ async def get_pull_request(
     if pr is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Pull request not found")
     return pr
+
+
+@router.get(
+    "/repos/{repo_id}/pull-requests/{pr_id}/diff",
+    response_model=PRDiffResponse,
+    operation_id="getPullRequestDiff",
+    summary="Compute musical diff between the PR branches",
+)
+async def get_pull_request_diff(
+    repo_id: str,
+    pr_id: str,
+    db: AsyncSession = Depends(get_db),
+    claims: TokenClaims | None = Depends(optional_token),
+) -> PRDiffResponse:
+    """Return a five-dimension musical diff between from_branch and to_branch of a PR.
+
+    Uses the Jaccard divergence engine to score harmonic, rhythmic, melodic,
+    structural, and dynamic change magnitude between the two branches.
+
+    This endpoint is consumed by the PR detail page to render the radar chart,
+    piano roll diff, audio A/B toggle, and dimension badges.  AI agents use it
+    to reason about musical impact before approving a merge.
+
+    Returns:
+        PRDiffResponse with per-dimension scores and overall divergence score.
+
+    Raises:
+        404: If the repo or PR is not found.
+        401: If the repo is private and no token is provided.
+    """
+    repo = await musehub_repository.get_repo(db, repo_id)
+    if repo is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repo not found")
+    if repo.visibility != "public" and claims is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required to access private repos.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    pr = await musehub_pull_requests.get_pr(db, repo_id, pr_id)
+    if pr is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Pull request not found")
+
+    try:
+        result = await musehub_divergence.compute_hub_divergence(
+            db,
+            repo_id=repo_id,
+            branch_a=pr.to_branch,
+            branch_b=pr.from_branch,
+        )
+    except ValueError:
+        # Branches with no commits yet — return zero-score placeholder so the page renders.
+        dimensions = [
+            PRDiffDimensionScore(
+                dimension=dim,
+                score=0.0,
+                level="NONE",
+                delta_label="unchanged",
+                description="No commits on one or both branches yet.",
+                from_branch_commits=0,
+                to_branch_commits=0,
+            )
+            for dim in musehub_divergence.ALL_DIMENSIONS
+        ]
+        return PRDiffResponse(
+            pr_id=pr_id,
+            repo_id=repo_id,
+            from_branch=pr.from_branch,
+            to_branch=pr.to_branch,
+            dimensions=dimensions,
+            overall_score=0.0,
+            common_ancestor=None,
+            affected_sections=[],
+        )
+
+    def _delta_label(score: float) -> str:
+        """Convert a divergence score to a human-readable delta badge label."""
+        pct = round(score * 100, 1)
+        if pct == 0.0:
+            return "unchanged"
+        return f"+{pct}"
+
+    dimensions = [
+        PRDiffDimensionScore(
+            dimension=d.dimension,
+            score=d.score,
+            level=d.level.value,
+            delta_label=_delta_label(d.score),
+            description=d.description,
+            from_branch_commits=d.branch_b_commits,
+            to_branch_commits=d.branch_a_commits,
+        )
+        for d in result.dimensions
+    ]
+
+    # Derive affected sections from commit messages that mention structural keywords.
+    section_keywords = ("bridge", "chorus", "verse", "intro", "outro", "section")
+    affected: list[str] = []
+    seen: set[str] = set()
+    for d in result.dimensions:
+        if d.dimension == "structural" and d.score > 0.0:
+            for kw in section_keywords:
+                if kw not in seen:
+                    seen.add(kw)
+                    affected.append(kw.capitalize())
+
+    return PRDiffResponse(
+        pr_id=pr_id,
+        repo_id=repo_id,
+        from_branch=pr.from_branch,
+        to_branch=pr.to_branch,
+        dimensions=dimensions,
+        overall_score=result.overall_score,
+        common_ancestor=result.common_ancestor,
+        affected_sections=affected,
+    )
 
 
 @router.post(
