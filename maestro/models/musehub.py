@@ -243,6 +243,28 @@ class ObjectMetaListResponse(CamelModel):
     objects: list[ObjectMetaResponse]
 
 
+# ── Cross-repo search models ───────────────────────────────────────────────────
+
+
+class GlobalSearchCommitMatch(CamelModel):
+    """A single commit that matched the search query in a cross-repo search.
+
+    Consumers display ``repo_id`` / ``repo_name`` as the group header, then
+    render ``commit_id``, ``message``, and ``author`` as the match row.
+    Audio preview is surfaced via ``audio_object_id`` when an .mp3 or .ogg
+    artifact is attached to the same repo.
+    """
+
+    commit_id: str
+    message: str
+    author: str
+    branch: str
+    timestamp: datetime
+    repo_id: str
+    repo_name: str
+    repo_owner: str
+    repo_visibility: str
+    audio_object_id: str | None = None
 # ── Webhook models ────────────────────────────────────────────────────────────
 
 # Valid event types a subscriber may register for.
@@ -377,6 +399,38 @@ class MuseHubContextCommitInfo(CamelModel):
     author: str
     branch: str
     timestamp: datetime
+
+
+class GlobalSearchRepoGroup(CamelModel):
+    """All matching commits for a single repo, with repo-level metadata.
+
+    Results are grouped by repo so consumers can render a collapsible section
+    per repo (name, owner) and paginate within each group.
+    """
+
+    repo_id: str
+    repo_name: str
+    repo_owner: str
+    repo_visibility: str
+    matches: list[GlobalSearchCommitMatch]
+    total_matches: int
+
+
+class GlobalSearchResult(CamelModel):
+    """Top-level response for GET /search?q={query}.
+
+    ``groups`` contains one entry per public repo that had at least one
+    matching commit.  ``total_repos`` is the count of repos searched, not just
+    the repos with matches.  ``page`` / ``page_size`` enable offset pagination
+    across groups.
+    """
+
+    query: str
+    mode: str
+    groups: list[GlobalSearchRepoGroup]
+    total_repos_searched: int
+    page: int
+    page_size: int
 
 
 class MuseHubContextHistoryEntry(CamelModel):

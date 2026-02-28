@@ -6403,3 +6403,116 @@ registration index matches the filesystem.
 **Implementation:** `maestro/muse_cli/commands/worktree.py` — `prune_worktrees(root)`.
 
 ---
+
+## Muse Hub — Cross-Repo Global Search
+
+### Overview
+
+Global search lets musicians and AI agents search commit messages across **all
+public Muse Hub repos** in a single query.  It is the cross-repo counterpart of
+the per-repo `muse find` command.
+
+Only `visibility='public'` repos are searched — private repos are excluded at
+the persistence layer and are never enumerated regardless of caller identity.
+
+### API
+
+```
+GET /api/v1/musehub/search?q={query}&mode={mode}&page={page}&page_size={page_size}
+Authorization: Bearer <jwt>
+```
+
+**Parameters:**
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `q` | string (required) | — | Search query (1–500 chars) |
+| `mode` | `keyword` \| `pattern` | `keyword` | Matching strategy (see below) |
+| `page` | int ≥ 1 | 1 | Repo-group page number |
+| `page_size` | int 1–50 | 10 | Repo-groups per page |
+
+**Search modes:**
+
+- **keyword** — whitespace-split OR-match of each term against commit messages
+  and repo names (case-insensitive, uses `lower()` + `LIKE %term%`).
+- **pattern** — raw SQL `LIKE` pattern applied to commit messages only.  Use
+  `%` as wildcard (e.g. `q=%minor%`).
+
+### Response shape
+
+Returns `GlobalSearchResult` (JSON, camelCase):
+
+```json
+{
+  "query": "jazz groove",
+  "mode": "keyword",
+  "totalReposSearched": 42,
+  "page": 1,
+  "pageSize": 10,
+  "groups": [
+    {
+      "repoId": "uuid",
+      "repoName": "jazz-lab",
+      "repoOwner": "alice",
+      "repoVisibility": "public",
+      "totalMatches": 3,
+      "matches": [
+        {
+          "commitId": "abc123",
+          "message": "jazz groove — walking bass variant",
+          "author": "alice",
+          "branch": "main",
+          "timestamp": "2026-02-27T12:00:00Z",
+          "repoId": "uuid",
+          "repoName": "jazz-lab",
+          "repoOwner": "alice",
+          "repoVisibility": "public",
+          "audioObjectId": "sha256:abc..."
+        }
+      ]
+    }
+  ]
+}
+```
+
+Results are **grouped by repo**.  Each group contains up to 20 matching commits
+(newest-first).  `totalMatches` reflects the actual count before the 20-commit
+cap.  Pagination (`page` / `page_size`) controls how many repo-groups appear
+per response.
+
+`audioObjectId` is populated when the repo has at least one `.mp3`, `.ogg`, or
+`.wav` artifact — the first one alphabetically by path is chosen.  Consumers
+can use this to render `<audio>` preview players without a separate API call.
+
+### Browser UI
+
+```
+GET /musehub/ui/search?q={query}&mode={mode}
+```
+
+Returns a static HTML shell (no JWT required).  The page pre-fills the search
+form from URL params, submits to the JSON API via localStorage JWT, and renders
+grouped results with audio previews and pagination.
+
+### Implementation
+
+| Layer | File | What it does |
+|-------|------|-------------|
+| Pydantic models | `maestro/models/musehub.py` | `GlobalSearchCommitMatch`, `GlobalSearchRepoGroup`, `GlobalSearchResult` |
+| Service | `maestro/services/musehub_repository.py` | `global_search()` — public-only filter, keyword/pattern predicate, group assembly, audio preview resolution |
+| Route | `maestro/api/routes/musehub/search.py` | `GET /musehub/search` — validates params, delegates to service |
+| UI | `maestro/api/routes/musehub/ui.py` | `global_search_page()` — static HTML shell at `/musehub/ui/search` |
+
+### Agent use case
+
+An AI composition agent searching for reference material can call:
+
+```
+GET /api/v1/musehub/search?q=F%23+minor+walking+bass&mode=keyword&page_size=5
+```
+
+The grouped response lets the agent scan commit messages by repo context,
+identify matching repos by name and owner, and immediately fetch audio previews
+via `audioObjectId` without additional round-trips.
+
+---

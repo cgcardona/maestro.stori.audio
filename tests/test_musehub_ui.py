@@ -195,6 +195,31 @@ async def test_ui_pages_include_token_form(
 
 
 @pytest.mark.anyio
+async def test_global_search_ui_page_returns_200(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """GET /musehub/ui/search returns 200 HTML (no auth required — HTML shell)."""
+    response = await client.get("/musehub/ui/search")
+    assert response.status_code == 200
+    assert "text/html" in response.headers["content-type"]
+    body = response.text
+    assert "Global Search" in body
+    assert "Muse Hub" in body
+
+
+@pytest.mark.anyio
+async def test_global_search_ui_page_no_auth_required(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """GET /musehub/ui/search must not return 401 — it is a static HTML shell."""
+    response = await client.get("/musehub/ui/search")
+    assert response.status_code != 401
+    assert response.status_code == 200
+
+
+@pytest.mark.anyio
 async def test_list_objects_returns_empty_for_new_repo(
     client: AsyncClient,
     db_session: AsyncSession,

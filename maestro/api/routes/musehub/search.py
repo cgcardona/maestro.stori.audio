@@ -1,23 +1,18 @@
-"""Muse Hub in-repo search route handlers.
+"""Muse Hub search route handlers.
 
-Endpoint summary:
+Endpoint summary (cross-repo global search):
+  GET /musehub/search?q={query}&mode={mode}&page={page}&page_size={page_size}
+    — search commit messages across all public repos, results grouped by repo.
+
+Endpoint summary (in-repo search):
   GET /api/v1/musehub/repos/{repo_id}/search — search commits by mode
 
-Search modes (``?mode=`` query parameter):
-  ``property``  — filter by musical properties (harmony, rhythm, melody, etc.)
-  ``ask``       — natural-language query (keyword extraction + overlap scoring)
-  ``keyword``   — keyword/phrase overlap scored search
-  ``pattern``   — substring pattern match against message and branch name
+The global search endpoint requires a valid JWT Bearer token so unauthenticated
+callers cannot enumerate commit messages from public repos without identity.
 
-All modes accept optional ``since`` / ``until`` date-range filters and a
-``limit`` cap (default 20, max 200).  All modes return the same JSON shape
-(:class:`~maestro.models.musehub.SearchResponse`) so the UI can use a
-single result renderer.
-
-Content negotiation: this endpoint always returns JSON. The HTML search page
-at ``GET /musehub/ui/{repo_id}/search`` fetches this endpoint client-side.
-
-Authentication: JWT Bearer token required (inherited from musehub router).
+Content negotiation:
+  Accept: application/json  (default) — returns JSON.
+  The UI page at GET /musehub/ui/search serves the browser-readable shell.
 """
 from __future__ import annotations
 
@@ -29,14 +24,69 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from maestro.auth.dependencies import TokenClaims, require_valid_token
 from maestro.db import get_db
-from maestro.models.musehub import SearchResponse
+from maestro.models.musehub import GlobalSearchResult, SearchResponse
 from maestro.services import musehub_repository, musehub_search
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-_VALID_MODES = frozenset({"property", "ask", "keyword", "pattern"})
+_GLOBAL_VALID_MODES = frozenset({"keyword", "pattern"})
+_REPO_VALID_MODES = frozenset({"property", "ask", "keyword", "pattern"})
+
+
+@router.get(
+    "/search",
+    response_model=GlobalSearchResult,
+    summary="Global cross-repo search across all public Muse Hub repos",
+)
+async def global_search(
+    q: str = Query(..., min_length=1, max_length=500, description="Search query string"),
+    mode: str = Query("keyword", description="Search mode: 'keyword' or 'pattern'"),
+    page: int = Query(1, ge=1, description="1-based page number for repo-group pagination"),
+    page_size: int = Query(10, ge=1, le=50, description="Number of repo groups per page"),
+    db: AsyncSession = Depends(get_db),
+    _: TokenClaims = Depends(require_valid_token),
+) -> GlobalSearchResult:
+    """Search commit messages across all public Muse Hub repos.
+
+    Results are grouped by repo — each group contains up to 20 matching
+    commits ordered newest-first with repo-level metadata (name, owner).
+
+    Only ``visibility='public'`` repos are searched.  Private repos are
+    excluded at the persistence layer regardless of caller identity.
+
+    Pagination applies to repo-groups: ``page=1&page_size=10`` returns the
+    first 10 repos that had at least one match.
+
+    Supported search modes:
+    - ``keyword``: OR-match whitespace-split terms against commit messages and
+      repo names (case-insensitive).
+    - ``pattern``: raw SQL LIKE pattern applied to commit messages only.
+      Use ``%`` as wildcard (e.g. ``q=%minor%``).
+
+    Content negotiation: this endpoint always returns JSON.  The companion
+    HTML page at ``GET /musehub/ui/search`` renders the browser UI shell.
+    """
+    effective_mode = mode if mode in _GLOBAL_VALID_MODES else "keyword"
+    if effective_mode != mode:
+        logger.warning("⚠️ Unknown search mode %r — falling back to 'keyword'", mode)
+
+    result = await musehub_repository.global_search(
+        db,
+        query=q,
+        mode=effective_mode,
+        page=page,
+        page_size=page_size,
+    )
+    logger.info(
+        "✅ Global search q=%r mode=%s page=%d → %d repo groups",
+        q,
+        effective_mode,
+        page,
+        len(result.groups),
+    )
+    return result
 
 
 @router.get(
@@ -81,10 +131,10 @@ async def search_repo(
     Returns 404 if the repo does not exist.  Returns an empty ``matches`` list
     when no commits satisfy the criteria (not a 404).
     """
-    if mode not in _VALID_MODES:
+    if mode not in _REPO_VALID_MODES:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-            detail=f"Invalid mode '{mode}'. Must be one of: {sorted(_VALID_MODES)}",
+            detail=f"Invalid mode '{mode}'. Must be one of: {sorted(_REPO_VALID_MODES)}",
         )
 
     repo = await musehub_repository.get_repo(db, repo_id)
@@ -126,7 +176,6 @@ async def search_repo(
             limit=limit,
         )
 
-    # mode == "pattern"
     return await musehub_search.search_by_pattern(
         db,
         repo_id=repo_id,
