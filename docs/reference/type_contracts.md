@@ -2097,6 +2097,27 @@ directly for JSON serialisation without any additional mapping step.
 **Producer:** `_match_commit()`, `_grep_async()`
 **Consumer:** `_render_matches()`, callers using `--json` output
 
+### `RecallResult`
+
+**Module:** `maestro/muse_cli/commands/recall.py`
+
+Ranked result entry returned by `muse recall`. Each entry represents one
+commit that scored at or above the `--threshold` keyword-overlap cutoff.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `rank` | `int` | 1-based rank within the result set (1 = highest score) |
+| `score` | `float` | Keyword overlap coefficient ∈ [0, 1], rounded to 4 decimal places |
+| `commit_id` | `str` | Full 64-char SHA of the matching commit |
+| `date` | `str` | Commit timestamp formatted as `"YYYY-MM-DD HH:MM:SS"` |
+| `branch` | `str` | Branch the commit belongs to |
+| `message` | `str` | Full commit message |
+
+**Producer:** `_recall_async()`
+**Consumer:** `_render_results()`, callers using `--json` output
+
+---
+
 ### `DescribeResult`
 
 **Module:** `maestro/muse_cli/commands/describe.py`
