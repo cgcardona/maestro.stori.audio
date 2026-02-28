@@ -17,7 +17,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends
 
-from maestro.api.routes.musehub import issues, pull_requests, repos, sync
+from maestro.api.routes.musehub import issues, objects, pull_requests, repos, sync
 from maestro.auth.dependencies import require_valid_token
 
 router = APIRouter(
@@ -30,5 +30,6 @@ router.include_router(repos.router)
 router.include_router(issues.router)
 router.include_router(pull_requests.router)
 router.include_router(sync.router)
+router.include_router(objects.router)
 
 __all__ = ["router"]
