@@ -97,7 +97,7 @@ maestro/muse_cli/
     ├── snapshot.py       — walk_workdir, hash_file, build_snapshot_manifest, compute IDs,
     │                        diff_workdir_vs_snapshot (added/modified/deleted/untracked sets)
     ├── models.py         — MuseCliCommit, MuseCliSnapshot, MuseCliObject, MuseCliTag (SQLAlchemy)
-    ├── db.py             — open_session, upsert/get helpers, get_head_snapshot_manifest
+    ├── db.py             — open_session, upsert/get helpers, get_head_snapshot_manifest, find_commits_by_prefix
     ├── tag.py            — muse tag ✅ add/remove/list/search (issue #123)
     ├── merge_engine.py   — find_merge_base(), diff_snapshots(), detect_conflicts(),
     │                        apply_merge(), read/write_merge_state(), MergeState dataclass
@@ -108,9 +108,15 @@ maestro/muse_cli/
     ├── pull.py           — muse pull    (stub — issue #38)
     ├── open_cmd.py       — muse open    ✅ macOS artifact preview (issue #45)
     ├── play.py           — muse play    ✅ macOS audio playback via afplay (issue #45)
+    ├── export.py         — muse export  ✅ snapshot export to MIDI/JSON/MusicXML/ABC/WAV (issue #112)
     ├── find.py           — muse find   ✅ search commit history by musical properties (issue #114)
     └── ask.py            — muse ask     ✅ natural language query over commit history (issue #126)
 ```
+
+`maestro/muse_cli/export_engine.py` — `ExportFormat`, `MuseExportOptions`, `MuseExportResult`,
+`StorpheusUnavailableError`, `filter_manifest`, `export_snapshot`, and per-format handlers
+(`export_midi`, `export_json`, `export_musicxml`, `export_abc`, `export_wav`). See
+`## muse export` section below.
 
 `maestro/muse_cli/artifact_resolver.py` — `resolve_artifact_async()` / `resolve_artifact()`:
 resolves a user-supplied path-or-commit-ID to a concrete `pathlib.Path` (see below).
@@ -506,6 +512,121 @@ See `docs/reference/type_contracts.md`:
 > **Planned enhancement:** Full harmonic, melodic, and rhythmic analysis (chord progression diffs, motif tracking, groove scoring) is tracked as a follow-up. Current output is purely structural — file-level snapshot diffs with no MIDI parsing.
 
 ---
+
+## `muse export` — Export a Snapshot to External Formats
+
+`muse export [<commit>] --format <format>` exports a Muse snapshot to a
+file format usable outside the DAW.  This is a **read-only** operation —
+no commit is created and no DB writes occur.  Given the same commit ID and
+format, the output is always identical (deterministic).
+
+### Usage
+
+```
+muse export [<commit>] --format <format> [OPTIONS]
+
+Arguments:
+  <commit>          Short commit ID prefix (default: HEAD).
+
+Options:
+  --format, -f      Target format (required): midi | json | musicxml | abc | wav
+  --output, -o      Destination path (default: ./exports/<commit8>.<format>)
+  --track TEXT      Export only files whose path contains TEXT (substring match).
+  --section TEXT    Export only files whose path contains TEXT (substring match).
+  --split-tracks    Write one file per MIDI track (MIDI only).
+```
+
+### Supported Formats
+
+| Format     | Extension | Description |
+|------------|-----------|-------------|
+| `midi`     | `.mid`    | Copy raw MIDI files from the snapshot (lossless, native). |
+| `json`     | `.json`   | Structured JSON index of snapshot files (AI/tooling consumption). |
+| `musicxml` | `.xml`    | MusicXML for notation software (MuseScore, Sibelius, etc.). |
+| `abc`      | `.abc`    | ABC notation for folk/traditional music tools. |
+| `wav`      | `.wav`    | Audio render via Storpheus (requires Storpheus running). |
+
+### Examples
+
+```bash
+# Export HEAD snapshot as MIDI
+muse export --format midi --output /tmp/my-song.mid
+
+# Export only the piano track from a specific commit
+muse export a1b2c3d4 --format midi --track piano
+
+# Export the chorus section as MusicXML
+muse export --format musicxml --section chorus
+
+# Export all tracks as separate MIDI files
+muse export --format midi --split-tracks
+
+# Export JSON note structure
+muse export --format json --output /tmp/snapshot.json
+
+# WAV render (Storpheus must be running)
+muse export --format wav
+```
+
+### Implementation
+
+| Component | Location |
+|-----------|----------|
+| CLI command | `maestro/muse_cli/commands/export.py` |
+| Format engine | `maestro/muse_cli/export_engine.py` |
+| Tests | `tests/muse_cli/test_export.py` |
+
+`export_engine.py` provides:
+
+- `ExportFormat` — enum of supported formats.
+- `MuseExportOptions` — frozen dataclass with export settings.
+- `MuseExportResult` — result dataclass listing written paths.
+- `StorpheusUnavailableError` — raised when WAV export is attempted
+  but Storpheus is unreachable (callers surface a clean error message).
+- `filter_manifest()` — applies `--track` / `--section` filters.
+- `export_snapshot()` — top-level dispatcher.
+- Format handlers: `export_midi`, `export_json`, `export_musicxml`, `export_abc`, `export_wav`.
+- MIDI conversion helpers: `_midi_to_musicxml`, `_midi_to_abc` (minimal, best-effort).
+
+### WAV Export and Storpheus Dependency
+
+`--format wav` delegates audio rendering to the Storpheus service
+(port 10002).  Before attempting any conversion, `export_wav` performs
+a synchronous health check against `GET /health`.  If Storpheus is not
+reachable or returns a non-200 response, `StorpheusUnavailableError` is
+raised and the CLI exits with a clear human-readable error:
+
+```
+❌ WAV export requires Storpheus.
+Storpheus is not reachable at http://localhost:10002: Connection refused
+Start Storpheus (docker compose up storpheus) and retry.
+```
+
+### Filter Semantics
+
+`--track` and `--section` are **case-insensitive substring matches** against
+the full relative path of each file in the snapshot manifest.  Both filters
+are applied with AND semantics: a file must match all provided filters to be
+included.
+
+```
+manifest:
+  chorus/piano/take1.mid
+  verse/piano/take1.mid
+  chorus/bass/take1.mid
+
+--track piano → chorus/piano/take1.mid, verse/piano/take1.mid
+--section chorus → chorus/piano/take1.mid, chorus/bass/take1.mid
+--track piano --section chorus → chorus/piano/take1.mid
+```
+
+### Postgres State
+
+Export is read-only.  It reads `muse_cli_commits` and `muse_cli_snapshots`
+but writes nothing to the database.
+
+---
+
 
 ## Commit Data Model
 
@@ -1984,6 +2105,7 @@ muse context [<commit>] [OPTIONS]
 | `muse context` | `commands/context.py` | ✅ implemented (PR #138) | #113 |
 | `muse describe` | `commands/describe.py` | ✅ stub (PR #134) | #125 |
 | `muse dynamics` | `commands/dynamics.py` | ✅ stub (PR #130) | #120 |
+| `muse export` | `commands/export.py` | ✅ implemented (PR #137) | #112 |
 | `muse grep` | `commands/grep_cmd.py` | ✅ stub (PR #128) | #124 |
 | `muse recall` | `commands/recall.py` | ✅ stub (PR #135) | #122 |
 | `muse session` | `commands/session.py` | ✅ implemented (PR #129) | #127 |
