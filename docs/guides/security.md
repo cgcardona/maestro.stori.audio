@@ -53,6 +53,27 @@ The Muse CLI reads your Hub auth token from `.muse/config.toml` under `[auth] to
 - No token rotation or automatic refresh is implemented. When a token expires, obtain a new one via `POST /auth/token` and update `config.toml` manually.
 - Revocation is handled server-side; the CLI has no revocation cache.
 
+**Full `.muse/config.toml` schema** (for reference — never commit this file):
+
+```toml
+[auth]
+token = "eyJ..."          # Hub bearer token — NEVER commit, NEVER log
+
+[remotes.origin]
+url = "https://story.audio/musehub/repos/<repo-id>"
+
+[remotes.staging]
+url = "https://staging.example.com/musehub/repos/<repo-id>"
+```
+
+**Remote URL security:**
+
+- Remote URLs are stored in `config.toml` alongside the token; the same
+  `.gitignore` entry protects both.
+- `muse remote -v` prints remote names and URLs but never the `[auth]` section.
+- Agents calling `muse remote add` should treat the Hub URL as non-sensitive
+  (it is a public endpoint) but must protect the token in the same file.
+
 **Example `.gitignore` entry:**
 
 ```
