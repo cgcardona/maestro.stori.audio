@@ -28,7 +28,7 @@ from maestro.contracts.mcp_types import (
 )
 from maestro.contracts.json_types import JSONValue, json_list, jint
 from maestro.contracts.project_types import ProjectContext
-from maestro.mcp.tools import MCP_TOOLS, SERVER_SIDE_TOOLS, TOOL_CATEGORIES
+from maestro.mcp.tools import MCP_TOOLS, SERVER_SIDE_TOOLS, TOOL_CATEGORIES, MUSEHUB_TOOL_NAMES
 from maestro.core.tool_validation import validate_tool_call
 
 logger = logging.getLogger(__name__)
@@ -121,7 +121,9 @@ class MaestroMCPServer:
         params = validation.resolved_params
 
         try:
-            if name in SERVER_SIDE_TOOLS:
+            if name in MUSEHUB_TOOL_NAMES:
+                return await self._execute_musehub_tool(name, params)
+            elif name in SERVER_SIDE_TOOLS:
                 return await self._execute_generation_tool(name, params)
             else:
                 return await self._forward_to_daw(name, params)
@@ -183,6 +185,79 @@ class MaestroMCPServer:
     # Tool Execution
     # =========================================================================
     
+    async def _execute_musehub_tool(
+        self,
+        name: str,
+        arguments: dict[str, JSONValue],
+    ) -> ToolCallResult:
+        """Execute a MuseHub browsing tool server-side.
+
+        Routes ``musehub_*`` tool calls to the appropriate executor function
+        in ``maestro.services.musehub_mcp_executor``.  The executor handles
+        its own DB session and returns a ``MusehubToolResult`` that is
+        serialised into an MCP content block here.
+        """
+        from maestro.services import musehub_mcp_executor as executor
+
+        repo_id_raw = arguments.get("repo_id", "")
+        repo_id = str(repo_id_raw) if repo_id_raw is not None else ""
+
+        if name == "musehub_browse_repo":
+            result = await executor.execute_browse_repo(repo_id)
+
+        elif name == "musehub_list_branches":
+            result = await executor.execute_list_branches(repo_id)
+
+        elif name == "musehub_list_commits":
+            branch_raw = arguments.get("branch")
+            branch = str(branch_raw) if branch_raw is not None else None
+            limit_raw = arguments.get("limit", 20)
+            limit = int(limit_raw) if isinstance(limit_raw, (int, float)) else 20
+            result = await executor.execute_list_commits(repo_id, branch=branch, limit=limit)
+
+        elif name == "musehub_read_file":
+            object_id_raw = arguments.get("object_id", "")
+            object_id = str(object_id_raw) if object_id_raw is not None else ""
+            result = await executor.execute_read_file(repo_id, object_id)
+
+        elif name == "musehub_get_analysis":
+            dim_raw = arguments.get("dimension", "overview")
+            dimension = str(dim_raw) if dim_raw is not None else "overview"
+            result = await executor.execute_get_analysis(repo_id, dimension=dimension)
+
+        elif name == "musehub_search":
+            query_raw = arguments.get("query", "")
+            query = str(query_raw) if query_raw is not None else ""
+            mode_raw = arguments.get("mode", "path")
+            mode = str(mode_raw) if mode_raw is not None else "path"
+            result = await executor.execute_search(repo_id, query, mode=mode)
+
+        elif name == "musehub_get_context":
+            result = await executor.execute_get_context(repo_id)
+
+        else:
+            logger.warning("⚠️ Unknown MuseHub tool: %s", name)
+            return ToolCallResult(
+                success=False,
+                content=[{"type": "text", "text": f"Unknown MuseHub tool: {name}"}],
+                is_error=True,
+            )
+
+        if result.ok:
+            logger.info("✅ MuseHub tool %s succeeded", name)
+            return ToolCallResult(
+                success=True,
+                content=[{"type": "text", "text": json.dumps(result.data, indent=2)}],
+            )
+        else:
+            logger.warning("⚠️ MuseHub tool %s failed: %s", name, result.error_message)
+            return ToolCallResult(
+                success=False,
+                content=[{"type": "text", "text": result.error_message or "Unknown error"}],
+                is_error=True,
+                bad_request=result.error_code in ("invalid_dimension", "invalid_mode"),
+            )
+
     async def _execute_generation_tool(
         self,
         name: str,
