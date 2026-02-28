@@ -4,6 +4,7 @@ Tables:
 - muse_cli_objects: content-addressed file blobs (sha256 keyed)
 - muse_cli_snapshots: snapshot manifests mapping paths to object IDs
 - muse_cli_commits: commit history with parent linkage and branch tracking
+- muse_cli_tags: music-semantic tags attached to commits
 
 These tables are owned by the Muse CLI (``muse commit``) and are
 distinct from the Muse VCS variation tables (``variations``, ``phrases``,
@@ -12,6 +13,8 @@ distinct from the Muse VCS variation tables (``variations``, ``phrases``,
 from __future__ import annotations
 
 from datetime import datetime, timezone
+
+import uuid
 
 from sqlalchemy import DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
@@ -104,3 +107,39 @@ class MuseCliCommit(Base):
             f"<MuseCliCommit {self.commit_id[:8]} branch={self.branch!r}"
             f" msg={self.message[:30]!r}>"
         )
+
+
+class MuseCliTag(Base):
+    """A music-semantic tag attached to a Muse CLI commit.
+
+    Tags are free-form strings supporting namespaced conventions:
+    - ``emotion:*``  — emotional character (e.g. emotion:melancholic)
+    - ``stage:*``    — production stage (e.g. stage:rough-mix)
+    - ``ref:*``      — reference track or external source (e.g. ref:beatles)
+    - ``key:*``      — musical key (e.g. key:Am)
+    - ``tempo:*``    — tempo annotation (e.g. tempo:120bpm)
+    - free-form      — any other descriptive label
+
+    Multiple tags can be attached to the same commit. Tags are scoped to a
+    repo so that different local repos can use independent tag spaces.
+    """
+
+    __tablename__ = "muse_cli_tags"
+
+    tag_id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    repo_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
+    commit_id: Mapped[str] = mapped_column(
+        String(64),
+        ForeignKey("muse_cli_commits.commit_id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    tag: Mapped[str] = mapped_column(Text, nullable=False, index=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=_utc_now
+    )
+
+    def __repr__(self) -> str:
+        return f"<MuseCliTag {self.tag!r} commit={self.commit_id[:8]}>"
