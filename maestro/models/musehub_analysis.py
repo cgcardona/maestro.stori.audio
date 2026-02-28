@@ -570,6 +570,86 @@ class DivergenceData(CamelModel):
 
 
 # ---------------------------------------------------------------------------
+# Form and structure page models (issue #225)
+# ---------------------------------------------------------------------------
+
+
+class SectionMapEntry(CamelModel):
+    """A formal section rendered in bars for the section map visualisation.
+
+    Bar numbers are 1-indexed.  ``color_hint`` is a CSS colour string agents
+    and UIs can use for colour-coding the section timeline without computing
+    a palette themselves.
+    """
+
+    label: str = Field(..., description="Section label, e.g. 'intro', 'verse_1', 'chorus'")
+    function: str = Field(..., description="Formal function, e.g. 'exposition', 'climax'")
+    start_bar: int = Field(..., ge=1, description="First bar of this section (1-indexed)")
+    end_bar: int = Field(..., ge=1, description="Last bar of this section (1-indexed, inclusive)")
+    bar_count: int = Field(..., ge=1, description="Number of bars in this section")
+    color_hint: str = Field(..., description="CSS colour string for this section type")
+
+
+class RepetitionEntry(CamelModel):
+    """A group of sections that share the same structural role (repeat).
+
+    ``occurrences`` lists the 1-indexed bar positions where this pattern
+    starts.  ``similarity_score`` is 1.0 for exact repeats, lower for
+    varied repetitions.
+    """
+
+    pattern_label: str = Field(..., description="Canonical name for this repeated pattern, e.g. 'chorus'")
+    occurrences: list[int] = Field(..., description="1-indexed start bars of each occurrence")
+    occurrence_count: int = Field(..., ge=1)
+    similarity_score: float = Field(
+        ..., ge=0.0, le=1.0, description="Mean pairwise similarity across occurrences (1=exact repeat)"
+    )
+
+
+class SectionSimilarityHeatmap(CamelModel):
+    """Pairwise similarity matrix between all formal sections.
+
+    ``labels`` lists section labels in the same order as ``matrix`` rows/cols.
+    ``matrix`` is a square, symmetric matrix where ``matrix[i][j]`` is the
+    0–1 cosine similarity between section i and section j.  Diagonal is 1.0.
+
+    Agents use this to identify musical cousins (verses that sound similar
+    to each other) and contrasting sections (bridge vs. chorus).
+    """
+
+    labels: list[str] = Field(..., description="Section labels, ordered to match matrix rows/cols")
+    matrix: list[list[float]] = Field(
+        ..., description="Square symmetric similarity matrix; matrix[i][j] in [0, 1]"
+    )
+
+
+class FormStructureResponse(CamelModel):
+    """Combined form and structure analysis for a Muse commit ref.
+
+    Returned by ``GET /api/v1/musehub/repos/{repo_id}/form-structure/{ref}``.
+    Combines three complementary views of the piece's formal architecture:
+
+    - ``section_map``: timeline of sections with bar ranges and colour hints
+    - ``repetition_structure``: which sections repeat and how often
+    - ``section_comparison``: pairwise similarity heatmap for all sections
+
+    Agents use this as the structural context document before generating
+    a new section — it answers "where am I in the form?" and "what sounds
+    like what?" without requiring multiple analysis requests.
+    """
+
+    repo_id: str
+    ref: str
+    form_label: str = Field(..., description="Detected macro form, e.g. 'AABA', 'verse-chorus'")
+    time_signature: str = Field(..., description="Primary time signature, e.g. '4/4'")
+    beats_per_bar: int = Field(..., ge=1)
+    total_bars: int = Field(..., ge=1)
+    section_map: list[SectionMapEntry]
+    repetition_structure: list[RepetitionEntry]
+    section_comparison: SectionSimilarityHeatmap
+
+
+# ---------------------------------------------------------------------------
 # Per-track dynamics models (used by the Dynamics Analysis Page)
 # ---------------------------------------------------------------------------
 

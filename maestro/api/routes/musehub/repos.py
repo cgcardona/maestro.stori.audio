@@ -48,7 +48,8 @@ from maestro.models.musehub_context import (
     ContextDepth,
     ContextFormat,
 )
-from maestro.services import musehub_context, musehub_credits, musehub_divergence, musehub_releases, musehub_repository
+from maestro.models.musehub_analysis import FormStructureResponse
+from maestro.services import musehub_analysis, musehub_context, musehub_credits, musehub_divergence, musehub_releases, musehub_repository
 from maestro.services.muse_groove_check import (
     DEFAULT_THRESHOLD,
     compute_groove_check,
@@ -460,6 +461,40 @@ async def get_commit_dag(
     repo = await musehub_repository.get_repo(db, repo_id)
     _guard_visibility(repo, claims)
     return await musehub_repository.list_commits_dag(db, repo_id)
+
+
+@router.get(
+    "/repos/{repo_id}/form-structure/{ref}",
+    response_model=FormStructureResponse,
+    summary="Get form and structure analysis for a commit ref",
+)
+async def get_form_structure(
+    repo_id: str,
+    ref: str,
+    db: AsyncSession = Depends(get_db),
+    _: TokenClaims = Depends(require_valid_token),
+) -> FormStructureResponse:
+    """Return combined form and structure analysis for the given commit ref.
+
+    Combines three complementary structural views of the piece's formal
+    architecture in a single response, optimised for the MuseHub
+    form-structure UI page:
+
+    - ``sectionMap``: timeline of sections with bar ranges and colour hints
+    - ``repetitionStructure``: which sections repeat and how often
+    - ``sectionComparison``: pairwise similarity heatmap for all sections
+
+    Agents use this as the structural context document before generating
+    a new section — it answers "where am I in the form?" and "what sounds
+    like what?" without requiring multiple analysis requests.
+
+    Returns 404 if the repo does not exist.
+    """
+    repo = await musehub_repository.get_repo(db, repo_id)
+    if repo is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repo not found")
+
+    return musehub_analysis.compute_form_structure(repo_id=repo_id, ref=ref)
 
 
 @router.post(
