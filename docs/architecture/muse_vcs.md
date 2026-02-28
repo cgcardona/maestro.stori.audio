@@ -479,12 +479,92 @@ Reuses `maestro.services.muse_log_render.render_ascii_graph` by adapting `MuseCl
 
 Merge commits (two parents) require `muse merge` (issue #35) — `parent2_commit_id` is reserved for that iteration.
 
+### `--oneline` mode
+
+One line per commit: `<short_id> [HEAD marker] <message>`.
+
+```
+a1b2c3d4 (HEAD -> main) boom bap demo take 1
+f9e8d7c6 initial take
+```
+
+### `--stat` mode
+
+Standard header per commit followed by per-file change lines and a totals summary.
+
+```
+commit a1b2c3d4  (HEAD -> main)
+Date:   2026-02-27 17:30:00
+
+    boom bap demo take 1
+
+ muse-work/drums/jazz.mid | added
+ muse-work/bass/old.mid | removed
+ 2 files changed, 1 added, 1 removed
+```
+
+### `--patch` / `-p` mode
+
+Standard header per commit followed by path-level diff blocks showing which files
+were added, removed, or modified.  This is a structural (path-level) diff since
+Muse tracks MIDI/audio blobs, not line-diffable text.
+
+```
+commit a1b2c3d4  (HEAD -> main)
+Date:   2026-02-27 17:30:00
+
+    boom bap demo take 1
+
+--- /dev/null
++++ muse-work/drums/jazz.mid
+--- muse-work/bass/old.mid
++++ /dev/null
+```
+
 ### Flags
 
 | Flag | Default | Description |
 |------|---------|-------------|
 | `--limit N` / `-n N` | 1000 | Cap the walk at N commits |
 | `--graph` | off | ASCII DAG mode |
+| `--oneline` | off | One line per commit: `<short_id> [HEAD] <message>` |
+| `--stat` | off | Show file-change statistics per commit |
+| `--patch` / `-p` | off | Show path-level diff per commit |
+| `--since DATE` | — | Only commits after DATE (ISO or "2 weeks ago") |
+| `--until DATE` | — | Only commits before DATE (ISO or "2 weeks ago") |
+| `--author TEXT` | — | Case-insensitive substring match on author field |
+| `--emotion TEXT` | — | Filter by `emotion:<TEXT>` tag (e.g. `melancholic`) |
+| `--section TEXT` | — | Filter by `section:<TEXT>` tag (e.g. `chorus`) |
+| `--track TEXT` | — | Filter by `track:<TEXT>` tag (e.g. `drums`) |
+
+All flags are combinable. Filters narrow the commit set; output mode flags control formatting.
+Priority when multiple output modes specified: `--graph` > `--oneline` > `--stat` > `--patch` > default.
+
+### Date parsing
+
+`--since` and `--until` accept:
+- ISO dates: `2026-01-15`, `2026-01-15T12:00:00`, `2026-01-15 12:00:00`
+- Relative: `N days ago`, `N weeks ago`, `N months ago`, `N years ago`, `yesterday`, `today`
+
+### Music-native tag filters
+
+`--emotion`, `--section`, and `--track` filter by tags stored in `muse_cli_tags`.
+Tags follow the `emotion:<value>`, `section:<value>`, `track:<value>` naming
+convention.  Multiple tag filters are AND-combined — a commit must carry all
+specified tags to appear in the output.
+
+**Agent use case:** An agent debugging a melancholic chorus can run
+`muse log --emotion melancholic --section chorus` to find exactly when that
+emotional character was committed, then `muse show <commit>` to inspect the
+snapshot or `muse revert <commit>` to undo it.
+
+### Result type
+
+`parse_date_filter(text: str) -> datetime` — converts a human date string to
+UTC-aware `datetime`. Raises `ValueError` on unrecognised formats.
+
+`CommitDiff` — fields: `added: list[str]`, `removed: list[str]`,
+`changed: list[str]`, `total_files: int` (computed property).
 
 ---
 
@@ -2008,6 +2088,167 @@ variation, to check if remote collaborators have pushed conflicting changes.  Si
 does not modify the working tree, it is safe to run mid-composition without interrupting
 the current generation pipeline.  Follow with `muse log origin/main` to inspect what
 arrived, then `muse merge origin/main` if the agent decides to incorporate remote changes.
+
+---
+
+## Muse CLI — Bisect Command Reference
+
+`muse bisect` implements a binary search over the commit graph to identify the
+exact commit that introduced a musical regression — a rhythmic drift, mix
+artefact, or tonal shift.  It is the music-domain analogue of `git bisect`.
+
+Session state is persisted in `.muse/BISECT_STATE.json` across shell invocations.
+
+---
+
+### `muse bisect start`
+
+**Purpose:** Open a bisect session and record the pre-bisect HEAD so that
+`muse bisect reset` can cleanly restore the workspace.
+
+**Usage:**
+```bash
+muse bisect start
+```
+
+**Blocked by:** `.muse/MERGE_STATE.json` (merge in progress) or an already-active
+`BISECT_STATE.json`.
+
+**Output example:**
+```
+✅ Bisect session started.
+   Now mark a good commit:  muse bisect good <commit>
+   And a bad commit:        muse bisect bad <commit>
+```
+
+**Agent use case:** An AI agent detects rhythmic drift in the latest mix and
+opens a bisect session to automatically locate the offending commit.
+
+**Implementation:** `maestro/muse_cli/commands/bisect.py`
+
+---
+
+### `muse bisect good <commit>`
+
+**Purpose:** Mark *commit* as a known-good revision.  Once both a good and bad
+bound are set, Muse selects the midpoint commit and checks it out into muse-work/
+for inspection.
+
+**Usage:**
+```bash
+muse bisect good [<commit>]   # default: HEAD
+```
+
+**Flags:**
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `<commit>` | positional | `HEAD` | Commit to mark as good: SHA, branch name, or `HEAD` |
+
+**Output example:**
+```
+✅ Marked a1b2c3d4 as good. Checking out f9e8d7c6 (~2 step(s) remaining, 3 commits in range)
+```
+
+**Agent use case:** After listening to the muse-work/ snapshot and confirming the
+groove is intact, the agent marks the current commit as good and awaits the next
+midpoint checkout.
+
+---
+
+### `muse bisect bad <commit>`
+
+**Purpose:** Mark *commit* as a known-bad revision.  Mirrors `muse bisect good`.
+
+**Usage:**
+```bash
+muse bisect bad [<commit>]   # default: HEAD
+```
+
+---
+
+### `muse bisect run <cmd>`
+
+**Purpose:** Automate the bisect loop.  Runs *cmd* after each checkout; exit 0
+means good, any non-zero exit code means bad.  Stops when the culprit is found.
+
+**Usage:**
+```bash
+muse bisect run <shell-command> [--max-steps N]
+```
+
+**Flags:**
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `<cmd>` | positional | — | Shell command to test each midpoint |
+| `--max-steps` | int | 50 | Safety limit on bisect iterations |
+
+**Output example:**
+```
+⟳  Testing f9e8d7c6…
+   exit=1 → bad
+✅ Marked f9e8d7c6 as bad. Checking out d3c2b1a0 (~1 step(s) remaining, 1 in range)
+⟳  Testing d3c2b1a0…
+   exit=0 → good
+🎯 Bisect complete! First bad commit: f9e8d7c6
+Run 'muse bisect reset' to restore your workspace.
+```
+
+**Result type:** `BisectStepResult` — fields: `culprit` (str | None),
+`next_commit` (str | None), `remaining` (int), `message` (str).
+
+**Agent use case:** An AI orchestrator runs `muse bisect run python check_groove.py`
+to automate the full regression hunt without human input.
+
+---
+
+### `muse bisect reset`
+
+**Purpose:** End the bisect session: restore `.muse/HEAD` and muse-work/ to the
+pre-bisect state, then remove `BISECT_STATE.json`.
+
+**Usage:**
+```bash
+muse bisect reset
+```
+
+**Output example:**
+```
+✅ muse-work/ restored (3 files) from pre-bisect snapshot.
+✅ Bisect session ended.
+```
+
+---
+
+### `muse bisect log`
+
+**Purpose:** Display the verdicts recorded so far and the current good/bad bounds.
+
+**Usage:**
+```bash
+muse bisect log [--json]
+```
+
+**Flags:**
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--json` | flag | off | Emit structured JSON for agent consumption |
+
+**Output example (default):**
+```
+Bisect session state:
+  good:    a1b2c3d4...
+  bad:     f9e8d7c6...
+  current: d3c2b1a0...
+  tested (2 commit(s)):
+    a1b2c3d4  good
+    f9e8d7c6  bad
+```
+
+**Result type:** `BisectState` — fields: `good`, `bad`, `current`, `tested`,
+`pre_bisect_ref`, `pre_bisect_commit`.
+
+**Agent use case:** An agent queries `muse bisect log --json` to resume a
+suspended bisect session and determine the next commit to test.
 
 ---
 
