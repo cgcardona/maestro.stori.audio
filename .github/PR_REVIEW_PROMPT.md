@@ -134,7 +134,13 @@ Review with production paranoia. Work through each applicable section.
 - [ ] Docstrings on all new public modules, classes, and functions
 - [ ] No dead code left behind (remove, don't comment out)
 - [ ] `STORI_*` env vars accessed via `maestro.config.settings`
-- [ ] **Type-system evasion absent:** no `cast(...)` at call sites to silence callee errors; callee return types fixed at the source. No `dict[str, Any]` or `list[dict]` crossing internal layer boundaries — typed Pydantic models or dataclasses required. `# type: ignore` only at explicit 3rd-party adapter boundaries with justification.
+- [ ] **Type system — entity-first, no evasion** (read `docs/reference/type_contracts.md`):
+  - No `cast()` at call sites — callee return type must be fixed at the source
+  - No `Any` anywhere — use TypeAlias, TypeVar, Protocol, or typed wrappers at 3rd-party edges
+  - No `object` as a type annotation
+  - No naked collections (`dict[str, Any]`, `list[dict]`, bare tuples) crossing module boundaries — every structured return value is a named entity (dataclass, Pydantic model, TypedDict) following the `<Domain><Concept>Result` naming convention
+  - No `# type: ignore` without an inline comment citing the specific 3rd-party issue
+  - Every new named result type is registered in `docs/reference/type_contracts.md`
 
 ---
 
@@ -209,6 +215,18 @@ Review with production paranoia. Work through each applicable section.
 - [ ] Token revocation cache is not bypassed
 - [ ] Budget guard is enforced on both entry points
 - [ ] No information leakage in error responses (no internal state exposed to the client)
+
+---
+
+### 3i-b. Documentation (always check — docs are not optional)
+
+- [ ] Every new public module, class, and function has a docstring explaining *why* and *what the contract is*
+- [ ] New `muse <cmd>` commands are documented in `docs/architecture/muse_vcs.md` with: purpose, flags table, output example, result type, and agent use case
+- [ ] New named result types are added to `docs/reference/type_contracts.md`
+- [ ] Affected doc files updated in the same commit as code (not a follow-up)
+- [ ] Docs are written for AI agent consumers, not just humans — they explain the contract and when to use each capability
+
+If docs are missing or stale for any new capability: **this is a C grade or below**.
 
 ---
 

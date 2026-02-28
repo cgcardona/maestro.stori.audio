@@ -111,11 +111,18 @@ docker compose exec storpheus mypy .
 
 Fix **all** type errors before proceeding. Running tests with type errors wastes a test pass.
 
-**Type-system rules — fix correctly, not around:**
-- Fix the callee's return type first. Never cast at a call site to silence a type error.
-- No `dict[str, Any]` or `list[dict]` crossing internal layer boundaries — use typed Pydantic models or dataclasses.
-- `# type: ignore` is only permitted at explicit 3rd-party adapter boundaries (Gradio, SSE transport, serialization) and must include an inline explanation.
-- If the same mypy error persists after two fix attempts, stop and reconsider the type design. Do not loop with incremental tweaks — change strategy.
+**Type-system rules — non-negotiable. Read `docs/reference/type_contracts.md` first.**
+
+This codebase is a musical operating system for AI agents. Every boundary must be
+machine-readable. Naked collections and `Any` break that contract silently.
+
+- **No `cast()` at call sites.** A cast means the callee's return type is wrong — fix the callee.
+- **No `Any`.** Not in return types, parameters, or TypedDicts. Use TypeAlias, TypeVar, Protocol, or Union. At true 3rd-party boundaries (Gradio, MIDI libs), define a typed wrapper.
+- **No `object` as a type annotation.** Be specific about what the value actually is.
+- **No naked collections at boundaries.** `dict[str, Any]`, `list[dict]`, bare `list` crossing module boundaries are code smells. Wrap in a named entity: dataclass, Pydantic model, or TypedDict. Naming: `<Domain><Concept>Result` (e.g. `DynamicsResult`, `SwingAnalysis`, `RecallMatch`).
+- **No `# type: ignore` without an inline comment** naming the specific 3rd-party issue.
+- **Fix callee, not caller.** Two failed fix attempts = stop and redesign.
+- **Every public function signature is a contract.** If it returns structured data, define a named entity. Future agents and the type checker both depend on this.
 
 ---
 
@@ -235,21 +242,78 @@ git push origin fix/<short-description>
 
 ---
 
-## STEP 9 — UPDATE DOCS
+## STEP 9 — UPDATE DOCS (NON-NEGOTIABLE)
 
-Update affected documentation **in the same commit as code changes**:
+Documentation is **not optional**. This codebase is consumed by AI agents, not just humans.
+Agents use docs to reason about capabilities, contracts, and correct usage.
+Missing or stale docs are bugs. Update in the **same commit as code changes**.
+
+### Docstrings (every new module, class, and public function)
+
+Write docstrings that explain *why* and *what the contract is*, not *what the code does*:
+```python
+def analyze_swing(midi_notes: list[MidiNote]) -> SwingAnalysis:
+    """Compute the swing factor from a sequence of MIDI note events.
+
+    Swing factor is the ratio of the first 8th-note to the total beat duration.
+    0.5 = straight (equal division), 0.67 = triplet feel (hard swing).
+
+    Args:
+        midi_notes: Sequence of timestamped MIDI note events. Must be non-empty.
+
+    Returns:
+        SwingAnalysis with factor (float), label (str), and confidence (float).
+
+    Raises:
+        ValueError: If midi_notes is empty or contains no paired onset/offset events.
+    """
+```
+
+### Markdown docs (update the canonical file for your domain)
 
 | Topic | File |
 |-------|------|
+| **Muse CLI commands** | `docs/architecture/muse_vcs.md` — add a section for every new `muse <cmd>` |
+| **Type contracts / models** | `docs/reference/type_contracts.md` — add every new named result type |
 | Setup / deploy | `docs/guides/setup.md` |
 | Frontend / MCP / JWT | `docs/guides/integrate.md` |
 | API reference | `docs/reference/api.md` |
 | Architecture | `docs/reference/architecture.md` |
 | Storpheus | `docs/reference/storpheus.md` |
-| Muse VCS | `docs/architecture/muse-vcs.md` |
 | Testing | `docs/guides/testing.md` |
 | Security | `docs/guides/security.md` |
 | Protocol specs | `docs/protocol/` |
+
+### Minimum doc content for a new `muse <cmd>`
+
+Add to `docs/architecture/muse_vcs.md` under `## Muse CLI — Command Reference`:
+
+```markdown
+### `muse <cmd>`
+
+**Purpose:** One sentence — what this command answers and why an AI agent needs it.
+
+**Usage:**
+```bash
+muse <cmd> [<commit>] [OPTIONS]
+```
+
+**Flags:**
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--json` | flag | off | Emit structured JSON for agent consumption |
+
+**Output example:**
+```
+<realistic sample output>
+```
+
+**Result type:** `<DomainResult>` — fields: ...
+
+**Agent use case:** How an AI music generation agent uses this to make better decisions.
+
+**Implementation stub note** (if applicable): Which parts are stubbed and what the full implementation requires.
+```
 
 ---
 

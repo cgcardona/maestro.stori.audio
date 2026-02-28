@@ -4,10 +4,15 @@
   },
   "additionalReadwritePaths": [
     "/var/run/docker.sock",
-    "/Users/gabriel/.cursor/worktrees"
+    "/Users/gabriel/.docker",
+    "/Users/gabriel/.cursor/worktrees",
+    "/tmp"
   ],
   "additionalReadonlyPaths": [
     "/usr/local/bin",
-    "/opt/homebrew/bin"
-  ]
+    "/opt/homebrew/bin",
+    "/usr/bin",
+    "/bin"
+  ],
+  "enableSharedBuildCache": true
 }
