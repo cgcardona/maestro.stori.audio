@@ -2388,7 +2388,6 @@ drift out of sync.
 | `muse swing` | `commands/swing.py` | ✅ stub (PR #131) | #121 |
 | `muse recall` | `commands/recall.py` | ✅ stub (PR #135) | #122 |
 | `muse tag` | `commands/tag.py` | ✅ implemented (PR #133) | #123 |
-| `muse tempo-scale` | `commands/tempo_scale.py` | ✅ stub (PR open) | #111 |
 | `muse grep` | `commands/grep_cmd.py` | ✅ stub (PR #128) | #124 |
 | `muse describe` | `commands/describe.py` | ✅ stub (PR #134) | #125 |
 | `muse ask` | `commands/ask.py` | ✅ stub (PR #132) | #126 |
@@ -2783,9 +2782,98 @@ branch for chord voicings while preserving the guitar branch's groove patterns.
 
 ---
 
+### `muse validate`
+
+**Purpose:** Run integrity checks against the working tree before `muse commit`.
+Detects corrupted MIDI files, manifest mismatches, duplicate instrument roles,
+non-conformant section names, and unknown emotion tags — giving agents and
+producers an actionable quality gate before bad state enters history.
+
+**Status:** ✅ Fully implemented (issue #99)
+
+**Usage:**
+```bash
+muse validate [OPTIONS]
+```
+
+**Flags:**
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--strict` | flag | off | Exit 2 on warnings as well as errors. |
+| `--track TEXT` | string | — | Restrict checks to files/paths containing TEXT (case-insensitive). |
+| `--section TEXT` | string | — | Restrict section-naming check to directories containing TEXT. |
+| `--fix` | flag | off | Auto-fix correctable issues (conservative; no data-loss risk). |
+| `--json` | flag | off | Emit full structured JSON for agent consumption. |
+
+**Exit codes:**
+
+| Code | Meaning |
+|------|---------|
+| 0 | All checks passed — working tree is clean. |
+| 1 | One or more ERROR issues found (corrupted MIDI, orphaned files). |
+| 2 | WARN issues found AND `--strict` was passed. |
+| 3 | Internal error (unexpected exception). |
+
+**Checks performed:**
+
+| Check | Severity | Description |
+|-------|----------|-------------|
+| `midi_integrity` | ERROR | Verifies each `.mid`/`.midi` has a valid SMF `MThd` header. |
+| `manifest_consistency` | ERROR/WARN | Compares committed snapshot manifest vs actual working tree. |
+| `no_duplicate_tracks` | WARN | Detects multiple MIDI files sharing the same instrument role. |
+| `section_naming` | WARN | Verifies section dirs match `[a-z][a-z0-9_-]*`. |
+| `emotion_tags` | WARN | Checks emotion tags (`.muse/tags.json`) against the allowed vocabulary. |
+
+**Output example (human-readable):**
+```
+Validating working tree …
+
+  ✅ midi_integrity              PASS
+  ❌ manifest_consistency        FAIL
+       ❌ ERROR   beat.mid  File in committed manifest is missing from working tree.
+  ✅ no_duplicate_tracks         PASS
+  ⚠️  section_naming             WARN
+       ⚠️  WARN   Verse  Section directory 'Verse' does not follow naming convention.
+  ✅ emotion_tags                PASS
+
+⚠️  1 error, 1 warning — working tree has integrity issues.
+```
+
+**Output example (`--json`):**
+```json
+{
+  "clean": false,
+  "has_errors": true,
+  "has_warnings": true,
+  "checks": [
+    { "name": "midi_integrity", "passed": true, "issues": [] },
+    {
+      "name": "manifest_consistency",
+      "passed": false,
+      "issues": [
+        {
+          "severity": "error",
+          "check": "manifest_consistency",
+          "path": "beat.mid",
+          "message": "File in committed manifest is missing from working tree (orphaned)."
+        }
+      ]
+    }
+  ],
+  "fixes_applied": []
+}
+```
+
+**Result types:** `MuseValidateResult`, `ValidationCheckResult`, `ValidationIssue`, `ValidationSeverity`
+— all defined in `maestro/services/muse_validate.py` and registered in `docs/reference/type_contracts.md`.
+
+**Agent use case:** An AI composition agent calls `muse validate --json` before every
+`muse commit` to confirm the working tree is consistent. If `has_errors` is true the agent
+must investigate the failing check before committing — a corrupted MIDI would silently
+corrupt the composition history. With `--strict`, agents can enforce zero-warning quality gates.
 
 ---
-
 ## `muse diff` — Music-Dimension Diff Between Commits
 
 **Purpose:** Compare two commits across five orthogonal musical dimensions —
@@ -2890,6 +2978,117 @@ Exit codes: 0 success, 2 outside repo (`REPO_NOT_FOUND`), 3 internal error.
 
 ---
 
+## `muse inspect` — Print Structured JSON of the Muse Commit Graph
+
+**Purpose:** Serialize the full commit graph reachable from a starting reference
+into machine-readable output.  This is the primary introspection tool for AI
+agents and tooling that need to programmatically traverse or audit commit history,
+branch state, and compositional metadata without parsing human-readable output.
+
+**Implementation:** `maestro/muse_cli/commands/inspect.py`\
+**Service:** `maestro/services/muse_inspect.py`\
+**Status:** ✅ implemented (issue #98)
+
+### Usage
+
+```bash
+muse inspect                          # JSON of HEAD branch history
+muse inspect abc1234                  # start from a specific commit
+muse inspect --depth 5                # limit to 5 commits
+muse inspect --branches               # include all branch heads
+muse inspect --format dot             # Graphviz DOT graph
+muse inspect --format mermaid         # Mermaid.js graph definition
+```
+
+### Flags
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `[<ref>]` | positional | HEAD | Starting commit ID or branch name |
+| `--depth N` | int | unlimited | Limit graph traversal to N commits per branch |
+| `--branches` | flag | off | Include all branch heads and their reachable commits |
+| `--tags` | flag | off | Include tag refs in the output |
+| `--format` | enum | `json` | Output format: `json`, `dot`, `mermaid` |
+
+### Output example (JSON)
+
+```json
+{
+  "repo_id": "550e8400-e29b-41d4-a716-446655440000",
+  "current_branch": "main",
+  "branches": {
+    "main": "a1b2c3d4e5f6...",
+    "feature/guitar": "f9e8d7c6b5a4..."
+  },
+  "commits": [
+    {
+      "commit_id": "a1b2c3d4e5f6...",
+      "short_id": "a1b2c3d4",
+      "branch": "main",
+      "parent_commit_id": "f9e8d7c6b5a4...",
+      "parent2_commit_id": null,
+      "message": "boom bap demo take 2",
+      "author": "",
+      "committed_at": "2026-02-27T17:30:00+00:00",
+      "snapshot_id": "deadbeef...",
+      "metadata": {"tempo_bpm": 95.0},
+      "tags": ["emotion:melancholic", "stage:rough-mix"]
+    }
+  ]
+}
+```
+
+### Result types
+
+`MuseInspectCommit` (frozen dataclass) — one commit node in the graph.\
+`MuseInspectResult` (frozen dataclass) — full serialized graph with branch pointers.\
+`InspectFormat` (str Enum) — `json`, `dot`, `mermaid`.\
+See `docs/reference/type_contracts.md § Muse Inspect Types`.
+
+### Format: DOT
+
+Graphviz DOT directed graph.  Pipe to `dot -Tsvg` to render a visual DAG:
+
+```bash
+muse inspect --format dot | dot -Tsvg -o graph.svg
+```
+
+Each commit becomes an ellipse node labelled `<short_id>\n<message[:40]>`.
+Parent edges point child → parent (matching git convention).  Branch refs
+appear as bold rectangle nodes pointing to their HEAD commit.
+
+### Format: Mermaid
+
+Mermaid.js `graph LR` definition.  Embed in GitHub markdown:
+
+```
+muse inspect --format mermaid
+```
+
+```mermaid
+graph LR
+  a1b2c3d4["a1b2c3d4: boom bap demo take 2"]
+  f9e8d7c6["f9e8d7c6: boom bap demo take 1"]
+  a1b2c3d4 --> f9e8d7c6
+  main["main"]
+  main --> a1b2c3d4
+```
+
+### Agent use case
+
+An AI composition agent calls `muse inspect --format json` before generating
+new music to understand the full lineage of the project:
+
+1. **Branch discovery** — which creative threads exist (`branches` dict).
+2. **Graph traversal** — which commits are ancestors, which are on feature branches.
+3. **Metadata audit** — which commits have explicit tempo, meter, or emotion tags.
+4. **Divergence awareness** — combined with `muse divergence`, informs merge decisions.
+
+The JSON output is deterministic for a fixed graph state, making it safe to cache
+between agent invocations and diff to detect graph changes.
+
+---
+
 ## `muse tempo-scale` — Stretch or Compress the Timing of a Commit
 
 **Purpose:** Apply a deterministic time-scaling transformation to a commit,
@@ -2990,12 +3189,14 @@ arguments (`USER_ERROR`), 2 outside repo (`REPO_NOT_FOUND`), 3 internal error
 | `muse grep` | `commands/grep_cmd.py` | ✅ stub (PR #128) | #124 |
 | `muse groove-check` | `commands/groove_check.py` | ✅ stub (PR #143) | #95 |
 | `muse import` | `commands/import_cmd.py` | ✅ implemented (PR #142) | #118 |
+| `muse inspect` | `commands/inspect.py` | ✅ implemented (PR #TBD) | #98 |
 | `muse meter` | `commands/meter.py` | ✅ implemented (PR #141) | #117 |
 | `muse recall` | `commands/recall.py` | ✅ stub (PR #135) | #122 |
 | `muse session` | `commands/session.py` | ✅ implemented (PR #129) | #127 |
 | `muse swing` | `commands/swing.py` | ✅ stub (PR #131) | #121 |
 | `muse tag` | `commands/tag.py` | ✅ implemented (PR #133) | #123 |
 | `muse tempo-scale` | `commands/tempo_scale.py` | ✅ stub (PR open) | #111 |
+| `muse validate` | `commands/validate.py` | ✅ implemented (PR #TBD) | #99 |
 
 All stub commands have stable CLI contracts. Full musical analysis (MIDI content
 parsing, vector embeddings, LLM synthesis) is tracked as follow-up issues.
