@@ -25,6 +25,7 @@ Single source-of-truth migration for Stori Maestro. Creates:
   - musehub_repos, musehub_branches, musehub_commits, musehub_issues
   - musehub_pull_requests (PR workflow between branches)
   - musehub_objects (content-addressed binary artifact storage)
+  - musehub_releases (published version releases with download packages)
 
 Fresh install:
   docker compose exec maestro alembic upgrade head
@@ -354,8 +355,35 @@ def upgrade() -> None:
     )
     op.create_index("ix_musehub_objects_repo_id", "musehub_objects", ["repo_id"])
 
+    # ── Muse Hub — releases ───────────────────────────────────────────────
+    op.create_table(
+        "musehub_releases",
+        sa.Column("release_id", sa.String(36), nullable=False),
+        sa.Column("repo_id", sa.String(36), nullable=False),
+        sa.Column("tag", sa.String(100), nullable=False),
+        sa.Column("title", sa.String(500), nullable=False),
+        sa.Column("body", sa.Text(), nullable=False, server_default=""),
+        sa.Column("commit_id", sa.String(64), nullable=True),
+        sa.Column("download_urls", sa.JSON(), nullable=False, server_default="{}"),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            nullable=False,
+            server_default=sa.text("CURRENT_TIMESTAMP"),
+        ),
+        sa.ForeignKeyConstraint(["repo_id"], ["musehub_repos.repo_id"], ondelete="CASCADE"),
+        sa.PrimaryKeyConstraint("release_id"),
+    )
+    op.create_index("ix_musehub_releases_repo_id", "musehub_releases", ["repo_id"])
+    op.create_index("ix_musehub_releases_tag", "musehub_releases", ["tag"])
+
 
 def downgrade() -> None:
+    # Muse Hub — releases
+    op.drop_index("ix_musehub_releases_tag", table_name="musehub_releases")
+    op.drop_index("ix_musehub_releases_repo_id", table_name="musehub_releases")
+    op.drop_table("musehub_releases")
+
     # Muse Hub — binary artifact storage
     op.drop_index("ix_musehub_objects_repo_id", table_name="musehub_objects")
     op.drop_table("musehub_objects")

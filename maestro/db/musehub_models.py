@@ -6,6 +6,7 @@ Tables:
 - musehub_commits: Remote commit records pushed from CLI clients
 - musehub_issues: Issue tracker entries per repo
 - musehub_pull_requests: Pull requests proposing branch merges
+- musehub_releases: Published version releases with download packages
 """
 from __future__ import annotations
 
@@ -54,6 +55,9 @@ class MusehubRepo(Base):
     )
     pull_requests: Mapped[list[MusehubPullRequest]] = relationship(
         "MusehubPullRequest", back_populates="repo", cascade="all, delete-orphan"
+    )
+    releases: Mapped[list[MusehubRelease]] = relationship(
+        "MusehubRelease", back_populates="repo", cascade="all, delete-orphan"
     )
 
 
@@ -198,3 +202,40 @@ class MusehubPullRequest(Base):
     )
 
     repo: Mapped[MusehubRepo] = relationship("MusehubRepo", back_populates="pull_requests")
+
+
+class MusehubRelease(Base):
+    """A published version release for a Muse Hub repo.
+
+    Releases tie a human-readable ``tag`` (e.g. "v1.0") to a specific commit
+    and carry markdown release notes plus a JSON map of download package URLs.
+    The ``download_urls`` field is a JSON object keyed by package type:
+    "midi_bundle", "stems", "mp3", "musicxml", "metadata".
+
+    ``tag`` is unique per repo — attempting to create a second release with the
+    same tag must be rejected at the service layer.
+    """
+
+    __tablename__ = "musehub_releases"
+
+    release_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_new_uuid)
+    repo_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("musehub_repos.repo_id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    # Semantic version tag, e.g. "v1.0", "v2.3.1" — unique per repo.
+    tag: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
+    title: Mapped[str] = mapped_column(String(500), nullable=False)
+    # Markdown release notes authored by the musician.
+    body: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    # Optional commit this release is pinned to.
+    commit_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # JSON map of download package URLs, keyed by package type.
+    download_urls: Mapped[dict[str, str]] = mapped_column(JSON, nullable=False, default=dict)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=_utc_now
+    )
+
+    repo: Mapped[MusehubRepo] = relationship("MusehubRepo", back_populates="releases")

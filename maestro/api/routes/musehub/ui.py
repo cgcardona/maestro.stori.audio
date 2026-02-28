@@ -10,6 +10,8 @@ Endpoint summary:
   GET /musehub/ui/{repo_id}/pulls/{pr_id}          — PR detail page (with merge button)
   GET /musehub/ui/{repo_id}/issues                 — issue list page
   GET /musehub/ui/{repo_id}/issues/{number}        — issue detail page (with close button)
+  GET /musehub/ui/{repo_id}/releases               — release list page
+  GET /musehub/ui/{repo_id}/releases/{tag}         — release detail page (notes + downloads)
 
 These routes require NO JWT auth — they return static HTML shells whose
 embedded JavaScript fetches data from the authed JSON API
@@ -63,6 +65,22 @@ h2 { font-size: 16px; color: #e6edf3; margin-bottom: 8px; }
 .badge-open { background: #1f6feb; color: #e6edf3; }
 .badge-closed { background: #8b949e; color: #e6edf3; }
 .badge-merged { background: #6e40c9; color: #e6edf3; }
+.badge-release { background: #238636; color: #e6edf3; }
+.release-row {
+  border-bottom: 1px solid #21262d; padding: 12px 0;
+  display: flex; align-items: flex-start; gap: 12px;
+}
+.release-row:last-child { border-bottom: none; }
+.download-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 10px; margin-top: 12px;
+}
+.download-card {
+  background: #21262d; border: 1px solid #30363d; border-radius: 6px;
+  padding: 12px; display: flex; flex-direction: column; gap: 8px; align-items: flex-start;
+}
+.download-card .pkg-name { font-size: 13px; font-weight: 600; color: #e6edf3; }
+.download-card .pkg-desc { font-size: 12px; color: #8b949e; }
 .commit-row {
   border-bottom: 1px solid #21262d; padding: 10px 0;
   display: flex; align-items: flex-start; gap: 12px;
@@ -242,14 +260,16 @@ async def repo_page(repo_id: str) -> HTMLResponse:
 
       async function load(branch) {{
         try {{
-          const [repoData, branchData, commitData] = await Promise.all([
+          const [repoData, branchData, commitData, releasesData] = await Promise.all([
             apiFetch('/repos/' + repoId),
             apiFetch('/repos/' + repoId + '/branches'),
             apiFetch('/repos/' + repoId + '/commits' + (branch ? '?branch=' + encodeURIComponent(branch) + '&limit=20' : '?limit=20')),
+            apiFetch('/repos/' + repoId + '/releases').catch(() => ({{ releases: [] }})),
           ]);
 
           const branches = branchData.branches || [];
           const commits  = commitData.commits  || [];
+          const latestRelease = (releasesData.releases || [])[0] || null;
 
           const branchSel = branches.map(b =>
             '<option value="' + b.name + '"' + (b.name === branch ? ' selected' : '') + '>' + b.name + '</option>'
@@ -270,9 +290,11 @@ async def repo_page(repo_id: str) -> HTMLResponse:
                 <h1 style="margin:0">${{escHtml(repoData.name)}}</h1>
                 <span class="badge badge-${{repoData.visibility}}">${{repoData.visibility}}</span>
               </div>
-              <div style="display:flex;gap:12px;margin-bottom:16px;flex-wrap:wrap">
+              <div style="display:flex;gap:12px;margin-bottom:16px;flex-wrap:wrap;align-items:center">
                 <a href="${{base}}/pulls" class="btn btn-secondary">Pull Requests</a>
                 <a href="${{base}}/issues" class="btn btn-secondary">Issues</a>
+                <a href="${{base}}/releases" class="btn btn-secondary">Releases</a>
+                ${{latestRelease ? `<a href="${{base}}/releases/${{encodeURIComponent(latestRelease.tag)}}" class="badge badge-release" style="text-decoration:none">Latest: ${{escHtml(latestRelease.tag)}}</a>` : ''}}
               </div>
               <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
                 <select id="branch-sel" onchange="load(this.value)">
@@ -745,6 +767,172 @@ async def issue_detail_page(repo_id: str, number: int) -> HTMLResponse:
         breadcrumb=(
             f'<a href="/musehub/ui/{repo_id}">{repo_id[:8]}</a> / '
             f'<a href="/musehub/ui/{repo_id}/issues">issues</a> / #{number}'
+        ),
+        body_script=script,
+    )
+    return HTMLResponse(content=html)
+
+
+@router.get(
+    "/{repo_id}/releases",
+    response_class=HTMLResponse,
+    summary="Muse Hub release list page",
+)
+async def release_list_page(repo_id: str) -> HTMLResponse:
+    """Render the release list page: all published versions newest first.
+
+    Fetches ``GET /api/v1/musehub/repos/{repo_id}/releases``.
+    Each release shows its tag, title, creation date, and a link to the
+    detail page where release notes and download packages are available.
+    """
+    script = f"""
+      const repoId = {repr(repo_id)};
+      const base   = '/musehub/ui/' + repoId;
+
+      function escHtml(s) {{
+        if (!s) return '';
+        return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+      }}
+
+      async function load() {{
+        try {{
+          const data     = await apiFetch('/repos/' + repoId + '/releases');
+          const releases = data.releases || [];
+
+          const rows = releases.length === 0
+            ? '<p class="loading">No releases published yet.</p>'
+            : releases.map(r => `
+              <div class="release-row">
+                <span class="badge badge-release">${{escHtml(r.tag)}}</span>
+                <div style="flex:1">
+                  <a href="${{base}}/releases/${{encodeURIComponent(r.tag)}}">${{escHtml(r.title)}}</a>
+                  <div style="font-size:12px;color:#8b949e;margin-top:2px">
+                    Released ${{fmtDate(r.createdAt)}}
+                    ${{r.commitId ? ' &bull; commit <span style="font-family:monospace">' + r.commitId.substring(0,8) + '</span>' : ''}}
+                  </div>
+                </div>
+              </div>`).join('');
+
+          document.getElementById('content').innerHTML = `
+            <div style="margin-bottom:12px">
+              <a href="${{base}}">&larr; Back to repo</a>
+            </div>
+            <div class="card">
+              <h1 style="margin-bottom:16px">Releases</h1>
+              ${{rows}}
+            </div>`;
+        }} catch(e) {{
+          if (e.message !== 'auth')
+            document.getElementById('content').innerHTML = '<p class="error">&#10005; ' + escHtml(e.message) + '</p>';
+        }}
+      }}
+
+      load();
+    """
+    html = _page(
+        title="Releases",
+        breadcrumb=f'<a href="/musehub/ui/{repo_id}">{repo_id[:8]}</a> / releases',
+        body_script=script,
+    )
+    return HTMLResponse(content=html)
+
+
+@router.get(
+    "/{repo_id}/releases/{tag}",
+    response_class=HTMLResponse,
+    summary="Muse Hub release detail page",
+)
+async def release_detail_page(repo_id: str, tag: str) -> HTMLResponse:
+    """Render the release detail page: title, tag, release notes, download packages.
+
+    Fetches ``GET /api/v1/musehub/repos/{repo_id}/releases/{tag}``.
+    Download packages (MIDI bundle, stems, MP3, MusicXML, metadata) are
+    rendered as download cards; unavailable packages show a "not available"
+    indicator instead of a broken link.
+    """
+    script = f"""
+      const repoId = {repr(repo_id)};
+      const tag    = {repr(tag)};
+      const base   = '/musehub/ui/' + repoId;
+
+      function escHtml(s) {{
+        if (!s) return '';
+        return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+      }}
+
+      function downloadCard(label, desc, url) {{
+        if (url) {{
+          return `
+            <div class="download-card">
+              <span class="pkg-name">${{label}}</span>
+              <span class="pkg-desc">${{desc}}</span>
+              <a class="btn btn-secondary" href="${{escHtml(url)}}" download>&#11015; Download</a>
+            </div>`;
+        }}
+        return `
+          <div class="download-card" style="opacity:0.5">
+            <span class="pkg-name">${{label}}</span>
+            <span class="pkg-desc">${{desc}}</span>
+            <span style="font-size:12px;color:#8b949e">Not available</span>
+          </div>`;
+      }}
+
+      async function load() {{
+        try {{
+          const r = await apiFetch('/repos/' + repoId + '/releases/' + encodeURIComponent(tag));
+          const dl = r.downloadUrls || {{}};
+
+          const downloads = `
+            <div class="download-grid">
+              ${{downloadCard('Full MIDI', 'All tracks as a single .mid file', dl.midiBubdle || dl.midiBuddle || dl.midiBundle)}}
+              ${{downloadCard('MIDI Stems', 'Individual track stems (zip of .mid files)', dl.stems)}}
+              ${{downloadCard('MP3 Mix', 'Full mix audio render', dl.mp3)}}
+              ${{downloadCard('MusicXML', 'Notation export for sheet music editors', dl.musicxml)}}
+              ${{downloadCard('Metadata', 'JSON manifest: tempo, key, arrangement', dl.metadata)}}
+            </div>`;
+
+          document.getElementById('content').innerHTML = `
+            <div style="margin-bottom:12px">
+              <a href="${{base}}/releases">&larr; Back to releases</a>
+            </div>
+            <div class="card">
+              <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px">
+                <h1 style="margin:0">${{escHtml(r.title)}}</h1>
+                <span class="badge badge-release">${{escHtml(r.tag)}}</span>
+              </div>
+              <div class="meta-row">
+                <div class="meta-item">
+                  <span class="meta-label">Released</span>
+                  <span class="meta-value">${{fmtDate(r.createdAt)}}</span>
+                </div>
+                ${{r.commitId ? `
+                <div class="meta-item">
+                  <span class="meta-label">Commit</span>
+                  <span class="meta-value">
+                    <a href="${{base}}/commits/${{r.commitId}}" style="font-family:monospace">
+                      ${{r.commitId.substring(0,8)}}
+                    </a>
+                  </span>
+                </div>` : ''}}
+              </div>
+              ${{r.body ? '<h2 style="margin-top:16px;margin-bottom:8px">Release Notes</h2><pre>' + escHtml(r.body) + '</pre>' : ''}}
+              <h2 style="margin-top:16px;margin-bottom:8px">Download Packages</h2>
+              ${{downloads}}
+            </div>`;
+        }} catch(e) {{
+          if (e.message !== 'auth')
+            document.getElementById('content').innerHTML = '<p class="error">&#10005; ' + escHtml(e.message) + '</p>';
+        }}
+      }}
+
+      load();
+    """
+    safe_tag = tag[:20] if len(tag) > 20 else tag
+    html = _page(
+        title=f"Release {safe_tag}",
+        breadcrumb=(
+            f'<a href="/musehub/ui/{repo_id}">{repo_id[:8]}</a> / '
+            f'<a href="/musehub/ui/{repo_id}/releases">releases</a> / {safe_tag}'
         ),
         body_script=script,
     )

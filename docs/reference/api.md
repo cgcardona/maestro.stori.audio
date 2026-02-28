@@ -1316,6 +1316,88 @@ others → `application/octet-stream`).
 
 ---
 
+## Muse Hub Releases API
+
+Releases publish a specific version of a composition with human-readable notes
+and structured download package URLs. Tags are unique per repo (e.g. `v1.0`).
+
+All endpoints require `Authorization: Bearer <token>`.
+
+### POST `/api/v1/musehub/repos/{repo_id}/releases`
+
+Create a new release tied to an optional commit snapshot.
+
+**Request body:**
+```json
+{
+  "tag": "v1.0",
+  "title": "First Release",
+  "body": "# Release Notes\n\nInitial jazz arrangement.",
+  "commitId": "abc123..."
+}
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `tag` | string | Yes | Version tag — unique per repo (e.g. `v1.0`) |
+| `title` | string | Yes | Human-readable release title |
+| `body` | string | No | Markdown release notes |
+| `commitId` | string | No | Commit SHA to pin this release to |
+
+**Response (201):** `ReleaseResponse` — see below.
+
+**Errors:**
+- **404** — repo not found
+- **409** — a release with this tag already exists in the repo
+
+### GET `/api/v1/musehub/repos/{repo_id}/releases`
+
+List all releases for the repo, ordered newest first.
+
+**Response (200):**
+```json
+{
+  "releases": [<ReleaseResponse>, ...]
+}
+```
+
+**Errors:**
+- **404** — repo not found
+
+### GET `/api/v1/musehub/repos/{repo_id}/releases/{tag}`
+
+Get a single release by its version tag.
+
+**Response (200):** `ReleaseResponse`
+
+**Errors:**
+- **404** — repo not found, or tag not found in this repo
+
+### `ReleaseResponse`
+
+```json
+{
+  "releaseId": "uuid",
+  "tag": "v1.0",
+  "title": "First Release",
+  "body": "# Release Notes...",
+  "commitId": "abc123...",
+  "downloadUrls": {
+    "midiBundle": "/api/v1/musehub/repos/{id}/releases/{release_id}/packages/midi",
+    "stems": "/api/v1/musehub/repos/{id}/releases/{release_id}/packages/stems",
+    "mp3": "/api/v1/musehub/repos/{id}/releases/{release_id}/packages/mp3",
+    "musicxml": "/api/v1/musehub/repos/{id}/releases/{release_id}/packages/musicxml",
+    "metadata": "/api/v1/musehub/repos/{id}/releases/{release_id}/packages/metadata"
+  },
+  "createdAt": "2026-02-27T00:00:00Z"
+}
+```
+
+`downloadUrls` fields are `null` when the corresponding package is not available
+(e.g. no commit pinned, or no stored objects for that commit).
+
+---
+
 ## Muse Hub Web UI
 
 The following routes serve HTML pages for browser-based repo navigation. They
@@ -1324,12 +1406,14 @@ do **not** require an `Authorization` header — auth is handled client-side via
 
 | Route | Description |
 |-------|-------------|
-| `GET /musehub/ui/{repo_id}` | Repo overview: branch selector + newest 20 commits |
+| `GET /musehub/ui/{repo_id}` | Repo overview: branch selector + newest 20 commits + latest release badge |
 | `GET /musehub/ui/{repo_id}/commits/{commit_id}` | Commit detail: metadata + artifact browser |
 | `GET /musehub/ui/{repo_id}/pulls` | PR list with open/all filter |
 | `GET /musehub/ui/{repo_id}/pulls/{pr_id}` | PR detail with Merge button |
 | `GET /musehub/ui/{repo_id}/issues` | Issue list with open/closed/all filter |
 | `GET /musehub/ui/{repo_id}/issues/{number}` | Issue detail with Close button |
+| `GET /musehub/ui/{repo_id}/releases` | Release list (all versions, newest first) |
+| `GET /musehub/ui/{repo_id}/releases/{tag}` | Release detail: notes + download package cards |
 
 **Response:** `200 text/html` for all routes. No JSON is returned.
 
