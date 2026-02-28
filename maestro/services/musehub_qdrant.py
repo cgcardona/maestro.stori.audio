@@ -88,7 +88,7 @@ class MusehubQdrantClient:
     """
 
     def __init__(self, host: str = "qdrant", port: int = 6333) -> None:
-        self._client = QdrantClient(host=host, port=port)
+        self._client = QdrantClient(host=host, port=port, check_compatibility=False)
         self._collection_ready = False
 
     # ------------------------------------------------------------------
