@@ -242,3 +242,98 @@ class BestCandidate:
     parsed: ParsedMidiResult
     flat_notes: list[StorpheusNoteDict]
     batch_idx: int
+
+
+@dataclass
+class GenreParameterPrior:
+    """Explicit per-genre parameter priors for the Orpheus model.
+
+    These are tuned from listening tests and A/B experiments to produce
+    genre-appropriate output.  All temperature/top_p values override the
+    defaults derived from the control-vector mapping; density_offset biases
+    the GenerationControlVector before token-budget allocation.
+
+    Ranges:
+        temperature     0.7–1.0   Orpheus safe range (default 0.9)
+        top_p           0.90–0.98 Orpheus safe range (default 0.96)
+        density_offset  -0.3–0.3  Additive offset on GenerationControlVector.density
+        prime_ratio     0.5–1.0   Fraction of max prime tokens to supply
+    """
+
+    temperature: float
+    top_p: float
+    density_offset: float = 0.0
+    prime_ratio: float = 1.0
+
+
+class GenerationTelemetryRecord(TypedDict, total=False):
+    """One telemetry record emitted for every completed generation.
+
+    Logged at INFO level in JSON-serialisable form so that external
+    consumers (log aggregators, dashboards) can ingest without parsing.
+
+    Input fields (always present):
+        genre           Musical style string
+        tempo           BPM
+        bars            Requested bar count
+        instruments     List of requested instrument roles
+        quality_preset  "fast" | "balanced" | "quality"
+        temperature     Orpheus model temperature used
+        top_p           Orpheus model top_p used
+        num_prime_tokens  Prime context tokens supplied to the model
+        num_gen_tokens    Generation tokens requested from the model
+        genre_prior_applied  Whether a genre-specific prior overrode defaults
+
+    Output fields (present on success):
+        note_count          Total notes in the selected candidate
+        pitch_range         Max MIDI pitch - min MIDI pitch
+        velocity_variation  Coefficient of variation for note velocities
+        quality_score       Composite quality score 0–1
+        rejection_score     Rejection-sampling score of selected candidate
+        candidate_count     How many candidates were evaluated
+        generation_ok       True = at least one candidate was accepted
+    """
+
+    genre: Required[str]
+    tempo: Required[int]
+    bars: Required[int]
+    instruments: list[str]
+    quality_preset: str
+    temperature: float
+    top_p: float
+    num_prime_tokens: int
+    num_gen_tokens: int
+    genre_prior_applied: bool
+    note_count: int
+    pitch_range: int
+    velocity_variation: float
+    quality_score: float
+    rejection_score: float
+    candidate_count: int
+    generation_ok: bool
+
+
+class ParameterSweepResult(TypedDict):
+    """Quality metrics plus the parameter set used to produce them."""
+
+    temperature: float
+    top_p: float
+    quality_score: float
+    note_count: int
+    pitch_range: int
+    velocity_variation: float
+    rejection_score: float
+
+
+class SweepABTestResult(TypedDict):
+    """Statistical summary of a parameter sweep A/B test."""
+
+    genre: str
+    tempo: int
+    bars: int
+    sweep_results: list[ParameterSweepResult]
+    best_temperature: float
+    best_top_p: float
+    best_quality_score: float
+    score_range: float
+    significant: bool  # True when max-min quality gap ≥ 0.05

@@ -30,6 +30,7 @@ def _to_issue_response(row: db.MusehubIssue) -> IssueResponse:
         body=row.body,
         state=row.state,
         labels=list(row.labels or []),
+        author=row.author,
         created_at=row.created_at,
     )
 
@@ -50,8 +51,13 @@ async def create_issue(
     title: str,
     body: str,
     labels: list[str],
+    author: str = "",
 ) -> IssueResponse:
-    """Persist a new issue in ``open`` state and return its wire representation."""
+    """Persist a new issue in ``open`` state and return its wire representation.
+
+    ``author`` identifies the user opening the issue — typically the JWT ``sub``
+    claim from the request token, or a display name from the seed script.
+    """
     number = await _next_issue_number(session, repo_id)
     issue = db.MusehubIssue(
         repo_id=repo_id,
@@ -60,6 +66,7 @@ async def create_issue(
         body=body,
         state="open",
         labels=labels,
+        author=author,
     )
     session.add(issue)
     await session.flush()
