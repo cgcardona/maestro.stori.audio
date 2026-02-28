@@ -701,7 +701,12 @@ def test_encrypt_decrypt_empty_secret_passthrough() -> None:
 
 
 def test_decrypt_invalid_token_raises_value_error() -> None:
-    """decrypt_secret raises ValueError when the ciphertext is garbage."""
+    """decrypt_secret raises ValueError when a Fernet-prefixed token is corrupt/wrong-key.
+
+    Values that *look* like Fernet tokens (prefix "gAAAAAB") but cannot be
+    decrypted are genuine key-mismatch or corruption errors — we surface them
+    rather than silently falling back so operators notice misconfiguration.
+    """
     from unittest.mock import patch
     from cryptography.fernet import Fernet
     from maestro.services import musehub_webhook_crypto as crypto
@@ -710,10 +715,98 @@ def test_decrypt_invalid_token_raises_value_error() -> None:
     with patch.object(crypto, "_fernet", None), patch.object(crypto, "_fernet_initialised", False):
         with patch("maestro.services.musehub_webhook_crypto.settings") as mock_settings:
             mock_settings.webhook_secret_key = test_key
-            # Encrypt something so fernet is initialised, then pass garbage.
+            # Encrypt something so fernet is initialised, then pass a corrupted
+            # token that carries the Fernet prefix — this should raise ValueError.
             crypto.encrypt_secret("seed")
+            corrupt_fernet_token = "gAAAAABthis-looks-like-fernet-but-is-corrupt"
             with pytest.raises(ValueError, match="Failed to decrypt webhook secret"):
-                crypto.decrypt_secret("not-a-valid-fernet-token")
+                crypto.decrypt_secret(corrupt_fernet_token)
+
+
+def test_decrypt_plaintext_secret_returns_value_when_key_set() -> None:
+    """decrypt_secret returns a plaintext secret as-is when it lacks the Fernet prefix.
+
+    This is the transparent migration fallback (issue #347): secrets written
+    before STORI_WEBHOOK_SECRET_KEY was enabled do not start with "gAAAAAB".
+    Rather than raising ValueError and breaking all existing webhooks, we
+    return the plaintext and emit a deprecation warning so operators know they
+    need to run the migration script.
+    """
+    from unittest.mock import patch
+    from cryptography.fernet import Fernet
+    from maestro.services import musehub_webhook_crypto as crypto
+
+    test_key = Fernet.generate_key().decode()
+    with patch.object(crypto, "_fernet", None), patch.object(crypto, "_fernet_initialised", False):
+        with patch("maestro.services.musehub_webhook_crypto.settings") as mock_settings:
+            mock_settings.webhook_secret_key = test_key
+            crypto.encrypt_secret("seed")  # initialise singleton
+            plaintext_secret = "pre-migration-plaintext-secret"
+            # Must NOT start with "gAAAAAB" (simulates a legacy row)
+            assert not plaintext_secret.startswith("gAAAAAB")
+            result = crypto.decrypt_secret(plaintext_secret)
+            assert result == plaintext_secret
+
+
+def test_is_fernet_token_detects_prefix() -> None:
+    """is_fernet_token correctly distinguishes Fernet tokens from plaintext."""
+    from cryptography.fernet import Fernet
+    from maestro.services.musehub_webhook_crypto import encrypt_secret, is_fernet_token
+
+    from unittest.mock import patch
+    from maestro.services import musehub_webhook_crypto as crypto
+
+    test_key = Fernet.generate_key().decode()
+    with patch.object(crypto, "_fernet", None), patch.object(crypto, "_fernet_initialised", False):
+        with patch("maestro.services.musehub_webhook_crypto.settings") as mock_settings:
+            mock_settings.webhook_secret_key = test_key
+            token = encrypt_secret("some-secret")
+
+    assert is_fernet_token(token)
+    assert not is_fernet_token("plaintext-secret")
+    assert not is_fernet_token("")
+    assert not is_fernet_token("not-starting-with-gAAAAAB")
+
+
+def test_migrate_webhook_secrets_logic() -> None:
+    """Core migration logic: plaintext rows are re-encrypted; already-encrypted rows skipped.
+
+    This test exercises the detection + re-encryption logic in isolation,
+    mirroring what scripts/migrate_webhook_secrets.py does in production.
+    """
+    from cryptography.fernet import Fernet
+    from maestro.services.musehub_webhook_crypto import encrypt_secret, is_fernet_token
+
+    from unittest.mock import patch
+    from maestro.services import musehub_webhook_crypto as crypto
+
+    test_key = Fernet.generate_key().decode()
+    plaintext = "legacy-plaintext-hmac-key"
+    already_fernet: str
+
+    with patch.object(crypto, "_fernet", None), patch.object(crypto, "_fernet_initialised", False):
+        with patch("maestro.services.musehub_webhook_crypto.settings") as mock_settings:
+            mock_settings.webhook_secret_key = test_key
+            already_fernet = encrypt_secret("already-encrypted")
+
+    # Simulate the per-row migration decision.
+    secrets = [plaintext, already_fernet, ""]
+
+    migrated = []
+    skipped = []
+    for secret in secrets:
+        if not secret or is_fernet_token(secret):
+            skipped.append(secret)
+        else:
+            with patch.object(crypto, "_fernet", None), patch.object(crypto, "_fernet_initialised", False):
+                with patch("maestro.services.musehub_webhook_crypto.settings") as mock_settings:
+                    mock_settings.webhook_secret_key = test_key
+                    migrated.append(encrypt_secret(secret))
+
+    # Plaintext row was migrated; already-encrypted and empty rows were skipped.
+    assert len(migrated) == 1
+    assert is_fernet_token(migrated[0])
+    assert len(skipped) == 2  # already_fernet + empty
 
 
 def test_encrypt_decrypt_no_key_passthrough() -> None:

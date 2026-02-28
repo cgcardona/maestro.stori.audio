@@ -251,6 +251,63 @@ muse play a1b2c3d4
 
 ---
 
+## Rotating/enabling webhook secret encryption
+
+### Overview
+
+`musehub_webhooks.secret` is stored encrypted at rest using Fernet symmetric
+encryption (AES-128-CBC + HMAC-SHA256 under the hood).  The key is
+`STORI_WEBHOOK_SECRET_KEY` in the environment.
+
+When the key is **absent** (e.g. local dev), secrets are stored as plaintext
+and the encrypt/decrypt functions are transparent pass-throughs.
+
+### First-time enablement (migrating existing secrets)
+
+If you're enabling `STORI_WEBHOOK_SECRET_KEY` on an existing deployment that
+already has webhook rows with plaintext secrets, run the migration script once
+**before** (or immediately after) setting the key:
+
+1. **Generate a Fernet key** (one-time, store it securely):
+
+   ```bash
+   docker compose exec maestro python3 -c \
+     "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+   ```
+
+2. **Set the key** in your `.env` or secret manager:
+
+   ```
+   STORI_WEBHOOK_SECRET_KEY=<the-generated-key>
+   ```
+
+3. **Run the migration script** to encrypt all legacy plaintext secrets:
+
+   ```bash
+   docker compose exec maestro python3 /app/scripts/migrate_webhook_secrets.py
+   ```
+
+   The script is idempotent — safe to run multiple times.  Already-encrypted
+   rows are detected by their `gAAAAAB` prefix and skipped.
+
+4. **Verify** the output shows the expected migrated/skipped counts.
+
+> **Transparent fallback:** If you enable the key without running the migration,
+> existing webhook deliveries will still work — `decrypt_secret()` detects
+> legacy plaintext secrets and returns them as-is with a deprecation warning.
+> This is a safety net, not a substitute for running the migration.
+
+### Key rotation
+
+To rotate to a new Fernet key:
+
+1. Generate a new key (step 1 above).
+2. Re-run the migration script with the new key — it re-encrypts every row.
+3. Update `STORI_WEBHOOK_SECRET_KEY` in your environment.
+4. Restart the `maestro` service.
+
+---
+
 ## AWS credentials
 
 For S3 asset setup: create IAM user + access key in AWS Console (or use existing key). Run `scripts/deploy/setup-s3-assets.sh` with `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_DEFAULT_REGION`. Script can create a limited `stori-assets-app` user; put the **printed** env vars into server `.env`.
