@@ -3081,6 +3081,25 @@ commit that scored at or above the `--threshold` keyword-overlap cutoff.
 
 ---
 
+### `HashObjectResult`
+
+**Module:** `maestro/muse_cli/commands/hash_object.py`
+
+Structured result from `muse hash-object`.  Records the computed SHA-256
+digest and whether the object was persisted, so callers (including tests)
+can assert storage behaviour without re-reading the DB.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `object_id` | `str` | 64-character lowercase hex SHA-256 digest of the content |
+| `stored` | `bool` | `True` when `-w` was given and the object was persisted |
+| `already_existed` | `bool` | `True` when `-w` was given but the object already existed in the store (idempotent write) |
+
+**Producer:** `_hash_object_async()`
+**Consumer:** `hash_object()` Typer command callback
+
+---
+
 ### `CatObjectResult`
 
 **Module:** `maestro/muse_cli/commands/cat_object.py`
