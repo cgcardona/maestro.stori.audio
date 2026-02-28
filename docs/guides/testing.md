@@ -196,3 +196,43 @@ docker compose exec maestro pytest tests/e2e/test_muse_e2e_harness.py -v -s
 ```
 
 Covers: root commit → mainline → branch A → branch B → merge → conflict detection → checkout traversal. Produces ASCII graph visualization, JSON dump, and summary table. See [muse_e2e_demo.md](../architecture/muse_e2e_demo.md) for expected output.
+
+---
+
+## Muse MVP golden-path tests
+
+The golden-path test exercises the **complete local Muse CLI workflow** end-to-end using real Postgres: `init → commit → branch → commit → checkout → merge (conflict) → resolve → merge --continue → log --graph`.
+
+**Quick run (pytest):**
+```bash
+docker compose exec maestro pytest tests/e2e/test_muse_golden_path.py -v -s
+```
+
+**Via Makefile:**
+```bash
+make test-golden-path
+```
+
+**Test coverage:**
+
+| Test | What it checks |
+|------|----------------|
+| `test_golden_path_local` | Full local workflow: init → commit → branch → merge conflict → resolve → merge --continue |
+| `test_golden_path_log_shows_merge_commit` | `muse log` output contains a merge commit with two distinct parent IDs |
+| `test_golden_path_remote` | Push/pull round-trip (skipped unless `MUSE_HUB_URL` is set) |
+| `test_checkout_branch_creates_and_switches` | `muse checkout -b` seeds new branch from HEAD; `muse checkout <branch>` switches |
+| `test_resolve_clears_conflict_paths` | `muse resolve --ours` removes path from MERGE_STATE; MERGE_STATE persists with `conflict_paths=[]` |
+| `test_merge_continue_creates_merge_commit` | `muse merge --continue` creates merge commit with two parents and clears MERGE_STATE |
+
+**Demo scripts (interactive):**
+
+```bash
+# Local golden path (steps 1–11, no remote required)
+make demo-local
+
+# Full path including Hub push/pull/PR (requires MUSE_HUB_URL)
+export MUSE_HUB_URL=https://muse.stori.app
+make demo-remote
+```
+
+The demo scripts run inside the `maestro` container and produce step-numbered, emoji-annotated output. Both scripts use `set -euo pipefail` — any command failure aborts with a clear error message.

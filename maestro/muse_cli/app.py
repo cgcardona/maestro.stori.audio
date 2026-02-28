@@ -3,8 +3,8 @@
 Entry point for the ``muse`` console script. Registers all MVP
 subcommands (arrange, ask, checkout, chord-map, commit, context, contour,
 describe, diff, divergence, dynamics, export, find, grep, humanize, import,
-init, key, log, merge, meter, open, play, pull, push, recall, remote, session,
-status, swing, tag, tempo, tempo-scale) as Typer sub-applications.
+init, key, log, merge, meter, open, play, pull, push, recall, remote, resolve,
+session, status, swing, tag, tempo, tempo-scale) as Typer sub-applications.
 """
 from __future__ import annotations
 
@@ -38,6 +38,7 @@ from maestro.muse_cli.commands import (
     push,
     recall,
     remote,
+    resolve,
     session,
     status,
     swing,
@@ -85,6 +86,7 @@ cli.add_typer(humanize.app, name="humanize", help="Apply micro-timing and veloci
 cli.add_typer(context.app, name="context", help="Output structured musical context for AI agent consumption.")
 cli.add_typer(divergence.app, name="divergence", help="Show how two branches have diverged musically.")
 cli.add_typer(tempo_scale.app, name="tempo-scale", help="Stretch or compress the timing of a commit.")
+cli.add_typer(resolve.app, name="resolve", help="Mark a conflicted file as resolved (--ours or --theirs).")
 
 
 if __name__ == "__main__":
