@@ -59,6 +59,8 @@ from post_processing import build_post_processor
 from storpheus_types import (
     BestCandidate,
     CacheKeyData,
+    ChunkMetadata,
+    ChunkedGenerationResult,
     GenerationTelemetryRecord,
     InstrumentTier,
     ParameterSweepResult,
@@ -142,6 +144,24 @@ STORPHEUS_FLASH_ATTENTION_ENABLED: bool = os.environ.get(
 STORPHEUS_KV_CACHE_ENABLED: bool = os.environ.get(
     "STORPHEUS_KV_CACHE", "false"
 ).lower() in ("1", "true", "yes")
+
+# ── Chunked generation config (#25) ────────────────────────────────────────
+# Compositions above the threshold are split into sequential chunks that each
+# fit within the HF Space's 1024 gen-token hard cap (~8 bars at 128 tok/bar).
+# Each chunk uses the previous chunk's output MIDI as its seed, implementing a
+# sliding context window for smooth long-form continuation.
+#
+# STORPHEUS_CHUNKED_THRESHOLD_BARS — request.bars above which chunked mode activates.
+#   Default 16: requests ≤ 16 bars use the standard single-pass path (no regression).
+# STORPHEUS_CHUNK_BARS — bars generated per chunk. Must satisfy chunk_bars * 128 ≤ 1024.
+#   Default 8: exactly fills the HF Space's gen-token budget.
+# STORPHEUS_CHUNK_FADE_BEATS — beats over which velocity is cross-faded at boundaries.
+#   Default 4.0: one beat of fade in / fade out at each chunk boundary.
+_CHUNKED_GEN_THRESHOLD_BARS: int = int(
+    os.environ.get("STORPHEUS_CHUNKED_THRESHOLD_BARS", "16")
+)
+_CHUNK_BARS: int = int(os.environ.get("STORPHEUS_CHUNK_BARS", "8"))
+_CHUNK_FADE_BEATS: float = float(os.environ.get("STORPHEUS_CHUNK_FADE_BEATS", "4.0"))
 
 
 @dataclass
@@ -2049,8 +2069,260 @@ def _get_or_create_session(composition_id: str | None) -> tuple[str, Composition
     return state.session_id, state
 
 
+def _apply_velocity_fade(
+    notes: list[WireNoteDict],
+    chunk_bars: int,
+    fade_beats: float,
+    fade_in: bool,
+    fade_out: bool,
+    beats_per_bar: int = 4,
+) -> list[WireNoteDict]:
+    """Apply linear velocity fade-in / fade-out at chunk boundaries.
+
+    Avoids jarring amplitude jumps where consecutive chunks meet.  Both
+    ``fade_in`` and ``fade_out`` are applied independently; a chunk that is
+    neither first nor last receives both.  A ``fade_beats`` of 0.0 is a no-op.
+
+    Args:
+        notes:        Wire-format notes for a single chunk (beats relative to chunk start).
+        chunk_bars:   Duration of this chunk in bars.
+        fade_beats:   Width of the fade envelope in beats (applied to each edge).
+        fade_in:      True for every chunk except the first.
+        fade_out:     True for every chunk except the last.
+        beats_per_bar: Beats per bar (always 4 for 4/4; parameterised for future metres).
+
+    Returns:
+        New list of WireNoteDict with velocity clamped to [1, 127].
+    """
+    if not notes or fade_beats <= 0.0:
+        return list(notes)
+
+    total_beats = float(chunk_bars * beats_per_bar)
+    result: list[WireNoteDict] = []
+    for note in notes:
+        sb = note["startBeat"]
+        vel = float(note["velocity"])
+
+        if fade_in and sb < fade_beats:
+            vel *= sb / fade_beats
+
+        if fade_out and sb >= (total_beats - fade_beats):
+            vel *= (total_beats - sb) / fade_beats
+
+        result.append(
+            WireNoteDict(
+                pitch=note["pitch"],
+                startBeat=sb,
+                durationBeats=note["durationBeats"],
+                velocity=max(1, min(127, int(vel))),
+            )
+        )
+    return result
+
+
+async def _generate_chunked(
+    request: GenerateRequest,
+    worker_id: int = 0,
+) -> GenerateResponse:
+    """Sliding window chunked generation for compositions longer than _CHUNKED_GEN_THRESHOLD_BARS.
+
+    Breaks a large bar-count request into sequential chunks of _CHUNK_BARS bars.
+    Each chunk conditions on the previous chunk's output MIDI (via the
+    CompositionState.accumulated_midi_path sliding window), so the model
+    naturally continues where the previous chunk left off.
+
+    Beat offsets are applied so that all chunks produce a contiguous timeline
+    spanning the full requested bar count.  A linear velocity cross-fade is
+    applied at each chunk boundary to smooth amplitude transitions.
+
+    Args:
+        request:    Original GenerateRequest with bars > _CHUNKED_GEN_THRESHOLD_BARS.
+        worker_id:  Worker slot passed through to each inner _do_generate call.
+
+    Returns:
+        GenerateResponse whose notes span the full requested duration.  On
+        partial failure the response is marked unsuccessful but any already-
+        stitched notes are included for debugging.
+    """
+    total_bars = request.bars
+    beats_per_bar = 4
+
+    # Split total_bars into _CHUNK_BARS-sized chunks (last may be smaller)
+    chunk_bar_counts: list[int] = []
+    remaining = total_bars
+    while remaining > 0:
+        c = min(_CHUNK_BARS, remaining)
+        chunk_bar_counts.append(c)
+        remaining -= c
+
+    chunks_needed = len(chunk_bar_counts)
+
+    # Isolated composition_id so chunked state does not bleed into caller's session
+    chunked_comp_id = f"chunked-{request.composition_id or str(uuid.uuid4())}"
+
+    all_notes: list[WireNoteDict] = []
+    chunk_metadata: list[ChunkMetadata] = []
+    beat_offset = 0.0
+
+    _run_start = monotonic()
+    logger.info(
+        f"🧩 Chunked generation: {total_bars} bars → {chunks_needed} chunk(s) of "
+        f"≤{_CHUNK_BARS} bars | composition={chunked_comp_id[:16]}"
+    )
+
+    for chunk_idx, c_bars in enumerate(chunk_bar_counts):
+        is_first = chunk_idx == 0
+        is_last = chunk_idx == chunks_needed - 1
+
+        chunk_request = GenerateRequest(
+            genre=request.genre,
+            tempo=request.tempo,
+            instruments=request.instruments,
+            bars=c_bars,
+            key=request.key,
+            emotion_vector=request.emotion_vector,
+            role_profile_summary=request.role_profile_summary,
+            generation_constraints=request.generation_constraints,
+            intent_goals=request.intent_goals,
+            seed=request.seed,
+            trace_id=request.trace_id,
+            intent_hash=request.intent_hash,
+            quality_preset=request.quality_preset,
+            temperature=request.temperature,
+            top_p=request.top_p,
+            composition_id=chunked_comp_id,
+            # Only attach outro token on the final chunk
+            add_outro=request.add_outro and is_last,
+            unified_output=False,  # chunked always returns flat notes; caller re-wraps
+        )
+
+        logger.info(
+            f"🧩 Chunk {chunk_idx + 1}/{chunks_needed}: "
+            f"{c_bars} bars, beat_offset={beat_offset:.0f}"
+        )
+        chunk_response = await _do_generate(chunk_request, worker_id=worker_id)
+
+        if not chunk_response.success:
+            logger.error(
+                f"❌ Chunked generation failed at chunk "
+                f"{chunk_idx + 1}/{chunks_needed}: {chunk_response.error}"
+            )
+            partial_meta: dict[str, object] = {
+                "chunked": True,
+                "chunks_completed": chunk_idx,
+                "chunks_total": chunks_needed,
+                "chunk_metadata": list(chunk_metadata),
+            }
+            if all_notes:
+                return GenerateResponse(
+                    success=False,
+                    notes=all_notes,
+                    error=(
+                        f"Chunked generation failed at chunk "
+                        f"{chunk_idx + 1}/{chunks_needed}: {chunk_response.error}"
+                    ),
+                    metadata=partial_meta,
+                )
+            return GenerateResponse(
+                success=False,
+                error=(
+                    f"Chunked generation failed at chunk "
+                    f"{chunk_idx + 1}/{chunks_needed}: {chunk_response.error}"
+                ),
+                metadata=partial_meta,
+            )
+
+        chunk_wire: list[WireNoteDict] = chunk_response.notes or []
+
+        # Apply velocity cross-fade at chunk boundaries
+        chunk_wire = _apply_velocity_fade(
+            chunk_wire,
+            c_bars,
+            fade_beats=_CHUNK_FADE_BEATS,
+            fade_in=not is_first,
+            fade_out=not is_last,
+            beats_per_bar=beats_per_bar,
+        )
+
+        # Shift beats to the correct position in the final timeline
+        for note in chunk_wire:
+            all_notes.append(
+                WireNoteDict(
+                    pitch=note["pitch"],
+                    startBeat=note["startBeat"] + beat_offset,
+                    durationBeats=note["durationBeats"],
+                    velocity=note["velocity"],
+                )
+            )
+
+        _raw_score = (
+            chunk_response.metadata.get("rejection_score")
+            if isinstance(chunk_response.metadata, dict)
+            else None
+        )
+        chunk_meta_obj: ChunkMetadata = {
+            "chunk": chunk_idx,
+            "bars": c_bars,
+            "notes": len(chunk_wire),
+            "beat_offset": beat_offset,
+            "rejection_score": float(_raw_score) if isinstance(_raw_score, (int, float)) else None,
+        }
+        chunk_metadata.append(chunk_meta_obj)
+
+        beat_offset += c_bars * beats_per_bar
+
+        logger.info(
+            f"✅ Chunk {chunk_idx + 1}/{chunks_needed}: "
+            f"{len(chunk_wire)} notes | next offset={beat_offset:.0f} beats"
+        )
+
+    # Sort by start beat across all chunks
+    all_notes.sort(key=lambda n: n["startBeat"])
+
+    total_elapsed = monotonic() - _run_start
+    logger.info(
+        f"✅ Chunked generation complete: {total_bars} bars, "
+        f"{len(all_notes)} total notes, {chunks_needed} chunks, "
+        f"{total_elapsed:.1f}s"
+    )
+
+    chunked_result: ChunkedGenerationResult = {
+        "success": True,
+        "notes": all_notes,
+        "chunk_count": chunks_needed,
+        "total_bars": total_bars,
+        "chunk_metadata": chunk_metadata,
+        "total_elapsed_seconds": round(total_elapsed, 2),
+        "error": None,
+    }
+
+    return GenerateResponse(
+        success=True,
+        notes=all_notes,
+        error=None,
+        metadata={
+            "chunked": True,
+            "chunk_count": chunks_needed,
+            "chunk_bars": _CHUNK_BARS,
+            "total_bars": total_bars,
+            "chunk_metadata": list(chunk_metadata),
+            "total_elapsed_seconds": chunked_result["total_elapsed_seconds"],
+        },
+    )
+
+
 async def _do_generate(request: GenerateRequest, worker_id: int = 0) -> GenerateResponse:
-    """Core GPU generation logic — called by JobQueue workers."""
+    """Core GPU generation logic — called by JobQueue workers.
+
+    Long compositions (``request.bars > _CHUNKED_GEN_THRESHOLD_BARS``) are
+    transparently routed to ``_generate_chunked`` which breaks the request into
+    sequential _CHUNK_BARS-bar slices, each within the HF Space's 1024 gen-token
+    hard cap.  Short compositions use the standard single-pass path unchanged.
+    """
+    # Route long compositions to sliding window chunked generation (#25)
+    if request.bars > _CHUNKED_GEN_THRESHOLD_BARS:
+        return await _generate_chunked(request, worker_id=worker_id)
+
     global _last_successful_gen
 
     _timing = GenerationTiming()

@@ -47,6 +47,8 @@ This document is the single source of truth for every named entity (TypedDict, d
 7. [Storpheus Types (`storpheus/storpheus_types.py`)](#storpheus-types)
    - [MIDI event types](#midi-event-types)
    - [Pipeline types](#pipeline-types)
+   - [ChunkMetadata](#chunkmetadata)
+   - [ChunkedGenerationResult](#chunkedgenerationresult)
    - [Scoring types](#scoring-types)
 8. [DAW Adapter Layer (`maestro/daw/`)](#daw-adapter-layer)
    - [Ports (`maestro/daw/ports.py`)](#ports-appdawportspy)
@@ -1994,6 +1996,37 @@ These types mirror the Maestro `app/contracts/json_types.py` types but are defin
 
 **Location:** `storpheus/storpheus_types.py`
 **Endpoint:** `POST /generate/progressive` → returns this as JSON
+
+#### `ChunkMetadata`
+
+`TypedDict` — Per-chunk metadata emitted during a sliding window chunked generation run (#25).
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `chunk` | `int` | Zero-based chunk index |
+| `bars` | `int` | Bar count for this chunk (last chunk may be smaller than `_CHUNK_BARS`) |
+| `notes` | `int` | Note count produced by this chunk after beat-trimming |
+| `beat_offset` | `float` | Beat position of this chunk's start in the final timeline |
+| `rejection_score` | `float \| None` | Candidate rejection score; `None` if unavailable |
+
+**Location:** `storpheus/storpheus_types.py`
+
+#### `ChunkedGenerationResult`
+
+`TypedDict` — Aggregated result of a sliding window chunked generation run. Produced when `request.bars > STORPHEUS_CHUNKED_THRESHOLD_BARS` (default 16). The `notes` list spans the full requested bar count with sequential beat offsets applied across all chunks.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `success` | `bool` | `True` when all chunks completed without error |
+| `notes` | `list[WireNoteDict]` | All notes across all chunks, sorted by `startBeat` |
+| `chunk_count` | `int` | Number of chunks generated |
+| `total_bars` | `int` | Total bars requested (= sum of all chunk bar counts) |
+| `chunk_metadata` | `list[ChunkMetadata]` | Per-chunk metadata in generation order |
+| `total_elapsed_seconds` | `float` | Total wall-clock time for the run |
+| `error` | `str \| None` | Error message if `success` is `False`; otherwise `None` |
+
+**Location:** `storpheus/storpheus_types.py`
+**Endpoint:** `POST /generate` → embedded in `GenerateResponse.metadata` when chunked mode activates
 
 ---
 
