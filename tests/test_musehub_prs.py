@@ -1,12 +1,15 @@
 """Tests for Muse Hub pull request endpoints.
 
-Covers every acceptance criterion from issue #41:
+Covers every acceptance criterion from issues #41 and #215:
 - POST /musehub/repos/{repo_id}/pull-requests creates PR in open state
 - 422 when from_branch == to_branch
 - 404 when from_branch does not exist
 - GET /pull-requests returns all PRs (open + merged + closed)
 - GET /pull-requests/{pr_id} returns full PR detail; 404 if not found
+- GET /pull-requests/{pr_id}/diff returns five-dimension musical diff scores
+- GET /pull-requests/{pr_id}/diff graceful degradation when branches have no commits
 - POST /pull-requests/{pr_id}/merge creates merge commit, sets state merged
+- POST /pull-requests/{pr_id}/merge accepts squash and rebase strategies
 - 409 when merging an already-merged PR
 - All endpoints require valid JWT
 
@@ -468,3 +471,169 @@ async def test_create_pr_author_persisted_in_list(
     assert len(prs) == 1
     assert "author" in prs[0]
     assert isinstance(prs[0]["author"], str)
+
+
+@pytest.mark.anyio
+async def test_pr_diff_endpoint_returns_five_dimensions(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+    db_session: AsyncSession,
+) -> None:
+    """GET /pull-requests/{pr_id}/diff returns per-dimension scores for the PR branches."""
+    repo_id = await _create_repo(client, auth_headers, "diff-pr-repo")
+    await _push_branch(db_session, repo_id, "feat/jazz-keys")
+    pr_resp = await _create_pr(client, auth_headers, repo_id, from_branch="feat/jazz-keys", to_branch="main")
+    pr_id = pr_resp["prId"]
+
+    response = await client.get(
+        f"/api/v1/musehub/repos/{repo_id}/pull-requests/{pr_id}/diff",
+        headers=auth_headers,
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert "dimensions" in data
+    assert len(data["dimensions"]) == 5
+    assert data["prId"] == pr_id
+    assert data["fromBranch"] == "feat/jazz-keys"
+    assert data["toBranch"] == "main"
+    assert "overallScore" in data
+    assert isinstance(data["overallScore"], float)
+
+    # Every dimension must have the expected fields
+    for dim in data["dimensions"]:
+        assert "dimension" in dim
+        assert dim["dimension"] in ("melodic", "harmonic", "rhythmic", "structural", "dynamic")
+        assert "score" in dim
+        assert 0.0 <= dim["score"] <= 1.0
+        assert "level" in dim
+        assert dim["level"] in ("NONE", "LOW", "MED", "HIGH")
+        assert "deltaLabel" in dim
+        assert "fromBranchCommits" in dim
+        assert "toBranchCommits" in dim
+
+
+@pytest.mark.anyio
+async def test_pr_diff_endpoint_404_for_unknown_pr(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+    db_session: AsyncSession,
+) -> None:
+    """GET /pull-requests/{pr_id}/diff returns 404 when the PR does not exist."""
+    repo_id = await _create_repo(client, auth_headers, "diff-404-repo")
+    response = await client.get(
+        f"/api/v1/musehub/repos/{repo_id}/pull-requests/nonexistent-pr-id/diff",
+        headers=auth_headers,
+    )
+    assert response.status_code == 404
+
+
+@pytest.mark.anyio
+async def test_pr_diff_endpoint_graceful_when_no_commits(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+    db_session: AsyncSession,
+) -> None:
+    """Diff endpoint returns zero scores when branches have no commits (graceful degradation).
+
+    When from_branch has commits but to_branch ('main') has none, compute_hub_divergence
+    raises ValueError.  The diff endpoint must catch it and return zero-score placeholders
+    so the PR detail page always renders.
+    """
+    from maestro.db.musehub_models import MusehubBranch, MusehubCommit, MusehubPullRequest
+
+    repo_id = await _create_repo(client, auth_headers, "diff-empty-repo")
+
+    # Seed from_branch with a commit so the PR can be created.
+    commit_id = uuid.uuid4().hex
+    commit = MusehubCommit(
+        commit_id=commit_id,
+        repo_id=repo_id,
+        branch="feat/empty-grace",
+        parent_ids=[],
+        message="Initial commit on feat/empty-grace",
+        author="musician",
+        timestamp=datetime.now(tz=timezone.utc),
+    )
+    branch = MusehubBranch(
+        repo_id=repo_id,
+        name="feat/empty-grace",
+        head_commit_id=commit_id,
+    )
+    db_session.add(commit)
+    db_session.add(branch)
+
+    # to_branch 'main' deliberately has NO commits — divergence will raise ValueError.
+    pr = MusehubPullRequest(
+        repo_id=repo_id,
+        title="Grace PR",
+        body="",
+        state="open",
+        from_branch="feat/empty-grace",
+        to_branch="main",
+        author="musician",
+    )
+    db_session.add(pr)
+    await db_session.flush()
+    await db_session.refresh(pr)
+    pr_id = pr.pr_id
+    await db_session.commit()
+
+    response = await client.get(
+        f"/api/v1/musehub/repos/{repo_id}/pull-requests/{pr_id}/diff",
+        headers=auth_headers,
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert len(data["dimensions"]) == 5
+    assert data["overallScore"] == 0.0
+    for dim in data["dimensions"]:
+        assert dim["score"] == 0.0
+        assert dim["level"] == "NONE"
+        assert dim["deltaLabel"] == "unchanged"
+
+
+@pytest.mark.anyio
+async def test_pr_merge_strategy_squash_accepted(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+    db_session: AsyncSession,
+) -> None:
+    """POST /pull-requests/{pr_id}/merge accepts 'squash' as a valid mergeStrategy."""
+    repo_id = await _create_repo(client, auth_headers, "strategy-squash-repo")
+    await _push_branch(db_session, repo_id, "feat/squash-test")
+    await _push_branch(db_session, repo_id, "main")
+    pr_resp = await _create_pr(client, auth_headers, repo_id, from_branch="feat/squash-test", to_branch="main")
+    pr_id = pr_resp["prId"]
+
+    response = await client.post(
+        f"/api/v1/musehub/repos/{repo_id}/pull-requests/{pr_id}/merge",
+        json={"mergeStrategy": "squash"},
+        headers=auth_headers,
+    )
+    # squash is now a valid strategy in the Pydantic model; merge logic uses merge_commit internally
+    assert response.status_code == 200
+    data = response.json()
+    assert data["merged"] is True
+
+
+@pytest.mark.anyio
+async def test_pr_merge_strategy_rebase_accepted(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+    db_session: AsyncSession,
+) -> None:
+    """POST /pull-requests/{pr_id}/merge accepts 'rebase' as a valid mergeStrategy."""
+    repo_id = await _create_repo(client, auth_headers, "strategy-rebase-repo")
+    await _push_branch(db_session, repo_id, "feat/rebase-test")
+    await _push_branch(db_session, repo_id, "main")
+    pr_resp = await _create_pr(client, auth_headers, repo_id, from_branch="feat/rebase-test", to_branch="main")
+    pr_id = pr_resp["prId"]
+
+    response = await client.post(
+        f"/api/v1/musehub/repos/{repo_id}/pull-requests/{pr_id}/merge",
+        json={"mergeStrategy": "rebase"},
+        headers=auth_headers,
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["merged"] is True
