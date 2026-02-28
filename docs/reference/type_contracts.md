@@ -3545,3 +3545,53 @@ classDiagram
     parse_prompt ..> MaestroPrompt : produces
     parse_prompt ..> PromptParseError : raises
 ```
+
+---
+
+## Muse CLI — Export Types (`maestro/muse_cli/export_engine.py`)
+
+### `ExportFormat`
+
+`StrEnum` of supported export format identifiers.
+
+| Value | Description |
+|-------|-------------|
+| `midi` | Raw MIDI file(s) (native format). |
+| `json` | Structured JSON note index. |
+| `musicxml` | MusicXML for notation software. |
+| `abc` | ABC notation for folk/traditional music tools. |
+| `wav` | Audio render via Storpheus. |
+
+### `MuseExportOptions`
+
+Frozen dataclass controlling a single export operation.
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `format` | `ExportFormat` | yes | Target export format. |
+| `commit_id` | `str` | yes | Full 64-char commit hash being exported. |
+| `output_path` | `pathlib.Path` | yes | Destination file or directory path. |
+| `track` | `str \| None` | no | Track name substring filter. |
+| `section` | `str \| None` | no | Section name substring filter. |
+| `split_tracks` | `bool` | no | Write one file per MIDI track (MIDI only). |
+
+### `MuseExportResult`
+
+Dataclass returned by every format handler.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `paths_written` | `list[pathlib.Path]` | Absolute paths of all files written. |
+| `format` | `ExportFormat` | Format that was exported. |
+| `commit_id` | `str` | Source commit ID. |
+| `skipped_count` | `int` | Entries skipped (wrong type, filter mismatch, missing). |
+
+### `StorpheusUnavailableError`
+
+Exception raised by `export_wav` when Storpheus is not reachable or returns
+a non-200 health response.  Callers catch this and surface a human-readable
+error message via `typer.echo` before calling `typer.Exit(INTERNAL_ERROR)`.
+
+```python
+class StorpheusUnavailableError(Exception): ...
+```
