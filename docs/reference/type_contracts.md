@@ -1091,6 +1091,27 @@ On failure: `success=False` plus `error` (and optionally `message`).
 
 ---
 
+### `TransposeResult`
+
+**Path:** `maestro/services/muse_transpose.py`
+
+`dataclass(frozen=True)` — Named result type for a `muse transpose <interval> [<commit>]` operation.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `source_commit_id` | `str` | Full 64-char SHA-256 commit that was the source of transposition |
+| `semitones` | `int` | Signed semitone offset applied (positive = up, negative = down) |
+| `files_modified` | `list[str]` | POSIX-relative paths of MIDI files that had notes transposed |
+| `files_skipped` | `list[str]` | POSIX-relative paths of non-MIDI or excluded files |
+| `new_commit_id` | `str \| None` | New commit ID created for the transposed snapshot; `None` in dry-run mode |
+| `original_key` | `str \| None` | Key metadata before transposition (from `metadata.key`), or `None` |
+| `new_key` | `str \| None` | Updated key metadata after transposition, or `None` if original was absent |
+| `dry_run` | `bool` | `True` when `--dry-run` was passed (no files written, no commit created) |
+
+**Agent use case:** After transposition, agents inspect `new_commit_id` to verify the commit exists, `new_key` to update their harmonic context, and `files_modified` to decide which tracks to re-render.
+
+---
+
 ### `MuseTempoHistoryEntry`
 
 **Path:** `maestro/services/muse_tempo.py`
