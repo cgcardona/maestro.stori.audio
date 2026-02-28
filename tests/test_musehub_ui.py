@@ -2867,16 +2867,16 @@ async def test_motifs_page_shows_transformation_badges(
 
 
 # ---------------------------------------------------------------------------
-# Repo home page — issue #203
+# Content negotiation & repo home page tests — issue #200 / #203
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.anyio
-async def test_repo_home_shows_name_and_owner(
+async def test_repo_page_html_default(
     client: AsyncClient,
     db_session: AsyncSession,
 ) -> None:
-    """GET /musehub/ui/{owner}/{repo_slug} renders HTML with owner name and repo slug."""
+    """GET /musehub/ui/{owner}/{repo_slug} with no Accept header returns HTML by default."""
     await _make_repo(db_session)
     response = await client.get("/musehub/ui/testuser/test-beats")
     assert response.status_code == 200
@@ -2897,7 +2897,6 @@ async def test_repo_home_shows_stats(
     response = await client.get("/musehub/ui/testuser/test-beats")
     assert response.status_code == 200
     body = response.text
-    # Stats bar container and JS that populates it must be present.
     assert "stats-bar" in body
     assert "loadStats" in body
 
@@ -2917,29 +2916,6 @@ async def test_repo_home_recent_commits(
 
 
 @pytest.mark.anyio
-async def test_repo_home_json_response(
-    client: AsyncClient,
-    db_session: AsyncSession,
-) -> None:
-    """GET /musehub/ui/{owner}/{repo_slug} with Accept: application/json returns stats + commits."""
-    await _make_repo(db_session)
-    response = await client.get(
-        "/musehub/ui/testuser/test-beats",
-        headers={"Accept": "application/json"},
-    )
-    assert response.status_code == 200
-    assert "application/json" in response.headers["content-type"]
-    data = response.json()
-    assert "stats" in data
-    assert "recent_commits" in data
-    stats = data["stats"]
-    assert "commit_count" in stats
-    assert "branch_count" in stats
-    assert "release_count" in stats
-    assert isinstance(stats["commit_count"], int)
-
-
-@pytest.mark.anyio
 async def test_repo_home_audio_player(
     client: AsyncClient,
     db_session: AsyncSession,
@@ -2949,9 +2925,74 @@ async def test_repo_home_audio_player(
     response = await client.get("/musehub/ui/testuser/test-beats")
     assert response.status_code == 200
     body = response.text
-    # The audio player section container and its JS loader must be in the page.
     assert "audio-player-section" in body
     assert "loadAudioPlayer" in body
+
+
+@pytest.mark.anyio
+async def test_repo_page_json_accept(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """GET /musehub/ui/{owner}/{repo_slug} with Accept: application/json returns JSON repo data."""
+    await _make_repo(db_session)
+    response = await client.get(
+        "/musehub/ui/testuser/test-beats",
+        headers={"Accept": "application/json"},
+    )
+    assert response.status_code == 200
+    assert "application/json" in response.headers["content-type"]
+    data = response.json()
+    # RepoResponse fields serialised as camelCase
+    assert "repoId" in data or "repo_id" in data or "slug" in data or "name" in data
+
+
+@pytest.mark.anyio
+async def test_commits_page_json_format_param(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """GET /musehub/ui/{owner}/{repo_slug}/commits?format=json returns JSON commit list."""
+    await _make_repo(db_session)
+    response = await client.get("/musehub/ui/testuser/test-beats/commits?format=json")
+    assert response.status_code == 200
+    assert "application/json" in response.headers["content-type"]
+    data = response.json()
+    # CommitListResponse has commits (list) and total (int)
+    assert "commits" in data
+    assert "total" in data
+    assert isinstance(data["commits"], list)
+
+
+@pytest.mark.anyio
+async def test_json_response_camelcase(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """JSON response from repo page uses camelCase keys matching API convention."""
+    await _make_repo(db_session)
+    response = await client.get(
+        "/musehub/ui/testuser/test-beats",
+        headers={"Accept": "application/json"},
+    )
+    assert response.status_code == 200
+    data = response.json()
+    # All top-level keys must be camelCase — no underscores allowed in field names
+    # (Pydantic by_alias=True serialises snake_case fields as camelCase)
+    snake_keys = [k for k in data if "_" in k]
+    assert snake_keys == [], f"Expected camelCase keys but found snake_case: {snake_keys}"
+
+
+@pytest.mark.anyio
+async def test_commits_list_html_default(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """GET /musehub/ui/{owner}/{repo_slug}/commits with no Accept header returns HTML."""
+    await _make_repo(db_session)
+    response = await client.get("/musehub/ui/testuser/test-beats/commits")
+    assert response.status_code == 200
+    assert "text/html" in response.headers["content-type"]
 
 
 # ---------------------------------------------------------------------------
