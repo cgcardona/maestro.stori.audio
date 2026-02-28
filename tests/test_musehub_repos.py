@@ -7,6 +7,11 @@ Covers every acceptance criterion from issue #39:
 - GET /musehub/repos/{repo_id}/branches returns empty list on new repo
 - GET /musehub/repos/{repo_id}/commits returns newest first, respects ?limit
 
+Covers issue #217 (compare view API endpoint):
+- test_compare_radar_data        — compare endpoint returns 5 dimension scores
+- test_compare_commit_list       — commits unique to head are listed
+- test_compare_unknown_ref_404   — unknown ref returns 422
+
 All tests use the shared ``client`` and ``auth_headers`` fixtures from conftest.py.
 """
 from __future__ import annotations
@@ -971,6 +976,148 @@ async def test_credits_aggregation_service_direct(db_session: AsyncSession) -> N
     result = await musehub_credits.aggregate_credits(db_session, repo_id, sort="count")
     assert result.total_contributors == 1
     assert result.contributors[0].author == "Charlie"
+    assert result.contributors[0].session_count == 1
+
+
+# ---------------------------------------------------------------------------
+# Compare endpoint (issue #217)
+# ---------------------------------------------------------------------------
+
+
+async def _make_compare_repo(
+    db_session: AsyncSession,
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+) -> str:
+    """Seed a repo with commits on two branches and return repo_id."""
+    from datetime import datetime, timezone
+
+    create = await client.post(
+        "/api/v1/musehub/repos",
+        json={"name": "compare-test", "owner": "testuser", "visibility": "private"},
+        headers=auth_headers,
+    )
+    assert create.status_code == 201
+    repo_id: str = str(create.json()["repoId"])
+
+    now = datetime.now(tz=timezone.utc)
+    db_session.add(
+        MusehubCommit(
+            commit_id="base001",
+            repo_id=repo_id,
+            branch="main",
+            parent_ids=[],
+            message="add melody line",
+            author="Alice",
+            timestamp=now,
+        )
+    )
+    db_session.add(
+        MusehubCommit(
+            commit_id="head001",
+            repo_id=repo_id,
+            branch="feature",
+            parent_ids=["base001"],
+            message="add chord progression",
+            author="Bob",
+            timestamp=now,
+        )
+    )
+    await db_session.commit()
+    return repo_id
+
+
+@pytest.mark.anyio
+async def test_compare_radar_data(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    auth_headers: dict[str, str],
+) -> None:
+    """GET /api/v1/musehub/repos/{id}/compare returns 5 dimension scores."""
+    repo_id = await _make_compare_repo(db_session, client, auth_headers)
+    response = await client.get(
+        f"/api/v1/musehub/repos/{repo_id}/compare?base=main&head=feature",
+        headers=auth_headers,
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert "dimensions" in body
+    assert len(body["dimensions"]) == 5
+    expected_dims = {"melodic", "harmonic", "rhythmic", "structural", "dynamic"}
+    found_dims = {d["dimension"] for d in body["dimensions"]}
+    assert found_dims == expected_dims
+    for dim in body["dimensions"]:
+        assert 0.0 <= dim["score"] <= 1.0
+        assert dim["level"] in ("NONE", "LOW", "MED", "HIGH")
+    assert "overallScore" in body
+    assert 0.0 <= body["overallScore"] <= 1.0
+
+
+@pytest.mark.anyio
+async def test_compare_commit_list(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    auth_headers: dict[str, str],
+) -> None:
+    """Commits unique to head are listed in the compare response."""
+    repo_id = await _make_compare_repo(db_session, client, auth_headers)
+    response = await client.get(
+        f"/api/v1/musehub/repos/{repo_id}/compare?base=main&head=feature",
+        headers=auth_headers,
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert "commits" in body
+    # head001 is on feature but not on main
+    commit_ids = [c["commitId"] for c in body["commits"]]
+    assert "head001" in commit_ids
+    # base001 is on main so should NOT appear as unique to head
+    assert "base001" not in commit_ids
+
+
+@pytest.mark.anyio
+async def test_compare_unknown_ref_422(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    auth_headers: dict[str, str],
+) -> None:
+    """Unknown ref (branch with no commits) returns 422."""
+    create = await client.post(
+        "/api/v1/musehub/repos",
+        json={"name": "empty-compare", "owner": "testuser", "visibility": "private"},
+        headers=auth_headers,
+    )
+    assert create.status_code == 201
+    repo_id = create.json()["repoId"]
+    response = await client.get(
+        f"/api/v1/musehub/repos/{repo_id}/compare?base=nonexistent&head=alsoabsent",
+        headers=auth_headers,
+    )
+    assert response.status_code == 422
+
+
+@pytest.mark.anyio
+async def test_compare_emotion_diff_fields(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    auth_headers: dict[str, str],
+) -> None:
+    """Compare response includes emotion diff with required delta fields."""
+    repo_id = await _make_compare_repo(db_session, client, auth_headers)
+    response = await client.get(
+        f"/api/v1/musehub/repos/{repo_id}/compare?base=main&head=feature",
+        headers=auth_headers,
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert "emotionDiff" in body
+    ed = body["emotionDiff"]
+    for field in ("energyDelta", "valenceDelta", "tensionDelta", "darknessDelta"):
+        assert field in ed
+        assert -1.0 <= ed[field] <= 1.0
+    for field in ("baseEnergy", "headEnergy", "baseValence", "headValence"):
+        assert field in ed
+        assert 0.0 <= ed[field] <= 1.0
 
 
 # ---------------------------------------------------------------------------

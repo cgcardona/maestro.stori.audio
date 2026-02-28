@@ -7831,90 +7831,64 @@ ArrangementMatrixResponse(
 
 ---
 
-## Muse Hub — Blob Viewer (issue #205)
+## MuseHub Compare View (issue #217)
 
-**Purpose:** Music-aware file blob viewer that renders individual files from a
-Muse repo with file-type-specific treatment.  Musicians can view MIDI as a
-piano roll preview, stream audio files directly in the browser, and inspect
-JSON/XML metadata with syntax highlighting — without downloading files first.
+### Motivation
 
-### URL Pattern
+There was no way to compare two branches or commits on MuseHub. GitHub's compare view (`/compare/{base}...{head}`) shows a code diff. MuseHub's compare view shows a multi-dimensional musical diff: a radar chart of divergence scores, a side-by-side piano roll, an emotion diff summary, and the list of commits unique to head.
 
-| Route | Description |
-|-------|-------------|
-| `GET /musehub/ui/{owner}/{repo_slug}/blob/{ref}/{path}` | HTML blob viewer page |
-| `GET /api/v1/musehub/repos/{repo_id}/blob/{ref}/{path}` | JSON blob metadata + text content |
+### Route
 
-**Auth:** No JWT required for public repos (HTML shell). Private repos require
-a Bearer token passed via `Authorization` header (API) or `localStorage` JWT (UI).
-
-### File-Type Dispatch
-
-The viewer selects a rendering mode based on the file extension:
-
-| Extension | `file_type` | Rendering |
-|-----------|-------------|-----------|
-| `.mid`, `.midi` | `midi` | Piano roll placeholder + "View in Piano Roll" quick link |
-| `.mp3`, `.wav`, `.flac`, `.ogg` | `audio` | `<audio>` player + "Listen" quick link |
-| `.json` | `json` | Syntax-highlighted JSON (keys blue, strings teal, numbers gold, bools red, nulls grey) |
-| `.webp`, `.png`, `.jpg`, `.jpeg` | `image` | Inline `<img>` on checkered background |
-| `.xml` | `xml` | Syntax-highlighted XML (MusicXML support) |
-| all others | `other` | Hex dump preview (first 512 bytes via Range request) + raw download |
-
-### File Metadata
-
-Every blob response includes:
-
-- `filename` — basename of the file (e.g. `bass.mid`)
-- `size_bytes` — file size in bytes
-- `sha` — content-addressed ID (e.g. `sha256:abc123...`)
-- `created_at` — timestamp of the most-recently-pushed version
-- `raw_url` — direct link to `/{owner}/{repo_slug}/raw/{ref}/{path}`
-- `file_type` — rendering hint (see table above)
-- `content_text` — UTF-8 content for JSON/XML files ≤ 256 KB; `null` for binary/oversized
-
-### Quick Links
-
-The blob viewer exposes contextual action links:
-
-- **Raw** — always present; links to raw download endpoint (`Content-Disposition: attachment`)
-- **View in Piano Roll** — MIDI files only; links to `/{owner}/{repo_slug}/piano-roll/{ref}/{path}`
-- **Listen** — audio files only; links to `/{owner}/{repo_slug}/listen/{ref}/{path}`
-
-### Object Resolution
-
-Object resolution uses `musehub_repository.get_object_by_path()`, which returns
-the most-recently-pushed object matching the path in the repo.  The `ref`
-parameter is validated for URL construction but does not currently filter by
-branch HEAD (MVP scope — consistent with raw and tree endpoints).
-
-### Response Shape (`BlobMetaResponse`)
-
-```json
-{
-  "objectId": "sha256:abc123...",
-  "path": "tracks/bass.mid",
-  "filename": "bass.mid",
-  "sizeBytes": 2048,
-  "sha": "sha256:abc123...",
-  "createdAt": "2025-01-15T12:00:00Z",
-  "rawUrl": "/musehub/repos/{repo_id}/raw/main/tracks/bass.mid",
-  "fileType": "midi",
-  "contentText": null
-}
+```
+GET /musehub/ui/{owner}/{repo_slug}/compare/{base}...{head}
 ```
 
-### Implementation Map
+The `{base}...{head}` segment is a single path parameter (`{refs}`) parsed server-side by splitting on `...`. Both `base` and `head` can be branch names, tags, or commit SHAs. Returns 404 when the `...` separator is absent or either segment is empty.
 
-| Component | File |
-|-----------|------|
-| Template | `maestro/templates/musehub/pages/blob.html` |
-| UI handler | `maestro/api/routes/musehub/ui.py` → `blob_page()` |
-| API endpoint | `maestro/api/routes/musehub/objects.py` → `get_blob_meta()` |
-| Pydantic model | `maestro/models/musehub.py` → `BlobMetaResponse` |
-| Tests | `tests/test_musehub_ui.py` — `test_blob_*` (7 tests) |
+Content negotiation: `?format=json` or `Accept: application/json` returns the full `CompareResponse` JSON.
 
----
+### JSON API Endpoint
+
+```
+GET /api/v1/musehub/repos/{repo_id}/compare?base=X&head=Y
+```
+
+Returns `CompareResponse` with:
+- `dimensions` — five per-dimension Jaccard divergence scores (melodic, harmonic, rhythmic, structural, dynamic)
+- `overallScore` — mean of the five scores in [0.0, 1.0]
+- `commonAncestor` — most recent common ancestor commit ID, or `null` for disjoint histories
+- `commits` — commits reachable from head but not from base (newest first)
+- `emotionDiff` — energy/valence/tension/darkness deltas (`head − base`)
+- `createPrUrl` — URL to open a pull request from this comparison
+
+Raises 422 if either ref has no commits. Raises 404 if the repo is not found.
+
+### Compare Page Features
+
+| Feature | Description |
+|---------|-------------|
+| Five-axis radar chart | Per-dimension divergence scores visualised as a pentagon, colour-coded by level (NONE/LOW/MED/HIGH) |
+| Dimension detail panels | Clickable cards that expand to show description and per-branch commit counts |
+| Piano roll comparison | Deterministic note grid derived from SHA bytes; green = added in head, red = removed |
+| Audio A/B toggle | Button pair to queue base or head audio in the player |
+| Emotion diff | Side-by-side bar charts for energy, valence, tension, darkness with delta labels |
+| Commit list | Commits unique to head with short SHA links, author, and timestamp |
+| Create PR button | Links to `/musehub/ui/{owner}/{slug}/pulls/new?base=X&head=Y` |
+
+### Emotion Vector Algorithm
+
+Each commit's emotion vector is derived deterministically from four non-overlapping 4-hex-char windows of the commit SHA:
+- `valence`  = `int(sha[0:4], 16) / 0xFFFF`
+- `energy`   = `int(sha[4:8], 16) / 0xFFFF`
+- `tension`  = `int(sha[8:12], 16) / 0xFFFF`
+- `darkness` = `int(sha[12:16], 16) / 0xFFFF`
+
+The emotion diff is `mean(head commits) − mean(base commits)` per axis, clamped to [−1.0, 1.0].
+
+### Divergence Reuse
+
+The compare endpoint reuses the existing `musehub_divergence.compute_hub_divergence()` engine. Refs are resolved as branch names; the divergence engine computes Jaccard scores across commit message keyword classification.
+
 
 ## MuseHub Render Pipeline — Auto-Generated Artifacts on Push
 
@@ -8016,6 +7990,17 @@ endpoint is available, replace `_make_stub_mp3` in
 
 | Layer | File |
 |-------|------|
+| Models | `maestro/models/musehub.py` — `EmotionDiffResponse`, `CompareResponse` |
+| API endpoint | `maestro/api/routes/musehub/repos.py` — `compare_refs()`, `_compute_emotion_diff()`, `_derive_emotion_vector()` |
+| UI route | `maestro/api/routes/musehub/ui.py` — `compare_page()` |
+| Template | `maestro/templates/musehub/pages/compare.html` |
+| Tests | `tests/test_musehub_ui.py` — `test_compare_*` (10 tests) |
+| Tests | `tests/test_musehub_repos.py` — `test_compare_*` (4 tests) |
+| Type contracts | `docs/reference/type_contracts.md` — `EmotionDiffResponse`, `CompareResponse` |
+
+---
+
+
 | DB model | `maestro/db/musehub_models.py` — `MusehubRenderJob` |
 | Piano roll | `maestro/services/musehub_piano_roll_renderer.py` |
 | Pipeline | `maestro/services/musehub_render_pipeline.py` |
@@ -8107,7 +8092,92 @@ at `maestro/main.py`. No rebuild required.
 Add `current_page: "piano-roll"` to the template context when linking from
 other pages (tree browser, commit detail, blob viewer).
 
+
+## Muse Hub — Blob Viewer (issue #205)
+
+**Purpose:** Music-aware file blob viewer that renders individual files from a
+Muse repo with file-type-specific treatment.  Musicians can view MIDI as a
+piano roll preview, stream audio files directly in the browser, and inspect
+JSON/XML metadata with syntax highlighting — without downloading files first.
+
+### URL Pattern
+
+| Route | Description |
+|-------|-------------|
+| `GET /musehub/ui/{owner}/{repo_slug}/blob/{ref}/{path}` | HTML blob viewer page |
+| `GET /api/v1/musehub/repos/{repo_id}/blob/{ref}/{path}` | JSON blob metadata + text content |
+
+**Auth:** No JWT required for public repos (HTML shell). Private repos require
+a Bearer token passed via `Authorization` header (API) or `localStorage` JWT (UI).
+
+### File-Type Dispatch
+
+The viewer selects a rendering mode based on the file extension:
+
+| Extension | `file_type` | Rendering |
+|-----------|-------------|-----------|
+| `.mid`, `.midi` | `midi` | Piano roll placeholder + "View in Piano Roll" quick link |
+| `.mp3`, `.wav`, `.flac`, `.ogg` | `audio` | `<audio>` player + "Listen" quick link |
+| `.json` | `json` | Syntax-highlighted JSON (keys blue, strings teal, numbers gold, bools red, nulls grey) |
+| `.webp`, `.png`, `.jpg`, `.jpeg` | `image` | Inline `<img>` on checkered background |
+| `.xml` | `xml` | Syntax-highlighted XML (MusicXML support) |
+| all others | `other` | Hex dump preview (first 512 bytes via Range request) + raw download |
+
+### File Metadata
+
+Every blob response includes:
+
+- `filename` — basename of the file (e.g. `bass.mid`)
+- `size_bytes` — file size in bytes
+- `sha` — content-addressed ID (e.g. `sha256:abc123...`)
+- `created_at` — timestamp of the most-recently-pushed version
+- `raw_url` — direct link to `/{owner}/{repo_slug}/raw/{ref}/{path}`
+- `file_type` — rendering hint (see table above)
+- `content_text` — UTF-8 content for JSON/XML files ≤ 256 KB; `null` for binary/oversized
+
+### Quick Links
+
+The blob viewer exposes contextual action links:
+
+- **Raw** — always present; links to raw download endpoint (`Content-Disposition: attachment`)
+- **View in Piano Roll** — MIDI files only; links to `/{owner}/{repo_slug}/piano-roll/{ref}/{path}`
+- **Listen** — audio files only; links to `/{owner}/{repo_slug}/listen/{ref}/{path}`
+
+### Object Resolution
+
+Object resolution uses `musehub_repository.get_object_by_path()`, which returns
+the most-recently-pushed object matching the path in the repo.  The `ref`
+parameter is validated for URL construction but does not currently filter by
+branch HEAD (MVP scope — consistent with raw and tree endpoints).
+
+### Response Shape (`BlobMetaResponse`)
+
+```json
+{
+  "objectId": "sha256:abc123...",
+  "path": "tracks/bass.mid",
+  "filename": "bass.mid",
+  "sizeBytes": 2048,
+  "sha": "sha256:abc123...",
+  "createdAt": "2025-01-15T12:00:00Z",
+  "rawUrl": "/musehub/repos/{repo_id}/raw/main/tracks/bass.mid",
+  "fileType": "midi",
+  "contentText": null
+}
+```
+
+### Implementation Map
+
+| Component | File |
+|-----------|------|
+| Template | `maestro/templates/musehub/pages/blob.html` |
+| UI handler | `maestro/api/routes/musehub/ui.py` → `blob_page()` |
+| API endpoint | `maestro/api/routes/musehub/objects.py` → `get_blob_meta()` |
+| Pydantic model | `maestro/models/musehub.py` → `BlobMetaResponse` |
+| Tests | `tests/test_musehub_ui.py` — `test_blob_*` (7 tests) |
+
 ---
+
 
 ## Score / Notation Renderer (issue #210)
 
