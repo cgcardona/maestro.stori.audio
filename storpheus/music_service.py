@@ -29,6 +29,7 @@ import asyncio
 import math
 import mido
 import random
+import statistics
 import traceback
 import os
 import copy
@@ -1767,9 +1768,8 @@ async def parameter_sweep(request: ParameterSweepRequest) -> SweepABTestResult:
             pitches = [n["pitch"] for n in snake]
             velocities = [n["velocity"] for n in snake]
 
-            import statistics as _stats
-            vel_stdev = _stats.stdev(velocities) if len(velocities) > 1 else 0.0
-            vel_mean = _stats.mean(velocities) if velocities else 1.0
+            vel_stdev = statistics.stdev(velocities) if len(velocities) > 1 else 0.0
+            vel_mean = statistics.mean(velocities) if velocities else 1.0
             vel_variation = vel_stdev / max(vel_mean, 1.0)
 
             sweep_results.append(ParameterSweepResult(

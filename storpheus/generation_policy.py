@@ -345,7 +345,7 @@ def build_controls(
         3. role_profile_summary (data-driven priors)
         4. genre/tempo heuristic baseline (last resort)
     """
-    controls = GenerationControlVector(quality_preset=quality_preset)  # type: ignore[arg-type]
+    controls = GenerationControlVector(quality_preset=quality_preset)  # type: ignore[arg-type]  # validated by caller
 
     # ── Tension: from emotion_vector (Maestro is authoritative) ──
     if emotion_vector is not None:
