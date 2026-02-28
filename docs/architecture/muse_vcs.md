@@ -1186,10 +1186,113 @@ Marcus (bass)       2 sessions
 
 ---
 
+### `muse divergence`
+
+**Purpose:** Show how two branches have diverged *musically* — useful when two
+producers are working on different arrangements of the same project and you need
+to understand the creative distance before deciding which to merge.
+
+**Implementation:** `maestro/muse_cli/commands/divergence.py`  
+**Service:** `maestro/services/muse_divergence.py`  
+**Status:** ✅ implemented (PR #119)
+
+#### Usage
+
+```
+muse divergence <branch-a> <branch-b> [OPTIONS]
+```
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `--since <commit>` | `str` | auto | Common ancestor commit ID. Auto-detected via merge-base BFS if omitted. |
+| `--dimensions <name>` | `str` (repeatable) | all | Dimension(s) to analyse — may be passed multiple times. |
+| `--json` | flag | off | Machine-readable JSON output. |
+
+#### What It Computes
+
+1. **Finds the merge base** — BFS over `MuseCliCommit.parent_commit_id` /
+   `parent2_commit_id` chains, equivalent to `git merge-base`.
+2. **Collects changed paths** — for each branch: diff from the merge-base
+   snapshot manifest to the branch-tip snapshot manifest (added + deleted +
+   modified paths).
+3. **Classifies paths by dimension** — keyword matching on the lowercase
+   filename:
+
+   | Dimension | Keywords |
+   |-----------|----------|
+   | `melodic` | `melody`, `lead`, `solo`, `vocal` |
+   | `harmonic` | `harm`, `chord`, `key`, `scale` |
+   | `rhythmic` | `beat`, `drum`, `rhythm`, `groove`, `perc` |
+   | `structural` | `struct`, `form`, `section`, `bridge`, `chorus`, `verse`, `intro`, `outro` |
+   | `dynamic` | `mix`, `master`, `volume`, `level`, `dyn` |
+
+4. **Scores each dimension** — `score = |sym_diff(A, B)| / |union(A, B)|` where
+   `A` and `B` are the sets of dimension-matched changed paths on each branch.
+   Score 0.0 = identical; 1.0 = completely diverged.
+
+5. **Classifies level** — `NONE` (<0.15), `LOW` (0.15–0.40), `MED` (0.40–0.70),
+   `HIGH` (≥0.70).
+
+6. **Computes overall score** — mean of all per-dimension scores.
+
+#### Text Output Example
+
+```
+Musical Divergence: feature/guitar-version vs feature/piano-version
+Common ancestor: 7e3a1f2c
+
+Melodic divergence:     HIGH — High melodic divergence — branches took different creative paths.
+  feature/guitar-version: 2 melodic file(s) changed
+  feature/piano-version:  0 melodic file(s) changed
+
+Harmonic divergence:    MED  — Moderate harmonic divergence — different directions.
+  feature/guitar-version: 1 harmonic file(s) changed
+  feature/piano-version:  2 harmonic file(s) changed
+
+Rhythmic divergence:    NONE — No rhythmic changes on either branch.
+  feature/guitar-version: 0 rhythmic file(s) changed
+  feature/piano-version:  0 rhythmic file(s) changed
+
+Overall divergence score: 0.6000
+```
+
+#### JSON Output Example
+
+```json
+{
+  "branch_a": "feature/guitar-version",
+  "branch_b": "feature/piano-version",
+  "common_ancestor": "7e3a1f2c...",
+  "overall_score": 0.6,
+  "dimensions": [
+    {
+      "dimension": "melodic",
+      "level": "high",
+      "score": 1.0,
+      "description": "High melodic divergence — branches took different creative paths.",
+      "branch_a_summary": "2 melodic file(s) changed",
+      "branch_b_summary": "0 melodic file(s) changed"
+    }
+  ]
+}
+```
+
+#### Architecture Notes
+
+- **Read-only:** `muse divergence` never writes to the database or filesystem.
+- **No schema changes:** Uses existing `muse_cli_commits` and `muse_cli_snapshots` tables.
+- **Merge-base reuse:** Delegates to `merge_engine.find_merge_base` (BFS over
+  `MuseCliCommit` parent chains), the same LCA implementation used by `muse merge`.
+- **Boundary rule:** `muse_divergence.py` must not import `muse_merge_base`
+  (the variation-level LCA) — it operates on CLI commits, not variations.
+
+---
+
 ### Command Registration Summary
 
 | Command | File | Status | Issue |
 |---------|------|--------|-------|
+| `muse divergence` | `commands/divergence.py` | ✅ implemented (PR #119) | #119 |
 | `muse dynamics` | `commands/dynamics.py` | ✅ stub (PR #130) | #120 |
 | `muse swing` | `commands/swing.py` | ✅ stub (PR #131) | #121 |
 | `muse recall` | `commands/recall.py` | ✅ stub (PR #135) | #122 |
