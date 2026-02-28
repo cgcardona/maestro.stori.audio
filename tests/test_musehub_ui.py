@@ -23,13 +23,20 @@ Covers regression for PR #282 (owner/slug URL scheme):
 - test_ui_nav_links_use_owner_slug_not_uuid_*  — every page handler injects
   ``const base = '/musehub/ui/{owner}/{slug}'`` not a UUID-based path.
 - test_ui_unknown_owner_slug_returns_404        — bad owner/slug → 404.
+
+Covers issue #221 (analysis dashboard):
+- test_analysis_dashboard_renders               — GET /musehub/ui/{owner}/{slug}/analysis/{ref} returns 200
+- test_analysis_dashboard_no_auth_required      — accessible without JWT
+- test_analysis_dashboard_all_dimension_labels  — 10 dimension labels present in HTML
+- test_analysis_dashboard_sparkline_logic_present — sparkline JS present
+- test_analysis_dashboard_card_links_to_dimensions — /analysis/ path in page
+See also test_musehub_analysis.py::test_analysis_aggregate_endpoint_returns_all_dimensions
 """
 from __future__ import annotations
 
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta, timezone
 
 import pytest
-from datetime import datetime, timezone, timedelta
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -1675,3 +1682,88 @@ async def test_no_inline_css_on_repo_page(
     # The old monolithic block started with "box-sizing: border-box"
     # If it appears inside <head>, the migration has been reverted.
     assert "box-sizing: border-box; margin: 0; padding: 0;" not in head_section
+
+
+# ---------------------------------------------------------------------------
+# Analysis dashboard UI tests (issue #221)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.anyio
+async def test_analysis_dashboard_renders(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """GET /musehub/ui/{owner}/{repo_slug}/analysis/{ref} returns 200 HTML without a JWT."""
+    await _make_repo(db_session)
+    response = await client.get("/musehub/ui/testuser/test-beats/analysis/main")
+    assert response.status_code == 200
+    assert "text/html" in response.headers["content-type"]
+    body = response.text
+    assert "Muse Hub" in body
+    assert "Analysis" in body
+    assert "test-beats" in body
+
+
+@pytest.mark.anyio
+async def test_analysis_dashboard_no_auth_required(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Analysis dashboard HTML shell must be accessible without an Authorization header."""
+    await _make_repo(db_session)
+    response = await client.get("/musehub/ui/testuser/test-beats/analysis/main")
+    assert response.status_code == 200
+    assert response.status_code != 401
+
+
+@pytest.mark.anyio
+async def test_analysis_dashboard_all_dimension_labels(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Dashboard HTML embeds all 10 required dimension card labels in the page script.
+
+    Regression test for issue #221: if any card label is missing the JS template
+    will silently skip rendering that dimension, so agents get an incomplete picture.
+    """
+    await _make_repo(db_session)
+    response = await client.get("/musehub/ui/testuser/test-beats/analysis/main")
+    assert response.status_code == 200
+    body = response.text
+    for label in ("Key", "Tempo", "Meter", "Chord Map", "Dynamics",
+                  "Groove", "Emotion", "Form", "Motifs", "Contour"):
+        assert label in body, f"Expected dimension label {label!r} in dashboard HTML"
+
+
+@pytest.mark.anyio
+async def test_analysis_dashboard_sparkline_logic_present(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Dashboard HTML includes sparkline rendering logic for velocity/pitch visualisations."""
+    await _make_repo(db_session)
+    response = await client.get("/musehub/ui/testuser/test-beats/analysis/main")
+    assert response.status_code == 200
+    body = response.text
+    assert "sparkline" in body
+    assert "velocityCurve" in body or "pitchCurve" in body
+
+
+@pytest.mark.anyio
+async def test_analysis_dashboard_card_links_to_dimensions(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Each dimension card must link to the per-dimension analysis detail page.
+
+    The card href is built client-side from ``base + '/analysis/' + ref + '/' + id``,
+    so the JS template string must reference ``/analysis/`` as the path segment.
+    """
+    await _make_repo(db_session)
+    response = await client.get("/musehub/ui/testuser/test-beats/analysis/main")
+    assert response.status_code == 200
+    body = response.text
+    assert "/analysis/" in body
+
+
