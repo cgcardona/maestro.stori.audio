@@ -1,6 +1,11 @@
 {% extends "musehub/base.html" %}
 
 {% block title %}Insights · {{ owner }}/{{ repo_slug }}{% endblock %}
+{% block extra_css %}
+<style>
+.traffic-chart-container { background: var(--bg-surface, var(--surface)); border-radius: 8px; padding: 16px; }
+</style>
+{% endblock %}
 {% block breadcrumb %}
   <a href="/musehub/ui/{{ owner }}">{{ owner }}</a> /
   <a href="{{ base_url }}">{{ repo_slug }}</a> /
@@ -117,6 +122,31 @@ function buildContributorChart(credits) {
   }).join('');
 }
 
+async function loadTrafficChart() {
+  try {
+    const data = await apiFetch('/repos/' + repoId + '/analytics/views?days=30');
+    if (!data || !data.length) {
+      document.getElementById('traffic-chart').textContent = 'No view data yet.';
+      return;
+    }
+    const max = Math.max(...data.map(d => d.count), 1);
+    const w = 500, h = 60, pad = 4;
+    const xs = data.map((_, i) => pad + i * (w - 2 * pad) / (data.length - 1 || 1));
+    const ys = data.map(d => h - pad - (d.count / max) * (h - 2 * pad));
+    const pts = xs.map((x, i) => x + ',' + ys[i]).join(' ');
+    const total = data.reduce((s, d) => s + d.count, 0);
+    document.getElementById('traffic-chart').innerHTML = `
+      <svg viewBox="0 0 ${w} ${h}" style="width:100%;height:60px">
+        <polyline points="${pts}" fill="none" stroke="var(--color-accent)" stroke-width="2"/>
+        ${data.map((d, i) => `<circle cx="${xs[i]}" cy="${ys[i]}" r="2" fill="var(--color-accent)">
+          <title>${escHtml(d.date)}: ${d.count} views</title></circle>`).join('')}
+      </svg>
+      <div style="font-size:var(--font-size-xs,11px);color:var(--text-muted);margin-top:4px">
+        Last 30 days — ${total} total views
+      </div>`;
+  } catch (_) {}
+}
+
 async function load() {
   initRepoNav(repoId);
   try {
@@ -131,6 +161,15 @@ async function load() {
     const credits  = creditsData.credits  || [];
     const sessions = sessionsData.sessions || [];
     const totalSessions = sessionsData.total || sessions.length;
+
+    // Fetch analytics in parallel (non-blocking — failures silently ignored)
+    apiFetch('/repos/' + repoId + '/analytics').then(a => {
+      const views = document.getElementById('stat-views');
+      const dls   = document.getElementById('stat-downloads');
+      if (views) views.textContent = a.view_count ?? 0;
+      if (dls)   dls.textContent   = a.download_count ?? 0;
+    }).catch(() => {});
+    loadTrafficChart();
 
     // Key signature distribution
     const keyMap = {};
@@ -182,6 +221,14 @@ async function load() {
           <span class="stat-value">${repoData.starCount || 0}</span>
           <div class="stat-label">Stars</div>
         </div>
+        <div class="stat-card">
+          <span class="stat-value" id="stat-views">—</span>
+          <span class="stat-label">👁 Views</span>
+        </div>
+        <div class="stat-card">
+          <span class="stat-value" id="stat-downloads">—</span>
+          <span class="stat-label">⬇️ Downloads</span>
+        </div>
       </div>
 
       <!-- Commit frequency heatmap -->
@@ -189,6 +236,12 @@ async function load() {
         <h2 style="margin-bottom:var(--space-3)">Commit Activity</h2>
         <p class="text-xs text-muted" style="margin-bottom:var(--space-3)">Past 52 weeks</p>
         ${buildHeatmap(commits)}
+      </div>
+
+      <!-- 30-day traffic -->
+      <div class="card">
+        <h2 style="margin-bottom:var(--space-3)">Traffic</h2>
+        <div id="traffic-chart" class="traffic-chart-container">Loading…</div>
       </div>
 
       <!-- BPM evolution -->
