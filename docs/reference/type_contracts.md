@@ -1140,6 +1140,51 @@ On failure: `success=False` plus `error` (and optionally `message`).
 
 ---
 
+#### `PRDiffDimensionScore`
+
+**Path:** `maestro/models/musehub.py`
+
+**Pydantic model** — Per-dimension musical change score between the `from_branch` and `to_branch` of a pull request.  Scores are Jaccard divergence in [0.0, 1.0]: 0 = identical, 1 = completely different.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `dimension` | `str` | Musical dimension: `harmonic` \| `rhythmic` \| `melodic` \| `structural` \| `dynamic` |
+| `score` | `float` | Divergence magnitude in [0.0, 1.0] |
+| `level` | `str` | Qualitative label: `NONE` \| `LOW` \| `MED` \| `HIGH` |
+| `delta_label` | `str` | Human-readable badge: `"unchanged"` or `"+N.N"` (percent) |
+| `description` | `str` | Prose summary of what changed in this dimension |
+| `from_branch_commits` | `int` | Commits in from_branch touching this dimension |
+| `to_branch_commits` | `int` | Commits in to_branch touching this dimension |
+
+**Wire name:** `PRDiffDimensionScore` → camelCase via `CamelModel`.
+
+---
+
+#### `PRDiffResponse`
+
+**Path:** `maestro/models/musehub.py`
+
+**Pydantic model** — Musical diff between the `from_branch` and `to_branch` of a pull request.  Consumed by the PR detail page to render the radar chart, piano roll diff, audio A/B toggle, and dimension badges.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `pr_id` | `str` | The pull request being inspected |
+| `repo_id` | `str` | The repository containing the PR |
+| `from_branch` | `str` | Source branch name |
+| `to_branch` | `str` | Target branch name |
+| `dimensions` | `list[PRDiffDimensionScore]` | Per-dimension divergence scores (always five entries) |
+| `overall_score` | `float` | Mean of all five dimension scores in [0.0, 1.0] |
+| `common_ancestor` | `str \| None` | Merge-base commit ID; `None` if no common ancestor |
+| `affected_sections` | `list[str]` | Section/track names that changed (derived from commit messages) |
+
+**Endpoint:** `GET /api/v1/musehub/repos/{repo_id}/pull-requests/{pr_id}/diff`
+
+**UI Page:** `GET /musehub/ui/{owner}/{repo_slug}/pulls/{pr_id}?format=json`
+
+**Agent use case:** AI review agents call this endpoint before approving a merge to understand which musical dimensions changed and by how much.  A large harmonic delta with small rhythmic change signals a key or chord progression update; a large structural delta indicates section reorganization.
+
+---
+
 ### `ExpressivenessResult`
 
 **Path:** `maestro/services/expressiveness.py`
