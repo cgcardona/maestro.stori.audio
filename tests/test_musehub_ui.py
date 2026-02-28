@@ -3373,3 +3373,133 @@ async def test_harmony_json_response(
     assert "totalBeats" in data
     assert data["totalBeats"] > 0
 
+
+# ---------------------------------------------------------------------------
+# Score page tests — issue #210
+# ---------------------------------------------------------------------------
+# Covers acceptance criteria from issue #210 (score/notation renderer):
+# - test_score_page_renders                  — GET /{owner}/{slug}/score/{ref} returns 200 HTML
+# - test_score_page_no_auth_required         — score page is accessible without JWT
+# - test_score_page_contains_track_selector  — page includes track selector markup
+# - test_score_page_contains_staff_container — page includes staff-container element
+# - test_score_page_contains_score_meta      — page includes score metadata panel
+# - test_score_page_contains_legend          — page includes note/rest legend
+# - test_score_part_page_renders             — GET /{owner}/{slug}/score/{ref}/{path} returns 200
+# - test_score_part_page_includes_path       — single-part page injects path into page data
+# - test_score_unknown_repo_404              — unknown owner/slug returns 404
+
+
+@pytest.mark.anyio
+async def test_score_page_renders(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """GET /musehub/ui/{owner}/{slug}/score/{ref} returns 200 HTML."""
+    await _make_repo(db_session)
+    response = await client.get("/musehub/ui/testuser/test-beats/score/main")
+    assert response.status_code == 200
+    assert "text/html" in response.headers["content-type"]
+    body = response.text
+    assert "Muse Hub" in body
+
+
+@pytest.mark.anyio
+async def test_score_page_no_auth_required(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Score UI page must be accessible without an Authorization header."""
+    await _make_repo(db_session)
+    response = await client.get("/musehub/ui/testuser/test-beats/score/main")
+    assert response.status_code == 200
+    assert response.status_code != 401
+
+
+@pytest.mark.anyio
+async def test_score_page_contains_track_selector(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Score page embeds a track selector element."""
+    await _make_repo(db_session)
+    response = await client.get("/musehub/ui/testuser/test-beats/score/main")
+    assert response.status_code == 200
+    body = response.text
+    assert "track-selector" in body
+
+
+@pytest.mark.anyio
+async def test_score_page_contains_staff_container(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Score page embeds the SVG staff container markup."""
+    await _make_repo(db_session)
+    response = await client.get("/musehub/ui/testuser/test-beats/score/main")
+    assert response.status_code == 200
+    body = response.text
+    assert "staff-container" in body or "staves" in body
+
+
+@pytest.mark.anyio
+async def test_score_page_contains_score_meta(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Score page embeds a score metadata panel (key/tempo/time signature)."""
+    await _make_repo(db_session)
+    response = await client.get("/musehub/ui/testuser/test-beats/score/main")
+    assert response.status_code == 200
+    body = response.text
+    assert "score-meta" in body
+
+
+@pytest.mark.anyio
+async def test_score_page_contains_legend(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Score page includes a legend for note symbols."""
+    await _make_repo(db_session)
+    response = await client.get("/musehub/ui/testuser/test-beats/score/main")
+    assert response.status_code == 200
+    body = response.text
+    assert "legend" in body or "Note" in body
+
+
+@pytest.mark.anyio
+async def test_score_part_page_renders(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """GET /musehub/ui/{owner}/{slug}/score/{ref}/{path} returns 200 HTML."""
+    await _make_repo(db_session)
+    response = await client.get("/musehub/ui/testuser/test-beats/score/main/piano")
+    assert response.status_code == 200
+    assert "text/html" in response.headers["content-type"]
+    body = response.text
+    assert "Muse Hub" in body
+
+
+@pytest.mark.anyio
+async def test_score_part_page_includes_path(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Single-part score page injects the path segment into page data."""
+    await _make_repo(db_session)
+    response = await client.get("/musehub/ui/testuser/test-beats/score/main/piano")
+    assert response.status_code == 200
+    body = response.text
+    # scorePath JS variable should be set to the path segment
+    assert "piano" in body
+
+
+@pytest.mark.anyio
+async def test_score_unknown_repo_404(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """GET /musehub/ui/{unknown}/{slug}/score/{ref} returns 404."""
+    response = await client.get("/musehub/ui/nobody/no-beats/score/main")
+    assert response.status_code == 404
