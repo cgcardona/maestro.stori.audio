@@ -1,0 +1,329 @@
+{% extends "musehub/base.html" %}
+
+{% block title %}{{ owner }}/{{ repo_slug }} — {{ filename }}{% endblock %}
+
+{% block breadcrumb %}
+  <a href="/musehub/ui/{{ owner }}/{{ repo_slug }}">{{ owner }}/{{ repo_slug }}</a> /
+  <a href="/musehub/ui/{{ owner }}/{{ repo_slug }}/tree/{{ ref }}">{{ ref[:8] }}</a>
+  {% if file_path %}
+    {% set segments = file_path.split('/') %}
+    {% set ns = namespace(accumulated='') %}
+    {% for seg in segments[:-1] %}
+      {% if ns.accumulated %}
+        {% set ns.accumulated = ns.accumulated + '/' + seg %}
+      {% else %}
+        {% set ns.accumulated = seg %}
+      {% endif %}
+      / <a href="/musehub/ui/{{ owner }}/{{ repo_slug }}/tree/{{ ref }}/{{ ns.accumulated }}">{{ seg }}</a>
+    {% endfor %}
+    / {{ filename }}
+  {% endif %}
+{% endblock %}
+
+{% block repo_nav %}{% include "musehub/partials/repo_nav.html" %}{% endblock %}
+
+{% block extra_css %}
+<style>
+/* ── Blob header ─────────────────────────────────────────────────────── */
+.blob-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 16px;
+  background: #161b22; border: 1px solid #30363d; border-radius: 8px 8px 0 0;
+  border-bottom: none; margin-top: 8px; gap: 12px; flex-wrap: wrap;
+}
+.blob-filename {
+  font-size: 14px; font-weight: 600; color: #c9d1d9;
+  display: flex; align-items: center; gap: 8px;
+}
+.blob-meta {
+  font-size: 12px; color: #8b949e; display: flex; gap: 16px; flex-wrap: wrap;
+}
+.blob-meta span { display: flex; align-items: center; gap: 4px; }
+.blob-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.btn-blob {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 6px 14px; border-radius: 6px; font-size: 13px;
+  text-decoration: none; font-weight: 500; border: 1px solid transparent;
+  cursor: pointer;
+}
+.btn-blob-primary {
+  background: #238636; border-color: #2ea043; color: #ffffff;
+}
+.btn-blob-primary:hover { background: #2ea043; }
+.btn-blob-secondary {
+  background: #21262d; border-color: #30363d; color: #c9d1d9;
+}
+.btn-blob-secondary:hover { background: #30363d; }
+
+/* ── Blob body ───────────────────────────────────────────────────────── */
+.blob-body {
+  background: #0d1117; border: 1px solid #30363d; border-radius: 0 0 8px 8px;
+  min-height: 120px; overflow: hidden;
+}
+.blob-loading { padding: 40px; text-align: center; color: #8b949e; font-size: 14px; }
+.blob-error { padding: 24px; color: #f85149; font-size: 14px; }
+
+/* ── MIDI / piano-roll placeholder ──────────────────────────────────── */
+.blob-midi-banner {
+  padding: 48px 24px; text-align: center; background: #0d1117;
+}
+.blob-midi-icon { font-size: 64px; margin-bottom: 16px; display: block; }
+.blob-midi-title { font-size: 20px; font-weight: 600; color: #c9d1d9; margin-bottom: 8px; }
+.blob-midi-sub { font-size: 14px; color: #8b949e; margin-bottom: 24px; }
+
+/* ── Audio player ─────────────────────────────────────────────────────── */
+.blob-audio-wrap {
+  padding: 40px 24px; text-align: center; background: #0d1117;
+}
+.blob-audio-icon { font-size: 48px; margin-bottom: 16px; display: block; }
+.blob-audio-player {
+  width: 100%; max-width: 560px; margin: 16px auto 0;
+  display: block; accent-color: #58a6ff;
+}
+
+/* ── JSON / XML viewer ─────────────────────────────────────────────────── */
+.blob-code-wrap {
+  overflow: auto; max-height: 680px; border-radius: 0 0 8px 8px;
+}
+.blob-code {
+  margin: 0; padding: 16px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px; line-height: 1.6; color: #c9d1d9;
+  white-space: pre-wrap; word-break: break-word;
+  background: #0d1117; tab-size: 2;
+}
+.blob-code .json-key { color: #79c0ff; }
+.blob-code .json-str { color: #a5d6ff; }
+.blob-code .json-num { color: #f2cc60; }
+.blob-code .json-bool { color: #ff7b72; }
+.blob-code .json-null { color: #8b949e; }
+
+/* ── Image viewer ───────────────────────────────────────────────────────── */
+.blob-img-wrap {
+  padding: 24px; display: flex; justify-content: center; align-items: center;
+  background: repeating-conic-gradient(#161b22 0% 25%, #0d1117 0% 50%) 0 0 / 20px 20px;
+  min-height: 200px; border-radius: 0 0 8px 8px;
+}
+.blob-img { max-width: 100%; max-height: 640px; border-radius: 4px; box-shadow: 0 4px 16px rgba(0,0,0,.6); }
+
+/* ── Hex dump / binary ─────────────────────────────────────────────────── */
+.blob-hex-wrap { overflow: auto; max-height: 400px; }
+.blob-hex {
+  margin: 0; padding: 16px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px; line-height: 1.7; color: #8b949e;
+  background: #0d1117; white-space: pre;
+}
+.blob-hex .hex-offset { color: #6e7681; margin-right: 12px; }
+.blob-hex .hex-bytes { color: #c9d1d9; margin-right: 12px; }
+.blob-hex .hex-ascii { color: #8b949e; }
+.blob-binary-notice {
+  padding: 24px; text-align: center; color: #8b949e; font-size: 14px;
+  border-top: 1px solid #21262d;
+}
+</style>
+{% endblock %}
+
+{% block page_data %}
+const repoId   = {{ repo_id | tojson }};
+const ref      = {{ ref | tojson }};
+const filePath = {{ file_path | tojson }};
+const filename = {{ filename | tojson }};
+const owner    = {{ owner | tojson }};
+const repoSlug = {{ repo_slug | tojson }};
+const base     = {{ base_url | tojson }};
+const apiBase  = '/api/v1/musehub/repos/' + repoId;
+{% endblock %}
+
+{% block page_script %}
+{% raw %}
+// ── Utility ──────────────────────────────────────────────────────────────────
+function fmtSize(bytes) {
+  if (bytes === null || bytes === undefined) return '';
+  if (bytes < 1024) return bytes + '\u00a0B';
+  if (bytes < 1048576) return (bytes / 1024).toFixed(1) + '\u00a0KB';
+  return (bytes / 1048576).toFixed(1) + '\u00a0MB';
+}
+
+function fmtDate(iso) {
+  if (!iso) return '';
+  try { return new Date(iso).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' }); }
+  catch (_) { return iso; }
+}
+
+function shortSha(sha) {
+  const idx = sha.indexOf(':');
+  const hex = idx >= 0 ? sha.slice(idx + 1) : sha;
+  return hex.slice(0, 12);
+}
+
+// ── JSON syntax highlight (safe — operates on text, never eval) ──────────────
+function highlightJson(text) {
+  const escaped = escHtml(text);
+  return escaped.replace(
+    /("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^"\\])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+\-]?\d+)?)/g,
+    function(match) {
+      if (/^"/.test(match)) {
+        if (/:$/.test(match)) return '<span class="json-key">' + match + '</span>';
+        return '<span class="json-str">' + match + '</span>';
+      }
+      if (/true|false/.test(match)) return '<span class="json-bool">' + match + '</span>';
+      if (/null/.test(match))       return '<span class="json-null">' + match + '</span>';
+      return '<span class="json-num">' + match + '</span>';
+    }
+  );
+}
+
+// ── Hex dump (first 512 bytes of a binary blob) ──────────────────────────────
+function renderHexDump(arrayBuffer) {
+  const bytes = new Uint8Array(arrayBuffer);
+  const limit = Math.min(bytes.length, 512);
+  let out = '';
+  for (let i = 0; i < limit; i += 16) {
+    const chunk = bytes.slice(i, i + 16);
+    const offset = i.toString(16).padStart(8, '0');
+    const hexPart = Array.from(chunk).map(b => b.toString(16).padStart(2, '0')).join(' ').padEnd(47, ' ');
+    const asciiPart = Array.from(chunk).map(b => (b >= 32 && b < 127) ? String.fromCharCode(b) : '.').join('');
+    out += '<span class="hex-offset">' + offset + '</span>'
+         + '<span class="hex-bytes">' + escHtml(hexPart) + '</span>'
+         + '<span class="hex-ascii">' + escHtml(asciiPart) + '</span>\n';
+  }
+  return out;
+}
+
+// ── Build action buttons ──────────────────────────────────────────────────────
+function buildActions(data, rawUrl) {
+  const rollUrl   = base + '/piano-roll/' + encodeURIComponent(ref) + '/' + filePath;
+  const listenUrl = base + '/listen/'     + encodeURIComponent(ref) + '/' + filePath;
+  let actions = '<a class="btn-blob btn-blob-secondary" href="' + escHtml(rawUrl) + '" download>'
+    + '&#11015;&#65039;&nbsp;Raw</a>';
+  if (data.fileType === 'midi') {
+    actions += '&nbsp;<a class="btn-blob btn-blob-primary" href="' + escHtml(rollUrl) + '">'
+      + '&#127929;&nbsp;View in Piano Roll</a>';
+  } else if (data.fileType === 'audio') {
+    actions += '&nbsp;<a class="btn-blob btn-blob-primary" href="' + escHtml(listenUrl) + '">'
+      + '&#127925;&nbsp;Listen</a>';
+  }
+  return actions;
+}
+
+// ── Render body by file type ─────────────────────────────────────────────────
+function renderBlobBody(data, rawUrl) {
+  const rollUrl = base + '/piano-roll/' + encodeURIComponent(ref) + '/' + filePath;
+  switch (data.fileType) {
+    case 'midi':
+      return '<div class="blob-midi-banner">'
+        + '<span class="blob-midi-icon">&#127929;</span>'
+        + '<div class="blob-midi-title">' + escHtml(data.filename || filename) + '</div>'
+        + '<div class="blob-midi-sub">MIDI file \u2014 interactive piano roll coming in Phase 2</div>'
+        + '<a class="btn-blob btn-blob-primary" href="' + escHtml(rollUrl) + '">&#127929;&nbsp;View in Piano Roll</a>'
+        + '</div>';
+    case 'audio':
+      return '<div class="blob-audio-wrap">'
+        + '<span class="blob-audio-icon">&#127925;</span>'
+        + '<div style="color:#c9d1d9;font-size:16px;font-weight:600;margin-bottom:4px">' + escHtml(data.filename || filename) + '</div>'
+        + '<audio class="blob-audio-player" controls preload="metadata" src="' + escHtml(rawUrl) + '">'
+        + 'Your browser does not support audio playback. <a href="' + escHtml(rawUrl) + '">Download</a> instead.'
+        + '</audio></div>';
+    case 'json':
+      if (data.contentText) {
+        let pretty = data.contentText;
+        try { pretty = JSON.stringify(JSON.parse(data.contentText), null, 2); } catch (_) {}
+        return '<div class="blob-code-wrap"><pre class="blob-code"><code>' + highlightJson(pretty) + '</code></pre></div>';
+      }
+      return '<div class="blob-binary-notice">File too large to display inline. '
+        + '<a href="' + escHtml(rawUrl) + '">Download raw</a></div>';
+    case 'xml':
+      if (data.contentText) {
+        return '<div class="blob-code-wrap"><pre class="blob-code"><code>' + escHtml(data.contentText) + '</code></pre></div>';
+      }
+      return '<div class="blob-binary-notice">File too large to display inline. '
+        + '<a href="' + escHtml(rawUrl) + '">Download raw</a></div>';
+    case 'image':
+      return '<div class="blob-img-wrap">'
+        + '<img class="blob-img" src="' + escHtml(rawUrl) + '" alt="' + escHtml(data.filename || filename) + '">'
+        + '</div>';
+    default:
+      return null; // async hex-dump path
+  }
+}
+
+// ── Hex preview for binary/unknown files (Range request for first 512 B) ──────
+async function fetchHexPreview(rawUrl, bodyEl, sizeBytes) {
+  try {
+    const resp = await fetch(rawUrl, { headers: { Range: 'bytes=0-511' } });
+    if (resp.ok || resp.status === 206) {
+      const buf  = await resp.arrayBuffer();
+      const hex  = renderHexDump(buf);
+      bodyEl.innerHTML =
+        '<div class="blob-hex-wrap"><pre class="blob-hex">' + hex + '</pre></div>'
+        + '<div class="blob-binary-notice">Showing first ' + Math.min(512, sizeBytes)
+        + ' bytes of ' + fmtSize(sizeBytes) + '. '
+        + '<a href="' + escHtml(rawUrl) + '" download>Download full file</a></div>';
+    } else {
+      bodyEl.innerHTML = '<div class="blob-binary-notice">Binary file \u2014 <a href="' + escHtml(rawUrl) + '" download>Download</a></div>';
+    }
+  } catch (_) {
+    bodyEl.innerHTML = '<div class="blob-binary-notice">Binary file \u2014 <a href="' + escHtml(rawUrl) + '" download>Download</a></div>';
+  }
+}
+
+// ── Render full page structure into #content ──────────────────────────────────
+async function renderBlob(data) {
+  const rawUrl = data.rawUrl || (base + '/raw/' + encodeURIComponent(ref) + '/' + filePath);
+
+  const metaHtml =
+    '<span title="Size">&#128196;&nbsp;' + fmtSize(data.sizeBytes) + '</span>'
+    + '<span title="SHA">&#128273;&nbsp;' + escHtml(shortSha(data.sha || '')) + '</span>'
+    + '<span title="Last pushed">&#128197;&nbsp;' + escHtml(fmtDate(data.createdAt)) + '</span>';
+
+  const headerHtml =
+    '<div class="blob-header">'
+    + '<div class="blob-filename">&#128196;&nbsp;' + escHtml(data.filename || filename) + '</div>'
+    + '<div class="blob-meta">' + metaHtml + '</div>'
+    + '<div class="blob-actions">' + buildActions(data, rawUrl) + '</div>'
+    + '</div>';
+
+  const syncBody = renderBlobBody(data, rawUrl);
+  const bodyPlaceholder = '<div class="blob-body" id="blob-body-inner">'
+    + (syncBody !== null ? syncBody : '<div class="blob-loading">Rendering\u2026</div>')
+    + '</div>';
+
+  document.getElementById('content').innerHTML = headerHtml + bodyPlaceholder;
+
+  if (syncBody === null) {
+    const bodyEl = document.getElementById('blob-body-inner');
+    await fetchHexPreview(rawUrl, bodyEl, data.sizeBytes);
+  }
+}
+
+// ── Load blob metadata from JSON API ─────────────────────────────────────────
+async function loadBlob() {
+  const contentEl = document.getElementById('content');
+  contentEl.innerHTML = '<div class="blob-loading">Loading\u2026</div>';
+  try {
+    const tok = getToken ? getToken() : (localStorage.getItem('muse_token') || '');
+    const headers = tok ? { Authorization: 'Bearer ' + tok } : {};
+    const url = apiBase + '/blob/' + encodeURIComponent(ref) + '/' + filePath;
+    const resp = await fetch(url, { headers });
+    if (resp.status === 404) {
+      contentEl.innerHTML = '<div class="blob-error">&#10060; File not found: <code>' + escHtml(filePath) + '</code></div>';
+      return;
+    }
+    if (resp.status === 401) {
+      contentEl.innerHTML = '<div class="blob-error">&#128274; Private repo \u2014 sign in to view this file.</div>';
+      return;
+    }
+    if (!resp.ok) {
+      contentEl.innerHTML = '<div class="blob-error">&#10060; Failed to load file (HTTP ' + resp.status + ').</div>';
+      return;
+    }
+    const data = await resp.json();
+    await renderBlob(data);
+  } catch (err) {
+    document.getElementById('content').innerHTML =
+      '<div class="blob-error">&#10060; ' + escHtml(String(err)) + '</div>';
+  }
+}
+
+loadBlob();
+{% endraw %}
+{% endblock %}
