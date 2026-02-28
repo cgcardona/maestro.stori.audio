@@ -6,6 +6,12 @@ Covers every acceptance criterion from issue #31:
 - --force reinitialises and preserves existing repo_id
 - muse status after init shows "On branch main, no commits yet"
 
+Covers acceptance criteria from issue #85:
+- --bare creates .muse/ without muse-work/ and writes bare = true in config.toml
+- --template copies template directory contents into muse-work/
+- --default-branch names the initial branch instead of "main"
+- All flags are combinable
+
 All filesystem operations use ``tmp_path`` + ``os.chdir`` or the
 ``MUSE_REPO_ROOT`` env-var override so tests are fully isolated.
 """
@@ -261,3 +267,184 @@ def test_init_oserror_exits_3(
     assert result.exit_code == int(ExitCode.INTERNAL_ERROR), result.output
     assert "Failed to initialise" in result.output
     assert "Traceback" not in result.output
+
+
+# ---------------------------------------------------------------------------
+# --bare flag (issue #85)
+# ---------------------------------------------------------------------------
+
+
+def test_bare_creates_muse_directory(tmp_path: pathlib.Path) -> None:
+    """``muse init --bare`` creates a ``.muse/`` directory."""
+    result = _run_init(tmp_path, "--bare")
+    assert result.exit_code == 0, result.output
+    assert (tmp_path / ".muse").is_dir()
+
+
+def test_bare_does_not_create_muse_work(tmp_path: pathlib.Path) -> None:
+    """``muse init --bare`` must NOT create ``muse-work/``."""
+    _run_init(tmp_path, "--bare")
+    assert not (tmp_path / "muse-work").exists()
+
+
+def test_bare_writes_bare_flag_in_repo_json(tmp_path: pathlib.Path) -> None:
+    """``muse init --bare`` writes ``bare = true`` into ``repo.json``."""
+    _run_init(tmp_path, "--bare")
+    data = json.loads((tmp_path / ".muse" / "repo.json").read_text())
+    assert data.get("bare") is True
+
+
+def test_bare_writes_bare_flag_in_config_toml(tmp_path: pathlib.Path) -> None:
+    """``muse init --bare`` writes ``bare = true`` into ``config.toml``."""
+    _run_init(tmp_path, "--bare")
+    content = (tmp_path / ".muse" / "config.toml").read_text()
+    assert "bare = true" in content
+
+
+def test_bare_output_mentions_bare(tmp_path: pathlib.Path) -> None:
+    """Success message for ``--bare`` includes the word 'bare'."""
+    result = _run_init(tmp_path, "--bare")
+    assert "bare" in result.output.lower()
+
+
+def test_normal_init_creates_muse_work(tmp_path: pathlib.Path) -> None:
+    """A regular (non-bare) ``muse init`` creates the ``muse-work/`` directory."""
+    _run_init(tmp_path)
+    assert (tmp_path / "muse-work").is_dir()
+
+
+def test_normal_init_repo_json_has_no_bare_flag(tmp_path: pathlib.Path) -> None:
+    """A non-bare ``muse init`` does not write ``bare`` into ``repo.json``."""
+    _run_init(tmp_path)
+    data = json.loads((tmp_path / ".muse" / "repo.json").read_text())
+    assert "bare" not in data
+
+
+# ---------------------------------------------------------------------------
+# --template flag (issue #85)
+# ---------------------------------------------------------------------------
+
+
+def test_template_copies_contents_into_muse_work(
+    tmp_path: pathlib.Path,
+) -> None:
+    """``muse init --template <path>`` copies template contents into ``muse-work/``."""
+    template_dir = tmp_path / "tmpl"
+    template_dir.mkdir()
+    (template_dir / "drums").mkdir()
+    (template_dir / "bass").mkdir()
+    (template_dir / "README.md").write_text("studio template\n")
+
+    work_dir = tmp_path / "project"
+    work_dir.mkdir()
+
+    result = _run_init(work_dir, "--template", str(template_dir))
+    assert result.exit_code == 0, result.output
+
+    muse_work = work_dir / "muse-work"
+    assert (muse_work / "drums").is_dir()
+    assert (muse_work / "bass").is_dir()
+    assert (muse_work / "README.md").read_text() == "studio template\n"
+
+
+def test_template_nonexistent_path_exits_1(tmp_path: pathlib.Path) -> None:
+    """``muse init --template`` exits 1 when the template path does not exist."""
+    result = _run_init(tmp_path, "--template", str(tmp_path / "no_such_dir"))
+    assert result.exit_code == int(ExitCode.USER_ERROR), result.output
+    assert "does not exist" in result.output or "not a directory" in result.output
+
+
+def test_template_ignored_for_bare_repos(tmp_path: pathlib.Path) -> None:
+    """``muse init --bare --template`` does not create ``muse-work/`` (bare takes priority)."""
+    template_dir = tmp_path / "tmpl"
+    template_dir.mkdir()
+    (template_dir / "keys").mkdir()
+
+    project_dir = tmp_path / "project"
+    project_dir.mkdir()
+
+    result = _run_init(project_dir, "--bare", "--template", str(template_dir))
+    assert result.exit_code == 0, result.output
+    assert not (project_dir / "muse-work").exists()
+
+
+# ---------------------------------------------------------------------------
+# --default-branch flag (issue #85)
+# ---------------------------------------------------------------------------
+
+
+def test_default_branch_sets_head_pointer(tmp_path: pathlib.Path) -> None:
+    """``muse init --default-branch develop`` writes ``refs/heads/develop`` into HEAD."""
+    result = _run_init(tmp_path, "--default-branch", "develop")
+    assert result.exit_code == 0, result.output
+    head = (tmp_path / ".muse" / "HEAD").read_text().strip()
+    assert head == "refs/heads/develop"
+
+
+def test_default_branch_creates_ref_file(tmp_path: pathlib.Path) -> None:
+    """``muse init --default-branch release`` creates ``.muse/refs/heads/release``."""
+    _run_init(tmp_path, "--default-branch", "release")
+    assert (tmp_path / ".muse" / "refs" / "heads" / "release").exists()
+
+
+def test_default_branch_default_is_main(tmp_path: pathlib.Path) -> None:
+    """Without ``--default-branch``, HEAD points to ``refs/heads/main`` (regression guard)."""
+    _run_init(tmp_path)
+    head = (tmp_path / ".muse" / "HEAD").read_text().strip()
+    assert head == "refs/heads/main"
+
+
+def test_default_branch_combined_with_bare(tmp_path: pathlib.Path) -> None:
+    """``--default-branch`` and ``--bare`` are combinable."""
+    result = _run_init(tmp_path, "--bare", "--default-branch", "trunk")
+    assert result.exit_code == 0, result.output
+    head = (tmp_path / ".muse" / "HEAD").read_text().strip()
+    assert head == "refs/heads/trunk"
+    assert (tmp_path / ".muse" / "refs" / "heads" / "trunk").exists()
+    assert not (tmp_path / "muse-work").exists()
+
+
+def test_default_branch_combined_with_template(tmp_path: pathlib.Path) -> None:
+    """``--default-branch`` and ``--template`` are combinable."""
+    template_dir = tmp_path / "tmpl"
+    template_dir.mkdir()
+    (template_dir / "vocals").mkdir()
+
+    project_dir = tmp_path / "project"
+    project_dir.mkdir()
+
+    result = _run_init(
+        project_dir, "--default-branch", "studio", "--template", str(template_dir)
+    )
+    assert result.exit_code == 0, result.output
+    head = (project_dir / ".muse" / "HEAD").read_text().strip()
+    assert head == "refs/heads/studio"
+    assert (project_dir / "muse-work" / "vocals").is_dir()
+
+
+def test_all_three_flags_combined(tmp_path: pathlib.Path) -> None:
+    """``--bare``, ``--template``, and ``--default-branch`` can all be passed together.
+
+    When --bare is used, muse-work/ is never created even if --template is given.
+    """
+    template_dir = tmp_path / "tmpl"
+    template_dir.mkdir()
+    (template_dir / "drums").mkdir()
+
+    project_dir = tmp_path / "project"
+    project_dir.mkdir()
+
+    result = _run_init(
+        project_dir,
+        "--bare",
+        "--template",
+        str(template_dir),
+        "--default-branch",
+        "develop",
+    )
+    assert result.exit_code == 0, result.output
+    head = (project_dir / ".muse" / "HEAD").read_text().strip()
+    assert head == "refs/heads/develop"
+    data = json.loads((project_dir / ".muse" / "repo.json").read_text())
+    assert data.get("bare") is True
+    assert not (project_dir / "muse-work").exists()
