@@ -23,6 +23,7 @@ from maestro.models.musehub import (
     BranchListResponse,
     CommitListResponse,
     CreateRepoRequest,
+    DagGraphResponse,
     RepoResponse,
 )
 from maestro.services import musehub_repository
@@ -112,3 +113,34 @@ async def list_commits(
         db, repo_id, branch=branch, limit=limit
     )
     return CommitListResponse(commits=commits, total=total)
+
+
+@router.get(
+    "/repos/{repo_id}/dag",
+    response_model=DagGraphResponse,
+    summary="Get the full commit DAG for a repo",
+)
+async def get_commit_dag(
+    repo_id: str,
+    db: AsyncSession = Depends(get_db),
+    _: TokenClaims = Depends(require_valid_token),
+) -> DagGraphResponse:
+    """Return the full commit history as a topologically sorted directed acyclic graph.
+
+    Nodes are ordered oldest→newest (Kahn's topological sort). Edges express
+    child→parent relationships (``source`` = child commit, ``target`` = parent
+    commit). This endpoint is the data source for the interactive DAG graph UI
+    at ``GET /musehub/ui/{repo_id}/graph``.
+
+    Content negotiation: always returns JSON. The UI page fetches this endpoint
+    with the stored JWT and renders it client-side with an SVG-based renderer.
+
+    Performance: all commits are fetched (no limit) to ensure the graph is
+    complete. For repos with 100+ commits the response may be several KB; the
+    client-side renderer virtualises visible nodes.
+    """
+    repo = await musehub_repository.get_repo(db, repo_id)
+    if repo is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repo not found")
+
+    return await musehub_repository.list_commits_dag(db, repo_id)

@@ -5846,6 +5846,54 @@ Wrapper returned by `GET /api/v1/musehub/repos/{repo_id}/objects`.
 **Producer:** `objects.list_objects` route handler
 **Consumer:** Muse Hub web UI; any agent inspecting which artifacts are available for a repo
 
+### `DagNode`
+
+A single commit node in the repo's directed acyclic graph. Defined in `maestro/models/musehub.py`.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `commit_id` | `str` | Full commit SHA |
+| `message` | `str` | Commit message |
+| `author` | `str` | Author display name |
+| `timestamp` | `datetime` | UTC commit timestamp |
+| `branch` | `str` | Branch the commit was pushed from |
+| `parent_ids` | `list[str]` | Parent commit SHAs (empty for root commits; two entries for merge commits) |
+| `is_head` | `bool` | `True` if this commit is the current HEAD |
+| `branch_labels` | `list[str]` | Branch ref names pointing at this commit |
+| `tag_labels` | `list[str]` | Tag ref names pointing at this commit |
+
+**Producer:** `musehub_repository.list_commits_dag()` → `repos.get_commit_dag` route handler
+**Consumer:** Interactive DAG graph renderer in `GET /musehub/ui/{repo_id}/graph`; AI agents reasoning about branching topology
+
+### `DagEdge`
+
+A directed edge in the commit DAG. Defined in `maestro/models/musehub.py`.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `source` | `str` | Child commit ID (the one that has the parent) |
+| `target` | `str` | Parent commit ID |
+
+Convention: edges flow child → parent (newest to oldest). This matches standard directed graph convention where arrows point toward ancestors.
+
+**Producer:** `musehub_repository.list_commits_dag()`
+**Consumer:** Graph renderer; agents computing reachability or common ancestors
+
+### `DagGraphResponse`
+
+Topologically sorted commit graph for a Muse Hub repo. Defined in `maestro/models/musehub.py`.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `nodes` | `list[DagNode]` | Commits in Kahn topological order (oldest ancestor first) |
+| `edges` | `list[DagEdge]` | All parent-child relationships in the graph |
+| `head_commit_id` | `str \| None` | SHA of the current HEAD commit |
+
+Returned by `GET /api/v1/musehub/repos/{repo_id}/dag`.
+
+**Producer:** `repos.get_commit_dag` route handler
+**Consumer:** Interactive DAG graph UI page; AI agents inspecting project history topology
+
 ---
 
 ## Muse Bisect Types

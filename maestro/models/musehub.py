@@ -240,3 +240,55 @@ class ObjectMetaListResponse(CamelModel):
     """List of artifact metadata for a repo."""
 
     objects: list[ObjectMetaResponse]
+
+
+# ── DAG graph models ───────────────────────────────────────────────────────────
+
+
+class DagNode(CamelModel):
+    """A single commit node in the repo's directed acyclic graph.
+
+    Designed for consumption by interactive graph renderers. The ``is_head``
+    flag marks the current HEAD commit across all branches. ``branch_labels``
+    and ``tag_labels`` list all ref names pointing at this commit.
+    """
+
+    commit_id: str
+    message: str
+    author: str
+    timestamp: datetime
+    branch: str
+    parent_ids: list[str]
+    is_head: bool = False
+    branch_labels: list[str] = Field(default_factory=list)
+    tag_labels: list[str] = Field(default_factory=list)
+
+
+class DagEdge(CamelModel):
+    """A directed edge in the commit DAG.
+
+    ``source`` is the child commit (the one that has the parent).
+    ``target`` is the parent commit. This follows standard graph convention:
+    edge flows from child → parent (newest to oldest).
+    """
+
+    source: str
+    target: str
+
+
+class DagGraphResponse(CamelModel):
+    """Topologically sorted commit graph for a Muse Hub repo.
+
+    ``nodes`` are ordered from oldest ancestor to newest commit (Kahn's
+    algorithm). ``edges`` enumerate every parent→child relationship.
+    Consumers can render this directly as a directed acyclic graph without
+    further processing.
+
+    Agent use case: an AI music agent can use this to identify which branches
+    diverged from a common ancestor, find merge points, and reason about the
+    project's compositional history.
+    """
+
+    nodes: list[DagNode]
+    edges: list[DagEdge]
+    head_commit_id: str | None = None
