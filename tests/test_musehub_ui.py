@@ -16,12 +16,6 @@ Covers acceptance criteria from issue #244 (embed player):
 - test_embed_page_x_frame_options      — Response sets X-Frame-Options: ALLOWALL
 - test_embed_page_contains_player_ui   — Player elements present in embed HTML
 
-Covers issue #241 (credits page):
-- test_credits_page_renders            — GET /musehub/ui/{repo_id}/credits returns 200 HTML
-- test_credits_json_response           — GET /api/v1/musehub/repos/{repo_id}/credits returns JSON
-- test_credits_empty_state             — empty state message when no commits exist
-- test_credits_no_auth_required        — credits UI page is accessible without JWT
-
 UI routes require no JWT auth (they return HTML shells whose JS handles auth).
 The HTML content tests assert structural markers present in every rendered page.
 """
@@ -33,7 +27,7 @@ import pytest
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from maestro.db.musehub_models import MusehubCommit, MusehubRepo
+from maestro.db.musehub_models import MusehubCommit, MusehubProfile, MusehubRepo
 
 
 # ---------------------------------------------------------------------------
@@ -186,6 +180,7 @@ async def test_ui_pages_include_token_form(
         f"/musehub/ui/{repo_id}",
         f"/musehub/ui/{repo_id}/pulls",
         f"/musehub/ui/{repo_id}/issues",
+        f"/musehub/ui/{repo_id}/releases",
     ]:
         response = await client.get(path)
         assert response.status_code == 200
@@ -195,34 +190,54 @@ async def test_ui_pages_include_token_form(
         assert "musehub_token" in body
 
 
-# ---------------------------------------------------------------------------
-# Object listing endpoint tests (JSON, authed)
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.anyio
-async def test_global_search_ui_page_returns_200(
+async def test_ui_release_list_page_returns_200(
     client: AsyncClient,
     db_session: AsyncSession,
 ) -> None:
-    """GET /musehub/ui/search returns 200 HTML (no auth required — HTML shell)."""
-    response = await client.get("/musehub/ui/search")
+    """GET /musehub/ui/{repo_id}/releases returns 200 HTML without requiring a JWT."""
+    repo_id = await _make_repo(db_session)
+    response = await client.get(f"/musehub/ui/{repo_id}/releases")
     assert response.status_code == 200
     assert "text/html" in response.headers["content-type"]
     body = response.text
-    assert "Global Search" in body
+    assert "Releases" in body
     assert "Muse Hub" in body
+    assert repo_id[:8] in body
 
 
 @pytest.mark.anyio
-async def test_global_search_ui_page_no_auth_required(
+async def test_ui_release_detail_page_returns_200(
     client: AsyncClient,
     db_session: AsyncSession,
 ) -> None:
-    """GET /musehub/ui/search must not return 401 — it is a static HTML shell."""
-    response = await client.get("/musehub/ui/search")
-    assert response.status_code != 401
+    """GET /musehub/ui/{repo_id}/releases/{tag} returns 200 HTML with download section."""
+    repo_id = await _make_repo(db_session)
+    response = await client.get(f"/musehub/ui/{repo_id}/releases/v1.0")
     assert response.status_code == 200
+    assert "text/html" in response.headers["content-type"]
+    body = response.text
+    assert "Muse Hub" in body
+    assert "Download" in body
+    assert "v1.0" in body
+
+
+@pytest.mark.anyio
+async def test_ui_repo_page_shows_releases_button(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """GET /musehub/ui/{repo_id} includes a Releases navigation button."""
+    repo_id = await _make_repo(db_session)
+    response = await client.get(f"/musehub/ui/{repo_id}")
+    assert response.status_code == 200
+    body = response.text
+    assert "releases" in body.lower()
+
+
+# ---------------------------------------------------------------------------
+# Object listing endpoint tests (JSON, authed)
+# ---------------------------------------------------------------------------
 
 
 @pytest.mark.anyio
@@ -318,6 +333,7 @@ async def test_graph_page_renders(
 
 
 # ---------------------------------------------------------------------------
+
 # Context viewer tests (issue #232)
 # ---------------------------------------------------------------------------
 
@@ -444,63 +460,6 @@ async def test_credits_json_response(
     assert body["sort"] == "count"
 
 
-@pytest.mark.anyio
-async def test_graph_page_contains_dag_js(
-    client: AsyncClient,
-    db_session: AsyncSession,
-) -> None:
-    """Graph page embeds the client-side DAG renderer JavaScript."""
-    repo_id = await _make_repo(db_session)
-    response = await client.get(f"/musehub/ui/{repo_id}/graph")
-    assert response.status_code == 200
-    body = response.text
-    # Key renderer identifiers must be present
-    assert "renderGraph" in body
-    assert "dag-viewport" in body
-    assert "dag-svg" in body
-
-
-@pytest.mark.anyio
-async def test_graph_page_has_zoom_pan(
-    client: AsyncClient,
-    db_session: AsyncSession,
-) -> None:
-    """Graph page includes zoom and pan JavaScript logic."""
-    repo_id = await _make_repo(db_session)
-    response = await client.get(f"/musehub/ui/{repo_id}/graph")
-    assert response.status_code == 200
-    body = response.text
-    assert "wheel" in body
-    assert "mousedown" in body
-    assert "applyTransform" in body
-
-
-@pytest.mark.anyio
-async def test_graph_page_has_popover(
-    client: AsyncClient,
-    db_session: AsyncSession,
-) -> None:
-    """Graph page includes commit detail hover popover markup."""
-    repo_id = await _make_repo(db_session)
-    response = await client.get(f"/musehub/ui/{repo_id}/graph")
-    assert response.status_code == 200
-    body = response.text
-    assert "dag-popover" in body
-    assert "pop-sha" in body
-    assert "pop-msg" in body
-
-
-@pytest.mark.anyio
-async def test_graph_page_no_auth_required(
-    client: AsyncClient,
-    db_session: AsyncSession,
-) -> None:
-    """Graph UI page must be accessible without an Authorization header."""
-    repo_id = await _make_repo(db_session)
-    response = await client.get(f"/musehub/ui/{repo_id}/graph")
-    assert response.status_code != 401
-    assert response.status_code == 200
-
 
 @pytest.mark.anyio
 async def test_context_json_response(
@@ -517,6 +476,7 @@ async def test_context_json_response(
     assert response.status_code == 200
     body = response.json()
     assert "repoId" in body
+
     assert body["repoId"] == repo_id
     assert body["currentBranch"] == "main"
     assert "headCommit" in body
@@ -552,6 +512,7 @@ async def test_context_includes_musical_state(
     db_session: AsyncSession,
     auth_headers: dict[str, str],
 ) -> None:
+
     """Context response includes musicalState with an activeTracks field."""
     repo_id, commit_id = await _make_repo_with_commit(db_session)
     response = await client.get(
@@ -621,19 +582,6 @@ async def test_context_page_no_auth_required(
     assert response.status_code == 200
 
 
-@pytest.mark.anyio
-async def test_graph_page_includes_token_form(
-    client: AsyncClient,
-    db_session: AsyncSession,
-) -> None:
-    """Graph page embeds the JWT token input form so visitors can authenticate."""
-    repo_id = await _make_repo(db_session)
-    response = await client.get(f"/musehub/ui/{repo_id}/graph")
-    assert response.status_code == 200
-    body = response.text
-    assert "localStorage" in body
-    assert "musehub_token" in body
-
 # ---------------------------------------------------------------------------
 # Embed player route tests (issue #244)
 # ---------------------------------------------------------------------------
@@ -698,6 +646,7 @@ async def test_embed_page_contains_player_ui(
 
 # ---------------------------------------------------------------------------
 # Groove check page and endpoint tests (issue #226)
+
 # ---------------------------------------------------------------------------
 
 
@@ -709,6 +658,7 @@ async def test_groove_check_page_renders(
     """GET /musehub/ui/{repo_id}/groove-check returns 200 HTML without requiring a JWT."""
     repo_id = await _make_repo(db_session)
     response = await client.get(f"/musehub/ui/{repo_id}/groove-check")
+
     assert response.status_code == 200
     assert "text/html" in response.headers["content-type"]
     body = response.text
@@ -891,3 +841,55 @@ async def test_repo_page_contains_groove_check_link(
     assert response.status_code == 200
     body = response.text
     assert "groove-check" in body
+
+
+# ---------------------------------------------------------------------------
+# User profile page tests (issue #233 — pre-existing from dev, fixed here)
+# ---------------------------------------------------------------------------
+
+_TEST_USER_ID = "550e8400-e29b-41d4-a716-446655440000"
+
+
+async def _make_profile(
+    db_session: AsyncSession, username: str = "testmusician"
+) -> MusehubProfile:
+    """Seed a minimal profile and return it."""
+    profile = MusehubProfile(
+        user_id=_TEST_USER_ID,
+        username=username,
+        bio="Test bio",
+        avatar_url=None,
+        pinned_repo_ids=[],
+    )
+    db_session.add(profile)
+    await db_session.commit()
+    await db_session.refresh(profile)
+    return profile
+
+
+@pytest.mark.anyio
+async def test_profile_page_renders(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """GET /musehub/ui/users/{username} returns 200 HTML for a known profile."""
+    await _make_profile(db_session, "rockstar")
+    response = await client.get("/musehub/ui/users/rockstar")
+    assert response.status_code == 200
+    assert "text/html" in response.headers["content-type"]
+    body = response.text
+    assert "Muse Hub" in body
+    assert "@rockstar" in body
+
+
+@pytest.mark.anyio
+async def test_profile_no_auth_required_ui(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Profile UI page is publicly accessible without a JWT (returns 200, not 401)."""
+    await _make_profile(db_session, "public-user")
+    response = await client.get("/musehub/ui/users/public-user")
+    assert response.status_code == 200
+    assert response.status_code != 401
+

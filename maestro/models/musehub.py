@@ -92,6 +92,13 @@ class CreateRepoRequest(CamelModel):
 
     name: str = Field(..., min_length=1, max_length=255, description="Repo name")
     visibility: str = Field("private", pattern="^(public|private)$")
+    description: str = Field("", description="Short description shown on the explore page")
+    tags: list[str] = Field(
+        default_factory=list,
+        description="Free-form tags — genre, key, instrumentation (e.g. 'jazz', 'F# minor', 'bass')",
+    )
+    key_signature: str | None = Field(None, max_length=50, description="Musical key (e.g. 'C major', 'F# minor')")
+    tempo_bpm: int | None = Field(None, ge=20, le=300, description="Tempo in BPM")
 
 
 # ── Response models ───────────────────────────────────────────────────────────
@@ -105,6 +112,10 @@ class RepoResponse(CamelModel):
     visibility: str
     owner_user_id: str
     clone_url: str
+    description: str = ""
+    tags: list[str] = Field(default_factory=list)
+    key_signature: str | None = None
+    tempo_bpm: int | None = None
     created_at: datetime
 
 
@@ -218,6 +229,57 @@ class PRMergeResponse(CamelModel):
     merge_commit_id: str
 
 
+# ── Release models ────────────────────────────────────────────────────────────
+
+
+class ReleaseCreate(CamelModel):
+    """Body for POST /musehub/repos/{repo_id}/releases.
+
+    ``tag`` must be unique per repo (e.g. "v1.0", "v2.3.1").
+    ``commit_id`` pins the release to a specific commit snapshot.
+    """
+
+    tag: str = Field(..., min_length=1, max_length=100, description="Version tag, e.g. 'v1.0'")
+    title: str = Field(..., min_length=1, max_length=500, description="Release title")
+    body: str = Field("", description="Release notes (Markdown)")
+    commit_id: str | None = Field(None, description="Commit to pin this release to")
+
+
+class ReleaseDownloadUrls(CamelModel):
+    """Structured download package URLs for a release.
+
+    Each field is either a URL string or None if the package is not available.
+    ``midi_bundle`` is the full MIDI export (all tracks as a single .mid).
+    ``stems`` is a zip of per-track MIDI stems.
+    ``mp3`` is the full mix audio render.
+    ``musicxml`` is the notation export in MusicXML format.
+    ``metadata`` is a JSON file with tempo, key, and arrangement info.
+    """
+
+    midi_bundle: str | None = None
+    stems: str | None = None
+    mp3: str | None = None
+    musicxml: str | None = None
+    metadata: str | None = None
+
+
+class ReleaseResponse(CamelModel):
+    """Wire representation of a Muse Hub release."""
+
+    release_id: str
+    tag: str
+    title: str
+    body: str
+    commit_id: str | None = None
+    download_urls: ReleaseDownloadUrls
+    created_at: datetime
+
+
+class ReleaseListResponse(CamelModel):
+    """List of releases for a repo (newest first)."""
+
+    releases: list[ReleaseResponse]
+
 # ── Credits models ────────────────────────────────────────────────────────────
 
 
@@ -274,6 +336,184 @@ class ObjectMetaListResponse(CamelModel):
 
     objects: list[ObjectMetaResponse]
 
+
+
+
+# ── Semantic search models ─────────────────────────────────────────────────────
+
+
+class SimilarCommitResponse(CamelModel):
+    """A single result from a MuseHub semantic similarity search.
+
+    The score is cosine similarity in [0.0, 1.0] — higher is more similar.
+    Results are pre-sorted descending by score.
+    """
+
+    commit_id: str = Field(..., description="Commit SHA of the matching commit")
+    repo_id: str = Field(..., description="UUID of the repo containing this commit")
+    score: float = Field(..., ge=0.0, le=1.0, description="Cosine similarity score")
+    branch: str = Field(..., description="Branch the commit lives on")
+    author: str = Field(..., description="Commit author identifier")
+
+
+class SimilarSearchResponse(CamelModel):
+    """Response for GET /musehub/search/similar.
+
+    Contains the query commit SHA and a ranked list of musically similar commits.
+    Only public repos appear in results — enforced server-side by Qdrant filter.
+    """
+
+    query_commit: str = Field(..., description="The commit SHA used as the search query")
+    results: list[SimilarCommitResponse] = Field(
+        default_factory=list,
+        description="Ranked results, most similar first",
+    )
+
+
+
+
+# ── Divergence visualization models ───────────────────────────────────────────
+
+
+class DivergenceDimensionResponse(CamelModel):
+    """Wire representation of divergence scores for a single musical dimension.
+
+    Mirrors :class:`maestro.services.musehub_divergence.MuseHubDimensionDivergence`
+    for JSON serialization.  AI agents consume this to decide which dimension
+    of a branch needs creative attention before merging.
+    """
+
+    dimension: str
+    level: str
+    score: float
+    description: str
+    branch_a_commits: int
+    branch_b_commits: int
+
+
+class DivergenceResponse(CamelModel):
+    """Full musical divergence report between two Muse Hub branches.
+
+    Returned by ``GET /musehub/repos/{repo_id}/divergence``.  Contains five
+    per-dimension scores (melodic, harmonic, rhythmic, structural, dynamic)
+    and an overall score computed as the mean of those five scores.
+
+    The ``overall_score`` is in [0.0, 1.0]; multiply by 100 for a percentage.
+    A score of 0.0 means identical, 1.0 means completely diverged.
+    """
+
+    repo_id: str
+    branch_a: str
+    branch_b: str
+    common_ancestor: str | None
+    dimensions: list[DivergenceDimensionResponse]
+    overall_score: float
+# ── Explore / Discover models ──────────────────────────────────────────────────
+
+
+class ExploreRepoResult(CamelModel):
+    """A public repo card shown on the explore/discover page.
+
+    Extends RepoResponse with aggregated counts (star_count, commit_count)
+    that are computed at query time for efficient pagination and sorting.
+    These counts are read-only signals — they are never persisted directly on
+    the repo row to avoid write amplification on every push/star.
+    """
+
+    repo_id: str
+    name: str
+    owner_user_id: str
+    description: str | None = None
+    tags: list[str] = []
+    key_signature: str | None = None
+    tempo_bpm: int | None = None
+    star_count: int = 0
+    commit_count: int = 0
+    created_at: datetime
+
+
+# ── Profile models ────────────────────────────────────────────────────────────
+
+
+class ProfileUpdateRequest(CamelModel):
+    """Body for PUT /api/v1/musehub/users/{username}.
+
+    All fields are optional — send only the ones to change.
+    """
+
+    bio: str | None = Field(None, max_length=500, description="Short bio (Markdown supported)")
+    avatar_url: str | None = Field(None, max_length=2048, description="Avatar image URL")
+    pinned_repo_ids: list[str] | None = Field(
+        None, max_length=6, description="Up to 6 repo_ids to pin on the profile page"
+    )
+
+
+class ProfileRepoSummary(CamelModel):
+    """Compact repo summary shown on a user's profile page.
+
+    Includes the last-activity timestamp derived from the most recent commit
+    and a stub star_count (always 0 at MVP — no star mechanism yet).
+    """
+
+    repo_id: str
+    name: str
+    visibility: str
+    star_count: int = 0
+    last_activity_at: datetime | None = None
+    created_at: datetime
+
+
+class ExploreResponse(CamelModel):
+    """Paginated response from GET /api/v1/musehub/discover/repos.
+
+    ``total`` reflects the full filtered result set size — not just the current
+    page — so clients can render pagination controls without a second query.
+    """
+
+    repos: list[ExploreRepoResult]
+    total: int
+    page: int
+    page_size: int
+
+
+class StarResponse(CamelModel):
+    """Confirmation that a star was added or removed."""
+
+    starred: bool
+    star_count: int = 0
+
+
+class ContributionDay(CamelModel):
+    """A single day in the contribution heatmap.
+
+    ``date`` is ISO-8601 (YYYY-MM-DD). ``count`` is the number of commits
+    authored on that day across all of the user's repos.
+    """
+
+    date: str
+    count: int
+
+
+class ProfileResponse(CamelModel):
+    """Full wire representation of a Muse Hub user profile.
+
+    Returned by GET /api/v1/musehub/users/{username}.
+    ``repos`` contains only public repos when the caller is not the owner.
+    ``contribution_graph`` is the last 52 weeks of daily commit activity.
+    ``session_credits`` is the total number of commits across all repos
+    (a proxy for creative session activity).
+    """
+
+    user_id: str
+    username: str
+    bio: str | None = None
+    avatar_url: str | None = None
+    pinned_repo_ids: list[str]
+    repos: list[ProfileRepoSummary]
+    contribution_graph: list[ContributionDay]
+    session_credits: int
+    created_at: datetime
+    updated_at: datetime
 
 # ── Cross-repo search models ───────────────────────────────────────────────────
 

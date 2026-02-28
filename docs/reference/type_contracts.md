@@ -1094,6 +1094,48 @@ On failure: `success=False` plus `error` (and optionally `message`).
 
 ---
 
+#### `MuseHubDimensionDivergence`
+
+**Path:** `maestro/services/musehub_divergence.py`
+
+`dataclass(frozen=True)` — Divergence score for a single musical dimension in a Muse Hub repo comparison.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `dimension` | `str` | Dimension name: `"melodic"`, `"harmonic"`, `"rhythmic"`, `"structural"`, or `"dynamic"` |
+| `level` | `MuseHubDivergenceLevel` | Qualitative label: `NONE` / `LOW` / `MED` / `HIGH` |
+| `score` | `float` | Normalised Jaccard divergence in [0.0, 1.0] |
+| `description` | `str` | Human-readable divergence summary |
+| `branch_a_commits` | `int` | Number of commits touching this dimension on branch A |
+| `branch_b_commits` | `int` | Number of commits touching this dimension on branch B |
+
+#### `MuseHubDivergenceResult`
+
+**Path:** `maestro/services/musehub_divergence.py`
+
+`dataclass(frozen=True)` — Full musical divergence report between two Muse Hub branches.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `repo_id` | `str` | Muse Hub repository ID |
+| `branch_a` | `str` | Name of the first branch |
+| `branch_b` | `str` | Name of the second branch |
+| `common_ancestor` | `str \| None` | Merge-base commit ID; `None` if histories are disjoint |
+| `dimensions` | `tuple[MuseHubDimensionDivergence, ...]` | Five per-dimension results |
+| `overall_score` | `float` | Mean of all per-dimension scores in [0.0, 1.0] |
+
+**Where used:**
+
+| Module | Usage |
+|--------|-------|
+| `maestro/services/musehub_divergence.py` | `compute_hub_divergence` return type |
+| `maestro/api/routes/musehub/repos.py` | `get_divergence` endpoint — serialized to `DivergenceResponse` |
+| `tests/test_musehub_repos.py` | Divergence endpoint tests |
+
+**Wire format:** Serialized as `DivergenceResponse` (camelCase) via `maestro/models/musehub.py`.
+
+---
+
 ### `ExpressivenessResult`
 
 **Path:** `maestro/services/expressiveness.py`
@@ -6368,7 +6410,138 @@ if state is not None and state.conflict_paths:
 - `is_conflict_resolved(merge_state, rel_path)` — returns `True` if `rel_path` is not in `conflict_paths`.
 
 
+
 ---
+
+## MuseHub Semantic Search (`maestro/services/musehub_embeddings.py`, `maestro/services/musehub_qdrant.py`)
+
+### MusicalFeatures
+
+Structured musical features extracted from a commit message. Typed intermediate
+representation between raw commit metadata and the Qdrant embedding vector.
+
+```python
+@dataclass
+class MusicalFeatures:
+    key_index: int          # Chromatic index: 0=C, 1=Db, ..., 11=B; -1=unknown
+    mode_score: float       # 0.0=minor, 1.0=major, 0.5=neutral/modal
+    tempo_norm: float       # (bpm - 20) / 280, range [0, 1]
+    note_density: float     # Notes per beat, normalised [0, 1]
+    velocity_mean: float    # Mean MIDI velocity [0, 1]
+    valence: float          # Emotional valence [0, 1]
+    arousal: float          # Emotional arousal/energy [0, 1]
+    chord_complexity: float # 0=triads only, 1=extended voicings
+    chroma: list[float]     # 12-element chromatic pitch class histogram
+    text_fingerprint: list[float]  # 16-element SHA-256 message fingerprint
+```
+
+**Source:** `maestro/services/musehub_embeddings.py`
+
+**Used by:** `features_to_vector()` → `compute_embedding()` → `embed_push_commits()`
+
+---
+
+### SimilarCommitResult
+
+A single result entry from a MuseHub similarity search query. Produced by
+`MusehubQdrantClient.search_similar()`.
+
+```python
+@dataclass
+class SimilarCommitResult:
+    commit_id: str   # Muse Hub commit SHA
+    repo_id: str     # UUID of the owning repository
+    score: float     # Cosine similarity in [0.0, 1.0]; 1.0 = identical
+    branch: str      # Branch the commit lives on
+    author: str      # Commit author identifier
+```
+
+**Source:** `maestro/services/musehub_qdrant.py`
+
+**Used by:** `GET /api/v1/musehub/search/similar` route → serialised as `SimilarCommitResponse`
+
+---
+
+### SimilarSearchResponse / SimilarCommitResponse (Pydantic)
+
+Wire-format models for the semantic search endpoint.
+
+```python
+class SimilarCommitResponse(CamelModel):
+    commit_id: str        # camelCase: commitId
+    repo_id: str          # camelCase: repoId
+    score: float          # [0.0, 1.0]
+    branch: str
+    author: str
+
+class SimilarSearchResponse(CamelModel):
+    query_commit: str                      # camelCase: queryCommit
+    results: list[SimilarCommitResponse]   # Sorted descending by score
+```
+
+**Source:** `maestro/models/musehub.py`
+
+**Agent contract:** Results are always sorted highest-to-lowest score. Only
+public repos appear in results. An empty `results` list means no similar
+public compositions were found — not an error condition.
+
+
+---
+
+## ProfileResponse
+
+**Module:** `maestro.models.musehub`
+**Returned by:** `GET /api/v1/musehub/users/{username}`, `POST /api/v1/musehub/users`, `PUT /api/v1/musehub/users/{username}`
+
+Full wire representation of a Muse Hub user profile.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `user_id` | `str` | JWT sub — matches `musehub_repos.owner_user_id` |
+| `username` | `str` | URL-friendly handle |
+| `bio` | `str \| None` | Short bio (Markdown) |
+| `avatar_url` | `str \| None` | Avatar image URL |
+| `pinned_repo_ids` | `list[str]` | Up to 6 pinned repo IDs |
+| `repos` | `list[ProfileRepoSummary]` | Public repos, newest first |
+| `contribution_graph` | `list[ContributionDay]` | 52-week daily commit history |
+| `session_credits` | `int` | Total commits across all repos |
+| `created_at` | `datetime` | Profile creation timestamp |
+| `updated_at` | `datetime` | Last update timestamp |
+
+---
+
+## ProfileRepoSummary
+
+**Module:** `maestro.models.musehub`
+**Used in:** `ProfileResponse.repos`
+
+Compact repo summary shown on a user profile page.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `repo_id` | `str` | Repo UUID |
+| `name` | `str` | Repo name |
+| `visibility` | `str` | `"public"` or `"private"` |
+| `star_count` | `int` | Star count (always 0 at MVP — no star mechanism yet) |
+| `last_activity_at` | `datetime \| None` | Timestamp of most recent commit, or None |
+| `created_at` | `datetime` | Repo creation timestamp |
+
+---
+
+## ContributionDay
+
+**Module:** `maestro.models.musehub`
+**Used in:** `ProfileResponse.contribution_graph`
+
+One day in the GitHub-style contribution heatmap.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `date` | `str` | ISO-8601 date `"YYYY-MM-DD"` |
+| `count` | `int` | Number of commits on that day across all user repos |
+
+**Agent use case:** Render as a heatmap. Bucket count 0–4 for colour intensity:
+0 = none, 1 = 1–2, 2 = 3–5, 3 = 6–9, 4 = 10+.
 
 ## Muse Hub — Cross-Repo Search Types (`maestro/models/musehub.py`)
 
@@ -6392,7 +6565,119 @@ cross-repo search query.  Returned inside `GlobalSearchRepoGroup.matches`.
 
 ### `GlobalSearchRepoGroup`
 
-Pydantic model grouping all matching commits for a single public repo.
+Pydantic model grouping all matching commits for a single public repo.---
+
+## `ReleaseCreate`
+
+**Module:** `maestro.models.musehub`
+**Used by:** `POST /api/v1/musehub/repos/{repo_id}/releases` request body.
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `tag` | `str` | Yes | Version tag unique per repo (e.g. `v1.0`) |
+| `title` | `str` | Yes | Human-readable release title |
+| `body` | `str` | No | Markdown release notes |
+| `commit_id` | `str \| None` | No | Commit SHA to pin this release to |
+
+---
+
+## `ReleaseDownloadUrls`
+
+**Module:** `maestro.models.musehub`
+**Used by:** `ReleaseResponse.download_urls`.
+
+Structured map of download package URLs for a release. Each field is `None`
+when the corresponding package is unavailable.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `midi_bundle` | `str \| None` | Full MIDI export (all tracks as a single .mid) |
+| `stems` | `str \| None` | Per-track MIDI stems (zip of .mid files) |
+| `mp3` | `str \| None` | Full mix audio render |
+| `musicxml` | `str \| None` | MusicXML notation export |
+| `metadata` | `str \| None` | JSON manifest with tempo, key, arrangement info |
+
+---
+
+## `ReleaseResponse`
+
+**Module:** `maestro.models.musehub`
+**Used by:** `POST`, `GET /releases`, `GET /releases/{tag}` responses.
+**Result type name:** `ReleaseResponse`
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `release_id` | `str` | UUID of the release row |
+| `tag` | `str` | Version tag (e.g. `v1.0`) |
+| `title` | `str` | Release title |
+| `body` | `str` | Markdown release notes |
+| `commit_id` | `str \| None` | Pinned commit SHA, or `None` |
+| `download_urls` | `ReleaseDownloadUrls` | Structured download package URL map |
+| `created_at` | `datetime` | UTC timestamp of release creation |
+
+---
+
+## `ReleaseListResponse`
+
+**Module:** `maestro.models.musehub`
+**Used by:** `GET /api/v1/musehub/repos/{repo_id}/releases`.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `releases` | `list[ReleaseResponse]` | All releases, newest first |
+## ExploreRepoResult
+
+**Module:** `maestro.models.musehub`
+**Used by:** `GET /api/v1/musehub/discover/repos` → `ExploreResponse.repos`
+
+A public repo card returned by the explore/discover page. Aggregated counts
+(`star_count`, `commit_count`) are computed at query time and are not stored
+on the repo row — they reflect the live DB state at the moment of the request.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `repo_id` | `str` | UUID of the repo |
+| `name` | `str` | Human-readable repo name |
+| `owner_user_id` | `str` | UUID of the repo owner |
+| `description` | `str` | Short description (empty string if not set) |
+| `tags` | `list[str]` | Free-form tags: genre, key, instrument (e.g. `["jazz", "F# minor", "bass"]`) |
+| `key_signature` | `str \| None` | Musical key (e.g. `"F# minor"`) |
+| `tempo_bpm` | `int \| None` | Tempo in BPM |
+| `star_count` | `int` | Total stars from all users |
+| `commit_count` | `int` | Total commits in the repo |
+| `created_at` | `datetime` | UTC timestamp of repo creation |
+
+---
+
+## ExploreResponse
+
+**Module:** `maestro.models.musehub`
+**Used by:** `GET /api/v1/musehub/discover/repos`
+
+Paginated discover response. `total` is the full filtered count (not just the
+current page) so clients can render pagination controls without a second query.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `repos` | `list[ExploreRepoResult]` | Repo cards for the current page |
+| `total` | `int` | Total repos matching the filters |
+| `page` | `int` | Current page number (1-based) |
+| `page_size` | `int` | Number of results per page |
+
+---
+
+## StarResponse
+
+**Module:** `maestro.models.musehub`
+**Used by:** `POST /api/v1/musehub/repos/{id}/star`, `DELETE /api/v1/musehub/repos/{id}/star`
+
+Confirmation of a star or unstar operation with the updated count.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `starred` | `bool` | `True` after star, `False` after unstar |
+| `star_count` | `int` | Current total star count for the repo |
+
 ---
 
 ## Agent Context Models (`maestro/models/musehub_context.py`)
