@@ -850,6 +850,67 @@ Named TypedDicts for every entity in the MCP protocol layer: tool schema shapes,
 
 ---
 
+## Muse Arrange Types (`maestro/services/muse_arrange.py`)
+
+> Added: issue #115 — `muse arrange` command
+
+### `ArrangementCell`
+
+```
+@dataclass(frozen=True)
+class ArrangementCell:
+    section: str        # Musical section name (normalised lowercase)
+    instrument: str     # Instrument/track name (lowercase)
+    active: bool        # True if >= 1 file exists for this pair
+    file_count: int     # Number of files for this (section, instrument) pair
+    total_bytes: int    # Sum of object sizes (proxy for note density)
+```
+
+Per-(section, instrument) cell in the arrangement matrix.  `density_score` is a property returning `float(total_bytes)`.
+
+### `ArrangementMatrix`
+
+```
+@dataclass
+class ArrangementMatrix:
+    commit_id: str                              # 64-char commit SHA
+    sections: list[str]                        # Ordered section names
+    instruments: list[str]                     # Sorted instrument names
+    cells: dict[tuple[str, str], ArrangementCell]  # (section, instrument) → cell
+```
+
+Full arrangement matrix for a single commit.  Built by `build_arrangement_matrix()`.
+
+### `ArrangementDiffCell`
+
+```
+@dataclass(frozen=True)
+class ArrangementDiffCell:
+    section: str
+    instrument: str
+    status: Literal["added", "removed", "unchanged"]
+    cell_a: ArrangementCell    # Baseline cell
+    cell_b: ArrangementCell    # Target cell
+```
+
+Per-cell change status between two commits.
+
+### `ArrangementDiff`
+
+```
+@dataclass
+class ArrangementDiff:
+    commit_id_a: str
+    commit_id_b: str
+    sections: list[str]
+    instruments: list[str]
+    cells: dict[tuple[str, str], ArrangementDiffCell]
+```
+
+Full diff of two arrangement matrices.  Built by `build_arrangement_diff()`.
+
+---
+
 ## Services
 
 ### Assets
@@ -1752,6 +1813,66 @@ Unified schema snapshot. Cacheable by `protocolHash`. The DAW frontend uses this
 | `tools` | `list[MCPToolDef]` | All registered tool definitions |
 | `toolCount` | `int` | `len(tools)` |
 | `eventCount` | `int` | `len(events)` |
+
+---
+
+### Muse Find (`maestro/services/muse_find.py`)
+
+#### `MuseFindQuery`
+
+Frozen dataclass — encapsulates all search criteria for a `muse find` invocation.
+Every field is optional; non-None fields are ANDed together.
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `harmony` | `str | None` | `None` | Harmonic filter query string |
+| `rhythm` | `str | None` | `None` | Rhythmic filter query string |
+| `melody` | `str | None` | `None` | Melodic filter query string |
+| `structure` | `str | None` | `None` | Structural filter query string |
+| `dynamic` | `str | None` | `None` | Dynamic filter query string |
+| `emotion` | `str | None` | `None` | Emotion tag filter |
+| `section` | `str | None` | `None` | Named section filter |
+| `track` | `str | None` | `None` | Track presence filter |
+| `since` | `datetime | None` | `None` | Lower bound on `committed_at` (UTC) |
+| `until` | `datetime | None` | `None` | Upper bound on `committed_at` (UTC) |
+| `limit` | `int` | `20` | Max results returned |
+
+#### `MuseFindCommitResult`
+
+Frozen dataclass — one matching commit, derived from `MuseCliCommit`.
+Callers never receive a raw ORM row.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `commit_id` | `str` | SHA-256 hex digest (64 chars) |
+| `branch` | `str` | Branch name at commit time |
+| `message` | `str` | Full commit message |
+| `author` | `str` | Author string (may be empty) |
+| `committed_at` | `datetime` | Timezone-aware UTC timestamp |
+| `parent_commit_id` | `str | None` | Parent commit ID, or None for root |
+| `snapshot_id` | `str` | SHA-256 ID of associated snapshot |
+
+#### `MuseFindResults`
+
+Frozen dataclass — container returned by `search_commits()`.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `matches` | `tuple[MuseFindCommitResult, ...]` | Matching commits, newest-first |
+| `total_scanned` | `int` | DB rows examined before limit |
+| `query` | `MuseFindQuery` | The originating query (for diagnostics) |
+
+#### `search_commits`
+
+```python
+async def search_commits(
+    session: AsyncSession,
+    repo_id: str,
+    query: MuseFindQuery,
+) -> MuseFindResults: ...
+```
+
+Read-only search across `muse_cli_commits`.  Returns `MuseFindResults`.
 
 ---
 
