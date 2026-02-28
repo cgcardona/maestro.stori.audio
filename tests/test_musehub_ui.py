@@ -1036,6 +1036,8 @@ async def _make_session(
     is_active: bool = False,
     intent: str = "jazz composition",
     participants: list[str] | None = None,
+    commits: list[str] | None = None,
+    notes: str = "",
 ) -> str:
     """Seed a MusehubSession and return its session_id."""
     start = datetime(2025, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
@@ -1048,6 +1050,8 @@ async def _make_session(
         started_at=started_at,
         ended_at=ended_at,
         participants=participants or ["producer-a"],
+        commits=commits or [],
+        notes=notes,
         intent=intent,
         location="Studio A",
         is_active=is_active,
@@ -1228,6 +1232,124 @@ async def test_active_session_has_null_duration(
     sess = response.json()["sessions"][0]
     assert sess["isActive"] is True
     assert sess["durationSeconds"] is None
+
+
+@pytest.mark.anyio
+async def test_session_response_includes_commits_and_notes(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    auth_headers: dict[str, str],
+) -> None:
+    """SessionResponse includes commits list and notes field in the JSON payload."""
+    repo_id = await _make_repo(db_session)
+    commit_ids = ["abc123", "def456", "ghi789"]
+    closing_notes = "Great session, nailed the groove."
+    await _make_session(
+        db_session,
+        repo_id,
+        intent="funk groove",
+        commits=commit_ids,
+        notes=closing_notes,
+    )
+
+    response = await client.get(
+        f"/api/v1/musehub/repos/{repo_id}/sessions",
+        headers=auth_headers,
+    )
+    assert response.status_code == 200
+    sess = response.json()["sessions"][0]
+    assert sess["commits"] == commit_ids
+    assert sess["notes"] == closing_notes
+
+
+@pytest.mark.anyio
+async def test_session_response_empty_commits_and_notes_defaults(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    auth_headers: dict[str, str],
+) -> None:
+    """SessionResponse defaults commits to [] and notes to '' when absent."""
+    repo_id = await _make_repo(db_session)
+    await _make_session(db_session, repo_id, intent="defaults check")
+
+    response = await client.get(
+        f"/api/v1/musehub/repos/{repo_id}/sessions",
+        headers=auth_headers,
+    )
+    assert response.status_code == 200
+    sess = response.json()["sessions"][0]
+    assert sess["commits"] == []
+    assert sess["notes"] == ""
+
+
+@pytest.mark.anyio
+async def test_session_list_page_contains_avatar_markup(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Sessions list page HTML contains participant avatar JS and CSS class references."""
+    repo_id = await _make_repo(db_session)
+    response = await client.get("/musehub/ui/testuser/test-beats/sessions")
+    assert response.status_code == 200
+    body = response.text
+    # The JS helper that builds avatar stacks must be present in the page
+    assert "participant-stack" in body
+    assert "participant-avatar" in body
+    assert "strHsl" in body
+
+
+@pytest.mark.anyio
+async def test_session_list_page_contains_commit_pill_markup(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Sessions list page HTML contains commit count pill JS reference."""
+    repo_id = await _make_repo(db_session)
+    response = await client.get("/musehub/ui/testuser/test-beats/sessions")
+    assert response.status_code == 200
+    body = response.text
+    assert "session-commit-pill" in body
+
+
+@pytest.mark.anyio
+async def test_session_list_page_contains_live_indicator_markup(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Sessions list page HTML contains pulsing LIVE indicator JS reference."""
+    repo_id = await _make_repo(db_session)
+    response = await client.get("/musehub/ui/testuser/test-beats/sessions")
+    assert response.status_code == 200
+    body = response.text
+    assert "session-live-pulse" in body
+
+
+@pytest.mark.anyio
+async def test_session_list_page_contains_notes_preview_markup(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Sessions list page HTML contains notes preview JS reference."""
+    repo_id = await _make_repo(db_session)
+    response = await client.get("/musehub/ui/testuser/test-beats/sessions")
+    assert response.status_code == 200
+    body = response.text
+    assert "session-notes-preview" in body
+    assert "notesPreview" in body
+
+
+@pytest.mark.anyio
+async def test_session_list_page_contains_location_tag_markup(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Sessions list page HTML contains location tag JS reference."""
+    repo_id = await _make_repo(db_session)
+    response = await client.get("/musehub/ui/testuser/test-beats/sessions")
+    assert response.status_code == 200
+    body = response.text
+    assert "session-location-tag" in body
+
 
 async def test_contour_page_renders(
     client: AsyncClient,
