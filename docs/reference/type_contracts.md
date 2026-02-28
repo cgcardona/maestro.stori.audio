@@ -2061,6 +2061,25 @@ Swing comparison between HEAD and a reference commit.
 **Producer:** `_swing_compare_async()`
 **Consumer:** `_format_compare()`
 
+### `GrepMatch`
+
+**Module:** `maestro/muse_cli/commands/grep_cmd.py`
+
+A single commit that matched the `muse grep` search pattern.  Implemented as a
+plain `dataclass` (not `TypedDict`) so that `dataclasses.asdict()` can be used
+directly for JSON serialisation without any additional mapping step.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `commit_id` | `str` | Full 64-char commit SHA |
+| `branch` | `str` | Branch name at the time of the commit |
+| `message` | `str` | Full commit message |
+| `committed_at` | `str` | ISO-8601 UTC timestamp string |
+| `match_source` | `str` | Where the pattern was found: `"message"`, `"branch"`, or `"midi_content"` (future) |
+
+**Producer:** `_match_commit()`, `_grep_async()`
+**Consumer:** `_render_matches()`, callers using `--json` output
+
 ---
 
 ## `Any` Status
