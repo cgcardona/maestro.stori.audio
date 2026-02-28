@@ -47,7 +47,9 @@ def _populate_workdir(root: pathlib.Path, files: dict[str, bytes] | None = None)
     if files is None:
         files = {"beat.mid": b"MIDI-DATA"}
     for name, content in files.items():
-        (workdir / name).write_bytes(content)
+        path = workdir / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(content)
 
 
 # ---------------------------------------------------------------------------
@@ -264,3 +266,418 @@ def test_status_outside_repo_exits_2(tmp_path: pathlib.Path) -> None:
 
     assert result.exit_code == int(ExitCode.REPO_NOT_FOUND)
     assert "not a muse repository" in result.output.lower()
+
+
+# ---------------------------------------------------------------------------
+# --short flag
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.anyio
+async def test_status_short_shows_modified_code(
+    tmp_path: pathlib.Path,
+    muse_cli_db_session: AsyncSession,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """--short emits 'M path' for a modified file (no verbose labels)."""
+    _init_muse_repo(tmp_path)
+    _populate_workdir(tmp_path, {"beat.mid": b"V1"})
+
+    await _commit_async(message="initial", root=tmp_path, session=muse_cli_db_session)
+    await muse_cli_db_session.flush()
+
+    (tmp_path / "muse-work" / "beat.mid").write_bytes(b"V2")
+
+    await _status_async(root=tmp_path, session=muse_cli_db_session, short=True)
+
+    out = capsys.readouterr().out
+    assert "M beat.mid" in out
+    assert "modified:" not in out  # verbose label must not appear
+
+
+@pytest.mark.anyio
+async def test_status_short_shows_added_code(
+    tmp_path: pathlib.Path,
+    muse_cli_db_session: AsyncSession,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """--short emits 'A path' for an added file."""
+    _init_muse_repo(tmp_path)
+    _populate_workdir(tmp_path, {"beat.mid": b"MIDI"})
+
+    await _commit_async(message="initial", root=tmp_path, session=muse_cli_db_session)
+    await muse_cli_db_session.flush()
+
+    (tmp_path / "muse-work" / "lead.mp3").write_bytes(b"MP3")
+
+    await _status_async(root=tmp_path, session=muse_cli_db_session, short=True)
+
+    out = capsys.readouterr().out
+    assert "A lead.mp3" in out
+
+
+@pytest.mark.anyio
+async def test_status_short_shows_deleted_code(
+    tmp_path: pathlib.Path,
+    muse_cli_db_session: AsyncSession,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """--short emits 'D path' for a deleted file."""
+    _init_muse_repo(tmp_path)
+    _populate_workdir(tmp_path, {"beat.mid": b"MIDI", "scratch.mid": b"TMP"})
+
+    await _commit_async(message="initial", root=tmp_path, session=muse_cli_db_session)
+    await muse_cli_db_session.flush()
+
+    (tmp_path / "muse-work" / "scratch.mid").unlink()
+
+    await _status_async(root=tmp_path, session=muse_cli_db_session, short=True)
+
+    out = capsys.readouterr().out
+    assert "D scratch.mid" in out
+
+
+@pytest.mark.anyio
+async def test_status_short_untracked_shows_question_mark(
+    tmp_path: pathlib.Path,
+    muse_cli_db_session: AsyncSession,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """--short emits '? path' for untracked files (no commits yet)."""
+    _init_muse_repo(tmp_path)
+    _populate_workdir(tmp_path, {"beat.mid": b"MIDI"})
+
+    await _status_async(root=tmp_path, session=muse_cli_db_session, short=True)
+
+    out = capsys.readouterr().out
+    assert "? beat.mid" in out
+
+
+# ---------------------------------------------------------------------------
+# --branch flag
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.anyio
+async def test_status_branch_only_shows_branch_line(
+    tmp_path: pathlib.Path,
+    muse_cli_db_session: AsyncSession,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """--branch emits only the 'On branch <name>' line with no file listing."""
+    _init_muse_repo(tmp_path)
+    _populate_workdir(tmp_path, {"beat.mid": b"V1"})
+
+    await _commit_async(message="initial", root=tmp_path, session=muse_cli_db_session)
+    await muse_cli_db_session.flush()
+
+    (tmp_path / "muse-work" / "beat.mid").write_bytes(b"V2")
+
+    await _status_async(root=tmp_path, session=muse_cli_db_session, branch_only=True)
+
+    out = capsys.readouterr().out
+    assert "On branch main" in out
+    assert "beat.mid" not in out  # no file listing
+    assert "modified" not in out
+
+
+@pytest.mark.anyio
+async def test_status_branch_only_no_commits(
+    tmp_path: pathlib.Path,
+    muse_cli_db_session: AsyncSession,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """--branch on a repo with no commits shows the branch name."""
+    _init_muse_repo(tmp_path)
+
+    await _status_async(root=tmp_path, session=muse_cli_db_session, branch_only=True)
+
+    out = capsys.readouterr().out
+    assert "On branch main" in out
+    assert "no commits" not in out  # branch_only suppresses extra info
+
+
+# ---------------------------------------------------------------------------
+# --porcelain flag
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.anyio
+async def test_status_porcelain_header_emitted(
+    tmp_path: pathlib.Path,
+    muse_cli_db_session: AsyncSession,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """--porcelain emits '## <branch>' as the first line of status output."""
+    _init_muse_repo(tmp_path)
+    _populate_workdir(tmp_path, {"beat.mid": b"V1"})
+
+    await _commit_async(message="initial", root=tmp_path, session=muse_cli_db_session)
+    await muse_cli_db_session.flush()
+    capsys.readouterr()  # discard commit's success line
+
+    await _status_async(root=tmp_path, session=muse_cli_db_session, porcelain=True)
+
+    out = capsys.readouterr().out
+    assert out.startswith("## main")
+
+
+@pytest.mark.anyio
+async def test_status_porcelain_clean_tree(
+    tmp_path: pathlib.Path,
+    muse_cli_db_session: AsyncSession,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """--porcelain with a clean working tree emits only the '## branch' header."""
+    _init_muse_repo(tmp_path)
+    _populate_workdir(tmp_path, {"beat.mid": b"MIDI"})
+
+    await _commit_async(message="initial", root=tmp_path, session=muse_cli_db_session)
+    await muse_cli_db_session.flush()
+    capsys.readouterr()  # discard commit's success line
+
+    await _status_async(root=tmp_path, session=muse_cli_db_session, porcelain=True)
+
+    out = capsys.readouterr().out.strip()
+    assert out == "## main"
+
+
+@pytest.mark.anyio
+async def test_status_porcelain_modified_file(
+    tmp_path: pathlib.Path,
+    muse_cli_db_session: AsyncSession,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """--porcelain emits ' M path' (two-char code) for a modified file."""
+    _init_muse_repo(tmp_path)
+    _populate_workdir(tmp_path, {"beat.mid": b"V1"})
+
+    await _commit_async(message="initial", root=tmp_path, session=muse_cli_db_session)
+    await muse_cli_db_session.flush()
+
+    (tmp_path / "muse-work" / "beat.mid").write_bytes(b"V2")
+
+    await _status_async(root=tmp_path, session=muse_cli_db_session, porcelain=True)
+
+    out = capsys.readouterr().out
+    assert " M beat.mid" in out
+
+
+@pytest.mark.anyio
+async def test_status_porcelain_added_file(
+    tmp_path: pathlib.Path,
+    muse_cli_db_session: AsyncSession,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """--porcelain emits ' A path' for an added file."""
+    _init_muse_repo(tmp_path)
+    _populate_workdir(tmp_path, {"beat.mid": b"MIDI"})
+
+    await _commit_async(message="initial", root=tmp_path, session=muse_cli_db_session)
+    await muse_cli_db_session.flush()
+
+    (tmp_path / "muse-work" / "lead.mp3").write_bytes(b"MP3")
+
+    await _status_async(root=tmp_path, session=muse_cli_db_session, porcelain=True)
+
+    out = capsys.readouterr().out
+    assert " A lead.mp3" in out
+
+
+@pytest.mark.anyio
+async def test_status_porcelain_deleted_file(
+    tmp_path: pathlib.Path,
+    muse_cli_db_session: AsyncSession,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """--porcelain emits ' D path' for a deleted file."""
+    _init_muse_repo(tmp_path)
+    _populate_workdir(tmp_path, {"beat.mid": b"MIDI", "scratch.mid": b"TMP"})
+
+    await _commit_async(message="initial", root=tmp_path, session=muse_cli_db_session)
+    await muse_cli_db_session.flush()
+
+    (tmp_path / "muse-work" / "scratch.mid").unlink()
+
+    await _status_async(root=tmp_path, session=muse_cli_db_session, porcelain=True)
+
+    out = capsys.readouterr().out
+    assert " D scratch.mid" in out
+
+
+@pytest.mark.anyio
+async def test_status_porcelain_untracked(
+    tmp_path: pathlib.Path,
+    muse_cli_db_session: AsyncSession,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """--porcelain emits '?? path' for untracked files."""
+    _init_muse_repo(tmp_path)
+    _populate_workdir(tmp_path, {"beat.mid": b"MIDI"})
+
+    await _status_async(root=tmp_path, session=muse_cli_db_session, porcelain=True)
+
+    out = capsys.readouterr().out
+    assert "?? beat.mid" in out
+
+
+# ---------------------------------------------------------------------------
+# --sections flag
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.anyio
+async def test_status_sections_groups_by_first_dir(
+    tmp_path: pathlib.Path,
+    muse_cli_db_session: AsyncSession,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """--sections groups changed files under '## <dir>' headers by first path component."""
+    _init_muse_repo(tmp_path)
+    _populate_workdir(
+        tmp_path,
+        {
+            "verse/bass.mid": b"V1",
+            "chorus/bass.mid": b"V1",
+        },
+    )
+
+    await _commit_async(message="initial", root=tmp_path, session=muse_cli_db_session)
+    await muse_cli_db_session.flush()
+
+    # Modify one file per section.
+    (tmp_path / "muse-work" / "verse" / "bass.mid").write_bytes(b"V2")
+    (tmp_path / "muse-work" / "chorus" / "bass.mid").write_bytes(b"V2")
+
+    await _status_async(root=tmp_path, session=muse_cli_db_session, sections=True)
+
+    out = capsys.readouterr().out
+    assert "## chorus" in out
+    assert "## verse" in out
+    assert "chorus/bass.mid" in out
+    assert "verse/bass.mid" in out
+
+
+@pytest.mark.anyio
+async def test_status_sections_root_files_ungrouped(
+    tmp_path: pathlib.Path,
+    muse_cli_db_session: AsyncSession,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Files directly in muse-work/ (no sub-dir) appear under '## (root)' when --sections is active."""
+    _init_muse_repo(tmp_path)
+    _populate_workdir(tmp_path, {"beat.mid": b"V1"})
+
+    await _commit_async(message="initial", root=tmp_path, session=muse_cli_db_session)
+    await muse_cli_db_session.flush()
+
+    (tmp_path / "muse-work" / "beat.mid").write_bytes(b"V2")
+
+    await _status_async(root=tmp_path, session=muse_cli_db_session, sections=True)
+
+    out = capsys.readouterr().out
+    assert "## (root)" in out
+    assert "beat.mid" in out
+
+
+# ---------------------------------------------------------------------------
+# --tracks flag
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.anyio
+async def test_status_tracks_groups_by_first_dir(
+    tmp_path: pathlib.Path,
+    muse_cli_db_session: AsyncSession,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """--tracks groups changed files under '## <dir>' headers by first path component."""
+    _init_muse_repo(tmp_path)
+    _populate_workdir(
+        tmp_path,
+        {
+            "drums/verse.mid": b"V1",
+            "bass/verse.mid": b"V1",
+        },
+    )
+
+    await _commit_async(message="initial", root=tmp_path, session=muse_cli_db_session)
+    await muse_cli_db_session.flush()
+
+    (tmp_path / "muse-work" / "drums" / "verse.mid").write_bytes(b"V2")
+    (tmp_path / "muse-work" / "bass" / "verse.mid").write_bytes(b"V2")
+
+    await _status_async(root=tmp_path, session=muse_cli_db_session, tracks=True)
+
+    out = capsys.readouterr().out
+    assert "## bass" in out
+    assert "## drums" in out
+    assert "bass/verse.mid" in out
+    assert "drums/verse.mid" in out
+
+
+# ---------------------------------------------------------------------------
+# Flag combinations
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.anyio
+async def test_status_short_and_sections_combined(
+    tmp_path: pathlib.Path,
+    muse_cli_db_session: AsyncSession,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """--short --sections emits short-format codes within section group headers."""
+    _init_muse_repo(tmp_path)
+    _populate_workdir(
+        tmp_path,
+        {
+            "verse/bass.mid": b"V1",
+            "chorus/drums.mid": b"V1",
+        },
+    )
+
+    await _commit_async(message="initial", root=tmp_path, session=muse_cli_db_session)
+    await muse_cli_db_session.flush()
+
+    (tmp_path / "muse-work" / "verse" / "bass.mid").write_bytes(b"V2")
+    (tmp_path / "muse-work" / "chorus" / "drums.mid").write_bytes(b"V2")
+
+    await _status_async(root=tmp_path, session=muse_cli_db_session, short=True, sections=True)
+
+    out = capsys.readouterr().out
+    assert "## verse" in out
+    assert "## chorus" in out
+    assert "M verse/bass.mid" in out
+    assert "M chorus/drums.mid" in out
+    # verbose labels must not appear
+    assert "modified:" not in out
+
+
+@pytest.mark.anyio
+async def test_status_porcelain_and_tracks_combined(
+    tmp_path: pathlib.Path,
+    muse_cli_db_session: AsyncSession,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """--porcelain --tracks emits porcelain codes within track group headers."""
+    _init_muse_repo(tmp_path)
+    _populate_workdir(
+        tmp_path,
+        {
+            "bass/line.mid": b"V1",
+            "keys/pad.mid": b"V1",
+        },
+    )
+
+    await _commit_async(message="initial", root=tmp_path, session=muse_cli_db_session)
+    await muse_cli_db_session.flush()
+
+    (tmp_path / "muse-work" / "bass" / "line.mid").write_bytes(b"V2")
+
+    await _status_async(root=tmp_path, session=muse_cli_db_session, porcelain=True, tracks=True)
+
+    out = capsys.readouterr().out
+    assert "## main" in out  # porcelain header
+    assert "## bass" in out
+    assert " M bass/line.mid" in out  # two-char porcelain code

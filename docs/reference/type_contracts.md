@@ -30,6 +30,8 @@ This document is the single source of truth for every named entity (TypedDict, d
    - [GrooveStatus](#groovestatuss)
    - [CommitGrooveMetrics](#commitgroovemetrics)
    - [GrooveCheckResult](#groovecheckresult)
+   - [ReleaseArtifact](#releaseartifact)
+   - [ReleaseResult](#releaseresult)
    - [RenderPreviewResult](#renderpreviewresult)
 5. [Variation Layer (`app/variation/`)](#variation-layer)
    - [Event Envelope payloads](#event-envelope-payloads)
@@ -1097,6 +1099,47 @@ On failure: `success=False` plus `error` (and optionally `message`).
 
 ---
 
+### `ReleaseArtifact`
+
+**Path:** `maestro/services/muse_release.py`
+
+`dataclass(frozen=True)` — A single file produced during a `muse release` operation.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `path` | `pathlib.Path` | Absolute path of the written file |
+| `sha256` | `str` | SHA-256 hex digest of the file contents (64 chars) |
+| `size_bytes` | `int` | File size in bytes |
+| `role` | `str` | Human-readable role: `"audio"`, `"midi-bundle"`, `"stem"`, `"manifest"` |
+
+---
+
+### `ReleaseResult`
+
+**Path:** `maestro/services/muse_release.py`
+
+`dataclass` — Result of a complete `muse release` operation.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `tag` | `str` | The release tag string (e.g. `"v1.0"`) |
+| `commit_id` | `str` | Full 64-char SHA-256 commit ID of the released snapshot |
+| `output_dir` | `pathlib.Path` | Root directory where all artifacts were written |
+| `manifest_path` | `pathlib.Path` | Path to the `release-manifest.json` file |
+| `artifacts` | `list[ReleaseArtifact]` | All files produced (audio, MIDI bundle, stems, manifest) |
+| `audio_format` | `ReleaseAudioFormat` | Audio format used for rendered files |
+| `stubbed` | `bool` | `True` when Storpheus `/render` is not yet deployed and MIDI was copied as placeholder |
+
+**Companion types:**
+
+- `ReleaseAudioFormat(str, Enum)` — `WAV = "wav"`, `MP3 = "mp3"`, `FLAC = "flac"`.
+- `StorpheusReleaseUnavailableError` — raised when Storpheus health check fails and audio rendering is requested.
+
+**Producer:** `build_release()` in `maestro/services/muse_release.py`
+**Consumer:** `muse release` CLI command (`maestro/muse_cli/commands/release.py`)
+
+---
+
 ### `RenderPreviewResult`
 
 **Path:** `maestro/services/muse_render_preview.py`
@@ -1957,6 +2000,41 @@ These type aliases replace the repeated pattern `dict[str, list[XxxDict]]` that 
 ## Muse CLI Types (`maestro/muse_cli/`)
 
 > Added: 2026-02-27 | Types used by the `muse` CLI commands — purely local, never serialised over HTTP.
+
+### `BlameEntry` (`maestro/muse_cli/commands/blame.py`)
+
+`TypedDict` — blame annotation for a single file path returned by `muse blame`.
+Identifies the most recent commit that touched the file, enabling AI agents to
+attribute musical decisions to specific commits.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `path` | `str` | Full relative path of the file (e.g. `muse-work/bass/bassline.mid`) |
+| `commit_id` | `str` | Full 64-char SHA-256 commit ID of the last-touching commit |
+| `commit_short` | `str` | 8-char abbreviated commit ID for human-readable output |
+| `author` | `str` | Author string from the commit; `"(unknown)"` if empty |
+| `committed_at` | `str` | Timestamp formatted as `YYYY-MM-DD HH:MM:SS` |
+| `message` | `str` | Commit message of the last-touching commit |
+| `change_type` | `str` | How the path changed: `"added"` \| `"modified"` \| `"unchanged"` |
+
+**Used by:** `_blame_async`, `_render_blame`.
+
+### `BlameResult` (`maestro/muse_cli/commands/blame.py`)
+
+`TypedDict` — full output of `muse blame`, wrapping a list of `BlameEntry` values
+with the active filter state.  Entries are sorted alphabetically by path.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `path_filter` | `str \| None` | Positional path filter passed to the command, or `None` |
+| `track_filter` | `str \| None` | `--track` fnmatch pattern, or `None` |
+| `section_filter` | `str \| None` | `--section` directory name, or `None` |
+| `line_range` | `str \| None` | `--line-range N,M` annotation (informational for binary files), or `None` |
+| `entries` | `list[BlameEntry]` | Blame annotations, sorted by path ascending |
+
+**Used by:** `_blame_async`, `_render_blame`, and JSON serialisation path in `blame()`.
+
+---
 
 ### `HarmonyResult` (`maestro/muse_cli/commands/harmony.py`)
 
@@ -3103,6 +3181,49 @@ dict whose shape varies by `object_type`:
 
 **Producer:** `_lookup_object()` (internal) → `_cat_object_async()`
 **Consumer:** `_render_metadata()`, JSON output path in `_cat_object_async()`
+
+---
+
+### `RebaseCommitPair`
+
+**Module:** `maestro/services/muse_rebase.py`
+
+Maps an original commit to its replayed replacement produced during a `muse rebase` operation. Agents can use these pairs to update any cached commit references after a rebase (e.g., updating a bookmark or annotation that pointed at the old SHA).
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `original_commit_id` | `str` | SHA of the commit that existed before the rebase. |
+| `new_commit_id` | `str` | SHA of the freshly-replayed commit with the new parent. |
+
+**Producer:** `_replay_one_commit()`, `_rebase_async()`
+**Consumer:** `RebaseResult.replayed`, tests in `tests/test_muse_rebase.py`
+
+**Frozen dataclass** — all fields are immutable after construction.
+
+---
+
+### `RebaseResult`
+
+**Module:** `maestro/services/muse_rebase.py`
+
+Outcome of a `muse rebase` operation. Captures the full mapping from original to replayed commits so callers (agents, tests, and `--continue` resumption) can verify the rebase succeeded.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `branch` | `str` | The branch that was rebased. |
+| `upstream` | `str` | The upstream branch name or commit ref used as the new base. |
+| `upstream_commit_id` | `str` | Resolved commit ID of the upstream tip. |
+| `base_commit_id` | `str` | LCA (lowest common ancestor) commit where the two histories diverged. |
+| `replayed` | `tuple[RebaseCommitPair, ...]` | Ordered list of (original, new) commit ID pairs in replay order. |
+| `conflict_paths` | `tuple[str, ...]` | Conflicting paths (empty on clean completion). |
+| `aborted` | `bool` | `True` when `--abort` cleared the in-progress rebase. |
+| `noop` | `bool` | `True` when there were no commits to replay (already up-to-date). |
+| `autosquash_applied` | `bool` | `True` when `--autosquash` reordered `fixup!` commits. |
+
+**Producer:** `_rebase_async()`, `_rebase_continue_async()`, `_rebase_abort_async()`
+**Consumer:** `rebase()` Typer command callback, tests in `tests/test_muse_rebase.py`
+
+**Frozen dataclass** — all fields are immutable after construction.
 
 ---
 
@@ -5248,13 +5369,59 @@ Response from the Hub's `/pull` endpoint.
 
 ---
 
+### `FetchRequest`
+
+**Module:** `maestro/muse_cli/hub_client.py`
+
+Payload sent to the Hub's `POST /fetch` endpoint to request remote branch state.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `branches` | `list[str]` | Branch names to fetch. Empty list means "all branches". |
+
+**Producer:** `_fetch_remote_async()` in `maestro/muse_cli/commands/fetch.py`
+
+---
+
+### `FetchBranchInfo`
+
+**Module:** `maestro/muse_cli/hub_client.py`
+
+A single branch's current state on the remote, returned inside `FetchResponse`.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `branch` | `str` | Branch name (e.g. `"feature/guitar"`) |
+| `head_commit_id` | `str` | Full commit ID of the remote branch HEAD |
+| `is_new` | `bool` | `True` when this branch has no local remote-tracking ref yet |
+
+**Consumer:** `_fetch_remote_async()` — updates `.muse/remotes/<remote>/<branch>` per entry; the CLI overrides `is_new` by checking local state rather than trusting the Hub's hint.
+
+---
+
+### `FetchResponse`
+
+**Module:** `maestro/muse_cli/hub_client.py`
+
+Response from the Hub's `POST /fetch` endpoint.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `branches` | `list[FetchBranchInfo]` | All branches the Hub knows about (filtered by the request's `branches` list when non-empty) |
+
+**Consumer:** `_fetch_remote_async()` — iterates entries to update remote-tracking refs; when `--prune` is active, branches absent from this list cause stale local refs to be deleted.
+
+---
+
 ### `ShowCommitResult`
 
 **Module:** `maestro/muse_cli/commands/show.py`
 
 Full commit metadata plus snapshot manifest returned by `muse show`. Designed
 for direct JSON serialisation so AI agents can consume commit state without a
-second round-trip to the database.
+second round-trip to the database.  Music-domain fields (`section`, `track`,
+`emotion`) are surfaced at the top level — sourced from `commit_metadata` — so
+agents do not need to parse a nested blob.
 
 | Field | Type | Description |
 |-------|------|-------------|
@@ -5262,11 +5429,14 @@ second round-trip to the database.
 | `branch` | `str` | Branch this commit belongs to |
 | `parent_commit_id` | `Optional[str]` | Full SHA of the primary parent, `None` for root commits |
 | `parent2_commit_id` | `Optional[str]` | Full SHA of the merge parent (set by `muse merge`), else `None` |
-| `message` | `str` | Commit message |
+| `message` | `str` | Commit message (may include Co-authored-by trailers) |
 | `author` | `str` | Author string (empty string when not set) |
 | `committed_at` | `str` | ISO-style timestamp `"YYYY-MM-DD HH:MM:SS"` (UTC) |
 | `snapshot_id` | `str` | SHA-256 of the snapshot manifest |
 | `snapshot_manifest` | `dict[str, str]` | `{relative_path: object_id}` for every file in the snapshot |
+| `section` | `Optional[str]` | Musical section tag (e.g. `"chorus"`), `None` if not set |
+| `track` | `Optional[str]` | Instrument track tag (e.g. `"drums"`), `None` if not set |
+| `emotion` | `Optional[str]` | Emotion vector label (e.g. `"melancholic"`), `None` if not set |
 
 **Producer:** `_show_async()`
 **Consumer:** `_render_show()`, `_render_midi()`, `_render_audio_preview()`, `--json` serialiser
@@ -5291,6 +5461,40 @@ For root commits (no parent) all snapshot paths appear in `added`.
 
 **Producer:** `_diff_vs_parent_async()`
 **Consumer:** `_render_diff()`
+
+---
+
+### `RestoreResult`
+
+**Module:** `maestro/services/muse_restore.py`
+
+Outcome of a completed `muse restore` operation.  Frozen dataclass — immutable
+after construction.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `source_commit_id` | `str` | Full 64-char SHA of the commit files were extracted from |
+| `paths_restored` | `list[str]` | Relative paths (within `muse-work/`) that were written to disk |
+| `staged` | `bool` | Whether `--staged` mode was active |
+
+**Producer:** `perform_restore()`
+**Consumer:** `restore()` Typer callback (CLI display)
+
+---
+
+### `PathNotInSnapshotError`
+
+**Module:** `maestro/services/muse_restore.py`
+
+Raised when a requested path is absent from the source commit's snapshot.
+
+| Attribute | Type | Description |
+|-----------|------|-------------|
+| `rel_path` | `str` | The path that was not found in the snapshot |
+| `source_commit_id` | `str` | The commit that was searched |
+
+**Producer:** `perform_restore()`
+**Consumer:** `restore()` Typer callback (exit code 1)
 
 ---
 
