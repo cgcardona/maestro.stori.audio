@@ -5,7 +5,7 @@ subcommands (amend, arrange, ask, cat-object, checkout, chord-map, commit,
 commit-tree, context, contour, describe, diff, divergence, dynamics, emotion-diff,
 export, find, form, grep, groove-check, harmony, humanize, import, init, inspect,
 key, log, merge, meter, motif, open, play, pull, push, read-tree, recall, remote,
-render-preview, reset, resolve, rev-parse, revert, session, show, similarity,
+render-preview, reset, resolve, restore, rev-parse, revert, session, show, similarity,
 status, swing, symbolic-ref, tag, tempo, tempo-scale, timeline, update-ref,
 validate, write-tree) as Typer sub-applications.
 """
@@ -54,6 +54,7 @@ from maestro.muse_cli.commands import (
     render_preview,
     reset,
     resolve,
+    restore,
     rev_parse,
     revert,
     session,
@@ -128,6 +129,7 @@ cli.add_typer(show.app, name="show", help="Inspect a commit: metadata, snapshot,
 cli.add_typer(render_preview.app, name="render-preview", help="Generate an audio preview of a commit's snapshot.")
 cli.add_typer(reset.app, name="reset", help="Reset the branch pointer to a prior commit.")
 cli.add_typer(resolve.app, name="resolve", help="Mark a conflicted file as resolved (--ours or --theirs).")
+cli.add_typer(restore.app, name="restore", help="Restore specific files from a commit or index into muse-work/.")
 cli.add_typer(groove_check.app, name="groove-check", help="Analyze rhythmic drift across commits to find groove regressions.")
 cli.add_typer(form.app, name="form", help="Analyze or annotate the formal structure (sections) of a commit.")
 cli.add_typer(similarity.app, name="similarity", help="Compare two commits by musical similarity score.")

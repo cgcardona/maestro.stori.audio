@@ -5294,6 +5294,40 @@ For root commits (no parent) all snapshot paths appear in `added`.
 
 ---
 
+### `RestoreResult`
+
+**Module:** `maestro/services/muse_restore.py`
+
+Outcome of a completed `muse restore` operation.  Frozen dataclass — immutable
+after construction.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `source_commit_id` | `str` | Full 64-char SHA of the commit files were extracted from |
+| `paths_restored` | `list[str]` | Relative paths (within `muse-work/`) that were written to disk |
+| `staged` | `bool` | Whether `--staged` mode was active |
+
+**Producer:** `perform_restore()`
+**Consumer:** `restore()` Typer callback (CLI display)
+
+---
+
+### `PathNotInSnapshotError`
+
+**Module:** `maestro/services/muse_restore.py`
+
+Raised when a requested path is absent from the source commit's snapshot.
+
+| Attribute | Type | Description |
+|-----------|------|-------------|
+| `rel_path` | `str` | The path that was not found in the snapshot |
+| `source_commit_id` | `str` | The commit that was searched |
+
+**Producer:** `perform_restore()`
+**Consumer:** `restore()` Typer callback (exit code 1)
+
+---
+
 ### `ResetResult`
 
 **Module:** `maestro/services/muse_reset.py`
