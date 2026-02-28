@@ -6,6 +6,7 @@ Tables:
 - musehub_commits: Remote commit records pushed from CLI clients
 - musehub_issues: Issue tracker entries per repo
 - musehub_pull_requests: Pull requests proposing branch merges
+- musehub_pr_comments: Inline review comments on musical diffs within PRs
 - musehub_objects: Content-addressed binary artifact storage
 - musehub_releases: Tagged releases
 - musehub_stars: Per-user repo starring (one row per user×repo pair)
@@ -20,7 +21,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.types import JSON
 
@@ -240,6 +241,57 @@ class MusehubPullRequest(Base):
     )
 
     repo: Mapped[MusehubRepo] = relationship("MusehubRepo", back_populates="pull_requests")
+    review_comments: Mapped[list[MusehubPRComment]] = relationship(
+        "MusehubPRComment", back_populates="pull_request", cascade="all, delete-orphan"
+    )
+
+class MusehubPRComment(Base):
+    """Inline review comment on a musical diff within a pull request.
+
+    Supports four targeting granularities to let reviewers pinpoint exactly
+    what they're commenting on:
+      - ``general``  — whole PR (no positional target)
+      - ``track``    — a named instrument track (e.g. "bass", "keys")
+      - ``region``   — a beat range within a track (beat_start..beat_end)
+      - ``note``     — a single note event (track + beat + pitch)
+
+    ``parent_comment_id`` enables threaded replies.  None means a top-level
+    review comment.  Replies carry the same ``pr_id`` so threads can be
+    assembled in a single query.
+    """
+
+    __tablename__ = "musehub_pr_comments"
+
+    comment_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_new_uuid)
+    pr_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("musehub_pull_requests.pr_id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    repo_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
+    author: Mapped[str] = mapped_column(String(255), nullable=False)
+    # Markdown-formatted review body
+    body: Mapped[str] = mapped_column(Text, nullable=False)
+    # Targeting: "general" | "track" | "region" | "note"
+    target_type: Mapped[str] = mapped_column(String(20), nullable=False, default="general")
+    # Instrument track name when target_type is "track", "region", or "note"
+    target_track: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # Beat range for "region" targets (inclusive start, exclusive end)
+    target_beat_start: Mapped[float | None] = mapped_column(Float, nullable=True)
+    target_beat_end: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # MIDI pitch (0-127) for "note" targets
+    target_note_pitch: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Parent comment ID for threaded replies; None for top-level comments
+    parent_comment_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=_utc_now, index=True
+    )
+
+    pull_request: Mapped[MusehubPullRequest] = relationship(
+        "MusehubPullRequest", back_populates="review_comments"
+    )
+
 
 class MusehubRelease(Base):
     """A published version release for a Muse Hub repo.

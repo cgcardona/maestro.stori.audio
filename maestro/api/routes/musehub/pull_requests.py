@@ -1,10 +1,12 @@
 """Muse Hub pull request route handlers.
 
 Endpoint summary:
-  POST /musehub/repos/{repo_id}/pull-requests                        — open a PR
-  GET  /musehub/repos/{repo_id}/pull-requests                        — list PRs
-  GET  /musehub/repos/{repo_id}/pull-requests/{pr_id}                — get a PR
-  POST /musehub/repos/{repo_id}/pull-requests/{pr_id}/merge          — merge a PR
+  POST /musehub/repos/{repo_id}/pull-requests                              — open a PR
+  GET  /musehub/repos/{repo_id}/pull-requests                              — list PRs
+  GET  /musehub/repos/{repo_id}/pull-requests/{pr_id}                      — get a PR
+  POST /musehub/repos/{repo_id}/pull-requests/{pr_id}/merge                — merge a PR
+  POST /musehub/repos/{repo_id}/pull-requests/{pr_id}/comments             — create review comment
+  GET  /musehub/repos/{repo_id}/pull-requests/{pr_id}/comments             — list review comments (threaded)
 
 All endpoints require a valid JWT Bearer token.
 No business logic lives here — all persistence is delegated to
@@ -20,6 +22,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from maestro.auth.dependencies import TokenClaims, optional_token, require_valid_token
 from maestro.db import get_db
 from maestro.models.musehub import (
+    PRCommentCreate,
+    PRCommentListResponse,
     PRCreate,
     PRListResponse,
     PRMergeRequest,
@@ -221,3 +225,87 @@ async def merge_pull_request(
         merge_pr_payload,
     )
     return PRMergeResponse(merged=True, merge_commit_id=pr.merge_commit_id)
+
+
+@router.post(
+    "/repos/{repo_id}/pull-requests/{pr_id}/comments",
+    response_model=PRCommentListResponse,
+    status_code=status.HTTP_201_CREATED,
+    operation_id="createPRComment",
+    summary="Leave a review comment on a pull request musical diff",
+)
+async def create_pr_comment(
+    repo_id: str,
+    pr_id: str,
+    body: PRCommentCreate,
+    db: AsyncSession = Depends(get_db),
+    token: TokenClaims = Depends(require_valid_token),
+) -> PRCommentListResponse:
+    """Create a review comment on a PR and return the updated thread list.
+
+    Comments can target the whole PR (general), a named track, a beat region,
+    or a single note event.  Replies attach via ``parent_comment_id``.
+
+    Returns the full threaded comment list after insertion so the UI can
+    refresh in a single round-trip.
+
+    Returns 404 if the repo or PR does not exist.
+    """
+    repo = await musehub_repository.get_repo(db, repo_id)
+    if repo is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repo not found")
+
+    try:
+        await musehub_pull_requests.create_pr_comment(
+            db,
+            pr_id=pr_id,
+            repo_id=repo_id,
+            author=token.get("sub", ""),
+            body=body.body,
+            target_type=body.target_type,
+            target_track=body.target_track,
+            target_beat_start=body.target_beat_start,
+            target_beat_end=body.target_beat_end,
+            target_note_pitch=body.target_note_pitch,
+            parent_comment_id=body.parent_comment_id,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
+
+    await db.commit()
+    return await musehub_pull_requests.list_pr_comments(db, pr_id=pr_id, repo_id=repo_id)
+
+
+@router.get(
+    "/repos/{repo_id}/pull-requests/{pr_id}/comments",
+    response_model=PRCommentListResponse,
+    operation_id="listPRComments",
+    summary="List review comments for a PR, assembled into threaded discussions",
+)
+async def list_pr_comments(
+    repo_id: str,
+    pr_id: str,
+    db: AsyncSession = Depends(get_db),
+    claims: TokenClaims | None = Depends(optional_token),
+) -> PRCommentListResponse:
+    """Return all review comments for a PR in a two-level thread structure.
+
+    Top-level comments carry a ``replies`` list with their direct children.
+    Public repo comments are readable without authentication; private repos
+    require a Bearer token.
+
+    Returns 404 if the repo or PR does not exist.
+    """
+    repo = await musehub_repository.get_repo(db, repo_id)
+    if repo is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repo not found")
+    if repo.visibility != "public" and claims is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required to access private repos.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    pr = await musehub_pull_requests.get_pr(db, repo_id, pr_id)
+    if pr is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Pull request not found")
+    return await musehub_pull_requests.list_pr_comments(db, pr_id=pr_id, repo_id=repo_id)
