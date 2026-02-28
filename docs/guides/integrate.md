@@ -160,6 +160,32 @@ muse remote -v
 # origin  https://story.audio/musehub/repos/<repo-id>
 ```
 
+### Clone (starting from scratch)
+
+Use `muse clone` when you are joining a project that already exists on the Hub.
+It initialises the local repo, fetches the commit history, and configures
+"origin" in one step — no separate `muse init` or `muse remote add` needed.
+
+```bash
+# Clone into a directory named after the repo
+muse clone https://hub.stori.app/repos/<repo-id>
+
+# Clone into a specific local directory
+muse clone https://hub.stori.app/repos/<repo-id> ./my-project
+
+# Shallow clone — only the latest commit
+muse clone https://hub.stori.app/repos/<repo-id> --depth 1
+
+# Clone and check out a specific branch
+muse clone https://hub.stori.app/repos/<repo-id> --branch feature/guitar
+
+# Download only the keyboard files (saves bandwidth for large projects)
+muse clone https://hub.stori.app/repos/<repo-id> --single-track keys
+
+# Fetch commit graph only, skip working-tree population
+muse clone https://hub.stori.app/repos/<repo-id> --no-checkout
+```
+
 ### Push
 
 ```bash
@@ -193,7 +219,7 @@ muse pull --branch main
 Gabriel (Machine A)                Rene (Machine B)
 ─────────────────────              ─────────────────────
 muse commit -m "groove v1"
-muse push                          muse pull
+muse push                          muse clone <hub-url>
                                    muse ask "what changed?"
                                    muse commit -m "variation"
                                    muse push

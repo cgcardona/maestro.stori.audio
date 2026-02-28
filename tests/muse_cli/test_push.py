@@ -8,6 +8,13 @@ Covers acceptance criteria from issue #38:
 - Network errors surface as exit code 3.
 - ``muse push`` with all commits already on remote prints up-to-date message.
 
+Covers acceptance criteria from issue #77 (new remote sync flags):
+- ``muse push --force`` sends ``force=True`` in the payload.
+- ``muse push --force-with-lease`` sends ``force_with_lease=True`` and
+  ``expected_remote_head`` in the payload; a 409 response exits 1.
+- ``muse push --tags`` includes tag refs from ``.muse/refs/tags/``.
+- ``muse push --set-upstream`` writes upstream tracking to config after push.
+
 All HTTP calls are mocked with unittest.mock — no live network required.
 """
 from __future__ import annotations
@@ -20,8 +27,13 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from maestro.muse_cli.commands.push import _compute_push_delta, _build_push_request, _push_async
-from maestro.muse_cli.config import get_remote_head, set_remote
+from maestro.muse_cli.commands.push import (
+    _build_push_request,
+    _collect_tag_refs,
+    _compute_push_delta,
+    _push_async,
+)
+from maestro.muse_cli.config import get_remote_head, get_upstream, set_remote
 from maestro.muse_cli.errors import ExitCode
 from maestro.muse_cli.models import MuseCliCommit
 
@@ -304,3 +316,365 @@ def test_build_push_request_structure() -> None:
     assert request["commits"][0]["commit_id"] == "commit-aaa"
     assert len(request["objects"]) == 2
     assert request["objects"][0]["object_id"] == "obj-001"
+
+
+# ---------------------------------------------------------------------------
+# Issue #77 — new remote sync flags
+# ---------------------------------------------------------------------------
+
+
+def test_build_push_request_force_flag() -> None:
+    """_build_push_request includes force=True when requested."""
+    c1 = _make_commit("commit-aaa")
+    request = _build_push_request(
+        branch="main",
+        head_commit_id="commit-aaa",
+        delta=[c1],
+        all_object_ids=[],
+        force=True,
+    )
+    assert request.get("force") is True
+    assert "force_with_lease" not in request
+
+
+def test_build_push_request_force_with_lease() -> None:
+    """_build_push_request includes force_with_lease and expected_remote_head."""
+    c1 = _make_commit("commit-aaa")
+    expected_head = "old-remote-sha" * 4
+    request = _build_push_request(
+        branch="main",
+        head_commit_id="commit-aaa",
+        delta=[c1],
+        all_object_ids=[],
+        force_with_lease=True,
+        expected_remote_head=expected_head,
+    )
+    assert request.get("force_with_lease") is True
+    assert request.get("expected_remote_head") == expected_head
+    assert "force" not in request
+
+
+def test_build_push_request_no_force_flags_by_default() -> None:
+    """_build_push_request does not include force flags unless explicitly set."""
+    c1 = _make_commit("commit-bbb")
+    request = _build_push_request(
+        branch="main",
+        head_commit_id="commit-bbb",
+        delta=[c1],
+        all_object_ids=[],
+    )
+    assert "force" not in request
+    assert "force_with_lease" not in request
+    assert "tags" not in request
+
+
+def test_build_push_request_tags() -> None:
+    """_build_push_request includes tags when tag_payloads is provided."""
+    from maestro.muse_cli.hub_client import PushTagPayload
+
+    c1 = _make_commit("commit-ccc")
+    tags = [PushTagPayload(tag_name="v1.0", commit_id="commit-ccc")]
+    request = _build_push_request(
+        branch="main",
+        head_commit_id="commit-ccc",
+        delta=[c1],
+        all_object_ids=[],
+        tag_payloads=tags,
+    )
+    assert "tags" in request
+    assert len(request["tags"]) == 1
+    assert request["tags"][0]["tag_name"] == "v1.0"
+    assert request["tags"][0]["commit_id"] == "commit-ccc"
+
+
+# ---------------------------------------------------------------------------
+# _collect_tag_refs unit tests
+# ---------------------------------------------------------------------------
+
+
+def test_collect_tag_refs_empty_when_no_tags_dir(tmp_path: pathlib.Path) -> None:
+    """_collect_tag_refs returns empty list when .muse/refs/tags/ does not exist."""
+    result = _collect_tag_refs(tmp_path)
+    assert result == []
+
+
+def test_collect_tag_refs_returns_tags_from_dir(tmp_path: pathlib.Path) -> None:
+    """_collect_tag_refs reads each tag file and returns name+commit pairs."""
+    tags_dir = tmp_path / ".muse" / "refs" / "tags"
+    tags_dir.mkdir(parents=True)
+    commit_v1 = "aaaa" * 16
+    commit_v2 = "bbbb" * 16
+    (tags_dir / "v1.0").write_text(commit_v1, encoding="utf-8")
+    (tags_dir / "v2.0").write_text(commit_v2, encoding="utf-8")
+
+    result = _collect_tag_refs(tmp_path)
+    assert len(result) == 2
+    tag_map = {t["tag_name"]: t["commit_id"] for t in result}
+    assert tag_map["v1.0"] == commit_v1
+    assert tag_map["v2.0"] == commit_v2
+
+
+def test_collect_tag_refs_ignores_empty_files(tmp_path: pathlib.Path) -> None:
+    """_collect_tag_refs skips tag files with empty content."""
+    tags_dir = tmp_path / ".muse" / "refs" / "tags"
+    tags_dir.mkdir(parents=True)
+    (tags_dir / "empty-tag").write_text("", encoding="utf-8")
+    (tags_dir / "v1.0").write_text("aabbccdd" * 8, encoding="utf-8")
+
+    result = _collect_tag_refs(tmp_path)
+    assert len(result) == 1
+    assert result[0]["tag_name"] == "v1.0"
+
+
+# ---------------------------------------------------------------------------
+# test_push_force_with_lease_rejects_mismatch (regression from issue #77)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.anyio
+async def test_push_force_with_lease_rejects_mismatch(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """When Hub returns 409, --force-with-lease exits 1 with instructive message.
+
+    Regression for issue #77: the hub rejects the push because the remote HEAD
+    has advanced beyond our last-known tracking pointer.
+    """
+    import typer
+
+    head_id = "localtip1234" * 5
+    root = _init_repo(tmp_path)
+    _write_branch_ref(root, "main", head_id)
+
+    muse_dir = root / ".muse"
+    (muse_dir / "config.toml").write_text(
+        '[auth]\ntoken = "tok"\n\n[remotes.origin]\nurl = "https://hub.example.com/r"\n',
+        encoding="utf-8",
+    )
+    # Record a known remote head (the "lease" value)
+    from maestro.muse_cli.config import set_remote_head as _set_rh
+    old_remote_head = "oldremotehead" * 5
+    _set_rh("origin", "main", old_remote_head, root)
+
+    commit = _make_commit(head_id)
+
+    # Hub responds with 409 — remote has advanced
+    mock_response = MagicMock()
+    mock_response.status_code = 409
+    mock_response.text = "remote has advanced"
+
+    mock_hub = MagicMock()
+    mock_hub.__aenter__ = AsyncMock(return_value=mock_hub)
+    mock_hub.__aexit__ = AsyncMock(return_value=None)
+    mock_hub.post = AsyncMock(return_value=mock_response)
+
+    with (
+        patch(
+            "maestro.muse_cli.commands.push.get_commits_for_branch",
+            new=AsyncMock(return_value=[commit]),
+        ),
+        patch(
+            "maestro.muse_cli.commands.push.get_all_object_ids",
+            new=AsyncMock(return_value=[]),
+        ),
+        patch("maestro.muse_cli.commands.push.open_session") as mock_open_session,
+        patch("maestro.muse_cli.commands.push.MuseHubClient", return_value=mock_hub),
+    ):
+        mock_session_ctx = MagicMock()
+        mock_session_ctx.__aenter__ = AsyncMock(return_value=MagicMock())
+        mock_session_ctx.__aexit__ = AsyncMock(return_value=None)
+        mock_open_session.return_value = mock_session_ctx
+
+        with pytest.raises(typer.Exit) as exc_info:
+            await _push_async(
+                root=root,
+                remote_name="origin",
+                branch=None,
+                force_with_lease=True,
+            )
+
+    assert exc_info.value.exit_code == int(ExitCode.USER_ERROR)
+    captured = capsys.readouterr()
+    assert "fetch" in captured.out.lower() or "advanced" in captured.out.lower()
+
+
+# ---------------------------------------------------------------------------
+# test_push_tags_includes_tags (regression from issue #77)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.anyio
+async def test_push_tags_includes_tags(tmp_path: pathlib.Path) -> None:
+    """--tags flag includes VCS tag refs in the push payload."""
+    head_id = "tagpushhead1" * 5
+    root = _init_repo(tmp_path)
+    _write_branch_ref(root, "main", head_id)
+
+    muse_dir = root / ".muse"
+    (muse_dir / "config.toml").write_text(
+        '[auth]\ntoken = "tok"\n\n[remotes.origin]\nurl = "https://hub.example.com/r"\n',
+        encoding="utf-8",
+    )
+
+    # Write a tag ref
+    tags_dir = muse_dir / "refs" / "tags"
+    tags_dir.mkdir(parents=True)
+    (tags_dir / "v1.0").write_text(head_id, encoding="utf-8")
+
+    commit = _make_commit(head_id)
+    captured_payloads: list[dict[str, object]] = []
+
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+
+    mock_hub = MagicMock()
+    mock_hub.__aenter__ = AsyncMock(return_value=mock_hub)
+    mock_hub.__aexit__ = AsyncMock(return_value=None)
+
+    async def _fake_post(path: str, **kwargs: object) -> MagicMock:
+        payload = kwargs.get("json", {})
+        if isinstance(payload, dict):
+            captured_payloads.append(payload)
+        return mock_response
+
+    mock_hub.post = _fake_post
+
+    with (
+        patch(
+            "maestro.muse_cli.commands.push.get_commits_for_branch",
+            new=AsyncMock(return_value=[commit]),
+        ),
+        patch(
+            "maestro.muse_cli.commands.push.get_all_object_ids",
+            new=AsyncMock(return_value=[]),
+        ),
+        patch("maestro.muse_cli.commands.push.open_session") as mock_open_session,
+        patch("maestro.muse_cli.commands.push.MuseHubClient", return_value=mock_hub),
+    ):
+        mock_session_ctx = MagicMock()
+        mock_session_ctx.__aenter__ = AsyncMock(return_value=MagicMock())
+        mock_session_ctx.__aexit__ = AsyncMock(return_value=None)
+        mock_open_session.return_value = mock_session_ctx
+
+        await _push_async(root=root, remote_name="origin", branch=None, include_tags=True)
+
+    assert len(captured_payloads) == 1
+    payload = captured_payloads[0]
+    assert "tags" in payload
+    tags = payload["tags"]
+    assert isinstance(tags, list)
+    assert len(tags) == 1
+    assert tags[0]["tag_name"] == "v1.0"
+    assert tags[0]["commit_id"] == head_id
+
+
+# ---------------------------------------------------------------------------
+# test_push_set_upstream_writes_config (regression from issue #77)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.anyio
+async def test_push_set_upstream_writes_config(tmp_path: pathlib.Path) -> None:
+    """--set-upstream writes upstream tracking to .muse/config.toml after push."""
+    head_id = "upstreamtest" * 5
+    root = _init_repo(tmp_path)
+    _write_branch_ref(root, "main", head_id)
+
+    muse_dir = root / ".muse"
+    (muse_dir / "config.toml").write_text(
+        '[auth]\ntoken = "tok"\n\n[remotes.origin]\nurl = "https://hub.example.com/r"\n',
+        encoding="utf-8",
+    )
+
+    commit = _make_commit(head_id)
+
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+
+    mock_hub = MagicMock()
+    mock_hub.__aenter__ = AsyncMock(return_value=mock_hub)
+    mock_hub.__aexit__ = AsyncMock(return_value=None)
+    mock_hub.post = AsyncMock(return_value=mock_response)
+
+    with (
+        patch(
+            "maestro.muse_cli.commands.push.get_commits_for_branch",
+            new=AsyncMock(return_value=[commit]),
+        ),
+        patch(
+            "maestro.muse_cli.commands.push.get_all_object_ids",
+            new=AsyncMock(return_value=[]),
+        ),
+        patch("maestro.muse_cli.commands.push.open_session") as mock_open_session,
+        patch("maestro.muse_cli.commands.push.MuseHubClient", return_value=mock_hub),
+    ):
+        mock_session_ctx = MagicMock()
+        mock_session_ctx.__aenter__ = AsyncMock(return_value=MagicMock())
+        mock_session_ctx.__aexit__ = AsyncMock(return_value=None)
+        mock_open_session.return_value = mock_session_ctx
+
+        await _push_async(
+            root=root,
+            remote_name="origin",
+            branch=None,
+            set_upstream_flag=True,
+        )
+
+    # After push with --set-upstream, config should record tracking branch
+    upstream = get_upstream("main", root)
+    assert upstream == "origin"
+
+
+@pytest.mark.anyio
+async def test_push_force_flag_sends_force_in_payload(tmp_path: pathlib.Path) -> None:
+    """--force flag sends force=True in the push payload."""
+    head_id = "forcetest1234" * 4
+    root = _init_repo(tmp_path)
+    _write_branch_ref(root, "main", head_id)
+
+    muse_dir = root / ".muse"
+    (muse_dir / "config.toml").write_text(
+        '[auth]\ntoken = "tok"\n\n[remotes.origin]\nurl = "https://hub.example.com/r"\n',
+        encoding="utf-8",
+    )
+
+    commit = _make_commit(head_id)
+    captured_payloads: list[dict[str, object]] = []
+
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+
+    mock_hub = MagicMock()
+    mock_hub.__aenter__ = AsyncMock(return_value=mock_hub)
+    mock_hub.__aexit__ = AsyncMock(return_value=None)
+
+    async def _fake_post(path: str, **kwargs: object) -> MagicMock:
+        payload = kwargs.get("json", {})
+        if isinstance(payload, dict):
+            captured_payloads.append(payload)
+        return mock_response
+
+    mock_hub.post = _fake_post
+
+    with (
+        patch(
+            "maestro.muse_cli.commands.push.get_commits_for_branch",
+            new=AsyncMock(return_value=[commit]),
+        ),
+        patch(
+            "maestro.muse_cli.commands.push.get_all_object_ids",
+            new=AsyncMock(return_value=[]),
+        ),
+        patch("maestro.muse_cli.commands.push.open_session") as mock_open_session,
+        patch("maestro.muse_cli.commands.push.MuseHubClient", return_value=mock_hub),
+    ):
+        mock_session_ctx = MagicMock()
+        mock_session_ctx.__aenter__ = AsyncMock(return_value=MagicMock())
+        mock_session_ctx.__aexit__ = AsyncMock(return_value=None)
+        mock_open_session.return_value = mock_session_ctx
+
+        await _push_async(root=root, remote_name="origin", branch=None, force=True)
+
+    assert len(captured_payloads) == 1
+    assert captured_payloads[0].get("force") is True

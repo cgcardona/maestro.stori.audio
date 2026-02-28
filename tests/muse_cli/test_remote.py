@@ -1,11 +1,15 @@
-"""Tests for ``muse remote add`` and ``muse remote -v``.
+"""Tests for ``muse remote`` subcommands.
 
-Covers acceptance criteria from issue #38:
+Covers acceptance criteria from issues #38 and #81:
 - ``muse remote add origin <url>`` writes to ``.muse/config.toml``.
 - ``muse remote -v`` prints all remotes with their URLs.
+- ``muse remote remove <name>`` removes config entry and tracking refs.
+- ``muse remote rename <old> <new>`` renames config entry and tracking ref paths.
+- ``muse remote set-url <name> <url>`` updates URL without touching refs.
 - URL validation: non-http(s) URLs are rejected with exit 1.
 - Duplicate ``add`` overwrites the existing URL.
 - ``muse remote`` outside a repo exits 2.
+- All three new subcommands error clearly if the remote doesn't exist.
 """
 from __future__ import annotations
 
@@ -16,7 +20,7 @@ import pytest
 from typer.testing import CliRunner
 
 from maestro.muse_cli.app import cli
-from maestro.muse_cli.config import get_remote, list_remotes, set_remote
+from maestro.muse_cli.config import get_remote, list_remotes, set_remote, set_remote_head
 
 
 runner = CliRunner()
@@ -163,3 +167,180 @@ def test_remote_add_output_confirms_success(tmp_path: pathlib.Path) -> None:
     )
     assert result.exit_code == 0
     assert "origin" in result.output
+
+
+# ---------------------------------------------------------------------------
+# muse remote remove
+# ---------------------------------------------------------------------------
+
+
+def test_remote_remove_cleans_config_and_refs(tmp_path: pathlib.Path) -> None:
+    """Regression: muse remote remove deletes config entry and tracking refs dir."""
+    root = _init_repo(tmp_path)
+    set_remote("origin", "https://hub.example.com/musehub/repos/r", root)
+    set_remote_head("origin", "main", "abc123", root)
+
+    refs_dir = root / ".muse" / "remotes" / "origin"
+    assert refs_dir.is_dir(), "tracking refs dir should exist after set_remote_head"
+
+    result = runner.invoke(
+        cli,
+        ["remote", "remove", "origin"],
+        env={"MUSE_REPO_ROOT": str(root)},
+    )
+    assert result.exit_code == 0, result.output
+    assert "origin" in result.output
+
+    assert get_remote("origin", root) is None
+    assert not refs_dir.exists(), "tracking refs dir should be removed"
+
+
+def test_remote_remove_leaves_other_remotes(tmp_path: pathlib.Path) -> None:
+    """muse remote remove only removes the named remote, leaving others intact."""
+    root = _init_repo(tmp_path)
+    set_remote("origin", "https://hub.example.com/musehub/repos/r", root)
+    set_remote("staging", "https://staging.example.com/musehub/repos/r", root)
+
+    runner.invoke(
+        cli,
+        ["remote", "remove", "origin"],
+        env={"MUSE_REPO_ROOT": str(root)},
+    )
+
+    assert get_remote("origin", root) is None
+    assert get_remote("staging", root) == "https://staging.example.com/musehub/repos/r"
+
+
+def test_remote_remove_nonexistent_errors(tmp_path: pathlib.Path) -> None:
+    """muse remote remove errors with exit 1 when the remote does not exist."""
+    root = _init_repo(tmp_path)
+    result = runner.invoke(
+        cli,
+        ["remote", "remove", "nonexistent"],
+        env={"MUSE_REPO_ROOT": str(root)},
+    )
+    assert result.exit_code == 1
+    assert "does not exist" in result.output.lower()
+
+
+def test_remote_remove_no_refs_dir_succeeds(tmp_path: pathlib.Path) -> None:
+    """muse remote remove succeeds even when no tracking refs dir exists."""
+    root = _init_repo(tmp_path)
+    set_remote("origin", "https://hub.example.com/musehub/repos/r", root)
+
+    result = runner.invoke(
+        cli,
+        ["remote", "remove", "origin"],
+        env={"MUSE_REPO_ROOT": str(root)},
+    )
+    assert result.exit_code == 0, result.output
+    assert get_remote("origin", root) is None
+
+
+# ---------------------------------------------------------------------------
+# muse remote rename
+# ---------------------------------------------------------------------------
+
+
+def test_remote_rename_updates_config_and_ref_paths(tmp_path: pathlib.Path) -> None:
+    """muse remote rename moves config entry and tracking refs from old to new name."""
+    root = _init_repo(tmp_path)
+    set_remote("origin", "https://hub.example.com/musehub/repos/r", root)
+    set_remote_head("origin", "main", "abc123", root)
+
+    old_refs_dir = root / ".muse" / "remotes" / "origin"
+    assert old_refs_dir.is_dir()
+
+    result = runner.invoke(
+        cli,
+        ["remote", "rename", "origin", "upstream"],
+        env={"MUSE_REPO_ROOT": str(root)},
+    )
+    assert result.exit_code == 0, result.output
+    assert "upstream" in result.output
+
+    assert get_remote("origin", root) is None
+    assert get_remote("upstream", root) == "https://hub.example.com/musehub/repos/r"
+
+    new_refs_dir = root / ".muse" / "remotes" / "upstream"
+    assert new_refs_dir.is_dir(), "tracking refs dir should be renamed"
+    assert not old_refs_dir.exists(), "old tracking refs dir should be gone"
+
+
+def test_remote_rename_nonexistent_errors(tmp_path: pathlib.Path) -> None:
+    """muse remote rename errors with exit 1 when old remote does not exist."""
+    root = _init_repo(tmp_path)
+    result = runner.invoke(
+        cli,
+        ["remote", "rename", "ghost", "upstream"],
+        env={"MUSE_REPO_ROOT": str(root)},
+    )
+    assert result.exit_code == 1
+    assert "does not exist" in result.output.lower()
+
+
+def test_remote_rename_conflict_errors(tmp_path: pathlib.Path) -> None:
+    """muse remote rename errors with exit 1 when the new name already exists."""
+    root = _init_repo(tmp_path)
+    set_remote("origin", "https://hub.example.com/musehub/repos/r", root)
+    set_remote("upstream", "https://other.example.com/musehub/repos/r", root)
+
+    result = runner.invoke(
+        cli,
+        ["remote", "rename", "origin", "upstream"],
+        env={"MUSE_REPO_ROOT": str(root)},
+    )
+    assert result.exit_code == 1
+    assert "already exists" in result.output.lower()
+
+
+# ---------------------------------------------------------------------------
+# muse remote set-url
+# ---------------------------------------------------------------------------
+
+
+def test_remote_set_url_updates_config_only(tmp_path: pathlib.Path) -> None:
+    """muse remote set-url updates the URL in config without touching refs."""
+    root = _init_repo(tmp_path)
+    set_remote("origin", "https://old.example.com/musehub/repos/r", root)
+    set_remote_head("origin", "main", "abc123", root)
+
+    result = runner.invoke(
+        cli,
+        ["remote", "set-url", "origin", "https://new.example.com/musehub/repos/r"],
+        env={"MUSE_REPO_ROOT": str(root)},
+    )
+    assert result.exit_code == 0, result.output
+    assert "new.example.com" in result.output
+
+    assert get_remote("origin", root) == "https://new.example.com/musehub/repos/r"
+
+    # Tracking refs must be untouched
+    refs_dir = root / ".muse" / "remotes" / "origin"
+    assert refs_dir.is_dir(), "tracking refs dir should still exist after set-url"
+
+
+def test_remote_set_url_nonexistent_errors(tmp_path: pathlib.Path) -> None:
+    """muse remote set-url errors with exit 1 when the remote does not exist."""
+    root = _init_repo(tmp_path)
+    result = runner.invoke(
+        cli,
+        ["remote", "set-url", "ghost", "https://new.example.com/musehub/repos/r"],
+        env={"MUSE_REPO_ROOT": str(root)},
+    )
+    assert result.exit_code == 1
+    assert "does not exist" in result.output.lower()
+
+
+def test_remote_set_url_invalid_scheme_errors(tmp_path: pathlib.Path) -> None:
+    """muse remote set-url rejects non-http(s) URLs with exit 1."""
+    root = _init_repo(tmp_path)
+    set_remote("origin", "https://hub.example.com/musehub/repos/r", root)
+
+    result = runner.invoke(
+        cli,
+        ["remote", "set-url", "origin", "ftp://bad.example.com"],
+        env={"MUSE_REPO_ROOT": str(root)},
+    )
+    assert result.exit_code == 1
+    assert "http" in result.output.lower()
