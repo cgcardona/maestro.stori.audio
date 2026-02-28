@@ -278,7 +278,7 @@ async def repo_page(
             "repo_slug": repo_slug,
             "repo_id": repo_id,
             "base_url": base_url,
-            "current_page": "home",
+            "current_page": "commits",
         },
     )
 
