@@ -44,7 +44,11 @@ Agent (per worktree)
                                                if so → stop + self-destruct
   └─ gh pr checkout <N>                     ← checks out the PR branch (only if open)
   └─ git fetch origin && git merge origin/dev  ← sync latest dev into feature branch
-  └─ review → grade → pre-merge sync → merge (or reject)
+  └─ review → grade
+  └─ git fetch origin && git merge origin/dev  ← final sync before merge
+  └─ git push origin "$BRANCH"             ← push resolution so GitHub sees clean state
+  └─ sleep 5 && gh pr merge <N> --squash  ← merge only after remote is up to date
+  └─ git push origin --delete "$BRANCH"   ← remote branch cleanup
   └─ git worktree remove --force <path>     ← self-destructs when done
   └─ git -C <main-repo> worktree prune      ← cleans up the ref
 ```
@@ -72,16 +76,16 @@ cd "$REPO"
 DEV_SHA=$(git rev-parse dev)
 
 # --- define PRs ---
-# Batch: #136–#143 (muse CLI commands — find, export, context, arrange, divergence, meter, import, tempo)
+# Batch: #144–#151 (muse CLI commands — chord-map, form, tempo-scale, similarity, contour, diff, key, humanize)
 declare -a PRS=(
-  "136|feat: muse find — search commit history by musical properties"
-  "137|feat: muse export [<commit>] --format <format> — export a Muse snapshot to external formats"
-  "138|feat: muse context [<commit>] — output structured musical context for AI agent consumption"
-  "139|feat: muse arrange [<commit>] — display the arrangement map (instrument activity over sections)"
-  "140|feat: muse divergence <branch-a> <branch-b> — show how two branches have diverged musically"
-  "141|feat: muse meter [<commit>] [--set <time-sig>] — read or set the time signature"
-  "142|feat: muse import <file> — import a MIDI or MusicXML file as a new Muse commit"
-  "143|feat: muse tempo [<commit>] [--set <bpm>] — read or set the tempo of a commit"
+  "144|feat: muse chord-map <commit> — visualize the chord progression embedded in a commit"
+  "145|feat: muse form [<commit>] — analyze and display the musical form of a commit"
+  "146|feat: muse tempo-scale <factor> [<commit>] — stretch or compress timing across a commit"
+  "147|feat: muse similarity <commit-a> <commit-b> — compute musical similarity score between two commits"
+  "148|feat: muse contour — analyze melodic contour and phrase shape"
+  "149|feat: muse diff — add music-dimension diff flags (--harmonic, --rhythmic, --melodic, --structural, --dynamic)"
+  "150|feat: muse key [<commit>] [--set <key>] — read or annotate the musical key of a commit"
+  "151|feat: muse humanize — apply humanization to quantized MIDI"
 )
 
 # --- create worktrees + task files ---
@@ -218,6 +222,15 @@ STEP 3 — CHECKOUT & SYNC (only if STEP 2 shows the PR is open and unreviewed):
 
   # 3. Merge the latest dev into this feature branch NOW
   git merge origin/dev
+
+  ⚠️  If git merge reports "local changes would be overwritten":
+    - Do NOT use git stash + git rebase. That rewrites history and is Yellow-tier.
+    - Run git status to identify the unexpected modified files.
+    - If they came from the checkout (gh pr checkout left dirty files), run:
+        git checkout -- <file>   ← discard checkout-introduced changes, then retry merge
+    - If they are your own review edits committed mid-step, commit them first:
+        git add -A && git commit -m "chore: stage review edits before dev sync"
+    - Then retry: git merge origin/dev
 
   ── If git merge reports conflicts ──────────────────────────────────────────
   │ You have full command-line authority to resolve them.                     │
@@ -399,6 +412,10 @@ STEP 6 — PRE-MERGE SYNC (only if grade is A or B):
   ⚠️  Other agents may have merged PRs while you were reviewing. Sync once more
   before merging to catch any new conflicts.
 
+  # 1. Capture branch name FIRST — you need it for the push and delete below
+  BRANCH=$(git rev-parse --abbrev-ref HEAD)
+
+  # 2. Sync with dev
   git fetch origin
   git merge origin/dev
 
@@ -408,18 +425,45 @@ STEP 6 — PRE-MERGE SYNC (only if grade is A or B):
   - If conflicts are non-trivial and introduce risk → downgrade grade to B
     and file a follow-up issue. Still merge if the overall work is solid.
 
-  After clean sync: output "Approved for merge" and then run these in order:
+  # 3. ALWAYS push the branch before merging — even if there were no conflicts.
+  #    GitHub sees the REMOTE branch tip, not your local state. If another PR landed
+  #    since your last sync, GitHub will reject the merge until you push the resolution.
+  git push origin "$BRANCH"
 
-  1. Capture the branch name while still inside the worktree:
-       BRANCH=$(git rev-parse --abbrev-ref HEAD)
+  # 4. Wait for GitHub to recompute merge status after the push
+  sleep 5
 
-  2. Merge WITHOUT --delete-branch (avoids "dev already used by worktree" error):
+  Output "Approved for merge" and then run these in order:
+
+  # 5. Squash merge — this is the ONLY valid merge strategy here.
+  #    NEVER use --auto (requires branch protection rules we don't have).
+  #    NEVER use --merge (wrong strategy, creates a merge commit on dev).
+  #    NEVER use --delete-branch (breaks in multi-worktree setups).
        gh pr merge <N> --squash
 
-  3. Delete the remote branch manually (now safe — merge is done):
+  ── If gh pr merge still reports conflicts after the push ──────────────────
+  │ GitHub sometimes needs more time to recompute merge status. Wait and retry: │
+  │                                                                             │
+  │   sleep 10                                                                  │
+  │   gh pr merge <N> --squash                                                  │
+  │                                                                             │
+  │ If it STILL fails: the feature branch has diverged again (yet another PR   │
+  │ landed in the gap). Re-run the full sync:                                  │
+  │   git fetch origin && git merge origin/dev                                  │
+  │   git push origin "$BRANCH"                                                 │
+  │   sleep 5 && gh pr merge <N> --squash                                       │
+  │                                                                             │
+  │ After two sync+push+retry cycles with no success → stop, report the PR     │
+  │ URL and the exact error, and let the user merge manually.                  │
+  └─────────────────────────────────────────────────────────────────────────────
+
+  # 6. Delete the remote branch manually (now safe — merge is done):
        git push origin --delete "$BRANCH"
 
-  4. Close the referenced issue:
+  # 7. Close the referenced issue.
+  #    Find the issue number from the PR body (look for "Closes #N"):
+       gh pr view <N> --json body --jq '.body' | grep -o '#[0-9]*' | head -1
+  #    Then close it:
        gh issue close <issue-number> --comment "Fixed by PR #<N>."
 
   ⚠️  Never use --delete-branch with gh pr merge in a multi-worktree setup.
