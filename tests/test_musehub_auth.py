@@ -26,7 +26,7 @@ async def test_hub_routes_require_auth_create_repo(client: AsyncClient) -> None:
     """POST /musehub/repos returns 401 without a Bearer token."""
     response = await client.post(
         "/api/v1/musehub/repos",
-        json={"name": "beats"},
+        json={"name": "beats", "owner": "testuser"},
     )
     assert response.status_code == 401
 
@@ -135,7 +135,7 @@ async def test_hub_routes_accept_valid_token(
     """
     response = await client.post(
         "/api/v1/musehub/repos",
-        json={"name": "auth-sanity-repo"},
+        json={"name": "auth-sanity-repo", "owner": "testuser"},
         headers=auth_headers,
     )
     assert response.status_code == 201

@@ -43,8 +43,12 @@ async def _make_public_repo(
     description: str = "",
 ) -> str:
     """Seed a public repo and return its repo_id."""
+    import re as _re
+    slug = _re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")[:64].strip("-") or "repo"
     repo = MusehubRepo(
         name=name,
+        owner="testuser",
+        slug=slug,
         visibility="public",
         owner_user_id="test-owner",
         description=description,
@@ -60,8 +64,12 @@ async def _make_public_repo(
 
 async def _make_private_repo(db_session: AsyncSession, name: str = "private-beats") -> str:
     """Seed a private repo and return its repo_id."""
+    import re as _re
+    slug = _re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")[:64].strip("-") or "repo"
     repo = MusehubRepo(
         name=name,
+        owner="testuser",
+        slug=slug,
         visibility="private",
         owner_user_id="test-owner",
         description="",

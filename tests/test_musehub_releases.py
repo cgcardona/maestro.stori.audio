@@ -37,7 +37,7 @@ async def _create_repo(
     """Create a repo via the API and return its repo_id."""
     response = await client.post(
         "/api/v1/musehub/repos",
-        json={"name": name},
+        json={"name": name, "owner": "testuser"},
         headers=auth_headers,
     )
     assert response.status_code == 201
@@ -320,6 +320,7 @@ async def test_create_release_service_persists_to_db(db_session: AsyncSession) -
     repo = await musehub_repository.create_repo(
         db_session,
         name="service-release-repo",
+        owner="testuser",
         visibility="private",
         owner_user_id="user-001",
     )
@@ -351,6 +352,7 @@ async def test_create_release_duplicate_tag_raises_value_error(
     repo = await musehub_repository.create_repo(
         db_session,
         name="dup-tag-svc-repo",
+        owner="testuser",
         visibility="private",
         owner_user_id="user-002",
     )
@@ -383,6 +385,7 @@ async def test_list_releases_newest_first_service(db_session: AsyncSession) -> N
     repo = await musehub_repository.create_repo(
         db_session,
         name="list-svc-repo",
+        owner="testuser",
         visibility="private",
         owner_user_id="user-003",
     )
@@ -410,6 +413,7 @@ async def test_get_latest_release_returns_newest(db_session: AsyncSession) -> No
     repo = await musehub_repository.create_repo(
         db_session,
         name="latest-svc-repo",
+        owner="testuser",
         visibility="private",
         owner_user_id="user-004",
     )
@@ -438,6 +442,7 @@ async def test_get_latest_release_empty_repo_returns_none(
     repo = await musehub_repository.create_repo(
         db_session,
         name="no-releases-repo",
+        owner="testuser",
         visibility="private",
         owner_user_id="user-005",
     )

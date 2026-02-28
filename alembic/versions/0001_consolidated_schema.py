@@ -258,6 +258,10 @@ def upgrade() -> None:
         "musehub_repos",
         sa.Column("repo_id", sa.String(36), nullable=False),
         sa.Column("name", sa.String(255), nullable=False),
+        # URL-visible owner username (e.g. "gabriel") — forms the /{owner}/{slug} path
+        sa.Column("owner", sa.String(64), nullable=False),
+        # URL-safe slug auto-generated from name (e.g. "neo-soul-experiment")
+        sa.Column("slug", sa.String(64), nullable=False),
         sa.Column("visibility", sa.String(20), nullable=False, server_default="private"),
         sa.Column("owner_user_id", sa.String(36), nullable=False),
         sa.Column("description", sa.Text(), nullable=False, server_default=""),
@@ -266,7 +270,10 @@ def upgrade() -> None:
         sa.Column("tempo_bpm", sa.Integer(), nullable=True),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP")),
         sa.PrimaryKeyConstraint("repo_id"),
+        sa.UniqueConstraint("owner", "slug", name="uq_musehub_repos_owner_slug"),
     )
+    op.create_index("ix_musehub_repos_owner", "musehub_repos", ["owner"])
+    op.create_index("ix_musehub_repos_slug", "musehub_repos", ["slug"])
     op.create_index("ix_musehub_repos_owner_user_id", "musehub_repos", ["owner_user_id"])
     op.create_index("ix_musehub_repos_visibility", "musehub_repos", ["visibility"])
 
@@ -534,6 +541,8 @@ def downgrade() -> None:
     op.drop_table("musehub_branches")
     op.drop_index("ix_musehub_repos_visibility", table_name="musehub_repos")
     op.drop_index("ix_musehub_repos_owner_user_id", table_name="musehub_repos")
+    op.drop_index("ix_musehub_repos_slug", table_name="musehub_repos")
+    op.drop_index("ix_musehub_repos_owner", table_name="musehub_repos")
     op.drop_table("musehub_repos")
 
     # Muse CLI
@@ -603,6 +612,8 @@ def downgrade() -> None:
     op.drop_table("musehub_branches")
     op.drop_index("ix_musehub_repos_visibility", table_name="musehub_repos")
     op.drop_index("ix_musehub_repos_owner_user_id", table_name="musehub_repos")
+    op.drop_index("ix_musehub_repos_slug", table_name="musehub_repos")
+    op.drop_index("ix_musehub_repos_owner", table_name="musehub_repos")
     op.drop_table("musehub_repos")
 
     # Muse CLI

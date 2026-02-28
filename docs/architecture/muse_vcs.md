@@ -1502,7 +1502,7 @@ maestro/
 
 **Contribution type inference:** Roles are inferred from commit message keywords using `_ROLE_KEYWORDS` in `musehub_credits.py`. No role matched → falls back to `["contributor"]`. The list evolves as musicians describe their work more richly in commit messages.
 
-**Machine-readable credits:** The UI page (`GET /musehub/ui/{repo_id}/credits`) injects a `<script type="application/ld+json">` block using schema.org `MusicComposition` vocabulary for embeddable, machine-readable attribution.
+**Machine-readable credits:** The UI page (`GET /musehub/ui/{owner}/{repo_slug}/credits`) injects a `<script type="application/ld+json">` block using schema.org `MusicComposition` vocabulary for embeddable, machine-readable attribution.
 
 **Agent use case:** An AI agent generating release notes or liner notes calls `GET /api/v1/musehub/repos/{id}/credits?sort=count` to enumerate all contributors and their roles, then formats the result as attribution text. The JSON-LD block is ready for schema.org consumers (streaming platforms, metadata aggregators).
 | GET | `/api/v1/musehub/repos/{id}/dag` | Full commit DAG (topologically sorted nodes + edges) |
@@ -1525,7 +1525,7 @@ Returns a `MuseHubContextResponse` document with:
 - `missing_elements` — list of dimensions the agent cannot determine from stored data.
 - `suggestions` — composer-facing hints about what to work on next.
 
-**UI page:** `GET /musehub/ui/{repo_id}/context/{ref}` — no auth required (JS shell handles auth).
+**UI page:** `GET /musehub/ui/{owner}/{repo_slug}/context/{ref}` — no auth required (JS shell handles auth).
 Renders the context document in structured HTML with:
 - "What the Agent Sees" explainer at the top
 - Collapsible sections for Musical State, History, Missing Elements, and Suggestions
@@ -1680,14 +1680,14 @@ All authed endpoints require `Authorization: Bearer <token>`. See [api.md](../re
 
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | `/musehub/ui/{repo_id}` | Repo landing page (branch selector + commit log) |
-| GET | `/musehub/ui/{repo_id}/commits/{commit_id}` | Commit detail (metadata + artifact browser) |
-| GET | `/musehub/ui/{repo_id}/pulls` | Pull request list |
-| GET | `/musehub/ui/{repo_id}/pulls/{pr_id}` | PR detail (with merge button) |
-| GET | `/musehub/ui/{repo_id}/issues` | Issue list |
-| GET | `/musehub/ui/{repo_id}/issues/{number}` | Issue detail (with close button) |
-| GET | `/musehub/ui/{repo_id}/sessions` | Session list (newest first) |
-| GET | `/musehub/ui/{repo_id}/sessions/{session_id}` | Session detail page |
+| GET | `/musehub/ui/{owner}/{repo_slug}` | Repo landing page (branch selector + commit log) |
+| GET | `/musehub/ui/{owner}/{repo_slug}/commits/{commit_id}` | Commit detail (metadata + artifact browser) |
+| GET | `/musehub/ui/{owner}/{repo_slug}/pulls` | Pull request list |
+| GET | `/musehub/ui/{owner}/{repo_slug}/pulls/{pr_id}` | PR detail (with merge button) |
+| GET | `/musehub/ui/{owner}/{repo_slug}/issues` | Issue list |
+| GET | `/musehub/ui/{owner}/{repo_slug}/issues/{number}` | Issue detail (with close button) |
+| GET | `/musehub/ui/{owner}/{repo_slug}/sessions` | Session list (newest first) |
+| GET | `/musehub/ui/{owner}/{repo_slug}/sessions/{session_id}` | Session detail page |
 
 UI pages are HTML shells — auth is handled client-side via `localStorage` JWT. The JS fetches from the authed JSON API above.
 ### DAG Graph — Interactive Commit Graph
@@ -1776,7 +1776,7 @@ returns `409 Conflict`. The same tag can be reused across different repos withou
 
 #### Latest Release Badge
 
-The repo home page (`GET /musehub/ui/{repo_id}`) fetches the release list on load and
+The repo home page (`GET /musehub/ui/{owner}/{repo_slug}`) fetches the release list on load and
 displays a green "Latest: v1.0" badge in the navigation bar when at least one release exists.
 Clicking the badge navigates to the release detail page.
 
@@ -1863,7 +1863,7 @@ Authorization: Bearer <token>
 #### Web UI Page
 
 ```
-GET /musehub/ui/{repo_id}/timeline
+GET /musehub/ui/{owner}/{repo_slug}/timeline
 ```
 
 No auth required — HTML shell whose JS fetches the JSON API using the JWT from `localStorage`.
@@ -1932,7 +1932,7 @@ Overall score = arithmetic mean of all five dimension scores.
 #### Browser UI
 
 ```
-GET /musehub/ui/{repo_id}/divergence?branch_a=<name>&branch_b=<name>
+GET /musehub/ui/{owner}/{repo_slug}/divergence?branch_a=<name>&branch_b=<name>
 ```
 
 Renders an interactive page featuring:
@@ -6812,7 +6812,7 @@ to token usage from `usage_logs`.
 ### Disambiguation
 
 The profile UI page at `/musehub/ui/users/{username}` does NOT conflict with
-the repo browser at `/musehub/ui/{repo_id}` — the `users/` path segment
+the repo browser at `/musehub/ui/{owner}/{repo_slug}` — the `users/` path segment
 ensures distinct routing.  The JSON API is namespaced at
 `/api/v1/musehub/users/{username}`.
 
@@ -7028,7 +7028,7 @@ ref.  These pages close the gap between the CLI commands `muse contour` and
 
 ### Contour Analysis Page
 
-**Route:** `GET /musehub/ui/{repo_id}/analysis/{ref}/contour`
+**Route:** `GET /musehub/ui/{owner}/{repo_slug}/analysis/{ref}/contour`
 
 **Auth:** No JWT required — static HTML shell; JS fetches from the authed JSON API.
 
@@ -7067,7 +7067,7 @@ descending phrase that resolves the arch rather than restarting from the peak.
 
 ### Tempo Analysis Page
 
-**Route:** `GET /musehub/ui/{repo_id}/analysis/{ref}/tempo`
+**Route:** `GET /musehub/ui/{owner}/{repo_slug}/analysis/{ref}/tempo`
 
 **Auth:** No JWT required — static HTML shell; JS fetches from the authed JSON API.
 

@@ -48,22 +48,37 @@ from maestro.models.musehub import (
 logger = logging.getLogger(__name__)
 
 
-def _repo_clone_url(repo_id: str) -> str:
-    """Derive a deterministic clone URL from the repo ID.
+def _generate_slug(name: str) -> str:
+    """Derive a URL-safe slug from a human-readable repo name.
 
-    The URL format is intentionally simple for MVP; it will be parameterised
-    by ``settings.musehub_base_url`` once that setting is introduced.
+    Rules: lowercase, non-alphanumeric chars collapsed to single hyphens,
+    leading/trailing hyphens stripped, max 64 chars.  If the result is empty
+    (e.g. name was all symbols) we fall back to "repo".
     """
-    return f"/musehub/repos/{repo_id}"
+    slug = name.lower()
+    slug = re.sub(r"[^a-z0-9]+", "-", slug)
+    slug = slug.strip("-")
+    slug = slug[:64].strip("-")
+    return slug or "repo"
+
+
+def _repo_clone_url(owner: str, slug: str) -> str:
+    """Derive the canonical clone URL from owner and slug.
+
+    Uses the /{owner}/{slug} scheme — no internal UUID exposed in external URLs.
+    """
+    return f"/{owner}/{slug}"
 
 
 def _to_repo_response(row: db.MusehubRepo) -> RepoResponse:
     return RepoResponse(
         repo_id=row.repo_id,
         name=row.name,
+        owner=row.owner,
+        slug=row.slug,
         visibility=row.visibility,
         owner_user_id=row.owner_user_id,
-        clone_url=_repo_clone_url(row.repo_id),
+        clone_url=_repo_clone_url(row.owner, row.slug),
         description=row.description,
         tags=list(row.tags or []),
         key_signature=row.key_signature,
@@ -96,6 +111,7 @@ async def create_repo(
     session: AsyncSession,
     *,
     name: str,
+    owner: str,
     visibility: str,
     owner_user_id: str,
     description: str = "",
@@ -103,9 +119,16 @@ async def create_repo(
     key_signature: str | None = None,
     tempo_bpm: int | None = None,
 ) -> RepoResponse:
-    """Persist a new remote repo and return its wire representation."""
+    """Persist a new remote repo and return its wire representation.
+
+    ``slug`` is auto-generated from ``name``.  The ``(owner, slug)`` pair must
+    be unique — callers should catch ``IntegrityError`` and surface a 409.
+    """
+    slug = _generate_slug(name)
     repo = db.MusehubRepo(
         name=name,
+        owner=owner,
+        slug=slug,
         visibility=visibility,
         owner_user_id=owner_user_id,
         description=description,
@@ -116,16 +139,50 @@ async def create_repo(
     session.add(repo)
     await session.flush()  # populate default columns before reading
     await session.refresh(repo)
-    logger.info("✅ Created Muse Hub repo %s (%s) for user %s", repo.repo_id, name, owner_user_id)
+    logger.info(
+        "✅ Created Muse Hub repo %s (%s/%s) for user %s",
+        repo.repo_id, owner, slug, owner_user_id,
+    )
     return _to_repo_response(repo)
 
 
 async def get_repo(session: AsyncSession, repo_id: str) -> RepoResponse | None:
-    """Return repo metadata, or None if not found."""
+    """Return repo metadata by internal UUID, or None if not found."""
     result = await session.get(db.MusehubRepo, repo_id)
     if result is None:
         return None
     return _to_repo_response(result)
+
+
+async def get_repo_by_owner_slug(
+    session: AsyncSession, owner: str, slug: str
+) -> RepoResponse | None:
+    """Return repo metadata by owner+slug canonical URL pair, or None if not found.
+
+    This is the primary resolver for all external /{owner}/{slug} routes.
+    """
+    stmt = select(db.MusehubRepo).where(
+        db.MusehubRepo.owner == owner,
+        db.MusehubRepo.slug == slug,
+    )
+    row = (await session.execute(stmt)).scalars().first()
+    if row is None:
+        return None
+    return _to_repo_response(row)
+
+
+async def get_repo_orm_by_owner_slug(
+    session: AsyncSession, owner: str, slug: str
+) -> db.MusehubRepo | None:
+    """Return the raw ORM repo row by owner+slug, or None if not found.
+
+    Used internally when the route needs the repo_id for downstream calls.
+    """
+    stmt = select(db.MusehubRepo).where(
+        db.MusehubRepo.owner == owner,
+        db.MusehubRepo.slug == slug,
+    )
+    return (await session.execute(stmt)).scalars().first()
 
 
 async def list_branches(session: AsyncSession, repo_id: str) -> list[BranchResponse]:
@@ -545,6 +602,7 @@ async def global_search(
                 repo_id=rid,
                 repo_name=repo_row.name,
                 repo_owner=repo_row.owner_user_id,
+                repo_slug=repo_row.slug,
                 repo_visibility=repo_row.visibility,
                 matches=commit_matches,
                 total_matches=len(all_matches),

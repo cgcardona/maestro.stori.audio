@@ -38,15 +38,25 @@ def _utc_now() -> datetime:
 class MusehubRepo(Base):
     """A remote Muse repository — the hub-side equivalent of a Git remote.
 
+    ``owner`` is the URL-visible username (e.g. "gabriel") and ``slug`` is the
+    URL-safe repo name auto-generated from ``name`` (e.g. "neo-soul-experiment").
+    Together they form the canonical /{owner}/{slug} URL scheme.  The internal
+    ``repo_id`` UUID remains the primary key — external URLs never expose it.
+
     Music-semantic fields (key_signature, tempo_bpm, tags) are optional metadata
     that musicians set to make their repos discoverable on the explore page.
     Tags are free-form strings that encode genre, instrumentation, and mood.
     """
 
     __tablename__ = "musehub_repos"
+    __table_args__ = (UniqueConstraint("owner", "slug", name="uq_musehub_repos_owner_slug"),)
 
     repo_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_new_uuid)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
+    # URL-visible owner username, e.g. "gabriel" — forms the /{owner}/{slug} path
+    owner: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    # URL-safe slug auto-generated from name, e.g. "neo-soul-experiment"
+    slug: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     visibility: Mapped[str] = mapped_column(String(20), nullable=False, default="private")
     owner_user_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
     description: Mapped[str] = mapped_column(Text, nullable=False, default="")

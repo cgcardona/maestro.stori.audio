@@ -30,7 +30,7 @@ async def _create_repo(client: AsyncClient, auth_headers: dict[str, str], name: 
     """Create a repo via the API and return its repo_id."""
     response = await client.post(
         "/api/v1/musehub/repos",
-        json={"name": name},
+        json={"name": name, "owner": "testuser"},
         headers=auth_headers,
     )
     assert response.status_code == 201
@@ -308,6 +308,7 @@ async def test_create_issue_service_persists_to_db(db_session: AsyncSession) -> 
     repo = await musehub_repository.create_repo(
         db_session,
         name="service-issue-repo",
+        owner="testuser",
         visibility="private",
         owner_user_id="user-abc",
     )
@@ -336,6 +337,7 @@ async def test_list_issues_closed_state_filter(db_session: AsyncSession) -> None
     repo = await musehub_repository.create_repo(
         db_session,
         name="filter-state-repo",
+        owner="testuser",
         visibility="private",
         owner_user_id="user-xyz",
     )
