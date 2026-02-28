@@ -30,6 +30,14 @@ This is why agents MUST read this document and follow it.
 
 ## Cursor Configuration (one-time setup)
 
+### External-File Protection — must be OFF
+
+`Cmd+Shift+J` → Cursor Settings → Agents → **External-File Protection → disable**
+
+Parallel agents edit files inside git worktrees at `~/.cursor/worktrees/`, which are
+outside the main workspace. With External-File Protection on, every file edit in a
+worktree triggers a "Blocked / Allow edits to external files" prompt. Turn it off once.
+
 ### Auto-Run Mode
 
 `Cmd+Shift+J` → Cursor Settings → Agents → Auto-Run → **Auto-Run in Sandbox**
@@ -50,34 +58,12 @@ they trip a restriction. Red-tier commands that reach the sandbox will prompt.
 Clear the existing allowlist entirely, then paste the block below into
 **Cursor Settings → Agents → Auto-Run → Command Allowlist**.
 
-Rules for this format: commands only, no prose, no parentheses, no backticks.
-Cursor tokenises on commas and periods — keep each line to one category.
+> **IMPORTANT:** Paste this as a **single unbroken line** — no line breaks.
+> Cursor strips newlines and treats them as spaces, merging adjacent entries
+> into one broken token. The comma is the only separator Cursor respects.
 
 ```
-ls, ls -la, ls -lah, ls -l, pwd, cat, head, tail, echo, wc, file, which, date, basename, dirname, printf, jq
-sort, uniq, tr, awk, sed, cut, xargs, tee
-rg, grep, find, mkdir -p, cp, mv, touch, ln -s
-cd, REPO=, WTNAME=, DEV_SHA=, WT=, NUM=, TITLE=
-git status, git log, git diff, git show, git branch, git fetch, git fetch origin, git stash list, git worktree list
-git ls-remote, git rev-parse, git ls-files, git merge-base, git describe, git cat-file
-git -C, git -C /Users, git worktree list --porcelain
-git bisect, git bisect start, git bisect bad, git bisect good, git bisect log, git bisect reset
-git checkout -b, git checkout, git add, git add -A, git commit, git merge origin/dev, git merge
-git stash, git stash pop, git stash apply, git push origin
-git worktree add, git worktree add --detach, git worktree remove --force, git worktree prune
-docker compose ps, docker compose logs, docker compose config, docker ps, docker inspect
-docker compose exec maestro mypy, docker compose exec maestro pytest, docker compose exec maestro sh -c
-docker compose exec maestro python -m coverage, docker compose exec maestro ls, docker compose exec maestro cat
-docker compose exec maestro rg, docker compose exec maestro grep, docker compose exec maestro find
-docker compose exec maestro alembic history, docker compose exec maestro alembic current, docker compose exec maestro alembic heads, docker compose exec maestro alembic upgrade head
-docker compose exec storpheus mypy, docker compose exec storpheus pytest, docker compose exec storpheus sh -c
-docker compose exec storpheus ls, docker compose exec storpheus cat, docker compose exec storpheus rg, docker compose exec storpheus grep
-docker compose exec postgres psql
-gh auth status, gh repo view, gh pr view, gh pr list, gh pr diff, gh pr create, gh pr checkout, gh pr merge, gh pr comment, gh pr review
-gh issue view, gh issue list, gh issue create, gh issue close, gh issue comment, gh issue edit
-gh run list, gh run view, gh release list, gh release view, gh api
-ps aux, ps -ef, pgrep, nc -z, curl
-REPO=$(git, WTNAME=$(basename, DEV_SHA=$(git, WT=$HOME
+ls, ls -la, ls -lah, ls -l, pwd, cat, head, tail, echo, wc, file, which, date, basename, dirname, printf, jq, sort, uniq, tr, awk, sed, cut, xargs, tee, rg, grep, find, mkdir -p, cp, mv, touch, ln -s, cd, REPO=, WTNAME=, DEV_SHA=, WT=, NUM=, TITLE=, BRANCH=, git status, git log, git diff, git show, git branch, git fetch, git fetch origin, git stash list, git worktree list, git ls-remote, git rev-parse, git ls-files, git merge-base, git describe, git cat-file, git -C, git -C /Users, git worktree list --porcelain, git bisect, git bisect start, git bisect bad, git bisect good, git bisect log, git bisect reset, git checkout -b, git checkout, git add, git add -A, git commit, git merge origin/dev, git merge, git stash, git stash pop, git stash apply, git push origin, git push origin --delete, git worktree add, git worktree add --detach, git worktree remove --force, git worktree prune, docker compose ps, docker compose logs, docker compose config, docker ps, docker inspect, docker compose exec maestro mypy, docker compose exec maestro pytest, docker compose exec maestro sh -c, docker compose exec maestro python -m coverage, docker compose exec maestro ls, docker compose exec maestro cat, docker compose exec maestro rg, docker compose exec maestro grep, docker compose exec maestro find, docker compose exec maestro alembic history, docker compose exec maestro alembic current, docker compose exec maestro alembic heads, docker compose exec maestro alembic upgrade head, docker compose exec storpheus mypy, docker compose exec storpheus pytest, docker compose exec storpheus sh -c, docker compose exec storpheus ls, docker compose exec storpheus cat, docker compose exec storpheus rg, docker compose exec storpheus grep, docker compose exec postgres psql, gh auth status, gh repo view, gh pr view, gh pr list, gh pr diff, gh pr create, gh pr checkout, gh pr merge, gh pr comment, gh pr review, gh issue view, gh issue list, gh issue create, gh issue close, gh issue comment, gh issue edit, gh run list, gh run view, gh release list, gh release view, gh api, ps aux, ps -ef, pgrep, nc -z, curl, REPO=$(git, WTNAME=$(basename, DEV_SHA=$(git, WT=$HOME, BRANCH=$(git
 ```
 
 ---
@@ -181,7 +167,8 @@ git worktree prune                       ← pruning stale worktree refs
 
 ### Git — Push (feature branches only)
 ```
-git push origin <feature-branch>   ← non-main, non-dev branches ONLY
+git push origin <feature-branch>          ← non-main, non-dev branches ONLY
+git push origin --delete <feature-branch> ← remote branch cleanup after PR merge
 ```
 
 ### GitHub CLI — Read Only
@@ -204,7 +191,7 @@ gh api <GET-endpoint>              ← read-only API calls only
 ```
 gh pr checkout <N>                 ← checkout into own worktree
 gh pr create --title "..." --body "..."
-gh pr merge <N> --squash --delete-branch   ← ONLY after "Grade: X / Approved" output
+gh pr merge <N> --squash                   ← ONLY after "Grade: X / Approved" output; never --delete-branch (breaks with multi-worktree)
 gh pr comment <N> --body "..."
 gh pr review <N> [--approve | --request-changes | --comment]
 gh issue create --title "..." --body "..." --label "..."
