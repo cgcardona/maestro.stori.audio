@@ -4,7 +4,11 @@ Covers the minimum acceptance criteria from issue #43 and issue #232:
 - test_ui_repo_page_returns_200        — GET /musehub/ui/{repo_id} returns HTML
 - test_ui_commit_page_shows_artifact_links — commit page HTML mentions img/download
 - test_ui_pr_list_page_returns_200     — PR list page renders without error
-- test_ui_issue_list_page_returns_200  — Issue list page renders without error
+- test_ui_issue_list_page_returns_200          — Issue list page renders without error
+- test_ui_issue_list_has_open_closed_tabs      — Open/Closed tab buttons present (#299)
+- test_ui_issue_list_has_sort_controls         — Sort buttons (newest/oldest/most-commented) present (#299)
+- test_ui_issue_list_has_label_filter_js       — Client-side label filter JS present (#299)
+- test_ui_issue_list_has_body_preview_js       — Body preview helper and CSS class present (#299)
 - test_context_page_renders            — context viewer page returns 200 HTML
 - test_context_json_response           — JSON returns MuseHubContextResponse structure
 - test_context_includes_musical_state  — response includes active_tracks field
@@ -195,6 +199,71 @@ async def test_ui_issue_list_page_returns_200(
     body = response.text
     assert "Issues" in body
     assert "Muse Hub" in body
+
+
+@pytest.mark.anyio
+async def test_ui_issue_list_has_open_closed_tabs(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Issue list page HTML includes Open and Closed tab buttons and count spans."""
+    await _make_repo(db_session)
+    response = await client.get("/musehub/ui/testuser/test-beats/issues")
+    assert response.status_code == 200
+    body = response.text
+    # Tab buttons for open and closed state
+    assert "tab-open" in body
+    assert "tab-closed" in body
+    # Tab count placeholders are rendered client-side; structural markers exist
+    assert "tab-count" in body
+    assert "Open" in body
+    assert "Closed" in body
+
+
+@pytest.mark.anyio
+async def test_ui_issue_list_has_sort_controls(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Issue list page HTML includes Newest, Oldest, and Most commented sort buttons."""
+    await _make_repo(db_session)
+    response = await client.get("/musehub/ui/testuser/test-beats/issues")
+    assert response.status_code == 200
+    body = response.text
+    assert "Newest" in body
+    assert "Oldest" in body
+    assert "Most commented" in body
+    assert "changeSort" in body
+
+
+@pytest.mark.anyio
+async def test_ui_issue_list_has_label_filter_js(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Issue list page HTML includes client-side label filter logic."""
+    await _make_repo(db_session)
+    response = await client.get("/musehub/ui/testuser/test-beats/issues")
+    assert response.status_code == 200
+    body = response.text
+    # JS function for label filtering
+    assert "setLabelFilter" in body
+    assert "label-pill" in body
+    assert "activeLabel" in body
+
+
+@pytest.mark.anyio
+async def test_ui_issue_list_has_body_preview_js(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Issue list page HTML includes bodyPreview helper for truncated body subtitles."""
+    await _make_repo(db_session)
+    response = await client.get("/musehub/ui/testuser/test-beats/issues")
+    assert response.status_code == 200
+    body = response.text
+    assert "bodyPreview" in body
+    assert "issue-preview" in body
 
 
 @pytest.mark.anyio
