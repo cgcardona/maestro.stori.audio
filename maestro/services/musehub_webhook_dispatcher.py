@@ -40,6 +40,7 @@ from maestro.models.musehub import (
     WebhookEventPayload,
     WebhookResponse,
 )
+from maestro.services.musehub_webhook_crypto import decrypt_secret, encrypt_secret
 
 logger = logging.getLogger(__name__)
 
@@ -114,7 +115,7 @@ async def create_webhook(
         repo_id=repo_id,
         url=url,
         events=events,
-        secret=secret,
+        secret=encrypt_secret(secret),
         active=True,
     )
     session.add(webhook)
@@ -222,7 +223,8 @@ async def _attempt_delivery(
         "User-Agent": "MuseHub-Webhook/1.0",
     }
     if webhook.secret:
-        headers["X-MuseHub-Signature"] = _sign_payload(webhook.secret, payload_bytes)
+        plaintext_secret = decrypt_secret(webhook.secret)
+        headers["X-MuseHub-Signature"] = _sign_payload(plaintext_secret, payload_bytes)
 
     try:
         resp = await client.post(

@@ -33,6 +33,9 @@ const COL_W    = 32;
 const PAD_LEFT = 20;
 const PAD_TOP  = 20;
 
+// Session teal ring color — distinct from HEAD orange and branch colours.
+const SESSION_RING_COLOR = '#2dd4bf';
+
 function layoutNodes(nodes) {
   const colMap = {};
   let nextCol = 0;
@@ -45,7 +48,44 @@ function layoutNodes(nodes) {
   return { pos, maxCol };
 }
 
-function renderGraph(data) {
+// Build a map of commitId → { intent, sessionId } from sessions data.
+// A commit may appear in multiple sessions; we keep the most-recently-started one.
+function buildSessionMap(sessions) {
+  const map = {};
+  const sorted = [...sessions].sort((a, b) =>
+    new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime()
+  );
+  sorted.forEach(s => {
+    (s.commits || []).forEach(cid => {
+      if (!map[cid]) {
+        map[cid] = { intent: s.intent || '', sessionId: s.sessionId };
+      }
+    });
+  });
+  return map;
+}
+
+// Batch-fetch reaction counts for an array of commitIds.
+// Returns a map of commitId → { topEmoji, totalCount }.
+async function fetchReactions(repoId, commitIds) {
+  const results = {};
+  await Promise.all(commitIds.map(async cid => {
+    try {
+      const data = await apiFetch(
+        `/repos/${repoId}/reactions?target_type=commit&target_id=${encodeURIComponent(cid)}`
+      );
+      const list = Array.isArray(data) ? data : [];
+      const total = list.reduce((s, r) => s + (r.count || 0), 0);
+      const top = list.sort((a, b) => (b.count || 0) - (a.count || 0))[0];
+      results[cid] = { topEmoji: top ? top.emoji : null, totalCount: total };
+    } catch (_) {
+      results[cid] = { topEmoji: null, totalCount: 0 };
+    }
+  }));
+  return results;
+}
+
+function renderGraph(data, sessionMap, reactionMap) {
   const { nodes, edges, headCommitId } = data;
   if (!nodes.length) {
     document.getElementById('content').innerHTML =
@@ -84,9 +124,15 @@ function renderGraph(data) {
     const color = branchColor(n.branch);
     const isHead = n.commitId === headCommitId || n.isHead;
     const isMerge = (n.parentIds || []).length > 1;
+    const inSession = Boolean(sessionMap[n.commitId]);
 
+    // Session teal ring — rendered behind the node so it frames it cleanly.
+    if (inSession) {
+      nodeCircles += `<circle cx="${cx}" cy="${cy}" r="${NODE_R + 5}"
+        fill="none" stroke="${SESSION_RING_COLOR}" stroke-width="2.5" opacity="0.85"/>`;
+    }
     if (isHead) {
-      nodeCircles += `<circle cx="${cx}" cy="${cy}" r="${NODE_R + 4}"
+      nodeCircles += `<circle cx="${cx}" cy="${cy}" r="${NODE_R + (inSession ? 9 : 4)}"
         fill="none" stroke="#f0883e" stroke-width="2" opacity="0.9"/>`;
     }
     if (isMerge) {
@@ -149,6 +195,7 @@ function renderGraph(data) {
         ${legendItems}
         <span style="font-size:12px;color:#8b949e;margin-left:auto">&#9830; = merge commit</span>
         <span style="font-size:12px;color:#f0883e;margin-left:12px">&#9711; = HEAD</span>
+        <span style="font-size:12px;color:${SESSION_RING_COLOR};margin-left:12px">&#9675; = session</span>
       </div>
       <div id="dag-viewport" style="overflow:hidden;position:relative;height:520px;background:#0d1117;cursor:grab">
         <svg id="dag-svg" width="${svgW}" height="${svgH}" style="position:absolute;top:0;left:0">
@@ -164,6 +211,8 @@ function renderGraph(data) {
       <div style="font-family:monospace;font-size:13px;color:#58a6ff;margin-bottom:6px" id="pop-sha"></div>
       <div style="font-size:13px;color:#e6edf3;margin-bottom:6px;word-break:break-word" id="pop-msg"></div>
       <div style="font-size:12px;color:#8b949e" id="pop-meta"></div>
+      <div style="font-size:12px;color:${SESSION_RING_COLOR};margin-top:6px;display:none" id="pop-session"></div>
+      <div style="font-size:12px;color:#8b949e;margin-top:4px;display:none" id="pop-reactions"></div>
     </div>`;
 
   const viewport = document.getElementById('dag-viewport');
@@ -204,6 +253,8 @@ function renderGraph(data) {
   });
 
   const popover = document.getElementById('dag-popover');
+  const popSession = document.getElementById('pop-session');
+  const popReactions = document.getElementById('pop-reactions');
   const svgEl = document.getElementById('dag-svg');
   svgEl.addEventListener('mousemove', e => {
     const target = e.target.closest('.dag-node');
@@ -216,11 +267,33 @@ function renderGraph(data) {
     document.getElementById('pop-meta').innerHTML =
       escHtml(node.author) + ' &bull; ' + fmtDate(node.timestamp) +
       ' &bull; ' + escHtml(node.branch);
+
+    // Session context
+    const sess = sessionMap[cid];
+    if (sess && sess.intent) {
+      popSession.textContent = '\u25cb Session: ' + sess.intent;
+      popSession.style.display = 'block';
+    } else {
+      popSession.style.display = 'none';
+    }
+
+    // Reaction summary
+    const rxn = reactionMap[cid];
+    if (rxn && rxn.totalCount > 0) {
+      const parts = [];
+      if (rxn.topEmoji) parts.push(rxn.topEmoji);
+      parts.push(rxn.totalCount + ' reaction' + (rxn.totalCount !== 1 ? 's' : ''));
+      popReactions.textContent = parts.join(' ');
+      popReactions.style.display = 'block';
+    } else {
+      popReactions.style.display = 'none';
+    }
+
     popover.style.display = 'block';
     const vw = window.innerWidth, vh = window.innerHeight;
     let px = e.clientX + 16, py = e.clientY + 16;
     if (px + 420 > vw) px = e.clientX - 420;
-    if (py + 120 > vh) py = e.clientY - 120;
+    if (py + 160 > vh) py = e.clientY - 160;
     popover.style.left = px + 'px';
     popover.style.top  = py + 'px';
   });
@@ -237,8 +310,21 @@ function renderGraph(data) {
 async function load() {
   initRepoNav(repoId);
   try {
-    const data = await apiFetch('/repos/' + repoId + '/dag');
-    renderGraph(data);
+    // Fetch DAG, sessions, and reactions in parallel.
+    // Reactions are batch-fetched for all commit IDs to avoid N+1 queries.
+    const [dagData, sessionsData] = await Promise.all([
+      apiFetch('/repos/' + repoId + '/dag'),
+      apiFetch('/repos/' + repoId + '/sessions?limit=200').catch(() => ({ sessions: [] })),
+    ]);
+
+    const sessions = (sessionsData.sessions || []);
+    const sessionMap = buildSessionMap(sessions);
+    const commitIds = (dagData.nodes || []).map(n => n.commitId);
+    const reactionMap = commitIds.length
+      ? await fetchReactions(repoId, commitIds)
+      : {};
+
+    renderGraph(dagData, sessionMap, reactionMap);
   } catch(e) {
     if (e.message !== 'auth')
       document.getElementById('content').innerHTML =

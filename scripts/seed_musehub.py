@@ -586,7 +586,7 @@ GENERIC_ISSUES = [
 # PR templates
 # ---------------------------------------------------------------------------
 
-def _make_prs(repo_id: str, commits: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def _make_prs(repo_id: str, commits: list[dict[str, Any]], owner: str) -> list[dict[str, Any]]:
     if len(commits) < 4:
         return []
     c = commits
@@ -595,22 +595,26 @@ def _make_prs(repo_id: str, commits: list[dict[str, Any]]) -> list[dict[str, Any
              title="Feat: add counter-melody layer",
              body="## Changes\nAdds secondary melodic voice.\n\n## Analysis\nHarmonic tension +0.08.",
              state="open", from_branch="feat/counter-melody", to_branch="main",
+             author=owner,
              created_at=_now(days=6)),
         dict(pr_id=_uid(f"pr-{repo_id}-2"), repo_id=repo_id,
              title="Refactor: humanize all MIDI timing",
              body="Applied `muse humanize --natural` to all tracks. Groove score +0.12.",
              state="merged", from_branch="fix/humanize-midi", to_branch="main",
              merge_commit_id=c[-3]["commit_id"],
+             author=owner,
              created_at=_now(days=14)),
         dict(pr_id=_uid(f"pr-{repo_id}-3"), repo_id=repo_id,
              title="Experiment: alternate bridge harmony",
              body="Trying a tritone substitution approach for the bridge section.",
              state="open", from_branch="experiment/bridge-harmony", to_branch="main",
+             author=owner,
              created_at=_now(days=3)),
         dict(pr_id=_uid(f"pr-{repo_id}-4"), repo_id=repo_id,
              title="Fix: resolve voice-leading errors",
              body="Parallel 5ths in bars 7-8 and parallel octaves in bars 15-16 corrected.",
              state="closed", from_branch="fix/voice-leading", to_branch="main",
+             author=owner,
              created_at=_now(days=20)),
     ]
 
@@ -619,7 +623,7 @@ def _make_prs(repo_id: str, commits: list[dict[str, Any]]) -> list[dict[str, Any
 # Release templates
 # ---------------------------------------------------------------------------
 
-def _make_releases(repo_id: str, commits: list[dict[str, Any]], repo_name: str) -> list[dict[str, Any]]:
+def _make_releases(repo_id: str, commits: list[dict[str, Any]], repo_name: str, owner: str) -> list[dict[str, Any]]:
     if not commits:
         return []
     return [
@@ -627,11 +631,13 @@ def _make_releases(repo_id: str, commits: list[dict[str, Any]], repo_name: str) 
              body=f"## v0.1.0 — Early Draft\n\nFirst checkpoint. Basic groove locked in.\n\n### Tracks\n- Main groove\n- Bass foundation\n\n### Technical\nInitial BPM and key established.",
              commit_id=commits[min(4, len(commits)-1)]["commit_id"],
              download_urls={"midi_bundle": f"/releases/{repo_id}-v0.1.0.zip"},
+             author=owner,
              created_at=_now(days=45)),
         dict(repo_id=repo_id, tag="v0.2.0", title="Arrangement Draft",
              body=f"## v0.2.0 — Arrangement Draft\n\nAll major sections sketched.\n\n### What's new\n- Additional instrument layers\n- Section transitions defined\n- Dynamic arc mapped",
              commit_id=commits[min(12, len(commits)-1)]["commit_id"],
              download_urls={"midi_bundle": f"/releases/{repo_id}-v0.2.0.zip", "mp3": f"/releases/{repo_id}-v0.2.0.mp3"},
+             author=owner,
              created_at=_now(days=25)),
         dict(repo_id=repo_id, tag="v1.0.0", title=f"{repo_name} — Full Release",
              body=f"## v1.0.0 — Full Release\n\nProduction-ready state.\n\n### Highlights\n- Complete arrangement with all instruments\n- Mixed and mastered\n- Stems included\n\n### Downloads\nMIDI bundle, MP3 stereo mix, individual stems",
@@ -639,6 +645,7 @@ def _make_releases(repo_id: str, commits: list[dict[str, Any]], repo_name: str) 
              download_urls={"midi_bundle": f"/releases/{repo_id}-v1.0.0.zip",
                             "mp3": f"/releases/{repo_id}-v1.0.0.mp3",
                             "stems": f"/releases/{repo_id}-v1.0.0-stems.zip"},
+             author=owner,
              created_at=_now(days=5)),
     ]
 
@@ -831,6 +838,7 @@ async def seed(db: AsyncSession, force: bool = False) -> None:
                 title=iss["title"],
                 body=iss["body"],
                 labels=iss["labels"],
+                author=r["owner"],
                 created_at=_now(days=days_base - iss["n"] * 2),
             ))
             issue_count += 1
@@ -844,7 +852,7 @@ async def seed(db: AsyncSession, force: bool = False) -> None:
     for r in REPOS:
         repo_id = r["repo_id"]
         commits = all_commits.get(repo_id, [])
-        prs = _make_prs(repo_id, commits)
+        prs = _make_prs(repo_id, commits, r["owner"])
         pr_ids[repo_id] = [p["pr_id"] for p in prs]
         for pr in prs:
             db.add(MusehubPullRequest(**pr))
@@ -859,7 +867,7 @@ async def seed(db: AsyncSession, force: bool = False) -> None:
     for r in REPOS:
         repo_id = r["repo_id"]
         commits = all_commits.get(repo_id, [])
-        releases = _make_releases(repo_id, commits, r["name"])
+        releases = _make_releases(repo_id, commits, r["name"], r["owner"])
         release_tags[repo_id] = [rel["tag"] for rel in releases]
         for rel in releases:
             db.add(MusehubRelease(**rel))

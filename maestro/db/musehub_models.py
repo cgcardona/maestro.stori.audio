@@ -201,6 +201,8 @@ class MusehubIssue(Base):
     state: Mapped[str] = mapped_column(String(20), nullable=False, default="open", index=True)
     # JSON list of free-form label strings
     labels: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    # Display name or identifier of the user who opened this issue
+    author: Mapped[str] = mapped_column(String(255), nullable=False, default="")
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=_utc_now
     )
@@ -230,6 +232,8 @@ class MusehubPullRequest(Base):
     to_branch: Mapped[str] = mapped_column(String(255), nullable=False)
     # Populated when state transitions to 'merged'
     merge_commit_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # Display name or identifier of the user who opened this PR
+    author: Mapped[str] = mapped_column(String(255), nullable=False, default="")
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=_utc_now
     )
@@ -268,6 +272,8 @@ class MusehubRelease(Base):
     commit_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     # JSON map of download package URLs, keyed by package type.
     download_urls: Mapped[dict[str, str]] = mapped_column(JSON, nullable=False, default=dict)
+    # Display name or identifier of the user who published this release
+    author: Mapped[str] = mapped_column(String(255), nullable=False, default="")
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=_utc_now
     )

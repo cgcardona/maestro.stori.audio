@@ -201,6 +201,7 @@ class IssueResponse(CamelModel):
     body: str
     state: str
     labels: list[str]
+    author: str = ""
     created_at: datetime
 
 
@@ -232,6 +233,7 @@ class PRResponse(CamelModel):
     from_branch: str
     to_branch: str
     merge_commit_id: str | None = None
+    author: str = ""
     created_at: datetime
 
 
@@ -301,6 +303,7 @@ class ReleaseResponse(CamelModel):
     body: str
     commit_id: str | None = None
     download_urls: ReleaseDownloadUrls
+    author: str = ""
     created_at: datetime
 
 
@@ -980,6 +983,8 @@ class SessionResponse(CamelModel):
     None when the session is still active (``ended_at`` is null).
     ``is_active`` is True while the session is open -- used by the Hub UI to
     render a live indicator.
+    ``commits`` is the ordered list of Muse commit IDs made during the session,
+    used by the graph page to apply session markers on commit nodes.
     """
 
     session_id: str
@@ -991,6 +996,7 @@ class SessionResponse(CamelModel):
     location: str
     is_active: bool
     created_at: datetime
+    commits: list[str] = Field(default_factory=list, description="Commit IDs associated with this session")
 
 
 class SessionListResponse(CamelModel):
@@ -1025,4 +1031,103 @@ class SimilarSearchResponse(CamelModel):
     results: list[SimilarCommitResponse] = Field(
         default_factory=list,
         description="Ranked results, most similar first",
+    )
+
+
+# ── Tree browser models ───────────────────────────────────────────────────────
+
+
+class TreeEntryResponse(CamelModel):
+    """A single entry (file or directory) in the Muse tree browser.
+
+    Returned by GET /musehub/repos/{repo_id}/tree/{ref} and
+    GET /musehub/repos/{repo_id}/tree/{ref}/{path}.
+
+    Consumers should use ``type`` to render the appropriate icon:
+    - "dir"  → folder icon, clickable to navigate deeper
+    - "file" → file-type icon based on ``name`` extension
+      (.mid → piano, .mp3/.wav → waveform, .json → braces, .webp/.png → photo)
+
+    ``size_bytes`` is None for directories (size is the sum of its contents,
+    which the server does not compute at list time).
+    """
+
+    type: str = Field(..., description="'file' or 'dir'")
+    name: str = Field(..., description="Entry filename or directory name")
+    path: str = Field(..., description="Full relative path from repo root, e.g. 'tracks/bass.mid'")
+    size_bytes: int | None = Field(None, description="File size in bytes; None for directories")
+
+
+class TreeListResponse(CamelModel):
+    """Directory listing for the Muse tree browser.
+
+    Returned by GET /musehub/repos/{repo_id}/tree/{ref} and
+    GET /musehub/repos/{repo_id}/tree/{ref}/{path}.
+
+    Directories are listed before files within the same level. Within each
+    group, entries are sorted alphabetically by name.
+
+    Agent use case: use this to enumerate files at a known ref without
+    downloading any content. Combine with ``/objects/{object_id}/content``
+    to read individual files.
+    """
+
+    owner: str
+    repo_slug: str
+    ref: str = Field(..., description="The branch name or commit SHA used to resolve the tree")
+    dir_path: str = Field(
+        ..., description="Current directory path being listed; empty string for repo root"
+    )
+    entries: list[TreeEntryResponse] = Field(default_factory=list)
+
+
+# ── Groove Check models ───────────────────────────────────────────────────────
+
+
+class GrooveCommitEntry(CamelModel):
+    """Per-commit groove metrics within a groove-check analysis window.
+
+    groove_score  — average note-onset deviation from the quantization grid,
+                    measured in beats (lower = tighter to the grid).
+    drift_delta   — absolute change in groove_score relative to the prior
+                    commit.  The oldest commit in the window always has 0.0.
+    status        — OK / WARN / FAIL classification against the threshold.
+    """
+
+    commit: str = Field(..., description="Short commit reference (8 hex chars)")
+    groove_score: float = Field(
+        ..., description="Average onset deviation from quantization grid, in beats"
+    )
+    drift_delta: float = Field(
+        ..., description="Absolute change in groove_score vs prior commit"
+    )
+    status: str = Field(..., description="OK / WARN / FAIL classification")
+    track: str = Field(..., description="Track scope analysed, or 'all'")
+    section: str = Field(..., description="Section scope analysed, or 'all'")
+    midi_files: int = Field(..., description="Number of MIDI snapshots analysed")
+
+
+class GrooveCheckResponse(CamelModel):
+    """Rhythmic consistency dashboard data for a commit range in a Muse Hub repo.
+
+    Aggregates timing deviation, swing ratio, and quantization tightness
+    metrics derived from MIDI snapshots across a window of commits.  The
+    ``entries`` list is ordered oldest-first so consumers can plot groove
+    evolution over time.
+    """
+
+    commit_range: str = Field(..., description="Commit range string that was analysed")
+    threshold: float = Field(
+        ..., description="Drift threshold in beats used for WARN/FAIL classification"
+    )
+    total_commits: int = Field(..., description="Total commits in the analysis window")
+    flagged_commits: int = Field(
+        ..., description="Number of commits with WARN or FAIL status"
+    )
+    worst_commit: str = Field(
+        ..., description="Commit ref with the highest drift_delta, or empty string"
+    )
+    entries: list[GrooveCommitEntry] = Field(
+        default_factory=list,
+        description="Per-commit metrics, oldest-first",
     )
