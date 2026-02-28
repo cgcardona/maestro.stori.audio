@@ -1443,6 +1443,55 @@ class GrooveCheckResponse(CamelModel):
     )
 
 
+# ── Listen page models ────────────────────────────────────────────────────────
+
+
+class AudioTrackEntry(CamelModel):
+    """A single audio artifact surfaced on the listen page.
+
+    Represents one stem or full-mix file at a given commit ref.  The
+    ``audio_url`` is the canonical download path served by the objects
+    endpoint.  ``piano_roll_url`` is non-None only when a matching .webp
+    piano-roll image exists at the same path prefix.
+    """
+
+    name: str = Field(..., description="Display name derived from the file path (basename without extension)")
+    path: str = Field(..., description="Relative artifact path, e.g. 'tracks/bass.mp3'")
+    object_id: str = Field(..., description="Content-addressed object ID")
+    audio_url: str = Field(
+        ..., description="Absolute URL to stream or download this artifact"
+    )
+    piano_roll_url: str | None = Field(
+        default=None, description="Absolute URL to the matching piano-roll image, if available"
+    )
+    size_bytes: int = Field(..., description="File size in bytes")
+
+
+class TrackListingResponse(CamelModel):
+    """Full-mix and per-track audio listing for a repo at a given ref.
+
+    Powers the listen page's dual-view UX: the full-mix player at the top
+    and the per-track listing below.  The ``has_renders`` flag lets the
+    client differentiate between a repo with no audio at all and one that
+    has audio but no explicit full-mix file.
+    """
+
+    repo_id: str = Field(..., description="Internal UUID of the repo")
+    ref: str = Field(..., description="Commit ref or branch name resolved by this listing")
+    full_mix_url: str | None = Field(
+        default=None,
+        description="Audio URL for the first full-mix file found, or None if absent",
+    )
+    tracks: list[AudioTrackEntry] = Field(
+        default_factory=list,
+        description="All audio artifacts at this ref, sorted by path",
+    )
+    has_renders: bool = Field(
+        ...,
+        description="True when at least one audio artifact exists at this ref",
+    )
+
+
 # ── Compare view models ────────────────────────────────────────────────────────
 
 

@@ -43,6 +43,8 @@ Endpoint summary (repo-scoped):
   GET /musehub/ui/{owner}/{repo_slug}/analysis/{ref}/tempo      -- tempo analysis
   GET /musehub/ui/{owner}/{repo_slug}/analysis/{ref}/dynamics   -- dynamics analysis
   GET /musehub/ui/{owner}/{repo_slug}/analysis/{ref}/motifs     -- motif browser (recurring patterns, transformations)
+  GET /musehub/ui/{owner}/{repo_slug}/listen/{ref}              -- full-mix and per-track audio playback with track listing
+  GET /musehub/ui/{owner}/{repo_slug}/listen/{ref}/{path}       -- single-stem playback page
   GET /musehub/ui/{owner}/{repo_slug}/listen/{ref}             -- Wavesurfer.js audio player (full mix)
   GET /musehub/ui/{owner}/{repo_slug}/listen/{ref}/{path}      -- Wavesurfer.js audio player (single track)
   GET /musehub/ui/{owner}/{repo_slug}/arrange/{ref}             -- arrangement matrix (instrument × section density grid)
@@ -69,6 +71,7 @@ from starlette.responses import Response as StarletteResponse
 
 from maestro.api.routes.musehub.negotiate import negotiate_response
 from maestro.db import get_db
+from maestro.models.musehub import CommitListResponse, CommitResponse, RepoResponse, TrackListingResponse
 from maestro.models.musehub import (
     BranchDetailListResponse,
     CommitListResponse,
@@ -658,6 +661,192 @@ async def embed_page(
 
 
 @router.get(
+    "/{owner}/{repo_slug}/listen/{ref}",
+    summary="Muse Hub listen page — full-mix and per-track audio playback",
+)
+async def listen_page(
+    request: Request,
+    owner: str,
+    repo_slug: str,
+    ref: str,
+    format: str | None = Query(None, description="Force response format: 'json' or omit for HTML"),
+    db: AsyncSession = Depends(get_db),
+) -> StarletteResponse:
+    """Render the listen page with a full-mix player and per-track listing.
+
+    Why this route exists: musicians need a dedicated listening experience to
+    evaluate each stem's contribution to the mix without exporting files to a
+    DAW.  The page surfaces the full-mix audio at the top, then lists each
+    audio artifact with its own player, mute/solo controls, a mini waveform
+    visualisation, a download button, and a link to the piano-roll view.
+
+    Content negotiation:
+    - HTML (default): interactive listen page via Jinja2.
+    - JSON (``Accept: application/json`` or ``?format=json``):
+      returns ``TrackListingResponse`` with all audio URLs.
+
+    Graceful fallback: when no audio renders exist the page shows a call-to-
+    action rather than an empty list, so musicians know what to do next.
+    No JWT required — the HTML shell's JS handles auth for private repos.
+    """
+    repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
+    objects = await musehub_repository.list_objects(db, repo_id)
+
+    import os
+
+    audio_exts: frozenset[str] = frozenset({".mp3", ".ogg", ".wav", ".m4a", ".flac"})
+    audio_objects = sorted(
+        [obj for obj in objects if os.path.splitext(obj.path)[1].lower() in audio_exts],
+        key=lambda o: o.path,
+    )
+    has_renders = bool(audio_objects)
+
+    mix_keywords = ("mix", "full", "master", "bounce")
+    full_mix_obj = None
+    if audio_objects:
+        full_mix_obj = next(
+            (o for o in audio_objects if any(kw in os.path.basename(o.path).lower() for kw in mix_keywords)),
+            audio_objects[0],
+        )
+
+    image_exts: frozenset[str] = frozenset({".webp", ".png", ".jpg", ".jpeg"})
+    object_map: dict[str, str] = {obj.path: obj.object_id for obj in objects}
+    api_base = f"/api/v1/musehub/repos/{repo_id}"
+
+    from maestro.models.musehub import AudioTrackEntry
+
+    tracks: list[AudioTrackEntry] = []
+    for obj in audio_objects:
+        stem = os.path.splitext(os.path.basename(obj.path))[0]
+        piano_roll_url: str | None = None
+        for p, oid in object_map.items():
+            if os.path.splitext(p)[1].lower() in image_exts and os.path.splitext(os.path.basename(p))[0] == stem:
+                piano_roll_url = f"{api_base}/objects/{oid}/content"
+                break
+        tracks.append(
+            AudioTrackEntry(
+                name=stem,
+                path=obj.path,
+                object_id=obj.object_id,
+                audio_url=f"{api_base}/objects/{obj.object_id}/content",
+                piano_roll_url=piano_roll_url,
+                size_bytes=obj.size_bytes,
+            )
+        )
+
+    json_data = TrackListingResponse(
+        repo_id=repo_id,
+        ref=ref,
+        full_mix_url=f"{api_base}/objects/{full_mix_obj.object_id}/content" if full_mix_obj else None,
+        tracks=tracks,
+        has_renders=has_renders,
+    )
+
+    return await negotiate_response(
+        request=request,
+        template_name="musehub/pages/listen.html",
+        context={
+            "owner": owner,
+            "repo_slug": repo_slug,
+            "repo_id": repo_id,
+            "ref": ref,
+            "base_url": base_url,
+            "current_page": "listen",
+        },
+        templates=templates,
+        json_data=json_data,
+        format_param=format,
+    )
+
+
+@router.get(
+    "/{owner}/{repo_slug}/listen/{ref}/{path:path}",
+    summary="Muse Hub listen page — individual stem playback",
+)
+async def listen_track_page(
+    request: Request,
+    owner: str,
+    repo_slug: str,
+    ref: str,
+    path: str,
+    format: str | None = Query(None, description="Force response format: 'json' or omit for HTML"),
+    db: AsyncSession = Depends(get_db),
+) -> StarletteResponse:
+    """Render the per-track listen page for a single stem artifact.
+
+    Why this route exists: ``path`` identifies a specific stem (e.g.
+    ``tracks/bass.mp3``).  This page focuses the player on that one file
+    and provides a "Back to full mix" link, a download button, and the
+    piano-roll viewer if a matching image artifact exists.
+
+    Content negotiation mirrors ``listen_page``: JSON returns a single-track
+    ``TrackListingResponse`` with ``has_renders=True`` when the file exists.
+
+    No JWT required — HTML shell; JS handles auth for private repos.
+    """
+    import os
+
+    repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
+    objects = await musehub_repository.list_objects(db, repo_id)
+
+    object_map: dict[str, str] = {obj.path: obj.object_id for obj in objects}
+    image_exts: frozenset[str] = frozenset({".webp", ".png", ".jpg", ".jpeg"})
+    api_base = f"/api/v1/musehub/repos/{repo_id}"
+
+    target_obj = next((obj for obj in objects if obj.path == path), None)
+    has_renders = target_obj is not None
+
+    from maestro.models.musehub import AudioTrackEntry
+
+    tracks: list[AudioTrackEntry] = []
+    full_mix_url: str | None = None
+
+    if target_obj:
+        stem = os.path.splitext(os.path.basename(target_obj.path))[0]
+        piano_roll_url: str | None = None
+        for p, oid in object_map.items():
+            if os.path.splitext(p)[1].lower() in image_exts and os.path.splitext(os.path.basename(p))[0] == stem:
+                piano_roll_url = f"{api_base}/objects/{oid}/content"
+                break
+        tracks = [
+            AudioTrackEntry(
+                name=stem,
+                path=target_obj.path,
+                object_id=target_obj.object_id,
+                audio_url=f"{api_base}/objects/{target_obj.object_id}/content",
+                piano_roll_url=piano_roll_url,
+                size_bytes=target_obj.size_bytes,
+            )
+        ]
+        full_mix_url = f"{api_base}/objects/{target_obj.object_id}/content"
+
+    json_data = TrackListingResponse(
+        repo_id=repo_id,
+        ref=ref,
+        full_mix_url=full_mix_url,
+        tracks=tracks,
+        has_renders=has_renders,
+    )
+
+    return await negotiate_response(
+        request=request,
+        template_name="musehub/pages/listen.html",
+        context={
+            "owner": owner,
+            "repo_slug": repo_slug,
+            "repo_id": repo_id,
+            "ref": ref,
+            "track_path": path,
+            "base_url": base_url,
+            "current_page": "listen",
+        },
+        templates=templates,
+        json_data=json_data,
+        format_param=format,
+    )
+
+
+@router.get(
     "/{owner}/{repo_slug}/credits",
     response_class=HTMLResponse,
     summary="Muse Hub dynamic credits page",
@@ -1080,88 +1269,6 @@ async def motifs_page(
             "ref": ref,
             "base_url": base_url,
             "current_page": "analysis",
-        },
-    )
-
-
-@router.get(
-    "/{owner}/{repo_slug}/listen/{ref}",
-    response_class=HTMLResponse,
-    summary="Muse Hub audio player — full mix",
-)
-async def listen_page(
-    request: Request,
-    owner: str,
-    repo_slug: str,
-    ref: str,
-    db: AsyncSession = Depends(get_db),
-) -> HTMLResponse:
-    """Render the Wavesurfer.js-based audio player for a commit ref (full mix).
-
-    Why this route exists: musicians need waveform seek, A/B loop regions, and
-    speed control for critical listening beyond what a bare ``<audio>`` element
-    offers.  This page lists all audio objects at ``ref`` and auto-loads the
-    first track, letting the user switch tracks via the in-page track list.
-
-    Contract:
-    - No JWT required -- HTML shell; JS fetches authed data via localStorage.
-    - Fetches ``GET /api/v1/musehub/repos/{repo_id}/objects?ref={ref}``.
-    - Waveform rendered client-side by ``vendor/wavesurfer.min.js`` (no CDN).
-    - A/B loop region: Shift+drag on waveform canvas.
-    - Speed options: 0.5x, 0.75x, 1x, 1.25x, 1.5x, 2x.
-    """
-    repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
-    return templates.TemplateResponse(
-        request,
-        "musehub/pages/listen.html",
-        {
-            "owner": owner,
-            "repo_slug": repo_slug,
-            "repo_id": repo_id,
-            "ref": ref,
-            "base_url": base_url,
-            "track_path": None,
-            "current_page": "listen",
-        },
-    )
-
-
-@router.get(
-    "/{owner}/{repo_slug}/listen/{ref}/{path:path}",
-    response_class=HTMLResponse,
-    summary="Muse Hub audio player — single track",
-)
-async def listen_track_page(
-    request: Request,
-    owner: str,
-    repo_slug: str,
-    ref: str,
-    path: str,
-    db: AsyncSession = Depends(get_db),
-) -> HTMLResponse:
-    """Render the Wavesurfer.js-based audio player scoped to a single track.
-
-    Why this route exists: deep-linking to a specific audio file at a given ref
-    lets users share direct playback URLs for individual stems, MIDI exports,
-    or rendered mixes.
-
-    Contract:
-    - No JWT required -- HTML shell; JS fetches authed data via localStorage.
-    - Resolves the track by matching ``path`` against object paths in the repo.
-    - Waveform and controls identical to the full-mix listen page.
-    """
-    repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
-    return templates.TemplateResponse(
-        request,
-        "musehub/pages/listen.html",
-        {
-            "owner": owner,
-            "repo_slug": repo_slug,
-            "repo_id": repo_id,
-            "ref": ref,
-            "base_url": base_url,
-            "track_path": path,
-            "current_page": "listen",
         },
     )
 

@@ -7566,6 +7566,45 @@ Full emotion map for a Muse repo ref. Returned by `GET /musehub/repos/{repo_id}/
 
 ---
 
+### `AudioTrackEntry`
+
+**Path:** `maestro/models/musehub.py`
+
+`CamelModel` — Wire representation of a single audio artifact on the listen page. Returned as an element in `TrackListingResponse.tracks`.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `name` | `str` | Display name derived from the file path (basename without extension) |
+| `path` | `str` | Relative artifact path, e.g. `tracks/bass.mp3` |
+| `object_id` | `str` | Content-addressed object ID |
+| `audio_url` | `str` | Absolute URL to stream or download this artifact |
+| `piano_roll_url` | `str \| None` | Absolute URL to the matching piano-roll image, if available |
+| `size_bytes` | `int` | File size in bytes |
+
+**Produced by:** `maestro.api.routes.musehub.repos.list_listen_tracks()` and `maestro.api.routes.musehub.ui.listen_page()`
+**Consumed by:** MuseHub listen page (`/musehub/ui/{owner}/{repo_slug}/listen/{ref}`); AI agents enumerating audio stems
+
+---
+
+### `TrackListingResponse`
+
+**Path:** `maestro/models/musehub.py`
+
+`CamelModel` — Full-mix and per-stem audio listing for a repo at a given ref. Powers the dual-view listen page UX: full-mix player at the top, per-track listing below.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `repo_id` | `str` | Internal UUID of the repo |
+| `ref` | `str` | Commit ref or branch name resolved by this listing |
+| `full_mix_url` | `str \| None` | Audio URL for the first full-mix file found, or None if absent |
+| `tracks` | `list[AudioTrackEntry]` | All audio artifacts at this ref, sorted by path |
+| `has_renders` | `bool` | True when at least one audio artifact exists at this ref |
+
+**Produced by:** `maestro.api.routes.musehub.repos.list_listen_tracks()` (`GET /api/v1/musehub/repos/{repo_id}/listen/{ref}/tracks`) and `maestro.api.routes.musehub.ui.listen_page()` (JSON content negotiation)
+**Consumed by:** MuseHub listen page JS; AI agents that need to enumerate audio stems without visiting the UI
+
+---
+
 ### `ArrangementCellData`
 
 **Path:** `maestro/models/musehub.py`

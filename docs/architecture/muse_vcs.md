@@ -1569,6 +1569,33 @@ Renders the context document in structured HTML with:
 
 **Agent use case:** A musician debugging why the AI generated something unexpected can load the context page for that commit and see exactly what musical knowledge the agent had. The copy button lets them paste the raw JSON into a new agent conversation for direct inspection or override.
 
+#### Listen Page — Full-Mix and Per-Track Audio Playback
+
+The listen page gives musicians a dedicated listening experience without requiring them to export files to a DAW.
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/musehub/ui/{owner}/{repo_slug}/listen/{ref}` | Full-mix player + per-track listing (HTML; no auth required) |
+| GET | `/musehub/ui/{owner}/{repo_slug}/listen/{ref}/{path}` | Single-stem player focused on one artifact (HTML; no auth required) |
+| GET | `/api/v1/musehub/repos/{repo_id}/listen/{ref}/tracks` | `TrackListingResponse` JSON (optional JWT) |
+| GET | `/musehub/ui/{owner}/{repo_slug}/listen/{ref}?format=json` | Same `TrackListingResponse` via content negotiation |
+
+**Page sections:**
+
+1. **Full-mix player** — a top-of-page audio player pointing to the first file whose basename contains a mix/master keyword (`mix`, `full`, `master`, `bounce`); falls back to the first audio artifact when no such file exists.
+2. **Track listing** — every `.mp3`, `.ogg`, `.wav`, `.m4a`, or `.flac` artifact for the repo, sorted by path.  Each row shows: instrument name, path, mini waveform visualisation, file size, play button, optional piano-roll link (if a matching `.webp` image exists), and download button.
+3. **No-renders fallback** — when no audio artifacts exist the page renders a friendly call-to-action with a link to the file-tree browser.
+
+**Content negotiation:** `?format=json` or `Accept: application/json` returns a `TrackListingResponse` with `repoId`, `ref`, `fullMixUrl`, `tracks`, and `hasRenders`.
+
+**Piano-roll matching:** if an `.webp` (or `.png`/`.jpg`) file shares the same basename as an audio file (e.g. `tracks/bass.webp` matches `tracks/bass.mp3`), the listen page links to it as a piano-roll image.
+
+**Audio state management:** the client-side JS keeps a single `<Audio>` instance per track; playing one track pauses all others and the full-mix player, so musicians can solo stems without browser audio conflicts.
+
+**Agent use case:** `GET .../listen/{ref}?format=json` returns a machine-readable track listing with audio URLs, letting AI agents enumerate stems and report on the arrangement without rendering HTML.
+
+**Backend model:** `TrackListingResponse` in `maestro/models/musehub.py`; registered in `docs/reference/type_contracts.md`.
+
 #### Analysis Dashboard
 
 The analysis dashboard provides a single-page overview of all musical dimensions for a given ref.
