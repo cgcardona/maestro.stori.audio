@@ -10,9 +10,10 @@ Boundary rules:
 - May import Pydantic response models from maestro.models.musehub.
 """
 from __future__ import annotations
+from datetime import datetime, timezone
 
 import logging
-from datetime import datetime, timezone
+import re
 from collections import deque
 
 from sqlalchemy import desc, func, or_, select
@@ -21,6 +22,8 @@ from sqlalchemy.sql.elements import ColumnElement
 
 from maestro.db import musehub_models as db
 from maestro.models.musehub import (
+    SessionListResponse,
+    SessionResponse,
     BranchResponse,
     CommitResponse,
     GlobalSearchCommitMatch,
@@ -35,7 +38,11 @@ from maestro.models.musehub import (
     MuseHubContextResponse,
     ObjectMetaResponse,
     RepoResponse,
-    SessionResponse,
+    TimelineCommitEvent,
+    TimelineEmotionEvent,
+    TimelineResponse,
+    TimelineSectionEvent,
+    TimelineTrackEvent,
 )
 
 logger = logging.getLogger(__name__)
@@ -57,6 +64,10 @@ def _to_repo_response(row: db.MusehubRepo) -> RepoResponse:
         visibility=row.visibility,
         owner_user_id=row.owner_user_id,
         clone_url=_repo_clone_url(row.repo_id),
+        description=row.description,
+        tags=list(row.tags or []),
+        key_signature=row.key_signature,
+        tempo_bpm=row.tempo_bpm,
         created_at=row.created_at,
     )
 
@@ -87,9 +98,21 @@ async def create_repo(
     name: str,
     visibility: str,
     owner_user_id: str,
+    description: str = "",
+    tags: list[str] | None = None,
+    key_signature: str | None = None,
+    tempo_bpm: int | None = None,
 ) -> RepoResponse:
     """Persist a new remote repo and return its wire representation."""
-    repo = db.MusehubRepo(name=name, visibility=visibility, owner_user_id=owner_user_id)
+    repo = db.MusehubRepo(
+        name=name,
+        visibility=visibility,
+        owner_user_id=owner_user_id,
+        description=description,
+        tags=tags or [],
+        key_signature=key_signature,
+        tempo_bpm=tempo_bpm,
+    )
     session.add(repo)
     await session.flush()  # populate default columns before reading
     await session.refresh(repo)
@@ -226,6 +249,150 @@ async def list_commits(
     return [_to_commit_response(r) for r in rows], total
 
 
+# ── Section / track keyword heuristics ──────────────────────────────────────
+
+_SECTION_KEYWORDS: list[str] = [
+    "intro", "verse", "chorus", "bridge", "outro", "hook",
+    "pre-chorus", "prechorus", "breakdown", "drop", "build",
+    "refrain", "coda", "tag", "interlude",
+]
+
+_TRACK_KEYWORDS: list[str] = [
+    "bass", "drums", "keys", "piano", "guitar", "synth", "pad",
+    "lead", "vocals", "strings", "brass", "horn",
+    "flute", "cello", "violin", "organ", "arp", "percussion",
+    "kick", "snare", "hi-hat", "hihat", "clap", "melody",
+]
+
+_ADDED_VERBS = re.compile(
+    r"\b(add(?:ed)?|new|introduce[ds]?|creat(?:ed)?|record(?:ed)?|layer(?:ed)?)\b",
+    re.IGNORECASE,
+)
+_REMOVED_VERBS = re.compile(
+    r"\b(remov(?:e[ds]?)?|delet(?:e[ds]?)?|drop(?:ped)?|cut|mute[ds]?)\b",
+    re.IGNORECASE,
+)
+
+
+def _infer_action(message: str) -> str:
+    """Return 'added' or 'removed' based on verb presence in the commit message."""
+    if _REMOVED_VERBS.search(message):
+        return "removed"
+    return "added"
+
+
+def _extract_section_events(row: db.MusehubCommit) -> list[TimelineSectionEvent]:
+    """Extract zero or more section-change events from a commit message."""
+    msg_lower = row.message.lower()
+    events: list[TimelineSectionEvent] = []
+    for keyword in _SECTION_KEYWORDS:
+        if keyword in msg_lower:
+            events.append(
+                TimelineSectionEvent(
+                    commit_id=row.commit_id,
+                    timestamp=row.timestamp,
+                    section_name=keyword,
+                    action=_infer_action(row.message),
+                )
+            )
+    return events
+
+
+def _extract_track_events(row: db.MusehubCommit) -> list[TimelineTrackEvent]:
+    """Extract zero or more track-change events from a commit message."""
+    msg_lower = row.message.lower()
+    events: list[TimelineTrackEvent] = []
+    for keyword in _TRACK_KEYWORDS:
+        if keyword in msg_lower:
+            events.append(
+                TimelineTrackEvent(
+                    commit_id=row.commit_id,
+                    timestamp=row.timestamp,
+                    track_name=keyword,
+                    action=_infer_action(row.message),
+                )
+            )
+    return events
+
+
+def _derive_emotion(row: db.MusehubCommit) -> TimelineEmotionEvent:
+    """Derive a deterministic emotion vector from the commit SHA.
+
+    Uses three non-overlapping byte windows of the SHA hex to produce
+    valence, energy, and tension in [0.0, 1.0].  Deterministic so the
+    timeline is always reproducible without external ML inference.
+    """
+    sha = row.commit_id
+    # Pad short commit IDs (e.g. test fixtures) so indexing is safe.
+    sha = sha.ljust(12, "0")
+    valence = int(sha[0:4], 16) / 0xFFFF if all(c in "0123456789abcdefABCDEF" for c in sha[0:4]) else 0.5
+    energy = int(sha[4:8], 16) / 0xFFFF if all(c in "0123456789abcdefABCDEF" for c in sha[4:8]) else 0.5
+    tension = int(sha[8:12], 16) / 0xFFFF if all(c in "0123456789abcdefABCDEF" for c in sha[8:12]) else 0.5
+    return TimelineEmotionEvent(
+        commit_id=row.commit_id,
+        timestamp=row.timestamp,
+        valence=round(valence, 4),
+        energy=round(energy, 4),
+        tension=round(tension, 4),
+    )
+
+
+async def get_timeline_events(
+    session: AsyncSession,
+    repo_id: str,
+    *,
+    limit: int = 200,
+) -> TimelineResponse:
+    """Return a chronological timeline of musical evolution for a repo.
+
+    Fetches up to ``limit`` commits (oldest-first for temporal rendering) and
+    derives four event streams:
+    - commits: every commit as a timeline marker
+    - emotion: deterministic emotion vectors from commit SHAs
+    - sections: section-change markers parsed from commit messages
+    - tracks: track add/remove markers parsed from commit messages
+
+    Callers must verify the repo exists before calling this function.
+    Returns an empty timeline when the repo has no commits.
+    """
+    total_stmt = select(func.count()).where(db.MusehubCommit.repo_id == repo_id)
+    total: int = (await session.execute(total_stmt)).scalar_one()
+
+    rows_stmt = (
+        select(db.MusehubCommit)
+        .where(db.MusehubCommit.repo_id == repo_id)
+        .order_by(db.MusehubCommit.timestamp)  # oldest-first for temporal rendering
+        .limit(limit)
+    )
+    rows = (await session.execute(rows_stmt)).scalars().all()
+
+    commit_events: list[TimelineCommitEvent] = []
+    emotion_events: list[TimelineEmotionEvent] = []
+    section_events: list[TimelineSectionEvent] = []
+    track_events: list[TimelineTrackEvent] = []
+
+    for row in rows:
+        commit_events.append(
+            TimelineCommitEvent(
+                commit_id=row.commit_id,
+                branch=row.branch,
+                message=row.message,
+                author=row.author,
+                timestamp=row.timestamp,
+                parent_ids=list(row.parent_ids or []),
+            )
+        )
+        emotion_events.append(_derive_emotion(row))
+        section_events.extend(_extract_section_events(row))
+        track_events.extend(_extract_track_events(row))
+
+    return TimelineResponse(
+        commits=commit_events,
+        emotion=emotion_events,
+        sections=section_events,
+        tracks=track_events,
+        total_commits=total,
+    )
 async def global_search(
     session: AsyncSession,
     *,
@@ -665,60 +832,47 @@ async def get_context_for_commit(
     )
 
 
-# ── Session helpers ────────────────────────────────────────────────────────────
-
-
-def _to_session_response(row: db.MusehubSession) -> SessionResponse:
-    """Convert a MusehubSession ORM row to its wire representation.
-
-    Derives ``duration_seconds`` from the start/end timestamps so callers
-    never need to compute it. Returns None for active sessions.
-    """
+def _to_session_response(s: db.MusehubSession) -> SessionResponse:
+    """Compute derived fields and return a SessionResponse."""
     duration: float | None = None
-    if row.ended_at is not None:
-        duration = (row.ended_at - row.started_at).total_seconds()
+    if s.ended_at is not None:
+        duration = (s.ended_at - s.started_at).total_seconds()
     return SessionResponse(
-        session_id=row.session_id,
-        started_at=row.started_at,
-        ended_at=row.ended_at,
+        session_id=s.session_id,
+        started_at=s.started_at,
+        ended_at=s.ended_at,
         duration_seconds=duration,
-        participants=list(row.participants or []),
-        intent=row.intent,
-        location=row.location,
-        is_active=row.is_active,
-        created_at=row.created_at,
+        participants=s.participants or [],
+        intent=s.intent,
+        location=s.location,
+        is_active=s.is_active,
+        created_at=s.created_at,
     )
 
 
 async def create_session(
     session: AsyncSession,
     repo_id: str,
-    *,
     started_at: datetime | None,
     participants: list[str],
     intent: str,
     location: str,
-    is_active: bool = True,
 ) -> SessionResponse:
-    """Persist a new recording session entry and return its wire representation.
+    """Create and persist a new recording session."""
+    import uuid
 
-    Called when the CLI pushes a ``muse session start`` event to the Hub.
-    If ``started_at`` is None, the current UTC time is used.
-    """
-    effective_start = started_at or datetime.now(tz=timezone.utc)
-    row = db.MusehubSession(
+    new_session = db.MusehubSession(
+        session_id=str(uuid.uuid4()),
         repo_id=repo_id,
-        started_at=effective_start,
+        started_at=started_at or datetime.now(timezone.utc),
         participants=participants,
         intent=intent,
         location=location,
-        is_active=is_active,
+        is_active=True,
     )
-    session.add(row)
+    session.add(new_session)
     await session.flush()
-    await session.refresh(row)
-    logger.info("✅ Created Muse Hub session %s for repo %s", row.session_id, repo_id)
-    return _to_session_response(row)
+    return _to_session_response(new_session)
 
 
 async def stop_session(
@@ -726,62 +880,68 @@ async def stop_session(
     repo_id: str,
     session_id: str,
     ended_at: datetime | None,
-) -> SessionResponse | None:
-    """Mark a session as stopped and return the updated representation.
+) -> SessionResponse:
+    """Mark a session as ended; idempotent if already stopped."""
+    from sqlalchemy import select
 
-    Returns None if the session does not exist or belongs to a different repo.
-    Called when the CLI pushes a ``muse session stop`` event to the Hub.
-    """
-    stmt = select(db.MusehubSession).where(
-        db.MusehubSession.session_id == session_id,
-        db.MusehubSession.repo_id == repo_id,
+    result = await session.execute(
+        select(db.MusehubSession).where(
+            db.MusehubSession.session_id == session_id,
+            db.MusehubSession.repo_id == repo_id,
+        )
     )
-    row = (await session.execute(stmt)).scalars().first()
+    row = result.scalar_one_or_none()
     if row is None:
-        return None
-    row.ended_at = ended_at or datetime.now(tz=timezone.utc)
-    row.is_active = False
-    await session.flush()
-    await session.refresh(row)
-    logger.info("✅ Stopped Muse Hub session %s for repo %s", session_id, repo_id)
+        raise ValueError(f"session {session_id} not found")
+    if row.is_active:
+        row.ended_at = ended_at or datetime.now(timezone.utc)
+        row.is_active = False
+        await session.flush()
     return _to_session_response(row)
 
 
 async def list_sessions(
     session: AsyncSession,
     repo_id: str,
-    *,
     limit: int = 50,
+    offset: int = 0,
 ) -> tuple[list[SessionResponse], int]:
-    """Return sessions for a repo, newest first (by started_at).
+    """Return sessions for a repo, newest first, with total count."""
+    from sqlalchemy import func, select
 
-    Returns a tuple of (sessions, total_count). Active sessions are listed
-    first within the same timestamp order so live sessions surface at the top.
-    """
-    base = select(db.MusehubSession).where(db.MusehubSession.repo_id == repo_id)
-
-    total_stmt = select(func.count()).select_from(base.subquery())
-    total: int = (await session.execute(total_stmt)).scalar_one()
-
-    rows_stmt = (
-        base.order_by(
-            desc(db.MusehubSession.is_active),
-            desc(db.MusehubSession.started_at),
-        ).limit(limit)
+    total_result = await session.execute(
+        select(func.count(db.MusehubSession.session_id)).where(
+            db.MusehubSession.repo_id == repo_id
+        )
     )
-    rows = (await session.execute(rows_stmt)).scalars().all()
-    return [_to_session_response(r) for r in rows], total
+    total = total_result.scalar_one()
+
+    result = await session.execute(
+        select(db.MusehubSession)
+        .where(db.MusehubSession.repo_id == repo_id)
+        .order_by(db.MusehubSession.started_at.desc())
+        .limit(limit)
+        .offset(offset)
+    )
+    rows = result.scalars().all()
+    return [_to_session_response(s) for s in rows], total
 
 
 async def get_session(
-    session: AsyncSession, repo_id: str, session_id: str
+    session: AsyncSession,
+    repo_id: str,
+    session_id: str,
 ) -> SessionResponse | None:
-    """Return a single session by ID within the given repo, or None."""
-    stmt = select(db.MusehubSession).where(
-        db.MusehubSession.session_id == session_id,
-        db.MusehubSession.repo_id == repo_id,
+    """Fetch a single session by id."""
+    from sqlalchemy import select
+
+    result = await session.execute(
+        select(db.MusehubSession).where(
+            db.MusehubSession.session_id == session_id,
+            db.MusehubSession.repo_id == repo_id,
+        )
     )
-    row = (await session.execute(stmt)).scalars().first()
+    row = result.scalar_one_or_none()
     if row is None:
         return None
     return _to_session_response(row)
