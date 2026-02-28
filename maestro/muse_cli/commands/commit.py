@@ -50,6 +50,7 @@ from maestro.muse_cli.db import (
 from maestro.muse_cli.errors import ExitCode
 from maestro.muse_cli.merge_engine import read_merge_state
 from maestro.muse_cli.models import MuseCliCommit
+from maestro.muse_cli.object_store import write_object
 from maestro.muse_cli.snapshot import (
     build_snapshot_manifest,
     compute_commit_id,
@@ -232,6 +233,10 @@ async def _commit_async(
         file_path = workdir / rel_path
         size = file_path.stat().st_size
         await upsert_object(session, object_id=object_id, size_bytes=size)
+        # Write raw bytes into the local content-addressed store so that
+        # ``muse read-tree`` can later reconstruct muse-work/ from any
+        # historical snapshot without the files being present in muse-work/.
+        write_object(root, object_id, file_path.read_bytes())
 
     # ── Persist snapshot ─────────────────────────────────────────────────
     await upsert_snapshot(session, manifest=manifest, snapshot_id=snapshot_id)

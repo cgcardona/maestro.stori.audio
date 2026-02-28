@@ -3,7 +3,8 @@
 Provides:
 - ``open_session()`` — async context manager that opens and commits a
   standalone AsyncSession (for use in the CLI, outside FastAPI DI).
-- CRUD helpers called by ``commands/commit.py`` and ``commands/meter.py``.
+- CRUD helpers called by ``commands/commit.py``, ``commands/meter.py``,
+  and ``commands/read_tree.py``.
 
 The session factory created by ``open_session()`` reads DATABASE_URL
 from ``maestro.config.settings`` — the same env var used by the main
@@ -263,3 +264,23 @@ async def set_commit_extra_metadata_key(
     flag_modified(commit, "commit_metadata")
     logger.debug("✅ Set %s=%r on commit %s", key, value, commit_id[:8])
     return True
+
+
+async def get_snapshot_by_id(
+    session: AsyncSession,
+    snapshot_id: str,
+) -> MuseCliSnapshot | None:
+    """Fetch a :class:`MuseCliSnapshot` row by its primary key.
+
+    Returns the snapshot when found, or ``None`` when *snapshot_id* does
+    not match any row.  Used by ``muse read-tree`` to load the file manifest
+    for a specific snapshot without requiring a commit reference.
+
+    Args:
+        session:     An open async DB session.
+        snapshot_id: The full 64-character sha256 snapshot identifier.
+
+    Returns:
+        The :class:`MuseCliSnapshot` ORM row, or ``None``.
+    """
+    return await session.get(MuseCliSnapshot, snapshot_id)

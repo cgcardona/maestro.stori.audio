@@ -1999,6 +1999,27 @@ Read-only search across `muse_cli_commits`.  Returns `MuseFindResults`.
 
 ---
 
+### Muse CLI — `muse read-tree` (`maestro/muse_cli/commands/read_tree.py`)
+
+#### `ReadTreeResult`
+
+Plain class — returned by `_read_tree_async()` and the `read_tree` Typer callback.
+Carries the outcome of a snapshot hydration so tests can assert on result fields
+without inspecting the filesystem.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `snapshot_id` | `str` | Full 64-char sha256 snapshot identifier that was resolved. |
+| `files_written` | `list[str]` | Relative paths (POSIX, relative to `muse-work/`) of files written. Empty on error. |
+| `dry_run` | `bool` | `True` when `--dry-run` was requested; no files were written. |
+| `reset` | `bool` | `True` when `--reset` cleared `muse-work/` before population. |
+
+**Agent contract:** When `dry_run=False`, all paths in `files_written` are guaranteed
+to exist in `muse-work/` with their correct content. When `dry_run=True`, the list
+reflects what *would* be written — the files may or may not exist on disk.
+
+---
+
 ### Muse VCS (`maestro/api/routes/muse.py`)
 
 #### `SaveVariationResponse`
