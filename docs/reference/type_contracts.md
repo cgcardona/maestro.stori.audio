@@ -47,6 +47,8 @@ This document is the single source of truth for every named entity (TypedDict, d
 7. [Storpheus Types (`storpheus/storpheus_types.py`)](#storpheus-types)
    - [MIDI event types](#midi-event-types)
    - [Pipeline types](#pipeline-types)
+   - [ChunkMetadata](#chunkmetadata)
+   - [ChunkedGenerationResult](#chunkedgenerationresult)
    - [Scoring types](#scoring-types)
 8. [DAW Adapter Layer (`maestro/daw/`)](#daw-adapter-layer)
    - [Ports (`maestro/daw/ports.py`)](#ports-appdawportspy)
@@ -1994,6 +1996,37 @@ These types mirror the Maestro `app/contracts/json_types.py` types but are defin
 
 **Location:** `storpheus/storpheus_types.py`
 **Endpoint:** `POST /generate/progressive` → returns this as JSON
+
+#### `ChunkMetadata`
+
+`TypedDict` — Per-chunk metadata emitted during a sliding window chunked generation run (#25).
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `chunk` | `int` | Zero-based chunk index |
+| `bars` | `int` | Bar count for this chunk (last chunk may be smaller than `_CHUNK_BARS`) |
+| `notes` | `int` | Note count produced by this chunk after beat-trimming |
+| `beat_offset` | `float` | Beat position of this chunk's start in the final timeline |
+| `rejection_score` | `float \| None` | Candidate rejection score; `None` if unavailable |
+
+**Location:** `storpheus/storpheus_types.py`
+
+#### `ChunkedGenerationResult`
+
+`TypedDict` — Aggregated result of a sliding window chunked generation run. Produced when `request.bars > STORPHEUS_CHUNKED_THRESHOLD_BARS` (default 16). The `notes` list spans the full requested bar count with sequential beat offsets applied across all chunks.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `success` | `bool` | `True` when all chunks completed without error |
+| `notes` | `list[WireNoteDict]` | All notes across all chunks, sorted by `startBeat` |
+| `chunk_count` | `int` | Number of chunks generated |
+| `total_bars` | `int` | Total bars requested (= sum of all chunk bar counts) |
+| `chunk_metadata` | `list[ChunkMetadata]` | Per-chunk metadata in generation order |
+| `total_elapsed_seconds` | `float` | Total wall-clock time for the run |
+| `error` | `str \| None` | Error message if `success` is `False`; otherwise `None` |
+
+**Location:** `storpheus/storpheus_types.py`
+**Endpoint:** `POST /generate` → embedded in `GenerateResponse.metadata` when chunked mode activates
 
 ---
 
@@ -7300,6 +7333,85 @@ Full emotion map for a Muse repo ref. Returned by `GET /musehub/repos/{repo_id}/
 
 **Produced by:** `maestro.api.routes.musehub.repos.list_listen_tracks()` (`GET /api/v1/musehub/repos/{repo_id}/listen/{ref}/tracks`) and `maestro.api.routes.musehub.ui.listen_page()` (JSON content negotiation)
 **Consumed by:** MuseHub listen page JS; AI agents that need to enumerate audio stems without visiting the UI
+
+---
+
+### `ArrangementCellData`
+
+**Path:** `maestro/models/musehub.py`
+
+`CamelModel` — Data for a single cell in the arrangement matrix grid (instrument × section pair).
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `instrument` | `str` | Instrument/track name (e.g. `"bass"`, `"keys"`) |
+| `section` | `str` | Section label (e.g. `"intro"`, `"chorus"`) |
+| `note_count` | `int` | Total notes played by this instrument in this section |
+| `note_density` | `float` | Normalised note density in `[0, 1]`; 0 = silent, 1 = densest cell |
+| `beat_start` | `float` | Beat position where this section starts |
+| `beat_end` | `float` | Beat position where this section ends |
+| `pitch_low` | `int` | Lowest MIDI pitch played (0–127) |
+| `pitch_high` | `int` | Highest MIDI pitch played (0–127) |
+| `active` | `bool` | `True` when the instrument has at least one note in this section |
+
+**Produced by:** `maestro.services.musehub_analysis.compute_arrangement_matrix()`
+
+---
+
+### `ArrangementRowSummary`
+
+**Path:** `maestro/models/musehub.py`
+
+`CamelModel` — Aggregated stats for one instrument row across all sections in the arrangement matrix.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `instrument` | `str` | Instrument/track name |
+| `total_notes` | `int` | Total note count across all sections |
+| `active_sections` | `int` | Number of sections where the instrument plays |
+| `mean_density` | `float` | Mean note density across all sections |
+
+**Produced by:** `maestro.services.musehub_analysis.compute_arrangement_matrix()`
+
+---
+
+### `ArrangementColumnSummary`
+
+**Path:** `maestro/models/musehub.py`
+
+`CamelModel` — Aggregated stats for one section column across all instruments in the arrangement matrix.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `section` | `str` | Section label |
+| `total_notes` | `int` | Total note count across all instruments |
+| `active_instruments` | `int` | Number of instruments that play in this section |
+| `beat_start` | `float` | Beat position where this section starts |
+| `beat_end` | `float` | Beat position where this section ends |
+
+**Produced by:** `maestro.services.musehub_analysis.compute_arrangement_matrix()`
+
+---
+
+### `ArrangementMatrixResponse`
+
+**Path:** `maestro/models/musehub.py`
+
+`CamelModel` — Full arrangement matrix for a Muse commit ref, as returned by `GET /repos/{repo_id}/arrange/{ref}`.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `repo_id` | `str` | Internal repo UUID |
+| `ref` | `str` | Commit ref (full SHA or branch name) |
+| `instruments` | `list[str]` | Ordered instrument names (Y-axis) |
+| `sections` | `list[str]` | Ordered section labels (X-axis) |
+| `cells` | `list[ArrangementCellData]` | Flat (instrument × section) cells, row-major order |
+| `row_summaries` | `list[ArrangementRowSummary]` | Per-instrument aggregates, same order as `instruments` |
+| `column_summaries` | `list[ArrangementColumnSummary]` | Per-section aggregates, same order as `sections` |
+| `total_beats` | `float` | Total beat length of the arrangement |
+
+**Produced by:** `maestro.api.routes.musehub.repos.get_arrangement_matrix()`
+**Consumed by:** MuseHub arrangement matrix UI page (`/musehub/ui/{owner}/{repo_slug}/arrange/{ref}`); AI agents evaluating orchestration density across sections
 
 ---
 
