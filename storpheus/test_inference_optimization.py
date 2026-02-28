@@ -18,7 +18,7 @@ import asyncio
 from dataclasses import dataclass, field
 from time import time
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -164,11 +164,9 @@ def test_multi_batch_max_tries_capped_at_10() -> None:
 @pytest.mark.anyio
 async def test_diagnostics_includes_inference_optimization() -> None:
     """GET /diagnostics returns inference_optimization block with expected keys."""
-    # Patch the client pool and job queue so diagnostics doesn't actually connect
-    with (
-        patch.object(music_service._client_pool, "get", return_value=MagicMock()),
-        patch("asyncio.wait_for", new=AsyncMock(return_value=None)),
-    ):
+    # Return None from _client_pool.get so diagnostics skips the asyncio.wait_for
+    # block entirely (avoids creating an unawaited asyncio.to_thread coroutine).
+    with patch.object(music_service._client_pool, "get", return_value=None):
         music_service._job_queue = MagicMock()
         music_service._job_queue.running_count = 0
         music_service._job_queue.depth = 0

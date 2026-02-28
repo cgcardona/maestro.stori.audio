@@ -7067,3 +7067,28 @@ Top-level response model for `GET /api/v1/musehub/search`.
 
 **Produced by:** `maestro.api.routes.musehub.repos.get_groove_check()`
 **Consumed by:** MuseHub groove-check UI page (`/musehub/ui/{owner}/{repo_slug}/groove-check`); AI agents comparing rhythmic consistency across branches
+
+---
+
+## Storpheus — Inference Optimization Types (`storpheus/music_service.py`)
+
+### `GenerationTiming`
+
+**Path:** `storpheus/music_service.py`
+
+`@dataclass` — Per-phase wall-clock latency breakdown for a single `_do_generate` call. Attached to every `GenerateResponse` under `metadata["timing"]` as the output of `GenerationTiming.to_dict()`.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `request_start` | `float` | `time()` at dataclass construction — beginning of the generation request |
+| `seed_elapsed_s` | `float` | Wall time for seed library lookup and key transposition |
+| `generate_elapsed_s` | `float` | Cumulative wall time for all `/generate_music_and_state` Gradio calls |
+| `add_batch_elapsed_s` | `float` | Cumulative wall time for all `/add_batch` Gradio calls |
+| `post_process_elapsed_s` | `float` | Wall time for the post-processing pipeline |
+| `total_elapsed_s` | `float` | Full request wall time (set just before response is returned) |
+| `regen_count` | `int` | Number of full re-generate calls triggered (above the first) |
+| `multi_batch_tries` | `int` | Total `/add_batch` calls made across all generate rounds |
+| `candidates_evaluated` | `int` | Total candidate batches scored by the rejection-sampling critic |
+
+**Produced by:** `storpheus.music_service._do_generate()`
+**Consumed by:** Callers of `GenerateResponse.metadata["timing"]`; latency dashboards; A/B test comparisons via `/quality/ab-test`
