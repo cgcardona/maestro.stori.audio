@@ -12,11 +12,19 @@ Boundary rules (same as other musehub services):
   - Must NOT import maestro.core.* modules.
   - May import from maestro.services.musehub_embeddings.
   - Wraps qdrant_client at the boundary with typed results.
+
+Public factory
+--------------
+``get_qdrant_client()`` is an ``@lru_cache``-backed factory that returns the
+process-level singleton.  Inject it via ``Depends(get_qdrant_client)`` in
+FastAPI route handlers so the dependency is explicit, overridable in tests via
+``app.dependency_overrides``, and never leaks global mutable state.
 """
 from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
+from functools import lru_cache
 
 from qdrant_client import QdrantClient
 from qdrant_client.models import (
@@ -29,6 +37,7 @@ from qdrant_client.models import (
     VectorParams,
 )
 
+from maestro.config import settings
 from maestro.services.musehub_embeddings import VECTOR_DIM
 
 logger = logging.getLogger(__name__)
@@ -220,6 +229,30 @@ class MusehubQdrantClient:
 
         logger.info("✅ Semantic search returned %d results (public_only=%s)", len(results), public_only)
         return results
+
+
+# ---------------------------------------------------------------------------
+# Public dependency factory
+# ---------------------------------------------------------------------------
+
+
+@lru_cache(maxsize=1)
+def get_qdrant_client() -> MusehubQdrantClient:
+    """Return the process-level MusehubQdrantClient, creating it on first call.
+
+    Decorated with ``@lru_cache(maxsize=1)`` so the client is initialised
+    exactly once per process and reused on every subsequent call — the same
+    semantics as the old module-level singleton, but explicit and injectable.
+
+    Inject into FastAPI route handlers via ``Depends(get_qdrant_client)``.
+    Override in tests via ``app.dependency_overrides[get_qdrant_client]``.
+
+    Returns:
+        A ready-to-use MusehubQdrantClient with the Qdrant collection ensured.
+    """
+    client = MusehubQdrantClient(host=settings.qdrant_host, port=settings.qdrant_port)
+    client.ensure_collection()
+    return client
 
 
 # ---------------------------------------------------------------------------
