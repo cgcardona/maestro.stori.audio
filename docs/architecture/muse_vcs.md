@@ -2056,6 +2056,117 @@ Marcus (bass)       2 sessions
 
 ---
 
+## `muse meter` — Time Signature Read/Set/Detect
+
+### `muse meter`
+
+**Purpose:** Read or set the time signature (meter) annotation for any commit. The
+time signature defines the rhythmic framework of a piece — a shift from 4/4 to 7/8 is
+a fundamental compositional decision. `muse meter` makes that history first-class.
+
+**Status:** ✅ Fully implemented (issue #117)
+
+**Storage:** The time signature is stored as the `meter` key inside the nullable
+`extra_metadata` JSON column on `muse_cli_commits`. No MIDI file is modified. The
+annotation is layered on top of the immutable content-addressed snapshot.
+
+**Time signature format:** `<numerator>/<denominator>` where the denominator must be a
+power of 2. Examples: `4/4`, `3/4`, `7/8`, `5/4`, `12/8`, `6/8`.
+
+#### Flags
+
+| Flag | Argument | Description |
+|------|----------|-------------|
+| *(none)* | `[COMMIT]` | Read the stored time signature. Default: HEAD. |
+| `--set` | `TIME_SIG` | Store a time signature annotation on the commit. |
+| `--detect` | — | Auto-detect from MIDI time-signature meta events in `muse-work/`. |
+| `--history` | — | Walk the branch and show when the time signature changed. |
+| `--polyrhythm` | — | Detect tracks with conflicting time signatures in `muse-work/`. |
+
+#### Examples
+
+```bash
+# Read the stored time signature for HEAD
+muse meter
+
+# Read the time signature for a specific commit (abbreviated SHA)
+muse meter a1b2c3d4
+
+# Set the time signature on HEAD
+muse meter --set 7/8
+
+# Set the time signature on a specific commit
+muse meter a1b2c3d4 --set 5/4
+
+# Auto-detect from MIDI files and store the result
+muse meter --detect
+
+# Show time signature history (newest-first, with change markers)
+muse meter --history
+
+# Check for polyrhythmic tracks
+muse meter --polyrhythm
+```
+
+#### Sample output
+
+**Read (no flag):**
+```
+commit a1b2c3d4
+meter  7/8
+```
+
+**History (`--history`):**
+```
+a1b2c3d4  7/8           switched to odd meter        ← changed
+f9e8d7c6  4/4           boom bap demo take 1
+e7d6c5b4  4/4           initial take
+```
+
+**Polyrhythm (`--polyrhythm`, conflict detected):**
+```
+⚠️  Polyrhythm detected — multiple time signatures in this commit:
+
+  4/4           tracks/drums.mid
+  7/8           tracks/melody.mid
+```
+
+#### MIDI Detection
+
+`--detect` scans `.mid` and `.midi` files in `muse-work/` for MIDI time-signature
+meta events (type `0xFF 0x58`). The event layout is:
+
+```
+FF 58 04  nn dd cc bb
+          │  │  │  └── 32nd notes per 24 MIDI clocks
+          │  │  └───── MIDI clocks per metronome tick
+          │  └──────── denominator exponent (denominator = 2^dd)
+          └─────────── numerator
+```
+
+The most common signature across all files is selected and written to the commit.
+Files with no time-signature event report `?` and are excluded from polyrhythm
+detection (only known signatures are compared).
+
+#### Result types
+
+| Type | Module | Description |
+|------|--------|-------------|
+| `MuseMeterReadResult` | `maestro/muse_cli/commands/meter.py` | Commit ID + stored time signature (or `None`) |
+| `MuseMeterHistoryEntry` | `maestro/muse_cli/commands/meter.py` | Single entry in the parent-chain meter walk |
+| `MusePolyrhythmResult` | `maestro/muse_cli/commands/meter.py` | Per-file time signatures + polyrhythm flag |
+
+**Agent use case:** An AI generating a new section calls `muse meter` to discover whether
+the project is in 4/4 or an odd meter before producing MIDI. An agent reviewing a composition
+calls `muse meter --history` to identify when meter changes occurred and correlate them with
+creative decisions. `muse meter --polyrhythm` surfaces conflicts that would cause tracks to
+drift out of sync.
+
+**Implementation:** `maestro/muse_cli/commands/meter.py`. All DB-touching paths are async
+(`open_session()` pattern). Exit codes: 0 success, 1 user error, 3 internal error.
+
+---
+
 ### Command Registration Summary
 
 | Command | File | Status | Issue |
@@ -2068,6 +2179,7 @@ Marcus (bass)       2 sessions
 | `muse describe` | `commands/describe.py` | ✅ stub (PR #134) | #125 |
 | `muse ask` | `commands/ask.py` | ✅ stub (PR #132) | #126 |
 | `muse session` | `commands/session.py` | ✅ implemented (PR #129) | #127 |
+| `muse meter` | `commands/meter.py` | ✅ implemented (PR #141) | #117 |
 
 All stub commands have stable CLI contracts. Full musical analysis (MIDI content
 parsing, vector embeddings, LLM synthesis) is tracked as follow-up issues.
@@ -2292,6 +2404,7 @@ branch for chord voicings while preserving the guitar branch's groove patterns.
 | `muse dynamics` | `commands/dynamics.py` | ✅ stub (PR #130) | #120 |
 | `muse export` | `commands/export.py` | ✅ implemented (PR #137) | #112 |
 | `muse grep` | `commands/grep_cmd.py` | ✅ stub (PR #128) | #124 |
+| `muse meter` | `commands/meter.py` | ✅ implemented (PR #141) | #117 |
 | `muse recall` | `commands/recall.py` | ✅ stub (PR #135) | #122 |
 | `muse session` | `commands/session.py` | ✅ implemented (PR #129) | #127 |
 | `muse swing` | `commands/swing.py` | ✅ stub (PR #131) | #121 |

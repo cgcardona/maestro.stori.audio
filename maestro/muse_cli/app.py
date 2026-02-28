@@ -1,9 +1,9 @@
 """Muse CLI — Typer application root.
 
 Entry point for the ``muse`` console script. Registers all MVP
-subcommands (init, status, commit, describe, divergence, find, grep, log,
-checkout, merge, remote, push, pull, open, play, export, dynamics, session,
-swing, ask, tag, tempo, recall, arrange, context) as Typer sub-applications.
+subcommands (init, status, commit, describe, divergence, find, grep, log, checkout,
+merge, remote, push, pull, open, play, export, dynamics, session, swing, ask,
+meter, tag, tempo, recall, arrange, context) as Typer sub-applications.
 """
 from __future__ import annotations
 
@@ -24,6 +24,7 @@ from maestro.muse_cli.commands import (
     init,
     log,
     merge,
+    meter,
     open_cmd,
     play,
     pull,
@@ -63,6 +64,7 @@ cli.add_typer(swing.app, name="swing", help="Analyze or annotate the swing facto
 cli.add_typer(session.app, name="session", help="Record and query recording session metadata.")
 cli.add_typer(export.app, name="export", help="Export a snapshot to MIDI, JSON, MusicXML, ABC, or WAV.")
 cli.add_typer(ask.app, name="ask", help="Query musical history in natural language.")
+cli.add_typer(meter.app, name="meter", help="Read or set the time signature of a commit.")
 cli.add_typer(tag.app, name="tag", help="Attach and query music-semantic tags on commits.")
 cli.add_typer(tempo.app, name="tempo", help="Read or set the tempo (BPM) of a commit.")
 cli.add_typer(recall.app, name="recall", help="Search commit history by natural-language description.")

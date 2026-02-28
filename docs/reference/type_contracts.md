@@ -1966,6 +1966,39 @@ Read-only search across `muse_cli_commits`.  Returns `MuseFindResults`.
 
 ---
 
+### Muse CLI — `muse meter` (`maestro/muse_cli/commands/meter.py`)
+
+#### `MuseMeterReadResult`
+
+`@dataclass(frozen=True)` — returned by `_meter_read_async()`.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `commit_id` | `str` | Full 64-char sha256 commit identifier. |
+| `time_signature` | `str \| None` | Time signature string (e.g. `"4/4"`), or `None` when no annotation is stored. |
+
+#### `MuseMeterHistoryEntry`
+
+`@dataclass(frozen=True)` — one entry in the list returned by `_meter_history_async()`.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `commit_id` | `str` | Full 64-char sha256 commit identifier. |
+| `time_signature` | `str \| None` | Stored time signature, or `None` if not annotated. |
+| `message` | `str` | Commit message. |
+
+#### `MusePolyrhythmResult`
+
+`@dataclass(frozen=True)` — returned by `_meter_polyrhythm_async()`.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `commit_id` | `str` | Commit that was inspected (HEAD by default). |
+| `signatures_by_file` | `dict[str, str]` | Maps relative MIDI file path to detected time signature. `"?"` when no meta event found. |
+| `is_polyrhythmic` | `bool` | `True` when two or more distinct known time signatures are present simultaneously. |
+
+---
+
 ### Muse VCS (`maestro/api/routes/muse.py`)
 
 #### `SaveVariationResponse`
