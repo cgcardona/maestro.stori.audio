@@ -20,11 +20,38 @@ let cachedOpen   = null;  // cached open PRs after first fetch
 let cachedMerged = null;  // cached merged PRs after first fetch
 let cachedClosed = null;  // cached closed PRs after first fetch
 
+// ── Social signal cache ────────────────────────────────────────────────────
+let prCommentCounts = {};  // { prId: count }
+let prReactions     = {};  // { prId: [{emoji, count, reacted_by_me}] }
+
 // ── Body preview ───────────────────────────────────────────────────────────
 function bodyPreview(body) {
   if (!body) return '';
   const first = body.split('\n')[0].trim();
   return first.length > 100 ? first.slice(0, 97) + '…' : first;
+}
+
+// ── Reaction pills (top 2 emojis + count) ─────────────────────────────────
+function reactionPills(prId) {
+  const rxns = (prReactions[prId] || []).slice().sort((a, b) => b.count - a.count).slice(0, 2);
+  if (!rxns.length) return '';
+  return rxns.map(r =>
+    `<span style="font-size:11px;color:#8b949e;background:var(--color-surface-2,#21262d);border-radius:4px;padding:1px 5px">${r.emoji}&nbsp;${r.count}</span>`
+  ).join('');
+}
+
+// ── Pre-fetch comment counts and reactions for all PRs (parallel) ──────────
+async function loadSocialSignals(prs) {
+  await Promise.all(prs.map(async pr => {
+    if (prCommentCounts[pr.prId] != null) return;  // already cached
+    const id = encodeURIComponent(pr.prId);
+    const [comments, rxns] = await Promise.all([
+      apiFetch('/repos/' + repoId + '/comments?target_type=pull_request&target_id=' + id).catch(() => []),
+      apiFetch('/repos/' + repoId + '/reactions?target_type=pull_request&target_id=' + id).catch(() => []),
+    ]);
+    prCommentCounts[pr.prId] = Array.isArray(comments) ? comments.length : 0;
+    prReactions[pr.prId]     = Array.isArray(rxns)     ? rxns            : [];
+  }));
 }
 
 // ── Sorting ────────────────────────────────────────────────────────────────
@@ -65,6 +92,8 @@ function renderRows() {
     } else {
       stateBadge = '<span class="badge badge-open">Open</span>';
     }
+    const commentBadge = `<span style="font-size:11px;color:#8b949e">&#128172; ${prCommentCounts[pr.prId] || 0}</span>`;
+    const pills = reactionPills(pr.prId);
     return `
       <div class="pr-row">
         ${stateBadge}
@@ -77,6 +106,8 @@ function renderRows() {
             <span class="branch-pill">${escHtml(pr.toBranch)}</span>
             <span style="font-size:11px;color:#8b949e">${fmtDate(pr.createdAt)}</span>
             ${mergeInfo}
+            ${commentBadge}
+            ${pills}
           </div>
         </div>
       </div>`;
@@ -121,6 +152,8 @@ async function load(state) {
     else if (state === 'closed') allPRs = cachedClosed;
     else if (state === 'all')    allPRs = [...cachedOpen, ...cachedMerged, ...cachedClosed];
     else                         allPRs = cachedOpen;
+
+    await loadSocialSignals(allPRs);
 
     document.getElementById('content').innerHTML = `
       <div class="card">
