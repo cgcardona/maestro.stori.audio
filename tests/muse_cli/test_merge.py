@@ -404,3 +404,277 @@ async def test_merge_same_branch_exits_0(
         )
 
     assert exc_info.value.exit_code == ExitCode.SUCCESS
+
+
+# ---------------------------------------------------------------------------
+# --no-ff tests
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.anyio
+async def test_merge_no_ff_creates_merge_commit(
+    tmp_path: pathlib.Path, muse_cli_db_session: AsyncSession
+) -> None:
+    """--no-ff forces a merge commit even when fast-forward is possible."""
+    _init_repo(tmp_path)
+    _write_workdir(tmp_path, {"beat.mid": b"V1"})
+    await _commit_async(message="initial", root=tmp_path, session=muse_cli_db_session)
+    ours_commit = _head_commit(tmp_path)
+
+    # Create feature branch and advance it — fast-forward would normally apply.
+    _create_branch(tmp_path, "feature")
+    _switch_branch(tmp_path, "feature")
+    _write_workdir(tmp_path, {"beat.mid": b"V2"})
+    await _commit_async(message="feature step", root=tmp_path, session=muse_cli_db_session)
+    theirs_commit = _head_commit(tmp_path, "feature")
+
+    # Merge with --no-ff: a merge commit must be created, not a fast-forward.
+    _switch_branch(tmp_path, "main")
+    await _merge_async(
+        branch="feature",
+        root=tmp_path,
+        session=muse_cli_db_session,
+        no_ff=True,
+    )
+
+    merge_commit_id = _head_commit(tmp_path, "main")
+    # HEAD must be a NEW commit (not the feature tip).
+    assert merge_commit_id != theirs_commit
+    assert merge_commit_id != ours_commit
+
+    # The new commit must carry both parents.
+    result = await muse_cli_db_session.execute(
+        select(MuseCliCommit).where(MuseCliCommit.commit_id == merge_commit_id)
+    )
+    merge_commit = result.scalar_one()
+    assert merge_commit.parent_commit_id == ours_commit
+    assert merge_commit.parent2_commit_id == theirs_commit
+
+
+@pytest.mark.anyio
+async def test_merge_no_ff_diverged_branches_creates_merge_commit(
+    tmp_path: pathlib.Path, muse_cli_db_session: AsyncSession
+) -> None:
+    """--no-ff on diverged branches still creates a merge commit (normal path)."""
+    _init_repo(tmp_path)
+    _write_workdir(tmp_path, {"base.mid": b"BASE"})
+    await _commit_async(message="base", root=tmp_path, session=muse_cli_db_session)
+
+    _create_branch(tmp_path, "feature")
+
+    _write_workdir(tmp_path, {"base.mid": b"BASE", "main_only.mid": b"MAIN"})
+    await _commit_async(message="main step", root=tmp_path, session=muse_cli_db_session)
+    ours_commit = _head_commit(tmp_path)
+
+    _switch_branch(tmp_path, "feature")
+    _write_workdir(tmp_path, {"base.mid": b"BASE", "feat_only.mid": b"FEAT"})
+    await _commit_async(message="feature step", root=tmp_path, session=muse_cli_db_session)
+    theirs_commit = _head_commit(tmp_path, "feature")
+
+    _switch_branch(tmp_path, "main")
+    await _merge_async(
+        branch="feature", root=tmp_path, session=muse_cli_db_session, no_ff=True
+    )
+
+    merge_commit_id = _head_commit(tmp_path, "main")
+    assert merge_commit_id != ours_commit
+
+    result = await muse_cli_db_session.execute(
+        select(MuseCliCommit).where(MuseCliCommit.commit_id == merge_commit_id)
+    )
+    mc = result.scalar_one()
+    assert mc.parent_commit_id == ours_commit
+    assert mc.parent2_commit_id == theirs_commit
+
+
+# ---------------------------------------------------------------------------
+# --squash tests
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.anyio
+async def test_merge_squash_single_commit_no_parent2(
+    tmp_path: pathlib.Path, muse_cli_db_session: AsyncSession
+) -> None:
+    """--squash creates a single commit with no parent2_commit_id."""
+    _init_repo(tmp_path)
+    _write_workdir(tmp_path, {"base.mid": b"BASE"})
+    await _commit_async(message="base", root=tmp_path, session=muse_cli_db_session)
+
+    _create_branch(tmp_path, "feature")
+
+    _write_workdir(tmp_path, {"base.mid": b"BASE", "main_only.mid": b"MAIN"})
+    await _commit_async(message="main step", root=tmp_path, session=muse_cli_db_session)
+    ours_commit = _head_commit(tmp_path)
+
+    _switch_branch(tmp_path, "feature")
+    _write_workdir(tmp_path, {"base.mid": b"BASE", "feat_only.mid": b"FEAT"})
+    await _commit_async(message="feature step", root=tmp_path, session=muse_cli_db_session)
+
+    _switch_branch(tmp_path, "main")
+    await _merge_async(
+        branch="feature",
+        root=tmp_path,
+        session=muse_cli_db_session,
+        squash=True,
+    )
+
+    squash_commit_id = _head_commit(tmp_path, "main")
+    assert squash_commit_id != ours_commit
+
+    result = await muse_cli_db_session.execute(
+        select(MuseCliCommit).where(MuseCliCommit.commit_id == squash_commit_id)
+    )
+    sc = result.scalar_one()
+    # Single parent — this is NOT a merge commit in the DAG.
+    assert sc.parent_commit_id == ours_commit
+    assert sc.parent2_commit_id is None
+
+
+@pytest.mark.anyio
+async def test_merge_squash_fast_forward_eligible_creates_single_commit(
+    tmp_path: pathlib.Path, muse_cli_db_session: AsyncSession
+) -> None:
+    """--squash on a fast-forward-eligible pair still creates a single commit."""
+    _init_repo(tmp_path)
+    _write_workdir(tmp_path, {"beat.mid": b"V1"})
+    await _commit_async(message="initial", root=tmp_path, session=muse_cli_db_session)
+    ours_commit = _head_commit(tmp_path)
+
+    _create_branch(tmp_path, "feature")
+    _switch_branch(tmp_path, "feature")
+    _write_workdir(tmp_path, {"beat.mid": b"V2"})
+    await _commit_async(message="feature", root=tmp_path, session=muse_cli_db_session)
+    theirs_commit = _head_commit(tmp_path, "feature")
+
+    _switch_branch(tmp_path, "main")
+    await _merge_async(
+        branch="feature",
+        root=tmp_path,
+        session=muse_cli_db_session,
+        squash=True,
+    )
+
+    squash_commit_id = _head_commit(tmp_path, "main")
+    # Must not be the feature tip (that would be a fast-forward).
+    assert squash_commit_id != theirs_commit
+
+    result = await muse_cli_db_session.execute(
+        select(MuseCliCommit).where(MuseCliCommit.commit_id == squash_commit_id)
+    )
+    sc = result.scalar_one()
+    assert sc.parent_commit_id == ours_commit
+    assert sc.parent2_commit_id is None
+
+
+# ---------------------------------------------------------------------------
+# --strategy tests
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.anyio
+async def test_merge_strategy_ours(
+    tmp_path: pathlib.Path, muse_cli_db_session: AsyncSession
+) -> None:
+    """--strategy ours keeps all files from current branch, ignores theirs."""
+    _init_repo(tmp_path)
+    _write_workdir(tmp_path, {"shared.mid": b"BASE"})
+    await _commit_async(message="base", root=tmp_path, session=muse_cli_db_session)
+
+    _create_branch(tmp_path, "feature")
+
+    # Both sides modify shared.mid (would conflict without a strategy).
+    _write_workdir(tmp_path, {"shared.mid": b"MAIN_VERSION"})
+    await _commit_async(message="main changes shared", root=tmp_path, session=muse_cli_db_session)
+    ours_commit = _head_commit(tmp_path)
+
+    _switch_branch(tmp_path, "feature")
+    _write_workdir(tmp_path, {"shared.mid": b"FEATURE_VERSION"})
+    await _commit_async(message="feature changes shared", root=tmp_path, session=muse_cli_db_session)
+    theirs_commit = _head_commit(tmp_path, "feature")
+
+    _switch_branch(tmp_path, "main")
+    # --strategy ours should succeed without conflicts.
+    await _merge_async(
+        branch="feature",
+        root=tmp_path,
+        session=muse_cli_db_session,
+        strategy="ours",
+    )
+
+    # No MERGE_STATE.json — no conflicts written.
+    assert read_merge_state(tmp_path) is None
+
+    merge_commit_id = _head_commit(tmp_path, "main")
+    from maestro.muse_cli.db import get_commit_snapshot_manifest
+    manifest = await get_commit_snapshot_manifest(muse_cli_db_session, merge_commit_id)
+    assert manifest is not None
+    # The snapshot should reflect ours (MAIN_VERSION).
+    from maestro.muse_cli.snapshot import compute_snapshot_id
+    ours_manifest = await get_commit_snapshot_manifest(muse_cli_db_session, ours_commit)
+    assert manifest == ours_manifest
+
+
+@pytest.mark.anyio
+async def test_merge_strategy_theirs(
+    tmp_path: pathlib.Path, muse_cli_db_session: AsyncSession
+) -> None:
+    """--strategy theirs takes all files from target branch, ignores ours."""
+    _init_repo(tmp_path)
+    _write_workdir(tmp_path, {"shared.mid": b"BASE"})
+    await _commit_async(message="base", root=tmp_path, session=muse_cli_db_session)
+
+    _create_branch(tmp_path, "feature")
+
+    _write_workdir(tmp_path, {"shared.mid": b"MAIN_VERSION"})
+    await _commit_async(message="main changes shared", root=tmp_path, session=muse_cli_db_session)
+
+    _switch_branch(tmp_path, "feature")
+    _write_workdir(tmp_path, {"shared.mid": b"FEATURE_VERSION"})
+    await _commit_async(message="feature changes shared", root=tmp_path, session=muse_cli_db_session)
+    theirs_commit = _head_commit(tmp_path, "feature")
+
+    _switch_branch(tmp_path, "main")
+    await _merge_async(
+        branch="feature",
+        root=tmp_path,
+        session=muse_cli_db_session,
+        strategy="theirs",
+    )
+
+    assert read_merge_state(tmp_path) is None
+
+    merge_commit_id = _head_commit(tmp_path, "main")
+    from maestro.muse_cli.db import get_commit_snapshot_manifest
+    manifest = await get_commit_snapshot_manifest(muse_cli_db_session, merge_commit_id)
+    assert manifest is not None
+    # The snapshot should reflect theirs (FEATURE_VERSION).
+    theirs_manifest = await get_commit_snapshot_manifest(muse_cli_db_session, theirs_commit)
+    assert manifest == theirs_manifest
+
+
+@pytest.mark.anyio
+async def test_merge_strategy_invalid_exits_1(
+    tmp_path: pathlib.Path, muse_cli_db_session: AsyncSession
+) -> None:
+    """Unknown --strategy value exits 1 with a clear error."""
+    _init_repo(tmp_path)
+    _write_workdir(tmp_path, {"a.mid": b"V"})
+    await _commit_async(message="initial", root=tmp_path, session=muse_cli_db_session)
+    _create_branch(tmp_path, "feature")
+
+    # Advance feature so merge would proceed.
+    _switch_branch(tmp_path, "feature")
+    _write_workdir(tmp_path, {"a.mid": b"V2"})
+    await _commit_async(message="feature step", root=tmp_path, session=muse_cli_db_session)
+    _switch_branch(tmp_path, "main")
+
+    with pytest.raises(typer.Exit) as exc_info:
+        await _merge_async(
+            branch="feature",
+            root=tmp_path,
+            session=muse_cli_db_session,
+            strategy="recursive",
+        )
+
+    assert exc_info.value.exit_code == ExitCode.USER_ERROR
