@@ -1175,11 +1175,124 @@ Get a single issue by its per-repo sequential number.
 
 **Response (200):** Full issue object (same shape as above). Returns **404** if the issue number does not exist.
 
+### PATCH /api/v1/musehub/repos/{repo_id}/issues/{issue_number}
+
+Partially update an issue's title, body, and/or labels. Only fields present in the body are modified.
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `title` | string | — | Updated title (1–500 chars) |
+| `body` | string | — | Updated Markdown body |
+| `labels` | string[] | — | Replacement label list |
+
+**Response (200):** Updated issue object.
+
 ### POST /api/v1/musehub/repos/{repo_id}/issues/{issue_number}/close
 
 Close an issue (set `state` → `"closed"`).
 
 **Response (200):** Updated issue object with `"state": "closed"`. Returns **404** if the issue number does not exist.
+
+### POST /api/v1/musehub/repos/{repo_id}/issues/{issue_number}/reopen
+
+Reopen a closed issue (set `state` → `"open"`).
+
+**Response (200):** Updated issue object with `"state": "open"`. Returns **404** if not found.
+
+### POST /api/v1/musehub/repos/{repo_id}/issues/{issue_number}/assign
+
+Assign or unassign a collaborator. Pass `"assignee": null` to unassign.
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `assignee` | string\|null | yes | Collaborator display name; null to unassign |
+
+**Response (200):** Updated issue object with `assignee` field set.
+
+### POST /api/v1/musehub/repos/{repo_id}/issues/{issue_number}/milestone
+
+Assign or remove a milestone. Query param `?milestone_id=<uuid>` to assign; omit to remove.
+
+**Response (200):** Updated issue object with `milestoneId` and `milestoneTitle` set.
+
+### GET /api/v1/musehub/repos/{repo_id}/issues/{issue_number}/comments
+
+List all non-deleted comments on an issue, ordered chronologically (oldest first).
+
+**Response (200):**
+```json
+{
+  "comments": [
+    {
+      "commentId": "uuid",
+      "issueId": "uuid",
+      "author": "miles_davis",
+      "body": "The section:chorus beats:16-24 has a frequency clash with track:bass.",
+      "parentId": null,
+      "musicalRefs": [
+        {"type": "section", "value": "chorus", "raw": "section:chorus"},
+        {"type": "beats", "value": "16-24", "raw": "beats:16-24"},
+        {"type": "track", "value": "bass", "raw": "track:bass"}
+      ],
+      "isDeleted": false,
+      "createdAt": "2026-02-28T12:00:00Z",
+      "updatedAt": "2026-02-28T12:00:00Z"
+    }
+  ],
+  "total": 1
+}
+```
+
+### POST /api/v1/musehub/repos/{repo_id}/issues/{issue_number}/comments
+
+Create a comment on an issue. Supports threaded replies via `parentId`.
+
+Musical context references (`track:bass`, `section:chorus`, `beats:16-24`) are parsed automatically and returned in `musicalRefs`.
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `body` | string | yes | Markdown comment body |
+| `parentId` | string | — | Parent comment UUID for threaded replies |
+
+**Response (201):** Full updated comment list (`IssueCommentListResponse`).
+
+### DELETE /api/v1/musehub/repos/{repo_id}/issues/{issue_number}/comments/{comment_id}
+
+Soft-delete a comment (excluded from future list results).
+
+**Response (204):** No content. Returns **404** if not found.
+
+---
+
+## Muse Hub Milestones API
+
+Group issues into milestones (e.g. "Album v1.0", "Mix Session 3"). All endpoints are under `/api/v1/musehub/repos/{repo_id}/milestones/`.
+
+### GET /api/v1/musehub/repos/{repo_id}/milestones
+
+List milestones. Optional `?state=open|closed|all` (default `open`).
+
+**Response (200):** `{ "milestones": [MilestoneResponse, ...] }`
+
+Each milestone includes `openIssues` and `closedIssues` counts.
+
+### POST /api/v1/musehub/repos/{repo_id}/milestones
+
+Create a milestone.
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `title` | string | yes | Milestone title (1–255 chars) |
+| `description` | string | — | Markdown description |
+| `dueOn` | string | — | ISO-8601 due date |
+
+**Response (201):** `MilestoneResponse`
+
+### GET /api/v1/musehub/repos/{repo_id}/milestones/{milestone_number}
+
+Get a single milestone by its per-repo sequential number.
+
+**Response (200):** `MilestoneResponse`. Returns **404** if not found.
 
 ---
 

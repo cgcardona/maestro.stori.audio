@@ -1362,3 +1362,239 @@ async def test_arrange_service_direct() -> None:
         assert 0.0 <= cell.note_density <= 1.0
     # Row summary count matches instruments
     assert len(result.row_summaries) == len(result.instruments)
+
+
+# ---------------------------------------------------------------------------
+# Star/Fork endpoints — issue #220
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.anyio
+async def test_star_repo_increases_star_count(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    auth_headers: dict[str, str],
+) -> None:
+    """POST /repos/{repo_id}/star stars the repo and returns starred=True with count=1."""
+    repo = MusehubRepo(
+        name="star-test",
+        owner="testuser",
+        slug="star-test",
+        visibility="public",
+        owner_user_id="u1",
+    )
+    db_session.add(repo)
+    await db_session.commit()
+    await db_session.refresh(repo)
+    repo_id = str(repo.repo_id)
+
+    resp = await client.post(f"/api/v1/musehub/repos/{repo_id}/star", headers=auth_headers)
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["starred"] is True
+    assert body["starCount"] == 1
+
+
+@pytest.mark.anyio
+async def test_unstar_repo_decreases_star_count(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    auth_headers: dict[str, str],
+) -> None:
+    """DELETE /repos/{repo_id}/star removes the star — returns starred=False with count=0."""
+    repo = MusehubRepo(
+        name="unstar-test",
+        owner="testuser",
+        slug="unstar-test",
+        visibility="public",
+        owner_user_id="u1",
+    )
+    db_session.add(repo)
+    await db_session.commit()
+    await db_session.refresh(repo)
+    repo_id = str(repo.repo_id)
+
+    await client.post(f"/api/v1/musehub/repos/{repo_id}/star", headers=auth_headers)
+    resp = await client.delete(f"/api/v1/musehub/repos/{repo_id}/star", headers=auth_headers)
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["starred"] is False
+    assert body["starCount"] == 0
+
+
+@pytest.mark.anyio
+async def test_star_idempotent_double_call(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    auth_headers: dict[str, str],
+) -> None:
+    """POST /star twice leaves count=1 (idempotent add — not a toggle)."""
+    repo = MusehubRepo(
+        name="idempotent-star",
+        owner="testuser",
+        slug="idempotent-star",
+        visibility="public",
+        owner_user_id="u1",
+    )
+    db_session.add(repo)
+    await db_session.commit()
+    await db_session.refresh(repo)
+    repo_id = str(repo.repo_id)
+
+    await client.post(f"/api/v1/musehub/repos/{repo_id}/star", headers=auth_headers)
+    resp = await client.post(f"/api/v1/musehub/repos/{repo_id}/star", headers=auth_headers)
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["starred"] is True
+    assert body["starCount"] == 1
+
+
+@pytest.mark.anyio
+async def test_star_requires_auth(client: AsyncClient, db_session: AsyncSession) -> None:
+    """POST /repos/{repo_id}/star returns 401 without a Bearer token."""
+    repo = MusehubRepo(
+        name="auth-star-test",
+        owner="testuser",
+        slug="auth-star-test",
+        visibility="public",
+        owner_user_id="u1",
+    )
+    db_session.add(repo)
+    await db_session.commit()
+    await db_session.refresh(repo)
+    repo_id = str(repo.repo_id)
+
+    resp = await client.post(f"/api/v1/musehub/repos/{repo_id}/star")
+    assert resp.status_code == 401
+
+
+@pytest.mark.anyio
+async def test_fork_repo_creates_fork_under_user(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    auth_headers: dict[str, str],
+) -> None:
+    """POST /repos/{repo_id}/fork creates a fork and returns lineage metadata."""
+    repo = MusehubRepo(
+        name="fork-source",
+        owner="original-owner",
+        slug="fork-source",
+        visibility="public",
+        owner_user_id="u-original",
+        description="The original",
+    )
+    db_session.add(repo)
+    await db_session.commit()
+    await db_session.refresh(repo)
+    repo_id = str(repo.repo_id)
+
+    resp = await client.post(f"/api/v1/musehub/repos/{repo_id}/fork", headers=auth_headers)
+    assert resp.status_code == 201
+    body = resp.json()
+    # social.py returns ForkResponse (snake_case from_attributes model)
+    assert body["source_repo_id"] == repo_id
+    assert "fork_repo_id" in body
+    assert body["fork_repo_id"] != repo_id
+
+
+@pytest.mark.anyio
+async def test_fork_preserves_branches(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    auth_headers: dict[str, str],
+) -> None:
+    """Forking a repo with branches copies branch pointers into the new fork.
+
+    Note: commit_id is a global PK so commits cannot be duplicated across repos.
+    The fork shares the lineage link (MusehubFork) and inherits branch pointers.
+    """
+    from maestro.db.musehub_models import MusehubBranch
+
+    repo = MusehubRepo(
+        name="fork-with-branches",
+        owner="src-owner",
+        slug="fork-with-branches",
+        visibility="public",
+        owner_user_id="u-src",
+    )
+    db_session.add(repo)
+    await db_session.commit()
+    await db_session.refresh(repo)
+    repo_id = str(repo.repo_id)
+
+    branch = MusehubBranch(
+        repo_id=repo_id,
+        name="main",
+        head_commit_id=None,
+    )
+    db_session.add(branch)
+    await db_session.commit()
+
+    resp = await client.post(f"/api/v1/musehub/repos/{repo_id}/fork", headers=auth_headers)
+    assert resp.status_code == 201
+    fork_repo_id = resp.json()["fork_repo_id"]
+
+    branches_resp = await client.get(
+        f"/api/v1/musehub/repos/{fork_repo_id}/branches", headers=auth_headers
+    )
+    assert branches_resp.status_code == 200
+    branches = branches_resp.json().get("branches", [])
+    assert any(b["name"] == "main" for b in branches)
+
+
+@pytest.mark.anyio
+async def test_list_stargazers_returns_starrers(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    auth_headers: dict[str, str],
+) -> None:
+    """GET /repos/{repo_id}/stargazers returns user_id of the starring user."""
+    repo = MusehubRepo(
+        name="stargazers-test",
+        owner="testuser",
+        slug="stargazers-test",
+        visibility="public",
+        owner_user_id="u1",
+    )
+    db_session.add(repo)
+    await db_session.commit()
+    await db_session.refresh(repo)
+    repo_id = str(repo.repo_id)
+
+    await client.post(f"/api/v1/musehub/repos/{repo_id}/star", headers=auth_headers)
+
+    resp = await client.get(f"/api/v1/musehub/repos/{repo_id}/stargazers")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["total"] == 1
+    assert len(body["stargazers"]) == 1
+
+
+@pytest.mark.anyio
+async def test_list_forks_returns_fork_entry(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    auth_headers: dict[str, str],
+) -> None:
+    """GET /repos/{repo_id}/forks returns the fork entry after forking."""
+    repo = MusehubRepo(
+        name="forks-list-test",
+        owner="original",
+        slug="forks-list-test",
+        visibility="public",
+        owner_user_id="u-orig",
+    )
+    db_session.add(repo)
+    await db_session.commit()
+    await db_session.refresh(repo)
+    repo_id = str(repo.repo_id)
+
+    await client.post(f"/api/v1/musehub/repos/{repo_id}/fork", headers=auth_headers)
+
+    resp = await client.get(f"/api/v1/musehub/repos/{repo_id}/forks")
+    assert resp.status_code == 200
+    # social.py returns list[ForkResponse] (a JSON array)
+    body = resp.json()
+    assert isinstance(body, list)
+    assert len(body) == 1
+    assert body[0]["source_repo_id"] == repo_id

@@ -29,7 +29,11 @@ from sqlalchemy import Text, desc, func, outerjoin, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from maestro.db import musehub_models as db
-from maestro.models.musehub import ExploreRepoResult, ExploreResponse, StarResponse
+from maestro.models.musehub import (
+    ExploreRepoResult,
+    ExploreResponse,
+    StarResponse,
+)
 
 logger = logging.getLogger(__name__)
 
