@@ -81,6 +81,12 @@ Covers issue #292 (rich event cards in activity feed):
 UI routes require no JWT auth (they return HTML shells whose JS handles auth).
 The HTML content tests assert structural markers present in every rendered page.
 
+Covers issue #290 (release detail comment threads):
+- test_ui_release_detail_has_comment_section        — Discussion section present in HTML
+- test_ui_release_detail_has_render_comments_js     — renderComments/submitComment/deleteComment JS present
+- test_ui_release_detail_comment_uses_release_target_type — target_type='release' used in JS
+- test_ui_release_detail_has_reply_thread_js        — toggleReplyForm/submitReply for thread support
+
 Covers issue #286 (commit comment threads):
 - test_commit_page_has_comment_section_html     — comments-section container present in HTML
 - test_commit_page_has_comment_js_functions     — renderComments/submitComment/deleteComment/loadComments JS present
@@ -702,6 +708,62 @@ async def test_ui_release_detail_page_returns_200(
     assert "Muse Hub" in body
     assert "Download" in body
     assert "v1.0" in body
+
+
+@pytest.mark.anyio
+async def test_ui_release_detail_has_comment_section(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Release detail page HTML includes the Discussion comment section (issue #290)."""
+    await _make_repo(db_session)
+    response = await client.get("/musehub/ui/testuser/test-beats/releases/v1.0")
+    assert response.status_code == 200
+    body = response.text
+    assert "comments-section" in body
+    assert "Discussion" in body
+
+
+@pytest.mark.anyio
+async def test_ui_release_detail_has_render_comments_js(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Release detail page includes renderComments() JavaScript function (issue #290)."""
+    await _make_repo(db_session)
+    response = await client.get("/musehub/ui/testuser/test-beats/releases/v1.0")
+    assert response.status_code == 200
+    body = response.text
+    assert "renderComments" in body
+    assert "submitComment" in body
+    assert "deleteComment" in body
+
+
+@pytest.mark.anyio
+async def test_ui_release_detail_comment_uses_release_target_type(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Release detail page posts comments with target_type='release' (issue #290)."""
+    await _make_repo(db_session)
+    response = await client.get("/musehub/ui/testuser/test-beats/releases/v1.0")
+    assert response.status_code == 200
+    body = response.text
+    assert "target_type: 'release'" in body or "target_type':'release'" in body or "target_type: \"release\"" in body
+
+
+@pytest.mark.anyio
+async def test_ui_release_detail_has_reply_thread_js(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Release detail page includes toggleReplyForm and submitReply for threaded comments (issue #290)."""
+    await _make_repo(db_session)
+    response = await client.get("/musehub/ui/testuser/test-beats/releases/v1.0")
+    assert response.status_code == 200
+    body = response.text
+    assert "toggleReplyForm" in body
+    assert "submitReply" in body
 
 
 @pytest.mark.anyio
