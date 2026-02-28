@@ -482,25 +482,26 @@ def _render_report(report: MusicDiffReport) -> str:
         f"Unchanged: {', '.join(report['unchanged_dimensions']) or 'none'}",
         "",
     ]
-    dim_map: list[tuple[str, object]] = [
-        ("Harmonic", report["harmonic"]),
-        ("Rhythmic", report["rhythmic"]),
-        ("Melodic", report["melodic"]),
-        ("Structural", report["structural"]),
-        ("Dynamic", report["dynamic"]),
-    ]
-    renderers = {
-        "Harmonic": _render_harmonic,
-        "Rhythmic": _render_rhythmic,
-        "Melodic": _render_melodic,
-        "Structural": _render_structural,
-        "Dynamic": _render_dynamic,
-    }
-    for dim_name, result in dim_map:
-        if result is not None:
-            sections.append(f"-- {dim_name} --")
-            sections.append(renderers[dim_name](result))  # type: ignore[arg-type]
-            sections.append("")
+    if report["harmonic"] is not None:
+        sections.append("-- Harmonic --")
+        sections.append(_render_harmonic(report["harmonic"]))
+        sections.append("")
+    if report["rhythmic"] is not None:
+        sections.append("-- Rhythmic --")
+        sections.append(_render_rhythmic(report["rhythmic"]))
+        sections.append("")
+    if report["melodic"] is not None:
+        sections.append("-- Melodic --")
+        sections.append(_render_melodic(report["melodic"]))
+        sections.append("")
+    if report["structural"] is not None:
+        sections.append("-- Structural --")
+        sections.append(_render_structural(report["structural"]))
+        sections.append("")
+    if report["dynamic"] is not None:
+        sections.append("-- Dynamic --")
+        sections.append(_render_dynamic(report["dynamic"]))
+        sections.append("")
     return "\n".join(sections)
 
 
