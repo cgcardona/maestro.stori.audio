@@ -11,11 +11,15 @@ Endpoint summary:
   GET /musehub/ui/{repo_id}/issues                 — issue list page
   GET /musehub/ui/{repo_id}/issues/{number}        — issue detail page (with close button)
   GET /musehub/ui/{repo_id}/credits                — dynamic credits page (album liner notes)
+  GET /musehub/ui/{repo_id}/embed/{ref}            — embeddable player widget (no auth, iframe-safe)
   GET /musehub/ui/{repo_id}/search                 — in-repo search page (four modes)
 
 These routes require NO JWT auth — they return static HTML shells whose
 embedded JavaScript fetches data from the authed JSON API
 (``/api/v1/musehub/...``) using a token stored in ``localStorage``.
+
+The embed route is intentionally designed for cross-origin iframe embedding:
+it sets ``X-Frame-Options: ALLOWALL`` and omits the Sign-out button.
 
 No Jinja2 is required; pages are self-contained HTML strings rendered
 server-side.  No external CDN dependencies.
@@ -24,7 +28,7 @@ from __future__ import annotations
 
 import logging
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Response
 from fastapi.responses import HTMLResponse
 
 logger = logging.getLogger(__name__)
@@ -673,6 +677,220 @@ async def issue_list_page(repo_id: str) -> HTMLResponse:
 
 
 @router.get(
+    "/{repo_id}/context/{ref}",
+    response_class=HTMLResponse,
+    summary="Muse Hub context viewer page",
+)
+async def context_page(repo_id: str, ref: str) -> HTMLResponse:
+    """Render the AI context viewer for a given commit ref.
+
+    Fetches ``GET /api/v1/musehub/repos/{repo_id}/context/{ref}`` and renders
+    the MuseHubContextResponse as a structured human-readable document.
+
+    Sections:
+    - "What the agent sees" explainer
+    - Musical State (active tracks + available musical dimensions)
+    - History Summary (recent ancestor commits)
+    - Missing Elements (dimensions not yet available)
+    - Suggestions (what to compose next)
+    - Raw JSON toggle for debugging
+    - Copy-to-clipboard button for sharing with agents
+    """
+    script = f"""
+      const repoId = {repr(repo_id)};
+      const ref    = {repr(ref)};
+      const base   = '/musehub/ui/' + repoId;
+
+      function escHtml(s) {{
+        if (s === null || s === undefined) return '—';
+        return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+      }}
+
+      function copyJson() {{
+        const text = document.getElementById('raw-json').textContent;
+        navigator.clipboard.writeText(text).then(() => {{
+          const btn = document.getElementById('copy-btn');
+          btn.textContent = 'Copied!';
+          setTimeout(() => {{ btn.textContent = 'Copy JSON'; }}, 2000);
+        }});
+      }}
+
+      function toggleSection(id) {{
+        const el = document.getElementById(id);
+        if (!el) return;
+        el.style.display = el.style.display === 'none' ? '' : 'none';
+        const btn = document.querySelector('[data-target="' + id + '"]');
+        if (btn) btn.textContent = el.style.display === 'none' ? '▶ Show' : '▼ Hide';
+      }}
+
+      async function load() {{
+        try {{
+          const ctx = await apiFetch('/repos/' + repoId + '/context/' + ref);
+
+          const tracks = (ctx.musicalState.activeTracks || []);
+          const trackList = tracks.length > 0
+            ? tracks.map(t => '<span class="label">' + escHtml(t) + '</span>').join(' ')
+            : '<em style="color:#8b949e">No music files found in repo yet.</em>';
+
+          function dimRow(label, val) {{
+            return val !== null && val !== undefined
+              ? '<div class="meta-item"><span class="meta-label">' + label + '</span>'
+                + '<span class="meta-value">' + escHtml(val) + '</span></div>'
+              : '';
+          }}
+
+          const musicalDims = [
+            dimRow('Key', ctx.musicalState.key),
+            dimRow('Mode', ctx.musicalState.mode),
+            dimRow('Tempo (BPM)', ctx.musicalState.tempoBpm),
+            dimRow('Time Signature', ctx.musicalState.timeSignature),
+            dimRow('Form', ctx.musicalState.form),
+            dimRow('Emotion', ctx.musicalState.emotion),
+          ].filter(Boolean).join('');
+
+          const histEntries = (ctx.history || []);
+          const histRows = histEntries.length > 0
+            ? histEntries.map(h => `
+                <div class="commit-row">
+                  <a class="commit-sha" href="${{base}}/commits/${{h.commitId}}">${{shortSha(h.commitId)}}</a>
+                  <span class="commit-msg">${{escHtml(h.message)}}</span>
+                  <span class="commit-meta">${{escHtml(h.author)}} &bull; ${{fmtDate(h.timestamp)}}</span>
+                </div>`).join('')
+            : '<p class="loading">No ancestor commits.</p>';
+
+          const missing = (ctx.missingElements || []);
+          const missingList = missing.length > 0
+            ? '<ul style="padding-left:20px;font-size:14px">' + missing.map(m => '<li>' + escHtml(m) + '</li>').join('') + '</ul>'
+            : '<p style="color:#3fb950;font-size:14px">All musical dimensions are available.</p>';
+
+          const suggestions = ctx.suggestions || {{}};
+          const suggKeys = Object.keys(suggestions);
+          const suggList = suggKeys.length > 0
+            ? suggKeys.map(k => '<div style="margin-bottom:8px"><strong style="color:#e6edf3">' + escHtml(k) + ':</strong> ' + escHtml(suggestions[k]) + '</div>').join('')
+            : '<p class="loading">No suggestions available.</p>';
+
+          const rawJson = JSON.stringify(ctx, null, 2);
+
+          document.getElementById('content').innerHTML = `
+            <div style="margin-bottom:12px">
+              <a href="${{base}}">&larr; Back to repo</a>
+            </div>
+
+            <div class="card" style="border-color:#1f6feb">
+              <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+                <span style="font-size:20px">&#127925;</span>
+                <h1 style="margin:0;font-size:18px">What the Agent Sees</h1>
+              </div>
+              <p style="font-size:14px;color:#8b949e;margin-bottom:0">
+                This is the musical context document that the AI agent receives
+                when generating music for this repo at commit
+                <code style="font-size:12px;background:#0d1117;padding:2px 6px;border-radius:4px">${{shortSha(ref)}}</code>.
+                Every composition decision — key, tempo, arrangement, what to add next —
+                is guided by this document.
+              </p>
+            </div>
+
+            <div class="card">
+              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+                <h2 style="margin:0">&#127925; Musical State</h2>
+                <button class="btn btn-secondary" style="font-size:12px"
+                        data-target="musical-state-body" onclick="toggleSection('musical-state-body')">&#9660; Hide</button>
+              </div>
+              <div id="musical-state-body">
+                <div style="margin-bottom:10px">
+                  <span class="meta-label">Active Tracks</span>
+                  <div style="margin-top:4px">${{trackList}}</div>
+                </div>
+                ${{musicalDims ? '<div class="meta-row" style="margin-top:12px">' + musicalDims + '</div>' : '<p style="font-size:13px;color:#8b949e">Musical dimensions (key, tempo, etc.) require MIDI analysis — not yet available.</p>'}}
+              </div>
+            </div>
+
+            <div class="card">
+              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+                <h2 style="margin:0">&#128337; History Summary</h2>
+                <button class="btn btn-secondary" style="font-size:12px"
+                        data-target="history-body" onclick="toggleSection('history-body')">&#9660; Hide</button>
+              </div>
+              <div id="history-body">
+                <div class="meta-row" style="margin-bottom:12px">
+                  <div class="meta-item">
+                    <span class="meta-label">Commit</span>
+                    <span class="meta-value" style="font-family:monospace">${{shortSha(ctx.headCommit.commitId)}}</span>
+                  </div>
+                  <div class="meta-item">
+                    <span class="meta-label">Branch</span>
+                    <span class="meta-value">${{escHtml(ctx.currentBranch)}}</span>
+                  </div>
+                  <div class="meta-item">
+                    <span class="meta-label">Author</span>
+                    <span class="meta-value">${{escHtml(ctx.headCommit.author)}}</span>
+                  </div>
+                  <div class="meta-item">
+                    <span class="meta-label">Date</span>
+                    <span class="meta-value">${{fmtDate(ctx.headCommit.timestamp)}}</span>
+                  </div>
+                </div>
+                <pre style="margin-bottom:12px">${{escHtml(ctx.headCommit.message)}}</pre>
+                <h2 style="font-size:14px;margin-bottom:8px">Ancestors (${{histEntries.length}})</h2>
+                ${{histRows}}
+              </div>
+            </div>
+
+            <div class="card">
+              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+                <h2 style="margin:0">&#9888;&#65039; Missing Elements</h2>
+                <button class="btn btn-secondary" style="font-size:12px"
+                        data-target="missing-body" onclick="toggleSection('missing-body')">&#9660; Hide</button>
+              </div>
+              <div id="missing-body">
+                ${{missingList}}
+              </div>
+            </div>
+
+            <div class="card" style="border-color:#238636">
+              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+                <h2 style="margin:0">&#127775; Suggestions</h2>
+                <button class="btn btn-secondary" style="font-size:12px"
+                        data-target="suggestions-body" onclick="toggleSection('suggestions-body')">&#9660; Hide</button>
+              </div>
+              <div id="suggestions-body">
+                ${{suggList}}
+              </div>
+            </div>
+
+            <div class="card">
+              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+                <h2 style="margin:0">&#128196; Raw JSON</h2>
+                <div style="display:flex;gap:8px">
+                  <button id="copy-btn" class="btn btn-secondary" style="font-size:12px" onclick="copyJson()">Copy JSON</button>
+                  <button class="btn btn-secondary" style="font-size:12px"
+                          data-target="raw-json-body" onclick="toggleSection('raw-json-body')">&#9660; Hide</button>
+                </div>
+              </div>
+              <div id="raw-json-body">
+                <pre id="raw-json">${{escHtml(rawJson)}}</pre>
+              </div>
+            </div>`;
+        }} catch(e) {{
+          if (e.message !== 'auth')
+            document.getElementById('content').innerHTML = '<p class="error">&#10005; ' + escHtml(e.message) + '</p>';
+        }}
+      }}
+
+      load();
+    """
+    html = _page(
+        title=f"Context {ref[:8]}",
+        breadcrumb=(
+            f'<a href="/musehub/ui/{repo_id}">{repo_id[:8]}</a> / '
+            f"context / {ref[:8]}"
+        ),
+        body_script=script,
+    )
+    return HTMLResponse(content=html)
+
+
+@router.get(
     "/{repo_id}/issues/{number}",
     response_class=HTMLResponse,
     summary="Muse Hub issue detail page",
@@ -753,6 +971,272 @@ async def issue_detail_page(repo_id: str, number: int) -> HTMLResponse:
         body_script=script,
     )
     return HTMLResponse(content=html)
+
+
+# ---------------------------------------------------------------------------
+# Embed CSS (compact dark theme, no chrome)
+# ---------------------------------------------------------------------------
+
+_EMBED_CSS = """
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  background: #0d1117; color: #c9d1d9;
+  height: 100vh; display: flex; align-items: center; justify-content: center;
+}
+.player {
+  width: 100%; max-width: 100%; padding: 16px 20px;
+  background: #161b22; border: 1px solid #30363d; border-radius: 8px;
+  display: flex; flex-direction: column; gap: 12px;
+}
+.player-header {
+  display: flex; align-items: center; gap: 12px;
+}
+.logo-mark {
+  font-size: 20px; flex-shrink: 0;
+}
+.track-info { flex: 1; overflow: hidden; }
+.track-title {
+  font-size: 14px; font-weight: 600; color: #e6edf3;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.track-sub {
+  font-size: 11px; color: #8b949e; margin-top: 2px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.controls {
+  display: flex; align-items: center; gap: 10px;
+}
+.play-btn {
+  width: 36px; height: 36px; border-radius: 50%;
+  background: #238636; border: none; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0; font-size: 14px; color: #fff;
+  transition: background 0.15s;
+}
+.play-btn:hover { background: #2ea043; }
+.play-btn:disabled { background: #30363d; cursor: not-allowed; }
+.progress-wrap {
+  flex: 1; display: flex; flex-direction: column; gap: 4px;
+}
+.progress-bar {
+  width: 100%; height: 4px; background: #30363d; border-radius: 2px;
+  cursor: pointer; position: relative; overflow: hidden;
+}
+.progress-fill {
+  height: 100%; width: 0%; background: #58a6ff;
+  border-radius: 2px; transition: width 0.1s linear;
+  pointer-events: none;
+}
+.time-row {
+  display: flex; justify-content: space-between;
+  font-size: 11px; color: #8b949e;
+}
+.footer-link {
+  display: flex; justify-content: flex-end; align-items: center;
+}
+.footer-link a {
+  font-size: 11px; color: #58a6ff; text-decoration: none;
+  display: flex; align-items: center; gap: 4px;
+}
+.footer-link a:hover { text-decoration: underline; }
+.status { font-size: 12px; color: #8b949e; text-align: center; padding: 8px 0; }
+.status.error { color: #f85149; }
+"""
+
+
+def _embed_page(title: str, repo_id: str, ref: str, body_script: str) -> str:
+    """Assemble a compact embed player HTML page.
+
+    Designed for iframe embedding on external sites.  No chrome, no token
+    form — just the player widget.  ``X-Frame-Options`` is set by the
+    route handler, not here, since this function only produces the body.
+    """
+    listen_url = f"/musehub/ui/{repo_id}"
+    return f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{title} — Muse Hub</title>
+  <style>{_EMBED_CSS}</style>
+</head>
+<body>
+  <div class="player" id="player">
+    <div class="player-header">
+      <span class="logo-mark">&#127925;</span>
+      <div class="track-info">
+        <div class="track-title" id="track-title">Loading&#8230;</div>
+        <div class="track-sub" id="track-sub">Muse Hub</div>
+      </div>
+    </div>
+    <div class="controls">
+      <button class="play-btn" id="play-btn" disabled title="Play / Pause">&#9654;</button>
+      <div class="progress-wrap">
+        <div class="progress-bar" id="progress-bar">
+          <div class="progress-fill" id="progress-fill"></div>
+        </div>
+        <div class="time-row">
+          <span id="time-cur">0:00</span>
+          <span id="time-dur">0:00</span>
+        </div>
+      </div>
+    </div>
+    <div class="footer-link">
+      <a href="{listen_url}" target="_blank" rel="noopener">
+        &#127925; View on Muse Hub
+      </a>
+    </div>
+  </div>
+  <audio id="audio-el" preload="metadata"></audio>
+  <script>
+    (function() {{
+      const repoId = {repr(repo_id)};
+      const ref    = {repr(ref)};
+      const API    = '/api/v1/musehub';
+
+      const audio      = document.getElementById('audio-el');
+      const playBtn    = document.getElementById('play-btn');
+      const fill       = document.getElementById('progress-fill');
+      const bar        = document.getElementById('progress-bar');
+      const timeCur    = document.getElementById('time-cur');
+      const timeDur    = document.getElementById('time-dur');
+      const trackTitle = document.getElementById('track-title');
+      const trackSub   = document.getElementById('track-sub');
+
+      function fmtTime(s) {{
+        if (!isFinite(s)) return '0:00';
+        const m = Math.floor(s / 60);
+        const sec = Math.floor(s % 60);
+        return m + ':' + (sec < 10 ? '0' : '') + sec;
+      }}
+
+      function setStatus(msg, isError) {{
+        trackTitle.textContent = isError ? msg : (trackTitle.textContent || msg);
+        if (isError) trackTitle.classList.add('error');
+      }}
+
+      audio.addEventListener('timeupdate', function() {{
+        const pct = audio.duration ? (audio.currentTime / audio.duration) * 100 : 0;
+        fill.style.width = pct + '%';
+        timeCur.textContent = fmtTime(audio.currentTime);
+      }});
+
+      audio.addEventListener('durationchange', function() {{
+        timeDur.textContent = fmtTime(audio.duration);
+      }});
+
+      audio.addEventListener('ended', function() {{
+        playBtn.innerHTML = '&#9654;';
+        fill.style.width = '0%';
+        audio.currentTime = 0;
+      }});
+
+      audio.addEventListener('canplay', function() {{
+        playBtn.disabled = false;
+      }});
+
+      audio.addEventListener('error', function() {{
+        setStatus('Audio unavailable', true);
+      }});
+
+      playBtn.addEventListener('click', function() {{
+        if (audio.paused) {{
+          audio.play();
+          playBtn.innerHTML = '&#9646;&#9646;';
+        }} else {{
+          audio.pause();
+          playBtn.innerHTML = '&#9654;';
+        }}
+      }});
+
+      bar.addEventListener('click', function(e) {{
+        if (!audio.duration) return;
+        const rect = bar.getBoundingClientRect();
+        const pct  = (e.clientX - rect.left) / rect.width;
+        audio.currentTime = pct * audio.duration;
+      }});
+
+      async function loadTrack() {{
+        try {{
+          const objRes = await fetch(API + '/repos/' + repoId + '/objects');
+          if (!objRes.ok) throw new Error('objects ' + objRes.status);
+          const objData = await objRes.json();
+          const objects = objData.objects || [];
+
+          const audio_exts = ['mp3', 'ogg', 'wav', 'm4a'];
+          const audioObj = objects.find(function(o) {{
+            const ext = o.path.split('.').pop().toLowerCase();
+            return audio_exts.indexOf(ext) !== -1;
+          }});
+
+          if (!audioObj) {{
+            trackTitle.textContent = 'No audio in this commit';
+            trackSub.textContent = 'ref: ' + ref.substring(0, 8);
+            return;
+          }}
+
+          const name = audioObj.path.split('/').pop();
+          trackTitle.textContent = name;
+          trackSub.textContent = 'ref: ' + ref.substring(0, 8);
+
+          const audioUrl = API + '/repos/' + repoId + '/objects/' + audioObj.objectId + '/content';
+          audio.src = audioUrl;
+          audio.load();
+        }} catch(e) {{
+          setStatus('Could not load track', true);
+          trackSub.textContent = e.message;
+        }}
+      }}
+
+      {body_script}
+
+      loadTrack();
+    }})();
+  </script>
+</body>
+</html>"""
+
+
+@router.get(
+    "/{repo_id}/embed/{ref}",
+    response_class=HTMLResponse,
+    summary="Embeddable MuseHub player widget",
+)
+async def embed_page(repo_id: str, ref: str) -> Response:
+    """Render a compact, iframe-safe audio player for a MuseHub repo commit.
+
+    Why this route exists: external sites (blogs, CMSes) embed MuseHub
+    compositions via ``<iframe src="/musehub/ui/{repo_id}/embed/{ref}">``.
+    The oEmbed endpoint (``GET /oembed``) auto-generates this iframe tag.
+
+    Contract:
+    - No JWT required — public repos can be embedded without auth.
+    - Returns ``X-Frame-Options: ALLOWALL`` so browsers permit cross-origin framing.
+    - ``ref`` is a commit SHA or branch name used to label the track.
+    - Audio is fetched from ``/api/v1/musehub/repos/{repo_id}/objects`` at
+      runtime; the first recognised audio file (mp3/ogg/wav/m4a) is played.
+    - Responsive: works from 300px to full viewport width.
+
+    Args:
+        repo_id: UUID of the MuseHub repository.
+        ref:     Commit SHA or branch name identifying the composition version.
+
+    Returns:
+        HTML response with ``X-Frame-Options: ALLOWALL`` header.
+    """
+    short_ref = ref[:8] if len(ref) >= 8 else ref
+    html = _embed_page(
+        title=f"Player {short_ref}",
+        repo_id=repo_id,
+        ref=ref,
+        body_script="",
+    )
+    return Response(
+        content=html,
+        media_type="text/html",
+        headers={"X-Frame-Options": "ALLOWALL"},
+    )
 
 
 @router.get(

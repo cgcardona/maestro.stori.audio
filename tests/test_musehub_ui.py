@@ -1,10 +1,20 @@
 """Tests for Muse Hub web UI endpoints.
 
-Covers the minimum acceptance criteria from issue #43:
+Covers the minimum acceptance criteria from issue #43 and issue #232:
 - test_ui_repo_page_returns_200        — GET /musehub/ui/{repo_id} returns HTML
 - test_ui_commit_page_shows_artifact_links — commit page HTML mentions img/download
 - test_ui_pr_list_page_returns_200     — PR list page renders without error
 - test_ui_issue_list_page_returns_200  — Issue list page renders without error
+- test_context_page_renders            — context viewer page returns 200 HTML
+- test_context_json_response           — JSON returns MuseHubContextResponse structure
+- test_context_includes_musical_state  — response includes active_tracks field
+- test_context_unknown_ref_404         — nonexistent ref returns 404
+
+Covers acceptance criteria from issue #244 (embed player):
+- test_embed_page_renders              — GET /musehub/ui/{repo_id}/embed/{ref} returns 200
+- test_embed_no_auth_required          — Public embed accessible without JWT
+- test_embed_page_x_frame_options      — Response sets X-Frame-Options: ALLOWALL
+- test_embed_page_contains_player_ui   — Player elements present in embed HTML
 
 Covers issue #241 (credits page):
 - test_credits_page_renders            — GET /musehub/ui/{repo_id}/credits returns 200 HTML
@@ -17,11 +27,13 @@ The HTML content tests assert structural markers present in every rendered page.
 """
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 import pytest
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from maestro.db.musehub_models import MusehubRepo
+from maestro.db.musehub_models import MusehubCommit, MusehubRepo
 
 
 # ---------------------------------------------------------------------------
@@ -257,6 +269,46 @@ async def test_credits_page_renders(
     """GET /musehub/ui/{repo_id}/credits returns 200 HTML without requiring a JWT."""
     repo_id = await _make_repo(db_session)
     response = await client.get(f"/musehub/ui/{repo_id}/credits")
+# Context viewer tests (issue #232)
+# ---------------------------------------------------------------------------
+
+_FIXED_COMMIT_ID = "aabbccdd" * 8  # 64-char hex string
+
+
+async def _make_repo_with_commit(db_session: AsyncSession) -> tuple[str, str]:
+    """Seed a repo with one commit and return (repo_id, commit_id)."""
+    repo = MusehubRepo(
+        name="jazz-context-test",
+        visibility="private",
+        owner_user_id="test-owner",
+    )
+    db_session.add(repo)
+    await db_session.flush()
+    await db_session.refresh(repo)
+    repo_id = str(repo.repo_id)
+
+    commit = MusehubCommit(
+        commit_id=_FIXED_COMMIT_ID,
+        repo_id=repo_id,
+        branch="main",
+        parent_ids=[],
+        message="Add bass and drums",
+        author="test-musician",
+        timestamp=datetime(2025, 1, 15, 12, 0, 0, tzinfo=timezone.utc),
+    )
+    db_session.add(commit)
+    await db_session.commit()
+    return repo_id, _FIXED_COMMIT_ID
+
+
+@pytest.mark.anyio
+async def test_context_page_renders(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """GET /musehub/ui/{repo_id}/context/{ref} returns 200 HTML without auth."""
+    repo_id, commit_id = await _make_repo_with_commit(db_session)
+    response = await client.get(f"/musehub/ui/{repo_id}/context/{commit_id}")
     assert response.status_code == 200
     assert "text/html" in response.headers["content-type"]
     body = response.text
@@ -322,6 +374,12 @@ async def test_credits_no_auth_required(
 
 @pytest.mark.anyio
 async def test_credits_json_response(
+    assert "What the Agent Sees" in body
+    assert commit_id[:8] in body
+
+
+@pytest.mark.anyio
+async def test_context_json_response(
     client: AsyncClient,
     db_session: AsyncSession,
     auth_headers: dict[str, str],
@@ -330,6 +388,10 @@ async def test_credits_json_response(
     repo_id = await _make_repo(db_session)
     response = await client.get(
         f"/api/v1/musehub/repos/{repo_id}/credits",
+    """GET /api/v1/musehub/repos/{repo_id}/context/{ref} returns MuseHubContextResponse."""
+    repo_id, commit_id = await _make_repo_with_commit(db_session)
+    response = await client.get(
+        f"/api/v1/musehub/repos/{repo_id}/context/{commit_id}",
         headers=auth_headers,
     )
     assert response.status_code == 200
@@ -345,6 +407,19 @@ async def test_credits_json_response(
 
 @pytest.mark.anyio
 async def test_credits_empty_state_json(
+    assert body["repoId"] == repo_id
+    assert body["currentBranch"] == "main"
+    assert "headCommit" in body
+    assert body["headCommit"]["commitId"] == commit_id
+    assert body["headCommit"]["author"] == "test-musician"
+    assert "musicalState" in body
+    assert "history" in body
+    assert "missingElements" in body
+    assert "suggestions" in body
+
+
+@pytest.mark.anyio
+async def test_context_includes_musical_state(
     client: AsyncClient,
     db_session: AsyncSession,
     auth_headers: dict[str, str],
@@ -359,3 +434,132 @@ async def test_credits_empty_state_json(
     body = response.json()
     assert body["contributors"] == []
     assert body["totalContributors"] == 0
+    """Context response includes musicalState with an activeTracks field."""
+    repo_id, commit_id = await _make_repo_with_commit(db_session)
+    response = await client.get(
+        f"/api/v1/musehub/repos/{repo_id}/context/{commit_id}",
+        headers=auth_headers,
+    )
+    assert response.status_code == 200
+    musical_state = response.json()["musicalState"]
+    assert "activeTracks" in musical_state
+    assert isinstance(musical_state["activeTracks"], list)
+    # Dimensions requiring MIDI analysis are None at this stage
+    assert musical_state["key"] is None
+    assert musical_state["tempoBpm"] is None
+
+
+@pytest.mark.anyio
+async def test_context_unknown_ref_404(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    auth_headers: dict[str, str],
+) -> None:
+    """GET /api/v1/musehub/repos/{repo_id}/context/{ref} returns 404 for unknown ref."""
+    repo_id = await _make_repo(db_session)
+    response = await client.get(
+        f"/api/v1/musehub/repos/{repo_id}/context/deadbeef" + "0" * 56,
+        headers=auth_headers,
+    )
+    assert response.status_code == 404
+
+
+@pytest.mark.anyio
+async def test_context_unknown_repo_404(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    auth_headers: dict[str, str],
+) -> None:
+    """GET /api/v1/musehub/repos/{unknown}/context/{ref} returns 404 for unknown repo."""
+    response = await client.get(
+        "/api/v1/musehub/repos/ghost-repo/context/deadbeef" + "0" * 56,
+        headers=auth_headers,
+    )
+    assert response.status_code == 404
+
+
+@pytest.mark.anyio
+async def test_context_requires_auth(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """GET /api/v1/musehub/repos/{repo_id}/context/{ref} returns 401 without auth."""
+    repo_id = await _make_repo(db_session)
+    response = await client.get(
+        f"/api/v1/musehub/repos/{repo_id}/context/deadbeef" + "0" * 56,
+    )
+    assert response.status_code == 401
+
+
+@pytest.mark.anyio
+async def test_context_page_no_auth_required(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """The context UI page must be accessible without a JWT (HTML shell handles auth)."""
+    repo_id, commit_id = await _make_repo_with_commit(db_session)
+    response = await client.get(f"/musehub/ui/{repo_id}/context/{commit_id}")
+    assert response.status_code != 401
+    assert response.status_code == 200
+
+
+# ---------------------------------------------------------------------------
+# Embed player route tests (issue #244)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.anyio
+async def test_embed_page_renders(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """GET /musehub/ui/{repo_id}/embed/{ref} returns 200 HTML."""
+    repo_id = await _make_repo(db_session)
+    ref = "abc1234567890abcdef"
+    response = await client.get(f"/musehub/ui/{repo_id}/embed/{ref}")
+    assert response.status_code == 200
+    assert "text/html" in response.headers["content-type"]
+
+
+@pytest.mark.anyio
+async def test_embed_no_auth_required(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Embed page must be accessible without an Authorization header (public embedding)."""
+    repo_id = await _make_repo(db_session)
+    ref = "deadbeef1234"
+    response = await client.get(f"/musehub/ui/{repo_id}/embed/{ref}")
+    assert response.status_code != 401
+    assert response.status_code == 200
+
+
+@pytest.mark.anyio
+async def test_embed_page_x_frame_options(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Embed page must set X-Frame-Options: ALLOWALL to permit cross-origin framing."""
+    repo_id = await _make_repo(db_session)
+    ref = "cafebabe1234"
+    response = await client.get(f"/musehub/ui/{repo_id}/embed/{ref}")
+    assert response.status_code == 200
+    assert response.headers.get("x-frame-options") == "ALLOWALL"
+
+
+@pytest.mark.anyio
+async def test_embed_page_contains_player_ui(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Embed page HTML must contain player elements: play button, progress bar, and Muse Hub link."""
+    repo_id = await _make_repo(db_session)
+    ref = "feedface0123456789ab"
+    response = await client.get(f"/musehub/ui/{repo_id}/embed/{ref}")
+    assert response.status_code == 200
+    body = response.text
+    assert "play-btn" in body
+    assert "progress-bar" in body
+    assert "View on Muse Hub" in body
+    assert "audio" in body
+    assert repo_id in body

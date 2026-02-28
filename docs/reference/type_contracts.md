@@ -924,6 +924,37 @@ Full diff of two arrangement matrices.  Built by `build_arrangement_diff()`.
 
 ## Services
 
+### MuseHub MCP Executor
+
+**Path:** `maestro/services/musehub_mcp_executor.py`
+
+#### `MusehubToolResult`
+
+`dataclass(frozen=True)` — Result of executing a single `musehub_*` MCP tool. This is the
+contract between the executor functions and the MCP server's routing layer.
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `ok` | `bool` | yes | `True` on success, `False` on failure |
+| `data` | `dict[str, JSONValue]` | no | JSON-serialisable payload on success; empty dict on failure |
+| `error_code` | `MusehubErrorCode \| None` | no | Error kind on failure; `None` on success |
+| `error_message` | `str \| None` | no | Human-readable error message; `None` on success |
+
+**`MusehubErrorCode`** — `Literal["not_found", "invalid_dimension", "invalid_mode", "db_unavailable"]`
+
+| Code | When |
+|------|------|
+| `not_found` | Repo or object does not exist |
+| `invalid_dimension` | Unrecognised analysis dimension (valid: `overview`, `commits`, `objects`) |
+| `invalid_mode` | Unrecognised search mode (valid: `path`, `commit`) |
+| `db_unavailable` | DB session factory not initialised (startup race) |
+
+**Agent use case:** The MCP server calls executor functions and pattern-matches on `result.ok`
+and `result.error_code` to build the `MCPContentBlock` response. On success, `result.data`
+is JSON-serialised directly into the content block text.
+
+---
+
 ### Assets
 
 **Path:** `maestro/services/assets.py`
@@ -1137,6 +1168,40 @@ On failure: `success=False` plus `error` (and optionally `message`).
 
 **Producer:** `build_release()` in `maestro/services/muse_release.py`
 **Consumer:** `muse release` CLI command (`maestro/muse_cli/commands/release.py`)
+
+---
+
+### `ExportResult`
+
+**Path:** `maestro/services/musehub_exporter.py`
+
+`dataclass(frozen=True)` — Fully packaged export artifact returned by `export_repo_at_ref()`.
+Ready for direct streaming to the HTTP client via `Response(content=result.content, ...)`.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `content` | `bytes` | Raw bytes of the artifact or ZIP archive |
+| `content_type` | `str` | MIME type for the HTTP `Content-Type` header |
+| `filename` | `str` | Suggested filename for `Content-Disposition: attachment` |
+
+**Companion enum:**
+
+`ExportFormat(str, Enum)` — `midi`, `json`, `musicxml`, `abc`, `wav`, `mp3`.
+
+**Companion TypedDict:**
+
+`ObjectIndexEntry(TypedDict)` — One entry in the JSON export object index (used in `format=json` responses).
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `object_id` | `str` | Muse Hub object ID |
+| `path` | `str` | Artifact path within the repo |
+| `size_bytes` | `int` | Stored artifact size in bytes |
+
+**Sentinel returns:** `export_repo_at_ref()` returns the string literal `"ref_not_found"` when
+the ref cannot be resolved to any known commit or branch, and `"no_matching_objects"` when
+no stored artifacts match the requested format + section filter. Route handlers convert
+these to HTTP 404.
 
 ---
 
@@ -5944,6 +6009,62 @@ Full contributor roll for a Muse Hub repo.  Returned by `GET /api/v1/musehub/rep
 
 **Producer:** `musehub_credits.aggregate_credits()` → `repos.get_credits` route handler
 **Consumer:** Muse Hub credits page UI; AI agents generating liner notes, release attribution, or schema.org `MusicComposition` JSON-LD
+### `MuseHubContextCommitInfo`
+
+Minimal commit metadata nested inside `MuseHubContextResponse`.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `commit_id` | `str` | Full 64-char commit hash |
+| `message` | `str` | Commit message |
+| `author` | `str` | Commit author (from push payload) |
+| `branch` | `str` | Branch the commit belongs to |
+| `timestamp` | `datetime` | UTC timestamp of the commit |
+
+### `MuseHubContextHistoryEntry`
+
+One ancestor commit in the evolutionary history section of `MuseHubContextResponse`.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `commit_id` | `str` | Full 64-char commit hash |
+| `message` | `str` | Commit message |
+| `author` | `str` | Commit author |
+| `timestamp` | `datetime` | UTC commit timestamp |
+| `active_tracks` | `list[str]` | Track names derived from repo objects at that point |
+
+### `MuseHubContextMusicalState`
+
+Musical state at the target commit, derived from stored artifact paths.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `active_tracks` | `list[str]` | Track names inferred from music file extensions in stored objects |
+| `key` | `str \| None` | Musical key — `null` until Storpheus MIDI analysis is integrated |
+| `mode` | `str \| None` | Modal quality (major/minor/dorian/…) — `null` until Storpheus integrated |
+| `tempo_bpm` | `int \| None` | Tempo in BPM — `null` until Storpheus integrated |
+| `time_signature` | `str \| None` | Time signature (e.g. `"4/4"`) — `null` until Storpheus integrated |
+| `form` | `str \| None` | Song form label — `null` until Storpheus integrated |
+| `emotion` | `str \| None` | Emotional quality — `null` until Storpheus integrated |
+
+### `MuseHubContextResponse`
+
+Complete musical context document for a MuseHub commit. The MuseHub equivalent of `MuseContextResult`,
+built from the remote repo's commit graph and stored objects rather than the local `.muse` filesystem.
+Returned by `GET /api/v1/musehub/repos/{repo_id}/context/{ref}`.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `repo_id` | `str` | Hub repo identifier |
+| `current_branch` | `str` | Branch name for the target commit |
+| `head_commit` | `MuseHubContextCommitInfo` | Metadata for the resolved commit (ref) |
+| `musical_state` | `MuseHubContextMusicalState` | Active tracks and musical dimensions |
+| `history` | `list[MuseHubContextHistoryEntry]` | Up to 5 ancestor commits, newest-first |
+| `missing_elements` | `list[str]` | Dimensions that could not be determined from stored data |
+| `suggestions` | `dict[str, str]` | Composer-facing hints about what to work on next |
+
+**Producer:** `musehub_repository.get_context_for_commit()` → `repos.get_context` route handler
+**Consumer:** Muse Hub web UI context page (`/musehub/ui/{repo_id}/context/{ref}`); AI agents calling the JSON endpoint directly to obtain the same context the generation pipeline uses.
 
 ### `SearchCommitMatch`
 

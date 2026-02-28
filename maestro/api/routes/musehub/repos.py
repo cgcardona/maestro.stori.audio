@@ -28,6 +28,7 @@ from maestro.models.musehub import (
     CommitListResponse,
     CreateRepoRequest,
     CreditsResponse,
+    MuseHubContextResponse,
     RepoResponse,
 )
 from maestro.models.musehub_context import (
@@ -157,6 +158,37 @@ async def get_credits(
     if repo is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repo not found")
     return await musehub_credits.aggregate_credits(db, repo_id, sort=sort)
+
+
+@router.get(
+    "/repos/{repo_id}/context/{ref}",
+    response_model=MuseHubContextResponse,
+    summary="Get musical context document for a commit",
+)
+async def get_context(
+    repo_id: str,
+    ref: str,
+    db: AsyncSession = Depends(get_db),
+    _: TokenClaims = Depends(require_valid_token),
+) -> MuseHubContextResponse:
+    """Return a structured musical context document for the given commit ref.
+
+    The context document is the same information the AI agent receives when
+    generating music for this repo at this commit, making it human-inspectable
+    for debugging and transparency.
+
+    Raises 404 if either the repo or the commit does not exist.
+    """
+    repo = await musehub_repository.get_repo(db, repo_id)
+    if repo is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repo not found")
+    context = await musehub_repository.get_context_for_commit(db, repo_id, ref)
+    if context is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Commit {ref!r} not found in repo",
+        )
+    return context
 
 
 @router.get(
