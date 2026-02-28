@@ -6,6 +6,7 @@ snake_case throughout; only serialisation to JSON uses camelCase.
 from __future__ import annotations
 
 from datetime import datetime
+from typing import NotRequired, TypedDict
 
 from pydantic import Field
 
@@ -292,6 +293,202 @@ class ObjectMetaListResponse(CamelModel):
     """List of artifact metadata for a repo."""
 
     objects: list[ObjectMetaResponse]
+
+
+# ── Webhook models ────────────────────────────────────────────────────────────
+
+# Valid event types a subscriber may register for.
+WEBHOOK_EVENT_TYPES: frozenset[str] = frozenset(
+    [
+        "push",
+        "pull_request",
+        "issue",
+        "release",
+        "branch",
+        "tag",
+        "session",
+        "analysis",
+    ]
+)
+
+
+class WebhookCreate(CamelModel):
+    """Body for POST /musehub/repos/{repo_id}/webhooks.
+
+    ``events`` must be a non-empty subset of the valid event-type strings
+    (push, pull_request, issue, release, branch, tag, session, analysis).
+    ``secret`` is optional; when provided it is used to sign every delivery
+    with HMAC-SHA256 in the ``X-MuseHub-Signature`` header.
+    """
+
+    url: str = Field(..., min_length=1, max_length=2048, description="HTTPS endpoint to deliver events to")
+    events: list[str] = Field(..., min_length=1, description="Event types to subscribe to")
+    secret: str = Field("", description="Optional HMAC-SHA256 signing secret")
+
+
+class WebhookResponse(CamelModel):
+    """Wire representation of a registered webhook subscription."""
+
+    webhook_id: str
+    repo_id: str
+    url: str
+    events: list[str]
+    active: bool
+    created_at: datetime
+
+
+class WebhookListResponse(CamelModel):
+    """List of webhook subscriptions for a repo."""
+
+    webhooks: list[WebhookResponse]
+
+
+class WebhookDeliveryResponse(CamelModel):
+    """Wire representation of a single webhook delivery attempt."""
+
+    delivery_id: str
+    webhook_id: str
+    event_type: str
+    attempt: int
+    success: bool
+    response_status: int
+    response_body: str
+    delivered_at: datetime
+
+
+class WebhookDeliveryListResponse(CamelModel):
+    """Paginated list of delivery attempts for a webhook."""
+
+    deliveries: list[WebhookDeliveryResponse]
+
+
+# ── Webhook event payload TypedDicts ─────────────────────────────────────────
+# These typed dicts are used as the payload argument to dispatch_event /
+# dispatch_event_background, replacing dict[str, Any] at the service boundary.
+
+
+class PushEventPayload(TypedDict):
+    """Payload emitted when commits are pushed to a MuseHub repo.
+
+    Used with event_type="push".
+    """
+
+    repoId: str
+    branch: str
+    headCommitId: str
+    pushedBy: str
+    commitCount: int
+
+
+class IssueEventPayload(TypedDict):
+    """Payload emitted when an issue is opened or closed.
+
+    ``action`` is either ``"opened"`` or ``"closed"``.
+    Used with event_type="issue".
+    """
+
+    repoId: str
+    action: str
+    issueId: str
+    number: int
+    title: str
+    state: str
+
+
+class PullRequestEventPayload(TypedDict):
+    """Payload emitted when a PR is opened or merged.
+
+    ``action`` is either ``"opened"`` or ``"merged"``.
+    ``mergeCommitId`` is only present on the "merged" action.
+    Used with event_type="pull_request".
+    """
+
+    repoId: str
+    action: str
+    prId: str
+    title: str
+    fromBranch: str
+    toBranch: str
+    state: str
+    mergeCommitId: NotRequired[str]
+
+
+# Union of all typed webhook event payloads.  The dispatcher accepts any of
+# these; callers pass the specific TypedDict for their event type.
+WebhookEventPayload = PushEventPayload | IssueEventPayload | PullRequestEventPayload
+
+
+# ── Context models ────────────────────────────────────────────────────────────
+
+
+class MuseHubContextCommitInfo(CamelModel):
+    """Minimal commit metadata included in a MuseHub context document."""
+
+    commit_id: str
+    message: str
+    author: str
+    branch: str
+    timestamp: datetime
+
+
+class MuseHubContextHistoryEntry(CamelModel):
+    """A single ancestor commit in the evolutionary history of the composition.
+
+    History is built by walking parent_ids from the target commit.
+    Entries are returned newest-first and limited to the last 5 ancestors.
+    """
+
+    commit_id: str
+    message: str
+    author: str
+    timestamp: datetime
+    active_tracks: list[str]
+
+
+class MuseHubContextMusicalState(CamelModel):
+    """Musical state at the target commit, derived from stored artifact paths.
+
+    ``active_tracks`` is populated from object paths in the repo.
+    All analytical fields (key, tempo, etc.) are None until Storpheus MIDI
+    analysis is integrated — agents should treat None as "unknown."
+    """
+
+    active_tracks: list[str]
+    key: str | None = None
+    mode: str | None = None
+    tempo_bpm: int | None = None
+    time_signature: str | None = None
+    form: str | None = None
+    emotion: str | None = None
+
+
+class MuseHubContextResponse(CamelModel):
+    """Human-readable and agent-consumable musical context document for a commit.
+
+    Returned by ``GET /api/v1/musehub/repos/{repo_id}/context/{ref}``.
+
+    This is the MuseHub equivalent of ``MuseContextResult`` — built from
+    the remote repo's commit graph and stored objects rather than the local
+    ``.muse`` filesystem.  The structure deliberately mirrors ``MuseContextResult``
+    so that agents consuming either source see the same schema.
+
+    Fields:
+        repo_id:        The hub repo identifier.
+        current_branch: Branch name for the target commit.
+        head_commit:    Metadata for the resolved commit (ref).
+        musical_state:  Active tracks and any available musical dimensions.
+        history:        Up to 5 ancestor commits, newest-first.
+        missing_elements: Dimensions that could not be determined from stored data.
+        suggestions:    Composer-facing hints about what to work on next.
+    """
+
+    repo_id: str
+    current_branch: str
+    head_commit: MuseHubContextCommitInfo
+    musical_state: MuseHubContextMusicalState
+    history: list[MuseHubContextHistoryEntry]
+    missing_elements: list[str]
+    suggestions: dict[str, str]
 
 
 # ── In-repo search models ─────────────────────────────────────────────────────

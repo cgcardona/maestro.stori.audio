@@ -924,6 +924,37 @@ Full diff of two arrangement matrices.  Built by `build_arrangement_diff()`.
 
 ## Services
 
+### MuseHub MCP Executor
+
+**Path:** `maestro/services/musehub_mcp_executor.py`
+
+#### `MusehubToolResult`
+
+`dataclass(frozen=True)` — Result of executing a single `musehub_*` MCP tool. This is the
+contract between the executor functions and the MCP server's routing layer.
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `ok` | `bool` | yes | `True` on success, `False` on failure |
+| `data` | `dict[str, JSONValue]` | no | JSON-serialisable payload on success; empty dict on failure |
+| `error_code` | `MusehubErrorCode \| None` | no | Error kind on failure; `None` on success |
+| `error_message` | `str \| None` | no | Human-readable error message; `None` on success |
+
+**`MusehubErrorCode`** — `Literal["not_found", "invalid_dimension", "invalid_mode", "db_unavailable"]`
+
+| Code | When |
+|------|------|
+| `not_found` | Repo or object does not exist |
+| `invalid_dimension` | Unrecognised analysis dimension (valid: `overview`, `commits`, `objects`) |
+| `invalid_mode` | Unrecognised search mode (valid: `path`, `commit`) |
+| `db_unavailable` | DB session factory not initialised (startup race) |
+
+**Agent use case:** The MCP server calls executor functions and pattern-matches on `result.ok`
+and `result.error_code` to build the `MCPContentBlock` response. On success, `result.data`
+is JSON-serialised directly into the content block text.
+
+---
+
 ### Assets
 
 **Path:** `maestro/services/assets.py`
@@ -1137,6 +1168,40 @@ On failure: `success=False` plus `error` (and optionally `message`).
 
 **Producer:** `build_release()` in `maestro/services/muse_release.py`
 **Consumer:** `muse release` CLI command (`maestro/muse_cli/commands/release.py`)
+
+---
+
+### `ExportResult`
+
+**Path:** `maestro/services/musehub_exporter.py`
+
+`dataclass(frozen=True)` — Fully packaged export artifact returned by `export_repo_at_ref()`.
+Ready for direct streaming to the HTTP client via `Response(content=result.content, ...)`.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `content` | `bytes` | Raw bytes of the artifact or ZIP archive |
+| `content_type` | `str` | MIME type for the HTTP `Content-Type` header |
+| `filename` | `str` | Suggested filename for `Content-Disposition: attachment` |
+
+**Companion enum:**
+
+`ExportFormat(str, Enum)` — `midi`, `json`, `musicxml`, `abc`, `wav`, `mp3`.
+
+**Companion TypedDict:**
+
+`ObjectIndexEntry(TypedDict)` — One entry in the JSON export object index (used in `format=json` responses).
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `object_id` | `str` | Muse Hub object ID |
+| `path` | `str` | Artifact path within the repo |
+| `size_bytes` | `int` | Stored artifact size in bytes |
+
+**Sentinel returns:** `export_repo_at_ref()` returns the string literal `"ref_not_found"` when
+the ref cannot be resolved to any known commit or branch, and `"no_matching_objects"` when
+no stored artifacts match the requested format + section filter. Route handlers convert
+these to HTTP 404.
 
 ---
 
@@ -5912,6 +5977,63 @@ Wrapper returned by `GET /api/v1/musehub/repos/{repo_id}/objects`.
 **Producer:** `objects.list_objects` route handler
 **Consumer:** Muse Hub web UI; any agent inspecting which artifacts are available for a repo
 
+### `MuseHubContextCommitInfo`
+
+Minimal commit metadata nested inside `MuseHubContextResponse`.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `commit_id` | `str` | Full 64-char commit hash |
+| `message` | `str` | Commit message |
+| `author` | `str` | Commit author (from push payload) |
+| `branch` | `str` | Branch the commit belongs to |
+| `timestamp` | `datetime` | UTC timestamp of the commit |
+
+### `MuseHubContextHistoryEntry`
+
+One ancestor commit in the evolutionary history section of `MuseHubContextResponse`.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `commit_id` | `str` | Full 64-char commit hash |
+| `message` | `str` | Commit message |
+| `author` | `str` | Commit author |
+| `timestamp` | `datetime` | UTC commit timestamp |
+| `active_tracks` | `list[str]` | Track names derived from repo objects at that point |
+
+### `MuseHubContextMusicalState`
+
+Musical state at the target commit, derived from stored artifact paths.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `active_tracks` | `list[str]` | Track names inferred from music file extensions in stored objects |
+| `key` | `str \| None` | Musical key — `null` until Storpheus MIDI analysis is integrated |
+| `mode` | `str \| None` | Modal quality (major/minor/dorian/…) — `null` until Storpheus integrated |
+| `tempo_bpm` | `int \| None` | Tempo in BPM — `null` until Storpheus integrated |
+| `time_signature` | `str \| None` | Time signature (e.g. `"4/4"`) — `null` until Storpheus integrated |
+| `form` | `str \| None` | Song form label — `null` until Storpheus integrated |
+| `emotion` | `str \| None` | Emotional quality — `null` until Storpheus integrated |
+
+### `MuseHubContextResponse`
+
+Complete musical context document for a MuseHub commit. The MuseHub equivalent of `MuseContextResult`,
+built from the remote repo's commit graph and stored objects rather than the local `.muse` filesystem.
+Returned by `GET /api/v1/musehub/repos/{repo_id}/context/{ref}`.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `repo_id` | `str` | Hub repo identifier |
+| `current_branch` | `str` | Branch name for the target commit |
+| `head_commit` | `MuseHubContextCommitInfo` | Metadata for the resolved commit (ref) |
+| `musical_state` | `MuseHubContextMusicalState` | Active tracks and musical dimensions |
+| `history` | `list[MuseHubContextHistoryEntry]` | Up to 5 ancestor commits, newest-first |
+| `missing_elements` | `list[str]` | Dimensions that could not be determined from stored data |
+| `suggestions` | `dict[str, str]` | Composer-facing hints about what to work on next |
+
+**Producer:** `musehub_repository.get_context_for_commit()` → `repos.get_context` route handler
+**Consumer:** Muse Hub web UI context page (`/musehub/ui/{repo_id}/context/{ref}`); AI agents calling the JSON endpoint directly to obtain the same context the generation pipeline uses.
+
 ### `SearchCommitMatch`
 
 A single commit returned by any of the four in-repo search modes.
@@ -6022,6 +6144,110 @@ Describes a single worktree entry returned by `list_worktrees()` and `add_worktr
 **Consumer:** `muse worktree list`, `muse worktree add`, agent code inspecting active arrangement contexts
 
 ---
+
+---
+
+## Muse Hub — Webhook Types (`maestro/models/musehub.py`, `maestro/services/musehub_webhook_dispatcher.py`)
+
+### `WebhookCreate`
+
+Pydantic v2 request body for `POST /musehub/repos/{repo_id}/webhooks`.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `url` | `str` | HTTPS endpoint to deliver events to (max 2048 chars) |
+| `events` | `list[str]` | Event types to subscribe to (min 1 element) |
+| `secret` | `str` | Optional HMAC-SHA256 signing secret (default `""`) |
+
+Valid event types: `push`, `pull_request`, `issue`, `release`, `branch`, `tag`, `session`, `analysis`.
+
+### `WebhookResponse`
+
+Wire representation of a registered webhook subscription (camelCase JSON).
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `webhook_id` | `str` | UUID primary key |
+| `repo_id` | `str` | Parent repo UUID |
+| `url` | `str` | Delivery URL |
+| `events` | `list[str]` | Subscribed event types |
+| `active` | `bool` | Whether this webhook receives events |
+| `created_at` | `datetime` | UTC creation timestamp |
+
+### `WebhookListResponse`
+
+Wrapper for `GET /musehub/repos/{repo_id}/webhooks`.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `webhooks` | `list[WebhookResponse]` | All registered webhooks for a repo |
+
+### `WebhookDeliveryResponse`
+
+Wire representation of one delivery attempt.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `delivery_id` | `str` | UUID for this attempt |
+| `webhook_id` | `str` | Parent webhook UUID |
+| `event_type` | `str` | Event that triggered delivery |
+| `attempt` | `int` | Attempt number (1 = first try, up to `_MAX_ATTEMPTS`) |
+| `success` | `bool` | True when receiver responded 2xx |
+| `response_status` | `int` | HTTP status code, 0 for network-level failures |
+| `response_body` | `str` | First 512 characters of receiver response |
+| `delivered_at` | `datetime` | UTC timestamp of this attempt |
+
+### `WebhookDeliveryListResponse`
+
+Wrapper for `GET /musehub/repos/{repo_id}/webhooks/{webhook_id}/deliveries`.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `deliveries` | `list[WebhookDeliveryResponse]` | Delivery history, newest first |
+
+### `PushEventPayload` (TypedDict)
+
+Typed payload for `event_type="push"`. Passed to `dispatch_event` / `dispatch_event_background` by the push route handler after a successful push.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `repoId` | `str` | Repo UUID |
+| `branch` | `str` | Branch name that received the push |
+| `headCommitId` | `str` | New branch head commit ID |
+| `pushedBy` | `str` | JWT sub claim of the pushing user |
+| `commitCount` | `int` | Number of commits in the push |
+
+### `IssueEventPayload` (TypedDict)
+
+Typed payload for `event_type="issue"`. Emitted on issue open and close.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `repoId` | `str` | Repo UUID |
+| `action` | `str` | `"opened"` or `"closed"` |
+| `issueId` | `str` | Issue UUID |
+| `number` | `int` | Per-repo sequential issue number |
+| `title` | `str` | Issue title |
+| `state` | `str` | Issue state after the action |
+
+### `PullRequestEventPayload` (TypedDict)
+
+Typed payload for `event_type="pull_request"`. Emitted on PR open and merge.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `repoId` | `str` | Repo UUID |
+| `action` | `str` | `"opened"` or `"merged"` |
+| `prId` | `str` | PR UUID |
+| `title` | `str` | PR title |
+| `fromBranch` | `str` | Source branch name |
+| `toBranch` | `str` | Target branch name |
+| `state` | `str` | PR state after the action |
+| `mergeCommitId` | `str` (optional) | Merge commit ID; only present when `action="merged"` |
+
+### `WebhookEventPayload` (TypeAlias)
+
+Union of all typed event payloads: `PushEventPayload | IssueEventPayload | PullRequestEventPayload`.  This is the type accepted by `dispatch_event` and `dispatch_event_background`.
 
 ---
 
