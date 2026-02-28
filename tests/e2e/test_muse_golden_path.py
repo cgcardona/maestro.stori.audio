@@ -24,7 +24,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from maestro.muse_cli.commands.checkout import checkout_branch
 from maestro.muse_cli.commands.commit import _commit_async
 from maestro.muse_cli.commands.merge import _merge_async, _merge_continue_async
-from maestro.muse_cli.commands.resolve import resolve_conflict
+from maestro.muse_cli.commands.resolve import resolve_conflict_async
 from maestro.muse_cli.db import open_session
 from maestro.muse_cli.merge_engine import read_merge_state
 
@@ -214,11 +214,13 @@ async def test_golden_path_local(tmp_path: pathlib.Path) -> None:
     )
 
     # Step 9: resolve --ours
-    resolve_conflict(
-        file_path="meta/section-1.json",
-        ours=True,
-        root=root,
-    )
+    async with open_session() as session:
+        await resolve_conflict_async(
+            file_path="meta/section-1.json",
+            ours=True,
+            root=root,
+            session=session,
+        )
     # After resolving the only conflict, MERGE_STATE.json must STILL exist with
     # conflict_paths=[] so that --continue can read the stored commit IDs.
     merge_state_after = read_merge_state(root)
@@ -277,7 +279,7 @@ async def test_golden_path_log_shows_merge_commit(tmp_path: pathlib.Path) -> Non
             await _merge_async(branch="experiment", root=root, session=session)
 
         # resolve
-        resolve_conflict(file_path="meta/section-1.json", ours=True, root=root)
+        await resolve_conflict_async(file_path="meta/section-1.json", ours=True, root=root, session=session)
 
         # merge --continue → merge commit
         await _merge_continue_async(root=root, session=session)
@@ -416,7 +418,8 @@ async def test_resolve_clears_conflict_paths(tmp_path: pathlib.Path) -> None:
     assert (root / ".muse" / "MERGE_STATE.json").exists()
 
     # Resolve first conflict
-    resolve_conflict(file_path="meta/section-1.json", ours=True, root=root)
+    async with open_session() as session:
+        await resolve_conflict_async(file_path="meta/section-1.json", ours=True, root=root, session=session)
     state = read_merge_state(root)
     assert state is not None
     assert "meta/section-1.json" not in state.conflict_paths
@@ -424,7 +427,8 @@ async def test_resolve_clears_conflict_paths(tmp_path: pathlib.Path) -> None:
 
     # Resolve second — MERGE_STATE.json persists with empty conflict_paths so
     # that `muse merge --continue` can still read ours_commit / theirs_commit.
-    resolve_conflict(file_path="tracks/piano.mid", ours=True, root=root)
+    async with open_session() as session:
+        await resolve_conflict_async(file_path="tracks/piano.mid", ours=True, root=root, session=session)
     state = read_merge_state(root)
     assert state is not None, "MERGE_STATE.json should persist after resolve (--continue needs it)"
     assert state.conflict_paths == [], "All conflicts resolved — conflict_paths must be empty"
