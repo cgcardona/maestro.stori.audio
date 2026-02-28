@@ -27,8 +27,8 @@ logger = logging.getLogger(__name__)
 
 # Two routers: one public (no auth dependency) and one authed (star/unstar).
 # Both are exported and registered separately so the auth contract is explicit.
-router = APIRouter(tags=["musehub-discover"])
-star_router = APIRouter(tags=["musehub-discover"])
+router = APIRouter()
+star_router = APIRouter()
 
 _VALID_SORTS = {"stars", "activity", "commits", "created"}
 
@@ -36,6 +36,7 @@ _VALID_SORTS = {"stars", "activity", "commits", "created"}
 @router.get(
     "/musehub/discover/repos",
     response_model=ExploreResponse,
+    operation_id="listPublicRepos",
     summary="Browse public Muse Hub repos with optional filters and sorting",
 )
 async def list_public_repos(
@@ -84,6 +85,7 @@ async def list_public_repos(
     "/musehub/repos/{repo_id}/star",
     response_model=StarResponse,
     status_code=status.HTTP_200_OK,
+    operation_id="starRepo",
     summary="Star a public Muse Hub repo",
 )
 async def star_repo(
@@ -109,6 +111,7 @@ async def star_repo(
     "/musehub/repos/{repo_id}/star",
     response_model=StarResponse,
     status_code=status.HTTP_200_OK,
+    operation_id="unstarRepo",
     summary="Unstar a Muse Hub repo",
 )
 async def unstar_repo(

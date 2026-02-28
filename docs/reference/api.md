@@ -915,6 +915,28 @@ See also: [integrate.md](../guides/integrate.md) for MCP setup (stdio, Cursor, W
 
 Remote collaboration backend for Muse VCS — the server-side equivalent of a Git remote. All endpoints are under `/api/v1/musehub/` and require `Authorization: Bearer <token>`.
 
+### Interactive API docs
+
+The full MuseHub API is available as a machine-readable OpenAPI 3.1 specification:
+
+| Resource | URL |
+|----------|-----|
+| **OpenAPI 3.1 JSON spec** | `GET /api/v1/openapi.json` |
+| **Swagger UI** (interactive, debug mode only) | `GET /docs` |
+| **ReDoc** (debug mode only) | `GET /redoc` |
+
+The spec is always available at `/api/v1/openapi.json` regardless of `DEBUG` mode, enabling agent SDK generation and third-party integrations without enabling the interactive UI in production.
+
+```bash
+# Fetch the spec for SDK generation
+curl https://your-domain.com/api/v1/openapi.json | jq '.info'
+
+# List all MuseHub operationIds
+curl https://your-domain.com/api/v1/openapi.json | jq '[.paths | to_entries[] | .value | to_entries[] | .value.operationId] | sort | .[]'
+```
+
+Every endpoint has a camelCase `operationId` (e.g. `listRepoCommits`, `getAnalysisHarmony`, `mergePullRequest`) that maps 1:1 to generated SDK method names.
+
 ### POST /api/v1/musehub/repos
 
 Create a new remote Muse repository. The `slug` is auto-generated from `name` (lowercase, hyphens). Returns `409` if the `(owner, name)` combination already exists.

@@ -682,6 +682,79 @@ textarea:focus {
   margin: 2px;
 }
 
+/* Clickable label pill for client-side filtering */
+.label-pill {
+  transition: opacity 0.1s, outline 0.1s;
+}
+
+.label-pill:hover {
+  opacity: 0.8;
+  outline: 1px solid var(--color-accent);
+}
+
+/* Active (selected) label filter pill */
+.label-active {
+  outline: 2px solid var(--color-accent);
+  background: color-mix(in srgb, var(--color-accent) 15%, var(--bg-hover));
+  color: var(--color-accent);
+}
+
+/* -------------------------------------------------------------------------
+ * Issue body preview (subtitle line under issue title)
+ * ------------------------------------------------------------------------- */
+.issue-preview {
+  font-size: var(--font-size-sm);
+  color: var(--text-muted);
+  margin-top: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* -------------------------------------------------------------------------
+ * Open/Closed tabs and sort buttons for issue list page
+ * ------------------------------------------------------------------------- */
+.tab-btn {
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  padding: var(--space-2) var(--space-4);
+  font-size: var(--font-size-sm);
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+}
+
+.tab-btn:hover {
+  color: var(--text-primary);
+}
+
+.tab-btn.tab-active {
+  color: var(--text-primary);
+  border-bottom-color: var(--color-accent);
+  font-weight: 600;
+}
+
+.tab-count {
+  display: inline-block;
+  background: var(--bg-hover);
+  border-radius: var(--radius-full);
+  font-size: var(--font-size-xs);
+  padding: 0 6px;
+  margin-left: 4px;
+  color: var(--text-muted);
+}
+
+.sort-btn {
+  font-size: var(--font-size-xs);
+  padding: 2px var(--space-2);
+}
+
+.sort-btn.sort-active {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
 /* -------------------------------------------------------------------------
  * Code blocks
  * ------------------------------------------------------------------------- */

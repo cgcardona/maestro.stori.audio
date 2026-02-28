@@ -59,6 +59,7 @@ def _content_type(path: str) -> str:
 @router.get(
     "/repos/{repo_id}/objects",
     response_model=ObjectMetaListResponse,
+    operation_id="listObjects",
     summary="List artifact metadata for a Muse Hub repo",
 )
 async def list_objects(
@@ -87,6 +88,7 @@ async def list_objects(
 
 @router.get(
     "/repos/{repo_id}/objects/{object_id}/content",
+    operation_id="getObjectContent",
     summary="Download raw artifact bytes",
     response_class=FileResponse,
 )
@@ -130,6 +132,7 @@ async def get_object_content(
 
 @router.get(
     "/repos/{repo_id}/export/{ref}",
+    operation_id="exportArtifacts",
     summary="Download an export package of artifacts at a commit ref",
     responses={
         200: {"description": "Artifact or ZIP archive ready for download"},

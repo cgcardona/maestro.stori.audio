@@ -34,6 +34,7 @@ router = APIRouter()
     "/repos/{repo_id}/issues",
     response_model=IssueResponse,
     status_code=status.HTTP_201_CREATED,
+    operation_id="createIssue",
     summary="Open a new issue against a Muse Hub repo",
 )
 async def create_issue(
@@ -78,6 +79,7 @@ async def create_issue(
 @router.get(
     "/repos/{repo_id}/issues",
     response_model=IssueListResponse,
+    operation_id="listIssues",
     summary="List issues for a Muse Hub repo",
 )
 async def list_issues(
@@ -108,6 +110,7 @@ async def list_issues(
 @router.get(
     "/repos/{repo_id}/issues/{issue_number}",
     response_model=IssueResponse,
+    operation_id="getIssue",
     summary="Get a single issue by its per-repo number",
 )
 async def get_issue(
@@ -135,6 +138,7 @@ async def get_issue(
 @router.post(
     "/repos/{repo_id}/issues/{issue_number}/close",
     response_model=IssueResponse,
+    operation_id="closeIssue",
     summary="Close an issue",
 )
 async def close_issue(
