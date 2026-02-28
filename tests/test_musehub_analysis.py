@@ -462,3 +462,37 @@ async def test_analysis_all_13_dimensions_individually(
         assert resp.status_code == 200, f"Dimension {dim!r} returned {resp.status_code}"
         body = resp.json()
         assert body["dimension"] == dim, f"Expected dimension={dim!r}, got {body['dimension']!r}"
+
+
+@pytest.mark.anyio
+async def test_analysis_aggregate_endpoint(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+    db_session: AsyncSession,
+) -> None:
+    """GET /api/v1/musehub/repos/{repo_id}/analysis/{ref} returns all dimensions.
+
+    Regression test for issue #221: the aggregate endpoint must return all 13
+    musical dimensions so that the analysis dashboard can render summary cards
+    for each one in a single round-trip.
+    """
+    repo_id = await _create_repo(client, auth_headers)
+    resp = await client.get(
+        f"/api/v1/musehub/repos/{repo_id}/analysis/main",
+        headers=auth_headers,
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["ref"] == "main"
+    assert body["repoId"] == repo_id
+    assert "dimensions" in body
+    assert len(body["dimensions"]) == 13
+    returned_dims = {d["dimension"] for d in body["dimensions"]}
+    assert returned_dims == set(ALL_DIMENSIONS)
+    # Every dimension entry must have the required envelope fields
+    for dim_entry in body["dimensions"]:
+        assert "dimension" in dim_entry
+        assert "ref" in dim_entry
+        assert "computedAt" in dim_entry
+        assert "data" in dim_entry
+        assert "filtersApplied" in dim_entry

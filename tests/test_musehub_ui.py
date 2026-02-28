@@ -555,7 +555,7 @@ async def test_context_page_renders(
     assert "text/html" in response.headers["content-type"]
     body = response.text
     assert "Muse Hub" in body
-    assert "Credits" in body
+    assert "context" in body
     assert repo_id[:8] in body
 
 
@@ -616,8 +616,25 @@ async def test_credits_no_auth_required(
 
 @pytest.mark.anyio
 async def test_credits_json_response(
-    assert "What the Agent Sees" in body
-    assert commit_id[:8] in body
+    client: AsyncClient,
+    db_session: AsyncSession,
+    auth_headers: dict[str, str],
+) -> None:
+    """GET /api/v1/musehub/repos/{repo_id}/credits returns JSON with required fields."""
+    repo_id = await _make_repo(db_session)
+    response = await client.get(
+        f"/api/v1/musehub/repos/{repo_id}/credits",
+        headers=auth_headers,
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert "repoId" in body
+    assert "contributors" in body
+    assert "sort" in body
+    assert "totalContributors" in body
+    assert body["repoId"] == repo_id
+    assert isinstance(body["contributors"], list)
+    assert body["sort"] == "count"
 
 
 @pytest.mark.anyio
@@ -684,10 +701,6 @@ async def test_context_json_response(
     db_session: AsyncSession,
     auth_headers: dict[str, str],
 ) -> None:
-    """GET /api/v1/musehub/repos/{repo_id}/credits returns JSON with required fields."""
-    repo_id = await _make_repo(db_session)
-    response = await client.get(
-        f"/api/v1/musehub/repos/{repo_id}/credits",
     """GET /api/v1/musehub/repos/{repo_id}/context/{ref} returns MuseHubContextResponse."""
     repo_id, commit_id = await _make_repo_with_commit(db_session)
     response = await client.get(
@@ -697,16 +710,6 @@ async def test_context_json_response(
     assert response.status_code == 200
     body = response.json()
     assert "repoId" in body
-    assert "contributors" in body
-    assert "sort" in body
-    assert "totalContributors" in body
-    assert body["repoId"] == repo_id
-    assert isinstance(body["contributors"], list)
-    assert body["sort"] == "count"
-
-
-@pytest.mark.anyio
-async def test_credits_empty_state_json(
     assert body["repoId"] == repo_id
     assert body["currentBranch"] == "main"
     assert "headCommit" in body
@@ -719,7 +722,7 @@ async def test_credits_empty_state_json(
 
 
 @pytest.mark.anyio
-async def test_context_includes_musical_state(
+async def test_credits_empty_state_json(
     client: AsyncClient,
     db_session: AsyncSession,
     auth_headers: dict[str, str],
@@ -734,6 +737,14 @@ async def test_context_includes_musical_state(
     body = response.json()
     assert body["contributors"] == []
     assert body["totalContributors"] == 0
+
+
+@pytest.mark.anyio
+async def test_context_includes_musical_state(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    auth_headers: dict[str, str],
+) -> None:
     """Context response includes musicalState with an activeTracks field."""
     repo_id, commit_id = await _make_repo_with_commit(db_session)
     response = await client.get(
@@ -875,3 +886,136 @@ async def test_embed_page_contains_player_ui(
     assert "View on Muse Hub" in body
     assert "audio" in body
     assert repo_id in body
+
+
+# ---------------------------------------------------------------------------
+# Analysis dashboard UI tests (issue #221)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.anyio
+async def test_analysis_dashboard_renders(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """GET /musehub/ui/{repo_id}/analysis/{ref} returns 200 HTML without requiring a JWT."""
+    repo_id = await _make_repo(db_session)
+    ref = "main"
+    response = await client.get(f"/musehub/ui/{repo_id}/analysis/{ref}")
+    assert response.status_code == 200
+    assert "text/html" in response.headers["content-type"]
+    body = response.text
+    assert "Muse Hub" in body
+    assert "Analysis" in body
+    assert repo_id[:8] in body
+    # Branch selector must be present
+    assert "ref-sel" in body
+
+
+@pytest.mark.anyio
+async def test_analysis_dashboard_all_dimensions(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Dashboard HTML includes all 10 required dimension card labels."""
+    repo_id = await _make_repo(db_session)
+    response = await client.get(f"/musehub/ui/{repo_id}/analysis/main")
+    assert response.status_code == 200
+    body = response.text
+    for label in ("Key", "Tempo", "Meter", "Chord Map", "Dynamics", "Groove", "Emotion", "Form", "Motifs", "Contour"):
+        assert label in body, f"Expected dimension label {label!r} in dashboard HTML"
+
+
+@pytest.mark.anyio
+async def test_analysis_dashboard_no_auth_required(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Analysis dashboard UI page must be accessible without an Authorization header."""
+    repo_id = await _make_repo(db_session)
+    response = await client.get(f"/musehub/ui/{repo_id}/analysis/main")
+    assert response.status_code != 401
+    assert response.status_code == 200
+
+
+@pytest.mark.anyio
+async def test_analysis_dashboard_includes_token_form(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Analysis dashboard embeds the JWT token input form for unauthenticated visitors."""
+    repo_id = await _make_repo(db_session)
+    response = await client.get(f"/musehub/ui/{repo_id}/analysis/main")
+    assert response.status_code == 200
+    body = response.text
+    assert "localStorage" in body
+    assert "musehub_token" in body
+
+
+@pytest.mark.anyio
+async def test_analysis_dashboard_json(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    auth_headers: dict[str, str],
+) -> None:
+    """GET /api/v1/musehub/repos/{repo_id}/analysis/{ref} returns structured JSON summary."""
+    repo_id = await _make_repo(db_session)
+    response = await client.get(
+        f"/api/v1/musehub/repos/{repo_id}/analysis/main",
+        headers=auth_headers,
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["ref"] == "main"
+    assert body["repoId"] == repo_id
+    assert "dimensions" in body
+    assert isinstance(body["dimensions"], list)
+    assert len(body["dimensions"]) == 13
+    # All required dashboard dimensions must be present in the JSON response
+    returned_dims = {d["dimension"] for d in body["dimensions"]}
+    for required_dim in ("key", "tempo", "meter", "chord-map", "dynamics", "groove", "emotion", "form", "motifs", "contour"):
+        assert required_dim in returned_dims, f"Missing dimension {required_dim!r} in aggregate JSON"
+
+
+@pytest.mark.anyio
+async def test_analysis_dashboard_unknown_ref_404(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    auth_headers: dict[str, str],
+) -> None:
+    """GET /api/v1/musehub/repos/{unknown_repo_id}/analysis/{ref} returns 404 for unknown repo."""
+    response = await client.get(
+        "/api/v1/musehub/repos/00000000-0000-0000-0000-111111111111/analysis/main",
+        headers=auth_headers,
+    )
+    assert response.status_code == 404
+
+
+@pytest.mark.anyio
+async def test_analysis_dashboard_card_links(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Dashboard HTML embeds per-dimension card link hrefs so cards navigate correctly."""
+    repo_id = await _make_repo(db_session)
+    response = await client.get(f"/musehub/ui/{repo_id}/analysis/main")
+    assert response.status_code == 200
+    body = response.text
+    # analysis-card class is present in the JS renderCard function
+    assert "analysis-card" in body
+    # card links are built client-side: base + '/analysis/' + ref + '/' + cfg.id
+    assert "'/analysis/' + ref + '/' + cfg.id" in body
+
+
+@pytest.mark.anyio
+async def test_analysis_dashboard_sparkline_js_present(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Dashboard HTML contains sparkline rendering logic for velocity/pitch visualizations."""
+    repo_id = await _make_repo(db_session)
+    response = await client.get(f"/musehub/ui/{repo_id}/analysis/main")
+    assert response.status_code == 200
+    body = response.text
+    assert "sparkline" in body
+    assert "velocityCurve" in body or "pitchCurve" in body
