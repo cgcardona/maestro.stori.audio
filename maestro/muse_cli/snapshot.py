@@ -125,3 +125,36 @@ def compute_commit_id(
     ]
     payload = "|".join(parts).encode()
     return hashlib.sha256(payload).hexdigest()
+
+
+def compute_commit_tree_id(
+    parent_ids: list[str],
+    snapshot_id: str,
+    message: str,
+    author: str,
+) -> str:
+    """Return a deterministic commit ID for a raw plumbing commit (no timestamp).
+
+    Unlike ``compute_commit_id``, this function omits ``committed_at`` so that
+    the same (parent_ids, snapshot_id, message, author) tuple always produces
+    the same commit_id.  This guarantees idempotency for ``muse commit-tree``:
+    re-running with identical inputs returns the same ID without inserting a
+    duplicate row.
+
+    Args:
+        parent_ids: Zero or more parent commit IDs.  Sorted before hashing.
+        snapshot_id: The sha256 ID of the snapshot this commit points to.
+        message: The commit message.
+        author: The author name string.
+
+    Returns:
+        A 64-character lowercase hex SHA-256 digest.
+    """
+    parts = [
+        "|".join(sorted(parent_ids)),
+        snapshot_id,
+        message,
+        author,
+    ]
+    payload = "|".join(parts).encode()
+    return hashlib.sha256(payload).hexdigest()
