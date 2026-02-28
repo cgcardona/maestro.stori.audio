@@ -132,6 +132,55 @@ class ForkResponse(BaseModel):
     created_at: datetime
 
 
+class ReactionToggleResult(BaseModel):
+    """Result of toggling an emoji reaction — indicates whether it was added or removed."""
+
+    added: bool
+    emoji: str
+
+
+class FollowActionResult(BaseModel):
+    """Result of a follow action."""
+
+    following: bool
+    username: str
+
+
+class WatchActionResult(BaseModel):
+    """Result of a watch action."""
+
+    watching: bool
+    repo_id: str
+
+
+class NotificationReadResult(BaseModel):
+    """Result of marking a single notification as read."""
+
+    read: bool
+    notif_id: str
+
+
+class NotificationsReadAllResult(BaseModel):
+    """Result of marking all notifications as read."""
+
+    marked_read: int
+
+
+class AnalyticsSummaryResult(BaseModel):
+    """Aggregated view and download counts for a repo."""
+
+    repo_id: str
+    view_count: int
+    download_count: int
+
+
+class ViewAnalyticsDayResult(BaseModel):
+    """Daily view count for a single date."""
+
+    date: str
+    count: int
+
+
 # ---------------------------------------------------------------------------
 # Comments
 # ---------------------------------------------------------------------------
@@ -274,7 +323,7 @@ async def toggle_reaction(
     body: ReactionCreate,
     db: AsyncSession = Depends(get_db),
     claims: TokenClaims = Depends(require_valid_token),
-) -> dict[str, object]:
+) -> ReactionToggleResult:
     """Toggle an emoji reaction. Adds if not present, removes if already reacted."""
     if body.emoji not in _ALLOWED_EMOJIS:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
@@ -293,7 +342,7 @@ async def toggle_reaction(
     if existing:
         await db.delete(existing)
         await db.commit()
-        return {"added": False, "emoji": body.emoji}
+        return ReactionToggleResult(added=False, emoji=body.emoji)
 
     reaction = MusehubReaction(
         reaction_id=str(uuid.uuid4()),
@@ -308,7 +357,7 @@ async def toggle_reaction(
         await db.commit()
     except IntegrityError:
         await db.rollback()
-    return {"added": True, "emoji": body.emoji}
+    return ReactionToggleResult(added=True, emoji=body.emoji)
 
 
 # ---------------------------------------------------------------------------
@@ -343,7 +392,7 @@ async def follow_user(
     username: str,
     db: AsyncSession = Depends(get_db),
     claims: TokenClaims = Depends(require_valid_token),
-) -> dict[str, object]:
+) -> FollowActionResult:
     """Follow another user. Idempotent."""
     if claims.get("sub", "") == username:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Cannot follow yourself")
@@ -357,7 +406,7 @@ async def follow_user(
         await db.commit()
     except IntegrityError:
         await db.rollback()
-    return {"following": True, "username": username}
+    return FollowActionResult(following=True, username=username)
 
 
 @router.delete("/users/{username}/follow", status_code=status.HTTP_204_NO_CONTENT,
@@ -409,7 +458,7 @@ async def watch_repo(
     repo_id: str,
     db: AsyncSession = Depends(get_db),
     claims: TokenClaims = Depends(require_valid_token),
-) -> dict[str, object]:
+) -> WatchActionResult:
     """Subscribe to repo activity. Idempotent."""
     watch = MusehubWatch(
         watch_id=str(uuid.uuid4()),
@@ -421,7 +470,7 @@ async def watch_repo(
         await db.commit()
     except IntegrityError:
         await db.rollback()
-    return {"watching": True, "repo_id": repo_id}
+    return WatchActionResult(watching=True, repo_id=repo_id)
 
 
 @router.delete("/repos/{repo_id}/watch", status_code=status.HTTP_204_NO_CONTENT,
@@ -467,7 +516,7 @@ async def mark_notification_read(
     notif_id: str,
     db: AsyncSession = Depends(get_db),
     claims: TokenClaims = Depends(require_valid_token),
-) -> dict[str, object]:
+) -> NotificationReadResult:
     """Mark a single notification as read."""
     row = (await db.execute(
         select(MusehubNotification).where(
@@ -479,14 +528,14 @@ async def mark_notification_read(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Notification not found")
     row.is_read = True
     await db.commit()
-    return {"read": True, "notif_id": notif_id}
+    return NotificationReadResult(read=True, notif_id=notif_id)
 
 
 @router.post("/notifications/read-all", summary="Mark all notifications as read")
 async def mark_all_notifications_read(
     db: AsyncSession = Depends(get_db),
     claims: TokenClaims = Depends(require_valid_token),
-) -> dict[str, object]:
+) -> NotificationsReadAllResult:
     """Mark all of the calling user's notifications as read."""
     rows = (await db.execute(
         select(MusehubNotification).where(
@@ -497,7 +546,7 @@ async def mark_all_notifications_read(
     for row in rows:
         row.is_read = True
     await db.commit()
-    return {"marked_read": len(rows)}
+    return NotificationsReadAllResult(marked_read=len(rows))
 
 
 # ---------------------------------------------------------------------------
@@ -618,7 +667,7 @@ async def get_analytics(
     repo_id: str,
     db: AsyncSession = Depends(get_db),
     claims: TokenClaims | None = Depends(optional_token),
-) -> dict[str, object]:
+) -> AnalyticsSummaryResult:
     """Return view counts and download counts for a repo."""
     repo = await musehub_repository.get_repo(db, repo_id)
     if repo is None:
@@ -636,7 +685,7 @@ async def get_analytics(
         select(func.count()).where(MusehubDownloadEvent.repo_id == repo_id)
     )).scalar_one()
 
-    return {"repo_id": repo_id, "view_count": view_count, "download_count": dl_count}
+    return AnalyticsSummaryResult(repo_id=repo_id, view_count=view_count, download_count=dl_count)
 
 
 @router.get("/repos/{repo_id}/analytics/views", summary="Daily view counts")
@@ -645,7 +694,7 @@ async def get_view_analytics(
     days: int = Query(default=30, ge=1, le=90),
     db: AsyncSession = Depends(get_db),
     claims: TokenClaims | None = Depends(optional_token),
-) -> list[dict[str, object]]:
+) -> list[ViewAnalyticsDayResult]:
     """Return daily view counts for the last N days.
 
     Aggregates MusehubViewEvent rows by event_date so the insights page can
@@ -656,14 +705,14 @@ async def get_view_analytics(
 
     cutoff = date.today() - timedelta(days=days)
     rows = await db.execute(
-        select(MusehubViewEvent.event_date, func.count().label("count"))
+        select(MusehubViewEvent.event_date, func.count().label("view_count"))
         .where(MusehubViewEvent.repo_id == repo_id)
         .where(MusehubViewEvent.event_date >= cutoff.isoformat())
         .group_by(MusehubViewEvent.event_date)
         .order_by(MusehubViewEvent.event_date)
     )
     results = rows.all()
-    return [{"date": r.event_date, "count": r.count} for r in results]
+    return [ViewAnalyticsDayResult(date=r.event_date, count=r.view_count) for r in results]
 
 
 # ---------------------------------------------------------------------------
