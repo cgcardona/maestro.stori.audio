@@ -2779,6 +2779,149 @@ async def test_analysis_dashboard_card_links_to_dimensions(
     assert "/analysis/" in body
 
 
+# ---------------------------------------------------------------------------
+# Navigation and breadcrumbs — issue #201
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.anyio
+async def test_all_pages_have_navbar(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Every MuseHub page response must contain the global nav bar.
+
+    The musehub-navbar class is the canonical marker for the global navigation
+    bar rendered by partials/navbar.html via base.html.
+    """
+    await _make_repo(db_session)
+
+    pages = [
+        "/musehub/ui/explore",
+        "/musehub/ui/search",
+        "/musehub/ui/testuser/test-beats",
+        "/musehub/ui/testuser/test-beats/pulls",
+        "/musehub/ui/testuser/test-beats/issues",
+    ]
+    for url in pages:
+        response = await client.get(url)
+        assert response.status_code == 200, f"Expected 200 for {url}, got {response.status_code}"
+        assert "musehub-navbar" in response.text, (
+            f"Global nav bar missing from {url} — expected class='musehub-navbar'"
+        )
+
+
+@pytest.mark.anyio
+async def test_repo_pages_have_tabs(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Repo-scoped pages must include the tab bar with canonical section links."""
+    await _make_repo(db_session)
+
+    response = await client.get("/musehub/ui/testuser/test-beats")
+    assert response.status_code == 200
+    body = response.text
+
+    assert 'class="repo-tabs"' in body or "repo-tabs" in body, (
+        "Tab bar missing — expected element with class repo-tabs"
+    )
+    assert "/musehub/ui/testuser/test-beats/pulls" in body, "Pull Requests tab link missing"
+    assert "/musehub/ui/testuser/test-beats/issues" in body, "Issues tab link missing"
+    assert "/musehub/ui/testuser/test-beats/sessions" in body, "Sessions tab link missing"
+
+
+@pytest.mark.anyio
+async def test_active_tab_highlighted(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """The tab matching the current section must have the 'active' CSS class.
+
+    The commits tab is active on the repo landing page (current_page='commits').
+    """
+    await _make_repo(db_session)
+
+    response = await client.get("/musehub/ui/testuser/test-beats")
+    assert response.status_code == 200
+    body = response.text
+
+    assert "repo-tab active" in body, (
+        "Active tab class missing — expected 'repo-tab active' on the current tab"
+    )
+
+
+@pytest.mark.anyio
+async def test_breadcrumbs_correct(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Commit detail page must show the full breadcrumb path.
+
+    Path: {owner} / {repo_slug} / commits / {short_commit_id}
+    """
+    repo_id = await _make_repo(db_session)
+
+    commit_id = "ccddee" * 8 + "ccdd"  # 50-char hex string for breadcrumb test
+    commit = MusehubCommit(
+        commit_id=commit_id,
+        repo_id=repo_id,
+        message="feat: add bass line",
+        author="testuser",
+        timestamp=datetime.now(timezone.utc),
+        parent_ids=[],
+        branch="main",
+    )
+    db_session.add(commit)
+    await db_session.commit()
+
+    response = await client.get(f"/musehub/ui/testuser/test-beats/commits/{commit_id}")
+    assert response.status_code == 200
+    body = response.text
+
+    assert "testuser" in body, "Owner segment missing from breadcrumb area"
+    assert "test-beats" in body, "Repo-slug segment missing from breadcrumb area"
+    assert "commits" in body, "'commits' segment missing from breadcrumb area"
+    short_id = commit_id[:8]
+    assert short_id in body, f"Short commit ID '{short_id}' missing from breadcrumb area"
+
+
+@pytest.mark.anyio
+async def test_breadcrumb_links_valid(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Each breadcrumb segment on the commit detail page must link to the correct URL.
+
+    - owner  → /musehub/ui/{owner}
+    - repo   → /musehub/ui/{owner}/{repo_slug}
+    - commits → /musehub/ui/{owner}/{repo_slug}  (repo root is the commits view)
+    """
+    repo_id = await _make_repo(db_session)
+
+    commit_id_2 = "eeff00" * 8 + "eeff"  # 50-char hex string for link test
+    commit = MusehubCommit(
+        commit_id=commit_id_2,
+        repo_id=repo_id,
+        message="feat: breadcrumb test commit",
+        author="testuser",
+        timestamp=datetime.now(timezone.utc),
+        parent_ids=[],
+        branch="main",
+    )
+    db_session.add(commit)
+    await db_session.commit()
+
+    response = await client.get(f"/musehub/ui/testuser/test-beats/commits/{commit_id_2}")
+    assert response.status_code == 200
+    body = response.text
+
+    assert 'href="/musehub/ui/testuser"' in body, (
+        "Owner breadcrumb link '/musehub/ui/testuser' missing"
+    )
+    assert 'href="/musehub/ui/testuser/test-beats"' in body, (
+        "Repo breadcrumb link '/musehub/ui/testuser/test-beats' missing"
+    )
 
 
 # ---------------------------------------------------------------------------

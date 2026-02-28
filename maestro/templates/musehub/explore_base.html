@@ -65,15 +65,12 @@
   </style>
 </head>
 <body>
-  <header>
-    <span class="logo"><a href="/musehub/ui/explore" style="color:inherit;text-decoration:none">&#127925; Muse Hub</a></span>
+  {% include "musehub/partials/navbar.html" %}
+  {% if breadcrumb %}
+  <div class="breadcrumb-bar">
     <span class="breadcrumb">{{ breadcrumb }}</span>
-    <span style="flex:1"></span>
-    <a href="/musehub/ui/explore" class="btn btn-ghost btn-sm" style="font-size:12px">Explore</a>
-    <a href="/musehub/ui/trending" class="btn btn-ghost btn-sm" style="font-size:12px">Trending</a>
-    <button id="signout-btn" class="btn btn-secondary btn-sm" style="font-size:12px;display:none"
-            onclick="clearToken();location.reload()">Sign out</button>
-  </header>
+  </div>
+  {% endif %}
 
   <div class="container-wide">
 

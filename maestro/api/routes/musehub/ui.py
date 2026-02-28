@@ -84,6 +84,16 @@ def _base_url(owner: str, repo_slug: str) -> str:
     return f"/musehub/ui/{owner}/{repo_slug}"
 
 
+def _breadcrumbs(*segments: tuple[str, str]) -> list[dict[str, str]]:
+    """Build breadcrumb_data list from (label, url) pairs.
+
+    Each dict has ``label`` (display text) and ``url`` (link target).
+    Pass an empty string for ``url`` to render the segment as plain text
+    (used for the leaf/current-page segment).
+    """
+    return [{"label": label, "url": url} for label, url in segments]
+
+
 async def _resolve_repo(
     owner: str, repo_slug: str, db: AsyncSession
 ) -> tuple[str, str]:
@@ -268,7 +278,7 @@ async def repo_page(
             "repo_slug": repo_slug,
             "repo_id": repo_id,
             "base_url": base_url,
-            "current_page": "home",
+            "current_page": "commits",
         },
     )
 
@@ -303,6 +313,12 @@ async def commit_page(
             "commit_id": commit_id,
             "base_url": base_url,
             "current_page": "commits",
+            "breadcrumb_data": _breadcrumbs(
+                (owner, f"/musehub/ui/{owner}"),
+                (repo_slug, base_url),
+                ("commits", base_url),
+                (commit_id[:8], ""),
+            ),
         },
     )
 
