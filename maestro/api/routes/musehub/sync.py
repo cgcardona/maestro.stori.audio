@@ -19,6 +19,7 @@ from maestro.db import get_db
 from maestro.models.musehub import (
     PullRequest,
     PullResponse,
+    PushEventPayload,
     PushRequest,
     PushResponse,
 )
@@ -78,17 +79,18 @@ async def push(
 
     await db.commit()
 
+    push_payload: PushEventPayload = {
+        "repoId": repo_id,
+        "branch": body.branch,
+        "headCommitId": body.head_commit_id,
+        "pushedBy": author,
+        "commitCount": len(body.commits),
+    }
     background_tasks.add_task(
         dispatch_event_background,
         repo_id,
         "push",
-        {
-            "repoId": repo_id,
-            "branch": body.branch,
-            "headCommitId": body.head_commit_id,
-            "pushedBy": author,
-            "commitCount": len(body.commits),
-        },
+        push_payload,
     )
     return result
 

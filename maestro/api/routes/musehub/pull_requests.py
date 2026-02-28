@@ -25,6 +25,7 @@ from maestro.models.musehub import (
     PRMergeRequest,
     PRMergeResponse,
     PRResponse,
+    PullRequestEventPayload,
 )
 from maestro.services import musehub_pull_requests, musehub_repository
 from maestro.services.musehub_webhook_dispatcher import dispatch_event_background
@@ -76,19 +77,20 @@ async def create_pull_request(
 
     await db.commit()
 
+    open_pr_payload: PullRequestEventPayload = {
+        "repoId": repo_id,
+        "action": "opened",
+        "prId": pr.pr_id,
+        "title": pr.title,
+        "fromBranch": pr.from_branch,
+        "toBranch": pr.to_branch,
+        "state": pr.state,
+    }
     background_tasks.add_task(
         dispatch_event_background,
         repo_id,
         "pull_request",
-        {
-            "repoId": repo_id,
-            "action": "opened",
-            "prId": pr.pr_id,
-            "title": pr.title,
-            "fromBranch": pr.from_branch,
-            "toBranch": pr.to_branch,
-            "state": pr.state,
-        },
+        open_pr_payload,
     )
     return pr
 
@@ -187,19 +189,20 @@ async def merge_pull_request(
             detail="Merge completed but merge_commit_id is missing",
         )
 
+    merge_pr_payload: PullRequestEventPayload = {
+        "repoId": repo_id,
+        "action": "merged",
+        "prId": pr.pr_id,
+        "title": pr.title,
+        "fromBranch": pr.from_branch,
+        "toBranch": pr.to_branch,
+        "state": pr.state,
+        "mergeCommitId": pr.merge_commit_id,
+    }
     background_tasks.add_task(
         dispatch_event_background,
         repo_id,
         "pull_request",
-        {
-            "repoId": repo_id,
-            "action": "merged",
-            "prId": pr.pr_id,
-            "title": pr.title,
-            "fromBranch": pr.from_branch,
-            "toBranch": pr.to_branch,
-            "state": pr.state,
-            "mergeCommitId": pr.merge_commit_id,
-        },
+        merge_pr_payload,
     )
     return PRMergeResponse(merged=True, merge_commit_id=pr.merge_commit_id)

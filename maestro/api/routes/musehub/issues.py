@@ -19,7 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from maestro.auth.dependencies import TokenClaims, require_valid_token
 from maestro.db import get_db
-from maestro.models.musehub import IssueCreate, IssueListResponse, IssueResponse
+from maestro.models.musehub import IssueCreate, IssueEventPayload, IssueListResponse, IssueResponse
 from maestro.services import musehub_issues
 from maestro.services import musehub_repository
 from maestro.services.musehub_webhook_dispatcher import dispatch_event_background
@@ -56,18 +56,19 @@ async def create_issue(
     )
     await db.commit()
 
+    open_payload: IssueEventPayload = {
+        "repoId": repo_id,
+        "action": "opened",
+        "issueId": issue.issue_id,
+        "number": issue.number,
+        "title": issue.title,
+        "state": issue.state,
+    }
     background_tasks.add_task(
         dispatch_event_background,
         repo_id,
         "issue",
-        {
-            "repoId": repo_id,
-            "action": "opened",
-            "issueId": issue.issue_id,
-            "number": issue.number,
-            "title": issue.title,
-            "state": issue.state,
-        },
+        open_payload,
     )
     return issue
 
@@ -141,17 +142,18 @@ async def close_issue(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Issue not found")
     await db.commit()
 
+    close_payload: IssueEventPayload = {
+        "repoId": repo_id,
+        "action": "closed",
+        "issueId": issue.issue_id,
+        "number": issue.number,
+        "title": issue.title,
+        "state": issue.state,
+    }
     background_tasks.add_task(
         dispatch_event_background,
         repo_id,
         "issue",
-        {
-            "repoId": repo_id,
-            "action": "closed",
-            "issueId": issue.issue_id,
-            "number": issue.number,
-            "title": issue.title,
-            "state": issue.state,
-        },
+        close_payload,
     )
     return issue

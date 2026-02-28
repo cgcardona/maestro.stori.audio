@@ -5981,6 +5981,50 @@ Wrapper for `GET /musehub/repos/{repo_id}/webhooks/{webhook_id}/deliveries`.
 |-------|------|-------------|
 | `deliveries` | `list[WebhookDeliveryResponse]` | Delivery history, newest first |
 
+### `PushEventPayload` (TypedDict)
+
+Typed payload for `event_type="push"`. Passed to `dispatch_event` / `dispatch_event_background` by the push route handler after a successful push.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `repoId` | `str` | Repo UUID |
+| `branch` | `str` | Branch name that received the push |
+| `headCommitId` | `str` | New branch head commit ID |
+| `pushedBy` | `str` | JWT sub claim of the pushing user |
+| `commitCount` | `int` | Number of commits in the push |
+
+### `IssueEventPayload` (TypedDict)
+
+Typed payload for `event_type="issue"`. Emitted on issue open and close.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `repoId` | `str` | Repo UUID |
+| `action` | `str` | `"opened"` or `"closed"` |
+| `issueId` | `str` | Issue UUID |
+| `number` | `int` | Per-repo sequential issue number |
+| `title` | `str` | Issue title |
+| `state` | `str` | Issue state after the action |
+
+### `PullRequestEventPayload` (TypedDict)
+
+Typed payload for `event_type="pull_request"`. Emitted on PR open and merge.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `repoId` | `str` | Repo UUID |
+| `action` | `str` | `"opened"` or `"merged"` |
+| `prId` | `str` | PR UUID |
+| `title` | `str` | PR title |
+| `fromBranch` | `str` | Source branch name |
+| `toBranch` | `str` | Target branch name |
+| `state` | `str` | PR state after the action |
+| `mergeCommitId` | `str` (optional) | Merge commit ID; only present when `action="merged"` |
+
+### `WebhookEventPayload` (TypeAlias)
+
+Union of all typed event payloads: `PushEventPayload | IssueEventPayload | PullRequestEventPayload`.  This is the type accepted by `dispatch_event` and `dispatch_event_background`.
+
 ---
 
 ## Muse CLI — Conflict Resolution Types (`maestro/muse_cli/merge_engine.py`)

@@ -28,7 +28,6 @@ import json
 import logging
 import uuid
 from datetime import datetime, timezone
-from typing import Any
 
 import httpx
 from sqlalchemy import select
@@ -36,7 +35,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from maestro.db import musehub_models as db
 from maestro.db.database import AsyncSessionLocal
-from maestro.models.musehub import WebhookDeliveryResponse, WebhookResponse
+from maestro.models.musehub import (
+    WebhookDeliveryResponse,
+    WebhookEventPayload,
+    WebhookResponse,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -241,7 +244,7 @@ async def dispatch_event(
     *,
     repo_id: str,
     event_type: str,
-    payload: dict[str, Any],
+    payload: WebhookEventPayload,
 ) -> None:
     """Dispatch a webhook event to all active subscribers for ``repo_id``.
 
@@ -328,7 +331,7 @@ async def dispatch_event(
 async def dispatch_event_background(
     repo_id: str,
     event_type: str,
-    payload: dict[str, Any],
+    payload: WebhookEventPayload,
 ) -> None:
     """Fire-and-forget webhook dispatch that manages its own DB session.
 

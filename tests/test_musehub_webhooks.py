@@ -19,13 +19,14 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
-from typing import Any
+from typing import Any  # used for MagicMock return annotations only
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from maestro.models.musehub import IssueEventPayload, PushEventPayload
 from maestro.services import musehub_webhook_dispatcher
 
 
@@ -349,6 +350,14 @@ async def test_dispatch_event_delivers_to_matching_webhooks(
         mock_resp.text = "ok"
         return mock_resp
 
+    push_payload: PushEventPayload = {
+        "repoId": "repo-abc",
+        "branch": "main",
+        "headCommitId": "abc123",
+        "pushedBy": "test-user",
+        "commitCount": 1,
+    }
+
     with patch("httpx.AsyncClient") as mock_client_cls:
         mock_client = AsyncMock()
         mock_client.post = _fake_post
@@ -360,7 +369,7 @@ async def test_dispatch_event_delivers_to_matching_webhooks(
             db_session,
             repo_id="repo-abc",
             event_type="push",
-            payload={"repoId": "repo-abc", "branch": "main"},
+            payload=push_payload,
         )
 
     assert posted_urls == ["https://example.com/push-hook"]
@@ -392,6 +401,14 @@ async def test_dispatch_event_skips_non_matching_event(
         mock_resp.text = "ok"
         return mock_resp
 
+    push_payload: PushEventPayload = {
+        "repoId": "repo-xyz",
+        "branch": "main",
+        "headCommitId": "xyz789",
+        "pushedBy": "test-user",
+        "commitCount": 0,
+    }
+
     with patch("httpx.AsyncClient") as mock_client_cls:
         mock_client = AsyncMock()
         mock_client.post = _fake_post
@@ -403,7 +420,7 @@ async def test_dispatch_event_skips_non_matching_event(
             db_session,
             repo_id="repo-xyz",
             event_type="push",
-            payload={"repoId": "repo-xyz"},
+            payload=push_payload,
         )
 
     assert posted_urls == []
@@ -434,6 +451,14 @@ async def test_dispatch_event_logs_delivery_on_success(
         mock_resp.text = "accepted"
         return mock_resp
 
+    log_payload: PushEventPayload = {
+        "repoId": "repo-log",
+        "branch": "main",
+        "headCommitId": "log123",
+        "pushedBy": "test-user",
+        "commitCount": 1,
+    }
+
     with patch("httpx.AsyncClient") as mock_client_cls:
         mock_client = AsyncMock()
         mock_client.post = _fake_post
@@ -445,7 +470,7 @@ async def test_dispatch_event_logs_delivery_on_success(
             db_session,
             repo_id="repo-log",
             event_type="push",
-            payload={"repoId": "repo-log"},
+            payload=log_payload,
         )
 
     stmt = select(db_models.MusehubWebhookDelivery).where(
@@ -488,6 +513,14 @@ async def test_webhook_retry_on_failure_logs_multiple_attempts(
         mock_resp.text = "service unavailable"
         return mock_resp
 
+    retry_payload: PushEventPayload = {
+        "repoId": "repo-retry",
+        "branch": "main",
+        "headCommitId": "retry123",
+        "pushedBy": "test-user",
+        "commitCount": 1,
+    }
+
     with (
         patch("httpx.AsyncClient") as mock_client_cls,
         patch("asyncio.sleep", new_callable=AsyncMock),
@@ -502,7 +535,7 @@ async def test_webhook_retry_on_failure_logs_multiple_attempts(
             db_session,
             repo_id="repo-retry",
             event_type="push",
-            payload={"repoId": "repo-retry"},
+            payload=retry_payload,
         )
 
     assert attempt_count == disp._MAX_ATTEMPTS
@@ -539,6 +572,15 @@ async def test_webhook_delivery_logging_records_failure_status(
     async def _raise_network_error(url: str, **kwargs: Any) -> None:
         raise httpx.ConnectError("Connection refused")
 
+    net_err_payload: IssueEventPayload = {
+        "repoId": "repo-net-err",
+        "action": "opened",
+        "issueId": "issue-001",
+        "number": 1,
+        "title": "Test issue",
+        "state": "open",
+    }
+
     with (
         patch("httpx.AsyncClient") as mock_client_cls,
         patch("asyncio.sleep", new_callable=AsyncMock),
@@ -553,7 +595,7 @@ async def test_webhook_delivery_logging_records_failure_status(
             db_session,
             repo_id="repo-net-err",
             event_type="issue",
-            payload={"repoId": "repo-net-err"},
+            payload=net_err_payload,
         )
 
     stmt = select(db_models.MusehubWebhookDelivery).where(
@@ -591,6 +633,14 @@ async def test_list_deliveries_via_api_after_dispatch(
         mock_resp.text = "ok"
         return mock_resp
 
+    api_payload: PushEventPayload = {
+        "repoId": repo_id,
+        "branch": "main",
+        "headCommitId": "api123",
+        "pushedBy": "test-user",
+        "commitCount": 1,
+    }
+
     with patch("httpx.AsyncClient") as mock_client_cls:
         mock_client = AsyncMock()
         mock_client.post = _fake_post
@@ -602,7 +652,7 @@ async def test_list_deliveries_via_api_after_dispatch(
             db_session,
             repo_id=repo_id,
             event_type="push",
-            payload={"repoId": repo_id},
+            payload=api_payload,
         )
 
     resp = await client.get(

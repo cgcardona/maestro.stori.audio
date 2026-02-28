@@ -6,6 +6,7 @@ snake_case throughout; only serialisation to JSON uses camelCase.
 from __future__ import annotations
 
 from datetime import datetime
+from typing import NotRequired, TypedDict
 
 from pydantic import Field
 
@@ -307,3 +308,59 @@ class WebhookDeliveryListResponse(CamelModel):
     """Paginated list of delivery attempts for a webhook."""
 
     deliveries: list[WebhookDeliveryResponse]
+
+
+# ── Webhook event payload TypedDicts ─────────────────────────────────────────
+# These typed dicts are used as the payload argument to dispatch_event /
+# dispatch_event_background, replacing dict[str, Any] at the service boundary.
+
+
+class PushEventPayload(TypedDict):
+    """Payload emitted when commits are pushed to a MuseHub repo.
+
+    Used with event_type="push".
+    """
+
+    repoId: str
+    branch: str
+    headCommitId: str
+    pushedBy: str
+    commitCount: int
+
+
+class IssueEventPayload(TypedDict):
+    """Payload emitted when an issue is opened or closed.
+
+    ``action`` is either ``"opened"`` or ``"closed"``.
+    Used with event_type="issue".
+    """
+
+    repoId: str
+    action: str
+    issueId: str
+    number: int
+    title: str
+    state: str
+
+
+class PullRequestEventPayload(TypedDict):
+    """Payload emitted when a PR is opened or merged.
+
+    ``action`` is either ``"opened"`` or ``"merged"``.
+    ``mergeCommitId`` is only present on the "merged" action.
+    Used with event_type="pull_request".
+    """
+
+    repoId: str
+    action: str
+    prId: str
+    title: str
+    fromBranch: str
+    toBranch: str
+    state: str
+    mergeCommitId: NotRequired[str]
+
+
+# Union of all typed webhook event payloads.  The dispatcher accepts any of
+# these; callers pass the specific TypedDict for their event type.
+WebhookEventPayload = PushEventPayload | IssueEventPayload | PullRequestEventPayload
