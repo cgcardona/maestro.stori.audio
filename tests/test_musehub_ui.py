@@ -10,6 +10,14 @@ Covers the minimum acceptance criteria from issue #43 and issue #232:
 - test_context_includes_musical_state  — response includes active_tracks field
 - test_context_unknown_ref_404         — nonexistent ref returns 404
 
+Covers acceptance criteria from issue #204 (tree browser):
+- test_tree_root_lists_directories
+- test_tree_subdirectory_lists_files
+- test_tree_file_icons_by_type
+- test_tree_breadcrumbs_correct
+- test_tree_json_response
+- test_tree_unknown_ref_404
+
 Covers acceptance criteria from issue #244 (embed player):
 - test_embed_page_renders              — GET /musehub/ui/{repo_id}/embed/{ref} returns 200
 - test_embed_no_auth_required          — Public embed accessible without JWT
@@ -34,13 +42,20 @@ See also test_musehub_analysis.py::test_analysis_aggregate_endpoint_returns_all_
 """
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta, timezone
 
 import pytest
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from maestro.db.musehub_models import MusehubCommit, MusehubProfile, MusehubRepo, MusehubSession
+from maestro.db.musehub_models import (
+    MusehubBranch,
+    MusehubCommit,
+    MusehubObject,
+    MusehubProfile,
+    MusehubRepo,
+    MusehubSession,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -717,6 +732,50 @@ async def test_credits_no_auth_required_slug_route(
 
 
 @pytest.mark.anyio
+async def test_credits_page_contains_avatar_functions(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Credits page includes avatarHsl and avatarCircle JS functions for contributor avatars."""
+    await _make_repo(db_session)
+    response = await client.get("/musehub/ui/testuser/test-beats/credits")
+    assert response.status_code == 200
+    body = response.text
+    assert "avatarHsl" in body
+    assert "avatarCircle" in body
+    assert "border-radius:50%" in body
+
+
+@pytest.mark.anyio
+async def test_credits_page_contains_fetch_profile_function(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Credits page includes fetchProfile JS function that fetches contributor profiles in parallel."""
+    await _make_repo(db_session)
+    response = await client.get("/musehub/ui/testuser/test-beats/credits")
+    assert response.status_code == 200
+    body = response.text
+    assert "fetchProfile" in body
+    assert "Promise.all" in body
+    assert "/users/" in body
+
+
+@pytest.mark.anyio
+async def test_credits_page_contains_profile_link_pattern(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Credits page links contributor names to their profile pages at /musehub/ui/users/{username}."""
+    await _make_repo(db_session)
+    response = await client.get("/musehub/ui/testuser/test-beats/credits")
+    assert response.status_code == 200
+    body = response.text
+    assert "/musehub/ui/users/" in body
+    assert "encodeURIComponent" in body
+
+
+@pytest.mark.anyio
 async def test_groove_check_page_no_auth_required(
     client: AsyncClient,
     db_session: AsyncSession,
@@ -1140,6 +1199,84 @@ async def test_timeline_page_includes_token_form(
     body = response.text
     assert "musehub/static/musehub.js" in body
     assert "token-form" in body
+
+
+@pytest.mark.anyio
+async def test_timeline_page_contains_overlay_toggles(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Timeline page must include Sessions, PRs, and Releases layer toggle checkboxes.
+
+    Regression test for issue #307 — before this fix the timeline had no
+    overlay markers for repo lifecycle events (sessions, PR merges, releases).
+    """
+    await _make_repo(db_session)
+    response = await client.get("/musehub/ui/testuser/test-beats/timeline")
+    assert response.status_code == 200
+    body = response.text
+    # All three new overlay toggle labels must be present.
+    assert "Sessions" in body
+    assert "PRs" in body
+    assert "Releases" in body
+
+
+@pytest.mark.anyio
+async def test_timeline_page_overlay_js_variables(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Timeline page script must initialise sessions, mergedPRs, and releases arrays.
+
+    Verifies that the overlay data arrays and the layer toggle state are wired
+    up in the page's inline script so the renderer can draw markers.
+    """
+    await _make_repo(db_session)
+    response = await client.get("/musehub/ui/testuser/test-beats/timeline")
+    assert response.status_code == 200
+    body = response.text
+    # State variables for overlay data must be declared.
+    assert "let sessions" in body
+    assert "let mergedPRs" in body
+    assert "let releases" in body
+    # Layer toggle state must include the three new keys.
+    assert "sessions: true" in body
+    assert "prs: true" in body
+    assert "releases: true" in body
+
+
+@pytest.mark.anyio
+async def test_timeline_page_overlay_fetch_calls(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Timeline page must issue API calls for sessions, merged PRs, and releases.
+
+    Checks that the inline script calls the correct API paths so the browser
+    will fetch overlay data when the page loads.
+    """
+    await _make_repo(db_session)
+    response = await client.get("/musehub/ui/testuser/test-beats/timeline")
+    assert response.status_code == 200
+    body = response.text
+    assert "/sessions" in body
+    assert "state=merged" in body
+    assert "/releases" in body
+
+
+@pytest.mark.anyio
+async def test_timeline_page_overlay_legend(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Timeline page legend must describe the three new overlay marker types."""
+    await _make_repo(db_session)
+    response = await client.get("/musehub/ui/testuser/test-beats/timeline")
+    assert response.status_code == 200
+    body = response.text
+    # Colour labels in the legend.
+    assert "teal" in body.lower()
+    assert "gold" in body.lower()
 
 
 # ---------------------------------------------------------------------------
@@ -2126,3 +2263,172 @@ async def test_motifs_page_shows_transformation_badges(
     body = response.text
     assert "transformationsHtml" in body
     assert "inversion" in body
+
+
+# ---------------------------------------------------------------------------
+# Tree browser tests — issue #204
+# ---------------------------------------------------------------------------
+
+
+async def _seed_tree_fixtures(db_session: AsyncSession) -> str:
+    """Seed a public repo with a branch and objects for tree browser tests.
+
+    Creates:
+    - repo: testuser/tree-test (public)
+    - branch: main (head pointing at a dummy commit)
+    - objects: tracks/bass.mid, tracks/keys.mp3, metadata.json, cover.webp
+    Returns repo_id.
+    """
+    repo = MusehubRepo(
+        name="tree-test",
+        owner="testuser",
+        slug="tree-test",
+        visibility="public",
+        owner_user_id="test-owner",
+    )
+    db_session.add(repo)
+    await db_session.flush()
+
+    commit = MusehubCommit(
+        commit_id="abc123def456",
+        repo_id=str(repo.repo_id),
+        message="initial",
+        branch="main",
+        author="testuser",
+        timestamp=datetime.now(tz=UTC),
+    )
+    db_session.add(commit)
+
+    branch = MusehubBranch(
+        repo_id=str(repo.repo_id),
+        name="main",
+        head_commit_id="abc123def456",
+    )
+    db_session.add(branch)
+
+    for path, size in [
+        ("tracks/bass.mid", 2048),
+        ("tracks/keys.mp3", 8192),
+        ("metadata.json", 512),
+        ("cover.webp", 4096),
+    ]:
+        obj = MusehubObject(
+            object_id=f"sha256:{path.replace('/', '_')}",
+            repo_id=str(repo.repo_id),
+            path=path,
+            size_bytes=size,
+            disk_path=f"/tmp/{path.replace('/', '_')}",
+        )
+        db_session.add(obj)
+
+    await db_session.commit()
+    return str(repo.repo_id)
+
+
+@pytest.mark.anyio
+async def test_tree_root_lists_directories(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """GET /musehub/ui/{owner}/{repo}/tree/{ref} returns 200 HTML with tree JS."""
+    await _seed_tree_fixtures(db_session)
+    response = await client.get("/musehub/ui/testuser/tree-test/tree/main")
+    assert response.status_code == 200
+    assert "text/html" in response.headers["content-type"]
+    body = response.text
+    assert "tree" in body
+    assert "branch-sel" in body or "ref-selector" in body or "loadTree" in body
+
+
+@pytest.mark.anyio
+async def test_tree_subdirectory_lists_files(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """GET /{owner}/{repo}/tree/{ref}/tracks returns 200 HTML for the subdirectory."""
+    await _seed_tree_fixtures(db_session)
+    response = await client.get("/musehub/ui/testuser/tree-test/tree/main/tracks")
+    assert response.status_code == 200
+    assert "text/html" in response.headers["content-type"]
+    body = response.text
+    assert "tracks" in body
+    assert "loadTree" in body
+
+
+@pytest.mark.anyio
+async def test_tree_file_icons_by_type(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Tree template includes JS that maps extensions to file-type icons."""
+    await _seed_tree_fixtures(db_session)
+    response = await client.get("/musehub/ui/testuser/tree-test/tree/main")
+    assert response.status_code == 200
+    body = response.text
+    # Piano icon for .mid files
+    assert ".mid" in body or "midi" in body
+    # Waveform icon for .mp3/.wav files
+    assert ".mp3" in body or ".wav" in body
+    # Braces for .json
+    assert ".json" in body
+    # Photo for images
+    assert ".webp" in body or ".png" in body
+
+
+@pytest.mark.anyio
+async def test_tree_breadcrumbs_correct(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Tree page breadcrumb contains owner, repo, tree, and ref."""
+    await _seed_tree_fixtures(db_session)
+    response = await client.get("/musehub/ui/testuser/tree-test/tree/main")
+    assert response.status_code == 200
+    body = response.text
+    assert "testuser" in body
+    assert "tree-test" in body
+    assert "tree" in body
+    assert "main" in body
+
+
+@pytest.mark.anyio
+async def test_tree_json_response(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """GET /api/v1/musehub/repos/{repo_id}/tree/{ref} returns JSON with tree entries."""
+    repo_id = await _seed_tree_fixtures(db_session)
+    response = await client.get(
+        f"/api/v1/musehub/repos/{repo_id}/tree/main"
+        f"?owner=testuser&repo_slug=tree-test"
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert "entries" in data
+    assert data["ref"] == "main"
+    assert data["dirPath"] == ""
+    # Root should show: 'tracks' dir, 'metadata.json', 'cover.webp'
+    names = {e["name"] for e in data["entries"]}
+    assert "tracks" in names
+    assert "metadata.json" in names
+    assert "cover.webp" in names
+    # 'bass.mid' should NOT appear at root (it's under tracks/)
+    assert "bass.mid" not in names
+    # tracks entry must be a directory
+    tracks_entry = next(e for e in data["entries"] if e["name"] == "tracks")
+    assert tracks_entry["type"] == "dir"
+    assert tracks_entry["sizeBytes"] is None
+
+
+@pytest.mark.anyio
+async def test_tree_unknown_ref_404(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """GET /api/v1/musehub/repos/{repo_id}/tree/{unknown_ref} returns 404."""
+    repo_id = await _seed_tree_fixtures(db_session)
+    response = await client.get(
+        f"/api/v1/musehub/repos/{repo_id}/tree/does-not-exist"
+        f"?owner=testuser&repo_slug=tree-test"
+    )
+    assert response.status_code == 404
