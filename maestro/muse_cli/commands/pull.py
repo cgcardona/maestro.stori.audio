@@ -11,19 +11,32 @@ Pull algorithm
 5. POST to ``<remote_url>/pull`` with Bearer auth.
 6. Store returned commits and object descriptors in local Postgres.
 7. Update ``.muse/remotes/origin/<branch>`` tracking pointer.
-8. If the remote HEAD is not an ancestor of the local branch HEAD, print a
-   divergence warning and advise ``muse merge origin/<branch>``.
-   Exit code is **0** even on divergence — the warning is informational.
+8. Apply post-fetch integration strategy based on flags:
+   - Default: print divergence warning if branches diverged.
+   - ``--ff-only``: fast-forward if possible; fail if not.
+   - ``--rebase``: fast-forward if remote is simply ahead; rebase local
+     commits onto remote HEAD if branches have diverged.
+
+Flags
+-----
+- ``--rebase``: after fetching, rebase local commits on top of the fetched
+  remote HEAD rather than merging. For linear divergence this replays each
+  local commit with the same snapshot but a new parent ID. For complex
+  divergence, it falls back to an advisory error.
+- ``--ff-only``: after fetching, only integrate if the result would be a
+  fast-forward (remote HEAD is a direct descendant of local HEAD). Fails
+  with exit code 1 if the branches have diverged.
 
 Exit codes:
-  0 — success (including the divergence warning case)
-  1 — user error (no remote, bad args)
+  0 — success (including ff and rebase cases)
+  1 — user error (no remote, bad args, ff-only on diverged branch)
   2 — not a Muse repository
   3 — network / server error
 """
 from __future__ import annotations
 
 import asyncio
+import datetime
 import json
 import logging
 import pathlib
@@ -37,6 +50,7 @@ from maestro.muse_cli.config import get_remote, get_remote_head, set_remote_head
 from maestro.muse_cli.db import (
     get_all_object_ids,
     get_commits_for_branch,
+    insert_commit,
     open_session,
     store_pulled_commit,
     store_pulled_object,
@@ -47,6 +61,9 @@ from maestro.muse_cli.hub_client import (
     PullRequest,
     PullResponse,
 )
+from maestro.muse_cli.merge_engine import find_merge_base
+from maestro.muse_cli.models import MuseCliCommit
+from maestro.muse_cli.snapshot import compute_commit_tree_id
 
 logger = logging.getLogger(__name__)
 
@@ -61,6 +78,78 @@ _DIVERGED_MSG = (
     "⚠️  Local branch has diverged from {remote}/{branch}.\n"
     "   Run `muse merge {remote}/{branch}` to integrate remote changes."
 )
+
+
+# ---------------------------------------------------------------------------
+# Rebase helper
+# ---------------------------------------------------------------------------
+
+
+async def _rebase_commits_onto(
+    root: pathlib.Path,
+    repo_id: str,
+    branch: str,
+    commits_to_rebase: list[MuseCliCommit],
+    new_base_commit_id: str,
+) -> str:
+    """Replay *commits_to_rebase* (oldest-first) on top of *new_base_commit_id*.
+
+    Creates new MuseCliCommit rows with updated parent IDs but the same
+    snapshot, message, and author.  Commit IDs are recomputed deterministically
+    via :func:`~maestro.muse_cli.snapshot.compute_commit_tree_id` so that
+    running the same rebase twice does not insert duplicate rows.
+
+    This implements a linear rebase: no conflict detection is performed.  When
+    the caller needs path-level conflict handling it should use ``muse merge``
+    instead.
+
+    Args:
+        root: Repository root (for writing the branch ref).
+        repo_id: Repository ID to tag the new commit rows.
+        branch: Local branch name whose HEAD will be updated.
+        commits_to_rebase: Local commits above the merge base, oldest-first.
+        new_base_commit_id: The remote HEAD onto which we replay.
+
+    Returns:
+        The new local branch HEAD commit ID (last replayed commit).
+    """
+    current_parent_id: str = new_base_commit_id
+
+    async with open_session() as session:
+        for commit in commits_to_rebase:
+            new_commit_id = compute_commit_tree_id(
+                parent_ids=[current_parent_id],
+                snapshot_id=commit.snapshot_id,
+                message=commit.message,
+                author=commit.author,
+            )
+
+            # Idempotency: skip if this rebased commit already exists
+            existing = await session.get(MuseCliCommit, new_commit_id)
+            if existing is None:
+                rebased = MuseCliCommit(
+                    commit_id=new_commit_id,
+                    repo_id=repo_id,
+                    branch=branch,
+                    parent_commit_id=current_parent_id,
+                    snapshot_id=commit.snapshot_id,
+                    message=commit.message,
+                    author=commit.author,
+                    committed_at=datetime.datetime.now(datetime.timezone.utc),
+                    commit_metadata=commit.commit_metadata,
+                )
+                await insert_commit(session, rebased)
+
+            current_parent_id = new_commit_id
+
+        await session.commit()
+
+    # Update local branch ref to the last rebased commit
+    ref_path = root / ".muse" / "refs" / "heads" / branch
+    ref_path.parent.mkdir(parents=True, exist_ok=True)
+    ref_path.write_text(current_parent_id, encoding="utf-8")
+
+    return current_parent_id
 
 
 # ---------------------------------------------------------------------------
@@ -108,10 +197,24 @@ async def _pull_async(
     root: pathlib.Path,
     remote_name: str,
     branch: str | None,
+    rebase: bool = False,
+    ff_only: bool = False,
 ) -> None:
     """Execute the pull pipeline.
 
     Raises :class:`typer.Exit` with the appropriate code on all error paths.
+
+    After fetching remote commits, the post-fetch integration strategy is
+    determined by *rebase* and *ff_only*:
+
+    - Default (both False): print divergence warning when branches have
+      diverged; do not touch the local branch ref.
+    - ``ff_only=True``: fast-forward the local branch ref to remote_head if
+      possible; fail with exit 1 if the branches have diverged.
+    - ``rebase=True``: fast-forward if remote is simply ahead; replay local
+      commits onto remote_head when branches have diverged (linear rebase).
+
+    When both *rebase* and *ff_only* are True, *ff_only* takes precedence.
     """
     muse_dir = root / ".muse"
 
@@ -135,13 +238,18 @@ async def _pull_async(
         have_commits = [c.commit_id for c in local_commits]
         have_objects = await get_all_object_ids(session, repo_id)
 
-    typer.echo(f"⬇️  Pulling {remote_name}/{effective_branch} …")
+    mode_hint = " (--rebase)" if rebase else " (--ff-only)" if ff_only else ""
+    typer.echo(f"⬇️  Pulling {remote_name}/{effective_branch}{mode_hint} …")
 
     pull_request = PullRequest(
         branch=effective_branch,
         have_commits=have_commits,
         have_objects=have_objects,
     )
+    if rebase:
+        pull_request["rebase"] = True
+    if ff_only:
+        pull_request["ff_only"] = True
 
     # ── HTTP pull ────────────────────────────────────────────────────────
     try:
@@ -208,7 +316,7 @@ async def _pull_async(
     if remote_head_from_hub:
         set_remote_head(remote_name, effective_branch, remote_head_from_hub, root)
 
-    # ── Divergence check ─────────────────────────────────────────────────
+    # ── Determine local HEAD and divergence ───────────────────────────────
     ref_path = muse_dir / "refs" / "heads" / effective_branch
     local_head: str | None = None
     if ref_path.exists():
@@ -216,24 +324,133 @@ async def _pull_async(
         local_head = raw if raw else None
 
     diverged = pull_response["diverged"]
+
+    # Re-check divergence locally using the updated commit graph
+    async with open_session() as session:
+        commits_after = await get_commits_for_branch(session, repo_id, effective_branch)
+
+    commits_by_id: dict[str, MuseCliCommit] = {c.commit_id: c for c in commits_after}
+
     if (
         not diverged
         and remote_head_from_hub
         and local_head
         and remote_head_from_hub != local_head
     ):
-        # Double-check locally: if remote_head is not an ancestor of local_head
-        # (or vice versa) then the branches have diverged.
-        async with open_session() as session:
-            commits_after = await get_commits_for_branch(session, repo_id, effective_branch)
-        commits_by_id = {c.commit_id: c for c in commits_after}
         if not _is_ancestor(commits_by_id, remote_head_from_hub, local_head):
             diverged = True
 
-    if diverged:
-        typer.echo(
-            _DIVERGED_MSG.format(remote=remote_name, branch=effective_branch)
+    # ── Fast-forward check (common to --ff-only and --rebase) ────────────
+    can_fast_forward = (
+        remote_head_from_hub is not None
+        and (
+            local_head is None
+            or _is_ancestor(commits_by_id, local_head, remote_head_from_hub)
         )
+    )
+
+    # ── Apply post-fetch integration strategy ─────────────────────────────
+    if ff_only:
+        if can_fast_forward and remote_head_from_hub:
+            # Advance local branch ref to remote HEAD
+            ref_path.parent.mkdir(parents=True, exist_ok=True)
+            ref_path.write_text(remote_head_from_hub, encoding="utf-8")
+            typer.echo(
+                f"✅ Fast-forwarded {effective_branch} → {remote_head_from_hub[:8]}"
+            )
+            logger.info(
+                "✅ muse pull --ff-only: fast-forwarded %s → %s",
+                effective_branch,
+                remote_head_from_hub[:8],
+            )
+        elif not diverged and remote_head_from_hub and local_head == remote_head_from_hub:
+            typer.echo(f"✅ Already up to date — {effective_branch} is current.")
+        else:
+            typer.echo(
+                f"❌ Cannot fast-forward: {effective_branch} has diverged from "
+                f"{remote_name}/{effective_branch}. "
+                f"Run `muse merge {remote_name}/{effective_branch}` or use "
+                f"`muse pull --rebase` to integrate."
+            )
+            logger.warning(
+                "⚠️ muse pull --ff-only: branches have diverged, refusing to merge",
+            )
+            raise typer.Exit(code=int(ExitCode.USER_ERROR))
+
+    elif rebase:
+        if can_fast_forward and remote_head_from_hub:
+            # Simple fast-forward — remote is strictly ahead of us
+            ref_path.parent.mkdir(parents=True, exist_ok=True)
+            ref_path.write_text(remote_head_from_hub, encoding="utf-8")
+            typer.echo(
+                f"✅ Fast-forwarded {effective_branch} → {remote_head_from_hub[:8]}"
+            )
+            logger.info(
+                "✅ muse pull --rebase: fast-forwarded %s → %s",
+                effective_branch,
+                remote_head_from_hub[:8],
+            )
+        elif diverged and remote_head_from_hub and local_head:
+            # Diverged — attempt linear rebase
+            async with open_session() as session:
+                merge_base_id = await find_merge_base(
+                    session, local_head, remote_head_from_hub
+                )
+
+            if merge_base_id is None:
+                typer.echo(
+                    "❌ Cannot rebase: no common ancestor found between "
+                    f"{effective_branch} and {remote_name}/{effective_branch}. "
+                    "Use `muse merge` instead."
+                )
+                raise typer.Exit(code=int(ExitCode.USER_ERROR))
+
+            # Collect local commits above the merge base (oldest-first)
+            local_above_base: list[MuseCliCommit] = []
+            for c in reversed(commits_after):
+                if c.commit_id == merge_base_id:
+                    break
+                # Only include commits that are NOT in the remote history
+                if not _is_ancestor(commits_by_id, c.commit_id, remote_head_from_hub):
+                    local_above_base.append(c)
+
+            if not local_above_base:
+                # Remote is already at or past local — fast-forward
+                ref_path.parent.mkdir(parents=True, exist_ok=True)
+                ref_path.write_text(remote_head_from_hub, encoding="utf-8")
+                typer.echo(
+                    f"✅ Fast-forwarded {effective_branch} → {remote_head_from_hub[:8]}"
+                )
+            else:
+                typer.echo(
+                    f"⟳  Rebasing {len(local_above_base)} local commit(s) onto "
+                    f"{remote_head_from_hub[:8]} …"
+                )
+                new_head = await _rebase_commits_onto(
+                    root=root,
+                    repo_id=repo_id,
+                    branch=effective_branch,
+                    commits_to_rebase=local_above_base,
+                    new_base_commit_id=remote_head_from_hub,
+                )
+                typer.echo(
+                    f"✅ Rebase complete — {effective_branch} → {new_head[:8]}"
+                )
+                logger.info(
+                    "✅ muse pull --rebase: rebased %d commit(s) onto %s, new HEAD %s",
+                    len(local_above_base),
+                    remote_head_from_hub[:8],
+                    new_head[:8],
+                )
+        elif local_head == remote_head_from_hub:
+            typer.echo(f"✅ Already up to date — {effective_branch} is current.")
+
+    else:
+        # Default: print divergence warning (do not touch local branch ref)
+        if diverged:
+            typer.echo(
+                _DIVERGED_MSG.format(remote=remote_name, branch=effective_branch)
+            )
 
     typer.echo(
         f"✅ Pulled {new_commits_count} new commit(s), "
@@ -267,26 +484,57 @@ def pull(
         "--remote",
         help="Remote name to pull from.",
     ),
+    rebase: bool = typer.Option(
+        False,
+        "--rebase",
+        help=(
+            "After fetching, rebase local commits on top of the remote HEAD "
+            "instead of merging. For a simple case where remote is ahead, this "
+            "fast-forwards the local branch. For diverged branches, each local "
+            "commit above the merge base is replayed with the remote HEAD as "
+            "the new base, preserving a linear history."
+        ),
+    ),
+    ff_only: bool = typer.Option(
+        False,
+        "--ff-only",
+        help=(
+            "Refuse to integrate remote commits unless the result would be a "
+            "fast-forward (i.e. local branch is a direct ancestor of the remote "
+            "HEAD). Exits 1 with an instructive message when branches have "
+            "diverged, keeping the local branch unchanged."
+        ),
+    ),
 ) -> None:
     """Download commits from the remote Muse Hub into the local repository.
 
     Contacts the remote Hub, receives commits and objects that are not yet in
-    the local database, and stores them.  If the local branch has diverged
-    from the remote, prints a warning and suggests ``muse merge``.
+    the local database, and stores them.  Post-fetch integration depends on flags:
 
-    Exit code is always 0 on success — the divergence warning does not count
-    as an error.
+    - Default: warn if diverged, suggest ``muse merge``.
+    - ``--ff-only``: fast-forward or fail.
+    - ``--rebase``: rebase local commits onto remote HEAD.
 
     Example::
 
         muse pull
+        muse pull --rebase
+        muse pull --ff-only
         muse pull --branch feature/groove-v2
         muse pull --remote staging
     """
     root = require_repo()
 
     try:
-        asyncio.run(_pull_async(root=root, remote_name=remote, branch=branch))
+        asyncio.run(
+            _pull_async(
+                root=root,
+                remote_name=remote,
+                branch=branch,
+                rebase=rebase,
+                ff_only=ff_only,
+            )
+        )
     except typer.Exit:
         raise
     except Exception as exc:

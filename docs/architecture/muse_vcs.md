@@ -1474,12 +1474,17 @@ setup time; subsequent push/pull commands run without further config.
 
 **Purpose:** Upload local commits that the remote Hub does not yet have.
 Enables collaborative workflows where one musician pushes and others pull.
+Supports force-push, lease-guarded override, tag syncing, and upstream tracking.
 
 **Usage:**
 ```bash
 muse push
 muse push --branch feature/groove-v2
 muse push --remote staging
+muse push --force-with-lease
+muse push --force -f
+muse push --tags
+muse push --set-upstream -u
 ```
 
 **Flags:**
@@ -1487,6 +1492,10 @@ muse push --remote staging
 |------|------|---------|-------------|
 | `--branch` / `-b` | str | current branch | Branch to push |
 | `--remote` | str | `origin` | Named remote to push to |
+| `--force` / `-f` | flag | off | Overwrite remote branch even on non-fast-forward. Use with caution — this discards remote history. |
+| `--force-with-lease` | flag | off | Overwrite remote only if its current HEAD matches our last-known tracking pointer. Safer than `--force`; the Hub must return HTTP 409 if the remote has advanced. |
+| `--tags` | flag | off | Push all VCS-style tag refs from `.muse/refs/tags/` alongside the branch commits. |
+| `--set-upstream` / `-u` | flag | off | After a successful push, record the remote as the upstream for the current branch in `.muse/config.toml`. |
 
 **Push algorithm:**
 1. Read `repo_id` from `.muse/repo.json` and branch from `.muse/HEAD`.
@@ -1494,33 +1503,50 @@ muse push --remote staging
 3. Resolve remote URL from `[remotes.<name>] url` in `.muse/config.toml`.
 4. Read last-known remote HEAD from `.muse/remotes/<name>/<branch>` (absent on first push).
 5. Compute delta: commits from local HEAD down to (but not including) remote HEAD.
-6. POST `{ branch, head_commit_id, commits[], objects[] }` to `<remote>/push`.
-7. On HTTP 200, update `.muse/remotes/<name>/<branch>` to the new HEAD.
+6. If `--tags`, enumerate `.muse/refs/tags/` and include as `PushTagPayload` list.
+7. POST `{ branch, head_commit_id, commits[], objects[], [force], [force_with_lease], [expected_remote_head], [tags] }` to `<remote>/push`.
+8. On HTTP 200, update `.muse/remotes/<name>/<branch>` to the new HEAD; if `--set-upstream`, write `branch = <branch>` under `[remotes.<name>]` in `.muse/config.toml`.
+9. On HTTP 409 with `--force-with-lease`, exit 1 with instructive message.
+
+**Force-with-lease contract:** `expected_remote_head` is the commit ID in our local
+tracking pointer before the push. The Hub must compare it against its current HEAD and
+reject (HTTP 409) if they differ — this prevents clobbering commits pushed by others
+since our last fetch.
 
 **Output example:**
 ```
-⬆️  Pushing 3 commit(s) to origin/main …
+⬆️  Pushing 3 commit(s) to origin/main [--force-with-lease] …
+✅ Branch 'main' set to track 'origin/main'
 ✅ Pushed 3 commit(s) → origin/main [aabbccdd]
+
+# When force-with-lease rejected:
+❌ Push rejected: remote origin/main has advanced since last fetch.
+   Run `muse pull` then retry, or use `--force` to override.
 ```
 
-**Exit codes:** 0 — success; 1 — no remote or no commits; 3 — network/server error.
+**Exit codes:** 0 — success; 1 — no remote, no commits, or force-with-lease mismatch; 3 — network/server error.
 
 **Result type:** `PushRequest` / `PushResponse` — see `maestro/muse_cli/hub_client.py`.
+New TypedDicts: `PushTagPayload` (tag_name, commit_id).
 
 **Agent use case:** After `muse commit`, an agent runs `muse push` to publish
-the committed variation to the shared Hub for other team members to review.
+the committed variation to the shared Hub. For CI workflows, `--force-with-lease`
+prevents clobbering concurrent pushes from other agents.
 
 ---
 
 ### `muse pull`
 
-**Purpose:** Download commits from the remote Hub that are missing locally.
+**Purpose:** Download commits from the remote Hub that are missing locally,
+then integrate them into the local branch via fast-forward, merge, or rebase.
 After pull, the AI agent has the full commit history of remote collaborators
 available for `muse context`, `muse diff`, `muse ask`, etc.
 
 **Usage:**
 ```bash
 muse pull
+muse pull --rebase
+muse pull --ff-only
 muse pull --branch feature/groove-v2
 muse pull --remote staging
 ```
@@ -1530,34 +1556,52 @@ muse pull --remote staging
 |------|------|---------|-------------|
 | `--branch` / `-b` | str | current branch | Branch to pull |
 | `--remote` | str | `origin` | Named remote to pull from |
+| `--rebase` | flag | off | After fetching, rebase local commits onto remote HEAD rather than merge. Fast-forwards when remote is simply ahead; replays local commits (linear rebase) when diverged. |
+| `--ff-only` | flag | off | Only integrate if the result would be a fast-forward. Fails with exit 1 and leaves local branch unchanged if branches have diverged. |
 
 **Pull algorithm:**
 1. Resolve remote URL from `[remotes.<name>] url` in `.muse/config.toml`.
 2. Collect `have_commits` (all local commit IDs) and `have_objects` (all local object IDs).
-3. POST `{ branch, have_commits[], have_objects[] }` to `<remote>/pull`.
+3. POST `{ branch, have_commits[], have_objects[], [rebase], [ff_only] }` to `<remote>/pull`.
 4. Store returned commits and object descriptors in local Postgres.
 5. Update `.muse/remotes/<name>/<branch>` tracking pointer.
-6. If branches have diverged, print a warning and suggest `muse merge origin/<branch>`.
+6. Apply post-fetch integration strategy:
+   - **Default:** If diverged, print warning and suggest `muse merge`.
+   - **`--ff-only`:** If `local_head` is ancestor of `remote_head`, advance branch ref (fast-forward). Otherwise exit 1.
+   - **`--rebase`:** If `local_head` is ancestor of `remote_head`, fast-forward. If diverged, find merge base and replay local commits above base onto `remote_head` using `compute_commit_tree_id` (deterministic IDs).
 
-**Divergence detection:** The pull succeeds (exit 0) even when diverged.
-The divergence warning is informational — it does not block further commands.
+**Rebase contract:** Linear rebase only — no path-level conflict detection.
+For complex divergence with conflicting file changes, use `muse merge`.
+The rebased commit IDs are deterministic (via `compute_commit_tree_id`), so
+re-running the same rebase is idempotent.
+
+**Divergence detection:** Pull succeeds (exit 0) even when diverged in default
+mode. The divergence warning is informational.
 
 **Output example:**
 ```
-⬇️  Pulling origin/main …
+⬇️  Pulling origin/main (--rebase) …
+✅ Fast-forwarded main → aabbccdd
 ✅ Pulled 2 new commit(s), 5 new object(s) from origin/main
 
-# When diverged:
-⚠️  Local branch has diverged from origin/main.
-   Run `muse merge origin/main` to integrate remote changes.
+# Diverged + --rebase:
+⟳  Rebasing 2 local commit(s) onto aabbccdd …
+✅ Rebase complete — main → eeff1122
+✅ Pulled 3 new commit(s), 0 new object(s) from origin/main
+
+# Diverged + --ff-only:
+❌ Cannot fast-forward: main has diverged from origin/main.
+   Run `muse merge origin/main` or use `muse pull --rebase` to integrate.
 ```
 
-**Exit codes:** 0 — success (including divergence); 1 — no remote configured; 3 — network/server error.
+**Exit codes:** 0 — success; 1 — no remote, or `--ff-only` on diverged branch; 3 — network/server error.
 
 **Result type:** `PullRequest` / `PullResponse` — see `maestro/muse_cli/hub_client.py`.
 
-**Agent use case:** Before generating a new arrangement, an agent pulls to ensure
-it is working from the latest shared composition state.
+**Agent use case:** Before generating a new arrangement, an agent runs
+`muse pull --rebase` to ensure it works from the latest shared composition
+state with a clean linear history. `--ff-only` is useful in strict CI pipelines
+where merges are not permitted.
 
 ---
 
