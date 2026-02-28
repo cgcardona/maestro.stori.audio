@@ -21,6 +21,7 @@ This document is the single source of truth for every named entity (TypedDict, d
    - [Assets (`maestro/services/assets.py`)](#assets)
    - [StorpheusRawResponse](#storpheusrawresponse)
    - [SampleChange](#samplechange)
+   - [Muse Divergence Types](#muse-divergence-types)
    - [ExpressivenessResult](#expressivenessresult)
 5. [Variation Layer (`app/variation/`)](#variation-layer)
    - [Event Envelope payloads](#event-envelope-payloads)
@@ -999,6 +1000,56 @@ On failure: `success=False` plus `error` (and optionally `message`).
 | `note` | | `NoteDict \| None` | The note (for `added`/`removed`) |
 | `before` | | `NoteDict \| None` | Original note (for `modified`) |
 | `after` | | `NoteDict \| None` | New note (for `modified`) |
+
+---
+
+### Muse Divergence Types
+
+**Path:** `maestro/services/muse_divergence.py`
+
+#### `DivergenceLevel`
+
+`str, Enum` — Qualitative label for a per-dimension or overall divergence score.
+
+| Value | Score Range | Meaning |
+|-------|-------------|---------|
+| `"none"` | < 0.15 | No meaningful divergence |
+| `"low"` | 0.15 – 0.40 | Minor divergence, mostly aligned |
+| `"med"` | 0.40 – 0.70 | Moderate divergence, different directions |
+| `"high"` | ≥ 0.70 | High divergence, completely different creative paths |
+
+#### `DimensionDivergence`
+
+`dataclass(frozen=True)` — Divergence score and human description for a single musical dimension.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `dimension` | `str` | Dimension name: `"melodic"`, `"harmonic"`, `"rhythmic"`, `"structural"`, or `"dynamic"` |
+| `level` | `DivergenceLevel` | Qualitative level label |
+| `score` | `float` | Normalised score in [0.0, 1.0] — `|sym_diff| / |union|` over classified paths |
+| `description` | `str` | Human-readable summary of the divergence |
+| `branch_a_summary` | `str` | E.g. `"2 melodic file(s) changed"` |
+| `branch_b_summary` | `str` | E.g. `"0 melodic file(s) changed"` |
+
+#### `MuseDivergenceResult`
+
+`dataclass(frozen=True)` — Full musical divergence report between two CLI branches.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `branch_a` | `str` | Name of the first branch |
+| `branch_b` | `str` | Name of the second branch |
+| `common_ancestor` | `str \| None` | Merge-base commit ID; `None` if histories are disjoint |
+| `dimensions` | `tuple[DimensionDivergence, ...]` | Per-dimension results |
+| `overall_score` | `float` | Mean of all per-dimension scores in [0.0, 1.0] |
+
+**Where used:**
+
+| Module | Usage |
+|--------|-------|
+| `maestro/services/muse_divergence.py` | `compute_divergence` return type |
+| `maestro/muse_cli/commands/divergence.py` | `render_text`, `render_json` input |
+| `tests/test_muse_divergence.py` | All async divergence tests |
 
 ---
 
