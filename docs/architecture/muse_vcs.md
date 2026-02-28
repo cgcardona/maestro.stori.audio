@@ -5672,11 +5672,21 @@ Snapshot a3f7b891 — 3 file(s):
 **Result type:** `ReadTreeResult` — fields: `snapshot_id` (str), `files_written` (list[str]),
 `dry_run` (bool), `reset` (bool).
 
-**How objects are stored:** `muse commit` writes each committed file's raw bytes
-into `.muse/objects/<sha256>` (the local content-addressed object store). `muse
-read-tree` reads from that store to reconstruct `muse-work/`. If an object is
-missing (e.g. the snapshot was pulled from a remote without a local commit), the
-command exits with a clear error listing the missing paths.
+**How objects are stored:** `muse commit` writes each committed file via
+`maestro.muse_cli.object_store.write_object_from_path()` into a sharded layout
+that mirrors Git's loose-object store:
+
+```
+.muse/objects/
+  ab/           ← first two hex chars of sha256 (256 possible shard dirs)
+    cdef1234…   ← remaining 62 chars — the raw file bytes
+```
+
+`muse read-tree` reads from that same store via `read_object()` to reconstruct
+`muse-work/`. If an object is missing (e.g. the snapshot was pulled from a
+remote without a local commit), the command exits with a clear error listing the
+missing paths.  All Muse commands share this single canonical module —
+`maestro/muse_cli/object_store.py` — for all object I/O.
 
 **Does NOT modify:**
 - `.muse/HEAD`
@@ -6140,12 +6150,18 @@ An AI composition agent uses `muse reset` to recover from a bad generation run:
 
 ### Implementation
 
+- **Object store (canonical):** `maestro/muse_cli/object_store.py` — single
+  source of truth for all blob I/O.  Public API: `write_object()`,
+  `write_object_from_path()`, `read_object()`, `restore_object()`,
+  `has_object()`, `object_path()`.  All commands import from here exclusively.
 - **Service layer:** `maestro/services/muse_reset.py` — `perform_reset()`,
-  `resolve_ref()`, `store_object()`, `object_store_path()`.
+  `resolve_ref()`.  Uses `has_object()` and `restore_object()` from
+  `object_store`.  Contains no path-layout logic of its own.
 - **CLI command:** `maestro/muse_cli/commands/reset.py` — Typer callback,
   confirmation prompt, error display.
 - **Commit integration:** `maestro/muse_cli/commands/commit.py` — calls
-  `store_object()` for each file during commit to populate `.muse/objects/`.
+  `write_object_from_path()` for each file during commit to populate
+  `.muse/objects/` without loading large blobs into memory.
 - **Exit codes:** 0 success, 1 user error (`USER_ERROR`), 2 not a repo
   (`REPO_NOT_FOUND`), 3 internal error (`INTERNAL_ERROR`).
 
@@ -6398,8 +6414,10 @@ identify commit SHAs, then `muse show <commit>` to inspect the snapshot manifest
 before running `muse restore`.
 
 **Implementation:** `maestro/muse_cli/commands/restore.py` (CLI) and
-`maestro/services/muse_restore.py` (service).  Uses the same object store helpers
-as `muse reset --hard`.  Branch pointer is never modified.
+`maestro/services/muse_restore.py` (service).  Uses `has_object()` and
+`restore_object()` from the canonical `maestro/muse_cli/object_store.py` —
+the same module used by `muse commit`, `muse read-tree`, and `muse reset
+--hard`.  Branch pointer is never modified.
 
 ---
 
