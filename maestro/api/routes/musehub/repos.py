@@ -1,20 +1,22 @@
-"""Muse Hub repo, branch, and commit route handlers.
+"""Muse Hub repo, branch, commit, and agent context route handlers.
 
 Endpoint summary:
-  POST /musehub/repos                        — create a new remote repo
-  GET  /musehub/repos/{repo_id}              — get repo metadata
-  GET  /musehub/repos/{repo_id}/branches     — list all branches
-  GET  /musehub/repos/{repo_id}/commits      — list commits (newest first)
+  POST /musehub/repos                              — create a new remote repo
+  GET  /musehub/repos/{repo_id}                   — get repo metadata
+  GET  /musehub/repos/{repo_id}/branches          — list all branches
+  GET  /musehub/repos/{repo_id}/commits           — list commits (newest first)
+  GET  /musehub/repos/{repo_id}/context           — agent context briefing
 
 All endpoints require a valid JWT Bearer token.
 No business logic lives here — all persistence is delegated to
-maestro.services.musehub_repository.
+maestro.services.musehub_repository and maestro.services.musehub_context.
 """
 from __future__ import annotations
 
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+import yaml  # type: ignore[import-untyped]  # PyYAML ships no py.typed marker
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from maestro.auth.dependencies import TokenClaims, require_valid_token
@@ -25,7 +27,12 @@ from maestro.models.musehub import (
     CreateRepoRequest,
     RepoResponse,
 )
-from maestro.services import musehub_repository
+from maestro.models.musehub_context import (
+    AgentContextResponse,
+    ContextDepth,
+    ContextFormat,
+)
+from maestro.services import musehub_context, musehub_repository
 
 logger = logging.getLogger(__name__)
 
@@ -112,3 +119,61 @@ async def list_commits(
         db, repo_id, branch=branch, limit=limit
     )
     return CommitListResponse(commits=commits, total=total)
+
+
+@router.get(
+    "/repos/{repo_id}/context",
+    summary="Get complete agent context for a repo ref",
+    responses={
+        200: {"description": "Agent context document (JSON or YAML)"},
+        404: {"description": "Repo not found or ref has no commits"},
+    },
+)
+async def get_agent_context(
+    repo_id: str,
+    ref: str = Query(
+        "HEAD",
+        description="Branch name or commit ID to build context for. 'HEAD' resolves to the latest commit.",
+    ),
+    depth: ContextDepth = Query(
+        ContextDepth.standard,
+        description="Depth level: 'brief' (~2K tokens), 'standard' (~8K tokens), 'verbose' (uncapped)",
+    ),
+    format: ContextFormat = Query(
+        ContextFormat.json,
+        description="Response format: 'json' or 'yaml'",
+    ),
+    db: AsyncSession = Depends(get_db),
+    _: TokenClaims = Depends(require_valid_token),
+) -> Response:
+    """Return a complete musical context briefing for AI agent consumption.
+
+    This endpoint is the canonical entry point for agents starting a composition
+    session.  It aggregates musical state, commit history, per-dimension analysis,
+    open PRs, open issues, and actionable suggestions into a single document.
+
+    Use ``?depth=brief`` to fit the response in a small context window (~2 K tokens).
+    Use ``?depth=verbose`` for full bodies and extended history.
+    Use ``?format=yaml`` for human-readable output (e.g. in agent logs).
+    """
+    context = await musehub_context.build_agent_context(
+        db,
+        repo_id=repo_id,
+        ref=ref,
+        depth=depth,
+    )
+    if context is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Repo not found or ref has no commits",
+        )
+
+    if format == ContextFormat.yaml:
+        payload = context.model_dump(by_alias=True)
+        yaml_text: str = yaml.dump(payload, allow_unicode=True, sort_keys=False)
+        return Response(content=yaml_text, media_type="application/x-yaml")
+
+    return Response(
+        content=context.model_dump_json(by_alias=True),
+        media_type="application/json",
+    )
