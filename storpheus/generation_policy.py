@@ -29,7 +29,12 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import TYPE_CHECKING, Literal
 
-from storpheus_types import FulfillmentReport, GradioGenerationParams, StorpheusNoteDict
+from storpheus_types import (
+    FulfillmentReport,
+    GenreParameterPrior,
+    GradioGenerationParams,
+    StorpheusNoteDict,
+)
 
 if TYPE_CHECKING:
     from music_service import (
@@ -507,6 +512,107 @@ def allocate_token_budget(bars: int) -> tuple[int, int]:
 
 
 # =============================================================================
+# Per-Genre Parameter Priors
+# =============================================================================
+
+# Tuned from listening tests — each entry overrides the default temperature
+# and top_p that would be derived from the control vector alone.
+#
+# Rationale per genre:
+#   jazz        High creativity/complexity → higher temperature; full prime context.
+#   fusion      Similar to jazz but slightly tighter.
+#   prog        Prog-rock/progressive: moderate temp, complex harmonic palette.
+#   experimental  Maximal randomness within safe range.
+#   techno      Tight, repetitive → lower temperature for determinism.
+#   house       Slightly warmer than techno; denser patterns.
+#   trance      Melodic repetition; moderate temperature.
+#   minimal     Very low temperature and density — austere.
+#   trap        Hi-hat density; modest temperature with high density.
+#   drill       Similar to trap but darker — keep it lean.
+#   boom_bap    Classic hip-hop: moderate everything, groove emphasis.
+#   lofi        Warm and simple; lower temp, reduced prime for shorter windows.
+#   ambient     Very low density, maximum prime context for long-form continuity.
+#   cinematic   High creativity, builds; keep full prime.
+#   soul        High velocity variation; slightly warm temperature.
+#   rnb         Smooth; moderate temp, low-ish density.
+#   funk        Syncopated; moderate temp with groove.
+
+_GENRE_PRIORS: dict[str, GenreParameterPrior] = {
+    # ── Complex / improvisational ──────────────────────────────────────
+    "jazz":         GenreParameterPrior(temperature=0.95, top_p=0.97, density_offset=0.05),
+    "fusion":       GenreParameterPrior(temperature=0.93, top_p=0.97, density_offset=0.05),
+    "prog":         GenreParameterPrior(temperature=0.92, top_p=0.96, density_offset=0.0),
+    "experimental": GenreParameterPrior(temperature=1.0,  top_p=0.98, density_offset=0.0),
+
+    # ── Electronic / repetitive ────────────────────────────────────────
+    "techno":  GenreParameterPrior(temperature=0.78, top_p=0.92, density_offset=0.1),
+    "house":   GenreParameterPrior(temperature=0.82, top_p=0.93, density_offset=0.1),
+    "trance":  GenreParameterPrior(temperature=0.83, top_p=0.94, density_offset=0.05),
+    "minimal": GenreParameterPrior(temperature=0.75, top_p=0.91, density_offset=-0.15),
+
+    # ── Hip-hop ────────────────────────────────────────────────────────
+    "trap":     GenreParameterPrior(temperature=0.87, top_p=0.95, density_offset=0.15),
+    "drill":    GenreParameterPrior(temperature=0.84, top_p=0.93, density_offset=0.1),
+    "boom_bap": GenreParameterPrior(temperature=0.86, top_p=0.95, density_offset=0.0),
+
+    # ── Chill / atmospheric ────────────────────────────────────────────
+    "lofi":    GenreParameterPrior(temperature=0.82, top_p=0.93, density_offset=-0.1,  prime_ratio=0.8),
+    "ambient": GenreParameterPrior(temperature=0.80, top_p=0.92, density_offset=-0.25, prime_ratio=1.0),
+
+    # ── Cinematic / soul / rnb ─────────────────────────────────────────
+    "cinematic": GenreParameterPrior(temperature=0.94, top_p=0.97, density_offset=0.0),
+    "soul":      GenreParameterPrior(temperature=0.90, top_p=0.96, density_offset=-0.05),
+    "rnb":       GenreParameterPrior(temperature=0.88, top_p=0.95, density_offset=-0.1),
+    "funk":      GenreParameterPrior(temperature=0.90, top_p=0.96, density_offset=0.05),
+}
+
+# Fuzzy aliases: substring tokens → canonical key in _GENRE_PRIORS.
+# Checked in order; first match wins.
+_GENRE_ALIAS_TOKENS: list[tuple[str, str]] = [
+    ("experimental", "experimental"),
+    ("fusion",    "fusion"),
+    ("jazz",      "jazz"),
+    ("prog",      "prog"),
+    ("techno",    "techno"),
+    ("house",     "house"),
+    ("trance",    "trance"),
+    ("minimal",   "minimal"),
+    ("trap",      "trap"),
+    ("drill",     "drill"),
+    ("boom",      "boom_bap"),
+    ("bap",       "boom_bap"),
+    ("hip",       "boom_bap"),
+    ("lofi",      "lofi"),
+    ("lo-fi",     "lofi"),
+    ("chill",     "lofi"),
+    ("ambient",   "ambient"),
+    ("cinematic", "cinematic"),
+    ("soul",      "soul"),
+    ("neo soul",  "soul"),
+    ("rnb",       "rnb"),
+    ("r&b",       "rnb"),
+    ("funk",      "funk"),
+]
+
+
+def get_genre_prior(genre: str) -> GenreParameterPrior | None:
+    """Return the ``GenreParameterPrior`` for *genre*, or ``None`` if unknown.
+
+    Matching is fuzzy: genre string is lowercased and checked for substring
+    tokens defined in ``_GENRE_ALIAS_TOKENS``.  First match wins so that
+    compound strings like ``"dark minimal techno"`` resolve to ``"techno"``.
+
+    Returns ``None`` for genres not covered by any alias, allowing the
+    caller to fall back to control-vector-derived parameters.
+    """
+    genre_lower = genre.lower()
+    for token, canonical in _GENRE_ALIAS_TOKENS:
+        if token in genre_lower:
+            return _GENRE_PRIORS.get(canonical)
+    return None
+
+
+# =============================================================================
 # Utilities
 # =============================================================================
 
@@ -565,6 +671,7 @@ _TOP_P_MAX = 0.98
 def apply_controls_to_params(
     controls: GenerationControlVector,
     bars: int,
+    genre_prior: GenreParameterPrior | None = None,
 ) -> GradioGenerationParams:
     """Map the abstract control vector to concrete Gradio API parameters.
 
@@ -577,17 +684,30 @@ def apply_controls_to_params(
     The control vector's ``creativity`` drives temperature,
     ``groove`` drives top_p, ``density`` scales gen tokens, and
     ``complexity`` scales prime context.
+
+    When *genre_prior* is supplied, its ``temperature`` and ``top_p``
+    values **replace** the control-vector-derived ones.  Its
+    ``density_offset`` is applied to ``controls.density`` before token
+    allocation, and ``prime_ratio`` scales the prime token budget.
     """
-    temperature = lerp(_TEMP_MIN, _TEMP_MAX, controls.creativity)
-    top_p = lerp(_TOP_P_MIN, _TOP_P_MAX, controls.groove)
+    if genre_prior is not None:
+        temperature = genre_prior.temperature
+        top_p = genre_prior.top_p
+        effective_density = max(0.0, min(1.0, controls.density + genre_prior.density_offset))
+        prime_ratio = genre_prior.prime_ratio
+    else:
+        temperature = lerp(_TEMP_MIN, _TEMP_MAX, controls.creativity)
+        top_p = lerp(_TOP_P_MIN, _TOP_P_MAX, controls.groove)
+        effective_density = controls.density
+        prime_ratio = 1.0
 
     base_prime, base_gen = allocate_token_budget(bars)
 
-    gen_scale = lerp(0.8, 1.0, controls.density)
+    gen_scale = lerp(0.8, 1.0, effective_density)
     num_gen_tokens = int(base_gen * gen_scale)
     num_gen_tokens = max(_MIN_GEN_TOKENS, min(_MAX_GEN_TOKENS, num_gen_tokens))
 
-    prime_scale = lerp(0.6, 1.0, controls.complexity)
+    prime_scale = lerp(0.6, 1.0, controls.complexity) * prime_ratio
     num_prime_tokens = int(base_prime * prime_scale)
     num_prime_tokens = max(2048, min(_MAX_PRIME_TOKENS, num_prime_tokens))
 
