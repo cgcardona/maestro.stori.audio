@@ -9,6 +9,60 @@
   <link rel="stylesheet" href="/musehub/static/icons.css">
   <link rel="stylesheet" href="/musehub/static/music.css">
   <title>{% block title %}{{ title }}{% endblock %} — Muse Hub</title>
+  <style>
+    /* Enriched repo card — musical metadata pills */
+    .repo-card-meta-pills {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+      margin: 6px 0 2px;
+    }
+    .repo-meta-pill {
+      font-size: 11px;
+      padding: 2px 8px;
+      border-radius: 10px;
+      background: var(--surface-raised, #2a2a3e);
+      color: var(--text-secondary, #aaa);
+      border: 1px solid var(--border, #333);
+    }
+    .tag-pill {
+      font-size: 11px;
+      padding: 2px 8px;
+      border-radius: 10px;
+      background: rgba(100, 120, 255, 0.12);
+      color: var(--accent, #7b93ff);
+      border: 1px solid rgba(100, 120, 255, 0.2);
+    }
+    .tag-overflow {
+      opacity: 0.6;
+    }
+    .repo-card-desc-trunc {
+      font-size: 13px;
+      color: var(--text-muted, #8b949e);
+      margin: 4px 0 0;
+      line-height: 1.4;
+    }
+    /* Rank badge — trending only */
+    .rank-badge {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      background: var(--accent, #7b93ff);
+      color: #fff;
+      font-weight: 700;
+      font-size: 13px;
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 1;
+      pointer-events: none;
+    }
+    /* Ensure cards using rank badge have relative positioning */
+    .repo-card { position: relative; }
+  </style>
 </head>
 <body>
   <header>
@@ -105,6 +159,7 @@
 
     const DISCOVER_API = '/api/v1/musehub';
     const PAGE_SIZE = 24;
+    const IS_TRENDING = {{ title | tojson }} === 'Trending';
 
     // Deterministic fake waveform bars for visual variety (no actual audio data needed)
     function waveformBars(seed) {
@@ -118,18 +173,36 @@
       return bars.join('');
     }
 
-    function repoCard(r) {
-      const repoUrl  = '/musehub/ui/' + encodeURIComponent(r.owner || r.ownerUserId || '') + '/' + encodeURIComponent(r.slug || '');
-      const tags     = (r.tags || []).slice(0, 4).map(t => `<span class="nav-meta-tag">${escHtml(t)}</span>`).join('');
-      const key      = r.keySignature ? `<span class="nav-meta-pill">&#9837; ${escHtml(r.keySignature)}</span>` : '';
-      const bpm      = r.tempoBpm    ? `<span class="nav-meta-pill">${r.tempoBpm} BPM</span>` : '';
-      const seed     = (r.slug || '').split('').reduce((a, c) => a + c.charCodeAt(0), 0);
+    function repoMetaPills(r) {
+      const pills = [];
+      if (r.tempoBpm)      pills.push(`<span class="repo-meta-pill">&#9833; ${r.tempoBpm} BPM</span>`);
+      if (r.keySignature)  pills.push(`<span class="repo-meta-pill">&#9837; ${escHtml(r.keySignature)}</span>`);
+      const allTags  = r.tags || [];
+      const tagSlice = allTags.slice(0, 3);
+      const extra    = allTags.length - 3;
+      const tagHtml  = tagSlice.map(t => `<span class="tag-pill">${escHtml(t)}</span>`).join('');
+      const extraHtml = extra > 0 ? `<span class="tag-pill tag-overflow">+${extra}</span>` : '';
+      const raw  = r.description || '';
+      const desc = raw.length > 120 ? escHtml(raw.slice(0, 120)) + '&#8230;' : escHtml(raw);
+      return `
+        ${pills.length ? `<div class="repo-card-meta-pills">${pills.join('')}</div>` : ''}
+        ${(tagHtml || extraHtml) ? `<div class="repo-card-meta-pills">${tagHtml}${extraHtml}</div>` : ''}
+        ${desc ? `<p class="repo-card-desc-trunc">${desc}</p>` : ''}
+      `;
+    }
 
-      // Find a preview audio URL if the repo has artifacts
+    function rankBadge(rank) {
+      return `<span class="rank-badge">#${rank}</span>`;
+    }
+
+    function repoCard(r, idx) {
+      const repoUrl    = '/musehub/ui/' + encodeURIComponent(r.owner || r.ownerUserId || '') + '/' + encodeURIComponent(r.slug || '');
+      const seed       = (r.slug || '').split('').reduce((a, c) => a + c.charCodeAt(0), 0);
       const previewUrl = r.latestAudioUrl || null;
 
       return `
         <div class="repo-card" onclick="location.href='${repoUrl}'">
+          ${IS_TRENDING ? rankBadge(idx + 1) : ''}
           <div class="repo-card-header">
             <span class="repo-card-name">
               <a href="${repoUrl}" onclick="event.stopPropagation()">${escHtml(r.name || r.slug)}</a>
@@ -141,10 +214,7 @@
               ${escHtml(r.owner || r.ownerUserId || '')}
             </a>
           </div>
-          ${r.description ? `<div class="repo-card-desc">${escHtml(r.description)}</div>` : ''}
-          <div class="repo-card-tags">
-            ${tags}${key}${bpm}
-          </div>
+          ${repoMetaPills(r)}
           <!-- Waveform preview bar -->
           <div class="waveform-bar" style="margin:var(--space-2) 0">
             ${waveformBars(seed)}
@@ -195,7 +265,7 @@
                <p class="empty-title">No repos found</p>
                <p class="empty-desc">Try adjusting your filters, or check back as more composers push their work.</p>
              </div>`
-          : repos.map(repoCard).join('');
+          : repos.map((r, i) => repoCard(r, i)).join('');
 
         document.getElementById('repo-grid').innerHTML = grid;
         document.getElementById('pager').innerHTML = pages <= 1 ? '' : `
