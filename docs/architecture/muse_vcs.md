@@ -103,7 +103,7 @@ maestro/muse_cli/
     │                        apply_merge(), read/write_merge_state(), MergeState dataclass
     ├── checkout.py       — muse checkout (stub — issue #34)
     ├── merge.py          — muse merge   ✅ fast-forward + 3-way merge (issue #35)
-    ├── remote.py         — muse remote (add, -v)
+    ├── remote.py         — muse remote (add, remove, rename, set-url, -v)
     ├── push.py           — muse push
     ├── pull.py           — muse pull
     ├── open_cmd.py       — muse open    ✅ macOS artifact preview (issue #45)
@@ -1433,11 +1433,16 @@ serving as the CLI-side counterpart to the Hub's sync API.
 
 **Purpose:** Manage named remote Hub URLs in `.muse/config.toml`.  Every push
 and pull needs a remote configured — `muse remote add` is the prerequisite.
+Use `remove`, `rename`, and `set-url` to maintain remotes over the repository
+lifecycle (switching Hub instances, renaming origin to upstream, etc.).
 
 **Usage:**
 ```bash
-muse remote add <name> <url>   # register a remote
-muse remote -v                  # list all remotes
+muse remote add <name> <url>          # register a new remote
+muse remote remove <name>             # remove a remote and its tracking refs
+muse remote rename <old> <new>        # rename a remote (config + tracking refs)
+muse remote set-url <name> <url>      # update URL of an existing remote
+muse remote -v                        # list all remotes with their URLs
 ```
 
 **Flags:**
@@ -1449,7 +1454,10 @@ muse remote -v                  # list all remotes
 
 | Subcommand | Description |
 |-----------|-------------|
-| `add <name> <url>` | Write `[remotes.<name>] url = "<url>"` to `.muse/config.toml` |
+| `add <name> <url>` | Write `[remotes.<name>] url = "<url>"` to `.muse/config.toml`; creates or overwrites |
+| `remove <name>` | Delete `[remotes.<name>]` from config and remove `.muse/remotes/<name>/` tracking refs |
+| `rename <old> <new>` | Rename config entry and move `.muse/remotes/<old>/` → `.muse/remotes/<new>/` |
+| `set-url <name> <url>` | Update `[remotes.<name>] url` without touching tracking refs; errors if remote absent |
 
 **Output example:**
 ```
@@ -1459,14 +1467,25 @@ muse remote -v                  # list all remotes
 # muse remote -v
 origin  https://story.audio/musehub/repos/my-repo-id
 staging https://staging.example.com/musehub/repos/my-repo-id
+
+# muse remote rename origin upstream
+✅ Remote 'origin' renamed to 'upstream'.
+
+# muse remote set-url upstream https://new-hub.example.com/musehub/repos/my-repo-id
+✅ Remote 'upstream' URL changed to https://new-hub.example.com/musehub/repos/my-repo-id
+
+# muse remote remove staging
+✅ Remote 'staging' removed.
 ```
 
 **Security:** Token values in `[auth]` are never shown by `muse remote -v`.
 
-**Exit codes:** 0 — success; 1 — bad URL or empty name; 2 — not a repo.
+**Exit codes:** 0 — success; 1 — bad URL, empty name, remote not found, or name conflict; 2 — not a repo.
 
 **Agent use case:** An orchestration agent registers the Hub URL once at repo
-setup time; subsequent push/pull commands run without further config.
+setup time with `add`, then uses `set-url` to point at a different Hub instance
+when the workspace migrates, `rename` to canonicalize `origin` → `upstream`,
+and `remove` to clean up stale collaborator remotes.
 
 ---
 

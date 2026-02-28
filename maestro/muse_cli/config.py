@@ -211,6 +211,92 @@ def set_remote(
     logger.info("✅ Remote %r set to %s", name, url)
 
 
+def remove_remote(
+    name: str,
+    repo_root: pathlib.Path | None = None,
+) -> None:
+    """Remove a named remote and all its tracking refs from ``.muse/``.
+
+    Deletes ``[remotes.<name>]`` from ``config.toml`` and removes the entire
+    ``.muse/remotes/<name>/`` directory tree (tracking head files).  Raises
+    ``KeyError`` when the remote does not exist so callers can surface a clear
+    error message to the user.
+
+    Args:
+        name: Remote name to remove (e.g. ``"origin"``).
+        repo_root: Repository root.  Defaults to ``Path.cwd()``.
+
+    Raises:
+        KeyError: If *name* is not a configured remote.
+    """
+    config_path = _config_path(repo_root)
+    data = _load_config(config_path)
+
+    remotes_section = data.get("remotes", {})
+    if not isinstance(remotes_section, dict) or name not in remotes_section:
+        raise KeyError(name)
+
+    del remotes_section[name]
+    data["remotes"] = remotes_section
+
+    config_path.write_text(_dump_toml(data), encoding="utf-8")
+    logger.info("✅ Remote %r removed from config", name)
+
+    # Remove tracking refs directory if it exists
+    root = (repo_root or pathlib.Path.cwd()).resolve()
+    refs_dir = root / _MUSE_DIR / "remotes" / name
+    if refs_dir.is_dir():
+        import shutil
+
+        shutil.rmtree(refs_dir)
+        logger.debug("✅ Removed tracking refs dir %s", refs_dir)
+
+
+def rename_remote(
+    old_name: str,
+    new_name: str,
+    repo_root: pathlib.Path | None = None,
+) -> None:
+    """Rename a remote in ``.muse/config.toml`` and move its tracking refs.
+
+    Updates ``[remotes.<old_name>]`` → ``[remotes.<new_name>]`` in config and
+    moves ``.muse/remotes/<old_name>/`` → ``.muse/remotes/<new_name>/``.
+    Raises ``KeyError`` when *old_name* does not exist.  Raises ``ValueError``
+    when *new_name* is already configured.
+
+    Args:
+        old_name: Current remote name.
+        new_name: Desired new remote name.
+        repo_root: Repository root.  Defaults to ``Path.cwd()``.
+
+    Raises:
+        KeyError: If *old_name* is not a configured remote.
+        ValueError: If *new_name* already exists as a remote.
+    """
+    config_path = _config_path(repo_root)
+    data = _load_config(config_path)
+
+    remotes_section = data.get("remotes", {})
+    if not isinstance(remotes_section, dict) or old_name not in remotes_section:
+        raise KeyError(old_name)
+    if new_name in remotes_section:
+        raise ValueError(new_name)
+
+    remotes_section[new_name] = remotes_section.pop(old_name)
+    data["remotes"] = remotes_section
+
+    config_path.write_text(_dump_toml(data), encoding="utf-8")
+    logger.info("✅ Remote %r renamed to %r", old_name, new_name)
+
+    # Move tracking refs directory if it exists
+    root = (repo_root or pathlib.Path.cwd()).resolve()
+    old_refs_dir = root / _MUSE_DIR / "remotes" / old_name
+    new_refs_dir = root / _MUSE_DIR / "remotes" / new_name
+    if old_refs_dir.is_dir():
+        old_refs_dir.rename(new_refs_dir)
+        logger.debug("✅ Moved tracking refs dir %s → %s", old_refs_dir, new_refs_dir)
+
+
 def list_remotes(repo_root: pathlib.Path | None = None) -> list[RemoteConfig]:
     """Return all configured remotes as :class:`RemoteConfig` dicts.
 
