@@ -462,3 +462,54 @@ async def test_analysis_all_13_dimensions_individually(
         assert resp.status_code == 200, f"Dimension {dim!r} returned {resp.status_code}"
         body = resp.json()
         assert body["dimension"] == dim, f"Expected dimension={dim!r}, got {body['dimension']!r}"
+
+
+@pytest.mark.anyio
+async def test_contour_track_filter(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+    db_session: AsyncSession,
+) -> None:
+    """Track filter is applied and reflected in filtersApplied for the contour dimension.
+
+    Verifies issue #228 acceptance criterion: contour analysis respects the
+    ``?track=`` query parameter so melodists can view per-instrument contour.
+    """
+    repo_id = await _create_repo(client, auth_headers)
+    resp = await client.get(
+        f"/api/v1/musehub/repos/{repo_id}/analysis/main/contour?track=lead",
+        headers=auth_headers,
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["dimension"] == "contour"
+    assert body["filtersApplied"]["track"] == "lead"
+    data = body["data"]
+    assert "shape" in data
+    assert "pitchCurve" in data
+    assert len(data["pitchCurve"]) > 0
+
+
+@pytest.mark.anyio
+async def test_tempo_section_filter(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+    db_session: AsyncSession,
+) -> None:
+    """Section filter is applied and reflected in filtersApplied for the tempo dimension.
+
+    Verifies that tempo analysis scoped to a named section returns valid TempoData
+    and records the section filter in the response envelope.
+    """
+    repo_id = await _create_repo(client, auth_headers)
+    resp = await client.get(
+        f"/api/v1/musehub/repos/{repo_id}/analysis/main/tempo?section=chorus",
+        headers=auth_headers,
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["dimension"] == "tempo"
+    assert body["filtersApplied"]["section"] == "chorus"
+    data = body["data"]
+    assert data["bpm"] > 0
+    assert 0.0 <= data["stability"] <= 1.0

@@ -2048,3 +2048,374 @@ async def search_page(repo_id: str) -> HTMLResponse:
         body_script=script,
     )
     return HTMLResponse(content=html)
+
+
+@router.get(
+    "/{repo_id}/analysis/{ref}/contour",
+    response_class=HTMLResponse,
+    summary="Muse Hub melodic contour analysis page",
+)
+async def contour_page(repo_id: str, ref: str) -> HTMLResponse:
+    """Render the melodic contour analysis page for a Muse commit ref.
+
+    Visualises per-track melodic shapes, tessitura, and cross-commit contour
+    comparison. Fetches structured JSON from
+    ``GET /api/v1/musehub/repos/{repo_id}/analysis/{ref}/contour``
+    and renders a pitch-curve line graph using SVG, shape classification
+    labels (ascending / descending / arch / inverted-arch / wave / static),
+    and a tessitura strip showing pitch range in octaves.
+
+    Track and section filters are applied client-side via query params forwarded
+    to the analysis JSON endpoint.  Auth is handled via localStorage JWT.
+    """
+    script = f"""
+      const repoId = {repr(repo_id)};
+      const ref    = {repr(ref)};
+      const base   = '/musehub/ui/' + repoId;
+      const apiBase = '/api/v1/musehub/repos/' + repoId;
+
+      function escHtml(s) {{
+        if (s === null || s === undefined) return '';
+        return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+      }}
+
+      // ── SVG pitch-curve line graph ─────────────────────────────────────────
+      function pitchCurveSvg(pitchCurve) {{
+        if (!pitchCurve || pitchCurve.length === 0) return '<p class="loading">No pitch data.</p>';
+        const W = 700, H = 120, pad = 24;
+        const min = Math.min(...pitchCurve);
+        const max = Math.max(...pitchCurve);
+        const range = max - min || 1;
+        const pts = pitchCurve.map((v, i) => {{
+          const x = pad + (i / (pitchCurve.length - 1 || 1)) * (W - pad * 2);
+          const y = pad + ((max - v) / range) * (H - pad * 2);
+          return x + ',' + y;
+        }}).join(' ');
+        return `
+          <svg viewBox="0 0 ${{W}} ${{H}}" style="width:100%;height:auto;display:block" role="img"
+               aria-label="Melodic pitch contour">
+            <polyline points="${{pts}}" fill="none" stroke="#58a6ff" stroke-width="2"/>
+            <text x="${{pad}}" y="${{H - 6}}" font-size="10" fill="#8b949e"
+                  font-family="monospace">beat 1</text>
+            <text x="${{W - pad - 10}}" y="${{H - 6}}" font-size="10" fill="#8b949e"
+                  font-family="monospace">${{pitchCurve.length}}</text>
+            <text x="6" y="${{pad + 4}}" font-size="10" fill="#8b949e"
+                  font-family="monospace">${{Math.round(max)}}</text>
+            <text x="6" y="${{H - pad + 4}}" font-size="10" fill="#8b949e"
+                  font-family="monospace">${{Math.round(min)}}</text>
+          </svg>`;
+      }}
+
+      // ── Shape badge colour ─────────────────────────────────────────────────
+      const SHAPE_COLORS = {{
+        ascending: '#3fb950',  descending: '#f85149',  arch: '#58a6ff',
+        'inverted-arch': '#f0883e',  wave: '#bc8cff',  static: '#8b949e', flat: '#8b949e',
+      }};
+      function shapeColor(s) {{ return SHAPE_COLORS[s] || '#8b949e'; }}
+
+      // ── Tessitura bar ──────────────────────────────────────────────────────
+      function tessituraBar(pitchCurve) {{
+        if (!pitchCurve || pitchCurve.length === 0) return '';
+        const lo = Math.min(...pitchCurve);
+        const hi = Math.max(...pitchCurve);
+        const octaves = ((hi - lo) / 12).toFixed(1);
+        const loNote  = midiNoteName(Math.round(lo));
+        const hiNote  = midiNoteName(Math.round(hi));
+        const pct = Math.min(100, ((hi - lo) / 48) * 100);
+        return `
+          <div style="margin-top:12px">
+            <span class="meta-label">Tessitura</span>
+            <div style="display:flex;align-items:center;gap:10px;margin-top:4px">
+              <span style="font-size:13px;color:#8b949e;font-family:monospace;min-width:28px">${{loNote}}</span>
+              <div style="flex:1;height:8px;background:#21262d;border-radius:4px;overflow:hidden">
+                <div style="height:100%;width:${{pct}}%;background:#58a6ff;border-radius:4px"></div>
+              </div>
+              <span style="font-size:13px;color:#8b949e;font-family:monospace;min-width:28px">${{hiNote}}</span>
+              <span style="font-size:12px;color:#8b949e">${{octaves}} oct</span>
+            </div>
+          </div>`;
+      }}
+
+      function midiNoteName(midi) {{
+        const names = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
+        const oct = Math.floor(midi / 12) - 1;
+        return names[midi % 12] + oct;
+      }}
+
+      // ── Main load ──────────────────────────────────────────────────────────
+      async function load(track) {{
+        try {{
+          let url = '/repos/' + repoId + '/analysis/' + encodeURIComponent(ref) + '/contour';
+          if (track) url += '?track=' + encodeURIComponent(track);
+          const data = await apiFetch(url);
+          const d = data.data;
+
+          const shapeCol = shapeColor(d.shape);
+          const svg = pitchCurveSvg(d.pitchCurve);
+          const tess = tessituraBar(d.pitchCurve);
+
+          document.getElementById('content').innerHTML = `
+            <div style="margin-bottom:12px">
+              <a href="${{base}}">&larr; Back to repo</a>
+            </div>
+            <div class="card">
+              <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:16px">
+                <h1 style="margin:0">&#9835; Melodic Contour</h1>
+                <span class="meta-value" style="font-family:monospace;color:#8b949e;font-size:13px">
+                  ref: ${{escHtml(ref.substring(0,8))}}
+                </span>
+              </div>
+
+              <!-- Track filter -->
+              <div style="display:flex;gap:8px;align-items:center;margin-bottom:16px">
+                <label style="font-size:13px;color:#8b949e">Track filter:</label>
+                <input id="track-inp" type="text" placeholder="bass, keys, lead&#8230;"
+                       value="${{escHtml(track || '')}}"
+                       style="background:#0d1117;color:#c9d1d9;border:1px solid #30363d;
+                              border-radius:6px;padding:6px 10px;font-size:13px;width:180px" />
+                <button class="btn btn-secondary" style="font-size:13px"
+                        onclick="load(document.getElementById('track-inp').value.trim() || null)">
+                  Apply
+                </button>
+              </div>
+
+              <!-- Shape card -->
+              <div class="meta-row" style="margin-bottom:16px">
+                <div class="meta-item">
+                  <span class="meta-label">Shape</span>
+                  <span class="meta-value">
+                    <span class="badge" style="background:${{shapeCol}}22;color:${{shapeCol}};
+                          border:1px solid ${{shapeCol}}44;font-size:14px">${{escHtml(d.shape)}}</span>
+                  </span>
+                </div>
+                <div class="meta-item">
+                  <span class="meta-label">Overall Direction</span>
+                  <span class="meta-value">${{escHtml(d.overallDirection)}}</span>
+                </div>
+                <div class="meta-item">
+                  <span class="meta-label">Direction Changes</span>
+                  <span class="meta-value">${{d.directionChanges}}</span>
+                </div>
+                <div class="meta-item">
+                  <span class="meta-label">Peak Beat</span>
+                  <span class="meta-value">${{d.peakBeat}}</span>
+                </div>
+                <div class="meta-item">
+                  <span class="meta-label">Valley Beat</span>
+                  <span class="meta-value">${{d.valleyBeat}}</span>
+                </div>
+              </div>
+
+              <!-- Pitch curve graph -->
+              <div style="background:#0d1117;border:1px solid #30363d;border-radius:6px;
+                          padding:12px;margin-bottom:12px">
+                <span class="meta-label" style="display:block;margin-bottom:8px">
+                  Pitch Curve (MIDI, per quarter-note)
+                </span>
+                ${{svg}}
+              </div>
+
+              <!-- Tessitura -->
+              ${{tess}}
+            </div>`;
+        }} catch(e) {{
+          if (e.message !== 'auth')
+            document.getElementById('content').innerHTML =
+              '<p class="error">&#10005; ' + escHtml(e.message) + '</p>';
+        }}
+      }}
+
+      load(null);
+    """
+    html = _page(
+        title=f"Contour {ref[:8]}",
+        breadcrumb=(
+            f'<a href="/musehub/ui/{repo_id}">{repo_id[:8]}</a> / '
+            f"analysis / {ref[:8]} / contour"
+        ),
+        body_script=script,
+    )
+    return HTMLResponse(content=html)
+
+
+@router.get(
+    "/{repo_id}/analysis/{ref}/tempo",
+    response_class=HTMLResponse,
+    summary="Muse Hub tempo analysis page",
+)
+async def tempo_page(repo_id: str, ref: str) -> HTMLResponse:
+    """Render the tempo analysis page for a Muse commit ref.
+
+    Displays the current BPM, time feel, tempo stability, and a timeline of
+    tempo change events within the piece. The BPM history across commits is
+    surfaced as a note for cross-commit tempo evolution.
+
+    Fetches structured JSON from
+    ``GET /api/v1/musehub/repos/{repo_id}/analysis/{ref}/tempo``.
+    Auth is handled via localStorage JWT.
+    """
+    script = f"""
+      const repoId = {repr(repo_id)};
+      const ref    = {repr(ref)};
+      const base   = '/musehub/ui/' + repoId;
+
+      function escHtml(s) {{
+        if (s === null || s === undefined) return '';
+        return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+      }}
+
+      // ── Tempo history line chart (SVG) ─────────────────────────────────────
+      function tempoChangeSvg(changes, baseBpm) {{
+        if (!changes || changes.length === 0) {{
+          return '<p style="font-size:13px;color:#8b949e">&#10003; Constant tempo — no tempo changes detected.</p>';
+        }}
+        // Prepend the base BPM at beat 0 so the chart starts from the beginning.
+        const pts = [{{ beat: 0, bpm: baseBpm }}, ...changes];
+        const W = 700, H = 100, pad = 28;
+        const beats = pts.map(p => p.beat);
+        const bpms  = pts.map(p => p.bpm);
+        const minB = Math.min(...beats), maxB = Math.max(...beats) || 1;
+        const minBpm = Math.min(...bpms) * 0.9, maxBpm = Math.max(...bpms) * 1.05;
+        const bpmRange = maxBpm - minBpm || 1;
+
+        const coords = pts.map(p => {{
+          const x = pad + ((p.beat - minB) / (maxB - minB || 1)) * (W - pad * 2);
+          const y = pad + ((maxBpm - p.bpm) / bpmRange) * (H - pad * 2);
+          return x + ',' + y;
+        }}).join(' ');
+
+        // Marker dots at each tempo change
+        const dots = pts.slice(1).map(p => {{
+          const x = pad + ((p.beat - minB) / (maxB - minB || 1)) * (W - pad * 2);
+          const y = pad + ((maxBpm - p.bpm) / bpmRange) * (H - pad * 2);
+          return `<circle cx="${{x}}" cy="${{y}}" r="4" fill="#f0883e"
+                    title="beat ${{p.beat}}: ${{p.bpm}} BPM"/>`;
+        }}).join('');
+
+        return `
+          <svg viewBox="0 0 ${{W}} ${{H}}" style="width:100%;height:auto;display:block" role="img"
+               aria-label="Tempo change timeline">
+            <polyline points="${{coords}}" fill="none" stroke="#58a6ff" stroke-width="2"/>
+            ${{dots}}
+            <text x="${{pad}}" y="${{H - 6}}" font-size="10" fill="#8b949e">beat ${{Math.round(minB)}}</text>
+            <text x="${{W - pad - 20}}" y="${{H - 6}}" font-size="10" fill="#8b949e">beat ${{Math.round(maxB)}}</text>
+            <text x="4" y="${{pad + 4}}" font-size="10" fill="#8b949e">${{Math.round(maxBpm)}}</text>
+            <text x="4" y="${{H - pad + 4}}" font-size="10" fill="#8b949e">${{Math.round(minBpm)}}</text>
+          </svg>`;
+      }}
+
+      // ── Stability indicator ────────────────────────────────────────────────
+      function stabilityBar(stability) {{
+        const pct = Math.round(stability * 100);
+        const col = stability >= 0.8 ? '#3fb950' : stability >= 0.5 ? '#f0883e' : '#f85149';
+        const label = stability >= 0.8 ? 'metronomic' : stability >= 0.5 ? 'moderate' : 'free tempo';
+        return `
+          <div>
+            <span class="meta-label">Stability (${{pct}}% — ${{label}})</span>
+            <div style="margin-top:4px;height:8px;background:#21262d;border-radius:4px;overflow:hidden">
+              <div style="height:100%;width:${{pct}}%;background:${{col}};border-radius:4px"></div>
+            </div>
+          </div>`;
+      }}
+
+      // ── Main load ──────────────────────────────────────────────────────────
+      async function load() {{
+        try {{
+          const data = await apiFetch('/repos/' + repoId + '/analysis/' + encodeURIComponent(ref) + '/tempo');
+          const d = data.data;
+
+          const changeSvg = tempoChangeSvg(d.tempoChanges, d.bpm);
+          const stability = stabilityBar(d.stability);
+
+          // Build tempo-change table if there are changes
+          const changeTable = (d.tempoChanges && d.tempoChanges.length > 0) ? `
+            <table style="width:100%;border-collapse:collapse;font-size:13px;margin-top:12px">
+              <thead>
+                <tr style="border-bottom:1px solid #30363d">
+                  <th style="text-align:left;padding:4px 8px;color:#8b949e;font-weight:600">Beat</th>
+                  <th style="text-align:left;padding:4px 8px;color:#8b949e;font-weight:600">BPM</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${{d.tempoChanges.map(c => `
+                  <tr style="border-bottom:1px solid #21262d">
+                    <td style="padding:4px 8px;font-family:monospace">${{c.beat}}</td>
+                    <td style="padding:4px 8px;color:#f0883e;font-family:monospace">${{c.bpm}}</td>
+                  </tr>`).join('')}}
+              </tbody>
+            </table>` : '';
+
+          document.getElementById('content').innerHTML = `
+            <div style="margin-bottom:12px">
+              <a href="${{base}}">&larr; Back to repo</a>
+            </div>
+            <div class="card">
+              <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:16px">
+                <h1 style="margin:0">&#9201; Tempo Analysis</h1>
+                <span class="meta-value" style="font-family:monospace;color:#8b949e;font-size:13px">
+                  ref: ${{escHtml(ref.substring(0,8))}}
+                </span>
+              </div>
+
+              <!-- Key metrics -->
+              <div class="meta-row" style="margin-bottom:16px">
+                <div class="meta-item">
+                  <span class="meta-label">BPM</span>
+                  <span class="meta-value" style="font-size:28px;font-weight:700;color:#e6edf3">
+                    ${{Math.round(d.bpm)}}
+                  </span>
+                </div>
+                <div class="meta-item">
+                  <span class="meta-label">Time Feel</span>
+                  <span class="meta-value">${{escHtml(d.timeFeel)}}</span>
+                </div>
+                <div class="meta-item">
+                  <span class="meta-label">Tempo Changes</span>
+                  <span class="meta-value">${{(d.tempoChanges || []).length}}</span>
+                </div>
+              </div>
+
+              <!-- Stability -->
+              ${{stability}}
+
+              <!-- Tempo change timeline -->
+              <div style="background:#0d1117;border:1px solid #30363d;border-radius:6px;
+                          padding:12px;margin-top:16px">
+                <span class="meta-label" style="display:block;margin-bottom:8px">
+                  Tempo Changes Within Piece
+                  <span style="font-size:11px;color:#8b949e;margin-left:8px">
+                    &#9632; = change event
+                  </span>
+                </span>
+                ${{changeSvg}}
+                ${{changeTable}}
+              </div>
+
+              <!-- Cross-commit note -->
+              <p style="font-size:12px;color:#8b949e;margin-top:12px">
+                &#128336; To view BPM history across commits, compare refs using the
+                <a href="${{base}}/analysis/${{encodeURIComponent(ref)}}/contour">contour page</a>
+                or the JSON API at
+                <code style="font-size:11px;background:#0d1117;padding:2px 6px;border-radius:4px">
+                  /api/v1/musehub/repos/${{repoId}}/analysis/${{encodeURIComponent(ref)}}/tempo
+                </code>.
+              </p>
+            </div>`;
+        }} catch(e) {{
+          if (e.message !== 'auth')
+            document.getElementById('content').innerHTML =
+              '<p class="error">&#10005; ' + escHtml(e.message) + '</p>';
+        }}
+      }}
+
+      load();
+    """
+    html = _page(
+        title=f"Tempo {ref[:8]}",
+        breadcrumb=(
+            f'<a href="/musehub/ui/{repo_id}">{repo_id[:8]}</a> / '
+            f"analysis / {ref[:8]} / tempo"
+        ),
+        body_script=script,
+    )
+    return HTMLResponse(content=html)
