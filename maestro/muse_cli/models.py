@@ -8,10 +8,16 @@ Tables:
 These tables are owned by the Muse CLI (``muse commit``) and are
 distinct from the Muse VCS variation tables (``variations``, ``phrases``,
 ``note_changes``) which track DAW-level note editing history.
+
+``muse_cli_commits.metadata`` is an extensible JSON blob for commit-level
+annotations.  Current keys:
+
+- ``tempo_bpm`` (``float | None``): BPM set via ``muse tempo --set``.
 """
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from typing import Any
 
 from sqlalchemy import DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
@@ -97,6 +103,9 @@ class MuseCliCommit(Base):
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=_utc_now
+    )
+    commit_metadata: Mapped[dict[str, Any] | None] = mapped_column(
+        "metadata", JSON, nullable=True, default=None
     )
 
     def __repr__(self) -> str:

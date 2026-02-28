@@ -1184,6 +1184,91 @@ Marcus (bass)       2 sessions
 
 **Implementation:** `maestro/muse_cli/commands/session.py` — all synchronous (no DB, no async). Storage: `.muse/sessions/current.json` (active) → `.muse/sessions/<uuid>.json` (completed). Exit codes: 0 success, 1 user error (duplicate session, no active session, ambiguous ID), 2 outside repo, 3 internal.
 
+
+---
+
+## `muse tempo` — Read or Set the Tempo of a Commit
+
+`muse tempo [<commit>] [--set <bpm>] [--history] [--json]` reads or annotates
+the BPM of a specific commit.  Tempo (BPM) is the most fundamental rhythmic property
+of a Muse project — this command makes it a first-class commit attribute.
+
+### Flags
+
+| Flag | Description |
+|------|-------------|
+| `[<commit>]` | Target commit SHA (full or abbreviated) or `HEAD` (default) |
+| `--set <bpm>` | Annotate the commit with an explicit BPM (20–400 range) |
+| `--history` | Show BPM timeline across all commits in the parent chain |
+| `--json` | Emit machine-readable JSON instead of human-readable text |
+
+### Tempo Resolution Order (read path)
+
+1. **Annotated BPM** — explicitly set via `muse tempo --set` and stored in `commit_metadata.tempo_bpm`.
+2. **Detected BPM** — auto-extracted from MIDI Set Tempo meta-events (FF 51 03) in the commit's snapshot files.
+3. **None** — displayed as `--` when neither source is available.
+
+### Tempo Storage (write path)
+
+`--set` writes `{tempo_bpm: <float>}` into the `metadata` JSON column of the
+`muse_cli_commits` table.  Other metadata keys in that column are preserved
+(merge-patch semantics).  No new rows are created — only the existing commit row
+is annotated.
+
+### Schema
+
+The `muse_cli_commits` table has a nullable `metadata` JSON column (added in
+migration `0002_muse_cli_commit_metadata`).  Current keys:
+
+| Key | Type | Set by |
+|-----|------|--------|
+| `tempo_bpm` | `float` | `muse tempo --set` |
+
+### History Traversal
+
+`--history` walks the full parent chain from the target commit (or HEAD),
+collecting annotated BPM values and computing signed deltas between consecutive
+commits:
+
+
+
+Auto-detected BPM is shown on the single-commit read path but is not persisted,
+so it does not appear in history (history only reflects explicitly set annotations).
+
+### MIDI Tempo Parsing
+
+`maestro/services/muse_tempo.extract_bpm_from_midi(data: bytes)` is a pure
+function that scans a raw MIDI byte string for the Set Tempo meta-event:
+
+
+
+The three `tt` bytes encode microseconds-per-beat as a 24-bit big-endian integer.
+BPM = 60_000_000 / microseconds_per_beat.  Only the first event is returned;
+`detect_all_tempos_from_midi` returns all events (used for rubato detection).
+
+### Result Types
+
+| Type | Module | Purpose |
+|------|--------|---------|
+| `MuseTempoResult` | `maestro.services.muse_tempo` | Single-commit tempo query result |
+| `MuseTempoHistoryEntry` | `maestro.services.muse_tempo` | One row in a `--history` traversal |
+
+### DB Helpers
+
+| Helper | Module | Purpose |
+|--------|--------|---------|
+| `resolve_commit_ref` | `maestro.muse_cli.db` | Resolve HEAD / full SHA / abbreviated SHA to a `MuseCliCommit` |
+| `set_commit_tempo_bpm` | `maestro.muse_cli.db` | Write `tempo_bpm` into `commit_metadata` (merge-patch) |
+
+### Exit Codes
+
+| Code | Meaning |
+|------|---------|
+| 0 | Success |
+| 1 | User error: unknown ref, BPM out of range |
+| 2 | Outside a Muse repository |
+| 3 | Internal error |
+
 ---
 
 ### Command Registration Summary
@@ -1198,6 +1283,7 @@ Marcus (bass)       2 sessions
 | `muse describe` | `commands/describe.py` | ✅ stub (PR #134) | #125 |
 | `muse ask` | `commands/ask.py` | ✅ stub (PR #132) | #126 |
 | `muse session` | `commands/session.py` | ✅ implemented (PR #129) | #127 |
+| `muse tempo` | `commands/tempo.py` | ✅ fully implemented (PR TBD) | #116 |
 
 All stub commands have stable CLI contracts. Full musical analysis (MIDI content
 parsing, vector embeddings, LLM synthesis) is tracked as follow-up issues.
