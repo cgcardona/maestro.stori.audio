@@ -16,6 +16,7 @@ Endpoint summary (fixed-path):
 
 Endpoint summary (repo-scoped):
   GET /musehub/ui/{owner}/{repo_slug}                           -- repo landing page
+  GET /musehub/ui/{owner}/{repo_slug}/commits                   -- paginated commit list with branch filter
   GET /musehub/ui/{owner}/{repo_slug}/commits/{commit_id}       -- commit detail + artifacts
   GET /musehub/ui/{owner}/{repo_slug}/commits/{commit_id}/diff  -- musical diff view
   GET /musehub/ui/{owner}/{repo_slug}/graph                     -- interactive DAG commit graph
@@ -42,6 +43,8 @@ Endpoint summary (repo-scoped):
   GET /musehub/ui/{owner}/{repo_slug}/analysis/{ref}/dynamics   -- dynamics analysis
   GET /musehub/ui/{owner}/{repo_slug}/analysis/{ref}/motifs     -- motif browser (recurring patterns, transformations)
   GET /musehub/ui/{owner}/{repo_slug}/arrange/{ref}             -- arrangement matrix (instrument × section density grid)
+  GET /musehub/ui/{owner}/{repo_slug}/piano-roll/{ref}          -- interactive piano roll (all tracks)
+  GET /musehub/ui/{owner}/{repo_slug}/piano-roll/{ref}/{path}   -- interactive piano roll (single MIDI file)
   GET /musehub/ui/{owner}/{repo_slug}/score/{ref}               -- sheet music score renderer (all tracks)
   GET /musehub/ui/{owner}/{repo_slug}/score/{ref}/{path}        -- sheet music score renderer (single part)
 
@@ -292,32 +295,49 @@ async def commits_list_page(
     owner: str,
     repo_slug: str,
     branch: str | None = Query(None, description="Filter commits by branch name"),
-    limit: int = Query(50, ge=1, le=200, description="Max commits to return"),
+    page: int = Query(1, ge=1, description="Page number (1-indexed)"),
+    per_page: int = Query(30, ge=1, le=200, description="Commits per page"),
     format: str | None = Query(None, description="Force response format: 'json' or omit for HTML"),
     db: AsyncSession = Depends(get_db),
 ) -> StarletteResponse:
-    """Render the commits list page or return structured commit data as JSON.
+    """Render the paginated commits list page or return structured commit data as JSON.
 
-    HTML (default): renders the repo commits list via Jinja2.
+    HTML (default): renders ``commits.html`` with paginated history, branch
+    selector, inline DAG indicators, and tag badges.
     JSON (``Accept: application/json`` or ``?format=json``): returns
-    ``CommitListResponse`` with the newest commits first.
+    ``CommitListResponse`` with the newest commits first for the requested page.
 
     Agents use this to inspect a repo's commit history without navigating
     a separate ``/api/v1/...`` endpoint.
     """
     repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
+    offset = (page - 1) * per_page
     commits, total = await musehub_repository.list_commits(
-        db, repo_id, branch=branch, limit=limit
+        db, repo_id, branch=branch, limit=per_page, offset=offset
     )
+    branches = await musehub_repository.list_branches(db, repo_id)
+    total_pages = max(1, (total + per_page - 1) // per_page)
     return await negotiate_response(
         request=request,
-        template_name="musehub/pages/repo.html",
+        template_name="musehub/pages/commits.html",
         context={
             "owner": owner,
             "repo_slug": repo_slug,
             "repo_id": repo_id,
             "base_url": base_url,
             "current_page": "commits",
+            "commits": commits,
+            "total": total,
+            "page": page,
+            "per_page": per_page,
+            "total_pages": total_pages,
+            "branch": branch,
+            "branches": branches,
+            "breadcrumb_data": _breadcrumbs(
+                (owner, f"/musehub/ui/{owner}"),
+                (repo_slug, base_url),
+                ("commits", ""),
+            ),
         },
         templates=templates,
         json_data=CommitListResponse(commits=commits, total=total),
@@ -2079,3 +2099,94 @@ async def harmony_analysis_page(repo_id: str, ref: str) -> HTMLResponse:
 </body>
 </html>"""
     return HTMLResponse(content=html)
+
+
+@router.get(
+    "/{owner}/{repo_slug}/piano-roll/{ref}",
+    response_class=HTMLResponse,
+    summary="Muse Hub piano roll — all MIDI tracks",
+)
+async def piano_roll_page(
+    request: Request,
+    owner: str,
+    repo_slug: str,
+    ref: str,
+    db: AsyncSession = Depends(get_db),
+) -> HTMLResponse:
+    """Render the Canvas-based interactive piano roll for all MIDI tracks at ``ref``.
+
+    The page shell fetches a list of MIDI artifacts at the given ref from the
+    ``GET /api/v1/musehub/repos/{repo_id}/objects`` endpoint, then calls
+    ``GET /api/v1/musehub/repos/{repo_id}/objects/{id}/parse-midi`` for each
+    selected file.  The parsed note data is rendered into a Canvas element via
+    ``piano-roll.js``.
+
+    Features:
+    - Pitch on Y-axis with a piano keyboard strip
+    - Beat grid on X-axis with measure markers
+    - Per-track colour coding (design system palette)
+    - Velocity mapped to rectangle opacity
+    - Zoom controls (horizontal and vertical sliders)
+    - Pan via click-drag
+    - Hover tooltip: pitch name, velocity, beat position, duration
+
+    No JWT required — HTML shell; JS fetches authed data via localStorage token.
+    """
+    repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
+    short_ref = ref[:8] if len(ref) >= 8 else ref
+    return templates.TemplateResponse(
+        request,
+        "musehub/pages/piano_roll.html",
+        {
+            "owner": owner,
+            "repo_slug": repo_slug,
+            "repo_id": repo_id,
+            "ref": ref,
+            "short_ref": short_ref,
+            "path": None,
+            "base_url": base_url,
+            "current_page": "piano-roll",
+        },
+    )
+
+
+@router.get(
+    "/{owner}/{repo_slug}/piano-roll/{ref}/{path:path}",
+    response_class=HTMLResponse,
+    summary="Muse Hub piano roll — single MIDI track",
+)
+async def piano_roll_track_page(
+    request: Request,
+    owner: str,
+    repo_slug: str,
+    ref: str,
+    path: str,
+    db: AsyncSession = Depends(get_db),
+) -> HTMLResponse:
+    """Render the Canvas-based piano roll scoped to a single MIDI file ``path``.
+
+    Identical to :func:`piano_roll_page` but restricts the view to one specific
+    MIDI artifact identified by its repo-relative path
+    (e.g. ``tracks/bass.mid``).  The ``path`` segment is forwarded to the
+    template as a JavaScript string; the client-side code resolves the
+    matching object ID via the objects list API.
+
+    Useful for per-track deep-dive links from the tree browser or commit
+    detail page.
+    """
+    repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
+    short_ref = ref[:8] if len(ref) >= 8 else ref
+    return templates.TemplateResponse(
+        request,
+        "musehub/pages/piano_roll.html",
+        {
+            "owner": owner,
+            "repo_slug": repo_slug,
+            "repo_id": repo_id,
+            "ref": ref,
+            "short_ref": short_ref,
+            "path": path,
+            "base_url": base_url,
+            "current_page": "piano-roll",
+        },
+    )

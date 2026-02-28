@@ -47,6 +47,8 @@ This document is the single source of truth for every named entity (TypedDict, d
 7. [Storpheus Types (`storpheus/storpheus_types.py`)](#storpheus-types)
    - [MIDI event types](#midi-event-types)
    - [Pipeline types](#pipeline-types)
+   - [ChunkMetadata](#chunkmetadata)
+   - [ChunkedGenerationResult](#chunkedgenerationresult)
    - [Scoring types](#scoring-types)
 8. [DAW Adapter Layer (`maestro/daw/`)](#daw-adapter-layer)
    - [Ports (`maestro/daw/ports.py`)](#ports-appdawportspy)
@@ -1994,6 +1996,37 @@ These types mirror the Maestro `app/contracts/json_types.py` types but are defin
 
 **Location:** `storpheus/storpheus_types.py`
 **Endpoint:** `POST /generate/progressive` → returns this as JSON
+
+#### `ChunkMetadata`
+
+`TypedDict` — Per-chunk metadata emitted during a sliding window chunked generation run (#25).
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `chunk` | `int` | Zero-based chunk index |
+| `bars` | `int` | Bar count for this chunk (last chunk may be smaller than `_CHUNK_BARS`) |
+| `notes` | `int` | Note count produced by this chunk after beat-trimming |
+| `beat_offset` | `float` | Beat position of this chunk's start in the final timeline |
+| `rejection_score` | `float \| None` | Candidate rejection score; `None` if unavailable |
+
+**Location:** `storpheus/storpheus_types.py`
+
+#### `ChunkedGenerationResult`
+
+`TypedDict` — Aggregated result of a sliding window chunked generation run. Produced when `request.bars > STORPHEUS_CHUNKED_THRESHOLD_BARS` (default 16). The `notes` list spans the full requested bar count with sequential beat offsets applied across all chunks.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `success` | `bool` | `True` when all chunks completed without error |
+| `notes` | `list[WireNoteDict]` | All notes across all chunks, sorted by `startBeat` |
+| `chunk_count` | `int` | Number of chunks generated |
+| `total_bars` | `int` | Total bars requested (= sum of all chunk bar counts) |
+| `chunk_metadata` | `list[ChunkMetadata]` | Per-chunk metadata in generation order |
+| `total_elapsed_seconds` | `float` | Total wall-clock time for the run |
+| `error` | `str \| None` | Error message if `success` is `False`; otherwise `None` |
+
+**Location:** `storpheus/storpheus_types.py`
+**Endpoint:** `POST /generate` → embedded in `GenerateResponse.metadata` when chunked mode activates
 
 ---
 
@@ -7449,3 +7482,62 @@ Carries the same data as `NotationDict` but uses Pythonic snake_case field names
 **Produced by:** `maestro.services.musehub_notation.convert_ref_to_notation()`
 **Consumed by:** Score page route handlers; `notation_result_to_dict()`
 
+
+---
+
+## Piano Roll / MIDI Parser Types (`maestro/services/musehub_midi_parser.py`)
+
+### `MidiNote`
+
+**Path:** `maestro/services/musehub_midi_parser.py`
+
+`TypedDict` — A single sounding note extracted from a MIDI track.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `pitch` | `int` | MIDI pitch number (0–127, 60 = middle C) |
+| `start_beat` | `float` | Note-on position in quarter-note beats from the beginning of the file |
+| `duration_beats` | `float` | Sustain length in quarter-note beats (note-on to note-off) |
+| `velocity` | `int` | Note-on velocity (0–127) |
+| `track_id` | `int` | Zero-based index of the source MIDI track |
+| `channel` | `int` | MIDI channel (0–15) |
+
+**Produced by:** `maestro.services.musehub_midi_parser.parse_midi_bytes()`
+**Consumed by:** `MidiTrack.notes`; MuseHub piano roll Canvas renderer
+
+---
+
+### `MidiTrack`
+
+**Path:** `maestro/services/musehub_midi_parser.py`
+
+`TypedDict` — A single logical track extracted from a MIDI file.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `track_id` | `int` | Zero-based track index matching `MidiNote.track_id` |
+| `channel` | `int` | Dominant MIDI channel (−1 when track has no notes) |
+| `name` | `str` | Track name from `track_name` meta message, or auto-generated |
+| `notes` | `list[MidiNote]` | All notes sorted by `start_beat` |
+
+**Produced by:** `maestro.services.musehub_midi_parser.parse_midi_bytes()`
+**Consumed by:** `MidiParseResult.tracks`; MuseHub piano roll Canvas renderer
+
+---
+
+### `MidiParseResult`
+
+**Path:** `maestro/services/musehub_midi_parser.py`
+
+`TypedDict` — Top-level result returned by `parse_midi_bytes()` and serialised
+as JSON by `GET /api/v1/musehub/repos/{repo_id}/objects/{object_id}/parse-midi`.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `tracks` | `list[MidiTrack]` | Per-track note data, ordered by track index |
+| `tempo_bpm` | `float` | First tempo found in the file, in BPM (default 120.0) |
+| `time_signature` | `str` | First time signature as `"N/D"` (default `"4/4"`) |
+| `total_beats` | `float` | Total duration in quarter-note beats |
+
+**Produced by:** `maestro.services.musehub_midi_parser.parse_midi_bytes()`
+**Consumed by:** `maestro.api.routes.musehub.objects.parse_midi_object()`; MuseHub piano roll JavaScript renderer (`piano-roll.js`)

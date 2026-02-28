@@ -171,14 +171,23 @@ async def list_commits(
     repo_id: str,
     branch: str | None = Query(None, description="Filter by branch name"),
     limit: int = Query(50, ge=1, le=200, description="Max commits to return"),
+    page: int = Query(1, ge=1, description="Page number (1-indexed, used with per_page)"),
+    per_page: int = Query(0, ge=0, le=200, description="Page size (0 = use limit param instead)"),
     db: AsyncSession = Depends(get_db),
     claims: TokenClaims | None = Depends(optional_token),
 ) -> CommitListResponse:
-    """Return commits for a repo, newest first. Optionally filter by branch."""
+    """Return commits for a repo, newest first.
+
+    Supports two pagination modes:
+    - Legacy: ``limit`` controls max rows returned, no offset.
+    - Page-based: ``per_page`` > 0 enables page/per_page navigation; ``limit`` is ignored.
+    """
     repo = await musehub_repository.get_repo(db, repo_id)
     _guard_visibility(repo, claims)
+    effective_limit = per_page if per_page > 0 else limit
+    offset = (page - 1) * effective_limit if per_page > 0 else 0
     commits, total = await musehub_repository.list_commits(
-        db, repo_id, branch=branch, limit=limit
+        db, repo_id, branch=branch, limit=effective_limit, offset=offset
     )
     return CommitListResponse(commits=commits, total=total)
 
