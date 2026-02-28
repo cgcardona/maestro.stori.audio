@@ -10,6 +10,7 @@ Endpoint summary:
   GET /musehub/ui/{repo_id}/pulls/{pr_id}          — PR detail page (with merge button)
   GET /musehub/ui/{repo_id}/issues                 — issue list page
   GET /musehub/ui/{repo_id}/issues/{number}        — issue detail page (with close button)
+  GET /musehub/ui/{repo_id}/sessions               — session log page (all recording sessions)
 
 These routes require NO JWT auth — they return static HTML shells whose
 embedded JavaScript fetches data from the authed JSON API
@@ -63,6 +64,17 @@ h2 { font-size: 16px; color: #e6edf3; margin-bottom: 8px; }
 .badge-open { background: #1f6feb; color: #e6edf3; }
 .badge-closed { background: #8b949e; color: #e6edf3; }
 .badge-merged { background: #6e40c9; color: #e6edf3; }
+.badge-active { background: #238636; color: #e6edf3; }
+.session-row {
+  border-bottom: 1px solid #21262d; padding: 12px 0;
+  display: flex; align-items: flex-start; gap: 12px;
+}
+.session-row:last-child { border-bottom: none; }
+.session-live {
+  display: inline-block; width: 8px; height: 8px; border-radius: 50%;
+  background: #3fb950; box-shadow: 0 0 6px #3fb950; margin-right: 4px;
+  vertical-align: middle;
+}
 .commit-row {
   border-bottom: 1px solid #21262d; padding: 10px 0;
   display: flex; align-items: flex-start; gap: 12px;
@@ -242,10 +254,11 @@ async def repo_page(repo_id: str) -> HTMLResponse:
 
       async function load(branch) {{
         try {{
-          const [repoData, branchData, commitData] = await Promise.all([
+          const [repoData, branchData, commitData, sessionData] = await Promise.all([
             apiFetch('/repos/' + repoId),
             apiFetch('/repos/' + repoId + '/branches'),
             apiFetch('/repos/' + repoId + '/commits' + (branch ? '?branch=' + encodeURIComponent(branch) + '&limit=20' : '?limit=20')),
+            apiFetch('/repos/' + repoId + '/sessions?limit=1'),
           ]);
 
           const branches = branchData.branches || [];
@@ -273,6 +286,9 @@ async def repo_page(repo_id: str) -> HTMLResponse:
               <div style="display:flex;gap:12px;margin-bottom:16px;flex-wrap:wrap">
                 <a href="${{base}}/pulls" class="btn btn-secondary">Pull Requests</a>
                 <a href="${{base}}/issues" class="btn btn-secondary">Issues</a>
+                <a href="${{base}}/sessions" class="btn btn-secondary">
+                  Sessions (${{sessionData.total}})
+                </a>
               </div>
               <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
                 <select id="branch-sel" onchange="load(this.value)">
@@ -746,6 +762,119 @@ async def issue_detail_page(repo_id: str, number: int) -> HTMLResponse:
             f'<a href="/musehub/ui/{repo_id}">{repo_id[:8]}</a> / '
             f'<a href="/musehub/ui/{repo_id}/issues">issues</a> / #{number}'
         ),
+        body_script=script,
+    )
+    return HTMLResponse(content=html)
+
+
+@router.get(
+    "/{repo_id}/sessions",
+    response_class=HTMLResponse,
+    summary="Muse Hub session log page",
+)
+async def sessions_page(repo_id: str) -> HTMLResponse:
+    """Render the session log page — all recording sessions newest first.
+
+    Lists every recording session for the repo with: start/end times, duration,
+    participants, intent, and location. Active sessions are highlighted with a
+    live green indicator at the top of the list.
+
+    Fetches ``GET /api/v1/musehub/repos/{repo_id}/sessions?limit=100``.
+    Active sessions surface first; the rest are ordered by ``started_at`` desc.
+    """
+    script = f"""
+      const repoId = {repr(repo_id)};
+      const base   = '/musehub/ui/' + repoId;
+
+      function escHtml(s) {{
+        if (!s) return '';
+        return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+      }}
+
+      function fmtDuration(secs) {{
+        if (secs === null || secs === undefined) return 'live';
+        const h = Math.floor(secs / 3600);
+        const m = Math.floor((secs % 3600) / 60);
+        const s = Math.floor(secs % 60);
+        if (h > 0) return h + 'h ' + m + 'm';
+        if (m > 0) return m + 'm ' + s + 's';
+        return s + 's';
+      }}
+
+      async function load() {{
+        try {{
+          const data     = await apiFetch('/repos/' + repoId + '/sessions?limit=100');
+          const sessions = data.sessions || [];
+          const total    = data.total    || 0;
+
+          const rows = sessions.length === 0
+            ? '<p class="loading">No sessions recorded yet.</p>'
+            : sessions.map(s => {{
+                const liveIndicator = s.isActive
+                  ? '<span class="session-live" title="Active"></span>'
+                  : '';
+                const badge = s.isActive
+                  ? '<span class="badge badge-active">live</span>'
+                  : '<span class="badge badge-closed">ended</span>';
+                const participants = (s.participants || []).length > 0
+                  ? escHtml(s.participants.join(', '))
+                  : '<span style="color:#8b949e">—</span>';
+                const intent = s.intent
+                  ? escHtml(s.intent)
+                  : '<span style="color:#8b949e">—</span>';
+                const location = s.location
+                  ? escHtml(s.location)
+                  : '<span style="color:#8b949e">—</span>';
+                return `
+                  <div class="session-row">
+                    ${{badge}}
+                    <div style="flex:1">
+                      <div style="font-size:14px;color:#e6edf3;margin-bottom:4px">
+                        ${{liveIndicator}}
+                        <strong>${{fmtDate(s.startedAt)}}</strong>
+                        ${{s.endedAt ? ' &rarr; ' + fmtDate(s.endedAt) : ''}}
+                        <span style="color:#8b949e;font-size:12px;margin-left:8px">
+                          ${{fmtDuration(s.durationSeconds)}}
+                        </span>
+                      </div>
+                      <div style="font-size:13px;color:#8b949e;margin-top:2px">
+                        <strong style="color:#c9d1d9">Intent:</strong> ${{intent}}
+                      </div>
+                      <div style="font-size:13px;color:#8b949e;margin-top:2px">
+                        <strong style="color:#c9d1d9">Participants:</strong> ${{participants}}
+                      </div>
+                      <div style="font-size:13px;color:#8b949e;margin-top:2px">
+                        <strong style="color:#c9d1d9">Location:</strong> ${{location}}
+                      </div>
+                    </div>
+                    <span style="font-family:monospace;font-size:12px;color:#8b949e">
+                      ${{s.sessionId.substring(0,8)}}
+                    </span>
+                  </div>`;
+              }}).join('');
+
+          document.getElementById('content').innerHTML = `
+            <div style="margin-bottom:12px">
+              <a href="${{base}}">&larr; Back to repo</a>
+            </div>
+            <div class="card">
+              <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px">
+                <h1 style="margin:0">Sessions</h1>
+                <span style="color:#8b949e;font-size:14px">${{total}} total</span>
+              </div>
+              ${{rows}}
+            </div>`;
+        }} catch(e) {{
+          if (e.message !== 'auth')
+            document.getElementById('content').innerHTML = '<p class="error">&#10005; ' + escHtml(e.message) + '</p>';
+        }}
+      }}
+
+      load();
+    """
+    html = _page(
+        title="Sessions",
+        breadcrumb=f'<a href="/musehub/ui/{repo_id}">{repo_id[:8]}</a> / sessions',
         body_script=script,
     )
     return HTMLResponse(content=html)

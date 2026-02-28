@@ -12,6 +12,7 @@ Boundary rules:
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timezone
 
 from sqlalchemy import desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -22,6 +23,7 @@ from maestro.models.musehub import (
     CommitResponse,
     ObjectMetaResponse,
     RepoResponse,
+    SessionResponse,
 )
 
 logger = logging.getLogger(__name__)
@@ -179,3 +181,126 @@ async def list_commits(
     rows_stmt = base.order_by(desc(db.MusehubCommit.timestamp)).limit(limit)
     rows = (await session.execute(rows_stmt)).scalars().all()
     return [_to_commit_response(r) for r in rows], total
+
+
+# ── Session helpers ────────────────────────────────────────────────────────────
+
+
+def _to_session_response(row: db.MusehubSession) -> SessionResponse:
+    """Convert a MusehubSession ORM row to its wire representation.
+
+    Derives ``duration_seconds`` from the start/end timestamps so callers
+    never need to compute it. Returns None for active sessions.
+    """
+    duration: float | None = None
+    if row.ended_at is not None:
+        duration = (row.ended_at - row.started_at).total_seconds()
+    return SessionResponse(
+        session_id=row.session_id,
+        started_at=row.started_at,
+        ended_at=row.ended_at,
+        duration_seconds=duration,
+        participants=list(row.participants or []),
+        intent=row.intent,
+        location=row.location,
+        is_active=row.is_active,
+        created_at=row.created_at,
+    )
+
+
+async def create_session(
+    session: AsyncSession,
+    repo_id: str,
+    *,
+    started_at: datetime | None,
+    participants: list[str],
+    intent: str,
+    location: str,
+    is_active: bool = True,
+) -> SessionResponse:
+    """Persist a new recording session entry and return its wire representation.
+
+    Called when the CLI pushes a ``muse session start`` event to the Hub.
+    If ``started_at`` is None, the current UTC time is used.
+    """
+    effective_start = started_at or datetime.now(tz=timezone.utc)
+    row = db.MusehubSession(
+        repo_id=repo_id,
+        started_at=effective_start,
+        participants=participants,
+        intent=intent,
+        location=location,
+        is_active=is_active,
+    )
+    session.add(row)
+    await session.flush()
+    await session.refresh(row)
+    logger.info("✅ Created Muse Hub session %s for repo %s", row.session_id, repo_id)
+    return _to_session_response(row)
+
+
+async def stop_session(
+    session: AsyncSession,
+    repo_id: str,
+    session_id: str,
+    ended_at: datetime | None,
+) -> SessionResponse | None:
+    """Mark a session as stopped and return the updated representation.
+
+    Returns None if the session does not exist or belongs to a different repo.
+    Called when the CLI pushes a ``muse session stop`` event to the Hub.
+    """
+    stmt = select(db.MusehubSession).where(
+        db.MusehubSession.session_id == session_id,
+        db.MusehubSession.repo_id == repo_id,
+    )
+    row = (await session.execute(stmt)).scalars().first()
+    if row is None:
+        return None
+    row.ended_at = ended_at or datetime.now(tz=timezone.utc)
+    row.is_active = False
+    await session.flush()
+    await session.refresh(row)
+    logger.info("✅ Stopped Muse Hub session %s for repo %s", session_id, repo_id)
+    return _to_session_response(row)
+
+
+async def list_sessions(
+    session: AsyncSession,
+    repo_id: str,
+    *,
+    limit: int = 50,
+) -> tuple[list[SessionResponse], int]:
+    """Return sessions for a repo, newest first (by started_at).
+
+    Returns a tuple of (sessions, total_count). Active sessions are listed
+    first within the same timestamp order so live sessions surface at the top.
+    """
+    base = select(db.MusehubSession).where(db.MusehubSession.repo_id == repo_id)
+
+    total_stmt = select(func.count()).select_from(base.subquery())
+    total: int = (await session.execute(total_stmt)).scalar_one()
+
+    # Active sessions first, then newest by start time.
+    rows_stmt = (
+        base.order_by(
+            desc(db.MusehubSession.is_active),
+            desc(db.MusehubSession.started_at),
+        ).limit(limit)
+    )
+    rows = (await session.execute(rows_stmt)).scalars().all()
+    return [_to_session_response(r) for r in rows], total
+
+
+async def get_session(
+    session: AsyncSession, repo_id: str, session_id: str
+) -> SessionResponse | None:
+    """Return a single session by ID within the given repo, or None."""
+    stmt = select(db.MusehubSession).where(
+        db.MusehubSession.session_id == session_id,
+        db.MusehubSession.repo_id == repo_id,
+    )
+    row = (await session.execute(stmt)).scalars().first()
+    if row is None:
+        return None
+    return _to_session_response(row)

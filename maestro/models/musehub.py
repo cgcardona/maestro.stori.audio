@@ -240,3 +240,58 @@ class ObjectMetaListResponse(CamelModel):
     """List of artifact metadata for a repo."""
 
     objects: list[ObjectMetaResponse]
+
+
+# ── Session models ─────────────────────────────────────────────────────────────
+
+
+class SessionCreate(CamelModel):
+    """Body for POST /musehub/repos/{repo_id}/sessions.
+
+    Sent by the CLI on ``muse session start`` to register a new session.
+    ``started_at`` defaults to the server's current time when absent.
+    """
+
+    started_at: datetime | None = None
+    participants: list[str] = Field(
+        default_factory=list, description="Participant identifiers or display names"
+    )
+    intent: str = Field("", description="Free-text creative goal for this session")
+    location: str = Field("", max_length=255, description="Studio or location label")
+    is_active: bool = Field(True, description="True if the session is currently live")
+
+
+class SessionStop(CamelModel):
+    """Body for POST /musehub/repos/{repo_id}/sessions/{session_id}/stop.
+
+    Sent by the CLI on ``muse session stop`` to mark a session as ended.
+    """
+
+    ended_at: datetime | None = None
+
+
+class SessionResponse(CamelModel):
+    """Wire representation of a single recording session.
+
+    ``duration_seconds`` is derived from ``started_at`` and ``ended_at``;
+    None when the session is still active (``ended_at`` is null).
+    ``is_active`` is True while the session is open — used by the Hub UI to
+    render a live indicator.
+    """
+
+    session_id: str
+    started_at: datetime
+    ended_at: datetime | None = None
+    duration_seconds: float | None = None
+    participants: list[str]
+    intent: str
+    location: str
+    is_active: bool
+    created_at: datetime
+
+
+class SessionListResponse(CamelModel):
+    """Paginated list of sessions for a repo (newest first)."""
+
+    sessions: list[SessionResponse]
+    total: int

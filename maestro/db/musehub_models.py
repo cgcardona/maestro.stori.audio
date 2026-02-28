@@ -6,13 +6,14 @@ Tables:
 - musehub_commits: Remote commit records pushed from CLI clients
 - musehub_issues: Issue tracker entries per repo
 - musehub_pull_requests: Pull requests proposing branch merges
+- musehub_sessions: Recording session log entries synced from ``muse session log``
 """
 from __future__ import annotations
 
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.types import JSON
 
@@ -54,6 +55,9 @@ class MusehubRepo(Base):
     )
     pull_requests: Mapped[list[MusehubPullRequest]] = relationship(
         "MusehubPullRequest", back_populates="repo", cascade="all, delete-orphan"
+    )
+    sessions: Mapped[list[MusehubSession]] = relationship(
+        "MusehubSession", back_populates="repo", cascade="all, delete-orphan"
     )
 
 
@@ -198,3 +202,45 @@ class MusehubPullRequest(Base):
     )
 
     repo: Mapped[MusehubRepo] = relationship("MusehubRepo", back_populates="pull_requests")
+
+
+class MusehubSession(Base):
+    """A recording session log entry synced from ``muse session log``.
+
+    Sessions are created by the CLI via ``muse session start`` and closed by
+    ``muse session stop``. The Hub receives them on push. An active session
+    (``ended_at`` is NULL) is one still in progress in the studio — displayed
+    with a live indicator in the sessions page.
+
+    ``participants`` is a JSON list of participant identifiers (user IDs or
+    display names). ``intent`` is the free-text creative goal the producer
+    described when starting the session.
+    """
+
+    __tablename__ = "musehub_sessions"
+
+    session_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_new_uuid)
+    repo_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("musehub_repos.repo_id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    started_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, index=True
+    )
+    # NULL means the session is still active (no stop event received yet)
+    ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # JSON list of participant identifiers, e.g. ["producer-1", "collab-2"]
+    participants: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    # Free-text creative intent / goal for this session
+    intent: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    # Studio/location label, e.g. "Studio A", "Remote – Berlin"
+    location: Mapped[str] = mapped_column(String(255), nullable=False, default="")
+    # True if the session is currently live (set False on stop)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, index=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=_utc_now
+    )
+
+    repo: Mapped[MusehubRepo] = relationship("MusehubRepo", back_populates="sessions")

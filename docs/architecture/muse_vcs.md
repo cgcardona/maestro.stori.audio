@@ -1402,6 +1402,7 @@ The Muse Hub is a lightweight GitHub-equivalent that lives inside the Maestro Fa
 | `musehub_objects` | Binary artifact metadata (MIDI, MP3, WebP piano rolls) |
 | `musehub_issues` | Issue tracker entries per repo |
 | `musehub_pull_requests` | Pull requests proposing branch merges |
+| `musehub_sessions` | Recording session log entries synced from `muse session log` |
 
 ### Module Map
 
@@ -1450,6 +1451,15 @@ maestro/
 | GET | `/api/v1/musehub/repos/{id}/pull-requests/{pr_id}` | Get a single PR by ID |
 | POST | `/api/v1/musehub/repos/{id}/pull-requests/{pr_id}/merge` | Merge an open PR |
 
+#### Session Log
+
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | `/api/v1/musehub/repos/{id}/sessions` | Create a session entry (`muse session start`) |
+| GET | `/api/v1/musehub/repos/{id}/sessions` | List sessions (active first, then newest-first by `started_at`) |
+| GET | `/api/v1/musehub/repos/{id}/sessions/{session_id}` | Get a single session |
+| POST | `/api/v1/musehub/repos/{id}/sessions/{session_id}/stop` | Mark session as ended (`muse session stop`) |
+
 #### Sync Protocol
 
 | Method | Path | Description |
@@ -1467,6 +1477,17 @@ Issues let musicians track production problems and creative tasks within a repo,
 - **Labels** are free-form strings — e.g. `bug`, `musical`, `timing`, `mix`. No validation at MVP.
 - **States:** `open` (default on creation) → `closed` (via the close endpoint). No re-open at MVP.
 - **Filtering:** `GET /issues?state=all` includes both open and closed; `?label=bug` narrows by label.
+
+### Session Log Workflow
+
+Session log entries bridge the CLI `muse session` commands and the Hub UI. Each entry represents a single recording session — a bounded creative work block with named participants, a stated intent, a studio/location label, start/end timestamps, and an active flag.
+
+- **Active sessions** (`is_active=true`) have no `ended_at`. The Hub UI renders these with a live green indicator at the top of the list.
+- **Ordering:** Active sessions surface first; within non-active sessions the list is newest-by-`started_at` descending.
+- **Duration:** Computed server-side from `started_at` and `ended_at`. `null` for active sessions.
+- **Stop:** `POST /sessions/{id}/stop` sets `is_active=false` and records `ended_at`. Idempotent.
+- **UI page:** `GET /musehub/ui/{repo_id}/sessions` renders a no-auth HTML shell whose embedded JS fetches the JSON API and displays the full session list.
+- **Session count** appears in the repo landing page nav tabs for quick overview.
 
 ### Pull Request Workflow
 
@@ -1513,7 +1534,7 @@ Only metadata (`object_id`, `path`, `size_bytes`, `disk_path`) is stored in Post
 ### Architecture Boundary
 
 Service modules are the only place that touches `musehub_*` tables:
-- `musehub_repository.py` → `musehub_repos`, `musehub_branches`, `musehub_commits`
+- `musehub_repository.py` → `musehub_repos`, `musehub_branches`, `musehub_commits`, `musehub_sessions`
 - `musehub_issues.py` → `musehub_issues`
 - `musehub_pull_requests.py` → `musehub_pull_requests`
 - `musehub_sync.py` → `musehub_commits`, `musehub_objects`, `musehub_branches` (sync path only)
