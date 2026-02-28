@@ -267,7 +267,7 @@ async def _status_async(
         typer.echo(f"On branch {branch}")
         typer.echo("")
         typer.echo("You have unmerged paths.")
-        typer.echo('  (fix conflicts and run "muse commit")')
+        typer.echo('  (fix conflicts and run "muse merge --continue")')
         typer.echo("")
         typer.echo("Unmerged paths:")
         for conflict_path in sorted(merge_state.conflict_paths):

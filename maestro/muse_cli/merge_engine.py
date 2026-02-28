@@ -158,6 +158,56 @@ def clear_merge_state(root: pathlib.Path) -> None:
         logger.debug("✅ Cleared MERGE_STATE.json")
 
 
+def apply_resolution(
+    root: pathlib.Path,
+    rel_path: str,
+    object_id: str,
+) -> None:
+    """Copy the object identified by *object_id* from the local store to ``muse-work/<rel_path>``.
+
+    Used by ``muse resolve --theirs`` and ``muse merge --abort`` to restore
+    a specific version of a file to the working directory without requiring
+    the caller to know the internal object store layout.
+
+    Args:
+        root:      Repository root (directory containing ``.muse/``).
+        rel_path:  POSIX path relative to ``muse-work/``.
+        object_id: sha256 hex digest of the desired object content.
+
+    Raises:
+        FileNotFoundError: If the object is not present in the local store.
+            This means the commit's objects were never fetched locally — the
+            caller should report a user-friendly error.
+    """
+    from maestro.muse_cli.object_store import read_object
+
+    content = read_object(root, object_id)
+    if content is None:
+        raise FileNotFoundError(
+            f"Object {object_id[:8]} for '{rel_path}' not found in local store."
+        )
+    dest = root / "muse-work" / rel_path
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    dest.write_bytes(content)
+    logger.debug("✅ Restored '%s' from object %s", rel_path, object_id[:8])
+
+
+def is_conflict_resolved(merge_state: MergeState, rel_path: str) -> bool:
+    """Return ``True`` if *rel_path* is NOT listed as a conflict in *merge_state*.
+
+    A path is resolved when it no longer appears in ``conflict_paths``.
+    Call this before marking a path resolved to detect double-resolve attempts.
+
+    Args:
+        merge_state: The current in-progress merge state.
+        rel_path:    POSIX path to check (relative to ``muse-work/``).
+
+    Returns:
+        ``True`` if the path is already resolved, ``False`` if it still conflicts.
+    """
+    return rel_path not in merge_state.conflict_paths
+
+
 # ---------------------------------------------------------------------------
 # Pure merge functions (no I/O, no DB)
 # ---------------------------------------------------------------------------

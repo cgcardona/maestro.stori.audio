@@ -2231,6 +2231,86 @@ Track: all
 
 ---
 
+### `muse transpose`
+
+**Purpose:** Apply MIDI pitch transposition to all files in `muse-work/` and record the result as a new Muse commit. Transposition is the most fundamental musical transformation — this makes it a first-class versioned operation rather than a silent destructive edit. Drum channels (MIDI channel 9) are always excluded because drums are unpitched.
+
+**Usage:**
+```bash
+muse transpose <interval> [<commit>] [OPTIONS]
+```
+
+**Flags:**
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `<interval>` | positional | required | Signed integer (`+3`, `-5`) or named interval (`up-minor3rd`, `down-perfect5th`) |
+| `[<commit>]` | positional | HEAD | Source commit to transpose from |
+| `--track TEXT` | string | all tracks | Transpose only the MIDI track whose name contains TEXT (case-insensitive substring) |
+| `--section TEXT` | string | — | Transpose only a named section (stub — full implementation pending) |
+| `--message TEXT` | string | `"Transpose +N semitones"` | Custom commit message |
+| `--dry-run` | flag | off | Show what would change without writing files or creating a commit |
+| `--json` | flag | off | Emit machine-readable JSON output |
+
+**Interval syntax:**
+
+| Form | Example | Semitones |
+|------|---------|-----------|
+| Signed integer | `+3` | +3 |
+| Signed integer | `-5` | -5 |
+| Named up | `up-minor3rd` | +3 |
+| Named down | `down-perfect5th` | -7 |
+| Named down | `down-octave` | -12 |
+
+**Named interval identifiers:**
+`unison`, `minor2nd`, `major2nd`, `minor3rd`, `major3rd`, `perfect4th`,
+`perfect5th`, `minor6th`, `major6th`, `minor7th`, `major7th`, `octave`
+(prefix with `up-` or `down-`)
+
+**Output example (text):**
+```
+✅ [a1b2c3d4] Transpose +3 semitones
+   Key: Eb major  →  F# major
+   Modified: 2 file(s)
+     ✅ tracks/melody.mid
+     ✅ tracks/bass.mid
+   Skipped:  1 file(s) (non-MIDI or no pitched notes)
+```
+
+**Output example (`--json`):**
+```json
+{
+  "source_commit_id": "a1b2c3d4...",
+  "semitones": 3,
+  "files_modified": ["tracks/melody.mid", "tracks/bass.mid"],
+  "files_skipped": ["notes.json"],
+  "new_commit_id": "b2c3d4e5...",
+  "original_key": "Eb major",
+  "new_key": "F# major",
+  "dry_run": false
+}
+```
+
+**Result type:** `TransposeResult` — fields: `source_commit_id`, `semitones`, `files_modified`, `files_skipped`, `new_commit_id` (None in dry-run), `original_key`, `new_key`, `dry_run`.
+
+**Key metadata update:** If the source commit has a `key` field in its `metadata` JSON blob (e.g. `"Eb major"`), the new commit's `metadata.key` is automatically updated to reflect the transposition (e.g. `"F# major"` after `+3`). The service uses flat note names for accidentals (Db, Eb, Ab, Bb) — G# is stored as Ab, etc.
+
+**MIDI transposition rules:**
+- Scans `muse-work/` recursively for `.mid` and `.midi` files.
+- Parses MTrk chunks and modifies Note-On (0x9n) and Note-Off (0x8n) events.
+- **Channel 9 (drums) is never transposed** — drums are unpitched and shifting their note numbers would change the GM drum map mapping.
+- Notes are clamped to [0, 127] to stay within MIDI range.
+- All other events (meta, sysex, CC, program change, pitch bend) are preserved byte-for-byte.
+- Track length headers remain unchanged — only note byte values differ.
+
+**Agent use case:** A producer experimenting with key runs `muse transpose +3` and immediately has a versioned, reversible pitch shift on the full arrangement. The agent can then run `muse context --json` to confirm the new key before generating new parts that fit the updated harmonic center. The `--dry-run` flag lets agents preview impact before committing, and the `--track` flag lets them scope transposition to a single instrument (e.g. `--track melody`) without shifting the bass or chords.
+
+**Implementation:** `maestro/services/muse_transpose.py` — `parse_interval`, `update_key_metadata`, `transpose_midi_bytes`, `apply_transpose_to_workdir`, `TransposeResult`. CLI: `maestro/muse_cli/commands/transpose.py` — `_transpose_async` (injectable async core), `_print_result` (renderer). Exit codes: 0 success, 1 user error (bad interval, empty workdir), 2 outside repo, 3 internal error.
+
+> **Section filter note:** `--section TEXT` is accepted by the CLI and logged as a warning but not yet applied. Full section-scoped transposition requires section boundary markers embedded in committed MIDI metadata — tracked as a follow-up enhancement.
+
+---
+
 ### `muse recall`
 
 **Purpose:** Search the full commit history using natural language. Returns ranked
@@ -4950,6 +5030,7 @@ commit is needed.
 | `muse tag` | `commands/tag.py` | ✅ implemented (PR #133) | #123 |
 | `muse tempo-scale` | `commands/tempo_scale.py` | ✅ stub (PR open) | #111 |
 | `muse timeline` | `commands/timeline.py` | ✅ implemented (PR #TBD) | #97 |
+| `muse transpose` | `commands/transpose.py` | ✅ implemented | #102 |
 | `muse update-ref` | `commands/update_ref.py` | ✅ implemented (PR #143) | #91 |
 | `muse validate` | `commands/validate.py` | ✅ implemented (PR #TBD) | #99 |
 | `muse write-tree` | `commands/write_tree.py` | ✅ implemented | #89 |
@@ -5522,12 +5603,14 @@ as `muse reset --hard`.  Branch pointer is never modified.
 
 **Purpose:** Mark a conflicted file as resolved during a paused `muse merge`.
 Called after `muse merge` exits with a conflict to accept one side's version
-before running `muse merge --continue`.
+before running `muse merge --continue`.  For `--theirs`, the command
+automatically fetches the incoming branch's object from the local store and
+writes it to `muse-work/<path>` — no manual file editing required.
 
 **Usage:**
 ```bash
-muse resolve <file-path> --ours    # Keep current branch's working-tree version
-muse resolve <file-path> --theirs  # Accept incoming branch (edit file first, then mark)
+muse resolve <file-path> --ours    # Keep current branch's working-tree version (no file change)
+muse resolve <file-path> --theirs  # Copy incoming branch's object to muse-work/ automatically
 ```
 
 **Flags:**
@@ -5535,25 +5618,34 @@ muse resolve <file-path> --theirs  # Accept incoming branch (edit file first, th
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--ours` | flag | off | Accept the current branch's version (no file change needed) |
-| `--theirs` | flag | off | Accept the incoming branch (caller edits file manually, then runs this) |
+| `--theirs` | flag | off | Fetch the incoming branch's object from local store and write to muse-work/ |
 
 **Output example:**
 ```
-✅ Resolved 'meta/section-1.json' — keeping ours
+✅ Resolved 'meta/section-1.json' — keeping theirs
+   1 conflict(s) remaining. Resolve all, then run 'muse merge --continue'.
+✅ Resolved 'beat.mid' — keeping ours
 ✅ All conflicts resolved. Run 'muse merge --continue' to create the merge commit.
 ```
 
-**Workflow:**
-1. `muse merge <branch>` exits with conflict, writes `.muse/MERGE_STATE.json`
-2. `muse resolve <path> --ours` for each conflicted file
-3. `muse merge --continue` creates the merge commit
+**Full conflict resolution workflow:**
+```bash
+muse merge experiment          # → conflict on beat.mid
+muse status                    # → shows "You have unmerged paths"
+muse resolve beat.mid --theirs # → copies theirs version into muse-work/
+muse merge --continue          # → creates merge commit, clears MERGE_STATE.json
+```
 
 **Note:** After all conflicts are resolved, `.muse/MERGE_STATE.json` persists
 with `conflict_paths=[]` so `--continue` can read the stored commit IDs.
 `muse merge --continue` is the command that clears MERGE_STATE.json.
+If the theirs object is not in the local store (e.g. branch was never
+committed locally), run `muse pull` first to fetch remote objects.
 
-**Implementation:** `maestro/muse_cli/commands/resolve.py` — `resolve_conflict(file_path, ours, root)`.
-Reads and rewrites `.muse/MERGE_STATE.json`.  No DB interaction.
+**Implementation:** `maestro/muse_cli/commands/resolve.py` — `resolve_conflict_async(file_path, ours, root, session)`.
+Reads and rewrites `.muse/MERGE_STATE.json`.  For `--theirs`, queries DB for
+the theirs commit's snapshot manifest and calls `apply_resolution()` from
+`merge_engine.py` to restore the file from the local object store.
 
 ---
 
@@ -5587,6 +5679,48 @@ muse merge --continue
 run `--continue` to record the merged arrangement as an immutable commit.
 
 **Implementation:** `maestro/muse_cli/commands/merge.py` — `_merge_continue_async(root, session)`.
+
+---
+
+### `muse merge --abort`
+
+**Purpose:** Cancel an in-progress merge and restore the pre-merge state of all
+conflicted files.  Use when a conflict is too complex to resolve and you want to
+return the working tree to the clean state it was in before `muse merge` ran.
+
+**Usage:**
+```bash
+muse merge --abort
+```
+
+**Flags:**
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--abort` | flag | off | Cancel the in-progress merge and restore pre-merge files |
+
+**Output example:**
+```
+✅ Merge abort. Restored 2 conflicted file(s).
+```
+
+**Contract:**
+- Reads `.muse/MERGE_STATE.json` for `ours_commit` and `conflict_paths`.
+- Fetches the ours commit's snapshot manifest from DB.
+- For each conflicted path: restores the ours version from the local object
+  store to `muse-work/`.  Paths that existed only on the theirs branch (not
+  in ours manifest) are deleted from `muse-work/`.
+- Clears `.muse/MERGE_STATE.json` on success.
+- Exits 1 if no merge is in progress.
+
+**Agent use case:** When an AI agent detects an irresolvable semantic conflict
+(e.g. two structural arrangements that cannot be combined), it should call
+`muse merge --abort` to restore a clean baseline before proposing an
+alternative strategy to the user.
+
+**Implementation:** `maestro/muse_cli/commands/merge.py` — `_merge_abort_async(root, session)`.
+Queries DB for the ours commit's manifest, then calls `apply_resolution()` from
+`merge_engine.py` for each conflicted path.
 
 ---
 

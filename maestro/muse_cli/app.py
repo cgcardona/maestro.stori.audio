@@ -7,7 +7,7 @@ emotion-diff, export, fetch, find, form, grep, groove-check, harmony, hash-objec
 humanize, import, init, inspect, key, log, merge, meter, motif, open, play, pull,
 push, read-tree, rebase, recall, release, remote, render-preview, reset, resolve,
 restore, rev-parse, revert, session, show, similarity, stash, status, swing,
-symbolic-ref, tag, tempo, tempo-scale, timeline,
+symbolic-ref, tag, tempo, tempo-scale, timeline, transpose,
 update-ref, validate, write-tree) as Typer sub-applications.
 """
 from __future__ import annotations
@@ -75,6 +75,7 @@ from maestro.muse_cli.commands import (
     tempo,
     tempo_scale,
     timeline,
+    transpose,
     update_ref,
     validate,
     write_tree,
@@ -135,6 +136,7 @@ cli.add_typer(key.app, name="key", help="Read or annotate the musical key of a c
 cli.add_typer(humanize.app, name="humanize", help="Apply micro-timing and velocity humanization to quantized MIDI.")
 cli.add_typer(context.app, name="context", help="Output structured musical context for AI agent consumption.")
 cli.add_typer(divergence.app, name="divergence", help="Show how two branches have diverged musically.")
+cli.add_typer(transpose.app, name="transpose", help="Apply MIDI pitch transposition and record as a Muse commit.")
 cli.add_typer(motif.app, name="motif", help="Identify, track, and compare recurring melodic motifs.")
 cli.add_typer(emotion_diff.app, name="emotion-diff", help="Compare emotion vectors between two commits.")
 cli.add_typer(rev_parse.app, name="rev-parse", help="Resolve a revision expression to a commit ID.")
