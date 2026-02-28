@@ -15,6 +15,9 @@ const base   = {{ base_url | tojson }};
 
 {% block page_script %}
 {% raw %}
+// ── Release ID resolved after load() fetches the release ────────────────────
+let releaseId = null;
+
 function downloadCard(label, desc, url) {
   if (url) {
     return `
@@ -32,11 +35,150 @@ function downloadCard(label, desc, url) {
     </div>`;
 }
 
+// ── Comment helpers ──────────────────────────────────────────────────────────
+
+function avatarHtml(author) {
+  return `<span class="comment-avatar">${escHtml(author.charAt(0).toUpperCase())}</span>`;
+}
+
+function commentHtml(c, isTopLevel) {
+  if (c.isDeleted) {
+    return `<div class="comment-item comment-deleted${isTopLevel ? '' : ' comment-reply'}">
+      <em class="text-muted text-sm">This comment was deleted.</em>
+    </div>`;
+  }
+  const myUsername = _currentUser();
+  const canDelete = myUsername && myUsername === c.author;
+  return `
+    <div class="comment-item${isTopLevel ? '' : ' comment-reply'}" data-comment-id="${escHtml(c.commentId)}">
+      <div class="comment-header">
+        ${avatarHtml(c.author)}
+        <a class="comment-author" href="/musehub/ui/users/${encodeURIComponent(escHtml(c.author))}">${escHtml(c.author)}</a>
+        <span class="comment-ts text-muted text-sm">${fmtDate(c.createdAt)}</span>
+        <div class="comment-actions">
+          ${isTopLevel ? `<button class="btn btn-ghost btn-xs" onclick="toggleReplyForm('${escHtml(c.commentId)}')">Reply</button>` : ''}
+          ${canDelete ? `<button class="btn btn-ghost btn-xs btn-danger-ghost" onclick="deleteComment('${escHtml(c.commentId)}')">Delete</button>` : ''}
+        </div>
+      </div>
+      <div class="comment-body">${escHtml(c.body)}</div>
+      ${isTopLevel ? `<div class="reply-form" id="reply-form-${escHtml(c.commentId)}" style="display:none">
+        <textarea class="form-input reply-textarea" rows="2" placeholder="Write a reply…"></textarea>
+        <div style="display:flex;gap:var(--space-2);margin-top:var(--space-1)">
+          <button class="btn btn-primary btn-sm" onclick="submitReply('${escHtml(c.commentId)}')">Post Reply</button>
+          <button class="btn btn-ghost btn-sm" onclick="toggleReplyForm('${escHtml(c.commentId)}')">Cancel</button>
+        </div>
+      </div>` : ''}
+    </div>`;
+}
+
+function _currentUser() {
+  try {
+    const token = localStorage.getItem('muse_token') || sessionStorage.getItem('muse_token') || '';
+    if (!token) return null;
+    const payload = JSON.parse(atob(token.split('.')[1]));
+    return payload.sub || payload.username || null;
+  } catch { return null; }
+}
+
+async function renderComments(targetId) {
+  const container = document.getElementById('comments-list');
+  if (!container) return;
+  try {
+    const comments = await apiFetch(
+      '/repos/' + repoId + '/comments?target_type=release&target_id=' + encodeURIComponent(targetId)
+    );
+    const roots = (comments || []).filter(c => !c.parentId);
+    const replies = (comments || []).filter(c => c.parentId);
+    if (!roots.length && !replies.length) {
+      container.innerHTML = '<p class="text-muted text-sm empty-comments">No comments yet. Be the first to celebrate this release!</p>';
+      return;
+    }
+    container.innerHTML = roots.map(c => {
+      const thread = replies.filter(r => r.parentId === c.commentId);
+      return commentHtml(c, true) + thread.map(r => commentHtml(r, false)).join('');
+    }).join('');
+  } catch(e) {
+    if (e.message !== 'auth')
+      container.innerHTML = '<p class="error text-sm">&#10005; Could not load comments.</p>';
+  }
+}
+
+async function submitComment() {
+  if (!releaseId) return;
+  const textarea = document.getElementById('comment-body');
+  const body = textarea ? textarea.value.trim() : '';
+  if (!body) return;
+  const btn = document.getElementById('comment-submit-btn');
+  btn.disabled = true;
+  btn.textContent = 'Posting…';
+  try {
+    await apiFetch('/repos/' + repoId + '/comments', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ target_type: 'release', target_id: releaseId, body }),
+    });
+    textarea.value = '';
+    await renderComments(releaseId);
+  } catch(e) {
+    if (e.message !== 'auth')
+      alert('Post failed: ' + e.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Post Comment';
+  }
+}
+
+async function submitReply(parentId) {
+  if (!releaseId) return;
+  const form = document.getElementById('reply-form-' + parentId);
+  if (!form) return;
+  const textarea = form.querySelector('.reply-textarea');
+  const body = textarea ? textarea.value.trim() : '';
+  if (!body) return;
+  try {
+    await apiFetch('/repos/' + repoId + '/comments', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ target_type: 'release', target_id: releaseId, body, parent_id: parentId }),
+    });
+    textarea.value = '';
+    form.style.display = 'none';
+    await renderComments(releaseId);
+  } catch(e) {
+    if (e.message !== 'auth')
+      alert('Reply failed: ' + e.message);
+  }
+}
+
+async function deleteComment(commentId) {
+  if (!confirm('Delete this comment?')) return;
+  try {
+    await apiFetch('/repos/' + repoId + '/comments/' + commentId, { method: 'DELETE' });
+    await renderComments(releaseId);
+  } catch(e) {
+    if (e.message !== 'auth')
+      alert('Delete failed: ' + e.message);
+  }
+}
+
+function toggleReplyForm(commentId) {
+  const form = document.getElementById('reply-form-' + commentId);
+  if (!form) return;
+  form.style.display = form.style.display === 'none' ? '' : 'none';
+  if (form.style.display !== 'none') {
+    const ta = form.querySelector('.reply-textarea');
+    if (ta) ta.focus();
+  }
+}
+
+// ── Main load ────────────────────────────────────────────────────────────────
+
 async function load() {
   initRepoNav(repoId);
   try {
     const r = await apiFetch('/repos/' + repoId + '/releases/' + encodeURIComponent(tag));
     const dl = r.downloadUrls || {};
+    releaseId = r.releaseId || r.id || r.tag || tag;
 
     const downloads = `
       <div class="download-grid">
@@ -46,6 +188,8 @@ async function load() {
         ${downloadCard('MusicXML', 'Notation export for sheet music editors', dl.musicxml)}
         ${downloadCard('Metadata', 'JSON manifest: tempo, key, arrangement', dl.metadata)}
       </div>`;
+
+    const myUsername = _currentUser();
 
     document.getElementById('content').innerHTML = `
       <div style="margin-bottom:12px">
@@ -83,11 +227,33 @@ async function load() {
         <h2 style="margin-top:16px;margin-bottom:8px">Download Packages</h2>
         ${downloads}
       </div>
+
       <div class="card" style="padding:var(--space-3) var(--space-4)">
         <div id="release-reactions"><p class="text-muted text-sm">Loading reactions…</p></div>
+      </div>
+
+      <!-- Comment threads -->
+      <div class="card" id="comments-section">
+        <h2 style="margin-bottom:var(--space-3)">&#128172; Discussion</h2>
+        <div id="comments-list"><p class="text-muted text-sm">Loading comments…</p></div>
+
+        ${myUsername ? `
+        <div class="comment-compose" style="margin-top:var(--space-4)">
+          <h3 style="margin-bottom:var(--space-2);font-size:var(--font-size-base)">Leave a comment</h3>
+          <textarea id="comment-body" class="form-input" rows="3"
+                    placeholder="Celebrate this release, flag an issue, or share listening feedback…"
+                    style="width:100%;resize:vertical"></textarea>
+          <div style="display:flex;justify-content:flex-end;margin-top:var(--space-2)">
+            <button id="comment-submit-btn" class="btn btn-primary" onclick="submitComment()">Post Comment</button>
+          </div>
+        </div>` : `
+        <p class="text-muted text-sm" style="margin-top:var(--space-3)">
+          <a href="/musehub/ui/login">Sign in</a> to leave a comment.
+        </p>`}
       </div>`;
 
     loadReactions('release', tag, 'release-reactions');
+    await renderComments(releaseId);
   } catch(e) {
     if (e.message !== 'auth')
       document.getElementById('content').innerHTML = '<p class="error">&#10005; ' + escHtml(e.message) + '</p>';
@@ -96,4 +262,69 @@ async function load() {
 
 load();
 {% endraw %}
+{% endblock %}
+
+{% block extra_css %}
+<style>
+/* ── Comment thread styles ─────────────────────────────────────────────────── */
+.comment-item {
+  padding: var(--space-3) 0;
+  border-bottom: 1px solid var(--border-subtle);
+}
+.comment-item:last-child { border-bottom: none; }
+.comment-reply {
+  margin-left: var(--space-5);
+  padding-left: var(--space-3);
+  border-left: 2px solid var(--border-subtle);
+  border-bottom: none;
+  padding-bottom: 0;
+}
+.comment-deleted { opacity: 0.55; }
+.comment-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: var(--space-1);
+  flex-wrap: wrap;
+}
+.comment-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--accent, #58a6ff);
+  color: #0d1117;
+  font-size: 11px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+.comment-author {
+  font-weight: var(--font-weight-medium);
+  font-size: var(--font-size-sm);
+}
+.comment-ts { font-size: var(--font-size-xs); }
+.comment-actions {
+  margin-left: auto;
+  display: flex;
+  gap: var(--space-1);
+}
+.comment-body {
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+  line-height: 1.6;
+  margin-left: calc(24px + var(--space-2));
+}
+.reply-form {
+  margin-top: var(--space-2);
+  margin-left: calc(24px + var(--space-2));
+}
+.reply-textarea { width: 100%; }
+.empty-comments { padding: var(--space-3) 0; }
+.btn-danger-ghost { color: var(--color-error, #f87171); }
+.btn-danger-ghost:hover { background: rgba(248,113,113,0.08); }
+.comment-compose { border-top: 1px solid var(--border-subtle); padding-top: var(--space-4); }
+</style>
 {% endblock %}
