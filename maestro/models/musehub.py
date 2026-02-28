@@ -245,17 +245,6 @@ class ObjectMetaListResponse(CamelModel):
 # ── Cross-repo search models ───────────────────────────────────────────────────
 
 
-class SearchMode(str):
-    """Valid cross-repo search mode identifiers.
-
-    keyword   — full-text match against commit messages and repo names.
-    pattern   — SQL LIKE pattern applied to commit messages.
-    """
-
-    KEYWORD = "keyword"
-    PATTERN = "pattern"
-
-
 class GlobalSearchCommitMatch(CamelModel):
     """A single commit that matched the search query in a cross-repo search.
 
