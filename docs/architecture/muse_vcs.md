@@ -5820,3 +5820,149 @@ site to update when the endpoint becomes available.
 Service layer: `maestro/services/muse_release.py` — `build_release(...)`.
 
 ---
+
+## Muse CLI — Worktree Command Reference
+
+### `muse worktree`
+
+**Purpose:** Manage local Muse worktrees so a producer can work on two
+arrangements simultaneously (e.g. "radio edit" and "extended club version")
+without switching branches back and forth.
+
+---
+
+### `muse worktree add`
+
+**Purpose:** Create a new linked worktree at a given path, checked out to a
+specific branch.  Enables parallel arrangement editing without branch switching.
+
+**Usage:**
+```bash
+muse worktree add <path> <branch>
+```
+
+**Arguments:**
+
+| Argument | Description |
+|----------|-------------|
+| `<path>` | Directory to create the linked worktree in (must not exist) |
+| `<branch>` | Branch name to check out; created from HEAD if absent |
+
+**Output example:**
+```
+✅ Linked worktree 'feature/extended' created at /path/to/club-mix
+```
+
+**Constraints:**
+- `<path>` must not already exist.
+- The same branch cannot be checked out in two worktrees simultaneously (mirrors git).
+- `<path>` must be outside the main repository root.
+
+**Layout of the new directory:**
+```
+<path>/
+  .muse          — plain-text gitdir file: "gitdir: <main-repo>/.muse"
+  muse-work/     — independent working directory for this worktree
+```
+
+**Registration in main repo:**
+```
+.muse/worktrees/<slug>/path    → absolute path to <path>
+.muse/worktrees/<slug>/branch  → branch name
+```
+
+**Result type:** `WorktreeInfo` — fields: `path`, `branch`, `head_commit`, `is_main`, `slug`.
+
+**Agent use case:** An AI music agent can call `muse worktree add` to isolate an
+experimental arrangement variant in a separate directory while keeping the main
+working tree on the current branch.
+
+**Implementation:** `maestro/muse_cli/commands/worktree.py` — `add_worktree(root, link_path, branch)`.
+
+---
+
+### `muse worktree remove`
+
+**Purpose:** Remove a linked worktree directory and de-register it from the main
+repo.  Branch refs and the shared objects store are preserved.
+
+**Usage:**
+```bash
+muse worktree remove <path>
+```
+
+**Arguments:**
+
+| Argument | Description |
+|----------|-------------|
+| `<path>` | Path of the linked worktree to remove |
+
+**Output example:**
+```
+✅ Worktree at /path/to/club-mix removed.
+```
+
+**Constraints:**
+- The main worktree cannot be removed.
+- `<path>` must be a registered linked worktree.
+- Works even when the linked directory is already absent (stale removal).
+
+**Agent use case:** After finishing a variant arrangement, an agent removes the
+linked worktree to clean up disk space while preserving the branch for future use.
+
+**Implementation:** `maestro/muse_cli/commands/worktree.py` — `remove_worktree(root, link_path)`.
+
+---
+
+### `muse worktree list`
+
+**Purpose:** Show all worktrees (main + linked) with their paths, branches, and
+HEAD commit SHAs.  Enables an agent to know which arrangements are active.
+
+**Usage:**
+```bash
+muse worktree list
+```
+
+**Output example:**
+```
+/path/to/project          [main]  branch: main                    head: a1b2c3d4
+/path/to/club-mix                 branch: feature/extended        head: a1b2c3d4
+```
+
+**Result type:** `list[WorktreeInfo]` — see `WorktreeInfo` in `type_contracts.md`.
+
+**Agent use case:** Before composing a new section, an agent lists all worktrees
+to pick the correct arrangement context to work in.
+
+**Implementation:** `maestro/muse_cli/commands/worktree.py` — `list_worktrees(root)`.
+
+---
+
+### `muse worktree prune`
+
+**Purpose:** Remove stale worktree registrations where the target directory no
+longer exists.  Safe to run any time — no data or branch refs are deleted.
+
+**Usage:**
+```bash
+muse worktree prune
+```
+
+**Output example (stale entries found):**
+```
+⚠️  Pruned stale worktree: /path/to/old-mix
+✅ Pruned 1 stale worktree registration(s).
+```
+
+**Output example (nothing to prune):**
+```
+✅ No stale worktrees found.
+```
+
+**Agent use case:** Run periodically or before `muse worktree list` to ensure the
+registration index matches the filesystem.
+
+**Implementation:** `maestro/muse_cli/commands/worktree.py` — `prune_worktrees(root)`.
+
+---
