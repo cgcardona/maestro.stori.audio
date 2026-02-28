@@ -436,7 +436,7 @@ class ChunkedGenerationResult(TypedDict):
     The ``notes`` list spans the full requested bar count with sequential
     beat offsets applied across all chunks.
 
-    Registered in ``docs/reference/storpheus.md`` under chunked generation.
+    Registered in ``docs/reference/type_contracts.md`` under Storpheus Types.
     """
 
     success: bool
