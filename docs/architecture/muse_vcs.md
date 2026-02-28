@@ -7644,6 +7644,112 @@ structure is derived by splitting object `path` fields on `/`.
 
 ---
 
+## Audio Player — Listen Page (issue #211)
+
+### Motivation
+
+The bare `<audio>` element provides no waveform feedback, no A/B looping, and
+no speed control. Musicians performing critical listening on MuseHub need:
+
+- Visual waveform for precise seek-by-region.
+- A/B loop to isolate a phrase and replay it at will.
+- Playback speed control (half-time, double-time, etc.) for transcription and
+  arrangement work.
+
+### URL Pattern
+
+```
+GET /musehub/ui/{owner}/{repo_slug}/listen/{ref}
+GET /musehub/ui/{owner}/{repo_slug}/listen/{ref}/{path:path}
+```
+
+The first form lists all audio objects at `ref` and auto-loads the first track
+with an in-page track switcher. The second form deep-links to a specific audio
+file (stem, MIDI export, full mix) by its object path.
+
+### Waveform Engine
+
+Wavesurfer.js is **vendored locally** at:
+
+```
+maestro/templates/musehub/static/vendor/wavesurfer.min.js
+```
+
+Served at `/musehub/static/vendor/wavesurfer.min.js` via FastAPI `StaticFiles`.
+No external CDN is used — the library is a self-contained, lightweight
+canvas-based implementation that renders waveform bars using pseudo-random
+peaks seeded by audio duration (stable visual fingerprint per track).
+
+A `_generatePeaks()` method using Web Audio API `AudioBuffer` could be dropped
+in later to replace the seeded peaks with true amplitude data.
+
+### Audio Player Component (`audio-player.js`)
+
+A thin wrapper around WaveSurfer that wires up:
+
+| UI Element | ID | Behaviour |
+|------------|----|-----------|
+| Waveform canvas | `#waveform` | Click to seek; Shift+drag for A/B loop |
+| Play/pause button | `#play-btn` | Toggle playback |
+| Current time | `#time-cur` | Updated on every `timeupdate` event |
+| Duration | `#time-dur` | Populated on `ready` |
+| Speed selector | `#speed-sel` | Options: 0.5x 0.75x 1x 1.25x 1.5x 2x |
+| Volume slider | `#vol-slider` | Range 0.0–1.0 |
+| Loop info | `#loop-info` | Shows `Loop: MM:SS – MM:SS` when active |
+| Clear loop button | `#loop-clear-btn` | Hidden until a loop region is set |
+
+**Keyboard shortcuts:**
+
+| Key | Action |
+|-----|--------|
+| `Space` | Play / pause |
+| `←` / `→` | Seek ± 5 seconds |
+| `L` | Clear A/B loop region |
+
+### A/B Loop
+
+Shift+drag on the waveform canvas sets the loop region. While the region is
+active the `_audio.currentTime` is reset to `loopStart` whenever it reaches
+`loopEnd`. A coloured overlay with boundary markers is drawn on the canvas.
+`clearRegion()` removes the loop and hides the loop-info badge.
+
+### Track List (full-mix view)
+
+On `GET /{owner}/{repo_slug}/listen/{ref}`, the page fetches:
+
+```
+GET /api/v1/musehub/repos/{repo_id}/objects?ref={ref}
+```
+
+and filters for audio extensions (`mp3 wav ogg m4a flac aiff aif`). All
+matching objects are rendered as a clickable track list. Clicking a row loads
+that track into the WaveSurfer instance and begins playback.
+
+### Single-Track View
+
+On `GET /{owner}/{repo_slug}/listen/{ref}/{path}`, the page fetches the same
+objects endpoint and matches the first object whose `path` matches (or ends
+with) the given `path` segment. If no match is found, an inline error message
+is shown — no hard 404, allowing the user to try other refs.
+
+### No CDN Policy
+
+All external script tags are forbidden. The vendor script is served from the
+same origin as all other MuseHub assets. This keeps the page functional in
+air-gapped DAW network environments and avoids CORS complexity.
+
+### Implementation
+
+| Layer | File |
+|-------|------|
+| WaveSurfer | `maestro/templates/musehub/static/vendor/wavesurfer.min.js` |
+| AudioPlayer | `maestro/templates/musehub/static/audio-player.js` |
+| HTML template | `maestro/templates/musehub/pages/listen.html` |
+| HTML routes | `maestro/api/routes/musehub/ui.py` — `listen_page()`, `listen_track_page()` |
+| Tests | `tests/test_musehub_ui.py` — `test_listen_*` (12 tests) |
+
+---
+
 ## Muse Hub — Arrangement Matrix Page (issue #212)
 
 **Purpose:** Provide a bird's-eye orchestration view — which instruments play in which sections — so producers can evaluate arrangement density without downloading or listening to tracks.  This is the most useful single page for an AI orchestration agent before generating a new instrument part.
@@ -7752,6 +7858,103 @@ The emotion diff is `mean(head commits) − mean(base commits)` per axis, clampe
 
 The compare endpoint reuses the existing `musehub_divergence.compute_hub_divergence()` engine. Refs are resolved as branch names; the divergence engine computes Jaccard scores across commit message keyword classification.
 
+
+## MuseHub Render Pipeline — Auto-Generated Artifacts on Push
+
+### Overview
+
+Every successful push to MuseHub triggers a background render pipeline that
+automatically generates two artifact types for each MIDI file in the commit:
+
+1. **Piano-roll PNG** — a server-side pixel-art rendering of the MIDI timeline,
+   colour-coded by MIDI channel (bass = green, keys = blue, lead = orange, …).
+2. **MP3 stub** — a copy of the MIDI file until the Storpheus `POST /render`
+   endpoint ships; labelled `stubbed=True` in the render job record.
+
+Both artifact types are stored as `musehub_objects` rows linked to the repo,
+and their object IDs are recorded in the `musehub_render_jobs` row for the
+commit.
+
+### Render Job Lifecycle
+
+```
+push received → ingest_push() → DB commit → BackgroundTasks
+                                                   ↓
+                                    trigger_render_background()
+                                           ↓
+                              status: pending → rendering
+                                           ↓
+                               discover MIDI objects in push
+                                           ↓
+                             for each MIDI:
+                               - render_piano_roll() → PNG
+                               - _make_stub_mp3() → MIDI copy
+                               - store as musehub_objects rows
+                                           ↓
+                               status: complete | failed
+```
+
+**Idempotency:** if a render job already exists for `(repo_id, commit_id)`,
+the pipeline exits immediately without creating a duplicate.
+
+**Failure isolation:** render errors are caught, logged, and stored in
+`job.error_message`; they never propagate to the push response.
+
+### Render Status API
+
+```
+GET /api/v1/musehub/repos/{repo_id}/commits/{sha}/render-status
+```
+
+Returns a `RenderStatusResponse`:
+
+```json
+{
+  "commitId": "abc123...",
+  "status": "complete",
+  "midiCount": 2,
+  "mp3ObjectIds": ["sha256:...", "sha256:..."],
+  "imageObjectIds": ["sha256:...", "sha256:..."],
+  "errorMessage": null
+}
+```
+
+Status values: `pending` | `rendering` | `complete` | `failed` | `not_found`.
+
+`not_found` is returned (not 404) when no render job exists for the given
+commit — this lets callers distinguish "never pushed" from "not yet rendered"
+without branching on HTTP status codes.
+
+### Piano Roll Renderer
+
+**Module:** `maestro/services/musehub_piano_roll_renderer.py`
+
+Pure-Python MIDI-to-PNG renderer — zero external image library dependency.
+Uses `mido` (already a project dependency) to parse MIDI and stdlib `zlib`
++ `struct` to encode a minimal PNG.
+
+Image layout:
+- Width: up to 1920 px (proportional to MIDI duration).
+- Height: 256 px (128 MIDI pitches × 2 px per row).
+- Background: dark charcoal.
+- Octave boundaries: lighter horizontal rules at every C note.
+- Notes: coloured rectangles, colour-coded by MIDI channel.
+
+Graceful degradation: invalid or empty MIDI produces a blank canvas PNG
+with `stubbed=True` — callers always receive a valid file.
+
+**Note:** WebP output requires Pillow (not yet a project dependency). The
+renderer currently emits PNG with a `.png` extension. WebP conversion is
+a planned follow-up.
+
+### MP3 Rendering (Stub)
+
+Storpheus `POST /render` (MIDI-in → audio-out) is not yet deployed. Until
+it ships, the MIDI file is copied verbatim to `renders/<commit_short>_<stem>.mp3`.
+The render job records this as `mp3_object_ids` entries regardless. When the
+endpoint is available, replace `_make_stub_mp3` in
+`maestro/services/musehub_render_pipeline.py` with a real HTTP call.
+
 ### Implementation
 
 | Layer | File |
@@ -7765,3 +7968,95 @@ The compare endpoint reuses the existing `musehub_divergence.compute_hub_diverge
 | Type contracts | `docs/reference/type_contracts.md` — `EmotionDiffResponse`, `CompareResponse` |
 
 ---
+
+
+| DB model | `maestro/db/musehub_models.py` — `MusehubRenderJob` |
+| Piano roll | `maestro/services/musehub_piano_roll_renderer.py` |
+| Pipeline | `maestro/services/musehub_render_pipeline.py` |
+| Trigger | `maestro/api/routes/musehub/sync.py` — `push()` adds background task |
+| Status API | `maestro/api/routes/musehub/repos.py` — `get_commit_render_status()` |
+| Response model | `maestro/models/musehub.py` — `RenderStatusResponse` |
+| Migration | `alembic/versions/0001_consolidated_schema.py` — `musehub_render_jobs` |
+| Tests | `tests/test_musehub_render.py` — 17 tests |
+
+---
+
+---
+
+## Piano Roll Renderer
+
+### Overview
+
+The MuseHub piano roll provides an interactive Canvas-based MIDI visualisation
+accessible from any MIDI artifact stored in a Muse Hub repo.  It is split into
+a server-side parser and a client-side renderer.
+
+### Architecture
+
+```
+Browser                            Maestro API
+  │                                     │
+  │  GET /musehub/ui/{owner}/{slug}/    │
+  │      piano-roll/{ref}               │
+  │ ──────────────────────────────────► │  piano_roll_page()
+  │ ◄──────────────────────────────────  piano_roll.html shell
+  │                                     │
+  │  [JS] apiFetch /objects?limit=500   │
+  │ ──────────────────────────────────► │  list_objects()
+  │ ◄──────────────────────────────────  ObjectMetaListResponse
+  │                                     │
+  │  [JS] apiFetch /objects/{id}/       │
+  │             parse-midi              │
+  │ ──────────────────────────────────► │  parse_midi_object()
+  │                                     │    → parse_midi_bytes()
+  │ ◄──────────────────────────────────  MidiParseResult (JSON)
+  │                                     │
+  │  [JS] PianoRoll.render(midi, el)    │
+  │  Canvas draw loop                   │
+```
+
+### Server-Side Parser (`musehub_midi_parser.py`)
+
+`parse_midi_bytes(data: bytes) → MidiParseResult`
+
+- Uses the `mido` library to read Standard MIDI Files (types 0, 1, 2).
+- Converts all tick offsets to quarter-note beats using `ticks_per_beat`.
+- Handles note-on / note-off pairing (including velocity-0 note-off shorthand).
+- Closes dangling note-ons at end-of-track with minimum duration.
+- Extracts `set_tempo`, `time_signature`, and `track_name` meta messages.
+- Returns `MidiParseResult` — a `TypedDict` registered in `type_contracts.md`.
+
+### Client-Side Renderer (`piano-roll.js`)
+
+`PianoRoll.render(midiParseResult, containerElement, options)`
+
+Renders a `<canvas>` element with:
+
+| Feature | Implementation |
+|---------|---------------|
+| Pitch axis | Piano keyboard strip (left margin, white/black key shading) |
+| Time axis | Beat grid with measure markers, auto-density by zoom level |
+| Note rectangles | Per-track colour from design palette; opacity = velocity / 127 |
+| Zoom | Horizontal (`px/beat`) and vertical (`px/pitch row`) range sliders |
+| Pan | Click-drag on canvas; `panX` in beats, `panY` in pitch rows |
+| Tooltip | Hover shows pitch name, MIDI pitch, velocity, beat, duration |
+| Track filter | `<select>` — all tracks or single track |
+| Device pixel ratio | Renders at native DPR for crisp display on HiDPI screens |
+
+### Routes
+
+| Method | Path | Handler | Description |
+|--------|------|---------|-------------|
+| `GET` | `/musehub/ui/{owner}/{slug}/piano-roll/{ref}` | `piano_roll_page` | All MIDI tracks at ref |
+| `GET` | `/musehub/ui/{owner}/{slug}/piano-roll/{ref}/{path}` | `piano_roll_track_page` | Single MIDI file |
+| `GET` | `/api/v1/musehub/repos/{repo_id}/objects/{id}/parse-midi` | `parse_midi_object` | MIDI-to-JSON endpoint |
+
+### Static Asset
+
+`/musehub/static/piano-roll.js` — served by the existing `StaticFiles` mount
+at `maestro/main.py`. No rebuild required.
+
+### Navigation Context
+
+Add `current_page: "piano-roll"` to the template context when linking from
+other pages (tree browser, commit detail, blob viewer).

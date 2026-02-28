@@ -13,6 +13,7 @@ Tables:
 - musehub_releases: Published version releases with download packages
 - musehub_webhooks: Registered webhook subscriptions per repo
 - musehub_webhook_deliveries: Delivery log for each webhook dispatch attempt
+- musehub_render_jobs: Render status tracking for auto-generated MP3/piano-roll artifacts
 """
 from __future__ import annotations
 
@@ -645,4 +646,51 @@ class MusehubDownloadEvent(Base):
     downloader_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=_utc_now, index=True
+    )
+
+
+class MusehubRenderJob(Base):
+    """Render job record tracking the async generation of MP3 and piano-roll artifacts.
+
+    One row is created per commit push. The render pipeline sets ``status`` as
+    work progresses: ``pending`` → ``rendering`` → ``complete`` | ``failed``.
+
+    ``mp3_object_ids`` and ``image_object_ids`` are JSON lists of
+    ``musehub_objects.object_id`` values written by the render pipeline.
+    They are empty until the job reaches ``complete`` or ``failed``.
+
+    Design: idempotent by ``(repo_id, commit_id)`` — re-pushing the same
+    commit does not create a second render job. The pipeline checks for an
+    existing row before creating one.
+    """
+
+    __tablename__ = "musehub_render_jobs"
+    __table_args__ = (
+        UniqueConstraint("repo_id", "commit_id", name="uq_musehub_render_jobs_repo_commit"),
+    )
+
+    render_job_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_new_uuid)
+    repo_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("musehub_repos.repo_id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    # The commit SHA this render covers — matches musehub_commits.commit_id.
+    commit_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    # Lifecycle: pending → rendering → complete | failed
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="pending", index=True)
+    # Human-readable error from the last failure; null when status != "failed".
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Number of MIDI objects found in the commit snapshot.
+    midi_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    # JSON list of object_ids for generated MP3 artifacts.
+    mp3_object_ids: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    # JSON list of object_ids for generated piano-roll PNG artifacts.
+    image_object_ids: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=_utc_now
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=_utc_now, onupdate=_utc_now
     )
