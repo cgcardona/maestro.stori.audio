@@ -4166,3 +4166,22 @@ error message via `typer.echo` before calling `typer.Exit(INTERNAL_ERROR)`.
 ```python
 class StorpheusUnavailableError(Exception): ...
 ```
+
+
+---
+
+### `CommitTreeResult`
+
+Conceptual result type for `muse commit-tree` (returned as a plain `str` from
+`_commit_tree_async`; documented here so agents understand the output contract).
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `commit_id` | `str` (64-char hex) | Deterministic SHA-256 commit ID created from `(parent_ids, snapshot_id, message, author)`. Identical inputs always produce the same ID. |
+
+**Source:** `maestro/muse_cli/commands/commit_tree.py` — `_commit_tree_async`
+
+**Idempotency:** The same `(parent_ids, snapshot_id, message, author)` tuple
+always hashes to the same `commit_id`.  Agents can call `muse commit-tree`
+repeatedly with the same arguments and always get the same result without
+side-effects on subsequent calls (second call is a no-op).

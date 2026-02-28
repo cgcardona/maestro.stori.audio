@@ -1351,6 +1351,74 @@ muse commit --from-batch muse-batch.json
 
 ---
 
+## Muse CLI — Plumbing Command Reference
+
+Plumbing commands expose the raw object model and allow scripted or programmatic
+construction of history without the side-effects of porcelain commands.  They
+mirror the design of `git commit-tree`, `git update-ref`, and `git hash-object`.
+
+AI agents use plumbing commands when they need to build commit graphs
+programmatically — for example when replaying a merge, synthesising history from
+an external source, or constructing commits without changing the working branch.
+
+---
+
+### `muse commit-tree`
+
+**Purpose:** Create a raw commit object directly from an existing `snapshot_id`
+and explicit metadata.  Does not walk the filesystem, does not update any branch
+ref, does not touch `.muse/HEAD`.  Use `muse update-ref` (planned) to associate
+the resulting commit with a branch.
+
+**Usage:**
+```bash
+muse commit-tree <snapshot_id> -m <message> [OPTIONS]
+```
+
+**Flags:**
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `snapshot_id` | positional | — | ID of an existing snapshot row in the database |
+| `-m / --message TEXT` | string | required | Commit message |
+| `-p / --parent TEXT` | string | — | Parent commit ID. Repeat for merge commits (max 2) |
+| `--author TEXT` | string | `[user] name` from `.muse/config.toml` or `""` | Author name |
+
+**Output example:**
+```
+a3f8c21d4e9b0712c5d6f7a8e3b2c1d0a4f5e6b7c8d9e0f1a2b3c4d5e6f7a8b9
+```
+
+The commit ID (64-char SHA-256 hex) is printed to stdout.  Pipe it to
+`muse update-ref` to advance a branch ref.
+
+**Result type:** `CommitTreeResult` — fields: `commit_id` (str, 64-char hex).
+
+**Idempotency contract:** The commit ID is derived deterministically from
+`(parent_ids, snapshot_id, message, author)` with **no timestamp** component.
+Repeating the same call returns the same `commit_id` without inserting a
+duplicate row.  This makes `muse commit-tree` safe to call in retry loops and
+idempotent scripts.
+
+**Agent use case:** An AI music generation agent that needs to construct a merge
+commit (e.g. combining the groove from branch A with the lead from branch B)
+without moving either branch pointer:
+
+```bash
+SNAP=$(muse write-tree)                            # planned plumbing command
+COMMIT=$(muse commit-tree "$SNAP" -m "Merge groove+lead" -p "$A_HEAD" -p "$B_HEAD")
+muse update-ref refs/heads/merge-candidate "$COMMIT"  # planned
+```
+
+**Error cases:**
+- `snapshot_id` not found → exits 1 with a clear message
+- More than 2 `-p` parents → exits 1 (DB model stores at most 2)
+- Not inside a Muse repo → exits 2
+
+**Implementation:** `maestro/muse_cli/commands/commit_tree.py`
+
+---
+
 ## Muse CLI — Music Analysis Command Reference
 
 These commands expose musical dimensions across the commit graph — the layer that
