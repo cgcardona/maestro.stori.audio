@@ -96,13 +96,19 @@ cd "$REPO"
 DEV_SHA=$(git rev-parse dev)
 
 # --- define issues (confirmed independent — zero file overlap) ---
-# Batch: #71, #70, #36 (bisect, restore, resolve/merge --continue — final Muse batch)
-# Known shared file: maestro/muse_cli/app.py (each agent adds one app.add_typer line)
-# Resolution: pre-push sync in STEP 4 handles app.py conflicts — keep both sides.
+# Batch: #232, #231, #230, #229 (MuseHub Phase 4 — Visualization)
+# Known shared files:
+#   maestro/api/routes/musehub/ui.py
+#     (#230 adds timeline_page(), #231 adds divergence_page(), #232 adds context_page())
+#   maestro/api/routes/musehub/repos.py
+#     (#230 adds timeline endpoint, #231 adds divergence endpoint, #232 adds context endpoint)
+# #229 adds DAG graph (new dag.py + D3.js frontend — independent new files only)
+# Resolution: pre-push sync in STEP 4 handles ui.py and repos.py — keep ALL handler/endpoint functions from all sides.
 declare -a ISSUES=(
-  "71|feat: muse bisect — binary search for the commit that introduced a regression"
-  "70|feat: muse restore — restore specific files from a commit or index"
-  "36|feat: muse resolve + muse merge --continue — conflict resolution workflow"
+  "232|feat: context viewer — human-readable view of the AI musical context document"
+  "231|feat: divergence visualization — radar chart and side-by-side comparison between branches"
+  "230|feat: timeline view — chronological evolution with emotion, section, and track layers"
+  "229|feat: interactive DAG graph — D3.js-based commit graph with branch coloring and zoom/pan"
 )
 
 # --- create worktrees + task files ---
@@ -162,12 +168,10 @@ REPO=$(git worktree list | head -1 | awk '{print $1}')
 WTNAME=$(basename "$(pwd)")
 
 # mypy
-cd "$REPO" && docker compose exec maestro sh -c \
-  "PYTHONPATH=/worktrees/$WTNAME mypy /worktrees/$WTNAME/maestro/ /worktrees/$WTNAME/tests/"
+cd "$REPO" && docker compose exec maestro sh -c "PYTHONPATH=/worktrees/$WTNAME mypy /worktrees/$WTNAME/maestro/ /worktrees/$WTNAME/tests/"
 
 # pytest (specific file)
-cd "$REPO" && docker compose exec maestro sh -c \
-  "PYTHONPATH=/worktrees/$WTNAME pytest /worktrees/$WTNAME/tests/path/to/test_file.py -v"
+cd "$REPO" && docker compose exec maestro sh -c "PYTHONPATH=/worktrees/$WTNAME pytest /worktrees/$WTNAME/tests/path/to/test_file.py -v"
 ```
 
 **⚠️ NEVER copy files into the main repo** for testing purposes. That pollutes
@@ -239,8 +243,7 @@ STEP 3 — IMPLEMENT (only if STEP 2 found nothing):
   git checkout -b feat/<short-description>
 
   mypy (run BEFORE tests — fix all type errors first):
-    cd "$REPO" && docker compose exec maestro sh -c \
-      "PYTHONPATH=/worktrees/$WTNAME mypy /worktrees/$WTNAME/maestro/ /worktrees/$WTNAME/tests/"
+    cd "$REPO" && docker compose exec maestro sh -c "PYTHONPATH=/worktrees/$WTNAME mypy /worktrees/$WTNAME/maestro/ /worktrees/$WTNAME/tests/"
 
   ⚠️  TYPE-SYSTEM RULES — mypy must be fixed correctly, not worked around:
     - No cast() at call sites — fix the callee's return type, not the caller.
@@ -256,8 +259,7 @@ STEP 3 — IMPLEMENT (only if STEP 2 found nothing):
     - Every public function signature is a contract. Register new result types in docs/reference/type_contracts.md.
 
   pytest — TARGETED TESTS ONLY (never the full suite):
-    cd "$REPO" && docker compose exec maestro sh -c \
-      "PYTHONPATH=/worktrees/$WTNAME pytest /worktrees/$WTNAME/tests/path/to/test_file.py -v"
+    cd "$REPO" && docker compose exec maestro sh -c "PYTHONPATH=/worktrees/$WTNAME pytest /worktrees/$WTNAME/tests/path/to/test_file.py -v"
 
   The full suite takes several minutes and is the responsibility of developers/CI,
   not parallel agents. Run only the test files directly related to your changes.
