@@ -1996,6 +1996,7 @@ detection).
 | `muse recall` | `commands/recall.py` | ✅ stub (PR #135) | #122 |
 | `muse tag` | `commands/tag.py` | ✅ implemented (PR #133) | #123 |
 | `muse grep` | `commands/grep_cmd.py` | ✅ stub (PR #128) | #124 |
+| `muse humanize` | `commands/humanize.py` | ✅ stub (PR #151) | #107 |
 | `muse describe` | `commands/describe.py` | ✅ stub (PR #134) | #125 |
 | `muse ask` | `commands/ask.py` | ✅ stub (PR #132) | #126 |
 | `muse session` | `commands/session.py` | ✅ implemented (PR #129) | #127 |
@@ -2447,6 +2448,42 @@ lead            79   105     38  swell
 **Implementation:** `maestro/muse_cli/commands/dynamics.py` — `_dynamics_async` (injectable async core), `TrackDynamics` (result entity), `_render_table` / `_render_json` (renderers). Exit codes: 0 success, 2 outside repo, 3 internal.
 
 > **Stub note:** Arc classification and velocity statistics are placeholder values. Full implementation requires MIDI note velocity extraction from committed snapshot objects (future: Storpheus MIDI parse route).
+
+---
+
+## `muse humanize` — Apply Micro-Timing and Velocity Humanization to Quantized MIDI
+
+**Purpose:** Apply realistic human-performance variation to machine-quantized MIDI, producing a new Muse commit that sounds natural. AI agents use this after generating quantized output to make compositions feel human before presenting them to DAW users.
+
+**Usage:**
+```bash
+muse humanize [COMMIT] [OPTIONS]
+```
+
+**Flags:**
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `COMMIT` | argument | HEAD | Source commit ref to humanize |
+| `--tight` | flag | off | Subtle: timing +/-5 ms, velocity +/-5 |
+| `--natural` | flag | on | Moderate: timing +/-12 ms, velocity +/-10 (default) |
+| `--loose` | flag | off | Heavy: timing +/-20 ms, velocity +/-15 |
+| `--factor FLOAT` | float | - | Custom factor 0.0-1.0 (overrides preset) |
+| `--timing-only` | flag | off | Apply timing variation only; preserve velocities |
+| `--velocity-only` | flag | off | Apply velocity variation only; preserve timing |
+| `--track TEXT` | string | all | Restrict to one track (prefix match) |
+| `--section TEXT` | string | all | Restrict to a named section |
+| `--seed N` | int | - | Fix random seed for reproducible output |
+| `--message TEXT` | string | auto | Commit message |
+| `--json` | flag | off | Emit structured JSON for agent consumption |
+
+**Result types:** `HumanizeResult` and `TrackHumanizeResult` (both TypedDict). See `docs/reference/type_contracts.md`.
+
+**Agent use case:** After `muse commit` records a machine-generated MIDI variation, an AI agent runs `muse humanize --natural --seed 42` to add realistic performance feel. Drum groove is preserved automatically (GM channel 10 excluded from timing variation).
+
+**Implementation:** `maestro/muse_cli/commands/humanize.py`. Exit codes: 0 success, 1 flag conflict, 2 outside repo, 3 internal.
+
+> **Stub note:** Full MIDI note rewrite pending Storpheus note-level access. CLI interface is stable.
 
 ---
 
