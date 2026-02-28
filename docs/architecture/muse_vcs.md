@@ -1996,7 +1996,7 @@ detection).
 | `muse recall` | `commands/recall.py` | ✅ stub (PR #135) | #122 |
 | `muse tag` | `commands/tag.py` | ✅ implemented (PR #133) | #123 |
 | `muse grep` | `commands/grep_cmd.py` | ✅ stub (PR #128) | #124 |
-| `muse humanize` | `commands/humanize.py` | ✅ stub (PR #?) | #107 |
+| `muse humanize` | `commands/humanize.py` | ✅ stub (PR #151) | #107 |
 | `muse describe` | `commands/describe.py` | ✅ stub (PR #134) | #125 |
 | `muse ask` | `commands/ask.py` | ✅ stub (PR #132) | #126 |
 | `muse session` | `commands/session.py` | ✅ implemented (PR #129) | #127 |
