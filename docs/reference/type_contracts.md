@@ -3295,6 +3295,50 @@ was (or was not) changed so callers can verify the revert succeeded.
 
 ---
 
+### `CherryPickResult`
+
+**Module:** `maestro/services/muse_cherry_pick.py`
+
+Outcome of a `muse cherry-pick` operation. Captures whether the cherry-pick applied cleanly, produced a conflict, or was staged without committing, so callers can verify the result and decide on next steps.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `commit_id` | `str` | New commit ID created by the cherry-pick. Empty string when `--no-commit` or conflict. |
+| `cherry_commit_id` | `str` | Source commit that was cherry-picked. |
+| `head_commit_id` | `str` | HEAD commit at cherry-pick initiation time. |
+| `new_snapshot_id` | `str` | Snapshot ID of the resulting state (even when not committed). |
+| `message` | `str` | Commit message with attribution suffix: `"(cherry picked from commit <short-id>)"`. |
+| `no_commit` | `bool` | `True` when changes were staged to muse-work/ without creating a commit. |
+| `conflict` | `bool` | `True` when conflicts were detected and `.muse/CHERRY_PICK_STATE.json` was written. |
+| `conflict_paths` | `tuple[str, ...]` | Conflicting relative POSIX paths. Non-empty iff `conflict=True`. |
+| `branch` | `str` | Branch on which the new commit was (or would have been) created. |
+
+**Producer:** `_cherry_pick_async()`, `_cherry_pick_continue_async()`
+**Consumer:** `cherry_pick()` Typer command callback, tests in `tests/muse_cli/test_cherry_pick.py`
+
+**Frozen dataclass** — all fields are immutable after construction.
+
+---
+
+### `CherryPickState`
+
+**Module:** `maestro/services/muse_cherry_pick.py`
+
+In-memory representation of `.muse/CHERRY_PICK_STATE.json`. Describes the paused cherry-pick so `--continue` and `--abort` can resume or cancel correctly.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `cherry_commit` | `str` | Commit ID that was being cherry-picked when paused. |
+| `head_commit` | `str` | HEAD commit at cherry-pick initiation — restored by `--abort`. |
+| `conflict_paths` | `list[str]` | Paths with unresolved conflicts. Empty list = all resolved (safe to `--continue`). |
+
+**Producer:** `write_cherry_pick_state()`, `read_cherry_pick_state()`
+**Consumer:** `_cherry_pick_continue_async()`, `_cherry_pick_abort_async()`
+
+**Frozen dataclass** — all fields are immutable after construction.
+
+---
+
 ### `TrackHumanizeResult`
 
 **Module:** `maestro/muse_cli/commands/humanize.py`
