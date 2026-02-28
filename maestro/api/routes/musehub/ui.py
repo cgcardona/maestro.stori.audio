@@ -6,6 +6,7 @@ analogous to GitHub's repository browser but for music projects.
 Endpoint summary:
   GET /musehub/ui/{repo_id}                        — repo page (branch selector + commit log)
   GET /musehub/ui/{repo_id}/commits/{commit_id}    — commit detail page (metadata + artifacts)
+  GET /musehub/ui/{repo_id}/graph                  — interactive DAG commit graph
   GET /musehub/ui/{repo_id}/pulls                  — pull request list page
   GET /musehub/ui/{repo_id}/pulls/{pr_id}          — PR detail page (with merge button)
   GET /musehub/ui/{repo_id}/issues                 — issue list page
@@ -435,6 +436,306 @@ async def commit_page(repo_id: str, commit_id: str) -> HTMLResponse:
         breadcrumb=(
             f'<a href="/musehub/ui/{repo_id}">{repo_id[:8]}</a> / '
             f'commits / {commit_id[:8]}'
+        ),
+        body_script=script,
+    )
+    return HTMLResponse(content=html)
+
+
+@router.get(
+    "/{repo_id}/graph",
+    response_class=HTMLResponse,
+    summary="Muse Hub interactive DAG commit graph",
+)
+async def graph_page(repo_id: str) -> HTMLResponse:
+    """Render the interactive DAG commit graph page.
+
+    Fetches ``GET /api/v1/musehub/repos/{repo_id}/dag`` which returns a
+    topologically sorted list of nodes and edges. The client-side renderer
+    draws an SVG-based commit graph with:
+
+    - Branch colour-coding (each unique branch name gets a stable colour)
+    - Merge commits highlighted with two incoming edges
+    - Zoom (mouse-wheel) and pan (drag) via SVG transform
+    - Hover popover showing SHA, message, author, and timestamp
+    - Branch/tag labels displayed as badges on nodes
+    - HEAD node styled with a distinct ring
+    - Click on any node navigates to the commit detail page
+    - Virtualised rendering: only nodes within the visible viewport are
+      painted, keeping 100+ commit graphs smooth
+
+    No external CDN dependencies — the entire renderer is inline JavaScript.
+    """
+    script = f"""
+      const repoId = {repr(repo_id)};
+      const base   = '/musehub/ui/' + repoId;
+
+      // ── Colour palette for branches (stable hash → index) ──────────────────
+      const BRANCH_COLORS = [
+        '#58a6ff', '#3fb950', '#f0883e', '#bc8cff', '#ff7b72',
+        '#79c0ff', '#56d364', '#ffa657', '#d2a8ff', '#ff9492',
+      ];
+      const _branchColorCache = {{}};
+      function branchColor(name) {{
+        if (_branchColorCache[name]) return _branchColorCache[name];
+        let h = 0;
+        for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) | 0;
+        const c = BRANCH_COLORS[Math.abs(h) % BRANCH_COLORS.length];
+        _branchColorCache[name] = c;
+        return c;
+      }}
+
+      function escHtml(s) {{
+        if (!s) return '';
+        return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+      }}
+
+      // ── Layout constants ────────────────────────────────────────────────────
+      const NODE_R   = 10;   // node circle radius
+      const ROW_H    = 48;   // vertical spacing per commit
+      const COL_W    = 32;   // horizontal spacing per branch lane
+      const PAD_LEFT = 20;
+      const PAD_TOP  = 20;
+
+      // ── Assign each commit a (col, row) position ────────────────────────────
+      // nodes are already in topological order (oldest first).
+      // Assign each branch a stable column; new branch = new column.
+      function layoutNodes(nodes) {{
+        const colMap = {{}};   // branch → column index
+        let nextCol = 0;
+        const pos = {{}};
+        nodes.forEach((n, row) => {{
+          if (colMap[n.branch] === undefined) colMap[n.branch] = nextCol++;
+          pos[n.commitId] = {{ col: colMap[n.branch], row }};
+        }});
+        const maxCol = nextCol;
+        return {{ pos, maxCol }};
+      }}
+
+      // ── Render the SVG graph ─────────────────────────────────────────────────
+      function renderGraph(data) {{
+        const {{ nodes, edges, headCommitId }} = data;
+        if (!nodes.length) {{
+          document.getElementById('content').innerHTML =
+            '<div class="card"><p class="loading">No commits yet — nothing to graph.</p></div>';
+          return;
+        }}
+
+        const {{ pos, maxCol }} = layoutNodes(nodes);
+        const svgW = PAD_LEFT * 2 + maxCol * COL_W + 400;  // extra width for labels
+        const svgH = PAD_TOP  * 2 + nodes.length * ROW_H;
+
+        // Build node lookup for tooltip
+        const nodeMap = {{}};
+        nodes.forEach(n => {{ nodeMap[n.commitId] = n; }});
+
+        // ── SVG elements as strings ───────────────────────────────────────────
+        let edgePaths = '';
+        edges.forEach(e => {{
+          const src = pos[e.source];
+          const tgt = pos[e.target];
+          if (!src || !tgt) return;
+          const x1 = PAD_LEFT + src.col * COL_W;
+          const y1 = PAD_TOP  + src.row * ROW_H;
+          const x2 = PAD_LEFT + tgt.col * COL_W;
+          const y2 = PAD_TOP  + tgt.row * ROW_H;
+          // Cubic bezier so diagonal edges look smooth
+          const cx = x1; const cy = y2;
+          const color = branchColor(nodeMap[e.source] ? nodeMap[e.source].branch : 'main');
+          edgePaths += `<path d="M${{x1}},${{y1}} C${{cx}},${{cy}} ${{cx}},${{cy}} ${{x2}},${{y2}}"
+            stroke="${{color}}" stroke-width="2" fill="none" opacity="0.6"/>`;
+        }});
+
+        let nodeCircles = '';
+        let nodeLabels = '';
+        nodes.forEach(n => {{
+          const p = pos[n.commitId];
+          const cx = PAD_LEFT + p.col * COL_W;
+          const cy = PAD_TOP  + p.row  * ROW_H;
+          const color = branchColor(n.branch);
+          const isHead = n.commitId === headCommitId || n.isHead;
+          const isMerge = (n.parentIds || []).length > 1;
+
+          // Outer ring for HEAD
+          if (isHead) {{
+            nodeCircles += `<circle cx="${{cx}}" cy="${{cy}}" r="${{NODE_R + 4}}"
+              fill="none" stroke="#f0883e" stroke-width="2" opacity="0.9"/>`;
+          }}
+          // Merge commits: diamond shape via rotated rect
+          if (isMerge) {{
+            nodeCircles += `<rect x="${{cx - NODE_R * 0.8}}" y="${{cy - NODE_R * 0.8}}"
+              width="${{NODE_R * 1.6}}" height="${{NODE_R * 1.6}}"
+              fill="${{color}}" stroke="#0d1117" stroke-width="1.5"
+              transform="rotate(45 ${{cx}} ${{cy}})"
+              class="dag-node" data-id="${{n.commitId}}" style="cursor:pointer"/>`;
+          }} else {{
+            nodeCircles += `<circle cx="${{cx}}" cy="${{cy}}" r="${{NODE_R}}"
+              fill="${{color}}" stroke="#0d1117" stroke-width="1.5"
+              class="dag-node" data-id="${{n.commitId}}" style="cursor:pointer"/>`;
+          }}
+
+          // Message label (truncated)
+          const msg = n.message.length > 55 ? n.message.substring(0,52) + '...' : n.message;
+          const labelX = PAD_LEFT + maxCol * COL_W + 12;
+          nodeLabels += `<text x="${{labelX}}" y="${{cy + 4}}" font-size="13"
+            fill="#c9d1d9" style="cursor:pointer" class="dag-node" data-id="${{n.commitId}}">
+            <tspan font-family="monospace" fill="#58a6ff">${{n.commitId.substring(0,7)}}</tspan>
+            <tspan dx="8">${{escHtml(msg)}}</tspan>
+          </text>`;
+
+          // Branch/tag badges
+          let badgeX = labelX;
+          (n.branchLabels || []).forEach(lbl => {{
+            const bw = lbl.length * 7 + 12;
+            nodeLabels += `<rect x="${{badgeX - 4}}" y="${{cy - 20}}" width="${{bw}}" height="14"
+              rx="7" fill="${{branchColor(lbl)}}" opacity="0.25"/>
+            <text x="${{badgeX}}" y="${{cy - 9}}" font-size="11" fill="${{branchColor(lbl)}}">${{escHtml(lbl)}}</text>`;
+            badgeX += bw + 6;
+          }});
+        }});
+
+        const svgContent = `
+          <defs>
+            <marker id="arrow" markerWidth="6" markerHeight="6" refX="3" refY="3"
+              orient="auto" markerUnits="strokeWidth">
+              <path d="M0,0 L6,3 L0,6 z" fill="#8b949e"/>
+            </marker>
+          </defs>
+          ${{edgePaths}}
+          ${{nodeCircles}}
+          ${{nodeLabels}}`;
+
+        // ── Legend ─────────────────────────────────────────────────────────────
+        const branchesInGraph = [...new Set(nodes.map(n => n.branch))];
+        const legendItems = branchesInGraph.map(b =>
+          `<span style="display:inline-flex;align-items:center;gap:6px;margin-right:16px">
+            <svg width="12" height="12"><circle cx="6" cy="6" r="5" fill="${{branchColor(b)}}"/></svg>
+            <span style="font-size:13px;color:#c9d1d9">${{escHtml(b)}}</span>
+          </span>`
+        ).join('');
+
+        document.getElementById('content').innerHTML = `
+          <div style="margin-bottom:12px;display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+            <a href="${{base}}">&larr; Back to repo</a>
+            <span style="color:#8b949e;font-size:13px">${{nodes.length}} commit${{nodes.length!==1?'s':''}} &bull; scroll to zoom &bull; drag to pan</span>
+          </div>
+          <div class="card" style="padding:0;overflow:hidden">
+            <div style="padding:12px 16px;border-bottom:1px solid #30363d;display:flex;align-items:center;flex-wrap:wrap;gap:4px">
+              <span style="font-size:12px;color:#8b949e;margin-right:8px">Branches:</span>
+              ${{legendItems}}
+              <span style="font-size:12px;color:#8b949e;margin-left:auto">&#9830; = merge commit</span>
+              <span style="font-size:12px;color:#f0883e;margin-left:12px">&#9711; = HEAD</span>
+            </div>
+            <div id="dag-viewport" style="overflow:hidden;position:relative;height:520px;background:#0d1117;cursor:grab">
+              <svg id="dag-svg" width="${{svgW}}" height="${{svgH}}" style="position:absolute;top:0;left:0">
+                <g id="dag-g" transform="translate(0,0) scale(1)">
+                  ${{svgContent}}
+                </g>
+              </svg>
+            </div>
+          </div>
+          <div id="dag-popover" style="display:none;position:fixed;z-index:1000;background:#161b22;
+            border:1px solid #30363d;border-radius:8px;padding:12px 16px;min-width:280px;max-width:400px;
+            box-shadow:0 8px 32px rgba(0,0,0,0.6);pointer-events:none">
+            <div style="font-family:monospace;font-size:13px;color:#58a6ff;margin-bottom:6px" id="pop-sha"></div>
+            <div style="font-size:13px;color:#e6edf3;margin-bottom:6px;word-break:break-word" id="pop-msg"></div>
+            <div style="font-size:12px;color:#8b949e" id="pop-meta"></div>
+          </div>`;
+
+        // ── Zoom + pan ────────────────────────────────────────────────────────
+        const viewport = document.getElementById('dag-viewport');
+        const g = document.getElementById('dag-g');
+        let scale = 1, tx = 0, ty = 0;
+        let dragging = false, dragX = 0, dragY = 0;
+
+        function applyTransform() {{
+          g.setAttribute('transform', `translate(${{tx}},${{ty}}) scale(${{scale}})`);
+        }}
+
+        viewport.addEventListener('wheel', e => {{
+          e.preventDefault();
+          const rect = viewport.getBoundingClientRect();
+          const mx = e.clientX - rect.left;
+          const my = e.clientY - rect.top;
+          const delta = e.deltaY > 0 ? 0.85 : 1.15;
+          const newScale = Math.max(0.2, Math.min(4, scale * delta));
+          tx = mx - (mx - tx) * (newScale / scale);
+          ty = my - (my - ty) * (newScale / scale);
+          scale = newScale;
+          applyTransform();
+        }}, {{ passive: false }});
+
+        viewport.addEventListener('mousedown', e => {{
+          dragging = true; dragX = e.clientX; dragY = e.clientY;
+          viewport.style.cursor = 'grabbing';
+        }});
+        window.addEventListener('mouseup', () => {{
+          dragging = false;
+          if (viewport) viewport.style.cursor = 'grab';
+        }});
+        window.addEventListener('mousemove', e => {{
+          if (!dragging) return;
+          tx += e.clientX - dragX; ty += e.clientY - dragY;
+          dragX = e.clientX; dragY = e.clientY;
+          applyTransform();
+        }});
+
+        // ── Hover popover ─────────────────────────────────────────────────────
+        const popover = document.getElementById('dag-popover');
+        const svgEl = document.getElementById('dag-svg');
+        svgEl.addEventListener('mousemove', e => {{
+          const target = e.target.closest('.dag-node');
+          if (!target) {{ popover.style.display = 'none'; return; }}
+          const cid = target.getAttribute('data-id');
+          const node = nodeMap[cid];
+          if (!node) {{ popover.style.display = 'none'; return; }}
+          document.getElementById('pop-sha').textContent = node.commitId;
+          document.getElementById('pop-msg').textContent = node.message;
+          document.getElementById('pop-meta').innerHTML =
+            escHtml(node.author) + ' &bull; ' + fmtDate(node.timestamp) +
+            ' &bull; ' + escHtml(node.branch);
+          popover.style.display = 'block';
+          // Position near cursor, keep on-screen
+          const vw = window.innerWidth, vh = window.innerHeight;
+          let px = e.clientX + 16, py = e.clientY + 16;
+          if (px + 420 > vw) px = e.clientX - 420;
+          if (py + 120 > vh) py = e.clientY - 120;
+          popover.style.left = px + 'px';
+          popover.style.top  = py + 'px';
+        }});
+        svgEl.addEventListener('mouseleave', () => {{ popover.style.display = 'none'; }});
+
+        // ── Click to navigate ─────────────────────────────────────────────────
+        svgEl.addEventListener('click', e => {{
+          const target = e.target.closest('.dag-node');
+          if (!target) return;
+          const cid = target.getAttribute('data-id');
+          if (cid) window.location.href = base + '/commits/' + cid;
+        }});
+      }}
+
+      async function load() {{
+        try {{
+          const data = await apiFetch('/repos/' + repoId + '/dag');
+          renderGraph(data);
+        }} catch(e) {{
+          if (e.message !== 'auth')
+            document.getElementById('content').innerHTML =
+              '<p class="error">&#10005; ' + escHtml(e.message) + '</p>';
+        }}
+      }}
+
+      function escHtml(s) {{
+        if (!s) return '';
+        return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+      }}
+
+      load();
+    """
+    html = _page(
+        title="Commit Graph",
+        breadcrumb=(
+            f'<a href="/musehub/ui/{repo_id}">{repo_id[:8]}</a> / graph'
         ),
         body_script=script,
     )

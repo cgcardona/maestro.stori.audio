@@ -1400,6 +1400,102 @@ others → `application/octet-stream`).
 
 ---
 
+## Muse Hub — Webhook Subscriptions
+
+Webhooks deliver real-time event notifications via HTTP POST to a registered
+URL whenever a matching event fires on a repo.  An HMAC-SHA256 signature is
+included when a secret is configured, allowing receivers to verify authenticity.
+
+**Event types:** `push`, `pull_request`, `issue`, `release`, `branch`, `tag`,
+`session`, `analysis`.
+
+**Delivery headers:**
+
+| Header | Value |
+|--------|-------|
+| `Content-Type` | `application/json` |
+| `X-MuseHub-Event` | Event type string (e.g. `push`) |
+| `X-MuseHub-Delivery` | UUID identifying this delivery attempt |
+| `X-MuseHub-Signature` | `sha256=<hmac_hex>` (only when secret is set) |
+
+**Retry policy:** Up to 3 attempts with exponential back-off (1 s, 2 s, 4 s).
+Each attempt is logged to `musehub_webhook_deliveries`.
+
+---
+
+### POST /api/v1/musehub/repos/{repo_id}/webhooks
+
+Register a new webhook subscription.
+
+**Request body:**
+
+```json
+{
+  "url": "https://your-server.example.com/hook",
+  "events": ["push", "issue"],
+  "secret": "optional-signing-secret"
+}
+```
+
+**Response (201):**
+
+```json
+{
+  "webhookId": "uuid",
+  "repoId": "repo-uuid",
+  "url": "https://your-server.example.com/hook",
+  "events": ["push", "issue"],
+  "active": true,
+  "createdAt": "2026-02-27T00:00:00Z"
+}
+```
+
+**Errors:**
+- **404** — repo not found
+- **422** — unknown event type(s)
+
+---
+
+### GET /api/v1/musehub/repos/{repo_id}/webhooks
+
+List all registered webhooks for a repo, ordered by creation time.
+
+**Response (200):**
+
+```json
+{
+  "webhooks": [
+    {
+      "webhookId": "uuid",
+      "repoId": "repo-uuid",
+      "url": "https://your-server.example.com/hook",
+      "events": ["push", "issue"],
+      "active": true,
+      "createdAt": "2026-02-27T00:00:00Z"
+    }
+  ]
+}
+```
+
+**Errors:** **404** — repo not found.
+
+---
+
+### DELETE /api/v1/musehub/repos/{repo_id}/webhooks/{webhook_id}
+
+Remove a webhook subscription and all its delivery history.
+
+**Response (204):** No content.
+
+**Errors:**
+- **404** — repo or webhook not found
+
+---
+
+### GET /api/v1/musehub/repos/{repo_id}/webhooks/{webhook_id}/deliveries
+
+List delivery attempts for a webhook, newest first.
+
 ### GET /api/v1/musehub/repos/{repo_id}/export/{ref}
 
 Download a packaged export of stored artifacts at a given commit ref. The ref
@@ -1407,10 +1503,29 @@ can be a full commit ID or a branch name (resolves to branch head). Artifacts
 are filtered by format and optional section names, then returned as a raw file
 (single artifact) or a ZIP archive (multi-artifact or `splitTracks=true`).
 
+
 **Query parameters:**
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
+| `limit` | int | 50 | Max records to return (1–200) |
+
+**Response (200):**
+
+```json
+{
+  "deliveries": [
+    {
+      "deliveryId": "uuid",
+      "webhookId": "webhook-uuid",
+      "eventType": "push",
+      "attempt": 1,
+      "success": true,
+      "responseStatus": 200,
+      "responseBody": "ok",
+      "deliveredAt": "2026-02-27T00:00:00Z"
+    }
+
 | `format` | string | `midi` | Export format: `midi`, `json`, `musicxml`, `abc`, `wav`, `mp3` |
 | `splitTracks` | bool | `false` | Bundle all matching artifacts into a ZIP archive, one file per track |
 | `sections` | string | — | Comma-separated section names; only artifacts whose path contains a listed name are included (e.g. `verse,chorus`) |
@@ -1442,11 +1557,14 @@ are filtered by format and optional section names, then returned as a raw file
   "commit_id": "string",
   "objects": [
     {"object_id": "string", "path": "string", "size_bytes": 0}
+
   ]
 }
 ```
 
 **Errors:**
+- **404** — repo or webhook not found
+
 - **404** — repo not found, ref not found, or no artifacts match the requested format
 - **422** — unrecognised `format` value
 
@@ -1622,6 +1740,7 @@ Returns structured JSON for one musical dimension.
 - `401` if no Bearer token
 
 See `maestro/models/musehub_analysis.py` for full Pydantic model definitions and OpenAPI schema.
+
 
 ---
 

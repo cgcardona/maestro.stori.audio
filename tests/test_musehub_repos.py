@@ -6,6 +6,7 @@ Covers every acceptance criterion from issue #39:
 - GET /musehub/repos/{repo_id} returns 200; 404 for unknown repo
 - GET /musehub/repos/{repo_id}/branches returns empty list on new repo
 - GET /musehub/repos/{repo_id}/commits returns newest first, respects ?limit
+- GET /musehub/repos/{repo_id}/dag returns topologically sorted DAG (issue #229)
 
 Covers issue #241 (credits aggregation):
 - test_credits_aggregation             — contributors aggregated from session commits
@@ -338,6 +339,101 @@ async def _seed_credits_repo(db_session: AsyncSession) -> str:
     db_session.add(repo)
     await db_session.flush()
     repo_id = str(repo.repo_id)
+# GET /musehub/repos/{repo_id}/dag  (issue #229)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.anyio
+async def test_graph_dag_endpoint_returns_empty_for_new_repo(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+) -> None:
+    """GET /dag returns empty nodes/edges for a repo with no commits."""
+    create = await client.post(
+        "/api/v1/musehub/repos",
+        json={"name": "dag-empty"},
+        headers=auth_headers,
+    )
+    repo_id = create.json()["repoId"]
+
+    response = await client.get(
+        f"/api/v1/musehub/repos/{repo_id}/dag",
+        headers=auth_headers,
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["nodes"] == []
+    assert body["edges"] == []
+    assert body["headCommitId"] is None
+
+
+@pytest.mark.anyio
+async def test_graph_dag_has_edges(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+    db_session: AsyncSession,
+) -> None:
+    """DAG endpoint returns correct edges representing parent relationships."""
+    from datetime import datetime, timezone, timedelta
+
+    create = await client.post(
+        "/api/v1/musehub/repos",
+        json={"name": "dag-edges"},
+        headers=auth_headers,
+    )
+    repo_id = create.json()["repoId"]
+
+    now = datetime.now(tz=timezone.utc)
+    root = MusehubCommit(
+        commit_id="root111",
+        repo_id=repo_id,
+        branch="main",
+        parent_ids=[],
+        message="root commit",
+        author="gabriel",
+        timestamp=now - timedelta(hours=2),
+    )
+    child = MusehubCommit(
+        commit_id="child222",
+        repo_id=repo_id,
+        branch="main",
+        parent_ids=["root111"],
+        message="child commit",
+        author="gabriel",
+        timestamp=now - timedelta(hours=1),
+    )
+    db_session.add_all([root, child])
+    await db_session.commit()
+
+    response = await client.get(
+        f"/api/v1/musehub/repos/{repo_id}/dag",
+        headers=auth_headers,
+    )
+    assert response.status_code == 200
+    body = response.json()
+    nodes = body["nodes"]
+    edges = body["edges"]
+
+    assert len(nodes) == 2
+    # Verify edge: child → root
+    assert any(e["source"] == "child222" and e["target"] == "root111" for e in edges)
+
+
+@pytest.mark.anyio
+async def test_graph_dag_endpoint_topological_order(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+    db_session: AsyncSession,
+) -> None:
+    """DAG endpoint returns nodes in topological order (oldest ancestor first)."""
+    from datetime import datetime, timezone, timedelta
+
+    create = await client.post(
+        "/api/v1/musehub/repos",
+        json={"name": "dag-topo"},
+        headers=auth_headers,
+    )
+    repo_id = create.json()["repoId"]
 
     now = datetime.now(tz=timezone.utc)
     commits = [
@@ -367,6 +463,31 @@ async def _seed_credits_repo(db_session: AsyncSession) -> str:
             message="mix and master final session",
             author="Alice",
             timestamp=now - timedelta(days=1),
+            commit_id="topo-a",
+            repo_id=repo_id,
+            branch="main",
+            parent_ids=[],
+            message="root",
+            author="gabriel",
+            timestamp=now - timedelta(hours=3),
+        ),
+        MusehubCommit(
+            commit_id="topo-b",
+            repo_id=repo_id,
+            branch="main",
+            parent_ids=["topo-a"],
+            message="second",
+            author="gabriel",
+            timestamp=now - timedelta(hours=2),
+        ),
+        MusehubCommit(
+            commit_id="topo-c",
+            repo_id=repo_id,
+            branch="main",
+            parent_ids=["topo-b"],
+            message="third",
+            author="gabriel",
+            timestamp=now - timedelta(hours=1),
         ),
     ]
     db_session.add_all(commits)
@@ -479,6 +600,33 @@ async def test_credits_404_for_unknown_repo(
     """GET /api/v1/musehub/repos/{unknown}/credits returns 404."""
     response = await client.get(
         "/api/v1/musehub/repos/does-not-exist/credits",
+
+    response = await client.get(
+        f"/api/v1/musehub/repos/{repo_id}/dag",
+        headers=auth_headers,
+    )
+    assert response.status_code == 200
+    node_ids = [n["commitId"] for n in response.json()["nodes"]]
+    # Root must appear before children in topological order
+    assert node_ids.index("topo-a") < node_ids.index("topo-b")
+    assert node_ids.index("topo-b") < node_ids.index("topo-c")
+
+
+@pytest.mark.anyio
+async def test_graph_dag_requires_auth(client: AsyncClient) -> None:
+    """GET /dag returns 401 without a Bearer token."""
+    response = await client.get("/api/v1/musehub/repos/any-repo/dag")
+    assert response.status_code == 401
+
+
+@pytest.mark.anyio
+async def test_graph_dag_404_for_unknown_repo(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+) -> None:
+    """GET /dag returns 404 for a non-existent repo."""
+    response = await client.get(
+        "/api/v1/musehub/repos/ghost-repo-dag/dag",
         headers=auth_headers,
     )
     assert response.status_code == 404
@@ -534,6 +682,30 @@ async def test_credits_aggregation_service_direct(db_session: AsyncSession) -> N
             message="produce and mix the drop",
             author="Charlie",
             timestamp=now,
+async def test_graph_json_response_has_required_fields(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+    db_session: AsyncSession,
+) -> None:
+    """DAG JSON response includes nodes (with required fields) and edges arrays."""
+    from datetime import datetime, timezone
+
+    create = await client.post(
+        "/api/v1/musehub/repos",
+        json={"name": "dag-fields"},
+        headers=auth_headers,
+    )
+    repo_id = create.json()["repoId"]
+
+    db_session.add(
+        MusehubCommit(
+            commit_id="fields-aaa",
+            repo_id=repo_id,
+            branch="main",
+            parent_ids=[],
+            message="check fields",
+            author="tester",
+            timestamp=datetime.now(tz=timezone.utc),
         )
     )
     await db_session.commit()
@@ -543,3 +715,16 @@ async def test_credits_aggregation_service_direct(db_session: AsyncSession) -> N
     assert result.contributors[0].author == "Charlie"
     assert result.contributors[0].session_count == 1
     assert len(result.contributors[0].contribution_types) >= 1
+    response = await client.get(
+        f"/api/v1/musehub/repos/{repo_id}/dag",
+        headers=auth_headers,
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert "nodes" in body
+    assert "edges" in body
+    assert "headCommitId" in body
+
+    node = body["nodes"][0]
+    for field in ("commitId", "message", "author", "timestamp", "branch", "parentIds", "isHead"):
+        assert field in node, f"Missing field '{field}' in DAG node"
