@@ -1664,6 +1664,36 @@ Returned by `GET /api/v1/musehub/repos/{id}/forks`.
 | `forks` | `list[ForkEntry]` | Forks of this repo, newest first |
 | `total` | `int` | Total fork count |
 
+#### `UserForkedRepoEntry`
+
+**Path:** `maestro/models/musehub.py`
+**Endpoint:** `GET /api/v1/musehub/users/{username}/forks`
+
+A single forked-repo entry shown on a user's profile Forked tab. Combines fork
+repo metadata with source attribution so the UI can render
+"forked from {source_owner}/{source_slug}" under each card.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `fork_id` | `str` | Internal UUID of the fork relationship record |
+| `fork_repo` | `RepoResponse` | Full metadata of the forked (child) repo |
+| `source_owner` | `str` | Owner username of the original source repo |
+| `source_slug` | `str` | Slug of the original source repo |
+| `forked_at` | `datetime` | Timestamp when the fork was created (ISO-8601 UTC) |
+
+#### `UserForksResponse`
+
+**Path:** `maestro/models/musehub.py`
+**Endpoint:** `GET /api/v1/musehub/users/{username}/forks`
+
+Returned by the public forks endpoint. Lists all repos that a given user has
+forked, newest first.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `forks` | `list[UserForkedRepoEntry]` | Repos forked by this user |
+| `total` | `int` | Total number of forked repos |
+
 #### `ForkCreateResponse`
 
 Returned by `POST /api/v1/musehub/repos/{id}/fork`.
