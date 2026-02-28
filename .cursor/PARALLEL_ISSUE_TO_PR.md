@@ -75,12 +75,18 @@ cd "$REPO"
 DEV_SHA=$(git rev-parse dev)
 
 # --- define issues (confirmed independent — zero file overlap) ---
+# Batch: #112–#119 (new muse CLI commands)
+# Known shared file: maestro/muse_cli/app.py (each agent adds one app.add_typer line)
+# Resolution: pre-push sync in STEP 4 handles app.py conflicts — keep both sides.
 declare -a ISSUES=(
-  "35|feat: muse merge — fast-forward and 3-way merge with path-level conflict detection"
-  "37|feat: Maestro stress test → muse-work/ output contract with muse-batch.json manifest"
-  "40|feat: Muse Hub push/pull sync protocol — batch commit and object transfer"
-  "41|feat: Muse Hub pull requests — create, list, and merge PRs between branches"
-  "47|feat: Muse Hub JWT auth integration — CLI token storage and Hub request authentication"
+  "119|feat: muse divergence — show how two branches have diverged musically"
+  "118|feat: muse import <file> — import a MIDI or MusicXML file as a new Muse commit"
+  "117|feat: muse meter [<commit>] [--set <time-sig>] — read or set the time signature"
+  "116|feat: muse tempo [<commit>] [--set <bpm>] — read or set the tempo of a commit"
+  "115|feat: muse arrange [<commit>] — display the arrangement map (instrument activity over sections)"
+  "114|feat: muse find — search commit history by musical properties"
+  "113|feat: muse context [<commit>] — output structured musical context for AI agent consumption"
+  "112|feat: muse export [<commit>] --format <format> — export a Muse snapshot to external formats"
 )
 
 # --- create worktrees + task files ---
