@@ -63,7 +63,7 @@ Clear the existing allowlist entirely, then paste the block below into
 > into one broken token. The comma is the only separator Cursor respects.
 
 ```
-ls, ls -la, ls -lah, ls -l, pwd, cat, head, tail, echo, wc, file, which, date, basename, dirname, printf, jq, sort, uniq, tr, awk, sed, cut, xargs, tee, rg, grep, find, mkdir -p, cp, mv, touch, ln -s, cd, sleep, REPO=, WTNAME=, DEV_SHA=, WT=, NUM=, TITLE=, BRANCH=, PRTREES=, WORKTREE=, ENTRY=, declare -a, declare -a ISSUES=, declare -a PRS=, for entry in, for NUM in, for WT in, git status, git log, git diff, git show, git branch, git fetch, git fetch origin, git pull, git pull origin, git pull origin dev, git stash list, git worktree list, git ls-remote, git rev-parse, git ls-files, git merge-base, git describe, git cat-file, git -C, git -C /Users, git worktree list --porcelain, git bisect, git bisect start, git bisect bad, git bisect good, git bisect log, git bisect reset, git checkout -b, git checkout, git add, git add -A, git commit, git merge origin/dev, git merge, git stash, git stash pop, git stash apply, git push origin, git push origin --delete, git worktree add, git worktree add --detach, git worktree remove --force, git worktree prune, docker compose ps, docker compose logs, docker compose config, docker compose -f, docker ps, docker inspect, docker compose exec maestro mypy, docker compose exec maestro pytest, docker compose exec maestro sh -c, docker compose exec maestro python -m coverage, docker compose exec maestro ls, docker compose exec maestro cat, docker compose exec maestro rg, docker compose exec maestro grep, docker compose exec maestro find, docker compose exec maestro alembic history, docker compose exec maestro alembic current, docker compose exec maestro alembic heads, docker compose exec maestro alembic upgrade head, docker compose exec storpheus mypy, docker compose exec storpheus pytest, docker compose exec storpheus sh -c, docker compose exec storpheus ls, docker compose exec storpheus cat, docker compose exec storpheus rg, docker compose exec storpheus grep, docker compose exec postgres psql, gh auth status, gh repo view, gh pr view, gh pr list, gh pr diff, gh pr create, gh pr checkout, gh pr merge, gh pr comment, gh pr review, gh issue view, gh issue list, gh issue create, gh issue close, gh issue comment, gh issue edit, gh label list, gh run list, gh run view, gh release list, gh release view, gh api, ps aux, ps -ef, pgrep, nc -z, curl, REPO=$(git, WTNAME=$(basename, DEV_SHA=$(git, WT=$HOME, BRANCH=$(git
+ls, ls -la, ls -lah, ls -l, pwd, cat, head, tail, echo, wc, file, which, date, basename, dirname, printf, jq, sort, uniq, tr, awk, sed, cut, xargs, tee, rg, grep, find, mkdir -p, cp, mv, touch, ln -s, cd, sleep, python3 -c, REPO=, WTNAME=, DEV_SHA=, WT=, NUM=, TITLE=, BRANCH=, PRTREES=, WORKTREE=, ENTRY=, declare -a, declare -a ISSUES=, declare -a PRS=, for entry in, for NUM in, for WT in, git status, git log, git diff, git show, git branch, git fetch, git fetch origin, git pull, git pull origin, git pull origin dev, git stash list, git worktree list, git ls-remote, git rev-parse, git ls-files, git merge-base, git describe, git cat-file, git -C, git -C /Users, git worktree list --porcelain, git bisect, git bisect start, git bisect bad, git bisect good, git bisect log, git bisect reset, git checkout -b, git checkout, git add, git add -A, git commit, git merge origin/dev, git merge, git stash, git stash pop, git stash apply, git push origin, git push origin --delete, git worktree add, git worktree add --detach, git worktree remove --force, git worktree prune, docker compose ps, docker compose logs, docker compose config, docker compose -f, docker ps, docker inspect, docker compose exec maestro mypy, docker compose exec maestro pytest, docker compose exec maestro sh -c, docker compose exec maestro python -m coverage, docker compose exec maestro ls, docker compose exec maestro cat, docker compose exec maestro rg, docker compose exec maestro grep, docker compose exec maestro find, docker compose exec maestro alembic history, docker compose exec maestro alembic current, docker compose exec maestro alembic heads, docker compose exec maestro alembic upgrade head, docker compose exec storpheus mypy, docker compose exec storpheus pytest, docker compose exec storpheus sh -c, docker compose exec storpheus ls, docker compose exec storpheus cat, docker compose exec storpheus rg, docker compose exec storpheus grep, docker compose exec postgres psql, gh auth status, gh repo view, gh pr view, gh pr list, gh pr diff, gh pr create, gh pr checkout, gh pr merge, gh pr comment, gh pr review, gh issue view, gh issue list, gh issue create, gh issue close, gh issue comment, gh issue edit, gh label list, gh run list, gh run view, gh release list, gh release view, gh api, ps aux, ps -ef, pgrep, nc -z, curl, REPO=$(git, WTNAME=$(basename, DEV_SHA=$(git, WT=$HOME, BRANCH=$(git
 ```
 
 ---
@@ -272,6 +272,13 @@ ps -ef
 pgrep <name>
 ```
 
+### Python — Host-side one-liners (read-only data processing only)
+```
+python3 -c "<one-liner>"      ← JSON parsing, string manipulation of gh/git output ONLY
+                               ← No file writes, no imports beyond stdlib, no network calls
+                               ← Longer scripts or any I/O must use docker compose exec
+```
+
 ### Network — Read-only probes
 ```
 curl -s <local-url>            ← GET only; local health checks only (e.g. localhost:10001/health)
@@ -299,7 +306,8 @@ needed and confirm scope is correct before running.
 | `docker compose exec maestro alembic downgrade` | Explicitly requested DB rollback | Routine use — destructive, should always be questioned |
 | `docker compose exec postgres psql` with mutations | Explicitly requested data fix | Any ad-hoc data modification without explicit user request |
 | `sed -i` (in-place file edit via shell) | Never — use the StrReplace tool instead | Always |
-| `python3` / `python` on the host | Never — use `docker compose exec` | Always |
+| `python3 <script.py>` on the host | Never — use `docker compose exec` | Always |
+| `python3 -c "..."` with file I/O or non-stdlib | Use `docker compose exec` instead | When the one-liner writes files, imports non-stdlib, or makes network calls |
 
 ---
 
@@ -391,7 +399,9 @@ gh pr merge <N>   ← without having first output "Grade: X" and "Approved for m
 1. **Never pipe `mypy` or `pytest` output through `grep`, `head`, or `tail`.**
    The exit code is the authoritative signal. Filtering hides failures.
 
-2. **Never run Python on the host.** Always `docker compose exec <service> ...`.
+2. **Never run Python scripts on the host.** `python3 -c "..."` one-liners are allowed for
+   read-only stdlib-only data processing (e.g. JSON parsing of `gh` output). Any script file,
+   file writes, non-stdlib imports, or network calls must use `docker compose exec <service> ...`.
 
 3. **Never `sed -i` to edit files.** Use the StrReplace tool — it's safer, tracked, and shows a diff.
 
