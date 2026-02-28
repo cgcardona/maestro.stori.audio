@@ -96,14 +96,14 @@ cd "$REPO"
 DEV_SHA=$(git rev-parse dev)
 
 # --- define issues (confirmed independent — zero file overlap) ---
-# Batch: #36, #38, #43, #48 (Muse conflict resolution, remote sync, Hub UI, integration tests)
+# Batch: #51, #48, #43, #38 (descending; gaps at #52–#65, #49–#50, #44–#47, #39–#42 skipped)
 # Known shared file: maestro/muse_cli/app.py (each agent adds one app.add_typer line)
 # Resolution: pre-push sync in STEP 4 handles app.py conflicts — keep both sides.
 declare -a ISSUES=(
+  "51|fix: remove unused import pathlib from status.py + drop status from STUB_COMMANDS"
   "48|feat: Golden-path integration test + demo scripts — end-to-end Muse MVP workflow"
   "43|feat: Muse Hub web UI — artifact browsing, commit viewer, PR and issue pages"
   "38|feat: muse remote add + muse push + muse pull — CLI ↔ Muse Hub sync"
-  "36|feat: muse resolve + muse merge --continue — conflict resolution workflow"
 )
 
 # --- create worktrees + task files ---
