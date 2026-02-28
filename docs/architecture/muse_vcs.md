@@ -1363,6 +1363,72 @@ CLI contract; stub implementations are clearly marked.
 
 ---
 
+### `muse cat-object`
+
+**Purpose:** Read and display a raw Muse object by its SHA-256 hash. The
+plumbing equivalent of `git cat-file` — lets an AI agent inspect any stored
+blob, snapshot manifest, or commit record without running the full `muse log`
+pipeline.
+
+**Usage:**
+```bash
+muse cat-object [OPTIONS] <object-id>
+```
+
+**Flags:**
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `<object-id>` | positional | required | Full 64-char SHA-256 hash to look up |
+| `-t / --type` | flag | off | Print only the object type (`object`, `snapshot`, or `commit`) |
+| `-p / --pretty` | flag | off | Pretty-print the object content as indented JSON |
+
+`-t` and `-p` are mutually exclusive.
+
+**Output example (default):**
+```
+type:       commit
+commit_id:  a1b2c3d4...
+branch:     main
+snapshot:   f9e8d7c6...
+message:    boom bap demo take 1
+parent:     00112233...
+committed_at: 2026-02-27T17:30:00+00:00
+```
+
+**Output example (`-t`):**
+```
+commit
+```
+
+**Output example (`-p <snapshot_id>`):**
+```json
+{
+  "type": "snapshot",
+  "snapshot_id": "f9e8d7c6...",
+  "manifest": {
+    "beat.mid": "a1b2c3d4...",
+    "keys.mid": "11223344..."
+  },
+  "created_at": "2026-02-27T17:20:00+00:00"
+}
+```
+
+**Result type:** `CatObjectResult` — fields: `object_type` (str), `row`
+(MuseCliObject | MuseCliSnapshot | MuseCliCommit). Call `.to_dict()` for a
+JSON-serialisable representation.
+
+**Agent use case:** Use `muse cat-object -t <hash>` to determine the type of
+an unknown ID before deciding how to process it. Use `-p` to extract the
+snapshot manifest (file → object_id map) or commit metadata for downstream
+generation context. Combine with `muse log` short IDs: copy the full commit_id
+from `muse log`, then `muse cat-object -p <id>` to inspect its snapshot.
+
+**Error behaviour:** Exits with code 1 (`USER_ERROR`) when the ID is not found
+in any object table; prints `❌ Object not found: <id>`.
+
+---
+
 ### `muse dynamics`
 
 **Purpose:** Analyze the velocity (loudness) profile of a commit across all instrument

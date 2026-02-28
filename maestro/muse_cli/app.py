@@ -1,10 +1,10 @@
 """Muse CLI — Typer application root.
 
 Entry point for the ``muse`` console script. Registers all MVP
-subcommands (arrange, ask, checkout, commit, context, describe, divergence,
-dynamics, export, find, grep, import, init, log, merge, meter, open, play,
-pull, push, recall, remote, session, status, swing, tag, tempo) as Typer
-sub-applications.
+subcommands (arrange, ask, cat-object, checkout, commit, context, describe,
+divergence, dynamics, export, find, grep, import, init, log, merge, meter,
+open, play, pull, push, recall, remote, session, status, swing, tag, tempo)
+as Typer sub-applications.
 """
 from __future__ import annotations
 
@@ -13,6 +13,7 @@ import typer
 from maestro.muse_cli.commands import (
     arrange,
     ask,
+    cat_object,
     checkout,
     commit,
     context,
@@ -46,6 +47,7 @@ cli = typer.Typer(
     no_args_is_help=True,
 )
 
+cli.add_typer(cat_object.app, name="cat-object", help="Read and display a stored object by its SHA-256 hash.")
 cli.add_typer(init.app, name="init", help="Initialise a new Muse repository.")
 cli.add_typer(status.app, name="status", help="Show working-tree drift against HEAD.")
 cli.add_typer(dynamics.app, name="dynamics", help="Analyse the dynamic (velocity) profile of a commit.")
