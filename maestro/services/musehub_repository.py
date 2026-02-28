@@ -476,8 +476,10 @@ async def global_search(
     controls how many repo-groups per page).  Within each group, up to 20
     matching commits are returned newest-first.
 
-    An audio preview object ID is attached when the repo contains any .mp3
-    or .ogg artifact — the first one found by path ordering is used.
+    An audio preview object ID is attached when the repo contains any .mp3,
+    .ogg, or .wav artifact — the first one found by path ordering is used.
+    Audio previews are resolved in a single batched query across all matching
+    repos (not N per-repo queries) to avoid the N+1 pattern.
 
     Args:
         session:   Active async DB session.
@@ -553,25 +555,30 @@ async def global_search(
     for commit_row, _repo_row in commit_pairs:
         groups_map.setdefault(commit_row.repo_id, []).append(commit_row)
 
-    # ── 5. Resolve audio preview objects (one per repo, first .mp3/.ogg) ────
+    # ── 5. Resolve audio preview objects — single batched query (eliminates N+1) ──
+    # Fetch all qualifying audio objects for every matching repo in one round-trip,
+    # ordered by (repo_id, path) so we naturally encounter each repo's
+    # alphabetically-first audio file first when iterating the result set.
+    # Python deduplication (first-seen wins) replicates the previous LIMIT 1
+    # per-repo semantics without issuing N separate queries.
     audio_map: dict[str, str] = {}
-    for rid in groups_map:
-        audio_stmt = (
-            select(db.MusehubObject.object_id)
+    if groups_map:
+        audio_batch_stmt = (
+            select(db.MusehubObject.repo_id, db.MusehubObject.object_id)
             .where(
-                db.MusehubObject.repo_id == rid,
+                db.MusehubObject.repo_id.in_(list(groups_map.keys())),
                 or_(
                     db.MusehubObject.path.like("%.mp3"),
                     db.MusehubObject.path.like("%.ogg"),
                     db.MusehubObject.path.like("%.wav"),
                 ),
             )
-            .order_by(db.MusehubObject.path)
-            .limit(1)
+            .order_by(db.MusehubObject.repo_id, db.MusehubObject.path)
         )
-        audio_row = (await session.execute(audio_stmt)).scalar_one_or_none()
-        if audio_row is not None:
-            audio_map[rid] = audio_row
+        audio_rows = (await session.execute(audio_batch_stmt)).all()
+        for audio_row in audio_rows:
+            if audio_row.repo_id not in audio_map:
+                audio_map[audio_row.repo_id] = audio_row.object_id
 
     # ── 6. Paginate repo-groups ──────────────────────────────────────────────
     sorted_repo_ids = list(groups_map.keys())
