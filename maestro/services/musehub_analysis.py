@@ -34,7 +34,7 @@ import hashlib
 import logging
 from collections.abc import Callable
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Literal, Optional
 
 from maestro.models.musehub_analysis import (
     ALL_DIMENSIONS,
@@ -816,7 +816,7 @@ def compute_emotion_map(
     narrative = " ".join(narrative_parts)
 
     # ── Source attribution ─────────────────────────────────────────────────
-    source = "inferred"  # Full implementation will check commit metadata for explicit tags
+    source: Literal["explicit", "inferred", "mixed"] = "inferred"  # Full implementation will check commit metadata for explicit tags
 
     logger.info("✅ emotion-map repo=%s ref=%s beats=%d commits=%d", repo_id[:8], ref, n, len(trajectory))
     return EmotionMapResponse(
