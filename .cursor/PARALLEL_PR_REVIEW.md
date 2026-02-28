@@ -76,12 +76,12 @@ cd "$REPO"
 DEV_SHA=$(git rev-parse dev)
 
 # --- define PRs ---
-# Batch: #162–#165 (test run of 4 — groove-check, commit-tree, validate, inspect)
+# Batch: #166–#169 (timeline, render-preview, amend, revert)
 declare -a PRS=(
-  "162|feat: muse groove-check — analyze rhythmic drift across commits"
-  "163|feat: muse commit-tree <snapshot-id> — create a raw commit object"
-  "164|feat: muse validate — check musical integrity of the working tree"
-  "165|feat: muse inspect — print structured JSON of the Muse commit graph"
+  "166|feat: muse timeline — visualize musical evolution chronologically"
+  "167|feat: muse render-preview [<commit>] — generate an audio preview of a commit's snapshot"
+  "168|feat: muse amend — amend the most recent commit"
+  "169|feat: muse revert <commit> — create a new commit that undoes a prior commit"
 )
 
 # --- create worktrees + task files ---
