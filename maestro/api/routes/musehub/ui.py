@@ -7,9 +7,9 @@ Endpoint summary:
   GET /musehub/ui/explore                          — discover public repos with filters
   GET /musehub/ui/trending                         — trending public repos (sorted by stars)
   GET /musehub/ui/search                           — global cross-repo search page
-  GET /musehub/ui/{repo_id}                        — repo page
+  GET /musehub/ui/{repo_id}                        — repo page (branch selector + commit log)
   GET /musehub/ui/{repo_id}/releases               — release list page
-  GET /musehub/ui/{repo_id}/releases/{tag}         — release detail page (notes + downloads) (branch selector + commit log)
+  GET /musehub/ui/{repo_id}/releases/{tag}         — release detail page (notes + downloads)
   GET /musehub/ui/users/{username}                 — user profile page (public repos, contribution graph, credits)
   GET /musehub/ui/search                           — global cross-repo search page  GET /musehub/ui/{repo_id}                        — repo page (branch selector + commit log)
   GET /musehub/ui/{repo_id}/commits/{commit_id}    — commit detail page (metadata + artifacts)

@@ -6,8 +6,9 @@ Tables:
 - musehub_commits: Remote commit records pushed from CLI clients
 - musehub_issues: Issue tracker entries per repo
 - musehub_pull_requests: Pull requests proposing branch merges
-- musehub_stars: Repo star/bookmark entries per user
-- musehub_profiles: User profiles with public repos and contribution history
+- musehub_objects: Content-addressed binary artifact storage
+- musehub_stars: Per-user repo starring (one row per user×repo pair)
+- musehub_profiles: Public user profiles (bio, avatar, pinned repos)
 - musehub_releases: Published version releases with download packages
 - musehub_webhooks: Registered webhook subscriptions per repo
 - musehub_webhook_deliveries: Delivery log for each webhook dispatch attempt
@@ -19,6 +20,7 @@ from datetime import datetime, timezone
 
 from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
+
 from sqlalchemy.types import JSON
 
 from maestro.db.database import Base

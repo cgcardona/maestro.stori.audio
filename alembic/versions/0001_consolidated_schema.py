@@ -536,7 +536,7 @@ def downgrade() -> None:
     op.drop_index("ix_musehub_releases_repo_id", table_name="musehub_releases")
     op.drop_table("musehub_releases")
 
-        # Muse Hub — binary artifact storage
+    # Muse Hub — binary artifact storage
     op.drop_index("ix_musehub_objects_repo_id", table_name="musehub_objects")
     op.drop_table("musehub_objects")
 
@@ -558,6 +558,7 @@ def downgrade() -> None:
     op.drop_table("musehub_commits")
     op.drop_index("ix_musehub_branches_repo_id", table_name="musehub_branches")
     op.drop_table("musehub_branches")
+    op.drop_index("ix_musehub_repos_visibility", table_name="musehub_repos")
     op.drop_index("ix_musehub_repos_owner_user_id", table_name="musehub_repos")
     op.drop_table("musehub_repos")
 
