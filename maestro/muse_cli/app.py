@@ -3,10 +3,10 @@
 Entry point for the ``muse`` console script. Registers all MVP
 subcommands (amend, arrange, ask, blame, cat-object, checkout, chord-map, commit,
 commit-tree, context, contour, describe, diff, divergence, dynamics, emotion-diff,
-export, fetch, find, form, grep, groove-check, harmony, humanize, import, init,
-inspect, key, log, merge, meter, motif, open, play, pull, push, read-tree, recall,
-release, remote, render-preview, reset, resolve, rev-parse, revert, session, show,
-similarity, status, swing, symbolic-ref, tag, tempo, tempo-scale, timeline,
+export, fetch, find, form, grep, groove-check, harmony, hash-object, humanize, import,
+init, inspect, key, log, merge, meter, motif, open, play, pull, push, read-tree, rebase,
+recall, release, remote, render-preview, reset, resolve, restore, rev-parse, revert, session, show,
+similarity, stash, status, swing, symbolic-ref, tag, tempo, tempo-scale, timeline,
 update-ref, validate, worktree, write-tree) as Typer sub-applications.
 """
 from __future__ import annotations
@@ -37,6 +37,7 @@ from maestro.muse_cli.commands import (
     grep_cmd,
     groove_check,
     harmony,
+    hash_object,
     humanize,
     import_cmd,
     init,
@@ -51,17 +52,20 @@ from maestro.muse_cli.commands import (
     pull,
     push,
     read_tree,
+    rebase,
     recall,
     release,
     remote,
     render_preview,
     reset,
     resolve,
+    restore,
     rev_parse,
     revert,
     session,
     show,
     similarity,
+    stash,
     status,
     swing,
     symbolic_ref,
@@ -84,6 +88,7 @@ cli = typer.Typer(
 cli.add_typer(amend.app, name="amend", help="Fold working-tree changes into the most recent commit.")
 cli.add_typer(blame.app, name="blame", help="Annotate files with the commit that last changed each one.")
 cli.add_typer(cat_object.app, name="cat-object", help="Read and display a stored object by its SHA-256 hash.")
+cli.add_typer(hash_object.app, name="hash-object", help="Compute the SHA-256 object ID for a file (or stdin) and optionally store it.")
 cli.add_typer(chord_map.app, name="chord-map", help="Visualize the chord progression embedded in a commit.")
 cli.add_typer(contour.app, name="contour", help="Analyze the melodic contour and phrase shape of a commit.")
 cli.add_typer(init.app, name="init", help="Initialise a new Muse repository.")
@@ -120,6 +125,7 @@ cli.add_typer(tag.app, name="tag", help="Attach and query music-semantic tags on
 cli.add_typer(import_cmd.app, name="import", help="Import a MIDI or MusicXML file as a new Muse commit.")
 cli.add_typer(tempo.app, name="tempo", help="Read or set the tempo (BPM) of a commit.")
 cli.add_typer(read_tree.app, name="read-tree", help="Read a snapshot into muse-work/ without updating HEAD.")
+cli.add_typer(rebase.app, name="rebase", help="Rebase commits onto a new base, producing a linear history.")
 cli.add_typer(recall.app, name="recall", help="Search commit history by natural-language description.")
 cli.add_typer(release.app, name="release", help="Export a tagged commit as distribution-ready release artifacts.")
 cli.add_typer(revert.app, name="revert", help="Create a new commit that undoes a prior commit without rewriting history.")
@@ -135,9 +141,11 @@ cli.add_typer(show.app, name="show", help="Inspect a commit: metadata, snapshot,
 cli.add_typer(render_preview.app, name="render-preview", help="Generate an audio preview of a commit's snapshot.")
 cli.add_typer(reset.app, name="reset", help="Reset the branch pointer to a prior commit.")
 cli.add_typer(resolve.app, name="resolve", help="Mark a conflicted file as resolved (--ours or --theirs).")
+cli.add_typer(restore.app, name="restore", help="Restore specific files from a commit or index into muse-work/.")
 cli.add_typer(groove_check.app, name="groove-check", help="Analyze rhythmic drift across commits to find groove regressions.")
 cli.add_typer(form.app, name="form", help="Analyze or annotate the formal structure (sections) of a commit.")
 cli.add_typer(similarity.app, name="similarity", help="Compare two commits by musical similarity score.")
+cli.add_typer(stash.app, name="stash", help="Temporarily shelve uncommitted muse-work/ changes.")
 cli.add_typer(tempo_scale.app, name="tempo-scale", help="Stretch or compress the timing of a commit.")
 cli.add_typer(timeline.app, name="timeline", help="Visualize musical evolution chronologically.")
 cli.add_typer(update_ref.app, name="update-ref", help="Write or delete a ref (branch or tag pointer).")

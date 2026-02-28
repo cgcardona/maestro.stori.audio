@@ -15,10 +15,22 @@ Push algorithm
 7. Build :class:`~maestro.muse_cli.hub_client.PushRequest` payload.
 8. POST to ``<remote_url>/push`` with Bearer auth.
 9. On success, update ``.muse/remotes/origin/<branch>`` to the new HEAD.
+   If ``--set-upstream`` was given, record the upstream tracking in config.
+
+Flags
+-----
+- ``--force / -f``: overwrite remote branch even on non-fast-forward.
+- ``--force-with-lease``: overwrite only if remote HEAD matches the last
+  known local tracking pointer (safer than ``--force``; the Hub must reject
+  if the remote has advanced since we last fetched).
+- ``--tags``: push all VCS-style tag refs from ``.muse/refs/tags/`` alongside
+  the branch commits.
+- ``--set-upstream / -u``: after a successful push, record the remote as the
+  upstream for this branch in ``.muse/config.toml``.
 
 Exit codes:
   0 — success
-  1 — user error (no remote, no commits, bad args)
+  1 — user error (no remote, no commits, bad args, force-with-lease mismatch)
   2 — not a Muse repository
   3 — network / server error
 """
@@ -33,7 +45,12 @@ import httpx
 import typer
 
 from maestro.muse_cli._repo import require_repo
-from maestro.muse_cli.config import get_remote, get_remote_head, set_remote_head
+from maestro.muse_cli.config import (
+    get_remote,
+    get_remote_head,
+    set_remote_head,
+    set_upstream,
+)
 from maestro.muse_cli.db import get_commits_for_branch, get_all_object_ids, open_session
 from maestro.muse_cli.errors import ExitCode
 from maestro.muse_cli.hub_client import (
@@ -41,6 +58,7 @@ from maestro.muse_cli.hub_client import (
     PushCommitPayload,
     PushObjectPayload,
     PushRequest,
+    PushTagPayload,
 )
 from maestro.muse_cli.models import MuseCliCommit
 
@@ -89,17 +107,71 @@ def _compute_push_delta(
     return list(reversed(delta))
 
 
+def _collect_tag_refs(root: pathlib.Path) -> list[PushTagPayload]:
+    """Enumerate VCS-style tag refs from ``.muse/refs/tags/``.
+
+    Each file under ``.muse/refs/tags/`` is a lightweight tag: the filename
+    is the tag name and the file content is the commit ID it points to.
+
+    Returns an empty list when the directory does not exist or contains no
+    readable tag files.
+
+    Args:
+        root: Repository root path.
+
+    Returns:
+        List of :class:`PushTagPayload` dicts, one per tag file found.
+    """
+    tags_dir = root / ".muse" / "refs" / "tags"
+    if not tags_dir.is_dir():
+        return []
+
+    payloads: list[PushTagPayload] = []
+    for tag_file in sorted(tags_dir.iterdir()):
+        if not tag_file.is_file():
+            continue
+        commit_id = tag_file.read_text(encoding="utf-8").strip()
+        if commit_id:
+            payloads.append(PushTagPayload(tag_name=tag_file.name, commit_id=commit_id))
+
+    return payloads
+
+
 def _build_push_request(
     branch: str,
     head_commit_id: str,
     delta: list[MuseCliCommit],
     all_object_ids: list[str],
+    *,
+    force: bool = False,
+    force_with_lease: bool = False,
+    expected_remote_head: str | None = None,
+    tag_payloads: list[PushTagPayload] | None = None,
 ) -> PushRequest:
     """Serialize the push payload from local ORM objects.
 
     ``objects`` includes all object IDs known to this repo so the Hub can
     store references even if it already has the blobs (deduplication is the
     Hub's responsibility).
+
+    When ``force_with_lease`` is ``True``, ``expected_remote_head`` is the
+    commit ID we believe the remote HEAD to be.  The Hub must reject the push
+    if its current HEAD differs.
+
+    Args:
+        branch: Branch name being pushed.
+        head_commit_id: Local branch HEAD commit ID.
+        delta: Commits not yet on the remote (oldest-first).
+        all_object_ids: All known object IDs in this repo.
+        force: If ``True``, allow non-fast-forward overwrite.
+        force_with_lease: If ``True``, include expected remote HEAD for
+            lease-based safety check.
+        expected_remote_head: Commit ID the caller believes the remote HEAD
+            to be (used with ``force_with_lease``).
+        tag_payloads: VCS tag refs to include (from ``--tags``).
+
+    Returns:
+        A :class:`PushRequest` TypedDict ready to be JSON-serialised.
     """
     commits: list[PushCommitPayload] = [
         PushCommitPayload(
@@ -120,12 +192,22 @@ def _build_push_request(
         for oid in all_object_ids
     ]
 
-    return PushRequest(
+    request = PushRequest(
         branch=branch,
         head_commit_id=head_commit_id,
         commits=commits,
         objects=objects,
     )
+
+    if force:
+        request["force"] = True
+    if force_with_lease:
+        request["force_with_lease"] = True
+        request["expected_remote_head"] = expected_remote_head
+    if tag_payloads:
+        request["tags"] = tag_payloads
+
+    return request
 
 
 # ---------------------------------------------------------------------------
@@ -138,11 +220,22 @@ async def _push_async(
     root: pathlib.Path,
     remote_name: str,
     branch: str | None,
+    force: bool = False,
+    force_with_lease: bool = False,
+    include_tags: bool = False,
+    set_upstream_flag: bool = False,
 ) -> None:
     """Execute the push pipeline.
 
     Raises :class:`typer.Exit` with the appropriate code on all error paths
     so the Typer callback surfaces clean messages instead of tracebacks.
+
+    When ``force_with_lease`` is ``True`` and the Hub returns HTTP 409
+    (conflict), the push is rejected because the remote has advanced beyond
+    our last-known tracking pointer — the user must fetch and retry.
+
+    When ``set_upstream_flag`` is ``True``, a successful push writes the
+    upstream tracking entry to ``.muse/config.toml``.
     """
     muse_dir = root / ".muse"
 
@@ -177,19 +270,35 @@ async def _push_async(
 
     delta = _compute_push_delta(commits, remote_head)
 
-    if not delta and remote_head == head_commit_id:
+    if not delta and remote_head == head_commit_id and not include_tags:
         typer.echo(f"✅ Everything up to date — {remote_name}/{effective_branch} is current.")
         return
+
+    # ── Collect tag refs if requested ────────────────────────────────────
+    tag_payloads = _collect_tag_refs(root) if include_tags else []
 
     payload = _build_push_request(
         branch=effective_branch,
         head_commit_id=head_commit_id,
         delta=delta,
         all_object_ids=all_object_ids,
+        force=force,
+        force_with_lease=force_with_lease,
+        expected_remote_head=remote_head if force_with_lease else None,
+        tag_payloads=tag_payloads if tag_payloads else None,
     )
 
+    extra_flags = []
+    if force:
+        extra_flags.append("--force")
+    elif force_with_lease:
+        extra_flags.append("--force-with-lease")
+    if include_tags and tag_payloads:
+        extra_flags.append(f"--tags ({len(tag_payloads)} tag(s))")
+
+    flags_desc = f" [{', '.join(extra_flags)}]" if extra_flags else ""
     typer.echo(
-        f"⬆️  Pushing {len(delta)} commit(s) to {remote_name}/{effective_branch} …"
+        f"⬆️  Pushing {len(delta)} commit(s) to {remote_name}/{effective_branch}{flags_desc} …"
     )
 
     # ── HTTP push ────────────────────────────────────────────────────────
@@ -199,6 +308,11 @@ async def _push_async(
 
         if response.status_code == 200:
             set_remote_head(remote_name, effective_branch, head_commit_id, root)
+            if set_upstream_flag:
+                set_upstream(effective_branch, remote_name, root)
+                typer.echo(
+                    f"✅ Branch '{effective_branch}' set to track '{remote_name}/{effective_branch}'"
+                )
             typer.echo(
                 f"✅ Pushed {len(delta)} commit(s) → "
                 f"{remote_name}/{effective_branch} [{head_commit_id[:8]}]"
@@ -211,6 +325,16 @@ async def _push_async(
                 head_commit_id[:8],
                 len(delta),
             )
+        elif response.status_code == 409 and force_with_lease:
+            typer.echo(
+                f"❌ Push rejected: remote {remote_name}/{effective_branch} has advanced "
+                f"since last fetch. Run `muse pull` then retry, or use `--force` to override."
+            )
+            logger.warning(
+                "⚠️ muse push --force-with-lease rejected: remote has advanced beyond %s",
+                remote_head[:8] if remote_head else "None",
+            )
+            raise typer.Exit(code=int(ExitCode.USER_ERROR))
         else:
             typer.echo(
                 f"❌ Hub rejected push (HTTP {response.status_code}): {response.text}"
@@ -252,6 +376,44 @@ def push(
         "--remote",
         help="Remote name to push to.",
     ),
+    force: bool = typer.Option(
+        False,
+        "--force",
+        "-f",
+        help=(
+            "Overwrite the remote branch even if the push is non-fast-forward. "
+            "Use with caution — this discards remote history. "
+            "Prefer --force-with-lease for a safer alternative."
+        ),
+    ),
+    force_with_lease: bool = typer.Option(
+        False,
+        "--force-with-lease",
+        help=(
+            "Overwrite the remote branch only if its current HEAD matches the "
+            "last commit we fetched from it. Safer than --force because it "
+            "prevents overwriting commits pushed by others after our last fetch."
+        ),
+    ),
+    tags: bool = typer.Option(
+        False,
+        "--tags",
+        help=(
+            "Push all VCS-style tag refs from .muse/refs/tags/ alongside the "
+            "branch commits. Tags are lightweight refs (filename = tag name, "
+            "content = commit ID)."
+        ),
+    ),
+    set_upstream: bool = typer.Option(
+        False,
+        "--set-upstream",
+        "-u",
+        help=(
+            "After a successful push, record this remote as the upstream for "
+            "the current branch in .muse/config.toml. Subsequent push/pull "
+            "commands can then default to this remote."
+        ),
+    ),
 ) -> None:
     """Push local commits to the configured remote Muse Hub.
 
@@ -263,11 +425,24 @@ def push(
         muse push
         muse push --branch feature/groove-v2
         muse push --remote staging
+        muse push --force-with-lease
+        muse push --set-upstream origin main
+        muse push --tags
     """
     root = require_repo()
 
     try:
-        asyncio.run(_push_async(root=root, remote_name=remote, branch=branch))
+        asyncio.run(
+            _push_async(
+                root=root,
+                remote_name=remote,
+                branch=branch,
+                force=force,
+                force_with_lease=force_with_lease,
+                include_tags=tags,
+                set_upstream_flag=set_upstream,
+            )
+        )
     except typer.Exit:
         raise
     except Exception as exc:
