@@ -172,9 +172,6 @@ async def execute_list_branches(repo_id: str) -> MusehubToolResult:
         ``MusehubToolResult`` with ``data.branches`` as a list of branch
         dicts, or ``error_code="not_found"`` if the repo does not exist.
     """
-    from maestro.db.database import AsyncSessionLocal
-    from maestro.services import musehub_repository
-
     async with AsyncSessionLocal() as session:
         repo = await musehub_repository.get_repo(session, repo_id)
         if repo is None:
@@ -216,9 +213,6 @@ async def execute_list_commits(
         ``MusehubToolResult`` with ``data.commits`` and ``data.total``,
         or ``error_code="not_found"`` if the repo does not exist.
     """
-    from maestro.db.database import AsyncSessionLocal
-    from maestro.services import musehub_repository
-
     limit = max(1, min(limit, 100))
 
     async with AsyncSessionLocal() as session:
@@ -275,9 +269,6 @@ async def execute_read_file(repo_id: str, object_id: str) -> MusehubToolResult:
         ``MusehubToolResult`` with file metadata, or ``error_code="not_found"``
         if the repo or object does not exist.
     """
-    from maestro.db.database import AsyncSessionLocal
-    from maestro.services import musehub_repository
-
     async with AsyncSessionLocal() as session:
         repo = await musehub_repository.get_repo(session, repo_id)
         if repo is None:
@@ -331,9 +322,6 @@ async def execute_get_analysis(
     Returns:
         ``MusehubToolResult`` with analysis data, or an error code on failure.
     """
-    from maestro.db.database import AsyncSessionLocal
-    from maestro.services import musehub_repository
-
     valid_dimensions = {"overview", "commits", "objects"}
     if dimension not in valid_dimensions:
         return MusehubToolResult(
@@ -451,9 +439,6 @@ async def execute_search(
     Returns:
         ``MusehubToolResult`` with ``data.results`` list, or an error on failure.
     """
-    from maestro.db.database import AsyncSessionLocal
-    from maestro.services import musehub_repository
-
     valid_modes = {"path", "commit"}
     if mode not in valid_modes:
         return MusehubToolResult(
@@ -535,9 +520,6 @@ async def execute_get_context(repo_id: str) -> MusehubToolResult:
         ``MusehubToolResult`` with ``data.context`` (the full context doc),
         or ``error_code="not_found"`` if the repo does not exist.
     """
-    from maestro.db.database import AsyncSessionLocal
-    from maestro.services import musehub_repository
-
     async with AsyncSessionLocal() as session:
         repo = await musehub_repository.get_repo(session, repo_id)
         if repo is None:
