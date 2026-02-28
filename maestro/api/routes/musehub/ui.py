@@ -42,7 +42,11 @@ Endpoint summary (repo-scoped):
   GET /musehub/ui/{owner}/{repo_slug}/analysis/{ref}/tempo      -- tempo analysis
   GET /musehub/ui/{owner}/{repo_slug}/analysis/{ref}/dynamics   -- dynamics analysis
   GET /musehub/ui/{owner}/{repo_slug}/analysis/{ref}/motifs     -- motif browser (recurring patterns, transformations)
+  GET /musehub/ui/{owner}/{repo_slug}/listen/{ref}             -- Wavesurfer.js audio player (full mix)
+  GET /musehub/ui/{owner}/{repo_slug}/listen/{ref}/{path}      -- Wavesurfer.js audio player (single track)
   GET /musehub/ui/{owner}/{repo_slug}/arrange/{ref}             -- arrangement matrix (instrument × section density grid)
+  GET /musehub/ui/{owner}/{repo_slug}/piano-roll/{ref}          -- interactive piano roll (all tracks)
+  GET /musehub/ui/{owner}/{repo_slug}/piano-roll/{ref}/{path}   -- interactive piano roll (single MIDI file)
 
 These routes require NO JWT auth -- they return HTML shells whose embedded
 JavaScript fetches data from the authed JSON API (``/api/v1/musehub/...``)
@@ -1075,6 +1079,88 @@ async def motifs_page(
             "ref": ref,
             "base_url": base_url,
             "current_page": "analysis",
+        },
+    )
+
+
+@router.get(
+    "/{owner}/{repo_slug}/listen/{ref}",
+    response_class=HTMLResponse,
+    summary="Muse Hub audio player — full mix",
+)
+async def listen_page(
+    request: Request,
+    owner: str,
+    repo_slug: str,
+    ref: str,
+    db: AsyncSession = Depends(get_db),
+) -> HTMLResponse:
+    """Render the Wavesurfer.js-based audio player for a commit ref (full mix).
+
+    Why this route exists: musicians need waveform seek, A/B loop regions, and
+    speed control for critical listening beyond what a bare ``<audio>`` element
+    offers.  This page lists all audio objects at ``ref`` and auto-loads the
+    first track, letting the user switch tracks via the in-page track list.
+
+    Contract:
+    - No JWT required -- HTML shell; JS fetches authed data via localStorage.
+    - Fetches ``GET /api/v1/musehub/repos/{repo_id}/objects?ref={ref}``.
+    - Waveform rendered client-side by ``vendor/wavesurfer.min.js`` (no CDN).
+    - A/B loop region: Shift+drag on waveform canvas.
+    - Speed options: 0.5x, 0.75x, 1x, 1.25x, 1.5x, 2x.
+    """
+    repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
+    return templates.TemplateResponse(
+        request,
+        "musehub/pages/listen.html",
+        {
+            "owner": owner,
+            "repo_slug": repo_slug,
+            "repo_id": repo_id,
+            "ref": ref,
+            "base_url": base_url,
+            "track_path": None,
+            "current_page": "listen",
+        },
+    )
+
+
+@router.get(
+    "/{owner}/{repo_slug}/listen/{ref}/{path:path}",
+    response_class=HTMLResponse,
+    summary="Muse Hub audio player — single track",
+)
+async def listen_track_page(
+    request: Request,
+    owner: str,
+    repo_slug: str,
+    ref: str,
+    path: str,
+    db: AsyncSession = Depends(get_db),
+) -> HTMLResponse:
+    """Render the Wavesurfer.js-based audio player scoped to a single track.
+
+    Why this route exists: deep-linking to a specific audio file at a given ref
+    lets users share direct playback URLs for individual stems, MIDI exports,
+    or rendered mixes.
+
+    Contract:
+    - No JWT required -- HTML shell; JS fetches authed data via localStorage.
+    - Resolves the track by matching ``path`` against object paths in the repo.
+    - Waveform and controls identical to the full-mix listen page.
+    """
+    repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
+    return templates.TemplateResponse(
+        request,
+        "musehub/pages/listen.html",
+        {
+            "owner": owner,
+            "repo_slug": repo_slug,
+            "repo_id": repo_id,
+            "ref": ref,
+            "base_url": base_url,
+            "track_path": path,
+            "current_page": "listen",
         },
     )
 
@@ -2130,3 +2216,94 @@ async def harmony_analysis_page(repo_id: str, ref: str) -> HTMLResponse:
 </body>
 </html>"""
     return HTMLResponse(content=html)
+
+
+@router.get(
+    "/{owner}/{repo_slug}/piano-roll/{ref}",
+    response_class=HTMLResponse,
+    summary="Muse Hub piano roll — all MIDI tracks",
+)
+async def piano_roll_page(
+    request: Request,
+    owner: str,
+    repo_slug: str,
+    ref: str,
+    db: AsyncSession = Depends(get_db),
+) -> HTMLResponse:
+    """Render the Canvas-based interactive piano roll for all MIDI tracks at ``ref``.
+
+    The page shell fetches a list of MIDI artifacts at the given ref from the
+    ``GET /api/v1/musehub/repos/{repo_id}/objects`` endpoint, then calls
+    ``GET /api/v1/musehub/repos/{repo_id}/objects/{id}/parse-midi`` for each
+    selected file.  The parsed note data is rendered into a Canvas element via
+    ``piano-roll.js``.
+
+    Features:
+    - Pitch on Y-axis with a piano keyboard strip
+    - Beat grid on X-axis with measure markers
+    - Per-track colour coding (design system palette)
+    - Velocity mapped to rectangle opacity
+    - Zoom controls (horizontal and vertical sliders)
+    - Pan via click-drag
+    - Hover tooltip: pitch name, velocity, beat position, duration
+
+    No JWT required — HTML shell; JS fetches authed data via localStorage token.
+    """
+    repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
+    short_ref = ref[:8] if len(ref) >= 8 else ref
+    return templates.TemplateResponse(
+        request,
+        "musehub/pages/piano_roll.html",
+        {
+            "owner": owner,
+            "repo_slug": repo_slug,
+            "repo_id": repo_id,
+            "ref": ref,
+            "short_ref": short_ref,
+            "path": None,
+            "base_url": base_url,
+            "current_page": "piano-roll",
+        },
+    )
+
+
+@router.get(
+    "/{owner}/{repo_slug}/piano-roll/{ref}/{path:path}",
+    response_class=HTMLResponse,
+    summary="Muse Hub piano roll — single MIDI track",
+)
+async def piano_roll_track_page(
+    request: Request,
+    owner: str,
+    repo_slug: str,
+    ref: str,
+    path: str,
+    db: AsyncSession = Depends(get_db),
+) -> HTMLResponse:
+    """Render the Canvas-based piano roll scoped to a single MIDI file ``path``.
+
+    Identical to :func:`piano_roll_page` but restricts the view to one specific
+    MIDI artifact identified by its repo-relative path
+    (e.g. ``tracks/bass.mid``).  The ``path`` segment is forwarded to the
+    template as a JavaScript string; the client-side code resolves the
+    matching object ID via the objects list API.
+
+    Useful for per-track deep-dive links from the tree browser or commit
+    detail page.
+    """
+    repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
+    short_ref = ref[:8] if len(ref) >= 8 else ref
+    return templates.TemplateResponse(
+        request,
+        "musehub/pages/piano_roll.html",
+        {
+            "owner": owner,
+            "repo_slug": repo_slug,
+            "repo_id": repo_id,
+            "ref": ref,
+            "short_ref": short_ref,
+            "path": path,
+            "base_url": base_url,
+            "current_page": "piano-roll",
+        },
+    )

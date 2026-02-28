@@ -1,19 +1,20 @@
 """Muse Hub repo, branch, commit, credits, and agent context route handlers.
 
 Endpoint summary:
-  POST /musehub/repos                                      — create a new remote repo
-  GET  /musehub/repos/{repo_id}                           — get repo metadata (by internal UUID)
-  GET  /musehub/{owner}/{repo_slug}                       — get repo metadata (by owner/slug)
-  GET  /musehub/repos/{repo_id}/branches                  — list all branches
-  GET  /musehub/repos/{repo_id}/commits                   — list commits (newest first)
-  GET  /musehub/repos/{repo_id}/credits                   — aggregated contributor credits
-  GET  /musehub/repos/{repo_id}/context                   — agent context briefing
-  GET  /musehub/repos/{repo_id}/timeline                  — chronological timeline with emotion/section/track layers
-  GET  /musehub/repos/{repo_id}/form-structure/{ref}      — form and structure analysis
-  POST /musehub/repos/{repo_id}/sessions                  — push a recording session
-  GET  /musehub/repos/{repo_id}/sessions                  — list recording sessions
-  GET  /musehub/repos/{repo_id}/sessions/{session_id}     — get a single session
-  GET  /musehub/repos/{repo_id}/arrange/{ref}            — arrangement matrix (instrument × section grid)
+  POST /musehub/repos                                                     — create a new remote repo
+  GET  /musehub/repos/{repo_id}                                           — get repo metadata (by internal UUID)
+  GET  /musehub/{owner}/{repo_slug}                                       — get repo metadata (by owner/slug)
+  GET  /musehub/repos/{repo_id}/branches                                  — list all branches
+  GET  /musehub/repos/{repo_id}/commits                                   — list commits (newest first)
+  GET  /musehub/repos/{repo_id}/commits/{sha}/render-status               — render job status for a commit
+  GET  /musehub/repos/{repo_id}/credits                                   — aggregated contributor credits
+  GET  /musehub/repos/{repo_id}/context                                   — agent context briefing
+  GET  /musehub/repos/{repo_id}/timeline                                  — chronological timeline with emotion/section/track layers
+  GET  /musehub/repos/{repo_id}/form-structure/{ref}                      — form and structure analysis
+  POST /musehub/repos/{repo_id}/sessions                                  — push a recording session
+  GET  /musehub/repos/{repo_id}/sessions                                  — list recording sessions
+  GET  /musehub/repos/{repo_id}/sessions/{session_id}                     — get a single session
+  GET  /musehub/repos/{repo_id}/arrange/{ref}                             — arrangement matrix (instrument × section grid)
 
 All endpoints require a valid JWT Bearer token.
 No business logic lives here — all persistence is delegated to
@@ -31,6 +32,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from maestro.auth.dependencies import TokenClaims, optional_token, require_valid_token
 from maestro.db import get_db
+from maestro.db import musehub_models as db_models
+from sqlalchemy import select
 from maestro.models.musehub import (
     ArrangementMatrixResponse,
     BranchDetailListResponse,
@@ -48,6 +51,7 @@ from maestro.models.musehub import (
     RepoResponse,
     RepoStatsResponse,
     CreditsResponse,
+    RenderStatusResponse,
     SessionCreate,
     SessionListResponse,
     SessionResponse,
@@ -249,6 +253,63 @@ async def get_commit(
             detail=f"Commit '{commit_id}' not found in repo '{repo_id}'",
         )
     return commit
+
+
+@router.get(
+    "/repos/{repo_id}/commits/{commit_id}/render-status",
+    response_model=RenderStatusResponse,
+    operation_id="getCommitRenderStatus",
+    summary="Query render job status for auto-generated MP3 and piano-roll artifacts",
+    tags=["Commits"],
+)
+async def get_commit_render_status(
+    repo_id: str,
+    commit_id: str,
+    db: AsyncSession = Depends(get_db),
+    claims: TokenClaims | None = Depends(optional_token),
+) -> RenderStatusResponse:
+    """Return the render job status for a commit's auto-generated artifacts.
+
+    Called by the MuseHub UI and AI agents to poll whether the background
+    render pipeline has finished generating MP3 and piano-roll images for a
+    given commit.
+
+    Status lifecycle: ``pending`` → ``rendering`` → ``complete`` | ``failed``.
+
+    When no render job exists for the commit (e.g. the push contained no MIDI
+    objects, or the job has not been created yet), the response returns
+    ``status="not_found"`` with empty artifact lists rather than a 404.
+
+    Args:
+        repo_id: Internal repo UUID.
+        commit_id: Commit SHA to query.
+
+    Returns:
+        ``RenderStatusResponse`` with current job status and artifact IDs.
+    """
+    repo = await musehub_repository.get_repo(db, repo_id)
+    _guard_visibility(repo, claims)
+
+    stmt = select(db_models.MusehubRenderJob).where(
+        db_models.MusehubRenderJob.repo_id == repo_id,
+        db_models.MusehubRenderJob.commit_id == commit_id,
+    )
+    job = (await db.execute(stmt)).scalar_one_or_none()
+
+    if job is None:
+        return RenderStatusResponse(
+            commit_id=commit_id,
+            status="not_found",
+        )
+
+    return RenderStatusResponse(
+        commit_id=job.commit_id,
+        status=job.status,
+        midi_count=job.midi_count,
+        mp3_object_ids=list(job.mp3_object_ids or []),
+        image_object_ids=list(job.image_object_ids or []),
+        error_message=job.error_message,
+    )
 
 
 @router.get(
