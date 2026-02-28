@@ -1897,6 +1897,51 @@ These types mirror the Maestro `app/contracts/json_types.py` types but are defin
 | `tool` | `str` | Tool name (e.g. `"addNotes"`) |
 | `params` | `QualityEvalParams` | Tool parameters |
 
+#### `InstrumentTier`
+
+`str` Enum — Musical dependency tier for progressive generation (#27).
+
+| Value | Description |
+|-------|-------------|
+| `"drums"` | Independent; channel-10 percussion; no harmonic context needed |
+| `"bass"` | GM 32–39; establishes root motion; seeded from drums |
+| `"harmony"` | GM piano/organ/strings/pads; seeded from drums+bass |
+| `"melody"` | All other melodic roles; seeded from the full harmonic context |
+
+**Location:** `storpheus/storpheus_types.py`
+**Used by:** `classify_instrument_tier()`, `group_instruments_by_tier()`, `_do_progressive_generate()`
+
+#### `ProgressiveTierResult`
+
+`TypedDict` — Per-tier result emitted during a progressive generation run. One entry per non-empty `InstrumentTier`.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `tier` | `str` | `InstrumentTier.value` |
+| `instruments` | `list[str]` | Instrument roles in this tier |
+| `notes` | `list[WireNoteDict]` | Flat note list for this tier |
+| `channel_notes` | `dict[str, list[WireNoteDict]] \| None` | Per-channel notes (label → notes) |
+| `metadata` | `dict[str, object]` | Generation metadata (policy_version, params, scores) |
+| `elapsed_seconds` | `float` | Wall-clock time for this tier |
+
+**Location:** `storpheus/storpheus_types.py`
+
+#### `ProgressiveGenerationResult`
+
+`TypedDict` — Full result of a progressive per-role generation run. Aggregates all tier results.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `success` | `bool` | `True` when all tiers completed without error |
+| `composition_id` | `str` | UUID shared across all tier calls for cascaded seeding |
+| `tier_results` | `list[ProgressiveTierResult]` | Results in generation order (drums first) |
+| `all_notes` | `list[WireNoteDict]` | Flat union of all tier notes |
+| `total_elapsed_seconds` | `float` | Total wall-clock time for the run |
+| `error` | `str \| None` | Error message if `success` is `False`; otherwise `None` |
+
+**Location:** `storpheus/storpheus_types.py`
+**Endpoint:** `POST /generate/progressive` → returns this as JSON
+
 ---
 
 ### Scoring Types
