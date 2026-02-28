@@ -61,9 +61,16 @@ Clear the existing allowlist entirely, then paste the block below into
 > **IMPORTANT:** Paste this as a **single unbroken line** — no line breaks.
 > Cursor strips newlines and treats them as spaces, merging adjacent entries
 > into one broken token. The comma is the only separator Cursor respects.
+>
+> **Re-paste whenever this file changes.** If agents are still prompted for commands
+> that appear in this list, your Cursor settings are out of date — clear and re-paste.
+>
+> **Backslash continuations trigger prompts.** Cursor treats the continuation line
+> (`"PYTHONPATH=..."`) as a separate, unrecognized command. All multi-line shell
+> commands in kickoff prompts must be written as single lines.
 
 ```
-ls, ls -la, ls -lah, ls -l, pwd, cat, head, tail, echo, wc, file, which, date, basename, dirname, printf, jq, sort, uniq, tr, awk, sed, cut, xargs, tee, rg, grep, find, mkdir -p, cp, mv, touch, ln -s, cd, sleep, python3 -c, REPO=, WTNAME=, DEV_SHA=, WT=, NUM=, TITLE=, BRANCH=, PRTREES=, WORKTREE=, ENTRY=, declare -a, declare -a ISSUES=, declare -a PRS=, for entry in, for NUM in, for WT in, git status, git log, git diff, git show, git branch, git fetch, git fetch origin, git pull, git pull origin, git pull origin dev, git stash list, git worktree list, git ls-remote, git rev-parse, git ls-files, git merge-base, git describe, git cat-file, git -C, git -C /Users, git worktree list --porcelain, git bisect, git bisect start, git bisect bad, git bisect good, git bisect log, git bisect reset, git checkout -b, git checkout, git add, git add -A, git commit, git merge origin/dev, git merge, git stash, git stash pop, git stash apply, git push origin, git push origin --delete, git worktree add, git worktree add --detach, git worktree remove --force, git worktree prune, docker compose ps, docker compose logs, docker compose config, docker compose -f, docker ps, docker inspect, docker compose exec maestro mypy, docker compose exec maestro pytest, docker compose exec maestro sh -c, docker compose exec maestro python -m coverage, docker compose exec maestro ls, docker compose exec maestro cat, docker compose exec maestro rg, docker compose exec maestro grep, docker compose exec maestro find, docker compose exec maestro alembic history, docker compose exec maestro alembic current, docker compose exec maestro alembic heads, docker compose exec maestro alembic upgrade head, docker compose exec storpheus mypy, docker compose exec storpheus pytest, docker compose exec storpheus sh -c, docker compose exec storpheus ls, docker compose exec storpheus cat, docker compose exec storpheus rg, docker compose exec storpheus grep, docker compose exec postgres psql, gh auth status, gh repo view, gh pr view, gh pr list, gh pr diff, gh pr create, gh pr checkout, gh pr merge, gh pr comment, gh pr review, gh issue view, gh issue list, gh issue create, gh issue close, gh issue comment, gh issue edit, gh label list, gh run list, gh run view, gh release list, gh release view, gh api, ps aux, ps -ef, pgrep, nc -z, curl, REPO=$(git, WTNAME=$(basename, DEV_SHA=$(git, WT=$HOME, BRANCH=$(git
+ls, ls -la, ls -lah, ls -l, pwd, cat, head, tail, echo, wc, file, which, date, basename, dirname, printf, jq, sort, uniq, tr, awk, sed, cut, xargs, tee, rg, grep, find, mkdir -p, cp, mv, touch, ln -s, cd, sleep, python3 -c, REPO=, WTNAME=, DEV_SHA=, WT=, NUM=, TITLE=, BRANCH=, PRTREES=, WORKTREE=, ENTRY=, FOLLOW_UP_URL=, ISSUE_URL=, declare -a, declare -a ISSUES=, declare -a PRS=, for entry in, for NUM in, for WT in, git status, git log, git diff, git show, git branch, git fetch, git fetch origin, git pull, git pull origin, git pull origin dev, git stash list, git worktree list, git ls-remote, git rev-parse, git ls-files, git merge-base, git describe, git cat-file, git -C, git -C /Users, git worktree list --porcelain, git bisect, git bisect start, git bisect bad, git bisect good, git bisect log, git bisect reset, git checkout -b, git checkout, git add, git add -A, git commit, git merge origin/dev, git merge, git stash, git stash pop, git stash apply, git restore, git restore --staged, git push origin, git push origin --delete, git worktree add, git worktree add --detach, git worktree remove --force, git worktree prune, docker compose ps, docker compose logs, docker compose config, docker compose -f, docker ps, docker inspect, docker compose exec maestro mypy, docker compose exec maestro pytest, docker compose exec maestro sh -c, docker compose exec maestro python -m coverage, docker compose exec maestro python -c, docker compose exec maestro ls, docker compose exec maestro cat, docker compose exec maestro rg, docker compose exec maestro grep, docker compose exec maestro find, docker compose exec maestro alembic history, docker compose exec maestro alembic current, docker compose exec maestro alembic heads, docker compose exec maestro alembic upgrade head, docker compose exec maestro python3, docker compose exec storpheus mypy, docker compose exec storpheus pytest, docker compose exec storpheus sh -c, docker compose exec storpheus ls, docker compose exec storpheus cat, docker compose exec storpheus rg, docker compose exec storpheus grep, docker compose exec storpheus python3, docker compose exec postgres psql, gh auth status, gh repo view, gh pr view, gh pr list, gh pr diff, gh pr create, gh pr checkout, gh pr merge, gh pr comment, gh pr review, gh issue view, gh issue list, gh issue create, gh issue close, gh issue comment, gh issue edit, gh label list, gh run list, gh run view, gh release list, gh release view, gh api, ps aux, ps -ef, pgrep, nc -z, curl, REPO=$(git, WTNAME=$(basename, DEV_SHA=$(git, WT=$HOME, BRANCH=$(git
 ```
 
 ---
@@ -96,6 +103,8 @@ for entry in "${ARRAY[@]}"    ← iteration in coordinator setup scripts
 PRTREES=<path>                ← variable assignment
 WORKTREE=<path>               ← variable assignment
 ENTRY=<value>                 ← variable assignment
+FOLLOW_UP_URL=<value>         ← B-grade follow-up issue URL
+ISSUE_URL=<value>             ← captured issue URL in scripts
 ```
 
 ### Shell — Text Processing (read-only transforms)
@@ -172,6 +181,8 @@ git merge origin/dev               ← integrating latest dev into feature branc
 git stash                          ← shelving uncommitted work temporarily
 git stash pop                      ← restoring stashed work
 git stash apply                    ← same as pop but keeps stash entry
+git restore <file>                 ← discarding local changes to a tracked file
+git restore --staged <file>        ← unstaging staged changes (used in cleanup)
 git worktree add --detach <path> <sha>   ← creating detached worktrees
 git worktree remove --force <path>       ← removing OWN worktree at end of task
 git worktree prune                       ← pruning stale worktree refs
@@ -240,7 +251,8 @@ docker compose exec maestro cat <file>
 docker compose exec maestro rg <pattern>
 docker compose exec maestro grep <pattern>
 docker compose exec maestro find <path>
-docker compose exec maestro python -c "<one-liner>"
+docker compose exec maestro python -c "<one-liner>"   ← Python one-liner inside container
+docker compose exec maestro python3 <script>          ← explicit python3 binary
 docker compose exec maestro alembic history
 docker compose exec maestro alembic current
 docker compose exec maestro alembic heads
