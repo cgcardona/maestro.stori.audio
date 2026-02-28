@@ -193,6 +193,105 @@ async function loadTrafficChart() {
   } catch (_) {}
 }
 
+function buildSocialTrendsChart(trend) {
+  // Multi-line SVG chart: stars=yellow, forks=blue, watches=purple
+  if (!trend || trend.length === 0)
+    return '<p class="text-muted text-sm">No social trend data yet.</p>';
+
+  // Skip leading zeros — only render from first day with any activity
+  const firstActive = trend.findIndex(d => d.stars > 0 || d.forks > 0 || d.watches > 0);
+  const visible = firstActive >= 0 ? trend.slice(firstActive) : trend.slice(-30);
+  if (visible.length === 0)
+    return '<p class="text-muted text-sm">No social activity in the past 90 days.</p>';
+
+  const W = 600, H = 120, padX = 32, padY = 16;
+  const innerW = W - padX * 2;
+  const innerH = H - padY * 2;
+
+  const maxVal = Math.max(
+    ...visible.map(d => Math.max(d.stars, d.forks, d.watches)), 1
+  );
+
+  function toX(i) { return padX + (i / (visible.length - 1 || 1)) * innerW; }
+  function toY(v) { return padY + innerH - (v / maxVal) * innerH; }
+
+  function polyline(key, color) {
+    const pts = visible.map((d, i) => `${toX(i)},${toY(d[key])}`).join(' ');
+    return `<polyline points="${pts}" fill="none" stroke="${color}" stroke-width="2" opacity="0.85"/>`;
+  }
+
+  function dots(key, color, label) {
+    return visible.map((d, i) =>
+      `<circle cx="${toX(i)}" cy="${toY(d[key])}" r="2.5" fill="${color}">
+        <title>${escHtml(d.date)} — ${d[key]} ${label}</title>
+      </circle>`
+    ).join('');
+  }
+
+  // X-axis: show first and last date labels
+  const firstLabel = visible[0].date.slice(5);  // MM-DD
+  const lastLabel  = visible[visible.length - 1].date.slice(5);
+
+  return `<div style="overflow-x:auto">
+    <svg viewBox="0 0 ${W} ${H}" style="width:100%;max-width:${W}px;height:${H}px">
+      <!-- Grid line at max -->
+      <line x1="${padX}" y1="${padY}" x2="${W - padX}" y2="${padY}"
+            stroke="var(--border-subtle)" stroke-width="1" stroke-dasharray="4,4"/>
+      <!-- Lines -->
+      ${polyline('stars',   '#eab308')}
+      ${polyline('forks',   '#3b82f6')}
+      ${polyline('watches', '#a855f7')}
+      <!-- Dots -->
+      ${dots('stars',   '#eab308', 'stars')}
+      ${dots('forks',   '#3b82f6', 'forks')}
+      ${dots('watches', '#a855f7', 'watches')}
+      <!-- Y axis label -->
+      <text x="${padX - 2}" y="${padY + 4}" font-size="9" fill="var(--text-muted)" text-anchor="end">${maxVal}</text>
+      <text x="${padX - 2}" y="${H - padY + 4}" font-size="9" fill="var(--text-muted)" text-anchor="end">0</text>
+      <!-- X axis labels -->
+      <text x="${padX}" y="${H - 2}" font-size="9" fill="var(--text-muted)" text-anchor="middle">${escHtml(firstLabel)}</text>
+      <text x="${W - padX}" y="${H - 2}" font-size="9" fill="var(--text-muted)" text-anchor="middle">${escHtml(lastLabel)}</text>
+    </svg>
+  </div>
+  <div style="display:flex;gap:var(--space-4);margin-top:6px;font-size:var(--font-size-xs,11px);color:var(--text-muted)">
+    <span><span style="display:inline-block;width:10px;height:3px;background:#eab308;border-radius:2px;vertical-align:middle;margin-right:4px"></span>Stars</span>
+    <span><span style="display:inline-block;width:10px;height:3px;background:#3b82f6;border-radius:2px;vertical-align:middle;margin-right:4px"></span>Forks</span>
+    <span><span style="display:inline-block;width:10px;height:3px;background:#a855f7;border-radius:2px;vertical-align:middle;margin-right:4px"></span>Watches</span>
+  </div>`;
+}
+
+function buildWhoForkedThis(forksDetail) {
+  if (!forksDetail || forksDetail.length === 0)
+    return '<p class="text-muted text-sm">No forks yet.</p>';
+  return forksDetail.slice(0, 20).map(f => {
+    const initial = (f.forked_by || '?')[0].toUpperCase();
+    const hue = ((f.forked_by || '').split('').reduce((acc, c) => acc + c.charCodeAt(0), 0) % 360);
+    return `
+      <div style="display:flex;align-items:center;gap:var(--space-3);padding:var(--space-2) 0;border-bottom:1px solid var(--border-subtle)">
+        <div style="width:32px;height:32px;border-radius:50%;background:hsl(${hue},55%,45%);display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:600;color:#fff;flex-shrink:0">${escHtml(initial)}</div>
+        <div>
+          <a href="/musehub/ui/${escHtml(f.forked_by)}" class="text-sm" style="font-weight:500">${escHtml(f.forked_by)}</a>
+          <div class="text-xs text-muted">forked ${fmtRelative(f.created_at)}</div>
+        </div>
+      </div>`;
+  }).join('');
+}
+
+async function loadSocialTrends() {
+  const el = document.getElementById('social-trends-section');
+  if (!el) return;
+  try {
+    const data = await apiFetch('/repos/' + repoId + '/analytics/social?days=90');
+    document.getElementById('stat-stars').textContent   = data.star_count  ?? 0;
+    document.getElementById('stat-forks').textContent   = data.fork_count  ?? 0;
+    document.getElementById('stat-watches').textContent = data.watch_count ?? 0;
+    document.getElementById('social-trend-chart').innerHTML = buildSocialTrendsChart(data.trend || []);
+    document.getElementById('who-forked').innerHTML         = buildWhoForkedThis(data.forks_detail || []);
+  } catch (_) {
+    el.innerHTML = '<p class="text-muted text-sm">Could not load social trends.</p>';
+  }
+}
+
 async function load() {
   initRepoNav(repoId);
   try {
@@ -225,6 +324,7 @@ async function load() {
       if (dls)   dls.textContent   = a.download_count ?? 0;
     }).catch(() => {});
     loadTrafficChart();
+    loadSocialTrends();
 
     // Key signature distribution
     const keyMap = {};
@@ -355,6 +455,29 @@ async function load() {
             <div class="stat-label">Merged PRs</div>
           </div>
         </div>
+      </div>
+
+      <!-- Social Trends -->
+      <div class="card" id="social-trends-section">
+        <h2 style="margin-bottom:var(--space-3)">Social Trends</h2>
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:var(--space-3);margin-bottom:var(--space-4)">
+          <div class="stat-card">
+            <span class="stat-value" id="stat-stars" style="color:#eab308">—</span>
+            <div class="stat-label">⭐ Stars</div>
+          </div>
+          <div class="stat-card">
+            <span class="stat-value" id="stat-watches" style="color:#a855f7">—</span>
+            <div class="stat-label">👁 Watches</div>
+          </div>
+          <div class="stat-card">
+            <span class="stat-value" id="stat-forks" style="color:#3b82f6">—</span>
+            <div class="stat-label">🍴 Forks</div>
+          </div>
+        </div>
+        <p class="text-xs text-muted" style="margin-bottom:var(--space-3)">Past 90 days</p>
+        <div id="social-trend-chart">Loading…</div>
+        <h3 style="margin-top:var(--space-4);margin-bottom:var(--space-2)">Who forked this</h3>
+        <div id="who-forked">Loading…</div>
       </div>
 
       <!-- Recent sessions -->

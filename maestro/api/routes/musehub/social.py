@@ -49,6 +49,7 @@ from maestro.db.musehub_models import (
     MusehubFork,
     MusehubNotification,
     MusehubReaction,
+    MusehubStar,
     MusehubViewEvent,
     MusehubWatch,
 )
@@ -179,6 +180,33 @@ class ViewAnalyticsDayResult(BaseModel):
 
     date: str
     count: int
+
+
+class SocialTrendsDayResult(BaseModel):
+    """Daily aggregated social engagement counts — stars, forks, and watches.
+
+    Each row represents one calendar day. Missing days (no activity) are filled
+    with zeros so the chart always spans the full requested window.
+    """
+
+    date: str
+    stars: int
+    forks: int
+    watches: int
+
+
+class SocialTrendsResult(BaseModel):
+    """Aggregate totals and per-day trend data for social engagement on a repo.
+
+    Returned by GET /repos/{id}/analytics/social. Designed for the insights
+    dashboard Social Trends chart and the "Who forked this" panel.
+    """
+
+    star_count: int
+    fork_count: int
+    watch_count: int
+    trend: list[SocialTrendsDayResult]
+    forks_detail: list[ForkResponse]
 
 
 # ---------------------------------------------------------------------------
@@ -713,6 +741,117 @@ async def get_view_analytics(
     )
     results = rows.all()
     return [ViewAnalyticsDayResult(date=r.event_date, count=r.view_count) for r in results]
+
+
+@router.get(
+    "/repos/{repo_id}/analytics/social",
+    operation_id="getRepoSocialAnalytics",
+    summary="Social trends — daily stars, forks, and watches",
+)
+async def get_social_analytics(
+    repo_id: str,
+    days: int = Query(default=90, ge=1, le=365),
+    db: AsyncSession = Depends(get_db),
+    claims: TokenClaims | None = Depends(optional_token),
+) -> SocialTrendsResult:
+    """Return daily social engagement counts for the last N days.
+
+    Aggregates MusehubStar, MusehubFork, and MusehubWatch rows by calendar date
+    so the insights page can render a 90-day multi-line trend chart without
+    sending raw event rows over the wire. Days with no activity are filled with
+    zeros so the chart spans the full window.
+
+    Also returns total counts and fork details (forked_by username) for the
+    "Who forked this" panel on the insights dashboard.
+
+    Args:
+        repo_id: The repo's UUID.
+        days: Window size in days (default 90, max 365).
+
+    Returns:
+        SocialTrendsResult with totals, per-day trend list, and fork details.
+    """
+    from datetime import date, timedelta
+
+    repo = await musehub_repository.get_repo(db, repo_id)
+    if repo is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repo not found")
+    if repo.visibility != "public" and claims is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    cutoff = date.today() - timedelta(days=days)
+    cutoff_dt = datetime(cutoff.year, cutoff.month, cutoff.day, tzinfo=timezone.utc)
+
+    # Total counts
+    star_count = (await db.execute(
+        select(func.count()).where(MusehubStar.repo_id == repo_id)
+    )).scalar_one()
+
+    fork_count = (await db.execute(
+        select(func.count()).where(MusehubFork.source_repo_id == repo_id)
+    )).scalar_one()
+
+    watch_count = (await db.execute(
+        select(func.count()).where(MusehubWatch.repo_id == repo_id)
+    )).scalar_one()
+
+    # Daily aggregates — func.date() works across SQLite and PostgreSQL
+    # and always returns a YYYY-MM-DD string, avoiding dialect type-conversion issues.
+    star_rows = (await db.execute(
+        select(func.date(MusehubStar.created_at).label("day"), func.count().label("n"))
+        .where(MusehubStar.repo_id == repo_id)
+        .where(MusehubStar.created_at >= cutoff_dt)
+        .group_by(func.date(MusehubStar.created_at))
+    )).all()
+
+    fork_rows = (await db.execute(
+        select(func.date(MusehubFork.created_at).label("day"), func.count().label("n"))
+        .where(MusehubFork.source_repo_id == repo_id)
+        .where(MusehubFork.created_at >= cutoff_dt)
+        .group_by(func.date(MusehubFork.created_at))
+    )).all()
+
+    watch_rows = (await db.execute(
+        select(func.date(MusehubWatch.created_at).label("day"), func.count().label("n"))
+        .where(MusehubWatch.repo_id == repo_id)
+        .where(MusehubWatch.created_at >= cutoff_dt)
+        .group_by(func.date(MusehubWatch.created_at))
+    )).all()
+
+    # Build day-keyed lookup dicts
+    stars_by_day: dict[str, int] = {str(r.day): r.n for r in star_rows}
+    forks_by_day: dict[str, int] = {str(r.day): r.n for r in fork_rows}
+    watches_by_day: dict[str, int] = {str(r.day): r.n for r in watch_rows}
+
+    # Emit one entry per day in the window, filling zeros for missing days
+    trend: list[SocialTrendsDayResult] = []
+    for offset in range(days):
+        day = cutoff + timedelta(days=offset)
+        key = day.isoformat()
+        trend.append(SocialTrendsDayResult(
+            date=key,
+            stars=stars_by_day.get(key, 0),
+            forks=forks_by_day.get(key, 0),
+            watches=watches_by_day.get(key, 0),
+        ))
+
+    # Fork details for "Who forked this" panel
+    fork_detail_rows = (await db.execute(
+        select(MusehubFork).where(MusehubFork.source_repo_id == repo_id)
+        .order_by(MusehubFork.created_at.desc())
+    )).scalars().all()
+
+    return SocialTrendsResult(
+        star_count=star_count,
+        fork_count=fork_count,
+        watch_count=watch_count,
+        trend=trend,
+        forks_detail=[ForkResponse.model_validate(f) for f in fork_detail_rows],
+    )
 
 
 # ---------------------------------------------------------------------------
