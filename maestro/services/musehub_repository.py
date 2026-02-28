@@ -24,6 +24,9 @@ from maestro.db import musehub_models as db
 from maestro.models.musehub import (
     SessionListResponse,
     SessionResponse,
+    BranchDetailListResponse,
+    BranchDetailResponse,
+    BranchDivergenceScores,
     BranchResponse,
     CommitResponse,
     GlobalSearchCommitMatch,
@@ -196,6 +199,66 @@ async def list_branches(session: AsyncSession, repo_id: str) -> list[BranchRespo
     )
     rows = (await session.execute(stmt)).scalars().all()
     return [_to_branch_response(r) for r in rows]
+
+
+async def list_branches_with_detail(
+    session: AsyncSession, repo_id: str
+) -> BranchDetailListResponse:
+    """Return branches enriched with ahead/behind counts vs the default branch.
+
+    The default branch is whichever branch is named "main"; if no "main" branch
+    exists, the first branch alphabetically is used.  Ahead/behind counts are
+    computed by comparing the set of commit IDs on each branch vs the default
+    branch — a set-difference approximation suitable for display purposes.
+
+    Musical divergence scores are not yet computable server-side (they require
+    audio snapshots), so all divergence fields are returned as ``None`` (placeholder).
+    """
+    branch_stmt = (
+        select(db.MusehubBranch)
+        .where(db.MusehubBranch.repo_id == repo_id)
+        .order_by(db.MusehubBranch.name)
+    )
+    branch_rows = (await session.execute(branch_stmt)).scalars().all()
+    if not branch_rows:
+        return BranchDetailListResponse(branches=[], default_branch="main")
+
+    # Determine default branch name: prefer "main", fall back to first alphabetically.
+    branch_names = [r.name for r in branch_rows]
+    default_branch_name = "main" if "main" in branch_names else branch_names[0]
+
+    # Load commit IDs per branch in one query.
+    commit_stmt = select(db.MusehubCommit.commit_id, db.MusehubCommit.branch).where(
+        db.MusehubCommit.repo_id == repo_id
+    )
+    commit_rows = (await session.execute(commit_stmt)).all()
+    commits_by_branch: dict[str, set[str]] = {}
+    for commit_id, branch_name in commit_rows:
+        commits_by_branch.setdefault(branch_name, set()).add(commit_id)
+
+    default_commits: set[str] = commits_by_branch.get(default_branch_name, set())
+
+    results: list[BranchDetailResponse] = []
+    for row in branch_rows:
+        is_default = row.name == default_branch_name
+        branch_commits: set[str] = commits_by_branch.get(row.name, set())
+        ahead = len(branch_commits - default_commits) if not is_default else 0
+        behind = len(default_commits - branch_commits) if not is_default else 0
+        results.append(
+            BranchDetailResponse(
+                branch_id=row.branch_id,
+                name=row.name,
+                head_commit_id=row.head_commit_id,
+                is_default=is_default,
+                ahead_count=ahead,
+                behind_count=behind,
+                divergence=BranchDivergenceScores(
+                    melodic=None, harmonic=None, rhythmic=None, structural=None, dynamic=None
+                ),
+            )
+        )
+
+    return BranchDetailListResponse(branches=results, default_branch=default_branch_name)
 
 
 def _to_object_meta_response(row: db.MusehubObject) -> ObjectMetaResponse:

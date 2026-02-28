@@ -1756,10 +1756,40 @@ All authed endpoints require `Authorization: Bearer <token>`. See [api.md](../re
 | GET | `/musehub/ui/{owner}/{repo_slug}/pulls/{pr_id}` | PR detail (with merge button) |
 | GET | `/musehub/ui/{owner}/{repo_slug}/issues` | Issue list |
 | GET | `/musehub/ui/{owner}/{repo_slug}/issues/{number}` | Issue detail (with close button) |
+| GET | `/musehub/ui/{owner}/{repo_slug}/branches` | Branch list with ahead/behind counts and divergence scores |
+| GET | `/musehub/ui/{owner}/{repo_slug}/tags` | Tag browser — releases grouped by namespace prefix |
 | GET | `/musehub/ui/{owner}/{repo_slug}/sessions` | Session list (newest first) |
 | GET | `/musehub/ui/{owner}/{repo_slug}/sessions/{session_id}` | Session detail page |
 
 UI pages are Jinja2-rendered HTML shells — auth is handled client-side via `localStorage` JWT (loaded from `/musehub/static/musehub.js`). The page JavaScript fetches from the authed JSON API above.
+
+### Branch List Page
+
+**Route:** `GET /musehub/ui/{owner}/{repo_slug}/branches`
+
+Lists all branches with enriched context to help musicians decide which branches to merge or discard:
+
+- **Default branch badge** — the repo default branch (name "main", or first alphabetically) is marked with a `default` badge.
+- **Ahead/behind counts** — number of commits unique to this branch (ahead) vs commits on the default not yet here (behind).  Computed as a commit-ID set difference over the `musehub_commits` table.
+- **Musical divergence scores** — five dimensions (melodic, harmonic, rhythmic, structural, dynamic) each in [0, 1]. Shown as mini bar charts. All `null` (placeholder) until audio snapshots are attached to commits and server-side computation is implemented.
+- **Compare link** — navigates to `/{owner}/{repo_slug}/compare/{default}...{branch}`.
+- **New Pull Request button** — navigates to `/{owner}/{repo_slug}/pulls/new?head={branch}`.
+
+Content negotiation: `?format=json` or `Accept: application/json` returns `BranchDetailListResponse` (camelCase).
+
+### Tag Browser Page
+
+**Route:** `GET /musehub/ui/{owner}/{repo_slug}/tags`
+
+Displays all releases as browseable tags, grouped by namespace prefix:
+
+- Tags are sourced from `musehub_releases`.  The `tag` field of a release is used as the tag name.
+- **Namespace extraction** — `emotion:happy` → namespace `emotion`; `v1.0` → namespace `version` (no colon).
+- **Namespace filter dropdown** — client-side filter that re-renders without a round trip.
+- **Per-tag info** — tag name, commit SHA (links to commit detail), release title, creation date.
+- **View commit** link per tag.
+
+Content negotiation: `?format=json` or `Accept: application/json` returns `TagListResponse` (camelCase) including a `namespaces` list. Optional `?namespace=<ns>` query parameter filters by namespace server-side.
 ### Repo Home Page
 
 **Purpose:** Provide an "album cover" view of a Muse Hub repo — hearing the latest mix, seeing the arrangement structure, and understanding project activity at a glance.  Replaces the plain commit-list landing page with a rich dashboard suited for musicians, collaborators, and AI agents.

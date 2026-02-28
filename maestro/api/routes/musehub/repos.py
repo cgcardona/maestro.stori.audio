@@ -31,6 +31,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from maestro.auth.dependencies import TokenClaims, optional_token, require_valid_token
 from maestro.db import get_db
 from maestro.models.musehub import (
+    BranchDetailListResponse,
     BranchListResponse,
     CommitListResponse,
     CommitResponse,
@@ -156,6 +157,34 @@ async def list_branches(
     _guard_visibility(repo, claims)
     branches = await musehub_repository.list_branches(db, repo_id)
     return BranchListResponse(branches=branches)
+
+
+@router.get(
+    "/repos/{repo_id}/branches/detail",
+    response_model=BranchDetailListResponse,
+    operation_id="listRepoBranchesDetail",
+    summary="List branches with ahead/behind counts and divergence scores",
+    tags=["Branches"],
+)
+async def list_branches_detail(
+    repo_id: str,
+    db: AsyncSession = Depends(get_db),
+    claims: TokenClaims | None = Depends(optional_token),
+) -> BranchDetailListResponse:
+    """Return branches enriched with ahead/behind counts vs the default branch.
+
+    Each branch includes:
+    - ``aheadCount``: commits on this branch not yet on the default branch
+    - ``behindCount``: commits on the default branch not yet merged here
+    - ``isDefault``: whether this is the repo's default branch
+    - ``divergence``: musical divergence scores (placeholder ``null`` until computable)
+
+    Used by the MuseHub branch list page to help musicians decide which branches
+    to merge or discard.
+    """
+    repo = await musehub_repository.get_repo(db, repo_id)
+    _guard_visibility(repo, claims)
+    return await musehub_repository.list_branches_with_detail(db, repo_id)
 
 
 @router.get(
