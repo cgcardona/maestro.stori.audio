@@ -1717,7 +1717,7 @@ All authed endpoints require `Authorization: Bearer <token>`. See [api.md](../re
 
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | `/musehub/ui/{owner}/{repo_slug}` | Repo landing page (branch selector + commit log) |
+| GET | `/musehub/ui/{owner}/{repo_slug}` | Repo home page (arrangement matrix, audio player, stats bar, recent commits) |
 | GET | `/musehub/ui/{owner}/{repo_slug}/commits/{commit_id}` | Commit detail (metadata + artifact browser) |
 | GET | `/musehub/ui/{owner}/{repo_slug}/pulls` | Pull request list |
 | GET | `/musehub/ui/{owner}/{repo_slug}/pulls/{pr_id}` | PR detail (with merge button) |
@@ -1727,6 +1727,62 @@ All authed endpoints require `Authorization: Bearer <token>`. See [api.md](../re
 | GET | `/musehub/ui/{owner}/{repo_slug}/sessions/{session_id}` | Session detail page |
 
 UI pages are Jinja2-rendered HTML shells — auth is handled client-side via `localStorage` JWT (loaded from `/musehub/static/musehub.js`). The page JavaScript fetches from the authed JSON API above.
+### Repo Home Page
+
+**Purpose:** Provide an "album cover" view of a Muse Hub repo — hearing the latest mix, seeing the arrangement structure, and understanding project activity at a glance.  Replaces the plain commit-list landing page with a rich dashboard suited for musicians, collaborators, and AI agents.
+
+**Routes:**
+
+| Route | Auth | Description |
+|-------|------|-------------|
+| `GET /musehub/ui/{owner}/{repo_slug}` | None (HTML shell) | Repo home page — arrangement matrix, audio player, stats bar, recent commits |
+| `GET /musehub/ui/{owner}/{repo_slug}` (`Accept: application/json`) | Optional JWT | Returns `{ stats, recent_commits }` as JSON |
+| `GET /api/v1/musehub/repos/{repo_id}/stats` | Optional JWT | `RepoStatsResponse` — commit/branch/release counts |
+
+**Sections rendered by the home page template (`repo_home.html`):**
+
+1. **Hero** — repo name, owner link, visibility badge (Public/Private), description, key/BPM pills, and genre tags.
+2. **Stats bar** — three clickable pills showing: commit count (links to commit history), branch count (links to DAG graph), release count (links to releases).
+3. **Quick-link tabs** — Code, Commits, Graph, PRs, Issues, Analysis, Sessions — one-click navigation to all repo sub-pages.
+4. **Audio player** — embeds an `<audio controls>` element pointing to the latest MP3/OGG/WAV object from the most recent commit.  Shows a placeholder when no audio render is found.
+5. **Arrangement matrix** — a colour-coded grid showing tracks (columns) × sections (rows) from the latest commit snapshot.  Falls back to a placeholder when the repo has no commits.
+6. **Recent commits** — last 5 commits with SHA link, conventional-commit type/scope badges, author avatar, and relative timestamp.
+7. **README** — raw text of `README.md` from HEAD rendered in a `<pre>` block; hidden when no README exists.
+
+**Content negotiation:**
+
+Sending `Accept: application/json` returns:
+
+```json
+{
+  "stats": {
+    "commit_count": 42,
+    "branch_count": 3,
+    "release_count": 2
+  },
+  "recent_commits": [
+    {
+      "commit_id": "abc123...",
+      "branch": "main",
+      "message": "feat(drums): add hi-hat pattern",
+      "author": "gabriel",
+      "timestamp": "2025-01-15T12:00:00+00:00"
+    }
+  ]
+}
+```
+
+This allows AI agents and CLI tools to query repo activity without rendering HTML.
+
+**Stats endpoint:** `GET /api/v1/musehub/repos/{repo_id}/stats`
+
+Returns a `RepoStatsResponse` with:
+- `commit_count` — total commits across all branches (from `list_commits` total)
+- `branch_count` — number of branch pointers (from `list_branches`)
+- `release_count` — number of published releases/tags (from `list_releases`)
+
+All counts are 0 when the repo is empty.  Respects visibility: private repos return 401 for unauthenticated callers.
+
 ### DAG Graph — Interactive Commit Graph
 
 **Purpose:** Visualise the full commit history of a Muse Hub repo as an interactive directed acyclic graph, equivalent to `muse inspect --format mermaid` but explorable in the browser.

@@ -37,6 +37,7 @@ from maestro.models.musehub import (
     GrooveCommitEntry,
     MuseHubContextResponse,
     RepoResponse,
+    RepoStatsResponse,
     CreditsResponse,
     SessionCreate,
     SessionListResponse,
@@ -47,7 +48,7 @@ from maestro.models.musehub_context import (
     ContextDepth,
     ContextFormat,
 )
-from maestro.services import musehub_context, musehub_credits, musehub_divergence, musehub_repository
+from maestro.services import musehub_context, musehub_credits, musehub_divergence, musehub_releases, musehub_repository
 from maestro.services.muse_groove_check import (
     DEFAULT_THRESHOLD,
     compute_groove_check,
@@ -74,7 +75,9 @@ def _guard_visibility(repo: RepoResponse | None, claims: TokenClaims | None) -> 
     "/repos",
     response_model=RepoResponse,
     status_code=status.HTTP_201_CREATED,
+    operation_id="createRepo",
     summary="Create a remote Muse repo",
+    tags=["Repos"],
 )
 async def create_repo(
     body: CreateRepoRequest,
@@ -114,7 +117,9 @@ async def create_repo(
 @router.get(
     "/repos/{repo_id}",
     response_model=RepoResponse,
+    operation_id="getRepo",
     summary="Get remote repo metadata",
+    tags=["Repos"],
 )
 async def get_repo(
     repo_id: str,
@@ -130,7 +135,9 @@ async def get_repo(
 @router.get(
     "/repos/{repo_id}/branches",
     response_model=BranchListResponse,
+    operation_id="listRepoBranches",
     summary="List all branches in a remote repo",
+    tags=["Branches"],
 )
 async def list_branches(
     repo_id: str,
@@ -147,7 +154,9 @@ async def list_branches(
 @router.get(
     "/repos/{repo_id}/commits",
     response_model=CommitListResponse,
+    operation_id="listRepoCommits",
     summary="List commits in a remote repo (newest first)",
+    tags=["Commits"],
 )
 async def list_commits(
     repo_id: str,
@@ -168,7 +177,9 @@ async def list_commits(
 @router.get(
     "/repos/{repo_id}/commits/{commit_id}",
     response_model=CommitResponse,
+    operation_id="getRepoCommit",
     summary="Get a single commit by ID",
+    tags=["Commits"],
 )
 async def get_commit(
     repo_id: str,
@@ -196,7 +207,9 @@ async def get_commit(
 @router.get(
     "/repos/{repo_id}/timeline",
     response_model=TimelineResponse,
+    operation_id="getRepoTimeline",
     summary="Chronological timeline of musical evolution",
+    tags=["Commits"],
 )
 async def get_timeline(
     repo_id: str,
@@ -224,7 +237,9 @@ async def get_timeline(
 @router.get(
     "/repos/{repo_id}/divergence",
     response_model=DivergenceResponse,
+    operation_id="getRepoDivergence",
     summary="Compute musical divergence between two branches",
+    tags=["Branches"],
 )
 async def get_divergence(
     repo_id: str,
@@ -289,7 +304,9 @@ async def get_divergence(
 @router.get(
     "/repos/{repo_id}/credits",
     response_model=CreditsResponse,
+    operation_id="getRepoCredits",
     summary="Get aggregated contributor credits for a repo",
+    tags=["Repos"],
 )
 async def get_credits(
     repo_id: str,
@@ -323,7 +340,9 @@ async def get_credits(
 @router.get(
     "/repos/{repo_id}/context/{ref}",
     response_model=MuseHubContextResponse,
+    operation_id="getRepoContextByRef",
     summary="Get musical context document for a commit",
+    tags=["Commits"],
 )
 async def get_context(
     repo_id: str,
@@ -352,7 +371,9 @@ async def get_context(
 
 @router.get(
     "/repos/{repo_id}/context",
+    operation_id="getAgentContext",
     summary="Get complete agent context for a repo ref",
+    tags=["Repos"],
     responses={
         200: {"description": "Agent context document (JSON or YAML)"},
         404: {"description": "Repo not found or ref has no commits"},
@@ -413,7 +434,9 @@ async def get_agent_context(
 @router.get(
     "/repos/{repo_id}/dag",
     response_model=DagGraphResponse,
+    operation_id="getCommitDag",
     summary="Get the full commit DAG for a repo",
+    tags=["Commits"],
 )
 async def get_commit_dag(
     repo_id: str,
@@ -443,7 +466,9 @@ async def get_commit_dag(
     "/repos/{repo_id}/sessions",
     response_model=SessionResponse,
     status_code=status.HTTP_201_CREATED,
+    operation_id="createSession",
     summary="Create a recording session entry",
+    tags=["Sessions"],
 )
 async def create_session(
     repo_id: str,
@@ -475,7 +500,9 @@ async def create_session(
 @router.get(
     "/repos/{repo_id}/sessions",
     response_model=SessionListResponse,
+    operation_id="listSessions",
     summary="List recording sessions for a repo (newest first)",
+    tags=["Sessions"],
 )
 async def list_sessions(
     repo_id: str,
@@ -497,7 +524,9 @@ async def list_sessions(
 @router.get(
     "/repos/{repo_id}/sessions/{session_id}",
     response_model=SessionResponse,
+    operation_id="getSession",
     summary="Get a single recording session by ID",
+    tags=["Sessions"],
 )
 async def get_session(
     repo_id: str,
@@ -521,7 +550,9 @@ async def get_session(
 @router.post(
     "/repos/{repo_id}/sessions/{session_id}/stop",
     response_model=SessionResponse,
+    operation_id="stopSession",
     summary="Mark a recording session as ended",
+    tags=["Sessions"],
 )
 async def stop_session(
     repo_id: str,
@@ -544,6 +575,39 @@ async def stop_session(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
     await db.commit()
     return sess
+
+
+@router.get(
+    "/repos/{repo_id}/stats",
+    response_model=RepoStatsResponse,
+    summary="Aggregated counts for the repo home page stats bar",
+)
+async def get_repo_stats(
+    repo_id: str,
+    db: AsyncSession = Depends(get_db),
+    claims: TokenClaims | None = Depends(optional_token),
+) -> RepoStatsResponse:
+    """Return aggregated statistics for a repo: commit count, branch count, release count.
+
+    This lightweight endpoint powers the stats bar on the repo home page and
+    the JSON content-negotiation response from ``GET /musehub/ui/{owner}/{slug}``.
+    All counts are 0 when the repo has no data yet.
+
+    Returns 404 if the repo does not exist.
+    Returns 401 if the repo is private and the caller is unauthenticated.
+    """
+    repo = await musehub_repository.get_repo(db, repo_id)
+    _guard_visibility(repo, claims)
+
+    branches = await musehub_repository.list_branches(db, repo_id)
+    _, commit_total = await musehub_repository.list_commits(db, repo_id, limit=1)
+    releases = await musehub_releases.list_releases(db, repo_id)
+
+    return RepoStatsResponse(
+        commit_count=commit_total,
+        branch_count=len(branches),
+        release_count=len(releases),
+    )
 
 
 @router.get(
@@ -618,7 +682,9 @@ async def get_groove_check(
 @router.get(
     "/{owner}/{repo_slug}",
     response_model=RepoResponse,
+    operation_id="getRepoByOwnerSlug",
     summary="Get repo metadata by owner/slug",
+    tags=["Repos"],
 )
 async def get_repo_by_owner_slug(
     owner: str,
