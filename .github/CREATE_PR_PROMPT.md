@@ -192,6 +192,13 @@ cd "$REPO" && docker compose exec storpheus pytest storpheus/test_<relevant_file
 
 **Cascading failure scan:** After your target tests pass, search for similar assertions or fixtures that may be affected by the same root change (shared constant, model field, contract shape). Fix all impacted tests in the same commit — do not leave sibling failures for a later round.
 
+**Warning scan:** Scan the FULL test output for `PytestWarning`, `DeprecationWarning`, `UserWarning`, and any other `Warning` lines. Warnings are defects, not noise:
+- Warnings introduced by your change **must be fixed before opening the PR**.
+- Pre-existing warnings you encounter **must also be fixed** and committed separately with:
+  `fix: resolve pre-existing test warning — <brief description>`
+  List each one in your PR description under "Warnings resolved."
+A clean run has zero warnings, not just zero failures.
+
 ### Broken tests from other agents — fix them
 
 **If you encounter a failing test that your change did NOT introduce:**
