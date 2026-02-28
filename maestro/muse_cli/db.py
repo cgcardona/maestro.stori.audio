@@ -187,6 +187,22 @@ async def set_commit_tempo_bpm(
     return commit
 
 
+async def find_commits_by_prefix(
+    session: AsyncSession,
+    prefix: str,
+) -> list[MuseCliCommit]:
+    """Return all commits whose ``commit_id`` starts with *prefix*.
+
+    Used by commands that accept a short commit ID (e.g. ``muse export``,
+    ``muse open``, ``muse play``) to resolve a user-supplied prefix to a
+    full commit record before DB lookups.
+    """
+    result = await session.execute(
+        select(MuseCliCommit).where(MuseCliCommit.commit_id.startswith(prefix))
+    )
+    return list(result.scalars().all())
+
+
 async def get_head_snapshot_manifest(
     session: AsyncSession, repo_id: str, branch: str
 ) -> dict[str, str] | None:
