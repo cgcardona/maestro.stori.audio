@@ -33,8 +33,7 @@ function artifactHtml(obj, repoName) {
 
   if (IMAGE_EXTS.has(ext)) {
     return `<div class="artifact-card">
-      <img src="${url}" alt="${escHtml(obj.path)}" loading="lazy"
-           onerror="this.src='';this.alt='Preview unavailable'" />
+      <img data-content-url="${url}" alt="${escHtml(obj.path)}" loading="lazy" />
       <span class="path">${escHtml(name)}</span>
     </div>`;
   }
@@ -45,10 +44,10 @@ function artifactHtml(obj, repoName) {
               onclick="queueAudio('${url}', '${escHtml(name)}', '${escHtml(repoName)}')">
         &#9654; Play
       </button>
-      <a class="btn btn-secondary btn-sm" style="width:100%;justify-content:center"
-         href="${url}" download="${escHtml(name)}">
+      <button class="btn btn-secondary btn-sm" style="width:100%;justify-content:center"
+              onclick="downloadArtifact('${url}','${escHtml(name)}')">
         &#11015; Download
-      </a>
+      </button>
       <span class="path icon-mp3">${escHtml(name)}</span>
     </div>`;
   }
@@ -58,10 +57,10 @@ function artifactHtml(obj, repoName) {
       <div class="midi-preview" id="midi-${escHtml(obj.objectId)}" data-url="${url}">
         <div class="midi-roll-placeholder">&#127929; MIDI — ${escHtml(name)}</div>
       </div>
-      <a class="btn btn-secondary btn-sm" style="width:100%;justify-content:center"
-         href="${url}" download="${escHtml(name)}">
+      <button class="btn btn-secondary btn-sm" style="width:100%;justify-content:center"
+              onclick="downloadArtifact('${url}','${escHtml(name)}')">
         &#11015; Download MIDI
-      </a>
+      </button>
       <span class="path icon-mid">${escHtml(name)}</span>
     </div>`;
   }
@@ -71,21 +70,33 @@ function artifactHtml(obj, repoName) {
       <div class="score-preview" id="score-${escHtml(obj.objectId)}" data-url="${url}" data-ext="${ext}">
         <p class="text-muted text-sm" style="padding:var(--space-2)">&#127926; ${escHtml(ext.toUpperCase())} Score — loading…</p>
       </div>
-      <a class="btn btn-secondary btn-sm" style="width:100%;justify-content:center"
-         href="${url}" download="${escHtml(name)}">
+      <button class="btn btn-secondary btn-sm" style="width:100%;justify-content:center"
+              onclick="downloadArtifact('${url}','${escHtml(name)}')">
         &#11015; Download Score
-      </a>
+      </button>
       <span class="path">${escHtml(name)}</span>
     </div>`;
   }
 
   return `<div class="artifact-card">
-    <a class="btn btn-secondary btn-sm" style="width:100%;justify-content:center"
-       href="${url}" download="${escHtml(name)}">
+    <button class="btn btn-secondary btn-sm" style="width:100%;justify-content:center"
+            onclick="downloadArtifact('${url}','${escHtml(name)}')">
       &#11015; Download
-    </a>
+    </button>
     <span class="path">${escHtml(name)}</span>
   </div>`;
+}
+
+async function hydrateImages() {
+  document.querySelectorAll('img[data-content-url]').forEach(async img => {
+    const url = img.dataset.contentUrl;
+    try {
+      const blobUrl = await _fetchBlobUrl(url);
+      img.src = blobUrl;
+    } catch (_) {
+      img.alt = 'Preview unavailable';
+    }
+  });
 }
 
 function parseInstruments(message) {
@@ -275,6 +286,8 @@ async function load() {
 
     // Load ABC score previews if abcjs is available
     renderScorePreviews();
+    // Hydrate image artifact cards with authed blob URLs to avoid 401
+    hydrateImages();
 
   } catch(e) {
     if (e.message !== 'auth')
