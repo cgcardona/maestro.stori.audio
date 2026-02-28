@@ -22,7 +22,7 @@ import asyncio
 import json
 import logging
 import pathlib
-from typing import Optional
+from datetime import datetime, timezone
 
 import typer
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -132,34 +132,34 @@ def _render_text(results: MuseFindResults) -> None:
 @app.callback(invoke_without_command=True)
 def find(
     ctx: typer.Context,
-    harmony: Optional[str] = typer.Option(
+    harmony: str | None = typer.Option(
         None, "--harmony", help='Harmonic filter, e.g. "key=Eb" or "mode=minor".'
     ),
-    rhythm: Optional[str] = typer.Option(
+    rhythm: str | None = typer.Option(
         None, "--rhythm", help='Rhythmic filter, e.g. "tempo=120-130" or "meter=7/8".'
     ),
-    melody: Optional[str] = typer.Option(
+    melody: str | None = typer.Option(
         None, "--melody", help='Melodic filter, e.g. "range>2oct" or "shape=arch".'
     ),
-    structure: Optional[str] = typer.Option(
+    structure: str | None = typer.Option(
         None, "--structure", help='Structural filter, e.g. "has=bridge" or "form=AABA".'
     ),
-    dynamic: Optional[str] = typer.Option(
+    dynamic: str | None = typer.Option(
         None, "--dynamic", help='Dynamic filter, e.g. "avg_vel>80" or "arc=crescendo".'
     ),
-    emotion: Optional[str] = typer.Option(
+    emotion: str | None = typer.Option(
         None, "--emotion", help="Emotion tag, e.g. melancholic."
     ),
-    section: Optional[str] = typer.Option(
+    section: str | None = typer.Option(
         None, "--section", help="Find commits containing a named section."
     ),
-    track: Optional[str] = typer.Option(
+    track: str | None = typer.Option(
         None, "--track", help="Find commits where a specific track was present."
     ),
-    since: Optional[str] = typer.Option(
+    since: str | None = typer.Option(
         None, "--since", help="Restrict to commits after this date (YYYY-MM-DD)."
     ),
-    until: Optional[str] = typer.Option(
+    until: str | None = typer.Option(
         None, "--until", help="Restrict to commits before this date (YYYY-MM-DD)."
     ),
     limit: int = typer.Option(
@@ -181,8 +181,6 @@ def find(
         raise typer.Exit(code=ExitCode.USER_ERROR)
 
     # Parse dates
-    from datetime import datetime, timezone
-
     since_dt: datetime | None = None
     until_dt: datetime | None = None
 
