@@ -4119,6 +4119,34 @@ classDiagram
 
 ---
 
+## Muse rev-parse Types (`maestro/muse_cli/commands/rev_parse.py`)
+
+### `RevParseResult`
+
+Immutable value object returned by `resolve_revision()` when a revision expression
+resolves successfully.  Consumers should always check for `None` before accessing
+fields — `resolve_revision` returns `None` on any resolution failure.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `commit_id` | `str` | Full 64-character hex commit ID of the resolved commit. |
+| `branch` | `str` | Branch that the resolved commit lives on. |
+| `revision_expr` | `str` | The original expression that was resolved (useful for error messages). |
+
+```python
+class RevParseResult:
+    commit_id: str
+    branch: str
+    revision_expr: str
+```
+
+**When to call `resolve_revision`:** any command that accepts a user-supplied
+revision argument (e.g. `muse describe <rev>`, `muse export --from <rev>`)
+should delegate resolution to this function rather than reimplementing tilde
+parsing and branch lookup.
+
+---
+
 ## Muse CLI — Export Types (`maestro/muse_cli/export_engine.py`)
 
 ### `ExportFormat`
