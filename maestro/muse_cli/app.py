@@ -1,17 +1,18 @@
 """Muse CLI — Typer application root.
 
 Entry point for the ``muse`` console script. Registers all MVP
-subcommands (arrange, ask, checkout, chord-map, commit, commit-tree, context,
-contour, describe, diff, divergence, dynamics, export, find, form, grep,
-groove-check, humanize, import, init, inspect, key, log, merge, meter, open,
-play, pull, push, recall, remote, revert, session, similarity, status, swing,
-tag, tempo, tempo-scale, timeline, validate) as Typer sub-applications.
+subcommands (amend, arrange, ask, checkout, chord-map, commit, commit-tree,
+context, contour, describe, diff, divergence, dynamics, export, find, form,
+grep, groove-check, humanize, import, init, inspect, key, log, merge, meter,
+open, play, pull, push, recall, remote, revert, session, similarity, status,
+swing, tag, tempo, tempo-scale, timeline, validate) as Typer sub-applications.
 """
 from __future__ import annotations
 
 import typer
 
 from maestro.muse_cli.commands import (
+    amend,
     arrange,
     ask,
     checkout,
@@ -61,6 +62,7 @@ cli = typer.Typer(
     no_args_is_help=True,
 )
 
+cli.add_typer(amend.app, name="amend", help="Fold working-tree changes into the most recent commit.")
 cli.add_typer(chord_map.app, name="chord-map", help="Visualize the chord progression embedded in a commit.")
 cli.add_typer(contour.app, name="contour", help="Analyze the melodic contour and phrase shape of a commit.")
 cli.add_typer(init.app, name="init", help="Initialise a new Muse repository.")

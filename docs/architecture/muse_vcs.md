@@ -3511,3 +3511,55 @@ the computed values will change when the full implementation is wired in.
 `_format_history()`.  Exit codes: 0 success, 2 outside repo
 (`REPO_NOT_FOUND`), 3 internal error (`INTERNAL_ERROR`).
 
+---
+
+## `muse amend` — Amend the Most Recent Commit
+
+**Purpose:** Fold working-tree changes into the most recent commit, replacing
+it with a new commit that has the same parent.  Equivalent to
+`git commit --amend`.  The original HEAD commit becomes an orphan (unreachable
+from any branch ref) and remains in the database for forensic traceability.
+
+**Usage:**
+```bash
+muse amend [OPTIONS]
+```
+
+**Flags:**
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `-m / --message TEXT` | string | — | Replace the commit message |
+| `--no-edit` | flag | off | Keep the original commit message (default when `-m` is omitted; takes precedence over `-m` when both are provided) |
+| `--reset-author` | flag | off | Reset the author field to the current user (stub: sets to empty string until a user-identity system is implemented) |
+
+**Output example:**
+```
+✅ [main a1b2c3d4] updated groove pattern (amended)
+```
+
+**Behaviour:**
+1. Re-snapshots `muse-work/` using the same content-addressed pipeline as
+   `muse commit` (sha256 per file, deterministic snapshot_id).
+2. Computes a new `commit_id` using the *original commit's parent* (not the
+   original itself), the new snapshot, the effective message, and the current
+   timestamp.
+3. Writes the new commit row to Postgres and updates
+   `.muse/refs/heads/<branch>` to the new commit ID.
+4. **Blocked** when a merge is in progress (`.muse/MERGE_STATE.json` exists).
+5. **Blocked** when there are no commits yet on the current branch.
+6. **Blocked** when `muse-work/` does not exist or is empty.
+
+**Result types:**
+- Returns the new `commit_id` (64-char sha256 hex string) from `_amend_async`.
+- Exit codes: 0 success, 1 user error (`USER_ERROR`), 2 outside repo
+  (`REPO_NOT_FOUND`), 3 internal error (`INTERNAL_ERROR`).
+
+**Agent use case:** A producer adjusts a MIDI note quantization setting, then
+runs `muse amend --no-edit` to fold the change silently into the last commit
+without cluttering history with a second "tweak quantization" entry.  An
+automated agent can call `muse amend -m "fix: tighten quantization on drums"`
+to improve the commit message after inspection.
+
+**Implementation:** `maestro/muse_cli/commands/amend.py` —
+`_amend_async(message, no_edit, reset_author, root, session)`.
+Tests: `tests/muse_cli/test_amend.py`.
