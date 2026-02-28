@@ -37,6 +37,12 @@ from collections.abc import Callable
 from datetime import datetime, timezone
 from typing import Literal, Optional
 
+from maestro.models.musehub import (
+    ArrangementCellData,
+    ArrangementColumnSummary,
+    ArrangementMatrixResponse,
+    ArrangementRowSummary,
+)
 from maestro.models.musehub_analysis import (
     ALL_DIMENSIONS,
     AggregateAnalysisResponse,
@@ -995,4 +1001,150 @@ def compute_aggregate_analysis(
         computed_at=now,
         dimensions=dimensions,
         filters_applied=AnalysisFilters(track=track, section=section),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Arrangement matrix
+# ---------------------------------------------------------------------------
+
+_ARRANGEMENT_INSTRUMENTS: list[str] = ["bass", "keys", "guitar", "drums", "lead", "pads"]
+_ARRANGEMENT_SECTIONS: list[str] = ["intro", "verse_1", "chorus", "bridge", "outro"]
+
+# Beat positions for each section (start, end).  Realistic 4/4 structure with
+# 8-bar sections at 120 BPM (32 beats per section).
+_SECTION_BEATS: dict[str, tuple[float, float]] = {
+    "intro":   (0.0,   32.0),
+    "verse_1": (32.0,  64.0),
+    "chorus":  (64.0,  96.0),
+    "bridge":  (96.0, 112.0),
+    "outro":   (112.0, 128.0),
+}
+
+# Probability that an instrument is active in a given section (realistic
+# arrangement logic — drums always play, bass almost always, pads lighter).
+_ACTIVE_PROBABILITY: dict[str, dict[str, float]] = {
+    "bass":   {"intro": 0.7, "verse_1": 1.0, "chorus": 1.0, "bridge": 0.8, "outro": 0.6},
+    "keys":   {"intro": 0.5, "verse_1": 0.8, "chorus": 1.0, "bridge": 0.7, "outro": 0.5},
+    "guitar": {"intro": 0.3, "verse_1": 0.7, "chorus": 0.9, "bridge": 0.6, "outro": 0.3},
+    "drums":  {"intro": 0.5, "verse_1": 1.0, "chorus": 1.0, "bridge": 0.8, "outro": 0.4},
+    "lead":   {"intro": 0.2, "verse_1": 0.5, "chorus": 0.8, "bridge": 0.9, "outro": 0.3},
+    "pads":   {"intro": 0.8, "verse_1": 0.6, "chorus": 0.7, "bridge": 1.0, "outro": 0.9},
+}
+
+
+def compute_arrangement_matrix(*, repo_id: str, ref: str) -> ArrangementMatrixResponse:
+    """Build a deterministic :class:`ArrangementMatrixResponse` for a Muse commit ref.
+
+    Returns instrument × section density data so the arrangement matrix page can
+    render a colour-coded grid without downloading any audio or MIDI files.
+
+    The stub data is deterministically seeded by ``ref`` so that agents receive
+    consistent responses across retries.  Note counts and density values are
+    drawn from realistic ranges for a 6-instrument soul/pop arrangement.
+
+    Args:
+        repo_id:  Muse Hub repo UUID (used only for logging).
+        ref:      Muse commit ref (seeds the deterministic RNG).
+
+    Returns:
+        :class:`ArrangementMatrixResponse` ready for the arrange endpoint.
+    """
+    seed_int = int(hashlib.md5(ref.encode()).hexdigest()[:8], 16)  # noqa: S324 — non-crypto
+
+    instruments = _ARRANGEMENT_INSTRUMENTS
+    sections = _ARRANGEMENT_SECTIONS
+
+    cells: list[ArrangementCellData] = []
+    raw_counts: dict[tuple[str, str], int] = {}
+
+    # Generate note counts deterministically per (instrument, section).
+    for i_idx, instrument in enumerate(instruments):
+        for s_idx, section in enumerate(sections):
+            prob = _ACTIVE_PROBABILITY.get(instrument, {}).get(section, 0.5)
+            # Mix ref seed with cell position for per-cell variation.
+            cell_seed = (seed_int + i_idx * 31 + s_idx * 97) % (2**32)
+            # Deterministic "random" value in [0, 1) via cheap LCG step.
+            lcg = (cell_seed * 1664525 + 1013904223) % (2**32)
+            roll = lcg / (2**32)
+            active = roll < prob
+            if active:
+                # Note count: 8–64, skewed toward busier instruments.
+                note_count = 8 + int(roll * 56)
+            else:
+                note_count = 0
+            raw_counts[(instrument, section)] = note_count
+
+    # Normalise counts to [0, 1] density (max across the whole matrix).
+    max_count = max(raw_counts.values()) or 1
+
+    for i_idx, instrument in enumerate(instruments):
+        for s_idx, section in enumerate(sections):
+            note_count = raw_counts[(instrument, section)]
+            beat_start, beat_end = _SECTION_BEATS[section]
+            active = note_count > 0
+            # Pitch range: realistic MIDI range per instrument.
+            pitch_base = {"bass": 28, "keys": 48, "guitar": 40, "drums": 36, "lead": 60, "pads": 52}.get(
+                instrument, 48
+            )
+            pitch_low = pitch_base if active else 0
+            pitch_high = pitch_base + 24 if active else 0
+            cells.append(
+                ArrangementCellData(
+                    instrument=instrument,
+                    section=section,
+                    note_count=note_count,
+                    note_density=round(note_count / max_count, 4),
+                    beat_start=beat_start,
+                    beat_end=beat_end,
+                    pitch_low=pitch_low,
+                    pitch_high=pitch_high,
+                    active=active,
+                )
+            )
+
+    # Row summaries (per instrument).
+    row_summaries: list[ArrangementRowSummary] = []
+    for instrument in instruments:
+        inst_cells = [c for c in cells if c.instrument == instrument]
+        total = sum(c.note_count for c in inst_cells)
+        active_secs = sum(1 for c in inst_cells if c.active)
+        mean_d = round(sum(c.note_density for c in inst_cells) / len(inst_cells), 4) if inst_cells else 0.0
+        row_summaries.append(
+            ArrangementRowSummary(
+                instrument=instrument,
+                total_notes=total,
+                active_sections=active_secs,
+                mean_density=mean_d,
+            )
+        )
+
+    # Column summaries (per section).
+    column_summaries: list[ArrangementColumnSummary] = []
+    for section in sections:
+        sec_cells = [c for c in cells if c.section == section]
+        total = sum(c.note_count for c in sec_cells)
+        active_inst = sum(1 for c in sec_cells if c.active)
+        beat_start, beat_end = _SECTION_BEATS[section]
+        column_summaries.append(
+            ArrangementColumnSummary(
+                section=section,
+                total_notes=total,
+                active_instruments=active_inst,
+                beat_start=beat_start,
+                beat_end=beat_end,
+            )
+        )
+
+    total_beats = max(end for _, end in _SECTION_BEATS.values())
+    logger.info("✅ arrangement/matrix repo=%s ref=%s cells=%d", repo_id[:8], ref[:8], len(cells))
+    return ArrangementMatrixResponse(
+        repo_id=repo_id,
+        ref=ref,
+        instruments=instruments,
+        sections=sections,
+        cells=cells,
+        row_summaries=row_summaries,
+        column_summaries=column_summaries,
+        total_beats=total_beats,
     )
