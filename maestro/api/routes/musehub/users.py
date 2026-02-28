@@ -17,19 +17,16 @@ from __future__ import annotations
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import aliased
 
 from pydantic import Field
 
 from maestro.auth.dependencies import TokenClaims, require_valid_token
 from maestro.db import get_db
-from maestro.db.musehub_models import MusehubFork, MusehubRepo
 from maestro.models.base import CamelModel
-from maestro.models.musehub import ProfileResponse, ProfileUpdateRequest, UserForkedRepoEntry, UserForksResponse
+from maestro.models.musehub import ProfileResponse, ProfileUpdateRequest, UserForksResponse
 from maestro.services import musehub_profile as profile_svc
-from maestro.services.musehub_repository import _to_repo_response
+from maestro.services import musehub_repository as repo_svc
 
 logger = logging.getLogger(__name__)
 
@@ -108,32 +105,9 @@ async def get_user_forks(
             detail=f"No profile found for username '{username}'",
         )
 
-    ForkRepo = aliased(MusehubRepo, name="fork_repo")
-    SourceRepo = aliased(MusehubRepo, name="source_repo")
-
-    rows = (
-        await db.execute(
-            select(MusehubFork, ForkRepo, SourceRepo)
-            .join(ForkRepo, MusehubFork.fork_repo_id == ForkRepo.repo_id)
-            .join(SourceRepo, MusehubFork.source_repo_id == SourceRepo.repo_id)
-            .where(MusehubFork.forked_by == username)
-            .order_by(MusehubFork.created_at.desc())
-        )
-    ).all()
-
-    entries = [
-        UserForkedRepoEntry(
-            fork_id=fork.fork_id,
-            fork_repo=_to_repo_response(fork_repo),
-            source_owner=source_repo.owner,
-            source_slug=source_repo.slug,
-            forked_at=fork.created_at,
-        )
-        for fork, fork_repo, source_repo in rows
-    ]
-
-    logger.info("✅ Served %d forks for username=%s", len(entries), username)
-    return UserForksResponse(forks=entries, total=len(entries))
+    result = await repo_svc.get_user_forks(db, username)
+    logger.info("✅ Served %d forks for username=%s", result.total, username)
+    return result
 
 
 @router.post(
