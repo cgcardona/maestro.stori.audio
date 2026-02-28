@@ -1016,6 +1016,53 @@ class SimilarSearchResponse(CamelModel):
     )
 
 
+# ── Tree browser models ───────────────────────────────────────────────────────
+
+
+class TreeEntryResponse(CamelModel):
+    """A single entry (file or directory) in the Muse tree browser.
+
+    Returned by GET /musehub/repos/{repo_id}/tree/{ref} and
+    GET /musehub/repos/{repo_id}/tree/{ref}/{path}.
+
+    Consumers should use ``type`` to render the appropriate icon:
+    - "dir"  → folder icon, clickable to navigate deeper
+    - "file" → file-type icon based on ``name`` extension
+      (.mid → piano, .mp3/.wav → waveform, .json → braces, .webp/.png → photo)
+
+    ``size_bytes`` is None for directories (size is the sum of its contents,
+    which the server does not compute at list time).
+    """
+
+    type: str = Field(..., description="'file' or 'dir'")
+    name: str = Field(..., description="Entry filename or directory name")
+    path: str = Field(..., description="Full relative path from repo root, e.g. 'tracks/bass.mid'")
+    size_bytes: int | None = Field(None, description="File size in bytes; None for directories")
+
+
+class TreeListResponse(CamelModel):
+    """Directory listing for the Muse tree browser.
+
+    Returned by GET /musehub/repos/{repo_id}/tree/{ref} and
+    GET /musehub/repos/{repo_id}/tree/{ref}/{path}.
+
+    Directories are listed before files within the same level. Within each
+    group, entries are sorted alphabetically by name.
+
+    Agent use case: use this to enumerate files at a known ref without
+    downloading any content. Combine with ``/objects/{object_id}/content``
+    to read individual files.
+    """
+
+    owner: str
+    repo_slug: str
+    ref: str = Field(..., description="The branch name or commit SHA used to resolve the tree")
+    dir_path: str = Field(
+        ..., description="Current directory path being listed; empty string for repo root"
+    )
+    entries: list[TreeEntryResponse] = Field(default_factory=list)
+
+
 # ── Groove Check models ───────────────────────────────────────────────────────
 
 
