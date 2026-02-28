@@ -7899,3 +7899,67 @@ as JSON by `GET /api/v1/musehub/repos/{repo_id}/objects/{object_id}/parse-midi`.
 
 **Produced by:** `musehub_events.list_events()` → `repos.get_repo_activity` route handler
 **Consumed by:** MuseHub activity feed UI; API clients filtering by event type
+
+---
+
+### `IssueCommentResponse`
+
+**Path:** `maestro/models/musehub.py`
+
+Pydantic `CamelModel` — Wire representation of a single threaded comment on a Muse Hub issue.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `comment_id` | `str` | Internal UUID for this comment |
+| `issue_id` | `str` | UUID of the parent issue |
+| `author` | `str` | Display name of the comment author |
+| `body` | `str` | Markdown comment body |
+| `parent_id` | `str \| None` | Parent comment UUID; null for top-level comments |
+| `musical_refs` | `list[MusicalRef]` | Parsed musical context references |
+| `is_deleted` | `bool` | True when soft-deleted |
+| `created_at` | `datetime` | Comment creation timestamp |
+| `updated_at` | `datetime` | Last edit timestamp |
+
+**Produced by:** `maestro.services.musehub_issues.create_comment()`, `list_comments()`
+**Consumed by:** `POST /issues/{number}/comments`, `GET /issues/{number}/comments`
+
+---
+
+### `MusicalRef`
+
+**Path:** `maestro/models/musehub.py`
+
+Pydantic `CamelModel` — A parsed musical context reference extracted from a comment body.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `type` | `str` | Reference type: `"track"` \| `"section"` \| `"beats"` |
+| `value` | `str` | The referenced value, e.g. `"bass"`, `"chorus"`, `"16-24"` |
+| `raw` | `str` | Original raw token from the comment body, e.g. `"track:bass"` |
+
+**Produced by:** `maestro.services.musehub_issues._parse_musical_refs()`
+**Consumed by:** `IssueCommentResponse.musical_refs`; issue detail UI rendering
+
+---
+
+### `MilestoneResponse`
+
+**Path:** `maestro/models/musehub.py`
+
+Pydantic `CamelModel` — Wire representation of a Muse Hub milestone.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `milestone_id` | `str` | Internal UUID |
+| `number` | `int` | Per-repo sequential milestone number |
+| `title` | `str` | Milestone title |
+| `description` | `str` | Markdown description |
+| `state` | `str` | `"open"` or `"closed"` |
+| `author` | `str` | Creator display name |
+| `due_on` | `datetime \| None` | Optional due date |
+| `open_issues` | `int` | Number of open issues linked to this milestone |
+| `closed_issues` | `int` | Number of closed issues linked to this milestone |
+| `created_at` | `datetime` | Creation timestamp |
+
+**Produced by:** `maestro.services.musehub_issues.create_milestone()`, `list_milestones()`, `get_milestone()`
+**Consumed by:** `POST /milestones`, `GET /milestones`, `GET /milestones/{number}`
