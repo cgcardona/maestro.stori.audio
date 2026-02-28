@@ -13,6 +13,7 @@ Endpoint summary:
   POST /musehub/repos/{repo_id}/sessions                  — push a recording session
   GET  /musehub/repos/{repo_id}/sessions                  — list recording sessions
   GET  /musehub/repos/{repo_id}/sessions/{session_id}     — get a single session
+  GET  /musehub/repos/{repo_id}/arrange/{ref}            — arrangement matrix (instrument × section grid)
 
 All endpoints require a valid JWT Bearer token.
 No business logic lives here — all persistence is delegated to
@@ -31,6 +32,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from maestro.auth.dependencies import TokenClaims, optional_token, require_valid_token
 from maestro.db import get_db
 from maestro.models.musehub import (
+    ArrangementMatrixResponse,
     BranchListResponse,
     CommitListResponse,
     CommitResponse,
@@ -169,14 +171,23 @@ async def list_commits(
     repo_id: str,
     branch: str | None = Query(None, description="Filter by branch name"),
     limit: int = Query(50, ge=1, le=200, description="Max commits to return"),
+    page: int = Query(1, ge=1, description="Page number (1-indexed, used with per_page)"),
+    per_page: int = Query(0, ge=0, le=200, description="Page size (0 = use limit param instead)"),
     db: AsyncSession = Depends(get_db),
     claims: TokenClaims | None = Depends(optional_token),
 ) -> CommitListResponse:
-    """Return commits for a repo, newest first. Optionally filter by branch."""
+    """Return commits for a repo, newest first.
+
+    Supports two pagination modes:
+    - Legacy: ``limit`` controls max rows returned, no offset.
+    - Page-based: ``per_page`` > 0 enables page/per_page navigation; ``limit`` is ignored.
+    """
     repo = await musehub_repository.get_repo(db, repo_id)
     _guard_visibility(repo, claims)
+    effective_limit = per_page if per_page > 0 else limit
+    offset = (page - 1) * effective_limit if per_page > 0 else 0
     commits, total = await musehub_repository.list_commits(
-        db, repo_id, branch=branch, limit=limit
+        db, repo_id, branch=branch, limit=effective_limit, offset=offset
     )
     return CommitListResponse(commits=commits, total=total)
 
@@ -715,6 +726,38 @@ async def get_groove_check(
         worst_commit=result.worst_commit,
         entries=entries,
     )
+
+
+@router.get(
+    "/repos/{repo_id}/arrange/{ref}",
+    response_model=ArrangementMatrixResponse,
+    operation_id="getArrangementMatrix",
+    summary="Get the instrument × section arrangement matrix for a Muse commit ref",
+    tags=["Repos"],
+)
+async def get_arrangement_matrix(
+    repo_id: str,
+    ref: str,
+    db: AsyncSession = Depends(get_db),
+    claims: TokenClaims | None = Depends(optional_token),
+) -> ArrangementMatrixResponse:
+    """Return the arrangement matrix for a Muse Hub commit ref.
+
+    The matrix encodes note density for every (instrument, section) pair so
+    the arrangement page can render a colour-coded grid.  Row and column
+    summaries are pre-computed to avoid redundant aggregation in the client.
+
+    Deterministic stub data is seeded by ``ref`` so agents receive consistent
+    responses across retries.  Full MIDI content analysis will be wired in
+    once Storpheus exposes per-section introspection.
+
+    Returns 404 if the repo does not exist.
+    Returns 401 if the repo is private and the caller is unauthenticated.
+    """
+    repo = await musehub_repository.get_repo(db, repo_id)
+    _guard_visibility(repo, claims)
+    result = musehub_analysis.compute_arrangement_matrix(repo_id=repo_id, ref=ref)
+    return result
 
 
 # ── Owner/slug resolver — declared LAST to avoid shadowing /repos/... routes ──

@@ -1,5 +1,19 @@
 """Tests for Muse Hub web UI endpoints.
 
+Covers acceptance criteria from issue #206 (commit list page):
+- test_commits_list_page_returns_200              — GET /{owner}/{repo}/commits returns HTML
+- test_commits_list_page_shows_commit_sha        — SHA of seeded commit appears in page
+- test_commits_list_page_shows_commit_message    — message appears in page
+- test_commits_list_page_dag_indicator           — DAG node element present
+- test_commits_list_page_pagination_links        — Older/Newer nav links present when multi-page
+- test_commits_list_page_branch_selector         — branch <select> present when branches exist
+- test_commits_list_page_json_content_negotiation — ?format=json returns CommitListResponse
+- test_commits_list_page_json_pagination         — ?format=json&per_page=1&page=2 returns page 2
+- test_commits_list_page_branch_filter_html      — ?branch=main filters to that branch
+- test_commits_list_page_empty_state             — repo with no commits shows empty state
+- test_commits_list_page_merge_indicator         — merge commit shows merge indicator
+- test_commits_list_page_graph_link              — link to DAG graph page present
+
 Covers the minimum acceptance criteria from issue #43 and issue #232:
 - test_ui_repo_page_returns_200        — GET /musehub/ui/{repo_id} returns HTML
 - test_ui_commit_page_shows_artifact_links — commit page HTML mentions img/download
@@ -161,12 +175,38 @@ async def test_ui_commit_page_shows_artifact_links(
     body = response.text
     # The JS function that renders artifacts must be in the page
     assert "artifactHtml" in body
-    # Inline img pattern for .webp artifacts
+    # Inline img pattern for .webp artifacts (uses data-content-url for authed blob fetch)
     assert "<img" in body
     # Download pattern for .mid and other binary artifacts
     assert "Download" in body
     # Audio player pattern
     assert "<audio" in body
+
+
+@pytest.mark.anyio
+async def test_ui_commit_page_artifact_auth_uses_blob_proxy(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Commit page must use blob URL proxy for artifact auth, not bare content URLs in src/href.
+
+    Images use data-content-url + hydrateImages(); audio/download use downloadArtifact().
+    This prevents 401s caused by the browser sending unauthenticated direct requests.
+    """
+    await _make_repo(db_session)
+    commit_id = "abc1234567890abcdef1234567890abcdef12345678"
+    response = await client.get(f"/musehub/ui/testuser/test-beats/commits/{commit_id}")
+    assert response.status_code == 200
+    body = response.text
+    # Images must carry data-content-url (hydrated asynchronously with auth)
+    assert "data-content-url" in body
+    # No bare /content URL should appear as img src= (would cause 401)
+    assert 'src="/api/v1/musehub' not in body
+    # Downloads must go through downloadArtifact() JS helper, not bare href
+    assert "downloadArtifact" in body
+    # hydrateImages and _fetchBlobUrl must be present for the blob proxy pattern
+    assert "hydrateImages" in body
+    assert "_fetchBlobUrl" in body
 
 
 @pytest.mark.anyio
@@ -3373,3 +3413,393 @@ async def test_harmony_json_response(
     assert "totalBeats" in data
     assert data["totalBeats"] > 0
 
+
+# ---------------------------------------------------------------------------
+# Issue #206 — Commit list page
+# ---------------------------------------------------------------------------
+
+_COMMIT_LIST_OWNER = "commitowner"
+_COMMIT_LIST_SLUG = "commit-list-repo"
+_SHA_MAIN_1 = "aa001122334455667788990011223344556677889900"
+_SHA_MAIN_2 = "bb001122334455667788990011223344556677889900"
+_SHA_MAIN_MERGE = "cc001122334455667788990011223344556677889900"
+_SHA_FEAT = "ff001122334455667788990011223344556677889900"
+
+
+async def _seed_commit_list_repo(
+    db_session: AsyncSession,
+) -> str:
+    """Seed a repo with 2 commits on main, 1 merge commit, and 1 on feat branch."""
+    repo = MusehubRepo(
+        name=_COMMIT_LIST_SLUG,
+        owner=_COMMIT_LIST_OWNER,
+        slug=_COMMIT_LIST_SLUG,
+        visibility="public",
+        owner_user_id="commit-owner-uid",
+    )
+    db_session.add(repo)
+    await db_session.flush()
+    repo_id = str(repo.repo_id)
+
+    branch_main = MusehubBranch(repo_id=repo_id, name="main", head_commit_id=_SHA_MAIN_MERGE)
+    branch_feat = MusehubBranch(repo_id=repo_id, name="feat/drums", head_commit_id=_SHA_FEAT)
+    db_session.add_all([branch_main, branch_feat])
+
+    now = datetime.now(UTC)
+    commits = [
+        MusehubCommit(
+            commit_id=_SHA_MAIN_1,
+            repo_id=repo_id,
+            branch="main",
+            parent_ids=[],
+            message="feat(bass): root commit with walking bass line",
+            author="composer@stori.io",
+            timestamp=now - timedelta(hours=4),
+        ),
+        MusehubCommit(
+            commit_id=_SHA_MAIN_2,
+            repo_id=repo_id,
+            branch="main",
+            parent_ids=[_SHA_MAIN_1],
+            message="feat(keys): add rhodes chord voicings in verse",
+            author="composer@stori.io",
+            timestamp=now - timedelta(hours=2),
+        ),
+        MusehubCommit(
+            commit_id=_SHA_MAIN_MERGE,
+            repo_id=repo_id,
+            branch="main",
+            parent_ids=[_SHA_MAIN_2, _SHA_FEAT],
+            message="merge(feat/drums): integrate drum pattern into main",
+            author="composer@stori.io",
+            timestamp=now - timedelta(hours=1),
+        ),
+        MusehubCommit(
+            commit_id=_SHA_FEAT,
+            repo_id=repo_id,
+            branch="feat/drums",
+            parent_ids=[_SHA_MAIN_1],
+            message="feat(drums): add kick and snare pattern at 120 BPM",
+            author="drummer@stori.io",
+            timestamp=now - timedelta(hours=3),
+        ),
+    ]
+    db_session.add_all(commits)
+    await db_session.commit()
+    return repo_id
+
+
+@pytest.mark.anyio
+async def test_commits_list_page_returns_200(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """GET /{owner}/{repo}/commits returns 200 HTML."""
+    await _seed_commit_list_repo(db_session)
+    resp = await client.get(f"/musehub/ui/{_COMMIT_LIST_OWNER}/{_COMMIT_LIST_SLUG}/commits")
+    assert resp.status_code == 200
+    assert "text/html" in resp.headers["content-type"]
+    assert "Muse Hub" in resp.text
+
+
+@pytest.mark.anyio
+async def test_commits_list_page_shows_commit_sha(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Commit SHA (first 8 chars) appears in the rendered HTML."""
+    await _seed_commit_list_repo(db_session)
+    resp = await client.get(f"/musehub/ui/{_COMMIT_LIST_OWNER}/{_COMMIT_LIST_SLUG}/commits")
+    assert resp.status_code == 200
+    # All 4 commits should appear (per_page=30 default, total=4)
+    assert _SHA_MAIN_1[:8] in resp.text
+    assert _SHA_MAIN_2[:8] in resp.text
+    assert _SHA_MAIN_MERGE[:8] in resp.text
+    assert _SHA_FEAT[:8] in resp.text
+
+
+@pytest.mark.anyio
+async def test_commits_list_page_shows_commit_message(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Commit messages appear truncated in commit rows."""
+    await _seed_commit_list_repo(db_session)
+    resp = await client.get(f"/musehub/ui/{_COMMIT_LIST_OWNER}/{_COMMIT_LIST_SLUG}/commits")
+    assert resp.status_code == 200
+    assert "walking bass line" in resp.text
+    assert "rhodes chord voicings" in resp.text
+
+
+@pytest.mark.anyio
+async def test_commits_list_page_dag_indicator(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """DAG node CSS class is present in the HTML for every commit row."""
+    await _seed_commit_list_repo(db_session)
+    resp = await client.get(f"/musehub/ui/{_COMMIT_LIST_OWNER}/{_COMMIT_LIST_SLUG}/commits")
+    assert resp.status_code == 200
+    assert "dag-node" in resp.text
+    assert "commit-list-row" in resp.text
+
+
+@pytest.mark.anyio
+async def test_commits_list_page_merge_indicator(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Merge commits display the merge indicator and dag-node-merge class."""
+    await _seed_commit_list_repo(db_session)
+    resp = await client.get(f"/musehub/ui/{_COMMIT_LIST_OWNER}/{_COMMIT_LIST_SLUG}/commits")
+    assert resp.status_code == 200
+    assert "dag-node-merge" in resp.text
+    assert "merge" in resp.text.lower()
+
+
+@pytest.mark.anyio
+async def test_commits_list_page_branch_selector(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Branch <select> dropdown is present when the repo has branches."""
+    await _seed_commit_list_repo(db_session)
+    resp = await client.get(f"/musehub/ui/{_COMMIT_LIST_OWNER}/{_COMMIT_LIST_SLUG}/commits")
+    assert resp.status_code == 200
+    # Select element with branch options
+    assert "branch-sel" in resp.text
+    assert "main" in resp.text
+    assert "feat/drums" in resp.text
+
+
+@pytest.mark.anyio
+async def test_commits_list_page_graph_link(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Link to the DAG graph page is present."""
+    await _seed_commit_list_repo(db_session)
+    resp = await client.get(f"/musehub/ui/{_COMMIT_LIST_OWNER}/{_COMMIT_LIST_SLUG}/commits")
+    assert resp.status_code == 200
+    assert "/graph" in resp.text
+
+
+@pytest.mark.anyio
+async def test_commits_list_page_pagination_links(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Pagination nav links appear when total exceeds per_page."""
+    await _seed_commit_list_repo(db_session)
+    # Request per_page=2 so 4 commits produce 2 pages
+    resp = await client.get(
+        f"/musehub/ui/{_COMMIT_LIST_OWNER}/{_COMMIT_LIST_SLUG}/commits?per_page=2&page=1"
+    )
+    assert resp.status_code == 200
+    body = resp.text
+    # "Older" link should be active (page 1 has no "Newer")
+    assert "Older" in body
+    # "Newer" should be disabled on page 1
+    assert "Newer" in body
+    assert "page=2" in body
+
+
+@pytest.mark.anyio
+async def test_commits_list_page_pagination_page2(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Page 2 renders with Newer navigation active."""
+    await _seed_commit_list_repo(db_session)
+    resp = await client.get(
+        f"/musehub/ui/{_COMMIT_LIST_OWNER}/{_COMMIT_LIST_SLUG}/commits?per_page=2&page=2"
+    )
+    assert resp.status_code == 200
+    body = resp.text
+    assert "page=1" in body  # "Newer" link points back to page 1
+
+
+@pytest.mark.anyio
+async def test_commits_list_page_branch_filter_html(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """?branch=main returns only main-branch commits in HTML."""
+    await _seed_commit_list_repo(db_session)
+    resp = await client.get(
+        f"/musehub/ui/{_COMMIT_LIST_OWNER}/{_COMMIT_LIST_SLUG}/commits?branch=main"
+    )
+    assert resp.status_code == 200
+    body = resp.text
+    # main commits appear
+    assert _SHA_MAIN_1[:8] in body
+    assert _SHA_MAIN_2[:8] in body
+    assert _SHA_MAIN_MERGE[:8] in body
+    # feat/drums commit should NOT appear when filtered to main
+    assert _SHA_FEAT[:8] not in body
+
+
+@pytest.mark.anyio
+async def test_commits_list_page_json_content_negotiation(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """?format=json returns CommitListResponse JSON with commits and total."""
+    await _seed_commit_list_repo(db_session)
+    resp = await client.get(
+        f"/musehub/ui/{_COMMIT_LIST_OWNER}/{_COMMIT_LIST_SLUG}/commits?format=json"
+    )
+    assert resp.status_code == 200
+    assert "application/json" in resp.headers["content-type"]
+    body = resp.json()
+    assert "commits" in body
+    assert "total" in body
+    assert body["total"] == 4
+    assert len(body["commits"]) == 4
+    # Commits are newest first; merge commit has timestamp now-1h (most recent)
+    commit_ids = [c["commitId"] for c in body["commits"]]
+    assert commit_ids[0] == _SHA_MAIN_MERGE
+
+
+@pytest.mark.anyio
+async def test_commits_list_page_json_pagination(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """JSON with per_page=1&page=2 returns the second commit."""
+    await _seed_commit_list_repo(db_session)
+    resp = await client.get(
+        f"/musehub/ui/{_COMMIT_LIST_OWNER}/{_COMMIT_LIST_SLUG}/commits"
+        "?format=json&per_page=1&page=2"
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["total"] == 4
+    assert len(body["commits"]) == 1
+    # Page 2 (newest-first) is the second most-recent commit.
+    # Newest: _SHA_MAIN_MERGE (now-1h), then _SHA_MAIN_2 (now-2h)
+    assert body["commits"][0]["commitId"] == _SHA_MAIN_2
+
+
+@pytest.mark.anyio
+async def test_commits_list_page_empty_state(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """A repo with no commits shows the empty state message."""
+    repo = MusehubRepo(
+        name="empty-repo",
+        owner="emptyowner",
+        slug="empty-repo",
+        visibility="public",
+        owner_user_id="empty-owner-uid",
+    )
+    db_session.add(repo)
+    await db_session.commit()
+
+    resp = await client.get("/musehub/ui/emptyowner/empty-repo/commits")
+    assert resp.status_code == 200
+    assert "No commits yet" in resp.text or "muse push" in resp.text
+
+
+# ---------------------------------------------------------------------------
+# Arrangement matrix page — issue #212
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.anyio
+async def test_arrange_page_returns_200(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """GET /musehub/ui/{owner}/{slug}/arrange/{ref} returns 200 HTML without a JWT."""
+    await _make_repo(db_session)
+    response = await client.get("/musehub/ui/testuser/test-beats/arrange/HEAD")
+    assert response.status_code == 200
+    assert "text/html" in response.headers["content-type"]
+
+
+@pytest.mark.anyio
+async def test_arrange_page_no_auth_required(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Arrangement matrix page is accessible without a JWT (auth handled client-side)."""
+    await _make_repo(db_session)
+    response = await client.get("/musehub/ui/testuser/test-beats/arrange/HEAD")
+    assert response.status_code == 200
+    assert response.status_code != 401
+
+
+@pytest.mark.anyio
+async def test_arrange_page_contains_musehub(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Arrangement matrix page HTML shell contains 'Muse Hub' branding."""
+    await _make_repo(db_session)
+    response = await client.get("/musehub/ui/testuser/test-beats/arrange/abc1234")
+    assert response.status_code == 200
+    assert "Muse Hub" in response.text
+
+
+@pytest.mark.anyio
+async def test_arrange_page_contains_grid_js(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Arrangement matrix page embeds the grid rendering JS (renderMatrix or arrange)."""
+    await _make_repo(db_session)
+    response = await client.get("/musehub/ui/testuser/test-beats/arrange/HEAD")
+    assert response.status_code == 200
+    body = response.text
+    assert "renderMatrix" in body or "arrange" in body.lower()
+
+
+@pytest.mark.anyio
+async def test_arrange_page_contains_density_logic(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Arrangement matrix page includes density colour logic."""
+    await _make_repo(db_session)
+    response = await client.get("/musehub/ui/testuser/test-beats/arrange/HEAD")
+    assert response.status_code == 200
+    body = response.text
+    assert "density" in body.lower() or "noteDensity" in body
+
+
+@pytest.mark.anyio
+async def test_arrange_page_contains_token_form(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Arrangement matrix page includes the JWT token form for client-side auth."""
+    await _make_repo(db_session)
+    response = await client.get("/musehub/ui/testuser/test-beats/arrange/HEAD")
+    assert response.status_code == 200
+    body = response.text
+    assert 'id="token-form"' in body
+    assert "musehub.js" in body
+
+
+@pytest.mark.anyio
+async def test_arrange_page_unknown_repo_returns_404(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """GET /musehub/ui/{unknown}/{slug}/arrange/{ref} returns 404 for unknown repos."""
+    response = await client.get("/musehub/ui/unknown-user/no-such-repo/arrange/HEAD")
+    assert response.status_code == 404
+
+
+@pytest.mark.anyio
+async def test_arrange_tab_in_repo_nav(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Repo home page navigation includes an 'Arrange' tab link."""
+    await _make_repo(db_session)
+    response = await client.get("/musehub/ui/testuser/test-beats")
+    assert response.status_code == 200
+    assert "Arrange" in response.text or "arrange" in response.text
