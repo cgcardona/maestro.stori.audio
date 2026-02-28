@@ -2166,6 +2166,96 @@ async def test_session_detail_404_marker(
     # The JS error handler must check for a 404 and render a "not found" message
     assert "Session not found" in body or "404" in body
 
+
+@pytest.mark.anyio
+async def test_session_detail_has_comment_section(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Session detail page must include the Discussion comment section."""
+    await _make_repo(db_session)
+    session_id = "comment-section-session-001"
+    response = await client.get(f"/musehub/ui/testuser/test-beats/sessions/{session_id}")
+    assert response.status_code == 200
+    body = response.text
+    assert "comments-section" in body
+    assert "Discussion" in body
+    assert "comments-list" in body
+
+
+@pytest.mark.anyio
+async def test_session_detail_comment_section_uses_session_target_type(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Session detail comment API calls must use target_type='session'."""
+    await _make_repo(db_session)
+    session_id = "target-type-session-002"
+    response = await client.get(f"/musehub/ui/testuser/test-beats/sessions/{session_id}")
+    assert response.status_code == 200
+    body = response.text
+    assert "target_type: 'session'" in body or "target_type=\"session\"" in body
+
+
+@pytest.mark.anyio
+async def test_session_detail_has_loadcomments_call(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Session detail page must call loadComments() on init."""
+    await _make_repo(db_session)
+    session_id = "load-comments-session-003"
+    response = await client.get(f"/musehub/ui/testuser/test-beats/sessions/{session_id}")
+    assert response.status_code == 200
+    body = response.text
+    assert "loadComments" in body
+
+
+@pytest.mark.anyio
+async def test_session_detail_has_submit_comment_function(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Session detail page must include the submitComment JS function."""
+    await _make_repo(db_session)
+    session_id = "submit-comment-session-004"
+    response = await client.get(f"/musehub/ui/testuser/test-beats/sessions/{session_id}")
+    assert response.status_code == 200
+    body = response.text
+    assert "submitComment" in body
+    assert "deleteComment" in body
+
+
+@pytest.mark.anyio
+async def test_session_detail_has_render_comments_function(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Session detail page must include renderComments() for threaded display."""
+    await _make_repo(db_session)
+    session_id = "render-comments-session-005"
+    response = await client.get(f"/musehub/ui/testuser/test-beats/sessions/{session_id}")
+    assert response.status_code == 200
+    body = response.text
+    assert "renderComments" in body
+
+
+@pytest.mark.anyio
+async def test_session_detail_comment_form_has_new_comment_body(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Session detail page must include the new-comment-body textarea and submit button."""
+    await _make_repo(db_session)
+    session_id = "comment-form-session-006"
+    response = await client.get(f"/musehub/ui/testuser/test-beats/sessions/{session_id}")
+    assert response.status_code == 200
+    body = response.text
+    assert "new-comment-body" in body
+    assert "new-comment-form" in body
+    assert "comment-submit-btn" in body
+
+
 async def _make_session(
     db_session: AsyncSession,
     repo_id: str,
