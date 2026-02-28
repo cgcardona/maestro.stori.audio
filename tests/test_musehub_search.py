@@ -589,10 +589,13 @@ async def test_global_search_results_grouped(
         assert "repoId" in group
         assert "repoName" in group
         assert "repoOwner" in group
+        assert "repoSlug" in group  # PR #282: slug required for UI link construction
         assert "repoVisibility" in group
         assert "matches" in group
         assert "totalMatches" in group
         assert isinstance(group["matches"], list)
+        assert isinstance(group["repoSlug"], str)
+        assert group["repoSlug"] != ""
 
     group_a = next(g for g in groups if g["repoId"] == repo_a)
     assert group_a["totalMatches"] == 2

@@ -602,6 +602,7 @@ async def global_search(
                 repo_id=rid,
                 repo_name=repo_row.name,
                 repo_owner=repo_row.owner_user_id,
+                repo_slug=repo_row.slug,
                 repo_visibility=repo_row.visibility,
                 matches=commit_matches,
                 total_matches=len(all_matches),

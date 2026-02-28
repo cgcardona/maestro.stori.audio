@@ -30,7 +30,8 @@ from __future__ import annotations
 
 import logging
 
-from fastapi import APIRouter, Depends, Response
+from fastapi import APIRouter, Depends, HTTPException, Response
+from fastapi import status as http_status
 from fastapi.responses import HTMLResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -296,7 +297,7 @@ async def global_search_page(
         return groups.map(g => {{
           const matchRows = g.matches.map(m => `
             <div class="commit-row">
-              <a class="commit-sha" href="/musehub/ui/${{encodeURIComponent(g.repoId)}}/commits/${{escHtml(m.commitId)}}">${{shortSha(m.commitId)}}</a>
+              <a class="commit-sha" href="/musehub/ui/${{encodeURIComponent(g.repoOwner)}}/${{encodeURIComponent(g.repoSlug)}}/commits/${{escHtml(m.commitId)}}">${{shortSha(m.commitId)}}</a>
               <span class="commit-msg">${{escHtml(m.message)}}</span>
               <span class="commit-meta">${{escHtml(m.author)}} &bull; ${{fmtDate(m.timestamp)}}</span>
             </div>`).join('');
@@ -309,7 +310,7 @@ async def global_search_page(
             <div class="card">
               <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
                 <h2 style="margin:0">
-                  <a href="/musehub/ui/${{encodeURIComponent(g.repoId)}}">${{escHtml(g.repoName)}}</a>
+                  <a href="/musehub/ui/${{encodeURIComponent(g.repoOwner)}}/${{encodeURIComponent(g.repoSlug)}}">${{escHtml(g.repoName)}}</a>
                 </h2>
                 <span class="badge badge-open" style="font-size:11px">${{escHtml(g.repoVisibility)}}</span>
                 <span style="font-size:12px;color:#8b949e">owner: ${{escHtml(g.repoOwner)}}</span>
@@ -414,7 +415,6 @@ async def repo_page(owner: str, repo_slug: str, db: AsyncSession = Depends(get_d
     Auth is handled client-side via localStorage JWT. Resolves owner+slug to
     repo_id server-side; the JS then uses the internal repo_id for API calls.
     """
-    from fastapi import HTTPException, status as http_status
     repo = await musehub_repository.get_repo_orm_by_owner_slug(db, owner, repo_slug)
     if repo is None:
         raise HTTPException(status_code=http_status.HTTP_404_NOT_FOUND, detail=f"Repo '{owner}/{repo_slug}' not found")
@@ -489,8 +489,8 @@ async def repo_page(owner: str, repo_slug: str, db: AsyncSession = Depends(get_d
       load('');
     """
     html = _page(
-        title=f"Repo {repo_id[:8]}",
-        breadcrumb=f'<a href="/musehub/ui/{repo_id}">{repo_id[:8]}</a>',
+        title=f"Repo {owner}/{repo_slug}",
+        breadcrumb=f'<a href="/musehub/ui/{owner}/{repo_slug}">{owner}/{repo_slug}</a>',
         body_script=script,
     )
     return HTMLResponse(content=html)
@@ -512,15 +512,14 @@ async def commit_page(owner: str, repo_slug: str, commit_id: str, db: AsyncSessi
     - ``.mid``  → download link
     """
 
-    from fastapi import HTTPException, status as _st
     _row = await musehub_repository.get_repo_orm_by_owner_slug(db, owner, repo_slug)
     if _row is None:
-        raise HTTPException(status_code=_st.HTTP_404_NOT_FOUND, detail=f"Repo '{owner}/{repo_slug}' not found")
+        raise HTTPException(status_code=http_status.HTTP_404_NOT_FOUND, detail=f"Repo '{owner}/{repo_slug}' not found")
     repo_id = _row.repo_id
     script = f"""
       const repoId   = {repr(repo_id)};
       const commitId = {repr(commit_id)};
-      const base     = '/musehub/ui/' + repoId;
+      const base = '/musehub/ui/{owner}/{repo_slug}';
       const apiBase  = '/api/v1/musehub/repos/' + repoId;
 
       function escHtml(s) {{
@@ -621,7 +620,7 @@ async def commit_page(owner: str, repo_slug: str, commit_id: str, db: AsyncSessi
     html = _page(
         title=f"Commit {commit_id[:8]}",
         breadcrumb=(
-            f'<a href="/musehub/ui/{repo_id}">{repo_id[:8]}</a> / '
+            f'<a href="/musehub/ui/{owner}/{repo_slug}">{owner}/{repo_slug}</a> / '
             f'commits / {commit_id[:8]}'
         ),
         body_script=script,
@@ -654,14 +653,13 @@ async def graph_page(owner: str, repo_slug: str, db: AsyncSession = Depends(get_
     No external CDN dependencies -- the entire renderer is inline JavaScript.
     """
 
-    from fastapi import HTTPException, status as _st
     _row = await musehub_repository.get_repo_orm_by_owner_slug(db, owner, repo_slug)
     if _row is None:
-        raise HTTPException(status_code=_st.HTTP_404_NOT_FOUND, detail=f"Repo '{owner}/{repo_slug}' not found")
+        raise HTTPException(status_code=http_status.HTTP_404_NOT_FOUND, detail=f"Repo '{owner}/{repo_slug}' not found")
     repo_id = _row.repo_id
     script = f"""
       const repoId = {repr(repo_id)};
-      const base   = '/musehub/ui/' + repoId;
+      const base = '/musehub/ui/{owner}/{repo_slug}';
 
       // ── Colour palette for branches (stable hash → index) ──────────────────
       const BRANCH_COLORS = [
@@ -928,7 +926,7 @@ async def graph_page(owner: str, repo_slug: str, db: AsyncSession = Depends(get_
     html = _page(
         title="Commit Graph",
         breadcrumb=(
-            f'<a href="/musehub/ui/{repo_id}">{repo_id[:8]}</a> / graph'
+            f'<a href="/musehub/ui/{owner}/{repo_slug}">{owner}/{repo_slug}</a> / graph'
         ),
         body_script=script,
     )
@@ -946,14 +944,13 @@ async def pr_list_page(owner: str, repo_slug: str, db: AsyncSession = Depends(ge
     Fetches ``GET /api/v1/musehub/repos/{repo_id}/pull-requests?state=<filter>``.
     """
 
-    from fastapi import HTTPException, status as _st
     _row = await musehub_repository.get_repo_orm_by_owner_slug(db, owner, repo_slug)
     if _row is None:
-        raise HTTPException(status_code=_st.HTTP_404_NOT_FOUND, detail=f"Repo '{owner}/{repo_slug}' not found")
+        raise HTTPException(status_code=http_status.HTTP_404_NOT_FOUND, detail=f"Repo '{owner}/{repo_slug}' not found")
     repo_id = _row.repo_id
     script = f"""
       const repoId = {repr(repo_id)};
-      const base   = '/musehub/ui/' + repoId;
+      const base = '/musehub/ui/{owner}/{repo_slug}';
 
       function escHtml(s) {{
         if (!s) return '';
@@ -1002,7 +999,7 @@ async def pr_list_page(owner: str, repo_slug: str, db: AsyncSession = Depends(ge
     """
     html = _page(
         title="Pull Requests",
-        breadcrumb=f'<a href="/musehub/ui/{repo_id}">{repo_id[:8]}</a> / pulls',
+        breadcrumb=f'<a href="/musehub/ui/{owner}/{repo_slug}">{owner}/{repo_slug}</a> / pulls',
         body_script=script,
     )
     return HTMLResponse(content=html)
@@ -1020,15 +1017,14 @@ async def pr_detail_page(owner: str, repo_slug: str, pr_id: str, db: AsyncSessio
     with ``merge_strategy: merge_commit`` and reloads the page on success.
     """
 
-    from fastapi import HTTPException, status as _st
     _row = await musehub_repository.get_repo_orm_by_owner_slug(db, owner, repo_slug)
     if _row is None:
-        raise HTTPException(status_code=_st.HTTP_404_NOT_FOUND, detail=f"Repo '{owner}/{repo_slug}' not found")
+        raise HTTPException(status_code=http_status.HTTP_404_NOT_FOUND, detail=f"Repo '{owner}/{repo_slug}' not found")
     repo_id = _row.repo_id
     script = f"""
       const repoId = {repr(repo_id)};
       const prId   = {repr(pr_id)};
-      const base   = '/musehub/ui/' + repoId;
+      const base = '/musehub/ui/{owner}/{repo_slug}';
 
       function escHtml(s) {{
         if (!s) return '';
@@ -1102,8 +1098,8 @@ async def pr_detail_page(owner: str, repo_slug: str, pr_id: str, db: AsyncSessio
     html = _page(
         title=f"PR {pr_id[:8]}",
         breadcrumb=(
-            f'<a href="/musehub/ui/{repo_id}">{repo_id[:8]}</a> / '
-            f'<a href="/musehub/ui/{repo_id}/pulls">pulls</a> / {pr_id[:8]}'
+            f'<a href="/musehub/ui/{owner}/{repo_slug}">{owner}/{repo_slug}</a> / '
+            f'<a href="/musehub/ui/{owner}/{repo_slug}/pulls">pulls</a> / {pr_id[:8]}'
         ),
         body_script=script,
     )
@@ -1121,14 +1117,13 @@ async def issue_list_page(owner: str, repo_slug: str, db: AsyncSession = Depends
     Fetches ``GET /api/v1/musehub/repos/{repo_id}/issues?state=<filter>``.
     """
 
-    from fastapi import HTTPException, status as _st
     _row = await musehub_repository.get_repo_orm_by_owner_slug(db, owner, repo_slug)
     if _row is None:
-        raise HTTPException(status_code=_st.HTTP_404_NOT_FOUND, detail=f"Repo '{owner}/{repo_slug}' not found")
+        raise HTTPException(status_code=http_status.HTTP_404_NOT_FOUND, detail=f"Repo '{owner}/{repo_slug}' not found")
     repo_id = _row.repo_id
     script = f"""
       const repoId = {repr(repo_id)};
-      const base   = '/musehub/ui/' + repoId;
+      const base = '/musehub/ui/{owner}/{repo_slug}';
 
       function escHtml(s) {{
         if (!s) return '';
@@ -1182,7 +1177,7 @@ async def issue_list_page(owner: str, repo_slug: str, db: AsyncSession = Depends
     """
     html = _page(
         title="Issues",
-        breadcrumb=f'<a href="/musehub/ui/{repo_id}">{repo_id[:8]}</a> / issues',
+        breadcrumb=f'<a href="/musehub/ui/{owner}/{repo_slug}">{owner}/{repo_slug}</a> / issues',
         body_script=script,
     )
     return HTMLResponse(content=html)
@@ -1209,15 +1204,14 @@ async def context_page(owner: str, repo_slug: str, ref: str, db: AsyncSession = 
     - Copy-to-clipboard button for sharing with agents
     """
 
-    from fastapi import HTTPException, status as _st
     _row = await musehub_repository.get_repo_orm_by_owner_slug(db, owner, repo_slug)
     if _row is None:
-        raise HTTPException(status_code=_st.HTTP_404_NOT_FOUND, detail=f"Repo '{owner}/{repo_slug}' not found")
+        raise HTTPException(status_code=http_status.HTTP_404_NOT_FOUND, detail=f"Repo '{owner}/{repo_slug}' not found")
     repo_id = _row.repo_id
     script = f"""
       const repoId = {repr(repo_id)};
       const ref    = {repr(ref)};
-      const base   = '/musehub/ui/' + repoId;
+      const base = '/musehub/ui/{owner}/{repo_slug}';
 
       function escHtml(s) {{
         if (s === null || s === undefined) return '--';
@@ -1400,7 +1394,7 @@ async def context_page(owner: str, repo_slug: str, ref: str, db: AsyncSession = 
     html = _page(
         title=f"Context {ref[:8]}",
         breadcrumb=(
-            f'<a href="/musehub/ui/{repo_id}">{repo_id[:8]}</a> / '
+            f'<a href="/musehub/ui/{owner}/{repo_slug}">{owner}/{repo_slug}</a> / '
             f"context / {ref[:8]}"
         ),
         body_script=script,
@@ -1421,15 +1415,14 @@ async def issue_detail_page(owner: str, repo_slug: str, number: int, db: AsyncSe
     and reloads the page on success.
     """
 
-    from fastapi import HTTPException, status as _st
     _row = await musehub_repository.get_repo_orm_by_owner_slug(db, owner, repo_slug)
     if _row is None:
-        raise HTTPException(status_code=_st.HTTP_404_NOT_FOUND, detail=f"Repo '{owner}/{repo_slug}' not found")
+        raise HTTPException(status_code=http_status.HTTP_404_NOT_FOUND, detail=f"Repo '{owner}/{repo_slug}' not found")
     repo_id = _row.repo_id
     script = f"""
       const repoId = {repr(repo_id)};
       const number = {number};
-      const base   = '/musehub/ui/' + repoId;
+      const base = '/musehub/ui/{owner}/{repo_slug}';
 
       function escHtml(s) {{
         if (!s) return '';
@@ -1489,8 +1482,8 @@ async def issue_detail_page(owner: str, repo_slug: str, number: int, db: AsyncSe
     html = _page(
         title=f"Issue #{number}",
         breadcrumb=(
-            f'<a href="/musehub/ui/{repo_id}">{repo_id[:8]}</a> / '
-            f'<a href="/musehub/ui/{repo_id}/issues">issues</a> / #{number}'
+            f'<a href="/musehub/ui/{owner}/{repo_slug}">{owner}/{repo_slug}</a> / '
+            f'<a href="/musehub/ui/{owner}/{repo_slug}/issues">issues</a> / #{number}'
         ),
         body_script=script,
     )
@@ -1569,14 +1562,16 @@ body {
 """
 
 
-def _embed_page(title: str, repo_id: str, ref: str, body_script: str) -> str:
+def _embed_page(title: str, repo_id: str, ref: str, body_script: str, owner: str = "", repo_slug: str = "") -> str:
     """Assemble a compact embed player HTML page.
 
     Designed for iframe embedding on external sites.  No chrome, no token
     form -- just the player widget.  ``X-Frame-Options`` is set by the
     route handler, not here, since this function only produces the body.
+    ``owner`` and ``repo_slug`` form the canonical /{owner}/{slug} listen URL;
+    they default to empty strings for backward compatibility with internal callers.
     """
-    listen_url = f"/musehub/ui/{repo_id}"
+    listen_url = f"/musehub/ui/{owner}/{repo_slug}" if owner and repo_slug else f"/musehub/ui/{repo_id}"
     return f"""<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -1749,10 +1744,9 @@ async def embed_page(owner: str, repo_slug: str, ref: str, db: AsyncSession = De
     Returns:
         HTML response with ``X-Frame-Options: ALLOWALL`` header.
     """
-    from fastapi import HTTPException, status as _st
     _row = await musehub_repository.get_repo_orm_by_owner_slug(db, owner, repo_slug)
     if _row is None:
-        raise HTTPException(status_code=_st.HTTP_404_NOT_FOUND, detail=f"Repo '{owner}/{repo_slug}' not found")
+        raise HTTPException(status_code=http_status.HTTP_404_NOT_FOUND, detail=f"Repo '{owner}/{repo_slug}' not found")
     repo_id = _row.repo_id
     short_ref = ref[:8] if len(ref) >= 8 else ref
     html = _embed_page(
@@ -1760,6 +1754,8 @@ async def embed_page(owner: str, repo_slug: str, ref: str, db: AsyncSession = De
         repo_id=repo_id,
         ref=ref,
         body_script="",
+        owner=owner,
+        repo_slug=repo_slug,
     )
     return Response(
         content=html,
@@ -1786,14 +1782,13 @@ async def credits_page(owner: str, repo_slug: str, db: AsyncSession = Depends(ge
     Auth is handled client-side via localStorage JWT, matching all other UI pages.
     """
 
-    from fastapi import HTTPException, status as _st
     _row = await musehub_repository.get_repo_orm_by_owner_slug(db, owner, repo_slug)
     if _row is None:
-        raise HTTPException(status_code=_st.HTTP_404_NOT_FOUND, detail=f"Repo '{owner}/{repo_slug}' not found")
+        raise HTTPException(status_code=http_status.HTTP_404_NOT_FOUND, detail=f"Repo '{owner}/{repo_slug}' not found")
     repo_id = _row.repo_id
     script = f"""
       const repoId = {repr(repo_id)};
-      const base   = '/musehub/ui/' + repoId;
+      const base = '/musehub/ui/{owner}/{repo_slug}';
 
 
       function escHtml(s) {{
@@ -1889,14 +1884,13 @@ async def credits_page(owner: str, repo_slug: str, db: AsyncSession = Depends(ge
       load('count');
     """
 
-    from fastapi import HTTPException, status as _st
     _row = await musehub_repository.get_repo_orm_by_owner_slug(db, owner, repo_slug)
     if _row is None:
-        raise HTTPException(status_code=_st.HTTP_404_NOT_FOUND, detail=f"Repo '{owner}/{repo_slug}' not found")
+        raise HTTPException(status_code=http_status.HTTP_404_NOT_FOUND, detail=f"Repo '{owner}/{repo_slug}' not found")
     repo_id = _row.repo_id
     html = _page(
         title="Credits",
-        breadcrumb=f'<a href="/musehub/ui/{repo_id}">{repo_id[:8]}</a> / credits',
+        breadcrumb=f'<a href="/musehub/ui/{owner}/{repo_slug}">{owner}/{repo_slug}</a> / credits',
         body_script=script,
     )
     return HTMLResponse(content=html)
@@ -1921,14 +1915,13 @@ async def search_page(owner: str, repo_slug: str, db: AsyncSession = Depends(get
     Authentication is handled client-side via localStorage JWT.
     """
 
-    from fastapi import HTTPException, status as _st
     _row = await musehub_repository.get_repo_orm_by_owner_slug(db, owner, repo_slug)
     if _row is None:
-        raise HTTPException(status_code=_st.HTTP_404_NOT_FOUND, detail=f"Repo '{owner}/{repo_slug}' not found")
+        raise HTTPException(status_code=http_status.HTTP_404_NOT_FOUND, detail=f"Repo '{owner}/{repo_slug}' not found")
     repo_id = _row.repo_id
     script = f"""
       const repoId = {repr(repo_id)};
-      const base   = '/musehub/ui/' + repoId;
+      const base = '/musehub/ui/{owner}/{repo_slug}';
       const apiBase = '/api/v1/musehub/repos/' + repoId;
 
       function escHtml(s) {{
@@ -2139,7 +2132,7 @@ async def search_page(owner: str, repo_slug: str, db: AsyncSession = Depends(get
     """
     html = _page(
         title="Search",
-        breadcrumb=f'<a href="/musehub/ui/{repo_id}">{repo_id[:8]}</a> / search',
+        breadcrumb=f'<a href="/musehub/ui/{owner}/{repo_slug}">{owner}/{repo_slug}</a> / search',
         body_script=script,
     )
     return HTMLResponse(content=html)
@@ -2294,7 +2287,7 @@ async def profile_page(username: str) -> HTMLResponse:
       function repoCardHtml(r) {{
         const lastAct = r.lastActivityAt ? fmtDate(r.lastActivityAt) : 'No commits yet';
         return `<div class="repo-card">
-          <h3><a href="/musehub/ui/${{r.repoId}}">${{escHtml(r.name)}}</a></h3>
+          <h3><a href="/musehub/ui/${{r.owner}}/${{r.slug}}">${{escHtml(r.name)}}</a></h3>
           <div class="repo-meta">
             <span class="badge badge-${{r.visibility}}">${{r.visibility}}</span>
             &bull; Last activity: ${{lastAct}}
@@ -2399,15 +2392,14 @@ async def divergence_page(owner: str, repo_slug: str, db: AsyncSession = Depends
 
     Auth is handled client-side via localStorage JWT.  No Jinja2 required.
     """
-    from fastapi import HTTPException, status as _st
     _row = await musehub_repository.get_repo_orm_by_owner_slug(db, owner, repo_slug)
     if _row is None:
-        raise HTTPException(status_code=_st.HTTP_404_NOT_FOUND, detail=f"Repo '{owner}/{repo_slug}' not found")
+        raise HTTPException(status_code=http_status.HTTP_404_NOT_FOUND, detail=f"Repo '{owner}/{repo_slug}' not found")
     repo_id = _row.repo_id
     script = f"""
       const repoId = {repr(repo_id)};
       const apiBase = '/api/v1/musehub/repos/' + repoId;
-      const uiBase  = '/musehub/ui/' + repoId;
+      const uiBase = '/musehub/ui/{owner}/{repo_slug}';
 
       function escHtml(s) {{
         if (!s) return '';
@@ -2612,7 +2604,7 @@ async def divergence_page(owner: str, repo_slug: str, db: AsyncSession = Depends
     """
     html = _page(
         title="Divergence",
-        breadcrumb=f'<a href="/musehub/ui/{repo_id}">{repo_id[:8]}</a> / divergence',
+        breadcrumb=f'<a href="/musehub/ui/{owner}/{repo_slug}">{owner}/{repo_slug}</a> / divergence',
         body_script=script,
     )
     return HTMLResponse(content=html)
@@ -2677,7 +2669,7 @@ function repoCard(r) {
   return `
     <div class="repo-card">
       <div class="repo-card-title">
-        <a href="/musehub/ui/${escHtml(r.repoId)}">${escHtml(r.name)}</a>
+        <a href="/musehub/ui/${escHtml(r.owner)}/${escHtml(r.slug)}">${escHtml(r.name)}</a>
       </div>
       <div class="repo-card-owner">${escHtml(r.ownerUserId)}</div>
       ${r.description ? '<div class="repo-card-desc">' + escHtml(r.description) + '</div>' : ''}
@@ -2879,14 +2871,13 @@ async def timeline_page(owner: str, repo_slug: str, db: AsyncSession = Depends(g
     Auth is handled client-side via localStorage JWT.
     """
 
-    from fastapi import HTTPException, status as _st
     _row = await musehub_repository.get_repo_orm_by_owner_slug(db, owner, repo_slug)
     if _row is None:
-        raise HTTPException(status_code=_st.HTTP_404_NOT_FOUND, detail=f"Repo '{owner}/{repo_slug}' not found")
+        raise HTTPException(status_code=http_status.HTTP_404_NOT_FOUND, detail=f"Repo '{owner}/{repo_slug}' not found")
     repo_id = _row.repo_id
     script = f"""
       const repoId = {repr(repo_id)};
-      const base   = '/musehub/ui/' + repoId;
+      const base = '/musehub/ui/{owner}/{repo_slug}';
       const API_TL = '/api/v1/musehub/repos/' + repoId + '/timeline';
 
       // ── State ───────────────────────────────────────────────────────────────
@@ -3209,7 +3200,7 @@ async def timeline_page(owner: str, repo_slug: str, db: AsyncSession = Depends(g
     """
     css_with_timeline = _CSS + _TIMELINE_CSS
     title = f"Timeline -- {repo_id[:8]}"
-    breadcrumb = f'<a href="/musehub/ui/{repo_id}">{repo_id[:8]}</a> / timeline'
+    breadcrumb = f'<a href="/musehub/ui/{owner}/{repo_slug}">{owner}/{repo_slug}</a> / timeline'
     html = f"""<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -3334,14 +3325,13 @@ async def release_list_page(owner: str, repo_slug: str, db: AsyncSession = Depen
     detail page where release notes and download packages are available.
     """
 
-    from fastapi import HTTPException, status as _st
     _row = await musehub_repository.get_repo_orm_by_owner_slug(db, owner, repo_slug)
     if _row is None:
-        raise HTTPException(status_code=_st.HTTP_404_NOT_FOUND, detail=f"Repo '{owner}/{repo_slug}' not found")
+        raise HTTPException(status_code=http_status.HTTP_404_NOT_FOUND, detail=f"Repo '{owner}/{repo_slug}' not found")
     repo_id = _row.repo_id
     script = f"""
       const repoId = {repr(repo_id)};
-      const base   = '/musehub/ui/' + repoId;
+      const base = '/musehub/ui/{owner}/{repo_slug}';
 
       function escHtml(s) {{
         if (!s) return '';
@@ -3385,7 +3375,7 @@ async def release_list_page(owner: str, repo_slug: str, db: AsyncSession = Depen
     """
     html = _page(
         title="Releases",
-        breadcrumb=f'<a href="/musehub/ui/{repo_id}">{repo_id[:8]}</a> / releases',
+        breadcrumb=f'<a href="/musehub/ui/{owner}/{repo_slug}">{owner}/{repo_slug}</a> / releases',
         body_script=script,
     )
     return HTMLResponse(content=html)
@@ -3405,15 +3395,14 @@ async def release_detail_page(owner: str, repo_slug: str, tag: str, db: AsyncSes
     indicator instead of a broken link.
     """
 
-    from fastapi import HTTPException, status as _st
     _row = await musehub_repository.get_repo_orm_by_owner_slug(db, owner, repo_slug)
     if _row is None:
-        raise HTTPException(status_code=_st.HTTP_404_NOT_FOUND, detail=f"Repo '{owner}/{repo_slug}' not found")
+        raise HTTPException(status_code=http_status.HTTP_404_NOT_FOUND, detail=f"Repo '{owner}/{repo_slug}' not found")
     repo_id = _row.repo_id
     script = f"""
       const repoId = {repr(repo_id)};
       const tag    = {repr(tag)};
-      const base   = '/musehub/ui/' + repoId;
+      const base = '/musehub/ui/{owner}/{repo_slug}';
 
       function escHtml(s) {{
         if (!s) return '';
@@ -3491,8 +3480,8 @@ async def release_detail_page(owner: str, repo_slug: str, tag: str, db: AsyncSes
     html = _page(
         title=f"Release {safe_tag}",
         breadcrumb=(
-            f'<a href="/musehub/ui/{repo_id}">{repo_id[:8]}</a> / '
-            f'<a href="/musehub/ui/{repo_id}/releases">releases</a> / {safe_tag}'
+            f'<a href="/musehub/ui/{owner}/{repo_slug}">{owner}/{repo_slug}</a> / '
+            f'<a href="/musehub/ui/{owner}/{repo_slug}/releases">releases</a> / {safe_tag}'
         ),
         body_script=script,
     )
@@ -3515,14 +3504,13 @@ async def sessions_page(owner: str, repo_slug: str, db: AsyncSession = Depends(g
     Active sessions surface first; the rest are ordered by ``started_at`` desc.
     """
 
-    from fastapi import HTTPException, status as _st
     _row = await musehub_repository.get_repo_orm_by_owner_slug(db, owner, repo_slug)
     if _row is None:
-        raise HTTPException(status_code=_st.HTTP_404_NOT_FOUND, detail=f"Repo '{owner}/{repo_slug}' not found")
+        raise HTTPException(status_code=http_status.HTTP_404_NOT_FOUND, detail=f"Repo '{owner}/{repo_slug}' not found")
     repo_id = _row.repo_id
     script = f"""
       const repoId = {repr(repo_id)};
-      const base   = '/musehub/ui/' + repoId;
+      const base = '/musehub/ui/{owner}/{repo_slug}';
 
       function escHtml(s) {{
         if (!s) return '';
@@ -3612,7 +3600,7 @@ async def sessions_page(owner: str, repo_slug: str, db: AsyncSession = Depends(g
     """
     html = _page(
         title="Sessions",
-        breadcrumb=f'<a href="/musehub/ui/{repo_id}">{repo_id[:8]}</a> / sessions',
+        breadcrumb=f'<a href="/musehub/ui/{owner}/{repo_slug}">{owner}/{repo_slug}</a> / sessions',
         body_script=script,
     )
     return HTMLResponse(content=html)
@@ -3636,15 +3624,14 @@ async def session_detail_page(owner: str, repo_slug: str, session_id: str, db: A
     a missing session from a server error.
     """
 
-    from fastapi import HTTPException, status as _st
     _row = await musehub_repository.get_repo_orm_by_owner_slug(db, owner, repo_slug)
     if _row is None:
-        raise HTTPException(status_code=_st.HTTP_404_NOT_FOUND, detail=f"Repo '{owner}/{repo_slug}' not found")
+        raise HTTPException(status_code=http_status.HTTP_404_NOT_FOUND, detail=f"Repo '{owner}/{repo_slug}' not found")
     repo_id = _row.repo_id
     script = f"""
       const repoId    = {repr(repo_id)};
       const sessionId = {repr(session_id)};
-      const base      = '/musehub/ui/' + repoId;
+      const base = '/musehub/ui/{owner}/{repo_slug}';
 
       function escHtml(s) {{
         if (!s) return '';
@@ -3792,8 +3779,8 @@ async def session_detail_page(owner: str, repo_slug: str, session_id: str, db: A
     html = _page(
         title=f"Session {session_id[:8]}",
         breadcrumb=(
-            f'<a href="/musehub/ui/{repo_id}">{repo_id[:8]}</a> / '
-            f'<a href="/musehub/ui/{repo_id}/sessions">sessions</a> / {session_id[:8]}'
+            f'<a href="/musehub/ui/{owner}/{repo_slug}">{owner}/{repo_slug}</a> / '
+            f'<a href="/musehub/ui/{owner}/{repo_slug}/sessions">sessions</a> / {session_id[:8]}'
         ),
         body_script=script,
     )
@@ -3817,15 +3804,14 @@ async def contour_page(owner: str, repo_slug: str, ref: str, db: AsyncSession = 
     to the analysis JSON endpoint.  Auth is handled via localStorage JWT.
     """
 
-    from fastapi import HTTPException, status as _st
     _row = await musehub_repository.get_repo_orm_by_owner_slug(db, owner, repo_slug)
     if _row is None:
-        raise HTTPException(status_code=_st.HTTP_404_NOT_FOUND, detail=f"Repo '{owner}/{repo_slug}' not found")
+        raise HTTPException(status_code=http_status.HTTP_404_NOT_FOUND, detail=f"Repo '{owner}/{repo_slug}' not found")
     repo_id = _row.repo_id
     script = f"""
       const repoId = {repr(repo_id)};
       const ref    = {repr(ref)};
-      const base   = '/musehub/ui/' + repoId;
+      const base = '/musehub/ui/{owner}/{repo_slug}';
       const apiBase = '/api/v1/musehub/repos/' + repoId;
 
       function escHtml(s) {{
@@ -3984,7 +3970,7 @@ async def contour_page(owner: str, repo_slug: str, ref: str, db: AsyncSession = 
     html = _page(
         title=f"Contour {ref[:8]}",
         breadcrumb=(
-            f'<a href="/musehub/ui/{repo_id}">{repo_id[:8]}</a> / '
+            f'<a href="/musehub/ui/{owner}/{repo_slug}">{owner}/{repo_slug}</a> / '
             f"analysis / {ref[:8]} / contour"
         ),
         body_script=script,
@@ -4009,15 +3995,14 @@ async def tempo_page(owner: str, repo_slug: str, ref: str, db: AsyncSession = De
     Auth is handled via localStorage JWT.
     """
 
-    from fastapi import HTTPException, status as _st
     _row = await musehub_repository.get_repo_orm_by_owner_slug(db, owner, repo_slug)
     if _row is None:
-        raise HTTPException(status_code=_st.HTTP_404_NOT_FOUND, detail=f"Repo '{owner}/{repo_slug}' not found")
+        raise HTTPException(status_code=http_status.HTTP_404_NOT_FOUND, detail=f"Repo '{owner}/{repo_slug}' not found")
     repo_id = _row.repo_id
     script = f"""
       const repoId = {repr(repo_id)};
       const ref    = {repr(ref)};
-      const base   = '/musehub/ui/' + repoId;
+      const base = '/musehub/ui/{owner}/{repo_slug}';
 
       function escHtml(s) {{
         if (s === null || s === undefined) return '';
@@ -4173,7 +4158,7 @@ async def tempo_page(owner: str, repo_slug: str, ref: str, db: AsyncSession = De
     html = _page(
         title=f"Tempo {ref[:8]}",
         breadcrumb=(
-            f'<a href="/musehub/ui/{repo_id}">{repo_id[:8]}</a> / '
+            f'<a href="/musehub/ui/{owner}/{repo_slug}">{owner}/{repo_slug}</a> / '
             f"analysis / {ref[:8]} / tempo"
         ),
         body_script=script,
@@ -4207,15 +4192,14 @@ async def dynamics_analysis_page(owner: str, repo_slug: str, ref: str, db: Async
     No Jinja2 -- self-contained HTML string rendered server-side.
     """
 
-    from fastapi import HTTPException, status as _st
     _row = await musehub_repository.get_repo_orm_by_owner_slug(db, owner, repo_slug)
     if _row is None:
-        raise HTTPException(status_code=_st.HTTP_404_NOT_FOUND, detail=f"Repo '{owner}/{repo_slug}' not found")
+        raise HTTPException(status_code=http_status.HTTP_404_NOT_FOUND, detail=f"Repo '{owner}/{repo_slug}' not found")
     repo_id = _row.repo_id
     script = f"""
       const repoId = {repr(repo_id)};
       const ref    = {repr(ref)};
-      const base   = '/musehub/ui/' + repoId;
+      const base = '/musehub/ui/{owner}/{repo_slug}';
       const apiBase = '/api/v1/musehub/repos/' + repoId;
 
       function escHtml(s) {{
@@ -4424,7 +4408,7 @@ async def dynamics_analysis_page(owner: str, repo_slug: str, ref: str, db: Async
     html = _page(
         title=f"Dynamics — {ref[:8]}",
         breadcrumb=(
-            f'<a href="/musehub/ui/{repo_id}">{repo_id[:8]}</a> / '
+            f'<a href="/musehub/ui/{owner}/{repo_slug}">{owner}/{repo_slug}</a> / '
             f"analysis / {ref[:8]} / dynamics"
         ),
         body_script=script,

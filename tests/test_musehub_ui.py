@@ -18,6 +18,11 @@ Covers acceptance criteria from issue #244 (embed player):
 
 UI routes require no JWT auth (they return HTML shells whose JS handles auth).
 The HTML content tests assert structural markers present in every rendered page.
+
+Covers regression for PR #282 (owner/slug URL scheme):
+- test_ui_nav_links_use_owner_slug_not_uuid_*  — every page handler injects
+  ``const base = '/musehub/ui/{owner}/{slug}'`` not a UUID-based path.
+- test_ui_unknown_owner_slug_returns_404        — bad owner/slug → 404.
 """
 from __future__ import annotations
 
@@ -1383,3 +1388,96 @@ async def test_tempo_json_response(
     assert data["bpm"] > 0
     assert 0.0 <= data["stability"] <= 1.0
     assert isinstance(data["tempoChanges"], list)
+
+
+# ---------------------------------------------------------------------------
+# owner/slug navigation link correctness (regression for PR #282)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.anyio
+async def test_ui_nav_links_use_owner_slug_not_uuid_repo_page(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Repo page must inject owner/slug base URL, not the internal UUID.
+
+    Before the fix, every handler except repo_page used ``const base =
+    '/musehub/ui/' + repoId``.  That produced UUID-based hrefs that 404 under
+    the new /{owner}/{repo_slug} routing.  This test guards the regression.
+    """
+    await _make_repo(db_session)
+    response = await client.get("/musehub/ui/testuser/test-beats")
+    assert response.status_code == 200
+    body = response.text
+    # JS base variable must use owner/slug, not UUID concatenation
+    assert "const base = '/musehub/ui/testuser/test-beats'" in body
+    # UUID-concatenation pattern must NOT appear
+    assert "'/musehub/ui/' + repoId" not in body
+
+
+@pytest.mark.anyio
+async def test_ui_nav_links_use_owner_slug_not_uuid_commit_page(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Commit page back-to-repo link must use owner/slug, not internal UUID."""
+    await _make_repo(db_session)
+    commit_id = "abc1234567890123456789012345678901234567"
+    response = await client.get(f"/musehub/ui/testuser/test-beats/commits/{commit_id}")
+    assert response.status_code == 200
+    body = response.text
+    assert "const base = '/musehub/ui/testuser/test-beats'" in body
+    assert "'/musehub/ui/' + repoId" not in body
+
+
+@pytest.mark.anyio
+async def test_ui_nav_links_use_owner_slug_not_uuid_graph_page(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Graph page back-to-repo link must use owner/slug, not internal UUID."""
+    await _make_repo(db_session)
+    response = await client.get("/musehub/ui/testuser/test-beats/graph")
+    assert response.status_code == 200
+    body = response.text
+    assert "const base = '/musehub/ui/testuser/test-beats'" in body
+    assert "'/musehub/ui/' + repoId" not in body
+
+
+@pytest.mark.anyio
+async def test_ui_nav_links_use_owner_slug_not_uuid_pr_list_page(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """PR list page navigation must use owner/slug, not internal UUID."""
+    await _make_repo(db_session)
+    response = await client.get("/musehub/ui/testuser/test-beats/pulls")
+    assert response.status_code == 200
+    body = response.text
+    assert "const base = '/musehub/ui/testuser/test-beats'" in body
+    assert "'/musehub/ui/' + repoId" not in body
+
+
+@pytest.mark.anyio
+async def test_ui_nav_links_use_owner_slug_not_uuid_releases_page(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Releases page navigation must use owner/slug, not internal UUID."""
+    await _make_repo(db_session)
+    response = await client.get("/musehub/ui/testuser/test-beats/releases")
+    assert response.status_code == 200
+    body = response.text
+    assert "const base = '/musehub/ui/testuser/test-beats'" in body
+    assert "'/musehub/ui/' + repoId" not in body
+
+
+@pytest.mark.anyio
+async def test_ui_unknown_owner_slug_returns_404(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """GET /musehub/ui/{unknown-owner}/{unknown-slug} must return 404."""
+    response = await client.get("/musehub/ui/nobody/nonexistent-repo")
+    assert response.status_code == 404

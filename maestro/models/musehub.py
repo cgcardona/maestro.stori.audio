@@ -756,11 +756,14 @@ class GlobalSearchRepoGroup(CamelModel):
 
     Results are grouped by repo so consumers can render a collapsible section
     per repo (name, owner) and paginate within each group.
+
+    ``repo_owner`` + ``repo_slug`` form the canonical /{owner}/{slug} UI URL.
     """
 
     repo_id: str
     repo_name: str
     repo_owner: str
+    repo_slug: str
     repo_visibility: str
     matches: list[GlobalSearchCommitMatch]
     total_matches: int
