@@ -2,13 +2,13 @@
   Repo-level tab strip — standalone partial.
 
   Tabs: Commits | Graph | Pull Requests | Issues | Releases | Sessions |
-        Analysis | Credits | Insights | Search
+        Analysis | Credits | Insights | Search | Arrange
 
   Required Jinja2 variables (passed from ui.py → page template):
     base_url     str  — canonical UI base URL (/musehub/ui/{owner}/{repo_slug})
     current_page str  — active tab key:
                         commits | graph | pulls | issues | releases |
-                        sessions | analysis | credits | insights | search
+                        sessions | analysis | credits | insights | search | arrange
 
   Count badges (open PRs, open issues) are loaded client-side by
   ``loadNavCounts()`` in musehub.js so route handlers stay unauthenticated.
@@ -43,6 +43,18 @@
      {% if current_page == 'issues' %}aria-current="page"{% endif %}>
     Issues
     <span class="tab-count" id="nav-issue-count" style="display:none"></span>
+  </a>
+
+  <a href="{{ base_url }}/branches"
+     class="repo-tab{% if current_page == 'branches' %} active{% endif %}"
+     {% if current_page == 'branches' %}aria-current="page"{% endif %}>
+    &#127807; Branches
+  </a>
+
+  <a href="{{ base_url }}/tags"
+     class="repo-tab{% if current_page == 'tags' %} active{% endif %}"
+     {% if current_page == 'tags' %}aria-current="page"{% endif %}>
+    &#127991; Tags
   </a>
 
   <a href="{{ base_url }}/releases"
@@ -91,6 +103,12 @@
      class="repo-tab{% if current_page == 'search' %} active{% endif %}"
      {% if current_page == 'search' %}aria-current="page"{% endif %}>
     &#128269; Search
+  </a>
+
+  <a href="{{ base_url }}/arrange/HEAD"
+     class="repo-tab{% if current_page == 'arrange' %} active{% endif %}"
+     {% if current_page == 'arrange' %}aria-current="page"{% endif %}>
+    &#127906; Arrange
   </a>
 
 </nav>

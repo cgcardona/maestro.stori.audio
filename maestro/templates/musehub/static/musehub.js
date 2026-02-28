@@ -196,23 +196,36 @@ const _player = { playing: false };
 function _audioEl() { return document.getElementById('player-audio'); }
 function _playerBar() { return document.getElementById('audio-player'); }
 
-function queueAudio(url, title, repoName) {
+async function _fetchBlobUrl(url) {
+  const res = await fetch(url, { headers: { 'Authorization': 'Bearer ' + getToken() } });
+  if (!res.ok) throw new Error(res.status);
+  const blob = await res.blob();
+  return URL.createObjectURL(blob);
+}
+
+async function queueAudio(url, title, repoName) {
   const bar = _playerBar();
   const audio = _audioEl();
   if (!bar || !audio) return;
 
-  audio.src = url;
-  audio.load();
-  audio.play().catch(() => {});
-  _player.playing = true;
-
   bar.style.display = 'flex';
   document.body.classList.add('player-open');
-
   const t = document.getElementById('player-title');
   const r = document.getElementById('player-repo');
   if (t) t.textContent = title || 'Now Playing';
   if (r) r.textContent = repoName || '';
+
+  try {
+    const blobUrl = await _fetchBlobUrl(url);
+    if (audio._blobUrl) URL.revokeObjectURL(audio._blobUrl);
+    audio._blobUrl = blobUrl;
+    audio.src = blobUrl;
+  } catch (_) {
+    audio.src = url;
+  }
+  audio.load();
+  audio.play().catch(() => {});
+  _player.playing = true;
 
   _updatePlayBtn();
 }
@@ -236,9 +249,25 @@ function closePlayer() {
   const audio = _audioEl();
   if (bar) bar.style.display = 'none';
   document.body.classList.remove('player-open');
-  if (audio) { audio.pause(); audio.src = ''; }
+  if (audio) {
+    audio.pause();
+    if (audio._blobUrl) { URL.revokeObjectURL(audio._blobUrl); audio._blobUrl = null; }
+    audio.src = '';
+  }
   _player.playing = false;
   _updatePlayBtn();
+}
+
+async function downloadArtifact(url, filename) {
+  const res = await fetch(url, { headers: { 'Authorization': 'Bearer ' + getToken() } });
+  if (!res.ok) return;
+  const blob = await res.blob();
+  const blobUrl = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = blobUrl;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(blobUrl);
 }
 
 function onTimeUpdate() {

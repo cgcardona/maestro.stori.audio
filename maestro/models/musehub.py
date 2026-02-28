@@ -197,6 +197,77 @@ class BranchListResponse(CamelModel):
     branches: list[BranchResponse]
 
 
+class BranchDivergenceScores(CamelModel):
+    """Placeholder musical divergence scores between a branch and the default branch.
+
+    These five dimensions mirror the ``muse divergence`` command output.  Values
+    are floats in [0.0, 1.0] where 0 = identical and 1 = maximally different.
+    All fields are ``None`` when divergence cannot yet be computed server-side
+    (e.g. no audio snapshots attached to commits).
+    """
+
+    melodic: float | None = Field(None, description="Melodic divergence (0–1)")
+    harmonic: float | None = Field(None, description="Harmonic divergence (0–1)")
+    rhythmic: float | None = Field(None, description="Rhythmic divergence (0–1)")
+    structural: float | None = Field(None, description="Structural divergence (0–1)")
+    dynamic: float | None = Field(None, description="Dynamic divergence (0–1)")
+
+
+class BranchDetailResponse(CamelModel):
+    """Branch pointer enriched with ahead/behind counts and musical divergence.
+
+    Used by the branch list page (``GET /{owner}/{repo}/branches``) to give
+    musicians a quick overview of how each branch relates to the default branch.
+    """
+
+    branch_id: str = Field(..., description="Internal UUID for this branch")
+    name: str = Field(..., description="Branch name", examples=["main", "feat/jazz-bridge"])
+    head_commit_id: str | None = Field(None, description="HEAD commit ID; null for an empty branch")
+    is_default: bool = Field(False, description="True when this is the repo's default branch")
+    ahead_count: int = Field(0, ge=0, description="Commits on this branch not yet on the default branch")
+    behind_count: int = Field(0, ge=0, description="Commits on the default branch not yet on this branch")
+    divergence: BranchDivergenceScores = Field(
+        default_factory=lambda: BranchDivergenceScores(
+            melodic=None, harmonic=None, rhythmic=None, structural=None, dynamic=None
+        ),
+        description="Musical divergence scores vs the default branch (placeholder until computable)",
+    )
+
+
+class BranchDetailListResponse(CamelModel):
+    """List of branches with detail — used by the branch list page and its JSON variant."""
+
+    branches: list[BranchDetailResponse]
+    default_branch: str = Field("main", description="Name of the repo's default branch")
+
+
+class TagResponse(CamelModel):
+    """A single tag entry for the tag browser page.
+
+    Tags are sourced from ``musehub_releases``.  The ``namespace`` field is
+    derived from the tag name: ``emotion:happy`` → namespace ``emotion``,
+    ``v1.0`` → namespace ``version``.
+    """
+
+    tag: str = Field(..., description="Full tag string (e.g. 'emotion:happy', 'v1.0')")
+    namespace: str = Field(..., description="Namespace prefix (e.g. 'emotion', 'genre', 'version')")
+    commit_id: str | None = Field(None, description="Commit this tag is pinned to")
+    message: str = Field("", description="Release title / description")
+    created_at: datetime = Field(..., description="Tag creation timestamp (ISO-8601 UTC)")
+
+
+class TagListResponse(CamelModel):
+    """All tags for a repo, grouped by namespace.
+
+    ``namespaces`` is an ordered list of distinct namespace strings present in
+    the repo.  ``tags`` is the flat list; clients should filter/group client-side
+    using the ``namespace`` field.
+    """
+
+    tags: list[TagResponse]
+    namespaces: list[str] = Field(default_factory=list, description="Distinct namespaces present in this repo")
+
+
 class CommitListResponse(CamelModel):
     """Paginated list of commits (newest first)."""
 
@@ -576,6 +647,49 @@ class DivergenceResponse(CamelModel):
     common_ancestor: str | None
     dimensions: list[DivergenceDimensionResponse]
     overall_score: float
+
+
+# ── Commit diff summary models ─────────────────────────────────────────────────
+
+
+class CommitDiffDimensionScore(CamelModel):
+    """Per-dimension change score between a commit and its parent.
+
+    Scores are heuristic estimates derived from the commit message and metadata.
+    They indicate *how much* each musical dimension changed in this commit.
+    """
+
+    dimension: str = Field(
+        ...,
+        description="Musical dimension: harmonic | rhythmic | melodic | structural | dynamic",
+        examples=["harmonic"],
+    )
+    score: float = Field(..., ge=0.0, le=1.0, description="Change magnitude [0.0, 1.0]")
+    label: str = Field(..., description="Human-readable level: none | low | medium | high")
+    color: str = Field(
+        ...,
+        description="CSS class hint for badge colour: dim-none | dim-low | dim-medium | dim-high",
+    )
+
+
+class CommitDiffSummaryResponse(CamelModel):
+    """Multi-dimensional diff summary between a commit and its parent.
+
+    Returned by ``GET /api/v1/musehub/repos/{repo_id}/commits/{commit_id}/diff-summary``.
+    Consumed by the commit detail page to render dimension-change badges that help
+    musicians understand *what* changed musically between two pushes.
+    """
+
+    commit_id: str = Field(..., description="The commit being inspected")
+    parent_id: str | None = Field(None, description="Parent commit ID; None for root commits")
+    dimensions: list[CommitDiffDimensionScore] = Field(
+        ..., description="Per-dimension change scores (always five entries)"
+    )
+    overall_score: float = Field(
+        ..., ge=0.0, le=1.0, description="Mean across all five dimension scores"
+    )
+
+
 # ── Explore / Discover models ──────────────────────────────────────────────────
 
 
@@ -1202,6 +1316,107 @@ class GrooveCommitEntry(CamelModel):
     midi_files: int = Field(..., description="Number of MIDI snapshots analysed")
 
 
+class ArrangementCellData(CamelModel):
+    """Data for a single cell in the arrangement matrix (instrument × section).
+
+    Encodes whether an instrument plays in a given section, how dense its part is,
+    and enough detail for a tooltip (note count, beat range, pitch range).
+    """
+
+    instrument: str = Field(..., description="Instrument/track name (e.g. 'bass', 'keys')")
+    section: str = Field(..., description="Section label (e.g. 'intro', 'chorus')")
+    note_count: int = Field(..., description="Total notes played by this instrument in this section")
+    note_density: float = Field(
+        ...,
+        ge=0.0,
+        le=1.0,
+        description="Normalised note density in [0, 1]; 0 = silent, 1 = densest cell",
+    )
+    beat_start: float = Field(..., description="Beat position where this section starts")
+    beat_end: float = Field(..., description="Beat position where this section ends")
+    pitch_low: int = Field(..., description="Lowest MIDI pitch played (0-127)")
+    pitch_high: int = Field(..., description="Highest MIDI pitch played (0-127)")
+    active: bool = Field(..., description="True when the instrument has at least one note in this section")
+
+
+class ArrangementRowSummary(CamelModel):
+    """Aggregated stats for one instrument row across all sections."""
+
+    instrument: str = Field(..., description="Instrument/track name")
+    total_notes: int = Field(..., description="Total note count across all sections")
+    active_sections: int = Field(..., description="Number of sections where the instrument plays")
+    mean_density: float = Field(..., description="Mean note density across all sections")
+
+
+class ArrangementColumnSummary(CamelModel):
+    """Aggregated stats for one section column across all instruments."""
+
+    section: str = Field(..., description="Section label")
+    total_notes: int = Field(..., description="Total note count across all instruments")
+    active_instruments: int = Field(..., description="Number of instruments that play in this section")
+    beat_start: float = Field(..., description="Beat position where this section starts")
+    beat_end: float = Field(..., description="Beat position where this section ends")
+
+
+class ArrangementMatrixResponse(CamelModel):
+    """Full arrangement matrix for a Muse commit ref.
+
+    Provides a bird's-eye view of which instruments play in which sections
+    so producers can evaluate orchestration density without downloading tracks.
+
+    The ``cells`` list is a flat row-major enumeration of (instrument, section)
+    pairs.  Consumers should index by (instrument, section) for O(1) lookup.
+    Row/column summaries pre-aggregate totals so the UI can draw marginal bars
+    without re-summing the cell list.
+    """
+
+    repo_id: str = Field(..., description="Internal repo UUID")
+    ref: str = Field(..., description="Commit ref (full SHA or branch name)")
+    instruments: list[str] = Field(..., description="Ordered instrument names (Y-axis)")
+    sections: list[str] = Field(..., description="Ordered section labels (X-axis)")
+    cells: list[ArrangementCellData] = Field(
+        default_factory=list,
+        description="Flat list of (instrument × section) cells, row-major order",
+    )
+    row_summaries: list[ArrangementRowSummary] = Field(
+        default_factory=list,
+        description="Per-instrument aggregates, same order as instruments list",
+    )
+    column_summaries: list[ArrangementColumnSummary] = Field(
+        default_factory=list,
+        description="Per-section aggregates, same order as sections list",
+    )
+    total_beats: float = Field(..., description="Total beat length of the arrangement")
+
+
+class BlobMetaResponse(CamelModel):
+    """Wire representation of a single file (blob) in the Muse tree browser.
+
+    Returned by GET /musehub/repos/{repo_id}/blob/{ref}/{path}.
+    Consumers use ``file_type`` to choose the appropriate rendering mode
+    (piano roll for MIDI, audio player for MP3/WAV, inline img for images,
+    syntax-highlighted text for JSON/XML, hex dump for unknown binaries).
+    ``content_text`` is populated only for text files up to 256 KB; binary
+    files should use ``raw_url`` to stream content.
+    """
+
+    object_id: str = Field(..., description="Content-addressed ID, e.g. 'sha256:abc123...'")
+    path: str = Field(..., description="Relative path from repo root, e.g. 'tracks/bass.mid'")
+    filename: str = Field(..., description="Basename of the file, e.g. 'bass.mid'")
+    size_bytes: int = Field(..., description="File size in bytes")
+    sha: str = Field(..., description="Content-addressed SHA identifier")
+    created_at: datetime = Field(..., description="Timestamp when this object was pushed")
+    raw_url: str = Field(..., description="URL to download the raw file bytes")
+    file_type: str = Field(
+        ...,
+        description="Rendering hint: 'midi' | 'audio' | 'json' | 'image' | 'xml' | 'other'",
+    )
+    content_text: str | None = Field(
+        None,
+        description="UTF-8 content for JSON/XML files up to 256 KB; None for binary or oversized files",
+    )
+
+
 class GrooveCheckResponse(CamelModel):
     """Rhythmic consistency dashboard data for a commit range in a Muse Hub repo.
 
@@ -1225,4 +1440,123 @@ class GrooveCheckResponse(CamelModel):
     entries: list[GrooveCommitEntry] = Field(
         default_factory=list,
         description="Per-commit metrics, oldest-first",
+    )
+
+
+# ── Compare view models ────────────────────────────────────────────────────────
+
+
+class EmotionDiffResponse(CamelModel):
+    """Delta between the emotional character of base and head refs.
+
+    Each field is ``head_value − base_value`` in [−1.0, 1.0].  Positive
+    means head is more energetic/positive/tense/dark than base; negative
+    means the opposite.  Values are derived deterministically from commit
+    SHA hashes so they are always reproducible.
+
+    Agents use this to answer "how did the mood shift between these two
+    refs?" without running external ML inference.
+    """
+
+    energy_delta: float = Field(
+        ..., description="Δenergy (head − base), in [−1.0, 1.0]"
+    )
+    valence_delta: float = Field(
+        ..., description="Δvalence (head − base), in [−1.0, 1.0]"
+    )
+    tension_delta: float = Field(
+        ..., description="Δtension (head − base), in [−1.0, 1.0]"
+    )
+    darkness_delta: float = Field(
+        ..., description="Δdarkness (head − base), in [−1.0, 1.0]"
+    )
+    base_energy: float = Field(..., description="Mean energy score for the base ref")
+    base_valence: float = Field(..., description="Mean valence score for the base ref")
+    base_tension: float = Field(..., description="Mean tension score for the base ref")
+    base_darkness: float = Field(..., description="Mean darkness score for the base ref")
+    head_energy: float = Field(..., description="Mean energy score for the head ref")
+    head_valence: float = Field(..., description="Mean valence score for the head ref")
+    head_tension: float = Field(..., description="Mean tension score for the head ref")
+    head_darkness: float = Field(..., description="Mean darkness score for the head ref")
+
+
+class CompareResponse(CamelModel):
+    """Multi-dimensional musical comparison between two refs in a Muse Hub repo.
+
+    Returned by ``GET /musehub/repos/{repo_id}/compare?base=X&head=Y``.
+    Combines divergence scores, unique commits, and emotion diff into a single
+    payload that powers the compare page UI.
+
+    The ``commits`` list contains only commits that are reachable from ``head``
+    but not from ``base`` (i.e. commits unique to head), newest first.  This
+    mirrors GitHub's compare view: "commits you'd be adding to base."
+
+    Agents use this to decide whether to open a pull request and what the
+    musical impact of merging would be.
+    """
+
+    repo_id: str = Field(..., description="Repository identifier")
+    base_ref: str = Field(..., description="Base ref (branch name, tag, or commit SHA)")
+    head_ref: str = Field(..., description="Head ref (branch name, tag, or commit SHA)")
+    common_ancestor: str | None = Field(
+        default=None,
+        description="Most recent common ancestor commit ID, or null if histories are disjoint",
+    )
+    dimensions: list[DivergenceDimensionResponse] = Field(
+        ..., description="Five per-dimension divergence scores (melodic/harmonic/rhythmic/structural/dynamic)"
+    )
+    overall_score: float = Field(
+        ..., description="Mean of all five dimension scores in [0.0, 1.0]"
+    )
+    commits: list[CommitResponse] = Field(
+        ..., description="Commits in head not in base (newest first)"
+    )
+    emotion_diff: EmotionDiffResponse = Field(
+        ..., description="Emotional character delta between base and head"
+    )
+    create_pr_url: str = Field(
+        ..., description="URL to create a pull request from this comparison"
+    )
+
+
+
+# ── Render pipeline ────────────────────────────────────────────────────────
+
+
+class RenderStatusResponse(CamelModel):
+    """Render job status for a single commit's auto-generated artifacts.
+
+    Returned by ``GET /api/v1/musehub/repos/{repo_id}/commits/{sha}/render-status``.
+
+    ``status`` lifecycle: ``pending`` → ``rendering`` → ``complete`` | ``failed``.
+    ``mp3_object_ids`` and ``image_object_ids`` are populated only when
+    status is ``complete``; both lists may be empty when no MIDI files were
+    pushed with the commit.
+
+    When no render job exists for the given commit SHA, the endpoint returns
+    ``status="not_found"`` with empty artifact lists rather than a 404, so
+    callers do not need to distinguish between "never pushed" and "not yet
+    rendered".
+    """
+
+    commit_id: str = Field(..., description="Muse commit SHA")
+    status: str = Field(
+        ...,
+        description="Render job status: pending | rendering | complete | failed | not_found",
+    )
+    midi_count: int = Field(
+        default=0,
+        description="Number of MIDI objects found in the commit",
+    )
+    mp3_object_ids: list[str] = Field(
+        default_factory=list,
+        description="Object IDs of generated MP3 (or stub) artifacts",
+    )
+    image_object_ids: list[str] = Field(
+        default_factory=list,
+        description="Object IDs of generated piano-roll PNG artifacts",
+    )
+    error_message: str | None = Field(
+        default=None,
+        description="Error details when status is 'failed'; null otherwise",
     )

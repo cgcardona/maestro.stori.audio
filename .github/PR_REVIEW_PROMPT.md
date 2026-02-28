@@ -103,11 +103,11 @@ Apply the **first matching rule** — stop as soon as one matches:
 
 **RULE 0 — ONE SIDE EMPTY** (most common in parallel batches — no judgment needed):
 ```
-<<<<<<< HEAD
-(blank / whitespace only)       ← this side is empty
-=======
-<real content>                  ← this side has content
->>>>>>> origin/dev
+ <<<<<<< HEAD
+ (blank / whitespace only)       ← this side is empty
+ =======
+ <real content>                  ← this side has content
+ >>>>>>> origin/dev
 ```
 OR the reverse (HEAD has content, origin/dev is blank/stub).
 **Action: take the non-empty side. Remove markers. Done.**
@@ -453,13 +453,20 @@ Only after you have output the grade and **"Approved for merge"**, do the follow
    git push origin --delete "$BRANCH"
    ```
 
-5. **Close the referenced issue** (find the issue number in the PR description — look for the line `Closes #N`):
+5. **Close every referenced issue** (find all `Closes #N` lines in the PR description and close each one):
    ```bash
-   # Extract issue number from PR body:
-   gh pr view <pr-number> --json body --jq '.body' | grep -o '#[0-9]*' | head -1
-   # Then close it:
-   gh issue close <issue-number> --comment "Fixed by PR #<pr-number>."
+   # Extract ALL "Closes #N" issue numbers from the PR body (handles multiple closes):
+   gh pr view <pr-number> --json body --jq '.body' \
+     | grep -oE '[Cc]loses?\s+#[0-9]+' \
+     | grep -oE '[0-9]+' \
+     | while read ISSUE_NUM; do
+         gh issue close "$ISSUE_NUM" \
+           --comment "Fixed by PR #<pr-number>." \
+           --repo "$GH_REPO"
+       done
    ```
+   ⚠️ Do NOT use `grep -o '#[0-9]*'` — it matches any `#N` in the body (commit hashes, mentions, etc.)
+   and silently closes the wrong issue. Always match `Closes #N` explicitly.
 
 6. **Return to dev and delete the local feature branch:**
    ```bash

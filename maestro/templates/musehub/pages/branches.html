@@ -1,0 +1,112 @@
+{% extends "musehub/base.html" %}
+
+{% block title %}Branches{% endblock %}
+{% block breadcrumb %}
+  <a href="/musehub/ui/{{ owner }}/{{ repo_slug }}">{{ owner }}/{{ repo_slug }}</a> / branches
+{% endblock %}
+{% block repo_nav %}{% include "musehub/partials/repo_nav.html" %}{% endblock %}
+
+{% block page_data %}
+const repoId  = {{ repo_id | tojson }};
+const apiBase = '/api/v1/musehub/repos/' + repoId;
+const uiBase  = {{ base_url | tojson }};
+{% endblock %}
+
+{% block page_script %}
+{% raw %}
+const DIMENSIONS = ['melodic', 'harmonic', 'rhythmic', 'structural', 'dynamic'];
+
+function scoreBar(value) {
+  if (value === null || value === undefined) {
+    return '<span style="color:#8b949e;font-size:11px">—</span>';
+  }
+  const pct = Math.round(value * 100);
+  const color = pct < 25 ? '#3fb950' : pct < 55 ? '#f0883e' : '#f85149';
+  return `<span style="display:inline-flex;align-items:center;gap:4px;font-size:11px">
+    <span style="display:inline-block;width:${pct}px;max-width:60px;height:6px;border-radius:3px;background:${color}"></span>
+    <span style="color:#8b949e">${pct}%</span>
+  </span>`;
+}
+
+function divergenceRow(div) {
+  if (!div) return '';
+  return DIMENSIONS.map(dim => `
+    <div style="display:flex;align-items:center;gap:8px;margin:2px 0">
+      <span style="width:68px;font-size:11px;color:#8b949e;text-transform:capitalize">${dim}</span>
+      ${scoreBar(div[dim])}
+    </div>`).join('');
+}
+
+function ahead_behind(ahead, behind) {
+  const parts = [];
+  if (ahead > 0) parts.push(`<span style="color:#3fb950">&#8593;${ahead} ahead</span>`);
+  if (behind > 0) parts.push(`<span style="color:#f85149">&#8595;${behind} behind</span>`);
+  if (parts.length === 0) return '<span style="color:#8b949e;font-size:11px">up to date</span>';
+  return parts.join(' &bull; ');
+}
+
+async function load() {
+  initRepoNav(repoId);
+  try {
+    const data = await apiFetch('/repos/' + repoId + '/branches/detail');
+    const branches = data.branches || [];
+    const defaultBranch = data.defaultBranch || 'main';
+
+    const rows = branches.length === 0
+      ? '<p class="loading">No branches found.</p>'
+      : branches.map(b => {
+          const sha = b.headCommitId ? b.headCommitId.substring(0, 8) : '—';
+          const compareUrl = `${uiBase}/compare/${encodeURIComponent(defaultBranch)}...${encodeURIComponent(b.name)}`;
+          const prUrl = `${uiBase}/pulls/new?head=${encodeURIComponent(b.name)}`;
+
+          return `
+          <div class="branch-row" style="padding:16px 0;border-bottom:1px solid #21262d">
+            <div style="display:flex;align-items:flex-start;gap:12px">
+              <div style="flex:1;min-width:0">
+                <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+                  <span style="font-weight:600;font-size:14px;color:#e6edf3">${escHtml(b.name)}</span>
+                  ${b.isDefault ? '<span class="badge badge-open" style="font-size:10px">default</span>' : ''}
+                </div>
+                <div style="font-size:12px;color:#8b949e;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+                  <span style="font-family:monospace">${sha}</span>
+                  ${b.isDefault ? '' : ahead_behind(b.aheadCount, b.behindCount)}
+                </div>
+                ${b.isDefault ? '' : `
+                <div style="margin-top:8px">
+                  <span style="font-size:11px;color:#8b949e;display:block;margin-bottom:4px">Musical divergence</span>
+                  ${divergenceRow(b.divergence)}
+                </div>`}
+              </div>
+              ${b.isDefault ? '' : `
+              <div style="display:flex;flex-direction:column;gap:6px;flex-shrink:0">
+                <a href="${compareUrl}" class="btn btn-secondary" style="font-size:12px;padding:4px 10px">
+                  Compare
+                </a>
+                <a href="${prUrl}" class="btn btn-primary" style="font-size:12px;padding:4px 10px">
+                  New Pull Request
+                </a>
+              </div>`}
+            </div>
+          </div>`;
+        }).join('');
+
+    document.getElementById('content').innerHTML = `
+      <div style="margin-bottom:12px">
+        <a href="${uiBase}">&larr; Back to repo</a>
+      </div>
+      <div class="card">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+          <h1 style="margin:0">&#127807; Branches</h1>
+          <span style="font-size:13px;color:#8b949e">${branches.length} branch${branches.length === 1 ? '' : 'es'}</span>
+        </div>
+        ${rows}
+      </div>`;
+  } catch(e) {
+    if (e.message !== 'auth')
+      document.getElementById('content').innerHTML = '<p class="error">&#10005; ' + escHtml(e.message) + '</p>';
+  }
+}
+
+load();
+{% endraw %}
+{% endblock %}

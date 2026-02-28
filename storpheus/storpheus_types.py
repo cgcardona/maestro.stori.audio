@@ -404,3 +404,45 @@ class SweepABTestResult(TypedDict):
     best_quality_score: float
     score_range: float
     significant: bool  # True when max-min quality gap ≥ 0.05
+
+
+# ---------------------------------------------------------------------------
+# Chunked generation — sliding window for long compositions (#25)
+# ---------------------------------------------------------------------------
+
+
+class ChunkMetadata(TypedDict):
+    """Per-chunk metadata emitted during a chunked generation run.
+
+    Field ranges:
+        chunk        ≥ 0    zero-based chunk index
+        bars         ≥ 1    bar count for this chunk (last chunk may be smaller)
+        notes        ≥ 0    notes produced by this chunk after beat-trimming
+        beat_offset  ≥ 0.0  beat position of chunk start in the final timeline
+        rejection_score  0.0–1.0  candidate rejection score for this chunk; None if unavailable
+    """
+
+    chunk: int
+    bars: int
+    notes: int
+    beat_offset: float
+    rejection_score: float | None
+
+
+class ChunkedGenerationResult(TypedDict):
+    """Aggregated result of a sliding window chunked generation.
+
+    Produced when ``request.bars > STORPHEUS_CHUNKED_THRESHOLD_BARS``.
+    The ``notes`` list spans the full requested bar count with sequential
+    beat offsets applied across all chunks.
+
+    Registered in ``docs/reference/type_contracts.md`` under Storpheus Types.
+    """
+
+    success: bool
+    notes: list[WireNoteDict]
+    chunk_count: int
+    total_bars: int
+    chunk_metadata: list[ChunkMetadata]
+    total_elapsed_seconds: float
+    error: str | None

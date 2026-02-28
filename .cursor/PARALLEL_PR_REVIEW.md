@@ -551,11 +551,19 @@ STEP 6 — PRE-MERGE SYNC (only if grade is A or B):
   # 6. Delete the remote branch manually (now safe — merge is done):
        git push origin --delete "$BRANCH"
 
-  # 7. Close the referenced issue.
-  #    Find the issue number from the PR body (look for "Closes #N"):
-       gh pr view <N> --json body --jq '.body' | grep -o '#[0-9]*' | head -1
-  #    Then close it:
-       gh issue close <issue-number> --comment "Fixed by PR #<N>."
+  # 7. Close every referenced issue.
+  #    Find ALL "Closes #N" issue numbers from the PR body and close each one.
+  #    ⚠️  Do NOT use `grep -o '#[0-9]*'` — it matches any #N (commit hashes,
+  #    mentions, literal numbers) and silently closes the wrong issue.
+  #    Always match the explicit "Closes #N" pattern:
+       gh pr view <N> --json body --jq '.body' \
+         | grep -oE '[Cc]loses?\s+#[0-9]+' \
+         | grep -oE '[0-9]+' \
+         | while read ISSUE_NUM; do
+             gh issue close "$ISSUE_NUM" \
+               --comment "Fixed by PR #<N>." \
+               --repo "$GH_REPO"
+           done
 
   ⚠️  Never use --delete-branch with gh pr merge in a multi-worktree setup.
       gh attempts to checkout dev locally to delete the feature branch, but dev
@@ -647,17 +655,51 @@ docker compose exec maestro ls /worktrees/
 
 ## After agents complete
 
-- Check GitHub for merged PRs and closed issues.
-- Pull `dev` locally: `git -C "$(git rev-parse --show-toplevel)" pull origin dev`
-- Verify no stale worktrees remain: `git worktree list` — should show only the main repo.
-  If any linger (agent crashed before cleanup):
-  ```bash
-  git -C "$(git rev-parse --show-toplevel)" worktree prune
-  ```
-- Verify main repo is clean: `git -C "$(git rev-parse --show-toplevel)" status`
-  Must show **nothing to commit, working tree clean**. If not, clean up:
-  ```bash
-  REPO=$(git rev-parse --show-toplevel)
-  git -C "$REPO" restore --staged .
-  git -C "$REPO" restore .
-  ```
+### 1 — Pull dev and check GitHub
+
+```bash
+git -C "$(git rev-parse --show-toplevel)" pull origin dev
+gh pr list --state open   # any PRs the batch failed to merge?
+```
+
+### 2 — Worktree cleanup
+
+```bash
+git worktree list   # should show only the main repo
+# If stale worktrees linger (agent crashed before self-destructing):
+git -C "$(git rev-parse --show-toplevel)" worktree prune
+```
+
+### 3 — Main repo cleanliness ⚠️ run this every batch, no exceptions
+
+An agent that violates the "never copy files into the main repo" rule leaves
+uncommitted changes in the main working tree. These accumulate silently across
+batches and create phantom diffs that are impossible to attribute.
+
+```bash
+REPO=$(git rev-parse --show-toplevel)
+git -C "$REPO" status
+# Must show: nothing to commit, working tree clean
+```
+
+**If dirty files are found:**
+
+1. Check whether the work is already merged:
+   ```bash
+   gh pr list --state merged --json number,title --jq '.[].number' | \
+     xargs -I{} gh pr diff {} --name-only 2>/dev/null | grep <filename>
+   ```
+2. **If already merged** → stale copies. Discard:
+   ```bash
+   git -C "$REPO" restore --staged .
+   git -C "$REPO" restore .
+   rm -f <any .bak or untracked agent artifacts>
+   ```
+3. **If NOT merged** → agent wrote directly to main repo. Rescue:
+   ```bash
+   git -C "$REPO" checkout -b fix/<description>
+   git -C "$REPO" add -A
+   git -C "$REPO" commit -m "feat: <description> (rescued from main repo dirty state)"
+   git push origin fix/<description>
+   gh pr create --base dev --head fix/<description> ...
+   ```

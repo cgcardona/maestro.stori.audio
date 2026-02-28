@@ -7,6 +7,11 @@ Covers every acceptance criterion from issue #39:
 - GET /musehub/repos/{repo_id}/branches returns empty list on new repo
 - GET /musehub/repos/{repo_id}/commits returns newest first, respects ?limit
 
+Covers issue #217 (compare view API endpoint):
+- test_compare_radar_data        — compare endpoint returns 5 dimension scores
+- test_compare_commit_list       — commits unique to head are listed
+- test_compare_unknown_ref_404   — unknown ref returns 422
+
 All tests use the shared ``client`` and ``auth_headers`` fixtures from conftest.py.
 """
 from __future__ import annotations
@@ -972,3 +977,388 @@ async def test_credits_aggregation_service_direct(db_session: AsyncSession) -> N
     assert result.total_contributors == 1
     assert result.contributors[0].author == "Charlie"
     assert result.contributors[0].session_count == 1
+
+
+# ---------------------------------------------------------------------------
+# Compare endpoint (issue #217)
+# ---------------------------------------------------------------------------
+
+
+async def _make_compare_repo(
+    db_session: AsyncSession,
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+) -> str:
+    """Seed a repo with commits on two branches and return repo_id."""
+    from datetime import datetime, timezone
+
+    create = await client.post(
+        "/api/v1/musehub/repos",
+        json={"name": "compare-test", "owner": "testuser", "visibility": "private"},
+        headers=auth_headers,
+    )
+    assert create.status_code == 201
+    repo_id: str = str(create.json()["repoId"])
+
+    now = datetime.now(tz=timezone.utc)
+    db_session.add(
+        MusehubCommit(
+            commit_id="base001",
+            repo_id=repo_id,
+            branch="main",
+            parent_ids=[],
+            message="add melody line",
+            author="Alice",
+            timestamp=now,
+        )
+    )
+    db_session.add(
+        MusehubCommit(
+            commit_id="head001",
+            repo_id=repo_id,
+            branch="feature",
+            parent_ids=["base001"],
+            message="add chord progression",
+            author="Bob",
+            timestamp=now,
+        )
+    )
+    await db_session.commit()
+    return repo_id
+
+
+@pytest.mark.anyio
+async def test_compare_radar_data(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    auth_headers: dict[str, str],
+) -> None:
+    """GET /api/v1/musehub/repos/{id}/compare returns 5 dimension scores."""
+    repo_id = await _make_compare_repo(db_session, client, auth_headers)
+    response = await client.get(
+        f"/api/v1/musehub/repos/{repo_id}/compare?base=main&head=feature",
+        headers=auth_headers,
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert "dimensions" in body
+    assert len(body["dimensions"]) == 5
+    expected_dims = {"melodic", "harmonic", "rhythmic", "structural", "dynamic"}
+    found_dims = {d["dimension"] for d in body["dimensions"]}
+    assert found_dims == expected_dims
+    for dim in body["dimensions"]:
+        assert 0.0 <= dim["score"] <= 1.0
+        assert dim["level"] in ("NONE", "LOW", "MED", "HIGH")
+    assert "overallScore" in body
+    assert 0.0 <= body["overallScore"] <= 1.0
+
+
+@pytest.mark.anyio
+async def test_compare_commit_list(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    auth_headers: dict[str, str],
+) -> None:
+    """Commits unique to head are listed in the compare response."""
+    repo_id = await _make_compare_repo(db_session, client, auth_headers)
+    response = await client.get(
+        f"/api/v1/musehub/repos/{repo_id}/compare?base=main&head=feature",
+        headers=auth_headers,
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert "commits" in body
+    # head001 is on feature but not on main
+    commit_ids = [c["commitId"] for c in body["commits"]]
+    assert "head001" in commit_ids
+    # base001 is on main so should NOT appear as unique to head
+    assert "base001" not in commit_ids
+
+
+@pytest.mark.anyio
+async def test_compare_unknown_ref_422(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    auth_headers: dict[str, str],
+) -> None:
+    """Unknown ref (branch with no commits) returns 422."""
+    create = await client.post(
+        "/api/v1/musehub/repos",
+        json={"name": "empty-compare", "owner": "testuser", "visibility": "private"},
+        headers=auth_headers,
+    )
+    assert create.status_code == 201
+    repo_id = create.json()["repoId"]
+    response = await client.get(
+        f"/api/v1/musehub/repos/{repo_id}/compare?base=nonexistent&head=alsoabsent",
+        headers=auth_headers,
+    )
+    assert response.status_code == 422
+
+
+@pytest.mark.anyio
+async def test_compare_emotion_diff_fields(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    auth_headers: dict[str, str],
+) -> None:
+    """Compare response includes emotion diff with required delta fields."""
+    repo_id = await _make_compare_repo(db_session, client, auth_headers)
+    response = await client.get(
+        f"/api/v1/musehub/repos/{repo_id}/compare?base=main&head=feature",
+        headers=auth_headers,
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert "emotionDiff" in body
+    ed = body["emotionDiff"]
+    for field in ("energyDelta", "valenceDelta", "tensionDelta", "darknessDelta"):
+        assert field in ed
+        assert -1.0 <= ed[field] <= 1.0
+    for field in ("baseEnergy", "headEnergy", "baseValence", "headValence"):
+        assert field in ed
+        assert 0.0 <= ed[field] <= 1.0
+
+
+# ---------------------------------------------------------------------------
+# Arrangement matrix endpoint — issue #212
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.anyio
+async def test_arrange_endpoint_returns_200(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    auth_headers: dict[str, str],
+) -> None:
+    """GET /api/v1/musehub/repos/{repo_id}/arrange/{ref} returns 200 with JSON body."""
+    repo = MusehubRepo(
+        name="arrange-test",
+        owner="testuser",
+        slug="arrange-test",
+        visibility="public",
+        owner_user_id="u1",
+    )
+    db_session.add(repo)
+    await db_session.commit()
+    await db_session.refresh(repo)
+    repo_id = str(repo.repo_id)
+
+    resp = await client.get(
+        f"/api/v1/musehub/repos/{repo_id}/arrange/HEAD",
+        headers=auth_headers,
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["repoId"] == repo_id
+    assert data["ref"] == "HEAD"
+
+
+@pytest.mark.anyio
+async def test_arrange_endpoint_has_required_fields(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    auth_headers: dict[str, str],
+) -> None:
+    """Arrangement matrix response contains instruments, sections, cells, and summaries."""
+    repo = MusehubRepo(
+        name="arrange-fields-test",
+        owner="testuser",
+        slug="arrange-fields-test",
+        visibility="public",
+        owner_user_id="u1",
+    )
+    db_session.add(repo)
+    await db_session.commit()
+    await db_session.refresh(repo)
+    repo_id = str(repo.repo_id)
+
+    resp = await client.get(
+        f"/api/v1/musehub/repos/{repo_id}/arrange/abc1234",
+        headers=auth_headers,
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "instruments" in data
+    assert "sections" in data
+    assert "cells" in data
+    assert "rowSummaries" in data
+    assert "columnSummaries" in data
+    assert "totalBeats" in data
+    assert isinstance(data["instruments"], list)
+    assert isinstance(data["sections"], list)
+    assert isinstance(data["cells"], list)
+    assert len(data["instruments"]) > 0
+    assert len(data["sections"]) > 0
+
+
+@pytest.mark.anyio
+async def test_arrange_endpoint_cells_have_required_fields(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    auth_headers: dict[str, str],
+) -> None:
+    """Each cell in the arrangement matrix has instrument, section, noteCount, noteDensity, and active."""
+    repo = MusehubRepo(
+        name="arrange-cells-test",
+        owner="testuser",
+        slug="arrange-cells-test",
+        visibility="public",
+        owner_user_id="u1",
+    )
+    db_session.add(repo)
+    await db_session.commit()
+    await db_session.refresh(repo)
+    repo_id = str(repo.repo_id)
+
+    resp = await client.get(
+        f"/api/v1/musehub/repos/{repo_id}/arrange/main",
+        headers=auth_headers,
+    )
+    assert resp.status_code == 200
+    cells = resp.json()["cells"]
+    assert len(cells) > 0
+    for cell in cells:
+        assert "instrument" in cell
+        assert "section" in cell
+        assert "noteCount" in cell
+        assert "noteDensity" in cell
+        assert "active" in cell
+        assert "beatStart" in cell
+        assert "beatEnd" in cell
+        assert isinstance(cell["noteCount"], int)
+        assert 0.0 <= cell["noteDensity"] <= 1.0
+
+
+@pytest.mark.anyio
+async def test_arrange_endpoint_instruments_x_sections_coverage(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    auth_headers: dict[str, str],
+) -> None:
+    """Cells cover every (instrument, section) pair — no missing combinations."""
+    repo = MusehubRepo(
+        name="arrange-coverage-test",
+        owner="testuser",
+        slug="arrange-coverage-test",
+        visibility="public",
+        owner_user_id="u1",
+    )
+    db_session.add(repo)
+    await db_session.commit()
+    await db_session.refresh(repo)
+    repo_id = str(repo.repo_id)
+
+    resp = await client.get(
+        f"/api/v1/musehub/repos/{repo_id}/arrange/ref-abc",
+        headers=auth_headers,
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    instruments = data["instruments"]
+    sections = data["sections"]
+    cells = data["cells"]
+    expected = len(instruments) * len(sections)
+    assert len(cells) == expected, (
+        f"Expected {expected} cells for {len(instruments)} instruments "
+        f"× {len(sections)} sections, got {len(cells)}"
+    )
+
+
+@pytest.mark.anyio
+async def test_arrange_endpoint_deterministic(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    auth_headers: dict[str, str],
+) -> None:
+    """Arrangement matrix is deterministic — identical ref produces identical data on re-request."""
+    repo = MusehubRepo(
+        name="arrange-det-test",
+        owner="testuser",
+        slug="arrange-det-test",
+        visibility="public",
+        owner_user_id="u1",
+    )
+    db_session.add(repo)
+    await db_session.commit()
+    await db_session.refresh(repo)
+    repo_id = str(repo.repo_id)
+
+    resp1 = await client.get(
+        f"/api/v1/musehub/repos/{repo_id}/arrange/stable-ref",
+        headers=auth_headers,
+    )
+    resp2 = await client.get(
+        f"/api/v1/musehub/repos/{repo_id}/arrange/stable-ref",
+        headers=auth_headers,
+    )
+    assert resp1.status_code == 200
+    assert resp2.status_code == 200
+    assert resp1.json() == resp2.json()
+
+
+@pytest.mark.anyio
+async def test_arrange_endpoint_404_for_unknown_repo(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+) -> None:
+    """GET /api/v1/musehub/repos/{unknown}/arrange/{ref} returns 404 for an unknown repo."""
+    resp = await client.get(
+        "/api/v1/musehub/repos/00000000-0000-0000-0000-000000000000/arrange/HEAD",
+        headers=auth_headers,
+    )
+    assert resp.status_code == 404
+
+
+@pytest.mark.anyio
+async def test_arrange_row_summaries_match_cells(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    auth_headers: dict[str, str],
+) -> None:
+    """Row summaries totalNotes matches the sum of noteCount across that instrument's cells."""
+    repo = MusehubRepo(
+        name="arrange-summary-test",
+        owner="testuser",
+        slug="arrange-summary-test",
+        visibility="public",
+        owner_user_id="u1",
+    )
+    db_session.add(repo)
+    await db_session.commit()
+    await db_session.refresh(repo)
+    repo_id = str(repo.repo_id)
+
+    resp = await client.get(
+        f"/api/v1/musehub/repos/{repo_id}/arrange/HEAD",
+        headers=auth_headers,
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    for row in data["rowSummaries"]:
+        inst = row["instrument"]
+        expected_total = sum(
+            c["noteCount"] for c in data["cells"] if c["instrument"] == inst
+        )
+        assert row["totalNotes"] == expected_total, (
+            f"Row summary for {inst}: expected {expected_total}, got {row['totalNotes']}"
+        )
+
+
+@pytest.mark.anyio
+async def test_arrange_service_direct() -> None:
+    """compute_arrangement_matrix() returns valid ArrangementMatrixResponse without DB."""
+    from maestro.services.musehub_analysis import compute_arrangement_matrix
+
+    result = compute_arrangement_matrix(repo_id="test-repo-id", ref="abc1234")
+    assert result.repo_id == "test-repo-id"
+    assert result.ref == "abc1234"
+    assert len(result.instruments) > 0
+    assert len(result.sections) > 0
+    assert len(result.cells) == len(result.instruments) * len(result.sections)
+    assert result.total_beats > 0
+    # All density values in valid range
+    for cell in result.cells:
+        assert 0.0 <= cell.note_density <= 1.0
+    # Row summary count matches instruments
+    assert len(result.row_summaries) == len(result.instruments)
