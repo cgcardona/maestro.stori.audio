@@ -196,10 +196,18 @@ STEP 1 — DERIVE PATHS:
   # Your worktree is live in Docker at /worktrees/$WTNAME — NO file copying needed.
   # All docker compose commands: cd "$REPO" && docker compose exec maestro <cmd>
 
-  # GitHub repo slug — ALWAYS hardcoded. NEVER derive from directory name or local path.
-  # The local path contains "tellurstori" but the GitHub org is "cgcardona".
+  # GitHub repo slug — HARDCODED. NEVER derive from directory name, basename, or local path.
+  # The local path is /Users/gabriel/dev/tellurstori/maestro.
+  # "tellurstori" is the LOCAL directory — it is NOT the GitHub org.
+  # The GitHub org is "cgcardona". Using the wrong slug → "Forbidden" or "Repository not found".
   export GH_REPO=cgcardona/maestro
-  # All gh commands pick this up automatically. You may also pass --repo "$GH_REPO" explicitly.
+
+  # ⚠️  VALIDATION — run this immediately to catch slug errors early:
+  gh repo view "$GH_REPO" --json name --jq '.name'
+  # Expected output: maestro
+  # If you see an error → GH_REPO is wrong. Stop and fix it before continuing.
+
+  # All gh commands inherit $GH_REPO automatically. You may also pass --repo "$GH_REPO" explicitly.
 
 STEP 2 — CHECK CANONICAL STATE BEFORE DOING ANY WORK:
   ⚠️  Query GitHub first. Do NOT checkout a branch, run mypy, or add a review
@@ -555,15 +563,14 @@ STEP 6 — PRE-MERGE SYNC (only if grade is A or B):
   #    Find ALL "Closes #N" issue numbers from the PR body and close each one.
   #    ⚠️  Do NOT use `grep -o '#[0-9]*'` — it matches any #N (commit hashes,
   #    mentions, literal numbers) and silently closes the wrong issue.
-  #    Always match the explicit "Closes #N" pattern:
+  #    ⚠️  Do NOT use `while read` — the `read` builtin triggers a sandbox prompt.
+  #    Always match the explicit "Closes #N" pattern and use xargs:
        gh pr view <N> --json body --jq '.body' \
          | grep -oE '[Cc]loses?\s+#[0-9]+' \
          | grep -oE '[0-9]+' \
-         | while read ISSUE_NUM; do
-             gh issue close "$ISSUE_NUM" \
-               --comment "Fixed by PR #<N>." \
-               --repo "$GH_REPO"
-           done
+         | xargs -I{} gh issue close {} \
+             --comment "Fixed by PR #<N>." \
+             --repo "$GH_REPO"
 
   ⚠️  Never use --delete-branch with gh pr merge in a multi-worktree setup.
       gh attempts to checkout dev locally to delete the feature branch, but dev
@@ -636,8 +643,15 @@ gh pr list --state open
 ### Step 2 — Confirm `dev` is up to date
 
 ```bash
-git -C "$(git rev-parse --show-toplevel)" pull origin dev
+REPO=$(git rev-parse --show-toplevel)
+git -C "$REPO" fetch origin
+git -C "$REPO" merge origin/dev
 ```
+
+> **Why `fetch + merge` and not `git pull`?** `git pull --rebase` fails when there are
+> uncommitted changes in the main worktree. `git pull` (merge mode) can also be blocked by
+> sandbox restrictions that prevent git from writing to `.git/config`. `fetch + merge` is
+> always safe and never needs sandbox elevation.
 
 ### Step 3 — Run the Setup script above
 
@@ -658,7 +672,9 @@ docker compose exec maestro ls /worktrees/
 ### 1 — Pull dev and check GitHub
 
 ```bash
-git -C "$(git rev-parse --show-toplevel)" pull origin dev
+REPO=$(git rev-parse --show-toplevel)
+git -C "$REPO" fetch origin
+git -C "$REPO" merge origin/dev
 gh pr list --state open   # any PRs the batch failed to merge?
 ```
 

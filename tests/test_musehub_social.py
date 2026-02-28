@@ -31,7 +31,9 @@ from maestro.db.musehub_models import (
     MusehubFork,
     MusehubNotification,
     MusehubRepo,
+    MusehubStar,
     MusehubViewEvent,
+    MusehubWatch,
 )
 
 # ---------------------------------------------------------------------------
@@ -1091,3 +1093,154 @@ async def test_get_feed_returns_user_notifications(
     assert len(items) == 2
     assert items[0]["event_type"] == "mention"   # newest first
     assert items[1]["event_type"] == "comment"
+
+
+# ---------------------------------------------------------------------------
+# Analytics — social trends (stars, forks, watches)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.anyio
+async def test_get_social_analytics_empty_public_repo(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+) -> None:
+    """GET /repos/{id}/analytics/social returns zero totals for a new public repo."""
+    repo_id = await _make_repo(client, auth_headers, name="social-analytics-empty")
+    resp = await client.get(
+        f"/api/v1/musehub/repos/{repo_id}/analytics/social",
+        headers=auth_headers,
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["star_count"] == 0
+    assert body["fork_count"] == 0
+    assert body["watch_count"] == 0
+    assert isinstance(body["trend"], list)
+    assert isinstance(body["forks_detail"], list)
+
+
+@pytest.mark.anyio
+async def test_get_social_analytics_not_found_returns_404(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+) -> None:
+    """GET /repos/{id}/analytics/social returns 404 for an unknown repo."""
+    resp = await client.get(
+        "/api/v1/musehub/repos/does-not-exist/analytics/social",
+        headers=auth_headers,
+    )
+    assert resp.status_code == 404
+
+
+@pytest.mark.anyio
+async def test_get_social_analytics_private_repo_requires_auth(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """GET /repos/{id}/analytics/social returns 401 for a private repo without auth."""
+    repo_id = await _make_private_repo(db_session, name="social-analytics-priv")
+    resp = await client.get(f"/api/v1/musehub/repos/{repo_id}/analytics/social")
+    assert resp.status_code == 401
+
+
+@pytest.mark.anyio
+async def test_get_social_analytics_counts_seeded_rows(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+    db_session: AsyncSession,
+) -> None:
+    """GET /repos/{id}/analytics/social reflects seeded star, fork, and watch rows."""
+    from datetime import timedelta
+
+    repo_id = await _make_repo(client, auth_headers, name="social-analytics-counts")
+    now = datetime.now(tz=timezone.utc)
+
+    # Seed one star, one watch
+    star = MusehubStar(
+        star_id=str(uuid.uuid4()),
+        repo_id=repo_id,
+        user_id="user-a",
+        created_at=now,
+    )
+    watch = MusehubWatch(
+        watch_id=str(uuid.uuid4()),
+        user_id="user-b",
+        repo_id=repo_id,
+        created_at=now,
+    )
+    db_session.add_all([star, watch])
+    await db_session.commit()
+
+    resp = await client.get(
+        f"/api/v1/musehub/repos/{repo_id}/analytics/social?days=90",
+        headers=auth_headers,
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["star_count"] == 1
+    assert body["watch_count"] == 1
+    assert body["fork_count"] == 0
+
+
+@pytest.mark.anyio
+async def test_get_social_analytics_trend_spans_full_window(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+) -> None:
+    """GET /repos/{id}/analytics/social trend list spans exactly 'days' entries."""
+    repo_id = await _make_repo(client, auth_headers, name="social-analytics-window")
+    resp = await client.get(
+        f"/api/v1/musehub/repos/{repo_id}/analytics/social?days=30",
+        headers=auth_headers,
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    # Trend must contain exactly `days` entries, one per calendar day
+    assert len(body["trend"]) == 30
+    # All entries must be zero for a new repo
+    for day in body["trend"]:
+        assert day["stars"] == 0
+        assert day["forks"] == 0
+        assert day["watches"] == 0
+
+
+@pytest.mark.anyio
+async def test_get_social_analytics_forks_detail_includes_forked_by(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+    db_session: AsyncSession,
+) -> None:
+    """GET /repos/{id}/analytics/social forks_detail lists who forked the repo."""
+    repo_id = await _make_repo(client, auth_headers, name="social-analytics-forks")
+
+    # Seed a fork record directly (no need to create the fork repo for this assertion)
+    fork_repo = MusehubRepo(
+        name="forked-copy",
+        owner="alice",
+        slug="forked-copy",
+        visibility="public",
+        owner_user_id="user-alice",
+    )
+    db_session.add(fork_repo)
+    await db_session.flush()
+
+    fork = MusehubFork(
+        fork_id=str(uuid.uuid4()),
+        source_repo_id=repo_id,
+        fork_repo_id=str(fork_repo.repo_id),
+        forked_by="alice",
+        created_at=datetime.now(tz=timezone.utc),
+    )
+    db_session.add(fork)
+    await db_session.commit()
+
+    resp = await client.get(
+        f"/api/v1/musehub/repos/{repo_id}/analytics/social",
+        headers=auth_headers,
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["fork_count"] == 1
+    assert len(body["forks_detail"]) == 1
+    assert body["forks_detail"][0]["forked_by"] == "alice"

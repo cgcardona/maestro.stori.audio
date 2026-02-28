@@ -312,6 +312,17 @@ class IssueCreate(CamelModel):
     )
 
 
+class IssueUpdate(CamelModel):
+    """Body for PATCH /musehub/repos/{repo_id}/issues/{number} — partial update.
+
+    All fields are optional; only non-None fields are applied.
+    """
+
+    title: str | None = Field(None, min_length=1, max_length=500, description="Updated issue title")
+    body: str | None = Field(None, description="Updated issue body (Markdown)")
+    labels: list[str] | None = Field(None, description="Replacement label list")
+
+
 class IssueResponse(CamelModel):
     """Wire representation of a Muse Hub issue."""
 
@@ -322,13 +333,142 @@ class IssueResponse(CamelModel):
     state: str = Field(..., description="'open' or 'closed'", examples=["open"])
     labels: list[str] = Field(..., description="Labels attached to this issue", examples=[["harmony"]])
     author: str = ""
+    # Collaborator assigned to resolve this issue; null when unassigned
+    assignee: str | None = Field(None, description="Display name of the assigned collaborator")
+    # Milestone this issue belongs to; null when not assigned to a milestone
+    milestone_id: str | None = Field(None, description="Milestone UUID; null when not assigned")
+    milestone_title: str | None = Field(None, description="Milestone title for display; null when not assigned")
     created_at: datetime = Field(..., description="Issue creation timestamp (ISO-8601 UTC)")
+    updated_at: datetime | None = Field(None, description="Last update timestamp (ISO-8601 UTC)")
+    comment_count: int = Field(0, description="Number of non-deleted comments on this issue")
 
 
 class IssueListResponse(CamelModel):
     """List of issues for a repo."""
 
     issues: list[IssueResponse]
+
+
+# ── Musical context reference models ──────────────────────────────────────────
+
+
+class MusicalRef(CamelModel):
+    """A parsed musical context reference extracted from a comment body.
+
+    Examples from user text:
+    - ``track:bass``      → type="track", value="bass"
+    - ``section:chorus``  → type="section", value="chorus"
+    - ``beats:16-24``     → type="beats", value="16-24"
+
+    These are parsed at write time and stored alongside the comment so that
+    the UI can render them as clickable links without re-parsing on every read.
+    """
+
+    type: str = Field(..., description="Reference type: 'track' | 'section' | 'beats'")
+    value: str = Field(..., description="The referenced value, e.g. 'bass', 'chorus', '16-24'")
+    raw: str = Field(..., description="Original raw token from the comment body, e.g. 'track:bass'")
+
+
+# ── Issue comment models ───────────────────────────────────────────────────────
+
+
+class IssueCommentCreate(CamelModel):
+    """Body for POST /musehub/repos/{repo_id}/issues/{number}/comments."""
+
+    body: str = Field(
+        ...,
+        min_length=1,
+        description="Comment body (Markdown). Use track:bass, section:chorus, beats:16-24 for musical refs.",
+        examples=["The bass in section:chorus beats:16-24 clashes with the chord progression."],
+    )
+    parent_id: str | None = Field(
+        None,
+        description="Parent comment UUID for threaded replies; omit for top-level comments",
+    )
+
+
+class IssueCommentResponse(CamelModel):
+    """Wire representation of a single issue comment."""
+
+    comment_id: str = Field(..., description="Internal UUID for this comment")
+    issue_id: str = Field(..., description="UUID of the issue this comment belongs to")
+    author: str = Field(..., description="Display name of the comment author")
+    body: str = Field(..., description="Comment body (Markdown)")
+    parent_id: str | None = Field(None, description="Parent comment UUID; null for top-level comments")
+    musical_refs: list[MusicalRef] = Field(
+        default_factory=list,
+        description="Parsed musical context references extracted from the comment body",
+    )
+    is_deleted: bool = Field(False, description="True when the comment has been soft-deleted")
+    created_at: datetime = Field(..., description="Comment creation timestamp (ISO-8601 UTC)")
+    updated_at: datetime = Field(..., description="Last edit timestamp (ISO-8601 UTC)")
+
+
+class IssueCommentListResponse(CamelModel):
+    """Threaded discussion on a single issue.
+
+    Comments are returned in chronological order (oldest first). Top-level
+    comments have ``parent_id=None``; replies reference their parent via
+    ``parent_id``. Clients build the thread tree client-side.
+    """
+
+    comments: list[IssueCommentResponse]
+    total: int
+
+
+# ── Milestone models ────────────────────────────────────────────────────────────
+
+
+class MilestoneCreate(CamelModel):
+    """Body for POST /musehub/repos/{repo_id}/milestones."""
+
+    title: str = Field(
+        ...,
+        min_length=1,
+        max_length=255,
+        description="Milestone title",
+        examples=["Album v1.0", "Mix Revision 2"],
+    )
+    description: str = Field(
+        "",
+        description="Milestone description (Markdown)",
+        examples=["All tracks balanced and mastered for the first release cut."],
+    )
+    due_on: datetime | None = Field(None, description="Optional due date (ISO-8601 UTC)")
+
+
+class MilestoneResponse(CamelModel):
+    """Wire representation of a Muse Hub milestone."""
+
+    milestone_id: str = Field(..., description="Internal UUID for this milestone")
+    number: int = Field(..., description="Per-repo sequential milestone number", examples=[1])
+    title: str = Field(..., description="Milestone title", examples=["Album v1.0"])
+    description: str = Field("", description="Milestone description (Markdown)")
+    state: str = Field(..., description="'open' or 'closed'", examples=["open"])
+    author: str = ""
+    due_on: datetime | None = Field(None, description="Optional due date; null when not set")
+    open_issues: int = Field(0, description="Number of open issues assigned to this milestone")
+    closed_issues: int = Field(0, description="Number of closed issues assigned to this milestone")
+    created_at: datetime = Field(..., description="Milestone creation timestamp (ISO-8601 UTC)")
+
+
+class MilestoneListResponse(CamelModel):
+    """List of milestones for a repo."""
+
+    milestones: list[MilestoneResponse]
+
+
+# ── Issue assignee models ─────────────────────────────────────────────────────
+
+
+class IssueAssignRequest(CamelModel):
+    """Body for POST /musehub/repos/{repo_id}/issues/{number}/assign."""
+
+    assignee: str | None = Field(
+        None,
+        description="Display name or user ID to assign; null to unassign",
+        examples=["miles_davis"],
+    )
 
 
 # ── Pull request models ────────────────────────────────────────────────────────
@@ -390,8 +530,61 @@ class PRMergeRequest(CamelModel):
 
     merge_strategy: str = Field(
         "merge_commit",
-        pattern="^(merge_commit)$",
-        description="Merge strategy -- only 'merge_commit' is supported at MVP",
+        pattern="^(merge_commit|squash|rebase)$",
+        description="Merge strategy: 'merge_commit' (default), 'squash', or 'rebase'",
+    )
+
+
+class PRDiffDimensionScore(CamelModel):
+    """Per-dimension musical change score between the from_branch and to_branch of a PR.
+
+    Used by agents to determine which musical dimensions changed most significantly
+    in a PR before deciding whether to approve or request changes.
+    Scores are Jaccard divergence in [0.0, 1.0]: 0 = identical, 1 = completely different.
+    """
+
+    dimension: str = Field(
+        ...,
+        description="Musical dimension: harmonic | rhythmic | melodic | structural | dynamic",
+        examples=["harmonic"],
+    )
+    score: float = Field(..., ge=0.0, le=1.0, description="Divergence magnitude [0.0, 1.0]")
+    level: str = Field(..., description="Human-readable level: NONE | LOW | MED | HIGH")
+    delta_label: str = Field(
+        ...,
+        description="Formatted delta label for diff badge, e.g. '+2.3' or 'unchanged'",
+    )
+    description: str = Field(..., description="Human-readable summary of what changed in this dimension")
+    from_branch_commits: int = Field(..., description="Commits in from_branch touching this dimension")
+    to_branch_commits: int = Field(..., description="Commits in to_branch touching this dimension")
+
+
+class PRDiffResponse(CamelModel):
+    """Musical diff between the from_branch and to_branch of a pull request.
+
+    Returned by ``GET /api/v1/musehub/repos/{repo_id}/pull-requests/{pr_id}/diff``.
+    Consumed by the PR detail page to render the radar chart, piano roll diff,
+    audio A/B toggle, and dimension badges.  Also consumed by AI agents to
+    reason about musical impact before merging.
+
+    ``overall_score`` is in [0.0, 1.0]; multiply by 100 for a percentage.
+    ``common_ancestor`` is the merge-base commit ID, or None if histories diverged.
+    """
+
+    pr_id: str = Field(..., description="The pull request being inspected")
+    repo_id: str = Field(..., description="The repository containing the PR")
+    from_branch: str = Field(..., description="Source branch name")
+    to_branch: str = Field(..., description="Target branch name")
+    dimensions: list[PRDiffDimensionScore] = Field(
+        ..., description="Per-dimension divergence scores (always five entries)"
+    )
+    overall_score: float = Field(..., ge=0.0, le=1.0, description="Mean of all five dimension scores")
+    common_ancestor: str | None = Field(
+        None, description="Merge-base commit ID; None if no common ancestor"
+    )
+    affected_sections: list[str] = Field(
+        default_factory=list,
+        description="List of section/track names that changed (derived from commit messages)",
     )
 
 
@@ -400,6 +593,105 @@ class PRMergeResponse(CamelModel):
 
     merged: bool = Field(..., description="True when the merge succeeded", examples=[True])
     merge_commit_id: str = Field(..., description="The new merge commit ID", examples=["c9d8e7f6a5b4"])
+
+
+# ── PR review comment models ───────────────────────────────────────────────────
+
+
+class PRCommentCreate(CamelModel):
+    """Body for POST /musehub/repos/{repo_id}/pull-requests/{pr_id}/comments.
+
+    ``target_type`` selects the granularity of the musical annotation:
+      - ``general``  — whole PR, no positional context
+      - ``track``    — a named instrument track (supply ``target_track``)
+      - ``region``   — beat range within a track (supply track + beat_start/end)
+      - ``note``     — single note event (supply track + beat_start + note_pitch)
+
+    ``body`` supports Markdown so reviewers can format code-fence chord charts,
+    lists of suggested edits, etc.
+    """
+
+    body: str = Field(
+        ...,
+        min_length=1,
+        description="Review comment body (Markdown)",
+        examples=["The bass line in beats 16-24 feels rhythmically stiff — try adding some swing."],
+    )
+    target_type: str = Field(
+        "general",
+        pattern="^(general|track|region|note)$",
+        description="Comment target granularity",
+        examples=["region"],
+    )
+    target_track: str | None = Field(
+        None,
+        max_length=255,
+        description="Instrument track name for track/region/note targets",
+        examples=["bass"],
+    )
+    target_beat_start: float | None = Field(
+        None,
+        ge=0,
+        description="First beat of the targeted region (inclusive)",
+        examples=[16.0],
+    )
+    target_beat_end: float | None = Field(
+        None,
+        ge=0,
+        description="Last beat of the targeted region (exclusive)",
+        examples=[24.0],
+    )
+    target_note_pitch: int | None = Field(
+        None,
+        ge=0,
+        le=127,
+        description="MIDI pitch (0-127) for note-level targets",
+        examples=[46],
+    )
+    parent_comment_id: str | None = Field(
+        None,
+        description="ID of the parent comment when creating a threaded reply",
+        examples=["a1b2c3d4-e5f6-7890-abcd-ef1234567890"],
+    )
+
+
+class PRCommentResponse(CamelModel):
+    """Wire representation of a single PR review comment."""
+
+    comment_id: str = Field(..., description="Internal UUID for this comment")
+    pr_id: str = Field(..., description="Pull request this comment belongs to")
+    author: str = Field(..., description="Display name / JWT sub of the comment author")
+    body: str = Field(..., description="Review body (Markdown)")
+    target_type: str = Field(..., description="'general', 'track', 'region', or 'note'")
+    target_track: str | None = Field(None, description="Instrument track name when targeted")
+    target_beat_start: float | None = Field(None, description="Region start beat (inclusive)")
+    target_beat_end: float | None = Field(None, description="Region end beat (exclusive)")
+    target_note_pitch: int | None = Field(None, description="MIDI pitch for note-level targets")
+    parent_comment_id: str | None = Field(None, description="Parent comment ID for threaded replies")
+    created_at: datetime = Field(..., description="Comment creation timestamp (ISO-8601 UTC)")
+    replies: list[PRCommentResponse] = Field(
+        default_factory=list,
+        description="Nested replies to this comment (only populated on top-level comments)",
+    )
+
+
+class PRCommentListResponse(CamelModel):
+    """Threaded list of review comments for a PR.
+
+    ``comments`` contains only top-level comments; each carries a ``replies``
+    list with its direct children, sorted chronologically.  This two-level
+    structure covers all current threading requirements without recursive fetches.
+    """
+
+    comments: list[PRCommentResponse] = Field(
+        default_factory=list,
+        description="Top-level review comments with nested replies",
+    )
+    total: int = Field(0, ge=0, description="Total number of comments (all levels)")
+
+
+# Rebuild the model to resolve the forward reference in PRCommentResponse.replies
+PRCommentResponse.model_rebuild()
 
 
 # ── Release models ────────────────────────────────────────────────────────────
@@ -1215,6 +1507,42 @@ class SessionListResponse(CamelModel):
     total: int
 
 
+class ActivityEventResponse(CamelModel):
+    """Wire representation of a single repo-level activity event.
+
+    ``event_type`` is one of:
+      "commit_pushed" | "pr_opened" | "pr_merged" | "pr_closed" |
+      "issue_opened" | "issue_closed" | "branch_created" | "branch_deleted" |
+      "tag_pushed" | "session_started" | "session_ended"
+
+    ``metadata`` carries event-specific structured data for deep-link rendering
+    (e.g. ``{"sha": "abc123", "message": "Add groove baseline"}`` for commit_pushed).
+    """
+
+    event_id: str
+    repo_id: str
+    event_type: str
+    actor: str
+    description: str
+    metadata: dict[str, object] = Field(default_factory=dict)
+    created_at: datetime
+
+
+class ActivityFeedResponse(CamelModel):
+    """Paginated activity event feed for a repo (newest-first).
+
+    ``page`` and ``page_size`` echo the request parameters.
+    ``total`` is the total number of events matching the filter (ignoring pagination).
+    ``event_type_filter`` is the active filter value, or None when showing all types.
+    """
+
+    events: list[ActivityEventResponse]
+    total: int
+    page: int
+    page_size: int
+    event_type_filter: str | None = None
+
+
 class SimilarCommitResponse(CamelModel):
     """A single result from a MuseHub semantic similarity search.
 
@@ -1567,6 +1895,73 @@ class CompareResponse(CamelModel):
         ..., description="URL to create a pull request from this comparison"
     )
 
+
+
+# ── Star / Fork models ─────────────────────────────────────────────────────
+
+
+class StargazerEntry(CamelModel):
+    """A single user who has starred a repo.
+
+    Returned as items in ``StargazerListResponse``.  ``user_id`` is the JWT
+    ``sub`` of the starring user; ``starred_at`` is when the star was created.
+    """
+
+    user_id: str = Field(..., description="User ID (JWT sub) of the starring user")
+    starred_at: datetime = Field(..., description="Timestamp when the star was created (ISO-8601 UTC)")
+
+
+class StargazerListResponse(CamelModel):
+    """Paginated list of users who have starred a repo.
+
+    Returned by ``GET /api/v1/musehub/repos/{repo_id}/stargazers``.
+    ``total`` is the full count, not just the current page, so clients can
+    display "N stargazers" without a second query.
+    """
+
+    stargazers: list[StargazerEntry] = Field(..., description="Users who starred this repo")
+    total: int = Field(..., description="Total number of stargazers")
+
+
+class ForkEntry(CamelModel):
+    """A single fork of a repo.
+
+    Carries both the fork's repo metadata and the lineage link back to the
+    source repo.  Returned as items in ``ForkListResponse``.
+    """
+
+    fork_id: str = Field(..., description="Internal UUID of the fork relationship record")
+    fork_repo_id: str = Field(..., description="Repo ID of the forked repo")
+    source_repo_id: str = Field(..., description="Repo ID of the source (original) repo")
+    forked_by: str = Field(..., description="User ID who created the fork")
+    fork_owner: str = Field(..., description="Owner username of the fork repo")
+    fork_slug: str = Field(..., description="Slug of the fork repo")
+    created_at: datetime = Field(..., description="Timestamp when the fork was created (ISO-8601 UTC)")
+
+
+class ForkListResponse(CamelModel):
+    """Paginated list of forks of a repo.
+
+    Returned by ``GET /api/v1/musehub/repos/{repo_id}/forks``.
+    """
+
+    forks: list[ForkEntry] = Field(..., description="Forks of this repo")
+    total: int = Field(..., description="Total number of forks")
+
+
+class ForkCreateResponse(CamelModel):
+    """Confirmation that a fork was created.
+
+    Returned by ``POST /api/v1/musehub/repos/{repo_id}/fork``.
+    ``fork_repo`` is the newly created repo under the authenticated user's
+    namespace.  ``source_repo_id`` is the original repo's ID for lineage
+    display on the fork's home page.
+    """
+
+    fork_repo: RepoResponse = Field(..., description="Newly created fork repo metadata")
+    source_repo_id: str = Field(..., description="ID of the original source repo")
+    source_owner: str = Field(..., description="Owner username of the source repo")
+    source_slug: str = Field(..., description="Slug of the source repo")
 
 
 # ── Render pipeline ────────────────────────────────────────────────────────
