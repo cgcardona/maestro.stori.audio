@@ -1,0 +1,156 @@
+/*
+ * Muse Hub Design Tokens
+ *
+ * CSS custom properties that form the foundation of the Muse Hub design system.
+ * All component classes consume these tokens — do not hardcode hex values in
+ * components.css, layout.css, or music.css.  Changing a token here cascades
+ * the change across every page automatically.
+ *
+ * Dark theme is the default (and currently the only supported theme).
+ * Future light-theme support: add a [data-theme="light"] selector block that
+ * overrides the --color-* tokens defined here.
+ */
+
+:root {
+  /* -------------------------------------------------------------------------
+   * Surface / background hierarchy (darkest → lightest)
+   * --bg-base       deepest background — page backdrop
+   * --bg-surface    primary card / panel surface
+   * --bg-overlay    elevated / nested surface (artifact cards, code blocks)
+   * --bg-hover      interactive hover state
+   * ------------------------------------------------------------------------- */
+  --bg-base:    #0d1117;
+  --bg-surface: #161b22;
+  --bg-overlay: #21262d;
+  --bg-hover:   #30363d;
+
+  /* -------------------------------------------------------------------------
+   * Border
+   * ------------------------------------------------------------------------- */
+  --border-subtle:  #21262d;
+  --border-default: #30363d;
+  --border-muted:   #484f58;
+
+  /* -------------------------------------------------------------------------
+   * Text
+   * ------------------------------------------------------------------------- */
+  --text-primary:   #e6edf3;
+  --text-secondary: #c9d1d9;
+  --text-muted:     #8b949e;
+  --text-disabled:  #484f58;
+
+  /* -------------------------------------------------------------------------
+   * Accent / brand
+   * ------------------------------------------------------------------------- */
+  --color-accent:       #58a6ff;   /* links, focus rings */
+  --color-accent-muted: #1f6feb;   /* badge backgrounds */
+  --color-success:      #3fb950;
+  --color-success-bg:   #238636;
+  --color-warning:      #d29922;
+  --color-warning-bg:   #9e6a03;
+  --color-danger:       #f85149;
+  --color-danger-bg:    #b91c1c;
+  --color-neutral:      #8b949e;
+  --color-purple:       #bc8cff;
+  --color-purple-bg:    #6e40c9;
+  --color-orange:       #f0883e;
+
+  /* -------------------------------------------------------------------------
+   * Musical dimension colors
+   * Used in piano rolls, radar charts, analysis pages, and diff views.
+   * Each dimension has a primary color and a muted/background variant.
+   * ------------------------------------------------------------------------- */
+  --dim-harmonic:        #388bfd;  /* blue  — chord progressions, intervals */
+  --dim-harmonic-muted:  #1f4a8a;
+  --dim-rhythmic:        #3fb950;  /* green — time, meter, swing */
+  --dim-rhythmic-muted:  #1a5c2a;
+  --dim-melodic:         #bc8cff;  /* purple — pitch contour, motifs */
+  --dim-melodic-muted:   #5a3e8a;
+  --dim-structural:      #f0883e;  /* orange — form, sections, repeats */
+  --dim-structural-muted:#7a3e10;
+  --dim-dynamic:         #f85149;  /* red    — velocity, loudness arcs */
+  --dim-dynamic-muted:   #7a1a18;
+
+  /* -------------------------------------------------------------------------
+   * Track colors — 8 distinct palette for multi-track views
+   * (piano roll lanes, arrangement matrix, contributor graphs)
+   * ------------------------------------------------------------------------- */
+  --track-0: #388bfd;
+  --track-1: #3fb950;
+  --track-2: #f0883e;
+  --track-3: #bc8cff;
+  --track-4: #f85149;
+  --track-5: #d29922;
+  --track-6: #39d353;
+  --track-7: #58a6ff;
+
+  /* -------------------------------------------------------------------------
+   * Spacing scale (4-point grid)
+   * ------------------------------------------------------------------------- */
+  --space-1:  4px;
+  --space-2:  8px;
+  --space-3:  12px;
+  --space-4:  16px;
+  --space-5:  20px;
+  --space-6:  24px;
+  --space-8:  32px;
+  --space-10: 40px;
+  --space-12: 48px;
+
+  /* -------------------------------------------------------------------------
+   * Typography
+   * ------------------------------------------------------------------------- */
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+  --font-mono: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+
+  --font-size-xs:   11px;
+  --font-size-sm:   12px;
+  --font-size-base: 14px;
+  --font-size-md:   16px;
+  --font-size-lg:   18px;
+  --font-size-xl:   20px;
+  --font-size-2xl:  24px;
+
+  --font-weight-regular: 400;
+  --font-weight-medium:  500;
+  --font-weight-semibold:600;
+  --font-weight-bold:    700;
+
+  --line-height-tight:  1.25;
+  --line-height-normal: 1.5;
+  --line-height-relaxed:1.75;
+
+  /* -------------------------------------------------------------------------
+   * Border-radius scale
+   * ------------------------------------------------------------------------- */
+  --radius-sm:   4px;
+  --radius-base: 6px;
+  --radius-md:   8px;
+  --radius-lg:   12px;
+  --radius-full: 9999px;
+
+  /* -------------------------------------------------------------------------
+   * Shadows
+   * ------------------------------------------------------------------------- */
+  --shadow-sm:  0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-md:  0 4px 8px rgba(0, 0, 0, 0.5);
+  --shadow-lg:  0 8px 24px rgba(0, 0, 0, 0.6);
+  --shadow-xl:  0 16px 48px rgba(0, 0, 0, 0.7);
+
+  /* -------------------------------------------------------------------------
+   * Animation / transition
+   * ------------------------------------------------------------------------- */
+  --transition-fast:   0.1s ease;
+  --transition-base:   0.15s ease;
+  --transition-slow:   0.25s ease;
+
+  /* -------------------------------------------------------------------------
+   * Z-index ladder
+   * ------------------------------------------------------------------------- */
+  --z-base:    0;
+  --z-raised:  10;
+  --z-overlay: 100;
+  --z-modal:   200;
+  --z-toast:   300;
+  --z-tooltip: 400;
+}

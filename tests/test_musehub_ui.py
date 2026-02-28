@@ -1481,3 +1481,197 @@ async def test_ui_unknown_owner_slug_returns_404(
     """GET /musehub/ui/{unknown-owner}/{unknown-slug} must return 404."""
     response = await client.get("/musehub/ui/nobody/nonexistent-repo")
     assert response.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# Issue #199 — Design System Tests
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.anyio
+async def test_design_tokens_css_served(client: AsyncClient) -> None:
+    """GET /musehub/static/tokens.css must return 200 with CSS content-type.
+
+    Verifies the design token file is reachable at its canonical static path.
+    If this fails, every MuseHub page will render unstyled because the CSS
+    custom properties (--bg-base, --color-accent, etc.) will be missing.
+    """
+    response = await client.get("/musehub/static/tokens.css")
+    assert response.status_code == 200
+    assert "text/css" in response.headers.get("content-type", "")
+    body = response.text
+    assert "--bg-base" in body
+    assert "--color-accent" in body
+    assert "--dim-harmonic" in body
+
+
+@pytest.mark.anyio
+async def test_components_css_served(client: AsyncClient) -> None:
+    """GET /musehub/static/components.css must return 200 with CSS content.
+
+    Verifies the component class file is reachable.  These classes (.card,
+    .badge, .btn, etc.) are used on every MuseHub page.
+    """
+    response = await client.get("/musehub/static/components.css")
+    assert response.status_code == 200
+    assert "text/css" in response.headers.get("content-type", "")
+    body = response.text
+    assert ".badge" in body
+    assert ".btn" in body
+    assert ".card" in body
+
+
+@pytest.mark.anyio
+async def test_layout_css_served(client: AsyncClient) -> None:
+    """GET /musehub/static/layout.css must return 200."""
+    response = await client.get("/musehub/static/layout.css")
+    assert response.status_code == 200
+    assert "text/css" in response.headers.get("content-type", "")
+    assert ".container" in response.text
+
+
+@pytest.mark.anyio
+async def test_icons_css_served(client: AsyncClient) -> None:
+    """GET /musehub/static/icons.css must return 200."""
+    response = await client.get("/musehub/static/icons.css")
+    assert response.status_code == 200
+    assert "text/css" in response.headers.get("content-type", "")
+    assert ".icon-mid" in response.text
+
+
+@pytest.mark.anyio
+async def test_music_css_served(client: AsyncClient) -> None:
+    """GET /musehub/static/music.css must return 200."""
+    response = await client.get("/musehub/static/music.css")
+    assert response.status_code == 200
+    assert "text/css" in response.headers.get("content-type", "")
+    assert ".piano-roll" in response.text
+
+
+@pytest.mark.anyio
+async def test_repo_page_uses_design_system(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Repo page HTML must reference all five design system CSS files.
+
+    This is the regression guard for the monolithic _CSS removal.  If the
+    _page() helper ever reverts to embedding CSS inline, this test will
+    catch it by asserting the external link tags are present.
+    """
+    await _make_repo(db_session)
+    response = await client.get("/musehub/ui/testuser/test-beats")
+    assert response.status_code == 200
+    body = response.text
+    assert "/musehub/static/tokens.css" in body
+    assert "/musehub/static/components.css" in body
+    assert "/musehub/static/layout.css" in body
+    assert "/musehub/static/icons.css" in body
+    assert "/musehub/static/music.css" in body
+
+
+@pytest.mark.anyio
+async def test_responsive_meta_tag_present_repo_page(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Repo page must include a viewport meta tag for mobile responsiveness."""
+    await _make_repo(db_session)
+    response = await client.get("/musehub/ui/testuser/test-beats")
+    assert response.status_code == 200
+    assert 'name="viewport"' in response.text
+
+
+@pytest.mark.anyio
+async def test_responsive_meta_tag_present_pr_page(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """PR list page must include a viewport meta tag for mobile responsiveness."""
+    await _make_repo(db_session)
+    response = await client.get("/musehub/ui/testuser/test-beats/pulls")
+    assert response.status_code == 200
+    assert 'name="viewport"' in response.text
+
+
+@pytest.mark.anyio
+async def test_responsive_meta_tag_present_issues_page(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Issues page must include a viewport meta tag for mobile responsiveness."""
+    await _make_repo(db_session)
+    response = await client.get("/musehub/ui/testuser/test-beats/issues")
+    assert response.status_code == 200
+    assert 'name="viewport"' in response.text
+
+
+@pytest.mark.anyio
+async def test_design_tokens_css_contains_dimension_colors(
+    client: AsyncClient,
+) -> None:
+    """tokens.css must define all five musical dimension color tokens.
+
+    These tokens are used in piano rolls, radar charts, and diff heatmaps.
+    Missing tokens would break analysis page visualisations silently.
+    """
+    response = await client.get("/musehub/static/tokens.css")
+    assert response.status_code == 200
+    body = response.text
+    for dim in ("harmonic", "rhythmic", "melodic", "structural", "dynamic"):
+        assert f"--dim-{dim}:" in body, f"Missing dimension token --dim-{dim}"
+
+
+@pytest.mark.anyio
+async def test_design_tokens_css_contains_track_colors(
+    client: AsyncClient,
+) -> None:
+    """tokens.css must define all 8 track color tokens (--track-0 through --track-7)."""
+    response = await client.get("/musehub/static/tokens.css")
+    assert response.status_code == 200
+    body = response.text
+    for i in range(8):
+        assert f"--track-{i}:" in body, f"Missing track color token --track-{i}"
+
+
+@pytest.mark.anyio
+async def test_badge_variants_in_components_css(client: AsyncClient) -> None:
+    """components.css must define all required badge variants including .badge-clean and .badge-dirty."""
+    response = await client.get("/musehub/static/components.css")
+    assert response.status_code == 200
+    body = response.text
+    for variant in ("open", "closed", "merged", "active", "clean", "dirty"):
+        assert f".badge-{variant}" in body, f"Missing badge variant .badge-{variant}"
+
+
+@pytest.mark.anyio
+async def test_file_type_icons_in_icons_css(client: AsyncClient) -> None:
+    """icons.css must define icon classes for all required file types."""
+    response = await client.get("/musehub/static/icons.css")
+    assert response.status_code == 200
+    body = response.text
+    for ext in ("mid", "mp3", "wav", "json", "webp", "xml", "abc"):
+        assert f".icon-{ext}" in body, f"Missing file-type icon .icon-{ext}"
+
+
+@pytest.mark.anyio
+async def test_no_inline_css_on_repo_page(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Repo page must NOT embed the old monolithic CSS string inline.
+
+    Regression test: verifies the _CSS removal was not accidentally reverted.
+    The old _CSS block contained the literal string 'background: #0d1117'
+    inside a <style> tag in the <head>.  After the design system migration,
+    all styling comes from external files.
+    """
+    await _make_repo(db_session)
+    response = await client.get("/musehub/ui/testuser/test-beats")
+    body = response.text
+    # Find the <head> section — inline CSS should not appear there
+    head_end = body.find("</head>")
+    head_section = body[:head_end] if head_end != -1 else body
+    # The old monolithic block started with "box-sizing: border-box"
+    # If it appears inside <head>, the migration has been reverted.
+    assert "box-sizing: border-box; margin: 0; padding: 0;" not in head_section

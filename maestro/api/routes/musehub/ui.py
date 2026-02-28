@@ -52,110 +52,6 @@ fixed_router = APIRouter(prefix="/musehub/ui", tags=["musehub-ui"])
 # Shared HTML scaffolding
 # ---------------------------------------------------------------------------
 
-_CSS = """
-* { box-sizing: border-box; margin: 0; padding: 0; }
-body {
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-  background: #0d1117; color: #c9d1d9; min-height: 100vh;
-  line-height: 1.6;
-}
-a { color: #58a6ff; text-decoration: none; }
-a:hover { text-decoration: underline; }
-header {
-  background: #161b22; border-bottom: 1px solid #30363d;
-  padding: 12px 24px; display: flex; align-items: center; gap: 16px;
-}
-header .logo { font-size: 18px; font-weight: 700; color: #e6edf3; }
-header .breadcrumb { color: #8b949e; font-size: 14px; }
-header .breadcrumb a { color: #58a6ff; }
-.container { max-width: 960px; margin: 24px auto; padding: 0 24px; }
-.card {
-  background: #161b22; border: 1px solid #30363d; border-radius: 6px;
-  padding: 16px; margin-bottom: 16px;
-}
-h1 { font-size: 20px; color: #e6edf3; margin-bottom: 12px; }
-h2 { font-size: 16px; color: #e6edf3; margin-bottom: 8px; }
-.badge {
-  display: inline-block; padding: 2px 8px; border-radius: 12px;
-  font-size: 12px; font-weight: 600;
-}
-.badge-open { background: #1f6feb; color: #e6edf3; }
-.badge-closed { background: #8b949e; color: #e6edf3; }
-.badge-merged { background: #6e40c9; color: #e6edf3; }
-.badge-active { background: #238636; color: #e6edf3; }
-.session-row {
-  border-bottom: 1px solid #21262d; padding: 12px 0;
-  display: flex; align-items: flex-start; gap: 12px;
-}
-.session-row:last-child { border-bottom: none; }
-.session-live {
-  display: inline-block; width: 8px; height: 8px; border-radius: 50%;
-  background: #3fb950; box-shadow: 0 0 6px #3fb950; margin-right: 4px;
-  vertical-align: middle;
-}
-.commit-row {
-  border-bottom: 1px solid #21262d; padding: 10px 0;
-  display: flex; align-items: flex-start; gap: 12px;
-}
-.commit-row:last-child { border-bottom: none; }
-.commit-sha {
-  font-family: monospace; font-size: 13px; color: #58a6ff;
-  white-space: nowrap;
-}
-.commit-msg { flex: 1; font-size: 14px; }
-.commit-meta { font-size: 12px; color: #8b949e; white-space: nowrap; }
-.artifact-grid {
-  display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-  gap: 12px; margin-top: 12px;
-}
-.artifact-card {
-  background: #21262d; border: 1px solid #30363d; border-radius: 6px;
-  padding: 10px; display: flex; flex-direction: column; gap: 8px;
-}
-.artifact-card img { width: 100%; border-radius: 4px; border: 1px solid #30363d; }
-.artifact-card audio { width: 100%; }
-.artifact-card .path { font-size: 12px; color: #8b949e; word-break: break-all; }
-.btn {
-  display: inline-block; padding: 6px 16px; border-radius: 6px;
-  font-size: 14px; font-weight: 500; cursor: pointer; border: none;
-  transition: opacity 0.15s;
-}
-.btn:hover { opacity: 0.8; }
-.btn-primary { background: #238636; color: #fff; }
-.btn-danger { background: #b91c1c; color: #fff; }
-.btn-secondary { background: #21262d; color: #c9d1d9; border: 1px solid #30363d; }
-select {
-  background: #21262d; color: #c9d1d9; border: 1px solid #30363d;
-  border-radius: 6px; padding: 6px 10px; font-size: 14px;
-}
-.token-form {
-  background: #161b22; border: 1px solid #f0883e; border-radius: 6px;
-  padding: 16px; margin-bottom: 20px;
-}
-.token-form p { font-size: 14px; color: #8b949e; margin-bottom: 8px; }
-.token-form input {
-  width: 100%; background: #0d1117; color: #c9d1d9;
-  border: 1px solid #30363d; border-radius: 6px; padding: 8px;
-  font-size: 13px; margin-bottom: 8px;
-}
-.loading { color: #8b949e; font-size: 14px; }
-.error { color: #f85149; font-size: 14px; margin: 8px 0; }
-.pr-row, .issue-row {
-  border-bottom: 1px solid #21262d; padding: 12px 0;
-  display: flex; align-items: flex-start; gap: 12px;
-}
-.pr-row:last-child, .issue-row:last-child { border-bottom: none; }
-.label {
-  display: inline-block; padding: 1px 8px; border-radius: 12px;
-  font-size: 12px; background: #30363d; color: #c9d1d9; margin: 2px;
-}
-.meta-row { display: flex; gap: 24px; flex-wrap: wrap; margin-bottom: 12px; }
-.meta-item { display: flex; flex-direction: column; gap: 2px; }
-.meta-label { font-size: 11px; color: #8b949e; text-transform: uppercase; letter-spacing: 0.5px; }
-.meta-value { font-size: 14px; color: #e6edf3; }
-pre { background: #0d1117; border: 1px solid #30363d; border-radius: 6px; padding: 12px;
-      font-size: 13px; overflow-x: auto; white-space: pre-wrap; word-break: break-word; }
-"""
 
 _TOKEN_SCRIPT = """
 const API = '/api/v1/musehub';
@@ -214,21 +110,36 @@ function shortSha(sha) { return sha ? sha.substring(0, 8) : '--'; }
 """
 
 
+_DESIGN_SYSTEM_CSS_LINKS = """
+  <link rel="stylesheet" href="/musehub/static/tokens.css">
+  <link rel="stylesheet" href="/musehub/static/components.css">
+  <link rel="stylesheet" href="/musehub/static/layout.css">
+  <link rel="stylesheet" href="/musehub/static/icons.css">
+  <link rel="stylesheet" href="/musehub/static/music.css">"""
+
+
 def _page(title: str, breadcrumb: str, body_script: str, extra_css: str = "") -> str:
-    """Assemble a complete Muse Hub HTML page with shared chrome."""
+    """Assemble a complete Muse Hub HTML page with shared chrome.
+
+    Loads the design system CSS from external files served at /musehub/static/
+    so that all pages share a single consistent visual language without
+    duplicating a monolithic CSS string in every response body.
+    ``extra_css`` accepts page-specific style overrides injected inline.
+    """
+    inline_style = f"<style>{extra_css}</style>" if extra_css else ""
     return f"""<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1">{_DESIGN_SYSTEM_CSS_LINKS}
   <title>{title} -- Muse Hub</title>
-  <style>{_CSS}</style>
+  {inline_style}
 </head>
 <body>
   <header>
     <span class="logo">&#127925; Muse Hub</span>
     <span class="breadcrumb">{breadcrumb}</span>
-    <span style="flex:1"></span>
+    <span class="spacer"></span>
     <button class="btn btn-secondary" style="font-size:12px"
             onclick="clearToken();location.reload()">Sign out</button>
   </header>
@@ -2138,50 +2049,6 @@ async def search_page(owner: str, repo_slug: str, db: AsyncSession = Depends(get
     return HTMLResponse(content=html)
 
 
-_PROFILE_CSS = """
-.profile-header {
-  display: flex; align-items: flex-start; gap: 24px; margin-bottom: 24px;
-}
-.avatar {
-  width: 80px; height: 80px; border-radius: 50%;
-  background: #21262d; border: 2px solid #30363d;
-  display: flex; align-items: center; justify-content: center;
-  font-size: 32px; flex-shrink: 0;
-}
-.avatar img { width: 100%; height: 100%; border-radius: 50%; object-fit: cover; }
-.profile-meta { flex: 1; }
-.profile-meta h1 { font-size: 22px; color: #e6edf3; margin-bottom: 4px; }
-.bio { font-size: 14px; color: #8b949e; margin-bottom: 12px; }
-.contrib-graph {
-  display: flex; gap: 2px; flex-wrap: wrap; overflow-x: auto;
-}
-.contrib-week { display: flex; flex-direction: column; gap: 2px; }
-.contrib-day {
-  width: 10px; height: 10px; border-radius: 2px; background: #161b22;
-  border: 1px solid #30363d;
-}
-.contrib-day[data-count="0"] { background: #161b22; }
-.contrib-day[data-count="1"] { background: #0e4429; border-color: #0e4429; }
-.contrib-day[data-count="2"] { background: #006d32; border-color: #006d32; }
-.contrib-day[data-count="3"] { background: #26a641; border-color: #26a641; }
-.contrib-day[data-count="4"] { background: #39d353; border-color: #39d353; }
-.repo-grid {
-  display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  gap: 12px;
-}
-.repo-card {
-  background: #161b22; border: 1px solid #30363d; border-radius: 6px;
-  padding: 14px; display: flex; flex-direction: column; gap: 6px;
-}
-.repo-card h3 { font-size: 15px; margin: 0; }
-.repo-card .repo-meta { font-size: 12px; color: #8b949e; }
-.credits-badge {
-  display: inline-flex; align-items: center; gap: 8px;
-  background: #1f6feb22; border: 1px solid #1f6feb; border-radius: 6px;
-  padding: 8px 14px; font-size: 14px;
-}
-.credits-badge .num { font-size: 22px; font-weight: 700; color: #58a6ff; }
-"""
 
 
 _TIMELINE_CSS = """
@@ -2370,7 +2237,6 @@ async def profile_page(username: str) -> HTMLResponse:
         title=f"@{username}",
         breadcrumb=f'<a href="/musehub/ui/users/{username}">@{username}</a>',
         body_script=script,
-        extra_css=_PROFILE_CSS,
     )
     return HTMLResponse(content=html)
 
@@ -2747,14 +2613,13 @@ def _explore_page_html(title: str, breadcrumb: str, default_sort: str) -> str:
     a JWT stored in localStorage but are optional (unauthenticated visitors can
     browse without starring).
     """
-    css = _CSS + _EXPLORE_CSS_EXTRA
     return f"""<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1">{_DESIGN_SYSTEM_CSS_LINKS}
   <title>{title} -- Muse Hub</title>
-  <style>{css}</style>
+  <style>{_EXPLORE_CSS_EXTRA}</style>
 </head>
 <body>
   <header>
@@ -3198,22 +3063,21 @@ async def timeline_page(owner: str, repo_slug: str, db: AsyncSession = Depends(g
 
       load();
     """
-    css_with_timeline = _CSS + _TIMELINE_CSS
     title = f"Timeline -- {repo_id[:8]}"
     breadcrumb = f'<a href="/musehub/ui/{owner}/{repo_slug}">{owner}/{repo_slug}</a> / timeline'
     html = f"""<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1">{_DESIGN_SYSTEM_CSS_LINKS}
   <title>{title} -- Muse Hub</title>
-  <style>{css_with_timeline}</style>
+  <style>{_TIMELINE_CSS}</style>
 </head>
 <body>
   <header>
     <span class="logo">&#127925; Muse Hub</span>
     <span class="breadcrumb">{breadcrumb}</span>
-    <span style="flex:1"></span>
+    <span class="spacer"></span>
     <button class="btn btn-secondary" style="font-size:12px"
             onclick="clearToken();location.reload()">Sign out</button>
   </header>
@@ -3243,74 +3107,6 @@ async def timeline_page(owner: str, repo_slug: str, db: AsyncSession = Depends(g
 # ---------------------------------------------------------------------------
 # Embed CSS (compact dark theme, no chrome)
 # ---------------------------------------------------------------------------
-
-_EMBED_CSS = """
-* { box-sizing: border-box; margin: 0; padding: 0; }
-body {
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-  background: #0d1117; color: #c9d1d9;
-  height: 100vh; display: flex; align-items: center; justify-content: center;
-}
-.player {
-  width: 100%; max-width: 100%; padding: 16px 20px;
-  background: #161b22; border: 1px solid #30363d; border-radius: 8px;
-  display: flex; flex-direction: column; gap: 12px;
-}
-.player-header {
-  display: flex; align-items: center; gap: 12px;
-}
-.logo-mark {
-  font-size: 20px; flex-shrink: 0;
-}
-.track-info { flex: 1; overflow: hidden; }
-.track-title {
-  font-size: 14px; font-weight: 600; color: #e6edf3;
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-}
-.track-sub {
-  font-size: 11px; color: #8b949e; margin-top: 2px;
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-}
-.controls {
-  display: flex; align-items: center; gap: 10px;
-}
-.play-btn {
-  width: 36px; height: 36px; border-radius: 50%;
-  background: #238636; border: none; cursor: pointer;
-  display: flex; align-items: center; justify-content: center;
-  flex-shrink: 0; font-size: 14px; color: #fff;
-  transition: background 0.15s;
-}
-.play-btn:hover { background: #2ea043; }
-.play-btn:disabled { background: #30363d; cursor: not-allowed; }
-.progress-wrap {
-  flex: 1; display: flex; flex-direction: column; gap: 4px;
-}
-.progress-bar {
-  width: 100%; height: 4px; background: #30363d; border-radius: 2px;
-  cursor: pointer; position: relative; overflow: hidden;
-}
-.progress-fill {
-  height: 100%; width: 0%; background: #58a6ff;
-  border-radius: 2px; transition: width 0.1s linear;
-  pointer-events: none;
-}
-.time-row {
-  display: flex; justify-content: space-between;
-  font-size: 11px; color: #8b949e;
-}
-.footer-link {
-  display: flex; justify-content: flex-end; align-items: center;
-}
-.footer-link a {
-  font-size: 11px; color: #58a6ff; text-decoration: none;
-  display: flex; align-items: center; gap: 4px;
-}
-.footer-link a:hover { text-decoration: underline; }
-.status { font-size: 12px; color: #8b949e; text-align: center; padding: 8px 0; }
-.status.error { color: #f85149; }
-"""
-
 
 @router.get(
     "/{owner}/{repo_slug}/releases",

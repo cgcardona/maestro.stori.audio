@@ -1,0 +1,607 @@
+/*
+ * Muse Hub Component Classes
+ *
+ * Reusable UI components built on top of the design tokens in tokens.css.
+ * Every selector here uses var(--*) tokens exclusively — no hardcoded colors.
+ *
+ * Component inventory:
+ *   Base reset, body
+ *   Links
+ *   Badges            (.badge, .badge-open/closed/merged/clean/dirty/active)
+ *   Buttons           (.btn, .btn-primary/danger/secondary/ghost)
+ *   Cards             (.card, .artifact-card)
+ *   Tables            (.table)
+ *   Forms             (.form-group, .form-label, .form-input, .form-select, .form-hint)
+ *   Token form        (.token-form)
+ *   Grids             (.grid-auto, .grid-2, .grid-3, .artifact-grid)
+ *   Modals            (.modal, .modal-backdrop, .modal-panel, .modal-header, .modal-footer)
+ *   Tabs              (.tabs, .tab-list, .tab, .tab-panel)
+ *   Tooltips          (.tooltip, [data-tooltip])
+ *   Rows              (.commit-row, .pr-row, .issue-row, .session-row)
+ *   Meta rows         (.meta-row, .meta-item, .meta-label, .meta-value)
+ *   Misc utilities    (.loading, .error, .empty-state, .session-live)
+ *   Code blocks       (pre, code)
+ *   Labels            (.label, .label-*)
+ */
+
+/* -------------------------------------------------------------------------
+ * Base reset
+ * ------------------------------------------------------------------------- */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  font-family: var(--font-sans);
+  font-size: var(--font-size-base);
+  line-height: var(--line-height-normal);
+  background-color: var(--bg-base);
+  color: var(--text-secondary);
+  min-height: 100vh;
+}
+
+/* -------------------------------------------------------------------------
+ * Links
+ * ------------------------------------------------------------------------- */
+a {
+  color: var(--color-accent);
+  text-decoration: none;
+}
+
+a:hover {
+  text-decoration: underline;
+}
+
+/* -------------------------------------------------------------------------
+ * Headings
+ * ------------------------------------------------------------------------- */
+h1 {
+  font-size: var(--font-size-xl);
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-primary);
+  margin-bottom: var(--space-3);
+}
+
+h2 {
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-primary);
+  margin-bottom: var(--space-2);
+}
+
+h3 {
+  font-size: var(--font-size-base);
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-primary);
+  margin-bottom: var(--space-1);
+}
+
+/* -------------------------------------------------------------------------
+ * Badges
+ * ------------------------------------------------------------------------- */
+.badge {
+  display: inline-block;
+  padding: 2px var(--space-2);
+  border-radius: var(--radius-full);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  line-height: var(--line-height-tight);
+  white-space: nowrap;
+}
+
+.badge-open    { background: var(--color-accent-muted);  color: var(--text-primary); }
+.badge-closed  { background: var(--color-neutral);       color: var(--text-primary); }
+.badge-merged  { background: var(--color-purple-bg);     color: var(--text-primary); }
+.badge-active  { background: var(--color-success-bg);    color: var(--text-primary); }
+.badge-clean   { background: var(--color-success-bg);    color: var(--text-primary); }
+.badge-dirty   { background: var(--color-warning-bg);    color: var(--text-primary); }
+.badge-error   { background: var(--color-danger-bg);     color: var(--text-primary); }
+.badge-dim-harmonic  { background: var(--dim-harmonic-muted);  color: var(--text-primary); }
+.badge-dim-rhythmic  { background: var(--dim-rhythmic-muted);  color: var(--text-primary); }
+.badge-dim-melodic   { background: var(--dim-melodic-muted);   color: var(--text-primary); }
+.badge-dim-structural{ background: var(--dim-structural-muted);color: var(--text-primary); }
+.badge-dim-dynamic   { background: var(--dim-dynamic-muted);   color: var(--text-primary); }
+
+/* -------------------------------------------------------------------------
+ * Buttons
+ * ------------------------------------------------------------------------- */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 6px var(--space-4);
+  border-radius: var(--radius-base);
+  font-family: var(--font-sans);
+  font-size: var(--font-size-base);
+  font-weight: var(--font-weight-medium);
+  line-height: var(--line-height-tight);
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: opacity var(--transition-base), background var(--transition-base);
+  text-decoration: none;
+  white-space: nowrap;
+  user-select: none;
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn:not(:disabled):hover {
+  opacity: 0.85;
+}
+
+.btn-primary   { background: var(--color-success-bg); color: #fff; border-color: var(--color-success-bg); }
+.btn-danger    { background: var(--color-danger-bg);  color: #fff; border-color: var(--color-danger-bg); }
+.btn-secondary {
+  background: var(--bg-overlay);
+  color: var(--text-secondary);
+  border-color: var(--border-default);
+}
+.btn-ghost {
+  background: transparent;
+  color: var(--color-accent);
+  border-color: transparent;
+}
+.btn-sm {
+  padding: 3px var(--space-2);
+  font-size: var(--font-size-sm);
+}
+
+/* -------------------------------------------------------------------------
+ * Cards
+ * ------------------------------------------------------------------------- */
+.card {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-base);
+  padding: var(--space-4);
+  margin-bottom: var(--space-4);
+}
+
+.artifact-card {
+  background: var(--bg-overlay);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-base);
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.artifact-card img {
+  width: 100%;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-default);
+}
+
+.artifact-card audio {
+  width: 100%;
+}
+
+.artifact-card .path {
+  font-size: var(--font-size-sm);
+  color: var(--text-muted);
+  word-break: break-all;
+}
+
+/* -------------------------------------------------------------------------
+ * Tables
+ * ------------------------------------------------------------------------- */
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--font-size-base);
+}
+
+.table th {
+  text-align: left;
+  padding: var(--space-2) var(--space-3);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  border-bottom: 1px solid var(--border-default);
+}
+
+.table td {
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--border-subtle);
+  color: var(--text-secondary);
+  vertical-align: top;
+}
+
+.table tr:last-child td {
+  border-bottom: none;
+}
+
+.table tr:hover td {
+  background: var(--bg-overlay);
+}
+
+/* -------------------------------------------------------------------------
+ * Forms
+ * ------------------------------------------------------------------------- */
+.form-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin-bottom: var(--space-4);
+}
+
+.form-label {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  color: var(--text-secondary);
+}
+
+.form-input,
+.form-select,
+select,
+input[type="text"],
+input[type="password"],
+input[type="email"],
+input[type="search"],
+textarea {
+  background: var(--bg-base);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-base);
+  padding: var(--space-2) var(--space-3);
+  font-size: var(--font-size-base);
+  font-family: var(--font-sans);
+  width: 100%;
+  transition: border-color var(--transition-base);
+}
+
+.form-input:focus,
+.form-select:focus,
+select:focus,
+input[type="text"]:focus,
+input[type="password"]:focus,
+input[type="email"]:focus,
+input[type="search"]:focus,
+textarea:focus {
+  outline: none;
+  border-color: var(--color-accent);
+}
+
+.form-hint {
+  font-size: var(--font-size-xs);
+  color: var(--text-muted);
+}
+
+/* Token authentication form */
+.token-form {
+  background: var(--bg-surface);
+  border: 1px solid var(--color-orange);
+  border-radius: var(--radius-base);
+  padding: var(--space-4);
+  margin-bottom: var(--space-5);
+}
+
+.token-form p {
+  font-size: var(--font-size-base);
+  color: var(--text-muted);
+  margin-bottom: var(--space-2);
+}
+
+/* -------------------------------------------------------------------------
+ * Grids
+ * ------------------------------------------------------------------------- */
+.grid-auto {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: var(--space-3);
+}
+
+.grid-2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-3);
+}
+
+.grid-3 {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: var(--space-3);
+}
+
+.artifact-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: var(--space-3);
+  margin-top: var(--space-3);
+}
+
+/* -------------------------------------------------------------------------
+ * Modals
+ * ------------------------------------------------------------------------- */
+.modal {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-modal);
+}
+
+.modal.is-open {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  z-index: var(--z-overlay);
+}
+
+.modal-panel {
+  position: relative;
+  z-index: var(--z-modal);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-xl);
+  padding: var(--space-6);
+  max-width: 560px;
+  width: 90%;
+  max-height: 80vh;
+  overflow-y: auto;
+}
+
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--space-4);
+}
+
+.modal-footer {
+  display: flex;
+  gap: var(--space-2);
+  justify-content: flex-end;
+  margin-top: var(--space-4);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--border-default);
+}
+
+/* -------------------------------------------------------------------------
+ * Tabs
+ * ------------------------------------------------------------------------- */
+.tabs {
+  margin-bottom: var(--space-4);
+}
+
+.tab-list {
+  display: flex;
+  border-bottom: 1px solid var(--border-default);
+  gap: 0;
+  list-style: none;
+}
+
+.tab {
+  padding: var(--space-2) var(--space-4);
+  font-size: var(--font-size-base);
+  font-weight: var(--font-weight-medium);
+  color: var(--text-muted);
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  transition: color var(--transition-base), border-color var(--transition-base);
+  white-space: nowrap;
+}
+
+.tab:hover {
+  color: var(--text-primary);
+}
+
+.tab.is-active {
+  color: var(--text-primary);
+  border-bottom-color: var(--color-orange);
+}
+
+.tab-panel {
+  display: none;
+  padding-top: var(--space-4);
+}
+
+.tab-panel.is-active {
+  display: block;
+}
+
+/* -------------------------------------------------------------------------
+ * Tooltips (CSS-only via data-tooltip attribute)
+ * ------------------------------------------------------------------------- */
+[data-tooltip] {
+  position: relative;
+}
+
+[data-tooltip]::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  bottom: calc(100% + var(--space-1));
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--bg-overlay);
+  color: var(--text-primary);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  padding: 4px var(--space-2);
+  font-size: var(--font-size-xs);
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity var(--transition-base);
+  z-index: var(--z-tooltip);
+  box-shadow: var(--shadow-md);
+}
+
+[data-tooltip]:hover::after {
+  opacity: 1;
+}
+
+/* Explicit .tooltip class for programmatic usage */
+.tooltip {
+  position: relative;
+}
+
+/* -------------------------------------------------------------------------
+ * List rows — commits, PRs, issues, sessions
+ * ------------------------------------------------------------------------- */
+.commit-row,
+.pr-row,
+.issue-row,
+.session-row {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.commit-row:last-child,
+.pr-row:last-child,
+.issue-row:last-child,
+.session-row:last-child {
+  border-bottom: none;
+}
+
+.commit-sha {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--color-accent);
+  white-space: nowrap;
+}
+
+.commit-msg {
+  flex: 1;
+  font-size: var(--font-size-base);
+}
+
+.commit-meta {
+  font-size: var(--font-size-sm);
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+/* Live session indicator */
+.session-live {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: var(--radius-full);
+  background: var(--color-success);
+  box-shadow: 0 0 6px var(--color-success);
+  margin-right: var(--space-1);
+  vertical-align: middle;
+  flex-shrink: 0;
+}
+
+/* -------------------------------------------------------------------------
+ * Metadata rows (key-value pairs, e.g. commit detail sidebar)
+ * ------------------------------------------------------------------------- */
+.meta-row {
+  display: flex;
+  gap: var(--space-6);
+  flex-wrap: wrap;
+  margin-bottom: var(--space-3);
+}
+
+.meta-item {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.meta-label {
+  font-size: var(--font-size-xs);
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.meta-value {
+  font-size: var(--font-size-base);
+  color: var(--text-primary);
+}
+
+/* -------------------------------------------------------------------------
+ * Labels (issue/PR taxonomy labels, similar to GitHub labels)
+ * ------------------------------------------------------------------------- */
+.label {
+  display: inline-block;
+  padding: 1px var(--space-2);
+  border-radius: var(--radius-full);
+  font-size: var(--font-size-xs);
+  background: var(--bg-hover);
+  color: var(--text-secondary);
+  margin: 2px;
+}
+
+/* -------------------------------------------------------------------------
+ * Code blocks
+ * ------------------------------------------------------------------------- */
+pre {
+  background: var(--bg-base);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-base);
+  padding: var(--space-3);
+  font-size: 13px;
+  font-family: var(--font-mono);
+  overflow-x: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+code {
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+  background: var(--bg-overlay);
+  padding: 1px 4px;
+  border-radius: var(--radius-sm);
+}
+
+pre code {
+  background: transparent;
+  padding: 0;
+  font-size: inherit;
+}
+
+/* -------------------------------------------------------------------------
+ * State / feedback
+ * ------------------------------------------------------------------------- */
+.loading {
+  color: var(--text-muted);
+  font-size: var(--font-size-base);
+}
+
+.error {
+  color: var(--color-danger);
+  font-size: var(--font-size-base);
+  margin: var(--space-2) 0;
+}
+
+.empty-state {
+  text-align: center;
+  padding: var(--space-10) var(--space-6);
+  color: var(--text-muted);
+  font-size: var(--font-size-base);
+}
+
+.empty-state .empty-icon {
+  font-size: 40px;
+  margin-bottom: var(--space-3);
+  display: block;
+}
