@@ -1,0 +1,362 @@
+{% extends "musehub/base.html" %}
+
+{% block title %}Arrange {{ ref[:8] }}{% endblock %}
+{% block breadcrumb %}
+  <a href="/musehub/ui/{{ owner }}/{{ repo_slug }}">{{ owner }}/{{ repo_slug }}</a> /
+  arrange / {{ ref[:8] }}
+{% endblock %}
+{% block repo_nav %}{% include "musehub/partials/repo_nav.html" %}{% endblock %}
+
+{% block extra_css %}
+<style>
+/* ── Arrangement matrix grid ─────────────────────────────────────── */
+.arrange-wrap {
+  overflow-x: auto;
+  margin-top: 16px;
+}
+.arrange-table {
+  border-collapse: collapse;
+  font-size: 13px;
+  min-width: 100%;
+  table-layout: auto;
+}
+.arrange-table th {
+  background: #21262d;
+  color: #8b949e;
+  font-weight: 600;
+  padding: 8px 12px;
+  border: 1px solid #30363d;
+  text-align: center;
+  white-space: nowrap;
+}
+.arrange-table th.row-header {
+  text-align: left;
+  min-width: 100px;
+}
+.arrange-table td {
+  border: 1px solid #21262d;
+  padding: 0;
+  text-align: center;
+  vertical-align: middle;
+}
+.arrange-cell {
+  width: 72px;
+  height: 52px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: opacity 0.15s, transform 0.1s;
+  border-radius: 3px;
+  margin: 2px;
+  position: relative;
+  font-size: 11px;
+  font-weight: 600;
+  color: rgba(255,255,255,0.85);
+}
+.arrange-cell:hover {
+  opacity: 0.85;
+  transform: scale(1.05);
+  z-index: 10;
+}
+.arrange-cell.silent {
+  background: #0d1117;
+  color: #30363d;
+  cursor: default;
+}
+.arrange-cell.silent:hover {
+  transform: none;
+  opacity: 1;
+}
+/* Row / column summary cells */
+.arrange-table td.summary-cell {
+  background: #161b22;
+  padding: 6px 10px;
+  color: #8b949e;
+  font-size: 12px;
+  white-space: nowrap;
+  text-align: right;
+}
+.arrange-table td.col-summary-cell {
+  background: #161b22;
+  padding: 6px 10px;
+  color: #8b949e;
+  font-size: 12px;
+  text-align: center;
+}
+/* Instrument icon mapping */
+.inst-icon::before { margin-right: 6px; }
+/* Legend */
+.legend {
+  display: flex; gap: 16px; flex-wrap: wrap;
+  align-items: center; margin-bottom: 12px; font-size: 12px; color: #8b949e;
+}
+.legend-swatch {
+  width: 18px; height: 18px; border-radius: 3px; display: inline-block;
+  vertical-align: middle; margin-right: 4px;
+}
+/* Density bar under row header */
+.density-bar {
+  height: 4px; border-radius: 2px; margin-top: 3px;
+  background: #1f6feb; transition: width 0.3s;
+}
+/* Section header beat info */
+.section-beats { font-size: 10px; color: #8b949e; display: block; margin-top: 2px; }
+/* Stats pills row */
+.stats-pills {
+  display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 16px;
+}
+.stats-pill {
+  background: #161b22; border: 1px solid #30363d; border-radius: 12px;
+  padding: 4px 12px; font-size: 12px; color: #8b949e;
+}
+.stats-pill strong { color: #e6edf3; }
+/* Tooltip (native browser via title) — upgrading to CSS tooltip for richer info */
+.cell-tooltip {
+  display: none;
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  background: #1c2128;
+  border: 1px solid #30363d;
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-size: 11px;
+  color: #c9d1d9;
+  white-space: nowrap;
+  z-index: 100;
+  pointer-events: none;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+  line-height: 1.5;
+  text-align: left;
+  min-width: 140px;
+}
+.arrange-cell:hover .cell-tooltip { display: block; }
+</style>
+{% endblock %}
+
+{% block page_data %}
+const repoId   = {{ repo_id | tojson }};
+const ref      = {{ ref | tojson }};
+const owner    = {{ owner | tojson }};
+const repoSlug = {{ repo_slug | tojson }};
+const base     = {{ base_url | tojson }};
+const apiBase  = '/api/v1/musehub/repos/' + repoId;
+{% endblock %}
+
+{% block page_script %}
+{% raw %}
+// ── Helpers ─────────────────────────────────────────────────────────────
+function escHtml(s) {
+  if (s === null || s === undefined) return '—';
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+// Map instrument name → emoji icon
+const INST_ICONS = {
+  bass:   '🎸',
+  keys:   '🎹',
+  guitar: '🎸',
+  drums:  '🥁',
+  lead:   '🎺',
+  pads:   '🌊',
+};
+function instIcon(name) {
+  return INST_ICONS[name] || '🎵';
+}
+
+// Colour for a density value [0, 1]:
+// 0 = transparent (#0d1117), max = vivid blue (#1f6feb).
+// We interpolate through a warm hue for mid-density values.
+function densityColor(density) {
+  if (density <= 0) return '#0d1117';
+  // Three-stop gradient: 0 → #0d1117, 0.5 → #0d419d, 1 → #1f6feb
+  const stops = [
+    [0,   [13,  17,  23]],
+    [0.4, [13,  65,  157]],
+    [1.0, [31, 111, 235]],
+  ];
+  let lo = stops[0], hi = stops[1];
+  for (let i = 0; i < stops.length - 1; i++) {
+    if (density >= stops[i][0] && density <= stops[i+1][0]) {
+      lo = stops[i]; hi = stops[i+1];
+      break;
+    }
+  }
+  const t = (density - lo[0]) / (hi[0] - lo[0]);
+  const r = Math.round(lo[1][0] + t * (hi[1][0] - lo[1][0]));
+  const g = Math.round(lo[1][1] + t * (hi[1][1] - lo[1][1]));
+  const b = Math.round(lo[1][2] + t * (hi[1][2] - lo[1][2]));
+  return `rgb(${r},${g},${b})`;
+}
+
+function formatBeats(start, end) {
+  return `beats ${start}–${end}`;
+}
+
+// ── Piano roll URL helper ───────────────────────────────────────────────
+// Navigates to the piano roll for a given instrument + section.
+// This links to the analysis page filtered by track + section until a
+// dedicated piano roll page exists.
+function pianoRollUrl(instrument, section) {
+  const q = new URLSearchParams({ track: instrument, section });
+  return base + '/analysis/' + encodeURIComponent(ref) + '/motifs?' + q.toString();
+}
+
+// ── Main renderer ───────────────────────────────────────────────────────
+function renderMatrix(data) {
+  const { instruments, sections, cells, rowSummaries, columnSummaries, totalBeats } = data;
+
+  // Index cells for O(1) lookup.
+  const cellIdx = {};
+  cells.forEach(c => { cellIdx[c.instrument + '|' + c.section] = c; });
+
+  // Stats bar
+  const totalNotes = cells.reduce((s, c) => s + c.noteCount, 0);
+  const activeCells = cells.filter(c => c.active).length;
+  const density = cells.length ? (activeCells / cells.length * 100).toFixed(0) : 0;
+
+  const statsBit = `
+    <div class="stats-pills">
+      <div class="stats-pill">Total notes <strong>${totalNotes.toLocaleString()}</strong></div>
+      <div class="stats-pill">Active cells <strong>${activeCells} / ${cells.length}</strong></div>
+      <div class="stats-pill">Fill density <strong>${density}%</strong></div>
+      <div class="stats-pill">Total beats <strong>${totalBeats}</strong></div>
+    </div>`;
+
+  // Legend
+  const legendBit = `
+    <div class="legend">
+      <span>Density:</span>
+      <span><span class="legend-swatch" style="background:#0d1117;border:1px solid #30363d"></span>Silent</span>
+      <span><span class="legend-swatch" style="background:#0d419d"></span>Low</span>
+      <span><span class="legend-swatch" style="background:#1f6feb"></span>High</span>
+      <span style="margin-left:8px;color:#58a6ff">Click a cell → open piano roll</span>
+    </div>`;
+
+  // Column headers (sections)
+  const sectionCols = sections.map(sec => {
+    const cs = (columnSummaries || []).find(s => s.section === sec) || {};
+    return `<th>
+      ${escHtml(sec.replace(/_/g, '\u00a0'))}
+      <span class="section-beats">${formatBeats(cs.beatStart || 0, cs.beatEnd || 0)}</span>
+    </th>`;
+  }).join('');
+
+  // Data rows
+  const rows = instruments.map(inst => {
+    const rs = (rowSummaries || []).find(r => r.instrument === inst) || {};
+    const maxRowNotes = rs.totalNotes || 1;
+
+    const dataCells = sections.map(sec => {
+      const cell = cellIdx[inst + '|' + sec];
+      if (!cell || !cell.active) {
+        return `<td><div class="arrange-cell silent" title="${escHtml(inst)} / ${escHtml(sec)}: silent">—</div></td>`;
+      }
+      const bg = densityColor(cell.noteDensity);
+      const tipLines = [
+        `<strong>${escHtml(inst)} × ${escHtml(sec)}</strong>`,
+        `Notes: ${cell.noteCount}`,
+        `Density: ${(cell.noteDensity * 100).toFixed(0)}%`,
+        `${formatBeats(cell.beatStart, cell.beatEnd)}`,
+        `Pitch: MIDI ${cell.pitchLow}–${cell.pitchHigh}`,
+        `<em style="color:#58a6ff">Click → piano roll</em>`,
+      ].join('<br>');
+      const href = pianoRollUrl(inst, sec);
+      return `<td>
+        <a href="${escHtml(href)}" style="text-decoration:none">
+          <div class="arrange-cell" style="background:${bg}" aria-label="${escHtml(inst)} in ${escHtml(sec)}: ${cell.noteCount} notes">
+            ${cell.noteCount}
+            <div class="cell-tooltip">${tipLines}</div>
+          </div>
+        </a>
+      </td>`;
+    }).join('');
+
+    // Row summary cell
+    const rowBarPct = rs.totalNotes ? Math.round((rs.totalNotes / (rowSummaries.reduce((m,r)=>Math.max(m,r.totalNotes),1))) * 100) : 0;
+    const summaryCell = `<td class="summary-cell">
+      ${rs.totalNotes || 0} notes<br>
+      <span style="color:#58a6ff">${rs.activeSections || 0}/${sections.length} sections</span>
+      <div class="density-bar" style="width:${rowBarPct}%"></div>
+    </td>`;
+
+    return `<tr>
+      <th class="row-header">
+        ${instIcon(inst)} ${escHtml(inst)}
+      </th>
+      ${dataCells}
+      ${summaryCell}
+    </tr>`;
+  }).join('');
+
+  // Column summary row
+  const maxColNotes = (columnSummaries || []).reduce((m, c) => Math.max(m, c.totalNotes || 0), 1);
+  const colSumCells = sections.map(sec => {
+    const cs = (columnSummaries || []).find(s => s.section === sec) || {};
+    const pct = cs.totalNotes ? Math.round((cs.totalNotes / maxColNotes) * 100) : 0;
+    return `<td class="col-summary-cell">
+      ${cs.totalNotes || 0} notes<br>
+      <span style="color:#58a6ff">${cs.activeInstruments || 0}/${instruments.length} inst.</span>
+      <div class="density-bar" style="width:${pct}%;margin:3px auto 0"></div>
+    </td>`;
+  }).join('');
+
+  const table = `
+    <div class="arrange-wrap">
+      <table class="arrange-table">
+        <thead>
+          <tr>
+            <th class="row-header">Instrument \\ Section</th>
+            ${sectionCols}
+            <th>Total</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rows}
+          <tr>
+            <th class="row-header" style="color:#8b949e">Totals</th>
+            ${colSumCells}
+            <td class="summary-cell">${totalNotes.toLocaleString()}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>`;
+
+  document.getElementById('content').innerHTML = `
+    <div style="margin-bottom:12px;display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+      <a href="${escHtml(base)}">&larr; Back to repo</a>
+      <span style="color:#8b949e;font-size:13px">
+        Arrangement for <code style="background:#161b22;padding:2px 6px;border-radius:4px">${escHtml(ref.substring(0,12))}</code>
+      </span>
+    </div>
+    <div class="card">
+      <h2 style="margin-bottom:12px">&#127926; Arrangement Matrix</h2>
+      <p style="font-size:13px;color:#8b949e;margin-bottom:12px">
+        Cell colour intensity = note density. Click a cell to open the piano roll for
+        that instrument and section.
+      </p>
+      ${statsBit}
+      ${legendBit}
+      ${table}
+    </div>`;
+}
+
+// ── Loader ──────────────────────────────────────────────────────────────
+async function load() {
+  document.getElementById('content').innerHTML = '<p class="loading">Loading arrangement&#8230;</p>';
+  try {
+    const resp = await apiFetch('/repos/' + encodeURIComponent(repoId) + '/arrange/' + encodeURIComponent(ref));
+    renderMatrix(resp.data || resp);
+  } catch (e) {
+    if (e.message !== 'auth') {
+      document.getElementById('content').innerHTML =
+        '<p class="error">&#10005; ' + escHtml(e.message) + '</p>';
+    }
+  }
+}
+
+load();
+{% endraw %}
+{% endblock %}

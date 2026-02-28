@@ -1202,6 +1202,79 @@ class GrooveCommitEntry(CamelModel):
     midi_files: int = Field(..., description="Number of MIDI snapshots analysed")
 
 
+class ArrangementCellData(CamelModel):
+    """Data for a single cell in the arrangement matrix (instrument × section).
+
+    Encodes whether an instrument plays in a given section, how dense its part is,
+    and enough detail for a tooltip (note count, beat range, pitch range).
+    """
+
+    instrument: str = Field(..., description="Instrument/track name (e.g. 'bass', 'keys')")
+    section: str = Field(..., description="Section label (e.g. 'intro', 'chorus')")
+    note_count: int = Field(..., description="Total notes played by this instrument in this section")
+    note_density: float = Field(
+        ...,
+        ge=0.0,
+        le=1.0,
+        description="Normalised note density in [0, 1]; 0 = silent, 1 = densest cell",
+    )
+    beat_start: float = Field(..., description="Beat position where this section starts")
+    beat_end: float = Field(..., description="Beat position where this section ends")
+    pitch_low: int = Field(..., description="Lowest MIDI pitch played (0-127)")
+    pitch_high: int = Field(..., description="Highest MIDI pitch played (0-127)")
+    active: bool = Field(..., description="True when the instrument has at least one note in this section")
+
+
+class ArrangementRowSummary(CamelModel):
+    """Aggregated stats for one instrument row across all sections."""
+
+    instrument: str = Field(..., description="Instrument/track name")
+    total_notes: int = Field(..., description="Total note count across all sections")
+    active_sections: int = Field(..., description="Number of sections where the instrument plays")
+    mean_density: float = Field(..., description="Mean note density across all sections")
+
+
+class ArrangementColumnSummary(CamelModel):
+    """Aggregated stats for one section column across all instruments."""
+
+    section: str = Field(..., description="Section label")
+    total_notes: int = Field(..., description="Total note count across all instruments")
+    active_instruments: int = Field(..., description="Number of instruments that play in this section")
+    beat_start: float = Field(..., description="Beat position where this section starts")
+    beat_end: float = Field(..., description="Beat position where this section ends")
+
+
+class ArrangementMatrixResponse(CamelModel):
+    """Full arrangement matrix for a Muse commit ref.
+
+    Provides a bird's-eye view of which instruments play in which sections
+    so producers can evaluate orchestration density without downloading tracks.
+
+    The ``cells`` list is a flat row-major enumeration of (instrument, section)
+    pairs.  Consumers should index by (instrument, section) for O(1) lookup.
+    Row/column summaries pre-aggregate totals so the UI can draw marginal bars
+    without re-summing the cell list.
+    """
+
+    repo_id: str = Field(..., description="Internal repo UUID")
+    ref: str = Field(..., description="Commit ref (full SHA or branch name)")
+    instruments: list[str] = Field(..., description="Ordered instrument names (Y-axis)")
+    sections: list[str] = Field(..., description="Ordered section labels (X-axis)")
+    cells: list[ArrangementCellData] = Field(
+        default_factory=list,
+        description="Flat list of (instrument × section) cells, row-major order",
+    )
+    row_summaries: list[ArrangementRowSummary] = Field(
+        default_factory=list,
+        description="Per-instrument aggregates, same order as instruments list",
+    )
+    column_summaries: list[ArrangementColumnSummary] = Field(
+        default_factory=list,
+        description="Per-section aggregates, same order as sections list",
+    )
+    total_beats: float = Field(..., description="Total beat length of the arrangement")
+
+
 class BlobMetaResponse(CamelModel):
     """Wire representation of a single file (blob) in the Muse tree browser.
 
