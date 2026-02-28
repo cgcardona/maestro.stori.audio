@@ -68,6 +68,15 @@ Covers issue #227 (emotion map page):
 UI routes require no JWT auth (they return HTML shells whose JS handles auth).
 The HTML content tests assert structural markers present in every rendered page.
 
+Covers issue #286 (commit comment threads):
+- test_commit_page_has_comment_section_html     — comments-section container present in HTML
+- test_commit_page_has_comment_js_functions     — renderComments/submitComment/deleteComment/loadComments JS present
+- test_commit_page_comment_calls_load_on_startup — loadComments() called at page startup
+- test_commit_page_comment_uses_correct_api_path — fetches /comments?target_type=commit
+- test_commit_page_comment_has_avatar_logic     — avatarColor() HSL helper present
+- test_commit_page_comment_has_new_comment_form — new-comment textarea form present
+- test_commit_page_comment_has_discussion_heading — "Discussion" heading present
+
 Covers regression for PR #282 (owner/slug URL scheme):
 - test_ui_nav_links_use_owner_slug_not_uuid_*  — every page handler injects
   ``const base = '/musehub/ui/{owner}/{slug}'`` not a UUID-based path.
@@ -4232,6 +4241,118 @@ async def test_commit_detail_diff_summary_unknown_commit_404(
         f"/api/v1/musehub/repos/{repo_id}/commits/deadbeefdeadbeefdeadbeef/diff-summary",
         headers=auth_headers,    )
     assert response.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# Commit comment threads — issue #286
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.anyio
+async def test_commit_page_has_comment_section_html(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Commit detail page HTML includes the comment section container (#286)."""
+    await _make_repo(db_session)
+    commit_id = "abc1234567890abcdef1234567890abcdef12345678"
+    response = await client.get(f"/musehub/ui/testuser/test-beats/commits/{commit_id}")
+    assert response.status_code == 200
+    body = response.text
+    assert "comments-section" in body
+    assert "comments-list" in body
+
+
+@pytest.mark.anyio
+async def test_commit_page_has_comment_js_functions(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Commit detail page JS includes renderComments, submitComment, deleteComment (#286)."""
+    await _make_repo(db_session)
+    commit_id = "abc1234567890abcdef1234567890abcdef12345678"
+    response = await client.get(f"/musehub/ui/testuser/test-beats/commits/{commit_id}")
+    assert response.status_code == 200
+    body = response.text
+    assert "renderComments" in body
+    assert "submitComment" in body
+    assert "deleteComment" in body
+    assert "showReplyForm" in body
+    assert "loadComments" in body
+
+
+@pytest.mark.anyio
+async def test_commit_page_comment_calls_load_on_startup(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Commit detail page calls loadComments() at startup (#286)."""
+    await _make_repo(db_session)
+    commit_id = "abc1234567890abcdef1234567890abcdef12345678"
+    response = await client.get(f"/musehub/ui/testuser/test-beats/commits/{commit_id}")
+    assert response.status_code == 200
+    body = response.text
+    assert "loadComments()" in body
+
+
+@pytest.mark.anyio
+async def test_commit_page_comment_uses_correct_api_path(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Comment section fetches /repos/{repo_id}/comments with target_type=commit (#286)."""
+    await _make_repo(db_session)
+    commit_id = "abc1234567890abcdef1234567890abcdef12345678"
+    response = await client.get(f"/musehub/ui/testuser/test-beats/commits/{commit_id}")
+    assert response.status_code == 200
+    body = response.text
+    assert "target_type=commit" in body
+    assert "/comments" in body
+
+
+@pytest.mark.anyio
+async def test_commit_page_comment_has_avatar_logic(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Commit page includes deterministic HSL avatar generation (#286)."""
+    await _make_repo(db_session)
+    commit_id = "abc1234567890abcdef1234567890abcdef12345678"
+    response = await client.get(f"/musehub/ui/testuser/test-beats/commits/{commit_id}")
+    assert response.status_code == 200
+    body = response.text
+    assert "avatarColor" in body
+    assert "comment-avatar" in body
+
+
+@pytest.mark.anyio
+async def test_commit_page_comment_has_new_comment_form(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Commit page includes the new-comment textarea form element (#286)."""
+    await _make_repo(db_session)
+    commit_id = "abc1234567890abcdef1234567890abcdef12345678"
+    response = await client.get(f"/musehub/ui/testuser/test-beats/commits/{commit_id}")
+    assert response.status_code == 200
+    body = response.text
+    assert "new-comment-form" in body
+    assert "new-comment-body" in body
+    assert "comment-submit-btn" in body
+
+
+@pytest.mark.anyio
+async def test_commit_page_comment_has_discussion_heading(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Commit page includes 'Discussion' heading in the comment section (#286)."""
+    await _make_repo(db_session)
+    commit_id = "abc1234567890abcdef1234567890abcdef12345678"
+    response = await client.get(f"/musehub/ui/testuser/test-beats/commits/{commit_id}")
+    assert response.status_code == 200
+    body = response.text
+    assert "Discussion" in body
 
 
 # ---------------------------------------------------------------------------
