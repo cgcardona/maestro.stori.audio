@@ -5,7 +5,7 @@ subcommands (amend, arrange, ask, checkout, chord-map, commit, commit-tree,
 context, contour, describe, diff, divergence, dynamics, export, find, form,
 grep, groove-check, humanize, import, init, inspect, key, log, merge, meter,
 open, play, pull, push, recall, remote, render-preview, resolve, rev-parse, revert,
-session, similarity, status, swing, tag, tempo, tempo-scale, timeline,
+session, show, similarity, status, swing, tag, tempo, tempo-scale, timeline,
 validate) as Typer sub-applications.
 """
 from __future__ import annotations
@@ -50,6 +50,7 @@ from maestro.muse_cli.commands import (
     rev_parse,
     revert,
     session,
+    show,
     similarity,
     status,
     swing,
@@ -107,6 +108,7 @@ cli.add_typer(humanize.app, name="humanize", help="Apply micro-timing and veloci
 cli.add_typer(context.app, name="context", help="Output structured musical context for AI agent consumption.")
 cli.add_typer(divergence.app, name="divergence", help="Show how two branches have diverged musically.")
 cli.add_typer(rev_parse.app, name="rev-parse", help="Resolve a revision expression to a commit ID.")
+cli.add_typer(show.app, name="show", help="Inspect a commit: metadata, snapshot, diff, MIDI files, and audio preview.")
 cli.add_typer(render_preview.app, name="render-preview", help="Generate an audio preview of a commit's snapshot.")
 cli.add_typer(groove_check.app, name="groove-check", help="Analyze rhythmic drift across commits to find groove regressions.")
 cli.add_typer(form.app, name="form", help="Analyze or annotate the formal structure (sections) of a commit.")
