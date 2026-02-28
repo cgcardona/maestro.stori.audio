@@ -8514,3 +8514,66 @@ something meaningful.
 | Tests (UI) | `tests/test_musehub_ui.py` — `test_score_*` (9 tests) |
 
 ---
+
+## Issue Tracker Enhancements (Phase 9 — Issue #218)
+
+### Overview
+
+The Muse Hub issue tracker supports full collaborative workflows beyond the initial title/body/close MVP. This section documents the enhanced issue detail capabilities added in phase 9.
+
+### Features
+
+**Threaded Discussion**
+
+Issues support threaded comments via `POST /issues/{number}/comments`. Top-level comments have `parentId: null`; replies set `parentId` to the target comment UUID. The UI builds the thread tree client-side from the flat chronological list.
+
+**Musical Context Linking**
+
+Comment bodies are scanned at write time for musical context references using the pattern `type:value`:
+
+| Syntax | Type | Example |
+|--------|------|---------|
+| `track:bass` | track | References the bass track |
+| `section:chorus` | section | References the chorus section |
+| `beats:16-24` | beats | References a beat range |
+
+Parsed refs are stored in `musehub_issue_comments.musical_refs` (JSON array) and returned in `IssueCommentResponse.musicalRefs`. The issue detail UI renders them as coloured badges.
+
+**Assignees**
+
+A single collaborator can be assigned per issue via `POST /issues/{number}/assign`. The `assignee` field is a free-form display name. Pass `"assignee": null` to unassign.
+
+**Milestones**
+
+Milestones group issues into named goals (e.g. "Album v1.0"). Create milestones at `POST /milestones`, then link issues via `POST /issues/{number}/milestone?milestone_id=<uuid>`. Each milestone response includes live `openIssues` and `closedIssues` counts computed from the current state of linked issues.
+
+**State Transitions**
+
+Issues may be reopened after closing: `POST /issues/{number}/reopen`. Both close and reopen fire webhook events with `action: "opened"/"closed"`.
+
+**Edit Capability**
+
+`PATCH /issues/{number}` allows partial updates to title, body, and labels.
+
+### Database Schema
+
+| Table | Purpose |
+|-------|---------|
+| `musehub_milestones` | Per-repo milestone definitions |
+| `musehub_issues` | Extended with `assignee`, `milestone_id`, `updated_at` |
+| `musehub_issue_comments` | Threaded comments with `parent_id` and `musical_refs` |
+
+### Implementation
+
+| Layer | File |
+|-------|------|
+| DB models | `maestro/db/musehub_models.py` — `MusehubMilestone`, `MusehubIssueComment`, extended `MusehubIssue` |
+| Pydantic models | `maestro/models/musehub.py` — `MilestoneCreate/Response`, `IssueCommentCreate/Response`, `IssueUpdate`, `IssueAssignRequest`, `MusicalRef` |
+| Service | `maestro/services/musehub_issues.py` — comment CRUD, milestone CRUD, assign, reopen, update |
+| Routes | `maestro/api/routes/musehub/issues.py` — 12 endpoints |
+| UI template | `maestro/templates/musehub/pages/issue_detail.html` — threaded UI |
+| Migration | `alembic/versions/0001_consolidated_schema.py` — new tables and columns |
+| Tests | `tests/test_musehub_issues.py` — 12 new tests covering all acceptance criteria |
+
+---
+
