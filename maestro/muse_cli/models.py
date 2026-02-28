@@ -16,6 +16,8 @@ distinct from the Muse VCS variation tables (``variations``, ``phrases``,
 annotations.  Current keys:
 
 - ``tempo_bpm`` (``float | None``): BPM set via ``muse tempo --set``.
+- ``key`` (``str | None``): Key string (e.g. ``"Eb major"``) auto-updated by
+  ``muse transpose`` when transposing a commit that has this annotation.
 """
 from __future__ import annotations
 
