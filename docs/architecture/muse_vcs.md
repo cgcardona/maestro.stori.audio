@@ -1396,34 +1396,69 @@ The Muse Hub is a lightweight GitHub-equivalent that lives inside the Maestro Fa
 
 | Table | Purpose |
 |-------|---------|
-| `musehub_repos` | Remote repos (name, visibility, owner) |
+| `musehub_repos` | Remote repos (name, visibility, owner, music-semantic metadata) |
 | `musehub_branches` | Branch pointers inside a repo |
 | `musehub_commits` | Commits pushed from CLI clients |
 | `musehub_objects` | Binary artifact metadata (MIDI, MP3, WebP piano rolls) |
 | `musehub_issues` | Issue tracker entries per repo |
 | `musehub_pull_requests` | Pull requests proposing branch merges |
+| `musehub_sessions` | Recording session records pushed from CLI clients |
+| `musehub_releases` | Published version releases with download package URLs |
+| `musehub_stars` | Per-user repo starring (one row per user×repo pair) |
 
 ### Module Map
 
 ```
 maestro/
-├── db/musehub_models.py                  — SQLAlchemy ORM models
-├── models/musehub.py                     — Pydantic v2 request/response models (incl. SearchCommitMatch, SearchResponse)
+├── db/musehub_models.py                      — SQLAlchemy ORM models
+├── models/musehub.py                         — Pydantic v2 request/response models (incl. SearchCommitMatch, SearchResponse)
+├── services/musehub_repository.py            — Async DB queries for repos/branches/commits
+├── services/musehub_credits.py               — Credits aggregation from commit history
+├── services/musehub_issues.py                — Async DB queries for issues (single point of DB access)
+├── services/musehub_pull_requests.py         — Async DB queries for PRs (single point of DB access)
+├── services/musehub_releases.py              — Async DB queries for releases (single point of DB access)
+├── services/musehub_release_packager.py      — Download package URL builder (pure, no DB access)
+├── services/musehub_search.py                — In-repo search service (property / ask / keyword / pattern)
+├── services/musehub_sync.py                  — Push/pull sync protocol (ingest_push, compute_pull_delta)
+└── api/routes/musehub/
+    ├── __init__.py                           — Composes sub-routers under /musehub prefix
+    ├── repos.py                              — Repo/branch/commit/credits route handlers
+    ├── issues.py                             — Issue tracking route handlers
+    ├── pull_requests.py                      — Pull request route handlers
+    ├── releases.py                           — Release management route handlers
+    ├── search.py                             — In-repo search route handler
+    ├── sync.py                               — Push/pull sync route handlers
+    ├── objects.py                            — Artifact list + content-by-object-id endpoints (auth required)
+    ├── raw.py                                — Raw file download by path (public repos: no auth)
+    └── ui.py                                 — HTML UI pages (incl. releases, credits and /search pages)
+├── db/musehub_models.py                  — SQLAlchemy ORM models (includes MusehubStar)
+├── models/musehub.py                     — Pydantic v2 request/response models (includes ExploreRepoResult, ExploreResponse, StarResponse, SearchCommitMatch, SearchResponse)
 ├── services/musehub_repository.py        — Async DB queries for repos/branches/commits
+├── services/musehub_discover.py          — Public repo discovery with filters, sorting, star/unstar
 ├── services/musehub_credits.py           — Credits aggregation from commit history
 ├── services/musehub_issues.py            — Async DB queries for issues (single point of DB access)
 ├── services/musehub_pull_requests.py     — Async DB queries for PRs (single point of DB access)
+├── services/musehub_sessions.py          — Async DB queries for sessions (upsert, list, get)
 ├── services/musehub_search.py            — In-repo search service (property / ask / keyword / pattern)
 ├── services/musehub_sync.py              — Push/pull sync protocol (ingest_push, compute_pull_delta)
+├── services/musehub_divergence.py        — Five-dimension divergence between two remote branches
 └── api/routes/musehub/
+    ├── __init__.py                       — Composes sub-routers under /musehub prefix (authed)
+    ├── repos.py                          — Repo/branch/commit route handlers
     ├── __init__.py                       — Composes sub-routers under /musehub prefix
+    ├── repos.py                          — Repo/branch/commit/session route handlers
+    ├── repos.py                          — Repo/branch/commit route handlers + divergence endpoint
     ├── repos.py                          — Repo/branch/commit/credits route handlers
     ├── issues.py                         — Issue tracking route handlers
     ├── pull_requests.py                  — Pull request route handlers
     ├── search.py                         — In-repo search route handler
     ├── sync.py                           — Push/pull sync route handlers
+    ├── discover.py                       — Public discover API + authed star/unstar (registered in main.py separately)
     ├── objects.py                        — Artifact list + content-by-object-id endpoints (auth required)
     ├── raw.py                            — Raw file download by path (public repos: no auth)
+    └── ui.py                             — Browser UI HTML shell pages (repo, commits, PRs, issues, sessions, search)
+    └── ui.py                             — HTML UI pages (divergence radar chart, search mode tabs)
+    └── ui.py                             — HTML shells for browser: explore, trending, repo, commit, PR, issue pages (incl. /search page with mode tabs)
     └── ui.py                             — HTML UI pages (incl. credits and /search pages)
 ```
 
@@ -1437,6 +1472,7 @@ maestro/
 | GET | `/api/v1/musehub/repos/{id}` | Get repo metadata |
 | GET | `/api/v1/musehub/repos/{id}/branches` | List branches |
 | GET | `/api/v1/musehub/repos/{id}/commits` | List commits (newest first) |
+| GET | `/api/v1/musehub/repos/{id}/divergence` | Five-dimension musical divergence between two branches (`?branch_a=...&branch_b=...`) |
 | GET | `/api/v1/musehub/repos/{id}/credits` | Aggregated contributor credits (`?sort=count\|recency\|alpha`) |
 
 #### Credits Page
@@ -1517,6 +1553,14 @@ Renders the context document in structured HTML with:
 | GET | `/api/v1/musehub/repos/{id}/pull-requests/{pr_id}` | Get a single PR by ID |
 | POST | `/api/v1/musehub/repos/{id}/pull-requests/{pr_id}/merge` | Merge an open PR |
 
+#### Sessions
+
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | `/api/v1/musehub/repos/{id}/sessions` | Push a session record (upsert — idempotent) |
+| GET | `/api/v1/musehub/repos/{id}/sessions` | List sessions, newest first (`?limit=N`, default 50, max 200) |
+| GET | `/api/v1/musehub/repos/{id}/sessions/{session_id}` | Get a single session by UUID |
+
 #### In-Repo Search
 
 | Method | Path | Description |
@@ -1555,12 +1599,52 @@ Each match is a `SearchCommitMatch` with: `commitId`, `branch`, `message`, `auth
 
 **Agent use case:** AI music composition agents can call the search endpoint to locate commits by musical property (e.g. find all commits with `harmony=Fm`) before applying `muse checkout`, `muse diff`, or `muse replay` to reconstruct or compare those versions.
 
+#### Releases
+
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | `/api/v1/musehub/repos/{id}/releases` | Create a release tied to a tag and optional commit |
+| GET | `/api/v1/musehub/repos/{id}/releases` | List all releases (newest first) |
+| GET | `/api/v1/musehub/repos/{id}/releases/{tag}` | Get a single release by tag (e.g. `v1.0`) |
+
 #### Sync Protocol
 
 | Method | Path | Description |
 |--------|------|-------------|
 | POST | `/api/v1/musehub/repos/{id}/push` | Upload commits and objects (fast-forward enforced) |
 | POST | `/api/v1/musehub/repos/{id}/pull` | Fetch missing commits and objects |
+
+#### Explore / Discover (public — no auth required for browse)
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/v1/musehub/discover/repos` | List public repos with optional filters and sort |
+| POST | `/api/v1/musehub/repos/{id}/star` | Star a public repo (auth required) |
+| DELETE | `/api/v1/musehub/repos/{id}/star` | Unstar a repo (auth required) |
+
+**Filter parameters for `GET /discover/repos`:**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `genre` | string | Substring match on tags (e.g. `jazz`, `lo-fi`) |
+| `key` | string | Exact match on `key_signature` (e.g. `F# minor`) |
+| `tempo_min` | int | Minimum BPM (inclusive) |
+| `tempo_max` | int | Maximum BPM (inclusive) |
+| `instrumentation` | string | Substring match on tags for instrument presence |
+| `sort` | string | `stars` \| `activity` \| `commits` \| `created` (default) |
+| `page` | int | 1-based page number |
+| `page_size` | int | Results per page (default 24, max 100) |
+
+**Result type:** `ExploreResponse` — fields: `repos: list[ExploreRepoResult]`, `total: int`, `page: int`, `page_size: int`
+
+**ExploreRepoResult fields:** `repo_id`, `name`, `owner_user_id`, `description`, `tags`, `key_signature`, `tempo_bpm`, `star_count`, `commit_count`, `created_at`
+
+**UI pages (no auth required):**
+
+| Path | Description |
+|------|-------------|
+| `GET /musehub/ui/explore` | Filterable grid of all public repos (newest first) |
+| `GET /musehub/ui/trending` | Public repos sorted by star count |
 
 #### Raw File Download
 
@@ -1589,8 +1673,22 @@ curl -H "Authorization: Bearer <token>" \
 See [api.md](../reference/api.md#get-apiv1musehub-reposrepo_idrawrefpath) for the
 full MIME type table and error reference.
 
-All other endpoints require `Authorization: Bearer <token>`. See [api.md](../reference/api.md#muse-hub-api) for full field docs.
+All authed endpoints require `Authorization: Bearer <token>`. See [api.md](../reference/api.md#muse-hub-api) for full field docs.
 
+#### Web UI (no auth required)
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/musehub/ui/{repo_id}` | Repo landing page (branch selector + commit log) |
+| GET | `/musehub/ui/{repo_id}/commits/{commit_id}` | Commit detail (metadata + artifact browser) |
+| GET | `/musehub/ui/{repo_id}/pulls` | Pull request list |
+| GET | `/musehub/ui/{repo_id}/pulls/{pr_id}` | PR detail (with merge button) |
+| GET | `/musehub/ui/{repo_id}/issues` | Issue list |
+| GET | `/musehub/ui/{repo_id}/issues/{number}` | Issue detail (with close button) |
+| GET | `/musehub/ui/{repo_id}/sessions` | Session list (newest first) |
+| GET | `/musehub/ui/{repo_id}/sessions/{session_id}` | Session detail page |
+
+UI pages are HTML shells — auth is handled client-side via `localStorage` JWT. The JS fetches from the authed JSON API above.
 ### DAG Graph — Interactive Commit Graph
 
 **Purpose:** Visualise the full commit history of a Muse Hub repo as an interactive directed acyclic graph, equivalent to `muse inspect --format mermaid` but explorable in the browser.
@@ -1639,6 +1737,122 @@ Issues let musicians track production problems and creative tasks within a repo,
 - **States:** `open` (default on creation) → `closed` (via the close endpoint). No re-open at MVP.
 - **Filtering:** `GET /issues?state=all` includes both open and closed; `?label=bug` narrows by label.
 
+### Release System
+
+Releases publish a specific version of a composition as a named snapshot that listeners and collaborators can download in multiple formats.
+
+#### Concept
+
+A release binds a human-readable **tag** (e.g. `v1.0`) to:
+- A **title** — the name of this version (e.g. "First Release")
+- **Release notes** — Markdown body describing what changed
+- An optional **commit ID** — pins the release to a specific commit snapshot
+- **Download URLs** — structured map of package download links
+
+#### Download Packages
+
+Each release exposes download URLs for these package types:
+
+| Package | Field | Format | Description |
+|---------|-------|--------|-------------|
+| Full MIDI | `midiBundle` | `.mid` | All tracks merged into a single MIDI file |
+| Stems | `stems` | `.zip` of `.mid` files | Individual per-track MIDI stems |
+| MP3 | `mp3` | `.mp3` | Full mix audio render |
+| MusicXML | `musicxml` | `.xml` | Notation export for sheet music editors |
+| Metadata | `metadata` | `.json` | Tempo, key, time signature, arrangement info |
+
+Package URLs are `null` when the corresponding artifact is unavailable (no pinned commit,
+or no stored objects for that commit). The frontend renders "Not available" cards instead
+of broken links.
+
+#### Uniqueness Constraint
+
+Tags are unique per repo — attempting to create a second `v1.0` release in the same repo
+returns `409 Conflict`. The same tag can be reused across different repos without conflict.
+
+#### Latest Release Badge
+
+The repo home page (`GET /musehub/ui/{repo_id}`) fetches the release list on load and
+displays a green "Latest: v1.0" badge in the navigation bar when at least one release exists.
+Clicking the badge navigates to the release detail page.
+
+#### Package Generation (MVP Stub)
+
+At MVP, download URLs are deterministic paths based on `repo_id` and `release_id`. The actual
+package generation (MIDI export, MP3 rendering, MusicXML conversion) is not implemented — the
+URL shape is established so the contract is stable for future implementation without an API change.
+
+The packager module (`maestro/services/musehub_release_packager.py`) controls URL construction.
+Callers pass boolean flags (`has_midi`, `has_stems`, `has_mp3`, `has_musicxml`) based on what
+stored objects are available for the pinned commit.
+### Divergence Visualization
+
+The divergence endpoint and UI let producers compare two branches across five musical dimensions before deciding what to merge.
+
+#### API Endpoint
+
+```
+GET /api/v1/musehub/repos/{repo_id}/divergence?branch_a=<name>&branch_b=<name>
+```
+
+Returns `DivergenceResponse` (JSON):
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `repoId` | `str` | Repository ID |
+| `branchA` | `str` | First branch name |
+| `branchB` | `str` | Second branch name |
+| `commonAncestor` | `str \| null` | Merge-base commit ID |
+| `dimensions` | `list[DivergenceDimensionResponse]` | Five dimension scores |
+| `overallScore` | `float` | Mean of dimension scores in [0.0, 1.0] |
+
+Each `DivergenceDimensionResponse`:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `dimension` | `str` | `melodic` / `harmonic` / `rhythmic` / `structural` / `dynamic` |
+| `level` | `str` | `NONE` / `LOW` / `MED` / `HIGH` |
+| `score` | `float` | Jaccard divergence in [0.0, 1.0] |
+| `description` | `str` | Human-readable summary |
+| `branchACommits` | `int` | Commits touching this dimension on branch A |
+| `branchBCommits` | `int` | Commits touching this dimension on branch B |
+
+**Level thresholds:**
+
+| Level | Score range |
+|-------|-------------|
+| NONE  | < 0.15 |
+| LOW   | 0.15–0.40 |
+| MED   | 0.40–0.70 |
+| HIGH  | ≥ 0.70 |
+
+#### Score Formula
+
+Divergence per dimension = `|symmetric_diff| / |union|` over commit IDs classified into that dimension via keyword matching on commit messages:
+
+- **melodic:** melody, lead, solo, vocal, tune, note, pitch, riff, arpeggio
+- **harmonic:** chord, harmony, key, scale, progression, voicing
+- **rhythmic:** beat, drum, rhythm, groove, perc, swing, tempo, bpm, quantize
+- **structural:** struct, form, section, bridge, chorus, verse, intro, outro, arrangement
+- **dynamic:** mix, master, volume, level, dynamic, eq, compress, reverb, fx
+
+Overall score = arithmetic mean of all five dimension scores.
+
+#### Browser UI
+
+```
+GET /musehub/ui/{repo_id}/divergence?branch_a=<name>&branch_b=<name>
+```
+
+Renders an interactive page featuring:
+- Five-axis SVG radar chart with colour-coded dimension labels (NONE=blue, LOW=teal, MED=amber, HIGH=red)
+- Overall divergence percentage display with merge-base commit reference
+- Per-dimension progress bars + level badges
+- Click-to-expand detail panels showing commit counts per branch
+- Branch selector dropdowns with URL state sync
+
+**AI agent use case:** Call `GET /divergence` before opening a PR to determine if two branches are safe to merge automatically (overall score < 0.15) or need producer review (HIGH on any dimension).
+
 ### Pull Request Workflow
 
 Pull requests let musicians propose merging one branch variation into another, enabling async review before incorporating changes into the canonical arrangement.
@@ -1681,12 +1895,23 @@ Default: `/data/musehub/objects`. Mount this path on a persistent volume in prod
 
 Only metadata (`object_id`, `path`, `size_bytes`, `disk_path`) is stored in Postgres; the bytes live on disk.
 
+### Session Workflow
+
+Recording sessions let musicians capture the creative context of a generation or performance session — who was present, where they recorded, what they intended, which commits were produced, and any closing notes.
+
+- **Session IDs** are the local UUIIDv4 from `.muse/sessions/<uuid>.json`. The same ID is used in the Hub.
+- **Push semantics:** `POST /sessions` is **idempotent** — re-pushing the same `session_id` updates the existing record. This allows updating notes after the initial push.
+- **Participants with session count badges:** The UI loads all sessions to compute per-participant session counts, displaying them next to each name on the detail page.
+- **Commits cross-reference:** `commits` is a JSON list of Muse commit IDs. The detail page links each commit to the commit detail page. No FK enforcement at DB level — commits may arrive before or after sessions.
+- **Previous/next navigation:** The session detail page fetches all sessions for the repo and renders prev/next links based on `started_at` order, mirroring the `muse session log` traversal pattern.
+
 ### Architecture Boundary
 
 Service modules are the only place that touches `musehub_*` tables:
 - `musehub_repository.py` → `musehub_repos`, `musehub_branches`, `musehub_commits`
 - `musehub_issues.py` → `musehub_issues`
 - `musehub_pull_requests.py` → `musehub_pull_requests`
+- `musehub_sessions.py` → `musehub_sessions`
 - `musehub_sync.py` → `musehub_commits`, `musehub_objects`, `musehub_branches` (sync path only)
 
 Route handlers delegate all persistence to the service layer. No business logic in route handlers.
@@ -6436,6 +6661,88 @@ registration index matches the filesystem.
 
 ---
 
+## Muse Hub — User Profiles
+
+User profiles are the public-facing identity layer of Muse Hub, analogous to
+GitHub profile pages.  Each authenticated user may create exactly one profile,
+identified by a URL-safe username.  The profile aggregates data across all
+of the user's repos to present a musical portfolio.
+
+### Data Model
+
+**Table:** `musehub_profiles`
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `user_id` | String(36) PK | JWT `sub` — same ID used in `musehub_repos.owner_user_id` |
+| `username` | String(64) UNIQUE | URL-friendly handle (e.g. `gabriel`) |
+| `bio` | Text nullable | Short bio, Markdown supported (max 500 chars) |
+| `avatar_url` | String(2048) nullable | Avatar image URL |
+| `pinned_repo_ids` | JSON | Up to 6 repo_ids highlighted on the profile page |
+| `created_at` | DateTime(tz) | Profile creation timestamp |
+| `updated_at` | DateTime(tz) | Last update timestamp |
+
+### API Endpoints
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| `GET` | `/api/v1/musehub/users/{username}` | Public | Full profile JSON |
+| `POST` | `/api/v1/musehub/users` | JWT required | Create a profile |
+| `PUT` | `/api/v1/musehub/users/{username}` | JWT, owner only | Update bio/avatar/pins |
+| `GET` | `/musehub/ui/users/{username}` | Public HTML shell | Browser profile page |
+
+### ProfileResponse Fields
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `username` | str | URL handle |
+| `bio` | str \| None | Short bio |
+| `avatar_url` | str \| None | Avatar URL |
+| `pinned_repo_ids` | list[str] | Pinned repo IDs (order preserved) |
+| `repos` | list[ProfileRepoSummary] | Public repos, newest first |
+| `contribution_graph` | list[ContributionDay] | 52 weeks of daily commit counts |
+| `session_credits` | int | Total commits across all repos (creative sessions) |
+| `created_at` / `updated_at` | datetime | Profile timestamps |
+
+### Contribution Graph
+
+The contribution graph covers the **last 52 weeks** (364 days) ending today.
+Each day's count is the number of commits pushed across ALL repos owned by
+the user (public and private) on that date.  The browser UI renders this as
+a GitHub-style heatmap using CSS data attributes (`data-count=0–4`).
+
+### Session Credits
+
+Session credits are the total number of commits ever pushed to Muse Hub across
+all repos owned by the user.  Each commit represents one composition session
+recorded to the hub.  This is the MVP proxy; future releases may tie credits
+to token usage from `usage_logs`.
+
+### Disambiguation
+
+The profile UI page at `/musehub/ui/users/{username}` does NOT conflict with
+the repo browser at `/musehub/ui/{repo_id}` — the `users/` path segment
+ensures distinct routing.  The JSON API is namespaced at
+`/api/v1/musehub/users/{username}`.
+
+### Result Types
+
+- `ProfileResponse` — `maestro/models/musehub.py`
+- `ProfileRepoSummary` — compact per-repo entry (repo_id, name, visibility, star_count, last_activity_at, created_at)
+- `ContributionDay` — `{ date: "YYYY-MM-DD", count: int }`
+
+Registered in `docs/reference/type_contracts.md`.
+
+### Implementation Files
+
+| File | Purpose |
+|------|---------|
+| `maestro/db/musehub_models.py` | `MusehubProfile` ORM model |
+| `maestro/services/musehub_profile.py` | CRUD + aggregate queries |
+| `maestro/api/routes/musehub/users.py` | JSON API handlers |
+| `maestro/api/routes/musehub/ui.py` | `profile_page()` HTML handler |
+| `alembic/versions/0001_consolidated_schema.py` | `musehub_profiles` table |
+| `tests/test_musehub_ui.py` | Profile acceptance tests |
 ## Muse Hub — Cross-Repo Global Search
 
 ### Overview
@@ -6546,7 +6853,6 @@ GET /api/v1/musehub/search?q=F%23+minor+walking+bass&mode=keyword&page_size=5
 The grouped response lets the agent scan commit messages by repo context,
 identify matching repos by name and owner, and immediately fetch audio previews
 via `audioObjectId` without additional round-trips.
-
 ---
 
 ## Emotion Map Page (issue #227)
