@@ -76,16 +76,12 @@ cd "$REPO"
 DEV_SHA=$(git rev-parse dev)
 
 # --- define PRs ---
-# Batch: #144–#151 (muse CLI commands — chord-map, form, tempo-scale, similarity, contour, diff, key, humanize)
+# Batch: #170–#173 (show, reset, pathlib fix, Muse Hub web UI)
 declare -a PRS=(
-  "144|feat: muse chord-map <commit> — visualize the chord progression embedded in a commit"
-  "145|feat: muse form [<commit>] — analyze and display the musical form of a commit"
-  "146|feat: muse tempo-scale <factor> [<commit>] — stretch or compress timing across a commit"
-  "147|feat: muse similarity <commit-a> <commit-b> — compute musical similarity score between two commits"
-  "148|feat: muse contour — analyze melodic contour and phrase shape"
-  "149|feat: muse diff — add music-dimension diff flags (--harmonic, --rhythmic, --melodic, --structural, --dynamic)"
-  "150|feat: muse key [<commit>] [--set <key>] — read or annotate the musical key of a commit"
-  "151|feat: muse humanize — apply humanization to quantized MIDI"
+  "170|feat: muse show <commit> — music-aware commit inspection"
+  "171|feat: muse reset <commit> — reset branch pointer to a prior commit"
+  "172|fix: remove bare import pathlib from status.py + status already dropped from STUB_COMMANDS"
+  "173|feat: Muse Hub web UI — artifact browsing, commit viewer, PR and issue pages"
 )
 
 # --- create worktrees + task files ---
@@ -214,108 +210,122 @@ STEP 2 — CHECK CANONICAL STATE BEFORE DOING ANY WORK:
 
 STEP 3 — CHECKOUT & SYNC (only if STEP 2 shows the PR is open and unreviewed):
 
+  ⚠️  COMMIT GUARD — run this first if any files are modified in your worktree:
+  Git will abort the merge if any tracked file has uncommitted local changes.
+  Commit everything before touching the remote.
+
+  git add -A
+  git diff --cached --quiet || git commit -m "chore: stage worktree before dev sync"
+
   # 1. Checkout the PR branch into this worktree
   gh pr checkout <N>
 
   # 2. Fetch ALL remote refs (other agents may have merged PRs while you work)
   git fetch origin
 
-  # 3. Merge the latest dev into this feature branch NOW
+  # 3. Pre-check: know what will conflict BEFORE you merge
+  #    These three files conflict on virtually every parallel Muse batch.
+  #    Read this section now so you can resolve mechanically when git stops.
+  #
+  #    FILE                              ALWAYS-SAFE RULE
+  #    maestro/muse_cli/app.py           Keep ALL app.add_typer() lines from both sides.
+  #    docs/architecture/muse_vcs.md    Keep ALL ## sections from both sides, sort alpha.
+  #    docs/reference/type_contracts.md Keep ALL entries from both sides.
+  #
+  #    If git reports a conflict in any of these three files, see the
+  #    KNOWN-SAFE CONFLICT PLAYBOOK below. All three are mechanically resolvable.
+
+  # 4. Merge the latest dev into this feature branch NOW
   git merge origin/dev
 
+  ── CONFLICT PLAYBOOK (reference this immediately when git reports conflicts) ──
+  │                                                                              │
+  │ STEP A — See what conflicted (one command):                                 │
+  │   git status | grep "^UU"                                                   │
+  │                                                                              │
+  │ STEP B — For each conflicted file, apply the matching rule below:           │
+  │                                                                              │
+  │ ┌─ maestro/muse_cli/app.py ─────────────────────────────────────────────┐  │
+  │ │ Each parallel agent adds exactly one app.add_typer() line.            │  │
+  │ │ Pattern:                                                               │  │
+  │ │   <<<<<<< HEAD                                                         │  │
+  │ │   app.add_typer(foo_app, name="foo", ...)                              │  │
+  │ │   =======                                                              │  │
+  │ │   app.add_typer(bar_app, name="bar", ...)                              │  │
+  │ │   >>>>>>> origin/dev                                                   │  │
+  │ │ Rule: KEEP BOTH LINES. Remove markers. Never drop a line.             │  │
+  │ │ Verify: grep -c "add_typer" maestro/muse_cli/app.py                   │  │
+  │ │   count must equal the total number of registered sub-apps            │  │
+  │ └───────────────────────────────────────────────────────────────────────┘  │
+  │                                                                              │
+  │ ┌─ docs/architecture/muse_vcs.md ───────────────────────────────────────┐  │
+  │ │ Count markers first:                                                   │  │
+  │ │   grep -c "^<<<<<" docs/architecture/muse_vcs.md                      │  │
+  │ │ That is how many conflict blocks you must resolve.                     │  │
+  │ │                                                                        │  │
+  │ │ For each block, identify pattern and apply rule:                       │  │
+  │ │                                                                        │  │
+  │ │ Pattern A — both sides have a real ## section:                        │  │
+  │ │   <<<<<<< HEAD                                                         │  │
+  │ │   ## muse foo — ...                                                    │  │
+  │ │   =======                                                              │  │
+  │ │   ## muse bar — ...                                                    │  │
+  │ │   >>>>>>> origin/dev                                                   │  │
+  │ │   Rule: KEEP BOTH, sorted alphabetically by command name.             │  │
+  │ │                                                                        │  │
+  │ │ Pattern B — one side is empty or a blank stub:                        │  │
+  │ │   <<<<<<< HEAD                                                         │  │
+  │ │   (blank or single-line stub)                                          │  │
+  │ │   =======                                                              │  │
+  │ │   ## muse bar — full content                                           │  │
+  │ │   >>>>>>> origin/dev                                                   │  │
+  │ │   Rule: KEEP the non-empty side entirely. Discard the empty side.    │  │
+  │ │                                                                        │  │
+  │ │ Pattern C — both sides edited the SAME section differently:           │  │
+  │ │   Rule: read both, keep the more complete / accurate version.         │  │
+  │ │   If genuinely unclear, keep both and note in the commit message.     │  │
+  │ │                                                                        │  │
+  │ │ Final check (must return empty):                                       │  │
+  │ │   grep -n "<<<<<<\|=======\|>>>>>>>" docs/architecture/muse_vcs.md   │  │
+  │ └───────────────────────────────────────────────────────────────────────┘  │
+  │                                                                              │
+  │ ┌─ docs/reference/type_contracts.md ────────────────────────────────────┐  │
+  │ │ Each agent registers new named types. Both belong.                    │  │
+  │ │ Rule: KEEP ALL entries from BOTH sides. Remove markers.              │  │
+  │ │ Final check: grep -n "<<<<<<\|=======\|>>>>>>>" docs/reference/type_contracts.md │
+  │ └───────────────────────────────────────────────────────────────────────┘  │
+  │                                                                              │
+  │ ┌─ Any other file (JUDGMENT CONFLICTS) ─────────────────────────────────┐  │
+  │ │ These require reading both sides carefully.                            │  │
+  │ │ • Preserve dev's version PLUS this PR's additions.                   │  │
+  │ │ • If dev already contains this PR's feature → downgrade grade.       │  │
+  │ │ • If semantically incompatible → stop, report to user.               │  │
+  │ └───────────────────────────────────────────────────────────────────────┘  │
+  │                                                                              │
+  │ STEP C — After resolving ALL files:                                         │
+  │   git add <resolved-files>                                                  │
+  │   git commit -m "chore: resolve merge conflicts with origin/dev"            │
+  │                                                                              │
+  │ STEP D — Verify clean (no markers anywhere):                                │
+  │   git diff --check                                                           │
+  │   (should output nothing — any output means unresolvedmarkers remain)       │
+  │                                                                              │
+  │ STEP E — Re-run mypy only if resolved files contain Python changes:         │
+  │   app.py changed → run mypy. Markdown-only conflicts → skip mypy.          │
+  │   cd "$REPO" && docker compose exec maestro sh -c \                         │
+  │     "PYTHONPATH=/worktrees/$WTNAME mypy /worktrees/$WTNAME/maestro/"        │
+  │                                                                              │
+  │ STEP F — Advanced diagnostics if needed:                                    │
+  │   git log --oneline origin/dev...HEAD  ← commits this PR adds              │
+  │   git diff origin/dev...HEAD           ← full delta vs dev                 │
+  │   git show origin/dev:path/to/file     ← see dev's version of a file       │
+  └──────────────────────────────────────────────────────────────────────────────
+
   ⚠️  If git merge reports "local changes would be overwritten":
-    - Do NOT use git stash + git rebase. That rewrites history and is Yellow-tier.
     - Run git status to identify the unexpected modified files.
     - If they came from the checkout (gh pr checkout left dirty files), run:
         git checkout -- <file>   ← discard checkout-introduced changes, then retry merge
-    - If they are your own review edits committed mid-step, commit them first:
-        git add -A && git commit -m "chore: stage review edits before dev sync"
     - Then retry: git merge origin/dev
-
-  ── If git merge reports conflicts ──────────────────────────────────────────
-  │ You have full command-line authority to resolve them.                     │
-  │                                                                           │
-  │ 1. Inspect what conflicted:                                               │
-  │      git status        ← UU = unmerged conflict, M/A = already staged   │
-  │      git diff          ← shows raw conflict markers (<<<<<<< / =======)  │
-  │                                                                           │
-  │ 2. Identify each conflict type and apply the matching rule:               │
-  │                                                                           │
-  │    KNOWN-SAFE CONFLICTS (resolve mechanically — no judgment needed):     │
-  │    • maestro/muse_cli/app.py                                              │
-  │        Each parallel agent adds exactly one app.add_typer() line.        │
-  │        Rule: KEEP ALL add_typer lines from BOTH sides. Never drop one.   │
-  │        Pattern to look for:                                               │
-  │          <<<<<<< HEAD                                                     │
-  │          app.add_typer(foo_app, ...)                                      │
-  │          =======                                                          │
-  │          app.add_typer(bar_app, ...)                                      │
-  │          >>>>>>> origin/dev                                               │
-  │        Resolution: keep both lines, remove markers.                      │
-  │                                                                           │
-  │    • docs/architecture/muse_vcs.md  (most common conflict in Muse PRs)  │
-  │        Diagnosis: run                                                     │
-  │          grep -n "<<<<<<\|=======\|>>>>>>>" docs/architecture/muse_vcs.md│
-  │        and inspect the <<<< / ==== / >>>> blocks.                        │
-  │                                                                           │
-  │        THREE patterns — all mechanically resolvable:                     │
-  │                                                                           │
-  │        A) Both sides add a NEW section (two non-empty blocks):           │
-  │             <<<<<<< HEAD                                                  │
-  │             ## muse foo — description                                    │
-  │             ...content...                                                 │
-  │             =======                                                       │
-  │             ## muse bar — description                                    │
-  │             ...content...                                                 │
-  │             >>>>>>> origin/dev                                            │
-  │           Resolution: keep BOTH sections, sort alphabetically by         │
-  │           command name, remove markers.                                   │
-  │                                                                           │
-  │        B) One side is empty/placeholder, other has full content          │
-  │           (most common — one PR didn't touch this section at all):       │
-  │             <<<<<<< HEAD                                                  │
-  │             (empty, or just a blank line / stub heading)                 │
-  │             =======                                                       │
-  │             ## muse bar — description                                    │
-  │             ...full content...                                            │
-  │             >>>>>>> origin/dev                                            │
-  │           Resolution: keep the non-empty side entirely. Discard the      │
-  │           empty side. Remove markers. Do NOT try to merge empty + full.  │
-  │                                                                           │
-  │        C) Both sides edited the SAME section (true conflict):            │
-  │           Resolution: read both carefully. Keep the more complete /      │
-  │           accurate version. Escalate to JUDGMENT CONFLICTS if unclear.   │
-  │                                                                           │
-  │        After resolving ALL markers in this file:                         │
-  │          grep -n "<<<<<<\|=======\|>>>>>>>" docs/architecture/muse_vcs.md│
-  │        Must return empty before staging.                                 │
-  │                                                                           │
-  │    • docs/reference/type_contracts.md                                     │
-  │        Each agent registers new named types. Both registrations belong.  │
-  │        Rule: keep ALL entries from BOTH sides.                            │
-  │                                                                           │
-  │    JUDGMENT CONFLICTS (read both sides carefully):                        │
-  │    • Any file NOT in the known-safe list above.                          │
-  │    • Prefer dev's version UNLESS this PR's change clearly supersedes it. │
-  │    • If a conflict reveals that dev already contains this PR's feature:  │
-  │      downgrade grade to C or D and explain. Do not merge redundant code. │
-  │                                                                           │
-  │ 3. After editing each conflicted file, verify no markers remain:          │
-  │      grep -n "<<<<<<\|=======\|>>>>>>>" <file>   ← must return empty    │
-  │                                                                           │
-  │ 4. Stage and commit:                                                      │
-  │      git add <resolved-files>                                             │
-  │      git commit -m "chore: resolve merge conflicts with origin/dev"      │
-  │                                                                           │
-  │ 5. After resolving: re-run mypy AND tests before continuing.             │
-  │    Conflicts resolved incorrectly surface as type errors or test failures.│
-  │                                                                           │
-  │ 6. Advanced diagnostic tools:                                             │
-  │      git log --oneline origin/dev...HEAD  ← commits this PR adds         │
-  │      git diff origin/dev...HEAD           ← full delta vs dev            │
-  │      git log --oneline --graph --all      ← full branch picture          │
-  │      git show origin/dev:path/to/file     ← see dev's version of a file │
-  └───────────────────────────────────────────────────────────────────────────
 
 STEP 4 — REGRESSION CHECK (before review):
   Check whether any commits that landed on dev since this branch diverged
@@ -412,16 +422,23 @@ STEP 6 — PRE-MERGE SYNC (only if grade is A or B):
   ⚠️  Other agents may have merged PRs while you were reviewing. Sync once more
   before merging to catch any new conflicts.
 
-  # 1. Capture branch name FIRST — you need it for the push and delete below
+  # 1. COMMIT GUARD — commit everything before touching origin. No exceptions.
+  #    An uncommitted working tree causes git merge to abort with "local changes
+  #    would be overwritten." This guard prevents that entirely.
+  git add -A
+  git diff --cached --quiet || git commit -m "chore: stage review edits before final dev sync"
+
+  # 2. Capture branch name FIRST — you need it for the push and delete below
   BRANCH=$(git rev-parse --abbrev-ref HEAD)
 
-  # 2. Sync with dev
+  # 3. Sync with dev
   git fetch origin
   git merge origin/dev
 
   If new conflicts appear after the final sync:
-  - Resolve using the same guidance from STEP 3.
-  - Re-run mypy and tests after resolving.
+  - Use the CONFLICT PLAYBOOK from STEP 3 — same rules apply.
+  - For markdown-only conflicts (muse_vcs.md, type_contracts.md), skip mypy.
+  - For app.py or any Python file, re-run mypy before pushing.
   - If conflicts are non-trivial and introduce risk → downgrade grade to B
     and file a follow-up issue. Still merge if the overall work is solid.
 
