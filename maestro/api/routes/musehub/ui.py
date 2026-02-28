@@ -11,10 +11,15 @@ Endpoint summary:
   GET /musehub/ui/{repo_id}/pulls/{pr_id}          — PR detail page (with merge button)
   GET /musehub/ui/{repo_id}/issues                 — issue list page
   GET /musehub/ui/{repo_id}/issues/{number}        — issue detail page (with close button)
+  GET /musehub/ui/{repo_id}/embed/{ref}            — embeddable player widget (no auth, iframe-safe)
+  GET /musehub/ui/{repo_id}/search                 — in-repo search page (four modes)
 
 These routes require NO JWT auth — they return static HTML shells whose
 embedded JavaScript fetches data from the authed JSON API
 (``/api/v1/musehub/...``) using a token stored in ``localStorage``.
+
+The embed route is intentionally designed for cross-origin iframe embedding:
+it sets ``X-Frame-Options: ALLOWALL`` and omits the Sign-out button.
 
 No Jinja2 is required; pages are self-contained HTML strings rendered
 server-side.  No external CDN dependencies.
@@ -23,7 +28,7 @@ from __future__ import annotations
 
 import logging
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Response
 from fastapi.responses import HTMLResponse
 
 logger = logging.getLogger(__name__)
@@ -274,6 +279,7 @@ async def repo_page(repo_id: str) -> HTMLResponse:
               <div style="display:flex;gap:12px;margin-bottom:16px;flex-wrap:wrap">
                 <a href="${{base}}/pulls" class="btn btn-secondary">Pull Requests</a>
                 <a href="${{base}}/issues" class="btn btn-secondary">Issues</a>
+                <a href="${{base}}/search" class="btn btn-secondary">&#128269; Search</a>
               </div>
               <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
                 <select id="branch-sel" onchange="load(this.value)">
@@ -1047,6 +1053,509 @@ async def issue_detail_page(repo_id: str, number: int) -> HTMLResponse:
             f'<a href="/musehub/ui/{repo_id}">{repo_id[:8]}</a> / '
             f'<a href="/musehub/ui/{repo_id}/issues">issues</a> / #{number}'
         ),
+        body_script=script,
+    )
+    return HTMLResponse(content=html)
+
+
+# ---------------------------------------------------------------------------
+# Embed CSS (compact dark theme, no chrome)
+# ---------------------------------------------------------------------------
+
+_EMBED_CSS = """
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  background: #0d1117; color: #c9d1d9;
+  height: 100vh; display: flex; align-items: center; justify-content: center;
+}
+.player {
+  width: 100%; max-width: 100%; padding: 16px 20px;
+  background: #161b22; border: 1px solid #30363d; border-radius: 8px;
+  display: flex; flex-direction: column; gap: 12px;
+}
+.player-header {
+  display: flex; align-items: center; gap: 12px;
+}
+.logo-mark {
+  font-size: 20px; flex-shrink: 0;
+}
+.track-info { flex: 1; overflow: hidden; }
+.track-title {
+  font-size: 14px; font-weight: 600; color: #e6edf3;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.track-sub {
+  font-size: 11px; color: #8b949e; margin-top: 2px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.controls {
+  display: flex; align-items: center; gap: 10px;
+}
+.play-btn {
+  width: 36px; height: 36px; border-radius: 50%;
+  background: #238636; border: none; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0; font-size: 14px; color: #fff;
+  transition: background 0.15s;
+}
+.play-btn:hover { background: #2ea043; }
+.play-btn:disabled { background: #30363d; cursor: not-allowed; }
+.progress-wrap {
+  flex: 1; display: flex; flex-direction: column; gap: 4px;
+}
+.progress-bar {
+  width: 100%; height: 4px; background: #30363d; border-radius: 2px;
+  cursor: pointer; position: relative; overflow: hidden;
+}
+.progress-fill {
+  height: 100%; width: 0%; background: #58a6ff;
+  border-radius: 2px; transition: width 0.1s linear;
+  pointer-events: none;
+}
+.time-row {
+  display: flex; justify-content: space-between;
+  font-size: 11px; color: #8b949e;
+}
+.footer-link {
+  display: flex; justify-content: flex-end; align-items: center;
+}
+.footer-link a {
+  font-size: 11px; color: #58a6ff; text-decoration: none;
+  display: flex; align-items: center; gap: 4px;
+}
+.footer-link a:hover { text-decoration: underline; }
+.status { font-size: 12px; color: #8b949e; text-align: center; padding: 8px 0; }
+.status.error { color: #f85149; }
+"""
+
+
+def _embed_page(title: str, repo_id: str, ref: str, body_script: str) -> str:
+    """Assemble a compact embed player HTML page.
+
+    Designed for iframe embedding on external sites.  No chrome, no token
+    form — just the player widget.  ``X-Frame-Options`` is set by the
+    route handler, not here, since this function only produces the body.
+    """
+    listen_url = f"/musehub/ui/{repo_id}"
+    return f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{title} — Muse Hub</title>
+  <style>{_EMBED_CSS}</style>
+</head>
+<body>
+  <div class="player" id="player">
+    <div class="player-header">
+      <span class="logo-mark">&#127925;</span>
+      <div class="track-info">
+        <div class="track-title" id="track-title">Loading&#8230;</div>
+        <div class="track-sub" id="track-sub">Muse Hub</div>
+      </div>
+    </div>
+    <div class="controls">
+      <button class="play-btn" id="play-btn" disabled title="Play / Pause">&#9654;</button>
+      <div class="progress-wrap">
+        <div class="progress-bar" id="progress-bar">
+          <div class="progress-fill" id="progress-fill"></div>
+        </div>
+        <div class="time-row">
+          <span id="time-cur">0:00</span>
+          <span id="time-dur">0:00</span>
+        </div>
+      </div>
+    </div>
+    <div class="footer-link">
+      <a href="{listen_url}" target="_blank" rel="noopener">
+        &#127925; View on Muse Hub
+      </a>
+    </div>
+  </div>
+  <audio id="audio-el" preload="metadata"></audio>
+  <script>
+    (function() {{
+      const repoId = {repr(repo_id)};
+      const ref    = {repr(ref)};
+      const API    = '/api/v1/musehub';
+
+      const audio      = document.getElementById('audio-el');
+      const playBtn    = document.getElementById('play-btn');
+      const fill       = document.getElementById('progress-fill');
+      const bar        = document.getElementById('progress-bar');
+      const timeCur    = document.getElementById('time-cur');
+      const timeDur    = document.getElementById('time-dur');
+      const trackTitle = document.getElementById('track-title');
+      const trackSub   = document.getElementById('track-sub');
+
+      function fmtTime(s) {{
+        if (!isFinite(s)) return '0:00';
+        const m = Math.floor(s / 60);
+        const sec = Math.floor(s % 60);
+        return m + ':' + (sec < 10 ? '0' : '') + sec;
+      }}
+
+      function setStatus(msg, isError) {{
+        trackTitle.textContent = isError ? msg : (trackTitle.textContent || msg);
+        if (isError) trackTitle.classList.add('error');
+      }}
+
+      audio.addEventListener('timeupdate', function() {{
+        const pct = audio.duration ? (audio.currentTime / audio.duration) * 100 : 0;
+        fill.style.width = pct + '%';
+        timeCur.textContent = fmtTime(audio.currentTime);
+      }});
+
+      audio.addEventListener('durationchange', function() {{
+        timeDur.textContent = fmtTime(audio.duration);
+      }});
+
+      audio.addEventListener('ended', function() {{
+        playBtn.innerHTML = '&#9654;';
+        fill.style.width = '0%';
+        audio.currentTime = 0;
+      }});
+
+      audio.addEventListener('canplay', function() {{
+        playBtn.disabled = false;
+      }});
+
+      audio.addEventListener('error', function() {{
+        setStatus('Audio unavailable', true);
+      }});
+
+      playBtn.addEventListener('click', function() {{
+        if (audio.paused) {{
+          audio.play();
+          playBtn.innerHTML = '&#9646;&#9646;';
+        }} else {{
+          audio.pause();
+          playBtn.innerHTML = '&#9654;';
+        }}
+      }});
+
+      bar.addEventListener('click', function(e) {{
+        if (!audio.duration) return;
+        const rect = bar.getBoundingClientRect();
+        const pct  = (e.clientX - rect.left) / rect.width;
+        audio.currentTime = pct * audio.duration;
+      }});
+
+      async function loadTrack() {{
+        try {{
+          const objRes = await fetch(API + '/repos/' + repoId + '/objects');
+          if (!objRes.ok) throw new Error('objects ' + objRes.status);
+          const objData = await objRes.json();
+          const objects = objData.objects || [];
+
+          const audio_exts = ['mp3', 'ogg', 'wav', 'm4a'];
+          const audioObj = objects.find(function(o) {{
+            const ext = o.path.split('.').pop().toLowerCase();
+            return audio_exts.indexOf(ext) !== -1;
+          }});
+
+          if (!audioObj) {{
+            trackTitle.textContent = 'No audio in this commit';
+            trackSub.textContent = 'ref: ' + ref.substring(0, 8);
+            return;
+          }}
+
+          const name = audioObj.path.split('/').pop();
+          trackTitle.textContent = name;
+          trackSub.textContent = 'ref: ' + ref.substring(0, 8);
+
+          const audioUrl = API + '/repos/' + repoId + '/objects/' + audioObj.objectId + '/content';
+          audio.src = audioUrl;
+          audio.load();
+        }} catch(e) {{
+          setStatus('Could not load track', true);
+          trackSub.textContent = e.message;
+        }}
+      }}
+
+      {body_script}
+
+      loadTrack();
+    }})();
+  </script>
+</body>
+</html>"""
+
+
+@router.get(
+    "/{repo_id}/embed/{ref}",
+    response_class=HTMLResponse,
+    summary="Embeddable MuseHub player widget",
+)
+async def embed_page(repo_id: str, ref: str) -> Response:
+    """Render a compact, iframe-safe audio player for a MuseHub repo commit.
+
+    Why this route exists: external sites (blogs, CMSes) embed MuseHub
+    compositions via ``<iframe src="/musehub/ui/{repo_id}/embed/{ref}">``.
+    The oEmbed endpoint (``GET /oembed``) auto-generates this iframe tag.
+
+    Contract:
+    - No JWT required — public repos can be embedded without auth.
+    - Returns ``X-Frame-Options: ALLOWALL`` so browsers permit cross-origin framing.
+    - ``ref`` is a commit SHA or branch name used to label the track.
+    - Audio is fetched from ``/api/v1/musehub/repos/{repo_id}/objects`` at
+      runtime; the first recognised audio file (mp3/ogg/wav/m4a) is played.
+    - Responsive: works from 300px to full viewport width.
+
+    Args:
+        repo_id: UUID of the MuseHub repository.
+        ref:     Commit SHA or branch name identifying the composition version.
+
+    Returns:
+        HTML response with ``X-Frame-Options: ALLOWALL`` header.
+    """
+    short_ref = ref[:8] if len(ref) >= 8 else ref
+    html = _embed_page(
+        title=f"Player {short_ref}",
+        repo_id=repo_id,
+        ref=ref,
+        body_script="",
+    )
+    return Response(
+        content=html,
+        media_type="text/html",
+        headers={"X-Frame-Options": "ALLOWALL"},
+    )
+
+
+@router.get(
+    "/{repo_id}/search",
+    response_class=HTMLResponse,
+    summary="Muse Hub in-repo search page",
+)
+async def search_page(repo_id: str) -> HTMLResponse:
+    """Render the in-repo search page with four mode tabs.
+
+    Modes map to the JSON API at ``GET /api/v1/musehub/repos/{repo_id}/search``:
+    - Musical Properties (``mode=property``) — filter by harmony/rhythm/melody/etc.
+    - Natural Language (``mode=ask``) — free-text question over commit history.
+    - Keyword (``mode=keyword``) — keyword overlap scored search.
+    - Pattern (``mode=pattern``) — substring match against messages and branches.
+
+    Results render as commit rows with SHA, message, author, timestamp, and an
+    audio preview link for any ``mp3``/``wav``/``ogg`` artifact on that commit.
+    Authentication is handled client-side via localStorage JWT.
+    """
+    script = f"""
+      const repoId = {repr(repo_id)};
+      const base   = '/musehub/ui/' + repoId;
+      const apiBase = '/api/v1/musehub/repos/' + repoId;
+
+      function escHtml(s) {{
+        if (!s) return '';
+        return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+      }}
+
+      // ── State ──────────────────────────────────────────────────────────────
+      let currentMode = 'keyword';
+
+      function setMode(mode) {{
+        currentMode = mode;
+        document.querySelectorAll('.tab-btn').forEach(b => {{
+          b.classList.toggle('tab-active', b.dataset.mode === mode);
+        }});
+        document.querySelectorAll('.mode-panel').forEach(p => {{
+          p.style.display = p.dataset.mode === mode ? 'block' : 'none';
+        }});
+      }}
+
+      // ── Result rendering ───────────────────────────────────────────────────
+      function renderResults(data) {{
+        const matches = data.matches || [];
+        const header = `<p style="color:#8b949e;font-size:13px;margin-bottom:12px">
+          Mode: <strong>${{escHtml(data.mode)}}</strong> &bull;
+          Query: <em>${{escHtml(data.query || '(all)')}}</em> &bull;
+          ${{matches.length}} result(s) &bull; ${{data.totalScanned}} commits scanned
+        </p>`;
+
+        if (matches.length === 0) {{
+          document.getElementById('results').innerHTML = header +
+            '<p class="loading">No matching commits found.</p>';
+          return;
+        }}
+
+        const rows = matches.map(m => `
+          <div class="commit-row">
+            <a class="commit-sha" href="${{base}}/commits/${{m.commitId}}">${{shortSha(m.commitId)}}</a>
+            <div class="commit-msg" style="flex:1">
+              <a href="${{base}}/commits/${{m.commitId}}">${{escHtml(m.message)}}</a>
+              <div style="font-size:12px;color:#8b949e;margin-top:2px">
+                ${{escHtml(m.author)}} &bull; ${{fmtDate(m.timestamp)}}
+                &bull; branch: ${{escHtml(m.branch)}}
+                ${{m.score < 1.0 ? '&bull; score: ' + m.score.toFixed(3) : ''}}
+                <a href="${{base}}/commits/${{m.commitId}}"
+                   class="btn btn-secondary"
+                   style="font-size:11px;padding:2px 8px;margin-left:8px">
+                  &#9654; Preview
+                </a>
+              </div>
+            </div>
+          </div>`).join('');
+
+        document.getElementById('results').innerHTML = header +
+          '<div class="card">' + rows + '</div>';
+      }}
+
+      // ── Search dispatch ────────────────────────────────────────────────────
+      async function runSearch() {{
+        document.getElementById('results').innerHTML = '<p class="loading">Searching&#8230;</p>';
+        try {{
+          let url = apiBase + '/search?mode=' + encodeURIComponent(currentMode);
+          const limit = document.getElementById('inp-limit').value || 20;
+          const since = document.getElementById('inp-since').value;
+          const until = document.getElementById('inp-until').value;
+          url += '&limit=' + encodeURIComponent(limit);
+          if (since) url += '&since=' + encodeURIComponent(since + 'T00:00:00Z');
+          if (until) url += '&until=' + encodeURIComponent(until + 'T23:59:59Z');
+
+          if (currentMode === 'property') {{
+            const fields = ['harmony','rhythm','melody','structure','dynamic','emotion'];
+            fields.forEach(f => {{
+              const v = document.getElementById('prop-' + f).value.trim();
+              if (v) url += '&' + f + '=' + encodeURIComponent(v);
+            }});
+          }} else {{
+            const q = document.getElementById('inp-q-' + currentMode).value.trim();
+            if (q) url += '&q=' + encodeURIComponent(q);
+          }}
+
+          const data = await apiFetch(url.replace(apiBase, ''));
+          renderResults(data);
+        }} catch(e) {{
+          if (e.message !== 'auth')
+            document.getElementById('results').innerHTML =
+              '<p class="error">&#10005; ' + escHtml(e.message) + '</p>';
+        }}
+      }}
+
+      // ── Page bootstrap ─────────────────────────────────────────────────────
+      document.getElementById('content').innerHTML = `
+        <div style="margin-bottom:12px">
+          <a href="${{base}}">&larr; Back to repo</a>
+        </div>
+        <div class="card">
+          <h1 style="margin-bottom:16px">&#128269; Search Commits</h1>
+
+          <!-- Mode tabs -->
+          <div style="display:flex;gap:8px;margin-bottom:20px;flex-wrap:wrap">
+            <button class="btn tab-btn tab-active" data-mode="keyword"
+                    onclick="setMode('keyword')">Keyword</button>
+            <button class="btn tab-btn" data-mode="ask"
+                    onclick="setMode('ask')">Natural Language</button>
+            <button class="btn tab-btn" data-mode="pattern"
+                    onclick="setMode('pattern')">Pattern</button>
+            <button class="btn tab-btn" data-mode="property"
+                    onclick="setMode('property')">Musical Properties</button>
+          </div>
+
+          <!-- Shared date range + limit -->
+          <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px;align-items:flex-end">
+            <div class="meta-item">
+              <span class="meta-label">Since</span>
+              <input id="inp-since" type="date" style="background:#0d1117;color:#c9d1d9;border:1px solid #30363d;border-radius:6px;padding:6px 10px;font-size:14px" />
+            </div>
+            <div class="meta-item">
+              <span class="meta-label">Until</span>
+              <input id="inp-until" type="date" style="background:#0d1117;color:#c9d1d9;border:1px solid #30363d;border-radius:6px;padding:6px 10px;font-size:14px" />
+            </div>
+            <div class="meta-item">
+              <span class="meta-label">Limit</span>
+              <input id="inp-limit" type="number" value="20" min="1" max="200"
+                     style="width:80px;background:#0d1117;color:#c9d1d9;border:1px solid #30363d;border-radius:6px;padding:6px 10px;font-size:14px" />
+            </div>
+          </div>
+
+          <!-- Keyword panel -->
+          <div class="mode-panel" data-mode="keyword">
+            <div style="display:flex;gap:8px">
+              <input id="inp-q-keyword" type="text" placeholder="e.g. dark jazz bassline"
+                     style="flex:1;background:#0d1117;color:#c9d1d9;border:1px solid #30363d;border-radius:6px;padding:8px;font-size:14px"
+                     onkeydown="if(event.key==='Enter')runSearch()" />
+              <button class="btn btn-primary" onclick="runSearch()">Search</button>
+            </div>
+            <p style="font-size:12px;color:#8b949e;margin-top:6px">
+              Scores commits by keyword overlap. Higher score = better match.
+            </p>
+          </div>
+
+          <!-- Natural Language panel -->
+          <div class="mode-panel" data-mode="ask" style="display:none">
+            <div style="display:flex;gap:8px">
+              <input id="inp-q-ask" type="text" placeholder="e.g. when did I change to F# minor?"
+                     style="flex:1;background:#0d1117;color:#c9d1d9;border:1px solid #30363d;border-radius:6px;padding:8px;font-size:14px"
+                     onkeydown="if(event.key==='Enter')runSearch()" />
+              <button class="btn btn-primary" onclick="runSearch()">Ask</button>
+            </div>
+            <p style="font-size:12px;color:#8b949e;margin-top:6px">
+              Keyword extraction from your question. Full LLM-powered search is a planned enhancement.
+            </p>
+          </div>
+
+          <!-- Pattern panel -->
+          <div class="mode-panel" data-mode="pattern" style="display:none">
+            <div style="display:flex;gap:8px">
+              <input id="inp-q-pattern" type="text" placeholder="e.g. Cm7 or feature/hip-hop"
+                     style="flex:1;background:#0d1117;color:#c9d1d9;border:1px solid #30363d;border-radius:6px;padding:8px;font-size:14px"
+                     onkeydown="if(event.key==='Enter')runSearch()" />
+              <button class="btn btn-primary" onclick="runSearch()">Search</button>
+            </div>
+            <p style="font-size:12px;color:#8b949e;margin-top:6px">
+              Case-insensitive substring match against commit messages and branch names.
+            </p>
+          </div>
+
+          <!-- Musical Properties panel -->
+          <div class="mode-panel" data-mode="property" style="display:none">
+            <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px;margin-bottom:12px">
+              ${{['harmony','rhythm','melody','structure','dynamic','emotion'].map(f => `
+                <div class="meta-item">
+                  <span class="meta-label">${{f}}</span>
+                  <input id="prop-${{f}}" type="text" placeholder="e.g. ${{f==='harmony'?'key=Eb':f==='rhythm'?'tempo=120-130':f}}"
+                         style="background:#0d1117;color:#c9d1d9;border:1px solid #30363d;border-radius:6px;padding:6px 10px;font-size:13px;width:100%" />
+                </div>`).join('')}}
+            </div>
+            <button class="btn btn-primary" onclick="runSearch()">Filter</button>
+            <p style="font-size:12px;color:#8b949e;margin-top:6px">
+              All non-empty fields are combined with AND logic.
+              Range syntax: <code>tempo=120-130</code>.
+            </p>
+          </div>
+        </div>
+
+        <!-- Results area -->
+        <div id="results"><p class="loading" style="display:none"></p></div>
+      `;
+
+      // Apply tab styles after DOM is written.
+      document.querySelectorAll('.tab-btn').forEach(b => {{
+        b.style.background = '#21262d';
+        b.style.color = '#c9d1d9';
+        b.style.border = '1px solid #30363d';
+      }});
+
+      function applyTabActive() {{
+        document.querySelectorAll('.tab-btn').forEach(b => {{
+          const active = b.dataset.mode === currentMode;
+          b.style.background = active ? '#1f6feb' : '#21262d';
+          b.style.color = active ? '#fff' : '#c9d1d9';
+        }});
+      }}
+
+      document.querySelectorAll('.tab-btn').forEach(b => {{
+        b.addEventListener('click', applyTabActive);
+      }});
+
+      applyTabActive();
+    """
+    html = _page(
+        title="Search",
+        breadcrumb=f'<a href="/musehub/ui/{repo_id}">{repo_id[:8]}</a> / search',
         body_script=script,
     )
     return HTMLResponse(content=html)
