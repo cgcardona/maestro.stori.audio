@@ -355,9 +355,9 @@ async def test_credits_page_renders(
     client: AsyncClient,
     db_session: AsyncSession,
 ) -> None:
-    """GET /musehub/ui/{repo_id}/credits returns 200 HTML without requiring a JWT."""
+    """GET /musehub/ui/{owner}/{repo_slug}/credits returns 200 HTML without requiring a JWT."""
     repo_id = await _make_repo(db_session)
-    response = await client.get(f"/musehub/ui/{repo_id}/credits")
+    response = await client.get("/musehub/ui/testuser/test-beats/credits")
     assert response.status_code == 200
     assert "text/html" in response.headers["content-type"]
     body = response.text
@@ -795,7 +795,7 @@ async def test_groove_check_page_contains_chart_js(
 ) -> None:
     """Groove check page embeds the SVG chart rendering JavaScript."""
     repo_id = await _make_repo(db_session)
-    response = await client.get(f"/musehub/ui/{repo_id}/groove-check")
+    response = await client.get("/musehub/ui/testuser/test-beats/groove-check")
     assert response.status_code == 200
     body = response.text
     assert "renderGrooveChart" in body
@@ -810,7 +810,7 @@ async def test_groove_check_page_contains_status_badges(
 ) -> None:
     """Groove check page HTML includes OK / WARN / FAIL status badge rendering."""
     repo_id = await _make_repo(db_session)
-    response = await client.get(f"/musehub/ui/{repo_id}/groove-check")
+    response = await client.get("/musehub/ui/testuser/test-beats/groove-check")
     assert response.status_code == 200
     body = response.text
     assert "statusBadge" in body
@@ -825,11 +825,11 @@ async def test_groove_check_page_includes_token_form(
 ) -> None:
     """Groove check page embeds the JWT token input form so visitors can authenticate."""
     repo_id = await _make_repo(db_session)
-    response = await client.get(f"/musehub/ui/{repo_id}/groove-check")
+    response = await client.get("/musehub/ui/testuser/test-beats/groove-check")
     assert response.status_code == 200
     body = response.text
-    assert "localStorage" in body
-    assert "musehub_token" in body
+    assert "token-form" in body
+    assert "token-input" in body
 
 
 @pytest.mark.anyio
