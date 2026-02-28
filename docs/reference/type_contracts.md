@@ -2641,6 +2641,106 @@ directly for JSON serialisation without any additional mapping step.
 **Producer:** `_match_commit()`, `_grep_async()`
 **Consumer:** `_render_matches()`, callers using `--json` output
 
+### Muse Diff Types
+
+**Module:** `maestro/muse_cli/commands/diff.py`
+
+Six TypedDicts covering the five music dimensions and the combined report.
+All types carry a `changed: bool` field so callers never need to diff
+individual fields to determine whether anything changed.
+
+#### `HarmonicDiffResult`
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `commit_a` | `str` | Earlier commit ref |
+| `commit_b` | `str` | Later commit ref |
+| `key_a` | `str` | Tonal center of commit A (e.g. `"Eb major"`) |
+| `key_b` | `str` | Tonal center of commit B |
+| `mode_a` | `str` | Mode of commit A (`"Major"`, `"Minor"`, etc.) |
+| `mode_b` | `str` | Mode of commit B |
+| `chord_prog_a` | `str` | Roman-numeral chord progression of commit A |
+| `chord_prog_b` | `str` | Roman-numeral chord progression of commit B |
+| `tension_a` | `float` | Normalized tension score ∈ [0, 1] for commit A |
+| `tension_b` | `float` | Normalized tension score for commit B |
+| `tension_label_a` | `str` | Human label: `"Low"`, `"Medium"`, `"Medium-High"`, `"High"` |
+| `tension_label_b` | `str` | Human label for commit B |
+| `summary` | `str` | One-sentence natural-language summary of the harmonic change |
+| `changed` | `bool` | `True` if any harmonic dimension differs between commits |
+
+#### `RhythmicDiffResult`
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `commit_a/b` | `str` | Commit refs |
+| `tempo_a/b` | `float` | Tempo in BPM |
+| `meter_a/b` | `str` | Time signature (e.g. `"4/4"`) |
+| `swing_a/b` | `float` | Swing factor ∈ [0.5, 0.67] |
+| `swing_label_a/b` | `str` | `"Straight"`, `"Light swing"`, `"Medium swing"`, `"Hard swing"` |
+| `groove_drift_ms_a/b` | `float` | Average note timing drift in milliseconds |
+| `summary` | `str` | One-sentence summary |
+| `changed` | `bool` | `True` if any rhythmic dimension changed |
+
+#### `MelodicDiffResult`
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `commit_a/b` | `str` | Commit refs |
+| `motifs_introduced` | `list[str]` | Named motifs newly present in commit B |
+| `motifs_removed` | `list[str]` | Named motifs absent from commit B that were in commit A |
+| `contour_a/b` | `str` | Melodic shape label (e.g. `"ascending-arch"`, `"descending-step"`) |
+| `range_low_a/b` | `int` | Lowest MIDI pitch (0–127) |
+| `range_high_a/b` | `int` | Highest MIDI pitch (0–127) |
+| `summary` | `str` | One-sentence summary |
+| `changed` | `bool` | `True` if melodic content changed |
+
+#### `StructuralDiffResult`
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `commit_a/b` | `str` | Commit refs |
+| `sections_added` | `list[str]` | Section names present in B but not A (e.g. `["bridge"]`) |
+| `sections_removed` | `list[str]` | Section names present in A but not B |
+| `instruments_added` | `list[str]` | Instruments added in commit B |
+| `instruments_removed` | `list[str]` | Instruments removed in commit B |
+| `form_a/b` | `str` | Arrangement form string (e.g. `"Intro-Verse-Chorus-Outro"`) |
+| `summary` | `str` | One-sentence summary |
+| `changed` | `bool` | `True` if arrangement changed |
+
+#### `DynamicDiffResult`
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `commit_a/b` | `str` | Commit refs |
+| `avg_velocity_a/b` | `int` | Average MIDI velocity (0–127) |
+| `arc_a/b` | `str` | Dynamic arc label (see `muse dynamics` arc vocabulary) |
+| `tracks_louder` | `list[str]` | Track names that got louder in commit B |
+| `tracks_softer` | `list[str]` | Track names that got softer in commit B |
+| `tracks_silent` | `list[str]` | Track names that went completely silent in commit B |
+| `summary` | `str` | One-sentence summary |
+| `changed` | `bool` | `True` if dynamic profile changed |
+
+#### `MusicDiffReport`
+
+Produced by `--all`. Aggregates all five dimension results.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `commit_a/b` | `str` | Commit refs |
+| `harmonic` | `HarmonicDiffResult \| None` | Harmonic diff; `None` if not computed |
+| `rhythmic` | `RhythmicDiffResult \| None` | Rhythmic diff |
+| `melodic` | `MelodicDiffResult \| None` | Melodic diff |
+| `structural` | `StructuralDiffResult \| None` | Structural diff |
+| `dynamic` | `DynamicDiffResult \| None` | Dynamic diff |
+| `changed_dimensions` | `list[str]` | Names of dimensions where `changed=True` |
+| `unchanged_dimensions` | `list[str]` | Names of dimensions where `changed=False` |
+| `summary` | `str` | Concatenated per-dimension summaries |
+
+**Producer:** `_diff_all_async()`
+**Consumer:** `_render_report()`, callers using `--all --json`
+
+---
+
 ### `RecallResult`
 
 **Module:** `maestro/muse_cli/commands/recall.py`
