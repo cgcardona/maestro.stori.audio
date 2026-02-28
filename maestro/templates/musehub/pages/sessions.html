@@ -23,54 +23,124 @@ function fmtDuration(secs) {
   return s + 's';
 }
 
+/* Deterministic hsl colour from a string — used for participant avatars. */
+function strHsl(str) {
+  let h = 0;
+  for (let i = 0; i < str.length; i++) h = (h * 31 + str.charCodeAt(i)) & 0xffff;
+  return 'hsl(' + (h % 360) + ',55%,38%)';
+}
+
+/* Build stacked participant avatar circles.
+   - Up to 4 circles, each showing the first character of the name.
+   - A "+N" overflow pill when there are more than 4 participants.
+   - Each avatar links to /musehub/ui/users/{name}. */
+function buildAvatars(participants) {
+  if (!participants || participants.length === 0) {
+    return '<span class="session-no-participants">—</span>';
+  }
+  const MAX = 4;
+  const visible = participants.slice(0, MAX);
+  const overflow = participants.length - MAX;
+  let html = '<div class="participant-stack">';
+  visible.forEach(function(name, idx) {
+    const initial = name.charAt(0).toUpperCase();
+    const bg = strHsl(name);
+    html += '<a href="/musehub/ui/users/' + encodeURIComponent(name) + '" '
+          + 'class="participant-avatar" '
+          + 'style="background:' + bg + ';z-index:' + (MAX - idx) + '" '
+          + 'title="' + escHtml(name) + '">'
+          + initial
+          + '</a>';
+  });
+  if (overflow > 0) {
+    html += '<span class="participant-overflow">+' + overflow + '</span>';
+  }
+  html += '</div>';
+  return html;
+}
+
+/* Truncate notes to 80 chars for the preview line. */
+function notesPreview(notes) {
+  if (!notes) return '';
+  const trimmed = notes.trim();
+  if (!trimmed) return '';
+  return escHtml(trimmed.length > 80 ? trimmed.slice(0, 80) + '\u2026' : trimmed);
+}
+
 async function load() {
   initRepoNav(repoId);
   try {
     const data     = await apiFetch('/repos/' + repoId + '/sessions?limit=100');
-    const sessions = data.sessions || [];
+    let sessions   = data.sessions || [];
     const total    = data.total    || 0;
+
+    /* Pin active sessions to the top; newest-first within each group. */
+    sessions = sessions
+      .slice()
+      .sort(function(a, b) {
+        if (a.isActive && !b.isActive) return -1;
+        if (!a.isActive && b.isActive) return 1;
+        return new Date(b.startedAt) - new Date(a.startedAt);
+      });
 
     const rows = sessions.length === 0
       ? '<p class="loading">No sessions recorded yet.</p>'
-      : sessions.map(s => {
+      : sessions.map(function(s) {
           const liveIndicator = s.isActive
-            ? '<span class="session-live" title="Active"></span>'
+            ? '<span class="session-live session-live-pulse" title="Active"></span>'
             : '';
           const badge = s.isActive
             ? '<span class="badge badge-active">live</span>'
             : '<span class="badge badge-closed">ended</span>';
-          const participants = (s.participants || []).length > 0
-            ? escHtml(s.participants.join(', '))
-            : '<span style="color:#8b949e">--</span>';
+
+          /* Participant avatars */
+          const avatars = buildAvatars(s.participants || []);
+
+          /* Commit count pill */
+          const commitCount = (s.commits || []).length;
+          const commitBadge = commitCount > 0
+            ? '<span class="session-commit-pill" title="' + commitCount + ' commit' + (commitCount !== 1 ? 's' : '') + ' in this session">\uD83C\uDFB5 ' + commitCount + '</span>'
+            : '';
+
+          /* Notes preview */
+          const preview = notesPreview(s.notes);
+          const notesHtml = preview
+            ? '<div class="session-notes-preview">' + preview + '</div>'
+            : '';
+
+          /* Location tag */
+          const locationHtml = s.location
+            ? '<span class="session-location-tag">\uD83D\uDCCD ' + escHtml(s.location) + '</span>'
+            : '';
+
+          /* Intent */
           const intent = s.intent
             ? escHtml(s.intent)
-            : '<span style="color:#8b949e">--</span>';
-          const location = s.location
-            ? escHtml(s.location)
-            : '<span style="color:#8b949e">--</span>';
+            : '<span style="color:var(--text-muted)">—</span>';
+
           return `
-            <div class="session-row">
+            <div class="session-row${s.isActive ? ' session-row-active' : ''}">
               ${badge}
-              <div style="flex:1">
-                <div style="font-size:14px;color:#e6edf3;margin-bottom:4px">
+              <div style="flex:1;min-width:0">
+                <div class="session-row-header">
                   ${liveIndicator}
                   <strong>${fmtDate(s.startedAt)}</strong>
                   ${s.endedAt ? ' &rarr; ' + fmtDate(s.endedAt) : ''}
-                  <span style="color:#8b949e;font-size:12px;margin-left:8px">
+                  <span style="color:var(--text-muted);font-size:12px;margin-left:8px">
                     ${fmtDuration(s.durationSeconds)}
                   </span>
+                  ${commitBadge}
+                  ${locationHtml}
                 </div>
-                <div style="font-size:13px;color:#8b949e;margin-top:2px">
-                  <strong style="color:#c9d1d9">Intent:</strong> ${intent}
+                <div class="session-row-intent">
+                  <strong style="color:var(--text-primary)">Intent:</strong> ${intent}
                 </div>
-                <div style="font-size:13px;color:#8b949e;margin-top:2px">
-                  <strong style="color:#c9d1d9">Participants:</strong> ${participants}
-                </div>
-                <div style="font-size:13px;color:#8b949e;margin-top:2px">
-                  <strong style="color:#c9d1d9">Location:</strong> ${location}
+                ${notesHtml}
+                <div class="session-row-participants">
+                  ${avatars}
                 </div>
               </div>
-              <span style="font-family:monospace;font-size:12px;color:#8b949e">
+              <span style="font-family:monospace;font-size:12px;color:var(--text-muted)">
                 ${s.sessionId.substring(0,8)}
               </span>
             </div>`;
@@ -83,7 +153,7 @@ async function load() {
       <div class="card">
         <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px">
           <h1 style="margin:0">Sessions</h1>
-          <span style="color:#8b949e;font-size:14px">${total} total</span>
+          <span style="color:var(--text-muted);font-size:14px">${total} total</span>
         </div>
         ${rows}
       </div>`;

@@ -40,6 +40,7 @@ router = APIRouter()
 @router.post(
     "/repos/{repo_id}/push",
     response_model=PushResponse,
+    operation_id="pushCommits",
     summary="Push commits and objects to a remote Muse repo",
 )
 async def push(
@@ -121,6 +122,7 @@ async def push(
 @router.post(
     "/repos/{repo_id}/pull",
     response_model=PullResponse,
+    operation_id="pullCommits",
     summary="Fetch missing commits and objects from a remote Muse repo",
 )
 async def pull(

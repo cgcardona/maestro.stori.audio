@@ -35,13 +35,14 @@ router = APIRouter()
     "/repos/{repo_id}/releases",
     response_model=ReleaseResponse,
     status_code=status.HTTP_201_CREATED,
+    operation_id="createRelease",
     summary="Create a release for a Muse Hub repo",
 )
 async def create_release(
     repo_id: str,
     body: ReleaseCreate,
     db: AsyncSession = Depends(get_db),
-    _: TokenClaims = Depends(require_valid_token),
+    token: TokenClaims = Depends(require_valid_token),
 ) -> ReleaseResponse:
     """Create a new release tied to an optional commit snapshot.
 
@@ -60,6 +61,7 @@ async def create_release(
             title=body.title,
             body=body.body,
             commit_id=body.commit_id,
+            author=token.get("sub", ""),
         )
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
@@ -71,6 +73,7 @@ async def create_release(
 @router.get(
     "/repos/{repo_id}/releases",
     response_model=ReleaseListResponse,
+    operation_id="listReleases",
     summary="List all releases for a Muse Hub repo",
 )
 async def list_releases(
@@ -97,6 +100,7 @@ async def list_releases(
 @router.get(
     "/repos/{repo_id}/releases/{tag}",
     response_model=ReleaseResponse,
+    operation_id="getRelease",
     summary="Get a single release by tag",
 )
 async def get_release(

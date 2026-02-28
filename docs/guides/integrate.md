@@ -256,7 +256,52 @@ For full CLI reference see [muse_vcs.md](../architecture/muse_vcs.md#muse-cli-re
 
 - **Assets:** Asset endpoints use **X-Device-ID only** (no JWT). Send header `X-Device-ID: <device-uuid>` (the app’s per-install UUID). List drum kits: `GET /api/v1/assets/drum-kits`. Download URL: `GET /api/v1/assets/drum-kits/{id}/download-url` → response has `url` (presigned S3, use within 30 min) and `expires_at`.
 - **CORS:** Backend allows origins in `CORS_ORIGINS` (e.g. `https://your-app-domain.com`, `stori://`). No wildcard in prod.
-- **Stage:** `/docs` and `/openapi.json` are off when `DEBUG=false`; use local or debug backend for interactive docs.
+- **OpenAPI spec:** `GET /api/v1/openapi.json` is **always available** (regardless of `DEBUG` mode) for agent SDK generation. Interactive Swagger UI (`/docs`) and ReDoc (`/redoc`) are only served in debug mode.
+
+---
+
+## Using the OpenAPI spec
+
+The MuseHub API ships a complete OpenAPI 3.1 specification at `GET /api/v1/openapi.json`. This spec enables:
+
+- **Auto-generated typed clients** — any OpenAPI code-gen tool (openapi-generator, openapi-typescript-codegen, etc.) can generate a typed SDK from the spec.
+- **Agent framework integration** — frameworks like LangChain, LlamaIndex, or Claude tool-use can load the spec and discover all MuseHub endpoints automatically.
+- **Interactive exploration** — when `DEBUG=true`, Swagger UI at `/docs` lets you try requests directly in the browser with your JWT.
+
+### Fetching the spec
+
+```bash
+# Fetch the spec
+curl https://your-domain.com/api/v1/openapi.json -o musehub-openapi.json
+
+# List all operationIds
+curl https://your-domain.com/api/v1/openapi.json | jq '[.paths | to_entries[] | .value | to_entries[] | .value.operationId] | sort | .[]'
+```
+
+### Authentication in the spec
+
+All write endpoints and private-repo reads require a Bearer JWT. The spec documents this as an HTTP Bearer security scheme. When using Swagger UI:
+
+1. Click **Authorize** (top right).
+2. Paste your JWT in the **Value** field: `<your-token>` (without the `Bearer` prefix — Swagger adds it).
+3. Click **Authorize** → all subsequent requests include the header.
+
+### Key operationIds for agent SDK generation
+
+| operationId | Method | Path |
+|-------------|--------|------|
+| `createRepo` | POST | `/api/v1/musehub/repos` |
+| `listRepoCommits` | GET | `/api/v1/musehub/repos/{repo_id}/commits` |
+| `getAnalysis` | GET | `/api/v1/musehub/repos/{repo_id}/analysis/{ref}` |
+| `getAnalysisDimension` | GET | `/api/v1/musehub/repos/{repo_id}/analysis/{ref}/{dimension}` |
+| `createIssue` | POST | `/api/v1/musehub/repos/{repo_id}/issues` |
+| `createPullRequest` | POST | `/api/v1/musehub/repos/{repo_id}/pull-requests` |
+| `mergePullRequest` | POST | `/api/v1/musehub/repos/{repo_id}/pull-requests/{pr_id}/merge` |
+| `globalSearch` | GET | `/api/v1/musehub/search` |
+| `searchSimilar` | GET | `/api/v1/musehub/search/similar` |
+| `pushCommits` | POST | `/api/v1/musehub/repos/{repo_id}/push` |
+| `getAgentContext` | GET | `/api/v1/musehub/repos/{repo_id}/context` |
+| `listPublicRepos` | GET | `/api/v1/musehub/discover/repos` |
 
 ---
 

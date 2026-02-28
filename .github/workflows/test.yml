@@ -1,17 +1,33 @@
 # Maestro — Test & Coverage
 #
-# Runs on PRs and direct pushes targeting main only.
-# Feature branches merge into dev freely without triggering CI.
+# Runs on PRs and direct pushes targeting dev and main.
+# Migration lint runs on every PR to dev to catch parallel-agent conflict
+# artifacts before they accumulate. Full test suite runs on PRs to main.
 # Two jobs: maestro (app/ + tests/) and storpheus (storpheus/).
 name: Test & Coverage
 
 on:
   push:
-    branches: [main]
+    branches: [main, dev]
   pull_request:
-    branches: [main]
+    branches: [main, dev]
 
 jobs:
+  migration-lint:
+    name: Migration lint (syntax + structure guard)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Lint consolidated migration
+        run: python tools/lint_migration.py
+
+
   maestro:
     name: Maestro (app/ + tests/)
     runs-on: ubuntu-latest

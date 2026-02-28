@@ -124,6 +124,7 @@ async def test_export_midi(
                     message="test",
                     author="alice",
                     timestamp=datetime(2024, 1, 1, tzinfo=timezone.utc),
+                    snapshot_id=None,
                 )
             )
             mock_repo.list_branches = AsyncMock(return_value=[])
@@ -185,6 +186,7 @@ async def test_export_json(
                     message="json export test",
                     author="bob",
                     timestamp=datetime(2024, 1, 1, tzinfo=timezone.utc),
+                    snapshot_id=None,
                 )
             )
             mock_repo.list_branches = AsyncMock(return_value=[])
@@ -246,6 +248,7 @@ async def test_export_split_tracks_zip(
                     message="zip test",
                     author="carol",
                     timestamp=datetime(2024, 1, 1, tzinfo=timezone.utc),
+                    snapshot_id=None,
                 )
             )
             mock_repo.list_branches = AsyncMock(return_value=[])
@@ -328,6 +331,7 @@ async def test_export_section_filter(
                     message="section test",
                     author="dave",
                     timestamp=datetime(2024, 1, 1, tzinfo=timezone.utc),
+                    snapshot_id=None,
                 )
             )
             mock_repo.list_branches = AsyncMock(return_value=[])
@@ -456,6 +460,7 @@ async def test_export_service_returns_no_matching_objects_sentinel() -> None:
                 message="x",
                 author="x",
                 timestamp=datetime(2024, 1, 1, tzinfo=timezone.utc),
+                snapshot_id=None,
             )
         )
         mock_repo.list_branches = AsyncMock(return_value=[])
@@ -498,6 +503,7 @@ async def test_export_service_json_format_no_disk_access() -> None:
                 message="json only",
                 author="eve",
                 timestamp=datetime(2024, 3, 1, tzinfo=timezone.utc),
+                snapshot_id=None,
             )
         )
         mock_repo.list_branches = AsyncMock(return_value=[])

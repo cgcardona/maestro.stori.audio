@@ -57,6 +57,14 @@ async function load() {
           <span class="badge badge-release">${escHtml(r.tag)}</span>
         </div>
         <div class="meta-row">
+          ${r.author ? `
+          <div class="meta-item">
+            <span class="meta-label">Author</span>
+            <span class="meta-value" style="display:flex;align-items:center;gap:6px">
+              <span style="display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:50%;background:var(--accent,#58a6ff);color:#0d1117;font-size:11px;font-weight:700;flex-shrink:0">${escHtml(r.author.charAt(0).toUpperCase())}</span>
+              <a href="${base.replace(/\/[^/]+\/[^/]+$/, '')}/users/${encodeURIComponent(escHtml(r.author))}">${escHtml(r.author)}</a>
+            </span>
+          </div>` : ''}
           <div class="meta-item">
             <span class="meta-label">Released</span>
             <span class="meta-value">${fmtDate(r.createdAt)}</span>
