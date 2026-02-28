@@ -7,6 +7,7 @@
 const username        = {{ username | tojson }};
 const API_PROFILE     = '/api/v1/musehub/users/' + username;
 const API_FORKS       = '/api/v1/musehub/users/' + username + '/forks';
+const API_STARRED     = '/api/v1/musehub/users/' + username + '/starred';
 const API_FOLLOWERS   = '/api/v1/musehub/users/' + username + '/followers-list';
 const API_FOLLOWING   = '/api/v1/musehub/users/' + username + '/following-list';
 {% endblock %}
@@ -67,6 +68,43 @@ function forkedRepoCardHtml(entry) {
       &bull; forked from <a href="${sourceLink}">${escHtml(entry.sourceOwner)}/${escHtml(entry.sourceSlug)}</a>
     </div>
   </div>`;
+}
+
+function starredRepoCardHtml(entry) {
+  const r = entry.repo;
+  const key = r.keySignature ? escHtml(r.keySignature) : null;
+  const bpm = r.tempoBpm ? r.tempoBpm + ' BPM' : null;
+  const meta = [key, bpm].filter(Boolean).join(' &bull; ');
+  const starCount = typeof r.starCount !== 'undefined' ? r.starCount : '';
+  return `<div class="repo-card">
+    <h3><a href="/musehub/ui/${escHtml(r.owner)}/${escHtml(r.slug)}">${escHtml(r.owner)}/${escHtml(r.name)}</a></h3>
+    ${r.description ? `<p style="font-size:13px;color:var(--fg-muted);margin:4px 0">${escHtml(r.description)}</p>` : ''}
+    <div class="repo-meta">
+      <span class="badge badge-${r.visibility}">${r.visibility}</span>
+      ${meta ? '&bull; ' + meta : ''}
+      ${typeof starCount === 'number' ? `&bull; &#11088; ${starCount}` : ''}
+    </div>
+  </div>`;
+}
+
+async function loadStarredRepos() {
+  try {
+    const data = await fetch(API_STARRED).then(r => r.json());
+    const starred = data.starred || [];
+    const section = document.getElementById('starred-section');
+    if (!section) return;
+    if (starred.length === 0) {
+      section.innerHTML = '<div class="card"><p class="loading">No starred repositories yet.</p></div>';
+      return;
+    }
+    section.innerHTML = `<div class="card">
+      <h2 style="margin-bottom:12px">&#11088; Starred Repositories (${starred.length})</h2>
+      <div class="repo-grid">${starred.map(starredRepoCardHtml).join('')}</div>
+    </div>`;
+  } catch(e) {
+    const section = document.getElementById('starred-section');
+    if (section) section.innerHTML = '';
+  }
 }
 
 async function loadForkedRepos() {
@@ -263,8 +301,10 @@ async function load() {
     ${graphSection}
     ${reposSection}
     <div id="forked-section"></div>
+    <div id="starred-section"></div>
   `;
   loadForkedRepos();
+  loadStarredRepos();
 }
 
 // Style active social tab button via JS since we're in a raw-string context
