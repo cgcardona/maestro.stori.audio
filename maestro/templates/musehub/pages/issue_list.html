@@ -18,6 +18,8 @@ let allIssues   = [];     // full list from API (state-filtered only)
 let activeLabel = null;   // label string currently filtering, or null
 let activeSort  = 'newest'; // 'newest' | 'oldest' | 'most-commented'
 let commentCounts = {};   // { issue_id: count } — populated on demand
+let cachedOpen   = null;  // cached open issues array after first fetch
+let cachedClosed = null;  // cached closed issues array after first fetch
 
 // ── Body preview ───────────────────────────────────────────────────────────
 function bodyPreview(body) {
@@ -119,16 +121,19 @@ async function changeSort(value) {
 async function load(state) {
   initRepoNav(repoId);
   try {
-    // Fetch open + closed counts in parallel
+    // Fetch only what is not yet cached — both needed on first load for tab counts.
     const [openData, closedData] = await Promise.all([
-      apiFetch('/repos/' + repoId + '/issues?state=open'),
-      apiFetch('/repos/' + repoId + '/issues?state=closed'),
+      cachedOpen   !== null ? Promise.resolve({ issues: cachedOpen })   : apiFetch('/repos/' + repoId + '/issues?state=open'),
+      cachedClosed !== null ? Promise.resolve({ issues: cachedClosed }) : apiFetch('/repos/' + repoId + '/issues?state=closed'),
     ]);
 
-    const openCount   = (openData.issues   || []).length;
-    const closedCount = (closedData.issues  || []).length;
+    cachedOpen   = openData.issues   || [];
+    cachedClosed = closedData.issues || [];
 
-    allIssues   = state === 'closed' ? (closedData.issues || []) : (openData.issues || []);
+    const openCount   = cachedOpen.length;
+    const closedCount = cachedClosed.length;
+
+    allIssues   = state === 'closed' ? cachedClosed : cachedOpen;
     activeLabel = null;
 
     document.getElementById('content').innerHTML = `
@@ -158,9 +163,9 @@ async function load(state) {
         <div style="display:flex;align-items:center;gap:var(--space-3);margin-bottom:var(--space-3);flex-wrap:wrap">
           <span style="font-size:13px;color:#8b949e">Sort by:</span>
           <div style="display:flex;gap:var(--space-1)">
-            <button class="btn btn-ghost btn-sm sort-btn${activeSort==='newest'?' sort-active':''}" onclick="changeSort('newest')">Newest</button>
-            <button class="btn btn-ghost btn-sm sort-btn${activeSort==='oldest'?' sort-active':''}" onclick="changeSort('oldest')">Oldest</button>
-            <button class="btn btn-ghost btn-sm sort-btn${activeSort==='most-commented'?' sort-active':''}" onclick="changeSort('most-commented')">Most commented</button>
+            <button class="btn btn-ghost btn-sm sort-btn${activeSort==='newest'?' sort-active':''}" data-sort="newest" onclick="changeSort('newest')">Newest</button>
+            <button class="btn btn-ghost btn-sm sort-btn${activeSort==='oldest'?' sort-active':''}" data-sort="oldest" onclick="changeSort('oldest')">Oldest</button>
+            <button class="btn btn-ghost btn-sm sort-btn${activeSort==='most-commented'?' sort-active':''}" data-sort="most-commented" onclick="changeSort('most-commented')">Most commented</button>
           </div>
           <span id="sort-loading" style="display:none;font-size:12px;color:#8b949e">Loading…</span>
           <div id="label-filter-bar"></div>
@@ -211,12 +216,10 @@ async function load(state) {
 }
 
 // ── Keep sort button active styles in sync ─────────────────────────────────
+// Buttons carry data-sort attributes matching the activeSort values.
 function updateSortButtons() {
-  document.querySelectorAll('.sort-btn').forEach(btn => {
-    btn.classList.toggle('sort-active', btn.textContent.trim().toLowerCase().replace(' ', '-') === activeSort ||
-      (btn.textContent.trim() === 'Newest' && activeSort === 'newest') ||
-      (btn.textContent.trim() === 'Oldest' && activeSort === 'oldest') ||
-      (btn.textContent.trim() === 'Most commented' && activeSort === 'most-commented'));
+  document.querySelectorAll('.sort-btn[data-sort]').forEach(btn => {
+    btn.classList.toggle('sort-active', btn.dataset.sort === activeSort);
   });
 }
 
