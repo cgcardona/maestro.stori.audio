@@ -6,6 +6,8 @@ Tables:
 - musehub_commits: Remote commit records pushed from CLI clients
 - musehub_issues: Issue tracker entries per repo
 - musehub_pull_requests: Pull requests proposing branch merges
+- musehub_objects: Content-addressed binary artifact storage
+- musehub_stars: Per-user repo starring (one row per user×repo pair)
 - musehub_profiles: Public user profiles (bio, avatar, pinned repos)
 - musehub_webhooks: Registered webhook subscriptions per repo
 - musehub_webhook_deliveries: Delivery log for each webhook dispatch attempt"""
@@ -14,6 +16,8 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timezone
 
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Textfrom sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.types import JSON
@@ -30,7 +34,12 @@ def _new_uuid() -> str:
 
 
 class MusehubRepo(Base):
-    """A remote Muse repository — the hub-side equivalent of a Git remote."""
+    """A remote Muse repository — the hub-side equivalent of a Git remote.
+
+    Music-semantic fields (key_signature, tempo_bpm, tags) are optional metadata
+    that musicians set to make their repos discoverable on the explore page.
+    Tags are free-form strings that encode genre, instrumentation, and mood.
+    """
 
     __tablename__ = "musehub_repos"
 
@@ -38,6 +47,12 @@ class MusehubRepo(Base):
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     visibility: Mapped[str] = mapped_column(String(20), nullable=False, default="private")
     owner_user_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
+    description: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    # JSON list of free-form tag strings: genre ("jazz"), key ("F# minor"), instrument ("bass")
+    tags: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    # Music-semantic metadata for filter-based discovery
+    key_signature: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    tempo_bpm: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=_utc_now
     )
@@ -56,6 +71,9 @@ class MusehubRepo(Base):
     )
     pull_requests: Mapped[list[MusehubPullRequest]] = relationship(
         "MusehubPullRequest", back_populates="repo", cascade="all, delete-orphan"
+    )
+    stars: Mapped[list[MusehubStar]] = relationship(
+        "MusehubStar", back_populates="repo", cascade="all, delete-orphan"
     )
     webhooks: Mapped[list[MusehubWebhook]] = relationship(
         "MusehubWebhook", back_populates="repo", cascade="all, delete-orphan"
@@ -203,6 +221,32 @@ class MusehubPullRequest(Base):
     )
 
     repo: Mapped[MusehubRepo] = relationship("MusehubRepo", back_populates="pull_requests")
+
+
+class MusehubStar(Base):
+    """A single user's star on a public repo.
+
+    Stars are the primary signal for the explore page's "trending" sort.
+    The unique constraint on (repo_id, user_id) makes starring idempotent —
+    a user can only star a repo once, and duplicate requests are safe.
+    """
+
+    __tablename__ = "musehub_stars"
+    __table_args__ = (UniqueConstraint("repo_id", "user_id", name="uq_musehub_stars_repo_user"),)
+
+    star_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_new_uuid)
+    repo_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("musehub_repos.repo_id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    user_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=_utc_now
+    )
+
+    repo: Mapped[MusehubRepo] = relationship("MusehubRepo", back_populates="stars")
 
 
 class MusehubProfile(Base):

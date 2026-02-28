@@ -1396,34 +1396,40 @@ The Muse Hub is a lightweight GitHub-equivalent that lives inside the Maestro Fa
 
 | Table | Purpose |
 |-------|---------|
-| `musehub_repos` | Remote repos (name, visibility, owner) |
+| `musehub_repos` | Remote repos (name, visibility, owner, music-semantic metadata) |
 | `musehub_branches` | Branch pointers inside a repo |
 | `musehub_commits` | Commits pushed from CLI clients |
 | `musehub_objects` | Binary artifact metadata (MIDI, MP3, WebP piano rolls) |
 | `musehub_issues` | Issue tracker entries per repo |
 | `musehub_pull_requests` | Pull requests proposing branch merges |
+| `musehub_stars` | Per-user repo starring (one row per user×repo pair) |
 
 ### Module Map
 
 ```
 maestro/
-├── db/musehub_models.py                  — SQLAlchemy ORM models
-├── models/musehub.py                     — Pydantic v2 request/response models (incl. SearchCommitMatch, SearchResponse)
+├── db/musehub_models.py                  — SQLAlchemy ORM models (includes MusehubStar)
+├── models/musehub.py                     — Pydantic v2 request/response models (includes ExploreRepoResult, ExploreResponse, StarResponse, SearchCommitMatch, SearchResponse)
 ├── services/musehub_repository.py        — Async DB queries for repos/branches/commits
+├── services/musehub_discover.py          — Public repo discovery with filters, sorting, star/unstar
 ├── services/musehub_credits.py           — Credits aggregation from commit history
 ├── services/musehub_issues.py            — Async DB queries for issues (single point of DB access)
 ├── services/musehub_pull_requests.py     — Async DB queries for PRs (single point of DB access)
 ├── services/musehub_search.py            — In-repo search service (property / ask / keyword / pattern)
 ├── services/musehub_sync.py              — Push/pull sync protocol (ingest_push, compute_pull_delta)
 └── api/routes/musehub/
+    ├── __init__.py                       — Composes sub-routers under /musehub prefix (authed)
+    ├── repos.py                          — Repo/branch/commit route handlers
     ├── __init__.py                       — Composes sub-routers under /musehub prefix
     ├── repos.py                          — Repo/branch/commit/credits route handlers
     ├── issues.py                         — Issue tracking route handlers
     ├── pull_requests.py                  — Pull request route handlers
     ├── search.py                         — In-repo search route handler
     ├── sync.py                           — Push/pull sync route handlers
+    ├── discover.py                       — Public discover API + authed star/unstar (registered in main.py separately)
     ├── objects.py                        — Artifact list + content-by-object-id endpoints (auth required)
     ├── raw.py                            — Raw file download by path (public repos: no auth)
+    └── ui.py                             — HTML shells for browser: explore, trending, repo, commit, PR, issue pages (incl. /search page with mode tabs)
     └── ui.py                             — HTML UI pages (incl. credits and /search pages)
 ```
 
@@ -1562,6 +1568,38 @@ Each match is a `SearchCommitMatch` with: `commitId`, `branch`, `message`, `auth
 | POST | `/api/v1/musehub/repos/{id}/push` | Upload commits and objects (fast-forward enforced) |
 | POST | `/api/v1/musehub/repos/{id}/pull` | Fetch missing commits and objects |
 
+#### Explore / Discover (public — no auth required for browse)
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/v1/musehub/discover/repos` | List public repos with optional filters and sort |
+| POST | `/api/v1/musehub/repos/{id}/star` | Star a public repo (auth required) |
+| DELETE | `/api/v1/musehub/repos/{id}/star` | Unstar a repo (auth required) |
+
+**Filter parameters for `GET /discover/repos`:**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `genre` | string | Substring match on tags (e.g. `jazz`, `lo-fi`) |
+| `key` | string | Exact match on `key_signature` (e.g. `F# minor`) |
+| `tempo_min` | int | Minimum BPM (inclusive) |
+| `tempo_max` | int | Maximum BPM (inclusive) |
+| `instrumentation` | string | Substring match on tags for instrument presence |
+| `sort` | string | `stars` \| `activity` \| `commits` \| `created` (default) |
+| `page` | int | 1-based page number |
+| `page_size` | int | Results per page (default 24, max 100) |
+
+**Result type:** `ExploreResponse` — fields: `repos: list[ExploreRepoResult]`, `total: int`, `page: int`, `page_size: int`
+
+**ExploreRepoResult fields:** `repo_id`, `name`, `owner_user_id`, `description`, `tags`, `key_signature`, `tempo_bpm`, `star_count`, `commit_count`, `created_at`
+
+**UI pages (no auth required):**
+
+| Path | Description |
+|------|-------------|
+| `GET /musehub/ui/explore` | Filterable grid of all public repos (newest first) |
+| `GET /musehub/ui/trending` | Public repos sorted by star count |
+
 #### Raw File Download
 
 | Method | Path | Description |
@@ -1589,7 +1627,7 @@ curl -H "Authorization: Bearer <token>" \
 See [api.md](../reference/api.md#get-apiv1musehub-reposrepo_idrawrefpath) for the
 full MIME type table and error reference.
 
-All other endpoints require `Authorization: Bearer <token>`. See [api.md](../reference/api.md#muse-hub-api) for full field docs.
+All authed endpoints require `Authorization: Bearer <token>`. See [api.md](../reference/api.md#muse-hub-api) for full field docs.
 
 ### DAG Graph — Interactive Commit Graph
 

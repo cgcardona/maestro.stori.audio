@@ -6449,6 +6449,61 @@ cross-repo search query.  Returned inside `GlobalSearchRepoGroup.matches`.
 
 Pydantic model grouping all matching commits for a single public repo.---
 
+## ExploreRepoResult
+
+**Module:** `maestro.models.musehub`
+**Used by:** `GET /api/v1/musehub/discover/repos` → `ExploreResponse.repos`
+
+A public repo card returned by the explore/discover page. Aggregated counts
+(`star_count`, `commit_count`) are computed at query time and are not stored
+on the repo row — they reflect the live DB state at the moment of the request.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `repo_id` | `str` | UUID of the repo |
+| `name` | `str` | Human-readable repo name |
+| `owner_user_id` | `str` | UUID of the repo owner |
+| `description` | `str` | Short description (empty string if not set) |
+| `tags` | `list[str]` | Free-form tags: genre, key, instrument (e.g. `["jazz", "F# minor", "bass"]`) |
+| `key_signature` | `str \| None` | Musical key (e.g. `"F# minor"`) |
+| `tempo_bpm` | `int \| None` | Tempo in BPM |
+| `star_count` | `int` | Total stars from all users |
+| `commit_count` | `int` | Total commits in the repo |
+| `created_at` | `datetime` | UTC timestamp of repo creation |
+
+---
+
+## ExploreResponse
+
+**Module:** `maestro.models.musehub`
+**Used by:** `GET /api/v1/musehub/discover/repos`
+
+Paginated discover response. `total` is the full filtered count (not just the
+current page) so clients can render pagination controls without a second query.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `repos` | `list[ExploreRepoResult]` | Repo cards for the current page |
+| `total` | `int` | Total repos matching the filters |
+| `page` | `int` | Current page number (1-based) |
+| `page_size` | `int` | Number of results per page |
+
+---
+
+## StarResponse
+
+**Module:** `maestro.models.musehub`
+**Used by:** `POST /api/v1/musehub/repos/{id}/star`, `DELETE /api/v1/musehub/repos/{id}/star`
+
+Confirmation of a star or unstar operation with the updated count.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `starred` | `bool` | `True` after star, `False` after unstar |
+| `star_count` | `int` | Current total star count for the repo |
+
+---
+
 ## Agent Context Models (`maestro/models/musehub_context.py`)
 
 ### ContextDepth
