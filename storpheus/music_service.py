@@ -23,12 +23,13 @@ from gradio_client import Client, handle_file
 from dataclasses import dataclass, field
 from collections import OrderedDict
 from enum import Enum
-from time import time
+from time import monotonic, time
 import uuid
 import asyncio
 import math
 import mido
 import random
+import statistics
 import traceback
 import os
 import copy
@@ -44,6 +45,7 @@ from generation_policy import (
     DEFAULT_TEMPERATURE,
     DEFAULT_TOP_P,
     get_policy_version,
+    get_genre_prior,
     build_controls,
     build_fulfillment_report,
     quality_preset_to_batch_count,
@@ -57,6 +59,11 @@ from post_processing import build_post_processor
 from storpheus_types import (
     BestCandidate,
     CacheKeyData,
+    GenerationTelemetryRecord,
+    InstrumentTier,
+    ParameterSweepResult,
+    ProgressiveGenerationResult,
+    ProgressiveTierResult,
     StorpheusAftertouch,
     StorpheusCCEvent,
     StorpheusNoteDict,
@@ -64,6 +71,7 @@ from storpheus_types import (
     ParsedMidiResult,
     QualityEvalToolCall,
     ScoringParams,
+    SweepABTestResult,
     WireNoteDict,
 )
 
@@ -111,6 +119,61 @@ MAX_SESSION_TOKENS = int(os.environ.get("STORPHEUS_MAX_SESSION_TOKENS", "4096"))
 
 _INTENT_QUANT_STEP = float(os.environ.get("STORPHEUS_INTENT_QUANT", "0.2"))
 _FUZZY_EPSILON = float(os.environ.get("STORPHEUS_FUZZY_EPSILON", "0.35"))
+
+# ── Inference optimization config ─────────────────────────────────────────
+# How many /add_batch indices to try from a single /generate_music_and_state
+# result before paying the cost of a full re-generate.  The HF Space produces
+# 10 stochastic batches per call; trying multiple indices is cheap (~2s each)
+# vs. a full re-generate (25-65s).  Set to 1 to disable multi-batch sampling.
+STORPHEUS_MULTI_BATCH_TRIES = int(os.environ.get("STORPHEUS_MULTI_BATCH_TRIES", "3"))
+
+# Score threshold below which we trigger a full re-generate.  Above this
+# threshold the best multi-batch result is accepted without re-generating.
+STORPHEUS_REGEN_THRESHOLD = float(os.environ.get("STORPHEUS_REGEN_THRESHOLD", "0.5"))
+
+# Future optimization flags — no-ops until self-hosted deployment lands (#18, #20).
+# Wired here so config is ready when the HF Space supports forwarding these flags.
+STORPHEUS_TORCH_COMPILE_ENABLED: bool = os.environ.get(
+    "STORPHEUS_TORCH_COMPILE", "false"
+).lower() in ("1", "true", "yes")
+STORPHEUS_FLASH_ATTENTION_ENABLED: bool = os.environ.get(
+    "STORPHEUS_FLASH_ATTENTION", "false"
+).lower() in ("1", "true", "yes")
+STORPHEUS_KV_CACHE_ENABLED: bool = os.environ.get(
+    "STORPHEUS_KV_CACHE", "false"
+).lower() in ("1", "true", "yes")
+
+
+@dataclass
+class GenerationTiming:
+    """Per-phase latency breakdown for a single generation call.
+
+    Populated throughout ``_do_generate`` and attached to response metadata
+    so callers can baseline current latency and measure the impact of future
+    optimizations (torch.compile, FlashAttention, KV-cache — see #26).
+    """
+
+    request_start: float = field(default_factory=time)
+    seed_elapsed_s: float = 0.0
+    generate_elapsed_s: float = 0.0
+    add_batch_elapsed_s: float = 0.0
+    post_process_elapsed_s: float = 0.0
+    total_elapsed_s: float = 0.0
+    regen_count: int = 0
+    multi_batch_tries: int = 0
+    candidates_evaluated: int = 0
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "total_elapsed_s": round(self.total_elapsed_s, 3),
+            "seed_elapsed_s": round(self.seed_elapsed_s, 3),
+            "generate_elapsed_s": round(self.generate_elapsed_s, 3),
+            "add_batch_elapsed_s": round(self.add_batch_elapsed_s, 3),
+            "post_process_elapsed_s": round(self.post_process_elapsed_s, 3),
+            "regen_count": self.regen_count,
+            "multi_batch_tries": self.multi_batch_tries,
+            "candidates_evaluated": self.candidates_evaluated,
+        }
 
 
 def _create_client() -> Client:
@@ -546,6 +609,47 @@ class GenerateResponse(BaseModel):
     tool_calls: list[dict[str, object]] | None = None
     error: str | None = None
     metadata: dict[str, object] | None = None
+
+
+class ProgressiveGenerateRequest(BaseModel):
+    """Request for dependency-ordered progressive instrument generation.
+
+    Instruments are automatically classified into dependency tiers
+    (drums → bass → harmony → melody) and generated sequentially.
+    Each tier uses the previous tier's output MIDI as its seed,
+    producing cascaded generation: each layer inherits the groove
+    and harmonic context of all layers before it.
+
+    All fields except ``instruments`` mirror ``GenerateRequest`` so
+    callers can swap between the two endpoints without restructuring
+    their payloads.
+    """
+
+    # ── Core ──
+    genre: str = "boom_bap"
+    tempo: int = 90
+    instruments: list[str] = ["drums", "bass", "piano", "lead"]
+    bars: int = 4
+    key: str | None = None
+
+    # ── Canonical intent blocks ──
+    emotion_vector: EmotionVectorPayload | None = None
+    role_profile_summary: RoleProfileSummary | None = None
+    generation_constraints: GenerationConstraintsPayload | None = None
+    intent_goals: list[IntentGoal] | None = None
+
+    # ── Observability ──
+    seed: int | None = None
+    trace_id: str | None = None
+    intent_hash: str | None = None
+
+    # ── Quality / overrides ──
+    quality_preset: str = "balanced"
+    temperature: float | None = None
+    top_p: float | None = None
+
+    # ── Composition correlation ──
+    composition_id: str | None = None
 
 
 # ============================================================================
@@ -1127,6 +1231,71 @@ def _resolve_melodic_index(role: str) -> int | None:
     return 2  # everything else
 
 
+# GM program ranges that map to the HARMONY tier in progressive generation.
+# Includes piano (0-7), chromatic perc (8-15), organ (16-23), guitar (24-31),
+# ensemble strings (40-47), ensemble (48-55), and synth pads (88-95).
+_HARMONY_GM_RANGES: tuple[tuple[int, int], ...] = (
+    (0, 15),    # Piano + chromatic percussion (vibraphone, marimba, …)
+    (16, 23),   # Organ
+    (40, 55),   # Strings + ensemble (violin, cello, choir, …)
+    (88, 95),   # Synth pads (new age, warm, polysynth, choir, bowed, …)
+)
+
+
+def classify_instrument_tier(role: str) -> InstrumentTier:
+    """Classify an instrument role into its musical dependency tier.
+
+    Tiers map to the generation order:
+        DRUMS   — channel-10 percussion; no harmonic context needed
+        BASS    — GM 32-39 (bass family); establishes root motion
+        HARMONY — GM piano, organ, strings, pads; chords and colour
+        MELODY  — everything else (lead, guitar, brass, wind, …)
+
+    Unknown roles that cannot be resolved default to MELODY so they
+    receive the richest harmonic seed before generation.
+    """
+    key = role.lower().strip()
+    if key in _DRUM_KEYWORDS:
+        return InstrumentTier.DRUMS
+    program = resolve_gm_program(key)
+    if program is None:
+        # Abstract roles "melody", "harmony", "chords" are in _GM_ALIASES → 0.
+        # If truly unresolvable, treat as melody (richest context).
+        return InstrumentTier.MELODY
+    if 32 <= program <= 39:
+        return InstrumentTier.BASS
+    for lo, hi in _HARMONY_GM_RANGES:
+        if lo <= program <= hi:
+            return InstrumentTier.HARMONY
+    return InstrumentTier.MELODY
+
+
+def group_instruments_by_tier(
+    instruments: list[str],
+) -> dict[InstrumentTier, list[str]]:
+    """Partition a flat instrument list into ordered dependency tiers.
+
+    Returns a dict keyed by ``InstrumentTier`` in dependency order.
+    Tiers with no instruments are omitted.  Preserves original role strings
+    (lowercased) so downstream callers can pass them directly to Orpheus.
+    """
+    groups: dict[InstrumentTier, list[str]] = {}
+    for role in instruments:
+        tier = classify_instrument_tier(role)
+        groups.setdefault(tier, []).append(role.lower().strip())
+    # Ensure deterministic ordering matching the musical dependency chain.
+    return {
+        tier: groups[tier]
+        for tier in (
+            InstrumentTier.DRUMS,
+            InstrumentTier.BASS,
+            InstrumentTier.HARMONY,
+            InstrumentTier.MELODY,
+        )
+        if tier in groups
+    }
+
+
 
 
 # ---------------------------------------------------------------------------
@@ -1498,6 +1667,14 @@ async def diagnostics() -> dict[str, object]:
         "max_concurrent": _MAX_CONCURRENT,
         "intent_quant_step": _INTENT_QUANT_STEP,
         "fuzzy_epsilon": _FUZZY_EPSILON,
+        "inference_optimization": {
+            "multi_batch_tries": STORPHEUS_MULTI_BATCH_TRIES,
+            "regen_threshold": STORPHEUS_REGEN_THRESHOLD,
+            "torch_compile": STORPHEUS_TORCH_COMPILE_ENABLED,
+            "flash_attention": STORPHEUS_FLASH_ATTENTION_ENABLED,
+            "kv_cache": STORPHEUS_KV_CACHE_ENABLED,
+            "note": "torch_compile/flash_attention/kv_cache pending self-hosted deployment (#18, #20)",
+        },
         "cache": {
             "size": cache_size,
             "max_size": MAX_CACHE_SIZE,
@@ -1688,6 +1865,133 @@ async def ab_test(request: ABTestRequest) -> dict[str, object]:
     }
 
 
+class ParameterSweepRequest(BaseModel):
+    """Request to sweep temperature × top_p combinations for a genre.
+
+    Runs a small grid of (temperature, top_p) pairs using the supplied
+    base ``GenerateRequest`` as a template, evaluates each candidate with
+    ``analyze_quality`` and ``rejection_score``, and returns a ranked
+    summary with a statistical-significance flag.
+
+    Fields:
+        base_config     Template GenerateRequest (instruments, bars, etc.)
+        temperatures    Temperature values to sweep (max 5 to bound cost)
+        top_ps          top_p values to sweep (max 3)
+    """
+
+    base_config: GenerateRequest
+    temperatures: list[float] = [0.80, 0.87, 0.95]
+    top_ps: list[float] = [0.93, 0.96]
+
+    model_config = {"json_schema_extra": {"example": {
+        "base_config": {"genre": "jazz", "tempo": 120, "instruments": ["piano"], "bars": 4},
+        "temperatures": [0.80, 0.90, 1.0],
+        "top_ps": [0.93, 0.96],
+    }}}
+
+
+@app.post("/quality/parameter-sweep")
+async def parameter_sweep(request: ParameterSweepRequest) -> SweepABTestResult:
+    """Sweep temperature × top_p combinations and rank by quality score.
+
+    Generates one candidate per (temperature, top_p) pair using the
+    ``base_config`` as a template, overriding only the two sampling
+    parameters.  Results are ranked by composite quality score and a
+    ``significant`` flag is set when the max-min gap ≥ 0.05 — indicating
+    that parameter choice materially affects quality for this genre.
+
+    Limits: ≤ 5 temperature values × ≤ 3 top_p values = ≤ 15 calls.
+    """
+    # Guard against runaway sweeps
+    _temps = request.temperatures[:5]
+    _top_ps = request.top_ps[:3]
+
+    def _to_storpheus_local(wire: list[WireNoteDict]) -> list[StorpheusNoteDict]:
+        return [
+            StorpheusNoteDict(
+                pitch=n["pitch"],
+                start_beat=n["startBeat"],
+                duration_beats=n["durationBeats"],
+                velocity=n["velocity"],
+            )
+            for n in wire
+        ]
+
+    sweep_results: list[ParameterSweepResult] = []
+
+    for temp in _temps:
+        for tp in _top_ps:
+            # Clone the base config with explicit temperature / top_p overrides
+            overridden = request.base_config.model_copy(
+                update={"temperature": round(temp, 3), "top_p": round(tp, 3)}
+            )
+            result = await _do_generate(overridden)
+
+            if not result.success or not result.notes:
+                logger.warning(
+                    f"⚠️ Sweep point temp={temp} top_p={tp} failed or produced no notes"
+                )
+                continue
+
+            snake = _to_storpheus_local(result.notes)
+            metrics = analyze_quality(snake, request.base_config.bars, request.base_config.tempo)
+            r_score = rejection_score(snake, request.base_config.bars)
+
+            pitches = [n["pitch"] for n in snake]
+            velocities = [n["velocity"] for n in snake]
+
+            vel_stdev = statistics.stdev(velocities) if len(velocities) > 1 else 0.0
+            vel_mean = statistics.mean(velocities) if velocities else 1.0
+            vel_variation = vel_stdev / max(vel_mean, 1.0)
+
+            sweep_results.append(ParameterSweepResult(
+                temperature=round(temp, 3),
+                top_p=round(tp, 3),
+                quality_score=round(metrics.get("quality_score", 0.0), 4),
+                note_count=len(snake),
+                pitch_range=(max(pitches) - min(pitches)) if pitches else 0,
+                velocity_variation=round(vel_variation, 4),
+                rejection_score=round(r_score, 4),
+            ))
+
+    if not sweep_results:
+        return SweepABTestResult(
+            genre=request.base_config.genre,
+            tempo=request.base_config.tempo,
+            bars=request.base_config.bars,
+            sweep_results=[],
+            best_temperature=DEFAULT_TEMPERATURE,
+            best_top_p=DEFAULT_TOP_P,
+            best_quality_score=0.0,
+            score_range=0.0,
+            significant=False,
+        )
+
+    sweep_results.sort(key=lambda r: r["quality_score"], reverse=True)
+    best = sweep_results[0]
+    scores = [r["quality_score"] for r in sweep_results]
+    score_range = round(max(scores) - min(scores), 4)
+
+    logger.info(
+        f"🔬 Parameter sweep: genre={request.base_config.genre} "
+        f"points={len(sweep_results)} best=temp={best['temperature']} "
+        f"top_p={best['top_p']} score={best['quality_score']:.4f} "
+        f"range={score_range:.4f} significant={score_range >= 0.05}"
+    )
+
+    return SweepABTestResult(
+        genre=request.base_config.genre,
+        tempo=request.base_config.tempo,
+        bars=request.base_config.bars,
+        sweep_results=sweep_results,
+        best_temperature=best["temperature"],
+        best_top_p=best["top_p"],
+        best_quality_score=best["quality_score"],
+        score_range=score_range,
+        significant=score_range >= 0.05,
+    )
+
+
 # ── Persistent session state per composition ──────────────────────────
 # Replicates Gradio's gr.State accumulation across calls within the same
 # composition, but with a token cap to prevent unbounded growth.
@@ -1749,6 +2053,8 @@ async def _do_generate(request: GenerateRequest, worker_id: int = 0) -> Generate
     """Core GPU generation logic — called by JobQueue workers."""
     global _last_successful_gen
 
+    _timing = GenerationTiming()
+
     _trace = request.trace_id or ""
     _log_prefix = ""
     if request.composition_id:
@@ -1773,6 +2079,7 @@ async def _do_generate(request: GenerateRequest, worker_id: int = 0) -> Generate
         else:
             client = _client_pool.fresh(worker_id)
 
+        _seed_t0 = time()
         resolved = _resolve_seed(
             genre=request.genre,
             target_key=request.key,
@@ -1788,6 +2095,7 @@ async def _do_generate(request: GenerateRequest, worker_id: int = 0) -> Generate
                 f"{_log_prefix} 🎹 Transposed seed by {resolved.transpose_semitones:+d} semitones "
                 f"({resolved.detected_key} → {request.key})"
             )
+        _timing.seed_elapsed_s = time() - _seed_t0
 
         seed_report = analyze_seed(seed_path)
         seed_hash = hashlib.sha256(open(seed_path, "rb").read()).hexdigest()[:16]
@@ -1844,7 +2152,17 @@ async def _do_generate(request: GenerateRequest, worker_id: int = 0) -> Generate
             intent_goals=request.intent_goals or None,
             quality_preset=request.quality_preset,
         )
-        _derived = apply_controls_to_params(_pre_controls, request.bars)
+        # Apply per-genre priors before mapping to Gradio params so that
+        # genre-specific temperature / top_p / density values are used.
+        _genre_prior = get_genre_prior(request.genre)
+        if _genre_prior is not None:
+            logger.info(
+                f"{_log_prefix} 🎼 Genre prior applied for '{request.genre}': "
+                f"temp={_genre_prior.temperature} top_p={_genre_prior.top_p} "
+                f"density_offset={_genre_prior.density_offset:+.2f} "
+                f"prime_ratio={_genre_prior.prime_ratio:.2f}"
+            )
+        _derived = apply_controls_to_params(_pre_controls, request.bars, genre_prior=_genre_prior)
 
         # Explicit overrides from the request take precedence
         temperature = request.temperature if request.temperature is not None else _derived["temperature"]
@@ -1951,48 +2269,19 @@ async def _do_generate(request: GenerateRequest, worker_id: int = 0) -> Generate
             f"calling /generate_music_and_state"
         )
 
-        try:
-            _gen_result = await asyncio.wait_for(
-                asyncio.to_thread(
-                    client.predict,
-                    input_midi=_input_midi,
-                    apply_sustains=True,
-                    remove_duplicate_pitches=True,
-                    remove_overlapping_durations=True,
-                    prime_instruments=orpheus_instruments,
-                    num_prime_tokens=num_prime_tokens,
-                    num_gen_tokens=num_gen_tokens,
-                    model_temperature=temperature,
-                    model_top_p=top_p,
-                    add_drums=add_drums,
-                    add_outro=request.add_outro,
-                    api_name="/generate_music_and_state",
-                ),
-                timeout=_predict_timeout,
-            )
-        except (asyncio.TimeoutError, asyncio.CancelledError) as exc:
-            kind = "cancelled" if isinstance(exc, asyncio.CancelledError) else "timed out"
-            logger.error(f"❌ Gradio /generate_music_and_state {kind} after {_predict_timeout}s")
-            return GenerateResponse(
-                success=False,
-                error=f"Orpheus generation {kind} after {_predict_timeout}s",
-            )
-
-        # Log what the Space returned (State is auto-managed by gradio_client)
-        _gen_type = type(_gen_result).__name__
-        _gen_len = len(_gen_result) if isinstance(_gen_result, (list, tuple)) else "N/A"
-        logger.info(
-            f"{_log_prefix} 📦 /generate_music_and_state returned: "
-            f"type={_gen_type} len={_gen_len}"
-        )
-
-        # ── Batch selection with rejection sampling ──
-        # The HF Space generates 10 parallel stochastic batches per
-        # /generate_music_and_state call.  We pick a random batch index
-        # (0-9) for variety, then score the result.  For non-fast presets,
-        # we can retry with a fresh generation if the score is poor.
+        # ── Batch selection with rejection sampling and multi-batch optimization ──
+        # The HF Space generates 10 stochastic batches per /generate_music_and_state
+        # call.  Rather than doing one full re-generate per candidate (the original
+        # approach), we first exhaust STORPHEUS_MULTI_BATCH_TRIES cheap /add_batch
+        # calls (~2s each) on the current generate result.  Only when the best score
+        # is still below STORPHEUS_REGEN_THRESHOLD do we pay the cost of a full
+        # re-generate (25-65s).  For a "quality" preset (4 candidates) this can
+        # reduce total latency from 4×(25-65s) → 1×(25-65s) + 3×(~2s).
         _num_candidates = quality_preset_to_batch_count(request.quality_preset)
         _rejection_threshold = float(os.environ.get("STORPHEUS_REJECTION_THRESHOLD", "0.3"))
+        _multi_batch_tries = min(STORPHEUS_MULTI_BATCH_TRIES, 10)
+        # Max generate calls: ceil(_num_candidates / _multi_batch_tries)
+        _max_generates = max(1, (_num_candidates + _multi_batch_tries - 1) // _multi_batch_tries)
 
         # Extract scoring params from constraints for candidate scoring
         _gc = request.generation_constraints
@@ -2010,143 +2299,213 @@ async def _do_generate(request: GenerateRequest, worker_id: int = 0) -> Generate
         best_candidate: BestCandidate | None = None
         best_score: CandidateScore | None = None
         all_candidate_scores: list[dict[str, object]] = []
+        _total_candidates = 0
+        _generate_calls = 0
 
-        for _attempt in range(_num_candidates):
-            batch_idx = rng.randint(0, 9)
-
-            if _attempt > 0:
-                client = _client_pool.fresh(worker_id)
-                logger.info(
-                    f"{_log_prefix} 🔄 Rejection retry {_attempt}/{_num_candidates}: "
-                    f"fresh client, batch_idx={batch_idx}"
+        async def _call_generate(c: Client) -> bool:
+            """Call /generate_music_and_state; returns True on success."""
+            nonlocal _generate_calls
+            _gen_t0 = time()
+            try:
+                _gr = await asyncio.wait_for(
+                    asyncio.to_thread(
+                        c.predict,
+                        input_midi=_input_midi,
+                        apply_sustains=True,
+                        remove_duplicate_pitches=True,
+                        remove_overlapping_durations=True,
+                        prime_instruments=orpheus_instruments,
+                        num_prime_tokens=num_prime_tokens,
+                        num_gen_tokens=num_gen_tokens,
+                        model_temperature=temperature,
+                        model_top_p=top_p,
+                        add_drums=add_drums,
+                        add_outro=request.add_outro,
+                        api_name="/generate_music_and_state",
+                    ),
+                    timeout=_predict_timeout,
                 )
+                _gen_type = type(_gr).__name__
+                _gen_len = len(_gr) if isinstance(_gr, (list, tuple)) else "N/A"
+                logger.info(
+                    f"{_log_prefix} 📦 /generate_music_and_state returned: "
+                    f"type={_gen_type} len={_gen_len}"
+                )
+                return True
+            except (asyncio.TimeoutError, asyncio.CancelledError) as exc:
+                kind = "cancelled" if isinstance(exc, asyncio.CancelledError) else "timed out"
+                logger.error(f"❌ /generate_music_and_state {kind} after {_predict_timeout}s")
+                return False
+            finally:
+                _timing.generate_elapsed_s += time() - _gen_t0
+                _generate_calls += 1
+
+        # First generate call
+        _first_ok = await _call_generate(client)
+        if not _first_ok:
+            return GenerateResponse(
+                success=False,
+                error=f"Orpheus generation timed out after {_predict_timeout}s",
+            )
+
+        _done = False
+        _used_batch_indices: set[int] = set()
+
+        while not _done:
+            # ── Inner loop: try multiple batch indices from the current generate ──
+            _batches_this_gen = 0
+            while _batches_this_gen < _multi_batch_tries and _total_candidates < _num_candidates:
+                _available = [i for i in range(10) if i not in _used_batch_indices]
+                if not _available:
+                    break
+                batch_idx = rng.choice(_available)
+                _used_batch_indices.add(batch_idx)
+                _batches_this_gen += 1
+                _total_candidates += 1
+                _timing.multi_batch_tries += 1
+
+                _ab_t0 = time()
                 try:
-                    await asyncio.wait_for(
+                    midi_result = await asyncio.wait_for(
                         asyncio.to_thread(
                             client.predict,
-                            input_midi=_input_midi,
-                            apply_sustains=True,
-                            remove_duplicate_pitches=True,
-                            remove_overlapping_durations=True,
-                            prime_instruments=orpheus_instruments,
-                            num_prime_tokens=num_prime_tokens,
-                            num_gen_tokens=num_gen_tokens,
-                            model_temperature=temperature,
-                            model_top_p=top_p,
-                            add_drums=add_drums,
-                            add_outro=request.add_outro,
-                            api_name="/generate_music_and_state",
+                            batch_number=batch_idx,
+                            api_name="/add_batch",
                         ),
-                        timeout=_predict_timeout,
+                        timeout=60,
                     )
-                except (asyncio.TimeoutError, asyncio.CancelledError):
-                    logger.warning(f"⚠️ Rejection retry {_attempt} timed out, using best so far")
-                    break
+                    logger.info(f"{_log_prefix} ✅ /add_batch({batch_idx}) ok")
                 except Exception as exc:
-                    logger.warning(f"⚠️ Rejection retry {_attempt} failed: {exc}")
+                    logger.error(f"❌ /add_batch({batch_idx}) failed: {exc}")
+                    if best_candidate is None:
+                        _timing.add_batch_elapsed_s += time() - _ab_t0
+                        _timing.candidates_evaluated = _total_candidates
+                        _timing.total_elapsed_s = time() - _timing.request_start
+                        return GenerateResponse(
+                            success=False,
+                            error=f"Orpheus add_batch failed on batch {batch_idx}: {exc}",
+                        )
+                    logger.warning("⚠️ Using best candidate from previous attempt")
+                    _timing.add_batch_elapsed_s += time() - _ab_t0
+                    _done = True
+                    break
+                _timing.add_batch_elapsed_s += time() - _ab_t0
+
+                if midi_result is None:
+                    continue
+
+                _attempt_midi_path: str = midi_result[2]
+                _attempt_parsed = await asyncio.to_thread(
+                    parse_midi_to_notes, _attempt_midi_path, request.tempo,
+                )
+
+                # Trim events beyond max_beat
+                for ch in list(_attempt_parsed["notes"]):
+                    _attempt_parsed["notes"][ch] = [
+                        n for n in _attempt_parsed["notes"][ch]
+                        if n.get("start_beat", 0.0) < max_beat
+                    ]
+                    if not _attempt_parsed["notes"][ch]:
+                        del _attempt_parsed["notes"][ch]
+                for ch in list(_attempt_parsed["cc_events"]):
+                    _attempt_parsed["cc_events"][ch] = [
+                        e for e in _attempt_parsed["cc_events"][ch] if e["beat"] < max_beat
+                    ]
+                    if not _attempt_parsed["cc_events"][ch]:
+                        del _attempt_parsed["cc_events"][ch]
+                for ch in list(_attempt_parsed["pitch_bends"]):
+                    _attempt_parsed["pitch_bends"][ch] = [
+                        e for e in _attempt_parsed["pitch_bends"][ch] if e["beat"] < max_beat
+                    ]
+                    if not _attempt_parsed["pitch_bends"][ch]:
+                        del _attempt_parsed["pitch_bends"][ch]
+                for ch in list(_attempt_parsed["aftertouch"]):
+                    _attempt_parsed["aftertouch"][ch] = [
+                        e for e in _attempt_parsed["aftertouch"][ch] if e["beat"] < max_beat
+                    ]
+                    if not _attempt_parsed["aftertouch"][ch]:
+                        del _attempt_parsed["aftertouch"][ch]
+
+                _attempt_flat: list[StorpheusNoteDict] = [
+                    note
+                    for ch_notes in _attempt_parsed["notes"].values()
+                    for note in ch_notes
+                ]
+
+                if not _attempt_flat:
+                    logger.warning(f"⚠️ Batch {batch_idx} produced zero notes, skipping")
+                    all_candidate_scores.append({"batch": batch_idx, "score": 0.0, "notes": 0})
+                    continue
+
+                candidate_score = score_candidate(
+                    _attempt_flat,
+                    _attempt_parsed["notes"],
+                    batch_index=batch_idx,
+                    params=_scoring,
+                )
+
+                all_candidate_scores.append({
+                    "batch": batch_idx,
+                    "score": candidate_score.total_score,
+                    "notes": candidate_score.note_count,
+                    "key": candidate_score.detected_key,
+                    "dims": candidate_score.dimensions,
+                })
+
+                logger.info(
+                    f"🎲 Candidate {_total_candidates - 1}: batch={batch_idx} "
+                    f"score={candidate_score.total_score:.3f} "
+                    f"notes={candidate_score.note_count} "
+                    f"key={candidate_score.detected_key or '?'}"
+                )
+
+                if best_score is None or candidate_score.total_score > best_score.total_score:
+                    best_score = candidate_score
+                    best_candidate = BestCandidate(
+                        midi_result=midi_result,
+                        midi_path=_attempt_midi_path,
+                        parsed=_attempt_parsed,
+                        flat_notes=_attempt_flat,
+                        batch_idx=batch_idx,
+                    )
+
+                if candidate_score.total_score >= (1.0 - _rejection_threshold):
+                    logger.info(
+                        f"✅ Score {candidate_score.total_score:.3f} above acceptance threshold, "
+                        f"skipping remaining candidates"
+                    )
+                    _done = True
                     break
 
-            try:
-                midi_result = await asyncio.wait_for(
-                    asyncio.to_thread(
-                        client.predict,
-                        batch_number=batch_idx,
-                        api_name="/add_batch",
-                    ),
-                    timeout=60,
+            # ── Decide whether to re-generate ──
+            if _done:
+                break
+            if _total_candidates >= _num_candidates:
+                break
+            _current_best = best_score.total_score if best_score else 0.0
+            if _current_best >= STORPHEUS_REGEN_THRESHOLD:
+                logger.info(
+                    f"✅ Multi-batch best score {_current_best:.3f} ≥ regen threshold "
+                    f"{STORPHEUS_REGEN_THRESHOLD} — skipping re-generate"
                 )
-                logger.info(f"{_log_prefix} ✅ /add_batch({batch_idx}) ok")
-            except Exception as exc:
-                logger.error(f"❌ /add_batch({batch_idx}) failed: {exc}")
-                if best_candidate is None:
-                    return GenerateResponse(
-                        success=False,
-                        error=f"Orpheus add_batch failed on batch {batch_idx}: {exc}",
-                    )
-                logger.warning(f"⚠️ Using best candidate from previous attempt")
+                break
+            if _generate_calls >= _max_generates:
                 break
 
-            if midi_result is None:
-                continue
-
-            _attempt_midi_path: str = midi_result[2]
-            _attempt_parsed = await asyncio.to_thread(
-                parse_midi_to_notes, _attempt_midi_path, request.tempo,
-            )
-
-            # Trim events beyond max_beat in-place on the typed sub-dicts
-            for ch in list(_attempt_parsed["notes"]):
-                _attempt_parsed["notes"][ch] = [
-                    n for n in _attempt_parsed["notes"][ch]
-                    if n.get("start_beat", 0.0) < max_beat
-                ]
-                if not _attempt_parsed["notes"][ch]:
-                    del _attempt_parsed["notes"][ch]
-            for ch in list(_attempt_parsed["cc_events"]):
-                _attempt_parsed["cc_events"][ch] = [
-                    e for e in _attempt_parsed["cc_events"][ch] if e["beat"] < max_beat
-                ]
-                if not _attempt_parsed["cc_events"][ch]:
-                    del _attempt_parsed["cc_events"][ch]
-            for ch in list(_attempt_parsed["pitch_bends"]):
-                _attempt_parsed["pitch_bends"][ch] = [
-                    e for e in _attempt_parsed["pitch_bends"][ch] if e["beat"] < max_beat
-                ]
-                if not _attempt_parsed["pitch_bends"][ch]:
-                    del _attempt_parsed["pitch_bends"][ch]
-            for ch in list(_attempt_parsed["aftertouch"]):
-                _attempt_parsed["aftertouch"][ch] = [
-                    e for e in _attempt_parsed["aftertouch"][ch] if e["beat"] < max_beat
-                ]
-                if not _attempt_parsed["aftertouch"][ch]:
-                    del _attempt_parsed["aftertouch"][ch]
-
-            _attempt_flat: list[StorpheusNoteDict] = [
-                note
-                for ch_notes in _attempt_parsed["notes"].values()
-                for note in ch_notes
-            ]
-
-            if not _attempt_flat:
-                logger.warning(f"⚠️ Batch {batch_idx} produced zero notes, skipping")
-                all_candidate_scores.append({"batch": batch_idx, "score": 0.0, "notes": 0})
-                continue
-
-            candidate_score = score_candidate(
-                _attempt_flat,
-                _attempt_parsed["notes"],
-                batch_index=batch_idx,
-                params=_scoring,
-            )
-
-            all_candidate_scores.append({
-                "batch": batch_idx,
-                "score": candidate_score.total_score,
-                "notes": candidate_score.note_count,
-                "key": candidate_score.detected_key,
-                "dims": candidate_score.dimensions,
-            })
-
+            # Full re-generate: only triggered when multi-batch tries all scored below threshold
+            _timing.regen_count += 1
+            client = _client_pool.fresh(worker_id)
             logger.info(
-                f"🎲 Candidate {_attempt}: batch={batch_idx} "
-                f"score={candidate_score.total_score:.3f} "
-                f"notes={candidate_score.note_count} "
-                f"key={candidate_score.detected_key or '?'}"
+                f"{_log_prefix} 🔄 Re-generate {_generate_calls + 1}/{_max_generates}: "
+                f"multi-batch best={_current_best:.3f} < {STORPHEUS_REGEN_THRESHOLD}"
             )
-
-            if best_score is None or candidate_score.total_score > best_score.total_score:
-                best_score = candidate_score
-                best_candidate = BestCandidate(
-                    midi_result=midi_result,
-                    midi_path=_attempt_midi_path,
-                    parsed=_attempt_parsed,
-                    flat_notes=_attempt_flat,
-                    batch_idx=batch_idx,
-                )
-
-            if candidate_score.total_score >= (1.0 - _rejection_threshold):
-                logger.info(f"✅ Score {candidate_score.total_score:.3f} above threshold, accepting")
+            _regen_ok = await _call_generate(client)
+            if not _regen_ok:
+                logger.warning("⚠️ Re-generate timed out, using best candidate so far")
                 break
+            _used_batch_indices.clear()
+
+        _timing.candidates_evaluated = _total_candidates
 
         if best_candidate is None:
             return GenerateResponse(
@@ -2221,11 +2580,13 @@ async def _do_generate(request: GenerateRequest, worker_id: int = 0) -> Generate
             logger.warning(f"⚠️ Failed to copy MIDI artifact: {exc}")
 
         # ── Post-processing pipeline ──
+        _pp_t0 = time()
         _post_processor = build_post_processor(
             generation_constraints=request.generation_constraints,
             role_profile_summary=request.role_profile_summary,
         )
         snake_notes = _post_processor.process(snake_notes)
+        _timing.post_process_elapsed_s = time() - _pp_t0
 
         # Rebuild wire-format notes from post-processed snake_notes
         mvp_notes = [
@@ -2236,14 +2597,47 @@ async def _do_generate(request: GenerateRequest, worker_id: int = 0) -> Generate
 
         score = rejection_score(snake_notes, request.bars)
 
+        # ── Quality telemetry ──────────────────────────────────────────
+        # Emit one structured record per completed generation so external
+        # log consumers (dashboards, quality monitors) can track trends.
+        _qual_metrics = analyze_quality(snake_notes, request.bars, request.tempo)
+        _pitches_telem = [n["pitch"] for n in snake_notes]
+        _velocities_telem = [n["velocity"] for n in snake_notes]
+        _telem: GenerationTelemetryRecord = {
+            "genre": request.genre,
+            "tempo": request.tempo,
+            "bars": request.bars,
+            "instruments": list(request.instruments),
+            "quality_preset": request.quality_preset,
+            "temperature": temperature,
+            "top_p": top_p,
+            "num_prime_tokens": num_prime_tokens,
+            "num_gen_tokens": num_gen_tokens,
+            "genre_prior_applied": _genre_prior is not None,
+            "note_count": len(snake_notes),
+            "pitch_range": (max(_pitches_telem) - min(_pitches_telem)) if _pitches_telem else 0,
+            "velocity_variation": round(_qual_metrics.get("velocity_variation", 0.0), 4),
+            "quality_score": round(_qual_metrics.get("quality_score", 0.0), 4),
+            "rejection_score": round(score, 4),
+            "candidate_count": len(all_candidate_scores),
+            "generation_ok": True,
+        }
+        logger.info(f"📊 TELEMETRY {json.dumps(_telem)}")
+
         comp_state.last_token_estimate += num_gen_tokens
         comp_state.accumulated_midi_path = midi_path
 
+        _timing.total_elapsed_s = time() - _timing.request_start
         _ctx_window = 8192
         _ctx_pct = (num_prime_tokens + num_gen_tokens) / _ctx_window * 100
         logger.info(
             f"✅ MVP: {len(mvp_notes)} notes, score={score:.3f}, "
-            f"ctx={_ctx_pct:.0f}%, batch={batch_idx}"
+            f"ctx={_ctx_pct:.0f}%, batch={batch_idx} | "
+            f"⏱ total={_timing.total_elapsed_s:.1f}s "
+            f"generate={_timing.generate_elapsed_s:.1f}s "
+            f"add_batch={_timing.add_batch_elapsed_s:.1f}s "
+            f"post_process={_timing.post_process_elapsed_s:.1f}s "
+            f"regens={_timing.regen_count}"
         )
 
         # ── Build metadata ──
@@ -2293,6 +2687,7 @@ async def _do_generate(request: GenerateRequest, worker_id: int = 0) -> Generate
             "post_processing": {
                 "transforms_applied": _post_processor.transforms_applied,
             },
+            "timing": _timing.to_dict(),
             "seed_provenance": {
                 "seed_source_type": seed_source_type,
                 "seed_file_path": seed_path,
@@ -2375,6 +2770,124 @@ async def _do_generate(request: GenerateRequest, worker_id: int = 0) -> Generate
         )
 
 
+async def _do_progressive_generate(
+    request: ProgressiveGenerateRequest,
+) -> ProgressiveGenerationResult:
+    """Generate instruments in dependency order with cascaded MIDI seeding.
+
+    Partitions ``request.instruments`` into four tiers (drums → bass →
+    harmony → melody) and calls ``_do_generate`` once per non-empty tier.
+    A shared ``composition_id`` threads the session state so each tier
+    automatically receives the previous tier's output MIDI as its seed
+    (via the existing ``CompositionState.accumulated_midi_path`` mechanism).
+
+    Returns a ``ProgressiveGenerationResult`` with per-tier results plus a
+    flat ``all_notes`` list combining every tier's output.
+    """
+    composition_id = request.composition_id or str(uuid.uuid4())
+    tier_groups = group_instruments_by_tier(request.instruments)
+
+    if not tier_groups:
+        return ProgressiveGenerationResult(
+            success=False,
+            composition_id=composition_id,
+            tier_results=[],
+            all_notes=[],
+            total_elapsed_seconds=0.0,
+            error="No instruments provided",
+        )
+
+    _run_start = monotonic()
+    tier_results: list[ProgressiveTierResult] = []
+    all_notes: list[WireNoteDict] = []
+
+    _trace = request.trace_id or ""
+    logger.info(
+        f"🎼 Progressive generation started | "
+        f"composition={composition_id[:8]} tiers={list(tier_groups)} "
+        f"instruments={request.instruments}"
+    )
+
+    for tier, instruments in tier_groups.items():
+        _tier_start = monotonic()
+        logger.info(
+            f"🎵 [{tier.value.upper()}] Generating {instruments} "
+            f"(composition={composition_id[:8]})"
+        )
+
+        tier_request = GenerateRequest(
+            genre=request.genre,
+            tempo=request.tempo,
+            instruments=instruments,
+            bars=request.bars,
+            key=request.key,
+            emotion_vector=request.emotion_vector,
+            role_profile_summary=request.role_profile_summary,
+            generation_constraints=request.generation_constraints,
+            intent_goals=request.intent_goals,
+            seed=request.seed,
+            trace_id=_trace or None,
+            intent_hash=request.intent_hash,
+            quality_preset=request.quality_preset,
+            temperature=request.temperature,
+            top_p=request.top_p,
+            composition_id=composition_id,
+            add_outro=False,
+            unified_output=True,  # always get per-channel notes for seeding
+        )
+
+        response = await _do_generate(tier_request)
+        elapsed = monotonic() - _tier_start
+
+        if not response.success:
+            logger.error(
+                f"❌ [{tier.value.upper()}] Generation failed: {response.error}"
+            )
+            return ProgressiveGenerationResult(
+                success=False,
+                composition_id=composition_id,
+                tier_results=tier_results,
+                all_notes=all_notes,
+                total_elapsed_seconds=monotonic() - _run_start,
+                error=f"Tier {tier.value} failed: {response.error}",
+            )
+
+        tier_notes: list[WireNoteDict] = response.notes or []
+        all_notes.extend(tier_notes)
+
+        tier_results.append(
+            ProgressiveTierResult(
+                tier=tier.value,
+                instruments=instruments,
+                notes=tier_notes,
+                channel_notes=response.channel_notes,
+                metadata=dict(response.metadata or {}),
+                elapsed_seconds=round(elapsed, 2),
+            )
+        )
+
+        logger.info(
+            f"✅ [{tier.value.upper()}] {len(tier_notes)} notes in {elapsed:.1f}s"
+        )
+
+    total_elapsed = monotonic() - _run_start
+    logger.info(
+        f"✅ Progressive generation complete | "
+        f"composition={composition_id[:8]} "
+        f"tiers={len(tier_results)} notes={len(all_notes)} "
+        f"total={total_elapsed:.1f}s"
+    )
+
+    return ProgressiveGenerationResult(
+        success=True,
+        composition_id=composition_id,
+        tier_results=tier_results,
+        all_notes=all_notes,
+        total_elapsed_seconds=round(total_elapsed, 2),
+        error=None,
+    )
+
+
 def _job_response(job: Job) -> dict[str, object]:
     """Serialize a Job to the wire format used by /generate and /jobs endpoints."""
     resp: dict[str, object] = {
@@ -2426,6 +2939,29 @@ async def generate(request: GenerateRequest) -> dict[str, object] | JSONResponse
             headers={"Retry-After": "30"},
         )
     return _job_response(job)
+
+
+@app.post("/generate/progressive", response_model=None)
+async def generate_progressive(
+    request: ProgressiveGenerateRequest,
+) -> dict[str, object] | JSONResponse:
+    """Generate instruments in dependency order with cascaded MIDI seeding.
+
+    Partitions ``request.instruments`` into four tiers (drums → bass →
+    harmony → melody) and generates each tier sequentially.  Each tier's
+    output MIDI seeds the next, so bass inherits drum groove, harmony
+    inherits bass root motion, and melody inherits the full harmonic context.
+
+    Returns immediately with the full ``ProgressiveGenerationResult`` once
+    all tiers complete.  For large arrangements (many instruments, high
+    quality preset) this may take 60–120 s.
+
+    Unlike ``POST /generate``, this endpoint bypasses the job queue and runs
+    the entire pipeline in-request so per-tier timing is accurate.
+    """
+    result = await _do_progressive_generate(request)
+    status_code = 200 if result["success"] else 500
+    return JSONResponse(status_code=status_code, content=result)
 
 
 @app.get("/jobs/{job_id}", response_model=None)

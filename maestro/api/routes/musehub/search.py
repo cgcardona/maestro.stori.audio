@@ -26,8 +26,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from maestro.auth.dependencies import TokenClaims, optional_token, require_valid_token
-from maestro.config import settings
+from maestro.auth.dependencies import TokenClaims, optional_token
 from maestro.db import get_db
 
 from maestro.db import musehub_models as db
@@ -35,15 +34,12 @@ from maestro.models.musehub import GlobalSearchResult, SearchResponse, SimilarCo
 
 from maestro.services import musehub_repository, musehub_search
 from maestro.services.musehub_embeddings import compute_embedding
-from maestro.services.musehub_qdrant import MusehubQdrantClient
+from maestro.services.musehub_qdrant import MusehubQdrantClient, get_qdrant_client
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-
-# Module-level singleton — one client per process, collection ensured on first use.
-_qdrant_client: MusehubQdrantClient | None = None
 
 _VALID_MODES = frozenset({"property", "ask", "keyword", "pattern"})
 
@@ -54,6 +50,7 @@ _REPO_VALID_MODES = frozenset({"property", "ask", "keyword", "pattern"})
 @router.get(
     "/search",
     response_model=GlobalSearchResult,
+    operation_id="globalSearch",
     summary="Global cross-repo search across all public Muse Hub repos",
 )
 async def global_search(
@@ -106,21 +103,10 @@ async def global_search(
 
 
 
-def _get_qdrant_client() -> MusehubQdrantClient:
-    """Return the process-level Qdrant client, creating it on first call."""
-    global _qdrant_client
-    if _qdrant_client is None:
-        _qdrant_client = MusehubQdrantClient(
-            host=settings.qdrant_host,
-            port=settings.qdrant_port,
-        )
-        _qdrant_client.ensure_collection()
-    return _qdrant_client
-
-
 @router.get(
     "/search/similar",
     response_model=SimilarSearchResponse,
+    operation_id="searchSimilar",
     summary="Find musically similar commits across public repos",
 )
 async def search_similar(
@@ -128,6 +114,7 @@ async def search_similar(
     limit: int = Query(10, ge=1, le=50, description="Maximum number of results"),
     db_session: AsyncSession = Depends(get_db),
     _: TokenClaims | None = Depends(optional_token),
+    qdrant: MusehubQdrantClient = Depends(get_qdrant_client),
 ) -> SimilarSearchResponse:
     """Return the N most musically similar public commits to the given commit SHA.
 
@@ -151,9 +138,8 @@ async def search_similar(
     query_vector = compute_embedding(row.message)
 
     try:
-        client = _get_qdrant_client()
         raw_results = await asyncio.to_thread(
-            client.search_similar,
+            qdrant.search_similar,
             query_vector=query_vector,
             limit=limit,
             public_only=True,
@@ -188,6 +174,7 @@ async def search_similar(
 @router.get(
     "/repos/{repo_id}/search",
     response_model=SearchResponse,
+    operation_id="searchRepo",
     summary="Search Muse repo commits",
 )
 async def search_repo(

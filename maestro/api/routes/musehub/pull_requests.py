@@ -39,6 +39,7 @@ router = APIRouter()
     "/repos/{repo_id}/pull-requests",
     response_model=PRResponse,
     status_code=status.HTTP_201_CREATED,
+    operation_id="createPullRequest",
     summary="Open a pull request against a Muse Hub repo",
 )
 async def create_pull_request(
@@ -46,7 +47,7 @@ async def create_pull_request(
     body: PRCreate,
     background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
-    _: TokenClaims = Depends(require_valid_token),
+    token: TokenClaims = Depends(require_valid_token),
 ) -> PRResponse:
     """Open a new pull request proposing to merge from_branch into to_branch.
 
@@ -71,6 +72,7 @@ async def create_pull_request(
             from_branch=body.from_branch,
             to_branch=body.to_branch,
             body=body.body,
+            author=token.get("sub", ""),
         )
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
@@ -98,6 +100,7 @@ async def create_pull_request(
 @router.get(
     "/repos/{repo_id}/pull-requests",
     response_model=PRListResponse,
+    operation_id="listPullRequests",
     summary="List pull requests for a Muse Hub repo",
 )
 async def list_pull_requests(
@@ -130,6 +133,7 @@ async def list_pull_requests(
 @router.get(
     "/repos/{repo_id}/pull-requests/{pr_id}",
     response_model=PRResponse,
+    operation_id="getPullRequest",
     summary="Get a single pull request by ID",
 )
 async def get_pull_request(
@@ -157,6 +161,7 @@ async def get_pull_request(
 @router.post(
     "/repos/{repo_id}/pull-requests/{pr_id}/merge",
     response_model=PRMergeResponse,
+    operation_id="mergePullRequest",
     summary="Merge an open pull request",
 )
 async def merge_pull_request(

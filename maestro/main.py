@@ -120,14 +120,53 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 
 app = FastAPI(
-    title=settings.app_name,
+    title="Stori MuseHub API",
     version=settings.app_version,
-    description="Stori — the infinite music machine.",
+    description=(
+        "**MuseHub** — the music composition version control platform powering Stori DAW.\n\n"
+        "MuseHub gives AI agents and human composers a GitHub-style workflow for music:\n"
+        "push commits, open pull requests, track issues, and browse public repos via a "
+        "machine-readable OpenAPI spec.\n\n"
+        "## Authentication\n\n"
+        "All write endpoints and private-repo reads require a **Bearer JWT** in the "
+        "`Authorization` header:\n\n"
+        "```\nAuthorization: Bearer <your-jwt>\n```\n\n"
+        "Public repo read endpoints (`GET /repos/*`, `/discover/*`, `/search`) accept "
+        "unauthenticated requests.\n\n"
+        "## Tags\n\n"
+        "Endpoints are grouped by resource type:\n"
+        "- **Repos** — create, read, and manage music repositories\n"
+        "- **Branches** — branch pointers and divergence\n"
+        "- **Commits** — push / pull / inspect commit history\n"
+        "- **Issues** — open, list, and close repo issues\n"
+        "- **Pull Requests** — open, review, and merge branches\n"
+        "- **Objects** — binary artifact storage (MIDI, MP3, WebP piano rolls)\n"
+        "- **Analysis** — 13-dimension musical analysis per commit ref\n"
+        "- **Sessions** — creative session tracking\n"
+        "- **Search** — in-repo and cross-repo commit search\n"
+        "- **Releases** — versioned release snapshots\n"
+        "- **Webhooks** — event subscriptions\n"
+        "- **Social** — stars, forks, follows, comments, reactions\n"
+        "- **Users** — public profile management\n"
+        "- **Discover** — explore public repos\n"
+        "- **Sync** — CLI push/pull wire protocol\n"
+    ),
+    contact={
+        "name": "Stori / Tellurstori",
+        "url": "https://stori.com",
+        "email": "hello@stori.com",
+    },
+    license_info={
+        "name": "Proprietary",
+        "url": "https://stori.com/terms",
+    },
     lifespan=lifespan,
-    # Disable public docs in production/stage; set DEBUG=true locally to enable
+    # OpenAPI spec always available for agent SDK generation.
+    # Swagger UI and ReDoc gated on DEBUG to avoid exposing interactive
+    # docs on production without additional access control.
+    openapi_url="/api/v1/openapi.json",
     docs_url="/docs" if settings.debug else None,
     redoc_url="/redoc" if settings.debug else None,
-    openapi_url="/openapi.json" if settings.debug else None,
 )
 
 # Adapter: FastAPI expects (Request, Exception) but slowapi's handler
@@ -172,11 +211,11 @@ app.include_router(muse.router, prefix="/api/v1", tags=["muse"])
 # so their concrete paths (/musehub/users/..., /musehub/explore, etc.) are matched
 # first and are not shadowed by the wildcard /{owner}/{repo_slug} route declared
 # last in repos.py.
-app.include_router(musehub_user_routes.router, prefix="/api/v1/musehub", tags=["musehub-users"])
-app.include_router(musehub_discover_routes.router, prefix="/api/v1", tags=["musehub-discover"])
-app.include_router(musehub_discover_routes.star_router, prefix="/api/v1", tags=["musehub-discover"])
+app.include_router(musehub_user_routes.router, prefix="/api/v1/musehub", tags=["Users"])
+app.include_router(musehub_discover_routes.router, prefix="/api/v1", tags=["Discover"])
+app.include_router(musehub_discover_routes.star_router, prefix="/api/v1", tags=["Social"])
 # Main musehub router — includes the /{owner}/{repo_slug} wildcard last.
-app.include_router(musehub.router, prefix="/api/v1", tags=["musehub"])
+app.include_router(musehub.router, prefix="/api/v1")
 # UI routers: fixed-path routes (users, explore, trending) first, then wildcards.
 app.include_router(musehub_ui_routes.fixed_router, tags=["musehub-ui"])
 app.include_router(musehub_ui_routes.router, tags=["musehub-ui"])

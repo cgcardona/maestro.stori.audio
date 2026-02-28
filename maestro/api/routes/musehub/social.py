@@ -56,7 +56,7 @@ from maestro.services import musehub_repository
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(tags=["musehub-social"])
+router = APIRouter()
 
 _ALLOWED_EMOJIS = {"👍", "👎", "❤️", "🎵", "🔥", "✨", "🎸", "🥁"}
 
@@ -132,12 +132,61 @@ class ForkResponse(BaseModel):
     created_at: datetime
 
 
+class ReactionToggleResult(BaseModel):
+    """Result of toggling an emoji reaction — indicates whether it was added or removed."""
+
+    added: bool
+    emoji: str
+
+
+class FollowActionResult(BaseModel):
+    """Result of a follow action."""
+
+    following: bool
+    username: str
+
+
+class WatchActionResult(BaseModel):
+    """Result of a watch action."""
+
+    watching: bool
+    repo_id: str
+
+
+class NotificationReadResult(BaseModel):
+    """Result of marking a single notification as read."""
+
+    read: bool
+    notif_id: str
+
+
+class NotificationsReadAllResult(BaseModel):
+    """Result of marking all notifications as read."""
+
+    marked_read: int
+
+
+class AnalyticsSummaryResult(BaseModel):
+    """Aggregated view and download counts for a repo."""
+
+    repo_id: str
+    view_count: int
+    download_count: int
+
+
+class ViewAnalyticsDayResult(BaseModel):
+    """Daily view count for a single date."""
+
+    date: str
+    count: int
+
+
 # ---------------------------------------------------------------------------
 # Comments
 # ---------------------------------------------------------------------------
 
 
-@router.get("/repos/{repo_id}/comments", summary="List comments on a target object")
+@router.get("/repos/{repo_id}/comments", operation_id="listComments", summary="List comments on a target object")
 async def list_comments(
     repo_id: str,
     target_type: str = Query(...),
@@ -170,7 +219,7 @@ async def list_comments(
 
 
 @router.post("/repos/{repo_id}/comments", status_code=status.HTTP_201_CREATED,
-             summary="Post a comment on a target object")
+             operation_id="createComment", summary="Post a comment on a target object")
 async def create_comment(
     repo_id: str,
     body: CommentCreate,
@@ -201,7 +250,7 @@ async def create_comment(
 
 
 @router.delete("/repos/{repo_id}/comments/{comment_id}",
-               status_code=status.HTTP_204_NO_CONTENT, summary="Soft-delete a comment")
+               status_code=status.HTTP_204_NO_CONTENT, operation_id="deleteComment", summary="Soft-delete a comment")
 async def delete_comment(
     repo_id: str,
     comment_id: str,
@@ -228,7 +277,7 @@ async def delete_comment(
 # ---------------------------------------------------------------------------
 
 
-@router.get("/repos/{repo_id}/reactions", summary="Get reaction counts for a target")
+@router.get("/repos/{repo_id}/reactions", operation_id="getReactions", summary="Get reaction counts for a target")
 async def list_reactions(
     repo_id: str,
     target_type: str = Query(...),
@@ -268,13 +317,13 @@ async def list_reactions(
 
 
 @router.post("/repos/{repo_id}/reactions", status_code=status.HTTP_201_CREATED,
-             summary="Toggle a reaction on a target")
+             operation_id="toggleReaction", summary="Toggle a reaction on a target")
 async def toggle_reaction(
     repo_id: str,
     body: ReactionCreate,
     db: AsyncSession = Depends(get_db),
     claims: TokenClaims = Depends(require_valid_token),
-) -> dict[str, object]:
+) -> ReactionToggleResult:
     """Toggle an emoji reaction. Adds if not present, removes if already reacted."""
     if body.emoji not in _ALLOWED_EMOJIS:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
@@ -293,7 +342,7 @@ async def toggle_reaction(
     if existing:
         await db.delete(existing)
         await db.commit()
-        return {"added": False, "emoji": body.emoji}
+        return ReactionToggleResult(added=False, emoji=body.emoji)
 
     reaction = MusehubReaction(
         reaction_id=str(uuid.uuid4()),
@@ -308,7 +357,7 @@ async def toggle_reaction(
         await db.commit()
     except IntegrityError:
         await db.rollback()
-    return {"added": True, "emoji": body.emoji}
+    return ReactionToggleResult(added=True, emoji=body.emoji)
 
 
 # ---------------------------------------------------------------------------
@@ -316,7 +365,7 @@ async def toggle_reaction(
 # ---------------------------------------------------------------------------
 
 
-@router.get("/users/{username}/followers", summary="Get follower count for a user")
+@router.get("/users/{username}/followers", operation_id="getFollowers", summary="Get follower count for a user")
 async def get_followers(
     username: str,
     db: AsyncSession = Depends(get_db),
@@ -338,12 +387,12 @@ async def get_followers(
 
 
 @router.post("/users/{username}/follow", status_code=status.HTTP_201_CREATED,
-             summary="Follow a user")
+             operation_id="followUser", summary="Follow a user")
 async def follow_user(
     username: str,
     db: AsyncSession = Depends(get_db),
     claims: TokenClaims = Depends(require_valid_token),
-) -> dict[str, object]:
+) -> FollowActionResult:
     """Follow another user. Idempotent."""
     if claims.get("sub", "") == username:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Cannot follow yourself")
@@ -357,11 +406,11 @@ async def follow_user(
         await db.commit()
     except IntegrityError:
         await db.rollback()
-    return {"following": True, "username": username}
+    return FollowActionResult(following=True, username=username)
 
 
 @router.delete("/users/{username}/follow", status_code=status.HTTP_204_NO_CONTENT,
-               summary="Unfollow a user")
+               operation_id="unfollowUser", summary="Unfollow a user")
 async def unfollow_user(
     username: str,
     db: AsyncSession = Depends(get_db),
@@ -382,7 +431,7 @@ async def unfollow_user(
 # ---------------------------------------------------------------------------
 
 
-@router.get("/repos/{repo_id}/watches", summary="Get watch count for a repo")
+@router.get("/repos/{repo_id}/watches", operation_id="getWatchCount", summary="Get watch count for a repo")
 async def get_watches(
     repo_id: str,
     db: AsyncSession = Depends(get_db),
@@ -404,12 +453,12 @@ async def get_watches(
 
 
 @router.post("/repos/{repo_id}/watch", status_code=status.HTTP_201_CREATED,
-             summary="Watch a repo")
+             operation_id="watchRepo", summary="Watch a repo")
 async def watch_repo(
     repo_id: str,
     db: AsyncSession = Depends(get_db),
     claims: TokenClaims = Depends(require_valid_token),
-) -> dict[str, object]:
+) -> WatchActionResult:
     """Subscribe to repo activity. Idempotent."""
     watch = MusehubWatch(
         watch_id=str(uuid.uuid4()),
@@ -421,11 +470,11 @@ async def watch_repo(
         await db.commit()
     except IntegrityError:
         await db.rollback()
-    return {"watching": True, "repo_id": repo_id}
+    return WatchActionResult(watching=True, repo_id=repo_id)
 
 
 @router.delete("/repos/{repo_id}/watch", status_code=status.HTTP_204_NO_CONTENT,
-               summary="Unwatch a repo")
+               operation_id="unwatchRepo", summary="Unwatch a repo")
 async def unwatch_repo(
     repo_id: str,
     db: AsyncSession = Depends(get_db),
@@ -446,7 +495,7 @@ async def unwatch_repo(
 # ---------------------------------------------------------------------------
 
 
-@router.get("/notifications", summary="Get notification inbox")
+@router.get("/notifications", operation_id="listNotifications", summary="Get notification inbox")
 async def list_notifications(
     unread_only: bool = Query(False),
     limit: int = Query(50, ge=1, le=200),
@@ -462,12 +511,12 @@ async def list_notifications(
     return [NotificationResponse.model_validate(r) for r in rows]
 
 
-@router.post("/notifications/{notif_id}/read", summary="Mark a notification as read")
+@router.post("/notifications/{notif_id}/read", operation_id="markNotificationRead", summary="Mark a notification as read")
 async def mark_notification_read(
     notif_id: str,
     db: AsyncSession = Depends(get_db),
     claims: TokenClaims = Depends(require_valid_token),
-) -> dict[str, object]:
+) -> NotificationReadResult:
     """Mark a single notification as read."""
     row = (await db.execute(
         select(MusehubNotification).where(
@@ -479,14 +528,14 @@ async def mark_notification_read(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Notification not found")
     row.is_read = True
     await db.commit()
-    return {"read": True, "notif_id": notif_id}
+    return NotificationReadResult(read=True, notif_id=notif_id)
 
 
-@router.post("/notifications/read-all", summary="Mark all notifications as read")
+@router.post("/notifications/read-all", operation_id="markAllNotificationsRead", summary="Mark all notifications as read")
 async def mark_all_notifications_read(
     db: AsyncSession = Depends(get_db),
     claims: TokenClaims = Depends(require_valid_token),
-) -> dict[str, object]:
+) -> NotificationsReadAllResult:
     """Mark all of the calling user's notifications as read."""
     rows = (await db.execute(
         select(MusehubNotification).where(
@@ -497,7 +546,7 @@ async def mark_all_notifications_read(
     for row in rows:
         row.is_read = True
     await db.commit()
-    return {"marked_read": len(rows)}
+    return NotificationsReadAllResult(marked_read=len(rows))
 
 
 # ---------------------------------------------------------------------------
@@ -505,7 +554,7 @@ async def mark_all_notifications_read(
 # ---------------------------------------------------------------------------
 
 
-@router.get("/repos/{repo_id}/forks", summary="List forks of a repo")
+@router.get("/repos/{repo_id}/forks", operation_id="listForks", summary="List forks of a repo")
 async def list_forks(
     repo_id: str,
     db: AsyncSession = Depends(get_db),
@@ -526,7 +575,7 @@ async def list_forks(
 
 
 @router.post("/repos/{repo_id}/fork", status_code=status.HTTP_201_CREATED,
-             summary="Fork a repo")
+             operation_id="forkRepo", summary="Fork a repo")
 async def fork_repo(
     repo_id: str,
     db: AsyncSession = Depends(get_db),
@@ -584,7 +633,7 @@ async def fork_repo(
 
 
 @router.post("/repos/{repo_id}/view", status_code=status.HTTP_204_NO_CONTENT,
-             summary="Record a page view for analytics")
+             operation_id="recordView", summary="Record a page view for analytics")
 async def record_view(
     repo_id: str,
     request: Request,
@@ -613,12 +662,12 @@ async def record_view(
         await db.rollback()  # already viewed today — no-op
 
 
-@router.get("/repos/{repo_id}/analytics", summary="Repo analytics summary")
+@router.get("/repos/{repo_id}/analytics", operation_id="getRepoAnalytics", summary="Repo analytics summary")
 async def get_analytics(
     repo_id: str,
     db: AsyncSession = Depends(get_db),
     claims: TokenClaims | None = Depends(optional_token),
-) -> dict[str, object]:
+) -> AnalyticsSummaryResult:
     """Return view counts and download counts for a repo."""
     repo = await musehub_repository.get_repo(db, repo_id)
     if repo is None:
@@ -636,7 +685,34 @@ async def get_analytics(
         select(func.count()).where(MusehubDownloadEvent.repo_id == repo_id)
     )).scalar_one()
 
-    return {"repo_id": repo_id, "view_count": view_count, "download_count": dl_count}
+    return AnalyticsSummaryResult(repo_id=repo_id, view_count=view_count, download_count=dl_count)
+
+
+@router.get("/repos/{repo_id}/analytics/views", operation_id="getRepoViewAnalytics", summary="Daily view counts")
+async def get_view_analytics(
+    repo_id: str,
+    days: int = Query(default=30, ge=1, le=90),
+    db: AsyncSession = Depends(get_db),
+    claims: TokenClaims | None = Depends(optional_token),
+) -> list[ViewAnalyticsDayResult]:
+    """Return daily view counts for the last N days.
+
+    Aggregates MusehubViewEvent rows by event_date so the insights page can
+    render a 30-day traffic sparkline without sending raw event rows over the
+    wire.
+    """
+    from datetime import date, timedelta
+
+    cutoff = date.today() - timedelta(days=days)
+    rows = await db.execute(
+        select(MusehubViewEvent.event_date, func.count().label("view_count"))
+        .where(MusehubViewEvent.repo_id == repo_id)
+        .where(MusehubViewEvent.event_date >= cutoff.isoformat())
+        .group_by(MusehubViewEvent.event_date)
+        .order_by(MusehubViewEvent.event_date)
+    )
+    results = rows.all()
+    return [ViewAnalyticsDayResult(date=r.event_date, count=r.view_count) for r in results]
 
 
 # ---------------------------------------------------------------------------
@@ -644,7 +720,7 @@ async def get_analytics(
 # ---------------------------------------------------------------------------
 
 
-@router.get("/feed", summary="Activity feed for the calling user")
+@router.get("/feed", operation_id="getActivityFeed", summary="Activity feed for the calling user")
 async def get_feed(
     limit: int = Query(50, ge=1, le=200),
     db: AsyncSession = Depends(get_db),

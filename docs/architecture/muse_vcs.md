@@ -1536,6 +1536,43 @@ Renders the context document in structured HTML with:
 
 **Agent use case:** A musician debugging why the AI generated something unexpected can load the context page for that commit and see exactly what musical knowledge the agent had. The copy button lets them paste the raw JSON into a new agent conversation for direct inspection or override.
 
+#### Analysis Dashboard
+
+The analysis dashboard provides a single-page overview of all musical dimensions for a given ref.
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/musehub/ui/{owner}/{repo_slug}/analysis/{ref}` | HTML dashboard with 10 dimension summary cards (no auth required) |
+| GET | `/api/v1/musehub/repos/{repo_id}/analysis/{ref}` | Aggregate analysis JSON with all 13 dimensions (JWT required) |
+
+**Dashboard cards (10 dimensions):** Key, Tempo, Meter, Chord Map, Dynamics, Groove, Emotion, Form, Motifs, Contour.
+
+Each card shows:
+- A headline metric derived from the dimension's stub data (e.g. "C Major", "120 BPM")
+- A sub-text with confidence or range context
+- A mini sparkline bar chart for time-series dimensions (dynamics velocity curve, contour pitch curve)
+- A clickable link to the per-dimension analysis page at `/{owner}/{repo_slug}/analysis/{ref}/{dim_id}`
+
+**Branch/tag selector:** A `<select>` populated by `GET /api/v1/musehub/repos/{repo_id}/branches`. Changing the selected branch navigates to `/{owner}/{repo_slug}/analysis/{branch}`.
+
+**Missing data:** When a dimension has no analysis data, the card displays "Not yet analyzed" gracefully — no errors or empty states break the layout.
+
+**Content negotiation (API):** `GET /api/v1/musehub/repos/{repo_id}/analysis/{ref}` returns `AggregateAnalysisResponse` JSON with a `dimensions` array. All 13 dimensions are present (including similarity and divergence, which are not shown as cards but are available to agents).
+
+**Auth model:** The HTML page at `/musehub/ui/{owner}/{repo_slug}/analysis/{ref}` is a Jinja2 template shell — no server-side auth required. The embedded JavaScript fetches the API with a JWT from `localStorage`.
+
+**Agent use case:** An AI agent assessing the current musical state of a repo calls `GET /api/v1/musehub/repos/{id}/analysis/{ref}` and reads the `dimensions` array to understand key, tempo, emotion, and harmonic complexity before proposing a new composition direction.
+
+**Files:**
+| Layer | File |
+|-------|------|
+| UI handler | `maestro/api/routes/musehub/ui.py::analysis_dashboard_page()` |
+| UI template | `maestro/templates/musehub/pages/analysis.html` |
+| API handler | `maestro/api/routes/musehub/analysis.py::get_aggregate_analysis()` |
+| Service | `maestro/services/musehub_analysis.py::compute_aggregate_analysis()` |
+| Models | `maestro/models/musehub_analysis.py::AggregateAnalysisResponse` |
+| UI tests | `tests/test_musehub_ui.py` — `test_analysis_dashboard_*`, `test_analysis_aggregate_endpoint` |
+
 #### Issues
 
 | Method | Path | Description |
@@ -1680,7 +1717,7 @@ All authed endpoints require `Authorization: Bearer <token>`. See [api.md](../re
 
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | `/musehub/ui/{owner}/{repo_slug}` | Repo landing page (branch selector + commit log) |
+| GET | `/musehub/ui/{owner}/{repo_slug}` | Repo home page (arrangement matrix, audio player, stats bar, recent commits) |
 | GET | `/musehub/ui/{owner}/{repo_slug}/commits/{commit_id}` | Commit detail (metadata + artifact browser) |
 | GET | `/musehub/ui/{owner}/{repo_slug}/pulls` | Pull request list |
 | GET | `/musehub/ui/{owner}/{repo_slug}/pulls/{pr_id}` | PR detail (with merge button) |
@@ -1690,6 +1727,62 @@ All authed endpoints require `Authorization: Bearer <token>`. See [api.md](../re
 | GET | `/musehub/ui/{owner}/{repo_slug}/sessions/{session_id}` | Session detail page |
 
 UI pages are Jinja2-rendered HTML shells — auth is handled client-side via `localStorage` JWT (loaded from `/musehub/static/musehub.js`). The page JavaScript fetches from the authed JSON API above.
+### Repo Home Page
+
+**Purpose:** Provide an "album cover" view of a Muse Hub repo — hearing the latest mix, seeing the arrangement structure, and understanding project activity at a glance.  Replaces the plain commit-list landing page with a rich dashboard suited for musicians, collaborators, and AI agents.
+
+**Routes:**
+
+| Route | Auth | Description |
+|-------|------|-------------|
+| `GET /musehub/ui/{owner}/{repo_slug}` | None (HTML shell) | Repo home page — arrangement matrix, audio player, stats bar, recent commits |
+| `GET /musehub/ui/{owner}/{repo_slug}` (`Accept: application/json`) | Optional JWT | Returns `{ stats, recent_commits }` as JSON |
+| `GET /api/v1/musehub/repos/{repo_id}/stats` | Optional JWT | `RepoStatsResponse` — commit/branch/release counts |
+
+**Sections rendered by the home page template (`repo_home.html`):**
+
+1. **Hero** — repo name, owner link, visibility badge (Public/Private), description, key/BPM pills, and genre tags.
+2. **Stats bar** — three clickable pills showing: commit count (links to commit history), branch count (links to DAG graph), release count (links to releases).
+3. **Quick-link tabs** — Code, Commits, Graph, PRs, Issues, Analysis, Sessions — one-click navigation to all repo sub-pages.
+4. **Audio player** — embeds an `<audio controls>` element pointing to the latest MP3/OGG/WAV object from the most recent commit.  Shows a placeholder when no audio render is found.
+5. **Arrangement matrix** — a colour-coded grid showing tracks (columns) × sections (rows) from the latest commit snapshot.  Falls back to a placeholder when the repo has no commits.
+6. **Recent commits** — last 5 commits with SHA link, conventional-commit type/scope badges, author avatar, and relative timestamp.
+7. **README** — raw text of `README.md` from HEAD rendered in a `<pre>` block; hidden when no README exists.
+
+**Content negotiation:**
+
+Sending `Accept: application/json` returns:
+
+```json
+{
+  "stats": {
+    "commit_count": 42,
+    "branch_count": 3,
+    "release_count": 2
+  },
+  "recent_commits": [
+    {
+      "commit_id": "abc123...",
+      "branch": "main",
+      "message": "feat(drums): add hi-hat pattern",
+      "author": "gabriel",
+      "timestamp": "2025-01-15T12:00:00+00:00"
+    }
+  ]
+}
+```
+
+This allows AI agents and CLI tools to query repo activity without rendering HTML.
+
+**Stats endpoint:** `GET /api/v1/musehub/repos/{repo_id}/stats`
+
+Returns a `RepoStatsResponse` with:
+- `commit_count` — total commits across all branches (from `list_commits` total)
+- `branch_count` — number of branch pointers (from `list_branches`)
+- `release_count` — number of published releases/tags (from `list_releases`)
+
+All counts are 0 when the repo is empty.  Respects visibility: private repos return 401 for unauthenticated callers.
+
 ### DAG Graph — Interactive Commit Graph
 
 **Purpose:** Visualise the full commit history of a Muse Hub repo as an interactive directed acyclic graph, equivalent to `muse inspect --format mermaid` but explorable in the browser.
@@ -7286,5 +7379,144 @@ files required.
 | Static mount | `maestro/main.py` | `app.mount("/musehub/static", StaticFiles(...))` |
 | Page helper | `maestro/api/routes/musehub/ui.py` | `_page()` links all five CSS files |
 | Tests | `tests/test_musehub_ui.py` | `test_design_tokens_css_served`, `test_components_css_served`, `test_repo_page_uses_design_system`, `test_responsive_meta_tag_present_*` |
+
+---
+
+## Emotion Map Page (issue #227)
+
+The emotion map page visualises four emotional dimensions — **energy**, **valence**, **tension**, and **darkness** — across time within a composition and across its commit history.
+
+### Motivation
+
+A film scorer needs to verify that the emotional arc of their composition matches the scene's emotional beats across the full commit history.  Running `muse emotion-diff` between individual commit pairs is manual and error-prone.  The emotion map provides a single-glance visual overview.
+
+### Route
+
+```
+GET /musehub/ui/{repo_id}/analysis/{ref}/emotion
+```
+
+Returns a static HTML shell (no JWT required).  JavaScript fetches the JSON emotion map from the authed API and renders:
+
+- **Evolution chart** — SVG line chart of all four dimensions sampled beat-by-beat within `ref`.
+- **Trajectory chart** — Per-commit summary vectors across the 5 most recent ancestor commits plus HEAD.
+- **Drift list** — Euclidean distance in emotion space between consecutive commits, with the dominant-change axis identified.
+- **Narrative** — Auto-generated text describing the emotional journey.
+- **Track / section filters** — Reload the data with instrument or section scope.
+
+### JSON Endpoint
+
+```
+GET /api/v1/musehub/repos/{repo_id}/analysis/{ref}/emotion-map
+```
+
+Requires JWT Bearer auth.  Returns `EmotionMapResponse` (see type contracts).  Query params: `?track=` and `?section=`.
+
+### Emotion Axes (all 0.0–1.0)
+
+| Axis | Description |
+|------|-------------|
+| `energy` | Compositional drive / activity level |
+| `valence` | Brightness / positivity (0=dark, 1=bright) |
+| `tension` | Harmonic and rhythmic tension |
+| `darkness` | Brooding / ominous quality (inversely correlated with valence) |
+
+Note: `valence` here is re-normalised to [0, 1] relative to the `EmotionData` model (which uses –1…+1) so all four axes share the same visual scale in charts.
+
+### Implementation
+
+| Layer | File | What it does |
+|-------|------|-------------|
+| Pydantic models | `maestro/models/musehub_analysis.py` | `EmotionVector`, `EmotionMapPoint`, `CommitEmotionSnapshot`, `EmotionDrift`, `EmotionMapResponse` |
+| Service | `maestro/services/musehub_analysis.py` | `compute_emotion_map()` — builds evolution, trajectory, drift, and narrative |
+| Route (JSON) | `maestro/api/routes/musehub/analysis.py` | `GET .../emotion-map` — registered before `/{dimension}` to avoid parameter capture |
+| Route (UI) | `maestro/api/routes/musehub/ui.py` | `emotion_map_page()` — static HTML shell at `.../analysis/{ref}/emotion` |
+| Tests | `tests/test_musehub_ui.py` | Page renders, no-auth, chart JS, filters, JSON fields, trajectory, drift |
+| Tests | `tests/test_musehub_analysis.py` | Service unit tests + HTTP endpoint tests |
+
+### Muse VCS Considerations
+
+- **Affected operations:** Maps conceptually to `muse emotion-diff` — the page shows what `emotion-diff` would show for all pairs in recent history.
+- **Reproducibility impact:** Stub data is deterministic for a given `ref` (seeded by MD5 of the ref string).  Full MIDI-analysis-based inference will be model-dependent once Storpheus exposes an emotion introspection route.
+
+---
+
+## Muse Hub — Tree Browser (issue #204)
+
+**Purpose:** GitHub-style directory tree browser for navigating the muse-work
+file structure stored in a Muse Hub repo.  Musicians use it to find specific
+MIDI tracks, rendered MP3s, metadata files, and preview images without using
+the CLI.
+
+### URL Pattern
+
+| Route | Description |
+|-------|-------------|
+| `GET /musehub/ui/{owner}/{repo_slug}/tree/{ref}` | Root directory listing |
+| `GET /musehub/ui/{owner}/{repo_slug}/tree/{ref}/{path}` | Subdirectory listing |
+| `GET /api/v1/musehub/repos/{repo_id}/tree/{ref}?owner=&repo_slug=` | JSON root listing |
+| `GET /api/v1/musehub/repos/{repo_id}/tree/{ref}/{path}?owner=&repo_slug=` | JSON subdirectory listing |
+
+**Auth:** No JWT required for HTML shell (public repos). JSON API enforces auth
+for private repos.
+
+### Ref Resolution
+
+`{ref}` can be:
+- A **branch name** (e.g. `main`, `feature/groove`) — resolved via `musehub_branches`.
+- A **full commit ID** — resolved via `musehub_commits`.
+
+An unknown ref returns HTTP 404. This check is performed by
+`musehub_repository.resolve_ref_for_tree()`.
+
+### Tree Reconstruction
+
+The tree is reconstructed at request time from all `musehub_objects` stored
+under the repo. No snapshot manifest table is required — the directory
+structure is derived by splitting object `path` fields on `/`.
+
+`musehub_repository.list_tree()` algorithm:
+1. Fetch all objects for the repo ordered by path.
+2. Strip the `dir_path` prefix from each object's path.
+3. If the remainder has no `/` → file entry at this level.
+4. If the remainder has a `/` → directory entry (first segment only, deduplicated).
+5. Return dirs first (alphabetical), then files (alphabetical).
+
+### Response Shape (`TreeListResponse`)
+
+```json
+{
+  "owner": "gabriel",
+  "repoSlug": "summer-groove",
+  "ref": "main",
+  "dirPath": "",
+  "entries": [
+    { "type": "dir",  "name": "tracks",       "path": "tracks",          "sizeBytes": null },
+    { "type": "file", "name": "cover.webp",   "path": "cover.webp",      "sizeBytes": 4096 },
+    { "type": "file", "name": "metadata.json","path": "metadata.json",   "sizeBytes": 512  }
+  ]
+}
+```
+
+### File-Type Icons
+
+| Extension | Icon | Symbol code |
+|-----------|------|-------------|
+| `.mid` / `.midi` | Piano | `&#127929;` |
+| `.mp3` / `.wav` / `.ogg` | Waveform | `&#127925;` |
+| `.json` | Braces | `&#123;&#125;` |
+| `.webp` / `.png` / `.jpg` | Photo | `&#128444;` |
+| Other | Generic file | `&#128196;` |
+
+### Implementation
+
+| Layer | File |
+|-------|------|
+| Models | `maestro/models/musehub.py` — `TreeEntryResponse`, `TreeListResponse` |
+| Repository | `maestro/services/musehub_repository.py` — `resolve_ref_for_tree()`, `list_tree()` |
+| JSON API | `maestro/api/routes/musehub/objects.py` — `list_tree_root()`, `list_tree_subdir()` |
+| HTML routes | `maestro/api/routes/musehub/ui.py` — `tree_page()`, `tree_subdir_page()` |
+| Template | `maestro/templates/musehub/pages/tree.html` |
+| Tests | `tests/test_musehub_ui.py` — `test_tree_*` (6 tests) |
 
 ---
