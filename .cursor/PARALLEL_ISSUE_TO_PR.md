@@ -142,6 +142,11 @@ cd "$REPO"
 # GitHub repo slug — hardcoded. NEVER derive from local path.
 GH_REPO=cgcardona/maestro
 
+# Enable rerere so git caches conflict resolutions across agents.
+# When multiple agents resolve the same conflict (e.g. muse_vcs.md), rerere
+# automatically reuses the recorded resolution — no manual work needed.
+git config rerere.enabled true
+
 # ── PHASE LABEL ─────────────────────────────────────────────────────────────
 # Change this to the current phase label. This is the ONLY value you update.
 PHASE_LABEL="phase-1"
@@ -417,7 +422,39 @@ STEP 4 — PRE-PUSH SYNC (critical — always run before pushing):
   │ STEP A — See what conflicted (one command):                                 │
   │   git status | grep "^UU"                                                   │
   │                                                                              │
-  │ STEP B — For each conflicted file, apply the matching rule:                 │
+  │ STEP A.5 — UNIVERSAL TRIAGE (run for EVERY conflict before step B):        │
+  │                                                                              │
+  │   Peek at the conflict shape for each file:                                 │
+  │     git diff --diff-filter=U -- <file> | grep -A6 "^<<<<<<<"               │
+  │                                                                              │
+  │   Apply the FIRST matching rule — stop as soon as one matches:             │
+  │                                                                              │
+  │   RULE 0 ─ ONE SIDE EMPTY (most common in parallel batches):               │
+  │   ┌──────────────────────────────────────────────────────────────────────┐  │
+  │   │  <<<<<<< HEAD                                                        │  │
+  │   │  (blank / whitespace only)        ← this side is empty              │  │
+  │   │  =======                                                             │  │
+  │   │  <real content>                   ← this side has content           │  │
+  │   │  >>>>>>> origin/dev                                                  │  │
+  │   │  — OR the reverse (HEAD has content, origin/dev is blank/stub).     │  │
+  │   │                                                                      │  │
+  │   │  Action: TAKE the non-empty side. Remove markers. Done.             │  │
+  │   │  This is always safe. The empty side is a base-file placeholder,   │  │
+  │   │  NOT intentionally deleted content. No further analysis needed.     │  │
+  │   │  Do NOT open the file to "verify" — just take the non-empty side.  │  │
+  │   └──────────────────────────────────────────────────────────────────────┘  │
+  │                                                                              │
+  │   RULE 1 ─ BOTH SIDES IDENTICAL:                                            │
+  │     Keep either side, remove markers. Done.                                │
+  │                                                                              │
+  │   RULE 2 ─ KNOWN ADDITIVE FILE → apply the file-specific rule in STEP B:  │
+  │     muse_cli/app.py  •  muse_vcs.md  •  type_contracts.md                 │
+  │                                                                              │
+  │   RULE 3 ─ ALL OTHER FILES (judgment conflict):                             │
+  │     Preserve dev's version PLUS your additions.                            │
+  │     Semantically incompatible → STOP and report to user. Never guess.     │
+  │                                                                              │
+  │ STEP B — For each conflicted file NOT resolved by STEP A.5 (Rules 0–1):   │
   │                                                                              │
   │ ┌─ maestro/muse_cli/app.py ─────────────────────────────────────────────┐  │
   │ │ Each parallel agent adds exactly one app.add_typer() line.            │  │
@@ -575,6 +612,41 @@ gh issue view <N> --repo cgcardona/maestro --json body,title
 Confirm no two selected issues share a file. Document your selection in the
 `SELECTED_ISSUES` array inside the Setup script.
 
+### Step B.5 — File overlap pre-check (run before creating worktrees)
+
+After selecting candidates, verify none of them share files with each other
+**or** with currently open PRs. Any overlap = serialize into the next batch.
+
+```bash
+REPO=$(git rev-parse --show-toplevel)
+cd "$REPO"
+
+echo "=== Files touched by currently open PRs ==="
+gh pr list --state open --json number,title --jq '.[] | "\(.number)|\(.title)"' | \
+  while IFS='|' read -r num title; do
+    files=$(gh pr diff "$num" --name-only 2>/dev/null)
+    if [ -n "$files" ]; then
+      echo ""
+      echo "PR #$num — $title:"
+      echo "$files" | sed 's/^/  /'
+    fi
+  done
+
+echo ""
+echo "⚠️  Any file appearing in TWO entries above = conflict at merge time."
+echo "⚠️  Resolve: finish the earlier PR first, then rebase the later issue off dev."
+```
+
+**Sequential batching rule:** Only launch issues with zero file overlap across
+all open PRs AND across each other. A two-batch structure (`batch-1 → merge
+all → batch-2`) eliminates most conflicts. Never mix dependent issues into the
+same parallel batch.
+
+**Dependency detection:** If issue B cannot function without A's code:
+1. Note `**Depends on #A**` in B's issue body.
+2. Label B as `blocked`.
+3. Merge A first, then un-block B and add it to the next batch.
+
 ### Step C — Confirm `dev` is up to date
 
 ```bash
@@ -652,16 +724,42 @@ git worktree list   # should show only the main repo
 git -C "$(git rev-parse --show-toplevel)" worktree prune
 ```
 
-### 4 — Main repo cleanliness
+### 4 — Main repo cleanliness ⚠️ run this every batch, no exceptions
+
+An agent that violates the "never copy files into the main repo" rule leaves
+uncommitted changes in the main working tree. These are silent — git status
+won't warn you unless you look. Left unchecked they accumulate across batches,
+creating phantom diffs that are impossible to attribute.
 
 ```bash
-git -C "$(git rev-parse --show-toplevel)" status
-# Must show: nothing to commit, working tree clean
-# If not:
 REPO=$(git rev-parse --show-toplevel)
-git -C "$REPO" restore --staged .
-git -C "$REPO" restore .
+git -C "$REPO" status
+# Must show: nothing to commit, working tree clean
 ```
+
+**If dirty files are found:**
+
+1. Check whether the work is already merged:
+   ```bash
+   # For each dirty file, find the PR that contains it:
+   gh pr list --state merged --json number,title --jq '.[].number' | \
+     xargs -I{} gh pr diff {} --name-only 2>/dev/null | grep <filename>
+   ```
+2. **If already merged** → the dirty files are stale copies. Discard them:
+   ```bash
+   git -C "$REPO" restore --staged .
+   git -C "$REPO" restore .
+   rm -f <any .bak or untracked agent artifacts>
+   ```
+3. **If NOT merged** → the agent likely wrote directly to the main repo instead
+   of staying in its worktree. Create a branch, commit the work, and open a PR:
+   ```bash
+   git -C "$REPO" checkout -b fix/<description>
+   git -C "$REPO" add -A
+   git -C "$REPO" commit -m "feat: <description> (rescued from main repo dirty state)"
+   git push origin fix/<description>
+   gh pr create --base dev --head fix/<description> ...
+   ```
 
 ### 5 — Hand off to PR review
 

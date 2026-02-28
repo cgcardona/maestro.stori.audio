@@ -92,7 +92,39 @@ git status | grep "^UU"                     # list conflicted files
 grep -c "^<<<<<" <file>                     # count blocks in a specific file
 ```
 
-**STEP B — Apply the rule for each file:**
+**STEP A.5 — Universal triage (do this for every conflict before STEP B):**
+
+For each conflicted file, check the conflict shape first:
+```bash
+git diff --diff-filter=U -- <file> | grep -A6 "^<<<<<<<"
+```
+
+Apply the **first matching rule** — stop as soon as one matches:
+
+**RULE 0 — ONE SIDE EMPTY** (most common in parallel batches — no judgment needed):
+```
+ <<<<<<< HEAD
+ (blank / whitespace only)       ← this side is empty
+ =======
+ <real content>                  ← this side has content
+ >>>>>>> origin/dev
+```
+OR the reverse (HEAD has content, origin/dev is blank/stub).
+**Action: take the non-empty side. Remove markers. Done.**
+This is always safe. The empty side is a base-file placeholder, not intentionally deleted content.
+Do NOT open the file to "verify" — just take the non-empty side and move on.
+
+**RULE 1 — BOTH SIDES IDENTICAL:** Keep either side, remove markers. Done.
+
+**RULE 2 — KNOWN ADDITIVE FILE:** Apply the file-specific rule in STEP B.
+Files: `muse_cli/app.py` · `muse_vcs.md` · `type_contracts.md`
+
+**RULE 3 — ALL OTHER FILES (judgment conflict):** Preserve dev's version plus this PR's additions.
+If semantically incompatible → stop, leave PR open, report ambiguity to user. Never guess.
+
+---
+
+**STEP B — Apply the file-specific rule (only for files not resolved by STEP A.5):**
 
 `maestro/muse_cli/app.py`
 - Each parallel agent adds one `app.add_typer()` line.
