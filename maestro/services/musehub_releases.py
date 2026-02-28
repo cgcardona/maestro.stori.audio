@@ -48,6 +48,7 @@ def _to_release_response(row: db.MusehubRelease) -> ReleaseResponse:
         body=row.body,
         commit_id=row.commit_id,
         download_urls=_urls_from_json(raw),
+        author=row.author,
         created_at=row.created_at,
     )
 
@@ -71,6 +72,7 @@ async def create_release(
     body: str,
     commit_id: str | None,
     download_urls: ReleaseDownloadUrls | None = None,
+    author: str = "",
 ) -> ReleaseResponse:
     """Persist a new release and return its wire representation.
 
@@ -86,6 +88,7 @@ async def create_release(
         body: Markdown release notes.
         commit_id: Optional commit to pin this release to.
         download_urls: Pre-built download URL map; defaults to empty URLs.
+        author: Display name or identifier of the user publishing this release.
 
     Returns:
         ``ReleaseResponse`` with all fields populated.
@@ -116,6 +119,7 @@ async def create_release(
         body=body,
         commit_id=commit_id,
         download_urls=urls_dict,
+        author=author,
     )
     session.add(release)
     await session.flush()

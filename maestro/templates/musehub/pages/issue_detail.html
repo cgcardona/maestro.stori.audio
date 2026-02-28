@@ -47,6 +47,14 @@ async function load() {
           <span class="badge badge-${issue.state}">${issue.state}</span>
         </div>
         <div class="meta-row">
+          ${issue.author ? `
+          <div class="meta-item">
+            <span class="meta-label">Author</span>
+            <span class="meta-value" style="display:flex;align-items:center;gap:6px">
+              <span style="display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:50%;background:var(--accent,#58a6ff);color:#0d1117;font-size:11px;font-weight:700;flex-shrink:0">${escHtml(issue.author.charAt(0).toUpperCase())}</span>
+              <a href="${base.replace(/\/[^/]+\/[^/]+$/, '')}/users/${encodeURIComponent(escHtml(issue.author))}">${escHtml(issue.author)}</a>
+            </span>
+          </div>` : ''}
           <div class="meta-item">
             <span class="meta-label">Opened</span>
             <span class="meta-value">${fmtDate(issue.createdAt)}</span>
