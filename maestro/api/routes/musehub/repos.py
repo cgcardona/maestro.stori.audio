@@ -1,14 +1,15 @@
-"""Muse Hub repo, branch, and commit route handlers.
+"""Muse Hub repo, branch, commit, and credits route handlers.
 
 Endpoint summary:
   POST /musehub/repos                        — create a new remote repo
   GET  /musehub/repos/{repo_id}              — get repo metadata
   GET  /musehub/repos/{repo_id}/branches     — list all branches
   GET  /musehub/repos/{repo_id}/commits      — list commits (newest first)
+  GET  /musehub/repos/{repo_id}/credits      — aggregated contributor credits
 
 All endpoints require a valid JWT Bearer token.
 No business logic lives here — all persistence is delegated to
-maestro.services.musehub_repository.
+maestro.services.musehub_repository and maestro.services.musehub_credits.
 """
 from __future__ import annotations
 
@@ -23,9 +24,10 @@ from maestro.models.musehub import (
     BranchListResponse,
     CommitListResponse,
     CreateRepoRequest,
+    CreditsResponse,
     RepoResponse,
 )
-from maestro.services import musehub_repository
+from maestro.services import musehub_credits, musehub_repository
 
 logger = logging.getLogger(__name__)
 
@@ -112,3 +114,38 @@ async def list_commits(
         db, repo_id, branch=branch, limit=limit
     )
     return CommitListResponse(commits=commits, total=total)
+
+
+@router.get(
+    "/repos/{repo_id}/credits",
+    response_model=CreditsResponse,
+    summary="Get aggregated contributor credits for a repo",
+)
+async def get_credits(
+    repo_id: str,
+    sort: str = Query(
+        "count",
+        pattern="^(count|recency|alpha)$",
+        description="Sort order: 'count' (most prolific), 'recency' (most recent), 'alpha' (A–Z)",
+    ),
+    db: AsyncSession = Depends(get_db),
+    _: TokenClaims = Depends(require_valid_token),
+) -> CreditsResponse:
+    """Return dynamic contributor credits aggregated from all commits in a repo.
+
+    Analogous to album liner notes: every contributor is listed with their
+    session count, inferred contribution types (composer, arranger, producer,
+    etc.), and activity window (first and last commit timestamps).
+
+    Content negotiation: when the request ``Accept`` header includes
+    ``application/ld+json``, clients should request the ``/credits`` endpoint
+    directly — the JSON body is schema.org-compatible and can be wrapped in
+    JSON-LD by the consumer.  This endpoint always returns ``application/json``.
+
+    Returns 404 if the repo does not exist.
+    Returns an empty ``contributors`` list when no commits have been pushed yet.
+    """
+    repo = await musehub_repository.get_repo(db, repo_id)
+    if repo is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repo not found")
+    return await musehub_credits.aggregate_credits(db, repo_id, sort=sort)
