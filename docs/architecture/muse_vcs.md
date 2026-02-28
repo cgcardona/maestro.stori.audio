@@ -4787,12 +4787,14 @@ No DB interaction at checkout time — the DAG remains intact.
 
 **Purpose:** Mark a conflicted file as resolved during a paused `muse merge`.
 Called after `muse merge` exits with a conflict to accept one side's version
-before running `muse merge --continue`.
+before running `muse merge --continue`.  For `--theirs`, the command
+automatically fetches the incoming branch's object from the local store and
+writes it to `muse-work/<path>` — no manual file editing required.
 
 **Usage:**
 ```bash
-muse resolve <file-path> --ours    # Keep current branch's working-tree version
-muse resolve <file-path> --theirs  # Accept incoming branch (edit file first, then mark)
+muse resolve <file-path> --ours    # Keep current branch's working-tree version (no file change)
+muse resolve <file-path> --theirs  # Copy incoming branch's object to muse-work/ automatically
 ```
 
 **Flags:**
@@ -4800,25 +4802,34 @@ muse resolve <file-path> --theirs  # Accept incoming branch (edit file first, th
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--ours` | flag | off | Accept the current branch's version (no file change needed) |
-| `--theirs` | flag | off | Accept the incoming branch (caller edits file manually, then runs this) |
+| `--theirs` | flag | off | Fetch the incoming branch's object from local store and write to muse-work/ |
 
 **Output example:**
 ```
-✅ Resolved 'meta/section-1.json' — keeping ours
+✅ Resolved 'meta/section-1.json' — keeping theirs
+   1 conflict(s) remaining. Resolve all, then run 'muse merge --continue'.
+✅ Resolved 'beat.mid' — keeping ours
 ✅ All conflicts resolved. Run 'muse merge --continue' to create the merge commit.
 ```
 
-**Workflow:**
-1. `muse merge <branch>` exits with conflict, writes `.muse/MERGE_STATE.json`
-2. `muse resolve <path> --ours` for each conflicted file
-3. `muse merge --continue` creates the merge commit
+**Full conflict resolution workflow:**
+```bash
+muse merge experiment          # → conflict on beat.mid
+muse status                    # → shows "You have unmerged paths"
+muse resolve beat.mid --theirs # → copies theirs version into muse-work/
+muse merge --continue          # → creates merge commit, clears MERGE_STATE.json
+```
 
 **Note:** After all conflicts are resolved, `.muse/MERGE_STATE.json` persists
 with `conflict_paths=[]` so `--continue` can read the stored commit IDs.
 `muse merge --continue` is the command that clears MERGE_STATE.json.
+If the theirs object is not in the local store (e.g. branch was never
+committed locally), run `muse pull` first to fetch remote objects.
 
-**Implementation:** `maestro/muse_cli/commands/resolve.py` — `resolve_conflict(file_path, ours, root)`.
-Reads and rewrites `.muse/MERGE_STATE.json`.  No DB interaction.
+**Implementation:** `maestro/muse_cli/commands/resolve.py` — `resolve_conflict_async(file_path, ours, root, session)`.
+Reads and rewrites `.muse/MERGE_STATE.json`.  For `--theirs`, queries DB for
+the theirs commit's snapshot manifest and calls `apply_resolution()` from
+`merge_engine.py` to restore the file from the local object store.
 
 ---
 
@@ -4852,5 +4863,47 @@ muse merge --continue
 run `--continue` to record the merged arrangement as an immutable commit.
 
 **Implementation:** `maestro/muse_cli/commands/merge.py` — `_merge_continue_async(root, session)`.
+
+---
+
+### `muse merge --abort`
+
+**Purpose:** Cancel an in-progress merge and restore the pre-merge state of all
+conflicted files.  Use when a conflict is too complex to resolve and you want to
+return the working tree to the clean state it was in before `muse merge` ran.
+
+**Usage:**
+```bash
+muse merge --abort
+```
+
+**Flags:**
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--abort` | flag | off | Cancel the in-progress merge and restore pre-merge files |
+
+**Output example:**
+```
+✅ Merge abort. Restored 2 conflicted file(s).
+```
+
+**Contract:**
+- Reads `.muse/MERGE_STATE.json` for `ours_commit` and `conflict_paths`.
+- Fetches the ours commit's snapshot manifest from DB.
+- For each conflicted path: restores the ours version from the local object
+  store to `muse-work/`.  Paths that existed only on the theirs branch (not
+  in ours manifest) are deleted from `muse-work/`.
+- Clears `.muse/MERGE_STATE.json` on success.
+- Exits 1 if no merge is in progress.
+
+**Agent use case:** When an AI agent detects an irresolvable semantic conflict
+(e.g. two structural arrangements that cannot be combined), it should call
+`muse merge --abort` to restore a clean baseline before proposing an
+alternative strategy to the user.
+
+**Implementation:** `maestro/muse_cli/commands/merge.py` — `_merge_abort_async(root, session)`.
+Queries DB for the ours commit's manifest, then calls `apply_resolution()` from
+`merge_engine.py` for each conflicted path.
 
 ---

@@ -50,6 +50,7 @@ from maestro.muse_cli.db import (
 from maestro.muse_cli.errors import ExitCode
 from maestro.muse_cli.merge_engine import (
     apply_merge,
+    apply_resolution,
     clear_merge_state,
     detect_conflicts,
     diff_snapshots,
@@ -352,6 +353,71 @@ async def _merge_continue_async(
 
 
 # ---------------------------------------------------------------------------
+# --abort: cancel an in-progress merge and restore pre-merge state
+# ---------------------------------------------------------------------------
+
+
+async def _merge_abort_async(
+    *,
+    root: pathlib.Path,
+    session: AsyncSession,
+) -> None:
+    """Cancel an in-progress merge and restore each conflicted path to its pre-merge version.
+
+    Reads ``MERGE_STATE.json``, fetches the ours_commit snapshot manifest, and
+    restores the ours version of each conflicted file from the local object
+    store to ``muse-work/``.  Clears ``MERGE_STATE.json`` on success.
+
+    Files that existed only on the theirs branch (i.e. path absent from ours
+    manifest) are removed from ``muse-work/`` — they should not exist in the
+    pre-merge state.
+
+    Args:
+        root:    Repository root.
+        session: Open async DB session used to look up the ours commit's
+                 snapshot manifest.
+
+    Raises:
+        :class:`typer.Exit`: If no merge is in progress or if the merge state
+            is missing required commit IDs.
+    """
+    merge_state = read_merge_state(root)
+    if merge_state is None:
+        typer.echo("❌ No merge in progress. Nothing to abort.")
+        raise typer.Exit(code=ExitCode.USER_ERROR)
+
+    ours_commit_id = merge_state.ours_commit
+    if not ours_commit_id:
+        typer.echo("❌ MERGE_STATE.json is missing ours_commit. Cannot abort.")
+        raise typer.Exit(code=ExitCode.INTERNAL_ERROR)
+
+    ours_manifest = await get_commit_snapshot_manifest(session, ours_commit_id) or {}
+
+    restored_count = 0
+    for rel_path in merge_state.conflict_paths:
+        object_id = ours_manifest.get(rel_path)
+        if object_id is None:
+            # Path was added by theirs (not present before the merge) — remove it.
+            dest = root / "muse-work" / rel_path
+            if dest.exists():
+                dest.unlink()
+                logger.debug("✅ Removed '%s' (not in pre-merge snapshot)", rel_path)
+            continue
+        try:
+            apply_resolution(root, rel_path, object_id)
+            restored_count += 1
+        except FileNotFoundError as exc:
+            logger.warning("⚠️ Could not restore '%s': %s", rel_path, exc)
+
+    clear_merge_state(root)
+
+    typer.echo(f"✅ Merge aborted. Restored {restored_count} conflicted file(s).")
+    logger.info(
+        "✅ muse merge --abort: cleared merge state, restored %d file(s)", restored_count
+    )
+
+
+# ---------------------------------------------------------------------------
 # Typer command
 # ---------------------------------------------------------------------------
 
@@ -361,7 +427,7 @@ def merge(
     ctx: typer.Context,
     branch: Optional[str] = typer.Argument(
         None,
-        help="Name of the branch to merge into HEAD. Omit when using --continue.",
+        help="Name of the branch to merge into HEAD. Omit when using --continue or --abort.",
     ),
     cont: bool = typer.Option(
         False,
@@ -369,12 +435,23 @@ def merge(
         is_flag=True,
         help="Finalize a paused merge after resolving all conflicts.",
     ),
+    abort: bool = typer.Option(
+        False,
+        "--abort",
+        is_flag=True,
+        help="Cancel the in-progress merge and restore the pre-merge state.",
+    ),
 ) -> None:
     """Merge a branch into the current branch (fast-forward or 3-way).
 
     Use ``--continue`` after resolving conflicts to create the merge commit.
+    Use ``--abort`` to cancel and restore the pre-merge working-tree state.
     """
     root = require_repo()
+
+    if cont and abort:
+        typer.echo("❌ Cannot use --continue and --abort together.")
+        raise typer.Exit(code=ExitCode.USER_ERROR)
 
     if cont:
         async def _run_continue() -> None:
@@ -391,8 +468,26 @@ def merge(
             raise typer.Exit(code=ExitCode.INTERNAL_ERROR)
         return
 
+    if abort:
+        async def _run_abort() -> None:
+            async with open_session() as session:
+                await _merge_abort_async(root=root, session=session)
+
+        try:
+            asyncio.run(_run_abort())
+        except typer.Exit:
+            raise
+        except Exception as exc:
+            typer.echo(f"❌ muse merge --abort failed: {exc}")
+            logger.error("❌ muse merge --abort error: %s", exc, exc_info=True)
+            raise typer.Exit(code=ExitCode.INTERNAL_ERROR)
+        return
+
     if not branch:
-        typer.echo("❌ Branch name required (or use --continue to finalize a paused merge).")
+        typer.echo(
+            "❌ Branch name required "
+            "(or use --continue / --abort to manage a paused merge)."
+        )
         raise typer.Exit(code=ExitCode.USER_ERROR)
 
     async def _run() -> None:
