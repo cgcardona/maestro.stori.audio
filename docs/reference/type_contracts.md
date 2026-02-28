@@ -4302,3 +4302,51 @@ error message via `typer.echo` before calling `typer.Exit(INTERNAL_ERROR)`.
 ```python
 class StorpheusUnavailableError(Exception): ...
 ```
+
+---
+
+### `ContourResult`
+
+**Module:** `maestro/muse_cli/commands/contour.py`
+
+Melodic contour analysis for a single commit or working tree.  Captures the
+overall pitch trajectory shape, effective range, average interval size, and
+phrase statistics.  Used by AI agents to understand a melody's expressive
+character before generating countermelodies or variations.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `shape` | `str` | Overall shape label: `ascending`, `descending`, `arch`, `inverted-arch`, `wave`, or `static` |
+| `tessitura` | `int` | Effective pitch range in semitones (e.g. 24 = 2 octaves) |
+| `avg_interval` | `float` | Mean absolute note-to-note interval in semitones; higher = more angular |
+| `phrase_count` | `int` | Number of detected melodic phrases |
+| `avg_phrase_bars` | `float` | Mean phrase length in bars |
+| `commit` | `str` | 8-char commit SHA analysed |
+| `branch` | `str` | Current branch name |
+| `track` | `str` | Track name analysed, or `"all"` |
+| `section` | `str` | Section name scoped, or `"all"` |
+| `source` | `str` | `"stub"` until full MIDI analysis is wired; `"midi"` when live |
+
+**Producer:** `_contour_detect_async()`
+**Consumer:** `_format_detect()`, `_format_history()`, `ContourCompareResult.commit_a/.commit_b`
+
+---
+
+### `ContourCompareResult`
+
+**Module:** `maestro/muse_cli/commands/contour.py`
+
+Comparison of melodic contour between two commits.  Exposes delta metrics
+that let an agent detect whether a melody became more angular (fragmented)
+or smoother (stepwise) between two points in history.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `commit_a` | `ContourResult` | Contour result for the first commit (or HEAD) |
+| `commit_b` | `ContourResult` | Contour result for the reference commit |
+| `shape_changed` | `bool` | `True` when the overall shape label differs between commits |
+| `angularity_delta` | `float` | Change in `avg_interval` (positive = more angular at A) |
+| `tessitura_delta` | `int` | Change in tessitura semitones (positive = wider range at A) |
+
+**Producer:** `_contour_compare_async()`
+**Consumer:** `_format_compare()`

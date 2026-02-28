@@ -1,10 +1,10 @@
 """Muse CLI — Typer application root.
 
 Entry point for the ``muse`` console script. Registers all MVP
-subcommands (arrange, ask, checkout, chord-map, commit, context, describe,
-divergence, dynamics, export, find, form, grep, import, init, log, merge, meter, open, play,
-pull, push, recall, remote, session, similarity, status, swing, tag, tempo,
-tempo-scale) as Typer sub-applications.
+subcommands (arrange, ask, checkout, chord-map, commit, context, contour,
+describe, divergence, dynamics, export, find, grep, import, init, log,
+merge, meter, open, play, pull, push, recall, remote, session, status,
+swing, tag, tempo, tempo-scale) as Typer sub-applications.
 """
 from __future__ import annotations
 
@@ -17,6 +17,7 @@ from maestro.muse_cli.commands import (
     chord_map,
     commit,
     context,
+    contour,
     describe,
     divergence,
     dynamics,
@@ -51,6 +52,7 @@ cli = typer.Typer(
 cli.add_typer(chord_map.app, name="chord-map", help="Visualize the chord progression embedded in a commit.")
 cli.add_typer(init.app, name="init", help="Initialise a new Muse repository.")
 cli.add_typer(status.app, name="status", help="Show working-tree drift against HEAD.")
+cli.add_typer(contour.app, name="contour", help="Analyze melodic contour and phrase shape of a commit.")
 cli.add_typer(dynamics.app, name="dynamics", help="Analyse the dynamic (velocity) profile of a commit.")
 cli.add_typer(commit.app, name="commit", help="Record a new variation in history.")
 cli.add_typer(grep_cmd.app, name="grep", help="Search for a musical pattern across all commits.")
