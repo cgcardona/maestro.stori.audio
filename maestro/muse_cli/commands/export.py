@@ -31,8 +31,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from maestro.config import settings
 from maestro.muse_cli._repo import require_repo
-from maestro.muse_cli.artifact_resolver import _find_commits_by_prefix
-from maestro.muse_cli.db import open_session
+from maestro.muse_cli.db import find_commits_by_prefix, open_session
 from maestro.muse_cli.errors import ExitCode
 from maestro.muse_cli.export_engine import (
     ExportFormat,
@@ -95,8 +94,6 @@ async def _export_async(
         StorpheusUnavailableError: When WAV and Storpheus is down.
     """
     from maestro.muse_cli.db import get_commit_snapshot_manifest
-    from maestro.muse_cli.models import MuseCliCommit, MuseCliSnapshot
-
     # Resolve commit ID from filesystem HEAD or prefix lookup.
     try:
         raw_ref = resolve_commit_id(root, commit_ref)
@@ -106,7 +103,7 @@ async def _export_async(
 
     # If a prefix was supplied, look it up in the DB.
     if len(raw_ref) < 64:
-        matches = await _find_commits_by_prefix(session, raw_ref)
+        matches = await find_commits_by_prefix(session, raw_ref)
         if not matches:
             typer.echo(f"❌ No commit found matching prefix '{raw_ref[:8]}'")
             raise typer.Exit(code=ExitCode.USER_ERROR)
@@ -136,7 +133,7 @@ async def _export_async(
     # Resolve output path.
     out_path = output if output is not None else _default_output_path(full_commit_id, fmt)
 
-    storpheus_url = getattr(settings, "storpheus_base_url", "http://localhost:10002")
+    storpheus_url = settings.storpheus_base_url
 
     opts = MuseExportOptions(
         format=fmt,
