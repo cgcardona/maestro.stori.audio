@@ -361,6 +361,70 @@ Start with (1); then (2) if you want to demo inside Cursor; then (3) when the ap
 
 **Next steps after MCP works in Cursor**
 
-1. **Confirm from Cursor** – In chat, list tools and call one (e.g. `stori_generate_drums` or, with a DAW connected, `stori_read_project`).
+1. **Confirm from Cursor** - In chat, list tools and call one (e.g. `stori_generate_drums` or, with a DAW connected, `stori_read_project`).
 2. **Wire WebSockets on the front end** – Stori app connects to `wss://<host>/api/v1/mcp/daw?token=<jwt>`, handles `tool_call` messages, runs the action in the DAW, and sends `tool_response` with `request_id` and `result`.
 3. **Test track icon/color from Cursor** – With the DAW connected over WebSocket, ask Cursor to change a track’s icon or color. Use `stori_set_track_icon` (e.g. `icon`: `pianokeys`, `guitars`, `music.note`) or `stori_set_track_color` (e.g. `color`: `blue`, `green`). The backend forwards these to the DAW; the app must implement the handlers and respond with `tool_response`.
+
+
+---
+
+## Embedding MuseHub Compositions on External Sites
+
+MuseHub compositions can be embedded on any website using an `<iframe>`, like SoundCloud or Spotify embeds.
+
+### Embed URL
+
+```
+GET /musehub/ui/{repo_id}/embed/{ref}
+```
+
+| Segment   | Description                                       |
+|-----------|---------------------------------------------------|
+| `repo_id` | UUID of the MuseHub repository                    |
+| `ref`     | Commit SHA or branch name (e.g. `main`, `abc123`) |
+
+- **No auth required** — publicly accessible for any repo.
+- Sets `X-Frame-Options: ALLOWALL` so browsers allow cross-origin framing.
+
+**Example iframe:**
+
+```html
+<iframe
+  src="https://musehub.stori.app/musehub/ui/aaaabbbb-cccc-dddd-eeee-ffff00001111/embed/main"
+  width="560" height="152"
+  frameborder="0" allowtransparency="true" allow="autoplay" scrolling="no">
+</iframe>
+```
+
+### oEmbed Auto-Embedding
+
+MuseHub supports the [oEmbed standard](https://oembed.com/), enabling CMSes
+(Wordpress, Ghost, Notion) to auto-embed compositions when a URL is pasted.
+
+```
+GET /oembed?url={embed_url}&maxwidth={w}&maxheight={h}
+```
+
+| Parameter   | Type   | Default  | Description                                   |
+|-------------|--------|----------|-----------------------------------------------|
+| `url`       | string | required | The MuseHub embed URL to resolve              |
+| `maxwidth`  | int    | 560      | Maximum iframe width in pixels (100 to 1200)  |
+| `maxheight` | int    | 152      | Maximum iframe height in pixels (80 to 400)   |
+| `format`    | string | `json`   | Response format; only `json` is supported     |
+
+Returns `404` if the URL does not match the embed URL pattern.
+Returns `501` if `format=xml` is requested.
+
+### Player UI Elements
+
+| Element                  | Description                                     |
+|--------------------------|-------------------------------------------------|
+| Play/Pause button        | Toggles audio playback                          |
+| Progress bar             | Clickable seek; updates in real-time            |
+| Track title              | Filename of first audio object in the commit    |
+| Time display             | Current position and total duration             |
+| "View on Muse Hub" link  | Opens full repo browser in a new tab            |
+
+Audio is fetched from `/api/v1/musehub/repos/{repo_id}/objects` at load time.
+The first `mp3`, `ogg`, `wav`, or `m4a` file found is played.
+The widget is responsive and works from 300 px to full viewport width.

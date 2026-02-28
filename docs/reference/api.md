@@ -1330,8 +1330,45 @@ do **not** require an `Authorization` header — auth is handled client-side via
 | `GET /musehub/ui/{repo_id}/pulls/{pr_id}` | PR detail with Merge button |
 | `GET /musehub/ui/{repo_id}/issues` | Issue list with open/closed/all filter |
 | `GET /musehub/ui/{repo_id}/issues/{number}` | Issue detail with Close button |
+| `GET /musehub/ui/{repo_id}/embed/{ref}` | Embeddable player widget (no auth, iframe-safe) |
 
 **Response:** `200 text/html` for all routes. No JSON is returned.
 
-See [integrate.md — Muse Hub web UI](../guides/integrate.md#muse-hub-web-ui) for
-usage and authentication instructions.
+The embed route additionally sets `X-Frame-Options: ALLOWALL` — required for
+cross-origin `<iframe>` embedding on external sites.
+
+See [integrate.md — Embedding MuseHub Compositions](../guides/integrate.md#embedding-musehub-compositions-on-external-sites) for
+usage and iframe code examples.
+
+### GET /oembed
+
+oEmbed discovery endpoint. Returns JSON metadata (including an `<iframe>` HTML
+snippet) for any MuseHub embed URL. No auth required.
+
+**Query parameters:**
+
+| Name        | Type   | Required | Description                                    |
+|-------------|--------|----------|------------------------------------------------|
+| `url`       | string | yes      | MuseHub embed URL to resolve                   |
+| `maxwidth`  | int    | no       | Maximum iframe width in pixels (default 560)   |
+| `maxheight` | int    | no       | Maximum iframe height in pixels (default 152)  |
+| `format`    | string | no       | Response format; only `json` supported         |
+
+**Response `200`:**
+
+```json
+{
+  "version": "1.0",
+  "type": "rich",
+  "title": "MuseHub Composition abc12345",
+  "provider_name": "Muse Hub",
+  "provider_url": "https://musehub.stori.app",
+  "width": 560,
+  "height": 152,
+  "html": "<iframe ...></iframe>"
+}
+```
+
+**Error responses:**
+- `404` — URL does not match an embed URL pattern.
+- `501` — `format` is not `json`.
