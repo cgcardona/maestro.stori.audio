@@ -306,6 +306,118 @@ Merge commits (two parents) require `muse merge` (issue #35) — `parent2_commit
 
 ---
 
+---
+
+## `muse arrange [<commit>]` — Arrangement Map (issue #115)
+
+`muse arrange` displays the **arrangement matrix**: which instruments are active in which musical sections for a given commit.  This is the single most useful command for an AI orchestration agent — before generating a new string part, the agent can run `muse arrange --format json HEAD` to see exactly which sections already have strings, preventing doubling mistakes and enabling coherent orchestration decisions.
+
+### Path Convention
+
+Files committed to Muse must follow the three-level path convention to participate in the arrangement map:
+
+```
+muse-work/<section>/<instrument>/<filename>
+```
+
+| Level | Example | Description |
+|-------|---------|-------------|
+| `<section>` | `intro`, `verse`, `chorus`, `bridge`, `outro` | Musical section name (normalised to lowercase) |
+| `<instrument>` | `drums`, `bass`, `strings`, `piano`, `vocals` | Instrument / track name |
+| `<filename>` | `beat.mid`, `pad.mid` | The actual file |
+
+Files with fewer than three path components are excluded from the arrangement map (they carry no section metadata).
+
+Section aliases are normalised: `pre-chorus`, `pre_chorus`, and `prechoruse` all map to `prechorus`.
+
+### Output Formats
+
+**Text (default)**:
+
+```
+Arrangement Map — commit abc1234
+
+            Intro  Verse  Chorus  Bridge  Outro
+drums       ████   ████   ████    ████    ████
+bass        ░░░░   ████   ████    ████    ████
+piano       ████   ░░░░   ████    ░░░░    ████
+strings     ░░░░   ░░░░   ████    ████    ░░░░
+```
+
+`████` = active (at least one file for that section/instrument pair).
+`░░░░` = inactive (no files).
+
+**JSON (`--format json`)** — structured, AI-agent-consumable:
+
+```json
+{
+  "commit_id": "abc1234...",
+  "sections": ["intro", "verse", "chorus", "bridge", "outro"],
+  "instruments": ["bass", "drums", "piano", "strings"],
+  "arrangement": {
+    "drums": { "intro": true, "verse": true, "chorus": true },
+    "strings": { "intro": false, "verse": false, "chorus": true }
+  }
+}
+```
+
+**CSV (`--format csv`)** — spreadsheet-ready rows with `0`/`1` cells.
+
+### Flags
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `[COMMIT]` | `HEAD` | Target commit: HEAD, branch name, or commit-ID prefix |
+| `--section TEXT` | none | Show only a specific section's instrumentation |
+| `--track TEXT` | none | Show only a specific instrument's section participation |
+| `--compare A --compare B` | — | Diff two arrangements (show added/removed cells) |
+| `--density` | off | Show byte-size total per cell instead of binary active/inactive |
+| `--format text\|json\|csv` | `text` | Output format |
+
+### Compare Mode (`--compare`)
+
+```
+Arrangement Diff — abc1234 → def5678
+
+            Intro  Verse  Chorus
+drums        ████   ████   ████
+strings     ░░░░   ░░░░  +████
+piano       ████   ░░░░  -████
+```
+
+`+████` = cell added in commit-b.
+`-████` = cell removed in commit-b.
+
+### Density Mode (`--density`)
+
+Each cell shows the total byte size of all files for that (section, instrument) pair.  Byte size correlates with note density for MIDI files and serves as a useful heuristic for AI orchestration agents:
+
+```
+            Intro   Verse   Chorus
+drums       4,096   3,200   5,120
+bass            -   1,024   2,048
+```
+
+### Implementation
+
+| Layer | File | Responsibility |
+|-------|------|----------------|
+| Service | `maestro/services/muse_arrange.py` | `build_arrangement_matrix()`, diff, renderers |
+| Command | `maestro/muse_cli/commands/arrange.py` | Typer callback + `_arrange_async` |
+| App | `maestro/muse_cli/app.py` | Registration under `arrange` subcommand |
+
+`_arrange_async` is fully injectable for unit tests (accepts a `root: pathlib.Path` and `session: AsyncSession`).
+
+Exit codes: `0` success, `1` user error (unknown format, missing reference, ambiguous prefix), `2` outside a Muse repo, `3` internal error.
+
+### Named Result Types
+
+See `docs/reference/type_contracts.md`:
+- `ArrangementCell` — per (section, instrument) data
+- `ArrangementMatrix` — full matrix for one commit
+- `ArrangementDiffCell` — change status for one cell
+- `ArrangementDiff` — full diff between two matrices
+
 ## Commit Data Model
 
 `muse commit` persists three content-addressed table types to Postgres:

@@ -840,6 +840,67 @@ Named TypedDicts for every entity in the MCP protocol layer: tool schema shapes,
 
 ---
 
+## Muse Arrange Types (`maestro/services/muse_arrange.py`)
+
+> Added: issue #115 — `muse arrange` command
+
+### `ArrangementCell`
+
+```
+@dataclass(frozen=True)
+class ArrangementCell:
+    section: str        # Musical section name (normalised lowercase)
+    instrument: str     # Instrument/track name (lowercase)
+    active: bool        # True if >= 1 file exists for this pair
+    file_count: int     # Number of files for this (section, instrument) pair
+    total_bytes: int    # Sum of object sizes (proxy for note density)
+```
+
+Per-(section, instrument) cell in the arrangement matrix.  `density_score` is a property returning `float(total_bytes)`.
+
+### `ArrangementMatrix`
+
+```
+@dataclass
+class ArrangementMatrix:
+    commit_id: str                              # 64-char commit SHA
+    sections: list[str]                        # Ordered section names
+    instruments: list[str]                     # Sorted instrument names
+    cells: dict[tuple[str, str], ArrangementCell]  # (section, instrument) → cell
+```
+
+Full arrangement matrix for a single commit.  Built by `build_arrangement_matrix()`.
+
+### `ArrangementDiffCell`
+
+```
+@dataclass(frozen=True)
+class ArrangementDiffCell:
+    section: str
+    instrument: str
+    status: Literal["added", "removed", "unchanged"]
+    cell_a: ArrangementCell    # Baseline cell
+    cell_b: ArrangementCell    # Target cell
+```
+
+Per-cell change status between two commits.
+
+### `ArrangementDiff`
+
+```
+@dataclass
+class ArrangementDiff:
+    commit_id_a: str
+    commit_id_b: str
+    sections: list[str]
+    instruments: list[str]
+    cells: dict[tuple[str, str], ArrangementDiffCell]
+```
+
+Full diff of two arrangement matrices.  Built by `build_arrangement_diff()`.
+
+---
+
 ## Services
 
 ### Assets
