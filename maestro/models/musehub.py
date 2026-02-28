@@ -189,6 +189,7 @@ class IssueResponse(CamelModel):
     body: str
     state: str
     labels: list[str]
+    author: str = ""
     created_at: datetime
 
 
@@ -220,6 +221,7 @@ class PRResponse(CamelModel):
     from_branch: str
     to_branch: str
     merge_commit_id: str | None = None
+    author: str = ""
     created_at: datetime
 
 
@@ -289,6 +291,7 @@ class ReleaseResponse(CamelModel):
     body: str
     commit_id: str | None = None
     download_urls: ReleaseDownloadUrls
+    author: str = ""
     created_at: datetime
 
 

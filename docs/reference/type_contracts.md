@@ -6821,6 +6821,7 @@ when the corresponding package is unavailable.
 | `body` | `str` | Markdown release notes |
 | `commit_id` | `str \| None` | Pinned commit SHA, or `None` |
 | `download_urls` | `ReleaseDownloadUrls` | Structured download package URL map |
+| `author` | `str` | JWT `sub` of the user who created this release; empty string for seed data |
 | `created_at` | `datetime` | UTC timestamp of release creation |
 
 ---

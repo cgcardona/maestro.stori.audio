@@ -317,6 +317,7 @@ def upgrade() -> None:
         sa.Column("body", sa.Text(), nullable=False, server_default=""),
         sa.Column("state", sa.String(20), nullable=False, server_default="open"),
         sa.Column("labels", sa.JSON(), nullable=False, server_default="[]"),
+        sa.Column("author", sa.String(255), nullable=False, server_default=""),
         sa.Column(
             "created_at",
             sa.DateTime(timezone=True),
@@ -341,6 +342,7 @@ def upgrade() -> None:
         sa.Column("from_branch", sa.String(255), nullable=False),
         sa.Column("to_branch", sa.String(255), nullable=False),
         sa.Column("merge_commit_id", sa.String(64), nullable=True),
+        sa.Column("author", sa.String(255), nullable=False, server_default=""),
         sa.Column(
             "created_at",
             sa.DateTime(timezone=True),
@@ -509,6 +511,7 @@ def upgrade() -> None:
         sa.Column("body", sa.Text(), nullable=False, server_default=""),
         sa.Column("commit_id", sa.String(64), nullable=True),
         sa.Column("download_urls", sa.JSON(), nullable=False, server_default="{}"),
+        sa.Column("author", sa.String(255), nullable=False, server_default=""),
         sa.Column(
             "created_at",
             sa.DateTime(timezone=True),
