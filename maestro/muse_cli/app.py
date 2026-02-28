@@ -3,8 +3,8 @@
 Entry point for the ``muse`` console script. Registers all MVP
 subcommands (arrange, ask, checkout, commit, context, describe, divergence,
 dynamics, export, find, grep, import, init, log, merge, meter, open, play,
-pull, push, recall, remote, session, status, swing, tag, tempo) as Typer
-sub-applications.
+pull, push, recall, remote, render-preview, session, status, swing, tag,
+tempo) as Typer sub-applications.
 """
 from __future__ import annotations
 
@@ -33,6 +33,7 @@ from maestro.muse_cli.commands import (
     push,
     recall,
     remote,
+    render_preview,
     session,
     status,
     swing,
@@ -73,6 +74,7 @@ cli.add_typer(tempo.app, name="tempo", help="Read or set the tempo (BPM) of a co
 cli.add_typer(recall.app, name="recall", help="Search commit history by natural-language description.")
 cli.add_typer(context.app, name="context", help="Output structured musical context for AI agent consumption.")
 cli.add_typer(divergence.app, name="divergence", help="Show how two branches have diverged musically.")
+cli.add_typer(render_preview.app, name="render-preview", help="Generate an audio preview of a commit's snapshot.")
 
 
 if __name__ == "__main__":

@@ -2533,6 +2533,88 @@ branch for chord voicings while preserving the guitar branch's groove patterns.
 
 ---
 
+## `muse render-preview [<commit>]` — Audio Preview of a Commit Snapshot
+
+**Purpose:** Render the MIDI snapshot of any commit to an audio file, letting producers and AI agents hear what the project sounded like at any point in history — without opening a DAW session.  The musical equivalent of `git show <commit>` with audio playback.
+
+**Implementation:** `maestro/muse_cli/commands/render_preview.py`\
+**Service:** `maestro/services/muse_render_preview.py`\
+**Status:** ✅ implemented (issue #96)
+
+### Flags
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `[<commit>]` | positional string | HEAD | Short commit ID prefix to preview |
+| `--format` / `-f` | `wav\|mp3\|flac` | `wav` | Output audio format |
+| `--track TEXT` | string | all | Render only MIDI files matching this track name substring |
+| `--section TEXT` | string | all | Render only MIDI files matching this section name substring |
+| `--output` / `-o` | path | `/tmp/muse-preview-<short_id>.<fmt>` | Write the preview to this path |
+| `--open` | flag | off | Open the rendered preview in the system default audio player (macOS only) |
+| `--json` | flag | off | Emit structured JSON for agent consumption |
+
+### Output example (text mode)
+
+```
+⚠️  Preview generated (stub — Storpheus /render not yet deployed):
+   /tmp/muse-preview-abc12345.wav
+   (1 MIDI files used)
+```
+
+### JSON output example (`--json`)
+
+```json
+{
+  "commit_id": "abc12345def67890...",
+  "commit_short": "abc12345",
+  "output_path": "/tmp/muse-preview-abc12345.wav",
+  "format": "wav",
+  "midi_files_used": 1,
+  "skipped_count": 0,
+  "stubbed": true
+}
+```
+
+### Result type: `RenderPreviewResult`
+
+Defined in `maestro/services/muse_render_preview.py`.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `output_path` | `pathlib.Path` | Absolute path of the rendered audio file |
+| `format` | `PreviewFormat` | Audio format enum (`wav` / `mp3` / `flac`) |
+| `commit_id` | `str` | Full commit ID (64-char SHA) |
+| `midi_files_used` | `int` | Number of MIDI files from the snapshot used |
+| `skipped_count` | `int` | Manifest entries skipped (wrong type / filter / missing) |
+| `stubbed` | `bool` | `True` when Storpheus `/render` is not yet deployed and the file is a MIDI placeholder |
+
+### Error handling
+
+| Scenario | Exit code | Message |
+|----------|-----------|---------|
+| Not in a Muse repo | 2 (REPO_NOT_FOUND) | Standard `require_repo()` message |
+| No commits yet | 1 (USER_ERROR) | `❌ No commits yet — nothing to export.` |
+| Ambiguous commit prefix | 1 (USER_ERROR) | Lists all matching commits |
+| No MIDI files after filter | 1 (USER_ERROR) | `❌ No MIDI files found in snapshot…` |
+| Storpheus unreachable | 3 (INTERNAL_ERROR) | `❌ Storpheus not reachable — render aborted.` |
+
+### Storpheus render status
+
+The Storpheus service currently exposes MIDI *generation* at `POST /generate`.  A dedicated `POST /render` endpoint (MIDI-in → audio-out) is planned but not yet deployed.  Until it ships:
+
+- A health-check confirms Storpheus is reachable (fast probe, 3 s timeout).
+- The first matching MIDI file from the snapshot is **copied** to `output_path` as a placeholder.
+- `RenderPreviewResult.stubbed` is set to `True`.
+- The CLI prints a clear `⚠️  Preview generated (stub…)` warning.
+
+When `POST /render` is available, replace `_render_via_storpheus` in the service with a multipart POST call and set `stubbed=False`.
+
+### Agent use case
+
+An AI music generation agent uses `muse render-preview HEAD~10 --json` to obtain a path to the audio preview of a historical snapshot before deciding whether to branch from it or continue the current line.  The `stubbed` field tells the agent whether the file is a true audio render or a MIDI placeholder, so it can adjust its reasoning accordingly.
+
+---
+
 ## Command Registration Summary
 
 | Command | File | Status | Issue |
@@ -2547,6 +2629,7 @@ branch for chord voicings while preserving the guitar branch's groove patterns.
 | `muse import` | `commands/import_cmd.py` | ✅ implemented (PR #142) | #118 |
 | `muse meter` | `commands/meter.py` | ✅ implemented (PR #141) | #117 |
 | `muse recall` | `commands/recall.py` | ✅ stub (PR #135) | #122 |
+| `muse render-preview` | `commands/render_preview.py` | ✅ implemented (issue #96) | #96 |
 | `muse session` | `commands/session.py` | ✅ implemented (PR #129) | #127 |
 | `muse swing` | `commands/swing.py` | ✅ stub (PR #131) | #121 |
 | `muse tag` | `commands/tag.py` | ✅ implemented (PR #133) | #123 |
