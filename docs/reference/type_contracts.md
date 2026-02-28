@@ -3184,6 +3184,49 @@ dict whose shape varies by `object_type`:
 
 ---
 
+### `RebaseCommitPair`
+
+**Module:** `maestro/services/muse_rebase.py`
+
+Maps an original commit to its replayed replacement produced during a `muse rebase` operation. Agents can use these pairs to update any cached commit references after a rebase (e.g., updating a bookmark or annotation that pointed at the old SHA).
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `original_commit_id` | `str` | SHA of the commit that existed before the rebase. |
+| `new_commit_id` | `str` | SHA of the freshly-replayed commit with the new parent. |
+
+**Producer:** `_replay_one_commit()`, `_rebase_async()`
+**Consumer:** `RebaseResult.replayed`, tests in `tests/test_muse_rebase.py`
+
+**Frozen dataclass** — all fields are immutable after construction.
+
+---
+
+### `RebaseResult`
+
+**Module:** `maestro/services/muse_rebase.py`
+
+Outcome of a `muse rebase` operation. Captures the full mapping from original to replayed commits so callers (agents, tests, and `--continue` resumption) can verify the rebase succeeded.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `branch` | `str` | The branch that was rebased. |
+| `upstream` | `str` | The upstream branch name or commit ref used as the new base. |
+| `upstream_commit_id` | `str` | Resolved commit ID of the upstream tip. |
+| `base_commit_id` | `str` | LCA (lowest common ancestor) commit where the two histories diverged. |
+| `replayed` | `tuple[RebaseCommitPair, ...]` | Ordered list of (original, new) commit ID pairs in replay order. |
+| `conflict_paths` | `tuple[str, ...]` | Conflicting paths (empty on clean completion). |
+| `aborted` | `bool` | `True` when `--abort` cleared the in-progress rebase. |
+| `noop` | `bool` | `True` when there were no commits to replay (already up-to-date). |
+| `autosquash_applied` | `bool` | `True` when `--autosquash` reordered `fixup!` commits. |
+
+**Producer:** `_rebase_async()`, `_rebase_continue_async()`, `_rebase_abort_async()`
+**Consumer:** `rebase()` Typer command callback, tests in `tests/test_muse_rebase.py`
+
+**Frozen dataclass** — all fields are immutable after construction.
+
+---
+
 ### `RevertResult`
 
 **Module:** `maestro/services/muse_revert.py`
@@ -5376,7 +5419,9 @@ Response from the Hub's `POST /fetch` endpoint.
 
 Full commit metadata plus snapshot manifest returned by `muse show`. Designed
 for direct JSON serialisation so AI agents can consume commit state without a
-second round-trip to the database.
+second round-trip to the database.  Music-domain fields (`section`, `track`,
+`emotion`) are surfaced at the top level — sourced from `commit_metadata` — so
+agents do not need to parse a nested blob.
 
 | Field | Type | Description |
 |-------|------|-------------|
@@ -5384,11 +5429,14 @@ second round-trip to the database.
 | `branch` | `str` | Branch this commit belongs to |
 | `parent_commit_id` | `Optional[str]` | Full SHA of the primary parent, `None` for root commits |
 | `parent2_commit_id` | `Optional[str]` | Full SHA of the merge parent (set by `muse merge`), else `None` |
-| `message` | `str` | Commit message |
+| `message` | `str` | Commit message (may include Co-authored-by trailers) |
 | `author` | `str` | Author string (empty string when not set) |
 | `committed_at` | `str` | ISO-style timestamp `"YYYY-MM-DD HH:MM:SS"` (UTC) |
 | `snapshot_id` | `str` | SHA-256 of the snapshot manifest |
 | `snapshot_manifest` | `dict[str, str]` | `{relative_path: object_id}` for every file in the snapshot |
+| `section` | `Optional[str]` | Musical section tag (e.g. `"chorus"`), `None` if not set |
+| `track` | `Optional[str]` | Instrument track tag (e.g. `"drums"`), `None` if not set |
+| `emotion` | `Optional[str]` | Emotion vector label (e.g. `"melancholic"`), `None` if not set |
 
 **Producer:** `_show_async()`
 **Consumer:** `_render_show()`, `_render_midi()`, `_render_audio_preview()`, `--json` serialiser

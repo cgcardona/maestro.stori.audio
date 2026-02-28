@@ -175,18 +175,34 @@ A commit can carry multiple tags. Adding the same tag twice is a no-op (idempote
 
 `muse merge <branch>` integrates another branch into the current branch.
 
+**Usage:**
+```bash
+muse merge <branch> [OPTIONS]
+```
+
+**Flags:**
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--no-ff` | flag | off | Force a merge commit even when fast-forward is possible. Preserves branch topology in the history graph. |
+| `--squash` | flag | off | Collapse all commits from `<branch>` into one new commit on the current branch. The result has a single parent and no `parent2_commit_id` — not a merge commit in the DAG. |
+| `--strategy TEXT` | string | none | Resolution shortcut: `ours` keeps all files from the current branch; `theirs` takes all files from the target branch. Both skip conflict detection. |
+| `--continue` | flag | off | Finalize a paused merge after resolving all conflicts with `muse resolve`. |
+
 ### Algorithm
 
 1. **Guard** — If `.muse/MERGE_STATE.json` exists, a merge is already in progress. Exit 1 with: *"Merge in progress. Resolve conflicts and run `muse merge --continue`."*
 2. **Resolve commits** — Read HEAD commit ID for the current branch and the target branch from their `.muse/refs/heads/<branch>` ref files.
 3. **Find merge base** — BFS over the commit graph to find the LCA (Lowest Common Ancestor) of the two HEAD commits. Both `parent_commit_id` and `parent2_commit_id` are traversed (supporting existing merge commits).
-4. **Fast-forward** — If `base == ours`, the target is strictly ahead of current HEAD. Move the current branch pointer to `theirs` without creating a new commit.
+4. **Fast-forward** — If `base == ours` *and* `--no-ff` is not set *and* `--squash` is not set, the target is strictly ahead of current HEAD. Move the current branch pointer to `theirs` without creating a new commit.
 5. **Already up-to-date** — If `base == theirs`, current branch is already ahead. Exit 0.
-6. **3-way merge** — When branches have diverged:
+6. **Strategy shortcut** — If `--strategy ours` or `--strategy theirs` is set, apply the resolution immediately before conflict detection and proceed to create a merge commit. No conflict state is written.
+7. **3-way merge** — When branches have diverged and no strategy is set:
    - Compute `diff(base → ours)` and `diff(base → theirs)` at file-path granularity.
    - Detect conflicts: paths changed on *both* sides since the base.
    - If **no conflicts**: auto-merge (take the changed side for each path), create a merge commit with two parent IDs, advance the branch pointer.
    - If **conflicts**: write `.muse/MERGE_STATE.json` and exit 1 with a conflict summary.
+8. **Squash** — If `--squash` is set, create a single commit with a combined tree but only `parent_commit_id` = current HEAD. `parent2_commit_id` is `None`.
 
 ### `MERGE_STATE.json` Schema
 
@@ -206,15 +222,33 @@ All fields except `other_branch` are required. `conflict_paths` is sorted alphab
 
 ### Merge Commit
 
-A successful 3-way merge creates a commit with:
+A successful 3-way merge (or `--no-ff` or `--strategy`) creates a commit with:
 - `parent_commit_id` = `ours_commit_id` (current branch HEAD at merge time)
 - `parent2_commit_id` = `theirs_commit_id` (target branch HEAD)
 - `snapshot_id` = merged manifest (non-conflicting changes from both sides)
-- `message` = `"Merge branch '<branch>' into <current_branch>"`
+- `message` = `"Merge branch '<branch>' into <current_branch>"` (strategy appended if set)
+
+### Squash Commit
+
+`--squash` creates a commit with:
+- `parent_commit_id` = `ours_commit_id` (current branch HEAD)
+- `parent2_commit_id` = `None` — not a merge commit in the graph
+- `snapshot_id` = same merged manifest as a regular merge would produce
+- `message` = `"Squash merge branch '<branch>' into <current_branch>"`
+
+Use squash when you want to land a feature branch as one clean commit without
+polluting `muse log` with intermediate work-in-progress commits.
 
 ### Path-Level Granularity (MVP)
 
 This merge implementation operates at **file-path level**. Two commits that modify the same file path (even if the changes are disjoint within the file) are treated as a conflict. Note-level merging (music-aware diffs inside MIDI files) is a future enhancement reserved for the existing `maestro/services/muse_merge.py` engine.
+
+### Agent Use Case
+
+- **`--no-ff`**: Use when building a structured session history is important (e.g., preserving that a feature branch existed). The branch topology is visible in `muse log --graph`.
+- **`--squash`**: Use after iterative experimentation on a feature branch to produce one atomic commit for review. Equivalent to "clean up before sharing."
+- **`--strategy ours`**: Use to quickly resolve a conflict situation where the current branch's version is definitively correct (e.g., a hotfix already applied to main).
+- **`--strategy theirs`**: Use to accept all incoming changes wholesale (e.g., adopting a new arrangement from a collaborator).
 
 ---
 
@@ -754,10 +788,22 @@ Two identical working trees always produce the same `snapshot_id`.
 | `branch` | `String(255)` | Branch name at commit time |
 | `parent_commit_id` | `String(64)` nullable | Previous HEAD commit on branch |
 | `snapshot_id` | `String(64)` FK | Points to the snapshot row |
-| `message` | `Text` | User-supplied commit message |
+| `message` | `Text` | User-supplied commit message (may include Co-authored-by trailers) |
 | `author` | `String(255)` | Reserved (empty for MVP) |
 | `committed_at` | `DateTime(tz=True)` | Timestamp used in hash derivation |
 | `created_at` | `DateTime(tz=True)` | Wall-clock DB insert time |
+| `metadata` | `JSON` nullable | Extensible music-domain annotations (see below) |
+
+**`metadata` JSON blob — current keys:**
+
+| Key | Type | Set by |
+|-----|------|--------|
+| `section` | `string` | `muse commit --section` |
+| `track` | `string` | `muse commit --track` |
+| `emotion` | `string` | `muse commit --emotion` |
+| `tempo_bpm` | `float` | `muse tempo --set` |
+
+All keys are optional and co-exist in the same blob.  Absent keys are simply not present (not `null`).  Future music-domain annotations extend this blob without schema migrations.
 
 ### ID Derivation (deterministic)
 
@@ -1443,6 +1489,57 @@ muse-batch.json   (written next to muse-work/, i.e. in the repo root)
 - Failed generations are **omitted** from `files[]`; only successful results appear
 - Cache hits **are included** in `files[]` with `"cached": true`
 
+### `muse commit` — Full Flag Reference
+
+**Usage:**
+```bash
+muse commit -m <message> [OPTIONS]
+muse commit --from-batch muse-batch.json [OPTIONS]
+```
+
+**Core flags:**
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `-m / --message TEXT` | string | — | Commit message. Required unless `--from-batch` is used |
+| `--from-batch PATH` | path | — | Use `commit_message_suggestion` from `muse-batch.json`; snapshot is restricted to listed files |
+| `--amend` | flag | off | Fold working-tree changes into the most recent commit (equivalent to `muse amend`) |
+| `--no-verify` | flag | off | Bypass pre-commit hooks (no-op until hook system is implemented) |
+| `--allow-empty` | flag | off | Allow committing even when the working tree has not changed since HEAD |
+
+**Music-domain flags (Muse-native metadata):**
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--section TEXT` | string | — | Tag commit as belonging to a musical section (e.g. `verse`, `chorus`, `bridge`) |
+| `--track TEXT` | string | — | Tag commit as affecting a specific instrument track (e.g. `drums`, `bass`, `keys`) |
+| `--emotion TEXT` | string | — | Attach an emotion vector label (e.g. `joyful`, `melancholic`, `tense`) |
+| `--co-author TEXT` | string | — | Append `Co-authored-by: Name <email>` trailer to the commit message |
+
+Music-domain flags are stored in the `commit_metadata` JSON column on `muse_cli_commits`.  They are surfaced at the top level in `muse show <commit> --json` output and form the foundation for future queries like `muse log --emotion melancholic` or `muse diff --section chorus`.
+
+**Examples:**
+
+```bash
+# Standard commit with message
+muse commit -m "feat: add Rhodes piano to chorus"
+
+# Tag with music-domain metadata
+muse commit -m "groove take 3" --section verse --track drums --emotion joyful
+
+# Collaborative session — attribute a co-author
+muse commit -m "keys arrangement" --co-author "Alice <alice@stori.app>"
+
+# Amend the last commit with new emotion tag
+muse commit --amend --emotion melancholic
+
+# Milestone commit with no file changes
+muse commit --allow-empty -m "session handoff" --section bridge
+
+# Fast path from stress test
+muse commit --from-batch muse-batch.json --emotion tense
+```
+
 ### Fast-Path Commit: `muse commit --from-batch`
 
 ```bash
@@ -1461,7 +1558,8 @@ muse commit --from-batch muse-batch.json
 4. Proceeds with the standard commit pipeline (snapshot → DB → HEAD pointer update)
 
 The `-m` flag is optional when `--from-batch` is present.  If both are supplied,
-`--from-batch`'s suggestion wins.
+`--from-batch`'s suggestion wins.  All music-domain flags (`--section`, `--track`,
+`--emotion`, `--co-author`) can be combined with `--from-batch`.
 
 ### Workflow Summary
 
@@ -2089,6 +2187,85 @@ keyword match · threshold 0.60 · limit 5
 **Implementation:** `maestro/muse_cli/commands/recall.py` — `RecallResult` (TypedDict), `_tokenize()`, `_score()`, `_recall_async()`. Exit codes: 0 success, 1 bad date format, 2 outside repo.
 
 > **Stub note:** Uses keyword overlap. Full implementation: vector embeddings stored in Qdrant, cosine similarity retrieval. The CLI interface will not change when vector search is added.
+
+---
+
+### `muse rebase`
+
+**Purpose:** Rebase commits onto a new base, producing a linear history. Given a current branch that has diverged from `<upstream>`, `muse rebase <upstream>` collects all commits since the divergence point and replays them one-by-one on top of the upstream tip — each producing a new commit ID with the same snapshot delta. An AI agent uses this to linearise a sequence of late-night fixup commits before merging to main, making the musical narrative readable and bisectable.
+
+**Usage:**
+```bash
+muse rebase <upstream> [OPTIONS]
+muse rebase --continue
+muse rebase --abort
+```
+
+**Flags:**
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `UPSTREAM` | positional | — | Branch name or commit ID to rebase onto. Omit with `--continue` / `--abort`. |
+| `--interactive` / `-i` | flag | off | Open `$EDITOR` with a rebase plan (pick/squash/drop per commit) before executing. |
+| `--autosquash` | flag | off | Automatically move `fixup! <msg>` commits immediately after their matching target commit. |
+| `--rebase-merges` | flag | off | Preserve merge commits during replay (experimental). |
+| `--continue` | flag | off | Resume a rebase that was paused by a conflict. |
+| `--abort` | flag | off | Cancel the in-progress rebase and restore the branch to its original HEAD. |
+
+**Output example (linear rebase):**
+```
+✅ Rebased 3 commit(s) onto 'dev' [main a1b2c3d4]
+```
+
+**Output example (conflict):**
+```
+❌ Conflict while replaying c2d3e4f5 ('Add strings'):
+    both modified: tracks/strings.mid
+Resolve conflicts, then run 'muse rebase --continue'.
+```
+
+**Output example (abort):**
+```
+✅ Rebase aborted. Branch 'main' restored to deadbeef.
+```
+
+**Interactive plan format:**
+```
+# Interactive rebase plan.
+# Actions: pick, squash (fold into previous), drop (skip), fixup (squash no msg), reword
+# Lines starting with '#' are ignored.
+
+pick a1b2c3d4 Add piano
+squash b2c3d4e5 Tweak piano velocity
+drop c3d4e5f6 Stale WIP commit
+pick d4e5f6a7 Add strings
+```
+
+**Result type:** `RebaseResult` (dataclass, frozen) — fields:
+- `branch` (str): The branch that was rebased.
+- `upstream` (str): The upstream branch or commit ref.
+- `upstream_commit_id` (str): Resolved commit ID of the upstream tip.
+- `base_commit_id` (str): LCA commit where the histories diverged.
+- `replayed` (tuple[RebaseCommitPair, ...]): Ordered list of (original, new) commit ID pairs.
+- `conflict_paths` (tuple[str, ...]): Conflicting paths (empty on clean completion).
+- `aborted` (bool): True when `--abort` cleared the in-progress rebase.
+- `noop` (bool): True when there were no commits to replay.
+- `autosquash_applied` (bool): True when `--autosquash` reordered commits.
+
+**State file:** `.muse/REBASE_STATE.json` — written on conflict; cleared on `--continue` completion or `--abort`. Contains: `upstream_commit`, `base_commit`, `original_branch`, `original_head`, `commits_to_replay`, `current_onto`, `completed_pairs`, `current_commit`, `conflict_paths`.
+
+**Agent use case:** An agent that maintains a feature branch can call `muse rebase dev` before opening a merge request. If conflicts are detected, the agent receives the conflict paths in `REBASE_STATE.json`, resolves them by picking the correct version of each affected file, then calls `muse rebase --continue`. The `--autosquash` flag is useful after a generation loop that emits intermediate `fixup!` commits — the agent can clean up history automatically before finalising.
+
+**Algorithm:**
+1. LCA of HEAD and upstream (via BFS over the commit graph).
+2. Collect commits on the current branch since the LCA (oldest first).
+3. For each commit, compute its snapshot delta relative to its own parent.
+4. Apply the delta onto the current onto-tip manifest; detect conflicts.
+5. On conflict: write `REBASE_STATE.json` and exit 1 (await `--continue`).
+6. On success: insert a new commit record; advance the onto pointer.
+7. After all commits: write the final commit ID to the branch ref.
+
+**Implementation:** `maestro/muse_cli/commands/rebase.py` (Typer CLI), `maestro/services/muse_rebase.py` (`_rebase_async`, `_rebase_continue_async`, `_rebase_abort_async`, `RebaseResult`, `RebaseState`, `InteractivePlan`, `compute_delta`, `apply_delta`, `apply_autosquash`).
 
 ---
 
