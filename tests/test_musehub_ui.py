@@ -263,7 +263,14 @@ async def test_graph_page_renders(
     """GET /musehub/ui/{repo_id}/graph returns 200 HTML without requiring a JWT."""
     repo_id = await _make_repo(db_session)
     response = await client.get(f"/musehub/ui/{repo_id}/graph")
+    assert response.status_code == 200
+    assert "text/html" in response.headers["content-type"]
+    body = response.text
+    assert "Muse Hub" in body
+    assert "graph" in body.lower()
 
+
+# ---------------------------------------------------------------------------
 # Context viewer tests (issue #232)
 # ---------------------------------------------------------------------------
 
@@ -308,7 +315,8 @@ async def test_context_page_renders(
     assert "text/html" in response.headers["content-type"]
     body = response.text
     assert "Muse Hub" in body
-    assert "graph" in body.lower()
+    assert "What the Agent Sees" in body
+    assert commit_id[:8] in body
 
 
 @pytest.mark.anyio
@@ -365,9 +373,8 @@ async def test_graph_page_no_auth_required(
     """Graph UI page must be accessible without an Authorization header."""
     repo_id = await _make_repo(db_session)
     response = await client.get(f"/musehub/ui/{repo_id}/graph")
-
-    assert "What the Agent Sees" in body
-    assert commit_id[:8] in body
+    assert response.status_code != 401
+    assert response.status_code == 200
 
 
 @pytest.mark.anyio
