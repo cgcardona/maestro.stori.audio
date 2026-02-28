@@ -682,6 +682,22 @@ textarea:focus {
   margin: 2px;
 }
 
+/* Branch indicator pill — from_branch / to_branch on PR rows */
+.branch-pill {
+  display: inline-block;
+  padding: 1px var(--space-2);
+  border-radius: var(--radius-full);
+  font-size: 11px;
+  font-family: var(--font-mono);
+  background: var(--bg-overlay);
+  color: var(--color-accent);
+  border: 1px solid var(--border-subtle);
+  white-space: nowrap;
+  overflow: hidden;
+  max-width: 200px;
+  text-overflow: ellipsis;
+}
+
 /* Clickable label pill for client-side filtering */
 .label-pill {
   transition: opacity 0.1s, outline 0.1s;

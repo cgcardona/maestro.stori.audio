@@ -13,9 +13,23 @@ const base   = {{ base_url | tojson }};
 
 {% block page_script %}
 {% raw %}
+// ── State ──────────────────────────────────────────────────────────────────
+let allPRs     = [];      // full list from API (state-filtered only)
+let activeSort = 'newest'; // 'newest' | 'oldest'
+let cachedOpen   = null;  // cached open PRs after first fetch
+let cachedMerged = null;  // cached merged PRs after first fetch
+let cachedClosed = null;  // cached closed PRs after first fetch
+
 // ── Social signal cache ────────────────────────────────────────────────────
 let prCommentCounts = {};  // { prId: count }
 let prReactions     = {};  // { prId: [{emoji, count, reacted_by_me}] }
+
+// ── Body preview ───────────────────────────────────────────────────────────
+function bodyPreview(body) {
+  if (!body) return '';
+  const first = body.split('\n')[0].trim();
+  return first.length > 100 ? first.slice(0, 97) + '…' : first;
+}
 
 // ── Reaction pills (top 2 emojis + count) ─────────────────────────────────
 function reactionPills(prId) {
@@ -40,49 +54,156 @@ async function loadSocialSignals(prs) {
   }));
 }
 
+// ── Sorting ────────────────────────────────────────────────────────────────
+function sortedPRs(prs) {
+  const copy = [...prs];
+  if (activeSort === 'oldest') {
+    copy.sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
+  } else {
+    // newest (default)
+    copy.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+  }
+  return copy;
+}
+
+// ── Render rows ────────────────────────────────────────────────────────────
+function renderRows() {
+  const prs = sortedPRs(allPRs);
+  const container = document.getElementById('pr-rows');
+  if (!container) return;
+
+  if (prs.length === 0) {
+    container.innerHTML = '<p class="loading">No pull requests found.</p>';
+    return;
+  }
+
+  container.innerHTML = prs.map(pr => {
+    const preview = bodyPreview(pr.body);
+    let stateBadge;
+    let mergeInfo = '';
+    if (pr.state === 'merged') {
+      stateBadge = '<span class="badge badge-merged">Merged</span>';
+      if (pr.mergeCommitId) {
+        const shortSha = pr.mergeCommitId.slice(0, 8);
+        mergeInfo = `<a href="${base}/commits/${pr.mergeCommitId}" style="font-size:11px;font-family:monospace;color:#8b49da" title="Merge commit">${shortSha}</a>`;
+      }
+    } else if (pr.state === 'closed') {
+      stateBadge = '<span class="badge badge-closed">Closed</span>';
+    } else {
+      stateBadge = '<span class="badge badge-open">Open</span>';
+    }
+    const commentBadge = `<span style="font-size:11px;color:#8b949e">&#128172; ${prCommentCounts[pr.prId] || 0}</span>`;
+    const pills = reactionPills(pr.prId);
+    return `
+      <div class="pr-row">
+        ${stateBadge}
+        <div style="flex:1;min-width:0">
+          <a href="${base}/pulls/${pr.prId}">${escHtml(pr.title)}</a>
+          ${preview ? `<div class="issue-preview">${escHtml(preview)}</div>` : ''}
+          <div style="display:flex;align-items:center;gap:var(--space-2);flex-wrap:wrap;margin-top:4px">
+            <span class="branch-pill">${escHtml(pr.fromBranch)}</span>
+            <span style="font-size:11px;color:#8b949e">&rarr;</span>
+            <span class="branch-pill">${escHtml(pr.toBranch)}</span>
+            <span style="font-size:11px;color:#8b949e">${fmtDate(pr.createdAt)}</span>
+            ${mergeInfo}
+            ${commentBadge}
+            ${pills}
+          </div>
+        </div>
+      </div>`;
+  }).join('');
+}
+
+// ── Sort control handler ───────────────────────────────────────────────────
+function changeSort(value) {
+  activeSort = value;
+  renderRows();
+  updateSortButtons();
+}
+
+// ── Keep sort button active styles in sync ─────────────────────────────────
+function updateSortButtons() {
+  document.querySelectorAll('.sort-btn[data-sort]').forEach(btn => {
+    btn.classList.toggle('sort-active', btn.dataset.sort === activeSort);
+  });
+}
+
+// ── Main load ──────────────────────────────────────────────────────────────
 async function load(state) {
   initRepoNav(repoId);
   try {
-    const data = await apiFetch('/repos/' + repoId + '/pull-requests?state=' + state);
-    const prs  = data.pullRequests || [];
+    // Fetch only what is not yet cached — all states needed for tab counts.
+    const [openData, mergedData, closedData] = await Promise.all([
+      cachedOpen   !== null ? Promise.resolve({ pullRequests: cachedOpen })   : apiFetch('/repos/' + repoId + '/pull-requests?state=open'),
+      cachedMerged !== null ? Promise.resolve({ pullRequests: cachedMerged }) : apiFetch('/repos/' + repoId + '/pull-requests?state=merged'),
+      cachedClosed !== null ? Promise.resolve({ pullRequests: cachedClosed }) : apiFetch('/repos/' + repoId + '/pull-requests?state=closed'),
+    ]);
 
-    await loadSocialSignals(prs);
+    cachedOpen   = openData.pullRequests   || [];
+    cachedMerged = mergedData.pullRequests || [];
+    cachedClosed = closedData.pullRequests || [];
 
-    const rows = prs.length === 0
-      ? '<p class="loading">No pull requests found.</p>'
-      : prs.map(pr => {
-          const commentBadge = `<span style="font-size:11px;color:#8b949e">&#128172; ${prCommentCounts[pr.prId] || 0}</span>`;
-          const pills = reactionPills(pr.prId);
-          return `
-        <div class="pr-row">
-          <span class="badge badge-${pr.state}">${pr.state}</span>
-          <div style="flex:1">
-            <a href="${base}/pulls/${pr.prId}">${escHtml(pr.title)}</a>
-            <div style="font-size:12px;color:#8b949e;margin-top:2px">
-              ${escHtml(pr.fromBranch)} &rarr; ${escHtml(pr.toBranch)} &bull; ${fmtDate(pr.createdAt)}
-            </div>
-            <div style="display:flex;align-items:center;gap:6px;margin-top:4px;flex-wrap:wrap">
-              ${commentBadge}
-              ${pills}
-            </div>
-          </div>
-        </div>`;
-        }).join('');
+    const openCount   = cachedOpen.length;
+    const mergedCount = cachedMerged.length;
+    const closedCount = cachedClosed.length;
+    const allCount    = openCount + mergedCount + closedCount;
+
+    if (state === 'merged')      allPRs = cachedMerged;
+    else if (state === 'closed') allPRs = cachedClosed;
+    else if (state === 'all')    allPRs = [...cachedOpen, ...cachedMerged, ...cachedClosed];
+    else                         allPRs = cachedOpen;
+
+    await loadSocialSignals(allPRs);
 
     document.getElementById('content').innerHTML = `
-      <div style="margin-bottom:12px">
-        <a href="${base}">&larr; Back to repo</a>
-      </div>
       <div class="card">
-        <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px">
+        <div style="display:flex;align-items:center;gap:var(--space-3);margin-bottom:var(--space-3);flex-wrap:wrap">
           <h1 style="margin:0">Pull Requests</h1>
-          <select onchange="load(this.value)">
-            <option value="open" ${state==='open'?'selected':''}>Open</option>
-            <option value="all"  ${state==='all' ?'selected':''}>All</option>
-          </select>
         </div>
-        ${rows}
+
+        <!-- State tabs: Open | Merged | Closed | All -->
+        <div style="display:flex;gap:0;border-bottom:1px solid var(--color-border);margin-bottom:var(--space-3)">
+          <button id="tab-open" class="tab-btn${state === 'open' || state === undefined ? ' tab-active' : ''}"
+                  onclick="load('open')">
+            &#9711; Open <span class="tab-count">${openCount}</span>
+          </button>
+          <button id="tab-merged" class="tab-btn${state === 'merged' ? ' tab-active' : ''}"
+                  onclick="load('merged')">
+            &#10022; Merged <span class="tab-count">${mergedCount}</span>
+          </button>
+          <button id="tab-closed" class="tab-btn${state === 'closed' ? ' tab-active' : ''}"
+                  onclick="load('closed')">
+            &#10007; Closed <span class="tab-count">${closedCount}</span>
+          </button>
+          <button id="tab-all" class="tab-btn${state === 'all' ? ' tab-active' : ''}"
+                  onclick="load('all')">
+            All <span class="tab-count">${allCount}</span>
+          </button>
+        </div>
+
+        <!-- Sort bar -->
+        <div style="display:flex;align-items:center;gap:var(--space-3);margin-bottom:var(--space-3);flex-wrap:wrap">
+          <span style="font-size:13px;color:#8b949e">Sort by:</span>
+          <div style="display:flex;gap:var(--space-1)">
+            <button class="btn btn-ghost btn-sm sort-btn${activeSort === 'newest' ? ' sort-active' : ''}" data-sort="newest" onclick="changeSort('newest')">Newest</button>
+            <button class="btn btn-ghost btn-sm sort-btn${activeSort === 'oldest' ? ' sort-active' : ''}" data-sort="oldest" onclick="changeSort('oldest')">Oldest</button>
+          </div>
+        </div>
+
+        <!-- PR rows -->
+        <div id="pr-rows"></div>
+
+        ${allCount === 0 ? `
+          <div class="empty-state">
+            <div class="empty-icon">&#128268;</div>
+            <p class="empty-title">No pull requests yet</p>
+            <p class="empty-desc">Ready to propose a musical change? Compare branches and open a pull request.</p>
+          </div>` : ''}
       </div>`;
+
+    // Initial render
+    renderRows();
+    updateSortButtons();
   } catch(e) {
     if (e.message !== 'auth')
       document.getElementById('content').innerHTML = '<p class="error">&#10005; ' + escHtml(e.message) + '</p>';
