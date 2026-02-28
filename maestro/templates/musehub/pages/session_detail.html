@@ -11,6 +11,50 @@
 const repoId    = {{ repo_id | tojson }};
 const sessionId = {{ session_id | tojson }};
 const base      = {{ base_url | tojson }};
+const owner     = {{ owner | tojson }};
+const repoSlug  = {{ repo_slug | tojson }};
+{% endblock %}
+
+{% block extra_css %}
+<style>
+.participant-cards-grid { display: flex; flex-wrap: wrap; gap: 12px; margin: 16px 0; }
+.participant-card {
+  display: flex; align-items: center; gap: 10px;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 8px; padding: 10px 14px;
+  text-decoration: none; color: inherit;
+  min-width: 180px; max-width: 260px;
+  transition: border-color 0.15s;
+}
+.participant-card:hover { border-color: var(--accent); }
+.participant-avatar-img { width: 40px; height: 40px; border-radius: 50%; object-fit: cover; flex-shrink: 0; }
+.participant-avatar-init {
+  width: 40px; height: 40px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  color: white; font-weight: 600; font-size: 14px; flex-shrink: 0;
+}
+.participant-info { display: flex; flex-direction: column; min-width: 0; }
+.participant-name { font-weight: 600; font-size: 14px; color: var(--text-primary); }
+.participant-bio { font-size: 12px; color: var(--text-muted); margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.session-commits-list { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+.session-commit-card {
+  display: grid; grid-template-columns: 80px 1fr auto;
+  align-items: center; gap: 8px;
+  padding: 8px 12px; background: var(--surface);
+  border: 1px solid var(--border); border-radius: 6px;
+  text-decoration: none; color: inherit; font-size: 13px;
+}
+.session-commit-card:hover { border-color: var(--accent); }
+.commit-sha { font-family: monospace; color: var(--accent); font-size: 12px; }
+.commit-msg { color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.commit-meta { font-size: 11px; color: var(--text-muted); white-space: nowrap; }
+
+.session-notes-block {
+  margin-top: 8px; font-size: 14px; line-height: 1.6;
+  color: var(--text-secondary);
+}
+</style>
 {% endblock %}
 
 {% block page_script %}
@@ -40,6 +84,68 @@ async function loadSessionCounts() {
   }
 }
 
+async function loadParticipantCards(participants) {
+  const container = document.getElementById('participant-cards');
+  if (!container || !participants.length) {
+    if (container) container.innerHTML = '<p style="color:#8b949e;font-size:14px">No participants recorded.</p>';
+    return;
+  }
+  const profiles = await Promise.all(
+    participants.map(name =>
+      apiFetch('/users/' + name).catch(() => ({ username: name, bio: '', avatar_url: '' }))
+    )
+  );
+  container.innerHTML = profiles.map(p => {
+    const username = p.username || '?';
+    const initials = username.slice(0, 2).toUpperCase();
+    const hue = [...username].reduce((h, c) => h + c.charCodeAt(0), 0) % 360;
+    const avatar = p.avatar_url
+      ? `<img src="${p.avatar_url}" class="participant-avatar-img" alt="${escHtml(username)}">`
+      : `<div class="participant-avatar-init" style="background:hsl(${hue},60%,45%)">${initials}</div>`;
+    const bio = p.bio || '';
+    const bioPreview = bio.length > 60 ? bio.slice(0, 60) + '…' : bio;
+    return `<a href="/musehub/ui/users/${encodeURIComponent(username)}" class="participant-card">
+      ${avatar}
+      <div class="participant-info">
+        <span class="participant-name">${escHtml(username)}</span>
+        ${bioPreview ? `<span class="participant-bio" title="${escHtml(bio)}">${escHtml(bioPreview)}</span>` : ''}
+      </div>
+    </a>`;
+  }).join('');
+}
+
+async function loadSessionCommits(commitIds) {
+  const container = document.getElementById('session-commits');
+  if (!container || !commitIds.length) {
+    if (container) container.innerHTML = '<p style="color:#8b949e;font-size:14px">No commits associated with this session.</p>';
+    return;
+  }
+  const commits = await Promise.all(
+    commitIds.map(cid =>
+      apiFetch('/repos/' + repoId + '/commits/' + cid).catch(() => null)
+    )
+  );
+  const cards = commits.filter(Boolean).map(c => {
+    const msg = c.message || '';
+    const firstLine = escHtml(msg.split('\n')[0]);
+    const short = c.commit_id ? c.commit_id.slice(0, 8) : (c.commitId ? c.commitId.slice(0, 8) : '');
+    const ts = c.timestamp ? new Date(c.timestamp).toLocaleDateString() : '';
+    const author = escHtml(c.author || '');
+    const meta = [author, ts].filter(Boolean).join(' · ');
+    return `<a href="${base}/commits/${encodeURIComponent(short)}" class="session-commit-card">
+      <code class="commit-sha">${short}</code>
+      <span class="commit-msg">${firstLine || '<em style="color:#8b949e">no message</em>'}</span>
+      <span class="commit-meta">${meta}</span>
+    </a>`;
+  });
+
+  if (cards.length === 0) {
+    container.innerHTML = '<p style="color:#8b949e;font-size:14px">No commits associated with this session.</p>';
+  } else {
+    container.innerHTML = cards.join('');
+  }
+}
+
 async function load() {
   initRepoNav(repoId);
   try {
@@ -50,26 +156,9 @@ async function load() {
 
     const duration = fmtDuration(session.startedAt, session.endedAt);
 
-    const participantHtml = (session.participants || []).length === 0
-      ? '<p style="color:#8b949e;font-size:14px">No participants recorded.</p>'
-      : (session.participants || []).map(p => `
-          <div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid #21262d">
-            <span style="flex:1;font-size:14px">${escHtml(p)}</span>
-            <span class="badge" style="background:#1f6feb;color:#e6edf3">
-              ${counts[p] || 1} session${(counts[p] || 1) !== 1 ? 's' : ''}
-            </span>
-          </div>`).join('');
-
-    const commitHtml = (session.commits || []).length === 0
-      ? '<p style="color:#8b949e;font-size:14px">No commits associated with this session.</p>'
-      : (session.commits || []).map(c => `
-          <div class="commit-row">
-            <a class="commit-sha" href="${base}/commits/${c}">${c.substring(0,8)}</a>
-            <span class="commit-msg"><a href="${base}/commits/${c}">${c}</a></span>
-          </div>`).join('');
-
-    const notesHtml = session.notes
-      ? '<pre>' + escHtml(session.notes) + '</pre>'
+    const notes = session.notes || '';
+    const notesHtml = notes
+      ? `<div class="session-notes-block">${escHtml(notes).replace(/\n/g, '<br>')}</div>`
       : '<p style="color:#8b949e;font-size:14px">No closing notes.</p>';
 
     const allSessions = await apiFetch('/repos/' + repoId + '/sessions?limit=200')
@@ -93,6 +182,10 @@ async function load() {
       </div>`;
 
     const isLive = !session.endedAt;
+    const participants = session.participants || [];
+    const commitIds = session.commits || [];
+
+
     document.getElementById('content').innerHTML = `
       <div class="card">
         <div style="display:flex;align-items:center;gap:var(--space-3);margin-bottom:var(--space-4);flex-wrap:wrap">
@@ -131,17 +224,24 @@ async function load() {
         ${navHtml}
       </div>
       <div class="card">
-        <h2>Participants (${(session.participants||[]).length})</h2>
-        <div style="margin-top:8px">${participantHtml}</div>
+        <h2>Participants (${participants.length})</h2>
+        <div id="participant-cards" class="participant-cards-grid">Loading participants…</div>
       </div>
       <div class="card">
-        <h2>Commits (${(session.commits||[]).length})</h2>
-        <div style="margin-top:8px">${commitHtml}</div>
+        <h2>Commits (${commitIds.length})</h2>
+        <div id="session-commits" class="session-commits-list">Loading commits…</div>
       </div>
       <div class="card">
         <h2>Closing Notes</h2>
         <div style="margin-top:8px">${notesHtml}</div>
       </div>`;
+
+    // Load rich cards after DOM is set
+    await Promise.all([
+      loadParticipantCards(participants),
+      loadSessionCommits(commitIds),
+    ]);
+
   } catch(e) {
     if (e.message !== 'auth') {
       const msg = e.message.startsWith('404') ? 'Session not found.' : escHtml(e.message);
