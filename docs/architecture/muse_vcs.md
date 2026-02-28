@@ -1409,21 +1409,23 @@ The Muse Hub is a lightweight GitHub-equivalent that lives inside the Maestro Fa
 ```
 maestro/
 ├── db/musehub_models.py                  — SQLAlchemy ORM models
-├── models/musehub.py                     — Pydantic v2 request/response models
+├── models/musehub.py                     — Pydantic v2 request/response models (incl. SearchCommitMatch, SearchResponse)
 ├── services/musehub_repository.py        — Async DB queries for repos/branches/commits
 ├── services/musehub_issues.py            — Async DB queries for issues (single point of DB access)
 ├── services/musehub_pull_requests.py     — Async DB queries for PRs (single point of DB access)
 ├── services/musehub_sessions.py          — Async DB queries for sessions (upsert, list, get)
+├── services/musehub_search.py            — In-repo search service (property / ask / keyword / pattern)
 ├── services/musehub_sync.py              — Push/pull sync protocol (ingest_push, compute_pull_delta)
 └── api/routes/musehub/
     ├── __init__.py                       — Composes sub-routers under /musehub prefix
     ├── repos.py                          — Repo/branch/commit/session route handlers
     ├── issues.py                         — Issue tracking route handlers
     ├── pull_requests.py                  — Pull request route handlers
+    ├── search.py                         — In-repo search route handler
     ├── sync.py                           — Push/pull sync route handlers
     ├── objects.py                        — Artifact list + content-by-object-id endpoints (auth required)
     ├── raw.py                            — Raw file download by path (public repos: no auth)
-    └── ui.py                             — Browser UI (HTML shell pages, no auth required)
+    └── ui.py                             — Browser UI HTML shell pages (repo, commits, PRs, issues, sessions, search)
 ```
 
 ### Endpoints
@@ -1463,6 +1465,43 @@ maestro/
 | GET | `/api/v1/musehub/repos/{id}/sessions` | List sessions, newest first (`?limit=N`, default 50, max 200) |
 | GET | `/api/v1/musehub/repos/{id}/sessions/{session_id}` | Get a single session by UUID |
 
+#### In-Repo Search
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/v1/musehub/repos/{id}/search` | Search commits by mode (property / ask / keyword / pattern) |
+| GET | `/musehub/ui/{id}/search` | HTML search page with four mode tabs (no auth required) |
+
+**Search query parameters:**
+
+| Param | Type | Description |
+|-------|------|-------------|
+| `mode` | string | `property` \| `ask` \| `keyword` \| `pattern` (default: `keyword`) |
+| `q` | string | Query string — interpreted differently per mode |
+| `harmony` | string | [property mode] Harmony filter (e.g. `key=Eb` or `key=C-Eb` range) |
+| `rhythm` | string | [property mode] Rhythm filter (e.g. `tempo=120-130`) |
+| `melody` | string | [property mode] Melody filter |
+| `structure` | string | [property mode] Structure filter |
+| `dynamic` | string | [property mode] Dynamics filter |
+| `emotion` | string | [property mode] Emotion filter |
+| `since` | ISO datetime | Only include commits on or after this datetime |
+| `until` | ISO datetime | Only include commits on or before this datetime |
+| `limit` | int | Max results (1–200, default 20) |
+
+**Result type:** `SearchResponse` — fields: `mode`, `query`, `matches`, `totalScanned`, `limit`.
+Each match is a `SearchCommitMatch` with: `commitId`, `branch`, `message`, `author`, `timestamp`, `score`, `matchSource`.
+
+**Search modes explained:**
+
+- **`property`** — delegates to `muse_find.search_commits()`. All non-empty property filters are ANDed. Accepts `key=low-high` range syntax for numeric properties. Score is always 1.0 (exact filter match). `matchSource = "property"`.
+
+- **`ask`** — natural-language query. Stop-words are stripped from `q`; remaining tokens are scored against each commit message using the overlap coefficient (`|Q ∩ M| / |Q|`). Commits with zero overlap are excluded. This is a keyword-matching stub; LLM-powered answer generation is a planned enhancement.
+
+- **`keyword`** — raw keyword overlap scoring. Tokenises `q` and each commit message; scores by `|Q ∩ M| / |Q|`. Commits with zero overlap excluded. Useful for precise term search.
+
+- **`pattern`** — case-insensitive substring match of `q` against commit messages (primary) and branch names (secondary). Score is always 1.0. `matchSource` is `"message"` or `"branch"`.
+
+**Agent use case:** AI music composition agents can call the search endpoint to locate commits by musical property (e.g. find all commits with `harmony=Fm`) before applying `muse checkout`, `muse diff`, or `muse replay` to reconstruct or compare those versions.
 #### Sync Protocol
 
 | Method | Path | Description |

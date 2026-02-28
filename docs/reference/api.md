@@ -1462,6 +1462,116 @@ curl https://musehub.stori.com/api/v1/musehub/repos/<repo_id>/raw/main/tracks/ba
 
 ## Muse Hub Web UI
 
+---
+
+## Muse Hub Analysis API
+
+Agent-optimized endpoints that return structured JSON for all 13 musical dimensions
+of a Muse commit ref.  All endpoints require `Authorization: Bearer <token>`.
+
+### GET /api/v1/musehub/repos/{repo_id}/analysis/{ref}
+
+Returns all 13 dimensions in a single response.
+
+**Path params:**
+- `repo_id` — Muse Hub repo UUID
+- `ref` — branch name, commit ID, or tag (e.g. `main`, `abc1234`)
+
+**Query params:**
+- `?track=<instrument>` — restrict to a named track (e.g. `bass`, `keys`)
+- `?section=<label>` — restrict to a named section (e.g. `chorus`, `verse_1`)
+
+**Response `200 application/json`:**
+```json
+{
+  "ref": "main",
+  "repoId": "...",
+  "computedAt": "2026-02-27T12:00:00Z",
+  "filtersApplied": { "track": null, "section": null },
+  "dimensions": [
+    {
+      "dimension": "harmony",
+      "ref": "main",
+      "computedAt": "2026-02-27T12:00:00Z",
+      "data": { "tonic": "C", "mode": "major", ... },
+      "filtersApplied": { "track": null, "section": null }
+    },
+    ... (13 total)
+  ]
+}
+```
+
+**Cache headers:** `ETag`, `Last-Modified`, `Cache-Control: private, max-age=60`
+
+**Errors:** `404` if repo not found.
+
+---
+
+### GET /api/v1/musehub/repos/{repo_id}/analysis/{ref}/{dimension}
+
+Returns structured JSON for one musical dimension.
+
+**Path params:**
+- `repo_id` — Muse Hub repo UUID
+- `ref` — commit ref
+- `dimension` — one of: `harmony`, `dynamics`, `motifs`, `form`, `groove`, `emotion`,
+  `chord-map`, `contour`, `key`, `tempo`, `meter`, `similarity`, `divergence`
+
+**Query params:** same as aggregate endpoint (`?track=`, `?section=`)
+
+**Response `200 application/json`:**
+```json
+{
+  "dimension": "harmony",
+  "ref": "main",
+  "computedAt": "2026-02-27T12:00:00Z",
+  "data": {
+    "tonic": "C",
+    "mode": "major",
+    "keyConfidence": 0.87,
+    "chordProgression": [
+      { "beat": 0.0, "chord": "Cmaj7", "function": "Imaj7", "tension": 0.1 },
+      ...
+    ],
+    "tensionCurve": [0.1, 0.12, ...],
+    "modulationPoints": [],
+    "totalBeats": 32
+  },
+  "filtersApplied": { "track": null, "section": null }
+}
+```
+
+**Dimension-specific `data` shapes:**
+
+| Dimension | Key fields |
+|-----------|-----------|
+| `harmony` | `tonic`, `mode`, `keyConfidence`, `chordProgression`, `tensionCurve`, `modulationPoints`, `totalBeats` |
+| `dynamics` | `peakVelocity`, `meanVelocity`, `minVelocity`, `dynamicRange`, `velocityCurve`, `dynamicEvents` |
+| `motifs` | `totalMotifs`, `motifs[]` (id, intervals, lengthBeats, occurrenceCount, occurrences, track) |
+| `form` | `formLabel`, `totalBeats`, `sections[]` (label, function, startBeat, endBeat, lengthBeats) |
+| `groove` | `swingFactor`, `gridResolution`, `onsetDeviation`, `grooveScore`, `style`, `bpm` |
+| `emotion` | `valence` (−1..1), `arousal` (0..1), `tension` (0..1), `primaryEmotion`, `confidence` |
+| `chord-map` | `progression[]`, `totalChords`, `totalBeats` |
+| `contour` | `shape`, `directionChanges`, `peakBeat`, `valleyBeat`, `overallDirection`, `pitchCurve` |
+| `key` | `tonic`, `mode`, `confidence`, `relativeKey`, `alternateKeys[]` |
+| `tempo` | `bpm`, `stability`, `timeFeel`, `tempoChanges[]` |
+| `meter` | `timeSignature`, `irregularSections[]`, `beatStrengthProfile`, `isCompound` |
+| `similarity` | `similarCommits[]` (ref, score, sharedMotifs, commitMessage), `embeddingDimensions` |
+| `divergence` | `divergenceScore`, `baseRef`, `changedDimensions[]` (dimension, changeMagnitude, description) |
+
+**Cache headers:** `ETag`, `Last-Modified`, `Cache-Control: private, max-age=60`
+
+**Errors:**
+- `404` if repo not found
+- `404` if `dimension` is not a supported value (response includes list of valid dimensions)
+- `401` if no Bearer token
+
+See `maestro/models/musehub_analysis.py` for full Pydantic model definitions and OpenAPI schema.
+
+---
+
+## Muse Hub Web UI
+
 The following routes serve HTML pages for browser-based repo navigation. They
 do **not** require an `Authorization` header — auth is handled client-side via
 `localStorage` and JavaScript `fetch()` calls to the JSON API above.
