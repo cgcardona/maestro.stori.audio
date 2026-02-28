@@ -172,6 +172,46 @@ class PullResponse(TypedDict):
 
 
 # ---------------------------------------------------------------------------
+# Fetch typed payload contracts
+# ---------------------------------------------------------------------------
+
+
+class FetchRequest(TypedDict):
+    """Payload sent to ``POST /musehub/repos/{repo_id}/fetch``.
+
+    ``branches`` lists the specific branch names to fetch.  An empty list
+    means "fetch all branches" — the Hub returns all it knows about.
+    """
+
+    branches: list[str]
+
+
+class FetchBranchInfo(TypedDict):
+    """A single branch's current state on the remote, returned by fetch.
+
+    ``is_new`` is ``True`` when the branch does not yet exist in the local
+    remote-tracking refs (so the CLI can print "(new branch)" in the report).
+    ``head_commit_id`` is the short-form commit ID suitable for display.
+    """
+
+    branch: str
+    head_commit_id: str
+    is_new: bool
+
+
+class FetchResponse(TypedDict):
+    """Response from the Hub fetch endpoint.
+
+    ``branches`` lists every branch the Hub knows about (filtered by the
+    request's ``branches`` list when non-empty).  The caller uses this to
+    update local remote-tracking refs and, when ``--prune`` is active, to
+    identify stale local refs that should be removed.
+    """
+
+    branches: list[FetchBranchInfo]
+
+
+# ---------------------------------------------------------------------------
 # MuseHubClient
 # ---------------------------------------------------------------------------
 
@@ -286,4 +326,7 @@ __all__ = [
     "PullCommitPayload",
     "PullObjectPayload",
     "PullResponse",
+    "FetchRequest",
+    "FetchBranchInfo",
+    "FetchResponse",
 ]
