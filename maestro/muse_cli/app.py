@@ -1,9 +1,9 @@
 """Muse CLI — Typer application root.
 
 Entry point for the ``muse`` console script. Registers all MVP
-subcommands (amend, arrange, ask, cat-object, checkout, chord-map, clone,
+subcommands (amend, arrange, ask, blame, cat-object, checkout, chord-map, clone,
 commit, commit-tree, context, contour, describe, diff, divergence, dynamics,
-emotion-diff, export, find, form, grep, groove-check, harmony, humanize,
+emotion-diff, export, fetch, find, form, grep, groove-check, harmony, humanize,
 import, init, inspect, key, log, merge, meter, motif, open, play, pull, push,
 read-tree, recall, remote, render-preview, reset, resolve, rev-parse, revert,
 session, show, similarity, status, swing, symbolic-ref, tag, tempo,
@@ -18,6 +18,7 @@ from maestro.muse_cli.commands import (
     amend,
     arrange,
     ask,
+    blame,
     cat_object,
     checkout,
     chord_map,
@@ -32,6 +33,7 @@ from maestro.muse_cli.commands import (
     dynamics,
     emotion_diff,
     export,
+    fetch,
     find,
     form,
     grep_cmd,
@@ -80,6 +82,7 @@ cli = typer.Typer(
 )
 
 cli.add_typer(amend.app, name="amend", help="Fold working-tree changes into the most recent commit.")
+cli.add_typer(blame.app, name="blame", help="Annotate files with the commit that last changed each one.")
 cli.add_typer(cat_object.app, name="cat-object", help="Read and display a stored object by its SHA-256 hash.")
 cli.add_typer(clone.app, name="clone", help="Clone a Muse Hub repository into a new local directory.")
 cli.add_typer(chord_map.app, name="chord-map", help="Visualize the chord progression embedded in a commit.")
@@ -101,6 +104,7 @@ cli.add_typer(inspect.app, name="inspect", help="Print structured JSON of the Mu
 cli.add_typer(checkout.app, name="checkout", help="Checkout a historical variation.")
 cli.add_typer(merge.app, name="merge", help="Three-way merge two variation branches.")
 cli.add_typer(remote.app, name="remote", help="Manage remote server connections.")
+cli.add_typer(fetch.app, name="fetch", help="Fetch refs from remote without merging.")
 cli.add_typer(push.app, name="push", help="Upload local variations to a remote.")
 cli.add_typer(pull.app, name="pull", help="Download remote variations locally.")
 cli.add_typer(describe.app, name="describe", help="Describe what changed musically in a commit.")
