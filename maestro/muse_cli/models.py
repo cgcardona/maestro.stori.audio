@@ -3,7 +3,9 @@
 Tables:
 - muse_cli_objects: content-addressed file blobs (sha256 keyed)
 - muse_cli_snapshots: snapshot manifests mapping paths to object IDs
-- muse_cli_commits: commit history with parent linkage and branch tracking
+- muse_cli_commits: commit history with parent linkage, branch tracking,
+  and an extensible ``extra_metadata`` JSON blob for annotations such as
+  meter (time signature), tempo, key, and other compositional metadata.
 
 These tables are owned by the Muse CLI (``muse commit``) and are
 distinct from the Muse VCS variation tables (``variations``, ``phrases``,
@@ -12,6 +14,7 @@ distinct from the Muse VCS variation tables (``variations``, ``phrases``,
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from typing import Any
 
 from sqlalchemy import DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
@@ -97,6 +100,9 @@ class MuseCliCommit(Base):
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=_utc_now
+    )
+    extra_metadata: Mapped[dict[str, Any] | None] = mapped_column(
+        JSON, nullable=True, default=None
     )
 
     def __repr__(self) -> str:
