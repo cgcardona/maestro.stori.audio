@@ -145,7 +145,9 @@ GH_REPO=cgcardona/maestro
 # Enable rerere so git caches conflict resolutions across agents.
 # When multiple agents resolve the same conflict (e.g. muse_vcs.md), rerere
 # automatically reuses the recorded resolution — no manual work needed.
-git config rerere.enabled true
+# || true: the sandbox blocks .git/config writes (EPERM) when this runs as
+# part of a multi-statement block. rerere is an optimization, not critical.
+git config rerere.enabled true || true
 
 # ── PHASE LABEL ─────────────────────────────────────────────────────────────
 # Change this to the current phase label. This is the ONLY value you update.
