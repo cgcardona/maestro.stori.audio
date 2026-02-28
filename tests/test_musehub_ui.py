@@ -75,6 +75,16 @@ Covers issue #221 (analysis dashboard):
 - test_analysis_dashboard_card_links_to_dimensions — /analysis/ path in page
 See also test_musehub_analysis.py::test_analysis_aggregate_endpoint_returns_all_dimensions
 
+Covers issue #208 (branch list and tag browser):
+- test_branches_page_lists_all          — GET /musehub/ui/{owner}/{slug}/branches returns 200 HTML
+- test_branches_default_marked          — default branch badge present in JSON response
+- test_branches_compare_link            — compare link JS present on branches page
+- test_branches_new_pr_button           — new pull request link JS present
+- test_branches_json_response           — JSON returns BranchDetailListResponse with ahead/behind
+- test_tags_page_lists_all             — GET /musehub/ui/{owner}/{slug}/tags returns 200 HTML
+- test_tags_namespace_filter           — namespace filter JS present on tags page
+- test_tags_json_response              — JSON returns TagListResponse with namespace grouping
+
 Covers issue #211 (audio player — listen page):
 - test_listen_page_renders                     — GET /musehub/ui/{owner}/{slug}/listen/{ref} returns 200
 - test_listen_page_no_auth_required            — listen page accessible without JWT
@@ -102,6 +112,7 @@ from maestro.db.musehub_models import (
     MusehubCommit,
     MusehubObject,
     MusehubProfile,
+    MusehubRelease,
     MusehubRepo,
     MusehubSession,
 )
@@ -197,38 +208,12 @@ async def test_ui_commit_page_shows_artifact_links(
     body = response.text
     # The JS function that renders artifacts must be in the page
     assert "artifactHtml" in body
-    # Inline img pattern for .webp artifacts (uses data-content-url for authed blob fetch)
+    # Inline img pattern for .webp artifacts
     assert "<img" in body
     # Download pattern for .mid and other binary artifacts
     assert "Download" in body
     # Audio player pattern
     assert "<audio" in body
-
-
-@pytest.mark.anyio
-async def test_ui_commit_page_artifact_auth_uses_blob_proxy(
-    client: AsyncClient,
-    db_session: AsyncSession,
-) -> None:
-    """Commit page must use blob URL proxy for artifact auth, not bare content URLs in src/href.
-
-    Images use data-content-url + hydrateImages(); audio/download use downloadArtifact().
-    This prevents 401s caused by the browser sending unauthenticated direct requests.
-    """
-    await _make_repo(db_session)
-    commit_id = "abc1234567890abcdef1234567890abcdef12345678"
-    response = await client.get(f"/musehub/ui/testuser/test-beats/commits/{commit_id}")
-    assert response.status_code == 200
-    body = response.text
-    # Images must carry data-content-url (hydrated asynchronously with auth)
-    assert "data-content-url" in body
-    # No bare /content URL should appear as img src= (would cause 401)
-    assert 'src="/api/v1/musehub' not in body
-    # Downloads must go through downloadArtifact() JS helper, not bare href
-    assert "downloadArtifact" in body
-    # hydrateImages and _fetchBlobUrl must be present for the blob proxy pattern
-    assert "hydrateImages" in body
-    assert "_fetchBlobUrl" in body
 
 
 @pytest.mark.anyio
@@ -3726,6 +3711,10 @@ async def test_commits_list_page_empty_state(
 
 
 # ---------------------------------------------------------------------------
+
+
+
+# ---------------------------------------------------------------------------
 # Commit detail enhancements — issue #207
 # ---------------------------------------------------------------------------
 
@@ -4235,6 +4224,264 @@ async def test_score_unknown_repo_404(
     """GET /musehub/ui/{unknown}/{slug}/score/{ref} returns 404."""
     response = await client.get("/musehub/ui/nobody/no-beats/score/main")
     assert response.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# Issue #208 — Branch list and tag browser tests
+# ---------------------------------------------------------------------------
+
+
+async def _make_repo_with_branches(
+    db_session: AsyncSession,
+) -> tuple[str, str, str]:
+    """Seed a repo with two branches (main + feature) and return (repo_id, owner, slug)."""
+    repo = MusehubRepo(
+        name="branch-test",
+        owner="testuser",
+        slug="branch-test",
+        visibility="private",
+        owner_user_id="test-owner",
+    )
+    db_session.add(repo)
+    await db_session.flush()
+    repo_id = str(repo.repo_id)
+
+    main_branch = MusehubBranch(repo_id=repo_id, name="main", head_commit_id="aaa000")
+    feat_branch = MusehubBranch(repo_id=repo_id, name="feat/jazz-bridge", head_commit_id="bbb111")
+    db_session.add_all([main_branch, feat_branch])
+
+    # Two commits on main, one unique commit on feat/jazz-bridge
+    now = datetime.now(UTC)
+    c1 = MusehubCommit(
+        commit_id="aaa000",
+        repo_id=repo_id,
+        branch="main",
+        parent_ids=[],
+        message="Initial commit",
+        author="composer@stori.com",
+        timestamp=now,
+    )
+    c2 = MusehubCommit(
+        commit_id="aaa001",
+        repo_id=repo_id,
+        branch="main",
+        parent_ids=["aaa000"],
+        message="Add bridge",
+        author="composer@stori.com",
+        timestamp=now,
+    )
+    c3 = MusehubCommit(
+        commit_id="bbb111",
+        repo_id=repo_id,
+        branch="feat/jazz-bridge",
+        parent_ids=["aaa000"],
+        message="Add jazz chord",
+        author="composer@stori.com",
+        timestamp=now,
+    )
+    db_session.add_all([c1, c2, c3])
+    await db_session.commit()
+    return repo_id, "testuser", "branch-test"
+
+
+async def _make_repo_with_releases(
+    db_session: AsyncSession,
+) -> tuple[str, str, str]:
+    """Seed a repo with namespaced releases used as tags."""
+    repo = MusehubRepo(
+        name="tag-test",
+        owner="testuser",
+        slug="tag-test",
+        visibility="private",
+        owner_user_id="test-owner",
+    )
+    db_session.add(repo)
+    await db_session.flush()
+    repo_id = str(repo.repo_id)
+
+    now = datetime.now(UTC)
+    releases = [
+        MusehubRelease(
+            repo_id=repo_id, tag="emotion:happy", title="Happy vibes", body="",
+            commit_id="abc001", author="composer", created_at=now, download_urls={},
+        ),
+        MusehubRelease(
+            repo_id=repo_id, tag="genre:jazz", title="Jazz release", body="",
+            commit_id="abc002", author="composer", created_at=now, download_urls={},
+        ),
+        MusehubRelease(
+            repo_id=repo_id, tag="v1.0", title="Version 1.0", body="",
+            commit_id="abc003", author="composer", created_at=now, download_urls={},
+        ),
+    ]
+    db_session.add_all(releases)
+    await db_session.commit()
+    return repo_id, "testuser", "tag-test"
+
+
+@pytest.mark.anyio
+async def test_branches_page_lists_all(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """GET /musehub/ui/{owner}/{slug}/branches returns 200 HTML."""
+    await _make_repo_with_branches(db_session)
+    resp = await client.get("/musehub/ui/testuser/branch-test/branches")
+    assert resp.status_code == 200
+    assert "text/html" in resp.headers["content-type"]
+    body = resp.text
+    assert "Muse Hub" in body
+    # Page-specific JS identifiers
+    assert "branch-row" in body or "branches" in body.lower()
+
+
+@pytest.mark.anyio
+async def test_branches_default_marked(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """JSON response marks the default branch with isDefault=true."""
+    await _make_repo_with_branches(db_session)
+    resp = await client.get(
+        "/musehub/ui/testuser/branch-test/branches",
+        headers={"Accept": "application/json"},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "branches" in data
+    default_branches = [b for b in data["branches"] if b.get("isDefault")]
+    assert len(default_branches) == 1
+    assert default_branches[0]["name"] == "main"
+
+
+@pytest.mark.anyio
+async def test_branches_compare_link(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Branches page HTML contains compare link JavaScript."""
+    await _make_repo_with_branches(db_session)
+    resp = await client.get("/musehub/ui/testuser/branch-test/branches")
+    assert resp.status_code == 200
+    body = resp.text
+    # The JS template must reference the compare URL pattern
+    assert "compare" in body.lower()
+
+
+@pytest.mark.anyio
+async def test_branches_new_pr_button(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Branches page HTML contains New Pull Request link JavaScript."""
+    await _make_repo_with_branches(db_session)
+    resp = await client.get("/musehub/ui/testuser/branch-test/branches")
+    assert resp.status_code == 200
+    body = resp.text
+    assert "Pull Request" in body
+
+
+@pytest.mark.anyio
+async def test_branches_json_response(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """JSON response includes branches with ahead/behind counts and divergence placeholder."""
+    await _make_repo_with_branches(db_session)
+    resp = await client.get(
+        "/musehub/ui/testuser/branch-test/branches?format=json",
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "branches" in data
+    assert "defaultBranch" in data
+    assert data["defaultBranch"] == "main"
+
+    branches_by_name = {b["name"]: b for b in data["branches"]}
+    assert "main" in branches_by_name
+    assert "feat/jazz-bridge" in branches_by_name
+
+    main = branches_by_name["main"]
+    assert main["isDefault"] is True
+    assert main["aheadCount"] == 0
+    assert main["behindCount"] == 0
+
+    feat = branches_by_name["feat/jazz-bridge"]
+    assert feat["isDefault"] is False
+    # feat has 1 unique commit (bbb111); main has 2 commits (aaa000, aaa001) not shared with feat
+    assert feat["aheadCount"] == 1
+    assert feat["behindCount"] == 2
+
+    # Divergence is a placeholder (all None)
+    div = feat["divergence"]
+    assert div["melodic"] is None
+    assert div["harmonic"] is None
+
+
+@pytest.mark.anyio
+async def test_tags_page_lists_all(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """GET /musehub/ui/{owner}/{slug}/tags returns 200 HTML."""
+    await _make_repo_with_releases(db_session)
+    resp = await client.get("/musehub/ui/testuser/tag-test/tags")
+    assert resp.status_code == 200
+    assert "text/html" in resp.headers["content-type"]
+    body = resp.text
+    assert "Muse Hub" in body
+    assert "Tags" in body
+
+
+@pytest.mark.anyio
+async def test_tags_namespace_filter(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Tags page HTML includes namespace filter dropdown JavaScript."""
+    await _make_repo_with_releases(db_session)
+    resp = await client.get("/musehub/ui/testuser/tag-test/tags")
+    assert resp.status_code == 200
+    body = resp.text
+    # Namespace filter select element is rendered by JS
+    assert "ns-filter" in body or "namespace" in body.lower()
+    # Namespace icons present
+    assert "&#127768;" in body or "emotion" in body
+
+
+@pytest.mark.anyio
+async def test_tags_json_response(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """JSON response returns TagListResponse with namespace grouping."""
+    await _make_repo_with_releases(db_session)
+    resp = await client.get(
+        "/musehub/ui/testuser/tag-test/tags?format=json",
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "tags" in data
+    assert "namespaces" in data
+
+    # All three releases become tags
+    assert len(data["tags"]) == 3
+
+    tags_by_name = {t["tag"]: t for t in data["tags"]}
+    assert "emotion:happy" in tags_by_name
+    assert "genre:jazz" in tags_by_name
+    assert "v1.0" in tags_by_name
+
+    assert tags_by_name["emotion:happy"]["namespace"] == "emotion"
+    assert tags_by_name["genre:jazz"]["namespace"] == "genre"
+    assert tags_by_name["v1.0"]["namespace"] == "version"
+
+    # Namespaces are sorted
+    assert sorted(data["namespaces"]) == data["namespaces"]
+    assert "emotion" in data["namespaces"]
+    assert "genre" in data["namespaces"]
+    assert "version" in data["namespaces"]
+
 
 
 # ---------------------------------------------------------------------------

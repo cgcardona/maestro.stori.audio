@@ -197,6 +197,77 @@ class BranchListResponse(CamelModel):
     branches: list[BranchResponse]
 
 
+class BranchDivergenceScores(CamelModel):
+    """Placeholder musical divergence scores between a branch and the default branch.
+
+    These five dimensions mirror the ``muse divergence`` command output.  Values
+    are floats in [0.0, 1.0] where 0 = identical and 1 = maximally different.
+    All fields are ``None`` when divergence cannot yet be computed server-side
+    (e.g. no audio snapshots attached to commits).
+    """
+
+    melodic: float | None = Field(None, description="Melodic divergence (0–1)")
+    harmonic: float | None = Field(None, description="Harmonic divergence (0–1)")
+    rhythmic: float | None = Field(None, description="Rhythmic divergence (0–1)")
+    structural: float | None = Field(None, description="Structural divergence (0–1)")
+    dynamic: float | None = Field(None, description="Dynamic divergence (0–1)")
+
+
+class BranchDetailResponse(CamelModel):
+    """Branch pointer enriched with ahead/behind counts and musical divergence.
+
+    Used by the branch list page (``GET /{owner}/{repo}/branches``) to give
+    musicians a quick overview of how each branch relates to the default branch.
+    """
+
+    branch_id: str = Field(..., description="Internal UUID for this branch")
+    name: str = Field(..., description="Branch name", examples=["main", "feat/jazz-bridge"])
+    head_commit_id: str | None = Field(None, description="HEAD commit ID; null for an empty branch")
+    is_default: bool = Field(False, description="True when this is the repo's default branch")
+    ahead_count: int = Field(0, ge=0, description="Commits on this branch not yet on the default branch")
+    behind_count: int = Field(0, ge=0, description="Commits on the default branch not yet on this branch")
+    divergence: BranchDivergenceScores = Field(
+        default_factory=lambda: BranchDivergenceScores(
+            melodic=None, harmonic=None, rhythmic=None, structural=None, dynamic=None
+        ),
+        description="Musical divergence scores vs the default branch (placeholder until computable)",
+    )
+
+
+class BranchDetailListResponse(CamelModel):
+    """List of branches with detail — used by the branch list page and its JSON variant."""
+
+    branches: list[BranchDetailResponse]
+    default_branch: str = Field("main", description="Name of the repo's default branch")
+
+
+class TagResponse(CamelModel):
+    """A single tag entry for the tag browser page.
+
+    Tags are sourced from ``musehub_releases``.  The ``namespace`` field is
+    derived from the tag name: ``emotion:happy`` → namespace ``emotion``,
+    ``v1.0`` → namespace ``version``.
+    """
+
+    tag: str = Field(..., description="Full tag string (e.g. 'emotion:happy', 'v1.0')")
+    namespace: str = Field(..., description="Namespace prefix (e.g. 'emotion', 'genre', 'version')")
+    commit_id: str | None = Field(None, description="Commit this tag is pinned to")
+    message: str = Field("", description="Release title / description")
+    created_at: datetime = Field(..., description="Tag creation timestamp (ISO-8601 UTC)")
+
+
+class TagListResponse(CamelModel):
+    """All tags for a repo, grouped by namespace.
+
+    ``namespaces`` is an ordered list of distinct namespace strings present in
+    the repo.  ``tags`` is the flat list; clients should filter/group client-side
+    using the ``namespace`` field.
+    """
+
+    tags: list[TagResponse]
+    namespaces: list[str] = Field(default_factory=list, description="Distinct namespaces present in this repo")
+
+
 class CommitListResponse(CamelModel):
     """Paginated list of commits (newest first)."""
 

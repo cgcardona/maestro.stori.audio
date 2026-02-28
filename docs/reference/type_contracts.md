@@ -7054,6 +7054,88 @@ when the corresponding package is unavailable.
 | Field | Type | Description |
 |-------|------|-------------|
 | `releases` | `list[ReleaseResponse]` | All releases, newest first |
+
+---
+
+## `BranchDivergenceScores`
+
+**Module:** `maestro.models.musehub`
+**Used by:** `BranchDetailResponse.divergence` field.
+
+Placeholder musical divergence scores between a branch and the repo's default branch. All five dimensions mirror the `muse divergence` command output. Values are floats in `[0.0, 1.0]` where `0` = identical and `1` = maximally different. All fields are `None` until audio snapshots are attached to commits and server-side computation is implemented.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `melodic` | `float \| None` | Melodic divergence `[0–1]`; `None` = not yet computable |
+| `harmonic` | `float \| None` | Harmonic divergence `[0–1]`; `None` = not yet computable |
+| `rhythmic` | `float \| None` | Rhythmic divergence `[0–1]`; `None` = not yet computable |
+| `structural` | `float \| None` | Structural divergence `[0–1]`; `None` = not yet computable |
+| `dynamic` | `float \| None` | Dynamic divergence `[0–1]`; `None` = not yet computable |
+
+---
+
+## `BranchDetailResponse`
+
+**Module:** `maestro.models.musehub`
+**Used by:** `BranchDetailListResponse.branches`, `GET /api/v1/musehub/repos/{repo_id}/branches/detail`.
+
+Branch pointer enriched with ahead/behind counts and musical divergence scores. Ahead/behind are set-difference approximations over the `musehub_commits` table — suitable for display, not for merge-base computation.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `branch_id` | `str` | Internal UUID of the branch row |
+| `name` | `str` | Branch name (e.g. `"main"`, `"feat/jazz-bridge"`) |
+| `head_commit_id` | `str \| None` | HEAD commit ID; `None` for an empty branch |
+| `is_default` | `bool` | `True` when this is the repo's default branch |
+| `ahead_count` | `int` | Commits on this branch not yet on the default branch |
+| `behind_count` | `int` | Commits on the default branch not yet on this branch |
+| `divergence` | `BranchDivergenceScores` | Musical divergence scores vs the default branch (placeholder until computable) |
+
+---
+
+## `BranchDetailListResponse`
+
+**Module:** `maestro.models.musehub`
+**Used by:** `GET /api/v1/musehub/repos/{repo_id}/branches/detail`, `GET /musehub/ui/{owner}/{repo_slug}/branches` (JSON variant).
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `branches` | `list[BranchDetailResponse]` | All branches, sorted alphabetically by name |
+| `default_branch` | `str` | Name of the repo's default branch (prefers `"main"`, else first alphabetically) |
+
+---
+
+## `TagResponse`
+
+**Module:** `maestro.models.musehub`
+**Used by:** `TagListResponse.tags`, `GET /musehub/ui/{owner}/{repo_slug}/tags` (JSON variant).
+
+A single tag entry sourced from a `musehub_releases` row. The `namespace` field is derived from the tag name: `emotion:happy` → `emotion`; tags without a colon fall into the `version` namespace.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `tag` | `str` | Full tag string (e.g. `"emotion:happy"`, `"v1.0"`) |
+| `namespace` | `str` | Namespace prefix extracted from the tag (e.g. `"emotion"`, `"genre"`, `"version"`) |
+| `commit_id` | `str \| None` | Commit this tag is pinned to, or `None` |
+| `message` | `str` | Release title / description (empty string if unset) |
+| `created_at` | `datetime` | Tag creation timestamp (ISO-8601 UTC) |
+
+---
+
+## `TagListResponse`
+
+**Module:** `maestro.models.musehub`
+**Used by:** `GET /musehub/ui/{owner}/{repo_slug}/tags` (JSON variant, `?format=json` or `Accept: application/json`).
+
+All tags for a repo, optionally filtered by `?namespace=<ns>` server-side. The flat `tags` list is sorted by creation time (newest first from the releases table). Clients may group by the `namespace` field client-side.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `tags` | `list[TagResponse]` | Tags (filtered by `?namespace` when provided; all tags otherwise) |
+| `namespaces` | `list[str]` | Sorted list of all distinct namespace strings present in the repo (always the full set, unaffected by `?namespace` filter) |
+
+---
+
 ## ExploreRepoResult
 
 **Module:** `maestro.models.musehub`

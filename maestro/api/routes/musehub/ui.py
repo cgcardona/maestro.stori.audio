@@ -71,7 +71,15 @@ from starlette.responses import Response as StarletteResponse
 
 from maestro.api.routes.musehub.negotiate import negotiate_response
 from maestro.db import get_db
-from maestro.models.musehub import CommitListResponse, CommitResponse, RepoResponse
+from maestro.models.musehub import (
+    BranchDetailListResponse,
+    CommitListResponse,
+    CommitResponse,
+    RepoResponse,
+    TagListResponse,
+    TagResponse,
+)
+from maestro.services import musehub_releases
 from maestro.services import musehub_repository
 
 logger = logging.getLogger(__name__)
@@ -1758,6 +1766,116 @@ async def groove_check_page(
             "base_url": base_url,
             "current_page": "groove-check",
         },
+    )
+
+
+@router.get(
+    "/{owner}/{repo_slug}/branches",
+    summary="Muse Hub branch list page",
+)
+async def branches_page(
+    request: Request,
+    owner: str,
+    repo_slug: str,
+    format: str | None = Query(None, description="Force response format: 'json' or omit for HTML"),
+    db: AsyncSession = Depends(get_db),
+) -> StarletteResponse:
+    """Render the branch list page or return structured branch data as JSON.
+
+    HTML (default): lists all branches with HEAD commit info, ahead/behind counts,
+    musical divergence scores (placeholder), compare links, and New Pull Request buttons.
+    JSON (``Accept: application/json`` or ``?format=json``): returns
+    ``BranchDetailListResponse`` with per-branch ahead/behind counts.
+
+    Content negotiation — one URL, two audiences: musicians get rich HTML,
+    agents get structured JSON to programmatically inspect branch state.
+    """
+    repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
+    branch_data: BranchDetailListResponse = (
+        await musehub_repository.list_branches_with_detail(db, repo_id)
+    )
+    return await negotiate_response(
+        request=request,
+        template_name="musehub/pages/branches.html",
+        context={
+            "owner": owner,
+            "repo_slug": repo_slug,
+            "repo_id": repo_id,
+            "base_url": base_url,
+            "current_page": "branches",
+        },
+        templates=templates,
+        json_data=branch_data,
+        format_param=format,
+    )
+
+
+@router.get(
+    "/{owner}/{repo_slug}/tags",
+    summary="Muse Hub tag browser page",
+)
+async def tags_page(
+    request: Request,
+    owner: str,
+    repo_slug: str,
+    namespace: str | None = Query(None, description="Filter tags by namespace prefix"),
+    format: str | None = Query(None, description="Force response format: 'json' or omit for HTML"),
+    db: AsyncSession = Depends(get_db),
+) -> StarletteResponse:
+    """Render the tag browser page or return structured tag data as JSON.
+
+    Tags are sourced from repo releases.  The tag browser groups tags by their
+    namespace prefix (the text before ``:``, e.g. ``emotion``, ``genre``,
+    ``instrument``) — tags without a colon fall into the ``version`` namespace.
+
+    HTML (default): filterable list of tags grouped by namespace with commit info.
+    JSON (``Accept: application/json`` or ``?format=json``): returns
+    ``TagListResponse`` with namespace grouping and optional ``?namespace`` filtering.
+
+    Click a tag to navigate to the commit detail page for that release's commit.
+    """
+    repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
+    releases = await musehub_releases.list_releases(db, repo_id)
+
+    all_tags: list[TagResponse] = []
+    for release in releases:
+        tag_str = release.tag
+        if ":" in tag_str:
+            ns, _ = tag_str.split(":", 1)
+        else:
+            ns = "version"
+        all_tags.append(
+            TagResponse(
+                tag=tag_str,
+                namespace=ns,
+                commit_id=release.commit_id,
+                message=release.title,
+                created_at=release.created_at,
+            )
+        )
+
+    if namespace:
+        filtered_tags = [t for t in all_tags if t.namespace == namespace]
+    else:
+        filtered_tags = all_tags
+
+    namespaces: list[str] = sorted({t.namespace for t in all_tags})
+    tag_data = TagListResponse(tags=filtered_tags, namespaces=namespaces)
+
+    return await negotiate_response(
+        request=request,
+        template_name="musehub/pages/tags.html",
+        context={
+            "owner": owner,
+            "repo_slug": repo_slug,
+            "repo_id": repo_id,
+            "base_url": base_url,
+            "current_page": "tags",
+            "active_namespace": namespace or "",
+        },
+        templates=templates,
+        json_data=tag_data,
+        format_param=format,
     )
 
 
