@@ -924,6 +924,37 @@ Full diff of two arrangement matrices.  Built by `build_arrangement_diff()`.
 
 ## Services
 
+### MuseHub MCP Executor
+
+**Path:** `maestro/services/musehub_mcp_executor.py`
+
+#### `MusehubToolResult`
+
+`dataclass(frozen=True)` — Result of executing a single `musehub_*` MCP tool. This is the
+contract between the executor functions and the MCP server's routing layer.
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `ok` | `bool` | yes | `True` on success, `False` on failure |
+| `data` | `dict[str, JSONValue]` | no | JSON-serialisable payload on success; empty dict on failure |
+| `error_code` | `MusehubErrorCode \| None` | no | Error kind on failure; `None` on success |
+| `error_message` | `str \| None` | no | Human-readable error message; `None` on success |
+
+**`MusehubErrorCode`** — `Literal["not_found", "invalid_dimension", "invalid_mode", "db_unavailable"]`
+
+| Code | When |
+|------|------|
+| `not_found` | Repo or object does not exist |
+| `invalid_dimension` | Unrecognised analysis dimension (valid: `overview`, `commits`, `objects`) |
+| `invalid_mode` | Unrecognised search mode (valid: `path`, `commit`) |
+| `db_unavailable` | DB session factory not initialised (startup race) |
+
+**Agent use case:** The MCP server calls executor functions and pattern-matches on `result.ok`
+and `result.error_code` to build the `MCPContentBlock` response. On success, `result.data`
+is JSON-serialised directly into the content block text.
+
+---
+
 ### Assets
 
 **Path:** `maestro/services/assets.py`
