@@ -1231,4 +1231,81 @@ commit for deeper inspection.
 > now to keep the CLI contract stable; supplying them emits a clear warning.
 
 
+## `muse recall` — Keyword Search over Musical Commit History
+
+**Purpose:** Walk the commit history on the current (or specified) branch and
+return the top-N commits ranked by keyword overlap against their commit
+messages.  Designed as the textual precursor to full vector embedding search —
+the CLI interface (flags, output modes, result type) is frozen so agents can
+rely on it before Qdrant-backed semantic search is wired in.
+
+**Usage:**
+```bash
+muse recall <query> [OPTIONS]
+```
+
+**Flags:**
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `QUERY` | positional | — | Natural-language description to search for |
+| `--limit / -n INT` | integer | 5 | Maximum number of results to return |
+| `--threshold FLOAT` | float | 0.6 | Minimum keyword-overlap score (0–1) to include a commit |
+| `--branch TEXT` | string | current branch | Filter to a specific branch name |
+| `--since YYYY-MM-DD` | date string | — | Only include commits on or after this date |
+| `--until YYYY-MM-DD` | date string | — | Only include commits on or before this date |
+| `--json` | flag | off | Emit machine-readable JSON array |
+
+**Scoring algorithm:** Overlap coefficient — `|Q ∩ M| / |Q|` — where Q is the
+set of lowercase word tokens in the query and M is the set of tokens in the
+commit message.  A score of 1.0 means every query word appears in the message;
+0.0 means none do.  Commits with score below `--threshold` are excluded.
+
+**Output example (text):**
+```
+Recall: "dark jazz bassline"
+(keyword match · threshold 0.60 · vector search is a planned enhancement)
+
+  #1  score=1.0000  commit a1b2c3d4...  [2026-02-20 14:30:00]
+       add dark jazz bassline to verse
+
+  #2  score=0.6667  commit e5f6a7b8...  [2026-02-18 09:15:00]
+       jazz bassline variation with reverb
+```
+
+**Output example (`--json`):**
+```json
+[
+  {
+    "rank": 1,
+    "score": 1.0,
+    "commit_id": "a1b2c3d4...",
+    "date": "2026-02-20 14:30:00",
+    "branch": "main",
+    "message": "add dark jazz bassline to verse"
+  }
+]
+```
+
+**Result type:** `RecallResult` (`TypedDict`) — fields: `rank` (int),
+`score` (float, rounded to 4 decimal places), `commit_id` (str),
+`date` (str, `"YYYY-MM-DD HH:MM:SS"`), `branch` (str), `message` (str).
+See `docs/reference/type_contracts.md § RecallResult`.
+
+**Agent use case:** An AI composing a new variation queries `muse recall
+"dark jazz bassline"` to surface all commits that previously explored that
+texture — letting the agent reuse, invert, or contrast those ideas.  The
+`--json` flag makes the result directly parseable in an agentic pipeline;
+`--threshold 0.0` with a broad query retrieves the full ranked history.
+
+**Implementation:** `maestro/muse_cli/commands/recall.py` —
+`RecallResult` (TypedDict), `_tokenize()`, `_score()`, `_fetch_commits()`,
+`_recall_async()`, `_render_results()`.  Exit codes: 0 success,
+1 bad date format (`USER_ERROR`), 2 outside repo (`REPO_NOT_FOUND`),
+3 internal error (`INTERNAL_ERROR`).
+
+> **Planned enhancement:** Full semantic vector search via Qdrant with
+> cosine similarity over pre-computed embeddings.  When implemented, the
+> scoring function will be replaced with no change to the CLI interface.
+
 ---
