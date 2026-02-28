@@ -3752,3 +3752,115 @@ to improve the commit message after inspection.
 **Implementation:** `maestro/muse_cli/commands/amend.py` —
 `_amend_async(message, no_edit, reset_author, root, session)`.
 Tests: `tests/muse_cli/test_amend.py`.
+
+---
+
+### `muse checkout`
+
+**Purpose:** Switch branches or create a new branch seeded from the current HEAD.
+Enables the branching workflows that allow composers and AI agents to explore
+divergent musical directions without losing prior work.
+
+**Usage:**
+```bash
+muse checkout <branch>            # Switch to an existing branch
+muse checkout -b <new-branch>     # Create branch from HEAD, then switch
+```
+
+**Flags:**
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `-b` | flag | off | Create the branch from the current HEAD commit and switch to it |
+
+**Output example (create):**
+```
+✅ Switched to a new branch 'experiment'
+```
+
+**Output example (switch):**
+```
+✅ Switched to branch 'main' [a1b2c3d4]
+```
+
+**Agent use case:** Create an experiment branch before exploring a rhythmically
+unusual variation.  If the experiment fails, checkout main and the original
+arrangement is untouched.
+
+**Implementation:** `maestro/muse_cli/commands/checkout.py` — `checkout_branch(root, branch, create)`.
+Pure filesystem writes: creates/updates `.muse/refs/heads/<branch>` and `.muse/HEAD`.
+No DB interaction at checkout time — the DAG remains intact.
+
+---
+
+### `muse resolve`
+
+**Purpose:** Mark a conflicted file as resolved during a paused `muse merge`.
+Called after `muse merge` exits with a conflict to accept one side's version
+before running `muse merge --continue`.
+
+**Usage:**
+```bash
+muse resolve <file-path> --ours    # Keep current branch's working-tree version
+muse resolve <file-path> --theirs  # Accept incoming branch (edit file first, then mark)
+```
+
+**Flags:**
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--ours` | flag | off | Accept the current branch's version (no file change needed) |
+| `--theirs` | flag | off | Accept the incoming branch (caller edits file manually, then runs this) |
+
+**Output example:**
+```
+✅ Resolved 'meta/section-1.json' — keeping ours
+✅ All conflicts resolved. Run 'muse merge --continue' to create the merge commit.
+```
+
+**Workflow:**
+1. `muse merge <branch>` exits with conflict, writes `.muse/MERGE_STATE.json`
+2. `muse resolve <path> --ours` for each conflicted file
+3. `muse merge --continue` creates the merge commit
+
+**Note:** After all conflicts are resolved, `.muse/MERGE_STATE.json` persists
+with `conflict_paths=[]` so `--continue` can read the stored commit IDs.
+`muse merge --continue` is the command that clears MERGE_STATE.json.
+
+**Implementation:** `maestro/muse_cli/commands/resolve.py` — `resolve_conflict(file_path, ours, root)`.
+Reads and rewrites `.muse/MERGE_STATE.json`.  No DB interaction.
+
+---
+
+### `muse merge --continue`
+
+**Purpose:** Finalize a merge that was paused due to file conflicts.  After all
+conflicts are resolved via `muse resolve`, this command creates the merge commit
+with two parent IDs and advances the branch pointer.
+
+**Usage:**
+```bash
+muse merge --continue
+```
+
+**Flags:**
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--continue` | flag | off | Finalize a paused conflicted merge |
+
+**Output example:**
+```
+✅ Merge commit [main a1b2c3d4] — merged 'experiment' into 'main'
+```
+
+**Contract:** Reads `.muse/MERGE_STATE.json` for commit IDs.  Fails if any
+`conflict_paths` remain (use `muse resolve` first).  Snapshots the current
+`muse-work/` contents as the merged state.  Clears MERGE_STATE.json on success.
+
+**Agent use case:** After resolving a harmonic conflict between two branches,
+run `--continue` to record the merged arrangement as an immutable commit.
+
+**Implementation:** `maestro/muse_cli/commands/merge.py` — `_merge_continue_async(root, session)`.
+
+---
