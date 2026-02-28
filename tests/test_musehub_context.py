@@ -20,7 +20,7 @@ All tests use fixtures from conftest.py.
 from __future__ import annotations
 
 import pytest
-import yaml
+import yaml  # type: ignore[import-untyped]  # PyYAML ships no py.typed marker
 from datetime import datetime, timezone
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
