@@ -96,14 +96,14 @@ cd "$REPO"
 DEV_SHA=$(git rev-parse dev)
 
 # --- define issues (confirmed independent — zero file overlap) ---
-# Batch: #66–#69 (Muse core history commands)
+# Batch: #36, #38, #43, #48 (Muse conflict resolution, remote sync, Hub UI, integration tests)
 # Known shared file: maestro/muse_cli/app.py (each agent adds one app.add_typer line)
 # Resolution: pre-push sync in STEP 4 handles app.py conflicts — keep both sides.
 declare -a ISSUES=(
-  "69|feat: muse reset <commit> — reset branch pointer to a prior commit"
-  "68|feat: muse revert <commit> — create a new commit that undoes a prior commit"
-  "67|feat: muse amend — amend the most recent commit"
-  "66|feat: muse show <commit> — music-aware commit inspection"
+  "48|feat: Golden-path integration test + demo scripts — end-to-end Muse MVP workflow"
+  "43|feat: Muse Hub web UI — artifact browsing, commit viewer, PR and issue pages"
+  "38|feat: muse remote add + muse push + muse pull — CLI ↔ Muse Hub sync"
+  "36|feat: muse resolve + muse merge --continue — conflict resolution workflow"
 )
 
 # --- create worktrees + task files ---
