@@ -64,7 +64,11 @@ async def upsert_session(
     Returns:
         The persisted session as a ``SessionResponse``.
     """
-    existing = await db.get(MusehubSession, data.session_id)
+    _existing_q = select(MusehubSession).where(
+        MusehubSession.session_id == data.session_id,
+        MusehubSession.repo_id == repo_id,
+    )
+    existing = (await db.execute(_existing_q)).scalar_one_or_none()
     if existing is not None:
         existing.schema_version = data.schema_version
         existing.started_at = data.started_at

@@ -499,6 +499,50 @@ async def test_session_push_is_idempotent(
 
 
 @pytest.mark.anyio
+async def test_session_upsert_scoped_to_repo(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    auth_headers: dict[str, str],
+) -> None:
+    """Session upsert lookup is scoped to repo_id — a session pushed to repo A is NOT
+    visible via repo B's detail endpoint, even if the IDs match."""
+    repo_a = await _make_repo(db_session)
+    repo_b = await _make_repo(db_session)
+    payload = {
+        "sessionId": "scoped-uuid-aaaa-bbbb-cccc-ddddeeeeeeee",
+        "schemaVersion": "1",
+        "startedAt": "2026-03-01T10:00:00+00:00",
+        "endedAt": "2026-03-01T12:00:00+00:00",
+        "participants": ["Frank"],
+        "location": "Studio C",
+        "intent": "Test repo scoping",
+        "commits": [],
+        "notes": "repo A only",
+    }
+    resp = await client.post(
+        f"/api/v1/musehub/repos/{repo_a}/sessions",
+        json=payload,
+        headers=auth_headers,
+    )
+    assert resp.status_code == 201
+
+    # The same session_id does NOT appear under repo B
+    detail_b = await client.get(
+        f"/api/v1/musehub/repos/{repo_b}/sessions/{payload['sessionId']}",
+        headers=auth_headers,
+    )
+    assert detail_b.status_code == 404
+
+    # And repo A's list is unaffected
+    list_a = await client.get(
+        f"/api/v1/musehub/repos/{repo_a}/sessions",
+        headers=auth_headers,
+    )
+    assert list_a.json()["total"] == 1
+    assert list_a.json()["sessions"][0]["notes"] == "repo A only"
+
+
+@pytest.mark.anyio
 async def test_session_repo_page_has_sessions_link(
     client: AsyncClient,
     db_session: AsyncSession,
