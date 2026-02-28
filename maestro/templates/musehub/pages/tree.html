@@ -1,0 +1,218 @@
+{% extends "musehub/base.html" %}
+
+{% block title %}{{ owner }}/{{ repo_slug }} — tree/{{ ref[:8] }}{% endblock %}
+
+{% block breadcrumb %}
+  <a href="/musehub/ui/{{ owner }}/{{ repo_slug }}">{{ owner }}/{{ repo_slug }}</a> /
+  tree /
+  <a href="/musehub/ui/{{ owner }}/{{ repo_slug }}/tree/{{ ref }}">{{ ref }}</a>
+  {% if dir_path %}
+    {% set segments = dir_path.split('/') %}
+    {% set ns = namespace(accumulated='') %}
+    {% for seg in segments %}
+      {% if ns.accumulated %}
+        {% set ns.accumulated = ns.accumulated + '/' + seg %}
+      {% else %}
+        {% set ns.accumulated = seg %}
+      {% endif %}
+      / <a href="/musehub/ui/{{ owner }}/{{ repo_slug }}/tree/{{ ref }}/{{ ns.accumulated }}">{{ seg }}</a>
+    {% endfor %}
+  {% endif %}
+{% endblock %}
+
+{% block repo_nav %}{% include "musehub/partials/repo_nav.html" %}{% endblock %}
+
+{% block extra_css %}
+<style>
+.tree-header {
+  display: flex; align-items: center; gap: 12px;
+  padding: 12px 16px;
+  background: #161b22; border: 1px solid #30363d; border-radius: 8px 8px 0 0;
+  border-bottom: none; margin-top: 8px;
+}
+.ref-selector { display: flex; align-items: center; gap: 8px; }
+.ref-selector label { color: #8b949e; font-size: 13px; }
+.ref-selector select {
+  background: #21262d; color: #c9d1d9; border: 1px solid #30363d;
+  border-radius: 6px; padding: 6px 10px; font-size: 13px; cursor: pointer;
+}
+.ref-selector select:hover { border-color: #58a6ff; }
+.tree-table {
+  width: 100%; border-collapse: collapse;
+  background: #0d1117; border: 1px solid #30363d; border-radius: 0 0 8px 8px;
+  overflow: hidden;
+}
+.tree-table th {
+  background: #161b22; color: #8b949e;
+  padding: 10px 16px; text-align: left; font-size: 12px; font-weight: 600;
+  border-bottom: 1px solid #30363d;
+}
+.tree-table td {
+  padding: 10px 16px; border-bottom: 1px solid #21262d;
+  font-size: 14px; color: #c9d1d9;
+}
+.tree-table tr:last-child td { border-bottom: none; }
+.tree-table tr:hover td { background: #161b22; }
+.tree-icon { margin-right: 8px; font-size: 15px; }
+.entry-link { color: #58a6ff; text-decoration: none; }
+.entry-link:hover { text-decoration: underline; }
+.tree-size { color: #8b949e; text-align: right; font-size: 12px; white-space: nowrap; }
+.tree-empty {
+  padding: 48px 16px; text-align: center; color: #8b949e;
+  background: #0d1117; border: 1px solid #30363d; border-radius: 0 0 8px 8px;
+}
+.tree-loading { padding: 24px 0; text-align: center; color: #8b949e; font-size: 14px; }
+.tree-error { color: #f85149; font-size: 14px; padding: 16px; }
+</style>
+{% endblock %}
+
+{% block page_data %}
+const repoId   = {{ repo_id | tojson }};
+const ref      = {{ ref | tojson }};
+const dirPath  = {{ dir_path | tojson }};
+const owner    = {{ owner | tojson }};
+const repoSlug = {{ repo_slug | tojson }};
+const base     = {{ base_url | tojson }};
+const apiBase  = '/api/v1/musehub/repos/' + repoId;
+{% endblock %}
+
+{% block page_script %}
+{% raw %}
+// ── File-type icon resolver ──────────────────────────────────────────────────
+// Returns a symbol that matches the file extension.
+// .mid/.midi → piano, .mp3/.wav/.ogg → waveform, .json → braces, images → photo
+function fileIconHtml(name) {
+  const lower = name.toLowerCase();
+  if (lower.endsWith('.mid') || lower.endsWith('.midi')) return '&#127929;'; // 🎹
+  if (lower.endsWith('.mp3') || lower.endsWith('.wav') || lower.endsWith('.ogg')) return '&#127925;'; // 🎵
+  if (lower.endsWith('.json')) return '&#123;&#125;'; // {}
+  if (lower.endsWith('.webp') || lower.endsWith('.png') || lower.endsWith('.jpg') || lower.endsWith('.jpeg')) return '&#128444;'; // 🖼
+  return '&#128196;'; // 📄
+}
+
+// ── Human-readable file size ─────────────────────────────────────────────────
+function fmtSize(bytes) {
+  if (bytes === null || bytes === undefined) return '';
+  if (bytes < 1024) return bytes + '\u00a0B';
+  if (bytes < 1048576) return (bytes / 1024).toFixed(1) + '\u00a0KB';
+  return (bytes / 1048576).toFixed(1) + '\u00a0MB';
+}
+
+// ── URL builders ──────────────────────────────────────────────────────────────
+function blobUrl(path) {
+  return base + '/blob/' + encodeURIComponent(ref) + '/' + path;
+}
+function treeUrl(path) {
+  return base + '/tree/' + encodeURIComponent(ref) + '/' + path;
+}
+
+// ── Render the tree listing into #content ────────────────────────────────────
+function renderTree(data) {
+  const entries = data.entries || [];
+
+  let headerHtml = '<div class="tree-header">'
+    + '<div class="ref-selector">'
+    + '<label>Branch&nbsp;/&nbsp;tag:</label>'
+    + '<select id="branch-sel" onchange="onRefChange(this)">'
+    + '<option value="' + escHtml(ref) + '">' + escHtml(ref) + '</option>'
+    + '</select>'
+    + '</div>'
+    + '</div>';
+
+  let bodyHtml;
+  if (entries.length === 0) {
+    bodyHtml = '<div class="tree-empty">This directory is empty.</div>';
+  } else {
+    let rows = '';
+    for (const entry of entries) {
+      if (entry.type === 'dir') {
+        rows += '<tr>'
+          + '<td><span class="tree-icon">&#128193;</span>'
+          + '<a class="entry-link" href="' + treeUrl(entry.path) + '">' + escHtml(entry.name) + '</a></td>'
+          + '<td class="tree-size"></td>'
+          + '</tr>';
+      } else {
+        rows += '<tr>'
+          + '<td><span class="tree-icon" title="' + escHtml(entry.name) + '">' + fileIconHtml(entry.name) + '</span>'
+          + '<a class="entry-link" href="' + blobUrl(entry.path) + '">' + escHtml(entry.name) + '</a></td>'
+          + '<td class="tree-size">' + fmtSize(entry.sizeBytes) + '</td>'
+          + '</tr>';
+      }
+    }
+    bodyHtml = '<table class="tree-table">'
+      + '<thead><tr><th>Name</th><th style="text-align:right">Size</th></tr></thead>'
+      + '<tbody>' + rows + '</tbody>'
+      + '</table>';
+  }
+
+  document.getElementById('content').innerHTML = headerHtml + bodyHtml;
+  loadBranches(); // populate selector now that the DOM node exists
+}
+
+// ── Fetch branch list for ref selector ───────────────────────────────────────
+async function loadBranches() {
+  try {
+    const tok = getToken ? getToken() : (localStorage.getItem('muse_token') || '');
+    const headers = tok ? { Authorization: 'Bearer ' + tok } : {};
+    const resp = await fetch(apiBase + '/branches', { headers });
+    if (!resp.ok) return;
+    const data = await resp.json();
+    const sel = document.getElementById('branch-sel');
+    if (!sel) return;
+    sel.innerHTML = '';
+    const branches = data.branches || [];
+    for (const b of branches) {
+      const opt = document.createElement('option');
+      opt.value = b.name;
+      opt.textContent = b.name;
+      if (b.name === ref) opt.selected = true;
+      sel.appendChild(opt);
+    }
+    // If current ref not in any branch (e.g. a commit SHA), add it first
+    if (!branches.some(b => b.name === ref)) {
+      const opt = document.createElement('option');
+      opt.value = ref;
+      opt.textContent = ref;
+      opt.selected = true;
+      sel.prepend(opt);
+    }
+  } catch (_) { /* branch selector is non-critical */ }
+}
+
+// ── Navigate to a different ref ───────────────────────────────────────────────
+function onRefChange(sel) {
+  const newRef = sel.value;
+  const pathSuffix = dirPath ? '/' + dirPath : '';
+  window.location.href = base + '/tree/' + encodeURIComponent(newRef) + pathSuffix;
+}
+
+// ── Load and render tree ──────────────────────────────────────────────────────
+async function loadTree() {
+  const contentEl = document.getElementById('content');
+  contentEl.innerHTML = '<div class="tree-loading">Loading tree\u2026</div>';
+  try {
+    const tok = getToken ? getToken() : (localStorage.getItem('muse_token') || '');
+    const headers = tok ? { Authorization: 'Bearer ' + tok } : {};
+    const pathSuffix = dirPath ? '/' + encodeURIComponent(dirPath) : '';
+    const qs = '?owner=' + encodeURIComponent(owner) + '&repo_slug=' + encodeURIComponent(repoSlug);
+    const url = apiBase + '/tree/' + encodeURIComponent(ref) + pathSuffix + qs;
+    const resp = await fetch(url, { headers });
+    if (resp.status === 404) {
+      contentEl.innerHTML = '<div class="tree-error">&#10060; Ref or path not found.</div>';
+      return;
+    }
+    if (!resp.ok) {
+      contentEl.innerHTML = '<div class="tree-error">&#10060; Failed to load tree (HTTP ' + resp.status + ').</div>';
+      return;
+    }
+    const data = await resp.json();
+    renderTree(data);
+  } catch (err) {
+    document.getElementById('content').innerHTML =
+      '<div class="tree-error">&#10060; ' + escHtml(String(err)) + '</div>';
+  }
+}
+
+loadTree();
+{% endraw %}
+{% endblock %}
