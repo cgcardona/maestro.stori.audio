@@ -7800,6 +7800,91 @@ ArrangementMatrixResponse(
 
 ---
 
+## Muse Hub — Blob Viewer (issue #205)
+
+**Purpose:** Music-aware file blob viewer that renders individual files from a
+Muse repo with file-type-specific treatment.  Musicians can view MIDI as a
+piano roll preview, stream audio files directly in the browser, and inspect
+JSON/XML metadata with syntax highlighting — without downloading files first.
+
+### URL Pattern
+
+| Route | Description |
+|-------|-------------|
+| `GET /musehub/ui/{owner}/{repo_slug}/blob/{ref}/{path}` | HTML blob viewer page |
+| `GET /api/v1/musehub/repos/{repo_id}/blob/{ref}/{path}` | JSON blob metadata + text content |
+
+**Auth:** No JWT required for public repos (HTML shell). Private repos require
+a Bearer token passed via `Authorization` header (API) or `localStorage` JWT (UI).
+
+### File-Type Dispatch
+
+The viewer selects a rendering mode based on the file extension:
+
+| Extension | `file_type` | Rendering |
+|-----------|-------------|-----------|
+| `.mid`, `.midi` | `midi` | Piano roll placeholder + "View in Piano Roll" quick link |
+| `.mp3`, `.wav`, `.flac`, `.ogg` | `audio` | `<audio>` player + "Listen" quick link |
+| `.json` | `json` | Syntax-highlighted JSON (keys blue, strings teal, numbers gold, bools red, nulls grey) |
+| `.webp`, `.png`, `.jpg`, `.jpeg` | `image` | Inline `<img>` on checkered background |
+| `.xml` | `xml` | Syntax-highlighted XML (MusicXML support) |
+| all others | `other` | Hex dump preview (first 512 bytes via Range request) + raw download |
+
+### File Metadata
+
+Every blob response includes:
+
+- `filename` — basename of the file (e.g. `bass.mid`)
+- `size_bytes` — file size in bytes
+- `sha` — content-addressed ID (e.g. `sha256:abc123...`)
+- `created_at` — timestamp of the most-recently-pushed version
+- `raw_url` — direct link to `/{owner}/{repo_slug}/raw/{ref}/{path}`
+- `file_type` — rendering hint (see table above)
+- `content_text` — UTF-8 content for JSON/XML files ≤ 256 KB; `null` for binary/oversized
+
+### Quick Links
+
+The blob viewer exposes contextual action links:
+
+- **Raw** — always present; links to raw download endpoint (`Content-Disposition: attachment`)
+- **View in Piano Roll** — MIDI files only; links to `/{owner}/{repo_slug}/piano-roll/{ref}/{path}`
+- **Listen** — audio files only; links to `/{owner}/{repo_slug}/listen/{ref}/{path}`
+
+### Object Resolution
+
+Object resolution uses `musehub_repository.get_object_by_path()`, which returns
+the most-recently-pushed object matching the path in the repo.  The `ref`
+parameter is validated for URL construction but does not currently filter by
+branch HEAD (MVP scope — consistent with raw and tree endpoints).
+
+### Response Shape (`BlobMetaResponse`)
+
+```json
+{
+  "objectId": "sha256:abc123...",
+  "path": "tracks/bass.mid",
+  "filename": "bass.mid",
+  "sizeBytes": 2048,
+  "sha": "sha256:abc123...",
+  "createdAt": "2025-01-15T12:00:00Z",
+  "rawUrl": "/musehub/repos/{repo_id}/raw/main/tracks/bass.mid",
+  "fileType": "midi",
+  "contentText": null
+}
+```
+
+### Implementation Map
+
+| Component | File |
+|-----------|------|
+| Template | `maestro/templates/musehub/pages/blob.html` |
+| UI handler | `maestro/api/routes/musehub/ui.py` → `blob_page()` |
+| API endpoint | `maestro/api/routes/musehub/objects.py` → `get_blob_meta()` |
+| Pydantic model | `maestro/models/musehub.py` → `BlobMetaResponse` |
+| Tests | `tests/test_musehub_ui.py` — `test_blob_*` (7 tests) |
+
+---
+
 ## MuseHub Render Pipeline — Auto-Generated Artifacts on Push
 
 ### Overview

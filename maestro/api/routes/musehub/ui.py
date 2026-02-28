@@ -37,6 +37,7 @@ Endpoint summary (repo-scoped):
   GET /musehub/ui/{owner}/{repo_slug}/insights                  -- repo insights dashboard
   GET /musehub/ui/{owner}/{repo_slug}/tree/{ref}                -- file tree browser (repo root)
   GET /musehub/ui/{owner}/{repo_slug}/tree/{ref}/{path}         -- file tree browser (subdirectory)
+  GET /musehub/ui/{owner}/{repo_slug}/blob/{ref}/{path}         -- music-aware file blob viewer
   GET /musehub/ui/{owner}/{repo_slug}/analysis/{ref}            -- analysis dashboard (all 10 dimensions at a glance)
   GET /musehub/ui/{owner}/{repo_slug}/analysis/{ref}/contour    -- melodic contour analysis
   GET /musehub/ui/{owner}/{repo_slug}/analysis/{ref}/tempo      -- tempo analysis
@@ -1583,6 +1584,54 @@ async def tree_subdir_page(
             "repo_id": repo_id,
             "ref": ref,
             "dir_path": path,
+            "base_url": base_url,
+            "current_page": "tree",
+        },
+    )
+
+
+@router.get(
+    "/{owner}/{repo_slug}/blob/{ref}/{path:path}",
+    response_class=HTMLResponse,
+    summary="Muse Hub file blob viewer — music-aware file rendering",
+)
+async def blob_page(
+    request: Request,
+    owner: str,
+    repo_slug: str,
+    ref: str,
+    path: str,
+    db: AsyncSession = Depends(get_db),
+) -> HTMLResponse:
+    """Render the music-aware blob viewer for a single file at a given ref.
+
+    Dispatches to the appropriate rendering mode based on file extension:
+    - .mid/.midi → piano roll preview with "View in Piano Roll" quick link
+    - .mp3/.wav/.flac → <audio> player with "Listen" quick link
+    - .json → syntax-highlighted, formatted JSON with collapsible sections
+    - .webp/.png/.jpg → inline <img> display
+    - .xml → syntax-highlighted XML (MusicXML support)
+    - Other → hex dump preview with raw download link
+
+    Metadata shown: filename, size, SHA, commit date.
+    Raw download button links to /{owner}/{repo_slug}/raw/{ref}/{path}.
+
+    Auth: no JWT required for public repos.  Private-repo auth is
+    handled client-side via localStorage JWT (consistent with other
+    MuseHub UI pages).
+    """
+    repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
+    filename = path.split("/")[-1] if path else ""
+    return templates.TemplateResponse(
+        request,
+        "musehub/pages/blob.html",
+        {
+            "owner": owner,
+            "repo_slug": repo_slug,
+            "repo_id": repo_id,
+            "ref": ref,
+            "file_path": path,
+            "filename": filename,
             "base_url": base_url,
             "current_page": "tree",
         },
