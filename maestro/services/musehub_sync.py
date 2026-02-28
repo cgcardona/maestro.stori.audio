@@ -36,6 +36,8 @@ from maestro.models.musehub import (
     PullResponse,
     PushResponse,
 )
+from maestro.services.musehub_embeddings import compute_embedding
+from maestro.services.musehub_qdrant import MusehubQdrantClient
 
 logger = logging.getLogger(__name__)
 
@@ -281,6 +283,68 @@ async def compute_pull_delta(
         objects=missing_objects,
         remote_head=remote_head,
     )
+
+
+def embed_push_commits(
+    *,
+    commits: list[CommitInput],
+    repo_id: str,
+    branch: str,
+    author: str,
+    is_public: bool,
+) -> None:
+    """Compute and upsert musical embeddings for a batch of pushed commits.
+
+    Called as a FastAPI BackgroundTask after a successful push so the push
+    response is not blocked by embedding computation. Errors are logged but
+    never raised — a missing embedding is recoverable (re-push or backfill),
+    whereas crashing the background task would lose the error silently.
+
+    This function is synchronous because QdrantClient is synchronous. It is
+    safe to call from an asyncio context via ``BackgroundTasks.add_task``
+    (FastAPI runs background tasks after the response in the same event loop
+    thread pool for sync callables).
+
+    Args:
+        commits: CommitInput list from the push payload.
+        repo_id: UUID of the owning repository.
+        branch: Branch name (stored in Qdrant payload for display).
+        author: Commit author identifier.
+        is_public: Whether the repo is public — controls visibility filtering.
+    """
+    if not commits:
+        return
+
+    try:
+        client = MusehubQdrantClient(
+            host=settings.qdrant_host,
+            port=settings.qdrant_port,
+        )
+        client.ensure_collection()
+
+        for commit in commits:
+            vector = compute_embedding(commit.message)
+            client.upsert_embedding(
+                commit_id=commit.commit_id,
+                repo_id=repo_id,
+                is_public=is_public,
+                vector=vector,
+                branch=branch,
+                author=commit.author or author,
+            )
+
+        logger.info(
+            "✅ Embedded %d commits for repo=%s (is_public=%s)",
+            len(commits),
+            repo_id,
+            is_public,
+        )
+    except Exception as exc:
+        logger.error(
+            "❌ Failed to embed commits for repo=%s: %s",
+            repo_id,
+            exc,
+        )
 
 
 # ---------------------------------------------------------------------------

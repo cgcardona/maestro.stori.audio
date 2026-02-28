@@ -337,6 +337,41 @@ class ObjectMetaListResponse(CamelModel):
     objects: list[ObjectMetaResponse]
 
 
+
+
+# ── Semantic search models ─────────────────────────────────────────────────────
+
+
+class SimilarCommitResponse(CamelModel):
+    """A single result from a MuseHub semantic similarity search.
+
+    The score is cosine similarity in [0.0, 1.0] — higher is more similar.
+    Results are pre-sorted descending by score.
+    """
+
+    commit_id: str = Field(..., description="Commit SHA of the matching commit")
+    repo_id: str = Field(..., description="UUID of the repo containing this commit")
+    score: float = Field(..., ge=0.0, le=1.0, description="Cosine similarity score")
+    branch: str = Field(..., description="Branch the commit lives on")
+    author: str = Field(..., description="Commit author identifier")
+
+
+class SimilarSearchResponse(CamelModel):
+    """Response for GET /musehub/search/similar.
+
+    Contains the query commit SHA and a ranked list of musically similar commits.
+    Only public repos appear in results — enforced server-side by Qdrant filter.
+    """
+
+    query_commit: str = Field(..., description="The commit SHA used as the search query")
+    results: list[SimilarCommitResponse] = Field(
+        default_factory=list,
+        description="Ranked results, most similar first",
+    )
+
+
+
+
 # ── Divergence visualization models ───────────────────────────────────────────
 
 
@@ -395,6 +430,7 @@ class ExploreRepoResult(CamelModel):
     star_count: int = 0
     commit_count: int = 0
     created_at: datetime
+
 
 # ── Profile models ────────────────────────────────────────────────────────────
 
@@ -622,6 +658,7 @@ class PullRequestEventPayload(TypedDict):
 # Union of all typed webhook event payloads.  The dispatcher accepts any of
 # these; callers pass the specific TypedDict for their event type.
 WebhookEventPayload = PushEventPayload | IssueEventPayload | PullRequestEventPayload
+
 
 # ── Context models ────────────────────────────────────────────────────────────
 

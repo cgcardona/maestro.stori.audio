@@ -1400,6 +1400,67 @@ others → `application/octet-stream`).
 
 ---
 
+
+---
+
+## Muse Hub Semantic Search
+
+### GET /api/v1/musehub/search/similar
+
+Find public commits that are musically similar to a given commit SHA using
+vector-based cosine similarity (Qdrant).  Only public repos appear in results.
+
+**Authentication:** `Authorization: Bearer <token>` required.
+
+**Query parameters:**
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `commit`  | string | ✅ | — | Commit SHA to use as the similarity query |
+| `limit`   | int | ❌ | 10 | Maximum results to return (1–50) |
+
+
+**Response (200):**
+
+```json
+{
+
+  "queryCommit": "abc123",
+  "results": [
+    {
+      "commitId": "def456",
+      "repoId": "repo-uuid",
+      "score": 0.94,
+      "branch": "main",
+      "author": "composer@stori"
+
+    }
+  ]
+}
+```
+
+
+**Result type:** `SimilarSearchResponse` — see `type_contracts.md`.
+
+**Errors:**
+- **401** — missing or invalid token
+- **404** — commit SHA not found in Muse Hub
+- **503** — Qdrant temporarily unavailable
+
+**How similarity works:** The commit message is parsed for musical metadata
+(key, tempo, mode, chord complexity) and encoded as a 128-dim L2-normalised
+feature vector. Qdrant returns the nearest vectors by cosine distance. Results
+are ranked highest-to-lowest by score (1.0 = identical, 0.0 = unrelated).
+
+**Agent use case:** After composing a jazz ballad in Db major at 72 BPM, an
+agent calls this endpoint to surface reference compositions with similar harmonic
+and tempo profiles for style study or mix-in inspiration.
+
+---
+
+
+---
+
 ## Muse Hub — Webhook Subscriptions
 
 Webhooks deliver real-time event notifications via HTTP POST to a registered
@@ -1460,10 +1521,12 @@ Register a new webhook subscription.
 
 List all registered webhooks for a repo, ordered by creation time.
 
+
 **Response (200):**
 
 ```json
 {
+
   "webhooks": [
     {
       "webhookId": "uuid",
@@ -1472,10 +1535,12 @@ List all registered webhooks for a repo, ordered by creation time.
       "events": ["push", "issue"],
       "active": true,
       "createdAt": "2026-02-27T00:00:00Z"
+
     }
   ]
 }
 ```
+
 
 **Errors:** **404** — repo not found.
 
@@ -1495,6 +1560,7 @@ Remove a webhook subscription and all its delivery history.
 ### GET /api/v1/musehub/repos/{repo_id}/webhooks/{webhook_id}/deliveries
 
 List delivery attempts for a webhook, newest first.
+
 
 ### GET /api/v1/musehub/repos/{repo_id}/export/{ref}
 
