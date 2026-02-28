@@ -1218,3 +1218,162 @@ async def test_active_session_has_null_duration(
     assert sess["isActive"] is True
     assert sess["durationSeconds"] is None
 
+async def test_contour_page_renders(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """GET /musehub/ui/{repo_id}/analysis/{ref}/contour returns 200 HTML."""
+    repo_id = await _make_repo(db_session)
+    ref = "abc1234567890abcdef"
+    response = await client.get(f"/musehub/ui/{repo_id}/analysis/{ref}/contour")
+    assert response.status_code == 200
+    assert "text/html" in response.headers["content-type"]
+
+
+@pytest.mark.anyio
+async def test_contour_page_no_auth_required(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Contour analysis page must be accessible without a JWT (HTML shell handles auth)."""
+    repo_id = await _make_repo(db_session)
+    ref = "deadbeef1234"
+    response = await client.get(f"/musehub/ui/{repo_id}/analysis/{ref}/contour")
+    assert response.status_code != 401
+    assert response.status_code == 200
+
+
+@pytest.mark.anyio
+async def test_contour_page_contains_graph_ui(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Contour page must contain pitch-curve graph, shape badge, and tessitura elements."""
+    repo_id = await _make_repo(db_session)
+    ref = "cafebabe12345678"
+    response = await client.get(f"/musehub/ui/{repo_id}/analysis/{ref}/contour")
+    assert response.status_code == 200
+    body = response.text
+    assert "Melodic Contour" in body
+    assert "pitchCurveSvg" in body or "pitchCurve" in body
+    assert "Tessitura" in body
+    assert "Shape" in body
+    assert "track-inp" in body
+    assert repo_id in body
+
+
+@pytest.mark.anyio
+async def test_contour_json_response(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+    db_session: AsyncSession,
+) -> None:
+    """GET /api/v1/musehub/repos/{repo_id}/analysis/{ref}/contour returns ContourData.
+
+    Verifies that the JSON response includes shape classification labels and
+    the pitch_curve array that the contour page visualises.
+    """
+    resp = await client.post(
+        "/api/v1/musehub/repos",
+        json={"name": "contour-test-repo", "visibility": "private"},
+        headers=auth_headers,
+    )
+    assert resp.status_code == 201
+    repo_id = resp.json()["repoId"]
+
+    resp = await client.get(
+        f"/api/v1/musehub/repos/{repo_id}/analysis/main/contour",
+        headers=auth_headers,
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["dimension"] == "contour"
+    assert body["ref"] == "main"
+    data = body["data"]
+    assert "shape" in data
+    assert "pitchCurve" in data
+    assert "overallDirection" in data
+    assert "directionChanges" in data
+    assert len(data["pitchCurve"]) > 0
+    assert data["shape"] in ("arch", "ascending", "descending", "flat", "wave")
+
+
+@pytest.mark.anyio
+async def test_tempo_page_renders(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """GET /musehub/ui/{repo_id}/analysis/{ref}/tempo returns 200 HTML."""
+    repo_id = await _make_repo(db_session)
+    ref = "abc1234567890abcdef"
+    response = await client.get(f"/musehub/ui/{repo_id}/analysis/{ref}/tempo")
+    assert response.status_code == 200
+    assert "text/html" in response.headers["content-type"]
+
+
+@pytest.mark.anyio
+async def test_tempo_page_no_auth_required(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Tempo analysis page must be accessible without a JWT (HTML shell handles auth)."""
+    repo_id = await _make_repo(db_session)
+    ref = "deadbeef5678"
+    response = await client.get(f"/musehub/ui/{repo_id}/analysis/{ref}/tempo")
+    assert response.status_code != 401
+    assert response.status_code == 200
+
+
+@pytest.mark.anyio
+async def test_tempo_page_contains_bpm_ui(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Tempo page must contain BPM display, stability bar, and tempo-change timeline."""
+    repo_id = await _make_repo(db_session)
+    ref = "feedface5678"
+    response = await client.get(f"/musehub/ui/{repo_id}/analysis/{ref}/tempo")
+    assert response.status_code == 200
+    body = response.text
+    assert "Tempo Analysis" in body
+    assert "BPM" in body
+    assert "Stability" in body
+    assert "tempoChangeSvg" in body or "tempoChanges" in body or "Tempo Changes" in body
+    assert repo_id in body
+
+
+@pytest.mark.anyio
+async def test_tempo_json_response(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+    db_session: AsyncSession,
+) -> None:
+    """GET /api/v1/musehub/repos/{repo_id}/analysis/{ref}/tempo returns TempoData.
+
+    Verifies that the JSON response includes BPM, stability, time feel, and
+    tempo_changes history that the tempo page visualises.
+    """
+    resp = await client.post(
+        "/api/v1/musehub/repos",
+        json={"name": "tempo-test-repo", "visibility": "private"},
+        headers=auth_headers,
+    )
+    assert resp.status_code == 201
+    repo_id = resp.json()["repoId"]
+
+    resp = await client.get(
+        f"/api/v1/musehub/repos/{repo_id}/analysis/main/tempo",
+        headers=auth_headers,
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["dimension"] == "tempo"
+    assert body["ref"] == "main"
+    data = body["data"]
+    assert "bpm" in data
+    assert "stability" in data
+    assert "timeFeel" in data
+    assert "tempoChanges" in data
+    assert data["bpm"] > 0
+    assert 0.0 <= data["stability"] <= 1.0
+    assert isinstance(data["tempoChanges"], list)

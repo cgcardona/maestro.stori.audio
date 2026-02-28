@@ -6945,3 +6945,104 @@ The grouped response lets the agent scan commit messages by repo context,
 identify matching repos by name and owner, and immediately fetch audio previews
 via `audioObjectId` without additional round-trips.
 ---
+
+## Muse Hub — Contour and Tempo Analysis Pages
+
+**Purpose:** Browser-readable visualisation of the two most structure-critical
+musical dimensions — melodic contour and tempo — derived from a Muse commit
+ref.  These pages close the gap between the CLI commands `muse contour` and
+`muse tempo --history` and the web-first MuseHub experience.
+
+### Contour Analysis Page
+
+**Route:** `GET /musehub/ui/{repo_id}/analysis/{ref}/contour`
+
+**Auth:** No JWT required — static HTML shell; JS fetches from the authed JSON API.
+
+**What it shows:**
+- **Shape label** — coarse melodic shape (`arch`, `ascending`, `descending`,
+  `flat`, `inverted-arch`, `wave`) rendered as a coloured badge.
+- **Pitch-curve SVG** — polyline of MIDI pitch sampled at quarter-note
+  intervals across the piece, with min/max pitch labels and beat-count axis.
+- **Tessitura bar** — horizontal range bar from lowest to highest note,
+  displaying octave span and note names (e.g. `C3` – `G5 · 2.0 oct`).
+- **Direction metadata** — `overallDirection` (up / down / flat),
+  `directionChanges` count, `peakBeat`, and `valleyBeat`.
+- **Track filter** — text input forwarded as `?track=<instrument>` to the
+  JSON API, restricting analysis to a named instrument (e.g. `lead`, `keys`).
+
+**JSON endpoint:** `GET /api/v1/musehub/repos/{repo_id}/analysis/{ref}/contour`
+
+Returns `AnalysisResponse` with `dimension = "contour"` and `data` of type
+`ContourData`:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `shape` | `str` | Coarse shape label (`arch`, `ascending`, `descending`, `flat`, `wave`) |
+| `direction_changes` | `int` | Number of melodic direction reversals |
+| `peak_beat` | `float` | Beat position of the melodic peak |
+| `valley_beat` | `float` | Beat position of the melodic valley |
+| `overall_direction` | `str` | Net direction from first to last note (`up`, `down`, `flat`) |
+| `pitch_curve` | `list[float]` | MIDI pitch sampled at quarter-note intervals |
+
+**Result type:** `ContourData` — defined in `maestro/models/musehub_analysis.py`.
+
+**Agent use case:** Before generating a melodic continuation, an AI agent
+fetches the contour page JSON to understand the shape of the existing lead
+line.  If `shape == "arch"`, the agent can elect to continue with a
+descending phrase that resolves the arch rather than restarting from the peak.
+
+### Tempo Analysis Page
+
+**Route:** `GET /musehub/ui/{repo_id}/analysis/{ref}/tempo`
+
+**Auth:** No JWT required — static HTML shell; JS fetches from the authed JSON API.
+
+**What it shows:**
+- **BPM display** — large primary tempo in beats per minute.
+- **Time feel** — perceptual descriptor (`straight`, `laid-back`, `rushing`).
+- **Stability bar** — colour-coded progress bar (green ≥ 80%, orange ≥ 50%,
+  red < 50%) with percentage and label (`metronomic` / `moderate` / `free tempo`).
+- **Tempo change timeline SVG** — polyline of BPM over beat position, with
+  orange dots marking each tempo change event.
+- **Tempo change table** — tabular list of beat → BPM transitions for precise
+  inspection.
+- **Cross-commit note** — guidance linking to the JSON API for BPM history
+  across multiple refs.
+
+**JSON endpoint:** `GET /api/v1/musehub/repos/{repo_id}/analysis/{ref}/tempo`
+
+Returns `AnalysisResponse` with `dimension = "tempo"` and `data` of type
+`TempoData`:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `bpm` | `float` | Primary (mean) BPM for the ref |
+| `stability` | `float` | 0 = free tempo, 1 = perfectly metronomic |
+| `time_feel` | `str` | `straight`, `laid-back`, or `rushing` |
+| `tempo_changes` | `list[TempoChange]` | Ordered list of beat-position → BPM transitions |
+
+`TempoChange` fields: `beat: float`, `bpm: float`.
+
+**Result type:** `TempoData`, `TempoChange` — defined in
+`maestro/models/musehub_analysis.py`.
+
+**Agent use case:** An AI agent generating a new section can query
+`/analysis/{ref}/tempo` to detect an accelerando near the end of a piece
+(`stability < 0.5`, ascending `tempo_changes`) and avoid locking the generated
+part to a rigid grid. For cross-commit BPM evolution, the agent compares
+`TempoData.bpm` across multiple refs to track tempo drift across a composition
+session.
+
+### Implementation
+
+| Layer | File | What it does |
+|-------|------|-------------|
+| Pydantic models | `maestro/models/musehub_analysis.py` | `ContourData`, `TempoData`, `TempoChange` |
+| Service | `maestro/services/musehub_analysis.py` | `compute_dimension("contour" \| "tempo", ...)` |
+| Analysis route | `maestro/api/routes/musehub/analysis.py` | `GET /repos/{id}/analysis/{ref}/contour` and `.../tempo` |
+| UI route | `maestro/api/routes/musehub/ui.py` | `contour_page()`, `tempo_page()` — HTML shells |
+| Tests | `tests/test_musehub_ui.py` | `test_contour_page_renders`, `test_contour_json_response`, `test_tempo_page_renders`, `test_tempo_json_response` |
+| Tests | `tests/test_musehub_analysis.py` | `test_contour_track_filter`, `test_tempo_section_filter` |
+
+---
