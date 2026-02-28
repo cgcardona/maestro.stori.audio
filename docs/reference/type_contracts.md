@@ -57,9 +57,19 @@ This document is the single source of truth for every named entity (TypedDict, d
     - [MCP Endpoints](#mcp-endpoints-appapiroutesmcppy)
     - [Variation Endpoints](#variation-endpoints)
     - [Conversations](#conversations-appapiroutesconversationsmodelspy)
-12. [Tempo Convention](#tempo-convention)
-13. [`Any` Status](#any-status)
-14. [Entity Hierarchy](#entity-hierarchy)
+12. [Muse Context (`maestro/services/muse_context.py`)](#muse-context-maestroservicesmuse_contextpy)
+    - [MuseHeadCommitInfo](#museheadcommitinfo)
+    - [MuseSectionDetail](#musesectiondetail)
+    - [MuseHarmonicProfile](#museharmonicprofile)
+    - [MuseDynamicProfile](#musedynamicprofile)
+    - [MuseMelodicProfile](#musemelodic profile)
+    - [MuseTrackDetail](#musetrackdetail)
+    - [MuseMusicalState](#musemusicalstate)
+    - [MuseHistoryEntry](#musehistoryentry)
+    - [MuseContextResult](#musecontextresult)
+13. [Tempo Convention](#tempo-convention)
+14. [`Any` Status](#any-status)
+15. [Entity Hierarchy](#entity-hierarchy)
 15. [Entity Graph (Mermaid)](#entity-graph-mermaid)
     - [Diagram 1 — JSON Type Universe](#diagram-1--json-type-universe)
     - [Diagram 2 — MIDI Primitives](#diagram-2--midi-primitives)
@@ -2117,6 +2127,121 @@ Minimal confirmation of a successful conversation metadata update. Contains only
 | `title` | `str` | `title` | Current title after the update |
 | `project_id` | `str \| None` | `projectId` | Linked project UUID; `null` if unlinked (`project_id: "null"` in request) |
 | `updated_at` | `str` | `updatedAt` | ISO-8601 UTC timestamp of the modification |
+
+---
+
+## Muse Context (`maestro/services/muse_context.py`)
+
+Returned by `build_muse_context()` — the primary interface between Muse VCS and AI music generation agents. All types are frozen dataclasses (immutable, hashable, serialisable via `dataclasses.asdict()`).
+
+### `MuseHeadCommitInfo`
+
+Metadata for the commit that the context document was built from.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `commit_id` | `str` | Full SHA-256 commit ID |
+| `message` | `str` | Commit message |
+| `author` | `str` | Commit author |
+| `committed_at` | `str` | ISO-8601 UTC timestamp |
+
+### `MuseSectionDetail`
+
+Per-section musical detail (populated when `--sections` is passed).
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `tracks` | `list[str]` | Track names active in this section |
+| `bars` | `int \| None` | Section length in bars (None until MIDI analysis) |
+
+### `MuseHarmonicProfile`
+
+Harmonic summary for a snapshot. All fields `None` until Storpheus integration.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `chord_progression` | `list[str] \| None` | Detected chord symbols |
+| `tension_score` | `float \| None` | 0.0 (relaxed) → 1.0 (tense) |
+| `harmonic_rhythm` | `float \| None` | Average beats per chord change |
+
+### `MuseDynamicProfile`
+
+Dynamic (velocity/intensity) summary. All fields `None` until Storpheus integration.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `avg_velocity` | `int \| None` | Mean MIDI velocity (0–127) |
+| `dynamic_arc` | `str \| None` | Shape label: `flat`, `crescendo`, `swell`, … |
+| `peak_section` | `str \| None` | Section name with highest average velocity |
+
+### `MuseMelodicProfile`
+
+Melodic contour summary. All fields `None` until Storpheus integration.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `contour` | `str \| None` | Shape label: `arch`, `ascending`, `descending`, … |
+| `range_semitones` | `int \| None` | Interval between lowest and highest note |
+| `motifs_detected` | `int \| None` | Number of recurring melodic patterns found |
+
+### `MuseTrackDetail`
+
+Per-track breakdown (populated when `--tracks` is passed).
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `track_name` | `str` | Lowercased file stem (e.g. `"drums"`) |
+| `harmonic` | `MuseHarmonicProfile` | Harmonic profile for this track |
+| `dynamic` | `MuseDynamicProfile` | Dynamic profile for this track |
+
+### `MuseMusicalState`
+
+Full musical state of the project at a given commit.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `active_tracks` | `list[str]` | Track names derived from snapshot file names (real data) |
+| `key` | `str \| None` | Key name e.g. `"Eb major"` (None until MIDI analysis) |
+| `mode` | `str \| None` | Mode name e.g. `"major"`, `"dorian"` |
+| `tempo_bpm` | `int \| None` | Beats per minute |
+| `time_signature` | `str \| None` | e.g. `"4/4"`, `"6/8"` |
+| `swing_factor` | `float \| None` | 0.5 = straight, 0.67 = triplet feel |
+| `form` | `str \| None` | e.g. `"intro-verse-chorus-outro"` |
+| `emotion` | `str \| None` | Emotional label e.g. `"uplifting"`, `"melancholic"` |
+| `sections` | `dict[str, MuseSectionDetail] \| None` | Per-section breakdown (requires `--sections`) |
+| `tracks` | `list[MuseTrackDetail] \| None` | Per-track breakdown (requires `--tracks`) |
+| `harmonic_profile` | `MuseHarmonicProfile \| None` | Aggregate harmonic profile |
+| `dynamic_profile` | `MuseDynamicProfile \| None` | Aggregate dynamic profile |
+| `melodic_profile` | `MuseMelodicProfile \| None` | Aggregate melodic profile |
+
+### `MuseHistoryEntry`
+
+A single ancestor commit in the evolutionary history of the composition.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `commit_id` | `str` | Full SHA-256 commit ID |
+| `message` | `str` | Commit message |
+| `author` | `str` | Commit author |
+| `committed_at` | `str` | ISO-8601 UTC timestamp |
+| `active_tracks` | `list[str]` | Tracks present at this commit |
+| `key` | `str \| None` | Key at this commit (None until MIDI analysis) |
+| `tempo_bpm` | `int \| None` | Tempo at this commit |
+| `emotion` | `str \| None` | Emotional label at this commit |
+
+### `MuseContextResult`
+
+The top-level document returned by `build_muse_context()`. Serialise with `.to_dict()`.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `repo_id` | `str` | UUID from `.muse/repo.json` |
+| `current_branch` | `str` | Active branch name |
+| `head_commit` | `MuseHeadCommitInfo` | Target commit metadata |
+| `musical_state` | `MuseMusicalState` | Current musical state |
+| `history` | `list[MuseHistoryEntry]` | Ancestor commits (newest-first, bounded by `--depth`) |
+| `missing_elements` | `list[str]` | Suggested missing elements (currently empty; future LLM analysis) |
+| `suggestions` | `dict[str, str]` | Keyed suggestions (currently empty; future LLM analysis) |
 
 ---
 

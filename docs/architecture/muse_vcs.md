@@ -1842,3 +1842,153 @@ texture — letting the agent reuse, invert, or contrast those ideas.  The
 > scoring function will be replaced with no change to the CLI interface.
 
 ---
+## `muse dynamics` — Dynamic (Velocity) Profile Analysis
+
+**Purpose:** Analyze the velocity (loudness) profile of a commit across all instrument
+tracks. The primary tool for understanding the dynamic arc of an arrangement and
+detecting flat, robotic, or over-compressed MIDI.
+
+**Usage:**
+```bash
+muse dynamics [<commit>] [OPTIONS]
+```
+
+**Flags:**
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `COMMIT` | positional | HEAD | Commit ref to analyze |
+| `--track TEXT` | string | all tracks | Case-insensitive prefix filter (e.g. `--track bass`) |
+| `--section TEXT` | string | — | Restrict to a named section/region (planned) |
+| `--compare COMMIT` | string | — | Side-by-side comparison with another commit (planned) |
+| `--history` | flag | off | Show dynamics for every commit in branch history (planned) |
+| `--peak` | flag | off | Show only tracks whose peak velocity exceeds the branch average |
+| `--range` | flag | off | Sort output by velocity range descending |
+| `--arc` | flag | off | When combined with `--track`, treat its value as an arc label filter |
+| `--json` | flag | off | Emit structured JSON for agent consumption |
+
+**Arc labels:**
+
+| Label | Meaning |
+|-------|---------|
+| `flat` | Velocity variance < 10; steady throughout |
+| `crescendo` | Monotonically rising from start to end |
+| `decrescendo` | Monotonically falling from start to end |
+| `terraced` | Step-wise plateaus; sudden jumps between stable levels |
+| `swell` | Rises then falls (arch shape) |
+
+**Output example (text):**
+```
+Dynamic profile — commit a1b2c3d4  (HEAD -> main)
+
+Track      Avg Vel  Peak  Range  Arc
+---------  -------  ----  -----  -----------
+drums           88   110     42  terraced
+bass            72    85     28  flat
+keys            64    95     56  crescendo
+lead            79   105     38  swell
+```
+
+**Output example (`--json`):**
+```json
+{
+  "commit": "a1b2c3d4",
+  "branch": "main",
+  "tracks": [
+    {"track": "drums", "avg_velocity": 88, "peak_velocity": 110, "velocity_range": 42, "arc": "terraced"}
+  ]
+}
+```
+
+**Result type:** `TrackDynamics` — fields: `name`, `avg_velocity`, `peak_velocity`, `velocity_range`, `arc`
+
+**Agent use case:** Before generating a new layer, an agent calls `muse dynamics --json` to understand the current velocity landscape. If the arrangement is `flat` across all tracks, the agent adds velocity variation to the new part. If the arc is `crescendo`, the agent ensures the new layer contributes to rather than fights the build.
+
+**Implementation:** `maestro/muse_cli/commands/dynamics.py` — `_dynamics_async` (injectable async core), `TrackDynamics` (result entity), `_render_table` / `_render_json` (renderers). Exit codes: 0 success, 2 outside repo, 3 internal.
+
+> **Stub note:** Arc classification and velocity statistics are placeholder values. Full implementation requires MIDI note velocity extraction from committed snapshot objects (future: Storpheus MIDI parse route).
+
+---
+
+## `muse context` — Structured Musical Context for AI Agents
+
+**Purpose:** Output a structured, self-contained musical context document for AI agent consumption. This is the **primary interface between Muse VCS and AI music generation agents** — agents run `muse context` before any generation task to understand the current key, tempo, active tracks, form, harmonic profile, and evolutionary history of the composition.
+
+**Usage:**
+```bash
+muse context [<commit>] [OPTIONS]
+```
+
+**Flags:**
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `<commit>` | positional | HEAD | Target commit ID to inspect |
+| `--depth N` | int | 5 | Number of ancestor commits to include in `history` |
+| `--sections` | flag | off | Expand section-level detail in `musical_state.sections` |
+| `--tracks` | flag | off | Add per-track harmonic and dynamic breakdowns |
+| `--include-history` | flag | off | Annotate history entries with dimensional deltas (future Storpheus integration) |
+| `--format json\|yaml` | string | json | Output format |
+
+**Output example (`--format json`):**
+```json
+{
+  "repo_id": "a1b2c3d4-...",
+  "current_branch": "main",
+  "head_commit": {
+    "commit_id": "abc1234...",
+    "message": "Add piano melody to verse",
+    "author": "Gabriel",
+    "committed_at": "2026-02-27T22:00:00+00:00"
+  },
+  "musical_state": {
+    "active_tracks": ["bass", "drums", "piano"],
+    "key": null,
+    "tempo_bpm": null,
+    "sections": null,
+    "tracks": null
+  },
+  "history": [
+    {
+      "commit_id": "...",
+      "message": "Add bass line",
+      "active_tracks": ["bass", "drums"],
+      "key": null,
+      "tempo_bpm": null
+    }
+  ],
+  "missing_elements": [],
+  "suggestions": {}
+}
+```
+
+**Result type:** `MuseContextResult` — fields: `repo_id`, `current_branch`, `head_commit` (`MuseHeadCommitInfo`), `musical_state` (`MuseMusicalState`), `history` (`list[MuseHistoryEntry]`), `missing_elements`, `suggestions`. See `docs/reference/type_contracts.md`.
+
+**Agent use case:** When Maestro receives a "generate a new section" request, it runs `muse context --format json` to obtain the current musical state, passes the result to the LLM, and the LLM generates music that is harmonically, rhythmically, and structurally coherent with the existing composition. Without this command, generation decisions are musically incoherent.
+
+**Implementation notes:**
+- `active_tracks` is populated from MIDI/audio file names in the snapshot manifest (real data).
+- Musical dimensions (`key`, `tempo_bpm`, `form`, `emotion`, harmonic/dynamic/melodic profiles) are `null` until Storpheus MIDI analysis is integrated. The full schema is defined and stable.
+- `sections` and `tracks` are populated when the respective flags are passed; sections currently use a single "main" stub section containing all active tracks until MIDI region metadata is available.
+- Output is **deterministic**: for the same `commit_id` and flags, the output is always identical.
+
+**Implementation:** `maestro/services/muse_context.py` (service layer), `maestro/muse_cli/commands/context.py` (CLI command). Exit codes: 0 success, 1 user error (bad commit, no commits), 2 outside repo, 3 internal.
+
+---
+
+## Command Registration Summary
+
+| Command | File | Status | Issue |
+|---------|------|--------|-------|
+| `muse ask` | `commands/ask.py` | ✅ stub (PR #132) | #126 |
+| `muse context` | `commands/context.py` | ✅ implemented (PR #138) | #113 |
+| `muse describe` | `commands/describe.py` | ✅ stub (PR #134) | #125 |
+| `muse dynamics` | `commands/dynamics.py` | ✅ stub (PR #130) | #120 |
+| `muse grep` | `commands/grep_cmd.py` | ✅ stub (PR #128) | #124 |
+| `muse recall` | `commands/recall.py` | ✅ stub (PR #135) | #122 |
+| `muse session` | `commands/session.py` | ✅ implemented (PR #129) | #127 |
+| `muse swing` | `commands/swing.py` | ✅ stub (PR #131) | #121 |
+| `muse tag` | `commands/tag.py` | ✅ implemented (PR #133) | #123 |
+
+All stub commands have stable CLI contracts. Full musical analysis (MIDI content
+parsing, vector embeddings, LLM synthesis) is tracked as follow-up issues.
