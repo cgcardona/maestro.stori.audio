@@ -1,17 +1,23 @@
-"""Muse Hub repo, branch, commit, and agent context route handlers.
+"""Muse Hub repo, branch, commit, credits, and agent context route handlers.
 
 Endpoint summary:
-  POST /musehub/repos                              — create a new remote repo
-  GET  /musehub/repos/{repo_id}                   — get repo metadata (by internal UUID)
-  GET  /musehub/{owner}/{repo_slug}               — get repo metadata (by owner/slug)
-  GET  /musehub/repos/{repo_id}/branches          — list all branches
-  GET  /musehub/repos/{repo_id}/commits           — list commits (newest first)
-  GET  /musehub/repos/{repo_id}/timeline          — chronological timeline with emotion/section/track layers
-  GET  /musehub/repos/{repo_id}/context           — agent context briefing
+  POST /musehub/repos                                      — create a new remote repo
+  GET  /musehub/repos/{repo_id}                           — get repo metadata (by internal UUID)
+  GET  /musehub/{owner}/{repo_slug}                       — get repo metadata (by owner/slug)
+  GET  /musehub/repos/{repo_id}/branches                  — list all branches
+  GET  /musehub/repos/{repo_id}/commits                   — list commits (newest first)
+  GET  /musehub/repos/{repo_id}/credits                   — aggregated contributor credits
+  GET  /musehub/repos/{repo_id}/context                   — agent context briefing
+  GET  /musehub/repos/{repo_id}/timeline                  — chronological timeline with emotion/section/track layers
+  GET  /musehub/repos/{repo_id}/form-structure/{ref}      — form and structure analysis
+  POST /musehub/repos/{repo_id}/sessions                  — push a recording session
+  GET  /musehub/repos/{repo_id}/sessions                  — list recording sessions
+  GET  /musehub/repos/{repo_id}/sessions/{session_id}     — get a single session
 
 All endpoints require a valid JWT Bearer token.
 No business logic lives here — all persistence is delegated to
-maestro.services.musehub_repository and maestro.services.musehub_context.
+maestro.services.musehub_repository, maestro.services.musehub_credits,
+and maestro.services.musehub_context.
 """
 from __future__ import annotations
 
@@ -44,11 +50,12 @@ from maestro.models.musehub import (
     SessionResponse,
     SessionStop,
 )
+from maestro.models.musehub_analysis import FormStructureResponse
 from maestro.models.musehub_context import (
     ContextDepth,
     ContextFormat,
 )
-from maestro.services import musehub_context, musehub_credits, musehub_divergence, musehub_releases, musehub_repository
+from maestro.services import musehub_analysis, musehub_context, musehub_credits, musehub_divergence, musehub_releases, musehub_repository, musehub_sessions
 from maestro.services.muse_groove_check import (
     DEFAULT_THRESHOLD,
     compute_groove_check,
@@ -460,6 +467,40 @@ async def get_commit_dag(
     repo = await musehub_repository.get_repo(db, repo_id)
     _guard_visibility(repo, claims)
     return await musehub_repository.list_commits_dag(db, repo_id)
+
+
+@router.get(
+    "/repos/{repo_id}/form-structure/{ref}",
+    response_model=FormStructureResponse,
+    summary="Get form and structure analysis for a commit ref",
+)
+async def get_form_structure(
+    repo_id: str,
+    ref: str,
+    db: AsyncSession = Depends(get_db),
+    _: TokenClaims = Depends(require_valid_token),
+) -> FormStructureResponse:
+    """Return combined form and structure analysis for the given commit ref.
+
+    Combines three complementary structural views of the piece's formal
+    architecture in a single response, optimised for the MuseHub
+    form-structure UI page:
+
+    - ``sectionMap``: timeline of sections with bar ranges and colour hints
+    - ``repetitionStructure``: which sections repeat and how often
+    - ``sectionComparison``: pairwise similarity heatmap for all sections
+
+    Agents use this as the structural context document before generating
+    a new section — it answers "where am I in the form?" and "what sounds
+    like what?" without requiring multiple analysis requests.
+
+    Returns 404 if the repo does not exist.
+    """
+    repo = await musehub_repository.get_repo(db, repo_id)
+    if repo is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repo not found")
+
+    return musehub_analysis.compute_form_structure(repo_id=repo_id, ref=ref)
 
 
 @router.post(
