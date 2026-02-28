@@ -2,9 +2,9 @@
 
 Entry point for the ``muse`` console script. Registers all MVP
 subcommands (arrange, ask, checkout, commit, context, describe, divergence,
-dynamics, emotion_diff, export, find, grep, import, init, log, merge, meter,
-open, play, pull, push, recall, remote, session, status, swing, tag, tempo)
-as Typer sub-applications.
+dynamics, emotion_diff, export, find, form, grep, import, init, log, merge,
+meter, open, play, pull, push, recall, remote, session, similarity, status,
+swing, tag, tempo) as Typer sub-applications.
 """
 from __future__ import annotations
 
@@ -22,6 +22,7 @@ from maestro.muse_cli.commands import (
     emotion_diff,
     export,
     find,
+    form,
     grep_cmd,
     import_cmd,
     init,
@@ -35,6 +36,7 @@ from maestro.muse_cli.commands import (
     recall,
     remote,
     session,
+    similarity,
     status,
     swing,
     tag,
@@ -54,6 +56,7 @@ cli.add_typer(commit.app, name="commit", help="Record a new variation in history
 cli.add_typer(grep_cmd.app, name="grep", help="Search for a musical pattern across all commits.")
 cli.add_typer(log.app, name="log", help="Display the variation history graph.")
 cli.add_typer(find.app, name="find", help="Search commit history by musical properties.")
+cli.add_typer(form.app, name="form", help="Analyze and display the musical form of a commit.")
 cli.add_typer(checkout.app, name="checkout", help="Checkout a historical variation.")
 cli.add_typer(merge.app, name="merge", help="Three-way merge two variation branches.")
 cli.add_typer(remote.app, name="remote", help="Manage remote server connections.")
@@ -72,6 +75,7 @@ cli.add_typer(tag.app, name="tag", help="Attach and query music-semantic tags on
 cli.add_typer(import_cmd.app, name="import", help="Import a MIDI or MusicXML file as a new Muse commit.")
 cli.add_typer(tempo.app, name="tempo", help="Read or set the tempo (BPM) of a commit.")
 cli.add_typer(recall.app, name="recall", help="Search commit history by natural-language description.")
+cli.add_typer(similarity.app, name="similarity", help="Compute musical similarity score between two commits.")
 cli.add_typer(context.app, name="context", help="Output structured musical context for AI agent consumption.")
 cli.add_typer(divergence.app, name="divergence", help="Show how two branches have diverged musically.")
 cli.add_typer(emotion_diff.app, name="emotion-diff", help="Compare emotion vectors between two commits.")

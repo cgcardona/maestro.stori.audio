@@ -2397,6 +2397,54 @@ Named result types for Muse CLI commands. All types are `TypedDict` subclasses
 defined in their respective command modules and returned from the injectable
 async core functions (the testable layer that Typer commands wrap).
 
+### `FormSection`
+
+**Module:** `maestro/muse_cli/commands/form.py`
+
+A single structural unit within a detected or annotated musical form.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `label` | `str` | Display label for this section (e.g. `"intro"`, `"A"`, `"chorus"`) |
+| `role` | `str` | Semantic role; one of the ROLE_LABELS vocabulary or the label itself for letter-only sections |
+| `index` | `int` | Zero-based position in the section sequence |
+
+**Producer:** `_stub_form_sections()`, `_form_set_async()`
+**Consumer:** `FormAnalysisResult.sections`, `_render_form_text()`, `_render_map_text()`
+
+### `FormAnalysisResult`
+
+**Module:** `maestro/muse_cli/commands/form.py`
+
+Full form analysis for one commit. The stable schema returned by all form
+detection and annotation functions.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `commit` | `str` | Resolved commit SHA (8-char) or empty string for working-tree annotations |
+| `branch` | `str` | Current branch name |
+| `form_string` | `str` | Pipe-separated sequence of section labels, e.g. `"intro \| A \| B \| A \| outro"` |
+| `sections` | `list[FormSection]` | Ordered list of section entries |
+| `source` | `str` | `"stub"` (placeholder analysis) or `"annotation"` (explicit `--set`) |
+
+**Producer:** `_form_detect_async()`, `_form_set_async()`
+**Consumer:** `form()` Typer command, `_render_form_text()`, `_render_map_text()`, `FormHistoryEntry.result`
+
+### `FormHistoryEntry`
+
+**Module:** `maestro/muse_cli/commands/form.py`
+
+A form analysis result paired with its position in the commit history.
+Used by `_form_history_async()` to return a ranked list of structural changes.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `position` | `int` | 1-based rank in the history list (1 = newest) |
+| `result` | `FormAnalysisResult` | Full form analysis for this commit |
+
+**Producer:** `_form_history_async()`
+**Consumer:** `form()` Typer command via `--history`, `_render_history_text()`
+
 ### `SwingDetectResult`
 
 **Module:** `maestro/muse_cli/commands/swing.py`
@@ -2484,6 +2532,46 @@ commit that scored at or above the `--threshold` keyword-overlap cutoff.
 
 **Producer:** `_recall_async()`
 **Consumer:** `_render_results()`, callers using `--json` output
+
+---
+
+### `DimensionScore`
+
+**Module:** `maestro/muse_cli/commands/similarity.py`
+
+Per-dimension musical similarity score between two commits.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `dimension` | `str` | One of: `harmonic`, `rhythmic`, `melodic`, `structural`, `dynamic` |
+| `score` | `float` | Normalized similarity ∈ [0.0, 1.0]; 1.0 = identical, 0.0 = completely different |
+| `note` | `str` | Brief human-readable interpretation of the difference |
+
+**Producer:** `_stub_dimension_scores()`
+**Consumer:** `build_similarity_result()`, `render_similarity_text()`, `render_similarity_json()`
+
+---
+
+### `SimilarityResult`
+
+**Module:** `maestro/muse_cli/commands/similarity.py`
+
+Overall similarity comparison between two commits across all requested dimensions.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `commit_a` | `str` | First commit ref as provided by the caller |
+| `commit_b` | `str` | Second commit ref as provided by the caller |
+| `dimensions` | `list[DimensionScore]` | Per-dimension scores (may be a subset if `--dimensions` filtered) |
+| `overall` | `float` | Weighted overall similarity ∈ [0.0, 1.0], rounded to 4 decimal places |
+| `label` | `str` | Human-readable summary (e.g. `"Significantly different — major rework"`) |
+| `max_divergence` | `str` | Dimension name with the lowest score (greatest creative change) |
+
+**Dimension weights:** harmonic=0.25, melodic=0.25, rhythmic=0.20, structural=0.15, dynamic=0.15.
+When a subset of dimensions is requested, weights are renormalized over the requested set.
+
+**Producer:** `build_similarity_result()`
+**Consumer:** `render_similarity_text()`, `render_similarity_json()`, `_similarity_async()`
 
 ---
 
