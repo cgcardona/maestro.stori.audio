@@ -150,6 +150,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from maestro.db.musehub_models import (
     MusehubBranch,
     MusehubCommit,
+    MusehubFork,
     MusehubObject,
     MusehubProfile,
     MusehubRelease,
@@ -1878,6 +1879,118 @@ async def test_profile_page_unknown_user_renders_404_inline(
     # The HTML shell always returns 200 — the JS fetches and handles the API 404
     assert response.status_code == 200
     assert "text/html" in response.headers["content-type"]
+
+
+# ---------------------------------------------------------------------------
+# Forked repos endpoint tests (issue #303)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.anyio
+async def test_profile_forked_repos_empty_list(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """GET /api/v1/musehub/users/{username}/forks returns empty list when user has no forks."""
+    await _make_profile(db_session, "freshuser")
+    response = await client.get("/api/v1/musehub/users/freshuser/forks")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["forks"] == []
+    assert data["total"] == 0
+
+
+@pytest.mark.anyio
+async def test_profile_forked_repos_returns_forks(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """GET /api/v1/musehub/users/{username}/forks returns forked repos with source attribution."""
+    await _make_profile(db_session, "forkuser")
+
+    # Seed a source repo owned by another user
+    source = MusehubRepo(
+        name="original-track",
+        owner="original-owner",
+        slug="original-track",
+        visibility="public",
+        owner_user_id="original-owner-id",
+    )
+    db_session.add(source)
+    await db_session.commit()
+    await db_session.refresh(source)
+
+    # Seed the fork repo owned by forkuser
+    fork_repo = MusehubRepo(
+        name="original-track",
+        owner="forkuser",
+        slug="original-track",
+        visibility="public",
+        owner_user_id=_TEST_USER_ID,
+    )
+    db_session.add(fork_repo)
+    await db_session.commit()
+    await db_session.refresh(fork_repo)
+
+    # Seed the fork relationship
+    fork = MusehubFork(
+        source_repo_id=source.repo_id,
+        fork_repo_id=fork_repo.repo_id,
+        forked_by="forkuser",
+    )
+    db_session.add(fork)
+    await db_session.commit()
+
+    response = await client.get("/api/v1/musehub/users/forkuser/forks")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["total"] == 1
+    assert len(data["forks"]) == 1
+    entry = data["forks"][0]
+    assert entry["sourceOwner"] == "original-owner"
+    assert entry["sourceSlug"] == "original-track"
+    assert entry["forkRepo"]["owner"] == "forkuser"
+    assert entry["forkRepo"]["slug"] == "original-track"
+    assert "forkId" in entry
+    assert "forkedAt" in entry
+
+
+@pytest.mark.anyio
+async def test_profile_forked_repos_404_for_unknown_user(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """GET /api/v1/musehub/users/{unknown}/forks returns 404 when user doesn't exist."""
+    response = await client.get("/api/v1/musehub/users/ghost-no-profile/forks")
+    assert response.status_code == 404
+
+
+@pytest.mark.anyio
+async def test_profile_forked_repos_no_auth_required(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """GET /api/v1/musehub/users/{username}/forks is publicly accessible without a JWT."""
+    await _make_profile(db_session, "public-forkuser")
+    response = await client.get("/api/v1/musehub/users/public-forkuser/forks")
+    assert response.status_code == 200
+    assert response.status_code != 401
+
+
+@pytest.mark.anyio
+async def test_profile_page_has_forked_section_js(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Profile HTML page includes the forked repos JS (loadForkedRepos, forked-section)."""
+    await _make_profile(db_session, "jsforkuser")
+    response = await client.get("/musehub/ui/users/jsforkuser")
+    assert response.status_code == 200
+    body = response.text
+    assert "loadForkedRepos" in body
+    assert "forked-section" in body
+    assert "API_FORKS" in body
+    assert "forked from" in body
 
 
 @pytest.mark.anyio

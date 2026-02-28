@@ -1964,6 +1964,31 @@ class ForkCreateResponse(CamelModel):
     source_slug: str = Field(..., description="Slug of the source repo")
 
 
+class UserForkedRepoEntry(CamelModel):
+    """A single forked repo entry shown on a user's profile Forked tab.
+
+    Combines the fork repo's full metadata with source attribution so the
+    profile page can render "forked from {source_owner}/{source_slug}" under
+    each card.
+    """
+
+    fork_id: str = Field(..., description="Internal UUID of the fork relationship record")
+    fork_repo: RepoResponse = Field(..., description="Full metadata of the forked (child) repo")
+    source_owner: str = Field(..., description="Owner username of the original source repo")
+    source_slug: str = Field(..., description="Slug of the original source repo")
+    forked_at: datetime = Field(..., description="Timestamp when the fork was created (ISO-8601 UTC)")
+
+
+class UserForksResponse(CamelModel):
+    """Paginated list of repos forked by a user.
+
+    Returned by ``GET /api/v1/musehub/users/{username}/forks``.
+    """
+
+    forks: list[UserForkedRepoEntry] = Field(..., description="Repos forked by this user")
+    total: int = Field(..., description="Total number of forked repos")
+
+
 # ── Render pipeline ────────────────────────────────────────────────────────
 
 

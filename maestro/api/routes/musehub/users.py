@@ -1,14 +1,15 @@
 """Muse Hub user-profile route handlers (JSON API).
 
 Endpoint summary:
-  GET  /musehub/users/{username}  — fetch full profile (public, no JWT required)
-  POST /musehub/users             — create a profile for the authenticated user
-  PUT  /musehub/users/{username}  — update bio/avatar/pinned repos (owner only)
+  GET  /musehub/users/{username}        — fetch full profile (public, no JWT required)
+  GET  /musehub/users/{username}/forks  — list repos forked by this user (public)
+  POST /musehub/users                   — create a profile for the authenticated user
+  PUT  /musehub/users/{username}        — update bio/avatar/pinned repos (owner only)
 
 Content negotiation: all endpoints return JSON.  The browser UI fetches from
 these endpoints using the client-side JWT stored in localStorage.
 
-The GET endpoint is intentionally unauthenticated so that profile pages are
+The GET endpoints are intentionally unauthenticated so that profile pages are
 publicly discoverable without login — matching the behaviour of GitHub profiles.
 """
 from __future__ import annotations
@@ -16,15 +17,19 @@ from __future__ import annotations
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import aliased
 
 from pydantic import Field
 
 from maestro.auth.dependencies import TokenClaims, require_valid_token
 from maestro.db import get_db
+from maestro.db.musehub_models import MusehubFork, MusehubRepo
 from maestro.models.base import CamelModel
-from maestro.models.musehub import ProfileResponse, ProfileUpdateRequest
+from maestro.models.musehub import ProfileResponse, ProfileUpdateRequest, UserForkedRepoEntry, UserForksResponse
 from maestro.services import musehub_profile as profile_svc
+from maestro.services.musehub_repository import _to_repo_response
 
 logger = logging.getLogger(__name__)
 
@@ -74,6 +79,61 @@ async def get_user_profile(
         )
     logger.info("✅ Served profile for username=%s", username)
     return profile
+
+
+@router.get(
+    "/users/{username}/forks",
+    response_model=UserForksResponse,
+    operation_id="getUserForks",
+    summary="List repos forked by a user (public)",
+)
+async def get_user_forks(
+    username: str,
+    db: AsyncSession = Depends(get_db),
+) -> UserForksResponse:
+    """Return all repos that ``username`` has forked, with source attribution.
+
+    Joins ``musehub_forks`` (where ``forked_by`` matches the given username)
+    with ``musehub_repos`` twice — once for the fork repo metadata and once
+    for the source repo's owner/slug so the profile page can render
+    "forked from {source_owner}/{source_slug}" under each card.
+
+    No JWT required — the forked tab is publicly visible on profile pages.
+    Returns 404 when the username does not exist.
+    """
+    profile = await profile_svc.get_profile_by_username(db, username)
+    if profile is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"No profile found for username '{username}'",
+        )
+
+    ForkRepo = aliased(MusehubRepo, name="fork_repo")
+    SourceRepo = aliased(MusehubRepo, name="source_repo")
+
+    rows = (
+        await db.execute(
+            select(MusehubFork, ForkRepo, SourceRepo)
+            .join(ForkRepo, MusehubFork.fork_repo_id == ForkRepo.repo_id)
+            .join(SourceRepo, MusehubFork.source_repo_id == SourceRepo.repo_id)
+            .where(MusehubFork.forked_by == username)
+            .order_by(MusehubFork.created_at.desc())
+        )
+    ).all()
+
+    entries = [
+        UserForkedRepoEntry(
+            fork_id=fork.fork_id,
+            fork_repo=_to_repo_response(fork_repo),
+            source_owner=source_repo.owner,
+            source_slug=source_repo.slug,
+            forked_at=fork.created_at,
+        )
+        for fork, fork_repo, source_repo in rows
+    ]
+
+    logger.info("✅ Served %d forks for username=%s", len(entries), username)
+    return UserForksResponse(forks=entries, total=len(entries))
 
 
 @router.post(
