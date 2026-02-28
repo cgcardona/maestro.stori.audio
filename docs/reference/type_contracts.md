@@ -5977,6 +5977,38 @@ Wrapper returned by `GET /api/v1/musehub/repos/{repo_id}/objects`.
 **Producer:** `objects.list_objects` route handler
 **Consumer:** Muse Hub web UI; any agent inspecting which artifacts are available for a repo
 
+### `ContributorCredits`
+
+Defined in `maestro/models/musehub.py`.
+
+One contributor record aggregated from all commits attributed to a single author.  Part of `CreditsResponse`.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `author` | `str` | Author name (from commit record) |
+| `session_count` | `int` | Total commits by this author in the repo |
+| `contribution_types` | `list[str]` | Inferred roles (composer, arranger, producer, etc.) |
+| `first_active` | `datetime` | Timestamp of earliest commit |
+| `last_active` | `datetime` | Timestamp of most recent commit |
+
+**Producer:** `musehub_credits.aggregate_credits()` → `repos.get_credits` route handler
+**Consumer:** Muse Hub credits page UI; any agent generating liner notes or attribution summaries
+
+### `CreditsResponse`
+
+Defined in `maestro/models/musehub.py`.
+
+Full contributor roll for a Muse Hub repo.  Returned by `GET /api/v1/musehub/repos/{repo_id}/credits`.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `repo_id` | `str` | Target repo ID |
+| `contributors` | `list[ContributorCredits]` | All contributors, sorted per `sort` |
+| `sort` | `str` | Echoed sort order (`count`, `recency`, or `alpha`) |
+| `total_contributors` | `int` | Total number of distinct contributors |
+
+**Producer:** `musehub_credits.aggregate_credits()` → `repos.get_credits` route handler
+**Consumer:** Muse Hub credits page UI; AI agents generating liner notes, release attribution, or schema.org `MusicComposition` JSON-LD
 ### `MuseHubContextCommitInfo`
 
 Minimal commit metadata nested inside `MuseHubContextResponse`.
@@ -6069,6 +6101,54 @@ Defined in `maestro/models/musehub.py`.
 
 **Producer:** `search.search_repo` route handler
 **Consumer:** Muse Hub search page (renders result rows); AI agents finding commits by musical property
+
+### `DagNode`
+
+A single commit node in the repo's directed acyclic graph. Defined in `maestro/models/musehub.py`.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `commit_id` | `str` | Full commit SHA |
+| `message` | `str` | Commit message |
+| `author` | `str` | Author display name |
+| `timestamp` | `datetime` | UTC commit timestamp |
+| `branch` | `str` | Branch the commit was pushed from |
+| `parent_ids` | `list[str]` | Parent commit SHAs (empty for root commits; two entries for merge commits) |
+| `is_head` | `bool` | `True` if this commit is the current HEAD |
+| `branch_labels` | `list[str]` | Branch ref names pointing at this commit |
+| `tag_labels` | `list[str]` | Tag ref names pointing at this commit |
+
+**Producer:** `musehub_repository.list_commits_dag()` → `repos.get_commit_dag` route handler
+**Consumer:** Interactive DAG graph renderer in `GET /musehub/ui/{repo_id}/graph`; AI agents reasoning about branching topology
+
+### `DagEdge`
+
+A directed edge in the commit DAG. Defined in `maestro/models/musehub.py`.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `source` | `str` | Child commit ID (the one that has the parent) |
+| `target` | `str` | Parent commit ID |
+
+Convention: edges flow child → parent (newest to oldest). This matches standard directed graph convention where arrows point toward ancestors.
+
+**Producer:** `musehub_repository.list_commits_dag()`
+**Consumer:** Graph renderer; agents computing reachability or common ancestors
+
+### `DagGraphResponse`
+
+Topologically sorted commit graph for a Muse Hub repo. Defined in `maestro/models/musehub.py`.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `nodes` | `list[DagNode]` | Commits in Kahn topological order (oldest ancestor first) |
+| `edges` | `list[DagEdge]` | All parent-child relationships in the graph |
+| `head_commit_id` | `str \| None` | SHA of the current HEAD commit |
+
+Returned by `GET /api/v1/musehub/repos/{repo_id}/dag`.
+
+**Producer:** `repos.get_commit_dag` route handler
+**Consumer:** Interactive DAG graph UI page; AI agents inspecting project history topology
 
 ---
 
@@ -6287,6 +6367,32 @@ if state is not None and state.conflict_paths:
 - `apply_resolution(root, rel_path, object_id)` — copies an object from the local store to `muse-work/`; used by `--theirs` resolution and `--abort`.
 - `is_conflict_resolved(merge_state, rel_path)` — returns `True` if `rel_path` is not in `conflict_paths`.
 
+
+---
+
+## Muse Hub — Cross-Repo Search Types (`maestro/models/musehub.py`)
+
+### `GlobalSearchCommitMatch`
+
+Pydantic model (`CamelModel`) representing a single commit that matched a
+cross-repo search query.  Returned inside `GlobalSearchRepoGroup.matches`.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `commit_id` | `str` | Commit SHA |
+| `message` | `str` | Commit message |
+| `author` | `str` | Author identifier |
+| `branch` | `str` | Branch the commit lives on |
+| `timestamp` | `datetime` | Commit timestamp (UTC) |
+| `repo_id` | `str` | Owning repo UUID |
+| `repo_name` | `str` | Human-readable repo name |
+| `repo_owner` | `str` | Owner user ID |
+| `repo_visibility` | `str` | Always `"public"` (private repos are excluded) |
+| `audio_object_id` | `str \| None` | First `.mp3`/`.ogg`/`.wav` object ID in the repo, if any |
+
+### `GlobalSearchRepoGroup`
+
+Pydantic model grouping all matching commits for a single public repo.
 ---
 
 ## `ReleaseCreate`
@@ -6455,6 +6561,26 @@ Top-level response from `GET /musehub/repos/{repo_id}/context`. Self-contained: 
 | Field | Type | Description |
 |-------|------|-------------|
 | `repo_id` | `str` | Repo UUID |
+| `repo_name` | `str` | Human-readable repo name |
+| `repo_owner` | `str` | Owner user ID |
+| `repo_visibility` | `str` | Always `"public"` |
+| `matches` | `list[GlobalSearchCommitMatch]` | Up to 20 matching commits, newest-first |
+| `total_matches` | `int` | Actual match count before the 20-commit cap |
+
+### `GlobalSearchResult`
+
+Top-level response model for `GET /api/v1/musehub/search`.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `query` | `str` | Original query string |
+| `mode` | `str` | `"keyword"` or `"pattern"` |
+| `groups` | `list[GlobalSearchRepoGroup]` | One entry per matching public repo (paginated) |
+| `total_repos_searched` | `int` | Count of public repos scanned (not just repos with matches) |
+| `page` | `int` | Current page number (1-based) |
+| `page_size` | `int` | Repo-groups per page |
+
+**Service function:** `musehub_repository.global_search(session, *, query, mode, page, page_size)`
 | `ref` | `str` | Resolved branch name or commit ID |
 | `depth` | `str` | Depth level used |
 | `musical_state` | `MusicalStateContext` | Current musical state |

@@ -1,15 +1,17 @@
-"""Muse Hub repo, branch, commit, and agent context route handlers.
+"""Muse Hub repo, branch, commit, credits, and agent context route handlers.
 
 Endpoint summary:
   POST /musehub/repos                              — create a new remote repo
   GET  /musehub/repos/{repo_id}                   — get repo metadata
   GET  /musehub/repos/{repo_id}/branches          — list all branches
   GET  /musehub/repos/{repo_id}/commits           — list commits (newest first)
+  GET  /musehub/repos/{repo_id}/credits           — aggregated contributor credits
   GET  /musehub/repos/{repo_id}/context           — agent context briefing
 
 All endpoints require a valid JWT Bearer token.
 No business logic lives here — all persistence is delegated to
-maestro.services.musehub_repository and maestro.services.musehub_context.
+maestro.services.musehub_repository, maestro.services.musehub_credits,
+and maestro.services.musehub_context.
 """
 from __future__ import annotations
 
@@ -25,6 +27,8 @@ from maestro.models.musehub import (
     BranchListResponse,
     CommitListResponse,
     CreateRepoRequest,
+    CreditsResponse,
+    DagGraphResponse,
     MuseHubContextResponse,
     RepoResponse,
 )
@@ -33,7 +37,7 @@ from maestro.models.musehub_context import (
     ContextDepth,
     ContextFormat,
 )
-from maestro.services import musehub_context, musehub_repository
+from maestro.services import musehub_context, musehub_credits, musehub_repository
 
 logger = logging.getLogger(__name__)
 
@@ -123,6 +127,41 @@ async def list_commits(
 
 
 @router.get(
+    "/repos/{repo_id}/credits",
+    response_model=CreditsResponse,
+    summary="Get aggregated contributor credits for a repo",
+)
+async def get_credits(
+    repo_id: str,
+    sort: str = Query(
+        "count",
+        pattern="^(count|recency|alpha)$",
+        description="Sort order: 'count' (most prolific), 'recency' (most recent), 'alpha' (A–Z)",
+    ),
+    db: AsyncSession = Depends(get_db),
+    _: TokenClaims = Depends(require_valid_token),
+) -> CreditsResponse:
+    """Return dynamic contributor credits aggregated from all commits in a repo.
+
+    Analogous to album liner notes: every contributor is listed with their
+    session count, inferred contribution types (composer, arranger, producer,
+    etc.), and activity window (first and last commit timestamps).
+
+    Content negotiation: when the request ``Accept`` header includes
+    ``application/ld+json``, clients should request the ``/credits`` endpoint
+    directly — the JSON body is schema.org-compatible and can be wrapped in
+    JSON-LD by the consumer.  This endpoint always returns ``application/json``.
+
+    Returns 404 if the repo does not exist.
+    Returns an empty ``contributors`` list when no commits have been pushed yet.
+    """
+    repo = await musehub_repository.get_repo(db, repo_id)
+    if repo is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repo not found")
+    return await musehub_credits.aggregate_credits(db, repo_id, sort=sort)
+
+
+@router.get(
     "/repos/{repo_id}/context/{ref}",
     response_model=MuseHubContextResponse,
     summary="Get musical context document for a commit",
@@ -136,7 +175,7 @@ async def get_context(
     """Return a structured musical context document for the given commit ref.
 
     The context document is the same information the AI agent receives when
-    generating music for this repo at this commit — making it human-inspectable
+    generating music for this repo at this commit, making it human-inspectable
     for debugging and transparency.
 
     Raises 404 if either the repo or the commit does not exist.
@@ -144,7 +183,6 @@ async def get_context(
     repo = await musehub_repository.get_repo(db, repo_id)
     if repo is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repo not found")
-
     context = await musehub_repository.get_context_for_commit(db, repo_id, ref)
     if context is None:
         raise HTTPException(
@@ -210,3 +248,34 @@ async def get_agent_context(
         content=context.model_dump_json(by_alias=True),
         media_type="application/json",
     )
+
+
+@router.get(
+    "/repos/{repo_id}/dag",
+    response_model=DagGraphResponse,
+    summary="Get the full commit DAG for a repo",
+)
+async def get_commit_dag(
+    repo_id: str,
+    db: AsyncSession = Depends(get_db),
+    _: TokenClaims = Depends(require_valid_token),
+) -> DagGraphResponse:
+    """Return the full commit history as a topologically sorted directed acyclic graph.
+
+    Nodes are ordered oldest→newest (Kahn's topological sort). Edges express
+    child→parent relationships (``source`` = child commit, ``target`` = parent
+    commit). This endpoint is the data source for the interactive DAG graph UI
+    at ``GET /musehub/ui/{repo_id}/graph``.
+
+    Content negotiation: always returns JSON. The UI page fetches this endpoint
+    with the stored JWT and renders it client-side with an SVG-based renderer.
+
+    Performance: all commits are fetched (no limit) to ensure the graph is
+    complete. For repos with 100+ commits the response may be several KB; the
+    client-side renderer virtualises visible nodes.
+    """
+    repo = await musehub_repository.get_repo(db, repo_id)
+    if repo is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repo not found")
+
+    return await musehub_repository.list_commits_dag(db, repo_id)

@@ -269,6 +269,37 @@ class ReleaseListResponse(CamelModel):
 
     releases: list[ReleaseResponse]
 
+# ── Credits models ────────────────────────────────────────────────────────────
+
+
+class ContributorCredits(CamelModel):
+    """Wire representation of a single contributor's credit record.
+
+    Aggregated from commit history — one record per unique author string.
+    Contribution types are inferred from commit message keywords so that an
+    agent or a human can understand each collaborator's role at a glance.
+    """
+
+    author: str
+    session_count: int
+    contribution_types: list[str]
+    first_active: datetime
+    last_active: datetime
+
+
+class CreditsResponse(CamelModel):
+    """Wire representation of the full credits roll for a repo.
+
+    Returned by ``GET /api/v1/musehub/repos/{repo_id}/credits``.
+    The ``sort`` field echoes back the sort order applied to the list.
+    An empty ``contributors`` list means no commits have been pushed yet.
+    """
+
+    repo_id: str
+    contributors: list[ContributorCredits]
+    sort: str
+    total_contributors: int
+
 
 # ── Object metadata model ─────────────────────────────────────────────────────
 
@@ -295,6 +326,28 @@ class ObjectMetaListResponse(CamelModel):
     objects: list[ObjectMetaResponse]
 
 
+# ── Cross-repo search models ───────────────────────────────────────────────────
+
+
+class GlobalSearchCommitMatch(CamelModel):
+    """A single commit that matched the search query in a cross-repo search.
+
+    Consumers display ``repo_id`` / ``repo_name`` as the group header, then
+    render ``commit_id``, ``message``, and ``author`` as the match row.
+    Audio preview is surfaced via ``audio_object_id`` when an .mp3 or .ogg
+    artifact is attached to the same repo.
+    """
+
+    commit_id: str
+    message: str
+    author: str
+    branch: str
+    timestamp: datetime
+    repo_id: str
+    repo_name: str
+    repo_owner: str
+    repo_visibility: str
+    audio_object_id: str | None = None
 # ── Webhook models ────────────────────────────────────────────────────────────
 
 # Valid event types a subscriber may register for.
@@ -431,6 +484,38 @@ class MuseHubContextCommitInfo(CamelModel):
     timestamp: datetime
 
 
+class GlobalSearchRepoGroup(CamelModel):
+    """All matching commits for a single repo, with repo-level metadata.
+
+    Results are grouped by repo so consumers can render a collapsible section
+    per repo (name, owner) and paginate within each group.
+    """
+
+    repo_id: str
+    repo_name: str
+    repo_owner: str
+    repo_visibility: str
+    matches: list[GlobalSearchCommitMatch]
+    total_matches: int
+
+
+class GlobalSearchResult(CamelModel):
+    """Top-level response for GET /search?q={query}.
+
+    ``groups`` contains one entry per public repo that had at least one
+    matching commit.  ``total_repos`` is the count of repos searched, not just
+    the repos with matches.  ``page`` / ``page_size`` enable offset pagination
+    across groups.
+    """
+
+    query: str
+    mode: str
+    groups: list[GlobalSearchRepoGroup]
+    total_repos_searched: int
+    page: int
+    page_size: int
+
+
 class MuseHubContextHistoryEntry(CamelModel):
     """A single ancestor commit in the evolutionary history of the composition.
 
@@ -524,3 +609,55 @@ class SearchResponse(CamelModel):
     matches: list[SearchCommitMatch]
     total_scanned: int
     limit: int
+
+
+# ── DAG graph models ───────────────────────────────────────────────────────────
+
+
+class DagNode(CamelModel):
+    """A single commit node in the repo's directed acyclic graph.
+
+    Designed for consumption by interactive graph renderers. The ``is_head``
+    flag marks the current HEAD commit across all branches. ``branch_labels``
+    and ``tag_labels`` list all ref names pointing at this commit.
+    """
+
+    commit_id: str
+    message: str
+    author: str
+    timestamp: datetime
+    branch: str
+    parent_ids: list[str]
+    is_head: bool = False
+    branch_labels: list[str] = Field(default_factory=list)
+    tag_labels: list[str] = Field(default_factory=list)
+
+
+class DagEdge(CamelModel):
+    """A directed edge in the commit DAG.
+
+    ``source`` is the child commit (the one that has the parent).
+    ``target`` is the parent commit. This follows standard graph convention:
+    edge flows from child → parent (newest to oldest).
+    """
+
+    source: str
+    target: str
+
+
+class DagGraphResponse(CamelModel):
+    """Topologically sorted commit graph for a Muse Hub repo.
+
+    ``nodes`` are ordered from oldest ancestor to newest commit (Kahn's
+    algorithm). ``edges`` enumerate every parent→child relationship.
+    Consumers can render this directly as a directed acyclic graph without
+    further processing.
+
+    Agent use case: an AI music agent can use this to identify which branches
+    diverged from a common ancestor, find merge points, and reason about the
+    project's compositional history.
+    """
+
+    nodes: list[DagNode]
+    edges: list[DagEdge]
+    head_commit_id: str | None = None
