@@ -1,0 +1,90 @@
+{#
+  Repo-level tab strip — standalone partial.
+
+  Tabs: Commits | Graph | Pull Requests | Issues | Releases | Sessions |
+        Analysis | Credits | Insights | Search
+
+  Required Jinja2 variables (passed from ui.py → page template):
+    base_url     str  — canonical UI base URL (/musehub/ui/{owner}/{repo_slug})
+    current_page str  — active tab key:
+                        commits | graph | pulls | issues | releases |
+                        sessions | analysis | credits | insights | search
+
+  Count badges (open PRs, open issues) are loaded client-side by
+  ``loadNavCounts()`` in musehub.js so route handlers stay unauthenticated.
+
+  This partial contains only the tab strip.  The repo identity card (owner /
+  repo name, star button, metadata pills) lives in repo_nav.html, which
+  includes this partial after the identity card.
+#}
+<nav class="repo-tabs" id="repo-tabs" aria-label="Repository navigation">
+
+  <a href="{{ base_url }}"
+     class="repo-tab{% if current_page == 'commits' %} active{% endif %}"
+     {% if current_page == 'commits' %}aria-current="page"{% endif %}>
+    Commits
+  </a>
+
+  <a href="{{ base_url }}/graph"
+     class="repo-tab{% if current_page == 'graph' %} active{% endif %}"
+     {% if current_page == 'graph' %}aria-current="page"{% endif %}>
+    Graph
+  </a>
+
+  <a href="{{ base_url }}/pulls"
+     class="repo-tab{% if current_page == 'pulls' %} active{% endif %}"
+     {% if current_page == 'pulls' %}aria-current="page"{% endif %}>
+    Pull Requests
+    <span class="tab-count" id="nav-pr-count" style="display:none"></span>
+  </a>
+
+  <a href="{{ base_url }}/issues"
+     class="repo-tab{% if current_page == 'issues' %} active{% endif %}"
+     {% if current_page == 'issues' %}aria-current="page"{% endif %}>
+    Issues
+    <span class="tab-count" id="nav-issue-count" style="display:none"></span>
+  </a>
+
+  <a href="{{ base_url }}/releases"
+     class="repo-tab{% if current_page == 'releases' %} active{% endif %}"
+     {% if current_page == 'releases' %}aria-current="page"{% endif %}>
+    Releases
+  </a>
+
+  <a href="{{ base_url }}/sessions"
+     class="repo-tab{% if current_page == 'sessions' %} active{% endif %}"
+     {% if current_page == 'sessions' %}aria-current="page"{% endif %}>
+    Sessions
+  </a>
+
+  <a href="{{ base_url }}/timeline"
+     class="repo-tab{% if current_page == 'timeline' %} active{% endif %}"
+     {% if current_page == 'timeline' %}aria-current="page"{% endif %}>
+    Timeline
+  </a>
+
+  <a href="{{ base_url }}/divergence"
+     class="repo-tab{% if current_page == 'analysis' %} active{% endif %}"
+     {% if current_page == 'analysis' %}aria-current="page"{% endif %}>
+    Analysis
+  </a>
+
+  <a href="{{ base_url }}/credits"
+     class="repo-tab{% if current_page == 'credits' %} active{% endif %}"
+     {% if current_page == 'credits' %}aria-current="page"{% endif %}>
+    Credits
+  </a>
+
+  <a href="{{ base_url }}/insights"
+     class="repo-tab{% if current_page == 'insights' %} active{% endif %}"
+     {% if current_page == 'insights' %}aria-current="page"{% endif %}>
+    Insights
+  </a>
+
+  <a href="{{ base_url }}/search"
+     class="repo-tab{% if current_page == 'search' %} active{% endif %}"
+     {% if current_page == 'search' %}aria-current="page"{% endif %}>
+    &#128269; Search
+  </a>
+
+</nav>

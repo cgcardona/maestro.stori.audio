@@ -1,0 +1,36 @@
+{#
+  Breadcrumb navigation partial.
+
+  Renders a breadcrumb trail from the ``breadcrumb_data`` template variable,
+  which is a list of dicts:  [{"label": str, "url": str}, ...]
+
+  The last segment (leaf) is rendered as plain text (not a link) because it
+  represents the current page.  All preceding segments are rendered as <a>
+  links.  An empty ``url`` on any segment also falls back to plain text.
+
+  Usage (from a page template or route handler):
+    breadcrumb_data = [
+        {"label": "gabriel",  "url": "/musehub/ui/gabriel"},
+        {"label": "neo-soul", "url": "/musehub/ui/gabriel/neo-soul"},
+        {"label": "commits",  "url": "/musehub/ui/gabriel/neo-soul"},
+        {"label": "a1b2c3d4", "url": ""},
+    ]
+
+  This partial is included by base.html when ``breadcrumb_data`` is set.
+  Pages that provide inline breadcrumbs via ``{% block breadcrumb %}`` do not
+  need to use this partial.
+#}
+{% if breadcrumb_data %}
+<nav class="breadcrumb-data-nav" aria-label="Breadcrumb">
+  {% for crumb in breadcrumb_data %}
+    {% if not loop.last and crumb.url %}
+      <a href="{{ crumb.url }}" class="breadcrumb-link">{{ crumb.label }}</a>
+    {% else %}
+      <span class="breadcrumb-current">{{ crumb.label }}</span>
+    {% endif %}
+    {% if not loop.last %}
+      <span class="breadcrumb-sep" aria-hidden="true">/</span>
+    {% endif %}
+  {% endfor %}
+</nav>
+{% endif %}

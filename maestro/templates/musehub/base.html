@@ -44,23 +44,16 @@
   </style>
 </head>
 <body>
-  <header>
-    <span class="logo"><a href="/musehub/ui/explore" style="color:inherit;text-decoration:none">&#127925; Muse Hub</a></span>
-    <span class="breadcrumb">{% block breadcrumb %}{% endblock %}</span>
-    <span class="spacer"></span>
-    {% block header_actions %}
-    <a href="/musehub/ui/explore" class="btn btn-ghost btn-sm" style="font-size:12px">Explore</a>
-    <a href="/musehub/ui/search" class="btn btn-ghost btn-sm" style="font-size:12px">Search</a>
-    <a href="/musehub/ui/feed" class="nav-notif-bell" title="Notifications">
-      &#128276;
-      <span id="nav-notif-badge" class="nav-notif-badge">0</span>
-    </a>
-    <button id="signout-btn" class="btn btn-secondary btn-sm" style="font-size:12px;display:none"
-            onclick="clearToken();location.reload()">Sign out</button>
-    {% endblock %}
-  </header>
+  {# Global navigation bar — logo, search, user menu #}
+  {% include "musehub/partials/navbar.html" %}
 
-  {# Repo-scoped pages fill this with the header card + tab strip #}
+  {# Contextual breadcrumb row — populated by each page via {% block breadcrumb %} #}
+  <div class="breadcrumb-bar">
+    <span class="breadcrumb">{% block breadcrumb %}{% endblock %}</span>
+    {% include "musehub/partials/breadcrumbs.html" %}
+  </div>
+
+  {# Repo-scoped pages fill this with the repo identity card + tab strip #}
   {% block repo_nav %}{% endblock %}
 
   <div class="container{% block container_extra_class %}{% endblock %}"{% block container_attrs %}{% endblock %}>
