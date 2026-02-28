@@ -215,3 +215,28 @@ class PRMergeResponse(CamelModel):
 
     merged: bool
     merge_commit_id: str
+
+
+# ── Object metadata model ─────────────────────────────────────────────────────
+
+
+class ObjectMetaResponse(CamelModel):
+    """Wire representation of a stored artifact — metadata only, no content bytes.
+
+    Returned by GET /musehub/repos/{repo_id}/objects. Use the ``/content``
+    sub-resource to download the raw bytes. The ``path`` field retains the
+    client-supplied relative path hint (e.g. "tracks/jazz_4b.mid") and is
+    the primary signal for choosing display treatment (.webp → img, .mid /
+    .mp3 → audio/download).
+    """
+
+    object_id: str
+    path: str
+    size_bytes: int
+    created_at: datetime
+
+
+class ObjectMetaListResponse(CamelModel):
+    """List of artifact metadata for a repo."""
+
+    objects: list[ObjectMetaResponse]
