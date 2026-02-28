@@ -383,3 +383,67 @@ Start with (1); then (2) if you want to demo inside Cursor; then (3) when the ap
 1. **Confirm from Cursor** – In chat, list tools and call one (e.g. `stori_generate_drums` or, with a DAW connected, `stori_read_project`).
 2. **Wire WebSockets on the front end** – Stori app connects to `wss://<host>/api/v1/mcp/daw?token=<jwt>`, handles `tool_call` messages, runs the action in the DAW, and sends `tool_response` with `request_id` and `result`.
 3. **Test track icon/color from Cursor** – With the DAW connected over WebSocket, ask Cursor to change a track’s icon or color. Use `stori_set_track_icon` (e.g. `icon`: `pianokeys`, `guitars`, `music.note`) or `stori_set_track_color` (e.g. `color`: `blue`, `green`). The backend forwards these to the DAW; the app must implement the handlers and respond with `tool_response`.
+
+---
+
+## Agent Context — Starting a Composition Session
+
+The agent context endpoint is the canonical first call an AI agent makes when starting
+a composition session. It returns a complete musical briefing in a single HTTP request.
+
+### Usage
+
+```bash
+# Standard depth (default — fits in ~8K tokens)
+curl -H "Authorization: Bearer $TOKEN" \
+  "https://hub.stori.app/api/v1/musehub/repos/<repo-id>/context"
+
+# Brief depth for tight context windows (~2K tokens)
+curl -H "Authorization: Bearer $TOKEN" \
+  "https://hub.stori.app/api/v1/musehub/repos/<repo-id>/context?depth=brief"
+
+# Target a specific branch
+curl -H "Authorization: Bearer $TOKEN" \
+  "https://hub.stori.app/api/v1/musehub/repos/<repo-id>/context?ref=main"
+
+# YAML format (human-readable, useful in agent logs)
+curl -H "Authorization: Bearer $TOKEN" \
+  "https://hub.stori.app/api/v1/musehub/repos/<repo-id>/context?format=yaml"
+```
+
+### What agents receive
+
+The response contains seven sections:
+
+| Section | Description | Notes |
+|---------|-------------|-------|
+| `musicalState` | Key, tempo, time signature, active tracks | Optional fields `null` until Storpheus MIDI integration |
+| `history` | Recent commits (newest first) | 3 / 10 / 50 entries at brief / standard / verbose |
+| `analysis` | Per-dimension highlights (harmony, groove, etc.) | All `null` at MVP |
+| `activePrs` | Open pull requests | Bodies included at `standard` and `verbose` depth |
+| `openIssues` | Open issues | Bodies included at `verbose` depth only |
+| `suggestions` | Actionable next steps | Heuristic at MVP; LLM-powered in future |
+
+### Depth selection guide
+
+| Goal | Depth | Approximate size |
+|------|-------|-----------------|
+| Fit in a 2K-token budget (GPT-4o-mini tools) | `brief` | ≤ 2K tokens |
+| Full briefing for a new session | `standard` | ≤ 8K tokens |
+| Full audit / detailed analysis | `verbose` | Uncapped |
+
+### Python example
+
+```python
+import httpx
+
+async def get_context(repo_id: str, token: str, depth: str = "standard") -> dict:
+    async with httpx.AsyncClient() as client:
+        response = await client.get(
+            f"https://hub.stori.app/api/v1/musehub/repos/{repo_id}/context",
+            headers={"Authorization": f"Bearer {token}"},
+            params={"depth": depth},
+        )
+        response.raise_for_status()
+        return response.json()
+```
