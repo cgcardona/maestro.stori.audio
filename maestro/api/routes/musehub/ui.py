@@ -4,22 +4,27 @@ Serves browser-readable HTML pages for navigating a Muse Hub repo —
 analogous to GitHub's repository browser but for music projects.
 
 Endpoint summary:
-  GET /musehub/ui/{repo_id}                           — repo page (branch selector + commit log)
-  GET /musehub/ui/{repo_id}/commits/{commit_id}       — commit detail page (metadata + artifacts)
-  GET /musehub/ui/{repo_id}/graph                     — contributor activity / commit graph
-  GET /musehub/ui/{repo_id}/pulls                     — pull request list page
-  GET /musehub/ui/{repo_id}/pulls/{pr_id}             — PR detail page (with merge button)
-  GET /musehub/ui/{repo_id}/issues                    — issue list page
-  GET /musehub/ui/{repo_id}/issues/{number}           — issue detail page (with close button)
-  GET /musehub/ui/{repo_id}/context/{ref}             — context viewer page
-  GET /musehub/ui/{repo_id}/embed/{ref}               — embeddable player widget (no auth, iframe-safe)
-  GET /musehub/ui/{repo_id}/credits                   — dynamic credits / liner notes page
-  GET /musehub/ui/{repo_id}/sessions                  — session list page
-  GET /musehub/ui/{repo_id}/sessions/{session_id}     — session detail page
-  GET /musehub/ui/{repo_id}/search                    — in-repo search page (four modes)
+  GET /musehub/ui/explore                          — discover public repos with filters
+  GET /musehub/ui/trending                         — trending public repos (sorted by stars)
+  GET /musehub/ui/search                           — global cross-repo search page
+  GET /musehub/ui/{repo_id}                        — repo page (branch selector + commit log)
+  GET /musehub/ui/{repo_id}/releases               — release list page
+  GET /musehub/ui/{repo_id}/releases/{tag}         — release detail page (notes + downloads)
+  GET /musehub/ui/users/{username}                 — user profile page (public repos, contribution graph, credits)
+  GET /musehub/ui/search                           — global cross-repo search page  GET /musehub/ui/{repo_id}                        — repo page (branch selector + commit log)
+  GET /musehub/ui/{repo_id}/commits/{commit_id}    — commit detail page (metadata + artifacts)
+  GET /musehub/ui/{repo_id}/graph                  — interactive DAG commit graph
+  GET /musehub/ui/{repo_id}/pulls                  — pull request list page
+  GET /musehub/ui/{repo_id}/pulls/{pr_id}          — PR detail page (with merge button)
+  GET /musehub/ui/{repo_id}/issues                 — issue list page
+  GET /musehub/ui/{repo_id}/issues/{number}        — issue detail page (with close button)
+  GET /musehub/ui/{repo_id}/credits                — dynamic credits page (album liner notes)
+  GET /musehub/ui/{repo_id}/embed/{ref}            — embeddable player widget (no auth, iframe-safe)
+  GET /musehub/ui/{repo_id}/search                 — in-repo search page (four modes)
 
 These routes require NO JWT auth — they return static HTML shells whose
-embedded JavaScript fetches data from the authed JSON API
+embedded JavaScript fetches data from the public JSON API
+(``/api/v1/musehub/discover/repos``) or the authed JSON API
 (``/api/v1/musehub/...``) using a token stored in ``localStorage``.
 
 The embed route is intentionally designed for cross-origin iframe embedding:
@@ -42,6 +47,51 @@ router = APIRouter(prefix="/musehub/ui", tags=["musehub-ui"])
 # ---------------------------------------------------------------------------
 # Shared HTML scaffolding
 # ---------------------------------------------------------------------------
+
+_PROFILE_CSS = """
+.profile-header {
+  display: flex; align-items: flex-start; gap: 24px; margin-bottom: 24px;
+}
+.avatar {
+  width: 80px; height: 80px; border-radius: 50%;
+  background: #21262d; border: 2px solid #30363d;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 32px; flex-shrink: 0;
+}
+.avatar img { width: 100%; height: 100%; border-radius: 50%; object-fit: cover; }
+.profile-meta { flex: 1; }
+.profile-meta h1 { font-size: 22px; color: #e6edf3; margin-bottom: 4px; }
+.bio { font-size: 14px; color: #8b949e; margin-bottom: 12px; }
+.contrib-graph {
+  display: flex; gap: 2px; flex-wrap: wrap; overflow-x: auto;
+}
+.contrib-week { display: flex; flex-direction: column; gap: 2px; }
+.contrib-day {
+  width: 10px; height: 10px; border-radius: 2px; background: #161b22;
+  border: 1px solid #30363d;
+}
+.contrib-day[data-count="0"] { background: #161b22; }
+.contrib-day[data-count="1"] { background: #0e4429; border-color: #0e4429; }
+.contrib-day[data-count="2"] { background: #006d32; border-color: #006d32; }
+.contrib-day[data-count="3"] { background: #26a641; border-color: #26a641; }
+.contrib-day[data-count="4"] { background: #39d353; border-color: #39d353; }
+.repo-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 12px;
+}
+.repo-card {
+  background: #161b22; border: 1px solid #30363d; border-radius: 6px;
+  padding: 14px; display: flex; flex-direction: column; gap: 6px;
+}
+.repo-card h3 { font-size: 15px; margin: 0; }
+.repo-card .repo-meta { font-size: 12px; color: #8b949e; }
+.credits-badge {
+  display: inline-flex; align-items: center; gap: 8px;
+  background: #1f6feb22; border: 1px solid #1f6feb; border-radius: 6px;
+  padding: 8px 14px; font-size: 14px;
+}
+.credits-badge .num { font-size: 22px; font-weight: 700; color: #58a6ff; }
+"""
 
 _CSS = """
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -194,7 +244,7 @@ function shortSha(sha) { return sha ? sha.substring(0, 8) : '—'; }
 """
 
 
-def _page(title: str, breadcrumb: str, body_script: str) -> str:
+def _page(title: str, breadcrumb: str, body_script: str, extra_css: str = "") -> str:
     """Assemble a complete Muse Hub HTML page with shared chrome."""
     return f"""<!DOCTYPE html>
 <html lang="en">
@@ -202,7 +252,7 @@ def _page(title: str, breadcrumb: str, body_script: str) -> str:
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{title} — Muse Hub</title>
-  <style>{_CSS}</style>
+  <style>{_CSS}{extra_css}</style>
 </head>
 <body>
   <header>
@@ -234,8 +284,543 @@ def _page(title: str, breadcrumb: str, body_script: str) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Route handlers
+# Route handlers — explore / discover (no auth required)
 # ---------------------------------------------------------------------------
+
+_EXPLORE_SCRIPT = """
+const DISCOVER_API = '/api/v1/musehub/discover/repos';
+
+function escHtml(s) {
+  if (!s) return '';
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function tagHtml(tag) {
+  return '<span class="label">' + escHtml(tag) + '</span>';
+}
+
+function repoCard(r) {
+  const tags = (r.tags || []).map(tagHtml).join('');
+  const key  = r.keySignature ? escHtml(r.keySignature) : '';
+  const bpm  = r.tempoBpm ? r.tempoBpm + ' BPM' : '';
+  const meta = [key, bpm].filter(Boolean).join(' &bull; ');
+  return `
+    <div class="repo-card">
+      <div class="repo-card-title">
+        <a href="/musehub/ui/${escHtml(r.repoId)}">${escHtml(r.name)}</a>
+      </div>
+      <div class="repo-card-owner">${escHtml(r.ownerUserId)}</div>
+      ${r.description ? '<div class="repo-card-desc">' + escHtml(r.description) + '</div>' : ''}
+      <div class="repo-card-tags">${tags}</div>
+      <div class="repo-card-meta">
+        ${meta ? '<span>' + meta + '</span>' : ''}
+        <span>&#9733; ${r.starCount}</span>
+        <span>&#128190; ${r.commitCount} commits</span>
+      </div>
+    </div>`;
+}
+
+async function loadExplore(page, sort, genre, key, tempoMin, tempoMax, instrumentation) {
+  const params = new URLSearchParams({ page: page, page_size: 24, sort: sort });
+  if (genre)         params.set('genre', genre);
+  if (key)           params.set('key', key);
+  if (tempoMin)      params.set('tempo_min', tempoMin);
+  if (tempoMax)      params.set('tempo_max', tempoMax);
+  if (instrumentation) params.set('instrumentation', instrumentation);
+
+  try {
+    const res  = await fetch(DISCOVER_API + '?' + params.toString());
+    if (!res.ok) throw new Error(res.status + ': ' + await res.text());
+    const data = await res.json();
+    const repos = data.repos || [];
+    const total = data.total || 0;
+    const pages = Math.ceil(total / 24) || 1;
+
+    const grid = repos.length === 0
+      ? '<p class="loading">No repos found matching these filters.</p>'
+      : repos.map(repoCard).join('');
+
+    const pager = pages > 1 ? `
+      <div class="pager">
+        ${page > 1 ? '<button class="btn btn-secondary" onclick="go(' + (page-1) + ')">&#8592; Prev</button>' : ''}
+        <span style="color:#8b949e;font-size:13px">Page ${page} of ${pages} &bull; ${total} repos</span>
+        ${page < pages ? '<button class="btn btn-secondary" onclick="go(' + (page+1) + ')">Next &#8594;</button>' : ''}
+      </div>` : '<div class="pager" style="color:#8b949e;font-size:13px">' + total + ' repos</div>';
+
+    document.getElementById('repo-grid').innerHTML = grid;
+    document.getElementById('pager').innerHTML = pager;
+  } catch(e) {
+    document.getElementById('repo-grid').innerHTML =
+      '<p class="error">&#10005; ' + escHtml(e.message) + '</p>';
+  }
+}
+
+function currentState() {
+  return {
+    page: parseInt(document.getElementById('cur-page').value || '1'),
+    sort: document.getElementById('sort-sel').value,
+    genre: document.getElementById('genre-inp').value.trim(),
+    key:   document.getElementById('key-inp').value.trim(),
+    tempoMin: document.getElementById('tempo-min').value.trim(),
+    tempoMax: document.getElementById('tempo-max').value.trim(),
+    instr: document.getElementById('instr-inp').value.trim(),
+  };
+}
+
+function go(page) {
+  document.getElementById('cur-page').value = page;
+  const s = currentState();
+  loadExplore(page, s.sort, s.genre, s.key, s.tempoMin, s.tempoMax, s.instr);
+}
+
+function applyFilters() { go(1); }
+"""
+
+_EXPLORE_CSS_EXTRA = """
+.filter-bar {
+  display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-end;
+  background: #161b22; border: 1px solid #30363d; border-radius: 6px;
+  padding: 12px; margin-bottom: 16px;
+}
+.filter-group { display: flex; flex-direction: column; gap: 4px; }
+.filter-label { font-size: 11px; color: #8b949e; text-transform: uppercase; letter-spacing: 0.5px; }
+.filter-group input {
+  background: #0d1117; color: #c9d1d9; border: 1px solid #30363d;
+  border-radius: 6px; padding: 6px 10px; font-size: 13px; width: 140px;
+}
+.filter-group input:focus { outline: none; border-color: #58a6ff; }
+.repo-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 12px;
+}
+.repo-card {
+  background: #161b22; border: 1px solid #30363d; border-radius: 6px;
+  padding: 14px; display: flex; flex-direction: column; gap: 6px;
+  transition: border-color 0.15s;
+}
+.repo-card:hover { border-color: #58a6ff; }
+.repo-card-title { font-size: 15px; font-weight: 600; }
+.repo-card-owner { font-size: 12px; color: #8b949e; }
+.repo-card-desc  { font-size: 13px; color: #c9d1d9; }
+.repo-card-tags  { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+.repo-card-meta  {
+  display: flex; gap: 12px; flex-wrap: wrap;
+  font-size: 12px; color: #8b949e; margin-top: 4px;
+}
+.pager {
+  display: flex; align-items: center; justify-content: center;
+  gap: 12px; margin-top: 20px;
+}
+"""
+
+
+def _explore_page_html(title: str, breadcrumb: str, default_sort: str) -> str:
+    """Render the explore or trending page HTML shell.
+
+    The page calls the public ``GET /api/v1/musehub/discover/repos`` JSON API
+    from the browser — no JWT required for browsing. Star/unstar actions require
+    a JWT stored in localStorage but are optional (unauthenticated visitors can
+    browse without starring).
+    """
+    css = _CSS + _EXPLORE_CSS_EXTRA
+    return f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{title} — Muse Hub</title>
+  <style>{css}</style>
+</head>
+<body>
+  <header>
+    <span class="logo">&#127925; Muse Hub</span>
+    <span class="breadcrumb">{breadcrumb}</span>
+    <span style="flex:1"></span>
+    <a href="/musehub/ui/explore" class="btn btn-secondary" style="font-size:12px">Explore</a>
+    &nbsp;
+    <a href="/musehub/ui/trending" class="btn btn-secondary" style="font-size:12px">Trending</a>
+  </header>
+  <div class="container" style="max-width:1200px">
+    <div class="filter-bar">
+      <div class="filter-group">
+        <span class="filter-label">Genre</span>
+        <input id="genre-inp" type="text" placeholder="jazz, lo-fi…" oninput="applyFilters()"/>
+      </div>
+      <div class="filter-group">
+        <span class="filter-label">Key</span>
+        <input id="key-inp" type="text" placeholder="F# minor" oninput="applyFilters()"/>
+      </div>
+      <div class="filter-group">
+        <span class="filter-label">BPM min</span>
+        <input id="tempo-min" type="number" min="20" max="300" placeholder="80" oninput="applyFilters()"/>
+      </div>
+      <div class="filter-group">
+        <span class="filter-label">BPM max</span>
+        <input id="tempo-max" type="number" min="20" max="300" placeholder="140" oninput="applyFilters()"/>
+      </div>
+      <div class="filter-group">
+        <span class="filter-label">Instrument</span>
+        <input id="instr-inp" type="text" placeholder="bass, drums…" oninput="applyFilters()"/>
+      </div>
+      <div class="filter-group">
+        <span class="filter-label">Sort by</span>
+        <select id="sort-sel" onchange="applyFilters()">
+          <option value="created" {'selected' if default_sort == 'created' else ''}>Newest</option>
+          <option value="stars"   {'selected' if default_sort == 'stars'   else ''}>Stars</option>
+          <option value="activity"{'selected' if default_sort == 'activity' else ''}>Activity</option>
+          <option value="commits" {'selected' if default_sort == 'commits'  else ''}>Commits</option>
+        </select>
+      </div>
+    </div>
+    <input type="hidden" id="cur-page" value="1"/>
+    <div id="repo-grid" class="repo-grid"><p class="loading">Loading&#8230;</p></div>
+    <div id="pager"></div>
+  </div>
+  <script>
+    {_EXPLORE_SCRIPT}
+    window.addEventListener('DOMContentLoaded', function() {{
+      const s = currentState();
+      loadExplore(1, s.sort, s.genre, s.key, s.tempoMin, s.tempoMax, s.instr);
+    }});
+  </script>
+</body>
+</html>"""
+
+
+@router.get("/explore", response_class=HTMLResponse, summary="Muse Hub explore page")
+async def explore_page() -> HTMLResponse:
+    """Render the explore/discover page — a filterable grid of all public repos.
+
+    No JWT required. The page fetches from the public
+    ``GET /api/v1/musehub/discover/repos`` endpoint. Filter controls are
+    rendered in the browser; filter state lives in the query URL so pages
+    are bookmarkable.
+    """
+    return HTMLResponse(
+        content=_explore_page_html(
+            title="Explore",
+            breadcrumb="Explore",
+            default_sort="created",
+        )
+    )
+
+
+@router.get("/trending", response_class=HTMLResponse, summary="Muse Hub trending page")
+async def trending_page() -> HTMLResponse:
+    """Render the trending page — public repos sorted by star count by default.
+
+    No JWT required. Identical shell to the explore page but pre-selected
+    to sort by stars, surfacing the most-starred compositions first.
+    """
+    return HTMLResponse(
+        content=_explore_page_html(
+            title="Trending",
+            breadcrumb="Trending",
+            default_sort="stars",
+        )
+    )
+
+
+# ---------------------------------------------------------------------------
+# Route handlers — per-repo pages (no auth required)
+# ---------------------------------------------------------------------------
+
+
+
+
+@router.get(
+    "/users/{username}",
+    response_class=HTMLResponse,
+    summary="Muse Hub user profile page",
+)
+async def profile_page(username: str) -> HTMLResponse:
+    """Render the public user profile page.
+
+    Displays: bio, avatar, pinned repos, all public repos with last-activity,
+    a GitHub-style contribution heatmap (52 weeks of daily commit counts), and
+    aggregated session credits.  Auth is handled client-side via localStorage JWT.
+
+    Returns 200 with an HTML shell even when the API returns 404 -- the JS
+    renders the 404 message inline so the browser gets a proper HTML response.
+    """
+    script = f"""
+      const username = {repr(username)};
+      const API_PROFILE = '/api/v1/musehub/users/' + username;
+
+      function escHtml(s) {{
+        if (!s) return '';
+        return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+      }}
+
+      function bucketCount(n) {{
+        if (n === 0) return 0;
+        if (n <= 2)  return 1;
+        if (n <= 5)  return 2;
+        if (n <= 9)  return 3;
+        return 4;
+      }}
+
+      function buildContribGraph(graph) {{
+        // Group days into weeks (7 days per column)
+        const weeks = [];
+        let week = [];
+        graph.forEach((d, i) => {{
+          week.push(d);
+          if (week.length === 7) {{ weeks.push(week); week = []; }}
+        }});
+        if (week.length) weeks.push(week);
+
+        const weeksHtml = weeks.map(w => {{
+          const days = w.map(d => {{
+            const b = bucketCount(d.count);
+            return `<div class="contrib-day" data-count="${{b}}" title="${{d.date}}: ${{d.count}} commit${{d.count !== 1 ? 's' : ''}}"></div>`;
+          }}).join('');
+          return `<div class="contrib-week">${{days}}</div>`;
+        }}).join('');
+
+        return `<div class="contrib-graph">${{weeksHtml}}</div>`;
+      }}
+
+      function repoCardHtml(r) {{
+        const lastAct = r.lastActivityAt ? fmtDate(r.lastActivityAt) : 'No commits yet';
+        return `<div class="repo-card">
+          <h3><a href="/musehub/ui/${{r.repoId}}">${{escHtml(r.name)}}</a></h3>
+          <div class="repo-meta">
+            <span class="badge badge-${{r.visibility}}">${{r.visibility}}</span>
+            &bull; Last activity: ${{lastAct}}
+          </div>
+        </div>`;
+      }}
+
+      async function load() {{
+        let profile;
+        try {{
+          profile = await fetch(API_PROFILE).then(r => {{
+            if (r.status === 404) throw new Error('404');
+            if (!r.ok) throw new Error(r.status);
+            return r.json();
+          }});
+        }} catch(e) {{
+          if (e.message === '404') {{
+            document.getElementById('content').innerHTML =
+              '<div class="card"><p class="error">&#10005; No profile found for <strong>' + escHtml(username) + '</strong>.</p></div>';
+          }} else {{
+            document.getElementById('content').innerHTML =
+              '<p class="error">Failed to load profile: ' + escHtml(e.message) + '</p>';
+          }}
+          return;
+        }}
+
+        const avatarHtml = profile.avatarUrl
+          ? `<img src="${{escHtml(profile.avatarUrl)}}" alt="avatar" />`
+          : '&#127925;';
+
+        const pinnedRepos = (profile.repos || []).filter(r => (profile.pinnedRepoIds || []).includes(r.repoId));
+        const publicRepos = profile.repos || [];
+
+        const pinnedSection = pinnedRepos.length > 0 ? `
+          <div class="card">
+            <h2 style="margin-bottom:12px">&#128204; Pinned</h2>
+            <div class="repo-grid">${{pinnedRepos.map(repoCardHtml).join('')}}</div>
+          </div>` : '';
+
+        const reposSection = publicRepos.length > 0 ? `
+          <div class="card">
+            <h2 style="margin-bottom:12px">&#127963; Public Repositories (${{publicRepos.length}})</h2>
+            <div class="repo-grid">${{publicRepos.map(repoCardHtml).join('')}}</div>
+          </div>` : '<div class="card"><p class="loading">No public repositories yet.</p></div>';
+
+        const graphSection = `
+          <div class="card">
+            <h2 style="margin-bottom:12px">&#128200; Contribution Activity (last 52 weeks)</h2>
+            ${{buildContribGraph(profile.contributionGraph || [])}}
+            <p style="font-size:12px;color:#8b949e;margin-top:8px">
+              Less &nbsp;
+              <span style="display:inline-flex;gap:2px;vertical-align:middle">
+                ${{[0,1,2,3,4].map(n => '<span class="contrib-day" data-count="' + n + '" style="display:inline-block"></span>').join('')}}
+              </span>
+              &nbsp; More
+            </p>
+          </div>`;
+
+        document.getElementById('content').innerHTML = `
+          <div class="card profile-header">
+            <div class="avatar">${{avatarHtml}}</div>
+            <div class="profile-meta">
+              <h1>${{escHtml(profile.username)}}</h1>
+              ${{profile.bio ? '<p class="bio">' + escHtml(profile.bio) + '</p>' : ''}}
+              <div class="credits-badge">
+                <span class="num">${{profile.sessionCredits || 0}}</span>
+                <span>session credits</span>
+              </div>
+            </div>
+          </div>
+          ${{pinnedSection}}
+          ${{graphSection}}
+          ${{reposSection}}
+        `;
+      }}
+
+      load();
+    """
+    html = _page(
+        title=f"@{username}",
+        breadcrumb=f'<a href="/musehub/ui/users/{username}">@{username}</a>',
+        body_script=script,
+        extra_css=_PROFILE_CSS,
+    )
+    return HTMLResponse(content=html)
+
+
+@router.get("/search", response_class=HTMLResponse, summary="Muse Hub global search page")
+async def global_search_page(
+    q: str = "",
+    mode: str = "keyword",
+) -> HTMLResponse:
+    """Render the global cross-repo search page.
+
+    The page is a static HTML shell; JavaScript fetches results from
+    ``GET /api/v1/musehub/search`` using the stored localStorage JWT.
+
+    Query parameters are pre-filled into the search form so that a browser
+    navigation or a URL share lands with the last query already populated.
+    These parameters are sanitised client-side before being rendered into the
+    DOM (``escHtml`` prevents XSS from adversarial query strings).
+    """
+    safe_q = q.replace("'", "\\'").replace('"', '\\"').replace("\n", "").replace("\r", "")
+    safe_mode = mode if mode in ("keyword", "pattern") else "keyword"
+    script = f"""
+      const INITIAL_Q    = {repr(safe_q)};
+      const INITIAL_MODE = {repr(safe_mode)};
+      function escHtml(s) {{
+        if (!s) return '';
+        return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+      }}
+      function shortSha(s) {{ return s ? s.substring(0, 8) : ''; }}
+
+      function audioHtml(groupId, audioOid) {{
+        if (!audioOid) return '';
+        const url = '/api/v1/musehub/repos/' + encodeURIComponent(groupId) + '/objects/' + encodeURIComponent(audioOid) + '/content';
+        return '<audio controls src="' + url + '" style="width:100%;margin-top:6px"></audio>';
+      }}
+
+      function renderGroups(groups) {{
+        if (!groups || groups.length === 0) {{
+          return '<p class="loading">No results found.</p>';
+        }}
+        return groups.map(g => {{
+          const matchRows = g.matches.map(m => `
+            <div class="commit-row">
+              <a class="commit-sha" href="/musehub/ui/${{encodeURIComponent(g.repoId)}}/commits/${{escHtml(m.commitId)}}">${{shortSha(m.commitId)}}</a>
+              <span class="commit-msg">${{escHtml(m.message)}}</span>
+              <span class="commit-meta">${{escHtml(m.author)}} &bull; ${{fmtDate(m.timestamp)}}</span>
+            </div>`).join('');
+
+          const moreNote = g.totalMatches > g.matches.length
+            ? `<p style="font-size:12px;color:#8b949e;margin-top:6px">Showing ${{g.matches.length}} of ${{g.totalMatches}} matches in this repo.</p>`
+            : '';
+
+          return `
+            <div class="card">
+              <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+                <h2 style="margin:0">
+                  <a href="/musehub/ui/${{encodeURIComponent(g.repoId)}}">${{escHtml(g.repoName)}}</a>
+                </h2>
+                <span class="badge badge-open" style="font-size:11px">${{escHtml(g.repoVisibility)}}</span>
+                <span style="font-size:12px;color:#8b949e">owner: ${{escHtml(g.repoOwner)}}</span>
+              </div>
+              ${{matchRows}}
+              ${{moreNote}}
+              ${{audioHtml(g.repoId, g.matches[0] && g.matches[0].audioObjectId)}}
+            </div>`;
+        }}).join('');
+      }}
+
+      async function search(page) {{
+        const q    = document.getElementById('q-input').value.trim();
+        const mode = document.getElementById('mode-sel').value;
+        if (!q) {{ document.getElementById('results').innerHTML = ''; return; }}
+
+        document.getElementById('results').innerHTML = '<p class="loading">Searching&#8230;</p>';
+        try {{
+          const params = new URLSearchParams({{ q, mode, page: page || 1, page_size: 10 }});
+          const data = await apiFetch('/search?' + params.toString());
+          const groups = data.groups || [];
+          const total  = data.totalReposSearched || 0;
+          const pg     = data.page || 1;
+          const ps     = data.pageSize || 10;
+
+          const summary = `<p style="font-size:13px;color:#8b949e;margin-bottom:12px">
+            ${{groups.length}} repo${{groups.length !== 1 ? 's' : ''}} with matches
+            &mdash; ${{total}} public repo${{total !== 1 ? 's' : ''}} searched
+            (page ${{pg}})
+          </p>`;
+
+          const prevBtn = pg > 1
+            ? `<button class="btn btn-secondary" style="font-size:13px" onclick="search(${{pg-1}})">&#8592; Prev</button>`
+            : '';
+          const nextBtn = groups.length === ps
+            ? `<button class="btn btn-secondary" style="font-size:13px" onclick="search(${{pg+1}})">Next &#8594;</button>`
+            : '';
+          const pager = (prevBtn || nextBtn)
+            ? `<div style="display:flex;gap:8px;margin-top:12px">${{prevBtn}}${{nextBtn}}</div>`
+            : '';
+
+          document.getElementById('results').innerHTML = summary + renderGroups(groups) + pager;
+
+          // Update URL bar without reload so the search is shareable
+          const url = new URL(window.location.href);
+          url.searchParams.set('q', q);
+          url.searchParams.set('mode', mode);
+          history.replaceState(null, '', url.toString());
+        }} catch(e) {{
+          if (e.message !== 'auth')
+            document.getElementById('results').innerHTML = '<p class="error">&#10005; ' + escHtml(e.message) + '</p>';
+        }}
+      }}
+
+      // Pre-fill form from URL params / server-injected values
+      document.getElementById('q-input').value    = INITIAL_Q;
+      document.getElementById('mode-sel').value   = INITIAL_MODE;
+
+      if (INITIAL_Q) {{ search(1); }}
+
+      document.getElementById('search-form').addEventListener('submit', function(e) {{
+        e.preventDefault();
+        search(1);
+      }});
+    """
+
+    body_html = """
+      <div class="card" style="margin-bottom:16px">
+        <h1 style="margin-bottom:12px">&#128269; Global Search</h1>
+        <form id="search-form" style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end">
+          <input id="q-input" type="text" placeholder="Search commit messages&#8230;"
+                 style="flex:1;min-width:200px;background:#0d1117;color:#c9d1d9;
+                        border:1px solid #30363d;border-radius:6px;padding:8px 12px;font-size:14px" />
+          <select id="mode-sel"
+                  style="background:#21262d;color:#c9d1d9;border:1px solid #30363d;
+                         border-radius:6px;padding:8px 10px;font-size:14px">
+            <option value="keyword">Keyword</option>
+            <option value="pattern">Pattern (LIKE)</option>
+          </select>
+          <button class="btn btn-primary" type="submit">Search</button>
+        </form>
+      </div>
+      <div id="results"></div>
+    """
+
+    # Embed body_html as a static section before the dynamic script runs
+    full_script = (
+        f"document.getElementById('content').innerHTML = {repr(body_html)};\n" + script
+    )
+    html = _page(
+        title="Global Search",
+        breadcrumb='<a href="/musehub/ui/search">Global Search</a>',
+        body_script=full_script,
+    )
+    return HTMLResponse(content=html)
 
 
 @router.get("/{repo_id}", response_class=HTMLResponse, summary="Muse Hub repo page")
@@ -283,6 +868,8 @@ async def repo_page(repo_id: str) -> HTMLResponse:
               <div style="display:flex;gap:12px;margin-bottom:16px;flex-wrap:wrap">
                 <a href="${{base}}/pulls" class="btn btn-secondary">Pull Requests</a>
                 <a href="${{base}}/issues" class="btn btn-secondary">Issues</a>
+                <a href="${{base}}/releases" class="btn btn-secondary">Releases</a>
+                <a href="${{base}}/credits" class="btn btn-secondary">&#127926; Credits</a>
                 <a href="${{base}}/sessions" class="btn btn-secondary">Sessions</a>
                 <a href="${{base}}/search" class="btn btn-secondary">&#128269; Search</a>
               </div>
@@ -443,8 +1030,6 @@ async def commit_page(repo_id: str, commit_id: str) -> HTMLResponse:
         body_script=script,
     )
     return HTMLResponse(content=html)
-
-
 
 
 @router.get(
@@ -747,8 +1332,6 @@ async def graph_page(repo_id: str) -> HTMLResponse:
     return HTMLResponse(content=html)
 
 
-
-
 @router.get(
     "/{repo_id}/pulls",
     response_class=HTMLResponse,
@@ -979,6 +1562,237 @@ async def issue_list_page(repo_id: str) -> HTMLResponse:
     html = _page(
         title="Issues",
         breadcrumb=f'<a href="/musehub/ui/{repo_id}">{repo_id[:8]}</a> / issues',
+        body_script=script,
+    )
+    return HTMLResponse(content=html)
+
+
+@router.get(
+    "/{repo_id}/divergence",
+    response_class=HTMLResponse,
+    summary="Muse Hub divergence visualization page",
+)
+async def divergence_page(repo_id: str) -> HTMLResponse:
+    """Render the divergence visualization page: radar chart + dimension detail panels.
+
+    Fetches ``GET /api/v1/musehub/repos/{repo_id}/divergence?branch_a=...&branch_b=...``
+    for the raw data, then renders:
+    - A five-axis radar chart (melodic/harmonic/rhythmic/structural/dynamic)
+    - Level labels (NONE/LOW/MED/HIGH) per dimension
+    - Overall divergence score as a percentage
+    - Per-dimension detail panels (click to expand)
+
+    Auth is handled client-side via localStorage JWT.  No Jinja2 required.
+    """
+    script = f"""
+      const repoId = {repr(repo_id)};
+      const apiBase = '/api/v1/musehub/repos/' + repoId;
+      const uiBase  = '/musehub/ui/' + repoId;
+
+      function escHtml(s) {{
+        if (!s) return '';
+        return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+      }}
+
+      const DIMENSIONS = ['melodic','harmonic','rhythmic','structural','dynamic'];
+      const LEVEL_COLOR = {{ NONE:'#1f6feb', LOW:'#388bfd', MED:'#f0883e', HIGH:'#f85149' }};
+      const LEVEL_BG    = {{ NONE:'#0d2942', LOW:'#102a4c', MED:'#341a00', HIGH:'#3d0000' }};
+      const AXIS_LABELS = {{
+        melodic:'Melodic', harmonic:'Harmonic', rhythmic:'Rhythmic',
+        structural:'Structural', dynamic:'Dynamic'
+      }};
+
+      function levelBadge(level) {{
+        const color = LEVEL_COLOR[level] || '#8b949e';
+        return `<span style="display:inline-block;padding:1px 7px;border-radius:10px;
+          font-size:11px;font-weight:700;color:#fff;background:${{color}}">${{level}}</span>`;
+      }}
+
+      function radarSvg(dims) {{
+        const cx = 180, cy = 180, r = 140;
+        const n = dims.length;
+        const pts = dims.map((d, i) => {{
+          const angle = (i / n) * 2 * Math.PI - Math.PI / 2;
+          const sr = d.score * r;
+          return {{ x: cx + sr * Math.cos(angle), y: cy + sr * Math.sin(angle) }};
+        }});
+        const bgPts = DIMENSIONS.map((_, i) => {{
+          const angle = (i / n) * 2 * Math.PI - Math.PI / 2;
+          return `${{cx + r * Math.cos(angle)}},${{cy + r * Math.sin(angle)}}`;
+        }}).join(' ');
+        const scorePoly = pts.map(p => `${{p.x}},${{p.y}}`).join(' ');
+
+        const axisLines = DIMENSIONS.map((_, i) => {{
+          const angle = (i / n) * 2 * Math.PI - Math.PI / 2;
+          const ex = cx + r * Math.cos(angle), ey = cy + r * Math.sin(angle);
+          return `<line x1="${{cx}}" y1="${{cy}}" x2="${{ex}}" y2="${{ey}}"
+            stroke="#30363d" stroke-width="1"/>`;
+        }}).join('');
+
+        const gridLines = [0.25, 0.5, 0.75, 1.0].map(frac => {{
+          const gPts = DIMENSIONS.map((_, i) => {{
+            const angle = (i / n) * 2 * Math.PI - Math.PI / 2;
+            return `${{cx + frac * r * Math.cos(angle)}},${{cy + frac * r * Math.sin(angle)}}`;
+          }}).join(' ');
+          return `<polygon points="${{gPts}}" fill="none" stroke="#21262d" stroke-width="1"/>`;
+        }}).join('');
+
+        const labels = dims.map((d, i) => {{
+          const angle = (i / n) * 2 * Math.PI - Math.PI / 2;
+          const lx = cx + (r + 22) * Math.cos(angle);
+          const ly = cy + (r + 22) * Math.sin(angle);
+          const color = LEVEL_COLOR[d.level] || '#8b949e';
+          return `<text x="${{lx}}" y="${{ly + 4}}" text-anchor="middle"
+            font-size="12" fill="${{color}}" font-family="system-ui">${{AXIS_LABELS[d.dimension]}}</text>`;
+        }}).join('');
+
+        const dots = pts.map((p, i) => {{
+          const color = LEVEL_COLOR[dims[i].level] || '#58a6ff';
+          return `<circle cx="${{p.x}}" cy="${{p.y}}" r="4" fill="${{color}}" stroke="#0d1117" stroke-width="2"/>`;
+        }}).join('');
+
+        return `<svg viewBox="0 0 360 360" xmlns="http://www.w3.org/2000/svg"
+            style="width:100%;max-width:360px;display:block;margin:0 auto">
+          ${{gridLines}}${{axisLines}}
+          <polygon points="${{bgPts}}" fill="rgba(88,166,255,0.04)" stroke="#30363d" stroke-width="1"/>
+          <polygon points="${{scorePoly}}" fill="rgba(248,81,73,0.18)" stroke="#f85149" stroke-width="2"/>
+          ${{labels}}${{dots}}
+        </svg>`;
+      }}
+
+      function dimensionPanel(d, expanded) {{
+        const bg = LEVEL_BG[d.level] || '#161b22';
+        const id = 'dim-' + d.dimension;
+        const detail = expanded ? `
+          <div style="margin-top:10px;font-size:13px;color:#8b949e">
+            <div>${{escHtml(d.description)}}</div>
+            <div style="margin-top:6px;display:flex;gap:16px">
+              <span>Branch A: <b style="color:#e6edf3">${{d.branchACommits}} commit(s)</b></span>
+              <span>Branch B: <b style="color:#e6edf3">${{d.branchBCommits}} commit(s)</b></span>
+            </div>
+          </div>` : '';
+        const pct = Math.round(d.score * 100);
+        return `<div id="${{id}}" class="card" style="background:${{bg}};cursor:pointer;margin-bottom:8px"
+            onclick="toggleDim('${{d.dimension}}')">
+          <div style="display:flex;align-items:center;gap:12px">
+            <span style="font-size:14px;color:#e6edf3;font-weight:600;min-width:90px">
+              ${{AXIS_LABELS[d.dimension]}}</span>
+            ${{levelBadge(d.level)}}
+            <div style="flex:1;height:6px;background:#21262d;border-radius:3px;overflow:hidden">
+              <div style="height:100%;width:${{pct}}%;background:${{LEVEL_COLOR[d.level] || '#58a6ff'}};
+                border-radius:3px;transition:width .3s"></div>
+            </div>
+            <span style="font-size:13px;color:#8b949e;white-space:nowrap">${{pct}}%</span>
+          </div>
+          ${{detail}}
+        </div>`;
+      }}
+
+      const _expanded = {{}};
+      function toggleDim(dim) {{
+        _expanded[dim] = !_expanded[dim];
+        renderDims(window._lastDims || []);
+      }}
+
+      function renderDims(dims) {{
+        window._lastDims = dims;
+        document.getElementById('dim-panels').innerHTML =
+          dims.map(d => dimensionPanel(d, !!_expanded[d.dimension])).join('');
+      }}
+
+      const params = new URLSearchParams(location.search);
+      let _branchA = params.get('branch_a') || '';
+      let _branchB = params.get('branch_b') || '';
+
+      async function loadBranches() {{
+        try {{
+          const data = await apiFetch('/repos/' + repoId + '/branches');
+          return (data.branches || []).map(b => b.name);
+        }} catch(e) {{ return []; }}
+      }}
+
+      async function loadDivergence(bA, bB) {{
+        if (!bA || !bB) {{
+          document.getElementById('radar-area').innerHTML =
+            '<p class="loading">Select two branches to compare.</p>';
+          document.getElementById('dim-panels').innerHTML = '';
+          document.getElementById('overall-area').innerHTML = '';
+          return;
+        }}
+        document.getElementById('radar-area').innerHTML = '<p class="loading">Computing&#8230;</p>';
+        try {{
+          const d = await apiFetch('/repos/' + repoId + '/divergence?branch_a=' +
+            encodeURIComponent(bA) + '&branch_b=' + encodeURIComponent(bB));
+          const pct = Math.round((d.overallScore || 0) * 100);
+          document.getElementById('radar-area').innerHTML = radarSvg(d.dimensions || []);
+          document.getElementById('overall-area').innerHTML = `
+            <div style="text-align:center;margin:12px 0">
+              <div style="font-size:32px;font-weight:700;color:#e6edf3">${{pct}}%</div>
+              <div style="font-size:12px;color:#8b949e;margin-top:2px">overall divergence</div>
+              ${{d.commonAncestor ? `<div style="font-size:11px;color:#8b949e;margin-top:4px;font-family:monospace">
+                base: ${{d.commonAncestor.substring(0,8)}}</div>` : ''}}
+            </div>`;
+          renderDims(d.dimensions || []);
+        }} catch(e) {{
+          if (e.message !== 'auth')
+            document.getElementById('radar-area').innerHTML =
+              '<p class="error">&#10005; ' + escHtml(e.message) + '</p>';
+        }}
+      }}
+
+      async function load() {{
+        const branches = await loadBranches();
+        const opts = branches.map(b =>
+          '<option value="' + escHtml(b) + '">' + escHtml(b) + '</option>').join('');
+
+        document.getElementById('content').innerHTML = `
+          <div style="margin-bottom:12px">
+            <a href="${{uiBase}}">&larr; Back to repo</a>
+          </div>
+          <div class="card">
+            <h1 style="margin-bottom:12px">Divergence Visualization</h1>
+            <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px">
+              <div>
+                <div class="meta-label" style="font-size:11px;color:#8b949e;margin-bottom:4px">BRANCH A</div>
+                <select id="sel-a" onchange="onBranchChange()">
+                  <option value="">Select branch&#8230;</option>${{opts}}
+                </select>
+              </div>
+              <div style="display:flex;align-items:flex-end;padding-bottom:4px;font-size:18px;color:#8b949e">
+                vs
+              </div>
+              <div>
+                <div class="meta-label" style="font-size:11px;color:#8b949e;margin-bottom:4px">BRANCH B</div>
+                <select id="sel-b" onchange="onBranchChange()">
+                  <option value="">Select branch&#8230;</option>${{opts}}
+                </select>
+              </div>
+            </div>
+            <div id="radar-area"><p class="loading">Select two branches to compare.</p></div>
+            <div id="overall-area"></div>
+          </div>
+          <div id="dim-panels"></div>`;
+
+        if (_branchA) document.getElementById('sel-a').value = _branchA;
+        if (_branchB) document.getElementById('sel-b').value = _branchB;
+        if (_branchA && _branchB) loadDivergence(_branchA, _branchB);
+      }}
+
+      function onBranchChange() {{
+        _branchA = document.getElementById('sel-a').value;
+        _branchB = document.getElementById('sel-b').value;
+        const url = new URL(location.href);
+        url.searchParams.set('branch_a', _branchA);
+        url.searchParams.set('branch_b', _branchB);
+        history.replaceState(null,'',url.toString());
+        loadDivergence(_branchA, _branchB);
+      }}
+
+      load();
+    """
+    html = _page(
+        title="Divergence",
+        breadcrumb=f'<a href="/musehub/ui/{repo_id}">{repo_id[:8]}</a> / divergence',
         body_script=script,
     )
     return HTMLResponse(content=html)
@@ -1547,8 +2361,6 @@ async def embed_page(repo_id: str, ref: str) -> Response:
     )
 
 
-
-
 @router.get(
     "/{repo_id}/credits",
     response_class=HTMLResponse,
@@ -1671,6 +2483,407 @@ async def credits_page(repo_id: str) -> HTMLResponse:
     return HTMLResponse(content=html)
 
 
+@router.get(
+    "/{repo_id}/search",
+    response_class=HTMLResponse,
+    summary="Muse Hub in-repo search page",
+)
+async def search_page(repo_id: str) -> HTMLResponse:
+    """Render the in-repo search page with four mode tabs.
+
+    Modes map to the JSON API at ``GET /api/v1/musehub/repos/{repo_id}/search``:
+    - Musical Properties (``mode=property``) — filter by harmony/rhythm/melody/etc.
+    - Natural Language (``mode=ask``) — free-text question over commit history.
+    - Keyword (``mode=keyword``) — keyword overlap scored search.
+    - Pattern (``mode=pattern``) — substring match against messages and branches.
+
+    Results render as commit rows with SHA, message, author, timestamp, and an
+    audio preview link for any ``mp3``/``wav``/``ogg`` artifact on that commit.
+    Authentication is handled client-side via localStorage JWT.
+    """
+    script = f"""
+      const repoId = {repr(repo_id)};
+      const base   = '/musehub/ui/' + repoId;
+      const apiBase = '/api/v1/musehub/repos/' + repoId;
+
+      function escHtml(s) {{
+        if (!s) return '';
+        return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+      }}
+
+      // ── State ──────────────────────────────────────────────────────────────
+      let currentMode = 'keyword';
+
+      function setMode(mode) {{
+        currentMode = mode;
+        document.querySelectorAll('.tab-btn').forEach(b => {{
+          b.classList.toggle('tab-active', b.dataset.mode === mode);
+        }});
+        document.querySelectorAll('.mode-panel').forEach(p => {{
+          p.style.display = p.dataset.mode === mode ? 'block' : 'none';
+        }});
+      }}
+
+      // ── Result rendering ───────────────────────────────────────────────────
+      function renderResults(data) {{
+        const matches = data.matches || [];
+        const header = `<p style="color:#8b949e;font-size:13px;margin-bottom:12px">
+          Mode: <strong>${{escHtml(data.mode)}}</strong> &bull;
+          Query: <em>${{escHtml(data.query || '(all)')}}</em> &bull;
+          ${{matches.length}} result(s) &bull; ${{data.totalScanned}} commits scanned
+        </p>`;
+
+        if (matches.length === 0) {{
+          document.getElementById('results').innerHTML = header +
+            '<p class="loading">No matching commits found.</p>';
+          return;
+        }}
+
+        const rows = matches.map(m => `
+          <div class="commit-row">
+            <a class="commit-sha" href="${{base}}/commits/${{m.commitId}}">${{shortSha(m.commitId)}}</a>
+            <div class="commit-msg" style="flex:1">
+              <a href="${{base}}/commits/${{m.commitId}}">${{escHtml(m.message)}}</a>
+              <div style="font-size:12px;color:#8b949e;margin-top:2px">
+                ${{escHtml(m.author)}} &bull; ${{fmtDate(m.timestamp)}}
+                &bull; branch: ${{escHtml(m.branch)}}
+                ${{m.score < 1.0 ? '&bull; score: ' + m.score.toFixed(3) : ''}}
+                <a href="${{base}}/commits/${{m.commitId}}"
+                   class="btn btn-secondary"
+                   style="font-size:11px;padding:2px 8px;margin-left:8px">
+                  &#9654; Preview
+                </a>
+              </div>
+            </div>
+          </div>`).join('');
+
+        document.getElementById('results').innerHTML = header +
+          '<div class="card">' + rows + '</div>';
+      }}
+
+      // ── Search dispatch ────────────────────────────────────────────────────
+      async function runSearch() {{
+        document.getElementById('results').innerHTML = '<p class="loading">Searching&#8230;</p>';
+        try {{
+          let url = apiBase + '/search?mode=' + encodeURIComponent(currentMode);
+          const limit = document.getElementById('inp-limit').value || 20;
+          const since = document.getElementById('inp-since').value;
+          const until = document.getElementById('inp-until').value;
+          url += '&limit=' + encodeURIComponent(limit);
+          if (since) url += '&since=' + encodeURIComponent(since + 'T00:00:00Z');
+          if (until) url += '&until=' + encodeURIComponent(until + 'T23:59:59Z');
+
+          if (currentMode === 'property') {{
+            const fields = ['harmony','rhythm','melody','structure','dynamic','emotion'];
+            fields.forEach(f => {{
+              const v = document.getElementById('prop-' + f).value.trim();
+              if (v) url += '&' + f + '=' + encodeURIComponent(v);
+            }});
+          }} else {{
+            const q = document.getElementById('inp-q-' + currentMode).value.trim();
+            if (q) url += '&q=' + encodeURIComponent(q);
+          }}
+
+          const data = await apiFetch(url.replace(apiBase, ''));
+          renderResults(data);
+        }} catch(e) {{
+          if (e.message !== 'auth')
+            document.getElementById('results').innerHTML =
+              '<p class="error">&#10005; ' + escHtml(e.message) + '</p>';
+        }}
+      }}
+
+      // ── Page bootstrap ─────────────────────────────────────────────────────
+      document.getElementById('content').innerHTML = `
+        <div style="margin-bottom:12px">
+          <a href="${{base}}">&larr; Back to repo</a>
+        </div>
+        <div class="card">
+          <h1 style="margin-bottom:16px">&#128269; Search Commits</h1>
+
+          <!-- Mode tabs -->
+          <div style="display:flex;gap:8px;margin-bottom:20px;flex-wrap:wrap">
+            <button class="btn tab-btn tab-active" data-mode="keyword"
+                    onclick="setMode('keyword')">Keyword</button>
+            <button class="btn tab-btn" data-mode="ask"
+                    onclick="setMode('ask')">Natural Language</button>
+            <button class="btn tab-btn" data-mode="pattern"
+                    onclick="setMode('pattern')">Pattern</button>
+            <button class="btn tab-btn" data-mode="property"
+                    onclick="setMode('property')">Musical Properties</button>
+          </div>
+
+          <!-- Shared date range + limit -->
+          <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px;align-items:flex-end">
+            <div class="meta-item">
+              <span class="meta-label">Since</span>
+              <input id="inp-since" type="date" style="background:#0d1117;color:#c9d1d9;border:1px solid #30363d;border-radius:6px;padding:6px 10px;font-size:14px" />
+            </div>
+            <div class="meta-item">
+              <span class="meta-label">Until</span>
+              <input id="inp-until" type="date" style="background:#0d1117;color:#c9d1d9;border:1px solid #30363d;border-radius:6px;padding:6px 10px;font-size:14px" />
+            </div>
+            <div class="meta-item">
+              <span class="meta-label">Limit</span>
+              <input id="inp-limit" type="number" value="20" min="1" max="200"
+                     style="width:80px;background:#0d1117;color:#c9d1d9;border:1px solid #30363d;border-radius:6px;padding:6px 10px;font-size:14px" />
+            </div>
+          </div>
+
+          <!-- Keyword panel -->
+          <div class="mode-panel" data-mode="keyword">
+            <div style="display:flex;gap:8px">
+              <input id="inp-q-keyword" type="text" placeholder="e.g. dark jazz bassline"
+                     style="flex:1;background:#0d1117;color:#c9d1d9;border:1px solid #30363d;border-radius:6px;padding:8px;font-size:14px"
+                     onkeydown="if(event.key==='Enter')runSearch()" />
+              <button class="btn btn-primary" onclick="runSearch()">Search</button>
+            </div>
+            <p style="font-size:12px;color:#8b949e;margin-top:6px">
+              Scores commits by keyword overlap. Higher score = better match.
+            </p>
+          </div>
+
+          <!-- Natural Language panel -->
+          <div class="mode-panel" data-mode="ask" style="display:none">
+            <div style="display:flex;gap:8px">
+              <input id="inp-q-ask" type="text" placeholder="e.g. when did I change to F# minor?"
+                     style="flex:1;background:#0d1117;color:#c9d1d9;border:1px solid #30363d;border-radius:6px;padding:8px;font-size:14px"
+                     onkeydown="if(event.key==='Enter')runSearch()" />
+              <button class="btn btn-primary" onclick="runSearch()">Ask</button>
+            </div>
+            <p style="font-size:12px;color:#8b949e;margin-top:6px">
+              Keyword extraction from your question. Full LLM-powered search is a planned enhancement.
+            </p>
+          </div>
+
+          <!-- Pattern panel -->
+          <div class="mode-panel" data-mode="pattern" style="display:none">
+            <div style="display:flex;gap:8px">
+              <input id="inp-q-pattern" type="text" placeholder="e.g. Cm7 or feature/hip-hop"
+                     style="flex:1;background:#0d1117;color:#c9d1d9;border:1px solid #30363d;border-radius:6px;padding:8px;font-size:14px"
+                     onkeydown="if(event.key==='Enter')runSearch()" />
+              <button class="btn btn-primary" onclick="runSearch()">Search</button>
+            </div>
+            <p style="font-size:12px;color:#8b949e;margin-top:6px">
+              Case-insensitive substring match against commit messages and branch names.
+            </p>
+          </div>
+
+          <!-- Musical Properties panel -->
+          <div class="mode-panel" data-mode="property" style="display:none">
+            <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px;margin-bottom:12px">
+              ${{['harmony','rhythm','melody','structure','dynamic','emotion'].map(f => `
+                <div class="meta-item">
+                  <span class="meta-label">${{f}}</span>
+                  <input id="prop-${{f}}" type="text" placeholder="e.g. ${{f==='harmony'?'key=Eb':f==='rhythm'?'tempo=120-130':f}}"
+                         style="background:#0d1117;color:#c9d1d9;border:1px solid #30363d;border-radius:6px;padding:6px 10px;font-size:13px;width:100%" />
+                </div>`).join('')}}
+            </div>
+            <button class="btn btn-primary" onclick="runSearch()">Filter</button>
+            <p style="font-size:12px;color:#8b949e;margin-top:6px">
+              All non-empty fields are combined with AND logic.
+              Range syntax: <code>tempo=120-130</code>.
+            </p>
+          </div>
+        </div>
+
+        <!-- Results area -->
+        <div id="results"><p class="loading" style="display:none"></p></div>
+      `;
+
+      // Apply tab styles after DOM is written.
+      document.querySelectorAll('.tab-btn').forEach(b => {{
+        b.style.background = '#21262d';
+        b.style.color = '#c9d1d9';
+        b.style.border = '1px solid #30363d';
+      }});
+
+      function applyTabActive() {{
+        document.querySelectorAll('.tab-btn').forEach(b => {{
+          const active = b.dataset.mode === currentMode;
+          b.style.background = active ? '#1f6feb' : '#21262d';
+          b.style.color = active ? '#fff' : '#c9d1d9';
+        }});
+      }}
+
+      document.querySelectorAll('.tab-btn').forEach(b => {{
+        b.addEventListener('click', applyTabActive);
+      }});
+
+      applyTabActive();
+    """
+    html = _page(
+        title="Search",
+        breadcrumb=f'<a href="/musehub/ui/{repo_id}">{repo_id[:8]}</a> / search',
+        body_script=script,
+    )
+    return HTMLResponse(content=html)
+
+
+@router.get(
+    "/{repo_id}/releases",
+    response_class=HTMLResponse,
+    summary="Muse Hub release list page",
+)
+async def release_list_page(repo_id: str) -> HTMLResponse:
+    """Render the release list page: all published versions newest first.
+
+    Fetches ``GET /api/v1/musehub/repos/{repo_id}/releases``.
+    Each release shows its tag, title, creation date, and a link to the
+    detail page where release notes and download packages are available.
+    """
+    script = f"""
+      const repoId = {repr(repo_id)};
+      const base   = '/musehub/ui/' + repoId;
+
+      function escHtml(s) {{
+        if (!s) return '';
+        return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+      }}
+
+      async function load() {{
+        try {{
+          const data     = await apiFetch('/repos/' + repoId + '/releases');
+          const releases = data.releases || [];
+
+          const rows = releases.length === 0
+            ? '<p class="loading">No releases published yet.</p>'
+            : releases.map(r => `
+              <div class="release-row">
+                <span class="badge badge-release">${{escHtml(r.tag)}}</span>
+                <div style="flex:1">
+                  <a href="${{base}}/releases/${{encodeURIComponent(r.tag)}}">${{escHtml(r.title)}}</a>
+                  <div style="font-size:12px;color:#8b949e;margin-top:2px">
+                    Released ${{fmtDate(r.createdAt)}}
+                    ${{r.commitId ? ' &bull; commit <span style="font-family:monospace">' + r.commitId.substring(0,8) + '</span>' : ''}}
+                  </div>
+                </div>
+              </div>`).join('');
+
+          document.getElementById('content').innerHTML = `
+            <div style="margin-bottom:12px">
+              <a href="${{base}}">&larr; Back to repo</a>
+            </div>
+            <div class="card">
+              <h1 style="margin-bottom:16px">Releases</h1>
+              ${{rows}}
+            </div>`;
+        }} catch(e) {{
+          if (e.message !== 'auth')
+            document.getElementById('content').innerHTML = '<p class="error">&#10005; ' + escHtml(e.message) + '</p>';
+        }}
+      }}
+
+      load();
+    """
+    html = _page(
+        title="Releases",
+        breadcrumb=f'<a href="/musehub/ui/{repo_id}">{repo_id[:8]}</a> / releases',
+        body_script=script,
+    )
+    return HTMLResponse(content=html)
+
+
+@router.get(
+    "/{repo_id}/releases/{tag}",
+    response_class=HTMLResponse,
+    summary="Muse Hub release detail page",
+)
+async def release_detail_page(repo_id: str, tag: str) -> HTMLResponse:
+    """Render the release detail page: title, tag, release notes, download packages.
+
+    Fetches ``GET /api/v1/musehub/repos/{repo_id}/releases/{tag}``.
+    Download packages (MIDI bundle, stems, MP3, MusicXML, metadata) are
+    rendered as download cards; unavailable packages show a "not available"
+    indicator instead of a broken link.
+    """
+    script = f"""
+      const repoId = {repr(repo_id)};
+      const tag    = {repr(tag)};
+      const base   = '/musehub/ui/' + repoId;
+
+      function escHtml(s) {{
+        if (!s) return '';
+        return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+      }}
+
+      function downloadCard(label, desc, url) {{
+        if (url) {{
+          return `
+            <div class="download-card">
+              <span class="pkg-name">${{label}}</span>
+              <span class="pkg-desc">${{desc}}</span>
+              <a class="btn btn-secondary" href="${{escHtml(url)}}" download>&#11015; Download</a>
+            </div>`;
+        }}
+        return `
+          <div class="download-card" style="opacity:0.5">
+            <span class="pkg-name">${{label}}</span>
+            <span class="pkg-desc">${{desc}}</span>
+            <span style="font-size:12px;color:#8b949e">Not available</span>
+          </div>`;
+      }}
+
+      async function load() {{
+        try {{
+          const r = await apiFetch('/repos/' + repoId + '/releases/' + encodeURIComponent(tag));
+          const dl = r.downloadUrls || {{}};
+
+          const downloads = `
+            <div class="download-grid">
+              ${{downloadCard('Full MIDI', 'All tracks as a single .mid file', dl.midiBubdle || dl.midiBuddle || dl.midiBundle)}}
+              ${{downloadCard('MIDI Stems', 'Individual track stems (zip of .mid files)', dl.stems)}}
+              ${{downloadCard('MP3 Mix', 'Full mix audio render', dl.mp3)}}
+              ${{downloadCard('MusicXML', 'Notation export for sheet music editors', dl.musicxml)}}
+              ${{downloadCard('Metadata', 'JSON manifest: tempo, key, arrangement', dl.metadata)}}
+            </div>`;
+
+          document.getElementById('content').innerHTML = `
+            <div style="margin-bottom:12px">
+              <a href="${{base}}/releases">&larr; Back to releases</a>
+            </div>
+            <div class="card">
+              <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px">
+                <h1 style="margin:0">${{escHtml(r.title)}}</h1>
+                <span class="badge badge-release">${{escHtml(r.tag)}}</span>
+              </div>
+              <div class="meta-row">
+                <div class="meta-item">
+                  <span class="meta-label">Released</span>
+                  <span class="meta-value">${{fmtDate(r.createdAt)}}</span>
+                </div>
+                ${{r.commitId ? `
+                <div class="meta-item">
+                  <span class="meta-label">Commit</span>
+                  <span class="meta-value">
+                    <a href="${{base}}/commits/${{r.commitId}}" style="font-family:monospace">
+                      ${{r.commitId.substring(0,8)}}
+                    </a>
+                  </span>
+                </div>` : ''}}
+              </div>
+              ${{r.body ? '<h2 style="margin-top:16px;margin-bottom:8px">Release Notes</h2><pre>' + escHtml(r.body) + '</pre>' : ''}}
+              <h2 style="margin-top:16px;margin-bottom:8px">Download Packages</h2>
+              ${{downloads}}
+            </div>`;
+        }} catch(e) {{
+          if (e.message !== 'auth')
+            document.getElementById('content').innerHTML = '<p class="error">&#10005; ' + escHtml(e.message) + '</p>';
+        }}
+      }}
+
+      load();
+    """
+    safe_tag = tag[:20] if len(tag) > 20 else tag
+    html = _page(
+        title=f"Release {safe_tag}",
+        breadcrumb=(
+            f'<a href="/musehub/ui/{repo_id}">{repo_id[:8]}</a> / '
+            f'<a href="/musehub/ui/{repo_id}/releases">releases</a> / {safe_tag}'
+        ),
+        body_script=script,
+    )
+    return HTMLResponse(content=html)
 
 
 @router.get(
@@ -1925,243 +3138,6 @@ async def session_detail_page(repo_id: str, session_id: str) -> HTMLResponse:
             f'<a href="/musehub/ui/{repo_id}">{repo_id[:8]}</a> / '
             f'<a href="/musehub/ui/{repo_id}/sessions">sessions</a> / {session_id[:8]}'
         ),
-        body_script=script,
-    )
-    return HTMLResponse(content=html)
-
-
-@router.get(
-    "/{repo_id}/search",
-    response_class=HTMLResponse,
-    summary="Muse Hub in-repo search page",
-)
-async def search_page(repo_id: str) -> HTMLResponse:
-    """Render the in-repo search page with four mode tabs.
-
-    Modes map to the JSON API at ``GET /api/v1/musehub/repos/{repo_id}/search``:
-    - Musical Properties (``mode=property``) — filter by harmony/rhythm/melody/etc.
-    - Natural Language (``mode=ask``) — free-text question over commit history.
-    - Keyword (``mode=keyword``) — keyword overlap scored search.
-    - Pattern (``mode=pattern``) — substring match against messages and branches.
-
-    Results render as commit rows with SHA, message, author, timestamp, and an
-    audio preview link for any ``mp3``/``wav``/``ogg`` artifact on that commit.
-    Authentication is handled client-side via localStorage JWT.
-    """
-    script = f"""
-      const repoId = {repr(repo_id)};
-      const base   = '/musehub/ui/' + repoId;
-      const apiBase = '/api/v1/musehub/repos/' + repoId;
-
-      function escHtml(s) {{
-        if (!s) return '';
-        return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-      }}
-
-      // ── State ──────────────────────────────────────────────────────────────
-      let currentMode = 'keyword';
-
-      function setMode(mode) {{
-        currentMode = mode;
-        document.querySelectorAll('.tab-btn').forEach(b => {{
-          b.classList.toggle('tab-active', b.dataset.mode === mode);
-        }});
-        document.querySelectorAll('.mode-panel').forEach(p => {{
-          p.style.display = p.dataset.mode === mode ? 'block' : 'none';
-        }});
-      }}
-
-      // ── Result rendering ───────────────────────────────────────────────────
-      function renderResults(data) {{
-        const matches = data.matches || [];
-        const header = `<p style="color:#8b949e;font-size:13px;margin-bottom:12px">
-          Mode: <strong>${{escHtml(data.mode)}}</strong> &bull;
-          Query: <em>${{escHtml(data.query || '(all)')}}</em> &bull;
-          ${{matches.length}} result(s) &bull; ${{data.totalScanned}} commits scanned
-        </p>`;
-
-        if (matches.length === 0) {{
-          document.getElementById('results').innerHTML = header +
-            '<p class="loading">No matching commits found.</p>';
-          return;
-        }}
-
-        const rows = matches.map(m => `
-          <div class="commit-row">
-            <a class="commit-sha" href="${{base}}/commits/${{m.commitId}}">${{shortSha(m.commitId)}}</a>
-            <div class="commit-msg" style="flex:1">
-              <a href="${{base}}/commits/${{m.commitId}}">${{escHtml(m.message)}}</a>
-              <div style="font-size:12px;color:#8b949e;margin-top:2px">
-                ${{escHtml(m.author)}} &bull; ${{fmtDate(m.timestamp)}}
-                &bull; branch: ${{escHtml(m.branch)}}
-                ${{m.score < 1.0 ? '&bull; score: ' + m.score.toFixed(3) : ''}}
-                <a href="${{base}}/commits/${{m.commitId}}"
-                   class="btn btn-secondary"
-                   style="font-size:11px;padding:2px 8px;margin-left:8px">
-                  &#9654; Preview
-                </a>
-              </div>
-            </div>
-          </div>`).join('');
-
-        document.getElementById('results').innerHTML = header +
-          '<div class="card">' + rows + '</div>';
-      }}
-
-      // ── Search dispatch ────────────────────────────────────────────────────
-      async function runSearch() {{
-        document.getElementById('results').innerHTML = '<p class="loading">Searching&#8230;</p>';
-        try {{
-          let url = apiBase + '/search?mode=' + encodeURIComponent(currentMode);
-          const limit = document.getElementById('inp-limit').value || 20;
-          const since = document.getElementById('inp-since').value;
-          const until = document.getElementById('inp-until').value;
-          url += '&limit=' + encodeURIComponent(limit);
-          if (since) url += '&since=' + encodeURIComponent(since + 'T00:00:00Z');
-          if (until) url += '&until=' + encodeURIComponent(until + 'T23:59:59Z');
-
-          if (currentMode === 'property') {{
-            const fields = ['harmony','rhythm','melody','structure','dynamic','emotion'];
-            fields.forEach(f => {{
-              const v = document.getElementById('prop-' + f).value.trim();
-              if (v) url += '&' + f + '=' + encodeURIComponent(v);
-            }});
-          }} else {{
-            const q = document.getElementById('inp-q-' + currentMode).value.trim();
-            if (q) url += '&q=' + encodeURIComponent(q);
-          }}
-
-          const data = await apiFetch(url.replace(apiBase, ''));
-          renderResults(data);
-        }} catch(e) {{
-          if (e.message !== 'auth')
-            document.getElementById('results').innerHTML =
-              '<p class="error">&#10005; ' + escHtml(e.message) + '</p>';
-        }}
-      }}
-
-      // ── Page bootstrap ─────────────────────────────────────────────────────
-      document.getElementById('content').innerHTML = `
-        <div style="margin-bottom:12px">
-          <a href="${{base}}">&larr; Back to repo</a>
-        </div>
-        <div class="card">
-          <h1 style="margin-bottom:16px">&#128269; Search Commits</h1>
-
-          <!-- Mode tabs -->
-          <div style="display:flex;gap:8px;margin-bottom:20px;flex-wrap:wrap">
-            <button class="btn tab-btn tab-active" data-mode="keyword"
-                    onclick="setMode('keyword')">Keyword</button>
-            <button class="btn tab-btn" data-mode="ask"
-                    onclick="setMode('ask')">Natural Language</button>
-            <button class="btn tab-btn" data-mode="pattern"
-                    onclick="setMode('pattern')">Pattern</button>
-            <button class="btn tab-btn" data-mode="property"
-                    onclick="setMode('property')">Musical Properties</button>
-          </div>
-
-          <!-- Shared date range + limit -->
-          <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px;align-items:flex-end">
-            <div class="meta-item">
-              <span class="meta-label">Since</span>
-              <input id="inp-since" type="date" style="background:#0d1117;color:#c9d1d9;border:1px solid #30363d;border-radius:6px;padding:6px 10px;font-size:14px" />
-            </div>
-            <div class="meta-item">
-              <span class="meta-label">Until</span>
-              <input id="inp-until" type="date" style="background:#0d1117;color:#c9d1d9;border:1px solid #30363d;border-radius:6px;padding:6px 10px;font-size:14px" />
-            </div>
-            <div class="meta-item">
-              <span class="meta-label">Limit</span>
-              <input id="inp-limit" type="number" value="20" min="1" max="200"
-                     style="width:80px;background:#0d1117;color:#c9d1d9;border:1px solid #30363d;border-radius:6px;padding:6px 10px;font-size:14px" />
-            </div>
-          </div>
-
-          <!-- Keyword panel -->
-          <div class="mode-panel" data-mode="keyword">
-            <div style="display:flex;gap:8px">
-              <input id="inp-q-keyword" type="text" placeholder="e.g. dark jazz bassline"
-                     style="flex:1;background:#0d1117;color:#c9d1d9;border:1px solid #30363d;border-radius:6px;padding:8px;font-size:14px"
-                     onkeydown="if(event.key==='Enter')runSearch()" />
-              <button class="btn btn-primary" onclick="runSearch()">Search</button>
-            </div>
-            <p style="font-size:12px;color:#8b949e;margin-top:6px">
-              Scores commits by keyword overlap. Higher score = better match.
-            </p>
-          </div>
-
-          <!-- Natural Language panel -->
-          <div class="mode-panel" data-mode="ask" style="display:none">
-            <div style="display:flex;gap:8px">
-              <input id="inp-q-ask" type="text" placeholder="e.g. when did I change to F# minor?"
-                     style="flex:1;background:#0d1117;color:#c9d1d9;border:1px solid #30363d;border-radius:6px;padding:8px;font-size:14px"
-                     onkeydown="if(event.key==='Enter')runSearch()" />
-              <button class="btn btn-primary" onclick="runSearch()">Ask</button>
-            </div>
-            <p style="font-size:12px;color:#8b949e;margin-top:6px">
-              Keyword extraction from your question. Full LLM-powered search is a planned enhancement.
-            </p>
-          </div>
-
-          <!-- Pattern panel -->
-          <div class="mode-panel" data-mode="pattern" style="display:none">
-            <div style="display:flex;gap:8px">
-              <input id="inp-q-pattern" type="text" placeholder="e.g. Cm7 or feature/hip-hop"
-                     style="flex:1;background:#0d1117;color:#c9d1d9;border:1px solid #30363d;border-radius:6px;padding:8px;font-size:14px"
-                     onkeydown="if(event.key==='Enter')runSearch()" />
-              <button class="btn btn-primary" onclick="runSearch()">Search</button>
-            </div>
-            <p style="font-size:12px;color:#8b949e;margin-top:6px">
-              Case-insensitive substring match against commit messages and branch names.
-            </p>
-          </div>
-
-          <!-- Musical Properties panel -->
-          <div class="mode-panel" data-mode="property" style="display:none">
-            <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px;margin-bottom:12px">
-              ${{['harmony','rhythm','melody','structure','dynamic','emotion'].map(f => `
-                <div class="meta-item">
-                  <span class="meta-label">${{f}}</span>
-                  <input id="prop-${{f}}" type="text" placeholder="e.g. ${{f==='harmony'?'key=Eb':f==='rhythm'?'tempo=120-130':f}}"
-                         style="background:#0d1117;color:#c9d1d9;border:1px solid #30363d;border-radius:6px;padding:6px 10px;font-size:13px;width:100%" />
-                </div>`).join('')}}
-            </div>
-            <button class="btn btn-primary" onclick="runSearch()">Filter</button>
-            <p style="font-size:12px;color:#8b949e;margin-top:6px">
-              All non-empty fields are combined with AND logic.
-              Range syntax: <code>tempo=120-130</code>.
-            </p>
-          </div>
-        </div>
-
-        <!-- Results area -->
-        <div id="results"><p class="loading" style="display:none"></p></div>
-      `;
-
-      // Apply tab styles after DOM is written.
-      document.querySelectorAll('.tab-btn').forEach(b => {{
-        b.style.background = '#21262d';
-        b.style.color = '#c9d1d9';
-        b.style.border = '1px solid #30363d';
-      }});
-
-      function applyTabActive() {{
-        document.querySelectorAll('.tab-btn').forEach(b => {{
-          const active = b.dataset.mode === currentMode;
-          b.style.background = active ? '#1f6feb' : '#21262d';
-          b.style.color = active ? '#fff' : '#c9d1d9';
-        }});
-      }}
-
-      document.querySelectorAll('.tab-btn').forEach(b => {{
-        b.addEventListener('click', applyTabActive);
-      }});
-
-      applyTabActive();
-    """
-    html = _page(
-        title="Search",
-        breadcrumb=f'<a href="/musehub/ui/{repo_id}">{repo_id[:8]}</a> / search',
         body_script=script,
     )
     return HTMLResponse(content=html)
