@@ -1459,8 +1459,41 @@ maestro/
     └── ui.py                             — Browser UI HTML shell pages (repo, commits, PRs, issues, sessions, search)
     └── ui.py                             — HTML UI pages (divergence radar chart, search mode tabs)
     └── ui.py                             — HTML shells for browser: explore, trending, repo, commit, PR, issue pages (incl. /search page with mode tabs)
+    ├── negotiate.py                      — Content negotiation helper (HTML vs JSON from one URL)
     └── ui.py                             — HTML UI pages (incl. credits and /search pages)
 ```
+
+### Content Negotiation — Dual-Format Endpoints
+
+Key MuseHub UI routes implement **content negotiation**: the same URL serves HTML
+to browsers and JSON to agents, decided by the `Accept` header (or `?format=json`).
+
+**Why this exists:** The Stori DAW philosophy is agent-first. An AI agent composing
+music should call `GET /{owner}/{repo_slug}` and receive structured JSON — not
+navigate a parallel `/api/v1/...` endpoint tree that requires separate maintenance.
+
+**Mechanism (`negotiate.py`):**
+
+```python
+# Decision order (first match wins):
+# 1. ?format=json  → JSON (explicit override, works in browser <a> links)
+# 2. Accept: application/json → JSON (standard HTTP content negotiation)
+# 3. default → text/html
+```
+
+JSON uses `CamelModel.model_dump(by_alias=True)` — camelCase keys matching the
+`/api/v1/musehub/...` convention. No schema divergence.
+
+**Current dual-format endpoints:**
+
+| URL | JSON response model |
+|-----|---------------------|
+| `GET /musehub/ui/{owner}/{repo_slug}` | `RepoResponse` |
+| `GET /musehub/ui/{owner}/{repo_slug}/commits` | `CommitListResponse` |
+| `GET /musehub/ui/{owner}/{repo_slug}/commits/{commit_id}` | `CommitResponse` |
+
+All other UI endpoints still return HTML only. As new pages are added, adopt
+`negotiate_response()` immediately so agents automatically get JSON support.
 
 ### Endpoints
 

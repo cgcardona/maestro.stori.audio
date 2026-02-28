@@ -51,13 +51,16 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi import status as http_status
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.ext.asyncio import AsyncSession
+from starlette.responses import Response as StarletteResponse
 
+from maestro.api.routes.musehub.negotiate import negotiate_response
 from maestro.db import get_db
+from maestro.models.musehub import CommitListResponse, CommitResponse, RepoResponse
 from maestro.services import musehub_repository
 
 logger = logging.getLogger(__name__)
@@ -97,6 +100,23 @@ async def _resolve_repo(
             detail=f"Repo '{owner}/{repo_slug}' not found",
         )
     return str(row.repo_id), _base_url(owner, repo_slug)
+
+
+async def _resolve_repo_full(
+    owner: str, repo_slug: str, db: AsyncSession
+) -> tuple[RepoResponse, str]:
+    """Resolve owner+slug to a full RepoResponse; raise 404 if not found.
+
+    Returns (repo_response, base_url).  Use this when the handler needs
+    structured repo data (e.g. to return JSON via negotiate_response).
+    """
+    repo = await musehub_repository.get_repo_by_owner_slug(db, owner, repo_slug)
+    if repo is None:
+        raise HTTPException(
+            status_code=http_status.HTTP_404_NOT_FOUND,
+            detail=f"Repo '{owner}/{repo_slug}' not found",
+        )
+    return repo, _base_url(owner, repo_slug)
 
 
 # ---------------------------------------------------------------------------
@@ -214,37 +234,84 @@ async def profile_page(request: Request, username: str) -> HTMLResponse:
 
 @router.get(
     "/{owner}/{repo_slug}",
-    response_class=HTMLResponse,
     summary="Muse Hub repo landing page",
 )
 async def repo_page(
     request: Request,
     owner: str,
     repo_slug: str,
+    format: str | None = Query(None, description="Force response format: 'json' or omit for HTML"),
     db: AsyncSession = Depends(get_db),
-) -> HTMLResponse:
-    """Render the repo landing page: branch selector + newest 20 commits.
+) -> StarletteResponse:
+    """Render the repo landing page or return structured repo data as JSON.
 
-    Resolves owner+slug to repo_id server-side; the JS then uses the
-    internal repo_id for API calls.
+    HTML (default): branch selector + newest 20 commits rendered via Jinja2.
+    JSON (``Accept: application/json`` or ``?format=json``): returns the full
+    ``RepoResponse`` Pydantic model with camelCase keys.
+
+    One URL, two audiences — agents get structured data, humans get rich HTML.
+    """
+    repo, base_url = await _resolve_repo_full(owner, repo_slug, db)
+    return await negotiate_response(
+        request=request,
+        template_name="musehub/pages/repo.html",
+        context={
+            "owner": owner,
+            "repo_slug": repo_slug,
+            "repo_id": str(repo.repo_id),
+            "base_url": base_url,
+            "current_page": "commits",
+        },
+        templates=templates,
+        json_data=repo,
+        format_param=format,
+    )
+
+
+@router.get(
+    "/{owner}/{repo_slug}/commits",
+    summary="Muse Hub commits list page",
+)
+async def commits_list_page(
+    request: Request,
+    owner: str,
+    repo_slug: str,
+    branch: str | None = Query(None, description="Filter commits by branch name"),
+    limit: int = Query(50, ge=1, le=200, description="Max commits to return"),
+    format: str | None = Query(None, description="Force response format: 'json' or omit for HTML"),
+    db: AsyncSession = Depends(get_db),
+) -> StarletteResponse:
+    """Render the commits list page or return structured commit data as JSON.
+
+    HTML (default): renders the repo commits list via Jinja2.
+    JSON (``Accept: application/json`` or ``?format=json``): returns
+    ``CommitListResponse`` with the newest commits first.
+
+    Agents use this to inspect a repo's commit history without navigating
+    a separate ``/api/v1/...`` endpoint.
     """
     repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
-    return templates.TemplateResponse(
-        request,
-        "musehub/pages/repo.html",
-        {
+    commits, total = await musehub_repository.list_commits(
+        db, repo_id, branch=branch, limit=limit
+    )
+    return await negotiate_response(
+        request=request,
+        template_name="musehub/pages/repo.html",
+        context={
             "owner": owner,
             "repo_slug": repo_slug,
             "repo_id": repo_id,
             "base_url": base_url,
             "current_page": "commits",
         },
+        templates=templates,
+        json_data=CommitListResponse(commits=commits, total=total),
+        format_param=format,
     )
 
 
 @router.get(
     "/{owner}/{repo_slug}/commits/{commit_id}",
-    response_class=HTMLResponse,
     summary="Muse Hub commit detail page",
 )
 async def commit_page(
@@ -252,9 +319,15 @@ async def commit_page(
     owner: str,
     repo_slug: str,
     commit_id: str,
+    format: str | None = Query(None, description="Force response format: 'json' or omit for HTML"),
     db: AsyncSession = Depends(get_db),
-) -> HTMLResponse:
-    """Render the commit detail page: metadata + artifact browser.
+) -> StarletteResponse:
+    """Render the commit detail page or return structured commit data as JSON.
+
+    HTML (default): metadata + artifact browser rendered via Jinja2.
+    JSON (``Accept: application/json`` or ``?format=json``): returns the full
+    ``CommitResponse`` Pydantic model with camelCase keys, or a minimal context
+    dict if the commit is not yet in the DB (not yet synced).
 
     Artifacts are displayed by extension:
     - ``.webp/.png/.jpg`` → inline ``<img>``
@@ -262,10 +335,11 @@ async def commit_page(
     - other              → download link
     """
     repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
-    return templates.TemplateResponse(
-        request,
-        "musehub/pages/commit.html",
-        {
+    commit = await musehub_repository.get_commit(db, repo_id, commit_id)
+    return await negotiate_response(
+        request=request,
+        template_name="musehub/pages/commit.html",
+        context={
             "owner": owner,
             "repo_slug": repo_slug,
             "repo_id": repo_id,
@@ -273,6 +347,9 @@ async def commit_page(
             "base_url": base_url,
             "current_page": "commits",
         },
+        templates=templates,
+        json_data=commit,
+        format_param=format,
     )
 
 
