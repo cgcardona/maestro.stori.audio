@@ -18,6 +18,7 @@ from collections import deque
 
 from sqlalchemy import desc, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import aliased
 from sqlalchemy.sql.elements import ColumnElement
 
 from maestro.db import musehub_models as db
@@ -48,6 +49,8 @@ from maestro.models.musehub import (
     TimelineTrackEvent,
     TreeEntryResponse,
     TreeListResponse,
+    UserForkedRepoEntry,
+    UserForksResponse,
 )
 
 logger = logging.getLogger(__name__)
@@ -1194,3 +1197,41 @@ async def list_tree(
         dir_path=dir_path.strip("/"),
         entries=dirs + files,
     )
+
+
+async def get_user_forks(db_session: AsyncSession, username: str) -> UserForksResponse:
+    """Return all repos that ``username`` has forked, with source attribution.
+
+    Joins ``musehub_forks`` (where ``forked_by`` matches the given username)
+    with ``musehub_repos`` twice — once for the fork repo metadata and once
+    for the source repo's owner/slug so the profile page can render
+    "forked from {source_owner}/{source_slug}" under each card.
+
+    Returns an empty list (not 404) when the user exists but has no forks.
+    Callers are responsible for 404-guarding the username before invoking this.
+    """
+    ForkRepo = aliased(db.MusehubRepo, name="fork_repo")
+    SourceRepo = aliased(db.MusehubRepo, name="source_repo")
+
+    rows = (
+        await db_session.execute(
+            select(db.MusehubFork, ForkRepo, SourceRepo)
+            .join(ForkRepo, db.MusehubFork.fork_repo_id == ForkRepo.repo_id)
+            .join(SourceRepo, db.MusehubFork.source_repo_id == SourceRepo.repo_id)
+            .where(db.MusehubFork.forked_by == username)
+            .order_by(db.MusehubFork.created_at.desc())
+        )
+    ).all()
+
+    entries = [
+        UserForkedRepoEntry(
+            fork_id=fork.fork_id,
+            fork_repo=_to_repo_response(fork_repo),
+            source_owner=source_repo.owner,
+            source_slug=source_repo.slug,
+            forked_at=fork.created_at,
+        )
+        for fork, fork_repo, source_repo in rows
+    ]
+
+    return UserForksResponse(forks=entries, total=len(entries))

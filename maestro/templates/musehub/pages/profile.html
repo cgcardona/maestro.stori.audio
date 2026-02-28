@@ -6,6 +6,7 @@
 {% block page_data %}
 const username        = {{ username | tojson }};
 const API_PROFILE     = '/api/v1/musehub/users/' + username;
+const API_FORKS       = '/api/v1/musehub/users/' + username + '/forks';
 const API_FOLLOWERS   = '/api/v1/musehub/users/' + username + '/followers-list';
 const API_FOLLOWING   = '/api/v1/musehub/users/' + username + '/following-list';
 {% endblock %}
@@ -54,6 +55,38 @@ function repoCardHtml(r) {
       &bull; Last activity: ${lastAct}
     </div>
   </div>`;
+}
+
+function forkedRepoCardHtml(entry) {
+  const r = entry.forkRepo;
+  const sourceLink = `/musehub/ui/${escHtml(entry.sourceOwner)}/${escHtml(entry.sourceSlug)}`;
+  return `<div class="repo-card">
+    <h3><a href="/musehub/ui/${escHtml(r.owner)}/${escHtml(r.slug)}">${escHtml(r.name)}</a></h3>
+    <div class="repo-meta">
+      <span class="badge badge-${r.visibility}">${r.visibility}</span>
+      &bull; forked from <a href="${sourceLink}">${escHtml(entry.sourceOwner)}/${escHtml(entry.sourceSlug)}</a>
+    </div>
+  </div>`;
+}
+
+async function loadForkedRepos() {
+  try {
+    const data = await fetch(API_FORKS).then(r => r.json());
+    const forks = data.forks || [];
+    const section = document.getElementById('forked-section');
+    if (!section) return;
+    if (forks.length === 0) {
+      section.innerHTML = '<div class="card"><p class="loading">No forked repositories yet.</p></div>';
+      return;
+    }
+    section.innerHTML = `<div class="card">
+      <h2 style="margin-bottom:12px">&#127860; Forked Repositories (${forks.length})</h2>
+      <div class="repo-grid">${forks.map(forkedRepoCardHtml).join('')}</div>
+    </div>`;
+  } catch(e) {
+    const section = document.getElementById('forked-section');
+    if (section) section.innerHTML = '';
+  }
 }
 
 async function toggleFollow() {
@@ -229,7 +262,9 @@ async function load() {
     ${socialTabsSection}
     ${graphSection}
     ${reposSection}
+    <div id="forked-section"></div>
   `;
+  loadForkedRepos();
 }
 
 // Style active social tab button via JS since we're in a raw-string context

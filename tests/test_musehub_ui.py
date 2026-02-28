@@ -84,6 +84,15 @@ Covers issue #292 (rich event cards in activity feed):
 - test_feed_page_has_actor_avatar_logic      — actorAvatar / actorHsl helper present
 - test_feed_page_has_relative_timestamp      — fmtRelative called in card rendering
 
+Covers issue #293 (mark-as-read UX in activity feed):
+- test_feed_page_has_mark_one_read_function          — markOneRead() defined for per-card action
+- test_feed_page_has_mark_all_read_function          — markAllRead() defined for bulk action
+- test_feed_page_has_decrement_nav_badge_function    — decrementNavBadge() keeps badge in sync
+- test_feed_page_mark_read_btn_targets_notification_endpoint — calls POST /notifications/{id}/read
+- test_feed_page_mark_all_btn_targets_read_all_endpoint      — calls POST /notifications/read-all
+- test_feed_page_mark_all_btn_present_in_template    — mark-all-read-btn element in page HTML
+- test_feed_page_mark_read_updates_nav_badge         — nav-notif-badge updated after mark-all
+
 UI routes require no JWT auth (they return HTML shells whose JS handles auth).
 The HTML content tests assert structural markers present in every rendered page.
 
@@ -151,6 +160,7 @@ from maestro.db.musehub_models import (
     MusehubBranch,
     MusehubCommit,
     MusehubFollow,
+    MusehubFork,
     MusehubObject,
     MusehubProfile,
     MusehubRelease,
@@ -1881,6 +1891,118 @@ async def test_profile_page_unknown_user_renders_404_inline(
     assert "text/html" in response.headers["content-type"]
 
 
+# ---------------------------------------------------------------------------
+# Forked repos endpoint tests (issue #303)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.anyio
+async def test_profile_forked_repos_empty_list(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """GET /api/v1/musehub/users/{username}/forks returns empty list when user has no forks."""
+    await _make_profile(db_session, "freshuser")
+    response = await client.get("/api/v1/musehub/users/freshuser/forks")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["forks"] == []
+    assert data["total"] == 0
+
+
+@pytest.mark.anyio
+async def test_profile_forked_repos_returns_forks(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """GET /api/v1/musehub/users/{username}/forks returns forked repos with source attribution."""
+    await _make_profile(db_session, "forkuser")
+
+    # Seed a source repo owned by another user
+    source = MusehubRepo(
+        name="original-track",
+        owner="original-owner",
+        slug="original-track",
+        visibility="public",
+        owner_user_id="original-owner-id",
+    )
+    db_session.add(source)
+    await db_session.commit()
+    await db_session.refresh(source)
+
+    # Seed the fork repo owned by forkuser
+    fork_repo = MusehubRepo(
+        name="original-track",
+        owner="forkuser",
+        slug="original-track",
+        visibility="public",
+        owner_user_id=_TEST_USER_ID,
+    )
+    db_session.add(fork_repo)
+    await db_session.commit()
+    await db_session.refresh(fork_repo)
+
+    # Seed the fork relationship
+    fork = MusehubFork(
+        source_repo_id=source.repo_id,
+        fork_repo_id=fork_repo.repo_id,
+        forked_by="forkuser",
+    )
+    db_session.add(fork)
+    await db_session.commit()
+
+    response = await client.get("/api/v1/musehub/users/forkuser/forks")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["total"] == 1
+    assert len(data["forks"]) == 1
+    entry = data["forks"][0]
+    assert entry["sourceOwner"] == "original-owner"
+    assert entry["sourceSlug"] == "original-track"
+    assert entry["forkRepo"]["owner"] == "forkuser"
+    assert entry["forkRepo"]["slug"] == "original-track"
+    assert "forkId" in entry
+    assert "forkedAt" in entry
+
+
+@pytest.mark.anyio
+async def test_profile_forked_repos_404_for_unknown_user(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """GET /api/v1/musehub/users/{unknown}/forks returns 404 when user doesn't exist."""
+    response = await client.get("/api/v1/musehub/users/ghost-no-profile/forks")
+    assert response.status_code == 404
+
+
+@pytest.mark.anyio
+async def test_profile_forked_repos_no_auth_required(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """GET /api/v1/musehub/users/{username}/forks is publicly accessible without a JWT."""
+    await _make_profile(db_session, "public-forkuser")
+    response = await client.get("/api/v1/musehub/users/public-forkuser/forks")
+    assert response.status_code == 200
+    assert response.status_code != 401
+
+
+@pytest.mark.anyio
+async def test_profile_page_has_forked_section_js(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Profile HTML page includes the forked repos JS (loadForkedRepos, forked-section)."""
+    await _make_profile(db_session, "jsforkuser")
+    response = await client.get("/musehub/ui/users/jsforkuser")
+    assert response.status_code == 200
+    body = response.text
+    assert "loadForkedRepos" in body
+    assert "forked-section" in body
+    assert "API_FORKS" in body
+    assert "forked from" in body
+
+
 @pytest.mark.anyio
 async def test_timeline_page_renders(
     client: AsyncClient,
@@ -2157,6 +2279,96 @@ async def test_session_detail_404_marker(
     body = response.text
     # The JS error handler must check for a 404 and render a "not found" message
     assert "Session not found" in body or "404" in body
+
+
+@pytest.mark.anyio
+async def test_session_detail_has_comment_section(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Session detail page must include the Discussion comment section."""
+    await _make_repo(db_session)
+    session_id = "comment-section-session-001"
+    response = await client.get(f"/musehub/ui/testuser/test-beats/sessions/{session_id}")
+    assert response.status_code == 200
+    body = response.text
+    assert "comments-section" in body
+    assert "Discussion" in body
+    assert "comments-list" in body
+
+
+@pytest.mark.anyio
+async def test_session_detail_comment_section_uses_session_target_type(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Session detail comment API calls must use target_type='session'."""
+    await _make_repo(db_session)
+    session_id = "target-type-session-002"
+    response = await client.get(f"/musehub/ui/testuser/test-beats/sessions/{session_id}")
+    assert response.status_code == 200
+    body = response.text
+    assert "target_type: 'session'" in body or "target_type=\"session\"" in body
+
+
+@pytest.mark.anyio
+async def test_session_detail_has_loadcomments_call(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Session detail page must call loadComments() on init."""
+    await _make_repo(db_session)
+    session_id = "load-comments-session-003"
+    response = await client.get(f"/musehub/ui/testuser/test-beats/sessions/{session_id}")
+    assert response.status_code == 200
+    body = response.text
+    assert "loadComments" in body
+
+
+@pytest.mark.anyio
+async def test_session_detail_has_submit_comment_function(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Session detail page must include the submitComment JS function."""
+    await _make_repo(db_session)
+    session_id = "submit-comment-session-004"
+    response = await client.get(f"/musehub/ui/testuser/test-beats/sessions/{session_id}")
+    assert response.status_code == 200
+    body = response.text
+    assert "submitComment" in body
+    assert "deleteComment" in body
+
+
+@pytest.mark.anyio
+async def test_session_detail_has_render_comments_function(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Session detail page must include renderComments() for threaded display."""
+    await _make_repo(db_session)
+    session_id = "render-comments-session-005"
+    response = await client.get(f"/musehub/ui/testuser/test-beats/sessions/{session_id}")
+    assert response.status_code == 200
+    body = response.text
+    assert "renderComments" in body
+
+
+@pytest.mark.anyio
+async def test_session_detail_comment_form_has_new_comment_body(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Session detail page must include the new-comment-body textarea and submit button."""
+    await _make_repo(db_session)
+    session_id = "comment-form-session-006"
+    response = await client.get(f"/musehub/ui/testuser/test-beats/sessions/{session_id}")
+    assert response.status_code == 200
+    body = response.text
+    assert "new-comment-body" in body
+    assert "new-comment-form" in body
+    assert "comment-submit-btn" in body
+
 
 async def _make_session(
     db_session: AsyncSession,
@@ -6214,6 +6426,92 @@ async def test_feed_page_has_relative_timestamp(
     response = await client.get("/musehub/ui/feed")
     assert response.status_code == 200
     assert "fmtRelative" in response.text
+
+
+# ---------------------------------------------------------------------------
+# Mark-as-read UX tests — issue #293
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.anyio
+async def test_feed_page_has_mark_one_read_function(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Feed page must define markOneRead() for per-notification mark-as-read."""
+    response = await client.get("/musehub/ui/feed")
+    assert response.status_code == 200
+    assert "markOneRead" in response.text
+
+
+@pytest.mark.anyio
+async def test_feed_page_has_mark_all_read_function(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Feed page must define markAllRead() for bulk mark-as-read."""
+    response = await client.get("/musehub/ui/feed")
+    assert response.status_code == 200
+    assert "markAllRead" in response.text
+
+
+@pytest.mark.anyio
+async def test_feed_page_has_decrement_nav_badge_function(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Feed page must define decrementNavBadge() to keep the nav badge in sync."""
+    response = await client.get("/musehub/ui/feed")
+    assert response.status_code == 200
+    assert "decrementNavBadge" in response.text
+
+
+@pytest.mark.anyio
+async def test_feed_page_mark_read_btn_targets_notification_endpoint(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """markOneRead() must call POST /notifications/{notif_id}/read."""
+    response = await client.get("/musehub/ui/feed")
+    assert response.status_code == 200
+    body = response.text
+    assert "/notifications/" in body
+    assert "mark-read-btn" in body
+
+
+@pytest.mark.anyio
+async def test_feed_page_mark_all_btn_targets_read_all_endpoint(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """markAllRead() must call POST /notifications/read-all."""
+    response = await client.get("/musehub/ui/feed")
+    assert response.status_code == 200
+    assert "read-all" in response.text
+
+
+@pytest.mark.anyio
+async def test_feed_page_mark_all_btn_present_in_template(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Feed page must render a 'Mark all as read' button element."""
+    response = await client.get("/musehub/ui/feed")
+    assert response.status_code == 200
+    assert "mark-all-read-btn" in response.text
+
+
+@pytest.mark.anyio
+async def test_feed_page_mark_read_updates_nav_badge(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """After marking all as read, page logic must update nav-notif-badge to hidden."""
+    response = await client.get("/musehub/ui/feed")
+    assert response.status_code == 200
+    body = response.text
+    assert "nav-notif-badge" in body
+    assert "decrementNavBadge" in body
 
 
 # ---------------------------------------------------------------------------

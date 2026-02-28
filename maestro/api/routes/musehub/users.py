@@ -2,6 +2,7 @@
 
 Endpoint summary:
   GET  /musehub/users/{username}                — fetch full profile (public, no JWT required)
+  GET  /musehub/users/{username}/forks          — list repos forked by this user (public)
   POST /musehub/users                           — create a profile for the authenticated user
   PUT  /musehub/users/{username}                — update bio/avatar/pinned repos (owner only)
   GET  /musehub/users/{username}/followers-list — list followers as user cards (public)
@@ -27,8 +28,9 @@ from maestro.auth.dependencies import TokenClaims, optional_token, require_valid
 from maestro.db import get_db
 from maestro.db.musehub_models import MusehubFollow, MusehubProfile
 from maestro.models.base import CamelModel
-from maestro.models.musehub import ProfileResponse, ProfileUpdateRequest
+from maestro.models.musehub import ProfileResponse, ProfileUpdateRequest, UserForksResponse
 from maestro.services import musehub_profile as profile_svc
+from maestro.services import musehub_repository as repo_svc
 
 logger = logging.getLogger(__name__)
 
@@ -90,6 +92,38 @@ async def get_user_profile(
         )
     logger.info("✅ Served profile for username=%s", username)
     return profile
+
+
+@router.get(
+    "/users/{username}/forks",
+    response_model=UserForksResponse,
+    operation_id="getUserForks",
+    summary="List repos forked by a user (public)",
+)
+async def get_user_forks(
+    username: str,
+    db: AsyncSession = Depends(get_db),
+) -> UserForksResponse:
+    """Return all repos that ``username`` has forked, with source attribution.
+
+    Joins ``musehub_forks`` (where ``forked_by`` matches the given username)
+    with ``musehub_repos`` twice — once for the fork repo metadata and once
+    for the source repo's owner/slug so the profile page can render
+    "forked from {source_owner}/{source_slug}" under each card.
+
+    No JWT required — the forked tab is publicly visible on profile pages.
+    Returns 404 when the username does not exist.
+    """
+    profile = await profile_svc.get_profile_by_username(db, username)
+    if profile is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"No profile found for username '{username}'",
+        )
+
+    result = await repo_svc.get_user_forks(db, username)
+    logger.info("✅ Served %d forks for username=%s", result.total, username)
+    return result
 
 
 @router.post(

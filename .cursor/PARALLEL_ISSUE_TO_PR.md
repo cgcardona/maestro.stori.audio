@@ -145,7 +145,9 @@ GH_REPO=cgcardona/maestro
 # Enable rerere so git caches conflict resolutions across agents.
 # When multiple agents resolve the same conflict (e.g. muse_vcs.md), rerere
 # automatically reuses the recorded resolution — no manual work needed.
-git config rerere.enabled true
+# || true: the sandbox blocks .git/config writes (EPERM) when this runs as
+# part of a multi-statement block. rerere is an optimization, not critical.
+git config rerere.enabled true || true
 
 # ── PHASE LABEL ─────────────────────────────────────────────────────────────
 # Change this to the current phase label. This is the ONLY value you update.
@@ -630,15 +632,15 @@ REPO=$(git rev-parse --show-toplevel)
 cd "$REPO"
 
 echo "=== Files touched by currently open PRs ==="
-gh pr list --state open --json number,title --jq '.[] | "\(.number)|\(.title)"' | \
-  while IFS='|' read -r num title; do
-    files=$(gh pr diff "$num" --name-only 2>/dev/null)
-    if [ -n "$files" ]; then
-      echo ""
-      echo "PR #$num — $title:"
-      echo "$files" | sed 's/^/  /'
-    fi
-  done
+for num in $(gh pr list --state open --json number --jq '.[].number'); do
+  files=$(gh pr diff "$num" --name-only 2>/dev/null)
+  if [ -n "$files" ]; then
+    title=$(gh pr view "$num" --json title --jq .title 2>/dev/null)
+    echo ""
+    echo "PR #$num — $title:"
+    echo "$files" | sed 's/^/  /'
+  fi
+done
 
 echo ""
 echo "⚠️  Any file appearing in TWO entries above = conflict at merge time."
