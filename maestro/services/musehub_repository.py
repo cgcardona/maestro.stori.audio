@@ -10,6 +10,7 @@ Boundary rules:
 - May import Pydantic response models from maestro.models.musehub.
 """
 from __future__ import annotations
+from datetime import datetime, timezone
 
 import logging
 import re
@@ -21,6 +22,8 @@ from sqlalchemy.sql.elements import ColumnElement
 
 from maestro.db import musehub_models as db
 from maestro.models.musehub import (
+    SessionListResponse,
+    SessionResponse,
     BranchResponse,
     CommitResponse,
     GlobalSearchCommitMatch,
@@ -40,27 +43,44 @@ from maestro.models.musehub import (
     TimelineResponse,
     TimelineSectionEvent,
     TimelineTrackEvent,
+    TreeEntryResponse,
+    TreeListResponse,
 )
 
 logger = logging.getLogger(__name__)
 
 
-def _repo_clone_url(repo_id: str) -> str:
-    """Derive a deterministic clone URL from the repo ID.
+def _generate_slug(name: str) -> str:
+    """Derive a URL-safe slug from a human-readable repo name.
 
-    The URL format is intentionally simple for MVP; it will be parameterised
-    by ``settings.musehub_base_url`` once that setting is introduced.
+    Rules: lowercase, non-alphanumeric chars collapsed to single hyphens,
+    leading/trailing hyphens stripped, max 64 chars.  If the result is empty
+    (e.g. name was all symbols) we fall back to "repo".
     """
-    return f"/musehub/repos/{repo_id}"
+    slug = name.lower()
+    slug = re.sub(r"[^a-z0-9]+", "-", slug)
+    slug = slug.strip("-")
+    slug = slug[:64].strip("-")
+    return slug or "repo"
+
+
+def _repo_clone_url(owner: str, slug: str) -> str:
+    """Derive the canonical clone URL from owner and slug.
+
+    Uses the /{owner}/{slug} scheme — no internal UUID exposed in external URLs.
+    """
+    return f"/{owner}/{slug}"
 
 
 def _to_repo_response(row: db.MusehubRepo) -> RepoResponse:
     return RepoResponse(
         repo_id=row.repo_id,
         name=row.name,
+        owner=row.owner,
+        slug=row.slug,
         visibility=row.visibility,
         owner_user_id=row.owner_user_id,
-        clone_url=_repo_clone_url(row.repo_id),
+        clone_url=_repo_clone_url(row.owner, row.slug),
         description=row.description,
         tags=list(row.tags or []),
         key_signature=row.key_signature,
@@ -93,6 +113,7 @@ async def create_repo(
     session: AsyncSession,
     *,
     name: str,
+    owner: str,
     visibility: str,
     owner_user_id: str,
     description: str = "",
@@ -100,9 +121,16 @@ async def create_repo(
     key_signature: str | None = None,
     tempo_bpm: int | None = None,
 ) -> RepoResponse:
-    """Persist a new remote repo and return its wire representation."""
+    """Persist a new remote repo and return its wire representation.
+
+    ``slug`` is auto-generated from ``name``.  The ``(owner, slug)`` pair must
+    be unique — callers should catch ``IntegrityError`` and surface a 409.
+    """
+    slug = _generate_slug(name)
     repo = db.MusehubRepo(
         name=name,
+        owner=owner,
+        slug=slug,
         visibility=visibility,
         owner_user_id=owner_user_id,
         description=description,
@@ -113,16 +141,50 @@ async def create_repo(
     session.add(repo)
     await session.flush()  # populate default columns before reading
     await session.refresh(repo)
-    logger.info("✅ Created Muse Hub repo %s (%s) for user %s", repo.repo_id, name, owner_user_id)
+    logger.info(
+        "✅ Created Muse Hub repo %s (%s/%s) for user %s",
+        repo.repo_id, owner, slug, owner_user_id,
+    )
     return _to_repo_response(repo)
 
 
 async def get_repo(session: AsyncSession, repo_id: str) -> RepoResponse | None:
-    """Return repo metadata, or None if not found."""
+    """Return repo metadata by internal UUID, or None if not found."""
     result = await session.get(db.MusehubRepo, repo_id)
     if result is None:
         return None
     return _to_repo_response(result)
+
+
+async def get_repo_by_owner_slug(
+    session: AsyncSession, owner: str, slug: str
+) -> RepoResponse | None:
+    """Return repo metadata by owner+slug canonical URL pair, or None if not found.
+
+    This is the primary resolver for all external /{owner}/{slug} routes.
+    """
+    stmt = select(db.MusehubRepo).where(
+        db.MusehubRepo.owner == owner,
+        db.MusehubRepo.slug == slug,
+    )
+    row = (await session.execute(stmt)).scalars().first()
+    if row is None:
+        return None
+    return _to_repo_response(row)
+
+
+async def get_repo_orm_by_owner_slug(
+    session: AsyncSession, owner: str, slug: str
+) -> db.MusehubRepo | None:
+    """Return the raw ORM repo row by owner+slug, or None if not found.
+
+    Used internally when the route needs the repo_id for downstream calls.
+    """
+    stmt = select(db.MusehubRepo).where(
+        db.MusehubRepo.owner == owner,
+        db.MusehubRepo.slug == slug,
+    )
+    return (await session.execute(stmt)).scalars().first()
 
 
 async def list_branches(session: AsyncSession, repo_id: str) -> list[BranchResponse]:
@@ -414,8 +476,10 @@ async def global_search(
     controls how many repo-groups per page).  Within each group, up to 20
     matching commits are returned newest-first.
 
-    An audio preview object ID is attached when the repo contains any .mp3
-    or .ogg artifact — the first one found by path ordering is used.
+    An audio preview object ID is attached when the repo contains any .mp3,
+    .ogg, or .wav artifact — the first one found by path ordering is used.
+    Audio previews are resolved in a single batched query across all matching
+    repos (not N per-repo queries) to avoid the N+1 pattern.
 
     Args:
         session:   Active async DB session.
@@ -491,25 +555,30 @@ async def global_search(
     for commit_row, _repo_row in commit_pairs:
         groups_map.setdefault(commit_row.repo_id, []).append(commit_row)
 
-    # ── 5. Resolve audio preview objects (one per repo, first .mp3/.ogg) ────
+    # ── 5. Resolve audio preview objects — single batched query (eliminates N+1) ──
+    # Fetch all qualifying audio objects for every matching repo in one round-trip,
+    # ordered by (repo_id, path) so we naturally encounter each repo's
+    # alphabetically-first audio file first when iterating the result set.
+    # Python deduplication (first-seen wins) replicates the previous LIMIT 1
+    # per-repo semantics without issuing N separate queries.
     audio_map: dict[str, str] = {}
-    for rid in groups_map:
-        audio_stmt = (
-            select(db.MusehubObject.object_id)
+    if groups_map:
+        audio_batch_stmt = (
+            select(db.MusehubObject.repo_id, db.MusehubObject.object_id)
             .where(
-                db.MusehubObject.repo_id == rid,
+                db.MusehubObject.repo_id.in_(list(groups_map.keys())),
                 or_(
                     db.MusehubObject.path.like("%.mp3"),
                     db.MusehubObject.path.like("%.ogg"),
                     db.MusehubObject.path.like("%.wav"),
                 ),
             )
-            .order_by(db.MusehubObject.path)
-            .limit(1)
+            .order_by(db.MusehubObject.repo_id, db.MusehubObject.path)
         )
-        audio_row = (await session.execute(audio_stmt)).scalar_one_or_none()
-        if audio_row is not None:
-            audio_map[rid] = audio_row
+        audio_rows = (await session.execute(audio_batch_stmt)).all()
+        for audio_row in audio_rows:
+            if audio_row.repo_id not in audio_map:
+                audio_map[audio_row.repo_id] = audio_row.object_id
 
     # ── 6. Paginate repo-groups ──────────────────────────────────────────────
     sorted_repo_ids = list(groups_map.keys())
@@ -542,6 +611,7 @@ async def global_search(
                 repo_id=rid,
                 repo_name=repo_row.name,
                 repo_owner=repo_row.owner_user_id,
+                repo_slug=repo_row.slug,
                 repo_visibility=repo_row.visibility,
                 matches=commit_matches,
                 total_matches=len(all_matches),
@@ -826,4 +896,235 @@ async def get_context_for_commit(
         history=history,
         missing_elements=missing,
         suggestions=suggestions,
+    )
+
+
+def _to_session_response(s: db.MusehubSession) -> SessionResponse:
+    """Compute derived fields and return a SessionResponse."""
+    duration: float | None = None
+    if s.ended_at is not None:
+        # Normalize to offset-naive UTC before subtraction (SQLite strips tz info on round-trip)
+        ended = s.ended_at.replace(tzinfo=None) if s.ended_at.tzinfo else s.ended_at
+        started = s.started_at.replace(tzinfo=None) if s.started_at.tzinfo else s.started_at
+        duration = (ended - started).total_seconds()
+    return SessionResponse(
+        session_id=s.session_id,
+        started_at=s.started_at,
+        ended_at=s.ended_at,
+        duration_seconds=duration,
+        participants=s.participants or [],
+        intent=s.intent,
+        location=s.location,
+        is_active=s.is_active,
+        created_at=s.created_at,
+        commits=s.commits or [],
+    )
+
+
+async def create_session(
+    session: AsyncSession,
+    repo_id: str,
+    started_at: datetime | None,
+    participants: list[str],
+    intent: str,
+    location: str,
+) -> SessionResponse:
+    """Create and persist a new recording session."""
+    import uuid
+
+    new_session = db.MusehubSession(
+        session_id=str(uuid.uuid4()),
+        repo_id=repo_id,
+        started_at=started_at or datetime.now(timezone.utc),
+        participants=participants,
+        intent=intent,
+        location=location,
+        is_active=True,
+    )
+    session.add(new_session)
+    await session.flush()
+    return _to_session_response(new_session)
+
+
+async def stop_session(
+    session: AsyncSession,
+    repo_id: str,
+    session_id: str,
+    ended_at: datetime | None,
+) -> SessionResponse:
+    """Mark a session as ended; idempotent if already stopped."""
+    from sqlalchemy import select
+
+    result = await session.execute(
+        select(db.MusehubSession).where(
+            db.MusehubSession.session_id == session_id,
+            db.MusehubSession.repo_id == repo_id,
+        )
+    )
+    row = result.scalar_one_or_none()
+    if row is None:
+        raise ValueError(f"session {session_id} not found")
+    if row.is_active:
+        row.ended_at = ended_at or datetime.now(timezone.utc)
+        row.is_active = False
+        await session.flush()
+    return _to_session_response(row)
+
+
+async def list_sessions(
+    session: AsyncSession,
+    repo_id: str,
+    limit: int = 50,
+    offset: int = 0,
+) -> tuple[list[SessionResponse], int]:
+    """Return sessions for a repo, newest first, with total count."""
+    from sqlalchemy import func, select
+
+    total_result = await session.execute(
+        select(func.count(db.MusehubSession.session_id)).where(
+            db.MusehubSession.repo_id == repo_id
+        )
+    )
+    total = total_result.scalar_one()
+
+    result = await session.execute(
+        select(db.MusehubSession)
+        .where(db.MusehubSession.repo_id == repo_id)
+        .order_by(db.MusehubSession.is_active.desc(), db.MusehubSession.started_at.desc())
+        .limit(limit)
+        .offset(offset)
+    )
+    rows = result.scalars().all()
+    return [_to_session_response(s) for s in rows], total
+
+
+async def get_session(
+    session: AsyncSession,
+    repo_id: str,
+    session_id: str,
+) -> SessionResponse | None:
+    """Fetch a single session by id."""
+    from sqlalchemy import select
+
+    result = await session.execute(
+        select(db.MusehubSession).where(
+            db.MusehubSession.session_id == session_id,
+            db.MusehubSession.repo_id == repo_id,
+        )
+    )
+    row = result.scalar_one_or_none()
+    if row is None:
+        return None
+    return _to_session_response(row)
+
+
+async def resolve_ref_for_tree(
+    session: AsyncSession, repo_id: str, ref: str
+) -> bool:
+    """Return True if ref resolves to a known branch or commit in this repo.
+
+    The ref can be:
+    - A branch name (e.g. "main", "feature/groove") — validated via the
+      musehub_branches table.
+    - A commit ID prefix or full SHA — validated via musehub_commits.
+
+    Returns False if the ref is unknown, which the caller should surface as
+    a 404. This is a lightweight existence check; callers that need the full
+    commit object should call ``get_commit()`` separately.
+    """
+    branch_stmt = select(db.MusehubBranch).where(
+        db.MusehubBranch.repo_id == repo_id,
+        db.MusehubBranch.name == ref,
+    )
+    branch_row = (await session.execute(branch_stmt)).scalars().first()
+    if branch_row is not None:
+        return True
+
+    commit_stmt = select(db.MusehubCommit).where(
+        db.MusehubCommit.repo_id == repo_id,
+        db.MusehubCommit.commit_id == ref,
+    )
+    commit_row = (await session.execute(commit_stmt)).scalars().first()
+    return commit_row is not None
+
+
+async def list_tree(
+    session: AsyncSession,
+    repo_id: str,
+    owner: str,
+    repo_slug: str,
+    ref: str,
+    dir_path: str,
+) -> TreeListResponse:
+    """Build a directory listing for the tree browser.
+
+    Reconstructs the repo's directory structure from all objects stored under
+    ``repo_id``. The ``dir_path`` parameter acts as a path prefix filter:
+    - Empty string → list the root directory.
+    - "tracks" → list all entries directly under the "tracks/" prefix.
+
+    Entries are grouped: directories first (alphabetically), then files
+    (alphabetically). Directory size_bytes is None because computing the
+    recursive sum is deferred to client-side rendering.
+
+    Args:
+        session:   Active async DB session.
+        repo_id:   UUID of the target repo.
+        owner:     Repo owner username (for response breadcrumbs).
+        repo_slug: Repo slug (for response breadcrumbs).
+        ref:       Branch name or commit SHA (for response breadcrumbs).
+        dir_path:  Current directory prefix; empty string for repo root.
+
+    Returns:
+        TreeListResponse with entries sorted dirs-first, then files.
+    """
+    all_objects = await list_objects(session, repo_id)
+
+    prefix = (dir_path.strip("/") + "/") if dir_path.strip("/") else ""
+    seen_dirs: set[str] = set()
+    dirs: list[TreeEntryResponse] = []
+    files: list[TreeEntryResponse] = []
+
+    for obj in all_objects:
+        path = obj.path.lstrip("/")
+        if not path.startswith(prefix):
+            continue
+        remainder = path[len(prefix):]
+        if not remainder:
+            continue
+        slash_pos = remainder.find("/")
+        if slash_pos == -1:
+            # Direct file entry under this prefix
+            files.append(
+                TreeEntryResponse(
+                    type="file",
+                    name=remainder,
+                    path=path,
+                    size_bytes=obj.size_bytes,
+                )
+            )
+        else:
+            # Directory entry — take only the next path segment
+            dir_name = remainder[:slash_pos]
+            dir_full_path = prefix + dir_name
+            if dir_name not in seen_dirs:
+                seen_dirs.add(dir_name)
+                dirs.append(
+                    TreeEntryResponse(
+                        type="dir",
+                        name=dir_name,
+                        path=dir_full_path,
+                        size_bytes=None,
+                    )
+                )
+
+    dirs.sort(key=lambda e: e.name)
+    files.sort(key=lambda e: e.name)
+
+    return TreeListResponse(
+        owner=owner,
+        repo_slug=repo_slug,
+        ref=ref,
+        dir_path=dir_path.strip("/"),
+        entries=dirs + files,
     )

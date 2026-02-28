@@ -10,9 +10,12 @@ from contextlib import asynccontextmanager
 from collections.abc import AsyncIterator
 from typing import Awaitable, Callable
 
+from pathlib import Path
+
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import Response
 from slowapi import Limiter, _rate_limit_exceeded_handler
@@ -165,18 +168,34 @@ app.include_router(users.router, prefix="/api/v1", tags=["users"])
 app.include_router(conversations.router, prefix="/api/v1", tags=["conversations"])
 app.include_router(assets.router, prefix="/api/v1", tags=["assets"])
 app.include_router(muse.router, prefix="/api/v1", tags=["muse"])
-app.include_router(musehub.router, prefix="/api/v1", tags=["musehub"])
+# Fixed-prefix musehub subrouters are registered BEFORE the main musehub router
+# so their concrete paths (/musehub/users/..., /musehub/explore, etc.) are matched
+# first and are not shadowed by the wildcard /{owner}/{repo_slug} route declared
+# last in repos.py.
 app.include_router(musehub_user_routes.router, prefix="/api/v1/musehub", tags=["musehub-users"])
-app.include_router(musehub_ui_routes.router, tags=["musehub-ui"])
-# Discover router: public browse (no auth) + authed star/unstar
 app.include_router(musehub_discover_routes.router, prefix="/api/v1", tags=["musehub-discover"])
 app.include_router(musehub_discover_routes.star_router, prefix="/api/v1", tags=["musehub-discover"])
+# Main musehub router — includes the /{owner}/{repo_slug} wildcard last.
+app.include_router(musehub.router, prefix="/api/v1", tags=["musehub"])
+# UI routers: fixed-path routes (users, explore, trending) first, then wildcards.
+app.include_router(musehub_ui_routes.fixed_router, tags=["musehub-ui"])
+app.include_router(musehub_ui_routes.router, tags=["musehub-ui"])
 app.include_router(musehub_oembed_routes.router, tags=["musehub-oembed"])
 app.include_router(musehub_raw_routes.router, prefix="/api/v1", tags=["musehub-raw"])
 app.include_router(mcp_routes.router, prefix="/api/v1/mcp", tags=["mcp"])
 
 from maestro.protocol.endpoints import router as protocol_router
 app.include_router(protocol_router, prefix="/api/v1", tags=["protocol"])
+
+# Mount Muse Hub static assets (design system CSS files).
+# The directory lives inside the maestro package so it is bind-mounted in dev
+# and COPY'd into the production image alongside the rest of the package.
+_MUSEHUB_STATIC_DIR = Path(__file__).parent / "templates" / "musehub" / "static"
+app.mount(
+    "/musehub/static",
+    StaticFiles(directory=str(_MUSEHUB_STATIC_DIR)),
+    name="musehub-static",
+)
 
 
 @app.get("/")

@@ -53,6 +53,10 @@ cleanup, run `git worktree prune` from the main repo.
 Run from anywhere inside the main repo. Paths are derived automatically.
 **Fill in the bug descriptions in each `.agent-task` before launching agents.**
 
+> **GitHub repo slug:** Always `cgcardona/maestro`. The local path
+> (`/Users/gabriel/dev/tellurstori/maestro`) is misleading — `tellurstori` is
+> NOT the GitHub org. Never derive the slug from `basename` or `pwd`.
+
 ```bash
 REPO=$(git rev-parse --show-toplevel)
 PRTREES="$HOME/.cursor/worktrees/$(basename "$REPO")"
@@ -102,13 +106,18 @@ Prompt below.
 
 ```bash
 # Derive main repo path if needed
-REPO=$(git worktree list | head -1 | awk '{print $1}')
+REPO=$(git worktree list | head -1 | awk '{print $1}')   # local filesystem path only
+
+# GitHub repo slug — HARDCODED. NEVER derive from local path or directory name.
+# The local path is /Users/gabriel/dev/tellurstori/maestro — "tellurstori" is NOT the GitHub org.
+export GH_REPO=cgcardona/maestro
 ```
 
 | Item | Value |
 |------|-------|
 | Your worktree root | current directory (contains `.agent-task`) |
-| Main repo | first entry of `git worktree list` |
+| Main repo (local path) | first entry of `git worktree list` |
+| GitHub repo slug | `cgcardona/maestro` — always hardcoded, never derived |
 | GitHub CLI | `gh` — already authenticated |
 
 **No Docker needed.** Issues are created via `gh issue create` — no code
@@ -125,7 +134,12 @@ STEP 0 — READ YOUR TASK:
   cat .agent-task
   This file contains your batch of bug reports to convert into GitHub issues.
 
-STEP 1 — VERIFY GH AUTH:
+STEP 1 — SET GITHUB REPO AND VERIFY AUTH:
+  # GitHub repo slug — ALWAYS hardcoded. NEVER derive from directory name or local path.
+  # The local path contains "tellurstori" but the GitHub org is "cgcardona".
+  export GH_REPO=cgcardona/maestro
+  # All gh commands pick this up automatically. You may also pass --repo "$GH_REPO" explicitly.
+
   gh auth status
 
 STEP 2 — CREATE ISSUES:

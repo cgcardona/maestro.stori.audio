@@ -60,7 +60,7 @@ def structured_prompt_context(parsed: "MaestroPrompt") -> str:
     Used by the EDITING LLM, which needs the creative brief to generate
     correct note data, voicings, dynamics, etc.
     """
-    import yaml as _yaml  # type: ignore[import-untyped]  # PyYAML ships no py.typed marker
+    import yaml as _yaml  # PyYAML ships no py.typed marker
 
     lines = _structured_routing_lines(parsed)
 

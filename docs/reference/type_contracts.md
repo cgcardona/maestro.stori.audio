@@ -1481,6 +1481,40 @@ content analysis will be wired in once Storpheus exposes per-dimension introspec
 
 **Type alias:** `DimensionData = HarmonyData | DynamicsData | ... | DivergenceData` (union of all 13 model types).
 
+### `DynamicArc`
+
+**Path:** `maestro/models/musehub_analysis.py`
+
+`Literal["flat", "terraced", "crescendo", "decrescendo", "swell", "hairpin"]` — vocabulary of per-track dynamic arc shapes. Used in `TrackDynamicsProfile.arc` and rendered as badges on the dynamics analysis UI page.
+
+### `TrackDynamicsProfile`
+
+**Path:** `maestro/models/musehub_analysis.py`
+
+Per-track velocity analysis result returned by `compute_dynamics_page_data`. Consumed by the dynamics analysis UI page (`GET /{repo_id}/analysis/{ref}/dynamics`) and the JSON endpoint (`GET /repos/{repo_id}/analysis/{ref}/dynamics/page`).
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `track` | `str` | Track name (e.g. `"piano"`, `"bass"`) |
+| `peak_velocity` | `int` | Maximum MIDI velocity (0–127) observed in track |
+| `min_velocity` | `int` | Minimum MIDI velocity (0–127) observed in track |
+| `mean_velocity` | `float` | Mean MIDI velocity across all events |
+| `dynamic_range` | `int` | `peak_velocity - min_velocity` |
+| `arc` | `DynamicArc` | Classified shape of the velocity envelope over time |
+| `curve` | `list[int]` | Downsampled velocity time-series (up to 32 points) for SVG sparkline |
+
+### `DynamicsPageData`
+
+**Path:** `maestro/models/musehub_analysis.py`
+
+Aggregate container returned by `compute_dynamics_page_data`. Feeds the dynamics analysis HTML page and its JSON content-negotiation response.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `repo_id` | `str` | Repository identifier |
+| `ref` | `str` | Commit SHA or branch ref |
+| `tracks` | `list[TrackDynamicsProfile]` | Per-track dynamics profiles, one per active track |
+
 ---
 
 ## Variation Layer
@@ -6199,6 +6233,39 @@ Defined in `maestro/models/musehub.py`.
 **Producer:** `search.search_repo` route handler
 **Consumer:** Muse Hub search page (renders result rows); AI agents finding commits by musical property
 
+### `SessionResponse`
+
+Defined in `maestro/models/musehub.py`.
+
+Wire representation of a single recording session entry.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `session_id` | `str` | UUID for this session |
+| `started_at` | `datetime` | When the session started (UTC) |
+| `ended_at` | `datetime \| None` | When the session ended; `null` if still active |
+| `duration_seconds` | `float \| None` | Derived duration; `null` for active sessions |
+| `participants` | `list[str]` | Participant identifiers or display names |
+| `intent` | `str` | Free-text creative goal for this session |
+| `location` | `str` | Studio or location label |
+| `is_active` | `bool` | True while session is open (no stop event received) |
+| `created_at` | `datetime` | When the Hub record was created (UTC) |
+
+**Producer:** `musehub_repository.create_session()` / `list_sessions()` / `get_session()` → `repos.create_session` / `list_sessions` / `get_session` route handlers
+**Consumer:** Muse Hub sessions page UI; CLI `muse session log`; AI agents reviewing creative history
+
+### `SessionListResponse`
+
+Wrapper returned by `GET /api/v1/musehub/repos/{repo_id}/sessions`.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `sessions` | `list[SessionResponse]` | Sessions ordered: active first, then newest-by-started_at |
+| `total` | `int` | Total session count for the repo (ignores `limit`) |
+
+**Producer:** `repos.list_sessions` route handler
+**Consumer:** Muse Hub sessions page UI; AI agents auditing studio activity across time
+
 ### `DagNode`
 
 A single commit node in the repo's directed acyclic graph. Defined in `maestro/models/musehub.py`.
@@ -6955,3 +7022,150 @@ Top-level response model for `GET /api/v1/musehub/search`.
 
 **Produced by:** `maestro.services.musehub_context.build_agent_context()`
 **Consumed by:** AI composition agents at session start; MCP context tool (planned)
+
+### EmotionVector
+
+**Location:** `maestro/models/musehub_analysis.py`
+**Kind:** Pydantic `CamelModel`
+
+Four-axis emotion vector, all dimensions normalised to [0, 1].
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `energy` | `float` | 0=passive, 1=driving |
+| `valence` | `float` | 0=dark/negative, 1=bright/positive |
+| `tension` | `float` | 0=relaxed, 1=tense/dissonant |
+| `darkness` | `float` | 0=luminous, 1=brooding/ominous |
+
+### EmotionMapPoint
+
+**Location:** `maestro/models/musehub_analysis.py`
+**Kind:** Pydantic `CamelModel`
+
+A single beat-position sample in the intra-ref emotion evolution chart.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `beat` | `float` | Beat position from the start of the ref |
+| `vector` | `EmotionVector` | Emotion vector at this beat |
+
+### CommitEmotionSnapshot
+
+**Location:** `maestro/models/musehub_analysis.py`
+**Kind:** Pydantic `CamelModel`
+
+Summary emotion vector for a single commit in the cross-commit trajectory view.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `commit_id` | `str` | Commit identifier (may be partial) |
+| `message` | `str` | Commit message |
+| `timestamp` | `str` | ISO-8601 UTC timestamp |
+| `vector` | `EmotionVector` | Aggregated emotion vector for this commit |
+| `primary_emotion` | `str` | Dominant emotion label, e.g. `'serene'`, `'tense'` |
+
+### EmotionDrift
+
+**Location:** `maestro/models/musehub_analysis.py`
+**Kind:** Pydantic `CamelModel`
+
+Emotion drift distance between two consecutive commits.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `from_commit` | `str` | Source commit ID |
+| `to_commit` | `str` | Target commit ID |
+| `drift` | `float` | Euclidean distance in emotion space (0–√4≈1.41) |
+| `dominant_change` | `str` | Axis with the largest change: `energy`, `valence`, `tension`, or `darkness` |
+
+### EmotionMapResponse
+
+**Location:** `maestro/models/musehub_analysis.py`
+**Kind:** Pydantic `CamelModel`
+
+Full emotion map for a Muse repo ref. Returned by `GET /musehub/repos/{repo_id}/analysis/{ref}/emotion-map`.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `repo_id` | `str` | Repo UUID |
+| `ref` | `str` | The queried ref |
+| `computed_at` | `datetime` | When the analysis was computed |
+| `filters_applied` | `AnalysisFilters` | Active track/section filters |
+| `evolution` | `list[EmotionMapPoint]` | Per-beat emotion samples within this ref |
+| `summary_vector` | `EmotionVector` | Mean emotion vector across all evolution points |
+| `trajectory` | `list[CommitEmotionSnapshot]` | Emotion snapshot per commit (oldest first, head last) |
+| `drift` | `list[EmotionDrift]` | Drift between consecutive trajectory commits (len = len(trajectory) - 1) |
+| `narrative` | `str` | Auto-generated textual description of the emotional journey |
+| `source` | `str` | Attribution: `'explicit'` (tags), `'inferred'` (model), or `'mixed'` |
+
+**Service function:** `maestro.services.musehub_analysis.compute_emotion_map()`
+**Produced by:** `GET /api/v1/musehub/repos/{repo_id}/analysis/{ref}/emotion-map`
+**Consumed by:** MuseHub emotion map page (`GET /musehub/ui/{repo_id}/analysis/{ref}/emotion`); AI agents needing emotional trajectory data
+
+---
+
+## Muse Hub — Groove Check API Types (`maestro/models/musehub.py`)
+
+### `GrooveCommitEntry`
+
+**Path:** `maestro/models/musehub.py`
+
+`CamelModel` — Per-commit groove metrics within a groove-check analysis window, as returned by `GET /repos/{repo_id}/groove-check`.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `commit` | `str` | Short commit reference (8 hex chars) |
+| `groove_score` | `float` | Average onset deviation from quantization grid, in beats |
+| `drift_delta` | `float` | Absolute change in `groove_score` vs prior commit |
+| `status` | `str` | `"OK"` / `"WARN"` / `"FAIL"` classification |
+| `track` | `str` | Track scope analysed, or `"all"` |
+| `section` | `str` | Section scope analysed, or `"all"` |
+| `midi_files` | `int` | Number of MIDI snapshots analysed |
+
+**Produced by:** `maestro.api.routes.musehub.repos.get_groove_check()`
+**Consumed by:** MuseHub groove-check UI page; AI agents auditing rhythmic consistency
+
+---
+
+### `GrooveCheckResponse`
+
+**Path:** `maestro/models/musehub.py`
+
+`CamelModel` — Aggregate rhythmic consistency dashboard data for a commit window, as returned by `GET /repos/{repo_id}/groove-check`.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `commit_range` | `str` | Commit range string that was analysed (e.g. `"HEAD~10..HEAD"`) |
+| `threshold` | `float` | Drift threshold in beats used for WARN/FAIL classification |
+| `total_commits` | `int` | Total commits in the analysis window |
+| `flagged_commits` | `int` | Number of commits with WARN or FAIL status |
+| `worst_commit` | `str` | Commit ref with the highest `drift_delta`, or empty string |
+| `entries` | `list[GrooveCommitEntry]` | Per-commit metrics, oldest-first |
+
+**Produced by:** `maestro.api.routes.musehub.repos.get_groove_check()`
+**Consumed by:** MuseHub groove-check UI page (`/musehub/ui/{owner}/{repo_slug}/groove-check`); AI agents comparing rhythmic consistency across branches
+
+---
+
+## Storpheus — Inference Optimization Types (`storpheus/music_service.py`)
+
+### `GenerationTiming`
+
+**Path:** `storpheus/music_service.py`
+
+`@dataclass` — Per-phase wall-clock latency breakdown for a single `_do_generate` call. Attached to every `GenerateResponse` under `metadata["timing"]` as the output of `GenerationTiming.to_dict()`.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `request_start` | `float` | `time()` at dataclass construction — beginning of the generation request |
+| `seed_elapsed_s` | `float` | Wall time for seed library lookup and key transposition |
+| `generate_elapsed_s` | `float` | Cumulative wall time for all `/generate_music_and_state` Gradio calls |
+| `add_batch_elapsed_s` | `float` | Cumulative wall time for all `/add_batch` Gradio calls |
+| `post_process_elapsed_s` | `float` | Wall time for the post-processing pipeline |
+| `total_elapsed_s` | `float` | Full request wall time (set just before response is returned) |
+| `regen_count` | `int` | Number of full re-generate calls triggered (above the first) |
+| `multi_batch_tries` | `int` | Total `/add_batch` calls made across all generate rounds |
+| `candidates_evaluated` | `int` | Total candidate batches scored by the rejection-sampling critic |
+
+**Produced by:** `storpheus.music_service._do_generate()`
+**Consumed by:** Callers of `GenerateResponse.metadata["timing"]`; latency dashboards; A/B test comparisons via `/quality/ab-test`

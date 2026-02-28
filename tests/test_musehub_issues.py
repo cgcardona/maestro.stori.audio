@@ -30,7 +30,7 @@ async def _create_repo(client: AsyncClient, auth_headers: dict[str, str], name: 
     """Create a repo via the API and return its repo_id."""
     response = await client.post(
         "/api/v1/musehub/repos",
-        json={"name": name},
+        json={"name": name, "owner": "testuser"},
         headers=auth_headers,
     )
     assert response.status_code == 201
@@ -281,20 +281,33 @@ async def test_close_nonexistent_issue_returns_404(
 
 
 @pytest.mark.anyio
-async def test_issues_require_auth(client: AsyncClient) -> None:
-    """All issue endpoints return 401 without a Bearer token."""
-    endpoints = [
+async def test_issue_write_endpoints_require_auth(client: AsyncClient) -> None:
+    """POST issue endpoints return 401 without a Bearer token (always require auth)."""
+    write_endpoints = [
         ("POST", "/api/v1/musehub/repos/some-repo/issues"),
-        ("GET", "/api/v1/musehub/repos/some-repo/issues"),
-        ("GET", "/api/v1/musehub/repos/some-repo/issues/1"),
         ("POST", "/api/v1/musehub/repos/some-repo/issues/1/close"),
     ]
-    for method, url in endpoints:
-        if method == "POST":
-            response = await client.post(url, json={})
-        else:
-            response = await client.get(url)
+    for method, url in write_endpoints:
+        response = await client.post(url, json={})
         assert response.status_code == 401, f"{method} {url} should require auth"
+
+
+@pytest.mark.anyio
+async def test_issue_read_endpoints_return_404_for_nonexistent_repo_without_auth(
+    client: AsyncClient,
+) -> None:
+    """GET issue endpoints return 404 for non-existent repos without a token.
+
+    Read endpoints use optional_token — auth is visibility-based; the DB
+    lookup happens before the auth check, so a missing repo returns 404.
+    """
+    read_endpoints = [
+        "/api/v1/musehub/repos/non-existent-repo/issues",
+        "/api/v1/musehub/repos/non-existent-repo/issues/1",
+    ]
+    for url in read_endpoints:
+        response = await client.get(url)
+        assert response.status_code == 404, f"GET {url} should return 404 for non-existent repo"
 
 
 # ---------------------------------------------------------------------------
@@ -308,6 +321,7 @@ async def test_create_issue_service_persists_to_db(db_session: AsyncSession) -> 
     repo = await musehub_repository.create_repo(
         db_session,
         name="service-issue-repo",
+        owner="testuser",
         visibility="private",
         owner_user_id="user-abc",
     )
@@ -336,6 +350,7 @@ async def test_list_issues_closed_state_filter(db_session: AsyncSession) -> None
     repo = await musehub_repository.create_repo(
         db_session,
         name="filter-state-repo",
+        owner="testuser",
         visibility="private",
         owner_user_id="user-xyz",
     )
@@ -359,3 +374,76 @@ async def test_list_issues_closed_state_filter(db_session: AsyncSession) -> None
     assert len(closed_list) == 1
     assert closed_list[0].issue_id == closed_issue.issue_id
     assert len(all_list) == 2
+
+
+# ---------------------------------------------------------------------------
+# Regression tests for issue #302 — author field on Issue, PR, Release
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.anyio
+async def test_create_issue_author_in_response(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+) -> None:
+    """POST /issues response includes the author field (JWT sub) — regression for #302."""
+    repo_id = await _create_repo(client, auth_headers, "author-issue-repo")
+    response = await client.post(
+        f"/api/v1/musehub/repos/{repo_id}/issues",
+        json={"title": "Author field regression", "body": "", "labels": []},
+        headers=auth_headers,
+    )
+    assert response.status_code == 201
+    body = response.json()
+    assert "author" in body
+    # The author is the JWT sub from the test token — must be a non-None string
+    assert isinstance(body["author"], str)
+
+
+@pytest.mark.anyio
+async def test_create_issue_author_persisted_in_list(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+) -> None:
+    """Author field is persisted and returned in the issue list endpoint — regression for #302."""
+    repo_id = await _create_repo(client, auth_headers, "author-list-repo")
+    await client.post(
+        f"/api/v1/musehub/repos/{repo_id}/issues",
+        json={"title": "Authored issue", "body": "", "labels": []},
+        headers=auth_headers,
+    )
+    list_response = await client.get(
+        f"/api/v1/musehub/repos/{repo_id}/issues",
+        headers=auth_headers,
+    )
+    assert list_response.status_code == 200
+    issues = list_response.json()["issues"]
+    assert len(issues) == 1
+    assert "author" in issues[0]
+    assert isinstance(issues[0]["author"], str)
+
+
+@pytest.mark.anyio
+async def test_issue_detail_page_shows_author_label(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """issue_detail.html template contains the 'Author' meta-label — regression for #302."""
+    from maestro.db.musehub_models import MusehubRepo
+    repo = MusehubRepo(
+        name="author-detail-beats",
+        owner="testuser",
+        slug="author-detail-beats",
+        visibility="private",
+        owner_user_id="test-owner",
+    )
+    db_session.add(repo)
+    await db_session.commit()
+    await db_session.refresh(repo)
+
+    response = await client.get("/musehub/ui/testuser/author-detail-beats/issues/1")
+    assert response.status_code == 200
+    body = response.text
+    # The JS template string containing the author meta-item must be in the page
+    assert "Author" in body
+    assert "meta-label" in body

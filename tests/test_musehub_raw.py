@@ -40,6 +40,8 @@ async def _make_repo(db: AsyncSession, *, visibility: str = "public") -> str:
     """Seed a minimal Muse Hub repo and return its repo_id."""
     repo = MusehubRepo(
         name="test-beats",
+        owner="testuser",
+        slug="test-beats",
         visibility=visibility,
         owner_user_id="test-owner",
     )

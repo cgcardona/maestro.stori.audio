@@ -1,0 +1,77 @@
+{% extends "musehub/base.html" %}
+
+{% block title %}Issue #{{ issue_number }}{% endblock %}
+{% block breadcrumb %}
+  <a href="/musehub/ui/{{ owner }}/{{ repo_slug }}">{{ owner }}/{{ repo_slug }}</a> /
+  <a href="/musehub/ui/{{ owner }}/{{ repo_slug }}/issues">issues</a> / #{{ issue_number }}
+{% endblock %}
+{% block repo_nav %}{% include "musehub/partials/repo_nav.html" %}{% endblock %}
+
+{% block page_data %}
+const repoId = {{ repo_id | tojson }};
+const number = {{ issue_number }};
+const base   = {{ base_url | tojson }};
+{% endblock %}
+
+{% block page_script %}
+{% raw %}
+async function closeIssue() {
+  if (!confirm('Close issue #' + number + '?')) return;
+  try {
+    await apiFetch('/repos/' + repoId + '/issues/' + number + '/close', { method: 'POST' });
+    location.reload();
+  } catch(e) {
+    if (e.message !== 'auth')
+      alert('Close failed: ' + e.message);
+  }
+}
+
+async function load() {
+  initRepoNav(repoId);
+  try {
+    const issue = await apiFetch('/repos/' + repoId + '/issues/' + number);
+
+    const closeSection = issue.state === 'open' ? `
+      <div style="margin-top:16px">
+        <button class="btn btn-danger" onclick="closeIssue()">&#10005; Close issue</button>
+      </div>` : '';
+
+    document.getElementById('content').innerHTML = `
+      <div style="margin-bottom:12px">
+        <a href="${base}/issues">&larr; Back to issues</a>
+      </div>
+      <div class="card">
+        <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px">
+          <h1 style="margin:0">${escHtml(issue.title)}</h1>
+          <span class="badge badge-${issue.state}">#${issue.number}</span>
+          <span class="badge badge-${issue.state}">${issue.state}</span>
+        </div>
+        <div class="meta-row">
+          ${issue.author ? `
+          <div class="meta-item">
+            <span class="meta-label">Author</span>
+            <span class="meta-value" style="display:flex;align-items:center;gap:6px">
+              <span style="display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:50%;background:var(--accent,#58a6ff);color:#0d1117;font-size:11px;font-weight:700;flex-shrink:0">${escHtml(issue.author.charAt(0).toUpperCase())}</span>
+              <a href="${base.replace(/\/[^/]+\/[^/]+$/, '')}/users/${encodeURIComponent(escHtml(issue.author))}">${escHtml(issue.author)}</a>
+            </span>
+          </div>` : ''}
+          <div class="meta-item">
+            <span class="meta-label">Opened</span>
+            <span class="meta-value">${fmtDate(issue.createdAt)}</span>
+          </div>
+        </div>
+        <div style="margin:8px 0">
+          ${(issue.labels||[]).map(l => '<span class="label">' + escHtml(l) + '</span>').join('')}
+        </div>
+        ${issue.body ? '<pre>' + escHtml(issue.body) + '</pre>' : ''}
+        ${closeSection}
+      </div>`;
+  } catch(e) {
+    if (e.message !== 'auth')
+      document.getElementById('content').innerHTML = '<p class="error">&#10005; ' + escHtml(e.message) + '</p>';
+  }
+}
+
+load();
+{% endraw %}
+{% endblock %}
