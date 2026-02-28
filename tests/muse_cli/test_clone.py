@@ -544,7 +544,7 @@ async def test_clone_stores_commits_in_db(muse_cli_db_session: object) -> None:
 
 
 def test_clone_hub_non_200_exits_3(tmp_path: pathlib.Path) -> None:
-    """Hub returning non-200 causes muse clone to exit 3."""
+    """Hub returning non-200 causes muse clone to exit 3 and cleans up the directory."""
     import typer
 
     url = "https://hub.stori.app/repos/error-test"
@@ -577,10 +577,12 @@ def test_clone_hub_non_200_exits_3(tmp_path: pathlib.Path) -> None:
         )
 
     assert exc_info.value.exit_code == int(ExitCode.INTERNAL_ERROR)
+    # Partial directory must be cleaned up so retrying does not hit "already exists".
+    assert not target.exists()
 
 
 def test_clone_network_error_exits_3(tmp_path: pathlib.Path) -> None:
-    """Network error during clone causes exit 3."""
+    """Network error during clone causes exit 3 and cleans up the directory."""
     import httpx
     import typer
 
@@ -613,6 +615,8 @@ def test_clone_network_error_exits_3(tmp_path: pathlib.Path) -> None:
         )
 
     assert exc_info.value.exit_code == int(ExitCode.INTERNAL_ERROR)
+    # Partial directory must be cleaned up so retrying does not hit "already exists".
+    assert not target.exists()
 
 
 # ---------------------------------------------------------------------------

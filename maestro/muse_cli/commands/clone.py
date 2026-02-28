@@ -31,6 +31,7 @@ import datetime
 import json
 import logging
 import pathlib
+import shutil
 import uuid
 
 import httpx
@@ -182,8 +183,10 @@ async def _clone_async(
     typer.echo(f"Cloning into '{target.name}' …")
 
     # ── Create target directory and initialise .muse/ ─────────────────────
+    target_created = False
     try:
         target.mkdir(parents=True, exist_ok=False)
+        target_created = True
         _init_muse_dir(target, effective_branch, url)
     except PermissionError as exc:
         typer.echo(f"❌ Permission denied creating '{target}': {exc}")
@@ -212,16 +215,22 @@ async def _clone_async(
                 response.status_code,
                 response.text,
             )
+            if target_created:
+                shutil.rmtree(target, ignore_errors=True)
             raise typer.Exit(code=int(ExitCode.INTERNAL_ERROR))
 
     except typer.Exit:
         raise
     except httpx.TimeoutException:
         typer.echo(f"❌ Clone timed out connecting to {url}")
+        if target_created:
+            shutil.rmtree(target, ignore_errors=True)
         raise typer.Exit(code=int(ExitCode.INTERNAL_ERROR))
     except httpx.HTTPError as exc:
         typer.echo(f"❌ Network error during clone: {exc}")
         logger.error("❌ muse clone network error: %s", exc, exc_info=True)
+        if target_created:
+            shutil.rmtree(target, ignore_errors=True)
         raise typer.Exit(code=int(ExitCode.INTERNAL_ERROR))
 
     # ── Parse response ────────────────────────────────────────────────────
