@@ -7919,3 +7919,147 @@ as JSON by `GET /api/v1/musehub/repos/{repo_id}/objects/{object_id}/parse-midi`.
 
 **Produced by:** `maestro.services.musehub_midi_parser.parse_midi_bytes()`
 **Consumed by:** `maestro.api.routes.musehub.objects.parse_midi_object()`; MuseHub piano roll JavaScript renderer (`piano-roll.js`)
+
+---
+
+### `ActivityEventResponse`
+
+**Path:** `maestro/models/musehub.py`
+
+`CamelModel` — A single repo-level activity event returned by the activity feed API.
+
+| Field | Type | Notes |
+|-------|------|-------|
+| `event_id` | `str` | UUID of the event row |
+| `repo_id` | `str` | UUID of the owning repo |
+| `event_type` | `str` | One of: `commit_pushed`, `pr_opened`, `pr_merged`, `pr_closed`, `issue_opened`, `issue_closed`, `branch_created`, `branch_deleted`, `tag_pushed`, `session_started`, `session_ended` |
+| `actor` | `str` | JWT `sub` or display name of the user who triggered the event |
+| `description` | `str` | One-line human-readable summary rendered in the feed UI |
+| `metadata` | `dict[str, object]` | Event-specific payload (e.g. `{"sha": "…"}` for `commit_pushed`, `{"number": 3}` for `issue_opened`) |
+| `created_at` | `datetime` | UTC timestamp of the event |
+
+**Produced by:** `musehub_events.record_event()` / `list_events()` → `repos.get_repo_activity` route handler
+**Consumed by:** MuseHub activity feed UI (`/musehub/ui/{owner}/{slug}/activity`); AI agents auditing repo activity
+
+---
+
+### `ActivityFeedResponse`
+
+**Path:** `maestro/models/musehub.py`
+
+`CamelModel` — Paginated activity event feed returned by `GET /api/v1/musehub/repos/{repo_id}/activity`.
+
+| Field | Type | Notes |
+|-------|------|-------|
+| `events` | `list[ActivityEventResponse]` | Events newest-first, sliced by `page` / `page_size` |
+| `total` | `int` | Total events matching the filter (ignoring pagination) |
+| `page` | `int` | 1-indexed current page number |
+| `page_size` | `int` | Events per page (1–100, default 30) |
+| `event_type_filter` | `str \| None` | Active `event_type` filter, or `None` when showing all types |
+
+**Produced by:** `musehub_events.list_events()` → `repos.get_repo_activity` route handler
+**Consumed by:** MuseHub activity feed UI; API clients filtering by event type
+
+---
+
+### `IssueCommentResponse`
+
+**Path:** `maestro/models/musehub.py`
+
+Pydantic `CamelModel` — Wire representation of a single threaded comment on a Muse Hub issue.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `comment_id` | `str` | Internal UUID for this comment |
+| `issue_id` | `str` | UUID of the parent issue |
+| `author` | `str` | Display name of the comment author |
+| `body` | `str` | Markdown comment body |
+| `parent_id` | `str \| None` | Parent comment UUID; null for top-level comments |
+| `musical_refs` | `list[MusicalRef]` | Parsed musical context references |
+| `is_deleted` | `bool` | True when soft-deleted |
+| `created_at` | `datetime` | Comment creation timestamp |
+| `updated_at` | `datetime` | Last edit timestamp |
+
+**Produced by:** `maestro.services.musehub_issues.create_comment()`, `list_comments()`
+**Consumed by:** `POST /issues/{number}/comments`, `GET /issues/{number}/comments`
+
+---
+
+### `MusicalRef`
+
+**Path:** `maestro/models/musehub.py`
+
+Pydantic `CamelModel` — A parsed musical context reference extracted from a comment body.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `type` | `str` | Reference type: `"track"` \| `"section"` \| `"beats"` |
+| `value` | `str` | The referenced value, e.g. `"bass"`, `"chorus"`, `"16-24"` |
+| `raw` | `str` | Original raw token from the comment body, e.g. `"track:bass"` |
+
+**Produced by:** `maestro.services.musehub_issues._parse_musical_refs()`
+**Consumed by:** `IssueCommentResponse.musical_refs`; issue detail UI rendering
+
+---
+
+### `MilestoneResponse`
+
+**Path:** `maestro/models/musehub.py`
+
+Pydantic `CamelModel` — Wire representation of a Muse Hub milestone.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `milestone_id` | `str` | Internal UUID |
+| `number` | `int` | Per-repo sequential milestone number |
+| `title` | `str` | Milestone title |
+| `description` | `str` | Markdown description |
+| `state` | `str` | `"open"` or `"closed"` |
+| `author` | `str` | Creator display name |
+| `due_on` | `datetime \| None` | Optional due date |
+| `open_issues` | `int` | Number of open issues linked to this milestone |
+| `closed_issues` | `int` | Number of closed issues linked to this milestone |
+| `created_at` | `datetime` | Creation timestamp |
+
+**Produced by:** `maestro.services.musehub_issues.create_milestone()`, `list_milestones()`, `get_milestone()`
+**Consumed by:** `POST /milestones`, `GET /milestones`, `GET /milestones/{number}`
+
+---
+
+### `SocialTrendsDayResult`
+
+**Path:** `maestro/api/routes/musehub/social.py`
+
+Pydantic `BaseModel` — One calendar day of aggregated social engagement counts for a repo. Missing
+days (no activity) are filled with zeros so the chart always spans the full requested window.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `date` | `str` | ISO 8601 calendar date (`YYYY-MM-DD`) |
+| `stars` | `int` | New stars received on this day |
+| `forks` | `int` | New forks created on this day |
+| `watches` | `int` | New watches added on this day |
+
+**Produced by:** `maestro.api.routes.musehub.social.get_social_analytics()`
+**Consumed by:** `GET /api/v1/musehub/repos/{repo_id}/analytics/social` — nested inside `SocialTrendsResult.trend`; insights dashboard SVG multi-line chart
+
+---
+
+### `SocialTrendsResult`
+
+**Path:** `maestro/api/routes/musehub/social.py`
+
+Pydantic `BaseModel` — Top-level response for the social trends analytics endpoint. Bundles
+aggregate totals, a full per-day trend list, and fork-detail records for the insights dashboard.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `star_count` | `int` | Total stars across all time |
+| `fork_count` | `int` | Total forks across all time |
+| `watch_count` | `int` | Total watches across all time |
+| `trend` | `list[SocialTrendsDayResult]` | One entry per calendar day over the requested window (zero-filled) |
+| `forks_detail` | `list[ForkResponse]` | Per-fork records ordered by `created_at` descending, for the "Who forked this" panel |
+
+**Produced by:** `maestro.api.routes.musehub.social.get_social_analytics()`
+**Consumed by:** `GET /api/v1/musehub/repos/{repo_id}/analytics/social` (default window: 90 days, max: 365); insights dashboard Social Trends card and "Who forked this" panel
+
