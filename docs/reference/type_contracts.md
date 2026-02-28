@@ -5943,6 +5943,42 @@ Wrapper returned by `GET /api/v1/musehub/repos/{repo_id}/objects`.
 **Producer:** `objects.list_objects` route handler
 **Consumer:** Muse Hub web UI; any agent inspecting which artifacts are available for a repo
 
+### `SearchCommitMatch`
+
+A single commit returned by any of the four in-repo search modes.
+
+Defined in `maestro/models/musehub.py`.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `commitId` | `str` | Full commit SHA |
+| `branch` | `str` | Branch the commit belongs to |
+| `message` | `str` | Commit message |
+| `author` | `str` | Commit author |
+| `timestamp` | `datetime` | When the commit was created |
+| `score` | `float` | Match score 0–1; always 1.0 for property/pattern modes |
+| `matchSource` | `str` | Where the match was found: `"message"`, `"branch"`, or `"property"` |
+
+**Producer:** `musehub_search.search_by_*` → `search.search_repo` route handler
+**Consumer:** Muse Hub search page UI; AI agents using search to locate commits before checkout/diff
+
+### `SearchResponse`
+
+Envelope returned by `GET /api/v1/musehub/repos/{repo_id}/search`.
+
+Defined in `maestro/models/musehub.py`.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `mode` | `str` | Echoed search mode: `property` \| `ask` \| `keyword` \| `pattern` |
+| `query` | `str` | Echoed query string (property mode uses filter summary) |
+| `matches` | `list[SearchCommitMatch]` | Ordered matches (score desc, then recency desc) |
+| `totalScanned` | `int` | Total commits examined before limit was applied |
+| `limit` | `int` | The limit cap that was applied |
+
+**Producer:** `search.search_repo` route handler
+**Consumer:** Muse Hub search page (renders result rows); AI agents finding commits by musical property
+
 ---
 
 ## Muse Bisect Types
