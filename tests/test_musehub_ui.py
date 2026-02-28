@@ -336,6 +336,120 @@ async def test_ui_pr_detail_page_returns_200(
 
 
 @pytest.mark.anyio
+async def test_pr_detail_shows_diff_radar(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """PR detail page HTML contains the musical diff radar chart container."""
+    await _make_repo(db_session)
+    response = await client.get("/musehub/ui/testuser/test-beats/pulls/some-pr-id")
+    assert response.status_code == 200
+    body = response.text
+    # radarSvg function and DIMENSIONS constant must be present
+    assert "radarSvg" in body
+    assert "DIMENSIONS" in body
+
+
+@pytest.mark.anyio
+async def test_pr_detail_audio_ab(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """PR detail page HTML contains before/after audio A/B toggle controls."""
+    await _make_repo(db_session)
+    response = await client.get("/musehub/ui/testuser/test-beats/pulls/some-pr-id")
+    assert response.status_code == 200
+    body = response.text
+    assert "btn-audio-from" in body
+    assert "btn-audio-to" in body
+    assert "toggleAudio" in body
+    assert "Audio A/B Comparison" in body
+
+
+@pytest.mark.anyio
+async def test_pr_detail_merge_strategies(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """PR detail page HTML contains the merge strategy selector buttons."""
+    await _make_repo(db_session)
+    response = await client.get("/musehub/ui/testuser/test-beats/pulls/some-pr-id")
+    assert response.status_code == 200
+    body = response.text
+    assert "strategy-merge_commit" in body
+    assert "strategy-squash" in body
+    assert "strategy-rebase" in body
+    assert "selectStrategy" in body
+    assert "mergePrWithStrategy" in body
+
+
+@pytest.mark.anyio
+async def test_pr_detail_json_response(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    auth_headers: dict[str, str],
+) -> None:
+    """PR detail page ?format=json returns structured diff data for agent consumption."""
+    from datetime import datetime, timezone
+
+    from maestro.db.musehub_models import MusehubBranch, MusehubCommit, MusehubPullRequest
+
+    repo_id = await _make_repo(db_session)
+    commit_id = "aabbccddeeff00112233445566778899aabbccdd"
+    commit = MusehubCommit(
+        commit_id=commit_id,
+        repo_id=repo_id,
+        branch="feat/blues-riff",
+        parent_ids=[],
+        message="Add harmonic chord progression in Dm",
+        author="musician",
+        timestamp=datetime.now(tz=timezone.utc),
+    )
+    branch = MusehubBranch(
+        repo_id=repo_id,
+        name="feat/blues-riff",
+        head_commit_id=commit_id,
+    )
+    db_session.add(commit)
+    db_session.add(branch)
+    import uuid
+    pr_id = uuid.uuid4().hex
+    pr = MusehubPullRequest(
+        pr_id=pr_id,
+        repo_id=repo_id,
+        title="Add blues riff",
+        body="",
+        state="open",
+        from_branch="feat/blues-riff",
+        to_branch="main",
+        author="musician",
+    )
+    db_session.add(pr)
+    await db_session.commit()
+
+    response = await client.get(
+        f"/musehub/ui/testuser/test-beats/pulls/{pr_id}?format=json",
+        headers=auth_headers,
+    )
+    assert response.status_code == 200
+    data = response.json()
+    # Must include dimension scores and overall score
+    assert "dimensions" in data
+    assert "overallScore" in data
+    assert isinstance(data["dimensions"], list)
+    assert len(data["dimensions"]) == 5
+    assert data["prId"] == pr_id
+    assert data["fromBranch"] == "feat/blues-riff"
+    assert data["toBranch"] == "main"
+    # Each dimension must have the expected fields
+    dim = data["dimensions"][0]
+    assert "dimension" in dim
+    assert "score" in dim
+    assert "level" in dim
+    assert "deltaLabel" in dim
+
+
+@pytest.mark.anyio
 async def test_ui_issue_detail_page_returns_200(
     client: AsyncClient,
     db_session: AsyncSession,

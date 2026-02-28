@@ -2135,9 +2135,31 @@ Renders an interactive page featuring:
 Pull requests let musicians propose merging one branch variation into another, enabling async review before incorporating changes into the canonical arrangement.
 
 - **States:** `open` (on creation) → `merged` (via merge endpoint) | `closed` (future: manual close).
-- **Merge strategy:** Only `merge_commit` at MVP. Creates a real merge commit on `to_branch` with two parent IDs (`[to_branch head, from_branch head]`), then advances the `to_branch` head pointer.
+- **Merge strategies:** `merge_commit` (default), `squash`, and `rebase` are accepted by the API. All three currently use merge-commit semantics — distinct strategy behavior is tracked as a follow-up.
 - **Validation:** `from_branch == to_branch` → 422. Missing `from_branch` → 404. Already merged/closed → 409 on merge attempt.
 - **Filtering:** `GET /pull-requests?state=open` returns only open PRs. Default (`state=all`) returns all states.
+
+#### PR Detail Page — Musical Diff (issue #215)
+
+The PR detail page (`GET /musehub/ui/{owner}/{repo_slug}/pulls/{pr_id}`) now shows a full musical diff UI on top of the existing metadata and merge button:
+
+| Component | Description |
+|-----------|-------------|
+| **Five-axis radar chart** | Visual divergence across harmonic, rhythmic, melodic, structural, dynamic dimensions — each axis shows delta magnitude in [0.0, 1.0] |
+| **Diff summary badges** | Per-dimension delta labels (e.g. `+23.5%`, `unchanged`) computed from the Jaccard divergence score |
+| **Before/after piano roll** | Deterministic note-grid comparison seeded from branch names — green = added, red = removed, grey = unchanged |
+| **Audio A/B toggle** | Switch between base (`to_branch`) and head (`from_branch`) audio renders; gracefully degrades if renders not available |
+| **Merge strategy selector** | Choose `merge_commit`, `squash`, or `rebase` before clicking merge |
+| **PR timeline** | Open → (review) → merge/close state progression with timestamps |
+| **Affected sections** | Commit-message-derived list of structural sections touched by the PR (bridge, chorus, verse, etc.) |
+
+**Musical diff endpoint:** `GET /api/v1/musehub/repos/{repo_id}/pull-requests/{pr_id}/diff`
+
+Returns `PRDiffResponse` — a `PRDiffDimensionScore` for each of the five musical dimensions plus `overall_score`, `common_ancestor`, and `affected_sections`.
+
+**Content negotiation:** `GET /musehub/ui/{owner}/{repo_slug}/pulls/{pr_id}?format=json` returns the full `PRDiffResponse` for AI agent consumption. Agents use this to reason about musical impact before approving a merge — e.g. a large harmonic delta with unchanged rhythm signals a chord progression update that preserves the groove.
+
+**Graceful degradation:** When one or both branches have no commits (divergence engine raises `ValueError`), the endpoint returns five zero-score placeholder dimensions so the page always renders cleanly.
 
 ### Sync Protocol Design
 
