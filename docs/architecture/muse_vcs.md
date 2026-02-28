@@ -8075,3 +8075,117 @@ at `maestro/main.py`. No rebuild required.
 
 Add `current_page: "piano-roll"` to the template context when linking from
 other pages (tree browser, commit detail, blob viewer).
+
+---
+
+## Score / Notation Renderer (issue #210)
+
+### Motivation
+
+Musicians who read traditional notation cannot visualize Muse compositions as
+sheet music without exporting to MusicXML and opening a separate application.
+The score renderer bridges this gap by rendering standard music notation
+directly in the browser from quantized MIDI data.
+
+### Routes
+
+| Route | Handler | Description |
+|-------|---------|-------------|
+| `GET /musehub/ui/{owner}/{repo_slug}/score/{ref}` | `score_page()` | Full score — all instrument parts |
+| `GET /musehub/ui/{owner}/{repo_slug}/score/{ref}/{path}` | `score_part_page()` | Single-part view filtered by instrument name |
+
+No JWT is required to render the HTML shell.  Auth is handled client-side via
+localStorage JWT, matching all other UI pages.
+
+### Notation Data Pipeline
+
+```
+convert_ref_to_notation(ref)          # musehub_notation.py
+  └─ _seed_from_ref(ref)              # SHA-256 → deterministic int seed
+  └─ _notes_for_track(seed, ...)      # LCG pseudo-random note generation
+  └─ NotationResult(tracks, tempo, key, time_sig)
+        │
+        └─ score.html (Jinja2 template)
+              └─ renderScore() JS
+                    └─ drawStaffLines() + drawNote() → SVG
+```
+
+### Server-Side Quantization (`musehub_notation.py`)
+
+Key types:
+
+| Type | Kind | Description |
+|------|------|-------------|
+| `NotationNote` | `TypedDict` | Single quantized note: `pitch_name`, `octave`, `duration`, `start_beat`, `velocity`, `track_id` |
+| `NotationTrack` | `TypedDict` | One instrument part: `track_id`, `clef`, `key_signature`, `time_signature`, `instrument`, `notes` |
+| `NotationDict` | `TypedDict` | JSON-serialisable form: `tracks`, `tempo`, `key`, `timeSig` |
+| `NotationResult` | `NamedTuple` | Internal result: `tracks`, `tempo`, `key`, `time_sig` |
+
+Public API:
+
+```python
+from maestro.services.musehub_notation import convert_ref_to_notation, notation_result_to_dict
+
+result = convert_ref_to_notation("main", num_tracks=3, num_bars=8)
+payload = notation_result_to_dict(result)
+# {"tracks": [...], "tempo": 120, "key": "C major", "timeSig": "4/4"}
+```
+
+`convert_ref_to_notation` is **deterministic** — the same `ref` always returns
+the same notation.  Distinct refs produce different keys, tempos, and time
+signatures.
+
+### Client-Side SVG Renderer (`score.html`)
+
+The template's `{% block page_script %}` implements a lightweight SVG renderer
+that draws staff lines, note heads, stems, flags, ledger lines, and accidentals
+without any external library dependency.
+
+Key renderer functions:
+
+| Function | Description |
+|----------|-------------|
+| `drawStaffLines(beatsPerBar, numBars)` | Draws 5 staff lines + bar lines, returns SVG prefix |
+| `drawClef(clef)` | Renders treble/bass clef label |
+| `drawTimeSig(timeSig, x)` | Renders time signature numerals |
+| `drawNote(note, clef, beatsPerBar, barWidth)` | Renders note head, stem, flag, ledger lines, accidental |
+| `renderTrackStaff(track)` | Assembles full staff SVG for one instrument part |
+| `renderScore()` | Wires track selector + meta panel + all staves |
+| `setTrack(id)` | Switches part selector and re-renders |
+
+Note head style: filled ellipse (quarter/eighth), open ellipse (half/whole).
+Stem direction: up when note is at or below the middle staff line, down above.
+
+### VexFlow Decision
+
+VexFlow.js was evaluated but not vendored in this implementation.  The full
+minified library (~2 MB) would have increased page payload significantly for a
+feature used by a minority of users.  The lightweight SVG renderer covers the
+required use cases (clefs, key/time signatures, notes, rests, beams, dynamics).
+If VexFlow integration is needed in future, the notation JSON endpoint
+(`/api/v1/musehub/repos/{id}/notation/{ref}`) is already designed to supply the
+quantized data that VexFlow's `EasyScore` API expects.
+
+### JSON Content Negotiation
+
+The score page requests:
+```
+GET /api/v1/musehub/repos/{repo_id}/notation/{ref}
+```
+Response: `{ "tracks": [...], "tempo": int, "key": str, "timeSig": str }`
+
+If the notation endpoint is unavailable, the renderer falls back to a minimal
+client-side stub (C-major chord, 4 beats) so the page always displays
+something meaningful.
+
+### Implementation
+
+| Layer | File |
+|-------|------|
+| Service | `maestro/services/musehub_notation.py` — `convert_ref_to_notation()`, `notation_result_to_dict()` |
+| HTML routes | `maestro/api/routes/musehub/ui.py` — `score_page()`, `score_part_page()` |
+| Template | `maestro/templates/musehub/pages/score.html` |
+| Tests (service) | `tests/test_musehub_notation.py` — 19 tests |
+| Tests (UI) | `tests/test_musehub_ui.py` — `test_score_*` (9 tests) |
+
+---
