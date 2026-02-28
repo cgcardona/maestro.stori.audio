@@ -2118,6 +2118,56 @@ commit that scored at or above the `--threshold` keyword-overlap cutoff.
 
 ---
 
+### `TrackHumanizeResult`
+
+**Module:** `maestro/muse_cli/commands/humanize.py`
+
+Per-track outcome of a `muse humanize` pass. Captures what was applied to each
+track so downstream agents can verify the humanization took effect (e.g. by
+comparing timing variance with `muse groove-check`).
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `track` | `str` | Track name (e.g. `"bass"`, `"drums"`) |
+| `timing_range_ms` | `int` | Applied timing variation range in ms (0 if `--velocity-only` or drum track) |
+| `velocity_range` | `int` | Applied velocity variation range in MIDI units (0 if `--timing-only`) |
+| `notes_affected` | `int` | Number of MIDI notes modified (stub: randomized placeholder) |
+| `drum_channel_excluded` | `bool` | `True` when the drum track was excluded from timing variation |
+
+**Producer:** `_apply_humanization()`
+**Consumer:** `HumanizeResult.tracks`, `_render_table()`, `_render_json()`
+
+---
+
+### `HumanizeResult`
+
+**Module:** `maestro/muse_cli/commands/humanize.py`
+
+Full result emitted by `muse humanize`. Contains provenance (source commit,
+preset, factor, seed) and a per-track breakdown of what was applied. Agents
+use this to confirm the operation succeeded and to audit the magnitude of
+humanization before committing downstream.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `commit` | `str` | Resolved source commit ref (8-char SHA or `"HEAD"`) |
+| `branch` | `str` | Current branch name |
+| `source_commit` | `str` | Same as `commit`; explicit alias for clarity in JSON payloads |
+| `preset` | `str` | One of `"tight"`, `"natural"`, `"loose"`, `"custom"` |
+| `factor` | `float` | Normalized humanization factor ∈ [0.0, 1.0] |
+| `seed` | `int \| None` | Random seed used; `None` = stochastic run |
+| `timing_only` | `bool` | Whether velocity humanization was skipped |
+| `velocity_only` | `bool` | Whether timing humanization was skipped |
+| `track_filter` | `str \| None` | `--track` value if provided; `None` = all tracks |
+| `section_filter` | `str \| None` | `--section` value if provided; `None` = all sections |
+| `tracks` | `list[TrackHumanizeResult]` | Per-track humanization outcomes |
+| `new_commit_id` | `str` | SHA of the newly created Muse commit |
+
+**Producer:** `_humanize_async()`
+**Consumer:** `_render_table()`, `_render_json()`, agentic `--json` pipelines
+
+---
+
 ### `DescribeResult`
 
 **Module:** `maestro/muse_cli/commands/describe.py`

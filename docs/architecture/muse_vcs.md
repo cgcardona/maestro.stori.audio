@@ -1309,3 +1309,107 @@ texture — letting the agent reuse, invert, or contrast those ideas.  The
 > scoring function will be replaced with no change to the CLI interface.
 
 ---
+
+### `muse humanize`
+
+**Purpose:** Apply micro-timing and velocity variation to quantized MIDI, producing
+a new Muse commit that sounds like a human performance.  AI agents use this after
+generating quantized output to make compositions feel natural before presenting
+them to DAW users.
+
+**Usage:**
+```bash
+muse humanize [COMMIT] [OPTIONS]
+```
+
+**Flags:**
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `COMMIT` | argument | HEAD | Source commit ref to humanize |
+| `--tight` | flag | off | Subtle: timing ±5 ms, velocity ±5 |
+| `--natural` | flag | on | Moderate: timing ±12 ms, velocity ±10 (default) |
+| `--loose` | flag | off | Heavy: timing ±20 ms, velocity ±15 |
+| `--factor FLOAT` | float | — | Custom factor 0.0–1.0 (overrides preset) |
+| `--timing-only` | flag | off | Apply timing variation only; preserve velocities |
+| `--velocity-only` | flag | off | Apply velocity variation only; preserve timing |
+| `--track TEXT` | string | all | Restrict humanization to one track (prefix match) |
+| `--section TEXT` | string | all | Restrict humanization to a named section |
+| `--seed N` | int | — | Fix random seed for reproducible output |
+| `--message TEXT` | string | auto | Commit message for the humanization commit |
+| `--json` | flag | off | Emit structured JSON for agent consumption |
+
+**Output example (default table):**
+```
+Humanize — natural (factor=0.60)  source=a1b2c3d4
+
+Track         Timing ±ms   Vel ±          Notes  Drum excluded
+------------  ----------  ------  -------------  ----------------
+bass                  12      10             78  no
+keys                  12      10             64  no
+lead                  12      10             52  no
+drums                  0      10             48  yes
+
+✅ New commit: 3f7a1c2dstub
+   (stub — full MIDI rewrite pending Storpheus note-level access)
+```
+
+**Output example (`--json`):**
+```json
+{
+  "commit": "a1b2c3d4",
+  "branch": "main",
+  "source_commit": "a1b2c3d4",
+  "preset": "natural",
+  "factor": 0.6,
+  "seed": 42,
+  "timing_only": false,
+  "velocity_only": false,
+  "track_filter": null,
+  "section_filter": null,
+  "tracks": [
+    {
+      "track": "bass",
+      "timing_range_ms": 12,
+      "velocity_range": 10,
+      "notes_affected": 78,
+      "drum_channel_excluded": false
+    }
+  ],
+  "new_commit_id": "3f7a1c2dstub"
+}
+```
+
+**Result types:** `HumanizeResult` and `TrackHumanizeResult` (both `TypedDict`).
+See `docs/reference/type_contracts.md § HumanizeResult`.
+
+**Agent use case:** After `muse commit` records a machine-generated MIDI variation,
+an AI agent runs `muse humanize --natural --seed 42` to add realistic performance
+feel before handing off to the DAW user.  The `--seed` flag makes the humanization
+reproducible so agents can compare groove metrics (via `muse groove-check`) across
+identical humanization passes.  `--json` makes the result directly parseable in an
+agentic pipeline.
+
+**Drum groove preservation:** The drum channel (GM channel 10) is automatically
+excluded from timing variation.  Drum velocity is still humanized unless
+`--timing-only` is specified.  This matches professional humanization practice
+where the groove template is sacred.
+
+**Reproducibility:** When `--seed N` is given, the same invocation always produces
+the same output.  Without `--seed`, each run is stochastic — suitable for creative
+exploration, but not for deterministic comparison tests.
+
+**Implementation:** `maestro/muse_cli/commands/humanize.py` —
+`HumanizeResult` (TypedDict), `TrackHumanizeResult` (TypedDict),
+`_resolve_preset()`, `_timing_ms_for_factor()`, `_velocity_range_for_factor()`,
+`_apply_humanization()`, `_humanize_async()`, `_render_table()`, `_render_json()`.
+Exit codes: 0 success, 1 flag conflict (`USER_ERROR`), 2 outside repo
+(`REPO_NOT_FOUND`), 3 internal error (`INTERNAL_ERROR`).
+
+> **Stub note:** The full implementation requires Storpheus to expose a note-level
+> MIDI read/write API.  The current stub computes correct per-track metadata
+> (timing ranges, velocity ranges, drum exclusion) and produces a new commit ID,
+> but does not physically rewrite note timings in the snapshot.  The CLI interface
+> is stable and will not change when the full implementation lands.
+
+---

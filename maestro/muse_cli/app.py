@@ -3,7 +3,7 @@
 Entry point for the ``muse`` console script. Registers all MVP
 subcommands (init, status, commit, describe, grep, log, checkout, merge,
 remote, push, pull, open, play, dynamics, session, swing, ask, tag,
-recall) as Typer sub-applications.
+recall, humanize) as Typer sub-applications.
 """
 from __future__ import annotations
 
@@ -16,6 +16,7 @@ from maestro.muse_cli.commands import (
     describe,
     dynamics,
     grep_cmd,
+    humanize,
     init,
     log,
     merge,
@@ -56,6 +57,7 @@ cli.add_typer(session.app, name="session", help="Record and query recording sess
 cli.add_typer(ask.app, name="ask", help="Query musical history in natural language.")
 cli.add_typer(tag.app, name="tag", help="Attach and query music-semantic tags on commits.")
 cli.add_typer(recall.app, name="recall", help="Search commit history by natural-language description.")
+cli.add_typer(humanize.app, name="humanize", help="Apply micro-timing and velocity humanization to quantized MIDI.")
 
 
 if __name__ == "__main__":
