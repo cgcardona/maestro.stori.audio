@@ -5711,3 +5711,41 @@ Wrapper returned by `GET /api/v1/musehub/repos/{repo_id}/objects`.
 
 **Producer:** `objects.list_objects` route handler
 **Consumer:** Muse Hub web UI; any agent inspecting which artifacts are available for a repo
+
+---
+
+## Muse CLI — Conflict Resolution Types (`maestro/muse_cli/merge_engine.py`)
+
+### `MergeState`
+
+Frozen dataclass representing an in-progress merge with unresolved conflicts.
+Returned by `read_merge_state(root)` when `.muse/MERGE_STATE.json` is present.
+`None` return indicates no merge is in progress.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `conflict_paths` | `list[str]` | Relative POSIX paths of files with unresolved conflicts |
+| `base_commit` | `str \| None` | Commit ID of the common ancestor (merge base) |
+| `ours_commit` | `str \| None` | Commit ID of HEAD when the merge was initiated |
+| `theirs_commit` | `str \| None` | Commit ID of the branch being merged in |
+| `other_branch` | `str \| None` | Human-readable name of the branch being merged in |
+
+**Lifecycle:** Created by `write_merge_state()` (called from `_merge_async` on conflict),
+updated by `resolve_conflict_async()` (removes resolved paths from `conflict_paths`),
+cleared by `clear_merge_state()` (called by `_merge_continue_async` and `_merge_abort_async`).
+
+**Agent contract:** When `conflict_paths` is non-empty, the merge is blocked.
+When `conflict_paths == []`, all conflicts are resolved and `muse merge --continue` will succeed.
+Call `is_conflict_resolved(state, path)` to test whether a specific path still needs resolution.
+
+```python
+state = read_merge_state(root)
+if state is not None and state.conflict_paths:
+    for path in state.conflict_paths:
+        # agent inspects each conflict before choosing --ours or --theirs
+        await resolve_conflict_async(file_path=path, ours=True, root=root, session=session)
+```
+
+**Related helpers:**
+- `apply_resolution(root, rel_path, object_id)` — copies an object from the local store to `muse-work/`; used by `--theirs` resolution and `--abort`.
+- `is_conflict_resolved(merge_state, rel_path)` — returns `True` if `rel_path` is not in `conflict_paths`.
