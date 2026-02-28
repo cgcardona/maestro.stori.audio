@@ -24,7 +24,7 @@ class CommitInput(CamelModel):
     message: str
     snapshot_id: str | None = None
     timestamp: datetime
-    # Optional — falls back to the JWT ``sub`` when absent
+    # Optional -- falls back to the JWT ``sub`` when absent
     author: str | None = None
 
 
@@ -62,9 +62,9 @@ class PullRequest(CamelModel):
     """Body for POST /musehub/repos/{repo_id}/pull."""
 
     branch: str
-    # Commit IDs the client already has — missing ones will be returned
+    # Commit IDs the client already has -- missing ones will be returned
     have_commits: list[str] = Field(default_factory=list)
-    # Object IDs the client already has — missing ones will be returned
+    # Object IDs the client already has -- missing ones will be returned
     have_objects: list[str] = Field(default_factory=list)
 
 
@@ -92,6 +92,13 @@ class CreateRepoRequest(CamelModel):
 
     name: str = Field(..., min_length=1, max_length=255, description="Repo name")
     visibility: str = Field("private", pattern="^(public|private)$")
+    description: str = Field("", description="Short description shown on the explore page")
+    tags: list[str] = Field(
+        default_factory=list,
+        description="Free-form tags -- genre, key, instrumentation (e.g. 'jazz', 'F# minor', 'bass')",
+    )
+    key_signature: str | None = Field(None, max_length=50, description="Musical key (e.g. 'C major', 'F# minor')")
+    tempo_bpm: int | None = Field(None, ge=20, le=300, description="Tempo in BPM")
 
 
 # ── Response models ───────────────────────────────────────────────────────────
@@ -105,6 +112,10 @@ class RepoResponse(CamelModel):
     visibility: str
     owner_user_id: str
     clone_url: str
+    description: str = ""
+    tags: list[str] = Field(default_factory=list)
+    key_signature: str | None = None
+    tempo_bpm: int | None = None
     created_at: datetime
 
 
@@ -207,7 +218,7 @@ class PRMergeRequest(CamelModel):
     merge_strategy: str = Field(
         "merge_commit",
         pattern="^(merge_commit)$",
-        description="Merge strategy — only 'merge_commit' is supported at MVP",
+        description="Merge strategy -- only 'merge_commit' is supported at MVP",
     )
 
 
@@ -224,7 +235,7 @@ class PRMergeResponse(CamelModel):
 class ContributorCredits(CamelModel):
     """Wire representation of a single contributor's credit record.
 
-    Aggregated from commit history — one record per unique author string.
+    Aggregated from commit history -- one record per unique author string.
     Contribution types are inferred from commit message keywords so that an
     agent or a human can understand each collaborator's role at a glance.
     """
@@ -254,7 +265,7 @@ class CreditsResponse(CamelModel):
 
 
 class ObjectMetaResponse(CamelModel):
-    """Wire representation of a stored artifact — metadata only, no content bytes.
+    """Wire representation of a stored artifact -- metadata only, no content bytes.
 
     Returned by GET /musehub/repos/{repo_id}/objects. Use the ``/content``
     sub-resource to download the raw bytes. The ``path`` field retains the
@@ -275,13 +286,73 @@ class ObjectMetaListResponse(CamelModel):
     objects: list[ObjectMetaResponse]
 
 
+# ── Divergence visualization models ───────────────────────────────────────────
+
+
+class DivergenceDimensionResponse(CamelModel):
+    """Wire representation of divergence scores for a single musical dimension.
+
+    Mirrors :class:`maestro.services.musehub_divergence.MuseHubDimensionDivergence`
+    for JSON serialization.  AI agents consume this to decide which dimension
+    of a branch needs creative attention before merging.
+    """
+
+    dimension: str
+    level: str
+    score: float
+    description: str
+    branch_a_commits: int
+    branch_b_commits: int
+
+
+class DivergenceResponse(CamelModel):
+    """Full musical divergence report between two Muse Hub branches.
+
+    Returned by ``GET /musehub/repos/{repo_id}/divergence``.  Contains five
+    per-dimension scores (melodic, harmonic, rhythmic, structural, dynamic)
+    and an overall score computed as the mean of those five scores.
+
+    The ``overall_score`` is in [0.0, 1.0]; multiply by 100 for a percentage.
+    A score of 0.0 means identical, 1.0 means completely diverged.
+    """
+
+    repo_id: str
+    branch_a: str
+    branch_b: str
+    common_ancestor: str | None
+    dimensions: list[DivergenceDimensionResponse]
+    overall_score: float
+# ── Explore / Discover models ──────────────────────────────────────────────────
+
+
+class ExploreRepoResult(CamelModel):
+    """A public repo card shown on the explore/discover page.
+
+    Extends RepoResponse with aggregated counts (star_count, commit_count)
+    that are computed at query time for efficient pagination and sorting.
+    These counts are read-only signals -- they are never persisted directly on
+    the repo row to avoid write amplification on every push/star.
+    """
+
+    repo_id: str
+    name: str
+    owner_user_id: str
+    description: str
+    tags: list[str]
+    key_signature: str | None
+    tempo_bpm: int | None
+    star_count: int
+    commit_count: int
+    created_at: datetime
+
+
 # ── Profile models ────────────────────────────────────────────────────────────
 
 
 class ProfileUpdateRequest(CamelModel):
     """Body for PUT /api/v1/musehub/users/{username}.
 
-    All fields are optional — send only the ones to change.
+    All fields are optional -- send only the ones to change.
     """
 
     bio: str | None = Field(None, max_length=500, description="Short bio (Markdown supported)")
@@ -295,15 +366,35 @@ class ProfileRepoSummary(CamelModel):
     """Compact repo summary shown on a user's profile page.
 
     Includes the last-activity timestamp derived from the most recent commit
-    and a stub star_count (always 0 at MVP — no star mechanism yet).
+    and a stub star_count (always 0 at MVP -- no star mechanism yet).
     """
 
     repo_id: str
     name: str
     visibility: str
-    star_count: int = 0
-    last_activity_at: datetime | None = None
+    star_count: int
+    last_activity_at: datetime | None
     created_at: datetime
+
+
+class ExploreResponse(CamelModel):
+    """Paginated response from GET /api/v1/musehub/discover/repos.
+
+    ``total`` reflects the full filtered result set size -- not just the current
+    page -- so clients can render pagination controls without a second query.
+    """
+
+    repos: list[ExploreRepoResult]
+    total: int
+    page: int
+    page_size: int
+
+
+class StarResponse(CamelModel):
+    """Confirmation that a star was added or removed."""
+
+    starred: bool
+    star_count: int
 
 
 class ContributionDay(CamelModel):
@@ -546,7 +637,7 @@ class MuseHubContextMusicalState(CamelModel):
 
     ``active_tracks`` is populated from object paths in the repo.
     All analytical fields (key, tempo, etc.) are None until Storpheus MIDI
-    analysis is integrated — agents should treat None as "unknown."
+    analysis is integrated -- agents should treat None as "unknown."
     """
 
     active_tracks: list[str]
@@ -563,7 +654,7 @@ class MuseHubContextResponse(CamelModel):
 
     Returned by ``GET /api/v1/musehub/repos/{repo_id}/context/{ref}``.
 
-    This is the MuseHub equivalent of ``MuseContextResult`` — built from
+    This is the MuseHub equivalent of ``MuseContextResult`` -- built from
     the remote repo's commit graph and stored objects rather than the local
     ``.muse`` filesystem.  The structure deliberately mirrors ``MuseContextResult``
     so that agents consuming either source see the same schema.
