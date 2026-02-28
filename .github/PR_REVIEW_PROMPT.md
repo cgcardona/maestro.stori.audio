@@ -330,6 +330,13 @@ cd "$REPO" && docker compose exec storpheus pytest storpheus/test_<relevant>.py 
 `ERROR`, `Traceback`, `toolError`, `circuit_breaker_open`, `FAILED`, `AssertionError`
 Any red-flag in the output means the run is not clean, regardless of the final summary line.
 
+**Warning scan:** Also scan the FULL output for `PytestWarning`, `DeprecationWarning`, `UserWarning`, and any other `Warning` lines. Warnings are not optional noise — treat them as defects:
+- Warnings introduced by this PR **must be fixed before merging**.
+- Pre-existing warnings found in the output **must also be fixed** and committed with:
+  `fix: resolve pre-existing test warning — <brief description>`
+  Note each one in your final report under "Warnings resolved."
+A clean run has zero warnings, not just zero failures.
+
 ### Broken tests from other PRs — fix them
 
 **If you encounter a failing test that was NOT introduced by this PR:**
