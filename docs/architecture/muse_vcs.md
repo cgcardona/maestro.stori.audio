@@ -2577,11 +2577,99 @@ drift out of sync.
 
 ---
 
+### `muse emotion-diff`
+
+**Purpose:** Compare emotion vectors between two commits to track how the emotional character of a composition changed over time. An AI agent uses this to detect whether a recent edit reinforced or subverted the intended emotional arc, and to decide whether to continue or correct the creative direction.
+
+**Status:** ✅ Implemented (issue #100)
+
+**Usage:**
+```bash
+muse emotion-diff [COMMIT_A] [COMMIT_B] [OPTIONS]
+```
+
+**Flags:**
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `COMMIT_A` | positional | `HEAD~1` | Baseline commit ref (full hash, abbreviated hash, `HEAD`, or `HEAD~N`). |
+| `COMMIT_B` | positional | `HEAD` | Target commit ref. |
+| `--track TEXT` | option | — | Scope analysis to a specific track (noted in output; full per-track MIDI scoping is a follow-up). |
+| `--section TEXT` | option | — | Scope to a named section (same stub note as `--track`). |
+| `--json` | flag | off | Emit structured JSON for agent or tool consumption. |
+
+**Sourcing strategy:**
+
+1. **`explicit_tags`** — Both commits have `emotion:*` tags (set via `muse tag add emotion:<label>`). Vectors are looked up from the canonical emotion table.
+2. **`mixed`** — One commit has a tag, the other is inferred from metadata.
+3. **`inferred`** — Neither commit has an emotion tag. Vectors are inferred from available commit metadata (tempo, annotations). Full MIDI-feature inference (mode, note density, velocity) is tracked as a follow-up.
+
+**Canonical emotion labels** (for `muse tag add emotion:<label>`):
+`joyful`, `melancholic`, `anxious`, `cinematic`, `peaceful`, `dramatic`, `hopeful`, `tense`, `dark`, `euphoric`, `serene`, `epic`, `mysterious`, `aggressive`, `nostalgic`.
+
+**Output example (text):**
+```
+Emotion diff — a1b2c3d4 → f9e8d7c6
+Source: explicit_tags
+
+Commit A (a1b2c3d4):  melancholic
+Commit B (f9e8d7c6):  joyful
+
+Dimension      Commit A   Commit B   Delta
+-----------    --------   --------   -----
+energy           0.3000     0.8000  +0.5000
+valence          0.3000     0.9000  +0.6000
+tension          0.4000     0.2000  -0.2000
+darkness         0.6000     0.1000  -0.5000
+
+Drift: 0.9747
+Dramatic emotional departure — a fundamentally different mood. melancholic → joyful (drift=0.975, major, dominant: +valence)
+```
+
+**Output example (JSON):**
+```json
+{
+  "commit_a": "a1b2c3d4",
+  "commit_b": "f9e8d7c6",
+  "source": "explicit_tags",
+  "label_a": "melancholic",
+  "label_b": "joyful",
+  "vector_a": {"energy": 0.3, "valence": 0.3, "tension": 0.4, "darkness": 0.6},
+  "vector_b": {"energy": 0.8, "valence": 0.9, "tension": 0.2, "darkness": 0.1},
+  "dimensions": [
+    {"dimension": "energy",   "value_a": 0.3, "value_b": 0.8, "delta":  0.5},
+    {"dimension": "valence",  "value_a": 0.3, "value_b": 0.9, "delta":  0.6},
+    {"dimension": "tension",  "value_a": 0.4, "value_b": 0.2, "delta": -0.2},
+    {"dimension": "darkness", "value_a": 0.6, "value_b": 0.1, "delta": -0.5}
+  ],
+  "drift": 0.9747,
+  "narrative": "...",
+  "track": null,
+  "section": null
+}
+```
+
+**Result types:** `EmotionDiffResult`, `EmotionVector`, `EmotionDimDelta` — all defined in `maestro/services/muse_emotion_diff.py` and registered in `docs/reference/type_contracts.md`.
+
+**Drift distance:** Euclidean distance in the 4-D emotion space. Range [0.0, 2.0].
+- < 0.05 — unchanged
+- 0.05–0.25 — subtle shift
+- 0.25–0.50 — moderate shift
+- 0.50–0.80 — significant shift
+- > 0.80 — major / dramatic departure
+
+**Agent use case:** An AI composing a new verse calls `muse emotion-diff HEAD~1 HEAD --json` after each commit to verify the composition is tracking toward the intended emotional destination (e.g., building from `melancholic` to `hopeful` across an album arc). A drift > 0.5 on the wrong dimension triggers a course-correction prompt.
+
+**Implementation:** `maestro/muse_cli/commands/emotion_diff.py` (CLI entry point) and `maestro/services/muse_emotion_diff.py` (core engine). All DB-touching paths are async (`open_session()` pattern). Commit refs support `HEAD`, `HEAD~N`, full 64-char hashes, and 8-char abbreviated hashes.
+
+---
+
 ### Command Registration Summary
 
 | Command | File | Status | Issue |
 |---------|------|--------|-------|
 | `muse dynamics` | `commands/dynamics.py` | ✅ stub (PR #130) | #120 |
+| `muse emotion-diff` | `commands/emotion_diff.py` | ✅ implemented (PR #100) | #100 |
 | `muse swing` | `commands/swing.py` | ✅ stub (PR #131) | #121 |
 | `muse recall` | `commands/recall.py` | ✅ stub (PR #135) | #122 |
 | `muse tag` | `commands/tag.py` | ✅ implemented (PR #133) | #123 |

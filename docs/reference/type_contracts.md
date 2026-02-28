@@ -4611,6 +4611,59 @@ classDiagram
 
 ---
 
+## Muse CLI — Emotion-Diff Types (`maestro/services/muse_emotion_diff.py`)
+
+### `EmotionVector`
+
+Frozen dataclass. 4-dimensional emotion representation for a single commit.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `energy` | `float` | Activity / rhythmic intensity in [0.0, 1.0]. |
+| `valence` | `float` | Positivity / happiness in [0.0, 1.0]. |
+| `tension` | `float` | Harmonic / rhythmic tension in [0.0, 1.0]. |
+| `darkness` | `float` | Heaviness / weight in [0.0, 1.0]. |
+
+Methods:
+- `as_tuple() -> tuple[float, float, float, float]` — returns `(energy, valence, tension, darkness)`.
+- `drift_from(other: EmotionVector) -> float` — Euclidean distance in emotion space, range [0.0, 2.0].
+
+### `EmotionDimDelta`
+
+Frozen dataclass. Delta for a single emotion dimension between two commits.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `dimension` | `str` | Dimension name: one of `"energy"`, `"valence"`, `"tension"`, `"darkness"`. |
+| `value_a` | `float` | Value at commit A (baseline). |
+| `value_b` | `float` | Value at commit B (target). |
+| `delta` | `float` | `value_b - value_a`; positive = increased, negative = decreased. |
+
+### `EmotionDiffResult`
+
+Frozen dataclass. Full emotion-diff report between two Muse commits. Returned by `compute_emotion_diff()`.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `commit_a` | `str` | Short (8-char) ref of the baseline commit. |
+| `commit_b` | `str` | Short (8-char) ref of the target commit. |
+| `source` | `str` | `"explicit_tags"` \| `"inferred"` \| `"mixed"` — how vectors were obtained. |
+| `label_a` | `str \| None` | Emotion label for commit A (e.g. `"melancholic"`), or `None`. |
+| `label_b` | `str \| None` | Emotion label for commit B, or `None`. |
+| `vector_a` | `EmotionVector \| None` | Emotion vector at commit A. |
+| `vector_b` | `EmotionVector \| None` | Emotion vector at commit B. |
+| `dimensions` | `tuple[EmotionDimDelta, ...]` | Per-dimension deltas in `EMOTION_DIMENSIONS` order. |
+| `drift` | `float` | Euclidean distance in emotion space, range [0.0, 2.0]. |
+| `narrative` | `str` | Human-readable summary of the emotional shift. |
+| `track` | `str \| None` | Track filter applied, or `None`. |
+| `section` | `str \| None` | Section filter applied, or `None`. |
+
+**Drift thresholds:** < 0.05 unchanged · 0.05–0.25 subtle · 0.25–0.50 moderate · 0.50–0.80 significant · > 0.80 major/dramatic.
+
+**Agent contract:** Call `muse emotion-diff HEAD~1 HEAD --json` and parse `drift` + `narrative` to decide whether the most recent commit is emotionally aligned with the intended arc.
+
+---
+
 ## Muse Inspect Types (`maestro/services/muse_inspect.py`)
 
 ### `InspectFormat`
