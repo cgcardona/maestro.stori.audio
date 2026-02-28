@@ -12,6 +12,7 @@ Endpoint summary:
   GET /musehub/ui/{repo_id}/pulls/{pr_id}          — PR detail page (with merge button)
   GET /musehub/ui/{repo_id}/issues                 — issue list page
   GET /musehub/ui/{repo_id}/issues/{number}        — issue detail page (with close button)
+  GET /musehub/ui/{repo_id}/credits                — dynamic credits page (album liner notes)
   GET /musehub/ui/{repo_id}/embed/{ref}            — embeddable player widget (no auth, iframe-safe)
   GET /musehub/ui/{repo_id}/search                 — in-repo search page (four modes)
 
@@ -430,6 +431,7 @@ async def repo_page(repo_id: str) -> HTMLResponse:
               <div style="display:flex;gap:12px;margin-bottom:16px;flex-wrap:wrap">
                 <a href="${{base}}/pulls" class="btn btn-secondary">Pull Requests</a>
                 <a href="${{base}}/issues" class="btn btn-secondary">Issues</a>
+                <a href="${{base}}/credits" class="btn btn-secondary">&#127926; Credits</a>
                 <a href="${{base}}/search" class="btn btn-secondary">&#128269; Search</a>
               </div>
               <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
@@ -1687,6 +1689,128 @@ async def embed_page(repo_id: str, ref: str) -> Response:
         media_type="text/html",
         headers={"X-Frame-Options": "ALLOWALL"},
     )
+
+
+@router.get(
+    "/{repo_id}/credits",
+    response_class=HTMLResponse,
+    summary="Muse Hub dynamic credits page",
+)
+async def credits_page(repo_id: str) -> HTMLResponse:
+    """Render the dynamic credits page — album liner notes for the repo.
+
+    Fetches ``GET /api/v1/musehub/repos/{repo_id}/credits`` and displays
+    every contributor with their session count, inferred roles, and activity
+    timeline.  Sort can be toggled via a dropdown (count / recency / alpha).
+
+    Embeds a ``<script type="application/ld+json">`` block for machine-readable
+    attribution using schema.org ``MusicComposition`` vocabulary.
+
+    Auth is handled client-side via localStorage JWT, matching all other UI pages.
+    """
+    script = f"""
+      const repoId = {repr(repo_id)};
+      const base   = '/musehub/ui/' + repoId;
+
+
+      function escHtml(s) {{
+        if (!s) return '';
+        return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+      }}
+
+      function fmtYear(iso) {{
+        if (!iso) return '—';
+        return new Date(iso).getFullYear();
+      }}
+
+      function contributorRow(c) {{
+        const roles = (c.contributionTypes || []).map(r =>
+          '<span class="label">' + escHtml(r) + '</span>'
+        ).join(' ');
+        const window = fmtDate(c.firstActive) + ' &ndash; ' + fmtDate(c.lastActive);
+        return `
+          <div class="commit-row" style="align-items:flex-start;flex-direction:column;gap:6px">
+            <div style="display:flex;align-items:center;gap:10px;width:100%">
+              <span style="font-size:15px;color:#e6edf3;font-weight:600;flex:1">
+                ${{escHtml(c.author)}}
+              </span>
+              <span class="badge badge-open" style="font-size:12px;background:#1a3a5c">
+                ${{c.sessionCount}} session${{c.sessionCount !== 1 ? 's' : ''}}
+              </span>
+            </div>
+            <div>${{roles}}</div>
+            <div style="font-size:12px;color:#8b949e">${{window}}</div>
+          </div>`;
+      }}
+
+      function injectJsonLd(credits) {{
+        const contributors = (credits.contributors || []).map(c => ({{
+          '@type': 'Person',
+          name: c.author,
+          roleName: (c.contributionTypes || []).join(', '),
+        }}));
+        const ld = {{
+          '@context': 'https://schema.org',
+          '@type': 'MusicComposition',
+          identifier: credits.repoId,
+          contributor: contributors,
+        }};
+        const el = document.createElement('script');
+        el.type = 'application/ld+json';
+        el.textContent = JSON.stringify(ld, null, 2);
+        document.head.appendChild(el);
+      }}
+
+      async function load(sort) {{
+        try {{
+          const credits = await apiFetch('/repos/' + repoId + '/credits?sort=' + sort);
+          const contributors = credits.contributors || [];
+
+          injectJsonLd(credits);
+
+          const rows = contributors.length === 0
+            ? '<p class="loading">No sessions recorded yet. Start a session with <code>muse session start</code>.</p>'
+            : contributors.map(contributorRow).join('');
+
+          document.getElementById('content').innerHTML = `
+            <div style="margin-bottom:12px">
+              <a href="${{base}}">&larr; Back to repo</a>
+            </div>
+            <div class="card">
+              <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;flex-wrap:wrap">
+                <h1 style="margin:0">&#127926; Credits</h1>
+                <span style="flex:1"></span>
+                <span style="font-size:13px;color:#8b949e">
+                  ${{credits.totalContributors}} contributor${{credits.totalContributors !== 1 ? 's' : ''}}
+                </span>
+                <label style="font-size:13px;color:#8b949e;display:flex;align-items:center;gap:6px">
+                  Sort:
+                  <select onchange="load(this.value)">
+                    <option value="count"   ${{sort==='count'  ?'selected':''}}>Most prolific</option>
+                    <option value="recency" ${{sort==='recency'?'selected':''}}>Most recent</option>
+                    <option value="alpha"   ${{sort==='alpha'  ?'selected':''}}>A &ndash; Z</option>
+                  </select>
+                </label>
+              </div>
+              ${{rows}}
+            </div>
+            <p style="font-size:11px;color:#8b949e;margin-top:8px;text-align:center">
+              Machine-readable credits embedded as JSON-LD (schema.org/MusicComposition)
+            </p>`;
+        }} catch(e) {{
+          if (e.message !== 'auth')
+            document.getElementById('content').innerHTML = '<p class="error">&#10005; ' + escHtml(e.message) + '</p>';
+        }}
+      }}
+
+      load('count');
+    """
+    html = _page(
+        title="Credits",
+        breadcrumb=f'<a href="/musehub/ui/{repo_id}">{repo_id[:8]}</a> / credits',
+        body_script=script,
+    )
+    return HTMLResponse(content=html)
 
 
 @router.get(

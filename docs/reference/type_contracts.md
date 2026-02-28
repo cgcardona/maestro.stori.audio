@@ -5977,6 +5977,38 @@ Wrapper returned by `GET /api/v1/musehub/repos/{repo_id}/objects`.
 **Producer:** `objects.list_objects` route handler
 **Consumer:** Muse Hub web UI; any agent inspecting which artifacts are available for a repo
 
+### `ContributorCredits`
+
+Defined in `maestro/models/musehub.py`.
+
+One contributor record aggregated from all commits attributed to a single author.  Part of `CreditsResponse`.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `author` | `str` | Author name (from commit record) |
+| `session_count` | `int` | Total commits by this author in the repo |
+| `contribution_types` | `list[str]` | Inferred roles (composer, arranger, producer, etc.) |
+| `first_active` | `datetime` | Timestamp of earliest commit |
+| `last_active` | `datetime` | Timestamp of most recent commit |
+
+**Producer:** `musehub_credits.aggregate_credits()` → `repos.get_credits` route handler
+**Consumer:** Muse Hub credits page UI; any agent generating liner notes or attribution summaries
+
+### `CreditsResponse`
+
+Defined in `maestro/models/musehub.py`.
+
+Full contributor roll for a Muse Hub repo.  Returned by `GET /api/v1/musehub/repos/{repo_id}/credits`.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `repo_id` | `str` | Target repo ID |
+| `contributors` | `list[ContributorCredits]` | All contributors, sorted per `sort` |
+| `sort` | `str` | Echoed sort order (`count`, `recency`, or `alpha`) |
+| `total_contributors` | `int` | Total number of distinct contributors |
+
+**Producer:** `musehub_credits.aggregate_credits()` → `repos.get_credits` route handler
+**Consumer:** Muse Hub credits page UI; AI agents generating liner notes, release attribution, or schema.org `MusicComposition` JSON-LD
 ### `MuseHubContextCommitInfo`
 
 Minimal commit metadata nested inside `MuseHubContextResponse`.
