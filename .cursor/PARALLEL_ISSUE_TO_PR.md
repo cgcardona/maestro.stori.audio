@@ -96,18 +96,16 @@ cd "$REPO"
 DEV_SHA=$(git rev-parse dev)
 
 # --- define issues (confirmed independent — zero file overlap) ---
-# Batch: #96–#103 (new muse CLI commands)
+# Batch: #82–#87 (new muse CLI commands)
 # Known shared file: maestro/muse_cli/app.py (each agent adds one app.add_typer line)
 # Resolution: pre-push sync in STEP 4 handles app.py conflicts — keep both sides.
 declare -a ISSUES=(
-  "103|feat: muse harmony [<commit>] — analyze and query harmonic content across commits"
-  "102|feat: muse transpose <interval> [<commit>] — apply transposition as a Muse commit"
-  "101|feat: muse motif — identify, track, and compare recurring melodic motifs across commits"
-  "100|feat: muse emotion-diff <commit-a> <commit-b> — compare emotion vectors between commits"
-  "99|feat: muse validate — check musical integrity of the working tree"
-  "98|feat: muse inspect — print structured JSON of the Muse commit graph"
-  "97|feat: muse timeline — visualize musical evolution chronologically"
-  "96|feat: muse render-preview [<commit>] — generate an audio preview of a commit's snapshot"
+  "87|feat: muse hash-object <file> — compute and optionally store an object"
+  "86|feat: muse status — add --short, --branch, --porcelain, --sections, --tracks flags"
+  "85|feat: muse init — add --bare, --template, and --default-branch flags"
+  "84|feat: muse commit — add missing music-domain flags"
+  "83|feat: muse worktree — manage local Muse worktrees from the CLI"
+  "82|feat: muse release <tag> — export and render a tagged commit as a release artifact"
 )
 
 # --- create worktrees + task files ---
