@@ -1571,6 +1571,101 @@ CLI contract; stub implementations are clearly marked.
 
 ---
 
+### `muse harmony`
+
+**Purpose:** Analyze the harmonic content (key center, mode, chord progression, harmonic
+rhythm, and tension profile) of a commit. The primary tool for understanding what a
+composition is doing harmonically — information that is completely invisible to Git.
+An AI agent calling `muse harmony --json` knows whether the current arrangement is in
+Eb major with a II-V-I progression and moderate tension, and can use this to make
+musically coherent generation decisions.
+
+**Usage:**
+```bash
+muse harmony [<commit>] [OPTIONS]
+```
+
+**Flags:**
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `COMMIT` | positional | HEAD | Commit ref to analyze |
+| `--track TEXT` | string | all tracks | Restrict to a named MIDI track (e.g. `--track keys`) |
+| `--section TEXT` | string | — | Restrict to a named musical section/region (planned) |
+| `--compare COMMIT` | string | — | Compare harmonic content against another commit |
+| `--range FROM..TO` | string | — | Analyze across a commit range (planned) |
+| `--progression` | flag | off | Show only the chord progression sequence |
+| `--key` | flag | off | Show only the detected key center |
+| `--mode` | flag | off | Show only the detected mode |
+| `--tension` | flag | off | Show only the harmonic tension profile |
+| `--json` | flag | off | Emit structured JSON for agent consumption |
+
+**Output example (text):**
+```
+Commit abc1234 — Harmonic Analysis
+(stub — full MIDI analysis pending)
+
+Key: Eb (confidence: 0.92)
+Mode: major
+Chord progression: Ebmaj7 | Fm7 | Bb7sus4 | Bb7 | Ebmaj7 | Abmaj7 | Gm7 | Cm7
+Harmonic rhythm: 2.1 chords/bar avg
+Tension profile: Low → Medium → High → Resolution (textbook tension-release arc)  [0.2 → 0.4 → 0.8 → 0.3]
+```
+
+**Output example (`--json`):**
+```json
+{
+  "commit_id": "abc1234",
+  "branch": "main",
+  "key": "Eb",
+  "mode": "major",
+  "confidence": 0.92,
+  "chord_progression": ["Ebmaj7", "Fm7", "Bb7sus4", "Bb7", "Ebmaj7", "Abmaj7", "Gm7", "Cm7"],
+  "harmonic_rhythm_avg": 2.1,
+  "tension_profile": [0.2, 0.4, 0.8, 0.3],
+  "track": "all",
+  "source": "stub"
+}
+```
+
+**Output example (`--compare <commit> --json`):**
+```json
+{
+  "head": { "commit_id": "abc1234", "key": "Eb", "mode": "major", ... },
+  "compare": { "commit_id": "def5678", "key": "Eb", "mode": "major", ... },
+  "key_changed": false,
+  "mode_changed": false,
+  "chord_progression_delta": []
+}
+```
+
+**Result type:** `HarmonyResult` — fields: `commit_id`, `branch`, `key`, `mode`,
+`confidence`, `chord_progression`, `harmonic_rhythm_avg`, `tension_profile`, `track`, `source`.
+Compare path returns `HarmonyCompareResult` — fields: `head`, `compare`, `key_changed`,
+`mode_changed`, `chord_progression_delta`.
+
+**Agent use case:** Before generating a new instrument layer, an agent calls
+`muse harmony --json` to discover the harmonic context. If the arrangement is in
+Eb major with a II-V-I progression, the agent ensures its generated voicings stay
+diatonic to Eb. If the tension profile shows a build toward the chorus, the agent
+adds chromatic tension at the right moment rather than resolving early.
+`muse harmony --compare HEAD~5 --json` reveals whether the composition has
+modulated, shifted mode, or changed its harmonic rhythm — all decisions an AI
+needs to make coherent musical choices across versions.
+
+**Implementation:** `maestro/muse_cli/commands/harmony.py` — `_harmony_analyze_async`
+(injectable async core), `HarmonyResult` / `HarmonyCompareResult` (TypedDict result
+entities), `_stub_harmony` (placeholder data), `_tension_label` (arc classifier),
+`_render_result_human` / `_render_result_json` / `_render_compare_human` /
+`_render_compare_json` (renderers). Exit codes: 0 success, 2 outside repo, 3 internal.
+
+> **Stub note:** Chord detection, key inference, and tension computation are placeholder
+> values derived from a static Eb major II-V-I template. Full implementation requires
+> MIDI note extraction from committed snapshot objects (future: Storpheus chord detection
+> route). The CLI contract, result types, and flag set are stable.
+
+---
+
 ### `muse dynamics`
 
 **Purpose:** Analyze the velocity (loudness) profile of a commit across all instrument
