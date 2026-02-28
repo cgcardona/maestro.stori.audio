@@ -2,7 +2,7 @@
 
 Entry point for the ``muse`` console script. Registers all MVP
 subcommands (init, status, commit, describe, grep, log, checkout, merge,
-remote, push, pull, open, play, dynamics, session, swing, ask, tag,
+remote, push, pull, open, play, dynamics, find, session, swing, ask, tag,
 recall, arrange) as Typer sub-applications.
 """
 from __future__ import annotations
@@ -16,6 +16,7 @@ from maestro.muse_cli.commands import (
     commit,
     describe,
     dynamics,
+    find,
     grep_cmd,
     init,
     log,
@@ -44,6 +45,7 @@ cli.add_typer(dynamics.app, name="dynamics", help="Analyse the dynamic (velocity
 cli.add_typer(commit.app, name="commit", help="Record a new variation in history.")
 cli.add_typer(grep_cmd.app, name="grep", help="Search for a musical pattern across all commits.")
 cli.add_typer(log.app, name="log", help="Display the variation history graph.")
+cli.add_typer(find.app, name="find", help="Search commit history by musical properties.")
 cli.add_typer(checkout.app, name="checkout", help="Checkout a historical variation.")
 cli.add_typer(merge.app, name="merge", help="Three-way merge two variation branches.")
 cli.add_typer(remote.app, name="remote", help="Manage remote server connections.")
