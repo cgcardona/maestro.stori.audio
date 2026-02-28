@@ -4539,3 +4539,39 @@ or smoother (stepwise) between two points in history.
 
 **Producer:** `_contour_compare_async()`
 **Consumer:** `_format_compare()`
+
+---
+
+### `ResetResult`
+
+**Module:** `maestro/services/muse_reset.py`
+
+Outcome of a completed `muse reset` operation.  Frozen dataclass — immutable
+after construction.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `target_commit_id` | `str` | Full 64-char SHA of the commit the branch now points to |
+| `mode` | `ResetMode` | The reset mode applied (`soft`, `mixed`, or `hard`) |
+| `branch` | `str` | Name of the branch that was reset |
+| `files_restored` | `int` | Number of files written to muse-work/ (hard only; 0 otherwise) |
+| `files_deleted` | `int` | Number of files deleted from muse-work/ (hard only; 0 otherwise) |
+
+**Producer:** `perform_reset()`
+**Consumer:** `reset()` Typer callback (CLI display)
+
+---
+
+### `ResetMode`
+
+**Module:** `maestro/services/muse_reset.py`
+
+Enum of the three reset modes.
+
+| Value | String | Semantics |
+|-------|--------|-----------|
+| `SOFT` | `"soft"` | Branch ref only; working tree untouched |
+| `MIXED` | `"mixed"` | Branch ref (index reset conceptually); working tree untouched |
+| `HARD` | `"hard"` | Branch ref + working tree overwritten from snapshot |
+
+**Producer / Consumer:** `perform_reset()`, `reset()` Typer callback
