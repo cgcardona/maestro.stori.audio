@@ -5401,3 +5401,22 @@ Wrapper returned by `GET /api/v1/musehub/repos/{repo_id}/objects`.
 
 **Producer:** `objects.list_objects` route handler
 **Consumer:** Muse Hub web UI; any agent inspecting which artifacts are available for a repo
+
+## Muse Worktree Types
+
+Defined in `maestro/muse_cli/commands/worktree.py`.
+
+### `WorktreeInfo`
+
+Describes a single worktree entry returned by `list_worktrees()` and `add_worktree()`.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `path` | `pathlib.Path` | Absolute filesystem path to the worktree directory |
+| `branch` | `str` | Checked-out branch name, or `"(detached)"` when HEAD is detached |
+| `head_commit` | `str` | Current HEAD commit SHA (empty string when branch has no commits) |
+| `is_main` | `bool` | `True` for the primary repo directory (owns `.muse/`), `False` for linked worktrees |
+| `slug` | `str` | Sanitized registration key under `.muse/worktrees/`; empty string for the main worktree |
+
+**Producer:** `list_worktrees(root)`, `add_worktree(root, link_path, branch)`
+**Consumer:** `muse worktree list`, `muse worktree add`, agent code inspecting active arrangement contexts

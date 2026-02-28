@@ -7,7 +7,7 @@ export, find, form, grep, groove-check, harmony, humanize, import, init, inspect
 key, log, merge, meter, motif, open, play, pull, push, read-tree, recall, remote,
 render-preview, reset, resolve, rev-parse, revert, session, show, similarity,
 status, swing, symbolic-ref, tag, tempo, tempo-scale, timeline, update-ref,
-validate, write-tree) as Typer sub-applications.
+validate, worktree, write-tree) as Typer sub-applications.
 """
 from __future__ import annotations
 
@@ -68,6 +68,7 @@ from maestro.muse_cli.commands import (
     timeline,
     update_ref,
     validate,
+    worktree,
     write_tree,
 )
 
@@ -135,6 +136,7 @@ cli.add_typer(tempo_scale.app, name="tempo-scale", help="Stretch or compress the
 cli.add_typer(timeline.app, name="timeline", help="Visualize musical evolution chronologically.")
 cli.add_typer(update_ref.app, name="update-ref", help="Write or delete a ref (branch or tag pointer).")
 cli.add_typer(validate.app, name="validate", help="Check musical integrity of the working tree.")
+cli.add_typer(worktree.app, name="worktree", help="Manage local Muse worktrees (add, remove, list, prune).")
 cli.add_typer(write_tree.app, name="write-tree", help="Write the current muse-work/ state as a snapshot (tree) object.")
 
 
