@@ -1966,4 +1966,3 @@ async def harmony_analysis_page(repo_id: str, ref: str) -> HTMLResponse:
 </body>
 </html>"""
     return HTMLResponse(content=html)
-
