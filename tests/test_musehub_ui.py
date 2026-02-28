@@ -661,11 +661,11 @@ async def test_groove_check_page_renders(
 
 
 @pytest.mark.anyio
-async def test_credits_page_contains_json_ld_injection(
+async def test_credits_page_contains_json_ld_injection_slug_route(
     client: AsyncClient,
     db_session: AsyncSession,
 ) -> None:
-    """Credits page embeds JSON-LD injection logic for machine-readable attribution."""
+    """Credits page embeds JSON-LD injection logic via slug route."""
     repo_id = await _make_repo(db_session)
     response = await client.get("/musehub/ui/testuser/test-beats/credits")
     assert response.status_code == 200
@@ -676,11 +676,11 @@ async def test_credits_page_contains_json_ld_injection(
 
 
 @pytest.mark.anyio
-async def test_credits_page_contains_sort_options(
+async def test_credits_page_contains_sort_options_slug_route(
     client: AsyncClient,
     db_session: AsyncSession,
 ) -> None:
-    """Credits page includes sort dropdown with count, recency, and alpha options."""
+    """Credits page includes sort dropdown via slug route."""
     repo_id = await _make_repo(db_session)
     response = await client.get("/musehub/ui/testuser/test-beats/credits")
     assert response.status_code == 200
@@ -691,11 +691,11 @@ async def test_credits_page_contains_sort_options(
 
 
 @pytest.mark.anyio
-async def test_credits_empty_state_message_in_page(
+async def test_credits_empty_state_message_in_page_slug_route(
     client: AsyncClient,
     db_session: AsyncSession,
 ) -> None:
-    """Credits page JS includes empty-state message for repos with no sessions."""
+    """Credits page JS includes empty-state message via slug route."""
     repo_id = await _make_repo(db_session)
     response = await client.get("/musehub/ui/testuser/test-beats/credits")
     assert response.status_code == 200
@@ -704,11 +704,11 @@ async def test_credits_empty_state_message_in_page(
 
 
 @pytest.mark.anyio
-async def test_credits_no_auth_required(
+async def test_credits_no_auth_required_slug_route(
     client: AsyncClient,
     db_session: AsyncSession,
 ) -> None:
-    """Credits page must be accessible without an Authorization header (HTML shell)."""
+    """Credits page must be accessible without an Authorization header via slug route."""
     repo_id = await _make_repo(db_session)
     response = await client.get("/musehub/ui/testuser/test-beats/credits")
     assert response.status_code == 200
