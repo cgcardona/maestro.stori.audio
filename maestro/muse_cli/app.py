@@ -5,7 +5,7 @@ subcommands (arrange, ask, checkout, chord-map, commit, commit-tree, context,
 contour, describe, diff, divergence, dynamics, export, find, form, grep,
 groove-check, humanize, import, init, inspect, key, log, merge, meter, open,
 play, pull, push, recall, remote, session, similarity, status, swing, tag,
-tempo, tempo-scale) as Typer sub-applications.
+tempo, tempo-scale, validate) as Typer sub-applications.
 """
 from __future__ import annotations
 
@@ -50,6 +50,7 @@ from maestro.muse_cli.commands import (
     tag,
     tempo,
     tempo_scale,
+    validate,
 )
 
 cli = typer.Typer(
@@ -100,6 +101,7 @@ cli.add_typer(groove_check.app, name="groove-check", help="Analyze rhythmic drif
 cli.add_typer(form.app, name="form", help="Analyze or annotate the formal structure (sections) of a commit.")
 cli.add_typer(similarity.app, name="similarity", help="Compare two commits by musical similarity score.")
 cli.add_typer(tempo_scale.app, name="tempo-scale", help="Stretch or compress the timing of a commit.")
+cli.add_typer(validate.app, name="validate", help="Check musical integrity of the working tree.")
 
 
 if __name__ == "__main__":
