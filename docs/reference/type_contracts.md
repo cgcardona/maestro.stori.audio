@@ -1694,6 +1694,35 @@ forked, newest first.
 | `forks` | `list[UserForkedRepoEntry]` | Repos forked by this user |
 | `total` | `int` | Total number of forked repos |
 
+#### `FollowResponse`
+
+**Path:** `maestro/api/routes/musehub/social.py`
+**Endpoint:** `GET /api/v1/musehub/users/{username}/followers`
+
+Returned by the public followers endpoint. Extended in issue #295 to include `following_count`
+so the profile header can display both "N followers · M following" at a glance.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `follower_count` | `int` | Number of users following this user |
+| `following_count` | `int` | Number of users this user follows (added #295) |
+| `following` | `bool` | Whether the calling user follows this user |
+
+#### `UserCardResponse`
+
+**Path:** `maestro/api/routes/musehub/users.py`
+**Endpoints:** `GET /api/v1/musehub/users/{username}/followers-list`, `GET /api/v1/musehub/users/{username}/following-list`
+
+Compact user card returned by the followers-list and following-list endpoints (issue #295).
+Designed for rendering avatar circles, linked usernames, and bio previews in the
+Followers / Following tabs on the profile page.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `username` | `str` | The user's public username |
+| `bio` | `str \| None` | Profile bio (may be absent) |
+| `avatar_url` | `str \| None` | Avatar image URL (may be absent) |
+
 #### `ForkCreateResponse`
 
 Returned by `POST /api/v1/musehub/repos/{id}/fork`.

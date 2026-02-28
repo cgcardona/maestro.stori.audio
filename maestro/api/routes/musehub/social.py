@@ -36,7 +36,7 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -48,6 +48,7 @@ from maestro.db.musehub_models import (
     MusehubFollow,
     MusehubFork,
     MusehubNotification,
+    MusehubProfile,
     MusehubReaction,
     MusehubStar,
     MusehubViewEvent,
@@ -103,6 +104,7 @@ class ReactionCount(BaseModel):
 
 class FollowResponse(BaseModel):
     follower_count: int
+    following_count: int
     following: bool
 
 
@@ -402,25 +404,41 @@ async def toggle_reaction(
 # ---------------------------------------------------------------------------
 
 
-@router.get("/users/{username}/followers", operation_id="getFollowers", summary="Get follower count for a user")
+@router.get("/users/{username}/followers", operation_id="getFollowers", summary="Get follower and following counts for a user")
 async def get_followers(
     username: str,
     db: AsyncSession = Depends(get_db),
     claims: TokenClaims | None = Depends(optional_token),
 ) -> FollowResponse:
-    """Return follower count and whether the calling user follows this user."""
-    count = (await db.execute(
-        select(func.count()).where(MusehubFollow.followee_id == username)
+    """Return follower count, following count, and whether the calling user follows this user."""
+    # Resolve user_id so we can match both username-keyed and user_id-keyed rows.
+    profile_row = (await db.execute(
+        select(MusehubProfile).where(MusehubProfile.username == username)
+    )).scalar_one_or_none()
+    user_id = profile_row.user_id if profile_row else username
+
+    follower_count = (await db.execute(
+        select(func.count()).where(
+            or_(MusehubFollow.followee_id == username, MusehubFollow.followee_id == user_id)
+        )
     )).scalar_one()
+
+    following_count = (await db.execute(
+        select(func.count()).where(
+            or_(MusehubFollow.follower_id == username, MusehubFollow.follower_id == user_id)
+        )
+    )).scalar_one()
+
     following = False
     if claims:
+        caller_id = claims.get("sub", "")
         following = bool((await db.execute(
             select(MusehubFollow).where(
-                MusehubFollow.follower_id == claims.get("sub", ""),
-                MusehubFollow.followee_id == username,
+                MusehubFollow.follower_id == caller_id,
+                or_(MusehubFollow.followee_id == username, MusehubFollow.followee_id == user_id),
             )
         )).scalar_one_or_none())
-    return FollowResponse(follower_count=count, following=following)
+    return FollowResponse(follower_count=follower_count, following_count=following_count, following=following)
 
 
 @router.post("/users/{username}/follow", status_code=status.HTTP_201_CREATED,
