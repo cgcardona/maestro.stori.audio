@@ -1421,6 +1421,8 @@ maestro/
     ├── issues.py                         — Issue tracking route handlers
     ├── pull_requests.py                  — Pull request route handlers
     ├── sync.py                           — Push/pull sync route handlers
+    ├── objects.py                        — Artifact list + content-by-object-id endpoints (auth required)
+    ├── raw.py                            — Raw file download by path (public repos: no auth)
     └── ui.py                             — Browser UI (HTML shell pages, no auth required)
 ```
 
@@ -1468,7 +1470,34 @@ maestro/
 | POST | `/api/v1/musehub/repos/{id}/push` | Upload commits and objects (fast-forward enforced) |
 | POST | `/api/v1/musehub/repos/{id}/pull` | Fetch missing commits and objects |
 
-All endpoints require `Authorization: Bearer <token>`. See [api.md](../reference/api.md#muse-hub-api) for full field docs.
+#### Raw File Download
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/v1/musehub/repos/{id}/raw/{ref}/{path}` | Download file by path with correct MIME type |
+
+The raw endpoint is designed for `curl`, `wget`, and scripted pipelines. It
+serves files with `Accept-Ranges: bytes` so audio clients can perform range
+requests for partial playback.
+
+**Auth:** No token required for **public** repos. Private repos return 401
+without a valid Bearer token.
+
+```bash
+# Public repo — no auth needed
+curl https://musehub.stori.com/api/v1/musehub/repos/<repo_id>/raw/main/tracks/bass.mid \
+  -o bass.mid
+
+# Private repo — Bearer token required
+curl -H "Authorization: Bearer <token>" \
+  https://musehub.stori.com/api/v1/musehub/repos/<repo_id>/raw/main/mix/final.mp3 \
+  -o final.mp3
+```
+
+See [api.md](../reference/api.md#get-apiv1musehub-reposrepo_idrawrefpath) for the
+full MIME type table and error reference.
+
+All other endpoints require `Authorization: Bearer <token>`. See [api.md](../reference/api.md#muse-hub-api) for full field docs.
 
 #### Web UI (no auth required)
 

@@ -6014,3 +6014,122 @@ if state is not None and state.conflict_paths:
 **Related helpers:**
 - `apply_resolution(root, rel_path, object_id)` — copies an object from the local store to `muse-work/`; used by `--theirs` resolution and `--abort`.
 - `is_conflict_resolved(merge_state, rel_path)` — returns `True` if `rel_path` is not in `conflict_paths`.
+
+---
+
+## Agent Context Models (`maestro/models/musehub_context.py`)
+
+### ContextDepth
+
+**Location:** `maestro/models/musehub_context.py`
+**Kind:** `str` Enum
+
+Controls how much data the agent context endpoint returns.
+
+| Value | Token budget | History entries | PR bodies | Issue bodies |
+|-------|-------------|-----------------|-----------|--------------|
+| `brief` | ~2K | ≤ 3 | No | No |
+| `standard` | ~8K | ≤ 10 | Yes | No |
+| `verbose` | Uncapped | ≤ 50 | Yes | Yes |
+
+### ContextFormat
+
+**Location:** `maestro/models/musehub_context.py`
+**Kind:** `str` Enum
+
+Wire format for the context response: `json` or `yaml`.
+
+### MusicalStateContext
+
+**Location:** `maestro/models/musehub_context.py`
+**Kind:** Pydantic `CamelModel`
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `active_tracks` | `list[str]` | Yes (default: `[]`) | Track names from the snapshot manifest |
+| `key` | `str \| None` | No | Detected key (e.g. `"F# minor"`) |
+| `mode` | `str \| None` | No | Detected mode (e.g. `"dorian"`) |
+| `tempo_bpm` | `int \| None` | No | Tempo in beats per minute |
+| `time_signature` | `str \| None` | No | Time signature (e.g. `"4/4"`) |
+| `form` | `str \| None` | No | Detected form (e.g. `"AABA"`) |
+| `emotion` | `str \| None` | No | Emotional character |
+
+**Note:** All optional fields are `None` until Storpheus MIDI analysis is integrated. Agents must handle `None` gracefully.
+
+### HistoryEntryContext
+
+**Location:** `maestro/models/musehub_context.py`
+**Kind:** Pydantic `CamelModel`
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `commit_id` | `str` | Yes | Commit UUID |
+| `message` | `str` | Yes | Commit message |
+| `author` | `str` | Yes | Author identifier |
+| `timestamp` | `str` | Yes | ISO-8601 UTC timestamp |
+| `active_tracks` | `list[str]` | Yes (default: `[]`) | Track names at this commit |
+
+### AnalysisSummaryContext
+
+**Location:** `maestro/models/musehub_context.py`
+**Kind:** Pydantic `CamelModel`
+
+Per-dimension analysis highlights. All fields are `None` until Storpheus integration.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `key_finding` | `str \| None` | Key and mode summary |
+| `chord_progression` | `list[str] \| None` | Detected chord sequence |
+| `groove_score` | `float \| None` | Groove quality `[0.0, 1.0]` |
+| `emotion` | `str \| None` | Emotional character |
+| `harmonic_tension` | `str \| None` | `"low"`, `"medium"`, or `"high"` |
+| `melodic_contour` | `str \| None` | Contour description |
+
+### ActivePRContext
+
+**Location:** `maestro/models/musehub_context.py`
+**Kind:** Pydantic `CamelModel`
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `pr_id` | `str` | PR UUID |
+| `title` | `str` | PR title |
+| `from_branch` | `str` | Source branch |
+| `to_branch` | `str` | Target branch |
+| `state` | `str` | Always `"open"` in context |
+| `body` | `str` | PR description (empty at `brief` depth) |
+
+### OpenIssueContext
+
+**Location:** `maestro/models/musehub_context.py`
+**Kind:** Pydantic `CamelModel`
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `issue_id` | `str` | Issue UUID |
+| `number` | `int` | Per-repo sequential number |
+| `title` | `str` | Issue title |
+| `labels` | `list[str]` | Label strings |
+| `body` | `str` | Issue body (only at `verbose` depth; empty otherwise) |
+
+### AgentContextResponse
+
+**Location:** `maestro/models/musehub_context.py`
+**Kind:** Pydantic `CamelModel`
+
+Top-level response from `GET /musehub/repos/{repo_id}/context`. Self-contained: an agent receiving only this document has everything it needs to compose coherent music.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `repo_id` | `str` | Repo UUID |
+| `ref` | `str` | Resolved branch name or commit ID |
+| `depth` | `str` | Depth level used |
+| `musical_state` | `MusicalStateContext` | Current musical state |
+| `history` | `list[HistoryEntryContext]` | Recent commits (head excluded) |
+| `analysis` | `AnalysisSummaryContext` | Per-dimension highlights |
+| `active_prs` | `list[ActivePRContext]` | Open PRs |
+| `open_issues` | `list[OpenIssueContext]` | Open issues |
+| `suggestions` | `list[str]` | Actionable composition suggestions |
+
+**Produced by:** `maestro.services.musehub_context.build_agent_context()`
+**Consumed by:** AI composition agents at session start; MCP context tool (planned)
