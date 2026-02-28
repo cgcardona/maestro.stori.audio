@@ -5,7 +5,7 @@ subcommands (amend, arrange, ask, checkout, chord-map, commit, commit-tree,
 context, contour, describe, diff, divergence, dynamics, export, find, form,
 grep, groove-check, humanize, import, init, inspect, key, log, merge, meter,
 open, play, pull, push, recall, remote, render-preview, reset, resolve, revert,
-session, similarity, status, swing, tag, tempo, tempo-scale, timeline,
+session, show, similarity, status, swing, tag, tempo, tempo-scale, timeline, update-ref,
 validate) as Typer sub-applications.
 """
 from __future__ import annotations
@@ -50,6 +50,7 @@ from maestro.muse_cli.commands import (
     resolve,
     revert,
     session,
+    show,
     similarity,
     status,
     swing,
@@ -57,6 +58,7 @@ from maestro.muse_cli.commands import (
     tempo,
     tempo_scale,
     timeline,
+    update_ref,
     validate,
 )
 
@@ -106,6 +108,7 @@ cli.add_typer(key.app, name="key", help="Read or annotate the musical key of a c
 cli.add_typer(humanize.app, name="humanize", help="Apply micro-timing and velocity humanization to quantized MIDI.")
 cli.add_typer(context.app, name="context", help="Output structured musical context for AI agent consumption.")
 cli.add_typer(divergence.app, name="divergence", help="Show how two branches have diverged musically.")
+cli.add_typer(show.app, name="show", help="Inspect a commit: metadata, snapshot, diff, MIDI files, and audio preview.")
 cli.add_typer(render_preview.app, name="render-preview", help="Generate an audio preview of a commit's snapshot.")
 cli.add_typer(reset.app, name="reset", help="Reset the branch pointer to a prior commit.")
 cli.add_typer(resolve.app, name="resolve", help="Mark a conflicted file as resolved (--ours or --theirs).")
@@ -114,6 +117,7 @@ cli.add_typer(form.app, name="form", help="Analyze or annotate the formal struct
 cli.add_typer(similarity.app, name="similarity", help="Compare two commits by musical similarity score.")
 cli.add_typer(tempo_scale.app, name="tempo-scale", help="Stretch or compress the timing of a commit.")
 cli.add_typer(timeline.app, name="timeline", help="Visualize musical evolution chronologically.")
+cli.add_typer(update_ref.app, name="update-ref", help="Write or delete a ref (branch or tag pointer).")
 cli.add_typer(validate.app, name="validate", help="Check musical integrity of the working tree.")
 
 
