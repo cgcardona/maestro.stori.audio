@@ -401,6 +401,220 @@ body.player-open .container-wide {
 .truncate      { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* -------------------------------------------------------------------------
+ * Repo landing page — two-column layout (GitHub-style)
+ * Main content (~68%) + sidebar (~30%), collapses to single column on mobile.
+ * ------------------------------------------------------------------------- */
+.repo-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 296px;
+  gap: var(--space-6);
+  align-items: start;
+  margin-top: var(--space-6);
+}
+
+.repo-main  { min-width: 0; }
+.repo-sidebar { min-width: 0; }
+
+@media (max-width: 1023px) {
+  .repo-layout {
+    grid-template-columns: 1fr;
+  }
+  /* On mobile, sidebar collapses above main (like GitHub mobile) */
+  .repo-sidebar { order: -1; }
+}
+
+/* Latest commit banner — sits flush above the commit card */
+.latest-commit-banner {
+  background: var(--bg-overlay);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-base) var(--radius-base) 0 0;
+  border-bottom: none;
+  padding: var(--space-3) var(--space-4);
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+}
+
+/* Small inline avatar (author initials) in commit rows and banner */
+.commit-avatar {
+  width: 20px;
+  height: 20px;
+  border-radius: var(--radius-full);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 9px;
+  font-weight: var(--font-weight-bold);
+  color: #fff;
+  flex-shrink: 0;
+  vertical-align: middle;
+}
+
+/* ── Sidebar ── */
+
+/* Star / Watch / Fork action strip */
+.repo-action-strip {
+  display: flex;
+  gap: var(--space-2);
+  margin-bottom: var(--space-5);
+}
+
+.repo-action-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 5px var(--space-3);
+  font-size: var(--font-size-sm);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-base);
+  background: var(--bg-overlay);
+  color: var(--text-secondary);
+  cursor: pointer;
+  text-decoration: none;
+  flex: 1;
+  line-height: 1.4;
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+.repo-action-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+  text-decoration: none;
+}
+
+.repo-action-btn.active {
+  background: var(--color-accent-muted);
+  border-color: var(--color-accent);
+  color: var(--text-primary);
+}
+
+.repo-action-count {
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-primary);
+  font-size: var(--font-size-xs);
+}
+
+/* Sidebar sections — each separated by a subtle rule */
+.sidebar-section {
+  padding-bottom: var(--space-5);
+  margin-bottom: var(--space-5);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.sidebar-section:last-child {
+  border-bottom: none;
+  margin-bottom: 0;
+  padding-bottom: 0;
+}
+
+.sidebar-section h3 {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-primary);
+  margin-bottom: var(--space-3);
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+/* About section prose */
+.about-description {
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+  line-height: 1.6;
+  margin-bottom: var(--space-3);
+}
+
+.about-stat-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+  padding: 3px 0;
+}
+
+.about-stat-row strong {
+  color: var(--text-primary);
+  font-weight: var(--font-weight-semibold);
+}
+
+/* Contributor avatar grid */
+.contributor-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  margin-bottom: var(--space-2);
+}
+
+.contributor-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-full);
+  background: var(--bg-overlay);
+  border: 2px solid var(--border-default);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: var(--font-weight-bold);
+  color: #fff;
+  text-decoration: none;
+  cursor: pointer;
+  transition: border-color var(--transition-fast), transform var(--transition-fast);
+  position: relative;
+  flex-shrink: 0;
+}
+
+.contributor-avatar:hover {
+  border-color: var(--color-accent);
+  transform: scale(1.15);
+  text-decoration: none;
+  z-index: 1;
+}
+
+/* Instrument / track breakdown bar (like GitHub's language bar) */
+.instrument-bar {
+  height: 8px;
+  border-radius: var(--radius-full);
+  overflow: hidden;
+  display: flex;
+  gap: 2px;
+  margin-bottom: var(--space-3);
+}
+
+.instrument-segment {
+  height: 100%;
+  transition: opacity var(--transition-fast);
+}
+
+.instrument-segment:hover { opacity: 0.7; }
+
+.instrument-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-4);
+}
+
+.instrument-legend-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: var(--font-size-xs);
+  color: var(--text-secondary);
+}
+
+.instrument-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+/* -------------------------------------------------------------------------
  * Responsive breakpoints — mobile-first overrides
  * ------------------------------------------------------------------------- */
 
