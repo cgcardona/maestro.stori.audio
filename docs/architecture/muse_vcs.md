@@ -1908,6 +1908,118 @@ detection).
 All stub commands have stable CLI contracts. Full musical analysis (MIDI content
 parsing, vector embeddings, LLM synthesis) is tracked as follow-up issues.
 
+## `muse form` — Analyze and Display the Musical Form of a Commit
+
+**Purpose:** Extract and display the large-scale structural blueprint of a
+composition — the ordering and labelling of sections (intro, verse, chorus,
+bridge, breakdown, outro) that define how the piece unfolds.  Producers can use
+`muse form --history` to see every structural iteration of a song: "we tried
+verse-chorus-verse-chorus-bridge, then cut the second verse, then added a
+breakdown."  Git shows file changes; Muse shows structural decisions.
+
+**Usage:**
+```bash
+muse form [<commit>] [OPTIONS]
+```
+
+**Flags:**
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `[<commit>]` | positional | HEAD | Target commit ref |
+| `--set TEXT` | string | — | Annotate with an explicit form string (e.g. `"AABA"`, `"verse-chorus-bridge"`) |
+| `--detect` | flag | on | Auto-detect form from section repetition patterns |
+| `--map` | flag | off | Show the section arrangement as a visual timeline |
+| `--history` | flag | off | Show how the form changed across commits |
+| `--json` | flag | off | Emit machine-readable JSON output |
+
+**Section vocabulary:** `intro`, `verse`, `pre-chorus`, `chorus`, `bridge`,
+`breakdown`, `outro` (named roles); `A`, `B`, `C`, … (structural letter labels
+when named roles cannot be inferred from MIDI metadata).
+
+**Detection heuristic:** Sections with identical content fingerprints are
+assigned the same letter label (A, B, C…).  Named roles are inferred from
+MIDI metadata in `.muse/sections/` when available.
+
+**Output example (default text):**
+```
+Musical form -- commit a1b2c3d4  (HEAD -> main)
+
+  intro | A | B | A | B | C | B | outro
+
+Sections:
+   1. intro        [intro]
+   2. A            [verse]
+   3. B            [chorus]
+   4. A            [verse]
+   5. B            [chorus]
+   6. C            [bridge]
+   7. B            [chorus]
+   8. outro        [outro]
+```
+
+**Output example (`--map`):**
+```
+Form map -- commit a1b2c3d4  (HEAD -> main)
+
++----------+----------+----------+----------+----------+----------+----------+----------+
+|  intro   |    A     |    B     |    A     |    B     |    C     |    B     |  outro   |
++----------+----------+----------+----------+----------+----------+----------+----------+
+     1          2          3          4          5          6          7          8
+```
+
+**Output example (`--history`):**
+```
+Form history (newest first):
+
+  #1  a1b2c3d4  intro | A | B | A | B | C | B | outro
+```
+
+**Output example (`--json`):**
+```json
+{
+  "commit": "a1b2c3d4",
+  "branch": "main",
+  "form_string": "intro | A | B | A | B | C | B | outro",
+  "sections": [
+    {"label": "intro", "role": "intro", "index": 0},
+    {"label": "A", "role": "verse", "index": 1}
+  ],
+  "source": "stub"
+}
+```
+
+**Result types:**
+
+- `FormSection` (TypedDict) — fields: `label` (str), `role` (str), `index` (int).
+- `FormAnalysisResult` (TypedDict) — fields: `commit` (str), `branch` (str),
+  `form_string` (str), `sections` (list[FormSection]), `source` (str:
+  `"stub"` | `"annotation"`).
+- `FormHistoryEntry` (TypedDict) — fields: `position` (int), `result`
+  (FormAnalysisResult).
+
+See `docs/reference/type_contracts.md § FormAnalysisResult`.
+
+**Agent use case:** An AI agent queries `muse form --json` to read the current
+structural blueprint before deciding where to insert a new section.  It uses
+`muse form --history --json` to surface previous structural experiments so it
+can avoid repeating failed arrangements.  `muse form --set "AABA"` lets the
+agent annotate a commit with the standard jazz form after generating a piece
+in that structure.
+
+**Implementation:** `maestro/muse_cli/commands/form.py` — `FormSection`,
+`FormAnalysisResult`, `FormHistoryEntry` (TypedDict); `_stub_form_sections()`,
+`_sections_to_form_string()`, `_form_detect_async()`, `_form_set_async()`,
+`_form_history_async()`, `_render_form_text()`, `_render_map_text()`,
+`_render_history_text()`.  Exit codes: 0 success, 2 outside repo
+(`REPO_NOT_FOUND`), 3 internal error (`INTERNAL_ERROR`).
+
+> **Stub note:** The current implementation returns a placeholder
+> verse-chorus-bridge structure.  Full MIDI section fingerprinting
+> (content hash comparison, `.muse/sections/` metadata) is reserved for a
+> future iteration.  All flags are accepted now to keep the CLI contract stable.
+
+
 ## `muse recall` — Keyword Search over Musical Commit History
 
 **Purpose:** Walk the commit history on the current (or specified) branch and
@@ -2219,6 +2331,7 @@ texture — letting the agent reuse, invert, or contrast those ideas.  The
 > scoring function will be replaced with no change to the CLI interface.
 
 ---
+
 ## `muse context` — Structured Musical Context for AI Agents
 
 **Purpose:** Output a structured, self-contained musical context document for AI agent consumption. This is the **primary interface between Muse VCS and AI music generation agents** — agents run `muse context` before any generation task to understand the current key, tempo, active tracks, form, harmonic profile, and evolutionary history of the composition.
@@ -2350,6 +2463,105 @@ lead            79   105     38  swell
 **Implementation:** `maestro/muse_cli/commands/dynamics.py` — `_dynamics_async` (injectable async core), `TrackDynamics` (result entity), `_render_table` / `_render_json` (renderers). Exit codes: 0 success, 2 outside repo, 3 internal.
 
 > **Stub note:** Arc classification and velocity statistics are placeholder values. Full implementation requires MIDI note velocity extraction from committed snapshot objects (future: Storpheus MIDI parse route).
+
+---
+
+## `muse similarity` — Compute Musical Similarity Score Between Two Commits
+
+**Purpose:** Compare any two Muse commits across up to five musical dimensions
+and produce per-dimension scores plus a weighted overall score in [0.0, 1.0].
+Agents use this to calibrate how much new material to generate: a score near
+1.0 means arrangements are nearly identical (small variation is appropriate);
+a score near 0.0 means a major creative transformation occurred (bolder
+generation may be warranted).
+
+**Usage:**
+```bash
+muse similarity <commit-a> <commit-b> [OPTIONS]
+```
+
+**Flags:**
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `COMMIT-A` | positional | — | First commit ref to compare (required) |
+| `COMMIT-B` | positional | — | Second commit ref to compare (required) |
+| `--dimensions DIMS` | string | all five | Comma-separated list of dimensions to compare |
+| `--section TEXT` | string | — | Scope comparison to a named section/region |
+| `--track TEXT` | string | — | Scope comparison to a specific track |
+| `--json` | flag | off | Emit machine-readable JSON output |
+| `--threshold FLOAT` | float | — | Exit 1 if overall similarity < threshold (for scripting) |
+
+**Dimensions:** `harmonic`, `rhythmic`, `melodic`, `structural`, `dynamic`.
+Each dimension score is in [0.0, 1.0] where 1.0 = identical, 0.0 = completely
+different.
+
+**Output example (text):**
+```
+Similarity: HEAD~10 vs HEAD
+
+  Harmonic:    0.45  ██████████░░░░░░░░░░  (key modulation, new chords)
+  Rhythmic:    0.89  ████████████████████  (same tempo, slightly more swing)
+  Melodic:     0.72  ██████████████████░░  (same motifs, extended range)
+  Structural:  0.65  █████████████░░░░░░░  (bridge added, intro shortened)
+  Dynamic:     0.55  ███████████░░░░░░░░░  (much louder, crescendo added)
+
+  Overall:    0.65  (Significantly different — major rework)
+  Max divergence: harmonic dimension
+```
+
+**Output example (`--json`):**
+```json
+{
+  "commit_a": "HEAD~10",
+  "commit_b": "HEAD",
+  "dimensions": [
+    {"dimension": "harmonic", "score": 0.45, "note": "key modulation, new chords"},
+    {"dimension": "rhythmic", "score": 0.89, "note": "same tempo, slightly more swing"},
+    {"dimension": "melodic", "score": 0.72, "note": "same motifs, extended range"},
+    {"dimension": "structural", "score": 0.65, "note": "bridge added, intro shortened"},
+    {"dimension": "dynamic", "score": 0.55, "note": "much louder, crescendo added"}
+  ],
+  "overall": 0.652,
+  "label": "Significantly different — major rework",
+  "max_divergence": "harmonic"
+}
+```
+
+**Overall score labels:**
+
+| Range | Label |
+|-------|-------|
+| ≥ 0.90 | Nearly identical — minimal change |
+| ≥ 0.75 | Highly similar — subtle variation |
+| ≥ 0.60 | Moderately similar — noticeable changes |
+| ≥ 0.40 | Significantly different — major rework |
+| < 0.40 | Completely different — new direction |
+
+**Result types:** `DimensionScore` and `SimilarityResult` (`TypedDict`) —
+see `docs/reference/type_contracts.md § DimensionScore` and
+`§ SimilarityResult`.
+
+**Agent use case:** An AI composing a variation calls
+`muse similarity HEAD~5 HEAD --json` before deciding generation strategy.
+If `overall >= 0.9`, the arrangement is nearly identical — a small variation
+is appropriate. If `overall < 0.5`, a major transformation occurred — bolder
+generation is warranted.  The `--threshold 0.5` flag enables this pattern
+in one-line shell scripts.
+
+**Implementation:** `maestro/muse_cli/commands/similarity.py` —
+`DimensionScore` (TypedDict), `SimilarityResult` (TypedDict),
+`_stub_dimension_scores()`, `_weighted_overall()`, `_overall_label()`,
+`build_similarity_result()`, `render_similarity_text()`,
+`render_similarity_json()`, `_similarity_async()`.
+Exit codes: 0 success, 1 threshold not met / user error, 2 outside repo,
+3 internal error.
+
+> **Stub note:** The current implementation returns representative placeholder
+> scores for each dimension.  Full MIDI-based analysis (key detection, rhythmic
+> density measurement, melodic contour comparison) is reserved for a future
+> iteration once Storpheus exposes the required inference endpoints.  The CLI
+> interface, flag contract, and result types are frozen and stable.
 
 ---
 
@@ -2609,6 +2821,7 @@ is safer than `muse checkout` because it leaves all branch metadata intact.
 | `muse read-tree` | `commands/read_tree.py` | ✅ implemented (PR #143) | #90 |
 | `muse recall` | `commands/recall.py` | ✅ stub (PR #135) | #122 |
 | `muse session` | `commands/session.py` | ✅ implemented (PR #129) | #127 |
+| `muse similarity` | `commands/similarity.py` | ✅ stub (PR #TBD) | #108 |
 | `muse swing` | `commands/swing.py` | ✅ stub (PR #131) | #121 |
 | `muse tag` | `commands/tag.py` | ✅ implemented (PR #133) | #123 |
 
