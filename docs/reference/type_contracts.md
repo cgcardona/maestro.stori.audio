@@ -7343,6 +7343,29 @@ Full emotion map for a Muse repo ref. Returned by `GET /musehub/repos/{repo_id}/
 
 ---
 
+### `BlobMetaResponse`
+
+**Path:** `maestro/models/musehub.py`
+
+`CamelModel` — Metadata and optional inline content for a single file in the Muse blob viewer, as returned by `GET /api/v1/musehub/repos/{repo_id}/blob/{ref}/{path}`.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `object_id` | `str` | Content-addressed ID, e.g. `sha256:abc123...` |
+| `path` | `str` | Relative path from repo root, e.g. `tracks/bass.mid` |
+| `filename` | `str` | Basename of the file, e.g. `bass.mid` |
+| `size_bytes` | `int` | File size in bytes |
+| `sha` | `str` | Content-addressed SHA identifier |
+| `created_at` | `datetime` | Timestamp when this object was pushed |
+| `raw_url` | `str` | URL to download the raw file bytes |
+| `file_type` | `str` | Rendering hint: `midi` \| `audio` \| `json` \| `image` \| `xml` \| `other` |
+| `content_text` | `str \| None` | UTF-8 content for JSON/XML files ≤ 256 KB; `None` for binary or oversized files |
+
+**Produced by:** `maestro.api.routes.musehub.objects.get_blob_meta()`
+**Consumed by:** MuseHub blob viewer UI page (`/musehub/ui/{owner}/{repo_slug}/blob/{ref}/{path}`); AI agents inspecting individual file content
+
+---
+
 ## Storpheus — Inference Optimization Types (`storpheus/music_service.py`)
 
 ### `GenerationTiming`
