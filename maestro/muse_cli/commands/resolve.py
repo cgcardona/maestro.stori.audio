@@ -4,42 +4,49 @@ Workflow
 --------
 When ``muse merge`` encounters conflicts it writes ``.muse/MERGE_STATE.json``
 and exits.  The user then inspects the listed conflict paths and resolves each
-one — either by keeping their current working-tree version (``--ours``) or by
-manually editing the file to the desired content and then marking it resolved.
+one:
 
-After resolving each file, call::
+- ``--ours``:   Keep the current branch's version already in ``muse-work/``.
+                The file is left untouched; the path is removed from the conflict
+                list in ``MERGE_STATE.json``.
 
-    muse resolve muse-work/meta/section-1.json --ours
+- ``--theirs``: Accept the incoming branch's version.  This command fetches
+                the object from the local store (written when the other branch's
+                commits were made) and writes it to ``muse-work/<path>`` before
+                removing the path from the conflict list.
 
-When all conflicts are cleared, run ``muse merge --continue`` to create the
+After resolving each conflict, run ``muse merge --continue`` to create the
 merge commit.
 
 Resolution strategies
 ---------------------
-- ``--ours``: Accept the current branch's version as-is.  No file is changed;
-              the path is simply removed from ``MERGE_STATE.json``'s conflict
-              list.
-- ``--theirs``: Accept the incoming branch's version.  Because the Muse object
-               store is content-addressed and does not persist raw bytes in the
-               database, the caller must manually copy or write the desired
-               content into ``muse-work/<path>`` before running this command.
-               ``muse resolve --theirs`` marks the path resolved after the file
-               is in place.
+Both strategies ultimately remove the path from ``conflict_paths`` in
+``MERGE_STATE.json``.  When the list reaches zero, ``muse merge --continue``
+can proceed.
 
-In both cases the path is removed from ``conflict_paths`` in
-``MERGE_STATE.json``.  When the list reaches zero, the merge state is cleared
-and ``muse merge --continue`` can proceed.
+The ``--theirs`` strategy requires the theirs commit's objects to be present
+in the local ``.muse/objects/`` store.  Objects are written there when commits
+are made locally; ``muse pull`` fetches them from the remote.
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 import pathlib
+from typing import TYPE_CHECKING
 
 import typer
 
 from maestro.muse_cli._repo import require_repo
 from maestro.muse_cli.errors import ExitCode
-from maestro.muse_cli.merge_engine import read_merge_state, write_merge_state
+from maestro.muse_cli.merge_engine import (
+    apply_resolution,
+    read_merge_state,
+    write_merge_state,
+)
+
+if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = logging.getLogger(__name__)
 
@@ -47,34 +54,39 @@ app = typer.Typer()
 
 
 # ---------------------------------------------------------------------------
-# Testable core — no Typer coupling
+# Testable async core — no Typer coupling
 # ---------------------------------------------------------------------------
 
 
-def resolve_conflict(
+async def resolve_conflict_async(
     *,
     file_path: str,
     ours: bool,
     root: pathlib.Path,
+    session: AsyncSession,
 ) -> None:
     """Mark *file_path* as resolved in ``.muse/MERGE_STATE.json``.
 
-    For ``--ours`` no file change is made.  For ``--theirs`` the caller is
-    responsible for ensuring the desired content is already in
-    ``muse-work/<file_path>`` before calling this function.
+    For ``--ours`` no file change is made — the current ``muse-work/`` content
+    is accepted as-is.  For ``--theirs`` this function fetches the theirs
+    branch's object from the local store and writes it to
+    ``muse-work/<file_path>``.
 
     Args:
         file_path: Path of the conflicted file.  Accepted as:
                    - absolute path (converted to relative to ``muse-work/``)
                    - path relative to ``muse-work/`` (e.g. ``meta/foo.json``)
                    - path relative to repo root (e.g. ``muse-work/meta/foo.json``)
-        ours:      ``True`` to accept ours, ``False`` to accept theirs (file
-                   must already be edited to the desired content).
+        ours:      ``True`` to accept ours (no file change); ``False`` to
+                   accept theirs (object is fetched from local store and written
+                   to ``muse-work/<file_path>``).
         root:      Repository root containing ``.muse/``.
+        session:   Open async DB session (used for ``--theirs`` to look up the
+                   theirs commit's snapshot manifest).
 
     Raises:
         :class:`typer.Exit`: On user errors (no merge in progress, path not
-                             in conflict list).
+                             in conflict list, object missing from local store).
     """
     merge_state = read_merge_state(root)
     if merge_state is None:
@@ -105,9 +117,41 @@ def resolve_conflict(
         )
         raise typer.Exit(code=ExitCode.USER_ERROR)
 
-    side = "ours" if ours else "theirs"
-    typer.echo(f"✅ Resolved '{rel_path}' — keeping {side}")
-    logger.info("✅ muse resolve %r ---%s", rel_path, side)
+    # For --theirs, fetch the object from the local store and write to workdir.
+    if not ours:
+        theirs_commit_id = merge_state.theirs_commit
+        if not theirs_commit_id:
+            typer.echo("❌ MERGE_STATE.json is missing theirs_commit. Cannot resolve --theirs.")
+            raise typer.Exit(code=ExitCode.INTERNAL_ERROR)
+
+        from maestro.muse_cli.db import get_commit_snapshot_manifest
+
+        theirs_manifest = (
+            await get_commit_snapshot_manifest(session, theirs_commit_id) or {}
+        )
+        object_id = theirs_manifest.get(rel_path)
+
+        if object_id is None:
+            # Path was deleted on the theirs branch — remove from workdir.
+            dest = workdir / rel_path
+            if dest.exists():
+                dest.unlink()
+            typer.echo(f"✅ Resolved '{rel_path}' — file deleted on theirs branch")
+            logger.info("✅ muse resolve %r --theirs (deleted on theirs)", rel_path)
+        else:
+            try:
+                apply_resolution(root, rel_path, object_id)
+            except FileNotFoundError:
+                typer.echo(
+                    f"❌ Object for '{rel_path}' is not in the local store.\n"
+                    "   Run 'muse pull' to fetch the remote objects, then retry."
+                )
+                raise typer.Exit(code=ExitCode.USER_ERROR)
+            typer.echo(f"✅ Resolved '{rel_path}' — keeping theirs")
+            logger.info("✅ muse resolve %r --theirs", rel_path)
+    else:
+        typer.echo(f"✅ Resolved '{rel_path}' — keeping ours")
+        logger.info("✅ muse resolve %r --ours", rel_path)
 
     remaining = [p for p in merge_state.conflict_paths if p != rel_path]
 
@@ -150,13 +194,13 @@ def resolve(
     ),
     ours: bool = typer.Option(
         False,
-        "--ours",
+        "--ours/--no-ours",
         help="Keep the current branch's version (no file change required).",
     ),
     theirs: bool = typer.Option(
         False,
-        "--theirs",
-        help="Accept the incoming branch's version (edit the file first, then mark resolved).",
+        "--theirs/--no-theirs",
+        help="Accept the incoming branch's version (fetched from local object store).",
     ),
 ) -> None:
     """Mark a conflicted file as resolved using --ours or --theirs."""
@@ -165,4 +209,20 @@ def resolve(
         raise typer.Exit(code=ExitCode.USER_ERROR)
 
     root = require_repo()
-    resolve_conflict(file_path=file_path, ours=ours, root=root)
+
+    async def _run() -> None:
+        from maestro.muse_cli.db import open_session
+
+        async with open_session() as session:
+            await resolve_conflict_async(
+                file_path=file_path, ours=ours, root=root, session=session
+            )
+
+    try:
+        asyncio.run(_run())
+    except typer.Exit:
+        raise
+    except Exception as exc:
+        typer.echo(f"❌ muse resolve failed: {exc}")
+        logger.error("❌ muse resolve error: %s", exc, exc_info=True)
+        raise typer.Exit(code=ExitCode.INTERNAL_ERROR)
