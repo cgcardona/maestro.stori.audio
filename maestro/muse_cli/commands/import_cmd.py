@@ -27,8 +27,6 @@ import json
 import logging
 import pathlib
 import shutil
-from typing import Optional
-
 import typer
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -58,7 +56,7 @@ async def _import_async(
     *,
     file_path: pathlib.Path,
     root: pathlib.Path,
-    session: AsyncSession,
+    session: AsyncSession | None,
     message: str | None = None,
     track_map: dict[str, str] | None = None,
     section: str | None = None,
@@ -155,6 +153,8 @@ async def _import_async(
     meta_path.write_text(json.dumps(meta, indent=2))
 
     # ── Commit ────────────────────────────────────────────────────────────
+    # dry_run returns before this point, so session is always non-None here.
+    assert session is not None
     commit_id = await _commit_async(
         message=effective_message,
         root=root,
@@ -182,18 +182,18 @@ async def _import_async(
 def import_file(
     ctx: typer.Context,
     file: str = typer.Argument(..., help="Path to the MIDI or MusicXML file to import."),
-    message: Optional[str] = typer.Option(
+    message: str | None = typer.Option(
         None,
         "--message",
         "-m",
         help='Commit message (default: "Import <filename>").',
     ),
-    track_map: Optional[str] = typer.Option(
+    track_map: str | None = typer.Option(
         None,
         "--track-map",
         help='Map MIDI channels to track names, e.g. "ch0=bass,ch1=piano,ch9=drums".',
     ),
-    section: Optional[str] = typer.Option(
+    section: str | None = typer.Option(
         None,
         "--section",
         help="Tag the imported content as a specific section.",
@@ -228,7 +228,7 @@ def import_file(
             await _import_async(
                 file_path=file_path,
                 root=root,
-                session=None,  # type: ignore[arg-type]
+                session=None,
                 message=message,
                 track_map=parsed_track_map,
                 section=section,
