@@ -850,15 +850,10 @@ async def compare_refs(
     emotion_diff = _compute_emotion_diff(all_base_commits, head_only)
 
     # ── PR creation URL ──────────────────────────────────────────────────────
-    repo_obj = await musehub_repository.get_repo(db, repo_id)
-    if repo_obj is not None:
-        owner = repo_obj.owner
-        slug = repo_obj.slug
-    else:
-        owner = repo_id
-        slug = repo_id
+    # repo is guaranteed non-None here — _guard_visibility raised 404 otherwise.
+    assert repo is not None
     create_pr_url = (
-        f"/musehub/ui/{owner}/{slug}/pulls/new"
+        f"/musehub/ui/{repo.owner}/{repo.slug}/pulls/new"
         f"?base={base}&head={head}"
     )
 
