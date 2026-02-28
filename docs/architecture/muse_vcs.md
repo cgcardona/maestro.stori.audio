@@ -1958,6 +1958,76 @@ muse revert <commit> [OPTIONS]
 
 ---
 
+### `muse cherry-pick`
+
+**Purpose:** Apply the changes introduced by a single commit from any branch onto the current branch, without merging the entire source branch. An AI agent uses this to transplant a winning take (the perfect guitar solo, the ideal bass groove) from an experimental branch into main without importing 20 unrelated commits.
+
+**Usage:**
+```bash
+muse cherry-pick <commit> [OPTIONS]
+```
+
+**Flags:**
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `COMMIT` | positional | required | Commit ID to cherry-pick (full or abbreviated SHA) |
+| `--no-commit` | flag | off | Apply changes to muse-work/ without creating a new commit |
+| `--continue` | flag | off | Resume after resolving conflicts from a paused cherry-pick |
+| `--abort` | flag | off | Abort an in-progress cherry-pick and restore the pre-cherry-pick HEAD |
+
+**Output example (clean apply):**
+```
+✅ [main a1b2c3d4] add guitar solo
+   (cherry picked from commit f3e2d1c0)
+```
+
+**Output example (conflict):**
+```
+❌ Cherry-pick conflict in 1 file(s):
+        both modified:   tracks/guitar/solo.mid
+Fix conflicts and run 'muse cherry-pick --continue' to create the commit.
+```
+
+**Output example (--abort):**
+```
+✅ Cherry-pick aborted. HEAD restored to a1b2c3d4.
+```
+
+**Algorithm:** 3-way merge model — base=P (cherry commit's parent), ours=HEAD, theirs=C (cherry commit). For each path C changed vs P: if HEAD also changed that path differently → conflict; otherwise apply C's version on top of HEAD. Commit message is prefixed with `(cherry picked from commit <short-id>)` for auditability.
+
+**State file:** `.muse/CHERRY_PICK_STATE.json` — written when conflicts are detected, consumed by `--continue` and `--abort`.
+
+```json
+{
+  "cherry_commit":  "f3e2d1c0...",
+  "head_commit":    "a1b2c3d4...",
+  "conflict_paths": ["tracks/guitar/solo.mid"]
+}
+```
+
+**Result type:** `CherryPickResult` (dataclass, frozen) — fields:
+- `commit_id` (str): New commit ID (empty when `--no-commit` or conflict).
+- `cherry_commit_id` (str): Source commit that was cherry-picked.
+- `head_commit_id` (str): HEAD commit at cherry-pick time.
+- `new_snapshot_id` (str): Snapshot ID of the resulting state.
+- `message` (str): Commit message with cherry-pick attribution suffix.
+- `no_commit` (bool): Whether changes were staged but not committed.
+- `conflict` (bool): True when conflicts were detected and state file was written.
+- `conflict_paths` (tuple[str, ...]): Conflicting paths (non-empty iff `conflict=True`).
+- `branch` (str): Branch on which the new commit was created.
+
+**Agent use case:** An AI music agent runs `muse log --json` across branches to score each commit, identifies the highest-scoring take on `experiment/guitar-solo`, then calls `muse cherry-pick <commit>` to transplant just that take into main. After cherry-pick, the agent can immediately continue composing on the enriched HEAD without merging the entire experimental branch.
+
+**Blocking behaviour:**
+- Blocked when a merge is in progress with unresolved conflicts (exits 1).
+- Blocked when a previous cherry-pick is in progress (exits 1 — use `--continue` or `--abort`).
+- Cherry-picking HEAD itself exits 0 (noop).
+
+**Implementation:** `maestro/muse_cli/commands/cherry_pick.py` (Typer CLI), `maestro/services/muse_cherry_pick.py` (`_cherry_pick_async`, `_cherry_pick_continue_async`, `_cherry_pick_abort_async`, `compute_cherry_manifest`, `CherryPickResult`, `CherryPickState`).
+
+---
+
 ### `muse grep`
 
 **Purpose:** Search all commits for a musical pattern — a note sequence, interval
