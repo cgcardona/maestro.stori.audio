@@ -7860,6 +7860,45 @@ as JSON by `GET /api/v1/musehub/repos/{repo_id}/objects/{object_id}/parse-midi`.
 **Produced by:** `maestro.services.musehub_midi_parser.parse_midi_bytes()`
 **Consumed by:** `maestro.api.routes.musehub.objects.parse_midi_object()`; MuseHub piano roll JavaScript renderer (`piano-roll.js`)
 
+---
+
+### `ActivityEventResponse`
+
+**Path:** `maestro/models/musehub.py`
+
+`CamelModel` — A single repo-level activity event returned by the activity feed API.
+
+| Field | Type | Notes |
+|-------|------|-------|
+| `event_id` | `str` | UUID of the event row |
+| `repo_id` | `str` | UUID of the owning repo |
+| `event_type` | `str` | One of: `commit_pushed`, `pr_opened`, `pr_merged`, `pr_closed`, `issue_opened`, `issue_closed`, `branch_created`, `branch_deleted`, `tag_pushed`, `session_started`, `session_ended` |
+| `actor` | `str` | JWT `sub` or display name of the user who triggered the event |
+| `description` | `str` | One-line human-readable summary rendered in the feed UI |
+| `metadata` | `dict[str, object]` | Event-specific payload (e.g. `{"sha": "…"}` for `commit_pushed`, `{"number": 3}` for `issue_opened`) |
+| `created_at` | `datetime` | UTC timestamp of the event |
+
+**Produced by:** `musehub_events.record_event()` / `list_events()` → `repos.get_repo_activity` route handler
+**Consumed by:** MuseHub activity feed UI (`/musehub/ui/{owner}/{slug}/activity`); AI agents auditing repo activity
+
+---
+
+### `ActivityFeedResponse`
+
+**Path:** `maestro/models/musehub.py`
+
+`CamelModel` — Paginated activity event feed returned by `GET /api/v1/musehub/repos/{repo_id}/activity`.
+
+| Field | Type | Notes |
+|-------|------|-------|
+| `events` | `list[ActivityEventResponse]` | Events newest-first, sliced by `page` / `page_size` |
+| `total` | `int` | Total events matching the filter (ignoring pagination) |
+| `page` | `int` | 1-indexed current page number |
+| `page_size` | `int` | Events per page (1–100, default 30) |
+| `event_type_filter` | `str \| None` | Active `event_type` filter, or `None` when showing all types |
+
+**Produced by:** `musehub_events.list_events()` → `repos.get_repo_activity` route handler
+**Consumed by:** MuseHub activity feed UI; API clients filtering by event type
 
 ---
 

@@ -16,6 +16,7 @@ Tables:
 - musehub_webhooks: Registered webhook subscriptions per repo
 - musehub_webhook_deliveries: Delivery log for each webhook dispatch attempt
 - musehub_render_jobs: Render status tracking for auto-generated MP3/piano-roll artifacts
+- musehub_events: Repo-level activity event stream (commits, PRs, issues, branches, tags, sessions)
 """
 from __future__ import annotations
 
@@ -102,6 +103,9 @@ class MusehubRepo(Base):
     )
     stars: Mapped[list[MusehubStar]] = relationship(
         "MusehubStar", back_populates="repo", cascade="all, delete-orphan"
+    )
+    events: Mapped[list[MusehubEvent]] = relationship(
+        "MusehubEvent", back_populates="repo", cascade="all, delete-orphan"
     )
 
 
@@ -811,3 +815,51 @@ class MusehubRenderJob(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=_utc_now, onupdate=_utc_now
     )
+
+
+class MusehubEvent(Base):
+    """A repo-level activity event — the chronological event stream for a repo.
+
+    One row per action that mutates repo state: commits pushed, PRs opened/merged,
+    issues opened/closed, branches created/deleted, tags pushed, and sessions started/ended.
+
+    ``event_type`` vocabulary (enforced by service layer, not by DB constraint):
+      "commit_pushed" | "pr_opened" | "pr_merged" | "pr_closed" |
+      "issue_opened" | "issue_closed" | "branch_created" | "branch_deleted" |
+      "tag_pushed" | "session_started" | "session_ended"
+
+    ``actor`` is the human-readable identifier of the user who triggered the event
+    (typically the JWT ``sub`` claim or the pusher username).
+    ``description`` is a one-line human-readable summary rendered in the feed.
+    ``metadata`` carries event-specific structured data (e.g. commit SHA, PR number)
+    for deep-link rendering without additional DB joins.
+
+    Design: append-only.  Events are never updated or deleted (cascade only on
+    repo delete).  The feed is read newest-first, paginated by ``(repo_id, created_at)``.
+    """
+
+    __tablename__ = "musehub_events"
+
+    event_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_new_uuid)
+    repo_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("musehub_repos.repo_id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    # Vocabulary: commit_pushed | pr_opened | pr_merged | pr_closed |
+    #             issue_opened | issue_closed | branch_created | branch_deleted |
+    #             tag_pushed | session_started | session_ended
+    event_type: Mapped[str] = mapped_column(String(40), nullable=False, index=True)
+    # Human-readable actor — JWT sub or pusher username
+    actor: Mapped[str] = mapped_column(String(255), nullable=False)
+    # One-line summary rendered in the feed UI
+    description: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    # Event-specific payload (commit SHA, PR/issue number, branch name, …)
+    # Named event_metadata to avoid conflict with SQLAlchemy DeclarativeBase.metadata
+    event_metadata: Mapped[dict[str, object]] = mapped_column(JSON, nullable=False, default=dict)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=_utc_now, index=True
+    )
+
+    repo: Mapped[MusehubRepo] = relationship("MusehubRepo", back_populates="events")

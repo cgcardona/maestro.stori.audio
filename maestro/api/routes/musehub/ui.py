@@ -56,6 +56,7 @@ Endpoint summary (repo-scoped):
   GET /musehub/ui/{owner}/{repo_slug}/arrange/{ref}             -- arrangement matrix (instrument × section density grid)
   GET /musehub/ui/{owner}/{repo_slug}/piano-roll/{ref}          -- interactive piano roll (all tracks)
   GET /musehub/ui/{owner}/{repo_slug}/piano-roll/{ref}/{path}   -- interactive piano roll (single MIDI file)
+  GET /musehub/ui/{owner}/{repo_slug}/activity                  -- repo-level event stream (commits, PRs, issues, branches, tags, sessions)
 
 These routes require NO JWT auth -- they return HTML shells whose embedded
 JavaScript fetches data from the authed JSON API (``/api/v1/musehub/...``)
@@ -2854,6 +2855,40 @@ async def score_page(
             "base_url": base_url,
             "path": "",
             "current_page": "score",
+        },
+    )
+
+
+@router.get(
+    "/{owner}/{repo_slug}/activity",
+    response_class=HTMLResponse,
+    summary="Muse Hub activity feed — repo-level event stream",
+)
+async def activity_page(
+    request: Request,
+    owner: str,
+    repo_slug: str,
+    db: AsyncSession = Depends(get_db),
+) -> HTMLResponse:
+    """Render the repo-level activity feed page.
+
+    Shows a chronological, paginated event stream for the repo covering:
+    commit pushes, PR opens/merges/closes, issue opens/closes, branch and tag
+    operations, and recording sessions.  A dropdown filters by event type.
+
+    No JWT is required to render the HTML shell.  Auth is handled client-side
+    via localStorage JWT, matching all other UI pages.
+    """
+    repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
+    return templates.TemplateResponse(
+        request,
+        "musehub/pages/activity.html",
+        {
+            "owner": owner,
+            "repo_slug": repo_slug,
+            "repo_id": repo_id,
+            "base_url": base_url,
+            "current_page": "activity",
         },
     )
 

@@ -35,6 +35,7 @@ from maestro.db import get_db
 from maestro.db import musehub_models as db_models
 from sqlalchemy import select
 from maestro.models.musehub import (
+    ActivityFeedResponse,
     ArrangementMatrixResponse,
     AudioTrackEntry,
     BranchDetailListResponse,
@@ -68,7 +69,7 @@ from maestro.models.musehub_context import (
     ContextDepth,
     ContextFormat,
 )
-from maestro.services import musehub_analysis, musehub_context, musehub_credits, musehub_divergence, musehub_releases, musehub_repository, musehub_sessions
+from maestro.services import musehub_analysis, musehub_context, musehub_credits, musehub_divergence, musehub_events, musehub_releases, musehub_repository, musehub_sessions
 from maestro.services.muse_groove_check import (
     DEFAULT_THRESHOLD,
     compute_groove_check,
@@ -1261,6 +1262,45 @@ async def get_arrangement_matrix(
     _guard_visibility(repo, claims)
     result = musehub_analysis.compute_arrangement_matrix(repo_id=repo_id, ref=ref)
     return result
+
+
+# ── Activity feed ─────────────────────────────────────────────────────────────
+
+
+@router.get(
+    "/repos/{repo_id}/activity",
+    response_model=ActivityFeedResponse,
+    operation_id="getRepoActivityFeed",
+    summary="Get paginated activity feed for a Muse Hub repo",
+    tags=["Repos"],
+)
+async def get_repo_activity(
+    repo_id: str,
+    event_type: str | None = Query(None, description="Filter to a single event type"),
+    page: int = Query(1, ge=1, description="1-indexed page number"),
+    page_size: int = Query(30, ge=1, le=100, description="Events per page"),
+    db: AsyncSession = Depends(get_db),
+    claims: TokenClaims | None = Depends(optional_token),
+) -> ActivityFeedResponse:
+    """Return the chronological (newest-first) activity feed for a repo.
+
+    Events cover: commit pushes, PR lifecycle, issue lifecycle, branch and tag
+    operations, and recording sessions.  Pass ``event_type`` to filter to a
+    single category; omit it to see all events.
+
+    Pagination is 1-indexed; ``page_size`` is capped at 100.
+    Returns 404 if the repo does not exist.
+    Returns 401 if the repo is private and the caller is unauthenticated.
+    """
+    repo = await musehub_repository.get_repo(db, repo_id)
+    _guard_visibility(repo, claims)
+    return await musehub_events.list_events(
+        db,
+        repo_id,
+        event_type=event_type,
+        page=page,
+        page_size=page_size,
+    )
 
 
 # ── Owner/slug resolver — declared LAST to avoid shadowing /repos/... routes ──
