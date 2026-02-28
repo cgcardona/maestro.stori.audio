@@ -43,7 +43,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import pathlib
+from pathlib import Path
 
 import typer
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -66,7 +66,7 @@ app = typer.Typer()
 
 async def _status_async(
     *,
-    root: pathlib.Path,
+    root: Path,
     session: AsyncSession,
 ) -> None:
     """Core status logic — fully injectable for tests.
@@ -101,7 +101,7 @@ async def _status_async(
         return
 
     # -- Check for any commits on this branch --
-    ref_path = muse_dir / pathlib.Path(head_ref)
+    ref_path = muse_dir / head_ref
     head_commit_id = ""
     if ref_path.exists():
         head_commit_id = ref_path.read_text().strip()
