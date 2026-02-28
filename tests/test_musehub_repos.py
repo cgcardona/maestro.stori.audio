@@ -551,3 +551,212 @@ async def test_timeline_404_for_unknown_repo(
         headers=auth_headers,
     )
     assert response.status_code == 404
+
+
+
+
+
+@pytest.mark.anyio
+async def test_divergence_endpoint_returns_five_dimensions(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+    db_session: AsyncSession,
+) -> None:
+    """GET /divergence returns five dimension scores with level labels."""
+    from datetime import datetime, timezone, timedelta
+
+    create = await client.post(
+        "/api/v1/musehub/repos",
+        json={"name": "divergence-test-repo"},
+        headers=auth_headers,
+    )
+    assert create.status_code == 201
+    repo_id = create.json()["repoId"]
+
+    now = datetime.now(tz=timezone.utc)
+    db_session.add(
+        MusehubCommit(
+            commit_id="aaa-melody",
+            repo_id=repo_id,
+            branch="main",
+            parent_ids=[],
+            message="add lead melody line",
+            author="alice",
+            timestamp=now - timedelta(hours=2),
+        )
+    )
+    db_session.add(
+        MusehubCommit(
+            commit_id="bbb-chord",
+            repo_id=repo_id,
+            branch="feature",
+            parent_ids=[],
+            message="update chord progression",
+            author="bob",
+            timestamp=now - timedelta(hours=1),
+        )
+    )
+    await db_session.commit()
+
+    response = await client.get(
+        f"/api/v1/musehub/repos/{repo_id}/divergence?branch_a=main&branch_b=feature",
+        headers=auth_headers,
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert "dimensions" in body
+    assert len(body["dimensions"]) == 5
+
+    dim_names = {d["dimension"] for d in body["dimensions"]}
+    assert dim_names == {"melodic", "harmonic", "rhythmic", "structural", "dynamic"}
+
+    for dim in body["dimensions"]:
+        assert "level" in dim
+        assert dim["level"] in {"NONE", "LOW", "MED", "HIGH"}
+        assert "score" in dim
+        assert 0.0 <= dim["score"] <= 1.0
+
+
+@pytest.mark.anyio
+async def test_divergence_overall_score_is_mean_of_dimensions(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+    db_session: AsyncSession,
+) -> None:
+    """Overall divergence score equals the mean of all five dimension scores."""
+    from datetime import datetime, timezone, timedelta
+
+    create = await client.post(
+        "/api/v1/musehub/repos",
+        json={"name": "divergence-mean-repo"},
+        headers=auth_headers,
+    )
+    repo_id = create.json()["repoId"]
+
+    now = datetime.now(tz=timezone.utc)
+    db_session.add(
+        MusehubCommit(
+            commit_id="c1-beat",
+            repo_id=repo_id,
+            branch="alpha",
+            parent_ids=[],
+            message="rework drum beat groove",
+            author="producer-a",
+            timestamp=now - timedelta(hours=3),
+        )
+    )
+    db_session.add(
+        MusehubCommit(
+            commit_id="c2-mix",
+            repo_id=repo_id,
+            branch="beta",
+            parent_ids=[],
+            message="fix master volume level",
+            author="producer-b",
+            timestamp=now - timedelta(hours=2),
+        )
+    )
+    await db_session.commit()
+
+    response = await client.get(
+        f"/api/v1/musehub/repos/{repo_id}/divergence?branch_a=alpha&branch_b=beta",
+        headers=auth_headers,
+    )
+    assert response.status_code == 200
+    body = response.json()
+
+    dims = body["dimensions"]
+    computed_mean = round(sum(d["score"] for d in dims) / len(dims), 4)
+    assert abs(body["overallScore"] - computed_mean) < 1e-6
+
+
+@pytest.mark.anyio
+async def test_divergence_json_response_structure(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+    db_session: AsyncSession,
+) -> None:
+    """JSON response has all required top-level fields and camelCase keys."""
+    from datetime import datetime, timezone, timedelta
+
+    create = await client.post(
+        "/api/v1/musehub/repos",
+        json={"name": "divergence-struct-repo"},
+        headers=auth_headers,
+    )
+    repo_id = create.json()["repoId"]
+
+    now = datetime.now(tz=timezone.utc)
+    for i, (branch, msg) in enumerate(
+        [("main", "add melody riff"), ("dev", "update chorus section")]
+    ):
+        db_session.add(
+            MusehubCommit(
+                commit_id=f"struct-{i}",
+                repo_id=repo_id,
+                branch=branch,
+                parent_ids=[],
+                message=msg,
+                author="test",
+                timestamp=now + timedelta(seconds=i),
+            )
+        )
+    await db_session.commit()
+
+    response = await client.get(
+        f"/api/v1/musehub/repos/{repo_id}/divergence?branch_a=main&branch_b=dev",
+        headers=auth_headers,
+    )
+    assert response.status_code == 200
+    body = response.json()
+
+    assert body["repoId"] == repo_id
+    assert body["branchA"] == "main"
+    assert body["branchB"] == "dev"
+    assert "commonAncestor" in body
+    assert "overallScore" in body
+    assert isinstance(body["overallScore"], float)
+    assert isinstance(body["dimensions"], list)
+    assert len(body["dimensions"]) == 5
+
+    for dim in body["dimensions"]:
+        assert "dimension" in dim
+        assert "level" in dim
+        assert "score" in dim
+        assert "description" in dim
+        assert "branchACommits" in dim
+        assert "branchBCommits" in dim
+
+
+@pytest.mark.anyio
+async def test_divergence_endpoint_returns_404_for_unknown_repo(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+) -> None:
+    """GET /divergence returns 404 for an unknown repo."""
+    response = await client.get(
+        "/api/v1/musehub/repos/no-such-repo/divergence?branch_a=a&branch_b=b",
+        headers=auth_headers,
+    )
+    assert response.status_code == 404
+
+
+@pytest.mark.anyio
+async def test_divergence_endpoint_returns_422_for_empty_branch(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+    db_session: AsyncSession,
+) -> None:
+    """GET /divergence returns 422 when a branch has no commits."""
+    create = await client.post(
+        "/api/v1/musehub/repos",
+        json={"name": "empty-branch-repo"},
+        headers=auth_headers,
+    )
+    repo_id = create.json()["repoId"]
+
+    response = await client.get(
+        f"/api/v1/musehub/repos/{repo_id}/divergence?branch_a=ghost&branch_b=also-ghost",
+        headers=auth_headers,
+    )
+    assert response.status_code == 422

@@ -26,15 +26,19 @@ from maestro.models.musehub import (
     BranchListResponse,
     CommitListResponse,
     CreateRepoRequest,
-    RepoResponse,
+    DivergenceDimensionResponse,
+    DivergenceResponse,
     TimelineResponse,
+    DagGraphResponse,
+    MuseHubContextResponse,
+    RepoResponse,
+    CreditsResponse,
 )
 from maestro.models.musehub_context import (
-    AgentContextResponse,
     ContextDepth,
     ContextFormat,
 )
-from maestro.services import musehub_context, musehub_repository
+from maestro.services import musehub_context, musehub_credits, musehub_divergence, musehub_repository
 
 logger = logging.getLogger(__name__)
 
@@ -59,6 +63,10 @@ async def create_repo(
         name=body.name,
         visibility=body.visibility,
         owner_user_id=owner_user_id,
+        description=body.description,
+        tags=body.tags,
+        key_signature=body.key_signature,
+        tempo_bpm=body.tempo_bpm,
     )
     await db.commit()
     return repo
@@ -123,6 +131,7 @@ async def list_commits(
     return CommitListResponse(commits=commits, total=total)
 
 
+
 @router.get(
     "/repos/{repo_id}/timeline",
     response_model=TimelineResponse,
@@ -152,6 +161,139 @@ async def get_timeline(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repo not found")
 
     return await musehub_repository.get_timeline_events(db, repo_id, limit=limit)
+
+@router.get(
+    "/repos/{repo_id}/divergence",
+    response_model=DivergenceResponse,
+    summary="Compute musical divergence between two branches",
+)
+async def get_divergence(
+    repo_id: str,
+    branch_a: str = Query(..., description="First branch name"),
+    branch_b: str = Query(..., description="Second branch name"),
+    db: AsyncSession = Depends(get_db),
+    _: TokenClaims = Depends(require_valid_token),
+) -> DivergenceResponse:
+    """Return a five-dimension musical divergence report between two branches.
+
+    Computes a per-dimension Jaccard divergence score by comparing each
+    branch's commit history since their common ancestor.  Dimensions are:
+    melodic, harmonic, rhythmic, structural, and dynamic.
+
+    The ``overallScore`` field is the mean of all five dimension scores,
+    expressed in [0.0, 1.0].  Multiply by 100 for a percentage display.
+
+    Content negotiation: this endpoint always returns JSON.  The UI page at
+    ``GET /musehub/ui/{repo_id}/divergence`` renders the radar chart.
+
+    Returns:
+        DivergenceResponse with per-dimension scores and overall score.
+
+    Raises:
+        404: If the repo is not found.
+        422: If either branch has no commits in this repo.
+    """
+    repo = await musehub_repository.get_repo(db, repo_id)
+    if repo is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repo not found")
+
+    try:
+        result = await musehub_divergence.compute_hub_divergence(
+            db,
+            repo_id=repo_id,
+            branch_a=branch_a,
+            branch_b=branch_b,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc))
+
+    dimensions = [
+        DivergenceDimensionResponse(
+            dimension=d.dimension,
+            level=d.level.value,
+            score=d.score,
+            description=d.description,
+            branch_a_commits=d.branch_a_commits,
+            branch_b_commits=d.branch_b_commits,
+        )
+        for d in result.dimensions
+    ]
+
+    return DivergenceResponse(
+        repo_id=repo_id,
+        branch_a=branch_a,
+        branch_b=branch_b,
+        common_ancestor=result.common_ancestor,
+        dimensions=dimensions,
+        overall_score=result.overall_score,
+    )
+
+
+@router.get(
+    "/repos/{repo_id}/credits",
+    response_model=CreditsResponse,
+    summary="Get aggregated contributor credits for a repo",
+)
+async def get_credits(
+    repo_id: str,
+    sort: str = Query(
+        "count",
+        pattern="^(count|recency|alpha)$",
+        description="Sort order: 'count' (most prolific), 'recency' (most recent), 'alpha' (A–Z)",
+    ),
+    db: AsyncSession = Depends(get_db),
+    _: TokenClaims = Depends(require_valid_token),
+) -> CreditsResponse:
+    """Return dynamic contributor credits aggregated from all commits in a repo.
+
+    Analogous to album liner notes: every contributor is listed with their
+    session count, inferred contribution types (composer, arranger, producer,
+    etc.), and activity window (first and last commit timestamps).
+
+    Content negotiation: when the request ``Accept`` header includes
+    ``application/ld+json``, clients should request the ``/credits`` endpoint
+    directly — the JSON body is schema.org-compatible and can be wrapped in
+    JSON-LD by the consumer.  This endpoint always returns ``application/json``.
+
+    Returns 404 if the repo does not exist.
+    Returns an empty ``contributors`` list when no commits have been pushed yet.
+    """
+    repo = await musehub_repository.get_repo(db, repo_id)
+    if repo is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repo not found")
+    return await musehub_credits.aggregate_credits(db, repo_id, sort=sort)
+
+
+@router.get(
+    "/repos/{repo_id}/context/{ref}",
+    response_model=MuseHubContextResponse,
+    summary="Get musical context document for a commit",
+)
+async def get_context(
+    repo_id: str,
+    ref: str,
+    db: AsyncSession = Depends(get_db),
+    _: TokenClaims = Depends(require_valid_token),
+) -> MuseHubContextResponse:
+    """Return a structured musical context document for the given commit ref.
+
+    The context document is the same information the AI agent receives when
+    generating music for this repo at this commit — making it human-inspectable
+    for debugging and transparency.
+
+    Raises 404 if either the repo or the commit does not exist.
+    """
+    repo = await musehub_repository.get_repo(db, repo_id)
+    if repo is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repo not found")
+
+    context = await musehub_repository.get_context_for_commit(db, repo_id, ref)
+    if context is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Commit {ref!r} not found in repo",
+        )
+    return context
 
 
 @router.get(
@@ -210,3 +352,34 @@ async def get_agent_context(
         content=context.model_dump_json(by_alias=True),
         media_type="application/json",
     )
+
+
+@router.get(
+    "/repos/{repo_id}/dag",
+    response_model=DagGraphResponse,
+    summary="Get the full commit DAG for a repo",
+)
+async def get_commit_dag(
+    repo_id: str,
+    db: AsyncSession = Depends(get_db),
+    _: TokenClaims = Depends(require_valid_token),
+) -> DagGraphResponse:
+    """Return the full commit history as a topologically sorted directed acyclic graph.
+
+    Nodes are ordered oldest→newest (Kahn's topological sort). Edges express
+    child→parent relationships (``source`` = child commit, ``target`` = parent
+    commit). This endpoint is the data source for the interactive DAG graph UI
+    at ``GET /musehub/ui/{repo_id}/graph``.
+
+    Content negotiation: always returns JSON. The UI page fetches this endpoint
+    with the stored JWT and renders it client-side with an SVG-based renderer.
+
+    Performance: all commits are fetched (no limit) to ensure the graph is
+    complete. For repos with 100+ commits the response may be several KB; the
+    client-side renderer virtualises visible nodes.
+    """
+    repo = await musehub_repository.get_repo(db, repo_id)
+    if repo is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repo not found")
+
+    return await musehub_repository.list_commits_dag(db, repo_id)
