@@ -13,15 +13,47 @@ const base   = {{ base_url | tojson }};
 
 {% block page_script %}
 {% raw %}
+// ── Social signal cache ────────────────────────────────────────────────────
+let prCommentCounts = {};  // { prId: count }
+let prReactions     = {};  // { prId: [{emoji, count, reacted_by_me}] }
+
+// ── Reaction pills (top 2 emojis + count) ─────────────────────────────────
+function reactionPills(prId) {
+  const rxns = (prReactions[prId] || []).slice().sort((a, b) => b.count - a.count).slice(0, 2);
+  if (!rxns.length) return '';
+  return rxns.map(r =>
+    `<span style="font-size:11px;color:#8b949e;background:var(--color-surface-2,#21262d);border-radius:4px;padding:1px 5px">${r.emoji}&nbsp;${r.count}</span>`
+  ).join('');
+}
+
+// ── Pre-fetch comment counts and reactions for all PRs (parallel) ──────────
+async function loadSocialSignals(prs) {
+  await Promise.all(prs.map(async pr => {
+    if (prCommentCounts[pr.prId] != null) return;  // already cached
+    const id = encodeURIComponent(pr.prId);
+    const [comments, rxns] = await Promise.all([
+      apiFetch('/repos/' + repoId + '/comments?target_type=pull_request&target_id=' + id).catch(() => []),
+      apiFetch('/repos/' + repoId + '/reactions?target_type=pull_request&target_id=' + id).catch(() => []),
+    ]);
+    prCommentCounts[pr.prId] = Array.isArray(comments) ? comments.length : 0;
+    prReactions[pr.prId]     = Array.isArray(rxns)     ? rxns            : [];
+  }));
+}
+
 async function load(state) {
   initRepoNav(repoId);
   try {
     const data = await apiFetch('/repos/' + repoId + '/pull-requests?state=' + state);
     const prs  = data.pullRequests || [];
 
+    await loadSocialSignals(prs);
+
     const rows = prs.length === 0
       ? '<p class="loading">No pull requests found.</p>'
-      : prs.map(pr => `
+      : prs.map(pr => {
+          const commentBadge = `<span style="font-size:11px;color:#8b949e">&#128172; ${prCommentCounts[pr.prId] || 0}</span>`;
+          const pills = reactionPills(pr.prId);
+          return `
         <div class="pr-row">
           <span class="badge badge-${pr.state}">${pr.state}</span>
           <div style="flex:1">
@@ -29,8 +61,13 @@ async function load(state) {
             <div style="font-size:12px;color:#8b949e;margin-top:2px">
               ${escHtml(pr.fromBranch)} &rarr; ${escHtml(pr.toBranch)} &bull; ${fmtDate(pr.createdAt)}
             </div>
+            <div style="display:flex;align-items:center;gap:6px;margin-top:4px;flex-wrap:wrap">
+              ${commentBadge}
+              ${pills}
+            </div>
           </div>
-        </div>`).join('');
+        </div>`;
+        }).join('');
 
     document.getElementById('content').innerHTML = `
       <div style="margin-bottom:12px">
