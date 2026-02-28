@@ -2080,6 +2080,31 @@ directly for JSON serialisation without any additional mapping step.
 **Producer:** `_match_commit()`, `_grep_async()`
 **Consumer:** `_render_matches()`, callers using `--json` output
 
+### `DescribeResult`
+
+**Module:** `maestro/muse_cli/commands/describe.py`
+
+Structured description of what changed between two commits. Implemented as a
+plain class (not `TypedDict`) to support methods (`.file_count()`, `.to_dict()`).
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `commit_id` | `str` | Full 64-char SHA of the target commit |
+| `message` | `str` | Commit message |
+| `depth` | `DescribeDepth` | Output verbosity level (`brief`, `standard`, `verbose`) |
+| `parent_id` | `str \| None` | Parent commit SHA; `None` for root commits |
+| `compare_commit_id` | `str \| None` | Explicitly compared commit (`--compare A B`); `None` in single-commit mode |
+| `changed_files` | `list[str]` | Relative paths with differing `object_id` between parent and target |
+| `added_files` | `list[str]` | Paths present in target but not parent |
+| `removed_files` | `list[str]` | Paths present in parent but not target |
+| `dimensions` | `list[str]` | Inferred or user-supplied musical dimension labels |
+| `auto_tag` | `str \| None` | Heuristic tag (`no-change`, `single-file-edit`, `minor-revision`, `major-revision`); `None` when `--auto-tag` not set |
+
+**Methods:** `.file_count() → int` (sum of all three file lists), `.to_dict() → dict[str, object]` (JSON-safe serialisation for `--json` output).
+
+**Producer:** `_describe_async()`
+**Consumer:** `_render_brief()`, `_render_standard()`, `_render_verbose()`, `_render_result()`
+
 ---
 
 ## `Any` Status
