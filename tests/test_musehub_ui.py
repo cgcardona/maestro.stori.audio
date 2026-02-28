@@ -37,6 +37,10 @@ Covers the minimum acceptance criteria from issue #43 and issue #232:
 - test_ui_issue_list_has_sort_controls         — Sort buttons (newest/oldest/most-commented) present (#299)
 - test_ui_issue_list_has_label_filter_js       — Client-side label filter JS present (#299)
 - test_ui_issue_list_has_body_preview_js       — Body preview helper and CSS class present (#299)
+- test_ui_pr_list_has_comment_badge_js         — PR list has comment count badge JS (#298)
+- test_ui_pr_list_has_reaction_pills_js        — PR list has reaction pills JS (#298)
+- test_ui_issue_list_has_reaction_pills_js     — Issue list has reaction pills JS (#298)
+- test_ui_issue_list_eager_social_signals      — Issue list eagerly pre-fetches social signals (#298)
 - test_context_page_renders            — context viewer page returns 200 HTML
 - test_context_json_response           — JSON returns MuseHubContextResponse structure
 - test_context_includes_musical_state  — response includes active_tracks field
@@ -326,6 +330,75 @@ async def test_ui_issue_list_has_body_preview_js(
     body = response.text
     assert "bodyPreview" in body
     assert "issue-preview" in body
+
+
+@pytest.mark.anyio
+async def test_ui_pr_list_has_comment_badge_js(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """PR list page HTML includes JS for fetching and rendering comment count badges (#298)."""
+    await _make_repo(db_session)
+    response = await client.get("/musehub/ui/testuser/test-beats/pulls")
+    assert response.status_code == 200
+    body = response.text
+    # Comment count badge rendered via loadSocialSignals
+    assert "loadSocialSignals" in body
+    assert "prCommentCounts" in body
+    assert "&#128172;" in body  # 💬 comment icon HTML entity
+
+
+@pytest.mark.anyio
+async def test_ui_pr_list_has_reaction_pills_js(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """PR list page HTML includes JS for fetching and rendering reaction pills (#298)."""
+    await _make_repo(db_session)
+    response = await client.get("/musehub/ui/testuser/test-beats/pulls")
+    assert response.status_code == 200
+    body = response.text
+    # Reaction pills rendered via reactionPills helper
+    assert "reactionPills" in body
+    assert "prReactions" in body
+    # Reactions fetched from the reactions API endpoint
+    assert "reactions?target_type=pull_request" in body
+
+
+@pytest.mark.anyio
+async def test_ui_issue_list_has_reaction_pills_js(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Issue list page HTML includes JS for fetching and rendering reaction pills (#298)."""
+    await _make_repo(db_session)
+    response = await client.get("/musehub/ui/testuser/test-beats/issues")
+    assert response.status_code == 200
+    body = response.text
+    # Reaction summary state and loader
+    assert "issueReactions" in body
+    assert "loadReactionSummaries" in body
+    # Reactions fetched from the reactions API endpoint
+    assert "reactions?target_type=issue" in body
+    # Reaction pills rendered inline in issue rows
+    assert "rxnPills" in body
+
+
+@pytest.mark.anyio
+async def test_ui_issue_list_eager_social_signals(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Issue list page eagerly pre-fetches comment counts and reactions on load (#298)."""
+    await _make_repo(db_session)
+    response = await client.get("/musehub/ui/testuser/test-beats/issues")
+    assert response.status_code == 200
+    body = response.text
+    # Eager pre-fetch block calls both loaders before rendering rows
+    assert "needCounts" in body
+    assert "needRxns" in body
+    assert "loadCommentCounts" in body
+    assert "loadReactionSummaries" in body
 
 
 @pytest.mark.anyio
