@@ -21,10 +21,9 @@ import logging
 import pathlib
 
 import typer
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from maestro.muse_cli.db import open_session
+from maestro.muse_cli.db import find_commits_by_prefix, open_session
 from maestro.muse_cli.errors import ExitCode
 from maestro.muse_cli.models import MuseCliCommit, MuseCliSnapshot
 
@@ -43,16 +42,6 @@ def _looks_like_commit_prefix(s: str) -> bool:
     lower = s.lower()
     return 4 <= len(lower) <= 64 and all(c in _HEX_CHARS for c in lower)
 
-
-async def _find_commits_by_prefix(
-    session: AsyncSession,
-    prefix: str,
-) -> list[MuseCliCommit]:
-    """Return all commits whose ``commit_id`` starts with *prefix*."""
-    result = await session.execute(
-        select(MuseCliCommit).where(MuseCliCommit.commit_id.startswith(prefix))
-    )
-    return list(result.scalars().all())
 
 
 async def resolve_artifact_async(
@@ -95,7 +84,7 @@ async def resolve_artifact_async(
         typer.echo(f"❌ File not found: {path_or_commit_id}")
         raise typer.Exit(code=ExitCode.USER_ERROR)
 
-    commits = await _find_commits_by_prefix(session, prefix)
+    commits = await find_commits_by_prefix(session, prefix)
     if not commits:
         typer.echo(f"❌ No commit found matching prefix '{prefix[:8]}'")
         raise typer.Exit(code=ExitCode.USER_ERROR)

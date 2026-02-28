@@ -21,7 +21,10 @@ This document is the single source of truth for every named entity (TypedDict, d
    - [Assets (`maestro/services/assets.py`)](#assets)
    - [StorpheusRawResponse](#storpheusrawresponse)
    - [SampleChange](#samplechange)
+   - [Muse Divergence Types](#muse-divergence-types)
    - [ExpressivenessResult](#expressivenessresult)
+   - [MuseTempoResult](#musetemporesult)
+   - [MuseTempoHistoryEntry](#musetemopohistoryentry)
 5. [Variation Layer (`app/variation/`)](#variation-layer)
    - [Event Envelope payloads](#event-envelope-payloads)
    - [PhraseRecord](#phraserecord)
@@ -1002,6 +1005,56 @@ On failure: `success=False` plus `error` (and optionally `message`).
 
 ---
 
+### Muse Divergence Types
+
+**Path:** `maestro/services/muse_divergence.py`
+
+#### `DivergenceLevel`
+
+`str, Enum` — Qualitative label for a per-dimension or overall divergence score.
+
+| Value | Score Range | Meaning |
+|-------|-------------|---------|
+| `"none"` | < 0.15 | No meaningful divergence |
+| `"low"` | 0.15 – 0.40 | Minor divergence, mostly aligned |
+| `"med"` | 0.40 – 0.70 | Moderate divergence, different directions |
+| `"high"` | ≥ 0.70 | High divergence, completely different creative paths |
+
+#### `DimensionDivergence`
+
+`dataclass(frozen=True)` — Divergence score and human description for a single musical dimension.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `dimension` | `str` | Dimension name: `"melodic"`, `"harmonic"`, `"rhythmic"`, `"structural"`, or `"dynamic"` |
+| `level` | `DivergenceLevel` | Qualitative level label |
+| `score` | `float` | Normalised score in [0.0, 1.0] — `|sym_diff| / |union|` over classified paths |
+| `description` | `str` | Human-readable summary of the divergence |
+| `branch_a_summary` | `str` | E.g. `"2 melodic file(s) changed"` |
+| `branch_b_summary` | `str` | E.g. `"0 melodic file(s) changed"` |
+
+#### `MuseDivergenceResult`
+
+`dataclass(frozen=True)` — Full musical divergence report between two CLI branches.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `branch_a` | `str` | Name of the first branch |
+| `branch_b` | `str` | Name of the second branch |
+| `common_ancestor` | `str \| None` | Merge-base commit ID; `None` if histories are disjoint |
+| `dimensions` | `tuple[DimensionDivergence, ...]` | Per-dimension results |
+| `overall_score` | `float` | Mean of all per-dimension scores in [0.0, 1.0] |
+
+**Where used:**
+
+| Module | Usage |
+|--------|-------|
+| `maestro/services/muse_divergence.py` | `compute_divergence` return type |
+| `maestro/muse_cli/commands/divergence.py` | `render_text`, `render_json` input |
+| `tests/test_muse_divergence.py` | All async divergence tests |
+
+---
+
 ### `ExpressivenessResult`
 
 **Path:** `maestro/services/expressiveness.py`
@@ -1013,6 +1066,43 @@ On failure: `success=False` plus `error` (and optionally `message`).
 | `notes` | `list[NoteDict]` | Source notes with humanized velocity and timing, same key format (camelCase/snake_case) as input |
 | `cc_events` | `list[CCEventDict]` | Generated CC automation (sustain, expression, mod wheel) |
 | `pitch_bends` | `list[PitchBendDict]` | Generated pitch-bend automation |
+
+---
+
+### `MuseTempoResult`
+
+**Path:** `maestro/services/muse_tempo.py`
+
+`dataclass(frozen=True)` — Named result type for a `muse tempo [<commit>]` query.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `commit_id` | `str` | Full 64-char SHA-256 commit ID |
+| `branch` | `str` | Branch name the commit belongs to |
+| `message` | `str` | Commit message |
+| `tempo_bpm` | `float \| None` | Explicitly annotated BPM (from `muse tempo --set`) |
+| `detected_bpm` | `float \| None` | Auto-detected BPM from MIDI Set Tempo events in the snapshot |
+
+**Property:**
+
+| Property | Returns | Description |
+|----------|---------|-------------|
+| `effective_bpm` | `float \| None` | `tempo_bpm` if set; else `detected_bpm` |
+
+---
+
+### `MuseTempoHistoryEntry`
+
+**Path:** `maestro/services/muse_tempo.py`
+
+`dataclass(frozen=True)` — One row in a `muse tempo --history` traversal.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `commit_id` | `str` | Full 64-char SHA-256 commit ID |
+| `message` | `str` | Commit message |
+| `effective_bpm` | `float \| None` | Annotated BPM for this commit, or `None` |
+| `delta_bpm` | `float \| None` | Signed BPM change vs. the previous (older) commit; `None` for the oldest commit |
 
 ---
 
@@ -1873,6 +1963,39 @@ async def search_commits(
 ```
 
 Read-only search across `muse_cli_commits`.  Returns `MuseFindResults`.
+
+---
+
+### Muse CLI — `muse meter` (`maestro/muse_cli/commands/meter.py`)
+
+#### `MuseMeterReadResult`
+
+`@dataclass(frozen=True)` — returned by `_meter_read_async()`.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `commit_id` | `str` | Full 64-char sha256 commit identifier. |
+| `time_signature` | `str \| None` | Time signature string (e.g. `"4/4"`), or `None` when no annotation is stored. |
+
+#### `MuseMeterHistoryEntry`
+
+`@dataclass(frozen=True)` — one entry in the list returned by `_meter_history_async()`.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `commit_id` | `str` | Full 64-char sha256 commit identifier. |
+| `time_signature` | `str \| None` | Stored time signature, or `None` if not annotated. |
+| `message` | `str` | Commit message. |
+
+#### `MusePolyrhythmResult`
+
+`@dataclass(frozen=True)` — returned by `_meter_polyrhythm_async()`.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `commit_id` | `str` | Commit that was inspected (HEAD by default). |
+| `signatures_by_file` | `dict[str, str]` | Maps relative MIDI file path to detected time signature. `"?"` when no meta event found. |
+| `is_polyrhythmic` | `bool` | `True` when two or more distinct known time signatures are present simultaneously. |
 
 ---
 
@@ -3985,4 +4108,109 @@ classDiagram
     PromptParseError <|-- InvalidMaestroPrompt
     parse_prompt ..> MaestroPrompt : produces
     parse_prompt ..> PromptParseError : raises
+```
+
+---
+
+### Diagram 20 — Muse Import Types (`maestro/muse_cli/midi_parser.py`)
+
+`NoteEvent` is the atomic unit of parsed music data — one sounding note with pitch, timing, velocity, and track assignment. `MuseImportData` groups all notes extracted from a single file along with format metadata. Both types are produced by `parse_file()` and its format-specific delegates (`parse_midi_file`, `parse_musicxml_file`). `apply_track_map()` returns a new list of `NoteEvent` objects with `channel_name` fields remapped; it never mutates its input.
+
+```mermaid
+classDiagram
+    direction TB
+
+    class NoteEvent {
+        <<dataclass>>
+        +pitch : int
+        +velocity : int
+        +start_tick : int
+        +duration_ticks : int
+        +channel : int
+        +channel_name : str
+    }
+
+    class MuseImportData {
+        <<dataclass>>
+        +source_path : pathlib.Path
+        +format : str
+        +ticks_per_beat : int
+        +tempo_bpm : float
+        +notes : list~NoteEvent~
+        +tracks : list~str~
+        +raw_meta : dict~str, Any~
+    }
+
+    class parse_file {
+        <<function>>
+        pathlib.Path → MuseImportData
+    }
+    class parse_midi_file {
+        <<function>>
+        pathlib.Path → MuseImportData
+    }
+    class parse_musicxml_file {
+        <<function>>
+        pathlib.Path → MuseImportData
+    }
+    class apply_track_map {
+        <<function>>
+        list~NoteEvent~, dict~str,str~ → list~NoteEvent~
+    }
+
+    MuseImportData --> NoteEvent : notes list
+    parse_file ..> MuseImportData : produces
+    parse_midi_file ..> MuseImportData : produces
+    parse_musicxml_file ..> MuseImportData : produces
+    apply_track_map ..> NoteEvent : returns remapped copies
+```
+
+---
+
+## Muse CLI — Export Types (`maestro/muse_cli/export_engine.py`)
+
+### `ExportFormat`
+
+`StrEnum` of supported export format identifiers.
+
+| Value | Description |
+|-------|-------------|
+| `midi` | Raw MIDI file(s) (native format). |
+| `json` | Structured JSON note index. |
+| `musicxml` | MusicXML for notation software. |
+| `abc` | ABC notation for folk/traditional music tools. |
+| `wav` | Audio render via Storpheus. |
+
+### `MuseExportOptions`
+
+Frozen dataclass controlling a single export operation.
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `format` | `ExportFormat` | yes | Target export format. |
+| `commit_id` | `str` | yes | Full 64-char commit hash being exported. |
+| `output_path` | `pathlib.Path` | yes | Destination file or directory path. |
+| `track` | `str \| None` | no | Track name substring filter. |
+| `section` | `str \| None` | no | Section name substring filter. |
+| `split_tracks` | `bool` | no | Write one file per MIDI track (MIDI only). |
+
+### `MuseExportResult`
+
+Dataclass returned by every format handler.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `paths_written` | `list[pathlib.Path]` | Absolute paths of all files written. |
+| `format` | `ExportFormat` | Format that was exported. |
+| `commit_id` | `str` | Source commit ID. |
+| `skipped_count` | `int` | Entries skipped (wrong type, filter mismatch, missing). |
+
+### `StorpheusUnavailableError`
+
+Exception raised by `export_wav` when Storpheus is not reachable or returns
+a non-200 health response.  Callers catch this and surface a human-readable
+error message via `typer.echo` before calling `typer.Exit(INTERNAL_ERROR)`.
+
+```python
+class StorpheusUnavailableError(Exception): ...
 ```
