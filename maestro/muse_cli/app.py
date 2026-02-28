@@ -2,7 +2,7 @@
 
 Entry point for the ``muse`` console script. Registers all MVP
 subcommands (init, status, commit, log, checkout, merge, remote,
-push, pull, open, play) as Typer sub-applications.
+push, pull, open, play, dynamics, session, swing) as Typer sub-applications.
 """
 from __future__ import annotations
 
@@ -22,6 +22,7 @@ from maestro.muse_cli.commands import (
     remote,
     session,
     status,
+    swing,
 )
 
 cli = typer.Typer(
@@ -42,6 +43,7 @@ cli.add_typer(push.app, name="push", help="Upload local variations to a remote."
 cli.add_typer(pull.app, name="pull", help="Download remote variations locally.")
 cli.add_typer(open_cmd.app, name="open", help="Open an artifact in the system default app (macOS).")
 cli.add_typer(play.app, name="play", help="Play an audio artifact via afplay (macOS).")
+cli.add_typer(swing.app, name="swing", help="Analyze or annotate the swing factor of a composition.")
 cli.add_typer(session.app, name="session", help="Record and query recording session metadata.")
 
 

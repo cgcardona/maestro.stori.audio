@@ -2022,6 +2022,47 @@ After this point, `tempo` is `int` everywhere:
 
 ---
 
+## Muse CLI Types
+
+Named result types for Muse CLI commands. All types are `TypedDict` subclasses
+defined in their respective command modules and returned from the injectable
+async core functions (the testable layer that Typer commands wrap).
+
+### `SwingDetectResult`
+
+**Module:** `maestro/muse_cli/commands/swing.py`
+
+Swing detection result for a single commit or working tree.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `factor` | `float` | Normalized swing factor in [0.5, 0.67] |
+| `label` | `str` | Human-readable label: `Straight`, `Light`, `Medium`, or `Hard` |
+| `commit` | `str` | Resolved commit SHA (8-char) or empty string for annotations |
+| `branch` | `str` | Current branch name |
+| `track` | `str` | MIDI track filter; `"all"` when no filter is applied |
+| `source` | `str` | `"stub"` (MIDI analysis pending) or `"annotation"` (explicit `--set`) |
+
+**Producer:** `_swing_detect_async()`, `_swing_history_async()`
+**Consumer:** `_format_detect()`, `_format_history()`, `SwingCompareResult.head/.compare`
+
+### `SwingCompareResult`
+
+**Module:** `maestro/muse_cli/commands/swing.py`
+
+Swing comparison between HEAD and a reference commit.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `head` | `SwingDetectResult` | Swing result for HEAD |
+| `compare` | `SwingDetectResult` | Swing result for the reference commit |
+| `delta` | `float` | `head.factor − compare.factor`, rounded to 4 decimal places |
+
+**Producer:** `_swing_compare_async()`
+**Consumer:** `_format_compare()`
+
+---
+
 ## `Any` Status
 
 `Any` does not appear in any production app file. The table below summarises how every historical use was eliminated:

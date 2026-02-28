@@ -908,3 +908,70 @@ muse commit --from-batch muse-batch.json
 ```
 
 ---
+
+## `muse swing` — Swing Factor Analysis and Annotation
+
+**Purpose:** Measure or annotate the swing factor of a commit — the ratio that
+distinguishes a straight 8th-note grid from a shuffled jazz feel. Swing is one
+of the most musically critical dimensions and is completely invisible to Git.
+
+**Usage:**
+```bash
+muse swing [<commit>] [OPTIONS]
+```
+
+**Flags:**
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `COMMIT` | positional | working tree | Commit SHA to analyze |
+| `--set FLOAT` | float | — | Annotate with an explicit swing factor (0.5–0.67) |
+| `--detect` | flag | on | Detect and display the swing factor (default) |
+| `--track TEXT` | string | all | Restrict to a named MIDI track (e.g. `--track bass`) |
+| `--compare COMMIT` | string | — | Compare HEAD swing against another commit |
+| `--history` | flag | off | Show swing history for the current branch |
+| `--json` | flag | off | Emit machine-readable JSON |
+
+**Swing factor scale:**
+
+| Range | Label | Feel |
+|-------|-------|------|
+| < 0.53 | Straight | Equal 8th notes — pop, EDM, quantized |
+| 0.53–0.58 | Light | Subtle shuffle — R&B, Neo-soul |
+| 0.58–0.63 | Medium | Noticeable swing — jazz, hip-hop |
+| ≥ 0.63 | Hard | Triplet feel — bebop, heavy jazz |
+
+**Output example (text):**
+```
+Swing factor: 0.55 (Light)
+Commit: a1b2c3d4  Branch: main
+Track: all
+(stub — full MIDI analysis pending)
+```
+
+**Output example (`--json`):**
+```json
+{"factor": 0.55, "label": "Light", "commit": "a1b2c3d4", "branch": "main", "track": "all", "source": "stub"}
+```
+
+**Result type:** `SwingDetectResult` (TypedDict) — fields: `factor` (float),
+`label` (str), `commit` (str), `branch` (str), `track` (str), `source` (str).
+`--compare` returns `SwingCompareResult` — fields: `head` (SwingDetectResult),
+`compare` (SwingDetectResult), `delta` (float). See
+`docs/reference/type_contracts.md § Muse CLI Types`.
+
+**Agent use case:** An AI generating a bass line runs `muse swing --json` to
+know whether to quantize straight or add shuffle. A Medium swing result means
+the bass should land slightly behind the grid to stay in pocket with the
+existing drum performance.
+
+**Implementation:** `maestro/muse_cli/commands/swing.py` — `swing_label()`,
+`_swing_detect_async()`, `_swing_history_async()`, `_swing_compare_async()`,
+`_format_detect()`, `_format_history()`, `_format_compare()`. Exit codes:
+0 success, 1 invalid `--set` value, 2 outside repo, 3 internal error.
+
+> **Stub note:** Returns a placeholder factor of 0.55. Full implementation
+> requires onset-to-onset ratio measurement from committed MIDI note events
+> (future: Storpheus MIDI parse route).
+
+---
