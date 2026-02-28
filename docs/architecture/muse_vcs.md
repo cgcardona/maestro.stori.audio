@@ -2091,6 +2091,167 @@ arrived, then `muse merge origin/main` if the agent decides to incorporate remot
 
 ---
 
+## Muse CLI — Bisect Command Reference
+
+`muse bisect` implements a binary search over the commit graph to identify the
+exact commit that introduced a musical regression — a rhythmic drift, mix
+artefact, or tonal shift.  It is the music-domain analogue of `git bisect`.
+
+Session state is persisted in `.muse/BISECT_STATE.json` across shell invocations.
+
+---
+
+### `muse bisect start`
+
+**Purpose:** Open a bisect session and record the pre-bisect HEAD so that
+`muse bisect reset` can cleanly restore the workspace.
+
+**Usage:**
+```bash
+muse bisect start
+```
+
+**Blocked by:** `.muse/MERGE_STATE.json` (merge in progress) or an already-active
+`BISECT_STATE.json`.
+
+**Output example:**
+```
+✅ Bisect session started.
+   Now mark a good commit:  muse bisect good <commit>
+   And a bad commit:        muse bisect bad <commit>
+```
+
+**Agent use case:** An AI agent detects rhythmic drift in the latest mix and
+opens a bisect session to automatically locate the offending commit.
+
+**Implementation:** `maestro/muse_cli/commands/bisect.py`
+
+---
+
+### `muse bisect good <commit>`
+
+**Purpose:** Mark *commit* as a known-good revision.  Once both a good and bad
+bound are set, Muse selects the midpoint commit and checks it out into muse-work/
+for inspection.
+
+**Usage:**
+```bash
+muse bisect good [<commit>]   # default: HEAD
+```
+
+**Flags:**
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `<commit>` | positional | `HEAD` | Commit to mark as good: SHA, branch name, or `HEAD` |
+
+**Output example:**
+```
+✅ Marked a1b2c3d4 as good. Checking out f9e8d7c6 (~2 step(s) remaining, 3 commits in range)
+```
+
+**Agent use case:** After listening to the muse-work/ snapshot and confirming the
+groove is intact, the agent marks the current commit as good and awaits the next
+midpoint checkout.
+
+---
+
+### `muse bisect bad <commit>`
+
+**Purpose:** Mark *commit* as a known-bad revision.  Mirrors `muse bisect good`.
+
+**Usage:**
+```bash
+muse bisect bad [<commit>]   # default: HEAD
+```
+
+---
+
+### `muse bisect run <cmd>`
+
+**Purpose:** Automate the bisect loop.  Runs *cmd* after each checkout; exit 0
+means good, any non-zero exit code means bad.  Stops when the culprit is found.
+
+**Usage:**
+```bash
+muse bisect run <shell-command> [--max-steps N]
+```
+
+**Flags:**
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `<cmd>` | positional | — | Shell command to test each midpoint |
+| `--max-steps` | int | 50 | Safety limit on bisect iterations |
+
+**Output example:**
+```
+⟳  Testing f9e8d7c6…
+   exit=1 → bad
+✅ Marked f9e8d7c6 as bad. Checking out d3c2b1a0 (~1 step(s) remaining, 1 in range)
+⟳  Testing d3c2b1a0…
+   exit=0 → good
+🎯 Bisect complete! First bad commit: f9e8d7c6
+Run 'muse bisect reset' to restore your workspace.
+```
+
+**Result type:** `BisectStepResult` — fields: `culprit` (str | None),
+`next_commit` (str | None), `remaining` (int), `message` (str).
+
+**Agent use case:** An AI orchestrator runs `muse bisect run python check_groove.py`
+to automate the full regression hunt without human input.
+
+---
+
+### `muse bisect reset`
+
+**Purpose:** End the bisect session: restore `.muse/HEAD` and muse-work/ to the
+pre-bisect state, then remove `BISECT_STATE.json`.
+
+**Usage:**
+```bash
+muse bisect reset
+```
+
+**Output example:**
+```
+✅ muse-work/ restored (3 files) from pre-bisect snapshot.
+✅ Bisect session ended.
+```
+
+---
+
+### `muse bisect log`
+
+**Purpose:** Display the verdicts recorded so far and the current good/bad bounds.
+
+**Usage:**
+```bash
+muse bisect log [--json]
+```
+
+**Flags:**
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--json` | flag | off | Emit structured JSON for agent consumption |
+
+**Output example (default):**
+```
+Bisect session state:
+  good:    a1b2c3d4...
+  bad:     f9e8d7c6...
+  current: d3c2b1a0...
+  tested (2 commit(s)):
+    a1b2c3d4  good
+    f9e8d7c6  bad
+```
+
+**Result type:** `BisectState` — fields: `good`, `bad`, `current`, `tested`,
+`pre_bisect_ref`, `pre_bisect_commit`.
+
+**Agent use case:** An agent queries `muse bisect log --json` to resume a
+suspended bisect session and determine the next commit to test.
+
+---
+
 ## Muse CLI — Music Analysis Command Reference
 
 These commands expose musical dimensions across the commit graph — the layer that
