@@ -3624,6 +3624,69 @@ An AI music generation agent uses `muse render-preview HEAD~10 --json` to obtain
 
 ---
 
+## `muse rev-parse` — Resolve a Revision Expression to a Commit ID
+
+**Purpose:** Translate a symbolic revision expression into a concrete 64-character
+commit ID.  Mirrors `git rev-parse` semantics and is the plumbing primitive used
+internally by other Muse commands that accept revision arguments.
+
+```
+muse rev-parse <revision> [OPTIONS]
+
+```
+
+### Flags
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `REVISION` | positional | required | Revision expression to resolve |
+| `--short` | flag | off | Print only the first 8 characters of the commit ID |
+| `--verify` | flag | off | Exit 1 if the expression does not resolve (default: print nothing) |
+| `--abbrev-ref` | flag | off | Print the branch name instead of the commit ID |
+
+### Supported Revision Expressions
+
+| Expression | Resolves to |
+|------------|-------------|
+| `HEAD` | Tip of the current branch |
+| `<branch>` | Tip of the named branch |
+| `<commit_id>` | Exact or prefix-matched commit |
+| `HEAD~N` | N parents back from HEAD |
+| `<branch>~N` | N parents back from the branch tip |
+
+### Output Example
+
+```
+$ muse rev-parse HEAD
+a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2
+
+$ muse rev-parse --short HEAD
+a1b2c3d4
+
+$ muse rev-parse --abbrev-ref HEAD
+main
+
+$ muse rev-parse HEAD~2
+f9e8d7c6b5a4f9e8d7c6b5a4f9e8d7c6b5a4f9e8d7c6b5a4f9e8d7c6b5a4f9e8
+
+$ muse rev-parse --verify nonexistent
+fatal: Not a valid revision: 'nonexistent'
+# exit code 1
+```
+
+### Result Type
+
+`RevParseResult` — see `docs/reference/type_contracts.md § Muse rev-parse Types`.
+
+### Agent Use Case
+
+An AI agent resolves `HEAD~1` before generating a new variation to obtain the
+parent commit ID, which it passes as a `base_commit` argument to downstream
+commands.  Use `--verify` in automation scripts to fail fast rather than
+silently producing empty output.
+
+---
+
 ## `muse symbolic-ref` — Read or Write a Symbolic Ref
 
 **Purpose:** Read or write a symbolic ref (e.g. `HEAD`), answering "which branch
@@ -3640,6 +3703,7 @@ muse symbolic-ref HEAD                         # read: prints refs/heads/main
 muse symbolic-ref --short HEAD                 # read short form: prints main
 muse symbolic-ref HEAD refs/heads/feature/x   # write: update .muse/HEAD
 muse symbolic-ref --delete HEAD               # delete the symbolic ref file
+
 ```
 
 ### Flags
@@ -4071,6 +4135,7 @@ commit is needed.
 | `muse meter` | `commands/meter.py` | ✅ implemented (PR #141) | #117 |
 | `muse recall` | `commands/recall.py` | ✅ stub (PR #135) | #122 |
 | `muse render-preview` | `commands/render_preview.py` | ✅ implemented (issue #96) | #96 |
+| `muse rev-parse` | `commands/rev_parse.py` | ✅ implemented (PR #143) | #92 |
 | `muse session` | `commands/session.py` | ✅ implemented (PR #129) | #127 |
 | `muse swing` | `commands/swing.py` | ✅ stub (PR #131) | #121 |
 | `muse motif` | `commands/motif.py` | ✅ stub (PR —) | #101 |

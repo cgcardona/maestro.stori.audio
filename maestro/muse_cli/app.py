@@ -5,9 +5,10 @@ subcommands (amend, arrange, ask, checkout, chord-map, commit, commit-tree,
 context, contour, describe, diff, divergence, dynamics, emotion-diff, export,
 find, form, grep, groove-check, harmony, humanize, import, init, inspect,
 key, log, merge, meter, motif, open, play, pull, push, recall, remote,
-render-preview, reset, resolve, revert, session, show, similarity, status,
-swing, symbolic-ref, tag, tempo, tempo-scale, timeline, update-ref, validate,
-write-tree) as Typer sub-applications."""
+render-preview, reset, resolve, rev-parse, revert, session, show, similarity,
+status, swing, symbolic-ref, tag, tempo, tempo-scale, timeline, update-ref,
+validate, write-tree) as Typer sub-applications.
+"""
 from __future__ import annotations
 
 import typer
@@ -51,6 +52,7 @@ from maestro.muse_cli.commands import (
     render_preview,
     reset,
     resolve,
+    rev_parse,
     revert,
     session,
     show,
@@ -116,6 +118,7 @@ cli.add_typer(context.app, name="context", help="Output structured musical conte
 cli.add_typer(divergence.app, name="divergence", help="Show how two branches have diverged musically.")
 cli.add_typer(motif.app, name="motif", help="Identify, track, and compare recurring melodic motifs.")
 cli.add_typer(emotion_diff.app, name="emotion-diff", help="Compare emotion vectors between two commits.")
+cli.add_typer(rev_parse.app, name="rev-parse", help="Resolve a revision expression to a commit ID.")
 cli.add_typer(symbolic_ref.app, name="symbolic-ref", help="Read or write a symbolic ref (e.g. HEAD).")
 cli.add_typer(show.app, name="show", help="Inspect a commit: metadata, snapshot, diff, MIDI files, and audio preview.")
 cli.add_typer(render_preview.app, name="render-preview", help="Generate an audio preview of a commit's snapshot.")
