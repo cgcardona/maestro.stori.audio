@@ -49,6 +49,7 @@ Agent (per worktree)
   └─ git push origin "$BRANCH"             ← push resolution so GitHub sees clean state
   └─ sleep 5 && gh pr merge <N> --squash  ← merge only after remote is up to date
   └─ git push origin --delete "$BRANCH"   ← remote branch cleanup
+  └─ git -C <main-repo> branch -D "$BRANCH"  ← local branch cleanup
   └─ git worktree remove --force <path>     ← self-destructs when done
   └─ git -C <main-repo> worktree prune      ← cleans up the ref
 ```
@@ -558,6 +559,9 @@ STEP 6 — PRE-MERGE SYNC (only if grade is A or B):
 
   # 6. Delete the remote branch manually (now safe — merge is done):
        git push origin --delete "$BRANCH"
+
+  # 6a. Delete the local branch (worktree remove destroys the directory but NOT the branch ref):
+       git -C "$REPO" branch -D "$BRANCH"
 
   # 7. Close every referenced issue.
   #    Find ALL "Closes #N" issue numbers from the PR body and close each one.
