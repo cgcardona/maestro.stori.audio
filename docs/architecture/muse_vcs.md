@@ -2533,6 +2533,59 @@ branch for chord voicings while preserving the guitar branch's groove patterns.
 
 ---
 
+## `muse write-tree` — Write Current Working-Tree as a Snapshot Object
+
+### `muse write-tree`
+
+**Purpose:** Hash all files in `muse-work/`, persist the object and snapshot
+rows in the database, and print the `snapshot_id`.  This is the plumbing
+primitive that underlies `muse commit` — it writes the tree object without
+recording any history (no commit row, no branch-pointer update).  AI agents
+use it to obtain a stable, content-addressed handle to the current working-tree
+state before deciding whether to commit.
+
+**Status:** ✅ Fully implemented (issue #89)
+
+**Usage:**
+```bash
+muse write-tree [OPTIONS]
+```
+
+**Flags:**
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--prefix PATH` | string | *(none)* | Only include files whose path (relative to `muse-work/`) starts with *PATH*. Example: `--prefix drums/` snapshots only the drums sub-directory. |
+| `--missing-ok` | flag | off | Do not fail when `muse-work/` is absent or empty, or when `--prefix` matches no files. Still prints a valid (empty) `snapshot_id`. |
+
+**Output example:**
+```
+a3f92c1e8b4d5f67890abcdef1234567890abcdef1234567890abcdef12345678
+```
+(64-character sha256 hex digest of the sorted `path:object_id` pairs.)
+
+**Idempotency:** Same file content → same `snapshot_id`.  Running `muse write-tree`
+twice without changing any file makes exactly zero new DB writes (all upserts are
+no-ops).
+
+**Result type:** `snapshot_id` is a raw 64-char hex string printed to stdout.
+No named result type — the caller decides what to do with the ID (compare,
+commit, discard).
+
+**Agent use case:** An AI agent that just generated a batch of MIDI files calls
+`muse write-tree` to get the `snapshot_id` for the current working tree.  It
+then compares that ID against the last committed `snapshot_id` (via `muse log
+--json | head -1`) to decide whether the new generation is novel enough to
+commit.  If the IDs match, the files are identical to the last commit and no
+commit is needed.
+
+**Implementation:** `maestro/muse_cli/commands/write_tree.py`.  Reuses
+`build_snapshot_manifest`, `compute_snapshot_id`, `upsert_object`, and
+`upsert_snapshot` from the commit pipeline.  No new DB schema — the same
+`muse_cli_objects` and `muse_cli_snapshots` tables.
+
+---
+
 ## Command Registration Summary
 
 | Command | File | Status | Issue |
@@ -2550,6 +2603,7 @@ branch for chord voicings while preserving the guitar branch's groove patterns.
 | `muse session` | `commands/session.py` | ✅ implemented (PR #129) | #127 |
 | `muse swing` | `commands/swing.py` | ✅ stub (PR #131) | #121 |
 | `muse tag` | `commands/tag.py` | ✅ implemented (PR #133) | #123 |
+| `muse write-tree` | `commands/write_tree.py` | ✅ implemented | #89 |
 
 All stub commands have stable CLI contracts. Full musical analysis (MIDI content
 parsing, vector embeddings, LLM synthesis) is tracked as follow-up issues.
