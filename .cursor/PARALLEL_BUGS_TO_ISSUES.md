@@ -136,15 +136,37 @@ STEP 2 — CREATE ISSUES:
        gh issue list --search "Fix: <short description>" --state all --json number,title,url
      If a matching open or closed issue already exists → skip creation, record the existing URL.
   3. Draft the full issue body (description, user journey, location, fix shape, tests, docs, labels)
-  4. Create the issue (only if step 2 found nothing):
-       gh issue create \
+  4. Create the issue (only if step 2 found nothing) using the TWO-STEP PATTERN:
+
+     ── LABEL REFERENCE (only use labels from this list) ──────────────────────
+     │ bug              documentation     duplicate         enhancement        │
+     │ good first issue help wanted       invalid           question           │
+     │ wontfix          multimodal        performance       ai-pipeline        │
+     │ muse             muse-cli          muse-hub          storpheus          │
+     │ maestro-integration  mypy          cli               testing            │
+     │ weekend-mvp      muse-music-extensions                                  │
+     │                                                                         │
+     │ ⚠️  Never invent labels (e.g. "tech-debt", "mcp", "budget",            │
+     │    "security" do NOT exist). Using a missing label causes               │
+     │    gh issue create to fail entirely.                                    │
+     └─────────────────────────────────────────────────────────────────────────
+
+     ── TWO-STEP PATTERN ──────────────────────────────────────────────────────
+     │ Step 1: create without --label (never fails due to labels)             │
+     │ Step 2: apply labels with gh issue edit || true (non-fatal per label)  │
+     └─────────────────────────────────────────────────────────────────────────
+
+       ISSUE_URL=$(gh issue create \
          --title "Fix: <short description>" \
          --body "$(cat <<'EOF'
 <full issue body>
 EOF
-)" \
-         --label "bug,<other-labels>"
-  5. Record the created issue URL.
+)")
+       # Apply each label on its own line from the LABEL REFERENCE above.
+       gh issue edit "$ISSUE_URL" --add-label "bug" 2>/dev/null || true
+       # gh issue edit "$ISSUE_URL" --add-label "<second-label>" 2>/dev/null || true
+
+  5. Record the created issue URL ($ISSUE_URL).
      ⚠️  If gh issue create fails twice for the same bug, skip it and report the failure —
      do NOT loop endlessly. Change strategy or escalate.
 
