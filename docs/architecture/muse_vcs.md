@@ -1647,6 +1647,47 @@ muse update-ref refs/heads/merge-candidate "$COMMIT"  # planned
 
 ---
 
+### `muse hash-object`
+
+**Purpose:** Compute the SHA-256 content-address of a file (or stdin) and
+optionally write it into the Muse object store.  The hash produced is
+identical to what `muse commit` would assign to the same file, ensuring
+cross-command content-addressability.  Use this for scripting, pre-upload
+deduplication checks, and debugging the object store.
+
+**Usage:**
+```bash
+muse hash-object <file> [OPTIONS]
+muse hash-object --stdin [OPTIONS]
+```
+
+**Flags:**
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `<file>` | positional | — | Path to the file to hash.  Omit when using `--stdin`. |
+| `-w / --write` | flag | off | Write the object to `.muse/objects/` and the `muse_cli_objects` table in addition to printing the hash. |
+| `--stdin` | flag | off | Read content from stdin instead of a file. |
+
+**Output example:**
+
+```
+a3f2e1b0d4c5...  (64-character SHA-256 hex digest)
+```
+
+**Result type:** `HashObjectResult` — fields: `object_id` (str, 64-char hex), `stored` (bool), `already_existed` (bool).
+
+**Agent use case:** An AI agent can call `muse hash-object <file>` to derive the
+object ID before committing, enabling optimistic checks ("is this drum loop
+already in the store?") without running a full `muse commit`.  Piping output
+to `muse cat-object` verifies whether the stored content matches expectations.
+
+**Implementation:** `maestro/muse_cli/commands/hash_object.py` — registered as
+`muse hash-object`.  `HashObjectResult` (class), `hash_bytes()` (pure helper),
+`_hash_object_async()` (fully injectable for tests).
+
+---
+
 ## Muse CLI — Remote Sync Command Reference
 
 These commands connect the local Muse repo to the remote Muse Hub, enabling
