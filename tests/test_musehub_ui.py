@@ -925,6 +925,84 @@ async def test_timeline_page_includes_token_form(
     assert "token-form" in body
 
 
+@pytest.mark.anyio
+async def test_timeline_page_contains_overlay_toggles(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Timeline page must include Sessions, PRs, and Releases layer toggle checkboxes.
+
+    Regression test for issue #307 — before this fix the timeline had no
+    overlay markers for repo lifecycle events (sessions, PR merges, releases).
+    """
+    await _make_repo(db_session)
+    response = await client.get("/musehub/ui/testuser/test-beats/timeline")
+    assert response.status_code == 200
+    body = response.text
+    # All three new overlay toggle labels must be present.
+    assert "Sessions" in body
+    assert "PRs" in body
+    assert "Releases" in body
+
+
+@pytest.mark.anyio
+async def test_timeline_page_overlay_js_variables(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Timeline page script must initialise sessions, mergedPRs, and releases arrays.
+
+    Verifies that the overlay data arrays and the layer toggle state are wired
+    up in the page's inline script so the renderer can draw markers.
+    """
+    await _make_repo(db_session)
+    response = await client.get("/musehub/ui/testuser/test-beats/timeline")
+    assert response.status_code == 200
+    body = response.text
+    # State variables for overlay data must be declared.
+    assert "let sessions" in body
+    assert "let mergedPRs" in body
+    assert "let releases" in body
+    # Layer toggle state must include the three new keys.
+    assert "sessions: true" in body
+    assert "prs: true" in body
+    assert "releases: true" in body
+
+
+@pytest.mark.anyio
+async def test_timeline_page_overlay_fetch_calls(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Timeline page must issue API calls for sessions, merged PRs, and releases.
+
+    Checks that the inline script calls the correct API paths so the browser
+    will fetch overlay data when the page loads.
+    """
+    await _make_repo(db_session)
+    response = await client.get("/musehub/ui/testuser/test-beats/timeline")
+    assert response.status_code == 200
+    body = response.text
+    assert "/sessions" in body
+    assert "state=merged" in body
+    assert "/releases" in body
+
+
+@pytest.mark.anyio
+async def test_timeline_page_overlay_legend(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Timeline page legend must describe the three new overlay marker types."""
+    await _make_repo(db_session)
+    response = await client.get("/musehub/ui/testuser/test-beats/timeline")
+    assert response.status_code == 200
+    body = response.text
+    # Colour labels in the legend.
+    assert "teal" in body.lower()
+    assert "gold" in body.lower()
+
+
 # ---------------------------------------------------------------------------
 # Embed player route tests (issue #244)
 # ---------------------------------------------------------------------------
