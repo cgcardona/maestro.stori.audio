@@ -49,6 +49,28 @@ gh pr checkout <pr-number>
 git fetch origin
 ```
 
+### Regression check
+
+Confirm no regressions were introduced by checking what landed on dev since
+this branch diverged. Run this **now** — before `git merge origin/dev` — while
+`HEAD` and `origin/dev` still have distinct histories.
+
+```bash
+git log --oneline HEAD..origin/dev       # new commits on dev since branch point
+git diff HEAD..origin/dev --name-only    # files those commits touch
+```
+
+If any of those files overlap with this PR's changes, run the full test suite
+after the merge step:
+```bash
+cd "$REPO" && docker compose exec maestro sh -c \
+  "PYTHONPATH=/worktrees/$WTNAME pytest /worktrees/$WTNAME/tests/ -v --timeout=60"
+```
+
+Any regression found drops the grade to **D** regardless of the PR's own quality.
+
+---
+
 **Pre-check — these three files conflict on virtually every parallel Muse batch.**
 Know the rule before you merge; resolve mechanically, not by guessing.
 
@@ -137,24 +159,6 @@ sleep 5
 If new conflicts appear after the final sync, use the Conflict Playbook above — same rules apply.
 For markdown-only conflicts, skip mypy. For Python conflicts, re-run mypy before pushing.
 If the conflicts are non-trivial and introduce risk, note them in the grade reasoning and file a follow-up issue.
-
-### Regression check
-
-Before merging, confirm no regressions were introduced by checking what
-landed on dev since this branch diverged:
-
-```bash
-git log --oneline HEAD..origin/dev       # new commits on dev since branch point
-git diff HEAD..origin/dev --name-only    # files those commits touch
-```
-
-If any of those files overlap with this PR's changes, run the full test suite:
-```bash
-cd "$REPO" && docker compose exec maestro sh -c \
-  "PYTHONPATH=/worktrees/$WTNAME pytest /worktrees/$WTNAME/tests/ -v --timeout=60"
-```
-
-Any regression found drops the grade to **D** regardless of the PR's own quality.
 
 ---
 

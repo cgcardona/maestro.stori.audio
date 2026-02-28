@@ -226,9 +226,9 @@ async def test_ui_pages_include_token_form(
         response = await client.get(path)
         assert response.status_code == 200
         body = response.text
-        # The JS setToken / getToken helpers must be present
-        assert "localStorage" in body
-        assert "musehub_token" in body
+        # musehub.js (which contains localStorage helpers) must be loaded
+        assert "musehub/static/musehub.js" in body
+        assert "token-form" in body
 
 
 @pytest.mark.anyio
@@ -921,8 +921,8 @@ async def test_timeline_page_includes_token_form(
     response = await client.get("/musehub/ui/testuser/test-beats/timeline")
     assert response.status_code == 200
     body = response.text
-    assert "localStorage" in body
-    assert "musehub_token" in body
+    assert "musehub/static/musehub.js" in body
+    assert "token-form" in body
 
 
 # ---------------------------------------------------------------------------
@@ -961,7 +961,7 @@ async def test_session_list_page_returns_200(
     body = response.text
     assert "Muse Hub" in body
     assert "Sessions" in body
-    assert "localStorage" in body
+    assert "musehub/static/musehub.js" in body
 
 
 @pytest.mark.anyio
@@ -1411,7 +1411,7 @@ async def test_ui_nav_links_use_owner_slug_not_uuid_repo_page(
     assert response.status_code == 200
     body = response.text
     # JS base variable must use owner/slug, not UUID concatenation
-    assert "const base = '/musehub/ui/testuser/test-beats'" in body
+    assert '"/musehub/ui/testuser/test-beats"' in body
     # UUID-concatenation pattern must NOT appear
     assert "'/musehub/ui/' + repoId" not in body
 
@@ -1427,7 +1427,7 @@ async def test_ui_nav_links_use_owner_slug_not_uuid_commit_page(
     response = await client.get(f"/musehub/ui/testuser/test-beats/commits/{commit_id}")
     assert response.status_code == 200
     body = response.text
-    assert "const base = '/musehub/ui/testuser/test-beats'" in body
+    assert '"/musehub/ui/testuser/test-beats"' in body
     assert "'/musehub/ui/' + repoId" not in body
 
 
@@ -1441,7 +1441,7 @@ async def test_ui_nav_links_use_owner_slug_not_uuid_graph_page(
     response = await client.get("/musehub/ui/testuser/test-beats/graph")
     assert response.status_code == 200
     body = response.text
-    assert "const base = '/musehub/ui/testuser/test-beats'" in body
+    assert '"/musehub/ui/testuser/test-beats"' in body
     assert "'/musehub/ui/' + repoId" not in body
 
 
@@ -1455,7 +1455,7 @@ async def test_ui_nav_links_use_owner_slug_not_uuid_pr_list_page(
     response = await client.get("/musehub/ui/testuser/test-beats/pulls")
     assert response.status_code == 200
     body = response.text
-    assert "const base = '/musehub/ui/testuser/test-beats'" in body
+    assert '"/musehub/ui/testuser/test-beats"' in body
     assert "'/musehub/ui/' + repoId" not in body
 
 
@@ -1469,7 +1469,7 @@ async def test_ui_nav_links_use_owner_slug_not_uuid_releases_page(
     response = await client.get("/musehub/ui/testuser/test-beats/releases")
     assert response.status_code == 200
     body = response.text
-    assert "const base = '/musehub/ui/testuser/test-beats'" in body
+    assert '"/musehub/ui/testuser/test-beats"' in body
     assert "'/musehub/ui/' + repoId" not in body
 
 

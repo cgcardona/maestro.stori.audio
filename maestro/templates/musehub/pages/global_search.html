@@ -1,0 +1,129 @@
+{% extends "musehub/base.html" %}
+
+{% block title %}Search{% endblock %}
+{% block breadcrumb %}Search{% endblock %}
+
+{% block auth_guard %}{% endblock %}
+
+{% block page_data %}
+const INITIAL_Q    = {{ initial_q | tojson }};
+const INITIAL_MODE = {{ initial_mode | tojson }};
+{% endblock %}
+
+{% block page_script %}
+{% raw %}
+function escHtml(s) {
+  if (!s) return '';
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function audioHtml(groupId, audioOid) {
+  if (!audioOid) return '';
+  const url = '/api/v1/musehub/repos/' + encodeURIComponent(groupId) + '/objects/' + encodeURIComponent(audioOid) + '/content';
+  return '<audio controls src="' + url + '" style="width:100%;margin-top:6px"></audio>';
+}
+
+function renderGroups(groups) {
+  if (!groups || groups.length === 0) {
+    return '<p class="loading">No results found.</p>';
+  }
+  return groups.map(g => {
+    const matchRows = g.matches.map(m => `
+      <div class="commit-row">
+        <a class="commit-sha" href="/musehub/ui/${encodeURIComponent(g.repoOwner)}/${encodeURIComponent(g.repoSlug)}/commits/${escHtml(m.commitId)}">${shortSha(m.commitId)}</a>
+        <span class="commit-msg">${escHtml(m.message)}</span>
+        <span class="commit-meta">${escHtml(m.author)} &bull; ${fmtDate(m.timestamp)}</span>
+      </div>`).join('');
+
+    const moreNote = g.totalMatches > g.matches.length
+      ? `<p style="font-size:12px;color:#8b949e;margin-top:6px">Showing ${g.matches.length} of ${g.totalMatches} matches in this repo.</p>`
+      : '';
+
+    return `
+      <div class="card">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+          <h2 style="margin:0">
+            <a href="/musehub/ui/${encodeURIComponent(g.repoOwner)}/${encodeURIComponent(g.repoSlug)}">${escHtml(g.repoName)}</a>
+          </h2>
+          <span class="badge badge-open" style="font-size:11px">${escHtml(g.repoVisibility)}</span>
+          <span style="font-size:12px;color:#8b949e">owner: ${escHtml(g.repoOwner)}</span>
+        </div>
+        ${matchRows}
+        ${moreNote}
+        ${audioHtml(g.repoId, g.matches[0] && g.matches[0].audioObjectId)}
+      </div>`;
+  }).join('');
+}
+
+async function search(page) {
+  const q    = document.getElementById('q-input').value.trim();
+  const mode = document.getElementById('mode-sel').value;
+  if (!q) { document.getElementById('results').innerHTML = ''; return; }
+
+  document.getElementById('results').innerHTML = '<p class="loading">Searching&#8230;</p>';
+  try {
+    const params = new URLSearchParams({ q, mode, page: page || 1, page_size: 10 });
+    const data = await apiFetch('/search?' + params.toString());
+    const groups = data.groups || [];
+    const total  = data.totalReposSearched || 0;
+    const pg     = data.page || 1;
+    const ps     = data.pageSize || 10;
+
+    const summary = `<p style="font-size:13px;color:#8b949e;margin-bottom:12px">
+      ${groups.length} repo${groups.length !== 1 ? 's' : ''} with matches
+      &mdash; ${total} public repo${total !== 1 ? 's' : ''} searched
+      (page ${pg})
+    </p>`;
+
+    const prevBtn = pg > 1
+      ? `<button class="btn btn-secondary" style="font-size:13px" onclick="search(${pg-1})">&#8592; Prev</button>`
+      : '';
+    const nextBtn = groups.length === ps
+      ? `<button class="btn btn-secondary" style="font-size:13px" onclick="search(${pg+1})">Next &#8594;</button>`
+      : '';
+    const pager = (prevBtn || nextBtn)
+      ? `<div style="display:flex;gap:8px;margin-top:12px">${prevBtn}${nextBtn}</div>`
+      : '';
+
+    document.getElementById('results').innerHTML = summary + renderGroups(groups) + pager;
+
+    const url = new URL(window.location.href);
+    url.searchParams.set('q', q);
+    url.searchParams.set('mode', mode);
+    history.replaceState(null, '', url.toString());
+  } catch(e) {
+    if (e.message !== 'auth')
+      document.getElementById('results').innerHTML = '<p class="error">&#10005; ' + escHtml(e.message) + '</p>';
+  }
+}
+
+document.getElementById('content').innerHTML = `
+  <div class="card" style="margin-bottom:16px">
+    <h1 style="margin-bottom:12px">&#128269; Global Search</h1>
+    <form id="search-form" style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end">
+      <input id="q-input" type="text" placeholder="Search commit messages&#8230;"
+             style="flex:1;min-width:200px;background:#0d1117;color:#c9d1d9;
+                    border:1px solid #30363d;border-radius:6px;padding:8px 12px;font-size:14px" />
+      <select id="mode-sel"
+              style="background:#21262d;color:#c9d1d9;border:1px solid #30363d;
+                     border-radius:6px;padding:8px 10px;font-size:14px">
+        <option value="keyword">Keyword</option>
+        <option value="pattern">Pattern</option>
+      </select>
+      <button type="submit" class="btn btn-primary">Search</button>
+    </form>
+  </div>
+  <div id="results"></div>
+`;
+
+document.getElementById('q-input').value    = INITIAL_Q;
+document.getElementById('mode-sel').value   = INITIAL_MODE;
+
+if (INITIAL_Q) { search(1); }
+
+document.getElementById('search-form').addEventListener('submit', function(e) {
+  e.preventDefault();
+  search(1);
+});
+{% endraw %}
+{% endblock %}

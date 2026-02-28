@@ -1,0 +1,60 @@
+{% extends "musehub/base.html" %}
+
+{% block title %}Pull Requests{% endblock %}
+{% block breadcrumb %}
+  <a href="/musehub/ui/{{ owner }}/{{ repo_slug }}">{{ owner }}/{{ repo_slug }}</a> / pulls
+{% endblock %}
+
+{% block page_data %}
+const repoId = {{ repo_id | tojson }};
+const base   = {{ base_url | tojson }};
+{% endblock %}
+
+{% block page_script %}
+{% raw %}
+function escHtml(s) {
+  if (!s) return '';
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+async function load(state) {
+  try {
+    const data = await apiFetch('/repos/' + repoId + '/pull-requests?state=' + state);
+    const prs  = data.pullRequests || [];
+
+    const rows = prs.length === 0
+      ? '<p class="loading">No pull requests found.</p>'
+      : prs.map(pr => `
+        <div class="pr-row">
+          <span class="badge badge-${pr.state}">${pr.state}</span>
+          <div style="flex:1">
+            <a href="${base}/pulls/${pr.prId}">${escHtml(pr.title)}</a>
+            <div style="font-size:12px;color:#8b949e;margin-top:2px">
+              ${escHtml(pr.fromBranch)} &rarr; ${escHtml(pr.toBranch)} &bull; ${fmtDate(pr.createdAt)}
+            </div>
+          </div>
+        </div>`).join('');
+
+    document.getElementById('content').innerHTML = `
+      <div style="margin-bottom:12px">
+        <a href="${base}">&larr; Back to repo</a>
+      </div>
+      <div class="card">
+        <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px">
+          <h1 style="margin:0">Pull Requests</h1>
+          <select onchange="load(this.value)">
+            <option value="open" ${state==='open'?'selected':''}>Open</option>
+            <option value="all"  ${state==='all' ?'selected':''}>All</option>
+          </select>
+        </div>
+        ${rows}
+      </div>`;
+  } catch(e) {
+    if (e.message !== 'auth')
+      document.getElementById('content').innerHTML = '<p class="error">&#10005; ' + escHtml(e.message) + '</p>';
+  }
+}
+
+load('open');
+{% endraw %}
+{% endblock %}
