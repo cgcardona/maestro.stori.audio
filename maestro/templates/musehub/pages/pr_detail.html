@@ -186,6 +186,100 @@ async function mergePrWithStrategy() {
   }
 }
 
+function targetBadge(comment) {
+  if (comment.targetType === 'general') return '';
+  let label = comment.targetType;
+  if (comment.targetTrack) label += ': ' + comment.targetTrack;
+  if (comment.targetBeatStart != null) label += ' beats ' + comment.targetBeatStart;
+  if (comment.targetBeatEnd   != null) label += '–' + comment.targetBeatEnd;
+  if (comment.targetNotePitch != null) label += ' pitch=' + comment.targetNotePitch;
+  return `<span style="font-size:11px;background:var(--surface2,#21262d);color:var(--fg2,#8b949e);border-radius:3px;padding:1px 6px;margin-left:8px">${escHtml(label)}</span>`;
+}
+
+function renderComment(c, isReply) {
+  const indent = isReply ? 'margin-left:32px;' : '';
+  const repliesHtml = (c.replies || []).map(r => renderComment(r, true)).join('');
+  const replyBtn = isReply ? '' :
+    `<button onclick="showReplyForm('${escHtml(c.commentId)}')" style="background:none;border:none;color:var(--accent,#58a6ff);cursor:pointer;font-size:12px;padding:0">Reply</button>`;
+  return `
+    <div style="${indent}border-left:2px solid var(--border,#30363d);padding:8px 12px;margin-bottom:8px">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+        <span style="font-weight:600">${escHtml(c.author)}</span>
+        <span style="font-size:11px;color:var(--fg2,#8b949e)">${fmtDate(c.createdAt)}</span>
+        ${targetBadge(c)}
+      </div>
+      <div style="white-space:pre-wrap;margin-bottom:4px">${escHtml(c.body)}</div>
+      ${replyBtn}
+      <div id="reply-form-${escHtml(c.commentId)}" style="display:none;margin-top:8px"></div>
+      ${repliesHtml}
+    </div>`;
+}
+
+function showReplyForm(parentId) {
+  const container = document.getElementById('reply-form-' + parentId);
+  if (!container) return;
+  container.style.display = 'block';
+  container.innerHTML = `
+    <textarea id="reply-body-${parentId}" rows="3" placeholder="Write a reply…"
+      style="width:100%;background:var(--surface2,#21262d);color:var(--fg,#e6edf3);border:1px solid var(--border,#30363d);border-radius:6px;padding:6px;resize:vertical;font-size:13px"></textarea>
+    <div style="margin-top:4px;display:flex;gap:8px">
+      <button onclick="submitComment('${parentId}')" class="btn btn-primary" style="font-size:12px;padding:4px 10px">Reply</button>
+      <button onclick="document.getElementById('reply-form-${parentId}').style.display='none'" style="background:none;border:none;color:var(--fg2,#8b949e);cursor:pointer;font-size:12px">Cancel</button>
+    </div>`;
+}
+
+async function submitComment(parentId) {
+  const bodyEl = parentId
+    ? document.getElementById('reply-body-' + parentId)
+    : document.getElementById('new-comment-body');
+  const targetTypeEl = document.getElementById('new-comment-target');
+  const trackEl = document.getElementById('new-comment-track');
+  const beatStartEl = document.getElementById('new-comment-beat-start');
+  const beatEndEl = document.getElementById('new-comment-beat-end');
+
+  if (!bodyEl || !bodyEl.value.trim()) return;
+
+  const payload = {
+    body: bodyEl.value.trim(),
+    targetType: (parentId || !targetTypeEl) ? 'general' : (targetTypeEl.value || 'general'),
+    targetTrack: (!parentId && trackEl && trackEl.value) ? trackEl.value : null,
+    targetBeatStart: (!parentId && beatStartEl && beatStartEl.value) ? parseFloat(beatStartEl.value) : null,
+    targetBeatEnd: (!parentId && beatEndEl && beatEndEl.value) ? parseFloat(beatEndEl.value) : null,
+    parentCommentId: parentId || null,
+  };
+
+  try {
+    await apiFetch('/repos/' + repoId + '/pull-requests/' + prId + '/comments', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+    await loadComments();
+    bodyEl.value = '';
+  } catch(e) {
+    if (e.message !== 'auth') alert('Failed to post comment: ' + e.message);
+  }
+}
+
+async function loadComments() {
+  const section = document.getElementById('comments-section');
+  if (!section) return;
+  try {
+    const data = await apiFetch('/repos/' + repoId + '/pull-requests/' + prId + '/comments');
+    const list = data.comments || [];
+    const countEl = document.getElementById('comment-count');
+    if (countEl) countEl.textContent = data.total || 0;
+
+    const listEl = document.getElementById('comment-list');
+    if (listEl) {
+      listEl.innerHTML = list.length
+        ? list.map(c => renderComment(c, false)).join('')
+        : '<p style="color:var(--fg2,#8b949e);font-size:13px">No review comments yet.</p>';
+    }
+  } catch(e) {
+    // Non-fatal — comment section degrades gracefully
+  }
+}
+
 // ── Timeline event row ───────────────────────────────────────────────────────
 function timelineRow(icon, label, ts) {
   const time = ts ? new Date(ts).toLocaleString() : '';
@@ -372,9 +466,55 @@ async function load() {
 
       <!-- ── PR Timeline ───────────────────────────────────────────────── -->
       ${timelineHtml}
-    `;
 
-  } catch (e) {
+      <!-- Review comments section -->
+      <div id="comments-section" class="card" style="margin-top:16px">
+        <h2 style="margin:0 0 12px">Review comments (<span id="comment-count">0</span>)</h2>
+        <div id="comment-list"></div>
+
+        <!-- New top-level comment form -->
+        <details style="margin-top:16px">
+          <summary style="cursor:pointer;font-weight:600;color:var(--accent,#58a6ff)">Leave a review comment</summary>
+          <div style="margin-top:12px">
+            <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:8px">
+              <div>
+                <label style="font-size:12px;color:var(--fg2,#8b949e)">Target</label>
+                <select id="new-comment-target" style="width:100%;background:var(--surface2,#21262d);color:var(--fg,#e6edf3);border:1px solid var(--border,#30363d);border-radius:4px;padding:4px">
+                  <option value="general">General</option>
+                  <option value="track">Track</option>
+                  <option value="region">Region</option>
+                  <option value="note">Note</option>
+                </select>
+              </div>
+              <div>
+                <label style="font-size:12px;color:var(--fg2,#8b949e)">Track name</label>
+                <input id="new-comment-track" type="text" placeholder="e.g. bass"
+                  style="width:100%;background:var(--surface2,#21262d);color:var(--fg,#e6edf3);border:1px solid var(--border,#30363d);border-radius:4px;padding:4px">
+              </div>
+              <div style="display:flex;gap:6px">
+                <div style="flex:1">
+                  <label style="font-size:12px;color:var(--fg2,#8b949e)">Beat start</label>
+                  <input id="new-comment-beat-start" type="number" min="0" step="0.5" placeholder="16"
+                    style="width:100%;background:var(--surface2,#21262d);color:var(--fg,#e6edf3);border:1px solid var(--border,#30363d);border-radius:4px;padding:4px">
+                </div>
+                <div style="flex:1">
+                  <label style="font-size:12px;color:var(--fg2,#8b949e)">Beat end</label>
+                  <input id="new-comment-beat-end" type="number" min="0" step="0.5" placeholder="24"
+                    style="width:100%;background:var(--surface2,#21262d);color:var(--fg,#e6edf3);border:1px solid var(--border,#30363d);border-radius:4px;padding:4px">
+                </div>
+              </div>
+            </div>
+            <textarea id="new-comment-body" rows="4" placeholder="Write a review comment (Markdown supported)…"
+              style="width:100%;background:var(--surface2,#21262d);color:var(--fg,#e6edf3);border:1px solid var(--border,#30363d);border-radius:6px;padding:8px;resize:vertical;font-size:13px"></textarea>
+            <div style="margin-top:8px">
+              <button onclick="submitComment(null)" class="btn btn-primary">Comment</button>
+            </div>
+          </div>
+        </details>
+      </div>`;
+
+    await loadComments();
+  } catch(e) {
     if (e.message !== 'auth')
       document.getElementById('content').innerHTML =
         '<p class="error">&#10005; ' + escHtml(e.message) + '</p>';
