@@ -515,6 +515,7 @@ class PRResponse(CamelModel):
     from_branch: str = Field(..., description="Source branch name", examples=["feat/bossa-nova-bridge"])
     to_branch: str = Field(..., description="Target branch name", examples=["main"])
     merge_commit_id: str | None = Field(default=None, description="Merge commit ID; only set after merge")
+    merged_at: datetime | None = Field(default=None, description="UTC timestamp when the PR was merged; None while open or closed")
     author: str = ""
     created_at: datetime = Field(..., description="PR creation timestamp (ISO-8601 UTC)")
 

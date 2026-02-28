@@ -46,6 +46,7 @@ def _to_pr_response(row: db.MusehubPullRequest) -> PRResponse:
         from_branch=row.from_branch,
         to_branch=row.to_branch,
         merge_commit_id=row.merge_commit_id,
+        merged_at=row.merged_at,
         author=row.author,
         created_at=row.created_at,
     )
@@ -147,7 +148,9 @@ async def merge_pr(
 
     Creates a merge commit on ``to_branch`` with parent_ids =
     [to_branch head, from_branch head], updates the branch head pointer, and
-    marks the PR as ``merged``.
+    marks the PR as ``merged``.  Sets ``merged_at`` to the current UTC time
+    so the timeline overlay can position the merge marker at the actual merge
+    instant rather than the PR creation date.
 
     Raises:
         ValueError: PR not found or ``from_branch`` does not exist or has no commits.
@@ -203,9 +206,10 @@ async def merge_pr(
     else:
         to_b.head_commit_id = merge_commit_id
 
-    # Mark PR as merged.
+    # Mark PR as merged and record the exact merge timestamp.
     pr.state = "merged"
     pr.merge_commit_id = merge_commit_id
+    pr.merged_at = _utc_now()
 
     await session.flush()
     await session.refresh(pr)
