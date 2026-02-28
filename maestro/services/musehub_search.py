@@ -75,7 +75,6 @@ async def _fetch_candidates(
     repo_id: str,
     since: datetime | None,
     until: datetime | None,
-    limit_multiplier: int = 10,
     cap: int = 5000,
 ) -> tuple[list[MuseCliCommit], int]:
     """Fetch candidate commits from DB with optional date range filter.
