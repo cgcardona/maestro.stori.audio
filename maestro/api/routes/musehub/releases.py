@@ -41,7 +41,7 @@ async def create_release(
     repo_id: str,
     body: ReleaseCreate,
     db: AsyncSession = Depends(get_db),
-    _: TokenClaims = Depends(require_valid_token),
+    token: TokenClaims = Depends(require_valid_token),
 ) -> ReleaseResponse:
     """Create a new release tied to an optional commit snapshot.
 
@@ -60,6 +60,7 @@ async def create_release(
             title=body.title,
             body=body.body,
             commit_id=body.commit_id,
+            author=token.get("sub", ""),
         )
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc

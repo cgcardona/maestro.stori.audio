@@ -37,7 +37,7 @@ from maestro.models.musehub import (
     PushResponse,
 )
 from maestro.services.musehub_embeddings import compute_embedding
-from maestro.services.musehub_qdrant import MusehubQdrantClient
+from maestro.services.musehub_qdrant import get_qdrant_client
 
 logger = logging.getLogger(__name__)
 
@@ -316,11 +316,7 @@ def embed_push_commits(
         return
 
     try:
-        client = MusehubQdrantClient(
-            host=settings.qdrant_host,
-            port=settings.qdrant_port,
-        )
-        client.ensure_collection()
+        client = get_qdrant_client()
 
         for commit in commits:
             vector = compute_embedding(commit.message)
