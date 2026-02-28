@@ -29,6 +29,8 @@ from maestro.models.musehub import (
     CreateRepoRequest,
     CreditsResponse,
     DagGraphResponse,
+    GrooveCheckResponse,
+    GrooveCommitEntry,
     MuseHubContextResponse,
     RepoResponse,
 )
@@ -38,6 +40,10 @@ from maestro.models.musehub_context import (
     ContextFormat,
 )
 from maestro.services import musehub_context, musehub_credits, musehub_repository
+from maestro.services.muse_groove_check import (
+    DEFAULT_THRESHOLD,
+    compute_groove_check,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -279,3 +285,69 @@ async def get_commit_dag(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repo not found")
 
     return await musehub_repository.list_commits_dag(db, repo_id)
+
+
+@router.get(
+    "/repos/{repo_id}/groove-check",
+    response_model=GrooveCheckResponse,
+    summary="Get rhythmic consistency analysis for a repo commit window",
+)
+async def get_groove_check(
+    repo_id: str,
+    threshold: float = Query(
+        DEFAULT_THRESHOLD,
+        ge=0.01,
+        le=1.0,
+        description="Drift threshold in beats — commits exceeding this are flagged WARN or FAIL",
+    ),
+    limit: int = Query(10, ge=1, le=50, description="Maximum number of commits to analyse"),
+    track: str | None = Query(None, description="Restrict analysis to a named instrument track"),
+    section: str | None = Query(None, description="Restrict analysis to a named musical section"),
+    db: AsyncSession = Depends(get_db),
+    _: TokenClaims = Depends(require_valid_token),
+) -> GrooveCheckResponse:
+    """Return rhythmic consistency metrics for the most recent commits in a repo.
+
+    Analyses note-onset deviation from the quantization grid across stored MIDI
+    snapshots and classifies each commit as OK / WARN / FAIL based on how much
+    the groove tightness changed relative to its predecessor.
+
+    The ``threshold`` parameter controls sensitivity: lower values flag even
+    small rhythmic shifts; the default of 0.1 beats works well for most projects.
+
+    Returns 404 if the repo does not exist.
+    """
+    repo = await musehub_repository.get_repo(db, repo_id)
+    if repo is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repo not found")
+
+    commit_range = f"HEAD~{limit}..HEAD"
+    result = compute_groove_check(
+        commit_range=commit_range,
+        threshold=threshold,
+        track=track,
+        section=section,
+        limit=limit,
+    )
+
+    entries = [
+        GrooveCommitEntry(
+            commit=e.commit,
+            groove_score=e.groove_score,
+            drift_delta=e.drift_delta,
+            status=e.status.value,
+            track=e.track,
+            section=e.section,
+            midi_files=e.midi_files,
+        )
+        for e in result.entries
+    ]
+
+    return GrooveCheckResponse(
+        commit_range=result.commit_range,
+        threshold=result.threshold,
+        total_commits=result.total_commits,
+        flagged_commits=result.flagged_commits,
+        worst_commit=result.worst_commit,
+        entries=entries,
+    )

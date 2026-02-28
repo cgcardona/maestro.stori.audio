@@ -433,6 +433,7 @@ async def repo_page(repo_id: str) -> HTMLResponse:
                 <a href="${{base}}/issues" class="btn btn-secondary">Issues</a>
                 <a href="${{base}}/credits" class="btn btn-secondary">&#127926; Credits</a>
                 <a href="${{base}}/search" class="btn btn-secondary">&#128269; Search</a>
+                <a href="${{base}}/groove-check" class="btn btn-secondary">&#127941; Groove Check</a>
               </div>
               <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
                 <select id="branch-sel" onchange="load(this.value)">
@@ -2045,6 +2046,231 @@ async def search_page(repo_id: str) -> HTMLResponse:
     html = _page(
         title="Search",
         breadcrumb=f'<a href="/musehub/ui/{repo_id}">{repo_id[:8]}</a> / search',
+        body_script=script,
+    )
+    return HTMLResponse(content=html)
+
+
+@router.get(
+    "/{repo_id}/groove-check",
+    response_class=HTMLResponse,
+    summary="Muse Hub groove check dashboard",
+)
+async def groove_check_page(repo_id: str) -> HTMLResponse:
+    """Render the rhythmic consistency dashboard for a Muse Hub repo.
+
+    Fetches ``GET /api/v1/musehub/repos/{repo_id}/groove-check`` and displays:
+
+    - Summary metrics: total commits analysed, flagged count, worst commit
+    - An SVG bar chart of groove scores over the commit window (lower = tighter)
+    - A per-commit table with status badges (OK / WARN / FAIL), groove score,
+      and drift delta
+
+    The chart encodes status as bar colour: green = OK, orange = WARN,
+    red = FAIL.  Threshold and limit can be adjusted via URL query parameters
+    that are forwarded to the underlying JSON API call.
+
+    Auth is handled client-side via localStorage JWT, consistent with all other
+    Muse Hub UI pages.
+    """
+    script = f"""
+      const repoId  = {repr(repo_id)};
+      const base    = '/musehub/ui/' + repoId;
+      const apiBase = '/api/v1/musehub/repos/' + repoId;
+
+      function escHtml(s) {{
+        if (s === null || s === undefined) return '';
+        return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+      }}
+
+      // ── SVG groove score bar chart ────────────────────────────────────────
+      function renderGrooveChart(entries, width, height) {{
+        if (!entries || !entries.length) {{
+          return '<p class="loading">No data to chart.</p>';
+        }}
+        const maxScore = Math.max(...entries.map(e => e.grooveScore), 0.01);
+        const barW     = Math.max(4, Math.floor((width - 4) / entries.length) - 2);
+        const pad      = {{ left: 40, right: 8, top: 8, bottom: 28 }};
+        const chartH   = height - pad.top - pad.bottom;
+        const chartW   = width  - pad.left - pad.right;
+        const stepX    = chartW / Math.max(entries.length - 1, 1);
+
+        const STATUS_COLOR = {{ 'OK': '#3fb950', 'WARN': '#f0883e', 'FAIL': '#f85149' }};
+
+        // Y-axis gridlines
+        let grid = '';
+        for (let i = 0; i <= 4; i++) {{
+          const y = pad.top + (i / 4) * chartH;
+          const val = (maxScore * (1 - i / 4)).toFixed(3);
+          grid += `<line x1="${{pad.left}}" y1="${{y}}" x2="${{width - pad.right}}" y2="${{y}}"
+            stroke="#21262d" stroke-width="1"/>
+            <text x="${{pad.left - 4}}" y="${{y + 4}}" font-size="9" fill="#8b949e"
+                  text-anchor="end">${{val}}</text>`;
+        }}
+
+        // Bars
+        let bars = '';
+        entries.forEach((e, i) => {{
+          const x    = pad.left + i * (chartW / entries.length) + 1;
+          const barH = (e.grooveScore / maxScore) * chartH;
+          const y    = pad.top + chartH - barH;
+          const color = STATUS_COLOR[e.status] || '#58a6ff';
+          bars += `<rect x="${{x}}" y="${{y}}" width="${{barW}}" height="${{barH}}"
+            fill="${{color}}" opacity="0.85" rx="1">
+            <title>${{escHtml(e.commit)}} — score: ${{e.grooveScore.toFixed(4)}} (${{e.status}})</title>
+          </rect>`;
+          // Commit label (every 2nd for readability)
+          if (entries.length <= 14 || i % 2 === 0) {{
+            bars += `<text x="${{x + barW / 2}}" y="${{height - 6}}" font-size="9" fill="#8b949e"
+              text-anchor="middle" transform="rotate(-30 ${{x + barW / 2}} ${{height - 6}})">${{escHtml(e.commit.substring(0,6))}}</text>`;
+          }}
+        }});
+
+        // Y-axis label
+        const axisLabel = `<text x="10" y="${{height / 2}}" font-size="10" fill="#8b949e"
+          transform="rotate(-90 10 ${{height / 2}})" text-anchor="middle">groove score (beats)</text>`;
+
+        return `<svg width="100%" viewBox="0 0 ${{width}} ${{height}}"
+          style="display:block;overflow:visible" preserveAspectRatio="xMidYMid meet">
+          ${{grid}}${{bars}}${{axisLabel}}
+        </svg>`;
+      }}
+
+      // ── Status badge HTML ─────────────────────────────────────────────────
+      function statusBadge(status) {{
+        const colors = {{ 'OK': '#3fb950', 'WARN': '#f0883e', 'FAIL': '#f85149' }};
+        const bg = colors[status] || '#8b949e';
+        return `<span style="display:inline-block;padding:1px 8px;border-radius:10px;
+          font-size:11px;font-weight:700;background:${{bg}};color:#0d1117">${{escHtml(status)}}</span>`;
+      }}
+
+      // ── Main load ─────────────────────────────────────────────────────────
+      async function load(threshold, limit) {{
+        document.getElementById('content').innerHTML = '<p class="loading">Analysing groove&#8230;</p>';
+        try {{
+          let url = '/repos/' + repoId + '/groove-check?limit=' + limit;
+          if (threshold) url += '&threshold=' + threshold;
+          const data = await apiFetch(url);
+
+          const entries = data.entries || [];
+
+          const chartHtml = renderGrooveChart(entries, 640, 220);
+
+          const summaryBadge = data.flaggedCommits > 0
+            ? `<span style="color:#f0883e;font-weight:600">${{data.flaggedCommits}} flagged</span>`
+            : `<span style="color:#3fb950;font-weight:600">All clear</span>`;
+
+          const worstHtml = data.worstCommit
+            ? `<a href="${{base}}/commits/${{data.worstCommit}}" style="font-family:monospace">${{escHtml(data.worstCommit)}}</a>`
+            : '<em style="color:#8b949e">none</em>';
+
+          const tableRows = entries.length === 0
+            ? '<tr><td colspan="6" style="text-align:center;color:#8b949e;padding:16px">No commits analysed yet.</td></tr>'
+            : entries.map(e => `<tr>
+                <td style="font-family:monospace;font-size:13px">
+                  <a href="${{base}}/commits/${{e.commit}}">${{escHtml(e.commit)}}</a>
+                </td>
+                <td>${{statusBadge(e.status)}}</td>
+                <td style="font-size:13px">${{e.grooveScore.toFixed(4)}}</td>
+                <td style="font-size:13px">${{e.driftDelta > 0 ? '+' : ''}}${{e.driftDelta.toFixed(4)}}</td>
+                <td style="font-size:13px;color:#8b949e">${{escHtml(e.track)}}</td>
+                <td style="font-size:13px;color:#8b949e">${{e.midiFiles}}</td>
+              </tr>`).join('');
+
+          document.getElementById('content').innerHTML = `
+            <div style="margin-bottom:12px">
+              <a href="${{base}}">&larr; Back to repo</a>
+            </div>
+
+            <!-- Summary cards -->
+            <div class="card">
+              <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;flex-wrap:wrap">
+                <h1 style="margin:0">&#127941; Groove Check</h1>
+                <span style="flex:1"></span>
+                <label style="font-size:13px;color:#8b949e;display:flex;align-items:center;gap:6px">
+                  Limit:
+                  <select id="limit-sel" onchange="load(document.getElementById('thr-inp').value, this.value)">
+                    ${{[5,7,10,20,30].map(n => '<option value="' + n + '"' + (n == limit ? ' selected' : '') + '>' + n + ' commits</option>').join('')}}
+                  </select>
+                </label>
+                <label style="font-size:13px;color:#8b949e;display:flex;align-items:center;gap:6px">
+                  Threshold:
+                  <input id="thr-inp" type="number" step="0.01" min="0.01" max="1" value="${{threshold}}"
+                    style="width:70px;background:#0d1117;color:#c9d1d9;border:1px solid #30363d;
+                           border-radius:6px;padding:4px 8px;font-size:13px"
+                    onchange="load(this.value, document.getElementById('limit-sel').value)" />
+                </label>
+              </div>
+
+              <div class="meta-row" style="margin-bottom:16px">
+                <div class="meta-item">
+                  <span class="meta-label">Range</span>
+                  <span class="meta-value" style="font-family:monospace;font-size:13px">${{escHtml(data.commitRange)}}</span>
+                </div>
+                <div class="meta-item">
+                  <span class="meta-label">Threshold</span>
+                  <span class="meta-value">${{data.threshold.toFixed(3)}} beats</span>
+                </div>
+                <div class="meta-item">
+                  <span class="meta-label">Commits</span>
+                  <span class="meta-value">${{data.totalCommits}}</span>
+                </div>
+                <div class="meta-item">
+                  <span class="meta-label">Flagged</span>
+                  <span class="meta-value">${{summaryBadge}} / ${{data.totalCommits}}</span>
+                </div>
+                <div class="meta-item">
+                  <span class="meta-label">Worst commit</span>
+                  <span class="meta-value">${{worstHtml}}</span>
+                </div>
+              </div>
+
+              <!-- SVG chart -->
+              <div style="background:#0d1117;border:1px solid #21262d;border-radius:6px;
+                          padding:12px;overflow-x:auto;margin-bottom:4px">
+                ${{chartHtml}}
+              </div>
+              <p style="font-size:11px;color:#8b949e;margin-top:4px">
+                Bar height = groove score (lower = tighter to quantization grid).
+                &#9646; Green = OK &nbsp; &#9646; Orange = WARN &nbsp; &#9646; Red = FAIL
+              </p>
+            </div>
+
+            <!-- Per-commit table -->
+            <div class="card">
+              <h2 style="margin-bottom:12px">Per-Commit Metrics</h2>
+              <div style="overflow-x:auto">
+                <table style="width:100%;border-collapse:collapse;font-size:13px">
+                  <thead>
+                    <tr style="border-bottom:1px solid #30363d">
+                      <th style="text-align:left;padding:8px 4px;color:#8b949e;font-weight:500">Commit</th>
+                      <th style="text-align:left;padding:8px 4px;color:#8b949e;font-weight:500">Status</th>
+                      <th style="text-align:left;padding:8px 4px;color:#8b949e;font-weight:500">Groove Score</th>
+                      <th style="text-align:left;padding:8px 4px;color:#8b949e;font-weight:500">Drift &Delta;</th>
+                      <th style="text-align:left;padding:8px 4px;color:#8b949e;font-weight:500">Track</th>
+                      <th style="text-align:left;padding:8px 4px;color:#8b949e;font-weight:500">MIDI Files</th>
+                    </tr>
+                  </thead>
+                  <tbody style="divide-y:1px solid #21262d">
+                    ${{tableRows}}
+                  </tbody>
+                </table>
+              </div>
+            </div>`;
+        }} catch(e) {{
+          if (e.message !== 'auth')
+            document.getElementById('content').innerHTML =
+              '<p class="error">&#10005; ' + escHtml(e.message) + '</p>';
+        }}
+      }}
+
+      load({repr(0.1)}, {repr(10)});
+    """
+    html = _page(
+        title="Groove Check",
+        breadcrumb=(
+            f'<a href="/musehub/ui/{repo_id}">{repo_id[:8]}</a> / groove-check'
+        ),
         body_script=script,
     )
     return HTMLResponse(content=html)

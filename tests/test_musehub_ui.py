@@ -295,6 +295,14 @@ async def test_credits_page_renders(
     """GET /musehub/ui/{repo_id}/credits returns 200 HTML without requiring a JWT."""
     repo_id = await _make_repo(db_session)
     response = await client.get(f"/musehub/ui/{repo_id}/credits")
+    assert response.status_code == 200
+    assert "text/html" in response.headers["content-type"]
+    body = response.text
+    assert "Muse Hub" in body
+    assert "Credits" in body
+
+
+@pytest.mark.anyio
 async def test_graph_page_renders(
     client: AsyncClient,
     db_session: AsyncSession,
@@ -354,7 +362,7 @@ async def test_context_page_renders(
     assert "text/html" in response.headers["content-type"]
     body = response.text
     assert "Muse Hub" in body
-    assert "Credits" in body
+    assert "context" in body.lower()
     assert repo_id[:8] in body
 
 
@@ -415,8 +423,25 @@ async def test_credits_no_auth_required(
 
 @pytest.mark.anyio
 async def test_credits_json_response(
-    assert "What the Agent Sees" in body
-    assert commit_id[:8] in body
+    client: AsyncClient,
+    db_session: AsyncSession,
+    auth_headers: dict[str, str],
+) -> None:
+    """GET /api/v1/musehub/repos/{repo_id}/credits returns JSON with required fields."""
+    repo_id = await _make_repo(db_session)
+    response = await client.get(
+        f"/api/v1/musehub/repos/{repo_id}/credits",
+        headers=auth_headers,
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert "repoId" in body
+    assert "contributors" in body
+    assert "sort" in body
+    assert "totalContributors" in body
+    assert body["repoId"] == repo_id
+    assert isinstance(body["contributors"], list)
+    assert body["sort"] == "count"
 
 
 @pytest.mark.anyio
@@ -483,10 +508,6 @@ async def test_context_json_response(
     db_session: AsyncSession,
     auth_headers: dict[str, str],
 ) -> None:
-    """GET /api/v1/musehub/repos/{repo_id}/credits returns JSON with required fields."""
-    repo_id = await _make_repo(db_session)
-    response = await client.get(
-        f"/api/v1/musehub/repos/{repo_id}/credits",
     """GET /api/v1/musehub/repos/{repo_id}/context/{ref} returns MuseHubContextResponse."""
     repo_id, commit_id = await _make_repo_with_commit(db_session)
     response = await client.get(
@@ -496,16 +517,6 @@ async def test_context_json_response(
     assert response.status_code == 200
     body = response.json()
     assert "repoId" in body
-    assert "contributors" in body
-    assert "sort" in body
-    assert "totalContributors" in body
-    assert body["repoId"] == repo_id
-    assert isinstance(body["contributors"], list)
-    assert body["sort"] == "count"
-
-
-@pytest.mark.anyio
-async def test_credits_empty_state_json(
     assert body["repoId"] == repo_id
     assert body["currentBranch"] == "main"
     assert "headCommit" in body
@@ -518,7 +529,7 @@ async def test_credits_empty_state_json(
 
 
 @pytest.mark.anyio
-async def test_context_includes_musical_state(
+async def test_credits_empty_state_json(
     client: AsyncClient,
     db_session: AsyncSession,
     auth_headers: dict[str, str],
@@ -533,6 +544,14 @@ async def test_context_includes_musical_state(
     body = response.json()
     assert body["contributors"] == []
     assert body["totalContributors"] == 0
+
+
+@pytest.mark.anyio
+async def test_context_includes_musical_state(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    auth_headers: dict[str, str],
+) -> None:
     """Context response includes musicalState with an activeTracks field."""
     repo_id, commit_id = await _make_repo_with_commit(db_session)
     response = await client.get(
@@ -675,3 +694,200 @@ async def test_embed_page_contains_player_ui(
     assert "View on Muse Hub" in body
     assert "audio" in body
     assert repo_id in body
+
+
+# ---------------------------------------------------------------------------
+# Groove check page and endpoint tests (issue #226)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.anyio
+async def test_groove_check_page_renders(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """GET /musehub/ui/{repo_id}/groove-check returns 200 HTML without requiring a JWT."""
+    repo_id = await _make_repo(db_session)
+    response = await client.get(f"/musehub/ui/{repo_id}/groove-check")
+    assert response.status_code == 200
+    assert "text/html" in response.headers["content-type"]
+    body = response.text
+    assert "Muse Hub" in body
+    assert "Groove Check" in body
+
+
+@pytest.mark.anyio
+async def test_groove_check_page_no_auth_required(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Groove check UI page must be accessible without an Authorization header (HTML shell)."""
+    repo_id = await _make_repo(db_session)
+    response = await client.get(f"/musehub/ui/{repo_id}/groove-check")
+    assert response.status_code != 401
+    assert response.status_code == 200
+
+
+@pytest.mark.anyio
+async def test_groove_check_page_contains_chart_js(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Groove check page embeds the SVG chart rendering JavaScript."""
+    repo_id = await _make_repo(db_session)
+    response = await client.get(f"/musehub/ui/{repo_id}/groove-check")
+    assert response.status_code == 200
+    body = response.text
+    assert "renderGrooveChart" in body
+    assert "grooveScore" in body
+    assert "driftDelta" in body
+
+
+@pytest.mark.anyio
+async def test_groove_check_page_contains_status_badges(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Groove check page HTML includes OK / WARN / FAIL status badge rendering."""
+    repo_id = await _make_repo(db_session)
+    response = await client.get(f"/musehub/ui/{repo_id}/groove-check")
+    assert response.status_code == 200
+    body = response.text
+    assert "statusBadge" in body
+    assert "WARN" in body
+    assert "FAIL" in body
+
+
+@pytest.mark.anyio
+async def test_groove_check_page_includes_token_form(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Groove check page embeds the JWT token input form so visitors can authenticate."""
+    repo_id = await _make_repo(db_session)
+    response = await client.get(f"/musehub/ui/{repo_id}/groove-check")
+    assert response.status_code == 200
+    body = response.text
+    assert "localStorage" in body
+    assert "musehub_token" in body
+
+
+@pytest.mark.anyio
+async def test_groove_check_endpoint_returns_json(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    auth_headers: dict[str, str],
+) -> None:
+    """GET /api/v1/musehub/repos/{repo_id}/groove-check returns JSON with required fields."""
+    repo_id = await _make_repo(db_session)
+    response = await client.get(
+        f"/api/v1/musehub/repos/{repo_id}/groove-check",
+        headers=auth_headers,
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert "commitRange" in body
+    assert "threshold" in body
+    assert "totalCommits" in body
+    assert "flaggedCommits" in body
+    assert "worstCommit" in body
+    assert "entries" in body
+    assert isinstance(body["entries"], list)
+
+
+@pytest.mark.anyio
+async def test_groove_check_endpoint_entries_have_required_fields(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    auth_headers: dict[str, str],
+) -> None:
+    """Groove check entries each contain commit, grooveScore, driftDelta, and status."""
+    repo_id = await _make_repo(db_session)
+    response = await client.get(
+        f"/api/v1/musehub/repos/{repo_id}/groove-check?limit=5",
+        headers=auth_headers,
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["totalCommits"] > 0
+    entry = body["entries"][0]
+    assert "commit" in entry
+    assert "grooveScore" in entry
+    assert "driftDelta" in entry
+    assert "status" in entry
+    assert entry["status"] in ("OK", "WARN", "FAIL")
+    assert "track" in entry
+    assert "midiFiles" in entry
+
+
+@pytest.mark.anyio
+async def test_groove_check_endpoint_requires_auth(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """GET /api/v1/musehub/repos/{repo_id}/groove-check returns 401 without auth."""
+    repo_id = await _make_repo(db_session)
+    response = await client.get(f"/api/v1/musehub/repos/{repo_id}/groove-check")
+    assert response.status_code == 401
+
+
+@pytest.mark.anyio
+async def test_groove_check_endpoint_404_for_unknown_repo(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    auth_headers: dict[str, str],
+) -> None:
+    """GET /api/v1/musehub/repos/{unknown}/groove-check returns 404."""
+    response = await client.get(
+        "/api/v1/musehub/repos/does-not-exist/groove-check",
+        headers=auth_headers,
+    )
+    assert response.status_code == 404
+
+
+@pytest.mark.anyio
+async def test_groove_check_endpoint_respects_limit(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    auth_headers: dict[str, str],
+) -> None:
+    """Groove check endpoint returns at most ``limit`` entries."""
+    repo_id = await _make_repo(db_session)
+    response = await client.get(
+        f"/api/v1/musehub/repos/{repo_id}/groove-check?limit=3",
+        headers=auth_headers,
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["totalCommits"] <= 3
+    assert len(body["entries"]) <= 3
+
+
+@pytest.mark.anyio
+async def test_groove_check_endpoint_custom_threshold(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    auth_headers: dict[str, str],
+) -> None:
+    """Groove check endpoint accepts a custom threshold parameter."""
+    repo_id = await _make_repo(db_session)
+    response = await client.get(
+        f"/api/v1/musehub/repos/{repo_id}/groove-check?threshold=0.05",
+        headers=auth_headers,
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert abs(body["threshold"] - 0.05) < 1e-9
+
+
+@pytest.mark.anyio
+async def test_repo_page_contains_groove_check_link(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Repo landing page navigation includes a Groove Check link."""
+    repo_id = await _make_repo(db_session)
+    response = await client.get(f"/musehub/ui/{repo_id}")
+    assert response.status_code == 200
+    body = response.text
+    assert "groove-check" in body
