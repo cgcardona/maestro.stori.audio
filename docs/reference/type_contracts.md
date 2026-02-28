@@ -3081,6 +3081,31 @@ commit that scored at or above the `--threshold` keyword-overlap cutoff.
 
 ---
 
+### `CatObjectResult`
+
+**Module:** `maestro/muse_cli/commands/cat_object.py`
+
+Wraps the result of a single object lookup across the three Muse object tables
+(blob → snapshot → commit). Records both the detected type and the ORM row so
+renderers never need to `isinstance`-check independently.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `object_type` | `str` | One of `"object"`, `"snapshot"`, or `"commit"` |
+| `row` | `MuseCliObject \| MuseCliSnapshot \| MuseCliCommit` | The matched ORM row |
+
+**Methods:** `.to_dict() → dict[str, object]` — produces a JSON-serialisable
+dict whose shape varies by `object_type`:
+
+- `object` → `{type, object_id, size_bytes, created_at}`
+- `snapshot` → `{type, snapshot_id, manifest, created_at}`
+- `commit` → `{type, commit_id, repo_id, branch, parent_commit_id, parent2_commit_id, snapshot_id, message, author, committed_at, created_at, metadata}`
+
+**Producer:** `_lookup_object()` (internal) → `_cat_object_async()`
+**Consumer:** `_render_metadata()`, JSON output path in `_cat_object_async()`
+
+---
+
 ### `RevertResult`
 
 **Module:** `maestro/services/muse_revert.py`
