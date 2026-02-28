@@ -383,6 +383,31 @@ def upgrade() -> None:
     op.create_index("ix_musehub_stars_repo_id", "musehub_stars", ["repo_id"])
     op.create_index("ix_musehub_stars_user_id", "musehub_stars", ["user_id"])
 
+    # ── Muse Hub — recording sessions ─────────────────────────────────────
+    op.create_table(
+        "musehub_sessions",
+        sa.Column("session_id", sa.String(36), nullable=False),
+        sa.Column("repo_id", sa.String(36), nullable=False),
+        sa.Column("schema_version", sa.String(10), nullable=False, server_default="1"),
+        sa.Column("started_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("ended_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("participants", sa.JSON(), nullable=False, server_default="[]"),
+        sa.Column("location", sa.String(500), nullable=False, server_default=""),
+        sa.Column("intent", sa.Text(), nullable=False, server_default=""),
+        sa.Column("commits", sa.JSON(), nullable=False, server_default="[]"),
+        sa.Column("notes", sa.Text(), nullable=False, server_default=""),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            nullable=False,
+            server_default=sa.text("CURRENT_TIMESTAMP"),
+        ),
+        sa.ForeignKeyConstraint(["repo_id"], ["musehub_repos.repo_id"], ondelete="CASCADE"),
+        sa.PrimaryKeyConstraint("session_id"),
+    )
+    op.create_index("ix_musehub_sessions_repo_id", "musehub_sessions", ["repo_id"])
+    op.create_index("ix_musehub_sessions_started_at", "musehub_sessions", ["started_at"])
+
     # ── Muse Hub — webhook subscriptions ─────────────────────────────────
     op.create_table(
         "musehub_webhooks",

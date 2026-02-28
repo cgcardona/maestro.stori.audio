@@ -27,7 +27,7 @@ import pytest
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from maestro.db.musehub_models import MusehubCommit, MusehubProfile, MusehubRepo
+from maestro.db.musehub_models import MusehubCommit, MusehubProfile, MusehubRepo, MusehubSession
 
 
 # ---------------------------------------------------------------------------
@@ -608,96 +608,6 @@ async def test_graph_page_contains_dag_js(
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.anyio
-async def test_credits_page_renders(
-    client: AsyncClient,
-    db_session: AsyncSession,
-) -> None:
-    """GET /musehub/ui/{repo_id}/credits returns 200 HTML without requiring a JWT."""
-    repo_id = await _make_repo(db_session)
-    response = await client.get(f"/musehub/ui/{repo_id}/credits")
-    assert response.status_code == 200
-    assert "text/html" in response.headers["content-type"]
-    body = response.text
-    assert "Muse Hub" in body
-
-
-@pytest.mark.anyio
-async def test_credits_no_auth_required(
-    client: AsyncClient,
-    db_session: AsyncSession,
-) -> None:
-    """Credits UI page must be accessible without an Authorization header (HTML shell)."""
-    repo_id = await _make_repo(db_session)
-    response = await client.get(f"/musehub/ui/{repo_id}/credits")
-    assert response.status_code == 200
-    assert response.status_code != 401
-
-
-@pytest.mark.anyio
-async def test_credits_json_response(
-    client: AsyncClient,
-    db_session: AsyncSession,
-    auth_headers: dict[str, str],
-) -> None:
-    """GET /api/v1/musehub/repos/{repo_id}/credits returns a CreditsResponse."""
-    repo_id = await _make_repo(db_session)
-    response = await client.get(
-        f"/api/v1/musehub/repos/{repo_id}/credits",
-        headers=auth_headers,
-    )
-    assert response.status_code == 200
-    data = response.json()
-    assert "repoId" in data
-    assert "contributors" in data
-    assert isinstance(data["contributors"], list)
-
-
-# ---------------------------------------------------------------------------
-# DAG graph page tests (issue #265 — pre-existing from dev, fixed here)
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.anyio
-async def test_graph_page_renders(
-    client: AsyncClient,
-    db_session: AsyncSession,
-) -> None:
-    """GET /musehub/ui/{repo_id}/graph returns 200 HTML without requiring a JWT."""
-    repo_id = await _make_repo(db_session)
-    response = await client.get(f"/musehub/ui/{repo_id}/graph")
-    assert response.status_code == 200
-    assert "text/html" in response.headers["content-type"]
-    body = response.text
-    assert "Muse Hub" in body
-
-
-@pytest.mark.anyio
-async def test_graph_no_auth_required(
-    client: AsyncClient,
-    db_session: AsyncSession,
-) -> None:
-    """Graph page must be accessible without an Authorization header (HTML shell)."""
-    repo_id = await _make_repo(db_session)
-    response = await client.get(f"/musehub/ui/{repo_id}/graph")
-    assert response.status_code == 200
-    assert response.status_code != 401
-
-
-@pytest.mark.anyio
-async def test_graph_page_contains_dag_js(
-    client: AsyncClient,
-    db_session: AsyncSession,
-) -> None:
-    """Graph page embeds the client-side DAG renderer JavaScript."""
-    repo_id = await _make_repo(db_session)
-    response = await client.get(f"/musehub/ui/{repo_id}/graph")
-    assert response.status_code == 200
-    body = response.text
-    assert "renderGraph" in body
-    assert "dag-viewport" in body
-    assert "dag-svg" in body
-
 
 # ---------------------------------------------------------------------------
 # User profile page tests (issue #233 — pre-existing from dev, fixed here)
@@ -748,3 +658,419 @@ async def test_profile_no_auth_required_ui(
     response = await client.get("/musehub/ui/users/public-user")
     assert response.status_code == 200
     assert response.status_code != 401
+
+_UTC = timezone.utc
+
+
+async def _make_session(db_session: AsyncSession, repo_id: str) -> str:
+    """Seed a completed session record and return its session_id."""
+    session_id = "aaaabbbb-cccc-dddd-eeee-ffffaaaabbbb"
+    session = MusehubSession(
+        session_id=session_id,
+        repo_id=repo_id,
+        schema_version="1",
+        started_at=datetime(2026, 1, 15, 10, 0, 0, tzinfo=_UTC),
+        ended_at=datetime(2026, 1, 15, 12, 30, 0, tzinfo=_UTC),
+        participants=["Alice", "Bob"],
+        location="Studio A",
+        intent="Record the main groove track for track 3",
+        commits=["abc123def456", "789000aabbcc"],
+        notes="Great session — kept the second take. Alice nailed the bass line.",
+    )
+    db_session.add(session)
+    await db_session.commit()
+    return session_id
+
+
+@pytest.mark.anyio
+async def test_session_list_page_returns_200(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """GET /musehub/ui/{repo_id}/sessions returns 200 HTML without requiring a JWT."""
+    repo_id = await _make_repo(db_session)
+    response = await client.get(f"/musehub/ui/{repo_id}/sessions")
+    assert response.status_code == 200
+    assert "text/html" in response.headers["content-type"]
+    body = response.text
+    assert "Muse Hub" in body
+    assert "Sessions" in body
+    assert "localStorage" in body
+
+
+@pytest.mark.anyio
+async def test_session_detail_renders(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """GET /musehub/ui/{repo_id}/sessions/{session_id} returns 200 HTML."""
+    repo_id = await _make_repo(db_session)
+    session_id = "some-session-uuid-1234"
+    response = await client.get(f"/musehub/ui/{repo_id}/sessions/{session_id}")
+    assert response.status_code == 200
+    assert "text/html" in response.headers["content-type"]
+    body = response.text
+    assert "Muse Hub" in body
+    assert "Recording Session" in body
+    assert session_id[:8] in body
+
+
+@pytest.mark.anyio
+async def test_session_detail_participants(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Session detail page HTML includes the Participants section."""
+    repo_id = await _make_repo(db_session)
+    session_id = "participant-session-5678"
+    response = await client.get(f"/musehub/ui/{repo_id}/sessions/{session_id}")
+    assert response.status_code == 200
+    body = response.text
+    assert "Participants" in body
+
+
+@pytest.mark.anyio
+async def test_session_detail_commits(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Session detail page HTML includes the Commits section."""
+    repo_id = await _make_repo(db_session)
+    session_id = "commits-session-9012"
+    response = await client.get(f"/musehub/ui/{repo_id}/sessions/{session_id}")
+    assert response.status_code == 200
+    body = response.text
+    assert "Commits" in body
+
+
+@pytest.mark.anyio
+async def test_session_detail_404_marker(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Session detail page renders a 404 error message for unknown session IDs.
+
+    The page itself returns 200 (HTML shell) — the 404 is detected client-side
+    when the JS calls the JSON API.  The page must include error-handling JS that
+    checks for a 404 response and shows a user-friendly message.
+    """
+    repo_id = await _make_repo(db_session)
+    session_id = "does-not-exist-1234"
+    response = await client.get(f"/musehub/ui/{repo_id}/sessions/{session_id}")
+    assert response.status_code == 200
+    body = response.text
+    # The JS error handler must check for a 404 and render a "not found" message
+    assert "Session not found" in body or "404" in body
+
+
+@pytest.mark.anyio
+async def test_session_detail_json(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    auth_headers: dict[str, str],
+) -> None:
+    """GET /api/v1/musehub/repos/{repo_id}/sessions/{session_id} returns full session JSON."""
+    repo_id = await _make_repo(db_session)
+    session_id = await _make_session(db_session, repo_id)
+
+    response = await client.get(
+        f"/api/v1/musehub/repos/{repo_id}/sessions/{session_id}",
+        headers=auth_headers,
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["sessionId"] == session_id
+    assert data["repoId"] == repo_id
+    assert data["participants"] == ["Alice", "Bob"]
+    assert data["location"] == "Studio A"
+    assert data["intent"] == "Record the main groove track for track 3"
+    assert len(data["commits"]) == 2
+    assert "nailed the bass line" in data["notes"]
+
+
+@pytest.mark.anyio
+async def test_session_list_json_returns_sessions(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    auth_headers: dict[str, str],
+) -> None:
+    """GET /api/v1/musehub/repos/{repo_id}/sessions returns list with pushed sessions."""
+    repo_id = await _make_repo(db_session)
+    await _make_session(db_session, repo_id)
+
+    response = await client.get(
+        f"/api/v1/musehub/repos/{repo_id}/sessions",
+        headers=auth_headers,
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["total"] == 1
+    assert len(data["sessions"]) == 1
+    assert data["sessions"][0]["participants"] == ["Alice", "Bob"]
+
+
+@pytest.mark.anyio
+async def test_session_list_json_requires_auth(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """GET /api/v1/musehub/repos/{repo_id}/sessions returns 401 without auth."""
+    repo_id = await _make_repo(db_session)
+    response = await client.get(f"/api/v1/musehub/repos/{repo_id}/sessions")
+    assert response.status_code == 401
+
+
+@pytest.mark.anyio
+async def test_session_detail_json_404_unknown_session(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    auth_headers: dict[str, str],
+) -> None:
+    """GET /api/v1/musehub/repos/{repo_id}/sessions/{unknown} returns 404."""
+    repo_id = await _make_repo(db_session)
+    response = await client.get(
+        f"/api/v1/musehub/repos/{repo_id}/sessions/does-not-exist",
+        headers=auth_headers,
+    )
+    assert response.status_code == 404
+
+
+@pytest.mark.anyio
+async def test_session_push_creates_session(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    auth_headers: dict[str, str],
+) -> None:
+    """POST /api/v1/musehub/repos/{repo_id}/sessions creates a session and returns 201."""
+    repo_id = await _make_repo(db_session)
+    payload = {
+        "sessionId": "new-session-uuid-abcd",
+        "schemaVersion": "1",
+        "startedAt": "2026-02-01T09:00:00+00:00",
+        "endedAt": "2026-02-01T11:30:00+00:00",
+        "participants": ["Carol", "Dave"],
+        "location": "Home Studio",
+        "intent": "Finalize bridge section",
+        "commits": [],
+        "notes": "",
+    }
+    response = await client.post(
+        f"/api/v1/musehub/repos/{repo_id}/sessions",
+        json=payload,
+        headers=auth_headers,
+    )
+    assert response.status_code == 201
+    data = response.json()
+    assert data["sessionId"] == "new-session-uuid-abcd"
+    assert data["participants"] == ["Carol", "Dave"]
+
+
+@pytest.mark.anyio
+async def test_session_push_is_idempotent(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    auth_headers: dict[str, str],
+) -> None:
+    """Re-pushing the same session_id updates the record rather than duplicating it."""
+    repo_id = await _make_repo(db_session)
+    payload = {
+        "sessionId": "idempotent-session-uuid",
+        "schemaVersion": "1",
+        "startedAt": "2026-02-10T14:00:00+00:00",
+        "endedAt": "2026-02-10T16:00:00+00:00",
+        "participants": ["Eve"],
+        "location": "Studio B",
+        "intent": "Initial intent",
+        "commits": [],
+        "notes": "First push notes",
+    }
+    await client.post(
+        f"/api/v1/musehub/repos/{repo_id}/sessions",
+        json=payload,
+        headers=auth_headers,
+    )
+
+    # Re-push with updated notes
+    payload["notes"] = "Updated notes after re-push"
+    response = await client.post(
+        f"/api/v1/musehub/repos/{repo_id}/sessions",
+        json=payload,
+        headers=auth_headers,
+    )
+    assert response.status_code == 201
+    assert response.json()["notes"] == "Updated notes after re-push"
+
+    # Verify no duplicate was created
+    list_resp = await client.get(
+        f"/api/v1/musehub/repos/{repo_id}/sessions",
+        headers=auth_headers,
+    )
+    assert list_resp.json()["total"] == 1
+
+
+@pytest.mark.anyio
+async def test_session_upsert_scoped_to_repo(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    auth_headers: dict[str, str],
+) -> None:
+    """Session upsert lookup is scoped to repo_id — a session pushed to repo A is NOT
+    visible via repo B's detail endpoint, even if the IDs match."""
+    repo_a = await _make_repo(db_session)
+    repo_b = await _make_repo(db_session)
+    payload = {
+        "sessionId": "scoped-uuid-aaaa-bbbb-cccc-ddddeeeeeeee",
+        "schemaVersion": "1",
+        "startedAt": "2026-03-01T10:00:00+00:00",
+        "endedAt": "2026-03-01T12:00:00+00:00",
+        "participants": ["Frank"],
+        "location": "Studio C",
+        "intent": "Test repo scoping",
+        "commits": [],
+        "notes": "repo A only",
+    }
+    resp = await client.post(
+        f"/api/v1/musehub/repos/{repo_a}/sessions",
+        json=payload,
+        headers=auth_headers,
+    )
+    assert resp.status_code == 201
+
+    # The same session_id does NOT appear under repo B
+    detail_b = await client.get(
+        f"/api/v1/musehub/repos/{repo_b}/sessions/{payload['sessionId']}",
+        headers=auth_headers,
+    )
+    assert detail_b.status_code == 404
+
+    # And repo A's list is unaffected
+    list_a = await client.get(
+        f"/api/v1/musehub/repos/{repo_a}/sessions",
+        headers=auth_headers,
+    )
+    assert list_a.json()["total"] == 1
+    assert list_a.json()["sessions"][0]["notes"] == "repo A only"
+
+
+@pytest.mark.anyio
+async def test_session_repo_page_has_sessions_link(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """The repo landing page includes a navigation link to Sessions.
+
+    The Sessions button is rendered inside a JavaScript template literal so the
+    actual href uses the JS variable ``${base}/sessions``.  We assert the text
+    label and the path fragment are both present in the page source.
+    """
+    repo_id = await _make_repo(db_session)
+    response = await client.get(f"/musehub/ui/{repo_id}")
+    assert response.status_code == 200
+    body = response.text
+    assert "Sessions" in body
+    assert "/sessions" in body
+
+
+
+# ---------------------------------------------------------------------------
+# Context viewer tests (issue #232)
+# ---------------------------------------------------------------------------
+
+_FIXED_COMMIT_ID = "aabbccdd" * 8  # 64-char hex string
+
+
+@pytest.mark.anyio
+async def test_credits_page_contains_json_ld_injection(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Credits page embeds JSON-LD injection logic for machine-readable attribution."""
+    repo_id = await _make_repo(db_session)
+    response = await client.get(f"/musehub/ui/{repo_id}/credits")
+    assert response.status_code == 200
+    body = response.text
+    assert "application/ld+json" in body
+    assert "schema.org" in body
+    assert "MusicComposition" in body
+
+@pytest.mark.anyio
+async def test_credits_page_contains_sort_options(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Credits page includes sort dropdown with count, recency, and alpha options."""
+    repo_id = await _make_repo(db_session)
+    response = await client.get(f"/musehub/ui/{repo_id}/credits")
+    assert response.status_code == 200
+    body = response.text
+    assert "Most prolific" in body
+    assert "Most recent" in body
+    assert "A" in body  # "A – Z" option
+
+@pytest.mark.anyio
+async def test_credits_empty_state_message_in_page(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Credits page JS includes empty-state message for repos with no sessions."""
+    repo_id = await _make_repo(db_session)
+    response = await client.get(f"/musehub/ui/{repo_id}/credits")
+    assert response.status_code == 200
+    body = response.text
+    assert "muse session start" in body
+
+@pytest.mark.anyio
+async def test_graph_page_has_zoom_pan(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Graph page includes zoom and pan JavaScript logic."""
+    repo_id = await _make_repo(db_session)
+    response = await client.get(f"/musehub/ui/{repo_id}/graph")
+    assert response.status_code == 200
+    body = response.text
+    assert "wheel" in body
+    assert "mousedown" in body
+    assert "applyTransform" in body
+
+@pytest.mark.anyio
+async def test_graph_page_has_popover(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Graph page includes commit detail hover popover markup."""
+    repo_id = await _make_repo(db_session)
+    response = await client.get(f"/musehub/ui/{repo_id}/graph")
+    assert response.status_code == 200
+    body = response.text
+    assert "dag-popover" in body
+    assert "pop-sha" in body
+    assert "pop-msg" in body
+
+@pytest.mark.anyio
+async def test_graph_page_no_auth_required(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Graph UI page must be accessible without an Authorization header."""
+    repo_id = await _make_repo(db_session)
+    response = await client.get(f"/musehub/ui/{repo_id}/graph")
+    assert response.status_code != 401
+    assert response.status_code == 200
+
+@pytest.mark.anyio
+async def test_graph_page_includes_token_form(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Graph page embeds the JWT token input form so visitors can authenticate."""
+    repo_id = await _make_repo(db_session)
+    response = await client.get(f"/musehub/ui/{repo_id}/graph")
+    assert response.status_code == 200
+    body = response.text
+    assert "localStorage" in body
+    assert "musehub_token" in body
+
+# ---------------------------------------------------------------------------
+# Embed player route tests (issue #244)
+# ---------------------------------------------------------------------------

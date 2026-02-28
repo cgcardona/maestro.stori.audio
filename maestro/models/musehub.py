@@ -850,3 +850,54 @@ class DagGraphResponse(CamelModel):
     nodes: list[DagNode]
     edges: list[DagEdge]
     head_commit_id: str | None = None
+
+
+# ── Session models ─────────────────────────────────────────────────────────────
+
+
+class SessionCreate(CamelModel):
+    """Body for POST /musehub/repos/{repo_id}/sessions.
+
+    Accepts a session record pushed from ``muse session end``.  The
+    ``session_id`` field uses the local UUID so the same session can be
+    pushed multiple times idempotently (upsert semantics in the service).
+    """
+
+    session_id: str = Field(..., description="UUIDv4 from the local .muse/sessions/<id>.json")
+    schema_version: str = Field("1", description="JSON schema version string")
+    started_at: datetime = Field(..., description="ISO-8601 UTC session start timestamp")
+    ended_at: datetime | None = Field(None, description="ISO-8601 UTC session end timestamp")
+    participants: list[str] = Field(default_factory=list, description="Ordered participant names")
+    location: str = Field("", description="Recording location or studio name")
+    intent: str = Field("", description="Creative intent declared at session start")
+    commits: list[str] = Field(default_factory=list, description="Muse commit IDs from this session")
+    notes: str = Field("", description="Closing notes added by muse session end --notes")
+
+
+class SessionResponse(CamelModel):
+    """Wire representation of a pushed Muse Hub recording session.
+
+    Returned by GET /musehub/repos/{repo_id}/sessions and
+    GET /musehub/repos/{repo_id}/sessions/{session_id}.  Agents use this
+    to reconstruct creative context — who was present, what was intended,
+    which commits were produced, and any post-session notes.
+    """
+
+    session_id: str
+    repo_id: str
+    schema_version: str
+    started_at: datetime
+    ended_at: datetime | None
+    participants: list[str]
+    location: str
+    intent: str
+    commits: list[str]
+    notes: str
+    created_at: datetime
+
+
+class SessionListResponse(CamelModel):
+    """Paginated list of sessions for a repo, newest first."""
+
+    sessions: list[SessionResponse]
+    total: int

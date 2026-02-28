@@ -79,6 +79,9 @@ class MusehubRepo(Base):
     stars: Mapped[list[MusehubStar]] = relationship(
         "MusehubStar", back_populates="repo", cascade="all, delete-orphan"
     )
+    sessions: Mapped[list[MusehubSession]] = relationship(
+        "MusehubSession", back_populates="repo", cascade="all, delete-orphan"
+    )
     webhooks: Mapped[list[MusehubWebhook]] = relationship(
         "MusehubWebhook", back_populates="repo", cascade="all, delete-orphan"
     )
@@ -321,6 +324,44 @@ class MusehubRelease(Base):
     )
 
     repo: Mapped[MusehubRepo] = relationship("MusehubRepo", back_populates="releases")
+
+class MusehubSession(Base):
+    """A recording session record pushed to Muse Hub from the CLI.
+
+    Sessions capture the creative context of a recording period: who was
+    present, where they recorded, what they intended to create, which commits
+    were made, and any closing notes. Maps to ``muse session show`` locally.
+
+    ``commits`` is a JSON list of Muse commit IDs associated with the session.
+    ``participants`` is a JSON list of participant name strings.
+    """
+
+    __tablename__ = "musehub_sessions"
+
+    session_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_new_uuid)
+    repo_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("musehub_repos.repo_id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    schema_version: Mapped[str] = mapped_column(String(10), nullable=False, default="1")
+    started_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, index=True
+    )
+    ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    participants: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    location: Mapped[str] = mapped_column(String(500), nullable=False, default="")
+    intent: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    # JSON list of Muse commit IDs made during this session
+    commits: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    notes: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=_utc_now
+    )
+
+    repo: Mapped[MusehubRepo] = relationship("MusehubRepo", back_populates="sessions")
+
 
 
 class MusehubWebhook(Base):
