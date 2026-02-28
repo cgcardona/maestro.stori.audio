@@ -4734,6 +4734,59 @@ classDiagram
 
 ---
 
+## Muse CLI — Emotion-Diff Types (`maestro/services/muse_emotion_diff.py`)
+
+### `EmotionVector`
+
+Frozen dataclass. 4-dimensional emotion representation for a single commit.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `energy` | `float` | Activity / rhythmic intensity in [0.0, 1.0]. |
+| `valence` | `float` | Positivity / happiness in [0.0, 1.0]. |
+| `tension` | `float` | Harmonic / rhythmic tension in [0.0, 1.0]. |
+| `darkness` | `float` | Heaviness / weight in [0.0, 1.0]. |
+
+Methods:
+- `as_tuple() -> tuple[float, float, float, float]` — returns `(energy, valence, tension, darkness)`.
+- `drift_from(other: EmotionVector) -> float` — Euclidean distance in emotion space, range [0.0, 2.0].
+
+### `EmotionDimDelta`
+
+Frozen dataclass. Delta for a single emotion dimension between two commits.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `dimension` | `str` | Dimension name: one of `"energy"`, `"valence"`, `"tension"`, `"darkness"`. |
+| `value_a` | `float` | Value at commit A (baseline). |
+| `value_b` | `float` | Value at commit B (target). |
+| `delta` | `float` | `value_b - value_a`; positive = increased, negative = decreased. |
+
+### `EmotionDiffResult`
+
+Frozen dataclass. Full emotion-diff report between two Muse commits. Returned by `compute_emotion_diff()`.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `commit_a` | `str` | Short (8-char) ref of the baseline commit. |
+| `commit_b` | `str` | Short (8-char) ref of the target commit. |
+| `source` | `str` | `"explicit_tags"` \| `"inferred"` \| `"mixed"` — how vectors were obtained. |
+| `label_a` | `str \| None` | Emotion label for commit A (e.g. `"melancholic"`), or `None`. |
+| `label_b` | `str \| None` | Emotion label for commit B, or `None`. |
+| `vector_a` | `EmotionVector \| None` | Emotion vector at commit A. |
+| `vector_b` | `EmotionVector \| None` | Emotion vector at commit B. |
+| `dimensions` | `tuple[EmotionDimDelta, ...]` | Per-dimension deltas in `EMOTION_DIMENSIONS` order. |
+| `drift` | `float` | Euclidean distance in emotion space, range [0.0, 2.0]. |
+| `narrative` | `str` | Human-readable summary of the emotional shift. |
+| `track` | `str \| None` | Track filter applied, or `None`. |
+| `section` | `str \| None` | Section filter applied, or `None`. |
+
+**Drift thresholds:** < 0.05 unchanged · 0.05–0.25 subtle · 0.25–0.50 moderate · 0.50–0.80 significant · > 0.80 major/dramatic.
+
+**Agent contract:** Call `muse emotion-diff HEAD~1 HEAD --json` and parse `drift` + `narrative` to decide whether the most recent commit is emotionally aligned with the intended arc.
+
+---
+
 ## Muse Inspect Types (`maestro/services/muse_inspect.py`)
 
 ### `InspectFormat`
@@ -4842,6 +4895,31 @@ error message via `typer.echo` before calling `typer.Exit(INTERNAL_ERROR)`.
 class StorpheusUnavailableError(Exception): ...
 ```
 
+---
+
+## Muse CLI — Symbolic Ref Types (`maestro/muse_cli/commands/symbolic_ref.py`)
+
+### `SymbolicRefResult`
+
+Slotted class returned by `read_symbolic_ref()` when the named ref file exists
+and its content starts with `refs/`.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `name` | `str` | The symbolic ref name that was queried, e.g. `HEAD`. |
+| `ref` | `str` | Full target ref string stored in the file, e.g. `refs/heads/main`. |
+| `short` | `str` | Last path component of `ref` (e.g. `main`). Computed on construction. |
+
+**Agent contract:** Callers receive `None` when the ref is absent or not
+symbolic (detached HEAD, bare SHA). Agents must guard with `if result is None`
+before accessing fields.
+
+```python
+result = read_symbolic_ref(muse_dir, "HEAD")
+if result is not None:
+    branch = result.short   # "main"
+    full   = result.ref     # "refs/heads/main"
+```
 
 ---
 
@@ -4908,6 +4986,201 @@ or smoother (stepwise) between two points in history.
 
 **Producer:** `_contour_compare_async()`
 **Consumer:** `_format_compare()`
+
+
+---
+
+### `RemoteConfig`
+
+**Module:** `maestro/muse_cli/config.py`
+
+A single configured remote — name and Hub URL pair as read from `.muse/config.toml`.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `name` | `str` | Remote name (e.g. `"origin"`) |
+| `url` | `str` | Hub URL (e.g. `"https://story.audio/musehub/repos/<id>"`) |
+
+**Producer:** `list_remotes()`
+**Consumer:** `muse remote -v`, `_push_async()`, `_pull_async()`
+
+---
+
+### `PushRequest`
+
+**Module:** `maestro/muse_cli/hub_client.py`
+
+Payload sent to `POST <remote>/push`. Carries the local branch tip and all
+commits/objects the remote does not yet have.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `branch` | `str` | Branch name being pushed |
+| `head_commit_id` | `str` | Local branch HEAD commit ID |
+| `commits` | `list[PushCommitPayload]` | Delta commits (chronological, oldest first) |
+| `objects` | `list[PushObjectPayload]` | Object descriptors for all known objects |
+
+**Producer:** `_build_push_request()`
+**Consumer:** Hub `/push` endpoint via `MuseHubClient.post()`
+
+---
+
+### `PushCommitPayload`
+
+**Module:** `maestro/muse_cli/hub_client.py`
+
+One commit record inside a `PushRequest`.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `commit_id` | `str` | 64-char sha256 commit ID |
+| `parent_commit_id` | `str \| None` | Parent commit ID, or `None` for root commits |
+| `snapshot_id` | `str` | 64-char sha256 snapshot ID |
+| `branch` | `str` | Branch this commit belongs to |
+| `message` | `str` | Commit message |
+| `author` | `str` | Author identifier |
+| `committed_at` | `str` | ISO-8601 UTC timestamp |
+| `metadata` | `dict[str, object] \| None` | Music annotations (tempo_bpm, key, meter, etc.) |
+
+---
+
+### `PushObjectPayload`
+
+**Module:** `maestro/muse_cli/hub_client.py`
+
+Content-addressed object descriptor inside a `PushRequest`.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `object_id` | `str` | 64-char sha256 object ID |
+| `size_bytes` | `int` | Object size in bytes |
+
+---
+
+### `PushResponse`
+
+**Module:** `maestro/muse_cli/hub_client.py`
+
+Response from the Hub's `/push` endpoint.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `accepted` | `bool` | `True` when the push was accepted |
+| `message` | `str` | Human-readable status message |
+
+---
+
+### `PullRequest`
+
+**Module:** `maestro/muse_cli/hub_client.py`
+
+Payload sent to `POST <remote>/pull`. Tells the Hub which commits and objects
+the client already has so the Hub can compute the minimal delta.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `branch` | `str` | Branch to pull |
+| `have_commits` | `list[str]` | Commit IDs already in local DB |
+| `have_objects` | `list[str]` | Object IDs already in local DB |
+
+**Producer:** `_pull_async()`
+**Consumer:** Hub `/pull` endpoint via `MuseHubClient.post()`
+
+---
+
+### `PullCommitPayload`
+
+**Module:** `maestro/muse_cli/hub_client.py`
+
+One commit record received from the Hub during a pull.  Same fields as
+`PushCommitPayload` — the schema is symmetric.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `commit_id` | `str` | 64-char sha256 commit ID |
+| `parent_commit_id` | `str \| None` | Parent commit ID, or `None` for root |
+| `snapshot_id` | `str` | 64-char sha256 snapshot ID |
+| `branch` | `str` | Branch this commit belongs to |
+| `message` | `str` | Commit message |
+| `author` | `str` | Author identifier |
+| `committed_at` | `str` | ISO-8601 UTC timestamp |
+| `metadata` | `dict[str, object] \| None` | Music annotations |
+
+---
+
+### `PullObjectPayload`
+
+**Module:** `maestro/muse_cli/hub_client.py`
+
+Object descriptor received from the Hub during a pull.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `object_id` | `str` | 64-char sha256 object ID |
+| `size_bytes` | `int` | Object size in bytes |
+
+---
+
+### `PullResponse`
+
+**Module:** `maestro/muse_cli/hub_client.py`
+
+Response from the Hub's `/pull` endpoint.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `commits` | `list[PullCommitPayload]` | Commits the client did not have |
+| `objects` | `list[PullObjectPayload]` | Objects the client did not have |
+| `remote_head` | `str \| None` | Current remote branch HEAD commit ID |
+| `diverged` | `bool` | `True` when remote HEAD is not an ancestor of local HEAD |
+
+**Consumer:** `_pull_async()` — stores commits/objects in DB, updates tracking pointer, prints divergence warning when `diverged=True`.
+
+---
+
+### `ShowCommitResult`
+
+**Module:** `maestro/muse_cli/commands/show.py`
+
+Full commit metadata plus snapshot manifest returned by `muse show`. Designed
+for direct JSON serialisation so AI agents can consume commit state without a
+second round-trip to the database.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `commit_id` | `str` | Full 64-char SHA-256 commit ID |
+| `branch` | `str` | Branch this commit belongs to |
+| `parent_commit_id` | `Optional[str]` | Full SHA of the primary parent, `None` for root commits |
+| `parent2_commit_id` | `Optional[str]` | Full SHA of the merge parent (set by `muse merge`), else `None` |
+| `message` | `str` | Commit message |
+| `author` | `str` | Author string (empty string when not set) |
+| `committed_at` | `str` | ISO-style timestamp `"YYYY-MM-DD HH:MM:SS"` (UTC) |
+| `snapshot_id` | `str` | SHA-256 of the snapshot manifest |
+| `snapshot_manifest` | `dict[str, str]` | `{relative_path: object_id}` for every file in the snapshot |
+
+**Producer:** `_show_async()`
+**Consumer:** `_render_show()`, `_render_midi()`, `_render_audio_preview()`, `--json` serialiser
+
+---
+
+### `ShowDiffResult`
+
+**Module:** `maestro/muse_cli/commands/show.py`
+
+Path-level diff of a commit vs its parent, produced by `muse show --diff`.
+For root commits (no parent) all snapshot paths appear in `added`.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `commit_id` | `str` | Full SHA of the commit being inspected |
+| `parent_commit_id` | `Optional[str]` | Full SHA of the parent, or `None` for root commits |
+| `added` | `list[str]` | Paths present in this snapshot but not the parent's |
+| `modified` | `list[str]` | Paths present in both snapshots with different object IDs |
+| `removed` | `list[str]` | Paths present in the parent's snapshot but not this one |
+| `total_changed` | `int` | `len(added) + len(modified) + len(removed)` |
+
+**Producer:** `_diff_vs_parent_async()`
+**Consumer:** `_render_diff()`
 
 ---
 
