@@ -4,8 +4,8 @@ Entry point for the ``muse`` console script. Registers all MVP
 subcommands (amend, arrange, ask, checkout, chord-map, commit, commit-tree,
 context, contour, describe, diff, divergence, dynamics, export, find, form,
 grep, groove-check, humanize, import, init, inspect, key, log, merge, meter,
-open, play, pull, push, recall, remote, session, similarity, status, swing,
-tag, tempo, tempo-scale, timeline, validate) as Typer sub-applications.
+open, play, pull, push, recall, remote, revert, session, similarity, status,
+swing, tag, tempo, tempo-scale, timeline, validate) as Typer sub-applications.
 """
 from __future__ import annotations
 
@@ -44,6 +44,7 @@ from maestro.muse_cli.commands import (
     push,
     recall,
     remote,
+    revert,
     session,
     similarity,
     status,
@@ -96,6 +97,7 @@ cli.add_typer(tag.app, name="tag", help="Attach and query music-semantic tags on
 cli.add_typer(import_cmd.app, name="import", help="Import a MIDI or MusicXML file as a new Muse commit.")
 cli.add_typer(tempo.app, name="tempo", help="Read or set the tempo (BPM) of a commit.")
 cli.add_typer(recall.app, name="recall", help="Search commit history by natural-language description.")
+cli.add_typer(revert.app, name="revert", help="Create a new commit that undoes a prior commit without rewriting history.")
 cli.add_typer(key.app, name="key", help="Read or annotate the musical key of a commit.")
 cli.add_typer(humanize.app, name="humanize", help="Apply micro-timing and velocity humanization to quantized MIDI.")
 cli.add_typer(context.app, name="context", help="Output structured musical context for AI agent consumption.")
