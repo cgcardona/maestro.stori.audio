@@ -228,7 +228,7 @@ _SECTION_KEYWORDS: list[str] = [
 
 _TRACK_KEYWORDS: list[str] = [
     "bass", "drums", "keys", "piano", "guitar", "synth", "pad",
-    "lead", "vocals", "vocals", "strings", "brass", "horn",
+    "lead", "vocals", "strings", "brass", "horn",
     "flute", "cello", "violin", "organ", "arp", "percussion",
     "kick", "snare", "hi-hat", "hihat", "clap", "melody",
 ]
