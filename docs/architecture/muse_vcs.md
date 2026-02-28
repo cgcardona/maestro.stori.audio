@@ -3960,6 +3960,134 @@ the computed values will change when the full implementation is wired in.
 
 ---
 
+---
+
+## `muse reset` — Reset Branch Pointer to a Prior Commit
+
+### Purpose
+
+Move the current branch's HEAD pointer backward to a prior commit, with three
+levels of aggression mirroring git's model.  The "panic button" for music
+production: when a producer makes ten bad commits and wants to return to the
+last known-good take.
+
+### Usage
+
+```bash
+muse reset [--soft | --mixed | --hard] [--yes] <commit>
+```
+
+### Flags
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `<commit>` | positional | required | Target commit (HEAD, HEAD~N, full/abbreviated SHA) |
+| `--soft` | flag | off | Move branch pointer only; muse-work/ and object store unchanged |
+| `--mixed` | flag | on | Move branch pointer and reset index (default; equivalent to soft in current model) |
+| `--hard` | flag | off | Move branch pointer AND overwrite muse-work/ with target snapshot |
+| `--yes` / `-y` | flag | off | Skip confirmation prompt for --hard mode |
+
+### Modes
+
+**Soft** (`--soft`):
+- Updates `.muse/refs/heads/<branch>` to point to the target commit.
+- `muse-work/` files are completely untouched.
+- The next `muse commit` will capture the current working tree on top of the rewound HEAD.
+- Use when you want to re-commit with a different message or squash commits.
+
+**Mixed** (`--mixed`, default):
+- Same as soft in the current Muse model (no explicit staging area exists yet).
+- Included for API symmetry with git and forward-compatibility when a staging
+  index is added.
+
+**Hard** (`--hard`):
+- Moves the branch ref to the target commit.
+- Overwrites every file in `muse-work/` with the content from the target
+  commit's snapshot.  Files are read from `.muse/objects/<sha[:2]>/<sha[2:]>`
+  (the content-addressed blob store populated by `muse commit`).
+- Files in `muse-work/` that are NOT present in the target snapshot are deleted.
+- **Prompts for confirmation** unless `--yes` is given — this is destructive.
+- **Requires `muse commit` to have been run** at least once after repo init so
+  that object blobs are present in `.muse/objects/`.
+
+### HEAD~N Syntax
+
+```bash
+muse reset HEAD~1       # one parent back (previous commit)
+muse reset HEAD~3       # three parents back
+muse reset abc123       # abbreviated SHA prefix
+muse reset --hard HEAD~2  # two parents back + restore working tree
+```
+
+`HEAD~N` walks the primary parent chain only.  Merge parents
+(`parent2_commit_id`) are not traversed.
+
+### Guards
+
+- **Merge in progress**: blocked when `.muse/MERGE_STATE.json` exists.
+  Resolve or abort the merge before resetting.
+- **No commits on branch**: exits with `USER_ERROR` if the current branch
+  has never been committed.
+- **Missing object blobs** (hard mode): exits with `INTERNAL_ERROR` rather
+  than silently leaving `muse-work/` in a partial state.
+
+### Output Examples
+
+```
+# Soft/mixed reset:
+✅ HEAD is now at abc123de
+
+# Hard reset (2 files restored, 1 deleted):
+✅ HEAD is now at abc123de (2 files restored, 1 files deleted)
+
+# Abort:
+⚠️  muse reset --hard will OVERWRITE muse-work/ with the target snapshot.
+    All uncommitted changes will be LOST.
+Proceed? [y/N]: N
+Reset aborted.
+```
+
+### Object Store
+
+`muse commit` now writes every file's blob content to `.muse/objects/` using
+a two-level sharding layout identical to git's loose-object store:
+
+```
+.muse/objects/
+  ab/           ← first two hex chars of sha256
+    cdef1234...  ← remaining 62 chars — the raw file bytes
+```
+
+This store enables `muse reset --hard` to restore any previously committed
+snapshot without needing the live `muse-work/` files.  Objects are written
+idempotently (never overwritten once stored).
+
+### Result Type
+
+`ResetResult` — see [`docs/reference/type_contracts.md`](../reference/type_contracts.md).
+
+### Agent Use Case
+
+An AI composition agent uses `muse reset` to recover from a bad generation run:
+
+1. Agent calls `muse log --json` to identify the last known-good commit SHA.
+2. Agent calls `muse reset --hard --yes <sha>` to restore the working tree.
+3. Agent calls `muse status` to verify the working tree matches expectations.
+4. Agent resumes composition from the clean baseline.
+
+### Implementation
+
+- **Service layer:** `maestro/services/muse_reset.py` — `perform_reset()`,
+  `resolve_ref()`, `store_object()`, `object_store_path()`.
+- **CLI command:** `maestro/muse_cli/commands/reset.py` — Typer callback,
+  confirmation prompt, error display.
+- **Commit integration:** `maestro/muse_cli/commands/commit.py` — calls
+  `store_object()` for each file during commit to populate `.muse/objects/`.
+- **Exit codes:** 0 success, 1 user error (`USER_ERROR`), 2 not a repo
+  (`REPO_NOT_FOUND`), 3 internal error (`INTERNAL_ERROR`).
+
+---
+
 ### `muse show`
 
 **Purpose:** Inspect any historical commit — its metadata, snapshot manifest,
