@@ -3545,3 +3545,58 @@ classDiagram
     parse_prompt ..> MaestroPrompt : produces
     parse_prompt ..> PromptParseError : raises
 ```
+
+---
+
+### Diagram 20 — Muse Import Types (`maestro/muse_cli/midi_parser.py`)
+
+`NoteEvent` is the atomic unit of parsed music data — one sounding note with pitch, timing, velocity, and track assignment. `MuseImportData` groups all notes extracted from a single file along with format metadata. Both types are produced by `parse_file()` and its format-specific delegates (`parse_midi_file`, `parse_musicxml_file`). `apply_track_map()` returns a new list of `NoteEvent` objects with `channel_name` fields remapped; it never mutates its input.
+
+```mermaid
+classDiagram
+    direction TB
+
+    class NoteEvent {
+        <<dataclass>>
+        +pitch : int
+        +velocity : int
+        +start_tick : int
+        +duration_ticks : int
+        +channel : int
+        +channel_name : str
+    }
+
+    class MuseImportData {
+        <<dataclass>>
+        +source_path : pathlib.Path
+        +format : str
+        +ticks_per_beat : int
+        +tempo_bpm : float
+        +notes : list~NoteEvent~
+        +tracks : list~str~
+        +raw_meta : dict~str, Any~
+    }
+
+    class parse_file {
+        <<function>>
+        pathlib.Path → MuseImportData
+    }
+    class parse_midi_file {
+        <<function>>
+        pathlib.Path → MuseImportData
+    }
+    class parse_musicxml_file {
+        <<function>>
+        pathlib.Path → MuseImportData
+    }
+    class apply_track_map {
+        <<function>>
+        list~NoteEvent~, dict~str,str~ → list~NoteEvent~
+    }
+
+    MuseImportData --> NoteEvent : notes list
+    parse_file ..> MuseImportData : produces
+    parse_midi_file ..> MuseImportData : produces
+    parse_musicxml_file ..> MuseImportData : produces
+    apply_track_map ..> NoteEvent : returns remapped copies
+```
