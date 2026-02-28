@@ -23,6 +23,7 @@ from maestro.config import settings
 from maestro.api.routes import maestro, maestro_ui, health, users, conversations, assets, variation, muse, musehub
 from maestro.api.routes.musehub import ui as musehub_ui_routes
 from maestro.api.routes.musehub import discover as musehub_discover_routes
+from maestro.api.routes.musehub import users as musehub_user_routes
 from maestro.api.routes.musehub import oembed as musehub_oembed_routes
 from maestro.api.routes.musehub import raw as musehub_raw_routes
 from maestro.api.routes import mcp as mcp_routes
@@ -165,6 +166,7 @@ app.include_router(conversations.router, prefix="/api/v1", tags=["conversations"
 app.include_router(assets.router, prefix="/api/v1", tags=["assets"])
 app.include_router(muse.router, prefix="/api/v1", tags=["muse"])
 app.include_router(musehub.router, prefix="/api/v1", tags=["musehub"])
+app.include_router(musehub_user_routes.router, prefix="/api/v1/musehub", tags=["musehub-users"])
 app.include_router(musehub_ui_routes.router, tags=["musehub-ui"])
 # Discover router: public browse (no auth) + authed star/unstar
 app.include_router(musehub_discover_routes.router, prefix="/api/v1", tags=["musehub-discover"])

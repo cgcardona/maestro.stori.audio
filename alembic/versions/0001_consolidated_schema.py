@@ -25,6 +25,8 @@ Single source-of-truth migration for Stori Maestro. Creates:
   - musehub_repos, musehub_branches, musehub_commits, musehub_issues
   - musehub_pull_requests (PR workflow between branches)
   - musehub_objects (content-addressed binary artifact storage)
+  - musehub_stars (per-user repo starring for the explore/discover page)
+  - musehub_profiles (public user profile pages — bio, avatar, pinned repos)
   - musehub_webhooks (registered event-driven webhook subscriptions)
   - musehub_webhook_deliveries (delivery log per dispatch attempt)
 
