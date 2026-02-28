@@ -661,10 +661,22 @@ Two identical working trees always produce the same `snapshot_id`.
 | `branch` | `String(255)` | Branch name at commit time |
 | `parent_commit_id` | `String(64)` nullable | Previous HEAD commit on branch |
 | `snapshot_id` | `String(64)` FK | Points to the snapshot row |
-| `message` | `Text` | User-supplied commit message |
+| `message` | `Text` | User-supplied commit message (may include Co-authored-by trailers) |
 | `author` | `String(255)` | Reserved (empty for MVP) |
 | `committed_at` | `DateTime(tz=True)` | Timestamp used in hash derivation |
 | `created_at` | `DateTime(tz=True)` | Wall-clock DB insert time |
+| `metadata` | `JSON` nullable | Extensible music-domain annotations (see below) |
+
+**`metadata` JSON blob — current keys:**
+
+| Key | Type | Set by |
+|-----|------|--------|
+| `section` | `string` | `muse commit --section` |
+| `track` | `string` | `muse commit --track` |
+| `emotion` | `string` | `muse commit --emotion` |
+| `tempo_bpm` | `float` | `muse tempo --set` |
+
+All keys are optional and co-exist in the same blob.  Absent keys are simply not present (not `null`).  Future music-domain annotations extend this blob without schema migrations.
 
 ### ID Derivation (deterministic)
 
@@ -1315,6 +1327,57 @@ muse-batch.json   (written next to muse-work/, i.e. in the repo root)
 - Failed generations are **omitted** from `files[]`; only successful results appear
 - Cache hits **are included** in `files[]` with `"cached": true`
 
+### `muse commit` — Full Flag Reference
+
+**Usage:**
+```bash
+muse commit -m <message> [OPTIONS]
+muse commit --from-batch muse-batch.json [OPTIONS]
+```
+
+**Core flags:**
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `-m / --message TEXT` | string | — | Commit message. Required unless `--from-batch` is used |
+| `--from-batch PATH` | path | — | Use `commit_message_suggestion` from `muse-batch.json`; snapshot is restricted to listed files |
+| `--amend` | flag | off | Fold working-tree changes into the most recent commit (equivalent to `muse amend`) |
+| `--no-verify` | flag | off | Bypass pre-commit hooks (no-op until hook system is implemented) |
+| `--allow-empty` | flag | off | Allow committing even when the working tree has not changed since HEAD |
+
+**Music-domain flags (Muse-native metadata):**
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--section TEXT` | string | — | Tag commit as belonging to a musical section (e.g. `verse`, `chorus`, `bridge`) |
+| `--track TEXT` | string | — | Tag commit as affecting a specific instrument track (e.g. `drums`, `bass`, `keys`) |
+| `--emotion TEXT` | string | — | Attach an emotion vector label (e.g. `joyful`, `melancholic`, `tense`) |
+| `--co-author TEXT` | string | — | Append `Co-authored-by: Name <email>` trailer to the commit message |
+
+Music-domain flags are stored in the `commit_metadata` JSON column on `muse_cli_commits`.  They are surfaced at the top level in `muse show <commit> --json` output and form the foundation for future queries like `muse log --emotion melancholic` or `muse diff --section chorus`.
+
+**Examples:**
+
+```bash
+# Standard commit with message
+muse commit -m "feat: add Rhodes piano to chorus"
+
+# Tag with music-domain metadata
+muse commit -m "groove take 3" --section verse --track drums --emotion joyful
+
+# Collaborative session — attribute a co-author
+muse commit -m "keys arrangement" --co-author "Alice <alice@stori.app>"
+
+# Amend the last commit with new emotion tag
+muse commit --amend --emotion melancholic
+
+# Milestone commit with no file changes
+muse commit --allow-empty -m "session handoff" --section bridge
+
+# Fast path from stress test
+muse commit --from-batch muse-batch.json --emotion tense
+```
+
 ### Fast-Path Commit: `muse commit --from-batch`
 
 ```bash
@@ -1333,7 +1396,8 @@ muse commit --from-batch muse-batch.json
 4. Proceeds with the standard commit pipeline (snapshot → DB → HEAD pointer update)
 
 The `-m` flag is optional when `--from-batch` is present.  If both are supplied,
-`--from-batch`'s suggestion wins.
+`--from-batch`'s suggestion wins.  All music-domain flags (`--section`, `--track`,
+`--emotion`, `--co-author`) can be combined with `--from-batch`.
 
 ### Workflow Summary
 
