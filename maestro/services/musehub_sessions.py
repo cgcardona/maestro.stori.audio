@@ -38,6 +38,8 @@ def _to_response(session: MusehubSession) -> SessionResponse:
         ended_at=session.ended_at,
         duration_seconds=duration,
         participants=list(session.participants),
+        commits=list(session.commits),
+        notes=session.notes,
         location=session.location,
         intent=session.intent,
         is_active=getattr(session, "is_active", session.ended_at is None),

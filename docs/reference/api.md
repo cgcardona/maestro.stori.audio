@@ -915,6 +915,28 @@ See also: [integrate.md](../guides/integrate.md) for MCP setup (stdio, Cursor, W
 
 Remote collaboration backend for Muse VCS — the server-side equivalent of a Git remote. All endpoints are under `/api/v1/musehub/` and require `Authorization: Bearer <token>`.
 
+### Interactive API docs
+
+The full MuseHub API is available as a machine-readable OpenAPI 3.1 specification:
+
+| Resource | URL |
+|----------|-----|
+| **OpenAPI 3.1 JSON spec** | `GET /api/v1/openapi.json` |
+| **Swagger UI** (interactive, debug mode only) | `GET /docs` |
+| **ReDoc** (debug mode only) | `GET /redoc` |
+
+The spec is always available at `/api/v1/openapi.json` regardless of `DEBUG` mode, enabling agent SDK generation and third-party integrations without enabling the interactive UI in production.
+
+```bash
+# Fetch the spec for SDK generation
+curl https://your-domain.com/api/v1/openapi.json | jq '.info'
+
+# List all MuseHub operationIds
+curl https://your-domain.com/api/v1/openapi.json | jq '[.paths | to_entries[] | .value | to_entries[] | .value.operationId] | sort | .[]'
+```
+
+Every endpoint has a camelCase `operationId` (e.g. `listRepoCommits`, `getAnalysisHarmony`, `mergePullRequest`) that maps 1:1 to generated SDK method names.
+
 ### POST /api/v1/musehub/repos
 
 Create a new remote Muse repository. The `slug` is auto-generated from `name` (lowercase, hyphens). Returns `409` if the `(owner, name)` combination already exists.
@@ -1900,6 +1922,51 @@ Get a single release by its version tag.
 
 ---
 
+### GET /api/v1/musehub/repos/{repo_id}/groove-check
+
+Returns rhythmic consistency metrics for the most recent commits in a repo.
+
+**Auth:** Requires `Authorization: Bearer <token>`.
+
+**Path params:**
+- `repo_id` — Muse Hub repo UUID
+
+**Query params:**
+- `?threshold=<float>` — drift threshold in beats (default `0.1`; range `0.01–1.0`). Commits whose drift delta exceeds this are classified WARN or FAIL.
+- `?limit=<int>` — maximum commits to analyse (default `10`; range `1–50`)
+- `?track=<name>` — restrict analysis to a named instrument track (optional)
+- `?section=<name>` — restrict analysis to a named musical section (optional)
+
+**Response `200 application/json`:**
+```json
+{
+  "commitRange": "HEAD~10..HEAD",
+  "threshold": 0.1,
+  "totalCommits": 10,
+  "flaggedCommits": 2,
+  "worstCommit": "a1b2c3d4",
+  "entries": [
+    {
+      "commit": "e5f6g7h8",
+      "grooveScore": 0.0312,
+      "driftDelta": 0.0,
+      "status": "OK",
+      "track": "all",
+      "section": "all",
+      "midiFiles": 3
+    }
+  ]
+}
+```
+
+**Status values:** `"OK"` (drift ≤ threshold), `"WARN"` (drift between threshold and 2×threshold), `"FAIL"` (drift > 2×threshold).
+
+**Errors:** `401` without auth; `404` if repo not found.
+
+**Response type:** [`GrooveCheckResponse`](./type_contracts.md#groovecheckresponse)
+
+---
+
 ### GET /api/v1/musehub/repos/{repo_id}/raw/{ref}/{path}
 
 Direct file download by human-readable path and ref (branch/tag), analogous to
@@ -2020,6 +2087,7 @@ HTML-only routes (no JSON path implemented):
 | `GET /musehub/ui/{owner}/{repo_slug}/timeline` | Timeline visualization |
 | `GET /musehub/ui/{owner}/{repo_slug}/sessions` | Recording session list |
 | `GET /musehub/ui/{owner}/{repo_slug}/sessions/{session_id}` | Session detail |
+| `GET /musehub/ui/{owner}/{repo_slug}/groove-check` | Rhythmic consistency dashboard with timing deviation plots |
 | `GET /musehub/ui/{owner}/{repo_slug}/context/{ref}` | Context viewer (what the agent sees) |
 | `GET /musehub/ui/{owner}/{repo_slug}/search` | In-repo search (keyword / NL / pattern / musical) |
 | `GET /musehub/ui/{owner}/{repo_slug}/analysis/{ref}/divergence` | Divergence radar chart |

@@ -34,7 +34,7 @@ import hashlib
 import logging
 from collections.abc import Callable
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Literal, Optional
 
 from maestro.models.musehub_analysis import (
     ALL_DIMENSIONS,
@@ -45,6 +45,7 @@ from maestro.models.musehub_analysis import (
     ChangedDimension,
     ChordEvent,
     ChordMapData,
+    CommitEmotionSnapshot,
     ContourData,
     DimensionData,
     DivergenceData,
@@ -52,6 +53,10 @@ from maestro.models.musehub_analysis import (
     DynamicsData,
     DynamicsPageData,
     EmotionData,
+    EmotionDrift,
+    EmotionMapPoint,
+    EmotionMapResponse,
+    EmotionVector,
     FormData,
     GrooveData,
     HarmonyData,
@@ -669,6 +674,162 @@ def compute_dynamics_page_data(
         computed_at=now,
         tracks=profiles,
         filters_applied=AnalysisFilters(track=track, section=section),
+    )
+
+
+def compute_emotion_map(
+    *,
+    repo_id: str,
+    ref: str,
+    track: Optional[str] = None,
+    section: Optional[str] = None,
+) -> EmotionMapResponse:
+    """Build a complete :class:`EmotionMapResponse` for an emotion map page.
+
+    Returns per-beat intra-ref evolution, cross-commit trajectory, drift
+    distances between consecutive commits, a generated narrative, and source
+    attribution.  All data is deterministic for a given ``ref`` so agents
+    receive consistent results across retries.
+
+    Why separate from ``compute_dimension('emotion', ...)``
+    -------------------------------------------------------
+    The generic emotion dimension returns a single aggregate snapshot.  This
+    function returns the *temporal* and *cross-commit* shape of the emotional
+    arc — the information needed to render line charts and trajectory plots.
+
+    Args:
+        repo_id:  Muse Hub repo UUID (used for logging).
+        ref:      Head Muse commit ref (branch name or commit ID).
+        track:    Optional instrument track filter.
+        section:  Optional musical section filter.
+
+    Returns:
+        :class:`EmotionMapResponse` with evolution, trajectory, drift, and narrative.
+    """
+    seed = _ref_hash(ref)
+    now = _utc_now()
+
+    # ── Per-beat evolution within this ref ─────────────────────────────────
+    total_beats = 32
+    evolution: list[EmotionMapPoint] = []
+    for i in range(total_beats):
+        phase = i / total_beats
+        # Each axis follows a gentle sinusoidal arc seeded by ref hash
+        energy = round(0.4 + 0.4 * abs((phase - 0.5) * 2) * (1 + (seed >> (i % 16)) % 3) / 4, 4)
+        valence = round(max(0.0, min(1.0, 0.5 + 0.3 * ((seed + i) % 7 - 3) / 3)), 4)
+        tension_val = round(min(1.0, 0.2 + 0.6 * phase * (1 + (seed % 3) / 3)), 4)
+        darkness = round(max(0.0, min(1.0, 1.0 - valence * 0.6 - energy * 0.2)), 4)
+        evolution.append(
+            EmotionMapPoint(
+                beat=float(i),
+                vector=EmotionVector(
+                    energy=energy,
+                    valence=valence,
+                    tension=tension_val,
+                    darkness=darkness,
+                ),
+            )
+        )
+
+    # Summary vector = mean across all evolution points
+    n = len(evolution)
+    summary_vector = EmotionVector(
+        energy=round(sum(p.vector.energy for p in evolution) / n, 4),
+        valence=round(sum(p.vector.valence for p in evolution) / n, 4),
+        tension=round(sum(p.vector.tension for p in evolution) / n, 4),
+        darkness=round(sum(p.vector.darkness for p in evolution) / n, 4),
+    )
+
+    # ── Cross-commit trajectory (5 synthetic ancestor snapshots + head) ───
+    _COMMIT_EMOTIONS = ["serene", "tense", "brooding", "joyful", "melancholic", "energetic"]
+    trajectory: list[CommitEmotionSnapshot] = []
+    n_commits = 5
+    for j in range(n_commits):
+        commit_seed = _ref_hash(f"{ref}:{j}")
+        em = _COMMIT_EMOTIONS[(seed + j) % len(_COMMIT_EMOTIONS)]
+        valence_traj = round(max(0.0, min(1.0, 0.3 + (commit_seed % 70) / 100)), 4)
+        energy_traj = round(max(0.0, min(1.0, 0.2 + (commit_seed % 80) / 100)), 4)
+        tension_traj = round(max(0.0, min(1.0, 0.1 + (commit_seed % 90) / 100)), 4)
+        darkness_traj = round(max(0.0, min(1.0, 1.0 - valence_traj * 0.7)), 4)
+        trajectory.append(
+            CommitEmotionSnapshot(
+                commit_id=hashlib.md5(f"{ref}:{j}".encode()).hexdigest()[:16],  # noqa: S324
+                message=f"Ancestor commit {n_commits - j}: {em} passage",
+                timestamp=f"2026-0{1 + j % 9}-{10 + j:02d}T12:00:00Z",
+                vector=EmotionVector(
+                    energy=energy_traj,
+                    valence=valence_traj,
+                    tension=tension_traj,
+                    darkness=darkness_traj,
+                ),
+                primary_emotion=em,
+            )
+        )
+    # Append head commit snapshot
+    trajectory.append(
+        CommitEmotionSnapshot(
+            commit_id=ref[:16] if len(ref) >= 16 else ref,
+            message="HEAD — current composition state",
+            timestamp=now.strftime("%Y-%m-%dT%H:%M:%SZ"),
+            vector=summary_vector,
+            primary_emotion=_COMMIT_EMOTIONS[seed % len(_COMMIT_EMOTIONS)],
+        )
+    )
+
+    # ── Drift between consecutive commits ──────────────────────────────────
+    _AXES = ["energy", "valence", "tension", "darkness"]
+    drift: list[EmotionDrift] = []
+    for k in range(len(trajectory) - 1):
+        a = trajectory[k].vector
+        b = trajectory[k + 1].vector
+        diff = [
+            abs(b.energy - a.energy),
+            abs(b.valence - a.valence),
+            abs(b.tension - a.tension),
+            abs(b.darkness - a.darkness),
+        ]
+        euclidean = round((sum(d**2 for d in diff) ** 0.5), 4)
+        dominant_change = _AXES[diff.index(max(diff))]
+        drift.append(
+            EmotionDrift(
+                from_commit=trajectory[k].commit_id,
+                to_commit=trajectory[k + 1].commit_id,
+                drift=euclidean,
+                dominant_change=dominant_change,
+            )
+        )
+
+    # ── Narrative generation ───────────────────────────────────────────────
+    head_em = trajectory[-1].primary_emotion
+    first_em = trajectory[0].primary_emotion
+    max_drift_entry = max(drift, key=lambda d: d.drift) if drift else None
+    narrative_parts = [
+        f"This composition begins with a {first_em} character",
+        f"and arrives at a {head_em} state at the head commit.",
+    ]
+    if max_drift_entry is not None:
+        narrative_parts.append(
+            f"The largest emotional shift occurs between commits "
+            f"{max_drift_entry.from_commit[:8]} and {max_drift_entry.to_commit[:8]}, "
+            f"with a {max_drift_entry.dominant_change} shift of {max_drift_entry.drift:.2f}."
+        )
+    narrative = " ".join(narrative_parts)
+
+    # ── Source attribution ─────────────────────────────────────────────────
+    source: Literal["explicit", "inferred", "mixed"] = "inferred"  # Full implementation will check commit metadata for explicit tags
+
+    logger.info("✅ emotion-map repo=%s ref=%s beats=%d commits=%d", repo_id[:8], ref, n, len(trajectory))
+    return EmotionMapResponse(
+        repo_id=repo_id,
+        ref=ref,
+        computed_at=now,
+        filters_applied=AnalysisFilters(track=track, section=section),
+        evolution=evolution,
+        summary_vector=summary_vector,
+        trajectory=trajectory,
+        drift=drift,
+        narrative=narrative,
+        source=source,
     )
 
 

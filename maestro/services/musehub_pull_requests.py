@@ -46,6 +46,7 @@ def _to_pr_response(row: db.MusehubPullRequest) -> PRResponse:
         from_branch=row.from_branch,
         to_branch=row.to_branch,
         merge_commit_id=row.merge_commit_id,
+        author=row.author,
         created_at=row.created_at,
     )
 
@@ -69,8 +70,12 @@ async def create_pr(
     from_branch: str,
     to_branch: str,
     body: str = "",
+    author: str = "",
 ) -> PRResponse:
     """Persist a new pull request in ``open`` state and return its wire representation.
+
+    ``author`` identifies the user opening the PR — typically the JWT ``sub``
+    claim from the request token, or a display name from the seed script.
 
     Raises ``ValueError`` if ``from_branch`` does not exist in the repo —
     the caller should surface this as HTTP 404.
@@ -86,6 +91,7 @@ async def create_pr(
         state="open",
         from_branch=from_branch,
         to_branch=to_branch,
+        author=author,
     )
     session.add(pr)
     await session.flush()
