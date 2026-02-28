@@ -3,8 +3,8 @@
 Entry point for the ``muse`` console script. Registers all MVP
 subcommands (arrange, ask, checkout, chord-map, commit, commit-tree, context,
 contour, describe, diff, divergence, dynamics, export, find, form, grep,
-humanize, import, init, key, log, merge, meter, open, play, pull, push,
-recall, remote, session, similarity, status, swing, tag, tempo,
+groove-check, humanize, import, init, key, log, merge, meter, open, play,
+pull, push, recall, remote, session, similarity, status, swing, tag, tempo,
 tempo-scale) as Typer sub-applications.
 """
 from __future__ import annotations
@@ -28,6 +28,7 @@ from maestro.muse_cli.commands import (
     find,
     form,
     grep_cmd,
+    groove_check,
     humanize,
     import_cmd,
     init,
@@ -93,6 +94,7 @@ cli.add_typer(key.app, name="key", help="Read or annotate the musical key of a c
 cli.add_typer(humanize.app, name="humanize", help="Apply micro-timing and velocity humanization to quantized MIDI.")
 cli.add_typer(context.app, name="context", help="Output structured musical context for AI agent consumption.")
 cli.add_typer(divergence.app, name="divergence", help="Show how two branches have diverged musically.")
+cli.add_typer(groove_check.app, name="groove-check", help="Analyze rhythmic drift across commits to find groove regressions.")
 cli.add_typer(form.app, name="form", help="Analyze or annotate the formal structure (sections) of a commit.")
 cli.add_typer(similarity.app, name="similarity", help="Compare two commits by musical similarity score.")
 cli.add_typer(tempo_scale.app, name="tempo-scale", help="Stretch or compress the timing of a commit.")

@@ -25,6 +25,9 @@ This document is the single source of truth for every named entity (TypedDict, d
    - [ExpressivenessResult](#expressivenessresult)
    - [MuseTempoResult](#musetemporesult)
    - [MuseTempoHistoryEntry](#musetemopohistoryentry)
+   - [GrooveStatus](#groovestatuss)
+   - [CommitGrooveMetrics](#commitgroovemetrics)
+   - [GrooveCheckResult](#groovecheckresult)
 5. [Variation Layer (`app/variation/`)](#variation-layer)
    - [Event Envelope payloads](#event-envelope-payloads)
    - [PhraseRecord](#phraserecord)
@@ -1103,6 +1106,60 @@ On failure: `success=False` plus `error` (and optionally `message`).
 | `message` | `str` | Commit message |
 | `effective_bpm` | `float \| None` | Annotated BPM for this commit, or `None` |
 | `delta_bpm` | `float \| None` | Signed BPM change vs. the previous (older) commit; `None` for the oldest commit |
+
+---
+
+### `GrooveStatus`
+
+**Path:** `maestro/services/muse_groove_check.py`
+
+`str Enum` — Per-commit groove assessment relative to the configured drift threshold.
+
+| Member | Value | Condition |
+|--------|-------|-----------|
+| `OK` | `"OK"` | `drift_delta ≤ threshold` |
+| `WARN` | `"WARN"` | `threshold < drift_delta ≤ 2 × threshold` |
+| `FAIL` | `"FAIL"` | `drift_delta > 2 × threshold` |
+
+---
+
+### `CommitGrooveMetrics`
+
+**Path:** `maestro/services/muse_groove_check.py`
+
+`dataclass(frozen=True)` — Rhythmic groove metrics for a single commit in a
+`muse groove-check` range.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `commit` | `str` | Short commit ref (8 hex chars or resolved ID) |
+| `groove_score` | `float` | Average note-onset deviation from the quantization grid in beats; lower = tighter |
+| `drift_delta` | `float` | Absolute change in `groove_score` vs. the prior commit; 0.0 for the oldest commit |
+| `status` | `GrooveStatus` | OK / WARN / FAIL classification against the threshold |
+| `track` | `str` | Track scope used for analysis, or `"all"` |
+| `section` | `str` | Section scope used for analysis, or `"all"` |
+| `midi_files` | `int` | Number of MIDI snapshots analysed for this commit |
+
+---
+
+### `GrooveCheckResult`
+
+**Path:** `maestro/services/muse_groove_check.py`
+
+`dataclass(frozen=True)` — Aggregate result for a `muse groove-check` run.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `commit_range` | `str` | The range string that was analysed (e.g. `"HEAD~5..HEAD"`) |
+| `threshold` | `float` | Drift threshold used for WARN/FAIL classification, in beats |
+| `total_commits` | `int` | Total commits in the analysis window |
+| `flagged_commits` | `int` | Number of commits with status WARN or FAIL |
+| `worst_commit` | `str` | Commit ref with the highest `drift_delta`, or empty string if no drift |
+| `entries` | `tuple[CommitGrooveMetrics, ...]` | Per-commit metrics, oldest-first |
+
+**Agent use case:** An AI agent reads `worst_commit` to identify the exact commit
+that degraded rhythmic consistency, then passes it to `muse describe` for a
+natural-language explanation of the change.
 
 ---
 

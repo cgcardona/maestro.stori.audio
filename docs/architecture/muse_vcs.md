@@ -2988,6 +2988,7 @@ arguments (`USER_ERROR`), 2 outside repo (`REPO_NOT_FOUND`), 3 internal error
 | `muse dynamics` | `commands/dynamics.py` | ✅ stub (PR #130) | #120 |
 | `muse export` | `commands/export.py` | ✅ implemented (PR #137) | #112 |
 | `muse grep` | `commands/grep_cmd.py` | ✅ stub (PR #128) | #124 |
+| `muse groove-check` | `commands/groove_check.py` | ✅ stub (PR #143) | #95 |
 | `muse import` | `commands/import_cmd.py` | ✅ implemented (PR #142) | #118 |
 | `muse meter` | `commands/meter.py` | ✅ implemented (PR #141) | #117 |
 | `muse recall` | `commands/recall.py` | ✅ stub (PR #135) | #122 |
@@ -2998,6 +2999,83 @@ arguments (`USER_ERROR`), 2 outside repo (`REPO_NOT_FOUND`), 3 internal error
 
 All stub commands have stable CLI contracts. Full musical analysis (MIDI content
 parsing, vector embeddings, LLM synthesis) is tracked as follow-up issues.
+
+## `muse groove-check` — Rhythmic Drift Analysis
+
+**Purpose:** Detect which commit in a range introduced rhythmic inconsistency
+by measuring how much the average note-onset deviation from the quantization grid
+changed between adjacent commits.  The music-native equivalent of a style/lint gate.
+
+**Implementation:** `maestro/muse_cli/commands/groove_check.py` (CLI),
+`maestro/services/muse_groove_check.py` (pure service layer).
+**Status:** ✅ stub (issue #95)
+
+### Usage
+
+```bash
+muse groove-check [RANGE] [OPTIONS]
+```
+
+### Flags
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `RANGE` | positional | last 10 commits | Commit range to analyze (e.g. `HEAD~5..HEAD`) |
+| `--track TEXT` | string | all | Scope analysis to a specific instrument track (e.g. `drums`) |
+| `--section TEXT` | string | all | Scope analysis to a specific musical section (e.g. `verse`) |
+| `--threshold FLOAT` | float | 0.1 | Drift threshold in beats; commits exceeding it are flagged WARN; >2× = FAIL |
+| `--json` | flag | off | Emit structured JSON for agent consumption |
+
+### Output example
+
+```
+Groove-check — range HEAD~6..HEAD  threshold 0.1 beats
+
+Commit    Groove Score  Drift Δ  Status
+--------  ------------  -------  ------
+a1b2c3d4        0.0400   0.0000  OK
+e5f6a7b8        0.0500   0.0100  OK
+c9d0e1f2        0.0600   0.0100  OK
+a3b4c5d6        0.0900   0.0300  OK
+e7f8a9b0        0.1500   0.0600  WARN
+c1d2e3f4        0.1300   0.0200  OK
+
+Flagged: 1 / 6 commits  (worst: e7f8a9b0)
+```
+
+### Result types
+
+`GrooveStatus` (Enum: OK/WARN/FAIL), `CommitGrooveMetrics` (frozen dataclass),
+`GrooveCheckResult` (frozen dataclass).
+See `docs/reference/type_contracts.md § GrooveCheckResult`.
+
+### Status classification
+
+| Status | Condition |
+|--------|-----------|
+| OK | `drift_delta ≤ threshold` |
+| WARN | `threshold < drift_delta ≤ 2 × threshold` |
+| FAIL | `drift_delta > 2 × threshold` |
+
+### Agent use case
+
+An AI agent runs `muse groove-check HEAD~20..HEAD --json` after a session to
+identify which commit degraded rhythmic tightness.  The `worst_commit` field
+pinpoints the exact SHA to inspect.  Feeding that into `muse describe` gives
+a natural-language explanation of what changed.  If `--threshold 0.05` returns
+multiple FAIL commits, the session's quantization workflow needs review before
+new layers are added.
+
+### Implementation stub note
+
+`groove_score` and `drift_delta` are computed from deterministic placeholder data.
+Full implementation will walk the `MuseCliCommit` chain, load MIDI snapshots via
+`MidiParser`, compute per-note onset deviation from the nearest quantization grid
+position (resolved from the commit's time-signature + tempo metadata), and
+aggregate by track / section.  Storpheus will expose a `/groove` route once
+the rhythmic-analysis pipeline is productionized.
+
+---
 
 ## `muse contour` — Melodic Contour and Phrase Shape Analysis
 
@@ -3101,4 +3179,3 @@ the computed values will change when the full implementation is wired in.
 `_format_history()`.  Exit codes: 0 success, 2 outside repo
 (`REPO_NOT_FOUND`), 3 internal error (`INTERNAL_ERROR`).
 
----
