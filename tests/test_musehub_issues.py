@@ -447,3 +447,309 @@ async def test_issue_detail_page_shows_author_label(
     # The JS template string containing the author meta-item must be in the page
     assert "Author" in body
     assert "meta-label" in body
+
+
+# ---------------------------------------------------------------------------
+# Issue #218 — enhanced issue detail: comments, assignees, milestones
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.anyio
+async def test_create_issue_comment(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+) -> None:
+    """POST /issues/{number}/comments creates a comment with body and author."""
+    repo_id = await _create_repo(client, auth_headers, "comment-repo-create")
+    issue = await _create_issue(client, auth_headers, repo_id, title="Bass clash in chorus")
+
+    response = await client.post(
+        f"/api/v1/musehub/repos/{repo_id}/issues/{issue['number']}/comments",
+        json={"body": "The section:chorus beats:16-24 has a frequency clash with track:bass."},
+        headers=auth_headers,
+    )
+    assert response.status_code == 201
+    data = response.json()
+    assert "comments" in data
+    assert len(data["comments"]) == 1
+    comment = data["comments"][0]
+    assert comment["body"] == "The section:chorus beats:16-24 has a frequency clash with track:bass."
+    assert isinstance(comment["author"], str)
+    assert comment["parentId"] is None
+
+
+@pytest.mark.anyio
+async def test_list_issue_comments(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+) -> None:
+    """GET /issues/{number}/comments returns comments chronologically."""
+    repo_id = await _create_repo(client, auth_headers, "comment-repo-list")
+    issue = await _create_issue(client, auth_headers, repo_id, title="Kick timing issue")
+
+    await client.post(
+        f"/api/v1/musehub/repos/{repo_id}/issues/{issue['number']}/comments",
+        json={"body": "First comment."},
+        headers=auth_headers,
+    )
+    await client.post(
+        f"/api/v1/musehub/repos/{repo_id}/issues/{issue['number']}/comments",
+        json={"body": "Second comment."},
+        headers=auth_headers,
+    )
+
+    response = await client.get(
+        f"/api/v1/musehub/repos/{repo_id}/issues/{issue['number']}/comments",
+        headers=auth_headers,
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["total"] == 2
+    assert data["comments"][0]["body"] == "First comment."
+    assert data["comments"][1]["body"] == "Second comment."
+
+
+@pytest.mark.anyio
+async def test_musical_context_parsed(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+) -> None:
+    """Musical context references (track:X, section:X, beats:X-Y) are parsed into musicalRefs."""
+    repo_id = await _create_repo(client, auth_headers, "musical-ref-repo")
+    issue = await _create_issue(client, auth_headers, repo_id, title="Musical context test")
+
+    response = await client.post(
+        f"/api/v1/musehub/repos/{repo_id}/issues/{issue['number']}/comments",
+        json={"body": "Check track:bass at section:chorus around beats:16-24 please."},
+        headers=auth_headers,
+    )
+    assert response.status_code == 201
+    comment = response.json()["comments"][0]
+    refs = comment["musicalRefs"]
+    assert len(refs) == 3
+    ref_types = {r["type"]: r["value"] for r in refs}
+    assert ref_types.get("track") == "bass"
+    assert ref_types.get("section") == "chorus"
+    assert ref_types.get("beats") == "16-24"
+
+
+@pytest.mark.anyio
+async def test_assign_issue(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+) -> None:
+    """POST /issues/{number}/assign sets the assignee field."""
+    repo_id = await _create_repo(client, auth_headers, "assignee-repo")
+    issue = await _create_issue(client, auth_headers, repo_id, title="Assign test issue")
+
+    response = await client.post(
+        f"/api/v1/musehub/repos/{repo_id}/issues/{issue['number']}/assign",
+        json={"assignee": "miles_davis"},
+        headers=auth_headers,
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["assignee"] == "miles_davis"
+
+
+@pytest.mark.anyio
+async def test_unassign_issue(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+) -> None:
+    """POST /issues/{number}/assign with null assignee clears the field."""
+    repo_id = await _create_repo(client, auth_headers, "unassign-repo")
+    issue = await _create_issue(client, auth_headers, repo_id, title="Unassign test")
+
+    await client.post(
+        f"/api/v1/musehub/repos/{repo_id}/issues/{issue['number']}/assign",
+        json={"assignee": "coltrane"},
+        headers=auth_headers,
+    )
+    response = await client.post(
+        f"/api/v1/musehub/repos/{repo_id}/issues/{issue['number']}/assign",
+        json={"assignee": None},
+        headers=auth_headers,
+    )
+    assert response.status_code == 200
+    assert response.json()["assignee"] is None
+
+
+@pytest.mark.anyio
+async def test_create_milestone(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+) -> None:
+    """POST /milestones creates a milestone with title and sequential number."""
+    repo_id = await _create_repo(client, auth_headers, "milestone-create-repo")
+
+    response = await client.post(
+        f"/api/v1/musehub/repos/{repo_id}/milestones",
+        json={"title": "Album v1.0", "description": "First release cut"},
+        headers=auth_headers,
+    )
+    assert response.status_code == 201
+    data = response.json()
+    assert data["title"] == "Album v1.0"
+    assert data["state"] == "open"
+    assert data["number"] == 1
+    assert data["openIssues"] == 0
+    assert data["closedIssues"] == 0
+
+
+@pytest.mark.anyio
+async def test_assign_issue_to_milestone(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+) -> None:
+    """POST /issues/{number}/milestone links the issue to a milestone."""
+    repo_id = await _create_repo(client, auth_headers, "milestone-assign-repo")
+    issue = await _create_issue(client, auth_headers, repo_id, title="Milestone target issue")
+
+    ms_resp = await client.post(
+        f"/api/v1/musehub/repos/{repo_id}/milestones",
+        json={"title": "Mix Revision 2"},
+        headers=auth_headers,
+    )
+    milestone_id: str = ms_resp.json()["milestoneId"]
+
+    response = await client.post(
+        f"/api/v1/musehub/repos/{repo_id}/issues/{issue['number']}/milestone",
+        params={"milestone_id": milestone_id},
+        headers=auth_headers,
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["milestoneId"] == milestone_id
+    assert data["milestoneTitle"] == "Mix Revision 2"
+
+
+@pytest.mark.anyio
+async def test_reopen_issue(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+) -> None:
+    """POST /issues/{number}/reopen transitions a closed issue back to open."""
+    repo_id = await _create_repo(client, auth_headers, "reopen-repo")
+    issue = await _create_issue(client, auth_headers, repo_id, title="Reopen test")
+    number = issue["number"]
+
+    await client.post(
+        f"/api/v1/musehub/repos/{repo_id}/issues/{number}/close",
+        headers=auth_headers,
+    )
+
+    response = await client.post(
+        f"/api/v1/musehub/repos/{repo_id}/issues/{number}/reopen",
+        headers=auth_headers,
+    )
+    assert response.status_code == 200
+    assert response.json()["state"] == "open"
+
+
+@pytest.mark.anyio
+async def test_threaded_comment_reply(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+) -> None:
+    """POST /comments with parentId creates a threaded reply."""
+    repo_id = await _create_repo(client, auth_headers, "thread-repo")
+    issue = await _create_issue(client, auth_headers, repo_id, title="Threading test")
+    number = issue["number"]
+
+    first_resp = await client.post(
+        f"/api/v1/musehub/repos/{repo_id}/issues/{number}/comments",
+        json={"body": "Top-level comment."},
+        headers=auth_headers,
+    )
+    parent_id = first_resp.json()["comments"][0]["commentId"]
+
+    reply_resp = await client.post(
+        f"/api/v1/musehub/repos/{repo_id}/issues/{number}/comments",
+        json={"body": "Reply to the top-level.", "parentId": parent_id},
+        headers=auth_headers,
+    )
+    assert reply_resp.status_code == 201
+    comments = reply_resp.json()["comments"]
+    replies = [c for c in comments if c["parentId"] == parent_id]
+    assert len(replies) == 1
+    assert replies[0]["body"] == "Reply to the top-level."
+
+
+@pytest.mark.anyio
+async def test_issue_comment_count_in_response(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+) -> None:
+    """GET /issues/{number} returns commentCount reflecting current non-deleted comments."""
+    repo_id = await _create_repo(client, auth_headers, "comment-count-repo")
+    issue = await _create_issue(client, auth_headers, repo_id, title="Count test")
+    number = issue["number"]
+
+    await client.post(
+        f"/api/v1/musehub/repos/{repo_id}/issues/{number}/comments",
+        json={"body": "Comment one."},
+        headers=auth_headers,
+    )
+    await client.post(
+        f"/api/v1/musehub/repos/{repo_id}/issues/{number}/comments",
+        json={"body": "Comment two."},
+        headers=auth_headers,
+    )
+
+    response = await client.get(
+        f"/api/v1/musehub/repos/{repo_id}/issues/{number}",
+        headers=auth_headers,
+    )
+    assert response.status_code == 200
+    assert response.json()["commentCount"] == 2
+
+
+@pytest.mark.anyio
+async def test_edit_issue_title_and_body(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+) -> None:
+    """PATCH /issues/{number} updates title and body."""
+    repo_id = await _create_repo(client, auth_headers, "edit-issue-repo")
+    issue = await _create_issue(client, auth_headers, repo_id, title="Original title")
+
+    response = await client.patch(
+        f"/api/v1/musehub/repos/{repo_id}/issues/{issue['number']}",
+        json={"title": "Updated title", "body": "Updated body."},
+        headers=auth_headers,
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["title"] == "Updated title"
+    assert data["body"] == "Updated body."
+
+
+@pytest.mark.anyio
+async def test_list_milestones(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+) -> None:
+    """GET /milestones returns all open milestones."""
+    repo_id = await _create_repo(client, auth_headers, "milestone-list-repo")
+
+    await client.post(
+        f"/api/v1/musehub/repos/{repo_id}/milestones",
+        json={"title": "Phase 1"},
+        headers=auth_headers,
+    )
+    await client.post(
+        f"/api/v1/musehub/repos/{repo_id}/milestones",
+        json={"title": "Phase 2"},
+        headers=auth_headers,
+    )
+
+    response = await client.get(
+        f"/api/v1/musehub/repos/{repo_id}/milestones",
+        headers=auth_headers,
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert len(data["milestones"]) == 2
+    assert data["milestones"][0]["title"] == "Phase 1"
+    assert data["milestones"][1]["title"] == "Phase 2"

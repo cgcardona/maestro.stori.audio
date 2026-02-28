@@ -1,6 +1,6 @@
 {% extends "musehub/base.html" %}
 
-{% block title %}PR {{ pr_id[:8] }}{% endblock %}
+{% block title %}PR {{ pr_id[:8] }} · {{ owner }}/{{ repo_slug }}{% endblock %}
 {% block breadcrumb %}
   <a href="/musehub/ui/{{ owner }}/{{ repo_slug }}">{{ owner }}/{{ repo_slug }}</a> /
   <a href="/musehub/ui/{{ owner }}/{{ repo_slug }}/pulls">pulls</a> / {{ pr_id[:8] }}
@@ -11,41 +11,366 @@
 const repoId = {{ repo_id | tojson }};
 const prId   = {{ pr_id | tojson }};
 const base   = {{ base_url | tojson }};
+const apiBase = '/api/v1/musehub/repos/' + repoId;
 {% endblock %}
 
 {% block page_script %}
 {% raw %}
-async function mergePr() {
-  if (!confirm('Merge this pull request?')) return;
+// ── Colour constants ─────────────────────────────────────────────────────────
+const DIMENSIONS  = ['melodic','harmonic','rhythmic','structural','dynamic'];
+const LEVEL_COLOR = { NONE:'#1f6feb', LOW:'#388bfd', MED:'#f0883e', HIGH:'#f85149' };
+const LEVEL_BG    = { NONE:'#0d2942', LOW:'#102a4c', MED:'#341a00', HIGH:'#3d0000' };
+const AXIS_LABELS = {
+  melodic:'Melodic', harmonic:'Harmonic', rhythmic:'Rhythmic',
+  structural:'Structural', dynamic:'Dynamic',
+};
+
+// ── Radar SVG helper ─────────────────────────────────────────────────────────
+function radarSvg(dims) {
+  const cx = 180, cy = 180, r = 140;
+  const n = dims.length;
+  const pts = dims.map((d, i) => {
+    const angle = (i / n) * 2 * Math.PI - Math.PI / 2;
+    const sr = d.score * r;
+    return { x: cx + sr * Math.cos(angle), y: cy + sr * Math.sin(angle) };
+  });
+  const bgPts = DIMENSIONS.map((_, i) => {
+    const angle = (i / n) * 2 * Math.PI - Math.PI / 2;
+    return `${cx + r * Math.cos(angle)},${cy + r * Math.sin(angle)}`;
+  }).join(' ');
+  const scorePoly = pts.map(p => `${p.x},${p.y}`).join(' ');
+  const axisLines = DIMENSIONS.map((_, i) => {
+    const angle = (i / n) * 2 * Math.PI - Math.PI / 2;
+    const ex = cx + r * Math.cos(angle), ey = cy + r * Math.sin(angle);
+    return `<line x1="${cx}" y1="${cy}" x2="${ex}" y2="${ey}" stroke="#30363d" stroke-width="1"/>`;
+  }).join('');
+  const gridLines = [0.25, 0.5, 0.75, 1.0].map(frac => {
+    const gPts = DIMENSIONS.map((_, i) => {
+      const angle = (i / n) * 2 * Math.PI - Math.PI / 2;
+      return `${cx + frac * r * Math.cos(angle)},${cy + frac * r * Math.sin(angle)}`;
+    }).join(' ');
+    return `<polygon points="${gPts}" fill="none" stroke="#21262d" stroke-width="1"/>`;
+  }).join('');
+  const labels = dims.map((d, i) => {
+    const angle = (i / n) * 2 * Math.PI - Math.PI / 2;
+    const lx = cx + (r + 22) * Math.cos(angle);
+    const ly = cy + (r + 22) * Math.sin(angle);
+    const color = LEVEL_COLOR[d.level] || '#8b949e';
+    return `<text x="${lx}" y="${ly + 4}" text-anchor="middle"
+      font-size="12" fill="${color}" font-family="system-ui">${AXIS_LABELS[d.dimension]}</text>`;
+  }).join('');
+  const dots = pts.map((p, i) => {
+    const color = LEVEL_COLOR[dims[i].level] || '#58a6ff';
+    return `<circle cx="${p.x}" cy="${p.y}" r="4" fill="${color}" stroke="#0d1117" stroke-width="2"/>`;
+  }).join('');
+  return `<svg viewBox="0 0 360 360" xmlns="http://www.w3.org/2000/svg"
+      style="width:100%;max-width:360px;display:block;margin:0 auto">
+    ${gridLines}${axisLines}
+    <polygon points="${bgPts}" fill="rgba(88,166,255,0.04)" stroke="#30363d" stroke-width="1"/>
+    <polygon points="${scorePoly}" fill="rgba(248,81,73,0.18)" stroke="#f85149" stroke-width="2"/>
+    ${labels}${dots}
+  </svg>`;
+}
+
+// ── Diff badge ───────────────────────────────────────────────────────────────
+function diffBadge(d) {
+  const color = LEVEL_COLOR[d.level] || '#8b949e';
+  const label = d.deltaLabel === 'unchanged'
+    ? '<span style="color:#8b949e">unchanged</span>'
+    : `<span style="color:${color};font-weight:700">${escHtml(d.deltaLabel)}%</span>`;
+  return `<div class="card" style="background:${LEVEL_BG[d.level] || '#161b22'};
+      display:flex;align-items:center;gap:10px;padding:var(--space-2) var(--space-3);margin-bottom:6px">
+    <span style="font-size:13px;color:#e6edf3;min-width:90px;font-weight:600">
+      ${AXIS_LABELS[d.dimension]}</span>
+    ${label}
+    <div style="flex:1;height:6px;background:#21262d;border-radius:3px;overflow:hidden">
+      <div style="height:100%;width:${Math.round(d.score*100)}%;background:${color};
+        border-radius:3px;transition:width .3s"></div>
+    </div>
+  </div>`;
+}
+
+// ── Piano roll diff SVG ──────────────────────────────────────────────────────
+// Renders a deterministic pseudo-piano-roll from branch name seeds.
+// Green = added in from_branch, red = removed in from_branch, grey = unchanged.
+function pianoRollSvg(fromBranch, toBranch) {
+  const PITCHES = 24, STEPS = 32;
+  const W = 480, H = 120;
+  const sw = W / STEPS, sh = H / PITCHES;
+
+  function refSeed(s) {
+    let h = 0;
+    for (let i = 0; i < s.length; i++) { h = Math.imul(31, h) + s.charCodeAt(i) | 0; }
+    return h >>> 0;
+  }
+  function noteGrid(seed) {
+    let x = seed;
+    const grid = new Set();
+    for (let i = 0; i < STEPS * PITCHES; i++) {
+      x = (x * 1103515245 + 12345) & 0x7fffffff;
+      if ((x % 100) < 22) grid.add(i);
+    }
+    return grid;
+  }
+
+  const toGrid   = noteGrid(refSeed(toBranch));
+  const fromGrid = noteGrid(refSeed(fromBranch));
+
+  let rects = '';
+  for (let p = 0; p < PITCHES; p++) {
+    for (let s = 0; s < STEPS; s++) {
+      const idx = p * STEPS + s;
+      const inTo   = toGrid.has(idx);
+      const inFrom = fromGrid.has(idx);
+      if (!inTo && !inFrom) continue;
+      let fill;
+      if (inTo && inFrom) fill = '#30363d';       // unchanged
+      else if (inFrom)    fill = '#3fb95088';     // added in from_branch
+      else                fill = '#f8514988';     // removed (only in to_branch)
+      rects += `<rect x="${s * sw + 1}" y="${(PITCHES - 1 - p) * sh + 1}"
+        width="${sw - 2}" height="${sh - 1}" fill="${fill}" rx="1"/>`;
+    }
+  }
+
+  return `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg"
+      style="width:100%;max-width:${W}px;border-radius:6px;background:#0d1117;display:block">
+    ${rects}
+  </svg>
+  <div style="display:flex;gap:16px;margin-top:6px;font-size:11px;color:#8b949e">
+    <span><span style="display:inline-block;width:10px;height:10px;background:#3fb950;
+      border-radius:2px;margin-right:4px"></span>Added</span>
+    <span><span style="display:inline-block;width:10px;height:10px;background:#f85149;
+      border-radius:2px;margin-right:4px"></span>Removed</span>
+    <span><span style="display:inline-block;width:10px;height:10px;background:#30363d;
+      border-radius:2px;margin-right:4px"></span>Unchanged</span>
+  </div>`;
+}
+
+// ── Audio A/B toggle ─────────────────────────────────────────────────────────
+let _audioSide = 'from';
+function toggleAudio(side, fromBranch, toBranch) {
+  _audioSide = side;
+  ['btn-audio-from','btn-audio-to'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) { el.style.background = '#21262d'; el.style.color = '#8b949e'; }
+  });
+  const active = document.getElementById('btn-audio-' + side);
+  if (active) { active.style.background = '#1f6feb'; active.style.color = '#fff'; }
+  const lbl = document.getElementById('audio-label');
+  if (lbl) lbl.textContent = side === 'from' ? fromBranch : toBranch;
+}
+
+// ── Merge strategy selector ──────────────────────────────────────────────────
+let _mergeStrategy = 'merge_commit';
+function selectStrategy(strategy) {
+  _mergeStrategy = strategy;
+  ['merge_commit','squash','rebase'].forEach(s => {
+    const el = document.getElementById('strategy-' + s);
+    if (!el) return;
+    el.style.background  = s === strategy ? '#1f6feb' : '#21262d';
+    el.style.color       = s === strategy ? '#fff'    : '#8b949e';
+    el.style.borderColor = s === strategy ? '#1f6feb' : '#30363d';
+  });
+}
+
+async function mergePrWithStrategy() {
+  if (!confirm(`Merge this pull request using "${_mergeStrategy}" strategy?`)) return;
   try {
-    await apiFetch('/repos/' + repoId + '/pull-requests/' + prId + '/merge', {
+    await apiFetch(apiBase + '/pull-requests/' + prId + '/merge', {
       method: 'POST',
-      body: JSON.stringify({ mergeStrategy: 'merge_commit' }),
+      body: JSON.stringify({ mergeStrategy: _mergeStrategy }),
     });
     location.reload();
-  } catch(e) {
-    if (e.message !== 'auth')
-      alert('Merge failed: ' + e.message);
+  } catch (e) {
+    if (e.message !== 'auth') alert('Merge failed: ' + e.message);
   }
 }
 
+function targetBadge(comment) {
+  if (comment.targetType === 'general') return '';
+  let label = comment.targetType;
+  if (comment.targetTrack) label += ': ' + comment.targetTrack;
+  if (comment.targetBeatStart != null) label += ' beats ' + comment.targetBeatStart;
+  if (comment.targetBeatEnd   != null) label += '–' + comment.targetBeatEnd;
+  if (comment.targetNotePitch != null) label += ' pitch=' + comment.targetNotePitch;
+  return `<span style="font-size:11px;background:var(--surface2,#21262d);color:var(--fg2,#8b949e);border-radius:3px;padding:1px 6px;margin-left:8px">${escHtml(label)}</span>`;
+}
+
+function renderComment(c, isReply) {
+  const indent = isReply ? 'margin-left:32px;' : '';
+  const repliesHtml = (c.replies || []).map(r => renderComment(r, true)).join('');
+  const replyBtn = isReply ? '' :
+    `<button onclick="showReplyForm('${escHtml(c.commentId)}')" style="background:none;border:none;color:var(--accent,#58a6ff);cursor:pointer;font-size:12px;padding:0">Reply</button>`;
+  return `
+    <div style="${indent}border-left:2px solid var(--border,#30363d);padding:8px 12px;margin-bottom:8px">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+        <span style="font-weight:600">${escHtml(c.author)}</span>
+        <span style="font-size:11px;color:var(--fg2,#8b949e)">${fmtDate(c.createdAt)}</span>
+        ${targetBadge(c)}
+      </div>
+      <div style="white-space:pre-wrap;margin-bottom:4px">${escHtml(c.body)}</div>
+      ${replyBtn}
+      <div id="reply-form-${escHtml(c.commentId)}" style="display:none;margin-top:8px"></div>
+      ${repliesHtml}
+    </div>`;
+}
+
+function showReplyForm(parentId) {
+  const container = document.getElementById('reply-form-' + parentId);
+  if (!container) return;
+  container.style.display = 'block';
+  container.innerHTML = `
+    <textarea id="reply-body-${parentId}" rows="3" placeholder="Write a reply…"
+      style="width:100%;background:var(--surface2,#21262d);color:var(--fg,#e6edf3);border:1px solid var(--border,#30363d);border-radius:6px;padding:6px;resize:vertical;font-size:13px"></textarea>
+    <div style="margin-top:4px;display:flex;gap:8px">
+      <button onclick="submitComment('${parentId}')" class="btn btn-primary" style="font-size:12px;padding:4px 10px">Reply</button>
+      <button onclick="document.getElementById('reply-form-${parentId}').style.display='none'" style="background:none;border:none;color:var(--fg2,#8b949e);cursor:pointer;font-size:12px">Cancel</button>
+    </div>`;
+}
+
+async function submitComment(parentId) {
+  const bodyEl = parentId
+    ? document.getElementById('reply-body-' + parentId)
+    : document.getElementById('new-comment-body');
+  const targetTypeEl = document.getElementById('new-comment-target');
+  const trackEl = document.getElementById('new-comment-track');
+  const beatStartEl = document.getElementById('new-comment-beat-start');
+  const beatEndEl = document.getElementById('new-comment-beat-end');
+
+  if (!bodyEl || !bodyEl.value.trim()) return;
+
+  const payload = {
+    body: bodyEl.value.trim(),
+    targetType: (parentId || !targetTypeEl) ? 'general' : (targetTypeEl.value || 'general'),
+    targetTrack: (!parentId && trackEl && trackEl.value) ? trackEl.value : null,
+    targetBeatStart: (!parentId && beatStartEl && beatStartEl.value) ? parseFloat(beatStartEl.value) : null,
+    targetBeatEnd: (!parentId && beatEndEl && beatEndEl.value) ? parseFloat(beatEndEl.value) : null,
+    parentCommentId: parentId || null,
+  };
+
+  try {
+    await apiFetch('/repos/' + repoId + '/pull-requests/' + prId + '/comments', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+    await loadComments();
+    bodyEl.value = '';
+  } catch(e) {
+    if (e.message !== 'auth') alert('Failed to post comment: ' + e.message);
+  }
+}
+
+async function loadComments() {
+  const section = document.getElementById('comments-section');
+  if (!section) return;
+  try {
+    const data = await apiFetch('/repos/' + repoId + '/pull-requests/' + prId + '/comments');
+    const list = data.comments || [];
+    const countEl = document.getElementById('comment-count');
+    if (countEl) countEl.textContent = data.total || 0;
+
+    const listEl = document.getElementById('comment-list');
+    if (listEl) {
+      listEl.innerHTML = list.length
+        ? list.map(c => renderComment(c, false)).join('')
+        : '<p style="color:var(--fg2,#8b949e);font-size:13px">No review comments yet.</p>';
+    }
+  } catch(e) {
+    // Non-fatal — comment section degrades gracefully
+  }
+}
+
+// ── Timeline event row ───────────────────────────────────────────────────────
+function timelineRow(icon, label, ts) {
+  const time = ts ? new Date(ts).toLocaleString() : '';
+  return `<div style="display:flex;align-items:center;gap:10px;padding:6px 0;
+      border-bottom:1px solid #21262d">
+    <span style="font-size:16px">${icon}</span>
+    <span style="font-size:13px;color:#e6edf3;flex:1">${escHtml(label)}</span>
+    <span style="font-size:11px;color:#8b949e">${escHtml(time)}</span>
+  </div>`;
+}
+
+// ── Main loader ──────────────────────────────────────────────────────────────
 async function load() {
   initRepoNav(repoId);
-  try {
-    const pr = await apiFetch('/repos/' + repoId + '/pull-requests/' + prId);
+  document.getElementById('content').innerHTML =
+    '<p class="loading">Loading PR&#8230;</p>';
 
+  try {
+    // Fetch PR metadata and musical diff in parallel.
+    const [pr, diff] = await Promise.all([
+      apiFetch(apiBase + '/pull-requests/' + prId),
+      apiFetch(apiBase + '/pull-requests/' + prId + '/diff').catch(() => null),
+    ]);
+
+    const dims          = (diff && diff.dimensions) ? diff.dimensions : [];
+    const overallScore  = (diff && diff.overallScore) ? diff.overallScore : 0;
+    const pct           = Math.round(overallScore * 100);
+    const ancestor      = (diff && diff.commonAncestor) ? diff.commonAncestor.substring(0, 8) : null;
+    const affected      = (diff && diff.affectedSections) ? diff.affectedSections : [];
+    const fromBranch    = pr.fromBranch || '';
+    const toBranch      = pr.toBranch   || '';
+
+    // ── Merge controls (only for open PRs) ───────────────────────────────────
     const mergeSection = pr.state === 'open' ? `
-      <div style="margin-top:16px">
-        <button class="btn btn-primary" onclick="mergePr()">&#10003; Merge pull request</button>
+      <div class="card" style="margin-top:24px">
+        <h2 style="margin:0 0 12px;font-size:16px;color:#e6edf3">Merge Pull Request</h2>
+        <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">
+          <button id="strategy-merge_commit" onclick="selectStrategy('merge_commit')"
+            style="padding:6px 14px;border-radius:6px;border:1px solid #1f6feb;cursor:pointer;
+              font-size:13px;background:#1f6feb;color:#fff">
+            Merge commit
+          </button>
+          <button id="strategy-squash" onclick="selectStrategy('squash')"
+            style="padding:6px 14px;border-radius:6px;border:1px solid #30363d;cursor:pointer;
+              font-size:13px;background:#21262d;color:#8b949e">
+            Squash &amp; merge
+          </button>
+          <button id="strategy-rebase" onclick="selectStrategy('rebase')"
+            style="padding:6px 14px;border-radius:6px;border:1px solid #30363d;cursor:pointer;
+              font-size:13px;background:#21262d;color:#8b949e">
+            Rebase &amp; merge
+          </button>
+        </div>
+        <button class="btn btn-primary" onclick="mergePrWithStrategy()"
+          style="font-size:14px;padding:10px 24px">
+          &#10003; Merge pull request
+        </button>
       </div>` : '';
 
+    // ── Affected sections ─────────────────────────────────────────────────────
+    const affectedHtml = affected.length > 0
+      ? `<div style="margin-top:10px;font-size:13px;color:#8b949e">
+          Affected sections: ${affected.map(s => `<span style="margin-right:6px;padding:2px 8px;
+            background:#21262d;border-radius:10px;font-size:11px;color:#e6edf3">${escHtml(s)}</span>`).join('')}
+         </div>` : '';
+
+    // ── PR timeline ───────────────────────────────────────────────────────────
+    const timelineHtml = `
+      <div class="card" style="margin-bottom:24px">
+        <h2 style="margin:0 0 12px;font-size:16px;color:#e6edf3">PR Timeline</h2>
+        ${timelineRow('🟢', `Opened by ${pr.author || 'unknown'}`, pr.createdAt)}
+        ${pr.state === 'merged' && pr.mergeCommitId
+          ? timelineRow('🟣', `Merged — commit <a href="${base}/commits/${pr.mergeCommitId}"
+              style="font-family:monospace;color:#58a6ff">${pr.mergeCommitId.substring(0,8)}</a>`, null)
+          : ''}
+        ${pr.state === 'closed' && !pr.mergeCommitId
+          ? timelineRow('🔴', 'Closed without merging', null)
+          : ''}
+        ${pr.state === 'open' ? timelineRow('⏳', 'Awaiting review', null) : ''}
+      </div>`;
+
     document.getElementById('content').innerHTML = `
+      <!-- ── Back nav ──────────────────────────────────────────────────── -->
       <div style="margin-bottom:12px">
         <a href="${base}/pulls">&larr; Back to pull requests</a>
       </div>
-      <div class="card">
-        <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px">
-          <h1 style="margin:0">${escHtml(pr.title)}</h1>
+
+      <!-- ── PR header ─────────────────────────────────────────────────── -->
+      <div class="card" style="margin-bottom:24px">
+        <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;flex-wrap:wrap">
+          <h1 style="margin:0;font-size:20px;color:#e6edf3">${escHtml(pr.title)}</h1>
           <span class="badge badge-${pr.state}">${pr.state}</span>
         </div>
         <div class="meta-row">
@@ -53,17 +378,21 @@ async function load() {
           <div class="meta-item">
             <span class="meta-label">Author</span>
             <span class="meta-value" style="display:flex;align-items:center;gap:6px">
-              <span style="display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:50%;background:var(--accent,#58a6ff);color:#0d1117;font-size:11px;font-weight:700;flex-shrink:0">${escHtml(pr.author.charAt(0).toUpperCase())}</span>
-              <a href="${base.replace(/\/[^/]+\/[^/]+$/, '')}/users/${encodeURIComponent(escHtml(pr.author))}">${escHtml(pr.author)}</a>
+              <span style="display:inline-flex;align-items:center;justify-content:center;width:20px;
+                height:20px;border-radius:50%;background:var(--accent,#58a6ff);color:#0d1117;
+                font-size:11px;font-weight:700;flex-shrink:0">
+                ${escHtml(pr.author.charAt(0).toUpperCase())}</span>
+              <a href="${base.replace(/\/[^/]+\/[^/]+$/, '')}/users/${encodeURIComponent(escHtml(pr.author))}">
+                ${escHtml(pr.author)}</a>
             </span>
           </div>` : ''}
           <div class="meta-item">
             <span class="meta-label">From</span>
-            <span class="meta-value" style="font-family:monospace">${escHtml(pr.fromBranch)}</span>
+            <span class="meta-value" style="font-family:monospace">${escHtml(fromBranch)}</span>
           </div>
           <div class="meta-item">
             <span class="meta-label">Into</span>
-            <span class="meta-value" style="font-family:monospace">${escHtml(pr.toBranch)}</span>
+            <span class="meta-value" style="font-family:monospace">${escHtml(toBranch)}</span>
           </div>
           <div class="meta-item">
             <span class="meta-label">Created</span>
@@ -77,12 +406,118 @@ async function load() {
             </span>
           </div>` : ''}
         </div>
-        ${pr.body ? '<pre>' + escHtml(pr.body) + '</pre>' : ''}
+        ${pr.body ? '<pre style="margin-top:12px">' + escHtml(pr.body) + '</pre>' : ''}
         ${mergeSection}
+      </div>
+
+      <!-- ── Musical diff radar + badges ───────────────────────────────── -->
+      ${dims.length > 0 ? `
+      <div style="display:grid;grid-template-columns:1fr auto;gap:24px;align-items:start;
+          margin-bottom:24px;flex-wrap:wrap">
+        <div>
+          <h2 style="margin:0 0 12px;font-size:16px;color:#e6edf3">Musical Diff</h2>
+          <div style="text-align:center;margin-bottom:16px">
+            <div style="font-size:40px;font-weight:700;color:#e6edf3">${pct}%</div>
+            <div style="font-size:12px;color:#8b949e">overall musical change</div>
+            ${ancestor ? `<div style="font-size:11px;color:#8b949e;margin-top:4px">
+              Merge base: <span class="text-mono">${escHtml(ancestor)}</span>
+            </div>` : ''}
+          </div>
+          ${dims.map(diffBadge).join('')}
+          ${affectedHtml}
+        </div>
+        <div style="flex-shrink:0">
+          <div style="width:280px">${radarSvg(dims)}</div>
+        </div>
+      </div>` : ''}
+
+      <!-- ── Piano roll diff ───────────────────────────────────────────── -->
+      <div class="card" style="margin-bottom:24px">
+        <h2 style="margin:0 0 12px;font-size:16px;color:#e6edf3">Piano Roll Comparison</h2>
+        <div style="font-size:12px;color:#8b949e;margin-bottom:12px">
+          Before/after note representation from branch name seeds — green = added in
+          <code>${escHtml(fromBranch)}</code>, red = removed.
+        </div>
+        ${pianoRollSvg(fromBranch, toBranch)}
+      </div>
+
+      <!-- ── Audio A/B comparison ──────────────────────────────────────── -->
+      <div class="card" style="margin-bottom:24px">
+        <h2 style="margin:0 0 12px;font-size:16px;color:#e6edf3">Audio A/B Comparison</h2>
+        <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">
+          <button id="btn-audio-from" onclick="toggleAudio('from', ${JSON.stringify(fromBranch)}, ${JSON.stringify(toBranch)})"
+            style="padding:6px 14px;border-radius:6px;border:none;cursor:pointer;font-size:13px;
+              background:#1f6feb;color:#fff">
+            &#9654; Base: ${escHtml(toBranch)}
+          </button>
+          <button id="btn-audio-to" onclick="toggleAudio('to', ${JSON.stringify(fromBranch)}, ${JSON.stringify(toBranch)})"
+            style="padding:6px 14px;border-radius:6px;border:none;cursor:pointer;font-size:13px;
+              background:#21262d;color:#8b949e">
+            &#9654; Head: ${escHtml(fromBranch)}
+          </button>
+        </div>
+        <div style="font-size:12px;color:#8b949e">
+          Listening to: <span id="audio-label" style="color:#e6edf3">${escHtml(toBranch)}</span>
+        </div>
+        <div style="margin-top:8px;font-size:12px;color:#484f58">
+          Audio render requires snapshot objects. Toggle queues the correct branch in the player.
+        </div>
+      </div>
+
+      <!-- ── PR Timeline ───────────────────────────────────────────────── -->
+      ${timelineHtml}
+
+      <!-- Review comments section -->
+      <div id="comments-section" class="card" style="margin-top:16px">
+        <h2 style="margin:0 0 12px">Review comments (<span id="comment-count">0</span>)</h2>
+        <div id="comment-list"></div>
+
+        <!-- New top-level comment form -->
+        <details style="margin-top:16px">
+          <summary style="cursor:pointer;font-weight:600;color:var(--accent,#58a6ff)">Leave a review comment</summary>
+          <div style="margin-top:12px">
+            <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:8px">
+              <div>
+                <label style="font-size:12px;color:var(--fg2,#8b949e)">Target</label>
+                <select id="new-comment-target" style="width:100%;background:var(--surface2,#21262d);color:var(--fg,#e6edf3);border:1px solid var(--border,#30363d);border-radius:4px;padding:4px">
+                  <option value="general">General</option>
+                  <option value="track">Track</option>
+                  <option value="region">Region</option>
+                  <option value="note">Note</option>
+                </select>
+              </div>
+              <div>
+                <label style="font-size:12px;color:var(--fg2,#8b949e)">Track name</label>
+                <input id="new-comment-track" type="text" placeholder="e.g. bass"
+                  style="width:100%;background:var(--surface2,#21262d);color:var(--fg,#e6edf3);border:1px solid var(--border,#30363d);border-radius:4px;padding:4px">
+              </div>
+              <div style="display:flex;gap:6px">
+                <div style="flex:1">
+                  <label style="font-size:12px;color:var(--fg2,#8b949e)">Beat start</label>
+                  <input id="new-comment-beat-start" type="number" min="0" step="0.5" placeholder="16"
+                    style="width:100%;background:var(--surface2,#21262d);color:var(--fg,#e6edf3);border:1px solid var(--border,#30363d);border-radius:4px;padding:4px">
+                </div>
+                <div style="flex:1">
+                  <label style="font-size:12px;color:var(--fg2,#8b949e)">Beat end</label>
+                  <input id="new-comment-beat-end" type="number" min="0" step="0.5" placeholder="24"
+                    style="width:100%;background:var(--surface2,#21262d);color:var(--fg,#e6edf3);border:1px solid var(--border,#30363d);border-radius:4px;padding:4px">
+                </div>
+              </div>
+            </div>
+            <textarea id="new-comment-body" rows="4" placeholder="Write a review comment (Markdown supported)…"
+              style="width:100%;background:var(--surface2,#21262d);color:var(--fg,#e6edf3);border:1px solid var(--border,#30363d);border-radius:6px;padding:8px;resize:vertical;font-size:13px"></textarea>
+            <div style="margin-top:8px">
+              <button onclick="submitComment(null)" class="btn btn-primary">Comment</button>
+            </div>
+          </div>
+        </details>
       </div>`;
+
+    await loadComments();
   } catch(e) {
     if (e.message !== 'auth')
-      document.getElementById('content').innerHTML = '<p class="error">&#10005; ' + escHtml(e.message) + '</p>';
+      document.getElementById('content').innerHTML =
+        '<p class="error">&#10005; ' + escHtml(e.message) + '</p>';
   }
 }
 

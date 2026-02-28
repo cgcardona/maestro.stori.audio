@@ -459,11 +459,9 @@ Only after you have output the grade and **"Approved for merge"**, do the follow
    gh pr view <pr-number> --json body --jq '.body' \
      | grep -oE '[Cc]loses?\s+#[0-9]+' \
      | grep -oE '[0-9]+' \
-     | while read ISSUE_NUM; do
-         gh issue close "$ISSUE_NUM" \
-           --comment "Fixed by PR #<pr-number>." \
-           --repo "$GH_REPO"
-       done
+     | xargs -I{} gh issue close {} \
+         --comment "Fixed by PR #<pr-number>." \
+         --repo "$GH_REPO"
    ```
    ⚠️ Do NOT use `grep -o '#[0-9]*'` — it matches any `#N` in the body (commit hashes, mentions, etc.)
    and silently closes the wrong issue. Always match `Closes #N` explicitly.
@@ -472,7 +470,7 @@ Only after you have output the grade and **"Approved for merge"**, do the follow
    ```bash
    git fetch --prune
    git checkout dev
-   git pull origin dev
+   git fetch origin && git merge origin/dev
    git branch -d "$BRANCH"
    ```
    This leaves the working tree on a clean, up-to-date `dev` — ready for the next task.

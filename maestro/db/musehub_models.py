@@ -5,7 +5,10 @@ Tables:
 - musehub_branches: Named branch pointers inside a repo
 - musehub_commits: Remote commit records pushed from CLI clients
 - musehub_issues: Issue tracker entries per repo
+- musehub_issue_comments: Threaded comments on issues
+- musehub_milestones: Milestone groupings for issues
 - musehub_pull_requests: Pull requests proposing branch merges
+- musehub_pr_comments: Inline review comments on musical diffs within PRs
 - musehub_objects: Content-addressed binary artifact storage
 - musehub_releases: Tagged releases
 - musehub_stars: Per-user repo starring (one row per user×repo pair)
@@ -14,13 +17,14 @@ Tables:
 - musehub_webhooks: Registered webhook subscriptions per repo
 - musehub_webhook_deliveries: Delivery log for each webhook dispatch attempt
 - musehub_render_jobs: Render status tracking for auto-generated MP3/piano-roll artifacts
+- musehub_events: Repo-level activity event stream (commits, PRs, issues, branches, tags, sessions)
 """
 from __future__ import annotations
 
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.types import JSON
 
@@ -82,6 +86,10 @@ class MusehubRepo(Base):
     issues: Mapped[list[MusehubIssue]] = relationship(
         "MusehubIssue", back_populates="repo", cascade="all, delete-orphan"
     )
+    milestones: Mapped[list[MusehubMilestone]] = relationship(
+        "MusehubMilestone", back_populates="repo", cascade="all, delete-orphan",
+        foreign_keys="[MusehubMilestone.repo_id]",
+    )
     pull_requests: Mapped[list[MusehubPullRequest]] = relationship(
         "MusehubPullRequest", back_populates="repo", cascade="all, delete-orphan"
     )
@@ -96,6 +104,9 @@ class MusehubRepo(Base):
     )
     stars: Mapped[list[MusehubStar]] = relationship(
         "MusehubStar", back_populates="repo", cascade="all, delete-orphan"
+    )
+    events: Mapped[list[MusehubEvent]] = relationship(
+        "MusehubEvent", back_populates="repo", cascade="all, delete-orphan"
     )
 
 
@@ -178,12 +189,58 @@ class MusehubObject(Base):
 
     repo: Mapped[MusehubRepo] = relationship("MusehubRepo", back_populates="objects")
 
+class MusehubMilestone(Base):
+    """A milestone that groups issues within a repo.
+
+    Milestones give musicians a way to track progress toward goals like
+    "Album v1.0" or "Mix Session 3". Issues are linked via milestone_id.
+
+    ``number`` is sequential per repo (1-based), mirroring the issue numbering
+    convention so users can reference milestones as "Milestone #1".
+    """
+
+    __tablename__ = "musehub_milestones"
+
+    milestone_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_new_uuid)
+    repo_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("musehub_repos.repo_id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    # Sequential per-repo milestone number (1, 2, 3…)
+    number: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    description: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    # Lifecycle: open → closed
+    state: Mapped[str] = mapped_column(String(20), nullable=False, default="open", index=True)
+    # Display name of the user who created the milestone
+    author: Mapped[str] = mapped_column(String(255), nullable=False, default="")
+    # Optional due date for the milestone
+    due_on: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=_utc_now
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=_utc_now, onupdate=_utc_now
+    )
+
+    repo: Mapped[MusehubRepo] = relationship(
+        "MusehubRepo", back_populates="milestones", foreign_keys=[repo_id]
+    )
+    issues: Mapped[list[MusehubIssue]] = relationship(
+        "MusehubIssue", back_populates="milestone", foreign_keys="[MusehubIssue.milestone_id]"
+    )
+
+
 class MusehubIssue(Base):
     """An issue opened against a Muse Hub repo.
 
     ``number`` is auto-incremented per repo starting at 1 so musicians can
     reference issues as ``#1``, ``#2``, etc., independently of the global PK.
     ``labels`` is a JSON list of free-form strings (no validation at MVP).
+    ``assignee`` is the display name or identifier of the user assigned to this issue.
+    ``milestone_id`` links the issue to a MusehubMilestone for progress tracking.
     """
 
     __tablename__ = "musehub_issues"
@@ -204,11 +261,76 @@ class MusehubIssue(Base):
     labels: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
     # Display name or identifier of the user who opened this issue
     author: Mapped[str] = mapped_column(String(255), nullable=False, default="")
+    # Display name or user ID of the collaborator assigned to resolve this issue
+    assignee: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # FK to musehub_milestones — null when the issue is not part of a milestone
+    milestone_id: Mapped[str | None] = mapped_column(
+        String(36),
+        ForeignKey("musehub_milestones.milestone_id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=_utc_now
     )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=_utc_now, onupdate=_utc_now
+    )
 
     repo: Mapped[MusehubRepo] = relationship("MusehubRepo", back_populates="issues")
+    milestone: Mapped[MusehubMilestone | None] = relationship(
+        "MusehubMilestone", back_populates="issues", foreign_keys=[milestone_id]
+    )
+    comments: Mapped[list[MusehubIssueComment]] = relationship(
+        "MusehubIssueComment", back_populates="issue", cascade="all, delete-orphan",
+        order_by="MusehubIssueComment.created_at",
+    )
+
+
+class MusehubIssueComment(Base):
+    """A comment in a threaded discussion on a Muse Hub issue.
+
+    Comments support threaded replies via ``parent_id``. Top-level comments
+    have ``parent_id=None``. Markdown body is stored verbatim; rendering
+    happens client-side.
+
+    ``musical_refs`` is a JSON list of parsed musical context references
+    extracted from the body (e.g. ``track:bass``, ``section:chorus``,
+    ``beats:16-24``). Parsing is done at write time so reads are fast.
+    """
+
+    __tablename__ = "musehub_issue_comments"
+
+    comment_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_new_uuid)
+    issue_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("musehub_issues.issue_id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    repo_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("musehub_repos.repo_id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    # Display name or user ID of the comment author
+    author: Mapped[str] = mapped_column(String(255), nullable=False, default="")
+    # Markdown comment body
+    body: Mapped[str] = mapped_column(Text, nullable=False)
+    # Parent comment ID for threaded replies; null for top-level comments
+    parent_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
+    # JSON list of parsed musical context dicts: {"type": "track"|"section"|"beats", "value": "..."}
+    musical_refs: Mapped[list[dict[str, str]]] = mapped_column(JSON, nullable=False, default=list)
+    is_deleted: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=_utc_now, index=True
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=_utc_now, onupdate=_utc_now
+    )
+
+    issue: Mapped[MusehubIssue] = relationship("MusehubIssue", back_populates="comments")
 
 class MusehubPullRequest(Base):
     """A pull request proposing to merge one branch into another.
@@ -240,6 +362,57 @@ class MusehubPullRequest(Base):
     )
 
     repo: Mapped[MusehubRepo] = relationship("MusehubRepo", back_populates="pull_requests")
+    review_comments: Mapped[list[MusehubPRComment]] = relationship(
+        "MusehubPRComment", back_populates="pull_request", cascade="all, delete-orphan"
+    )
+
+class MusehubPRComment(Base):
+    """Inline review comment on a musical diff within a pull request.
+
+    Supports four targeting granularities to let reviewers pinpoint exactly
+    what they're commenting on:
+      - ``general``  — whole PR (no positional target)
+      - ``track``    — a named instrument track (e.g. "bass", "keys")
+      - ``region``   — a beat range within a track (beat_start..beat_end)
+      - ``note``     — a single note event (track + beat + pitch)
+
+    ``parent_comment_id`` enables threaded replies.  None means a top-level
+    review comment.  Replies carry the same ``pr_id`` so threads can be
+    assembled in a single query.
+    """
+
+    __tablename__ = "musehub_pr_comments"
+
+    comment_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_new_uuid)
+    pr_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("musehub_pull_requests.pr_id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    repo_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
+    author: Mapped[str] = mapped_column(String(255), nullable=False)
+    # Markdown-formatted review body
+    body: Mapped[str] = mapped_column(Text, nullable=False)
+    # Targeting: "general" | "track" | "region" | "note"
+    target_type: Mapped[str] = mapped_column(String(20), nullable=False, default="general")
+    # Instrument track name when target_type is "track", "region", or "note"
+    target_track: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # Beat range for "region" targets (inclusive start, exclusive end)
+    target_beat_start: Mapped[float | None] = mapped_column(Float, nullable=True)
+    target_beat_end: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # MIDI pitch (0-127) for "note" targets
+    target_note_pitch: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Parent comment ID for threaded replies; None for top-level comments
+    parent_comment_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=_utc_now, index=True
+    )
+
+    pull_request: Mapped[MusehubPullRequest] = relationship(
+        "MusehubPullRequest", back_populates="review_comments"
+    )
+
 
 class MusehubRelease(Base):
     """A published version release for a Muse Hub repo.
@@ -694,3 +867,51 @@ class MusehubRenderJob(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=_utc_now, onupdate=_utc_now
     )
+
+
+class MusehubEvent(Base):
+    """A repo-level activity event — the chronological event stream for a repo.
+
+    One row per action that mutates repo state: commits pushed, PRs opened/merged,
+    issues opened/closed, branches created/deleted, tags pushed, and sessions started/ended.
+
+    ``event_type`` vocabulary (enforced by service layer, not by DB constraint):
+      "commit_pushed" | "pr_opened" | "pr_merged" | "pr_closed" |
+      "issue_opened" | "issue_closed" | "branch_created" | "branch_deleted" |
+      "tag_pushed" | "session_started" | "session_ended"
+
+    ``actor`` is the human-readable identifier of the user who triggered the event
+    (typically the JWT ``sub`` claim or the pusher username).
+    ``description`` is a one-line human-readable summary rendered in the feed.
+    ``metadata`` carries event-specific structured data (e.g. commit SHA, PR number)
+    for deep-link rendering without additional DB joins.
+
+    Design: append-only.  Events are never updated or deleted (cascade only on
+    repo delete).  The feed is read newest-first, paginated by ``(repo_id, created_at)``.
+    """
+
+    __tablename__ = "musehub_events"
+
+    event_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_new_uuid)
+    repo_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("musehub_repos.repo_id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    # Vocabulary: commit_pushed | pr_opened | pr_merged | pr_closed |
+    #             issue_opened | issue_closed | branch_created | branch_deleted |
+    #             tag_pushed | session_started | session_ended
+    event_type: Mapped[str] = mapped_column(String(40), nullable=False, index=True)
+    # Human-readable actor — JWT sub or pusher username
+    actor: Mapped[str] = mapped_column(String(255), nullable=False)
+    # One-line summary rendered in the feed UI
+    description: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    # Event-specific payload (commit SHA, PR/issue number, branch name, …)
+    # Named event_metadata to avoid conflict with SQLAlchemy DeclarativeBase.metadata
+    event_metadata: Mapped[dict[str, object]] = mapped_column(JSON, nullable=False, default=dict)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=_utc_now, index=True
+    )
+
+    repo: Mapped[MusehubRepo] = relationship("MusehubRepo", back_populates="events")
