@@ -58,9 +58,19 @@ This document is the single source of truth for every named entity (TypedDict, d
     - [MCP Endpoints](#mcp-endpoints-appapiroutesmcppy)
     - [Variation Endpoints](#variation-endpoints)
     - [Conversations](#conversations-appapiroutesconversationsmodelspy)
-12. [Tempo Convention](#tempo-convention)
-13. [`Any` Status](#any-status)
-14. [Entity Hierarchy](#entity-hierarchy)
+12. [Muse Context (`maestro/services/muse_context.py`)](#muse-context-maestroservicesmuse_contextpy)
+    - [MuseHeadCommitInfo](#museheadcommitinfo)
+    - [MuseSectionDetail](#musesectiondetail)
+    - [MuseHarmonicProfile](#museharmonicprofile)
+    - [MuseDynamicProfile](#musedynamicprofile)
+    - [MuseMelodicProfile](#musemelodic profile)
+    - [MuseTrackDetail](#musetrackdetail)
+    - [MuseMusicalState](#musemusicalstate)
+    - [MuseHistoryEntry](#musehistoryentry)
+    - [MuseContextResult](#musecontextresult)
+13. [Tempo Convention](#tempo-convention)
+14. [`Any` Status](#any-status)
+15. [Entity Hierarchy](#entity-hierarchy)
 15. [Entity Graph (Mermaid)](#entity-graph-mermaid)
     - [Diagram 1 — JSON Type Universe](#diagram-1--json-type-universe)
     - [Diagram 2 — MIDI Primitives](#diagram-2--midi-primitives)
@@ -838,6 +848,67 @@ Named TypedDicts for every entity in the MCP protocol layer: tool schema shapes,
 #### `AccessCodeError`
 
 `Exception` — Raised by `validate_access_code` when a token is invalid, expired, or malformed.
+
+---
+
+## Muse Arrange Types (`maestro/services/muse_arrange.py`)
+
+> Added: issue #115 — `muse arrange` command
+
+### `ArrangementCell`
+
+```
+@dataclass(frozen=True)
+class ArrangementCell:
+    section: str        # Musical section name (normalised lowercase)
+    instrument: str     # Instrument/track name (lowercase)
+    active: bool        # True if >= 1 file exists for this pair
+    file_count: int     # Number of files for this (section, instrument) pair
+    total_bytes: int    # Sum of object sizes (proxy for note density)
+```
+
+Per-(section, instrument) cell in the arrangement matrix.  `density_score` is a property returning `float(total_bytes)`.
+
+### `ArrangementMatrix`
+
+```
+@dataclass
+class ArrangementMatrix:
+    commit_id: str                              # 64-char commit SHA
+    sections: list[str]                        # Ordered section names
+    instruments: list[str]                     # Sorted instrument names
+    cells: dict[tuple[str, str], ArrangementCell]  # (section, instrument) → cell
+```
+
+Full arrangement matrix for a single commit.  Built by `build_arrangement_matrix()`.
+
+### `ArrangementDiffCell`
+
+```
+@dataclass(frozen=True)
+class ArrangementDiffCell:
+    section: str
+    instrument: str
+    status: Literal["added", "removed", "unchanged"]
+    cell_a: ArrangementCell    # Baseline cell
+    cell_b: ArrangementCell    # Target cell
+```
+
+Per-cell change status between two commits.
+
+### `ArrangementDiff`
+
+```
+@dataclass
+class ArrangementDiff:
+    commit_id_a: str
+    commit_id_b: str
+    sections: list[str]
+    instruments: list[str]
+    cells: dict[tuple[str, str], ArrangementDiffCell]
+```
+
+Full diff of two arrangement matrices.  Built by `build_arrangement_diff()`.
 
 ---
 
@@ -1796,6 +1867,66 @@ Unified schema snapshot. Cacheable by `protocolHash`. The DAW frontend uses this
 
 ---
 
+### Muse Find (`maestro/services/muse_find.py`)
+
+#### `MuseFindQuery`
+
+Frozen dataclass — encapsulates all search criteria for a `muse find` invocation.
+Every field is optional; non-None fields are ANDed together.
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `harmony` | `str | None` | `None` | Harmonic filter query string |
+| `rhythm` | `str | None` | `None` | Rhythmic filter query string |
+| `melody` | `str | None` | `None` | Melodic filter query string |
+| `structure` | `str | None` | `None` | Structural filter query string |
+| `dynamic` | `str | None` | `None` | Dynamic filter query string |
+| `emotion` | `str | None` | `None` | Emotion tag filter |
+| `section` | `str | None` | `None` | Named section filter |
+| `track` | `str | None` | `None` | Track presence filter |
+| `since` | `datetime | None` | `None` | Lower bound on `committed_at` (UTC) |
+| `until` | `datetime | None` | `None` | Upper bound on `committed_at` (UTC) |
+| `limit` | `int` | `20` | Max results returned |
+
+#### `MuseFindCommitResult`
+
+Frozen dataclass — one matching commit, derived from `MuseCliCommit`.
+Callers never receive a raw ORM row.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `commit_id` | `str` | SHA-256 hex digest (64 chars) |
+| `branch` | `str` | Branch name at commit time |
+| `message` | `str` | Full commit message |
+| `author` | `str` | Author string (may be empty) |
+| `committed_at` | `datetime` | Timezone-aware UTC timestamp |
+| `parent_commit_id` | `str | None` | Parent commit ID, or None for root |
+| `snapshot_id` | `str` | SHA-256 ID of associated snapshot |
+
+#### `MuseFindResults`
+
+Frozen dataclass — container returned by `search_commits()`.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `matches` | `tuple[MuseFindCommitResult, ...]` | Matching commits, newest-first |
+| `total_scanned` | `int` | DB rows examined before limit |
+| `query` | `MuseFindQuery` | The originating query (for diagnostics) |
+
+#### `search_commits`
+
+```python
+async def search_commits(
+    session: AsyncSession,
+    repo_id: str,
+    query: MuseFindQuery,
+) -> MuseFindResults: ...
+```
+
+Read-only search across `muse_cli_commits`.  Returns `MuseFindResults`.
+
+---
+
 ### Muse VCS (`maestro/api/routes/muse.py`)
 
 #### `SaveVariationResponse`
@@ -2050,6 +2181,121 @@ Minimal confirmation of a successful conversation metadata update. Contains only
 
 ---
 
+## Muse Context (`maestro/services/muse_context.py`)
+
+Returned by `build_muse_context()` — the primary interface between Muse VCS and AI music generation agents. All types are frozen dataclasses (immutable, hashable, serialisable via `dataclasses.asdict()`).
+
+### `MuseHeadCommitInfo`
+
+Metadata for the commit that the context document was built from.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `commit_id` | `str` | Full SHA-256 commit ID |
+| `message` | `str` | Commit message |
+| `author` | `str` | Commit author |
+| `committed_at` | `str` | ISO-8601 UTC timestamp |
+
+### `MuseSectionDetail`
+
+Per-section musical detail (populated when `--sections` is passed).
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `tracks` | `list[str]` | Track names active in this section |
+| `bars` | `int \| None` | Section length in bars (None until MIDI analysis) |
+
+### `MuseHarmonicProfile`
+
+Harmonic summary for a snapshot. All fields `None` until Storpheus integration.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `chord_progression` | `list[str] \| None` | Detected chord symbols |
+| `tension_score` | `float \| None` | 0.0 (relaxed) → 1.0 (tense) |
+| `harmonic_rhythm` | `float \| None` | Average beats per chord change |
+
+### `MuseDynamicProfile`
+
+Dynamic (velocity/intensity) summary. All fields `None` until Storpheus integration.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `avg_velocity` | `int \| None` | Mean MIDI velocity (0–127) |
+| `dynamic_arc` | `str \| None` | Shape label: `flat`, `crescendo`, `swell`, … |
+| `peak_section` | `str \| None` | Section name with highest average velocity |
+
+### `MuseMelodicProfile`
+
+Melodic contour summary. All fields `None` until Storpheus integration.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `contour` | `str \| None` | Shape label: `arch`, `ascending`, `descending`, … |
+| `range_semitones` | `int \| None` | Interval between lowest and highest note |
+| `motifs_detected` | `int \| None` | Number of recurring melodic patterns found |
+
+### `MuseTrackDetail`
+
+Per-track breakdown (populated when `--tracks` is passed).
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `track_name` | `str` | Lowercased file stem (e.g. `"drums"`) |
+| `harmonic` | `MuseHarmonicProfile` | Harmonic profile for this track |
+| `dynamic` | `MuseDynamicProfile` | Dynamic profile for this track |
+
+### `MuseMusicalState`
+
+Full musical state of the project at a given commit.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `active_tracks` | `list[str]` | Track names derived from snapshot file names (real data) |
+| `key` | `str \| None` | Key name e.g. `"Eb major"` (None until MIDI analysis) |
+| `mode` | `str \| None` | Mode name e.g. `"major"`, `"dorian"` |
+| `tempo_bpm` | `int \| None` | Beats per minute |
+| `time_signature` | `str \| None` | e.g. `"4/4"`, `"6/8"` |
+| `swing_factor` | `float \| None` | 0.5 = straight, 0.67 = triplet feel |
+| `form` | `str \| None` | e.g. `"intro-verse-chorus-outro"` |
+| `emotion` | `str \| None` | Emotional label e.g. `"uplifting"`, `"melancholic"` |
+| `sections` | `dict[str, MuseSectionDetail] \| None` | Per-section breakdown (requires `--sections`) |
+| `tracks` | `list[MuseTrackDetail] \| None` | Per-track breakdown (requires `--tracks`) |
+| `harmonic_profile` | `MuseHarmonicProfile \| None` | Aggregate harmonic profile |
+| `dynamic_profile` | `MuseDynamicProfile \| None` | Aggregate dynamic profile |
+| `melodic_profile` | `MuseMelodicProfile \| None` | Aggregate melodic profile |
+
+### `MuseHistoryEntry`
+
+A single ancestor commit in the evolutionary history of the composition.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `commit_id` | `str` | Full SHA-256 commit ID |
+| `message` | `str` | Commit message |
+| `author` | `str` | Commit author |
+| `committed_at` | `str` | ISO-8601 UTC timestamp |
+| `active_tracks` | `list[str]` | Tracks present at this commit |
+| `key` | `str \| None` | Key at this commit (None until MIDI analysis) |
+| `tempo_bpm` | `int \| None` | Tempo at this commit |
+| `emotion` | `str \| None` | Emotional label at this commit |
+
+### `MuseContextResult`
+
+The top-level document returned by `build_muse_context()`. Serialise with `.to_dict()`.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `repo_id` | `str` | UUID from `.muse/repo.json` |
+| `current_branch` | `str` | Active branch name |
+| `head_commit` | `MuseHeadCommitInfo` | Target commit metadata |
+| `musical_state` | `MuseMusicalState` | Current musical state |
+| `history` | `list[MuseHistoryEntry]` | Ancestor commits (newest-first, bounded by `--depth`) |
+| `missing_elements` | `list[str]` | Suggested missing elements (currently empty; future LLM analysis) |
+| `suggestions` | `dict[str, str]` | Keyed suggestions (currently empty; future LLM analysis) |
+
+---
+
 ## Tempo Convention
 
 **Tempo is always `int` (BPM) throughout the internal codebase.**
@@ -2148,6 +2394,51 @@ directly for JSON serialisation without any additional mapping step.
 **Producer:** `_match_commit()`, `_grep_async()`
 **Consumer:** `_render_matches()`, callers using `--json` output
 
+### `RecallResult`
+
+**Module:** `maestro/muse_cli/commands/recall.py`
+
+Ranked result entry returned by `muse recall`. Each entry represents one
+commit that scored at or above the `--threshold` keyword-overlap cutoff.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `rank` | `int` | 1-based rank within the result set (1 = highest score) |
+| `score` | `float` | Keyword overlap coefficient ∈ [0, 1], rounded to 4 decimal places |
+| `commit_id` | `str` | Full 64-char SHA of the matching commit |
+| `date` | `str` | Commit timestamp formatted as `"YYYY-MM-DD HH:MM:SS"` |
+| `branch` | `str` | Branch the commit belongs to |
+| `message` | `str` | Full commit message |
+
+**Producer:** `_recall_async()`
+**Consumer:** `_render_results()`, callers using `--json` output
+
+---
+
+### `DescribeResult`
+
+**Module:** `maestro/muse_cli/commands/describe.py`
+
+Structured description of what changed between two commits. Implemented as a
+plain class (not `TypedDict`) to support methods (`.file_count()`, `.to_dict()`).
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `commit_id` | `str` | Full 64-char SHA of the target commit |
+| `message` | `str` | Commit message |
+| `depth` | `DescribeDepth` | Output verbosity level (`brief`, `standard`, `verbose`) |
+| `parent_id` | `str | None` | Parent commit SHA; `None` for root commits |
+| `compare_commit_id` | `str | None` | Explicitly compared commit (`--compare A B`); `None` in single-commit mode |
+| `changed_files` | `list[str]` | Relative paths with differing `object_id` between parent and target |
+| `added_files` | `list[str]` | Paths present in target but not parent |
+| `removed_files` | `list[str]` | Paths present in parent but not target |
+| `dimensions` | `list[str]` | Inferred or user-supplied musical dimension labels |
+| `auto_tag` | `str | None` | Heuristic tag (`no-change`, `single-file-edit`, `minor-revision`, `major-revision`); `None` when `--auto-tag` not set |
+
+**Methods:** `.file_count() → int` (sum of all three file lists), `.to_dict() → dict[str, object]` (JSON-safe serialisation for `--json` output).
+
+**Producer:** `_describe_async()`
+**Consumer:** `_render_brief()`, `_render_standard()`, `_render_verbose()`, `_render_result()`
 
 ---
 
@@ -3697,4 +3988,54 @@ classDiagram
     PromptParseError <|-- InvalidMaestroPrompt
     parse_prompt ..> MaestroPrompt : produces
     parse_prompt ..> PromptParseError : raises
+```
+
+---
+
+## Muse CLI — Export Types (`maestro/muse_cli/export_engine.py`)
+
+### `ExportFormat`
+
+`StrEnum` of supported export format identifiers.
+
+| Value | Description |
+|-------|-------------|
+| `midi` | Raw MIDI file(s) (native format). |
+| `json` | Structured JSON note index. |
+| `musicxml` | MusicXML for notation software. |
+| `abc` | ABC notation for folk/traditional music tools. |
+| `wav` | Audio render via Storpheus. |
+
+### `MuseExportOptions`
+
+Frozen dataclass controlling a single export operation.
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `format` | `ExportFormat` | yes | Target export format. |
+| `commit_id` | `str` | yes | Full 64-char commit hash being exported. |
+| `output_path` | `pathlib.Path` | yes | Destination file or directory path. |
+| `track` | `str \| None` | no | Track name substring filter. |
+| `section` | `str \| None` | no | Section name substring filter. |
+| `split_tracks` | `bool` | no | Write one file per MIDI track (MIDI only). |
+
+### `MuseExportResult`
+
+Dataclass returned by every format handler.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `paths_written` | `list[pathlib.Path]` | Absolute paths of all files written. |
+| `format` | `ExportFormat` | Format that was exported. |
+| `commit_id` | `str` | Source commit ID. |
+| `skipped_count` | `int` | Entries skipped (wrong type, filter mismatch, missing). |
+
+### `StorpheusUnavailableError`
+
+Exception raised by `export_wav` when Storpheus is not reachable or returns
+a non-200 health response.  Callers catch this and surface a human-readable
+error message via `typer.echo` before calling `typer.Exit(INTERNAL_ERROR)`.
+
+```python
+class StorpheusUnavailableError(Exception): ...
 ```
