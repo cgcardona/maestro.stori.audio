@@ -112,6 +112,61 @@ MAX_SESSION_TOKENS = int(os.environ.get("STORPHEUS_MAX_SESSION_TOKENS", "4096"))
 _INTENT_QUANT_STEP = float(os.environ.get("STORPHEUS_INTENT_QUANT", "0.2"))
 _FUZZY_EPSILON = float(os.environ.get("STORPHEUS_FUZZY_EPSILON", "0.35"))
 
+# ── Inference optimization config ─────────────────────────────────────────
+# How many /add_batch indices to try from a single /generate_music_and_state
+# result before paying the cost of a full re-generate.  The HF Space produces
+# 10 stochastic batches per call; trying multiple indices is cheap (~2s each)
+# vs. a full re-generate (25-65s).  Set to 1 to disable multi-batch sampling.
+STORPHEUS_MULTI_BATCH_TRIES = int(os.environ.get("STORPHEUS_MULTI_BATCH_TRIES", "3"))
+
+# Score threshold below which we trigger a full re-generate.  Above this
+# threshold the best multi-batch result is accepted without re-generating.
+STORPHEUS_REGEN_THRESHOLD = float(os.environ.get("STORPHEUS_REGEN_THRESHOLD", "0.5"))
+
+# Future optimization flags — no-ops until self-hosted deployment lands (#18, #20).
+# Wired here so config is ready when the HF Space supports forwarding these flags.
+STORPHEUS_TORCH_COMPILE_ENABLED: bool = os.environ.get(
+    "STORPHEUS_TORCH_COMPILE", "false"
+).lower() in ("1", "true", "yes")
+STORPHEUS_FLASH_ATTENTION_ENABLED: bool = os.environ.get(
+    "STORPHEUS_FLASH_ATTENTION", "false"
+).lower() in ("1", "true", "yes")
+STORPHEUS_KV_CACHE_ENABLED: bool = os.environ.get(
+    "STORPHEUS_KV_CACHE", "false"
+).lower() in ("1", "true", "yes")
+
+
+@dataclass
+class GenerationTiming:
+    """Per-phase latency breakdown for a single generation call.
+
+    Populated throughout ``_do_generate`` and attached to response metadata
+    so callers can baseline current latency and measure the impact of future
+    optimizations (torch.compile, FlashAttention, KV-cache — see #26).
+    """
+
+    request_start: float = field(default_factory=time)
+    seed_elapsed_s: float = 0.0
+    generate_elapsed_s: float = 0.0
+    add_batch_elapsed_s: float = 0.0
+    post_process_elapsed_s: float = 0.0
+    total_elapsed_s: float = 0.0
+    regen_count: int = 0
+    multi_batch_tries: int = 0
+    candidates_evaluated: int = 0
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "total_elapsed_s": round(self.total_elapsed_s, 3),
+            "seed_elapsed_s": round(self.seed_elapsed_s, 3),
+            "generate_elapsed_s": round(self.generate_elapsed_s, 3),
+            "add_batch_elapsed_s": round(self.add_batch_elapsed_s, 3),
+            "post_process_elapsed_s": round(self.post_process_elapsed_s, 3),
+            "regen_count": self.regen_count,
+            "multi_batch_tries": self.multi_batch_tries,
+            "candidates_evaluated": self.candidates_evaluated,
+        }
+
 
 def _create_client() -> Client:
     """Create a fresh Gradio client connection."""
@@ -1498,6 +1553,14 @@ async def diagnostics() -> dict[str, object]:
         "max_concurrent": _MAX_CONCURRENT,
         "intent_quant_step": _INTENT_QUANT_STEP,
         "fuzzy_epsilon": _FUZZY_EPSILON,
+        "inference_optimization": {
+            "multi_batch_tries": STORPHEUS_MULTI_BATCH_TRIES,
+            "regen_threshold": STORPHEUS_REGEN_THRESHOLD,
+            "torch_compile": STORPHEUS_TORCH_COMPILE_ENABLED,
+            "flash_attention": STORPHEUS_FLASH_ATTENTION_ENABLED,
+            "kv_cache": STORPHEUS_KV_CACHE_ENABLED,
+            "note": "torch_compile/flash_attention/kv_cache pending self-hosted deployment (#18, #20)",
+        },
         "cache": {
             "size": cache_size,
             "max_size": MAX_CACHE_SIZE,
@@ -1749,6 +1812,8 @@ async def _do_generate(request: GenerateRequest, worker_id: int = 0) -> Generate
     """Core GPU generation logic — called by JobQueue workers."""
     global _last_successful_gen
 
+    _timing = GenerationTiming()
+
     _trace = request.trace_id or ""
     _log_prefix = ""
     if request.composition_id:
@@ -1773,6 +1838,7 @@ async def _do_generate(request: GenerateRequest, worker_id: int = 0) -> Generate
         else:
             client = _client_pool.fresh(worker_id)
 
+        _seed_t0 = time()
         resolved = _resolve_seed(
             genre=request.genre,
             target_key=request.key,
@@ -1788,6 +1854,7 @@ async def _do_generate(request: GenerateRequest, worker_id: int = 0) -> Generate
                 f"{_log_prefix} 🎹 Transposed seed by {resolved.transpose_semitones:+d} semitones "
                 f"({resolved.detected_key} → {request.key})"
             )
+        _timing.seed_elapsed_s = time() - _seed_t0
 
         seed_report = analyze_seed(seed_path)
         seed_hash = hashlib.sha256(open(seed_path, "rb").read()).hexdigest()[:16]
@@ -1951,48 +2018,19 @@ async def _do_generate(request: GenerateRequest, worker_id: int = 0) -> Generate
             f"calling /generate_music_and_state"
         )
 
-        try:
-            _gen_result = await asyncio.wait_for(
-                asyncio.to_thread(
-                    client.predict,
-                    input_midi=_input_midi,
-                    apply_sustains=True,
-                    remove_duplicate_pitches=True,
-                    remove_overlapping_durations=True,
-                    prime_instruments=orpheus_instruments,
-                    num_prime_tokens=num_prime_tokens,
-                    num_gen_tokens=num_gen_tokens,
-                    model_temperature=temperature,
-                    model_top_p=top_p,
-                    add_drums=add_drums,
-                    add_outro=request.add_outro,
-                    api_name="/generate_music_and_state",
-                ),
-                timeout=_predict_timeout,
-            )
-        except (asyncio.TimeoutError, asyncio.CancelledError) as exc:
-            kind = "cancelled" if isinstance(exc, asyncio.CancelledError) else "timed out"
-            logger.error(f"❌ Gradio /generate_music_and_state {kind} after {_predict_timeout}s")
-            return GenerateResponse(
-                success=False,
-                error=f"Orpheus generation {kind} after {_predict_timeout}s",
-            )
-
-        # Log what the Space returned (State is auto-managed by gradio_client)
-        _gen_type = type(_gen_result).__name__
-        _gen_len = len(_gen_result) if isinstance(_gen_result, (list, tuple)) else "N/A"
-        logger.info(
-            f"{_log_prefix} 📦 /generate_music_and_state returned: "
-            f"type={_gen_type} len={_gen_len}"
-        )
-
-        # ── Batch selection with rejection sampling ──
-        # The HF Space generates 10 parallel stochastic batches per
-        # /generate_music_and_state call.  We pick a random batch index
-        # (0-9) for variety, then score the result.  For non-fast presets,
-        # we can retry with a fresh generation if the score is poor.
+        # ── Batch selection with rejection sampling and multi-batch optimization ──
+        # The HF Space generates 10 stochastic batches per /generate_music_and_state
+        # call.  Rather than doing one full re-generate per candidate (the original
+        # approach), we first exhaust STORPHEUS_MULTI_BATCH_TRIES cheap /add_batch
+        # calls (~2s each) on the current generate result.  Only when the best score
+        # is still below STORPHEUS_REGEN_THRESHOLD do we pay the cost of a full
+        # re-generate (25-65s).  For a "quality" preset (4 candidates) this can
+        # reduce total latency from 4×(25-65s) → 1×(25-65s) + 3×(~2s).
         _num_candidates = quality_preset_to_batch_count(request.quality_preset)
         _rejection_threshold = float(os.environ.get("STORPHEUS_REJECTION_THRESHOLD", "0.3"))
+        _multi_batch_tries = min(STORPHEUS_MULTI_BATCH_TRIES, 10)
+        # Max generate calls: ceil(_num_candidates / _multi_batch_tries)
+        _max_generates = max(1, (_num_candidates + _multi_batch_tries - 1) // _multi_batch_tries)
 
         # Extract scoring params from constraints for candidate scoring
         _gc = request.generation_constraints
@@ -2010,143 +2048,213 @@ async def _do_generate(request: GenerateRequest, worker_id: int = 0) -> Generate
         best_candidate: BestCandidate | None = None
         best_score: CandidateScore | None = None
         all_candidate_scores: list[dict[str, object]] = []
+        _total_candidates = 0
+        _generate_calls = 0
 
-        for _attempt in range(_num_candidates):
-            batch_idx = rng.randint(0, 9)
-
-            if _attempt > 0:
-                client = _client_pool.fresh(worker_id)
-                logger.info(
-                    f"{_log_prefix} 🔄 Rejection retry {_attempt}/{_num_candidates}: "
-                    f"fresh client, batch_idx={batch_idx}"
+        async def _call_generate(c: Client) -> bool:
+            """Call /generate_music_and_state; returns True on success."""
+            nonlocal _generate_calls
+            _gen_t0 = time()
+            try:
+                _gr = await asyncio.wait_for(
+                    asyncio.to_thread(
+                        c.predict,
+                        input_midi=_input_midi,
+                        apply_sustains=True,
+                        remove_duplicate_pitches=True,
+                        remove_overlapping_durations=True,
+                        prime_instruments=orpheus_instruments,
+                        num_prime_tokens=num_prime_tokens,
+                        num_gen_tokens=num_gen_tokens,
+                        model_temperature=temperature,
+                        model_top_p=top_p,
+                        add_drums=add_drums,
+                        add_outro=request.add_outro,
+                        api_name="/generate_music_and_state",
+                    ),
+                    timeout=_predict_timeout,
                 )
+                _gen_type = type(_gr).__name__
+                _gen_len = len(_gr) if isinstance(_gr, (list, tuple)) else "N/A"
+                logger.info(
+                    f"{_log_prefix} 📦 /generate_music_and_state returned: "
+                    f"type={_gen_type} len={_gen_len}"
+                )
+                return True
+            except (asyncio.TimeoutError, asyncio.CancelledError) as exc:
+                kind = "cancelled" if isinstance(exc, asyncio.CancelledError) else "timed out"
+                logger.error(f"❌ /generate_music_and_state {kind} after {_predict_timeout}s")
+                return False
+            finally:
+                _timing.generate_elapsed_s += time() - _gen_t0
+                _generate_calls += 1
+
+        # First generate call
+        _first_ok = await _call_generate(client)
+        if not _first_ok:
+            return GenerateResponse(
+                success=False,
+                error=f"Orpheus generation timed out after {_predict_timeout}s",
+            )
+
+        _done = False
+        _used_batch_indices: set[int] = set()
+
+        while not _done:
+            # ── Inner loop: try multiple batch indices from the current generate ──
+            _batches_this_gen = 0
+            while _batches_this_gen < _multi_batch_tries and _total_candidates < _num_candidates:
+                _available = [i for i in range(10) if i not in _used_batch_indices]
+                if not _available:
+                    break
+                batch_idx = rng.choice(_available)
+                _used_batch_indices.add(batch_idx)
+                _batches_this_gen += 1
+                _total_candidates += 1
+                _timing.multi_batch_tries += 1
+
+                _ab_t0 = time()
                 try:
-                    await asyncio.wait_for(
+                    midi_result = await asyncio.wait_for(
                         asyncio.to_thread(
                             client.predict,
-                            input_midi=_input_midi,
-                            apply_sustains=True,
-                            remove_duplicate_pitches=True,
-                            remove_overlapping_durations=True,
-                            prime_instruments=orpheus_instruments,
-                            num_prime_tokens=num_prime_tokens,
-                            num_gen_tokens=num_gen_tokens,
-                            model_temperature=temperature,
-                            model_top_p=top_p,
-                            add_drums=add_drums,
-                            add_outro=request.add_outro,
-                            api_name="/generate_music_and_state",
+                            batch_number=batch_idx,
+                            api_name="/add_batch",
                         ),
-                        timeout=_predict_timeout,
+                        timeout=60,
                     )
-                except (asyncio.TimeoutError, asyncio.CancelledError):
-                    logger.warning(f"⚠️ Rejection retry {_attempt} timed out, using best so far")
-                    break
+                    logger.info(f"{_log_prefix} ✅ /add_batch({batch_idx}) ok")
                 except Exception as exc:
-                    logger.warning(f"⚠️ Rejection retry {_attempt} failed: {exc}")
+                    logger.error(f"❌ /add_batch({batch_idx}) failed: {exc}")
+                    if best_candidate is None:
+                        _timing.add_batch_elapsed_s += time() - _ab_t0
+                        _timing.candidates_evaluated = _total_candidates
+                        _timing.total_elapsed_s = time() - _timing.request_start
+                        return GenerateResponse(
+                            success=False,
+                            error=f"Orpheus add_batch failed on batch {batch_idx}: {exc}",
+                        )
+                    logger.warning("⚠️ Using best candidate from previous attempt")
+                    _timing.add_batch_elapsed_s += time() - _ab_t0
+                    _done = True
+                    break
+                _timing.add_batch_elapsed_s += time() - _ab_t0
+
+                if midi_result is None:
+                    continue
+
+                _attempt_midi_path: str = midi_result[2]
+                _attempt_parsed = await asyncio.to_thread(
+                    parse_midi_to_notes, _attempt_midi_path, request.tempo,
+                )
+
+                # Trim events beyond max_beat
+                for ch in list(_attempt_parsed["notes"]):
+                    _attempt_parsed["notes"][ch] = [
+                        n for n in _attempt_parsed["notes"][ch]
+                        if n.get("start_beat", 0.0) < max_beat
+                    ]
+                    if not _attempt_parsed["notes"][ch]:
+                        del _attempt_parsed["notes"][ch]
+                for ch in list(_attempt_parsed["cc_events"]):
+                    _attempt_parsed["cc_events"][ch] = [
+                        e for e in _attempt_parsed["cc_events"][ch] if e["beat"] < max_beat
+                    ]
+                    if not _attempt_parsed["cc_events"][ch]:
+                        del _attempt_parsed["cc_events"][ch]
+                for ch in list(_attempt_parsed["pitch_bends"]):
+                    _attempt_parsed["pitch_bends"][ch] = [
+                        e for e in _attempt_parsed["pitch_bends"][ch] if e["beat"] < max_beat
+                    ]
+                    if not _attempt_parsed["pitch_bends"][ch]:
+                        del _attempt_parsed["pitch_bends"][ch]
+                for ch in list(_attempt_parsed["aftertouch"]):
+                    _attempt_parsed["aftertouch"][ch] = [
+                        e for e in _attempt_parsed["aftertouch"][ch] if e["beat"] < max_beat
+                    ]
+                    if not _attempt_parsed["aftertouch"][ch]:
+                        del _attempt_parsed["aftertouch"][ch]
+
+                _attempt_flat: list[StorpheusNoteDict] = [
+                    note
+                    for ch_notes in _attempt_parsed["notes"].values()
+                    for note in ch_notes
+                ]
+
+                if not _attempt_flat:
+                    logger.warning(f"⚠️ Batch {batch_idx} produced zero notes, skipping")
+                    all_candidate_scores.append({"batch": batch_idx, "score": 0.0, "notes": 0})
+                    continue
+
+                candidate_score = score_candidate(
+                    _attempt_flat,
+                    _attempt_parsed["notes"],
+                    batch_index=batch_idx,
+                    params=_scoring,
+                )
+
+                all_candidate_scores.append({
+                    "batch": batch_idx,
+                    "score": candidate_score.total_score,
+                    "notes": candidate_score.note_count,
+                    "key": candidate_score.detected_key,
+                    "dims": candidate_score.dimensions,
+                })
+
+                logger.info(
+                    f"🎲 Candidate {_total_candidates - 1}: batch={batch_idx} "
+                    f"score={candidate_score.total_score:.3f} "
+                    f"notes={candidate_score.note_count} "
+                    f"key={candidate_score.detected_key or '?'}"
+                )
+
+                if best_score is None or candidate_score.total_score > best_score.total_score:
+                    best_score = candidate_score
+                    best_candidate = BestCandidate(
+                        midi_result=midi_result,
+                        midi_path=_attempt_midi_path,
+                        parsed=_attempt_parsed,
+                        flat_notes=_attempt_flat,
+                        batch_idx=batch_idx,
+                    )
+
+                if candidate_score.total_score >= (1.0 - _rejection_threshold):
+                    logger.info(
+                        f"✅ Score {candidate_score.total_score:.3f} above acceptance threshold, "
+                        f"skipping remaining candidates"
+                    )
+                    _done = True
                     break
 
-            try:
-                midi_result = await asyncio.wait_for(
-                    asyncio.to_thread(
-                        client.predict,
-                        batch_number=batch_idx,
-                        api_name="/add_batch",
-                    ),
-                    timeout=60,
+            # ── Decide whether to re-generate ──
+            if _done:
+                break
+            if _total_candidates >= _num_candidates:
+                break
+            _current_best = best_score.total_score if best_score else 0.0
+            if _current_best >= STORPHEUS_REGEN_THRESHOLD:
+                logger.info(
+                    f"✅ Multi-batch best score {_current_best:.3f} ≥ regen threshold "
+                    f"{STORPHEUS_REGEN_THRESHOLD} — skipping re-generate"
                 )
-                logger.info(f"{_log_prefix} ✅ /add_batch({batch_idx}) ok")
-            except Exception as exc:
-                logger.error(f"❌ /add_batch({batch_idx}) failed: {exc}")
-                if best_candidate is None:
-                    return GenerateResponse(
-                        success=False,
-                        error=f"Orpheus add_batch failed on batch {batch_idx}: {exc}",
-                    )
-                logger.warning(f"⚠️ Using best candidate from previous attempt")
+                break
+            if _generate_calls >= _max_generates:
                 break
 
-            if midi_result is None:
-                continue
-
-            _attempt_midi_path: str = midi_result[2]
-            _attempt_parsed = await asyncio.to_thread(
-                parse_midi_to_notes, _attempt_midi_path, request.tempo,
-            )
-
-            # Trim events beyond max_beat in-place on the typed sub-dicts
-            for ch in list(_attempt_parsed["notes"]):
-                _attempt_parsed["notes"][ch] = [
-                    n for n in _attempt_parsed["notes"][ch]
-                    if n.get("start_beat", 0.0) < max_beat
-                ]
-                if not _attempt_parsed["notes"][ch]:
-                    del _attempt_parsed["notes"][ch]
-            for ch in list(_attempt_parsed["cc_events"]):
-                _attempt_parsed["cc_events"][ch] = [
-                    e for e in _attempt_parsed["cc_events"][ch] if e["beat"] < max_beat
-                ]
-                if not _attempt_parsed["cc_events"][ch]:
-                    del _attempt_parsed["cc_events"][ch]
-            for ch in list(_attempt_parsed["pitch_bends"]):
-                _attempt_parsed["pitch_bends"][ch] = [
-                    e for e in _attempt_parsed["pitch_bends"][ch] if e["beat"] < max_beat
-                ]
-                if not _attempt_parsed["pitch_bends"][ch]:
-                    del _attempt_parsed["pitch_bends"][ch]
-            for ch in list(_attempt_parsed["aftertouch"]):
-                _attempt_parsed["aftertouch"][ch] = [
-                    e for e in _attempt_parsed["aftertouch"][ch] if e["beat"] < max_beat
-                ]
-                if not _attempt_parsed["aftertouch"][ch]:
-                    del _attempt_parsed["aftertouch"][ch]
-
-            _attempt_flat: list[StorpheusNoteDict] = [
-                note
-                for ch_notes in _attempt_parsed["notes"].values()
-                for note in ch_notes
-            ]
-
-            if not _attempt_flat:
-                logger.warning(f"⚠️ Batch {batch_idx} produced zero notes, skipping")
-                all_candidate_scores.append({"batch": batch_idx, "score": 0.0, "notes": 0})
-                continue
-
-            candidate_score = score_candidate(
-                _attempt_flat,
-                _attempt_parsed["notes"],
-                batch_index=batch_idx,
-                params=_scoring,
-            )
-
-            all_candidate_scores.append({
-                "batch": batch_idx,
-                "score": candidate_score.total_score,
-                "notes": candidate_score.note_count,
-                "key": candidate_score.detected_key,
-                "dims": candidate_score.dimensions,
-            })
-
+            # Full re-generate: only triggered when multi-batch tries all scored below threshold
+            _timing.regen_count += 1
+            client = _client_pool.fresh(worker_id)
             logger.info(
-                f"🎲 Candidate {_attempt}: batch={batch_idx} "
-                f"score={candidate_score.total_score:.3f} "
-                f"notes={candidate_score.note_count} "
-                f"key={candidate_score.detected_key or '?'}"
+                f"{_log_prefix} 🔄 Re-generate {_generate_calls + 1}/{_max_generates}: "
+                f"multi-batch best={_current_best:.3f} < {STORPHEUS_REGEN_THRESHOLD}"
             )
-
-            if best_score is None or candidate_score.total_score > best_score.total_score:
-                best_score = candidate_score
-                best_candidate = BestCandidate(
-                    midi_result=midi_result,
-                    midi_path=_attempt_midi_path,
-                    parsed=_attempt_parsed,
-                    flat_notes=_attempt_flat,
-                    batch_idx=batch_idx,
-                )
-
-            if candidate_score.total_score >= (1.0 - _rejection_threshold):
-                logger.info(f"✅ Score {candidate_score.total_score:.3f} above threshold, accepting")
+            _regen_ok = await _call_generate(client)
+            if not _regen_ok:
+                logger.warning("⚠️ Re-generate timed out, using best candidate so far")
                 break
+            _used_batch_indices.clear()
+
+        _timing.candidates_evaluated = _total_candidates
 
         if best_candidate is None:
             return GenerateResponse(
@@ -2221,11 +2329,13 @@ async def _do_generate(request: GenerateRequest, worker_id: int = 0) -> Generate
             logger.warning(f"⚠️ Failed to copy MIDI artifact: {exc}")
 
         # ── Post-processing pipeline ──
+        _pp_t0 = time()
         _post_processor = build_post_processor(
             generation_constraints=request.generation_constraints,
             role_profile_summary=request.role_profile_summary,
         )
         snake_notes = _post_processor.process(snake_notes)
+        _timing.post_process_elapsed_s = time() - _pp_t0
 
         # Rebuild wire-format notes from post-processed snake_notes
         mvp_notes = [
@@ -2239,11 +2349,17 @@ async def _do_generate(request: GenerateRequest, worker_id: int = 0) -> Generate
         comp_state.last_token_estimate += num_gen_tokens
         comp_state.accumulated_midi_path = midi_path
 
+        _timing.total_elapsed_s = time() - _timing.request_start
         _ctx_window = 8192
         _ctx_pct = (num_prime_tokens + num_gen_tokens) / _ctx_window * 100
         logger.info(
             f"✅ MVP: {len(mvp_notes)} notes, score={score:.3f}, "
-            f"ctx={_ctx_pct:.0f}%, batch={batch_idx}"
+            f"ctx={_ctx_pct:.0f}%, batch={batch_idx} | "
+            f"⏱ total={_timing.total_elapsed_s:.1f}s "
+            f"generate={_timing.generate_elapsed_s:.1f}s "
+            f"add_batch={_timing.add_batch_elapsed_s:.1f}s "
+            f"post_process={_timing.post_process_elapsed_s:.1f}s "
+            f"regens={_timing.regen_count}"
         )
 
         # ── Build metadata ──
@@ -2293,6 +2409,7 @@ async def _do_generate(request: GenerateRequest, worker_id: int = 0) -> Generate
             "post_processing": {
                 "transforms_applied": _post_processor.transforms_applied,
             },
+            "timing": _timing.to_dict(),
             "seed_provenance": {
                 "seed_source_type": seed_source_type,
                 "seed_file_path": seed_path,
