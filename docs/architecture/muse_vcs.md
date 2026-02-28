@@ -2672,11 +2672,99 @@ drift out of sync.
 
 ---
 
+### `muse emotion-diff`
+
+**Purpose:** Compare emotion vectors between two commits to track how the emotional character of a composition changed over time. An AI agent uses this to detect whether a recent edit reinforced or subverted the intended emotional arc, and to decide whether to continue or correct the creative direction.
+
+**Status:** ✅ Implemented (issue #100)
+
+**Usage:**
+```bash
+muse emotion-diff [COMMIT_A] [COMMIT_B] [OPTIONS]
+```
+
+**Flags:**
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `COMMIT_A` | positional | `HEAD~1` | Baseline commit ref (full hash, abbreviated hash, `HEAD`, or `HEAD~N`). |
+| `COMMIT_B` | positional | `HEAD` | Target commit ref. |
+| `--track TEXT` | option | — | Scope analysis to a specific track (noted in output; full per-track MIDI scoping is a follow-up). |
+| `--section TEXT` | option | — | Scope to a named section (same stub note as `--track`). |
+| `--json` | flag | off | Emit structured JSON for agent or tool consumption. |
+
+**Sourcing strategy:**
+
+1. **`explicit_tags`** — Both commits have `emotion:*` tags (set via `muse tag add emotion:<label>`). Vectors are looked up from the canonical emotion table.
+2. **`mixed`** — One commit has a tag, the other is inferred from metadata.
+3. **`inferred`** — Neither commit has an emotion tag. Vectors are inferred from available commit metadata (tempo, annotations). Full MIDI-feature inference (mode, note density, velocity) is tracked as a follow-up.
+
+**Canonical emotion labels** (for `muse tag add emotion:<label>`):
+`joyful`, `melancholic`, `anxious`, `cinematic`, `peaceful`, `dramatic`, `hopeful`, `tense`, `dark`, `euphoric`, `serene`, `epic`, `mysterious`, `aggressive`, `nostalgic`.
+
+**Output example (text):**
+```
+Emotion diff — a1b2c3d4 → f9e8d7c6
+Source: explicit_tags
+
+Commit A (a1b2c3d4):  melancholic
+Commit B (f9e8d7c6):  joyful
+
+Dimension      Commit A   Commit B   Delta
+-----------    --------   --------   -----
+energy           0.3000     0.8000  +0.5000
+valence          0.3000     0.9000  +0.6000
+tension          0.4000     0.2000  -0.2000
+darkness         0.6000     0.1000  -0.5000
+
+Drift: 0.9747
+Dramatic emotional departure — a fundamentally different mood. melancholic → joyful (drift=0.975, major, dominant: +valence)
+```
+
+**Output example (JSON):**
+```json
+{
+  "commit_a": "a1b2c3d4",
+  "commit_b": "f9e8d7c6",
+  "source": "explicit_tags",
+  "label_a": "melancholic",
+  "label_b": "joyful",
+  "vector_a": {"energy": 0.3, "valence": 0.3, "tension": 0.4, "darkness": 0.6},
+  "vector_b": {"energy": 0.8, "valence": 0.9, "tension": 0.2, "darkness": 0.1},
+  "dimensions": [
+    {"dimension": "energy",   "value_a": 0.3, "value_b": 0.8, "delta":  0.5},
+    {"dimension": "valence",  "value_a": 0.3, "value_b": 0.9, "delta":  0.6},
+    {"dimension": "tension",  "value_a": 0.4, "value_b": 0.2, "delta": -0.2},
+    {"dimension": "darkness", "value_a": 0.6, "value_b": 0.1, "delta": -0.5}
+  ],
+  "drift": 0.9747,
+  "narrative": "...",
+  "track": null,
+  "section": null
+}
+```
+
+**Result types:** `EmotionDiffResult`, `EmotionVector`, `EmotionDimDelta` — all defined in `maestro/services/muse_emotion_diff.py` and registered in `docs/reference/type_contracts.md`.
+
+**Drift distance:** Euclidean distance in the 4-D emotion space. Range [0.0, 2.0].
+- < 0.05 — unchanged
+- 0.05–0.25 — subtle shift
+- 0.25–0.50 — moderate shift
+- 0.50–0.80 — significant shift
+- > 0.80 — major / dramatic departure
+
+**Agent use case:** An AI composing a new verse calls `muse emotion-diff HEAD~1 HEAD --json` after each commit to verify the composition is tracking toward the intended emotional destination (e.g., building from `melancholic` to `hopeful` across an album arc). A drift > 0.5 on the wrong dimension triggers a course-correction prompt.
+
+**Implementation:** `maestro/muse_cli/commands/emotion_diff.py` (CLI entry point) and `maestro/services/muse_emotion_diff.py` (core engine). All DB-touching paths are async (`open_session()` pattern). Commit refs support `HEAD`, `HEAD~N`, full 64-char hashes, and 8-char abbreviated hashes.
+
+---
+
 ### Command Registration Summary
 
 | Command | File | Status | Issue |
 |---------|------|--------|-------|
 | `muse dynamics` | `commands/dynamics.py` | ✅ stub (PR #130) | #120 |
+| `muse emotion-diff` | `commands/emotion_diff.py` | ✅ implemented (PR #100) | #100 |
 | `muse swing` | `commands/swing.py` | ✅ stub (PR #131) | #121 |
 | `muse recall` | `commands/recall.py` | ✅ stub (PR #135) | #122 |
 | `muse tag` | `commands/tag.py` | ✅ implemented (PR #133) | #123 |
@@ -3756,6 +3844,59 @@ snapshot with a stable tag pointer that other agents can reference by name.
 
 ---
 
+## `muse write-tree` — Write Current Working-Tree as a Snapshot Object
+
+### `muse write-tree`
+
+**Purpose:** Hash all files in `muse-work/`, persist the object and snapshot
+rows in the database, and print the `snapshot_id`.  This is the plumbing
+primitive that underlies `muse commit` — it writes the tree object without
+recording any history (no commit row, no branch-pointer update).  AI agents
+use it to obtain a stable, content-addressed handle to the current working-tree
+state before deciding whether to commit.
+
+**Status:** ✅ Fully implemented (issue #89)
+
+**Usage:**
+```bash
+muse write-tree [OPTIONS]
+```
+
+**Flags:**
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--prefix PATH` | string | *(none)* | Only include files whose path (relative to `muse-work/`) starts with *PATH*. Example: `--prefix drums/` snapshots only the drums sub-directory. |
+| `--missing-ok` | flag | off | Do not fail when `muse-work/` is absent or empty, or when `--prefix` matches no files. Still prints a valid (empty) `snapshot_id`. |
+
+**Output example:**
+```
+a3f92c1e8b4d5f67890abcdef1234567890abcdef1234567890abcdef12345678
+```
+(64-character sha256 hex digest of the sorted `path:object_id` pairs.)
+
+**Idempotency:** Same file content → same `snapshot_id`.  Running `muse write-tree`
+twice without changing any file makes exactly zero new DB writes (all upserts are
+no-ops).
+
+**Result type:** `snapshot_id` is a raw 64-char hex string printed to stdout.
+No named result type — the caller decides what to do with the ID (compare,
+commit, discard).
+
+**Agent use case:** An AI agent that just generated a batch of MIDI files calls
+`muse write-tree` to get the `snapshot_id` for the current working tree.  It
+then compares that ID against the last committed `snapshot_id` (via `muse log
+--json | head -1`) to decide whether the new generation is novel enough to
+commit.  If the IDs match, the files are identical to the last commit and no
+commit is needed.
+
+**Implementation:** `maestro/muse_cli/commands/write_tree.py`.  Reuses
+`build_snapshot_manifest`, `compute_snapshot_id`, `upsert_object`, and
+`upsert_snapshot` from the commit pipeline.  No new DB schema — the same
+`muse_cli_objects` and `muse_cli_snapshots` tables.
+
+---
+
 ## Command Registration Summary
 
 | Command | File | Status | Issue |
@@ -3778,10 +3919,11 @@ snapshot with a stable tag pointer that other agents can reference by name.
 | `muse swing` | `commands/swing.py` | ✅ stub (PR #131) | #121 |
 | `muse symbolic-ref` | `commands/symbolic_ref.py` | ✅ implemented (issue #93) | #93 |
 | `muse tag` | `commands/tag.py` | ✅ implemented (PR #133) | #123 |
-| `muse timeline` | `commands/timeline.py` | ✅ implemented (PR #TBD) | #97 |
 | `muse tempo-scale` | `commands/tempo_scale.py` | ✅ stub (PR open) | #111 |
+| `muse timeline` | `commands/timeline.py` | ✅ implemented (PR #TBD) | #97 |
 | `muse update-ref` | `commands/update_ref.py` | ✅ implemented (PR #143) | #91 |
 | `muse validate` | `commands/validate.py` | ✅ implemented (PR #TBD) | #99 |
+| `muse write-tree` | `commands/write_tree.py` | ✅ implemented | #89 |
 
 All stub commands have stable CLI contracts. Full musical analysis (MIDI content
 parsing, vector embeddings, LLM synthesis) is tracked as follow-up issues.
@@ -3964,6 +4106,134 @@ the computed values will change when the full implementation is wired in.
 `_contour_history_async()`, `_format_detect()`, `_format_compare()`,
 `_format_history()`.  Exit codes: 0 success, 2 outside repo
 (`REPO_NOT_FOUND`), 3 internal error (`INTERNAL_ERROR`).
+
+---
+
+---
+
+## `muse reset` — Reset Branch Pointer to a Prior Commit
+
+### Purpose
+
+Move the current branch's HEAD pointer backward to a prior commit, with three
+levels of aggression mirroring git's model.  The "panic button" for music
+production: when a producer makes ten bad commits and wants to return to the
+last known-good take.
+
+### Usage
+
+```bash
+muse reset [--soft | --mixed | --hard] [--yes] <commit>
+```
+
+### Flags
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `<commit>` | positional | required | Target commit (HEAD, HEAD~N, full/abbreviated SHA) |
+| `--soft` | flag | off | Move branch pointer only; muse-work/ and object store unchanged |
+| `--mixed` | flag | on | Move branch pointer and reset index (default; equivalent to soft in current model) |
+| `--hard` | flag | off | Move branch pointer AND overwrite muse-work/ with target snapshot |
+| `--yes` / `-y` | flag | off | Skip confirmation prompt for --hard mode |
+
+### Modes
+
+**Soft** (`--soft`):
+- Updates `.muse/refs/heads/<branch>` to point to the target commit.
+- `muse-work/` files are completely untouched.
+- The next `muse commit` will capture the current working tree on top of the rewound HEAD.
+- Use when you want to re-commit with a different message or squash commits.
+
+**Mixed** (`--mixed`, default):
+- Same as soft in the current Muse model (no explicit staging area exists yet).
+- Included for API symmetry with git and forward-compatibility when a staging
+  index is added.
+
+**Hard** (`--hard`):
+- Moves the branch ref to the target commit.
+- Overwrites every file in `muse-work/` with the content from the target
+  commit's snapshot.  Files are read from `.muse/objects/<sha[:2]>/<sha[2:]>`
+  (the content-addressed blob store populated by `muse commit`).
+- Files in `muse-work/` that are NOT present in the target snapshot are deleted.
+- **Prompts for confirmation** unless `--yes` is given — this is destructive.
+- **Requires `muse commit` to have been run** at least once after repo init so
+  that object blobs are present in `.muse/objects/`.
+
+### HEAD~N Syntax
+
+```bash
+muse reset HEAD~1       # one parent back (previous commit)
+muse reset HEAD~3       # three parents back
+muse reset abc123       # abbreviated SHA prefix
+muse reset --hard HEAD~2  # two parents back + restore working tree
+```
+
+`HEAD~N` walks the primary parent chain only.  Merge parents
+(`parent2_commit_id`) are not traversed.
+
+### Guards
+
+- **Merge in progress**: blocked when `.muse/MERGE_STATE.json` exists.
+  Resolve or abort the merge before resetting.
+- **No commits on branch**: exits with `USER_ERROR` if the current branch
+  has never been committed.
+- **Missing object blobs** (hard mode): exits with `INTERNAL_ERROR` rather
+  than silently leaving `muse-work/` in a partial state.
+
+### Output Examples
+
+```
+# Soft/mixed reset:
+✅ HEAD is now at abc123de
+
+# Hard reset (2 files restored, 1 deleted):
+✅ HEAD is now at abc123de (2 files restored, 1 files deleted)
+
+# Abort:
+⚠️  muse reset --hard will OVERWRITE muse-work/ with the target snapshot.
+    All uncommitted changes will be LOST.
+Proceed? [y/N]: N
+Reset aborted.
+```
+
+### Object Store
+
+`muse commit` now writes every file's blob content to `.muse/objects/` using
+a two-level sharding layout identical to git's loose-object store:
+
+```
+.muse/objects/
+  ab/           ← first two hex chars of sha256
+    cdef1234...  ← remaining 62 chars — the raw file bytes
+```
+
+This store enables `muse reset --hard` to restore any previously committed
+snapshot without needing the live `muse-work/` files.  Objects are written
+idempotently (never overwritten once stored).
+
+### Result Type
+
+`ResetResult` — see [`docs/reference/type_contracts.md`](../reference/type_contracts.md).
+
+### Agent Use Case
+
+An AI composition agent uses `muse reset` to recover from a bad generation run:
+
+1. Agent calls `muse log --json` to identify the last known-good commit SHA.
+2. Agent calls `muse reset --hard --yes <sha>` to restore the working tree.
+3. Agent calls `muse status` to verify the working tree matches expectations.
+4. Agent resumes composition from the clean baseline.
+
+### Implementation
+
+- **Service layer:** `maestro/services/muse_reset.py` — `perform_reset()`,
+  `resolve_ref()`, `store_object()`, `object_store_path()`.
+- **CLI command:** `maestro/muse_cli/commands/reset.py` — Typer callback,
+  confirmation prompt, error display.
+- **Commit integration:** `maestro/muse_cli/commands/commit.py` — calls
+  `store_object()` for each file during commit to populate `.muse/objects/`.
+- **Exit codes:** 0 success, 1 user error (`USER_ERROR`), 2 not a repo
+  (`REPO_NOT_FOUND`), 3 internal error (`INTERNAL_ERROR`).
 
 ---
 
