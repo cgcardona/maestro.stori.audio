@@ -7,7 +7,7 @@ never written to logs — log lines use ``"Bearer ***"`` as a placeholder.
 Usage::
 
     async with MuseHubClient(base_url="https://hub.example.com", repo_root=root) as hub:
-        response = await hub.get("/api/v1/musehub/repos/my-repo")
+        response = await hub.post("/push", json=payload)
 
 If ``[auth] token`` is missing or empty in ``.muse/config.toml``, the client
 raises :class:`typer.Exit` with exit-code ``1`` and prints an actionable
@@ -21,7 +21,7 @@ from __future__ import annotations
 import logging
 import pathlib
 import types
-from typing import Any
+from typing import Any, TypedDict
 
 import httpx
 import typer
@@ -35,6 +35,97 @@ _MISSING_TOKEN_MSG = (
     "No auth token configured. "
     'Add `token = "..."` under `[auth]` in `.muse/config.toml`.'
 )
+
+
+# ---------------------------------------------------------------------------
+# Push / Pull typed payload contracts
+# ---------------------------------------------------------------------------
+
+
+class PushCommitPayload(TypedDict):
+    """A single commit record sent to the Hub during a push.
+
+    All datetime fields are ISO-8601 strings (UTC).  ``metadata`` carries
+    music-domain annotations (tempo_bpm, key, meter, etc.).
+    """
+
+    commit_id: str
+    parent_commit_id: str | None
+    snapshot_id: str
+    branch: str
+    message: str
+    author: str
+    committed_at: str
+    metadata: dict[str, object] | None
+
+
+class PushObjectPayload(TypedDict):
+    """A content-addressed object descriptor sent during a push."""
+
+    object_id: str
+    size_bytes: int
+
+
+class PushRequest(TypedDict):
+    """Payload sent to ``POST /musehub/repos/{repo_id}/push``."""
+
+    branch: str
+    head_commit_id: str
+    commits: list[PushCommitPayload]
+    objects: list[PushObjectPayload]
+
+
+class PushResponse(TypedDict):
+    """Response from the Hub push endpoint."""
+
+    accepted: bool
+    message: str
+
+
+class PullRequest(TypedDict):
+    """Payload sent to ``POST /musehub/repos/{repo_id}/pull``."""
+
+    branch: str
+    have_commits: list[str]
+    have_objects: list[str]
+
+
+class PullCommitPayload(TypedDict):
+    """A single commit record received from the Hub during a pull."""
+
+    commit_id: str
+    parent_commit_id: str | None
+    snapshot_id: str
+    branch: str
+    message: str
+    author: str
+    committed_at: str
+    metadata: dict[str, object] | None
+
+
+class PullObjectPayload(TypedDict):
+    """A content-addressed object descriptor received during a pull."""
+
+    object_id: str
+    size_bytes: int
+
+
+class PullResponse(TypedDict):
+    """Response from the Hub pull endpoint.
+
+    ``diverged`` is ``True`` when the remote HEAD is not an ancestor of the
+    local branch HEAD — the caller should display a divergence warning.
+    """
+
+    commits: list[PullCommitPayload]
+    objects: list[PullObjectPayload]
+    remote_head: str | None
+    diverged: bool
+
+
+# ---------------------------------------------------------------------------
+# MuseHubClient
+# ---------------------------------------------------------------------------
 
 
 class MuseHubClient:
@@ -136,4 +227,14 @@ class MuseHubClient:
         return await self._require_client().delete(path, **kwargs)
 
 
-__all__ = ["MuseHubClient"]
+__all__ = [
+    "MuseHubClient",
+    "PushCommitPayload",
+    "PushObjectPayload",
+    "PushRequest",
+    "PushResponse",
+    "PullRequest",
+    "PullCommitPayload",
+    "PullObjectPayload",
+    "PullResponse",
+]

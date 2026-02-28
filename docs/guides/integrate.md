@@ -100,6 +100,67 @@ All `/musehub/` routes require a valid JWT Bearer token. The Muse CLI reads this
 
 ---
 
+## Muse Hub — Remote Sync Workflow
+
+After authenticating (see above), sync local commits to the shared Hub using
+`muse remote add`, `muse push`, and `muse pull`.
+
+### Setup (once per repo)
+
+```bash
+# Register the remote Hub URL
+muse remote add origin https://story.audio/musehub/repos/<repo-id>
+
+# Verify
+muse remote -v
+# origin  https://story.audio/musehub/repos/<repo-id>
+```
+
+### Push
+
+```bash
+# Push all new commits on the current branch to origin
+muse push
+
+# Push a specific branch
+muse push --branch feature/groove-v2
+
+# Push to a non-default remote
+muse push --remote staging
+```
+
+### Pull
+
+```bash
+# Pull any commits from origin that are not yet local
+muse pull
+
+# Pull a specific branch
+muse pull --branch main
+
+# After pull, if branches diverged:
+# ⚠️  Local branch has diverged from origin/main.
+#    Run `muse merge origin/main` to integrate remote changes.
+```
+
+### Collaboration pattern
+
+```
+Gabriel (Machine A)                Rene (Machine B)
+─────────────────────              ─────────────────────
+muse commit -m "groove v1"
+muse push                          muse pull
+                                   muse ask "what changed?"
+                                   muse commit -m "variation"
+                                   muse push
+muse pull
+muse merge origin/main
+```
+
+For full CLI reference see [muse_vcs.md](../architecture/muse_vcs.md#muse-cli-remote-sync-command-reference).
+
+---
+
 ## Frontend (Swift)
 
 **Auth & identity parity:** The app should use the backend's single-identifier architecture (device UUID). Register, get JWT for maestro/MCP, use X-Device-ID only for assets.

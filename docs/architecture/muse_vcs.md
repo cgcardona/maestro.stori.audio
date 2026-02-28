@@ -103,9 +103,9 @@ maestro/muse_cli/
     │                        apply_merge(), read/write_merge_state(), MergeState dataclass
     ├── checkout.py       — muse checkout (stub — issue #34)
     ├── merge.py          — muse merge   ✅ fast-forward + 3-way merge (issue #35)
-    ├── remote.py         — muse remote  (stub — issue #38)
-    ├── push.py           — muse push    (stub — issue #38)
-    ├── pull.py           — muse pull    (stub — issue #38)
+    ├── remote.py         — muse remote (add, -v)
+    ├── push.py           — muse push
+    ├── pull.py           — muse pull
     ├── open_cmd.py       — muse open    ✅ macOS artifact preview (issue #45)
     ├── play.py           — muse play    ✅ macOS audio playback via afplay (issue #45)
     ├── export.py         — muse export  ✅ snapshot export to MIDI/JSON/MusicXML/ABC/WAV (issue #112)
@@ -1348,6 +1348,146 @@ muse commit --from-batch muse-batch.json
        ├── uses commit_message_suggestion
        └── creates versioned commit in Postgres
 ```
+
+---
+
+## Muse CLI — Remote Sync Command Reference
+
+These commands connect the local Muse repo to the remote Muse Hub, enabling
+collaboration between musicians (push from one machine, pull on another) and
+serving as the CLI-side counterpart to the Hub's sync API.
+
+---
+
+### `muse remote`
+
+**Purpose:** Manage named remote Hub URLs in `.muse/config.toml`.  Every push
+and pull needs a remote configured — `muse remote add` is the prerequisite.
+
+**Usage:**
+```bash
+muse remote add <name> <url>   # register a remote
+muse remote -v                  # list all remotes
+```
+
+**Flags:**
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `-v` / `--verbose` | flag | off | Print all configured remotes with their URLs |
+
+**Subcommands:**
+
+| Subcommand | Description |
+|-----------|-------------|
+| `add <name> <url>` | Write `[remotes.<name>] url = "<url>"` to `.muse/config.toml` |
+
+**Output example:**
+```
+# muse remote add origin https://story.audio/musehub/repos/my-repo-id
+✅ Remote 'origin' set to https://story.audio/musehub/repos/my-repo-id
+
+# muse remote -v
+origin  https://story.audio/musehub/repos/my-repo-id
+staging https://staging.example.com/musehub/repos/my-repo-id
+```
+
+**Security:** Token values in `[auth]` are never shown by `muse remote -v`.
+
+**Exit codes:** 0 — success; 1 — bad URL or empty name; 2 — not a repo.
+
+**Agent use case:** An orchestration agent registers the Hub URL once at repo
+setup time; subsequent push/pull commands run without further config.
+
+---
+
+### `muse push`
+
+**Purpose:** Upload local commits that the remote Hub does not yet have.
+Enables collaborative workflows where one musician pushes and others pull.
+
+**Usage:**
+```bash
+muse push
+muse push --branch feature/groove-v2
+muse push --remote staging
+```
+
+**Flags:**
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--branch` / `-b` | str | current branch | Branch to push |
+| `--remote` | str | `origin` | Named remote to push to |
+
+**Push algorithm:**
+1. Read `repo_id` from `.muse/repo.json` and branch from `.muse/HEAD`.
+2. Read local HEAD commit from `.muse/refs/heads/<branch>`.
+3. Resolve remote URL from `[remotes.<name>] url` in `.muse/config.toml`.
+4. Read last-known remote HEAD from `.muse/remotes/<name>/<branch>` (absent on first push).
+5. Compute delta: commits from local HEAD down to (but not including) remote HEAD.
+6. POST `{ branch, head_commit_id, commits[], objects[] }` to `<remote>/push`.
+7. On HTTP 200, update `.muse/remotes/<name>/<branch>` to the new HEAD.
+
+**Output example:**
+```
+⬆️  Pushing 3 commit(s) to origin/main …
+✅ Pushed 3 commit(s) → origin/main [aabbccdd]
+```
+
+**Exit codes:** 0 — success; 1 — no remote or no commits; 3 — network/server error.
+
+**Result type:** `PushRequest` / `PushResponse` — see `maestro/muse_cli/hub_client.py`.
+
+**Agent use case:** After `muse commit`, an agent runs `muse push` to publish
+the committed variation to the shared Hub for other team members to review.
+
+---
+
+### `muse pull`
+
+**Purpose:** Download commits from the remote Hub that are missing locally.
+After pull, the AI agent has the full commit history of remote collaborators
+available for `muse context`, `muse diff`, `muse ask`, etc.
+
+**Usage:**
+```bash
+muse pull
+muse pull --branch feature/groove-v2
+muse pull --remote staging
+```
+
+**Flags:**
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--branch` / `-b` | str | current branch | Branch to pull |
+| `--remote` | str | `origin` | Named remote to pull from |
+
+**Pull algorithm:**
+1. Resolve remote URL from `[remotes.<name>] url` in `.muse/config.toml`.
+2. Collect `have_commits` (all local commit IDs) and `have_objects` (all local object IDs).
+3. POST `{ branch, have_commits[], have_objects[] }` to `<remote>/pull`.
+4. Store returned commits and object descriptors in local Postgres.
+5. Update `.muse/remotes/<name>/<branch>` tracking pointer.
+6. If branches have diverged, print a warning and suggest `muse merge origin/<branch>`.
+
+**Divergence detection:** The pull succeeds (exit 0) even when diverged.
+The divergence warning is informational — it does not block further commands.
+
+**Output example:**
+```
+⬇️  Pulling origin/main …
+✅ Pulled 2 new commit(s), 5 new object(s) from origin/main
+
+# When diverged:
+⚠️  Local branch has diverged from origin/main.
+   Run `muse merge origin/main` to integrate remote changes.
+```
+
+**Exit codes:** 0 — success (including divergence); 1 — no remote configured; 3 — network/server error.
+
+**Result type:** `PullRequest` / `PullResponse` — see `maestro/muse_cli/hub_client.py`.
+
+**Agent use case:** Before generating a new arrangement, an agent pulls to ensure
+it is working from the latest shared composition state.
 
 ---
 
