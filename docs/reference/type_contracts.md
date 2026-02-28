@@ -6811,6 +6811,42 @@ public compositions were found — not an error condition.
 
 ---
 
+## CommitDiffSummaryResponse / CommitDiffDimensionScore (Pydantic)
+
+**Module:** `maestro.models.musehub`
+**Returned by:** `GET /api/v1/musehub/repos/{repo_id}/commits/{commit_id}/diff-summary`
+
+Wire-format models for the multi-dimensional musical diff summary endpoint.
+Scores are heuristic estimates derived from commit message keyword analysis.
+
+```python
+class CommitDiffDimensionScore(CamelModel):
+    dimension: str   # "harmonic" | "rhythmic" | "melodic" | "structural" | "dynamic"
+    score: float     # [0.0, 1.0] — change magnitude
+    label: str       # "none" | "low" | "medium" | "high"
+    color: str       # CSS class: "dim-none" | "dim-low" | "dim-medium" | "dim-high"
+
+class CommitDiffSummaryResponse(CamelModel):
+    commit_id: str                              # camelCase: commitId
+    parent_id: str | None                       # camelCase: parentId; None for root commits
+    dimensions: list[CommitDiffDimensionScore]  # Always five entries (one per dimension)
+    overall_score: float                        # camelCase: overallScore; mean of all five
+```
+
+**Source:** `maestro/models/musehub.py`
+**Endpoint logic:** `maestro/api/routes/musehub/repos.py` → `get_commit_diff_summary()`
+
+**Score semantics:**
+- Root commit (no parent): all dimensions score `1.0` (everything is new)
+- Non-root commit: keyword density in commit message drives score per dimension
+- `score < 0.15` → label `"none"`, `< 0.40` → `"low"`, `< 0.70` → `"medium"`, else `"high"`
+
+**Agent contract:** Always five entries in `dimensions`, one per musical dimension.
+An `overallScore` of `0.0` means no recognized musical keywords were found in the
+commit message — not an error. `parentId` is `null` for root commits (initial push).
+
+---
+
 ## ProfileResponse
 
 **Module:** `maestro.models.musehub`
