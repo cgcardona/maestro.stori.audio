@@ -1,7 +1,27 @@
 # Parallel Agent Kickoff — Bug Reports → GitHub Issues
 
-Each agent gets its own ephemeral worktree. Worktrees are created at kickoff,
-named by batch number, and **deleted by the agent when its job is done**.
+> ## YOU ARE THE COORDINATOR
+>
+> If you are an AI agent reading this document, your role is **coordinator only**.
+>
+> **Your job — the full list, nothing more:**
+> 1. Fill in the bug descriptions in each `.agent-task` file (or confirm the user has done so).
+> 2. Run the Setup script below to create one worktree per batch.
+> 3. Launch one sub-agent per worktree by pasting the Kickoff Prompt (found at the bottom of this document) into a separate Cursor composer window rooted in that worktree.
+> 4. Report back once all sub-agents have been launched.
+>
+> **You do NOT:**
+> - Draft or create any GitHub issues yourself.
+> - Read bug reports and analyze them yourself.
+> - Run `gh issue create` yourself.
+>
+> The **Kickoff Prompt** at the bottom of this document is for the sub-agents, not for you.
+> Copy it verbatim into each sub-agent's window. Do not follow it yourself.
+
+---
+
+Each sub-agent gets its own ephemeral worktree. Worktrees are created at kickoff,
+named by batch number, and **deleted by the sub-agent when its job is done**.
 No branch, no Docker — pure `gh issue create`.
 
 ---
