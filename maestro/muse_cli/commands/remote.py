@@ -31,7 +31,7 @@ import logging
 import typer
 
 from maestro.muse_cli._repo import require_repo
-from maestro.muse_cli.config import list_remotes, remove_remote, rename_remote, set_remote
+from maestro.muse_cli.config import get_remote, list_remotes, remove_remote, rename_remote, set_remote
 from maestro.muse_cli.errors import ExitCode
 
 logger = logging.getLogger(__name__)
@@ -178,8 +178,6 @@ def remote_set_url(
     if not url.strip().startswith(("http://", "https://")):
         typer.echo(f"❌ URL must start with http:// or https:// — got: {url!r}")
         raise typer.Exit(code=int(ExitCode.USER_ERROR))
-
-    from maestro.muse_cli.config import get_remote
 
     if get_remote(name.strip(), root) is None:
         typer.echo(f"❌ Remote '{name}' does not exist. Use `muse remote add` to create it.")
