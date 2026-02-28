@@ -4,6 +4,13 @@
 {% block extra_css %}
 <style>
 .traffic-chart-container { background: var(--bg-surface, var(--surface)); border-radius: 8px; padding: 16px; }
+.branch-bar-row { display: flex; align-items: center; gap: var(--space-3); margin-bottom: var(--space-2); }
+.branch-bar-label { width: 160px; font-size: var(--font-size-xs, 11px); color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex-shrink: 0; }
+.branch-bar-track { flex: 1; background: var(--bg-overlay); border-radius: var(--radius-full); height: 10px; overflow: hidden; }
+.branch-bar-fill { height: 100%; border-radius: var(--radius-full); }
+.branch-bar-count { font-size: var(--font-size-xs, 11px); color: var(--text-muted); flex-shrink: 0; width: 80px; text-align: right; }
+.issue-health-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: var(--space-3); }
+@media (max-width: 600px) { .issue-health-grid { grid-template-columns: repeat(2, 1fr); } }
 </style>
 {% endblock %}
 {% block breadcrumb %}
@@ -102,6 +109,45 @@ function buildBpmTimeline(commits) {
   </div>`;
 }
 
+function branchColor(name) {
+  if (name === 'main' || name === 'master') return '#22c55e';
+  if (name.startsWith('feat/') || name.startsWith('feature/')) return '#3b82f6';
+  if (name.startsWith('fix/') || name.startsWith('bugfix/') || name.startsWith('hotfix/')) return '#ef4444';
+  if (name.startsWith('experiment/') || name.startsWith('exp/')) return '#eab308';
+  return '#6b7280';
+}
+
+function buildBranchActivity(commits) {
+  if (!commits || commits.length === 0)
+    return '<p class="text-muted text-sm">No commit data yet.</p>';
+
+  const branchMap = {};
+  commits.forEach(c => {
+    const b = c.branch || 'unknown';
+    if (!branchMap[b]) branchMap[b] = { count: 0, lastDate: null };
+    branchMap[b].count++;
+    const ts = new Date(c.timestamp);
+    if (!branchMap[b].lastDate || ts > branchMap[b].lastDate) branchMap[b].lastDate = ts;
+  });
+
+  const sorted = Object.entries(branchMap).sort((a, b) => b[1].count - a[1].count);
+  const maxCount = sorted[0][1].count || 1;
+
+  return sorted.map(([name, info]) => {
+    const pct = Math.round((info.count / maxCount) * 100);
+    const color = branchColor(name);
+    const lastStr = info.lastDate ? fmtRelative(info.lastDate.toISOString()) : '—';
+    return `
+      <div class="branch-bar-row">
+        <div class="branch-bar-label" title="${escHtml(name)}">${escHtml(name)}</div>
+        <div class="branch-bar-track">
+          <div class="branch-bar-fill" style="width:${pct}%;background:${color}"></div>
+        </div>
+        <div class="branch-bar-count">${info.count} commit${info.count !== 1 ? 's' : ''} &middot; ${lastStr}</div>
+      </div>`;
+  }).join('');
+}
+
 function buildContributorChart(credits) {
   if (!credits || credits.length === 0)
     return '<p class="text-muted text-sm">No contributor data yet.</p>';
@@ -150,17 +196,26 @@ async function loadTrafficChart() {
 async function load() {
   initRepoNav(repoId);
   try {
-    const [repoData, commitsData, creditsData, sessionsData] = await Promise.all([
+    const [repoData, commitsData, creditsData, sessionsData, openIssuesData, closedIssuesData, openPrsData, mergedPrsData] = await Promise.all([
       apiFetch('/repos/' + repoId),
       apiFetch('/repos/' + repoId + '/commits?limit=200'),
       apiFetch('/repos/' + repoId + '/credits').catch(() => ({ credits: [] })),
       apiFetch('/repos/' + repoId + '/sessions?limit=100').catch(() => ({ sessions: [], total: 0 })),
+      apiFetch('/repos/' + repoId + '/issues?state=open').catch(() => ({ issues: [] })),
+      apiFetch('/repos/' + repoId + '/issues?state=closed').catch(() => ({ issues: [] })),
+      apiFetch('/repos/' + repoId + '/pull-requests?state=open').catch(() => ({ pullRequests: [] })),
+      apiFetch('/repos/' + repoId + '/pull-requests?state=merged').catch(() => ({ pullRequests: [] })),
     ]);
 
     const commits  = commitsData.commits  || [];
     const credits  = creditsData.credits  || [];
     const sessions = sessionsData.sessions || [];
     const totalSessions = sessionsData.total || sessions.length;
+
+    const openIssues  = (openIssuesData.issues   || []).length;
+    const closedIssues = (closedIssuesData.issues || []).length;
+    const openPrs     = (openPrsData.pullRequests   || []).length;
+    const mergedPrs   = (mergedPrsData.pullRequests || []).length;
 
     // Fetch analytics in parallel (non-blocking — failures silently ignored)
     apiFetch('/repos/' + repoId + '/analytics').then(a => {
@@ -269,6 +324,36 @@ async function load() {
               <a href="/musehub/ui/users/${escHtml(author)}" class="text-sm">${escHtml(author)}</a>
               <span class="text-xs text-muted">${count} commit${count !== 1 ? 's' : ''}</span>
             </div>`).join('')}
+        </div>
+      </div>
+
+      <!-- Branch Activity -->
+      <div class="card">
+        <h2 style="margin-bottom:var(--space-2)">Branch Activity</h2>
+        <p class="text-xs text-muted" style="margin-bottom:var(--space-3)">Commit count per branch · last 200 commits</p>
+        ${buildBranchActivity(commits)}
+      </div>
+
+      <!-- Issue Health -->
+      <div class="card">
+        <h2 style="margin-bottom:var(--space-3)">Issue &amp; PR Health</h2>
+        <div class="issue-health-grid">
+          <div class="stat-card">
+            <span class="stat-value" style="color:#22c55e">${openIssues}</span>
+            <div class="stat-label">Open Issues</div>
+          </div>
+          <div class="stat-card">
+            <span class="stat-value" style="color:var(--text-muted)">${closedIssues}</span>
+            <div class="stat-label">Closed Issues</div>
+          </div>
+          <div class="stat-card">
+            <span class="stat-value" style="color:#3b82f6">${openPrs}</span>
+            <div class="stat-label">Open PRs</div>
+          </div>
+          <div class="stat-card">
+            <span class="stat-value" style="color:#a855f7">${mergedPrs}</span>
+            <div class="stat-label">Merged PRs</div>
+          </div>
         </div>
       </div>
 
