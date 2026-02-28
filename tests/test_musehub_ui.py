@@ -3372,3 +3372,258 @@ async def test_harmony_json_response(
     # Total beats
     assert "totalBeats" in data
     assert data["totalBeats"] > 0
+
+
+# ---------------------------------------------------------------------------
+# Commit detail enhancements — issue #207
+# ---------------------------------------------------------------------------
+
+
+async def _seed_commit_detail_fixtures(
+    db_session: AsyncSession,
+) -> tuple[str, str, str]:
+    """Seed a public repo with a parent commit and a child commit.
+
+    Returns (repo_id, parent_commit_id, child_commit_id).
+    """
+    repo = MusehubRepo(
+        name="commit-detail-test",
+        owner="testuser",
+        slug="commit-detail-test",
+        visibility="public",
+        owner_user_id="test-owner",
+    )
+    db_session.add(repo)
+    await db_session.flush()
+    repo_id = str(repo.repo_id)
+
+    branch = MusehubBranch(
+        repo_id=repo_id,
+        name="main",
+        head_commit_id=None,
+    )
+    db_session.add(branch)
+
+    parent_commit_id = "aaaa0000111122223333444455556666aaaabbbb"
+    child_commit_id  = "bbbb1111222233334444555566667777bbbbcccc"
+
+    parent_commit = MusehubCommit(
+        repo_id=repo_id,
+        commit_id=parent_commit_id,
+        branch="main",
+        parent_ids=[],
+        message="init: establish harmonic foundation in C major\n\nKey: C major\nBPM: 120\nMeter: 4/4",
+        author="testuser",
+        timestamp=datetime.now(UTC) - timedelta(hours=2),
+        snapshot_id=None,
+    )
+    child_commit = MusehubCommit(
+        repo_id=repo_id,
+        commit_id=child_commit_id,
+        branch="main",
+        parent_ids=[parent_commit_id],
+        message="feat(keys): add melodic piano phrase in D minor\n\nKey: D minor\nBPM: 132\nMeter: 3/4\nSection: verse",
+        author="testuser",
+        timestamp=datetime.now(UTC) - timedelta(hours=1),
+        snapshot_id=None,
+    )
+    db_session.add(parent_commit)
+    db_session.add(child_commit)
+    await db_session.commit()
+    return repo_id, parent_commit_id, child_commit_id
+
+
+@pytest.mark.anyio
+async def test_commit_detail_page_renders_enhanced_metadata(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Commit detail page HTML includes enhanced metadata markers (SHA, parent, child nav)."""
+    await _seed_commit_detail_fixtures(db_session)
+    sha = "bbbb1111222233334444555566667777bbbbcccc"
+    response = await client.get(f"/musehub/ui/testuser/commit-detail-test/commits/{sha}")
+    assert response.status_code == 200
+    assert "text/html" in response.headers["content-type"]
+    body = response.text
+    # Full SHA copyable button
+    assert "copyToClipboard" in body
+    assert "copy-btn" in body
+    # Child links function
+    assert "buildChildLinks" in body
+    # Parent links in JS
+    assert "parentLinks" in body
+    # Dimension diff badges
+    assert "dimBadge" in body
+    assert "dim-badges-row" in body
+
+
+@pytest.mark.anyio
+async def test_commit_detail_artifact_browser_organized_by_type(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Commit detail page includes organized artifact browser with section headings."""
+    await _seed_commit_detail_fixtures(db_session)
+    sha = "bbbb1111222233334444555566667777bbbbcccc"
+    response = await client.get(f"/musehub/ui/testuser/commit-detail-test/commits/{sha}")
+    assert response.status_code == 200
+    body = response.text
+    # Organized artifact sections by type
+    assert "Piano Rolls" in body
+    assert "buildArtifactSections" in body
+    assert "METADATA_EXTS" in body
+    # Before/After comparison
+    assert "buildBeforeAfterAudio" in body
+    assert "Before / After" in body
+
+
+@pytest.mark.anyio
+async def test_commit_detail_commit_body_line_breaks(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Commit detail page renders commit message body with line breaks preserved."""
+    await _seed_commit_detail_fixtures(db_session)
+    sha = "bbbb1111222233334444555566667777bbbbcccc"
+    response = await client.get(f"/musehub/ui/testuser/commit-detail-test/commits/{sha}")
+    assert response.status_code == 200
+    body = response.text
+    assert "renderCommitBody" in body
+    assert "commit-body-line" in body
+
+
+@pytest.mark.anyio
+async def test_commit_detail_diff_summary_endpoint_returns_five_dimensions(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    auth_headers: dict[str, str],
+) -> None:
+    """GET /api/v1/musehub/repos/{repo_id}/commits/{sha}/diff-summary returns 5 dimensions."""
+    repo_id, _parent_id, child_id = await _seed_commit_detail_fixtures(db_session)
+    response = await client.get(
+        f"/api/v1/musehub/repos/{repo_id}/commits/{child_id}/diff-summary",
+        headers=auth_headers,
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["commitId"] == child_id
+    assert data["parentId"] == _parent_id
+    assert "dimensions" in data
+    assert len(data["dimensions"]) == 5
+    dim_names = {d["dimension"] for d in data["dimensions"]}
+    assert dim_names == {"harmonic", "rhythmic", "melodic", "structural", "dynamic"}
+    for dim in data["dimensions"]:
+        assert 0.0 <= dim["score"] <= 1.0
+        assert dim["label"] in {"none", "low", "medium", "high"}
+        assert dim["color"] in {"dim-none", "dim-low", "dim-medium", "dim-high"}
+    assert "overallScore" in data
+    assert 0.0 <= data["overallScore"] <= 1.0
+
+
+@pytest.mark.anyio
+async def test_commit_detail_diff_summary_root_commit_scores_one(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    auth_headers: dict[str, str],
+) -> None:
+    """Diff summary for a root commit (no parent) scores all dimensions at 1.0."""
+    repo_id, parent_id, _child_id = await _seed_commit_detail_fixtures(db_session)
+    response = await client.get(
+        f"/api/v1/musehub/repos/{repo_id}/commits/{parent_id}/diff-summary",
+        headers=auth_headers,
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["parentId"] is None
+    for dim in data["dimensions"]:
+        assert dim["score"] == 1.0
+        assert dim["label"] == "high"
+
+
+@pytest.mark.anyio
+async def test_commit_detail_diff_summary_keyword_detection(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    auth_headers: dict[str, str],
+) -> None:
+    """Diff summary detects melodic keyword in child commit message."""
+    repo_id, _parent_id, child_id = await _seed_commit_detail_fixtures(db_session)
+    response = await client.get(
+        f"/api/v1/musehub/repos/{repo_id}/commits/{child_id}/diff-summary",
+        headers=auth_headers,
+    )
+    assert response.status_code == 200
+    data = response.json()
+    melodic_dim = next(d for d in data["dimensions"] if d["dimension"] == "melodic")
+    # child commit message contains "melodic" keyword → non-zero score
+    assert melodic_dim["score"] > 0.0
+
+
+@pytest.mark.anyio
+async def test_commit_detail_diff_summary_unknown_commit_404(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    auth_headers: dict[str, str],
+) -> None:
+    """Diff summary for unknown commit ID returns 404."""
+    repo_id, _p, _c = await _seed_commit_detail_fixtures(db_session)
+    response = await client.get(
+        f"/api/v1/musehub/repos/{repo_id}/commits/deadbeefdeadbeefdeadbeef/diff-summary",
+        headers=auth_headers,
+    )
+    assert response.status_code == 404
+
+
+@pytest.mark.anyio
+async def test_commit_detail_json_format_returns_commit_data(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """GET commit detail page with ?format=json returns CommitResponse JSON."""
+    await _seed_commit_detail_fixtures(db_session)
+    sha = "bbbb1111222233334444555566667777bbbbcccc"
+    response = await client.get(
+        f"/musehub/ui/testuser/commit-detail-test/commits/{sha}?format=json"
+    )
+    assert response.status_code == 200
+    assert "application/json" in response.headers["content-type"]
+    data = response.json()
+    # CommitResponse fields in camelCase
+    assert "commitId" in data or "commit_id" in data
+    assert "message" in data
+
+
+@pytest.mark.anyio
+async def test_commit_detail_page_musical_metadata_section(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Commit detail page includes musical metadata (tempo, key, meter) rendering logic."""
+    await _seed_commit_detail_fixtures(db_session)
+    sha = "bbbb1111222233334444555566667777bbbbcccc"
+    response = await client.get(f"/musehub/ui/testuser/commit-detail-test/commits/{sha}")
+    assert response.status_code == 200
+    body = response.text
+    # Musical metadata section in JS
+    assert "musicalMeta" in body
+    # Meter extraction
+    assert "meta.meter" in body
+    # Tempo/key rendering
+    assert "meta.key" in body
+    assert "meta.tempo" in body
+
+
+@pytest.mark.anyio
+async def test_commit_detail_nav_has_parent_and_child_links(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Commit detail page navigation includes both parent and child commit links."""
+    await _seed_commit_detail_fixtures(db_session)
+    sha = "bbbb1111222233334444555566667777bbbbcccc"
+    response = await client.get(f"/musehub/ui/testuser/commit-detail-test/commits/{sha}")
+    assert response.status_code == 200
+    body = response.text
+    # Both parent and child navigation links rendered in JS
+    assert "Parent Commit" in body
+    assert "Child Commit" in body

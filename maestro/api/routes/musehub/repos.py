@@ -32,6 +32,8 @@ from maestro.auth.dependencies import TokenClaims, optional_token, require_valid
 from maestro.db import get_db
 from maestro.models.musehub import (
     BranchListResponse,
+    CommitDiffDimensionScore,
+    CommitDiffSummaryResponse,
     CommitListResponse,
     CommitResponse,
     CreateRepoRequest,
@@ -209,6 +211,155 @@ async def get_commit(
             detail=f"Commit '{commit_id}' not found in repo '{repo_id}'",
         )
     return commit
+
+
+@router.get(
+    "/repos/{repo_id}/commits/{commit_id}/diff-summary",
+    response_model=CommitDiffSummaryResponse,
+    operation_id="getCommitDiffSummary",
+    summary="Multi-dimensional diff summary between a commit and its parent",
+    tags=["Commits"],
+)
+async def get_commit_diff_summary(
+    repo_id: str,
+    commit_id: str,
+    db: AsyncSession = Depends(get_db),
+    claims: TokenClaims | None = Depends(optional_token),
+) -> CommitDiffSummaryResponse:
+    """Return a five-dimension musical diff summary between a commit and its parent.
+
+    Computes heuristic per-dimension change scores (harmonic, rhythmic, melodic,
+    structural, dynamic) from the commit message keywords and metadata.  Scores
+    are in [0.0, 1.0] where 0 = no change and 1 = complete replacement.
+
+    Consumed by the commit detail page to render coloured dimension-change badges
+    that help musicians understand *what* musically changed in this push.
+
+    Returns:
+        CommitDiffSummaryResponse with per-dimension scores and overall mean.
+
+    Raises:
+        404: If the commit is not found in this repo.
+    """
+    repo = await musehub_repository.get_repo(db, repo_id)
+    _guard_visibility(repo, claims)
+    commits, _ = await musehub_repository.list_commits(db, repo_id, limit=500)
+    commit = next((c for c in commits if c.commit_id == commit_id), None)
+    if commit is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Commit '{commit_id}' not found in repo '{repo_id}'",
+        )
+    parent_id = commit.parent_ids[0] if commit.parent_ids else None
+    parent = next((c for c in commits if c.commit_id == parent_id), None) if parent_id else None
+
+    dimensions = _compute_commit_diff_dimensions(commit, parent)
+    overall = sum(d.score for d in dimensions) / len(dimensions) if dimensions else 0.0
+    return CommitDiffSummaryResponse(
+        commit_id=commit_id,
+        parent_id=parent_id,
+        dimensions=dimensions,
+        overall_score=round(overall, 4),
+    )
+
+
+def _dim_label_color(score: float) -> tuple[str, str]:
+    """Map a [0,1] score to a (label, CSS-class) pair for badge rendering."""
+    if score < 0.15:
+        return "none", "dim-none"
+    if score < 0.40:
+        return "low", "dim-low"
+    if score < 0.70:
+        return "medium", "dim-medium"
+    return "high", "dim-high"
+
+
+_HARMONIC_KEYWORDS = frozenset(
+    ["key", "chord", "harmony", "harmonic", "tonal", "modulation", "progression", "pitch"]
+)
+_RHYTHMIC_KEYWORDS = frozenset(
+    ["bpm", "tempo", "beat", "rhythm", "rhythmic", "groove", "swing", "meter", "time"]
+)
+_MELODIC_KEYWORDS = frozenset(
+    ["melody", "melodic", "lead", "motif", "phrase", "contour", "scale", "mode"]
+)
+_STRUCTURAL_KEYWORDS = frozenset(
+    [
+        "section",
+        "structural",
+        "intro",
+        "verse",
+        "chorus",
+        "bridge",
+        "outro",
+        "form",
+        "arrangement",
+        "structure",
+    ]
+)
+_DYNAMIC_KEYWORDS = frozenset(
+    [
+        "dynamic",
+        "volume",
+        "velocity",
+        "loud",
+        "soft",
+        "crescendo",
+        "decrescendo",
+        "fade",
+        "mute",
+        "swell",
+    ]
+)
+
+
+def _keyword_score(message: str, keywords: frozenset[str]) -> float:
+    """Return a [0, 1] score based on keyword density in a commit message.
+
+    Presence of any keyword gives a base 0.35 score; each additional keyword
+    adds 0.15 up to a ceiling of 0.95.  Root commits (empty parent) implicitly
+    score 1.0 on all dimensions since everything is new.
+    """
+    msg_lower = message.lower()
+    hits = sum(1 for kw in keywords if kw in msg_lower)
+    if hits == 0:
+        return 0.0
+    return min(0.35 + (hits - 1) * 0.15, 0.95)
+
+
+def _compute_commit_diff_dimensions(
+    commit: CommitResponse,
+    parent: CommitResponse | None,
+) -> list[CommitDiffDimensionScore]:
+    """Derive five-dimension diff scores from commit message keyword analysis.
+
+    When ``parent`` is None the commit is a root commit — all dimensions score
+    1.0 because every musical element is being introduced for the first time.
+    """
+    DIMS: list[tuple[str, frozenset[str]]] = [
+        ("harmonic", _HARMONIC_KEYWORDS),
+        ("rhythmic", _RHYTHMIC_KEYWORDS),
+        ("melodic", _MELODIC_KEYWORDS),
+        ("structural", _STRUCTURAL_KEYWORDS),
+        ("dynamic", _DYNAMIC_KEYWORDS),
+    ]
+
+    results: list[CommitDiffDimensionScore] = []
+    for dim_name, keywords in DIMS:
+        if parent is None:
+            raw = 1.0
+        else:
+            raw = _keyword_score(commit.message, keywords)
+        label, color = _dim_label_color(raw)
+        results.append(
+            CommitDiffDimensionScore(
+                dimension=dim_name,
+                score=round(raw, 4),
+                label=label,
+                color=color,
+            )
+        )
+    return results
 
 
 @router.get(
