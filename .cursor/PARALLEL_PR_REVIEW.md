@@ -44,7 +44,11 @@ Agent (per worktree)
                                                if so → stop + self-destruct
   └─ gh pr checkout <N>                     ← checks out the PR branch (only if open)
   └─ git fetch origin && git merge origin/dev  ← sync latest dev into feature branch
-  └─ review → grade → pre-merge sync → merge (or reject)
+  └─ review → grade
+  └─ git fetch origin && git merge origin/dev  ← final sync before merge
+  └─ git push origin "$BRANCH"             ← push resolution so GitHub sees clean state
+  └─ sleep 5 && gh pr merge <N> --squash  ← merge only after remote is up to date
+  └─ git push origin --delete "$BRANCH"   ← remote branch cleanup
   └─ git worktree remove --force <path>     ← self-destructs when done
   └─ git -C <main-repo> worktree prune      ← cleans up the ref
 ```
@@ -408,6 +412,10 @@ STEP 6 — PRE-MERGE SYNC (only if grade is A or B):
   ⚠️  Other agents may have merged PRs while you were reviewing. Sync once more
   before merging to catch any new conflicts.
 
+  # 1. Capture branch name FIRST — you need it for the push and delete below
+  BRANCH=$(git rev-parse --abbrev-ref HEAD)
+
+  # 2. Sync with dev
   git fetch origin
   git merge origin/dev
 
@@ -417,18 +425,42 @@ STEP 6 — PRE-MERGE SYNC (only if grade is A or B):
   - If conflicts are non-trivial and introduce risk → downgrade grade to B
     and file a follow-up issue. Still merge if the overall work is solid.
 
-  After clean sync: output "Approved for merge" and then run these in order:
+  # 3. ALWAYS push the branch before merging — even if there were no conflicts.
+  #    GitHub sees the REMOTE branch tip, not your local state. If another PR landed
+  #    since your last sync, GitHub will reject the merge until you push the resolution.
+  git push origin "$BRANCH"
 
-  1. Capture the branch name while still inside the worktree:
-       BRANCH=$(git rev-parse --abbrev-ref HEAD)
+  # 4. Wait for GitHub to recompute merge status after the push
+  sleep 5
 
-  2. Merge WITHOUT --delete-branch (avoids "dev already used by worktree" error):
+  Output "Approved for merge" and then run these in order:
+
+  # 5. Squash merge — this is the ONLY valid merge strategy here.
+  #    NEVER use --auto (requires branch protection rules we don't have).
+  #    NEVER use --merge (wrong strategy, creates a merge commit on dev).
+  #    NEVER use --delete-branch (breaks in multi-worktree setups).
        gh pr merge <N> --squash
 
-  3. Delete the remote branch manually (now safe — merge is done):
+  ── If gh pr merge still reports conflicts after the push ──────────────────
+  │ GitHub sometimes needs more time to recompute merge status. Wait and retry: │
+  │                                                                             │
+  │   sleep 10                                                                  │
+  │   gh pr merge <N> --squash                                                  │
+  │                                                                             │
+  │ If it STILL fails: the feature branch has diverged again (yet another PR   │
+  │ landed in the gap). Re-run the full sync:                                  │
+  │   git fetch origin && git merge origin/dev                                  │
+  │   git push origin "$BRANCH"                                                 │
+  │   sleep 5 && gh pr merge <N> --squash                                       │
+  │                                                                             │
+  │ After two sync+push+retry cycles with no success → stop, report the PR     │
+  │ URL and the exact error, and let the user merge manually.                  │
+  └─────────────────────────────────────────────────────────────────────────────
+
+  # 6. Delete the remote branch manually (now safe — merge is done):
        git push origin --delete "$BRANCH"
 
-  4. Close the referenced issue:
+  # 7. Close the referenced issue:
        gh issue close <issue-number> --comment "Fixed by PR #<N>."
 
   ⚠️  Never use --delete-branch with gh pr merge in a multi-worktree setup.
