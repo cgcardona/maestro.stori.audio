@@ -993,6 +993,90 @@ List commits for a repo, newest first.
 
 ---
 
+### GET /api/v1/musehub/repos/{repo_id}/context
+
+**Agent context endpoint.** Returns a complete musical briefing for AI composition agents. This is the canonical first call an agent makes when starting a session — it aggregates musical state, commit history, analysis highlights, open PRs, open issues, and actionable suggestions into a single self-contained document.
+
+**Query params:**
+
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `ref` | string | `HEAD` | Branch name or commit ID. `HEAD` resolves to the latest commit. |
+| `depth` | `brief`\|`standard`\|`verbose` | `standard` | Controls response size. `brief` ≈ 2K tokens; `standard` ≈ 8K tokens; `verbose` = uncapped. |
+| `format` | `json`\|`yaml` | `json` | Response format. `yaml` returns `application/x-yaml`. |
+
+**Response (JSON):**
+
+```json
+{
+  "repoId": "f47ac10b-58cc-4372-a567-0e02b2c3d479",
+  "ref": "main",
+  "depth": "standard",
+  "musicalState": {
+    "activeTracks": ["bass", "keys", "drums"],
+    "key": null,
+    "mode": null,
+    "tempoBpm": null,
+    "timeSignature": null,
+    "form": null,
+    "emotion": null
+  },
+  "history": [
+    {
+      "commitId": "abc123",
+      "message": "feat: add tritone sub in bridge",
+      "author": "gabriel",
+      "timestamp": "2026-02-27T17:30:00Z",
+      "activeTracks": []
+    }
+  ],
+  "analysis": {
+    "keyFinding": null,
+    "chordProgression": null,
+    "grooveScore": null,
+    "emotion": null,
+    "harmonicTension": null,
+    "melodicContour": null
+  },
+  "activePrs": [
+    {
+      "prId": "pr-uuid",
+      "title": "Add swing feel to verse",
+      "fromBranch": "feat/swing",
+      "toBranch": "main",
+      "state": "open",
+      "body": "Adds a 0.62 swing factor to 8th notes in bars 1–16."
+    }
+  ],
+  "openIssues": [
+    {
+      "issueId": "issue-uuid",
+      "number": 3,
+      "title": "Add more harmonic tension in bridge",
+      "labels": ["harmonic", "composition"],
+      "body": ""
+    }
+  ],
+  "suggestions": [
+    "Set a project tempo: no BPM detected. Run `muse tempo set <bpm>` to anchor the grid.",
+    "Declare a key center: no key detected. Run `muse key set <key>` to enable harmonic analysis."
+  ]
+}
+```
+
+**Notes:**
+- `musicalState` optional fields (`key`, `tempoBpm`, etc.) are `null` until Storpheus MIDI analysis integration is complete. Agents must handle `null` gracefully.
+- `analysis` fields are all `null` at MVP for the same reason.
+- `brief` depth includes at most 3 history entries and 2 suggestions (designed to fit in a 2K-token context window).
+- `verbose` depth includes full issue and PR bodies, and up to 50 history entries.
+- The response is deterministic for the same `repo_id` + `ref` + `depth`.
+
+**Errors:**
+- `404` — repo does not exist, or `ref` has no commits.
+- `401` — missing or invalid Bearer token.
+
+---
+
 ## Muse Hub Issues API
 
 Issue tracker for Muse Hub repos — lets musicians open, filter, and close production/creative issues (e.g. "hi-hat / synth pad clash in measure 8"). All endpoints are under `/api/v1/musehub/repos/{repo_id}/issues/` and require `Authorization: Bearer <token>`.
@@ -1395,6 +1479,176 @@ Get a single release by its version tag.
 
 `downloadUrls` fields are `null` when the corresponding package is not available
 (e.g. no commit pinned, or no stored objects for that commit).
+
+---
+
+### GET /api/v1/musehub/repos/{repo_id}/raw/{ref}/{path}
+
+Direct file download by human-readable path and ref (branch/tag), analogous to
+GitHub's `raw.githubusercontent.com` URLs. Designed for `curl`, `wget`, and
+scripted pipelines.
+
+**Auth:** No token required for **public** repos. Private repos require
+`Authorization: Bearer <token>` and return 401 otherwise.
+
+**Path parameters:**
+
+| Parameter | Description |
+|-----------|-------------|
+| `repo_id` | UUID of the target Muse Hub repo |
+| `ref` | Branch or tag name (e.g. `main`). Accepted for URL semantics; current implementation serves the most-recently-pushed object at `path`. |
+| `path` | Relative file path inside the repo (e.g. `tracks/bass.mid`). Supports nested paths. |
+
+**Response headers:**
+
+| Header | Value |
+|--------|-------|
+| `Content-Type` | MIME type derived from file extension (see table below) |
+| `Content-Disposition` | `attachment; filename="<basename>"` |
+| `Accept-Ranges` | `bytes` — range requests are supported |
+
+**MIME type resolution:**
+
+| Extension | Content-Type |
+|-----------|-------------|
+| `.mid`, `.midi` | `audio/midi` |
+| `.mp3` | `audio/mpeg` |
+| `.wav` | `audio/wav` |
+| `.json` | `application/json` |
+| `.webp` | `image/webp` |
+| `.xml` | `application/xml` |
+| `.abc` | `text/vnd.abc` |
+| Others | `application/octet-stream` |
+
+**Range request example:**
+
+```bash
+curl -H "Range: bytes=0-1023" \
+  https://musehub.stori.com/api/v1/musehub/repos/<repo_id>/raw/main/tracks/bass.mid
+# → 206 Partial Content with first 1 KB
+```
+
+**Full download example:**
+
+```bash
+curl https://musehub.stori.com/api/v1/musehub/repos/<repo_id>/raw/main/tracks/bass.mid \
+  -o bass.mid
+```
+
+**Errors:**
+- **401** — private repo accessed without a valid Bearer token
+- **404** — repo not found, or no object exists at the given path
+- **410** — object metadata exists in DB but the file was removed from disk
+
+---
+
+## Muse Hub Web UI
+
+---
+
+## Muse Hub Analysis API
+
+Agent-optimized endpoints that return structured JSON for all 13 musical dimensions
+of a Muse commit ref.  All endpoints require `Authorization: Bearer <token>`.
+
+### GET /api/v1/musehub/repos/{repo_id}/analysis/{ref}
+
+Returns all 13 dimensions in a single response.
+
+**Path params:**
+- `repo_id` — Muse Hub repo UUID
+- `ref` — branch name, commit ID, or tag (e.g. `main`, `abc1234`)
+
+**Query params:**
+- `?track=<instrument>` — restrict to a named track (e.g. `bass`, `keys`)
+- `?section=<label>` — restrict to a named section (e.g. `chorus`, `verse_1`)
+
+**Response `200 application/json`:**
+```json
+{
+  "ref": "main",
+  "repoId": "...",
+  "computedAt": "2026-02-27T12:00:00Z",
+  "filtersApplied": { "track": null, "section": null },
+  "dimensions": [
+    {
+      "dimension": "harmony",
+      "ref": "main",
+      "computedAt": "2026-02-27T12:00:00Z",
+      "data": { "tonic": "C", "mode": "major", ... },
+      "filtersApplied": { "track": null, "section": null }
+    },
+    ... (13 total)
+  ]
+}
+```
+
+**Cache headers:** `ETag`, `Last-Modified`, `Cache-Control: private, max-age=60`
+
+**Errors:** `404` if repo not found.
+
+---
+
+### GET /api/v1/musehub/repos/{repo_id}/analysis/{ref}/{dimension}
+
+Returns structured JSON for one musical dimension.
+
+**Path params:**
+- `repo_id` — Muse Hub repo UUID
+- `ref` — commit ref
+- `dimension` — one of: `harmony`, `dynamics`, `motifs`, `form`, `groove`, `emotion`,
+  `chord-map`, `contour`, `key`, `tempo`, `meter`, `similarity`, `divergence`
+
+**Query params:** same as aggregate endpoint (`?track=`, `?section=`)
+
+**Response `200 application/json`:**
+```json
+{
+  "dimension": "harmony",
+  "ref": "main",
+  "computedAt": "2026-02-27T12:00:00Z",
+  "data": {
+    "tonic": "C",
+    "mode": "major",
+    "keyConfidence": 0.87,
+    "chordProgression": [
+      { "beat": 0.0, "chord": "Cmaj7", "function": "Imaj7", "tension": 0.1 },
+      ...
+    ],
+    "tensionCurve": [0.1, 0.12, ...],
+    "modulationPoints": [],
+    "totalBeats": 32
+  },
+  "filtersApplied": { "track": null, "section": null }
+}
+```
+
+**Dimension-specific `data` shapes:**
+
+| Dimension | Key fields |
+|-----------|-----------|
+| `harmony` | `tonic`, `mode`, `keyConfidence`, `chordProgression`, `tensionCurve`, `modulationPoints`, `totalBeats` |
+| `dynamics` | `peakVelocity`, `meanVelocity`, `minVelocity`, `dynamicRange`, `velocityCurve`, `dynamicEvents` |
+| `motifs` | `totalMotifs`, `motifs[]` (id, intervals, lengthBeats, occurrenceCount, occurrences, track) |
+| `form` | `formLabel`, `totalBeats`, `sections[]` (label, function, startBeat, endBeat, lengthBeats) |
+| `groove` | `swingFactor`, `gridResolution`, `onsetDeviation`, `grooveScore`, `style`, `bpm` |
+| `emotion` | `valence` (−1..1), `arousal` (0..1), `tension` (0..1), `primaryEmotion`, `confidence` |
+| `chord-map` | `progression[]`, `totalChords`, `totalBeats` |
+| `contour` | `shape`, `directionChanges`, `peakBeat`, `valleyBeat`, `overallDirection`, `pitchCurve` |
+| `key` | `tonic`, `mode`, `confidence`, `relativeKey`, `alternateKeys[]` |
+| `tempo` | `bpm`, `stability`, `timeFeel`, `tempoChanges[]` |
+| `meter` | `timeSignature`, `irregularSections[]`, `beatStrengthProfile`, `isCompound` |
+| `similarity` | `similarCommits[]` (ref, score, sharedMotifs, commitMessage), `embeddingDimensions` |
+| `divergence` | `divergenceScore`, `baseRef`, `changedDimensions[]` (dimension, changeMagnitude, description) |
+
+**Cache headers:** `ETag`, `Last-Modified`, `Cache-Control: private, max-age=60`
+
+**Errors:**
+- `404` if repo not found
+- `404` if `dimension` is not a supported value (response includes list of valid dimensions)
+- `401` if no Bearer token
+
+See `maestro/models/musehub_analysis.py` for full Pydantic model definitions and OpenAPI schema.
 
 ---
 
