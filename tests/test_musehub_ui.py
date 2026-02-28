@@ -771,3 +771,163 @@ async def test_embed_page_contains_player_ui(
     assert "View on Muse Hub" in body
     assert "audio" in body
     assert repo_id in body
+
+
+
+@pytest.mark.anyio
+async def test_credits_page_renders(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """GET /musehub/ui/{repo_id}/credits returns 200 HTML without requiring a JWT."""
+    repo_id = await _make_repo(db_session)
+    response = await client.get(f"/musehub/ui/{repo_id}/credits")
+async def test_graph_page_renders(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """GET /musehub/ui/{repo_id}/graph returns 200 HTML without requiring a JWT."""
+    repo_id = await _make_repo(db_session)
+    response = await client.get(f"/musehub/ui/{repo_id}/graph")
+    assert response.status_code == 200
+    assert "text/html" in response.headers["content-type"]
+    body = response.text
+    assert "Muse Hub" in body
+    assert "graph" in body.lower()
+
+
+# ---------------------------------------------------------------------------
+# Context viewer tests (issue #232)# ---------------------------------------------------------------------------
+
+_FIXED_COMMIT_ID = "aabbccdd" * 8  # 64-char hex string
+
+
+@pytest.mark.anyio
+async def test_credits_page_contains_json_ld_injection(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Credits page embeds JSON-LD injection logic for machine-readable attribution."""
+    repo_id = await _make_repo(db_session)
+    response = await client.get(f"/musehub/ui/{repo_id}/credits")
+    assert response.status_code == 200
+    body = response.text
+    assert "application/ld+json" in body
+    assert "schema.org" in body
+    assert "MusicComposition" in body
+
+
+@pytest.mark.anyio
+async def test_credits_page_contains_sort_options(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Credits page includes sort dropdown with count, recency, and alpha options."""
+    repo_id = await _make_repo(db_session)
+    response = await client.get(f"/musehub/ui/{repo_id}/credits")
+    assert response.status_code == 200
+    body = response.text
+    assert "Most prolific" in body
+    assert "Most recent" in body
+    assert "A" in body  # "A – Z" option
+
+
+@pytest.mark.anyio
+async def test_credits_empty_state_message_in_page(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Credits page JS includes empty-state message for repos with no sessions."""
+    repo_id = await _make_repo(db_session)
+    response = await client.get(f"/musehub/ui/{repo_id}/credits")
+    assert response.status_code == 200
+    body = response.text
+    assert "muse session start" in body
+
+
+@pytest.mark.anyio
+async def test_credits_no_auth_required(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Credits UI page must be accessible without an Authorization header (HTML shell)."""
+    repo_id = await _make_repo(db_session)
+    response = await client.get(f"/musehub/ui/{repo_id}/credits")
+    assert response.status_code == 200
+    assert response.status_code != 401
+
+
+@pytest.mark.anyio
+async def test_graph_page_contains_dag_js(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Graph page embeds the client-side DAG renderer JavaScript."""
+    repo_id = await _make_repo(db_session)
+    response = await client.get(f"/musehub/ui/{repo_id}/graph")
+    assert response.status_code == 200
+    body = response.text
+    # Key renderer identifiers must be present
+    assert "renderGraph" in body
+    assert "dag-viewport" in body
+    assert "dag-svg" in body
+
+
+@pytest.mark.anyio
+async def test_graph_page_has_zoom_pan(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Graph page includes zoom and pan JavaScript logic."""
+    repo_id = await _make_repo(db_session)
+    response = await client.get(f"/musehub/ui/{repo_id}/graph")
+    assert response.status_code == 200
+    body = response.text
+    assert "wheel" in body
+    assert "mousedown" in body
+    assert "applyTransform" in body
+
+
+@pytest.mark.anyio
+async def test_graph_page_has_popover(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Graph page includes commit detail hover popover markup."""
+    repo_id = await _make_repo(db_session)
+    response = await client.get(f"/musehub/ui/{repo_id}/graph")
+    assert response.status_code == 200
+    body = response.text
+    assert "dag-popover" in body
+    assert "pop-sha" in body
+    assert "pop-msg" in body
+
+
+@pytest.mark.anyio
+async def test_graph_page_no_auth_required(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Graph UI page must be accessible without an Authorization header."""
+    repo_id = await _make_repo(db_session)
+    response = await client.get(f"/musehub/ui/{repo_id}/graph")
+    assert response.status_code != 401
+    assert response.status_code == 200
+
+
+@pytest.mark.anyio
+async def test_graph_page_includes_token_form(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Graph page embeds the JWT token input form so visitors can authenticate."""
+    repo_id = await _make_repo(db_session)
+    response = await client.get(f"/musehub/ui/{repo_id}/graph")
+    assert response.status_code == 200
+    body = response.text
+    assert "localStorage" in body
+    assert "musehub_token" in body
+
+# ---------------------------------------------------------------------------
+# Embed player route tests (issue #244)
+# ---------------------------------------------------------------------------
