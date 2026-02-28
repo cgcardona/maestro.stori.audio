@@ -194,14 +194,12 @@ def resolve(
     ),
     ours: bool = typer.Option(
         False,
-        "--ours",
-        is_flag=True,
+        "--ours/--no-ours",
         help="Keep the current branch's version (no file change required).",
     ),
     theirs: bool = typer.Option(
         False,
-        "--theirs",
-        is_flag=True,
+        "--theirs/--no-theirs",
         help="Accept the incoming branch's version (fetched from local object store).",
     ),
 ) -> None:
