@@ -161,12 +161,16 @@ def test_embedding_computed_on_push_calls_upsert() -> None:
             parent_ids=[],
             message="Jazz ballad in Db major at 72 BPM",
             timestamp=datetime(2024, 1, 1, tzinfo=timezone.utc),
+            snapshot_id=None,
+            author=None,
         ),
         CommitInput(
             commit_id="def456",
             parent_ids=["abc123"],
             message="Variation in A minor at 90 BPM",
             timestamp=datetime(2024, 1, 2, tzinfo=timezone.utc),
+            snapshot_id=None,
+            author=None,
         ),
     ]
 
@@ -223,6 +227,8 @@ def test_embedding_computed_on_push_qdrant_error_does_not_raise() -> None:
             parent_ids=[],
             message="C major 120 BPM",
             timestamp=datetime(2024, 1, 1, tzinfo=timezone.utc),
+            snapshot_id=None,
+            author=None,
         )
     ]
 

@@ -35,6 +35,7 @@ router = APIRouter()
     "/repos/{repo_id}/releases",
     response_model=ReleaseResponse,
     status_code=status.HTTP_201_CREATED,
+    operation_id="createRelease",
     summary="Create a release for a Muse Hub repo",
 )
 async def create_release(
@@ -71,6 +72,7 @@ async def create_release(
 @router.get(
     "/repos/{repo_id}/releases",
     response_model=ReleaseListResponse,
+    operation_id="listReleases",
     summary="List all releases for a Muse Hub repo",
 )
 async def list_releases(
@@ -97,6 +99,7 @@ async def list_releases(
 @router.get(
     "/repos/{repo_id}/releases/{tag}",
     response_model=ReleaseResponse,
+    operation_id="getRelease",
     summary="Get a single release by tag",
 )
 async def get_release(

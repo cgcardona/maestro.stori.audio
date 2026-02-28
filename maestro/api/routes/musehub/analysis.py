@@ -55,6 +55,7 @@ def _etag(repo_id: str, ref: str, dimension: str) -> str:
 @router.get(
     "/repos/{repo_id}/analysis/{ref}",
     response_model=AggregateAnalysisResponse,
+    operation_id="getAnalysis",
     summary="Aggregate analysis — all 13 musical dimensions for a ref",
     description=(
         "Returns structured JSON for all 13 musical dimensions of a Muse commit ref "
@@ -105,6 +106,7 @@ async def get_aggregate_analysis(
 @router.get(
     "/repos/{repo_id}/analysis/{ref}/{dimension}",
     response_model=AnalysisResponse,
+    operation_id="getAnalysisDimension",
     summary="Single-dimension analysis for a Muse ref",
     description=(
         "Returns structured JSON for one of the 13 supported musical dimensions. "
@@ -166,6 +168,7 @@ async def get_dimension_analysis(
 @router.get(
     "/repos/{repo_id}/analysis/{ref}/dynamics/page",
     response_model=DynamicsPageData,
+    operation_id="getAnalysisDynamicsPage",
     summary="Per-track dynamics page data for the Dynamics Analysis page",
     description=(
         "Returns enriched per-track dynamic analysis: velocity profiles, arc "
