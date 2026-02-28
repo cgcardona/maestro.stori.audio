@@ -3,17 +3,23 @@
 Tables:
 - muse_cli_objects: content-addressed file blobs (sha256 keyed)
 - muse_cli_snapshots: snapshot manifests mapping paths to object IDs
-- muse_cli_commits: commit history with parent linkage and branch tracking
+- muse_cli_commits: commit history with parent linkage, branch tracking,
+  and an extensible ``extra_metadata`` JSON blob for annotations such as
+  meter (time signature), tempo, key, and other compositional metadata.
 - muse_cli_tags: music-semantic tags attached to commits
 
 These tables are owned by the Muse CLI (``muse commit``) and are
 distinct from the Muse VCS variation tables (``variations``, ``phrases``,
 ``note_changes``) which track DAW-level note editing history.
+
+``muse_cli_commits.metadata`` is an extensible JSON blob for commit-level
+annotations.  Current keys:
+
+- ``tempo_bpm`` (``float | None``): BPM set via ``muse tempo --set``.
 """
 from __future__ import annotations
 
 from datetime import datetime, timezone
-
 import uuid
 
 from sqlalchemy import DateTime, ForeignKey, Integer, String, Text
@@ -100,6 +106,9 @@ class MuseCliCommit(Base):
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=_utc_now
+    )
+    commit_metadata: Mapped[dict[str, object] | None] = mapped_column(
+        "metadata", JSON, nullable=True, default=None
     )
 
     def __repr__(self) -> str:
