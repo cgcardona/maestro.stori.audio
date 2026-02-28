@@ -5510,6 +5510,65 @@ For root commits (no parent) all snapshot paths appear in `added`.
 
 ---
 
+## Muse Stash Types (`maestro/services/muse_stash.py`)
+
+Result types for `muse stash` operations.  All are frozen dataclasses —
+immutable after construction and safe to return from async contexts.
+
+### `StashEntry`
+
+A single stash entry as read from `.muse/stash/<stash_id>.json`.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `stash_id` | `str` | Unique filesystem stem (e.g. `stash-20260227T120000Z-abc12345`) |
+| `index` | `int` | Position in the stack (0 = most recent) |
+| `branch` | `str` | Branch name at the time of push |
+| `message` | `str` | Human label (default: `"On <branch>: stash"`) |
+| `created_at` | `str` | ISO-8601 timestamp of when the stash was created |
+| `manifest` | `dict[str, str]` | `{rel_path: sha256_object_id}` of stashed files |
+| `track` | `str \| None` | Track scope used during push, or `None` (full push) |
+| `section` | `str \| None` | Section scope used during push, or `None` (full push) |
+
+**Producer:** `list_stash()`, internal `_read_entry()`
+**Consumer:** `stash_list`, `stash_drop`, `apply_stash`
+
+---
+
+### `StashPushResult`
+
+Outcome of `muse stash push`.  Frozen dataclass.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `stash_ref` | `str` | Human label (`"stash@{0}"`); empty string when nothing was stashed |
+| `message` | `str` | Label stored in the entry |
+| `branch` | `str` | Branch at the time of push |
+| `files_stashed` | `int` | Number of files copied into the stash |
+| `head_restored` | `bool` | Whether HEAD snapshot was restored to muse-work/ |
+| `missing_head` | `tuple[str, ...]` | Paths that could not be restored from the object store after push |
+
+**Producer:** `push_stash()`
+**Consumer:** `stash_default`, `stash_push` Typer callbacks
+
+---
+
+### `StashApplyResult`
+
+Outcome of `muse stash apply` or `muse stash pop`.  Frozen dataclass.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `stash_ref` | `str` | Human label of the entry that was applied (e.g. `"stash@{0}"`) |
+| `message` | `str` | The entry's label |
+| `files_applied` | `int` | Number of files written to muse-work/ |
+| `missing` | `tuple[str, ...]` | Paths whose object bytes were absent from the store |
+| `dropped` | `bool` | True when the entry was removed (pop); False for apply |
+
+**Producer:** `apply_stash()`
+**Consumer:** `stash_pop`, `stash_apply` Typer callbacks
+---
+
 ### `RestoreResult`
 
 **Module:** `maestro/services/muse_restore.py`
@@ -5541,6 +5600,7 @@ Raised when a requested path is absent from the source commit's snapshot.
 
 **Producer:** `perform_restore()`
 **Consumer:** `restore()` Typer callback (exit code 1)
+
 
 ---
 

@@ -6,7 +6,7 @@ commit-tree, context, contour, describe, diff, divergence, dynamics, emotion-dif
 export, fetch, find, form, grep, groove-check, harmony, hash-object, humanize, import,
 init, inspect, key, log, merge, meter, motif, open, play, pull, push, read-tree, rebase,
 recall, release, remote, render-preview, reset, resolve, restore, rev-parse, revert, session, show,
-similarity, status, swing, symbolic-ref, tag, tempo, tempo-scale, timeline,
+similarity, stash, status, swing, symbolic-ref, tag, tempo, tempo-scale, timeline,
 update-ref, validate, write-tree) as Typer sub-applications.
 """
 from __future__ import annotations
@@ -65,6 +65,7 @@ from maestro.muse_cli.commands import (
     session,
     show,
     similarity,
+    stash,
     status,
     swing,
     symbolic_ref,
@@ -143,6 +144,7 @@ cli.add_typer(restore.app, name="restore", help="Restore specific files from a c
 cli.add_typer(groove_check.app, name="groove-check", help="Analyze rhythmic drift across commits to find groove regressions.")
 cli.add_typer(form.app, name="form", help="Analyze or annotate the formal structure (sections) of a commit.")
 cli.add_typer(similarity.app, name="similarity", help="Compare two commits by musical similarity score.")
+cli.add_typer(stash.app, name="stash", help="Temporarily shelve uncommitted muse-work/ changes.")
 cli.add_typer(tempo_scale.app, name="tempo-scale", help="Stretch or compress the timing of a commit.")
 cli.add_typer(timeline.app, name="timeline", help="Visualize musical evolution chronologically.")
 cli.add_typer(update_ref.app, name="update-ref", help="Write or delete a ref (branch or tag pointer).")
