@@ -158,6 +158,37 @@ async def get_object_row(
     return (await session.execute(stmt)).scalars().first()
 
 
+async def get_object_by_path(
+    session: AsyncSession, repo_id: str, path: str
+) -> db.MusehubObject | None:
+    """Return the most-recently-created object matching ``path`` in a repo.
+
+    Used by the raw file endpoint to resolve a human-readable path
+    (e.g. ``tracks/bass.mid``) to the stored artifact on disk.  When
+    multiple objects share the same path (re-pushed content), the newest
+    one wins — consistent with Git's ref semantics where HEAD always
+    points at the latest version.
+
+    Args:
+        session: Active async DB session.
+        repo_id: UUID of the target repo.
+        path: Client-supplied relative file path, e.g. ``tracks/bass.mid``.
+
+    Returns:
+        The matching ORM row, or ``None`` if no object with that path exists.
+    """
+    stmt = (
+        select(db.MusehubObject)
+        .where(
+            db.MusehubObject.repo_id == repo_id,
+            db.MusehubObject.path == path,
+        )
+        .order_by(desc(db.MusehubObject.created_at))
+        .limit(1)
+    )
+    return (await session.execute(stmt)).scalars().first()
+
+
 async def list_commits(
     session: AsyncSession,
     repo_id: str,
