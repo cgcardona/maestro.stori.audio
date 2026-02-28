@@ -3,9 +3,9 @@
 Entry point for the ``muse`` console script. Registers all MVP
 subcommands (amend, arrange, ask, cat-object, checkout, chord-map, commit,
 commit-tree, context, contour, describe, diff, divergence, dynamics, emotion-diff,
-export, find, form, grep, groove-check, harmony, humanize, import, init, inspect,
-key, log, merge, meter, motif, open, play, pull, push, read-tree, recall, remote,
-render-preview, reset, resolve, rev-parse, revert, session, show, similarity,
+export, fetch, find, form, grep, groove-check, harmony, humanize, import, init,
+inspect, key, log, merge, meter, motif, open, play, pull, push, read-tree, recall,
+remote, render-preview, reset, resolve, rev-parse, revert, session, show, similarity,
 status, swing, symbolic-ref, tag, tempo, tempo-scale, timeline, update-ref,
 validate, write-tree) as Typer sub-applications.
 """
@@ -30,6 +30,7 @@ from maestro.muse_cli.commands import (
     dynamics,
     emotion_diff,
     export,
+    fetch,
     find,
     form,
     grep_cmd,
@@ -98,6 +99,7 @@ cli.add_typer(inspect.app, name="inspect", help="Print structured JSON of the Mu
 cli.add_typer(checkout.app, name="checkout", help="Checkout a historical variation.")
 cli.add_typer(merge.app, name="merge", help="Three-way merge two variation branches.")
 cli.add_typer(remote.app, name="remote", help="Manage remote server connections.")
+cli.add_typer(fetch.app, name="fetch", help="Fetch refs from remote without merging.")
 cli.add_typer(push.app, name="push", help="Upload local variations to a remote.")
 cli.add_typer(pull.app, name="pull", help="Download remote variations locally.")
 cli.add_typer(describe.app, name="describe", help="Describe what changed musically in a commit.")

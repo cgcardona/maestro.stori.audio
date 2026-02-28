@@ -5248,6 +5248,50 @@ Response from the Hub's `/pull` endpoint.
 
 ---
 
+### `FetchRequest`
+
+**Module:** `maestro/muse_cli/hub_client.py`
+
+Payload sent to the Hub's `POST /fetch` endpoint to request remote branch state.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `branches` | `list[str]` | Branch names to fetch. Empty list means "all branches". |
+
+**Producer:** `_fetch_remote_async()` in `maestro/muse_cli/commands/fetch.py`
+
+---
+
+### `FetchBranchInfo`
+
+**Module:** `maestro/muse_cli/hub_client.py`
+
+A single branch's current state on the remote, returned inside `FetchResponse`.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `branch` | `str` | Branch name (e.g. `"feature/guitar"`) |
+| `head_commit_id` | `str` | Full commit ID of the remote branch HEAD |
+| `is_new` | `bool` | `True` when this branch has no local remote-tracking ref yet |
+
+**Consumer:** `_fetch_remote_async()` — updates `.muse/remotes/<remote>/<branch>` per entry; the CLI overrides `is_new` by checking local state rather than trusting the Hub's hint.
+
+---
+
+### `FetchResponse`
+
+**Module:** `maestro/muse_cli/hub_client.py`
+
+Response from the Hub's `POST /fetch` endpoint.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `branches` | `list[FetchBranchInfo]` | All branches the Hub knows about (filtered by the request's `branches` list when non-empty) |
+
+**Consumer:** `_fetch_remote_async()` — iterates entries to update remote-tracking refs; when `--prune` is active, branches absent from this list cause stale local refs to be deleted.
+
+---
+
 ### `ShowCommitResult`
 
 **Module:** `maestro/muse_cli/commands/show.py`
