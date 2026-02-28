@@ -7,6 +7,11 @@
 {% endblock %}
 {% block repo_nav %}{% include "musehub/partials/repo_nav.html" %}{% endblock %}
 
+{% block body_extra %}
+<script src="/musehub/static/vendor/wavesurfer.min.js"></script>
+<script src="/musehub/static/audio-player.js"></script>
+{% endblock %}
+
 {% block extra_css %}
 <style>
 .listen-player-card {
@@ -172,6 +177,7 @@ const repoSlug = {{ repo_slug | tojson }};
 const base     = {{ base_url | tojson }};
 const trackPath = {{ (track_path if track_path is defined else '') | tojson }};
 const apiBase  = '/api/v1/musehub/repos/' + repoId;
+const TRACK_PATH = trackPath;
 {% endblock %}
 
 {% block page_script %}
@@ -366,7 +372,20 @@ async function load() {
       + '<div class="listen-time-row">'
       + '<span id="mix-time-cur">0:00</span>'
       + '<span id="mix-time-dur">0:00</span>'
-      + '</div></div></div>';
+      + '</div>'
+      + '<div class="speed-wrap">'
+      + '<label for="speed-sel">Speed</label>'
+      + '<select id="speed-sel"></select>'
+      + '</div>'
+      + '</div>'
+      + '<div class="loop-bar">'
+      + '<span id="loop-info"></span>'
+      + '<button id="loop-clear-btn">Clear loop</button>'
+      + '</div>'
+      + '<div class="help-card" style="font-size:12px;color:#8b949e;margin-top:8px">'
+      + '<kbd>Space</kbd> play / pause &nbsp;&bull;&nbsp; <kbd>L</kbd> clear loop'
+      + '</div>'
+      + '</div>';
 
     if (hasMix) {
       html += '<div class="listen-actions">'
