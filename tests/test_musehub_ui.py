@@ -717,6 +717,50 @@ async def test_credits_no_auth_required_slug_route(
 
 
 @pytest.mark.anyio
+async def test_credits_page_contains_avatar_functions(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Credits page includes avatarHsl and avatarCircle JS functions for contributor avatars."""
+    await _make_repo(db_session)
+    response = await client.get("/musehub/ui/testuser/test-beats/credits")
+    assert response.status_code == 200
+    body = response.text
+    assert "avatarHsl" in body
+    assert "avatarCircle" in body
+    assert "border-radius:50%" in body
+
+
+@pytest.mark.anyio
+async def test_credits_page_contains_fetch_profile_function(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Credits page includes fetchProfile JS function that fetches contributor profiles in parallel."""
+    await _make_repo(db_session)
+    response = await client.get("/musehub/ui/testuser/test-beats/credits")
+    assert response.status_code == 200
+    body = response.text
+    assert "fetchProfile" in body
+    assert "Promise.all" in body
+    assert "/users/" in body
+
+
+@pytest.mark.anyio
+async def test_credits_page_contains_profile_link_pattern(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Credits page links contributor names to their profile pages at /musehub/ui/users/{username}."""
+    await _make_repo(db_session)
+    response = await client.get("/musehub/ui/testuser/test-beats/credits")
+    assert response.status_code == 200
+    body = response.text
+    assert "/musehub/ui/users/" in body
+    assert "encodeURIComponent" in body
+
+
+@pytest.mark.anyio
 async def test_groove_check_page_no_auth_required(
     client: AsyncClient,
     db_session: AsyncSession,
