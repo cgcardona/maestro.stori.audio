@@ -4,8 +4,10 @@
 {% block breadcrumb %}<a href="/musehub/ui/users/{{ username }}">@{{ username }}</a>{% endblock %}
 
 {% block page_data %}
-const username    = {{ username | tojson }};
-const API_PROFILE = '/api/v1/musehub/users/' + username;
+const username        = {{ username | tojson }};
+const API_PROFILE     = '/api/v1/musehub/users/' + username;
+const API_FOLLOWERS   = '/api/v1/musehub/users/' + username + '/followers-list';
+const API_FOLLOWING   = '/api/v1/musehub/users/' + username + '/following-list';
 {% endblock %}
 
 {% block page_script %}
@@ -73,11 +75,57 @@ async function toggleFollow() {
   } catch(e) { /* non-critical */ }
 }
 
+function userCardHtml(u) {
+  const bio = u.bio ? escHtml(u.bio.slice(0, 60)) + (u.bio.length > 60 ? '…' : '') : '';
+  const hue = u.username.split('').reduce((acc, c) => acc + c.charCodeAt(0), 0) % 360;
+  const initial = (u.username[0] || '?').toUpperCase();
+  const avatar = u.avatarUrl
+    ? `<img src="${escHtml(u.avatarUrl)}" alt="${escHtml(u.username)}" style="width:40px;height:40px;border-radius:50%;object-fit:cover" />`
+    : `<div style="width:40px;height:40px;border-radius:50%;background:hsl(${hue},55%,45%);display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;font-size:18px;flex-shrink:0">${initial}</div>`;
+  return `<div class="user-card" style="display:flex;align-items:center;gap:var(--space-3);padding:var(--space-3) 0;border-bottom:1px solid var(--border)">
+    <a href="/musehub/ui/users/${escHtml(u.username)}" style="flex-shrink:0">${avatar}</a>
+    <div style="flex:1;min-width:0">
+      <a href="/musehub/ui/users/${escHtml(u.username)}" style="font-weight:600">@${escHtml(u.username)}</a>
+      ${bio ? `<p style="margin:2px 0 0;font-size:13px;color:var(--fg-muted)">${bio}</p>` : ''}
+    </div>
+  </div>`;
+}
+
+async function loadFollowTab(tab) {
+  const container = document.getElementById('social-tab-content');
+  if (!container) return;
+  container.innerHTML = '<p class="loading">Loading…</p>';
+  try {
+    const url = tab === 'followers' ? API_FOLLOWERS : API_FOLLOWING;
+    const users = await fetch(url).then(r => r.json());
+    if (!Array.isArray(users) || users.length === 0) {
+      container.innerHTML = `<p class="loading">No ${tab} yet.</p>`;
+      return;
+    }
+    container.innerHTML = users.map(userCardHtml).join('');
+  } catch(e) {
+    container.innerHTML = `<p class="error">Failed to load ${tab}.</p>`;
+  }
+}
+
+function switchTab(tab) {
+  document.querySelectorAll('.social-tab-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.tab === tab);
+  });
+  loadFollowTab(tab);
+}
+
 async function loadFollowState() {
   try {
     const data = await fetch('/api/v1/musehub/users/' + username + '/followers', { headers: authHeaders() }).then(r => r.json());
     const countEl = document.getElementById('follower-count');
-    if (countEl) countEl.textContent = (data.follower_count || 0) + ' followers';
+    if (countEl) {
+      countEl.textContent = (data.follower_count || 0) + ' followers · ' + (data.following_count || 0) + ' following';
+    }
+    const followersTabBtn = document.getElementById('tab-btn-followers');
+    const followingTabBtn = document.getElementById('tab-btn-following');
+    if (followersTabBtn) followersTabBtn.textContent = 'Followers (' + (data.follower_count || 0) + ')';
+    if (followingTabBtn) followingTabBtn.textContent = 'Following (' + (data.following_count || 0) + ')';
     if (getToken() && document.getElementById('follow-btn')) {
       document.getElementById('follow-btn').style.display = '';
       document.getElementById('follow-btn').dataset.following = data.following ? 'true' : 'false';
@@ -139,6 +187,25 @@ async function load() {
       </p>
     </div>`;
 
+  const socialTabsSection = `
+    <div class="card" style="padding-bottom:0">
+      <div style="display:flex;gap:0;border-bottom:1px solid var(--border);margin:0 calc(-1 * var(--space-4))">
+        <button id="tab-btn-followers" class="social-tab-btn active" data-tab="followers"
+          onclick="switchTab('followers')"
+          style="padding:var(--space-2) var(--space-4);border:none;background:none;cursor:pointer;font-weight:600;color:var(--fg);border-bottom:2px solid transparent">
+          Followers
+        </button>
+        <button id="tab-btn-following" class="social-tab-btn" data-tab="following"
+          onclick="switchTab('following')"
+          style="padding:var(--space-2) var(--space-4);border:none;background:none;cursor:pointer;color:var(--fg-muted);border-bottom:2px solid transparent">
+          Following
+        </button>
+      </div>
+      <div id="social-tab-content" style="padding-top:var(--space-3)">
+        <p class="loading">Loading…</p>
+      </div>
+    </div>`;
+
   document.getElementById('content').innerHTML = `
     <div class="card profile-header">
       <div class="avatar">${avatarHtml}</div>
@@ -159,11 +226,26 @@ async function load() {
       </div>
     </div>
     ${pinnedSection}
+    ${socialTabsSection}
     ${graphSection}
     ${reposSection}
   `;
 }
 
-load();
+// Style active social tab button via JS since we're in a raw-string context
+document.addEventListener('click', e => {
+  if (e.target.classList.contains('social-tab-btn')) {
+    document.querySelectorAll('.social-tab-btn').forEach(b => {
+      b.style.borderBottomColor = 'transparent';
+      b.style.color = 'var(--fg-muted)';
+      b.style.fontWeight = '';
+    });
+    e.target.style.borderBottomColor = 'var(--color-accent)';
+    e.target.style.color = 'var(--fg)';
+    e.target.style.fontWeight = '600';
+  }
+});
+
+load().then(() => { loadFollowTab('followers'); });
 {% endraw %}
 {% endblock %}

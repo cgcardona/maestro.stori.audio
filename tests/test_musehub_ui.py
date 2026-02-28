@@ -150,6 +150,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from maestro.db.musehub_models import (
     MusehubBranch,
     MusehubCommit,
+    MusehubFollow,
     MusehubObject,
     MusehubProfile,
     MusehubRelease,
@@ -6478,3 +6479,203 @@ async def test_form_analysis_page_contains_form_data_labels(
     assert "Form Timeline" in body or "formLabel" in body
     assert "Sections" in body
     assert "Total Beats" in body
+
+
+# ---------------------------------------------------------------------------
+# Issue #295 — Profile page: followers/following lists with user cards
+# ---------------------------------------------------------------------------
+
+# test_profile_page_has_followers_following_tabs
+# test_profile_page_has_user_card_js
+# test_profile_page_has_switch_tab_js
+# test_followers_list_endpoint_returns_200
+# test_followers_list_returns_user_cards_for_known_user
+# test_following_list_returns_user_cards_for_known_user
+# test_followers_list_unknown_user_404
+# test_following_list_unknown_user_404
+# test_followers_response_includes_following_count
+# test_followers_list_empty_for_user_with_no_followers
+
+
+async def _make_follow(
+    db_session: AsyncSession,
+    follower_id: str,
+    followee_id: str,
+) -> MusehubFollow:
+    """Seed a follow relationship and return the ORM row."""
+    import uuid
+    row = MusehubFollow(
+        follow_id=str(uuid.uuid4()),
+        follower_id=follower_id,
+        followee_id=followee_id,
+    )
+    db_session.add(row)
+    await db_session.commit()
+    return row
+
+
+@pytest.mark.anyio
+async def test_profile_page_has_followers_following_tabs(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Profile page must render Followers and Following tab buttons (issue #295)."""
+    await _make_profile(db_session, username="tabuser")
+    response = await client.get("/musehub/ui/users/tabuser")
+    assert response.status_code == 200
+    body = response.text
+    assert "tab-btn-followers" in body
+    assert "tab-btn-following" in body
+
+
+@pytest.mark.anyio
+async def test_profile_page_has_user_card_js(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Profile page must include userCardHtml and loadFollowTab JS helpers (issue #295)."""
+    await _make_profile(db_session, username="cardjsuser")
+    response = await client.get("/musehub/ui/users/cardjsuser")
+    assert response.status_code == 200
+    body = response.text
+    assert "userCardHtml" in body
+    assert "loadFollowTab" in body
+
+
+@pytest.mark.anyio
+async def test_profile_page_has_switch_tab_js(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Profile page must include switchTab() to toggle between followers and following (issue #295)."""
+    await _make_profile(db_session, username="switchtabuser")
+    response = await client.get("/musehub/ui/users/switchtabuser")
+    assert response.status_code == 200
+    assert "switchTab" in response.text
+
+
+@pytest.mark.anyio
+async def test_followers_list_endpoint_returns_200(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """GET /api/v1/musehub/users/{username}/followers-list returns 200 for known user (issue #295)."""
+    await _make_profile(db_session, username="followerlistuser")
+    response = await client.get("/api/v1/musehub/users/followerlistuser/followers-list")
+    assert response.status_code == 200
+    assert isinstance(response.json(), list)
+
+
+@pytest.mark.anyio
+async def test_followers_list_returns_user_cards_for_known_user(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """followers-list returns UserCard objects when followers exist (issue #295)."""
+    import uuid
+
+    target = MusehubProfile(
+        user_id="target-user-fl-01",
+        username="flctarget",
+        bio="I am the target",
+        avatar_url=None,
+        pinned_repo_ids=[],
+    )
+    follower = MusehubProfile(
+        user_id="follower-user-fl-01",
+        username="flcfollower",
+        bio="I am a follower",
+        avatar_url=None,
+        pinned_repo_ids=[],
+    )
+    db_session.add(target)
+    db_session.add(follower)
+    await db_session.flush()
+    # Seed a follow row using user_ids (same convention as the seed script)
+    await _make_follow(db_session, follower_id="follower-user-fl-01", followee_id="target-user-fl-01")
+
+    response = await client.get("/api/v1/musehub/users/flctarget/followers-list")
+    assert response.status_code == 200
+    cards = response.json()
+    assert len(cards) >= 1
+    usernames = [c["username"] for c in cards]
+    assert "flcfollower" in usernames
+
+
+@pytest.mark.anyio
+async def test_following_list_returns_user_cards_for_known_user(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """following-list returns UserCard objects for users that the target follows (issue #295)."""
+    actor = MusehubProfile(
+        user_id="actor-user-fl-02",
+        username="flcactor",
+        bio="I follow people",
+        avatar_url=None,
+        pinned_repo_ids=[],
+    )
+    followee = MusehubProfile(
+        user_id="followee-user-fl-02",
+        username="flcfollowee",
+        bio="I am followed",
+        avatar_url=None,
+        pinned_repo_ids=[],
+    )
+    db_session.add(actor)
+    db_session.add(followee)
+    await db_session.flush()
+    await _make_follow(db_session, follower_id="actor-user-fl-02", followee_id="followee-user-fl-02")
+
+    response = await client.get("/api/v1/musehub/users/flcactor/following-list")
+    assert response.status_code == 200
+    cards = response.json()
+    assert len(cards) >= 1
+    usernames = [c["username"] for c in cards]
+    assert "flcfollowee" in usernames
+
+
+@pytest.mark.anyio
+async def test_followers_list_unknown_user_404(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """followers-list returns 404 when the target username does not exist (issue #295)."""
+    response = await client.get("/api/v1/musehub/users/nonexistent-ghost-user/followers-list")
+    assert response.status_code == 404
+
+
+@pytest.mark.anyio
+async def test_following_list_unknown_user_404(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """following-list returns 404 when the target username does not exist (issue #295)."""
+    response = await client.get("/api/v1/musehub/users/nonexistent-ghost-user/following-list")
+    assert response.status_code == 404
+
+
+@pytest.mark.anyio
+async def test_followers_response_includes_following_count(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """GET /users/{username}/followers now includes following_count in response (issue #295)."""
+    await _make_profile(db_session, username="followcountuser")
+    response = await client.get("/api/v1/musehub/users/followcountuser/followers")
+    assert response.status_code == 200
+    data = response.json()
+    assert "followerCount" in data or "follower_count" in data
+    assert "followingCount" in data or "following_count" in data
+
+
+@pytest.mark.anyio
+async def test_followers_list_empty_for_user_with_no_followers(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """followers-list returns an empty list when no one follows the user (issue #295)."""
+    await _make_profile(db_session, username="lonelyuser295")
+    response = await client.get("/api/v1/musehub/users/lonelyuser295/followers-list")
+    assert response.status_code == 200
+    assert response.json() == []
