@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from maestro.auth.dependencies import TokenClaims, require_valid_token
@@ -27,6 +27,7 @@ from maestro.models.musehub import (
     PRResponse,
 )
 from maestro.services import musehub_pull_requests, musehub_repository
+from maestro.services.musehub_webhook_dispatcher import dispatch_event_background
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +43,7 @@ router = APIRouter()
 async def create_pull_request(
     repo_id: str,
     body: PRCreate,
+    background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
     _: TokenClaims = Depends(require_valid_token),
 ) -> PRResponse:
@@ -73,6 +75,21 @@ async def create_pull_request(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
 
     await db.commit()
+
+    background_tasks.add_task(
+        dispatch_event_background,
+        repo_id,
+        "pull_request",
+        {
+            "repoId": repo_id,
+            "action": "opened",
+            "prId": pr.pr_id,
+            "title": pr.title,
+            "fromBranch": pr.from_branch,
+            "toBranch": pr.to_branch,
+            "state": pr.state,
+        },
+    )
     return pr
 
 
@@ -134,6 +151,7 @@ async def merge_pull_request(
     repo_id: str,
     pr_id: str,
     body: PRMergeRequest,
+    background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
     _: TokenClaims = Depends(require_valid_token),
 ) -> PRMergeResponse:
@@ -168,4 +186,20 @@ async def merge_pull_request(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Merge completed but merge_commit_id is missing",
         )
+
+    background_tasks.add_task(
+        dispatch_event_background,
+        repo_id,
+        "pull_request",
+        {
+            "repoId": repo_id,
+            "action": "merged",
+            "prId": pr.pr_id,
+            "title": pr.title,
+            "fromBranch": pr.from_branch,
+            "toBranch": pr.to_branch,
+            "state": pr.state,
+            "mergeCommitId": pr.merge_commit_id,
+        },
+    )
     return PRMergeResponse(merged=True, merge_commit_id=pr.merge_commit_id)

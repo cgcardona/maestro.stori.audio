@@ -5869,6 +5869,66 @@ Describes a single worktree entry returned by `list_worktrees()` and `add_worktr
 
 ---
 
+## Muse Hub — Webhook Types (`maestro/models/musehub.py`, `maestro/services/musehub_webhook_dispatcher.py`)
+
+### `WebhookCreate`
+
+Pydantic v2 request body for `POST /musehub/repos/{repo_id}/webhooks`.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `url` | `str` | HTTPS endpoint to deliver events to (max 2048 chars) |
+| `events` | `list[str]` | Event types to subscribe to (min 1 element) |
+| `secret` | `str` | Optional HMAC-SHA256 signing secret (default `""`) |
+
+Valid event types: `push`, `pull_request`, `issue`, `release`, `branch`, `tag`, `session`, `analysis`.
+
+### `WebhookResponse`
+
+Wire representation of a registered webhook subscription (camelCase JSON).
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `webhook_id` | `str` | UUID primary key |
+| `repo_id` | `str` | Parent repo UUID |
+| `url` | `str` | Delivery URL |
+| `events` | `list[str]` | Subscribed event types |
+| `active` | `bool` | Whether this webhook receives events |
+| `created_at` | `datetime` | UTC creation timestamp |
+
+### `WebhookListResponse`
+
+Wrapper for `GET /musehub/repos/{repo_id}/webhooks`.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `webhooks` | `list[WebhookResponse]` | All registered webhooks for a repo |
+
+### `WebhookDeliveryResponse`
+
+Wire representation of one delivery attempt.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `delivery_id` | `str` | UUID for this attempt |
+| `webhook_id` | `str` | Parent webhook UUID |
+| `event_type` | `str` | Event that triggered delivery |
+| `attempt` | `int` | Attempt number (1 = first try, up to `_MAX_ATTEMPTS`) |
+| `success` | `bool` | True when receiver responded 2xx |
+| `response_status` | `int` | HTTP status code, 0 for network-level failures |
+| `response_body` | `str` | First 512 characters of receiver response |
+| `delivered_at` | `datetime` | UTC timestamp of this attempt |
+
+### `WebhookDeliveryListResponse`
+
+Wrapper for `GET /musehub/repos/{repo_id}/webhooks/{webhook_id}/deliveries`.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `deliveries` | `list[WebhookDeliveryResponse]` | Delivery history, newest first |
+
+---
+
 ## Muse CLI — Conflict Resolution Types (`maestro/muse_cli/merge_engine.py`)
 
 ### `MergeState`

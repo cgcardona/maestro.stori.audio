@@ -364,3 +364,67 @@ Start with (1); then (2) if you want to demo inside Cursor; then (3) when the ap
 1. **Confirm from Cursor** – In chat, list tools and call one (e.g. `stori_generate_drums` or, with a DAW connected, `stori_read_project`).
 2. **Wire WebSockets on the front end** – Stori app connects to `wss://<host>/api/v1/mcp/daw?token=<jwt>`, handles `tool_call` messages, runs the action in the DAW, and sends `tool_response` with `request_id` and `result`.
 3. **Test track icon/color from Cursor** – With the DAW connected over WebSocket, ask Cursor to change a track’s icon or color. Use `stori_set_track_icon` (e.g. `icon`: `pianokeys`, `guitars`, `music.note`) or `stori_set_track_color` (e.g. `color`: `blue`, `green`). The backend forwards these to the DAW; the app must implement the handlers and respond with `tool_response`.
+
+
+---
+
+## Muse Hub Webhooks
+
+Webhooks enable event-driven workflows — instead of polling for changes, your agent
+or external service receives an HTTP POST the moment an event fires on a repo.
+
+### Registering a webhook
+
+```bash
+curl -X POST https://<host>/api/v1/musehub/repos/<repo_id>/webhooks \
+  -H "Authorization: Bearer <jwt>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "url": "https://your-server.example.com/hook",
+    "events": ["push", "pull_request", "issue"],
+    "secret": "your-signing-secret"
+  }'
+```
+
+**Valid event types:** `push`, `pull_request`, `issue`, `release`, `branch`, `tag`, `session`, `analysis`.
+
+### Verifying the signature
+
+When a `secret` is set, every delivery includes an `X-MuseHub-Signature: sha256=<hex>` header.
+Verify it on your server to ensure the payload came from MuseHub:
+
+```python
+import hashlib, hmac
+
+def verify_signature(secret: str, body: bytes, signature_header: str) -> bool:
+    expected = "sha256=" + hmac.new(secret.encode(), body, hashlib.sha256).hexdigest()
+    return hmac.compare_digest(expected, signature_header)
+```
+
+### Delivery payload structure
+
+Each event is a JSON object with at minimum a `repoId` field and event-specific fields.
+Example `push` payload:
+
+```json
+{
+  "repoId": "repo-uuid",
+  "branch": "main",
+  "headCommitId": "abc123",
+  "pushedBy": "user-uuid",
+  "commitCount": 3
+}
+```
+
+### Retry policy
+
+Failed deliveries (non-2xx or network error) are retried up to 3 times with
+exponential back-off (1 s, 2 s, 4 s).  Each attempt is logged to
+`GET /api/v1/musehub/repos/{repo_id}/webhooks/{webhook_id}/deliveries`.
+
+### Agent use case
+
+AI agent orchestrators can register a webhook on a composer's repo so that
+when a new commit is pushed, the agent automatically analyzes the changes and
+posts review comments — enabling a real-time human-agent collaboration loop
+without polling.

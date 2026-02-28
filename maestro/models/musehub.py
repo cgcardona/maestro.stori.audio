@@ -240,3 +240,70 @@ class ObjectMetaListResponse(CamelModel):
     """List of artifact metadata for a repo."""
 
     objects: list[ObjectMetaResponse]
+
+
+# ── Webhook models ────────────────────────────────────────────────────────────
+
+# Valid event types a subscriber may register for.
+WEBHOOK_EVENT_TYPES: frozenset[str] = frozenset(
+    [
+        "push",
+        "pull_request",
+        "issue",
+        "release",
+        "branch",
+        "tag",
+        "session",
+        "analysis",
+    ]
+)
+
+
+class WebhookCreate(CamelModel):
+    """Body for POST /musehub/repos/{repo_id}/webhooks.
+
+    ``events`` must be a non-empty subset of the valid event-type strings
+    (push, pull_request, issue, release, branch, tag, session, analysis).
+    ``secret`` is optional; when provided it is used to sign every delivery
+    with HMAC-SHA256 in the ``X-MuseHub-Signature`` header.
+    """
+
+    url: str = Field(..., min_length=1, max_length=2048, description="HTTPS endpoint to deliver events to")
+    events: list[str] = Field(..., min_length=1, description="Event types to subscribe to")
+    secret: str = Field("", description="Optional HMAC-SHA256 signing secret")
+
+
+class WebhookResponse(CamelModel):
+    """Wire representation of a registered webhook subscription."""
+
+    webhook_id: str
+    repo_id: str
+    url: str
+    events: list[str]
+    active: bool
+    created_at: datetime
+
+
+class WebhookListResponse(CamelModel):
+    """List of webhook subscriptions for a repo."""
+
+    webhooks: list[WebhookResponse]
+
+
+class WebhookDeliveryResponse(CamelModel):
+    """Wire representation of a single webhook delivery attempt."""
+
+    delivery_id: str
+    webhook_id: str
+    event_type: str
+    attempt: int
+    success: bool
+    response_status: int
+    response_body: str
+    delivered_at: datetime
+
+
+class WebhookDeliveryListResponse(CamelModel):
+    """Paginated list of delivery attempts for a webhook."""
+
+    deliveries: list[WebhookDeliveryResponse]

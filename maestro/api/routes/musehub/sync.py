@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from maestro.auth.dependencies import TokenClaims, require_valid_token
@@ -23,6 +23,7 @@ from maestro.models.musehub import (
     PushResponse,
 )
 from maestro.services import musehub_repository, musehub_sync
+from maestro.services.musehub_webhook_dispatcher import dispatch_event_background
 
 logger = logging.getLogger(__name__)
 
@@ -37,6 +38,7 @@ router = APIRouter()
 async def push(
     repo_id: str,
     body: PushRequest,
+    background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
     claims: TokenClaims = Depends(require_valid_token),
 ) -> PushResponse:
@@ -75,6 +77,19 @@ async def push(
         raise
 
     await db.commit()
+
+    background_tasks.add_task(
+        dispatch_event_background,
+        repo_id,
+        "push",
+        {
+            "repoId": repo_id,
+            "branch": body.branch,
+            "headCommitId": body.head_commit_id,
+            "pushedBy": author,
+            "commitCount": len(body.commits),
+        },
+    )
     return result
 
 
