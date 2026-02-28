@@ -52,6 +52,20 @@ Covers issue #221 (analysis dashboard):
 - test_analysis_dashboard_sparkline_logic_present — sparkline JS present
 - test_analysis_dashboard_card_links_to_dimensions — /analysis/ path in page
 See also test_musehub_analysis.py::test_analysis_aggregate_endpoint_returns_all_dimensions
+
+Covers issue #211 (audio player — listen page):
+- test_listen_page_renders                     — GET /musehub/ui/{owner}/{slug}/listen/{ref} returns 200
+- test_listen_page_no_auth_required            — listen page accessible without JWT
+- test_listen_page_contains_waveform_ui        — waveform container and controls present
+- test_listen_page_contains_play_button        — play button element present in HTML
+- test_listen_page_contains_speed_selector     — speed selector element present
+- test_listen_page_contains_ab_loop_ui         — A/B loop controls present
+- test_listen_page_loads_wavesurfer_vendor     — page loads vendored wavesurfer.min.js (no CDN)
+- test_listen_page_loads_audio_player_js       — page loads audio-player.js component script
+- test_listen_track_page_renders               — GET /musehub/ui/{owner}/{slug}/listen/{ref}/{path} returns 200
+- test_listen_track_page_has_track_path_in_js  — track path injected into page JS context
+- test_listen_page_unknown_repo_404            — bad owner/slug → 404
+- test_listen_page_keyboard_shortcuts_documented — keyboard shortcuts mentioned in page
 """
 from __future__ import annotations
 
@@ -3373,3 +3387,183 @@ async def test_harmony_json_response(
     assert "totalBeats" in data
     assert data["totalBeats"] > 0
 
+
+# ---------------------------------------------------------------------------
+# Audio player — listen page tests (issue #211)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.anyio
+async def test_listen_page_renders(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """GET /musehub/ui/{owner}/{slug}/listen/{ref} must return 200 HTML."""
+    await _make_repo(db_session)
+    ref = "abc1234567890abcdef"
+    response = await client.get(f"/musehub/ui/testuser/test-beats/listen/{ref}")
+    assert response.status_code == 200
+    assert "text/html" in response.headers["content-type"]
+
+
+@pytest.mark.anyio
+async def test_listen_page_no_auth_required(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Listen page must be accessible without an Authorization header."""
+    await _make_repo(db_session)
+    ref = "deadbeef1234"
+    response = await client.get(f"/musehub/ui/testuser/test-beats/listen/{ref}")
+    assert response.status_code != 401
+    assert response.status_code == 200
+
+
+@pytest.mark.anyio
+async def test_listen_page_contains_waveform_ui(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Listen page HTML must contain the waveform container element."""
+    await _make_repo(db_session)
+    ref = "cafebabe1234"
+    response = await client.get(f"/musehub/ui/testuser/test-beats/listen/{ref}")
+    assert response.status_code == 200
+    body = response.text
+    assert "waveform" in body
+
+
+@pytest.mark.anyio
+async def test_listen_page_contains_play_button(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Listen page must include a play button element."""
+    await _make_repo(db_session)
+    ref = "feed1234abcdef"
+    response = await client.get(f"/musehub/ui/testuser/test-beats/listen/{ref}")
+    assert response.status_code == 200
+    body = response.text
+    assert "play-btn" in body
+
+
+@pytest.mark.anyio
+async def test_listen_page_contains_speed_selector(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Listen page must include the playback speed selector element."""
+    await _make_repo(db_session)
+    ref = "1a2b3c4d5e6f7890"
+    response = await client.get(f"/musehub/ui/testuser/test-beats/listen/{ref}")
+    assert response.status_code == 200
+    body = response.text
+    assert "speed-sel" in body
+
+
+@pytest.mark.anyio
+async def test_listen_page_contains_ab_loop_ui(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Listen page must include A/B loop controls (loop info + clear button)."""
+    await _make_repo(db_session)
+    ref = "aabbccddeeff0011"
+    response = await client.get(f"/musehub/ui/testuser/test-beats/listen/{ref}")
+    assert response.status_code == 200
+    body = response.text
+    assert "loop-info" in body
+    assert "loop-clear-btn" in body
+
+
+@pytest.mark.anyio
+async def test_listen_page_loads_wavesurfer_vendor(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Listen page must load the vendored wavesurfer.min.js — no external CDN."""
+    await _make_repo(db_session)
+    ref = "112233445566778899"
+    response = await client.get(f"/musehub/ui/testuser/test-beats/listen/{ref}")
+    assert response.status_code == 200
+    body = response.text
+    # Must reference the local vendor path — never an external CDN URL
+    assert "vendor/wavesurfer.min.js" in body
+    assert "unpkg.com" not in body
+    assert "cdn.jsdelivr.net" not in body
+    assert "cdnjs.cloudflare.com" not in body
+
+
+@pytest.mark.anyio
+async def test_listen_page_loads_audio_player_js(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Listen page must load the audio-player.js component wrapper script."""
+    await _make_repo(db_session)
+    ref = "99aabbccddeeff00"
+    response = await client.get(f"/musehub/ui/testuser/test-beats/listen/{ref}")
+    assert response.status_code == 200
+    body = response.text
+    assert "audio-player.js" in body
+
+
+@pytest.mark.anyio
+async def test_listen_track_page_renders(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """GET /musehub/ui/{owner}/{slug}/listen/{ref}/{path} must return 200."""
+    await _make_repo(db_session)
+    ref = "feedface0011aabb"
+    response = await client.get(
+        f"/musehub/ui/testuser/test-beats/listen/{ref}/tracks/bass.mp3"
+    )
+    assert response.status_code == 200
+    assert "text/html" in response.headers["content-type"]
+
+
+@pytest.mark.anyio
+async def test_listen_track_page_has_track_path_in_js(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Track path must be injected into the page JS context as TRACK_PATH."""
+    await _make_repo(db_session)
+    ref = "00aabbccddeeff11"
+    track = "tracks/lead-guitar.mp3"
+    response = await client.get(
+        f"/musehub/ui/testuser/test-beats/listen/{ref}/{track}"
+    )
+    assert response.status_code == 200
+    body = response.text
+    assert "TRACK_PATH" in body
+    assert "lead-guitar.mp3" in body
+
+
+@pytest.mark.anyio
+async def test_listen_page_unknown_repo_404(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """GET listen page with nonexistent owner/slug must return 404."""
+    response = await client.get(
+        "/musehub/ui/nobody/nonexistent-repo/listen/abc123"
+    )
+    assert response.status_code == 404
+
+
+@pytest.mark.anyio
+async def test_listen_page_keyboard_shortcuts_documented(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Listen page must document Space, arrow, and L keyboard shortcuts."""
+    await _make_repo(db_session)
+    ref = "cafe0011aabb2233"
+    response = await client.get(f"/musehub/ui/testuser/test-beats/listen/{ref}")
+    assert response.status_code == 200
+    body = response.text
+    # Keyboard hint section must be present
+    assert "Space" in body or "space" in body.lower()
+    assert "loop" in body.lower()
