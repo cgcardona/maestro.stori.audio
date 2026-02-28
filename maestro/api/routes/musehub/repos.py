@@ -5,7 +5,8 @@ Endpoint summary:
   GET  /musehub/repos/{repo_id}                          — get repo metadata
   GET  /musehub/repos/{repo_id}/branches                 — list all branches
   GET  /musehub/repos/{repo_id}/commits                  — list commits (newest first)
-  GET  /musehub/repos/{repo_id}/context                  — agent context briefing
+  GET  /musehub/repos/{repo_id}/context/{ref}            — musical context for a commit
+  GET  /musehub/repos/{repo_id}/context                  — agent context briefing (YAML/JSON)
   POST /musehub/repos/{repo_id}/sessions                 — create a session entry
   GET  /musehub/repos/{repo_id}/sessions                 — list sessions (newest first)
   GET  /musehub/repos/{repo_id}/sessions/{session_id}    — get a single session
@@ -29,6 +30,7 @@ from maestro.models.musehub import (
     BranchListResponse,
     CommitListResponse,
     CreateRepoRequest,
+    MuseHubContextResponse,
     RepoResponse,
     SessionCreate,
     SessionListResponse,
@@ -128,6 +130,38 @@ async def list_commits(
     )
     return CommitListResponse(commits=commits, total=total)
 
+
+
+
+@router.get(
+    "/repos/{repo_id}/context/{ref}",
+    response_model=MuseHubContextResponse,
+    summary="Get musical context document for a commit",
+)
+async def get_context(
+    repo_id: str,
+    ref: str,
+    db: AsyncSession = Depends(get_db),
+    _: TokenClaims = Depends(require_valid_token),
+) -> MuseHubContextResponse:
+    """Return a structured musical context document for the given commit ref.
+
+    The context document is the same information the AI agent receives when
+    generating music for this repo at this commit, making it human-inspectable
+    for debugging and transparency.
+
+    Raises 404 if either the repo or the commit does not exist.
+    """
+    repo = await musehub_repository.get_repo(db, repo_id)
+    if repo is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repo not found")
+    context = await musehub_repository.get_context_for_commit(db, repo_id, ref)
+    if context is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Commit {ref!r} not found in repo",
+        )
+    return context
 
 @router.get(
     "/repos/{repo_id}/context",
