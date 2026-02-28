@@ -4,21 +4,27 @@ Serves browser-readable HTML pages for navigating a Muse Hub repo —
 analogous to GitHub's repository browser but for music projects.
 
 Endpoint summary:
-  GET /musehub/ui/search                                — global cross-repo search page
-  GET /musehub/ui/{repo_id}                             — repo page (branch selector + commit log)
-  GET /musehub/ui/{repo_id}/commits/{commit_id}         — commit detail page (metadata + artifacts)
-  GET /musehub/ui/{repo_id}/graph                       — interactive DAG commit graph
-  GET /musehub/ui/{repo_id}/pulls                       — pull request list page
-  GET /musehub/ui/{repo_id}/pulls/{pr_id}               — PR detail page (with merge button)
-  GET /musehub/ui/{repo_id}/issues                      — issue list page
-  GET /musehub/ui/{repo_id}/issues/{number}             — issue detail page (with close button)
-  GET /musehub/ui/{repo_id}/credits                     — dynamic credits page (album liner notes)
-  GET /musehub/ui/{repo_id}/embed/{ref}                 — embeddable player widget (no auth, iframe-safe)
-  GET /musehub/ui/{repo_id}/search                      — in-repo search page (four modes)
-  GET /musehub/ui/{repo_id}/form-structure/{ref}        — form and structure page (section map, repetition, heatmap)
+  GET /musehub/ui/explore                          — discover public repos with filters
+  GET /musehub/ui/trending                         — trending public repos (sorted by stars)
+  GET /musehub/ui/search                           — global cross-repo search page
+  GET /musehub/ui/{repo_id}                        — repo page (branch selector + commit log)
+  GET /musehub/ui/{repo_id}/releases               — release list page
+  GET /musehub/ui/{repo_id}/releases/{tag}         — release detail page (notes + downloads)
+  GET /musehub/ui/users/{username}                 — user profile page (public repos, contribution graph, credits)
+  GET /musehub/ui/search                           — global cross-repo search page  GET /musehub/ui/{repo_id}                        — repo page (branch selector + commit log)
+  GET /musehub/ui/{repo_id}/commits/{commit_id}    — commit detail page (metadata + artifacts)
+  GET /musehub/ui/{repo_id}/graph                  — interactive DAG commit graph
+  GET /musehub/ui/{repo_id}/pulls                  — pull request list page
+  GET /musehub/ui/{repo_id}/pulls/{pr_id}          — PR detail page (with merge button)
+  GET /musehub/ui/{repo_id}/issues                 — issue list page
+  GET /musehub/ui/{repo_id}/issues/{number}        — issue detail page (with close button)
+  GET /musehub/ui/{repo_id}/credits                — dynamic credits page (album liner notes)
+  GET /musehub/ui/{repo_id}/embed/{ref}            — embeddable player widget (no auth, iframe-safe)
+  GET /musehub/ui/{repo_id}/search                 — in-repo search page (four modes)
 
 These routes require NO JWT auth — they return static HTML shells whose
-embedded JavaScript fetches data from the authed JSON API
+embedded JavaScript fetches data from the public JSON API
+(``/api/v1/musehub/discover/repos``) or the authed JSON API
 (``/api/v1/musehub/...``) using a token stored in ``localStorage``.
 
 The embed route is intentionally designed for cross-origin iframe embedding:
@@ -41,6 +47,51 @@ router = APIRouter(prefix="/musehub/ui", tags=["musehub-ui"])
 # ---------------------------------------------------------------------------
 # Shared HTML scaffolding
 # ---------------------------------------------------------------------------
+
+_PROFILE_CSS = """
+.profile-header {
+  display: flex; align-items: flex-start; gap: 24px; margin-bottom: 24px;
+}
+.avatar {
+  width: 80px; height: 80px; border-radius: 50%;
+  background: #21262d; border: 2px solid #30363d;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 32px; flex-shrink: 0;
+}
+.avatar img { width: 100%; height: 100%; border-radius: 50%; object-fit: cover; }
+.profile-meta { flex: 1; }
+.profile-meta h1 { font-size: 22px; color: #e6edf3; margin-bottom: 4px; }
+.bio { font-size: 14px; color: #8b949e; margin-bottom: 12px; }
+.contrib-graph {
+  display: flex; gap: 2px; flex-wrap: wrap; overflow-x: auto;
+}
+.contrib-week { display: flex; flex-direction: column; gap: 2px; }
+.contrib-day {
+  width: 10px; height: 10px; border-radius: 2px; background: #161b22;
+  border: 1px solid #30363d;
+}
+.contrib-day[data-count="0"] { background: #161b22; }
+.contrib-day[data-count="1"] { background: #0e4429; border-color: #0e4429; }
+.contrib-day[data-count="2"] { background: #006d32; border-color: #006d32; }
+.contrib-day[data-count="3"] { background: #26a641; border-color: #26a641; }
+.contrib-day[data-count="4"] { background: #39d353; border-color: #39d353; }
+.repo-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 12px;
+}
+.repo-card {
+  background: #161b22; border: 1px solid #30363d; border-radius: 6px;
+  padding: 14px; display: flex; flex-direction: column; gap: 6px;
+}
+.repo-card h3 { font-size: 15px; margin: 0; }
+.repo-card .repo-meta { font-size: 12px; color: #8b949e; }
+.credits-badge {
+  display: inline-flex; align-items: center; gap: 8px;
+  background: #1f6feb22; border: 1px solid #1f6feb; border-radius: 6px;
+  padding: 8px 14px; font-size: 14px;
+}
+.credits-badge .num { font-size: 22px; font-weight: 700; color: #58a6ff; }
+"""
 
 _CSS = """
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -193,7 +244,7 @@ function shortSha(sha) { return sha ? sha.substring(0, 8) : '—'; }
 """
 
 
-def _page(title: str, breadcrumb: str, body_script: str) -> str:
+def _page(title: str, breadcrumb: str, body_script: str, extra_css: str = "") -> str:
     """Assemble a complete Muse Hub HTML page with shared chrome."""
     return f"""<!DOCTYPE html>
 <html lang="en">
@@ -201,7 +252,7 @@ def _page(title: str, breadcrumb: str, body_script: str) -> str:
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{title} — Muse Hub</title>
-  <style>{_CSS}</style>
+  <style>{_CSS}{extra_css}</style>
 </head>
 <body>
   <header>
@@ -233,8 +284,393 @@ def _page(title: str, breadcrumb: str, body_script: str) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Route handlers
+# Route handlers — explore / discover (no auth required)
 # ---------------------------------------------------------------------------
+
+_EXPLORE_SCRIPT = """
+const DISCOVER_API = '/api/v1/musehub/discover/repos';
+
+function escHtml(s) {
+  if (!s) return '';
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function tagHtml(tag) {
+  return '<span class="label">' + escHtml(tag) + '</span>';
+}
+
+function repoCard(r) {
+  const tags = (r.tags || []).map(tagHtml).join('');
+  const key  = r.keySignature ? escHtml(r.keySignature) : '';
+  const bpm  = r.tempoBpm ? r.tempoBpm + ' BPM' : '';
+  const meta = [key, bpm].filter(Boolean).join(' &bull; ');
+  return `
+    <div class="repo-card">
+      <div class="repo-card-title">
+        <a href="/musehub/ui/${escHtml(r.repoId)}">${escHtml(r.name)}</a>
+      </div>
+      <div class="repo-card-owner">${escHtml(r.ownerUserId)}</div>
+      ${r.description ? '<div class="repo-card-desc">' + escHtml(r.description) + '</div>' : ''}
+      <div class="repo-card-tags">${tags}</div>
+      <div class="repo-card-meta">
+        ${meta ? '<span>' + meta + '</span>' : ''}
+        <span>&#9733; ${r.starCount}</span>
+        <span>&#128190; ${r.commitCount} commits</span>
+      </div>
+    </div>`;
+}
+
+async function loadExplore(page, sort, genre, key, tempoMin, tempoMax, instrumentation) {
+  const params = new URLSearchParams({ page: page, page_size: 24, sort: sort });
+  if (genre)         params.set('genre', genre);
+  if (key)           params.set('key', key);
+  if (tempoMin)      params.set('tempo_min', tempoMin);
+  if (tempoMax)      params.set('tempo_max', tempoMax);
+  if (instrumentation) params.set('instrumentation', instrumentation);
+
+  try {
+    const res  = await fetch(DISCOVER_API + '?' + params.toString());
+    if (!res.ok) throw new Error(res.status + ': ' + await res.text());
+    const data = await res.json();
+    const repos = data.repos || [];
+    const total = data.total || 0;
+    const pages = Math.ceil(total / 24) || 1;
+
+    const grid = repos.length === 0
+      ? '<p class="loading">No repos found matching these filters.</p>'
+      : repos.map(repoCard).join('');
+
+    const pager = pages > 1 ? `
+      <div class="pager">
+        ${page > 1 ? '<button class="btn btn-secondary" onclick="go(' + (page-1) + ')">&#8592; Prev</button>' : ''}
+        <span style="color:#8b949e;font-size:13px">Page ${page} of ${pages} &bull; ${total} repos</span>
+        ${page < pages ? '<button class="btn btn-secondary" onclick="go(' + (page+1) + ')">Next &#8594;</button>' : ''}
+      </div>` : '<div class="pager" style="color:#8b949e;font-size:13px">' + total + ' repos</div>';
+
+    document.getElementById('repo-grid').innerHTML = grid;
+    document.getElementById('pager').innerHTML = pager;
+  } catch(e) {
+    document.getElementById('repo-grid').innerHTML =
+      '<p class="error">&#10005; ' + escHtml(e.message) + '</p>';
+  }
+}
+
+function currentState() {
+  return {
+    page: parseInt(document.getElementById('cur-page').value || '1'),
+    sort: document.getElementById('sort-sel').value,
+    genre: document.getElementById('genre-inp').value.trim(),
+    key:   document.getElementById('key-inp').value.trim(),
+    tempoMin: document.getElementById('tempo-min').value.trim(),
+    tempoMax: document.getElementById('tempo-max').value.trim(),
+    instr: document.getElementById('instr-inp').value.trim(),
+  };
+}
+
+function go(page) {
+  document.getElementById('cur-page').value = page;
+  const s = currentState();
+  loadExplore(page, s.sort, s.genre, s.key, s.tempoMin, s.tempoMax, s.instr);
+}
+
+function applyFilters() { go(1); }
+"""
+
+_EXPLORE_CSS_EXTRA = """
+.filter-bar {
+  display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-end;
+  background: #161b22; border: 1px solid #30363d; border-radius: 6px;
+  padding: 12px; margin-bottom: 16px;
+}
+.filter-group { display: flex; flex-direction: column; gap: 4px; }
+.filter-label { font-size: 11px; color: #8b949e; text-transform: uppercase; letter-spacing: 0.5px; }
+.filter-group input {
+  background: #0d1117; color: #c9d1d9; border: 1px solid #30363d;
+  border-radius: 6px; padding: 6px 10px; font-size: 13px; width: 140px;
+}
+.filter-group input:focus { outline: none; border-color: #58a6ff; }
+.repo-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 12px;
+}
+.repo-card {
+  background: #161b22; border: 1px solid #30363d; border-radius: 6px;
+  padding: 14px; display: flex; flex-direction: column; gap: 6px;
+  transition: border-color 0.15s;
+}
+.repo-card:hover { border-color: #58a6ff; }
+.repo-card-title { font-size: 15px; font-weight: 600; }
+.repo-card-owner { font-size: 12px; color: #8b949e; }
+.repo-card-desc  { font-size: 13px; color: #c9d1d9; }
+.repo-card-tags  { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+.repo-card-meta  {
+  display: flex; gap: 12px; flex-wrap: wrap;
+  font-size: 12px; color: #8b949e; margin-top: 4px;
+}
+.pager {
+  display: flex; align-items: center; justify-content: center;
+  gap: 12px; margin-top: 20px;
+}
+"""
+
+
+def _explore_page_html(title: str, breadcrumb: str, default_sort: str) -> str:
+    """Render the explore or trending page HTML shell.
+
+    The page calls the public ``GET /api/v1/musehub/discover/repos`` JSON API
+    from the browser — no JWT required for browsing. Star/unstar actions require
+    a JWT stored in localStorage but are optional (unauthenticated visitors can
+    browse without starring).
+    """
+    css = _CSS + _EXPLORE_CSS_EXTRA
+    return f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{title} — Muse Hub</title>
+  <style>{css}</style>
+</head>
+<body>
+  <header>
+    <span class="logo">&#127925; Muse Hub</span>
+    <span class="breadcrumb">{breadcrumb}</span>
+    <span style="flex:1"></span>
+    <a href="/musehub/ui/explore" class="btn btn-secondary" style="font-size:12px">Explore</a>
+    &nbsp;
+    <a href="/musehub/ui/trending" class="btn btn-secondary" style="font-size:12px">Trending</a>
+  </header>
+  <div class="container" style="max-width:1200px">
+    <div class="filter-bar">
+      <div class="filter-group">
+        <span class="filter-label">Genre</span>
+        <input id="genre-inp" type="text" placeholder="jazz, lo-fi…" oninput="applyFilters()"/>
+      </div>
+      <div class="filter-group">
+        <span class="filter-label">Key</span>
+        <input id="key-inp" type="text" placeholder="F# minor" oninput="applyFilters()"/>
+      </div>
+      <div class="filter-group">
+        <span class="filter-label">BPM min</span>
+        <input id="tempo-min" type="number" min="20" max="300" placeholder="80" oninput="applyFilters()"/>
+      </div>
+      <div class="filter-group">
+        <span class="filter-label">BPM max</span>
+        <input id="tempo-max" type="number" min="20" max="300" placeholder="140" oninput="applyFilters()"/>
+      </div>
+      <div class="filter-group">
+        <span class="filter-label">Instrument</span>
+        <input id="instr-inp" type="text" placeholder="bass, drums…" oninput="applyFilters()"/>
+      </div>
+      <div class="filter-group">
+        <span class="filter-label">Sort by</span>
+        <select id="sort-sel" onchange="applyFilters()">
+          <option value="created" {'selected' if default_sort == 'created' else ''}>Newest</option>
+          <option value="stars"   {'selected' if default_sort == 'stars'   else ''}>Stars</option>
+          <option value="activity"{'selected' if default_sort == 'activity' else ''}>Activity</option>
+          <option value="commits" {'selected' if default_sort == 'commits'  else ''}>Commits</option>
+        </select>
+      </div>
+    </div>
+    <input type="hidden" id="cur-page" value="1"/>
+    <div id="repo-grid" class="repo-grid"><p class="loading">Loading&#8230;</p></div>
+    <div id="pager"></div>
+  </div>
+  <script>
+    {_EXPLORE_SCRIPT}
+    window.addEventListener('DOMContentLoaded', function() {{
+      const s = currentState();
+      loadExplore(1, s.sort, s.genre, s.key, s.tempoMin, s.tempoMax, s.instr);
+    }});
+  </script>
+</body>
+</html>"""
+
+
+@router.get("/explore", response_class=HTMLResponse, summary="Muse Hub explore page")
+async def explore_page() -> HTMLResponse:
+    """Render the explore/discover page — a filterable grid of all public repos.
+
+    No JWT required. The page fetches from the public
+    ``GET /api/v1/musehub/discover/repos`` endpoint. Filter controls are
+    rendered in the browser; filter state lives in the query URL so pages
+    are bookmarkable.
+    """
+    return HTMLResponse(
+        content=_explore_page_html(
+            title="Explore",
+            breadcrumb="Explore",
+            default_sort="created",
+        )
+    )
+
+
+@router.get("/trending", response_class=HTMLResponse, summary="Muse Hub trending page")
+async def trending_page() -> HTMLResponse:
+    """Render the trending page — public repos sorted by star count by default.
+
+    No JWT required. Identical shell to the explore page but pre-selected
+    to sort by stars, surfacing the most-starred compositions first.
+    """
+    return HTMLResponse(
+        content=_explore_page_html(
+            title="Trending",
+            breadcrumb="Trending",
+            default_sort="stars",
+        )
+    )
+
+
+# ---------------------------------------------------------------------------
+# Route handlers — per-repo pages (no auth required)
+# ---------------------------------------------------------------------------
+
+
+
+
+@router.get(
+    "/users/{username}",
+    response_class=HTMLResponse,
+    summary="Muse Hub user profile page",
+)
+async def profile_page(username: str) -> HTMLResponse:
+    """Render the public user profile page.
+
+    Displays: bio, avatar, pinned repos, all public repos with last-activity,
+    a GitHub-style contribution heatmap (52 weeks of daily commit counts), and
+    aggregated session credits.  Auth is handled client-side via localStorage JWT.
+
+    Returns 200 with an HTML shell even when the API returns 404 -- the JS
+    renders the 404 message inline so the browser gets a proper HTML response.
+    """
+    script = f"""
+      const username = {repr(username)};
+      const API_PROFILE = '/api/v1/musehub/users/' + username;
+
+      function escHtml(s) {{
+        if (!s) return '';
+        return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+      }}
+
+      function bucketCount(n) {{
+        if (n === 0) return 0;
+        if (n <= 2)  return 1;
+        if (n <= 5)  return 2;
+        if (n <= 9)  return 3;
+        return 4;
+      }}
+
+      function buildContribGraph(graph) {{
+        // Group days into weeks (7 days per column)
+        const weeks = [];
+        let week = [];
+        graph.forEach((d, i) => {{
+          week.push(d);
+          if (week.length === 7) {{ weeks.push(week); week = []; }}
+        }});
+        if (week.length) weeks.push(week);
+
+        const weeksHtml = weeks.map(w => {{
+          const days = w.map(d => {{
+            const b = bucketCount(d.count);
+            return `<div class="contrib-day" data-count="${{b}}" title="${{d.date}}: ${{d.count}} commit${{d.count !== 1 ? 's' : ''}}"></div>`;
+          }}).join('');
+          return `<div class="contrib-week">${{days}}</div>`;
+        }}).join('');
+
+        return `<div class="contrib-graph">${{weeksHtml}}</div>`;
+      }}
+
+      function repoCardHtml(r) {{
+        const lastAct = r.lastActivityAt ? fmtDate(r.lastActivityAt) : 'No commits yet';
+        return `<div class="repo-card">
+          <h3><a href="/musehub/ui/${{r.repoId}}">${{escHtml(r.name)}}</a></h3>
+          <div class="repo-meta">
+            <span class="badge badge-${{r.visibility}}">${{r.visibility}}</span>
+            &bull; Last activity: ${{lastAct}}
+          </div>
+        </div>`;
+      }}
+
+      async function load() {{
+        let profile;
+        try {{
+          profile = await fetch(API_PROFILE).then(r => {{
+            if (r.status === 404) throw new Error('404');
+            if (!r.ok) throw new Error(r.status);
+            return r.json();
+          }});
+        }} catch(e) {{
+          if (e.message === '404') {{
+            document.getElementById('content').innerHTML =
+              '<div class="card"><p class="error">&#10005; No profile found for <strong>' + escHtml(username) + '</strong>.</p></div>';
+          }} else {{
+            document.getElementById('content').innerHTML =
+              '<p class="error">Failed to load profile: ' + escHtml(e.message) + '</p>';
+          }}
+          return;
+        }}
+
+        const avatarHtml = profile.avatarUrl
+          ? `<img src="${{escHtml(profile.avatarUrl)}}" alt="avatar" />`
+          : '&#127925;';
+
+        const pinnedRepos = (profile.repos || []).filter(r => (profile.pinnedRepoIds || []).includes(r.repoId));
+        const publicRepos = profile.repos || [];
+
+        const pinnedSection = pinnedRepos.length > 0 ? `
+          <div class="card">
+            <h2 style="margin-bottom:12px">&#128204; Pinned</h2>
+            <div class="repo-grid">${{pinnedRepos.map(repoCardHtml).join('')}}</div>
+          </div>` : '';
+
+        const reposSection = publicRepos.length > 0 ? `
+          <div class="card">
+            <h2 style="margin-bottom:12px">&#127963; Public Repositories (${{publicRepos.length}})</h2>
+            <div class="repo-grid">${{publicRepos.map(repoCardHtml).join('')}}</div>
+          </div>` : '<div class="card"><p class="loading">No public repositories yet.</p></div>';
+
+        const graphSection = `
+          <div class="card">
+            <h2 style="margin-bottom:12px">&#128200; Contribution Activity (last 52 weeks)</h2>
+            ${{buildContribGraph(profile.contributionGraph || [])}}
+            <p style="font-size:12px;color:#8b949e;margin-top:8px">
+              Less &nbsp;
+              <span style="display:inline-flex;gap:2px;vertical-align:middle">
+                ${{[0,1,2,3,4].map(n => '<span class="contrib-day" data-count="' + n + '" style="display:inline-block"></span>').join('')}}
+              </span>
+              &nbsp; More
+            </p>
+          </div>`;
+
+        document.getElementById('content').innerHTML = `
+          <div class="card profile-header">
+            <div class="avatar">${{avatarHtml}}</div>
+            <div class="profile-meta">
+              <h1>${{escHtml(profile.username)}}</h1>
+              ${{profile.bio ? '<p class="bio">' + escHtml(profile.bio) + '</p>' : ''}}
+              <div class="credits-badge">
+                <span class="num">${{profile.sessionCredits || 0}}</span>
+                <span>session credits</span>
+              </div>
+            </div>
+          </div>
+          ${{pinnedSection}}
+          ${{graphSection}}
+          ${{reposSection}}
+        `;
+      }}
+
+      load();
+    """
+    html = _page(
+        title=f"@{username}",
+        breadcrumb=f'<a href="/musehub/ui/users/{username}">@{username}</a>',
+        body_script=script,
+        extra_css=_PROFILE_CSS,
+    )
+    return HTMLResponse(content=html)
 
 
 @router.get("/search", response_class=HTMLResponse, summary="Muse Hub global search page")
@@ -250,18 +686,18 @@ async def global_search_page(
     Query parameters are pre-filled into the search form so that a browser
     navigation or a URL share lands with the last query already populated.
     These parameters are sanitised client-side before being rendered into the
-    DOM — ``escHtml`` prevents XSS from adversarial query strings.
+    DOM (``escHtml`` prevents XSS from adversarial query strings).
     """
     safe_q = q.replace("'", "\\'").replace('"', '\\"').replace("\n", "").replace("\r", "")
     safe_mode = mode if mode in ("keyword", "pattern") else "keyword"
     script = f"""
       const INITIAL_Q    = {repr(safe_q)};
       const INITIAL_MODE = {repr(safe_mode)};
-
       function escHtml(s) {{
         if (!s) return '';
         return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
       }}
+      function shortSha(s) {{ return s ? s.substring(0, 8) : ''; }}
 
       function audioHtml(groupId, audioOid) {{
         if (!audioOid) return '';
@@ -432,7 +868,9 @@ async def repo_page(repo_id: str) -> HTMLResponse:
               <div style="display:flex;gap:12px;margin-bottom:16px;flex-wrap:wrap">
                 <a href="${{base}}/pulls" class="btn btn-secondary">Pull Requests</a>
                 <a href="${{base}}/issues" class="btn btn-secondary">Issues</a>
+                <a href="${{base}}/releases" class="btn btn-secondary">Releases</a>
                 <a href="${{base}}/credits" class="btn btn-secondary">&#127926; Credits</a>
+                <a href="${{base}}/sessions" class="btn btn-secondary">Sessions</a>
                 <a href="${{base}}/search" class="btn btn-secondary">&#128269; Search</a>
               </div>
               <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
@@ -1124,6 +1562,237 @@ async def issue_list_page(repo_id: str) -> HTMLResponse:
     html = _page(
         title="Issues",
         breadcrumb=f'<a href="/musehub/ui/{repo_id}">{repo_id[:8]}</a> / issues',
+        body_script=script,
+    )
+    return HTMLResponse(content=html)
+
+
+@router.get(
+    "/{repo_id}/divergence",
+    response_class=HTMLResponse,
+    summary="Muse Hub divergence visualization page",
+)
+async def divergence_page(repo_id: str) -> HTMLResponse:
+    """Render the divergence visualization page: radar chart + dimension detail panels.
+
+    Fetches ``GET /api/v1/musehub/repos/{repo_id}/divergence?branch_a=...&branch_b=...``
+    for the raw data, then renders:
+    - A five-axis radar chart (melodic/harmonic/rhythmic/structural/dynamic)
+    - Level labels (NONE/LOW/MED/HIGH) per dimension
+    - Overall divergence score as a percentage
+    - Per-dimension detail panels (click to expand)
+
+    Auth is handled client-side via localStorage JWT.  No Jinja2 required.
+    """
+    script = f"""
+      const repoId = {repr(repo_id)};
+      const apiBase = '/api/v1/musehub/repos/' + repoId;
+      const uiBase  = '/musehub/ui/' + repoId;
+
+      function escHtml(s) {{
+        if (!s) return '';
+        return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+      }}
+
+      const DIMENSIONS = ['melodic','harmonic','rhythmic','structural','dynamic'];
+      const LEVEL_COLOR = {{ NONE:'#1f6feb', LOW:'#388bfd', MED:'#f0883e', HIGH:'#f85149' }};
+      const LEVEL_BG    = {{ NONE:'#0d2942', LOW:'#102a4c', MED:'#341a00', HIGH:'#3d0000' }};
+      const AXIS_LABELS = {{
+        melodic:'Melodic', harmonic:'Harmonic', rhythmic:'Rhythmic',
+        structural:'Structural', dynamic:'Dynamic'
+      }};
+
+      function levelBadge(level) {{
+        const color = LEVEL_COLOR[level] || '#8b949e';
+        return `<span style="display:inline-block;padding:1px 7px;border-radius:10px;
+          font-size:11px;font-weight:700;color:#fff;background:${{color}}">${{level}}</span>`;
+      }}
+
+      function radarSvg(dims) {{
+        const cx = 180, cy = 180, r = 140;
+        const n = dims.length;
+        const pts = dims.map((d, i) => {{
+          const angle = (i / n) * 2 * Math.PI - Math.PI / 2;
+          const sr = d.score * r;
+          return {{ x: cx + sr * Math.cos(angle), y: cy + sr * Math.sin(angle) }};
+        }});
+        const bgPts = DIMENSIONS.map((_, i) => {{
+          const angle = (i / n) * 2 * Math.PI - Math.PI / 2;
+          return `${{cx + r * Math.cos(angle)}},${{cy + r * Math.sin(angle)}}`;
+        }}).join(' ');
+        const scorePoly = pts.map(p => `${{p.x}},${{p.y}}`).join(' ');
+
+        const axisLines = DIMENSIONS.map((_, i) => {{
+          const angle = (i / n) * 2 * Math.PI - Math.PI / 2;
+          const ex = cx + r * Math.cos(angle), ey = cy + r * Math.sin(angle);
+          return `<line x1="${{cx}}" y1="${{cy}}" x2="${{ex}}" y2="${{ey}}"
+            stroke="#30363d" stroke-width="1"/>`;
+        }}).join('');
+
+        const gridLines = [0.25, 0.5, 0.75, 1.0].map(frac => {{
+          const gPts = DIMENSIONS.map((_, i) => {{
+            const angle = (i / n) * 2 * Math.PI - Math.PI / 2;
+            return `${{cx + frac * r * Math.cos(angle)}},${{cy + frac * r * Math.sin(angle)}}`;
+          }}).join(' ');
+          return `<polygon points="${{gPts}}" fill="none" stroke="#21262d" stroke-width="1"/>`;
+        }}).join('');
+
+        const labels = dims.map((d, i) => {{
+          const angle = (i / n) * 2 * Math.PI - Math.PI / 2;
+          const lx = cx + (r + 22) * Math.cos(angle);
+          const ly = cy + (r + 22) * Math.sin(angle);
+          const color = LEVEL_COLOR[d.level] || '#8b949e';
+          return `<text x="${{lx}}" y="${{ly + 4}}" text-anchor="middle"
+            font-size="12" fill="${{color}}" font-family="system-ui">${{AXIS_LABELS[d.dimension]}}</text>`;
+        }}).join('');
+
+        const dots = pts.map((p, i) => {{
+          const color = LEVEL_COLOR[dims[i].level] || '#58a6ff';
+          return `<circle cx="${{p.x}}" cy="${{p.y}}" r="4" fill="${{color}}" stroke="#0d1117" stroke-width="2"/>`;
+        }}).join('');
+
+        return `<svg viewBox="0 0 360 360" xmlns="http://www.w3.org/2000/svg"
+            style="width:100%;max-width:360px;display:block;margin:0 auto">
+          ${{gridLines}}${{axisLines}}
+          <polygon points="${{bgPts}}" fill="rgba(88,166,255,0.04)" stroke="#30363d" stroke-width="1"/>
+          <polygon points="${{scorePoly}}" fill="rgba(248,81,73,0.18)" stroke="#f85149" stroke-width="2"/>
+          ${{labels}}${{dots}}
+        </svg>`;
+      }}
+
+      function dimensionPanel(d, expanded) {{
+        const bg = LEVEL_BG[d.level] || '#161b22';
+        const id = 'dim-' + d.dimension;
+        const detail = expanded ? `
+          <div style="margin-top:10px;font-size:13px;color:#8b949e">
+            <div>${{escHtml(d.description)}}</div>
+            <div style="margin-top:6px;display:flex;gap:16px">
+              <span>Branch A: <b style="color:#e6edf3">${{d.branchACommits}} commit(s)</b></span>
+              <span>Branch B: <b style="color:#e6edf3">${{d.branchBCommits}} commit(s)</b></span>
+            </div>
+          </div>` : '';
+        const pct = Math.round(d.score * 100);
+        return `<div id="${{id}}" class="card" style="background:${{bg}};cursor:pointer;margin-bottom:8px"
+            onclick="toggleDim('${{d.dimension}}')">
+          <div style="display:flex;align-items:center;gap:12px">
+            <span style="font-size:14px;color:#e6edf3;font-weight:600;min-width:90px">
+              ${{AXIS_LABELS[d.dimension]}}</span>
+            ${{levelBadge(d.level)}}
+            <div style="flex:1;height:6px;background:#21262d;border-radius:3px;overflow:hidden">
+              <div style="height:100%;width:${{pct}}%;background:${{LEVEL_COLOR[d.level] || '#58a6ff'}};
+                border-radius:3px;transition:width .3s"></div>
+            </div>
+            <span style="font-size:13px;color:#8b949e;white-space:nowrap">${{pct}}%</span>
+          </div>
+          ${{detail}}
+        </div>`;
+      }}
+
+      const _expanded = {{}};
+      function toggleDim(dim) {{
+        _expanded[dim] = !_expanded[dim];
+        renderDims(window._lastDims || []);
+      }}
+
+      function renderDims(dims) {{
+        window._lastDims = dims;
+        document.getElementById('dim-panels').innerHTML =
+          dims.map(d => dimensionPanel(d, !!_expanded[d.dimension])).join('');
+      }}
+
+      const params = new URLSearchParams(location.search);
+      let _branchA = params.get('branch_a') || '';
+      let _branchB = params.get('branch_b') || '';
+
+      async function loadBranches() {{
+        try {{
+          const data = await apiFetch('/repos/' + repoId + '/branches');
+          return (data.branches || []).map(b => b.name);
+        }} catch(e) {{ return []; }}
+      }}
+
+      async function loadDivergence(bA, bB) {{
+        if (!bA || !bB) {{
+          document.getElementById('radar-area').innerHTML =
+            '<p class="loading">Select two branches to compare.</p>';
+          document.getElementById('dim-panels').innerHTML = '';
+          document.getElementById('overall-area').innerHTML = '';
+          return;
+        }}
+        document.getElementById('radar-area').innerHTML = '<p class="loading">Computing&#8230;</p>';
+        try {{
+          const d = await apiFetch('/repos/' + repoId + '/divergence?branch_a=' +
+            encodeURIComponent(bA) + '&branch_b=' + encodeURIComponent(bB));
+          const pct = Math.round((d.overallScore || 0) * 100);
+          document.getElementById('radar-area').innerHTML = radarSvg(d.dimensions || []);
+          document.getElementById('overall-area').innerHTML = `
+            <div style="text-align:center;margin:12px 0">
+              <div style="font-size:32px;font-weight:700;color:#e6edf3">${{pct}}%</div>
+              <div style="font-size:12px;color:#8b949e;margin-top:2px">overall divergence</div>
+              ${{d.commonAncestor ? `<div style="font-size:11px;color:#8b949e;margin-top:4px;font-family:monospace">
+                base: ${{d.commonAncestor.substring(0,8)}}</div>` : ''}}
+            </div>`;
+          renderDims(d.dimensions || []);
+        }} catch(e) {{
+          if (e.message !== 'auth')
+            document.getElementById('radar-area').innerHTML =
+              '<p class="error">&#10005; ' + escHtml(e.message) + '</p>';
+        }}
+      }}
+
+      async function load() {{
+        const branches = await loadBranches();
+        const opts = branches.map(b =>
+          '<option value="' + escHtml(b) + '">' + escHtml(b) + '</option>').join('');
+
+        document.getElementById('content').innerHTML = `
+          <div style="margin-bottom:12px">
+            <a href="${{uiBase}}">&larr; Back to repo</a>
+          </div>
+          <div class="card">
+            <h1 style="margin-bottom:12px">Divergence Visualization</h1>
+            <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px">
+              <div>
+                <div class="meta-label" style="font-size:11px;color:#8b949e;margin-bottom:4px">BRANCH A</div>
+                <select id="sel-a" onchange="onBranchChange()">
+                  <option value="">Select branch&#8230;</option>${{opts}}
+                </select>
+              </div>
+              <div style="display:flex;align-items:flex-end;padding-bottom:4px;font-size:18px;color:#8b949e">
+                vs
+              </div>
+              <div>
+                <div class="meta-label" style="font-size:11px;color:#8b949e;margin-bottom:4px">BRANCH B</div>
+                <select id="sel-b" onchange="onBranchChange()">
+                  <option value="">Select branch&#8230;</option>${{opts}}
+                </select>
+              </div>
+            </div>
+            <div id="radar-area"><p class="loading">Select two branches to compare.</p></div>
+            <div id="overall-area"></div>
+          </div>
+          <div id="dim-panels"></div>`;
+
+        if (_branchA) document.getElementById('sel-a').value = _branchA;
+        if (_branchB) document.getElementById('sel-b').value = _branchB;
+        if (_branchA && _branchB) loadDivergence(_branchA, _branchB);
+      }}
+
+      function onBranchChange() {{
+        _branchA = document.getElementById('sel-a').value;
+        _branchB = document.getElementById('sel-b').value;
+        const url = new URL(location.href);
+        url.searchParams.set('branch_a', _branchA);
+        url.searchParams.set('branch_b', _branchB);
+        history.replaceState(null,'',url.toString());
+        loadDivergence(_branchA, _branchB);
+      }}
+
+      load();
+    """
+    html = _page(
+        title="Divergence",
+        breadcrumb=f'<a href="/musehub/ui/{repo_id}">{repo_id[:8]}</a> / divergence',
         body_script=script,
     )
     return HTMLResponse(content=html)
@@ -2046,6 +2715,429 @@ async def search_page(repo_id: str) -> HTMLResponse:
     html = _page(
         title="Search",
         breadcrumb=f'<a href="/musehub/ui/{repo_id}">{repo_id[:8]}</a> / search',
+        body_script=script,
+    )
+    return HTMLResponse(content=html)
+
+
+@router.get(
+    "/{repo_id}/releases",
+    response_class=HTMLResponse,
+    summary="Muse Hub release list page",
+)
+async def release_list_page(repo_id: str) -> HTMLResponse:
+    """Render the release list page: all published versions newest first.
+
+    Fetches ``GET /api/v1/musehub/repos/{repo_id}/releases``.
+    Each release shows its tag, title, creation date, and a link to the
+    detail page where release notes and download packages are available.
+    """
+    script = f"""
+      const repoId = {repr(repo_id)};
+      const base   = '/musehub/ui/' + repoId;
+
+      function escHtml(s) {{
+        if (!s) return '';
+        return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+      }}
+
+      async function load() {{
+        try {{
+          const data     = await apiFetch('/repos/' + repoId + '/releases');
+          const releases = data.releases || [];
+
+          const rows = releases.length === 0
+            ? '<p class="loading">No releases published yet.</p>'
+            : releases.map(r => `
+              <div class="release-row">
+                <span class="badge badge-release">${{escHtml(r.tag)}}</span>
+                <div style="flex:1">
+                  <a href="${{base}}/releases/${{encodeURIComponent(r.tag)}}">${{escHtml(r.title)}}</a>
+                  <div style="font-size:12px;color:#8b949e;margin-top:2px">
+                    Released ${{fmtDate(r.createdAt)}}
+                    ${{r.commitId ? ' &bull; commit <span style="font-family:monospace">' + r.commitId.substring(0,8) + '</span>' : ''}}
+                  </div>
+                </div>
+              </div>`).join('');
+
+          document.getElementById('content').innerHTML = `
+            <div style="margin-bottom:12px">
+              <a href="${{base}}">&larr; Back to repo</a>
+            </div>
+            <div class="card">
+              <h1 style="margin-bottom:16px">Releases</h1>
+              ${{rows}}
+            </div>`;
+        }} catch(e) {{
+          if (e.message !== 'auth')
+            document.getElementById('content').innerHTML = '<p class="error">&#10005; ' + escHtml(e.message) + '</p>';
+        }}
+      }}
+
+      load();
+    """
+    html = _page(
+        title="Releases",
+        breadcrumb=f'<a href="/musehub/ui/{repo_id}">{repo_id[:8]}</a> / releases',
+        body_script=script,
+    )
+    return HTMLResponse(content=html)
+
+
+@router.get(
+    "/{repo_id}/releases/{tag}",
+    response_class=HTMLResponse,
+    summary="Muse Hub release detail page",
+)
+async def release_detail_page(repo_id: str, tag: str) -> HTMLResponse:
+    """Render the release detail page: title, tag, release notes, download packages.
+
+    Fetches ``GET /api/v1/musehub/repos/{repo_id}/releases/{tag}``.
+    Download packages (MIDI bundle, stems, MP3, MusicXML, metadata) are
+    rendered as download cards; unavailable packages show a "not available"
+    indicator instead of a broken link.
+    """
+    script = f"""
+      const repoId = {repr(repo_id)};
+      const tag    = {repr(tag)};
+      const base   = '/musehub/ui/' + repoId;
+
+      function escHtml(s) {{
+        if (!s) return '';
+        return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+      }}
+
+      function downloadCard(label, desc, url) {{
+        if (url) {{
+          return `
+            <div class="download-card">
+              <span class="pkg-name">${{label}}</span>
+              <span class="pkg-desc">${{desc}}</span>
+              <a class="btn btn-secondary" href="${{escHtml(url)}}" download>&#11015; Download</a>
+            </div>`;
+        }}
+        return `
+          <div class="download-card" style="opacity:0.5">
+            <span class="pkg-name">${{label}}</span>
+            <span class="pkg-desc">${{desc}}</span>
+            <span style="font-size:12px;color:#8b949e">Not available</span>
+          </div>`;
+      }}
+
+      async function load() {{
+        try {{
+          const r = await apiFetch('/repos/' + repoId + '/releases/' + encodeURIComponent(tag));
+          const dl = r.downloadUrls || {{}};
+
+          const downloads = `
+            <div class="download-grid">
+              ${{downloadCard('Full MIDI', 'All tracks as a single .mid file', dl.midiBubdle || dl.midiBuddle || dl.midiBundle)}}
+              ${{downloadCard('MIDI Stems', 'Individual track stems (zip of .mid files)', dl.stems)}}
+              ${{downloadCard('MP3 Mix', 'Full mix audio render', dl.mp3)}}
+              ${{downloadCard('MusicXML', 'Notation export for sheet music editors', dl.musicxml)}}
+              ${{downloadCard('Metadata', 'JSON manifest: tempo, key, arrangement', dl.metadata)}}
+            </div>`;
+
+          document.getElementById('content').innerHTML = `
+            <div style="margin-bottom:12px">
+              <a href="${{base}}/releases">&larr; Back to releases</a>
+            </div>
+            <div class="card">
+              <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px">
+                <h1 style="margin:0">${{escHtml(r.title)}}</h1>
+                <span class="badge badge-release">${{escHtml(r.tag)}}</span>
+              </div>
+              <div class="meta-row">
+                <div class="meta-item">
+                  <span class="meta-label">Released</span>
+                  <span class="meta-value">${{fmtDate(r.createdAt)}}</span>
+                </div>
+                ${{r.commitId ? `
+                <div class="meta-item">
+                  <span class="meta-label">Commit</span>
+                  <span class="meta-value">
+                    <a href="${{base}}/commits/${{r.commitId}}" style="font-family:monospace">
+                      ${{r.commitId.substring(0,8)}}
+                    </a>
+                  </span>
+                </div>` : ''}}
+              </div>
+              ${{r.body ? '<h2 style="margin-top:16px;margin-bottom:8px">Release Notes</h2><pre>' + escHtml(r.body) + '</pre>' : ''}}
+              <h2 style="margin-top:16px;margin-bottom:8px">Download Packages</h2>
+              ${{downloads}}
+            </div>`;
+        }} catch(e) {{
+          if (e.message !== 'auth')
+            document.getElementById('content').innerHTML = '<p class="error">&#10005; ' + escHtml(e.message) + '</p>';
+        }}
+      }}
+
+      load();
+    """
+    safe_tag = tag[:20] if len(tag) > 20 else tag
+    html = _page(
+        title=f"Release {safe_tag}",
+        breadcrumb=(
+            f'<a href="/musehub/ui/{repo_id}">{repo_id[:8]}</a> / '
+            f'<a href="/musehub/ui/{repo_id}/releases">releases</a> / {safe_tag}'
+        ),
+        body_script=script,
+    )
+    return HTMLResponse(content=html)
+
+
+@router.get(
+    "/{repo_id}/sessions",
+    response_class=HTMLResponse,
+    summary="Muse Hub session list page",
+)
+async def session_list_page(repo_id: str) -> HTMLResponse:
+    """Render the session list page: recording sessions newest first.
+
+    Fetches ``GET /api/v1/musehub/repos/{repo_id}/sessions`` and displays
+    each session's start time, duration, participants, and intent.  Links to
+    the session detail page for full metadata.
+    """
+    script = f"""
+      const repoId = {repr(repo_id)};
+      const base   = '/musehub/ui/' + repoId;
+
+      function escHtml(s) {{
+        if (!s) return '';
+        return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+      }}
+
+      function fmtDuration(startIso, endIso) {{
+        if (!startIso || !endIso) return '—';
+        const ms = new Date(endIso) - new Date(startIso);
+        if (ms < 0) return '—';
+        const h = Math.floor(ms / 3600000);
+        const m = Math.floor((ms % 3600000) / 60000);
+        return h > 0 ? h + 'h ' + m + 'm' : m + 'm';
+      }}
+
+      async function load() {{
+        try {{
+          const data = await apiFetch('/repos/' + repoId + '/sessions?limit=50');
+          const sessions = data.sessions || [];
+
+          const rows = sessions.length === 0
+            ? '<p class="loading">No sessions pushed to this repo yet.</p>'
+            : sessions.map(s => `
+              <div class="commit-row">
+                <a class="commit-sha" href="${{base}}/sessions/${{s.sessionId}}">${{escHtml(s.sessionId.substring(0,8))}}</a>
+                <div class="commit-msg" style="flex:1">
+                  <a href="${{base}}/sessions/${{s.sessionId}}">
+                    ${{escHtml(s.intent) || '<em style="color:#8b949e">no intent recorded</em>'}}
+                  </a>
+                  <div style="font-size:12px;color:#8b949e;margin-top:2px">
+                    ${{(s.participants||[]).map(p => '<span class="label">' + escHtml(p) + '</span>').join('')}}
+                    ${{s.location ? '&nbsp;&bull;&nbsp;' + escHtml(s.location) : ''}}
+                  </div>
+                </div>
+                <div class="commit-meta">
+                  <div>${{fmtDate(s.startedAt)}}</div>
+                  <div style="color:#8b949e;font-size:11px">${{fmtDuration(s.startedAt, s.endedAt)}}</div>
+                </div>
+              </div>`).join('');
+
+          document.getElementById('content').innerHTML = `
+            <div style="margin-bottom:12px">
+              <a href="${{base}}">&larr; Back to repo</a>
+            </div>
+            <div class="card">
+              <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px">
+                <h1 style="margin:0">Recording Sessions</h1>
+                <span style="color:#8b949e;font-size:13px">${{data.total}} total</span>
+              </div>
+              ${{rows}}
+            </div>`;
+        }} catch(e) {{
+          if (e.message !== 'auth')
+            document.getElementById('content').innerHTML = '<p class="error">&#10005; ' + escHtml(e.message) + '</p>';
+        }}
+      }}
+
+      load();
+    """
+    html = _page(
+        title="Sessions",
+        breadcrumb=f'<a href="/musehub/ui/{repo_id}">{repo_id[:8]}</a> / sessions',
+        body_script=script,
+    )
+    return HTMLResponse(content=html)
+
+
+@router.get(
+    "/{repo_id}/sessions/{session_id}",
+    response_class=HTMLResponse,
+    summary="Muse Hub session detail page",
+)
+async def session_detail_page(repo_id: str, session_id: str) -> HTMLResponse:
+    """Render the full session detail page.
+
+    Fetches ``GET /api/v1/musehub/repos/{repo_id}/sessions/{session_id}`` and
+    displays all session metadata: start/end times, duration, location, intent,
+    participants with session-count badges, commits made during the session
+    (linked to commit detail pages), and closing notes rendered verbatim.
+
+    Renders a 404 message if the API returns 404, so agents can distinguish
+    a missing session from a server error.
+    """
+    script = f"""
+      const repoId    = {repr(repo_id)};
+      const sessionId = {repr(session_id)};
+      const base      = '/musehub/ui/' + repoId;
+
+      function escHtml(s) {{
+        if (!s) return '';
+        return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+      }}
+
+      function fmtDuration(startIso, endIso) {{
+        if (!startIso || !endIso) return '—';
+        const ms = new Date(endIso) - new Date(startIso);
+        if (ms < 0) return '—';
+        const h = Math.floor(ms / 3600000);
+        const m = Math.floor((ms % 3600000) / 60000);
+        return h > 0 ? h + 'h ' + m + 'm' : m + 'm';
+      }}
+
+      async function loadSessionCounts() {{
+        try {{
+          const data = await apiFetch('/repos/' + repoId + '/sessions?limit=200');
+          const sessions = data.sessions || [];
+          const counts = {{}};
+          sessions.forEach(s => {{
+            (s.participants || []).forEach(p => {{
+              counts[p] = (counts[p] || 0) + 1;
+            }});
+          }});
+          return counts;
+        }} catch(e) {{
+          return {{}};
+        }}
+      }}
+
+      async function load() {{
+        try {{
+          const [session, counts] = await Promise.all([
+            apiFetch('/repos/' + repoId + '/sessions/' + sessionId),
+            loadSessionCounts(),
+          ]);
+
+          const duration = fmtDuration(session.startedAt, session.endedAt);
+
+          const participantHtml = (session.participants || []).length === 0
+            ? '<p style="color:#8b949e;font-size:14px">No participants recorded.</p>'
+            : (session.participants || []).map(p => `
+                <div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid #21262d">
+                  <span style="flex:1;font-size:14px">${{escHtml(p)}}</span>
+                  <span class="badge" style="background:#1f6feb;color:#e6edf3">
+                    ${{counts[p] || 1}} session${{(counts[p] || 1) !== 1 ? 's' : ''}}
+                  </span>
+                </div>`).join('');
+
+          const commitHtml = (session.commits || []).length === 0
+            ? '<p style="color:#8b949e;font-size:14px">No commits associated with this session.</p>'
+            : (session.commits || []).map(c => `
+                <div class="commit-row">
+                  <a class="commit-sha" href="${{base}}/commits/${{c}}">${{c.substring(0,8)}}</a>
+                  <span class="commit-msg">
+                    <a href="${{base}}/commits/${{c}}">${{c}}</a>
+                  </span>
+                </div>`).join('');
+
+          const notesHtml = session.notes
+            ? '<pre>' + escHtml(session.notes) + '</pre>'
+            : '<p style="color:#8b949e;font-size:14px">No closing notes.</p>';
+
+          const allSessions = await apiFetch('/repos/' + repoId + '/sessions?limit=200')
+            .then(d => d.sessions || []).catch(() => []);
+          const idx = allSessions.findIndex(s => s.sessionId === sessionId);
+          const prevSession = idx >= 0 && idx + 1 < allSessions.length ? allSessions[idx + 1] : null;
+          const nextSession = idx > 0 ? allSessions[idx - 1] : null;
+
+          const navHtml = `
+            <div style="display:flex;justify-content:space-between;margin-top:12px;font-size:13px">
+              <span>
+                ${{prevSession
+                  ? '<a href="' + base + '/sessions/' + prevSession.sessionId + '">&larr; Previous session</a>'
+                  : '<span style="color:#8b949e">No previous session</span>'}}
+              </span>
+              <span>
+                ${{nextSession
+                  ? '<a href="' + base + '/sessions/' + nextSession.sessionId + '">Next session &rarr;</a>'
+                  : '<span style="color:#8b949e">No next session</span>'}}
+              </span>
+            </div>`;
+
+          document.getElementById('content').innerHTML = `
+            <div style="margin-bottom:12px">
+              <a href="${{base}}/sessions">&larr; Back to sessions</a>
+            </div>
+            <div class="card">
+              <h1>Recording Session</h1>
+              <div class="meta-row">
+                <div class="meta-item">
+                  <span class="meta-label">Started</span>
+                  <span class="meta-value">${{fmtDate(session.startedAt)}}</span>
+                </div>
+                <div class="meta-item">
+                  <span class="meta-label">Ended</span>
+                  <span class="meta-value">${{session.endedAt ? fmtDate(session.endedAt) : '—'}}</span>
+                </div>
+                <div class="meta-item">
+                  <span class="meta-label">Duration</span>
+                  <span class="meta-value">${{duration}}</span>
+                </div>
+                ${{session.location ? `
+                <div class="meta-item">
+                  <span class="meta-label">Location</span>
+                  <span class="meta-value">${{escHtml(session.location)}}</span>
+                </div>` : ''}}
+                <div class="meta-item">
+                  <span class="meta-label">Session ID</span>
+                  <span class="meta-value" style="font-family:monospace;font-size:12px">${{escHtml(session.sessionId)}}</span>
+                </div>
+              </div>
+              ${{session.intent ? `
+              <div style="margin-top:8px">
+                <span class="meta-label">Intent</span>
+                <p style="margin-top:4px;font-size:14px;color:#c9d1d9">${{escHtml(session.intent)}}</p>
+              </div>` : ''}}
+              ${{navHtml}}
+            </div>
+            <div class="card">
+              <h2>Participants (${{(session.participants||[]).length}})</h2>
+              <div style="margin-top:8px">${{participantHtml}}</div>
+            </div>
+            <div class="card">
+              <h2>Commits (${{(session.commits||[]).length}})</h2>
+              <div style="margin-top:8px">${{commitHtml}}</div>
+            </div>
+            <div class="card">
+              <h2>Closing Notes</h2>
+              <div style="margin-top:8px">${{notesHtml}}</div>
+            </div>`;
+        }} catch(e) {{
+          if (e.message !== 'auth') {{
+            const msg = e.message.startsWith('404') ? 'Session not found.' : escHtml(e.message);
+            document.getElementById('content').innerHTML =
+              '<div style="margin-bottom:12px"><a href="' + base + '/sessions">&larr; Back to sessions</a></div>' +
+              '<p class="error">&#10005; ' + msg + '</p>';
+          }}
+        }}
+      }}
+
+      load();
+    """
+    html = _page(
+        title=f"Session {session_id[:8]}",
+        breadcrumb=(
+            f'<a href="/musehub/ui/{repo_id}">{repo_id[:8]}</a> / '
+            f'<a href="/musehub/ui/{repo_id}/sessions">sessions</a> / {session_id[:8]}'
+        ),
         body_script=script,
     )
     return HTMLResponse(content=html)
