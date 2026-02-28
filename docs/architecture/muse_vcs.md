@@ -975,3 +975,81 @@ existing drum performance.
 > (future: Storpheus MIDI parse route).
 
 ---
+
+## `muse grep` — Search for a Musical Pattern Across All Commits
+
+**Purpose:** Walk the full commit chain on the current branch and return every
+commit whose message or branch name contains the given pattern.  Designed as
+the textual precursor to full MIDI content search — the CLI contract (flags,
+output modes, result type) is frozen now so agents can rely on it before the
+deeper analysis is wired in.
+
+**Usage:**
+```bash
+muse grep <pattern> [OPTIONS]
+```
+
+**Flags:**
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `PATTERN` | positional | — | Pattern to search (note sequence, interval, chord, or free text) |
+| `--track TEXT` | string | — | [Future] Restrict to a named MIDI track |
+| `--section TEXT` | string | — | [Future] Restrict to a labelled section |
+| `--transposition-invariant / --no-transposition-invariant` | flag | on | [Future] Match regardless of key |
+| `--rhythm-invariant` | flag | off | [Future] Match regardless of rhythm/timing |
+| `--commits` | flag | off | Output one commit ID per line (like `git grep --name-only`) |
+| `--json` | flag | off | Emit machine-readable JSON array |
+
+**Output example (text):**
+```
+Pattern: 'pentatonic'  (1 match(es))
+
+commit c1d2e3f4...
+Branch:  feature/pentatonic-solo
+Date:    2026-02-27T15:00:00+00:00
+Match:   [message]
+Message: add pentatonic riff to chorus
+```
+
+**Output example (`--commits`):**
+```
+c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2
+```
+
+**Output example (`--json`):**
+```json
+[
+  {
+    "commit_id": "c1d2e3f4...",
+    "branch": "feature/pentatonic-solo",
+    "message": "add pentatonic riff to chorus",
+    "committed_at": "2026-02-27T15:00:00+00:00",
+    "match_source": "message"
+  }
+]
+```
+
+**Result type:** `GrepMatch` (dataclass) — fields: `commit_id` (str),
+`branch` (str), `message` (str), `committed_at` (str, ISO-8601),
+`match_source` (str: `"message"` | `"branch"` | `"midi_content"`).
+See `docs/reference/type_contracts.md § Muse CLI Types`.
+
+**Agent use case:** An AI composing a variation searches previous commits for
+all times "pentatonic" appeared in the history before deciding whether to
+reuse or invert the motif.  The `--json` flag makes the result directly
+parseable; `--commits` feeds a shell loop that checks out each matching
+commit for deeper inspection.
+
+**Implementation:** `maestro/muse_cli/commands/grep_cmd.py` —
+`GrepMatch` (dataclass), `_load_all_commits()`, `_match_commit()`,
+`_grep_async()`, `_render_matches()`.  Exit codes: 0 success,
+2 outside repo, 3 internal error.
+
+> **Stub note:** The current implementation matches commit *messages* and
+> *branch names* only.  Full MIDI content search (note sequences, intervals,
+> chord symbols, `--track`, `--section`, `--transposition-invariant`,
+> `--rhythm-invariant`) is reserved for a future iteration.  Flags are accepted
+> now to keep the CLI contract stable; supplying them emits a clear warning.
+
+---
