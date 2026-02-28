@@ -640,9 +640,46 @@ def upgrade() -> None:
     )
     op.create_index("ix_musehub_download_events_repo_id", "musehub_download_events", ["repo_id"])
 
+    # ── MuseHub — render pipeline (Phase 5) ──────────────────────────────
+    op.create_table(
+        "musehub_render_jobs",
+        sa.Column("render_job_id", sa.String(36), nullable=False),
+        sa.Column("repo_id", sa.String(36), nullable=False),
+        sa.Column("commit_id", sa.String(64), nullable=False),
+        sa.Column("status", sa.String(20), nullable=False, server_default="pending"),
+        sa.Column("error_message", sa.Text(), nullable=True),
+        sa.Column("midi_count", sa.Integer(), nullable=False, server_default="0"),
+        sa.Column("mp3_object_ids", sa.JSON(), nullable=False, server_default="[]"),
+        sa.Column("image_object_ids", sa.JSON(), nullable=False, server_default="[]"),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            nullable=False,
+            server_default=sa.text("CURRENT_TIMESTAMP"),
+        ),
+        sa.Column(
+            "updated_at",
+            sa.DateTime(timezone=True),
+            nullable=False,
+            server_default=sa.text("CURRENT_TIMESTAMP"),
+        ),
+        sa.ForeignKeyConstraint(["repo_id"], ["musehub_repos.repo_id"], ondelete="CASCADE"),
+        sa.PrimaryKeyConstraint("render_job_id"),
+        sa.UniqueConstraint("repo_id", "commit_id", name="uq_musehub_render_jobs_repo_commit"),
+    )
+    op.create_index("ix_musehub_render_jobs_repo_id", "musehub_render_jobs", ["repo_id"])
+    op.create_index("ix_musehub_render_jobs_commit_id", "musehub_render_jobs", ["commit_id"])
+    op.create_index("ix_musehub_render_jobs_status", "musehub_render_jobs", ["status"])
+
 
 def downgrade() -> None:
     # Drop in reverse creation order, respecting foreign-key dependencies.
+
+    # MuseHub — render pipeline (Phase 5)
+    op.drop_index("ix_musehub_render_jobs_status", table_name="musehub_render_jobs")
+    op.drop_index("ix_musehub_render_jobs_commit_id", table_name="musehub_render_jobs")
+    op.drop_index("ix_musehub_render_jobs_repo_id", table_name="musehub_render_jobs")
+    op.drop_table("musehub_render_jobs")
 
     # Muse Hub — social layer (Phase 4)
     op.drop_index("ix_musehub_download_events_repo_id", table_name="musehub_download_events")
