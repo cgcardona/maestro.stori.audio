@@ -17,6 +17,7 @@ Exercises:
   computation.
 
 All async tests use ``@pytest.mark.anyio``.
+
 """
 from __future__ import annotations
 
@@ -406,6 +407,55 @@ async def test_muse_revert_abbreviated_commit_ref(
 
     assert result.target_commit_id == commit_b_id
     assert result.commit_id != ""
+
+
+@pytest.mark.anyio
+async def test_muse_revert_noop_when_already_reverted(
+    tmp_path: pathlib.Path, muse_cli_db_session: AsyncSession
+) -> None:
+    """Reverting the same commit twice is a noop on the second attempt.
+
+    After the first revert, HEAD's snapshot equals the target commit's parent
+    snapshot. A second revert of the same target would produce the identical
+    snapshot → noop.
+    """
+    _init_muse_repo(tmp_path)
+
+    # Commit A — initial state
+    _populate_workdir(tmp_path, {"beat.mid": b"v1"})
+    commit_a_id = await _commit_async(
+        message="initial take",
+        root=tmp_path,
+        session=muse_cli_db_session,
+    )
+
+    # Commit B — changed state
+    _populate_workdir(tmp_path, {"beat.mid": b"v2"})
+    commit_b_id = await _commit_async(
+        message="updated arrangement",
+        root=tmp_path,
+        session=muse_cli_db_session,
+    )
+
+    # First revert: B → creates commit C whose snapshot == A's snapshot
+    first = await _revert_async(
+        commit_ref=commit_b_id,
+        root=tmp_path,
+        session=muse_cli_db_session,
+    )
+    assert not first.noop
+    assert first.parent_commit_id == commit_a_id
+
+    # Second revert of the same B: HEAD is now C (snapshot == A's snapshot).
+    # Reverting B again would produce the same snapshot as HEAD → noop.
+    second = await _revert_async(
+        commit_ref=commit_b_id,
+        root=tmp_path,
+        session=muse_cli_db_session,
+    )
+    assert second.noop is True
+    assert second.commit_id == ""
+    assert second.target_commit_id == commit_b_id
 
 
 @pytest.mark.anyio

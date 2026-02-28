@@ -295,15 +295,11 @@ async def _revert_async(
     # If target is the root commit (no parent), reverting it means an empty state
 
     head_manifest: dict[str, str] = {}
-    if head_snapshot_id:
-        head_snap = await get_commit_snapshot_manifest(session, target_commit_id)
-        # head_manifest is HEAD's snapshot, not target's — use head_commit
-        if head_commit:
-            from sqlalchemy.future import select
-            from maestro.muse_cli.models import MuseCliSnapshot
-            snap_row = await session.get(MuseCliSnapshot, head_commit.snapshot_id)
-            if snap_row is not None:
-                head_manifest = dict(snap_row.manifest)
+    if head_snapshot_id and head_commit:
+        from maestro.muse_cli.models import MuseCliSnapshot
+        snap_row = await session.get(MuseCliSnapshot, head_commit.snapshot_id)
+        if snap_row is not None:
+            head_manifest = dict(snap_row.manifest)
 
     # ── Compute revert manifest ──────────────────────────────────────────
     revert_manifest, scoped_paths = compute_revert_manifest(
