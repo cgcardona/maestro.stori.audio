@@ -1659,47 +1659,93 @@ Exit codes: 0 success, 1 invalid `--format`, 2 outside repo, 3 internal error.
 
 ---
 
-### `muse recall`
+## `muse key` — Read or Annotate the Musical Key of a Commit
 
-**Purpose:** Search the full commit history using natural language. Returns ranked
-commits whose messages best match the query. The musical memory retrieval command —
-"find me that arrangement I made three months ago."
+`muse key` reads or annotates the tonal center (key) of a Muse commit.
+Key is the most fundamental property of a piece of music — knowing the key is a
+prerequisite for harmonic generation, chord-scale selection, and tonal arc
+analysis. An AI agent calls `muse key --json` before generating new material to
+stay in the correct tonal center.
 
 **Usage:**
 ```bash
-muse recall "<description>" [OPTIONS]
+muse key [<commit>] [OPTIONS]
 ```
 
 **Flags:**
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
-| `QUERY` | positional | required | Natural-language description of what to find |
-| `--limit N` | int | 5 | Maximum results to return |
-| `--threshold FLOAT` | float | 0.6 | Minimum similarity score (0.0–1.0) |
-| `--branch TEXT` | string | all branches | Restrict search to a specific branch |
-| `--since DATE` | `YYYY-MM-DD` | — | Only search commits after this date |
-| `--until DATE` | `YYYY-MM-DD` | — | Only search commits before this date |
-| `--json` | flag | off | Emit structured JSON array |
+| `<commit>` | arg | HEAD | Commit SHA to analyse |
+| `--set KEY` | str | — | Annotate with an explicit key (e.g. `"F# minor"`) |
+| `--detect` | flag | on | Detect and display the key (default behaviour) |
+| `--track TEXT` | str | — | Restrict key detection to a specific instrument track |
+| `--relative` | flag | off | Show the relative key (e.g. `"Eb major / C minor"`) |
+| `--history` | flag | off | Show how the key changed across all commits |
+| `--json` | flag | off | Emit machine-readable JSON for agent consumption |
 
-**Scoring (current stub):** Normalized keyword overlap coefficient — `|Q ∩ M| / |Q|` — where Q is the set of query tokens and M is the set of message tokens. Score 1.0 means every query word appeared in the commit message.
+**Key format:** `<tonic> <mode>` — e.g. `"F# minor"`, `"Eb major"`. Valid tonics
+include all 12 chromatic pitches with `#` and `b` enharmonics. Valid modes are
+`major` and `minor`.
 
 **Output example (text):**
 ```
-Recall: "dark jazz bassline"
-keyword match · threshold 0.60 · limit 5
-
-  1. [a1b2c3d4]  2026-02-15 22:00  boom bap demo take 3      score 0.67
-  2. [f9e8d7c6]  2026-02-10 18:30  jazz bass overdub session  score 0.50
+Key: C major
+Commit: a1b2c3d4  Branch: main
+Track: all
+(stub — full MIDI key detection pending)
 ```
 
-**Result type:** `RecallResult` (TypedDict) — fields: `rank` (int), `score` (float), `commit_id` (str), `date` (str), `branch` (str), `message` (str)
+**Output example (`--relative`):**
+```
+Key: A minor
+Commit: a1b2c3d4  Branch: main
+Track: all
+Relative: C major
+(stub — full MIDI key detection pending)
+```
 
-**Agent use case:** An agent asked to "generate something like that funky bass riff from last month" calls `muse recall "funky bass" --json --limit 3` to retrieve the closest historical commits, then uses those as style references for generation.
+**Output example (`--json`):**
+```json
+{
+  "key": "C major",
+  "tonic": "C",
+  "mode": "major",
+  "relative": "",
+  "commit": "a1b2c3d4",
+  "branch": "main",
+  "track": "all",
+  "source": "stub"
+}
+```
 
-**Implementation:** `maestro/muse_cli/commands/recall.py` — `RecallResult` (TypedDict), `_tokenize()`, `_score()`, `_recall_async()`. Exit codes: 0 success, 1 bad date format, 2 outside repo.
+**Output example (`--history --json`):**
+```json
+[
+  {"commit": "a1b2c3d4", "key": "C major", "tonic": "C", "mode": "major", "source": "stub"}
+]
+```
 
-> **Stub note:** Uses keyword overlap. Full implementation: vector embeddings stored in Qdrant, cosine similarity retrieval. The CLI interface will not change when vector search is added.
+**Result types:** `KeyDetectResult` (TypedDict) — fields: `key` (str), `tonic` (str),
+`mode` (str), `relative` (str), `commit` (str), `branch` (str), `track` (str),
+`source` (str). History mode returns `list[KeyHistoryEntry]`. See
+`docs/reference/type_contracts.md § Muse CLI Types`.
+
+**Agent use case:** Before generating a chord progression or melody, an agent runs
+`muse key --json` to discover the tonal center of the most recent commit.
+`muse key --history --json` reveals modulations across an album — if the key
+changed from D major to F major at commit `abc123`, the agent knows a modulation
+occurred and can generate transitional material accordingly.
+
+**Implementation:** `maestro/muse_cli/commands/key.py` — `parse_key()`,
+`relative_key()`, `_key_detect_async()`, `_key_history_async()`,
+`_format_detect()`, `_format_history()`. Exit codes: 0 success, 1 invalid
+`--set` value, 2 outside repo, 3 internal error.
+
+> **Stub note:** Returns a placeholder key of `C major`. Full implementation
+> requires chromatic pitch-class distribution analysis from committed MIDI note
+> events (Krumhansl-Schmuckler or similar key-finding algorithm, future:
+> Storpheus MIDI parse route).
 
 ---
 
