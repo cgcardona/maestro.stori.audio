@@ -28,7 +28,7 @@ from maestro.services import musehub_profile as profile_svc
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(tags=["musehub-users"])
+router = APIRouter()
 
 
 # ---------------------------------------------------------------------------
@@ -53,6 +53,7 @@ class CreateProfileBody(CamelModel):
 @router.get(
     "/users/{username}",
     response_model=ProfileResponse,
+    operation_id="getUserProfile",
     summary="Get a Muse Hub user profile (public)",
 )
 async def get_user_profile(
@@ -79,6 +80,7 @@ async def get_user_profile(
     "/users",
     response_model=ProfileResponse,
     status_code=status.HTTP_201_CREATED,
+    operation_id="createUserProfile",
     summary="Create a Muse Hub user profile",
 )
 async def create_user_profile(
@@ -128,6 +130,7 @@ async def create_user_profile(
 @router.put(
     "/users/{username}",
     response_model=ProfileResponse,
+    operation_id="updateUserProfile",
     summary="Update a Muse Hub user profile (owner only)",
 )
 async def update_user_profile(

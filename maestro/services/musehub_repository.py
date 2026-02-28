@@ -913,11 +913,12 @@ def _to_session_response(s: db.MusehubSession) -> SessionResponse:
         ended_at=s.ended_at,
         duration_seconds=duration,
         participants=s.participants or [],
+        commits=list(s.commits) if s.commits else [],
+        notes=s.notes or "",
         intent=s.intent,
         location=s.location,
         is_active=s.is_active,
         created_at=s.created_at,
-        commits=s.commits or [],
     )
 
 

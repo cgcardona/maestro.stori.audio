@@ -4,7 +4,11 @@ Covers the minimum acceptance criteria from issue #43 and issue #232:
 - test_ui_repo_page_returns_200        — GET /musehub/ui/{repo_id} returns HTML
 - test_ui_commit_page_shows_artifact_links — commit page HTML mentions img/download
 - test_ui_pr_list_page_returns_200     — PR list page renders without error
-- test_ui_issue_list_page_returns_200  — Issue list page renders without error
+- test_ui_issue_list_page_returns_200          — Issue list page renders without error
+- test_ui_issue_list_has_open_closed_tabs      — Open/Closed tab buttons present (#299)
+- test_ui_issue_list_has_sort_controls         — Sort buttons (newest/oldest/most-commented) present (#299)
+- test_ui_issue_list_has_label_filter_js       — Client-side label filter JS present (#299)
+- test_ui_issue_list_has_body_preview_js       — Body preview helper and CSS class present (#299)
 - test_context_page_renders            — context viewer page returns 200 HTML
 - test_context_json_response           — JSON returns MuseHubContextResponse structure
 - test_context_includes_musical_state  — response includes active_tracks field
@@ -139,8 +143,8 @@ async def test_ui_repo_page_returns_200(
     # Verify shared chrome is present
     assert "Muse Hub" in body
     assert repo_id[:8] in body
-    # Verify page-specific JS is injected
-    assert "branch-sel" in body or "All branches" in body
+    # Verify page-specific JS is injected (repo home page — stats bar + audio player)
+    assert "stats-bar" in body or "loadStats" in body
 
 
 @pytest.mark.anyio
@@ -195,6 +199,71 @@ async def test_ui_issue_list_page_returns_200(
     body = response.text
     assert "Issues" in body
     assert "Muse Hub" in body
+
+
+@pytest.mark.anyio
+async def test_ui_issue_list_has_open_closed_tabs(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Issue list page HTML includes Open and Closed tab buttons and count spans."""
+    await _make_repo(db_session)
+    response = await client.get("/musehub/ui/testuser/test-beats/issues")
+    assert response.status_code == 200
+    body = response.text
+    # Tab buttons for open and closed state
+    assert "tab-open" in body
+    assert "tab-closed" in body
+    # Tab count placeholders are rendered client-side; structural markers exist
+    assert "tab-count" in body
+    assert "Open" in body
+    assert "Closed" in body
+
+
+@pytest.mark.anyio
+async def test_ui_issue_list_has_sort_controls(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Issue list page HTML includes Newest, Oldest, and Most commented sort buttons."""
+    await _make_repo(db_session)
+    response = await client.get("/musehub/ui/testuser/test-beats/issues")
+    assert response.status_code == 200
+    body = response.text
+    assert "Newest" in body
+    assert "Oldest" in body
+    assert "Most commented" in body
+    assert "changeSort" in body
+
+
+@pytest.mark.anyio
+async def test_ui_issue_list_has_label_filter_js(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Issue list page HTML includes client-side label filter logic."""
+    await _make_repo(db_session)
+    response = await client.get("/musehub/ui/testuser/test-beats/issues")
+    assert response.status_code == 200
+    body = response.text
+    # JS function for label filtering
+    assert "setLabelFilter" in body
+    assert "label-pill" in body
+    assert "activeLabel" in body
+
+
+@pytest.mark.anyio
+async def test_ui_issue_list_has_body_preview_js(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Issue list page HTML includes bodyPreview helper for truncated body subtitles."""
+    await _make_repo(db_session)
+    response = await client.get("/musehub/ui/testuser/test-beats/issues")
+    assert response.status_code == 200
+    body = response.text
+    assert "bodyPreview" in body
+    assert "issue-preview" in body
 
 
 @pytest.mark.anyio
@@ -1468,6 +1537,8 @@ async def _make_session(
     is_active: bool = False,
     intent: str = "jazz composition",
     participants: list[str] | None = None,
+    commits: list[str] | None = None,
+    notes: str = "",
 ) -> str:
     """Seed a MusehubSession and return its session_id."""
     start = datetime(2025, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
@@ -1480,6 +1551,8 @@ async def _make_session(
         started_at=started_at,
         ended_at=ended_at,
         participants=participants or ["producer-a"],
+        commits=commits or [],
+        notes=notes,
         intent=intent,
         location="Studio A",
         is_active=is_active,
@@ -1663,6 +1736,34 @@ async def test_active_session_has_null_duration(
 
 
 @pytest.mark.anyio
+async def test_session_response_includes_commits_and_notes(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    auth_headers: dict[str, str],
+) -> None:
+    """SessionResponse includes commits list and notes field in the JSON payload."""
+    repo_id = await _make_repo(db_session)
+    commit_ids = ["abc123", "def456", "ghi789"]
+    closing_notes = "Great session, nailed the groove."
+    await _make_session(
+        db_session,
+        repo_id,
+        intent="funk groove",
+        commits=commit_ids,
+        notes=closing_notes,
+    )
+
+    response = await client.get(
+        f"/api/v1/musehub/repos/{repo_id}/sessions",
+        headers=auth_headers,
+    )
+    assert response.status_code == 200
+    sess = response.json()["sessions"][0]
+    assert sess["commits"] == commit_ids
+    assert sess["notes"] == closing_notes
+
+
+@pytest.mark.anyio
 async def test_session_response_commits_field_present(
     client: AsyncClient,
     db_session: AsyncSession,
@@ -1701,6 +1802,95 @@ async def test_session_response_commits_field_present(
     sess = sessions[0]
     assert "commits" in sess, "'commits' field missing from SessionResponse"
     assert sess["commits"] == commit_ids, "commits field does not match seeded commit IDs"
+
+
+@pytest.mark.anyio
+async def test_session_response_empty_commits_and_notes_defaults(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    auth_headers: dict[str, str],
+) -> None:
+    """SessionResponse defaults commits to [] and notes to '' when absent."""
+    repo_id = await _make_repo(db_session)
+    await _make_session(db_session, repo_id, intent="defaults check")
+
+    response = await client.get(
+        f"/api/v1/musehub/repos/{repo_id}/sessions",
+        headers=auth_headers,
+    )
+    assert response.status_code == 200
+    sess = response.json()["sessions"][0]
+    assert sess["commits"] == []
+    assert sess["notes"] == ""
+
+
+@pytest.mark.anyio
+async def test_session_list_page_contains_avatar_markup(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Sessions list page HTML contains participant avatar JS and CSS class references."""
+    repo_id = await _make_repo(db_session)
+    response = await client.get("/musehub/ui/testuser/test-beats/sessions")
+    assert response.status_code == 200
+    body = response.text
+    # The JS helper that builds avatar stacks must be present in the page
+    assert "participant-stack" in body
+    assert "participant-avatar" in body
+    assert "strHsl" in body
+
+
+@pytest.mark.anyio
+async def test_session_list_page_contains_commit_pill_markup(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Sessions list page HTML contains commit count pill JS reference."""
+    repo_id = await _make_repo(db_session)
+    response = await client.get("/musehub/ui/testuser/test-beats/sessions")
+    assert response.status_code == 200
+    body = response.text
+    assert "session-commit-pill" in body
+
+
+@pytest.mark.anyio
+async def test_session_list_page_contains_live_indicator_markup(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Sessions list page HTML contains pulsing LIVE indicator JS reference."""
+    repo_id = await _make_repo(db_session)
+    response = await client.get("/musehub/ui/testuser/test-beats/sessions")
+    assert response.status_code == 200
+    body = response.text
+    assert "session-live-pulse" in body
+
+
+@pytest.mark.anyio
+async def test_session_list_page_contains_notes_preview_markup(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Sessions list page HTML contains notes preview JS reference."""
+    repo_id = await _make_repo(db_session)
+    response = await client.get("/musehub/ui/testuser/test-beats/sessions")
+    assert response.status_code == 200
+    body = response.text
+    assert "session-notes-preview" in body
+    assert "notesPreview" in body
+
+
+@pytest.mark.anyio
+async def test_session_list_page_contains_location_tag_markup(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Sessions list page HTML contains location tag JS reference."""
+    repo_id = await _make_repo(db_session)
+    response = await client.get("/musehub/ui/testuser/test-beats/sessions")
+    assert response.status_code == 200
+    body = response.text
+    assert "session-location-tag" in body
 
 
 async def test_contour_page_renders(
@@ -2677,6 +2867,94 @@ async def test_motifs_page_shows_transformation_badges(
 
 
 # ---------------------------------------------------------------------------
+# Repo home page — issue #203
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.anyio
+async def test_repo_home_shows_name_and_owner(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """GET /musehub/ui/{owner}/{repo_slug} renders HTML with owner name and repo slug."""
+    await _make_repo(db_session)
+    response = await client.get("/musehub/ui/testuser/test-beats")
+    assert response.status_code == 200
+    assert "text/html" in response.headers["content-type"]
+    body = response.text
+    assert "Muse Hub" in body
+    assert "testuser" in body
+    assert "test-beats" in body
+
+
+@pytest.mark.anyio
+async def test_repo_home_shows_stats(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Repo home page embeds JS that fetches and renders the stats bar."""
+    await _make_repo(db_session)
+    response = await client.get("/musehub/ui/testuser/test-beats")
+    assert response.status_code == 200
+    body = response.text
+    # Stats bar container and JS that populates it must be present.
+    assert "stats-bar" in body
+    assert "loadStats" in body
+
+
+@pytest.mark.anyio
+async def test_repo_home_recent_commits(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Repo home page embeds JS that renders the recent commits section."""
+    await _make_repo(db_session)
+    response = await client.get("/musehub/ui/testuser/test-beats")
+    assert response.status_code == 200
+    body = response.text
+    assert "recent-commits" in body
+    assert "loadRecentCommits" in body
+
+
+@pytest.mark.anyio
+async def test_repo_home_json_response(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """GET /musehub/ui/{owner}/{repo_slug} with Accept: application/json returns stats + commits."""
+    await _make_repo(db_session)
+    response = await client.get(
+        "/musehub/ui/testuser/test-beats",
+        headers={"Accept": "application/json"},
+    )
+    assert response.status_code == 200
+    assert "application/json" in response.headers["content-type"]
+    data = response.json()
+    assert "stats" in data
+    assert "recent_commits" in data
+    stats = data["stats"]
+    assert "commit_count" in stats
+    assert "branch_count" in stats
+    assert "release_count" in stats
+    assert isinstance(stats["commit_count"], int)
+
+
+@pytest.mark.anyio
+async def test_repo_home_audio_player(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Repo home page embeds the audio player section and JS loader."""
+    await _make_repo(db_session)
+    response = await client.get("/musehub/ui/testuser/test-beats")
+    assert response.status_code == 200
+    body = response.text
+    # The audio player section container and its JS loader must be in the page.
+    assert "audio-player-section" in body
+    assert "loadAudioPlayer" in body
+
+
+# ---------------------------------------------------------------------------
 # Tree browser tests — issue #204
 # ---------------------------------------------------------------------------
 
@@ -2843,3 +3121,213 @@ async def test_tree_unknown_ref_404(
         f"?owner=testuser&repo_slug=tree-test"
     )
     assert response.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# Harmony analysis page tests — issue #222
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.anyio
+async def test_harmony_page_renders(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """GET /musehub/ui/{repo_id}/analysis/{ref}/harmony returns 200 HTML without auth."""
+    repo_id = await _make_repo(db_session)
+    ref = "abc1234567890abcdef"
+    response = await client.get(f"/musehub/ui/{repo_id}/analysis/{ref}/harmony")
+    assert response.status_code == 200
+    assert "text/html" in response.headers["content-type"]
+    body = response.text
+    assert "Muse Hub" in body
+    assert "harmony" in body.lower()
+
+
+@pytest.mark.anyio
+async def test_harmony_page_no_auth_required(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Harmony analysis page HTML shell must be accessible without a JWT (not 401)."""
+    repo_id = await _make_repo(db_session)
+    ref = "deadbeef00001234"
+    response = await client.get(f"/musehub/ui/{repo_id}/analysis/{ref}/harmony")
+    assert response.status_code != 401
+    assert response.status_code == 200
+
+
+@pytest.mark.anyio
+async def test_harmony_page_contains_key_display(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Harmony page JS must reference key, mode, and relative-key fields from the API response."""
+    repo_id = await _make_repo(db_session)
+    ref = "cafe0000000000000001"
+    response = await client.get(f"/musehub/ui/{repo_id}/analysis/{ref}/harmony")
+    assert response.status_code == 200
+    body = response.text
+    # Client-side JS field references (camelCase from Pydantic CamelModel)
+    assert "tonic" in body
+    assert "mode" in body
+    assert "relativeKey" in body or "relative" in body.lower()
+    assert "keyConfidence" in body or "key_confidence" in body.lower()
+
+
+@pytest.mark.anyio
+async def test_harmony_page_contains_chord_timeline(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Harmony page must embed the chord progression timeline renderer."""
+    repo_id = await _make_repo(db_session)
+    ref = "babe0000000000000002"
+    response = await client.get(f"/musehub/ui/{repo_id}/analysis/{ref}/harmony")
+    assert response.status_code == 200
+    body = response.text
+    assert "renderChordTimeline" in body
+    assert "chordProgression" in body
+    assert "Chord Progression Timeline" in body
+
+
+@pytest.mark.anyio
+async def test_harmony_page_contains_tension_curve(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Harmony page must embed the tension curve SVG renderer."""
+    repo_id = await _make_repo(db_session)
+    ref = "face0000000000000003"
+    response = await client.get(f"/musehub/ui/{repo_id}/analysis/{ref}/harmony")
+    assert response.status_code == 200
+    body = response.text
+    assert "renderTensionCurve" in body
+    assert "tensionCurve" in body
+    assert "Tension Curve" in body
+
+
+@pytest.mark.anyio
+async def test_harmony_page_contains_modulation_section(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Harmony page must include the modulation markers section."""
+    repo_id = await _make_repo(db_session)
+    ref = "feed0000000000000004"
+    response = await client.get(f"/musehub/ui/{repo_id}/analysis/{ref}/harmony")
+    assert response.status_code == 200
+    body = response.text
+    assert "renderModulationPoints" in body
+    assert "modulationPoints" in body
+    assert "Modulation Points" in body
+
+
+@pytest.mark.anyio
+async def test_harmony_page_contains_filter_controls(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Harmony page must include track and section filter dropdowns."""
+    repo_id = await _make_repo(db_session)
+    ref = "beef0000000000000005"
+    response = await client.get(f"/musehub/ui/{repo_id}/analysis/{ref}/harmony")
+    assert response.status_code == 200
+    body = response.text
+    assert "track-sel" in body
+    assert "section-sel" in body
+    assert "setFilter" in body
+    # Common track options present
+    assert "bass" in body
+    assert "All tracks" in body
+
+
+@pytest.mark.anyio
+async def test_harmony_page_contains_key_history(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Harmony page must include key history across commits section."""
+    repo_id = await _make_repo(db_session)
+    ref = "0000000000000000dead"
+    response = await client.get(f"/musehub/ui/{repo_id}/analysis/{ref}/harmony")
+    assert response.status_code == 200
+    body = response.text
+    assert "Key History Across Commits" in body
+    assert "loadKeyHistory" in body
+    assert "key-history-content" in body
+
+
+@pytest.mark.anyio
+async def test_harmony_page_contains_voice_leading(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Harmony page must include voice-leading quality indicator."""
+    repo_id = await _make_repo(db_session)
+    ref = "1111111111111111beef"
+    response = await client.get(f"/musehub/ui/{repo_id}/analysis/{ref}/harmony")
+    assert response.status_code == 200
+    body = response.text
+    assert "renderVoiceLeading" in body
+    assert "Voice-Leading Quality" in body
+
+
+@pytest.mark.anyio
+async def test_harmony_page_has_token_form(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Harmony page must include the JWT token form so unauthenticated visitors can sign in.
+
+    Auth state (localStorage / musehub_token) is managed by musehub.js; the
+    HTML shell must include the token-form element and the musehub.js script tag.
+    """
+    repo_id = await _make_repo(db_session)
+    ref = "2222222222222222cafe"
+    response = await client.get(f"/musehub/ui/{repo_id}/analysis/{ref}/harmony")
+    assert response.status_code == 200
+    body = response.text
+    assert 'id="token-form"' in body
+    assert "musehub.js" in body
+
+
+@pytest.mark.anyio
+async def test_harmony_json_response(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    auth_headers: dict[str, str],
+) -> None:
+    """GET /api/v1/musehub/repos/{repo_id}/analysis/{ref}/harmony returns full harmonic JSON."""
+    repo_id = await _make_repo(db_session)
+    resp = await client.get(
+        f"/api/v1/musehub/repos/{repo_id}/analysis/main/harmony",
+        headers=auth_headers,
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["dimension"] == "harmony"
+    assert body["ref"] == "main"
+    data = body["data"]
+    # Key and mode present
+    assert "tonic" in data
+    assert "mode" in data
+    assert "keyConfidence" in data
+    # Chord progression
+    assert "chordProgression" in data
+    assert isinstance(data["chordProgression"], list)
+    if data["chordProgression"]:
+        chord = data["chordProgression"][0]
+        assert "beat" in chord
+        assert "chord" in chord
+        assert "function" in chord
+        assert "tension" in chord
+    # Tension curve
+    assert "tensionCurve" in data
+    assert isinstance(data["tensionCurve"], list)
+    # Modulation points
+    assert "modulationPoints" in data
+    assert isinstance(data["modulationPoints"], list)
+    # Total beats
+    assert "totalBeats" in data
+    assert data["totalBeats"] > 0
