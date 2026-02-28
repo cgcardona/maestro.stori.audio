@@ -1663,6 +1663,30 @@ These type aliases replace the repeated pattern `dict[str, list[XxxDict]]` that 
 
 ---
 
+## Muse CLI Types (`maestro/muse_cli/`)
+
+> Added: 2026-02-27 | Types used by the `muse` CLI commands — purely local, never serialised over HTTP.
+
+### `MuseSessionRecord` (`maestro/muse_cli/commands/session.py`)
+
+`TypedDict(total=False)` — wire-format for a single recording session stored as JSON in `.muse/sessions/`.
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `session_id` | `str` | ✅ | UUIDv4 string identifying the session |
+| `schema_version` | `str` | ✅ | Schema version (currently `"1"`) |
+| `started_at` | `str` | ✅ | ISO-8601 UTC timestamp from `muse session start` |
+| `ended_at` | `str \| None` | ✅ | ISO-8601 UTC timestamp from `muse session end`; `None` while active |
+| `participants` | `list[str]` | ✅ | Ordered participant names from `--participants` |
+| `location` | `str` | ✅ | Recording location or studio name |
+| `intent` | `str` | ✅ | Creative intent declared at session start |
+| `commits` | `list[str]` | ✅ | Muse commit IDs associated with this session (starts empty) |
+| `notes` | `str` | ✅ | Closing notes from `muse session end --notes` |
+
+**Used by:** `_read_session`, `_write_session`, `_load_completed_sessions`, and all five `muse session` subcommands.
+
+---
+
 ## HTTP Response Entities
 
 > Updated: 2026-02-26 | Reflects the named-entity sweep that eliminated all `dict[str, object]` and `dict[str, str]` return types from route handlers.
