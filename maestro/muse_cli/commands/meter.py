@@ -35,7 +35,7 @@ Examples: ``4/4``, ``3/4``, ``7/8``, ``5/4``, ``12/8``, ``6/8``.
 Storage
 -------
 The time signature is stored as the ``meter`` key inside the
-``extra_metadata`` JSON blob on the ``muse_cli_commits`` row.  No new
+``metadata`` JSON blob on the ``muse_cli_commits`` row.  No new
 columns are added; the blob is extensible for future annotations (tempo,
 key, etc.).
 
@@ -346,7 +346,7 @@ async def _meter_history_async(
         commit = await session.get(MuseCliCommit, current_id)
         if commit is None:
             break
-        metadata = commit.extra_metadata or {}
+        metadata = commit.commit_metadata or {}
         raw = metadata.get(_METADATA_KEY) if isinstance(metadata, dict) else None
         time_sig: str | None = raw if isinstance(raw, str) else None
         entries.append(

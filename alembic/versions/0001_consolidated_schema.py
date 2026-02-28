@@ -17,7 +17,8 @@ Single source-of-truth migration for Stori Maestro. Creates:
 
   Muse CLI — filesystem commit history
   - muse_cli_objects, muse_cli_snapshots, muse_cli_commits
-    (includes parent2_commit_id for merge commits)
+    (includes parent2_commit_id for merge commits; metadata JSON blob for
+    commit-level annotations e.g. tempo_bpm set via ``muse tempo --set``)
   - muse_cli_tags (music-semantic tags attached to commits)
 
   Muse Hub — remote collaboration backend
@@ -225,7 +226,7 @@ def upgrade() -> None:
         sa.Column("author", sa.String(255), nullable=False),
         sa.Column("committed_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
-        sa.Column("extra_metadata", postgresql.JSONB(astext_type=sa.Text()), nullable=True),
+        sa.Column("metadata", sa.JSON(), nullable=True),
         sa.ForeignKeyConstraint(["snapshot_id"], ["muse_cli_snapshots.snapshot_id"], ondelete="RESTRICT"),
         sa.PrimaryKeyConstraint("commit_id"),
     )
