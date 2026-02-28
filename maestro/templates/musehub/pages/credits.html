@@ -18,20 +18,65 @@ function fmtYear(iso) {
   return new Date(iso).getFullYear();
 }
 
-function contributorRow(c) {
+/**
+ * Deterministic hsl background from a username string — ensures a stable,
+ * visually distinct colour per contributor without storing any colour data.
+ */
+function avatarHsl(username) {
+  let hash = 0;
+  for (let i = 0; i < username.length; i++) {
+    hash = username.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  const hue = Math.abs(hash) % 360;
+  return `hsl(${hue},45%,32%)`;
+}
+
+/**
+ * Render an avatar circle: real image if avatarUrl is present, otherwise the
+ * contributor's first character on a deterministic hsl background.
+ */
+function avatarCircle(username, avatarUrl) {
+  const size = 'width:36px;height:36px;border-radius:50%;flex-shrink:0;';
+  if (avatarUrl) {
+    return `<img src="${escHtml(avatarUrl)}" alt="${escHtml(username)}"
+              style="${size}object-fit:cover;border:2px solid #30363d;" />`;
+  }
+  const bg = avatarHsl(username);
+  const initial = escHtml(username.charAt(0).toUpperCase());
+  return `<div style="${size}background:${bg};display:flex;align-items:center;
+              justify-content:center;font-size:16px;font-weight:700;
+              color:#e6edf3;border:2px solid #30363d;">${initial}</div>`;
+}
+
+function contributorRow(c, profile) {
   const roles = (c.contributionTypes || []).map(r =>
     '<span class="label">' + escHtml(r) + '</span>'
   ).join(' ');
   const window = fmtDate(c.firstActive) + ' &ndash; ' + fmtDate(c.lastActive);
+
+  const avatarUrl = profile ? (profile.avatarUrl || null) : null;
+  const bio       = profile ? (profile.bio       || '')   : '';
+  const bioPreview = bio.length > 80 ? escHtml(bio.slice(0, 80)) + '&hellip;' : escHtml(bio);
+
+  const nameHtml = `<a href="/musehub/ui/users/${encodeURIComponent(c.author)}"
+      style="font-size:15px;color:#e6edf3;font-weight:600;text-decoration:none;
+             flex:1;word-break:break-word;"
+      onmouseover="this.style.textDecoration='underline'"
+      onmouseout="this.style.textDecoration='none'">${escHtml(c.author)}</a>`;
+
   return `
     <div class="commit-row" style="align-items:flex-start;flex-direction:column;gap:6px">
       <div style="display:flex;align-items:center;gap:10px;width:100%">
-        <span style="font-size:15px;color:#e6edf3;font-weight:600;flex:1">
-          ${escHtml(c.author)}
-        </span>
-        <span class="badge badge-open" style="font-size:12px;background:#1a3a5c">
-          ${c.sessionCount} session${c.sessionCount !== 1 ? 's' : ''}
-        </span>
+        ${avatarCircle(c.author, avatarUrl)}
+        <div style="flex:1;min-width:0">
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+            ${nameHtml}
+            <span class="badge badge-open" style="font-size:12px;background:#1a3a5c">
+              ${c.sessionCount} session${c.sessionCount !== 1 ? 's' : ''}
+            </span>
+          </div>
+          ${bioPreview ? `<div style="font-size:12px;color:#8b949e;margin-top:2px">${bioPreview}</div>` : ''}
+        </div>
       </div>
       <div>${roles}</div>
       <div style="font-size:12px;color:#8b949e">${window}</div>
@@ -56,6 +101,18 @@ function injectJsonLd(credits) {
   document.head.appendChild(el);
 }
 
+/**
+ * Fetch a single user profile; returns null on any error (404, network, etc.)
+ * so a missing/private profile never breaks the credits page.
+ */
+async function fetchProfile(username) {
+  try {
+    return await apiFetch('/users/' + encodeURIComponent(username));
+  } catch (_) {
+    return null;
+  }
+}
+
 async function load(sort) {
   initRepoNav(repoId);
   try {
@@ -64,9 +121,15 @@ async function load(sort) {
 
     injectJsonLd(credits);
 
+    // Enrich every contributor row with profile data (avatar + bio) fetched in parallel.
+    // A failed profile fetch returns null — the row still renders with a fallback initial.
+    const profiles = await Promise.all(
+      contributors.map(c => fetchProfile(c.author))
+    );
+
     const rows = contributors.length === 0
       ? '<p class="loading">No sessions recorded yet. Start a session with <code>muse session start</code>.</p>'
-      : contributors.map(contributorRow).join('');
+      : contributors.map((c, i) => contributorRow(c, profiles[i])).join('');
 
     document.getElementById('content').innerHTML = `
       <div style="margin-bottom:12px">

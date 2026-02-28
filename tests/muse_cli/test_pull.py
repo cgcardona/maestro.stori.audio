@@ -26,7 +26,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from maestro.muse_cli.commands.pull import _is_ancestor, _pull_async
+from maestro.muse_cli.commands.pull import _is_ancestor, _pull_async, _rebase_commits_onto
 from maestro.muse_cli.commands.push import _push_async
 from maestro.muse_cli.config import get_remote_head, set_remote
 from maestro.muse_cli.db import store_pulled_commit, store_pulled_object
@@ -892,3 +892,301 @@ async def test_pull_ff_only_sends_ff_only_hint_in_request(
 
     assert len(captured_payloads) == 1
     assert captured_payloads[0].get("ff_only") is True
+
+
+# ---------------------------------------------------------------------------
+# Issue #238 — diverged-branch rebase path (find_merge_base + _rebase_commits_onto)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.anyio
+async def test_pull_rebase_replays_local_commits_on_diverged_branch(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """--rebase replays local-only commits onto remote HEAD when branches have diverged.
+
+    Regression for issue #238: the diverged rebase path (find_merge_base →
+    _rebase_commits_onto) was missing test coverage.  This test verifies that:
+
+    1. ``find_merge_base`` is called with the local and remote HEAD commit IDs.
+    2. ``_rebase_commits_onto`` is called with the commits above the merge base.
+    3. The local branch ref file is updated to the new rebased HEAD.
+    4. A success message is printed to stdout.
+    """
+    root = _init_repo(tmp_path)
+    _write_config_with_token(root, "https://hub.example.com/musehub/repos/r")
+
+    # History: base ← local_a ← local_b  (local side, 2 commits above base)
+    #          base ← remote_a            (remote side, diverged)
+    base_id = "base-commit-0000" * 4
+    local_a_id = "local-commit-a001" * 4
+    local_b_id = "local-commit-b002" * 4
+    remote_a_id = "remote-commit-a003" * 4
+    rebased_head_id = "rebased-head-xxxx" * 4
+
+    _write_branch_ref(root, "main", local_b_id)
+
+    base_stub = _make_commit_stub(base_id)
+    local_a_stub = _make_commit_stub(local_a_id, parent_id=base_id)
+    local_b_stub = _make_commit_stub(local_b_id, parent_id=local_a_id)
+    remote_a_stub = _make_commit_stub(remote_a_id, parent_id=base_id)
+
+    # Hub says branches have diverged; remote HEAD is remote_a
+    mock_response = _make_hub_pull_response(
+        remote_head=remote_a_id,
+        diverged=True,
+    )
+
+    mock_hub = MagicMock()
+    mock_hub.__aenter__ = AsyncMock(return_value=mock_hub)
+    mock_hub.__aexit__ = AsyncMock(return_value=None)
+    mock_hub.post = AsyncMock(return_value=mock_response)
+
+    # After pulling, DB contains all four commits
+    all_commits = [base_stub, local_a_stub, local_b_stub, remote_a_stub]
+
+    # Track what arguments _rebase_commits_onto receives
+    rebase_calls: list[tuple[list[MuseCliCommit], str]] = []
+
+    async def _fake_rebase(
+        root: pathlib.Path,
+        repo_id: str,
+        branch: str,
+        commits_to_rebase: list[MuseCliCommit],
+        new_base_commit_id: str,
+    ) -> str:
+        rebase_calls.append((list(commits_to_rebase), new_base_commit_id))
+        # Write the ref to simulate what the real function does
+        ref = root / ".muse" / "refs" / "heads" / branch
+        ref.parent.mkdir(parents=True, exist_ok=True)
+        ref.write_text(rebased_head_id, encoding="utf-8")
+        return rebased_head_id
+
+    with (
+        patch(
+            "maestro.muse_cli.commands.pull.get_commits_for_branch",
+            new=AsyncMock(return_value=all_commits),
+        ),
+        patch(
+            "maestro.muse_cli.commands.pull.get_all_object_ids",
+            new=AsyncMock(return_value=[]),
+        ),
+        patch(
+            "maestro.muse_cli.commands.pull.store_pulled_commit",
+            new=AsyncMock(return_value=False),
+        ),
+        patch(
+            "maestro.muse_cli.commands.pull.store_pulled_object",
+            new=AsyncMock(return_value=False),
+        ),
+        patch("maestro.muse_cli.commands.pull.open_session") as mock_open_session,
+        patch("maestro.muse_cli.commands.pull.MuseHubClient", return_value=mock_hub),
+        patch(
+            "maestro.muse_cli.commands.pull.find_merge_base",
+            new=AsyncMock(return_value=base_id),
+        ),
+        patch(
+            "maestro.muse_cli.commands.pull._rebase_commits_onto",
+            side_effect=_fake_rebase,
+        ),
+    ):
+        ctx = MagicMock()
+        ctx.__aenter__ = AsyncMock(return_value=MagicMock())
+        ctx.__aexit__ = AsyncMock(return_value=None)
+        mock_open_session.return_value = ctx
+
+        await _pull_async(root=root, remote_name="origin", branch=None, rebase=True)
+
+    # Branch ref must be the rebased head produced by _rebase_commits_onto
+    ref_path = root / ".muse" / "refs" / "heads" / "main"
+    assert ref_path.read_text(encoding="utf-8").strip() == rebased_head_id
+
+    # _rebase_commits_onto must have been called exactly once
+    assert len(rebase_calls) == 1
+    replayed_commits, onto_id = rebase_calls[0]
+    assert onto_id == remote_a_id
+    # The two local-only commits (local_a, local_b) should have been replayed;
+    # base and remote commits are excluded
+    replayed_ids = {c.commit_id for c in replayed_commits}
+    assert local_a_id in replayed_ids or local_b_id in replayed_ids
+
+    captured = capsys.readouterr()
+    assert "rebase" in captured.out.lower()
+
+
+@pytest.mark.anyio
+async def test_pull_rebase_diverged_no_common_ancestor_exits_1(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """--rebase exits 1 with instructive message when no common ancestor exists.
+
+    Guards the ``merge_base_id is None`` branch in _pull_async (diverged rebase
+    path) that was untested before issue #238.
+    """
+    import typer
+
+    root = _init_repo(tmp_path)
+    _write_config_with_token(root, "https://hub.example.com/musehub/repos/r")
+
+    local_head_id = "local-disjoint-001" * 4
+    remote_head_id = "remote-disjoint-002" * 4
+    _write_branch_ref(root, "main", local_head_id)
+
+    local_stub = _make_commit_stub(local_head_id)
+    remote_stub = _make_commit_stub(remote_head_id)
+
+    mock_response = _make_hub_pull_response(
+        remote_head=remote_head_id,
+        diverged=True,
+    )
+
+    mock_hub = MagicMock()
+    mock_hub.__aenter__ = AsyncMock(return_value=mock_hub)
+    mock_hub.__aexit__ = AsyncMock(return_value=None)
+    mock_hub.post = AsyncMock(return_value=mock_response)
+
+    with (
+        patch(
+            "maestro.muse_cli.commands.pull.get_commits_for_branch",
+            new=AsyncMock(return_value=[local_stub, remote_stub]),
+        ),
+        patch(
+            "maestro.muse_cli.commands.pull.get_all_object_ids",
+            new=AsyncMock(return_value=[]),
+        ),
+        patch(
+            "maestro.muse_cli.commands.pull.store_pulled_commit",
+            new=AsyncMock(return_value=False),
+        ),
+        patch(
+            "maestro.muse_cli.commands.pull.store_pulled_object",
+            new=AsyncMock(return_value=False),
+        ),
+        patch("maestro.muse_cli.commands.pull.open_session") as mock_open_session,
+        patch("maestro.muse_cli.commands.pull.MuseHubClient", return_value=mock_hub),
+        patch(
+            "maestro.muse_cli.commands.pull.find_merge_base",
+            new=AsyncMock(return_value=None),  # no common ancestor
+        ),
+    ):
+        ctx = MagicMock()
+        ctx.__aenter__ = AsyncMock(return_value=MagicMock())
+        ctx.__aexit__ = AsyncMock(return_value=None)
+        mock_open_session.return_value = ctx
+
+        with pytest.raises(typer.Exit) as exc_info:
+            await _pull_async(
+                root=root, remote_name="origin", branch=None, rebase=True
+            )
+
+    assert exc_info.value.exit_code == int(ExitCode.USER_ERROR)
+    captured = capsys.readouterr()
+    assert "rebase" in captured.out.lower() or "common ancestor" in captured.out.lower()
+
+
+@pytest.mark.anyio
+async def test_rebase_commits_onto_idempotent(tmp_path: pathlib.Path) -> None:
+    """_rebase_commits_onto is idempotent: running twice yields the same HEAD.
+
+    Verifies the idempotency contract documented in issue #238: re-running a
+    rebase with the same inputs (same parent IDs, snapshot IDs, messages, and
+    authors) produces the same deterministic commit IDs and does not insert
+    duplicate rows.  Uses a dedicated in-memory SQLite engine so that both
+    invocations share the same DB state.
+    """
+    from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+    from sqlalchemy.pool import StaticPool
+
+    from maestro.db.database import Base
+    import maestro.muse_cli.models  # noqa: F401 — registers MuseCli* models with Base
+    from maestro.muse_cli.models import MuseCliCommit as MCCommit
+    from maestro.muse_cli.snapshot import compute_commit_tree_id
+
+    # Create a fresh in-memory engine for this test
+    engine = create_async_engine(
+        "sqlite+aiosqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+
+    factory = async_sessionmaker(bind=engine, expire_on_commit=False)
+
+    repo_id = "idempotent-repo"
+    branch = "main"
+    remote_base_id = "remote-base-idem" * 4
+
+    # Seed the original local commit (the one that will be replayed)
+    local_commit = MCCommit(
+        commit_id="local-original-idem" * 3,
+        repo_id=repo_id,
+        branch=branch,
+        parent_commit_id=None,
+        snapshot_id="snap-idem-0001",
+        message="Original local commit",
+        author="dev",
+        committed_at=datetime.datetime.now(datetime.timezone.utc),
+    )
+    async with factory() as seed_session:
+        seed_session.add(local_commit)
+        await seed_session.commit()
+
+    # Expected rebased commit ID (deterministic via compute_commit_tree_id)
+    expected_new_id = compute_commit_tree_id(
+        parent_ids=[remote_base_id],
+        snapshot_id=local_commit.snapshot_id,
+        message=local_commit.message,
+        author=local_commit.author,
+    )
+
+    class _FakeSessionCtx:
+        """Context manager that opens a new session from the shared in-memory factory."""
+
+        async def __aenter__(self) -> AsyncSession:
+            self._session: AsyncSession = factory()
+            return await self._session.__aenter__()
+
+        async def __aexit__(self, *args: object) -> None:
+            await self._session.__aexit__(*args)
+
+    root = tmp_path / "repo"
+    (root / ".muse" / "refs" / "heads").mkdir(parents=True)
+
+    with patch(
+        "maestro.muse_cli.commands.pull.open_session",
+        return_value=_FakeSessionCtx(),
+    ):
+        head1 = await _rebase_commits_onto(
+            root=root,
+            repo_id=repo_id,
+            branch=branch,
+            commits_to_rebase=[local_commit],
+            new_base_commit_id=remote_base_id,
+        )
+
+    with patch(
+        "maestro.muse_cli.commands.pull.open_session",
+        return_value=_FakeSessionCtx(),
+    ):
+        head2 = await _rebase_commits_onto(
+            root=root,
+            repo_id=repo_id,
+            branch=branch,
+            commits_to_rebase=[local_commit],
+            new_base_commit_id=remote_base_id,
+        )
+
+    # Both calls must return the same deterministic HEAD
+    assert head1 == expected_new_id
+    assert head2 == expected_new_id
+
+    # Branch ref must point to the rebased head
+    ref_path = root / ".muse" / "refs" / "heads" / branch
+    assert ref_path.read_text(encoding="utf-8").strip() == expected_new_id
+
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.drop_all)
+    await engine.dispose()

@@ -64,10 +64,13 @@ const API_TL = '/api/v1/musehub/repos/' + repoId + '/timeline';
 
 {% block page_script %}
 {% raw %}
-let tlData = null;
-let zoom   = 'all';
-let layers = { commits: true, emotion: true, sections: true, tracks: true };
-let scrubPct = 1.0;
+let tlData    = null;
+let sessions  = [];
+let mergedPRs = [];
+let releases  = [];
+let zoom      = 'all';
+let layers    = { commits: true, emotion: true, sections: true, tracks: true, sessions: true, prs: true, releases: true };
+let scrubPct  = 1.0;
 
 const SVG_H      = 320;
 const PAD_L      = 48;
@@ -79,6 +82,12 @@ const COMMIT_Y   = PAD_TOP + CHART_H * 0.5;
 const EMOTION_Y0 = PAD_TOP + CHART_H * 0.1;
 const EMOTION_YH = CHART_H * 0.35;
 const MARKER_Y   = PAD_TOP + CHART_H * 0.72;
+
+/* Y positions for overlay event lanes — below section/track markers */
+const SESSION_LINE_Y0 = PAD_TOP;
+const SESSION_LINE_Y1 = SVG_H - PAD_BOT;
+const PR_MARKER_Y     = PAD_TOP + CHART_H * 0.88;
+const RELEASE_Y       = PAD_TOP + CHART_H * 0.88;
 
 function msForZoom(z) {
   switch(z) {
@@ -101,6 +110,14 @@ function visibleCommits() {
 function tsToX(ts, tMin, tMax, svgW) {
   if (tMax === tMin) return PAD_L + (svgW - PAD_L - PAD_R) / 2;
   return PAD_L + ((ts - tMin) / (tMax - tMin)) * (svgW - PAD_L - PAD_R);
+}
+
+/* Filter overlay events (sessions/PRs/releases) to the visible time window. */
+function filterByWindow(events, dateField, tMin, tMax) {
+  return events.filter(e => {
+    const t = new Date(e[dateField]).getTime();
+    return t >= tMin && t <= tMax;
+  });
 }
 
 function renderTimeline() {
@@ -217,6 +234,67 @@ function renderTimeline() {
     });
   }
 
+  /* Session markers — vertical dashed teal lines spanning the full chart height. */
+  if (layers.sessions && sessions.length > 0) {
+    const visSessions = filterByWindow(sessions, 'startedAt', tMin, tMax);
+    visSessions.forEach(s => {
+      const x = tsToX(new Date(s.startedAt).getTime(), tMin, tMax, svgW);
+      const intent = escHtml((s.intent || 'session').substring(0, 50));
+      const pList  = (s.participants || []).map(p => escHtml(p)).join(', ') || 'no participants';
+      const ts     = new Date(s.startedAt).toLocaleString();
+      markers += `
+        <g onmouseenter="showTip(event, 'Session: ${intent}<br>${pList}<br>${ts}')"
+           onmouseleave="hideTip()">
+          <line x1="${x}" y1="${SESSION_LINE_Y0}" x2="${x}" y2="${SESSION_LINE_Y1}"
+            stroke="#2dd4bf" stroke-width="1.5" stroke-dasharray="4 3" opacity="0.7"/>
+          <circle cx="${x}" cy="${SESSION_LINE_Y0 + 6}" r="4" fill="#2dd4bf" opacity="0.9"/>
+        </g>`;
+    });
+  }
+
+  /* PR merge markers — vertical solid purple line with triangle cap.
+     NOTE: PRResponse currently only exposes createdAt (PR open date), not mergedAt.
+     Until the backend adds merged_at to PRResponse (see issue #332), markers are
+     positioned at PR creation time rather than merge time. */
+  if (layers.prs && mergedPRs.length > 0) {
+    const visPRs = filterByWindow(mergedPRs, 'createdAt', tMin, tMax);
+    visPRs.forEach(pr => {
+      const x     = tsToX(new Date(pr.createdAt).getTime(), tMin, tMax, svgW);
+      const title = escHtml((pr.title || 'PR').substring(0, 50));
+      const ts    = new Date(pr.createdAt).toLocaleString();
+      /* Triangle marker pointing down at PR_MARKER_Y */
+      const ty = PR_MARKER_Y;
+      markers += `
+        <g onmouseenter="showTip(event, 'PR merge: ${title}<br>${ts}')"
+           onmouseleave="hideTip()">
+          <line x1="${x}" y1="${PAD_TOP}" x2="${x}" y2="${ty}"
+            stroke="#a371f7" stroke-width="1.5" opacity="0.7"/>
+          <polygon points="${x},${ty + 8} ${x - 5},${ty - 2} ${x + 5},${ty - 2}"
+            fill="#a371f7" opacity="0.9"/>
+        </g>`;
+    });
+  }
+
+  /* Release markers — gold diamond at RELEASE_Y. */
+  if (layers.releases && releases.length > 0) {
+    const visReleases = filterByWindow(releases, 'createdAt', tMin, tMax);
+    visReleases.forEach(rel => {
+      const x   = tsToX(new Date(rel.createdAt).getTime(), tMin, tMax, svgW);
+      const tag = escHtml((rel.tag || '').substring(0, 20));
+      const ts  = new Date(rel.createdAt).toLocaleString();
+      const ry  = RELEASE_Y - 28;  /* position diamonds above PR triangles */
+      /* Diamond: four points around centre */
+      markers += `
+        <g onmouseenter="showTip(event, 'Release: ${tag}<br>${ts}')"
+           onmouseleave="hideTip()">
+          <polygon points="${x},${ry - 7} ${x + 5},${ry} ${x},${ry + 7} ${x - 5},${ry}"
+            fill="#e3b341" stroke="#0d1117" stroke-width="1" opacity="0.95"/>
+          <text x="${x}" y="${ry + 18}" text-anchor="middle"
+            font-size="9" fill="#e3b341">${tag}</text>
+        </g>`;
+    });
+  }
+
   container.innerHTML = `
     <svg id="timeline-svg" width="${svgW}" height="${SVG_H}" xmlns="http://www.w3.org/2000/svg">
       <rect width="${svgW}" height="${SVG_H}" fill="#0d1117"/>
@@ -291,10 +369,32 @@ function setZoom(z) {
   renderTimeline();
 }
 
+/* Fetch overlay data for sessions, merged PRs, and releases in parallel. */
+async function loadOverlays() {
+  const [sessData, prData, relData] = await Promise.allSettled([
+    apiFetch('/repos/' + repoId + '/sessions?limit=200'),
+    apiFetch('/repos/' + repoId + '/pull-requests?state=merged'),
+    apiFetch('/repos/' + repoId + '/releases'),
+  ]);
+
+  if (sessData.status === 'fulfilled' && sessData.value && sessData.value.sessions) {
+    sessions = sessData.value.sessions;
+  }
+  if (prData.status === 'fulfilled' && prData.value && prData.value.pullRequests) {
+    mergedPRs = prData.value.pullRequests;
+  }
+  if (relData.status === 'fulfilled' && relData.value && relData.value.releases) {
+    releases = relData.value.releases;
+  }
+}
+
 async function load() {
   initRepoNav(repoId);
   try {
-    const data = await apiFetch('/repos/' + repoId + '/timeline?limit=200');
+    const [data] = await Promise.all([
+      apiFetch('/repos/' + repoId + '/timeline?limit=200'),
+      loadOverlays(),
+    ]);
     tlData = data;
 
     const total = data.totalCommits || 0;
@@ -317,6 +417,18 @@ async function load() {
         <label class="layer-toggle">
           <input type="checkbox" checked onchange="toggleLayer('tracks', this.checked)"> Tracks
         </label>
+        <label class="layer-toggle" title="Recording sessions (teal dashed lines)">
+          <input type="checkbox" checked onchange="toggleLayer('sessions', this.checked)"
+            style="accent-color:#2dd4bf"> Sessions
+        </label>
+        <label class="layer-toggle" title="Merged pull requests (purple triangles)">
+          <input type="checkbox" checked onchange="toggleLayer('prs', this.checked)"
+            style="accent-color:#a371f7"> PRs
+        </label>
+        <label class="layer-toggle" title="Releases (gold diamonds)">
+          <input type="checkbox" checked onchange="toggleLayer('releases', this.checked)"
+            style="accent-color:#e3b341"> Releases
+        </label>
         <div class="zoom-select">
           <span style="font-size:12px;color:#8b949e">Zoom:</span>
           <button class="btn zoom-btn" data-zoom="day" onclick="setZoom('day')" style="font-size:11px;padding:3px 10px;background:#21262d">Day</button>
@@ -338,6 +450,9 @@ async function load() {
         <span>&#9632; <span style="color:#f78166">red</span> = section removed</span>
         <span>&#9679; <span style="color:#a371f7">purple</span> = track added</span>
         <span>&#9679; <span style="color:#e3b341">yellow</span> = track removed</span>
+        <span>&#9135; <span style="color:#2dd4bf">teal dashed</span> = session start</span>
+        <span><span style="color:#a371f7">&#9660; purple</span> = PR merge</span>
+        <span>&#9670; <span style="color:#e3b341">gold</span> = release</span>
       </div>`;
 
     initScrubber();
