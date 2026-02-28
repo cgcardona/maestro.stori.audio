@@ -1,10 +1,10 @@
 """Muse CLI — Typer application root.
 
 Entry point for the ``muse`` console script. Registers all MVP
-subcommands (arrange, ask, checkout, chord-map, commit, context, describe,
-divergence, dynamics, export, find, form, grep, humanize, import, init, log,
-merge, meter, open, play, pull, push, recall, remote, session, similarity,
-status, swing, tag, tempo, tempo-scale) as Typer sub-applications.
+subcommands (arrange, ask, checkout, chord-map, commit, context, contour,
+describe, divergence, dynamics, export, find, grep, humanize, import, init,
+log, merge, meter, open, play, pull, push, recall, remote, session, status,
+swing, tag, tempo, tempo-scale) as Typer sub-applications.
 """
 from __future__ import annotations
 
