@@ -3,7 +3,8 @@
 Provides:
 - ``open_session()`` — async context manager that opens and commits a
   standalone AsyncSession (for use in the CLI, outside FastAPI DI).
-- CRUD helpers called by ``commands/commit.py`` and ``commands/meter.py``.
+- CRUD helpers called by ``commands/commit.py``, ``commands/meter.py``,
+  and ``commands/read_tree.py``.
 
 The session factory created by ``open_session()`` reads DATABASE_URL
 from ``maestro.config.settings`` — the same env var used by the main

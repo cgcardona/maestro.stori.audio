@@ -4,10 +4,10 @@ Entry point for the ``muse`` console script. Registers all MVP
 subcommands (amend, arrange, ask, checkout, chord-map, commit, commit-tree,
 context, contour, describe, diff, divergence, dynamics, emotion-diff, export,
 find, form, grep, groove-check, harmony, humanize, import, init, inspect,
-key, log, merge, meter, motif, open, play, pull, push, recall, remote,
-render-preview, reset, resolve, rev-parse, revert, session, show, similarity,
-status, swing, symbolic-ref, tag, tempo, tempo-scale, timeline, update-ref,
-validate, write-tree) as Typer sub-applications.
+key, log, merge, meter, motif, open, play, pull, push, read-tree, recall,
+remote, render-preview, reset, resolve, rev-parse, revert, session, show,
+similarity, status, swing, symbolic-ref, tag, tempo, tempo-scale, timeline,
+update-ref, validate, write-tree) as Typer sub-applications.
 """
 from __future__ import annotations
 
@@ -47,6 +47,7 @@ from maestro.muse_cli.commands import (
     play,
     pull,
     push,
+    read_tree,
     recall,
     remote,
     render_preview,
@@ -110,6 +111,7 @@ cli.add_typer(meter.app, name="meter", help="Read or set the time signature of a
 cli.add_typer(tag.app, name="tag", help="Attach and query music-semantic tags on commits.")
 cli.add_typer(import_cmd.app, name="import", help="Import a MIDI or MusicXML file as a new Muse commit.")
 cli.add_typer(tempo.app, name="tempo", help="Read or set the tempo (BPM) of a commit.")
+cli.add_typer(read_tree.app, name="read-tree", help="Read a snapshot into muse-work/ without updating HEAD.")
 cli.add_typer(recall.app, name="recall", help="Search commit history by natural-language description.")
 cli.add_typer(revert.app, name="revert", help="Create a new commit that undoes a prior commit without rewriting history.")
 cli.add_typer(key.app, name="key", help="Read or annotate the musical key of a commit.")
