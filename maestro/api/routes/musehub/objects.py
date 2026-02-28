@@ -30,7 +30,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from maestro.auth.dependencies import TokenClaims, optional_token, require_valid_token
 from maestro.db import get_db
 from maestro.db.musehub_models import MusehubDownloadEvent
-from maestro.models.musehub import ObjectMetaListResponse
+from maestro.models.musehub import ObjectMetaListResponse, TreeListResponse
 from maestro.services import musehub_repository
 from maestro.services.musehub_exporter import ExportFormat, export_repo_at_ref
 
@@ -228,3 +228,84 @@ async def export_artifacts(
         media_type=result.content_type,
         headers={"Content-Disposition": f'attachment; filename="{result.filename}"'},
     )
+
+
+@router.get(
+    "/repos/{repo_id}/tree/{ref}",
+    response_model=TreeListResponse,
+    summary="List root directory of a Muse repo at a given ref",
+)
+async def list_tree_root(
+    repo_id: str,
+    ref: str,
+    owner: str,
+    repo_slug: str,
+    db: AsyncSession = Depends(get_db),
+    claims: TokenClaims | None = Depends(optional_token),
+) -> TreeListResponse:
+    """Return a directory listing of the repo root at the given ref.
+
+    Reconstructs the tree from all stored musehub_objects for the repo.
+    The ``ref`` parameter is validated against known branches and commit IDs —
+    an unknown ref returns 404 so clients get meaningful feedback.
+
+    Query params ``owner`` and ``repo_slug`` are passed through verbatim for
+    breadcrumb generation in the response; they are not validated here (the
+    repo_id is the authoritative key).
+
+    Returns entries sorted directories-first, then files, both alphabetically.
+    """
+    repo = await musehub_repository.get_repo(db, repo_id)
+    if repo is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repo not found")
+    if repo.visibility != "public" and claims is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required to access private repos.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    ref_valid = await musehub_repository.resolve_ref_for_tree(db, repo_id, ref)
+    if not ref_valid:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Ref '{ref}' not found in repo",
+        )
+    return await musehub_repository.list_tree(db, repo_id, owner, repo_slug, ref, "")
+
+
+@router.get(
+    "/repos/{repo_id}/tree/{ref}/{path:path}",
+    response_model=TreeListResponse,
+    summary="List a subdirectory of a Muse repo at a given ref",
+)
+async def list_tree_subdir(
+    repo_id: str,
+    ref: str,
+    path: str,
+    owner: str,
+    repo_slug: str,
+    db: AsyncSession = Depends(get_db),
+    claims: TokenClaims | None = Depends(optional_token),
+) -> TreeListResponse:
+    """Return a directory listing of ``path`` inside the repo at the given ref.
+
+    Behaves identically to ``list_tree_root`` but scoped to the subdirectory
+    identified by ``path`` (e.g. "tracks", "tracks/stems").  Returns 404 when
+    the ref is unknown or the path has no objects underneath it.
+    """
+    repo = await musehub_repository.get_repo(db, repo_id)
+    if repo is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repo not found")
+    if repo.visibility != "public" and claims is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required to access private repos.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    ref_valid = await musehub_repository.resolve_ref_for_tree(db, repo_id, ref)
+    if not ref_valid:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Ref '{ref}' not found in repo",
+        )
+    return await musehub_repository.list_tree(db, repo_id, owner, repo_slug, ref, path)
