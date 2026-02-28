@@ -215,6 +215,112 @@ class EmotionData(CamelModel):
     confidence: float = Field(..., ge=0.0, le=1.0)
 
 
+# ---------------------------------------------------------------------------
+# Emotion map models (issue #227)
+# ---------------------------------------------------------------------------
+
+
+class EmotionVector(CamelModel):
+    """Four-axis emotion vector, all dimensions normalised to [0, 1].
+
+    - ``energy``   — 0 (passive/still) to 1 (active/driving)
+    - ``valence``  — 0 (dark/negative) to 1 (bright/positive)
+    - ``tension``  — 0 (relaxed) to 1 (tense/dissonant)
+    - ``darkness`` — 0 (luminous) to 1 (brooding/ominous)
+
+    Note that ``valence`` here is re-normalised relative to :class:`EmotionData`
+    (which uses –1…+1) so that all four axes share the same visual scale in charts.
+    """
+
+    energy: float = Field(..., ge=0.0, le=1.0)
+    valence: float = Field(..., ge=0.0, le=1.0)
+    tension: float = Field(..., ge=0.0, le=1.0)
+    darkness: float = Field(..., ge=0.0, le=1.0)
+
+
+class EmotionMapPoint(CamelModel):
+    """Emotion vector sample at a specific beat position within a ref.
+
+    Used to render the intra-ref emotion evolution chart (x=beat, y=0–1 per dimension).
+    """
+
+    beat: float
+    vector: EmotionVector
+
+
+class CommitEmotionSnapshot(CamelModel):
+    """Summary emotion vector for a single commit in the trajectory view.
+
+    Used to render the cross-commit emotion trajectory chart (x=commit index, y=0–1).
+    """
+
+    commit_id: str
+    message: str
+    timestamp: str = Field(..., description="ISO-8601 UTC timestamp")
+    vector: EmotionVector
+    primary_emotion: str = Field(
+        ..., description="Dominant emotion label for this commit, e.g. 'serene', 'tense'"
+    )
+
+
+class EmotionDrift(CamelModel):
+    """Emotion drift distance between two consecutive commits.
+
+    ``drift`` is the Euclidean distance in the four-dimensional emotion space (0–√4≈1.41).
+    A drift near 0 means the emotional character was stable; near 1 means a large shift.
+    """
+
+    from_commit: str
+    to_commit: str
+    drift: float = Field(..., ge=0.0, description="Euclidean distance in emotion space (0–√4)")
+    dominant_change: str = Field(
+        ..., description="Which axis changed most, e.g. 'energy', 'tension'"
+    )
+
+
+class EmotionMapResponse(CamelModel):
+    """Full emotion map for a Muse repo ref.
+
+    Combines intra-ref per-beat evolution, cross-commit trajectory,
+    drift distances, narrative text, and source attribution.
+
+    Returned by ``GET /musehub/repos/{repo_id}/analysis/{ref}/emotion-map``.
+    Agents and the MuseHub UI use this to render emotion arc visualisations.
+    """
+
+    repo_id: str
+    ref: str
+    computed_at: datetime
+    filters_applied: AnalysisFilters
+
+    # Intra-ref: how the emotion evolves beat-by-beat within this ref
+    evolution: list[EmotionMapPoint] = Field(
+        ..., description="Per-beat emotion samples within this ref"
+    )
+    # Aggregate vector for this ref (mean of evolution points)
+    summary_vector: EmotionVector
+
+    # Cross-commit: emotion snapshots for recent ancestor commits + this ref
+    trajectory: list[CommitEmotionSnapshot] = Field(
+        ...,
+        description="Emotion snapshot per commit in the recent history (oldest first, head last)",
+    )
+    drift: list[EmotionDrift] = Field(
+        ..., description="Drift distances between consecutive commits in the trajectory"
+    )
+
+    # Human-readable narrative
+    narrative: str = Field(
+        ..., description="Textual description of the emotional journey across the trajectory"
+    )
+
+    # Attribution
+    source: str = Field(
+        ...,
+        description="How emotion was determined: 'explicit' (tags), 'inferred' (model), or 'mixed'",
+    )
+
+
 class ChordMapData(CamelModel):
     """Full chord-by-chord map for a Muse commit.
 

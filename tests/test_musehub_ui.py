@@ -22,6 +22,15 @@ Covers issue #241 (credits page):
 - test_credits_empty_state             — empty state message when no commits exist
 - test_credits_no_auth_required        — credits UI page is accessible without JWT
 
+Covers issue #227 (emotion map page):
+- test_emotion_page_renders            — GET /musehub/ui/{repo_id}/analysis/{ref}/emotion returns 200
+- test_emotion_page_no_auth_required   — emotion map UI page accessible without JWT
+- test_emotion_page_includes_charts    — page embeds SVG chart and axis identifiers
+- test_emotion_page_includes_filters   — page includes track/section filter inputs
+- test_emotion_json_response           — JSON endpoint returns emotion map with required fields
+- test_emotion_trajectory              — cross-commit trajectory data is present and ordered
+- test_emotion_drift_distances         — drift list has one entry per consecutive commit pair
+
 UI routes require no JWT auth (they return HTML shells whose JS handles auth).
 The HTML content tests assert structural markers present in every rendered page.
 """
@@ -295,6 +304,14 @@ async def test_credits_page_renders(
     """GET /musehub/ui/{repo_id}/credits returns 200 HTML without requiring a JWT."""
     repo_id = await _make_repo(db_session)
     response = await client.get(f"/musehub/ui/{repo_id}/credits")
+    assert response.status_code == 200
+    assert "text/html" in response.headers["content-type"]
+    body = response.text
+    assert "Muse Hub" in body
+    assert "Credits" in body
+
+
+@pytest.mark.anyio
 async def test_graph_page_renders(
     client: AsyncClient,
     db_session: AsyncSession,
@@ -354,7 +371,7 @@ async def test_context_page_renders(
     assert "text/html" in response.headers["content-type"]
     body = response.text
     assert "Muse Hub" in body
-    assert "Credits" in body
+    assert "What the Agent Sees" in body
     assert repo_id[:8] in body
 
 
@@ -415,8 +432,25 @@ async def test_credits_no_auth_required(
 
 @pytest.mark.anyio
 async def test_credits_json_response(
-    assert "What the Agent Sees" in body
-    assert commit_id[:8] in body
+    client: AsyncClient,
+    db_session: AsyncSession,
+    auth_headers: dict[str, str],
+) -> None:
+    """GET /api/v1/musehub/repos/{repo_id}/credits returns JSON with required fields."""
+    repo_id = await _make_repo(db_session)
+    response = await client.get(
+        f"/api/v1/musehub/repos/{repo_id}/credits",
+        headers=auth_headers,
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert "repoId" in body
+    assert "contributors" in body
+    assert "sort" in body
+    assert "totalContributors" in body
+    assert body["repoId"] == repo_id
+    assert isinstance(body["contributors"], list)
+    assert body["sort"] == "count"
 
 
 @pytest.mark.anyio
@@ -483,10 +517,6 @@ async def test_context_json_response(
     db_session: AsyncSession,
     auth_headers: dict[str, str],
 ) -> None:
-    """GET /api/v1/musehub/repos/{repo_id}/credits returns JSON with required fields."""
-    repo_id = await _make_repo(db_session)
-    response = await client.get(
-        f"/api/v1/musehub/repos/{repo_id}/credits",
     """GET /api/v1/musehub/repos/{repo_id}/context/{ref} returns MuseHubContextResponse."""
     repo_id, commit_id = await _make_repo_with_commit(db_session)
     response = await client.get(
@@ -495,17 +525,6 @@ async def test_context_json_response(
     )
     assert response.status_code == 200
     body = response.json()
-    assert "repoId" in body
-    assert "contributors" in body
-    assert "sort" in body
-    assert "totalContributors" in body
-    assert body["repoId"] == repo_id
-    assert isinstance(body["contributors"], list)
-    assert body["sort"] == "count"
-
-
-@pytest.mark.anyio
-async def test_credits_empty_state_json(
     assert body["repoId"] == repo_id
     assert body["currentBranch"] == "main"
     assert "headCommit" in body
@@ -518,7 +537,7 @@ async def test_credits_empty_state_json(
 
 
 @pytest.mark.anyio
-async def test_context_includes_musical_state(
+async def test_credits_empty_state_json(
     client: AsyncClient,
     db_session: AsyncSession,
     auth_headers: dict[str, str],
@@ -533,6 +552,14 @@ async def test_context_includes_musical_state(
     body = response.json()
     assert body["contributors"] == []
     assert body["totalContributors"] == 0
+
+
+@pytest.mark.anyio
+async def test_context_includes_musical_state(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    auth_headers: dict[str, str],
+) -> None:
     """Context response includes musicalState with an activeTracks field."""
     repo_id, commit_id = await _make_repo_with_commit(db_session)
     response = await client.get(
@@ -675,3 +702,152 @@ async def test_embed_page_contains_player_ui(
     assert "View on Muse Hub" in body
     assert "audio" in body
     assert repo_id in body
+
+
+# ---------------------------------------------------------------------------
+# Emotion map page tests (issue #227)
+# ---------------------------------------------------------------------------
+
+_EMOTION_REF = "deadbeef12345678"
+
+
+@pytest.mark.anyio
+async def test_emotion_page_renders(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """GET /musehub/ui/{repo_id}/analysis/{ref}/emotion returns 200 HTML without auth."""
+    repo_id = await _make_repo(db_session)
+    response = await client.get(f"/musehub/ui/{repo_id}/analysis/{_EMOTION_REF}/emotion")
+    assert response.status_code == 200
+    assert "text/html" in response.headers["content-type"]
+    body = response.text
+    assert "Muse Hub" in body
+    assert "Emotion Map" in body
+    assert repo_id[:8] in body
+
+
+@pytest.mark.anyio
+async def test_emotion_page_no_auth_required(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Emotion map UI page must be accessible without an Authorization header (HTML shell)."""
+    repo_id = await _make_repo(db_session)
+    response = await client.get(f"/musehub/ui/{repo_id}/analysis/{_EMOTION_REF}/emotion")
+    assert response.status_code != 401
+    assert response.status_code == 200
+
+
+@pytest.mark.anyio
+async def test_emotion_page_includes_charts(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Emotion map page embeds SVG chart builder and four-axis colour references."""
+    repo_id = await _make_repo(db_session)
+    response = await client.get(f"/musehub/ui/{repo_id}/analysis/{_EMOTION_REF}/emotion")
+    assert response.status_code == 200
+    body = response.text
+    # SVG line chart is generated client-side; verify the builder function is injected
+    assert "buildLineChart" in body
+    # All four emotion axes are referenced
+    for axis in ("energy", "valence", "tension", "darkness"):
+        assert axis in body
+
+
+@pytest.mark.anyio
+async def test_emotion_page_includes_filters(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Emotion map page includes track and section filter inputs."""
+    repo_id = await _make_repo(db_session)
+    response = await client.get(f"/musehub/ui/{repo_id}/analysis/{_EMOTION_REF}/emotion")
+    assert response.status_code == 200
+    body = response.text
+    assert "filter-track" in body
+    assert "filter-section" in body
+
+
+@pytest.mark.anyio
+async def test_emotion_json_response(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    auth_headers: dict[str, str],
+) -> None:
+    """GET /api/v1/musehub/repos/{repo_id}/analysis/{ref}/emotion-map returns required fields."""
+    repo_id = await _make_repo(db_session)
+    response = await client.get(
+        f"/api/v1/musehub/repos/{repo_id}/analysis/{_EMOTION_REF}/emotion-map",
+        headers=auth_headers,
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["repoId"] == repo_id
+    assert body["ref"] == _EMOTION_REF
+    assert "computedAt" in body
+    assert "summaryVector" in body
+    sv = body["summaryVector"]
+    for axis in ("energy", "valence", "tension", "darkness"):
+        assert axis in sv
+        assert 0.0 <= sv[axis] <= 1.0
+    assert "evolution" in body
+    assert isinstance(body["evolution"], list)
+    assert len(body["evolution"]) > 0
+    assert "narrative" in body
+    assert len(body["narrative"]) > 0
+    assert "source" in body
+
+
+@pytest.mark.anyio
+async def test_emotion_trajectory(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    auth_headers: dict[str, str],
+) -> None:
+    """Cross-commit trajectory must be a list of commit snapshots with emotion vectors."""
+    repo_id = await _make_repo(db_session)
+    response = await client.get(
+        f"/api/v1/musehub/repos/{repo_id}/analysis/{_EMOTION_REF}/emotion-map",
+        headers=auth_headers,
+    )
+    assert response.status_code == 200
+    trajectory = response.json()["trajectory"]
+    assert isinstance(trajectory, list)
+    assert len(trajectory) >= 2  # at least one ancestor + head
+    for snapshot in trajectory:
+        assert "commitId" in snapshot
+        assert "message" in snapshot
+        assert "primaryEmotion" in snapshot
+        vector = snapshot["vector"]
+        for axis in ("energy", "valence", "tension", "darkness"):
+            assert axis in vector
+            assert 0.0 <= vector[axis] <= 1.0
+
+
+@pytest.mark.anyio
+async def test_emotion_drift_distances(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    auth_headers: dict[str, str],
+) -> None:
+    """Drift list must have exactly len(trajectory) - 1 entries."""
+    repo_id = await _make_repo(db_session)
+    response = await client.get(
+        f"/api/v1/musehub/repos/{repo_id}/analysis/{_EMOTION_REF}/emotion-map",
+        headers=auth_headers,
+    )
+    assert response.status_code == 200
+    body = response.json()
+    trajectory = body["trajectory"]
+    drift = body["drift"]
+    assert isinstance(drift, list)
+    assert len(drift) == len(trajectory) - 1
+    for entry in drift:
+        assert "fromCommit" in entry
+        assert "toCommit" in entry
+        assert "drift" in entry
+        assert entry["drift"] >= 0.0
+        assert "dominantChange" in entry
+        assert entry["dominantChange"] in ("energy", "valence", "tension", "darkness")
