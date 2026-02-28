@@ -161,12 +161,38 @@ async def test_ui_commit_page_shows_artifact_links(
     body = response.text
     # The JS function that renders artifacts must be in the page
     assert "artifactHtml" in body
-    # Inline img pattern for .webp artifacts
+    # Inline img pattern for .webp artifacts (uses data-content-url for authed blob fetch)
     assert "<img" in body
     # Download pattern for .mid and other binary artifacts
     assert "Download" in body
     # Audio player pattern
     assert "<audio" in body
+
+
+@pytest.mark.anyio
+async def test_ui_commit_page_artifact_auth_uses_blob_proxy(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Commit page must use blob URL proxy for artifact auth, not bare content URLs in src/href.
+
+    Images use data-content-url + hydrateImages(); audio/download use downloadArtifact().
+    This prevents 401s caused by the browser sending unauthenticated direct requests.
+    """
+    await _make_repo(db_session)
+    commit_id = "abc1234567890abcdef1234567890abcdef12345678"
+    response = await client.get(f"/musehub/ui/testuser/test-beats/commits/{commit_id}")
+    assert response.status_code == 200
+    body = response.text
+    # Images must carry data-content-url (hydrated asynchronously with auth)
+    assert "data-content-url" in body
+    # No bare /content URL should appear as img src= (would cause 401)
+    assert 'src="/api/v1/musehub' not in body
+    # Downloads must go through downloadArtifact() JS helper, not bare href
+    assert "downloadArtifact" in body
+    # hydrateImages and _fetchBlobUrl must be present for the blob proxy pattern
+    assert "hydrateImages" in body
+    assert "_fetchBlobUrl" in body
 
 
 @pytest.mark.anyio
