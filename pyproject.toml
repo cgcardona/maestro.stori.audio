@@ -35,6 +35,10 @@ asyncio_mode = "auto"
 testpaths = ["tests"]
 cache_dir = "/tmp/pytest_cache"
 addopts = "-v --tb=short"
+filterwarnings = [
+    # Typer's own internal use of deprecated Click parameters — unfixable from userland.
+    "ignore::DeprecationWarning:typer",
+]
 
 [tool.coverage.run]
 source = ["maestro"]
