@@ -1,5 +1,9 @@
 """Typed structures for the Storpheus music generation service.
 
+Progressive generation types (``InstrumentTier``, ``ProgressiveTierResult``,
+``ProgressiveGenerationResult``) define the dependency-ordered generation
+pipeline introduced in issue #27 (drums → bass → harmony → melody).
+
 Defines the MIDI event shapes, parsed result types, and scoring entities
 used throughout the Storpheus codebase.  These mirror ``app/contracts/json_types.py``
 in the Maestro service but are defined independently to avoid
@@ -22,6 +26,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass, field
+from enum import Enum
 
 from typing_extensions import Required, TypedDict
 
@@ -242,3 +247,60 @@ class BestCandidate:
     parsed: ParsedMidiResult
     flat_notes: list[StorpheusNoteDict]
     batch_idx: int
+
+
+# ---------------------------------------------------------------------------
+# Progressive generation — dependency-ordered per-role pipeline (#27)
+# ---------------------------------------------------------------------------
+
+
+class InstrumentTier(str, Enum):
+    """Musical dependency tier — determines generation order.
+
+    Each tier is generated sequentially, with the previous tier's output MIDI
+    used as the seed (prime) for the next tier (cascaded seeding):
+
+        1. DRUMS   — independent; no harmonic context required
+        2. BASS    — seeded from drums; establishes root motion
+        3. HARMONY — seeded from drums+bass; chords, pads, piano
+        4. MELODY  — seeded from drums+bass+harmony; lead, guitar, arp
+
+    Ordering matches musical dependency: rhythm → foundation → colour → line.
+    """
+
+    DRUMS = "drums"
+    BASS = "bass"
+    HARMONY = "harmony"
+    MELODY = "melody"
+
+
+class ProgressiveTierResult(TypedDict):
+    """Per-tier result emitted during a progressive generation run.
+
+    One ``ProgressiveTierResult`` is produced for each ``InstrumentTier``
+    that contains at least one requested instrument.
+    """
+
+    tier: str  # InstrumentTier.value
+    instruments: list[str]
+    notes: list[WireNoteDict]
+    channel_notes: dict[str, list[WireNoteDict]] | None
+    metadata: dict[str, object]
+    elapsed_seconds: float
+
+
+class ProgressiveGenerationResult(TypedDict):
+    """Full result of a progressive per-role generation run.
+
+    Aggregates all tier results.  ``all_notes`` is a flat union of every
+    tier's notes for consumers that do not need per-tier resolution.
+
+    Registered in ``docs/reference/type_contracts.md``.
+    """
+
+    success: bool
+    composition_id: str
+    tier_results: list[ProgressiveTierResult]
+    all_notes: list[WireNoteDict]
+    total_elapsed_seconds: float
+    error: str | None

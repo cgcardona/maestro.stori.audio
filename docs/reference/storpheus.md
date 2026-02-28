@@ -1473,3 +1473,109 @@ docker compose exec storpheus mypy .
 ```bash
 docker compose exec storpheus pytest test_midi_pipeline.py test_quality_metrics.py test_expressiveness.py test_gm_resolution.py -v
 ```
+
+---
+
+## Progressive Generation (Issue #27)
+
+### Overview
+
+`POST /generate/progressive` implements dependency-ordered instrument generation.
+Instruments are partitioned into four musical tiers and generated sequentially:
+
+```
+Drums → Bass → Harmony → Melody
+```
+
+Each tier's output MIDI is used as the seed for the next tier via the existing
+`CompositionState.accumulated_midi_path` mechanism.  This means:
+
+- **Bass** inherits the drum groove (correct rhythmic feel)
+- **Harmony** inherits drums + bass (correct root motion)
+- **Melody** inherits the full harmonic context (correct chord colours)
+
+### Tier Classification
+
+| Tier | GM Programs | Example Roles |
+|------|-------------|---------------|
+| `drums` | channel 10 (no GM program) | drums, kick, snare, hihat, 808 |
+| `bass` | 32–39 | bass, electric bass, synth bass, fretless |
+| `harmony` | 0–15, 16–23, 40–55, 88–95 | piano, organ, strings, pad, choir |
+| `melody` | all others | lead, guitar, flute, trumpet, saxophone |
+
+Roles that do not resolve to a GM program default to `melody` (richest context).
+
+### API
+
+**Request:** `POST /generate/progressive`
+
+```json
+{
+  "genre": "boom_bap",
+  "tempo": 90,
+  "instruments": ["drums", "bass", "piano", "lead"],
+  "bars": 4,
+  "key": "C",
+  "quality_preset": "balanced",
+  "composition_id": "optional-uuid"
+}
+```
+
+**Response:** `ProgressiveGenerationResult`
+
+```json
+{
+  "success": true,
+  "composition_id": "uuid",
+  "tier_results": [
+    {
+      "tier": "drums",
+      "instruments": ["drums"],
+      "notes": [...],
+      "channel_notes": {"drums": [...]},
+      "metadata": {...},
+      "elapsed_seconds": 24.1
+    }
+  ],
+  "all_notes": [...],
+  "total_elapsed_seconds": 87.3,
+  "error": null
+}
+```
+
+### Implementation
+
+**Key functions** (all in `storpheus/music_service.py`):
+
+| Function | Description |
+|----------|-------------|
+| `classify_instrument_tier(role)` | Returns `InstrumentTier` for a single role string |
+| `group_instruments_by_tier(instruments)` | Partitions list into ordered tier dict |
+| `_do_progressive_generate(request)` | Orchestrates sequential tier generation |
+
+**Types** (in `storpheus/storpheus_types.py`):
+
+| Type | Description |
+|------|-------------|
+| `InstrumentTier` | `str` enum: `drums \| bass \| harmony \| melody` |
+| `ProgressiveTierResult` | Per-tier output: notes, channel_notes, metadata, timing |
+| `ProgressiveGenerationResult` | Full run output: tier_results, all_notes, timing |
+
+### Limitations and Next Steps
+
+The current implementation runs all tiers synchronously within a single HTTP
+request.  Full DAW streaming (per-tier SSE events as each layer completes)
+depends on:
+
+- **#18** — thin inference server with async job model
+- **#19** — async API with SSE streaming support
+
+Once those are in place, `_do_progressive_generate` can be adapted to emit
+`storpheus_tier_complete` SSE events after each tier, letting the DAW
+begin rendering drums while bass is still generating.
+
+### Running progressive generation tests
+
+```bash
+docker compose exec storpheus pytest test_progressive_generation.py -v
+```

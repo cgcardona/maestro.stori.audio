@@ -57,6 +57,9 @@ from post_processing import build_post_processor
 from storpheus_types import (
     BestCandidate,
     CacheKeyData,
+    InstrumentTier,
+    ProgressiveGenerationResult,
+    ProgressiveTierResult,
     StorpheusAftertouch,
     StorpheusCCEvent,
     StorpheusNoteDict,
@@ -546,6 +549,47 @@ class GenerateResponse(BaseModel):
     tool_calls: list[dict[str, object]] | None = None
     error: str | None = None
     metadata: dict[str, object] | None = None
+
+
+class ProgressiveGenerateRequest(BaseModel):
+    """Request for dependency-ordered progressive instrument generation.
+
+    Instruments are automatically classified into dependency tiers
+    (drums → bass → harmony → melody) and generated sequentially.
+    Each tier uses the previous tier's output MIDI as its seed,
+    producing cascaded generation: each layer inherits the groove
+    and harmonic context of all layers before it.
+
+    All fields except ``instruments`` mirror ``GenerateRequest`` so
+    callers can swap between the two endpoints without restructuring
+    their payloads.
+    """
+
+    # ── Core ──
+    genre: str = "boom_bap"
+    tempo: int = 90
+    instruments: list[str] = ["drums", "bass", "piano", "lead"]
+    bars: int = 4
+    key: str | None = None
+
+    # ── Canonical intent blocks ──
+    emotion_vector: EmotionVectorPayload | None = None
+    role_profile_summary: RoleProfileSummary | None = None
+    generation_constraints: GenerationConstraintsPayload | None = None
+    intent_goals: list[IntentGoal] | None = None
+
+    # ── Observability ──
+    seed: int | None = None
+    trace_id: str | None = None
+    intent_hash: str | None = None
+
+    # ── Quality / overrides ──
+    quality_preset: str = "balanced"
+    temperature: float | None = None
+    top_p: float | None = None
+
+    # ── Composition correlation ──
+    composition_id: str | None = None
 
 
 # ============================================================================
@@ -1125,6 +1169,71 @@ def _resolve_melodic_index(role: str) -> int | None:
     if program <= 7 or 16 <= program <= 23:
         return 1  # piano/keys/organ
     return 2  # everything else
+
+
+# GM program ranges that map to the HARMONY tier in progressive generation.
+# Includes piano (0-7), chromatic perc (8-15), organ (16-23), guitar (24-31),
+# ensemble strings (40-47), ensemble (48-55), and synth pads (88-95).
+_HARMONY_GM_RANGES: tuple[tuple[int, int], ...] = (
+    (0, 15),    # Piano + chromatic percussion (vibraphone, marimba, …)
+    (16, 23),   # Organ
+    (40, 55),   # Strings + ensemble (violin, cello, choir, …)
+    (88, 95),   # Synth pads (new age, warm, polysynth, choir, bowed, …)
+)
+
+
+def classify_instrument_tier(role: str) -> InstrumentTier:
+    """Classify an instrument role into its musical dependency tier.
+
+    Tiers map to the generation order:
+        DRUMS   — channel-10 percussion; no harmonic context needed
+        BASS    — GM 32-39 (bass family); establishes root motion
+        HARMONY — GM piano, organ, strings, pads; chords and colour
+        MELODY  — everything else (lead, guitar, brass, wind, …)
+
+    Unknown roles that cannot be resolved default to MELODY so they
+    receive the richest harmonic seed before generation.
+    """
+    key = role.lower().strip()
+    if key in _DRUM_KEYWORDS:
+        return InstrumentTier.DRUMS
+    program = resolve_gm_program(key)
+    if program is None:
+        # Abstract roles "melody", "harmony", "chords" are in _GM_ALIASES → 0.
+        # If truly unresolvable, treat as melody (richest context).
+        return InstrumentTier.MELODY
+    if 32 <= program <= 39:
+        return InstrumentTier.BASS
+    for lo, hi in _HARMONY_GM_RANGES:
+        if lo <= program <= hi:
+            return InstrumentTier.HARMONY
+    return InstrumentTier.MELODY
+
+
+def group_instruments_by_tier(
+    instruments: list[str],
+) -> dict[InstrumentTier, list[str]]:
+    """Partition a flat instrument list into ordered dependency tiers.
+
+    Returns a dict keyed by ``InstrumentTier`` in dependency order.
+    Tiers with no instruments are omitted.  Preserves original role strings
+    (lowercased) so downstream callers can pass them directly to Orpheus.
+    """
+    groups: dict[InstrumentTier, list[str]] = {}
+    for role in instruments:
+        tier = classify_instrument_tier(role)
+        groups.setdefault(tier, []).append(role.lower().strip())
+    # Ensure deterministic ordering matching the musical dependency chain.
+    return {
+        tier: groups[tier]
+        for tier in (
+            InstrumentTier.DRUMS,
+            InstrumentTier.BASS,
+            InstrumentTier.HARMONY,
+            InstrumentTier.MELODY,
+        )
+        if tier in groups
+    }
 
 
 
@@ -2375,6 +2484,126 @@ async def _do_generate(request: GenerateRequest, worker_id: int = 0) -> Generate
         )
 
 
+async def _do_progressive_generate(
+    request: ProgressiveGenerateRequest,
+) -> ProgressiveGenerationResult:
+    """Generate instruments in dependency order with cascaded MIDI seeding.
+
+    Partitions ``request.instruments`` into four tiers (drums → bass →
+    harmony → melody) and calls ``_do_generate`` once per non-empty tier.
+    A shared ``composition_id`` threads the session state so each tier
+    automatically receives the previous tier's output MIDI as its seed
+    (via the existing ``CompositionState.accumulated_midi_path`` mechanism).
+
+    Returns a ``ProgressiveGenerationResult`` with per-tier results plus a
+    flat ``all_notes`` list combining every tier's output.
+    """
+    import time as _time_mod
+
+    composition_id = request.composition_id or str(uuid.uuid4())
+    tier_groups = group_instruments_by_tier(request.instruments)
+
+    if not tier_groups:
+        return ProgressiveGenerationResult(
+            success=False,
+            composition_id=composition_id,
+            tier_results=[],
+            all_notes=[],
+            total_elapsed_seconds=0.0,
+            error="No instruments provided",
+        )
+
+    _run_start = _time_mod.monotonic()
+    tier_results: list[ProgressiveTierResult] = []
+    all_notes: list[WireNoteDict] = []
+
+    _trace = request.trace_id or ""
+    logger.info(
+        f"🎼 Progressive generation started | "
+        f"composition={composition_id[:8]} tiers={list(tier_groups)} "
+        f"instruments={request.instruments}"
+    )
+
+    for tier, instruments in tier_groups.items():
+        _tier_start = _time_mod.monotonic()
+        logger.info(
+            f"🎵 [{tier.value.upper()}] Generating {instruments} "
+            f"(composition={composition_id[:8]})"
+        )
+
+        tier_request = GenerateRequest(
+            genre=request.genre,
+            tempo=request.tempo,
+            instruments=instruments,
+            bars=request.bars,
+            key=request.key,
+            emotion_vector=request.emotion_vector,
+            role_profile_summary=request.role_profile_summary,
+            generation_constraints=request.generation_constraints,
+            intent_goals=request.intent_goals,
+            seed=request.seed,
+            trace_id=_trace or None,
+            intent_hash=request.intent_hash,
+            quality_preset=request.quality_preset,
+            temperature=request.temperature,
+            top_p=request.top_p,
+            composition_id=composition_id,
+            add_outro=False,
+            unified_output=True,  # always get per-channel notes for seeding
+        )
+
+        response = await _do_generate(tier_request)
+        elapsed = _time_mod.monotonic() - _tier_start
+
+        if not response.success:
+            logger.error(
+                f"❌ [{tier.value.upper()}] Generation failed: {response.error}"
+            )
+            return ProgressiveGenerationResult(
+                success=False,
+                composition_id=composition_id,
+                tier_results=tier_results,
+                all_notes=all_notes,
+                total_elapsed_seconds=_time_mod.monotonic() - _run_start,
+                error=f"Tier {tier.value} failed: {response.error}",
+            )
+
+        tier_notes: list[WireNoteDict] = response.notes or []
+        all_notes.extend(tier_notes)
+
+        tier_results.append(
+            ProgressiveTierResult(
+                tier=tier.value,
+                instruments=instruments,
+                notes=tier_notes,
+                channel_notes=response.channel_notes,
+                metadata=dict(response.metadata or {}),
+                elapsed_seconds=round(elapsed, 2),
+            )
+        )
+
+        logger.info(
+            f"✅ [{tier.value.upper()}] {len(tier_notes)} notes in {elapsed:.1f}s"
+        )
+
+    total_elapsed = _time_mod.monotonic() - _run_start
+    logger.info(
+        f"✅ Progressive generation complete | "
+        f"composition={composition_id[:8]} "
+        f"tiers={len(tier_results)} notes={len(all_notes)} "
+        f"total={total_elapsed:.1f}s"
+    )
+
+    return ProgressiveGenerationResult(
+        success=True,
+        composition_id=composition_id,
+        tier_results=tier_results,
+        all_notes=all_notes,
+        total_elapsed_seconds=round(total_elapsed, 2),
+        error=None,
+    )
+
+
 def _job_response(job: Job) -> dict[str, object]:
     """Serialize a Job to the wire format used by /generate and /jobs endpoints."""
     resp: dict[str, object] = {
@@ -2426,6 +2655,29 @@ async def generate(request: GenerateRequest) -> dict[str, object] | JSONResponse
             headers={"Retry-After": "30"},
         )
     return _job_response(job)
+
+
+@app.post("/generate/progressive", response_model=None)
+async def generate_progressive(
+    request: ProgressiveGenerateRequest,
+) -> dict[str, object] | JSONResponse:
+    """Generate instruments in dependency order with cascaded MIDI seeding.
+
+    Partitions ``request.instruments`` into four tiers (drums → bass →
+    harmony → melody) and generates each tier sequentially.  Each tier's
+    output MIDI seeds the next, so bass inherits drum groove, harmony
+    inherits bass root motion, and melody inherits the full harmonic context.
+
+    Returns immediately with the full ``ProgressiveGenerationResult`` once
+    all tiers complete.  For large arrangements (many instruments, high
+    quality preset) this may take 60–120 s.
+
+    Unlike ``POST /generate``, this endpoint bypasses the job queue and runs
+    the entire pipeline in-request so per-tier timing is accurate.
+    """
+    result = await _do_progressive_generate(request)
+    status_code = 200 if result["success"] else 500
+    return JSONResponse(status_code=status_code, content=result)
 
 
 @app.get("/jobs/{job_id}", response_model=None)
