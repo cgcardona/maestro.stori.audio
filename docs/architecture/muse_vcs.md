@@ -1790,6 +1790,7 @@ Displays all releases as browseable tags, grouped by namespace prefix:
 - **View commit** link per tag.
 
 Content negotiation: `?format=json` or `Accept: application/json` returns `TagListResponse` (camelCase) including a `namespaces` list. Optional `?namespace=<ns>` query parameter filters by namespace server-side.
+
 ### Repo Home Page
 
 **Purpose:** Provide an "album cover" view of a Muse Hub repo — hearing the latest mix, seeing the arrangement structure, and understanding project activity at a glance.  Replaces the plain commit-list landing page with a rich dashboard suited for musicians, collaborators, and AI agents.
