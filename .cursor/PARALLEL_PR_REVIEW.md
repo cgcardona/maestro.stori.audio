@@ -241,6 +241,23 @@ STEP 5 — REVIEW:
   Read and follow every step in .github/PR_REVIEW_PROMPT.md exactly.
   1. Context — read PR description, referenced issue, commits, files changed
   2. Deep review — work through all applicable checklist sections (3a–3j)
+
+  TYPE SYSTEM — automatic C grade if any of these are present:
+    - cast() at a call site (fix the callee)
+    - Any in a return type, parameter, or TypedDict field
+    - object as a type annotation
+    - dict[str, Any], list[dict], or bare tuples crossing module boundaries
+      (must be wrapped in a named entity: <Domain><Concept>Result)
+    - # type: ignore without an inline comment naming the 3rd-party issue
+    - See docs/reference/type_contracts.md for the canonical entity inventory
+
+  DOCS — automatic C grade if any of these are missing:
+    - Docstrings on every new public module, class, and function
+    - New muse <cmd> section in docs/architecture/muse_vcs.md
+      (must include: purpose, flags table, output example, result type, agent use case)
+    - New result types registered in docs/reference/type_contracts.md
+    - Docs in the same commit as code (not a follow-up PR)
+
   3. Add/fix tests if weak or missing
   4. Run mypy first, then TARGETED tests (Docker-native, $REPO and $WTNAME from STEP 1).
      ⚠️  TARGETED TESTS ONLY — run only the test files relevant to this PR's changes.
