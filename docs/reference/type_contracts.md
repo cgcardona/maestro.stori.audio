@@ -1481,6 +1481,40 @@ content analysis will be wired in once Storpheus exposes per-dimension introspec
 
 **Type alias:** `DimensionData = HarmonyData | DynamicsData | ... | DivergenceData` (union of all 13 model types).
 
+### `DynamicArc`
+
+**Path:** `maestro/models/musehub_analysis.py`
+
+`Literal["flat", "terraced", "crescendo", "decrescendo", "swell", "hairpin"]` — vocabulary of per-track dynamic arc shapes. Used in `TrackDynamicsProfile.arc` and rendered as badges on the dynamics analysis UI page.
+
+### `TrackDynamicsProfile`
+
+**Path:** `maestro/models/musehub_analysis.py`
+
+Per-track velocity analysis result returned by `compute_dynamics_page_data`. Consumed by the dynamics analysis UI page (`GET /{repo_id}/analysis/{ref}/dynamics`) and the JSON endpoint (`GET /repos/{repo_id}/analysis/{ref}/dynamics/page`).
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `track` | `str` | Track name (e.g. `"piano"`, `"bass"`) |
+| `peak_velocity` | `int` | Maximum MIDI velocity (0–127) observed in track |
+| `min_velocity` | `int` | Minimum MIDI velocity (0–127) observed in track |
+| `mean_velocity` | `float` | Mean MIDI velocity across all events |
+| `dynamic_range` | `int` | `peak_velocity - min_velocity` |
+| `arc` | `DynamicArc` | Classified shape of the velocity envelope over time |
+| `curve` | `list[int]` | Downsampled velocity time-series (up to 32 points) for SVG sparkline |
+
+### `DynamicsPageData`
+
+**Path:** `maestro/models/musehub_analysis.py`
+
+Aggregate container returned by `compute_dynamics_page_data`. Feeds the dynamics analysis HTML page and its JSON content-negotiation response.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `repo_id` | `str` | Repository identifier |
+| `ref` | `str` | Commit SHA or branch ref |
+| `tracks` | `list[TrackDynamicsProfile]` | Per-track dynamics profiles, one per active track |
+
 ---
 
 ## Variation Layer

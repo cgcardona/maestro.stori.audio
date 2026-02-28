@@ -6944,6 +6944,79 @@ GET /api/v1/musehub/search?q=F%23+minor+walking+bass&mode=keyword&page_size=5
 The grouped response lets the agent scan commit messages by repo context,
 identify matching repos by name and owner, and immediately fetch audio previews
 via `audioObjectId` without additional round-trips.
+
+---
+
+## Muse Hub — Dynamics Analysis Page (issue #223)
+
+The dynamics analysis page visualises per-track velocity profiles, dynamic arc
+classifications, and a cross-track loudness comparison for a given commit ref.
+
+### JSON endpoint
+
+```
+GET /api/v1/musehub/repos/{repo_id}/analysis/{ref}/dynamics/page
+```
+
+Requires JWT. Returns `DynamicsPageData` — a list of `TrackDynamicsProfile`
+objects, one per active track.
+
+Query params:
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `track` | `str` | (all) | Filter to a single named track |
+| `section` | `str` | (all) | Filter to a named section |
+
+Response fields: `repo_id`, `ref`, `tracks[]` (each with `track`, `peak_velocity`,
+`min_velocity`, `mean_velocity`, `dynamic_range`, `arc`, `curve`).
+
+### Browser UI
+
+```
+GET /{repo_id}/analysis/{ref}/dynamics
+```
+
+Returns a static HTML shell (no JWT required to load; JWT required to fetch
+data). Renders:
+- Per-track SVG velocity sparkline (32-point `curve` array)
+- Dynamic arc badge (`flat` / `crescendo` / `decrescendo` / `terraced` / `swell` / `hairpin`)
+- Peak velocity and velocity range metrics per track
+- Cross-track loudness comparison bar chart
+- Track and section filter dropdowns
+
+### Arc vocabulary
+
+| Arc | Meaning |
+|-----|---------|
+| `flat` | Uniform velocity throughout |
+| `terraced` | Step-wise velocity shifts (Baroque-style) |
+| `crescendo` | Monotonically increasing velocity |
+| `decrescendo` | Monotonically decreasing velocity |
+| `swell` | Rise then fall (arch shape) |
+| `hairpin` | Fall then rise (valley shape) |
+
+### Implementation
+
+| Layer | File | What it does |
+|-------|------|-------------|
+| Pydantic models | `maestro/models/musehub_analysis.py` | `DynamicArc`, `TrackDynamicsProfile`, `DynamicsPageData` |
+| Service | `maestro/services/musehub_analysis.py` | `compute_dynamics_page_data()` — builds stub profiles keyed by `(repo_id, ref)` |
+| Route | `maestro/api/routes/musehub/analysis.py` | `GET .../dynamics/page` — JWT, ETag, 404 on missing repo |
+| UI | `maestro/api/routes/musehub/ui.py` | `dynamics_analysis_page()` — static HTML + JS at `/{repo_id}/analysis/{ref}/dynamics` |
+| Tests | `tests/test_musehub_analysis.py` | Endpoint + service unit tests |
+
+### Agent use case
+
+Before composing a new layer, an agent fetches:
+
+```
+GET /api/v1/musehub/repos/{repo_id}/analysis/{ref}/dynamics/page
+```
+
+It examines the `arc` of each track to decide whether to add velocity
+variation. If all tracks are `flat`, the agent shapes the new part with a
+`crescendo`. If one track is already `crescendo`, the new layer complements it
+rather than competing.
 ---
 
 ## Muse Hub — Contour and Tempo Analysis Pages

@@ -4053,3 +4053,248 @@ async def tempo_page(repo_id: str, ref: str) -> HTMLResponse:
         body_script=script,
     )
     return HTMLResponse(content=html)
+
+
+@router.get(
+    "/{repo_id}/analysis/{ref}/dynamics",
+    response_class=HTMLResponse,
+    summary="Muse Hub dynamics analysis page",
+)
+async def dynamics_analysis_page(repo_id: str, ref: str) -> HTMLResponse:
+    """Render the dynamics analysis page for a Muse commit ref.
+
+    Visualises velocity profiles, arc classifications, and per-track loudness
+    so a mixing engineer can spot dynamic imbalances without running the CLI.
+
+    Data is fetched from:
+    - ``GET /api/v1/musehub/repos/{repo_id}/analysis/{ref}/dynamics/page``
+      for per-track profiles.
+
+    Features:
+    - Per-track velocity profile graphs (SVG, velocity vs beats).
+    - Dynamic arc classification badge per track (crescendo, flat, etc.).
+    - Peak velocity and velocity range numbers per track.
+    - Cross-track loudness comparison bar chart.
+    - Track and section filter dropdowns.
+    - Auth handled client-side via localStorage JWT.
+
+    No Jinja2 -- self-contained HTML string rendered server-side.
+    """
+    script = f"""
+      const repoId = {repr(repo_id)};
+      const ref    = {repr(ref)};
+      const base   = '/musehub/ui/' + repoId;
+      const apiBase = '/api/v1/musehub/repos/' + repoId;
+
+      function escHtml(s) {{
+        if (s === null || s === undefined) return '';
+        return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+      }}
+
+      // ── Arc colour map ───────────────────────────────────────────────────────
+      const ARC_COLORS = {{
+        flat:        '#8b949e',
+        terraced:    '#bc8cff',
+        crescendo:   '#3fb950',
+        decrescendo: '#f0883e',
+        swell:       '#58a6ff',
+        hairpin:     '#ff7b72',
+      }};
+
+      function arcBadge(arc) {{
+        const color = ARC_COLORS[arc] || '#8b949e';
+        return `<span style="display:inline-block;padding:2px 10px;border-radius:12px;
+          font-size:12px;font-weight:600;background:${{color}}22;border:1px solid ${{color}};
+          color:${{color}}">${{escHtml(arc)}}</span>`;
+      }}
+
+      // ── SVG velocity profile graph ────────────────────────────────────────────
+      // Draws an inline SVG curve for a track's velocity_curve array.
+      // Width: 280px, Height: 60px, x=beat position, y=velocity (0-127).
+      function velocityGraphSvg(curve) {{
+        const W = 280, H = 60, PAD = 6;
+        if (!curve || curve.length === 0) return '<em style="color:#8b949e;font-size:12px">no data</em>';
+        const maxBeat = curve[curve.length - 1].beat || 30;
+        const points = curve.map(e => {{
+          const x = PAD + (e.beat / maxBeat) * (W - 2 * PAD);
+          const y = PAD + (1 - e.velocity / 127) * (H - 2 * PAD);
+          return x + ',' + y;
+        }}).join(' ');
+        // Filled area polygon: close the path at bottom-left and bottom-right
+        const firstX = PAD + (curve[0].beat / maxBeat) * (W - 2 * PAD);
+        const lastX  = PAD + (curve[curve.length-1].beat / maxBeat) * (W - 2 * PAD);
+        const polyFill = points + ' ' + lastX + ',' + (H-PAD) + ' ' + firstX + ',' + (H-PAD);
+        return `<svg width="${{W}}" height="${{H}}" style="display:block;border-radius:4px;background:#0d1117">
+          <defs>
+            <linearGradient id="vg" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stop-color="#58a6ff" stop-opacity="0.5"/>
+              <stop offset="100%" stop-color="#58a6ff" stop-opacity="0.05"/>
+            </linearGradient>
+          </defs>
+          <polygon points="${{polyFill}}" fill="url(#vg)"/>
+          <polyline points="${{points}}" fill="none" stroke="#58a6ff" stroke-width="1.5"
+            stroke-linejoin="round" stroke-linecap="round"/>
+        </svg>`;
+      }}
+
+      // ── Loudness comparison bar chart ────────────────────────────────────────
+      // Renders a horizontal bar chart of peak velocities across tracks.
+      function loudnessBarChart(tracks) {{
+        if (!tracks || tracks.length === 0) return '';
+        const maxPeak = Math.max(...tracks.map(t => t.peakVelocity));
+        const bars = tracks.map(t => {{
+          const pct = maxPeak > 0 ? Math.round((t.peakVelocity / 127) * 100) : 0;
+          const color = ARC_COLORS[t.arc] || '#58a6ff';
+          return `<div style="margin-bottom:10px">
+            <div style="display:flex;justify-content:space-between;margin-bottom:3px;font-size:13px">
+              <span style="color:#e6edf3">${{escHtml(t.track)}}</span>
+              <span style="color:#8b949e;font-size:12px">${{t.peakVelocity}} / 127</span>
+            </div>
+            <div style="background:#21262d;border-radius:4px;height:10px;overflow:hidden">
+              <div style="width:${{pct}}%;height:100%;background:${{color}};border-radius:4px;
+                transition:width 0.4s ease"></div>
+            </div>
+          </div>`;
+        }}).join('');
+        return `<div style="margin-top:8px">${{bars}}</div>`;
+      }}
+
+      // ── Track card ───────────────────────────────────────────────────────────
+      function trackCard(t) {{
+        return `<div class="card" style="margin-bottom:14px">
+          <div style="display:flex;align-items:center;gap:12px;margin-bottom:10px;flex-wrap:wrap">
+            <h2 style="margin:0;font-size:15px;color:#e6edf3">${{escHtml(t.track)}}</h2>
+            ${{arcBadge(t.arc)}}
+          </div>
+          <div style="display:flex;gap:20px;flex-wrap:wrap;margin-bottom:10px">
+            <div class="meta-item">
+              <span class="meta-label">Peak Velocity</span>
+              <span class="meta-value" style="font-size:18px;color:#58a6ff">${{t.peakVelocity}}</span>
+            </div>
+            <div class="meta-item">
+              <span class="meta-label">Min Velocity</span>
+              <span class="meta-value">${{t.minVelocity}}</span>
+            </div>
+            <div class="meta-item">
+              <span class="meta-label">Mean Velocity</span>
+              <span class="meta-value">${{t.meanVelocity.toFixed(1)}}</span>
+            </div>
+            <div class="meta-item">
+              <span class="meta-label">Range</span>
+              <span class="meta-value">${{t.velocityRange}}</span>
+            </div>
+          </div>
+          <div>
+            <span class="meta-label" style="display:block;margin-bottom:6px">Velocity Profile</span>
+            ${{velocityGraphSvg(t.velocityCurve)}}
+          </div>
+        </div>`;
+      }}
+
+      // ── Filter helpers ────────────────────────────────────────────────────────
+      function buildUrl(track, section) {{
+        let url = apiBase + '/analysis/' + encodeURIComponent(ref) + '/dynamics/page';
+        const params = [];
+        if (track)   params.push('track='   + encodeURIComponent(track));
+        if (section) params.push('section=' + encodeURIComponent(section));
+        if (params.length) url += '?' + params.join('&');
+        return url;
+      }}
+
+      let _knownTracks = [];
+      const _sections  = ['intro', 'verse_1', 'chorus', 'verse_2', 'outro'];
+
+      function buildFilters(currentTrack, currentSection) {{
+        const trackOpts = ['', ..._knownTracks].map(t =>
+          `<option value="${{escHtml(t)}}" ${{t === currentTrack ? 'selected' : ''}}>${{t || 'All tracks'}}</option>`
+        ).join('');
+        const secOpts = ['', ..._sections].map(s =>
+          `<option value="${{escHtml(s)}}" ${{s === currentSection ? 'selected' : ''}}>${{s || 'All sections'}}</option>`
+        ).join('');
+        return `
+          <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-bottom:16px">
+            <div class="meta-item">
+              <span class="meta-label">Track</span>
+              <select id="track-sel" onchange="applyFilters()">
+                ${{trackOpts}}
+              </select>
+            </div>
+            <div class="meta-item">
+              <span class="meta-label">Section</span>
+              <select id="section-sel" onchange="applyFilters()">
+                ${{secOpts}}
+              </select>
+            </div>
+          </div>`;
+      }}
+
+      function applyFilters() {{
+        const track   = document.getElementById('track-sel').value;
+        const section = document.getElementById('section-sel').value;
+        load(track || null, section || null);
+      }}
+
+      // ── Main load ─────────────────────────────────────────────────────────────
+      async function load(track, section) {{
+        document.getElementById('content').innerHTML =
+          '<p class="loading">Loading dynamics data&#8230;</p>';
+        try {{
+          const url = buildUrl(track, section).replace(apiBase, '');
+          const data = await apiFetch(url);
+
+          _knownTracks = data.tracks.map(t => t.track);
+
+          const trackCards = data.tracks.length === 0
+            ? '<p class="loading">No track data available for this ref.</p>'
+            : data.tracks.map(trackCard).join('');
+
+          // Sort tracks by peak velocity for the bar chart (loudest first)
+          const sortedTracks = [...data.tracks].sort((a, b) => b.peakVelocity - a.peakVelocity);
+
+          document.getElementById('content').innerHTML = `
+            <div style="margin-bottom:12px">
+              <a href="${{base}}">&larr; Back to repo</a>
+            </div>
+
+            <div class="card" style="border-color:#1f6feb;margin-bottom:16px">
+              <div style="display:flex;align-items:center;gap:12px;margin-bottom:8px;flex-wrap:wrap">
+                <h1 style="margin:0">&#127897; Dynamics Analysis</h1>
+                <code style="font-size:13px;background:#0d1117;padding:2px 8px;border-radius:4px;
+                  color:#8b949e">${{escHtml(ref.substring(0,12))}}</code>
+                <span style="font-size:13px;color:#8b949e">
+                  ${{data.tracks.length}} track${{data.tracks.length !== 1 ? 's' : ''}}
+                </span>
+              </div>
+              <p style="font-size:13px;color:#8b949e;margin:0">
+                Velocity profiles and arc classifications for each instrument track.
+                Use the filters to focus on a specific track or section.
+              </p>
+            </div>
+
+            ${{buildFilters(track || '', section || '')}}
+
+            <div class="card" style="margin-bottom:16px">
+              <h2 style="margin-bottom:14px">&#128202; Cross-Track Loudness</h2>
+              ${{loudnessBarChart(sortedTracks)}}
+            </div>
+
+            ${{trackCards}}
+          `;
+        }} catch(e) {{
+          if (e.message !== 'auth')
+            document.getElementById('content').innerHTML =
+              '<p class="error">&#10005; ' + escHtml(e.message) + '</p>';
+        }}
+      }}
+
+      load(null, null);
+    """
+    html = _page(
+        title=f"Dynamics — {ref[:8]}",
+        breadcrumb=(
+            f'<a href="/musehub/ui/{repo_id}">{repo_id[:8]}</a> / '
+            f"analysis / {ref[:8]} / dynamics"
+        ),
+        body_script=script,
+    )
+    return HTMLResponse(content=html)
