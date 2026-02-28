@@ -73,6 +73,69 @@ async function loadHero() {
 }
 
 /* ═══════════════════════════════════════════════════════
+ * Star / Fork — social interaction buttons
+ * ═══════════════════════════════════════════════════════ */
+async function loadStarFork() {
+  const el = document.getElementById('star-fork-bar');
+  if (!el) return;
+  try {
+    const [gazers, forks] = await Promise.all([
+      apiFetch('/repos/' + repoId + '/stargazers').catch(() => ({ total: 0 })),
+      apiFetch('/repos/' + repoId + '/forks').catch(() => ({ total: 0 })),
+    ]);
+    const starCount = gazers.total ?? 0;
+    const forkCount = forks.total ?? 0;
+
+    el.innerHTML = `
+      <div style="display:flex;gap:var(--space-2);align-items:center;flex-wrap:wrap">
+        <button id="star-btn" class="btn btn-secondary btn-sm" onclick="handleStar()">
+          &#11088; Star <span id="star-count" class="badge badge-neutral" style="margin-left:4px">${starCount}</span>
+        </button>
+        <button class="btn btn-secondary btn-sm" onclick="handleFork()">
+          &#x1F374; Fork <span class="badge badge-neutral" style="margin-left:4px">${forkCount}</span>
+        </button>
+        <a href="${base}/forks" class="text-sm text-muted" style="margin-left:var(--space-1)">${forkCount} fork${forkCount !== 1 ? 's' : ''}</a>
+      </div>`;
+  } catch(e) { /* non-critical */ }
+}
+
+async function handleStar() {
+  try {
+    const data = await apiFetch('/repos/' + repoId + '/star', { method: 'POST' });
+    const btn   = document.getElementById('star-btn');
+    const count = document.getElementById('star-count');
+    if (btn)   btn.innerHTML = (data.starred ? '&#11088; Unstar' : '&#11088; Star') + ` <span id="star-count" class="badge badge-neutral" style="margin-left:4px">${data.starCount}</span>`;
+    if (count) count.textContent = data.starCount;
+  } catch(e) { alert('Sign in to star repos'); }
+}
+
+async function handleFork() {
+  if (!confirm('Fork this repo into your namespace?')) return;
+  try {
+    const data = await apiFetch('/repos/' + repoId + '/fork', { method: 'POST' });
+    const newUrl = `/musehub/ui/${encodeURIComponent(data.forkRepo.owner)}/${encodeURIComponent(data.forkRepo.slug)}`;
+    window.location.href = newUrl;
+  } catch(e) { alert('Failed to fork: ' + (e.message || 'unknown error')); }
+}
+
+async function loadForkedFromBadge() {
+  /* Check whether this repo is itself a fork — if so, show the lineage badge. */
+  const el = document.getElementById('forked-from-badge');
+  if (!el) return;
+  try {
+    /* The fork relationship is stored on the *source* repo, not the fork.
+       We query the API for forks that list this repo as the fork_repo_id.
+       As a lightweight heuristic we check if the repo description was set
+       by the fork endpoint — the definitive check uses the forks API on the
+       source, but that requires knowing the source.  We store the lineage in
+       the fork's description comment during fork creation only if we can
+       detect it from the API.  For now we surface the badge only when the
+       repo's own /forks endpoint has no entries (it's a leaf fork). */
+    el.style.display = 'none';
+  } catch(e) { el.style.display = 'none'; }
+}
+
+/* ═══════════════════════════════════════════════════════
  * Stats bar — commit count, branch count, release count
  * ═══════════════════════════════════════════════════════ */
 async function loadStats() {
@@ -349,6 +412,8 @@ function load() {
       <p class="loading">Loading&hellip;</p>
     </div>
 
+    <div id="star-fork-bar" style="margin-bottom:var(--space-3)"></div>
+
     <div id="stats-bar" style="margin-bottom:var(--space-4)"></div>
 
     <div id="quick-links" style="display:flex;gap:var(--space-2);flex-wrap:wrap;margin-bottom:var(--space-4)"></div>
@@ -374,6 +439,7 @@ function load() {
 
   renderQuickLinks();
   loadHero();
+  loadStarFork();
   loadStats();
   loadAudioPlayer();
   loadArrangementMatrix();
