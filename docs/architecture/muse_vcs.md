@@ -1561,47 +1561,191 @@ existing drum performance.
 
 ---
 
-### `muse recall`
+## `muse chord-map` — Chord Progression Timeline
 
-**Purpose:** Search the full commit history using natural language. Returns ranked
-commits whose messages best match the query. The musical memory retrieval command —
-"find me that arrangement I made three months ago."
+`muse chord-map [<commit>]` extracts and displays the chord timeline of a
+specific commit — showing *when* each chord occurs in the arrangement, not
+just which chords are present.  This is the foundation for AI-generated
+harmonic analysis and chord-substitution suggestions.
+
+**Purpose:** Give AI agents a precise picture of the harmonic structure at any
+commit so they can reason about the progression in time, propose substitutions,
+or detect tension/resolution cycles.
+
+### Flags
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `COMMIT` | positional | HEAD | Commit ref to analyse. |
+| `--section TEXT` | string | — | Scope to a named section/region. |
+| `--track TEXT` | string | — | Scope to a specific track (e.g. piano for chord voicings). |
+| `--bar-grid / --no-bar-grid` | flag | on | Align chord events to musical bar numbers. |
+| `--format FORMAT` | string | `text` | Output format: `text`, `json`, or `mermaid`. |
+| `--voice-leading` | flag | off | Show how individual notes move between consecutive chords. |
+
+### Output example
+
+**Text (default, `--bar-grid`):**
+
+```
+Chord map -- commit a1b2c3d4  (HEAD -> main)
+
+Bar  1: Cmaj9       ########
+Bar  2: Am11        ########
+Bar  3: Dm7         ####  Gsus4       ####
+Bar  4: G7          ########
+Bar  5: Cmaj9       ########
+
+(stub -- full MIDI chord detection pending)
+```
+
+**With `--voice-leading`:**
+
+```
+Chord map -- commit a1b2c3d4  (HEAD -> main)
+
+Bar  2: Cmaj9    -> Am11  (E->E, G->G, B->A, D->C)
+Bar  3: Am11     -> Dm7   (A->D, C->C, E->F, G->A)
+...
+```
+
+**JSON (`--format json`):**
+
+```json
+{
+  "commit": "a1b2c3d4",
+  "branch": "main",
+  "track": "all",
+  "section": "",
+  "chords": [
+    { "bar": 1, "beat": 1, "chord": "Cmaj9", "duration": 1.0, "track": "keys" },
+    { "bar": 2, "beat": 1, "chord": "Am11",  "duration": 1.0, "track": "keys" }
+  ],
+  "voice_leading": []
+}
+```
+
+**Mermaid (`--format mermaid`):**
+
+```
+timeline
+    title Chord map -- a1b2c3d4
+    section Bar 1
+        Cmaj9
+    section Bar 2
+        Am11
+```
+
+### Result type
+
+`muse chord-map` returns a `ChordMapResult` TypedDict (see
+`docs/reference/type_contracts.md § ChordMapResult`).  Each chord event is a
+`ChordEvent`; each voice-leading step is a `VoiceLeadingStep`.
+
+### Agent use case
+
+An AI agent writing a counter-melody calls `muse chord-map HEAD --format json`
+to retrieve the exact bar-by-bar harmonic grid.  It then selects chord tones
+that land on the strong beats.  With `--voice-leading`, the agent can also
+detect smooth inner-voice motion and mirror it in the new part.
+
+**Implementation:** `maestro/muse_cli/commands/chord_map.py` —
+`_chord_map_async()`, `_render_text()`, `_render_json()`, `_render_mermaid()`.
+Exit codes: 0 success, 1 invalid `--format`, 2 outside repo, 3 internal error.
+
+> **Stub note:** Returns a placeholder I-vi-ii-V-I progression. Full
+> implementation requires chord-detection from committed MIDI note events
+> (future: Storpheus MIDI parse route).
+
+---
+
+## `muse key` — Read or Annotate the Musical Key of a Commit
+
+`muse key` reads or annotates the tonal center (key) of a Muse commit.
+Key is the most fundamental property of a piece of music — knowing the key is a
+prerequisite for harmonic generation, chord-scale selection, and tonal arc
+analysis. An AI agent calls `muse key --json` before generating new material to
+stay in the correct tonal center.
 
 **Usage:**
 ```bash
-muse recall "<description>" [OPTIONS]
+muse key [<commit>] [OPTIONS]
 ```
 
 **Flags:**
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
-| `QUERY` | positional | required | Natural-language description of what to find |
-| `--limit N` | int | 5 | Maximum results to return |
-| `--threshold FLOAT` | float | 0.6 | Minimum similarity score (0.0–1.0) |
-| `--branch TEXT` | string | all branches | Restrict search to a specific branch |
-| `--since DATE` | `YYYY-MM-DD` | — | Only search commits after this date |
-| `--until DATE` | `YYYY-MM-DD` | — | Only search commits before this date |
-| `--json` | flag | off | Emit structured JSON array |
+| `<commit>` | arg | HEAD | Commit SHA to analyse |
+| `--set KEY` | str | — | Annotate with an explicit key (e.g. `"F# minor"`) |
+| `--detect` | flag | on | Detect and display the key (default behaviour) |
+| `--track TEXT` | str | — | Restrict key detection to a specific instrument track |
+| `--relative` | flag | off | Show the relative key (e.g. `"Eb major / C minor"`) |
+| `--history` | flag | off | Show how the key changed across all commits |
+| `--json` | flag | off | Emit machine-readable JSON for agent consumption |
 
-**Scoring (current stub):** Normalized keyword overlap coefficient — `|Q ∩ M| / |Q|` — where Q is the set of query tokens and M is the set of message tokens. Score 1.0 means every query word appeared in the commit message.
+**Key format:** `<tonic> <mode>` — e.g. `"F# minor"`, `"Eb major"`. Valid tonics
+include all 12 chromatic pitches with `#` and `b` enharmonics. Valid modes are
+`major` and `minor`.
 
 **Output example (text):**
 ```
-Recall: "dark jazz bassline"
-keyword match · threshold 0.60 · limit 5
-
-  1. [a1b2c3d4]  2026-02-15 22:00  boom bap demo take 3      score 0.67
-  2. [f9e8d7c6]  2026-02-10 18:30  jazz bass overdub session  score 0.50
+Key: C major
+Commit: a1b2c3d4  Branch: main
+Track: all
+(stub — full MIDI key detection pending)
 ```
 
-**Result type:** `RecallResult` (TypedDict) — fields: `rank` (int), `score` (float), `commit_id` (str), `date` (str), `branch` (str), `message` (str)
+**Output example (`--relative`):**
+```
+Key: A minor
+Commit: a1b2c3d4  Branch: main
+Track: all
+Relative: C major
+(stub — full MIDI key detection pending)
+```
 
-**Agent use case:** An agent asked to "generate something like that funky bass riff from last month" calls `muse recall "funky bass" --json --limit 3` to retrieve the closest historical commits, then uses those as style references for generation.
+**Output example (`--json`):**
+```json
+{
+  "key": "C major",
+  "tonic": "C",
+  "mode": "major",
+  "relative": "",
+  "commit": "a1b2c3d4",
+  "branch": "main",
+  "track": "all",
+  "source": "stub"
+}
+```
 
-**Implementation:** `maestro/muse_cli/commands/recall.py` — `RecallResult` (TypedDict), `_tokenize()`, `_score()`, `_recall_async()`. Exit codes: 0 success, 1 bad date format, 2 outside repo.
+**Output example (`--history --json`):**
+```json
+[
+  {"commit": "a1b2c3d4", "key": "C major", "tonic": "C", "mode": "major", "source": "stub"}
+]
+```
 
-> **Stub note:** Uses keyword overlap. Full implementation: vector embeddings stored in Qdrant, cosine similarity retrieval. The CLI interface will not change when vector search is added.
+**Result types:** `KeyDetectResult` (TypedDict) — fields: `key` (str), `tonic` (str),
+`mode` (str), `relative` (str), `commit` (str), `branch` (str), `track` (str),
+`source` (str). History mode returns `list[KeyHistoryEntry]`. See
+`docs/reference/type_contracts.md § Muse CLI Types`.
+
+**Agent use case:** Before generating a chord progression or melody, an agent runs
+`muse key --json` to discover the tonal center of the most recent commit.
+`muse key --history --json` reveals modulations across an album — if the key
+changed from D major to F major at commit `abc123`, the agent knows a modulation
+occurred and can generate transitional material accordingly.
+
+**Implementation:** `maestro/muse_cli/commands/key.py` — `parse_key()`,
+`relative_key()`, `_key_detect_async()`, `_key_history_async()`,
+`_format_detect()`, `_format_history()`. Exit codes: 0 success, 1 invalid
+`--set` value, 2 outside repo, 3 internal error.
+
+> **Stub note:** Returns a placeholder key of `C major`. Full implementation
+> requires chromatic pitch-class distribution analysis from committed MIDI note
+> events (Krumhansl-Schmuckler or similar key-finding algorithm, future:
+> Storpheus MIDI parse route).
 
 ---
 
@@ -1898,6 +2042,7 @@ detection).
 | `muse recall` | `commands/recall.py` | ✅ stub (PR #135) | #122 |
 | `muse tag` | `commands/tag.py` | ✅ implemented (PR #133) | #123 |
 | `muse grep` | `commands/grep_cmd.py` | ✅ stub (PR #128) | #124 |
+| `muse humanize` | `commands/humanize.py` | ✅ stub (PR #151) | #107 |
 | `muse describe` | `commands/describe.py` | ✅ stub (PR #134) | #125 |
 | `muse ask` | `commands/ask.py` | ✅ stub (PR #132) | #126 |
 | `muse session` | `commands/session.py` | ✅ implemented (PR #129) | #127 |
@@ -2351,6 +2496,42 @@ lead            79   105     38  swell
 
 ---
 
+## `muse humanize` — Apply Micro-Timing and Velocity Humanization to Quantized MIDI
+
+**Purpose:** Apply realistic human-performance variation to machine-quantized MIDI, producing a new Muse commit that sounds natural. AI agents use this after generating quantized output to make compositions feel human before presenting them to DAW users.
+
+**Usage:**
+```bash
+muse humanize [COMMIT] [OPTIONS]
+```
+
+**Flags:**
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `COMMIT` | argument | HEAD | Source commit ref to humanize |
+| `--tight` | flag | off | Subtle: timing +/-5 ms, velocity +/-5 |
+| `--natural` | flag | on | Moderate: timing +/-12 ms, velocity +/-10 (default) |
+| `--loose` | flag | off | Heavy: timing +/-20 ms, velocity +/-15 |
+| `--factor FLOAT` | float | - | Custom factor 0.0-1.0 (overrides preset) |
+| `--timing-only` | flag | off | Apply timing variation only; preserve velocities |
+| `--velocity-only` | flag | off | Apply velocity variation only; preserve timing |
+| `--track TEXT` | string | all | Restrict to one track (prefix match) |
+| `--section TEXT` | string | all | Restrict to a named section |
+| `--seed N` | int | - | Fix random seed for reproducible output |
+| `--message TEXT` | string | auto | Commit message |
+| `--json` | flag | off | Emit structured JSON for agent consumption |
+
+**Result types:** `HumanizeResult` and `TrackHumanizeResult` (both TypedDict). See `docs/reference/type_contracts.md`.
+
+**Agent use case:** After `muse commit` records a machine-generated MIDI variation, an AI agent runs `muse humanize --natural --seed 42` to add realistic performance feel. Drum groove is preserved automatically (GM channel 10 excluded from timing variation).
+
+**Implementation:** `maestro/muse_cli/commands/humanize.py`. Exit codes: 0 success, 1 flag conflict, 2 outside repo, 3 internal.
+
+> **Stub note:** Full MIDI note rewrite pending Storpheus note-level access. CLI interface is stable.
+
+---
+
 ## `muse import` — Import a MIDI or MusicXML File as a New Muse Commit
 
 ### Overview
@@ -2624,7 +2805,111 @@ Validating working tree …
 must investigate the failing check before committing — a corrupted MIDI would silently
 corrupt the composition history. With `--strict`, agents can enforce zero-warning quality gates.
 
+---
 
+## `muse diff` — Music-Dimension Diff Between Commits
+
+**Purpose:** Compare two commits across five orthogonal musical dimensions —
+harmonic, rhythmic, melodic, structural, and dynamic.  Where `git diff` tells
+you "file changed," `muse diff --harmonic` tells you "the song modulated from
+Eb major to F minor and the tension profile doubled."  This is the killer
+feature that proves Muse's value over Git: musically meaningful version control.
+
+**Usage:**
+```bash
+muse diff [<COMMIT_A>] [<COMMIT_B>] [OPTIONS]
+```
+
+Defaults: `COMMIT_A` = HEAD~1, `COMMIT_B` = HEAD.
+
+**Flags:**
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `COMMIT_A` | positional | HEAD~1 | Earlier commit ref |
+| `COMMIT_B` | positional | HEAD | Later commit ref |
+| `--harmonic` | flag | off | Compare key, mode, chord progression, tension |
+| `--rhythmic` | flag | off | Compare tempo, meter, swing, groove drift |
+| `--melodic` | flag | off | Compare motifs, contour, pitch range |
+| `--structural` | flag | off | Compare sections, instrumentation, form |
+| `--dynamic` | flag | off | Compare velocity arc, per-track loudness |
+| `--all` | flag | off | Run all five dimensions simultaneously |
+| `--json` | flag | off | Emit structured JSON for agent consumption |
+
+**Output example (`muse diff HEAD~1 HEAD --harmonic`):**
+```
+Harmonic diff: abc1234 -> def5678
+
+Key:           Eb major -> F minor
+Mode:          Major -> Minor
+Chord prog:    I-IV-V-I -> i-VI-III-VII
+Tension:       Low (0.2) -> Medium-High (0.65)
+Summary:       Major harmonic restructuring — key modulation down a minor 3rd, shift to Andalusian cadence
+```
+
+**Output example (`muse diff HEAD~1 HEAD --rhythmic`):**
+```
+Rhythmic diff: abc1234 -> def5678
+
+Tempo:         120.0 BPM -> 128.0 BPM (+8.0 BPM)
+Meter:         4/4 -> 4/4
+Swing:         Straight (0.5) -> Light swing (0.57)
+Groove drift:  12.0ms -> 6.0ms
+Summary:       Slightly faster, more swung, tighter quantization
+```
+
+**Output example (`muse diff HEAD~1 HEAD --all`):**
+```
+Music diff: abc1234 -> def5678
+Changed:   harmonic, rhythmic, melodic, structural, dynamic
+Unchanged: (none)
+
+-- Harmonic --
+...
+
+-- Rhythmic --
+...
+```
+
+**Unchanged dimensions:** When a dimension shows no change, the renderer appends
+`Unchanged` to the block rather than omitting it.  This guarantees agents always
+receive a complete report — silence is never ambiguous.
+
+**Result types:**
+
+| Type | Fields |
+|------|--------|
+| `HarmonicDiffResult` | `commit_a/b`, `key_a/b`, `mode_a/b`, `chord_prog_a/b`, `tension_a/b`, `tension_label_a/b`, `summary`, `changed` |
+| `RhythmicDiffResult` | `commit_a/b`, `tempo_a/b`, `meter_a/b`, `swing_a/b`, `swing_label_a/b`, `groove_drift_ms_a/b`, `summary`, `changed` |
+| `MelodicDiffResult` | `commit_a/b`, `motifs_introduced`, `motifs_removed`, `contour_a/b`, `range_low_a/b`, `range_high_a/b`, `summary`, `changed` |
+| `StructuralDiffResult` | `commit_a/b`, `sections_added`, `sections_removed`, `instruments_added`, `instruments_removed`, `form_a/b`, `summary`, `changed` |
+| `DynamicDiffResult` | `commit_a/b`, `avg_velocity_a/b`, `arc_a/b`, `tracks_louder`, `tracks_softer`, `tracks_silent`, `summary`, `changed` |
+| `MusicDiffReport` | All five dimension results + `changed_dimensions`, `unchanged_dimensions`, `summary` |
+
+See `docs/reference/type_contracts.md § Muse Diff Types`.
+
+**Agent use case:** An AI composing a new variation runs
+`muse diff HEAD~3 HEAD --harmonic --json` before generating to understand
+whether the last three sessions have been converging on a key or exploring
+multiple tonalities.  The `changed_dimensions` field in `MusicDiffReport` lets
+the agent prioritize which musical parameters to vary next.
+
+**Implementation:** `maestro/muse_cli/commands/diff.py` —
+`HarmonicDiffResult`, `RhythmicDiffResult`, `MelodicDiffResult`,
+`StructuralDiffResult`, `DynamicDiffResult`, `MusicDiffReport` (TypedDicts);
+`_harmonic_diff_async()`, `_rhythmic_diff_async()`, `_melodic_diff_async()`,
+`_structural_diff_async()`, `_dynamic_diff_async()`, `_diff_all_async()`;
+`_render_harmonic()`, `_render_rhythmic()`, `_render_melodic()`,
+`_render_structural()`, `_render_dynamic()`, `_render_report()`;
+`_resolve_refs()`, `_tension_label()`.
+Exit codes: 0 success, 2 outside repo (`REPO_NOT_FOUND`), 3 internal error.
+
+> **Stub note:** All dimension analyses return realistic placeholder data.
+> Full implementation requires Storpheus MIDI parsing for chord/tempo/motif
+> extraction.  The CLI contract (flags, output schema, result types) is frozen
+> so agents can rely on it before the analysis pipeline is wired in.
+
+---
 
 ## `muse tempo-scale` — Stretch or Compress the Timing of a Commit
 
@@ -2712,9 +2997,6 @@ arguments (`USER_ERROR`), 2 outside repo (`REPO_NOT_FOUND`), 3 internal error
 
 ---
 
-
----
-
 ## Command Registration Summary
 
 | Command | File | Status | Issue |
@@ -2723,6 +3005,7 @@ arguments (`USER_ERROR`), 2 outside repo (`REPO_NOT_FOUND`), 3 internal error
 | `muse context` | `commands/context.py` | ✅ implemented (PR #138) | #113 |
 | `muse describe` | `commands/describe.py` | ✅ stub (PR #134) | #125 |
 | `muse divergence` | `commands/divergence.py` | ✅ implemented (PR #140) | #119 |
+| `muse diff` | `commands/diff.py` | ✅ stub (this PR) | #104 |
 | `muse dynamics` | `commands/dynamics.py` | ✅ stub (PR #130) | #120 |
 | `muse export` | `commands/export.py` | ✅ implemented (PR #137) | #112 |
 | `muse grep` | `commands/grep_cmd.py` | ✅ stub (PR #128) | #124 |
