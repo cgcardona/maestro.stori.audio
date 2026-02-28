@@ -18,6 +18,7 @@ Single source-of-truth migration for Stori Maestro. Creates:
   Muse CLI — filesystem commit history
   - muse_cli_objects, muse_cli_snapshots, muse_cli_commits
     (includes parent2_commit_id for merge commits)
+  - muse_cli_tags (music-semantic tags attached to commits)
 
   Muse Hub — remote collaboration backend
   - musehub_repos, musehub_branches, musehub_commits, musehub_issues
@@ -231,6 +232,20 @@ def upgrade() -> None:
     op.create_index("ix_muse_cli_commits_parent_commit_id", "muse_cli_commits", ["parent_commit_id"])
     op.create_index("ix_muse_cli_commits_parent2_commit_id", "muse_cli_commits", ["parent2_commit_id"])
 
+    op.create_table(
+        "muse_cli_tags",
+        sa.Column("tag_id", sa.String(36), nullable=False),
+        sa.Column("repo_id", sa.String(36), nullable=False),
+        sa.Column("commit_id", sa.String(64), nullable=False),
+        sa.Column("tag", sa.Text(), nullable=False),
+        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
+        sa.ForeignKeyConstraint(["commit_id"], ["muse_cli_commits.commit_id"], ondelete="CASCADE"),
+        sa.PrimaryKeyConstraint("tag_id"),
+    )
+    op.create_index("ix_muse_cli_tags_repo_id", "muse_cli_tags", ["repo_id"])
+    op.create_index("ix_muse_cli_tags_commit_id", "muse_cli_tags", ["commit_id"])
+    op.create_index("ix_muse_cli_tags_tag", "muse_cli_tags", ["tag"])
+
     # ── Muse Hub — remote collaboration backend ───────────────────────────
     op.create_table(
         "musehub_repos",
@@ -365,6 +380,10 @@ def downgrade() -> None:
     op.drop_table("musehub_repos")
 
     # Muse CLI
+    op.drop_index("ix_muse_cli_tags_tag", table_name="muse_cli_tags")
+    op.drop_index("ix_muse_cli_tags_commit_id", table_name="muse_cli_tags")
+    op.drop_index("ix_muse_cli_tags_repo_id", table_name="muse_cli_tags")
+    op.drop_table("muse_cli_tags")
     op.drop_index("ix_muse_cli_commits_parent2_commit_id", table_name="muse_cli_commits")
     op.drop_index("ix_muse_cli_commits_parent_commit_id", table_name="muse_cli_commits")
     op.drop_index("ix_muse_cli_commits_repo_id", table_name="muse_cli_commits")
