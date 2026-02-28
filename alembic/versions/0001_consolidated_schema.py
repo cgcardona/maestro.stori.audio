@@ -373,6 +373,7 @@ def upgrade() -> None:
         ),
         sa.ForeignKeyConstraint(["repo_id"], ["musehub_repos.repo_id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("release_id"),
+        sa.UniqueConstraint("repo_id", "tag", name="uq_musehub_releases_repo_tag"),
     )
     op.create_index("ix_musehub_releases_repo_id", "musehub_releases", ["repo_id"])
     op.create_index("ix_musehub_releases_tag", "musehub_releases", ["tag"])

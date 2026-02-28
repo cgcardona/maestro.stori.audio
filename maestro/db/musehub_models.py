@@ -13,7 +13,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.types import JSON
 
@@ -212,11 +212,13 @@ class MusehubRelease(Base):
     The ``download_urls`` field is a JSON object keyed by package type:
     "midi_bundle", "stems", "mp3", "musicxml", "metadata".
 
-    ``tag`` is unique per repo — attempting to create a second release with the
-    same tag must be rejected at the service layer.
+    ``tag`` is unique per repo — enforced by the DB constraint
+    ``uq_musehub_releases_repo_tag`` and guarded at the service layer to
+    return a clean 409 before the constraint fires.
     """
 
     __tablename__ = "musehub_releases"
+    __table_args__ = (UniqueConstraint("repo_id", "tag", name="uq_musehub_releases_repo_tag"),)
 
     release_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_new_uuid)
     repo_id: Mapped[str] = mapped_column(
