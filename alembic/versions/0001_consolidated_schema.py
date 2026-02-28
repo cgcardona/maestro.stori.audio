@@ -25,6 +25,7 @@ Single source-of-truth migration for Stori Maestro. Creates:
   - musehub_repos, musehub_branches, musehub_commits, musehub_issues
   - musehub_pull_requests (PR workflow between branches)
   - musehub_objects (content-addressed binary artifact storage)
+  - musehub_sessions (recording session records pushed from CLI clients)
 
 Fresh install:
   docker compose exec maestro alembic upgrade head
@@ -354,8 +355,38 @@ def upgrade() -> None:
     )
     op.create_index("ix_musehub_objects_repo_id", "musehub_objects", ["repo_id"])
 
+    # ── Muse Hub — recording sessions ─────────────────────────────────────
+    op.create_table(
+        "musehub_sessions",
+        sa.Column("session_id", sa.String(36), nullable=False),
+        sa.Column("repo_id", sa.String(36), nullable=False),
+        sa.Column("schema_version", sa.String(10), nullable=False, server_default="1"),
+        sa.Column("started_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("ended_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("participants", sa.JSON(), nullable=False, server_default="[]"),
+        sa.Column("location", sa.String(500), nullable=False, server_default=""),
+        sa.Column("intent", sa.Text(), nullable=False, server_default=""),
+        sa.Column("commits", sa.JSON(), nullable=False, server_default="[]"),
+        sa.Column("notes", sa.Text(), nullable=False, server_default=""),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            nullable=False,
+            server_default=sa.text("CURRENT_TIMESTAMP"),
+        ),
+        sa.ForeignKeyConstraint(["repo_id"], ["musehub_repos.repo_id"], ondelete="CASCADE"),
+        sa.PrimaryKeyConstraint("session_id"),
+    )
+    op.create_index("ix_musehub_sessions_repo_id", "musehub_sessions", ["repo_id"])
+    op.create_index("ix_musehub_sessions_started_at", "musehub_sessions", ["started_at"])
+
 
 def downgrade() -> None:
+    # Muse Hub — recording sessions
+    op.drop_index("ix_musehub_sessions_started_at", table_name="musehub_sessions")
+    op.drop_index("ix_musehub_sessions_repo_id", table_name="musehub_sessions")
+    op.drop_table("musehub_sessions")
+
     # Muse Hub — binary artifact storage
     op.drop_index("ix_musehub_objects_repo_id", table_name="musehub_objects")
     op.drop_table("musehub_objects")

@@ -1402,6 +1402,7 @@ The Muse Hub is a lightweight GitHub-equivalent that lives inside the Maestro Fa
 | `musehub_objects` | Binary artifact metadata (MIDI, MP3, WebP piano rolls) |
 | `musehub_issues` | Issue tracker entries per repo |
 | `musehub_pull_requests` | Pull requests proposing branch merges |
+| `musehub_sessions` | Recording session records pushed from CLI clients |
 
 ### Module Map
 
@@ -1412,13 +1413,15 @@ maestro/
 ├── services/musehub_repository.py        — Async DB queries for repos/branches/commits
 ├── services/musehub_issues.py            — Async DB queries for issues (single point of DB access)
 ├── services/musehub_pull_requests.py     — Async DB queries for PRs (single point of DB access)
+├── services/musehub_sessions.py          — Async DB queries for sessions (upsert, list, get)
 ├── services/musehub_sync.py              — Push/pull sync protocol (ingest_push, compute_pull_delta)
 └── api/routes/musehub/
     ├── __init__.py                       — Composes sub-routers under /musehub prefix
-    ├── repos.py                          — Repo/branch/commit route handlers
+    ├── repos.py                          — Repo/branch/commit/session route handlers
     ├── issues.py                         — Issue tracking route handlers
     ├── pull_requests.py                  — Pull request route handlers
-    └── sync.py                           — Push/pull sync route handlers
+    ├── sync.py                           — Push/pull sync route handlers
+    └── ui.py                             — Browser UI (HTML shell pages, no auth required)
 ```
 
 ### Endpoints
@@ -1450,6 +1453,14 @@ maestro/
 | GET | `/api/v1/musehub/repos/{id}/pull-requests/{pr_id}` | Get a single PR by ID |
 | POST | `/api/v1/musehub/repos/{id}/pull-requests/{pr_id}/merge` | Merge an open PR |
 
+#### Sessions
+
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | `/api/v1/musehub/repos/{id}/sessions` | Push a session record (upsert — idempotent) |
+| GET | `/api/v1/musehub/repos/{id}/sessions` | List sessions, newest first (`?limit=N`, default 50, max 200) |
+| GET | `/api/v1/musehub/repos/{id}/sessions/{session_id}` | Get a single session by UUID |
+
 #### Sync Protocol
 
 | Method | Path | Description |
@@ -1458,6 +1469,21 @@ maestro/
 | POST | `/api/v1/musehub/repos/{id}/pull` | Fetch missing commits and objects |
 
 All endpoints require `Authorization: Bearer <token>`. See [api.md](../reference/api.md#muse-hub-api) for full field docs.
+
+#### Web UI (no auth required)
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/musehub/ui/{repo_id}` | Repo landing page (branch selector + commit log) |
+| GET | `/musehub/ui/{repo_id}/commits/{commit_id}` | Commit detail (metadata + artifact browser) |
+| GET | `/musehub/ui/{repo_id}/pulls` | Pull request list |
+| GET | `/musehub/ui/{repo_id}/pulls/{pr_id}` | PR detail (with merge button) |
+| GET | `/musehub/ui/{repo_id}/issues` | Issue list |
+| GET | `/musehub/ui/{repo_id}/issues/{number}` | Issue detail (with close button) |
+| GET | `/musehub/ui/{repo_id}/sessions` | Session list (newest first) |
+| GET | `/musehub/ui/{repo_id}/sessions/{session_id}` | Session detail page |
+
+UI pages are HTML shells — auth is handled client-side via `localStorage` JWT. The JS fetches from the authed JSON API above.
 
 ### Issue Workflow
 
@@ -1510,12 +1536,23 @@ Default: `/data/musehub/objects`. Mount this path on a persistent volume in prod
 
 Only metadata (`object_id`, `path`, `size_bytes`, `disk_path`) is stored in Postgres; the bytes live on disk.
 
+### Session Workflow
+
+Recording sessions let musicians capture the creative context of a generation or performance session — who was present, where they recorded, what they intended, which commits were produced, and any closing notes.
+
+- **Session IDs** are the local UUIIDv4 from `.muse/sessions/<uuid>.json`. The same ID is used in the Hub.
+- **Push semantics:** `POST /sessions` is **idempotent** — re-pushing the same `session_id` updates the existing record. This allows updating notes after the initial push.
+- **Participants with session count badges:** The UI loads all sessions to compute per-participant session counts, displaying them next to each name on the detail page.
+- **Commits cross-reference:** `commits` is a JSON list of Muse commit IDs. The detail page links each commit to the commit detail page. No FK enforcement at DB level — commits may arrive before or after sessions.
+- **Previous/next navigation:** The session detail page fetches all sessions for the repo and renders prev/next links based on `started_at` order, mirroring the `muse session log` traversal pattern.
+
 ### Architecture Boundary
 
 Service modules are the only place that touches `musehub_*` tables:
 - `musehub_repository.py` → `musehub_repos`, `musehub_branches`, `musehub_commits`
 - `musehub_issues.py` → `musehub_issues`
 - `musehub_pull_requests.py` → `musehub_pull_requests`
+- `musehub_sessions.py` → `musehub_sessions`
 - `musehub_sync.py` → `musehub_commits`, `musehub_objects`, `musehub_branches` (sync path only)
 
 Route handlers delegate all persistence to the service layer. No business logic in route handlers.

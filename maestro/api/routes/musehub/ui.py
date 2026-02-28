@@ -4,12 +4,14 @@ Serves browser-readable HTML pages for navigating a Muse Hub repo —
 analogous to GitHub's repository browser but for music projects.
 
 Endpoint summary:
-  GET /musehub/ui/{repo_id}                        — repo page (branch selector + commit log)
-  GET /musehub/ui/{repo_id}/commits/{commit_id}    — commit detail page (metadata + artifacts)
-  GET /musehub/ui/{repo_id}/pulls                  — pull request list page
-  GET /musehub/ui/{repo_id}/pulls/{pr_id}          — PR detail page (with merge button)
-  GET /musehub/ui/{repo_id}/issues                 — issue list page
-  GET /musehub/ui/{repo_id}/issues/{number}        — issue detail page (with close button)
+  GET /musehub/ui/{repo_id}                           — repo page (branch selector + commit log)
+  GET /musehub/ui/{repo_id}/commits/{commit_id}       — commit detail page (metadata + artifacts)
+  GET /musehub/ui/{repo_id}/pulls                     — pull request list page
+  GET /musehub/ui/{repo_id}/pulls/{pr_id}             — PR detail page (with merge button)
+  GET /musehub/ui/{repo_id}/issues                    — issue list page
+  GET /musehub/ui/{repo_id}/issues/{number}           — issue detail page (with close button)
+  GET /musehub/ui/{repo_id}/sessions                  — session list page
+  GET /musehub/ui/{repo_id}/sessions/{session_id}     — session detail page
 
 These routes require NO JWT auth — they return static HTML shells whose
 embedded JavaScript fetches data from the authed JSON API
@@ -273,6 +275,7 @@ async def repo_page(repo_id: str) -> HTMLResponse:
               <div style="display:flex;gap:12px;margin-bottom:16px;flex-wrap:wrap">
                 <a href="${{base}}/pulls" class="btn btn-secondary">Pull Requests</a>
                 <a href="${{base}}/issues" class="btn btn-secondary">Issues</a>
+                <a href="${{base}}/sessions" class="btn btn-secondary">Sessions</a>
               </div>
               <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
                 <select id="branch-sel" onchange="load(this.value)">
@@ -745,6 +748,263 @@ async def issue_detail_page(repo_id: str, number: int) -> HTMLResponse:
         breadcrumb=(
             f'<a href="/musehub/ui/{repo_id}">{repo_id[:8]}</a> / '
             f'<a href="/musehub/ui/{repo_id}/issues">issues</a> / #{number}'
+        ),
+        body_script=script,
+    )
+    return HTMLResponse(content=html)
+
+
+@router.get(
+    "/{repo_id}/sessions",
+    response_class=HTMLResponse,
+    summary="Muse Hub session list page",
+)
+async def session_list_page(repo_id: str) -> HTMLResponse:
+    """Render the session list page: recording sessions newest first.
+
+    Fetches ``GET /api/v1/musehub/repos/{repo_id}/sessions`` and displays
+    each session's start time, duration, participants, and intent.  Links to
+    the session detail page for full metadata.
+    """
+    script = f"""
+      const repoId = {repr(repo_id)};
+      const base   = '/musehub/ui/' + repoId;
+
+      function escHtml(s) {{
+        if (!s) return '';
+        return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+      }}
+
+      function fmtDuration(startIso, endIso) {{
+        if (!startIso || !endIso) return '—';
+        const ms = new Date(endIso) - new Date(startIso);
+        if (ms < 0) return '—';
+        const h = Math.floor(ms / 3600000);
+        const m = Math.floor((ms % 3600000) / 60000);
+        return h > 0 ? h + 'h ' + m + 'm' : m + 'm';
+      }}
+
+      async function load() {{
+        try {{
+          const data = await apiFetch('/repos/' + repoId + '/sessions?limit=50');
+          const sessions = data.sessions || [];
+
+          const rows = sessions.length === 0
+            ? '<p class="loading">No sessions pushed to this repo yet.</p>'
+            : sessions.map(s => `
+              <div class="commit-row">
+                <a class="commit-sha" href="${{base}}/sessions/${{s.sessionId}}">${{escHtml(s.sessionId.substring(0,8))}}</a>
+                <div class="commit-msg" style="flex:1">
+                  <a href="${{base}}/sessions/${{s.sessionId}}">
+                    ${{escHtml(s.intent) || '<em style="color:#8b949e">no intent recorded</em>'}}
+                  </a>
+                  <div style="font-size:12px;color:#8b949e;margin-top:2px">
+                    ${{(s.participants||[]).map(p => '<span class="label">' + escHtml(p) + '</span>').join('')}}
+                    ${{s.location ? '&nbsp;&bull;&nbsp;' + escHtml(s.location) : ''}}
+                  </div>
+                </div>
+                <div class="commit-meta">
+                  <div>${{fmtDate(s.startedAt)}}</div>
+                  <div style="color:#8b949e;font-size:11px">${{fmtDuration(s.startedAt, s.endedAt)}}</div>
+                </div>
+              </div>`).join('');
+
+          document.getElementById('content').innerHTML = `
+            <div style="margin-bottom:12px">
+              <a href="${{base}}">&larr; Back to repo</a>
+            </div>
+            <div class="card">
+              <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px">
+                <h1 style="margin:0">Recording Sessions</h1>
+                <span style="color:#8b949e;font-size:13px">${{data.total}} total</span>
+              </div>
+              ${{rows}}
+            </div>`;
+        }} catch(e) {{
+          if (e.message !== 'auth')
+            document.getElementById('content').innerHTML = '<p class="error">&#10005; ' + escHtml(e.message) + '</p>';
+        }}
+      }}
+
+      load();
+    """
+    html = _page(
+        title="Sessions",
+        breadcrumb=f'<a href="/musehub/ui/{repo_id}">{repo_id[:8]}</a> / sessions',
+        body_script=script,
+    )
+    return HTMLResponse(content=html)
+
+
+@router.get(
+    "/{repo_id}/sessions/{session_id}",
+    response_class=HTMLResponse,
+    summary="Muse Hub session detail page",
+)
+async def session_detail_page(repo_id: str, session_id: str) -> HTMLResponse:
+    """Render the full session detail page.
+
+    Fetches ``GET /api/v1/musehub/repos/{repo_id}/sessions/{session_id}`` and
+    displays all session metadata: start/end times, duration, location, intent,
+    participants with session-count badges, commits made during the session
+    (linked to commit detail pages), and closing notes rendered verbatim.
+
+    Renders a 404 message if the API returns 404, so agents can distinguish
+    a missing session from a server error.
+    """
+    script = f"""
+      const repoId    = {repr(repo_id)};
+      const sessionId = {repr(session_id)};
+      const base      = '/musehub/ui/' + repoId;
+
+      function escHtml(s) {{
+        if (!s) return '';
+        return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+      }}
+
+      function fmtDuration(startIso, endIso) {{
+        if (!startIso || !endIso) return '—';
+        const ms = new Date(endIso) - new Date(startIso);
+        if (ms < 0) return '—';
+        const h = Math.floor(ms / 3600000);
+        const m = Math.floor((ms % 3600000) / 60000);
+        return h > 0 ? h + 'h ' + m + 'm' : m + 'm';
+      }}
+
+      async function loadSessionCounts() {{
+        try {{
+          const data = await apiFetch('/repos/' + repoId + '/sessions?limit=200');
+          const sessions = data.sessions || [];
+          const counts = {{}};
+          sessions.forEach(s => {{
+            (s.participants || []).forEach(p => {{
+              counts[p] = (counts[p] || 0) + 1;
+            }});
+          }});
+          return counts;
+        }} catch(e) {{
+          return {{}};
+        }}
+      }}
+
+      async function load() {{
+        try {{
+          const [session, counts] = await Promise.all([
+            apiFetch('/repos/' + repoId + '/sessions/' + sessionId),
+            loadSessionCounts(),
+          ]);
+
+          const duration = fmtDuration(session.startedAt, session.endedAt);
+
+          const participantHtml = (session.participants || []).length === 0
+            ? '<p style="color:#8b949e;font-size:14px">No participants recorded.</p>'
+            : (session.participants || []).map(p => `
+                <div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid #21262d">
+                  <span style="flex:1;font-size:14px">${{escHtml(p)}}</span>
+                  <span class="badge" style="background:#1f6feb;color:#e6edf3">
+                    ${{counts[p] || 1}} session${{(counts[p] || 1) !== 1 ? 's' : ''}}
+                  </span>
+                </div>`).join('');
+
+          const commitHtml = (session.commits || []).length === 0
+            ? '<p style="color:#8b949e;font-size:14px">No commits associated with this session.</p>'
+            : (session.commits || []).map(c => `
+                <div class="commit-row">
+                  <a class="commit-sha" href="${{base}}/commits/${{c}}">${{c.substring(0,8)}}</a>
+                  <span class="commit-msg">
+                    <a href="${{base}}/commits/${{c}}">${{c}}</a>
+                  </span>
+                </div>`).join('');
+
+          const notesHtml = session.notes
+            ? '<pre>' + escHtml(session.notes) + '</pre>'
+            : '<p style="color:#8b949e;font-size:14px">No closing notes.</p>';
+
+          const allSessions = await apiFetch('/repos/' + repoId + '/sessions?limit=200')
+            .then(d => d.sessions || []).catch(() => []);
+          const idx = allSessions.findIndex(s => s.sessionId === sessionId);
+          const prevSession = idx >= 0 && idx + 1 < allSessions.length ? allSessions[idx + 1] : null;
+          const nextSession = idx > 0 ? allSessions[idx - 1] : null;
+
+          const navHtml = `
+            <div style="display:flex;justify-content:space-between;margin-top:12px;font-size:13px">
+              <span>
+                ${{prevSession
+                  ? '<a href="' + base + '/sessions/' + prevSession.sessionId + '">&larr; Previous session</a>'
+                  : '<span style="color:#8b949e">No previous session</span>'}}
+              </span>
+              <span>
+                ${{nextSession
+                  ? '<a href="' + base + '/sessions/' + nextSession.sessionId + '">Next session &rarr;</a>'
+                  : '<span style="color:#8b949e">No next session</span>'}}
+              </span>
+            </div>`;
+
+          document.getElementById('content').innerHTML = `
+            <div style="margin-bottom:12px">
+              <a href="${{base}}/sessions">&larr; Back to sessions</a>
+            </div>
+            <div class="card">
+              <h1>Recording Session</h1>
+              <div class="meta-row">
+                <div class="meta-item">
+                  <span class="meta-label">Started</span>
+                  <span class="meta-value">${{fmtDate(session.startedAt)}}</span>
+                </div>
+                <div class="meta-item">
+                  <span class="meta-label">Ended</span>
+                  <span class="meta-value">${{session.endedAt ? fmtDate(session.endedAt) : '—'}}</span>
+                </div>
+                <div class="meta-item">
+                  <span class="meta-label">Duration</span>
+                  <span class="meta-value">${{duration}}</span>
+                </div>
+                ${{session.location ? `
+                <div class="meta-item">
+                  <span class="meta-label">Location</span>
+                  <span class="meta-value">${{escHtml(session.location)}}</span>
+                </div>` : ''}}
+                <div class="meta-item">
+                  <span class="meta-label">Session ID</span>
+                  <span class="meta-value" style="font-family:monospace;font-size:12px">${{escHtml(session.sessionId)}}</span>
+                </div>
+              </div>
+              ${{session.intent ? `
+              <div style="margin-top:8px">
+                <span class="meta-label">Intent</span>
+                <p style="margin-top:4px;font-size:14px;color:#c9d1d9">${{escHtml(session.intent)}}</p>
+              </div>` : ''}}
+              ${{navHtml}}
+            </div>
+            <div class="card">
+              <h2>Participants (${{(session.participants||[]).length}})</h2>
+              <div style="margin-top:8px">${{participantHtml}}</div>
+            </div>
+            <div class="card">
+              <h2>Commits (${{(session.commits||[]).length}})</h2>
+              <div style="margin-top:8px">${{commitHtml}}</div>
+            </div>
+            <div class="card">
+              <h2>Closing Notes</h2>
+              <div style="margin-top:8px">${{notesHtml}}</div>
+            </div>`;
+        }} catch(e) {{
+          if (e.message !== 'auth') {{
+            const msg = e.message.startsWith('404') ? 'Session not found.' : escHtml(e.message);
+            document.getElementById('content').innerHTML =
+              '<div style="margin-bottom:12px"><a href="' + base + '/sessions">&larr; Back to sessions</a></div>' +
+              '<p class="error">&#10005; ' + msg + '</p>';
+          }}
+        }}
+      }}
+
+      load();
+    """
+    html = _page(
+        title=f"Session {session_id[:8]}",
+        breadcrumb=(
+            f'<a href="/musehub/ui/{repo_id}">{repo_id[:8]}</a> / '
+            f'<a href="/musehub/ui/{repo_id}/sessions">sessions</a> / {session_id[:8]}'
         ),
         body_script=script,
     )

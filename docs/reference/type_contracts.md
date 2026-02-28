@@ -5846,6 +5846,62 @@ Wrapper returned by `GET /api/v1/musehub/repos/{repo_id}/objects`.
 **Producer:** `objects.list_objects` route handler
 **Consumer:** Muse Hub web UI; any agent inspecting which artifacts are available for a repo
 
+### `SessionCreate`
+
+Defined in `maestro/models/musehub.py`.
+
+Request body for `POST /api/v1/musehub/repos/{repo_id}/sessions`. Accepts a session record pushed from `muse session end`. Push is idempotent — same `session_id` updates the existing record.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `session_id` | `str` | UUIDv4 from the local `.muse/sessions/<id>.json` |
+| `schema_version` | `str` | JSON schema version (currently `"1"`) |
+| `started_at` | `datetime` | ISO-8601 UTC session start |
+| `ended_at` | `datetime \| None` | ISO-8601 UTC session end; `None` while active |
+| `participants` | `list[str]` | Ordered participant names |
+| `location` | `str` | Recording location or studio name |
+| `intent` | `str` | Creative intent declared at session start |
+| `commits` | `list[str]` | Muse commit IDs made during this session |
+| `notes` | `str` | Closing notes from `muse session end --notes` |
+
+**Producer:** CLI `muse session end` (future push command)
+**Consumer:** `repos.push_session` route handler → `musehub_sessions.upsert_session`
+
+### `SessionResponse`
+
+Defined in `maestro/models/musehub.py`.
+
+Returned by `GET /api/v1/musehub/repos/{repo_id}/sessions/{session_id}` and as items in `SessionListResponse`.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `session_id` | `str` | UUIDv4 session identifier |
+| `repo_id` | `str` | Hub repo this session belongs to |
+| `schema_version` | `str` | JSON schema version string |
+| `started_at` | `datetime` | Session start timestamp |
+| `ended_at` | `datetime \| None` | Session end timestamp |
+| `participants` | `list[str]` | Ordered participant name list |
+| `location` | `str` | Recording location |
+| `intent` | `str` | Creative intent |
+| `commits` | `list[str]` | Muse commit IDs associated with this session |
+| `notes` | `str` | Closing notes |
+| `created_at` | `datetime` | When the record was pushed to the Hub |
+
+**Producer:** `musehub_sessions.upsert_session`, `musehub_sessions.get_session`, `musehub_sessions.list_sessions`
+**Consumer:** Muse Hub session detail UI page; any agent reasoning about session creative context
+
+### `SessionListResponse`
+
+Wrapper returned by `GET /api/v1/musehub/repos/{repo_id}/sessions`.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `sessions` | `list[SessionResponse]` | Sessions ordered newest-first by `started_at` |
+| `total` | `int` | Total session count for the repo (pre-limit) |
+
+**Producer:** `repos.list_sessions` route handler
+**Consumer:** Muse Hub session list UI page; agents computing per-participant session counts
+
 ---
 
 ## Muse Bisect Types
