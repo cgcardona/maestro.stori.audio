@@ -1,7 +1,28 @@
 # Parallel Agent Kickoff — PR Review → Grade → Merge
 
-Each agent gets its own ephemeral worktree. Worktrees are created at kickoff,
-named by PR number, and **deleted by the agent when its job is done** — whether
+> ## YOU ARE THE COORDINATOR
+>
+> If you are an AI agent reading this document, your role is **coordinator only**.
+>
+> **Your job — the full list, nothing more:**
+> 1. Pull `dev` to confirm it is up to date.
+> 2. Run the Setup script below to create one worktree per PR.
+> 3. Launch one sub-agent per worktree by pasting the Kickoff Prompt (found at the bottom of this document) into a separate Cursor composer window rooted in that worktree.
+> 4. Report back once all sub-agents have been launched.
+>
+> **You do NOT:**
+> - Check out branches or review any PR yourself.
+> - Run mypy or pytest yourself.
+> - Merge or close any PR yourself.
+> - Read PR diffs or study code yourself.
+>
+> The **Kickoff Prompt** at the bottom of this document is for the sub-agents, not for you.
+> Copy it verbatim into each sub-agent's window. Do not follow it yourself.
+
+---
+
+Each sub-agent gets its own ephemeral worktree. Worktrees are created at kickoff,
+named by PR number, and **deleted by the sub-agent when its job is done** — whether
 the PR was merged, rejected, or left for human review. The branch lives on
 GitHub regardless; the local worktree is just a working directory.
 
@@ -51,16 +72,16 @@ cd "$REPO"
 DEV_SHA=$(git rev-parse dev)
 
 # --- define PRs ---
-# Batch: #128–#135 (muse CLI commands — grep, session, dynamics, swing, ask, tag, describe, recall)
+# Batch: #136–#143 (muse CLI commands — find, export, context, arrange, divergence, meter, import, tempo)
 declare -a PRS=(
-  "128|feat: muse grep — search for a musical pattern across all commits"
-  "129|feat: muse session — record and query recording session metadata"
-  "130|feat: muse dynamics — analyze the dynamic profile of a commit"
-  "131|feat: muse swing — analyze or annotate the swing factor"
-  "132|feat: muse ask — natural language query over Muse musical history"
-  "133|feat: muse tag — add music-semantic tags to commits and query by tag"
-  "134|feat: muse describe — generate a natural language description of what changed musically"
-  "135|feat: muse recall — keyword search over musical commit history"
+  "136|feat: muse find — search commit history by musical properties"
+  "137|feat: muse export [<commit>] --format <format> — export a Muse snapshot to external formats"
+  "138|feat: muse context [<commit>] — output structured musical context for AI agent consumption"
+  "139|feat: muse arrange [<commit>] — display the arrangement map (instrument activity over sections)"
+  "140|feat: muse divergence <branch-a> <branch-b> — show how two branches have diverged musically"
+  "141|feat: muse meter [<commit>] [--set <time-sig>] — read or set the time signature"
+  "142|feat: muse import <file> — import a MIDI or MusicXML file as a new Muse commit"
+  "143|feat: muse tempo [<commit>] [--set <bpm>] — read or set the tempo of a commit"
 )
 
 # --- create worktrees + task files ---
@@ -199,31 +220,55 @@ STEP 3 — CHECKOUT & SYNC (only if STEP 2 shows the PR is open and unreviewed):
   git merge origin/dev
 
   ── If git merge reports conflicts ──────────────────────────────────────────
-  │ You have full command-line authority to resolve them. Guidance:           │
+  │ You have full command-line authority to resolve them.                     │
   │                                                                           │
   │ 1. Inspect what conflicted:                                               │
-  │      git status        ← shows conflicted files                          │
-  │      git diff          ← shows the conflict markers                      │
+  │      git status        ← UU = unmerged conflict, M/A = already staged   │
+  │      git diff          ← shows raw conflict markers (<<<<<<< / =======)  │
   │                                                                           │
-  │ 2. Resolution philosophy:                                                 │
-  │    • Conflicts in NEW files this PR introduces: keep this PR's version.  │
-  │    • Conflicts in files ALSO changed on dev: carefully read BOTH sides.  │
-  │      Prefer dev's version UNLESS this PR's change clearly supersedes it. │
-  │    • If a conflict reveals that dev landed a change that makes this PR   │
-  │      redundant or incorrect → downgrade grade to C or D and explain.     │
+  │ 2. Identify each conflict type and apply the matching rule:               │
   │                                                                           │
-  │ 3. Resolve, stage, and commit:                                            │
+  │    KNOWN-SAFE CONFLICTS (resolve mechanically — no judgment needed):     │
+  │    • maestro/muse_cli/app.py                                              │
+  │        Each parallel agent adds exactly one app.add_typer() line.        │
+  │        Rule: KEEP ALL add_typer lines from BOTH sides. Never drop one.   │
+  │        Pattern to look for:                                               │
+  │          <<<<<<< HEAD                                                     │
+  │          app.add_typer(foo_app, ...)                                      │
+  │          =======                                                          │
+  │          app.add_typer(bar_app, ...)                                      │
+  │          >>>>>>> origin/dev                                               │
+  │        Resolution: keep both lines, remove markers.                      │
+  │                                                                           │
+  │    • docs/architecture/muse_vcs.md                                        │
+  │        Each agent appends a new command section. Both sections belong.   │
+  │        Rule: keep BOTH sections, place them in alphabetical command order.│
+  │                                                                           │
+  │    • docs/reference/type_contracts.md                                     │
+  │        Each agent registers new named types. Both registrations belong.  │
+  │        Rule: keep ALL entries from BOTH sides.                            │
+  │                                                                           │
+  │    JUDGMENT CONFLICTS (read both sides carefully):                        │
+  │    • Any file NOT in the known-safe list above.                          │
+  │    • Prefer dev's version UNLESS this PR's change clearly supersedes it. │
+  │    • If a conflict reveals that dev already contains this PR's feature:  │
+  │      downgrade grade to C or D and explain. Do not merge redundant code. │
+  │                                                                           │
+  │ 3. After editing each conflicted file, verify no markers remain:          │
+  │      grep -n "<<<<<<\|=======\|>>>>>>>" <file>   ← must return empty    │
+  │                                                                           │
+  │ 4. Stage and commit:                                                      │
   │      git add <resolved-files>                                             │
   │      git commit -m "chore: resolve merge conflicts with origin/dev"      │
   │                                                                           │
-  │ 4. After resolving: re-run mypy AND tests before continuing.             │
-  │    Conflicts resolved incorrectly will surface as type errors or failures.│
+  │ 5. After resolving: re-run mypy AND tests before continuing.             │
+  │    Conflicts resolved incorrectly surface as type errors or test failures.│
   │                                                                           │
-  │ 5. Advanced tools available:                                              │
+  │ 6. Advanced diagnostic tools:                                             │
   │      git log --oneline origin/dev...HEAD  ← commits this PR adds         │
   │      git diff origin/dev...HEAD           ← full delta vs dev            │
-  │      git bisect start/bad/good            ← regression hunting           │
   │      git log --oneline --graph --all      ← full branch picture          │
+  │      git show origin/dev:path/to/file     ← see dev's version of a file │
   └───────────────────────────────────────────────────────────────────────────
 
 STEP 4 — REGRESSION CHECK (before review):
@@ -275,6 +320,45 @@ STEP 5 — REVIEW:
        ERROR, Traceback, toolError, circuit_breaker_open, FAILED, AssertionError
      Any red-flag = the run is not clean, regardless of the final summary line.
   7. Grade the PR (A/B/C/D/F) — OUTPUT GRADE FIRST before any merge command
+
+  GRADE B — FIX-OR-TICKET PROTOCOL (apply before proceeding to STEP 6):
+    A B grade means the PR is solid but has at least one specific, named concern.
+    Before merging a B, you MUST choose exactly one of these two paths:
+
+    PATH 1 — Fix it to an A (preferred):
+      If the concern is a straightforward improvement (missing test assertion,
+      weak docstring, minor type narrowing, a cleaner error message), fix it
+      right here in the worktree, re-run mypy + targeted tests, and upgrade
+      the grade to A. Commit the fix with:
+        git commit -m "fix: address PR review concern — <one-line description>"
+      Then push and continue to STEP 6.
+
+    PATH 2 — Create a follow-up ticket (when fix is non-trivial):
+      If the concern requires design thought, touches other files, or risks
+      introducing new bugs, capture it as a GitHub issue instead of fixing
+      in place. File it BEFORE merging:
+        gh issue create \
+          --title "follow-up: <specific concern from PR #<N>>" \
+          --body "$(cat <<'EOF'
+        ## Context
+        Identified during review of PR #<N> (grade B).
+
+        ## Concern
+        <Exact description of what fell short and why it matters>
+
+        ## Acceptance Criteria
+        <What the fix must do to close this issue>
+
+        ## Files Affected
+        <List of files that need to change>
+        EOF
+        )" \
+          --label "enhancement,tech-debt"
+      Report the follow-up issue URL in your final report. Then proceed to STEP 6.
+
+    ⚠️  A B grade without a fix OR a follow-up ticket URL is not acceptable.
+        You must produce one artifact per B-grade concern before merging.
+
   8. If grade is A or B: proceed to STEP 6 (pre-merge sync)
      If grade is C/D/F: skip to STEP 7 (self-destruct)
 
@@ -321,8 +405,8 @@ Report: PR number, grade, merge status, any improvements made, follow-up issues 
 | Grade | Meaning | Action |
 |-------|---------|--------|
 | **A** | Production-ready. Types, tests, docs all solid. | Merge immediately |
-| **B** | Solid fix, minor concerns noted. | Merge, file follow-up issues |
-| **C** | Fix works but quality bar not met. | Do NOT merge. State what must change. |
+| **B** | Solid fix, one or more named minor concerns. | Fix concern in place → upgrade to A (preferred), OR file a follow-up GitHub issue per concern → then merge. **A PR URL + fix commit OR follow-up issue URL is required.** |
+| **C** | Fix works but quality bar not met. | Do NOT merge. State exactly what must change. |
 | **D** | Unsafe, incomplete, or breaks a contract. | Do NOT merge. |
 | **F** | Regression, security hole, or architectural violation. | Reject. |
 

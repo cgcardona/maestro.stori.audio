@@ -1,7 +1,28 @@
 # Parallel Agent Kickoff — Issue → PR
 
-Each agent gets its own ephemeral worktree. Worktrees are created at kickoff,
-named by issue number, and **deleted by the agent when its job is done**.
+> ## YOU ARE THE COORDINATOR
+>
+> If you are an AI agent reading this document, your role is **coordinator only**.
+>
+> **Your job — the full list, nothing more:**
+> 1. Pull `dev` to confirm it is up to date.
+> 2. Run the Setup script below to create one worktree per issue.
+> 3. Launch one sub-agent per worktree by pasting the Kickoff Prompt (found at the bottom of this document) into a separate Cursor composer window rooted in that worktree.
+> 4. Report back once all sub-agents have been launched.
+>
+> **You do NOT:**
+> - Check out branches or implement any feature yourself.
+> - Run mypy or pytest yourself.
+> - Create PRs yourself.
+> - Read issue bodies or study code yourself.
+>
+> The **Kickoff Prompt** at the bottom of this document is for the sub-agents, not for you.
+> Copy it verbatim into each sub-agent's window. Do not follow it yourself.
+
+---
+
+Each sub-agent gets its own ephemeral worktree. Worktrees are created at kickoff,
+named by issue number, and **deleted by the sub-agent when its job is done**.
 The branch and PR live on GitHub regardless — the local worktree is just a
 working directory.
 
@@ -75,18 +96,18 @@ cd "$REPO"
 DEV_SHA=$(git rev-parse dev)
 
 # --- define issues (confirmed independent — zero file overlap) ---
-# Batch: #112–#119 (new muse CLI commands)
+# Batch: #104–#111 (new muse CLI commands)
 # Known shared file: maestro/muse_cli/app.py (each agent adds one app.add_typer line)
 # Resolution: pre-push sync in STEP 4 handles app.py conflicts — keep both sides.
 declare -a ISSUES=(
-  "119|feat: muse divergence — show how two branches have diverged musically"
-  "118|feat: muse import <file> — import a MIDI or MusicXML file as a new Muse commit"
-  "117|feat: muse meter [<commit>] [--set <time-sig>] — read or set the time signature"
-  "116|feat: muse tempo [<commit>] [--set <bpm>] — read or set the tempo of a commit"
-  "115|feat: muse arrange [<commit>] — display the arrangement map (instrument activity over sections)"
-  "114|feat: muse find — search commit history by musical properties"
-  "113|feat: muse context [<commit>] — output structured musical context for AI agent consumption"
-  "112|feat: muse export [<commit>] --format <format> — export a Muse snapshot to external formats"
+  "111|feat: muse tempo-scale <factor> [<commit>] — stretch or compress timing across a commit"
+  "110|feat: muse form [<commit>] — analyze and display the musical form of a commit"
+  "109|feat: muse chord-map <commit> — visualize the chord progression embedded in a commit"
+  "108|feat: muse similarity <commit-a> <commit-b> — compute musical similarity score between two commits"
+  "107|feat: muse humanize [<commit>] — apply humanization to quantized MIDI"
+  "106|feat: muse key [<commit>] [--set <key>] — read or annotate the musical key of a commit"
+  "105|feat: muse contour [<commit>] — analyze melodic contour and phrase shape"
+  "104|feat: muse diff — add music-dimension diff flags (--harmonic, --rhythmic, --melodic, --structural, --dynamic)"
 )
 
 # --- create worktrees + task files ---
@@ -269,32 +290,57 @@ STEP 4 — PRE-PUSH SYNC (critical — always run before pushing):
   git merge origin/dev
 
   ── If git merge reports conflicts ──────────────────────────────────────────
-  │ You have full command-line authority to resolve them. Guidance:           │
+  │ You have full command-line authority to resolve them.                     │
   │                                                                           │
   │ 1. Inspect what conflicted:                                               │
-  │      git status        ← shows conflicted files                          │
-  │      git diff          ← shows the conflict markers                      │
+  │      git status        ← UU = unmerged conflict, M/A = already staged   │
+  │      git diff          ← shows raw conflict markers (<<<<<<< / =======)  │
   │                                                                           │
-  │ 2. Resolution philosophy:                                                 │
-  │    • Conflicts in NEW files this branch introduces: keep this branch.    │
-  │    • Conflicts in files ALSO changed on dev: read BOTH sides carefully.  │
-  │      Preserve the work from dev PLUS your additions. If they are truly   │
-  │      incompatible, stop and explain to the user before proceeding.        │
-  │    • If a conflict reveals that dev already contains your feature        │
-  │      (another agent landed the same fix): stop and self-destruct.        │
+  │ 2. Identify each conflict type and apply the matching rule:               │
   │                                                                           │
-  │ 3. Resolve, stage, and commit:                                            │
+  │    KNOWN-SAFE CONFLICTS (resolve mechanically — no judgment needed):     │
+  │    • maestro/muse_cli/app.py                                              │
+  │        Each parallel agent adds exactly one app.add_typer() line.        │
+  │        Rule: KEEP ALL add_typer lines from BOTH sides. Never drop one.   │
+  │        Pattern to look for:                                               │
+  │          <<<<<<< HEAD                                                     │
+  │          app.add_typer(foo_app, ...)                                      │
+  │          =======                                                          │
+  │          app.add_typer(bar_app, ...)                                      │
+  │          >>>>>>> origin/dev                                               │
+  │        Resolution: keep both lines, remove markers.                      │
+  │                                                                           │
+  │    • docs/architecture/muse_vcs.md                                        │
+  │        Each agent appends a new command section. Both sections belong.   │
+  │        Rule: keep BOTH sections, place them in alphabetical command order.│
+  │                                                                           │
+  │    • docs/reference/type_contracts.md                                     │
+  │        Each agent registers new named types. Both registrations belong.  │
+  │        Rule: keep ALL entries from BOTH sides.                            │
+  │                                                                           │
+  │    JUDGMENT CONFLICTS (read both sides carefully):                        │
+  │    • Any file NOT in the known-safe list above.                          │
+  │    • Changes to shared models, config, or protocol files.                │
+  │    • Preserve dev's version PLUS your additions. If truly incompatible,  │
+  │      stop and explain to the user before proceeding.                      │
+  │    • If dev already contains your feature (another agent landed it):     │
+  │      stop and self-destruct.                                              │
+  │                                                                           │
+  │ 3. After editing each conflicted file, verify no markers remain:          │
+  │      grep -n "<<<<<<\|=======\|>>>>>>>" <file>   ← must return empty    │
+  │                                                                           │
+  │ 4. Stage and commit:                                                      │
   │      git add <resolved-files>                                             │
   │      git commit -m "chore: resolve merge conflicts with origin/dev"      │
   │                                                                           │
-  │ 4. After resolving: re-run mypy AND tests before pushing.                │
-  │    Incorrectly resolved conflicts will surface as type errors or failures.│
+  │ 5. After resolving: re-run mypy AND tests before pushing.                │
+  │    Incorrectly resolved conflicts surface as type errors or test failures.│
   │                                                                           │
-  │ 5. Advanced tools available:                                              │
+  │ 6. Advanced diagnostic tools:                                             │
   │      git log --oneline origin/dev...HEAD  ← commits this branch adds    │
   │      git diff origin/dev...HEAD           ← full delta vs dev            │
-  │      git bisect start/bad/good            ← regression hunting           │
   │      git log --oneline --graph --all      ← full branch picture          │
+  │      git show origin/dev:path/to/file     ← see dev's version of a file │
   └───────────────────────────────────────────────────────────────────────────
 
 STEP 5 — PUSH & CREATE PR:
