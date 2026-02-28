@@ -188,6 +188,152 @@ async def set_commit_tempo_bpm(
     return commit
 
 
+async def get_commits_for_branch(
+    session: AsyncSession,
+    repo_id: str,
+    branch: str,
+) -> list[MuseCliCommit]:
+    """Return all commits on *branch* for *repo_id*, newest first.
+
+    Used by ``muse push`` to collect commits since the last known remote head.
+    Ordering is newest-first so callers can slice from the front to get the
+    delta since a known commit.
+    """
+    result = await session.execute(
+        select(MuseCliCommit)
+        .where(MuseCliCommit.repo_id == repo_id, MuseCliCommit.branch == branch)
+        .order_by(MuseCliCommit.committed_at.desc())
+    )
+    return list(result.scalars().all())
+
+
+async def get_all_object_ids(
+    session: AsyncSession,
+    repo_id: str,
+) -> list[str]:
+    """Return all object IDs referenced by any snapshot in this repo.
+
+    Used by ``muse pull`` to tell the Hub which objects we already have so
+    the Hub only sends the missing ones.
+    """
+    from sqlalchemy import distinct
+
+    result = await session.execute(
+        select(MuseCliCommit.snapshot_id).where(
+            MuseCliCommit.repo_id == repo_id
+        )
+    )
+    snapshot_ids = [row for row in result.scalars().all()]
+    if not snapshot_ids:
+        return []
+
+    # Collect all object_ids from all known snapshots
+    object_ids: set[str] = set()
+    for snap_id in snapshot_ids:
+        snapshot = await session.get(MuseCliSnapshot, snap_id)
+        if snapshot is not None and snapshot.manifest:
+            object_ids.update(snapshot.manifest.values())
+
+    return sorted(object_ids)
+
+
+async def store_pulled_commit(
+    session: AsyncSession,
+    commit_data: dict[str, object],
+) -> bool:
+    """Persist a commit received from the Hub into local Postgres.
+
+    Idempotent — silently skips if the commit already exists.  Returns
+    ``True`` if the row was newly inserted, ``False`` if it already existed.
+
+    The *commit_data* dict must contain the keys defined in
+    :class:`~maestro.muse_cli.hub_client.PullCommitPayload`.
+    """
+    import datetime
+
+    commit_id = str(commit_data.get("commit_id", ""))
+    if not commit_id:
+        logger.warning("⚠️ store_pulled_commit: missing commit_id — skipping")
+        return False
+
+    existing = await session.get(MuseCliCommit, commit_id)
+    if existing is not None:
+        logger.debug("⚠️ Pulled commit %s already exists — skipped", commit_id[:8])
+        return False
+
+    snapshot_id = str(commit_data.get("snapshot_id", ""))
+    branch = str(commit_data.get("branch", ""))
+    message = str(commit_data.get("message", ""))
+    author = str(commit_data.get("author", ""))
+    committed_at_raw = str(commit_data.get("committed_at", ""))
+    parent_commit_id_raw = commit_data.get("parent_commit_id")
+    parent_commit_id: str | None = (
+        str(parent_commit_id_raw) if parent_commit_id_raw is not None else None
+    )
+    metadata_raw = commit_data.get("metadata")
+    commit_metadata: dict[str, object] | None = (
+        dict(metadata_raw)
+        if isinstance(metadata_raw, dict)
+        else None
+    )
+
+    try:
+        committed_at = datetime.datetime.fromisoformat(committed_at_raw)
+    except ValueError:
+        committed_at = datetime.datetime.now(datetime.timezone.utc)
+
+    # Ensure the snapshot row exists (as a stub if not present — objects are
+    # content-addressed so the manifest may arrive separately or be empty for
+    # Hub-side storage).
+    existing_snap = await session.get(MuseCliSnapshot, snapshot_id)
+    if existing_snap is None:
+        stub_snap = MuseCliSnapshot(snapshot_id=snapshot_id, manifest={})
+        session.add(stub_snap)
+        await session.flush()
+
+    new_commit = MuseCliCommit(
+        commit_id=commit_id,
+        repo_id=str(commit_data.get("repo_id", "")),
+        branch=branch,
+        parent_commit_id=parent_commit_id,
+        snapshot_id=snapshot_id,
+        message=message,
+        author=author,
+        committed_at=committed_at,
+        commit_metadata=commit_metadata,
+    )
+    session.add(new_commit)
+    logger.debug("✅ Stored pulled commit %s branch=%r", commit_id[:8], branch)
+    return True
+
+
+async def store_pulled_object(
+    session: AsyncSession,
+    object_data: dict[str, object],
+) -> bool:
+    """Persist an object descriptor received from the Hub into local Postgres.
+
+    Idempotent — silently skips if the object already exists.  Returns
+    ``True`` if the row was newly inserted, ``False`` if it already existed.
+    """
+    object_id = str(object_data.get("object_id", ""))
+    if not object_id:
+        logger.warning("⚠️ store_pulled_object: missing object_id — skipping")
+        return False
+
+    size_raw = object_data.get("size_bytes", 0)
+    size_bytes = int(size_raw) if isinstance(size_raw, (int, float)) else 0
+
+    existing = await session.get(MuseCliObject, object_id)
+    if existing is not None:
+        logger.debug("⚠️ Pulled object %s already exists — skipped", object_id[:8])
+        return False
+
+    session.add(MuseCliObject(object_id=object_id, size_bytes=size_bytes))
+    logger.debug("✅ Stored pulled object %s (%d bytes)", object_id[:8], size_bytes)
+    return True
+
+
 async def find_commits_by_prefix(
     session: AsyncSession,
     prefix: str,
