@@ -745,9 +745,37 @@ def upgrade() -> None:
     op.create_index("ix_musehub_render_jobs_commit_id", "musehub_render_jobs", ["commit_id"])
     op.create_index("ix_musehub_render_jobs_status", "musehub_render_jobs", ["status"])
 
+    # ── MuseHub — activity event stream (Phase 6) ─────────────────────────
+    op.create_table(
+        "musehub_events",
+        sa.Column("event_id", sa.String(36), nullable=False),
+        sa.Column("repo_id", sa.String(36), nullable=False),
+        sa.Column("event_type", sa.String(40), nullable=False),
+        sa.Column("actor", sa.String(255), nullable=False),
+        sa.Column("description", sa.Text(), nullable=False, server_default=""),
+        sa.Column("event_metadata", sa.JSON(), nullable=False, server_default="{}"),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            nullable=False,
+            server_default=sa.text("CURRENT_TIMESTAMP"),
+        ),
+        sa.ForeignKeyConstraint(["repo_id"], ["musehub_repos.repo_id"], ondelete="CASCADE"),
+        sa.PrimaryKeyConstraint("event_id"),
+    )
+    op.create_index("ix_musehub_events_repo_id", "musehub_events", ["repo_id"])
+    op.create_index("ix_musehub_events_event_type", "musehub_events", ["event_type"])
+    op.create_index("ix_musehub_events_created_at", "musehub_events", ["created_at"])
+
 
 def downgrade() -> None:
     # Drop in reverse creation order, respecting foreign-key dependencies.
+
+    # MuseHub — activity event stream (Phase 6)
+    op.drop_index("ix_musehub_events_created_at", table_name="musehub_events")
+    op.drop_index("ix_musehub_events_event_type", table_name="musehub_events")
+    op.drop_index("ix_musehub_events_repo_id", table_name="musehub_events")
+    op.drop_table("musehub_events")
 
     # MuseHub — render pipeline (Phase 5)
     op.drop_index("ix_musehub_render_jobs_status", table_name="musehub_render_jobs")

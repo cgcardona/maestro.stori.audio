@@ -1,0 +1,218 @@
+{% extends "musehub/base.html" %}
+
+{% block title %}Activity — {{ owner }}/{{ repo_slug }}{% endblock %}
+{% block breadcrumb %}
+  <a href="/musehub/ui/{{ owner }}/{{ repo_slug }}">{{ owner }}/{{ repo_slug }}</a> / activity
+{% endblock %}
+{% block repo_nav %}{% include "musehub/partials/repo_nav.html" %}{% endblock %}
+
+{% block page_data %}
+const repoId = {{ repo_id | tojson }};
+const base   = {{ base_url | tojson }};
+{% endblock %}
+
+{% block page_script %}
+{% raw %}
+/* Map event_type to a display icon and label. */
+const EVENT_META = {
+  commit_pushed:   { icon: '&#128190;', label: 'Commit pushed' },
+  pr_opened:       { icon: '&#9883;',   label: 'PR opened' },
+  pr_merged:       { icon: '&#10003;',  label: 'PR merged' },
+  pr_closed:       { icon: '&#10005;',  label: 'PR closed' },
+  issue_opened:    { icon: '&#128203;', label: 'Issue opened' },
+  issue_closed:    { icon: '&#9989;',   label: 'Issue closed' },
+  branch_created:  { icon: '&#127807;', label: 'Branch created' },
+  branch_deleted:  { icon: '&#128465;', label: 'Branch deleted' },
+  tag_pushed:      { icon: '&#127991;', label: 'Tag pushed' },
+  session_started: { icon: '&#127911;', label: 'Session started' },
+  session_ended:   { icon: '&#9209;',   label: 'Session ended' },
+};
+
+const ALL_EVENT_TYPES = Object.keys(EVENT_META);
+
+/* Build the deep-link for an event using its metadata. */
+function eventLink(ev) {
+  const m = ev.metadata || {};
+  switch (ev.eventType) {
+    case 'commit_pushed':
+      return m.sha ? base + '/commits/' + m.sha : base + '/commits';
+    case 'pr_opened':
+    case 'pr_merged':
+    case 'pr_closed':
+      return m.pr_id ? base + '/pulls/' + m.pr_id : base + '/pulls';
+    case 'issue_opened':
+    case 'issue_closed':
+      return m.number != null ? base + '/issues/' + m.number : base + '/issues';
+    case 'branch_created':
+    case 'branch_deleted':
+      return base + '/branches';
+    case 'tag_pushed':
+      return base + '/tags';
+    case 'session_started':
+    case 'session_ended':
+      return m.session_id ? base + '/sessions/' + m.session_id : base + '/sessions';
+    default:
+      return base;
+  }
+}
+
+/* Current filter state */
+let currentFilter = null;
+let currentPage   = 1;
+const PAGE_SIZE   = 30;
+
+async function loadActivity(filter, page) {
+  currentFilter = filter || null;
+  currentPage   = page  || 1;
+
+  let url = '/repos/' + repoId + '/activity?page=' + currentPage + '&page_size=' + PAGE_SIZE;
+  if (currentFilter) url += '&event_type=' + encodeURIComponent(currentFilter);
+
+  try {
+    const data   = await apiFetch(url);
+    const events = data.events || [];
+    const total  = data.total  || 0;
+    const pages  = Math.ceil(total / PAGE_SIZE) || 1;
+
+    /* Update active filter pill */
+    document.querySelectorAll('.filter-pill').forEach(function(btn) {
+      btn.classList.toggle('active', btn.dataset.filter === (currentFilter || ''));
+    });
+
+    /* Event rows */
+    const rows = events.length === 0
+      ? '<div class="empty-state"><div class="empty-icon">&#127926;</div><p class="empty-title">No activity yet</p><p class="empty-desc">Events appear here when commits are pushed, PRs opened, issues created, and more.</p></div>'
+      : events.map(function(ev) {
+          const meta  = EVENT_META[ev.eventType] || { icon: '&#8226;', label: ev.eventType };
+          const link  = eventLink(ev);
+          return '<div class="activity-row">'
+            + '<span class="activity-icon" title="' + escHtml(meta.label) + '">' + meta.icon + '</span>'
+            + '<div class="activity-body">'
+            +   '<div class="activity-description">'
+            +     '<a href="' + escHtml(link) + '">' + escHtml(ev.description || meta.label) + '</a>'
+            +   '</div>'
+            +   '<div class="activity-meta">'
+            +     '<a href="/musehub/ui/users/' + encodeURIComponent(ev.actor) + '" class="activity-actor">' + escHtml(ev.actor) + '</a>'
+            +     ' &bull; <span class="activity-type-badge">' + escHtml(meta.label) + '</span>'
+            +     ' &bull; <span class="text-muted" title="' + escHtml(ev.createdAt) + '">' + fmtRelative(ev.createdAt) + '</span>'
+            +   '</div>'
+            + '</div>'
+            + '</div>';
+        }).join('');
+
+    /* Pagination */
+    let pager = '';
+    if (pages > 1) {
+      pager = '<div class="pager">';
+      if (currentPage > 1) {
+        pager += '<button class="btn btn-secondary btn-sm" onclick="loadActivity(' + JSON.stringify(currentFilter) + ',' + (currentPage-1) + ')">&larr; Prev</button>';
+      }
+      pager += '<span class="pager-info">Page ' + currentPage + ' of ' + pages + '</span>';
+      if (currentPage < pages) {
+        pager += '<button class="btn btn-secondary btn-sm" onclick="loadActivity(' + JSON.stringify(currentFilter) + ',' + (currentPage+1) + ')">Next &rarr;</button>';
+      }
+      pager += '</div>';
+    }
+
+    document.getElementById('activity-list').innerHTML = rows + pager;
+    document.getElementById('activity-total').textContent = total + ' event' + (total !== 1 ? 's' : '');
+
+  } catch(e) {
+    if (e.message !== 'auth') {
+      document.getElementById('activity-list').innerHTML = '<p class="error">&#10005; ' + escHtml(e.message) + '</p>';
+    }
+  }
+}
+
+async function load() {
+  initRepoNav(repoId);
+  loadActivity(null, 1);
+}
+
+load();
+{% endraw %}
+{% endblock %}
+
+{% block content %}
+<div class="card" style="padding:0">
+  <div class="card-header" style="display:flex;align-items:center;gap:16px;flex-wrap:wrap;padding:16px 20px">
+    <h1 style="margin:0;font-size:18px">Activity</h1>
+    <span id="activity-total" class="text-muted" style="font-size:13px"></span>
+    <div class="filter-pills" style="margin-left:auto;display:flex;gap:6px;flex-wrap:wrap">
+      <button class="btn btn-sm filter-pill active" data-filter=""
+              onclick="loadActivity(null,1)">All</button>
+      <button class="btn btn-sm filter-pill" data-filter="commit_pushed"
+              onclick="loadActivity('commit_pushed',1)">&#128190; Commits</button>
+      <button class="btn btn-sm filter-pill" data-filter="pr_opened"
+              onclick="loadActivity('pr_opened',1)">&#9883; PRs</button>
+      <button class="btn btn-sm filter-pill" data-filter="issue_opened"
+              onclick="loadActivity('issue_opened',1)">&#128203; Issues</button>
+      <button class="btn btn-sm filter-pill" data-filter="branch_created"
+              onclick="loadActivity('branch_created',1)">&#127807; Branches</button>
+      <button class="btn btn-sm filter-pill" data-filter="tag_pushed"
+              onclick="loadActivity('tag_pushed',1)">&#127991; Tags</button>
+      <button class="btn btn-sm filter-pill" data-filter="session_started"
+              onclick="loadActivity('session_started',1)">&#127911; Sessions</button>
+    </div>
+  </div>
+  <div id="activity-list" style="padding:0 20px 20px">
+    <p class="loading">Loading activity&hellip;</p>
+  </div>
+</div>
+
+<style>
+.activity-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--border-color);
+}
+.activity-row:last-child { border-bottom: none; }
+.activity-icon {
+  font-size: 20px;
+  flex-shrink: 0;
+  width: 28px;
+  text-align: center;
+  margin-top: 2px;
+}
+.activity-body { flex: 1; min-width: 0; }
+.activity-description { font-size: 14px; margin-bottom: 4px; }
+.activity-description a { color: var(--text-primary); text-decoration: none; }
+.activity-description a:hover { text-decoration: underline; }
+.activity-meta { font-size: 12px; color: var(--text-muted); }
+.activity-actor { color: var(--accent-color); text-decoration: none; font-weight: 600; }
+.activity-actor:hover { text-decoration: underline; }
+.activity-type-badge {
+  background: var(--surface-color);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  padding: 1px 5px;
+  font-size: 11px;
+}
+.filter-pills { gap: 4px; }
+.filter-pill {
+  background: var(--surface-color);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  padding: 3px 10px;
+  font-size: 12px;
+  cursor: pointer;
+  color: var(--text-secondary);
+  transition: all 0.15s;
+}
+.filter-pill:hover { border-color: var(--accent-color); color: var(--accent-color); }
+.filter-pill.active {
+  background: var(--accent-color);
+  border-color: var(--accent-color);
+  color: #fff;
+}
+.pager {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px 0 4px;
+}
+.pager-info { font-size: 13px; color: var(--text-muted); }
+</style>
+{% endblock %}

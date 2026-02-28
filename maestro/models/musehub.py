@@ -1408,6 +1408,42 @@ class SessionListResponse(CamelModel):
     total: int
 
 
+class ActivityEventResponse(CamelModel):
+    """Wire representation of a single repo-level activity event.
+
+    ``event_type`` is one of:
+      "commit_pushed" | "pr_opened" | "pr_merged" | "pr_closed" |
+      "issue_opened" | "issue_closed" | "branch_created" | "branch_deleted" |
+      "tag_pushed" | "session_started" | "session_ended"
+
+    ``metadata`` carries event-specific structured data for deep-link rendering
+    (e.g. ``{"sha": "abc123", "message": "Add groove baseline"}`` for commit_pushed).
+    """
+
+    event_id: str
+    repo_id: str
+    event_type: str
+    actor: str
+    description: str
+    metadata: dict[str, object] = Field(default_factory=dict)
+    created_at: datetime
+
+
+class ActivityFeedResponse(CamelModel):
+    """Paginated activity event feed for a repo (newest-first).
+
+    ``page`` and ``page_size`` echo the request parameters.
+    ``total`` is the total number of events matching the filter (ignoring pagination).
+    ``event_type_filter`` is the active filter value, or None when showing all types.
+    """
+
+    events: list[ActivityEventResponse]
+    total: int
+    page: int
+    page_size: int
+    event_type_filter: str | None = None
+
+
 class SimilarCommitResponse(CamelModel):
     """A single result from a MuseHub semantic similarity search.
 
