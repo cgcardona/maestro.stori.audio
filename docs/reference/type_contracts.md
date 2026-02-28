@@ -1958,6 +1958,41 @@ These type aliases replace the repeated pattern `dict[str, list[XxxDict]]` that 
 
 > Added: 2026-02-27 | Types used by the `muse` CLI commands — purely local, never serialised over HTTP.
 
+### `BlameEntry` (`maestro/muse_cli/commands/blame.py`)
+
+`TypedDict` — blame annotation for a single file path returned by `muse blame`.
+Identifies the most recent commit that touched the file, enabling AI agents to
+attribute musical decisions to specific commits.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `path` | `str` | Full relative path of the file (e.g. `muse-work/bass/bassline.mid`) |
+| `commit_id` | `str` | Full 64-char SHA-256 commit ID of the last-touching commit |
+| `commit_short` | `str` | 8-char abbreviated commit ID for human-readable output |
+| `author` | `str` | Author string from the commit; `"(unknown)"` if empty |
+| `committed_at` | `str` | Timestamp formatted as `YYYY-MM-DD HH:MM:SS` |
+| `message` | `str` | Commit message of the last-touching commit |
+| `change_type` | `str` | How the path changed: `"added"` \| `"modified"` \| `"unchanged"` |
+
+**Used by:** `_blame_async`, `_render_blame`.
+
+### `BlameResult` (`maestro/muse_cli/commands/blame.py`)
+
+`TypedDict` — full output of `muse blame`, wrapping a list of `BlameEntry` values
+with the active filter state.  Entries are sorted alphabetically by path.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `path_filter` | `str \| None` | Positional path filter passed to the command, or `None` |
+| `track_filter` | `str \| None` | `--track` fnmatch pattern, or `None` |
+| `section_filter` | `str \| None` | `--section` directory name, or `None` |
+| `line_range` | `str \| None` | `--line-range N,M` annotation (informational for binary files), or `None` |
+| `entries` | `list[BlameEntry]` | Blame annotations, sorted by path ascending |
+
+**Used by:** `_blame_async`, `_render_blame`, and JSON serialisation path in `blame()`.
+
+---
+
 ### `HarmonyResult` (`maestro/muse_cli/commands/harmony.py`)
 
 `TypedDict` — harmonic analysis for a single commit returned by `muse harmony`.
