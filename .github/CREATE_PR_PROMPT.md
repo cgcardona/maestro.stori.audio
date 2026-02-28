@@ -67,6 +67,14 @@ If the issue is ambiguous:
 
 ## STEP 2 — BRANCH SETUP
 
+**If running inside a parallel agent worktree** (the working directory contains `.agent-task`):
+your worktree is already at the dev tip in detached HEAD. Do NOT run `git checkout dev` —
+`dev` is checked out in the main repo and git will refuse. Just create the feature branch:
+```bash
+git checkout -b feat/<short-description>
+```
+
+**If running standalone** (not inside a worktree):
 ```bash
 git checkout dev
 git pull origin dev

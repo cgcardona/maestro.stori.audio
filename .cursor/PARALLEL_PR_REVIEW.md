@@ -460,7 +460,10 @@ STEP 6 — PRE-MERGE SYNC (only if grade is A or B):
   # 6. Delete the remote branch manually (now safe — merge is done):
        git push origin --delete "$BRANCH"
 
-  # 7. Close the referenced issue:
+  # 7. Close the referenced issue.
+  #    Find the issue number from the PR body (look for "Closes #N"):
+       gh pr view <N> --json body --jq '.body' | grep -o '#[0-9]*' | head -1
+  #    Then close it:
        gh issue close <issue-number> --comment "Fixed by PR #<N>."
 
   ⚠️  Never use --delete-branch with gh pr merge in a multi-worktree setup.
