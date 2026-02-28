@@ -37,6 +37,12 @@ Covers the minimum acceptance criteria from issue #43 and issue #232:
 - test_ui_issue_list_has_sort_controls         — Sort buttons (newest/oldest/most-commented) present (#299)
 - test_ui_issue_list_has_label_filter_js       — Client-side label filter JS present (#299)
 - test_ui_issue_list_has_body_preview_js       — Body preview helper and CSS class present (#299)
+- test_ui_issue_detail_has_comment_section     — Comment thread section below issue body (#289)
+- test_ui_issue_detail_has_render_comments_js  — renderComments() fetches issue comments (#289)
+- test_ui_issue_detail_has_submit_comment_js   — submitComment() posts new comments (#289)
+- test_ui_issue_detail_has_delete_comment_js   — deleteComment() removes own comments (#289)
+- test_ui_issue_detail_has_reply_support_js    — toggleReplyForm() enables threaded replies (#289)
+- test_ui_issue_detail_comment_section_below_body — comment section follows issue body card (#289)
 - test_context_page_renders            — context viewer page returns 200 HTML
 - test_context_json_response           — JSON returns MuseHubContextResponse structure
 - test_context_includes_musical_state  — response includes active_tracks field
@@ -348,6 +354,93 @@ async def test_ui_issue_detail_page_returns_200(
     body = response.text
     assert "Muse Hub" in body
     assert "Close issue" in body
+
+
+@pytest.mark.anyio
+async def test_ui_issue_detail_has_comment_section(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Issue detail page includes a comment thread section below the issue body (#289)."""
+    await _make_repo(db_session)
+    response = await client.get("/musehub/ui/testuser/test-beats/issues/1")
+    assert response.status_code == 200
+    body = response.text
+    assert "comments-list" in body
+    assert "Comments" in body
+    assert "new-comment-body" in body
+
+
+@pytest.mark.anyio
+async def test_ui_issue_detail_has_render_comments_js(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Issue detail page embeds renderComments() for fetching the comment thread (#289)."""
+    await _make_repo(db_session)
+    response = await client.get("/musehub/ui/testuser/test-beats/issues/1")
+    assert response.status_code == 200
+    body = response.text
+    assert "renderComments" in body
+    assert "target_type=issue" in body
+
+
+@pytest.mark.anyio
+async def test_ui_issue_detail_has_submit_comment_js(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Issue detail page embeds submitComment() for posting new comments (#289)."""
+    await _make_repo(db_session)
+    response = await client.get("/musehub/ui/testuser/test-beats/issues/1")
+    assert response.status_code == 200
+    body = response.text
+    assert "submitComment" in body
+    assert "submit-comment-btn" in body
+
+
+@pytest.mark.anyio
+async def test_ui_issue_detail_has_delete_comment_js(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Issue detail page embeds deleteComment() for removing own comments (#289)."""
+    await _make_repo(db_session)
+    response = await client.get("/musehub/ui/testuser/test-beats/issues/1")
+    assert response.status_code == 200
+    body = response.text
+    assert "deleteComment" in body
+
+
+@pytest.mark.anyio
+async def test_ui_issue_detail_has_reply_support_js(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Issue detail page embeds toggleReplyForm() for threaded replies (#289)."""
+    await _make_repo(db_session)
+    response = await client.get("/musehub/ui/testuser/test-beats/issues/1")
+    assert response.status_code == 200
+    body = response.text
+    assert "toggleReplyForm" in body
+    assert "parent_id" in body
+
+
+@pytest.mark.anyio
+async def test_ui_issue_detail_comment_section_below_body(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Comment section appears after the issue body card in document order (#289)."""
+    await _make_repo(db_session)
+    response = await client.get("/musehub/ui/testuser/test-beats/issues/1")
+    assert response.status_code == 200
+    body = response.text
+    close_pos = body.find("closeIssue")
+    comments_pos = body.find("comments-list")
+    assert close_pos != -1, "closeIssue not found"
+    assert comments_pos != -1, "comments-list not found"
+    assert comments_pos > close_pos, "comment section must appear after the issue body"
 
 
 @pytest.mark.anyio

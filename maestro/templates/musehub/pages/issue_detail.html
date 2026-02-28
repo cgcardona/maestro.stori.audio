@@ -26,6 +26,148 @@ async function closeIssue() {
   }
 }
 
+// ── Comment thread ────────────────────────────────────────────────────────────
+
+function avatarHtml(author) {
+  const initial = (author || '?').charAt(0).toUpperCase();
+  return `<span style="display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:50%;background:var(--accent,#58a6ff);color:#0d1117;font-size:12px;font-weight:700;flex-shrink:0">${escHtml(initial)}</span>`;
+}
+
+function commentHtml(c, isReply) {
+  const indent = isReply ? 'margin-left:36px;border-left:2px solid var(--border-subtle);padding-left:12px;' : '';
+  const me = getCurrentUser();
+  const deleteBtn = me && me === c.author
+    ? `<button class="btn btn-ghost btn-xs" style="color:var(--color-danger,#f87171);margin-left:auto" onclick="deleteComment('${escHtml(c.comment_id)}')">✕ Delete</button>`
+    : '';
+  const replyBtn = !isReply
+    ? `<button class="btn btn-ghost btn-xs" onclick="toggleReplyForm('${escHtml(c.comment_id)}')">↩ Reply</button>`
+    : '';
+  return `
+    <div class="comment-block" id="comment-${escHtml(c.comment_id)}" style="${indent}margin-bottom:12px">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+        ${avatarHtml(c.author)}
+        <span style="font-weight:600;font-size:13px">${escHtml(c.author)}</span>
+        <span style="color:var(--text-muted);font-size:12px">${fmtDate(c.created_at)}</span>
+        ${replyBtn}
+        ${deleteBtn}
+      </div>
+      <div style="font-size:14px;color:var(--text-secondary);white-space:pre-wrap;padding-left:36px">${escHtml(c.body)}</div>
+      ${!isReply ? `<div id="reply-form-${escHtml(c.comment_id)}" style="display:none;margin-top:8px;padding-left:36px"></div>` : ''}
+    </div>`;
+}
+
+function toggleReplyForm(parentId) {
+  const container = document.getElementById('reply-form-' + parentId);
+  if (!container) return;
+  if (container.style.display !== 'none') {
+    container.style.display = 'none';
+    container.innerHTML = '';
+    return;
+  }
+  container.style.display = '';
+  container.innerHTML = `
+    <div style="display:flex;flex-direction:column;gap:8px">
+      <textarea id="reply-body-${parentId}" class="form-input" rows="2"
+                placeholder="Write a reply…"
+                style="resize:vertical;width:100%;font-family:var(--font-sans);font-size:13px"></textarea>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-primary btn-sm" onclick="submitComment('${parentId}')">Reply</button>
+        <button class="btn btn-ghost btn-sm" onclick="toggleReplyForm('${parentId}')">Cancel</button>
+      </div>
+    </div>`;
+  const ta = document.getElementById('reply-body-' + parentId);
+  if (ta) ta.focus();
+}
+
+async function renderComments() {
+  const container = document.getElementById('comments-list');
+  if (!container) return;
+  container.innerHTML = '<p class="loading text-sm" style="padding:12px">Loading comments…</p>';
+  try {
+    const comments = await apiFetch(
+      '/repos/' + repoId + '/comments?target_type=issue&target_id=' + encodeURIComponent(String(number))
+    );
+    const topLevel = comments.filter(c => !c.parent_id);
+    const byParent = {};
+    comments.forEach(c => {
+      if (c.parent_id) {
+        if (!byParent[c.parent_id]) byParent[c.parent_id] = [];
+        byParent[c.parent_id].push(c);
+      }
+    });
+    if (!topLevel.length) {
+      container.innerHTML = '<p style="color:var(--text-muted);font-size:14px;padding:12px 0">No comments yet. Be the first to comment.</p>';
+      return;
+    }
+    let html = '';
+    topLevel.forEach(c => {
+      html += commentHtml(c, false);
+      (byParent[c.comment_id] || []).forEach(r => {
+        html += commentHtml(r, true);
+      });
+    });
+    container.innerHTML = html;
+  } catch(e) {
+    if (e.message !== 'auth')
+      container.innerHTML = '<p class="error" style="font-size:13px">Failed to load comments: ' + escHtml(e.message) + '</p>';
+    else
+      container.innerHTML = '<p style="color:var(--text-muted);font-size:14px;padding:12px 0">Sign in to view and post comments.</p>';
+  }
+}
+
+async function submitComment(parentId) {
+  const isReply = !!parentId;
+  const textareaId = isReply ? 'reply-body-' + parentId : 'new-comment-body';
+  const textarea = document.getElementById(textareaId);
+  if (!textarea) return;
+  const body = textarea.value.trim();
+  if (!body) { textarea.focus(); return; }
+
+  const btnId = isReply ? null : 'submit-comment-btn';
+  const btn = btnId ? document.getElementById(btnId) : null;
+  if (btn) { btn.disabled = true; btn.textContent = 'Posting…'; }
+
+  try {
+    await apiFetch('/repos/' + repoId + '/comments', {
+      method: 'POST',
+      body: JSON.stringify({
+        target_type: 'issue',
+        target_id: String(number),
+        body: body,
+        parent_id: parentId || null,
+      }),
+    });
+    textarea.value = '';
+    if (isReply) toggleReplyForm(parentId);
+    await renderComments();
+  } catch(e) {
+    if (e.message !== 'auth')
+      alert('Failed to post comment: ' + e.message);
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = 'Comment'; }
+  }
+}
+
+async function deleteComment(commentId) {
+  if (!confirm('Delete this comment?')) return;
+  try {
+    await apiFetch('/repos/' + repoId + '/comments/' + commentId, { method: 'DELETE' });
+    await renderComments();
+  } catch(e) {
+    if (e.message !== 'auth')
+      alert('Failed to delete comment: ' + e.message);
+  }
+}
+
+function getCurrentUser() {
+  try {
+    const token = localStorage.getItem('musehub_token');
+    if (!token) return null;
+    const payload = JSON.parse(atob(token.split('.')[1]));
+    return payload.sub || null;
+  } catch(_) { return null; }
+}
+
 async function load() {
   initRepoNav(repoId);
   try {
@@ -40,6 +182,8 @@ async function load() {
       <div style="margin-bottom:12px">
         <a href="${base}/issues">&larr; Back to issues</a>
       </div>
+
+      <!-- Issue body -->
       <div class="card">
         <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px">
           <h1 style="margin:0">${escHtml(issue.title)}</h1>
@@ -65,7 +209,41 @@ async function load() {
         </div>
         ${issue.body ? '<pre>' + escHtml(issue.body) + '</pre>' : ''}
         ${closeSection}
+      </div>
+
+      <!-- Comment thread -->
+      <div class="card" style="margin-top:16px">
+        <h2 style="margin:0 0 16px 0;font-size:16px">&#128172; Comments</h2>
+        <div id="comments-list"></div>
+
+        <!-- New comment form -->
+        <div style="margin-top:20px;padding-top:16px;border-top:1px solid var(--border-subtle)">
+          <div style="display:flex;align-items:flex-start;gap:10px">
+            <span id="comment-avatar" style="display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:50%;background:var(--bg-overlay);color:var(--text-muted);font-size:12px;font-weight:700;flex-shrink:0;margin-top:4px">?</span>
+            <div style="flex:1;display:flex;flex-direction:column;gap:8px">
+              <textarea id="new-comment-body" class="form-input" rows="3"
+                        placeholder="Leave a comment…"
+                        style="resize:vertical;width:100%;font-family:var(--font-sans);font-size:13px"></textarea>
+              <div>
+                <button id="submit-comment-btn" class="btn btn-primary btn-sm" onclick="submitComment(null)">
+                  Comment
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>`;
+
+    // Personalise avatar initial once we know the current user
+    const me = getCurrentUser();
+    const avatarEl = document.getElementById('comment-avatar');
+    if (avatarEl && me) {
+      avatarEl.style.background = 'var(--accent,#58a6ff)';
+      avatarEl.style.color = '#0d1117';
+      avatarEl.textContent = me.charAt(0).toUpperCase();
+    }
+
+    await renderComments();
   } catch(e) {
     if (e.message !== 'auth')
       document.getElementById('content').innerHTML = '<p class="error">&#10005; ' + escHtml(e.message) + '</p>';
