@@ -72,9 +72,16 @@ class MusehubRepo(Base):
     pull_requests: Mapped[list[MusehubPullRequest]] = relationship(
         "MusehubPullRequest", back_populates="repo", cascade="all, delete-orphan"
     )
+    releases: Mapped[list[MusehubRelease]] = relationship(
+        "MusehubRelease", back_populates="repo", cascade="all, delete-orphan"
+    )
+    webhooks: Mapped[list[MusehubWebhook]] = relationship(
+        "MusehubWebhook", back_populates="repo", cascade="all, delete-orphan"
+    )
     stars: Mapped[list[MusehubStar]] = relationship(
         "MusehubStar", back_populates="repo", cascade="all, delete-orphan"
     )
+
 
 class MusehubBranch(Base):
     """A named branch pointer inside a Muse Hub repo."""
