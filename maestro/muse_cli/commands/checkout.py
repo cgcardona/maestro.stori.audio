@@ -68,7 +68,7 @@ def checkout_branch(
         if target_ref_path.exists() and target_ref_path.read_text().strip():
             typer.echo(
                 f"❌ Branch '{branch}' already exists.\n"
-                "   Use 'muse checkout {branch}' to switch to it."
+                f"   Use 'muse checkout {branch}' to switch to it."
             )
             raise typer.Exit(code=ExitCode.USER_ERROR)
 
@@ -96,7 +96,7 @@ def checkout_branch(
         if not target_ref_path.exists():
             typer.echo(
                 f"❌ Branch '{branch}' does not exist.\n"
-                "   Use 'muse checkout -b {branch}' to create it."
+                f"   Use 'muse checkout -b {branch}' to create it."
             )
             raise typer.Exit(code=ExitCode.USER_ERROR)
 
