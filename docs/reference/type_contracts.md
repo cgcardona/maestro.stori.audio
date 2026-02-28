@@ -6233,7 +6233,6 @@ Defined in `maestro/models/musehub.py`.
 **Producer:** `search.search_repo` route handler
 **Consumer:** Muse Hub search page (renders result rows); AI agents finding commits by musical property
 
-<<<<<<< HEAD
 ### `SessionResponse`
 
 Defined in `maestro/models/musehub.py`.
@@ -6266,7 +6265,7 @@ Wrapper returned by `GET /api/v1/musehub/repos/{repo_id}/sessions`.
 
 **Producer:** `repos.list_sessions` route handler
 **Consumer:** Muse Hub sessions page UI; AI agents auditing studio activity across time
-=======
+
 ### `DagNode`
 
 A single commit node in the repo's directed acyclic graph. Defined in `maestro/models/musehub.py`.
@@ -6314,7 +6313,6 @@ Returned by `GET /api/v1/musehub/repos/{repo_id}/dag`.
 
 **Producer:** `repos.get_commit_dag` route handler
 **Consumer:** Interactive DAG graph UI page; AI agents inspecting project history topology
->>>>>>> origin/dev
 
 ---
 

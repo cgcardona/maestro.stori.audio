@@ -29,6 +29,7 @@ import asyncio
 import math
 import mido
 import random
+import statistics
 import traceback
 import os
 import copy
@@ -44,6 +45,7 @@ from generation_policy import (
     DEFAULT_TEMPERATURE,
     DEFAULT_TOP_P,
     get_policy_version,
+    get_genre_prior,
     build_controls,
     build_fulfillment_report,
     quality_preset_to_batch_count,
@@ -57,6 +59,8 @@ from post_processing import build_post_processor
 from storpheus_types import (
     BestCandidate,
     CacheKeyData,
+    GenerationTelemetryRecord,
+    ParameterSweepResult,
     StorpheusAftertouch,
     StorpheusCCEvent,
     StorpheusNoteDict,
@@ -64,6 +68,7 @@ from storpheus_types import (
     ParsedMidiResult,
     QualityEvalToolCall,
     ScoringParams,
+    SweepABTestResult,
     WireNoteDict,
 )
 
@@ -1751,6 +1756,133 @@ async def ab_test(request: ABTestRequest) -> dict[str, object]:
     }
 
 
+class ParameterSweepRequest(BaseModel):
+    """Request to sweep temperature × top_p combinations for a genre.
+
+    Runs a small grid of (temperature, top_p) pairs using the supplied
+    base ``GenerateRequest`` as a template, evaluates each candidate with
+    ``analyze_quality`` and ``rejection_score``, and returns a ranked
+    summary with a statistical-significance flag.
+
+    Fields:
+        base_config     Template GenerateRequest (instruments, bars, etc.)
+        temperatures    Temperature values to sweep (max 5 to bound cost)
+        top_ps          top_p values to sweep (max 3)
+    """
+
+    base_config: GenerateRequest
+    temperatures: list[float] = [0.80, 0.87, 0.95]
+    top_ps: list[float] = [0.93, 0.96]
+
+    model_config = {"json_schema_extra": {"example": {
+        "base_config": {"genre": "jazz", "tempo": 120, "instruments": ["piano"], "bars": 4},
+        "temperatures": [0.80, 0.90, 1.0],
+        "top_ps": [0.93, 0.96],
+    }}}
+
+
+@app.post("/quality/parameter-sweep")
+async def parameter_sweep(request: ParameterSweepRequest) -> SweepABTestResult:
+    """Sweep temperature × top_p combinations and rank by quality score.
+
+    Generates one candidate per (temperature, top_p) pair using the
+    ``base_config`` as a template, overriding only the two sampling
+    parameters.  Results are ranked by composite quality score and a
+    ``significant`` flag is set when the max-min gap ≥ 0.05 — indicating
+    that parameter choice materially affects quality for this genre.
+
+    Limits: ≤ 5 temperature values × ≤ 3 top_p values = ≤ 15 calls.
+    """
+    # Guard against runaway sweeps
+    _temps = request.temperatures[:5]
+    _top_ps = request.top_ps[:3]
+
+    def _to_storpheus_local(wire: list[WireNoteDict]) -> list[StorpheusNoteDict]:
+        return [
+            StorpheusNoteDict(
+                pitch=n["pitch"],
+                start_beat=n["startBeat"],
+                duration_beats=n["durationBeats"],
+                velocity=n["velocity"],
+            )
+            for n in wire
+        ]
+
+    sweep_results: list[ParameterSweepResult] = []
+
+    for temp in _temps:
+        for tp in _top_ps:
+            # Clone the base config with explicit temperature / top_p overrides
+            overridden = request.base_config.model_copy(
+                update={"temperature": round(temp, 3), "top_p": round(tp, 3)}
+            )
+            result = await _do_generate(overridden)
+
+            if not result.success or not result.notes:
+                logger.warning(
+                    f"⚠️ Sweep point temp={temp} top_p={tp} failed or produced no notes"
+                )
+                continue
+
+            snake = _to_storpheus_local(result.notes)
+            metrics = analyze_quality(snake, request.base_config.bars, request.base_config.tempo)
+            r_score = rejection_score(snake, request.base_config.bars)
+
+            pitches = [n["pitch"] for n in snake]
+            velocities = [n["velocity"] for n in snake]
+
+            vel_stdev = statistics.stdev(velocities) if len(velocities) > 1 else 0.0
+            vel_mean = statistics.mean(velocities) if velocities else 1.0
+            vel_variation = vel_stdev / max(vel_mean, 1.0)
+
+            sweep_results.append(ParameterSweepResult(
+                temperature=round(temp, 3),
+                top_p=round(tp, 3),
+                quality_score=round(metrics.get("quality_score", 0.0), 4),
+                note_count=len(snake),
+                pitch_range=(max(pitches) - min(pitches)) if pitches else 0,
+                velocity_variation=round(vel_variation, 4),
+                rejection_score=round(r_score, 4),
+            ))
+
+    if not sweep_results:
+        return SweepABTestResult(
+            genre=request.base_config.genre,
+            tempo=request.base_config.tempo,
+            bars=request.base_config.bars,
+            sweep_results=[],
+            best_temperature=DEFAULT_TEMPERATURE,
+            best_top_p=DEFAULT_TOP_P,
+            best_quality_score=0.0,
+            score_range=0.0,
+            significant=False,
+        )
+
+    sweep_results.sort(key=lambda r: r["quality_score"], reverse=True)
+    best = sweep_results[0]
+    scores = [r["quality_score"] for r in sweep_results]
+    score_range = round(max(scores) - min(scores), 4)
+
+    logger.info(
+        f"🔬 Parameter sweep: genre={request.base_config.genre} "
+        f"points={len(sweep_results)} best=temp={best['temperature']} "
+        f"top_p={best['top_p']} score={best['quality_score']:.4f} "
+        f"range={score_range:.4f} significant={score_range >= 0.05}"
+    )
+
+    return SweepABTestResult(
+        genre=request.base_config.genre,
+        tempo=request.base_config.tempo,
+        bars=request.base_config.bars,
+        sweep_results=sweep_results,
+        best_temperature=best["temperature"],
+        best_top_p=best["top_p"],
+        best_quality_score=best["quality_score"],
+        score_range=score_range,
+        significant=score_range >= 0.05,
+    )
+
+
 # ── Persistent session state per composition ──────────────────────────
 # Replicates Gradio's gr.State accumulation across calls within the same
 # composition, but with a token cap to prevent unbounded growth.
@@ -1911,7 +2043,17 @@ async def _do_generate(request: GenerateRequest, worker_id: int = 0) -> Generate
             intent_goals=request.intent_goals or None,
             quality_preset=request.quality_preset,
         )
-        _derived = apply_controls_to_params(_pre_controls, request.bars)
+        # Apply per-genre priors before mapping to Gradio params so that
+        # genre-specific temperature / top_p / density values are used.
+        _genre_prior = get_genre_prior(request.genre)
+        if _genre_prior is not None:
+            logger.info(
+                f"{_log_prefix} 🎼 Genre prior applied for '{request.genre}': "
+                f"temp={_genre_prior.temperature} top_p={_genre_prior.top_p} "
+                f"density_offset={_genre_prior.density_offset:+.2f} "
+                f"prime_ratio={_genre_prior.prime_ratio:.2f}"
+            )
+        _derived = apply_controls_to_params(_pre_controls, request.bars, genre_prior=_genre_prior)
 
         # Explicit overrides from the request take precedence
         temperature = request.temperature if request.temperature is not None else _derived["temperature"]
@@ -2345,6 +2487,33 @@ async def _do_generate(request: GenerateRequest, worker_id: int = 0) -> Generate
         ]
 
         score = rejection_score(snake_notes, request.bars)
+
+        # ── Quality telemetry ──────────────────────────────────────────
+        # Emit one structured record per completed generation so external
+        # log consumers (dashboards, quality monitors) can track trends.
+        _qual_metrics = analyze_quality(snake_notes, request.bars, request.tempo)
+        _pitches_telem = [n["pitch"] for n in snake_notes]
+        _velocities_telem = [n["velocity"] for n in snake_notes]
+        _telem: GenerationTelemetryRecord = {
+            "genre": request.genre,
+            "tempo": request.tempo,
+            "bars": request.bars,
+            "instruments": list(request.instruments),
+            "quality_preset": request.quality_preset,
+            "temperature": temperature,
+            "top_p": top_p,
+            "num_prime_tokens": num_prime_tokens,
+            "num_gen_tokens": num_gen_tokens,
+            "genre_prior_applied": _genre_prior is not None,
+            "note_count": len(snake_notes),
+            "pitch_range": (max(_pitches_telem) - min(_pitches_telem)) if _pitches_telem else 0,
+            "velocity_variation": round(_qual_metrics.get("velocity_variation", 0.0), 4),
+            "quality_score": round(_qual_metrics.get("quality_score", 0.0), 4),
+            "rejection_score": round(score, 4),
+            "candidate_count": len(all_candidate_scores),
+            "generation_ok": True,
+        }
+        logger.info(f"📊 TELEMETRY {json.dumps(_telem)}")
 
         comp_state.last_token_estimate += num_gen_tokens
         comp_state.accumulated_midi_path = midi_path

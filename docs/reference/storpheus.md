@@ -1085,6 +1085,104 @@ prime_tokens = 6656  (always max)
 | bars × density | `num_gen_tokens` | 512 – 1024 |
 | complexity | `num_prime_tokens` | 2048 – 6656 |
 
+When a **per-genre prior** is found (see below), its `temperature` and `top_p`
+**replace** the control-vector-derived values.  The `density_offset` biases the
+effective density before gen-token allocation, and `prime_ratio` scales the
+prime token budget.
+
+### Per-Genre Parameter Priors (`generation_policy.py`)
+
+Genre-specific `temperature`, `top_p`, `density_offset`, and `prime_ratio`
+values tuned from listening tests and A/B experiments.  Resolved by
+`get_genre_prior(genre_string)` using fuzzy substring matching — so a request
+for `"dark minimal techno"` uses the `techno` prior.
+
+**Resolution:** `get_genre_prior(genre: str) → GenreParameterPrior | None`
+Returns `None` for unrecognised genres — the control-vector-derived defaults
+are used as fallback.
+
+**Canonical priors:**
+
+| Genre | Temperature | Top-P | Density offset | Prime ratio | Notes |
+|-------|------------|-------|---------------|-------------|-------|
+| `jazz` | 0.95 | 0.97 | +0.05 | 1.0 | High creativity, through-composed |
+| `fusion` | 0.93 | 0.97 | +0.05 | 1.0 | Similar to jazz, tighter |
+| `prog` | 0.92 | 0.96 | 0.0 | 1.0 | Complex harmony |
+| `experimental` | 1.0 | 0.98 | 0.0 | 1.0 | Maximum randomness |
+| `techno` | 0.78 | 0.92 | +0.1 | 1.0 | Tight, repetitive — deterministic |
+| `house` | 0.82 | 0.93 | +0.1 | 1.0 | Warmer than techno |
+| `trance` | 0.83 | 0.94 | +0.05 | 1.0 | Melodic repetition |
+| `minimal` | 0.75 | 0.91 | −0.15 | 1.0 | Austere — very low density |
+| `trap` | 0.87 | 0.95 | +0.15 | 1.0 | Dense hi-hat patterns |
+| `drill` | 0.84 | 0.93 | +0.1 | 1.0 | Lean and dark |
+| `boom_bap` | 0.86 | 0.95 | 0.0 | 1.0 | Classic hip-hop groove |
+| `lofi` | 0.82 | 0.93 | −0.1 | 0.8 | Warm, short prime window |
+| `ambient` | 0.80 | 0.92 | −0.25 | 1.0 | Very sparse, maximum prime context |
+| `cinematic` | 0.94 | 0.97 | 0.0 | 1.0 | High creativity, builds |
+| `soul` | 0.90 | 0.96 | −0.05 | 1.0 | High velocity variation |
+| `rnb` | 0.88 | 0.95 | −0.1 | 1.0 | Smooth, moderate |
+| `funk` | 0.90 | 0.96 | +0.05 | 1.0 | Syncopated groove |
+
+**Adding a new prior:** Extend `_GENRE_PRIORS` in `generation_policy.py` and
+add a matching entry to `_GENRE_ALIAS_TOKENS` for fuzzy resolution.  Then add
+a parametrized test case in `test_genre_priors_telemetry.py`.
+
+### Generation Telemetry
+
+Every completed generation emits one `📊 TELEMETRY` log line at `INFO` level
+with a JSON-serialisable `GenerationTelemetryRecord`:
+
+```json
+{
+  "genre": "jazz",
+  "tempo": 120,
+  "bars": 4,
+  "instruments": ["piano", "bass"],
+  "quality_preset": "balanced",
+  "temperature": 0.95,
+  "top_p": 0.97,
+  "num_prime_tokens": 5000,
+  "num_gen_tokens": 768,
+  "genre_prior_applied": true,
+  "note_count": 64,
+  "pitch_range": 28,
+  "velocity_variation": 0.14,
+  "quality_score": 0.78,
+  "rejection_score": 0.83,
+  "candidate_count": 3,
+  "generation_ok": true
+}
+```
+
+Use `grep '📊 TELEMETRY'` on the container logs to extract all records.
+
+### Parameter Sweep A/B Testing (`POST /quality/parameter-sweep`)
+
+Extends the existing `/quality/ab-test` endpoint with a full grid sweep over
+`temperature × top_p` combinations.
+
+**Request body:**
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `base_config` | `GenerateRequest` | *(required)* | Template generation request |
+| `temperatures` | `list[float]` | `[0.80, 0.87, 0.95]` | Temperature values (max 5) |
+| `top_ps` | `list[float]` | `[0.93, 0.96]` | top_p values (max 3) |
+
+**Response:** `SweepABTestResult`
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `genre` | `str` | Genre from base_config |
+| `tempo` | `int` | Tempo from base_config |
+| `bars` | `int` | Bar count from base_config |
+| `sweep_results` | `list[ParameterSweepResult]` | Ranked results (best first) |
+| `best_temperature` | `float` | Temperature of best result |
+| `best_top_p` | `float` | top_p of best result |
+| `best_quality_score` | `float` | Quality score of best result |
+| `score_range` | `float` | max − min quality score across sweep |
+| `significant` | `bool` | `True` when `score_range ≥ 0.05` |
+
 ---
 
 ## 10. Seed Library
