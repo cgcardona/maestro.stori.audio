@@ -15,6 +15,77 @@ const base   = {{ base_url | tojson }};
 
 {% block page_script %}
 {% raw %}
+/*
+ * Context Viewer — Component Structure
+ * ─────────────────────────────────────
+ * 1. Header card — "What the Agent Sees" explainer
+ * 2. Musical State card
+ *    - Instrument pills: coloured by role
+ *        bass   → blue  (#1f6feb)
+ *        keys   → purple (#8957e5)
+ *        drums  → red   (#f85149)
+ *        other  → muted (#8b949e)
+ *    - Stat badges: Key, BPM, Time Signature, Form, Emotion
+ * 3. Missing Elements card — red-bordered, checklist rows (☐ item)
+ * 4. Suggestions card — each suggestion has an "Implement" button that
+ *    opens the compose modal pre-filled with the suggestion text.
+ * 5. History Summary card — head commit metadata + ancestor list
+ * 6. Raw JSON card — collapsible, copyable
+ * 7. Compose modal — same pattern as commit.html; streams via
+ *    POST /api/v1/maestro/stream
+ */
+
+// ── Role → colour mapping ────────────────────────────────────────────────
+const ROLE_COLORS = {
+  bass:        { bg: '#0d2848', border: '#1f6feb', text: '#79c0ff' },
+  keys:        { bg: '#1e1040', border: '#8957e5', text: '#d2a8ff' },
+  piano:       { bg: '#1e1040', border: '#8957e5', text: '#d2a8ff' },
+  keyboard:    { bg: '#1e1040', border: '#8957e5', text: '#d2a8ff' },
+  synth:       { bg: '#1e1040', border: '#8957e5', text: '#d2a8ff' },
+  drums:       { bg: '#3d0a0a', border: '#f85149', text: '#ff7b72' },
+  percussion:  { bg: '#3d0a0a', border: '#f85149', text: '#ff7b72' },
+  guitar:      { bg: '#1a2a00', border: '#56d364', text: '#56d364' },
+  strings:     { bg: '#2a1800', border: '#e3b341', text: '#e3b341' },
+  brass:       { bg: '#2a1800', border: '#e3b341', text: '#e3b341' },
+  winds:       { bg: '#002a2a', border: '#39d353', text: '#39d353' },
+  woodwinds:   { bg: '#002a2a', border: '#39d353', text: '#39d353' },
+  vocals:      { bg: '#2a002a', border: '#f778ba', text: '#f778ba' },
+  voice:       { bg: '#2a002a', border: '#f778ba', text: '#f778ba' },
+};
+
+function roleColor(trackName) {
+  const lower = (trackName || '').toLowerCase();
+  for (const [role, colors] of Object.entries(ROLE_COLORS)) {
+    if (lower.includes(role)) return colors;
+  }
+  return { bg: '#161b22', border: '#30363d', text: '#8b949e' };
+}
+
+function trackPill(name) {
+  const c = roleColor(name);
+  return `<span style="display:inline-block;padding:3px 10px;border-radius:20px;font-size:12px;font-weight:500;`
+    + `background:${c.bg};border:1px solid ${c.border};color:${c.text};margin:2px 3px 2px 0">`
+    + escHtml(name) + `</span>`;
+}
+
+function statBadge(icon, label, value) {
+  if (value === null || value === undefined) return '';
+  return `<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;`
+    + `padding:10px 18px;background:#161b22;border:1px solid #30363d;border-radius:8px;min-width:90px">`
+    + `<span style="font-size:18px;margin-bottom:4px">${icon}</span>`
+    + `<span style="font-size:18px;font-weight:700;color:#e6edf3;line-height:1.1">${escHtml(String(value))}</span>`
+    + `<span style="font-size:11px;color:#8b949e;margin-top:2px">${label}</span>`
+    + `</div>`;
+}
+
+function toggleSection(id) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.style.display = el.style.display === 'none' ? '' : 'none';
+  const btn = document.querySelector('[data-target="' + id + '"]');
+  if (btn) btn.textContent = el.style.display === 'none' ? '▶ Show' : '▼ Hide';
+}
+
 function copyJson() {
   const text = document.getElementById('raw-json').textContent;
   navigator.clipboard.writeText(text).then(() => {
@@ -24,41 +95,143 @@ function copyJson() {
   });
 }
 
-function toggleSection(id) {
-  const el = document.getElementById(id);
-  if (!el) return;
-  el.style.display = el.style.display === 'none' ? '' : 'none';
-  const btn = document.querySelector('[data-target="' + id + '"]');
-  if (btn) btn.textContent = el.style.display === 'none' ? '&#9654; Show' : '&#9660; Hide';
+// ── Compose modal ────────────────────────────────────────────────────────
+let _composePreset = '';
+
+function openCompose(presetText) {
+  _composePreset = presetText || '';
+  const modal = document.getElementById('compose-modal');
+  if (!modal) return;
+  modal.style.display = 'flex';
+  const textarea = document.getElementById('compose-prompt');
+  if (textarea) textarea.value = _composePreset;
+  const output = document.getElementById('compose-output');
+  const stream = document.getElementById('compose-stream');
+  if (output) output.style.display = 'none';
+  if (stream) stream.textContent = '';
 }
 
+function closeCompose() {
+  const modal = document.getElementById('compose-modal');
+  if (modal) modal.style.display = 'none';
+}
+
+async function sendCompose() {
+  const prompt = document.getElementById('compose-prompt').value.trim();
+  if (!prompt) return;
+  const btn    = document.getElementById('compose-send-btn');
+  const output = document.getElementById('compose-output');
+  const stream = document.getElementById('compose-stream');
+  btn.disabled = true;
+  btn.textContent = '⏳ Generating…';
+  output.style.display = '';
+  stream.textContent = '';
+
+  try {
+    const res = await fetch('/api/v1/maestro/stream', {
+      method: 'POST',
+      headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        message: prompt,
+        mode: 'compose',
+        repo_id: repoId,
+        commit_id: ref,
+      }),
+    });
+
+    if (!res.ok) {
+      stream.textContent = '❌ Error: ' + res.status + ' ' + res.statusText;
+      return;
+    }
+    const reader = res.body.getReader();
+    const dec = new TextDecoder();
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      const chunk = dec.decode(value, { stream: true });
+      for (const line of chunk.split('\n')) {
+        if (!line.startsWith('data:')) continue;
+        const data = line.slice(5).trim();
+        if (data === '[DONE]') break;
+        try {
+          const ev = JSON.parse(data);
+          if (ev.delta) stream.textContent += ev.delta;
+          else if (ev.text) stream.textContent += ev.text;
+          else if (ev.content) stream.textContent += ev.content;
+          stream.scrollTop = stream.scrollHeight;
+        } catch (_) { /* non-JSON SSE lines are ignored */ }
+      }
+    }
+  } catch (err) {
+    stream.textContent = '❌ ' + (err.message || String(err));
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '🎵 Generate';
+  }
+}
+
+// ── Main load ────────────────────────────────────────────────────────────
 async function load() {
   initRepoNav(repoId);
   try {
     const ctx = await apiFetch('/repos/' + repoId + '/context/' + ref);
 
-    const tracks = (ctx.musicalState.activeTracks || []);
-    const trackList = tracks.length > 0
-      ? tracks.map(t => '<span class="label">' + escHtml(t) + '</span>').join(' ')
-      : '<em style="color:#8b949e">No music files found in repo yet.</em>';
+    // ── Musical State ──────────────────────────────────────────────────
+    const tracks = ctx.musicalState.activeTracks || [];
+    const trackPills = tracks.length > 0
+      ? tracks.map(trackPill).join('')
+      : '<em style="color:#8b949e;font-size:13px">No music files found in repo yet.</em>';
 
-    function dimRow(label, val) {
-      return val !== null && val !== undefined
-        ? '<div class="meta-item"><span class="meta-label">' + label + '</span>'
-          + '<span class="meta-value">' + escHtml(val) + '</span></div>'
-        : '';
-    }
-
-    const musicalDims = [
-      dimRow('Key', ctx.musicalState.key),
-      dimRow('Mode', ctx.musicalState.mode),
-      dimRow('Tempo (BPM)', ctx.musicalState.tempoBpm),
-      dimRow('Time Signature', ctx.musicalState.timeSignature),
-      dimRow('Form', ctx.musicalState.form),
-      dimRow('Emotion', ctx.musicalState.emotion),
+    const badges = [
+      statBadge('♭', 'Key',            ctx.musicalState.key),
+      statBadge('♩', 'Mode',           ctx.musicalState.mode),
+      statBadge('♩', 'BPM',            ctx.musicalState.tempoBpm),
+      statBadge('𝄴', 'Time Sig',       ctx.musicalState.timeSignature),
+      statBadge('🎼', 'Form',           ctx.musicalState.form),
+      statBadge('🎭', 'Emotion',        ctx.musicalState.emotion),
     ].filter(Boolean).join('');
 
-    const histEntries = (ctx.history || []);
+    const badgesHtml = badges
+      ? `<div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:12px">${badges}</div>`
+      : `<p style="font-size:13px;color:#8b949e;margin-top:12px">Musical dimensions (key, tempo, etc.) require MIDI analysis — not yet available.</p>`;
+
+    // ── Missing Elements ───────────────────────────────────────────────
+    const missing = ctx.missingElements || [];
+    const missingHtml = missing.length > 0
+      ? missing.map(m =>
+          `<div style="display:flex;align-items:flex-start;gap:10px;padding:8px 0;`
+          + `border-bottom:1px solid #21262d;font-size:14px">`
+          + `<span style="color:#f85149;flex-shrink:0;margin-top:1px">☐</span>`
+          + `<span style="color:#e6edf3">${escHtml(m)}</span>`
+          + `</div>`
+        ).join('')
+      : `<div style="display:flex;align-items:center;gap:8px;font-size:14px;color:#3fb950">`
+        + `<span>✅</span><span>All musical dimensions are present.</span></div>`;
+
+    const missingBorderColor = missing.length > 0 ? '#f85149' : '#238636';
+
+    // ── Suggestions ────────────────────────────────────────────────────
+    const suggestions = ctx.suggestions || {};
+    const suggKeys = Object.keys(suggestions);
+    const suggHtml = suggKeys.length > 0
+      ? suggKeys.map(k => {
+          const text = suggestions[k];
+          const safeText = escHtml(k + ': ' + text);
+          // Escape for HTML attribute usage (double-quote safe)
+          const attrText = (k + ': ' + text).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+          return `<div style="display:flex;align-items:flex-start;justify-content:space-between;`
+            + `gap:12px;padding:12px 0;border-bottom:1px solid #21262d">`
+            + `<div style="font-size:14px;color:#e6edf3;flex:1">`
+            + `<strong style="color:#79c0ff">${escHtml(k)}</strong>: ${escHtml(text)}`
+            + `</div>`
+            + `<button class="btn btn-primary btn-sm" style="flex-shrink:0;white-space:nowrap"`
+            + ` onclick="openCompose('${attrText.replace(/"/g, '&quot;')}')">⚡ Implement</button>`
+            + `</div>`;
+        }).join('')
+      : `<p style="font-size:14px;color:#8b949e">No suggestions available.</p>`;
+
+    // ── History ────────────────────────────────────────────────────────
+    const histEntries = ctx.history || [];
     const histRows = histEntries.length > 0
       ? histEntries.map(h => `
           <div class="commit-row">
@@ -68,17 +241,7 @@ async function load() {
           </div>`).join('')
       : '<p class="loading">No ancestor commits.</p>';
 
-    const missing = (ctx.missingElements || []);
-    const missingList = missing.length > 0
-      ? '<ul style="padding-left:20px;font-size:14px">' + missing.map(m => '<li>' + escHtml(m) + '</li>').join('') + '</ul>'
-      : '<p style="color:#3fb950;font-size:14px">All musical dimensions are available.</p>';
-
-    const suggestions = ctx.suggestions || {};
-    const suggKeys = Object.keys(suggestions);
-    const suggList = suggKeys.length > 0
-      ? suggKeys.map(k => '<div style="margin-bottom:8px"><strong style="color:#e6edf3">' + escHtml(k) + ':</strong> ' + escHtml(suggestions[k]) + '</div>').join('')
-      : '<p class="loading">No suggestions available.</p>';
-
+    // ── Raw JSON ───────────────────────────────────────────────────────
     const rawJson = JSON.stringify(ctx, null, 2);
 
     document.getElementById('content').innerHTML = `
@@ -86,38 +249,60 @@ async function load() {
         <a href="${base}">&larr; Back to repo</a>
       </div>
 
+      <!-- ── Header ── -->
       <div class="card" style="border-color:#1f6feb">
         <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
-          <span style="font-size:20px">&#127925;</span>
+          <span style="font-size:20px">🎵</span>
           <h1 style="margin:0;font-size:18px">What the Agent Sees</h1>
         </div>
         <p style="font-size:14px;color:#8b949e;margin-bottom:0">
-          This is the musical context document that the AI agent receives
-          when generating music for this repo at commit
+          Musical context the AI agent receives when generating music at commit
           <code style="font-size:12px;background:#0d1117;padding:2px 6px;border-radius:4px">${shortSha(ref)}</code>.
         </p>
       </div>
 
+      <!-- ── Musical State ── -->
       <div class="card">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
-          <h2 style="margin:0">&#127925; Musical State</h2>
-          <button class="btn btn-secondary" style="font-size:12px"
-                  data-target="musical-state-body" onclick="toggleSection('musical-state-body')">&#9660; Hide</button>
+          <h2 style="margin:0">🎵 Musical State</h2>
+          <button class="btn btn-secondary btn-sm" data-target="musical-state-body"
+                  onclick="toggleSection('musical-state-body')">▼ Hide</button>
         </div>
         <div id="musical-state-body">
-          <div style="margin-bottom:10px">
-            <span class="meta-label">Active Tracks</span>
-            <div style="margin-top:4px">${trackList}</div>
+          <div style="margin-bottom:8px">
+            <span class="meta-label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em">Active Tracks</span>
+            <div style="margin-top:6px">${trackPills}</div>
           </div>
-          ${musicalDims ? '<div class="meta-row" style="margin-top:12px">' + musicalDims + '</div>' : '<p style="font-size:13px;color:#8b949e">Musical dimensions (key, tempo, etc.) require MIDI analysis -- not yet available.</p>'}
+          ${badgesHtml}
         </div>
       </div>
 
+      <!-- ── Missing Elements ── -->
+      <div class="card" style="border-color:${missingBorderColor}">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+          <h2 style="margin:0">⚠️ Missing Elements</h2>
+          <button class="btn btn-secondary btn-sm" data-target="missing-body"
+                  onclick="toggleSection('missing-body')">▼ Hide</button>
+        </div>
+        <div id="missing-body">${missingHtml}</div>
+      </div>
+
+      <!-- ── Suggestions ── -->
+      <div class="card" style="border-color:#238636">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+          <h2 style="margin:0">✨ Suggestions</h2>
+          <button class="btn btn-secondary btn-sm" data-target="suggestions-body"
+                  onclick="toggleSection('suggestions-body')">▼ Hide</button>
+        </div>
+        <div id="suggestions-body">${suggHtml}</div>
+      </div>
+
+      <!-- ── History Summary ── -->
       <div class="card">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
-          <h2 style="margin:0">&#128337; History Summary</h2>
-          <button class="btn btn-secondary" style="font-size:12px"
-                  data-target="history-body" onclick="toggleSection('history-body')">&#9660; Hide</button>
+          <h2 style="margin:0">🕐 History Summary</h2>
+          <button class="btn btn-secondary btn-sm" data-target="history-body"
+                  onclick="toggleSection('history-body')">▼ Hide</button>
         </div>
         <div id="history-body">
           <div class="meta-row" style="margin-bottom:12px">
@@ -144,43 +329,60 @@ async function load() {
         </div>
       </div>
 
+      <!-- ── Raw JSON ── -->
       <div class="card">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
-          <h2 style="margin:0">&#9888;&#65039; Missing Elements</h2>
-          <button class="btn btn-secondary" style="font-size:12px"
-                  data-target="missing-body" onclick="toggleSection('missing-body')">&#9660; Hide</button>
-        </div>
-        <div id="missing-body">${missingList}</div>
-      </div>
-
-      <div class="card" style="border-color:#238636">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
-          <h2 style="margin:0">&#127775; Suggestions</h2>
-          <button class="btn btn-secondary" style="font-size:12px"
-                  data-target="suggestions-body" onclick="toggleSection('suggestions-body')">&#9660; Hide</button>
-        </div>
-        <div id="suggestions-body">${suggList}</div>
-      </div>
-
-      <div class="card">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
-          <h2 style="margin:0">&#128196; Raw JSON</h2>
+          <h2 style="margin:0">📄 Raw JSON</h2>
           <div style="display:flex;gap:8px">
-            <button id="copy-btn" class="btn btn-secondary" style="font-size:12px" onclick="copyJson()">Copy JSON</button>
-            <button class="btn btn-secondary" style="font-size:12px"
-                    data-target="raw-json-body" onclick="toggleSection('raw-json-body')">&#9660; Hide</button>
+            <button id="copy-btn" class="btn btn-secondary btn-sm" onclick="copyJson()">Copy JSON</button>
+            <button class="btn btn-secondary btn-sm" data-target="raw-json-body"
+                    onclick="toggleSection('raw-json-body')">▼ Hide</button>
           </div>
         </div>
         <div id="raw-json-body">
           <pre id="raw-json">${escHtml(rawJson)}</pre>
         </div>
       </div>`;
-  } catch(e) {
+  } catch (e) {
     if (e.message !== 'auth')
-      document.getElementById('content').innerHTML = '<p class="error">&#10005; ' + escHtml(e.message) + '</p>';
+      document.getElementById('content').innerHTML = '<p class="error">✗ ' + escHtml(e.message) + '</p>';
   }
 }
 
 load();
 {% endraw %}
+{% endblock %}
+
+{% block body_extra %}
+<!-- ── Compose Suggestion Modal ── -->
+<div id="compose-modal" class="modal" style="display:none" onclick="if(event.target===this)closeCompose()">
+  <div class="modal-panel" style="max-width:640px;width:100%">
+    <div class="modal-header">
+      <h2 style="margin:0">🎹 Implement Suggestion</h2>
+      <button class="btn btn-ghost btn-sm" onclick="closeCompose()">&#10005;</button>
+    </div>
+    <div style="padding:var(--space-4)">
+      <p class="text-sm text-muted" style="margin-bottom:var(--space-3)">
+        Describe what you want Maestro to compose. The suggestion text is pre-filled —
+        edit it or add more detail before generating.
+      </p>
+      <div class="form-group">
+        <label class="form-label" for="compose-prompt">Prompt</label>
+        <textarea id="compose-prompt" class="form-input" rows="4"
+                  placeholder="Add a walking bass line in F minor. Keep it under 90 BPM…"
+                  style="resize:vertical;width:100%;font-family:var(--font-sans)"></textarea>
+      </div>
+      <div style="display:flex;gap:var(--space-2);margin-top:var(--space-3)">
+        <button class="btn btn-primary" id="compose-send-btn" onclick="sendCompose()">
+          🎵 Generate
+        </button>
+        <button class="btn btn-secondary" onclick="closeCompose()">Cancel</button>
+      </div>
+      <div id="compose-output" style="margin-top:var(--space-4);display:none">
+        <div class="section-title">Agent Response</div>
+        <pre id="compose-stream" style="background:var(--bg-base);border:1px solid var(--border-subtle);border-radius:var(--radius-base);padding:var(--space-3);font-size:12px;max-height:300px;overflow-y:auto;white-space:pre-wrap"></pre>
+      </div>
+    </div>
+  </div>
+</div>
 {% endblock %}
