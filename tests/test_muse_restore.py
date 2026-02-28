@@ -34,7 +34,8 @@ from maestro.db.database import Base
 from maestro.muse_cli import models as cli_models  # noqa: F401 — register tables
 from maestro.muse_cli.errors import ExitCode
 from maestro.muse_cli.models import MuseCliCommit, MuseCliObject, MuseCliSnapshot
-from maestro.services.muse_reset import MissingObjectError, object_store_path
+from maestro.muse_cli.object_store import write_object
+from maestro.services.muse_reset import MissingObjectError
 from maestro.services.muse_restore import (
     PathNotInSnapshotError,
     RestoreResult,
@@ -128,10 +129,8 @@ def _write_ref(root: pathlib.Path, branch: str, commit_id: str) -> None:
 
 
 def _seed_object_store(root: pathlib.Path, object_id: str, content: bytes) -> None:
-    """Manually write a blob into the .muse/objects/ store."""
-    dest = object_store_path(root, object_id)
-    dest.parent.mkdir(parents=True, exist_ok=True)
-    dest.write_bytes(content)
+    """Manually write a blob into the .muse/objects/ store via the canonical module."""
+    write_object(root, object_id, content)
 
 
 # ---------------------------------------------------------------------------

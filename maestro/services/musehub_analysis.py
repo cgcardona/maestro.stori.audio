@@ -32,9 +32,10 @@ from __future__ import annotations
 
 import hashlib
 import logging
+from collections import defaultdict
 from collections.abc import Callable
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Literal, Optional
 
 from maestro.models.musehub_analysis import (
     ALL_DIMENSIONS,
@@ -45,11 +46,18 @@ from maestro.models.musehub_analysis import (
     ChangedDimension,
     ChordEvent,
     ChordMapData,
+    CommitEmotionSnapshot,
     ContourData,
     DimensionData,
     DivergenceData,
+    DynamicArc,
     DynamicsData,
+    DynamicsPageData,
     EmotionData,
+    EmotionDrift,
+    EmotionMapPoint,
+    EmotionMapResponse,
+    EmotionVector,
     FormData,
     FormStructureResponse,
     GrooveData,
@@ -59,6 +67,8 @@ from maestro.models.musehub_analysis import (
     MeterData,
     ModulationPoint,
     MotifEntry,
+    MotifRecurrenceCell,
+    MotifTransformation,
     MotifsData,
     RepetitionEntry,
     SectionEntry,
@@ -68,6 +78,7 @@ from maestro.models.musehub_analysis import (
     SimilarityData,
     TempoChange,
     TempoData,
+    TrackDynamicsProfile,
     VelocityEvent,
 )
 
@@ -82,6 +93,10 @@ _EMOTIONS = ["joyful", "melancholic", "tense", "serene", "energetic", "brooding"
 _FORMS = ["AABA", "verse-chorus", "through-composed", "rondo", "binary", "ternary"]
 _GROOVES = ["straight", "swing", "shuffled", "half-time", "double-time"]
 _TONICS = ["C", "F", "G", "D", "Bb", "Eb"]
+_DYNAMIC_ARCS: list[DynamicArc] = [
+    "flat", "terraced", "crescendo", "decrescendo", "swell", "hairpin",
+]
+_DEFAULT_TRACKS = ["bass", "keys", "drums", "melody", "pads"]
 
 
 def _ref_hash(ref: str) -> int:
@@ -168,13 +183,141 @@ def _build_dynamics(ref: str, track: Optional[str], section: Optional[str]) -> D
     )
 
 
+_CONTOUR_LABELS = [
+    "ascending-step",
+    "descending-step",
+    "arch",
+    "valley",
+    "oscillating",
+    "static",
+]
+_TRANSFORMATION_TYPES = ["inversion", "retrograde", "retrograde-inversion", "transposition"]
+_MOTIF_TRACKS = ["melody", "bass", "keys", "strings", "brass"]
+_MOTIF_SECTIONS = ["intro", "verse_1", "chorus", "verse_2", "outro"]
+
+
+def _invert_intervals(intervals: list[int]) -> list[int]:
+    """Return the melodic inversion (negate all semitone intervals)."""
+    return [-x for x in intervals]
+
+
+def _retrograde_intervals(intervals: list[int]) -> list[int]:
+    """Return the retrograde (reversed interval sequence)."""
+    return list(reversed(intervals))
+
+
 def _build_motifs(ref: str, track: Optional[str], section: Optional[str]) -> MotifsData:
+    """Build stub motif analysis with transformations, contour, and recurrence grid.
+
+    Deterministic for a given ``ref`` value.  Produces 2–4 motifs, each with:
+    - Original interval sequence and occurrence beats
+    - Melodic contour label (arch, valley, oscillating, etc.)
+    - All tracks where the motif or its transformations appear
+    - Up to 3 transformations (inversion, retrograde, transposition)
+    - Flat track×section recurrence grid for heatmap rendering
+    """
     seed = _ref_hash(ref)
     n_motifs = 2 + (seed % 3)
+    all_tracks = _MOTIF_TRACKS[: 2 + (seed % 3)]
+    sections = _MOTIF_SECTIONS
+
     motifs: list[MotifEntry] = []
     for i in range(n_motifs):
         intervals = [2, -1, 3, -2][: 2 + i]
         occurrences = [float(j * 8 + i * 2) for j in range(2 + (seed % 2))]
+        contour_label = _pick(seed, _CONTOUR_LABELS, offset=i)
+        primary_track = track or all_tracks[i % len(all_tracks)]
+
+        # Cross-track sharing: motif appears in 1–3 tracks
+        n_sharing_tracks = 1 + (seed + i) % min(3, len(all_tracks))
+        sharing_tracks = [all_tracks[(i + k) % len(all_tracks)] for k in range(n_sharing_tracks)]
+        if primary_track not in sharing_tracks:
+            sharing_tracks = [primary_track] + sharing_tracks[: n_sharing_tracks - 1]
+
+        # Build transformations
+        transformations: list[MotifTransformation] = []
+        inv_occurrences = [float(j * 8 + i * 2 + 4) for j in range(1 + (seed % 2))]
+        transformations.append(
+            MotifTransformation(
+                transformation_type="inversion",
+                intervals=_invert_intervals(intervals),
+                transposition_semitones=0,
+                occurrences=inv_occurrences,
+                track=sharing_tracks[0],
+            )
+        )
+        if len(intervals) >= 2:
+            retro_occurrences = [float(j * 8 + i * 2 + 2) for j in range(1 + (seed % 2))]
+            transformations.append(
+                MotifTransformation(
+                    transformation_type="retrograde",
+                    intervals=_retrograde_intervals(intervals),
+                    transposition_semitones=0,
+                    occurrences=retro_occurrences,
+                    track=sharing_tracks[-1],
+                )
+            )
+        if (seed + i) % 2 == 0:
+            transpose_by = 5 if (seed % 2 == 0) else 7
+            transpo_occurrences = [float(j * 16 + i * 2) for j in range(1 + (seed % 2))]
+            transformations.append(
+                MotifTransformation(
+                    transformation_type="transposition",
+                    intervals=[x for x in intervals],
+                    transposition_semitones=transpose_by,
+                    occurrences=transpo_occurrences,
+                    track=sharing_tracks[min(1, len(sharing_tracks) - 1)],
+                )
+            )
+
+        # Build recurrence grid: track × section
+        recurrence_grid: list[MotifRecurrenceCell] = []
+        for t in all_tracks:
+            for s in sections:
+                # Original present in primary track, first two sections
+                if t == primary_track and s in sections[:2]:
+                    recurrence_grid.append(
+                        MotifRecurrenceCell(
+                            track=t,
+                            section=s,
+                            present=True,
+                            occurrence_count=1 + (seed % 2),
+                            transformation_types=["original"],
+                        )
+                    )
+                # Inversion in sharing tracks at chorus
+                elif t in sharing_tracks and s == "chorus":
+                    recurrence_grid.append(
+                        MotifRecurrenceCell(
+                            track=t,
+                            section=s,
+                            present=True,
+                            occurrence_count=1,
+                            transformation_types=["inversion"],
+                        )
+                    )
+                # Transposition in bridge / outro for certain motifs
+                elif (seed + i) % 2 == 0 and t in sharing_tracks and s == "outro":
+                    recurrence_grid.append(
+                        MotifRecurrenceCell(
+                            track=t,
+                            section=s,
+                            present=True,
+                            occurrence_count=1,
+                            transformation_types=["transposition"],
+                        )
+                    )
+                else:
+                    recurrence_grid.append(
+                        MotifRecurrenceCell(
+                            track=t,
+                            section=s,
+                            present=False,
+                            occurrence_count=0,
+                            transformation_types=[],
+                        )
+                    )
+
         motifs.append(
             MotifEntry(
                 motif_id=f"M{i + 1:02d}",
@@ -182,10 +325,20 @@ def _build_motifs(ref: str, track: Optional[str], section: Optional[str]) -> Mot
                 length_beats=float(2 + i),
                 occurrence_count=len(occurrences),
                 occurrences=occurrences,
-                track=track or ("melody" if i == 0 else "bass"),
+                track=primary_track,
+                contour_label=contour_label,
+                tracks=sharing_tracks,
+                transformations=transformations,
+                recurrence_grid=recurrence_grid,
             )
         )
-    return MotifsData(total_motifs=len(motifs), motifs=motifs)
+
+    return MotifsData(
+        total_motifs=len(motifs),
+        motifs=motifs,
+        sections=sections,
+        all_tracks=all_tracks,
+    )
 
 
 def _build_form(ref: str, track: Optional[str], section: Optional[str]) -> FormData:
@@ -520,8 +673,6 @@ def compute_form_structure(*, repo_id: str, ref: str) -> FormStructureResponse:
             return parts[0]
         return label
 
-    from collections import defaultdict
-
     groups: dict[str, list[int]] = defaultdict(list)
     for entry in section_map:
         groups[_base_label(entry.label)].append(entry.start_bar)
@@ -566,6 +717,241 @@ def compute_form_structure(*, repo_id: str, ref: str) -> FormStructureResponse:
         section_map=section_map,
         repetition_structure=repetition_structure,
         section_comparison=section_comparison,
+    )
+
+
+def _build_track_dynamics_profile(
+    ref: str,
+    track: str,
+    track_index: int,
+) -> TrackDynamicsProfile:
+    """Build a deterministic per-track dynamic profile for the dynamics page.
+
+    Seed is derived from ``ref`` XOR ``track_index`` so each track gets a
+    distinct but reproducible curve for the same ref.
+    """
+    seed = _ref_hash(ref) ^ (track_index * 0x9E3779B9)
+    base_vel = 50 + (seed % 50)
+    peak = min(127, base_vel + 20 + (seed % 30))
+    low = max(10, base_vel - 20 - (seed % 20))
+    mean = round(float((peak + low) / 2), 2)
+
+    curve = [
+        VelocityEvent(
+            beat=float(i * 2),
+            velocity=min(127, max(10, base_vel + (seed >> (i % 16)) % 25 - 12)),
+        )
+        for i in range(16)
+    ]
+
+    arc: DynamicArc = _DYNAMIC_ARCS[(seed + track_index) % len(_DYNAMIC_ARCS)]
+
+    return TrackDynamicsProfile(
+        track=track,
+        peak_velocity=peak,
+        min_velocity=low,
+        mean_velocity=mean,
+        velocity_range=peak - low,
+        arc=arc,
+        velocity_curve=curve,
+    )
+
+
+def compute_dynamics_page_data(
+    *,
+    repo_id: str,
+    ref: str,
+    track: Optional[str] = None,
+    section: Optional[str] = None,
+) -> DynamicsPageData:
+    """Build per-track dynamics data for the Dynamics Analysis page.
+
+    Returns one :class:`TrackDynamicsProfile` per active track, or a single
+    entry when ``track`` filter is applied.  Each profile includes a velocity
+    curve suitable for rendering a profile graph, an arc classification badge,
+    and peak/range metrics for the loudness comparison bar chart.
+
+    Args:
+        repo_id:  Muse Hub repo UUID.
+        ref:      Muse commit ref (branch name, commit ID, or tag).
+        track:    Optional track filter — if set, only that track is returned.
+        section:  Optional section filter (recorded in ``filters_applied``).
+
+    Returns:
+        :class:`DynamicsPageData` with per-track profiles.
+    """
+    tracks_to_include = [track] if track else _DEFAULT_TRACKS
+    profiles = [
+        _build_track_dynamics_profile(ref, t, i)
+        for i, t in enumerate(tracks_to_include)
+    ]
+    now = _utc_now()
+    logger.info(
+        "✅ dynamics/page repo=%s ref=%s tracks=%d",
+        repo_id[:8], ref, len(profiles),
+    )
+    return DynamicsPageData(
+        ref=ref,
+        repo_id=repo_id,
+        computed_at=now,
+        tracks=profiles,
+        filters_applied=AnalysisFilters(track=track, section=section),
+    )
+
+
+def compute_emotion_map(
+    *,
+    repo_id: str,
+    ref: str,
+    track: Optional[str] = None,
+    section: Optional[str] = None,
+) -> EmotionMapResponse:
+    """Build a complete :class:`EmotionMapResponse` for an emotion map page.
+
+    Returns per-beat intra-ref evolution, cross-commit trajectory, drift
+    distances between consecutive commits, a generated narrative, and source
+    attribution.  All data is deterministic for a given ``ref`` so agents
+    receive consistent results across retries.
+
+    Why separate from ``compute_dimension('emotion', ...)``
+    -------------------------------------------------------
+    The generic emotion dimension returns a single aggregate snapshot.  This
+    function returns the *temporal* and *cross-commit* shape of the emotional
+    arc — the information needed to render line charts and trajectory plots.
+
+    Args:
+        repo_id:  Muse Hub repo UUID (used for logging).
+        ref:      Head Muse commit ref (branch name or commit ID).
+        track:    Optional instrument track filter.
+        section:  Optional musical section filter.
+
+    Returns:
+        :class:`EmotionMapResponse` with evolution, trajectory, drift, and narrative.
+    """
+    seed = _ref_hash(ref)
+    now = _utc_now()
+
+    # ── Per-beat evolution within this ref ─────────────────────────────────
+    total_beats = 32
+    evolution: list[EmotionMapPoint] = []
+    for i in range(total_beats):
+        phase = i / total_beats
+        # Each axis follows a gentle sinusoidal arc seeded by ref hash
+        energy = round(0.4 + 0.4 * abs((phase - 0.5) * 2) * (1 + (seed >> (i % 16)) % 3) / 4, 4)
+        valence = round(max(0.0, min(1.0, 0.5 + 0.3 * ((seed + i) % 7 - 3) / 3)), 4)
+        tension_val = round(min(1.0, 0.2 + 0.6 * phase * (1 + (seed % 3) / 3)), 4)
+        darkness = round(max(0.0, min(1.0, 1.0 - valence * 0.6 - energy * 0.2)), 4)
+        evolution.append(
+            EmotionMapPoint(
+                beat=float(i),
+                vector=EmotionVector(
+                    energy=energy,
+                    valence=valence,
+                    tension=tension_val,
+                    darkness=darkness,
+                ),
+            )
+        )
+
+    # Summary vector = mean across all evolution points
+    n = len(evolution)
+    summary_vector = EmotionVector(
+        energy=round(sum(p.vector.energy for p in evolution) / n, 4),
+        valence=round(sum(p.vector.valence for p in evolution) / n, 4),
+        tension=round(sum(p.vector.tension for p in evolution) / n, 4),
+        darkness=round(sum(p.vector.darkness for p in evolution) / n, 4),
+    )
+
+    # ── Cross-commit trajectory (5 synthetic ancestor snapshots + head) ───
+    _COMMIT_EMOTIONS = ["serene", "tense", "brooding", "joyful", "melancholic", "energetic"]
+    trajectory: list[CommitEmotionSnapshot] = []
+    n_commits = 5
+    for j in range(n_commits):
+        commit_seed = _ref_hash(f"{ref}:{j}")
+        em = _COMMIT_EMOTIONS[(seed + j) % len(_COMMIT_EMOTIONS)]
+        valence_traj = round(max(0.0, min(1.0, 0.3 + (commit_seed % 70) / 100)), 4)
+        energy_traj = round(max(0.0, min(1.0, 0.2 + (commit_seed % 80) / 100)), 4)
+        tension_traj = round(max(0.0, min(1.0, 0.1 + (commit_seed % 90) / 100)), 4)
+        darkness_traj = round(max(0.0, min(1.0, 1.0 - valence_traj * 0.7)), 4)
+        trajectory.append(
+            CommitEmotionSnapshot(
+                commit_id=hashlib.md5(f"{ref}:{j}".encode()).hexdigest()[:16],  # noqa: S324
+                message=f"Ancestor commit {n_commits - j}: {em} passage",
+                timestamp=f"2026-0{1 + j % 9}-{10 + j:02d}T12:00:00Z",
+                vector=EmotionVector(
+                    energy=energy_traj,
+                    valence=valence_traj,
+                    tension=tension_traj,
+                    darkness=darkness_traj,
+                ),
+                primary_emotion=em,
+            )
+        )
+    # Append head commit snapshot
+    trajectory.append(
+        CommitEmotionSnapshot(
+            commit_id=ref[:16] if len(ref) >= 16 else ref,
+            message="HEAD — current composition state",
+            timestamp=now.strftime("%Y-%m-%dT%H:%M:%SZ"),
+            vector=summary_vector,
+            primary_emotion=_COMMIT_EMOTIONS[seed % len(_COMMIT_EMOTIONS)],
+        )
+    )
+
+    # ── Drift between consecutive commits ──────────────────────────────────
+    _AXES = ["energy", "valence", "tension", "darkness"]
+    drift: list[EmotionDrift] = []
+    for k in range(len(trajectory) - 1):
+        a = trajectory[k].vector
+        b = trajectory[k + 1].vector
+        diff = [
+            abs(b.energy - a.energy),
+            abs(b.valence - a.valence),
+            abs(b.tension - a.tension),
+            abs(b.darkness - a.darkness),
+        ]
+        euclidean = round((sum(d**2 for d in diff) ** 0.5), 4)
+        dominant_change = _AXES[diff.index(max(diff))]
+        drift.append(
+            EmotionDrift(
+                from_commit=trajectory[k].commit_id,
+                to_commit=trajectory[k + 1].commit_id,
+                drift=euclidean,
+                dominant_change=dominant_change,
+            )
+        )
+
+    # ── Narrative generation ───────────────────────────────────────────────
+    head_em = trajectory[-1].primary_emotion
+    first_em = trajectory[0].primary_emotion
+    max_drift_entry = max(drift, key=lambda d: d.drift) if drift else None
+    narrative_parts = [
+        f"This composition begins with a {first_em} character",
+        f"and arrives at a {head_em} state at the head commit.",
+    ]
+    if max_drift_entry is not None:
+        narrative_parts.append(
+            f"The largest emotional shift occurs between commits "
+            f"{max_drift_entry.from_commit[:8]} and {max_drift_entry.to_commit[:8]}, "
+            f"with a {max_drift_entry.dominant_change} shift of {max_drift_entry.drift:.2f}."
+        )
+    narrative = " ".join(narrative_parts)
+
+    # ── Source attribution ─────────────────────────────────────────────────
+    source: Literal["explicit", "inferred", "mixed"] = "inferred"  # Full implementation will check commit metadata for explicit tags
+
+    logger.info("✅ emotion-map repo=%s ref=%s beats=%d commits=%d", repo_id[:8], ref, n, len(trajectory))
+    return EmotionMapResponse(
+        repo_id=repo_id,
+        ref=ref,
+        computed_at=now,
+        filters_applied=AnalysisFilters(track=track, section=section),
+        evolution=evolution,
+        summary_vector=summary_vector,
+        trajectory=trajectory,
+        drift=drift,
+        narrative=narrative,
+        source=source,
     )
 
 

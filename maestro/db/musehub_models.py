@@ -7,6 +7,7 @@ Tables:
 - musehub_issues: Issue tracker entries per repo
 - musehub_pull_requests: Pull requests proposing branch merges
 - musehub_objects: Content-addressed binary artifact storage
+- musehub_releases: Tagged releases
 - musehub_stars: Per-user repo starring (one row per user×repo pair)
 - musehub_profiles: Public user profiles (bio, avatar, pinned repos)
 - musehub_releases: Published version releases with download packages
@@ -20,22 +21,27 @@ from datetime import datetime, timezone
 
 from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-
 from sqlalchemy.types import JSON
 
 from maestro.db.database import Base
-
-
-def _utc_now() -> datetime:
-    return datetime.now(tz=timezone.utc)
 
 
 def _new_uuid() -> str:
     return str(uuid.uuid4())
 
 
+def _utc_now() -> datetime:
+    return datetime.now(tz=timezone.utc)
+
+
+
 class MusehubRepo(Base):
     """A remote Muse repository — the hub-side equivalent of a Git remote.
+
+    ``owner`` is the URL-visible username (e.g. "gabriel") and ``slug`` is the
+    URL-safe repo name auto-generated from ``name`` (e.g. "neo-soul-experiment").
+    Together they form the canonical /{owner}/{slug} URL scheme.  The internal
+    ``repo_id`` UUID remains the primary key — external URLs never expose it.
 
     Music-semantic fields (key_signature, tempo_bpm, tags) are optional metadata
     that musicians set to make their repos discoverable on the explore page.
@@ -43,9 +49,14 @@ class MusehubRepo(Base):
     """
 
     __tablename__ = "musehub_repos"
+    __table_args__ = (UniqueConstraint("owner", "slug", name="uq_musehub_repos_owner_slug"),)
 
     repo_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_new_uuid)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
+    # URL-visible owner username, e.g. "gabriel" — forms the /{owner}/{slug} path
+    owner: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    # URL-safe slug auto-generated from name, e.g. "neo-soul-experiment"
+    slug: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     visibility: Mapped[str] = mapped_column(String(20), nullable=False, default="private")
     owner_user_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
     description: Mapped[str] = mapped_column(Text, nullable=False, default="")
@@ -76,14 +87,14 @@ class MusehubRepo(Base):
     releases: Mapped[list[MusehubRelease]] = relationship(
         "MusehubRelease", back_populates="repo", cascade="all, delete-orphan"
     )
-    stars: Mapped[list[MusehubStar]] = relationship(
-        "MusehubStar", back_populates="repo", cascade="all, delete-orphan"
-    )
     sessions: Mapped[list[MusehubSession]] = relationship(
         "MusehubSession", back_populates="repo", cascade="all, delete-orphan"
     )
     webhooks: Mapped[list[MusehubWebhook]] = relationship(
         "MusehubWebhook", back_populates="repo", cascade="all, delete-orphan"
+    )
+    stars: Mapped[list[MusehubStar]] = relationship(
+        "MusehubStar", back_populates="repo", cascade="all, delete-orphan"
     )
 
 
@@ -104,7 +115,6 @@ class MusehubBranch(Base):
     head_commit_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
     repo: Mapped[MusehubRepo] = relationship("MusehubRepo", back_populates="branches")
-
 
 class MusehubCommit(Base):
     """A commit record pushed to the Muse Hub.
@@ -137,7 +147,6 @@ class MusehubCommit(Base):
 
     repo: Mapped[MusehubRepo] = relationship("MusehubRepo", back_populates="commits")
 
-
 class MusehubObject(Base):
     """A binary artifact (MIDI, MP3, WebP piano roll) stored in Muse Hub.
 
@@ -168,7 +177,6 @@ class MusehubObject(Base):
 
     repo: Mapped[MusehubRepo] = relationship("MusehubRepo", back_populates="objects")
 
-
 class MusehubIssue(Base):
     """An issue opened against a Muse Hub repo.
 
@@ -193,12 +201,13 @@ class MusehubIssue(Base):
     state: Mapped[str] = mapped_column(String(20), nullable=False, default="open", index=True)
     # JSON list of free-form label strings
     labels: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    # Display name or identifier of the user who opened this issue
+    author: Mapped[str] = mapped_column(String(255), nullable=False, default="")
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=_utc_now
     )
 
     repo: Mapped[MusehubRepo] = relationship("MusehubRepo", back_populates="issues")
-
 
 class MusehubPullRequest(Base):
     """A pull request proposing to merge one branch into another.
@@ -223,69 +232,13 @@ class MusehubPullRequest(Base):
     to_branch: Mapped[str] = mapped_column(String(255), nullable=False)
     # Populated when state transitions to 'merged'
     merge_commit_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # Display name or identifier of the user who opened this PR
+    author: Mapped[str] = mapped_column(String(255), nullable=False, default="")
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=_utc_now
     )
 
     repo: Mapped[MusehubRepo] = relationship("MusehubRepo", back_populates="pull_requests")
-
-
-class MusehubStar(Base):
-    """A single user's star on a public repo.
-
-    Stars are the primary signal for the explore page's "trending" sort.
-    The unique constraint on (repo_id, user_id) makes starring idempotent —
-    a user can only star a repo once, and duplicate requests are safe.
-    """
-
-    __tablename__ = "musehub_stars"
-    __table_args__ = (UniqueConstraint("repo_id", "user_id", name="uq_musehub_stars_repo_user"),)
-
-    star_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_new_uuid)
-    repo_id: Mapped[str] = mapped_column(
-        String(36),
-        ForeignKey("musehub_repos.repo_id", ondelete="CASCADE"),
-        nullable=False,
-        index=True,
-    )
-    user_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, default=_utc_now
-    )
-
-    repo: Mapped[MusehubRepo] = relationship("MusehubRepo", back_populates="stars")
-
-
-class MusehubProfile(Base):
-    """Public user profile for Muse Hub — a musical portfolio page.
-
-    One profile per user, keyed by ``user_id`` (the JWT ``sub`` claim).
-    ``username`` is a unique, URL-friendly display handle chosen by the user.
-    When no profile exists for a user, their repos are still accessible by
-    ``owner_user_id`` but they have no public profile page.
-
-    ``pinned_repo_ids`` is a JSON list of up to 6 repo_ids the user has
-    chosen to highlight on their profile. Order is preserved.
-    """
-
-    __tablename__ = "musehub_profiles"
-    __table_args__ = (UniqueConstraint("username", name="uq_musehub_profiles_username"),)
-
-    # PK is the JWT sub — same value used in musehub_repos.owner_user_id
-    user_id: Mapped[str] = mapped_column(String(36), primary_key=True)
-    # URL-friendly handle, e.g. "gabriel" → /musehub/ui/users/gabriel
-    username: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
-    bio: Mapped[str | None] = mapped_column(Text, nullable=True)
-    avatar_url: Mapped[str | None] = mapped_column(String(2048), nullable=True)
-    # JSON list of repo_ids (up to 6) pinned by the user
-    pinned_repo_ids: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, default=_utc_now
-    )
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, default=_utc_now, onupdate=_utc_now
-    )
-
 
 class MusehubRelease(Base):
     """A published version release for a Muse Hub repo.
@@ -319,49 +272,45 @@ class MusehubRelease(Base):
     commit_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     # JSON map of download package URLs, keyed by package type.
     download_urls: Mapped[dict[str, str]] = mapped_column(JSON, nullable=False, default=dict)
+    # Display name or identifier of the user who published this release
+    author: Mapped[str] = mapped_column(String(255), nullable=False, default="")
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=_utc_now
     )
 
     repo: Mapped[MusehubRepo] = relationship("MusehubRepo", back_populates="releases")
 
-class MusehubSession(Base):
-    """A recording session record pushed to Muse Hub from the CLI.
 
-    Sessions capture the creative context of a recording period: who was
-    present, where they recorded, what they intended to create, which commits
-    were made, and any closing notes. Maps to ``muse session show`` locally.
 
-    ``commits`` is a JSON list of Muse commit IDs associated with the session.
-    ``participants`` is a JSON list of participant name strings.
+class MusehubProfile(Base):
+    """Public user profile for Muse Hub — a musical portfolio page.
+
+    One profile per user, keyed by ``user_id`` (the JWT ``sub`` claim).
+    ``username`` is a unique, URL-friendly display handle chosen by the user.
+    When no profile exists for a user, their repos are still accessible by
+    ``owner_user_id`` but they have no public profile page.
+
+    ``pinned_repo_ids`` is a JSON list of up to 6 repo_ids the user has
+    chosen to highlight on their profile. Order is preserved.
     """
 
-    __tablename__ = "musehub_sessions"
+    __tablename__ = "musehub_profiles"
+    __table_args__ = (UniqueConstraint("username", name="uq_musehub_profiles_username"),)
 
-    session_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_new_uuid)
-    repo_id: Mapped[str] = mapped_column(
-        String(36),
-        ForeignKey("musehub_repos.repo_id", ondelete="CASCADE"),
-        nullable=False,
-        index=True,
-    )
-    schema_version: Mapped[str] = mapped_column(String(10), nullable=False, default="1")
-    started_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, index=True
-    )
-    ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    participants: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
-    location: Mapped[str] = mapped_column(String(500), nullable=False, default="")
-    intent: Mapped[str] = mapped_column(Text, nullable=False, default="")
-    # JSON list of Muse commit IDs made during this session
-    commits: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
-    notes: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    # PK is the JWT sub — same value used in musehub_repos.owner_user_id
+    user_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    # URL-friendly handle, e.g. "gabriel" → /musehub/ui/users/gabriel
+    username: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    bio: Mapped[str | None] = mapped_column(Text, nullable=True)
+    avatar_url: Mapped[str | None] = mapped_column(String(2048), nullable=True)
+    # JSON list of repo_ids (up to 6) pinned by the user
+    pinned_repo_ids: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=_utc_now
     )
-
-    repo: Mapped[MusehubRepo] = relationship("MusehubRepo", back_populates="sessions")
-
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=_utc_now, onupdate=_utc_now
+    )
 
 
 class MusehubWebhook(Base):
@@ -400,7 +349,6 @@ class MusehubWebhook(Base):
         "MusehubWebhookDelivery", back_populates="webhook", cascade="all, delete-orphan"
     )
 
-
 class MusehubWebhookDelivery(Base):
     """One delivery attempt for a webhook event.
 
@@ -433,4 +381,268 @@ class MusehubWebhookDelivery(Base):
     )
 
     webhook: Mapped[MusehubWebhook] = relationship(
-        "MusehubWebhook", back_populates="deliveries"    )
+        "MusehubWebhook", back_populates="deliveries"
+    )
+
+class MusehubStar(Base):
+    """A single user's star on a public repo.
+
+    Stars are the primary signal for the explore page's "trending" sort.
+    The unique constraint on (repo_id, user_id) makes starring idempotent —
+    a user can only star a repo once, and duplicate requests are safe.
+    """
+
+    __tablename__ = "musehub_stars"
+    __table_args__ = (UniqueConstraint("repo_id", "user_id", name="uq_musehub_stars_repo_user"),)
+
+    star_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_new_uuid)
+    repo_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("musehub_repos.repo_id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    user_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=_utc_now
+    )
+
+    repo: Mapped[MusehubRepo] = relationship("MusehubRepo", back_populates="stars")
+
+
+class MusehubSession(Base):
+    """A recording session record pushed to Muse Hub from the CLI.
+
+    Sessions capture the creative context of a recording period: who was
+    present, where they recorded, what they intended to create, which commits
+    were made, and any closing notes. Maps to ``muse session show`` locally.
+
+    ``commits`` is a JSON list of Muse commit IDs associated with the session.
+    ``participants`` is a JSON list of participant name strings.
+    """
+
+    __tablename__ = "musehub_sessions"
+
+    session_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_new_uuid)
+    repo_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("musehub_repos.repo_id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    schema_version: Mapped[str] = mapped_column(String(10), nullable=False, default="1")
+    started_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, index=True
+    )
+    ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    participants: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    location: Mapped[str] = mapped_column(String(500), nullable=False, default="")
+    intent: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    # JSON list of Muse commit IDs made during this session
+    commits: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    notes: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    # True if session is currently active; False after stop
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, index=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=_utc_now
+    )
+
+    repo: Mapped[MusehubRepo] = relationship("MusehubRepo", back_populates="sessions")
+
+
+# ---------------------------------------------------------------------------
+# Social layer — Phase 4
+# ---------------------------------------------------------------------------
+
+
+class MusehubComment(Base):
+    """Threaded comment on a repo object (commit, PR, issue, or repo itself).
+
+    ``target_type`` distinguishes what the comment is attached to:
+      "commit"  | "pull_request" | "issue" | "repo"
+    ``target_id`` is the primary key of the target object.
+    ``parent_id`` enables threaded replies; None means a top-level comment.
+    """
+
+    __tablename__ = "musehub_comments"
+
+    comment_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_new_uuid)
+    repo_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("musehub_repos.repo_id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    target_type: Mapped[str] = mapped_column(String(20), nullable=False, index=True)
+    target_id: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    author: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    body: Mapped[str] = mapped_column(Text, nullable=False)
+    parent_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=_utc_now, index=True
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=_utc_now, onupdate=_utc_now
+    )
+    is_deleted: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
+
+class MusehubReaction(Base):
+    """Emoji reaction on a comment or target object.
+
+    One reaction per (user, target_type, target_id, emoji) combination.
+    """
+
+    __tablename__ = "musehub_reactions"
+    __table_args__ = (
+        UniqueConstraint("user_id", "target_type", "target_id", "emoji", name="uq_musehub_reactions"),
+    )
+
+    reaction_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_new_uuid)
+    repo_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
+    target_type: Mapped[str] = mapped_column(String(20), nullable=False, index=True)
+    target_id: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    user_id: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    emoji: Mapped[str] = mapped_column(String(10), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=_utc_now
+    )
+
+
+class MusehubFollow(Base):
+    """User follows another user.
+
+    Enables a social graph where followers see followed users' activity
+    in their feed.
+    """
+
+    __tablename__ = "musehub_follows"
+    __table_args__ = (
+        UniqueConstraint("follower_id", "followee_id", name="uq_musehub_follows"),
+    )
+
+    follow_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_new_uuid)
+    follower_id: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    followee_id: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=_utc_now
+    )
+
+
+class MusehubWatch(Base):
+    """User watches a repo — subscribes to activity notifications."""
+
+    __tablename__ = "musehub_watches"
+    __table_args__ = (
+        UniqueConstraint("user_id", "repo_id", name="uq_musehub_watches"),
+    )
+
+    watch_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_new_uuid)
+    user_id: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    repo_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("musehub_repos.repo_id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=_utc_now
+    )
+
+
+class MusehubNotification(Base):
+    """A notification delivered to a user.
+
+    ``event_type`` classifies the triggering event:
+      "comment" | "mention" | "pr_opened" | "pr_merged" | "issue_opened" |
+      "issue_closed" | "new_commit" | "new_follower"
+    """
+
+    __tablename__ = "musehub_notifications"
+
+    notif_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_new_uuid)
+    recipient_id: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    event_type: Mapped[str] = mapped_column(String(40), nullable=False)
+    repo_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    actor: Mapped[str] = mapped_column(String(255), nullable=False)
+    payload: Mapped[dict[str, object]] = mapped_column(JSON, nullable=False, default=dict)
+    is_read: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, index=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=_utc_now, index=True
+    )
+
+
+class MusehubFork(Base):
+    """Records a fork relationship between two repos.
+
+    When user B forks user A's repo, a new repo is created for B and a
+    MusehubFork row records the lineage.
+    """
+
+    __tablename__ = "musehub_forks"
+    __table_args__ = (
+        UniqueConstraint("source_repo_id", "fork_repo_id", name="uq_musehub_forks"),
+    )
+
+    fork_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_new_uuid)
+    source_repo_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("musehub_repos.repo_id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    fork_repo_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("musehub_repos.repo_id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    forked_by: Mapped[str] = mapped_column(String(255), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=_utc_now
+    )
+
+
+class MusehubViewEvent(Base):
+    """Debounced repo view event for view-count tracking.
+
+    One row per (repo_id, viewer_fingerprint, date) to avoid counting
+    the same visitor multiple times per day.
+    """
+
+    __tablename__ = "musehub_view_events"
+    __table_args__ = (
+        UniqueConstraint("repo_id", "viewer_fingerprint", "event_date", name="uq_musehub_view_events"),
+    )
+
+    view_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_new_uuid)
+    repo_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("musehub_repos.repo_id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    viewer_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    event_date: Mapped[str] = mapped_column(String(10), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=_utc_now
+    )
+
+
+class MusehubDownloadEvent(Base):
+    """Records each artifact export download for analytics."""
+
+    __tablename__ = "musehub_download_events"
+
+    dl_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_new_uuid)
+    repo_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("musehub_repos.repo_id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    ref: Mapped[str] = mapped_column(String(255), nullable=False)
+    downloader_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=_utc_now, index=True
+    )

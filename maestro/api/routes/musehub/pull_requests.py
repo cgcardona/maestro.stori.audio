@@ -17,7 +17,7 @@ import logging
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from maestro.auth.dependencies import TokenClaims, require_valid_token
+from maestro.auth.dependencies import TokenClaims, optional_token, require_valid_token
 from maestro.db import get_db
 from maestro.models.musehub import (
     PRCreate,
@@ -46,7 +46,7 @@ async def create_pull_request(
     body: PRCreate,
     background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
-    _: TokenClaims = Depends(require_valid_token),
+    token: TokenClaims = Depends(require_valid_token),
 ) -> PRResponse:
     """Open a new pull request proposing to merge from_branch into to_branch.
 
@@ -71,6 +71,7 @@ async def create_pull_request(
             from_branch=body.from_branch,
             to_branch=body.to_branch,
             body=body.body,
+            author=token.get("sub", ""),
         )
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
@@ -108,7 +109,7 @@ async def list_pull_requests(
         description="Filter by state (open, merged, closed, all)",
     ),
     db: AsyncSession = Depends(get_db),
-    _: TokenClaims = Depends(require_valid_token),
+    claims: TokenClaims | None = Depends(optional_token),
 ) -> PRListResponse:
     """Return pull requests for a repo, ordered by creation time.
 
@@ -117,7 +118,12 @@ async def list_pull_requests(
     repo = await musehub_repository.get_repo(db, repo_id)
     if repo is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repo not found")
-
+    if repo.visibility != "public" and claims is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required to access private repos.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
     prs = await musehub_pull_requests.list_prs(db, repo_id, state=state)
     return PRListResponse(pull_requests=prs)
 
@@ -131,13 +137,18 @@ async def get_pull_request(
     repo_id: str,
     pr_id: str,
     db: AsyncSession = Depends(get_db),
-    _: TokenClaims = Depends(require_valid_token),
+    claims: TokenClaims | None = Depends(optional_token),
 ) -> PRResponse:
     """Return a single PR. Returns 404 if the repo or PR is not found."""
     repo = await musehub_repository.get_repo(db, repo_id)
     if repo is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repo not found")
-
+    if repo.visibility != "public" and claims is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required to access private repos.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
     pr = await musehub_pull_requests.get_pr(db, repo_id, pr_id)
     if pr is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Pull request not found")

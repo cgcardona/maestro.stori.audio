@@ -48,9 +48,10 @@ import pytest
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from maestro.db.musehub_models import MusehubCommit, MusehubRepo
+from maestro.db.musehub_models import MusehubCommit, MusehubObject, MusehubRepo
+from maestro.main import app
 from maestro.muse_cli.models import MuseCliCommit, MuseCliSnapshot
-from maestro.services.musehub_qdrant import SimilarCommitResult
+from maestro.services.musehub_qdrant import SimilarCommitResult, get_qdrant_client
 
 
 # ---------------------------------------------------------------------------
@@ -87,7 +88,9 @@ async def _make_repo(
     owner: str = "test-owner",
 ) -> str:
     """Seed a MuseHub repo and return its repo_id."""
-    repo = MusehubRepo(name=name, visibility=visibility, owner_user_id=owner)
+    import re as _re
+    slug = _re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")[:64].strip("-") or "repo"
+    repo = MusehubRepo(name=name, owner="testuser", slug=slug, visibility=visibility, owner_user_id=owner)
     db_session.add(repo)
     await db_session.commit()
     await db_session.refresh(repo)
@@ -126,6 +129,8 @@ async def _make_search_repo(db: AsyncSession) -> str:
     """Seed a minimal MuseHub repo for in-repo search tests; return repo_id."""
     repo = MusehubRepo(
         name="search-test-repo",
+        owner="testuser",
+        slug="search-test-repo",
         visibility="private",
         owner_user_id="test-owner",
     )
@@ -174,10 +179,15 @@ async def _make_search_commit(
 
 
 @pytest.mark.anyio
-async def test_similar_search_requires_auth(client: AsyncClient) -> None:
-    """GET /musehub/search/similar without token returns 401."""
-    resp = await client.get("/api/v1/musehub/search/similar?commit=abc123")
-    assert resp.status_code == 401
+async def test_similar_search_unknown_commit_returns_404_without_auth(
+    client: AsyncClient,
+) -> None:
+    """GET /musehub/search/similar returns 404 for an unknown commit without a token.
+
+    Uses optional_token — the endpoint is public; a non-existent commit → 404.
+    """
+    resp = await client.get("/api/v1/musehub/search/similar?commit=non-existent-commit-id")
+    assert resp.status_code == 404
 
 
 # ---------------------------------------------------------------------------
@@ -212,7 +222,7 @@ async def test_similar_search_returns_results(
     """Successful search returns ranked SimilarCommitResponse list."""
     create_resp = await client.post(
         "/api/v1/musehub/repos",
-        json={"name": "jazz-ballad", "visibility": "public"},
+        json={"name": "jazz-ballad", "owner": "testuser", "visibility": "public"},
         headers=auth_headers,
     )
     assert create_resp.status_code == 201
@@ -244,15 +254,16 @@ async def test_similar_search_returns_results(
         _make_similar_result("similar-001", score=0.95),
         _make_similar_result("similar-002", score=0.87),
     ]
-    with patch("maestro.api.routes.musehub.search._get_qdrant_client") as mock_get_client:
-        mock_qdrant = MagicMock()
-        mock_qdrant.search_similar.return_value = mock_results
-        mock_get_client.return_value = mock_qdrant
-
+    mock_qdrant = MagicMock()
+    mock_qdrant.search_similar.return_value = mock_results
+    app.dependency_overrides[get_qdrant_client] = lambda: mock_qdrant
+    try:
         search_resp = await client.get(
             f"/api/v1/musehub/search/similar?commit={commit_id}&limit=5",
             headers=auth_headers,
         )
+    finally:
+        app.dependency_overrides.pop(get_qdrant_client, None)
 
     assert search_resp.status_code == 200
     data = search_resp.json()
@@ -269,7 +280,7 @@ async def test_similar_search_public_only_enforced(
     """search_similar is called with public_only=True — private commits excluded."""
     create_resp = await client.post(
         "/api/v1/musehub/repos",
-        json={"name": "public-jazz", "visibility": "public"},
+        json={"name": "public-jazz", "owner": "testuser", "visibility": "public"},
         headers=auth_headers,
     )
     assert create_resp.status_code == 201
@@ -296,15 +307,16 @@ async def test_similar_search_public_only_enforced(
             headers=auth_headers,
         )
 
-    with patch("maestro.api.routes.musehub.search._get_qdrant_client") as mock_get:
-        mock_qdrant = MagicMock()
-        mock_qdrant.search_similar.return_value = []
-        mock_get.return_value = mock_qdrant
-
+    mock_qdrant = MagicMock()
+    mock_qdrant.search_similar.return_value = []
+    app.dependency_overrides[get_qdrant_client] = lambda: mock_qdrant
+    try:
         resp = await client.get(
             f"/api/v1/musehub/search/similar?commit={commit_id}",
             headers=auth_headers,
         )
+    finally:
+        app.dependency_overrides.pop(get_qdrant_client, None)
 
     assert resp.status_code == 200
     call_kwargs = mock_qdrant.search_similar.call_args.kwargs
@@ -319,7 +331,7 @@ async def test_similar_search_excludes_query_commit(
     """The query commit itself is passed as exclude_commit_id to avoid self-match."""
     create_resp = await client.post(
         "/api/v1/musehub/repos",
-        json={"name": "self-exclude-test", "visibility": "public"},
+        json={"name": "self-exclude-test", "owner": "testuser", "visibility": "public"},
         headers=auth_headers,
     )
     repo_id = create_resp.json()["repoId"]
@@ -345,15 +357,16 @@ async def test_similar_search_excludes_query_commit(
             headers=auth_headers,
         )
 
-    with patch("maestro.api.routes.musehub.search._get_qdrant_client") as mock_get:
-        mock_qdrant = MagicMock()
-        mock_qdrant.search_similar.return_value = []
-        mock_get.return_value = mock_qdrant
-
+    mock_qdrant = MagicMock()
+    mock_qdrant.search_similar.return_value = []
+    app.dependency_overrides[get_qdrant_client] = lambda: mock_qdrant
+    try:
         await client.get(
             f"/api/v1/musehub/search/similar?commit={commit_id}",
             headers=auth_headers,
         )
+    finally:
+        app.dependency_overrides.pop(get_qdrant_client, None)
 
     call_kwargs = mock_qdrant.search_similar.call_args.kwargs
     assert call_kwargs.get("exclude_commit_id") == commit_id
@@ -367,7 +380,7 @@ async def test_similar_search_503_when_qdrant_unavailable(
     """503 is returned when Qdrant raises an exception."""
     create_resp = await client.post(
         "/api/v1/musehub/repos",
-        json={"name": "qdrant-fail-test", "visibility": "public"},
+        json={"name": "qdrant-fail-test", "owner": "testuser", "visibility": "public"},
         headers=auth_headers,
     )
     repo_id = create_resp.json()["repoId"]
@@ -393,15 +406,16 @@ async def test_similar_search_503_when_qdrant_unavailable(
             headers=auth_headers,
         )
 
-    with patch("maestro.api.routes.musehub.search._get_qdrant_client") as mock_get:
-        mock_qdrant = MagicMock()
-        mock_qdrant.search_similar.side_effect = ConnectionError("Qdrant down")
-        mock_get.return_value = mock_qdrant
-
+    mock_qdrant = MagicMock()
+    mock_qdrant.search_similar.side_effect = ConnectionError("Qdrant down")
+    app.dependency_overrides[get_qdrant_client] = lambda: mock_qdrant
+    try:
         resp = await client.get(
             f"/api/v1/musehub/search/similar?commit={commit_id}",
             headers=auth_headers,
         )
+    finally:
+        app.dependency_overrides.pop(get_qdrant_client, None)
 
     assert resp.status_code == 503
 
@@ -414,7 +428,7 @@ async def test_similar_search_limit_respected(
     """The limit query parameter is forwarded to Qdrant search_similar."""
     create_resp = await client.post(
         "/api/v1/musehub/repos",
-        json={"name": "limit-test", "visibility": "public"},
+        json={"name": "limit-test", "owner": "testuser", "visibility": "public"},
         headers=auth_headers,
     )
     repo_id = create_resp.json()["repoId"]
@@ -440,18 +454,82 @@ async def test_similar_search_limit_respected(
             headers=auth_headers,
         )
 
-    with patch("maestro.api.routes.musehub.search._get_qdrant_client") as mock_get:
-        mock_qdrant = MagicMock()
-        mock_qdrant.search_similar.return_value = []
-        mock_get.return_value = mock_qdrant
-
+    mock_qdrant = MagicMock()
+    mock_qdrant.search_similar.return_value = []
+    app.dependency_overrides[get_qdrant_client] = lambda: mock_qdrant
+    try:
         await client.get(
             f"/api/v1/musehub/search/similar?commit={commit_id}&limit=3",
             headers=auth_headers,
         )
+    finally:
+        app.dependency_overrides.pop(get_qdrant_client, None)
 
     call_kwargs = mock_qdrant.search_similar.call_args.kwargs
     assert call_kwargs.get("limit") == 3
+
+
+# ---------------------------------------------------------------------------
+# Similarity search — DI override (regression for issue #272)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.anyio
+async def test_similar_search_qdrant_injected_via_dependency_override(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+) -> None:
+    """Qdrant client is injected via FastAPI dependency_overrides, not module patching.
+
+    Regression test for issue #272: confirms that get_qdrant_client is a proper
+    FastAPI dependency so tests can override it without patching module internals.
+    """
+    create_resp = await client.post(
+        "/api/v1/musehub/repos",
+        json={"name": "di-test-repo", "owner": "testuser", "visibility": "public"},
+        headers=auth_headers,
+    )
+    assert create_resp.status_code == 201
+    repo_id = create_resp.json()["repoId"]
+    commit_id = "di-test-commit-001"
+
+    with patch("maestro.api.routes.musehub.sync.embed_push_commits"):
+        await client.post(
+            f"/api/v1/musehub/repos/{repo_id}/push",
+            json={
+                "branch": "main",
+                "headCommitId": commit_id,
+                "commits": [
+                    {
+                        "commitId": commit_id,
+                        "parentIds": [],
+                        "message": "DI refactor test commit in Cmaj",
+                        "timestamp": "2024-01-01T00:00:00Z",
+                    }
+                ],
+                "objects": [],
+                "force": False,
+            },
+            headers=auth_headers,
+        )
+
+    mock_qdrant = MagicMock()
+    mock_qdrant.search_similar.return_value = [_make_similar_result("di-result-001", score=0.88)]
+    app.dependency_overrides[get_qdrant_client] = lambda: mock_qdrant
+    try:
+        resp = await client.get(
+            f"/api/v1/musehub/search/similar?commit={commit_id}&limit=5",
+            headers=auth_headers,
+        )
+    finally:
+        app.dependency_overrides.pop(get_qdrant_client, None)
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["queryCommit"] == commit_id
+    assert len(data["results"]) == 1
+    assert data["results"][0]["commitId"] == "di-result-001"
+    assert mock_qdrant.search_similar.called
 
 
 # ---------------------------------------------------------------------------
@@ -493,13 +571,17 @@ async def test_global_search_page_pre_fills_query(
 
 
 @pytest.mark.anyio
-async def test_global_search_requires_auth(
+async def test_global_search_accessible_without_auth(
     client: AsyncClient,
     db_session: AsyncSession,
 ) -> None:
-    """GET /api/v1/musehub/search returns 401 without a JWT."""
+    """GET /api/v1/musehub/search returns 200 without a JWT.
+
+    Global search is a public endpoint — uses optional_token, so unauthenticated
+    requests are allowed and return results for public repos.
+    """
     response = await client.get("/api/v1/musehub/search?q=jazz")
-    assert response.status_code == 401
+    assert response.status_code == 200
 
 
 @pytest.mark.anyio
@@ -585,10 +667,13 @@ async def test_global_search_results_grouped(
         assert "repoId" in group
         assert "repoName" in group
         assert "repoOwner" in group
+        assert "repoSlug" in group  # PR #282: slug required for UI link construction
         assert "repoVisibility" in group
         assert "matches" in group
         assert "totalMatches" in group
         assert isinstance(group["matches"], list)
+        assert isinstance(group["repoSlug"], str)
+        assert group["repoSlug"] != ""
 
     group_a = next(g for g in groups if g["repoId"] == repo_a)
     assert group_a["totalMatches"] == 2
@@ -740,6 +825,91 @@ async def test_global_search_match_contains_required_fields(
 
 
 # ---------------------------------------------------------------------------
+# Global search — audio preview batching (issue #270)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.anyio
+async def test_global_search_audio_preview_populated_for_multiple_repos(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    auth_headers: dict[str, str],
+) -> None:
+    """Audio preview object IDs are resolved via a single batched query for all repos.
+
+    Verifies that when N repos all have audio files, each GlobalSearchRepoGroup
+    contains the correct audioObjectId — confirming the batched path works
+    end-to-end and produces the same result as the old N+1 per-repo loop.
+
+    Regression test for the N+1 bug fixed in issue #270.
+    """
+    repo_a = await _make_repo(db_session, name="audio-repo-alpha", visibility="public")
+    repo_b = await _make_repo(db_session, name="audio-repo-beta", visibility="public")
+
+    await _make_commit(
+        db_session, repo_a, commit_id="ap001abcde", message="funky groove jam"
+    )
+    await _make_commit(
+        db_session, repo_b, commit_id="ap002abcde", message="funky bass session"
+    )
+
+    obj_a = MusehubObject(
+        object_id="sha256:audio-preview-alpha",
+        repo_id=repo_a,
+        path="preview.mp3",
+        size_bytes=1024,
+        disk_path="/tmp/preview-alpha.mp3",
+    )
+    obj_b = MusehubObject(
+        object_id="sha256:audio-preview-beta",
+        repo_id=repo_b,
+        path="preview.ogg",
+        size_bytes=2048,
+        disk_path="/tmp/preview-beta.ogg",
+    )
+    db_session.add(obj_a)
+    db_session.add(obj_b)
+    await db_session.commit()
+
+    response = await client.get(
+        "/api/v1/musehub/search?q=funky",
+        headers=auth_headers,
+    )
+    assert response.status_code == 200
+    data = response.json()
+
+    groups_by_id = {g["repoId"]: g for g in data["groups"]}
+    assert repo_a in groups_by_id
+    assert repo_b in groups_by_id
+
+    assert groups_by_id[repo_a]["matches"][0]["audioObjectId"] == "sha256:audio-preview-alpha"
+    assert groups_by_id[repo_b]["matches"][0]["audioObjectId"] == "sha256:audio-preview-beta"
+
+
+@pytest.mark.anyio
+async def test_global_search_audio_preview_absent_when_no_audio_objects(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    auth_headers: dict[str, str],
+) -> None:
+    """Repos without audio objects return null audioObjectId in search results."""
+    repo_id = await _make_repo(db_session, name="no-audio-repo", visibility="public")
+    await _make_commit(
+        db_session, repo_id, commit_id="na001abcde", message="silent ambient piece"
+    )
+
+    response = await client.get(
+        "/api/v1/musehub/search?q=silent",
+        headers=auth_headers,
+    )
+    assert response.status_code == 200
+    data = response.json()
+    group = next((g for g in data["groups"] if g["repoId"] == repo_id), None)
+    assert group is not None
+    assert group["matches"][0]["audioObjectId"] is None
+
+
+# ---------------------------------------------------------------------------
 # In-repo search — UI page
 # ---------------------------------------------------------------------------
 
@@ -751,7 +921,7 @@ async def test_search_page_renders(
 ) -> None:
     """GET /musehub/ui/{repo_id}/search returns 200 HTML with mode tabs."""
     repo_id = await _make_search_repo(db_session)
-    response = await client.get(f"/musehub/ui/{repo_id}/search")
+    response = await client.get("/musehub/ui/testuser/search-test-repo/search")
     assert response.status_code == 200
     assert "text/html" in response.headers["content-type"]
     body = response.text
@@ -772,7 +942,7 @@ async def test_search_page_no_auth_required(
 ) -> None:
     """Search UI page is accessible without a JWT (HTML shell, JS handles auth)."""
     repo_id = await _make_search_repo(db_session)
-    response = await client.get(f"/musehub/ui/{repo_id}/search")
+    response = await client.get("/musehub/ui/testuser/search-test-repo/search")
     assert response.status_code == 200
 
 

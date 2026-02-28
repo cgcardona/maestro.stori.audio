@@ -66,6 +66,10 @@ Run from anywhere inside the main repo. Paths are derived automatically.
 > `dev` directly. This prevents the "dev is already used by worktree" error when
 > the main repo has `dev` checked out.
 
+> **GitHub repo slug:** Always `cgcardona/maestro`. The local path
+> (`/Users/gabriel/dev/tellurstori/maestro`) is misleading — `tellurstori` is
+> NOT the GitHub org. Never derive the slug from `basename` or `pwd`.
+
 ```bash
 REPO=$(git rev-parse --show-toplevel)
 PRTREES="$HOME/.cursor/worktrees/$(basename "$REPO")"
@@ -76,12 +80,12 @@ cd "$REPO"
 DEV_SHA=$(git rev-parse dev)
 
 # --- define PRs ---
-# Batch: #259, #260, #261, #262 (MuseHub Phase 8 — Sessions, Search, Context Viewer)
+# Batch: #315, #316, #317, #318 (MuseHub — Notifications, Sessions, Explore, Insights)
 declare -a PRS=(
-  "259|feat(musehub): session detail page — full session view with participants, commits, and notes"
-  "260|feat(musehub): cross-repo search — global search across all public repos with result grouping"
-  "261|feat(musehub): in-repo search — musical property, natural language, keyword, and pattern search"
-  "262|feat: context viewer — human-readable view of the AI musical context document"
+  "315|feat(musehub): unread notification badge in nav header"
+  "316|feat(musehub): session detail — participant avatars, profile links, commit cards"
+  "317|feat(musehub): explore and trending — richer repo cards with BPM, key, tags"
+  "318|feat(musehub): insights dashboard — view count, download count, traffic sparkline"
 )
 
 # --- create worktrees + task files ---
@@ -113,15 +117,20 @@ in its `pr-<N>` directory, and paste the Kickoff Prompt below.
 
 ```bash
 # Derive paths — run these at the start of your session
-REPO=$(git worktree list | head -1 | awk '{print $1}')   # main repo
+REPO=$(git worktree list | head -1 | awk '{print $1}')   # local filesystem path to main repo
 WTNAME=$(basename "$(pwd)")                               # this worktree's name
 # Docker path to your worktree: /worktrees/$WTNAME
+
+# GitHub repo slug — HARDCODED. NEVER derive from local path or directory name.
+# The local path is /Users/gabriel/dev/tellurstori/maestro — "tellurstori" is NOT the GitHub org.
+export GH_REPO=cgcardona/maestro
 ```
 
 | Item | Value |
 |------|-------|
 | Your worktree root | current directory (contains `.agent-task`) |
-| Main repo | first entry of `git worktree list` |
+| Main repo (local path) | first entry of `git worktree list` |
+| GitHub repo slug | `cgcardona/maestro` — always hardcoded, never derived |
 | Docker compose location | main repo |
 | Your worktree inside Docker | `/worktrees/$WTNAME` |
 
@@ -177,10 +186,15 @@ STEP 0 — READ YOUR TASK:
   PR number wherever you see <N> below.
 
 STEP 1 — DERIVE PATHS:
-  REPO=$(git worktree list | head -1 | awk '{print $1}')
+  REPO=$(git worktree list | head -1 | awk '{print $1}')   # local filesystem path only
   WTNAME=$(basename "$(pwd)")
   # Your worktree is live in Docker at /worktrees/$WTNAME — NO file copying needed.
   # All docker compose commands: cd "$REPO" && docker compose exec maestro <cmd>
+
+  # GitHub repo slug — ALWAYS hardcoded. NEVER derive from directory name or local path.
+  # The local path contains "tellurstori" but the GitHub org is "cgcardona".
+  export GH_REPO=cgcardona/maestro
+  # All gh commands pick this up automatically. You may also pass --repo "$GH_REPO" explicitly.
 
 STEP 2 — CHECK CANONICAL STATE BEFORE DOING ANY WORK:
   ⚠️  Query GitHub first. Do NOT checkout a branch, run mypy, or add a review
