@@ -122,7 +122,7 @@ async function load() {
   try {
     const [repoData, commitsData, creditsData, sessionsData] = await Promise.all([
       apiFetch('/repos/' + repoId),
-      apiFetch('/repos/' + repoId + '/commits?limit=500'),
+      apiFetch('/repos/' + repoId + '/commits?limit=200'),
       apiFetch('/repos/' + repoId + '/credits').catch(() => ({ credits: [] })),
       apiFetch('/repos/' + repoId + '/sessions?limit=100').catch(() => ({ sessions: [], total: 0 })),
     ]);

@@ -51,7 +51,7 @@ from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi import status as http_status
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -162,6 +162,24 @@ async def trending_page(request: Request) -> HTMLResponse:
             "breadcrumb": "Trending",
             "default_sort": "stars",
         },
+    )
+
+
+@fixed_router.get(
+    "/{username}",
+    response_class=HTMLResponse,
+    summary="Muse Hub user profile shortcut — redirects to /users/{username}",
+)
+async def profile_redirect(username: str) -> RedirectResponse:
+    """Redirect /musehub/ui/{username} → /musehub/ui/users/{username}.
+
+    This lets breadcrumb links like /musehub/ui/gabriel resolve to the profile
+    page instead of 404-ing (the two-segment /{owner}/{repo_slug} pattern only
+    matches when two segments are present).
+    """
+    return RedirectResponse(
+        url=f"/musehub/ui/users/{username}",
+        status_code=http_status.HTTP_302_FOUND,
     )
 
 
