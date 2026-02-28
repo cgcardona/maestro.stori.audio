@@ -10,9 +10,12 @@ from contextlib import asynccontextmanager
 from collections.abc import AsyncIterator
 from typing import Awaitable, Callable
 
+from pathlib import Path
+
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import Response
 from slowapi import Limiter, _rate_limit_exceeded_handler
@@ -183,6 +186,16 @@ app.include_router(mcp_routes.router, prefix="/api/v1/mcp", tags=["mcp"])
 
 from maestro.protocol.endpoints import router as protocol_router
 app.include_router(protocol_router, prefix="/api/v1", tags=["protocol"])
+
+# Mount Muse Hub static assets (design system CSS files).
+# The directory lives inside the maestro package so it is bind-mounted in dev
+# and COPY'd into the production image alongside the rest of the package.
+_MUSEHUB_STATIC_DIR = Path(__file__).parent / "templates" / "musehub" / "static"
+app.mount(
+    "/musehub/static",
+    StaticFiles(directory=str(_MUSEHUB_STATIC_DIR)),
+    name="musehub-static",
+)
 
 
 @app.get("/")

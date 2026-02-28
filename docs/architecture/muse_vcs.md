@@ -7119,3 +7119,110 @@ session.
 | Tests | `tests/test_musehub_analysis.py` | `test_contour_track_filter`, `test_tempo_section_filter` |
 
 ---
+
+## MuseHub Design System
+
+MuseHub pages share a structured CSS framework served as static assets from
+`/musehub/static/`.  This replaces the former monolithic `_CSS` Python string
+that was embedded in every HTML response body.
+
+### File structure
+
+| File | Served at | Purpose |
+|------|-----------|---------|
+| `maestro/templates/musehub/static/tokens.css` | `/musehub/static/tokens.css` | CSS custom properties (design tokens) |
+| `maestro/templates/musehub/static/components.css` | `/musehub/static/components.css` | Reusable component classes |
+| `maestro/templates/musehub/static/layout.css` | `/musehub/static/layout.css` | Grid, header, responsive breakpoints |
+| `maestro/templates/musehub/static/icons.css` | `/musehub/static/icons.css` | File-type and musical concept icons |
+| `maestro/templates/musehub/static/music.css` | `/musehub/static/music.css` | Piano roll, waveform, radar chart, heatmap |
+
+Static files are served by FastAPI's `StaticFiles` mount registered in
+`maestro/main.py` at startup.  The `_page()` helper in
+`maestro/api/routes/musehub/ui.py` links to all five files in every page
+`<head>`.
+
+### Design tokens (`tokens.css`)
+
+All component classes consume CSS custom properties exclusively — no hardcoded
+hex values in component or layout files.
+
+| Token group | Examples |
+|-------------|---------|
+| Background surfaces | `--bg-base`, `--bg-surface`, `--bg-overlay`, `--bg-hover` |
+| Borders | `--border-subtle`, `--border-default`, `--border-muted` |
+| Text | `--text-primary`, `--text-secondary`, `--text-muted` |
+| Accent / brand | `--color-accent`, `--color-success`, `--color-danger`, `--color-warning` |
+| Musical dimensions | `--dim-harmonic`, `--dim-rhythmic`, `--dim-melodic`, `--dim-structural`, `--dim-dynamic` |
+| Track palette | `--track-0` through `--track-7` (8 distinct colours) |
+| Spacing | `--space-1` (4 px) through `--space-12` (48 px) |
+| Typography | `--font-sans`, `--font-mono`, `--font-size-*`, `--font-weight-*` |
+| Radii | `--radius-sm` (4 px) through `--radius-full` (9999 px) |
+| Shadows | `--shadow-sm` through `--shadow-xl` |
+
+### Musical dimension colours
+
+Each musical dimension has a primary colour and a muted/background variant used
+in badges, radar polygons, and diff heatmap bars.
+
+| Dimension | Token | Colour | Use |
+|-----------|-------|--------|-----|
+| Harmonic | `--dim-harmonic` | Blue `#388bfd` | Chord progressions, intervals |
+| Rhythmic | `--dim-rhythmic` | Green `#3fb950` | Time, meter, swing |
+| Melodic | `--dim-melodic` | Purple `#bc8cff` | Pitch contour, motifs |
+| Structural | `--dim-structural` | Orange `#f0883e` | Form, sections, repeats |
+| Dynamic | `--dim-dynamic` | Red `#f85149` | Velocity, loudness arcs |
+
+### Component reference
+
+| Class | File | Description |
+|-------|------|-------------|
+| `.badge`, `.badge-open/closed/merged/clean/dirty` | `components.css` | Status badges |
+| `.btn`, `.btn-primary/danger/secondary/ghost` | `components.css` | Action buttons |
+| `.card` | `components.css` | Surface panel |
+| `.table` | `components.css` | Data table |
+| `.grid-auto`, `.grid-2`, `.grid-3` | `components.css` | Layout grids |
+| `.modal`, `.modal-panel`, `.modal-footer` | `components.css` | Dialog overlay |
+| `.tabs`, `.tab-list`, `.tab` | `components.css` | Tab navigation |
+| `[data-tooltip]` | `components.css` | CSS-only tooltip |
+| `.file-icon .icon-mid/mp3/wav/json/webp/xml/abc` | `icons.css` | File-type icons |
+| `.music-icon .icon-key/tempo/dynamics/…` | `icons.css` | Musical concept icons |
+| `.piano-roll` | `music.css` | Multi-track note grid |
+| `.waveform` | `music.css` | Audio waveform container |
+| `.radar-chart`, `.radar-polygon-*` | `music.css` | Dimension radar chart |
+| `.contrib-graph`, `.contrib-day` | `music.css` | Contribution heatmap |
+| `.diff-heatmap`, `.diff-dim-bar-*` | `music.css` | Commit diff visualisation |
+
+### Responsive breakpoints
+
+| Name | Width | Override behaviour |
+|------|-------|--------------------|
+| xs | < 480 px | Single-column layout; breadcrumb hidden |
+| sm | 480–767 px | Single-column layout |
+| md | 768–1023 px | Sidebar narrows to 200 px |
+| lg | ≥ 1024 px | Full layout (base styles) |
+| xl | ≥ 1280 px | Container-wide expands to 1440 px |
+
+Minimum supported width: **375 px** (iPhone SE and equivalent Android devices).
+
+### Future theme support
+
+The design system is dark-theme by default.  All colours are defined as CSS
+custom properties on `:root`.  A future light theme can be implemented by
+adding a `[data-theme="light"]` selector block to `tokens.css` that overrides
+the `--bg-*`, `--text-*`, and `--color-*` tokens — no changes to component
+files required.
+
+### Implementation
+
+| Layer | File | What it does |
+|-------|------|-------------|
+| Design tokens | `maestro/templates/musehub/static/tokens.css` | CSS custom properties |
+| Components | `maestro/templates/musehub/static/components.css` | Reusable classes |
+| Layout | `maestro/templates/musehub/static/layout.css` | Grid, header, breakpoints |
+| Icons | `maestro/templates/musehub/static/icons.css` | File-type + music concept icons |
+| Music UI | `maestro/templates/musehub/static/music.css` | Piano roll, radar, heatmap |
+| Static mount | `maestro/main.py` | `app.mount("/musehub/static", StaticFiles(...))` |
+| Page helper | `maestro/api/routes/musehub/ui.py` | `_page()` links all five CSS files |
+| Tests | `tests/test_musehub_ui.py` | `test_design_tokens_css_served`, `test_components_css_served`, `test_repo_page_uses_design_system`, `test_responsive_meta_tag_present_*` |
+
+---

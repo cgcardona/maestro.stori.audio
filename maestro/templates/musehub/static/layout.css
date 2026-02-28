@@ -1,0 +1,251 @@
+/*
+ * Muse Hub Layout System
+ *
+ * Global structural layout: page container, header/nav chrome, responsive
+ * breakpoints, and utility spacing helpers.
+ *
+ * Breakpoints (mobile-first):
+ *   xs  < 480px   — compact phones
+ *   sm  480-767px — large phones / small tablets (portrait)
+ *   md  768-1023px— tablets and small laptops
+ *   lg  1024-1279px— laptops
+ *   xl  >= 1280px  — desktops / wide monitors
+ *
+ * Minimum supported width: 375px (iPhone SE / most modern phones).
+ * Maximum design width: 1280px (content column; wider screens add side whitespace).
+ */
+
+/* -------------------------------------------------------------------------
+ * Page header / navigation bar
+ * ------------------------------------------------------------------------- */
+header {
+  background: var(--bg-surface);
+  border-bottom: 1px solid var(--border-default);
+  padding: var(--space-3) var(--space-6);
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  position: sticky;
+  top: 0;
+  z-index: var(--z-raised);
+}
+
+header .logo {
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-bold);
+  color: var(--text-primary);
+  white-space: nowrap;
+}
+
+header .breadcrumb {
+  color: var(--text-muted);
+  font-size: var(--font-size-base);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+header .breadcrumb a {
+  color: var(--color-accent);
+}
+
+header .spacer {
+  flex: 1;
+}
+
+header .header-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-shrink: 0;
+}
+
+/* -------------------------------------------------------------------------
+ * Page container
+ * ------------------------------------------------------------------------- */
+.container {
+  max-width: 960px;
+  margin: var(--space-6) auto;
+  padding: 0 var(--space-6);
+}
+
+.container-wide {
+  max-width: 1280px;
+  margin: var(--space-6) auto;
+  padding: 0 var(--space-6);
+}
+
+.container-narrow {
+  max-width: 720px;
+  margin: var(--space-6) auto;
+  padding: 0 var(--space-6);
+}
+
+/* -------------------------------------------------------------------------
+ * Two-column sidebar layout
+ * Sidebar: fixed-width left column (e.g. repo metadata, file tree)
+ * Main: flexible right column
+ * ------------------------------------------------------------------------- */
+.layout-sidebar {
+  display: grid;
+  grid-template-columns: 240px 1fr;
+  gap: var(--space-6);
+  align-items: start;
+}
+
+.layout-sidebar-right {
+  display: grid;
+  grid-template-columns: 1fr 240px;
+  gap: var(--space-6);
+  align-items: start;
+}
+
+/* -------------------------------------------------------------------------
+ * Section divider
+ * ------------------------------------------------------------------------- */
+.section-title {
+  font-size: var(--font-size-base);
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: var(--space-3);
+  padding-bottom: var(--space-2);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+/* -------------------------------------------------------------------------
+ * Flex utilities
+ * ------------------------------------------------------------------------- */
+.flex         { display: flex; }
+.flex-col     { display: flex; flex-direction: column; }
+.items-center { align-items: center; }
+.items-start  { align-items: flex-start; }
+.justify-between { justify-content: space-between; }
+.gap-1  { gap: var(--space-1); }
+.gap-2  { gap: var(--space-2); }
+.gap-3  { gap: var(--space-3); }
+.gap-4  { gap: var(--space-4); }
+.flex-1 { flex: 1; }
+.flex-wrap { flex-wrap: wrap; }
+.flex-shrink-0 { flex-shrink: 0; }
+
+/* -------------------------------------------------------------------------
+ * Spacing utilities
+ * ------------------------------------------------------------------------- */
+.mb-2  { margin-bottom: var(--space-2); }
+.mb-3  { margin-bottom: var(--space-3); }
+.mb-4  { margin-bottom: var(--space-4); }
+.mb-6  { margin-bottom: var(--space-6); }
+.mt-2  { margin-top: var(--space-2); }
+.mt-3  { margin-top: var(--space-3); }
+.mt-4  { margin-top: var(--space-4); }
+
+/* -------------------------------------------------------------------------
+ * Text utilities
+ * ------------------------------------------------------------------------- */
+.text-muted    { color: var(--text-muted); }
+.text-primary  { color: var(--text-primary); }
+.text-accent   { color: var(--color-accent); }
+.text-danger   { color: var(--color-danger); }
+.text-success  { color: var(--color-success); }
+.text-sm       { font-size: var(--font-size-sm); }
+.text-xs       { font-size: var(--font-size-xs); }
+.text-mono     { font-family: var(--font-mono); }
+.truncate      { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* -------------------------------------------------------------------------
+ * Responsive breakpoints — mobile-first overrides
+ * ------------------------------------------------------------------------- */
+
+/* xs — phones < 480px */
+@media (max-width: 479px) {
+  header {
+    padding: var(--space-2) var(--space-3);
+    gap: var(--space-2);
+  }
+
+  header .breadcrumb {
+    display: none;
+  }
+
+  .container,
+  .container-wide,
+  .container-narrow {
+    padding: 0 var(--space-3);
+    margin-top: var(--space-4);
+  }
+
+  .layout-sidebar,
+  .layout-sidebar-right {
+    grid-template-columns: 1fr;
+  }
+
+  .grid-2,
+  .grid-3 {
+    grid-template-columns: 1fr;
+  }
+
+  h1 { font-size: var(--font-size-md); }
+  h2 { font-size: var(--font-size-base); }
+}
+
+/* sm — large phones 480-767px */
+@media (min-width: 480px) and (max-width: 767px) {
+  header {
+    padding: var(--space-2) var(--space-4);
+  }
+
+  .container,
+  .container-wide,
+  .container-narrow {
+    padding: 0 var(--space-4);
+  }
+
+  .layout-sidebar,
+  .layout-sidebar-right {
+    grid-template-columns: 1fr;
+  }
+
+  .grid-3 {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+/* md — tablets 768-1023px */
+@media (min-width: 768px) and (max-width: 1023px) {
+  .container {
+    max-width: 100%;
+    padding: 0 var(--space-6);
+  }
+
+  .layout-sidebar {
+    grid-template-columns: 200px 1fr;
+  }
+
+  .layout-sidebar-right {
+    grid-template-columns: 1fr 200px;
+  }
+}
+
+/* lg — laptops 1024px+ */
+@media (min-width: 1024px) {
+  /* Full layout — no overrides needed; base styles apply */
+}
+
+/* xl — desktops 1280px+ */
+@media (min-width: 1280px) {
+  .container-wide {
+    max-width: 1440px;
+  }
+}
+
+/* -------------------------------------------------------------------------
+ * Print styles (minimal — Muse Hub is primarily a screen UI)
+ * ------------------------------------------------------------------------- */
+@media print {
+  header { display: none; }
+  .btn   { display: none; }
+  .token-form { display: none !important; }
+  pre { white-space: pre-wrap; border: 1px solid #ccc; }
+}
