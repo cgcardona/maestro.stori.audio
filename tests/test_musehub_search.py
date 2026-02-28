@@ -48,7 +48,7 @@ import pytest
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from maestro.db.musehub_models import MusehubCommit, MusehubRepo
+from maestro.db.musehub_models import MusehubCommit, MusehubObject, MusehubRepo
 from maestro.muse_cli.models import MuseCliCommit, MuseCliSnapshot
 from maestro.services.musehub_qdrant import SimilarCommitResult
 
@@ -753,6 +753,92 @@ async def test_global_search_match_contains_required_fields(
     assert match["branch"] == "main"
     assert "timestamp" in match
     assert match["repoId"] == repo_id
+
+
+# ---------------------------------------------------------------------------
+# Global search — audio preview batching (issue #270)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.anyio
+async def test_global_search_audio_preview_populated_for_multiple_repos(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    auth_headers: dict[str, str],
+    tmp_path: pytest.TempPathFactory,
+) -> None:
+    """Audio preview object IDs are resolved via a single batched query for all repos.
+
+    Verifies that when N repos all have audio files, each GlobalSearchRepoGroup
+    contains the correct audioObjectId — confirming the batched path works
+    end-to-end and produces the same result as the old N+1 per-repo loop.
+
+    Regression test for the N+1 bug fixed in issue #270.
+    """
+    repo_a = await _make_repo(db_session, name="audio-repo-alpha", visibility="public")
+    repo_b = await _make_repo(db_session, name="audio-repo-beta", visibility="public")
+
+    await _make_commit(
+        db_session, repo_a, commit_id="ap001abcde", message="funky groove jam"
+    )
+    await _make_commit(
+        db_session, repo_b, commit_id="ap002abcde", message="funky bass session"
+    )
+
+    obj_a = MusehubObject(
+        object_id="sha256:audio-preview-alpha",
+        repo_id=repo_a,
+        path="preview.mp3",
+        size_bytes=1024,
+        disk_path="/tmp/preview-alpha.mp3",
+    )
+    obj_b = MusehubObject(
+        object_id="sha256:audio-preview-beta",
+        repo_id=repo_b,
+        path="preview.ogg",
+        size_bytes=2048,
+        disk_path="/tmp/preview-beta.ogg",
+    )
+    db_session.add(obj_a)
+    db_session.add(obj_b)
+    await db_session.commit()
+
+    response = await client.get(
+        "/api/v1/musehub/search?q=funky",
+        headers=auth_headers,
+    )
+    assert response.status_code == 200
+    data = response.json()
+
+    groups_by_id = {g["repoId"]: g for g in data["groups"]}
+    assert repo_a in groups_by_id
+    assert repo_b in groups_by_id
+
+    assert groups_by_id[repo_a]["matches"][0]["audioObjectId"] == "sha256:audio-preview-alpha"
+    assert groups_by_id[repo_b]["matches"][0]["audioObjectId"] == "sha256:audio-preview-beta"
+
+
+@pytest.mark.anyio
+async def test_global_search_audio_preview_absent_when_no_audio_objects(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    auth_headers: dict[str, str],
+) -> None:
+    """Repos without audio objects return null audioObjectId in search results."""
+    repo_id = await _make_repo(db_session, name="no-audio-repo", visibility="public")
+    await _make_commit(
+        db_session, repo_id, commit_id="na001abcde", message="silent ambient piece"
+    )
+
+    response = await client.get(
+        "/api/v1/musehub/search?q=silent",
+        headers=auth_headers,
+    )
+    assert response.status_code == 200
+    data = response.json()
+    group = next((g for g in data["groups"] if g["repoId"] == repo_id), None)
+    assert group is not None
+    assert group["matches"][0]["audioObjectId"] is None
 
 
 # ---------------------------------------------------------------------------
