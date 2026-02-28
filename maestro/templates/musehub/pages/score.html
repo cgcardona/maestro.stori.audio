@@ -1,0 +1,416 @@
+{% extends "musehub/base.html" %}
+
+{% block title %}Score {{ ref[:8] }}{% endblock %}
+{% block breadcrumb %}
+  <a href="/musehub/ui/{{ owner }}/{{ repo_slug }}">{{ owner }}/{{ repo_slug }}</a> /
+  score / {{ ref[:8] }}{% if path %} / {{ path }}{% endif %}
+{% endblock %}
+{% block repo_nav %}{% include "musehub/partials/repo_nav.html" %}{% endblock %}
+
+{% block extra_css %}
+<style>
+.score-header {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+.score-meta {
+  display: flex; gap: 20px; flex-wrap: wrap;
+  margin-bottom: 16px; font-size: 13px; color: var(--color-text-muted);
+}
+.score-meta-item { display: flex; flex-direction: column; gap: 2px; }
+.score-meta-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: #6e7681; }
+.score-meta-value { font-size: 14px; font-weight: 600; color: #e6edf3; }
+.track-selector {
+  display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px;
+}
+.track-btn {
+  background: #161b22; border: 1px solid #30363d; color: #8b949e;
+  padding: 4px 12px; border-radius: 20px; font-size: 12px;
+  cursor: pointer; transition: all 0.15s;
+}
+.track-btn:hover { border-color: #58a6ff; color: #58a6ff; }
+.track-btn.active { background: #1f6feb; border-color: #1f6feb; color: #fff; font-weight: 600; }
+.staff-container {
+  background: #0d1117; border: 1px solid #30363d; border-radius: 8px;
+  padding: 20px; overflow-x: auto; margin-bottom: 16px;
+}
+.staff-label {
+  font-size: 12px; font-weight: 600; color: #58a6ff;
+  text-transform: uppercase; letter-spacing: 0.05em;
+  margin-bottom: 8px;
+}
+.staff-svg { display: block; width: 100%; overflow: visible; }
+.staff-line { stroke: #30363d; stroke-width: 1; }
+.bar-line { stroke: #444c56; stroke-width: 1.5; }
+.note-head { fill: #58a6ff; }
+.note-stem { stroke: #58a6ff; stroke-width: 1.5; }
+.note-ledger { stroke: #58a6ff; stroke-width: 1; }
+.rest-mark { fill: #6e7681; }
+.clef-text { fill: #8b949e; font-family: serif; font-size: 28px; }
+.timesig-text { fill: #8b949e; font-family: serif; font-size: 16px; font-weight: 700; }
+.beat-num { fill: #6e7681; font-size: 9px; font-family: monospace; }
+.score-empty {
+  text-align: center; color: #6e7681; padding: 40px;
+  font-style: italic;
+}
+.legend-row {
+  display: flex; gap: 16px; flex-wrap: wrap;
+  font-size: 12px; color: #8b949e; margin-top: 12px;
+}
+.legend-item { display: flex; align-items: center; gap: 6px; }
+.legend-dot { width: 10px; height: 10px; border-radius: 50%; }
+</style>
+{% endblock %}
+
+{% block page_data %}
+const repoId   = {{ repo_id | tojson }};
+const ref      = {{ ref | tojson }};
+const owner    = {{ owner | tojson }};
+const repoSlug = {{ repo_slug | tojson }};
+const base     = {{ base_url | tojson }};
+const scorePath = {{ path | tojson }};
+{% endblock %}
+
+{% block page_script %}
+{% raw %}
+// ── Score renderer constants ───────────────────────────────────────────────
+const STAFF_HEIGHT  = 80;   // px total per staff (5 lines × 16px apart)
+const LINE_GAP      = 8;    // px between staff lines
+const STAFF_Y       = 24;   // top margin inside staff-container
+const STAFF_LINES   = 5;
+const BAR_WIDTH     = 120;  // px per bar
+const LEFT_MARGIN   = 60;   // px for clef + time sig
+const NOTE_RADIUS   = 5;    // px
+const STEM_LENGTH   = 28;   // px
+
+// MIDI pitch → staff position (0 = bottom line, treble clef, C4=middle)
+// Treble clef: lines are E4, G4, B4, D5, F5 (bottom to top)
+// Staff position 0 = bottom line (E4 MIDI 64), each step = semitone → diatonic
+const PITCH_TO_STAFF_TREBLE = {
+  // octave 3 (below staff — ledger lines)
+  'C3': -7, 'D3': -6, 'E3': -5, 'F3': -4, 'G3': -3, 'A3': -2, 'B3': -1,
+  // octave 4
+  'C4': 0, 'D4': 1, 'E4': 2, 'F4': 3, 'G4': 4, 'A4': 5, 'B4': 6,
+  // octave 5
+  'C5': 7, 'D5': 8, 'E5': 9, 'F5': 10, 'G5': 11, 'A5': 12, 'B5': 13,
+};
+
+// Bass clef: lines are G2, B2, D3, F3, A3 (bottom to top)
+const PITCH_TO_STAFF_BASS = {
+  // octave 1
+  'C1': -5, 'D1': -4, 'E1': -3, 'F1': -2, 'G1': -1,
+  // octave 2
+  'A1': 0, 'B1': 1, 'C2': 2, 'D2': 3, 'E2': 4, 'F2': 5, 'G2': 6,
+  // octave 3
+  'A2': 7, 'B2': 8, 'C3': 9, 'D3': 10, 'E3': 11, 'F3': 12, 'G3': 13,
+  // octave 4
+  'A3': 14, 'B3': 15, 'C4': 16,
+};
+
+// Duration fraction → beat count
+const DUR_BEATS = { '1/1': 4, '1/2': 2, '1/4': 1, '1/8': 0.5, '1/16': 0.25 };
+
+let notationData = null;   // full NotationResult from server
+let activeTrack  = 'all';  // 'all' or track_id int
+
+// ── Utilities ─────────────────────────────────────────────────────────────
+
+function staffY(staffPos, clef) {
+  // staffPos 0 = bottom staff line, increases upward
+  // In SVG y increases downward, so flip
+  const bottomLineY = STAFF_Y + (STAFF_LINES - 1) * LINE_GAP;
+  return bottomLineY - staffPos * LINE_GAP;
+}
+
+function noteStaffPos(note, clef) {
+  const map = clef === 'bass' ? PITCH_TO_STAFF_BASS : PITCH_TO_STAFF_TREBLE;
+  const key = note.pitch_name.replace('#', '#').replace('b', 'b') + note.octave;
+  // Strip accidentals for map lookup, use natural pitch name
+  const naturalKey = note.pitch_name.replace('#', '').replace('b', '') + note.octave;
+  const pos = map[naturalKey] !== undefined ? map[naturalKey] : map[key];
+  return pos !== undefined ? pos : 4; // default to middle of staff
+}
+
+function drawStaffLines(beatsPerBar, numBars) {
+  const totalWidth = LEFT_MARGIN + numBars * BAR_WIDTH + 20;
+  let svg = `<svg class="staff-svg" height="${STAFF_Y + (STAFF_LINES - 1) * LINE_GAP + 40}" width="${totalWidth}">`;
+
+  // Draw 5 staff lines
+  for (let i = 0; i < STAFF_LINES; i++) {
+    const y = STAFF_Y + i * LINE_GAP;
+    svg += `<line class="staff-line" x1="${LEFT_MARGIN}" y1="${y}" x2="${totalWidth - 10}" y2="${y}"/>`;
+  }
+
+  // Draw bar lines
+  for (let b = 0; b <= numBars; b++) {
+    const x = LEFT_MARGIN + b * BAR_WIDTH;
+    svg += `<line class="bar-line" x1="${x}" y1="${STAFF_Y}" x2="${x}" y2="${STAFF_Y + (STAFF_LINES - 1) * LINE_GAP}"/>`;
+  }
+
+  return { prefix: svg, totalWidth };
+}
+
+function drawClef(clef) {
+  const symbol = clef === 'bass' ? '\u{1D122}' : '\u{1D11E}';  // Unicode musical clef
+  const textFallback = clef === 'bass' ? '??' : '&';
+  // Use text with CSS font-size instead of Unicode music glyphs (font support varies)
+  const label = clef === 'bass' ? 'Bass' : 'Treble';
+  return `<text class="clef-text" x="8" y="${STAFF_Y + (STAFF_LINES - 1) * LINE_GAP - 2}" font-size="11" fill="#8b949e" font-weight="600">${escHtml(label)}</text>`;
+}
+
+function drawTimeSig(timeSig, x) {
+  const [num, den] = timeSig.split('/');
+  const midY = STAFF_Y + ((STAFF_LINES - 1) * LINE_GAP) / 2;
+  return (
+    `<text class="timesig-text" x="${x}" y="${midY - 4}" text-anchor="middle">${escHtml(num)}</text>` +
+    `<text class="timesig-text" x="${x}" y="${midY + 12}" text-anchor="middle">${escHtml(den)}</text>`
+  );
+}
+
+function drawNote(note, clef, beatsPerBar, barWidth) {
+  const bar = Math.floor(note.start_beat / beatsPerBar);
+  const beatInBar = note.start_beat % beatsPerBar;
+  const x = LEFT_MARGIN + bar * barWidth + (beatInBar / beatsPerBar) * barWidth + barWidth * 0.1;
+  const staffPos = noteStaffPos(note, clef);
+  const y = staffY(staffPos, clef);
+  const midLine = STAFF_Y + 2 * LINE_GAP;  // 3rd line from top
+  const stemUp = y >= midLine;
+
+  let result = '';
+
+  // Ledger lines (above/below staff)
+  if (staffPos < 0) {
+    for (let lp = -2; lp >= staffPos; lp -= 2) {
+      const ly = staffY(lp, clef);
+      result += `<line class="note-ledger" x1="${x - NOTE_RADIUS - 3}" y1="${ly}" x2="${x + NOTE_RADIUS + 3}" y2="${ly}"/>`;
+    }
+  } else if (staffPos > (STAFF_LINES - 1) * 2) {
+    for (let lp = (STAFF_LINES - 1) * 2 + 2; lp <= staffPos; lp += 2) {
+      const ly = staffY(lp, clef);
+      result += `<line class="note-ledger" x1="${x - NOTE_RADIUS - 3}" y1="${ly}" x2="${x + NOTE_RADIUS + 3}" y2="${ly}"/>`;
+    }
+  }
+
+  // Note head (filled for quarter/eighth, open for half/whole)
+  const beats = DUR_BEATS[note.duration] || 1;
+  const filled = beats < 2;
+  if (filled) {
+    result += `<ellipse class="note-head" cx="${x}" cy="${y}" rx="${NOTE_RADIUS}" ry="${NOTE_RADIUS - 1}"/>`;
+  } else {
+    result += `<ellipse cx="${x}" cy="${y}" rx="${NOTE_RADIUS}" ry="${NOTE_RADIUS - 1}" fill="none" stroke="#58a6ff" stroke-width="1.5"/>`;
+  }
+
+  // Stem (not for whole notes)
+  if (beats < 4) {
+    if (stemUp) {
+      result += `<line class="note-stem" x1="${x + NOTE_RADIUS}" y1="${y}" x2="${x + NOTE_RADIUS}" y2="${y - STEM_LENGTH}"/>`;
+    } else {
+      result += `<line class="note-stem" x1="${x - NOTE_RADIUS}" y1="${y}" x2="${x - NOTE_RADIUS}" y2="${y + STEM_LENGTH}"/>`;
+    }
+  }
+
+  // Eighth note flag
+  if (beats === 0.5) {
+    const sx = stemUp ? x + NOTE_RADIUS : x - NOTE_RADIUS;
+    const sy = stemUp ? y - STEM_LENGTH : y + STEM_LENGTH;
+    const fy = stemUp ? sy + 10 : sy - 10;
+    result += `<path d="M${sx},${sy} Q${sx + 10},${(sy + fy) / 2} ${sx},${fy}" stroke="#58a6ff" stroke-width="1.5" fill="none"/>`;
+  }
+
+  // Accidental
+  if (note.pitch_name.includes('#')) {
+    result += `<text x="${x - NOTE_RADIUS - 8}" y="${y + 4}" font-size="12" fill="#f0883e">#</text>`;
+  } else if (note.pitch_name.includes('b')) {
+    result += `<text x="${x - NOTE_RADIUS - 8}" y="${y + 4}" font-size="12" fill="#f0883e">b</text>`;
+  }
+
+  return result;
+}
+
+function renderTrackStaff(track) {
+  if (!track.notes || track.notes.length === 0) {
+    return `<div class="score-empty">No notes in this track.</div>`;
+  }
+
+  const beatsPerBar = parseInt((notationData.timeSig || '4/4').split('/')[0]);
+  const maxBeat = Math.max(...track.notes.map(n => n.start_beat)) + beatsPerBar;
+  const numBars = Math.ceil(maxBeat / beatsPerBar);
+  const clef = track.clef || 'treble';
+
+  const { prefix, totalWidth } = drawStaffLines(beatsPerBar, numBars);
+  let svg = prefix;
+
+  // Clef
+  svg += drawClef(clef);
+  // Time signature
+  svg += drawTimeSig(notationData.timeSig || '4/4', LEFT_MARGIN + 20);
+
+  // Notes
+  for (const note of track.notes) {
+    svg += drawNote(note, clef, beatsPerBar, BAR_WIDTH);
+  }
+
+  svg += '</svg>';
+
+  return `
+    <div class="staff-container">
+      <div class="staff-label">
+        &#127929; ${escHtml(track.instrument || 'Track ' + track.track_id)}
+        <span style="font-size:11px;font-weight:400;color:#6e7681;margin-left:8px">
+          ${escHtml(clef)} clef &bull; ${escHtml(track.key_signature || '')}
+        </span>
+      </div>
+      ${svg}
+    </div>`;
+}
+
+// ── Track selector ─────────────────────────────────────────────────────────
+
+function renderTrackSelector(tracks) {
+  const allActive = activeTrack === 'all' ? ' active' : '';
+  let html = `<button class="track-btn${allActive}" onclick="setTrack('all')">All Parts</button>`;
+  tracks.forEach((t, i) => {
+    const active = activeTrack === i ? ' active' : '';
+    html += `<button class="track-btn${active}" onclick="setTrack(${i})">`
+      + escHtml(t.instrument || 'Track ' + i) + '</button>';
+  });
+  return html;
+}
+
+function setTrack(id) {
+  activeTrack = id;
+  renderScore();
+}
+
+// ── Main render ────────────────────────────────────────────────────────────
+
+function renderScore() {
+  if (!notationData) return;
+
+  const tracks = notationData.tracks || [];
+  const visible = activeTrack === 'all'
+    ? tracks
+    : tracks.filter((_, i) => i === activeTrack);
+
+  // Track selector
+  document.getElementById('track-selector').innerHTML = renderTrackSelector(tracks);
+
+  // Meta row
+  document.getElementById('score-meta').innerHTML = `
+    <div class="score-meta-item">
+      <span class="score-meta-label">Key</span>
+      <span class="score-meta-value">${escHtml(notationData.key || '\u2014')}</span>
+    </div>
+    <div class="score-meta-item">
+      <span class="score-meta-label">Tempo</span>
+      <span class="score-meta-value">${notationData.tempo || '\u2014'} BPM</span>
+    </div>
+    <div class="score-meta-item">
+      <span class="score-meta-label">Time</span>
+      <span class="score-meta-value">${escHtml(notationData.timeSig || '\u2014')}</span>
+    </div>
+    <div class="score-meta-item">
+      <span class="score-meta-label">Parts</span>
+      <span class="score-meta-value">${tracks.length}</span>
+    </div>`;
+
+  // Staff panels
+  const staffHtml = visible.map(renderTrackStaff).join('');
+  document.getElementById('staves').innerHTML = staffHtml || '<div class="score-empty">No tracks found.</div>';
+}
+
+// ── Data fetch ─────────────────────────────────────────────────────────────
+
+async function load() {
+  initRepoNav(repoId);
+
+  try {
+    // Try JSON content negotiation first for notation data
+    const url = scorePath
+      ? '/api/v1/musehub/repos/' + encodeURIComponent(repoId) + '/score/' + encodeURIComponent(ref) + '/' + encodeURIComponent(scorePath)
+      : '/api/v1/musehub/repos/' + encodeURIComponent(repoId) + '/score/' + encodeURIComponent(ref);
+
+    // Fall back to the notation endpoint if dedicated score endpoint not yet available
+    const notationUrl = '/api/v1/musehub/repos/' + encodeURIComponent(repoId) + '/notation/' + encodeURIComponent(ref);
+
+    let data = null;
+    try {
+      data = await apiFetch(notationUrl);
+    } catch (e) {
+      // Notation endpoint not yet available — use client-side stub rendering
+      data = null;
+    }
+
+    if (data) {
+      notationData = data.data || data;
+    } else {
+      // Minimal stub so the page renders without a live API
+      notationData = {
+        key: 'C major',
+        tempo: 120,
+        timeSig: '4/4',
+        tracks: [{
+          track_id: 0,
+          clef: 'treble',
+          key_signature: 'C major',
+          time_signature: '4/4',
+          instrument: 'piano',
+          notes: [
+            { pitch_name: 'C', octave: 4, duration: '1/4', start_beat: 0, velocity: 80, track_id: 0 },
+            { pitch_name: 'E', octave: 4, duration: '1/4', start_beat: 1, velocity: 75, track_id: 0 },
+            { pitch_name: 'G', octave: 4, duration: '1/4', start_beat: 2, velocity: 78, track_id: 0 },
+            { pitch_name: 'E', octave: 4, duration: '1/4', start_beat: 3, velocity: 72, track_id: 0 },
+          ]
+        }]
+      };
+    }
+
+    renderScore();
+
+  } catch (e) {
+    if (e.message !== 'auth') {
+      document.getElementById('staves').innerHTML =
+        '<p class="error">&#10005; Could not load notation: ' + escHtml(e.message) + '</p>';
+    }
+  }
+}
+
+load();
+{% endraw %}
+{% endblock %}
+
+{% block body_extra %}
+<div class="container" style="padding-top:0">
+  <div style="margin-bottom:12px">
+    <a href="{{ base_url }}">&larr; Back to repo</a>
+  </div>
+  <div class="card" style="margin-bottom:16px">
+    <div class="score-header">
+      <h1 style="margin:0">&#127926; Score</h1>
+      <code class="ref-badge">{{ ref[:16] }}{% if ref|length > 16 %}&hellip;{% endif %}</code>
+      {% if path %}
+      <span style="color:#8b949e;font-size:13px">{{ path }}</span>
+      {% endif %}
+    </div>
+    <div class="score-meta" id="score-meta">
+      <p class="loading">Loading metadata&hellip;</p>
+    </div>
+  </div>
+  <div class="track-selector" id="track-selector"></div>
+  <div id="staves"><p class="loading">Loading score&hellip;</p></div>
+  <div class="legend-row">
+    <div class="legend-item">
+      <div class="legend-dot" style="background:#58a6ff"></div>
+      <span>Note</span>
+    </div>
+    <div class="legend-item">
+      <div class="legend-dot" style="background:#6e7681"></div>
+      <span>Rest</span>
+    </div>
+    <div class="legend-item">
+      <span style="color:#f0883e;font-size:13px">#/b</span>
+      <span>Accidental</span>
+    </div>
+  </div>
+</div>
+{% endblock %}
