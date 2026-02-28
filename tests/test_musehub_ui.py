@@ -27,7 +27,7 @@ import pytest
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from maestro.db.musehub_models import MusehubCommit, MusehubRepo
+from maestro.db.musehub_models import MusehubCommit, MusehubProfile, MusehubRepo
 
 
 # ---------------------------------------------------------------------------
@@ -601,3 +601,150 @@ async def test_graph_page_contains_dag_js(
     assert "renderGraph" in body
     assert "dag-viewport" in body
     assert "dag-svg" in body
+
+
+# ---------------------------------------------------------------------------
+# Credits page tests (issue #241 — pre-existing from dev, fixed here)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.anyio
+async def test_credits_page_renders(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """GET /musehub/ui/{repo_id}/credits returns 200 HTML without requiring a JWT."""
+    repo_id = await _make_repo(db_session)
+    response = await client.get(f"/musehub/ui/{repo_id}/credits")
+    assert response.status_code == 200
+    assert "text/html" in response.headers["content-type"]
+    body = response.text
+    assert "Muse Hub" in body
+
+
+@pytest.mark.anyio
+async def test_credits_no_auth_required(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Credits UI page must be accessible without an Authorization header (HTML shell)."""
+    repo_id = await _make_repo(db_session)
+    response = await client.get(f"/musehub/ui/{repo_id}/credits")
+    assert response.status_code == 200
+    assert response.status_code != 401
+
+
+@pytest.mark.anyio
+async def test_credits_json_response(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    auth_headers: dict[str, str],
+) -> None:
+    """GET /api/v1/musehub/repos/{repo_id}/credits returns a CreditsResponse."""
+    repo_id = await _make_repo(db_session)
+    response = await client.get(
+        f"/api/v1/musehub/repos/{repo_id}/credits",
+        headers=auth_headers,
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert "repoId" in data
+    assert "contributors" in data
+    assert isinstance(data["contributors"], list)
+
+
+# ---------------------------------------------------------------------------
+# DAG graph page tests (issue #265 — pre-existing from dev, fixed here)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.anyio
+async def test_graph_page_renders(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """GET /musehub/ui/{repo_id}/graph returns 200 HTML without requiring a JWT."""
+    repo_id = await _make_repo(db_session)
+    response = await client.get(f"/musehub/ui/{repo_id}/graph")
+    assert response.status_code == 200
+    assert "text/html" in response.headers["content-type"]
+    body = response.text
+    assert "Muse Hub" in body
+
+
+@pytest.mark.anyio
+async def test_graph_no_auth_required(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Graph page must be accessible without an Authorization header (HTML shell)."""
+    repo_id = await _make_repo(db_session)
+    response = await client.get(f"/musehub/ui/{repo_id}/graph")
+    assert response.status_code == 200
+    assert response.status_code != 401
+
+
+@pytest.mark.anyio
+async def test_graph_page_contains_dag_js(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Graph page embeds the client-side DAG renderer JavaScript."""
+    repo_id = await _make_repo(db_session)
+    response = await client.get(f"/musehub/ui/{repo_id}/graph")
+    assert response.status_code == 200
+    body = response.text
+    assert "renderGraph" in body
+    assert "dag-viewport" in body
+    assert "dag-svg" in body
+
+
+# ---------------------------------------------------------------------------
+# User profile page tests (issue #233 — pre-existing from dev, fixed here)
+# ---------------------------------------------------------------------------
+
+_TEST_USER_ID = "550e8400-e29b-41d4-a716-446655440000"
+
+
+async def _make_profile(
+    db_session: AsyncSession, username: str = "testmusician"
+) -> MusehubProfile:
+    """Seed a minimal profile and return it."""
+    profile = MusehubProfile(
+        user_id=_TEST_USER_ID,
+        username=username,
+        bio="Test bio",
+        avatar_url=None,
+        pinned_repo_ids=[],
+    )
+    db_session.add(profile)
+    await db_session.commit()
+    await db_session.refresh(profile)
+    return profile
+
+
+@pytest.mark.anyio
+async def test_profile_page_renders(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """GET /musehub/ui/users/{username} returns 200 HTML for a known profile."""
+    await _make_profile(db_session, "rockstar")
+    response = await client.get("/musehub/ui/users/rockstar")
+    assert response.status_code == 200
+    assert "text/html" in response.headers["content-type"]
+    body = response.text
+    assert "Muse Hub" in body
+    assert "@rockstar" in body
+
+
+@pytest.mark.anyio
+async def test_profile_no_auth_required_ui(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Profile UI page is publicly accessible without a JWT (returns 200, not 401)."""
+    await _make_profile(db_session, "public-user")
+    response = await client.get("/musehub/ui/users/public-user")
+    assert response.status_code == 200
+    assert response.status_code != 401
