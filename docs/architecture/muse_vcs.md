@@ -106,7 +106,8 @@ maestro/muse_cli/
     ├── push.py           — muse push    (stub — issue #38)
     ├── pull.py           — muse pull    (stub — issue #38)
     ├── open_cmd.py       — muse open    ✅ macOS artifact preview (issue #45)
-    └── play.py           — muse play    ✅ macOS audio playback via afplay (issue #45)
+    ├── play.py           — muse play    ✅ macOS audio playback via afplay (issue #45)
+    └── ask.py            — muse ask     ✅ natural language query over commit history (issue #126)
 ```
 
 `maestro/muse_cli/artifact_resolver.py` — `resolve_artifact_async()` / `resolve_artifact()`:
@@ -973,5 +974,85 @@ existing drum performance.
 > **Stub note:** Returns a placeholder factor of 0.55. Full implementation
 > requires onset-to-onset ratio measurement from committed MIDI note events
 > (future: Storpheus MIDI parse route).
+
+---
+
+## `muse ask` — Natural Language Query over Musical History
+
+`muse ask "<question>"` searches Muse commit messages for keywords derived
+from the user's question and returns matching commits in a structured answer.
+
+**Purpose:** Give musicians and AI agents a conversational interface to
+retrieve relevant moments from the composition history without remembering
+exact commit messages or timestamps.
+
+### Flags
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `<question>` | *(required)* | Natural language question about your musical history. |
+| `--branch <name>` | current HEAD branch | Restrict search to commits on this branch. |
+| `--since YYYY-MM-DD` | *(none)* | Include only commits on or after this date. |
+| `--until YYYY-MM-DD` | *(none)* | Include only commits on or before this date (inclusive, end-of-day). |
+| `--json` | `false` | Emit machine-readable JSON instead of plain text. |
+| `--cite` | `false` | Show full 64-character commit IDs instead of 8-character prefixes. |
+
+### Output example
+
+**Plain text:**
+
+```
+Based on Muse history (14 commits searched):
+Commits matching your query: 2 found
+
+  [a3f2c1b0] 2026-02-10 14:32  boom bap take 1
+  [d9e8f7a6] 2026-02-11 09:15  boom bap take 2
+
+Note: Full LLM-powered answer generation is a planned enhancement.
+```
+
+**JSON (`--json`):**
+
+```json
+{
+  "question": "boom bap sessions",
+  "total_searched": 14,
+  "matches": [
+    {
+      "commit_id": "a3f2c1b0",
+      "branch": "main",
+      "message": "boom bap take 1",
+      "committed_at": "2026-02-10T14:32:00+00:00"
+    }
+  ],
+  "note": "Full LLM-powered answer generation is a planned enhancement."
+}
+```
+
+### Result type
+
+`muse ask` returns an `AnswerResult` object (see
+`docs/reference/type_contracts.md § AnswerResult`). The `to_plain()` and
+`to_json()` methods on `AnswerResult` render the two output formats.
+
+### Agent use case
+
+An AI agent reviewing a composition session calls `muse ask "piano intro" --json`
+to retrieve all commits where piano intro work was recorded. The JSON output
+feeds directly into the agent's context without screen-scraping, allowing it to
+reference specific commit IDs when proposing the next variation.
+
+The `--branch` filter lets an agent scope queries to a feature branch
+(e.g., `feat/verse-2`) rather than searching across all experimental branches.
+The `--cite` flag gives the agent full commit IDs for downstream `muse checkout`
+or `muse log` calls.
+
+**Implementation:** `maestro/muse_cli/commands/ask.py` — `_keywords()`,
+`_ask_async()`, `AnswerResult`. Exit codes: 0 success, 2 outside repo,
+3 internal error.
+
+> **Stub note:** Keyword matching over commit messages only. Full LLM-powered
+> semantic search (embedding similarity over commit content) is a planned
+> enhancement (future: integrate with Qdrant vector store).
 
 ---

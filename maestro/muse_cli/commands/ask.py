@@ -20,6 +20,7 @@ import asyncio
 import json
 import logging
 import pathlib
+import re
 from datetime import date, datetime, timezone
 from typing import Annotated, Optional
 
@@ -121,7 +122,6 @@ def _keywords(question: str) -> list[str]:
         "but", "not", "with", "from", "by", "about", "into", "through",
         "did", "make", "made", "last", "any", "all", "that", "this",
     }
-    import re
     tokens = re.split(r"[\s\W]+", question.lower())
     return [t for t in tokens if t and t not in stop and len(t) > 1]
 
