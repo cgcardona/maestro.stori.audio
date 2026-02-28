@@ -201,6 +201,55 @@ async def test_ui_pages_include_token_form(
         assert "musehub_token" in body
 
 
+
+# ---------------------------------------------------------------------------
+# Release page tests
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.anyio
+async def test_ui_release_list_page_returns_200(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """GET /musehub/ui/{repo_id}/releases returns 200 HTML without requiring a JWT."""
+    repo_id = await _make_repo(db_session)
+    response = await client.get(f"/musehub/ui/{repo_id}/releases")
+    assert response.status_code == 200
+    assert "text/html" in response.headers["content-type"]
+    body = response.text
+    assert "Releases" in body
+    assert "Muse Hub" in body
+    assert repo_id[:8] in body
+
+
+@pytest.mark.anyio
+async def test_ui_release_detail_page_returns_200(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """GET /musehub/ui/{repo_id}/releases/{tag} returns 200 HTML with download section."""
+    repo_id = await _make_repo(db_session)
+    response = await client.get(f"/musehub/ui/{repo_id}/releases/v1.0")
+    assert response.status_code == 200
+    assert "text/html" in response.headers["content-type"]
+    body = response.text
+    assert "Muse Hub" in body
+    assert "Download" in body
+    assert "v1.0" in body
+
+
+@pytest.mark.anyio
+async def test_ui_repo_page_shows_releases_button(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """GET /musehub/ui/{repo_id} includes a Releases navigation button."""
+    repo_id = await _make_repo(db_session)
+    response = await client.get(f"/musehub/ui/{repo_id}")
+    assert response.status_code == 200
+    body = response.text
+    assert "releases" in body.lower()
 # ---------------------------------------------------------------------------
 # Object listing endpoint tests (JSON, authed)
 # ---------------------------------------------------------------------------
