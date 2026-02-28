@@ -40,7 +40,7 @@ def _to_response(session: MusehubSession) -> SessionResponse:
         participants=list(session.participants),
         location=session.location,
         intent=session.intent,
-        is_active=getattr(session, 'is_active', session.ended_at is None),
+        is_active=getattr(session, "is_active", session.ended_at is None),
         created_at=session.created_at,
     )
 
@@ -50,10 +50,7 @@ async def upsert_session(
     repo_id: str,
     data: SessionCreate,
 ) -> SessionResponse:
-    """Persist a session record for the given repo.
-
-    Creates a new session using the provided data.
-    """
+    """Create a new session record for the given repo."""
     import uuid as _uuid
     session = MusehubSession(
         session_id=str(_uuid.uuid4()),

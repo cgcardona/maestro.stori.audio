@@ -318,8 +318,242 @@ async def test_list_branches_returns_empty_for_new_repo(db_session: AsyncSession
 
 
 # ---------------------------------------------------------------------------
-# GET /musehub/repos/{repo_id}/divergence
+# GET /musehub/repos/{repo_id}/timeline
 # ---------------------------------------------------------------------------
+
+
+@pytest.mark.anyio
+async def test_timeline_data_endpoint_empty_repo(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+) -> None:
+    """GET /musehub/repos/{repo_id}/timeline returns empty event streams for new repo."""
+    create = await client.post(
+        "/api/v1/musehub/repos",
+        json={"name": "empty-timeline"},
+        headers=auth_headers,
+    )
+    assert create.status_code == 201
+    repo_id = create.json()["repoId"]
+
+    response = await client.get(
+        f"/api/v1/musehub/repos/{repo_id}/timeline",
+        headers=auth_headers,
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["commits"] == []
+    assert body["emotion"] == []
+    assert body["sections"] == []
+    assert body["tracks"] == []
+    assert body["totalCommits"] == 0
+
+
+@pytest.mark.anyio
+async def test_timeline_data_includes_commits_with_timestamps(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+    db_session: AsyncSession,
+) -> None:
+    """GET /musehub/repos/{repo_id}/timeline includes commits with timestamps."""
+    from datetime import datetime, timezone, timedelta
+
+    create = await client.post(
+        "/api/v1/musehub/repos",
+        json={"name": "timeline-commits"},
+        headers=auth_headers,
+    )
+    repo_id = create.json()["repoId"]
+
+    now = datetime.now(tz=timezone.utc)
+    for i in range(3):
+        db_session.add(
+            MusehubCommit(
+                commit_id=f"abc{i:04d}ef1234567890abcdef1234",
+                repo_id=repo_id,
+                branch="main",
+                parent_ids=[],
+                message=f"commit {i}",
+                author="musician",
+                timestamp=now + timedelta(hours=i),
+            )
+        )
+    await db_session.commit()
+
+    response = await client.get(
+        f"/api/v1/musehub/repos/{repo_id}/timeline",
+        headers=auth_headers,
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert len(body["commits"]) == 3
+    assert body["totalCommits"] == 3
+    # Commits are returned oldest-first for temporal rendering
+    commits = body["commits"]
+    timestamps = [c["timestamp"] for c in commits]
+    assert timestamps == sorted(timestamps)
+
+
+@pytest.mark.anyio
+async def test_timeline_json_response_structure(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+    db_session: AsyncSession,
+) -> None:
+    """Timeline JSON response includes all four event stream keys."""
+    from datetime import datetime, timezone
+
+    create = await client.post(
+        "/api/v1/musehub/repos",
+        json={"name": "timeline-structure"},
+        headers=auth_headers,
+    )
+    repo_id = create.json()["repoId"]
+
+    db_session.add(
+        MusehubCommit(
+            commit_id="deadbeef12345678abcdef1234567890abcdef12",
+            repo_id=repo_id,
+            branch="main",
+            parent_ids=[],
+            message="added chorus",
+            author="musician",
+            timestamp=datetime.now(tz=timezone.utc),
+        )
+    )
+    await db_session.commit()
+
+    response = await client.get(
+        f"/api/v1/musehub/repos/{repo_id}/timeline",
+        headers=auth_headers,
+    )
+    assert response.status_code == 200
+    body = response.json()
+
+    # All four event stream keys present
+    assert "commits" in body
+    assert "emotion" in body
+    assert "sections" in body
+    assert "tracks" in body
+    assert "totalCommits" in body
+
+    # One commit, one emotion entry
+    assert len(body["commits"]) == 1
+    assert len(body["emotion"]) == 1
+
+    # Emotion values are in [0, 1]
+    emo = body["emotion"][0]
+    assert 0.0 <= emo["valence"] <= 1.0
+    assert 0.0 <= emo["energy"] <= 1.0
+    assert 0.0 <= emo["tension"] <= 1.0
+
+    # "added chorus" in commit message → section event with action "added"
+    assert len(body["sections"]) >= 1
+    section = next(s for s in body["sections"] if s["sectionName"] == "chorus")
+    assert section["action"] == "added"
+
+
+@pytest.mark.anyio
+async def test_timeline_section_removed_action(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+    db_session: AsyncSession,
+) -> None:
+    """Commit message 'removed verse' yields section event with action='removed'."""
+    from datetime import datetime, timezone
+
+    create = await client.post(
+        "/api/v1/musehub/repos",
+        json={"name": "section-removed"},
+        headers=auth_headers,
+    )
+    repo_id = create.json()["repoId"]
+
+    db_session.add(
+        MusehubCommit(
+            commit_id="cafe1234567890abcdef1234567890abcdef1234",
+            repo_id=repo_id,
+            branch="main",
+            parent_ids=[],
+            message="removed verse completely",
+            author="musician",
+            timestamp=datetime.now(tz=timezone.utc),
+        )
+    )
+    await db_session.commit()
+
+    response = await client.get(
+        f"/api/v1/musehub/repos/{repo_id}/timeline",
+        headers=auth_headers,
+    )
+    assert response.status_code == 200
+    sections = response.json()["sections"]
+    verse_events = [s for s in sections if s["sectionName"] == "verse"]
+    assert len(verse_events) >= 1
+    assert verse_events[0]["action"] == "removed"
+
+
+@pytest.mark.anyio
+async def test_timeline_track_events(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+    db_session: AsyncSession,
+) -> None:
+    """Commit message 'added bass' yields a track event with track_name='bass'."""
+    from datetime import datetime, timezone
+
+    create = await client.post(
+        "/api/v1/musehub/repos",
+        json={"name": "track-events"},
+        headers=auth_headers,
+    )
+    repo_id = create.json()["repoId"]
+
+    db_session.add(
+        MusehubCommit(
+            commit_id="babe5678901234abcdef1234567890abcdef1234",
+            repo_id=repo_id,
+            branch="main",
+            parent_ids=[],
+            message="added bass line",
+            author="musician",
+            timestamp=datetime.now(tz=timezone.utc),
+        )
+    )
+    await db_session.commit()
+
+    response = await client.get(
+        f"/api/v1/musehub/repos/{repo_id}/timeline",
+        headers=auth_headers,
+    )
+    assert response.status_code == 200
+    tracks = response.json()["tracks"]
+    bass_events = [t for t in tracks if t["trackName"] == "bass"]
+    assert len(bass_events) >= 1
+    assert bass_events[0]["action"] == "added"
+
+
+@pytest.mark.anyio
+async def test_timeline_requires_auth(client: AsyncClient) -> None:
+    """GET /musehub/repos/{repo_id}/timeline returns 401 without auth."""
+    response = await client.get("/api/v1/musehub/repos/any-id/timeline")
+    assert response.status_code == 401
+
+
+@pytest.mark.anyio
+async def test_timeline_404_for_unknown_repo(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+) -> None:
+    """GET /musehub/repos/{unknown}/timeline returns 404."""
+    response = await client.get(
+        "/api/v1/musehub/repos/does-not-exist/timeline",
+        headers=auth_headers,
+    )
+    assert response.status_code == 404
+
+
+
 
 
 @pytest.mark.anyio
@@ -526,434 +760,3 @@ async def test_divergence_endpoint_returns_422_for_empty_branch(
         headers=auth_headers,
     )
     assert response.status_code == 422
-
-
-
-# ---------------------------------------------------------------------------
-# GET /musehub/repos/{repo_id}/dag  (issue #229)
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.anyio
-async def test_graph_dag_endpoint_returns_empty_for_new_repo(
-    client: AsyncClient,
-    auth_headers: dict[str, str],
-) -> None:
-    """GET /dag returns empty nodes/edges for a repo with no commits."""
-    create = await client.post(
-        "/api/v1/musehub/repos",
-        json={"name": "dag-empty"},
-        headers=auth_headers,
-    )
-    repo_id = create.json()["repoId"]
-
-    response = await client.get(
-        f"/api/v1/musehub/repos/{repo_id}/dag",
-        headers=auth_headers,
-    )
-    assert response.status_code == 200
-    body = response.json()
-    assert body["nodes"] == []
-    assert body["edges"] == []
-    assert body["headCommitId"] is None
-
-
-@pytest.mark.anyio
-async def test_graph_dag_has_edges(
-    client: AsyncClient,
-    auth_headers: dict[str, str],
-    db_session: AsyncSession,
-) -> None:
-    """DAG endpoint returns correct edges representing parent relationships."""
-    from datetime import datetime, timezone, timedelta
-
-    create = await client.post(
-        "/api/v1/musehub/repos",
-        json={"name": "dag-edges"},
-        headers=auth_headers,
-    )
-    repo_id = create.json()["repoId"]
-
-    now = datetime.now(tz=timezone.utc)
-    root = MusehubCommit(
-        commit_id="root111",
-        repo_id=repo_id,
-        branch="main",
-        parent_ids=[],
-        message="root commit",
-        author="gabriel",
-        timestamp=now - timedelta(hours=2),
-    )
-    child = MusehubCommit(
-        commit_id="child222",
-        repo_id=repo_id,
-        branch="main",
-        parent_ids=["root111"],
-        message="child commit",
-        author="gabriel",
-        timestamp=now - timedelta(hours=1),
-    )
-    db_session.add_all([root, child])
-    await db_session.commit()
-
-    response = await client.get(
-        f"/api/v1/musehub/repos/{repo_id}/dag",
-        headers=auth_headers,
-    )
-    assert response.status_code == 200
-    body = response.json()
-    nodes = body["nodes"]
-    edges = body["edges"]
-
-    assert len(nodes) == 2
-    # Verify edge: child → root
-    assert any(e["source"] == "child222" and e["target"] == "root111" for e in edges)
-
-
-@pytest.mark.anyio
-async def test_graph_dag_endpoint_topological_order(
-    client: AsyncClient,
-    auth_headers: dict[str, str],
-    db_session: AsyncSession,
-) -> None:
-    """DAG endpoint returns nodes in topological order (oldest ancestor first)."""
-    from datetime import datetime, timezone, timedelta
-
-    create = await client.post(
-        "/api/v1/musehub/repos",
-        json={"name": "dag-topo"},
-        headers=auth_headers,
-    )
-    repo_id = create.json()["repoId"]
-
-    now = datetime.now(tz=timezone.utc)
-    commits = [
-        MusehubCommit(
-            commit_id="topo-a",
-            repo_id=repo_id,
-            branch="main",
-            parent_ids=[],
-            message="root",
-            author="gabriel",
-            timestamp=now - timedelta(hours=3),
-        ),
-        MusehubCommit(
-            commit_id="topo-b",
-            repo_id=repo_id,
-            branch="main",
-            parent_ids=["topo-a"],
-            message="second",
-            author="gabriel",
-            timestamp=now - timedelta(hours=2),
-        ),
-        MusehubCommit(
-            commit_id="topo-c",
-            repo_id=repo_id,
-            branch="main",
-            parent_ids=["topo-b"],
-            message="third",
-            author="gabriel",
-            timestamp=now - timedelta(hours=1),
-        ),
-    ]
-    db_session.add_all(commits)
-    await db_session.commit()
-
-    response = await client.get(
-        f"/api/v1/musehub/repos/{repo_id}/dag",
-        headers=auth_headers,
-    )
-    assert response.status_code == 200
-    node_ids = [n["commitId"] for n in response.json()["nodes"]]
-    # Root must appear before children in topological order
-    assert node_ids.index("topo-a") < node_ids.index("topo-b")
-    assert node_ids.index("topo-b") < node_ids.index("topo-c")
-
-
-@pytest.mark.anyio
-async def test_graph_dag_requires_auth(client: AsyncClient) -> None:
-    """GET /dag returns 401 without a Bearer token."""
-    response = await client.get("/api/v1/musehub/repos/any-repo/dag")
-    assert response.status_code == 401
-
-
-@pytest.mark.anyio
-async def test_graph_dag_404_for_unknown_repo(
-    client: AsyncClient,
-    auth_headers: dict[str, str],
-) -> None:
-    """GET /dag returns 404 for a non-existent repo."""
-    response = await client.get(
-        "/api/v1/musehub/repos/ghost-repo-dag/dag",
-        headers=auth_headers,
-    )
-    assert response.status_code == 404
-
-
-@pytest.mark.anyio
-async def test_graph_json_response_has_required_fields(
-    client: AsyncClient,
-    auth_headers: dict[str, str],
-    db_session: AsyncSession,
-) -> None:
-    """DAG JSON response includes nodes (with required fields) and edges arrays."""
-    from datetime import datetime, timezone
-
-    create = await client.post(
-        "/api/v1/musehub/repos",
-        json={"name": "dag-fields"},
-        headers=auth_headers,
-    )
-    repo_id = create.json()["repoId"]
-
-    db_session.add(
-        MusehubCommit(
-            commit_id="fields-aaa",
-            repo_id=repo_id,
-            branch="main",
-            parent_ids=[],
-            message="check fields",
-            author="tester",
-            timestamp=datetime.now(tz=timezone.utc),
-        )
-    )
-    await db_session.commit()
-
-    response = await client.get(
-        f"/api/v1/musehub/repos/{repo_id}/dag",
-        headers=auth_headers,
-    )
-    assert response.status_code == 200
-    body = response.json()
-    assert "nodes" in body
-    assert "edges" in body
-    assert "headCommitId" in body
-
-    node = body["nodes"][0]
-    for field in ("commitId", "message", "author", "timestamp", "branch", "parentIds", "isHead"):
-        assert field in node, f"Missing field '{field}' in DAG node"
-
-# ---------------------------------------------------------------------------
-# GET /musehub/repos/{repo_id}/credits
-# ---------------------------------------------------------------------------
-
-
-async def _seed_credits_repo(db_session: AsyncSession) -> str:
-    """Create a repo with commits from two distinct authors and return repo_id."""
-    from datetime import datetime, timezone, timedelta
-
-    repo = MusehubRepo(name="liner-notes", visibility="public", owner_user_id="producer-1")
-    db_session.add(repo)
-    await db_session.flush()
-    repo_id = str(repo.repo_id)
-
-    now = datetime.now(tz=timezone.utc)
-    # Alice: 2 commits (most prolific), most recent 1 day ago
-    db_session.add(
-        MusehubCommit(
-            commit_id="alice-001",
-            repo_id=repo_id,
-            branch="main",
-            parent_ids=[],
-            message="compose the main melody",
-            author="Alice",
-            timestamp=now - timedelta(days=3),
-        )
-    )
-    db_session.add(
-        MusehubCommit(
-            commit_id="alice-002",
-            repo_id=repo_id,
-            branch="main",
-            parent_ids=["alice-001"],
-            message="mix the final arrangement",
-            author="Alice",
-            timestamp=now - timedelta(days=1),
-        )
-    )
-    # Bob: 1 commit, last active 5 days ago
-    db_session.add(
-        MusehubCommit(
-            commit_id="bob-001",
-            repo_id=repo_id,
-            branch="main",
-            parent_ids=[],
-            message="arrange the bridge section",
-            author="Bob",
-            timestamp=now - timedelta(days=5),
-        )
-    )
-    await db_session.commit()
-    return repo_id
-
-
-@pytest.mark.anyio
-async def test_credits_aggregation(
-    client: AsyncClient,
-    db_session: AsyncSession,
-    auth_headers: dict[str, str],
-) -> None:
-    """GET /api/v1/musehub/repos/{repo_id}/credits aggregates contributors from commits."""
-    repo_id = await _seed_credits_repo(db_session)
-    response = await client.get(
-        f"/api/v1/musehub/repos/{repo_id}/credits",
-        headers=auth_headers,
-    )
-    assert response.status_code == 200
-    body = response.json()
-    assert body["totalContributors"] == 2
-    authors = {c["author"] for c in body["contributors"]}
-    assert "Alice" in authors
-    assert "Bob" in authors
-
-
-@pytest.mark.anyio
-async def test_credits_sorted_by_count(
-    client: AsyncClient,
-    db_session: AsyncSession,
-    auth_headers: dict[str, str],
-) -> None:
-    """Default sort (count) puts the most prolific contributor first."""
-    repo_id = await _seed_credits_repo(db_session)
-    response = await client.get(
-        f"/api/v1/musehub/repos/{repo_id}/credits?sort=count",
-        headers=auth_headers,
-    )
-    assert response.status_code == 200
-    contributors = response.json()["contributors"]
-    assert contributors[0]["author"] == "Alice"
-    assert contributors[0]["sessionCount"] == 2
-
-
-@pytest.mark.anyio
-async def test_credits_sorted_by_recency(
-    client: AsyncClient,
-    db_session: AsyncSession,
-    auth_headers: dict[str, str],
-) -> None:
-    """sort=recency puts the most recently active contributor first."""
-    repo_id = await _seed_credits_repo(db_session)
-    response = await client.get(
-        f"/api/v1/musehub/repos/{repo_id}/credits?sort=recency",
-        headers=auth_headers,
-    )
-    assert response.status_code == 200
-    contributors = response.json()["contributors"]
-    # Alice has a commit 1 day ago; Bob's last was 5 days ago
-    assert contributors[0]["author"] == "Alice"
-
-
-@pytest.mark.anyio
-async def test_credits_sorted_by_alpha(
-    client: AsyncClient,
-    db_session: AsyncSession,
-    auth_headers: dict[str, str],
-) -> None:
-    """sort=alpha returns contributors in alphabetical order."""
-    repo_id = await _seed_credits_repo(db_session)
-    response = await client.get(
-        f"/api/v1/musehub/repos/{repo_id}/credits?sort=alpha",
-        headers=auth_headers,
-    )
-    assert response.status_code == 200
-    contributors = response.json()["contributors"]
-    authors = [c["author"] for c in contributors]
-    assert authors == sorted(authors, key=str.lower)
-
-
-@pytest.mark.anyio
-async def test_credits_contribution_types_inferred(
-    client: AsyncClient,
-    db_session: AsyncSession,
-    auth_headers: dict[str, str],
-) -> None:
-    """Contribution types are inferred from commit messages."""
-    repo_id = await _seed_credits_repo(db_session)
-    response = await client.get(
-        f"/api/v1/musehub/repos/{repo_id}/credits",
-        headers=auth_headers,
-    )
-    assert response.status_code == 200
-    contributors = response.json()["contributors"]
-    alice = next(c for c in contributors if c["author"] == "Alice")
-    # Alice's commits mention "compose" and "mix"
-    types = set(alice["contributionTypes"])
-    assert len(types) > 0
-
-
-@pytest.mark.anyio
-async def test_credits_404_for_unknown_repo(
-    client: AsyncClient,
-    auth_headers: dict[str, str],
-) -> None:
-    """GET /api/v1/musehub/repos/{unknown}/credits returns 404."""
-    response = await client.get(
-        "/api/v1/musehub/repos/does-not-exist/credits",
-        headers=auth_headers,
-    )
-    assert response.status_code == 404
-
-
-@pytest.mark.anyio
-async def test_credits_requires_auth(
-    client: AsyncClient,
-    db_session: AsyncSession,
-) -> None:
-    """GET /api/v1/musehub/repos/{repo_id}/credits returns 401 without JWT."""
-    repo = MusehubRepo(name="auth-test-repo", visibility="private", owner_user_id="u1")
-    db_session.add(repo)
-    await db_session.commit()
-    await db_session.refresh(repo)
-    response = await client.get(f"/api/v1/musehub/repos/{repo.repo_id}/credits")
-    assert response.status_code == 401
-
-
-@pytest.mark.anyio
-async def test_credits_invalid_sort_param(
-    client: AsyncClient,
-    db_session: AsyncSession,
-    auth_headers: dict[str, str],
-) -> None:
-    """GET /api/v1/musehub/repos/{repo_id}/credits with invalid sort returns 422."""
-    repo = MusehubRepo(name="sort-test", visibility="private", owner_user_id="u1")
-    db_session.add(repo)
-    await db_session.commit()
-    await db_session.refresh(repo)
-    response = await client.get(
-        f"/api/v1/musehub/repos/{repo.repo_id}/credits?sort=invalid",
-        headers=auth_headers,
-    )
-    assert response.status_code == 422
-
-
-@pytest.mark.anyio
-async def test_credits_aggregation_service_direct(db_session: AsyncSession) -> None:
-    """musehub_credits.aggregate_credits() returns correct data without HTTP layer."""
-    from datetime import datetime, timezone
-
-    from maestro.services import musehub_credits
-
-    repo = MusehubRepo(name="direct-test", visibility="private", owner_user_id="u1")
-    db_session.add(repo)
-    await db_session.flush()
-    repo_id = str(repo.repo_id)
-
-    now = datetime.now(tz=timezone.utc)
-    db_session.add(
-        MusehubCommit(
-            commit_id="svc-001",
-            repo_id=repo_id,
-            branch="main",
-            parent_ids=[],
-            message="produce and mix the drop",
-            author="Charlie",
-            timestamp=now,
-        )
-    )
-    await db_session.commit()
-
-    result = await musehub_credits.aggregate_credits(db_session, repo_id, sort="count")
-    assert result.total_contributors == 1
-    assert result.contributors[0].author == "Charlie"
-    assert result.contributors[0].session_count == 1
-

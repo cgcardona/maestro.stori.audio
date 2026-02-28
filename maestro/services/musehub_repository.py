@@ -836,7 +836,10 @@ def _to_session_response(s: db.MusehubSession) -> SessionResponse:
     """Compute derived fields and return a SessionResponse."""
     duration: float | None = None
     if s.ended_at is not None:
-        duration = (s.ended_at - s.started_at).total_seconds()
+        # Normalize to offset-naive UTC before subtraction (SQLite strips tz info on round-trip)
+        ended = s.ended_at.replace(tzinfo=None) if s.ended_at.tzinfo else s.ended_at
+        started = s.started_at.replace(tzinfo=None) if s.started_at.tzinfo else s.started_at
+        duration = (ended - started).total_seconds()
     return SessionResponse(
         session_id=s.session_id,
         started_at=s.started_at,
@@ -919,7 +922,7 @@ async def list_sessions(
     result = await session.execute(
         select(db.MusehubSession)
         .where(db.MusehubSession.repo_id == repo_id)
-        .order_by(db.MusehubSession.started_at.desc())
+        .order_by(db.MusehubSession.is_active.desc(), db.MusehubSession.started_at.desc())
         .limit(limit)
         .offset(offset)
     )

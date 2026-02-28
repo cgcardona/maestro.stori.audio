@@ -1,8 +1,8 @@
 """Muse Hub route package.
 
 Composes sub-routers for repos/branches/commits, issue tracking, pull
-requests, and the push/pull sync protocol under the shared ``/musehub``
-prefix. Registered in ``maestro.main`` as:
+requests, releases, and the push/pull sync protocol under the shared
+``/musehub`` prefix. Registered in ``maestro.main`` as:
 
     app.include_router(musehub.router, prefix="/api/v1", tags=["musehub"])
 

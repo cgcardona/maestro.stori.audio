@@ -112,10 +112,10 @@ def extract_features_from_message(message: str) -> MusicalFeatures:
     # --- Key detection (two-pass: prefer key+mode match over key alone) ---
     # Pass 1: key immediately followed by mode word (e.g. "Db major", "A minor").
     key_mode_pattern = re.compile(
-        r"([A-Ga-g][b#]?)\s+(major|minor|maj|min|dorian|mixolydian|lydian|phrygian|locrian)"
+        r"\b([A-Ga-g][b#]?)\s+(major|minor|maj|min|dorian|mixolydian|lydian|phrygian|locrian)\b"
     )
     # Pass 2: standalone key letter at word boundary (no mode info present).
-    key_only_pattern = re.compile(r"([A-Ga-g][b#]?)")
+    key_only_pattern = re.compile(r"\b([A-Ga-g][b#]?)\b")
 
     matched_key = False
     for match in key_mode_pattern.finditer(message):
