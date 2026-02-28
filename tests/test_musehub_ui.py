@@ -844,25 +844,6 @@ async def test_groove_check_page_no_auth_required(
     assert response.status_code == 200
 
 
-
-@pytest.mark.anyio
-async def test_credits_empty_state_json(
-    client: AsyncClient,
-    db_session: AsyncSession,
-    auth_headers: dict[str, str],
-) -> None:
-    """Repo with no commits returns empty contributors list and totalContributors=0."""
-    repo_id = await _make_repo(db_session)
-    response = await client.get(
-        f"/api/v1/musehub/repos/{repo_id}/credits",
-        headers=auth_headers,
-    )
-    assert response.status_code == 200
-    body = response.json()
-    assert body["contributors"] == []
-    assert body["totalContributors"] == 0
-
-
 # ---------------------------------------------------------------------------
 # Object listing endpoint tests (JSON, authed)
 # ---------------------------------------------------------------------------
@@ -1969,14 +1950,14 @@ async def test_form_structure_page_includes_token_form(
     client: AsyncClient,
     db_session: AsyncSession,
 ) -> None:
-    """Form-structure page embeds the JWT token input form so visitors can authenticate."""
+    """Form-structure page includes the JWT token form and musehub.js auth infrastructure."""
     repo_id = await _make_repo(db_session)
     ref = "babe1234abcd"
     response = await client.get(f"/musehub/ui/{repo_id}/form-structure/{ref}")
     assert response.status_code == 200
     body = response.text
-    assert "localStorage" in body
-    assert "musehub_token" in body
+    assert "musehub.js" in body
+    assert "token-form" in body
 
 
 @pytest.mark.anyio

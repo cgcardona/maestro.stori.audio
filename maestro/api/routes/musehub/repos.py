@@ -23,7 +23,7 @@ from __future__ import annotations
 
 import logging
 
-import yaml  # type: ignore[import-untyped]  # PyYAML ships no py.typed marker
+import yaml  # PyYAML ships no py.typed marker
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
