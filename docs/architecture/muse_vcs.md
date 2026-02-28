@@ -2445,7 +2445,6 @@ drift out of sync.
 | `muse swing` | `commands/swing.py` | ✅ stub (PR #131) | #121 |
 | `muse recall` | `commands/recall.py` | ✅ stub (PR #135) | #122 |
 | `muse tag` | `commands/tag.py` | ✅ implemented (PR #133) | #123 |
-| `muse tempo-scale` | `commands/tempo_scale.py` | ✅ stub (PR open) | #111 |
 | `muse grep` | `commands/grep_cmd.py` | ✅ stub (PR #128) | #124 |
 | `muse describe` | `commands/describe.py` | ✅ stub (PR #134) | #125 |
 | `muse ask` | `commands/ask.py` | ✅ stub (PR #132) | #126 |
@@ -2838,8 +2837,173 @@ An AI deciding which branch to merge calls `muse divergence feature/guitar featu
 before generation.  HIGH harmonic divergence + LOW rhythmic divergence means lean on the piano
 branch for chord voicings while preserving the guitar branch's groove patterns.
 
+### `muse timeline`
+
+**Purpose:** Render a commit-by-commit chronological view of a composition's
+creative arc — emotion transitions, section progress, and per-track activity.
+This is the "album liner notes" view that no Git command provides.  Agents
+use it to understand how a project's emotional and structural character
+evolved before making generation decisions.
+
+**Usage:**
+```bash
+muse timeline [RANGE] [OPTIONS]
+```
+
+**Flags:**
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `RANGE` | positional string | full history | Commit range (reserved — full history shown for now) |
+| `--emotion` | flag | off | Add emotion column (from `emotion:*` tags) |
+| `--sections` | flag | off | Group commits under section headers (from `section:*` tags) |
+| `--tracks` | flag | off | Show per-track activity column (from `track:*` tags) |
+| `--json` | flag | off | Emit structured JSON for UI rendering or agent consumption |
+| `--limit N` | int | 1000 | Maximum commits to walk |
+
+**Output example (text):**
+```
+Timeline — branch: main  (3 commit(s))
+
+  ── verse ──
+2026-02-01  abc1234  Initial drum arrangement    [drums]        [melancholic]  ████
+2026-02-02  def5678  Add bass line               [bass]         [melancholic]  ██████
+  ── chorus ──
+2026-02-03  ghi9012  Chorus melody               [keys,vocals]  [joyful]       █████████
+
+Emotion arc: melancholic → joyful
+Sections:    verse → chorus
+```
+
+**Output example (JSON):**
+```json
+{
+  "branch": "main",
+  "total_commits": 3,
+  "emotion_arc": ["melancholic", "joyful"],
+  "section_order": ["verse", "chorus"],
+  "entries": [
+    {
+      "commit_id": "abc1234...",
+      "short_id": "abc1234",
+      "committed_at": "2026-02-01T00:00:00+00:00",
+      "message": "Initial drum arrangement",
+      "emotion": "melancholic",
+      "sections": ["verse"],
+      "tracks": ["drums"],
+      "activity": 1
+    }
+  ]
+}
+```
+
+**Result types:** `MuseTimelineEntry`, `MuseTimelineResult` — see `docs/reference/type_contracts.md § Muse Timeline Types`.
+
+**Agent use case:** An AI agent calls `muse timeline --json` before composing a new
+section to understand the emotional arc to date (e.g. `melancholic → joyful → tense`).
+It uses `section_order` to determine what structural elements have been established
+and `emotion_arc` to decide whether to maintain or contrast the current emotional
+character.  `activity` per commit helps identify which sections were most actively
+developed.
+
+**Implementation note:** Emotion, section, and track data are derived entirely from
+tags attached via `muse tag add`.  Commits with no tags show `—` in filtered columns.
+The commit range argument (`RANGE`) is accepted but reserved for a future iteration
+that supports `HEAD~10..HEAD` syntax.
+
 ---
 
+### `muse validate`
+
+**Purpose:** Run integrity checks against the working tree before `muse commit`.
+Detects corrupted MIDI files, manifest mismatches, duplicate instrument roles,
+non-conformant section names, and unknown emotion tags — giving agents and
+producers an actionable quality gate before bad state enters history.
+
+**Status:** ✅ Fully implemented (issue #99)
+
+**Usage:**
+```bash
+muse validate [OPTIONS]
+```
+
+**Flags:**
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--strict` | flag | off | Exit 2 on warnings as well as errors. |
+| `--track TEXT` | string | — | Restrict checks to files/paths containing TEXT (case-insensitive). |
+| `--section TEXT` | string | — | Restrict section-naming check to directories containing TEXT. |
+| `--fix` | flag | off | Auto-fix correctable issues (conservative; no data-loss risk). |
+| `--json` | flag | off | Emit full structured JSON for agent consumption. |
+
+**Exit codes:**
+
+| Code | Meaning |
+|------|---------|
+| 0 | All checks passed — working tree is clean. |
+| 1 | One or more ERROR issues found (corrupted MIDI, orphaned files). |
+| 2 | WARN issues found AND `--strict` was passed. |
+| 3 | Internal error (unexpected exception). |
+
+**Checks performed:**
+
+| Check | Severity | Description |
+|-------|----------|-------------|
+| `midi_integrity` | ERROR | Verifies each `.mid`/`.midi` has a valid SMF `MThd` header. |
+| `manifest_consistency` | ERROR/WARN | Compares committed snapshot manifest vs actual working tree. |
+| `no_duplicate_tracks` | WARN | Detects multiple MIDI files sharing the same instrument role. |
+| `section_naming` | WARN | Verifies section dirs match `[a-z][a-z0-9_-]*`. |
+| `emotion_tags` | WARN | Checks emotion tags (`.muse/tags.json`) against the allowed vocabulary. |
+
+**Output example (human-readable):**
+```
+Validating working tree …
+
+  ✅ midi_integrity              PASS
+  ❌ manifest_consistency        FAIL
+       ❌ ERROR   beat.mid  File in committed manifest is missing from working tree.
+  ✅ no_duplicate_tracks         PASS
+  ⚠️  section_naming             WARN
+       ⚠️  WARN   Verse  Section directory 'Verse' does not follow naming convention.
+  ✅ emotion_tags                PASS
+
+⚠️  1 error, 1 warning — working tree has integrity issues.
+```
+
+**Output example (`--json`):**
+```json
+{
+  "clean": false,
+  "has_errors": true,
+  "has_warnings": true,
+  "checks": [
+    { "name": "midi_integrity", "passed": true, "issues": [] },
+    {
+      "name": "manifest_consistency",
+      "passed": false,
+      "issues": [
+        {
+          "severity": "error",
+          "check": "manifest_consistency",
+          "path": "beat.mid",
+          "message": "File in committed manifest is missing from working tree (orphaned)."
+        }
+      ]
+    }
+  ],
+  "fixes_applied": []
+}
+```
+
+**Result types:** `MuseValidateResult`, `ValidationCheckResult`, `ValidationIssue`, `ValidationSeverity`
+— all defined in `maestro/services/muse_validate.py` and registered in `docs/reference/type_contracts.md`.
+
+**Agent use case:** An AI composition agent calls `muse validate --json` before every
+`muse commit` to confirm the working tree is consistent. If `has_errors` is true the agent
+must investigate the failing check before committing — a corrupted MIDI would silently
+corrupt the composition history. With `--strict`, agents can enforce zero-warning quality gates.
+
+---
 ## `muse diff` — Music-Dimension Diff Between Commits
 
 **Purpose:** Compare two commits across five orthogonal musical dimensions —
@@ -3161,7 +3325,9 @@ arguments (`USER_ERROR`), 2 outside repo (`REPO_NOT_FOUND`), 3 internal error
 | `muse session` | `commands/session.py` | ✅ implemented (PR #129) | #127 |
 | `muse swing` | `commands/swing.py` | ✅ stub (PR #131) | #121 |
 | `muse tag` | `commands/tag.py` | ✅ implemented (PR #133) | #123 |
+| `muse timeline` | `commands/timeline.py` | ✅ implemented (PR #TBD) | #97 |
 | `muse tempo-scale` | `commands/tempo_scale.py` | ✅ stub (PR open) | #111 |
+| `muse validate` | `commands/validate.py` | ✅ implemented (PR #TBD) | #99 |
 
 All stub commands have stable CLI contracts. Full musical analysis (MIDI content
 parsing, vector embeddings, LLM synthesis) is tracked as follow-up issues.

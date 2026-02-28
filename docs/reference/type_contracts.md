@@ -25,6 +25,7 @@ This document is the single source of truth for every named entity (TypedDict, d
    - [ExpressivenessResult](#expressivenessresult)
    - [MuseTempoResult](#musetemporesult)
    - [MuseTempoHistoryEntry](#musetemopohistoryentry)
+   - [Muse Validate Types](#muse-validate-types)
    - [GrooveStatus](#groovestatuss)
    - [CommitGrooveMetrics](#commitgroovemetrics)
    - [GrooveCheckResult](#groovecheckresult)
@@ -1106,6 +1107,65 @@ On failure: `success=False` plus `error` (and optionally `message`).
 | `message` | `str` | Commit message |
 | `effective_bpm` | `float \| None` | Annotated BPM for this commit, or `None` |
 | `delta_bpm` | `float \| None` | Signed BPM change vs. the previous (older) commit; `None` for the oldest commit |
+
+---
+
+### Muse Validate Types
+
+**Path:** `maestro/services/muse_validate.py`
+
+#### `ValidationSeverity`
+
+`str, Enum` — Severity level for a single validation finding.
+
+| Value | Meaning |
+|-------|---------|
+| `"error"` | Blocking issue — must be resolved before `muse commit`. |
+| `"warn"` | Advisory issue — becomes blocking under `--strict`. |
+| `"info"` | Informational only — never blocks commit. |
+
+#### `ValidationIssue`
+
+`dataclass` — A single finding produced by one validation check.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `severity` | `ValidationSeverity` | How serious the finding is. |
+| `check` | `str` | Name of the check that produced this issue (e.g. `"midi_integrity"`). |
+| `path` | `str` | Relative path to the file or directory involved. |
+| `message` | `str` | Human-readable description of the problem. |
+
+`.to_dict()` → `dict[str, str]` — JSON-serialisable representation.
+
+#### `ValidationCheckResult`
+
+`dataclass` — Outcome of one named check category.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `name` | `str` | Check identifier (e.g. `"midi_integrity"`). |
+| `passed` | `bool` | `True` iff `issues` is empty for this check. |
+| `issues` | `list[ValidationIssue]` | All findings from this check. |
+
+`.to_dict()` → `dict[str, object]` — JSON-serialisable representation.
+
+#### `MuseValidateResult`
+
+`dataclass` — Aggregated result of all validation checks.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `clean` | `bool` | `True` iff no issues of any severity were found. |
+| `has_errors` | `bool` | `True` iff at least one ERROR issue was found. |
+| `has_warnings` | `bool` | `True` iff at least one WARN issue was found. |
+| `checks` | `list[ValidationCheckResult]` | One result per check category, in run order. |
+| `fixes_applied` | `list[str]` | Human-readable descriptions of auto-fixes applied. |
+
+`.to_dict()` → `dict[str, object]` — Full JSON-serialisable tree (nested).
+
+**Agent contract:** Call `run_validate(root, ...)` to get a `MuseValidateResult`.
+Inspect `has_errors` before calling `muse commit`. Use `--json` in the CLI for
+structured output that can be parsed by downstream agents.
 
 ---
 
@@ -4703,3 +4763,44 @@ or smoother (stepwise) between two points in history.
 
 **Producer:** `_contour_compare_async()`
 **Consumer:** `_format_compare()`
+
+---
+
+## Muse Timeline Types
+
+Defined in `maestro/services/muse_timeline.py`.
+
+### `MuseTimelineEntry`
+
+A single commit in the chronological musical timeline.
+Music-semantic fields are derived from tags attached via `muse tag add`.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `commit_id` | `str` | Full 64-char commit hash. |
+| `short_id` | `str` | First 7 characters for display. |
+| `committed_at` | `datetime` | Commit timestamp (UTC). |
+| `message` | `str` | Human-authored commit message. |
+| `emotion` | `str \| None` | First `emotion:*` tag value (prefix stripped), or `None`. |
+| `sections` | `tuple[str, ...]` | All `section:*` tag values (prefix stripped). |
+| `tracks` | `tuple[str, ...]` | All `track:*` tag values (prefix stripped). |
+| `activity` | `int` | Number of tracks modified; 1 when no track tags present. |
+
+### `MuseTimelineResult`
+
+Full chronological timeline for a single repository branch.
+Returned by `build_timeline()` in `maestro/services/muse_timeline.py`.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `entries` | `tuple[MuseTimelineEntry, ...]` | Timeline entries, oldest-first. |
+| `branch` | `str` | Branch name this timeline was built from. |
+| `emotion_arc` | `tuple[str, ...]` | Ordered unique emotion labels (oldest first). |
+| `section_order` | `tuple[str, ...]` | Ordered unique section names (oldest first). |
+| `total_commits` | `int` | Total number of commits in the timeline. |
+
+**Agent use case:** An AI agent calls `muse timeline --json` and inspects
+`emotion_arc` to understand how the composition's emotional character has
+evolved.  `section_order` maps the structural progression of the piece.
+`entries[*].activity` can be used to weight which commits had the most
+musical change — useful for selecting seed material for generation.
