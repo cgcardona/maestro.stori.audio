@@ -4,8 +4,8 @@ Entry point for the ``muse`` console script. Registers all MVP
 subcommands (amend, arrange, ask, checkout, chord-map, commit, commit-tree,
 context, contour, describe, diff, divergence, dynamics, export, find, form,
 grep, groove-check, humanize, import, init, inspect, key, log, merge, meter,
-open, play, pull, push, recall, remote, render-preview, reset, revert, session,
-similarity, status, swing, tag, tempo, tempo-scale, timeline,
+open, play, pull, push, recall, remote, render-preview, reset, resolve, revert,
+session, similarity, status, swing, tag, tempo, tempo-scale, timeline,
 validate) as Typer sub-applications.
 """
 from __future__ import annotations
@@ -47,6 +47,7 @@ from maestro.muse_cli.commands import (
     remote,
     render_preview,
     reset,
+    resolve,
     revert,
     session,
     similarity,
@@ -107,6 +108,7 @@ cli.add_typer(context.app, name="context", help="Output structured musical conte
 cli.add_typer(divergence.app, name="divergence", help="Show how two branches have diverged musically.")
 cli.add_typer(render_preview.app, name="render-preview", help="Generate an audio preview of a commit's snapshot.")
 cli.add_typer(reset.app, name="reset", help="Reset the branch pointer to a prior commit.")
+cli.add_typer(resolve.app, name="resolve", help="Mark a conflicted file as resolved (--ours or --theirs).")
 cli.add_typer(groove_check.app, name="groove-check", help="Analyze rhythmic drift across commits to find groove regressions.")
 cli.add_typer(form.app, name="form", help="Analyze or annotate the formal structure (sections) of a commit.")
 cli.add_typer(similarity.app, name="similarity", help="Compare two commits by musical similarity score.")
