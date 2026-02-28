@@ -576,20 +576,11 @@ async def test_embed_page_contains_player_ui(
     assert "audio" in body
     assert repo_id in body
 
+# ---------------------------------------------------------------------------
+# Credits page tests (issue #241 — pre-existing from dev, fixed here)
+# ---------------------------------------------------------------------------
 
-@pytest.mark.anyio
-@pytest.mark.anyio
-@pytest.mark.anyio
-@pytest.mark.anyio
-@pytest.mark.anyio
-@pytest.mark.anyio
-@pytest.mark.anyio
-@pytest.mark.anyio
-@pytest.mark.anyio
-@pytest.mark.anyio
-@pytest.mark.anyio
-@pytest.mark.anyio
-@pytest.mark.anyio
+
 @pytest.mark.anyio
 async def test_credits_page_renders(
     client: AsyncClient,
@@ -598,6 +589,10 @@ async def test_credits_page_renders(
     """GET /musehub/ui/{repo_id}/credits returns 200 HTML without requiring a JWT."""
     repo_id = await _make_repo(db_session)
     response = await client.get("/musehub/ui/testuser/test-beats/credits")
+    assert response.status_code == 200
+    assert "text/html" in response.headers["content-type"]
+    body = response.text
+    assert "Muse Hub" in body
 
 
 @pytest.mark.anyio
@@ -655,14 +650,6 @@ async def test_credits_no_auth_required(
     assert response.status_code != 401
 
 
-@pytest.mark.anyio
-
-
-@pytest.mark.anyio
-
-
-@pytest.mark.anyio
-
 
 # ---------------------------------------------------------------------------
 # Object listing endpoint tests (JSON, authed)
@@ -703,6 +690,12 @@ async def test_graph_no_auth_required(
     response = await client.get("/musehub/ui/testuser/test-beats/graph")
     assert response.status_code == 200
     assert response.status_code != 401
+
+
+
+# ---------------------------------------------------------------------------
+# User profile page tests (issue #233 — pre-existing from dev, fixed here)
+# ---------------------------------------------------------------------------
 
 
 @pytest.mark.anyio
@@ -1767,3 +1760,88 @@ async def test_analysis_dashboard_card_links_to_dimensions(
     assert "/analysis/" in body
 
 
+
+
+# ---------------------------------------------------------------------------
+# Motifs browser page — issue #224
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.anyio
+async def test_motifs_page_renders(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """GET /musehub/ui/{owner}/{repo_slug}/analysis/{ref}/motifs returns 200 HTML."""
+    repo_id = await _make_repo(db_session)
+    response = await client.get("/musehub/ui/testuser/test-beats/analysis/main/motifs")
+    assert response.status_code == 200
+    assert "text/html" in response.headers["content-type"]
+    body = response.text
+    assert "Muse Hub" in body
+
+
+@pytest.mark.anyio
+async def test_motifs_page_no_auth_required(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Motifs UI page must be accessible without an Authorization header."""
+    repo_id = await _make_repo(db_session)
+    response = await client.get("/musehub/ui/testuser/test-beats/analysis/main/motifs")
+    assert response.status_code == 200
+    assert response.status_code != 401
+
+
+@pytest.mark.anyio
+async def test_motifs_page_contains_filter_ui(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Motifs page embeds client-side track and section filter controls."""
+    repo_id = await _make_repo(db_session)
+    response = await client.get("/musehub/ui/testuser/test-beats/analysis/main/motifs")
+    assert response.status_code == 200
+    body = response.text
+    assert "track-filter" in body
+    assert "section-filter" in body
+
+
+@pytest.mark.anyio
+async def test_motifs_page_contains_piano_roll_renderer(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Motifs page embeds the piano roll renderer JavaScript function."""
+    repo_id = await _make_repo(db_session)
+    response = await client.get("/musehub/ui/testuser/test-beats/analysis/main/motifs")
+    assert response.status_code == 200
+    body = response.text
+    assert "pianoRollHtml" in body
+
+
+@pytest.mark.anyio
+async def test_motifs_page_contains_recurrence_grid(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Motifs page embeds the recurrence grid (heatmap) renderer."""
+    repo_id = await _make_repo(db_session)
+    response = await client.get("/musehub/ui/testuser/test-beats/analysis/main/motifs")
+    assert response.status_code == 200
+    body = response.text
+    assert "recurrenceGridHtml" in body
+
+
+@pytest.mark.anyio
+async def test_motifs_page_shows_transformation_badges(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Motifs page includes transformation badge renderer for inversion/retrograde labels."""
+    repo_id = await _make_repo(db_session)
+    response = await client.get("/musehub/ui/testuser/test-beats/analysis/main/motifs")
+    assert response.status_code == 200
+    body = response.text
+    assert "transformationsHtml" in body
+    assert "inversion" in body

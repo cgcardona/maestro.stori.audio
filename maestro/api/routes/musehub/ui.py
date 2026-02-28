@@ -38,6 +38,7 @@ Endpoint summary (repo-scoped):
   GET /musehub/ui/{owner}/{repo_slug}/analysis/{ref}/contour    -- melodic contour analysis
   GET /musehub/ui/{owner}/{repo_slug}/analysis/{ref}/tempo      -- tempo analysis
   GET /musehub/ui/{owner}/{repo_slug}/analysis/{ref}/dynamics   -- dynamics analysis
+  GET /musehub/ui/{owner}/{repo_slug}/analysis/{ref}/motifs     -- motif browser (recurring patterns, transformations)
 
 These routes require NO JWT auth -- they return HTML shells whose embedded
 JavaScript fetches data from the authed JSON API (``/api/v1/musehub/...``)
@@ -633,6 +634,50 @@ async def search_page(
             "current_page": "search",
         },
     )
+
+
+@router.get(
+    "/{owner}/{repo_slug}/analysis/{ref}/motifs",
+    response_class=HTMLResponse,
+    summary="Muse Hub motif browser page",
+)
+async def motifs_page(
+    request: Request,
+    owner: str,
+    repo_slug: str,
+    ref: str,
+    db: AsyncSession = Depends(get_db),
+) -> HTMLResponse:
+    """Render the motif browser for a given commit ref.
+
+    Fetches ``GET /api/v1/musehub/repos/{repo_id}/analysis/{ref}/motifs``
+    and renders:
+    - All detected motifs with interval pattern and occurrence count
+    - Mini piano roll visualising the note pattern for each motif
+    - Contour label (arch, valley, oscillating, etc.)
+    - Transformation badges (inversion, retrograde, transposition)
+    - Motif recurrence grid (tracks x sections heatmap)
+    - Cross-track sharing indicators
+    - Track and section filters
+
+    Auth is handled client-side via localStorage JWT, matching all other UI
+    pages.  No JWT is required to render the HTML shell.
+    """
+    repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
+    return templates.TemplateResponse(
+        request,
+        "musehub/pages/motifs.html",
+        {
+            "owner": owner,
+            "repo_slug": repo_slug,
+            "repo_id": repo_id,
+            "ref": ref,
+            "base_url": base_url,
+            "current_page": "analysis",
+        },
+    )
+
+
 
 
 @router.get(
