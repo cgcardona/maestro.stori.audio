@@ -14,8 +14,8 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Textfrom sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.types import JSON
 
 from maestro.db.database import Base
@@ -233,6 +233,9 @@ class MusehubProfile(Base):
     )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=_utc_now, onupdate=_utc_now
+    )
+
+
 class MusehubWebhook(Base):
     """A registered webhook subscription for a Muse Hub repo.
 
