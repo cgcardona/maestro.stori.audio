@@ -76,12 +76,12 @@ cd "$REPO"
 DEV_SHA=$(git rev-parse dev)
 
 # --- define PRs ---
-# Batch: #166–#169 (timeline, render-preview, amend, revert)
+# Batch: #170–#173 (show, reset, pathlib fix, Muse Hub web UI)
 declare -a PRS=(
-  "166|feat: muse timeline — visualize musical evolution chronologically"
-  "167|feat: muse render-preview [<commit>] — generate an audio preview of a commit's snapshot"
-  "168|feat: muse amend — amend the most recent commit"
-  "169|feat: muse revert <commit> — create a new commit that undoes a prior commit"
+  "170|feat: muse show <commit> — music-aware commit inspection"
+  "171|feat: muse reset <commit> — reset branch pointer to a prior commit"
+  "172|fix: remove bare import pathlib from status.py + status already dropped from STUB_COMMANDS"
+  "173|feat: Muse Hub web UI — artifact browsing, commit viewer, PR and issue pages"
 )
 
 # --- create worktrees + task files ---
