@@ -21,7 +21,10 @@ This document is the single source of truth for every named entity (TypedDict, d
    - [Assets (`maestro/services/assets.py`)](#assets)
    - [StorpheusRawResponse](#storpheusrawresponse)
    - [SampleChange](#samplechange)
+   - [Muse Divergence Types](#muse-divergence-types)
    - [ExpressivenessResult](#expressivenessresult)
+   - [MuseTempoResult](#musetemporesult)
+   - [MuseTempoHistoryEntry](#musetemopohistoryentry)
 5. [Variation Layer (`app/variation/`)](#variation-layer)
    - [Event Envelope payloads](#event-envelope-payloads)
    - [PhraseRecord](#phraserecord)
@@ -1002,6 +1005,56 @@ On failure: `success=False` plus `error` (and optionally `message`).
 
 ---
 
+### Muse Divergence Types
+
+**Path:** `maestro/services/muse_divergence.py`
+
+#### `DivergenceLevel`
+
+`str, Enum` — Qualitative label for a per-dimension or overall divergence score.
+
+| Value | Score Range | Meaning |
+|-------|-------------|---------|
+| `"none"` | < 0.15 | No meaningful divergence |
+| `"low"` | 0.15 – 0.40 | Minor divergence, mostly aligned |
+| `"med"` | 0.40 – 0.70 | Moderate divergence, different directions |
+| `"high"` | ≥ 0.70 | High divergence, completely different creative paths |
+
+#### `DimensionDivergence`
+
+`dataclass(frozen=True)` — Divergence score and human description for a single musical dimension.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `dimension` | `str` | Dimension name: `"melodic"`, `"harmonic"`, `"rhythmic"`, `"structural"`, or `"dynamic"` |
+| `level` | `DivergenceLevel` | Qualitative level label |
+| `score` | `float` | Normalised score in [0.0, 1.0] — `|sym_diff| / |union|` over classified paths |
+| `description` | `str` | Human-readable summary of the divergence |
+| `branch_a_summary` | `str` | E.g. `"2 melodic file(s) changed"` |
+| `branch_b_summary` | `str` | E.g. `"0 melodic file(s) changed"` |
+
+#### `MuseDivergenceResult`
+
+`dataclass(frozen=True)` — Full musical divergence report between two CLI branches.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `branch_a` | `str` | Name of the first branch |
+| `branch_b` | `str` | Name of the second branch |
+| `common_ancestor` | `str \| None` | Merge-base commit ID; `None` if histories are disjoint |
+| `dimensions` | `tuple[DimensionDivergence, ...]` | Per-dimension results |
+| `overall_score` | `float` | Mean of all per-dimension scores in [0.0, 1.0] |
+
+**Where used:**
+
+| Module | Usage |
+|--------|-------|
+| `maestro/services/muse_divergence.py` | `compute_divergence` return type |
+| `maestro/muse_cli/commands/divergence.py` | `render_text`, `render_json` input |
+| `tests/test_muse_divergence.py` | All async divergence tests |
+
+---
+
 ### `ExpressivenessResult`
 
 **Path:** `maestro/services/expressiveness.py`
@@ -1013,6 +1066,43 @@ On failure: `success=False` plus `error` (and optionally `message`).
 | `notes` | `list[NoteDict]` | Source notes with humanized velocity and timing, same key format (camelCase/snake_case) as input |
 | `cc_events` | `list[CCEventDict]` | Generated CC automation (sustain, expression, mod wheel) |
 | `pitch_bends` | `list[PitchBendDict]` | Generated pitch-bend automation |
+
+---
+
+### `MuseTempoResult`
+
+**Path:** `maestro/services/muse_tempo.py`
+
+`dataclass(frozen=True)` — Named result type for a `muse tempo [<commit>]` query.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `commit_id` | `str` | Full 64-char SHA-256 commit ID |
+| `branch` | `str` | Branch name the commit belongs to |
+| `message` | `str` | Commit message |
+| `tempo_bpm` | `float \| None` | Explicitly annotated BPM (from `muse tempo --set`) |
+| `detected_bpm` | `float \| None` | Auto-detected BPM from MIDI Set Tempo events in the snapshot |
+
+**Property:**
+
+| Property | Returns | Description |
+|----------|---------|-------------|
+| `effective_bpm` | `float \| None` | `tempo_bpm` if set; else `detected_bpm` |
+
+---
+
+### `MuseTempoHistoryEntry`
+
+**Path:** `maestro/services/muse_tempo.py`
+
+`dataclass(frozen=True)` — One row in a `muse tempo --history` traversal.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `commit_id` | `str` | Full 64-char SHA-256 commit ID |
+| `message` | `str` | Commit message |
+| `effective_bpm` | `float \| None` | Annotated BPM for this commit, or `None` |
+| `delta_bpm` | `float \| None` | Signed BPM change vs. the previous (older) commit; `None` for the oldest commit |
 
 ---
 

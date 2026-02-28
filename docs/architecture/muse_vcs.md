@@ -1561,6 +1561,50 @@ existing drum performance.
 
 ---
 
+### `muse recall`
+
+**Purpose:** Search the full commit history using natural language. Returns ranked
+commits whose messages best match the query. The musical memory retrieval command —
+"find me that arrangement I made three months ago."
+
+**Usage:**
+```bash
+muse recall "<description>" [OPTIONS]
+```
+
+**Flags:**
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `QUERY` | positional | required | Natural-language description of what to find |
+| `--limit N` | int | 5 | Maximum results to return |
+| `--threshold FLOAT` | float | 0.6 | Minimum similarity score (0.0–1.0) |
+| `--branch TEXT` | string | all branches | Restrict search to a specific branch |
+| `--since DATE` | `YYYY-MM-DD` | — | Only search commits after this date |
+| `--until DATE` | `YYYY-MM-DD` | — | Only search commits before this date |
+| `--json` | flag | off | Emit structured JSON array |
+
+**Scoring (current stub):** Normalized keyword overlap coefficient — `|Q ∩ M| / |Q|` — where Q is the set of query tokens and M is the set of message tokens. Score 1.0 means every query word appeared in the commit message.
+
+**Output example (text):**
+```
+Recall: "dark jazz bassline"
+keyword match · threshold 0.60 · limit 5
+
+  1. [a1b2c3d4]  2026-02-15 22:00  boom bap demo take 3      score 0.67
+  2. [f9e8d7c6]  2026-02-10 18:30  jazz bass overdub session  score 0.50
+```
+
+**Result type:** `RecallResult` (TypedDict) — fields: `rank` (int), `score` (float), `commit_id` (str), `date` (str), `branch` (str), `message` (str)
+
+**Agent use case:** An agent asked to "generate something like that funky bass riff from last month" calls `muse recall "funky bass" --json --limit 3` to retrieve the closest historical commits, then uses those as style references for generation.
+
+**Implementation:** `maestro/muse_cli/commands/recall.py` — `RecallResult` (TypedDict), `_tokenize()`, `_score()`, `_recall_async()`. Exit codes: 0 success, 1 bad date format, 2 outside repo.
+
+> **Stub note:** Uses keyword overlap. Full implementation: vector embeddings stored in Qdrant, cosine similarity retrieval. The CLI interface will not change when vector search is added.
+
+---
+
 ## `muse ask` — Natural Language Query over Musical History
 
 `muse ask "<question>"` searches Muse commit messages for keywords derived
@@ -1763,6 +1807,104 @@ commit for deeper inspection.
 > `--rhythm-invariant`) is reserved for a future iteration.  Flags are accepted
 > now to keep the CLI contract stable; supplying them emits a clear warning.
 
+---
+
+## `muse tempo` — Read or Set the Tempo of a Commit
+
+`muse tempo [<commit>] [--set <bpm>] [--history] [--json]` reads or annotates
+the BPM of a specific commit.  Tempo (BPM) is the most fundamental rhythmic property
+of a Muse project — this command makes it a first-class commit attribute.
+
+### Flags
+
+| Flag | Description |
+|------|-------------|
+| `[<commit>]` | Target commit SHA (full or abbreviated) or `HEAD` (default) |
+| `--set <bpm>` | Annotate the commit with an explicit BPM (20–400 range) |
+| `--history` | Show BPM timeline across all commits in the parent chain |
+| `--json` | Emit machine-readable JSON instead of human-readable text |
+
+### Tempo Resolution Order (read path)
+
+1. **Annotated BPM** — explicitly set via `muse tempo --set` and stored in `commit_metadata.tempo_bpm`.
+2. **Detected BPM** — auto-extracted from MIDI Set Tempo meta-events (FF 51 03) in the commit's snapshot files.
+3. **None** — displayed as `--` when neither source is available.
+
+### Tempo Storage (write path)
+
+`--set` writes `{tempo_bpm: <float>}` into the `metadata` JSON column of the
+`muse_cli_commits` table.  Other metadata keys in that column are preserved
+(merge-patch semantics).  No new rows are created — only the existing commit row
+is annotated.
+
+### Schema
+
+The `muse_cli_commits` table has a nullable `metadata` JSON column (added in
+migration `0002_muse_cli_commit_metadata`).  Current keys:
+
+| Key | Type | Set by |
+|-----|------|--------|
+| `tempo_bpm` | `float` | `muse tempo --set` |
+
+### History Traversal
+
+`--history` walks the full parent chain from the target commit (or HEAD),
+collecting annotated BPM values and computing signed deltas between consecutive
+commits.
+
+Auto-detected BPM is shown on the single-commit read path but is not persisted,
+so it does not appear in history (history only reflects explicitly set annotations).
+
+### MIDI Tempo Parsing
+
+`maestro/services/muse_tempo.extract_bpm_from_midi(data: bytes)` is a pure
+function that scans a raw MIDI byte string for the Set Tempo meta-event
+(FF 51 03). The three bytes encode microseconds-per-beat as a 24-bit big-endian
+integer. BPM = 60_000_000 / microseconds_per_beat. Only the first event is
+returned; `detect_all_tempos_from_midi` returns all events (used for rubato
+detection).
+
+### Result Types
+
+| Type | Module | Purpose |
+|------|--------|---------|
+| `MuseTempoResult` | `maestro.services.muse_tempo` | Single-commit tempo query result |
+| `MuseTempoHistoryEntry` | `maestro.services.muse_tempo` | One row in a `--history` traversal |
+
+### DB Helpers
+
+| Helper | Module | Purpose |
+|--------|--------|---------|
+| `resolve_commit_ref` | `maestro.muse_cli.db` | Resolve HEAD / full SHA / abbreviated SHA to a `MuseCliCommit` |
+| `set_commit_tempo_bpm` | `maestro.muse_cli.db` | Write `tempo_bpm` into `commit_metadata` (merge-patch) |
+
+### Exit Codes
+
+| Code | Meaning |
+|------|---------|
+| 0 | Success |
+| 1 | User error: unknown ref, BPM out of range |
+| 2 | Outside a Muse repository |
+| 3 | Internal error |
+
+---
+
+### Command Registration Summary
+
+| Command | File | Status | Issue |
+|---------|------|--------|-------|
+| `muse dynamics` | `commands/dynamics.py` | ✅ stub (PR #130) | #120 |
+| `muse swing` | `commands/swing.py` | ✅ stub (PR #131) | #121 |
+| `muse recall` | `commands/recall.py` | ✅ stub (PR #135) | #122 |
+| `muse tag` | `commands/tag.py` | ✅ implemented (PR #133) | #123 |
+| `muse grep` | `commands/grep_cmd.py` | ✅ stub (PR #128) | #124 |
+| `muse describe` | `commands/describe.py` | ✅ stub (PR #134) | #125 |
+| `muse ask` | `commands/ask.py` | ✅ stub (PR #132) | #126 |
+| `muse session` | `commands/session.py` | ✅ implemented (PR #129) | #127 |
+| `muse tempo` | `commands/tempo.py` | ✅ fully implemented (PR TBD) | #116 |
+
+All stub commands have stable CLI contracts. Full musical analysis (MIDI content
+parsing, vector embeddings, LLM synthesis) is tracked as follow-up issues.
 
 ## `muse recall` — Keyword Search over Musical Commit History
 
@@ -2237,6 +2379,48 @@ Analysis:
 
 ---
 
+## `muse divergence` — Musical Divergence Between Two Branches
+
+**Purpose:** Show how two branches have diverged *musically* — useful when two
+producers are working on different arrangements of the same project and you need
+to understand the creative distance before deciding which to merge.
+
+**Implementation:** `maestro/muse_cli/commands/divergence.py`\
+**Service:** `maestro/services/muse_divergence.py`\
+**Status:** ✅ implemented (issue #119)
+
+### Flags
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `BRANCH_A` | positional | required | First branch name |
+| `BRANCH_B` | positional | required | Second branch name |
+| `--since COMMIT` | string | auto | Common ancestor commit ID (auto-detected via merge-base BFS if omitted) |
+| `--dimensions TEXT` | string (repeatable) | all five | Musical dimension(s) to analyse |
+| `--json` | flag | off | Machine-readable JSON output |
+
+### What It Computes
+
+1. **Finds the merge base** — BFS over `MuseCliCommit.parent_commit_id` / `parent2_commit_id`, equivalent to `git merge-base`.
+2. **Collects changed paths** — diff from merge-base snapshot to branch-tip (added + deleted + modified paths).
+3. **Classifies paths by dimension** — keyword matching on lowercase filename.
+4. **Scores each dimension** — `score = |sym_diff(A, B)| / |union(A, B)|`.  0.0 = identical; 1.0 = completely diverged.
+5. **Classifies level** — `NONE` (<0.15), `LOW` (0.15–0.40), `MED` (0.40–0.70), `HIGH` (≥0.70).
+6. **Computes overall score** — mean of per-dimension scores.
+
+### Result types
+
+`DivergenceLevel` (Enum), `DimensionDivergence` (frozen dataclass), `MuseDivergenceResult` (frozen dataclass).
+See `docs/reference/type_contracts.md § Muse Divergence Types`.
+
+### Agent use case
+
+An AI deciding which branch to merge calls `muse divergence feature/guitar feature/piano --json`
+before generation.  HIGH harmonic divergence + LOW rhythmic divergence means lean on the piano
+branch for chord voicings while preserving the guitar branch's groove patterns.
+
+---
+
 ## Command Registration Summary
 
 | Command | File | Status | Issue |
@@ -2244,6 +2428,7 @@ Analysis:
 | `muse ask` | `commands/ask.py` | ✅ stub (PR #132) | #126 |
 | `muse context` | `commands/context.py` | ✅ implemented (PR #138) | #113 |
 | `muse describe` | `commands/describe.py` | ✅ stub (PR #134) | #125 |
+| `muse divergence` | `commands/divergence.py` | ✅ implemented (PR #140) | #119 |
 | `muse dynamics` | `commands/dynamics.py` | ✅ stub (PR #130) | #120 |
 | `muse export` | `commands/export.py` | ✅ implemented (PR #137) | #112 |
 | `muse grep` | `commands/grep_cmd.py` | ✅ stub (PR #128) | #124 |

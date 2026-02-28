@@ -127,6 +127,66 @@ async def get_commit_snapshot_manifest(
     return dict(snapshot.manifest)
 
 
+async def resolve_commit_ref(
+    session: AsyncSession,
+    repo_id: str,
+    branch: str,
+    ref: str | None,
+) -> MuseCliCommit | None:
+    """Resolve a commit reference to a ``MuseCliCommit`` row.
+
+    *ref* may be:
+
+    - ``None`` / ``"HEAD"`` — returns the most recent commit on *branch*.
+    - A full or abbreviated commit SHA — looks up by exact or prefix match.
+
+    Returns ``None`` when no matching commit is found.
+    """
+    if ref is None or ref.upper() == "HEAD":
+        result = await session.execute(
+            select(MuseCliCommit)
+            .where(MuseCliCommit.repo_id == repo_id, MuseCliCommit.branch == branch)
+            .order_by(MuseCliCommit.committed_at.desc())
+            .limit(1)
+        )
+        return result.scalar_one_or_none()
+
+    # Try exact match first
+    commit = await session.get(MuseCliCommit, ref)
+    if commit is not None:
+        return commit
+
+    # Abbreviated SHA prefix match (scan required — acceptable for CLI use)
+    result = await session.execute(
+        select(MuseCliCommit).where(
+            MuseCliCommit.repo_id == repo_id,
+            MuseCliCommit.commit_id.startswith(ref),
+        )
+    )
+    return result.scalars().first()
+
+
+async def set_commit_tempo_bpm(
+    session: AsyncSession,
+    commit_id: str,
+    bpm: float,
+) -> MuseCliCommit | None:
+    """Annotate *commit_id* with an explicit BPM in its ``metadata`` JSON blob.
+
+    Merges into the existing metadata dict so other annotations are preserved.
+    Returns the updated ``MuseCliCommit`` row, or ``None`` when not found.
+    """
+    commit = await session.get(MuseCliCommit, commit_id)
+    if commit is None:
+        return None
+    existing: dict[str, object] = dict(commit.commit_metadata or {})
+    existing["tempo_bpm"] = bpm
+    commit.commit_metadata = existing
+    session.add(commit)
+    logger.debug("✅ Set tempo %.2f BPM on commit %s", bpm, commit_id[:8])
+    return commit
+
+
 async def find_commits_by_prefix(
     session: AsyncSession,
     prefix: str,
