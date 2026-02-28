@@ -245,7 +245,24 @@ exit 1 with a clear error in that case.
 
 ## `muse status` Output Formats
 
-`muse status` operates in three modes depending on repository state.
+`muse status` operates in several modes depending on repository state and active flags.
+
+**Usage:**
+```bash
+muse status [OPTIONS]
+```
+
+**Flags:**
+
+| Flag | Short | Description |
+|------|-------|-------------|
+| `--short` | `-s` | Condensed one-line-per-file output (`M`=modified, `A`=added, `D`=deleted, `?`=untracked) |
+| `--branch` | `-b` | Emit only the branch and tracking info line |
+| `--porcelain` | — | Machine-readable `XY path` format, stable for scripting (like `git status --porcelain`) |
+| `--sections` | — | Group output by first path component under `muse-work/` (musical sections) |
+| `--tracks` | — | Group output by first path component under `muse-work/` (instrument tracks) |
+
+Flags are combinable where it makes sense: `--short --sections` emits short-format codes grouped under section headers; `--porcelain --tracks` emits porcelain codes grouped under track headers.
 
 ### Mode 1 — Clean working tree
 
@@ -256,10 +273,13 @@ On branch main
 nothing to commit, working tree clean
 ```
 
+With `--porcelain` (clean): emits only the branch header `## main`.
+
 ### Mode 2 — Uncommitted changes
 
 Files have been modified, added, or deleted relative to the last snapshot:
 
+**Default (verbose):**
 ```
 On branch main
 
@@ -274,6 +294,59 @@ Changes since last commit:
 - `modified:` — file exists in both the last snapshot and `muse-work/` but its sha256 hash differs.
 - `new file:` — file is present in `muse-work/` but absent from the last committed snapshot.
 - `deleted:` — file was in the last committed snapshot but is no longer present in `muse-work/`.
+
+**`--short`:**
+```
+On branch main
+M beat.mid
+A lead.mp3
+D scratch.mid
+```
+
+**`--porcelain`:**
+```
+## main
+ M beat.mid
+ A lead.mp3
+ D scratch.mid
+```
+
+The two-character code column follows the git porcelain convention: first char = index, second = working tree. Since Muse tracks working-tree changes only, the first char is always a space.
+
+**`--sections` (group by musical section directory):**
+```
+On branch main
+
+## chorus
+	modified:   chorus/bass.mid
+
+## verse
+	modified:   verse/bass.mid
+	new file:   verse/drums.mid
+```
+
+**`--tracks` (group by instrument track directory):**
+```
+On branch main
+
+## bass
+	modified:   bass/verse.mid
+
+## drums
+	new file:   drums/chorus.mid
+```
+
+Files not under a subdirectory appear under `## (root)` when grouping is active.
+
+**Combined `--short --sections`:**
+```
+On branch main
+## chorus
+M chorus/bass.mid
+
+## verse
+M verse/bass.mid
+```
 
 ### Mode 3 — In-progress merge
 
@@ -306,6 +379,25 @@ Untracked files:
 ```
 
 If `muse-work/` is empty or missing: `On branch main, no commits yet` (single line).
+
+### `--branch` only
+
+Emits only the branch line regardless of working-tree state:
+
+```
+On branch main
+```
+
+This is useful when a script needs the branch name without triggering a full DB round-trip for the diff.
+
+### Agent use case
+
+An AI music agent uses `muse status` to:
+
+- **Detect drift:** `muse status --porcelain` gives a stable, parseable list of all changed files before deciding whether to commit.
+- **Section-aware generation:** `muse status --sections` reveals which musical sections have uncommitted changes, letting the agent focus generation on modified sections only.
+- **Track inspection:** `muse status --tracks` shows which instrument tracks differ from HEAD, useful when coordinating multi-track edits across agent turns.
+- **Pre-commit guard:** `muse status --short` gives a compact human-readable summary to include in agent reasoning traces before committing.
 
 ### Implementation
 
