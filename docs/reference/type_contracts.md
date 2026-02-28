@@ -4735,3 +4735,44 @@ or smoother (stepwise) between two points in history.
 
 **Producer:** `_contour_compare_async()`
 **Consumer:** `_format_compare()`
+
+---
+
+## Muse Timeline Types
+
+Defined in `maestro/services/muse_timeline.py`.
+
+### `MuseTimelineEntry`
+
+A single commit in the chronological musical timeline.
+Music-semantic fields are derived from tags attached via `muse tag add`.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `commit_id` | `str` | Full 64-char commit hash. |
+| `short_id` | `str` | First 7 characters for display. |
+| `committed_at` | `datetime` | Commit timestamp (UTC). |
+| `message` | `str` | Human-authored commit message. |
+| `emotion` | `str \| None` | First `emotion:*` tag value (prefix stripped), or `None`. |
+| `sections` | `tuple[str, ...]` | All `section:*` tag values (prefix stripped). |
+| `tracks` | `tuple[str, ...]` | All `track:*` tag values (prefix stripped). |
+| `activity` | `int` | Number of tracks modified; 1 when no track tags present. |
+
+### `MuseTimelineResult`
+
+Full chronological timeline for a single repository branch.
+Returned by `build_timeline()` in `maestro/services/muse_timeline.py`.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `entries` | `tuple[MuseTimelineEntry, ...]` | Timeline entries, oldest-first. |
+| `branch` | `str` | Branch name this timeline was built from. |
+| `emotion_arc` | `tuple[str, ...]` | Ordered unique emotion labels (oldest first). |
+| `section_order` | `tuple[str, ...]` | Ordered unique section names (oldest first). |
+| `total_commits` | `int` | Total number of commits in the timeline. |
+
+**Agent use case:** An AI agent calls `muse timeline --json` and inspects
+`emotion_arc` to understand how the composition's emotional character has
+evolved.  `section_order` maps the structural progression of the piece.
+`entries[*].activity` can be used to weight which commits had the most
+musical change — useful for selecting seed material for generation.
