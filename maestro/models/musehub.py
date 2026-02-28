@@ -659,3 +659,37 @@ class DagGraphResponse(CamelModel):
     nodes: list[DagNode]
     edges: list[DagEdge]
     head_commit_id: str | None = None
+
+class DivergenceDimensionResponse(CamelModel):
+    """Wire representation of divergence scores for a single musical dimension.
+
+    Mirrors :class:`maestro.services.musehub_divergence.MuseHubDimensionDivergence`
+    for JSON serialization.  AI agents consume this to decide which dimension
+    of a branch needs creative attention before merging.
+    """
+
+    dimension: str
+    level: str
+    score: float
+    description: str
+    branch_a_commits: int
+    branch_b_commits: int
+
+
+class DivergenceResponse(CamelModel):
+    """Full musical divergence report between two Muse Hub branches.
+
+    Returned by ``GET /musehub/repos/{repo_id}/divergence``.  Contains five
+    per-dimension scores (melodic, harmonic, rhythmic, structural, dynamic)
+    and an overall score computed as the mean of those five scores.
+
+    The ``overall_score`` is in [0.0, 1.0]; multiply by 100 for a percentage.
+    A score of 0.0 means identical, 1.0 means completely diverged.
+    """
+
+    repo_id: str
+    branch_a: str
+    branch_b: str
+    common_ancestor: str | None
+    dimensions: list[DivergenceDimensionResponse]
+    overall_score: float
