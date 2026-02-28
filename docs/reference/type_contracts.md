@@ -1818,6 +1818,42 @@ These type aliases replace the repeated pattern `dict[str, list[XxxDict]]` that 
 
 > Added: 2026-02-27 | Types used by the `muse` CLI commands — purely local, never serialised over HTTP.
 
+### `HarmonyResult` (`maestro/muse_cli/commands/harmony.py`)
+
+`TypedDict` — harmonic analysis for a single commit returned by `muse harmony`.
+Primary result type for AI agent consumption via `muse harmony --json`.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `commit_id` | `str` | Short or full commit SHA that was analyzed |
+| `branch` | `str` | Current branch name |
+| `key` | `str \| None` | Detected key center (e.g. `"Eb"`); `None` for drum-only snapshots |
+| `mode` | `str \| None` | Detected mode (e.g. `"major"`, `"dorian"`); `None` for drum-only |
+| `confidence` | `float` | Key/mode detection confidence in [0.0, 1.0] |
+| `chord_progression` | `list[str]` | Ordered chord symbol strings (e.g. `["Ebmaj7", "Fm7"]`) |
+| `harmonic_rhythm_avg` | `float` | Average chord changes per bar |
+| `tension_profile` | `list[float]` | Per-section tension scores in [0.0, 1.0]; 0.0 = consonant, 1.0 = dissonant |
+| `track` | `str` | Instrument track scope (`"all"` unless `--track` specified) |
+| `source` | `str` | `"stub"` until backed by real MIDI analysis |
+
+**Used by:** `_harmony_analyze_async`, `_render_result_human`, `_render_result_json`.
+
+### `HarmonyCompareResult` (`maestro/muse_cli/commands/harmony.py`)
+
+`TypedDict` — comparison between two commits returned by `muse harmony --compare`.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `head` | `HarmonyResult` | Harmonic analysis for the HEAD (or specified) commit |
+| `compare` | `HarmonyResult` | Harmonic analysis for the reference commit |
+| `key_changed` | `bool` | `True` if the key center differs between commits |
+| `mode_changed` | `bool` | `True` if the mode differs between commits |
+| `chord_progression_delta` | `list[str]` | Chords present in HEAD but absent in compare |
+
+**Used by:** `_render_compare_human`, `_render_compare_json`.
+
+---
+
 ### `MuseSessionRecord` (`maestro/muse_cli/commands/session.py`)
 
 `TypedDict(total=False)` — wire-format for a single recording session stored as JSON in `.muse/sessions/`.
