@@ -1,0 +1,170 @@
+{% extends "musehub/base.html" %}
+
+{% block title %}Analysis {{ ref[:8] }}{% endblock %}
+{% block breadcrumb %}
+  <a href="/musehub/ui/{{ owner }}/{{ repo_slug }}">{{ owner }}/{{ repo_slug }}</a> /
+  analysis / {{ ref[:8] }}
+{% endblock %}
+{% block repo_nav %}{% include "musehub/partials/repo_nav.html" %}{% endblock %}
+
+{% block page_data %}
+const repoId  = {{ repo_id | tojson }};
+const ref     = {{ ref | tojson }};
+const owner   = {{ owner | tojson }};
+const repoSlug = {{ repo_slug | tojson }};
+const base    = {{ base_url | tojson }};
+const apiBase = '/api/v1/musehub/repos/' + repoId;
+{% endblock %}
+
+{% block page_script %}
+{% raw %}
+const CARD_CONFIG = [
+  {
+    id: 'key', emoji: '&#127925;', label: 'Key',
+    extract: d => d.tonic && d.mode ? d.tonic + ' ' + d.mode : '\u2014',
+    sub: d => d.confidence ? 'confidence: ' + (d.confidence * 100).toFixed(0) + '%' : '',
+  },
+  {
+    id: 'tempo', emoji: '&#9201;&#65039;', label: 'Tempo',
+    extract: d => d.bpm ? d.bpm + ' BPM' : '\u2014',
+    sub: d => d.timeFeel ? 'feel: ' + d.timeFeel : '',
+  },
+  {
+    id: 'meter', emoji: '&#127932;', label: 'Meter',
+    extract: d => d.timeSignature || '\u2014',
+    sub: d => d.isCompound ? 'compound' : 'simple',
+  },
+  {
+    id: 'chord-map', emoji: '&#127929;', label: 'Chord Map',
+    extract: d => d.totalChords ? d.totalChords + ' chords' : '\u2014',
+    sub: d => d.progression && d.progression[0] ? d.progression[0].chord : '',
+  },
+  {
+    id: 'dynamics', emoji: '&#128266;', label: 'Dynamics',
+    extract: d => d.dynamicEvents && d.dynamicEvents[0]
+      ? d.dynamicEvents[0].split('@')[0]
+      : (d.meanVelocity ? 'vel ' + Math.round(d.meanVelocity) : '\u2014'),
+    sub: d => d.dynamicRange ? 'range: ' + d.dynamicRange : '',
+  },
+  {
+    id: 'groove', emoji: '&#129345;', label: 'Groove',
+    extract: d => d.style ? d.style : '\u2014',
+    sub: d => d.grooveScore ? 'score: ' + (d.grooveScore * 100).toFixed(0) + '%' : '',
+  },
+  {
+    id: 'emotion', emoji: '&#127917;', label: 'Emotion',
+    extract: d => d.primaryEmotion ? d.primaryEmotion : '\u2014',
+    sub: d => d.valence !== undefined
+      ? 'valence: ' + (d.valence > 0 ? '+' : '') + d.valence.toFixed(2)
+      : '',
+  },
+  {
+    id: 'form', emoji: '&#128203;', label: 'Form',
+    extract: d => d.formLabel || '\u2014',
+    sub: d => d.sections ? d.sections.length + ' sections' : '',
+  },
+  {
+    id: 'motifs', emoji: '&#128257;', label: 'Motifs',
+    extract: d => d.totalMotifs !== undefined
+      ? d.totalMotifs + ' pattern' + (d.totalMotifs !== 1 ? 's' : '')
+      : '\u2014',
+    sub: d => d.motifs && d.motifs[0] && d.motifs[0].intervals
+      ? 'M01: [' + d.motifs[0].intervals.slice(0, 4).join(',') + ']'
+      : '',
+  },
+  {
+    id: 'contour', emoji: '&#128200;', label: 'Contour',
+    extract: d => d.shape || '\u2014',
+    sub: d => d.overallDirection ? d.overallDirection + ' \u2192' : '',
+  },
+];
+
+function sparkline(values, width) {
+  if (!values || !values.length) return '';
+  const w = width || 8;
+  const max = Math.max(...values, 1);
+  const bars = ['\u2581', '\u2582', '\u2583', '\u2584', '\u2585', '\u2586', '\u2587', '\u2588'];
+  return values.slice(0, w).map(v => {
+    const pct = Math.round((v / max) * 7);
+    return bars[Math.min(pct, 7)];
+  }).join('');
+}
+
+function sparklineForDim(id, data) {
+  if (id === 'dynamics' && data.velocityCurve)
+    return sparkline(data.velocityCurve.map(e => e.velocity), 12);
+  if (id === 'contour' && data.pitchCurve) {
+    const min = Math.min(...data.pitchCurve);
+    return sparkline(data.pitchCurve.map(v => v - min + 1), 12);
+  }
+  return '';
+}
+
+function renderCard(cfg, dimensionEntry) {
+  const d      = dimensionEntry ? dimensionEntry.data : null;
+  const metric = d ? cfg.extract(d) : '\u2014';
+  const sub    = d ? cfg.sub(d) : 'Not yet analyzed';
+  const spark  = d ? sparklineForDim(cfg.id, d) : '';
+  const href   = base + '/analysis/' + encodeURIComponent(ref) + '/' + cfg.id;
+  return '<a href="' + href + '" class="analysis-card">'
+    + '<div class="card-emoji">' + cfg.emoji + '</div>'
+    + '<div class="card-dim">' + escHtml(cfg.label) + '</div>'
+    + '<div class="card-metric">' + escHtml(metric) + '</div>'
+    + (sub ? '<div class="card-sub">' + escHtml(sub) + '</div>' : '')
+    + (spark ? '<div class="card-spark" aria-hidden="true">' + spark + '</div>' : '')
+    + '</a>';
+}
+
+async function loadBranches() {
+  try {
+    const data = await apiFetch('/repos/' + repoId + '/branches');
+    const branches = data.branches || [];
+    const opts = branches.map(b =>
+      '<option value="' + escHtml(b.name) + '"' + (b.name === ref ? ' selected' : '') + '>'
+      + escHtml(b.name) + '</option>'
+    ).join('');
+    document.getElementById('ref-sel').innerHTML =
+      '<option value="">\u2014 select branch \u2014</option>' + opts;
+  } catch (e) { /* branch selector is optional — silently ignore */ }
+}
+
+async function load() {
+  initRepoNav(repoId);
+
+  document.getElementById('content').innerHTML =
+    '<div style="margin-bottom:12px"><a href="' + escHtml(base) + '">&larr; Back to repo</a></div>'
+    + '<div class="card" style="margin-bottom:16px">'
+    + '<div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">'
+    + '<h1 style="margin:0">&#127926; Analysis</h1>'
+    + '<code class="ref-badge">'
+    + escHtml(ref.length > 16 ? ref.substring(0, 16) + '\u2026' : ref)
+    + '</code><span style="flex:1"></span>'
+    + '<label style="font-size:13px;color:var(--color-text-muted);display:flex;align-items:center;gap:6px">Branch: '
+    + '<select id="ref-sel"'
+    + ' onchange="if(this.value)location.href=\'' + escHtml(base) + '/analysis/\'+this.value"'
+    + ' class="branch-select">'
+    + '<option value="">\u2014 loading \u2014</option></select></label>'
+    + '</div></div>'
+    + '<div id="dashboard-grid" class="analysis-grid">'
+    + '<p class="loading">Fetching analysis\u2026</p>'
+    + '</div>';
+
+  loadBranches();
+
+  try {
+    const agg = await apiFetch('/repos/' + repoId + '/analysis/' + encodeURIComponent(ref));
+    const dimMap = {};
+    (agg.dimensions || []).forEach(d => { dimMap[d.dimension] = d; });
+    const cards = CARD_CONFIG.map(cfg => renderCard(cfg, dimMap[cfg.id])).join('');
+    document.getElementById('dashboard-grid').innerHTML = cards;
+  } catch (e) {
+    if (e.message !== 'auth') {
+      document.getElementById('dashboard-grid').innerHTML =
+        '<p class="error">&#10005; Could not load analysis: ' + escHtml(e.message) + '</p>';
+    }
+  }
+}
+
+load();
+{% endraw %}
+{% endblock %}

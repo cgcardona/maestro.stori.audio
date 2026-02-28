@@ -34,6 +34,7 @@ Endpoint summary (repo-scoped):
   GET /musehub/ui/{owner}/{repo_slug}/sessions                  -- recording session log
   GET /musehub/ui/{owner}/{repo_slug}/sessions/{id}             -- session detail
   GET /musehub/ui/{owner}/{repo_slug}/insights                  -- repo insights dashboard
+  GET /musehub/ui/{owner}/{repo_slug}/analysis/{ref}            -- analysis dashboard (all 10 dimensions at a glance)
   GET /musehub/ui/{owner}/{repo_slug}/analysis/{ref}/contour    -- melodic contour analysis
   GET /musehub/ui/{owner}/{repo_slug}/analysis/{ref}/tempo      -- tempo analysis
   GET /musehub/ui/{owner}/{repo_slug}/analysis/{ref}/dynamics   -- dynamics analysis
@@ -561,11 +562,17 @@ async def credits_page(
 
 
 @router.get(
-    "/{repo_id}/analysis/{ref}",
+    "/{owner}/{repo_slug}/analysis/{ref}",
     response_class=HTMLResponse,
     summary="Muse Hub analysis dashboard -- all musical dimensions at a glance",
 )
-async def analysis_dashboard_page(repo_id: str, ref: str) -> HTMLResponse:
+async def analysis_dashboard_page(
+    request: Request,
+    owner: str,
+    repo_slug: str,
+    ref: str,
+    db: AsyncSession = Depends(get_db),
+) -> HTMLResponse:
     """Render the analysis dashboard: summary cards for all 10 musical dimensions.
 
     Why this exists: musicians and AI agents need a single entry point that
@@ -579,194 +586,20 @@ async def analysis_dashboard_page(repo_id: str, ref: str) -> HTMLResponse:
     - Branch selector fetches ``GET /api/v1/musehub/repos/{repo_id}/branches``.
     - Each card links to the dedicated per-dimension analysis page.
     - Graceful empty state when analysis data is not yet available.
-    - Content negotiation: the underlying API at the same path with
-      ``Accept: application/json`` returns structured JSON.
-
-    Args:
-        repo_id: UUID of the MuseHub repository.
-        ref:     Commit SHA or branch name to analyse.
     """
-    _DASHBOARD_CSS = """
-.analysis-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-  gap: 14px;
-  margin-top: 4px;
-}
-.analysis-card {
-  background: #161b22; border: 1px solid #30363d; border-radius: 8px;
-  padding: 16px; display: flex; flex-direction: column; gap: 6px;
-  transition: border-color 0.15s, background 0.15s;
-  color: inherit;
-}
-.analysis-card:hover {
-  border-color: #58a6ff; background: #1c2128; text-decoration: none;
-}
-.card-emoji { font-size: 22px; }
-.card-dim { font-size: 11px; color: #8b949e; text-transform: uppercase; letter-spacing: 0.6px; }
-.card-metric { font-size: 18px; font-weight: 700; color: #e6edf3; word-break: break-word; }
-.card-sub { font-size: 12px; color: #8b949e; }
-.card-spark { font-size: 14px; color: #3fb950; letter-spacing: 1px; margin-top: 2px; }
-"""
-    script = f"""
-      const repoId = {repr(repo_id)};
-      const ref    = {repr(ref)};
-      const base   = '/musehub/ui/' + repoId;
-
-      function escHtml(s) {{
-        if (s === null || s === undefined) return '\u2014';
-        return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-      }}
-
-      const CARD_CONFIG = [
-        {{
-          id: 'key', emoji: '&#127925;', label: 'Key',
-          extract: d => d.tonic && d.mode ? d.tonic + ' ' + d.mode : '\u2014',
-          sub: d => d.confidence ? 'confidence: ' + (d.confidence * 100).toFixed(0) + '%' : '',
-        }},
-        {{
-          id: 'tempo', emoji: '&#9201;&#65039;', label: 'Tempo',
-          extract: d => d.bpm ? d.bpm + ' BPM' : '\u2014',
-          sub: d => d.timeFeel ? 'feel: ' + d.timeFeel : '',
-        }},
-        {{
-          id: 'meter', emoji: '&#127932;', label: 'Meter',
-          extract: d => d.timeSignature || '\u2014',
-          sub: d => d.isCompound ? 'compound' : 'simple',
-        }},
-        {{
-          id: 'chord-map', emoji: '&#127929;', label: 'Chord Map',
-          extract: d => d.totalChords ? d.totalChords + ' chords' : '\u2014',
-          sub: d => d.progression && d.progression[0] ? d.progression[0].chord : '',
-        }},
-        {{
-          id: 'dynamics', emoji: '&#128266;', label: 'Dynamics',
-          extract: d => d.dynamicEvents && d.dynamicEvents[0] ? d.dynamicEvents[0].split('@')[0] : (d.meanVelocity ? 'vel ' + Math.round(d.meanVelocity) : '\u2014'),
-          sub: d => d.dynamicRange ? 'range: ' + d.dynamicRange : '',
-        }},
-        {{
-          id: 'groove', emoji: '&#129345;', label: 'Groove',
-          extract: d => d.style ? d.style : '\u2014',
-          sub: d => d.grooveScore ? 'score: ' + (d.grooveScore * 100).toFixed(0) + '%' : '',
-        }},
-        {{
-          id: 'emotion', emoji: '&#127917;', label: 'Emotion',
-          extract: d => d.primaryEmotion ? d.primaryEmotion : '\u2014',
-          sub: d => d.valence !== undefined ? 'valence: ' + (d.valence > 0 ? '+' : '') + d.valence.toFixed(2) : '',
-        }},
-        {{
-          id: 'form', emoji: '&#128203;', label: 'Form',
-          extract: d => d.formLabel || '\u2014',
-          sub: d => d.sections ? d.sections.length + ' sections' : '',
-        }},
-        {{
-          id: 'motifs', emoji: '&#128257;', label: 'Motifs',
-          extract: d => d.totalMotifs !== undefined ? d.totalMotifs + ' pattern' + (d.totalMotifs !== 1 ? 's' : '') : '\u2014',
-          sub: d => d.motifs && d.motifs[0] && d.motifs[0].intervals ? 'M01: [' + d.motifs[0].intervals.slice(0,4).join(',') + ']' : '',
-        }},
-        {{
-          id: 'contour', emoji: '&#128200;', label: 'Contour',
-          extract: d => d.shape || '\u2014',
-          sub: d => d.overallDirection ? d.overallDirection + ' \u2192' : '',
-        }},
-      ];
-
-      function sparkline(values, width) {{
-        if (!values || !values.length) return '';
-        const w = width || 8;
-        const max = Math.max(...values, 1);
-        const bars = [
-          '\u2581','\u2582','\u2583','\u2584',
-          '\u2585','\u2586','\u2587','\u2588'
-        ];
-        return values.slice(0, w).map(v => {{
-          const pct = Math.round((v / max) * 7);
-          return bars[Math.min(pct, 7)];
-        }}).join('');
-      }}
-
-      function sparklineForDim(id, data) {{
-        if (id === 'dynamics' && data.velocityCurve)
-          return sparkline(data.velocityCurve.map(e => e.velocity), 12);
-        if (id === 'contour' && data.pitchCurve) {{
-          const min = Math.min(...data.pitchCurve);
-          return sparkline(data.pitchCurve.map(v => v - min + 1), 12);
-        }}
-        return '';
-      }}
-
-      function renderCard(cfg, dimensionEntry) {{
-        const d = dimensionEntry ? dimensionEntry.data : null;
-        const metric = d ? cfg.extract(d) : '\u2014';
-        const sub    = d ? cfg.sub(d) : 'Not yet analyzed';
-        const spark  = d ? sparklineForDim(cfg.id, d) : '';
-        const href   = base + '/analysis/' + ref + '/' + cfg.id;
-        return '<a href="' + href + '" class="analysis-card" style="text-decoration:none">'
-          + '<div class="card-emoji">' + cfg.emoji + '</div>'
-          + '<div class="card-dim">' + escHtml(cfg.label) + '</div>'
-          + '<div class="card-metric">' + escHtml(metric) + '</div>'
-          + (sub ? '<div class="card-sub">' + escHtml(sub) + '</div>' : '')
-          + (spark ? '<div class="card-spark" aria-hidden="true">' + spark + '</div>' : '')
-          + '</a>';
-      }}
-
-      async function loadBranches() {{
-        try {{
-          const data = await apiFetch('/repos/' + repoId + '/branches');
-          const branches = data.branches || [];
-          const opts = branches.map(b =>
-            '<option value="' + escHtml(b.name) + '"' + (b.name === ref ? ' selected' : '') + '>'
-            + escHtml(b.name) + '</option>'
-          ).join('');
-          document.getElementById('ref-sel').innerHTML =
-            '<option value="">\u2014 select branch \u2014</option>' + opts;
-        }} catch(e) {{ /* branch selector is optional */ }}
-      }}
-
-      async function load() {{
-        document.getElementById('content').innerHTML =
-          '<div style="margin-bottom:12px"><a href="' + base + '">&larr; Back to repo</a></div>'
-          + '<div class="card" style="margin-bottom:16px">'
-          + '<div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">'
-          + '<h1 style="margin:0">&#127926; Analysis</h1>'
-          + '<code style="font-size:13px;background:#0d1117;padding:3px 8px;border-radius:4px;color:#58a6ff">'
-          + escHtml(ref.length > 16 ? ref.substring(0,16) + '\u2026' : ref)
-          + '</code><span style="flex:1"></span>'
-          + '<label style="font-size:13px;color:#8b949e;display:flex;align-items:center;gap:6px">Branch: '
-          + '<select id="ref-sel" onchange="if(this.value)location.href=base+\'/analysis/\'+this.value"'
-          + ' style="background:#21262d;color:#c9d1d9;border:1px solid #30363d;border-radius:6px;padding:4px 8px;font-size:13px">'
-          + '<option value="">\u2014 loading \u2014</option></select></label>'
-          + '</div></div>'
-          + '<div id="dashboard-grid" class="analysis-grid"><p class="loading">Fetching analysis\u2026</p></div>';
-
-        loadBranches();
-
-        try {{
-          const agg = await apiFetch('/repos/' + repoId + '/analysis/' + encodeURIComponent(ref));
-          const dimMap = {{}};
-          (agg.dimensions || []).forEach(d => {{ dimMap[d.dimension] = d; }});
-          const cards = CARD_CONFIG.map(cfg => renderCard(cfg, dimMap[cfg.id])).join('');
-          document.getElementById('dashboard-grid').innerHTML = cards;
-        }} catch(e) {{
-          if (e.message !== 'auth') {{
-            document.getElementById('dashboard-grid').innerHTML =
-              '<p class="error">&#10005; Could not load analysis: ' + escHtml(e.message) + '</p>';
-          }}
-        }}
-      }}
-
-      load();
-    """
-    html = _page(
-        title=f"Analysis {ref[:12]}",
-        breadcrumb=(
-            f'<a href="/musehub/ui/{repo_id}">{repo_id[:8]}</a> / '
-            f"analysis / {ref[:8]}"
-        ),
-        body_script=script,
-        extra_css=_DASHBOARD_CSS,
+    repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
+    return templates.TemplateResponse(
+        request,
+        "musehub/pages/analysis.html",
+        {
+            "owner": owner,
+            "repo_slug": repo_slug,
+            "repo_id": repo_id,
+            "ref": ref,
+            "base_url": base_url,
+            "current_page": "analysis",
+        },
     )
-    return HTMLResponse(content=html)
 
 
 @router.get(
