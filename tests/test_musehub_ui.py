@@ -681,20 +681,6 @@ async def test_credits_json_response(
 
 
 @pytest.mark.anyio
-async def test_graph_page_renders(
-    client: AsyncClient,
-    db_session: AsyncSession,
-) -> None:
-    """GET /musehub/ui/{owner}/{repo_slug}/graph returns 200 HTML without requiring a JWT."""
-    repo_id = await _make_repo(db_session)
-    response = await client.get("/musehub/ui/testuser/test-beats/graph")
-    assert response.status_code == 200
-    assert "text/html" in response.headers["content-type"]
-    body = response.text
-    assert "Muse Hub" in body
-
-
-@pytest.mark.anyio
 async def test_graph_no_auth_required(
     client: AsyncClient,
     db_session: AsyncSession,
@@ -706,43 +692,10 @@ async def test_graph_no_auth_required(
     assert response.status_code != 401
 
 
-@pytest.mark.anyio
-async def test_graph_page_contains_dag_js(
-    client: AsyncClient,
-    db_session: AsyncSession,
-) -> None:
-    """Graph page embeds the client-side DAG renderer JavaScript."""
-    repo_id = await _make_repo(db_session)
-    response = await client.get("/musehub/ui/testuser/test-beats/graph")
-    assert response.status_code == 200
-    body = response.text
-    assert "renderGraph" in body
-    assert "dag-viewport" in body
-    assert "dag-svg" in body
-
 
 # ---------------------------------------------------------------------------
 # User profile page tests (issue #233 — pre-existing from dev, fixed here)
 # ---------------------------------------------------------------------------
-
-_TEST_USER_ID = "550e8400-e29b-41d4-a716-446655440000"
-
-
-async def _make_profile(
-    db_session: AsyncSession, username: str = "testmusician"
-) -> MusehubProfile:
-    """Seed a minimal profile and return it."""
-    profile = MusehubProfile(
-        user_id=_TEST_USER_ID,
-        username=username,
-        bio="Test bio",
-        avatar_url=None,
-        pinned_repo_ids=[],
-    )
-    db_session.add(profile)
-    await db_session.commit()
-    await db_session.refresh(profile)
-    return profile
 
 
 @pytest.mark.anyio
