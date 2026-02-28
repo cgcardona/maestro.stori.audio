@@ -1402,12 +1402,34 @@ The Muse Hub is a lightweight GitHub-equivalent that lives inside the Maestro Fa
 | `musehub_objects` | Binary artifact metadata (MIDI, MP3, WebP piano rolls) |
 | `musehub_issues` | Issue tracker entries per repo |
 | `musehub_pull_requests` | Pull requests proposing branch merges |
+| `musehub_releases` | Published version releases with download package URLs |
 | `musehub_stars` | Per-user repo starring (one row per user×repo pair) |
 
 ### Module Map
 
 ```
 maestro/
+├── db/musehub_models.py                      — SQLAlchemy ORM models
+├── models/musehub.py                         — Pydantic v2 request/response models (incl. SearchCommitMatch, SearchResponse)
+├── services/musehub_repository.py            — Async DB queries for repos/branches/commits
+├── services/musehub_credits.py               — Credits aggregation from commit history
+├── services/musehub_issues.py                — Async DB queries for issues (single point of DB access)
+├── services/musehub_pull_requests.py         — Async DB queries for PRs (single point of DB access)
+├── services/musehub_releases.py              — Async DB queries for releases (single point of DB access)
+├── services/musehub_release_packager.py      — Download package URL builder (pure, no DB access)
+├── services/musehub_search.py                — In-repo search service (property / ask / keyword / pattern)
+├── services/musehub_sync.py                  — Push/pull sync protocol (ingest_push, compute_pull_delta)
+└── api/routes/musehub/
+    ├── __init__.py                           — Composes sub-routers under /musehub prefix
+    ├── repos.py                              — Repo/branch/commit/credits route handlers
+    ├── issues.py                             — Issue tracking route handlers
+    ├── pull_requests.py                      — Pull request route handlers
+    ├── releases.py                           — Release management route handlers
+    ├── search.py                             — In-repo search route handler
+    ├── sync.py                               — Push/pull sync route handlers
+    ├── objects.py                            — Artifact list + content-by-object-id endpoints (auth required)
+    ├── raw.py                                — Raw file download by path (public repos: no auth)
+    └── ui.py                                 — HTML UI pages (incl. releases, credits and /search pages)
 ├── db/musehub_models.py                  — SQLAlchemy ORM models (includes MusehubStar)
 ├── models/musehub.py                     — Pydantic v2 request/response models (includes ExploreRepoResult, ExploreResponse, StarResponse, SearchCommitMatch, SearchResponse)
 ├── services/musehub_repository.py        — Async DB queries for repos/branches/commits
@@ -1565,6 +1587,14 @@ Each match is a `SearchCommitMatch` with: `commitId`, `branch`, `message`, `auth
 
 **Agent use case:** AI music composition agents can call the search endpoint to locate commits by musical property (e.g. find all commits with `harmony=Fm`) before applying `muse checkout`, `muse diff`, or `muse replay` to reconstruct or compare those versions.
 
+#### Releases
+
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | `/api/v1/musehub/repos/{id}/releases` | Create a release tied to a tag and optional commit |
+| GET | `/api/v1/musehub/repos/{id}/releases` | List all releases (newest first) |
+| GET | `/api/v1/musehub/repos/{id}/releases/{tag}` | Get a single release by tag (e.g. `v1.0`) |
+
 #### Sync Protocol
 
 | Method | Path | Description |
@@ -1681,6 +1711,54 @@ Issues let musicians track production problems and creative tasks within a repo,
 - **States:** `open` (default on creation) → `closed` (via the close endpoint). No re-open at MVP.
 - **Filtering:** `GET /issues?state=all` includes both open and closed; `?label=bug` narrows by label.
 
+### Release System
+
+Releases publish a specific version of a composition as a named snapshot that listeners and collaborators can download in multiple formats.
+
+#### Concept
+
+A release binds a human-readable **tag** (e.g. `v1.0`) to:
+- A **title** — the name of this version (e.g. "First Release")
+- **Release notes** — Markdown body describing what changed
+- An optional **commit ID** — pins the release to a specific commit snapshot
+- **Download URLs** — structured map of package download links
+
+#### Download Packages
+
+Each release exposes download URLs for these package types:
+
+| Package | Field | Format | Description |
+|---------|-------|--------|-------------|
+| Full MIDI | `midiBundle` | `.mid` | All tracks merged into a single MIDI file |
+| Stems | `stems` | `.zip` of `.mid` files | Individual per-track MIDI stems |
+| MP3 | `mp3` | `.mp3` | Full mix audio render |
+| MusicXML | `musicxml` | `.xml` | Notation export for sheet music editors |
+| Metadata | `metadata` | `.json` | Tempo, key, time signature, arrangement info |
+
+Package URLs are `null` when the corresponding artifact is unavailable (no pinned commit,
+or no stored objects for that commit). The frontend renders "Not available" cards instead
+of broken links.
+
+#### Uniqueness Constraint
+
+Tags are unique per repo — attempting to create a second `v1.0` release in the same repo
+returns `409 Conflict`. The same tag can be reused across different repos without conflict.
+
+#### Latest Release Badge
+
+The repo home page (`GET /musehub/ui/{repo_id}`) fetches the release list on load and
+displays a green "Latest: v1.0" badge in the navigation bar when at least one release exists.
+Clicking the badge navigates to the release detail page.
+
+#### Package Generation (MVP Stub)
+
+At MVP, download URLs are deterministic paths based on `repo_id` and `release_id`. The actual
+package generation (MIDI export, MP3 rendering, MusicXML conversion) is not implemented — the
+URL shape is established so the contract is stable for future implementation without an API change.
+
+The packager module (`maestro/services/musehub_release_packager.py`) controls URL construction.
+Callers pass boolean flags (`has_midi`, `has_stems`, `has_mp3`, `has_musicxml`) based on what
+stored objects are available for the pinned commit.
 ### Divergence Visualization
 
 The divergence endpoint and UI let producers compare two branches across five musical dimensions before deciding what to merge.

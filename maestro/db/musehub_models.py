@@ -9,8 +9,10 @@ Tables:
 - musehub_objects: Content-addressed binary artifact storage
 - musehub_stars: Per-user repo starring (one row per user×repo pair)
 - musehub_profiles: Public user profiles (bio, avatar, pinned repos)
+- musehub_releases: Published version releases with download packages
 - musehub_webhooks: Registered webhook subscriptions per repo
-- musehub_webhook_deliveries: Delivery log for each webhook dispatch attempt"""
+- musehub_webhook_deliveries: Delivery log for each webhook dispatch attempt
+"""
 from __future__ import annotations
 
 import uuid
@@ -18,8 +20,7 @@ from datetime import datetime, timezone
 
 from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Textfrom sqlalchemy.orm import Mapped, mapped_column, relationship
+
 from sqlalchemy.types import JSON
 
 from maestro.db.database import Base
@@ -71,6 +72,9 @@ class MusehubRepo(Base):
     )
     pull_requests: Mapped[list[MusehubPullRequest]] = relationship(
         "MusehubPullRequest", back_populates="repo", cascade="all, delete-orphan"
+    )
+    releases: Mapped[list[MusehubRelease]] = relationship(
+        "MusehubRelease", back_populates="repo", cascade="all, delete-orphan"
     )
     stars: Mapped[list[MusehubStar]] = relationship(
         "MusehubStar", back_populates="repo", cascade="all, delete-orphan"
@@ -277,6 +281,48 @@ class MusehubProfile(Base):
     )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=_utc_now, onupdate=_utc_now
+    )
+
+
+class MusehubRelease(Base):
+    """A published version release for a Muse Hub repo.
+
+    Releases tie a human-readable ``tag`` (e.g. "v1.0") to a specific commit
+    and carry markdown release notes plus a JSON map of download package URLs.
+    The ``download_urls`` field is a JSON object keyed by package type:
+    "midi_bundle", "stems", "mp3", "musicxml", "metadata".
+
+    ``tag`` is unique per repo — enforced by the DB constraint
+    ``uq_musehub_releases_repo_tag`` and guarded at the service layer to
+    return a clean 409 before the constraint fires.
+    """
+
+    __tablename__ = "musehub_releases"
+    __table_args__ = (UniqueConstraint("repo_id", "tag", name="uq_musehub_releases_repo_tag"),)
+
+    release_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_new_uuid)
+    repo_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("musehub_repos.repo_id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    # Semantic version tag, e.g. "v1.0", "v2.3.1" — unique per repo.
+    tag: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
+    title: Mapped[str] = mapped_column(String(500), nullable=False)
+    # Markdown release notes authored by the musician.
+    body: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    # Optional commit this release is pinned to.
+    commit_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # JSON map of download package URLs, keyed by package type.
+    download_urls: Mapped[dict[str, str]] = mapped_column(JSON, nullable=False, default=dict)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=_utc_now
+    )
+
+    repo: Mapped[MusehubRepo] = relationship("MusehubRepo", back_populates="releases")
+
+
 class MusehubWebhook(Base):
     """A registered webhook subscription for a Muse Hub repo.
 

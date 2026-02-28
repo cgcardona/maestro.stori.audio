@@ -229,6 +229,57 @@ class PRMergeResponse(CamelModel):
     merge_commit_id: str
 
 
+# ── Release models ────────────────────────────────────────────────────────────
+
+
+class ReleaseCreate(CamelModel):
+    """Body for POST /musehub/repos/{repo_id}/releases.
+
+    ``tag`` must be unique per repo (e.g. "v1.0", "v2.3.1").
+    ``commit_id`` pins the release to a specific commit snapshot.
+    """
+
+    tag: str = Field(..., min_length=1, max_length=100, description="Version tag, e.g. 'v1.0'")
+    title: str = Field(..., min_length=1, max_length=500, description="Release title")
+    body: str = Field("", description="Release notes (Markdown)")
+    commit_id: str | None = Field(None, description="Commit to pin this release to")
+
+
+class ReleaseDownloadUrls(CamelModel):
+    """Structured download package URLs for a release.
+
+    Each field is either a URL string or None if the package is not available.
+    ``midi_bundle`` is the full MIDI export (all tracks as a single .mid).
+    ``stems`` is a zip of per-track MIDI stems.
+    ``mp3`` is the full mix audio render.
+    ``musicxml`` is the notation export in MusicXML format.
+    ``metadata`` is a JSON file with tempo, key, and arrangement info.
+    """
+
+    midi_bundle: str | None = None
+    stems: str | None = None
+    mp3: str | None = None
+    musicxml: str | None = None
+    metadata: str | None = None
+
+
+class ReleaseResponse(CamelModel):
+    """Wire representation of a Muse Hub release."""
+
+    release_id: str
+    tag: str
+    title: str
+    body: str
+    commit_id: str | None = None
+    download_urls: ReleaseDownloadUrls
+    created_at: datetime
+
+
+class ReleaseListResponse(CamelModel):
+    """List of releases for a repo (newest first)."""
+
+    releases: list[ReleaseResponse]
+
 # ── Credits models ────────────────────────────────────────────────────────────
 
 
@@ -332,6 +383,19 @@ class ExploreRepoResult(CamelModel):
     that are computed at query time for efficient pagination and sorting.
     These counts are read-only signals — they are never persisted directly on
     the repo row to avoid write amplification on every push/star.
+    """
+
+    repo_id: str
+    name: str
+    owner_user_id: str
+    description: str | None = None
+    tags: list[str] = []
+    key_signature: str | None = None
+    tempo_bpm: int | None = None
+    star_count: int = 0
+    commit_count: int = 0
+    created_at: datetime
+
 # ── Profile models ────────────────────────────────────────────────────────────
 
 
@@ -357,13 +421,9 @@ class ProfileRepoSummary(CamelModel):
 
     repo_id: str
     name: str
-    owner_user_id: str
-    description: str
-    tags: list[str]
-    key_signature: str | None
-    tempo_bpm: int | None
-    star_count: int
-    commit_count: int
+    visibility: str
+    star_count: int = 0
+    last_activity_at: datetime | None = None
     created_at: datetime
 
 
@@ -384,11 +444,7 @@ class StarResponse(CamelModel):
     """Confirmation that a star was added or removed."""
 
     starred: bool
-    star_count: int
-    visibility: str
     star_count: int = 0
-    last_activity_at: datetime | None = None
-    created_at: datetime
 
 
 class ContributionDay(CamelModel):

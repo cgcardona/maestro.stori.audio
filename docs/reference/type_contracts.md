@@ -6491,6 +6491,64 @@ cross-repo search query.  Returned inside `GlobalSearchRepoGroup.matches`.
 
 Pydantic model grouping all matching commits for a single public repo.---
 
+## `ReleaseCreate`
+
+**Module:** `maestro.models.musehub`
+**Used by:** `POST /api/v1/musehub/repos/{repo_id}/releases` request body.
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `tag` | `str` | Yes | Version tag unique per repo (e.g. `v1.0`) |
+| `title` | `str` | Yes | Human-readable release title |
+| `body` | `str` | No | Markdown release notes |
+| `commit_id` | `str \| None` | No | Commit SHA to pin this release to |
+
+---
+
+## `ReleaseDownloadUrls`
+
+**Module:** `maestro.models.musehub`
+**Used by:** `ReleaseResponse.download_urls`.
+
+Structured map of download package URLs for a release. Each field is `None`
+when the corresponding package is unavailable.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `midi_bundle` | `str \| None` | Full MIDI export (all tracks as a single .mid) |
+| `stems` | `str \| None` | Per-track MIDI stems (zip of .mid files) |
+| `mp3` | `str \| None` | Full mix audio render |
+| `musicxml` | `str \| None` | MusicXML notation export |
+| `metadata` | `str \| None` | JSON manifest with tempo, key, arrangement info |
+
+---
+
+## `ReleaseResponse`
+
+**Module:** `maestro.models.musehub`
+**Used by:** `POST`, `GET /releases`, `GET /releases/{tag}` responses.
+**Result type name:** `ReleaseResponse`
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `release_id` | `str` | UUID of the release row |
+| `tag` | `str` | Version tag (e.g. `v1.0`) |
+| `title` | `str` | Release title |
+| `body` | `str` | Markdown release notes |
+| `commit_id` | `str \| None` | Pinned commit SHA, or `None` |
+| `download_urls` | `ReleaseDownloadUrls` | Structured download package URL map |
+| `created_at` | `datetime` | UTC timestamp of release creation |
+
+---
+
+## `ReleaseListResponse`
+
+**Module:** `maestro.models.musehub`
+**Used by:** `GET /api/v1/musehub/repos/{repo_id}/releases`.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `releases` | `list[ReleaseResponse]` | All releases, newest first |
 ## ExploreRepoResult
 
 **Module:** `maestro.models.musehub`
