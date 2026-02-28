@@ -245,15 +245,6 @@ class ObjectMetaListResponse(CamelModel):
 # ── Timeline models ───────────────────────────────────────────────────────────
 
 
-class TimelineEventType(str):
-    """Discriminator values for timeline event layers."""
-
-    COMMIT = "commit"
-    EMOTION = "emotion"
-    SECTION = "section"
-    TRACK = "track"
-
-
 class TimelineCommitEvent(CamelModel):
     """A commit plotted as a point on the timeline.
 
