@@ -1,0 +1,67 @@
+{#
+  Global navigation bar — included in base.html on every MuseHub page.
+
+  Provides:
+    - MuseHub logo / home link
+    - Search bar (GET /musehub/ui/search?q={query})
+    - Explore link
+    - Notifications bell (badge populated client-side)
+    - Sign-out button (shown client-side when a JWT is stored)
+    - Hamburger collapse on mobile (CSS :target / checkbox trick, no JS required)
+
+  No template variables required — this partial is fully self-contained.
+  JS hooks: #nav-notif-badge, #signout-btn (same IDs as the previous inline header).
+#}
+<header class="musehub-navbar" role="banner" aria-label="MuseHub global navigation">
+  <div class="navbar-inner">
+
+    {# ── Logo ── #}
+    <a href="/musehub/ui/explore" class="navbar-logo" aria-label="MuseHub home">
+      &#127925; Muse Hub
+    </a>
+
+    {# ── Search (no-JS: plain GET form) ── #}
+    <form class="navbar-search-form"
+          action="/musehub/ui/search"
+          method="get"
+          role="search"
+          aria-label="Search MuseHub">
+      <input  type="search"
+              name="q"
+              class="navbar-search-input"
+              placeholder="Search repositories, commits, sessions&#8230;"
+              aria-label="Search query"
+              autocomplete="off"
+              spellcheck="false">
+      <button type="submit" class="navbar-search-btn" aria-label="Submit search">&#128269;</button>
+    </form>
+
+    {# ── Hamburger toggle (CSS-only, no JS required for collapse) ── #}
+    <label class="navbar-hamburger" for="navbar-toggle" aria-label="Toggle navigation menu">
+      <span></span>
+      <span></span>
+      <span></span>
+    </label>
+    <input type="checkbox" id="navbar-toggle" class="navbar-toggle-input" aria-hidden="true">
+
+    {# ── Action links ── #}
+    <nav class="navbar-actions" aria-label="Site navigation">
+      <a href="/musehub/ui/explore" class="navbar-link">Explore</a>
+      <a href="/musehub/ui/feed"
+         class="navbar-link nav-notif-bell"
+         title="Notifications"
+         aria-label="Notifications">
+        &#128276;
+        <span id="nav-notif-badge" class="nav-notif-badge" aria-live="polite">0</span>
+      </a>
+      <button id="signout-btn"
+              class="btn btn-secondary btn-sm navbar-signout"
+              style="display:none"
+              onclick="clearToken();location.reload()"
+              type="button">
+        Sign out
+      </button>
+    </nav>
+
+  </div>
+</header>
