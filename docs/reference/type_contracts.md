@@ -2397,35 +2397,6 @@ Named result types for Muse CLI commands. All types are `TypedDict` subclasses
 defined in their respective command modules and returned from the injectable
 async core functions (the testable layer that Typer commands wrap).
 
-### `TempoScaleResult`
-
-**Module:** `maestro/muse_cli/commands/tempo_scale.py`
-
-Result of a `muse tempo-scale` operation.  Agents should treat `new_commit`
-as the SHA that replaces the source commit in the timeline.  The result is
-deterministic: same `source_commit` + `factor` + `track` + `preserve_expressions`
-always produces the same `new_commit`.
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `source_commit` | `str` | Short SHA of the input commit |
-| `new_commit` | `str` | Short SHA of the newly created tempo-scaled commit |
-| `factor` | `float` | Scaling factor applied: `< 1` = slower, `> 1` = faster |
-| `source_bpm` | `float` | Tempo of the source commit in BPM (stub: 120.0) |
-| `new_bpm` | `float` | Resulting tempo after scaling (`source_bpm × factor`) |
-| `track` | `str` | MIDI track filter; `"all"` when no filter is applied |
-| `preserve_expressions` | `bool` | Whether CC/expression events were scaled proportionally |
-| `message` | `str` | Commit message for the new scaled commit |
-
-**Producer:** `_tempo_scale_async()`
-**Consumer:** `_format_result()`, `tempo_scale()` Typer command
-
-**Pure helpers:**
-- `compute_factor_from_bpm(source_bpm, target_bpm) -> float` — compute factor = target / source
-- `apply_factor(bpm, factor) -> float` — compute new BPM = bpm × factor
-
----
-
 ### `FormSection`
 
 **Module:** `maestro/muse_cli/commands/form.py`
@@ -2473,6 +2444,74 @@ Used by `_form_history_async()` to return a ranked list of structural changes.
 
 **Producer:** `_form_history_async()`
 **Consumer:** `form()` Typer command via `--history`, `_render_history_text()`
+
+---
+
+### `KeyDetectResult`
+
+**Module:** `maestro/muse_cli/commands/key.py`
+
+Key detection (or annotation) result for a single commit or working tree.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `key` | `str` | Full key string, e.g. `"F# minor"` |
+| `tonic` | `str` | Root note, e.g. `"F#"` |
+| `mode` | `str` | `"major"` or `"minor"` |
+| `relative` | `str` | Relative key string (e.g. `"A major"`), empty when `--relative` not given |
+| `commit` | `str` | Resolved commit SHA (8-char) or empty string for annotations |
+| `branch` | `str` | Current branch name |
+| `track` | `str` | MIDI track filter; `"all"` when no filter is applied |
+| `source` | `str` | `"stub"` (MIDI analysis pending), `"annotation"` (explicit `--set`), or `"detected"` |
+
+**Producer:** `_key_detect_async()`
+**Consumer:** `_format_detect()`, `key()` Typer command
+
+### `KeyHistoryEntry`
+
+**Module:** `maestro/muse_cli/commands/key.py`
+
+One entry in a `muse key --history` listing, representing the key at a given commit.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `commit` | `str` | Resolved commit SHA (8-char) |
+| `key` | `str` | Full key string, e.g. `"F# minor"` |
+| `tonic` | `str` | Root note |
+| `mode` | `str` | `"major"` or `"minor"` |
+| `source` | `str` | `"stub"`, `"annotation"`, or `"detected"` |
+
+**Producer:** `_key_history_async()`
+**Consumer:** `_format_history()`, `key()` Typer command via `--history`
+
+---
+
+### `TempoScaleResult`
+
+**Module:** `maestro/muse_cli/commands/tempo_scale.py`
+
+Result of a `muse tempo-scale` operation.  Agents should treat `new_commit`
+as the SHA that replaces the source commit in the timeline.  The result is
+deterministic: same `source_commit` + `factor` + `track` + `preserve_expressions`
+always produces the same `new_commit`.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `source_commit` | `str` | Short SHA of the input commit |
+| `new_commit` | `str` | Short SHA of the newly created tempo-scaled commit |
+| `factor` | `float` | Scaling factor applied: `< 1` = slower, `> 1` = faster |
+| `source_bpm` | `float` | Tempo of the source commit in BPM (stub: 120.0) |
+| `new_bpm` | `float` | Resulting tempo after scaling (`source_bpm × factor`) |
+| `track` | `str` | MIDI track filter; `"all"` when no filter is applied |
+| `preserve_expressions` | `bool` | Whether CC/expression events were scaled proportionally |
+| `message` | `str` | Commit message for the new scaled commit |
+
+**Producer:** `_tempo_scale_async()`
+**Consumer:** `_format_result()`, `tempo_scale()` Typer command
+
+**Pure helpers:**
+- `compute_factor_from_bpm(source_bpm, target_bpm) -> float` — compute factor = target / source
+- `apply_factor(bpm, factor) -> float` — compute new BPM = bpm × factor
 
 ### `SwingDetectResult`
 
