@@ -228,6 +228,18 @@ STEP 2 — CHECK CANONICAL STATE BEFORE DOING ANY WORK:
   ⚠️  Query GitHub first. Do NOT create a branch, write a file, or run mypy until
   you have confirmed no prior work exists. This is the idempotency gate.
 
+  # 0. Is the issue itself already closed? (fastest exit — check this FIRST)
+  ISSUE_STATE=$(gh issue view <N> --json state --jq '.state')
+  if [ "$ISSUE_STATE" = "CLOSED" ]; then
+    echo "⚠️  Issue #<N> is already CLOSED on GitHub. No work needed."
+    # Self-destruct and stop.
+    WORKTREE=$(pwd)
+    cd "$REPO"
+    git worktree remove --force "$WORKTREE"
+    git worktree prune
+    exit 0
+  fi
+
   # 1. Is there already an open or merged PR that closes this issue?
   gh pr list --search "closes #<N>" --state all --json number,url,state,headRefName
 
@@ -235,13 +247,14 @@ STEP 2 — CHECK CANONICAL STATE BEFORE DOING ANY WORK:
   git ls-remote origin | grep -i "issue-<N>\|fix/.*<N>\|feat/.*<N>"
 
   Decision matrix — act on the FIRST match:
-  ┌─────────────────────────────────────────────────────────────────────┐
-  │ Merged PR found       → STOP. Report the PR URL. Self-destruct.    │
-  │ Open PR found         → STOP. Report the PR URL. Self-destruct.    │
-  │ Remote branch exists, │                                             │
-  │   no PR yet           → Checkout that branch, skip to STEP 4.     │
-  │ Nothing found         → Continue to STEP 3 (full implementation).  │
-  └─────────────────────────────────────────────────────────────────────┘
+  ┌──────────────────────────────────────────────────────────────────────┐
+  │ Issue is CLOSED       → STOP. Report closed state. Self-destruct.   │
+  │ Merged PR found       → STOP. Report the PR URL. Self-destruct.     │
+  │ Open PR found         → STOP. Report the PR URL. Self-destruct.     │
+  │ Remote branch exists, │                                              │
+  │   no PR yet           → Checkout that branch, skip to STEP 4.      │
+  │ Nothing found         → Continue to STEP 3 (full implementation).   │
+  └──────────────────────────────────────────────────────────────────────┘
 
   Self-destruct when stopping early:
     WORKTREE=$(pwd)

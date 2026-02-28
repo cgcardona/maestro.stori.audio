@@ -516,3 +516,49 @@ def test_build_download_urls_no_packages() -> None:
     assert urls.mp3 is None
     assert urls.musicxml is None
     assert urls.metadata is None
+
+
+# ---------------------------------------------------------------------------
+# Regression tests for issue #302 — author field on Release
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.anyio
+async def test_create_release_author_in_response(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+) -> None:
+    """POST /releases response includes the author field (JWT sub) — regression for #302."""
+    repo_id = await _create_repo(client, auth_headers, "author-release-repo")
+    response = await client.post(
+        f"/api/v1/musehub/repos/{repo_id}/releases",
+        json={"tag": "v1.0", "title": "Author Field Test", "body": ""},
+        headers=auth_headers,
+    )
+    assert response.status_code == 201
+    body = response.json()
+    assert "author" in body
+    assert isinstance(body["author"], str)
+
+
+@pytest.mark.anyio
+async def test_create_release_author_persisted_in_list(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+) -> None:
+    """Author field is persisted and returned in the release list endpoint — regression for #302."""
+    repo_id = await _create_repo(client, auth_headers, "author-release-list-repo")
+    await client.post(
+        f"/api/v1/musehub/repos/{repo_id}/releases",
+        json={"tag": "v0.1", "title": "Listed Release", "body": ""},
+        headers=auth_headers,
+    )
+    list_response = await client.get(
+        f"/api/v1/musehub/repos/{repo_id}/releases",
+        headers=auth_headers,
+    )
+    assert list_response.status_code == 200
+    releases = list_response.json()["releases"]
+    assert len(releases) == 1
+    assert "author" in releases[0]
+    assert isinstance(releases[0]["author"], str)

@@ -6233,7 +6233,6 @@ Defined in `maestro/models/musehub.py`.
 **Producer:** `search.search_repo` route handler
 **Consumer:** Muse Hub search page (renders result rows); AI agents finding commits by musical property
 
-<<<<<<< HEAD
 ### `SessionResponse`
 
 Defined in `maestro/models/musehub.py`.
@@ -6266,7 +6265,7 @@ Wrapper returned by `GET /api/v1/musehub/repos/{repo_id}/sessions`.
 
 **Producer:** `repos.list_sessions` route handler
 **Consumer:** Muse Hub sessions page UI; AI agents auditing studio activity across time
-=======
+
 ### `DagNode`
 
 A single commit node in the repo's directed acyclic graph. Defined in `maestro/models/musehub.py`.
@@ -6314,7 +6313,6 @@ Returned by `GET /api/v1/musehub/repos/{repo_id}/dag`.
 
 **Producer:** `repos.get_commit_dag` route handler
 **Consumer:** Interactive DAG graph UI page; AI agents inspecting project history topology
->>>>>>> origin/dev
 
 ---
 
@@ -7024,3 +7022,71 @@ Top-level response model for `GET /api/v1/musehub/search`.
 
 **Produced by:** `maestro.services.musehub_context.build_agent_context()`
 **Consumed by:** AI composition agents at session start; MCP context tool (planned)
+
+---
+
+## Muse Hub — Groove Check API Types (`maestro/models/musehub.py`)
+
+### `GrooveCommitEntry`
+
+**Path:** `maestro/models/musehub.py`
+
+`CamelModel` — Per-commit groove metrics within a groove-check analysis window, as returned by `GET /repos/{repo_id}/groove-check`.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `commit` | `str` | Short commit reference (8 hex chars) |
+| `groove_score` | `float` | Average onset deviation from quantization grid, in beats |
+| `drift_delta` | `float` | Absolute change in `groove_score` vs prior commit |
+| `status` | `str` | `"OK"` / `"WARN"` / `"FAIL"` classification |
+| `track` | `str` | Track scope analysed, or `"all"` |
+| `section` | `str` | Section scope analysed, or `"all"` |
+| `midi_files` | `int` | Number of MIDI snapshots analysed |
+
+**Produced by:** `maestro.api.routes.musehub.repos.get_groove_check()`
+**Consumed by:** MuseHub groove-check UI page; AI agents auditing rhythmic consistency
+
+---
+
+### `GrooveCheckResponse`
+
+**Path:** `maestro/models/musehub.py`
+
+`CamelModel` — Aggregate rhythmic consistency dashboard data for a commit window, as returned by `GET /repos/{repo_id}/groove-check`.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `commit_range` | `str` | Commit range string that was analysed (e.g. `"HEAD~10..HEAD"`) |
+| `threshold` | `float` | Drift threshold in beats used for WARN/FAIL classification |
+| `total_commits` | `int` | Total commits in the analysis window |
+| `flagged_commits` | `int` | Number of commits with WARN or FAIL status |
+| `worst_commit` | `str` | Commit ref with the highest `drift_delta`, or empty string |
+| `entries` | `list[GrooveCommitEntry]` | Per-commit metrics, oldest-first |
+
+**Produced by:** `maestro.api.routes.musehub.repos.get_groove_check()`
+**Consumed by:** MuseHub groove-check UI page (`/musehub/ui/{owner}/{repo_slug}/groove-check`); AI agents comparing rhythmic consistency across branches
+
+---
+
+## Storpheus — Inference Optimization Types (`storpheus/music_service.py`)
+
+### `GenerationTiming`
+
+**Path:** `storpheus/music_service.py`
+
+`@dataclass` — Per-phase wall-clock latency breakdown for a single `_do_generate` call. Attached to every `GenerateResponse` under `metadata["timing"]` as the output of `GenerationTiming.to_dict()`.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `request_start` | `float` | `time()` at dataclass construction — beginning of the generation request |
+| `seed_elapsed_s` | `float` | Wall time for seed library lookup and key transposition |
+| `generate_elapsed_s` | `float` | Cumulative wall time for all `/generate_music_and_state` Gradio calls |
+| `add_batch_elapsed_s` | `float` | Cumulative wall time for all `/add_batch` Gradio calls |
+| `post_process_elapsed_s` | `float` | Wall time for the post-processing pipeline |
+| `total_elapsed_s` | `float` | Full request wall time (set just before response is returned) |
+| `regen_count` | `int` | Number of full re-generate calls triggered (above the first) |
+| `multi_batch_tries` | `int` | Total `/add_batch` calls made across all generate rounds |
+| `candidates_evaluated` | `int` | Total candidate batches scored by the rejection-sampling critic |
+
+**Produced by:** `storpheus.music_service._do_generate()`
+**Consumed by:** Callers of `GenerateResponse.metadata["timing"]`; latency dashboards; A/B test comparisons via `/quality/ab-test`

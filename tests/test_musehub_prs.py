@@ -408,3 +408,63 @@ async def test_merge_pr_requires_auth(client: AsyncClient) -> None:
         json={"mergeStrategy": "merge_commit"},
     )
     assert response.status_code == 401
+
+
+# ---------------------------------------------------------------------------
+# Regression tests for issue #302 — author field on PR
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.anyio
+async def test_create_pr_author_in_response(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+    db_session: AsyncSession,
+) -> None:
+    """POST /pull-requests response includes the author field (JWT sub) — regression for #302."""
+    repo_id = await _create_repo(client, auth_headers, "author-pr-repo")
+    await _push_branch(db_session, repo_id, "feat/author-test")
+    response = await client.post(
+        f"/api/v1/musehub/repos/{repo_id}/pull-requests",
+        json={
+            "title": "Author field regression",
+            "body": "",
+            "fromBranch": "feat/author-test",
+            "toBranch": "main",
+        },
+        headers=auth_headers,
+    )
+    assert response.status_code == 201
+    body = response.json()
+    assert "author" in body
+    assert isinstance(body["author"], str)
+
+
+@pytest.mark.anyio
+async def test_create_pr_author_persisted_in_list(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+    db_session: AsyncSession,
+) -> None:
+    """Author field is persisted and returned in the PR list endpoint — regression for #302."""
+    repo_id = await _create_repo(client, auth_headers, "author-pr-list-repo")
+    await _push_branch(db_session, repo_id, "feat/author-list-test")
+    await client.post(
+        f"/api/v1/musehub/repos/{repo_id}/pull-requests",
+        json={
+            "title": "Authored PR",
+            "body": "",
+            "fromBranch": "feat/author-list-test",
+            "toBranch": "main",
+        },
+        headers=auth_headers,
+    )
+    list_response = await client.get(
+        f"/api/v1/musehub/repos/{repo_id}/pull-requests",
+        headers=auth_headers,
+    )
+    assert list_response.status_code == 200
+    prs = list_response.json()["pullRequests"]
+    assert len(prs) == 1
+    assert "author" in prs[0]
+    assert isinstance(prs[0]["author"], str)

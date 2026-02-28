@@ -60,6 +60,8 @@ from maestro.models.musehub_analysis import (
     MeterData,
     ModulationPoint,
     MotifEntry,
+    MotifRecurrenceCell,
+    MotifTransformation,
     MotifsData,
     SectionEntry,
     SimilarCommit,
@@ -171,13 +173,141 @@ def _build_dynamics(ref: str, track: Optional[str], section: Optional[str]) -> D
     )
 
 
+_CONTOUR_LABELS = [
+    "ascending-step",
+    "descending-step",
+    "arch",
+    "valley",
+    "oscillating",
+    "static",
+]
+_TRANSFORMATION_TYPES = ["inversion", "retrograde", "retrograde-inversion", "transposition"]
+_MOTIF_TRACKS = ["melody", "bass", "keys", "strings", "brass"]
+_MOTIF_SECTIONS = ["intro", "verse_1", "chorus", "verse_2", "outro"]
+
+
+def _invert_intervals(intervals: list[int]) -> list[int]:
+    """Return the melodic inversion (negate all semitone intervals)."""
+    return [-x for x in intervals]
+
+
+def _retrograde_intervals(intervals: list[int]) -> list[int]:
+    """Return the retrograde (reversed interval sequence)."""
+    return list(reversed(intervals))
+
+
 def _build_motifs(ref: str, track: Optional[str], section: Optional[str]) -> MotifsData:
+    """Build stub motif analysis with transformations, contour, and recurrence grid.
+
+    Deterministic for a given ``ref`` value.  Produces 2–4 motifs, each with:
+    - Original interval sequence and occurrence beats
+    - Melodic contour label (arch, valley, oscillating, etc.)
+    - All tracks where the motif or its transformations appear
+    - Up to 3 transformations (inversion, retrograde, transposition)
+    - Flat track×section recurrence grid for heatmap rendering
+    """
     seed = _ref_hash(ref)
     n_motifs = 2 + (seed % 3)
+    all_tracks = _MOTIF_TRACKS[: 2 + (seed % 3)]
+    sections = _MOTIF_SECTIONS
+
     motifs: list[MotifEntry] = []
     for i in range(n_motifs):
         intervals = [2, -1, 3, -2][: 2 + i]
         occurrences = [float(j * 8 + i * 2) for j in range(2 + (seed % 2))]
+        contour_label = _pick(seed, _CONTOUR_LABELS, offset=i)
+        primary_track = track or all_tracks[i % len(all_tracks)]
+
+        # Cross-track sharing: motif appears in 1–3 tracks
+        n_sharing_tracks = 1 + (seed + i) % min(3, len(all_tracks))
+        sharing_tracks = [all_tracks[(i + k) % len(all_tracks)] for k in range(n_sharing_tracks)]
+        if primary_track not in sharing_tracks:
+            sharing_tracks = [primary_track] + sharing_tracks[: n_sharing_tracks - 1]
+
+        # Build transformations
+        transformations: list[MotifTransformation] = []
+        inv_occurrences = [float(j * 8 + i * 2 + 4) for j in range(1 + (seed % 2))]
+        transformations.append(
+            MotifTransformation(
+                transformation_type="inversion",
+                intervals=_invert_intervals(intervals),
+                transposition_semitones=0,
+                occurrences=inv_occurrences,
+                track=sharing_tracks[0],
+            )
+        )
+        if len(intervals) >= 2:
+            retro_occurrences = [float(j * 8 + i * 2 + 2) for j in range(1 + (seed % 2))]
+            transformations.append(
+                MotifTransformation(
+                    transformation_type="retrograde",
+                    intervals=_retrograde_intervals(intervals),
+                    transposition_semitones=0,
+                    occurrences=retro_occurrences,
+                    track=sharing_tracks[-1],
+                )
+            )
+        if (seed + i) % 2 == 0:
+            transpose_by = 5 if (seed % 2 == 0) else 7
+            transpo_occurrences = [float(j * 16 + i * 2) for j in range(1 + (seed % 2))]
+            transformations.append(
+                MotifTransformation(
+                    transformation_type="transposition",
+                    intervals=[x for x in intervals],
+                    transposition_semitones=transpose_by,
+                    occurrences=transpo_occurrences,
+                    track=sharing_tracks[min(1, len(sharing_tracks) - 1)],
+                )
+            )
+
+        # Build recurrence grid: track × section
+        recurrence_grid: list[MotifRecurrenceCell] = []
+        for t in all_tracks:
+            for s in sections:
+                # Original present in primary track, first two sections
+                if t == primary_track and s in sections[:2]:
+                    recurrence_grid.append(
+                        MotifRecurrenceCell(
+                            track=t,
+                            section=s,
+                            present=True,
+                            occurrence_count=1 + (seed % 2),
+                            transformation_types=["original"],
+                        )
+                    )
+                # Inversion in sharing tracks at chorus
+                elif t in sharing_tracks and s == "chorus":
+                    recurrence_grid.append(
+                        MotifRecurrenceCell(
+                            track=t,
+                            section=s,
+                            present=True,
+                            occurrence_count=1,
+                            transformation_types=["inversion"],
+                        )
+                    )
+                # Transposition in bridge / outro for certain motifs
+                elif (seed + i) % 2 == 0 and t in sharing_tracks and s == "outro":
+                    recurrence_grid.append(
+                        MotifRecurrenceCell(
+                            track=t,
+                            section=s,
+                            present=True,
+                            occurrence_count=1,
+                            transformation_types=["transposition"],
+                        )
+                    )
+                else:
+                    recurrence_grid.append(
+                        MotifRecurrenceCell(
+                            track=t,
+                            section=s,
+                            present=False,
+                            occurrence_count=0,
+                            transformation_types=[],
+                        )
+                    )
+
         motifs.append(
             MotifEntry(
                 motif_id=f"M{i + 1:02d}",
@@ -185,10 +315,20 @@ def _build_motifs(ref: str, track: Optional[str], section: Optional[str]) -> Mot
                 length_beats=float(2 + i),
                 occurrence_count=len(occurrences),
                 occurrences=occurrences,
-                track=track or ("melody" if i == 0 else "bass"),
+                track=primary_track,
+                contour_label=contour_label,
+                tracks=sharing_tracks,
+                transformations=transformations,
+                recurrence_grid=recurrence_grid,
             )
         )
-    return MotifsData(total_motifs=len(motifs), motifs=motifs)
+
+    return MotifsData(
+        total_motifs=len(motifs),
+        motifs=motifs,
+        sections=sections,
+        all_tracks=all_tracks,
+    )
 
 
 def _build_form(ref: str, track: Optional[str], section: Optional[str]) -> FormData:
