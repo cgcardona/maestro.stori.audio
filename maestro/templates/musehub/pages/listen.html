@@ -378,8 +378,7 @@ const TRACK_PATH = {{ (track_path or '') | tojson }};
     if (rowEl) { rowEl.classList.add('active'); activeTrackRow = rowEl; }
     var nameEl = document.getElementById('player-track-label');
     if (nameEl) nameEl.textContent = name;
-    player.load(url);
-    player._ws.on('ready', function () { player._ws.play(); });
+    player.load(url, true /* autoPlay */);
   }
 
   /* ── Full-mix view: fetch object list ───────────────────────────── */

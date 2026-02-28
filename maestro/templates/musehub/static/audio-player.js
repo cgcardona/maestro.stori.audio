@@ -50,6 +50,7 @@
     this._opts = opts;
     this._speedIdx = 2; /* default 1.0x */
     this._loopActive = false;
+    this._autoPlay = false;
   }
 
   /**
@@ -92,6 +93,10 @@
       var dur = self._ws.getDuration();
       if (opts.timeDurEl) opts.timeDurEl.textContent = fmtTime(dur);
       if (opts.playBtnEl) opts.playBtnEl.disabled = false;
+      if (self._autoPlay) {
+        self._autoPlay = false;
+        self._ws.play();
+      }
     });
 
     this._ws.on('play', function () {
@@ -204,9 +209,14 @@
   /**
    * Load an audio URL into the player.
    *
-   * @param {string} url - Absolute or relative URL of the audio file.
+   * @param {string} url      - Absolute or relative URL of the audio file.
+   * @param {boolean} [autoPlay=false] - If true, begin playback as soon as
+   *   the audio is ready.  Use this instead of calling
+   *   ``player._ws.on('ready', ...)`` at the call site — doing so accumulates
+   *   stale listeners across successive track loads.
    */
-  AudioPlayer.prototype.load = function (url) {
+  AudioPlayer.prototype.load = function (url, autoPlay) {
+    this._autoPlay = !!autoPlay;
     if (this._opts.playBtnEl) this._opts.playBtnEl.disabled = true;
     if (this._opts.timeCurEl) this._opts.timeCurEl.textContent = '0:00';
     if (this._opts.timeDurEl) this._opts.timeDurEl.textContent = '0:00';
