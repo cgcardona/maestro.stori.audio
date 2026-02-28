@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import logging
 import pathlib
+import shutil
 import tomllib
 from typing import TypedDict
 
@@ -246,8 +247,6 @@ def remove_remote(
     root = (repo_root or pathlib.Path.cwd()).resolve()
     refs_dir = root / _MUSE_DIR / "remotes" / name
     if refs_dir.is_dir():
-        import shutil
-
         shutil.rmtree(refs_dir)
         logger.debug("✅ Removed tracking refs dir %s", refs_dir)
 
