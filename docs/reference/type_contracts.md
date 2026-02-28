@@ -7398,3 +7398,62 @@ Full emotion map for a Muse repo ref. Returned by `GET /musehub/repos/{repo_id}/
 
 **Produced by:** `storpheus.music_service._do_generate()`
 **Consumed by:** Callers of `GenerateResponse.metadata["timing"]`; latency dashboards; A/B test comparisons via `/quality/ab-test`
+
+---
+
+## Piano Roll / MIDI Parser Types (`maestro/services/musehub_midi_parser.py`)
+
+### `MidiNote`
+
+**Path:** `maestro/services/musehub_midi_parser.py`
+
+`TypedDict` — A single sounding note extracted from a MIDI track.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `pitch` | `int` | MIDI pitch number (0–127, 60 = middle C) |
+| `start_beat` | `float` | Note-on position in quarter-note beats from the beginning of the file |
+| `duration_beats` | `float` | Sustain length in quarter-note beats (note-on to note-off) |
+| `velocity` | `int` | Note-on velocity (0–127) |
+| `track_id` | `int` | Zero-based index of the source MIDI track |
+| `channel` | `int` | MIDI channel (0–15) |
+
+**Produced by:** `maestro.services.musehub_midi_parser.parse_midi_bytes()`
+**Consumed by:** `MidiTrack.notes`; MuseHub piano roll Canvas renderer
+
+---
+
+### `MidiTrack`
+
+**Path:** `maestro/services/musehub_midi_parser.py`
+
+`TypedDict` — A single logical track extracted from a MIDI file.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `track_id` | `int` | Zero-based track index matching `MidiNote.track_id` |
+| `channel` | `int` | Dominant MIDI channel (−1 when track has no notes) |
+| `name` | `str` | Track name from `track_name` meta message, or auto-generated |
+| `notes` | `list[MidiNote]` | All notes sorted by `start_beat` |
+
+**Produced by:** `maestro.services.musehub_midi_parser.parse_midi_bytes()`
+**Consumed by:** `MidiParseResult.tracks`; MuseHub piano roll Canvas renderer
+
+---
+
+### `MidiParseResult`
+
+**Path:** `maestro/services/musehub_midi_parser.py`
+
+`TypedDict` — Top-level result returned by `parse_midi_bytes()` and serialised
+as JSON by `GET /api/v1/musehub/repos/{repo_id}/objects/{object_id}/parse-midi`.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `tracks` | `list[MidiTrack]` | Per-track note data, ordered by track index |
+| `tempo_bpm` | `float` | First tempo found in the file, in BPM (default 120.0) |
+| `time_signature` | `str` | First time signature as `"N/D"` (default `"4/4"`) |
+| `total_beats` | `float` | Total duration in quarter-note beats |
+
+**Produced by:** `maestro.services.musehub_midi_parser.parse_midi_bytes()`
+**Consumed by:** `maestro.api.routes.musehub.objects.parse_midi_object()`; MuseHub piano roll JavaScript renderer (`piano-roll.js`)
