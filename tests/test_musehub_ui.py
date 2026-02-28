@@ -3373,3 +3373,105 @@ async def test_harmony_json_response(
     assert "totalBeats" in data
     assert data["totalBeats"] > 0
 
+
+# ---------------------------------------------------------------------------
+# Arrangement matrix page — issue #212
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.anyio
+async def test_arrange_page_returns_200(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """GET /musehub/ui/{owner}/{slug}/arrange/{ref} returns 200 HTML without a JWT."""
+    await _make_repo(db_session)
+    response = await client.get("/musehub/ui/testuser/test-beats/arrange/HEAD")
+    assert response.status_code == 200
+    assert "text/html" in response.headers["content-type"]
+
+
+@pytest.mark.anyio
+async def test_arrange_page_no_auth_required(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Arrangement matrix page is accessible without a JWT (auth handled client-side)."""
+    await _make_repo(db_session)
+    response = await client.get("/musehub/ui/testuser/test-beats/arrange/HEAD")
+    assert response.status_code == 200
+    assert response.status_code != 401
+
+
+@pytest.mark.anyio
+async def test_arrange_page_contains_musehub(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Arrangement matrix page HTML shell contains 'Muse Hub' branding."""
+    await _make_repo(db_session)
+    response = await client.get("/musehub/ui/testuser/test-beats/arrange/abc1234")
+    assert response.status_code == 200
+    assert "Muse Hub" in response.text
+
+
+@pytest.mark.anyio
+async def test_arrange_page_contains_grid_js(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Arrangement matrix page embeds the grid rendering JS (renderMatrix or arrange)."""
+    await _make_repo(db_session)
+    response = await client.get("/musehub/ui/testuser/test-beats/arrange/HEAD")
+    assert response.status_code == 200
+    body = response.text
+    assert "renderMatrix" in body or "arrange" in body.lower()
+
+
+@pytest.mark.anyio
+async def test_arrange_page_contains_density_logic(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Arrangement matrix page includes density colour logic."""
+    await _make_repo(db_session)
+    response = await client.get("/musehub/ui/testuser/test-beats/arrange/HEAD")
+    assert response.status_code == 200
+    body = response.text
+    assert "density" in body.lower() or "noteDensity" in body
+
+
+@pytest.mark.anyio
+async def test_arrange_page_contains_token_form(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Arrangement matrix page includes the JWT token form for client-side auth."""
+    await _make_repo(db_session)
+    response = await client.get("/musehub/ui/testuser/test-beats/arrange/HEAD")
+    assert response.status_code == 200
+    body = response.text
+    assert 'id="token-form"' in body
+    assert "musehub.js" in body
+
+
+@pytest.mark.anyio
+async def test_arrange_page_unknown_repo_returns_404(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """GET /musehub/ui/{unknown}/{slug}/arrange/{ref} returns 404 for unknown repos."""
+    response = await client.get("/musehub/ui/unknown-user/no-such-repo/arrange/HEAD")
+    assert response.status_code == 404
+
+
+@pytest.mark.anyio
+async def test_arrange_tab_in_repo_nav(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Repo home page navigation includes an 'Arrange' tab link."""
+    await _make_repo(db_session)
+    response = await client.get("/musehub/ui/testuser/test-beats")
+    assert response.status_code == 200
+    assert "Arrange" in response.text or "arrange" in response.text

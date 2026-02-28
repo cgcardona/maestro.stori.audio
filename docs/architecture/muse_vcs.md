@@ -1758,6 +1758,7 @@ All authed endpoints require `Authorization: Bearer <token>`. See [api.md](../re
 | GET | `/musehub/ui/{owner}/{repo_slug}/issues/{number}` | Issue detail (with close button) |
 | GET | `/musehub/ui/{owner}/{repo_slug}/sessions` | Session list (newest first) |
 | GET | `/musehub/ui/{owner}/{repo_slug}/sessions/{session_id}` | Session detail page |
+| GET | `/musehub/ui/{owner}/{repo_slug}/arrange/{ref}` | Arrangement matrix — interactive instrument × section density grid |
 
 UI pages are Jinja2-rendered HTML shells — auth is handled client-side via `localStorage` JWT (loaded from `/musehub/static/musehub.js`). The page JavaScript fetches from the authed JSON API above.
 ### Repo Home Page
@@ -1771,6 +1772,7 @@ UI pages are Jinja2-rendered HTML shells — auth is handled client-side via `lo
 | `GET /musehub/ui/{owner}/{repo_slug}` | None (HTML shell) | Repo home page — arrangement matrix, audio player, stats bar, recent commits |
 | `GET /musehub/ui/{owner}/{repo_slug}` (`Accept: application/json`) | Optional JWT | Returns `{ stats, recent_commits }` as JSON |
 | `GET /api/v1/musehub/repos/{repo_id}/stats` | Optional JWT | `RepoStatsResponse` — commit/branch/release counts |
+| `GET /api/v1/musehub/repos/{repo_id}/arrange/{ref}` | Optional JWT | `ArrangementMatrixResponse` — instrument × section density grid |
 
 **Sections rendered by the home page template (`repo_home.html`):**
 
@@ -7411,6 +7413,7 @@ repo identity card above the tabs).  The active tab is determined by the
 | `credits`  | Credits |
 | `insights` | Insights |
 | `search`   | Search |
+| `arrange`  | Arrange |
 
 Tab count badges (`id="nav-pr-count"`, `id="nav-issue-count"`) are populated
 client-side by `loadNavCounts()` in `musehub.js` so route handlers remain
@@ -7638,6 +7641,56 @@ structure is derived by splitting object `path` fields on `/`.
 | HTML routes | `maestro/api/routes/musehub/ui.py` — `tree_page()`, `tree_subdir_page()` |
 | Template | `maestro/templates/musehub/pages/tree.html` |
 | Tests | `tests/test_musehub_ui.py` — `test_tree_*` (6 tests) |
+
+---
+
+## Muse Hub — Arrangement Matrix Page (issue #212)
+
+**Purpose:** Provide a bird's-eye orchestration view — which instruments play in which sections — so producers can evaluate arrangement density without downloading or listening to tracks.  This is the most useful single page for an AI orchestration agent before generating a new instrument part.
+
+### Routes
+
+| Route | Auth | Description |
+|-------|------|-------------|
+| `GET /musehub/ui/{owner}/{repo_slug}/arrange/{ref}` | None (HTML shell) | Interactive instrument × section density grid |
+| `GET /api/v1/musehub/repos/{repo_id}/arrange/{ref}` | Optional JWT | `ArrangementMatrixResponse` JSON |
+
+### Grid Layout
+
+- **Y-axis (rows):** instruments — bass, keys, guitar, drums, lead, pads
+- **X-axis (columns):** sections — intro, verse_1, chorus, bridge, outro
+- **Cell:** colour-coded by note density; silent cells rendered in dark background
+- **Cell click:** navigates to the piano roll (motif browser filtered by instrument + section)
+- **Hover tooltip:** note count, beat range, MIDI pitch range
+- **Row summaries:** per-instrument total notes, active section count, mean density bar
+- **Column summaries:** per-section total notes, active instrument count
+
+### Data Model
+
+```python
+ArrangementMatrixResponse(
+    repo_id    = "...",
+    ref        = "HEAD",
+    instruments = ["bass", "keys", "guitar", "drums", "lead", "pads"],
+    sections    = ["intro", "verse_1", "chorus", "bridge", "outro"],
+    cells       = [ArrangementCellData(...)],   # 6 × 5 = 30 cells, row-major
+    row_summaries    = [ArrangementRowSummary(...)],
+    column_summaries = [ArrangementColumnSummary(...)],
+    total_beats = 128.0,
+)
+```
+
+### Implementation
+
+| Layer | File |
+|-------|------|
+| Models | `maestro/models/musehub.py` — `ArrangementCellData`, `ArrangementRowSummary`, `ArrangementColumnSummary`, `ArrangementMatrixResponse` |
+| Service | `maestro/services/musehub_analysis.py` — `compute_arrangement_matrix()` |
+| JSON API | `maestro/api/routes/musehub/repos.py` — `get_arrangement_matrix()` |
+| HTML route | `maestro/api/routes/musehub/ui.py` — `arrange_page()` |
+| Template | `maestro/templates/musehub/pages/arrange.html` |
+| Nav tab | `maestro/templates/musehub/partials/repo_tabs.html` — `current_page = "arrange"` |
+| Tests | `tests/test_musehub_ui.py` — `test_arrange_*` (8 tests), `tests/test_musehub_repos.py` — `test_arrange_*` (8 tests) |
 
 ---
 
