@@ -106,7 +106,8 @@ maestro/muse_cli/
     ├── push.py           — muse push    (stub — issue #38)
     ├── pull.py           — muse pull    (stub — issue #38)
     ├── open_cmd.py       — muse open    ✅ macOS artifact preview (issue #45)
-    └── play.py           — muse play    ✅ macOS audio playback via afplay (issue #45)
+    ├── play.py           — muse play    ✅ macOS audio playback via afplay (issue #45)
+    └── find.py           — muse find   ✅ search commit history by musical properties (issue #114)
 ```
 
 `maestro/muse_cli/artifact_resolver.py` — `resolve_artifact_async()` / `resolve_artifact()`:
@@ -303,6 +304,126 @@ Merge commits (two parents) require `muse merge` (issue #35) — `parent2_commit
 |------|---------|-------------|
 | `--limit N` / `-n N` | 1000 | Cap the walk at N commits |
 | `--graph` | off | ASCII DAG mode |
+
+---
+
+## `muse find` — Search Commit History by Musical Properties
+
+`muse find` is the musical grep: it queries the full commit history for the
+current repository and returns commits whose messages match musical criteria.
+All filter flags combine with **AND logic** — a commit must satisfy every
+supplied criterion to appear in results.
+
+### Command Flags
+
+| Flag | Example | Description |
+|------|---------|-------------|
+| `--harmony <query>` | `"key=Eb"`, `"mode=minor"` | Harmonic filter |
+| `--rhythm <query>` | `"tempo=120-130"`, `"meter=7/8"` | Rhythmic filter |
+| `--melody <query>` | `"shape=arch"`, `"motif=main-theme"` | Melodic filter |
+| `--structure <query>` | `"has=bridge"`, `"form=AABA"` | Structural filter |
+| `--dynamic <query>` | `"avg_vel>80"`, `"arc=crescendo"` | Dynamic filter |
+| `--emotion <tag>` | `melancholic` | Emotion tag |
+| `--section <text>` | `"chorus"` | Named section filter |
+| `--track <text>` | `"bass"` | Track presence filter |
+| `--since <date>` | `"2026-01-01"` | Commits after this date (UTC) |
+| `--until <date>` | `"2026-03-01"` | Commits before this date (UTC) |
+| `--limit N` / `-n N` | `20` (default) | Cap results |
+| `--json` | — | Machine-readable JSON output |
+
+### Query DSL
+
+#### Equality match (default)
+
+All property filters do a **case-insensitive substring match** against the
+commit message:
+
+```
+muse find --harmony "key=F minor"
+```
+
+Finds every commit whose message contains the string `key=F minor` (any case).
+
+#### Numeric range match
+
+When the value portion of a `key=value` expression contains two numbers
+separated by a hyphen (`low-high`), the filter extracts the numeric value of
+the key from the message and checks whether it falls within the range
+(inclusive):
+
+```
+muse find --rhythm "tempo=120-130"
+```
+
+Matches commits whose message contains `tempo=<N>` where 120 ≤ N ≤ 130.
+
+### Output Formats
+
+#### Default (text)
+
+One commit block per match, newest-first:
+
+```
+commit a1b2c3d4...
+Branch: main
+Parent: f9e8d7c6
+Date:   2026-02-27 17:30:00
+
+    ambient sketch, key=F minor, tempo=90 bpm
+
+```
+
+#### `--json` output
+
+A JSON array of commit objects:
+
+```json
+[
+  {
+    "commit_id": "a1b2c3d4...",
+    "branch": "main",
+    "message": "ambient sketch, key=F minor, tempo=90 bpm",
+    "author": "",
+    "committed_at": "2026-02-27T17:30:00+00:00",
+    "parent_commit_id": "f9e8d7c6...",
+    "snapshot_id": "bac947cf..."
+  }
+]
+```
+
+### Examples
+
+```bash
+# All commits in F minor
+muse find --harmony "key=F minor"
+
+# Up-tempo commits in a date window
+muse find --rhythm "tempo=120-130" --since "2026-01-01"
+
+# Melancholic commits that include a bridge, as JSON
+muse find --emotion melancholic --structure "has=bridge" --json
+
+# Bass track presence, capped at 10 results
+muse find --track bass --limit 10
+```
+
+### Architecture
+
+- **Service:** `maestro/services/muse_find.py`
+  - `MuseFindQuery` — frozen dataclass of all search criteria
+  - `MuseFindCommitResult` — a single matching commit
+  - `MuseFindResults` — container with matches, total scanned, and the query
+  - `search_commits(session, repo_id, query)` — async search function
+- **CLI command:** `maestro/muse_cli/commands/find.py`
+  - `_find_async(root, session, query, output_json)` — injectable core (tested directly)
+  - Registered in `maestro/muse_cli/app.py` as `find`
+
+### Postgres Behaviour
+
+Read-only operation — no writes.  Plain-text filters are pushed to SQL via
+`ILIKE` for efficiency; numeric range filters are applied in Python after
+the SQL result set is fetched.  `committed_at` date range filters use SQL
+`>=` / `<=` comparisons.
 
 ---
 

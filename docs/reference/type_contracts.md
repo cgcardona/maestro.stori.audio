@@ -1721,6 +1721,66 @@ Unified schema snapshot. Cacheable by `protocolHash`. The DAW frontend uses this
 
 ---
 
+### Muse Find (`maestro/services/muse_find.py`)
+
+#### `MuseFindQuery`
+
+Frozen dataclass — encapsulates all search criteria for a `muse find` invocation.
+Every field is optional; non-None fields are ANDed together.
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `harmony` | `str | None` | `None` | Harmonic filter query string |
+| `rhythm` | `str | None` | `None` | Rhythmic filter query string |
+| `melody` | `str | None` | `None` | Melodic filter query string |
+| `structure` | `str | None` | `None` | Structural filter query string |
+| `dynamic` | `str | None` | `None` | Dynamic filter query string |
+| `emotion` | `str | None` | `None` | Emotion tag filter |
+| `section` | `str | None` | `None` | Named section filter |
+| `track` | `str | None` | `None` | Track presence filter |
+| `since` | `datetime | None` | `None` | Lower bound on `committed_at` (UTC) |
+| `until` | `datetime | None` | `None` | Upper bound on `committed_at` (UTC) |
+| `limit` | `int` | `20` | Max results returned |
+
+#### `MuseFindCommitResult`
+
+Frozen dataclass — one matching commit, derived from `MuseCliCommit`.
+Callers never receive a raw ORM row.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `commit_id` | `str` | SHA-256 hex digest (64 chars) |
+| `branch` | `str` | Branch name at commit time |
+| `message` | `str` | Full commit message |
+| `author` | `str` | Author string (may be empty) |
+| `committed_at` | `datetime` | Timezone-aware UTC timestamp |
+| `parent_commit_id` | `str | None` | Parent commit ID, or None for root |
+| `snapshot_id` | `str` | SHA-256 ID of associated snapshot |
+
+#### `MuseFindResults`
+
+Frozen dataclass — container returned by `search_commits()`.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `matches` | `tuple[MuseFindCommitResult, ...]` | Matching commits, newest-first |
+| `total_scanned` | `int` | DB rows examined before limit |
+| `query` | `MuseFindQuery` | The originating query (for diagnostics) |
+
+#### `search_commits`
+
+```python
+async def search_commits(
+    session: AsyncSession,
+    repo_id: str,
+    query: MuseFindQuery,
+) -> MuseFindResults: ...
+```
+
+Read-only search across `muse_cli_commits`.  Returns `MuseFindResults`.
+
+---
+
 ### Muse VCS (`maestro/api/routes/muse.py`)
 
 #### `SaveVariationResponse`
