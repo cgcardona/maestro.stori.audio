@@ -5,10 +5,90 @@
 
 {% block page_script %}
 {% raw %}
+/**
+ * Deterministic HSL hue from an actor string — stable, visually distinct
+ * colour per user without any stored data.
+ */
+function actorHsl(actor) {
+  let hash = 0;
+  for (let i = 0; i < actor.length; i++) {
+    hash = actor.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  return 'hsl(' + (Math.abs(hash) % 360) + ',50%,38%)';
+}
+
+/**
+ * Render a 32 × 32 avatar circle for the actor: initial on an HSL background.
+ */
+function actorAvatar(actor) {
+  const bg      = actorHsl(actor);
+  const initial = escHtml((actor || '?').charAt(0).toUpperCase());
+  return `<div class="comment-avatar" style="background:${bg};color:#e6edf3;font-weight:700;font-size:14px;border:none">${initial}</div>`;
+}
+
+/**
+ * Build a profile-page link for the actor.
+ */
+function actorLink(actor) {
+  return `<a href="/musehub/ui/users/${encodeURIComponent(actor)}" style="color:var(--text-primary);font-weight:600">${escHtml(actor)}</a>`;
+}
+
+/**
+ * Build a repo link when repo_id is present.
+ * repo_id is expected to be "owner/slug".
+ */
+function repoLink(repoId) {
+  if (!repoId) return '';
+  const parts = repoId.split('/');
+  const label = parts.length >= 2 ? escHtml(parts[1]) : escHtml(repoId);
+  return `<a href="/musehub/ui/${encodeURIComponent(repoId)}" style="color:var(--color-accent)">${label}</a>`;
+}
+
+const EVENT_META = {
+  comment:      { icon: '🗨️',  sentence: (a, r) => `${actorLink(a)} commented on ${repoLink(r)}` },
+  mention:      { icon: '💬',  sentence: (a, r) => `${actorLink(a)} mentioned you in ${repoLink(r)}` },
+  pr_opened:    { icon: '🔀',  sentence: (a, r) => `${actorLink(a)} opened a PR in ${repoLink(r)}` },
+  pr_merged:    { icon: '✅',  sentence: (a, r) => `${actorLink(a)} merged a PR in ${repoLink(r)}` },
+  issue_opened: { icon: '🐛',  sentence: (a, r) => `${actorLink(a)} opened an issue in ${repoLink(r)}` },
+  issue_closed: { icon: '✔️', sentence: (a, r) => `${actorLink(a)} closed an issue in ${repoLink(r)}` },
+  new_commit:   { icon: '🎵',  sentence: (a, r) => `${actorLink(a)} committed to ${repoLink(r)}` },
+  new_follower: { icon: '👤',  sentence: (a, _) => `${actorLink(a)} followed you` },
+};
+
+/**
+ * Render a single notification as a rich event card.
+ *
+ * Each card carries a `data-notif-id` attribute so issue #293 (mark-as-read
+ * UX) can attach action buttons without restructuring the DOM.
+ */
+function eventCard(item) {
+  const meta      = EVENT_META[item.event_type] || { icon: '•', sentence: (a) => actorLink(a) };
+  const icon      = meta.icon;
+  const sentence  = meta.sentence(item.actor, item.repo_id || '');
+  const timestamp = fmtRelative(item.created_at);
+  const isUnread  = !item.is_read;
+
+  const unreadStyle = isUnread
+    ? 'border-left:3px solid var(--color-accent);padding-left:calc(var(--space-3) - 3px);'
+    : 'border-left:3px solid transparent;padding-left:calc(var(--space-3) - 3px);opacity:0.75;';
+
+  return `
+    <div class="comment-item" data-notif-id="${escHtml(item.notif_id)}" style="${unreadStyle}">
+      ${actorAvatar(item.actor)}
+      <div class="comment-body">
+        <div class="comment-meta" style="display:flex;align-items:center;gap:var(--space-2);flex-wrap:wrap">
+          <span style="font-size:16px;line-height:1">${icon}</span>
+          <span>${sentence}</span>
+          <span style="margin-left:auto;white-space:nowrap">${escHtml(timestamp)}</span>
+        </div>
+        ${isUnread ? '<div style="width:6px;height:6px;border-radius:50%;background:var(--color-accent);display:inline-block;margin-top:var(--space-1)"></div>' : ''}
+      </div>
+    </div>`;
+}
+
 async function load() {
   try {
-    const data = await apiFetch('/feed?limit=50');
-    const items = data || [];
+    const items = (await apiFetch('/feed?limit=50')) || [];
 
     if (items.length === 0) {
       document.getElementById('content').innerHTML = `
@@ -21,37 +101,12 @@ async function load() {
       return;
     }
 
-    const EVENT_ICONS = {
-      comment: '&#128172;',
-      mention: '&#64;',
-      pr_opened: '&#9883;',
-      pr_merged: '&#10003;',
-      issue_opened: '&#128203;',
-      issue_closed: '&#10003;',
-      new_commit: '&#128190;',
-      new_follower: '&#128101;',
-    };
-
     document.getElementById('content').innerHTML = `
       <h1 style="margin-bottom:var(--space-4)">Activity Feed</h1>
       <div class="card" style="padding:0">
-        ${items.map(item => `
-          <div class="comment-item">
-            <div class="comment-avatar">${(EVENT_ICONS[item.eventType] || '&#8226;')}</div>
-            <div class="comment-body">
-              <div class="comment-meta">
-                <strong>${escHtml(item.actor)}</strong>
-                &bull; ${escHtml(item.eventType.replace(/_/g,' '))}
-                ${item.repoId ? ` &bull; <a href="/musehub/ui/explore">repo</a>` : ''}
-                &bull; ${fmtRelative(item.createdAt)}
-              </div>
-              <div class="comment-text text-sm text-muted">
-                ${JSON.stringify(item.payload || {}).substring(0, 100)}
-              </div>
-            </div>
-          </div>`).join('')}
+        ${items.map(eventCard).join('')}
       </div>`;
-  } catch(e) {
+  } catch (e) {
     if (e.message !== 'auth')
       document.getElementById('content').innerHTML = '<p class="error">&#10005; ' + escHtml(e.message) + '</p>';
   }

@@ -682,6 +682,22 @@ textarea:focus {
   margin: 2px;
 }
 
+/* Branch indicator pill — from_branch / to_branch on PR rows */
+.branch-pill {
+  display: inline-block;
+  padding: 1px var(--space-2);
+  border-radius: var(--radius-full);
+  font-size: 11px;
+  font-family: var(--font-mono);
+  background: var(--bg-overlay);
+  color: var(--color-accent);
+  border: 1px solid var(--border-subtle);
+  white-space: nowrap;
+  overflow: hidden;
+  max-width: 200px;
+  text-overflow: ellipsis;
+}
+
 /* Clickable label pill for client-side filtering */
 .label-pill {
   transition: opacity 0.1s, outline 0.1s;
@@ -1195,4 +1211,50 @@ pre code {
   border-radius: 2px 2px 0 0;
   min-height: 4px;
   transition: height 0.1s;
+}
+
+/* ── Reaction bar ────────────────────────────────────────────────────────── */
+.reaction-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: var(--space-3) 0;
+}
+
+.reaction-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border: 1px solid var(--border-subtle, rgba(255,255,255,0.12));
+  border-radius: 20px;
+  background: var(--bg-overlay, rgba(255,255,255,0.05));
+  color: var(--text-primary, #e6edf3);
+  font-size: 16px;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, transform 0.1s;
+  line-height: 1;
+  user-select: none;
+}
+
+.reaction-btn:hover {
+  background: var(--bg-raised, rgba(255,255,255,0.1));
+  border-color: var(--color-accent, #58a6ff);
+  transform: scale(1.08);
+}
+
+.reaction-btn--active {
+  background: rgba(88, 166, 255, 0.15);
+  border-color: var(--color-accent, #58a6ff);
+}
+
+.reaction-count {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary, #8b949e);
+  min-width: 12px;
+}
+
+.reaction-btn--active .reaction-count {
+  color: var(--color-accent, #58a6ff);
 }

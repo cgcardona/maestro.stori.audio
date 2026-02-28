@@ -99,6 +99,7 @@ async function load() {
     ]);
     currentIssue = issue;
     renderIssue(issue, commentData.comments || []);
+    loadReactions('issue', String(issue.number), 'issue-reactions');
   } catch(e) {
     if (e.message !== 'auth')
       document.getElementById('content').innerHTML = '<p class="error">&#10005; ' + escHtml(e.message) + '</p>';
@@ -168,6 +169,10 @@ function renderIssue(issue, comments) {
       </div>
 
       ${issue.body ? '<div class="issue-body">' + linkifyBody(issue.body) + '</div>' : ''}
+    </div>
+
+    <div class="card" style="padding:var(--space-3) var(--space-4)">
+      <div id="issue-reactions"><p class="text-muted text-sm">Loading reactions…</p></div>
     </div>
 
     <div class="section-header" style="margin-top:24px;margin-bottom:12px">

@@ -193,6 +193,26 @@ async def test_created_comment_appears_in_list(
     assert comments[0]["body"] == "Hello world"
 
 
+@pytest.mark.anyio
+async def test_create_comment_with_release_target_type_returns_201(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+) -> None:
+    """POST /repos/{id}/comments accepts target_type='release' (added in PR #376)."""
+    repo_id = await _make_repo(client, auth_headers, name="comment-release")
+    release_id = "v1.0"
+    resp = await client.post(
+        f"/api/v1/musehub/repos/{repo_id}/comments",
+        json={"target_type": "release", "target_id": release_id, "body": "Amazing release!"},
+        headers=auth_headers,
+    )
+    assert resp.status_code == 201
+    body = resp.json()
+    assert body["body"] == "Amazing release!"
+    assert body["is_deleted"] is False
+    assert "comment_id" in body
+
+
 # ---------------------------------------------------------------------------
 # Comments — DELETE
 # ---------------------------------------------------------------------------

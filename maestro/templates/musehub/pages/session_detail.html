@@ -233,12 +233,16 @@ async function load() {
       <div class="card">
         <h2>Closing Notes</h2>
         <div style="margin-top:8px">${notesHtml}</div>
+      </div>
+      <div class="card" style="padding:var(--space-3) var(--space-4)">
+        <div id="session-reactions"><p class="text-muted text-sm">Loading reactions…</p></div>
       </div>`;
 
     // Load rich cards after DOM is set
     await Promise.all([
       loadParticipantCards(participants),
       loadSessionCommits(commitIds),
+      loadReactions('session', sessionId, 'session-reactions'),
     ]);
 
   } catch(e) {

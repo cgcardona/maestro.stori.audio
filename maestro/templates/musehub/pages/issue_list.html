@@ -17,7 +17,8 @@ const base   = {{ base_url | tojson }};
 let allIssues   = [];     // full list from API (state-filtered only)
 let activeLabel = null;   // label string currently filtering, or null
 let activeSort  = 'newest'; // 'newest' | 'oldest' | 'most-commented'
-let commentCounts = {};   // { issue_id: count } — populated on demand
+let commentCounts  = {};  // { issue_id: count } — populated eagerly on load
+let issueReactions = {};  // { issue_id: [{emoji, count}] } — populated eagerly on load
 let cachedOpen   = null;  // cached open issues array after first fetch
 let cachedClosed = null;  // cached closed issues array after first fetch
 
@@ -71,8 +72,12 @@ function renderRows() {
     const labels  = (i.labels || []);
     const commentCount = commentCounts[i.issueId];
     const commentBadge = commentCount != null
-      ? `<span style="font-size:11px;color:#8b949e;margin-left:auto">&#128172; ${commentCount}</span>`
+      ? `<span style="font-size:11px;color:#8b949e">&#128172; ${commentCount}</span>`
       : '';
+    const topRxns = (issueReactions[i.issueId] || []).slice().sort((a, b) => b.count - a.count).slice(0, 2);
+    const rxnPills = topRxns.map(r =>
+      `<span style="font-size:11px;color:#8b949e;background:var(--color-surface-2,#21262d);border-radius:4px;padding:1px 5px">${r.emoji}&nbsp;${r.count}</span>`
+    ).join('');
     return `
       <div class="issue-row" data-issue-id="${i.issueId}">
         <span class="badge badge-${i.state}">#${i.number}</span>
@@ -83,6 +88,7 @@ function renderRows() {
             ${labels.map(l => `<span class="label label-pill${activeLabel === l ? ' label-active' : ''}" onclick="setLabelFilter(${JSON.stringify(l)})" style="cursor:pointer" title="Filter by ${escHtml(l)}">${escHtml(l)}</span>`).join('')}
             <span style="font-size:11px;color:#8b949e">Opened ${fmtDate(i.createdAt)}</span>
             ${commentBadge}
+            ${rxnPills}
           </div>
         </div>
         <span class="badge badge-${i.state}">${i.state}</span>
@@ -90,7 +96,7 @@ function renderRows() {
   }).join('');
 }
 
-// ── Load comment counts (called when sort=most-commented) ──────────────────
+// ── Load comment counts ────────────────────────────────────────────────────
 async function loadCommentCounts(issues) {
   await Promise.all(issues.map(async i => {
     try {
@@ -98,6 +104,18 @@ async function loadCommentCounts(issues) {
       commentCounts[i.issueId] = Array.isArray(rows) ? rows.length : 0;
     } catch (_) {
       commentCounts[i.issueId] = 0;
+    }
+  }));
+}
+
+// ── Load reaction summaries ────────────────────────────────────────────────
+async function loadReactionSummaries(issues) {
+  await Promise.all(issues.map(async i => {
+    try {
+      const rxns = await apiFetch('/repos/' + repoId + '/reactions?target_type=issue&target_id=' + encodeURIComponent(i.issueId));
+      issueReactions[i.issueId] = Array.isArray(rxns) ? rxns : [];
+    } catch (_) {
+      issueReactions[i.issueId] = [];
     }
   }));
 }
@@ -135,6 +153,15 @@ async function load(state) {
 
     allIssues   = state === 'closed' ? cachedClosed : cachedOpen;
     activeLabel = null;
+
+    // Eagerly pre-fetch social signals for all issues (open + closed) in parallel
+    const allForSocial = [...cachedOpen, ...cachedClosed];
+    const needCounts = allForSocial.filter(i => commentCounts[i.issueId] == null);
+    const needRxns   = allForSocial.filter(i => issueReactions[i.issueId] == null);
+    await Promise.all([
+      needCounts.length ? loadCommentCounts(needCounts)      : Promise.resolve(),
+      needRxns.length   ? loadReactionSummaries(needRxns)    : Promise.resolve(),
+    ]);
 
     document.getElementById('content').innerHTML = `
       <div class="card">
