@@ -988,7 +988,6 @@ class SessionResponse(CamelModel):
     location: str
     is_active: bool
     created_at: datetime
-    commits: list[str] = Field(default_factory=list, description="Commit IDs associated with this session")
 
 
 class SessionListResponse(CamelModel):

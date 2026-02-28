@@ -919,7 +919,6 @@ def _to_session_response(s: db.MusehubSession) -> SessionResponse:
         location=s.location,
         is_active=s.is_active,
         created_at=s.created_at,
-        commits=s.commits or [],
     )
 
 
