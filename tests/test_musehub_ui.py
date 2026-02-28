@@ -345,6 +345,120 @@ async def test_ui_pr_detail_page_returns_200(
 
 
 @pytest.mark.anyio
+async def test_pr_detail_shows_diff_radar(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """PR detail page HTML contains the musical diff radar chart container."""
+    await _make_repo(db_session)
+    response = await client.get("/musehub/ui/testuser/test-beats/pulls/some-pr-id")
+    assert response.status_code == 200
+    body = response.text
+    # radarSvg function and DIMENSIONS constant must be present
+    assert "radarSvg" in body
+    assert "DIMENSIONS" in body
+
+
+@pytest.mark.anyio
+async def test_pr_detail_audio_ab(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """PR detail page HTML contains before/after audio A/B toggle controls."""
+    await _make_repo(db_session)
+    response = await client.get("/musehub/ui/testuser/test-beats/pulls/some-pr-id")
+    assert response.status_code == 200
+    body = response.text
+    assert "btn-audio-from" in body
+    assert "btn-audio-to" in body
+    assert "toggleAudio" in body
+    assert "Audio A/B Comparison" in body
+
+
+@pytest.mark.anyio
+async def test_pr_detail_merge_strategies(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """PR detail page HTML contains the merge strategy selector buttons."""
+    await _make_repo(db_session)
+    response = await client.get("/musehub/ui/testuser/test-beats/pulls/some-pr-id")
+    assert response.status_code == 200
+    body = response.text
+    assert "strategy-merge_commit" in body
+    assert "strategy-squash" in body
+    assert "strategy-rebase" in body
+    assert "selectStrategy" in body
+    assert "mergePrWithStrategy" in body
+
+
+@pytest.mark.anyio
+async def test_pr_detail_json_response(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    auth_headers: dict[str, str],
+) -> None:
+    """PR detail page ?format=json returns structured diff data for agent consumption."""
+    from datetime import datetime, timezone
+
+    from maestro.db.musehub_models import MusehubBranch, MusehubCommit, MusehubPullRequest
+
+    repo_id = await _make_repo(db_session)
+    commit_id = "aabbccddeeff00112233445566778899aabbccdd"
+    commit = MusehubCommit(
+        commit_id=commit_id,
+        repo_id=repo_id,
+        branch="feat/blues-riff",
+        parent_ids=[],
+        message="Add harmonic chord progression in Dm",
+        author="musician",
+        timestamp=datetime.now(tz=timezone.utc),
+    )
+    branch = MusehubBranch(
+        repo_id=repo_id,
+        name="feat/blues-riff",
+        head_commit_id=commit_id,
+    )
+    db_session.add(commit)
+    db_session.add(branch)
+    import uuid
+    pr_id = uuid.uuid4().hex
+    pr = MusehubPullRequest(
+        pr_id=pr_id,
+        repo_id=repo_id,
+        title="Add blues riff",
+        body="",
+        state="open",
+        from_branch="feat/blues-riff",
+        to_branch="main",
+        author="musician",
+    )
+    db_session.add(pr)
+    await db_session.commit()
+
+    response = await client.get(
+        f"/musehub/ui/testuser/test-beats/pulls/{pr_id}?format=json",
+        headers=auth_headers,
+    )
+    assert response.status_code == 200
+    data = response.json()
+    # Must include dimension scores and overall score
+    assert "dimensions" in data
+    assert "overallScore" in data
+    assert isinstance(data["dimensions"], list)
+    assert len(data["dimensions"]) == 5
+    assert data["prId"] == pr_id
+    assert data["fromBranch"] == "feat/blues-riff"
+    assert data["toBranch"] == "main"
+    # Each dimension must have the expected fields
+    dim = data["dimensions"][0]
+    assert "dimension" in dim
+    assert "score" in dim
+    assert "level" in dim
+    assert "deltaLabel" in dim
+
+
+@pytest.mark.anyio
 async def test_ui_issue_detail_page_returns_200(
     client: AsyncClient,
     db_session: AsyncSession,
@@ -407,6 +521,89 @@ async def test_ui_release_list_page_returns_200(
     assert "Releases" in body
     assert "Muse Hub" in body
     assert repo_id[:8] in body
+
+
+@pytest.mark.anyio
+async def test_ui_release_list_page_has_download_buttons(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Release list page template includes inline download icon buttons for all package types."""
+    await _make_repo(db_session)
+    response = await client.get("/musehub/ui/testuser/test-beats/releases")
+    assert response.status_code == 200
+    body = response.text
+    # All four download package types must appear in the JS template source.
+    assert "MIDI" in body
+    assert "Stems" in body
+    assert "MP3" in body
+    assert "MusicXML" in body
+    # The helper function that builds download buttons must be present.
+    assert "downloadButtons" in body
+
+
+@pytest.mark.anyio
+async def test_ui_release_list_page_has_body_preview(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Release list page template includes body preview logic (stripMarkdown / bodyPreview)."""
+    await _make_repo(db_session)
+    response = await client.get("/musehub/ui/testuser/test-beats/releases")
+    assert response.status_code == 200
+    body = response.text
+    assert "stripMarkdown" in body
+    assert "bodyPreview" in body
+
+
+@pytest.mark.anyio
+async def test_ui_release_list_page_has_download_count_badge(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Release list page fetches the analytics endpoint to show a download count badge."""
+    await _make_repo(db_session)
+    response = await client.get("/musehub/ui/testuser/test-beats/releases")
+    assert response.status_code == 200
+    body = response.text
+    # The page must fetch analytics to populate the download count.
+    assert "/analytics" in body
+    assert "downloadCount" in body
+    assert "download-badge" in body
+
+
+@pytest.mark.anyio
+async def test_ui_release_list_page_has_commit_link(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Release list page links each release's commit_id to the commit detail page."""
+    await _make_repo(db_session)
+    response = await client.get("/musehub/ui/testuser/test-beats/releases")
+    assert response.status_code == 200
+    body = response.text
+    # Commit link renders first 8 chars of commit_id via substring(0, 8).
+    assert "commitId" in body
+    assert "substring(0, 8)" in body or "substring(0,8)" in body
+    # Commit detail URL pattern must be embedded in the JS template.
+    assert "/commits/" in body
+
+
+@pytest.mark.anyio
+async def test_ui_release_list_page_has_tag_colour_coding(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Release list page colour-codes tags: v1.x = green (stable), v0.x = yellow (pre-release)."""
+    await _make_repo(db_session)
+    response = await client.get("/musehub/ui/testuser/test-beats/releases")
+    assert response.status_code == 200
+    body = response.text
+    # CSS classes for stable and pre-release tags must be present.
+    assert "tag-stable" in body
+    assert "tag-prerelease" in body
+    # The JS function that assigns these classes must be present.
+    assert "tagBadgeClass" in body
 
 
 @pytest.mark.anyio
@@ -5331,3 +5528,268 @@ async def test_ui_commit_page_artifact_auth_uses_blob_proxy(
     # hydrateImages and _fetchBlobUrl must be present for the blob proxy pattern
     assert "hydrateImages" in body
     assert "_fetchBlobUrl" in body
+
+
+# ---------------------------------------------------------------------------
+# Per-dimension analysis detail pages (issue #332)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.anyio
+async def test_key_analysis_page_renders(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """GET /musehub/ui/{owner}/{repo_slug}/analysis/{ref}/key returns 200 HTML."""
+    await _make_repo(db_session)
+    ref = "abc1234567890abcdef"
+    response = await client.get(f"/musehub/ui/testuser/test-beats/analysis/{ref}/key")
+    assert response.status_code == 200
+    assert "text/html" in response.headers["content-type"]
+
+
+@pytest.mark.anyio
+async def test_key_analysis_page_no_auth_required(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Key analysis page must be accessible without a JWT (HTML shell handles auth)."""
+    await _make_repo(db_session)
+    ref = "deadbeef1234"
+    response = await client.get(f"/musehub/ui/testuser/test-beats/analysis/{ref}/key")
+    assert response.status_code != 401
+    assert response.status_code == 200
+
+
+@pytest.mark.anyio
+async def test_key_analysis_page_contains_key_data_labels(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Key page must contain tonic, mode, relative key, and confidence UI elements."""
+    await _make_repo(db_session)
+    ref = "cafebabe12345678"
+    response = await client.get(f"/musehub/ui/testuser/test-beats/analysis/{ref}/key")
+    assert response.status_code == 200
+    body = response.text
+    assert "Key Detection" in body
+    assert "Relative Key" in body
+    assert "Detection Confidence" in body
+    assert "Alternate Key" in body
+
+
+@pytest.mark.anyio
+async def test_meter_analysis_page_renders(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """GET /musehub/ui/{owner}/{repo_slug}/analysis/{ref}/meter returns 200 HTML."""
+    await _make_repo(db_session)
+    ref = "abc1234567890abcdef"
+    response = await client.get(f"/musehub/ui/testuser/test-beats/analysis/{ref}/meter")
+    assert response.status_code == 200
+    assert "text/html" in response.headers["content-type"]
+
+
+@pytest.mark.anyio
+async def test_meter_analysis_page_no_auth_required(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Meter analysis page must be accessible without a JWT (HTML shell handles auth)."""
+    await _make_repo(db_session)
+    ref = "deadbeef5678"
+    response = await client.get(f"/musehub/ui/testuser/test-beats/analysis/{ref}/meter")
+    assert response.status_code != 401
+    assert response.status_code == 200
+
+
+@pytest.mark.anyio
+async def test_meter_analysis_page_contains_meter_data_labels(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Meter page must contain time signature, compound/simple badge, and beat strength UI."""
+    await _make_repo(db_session)
+    ref = "feedface5678"
+    response = await client.get(f"/musehub/ui/testuser/test-beats/analysis/{ref}/meter")
+    assert response.status_code == 200
+    body = response.text
+    assert "Meter Analysis" in body
+    assert "Time Signature" in body
+    assert "Beat Strength Profile" in body
+    assert "beatStrengthSvg" in body or "beatStrengthProfile" in body
+
+
+@pytest.mark.anyio
+async def test_chord_map_analysis_page_renders(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """GET /musehub/ui/{owner}/{repo_slug}/analysis/{ref}/chord-map returns 200 HTML."""
+    await _make_repo(db_session)
+    ref = "abc1234567890abcdef"
+    response = await client.get(f"/musehub/ui/testuser/test-beats/analysis/{ref}/chord-map")
+    assert response.status_code == 200
+    assert "text/html" in response.headers["content-type"]
+
+
+@pytest.mark.anyio
+async def test_chord_map_analysis_page_no_auth_required(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Chord-map analysis page must be accessible without a JWT (HTML shell handles auth)."""
+    await _make_repo(db_session)
+    ref = "deadbeef9999"
+    response = await client.get(f"/musehub/ui/testuser/test-beats/analysis/{ref}/chord-map")
+    assert response.status_code != 401
+    assert response.status_code == 200
+
+
+@pytest.mark.anyio
+async def test_chord_map_analysis_page_contains_chord_data_labels(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Chord-map page must contain progression, tension, and beat position UI elements."""
+    await _make_repo(db_session)
+    ref = "beefdead1234"
+    response = await client.get(f"/musehub/ui/testuser/test-beats/analysis/{ref}/chord-map")
+    assert response.status_code == 200
+    body = response.text
+    assert "Chord Map" in body
+    assert "Total Chords" in body
+    assert "Chord Progression" in body
+    assert "tension" in body.lower()
+
+
+@pytest.mark.anyio
+async def test_groove_analysis_page_renders(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """GET /musehub/ui/{owner}/{repo_slug}/analysis/{ref}/groove returns 200 HTML."""
+    await _make_repo(db_session)
+    ref = "abc1234567890abcdef"
+    response = await client.get(f"/musehub/ui/testuser/test-beats/analysis/{ref}/groove")
+    assert response.status_code == 200
+    assert "text/html" in response.headers["content-type"]
+
+
+@pytest.mark.anyio
+async def test_groove_analysis_page_no_auth_required(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Groove analysis page must be accessible without a JWT (HTML shell handles auth)."""
+    await _make_repo(db_session)
+    ref = "deadbeef4321"
+    response = await client.get(f"/musehub/ui/testuser/test-beats/analysis/{ref}/groove")
+    assert response.status_code != 401
+    assert response.status_code == 200
+
+
+@pytest.mark.anyio
+async def test_groove_analysis_page_contains_groove_data_labels(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Groove page must contain style badge, BPM, swing factor, and groove score UI."""
+    await _make_repo(db_session)
+    ref = "cafefeed5678"
+    response = await client.get(f"/musehub/ui/testuser/test-beats/analysis/{ref}/groove")
+    assert response.status_code == 200
+    body = response.text
+    assert "Groove Analysis" in body
+    assert "Style" in body
+    assert "BPM" in body
+    assert "Groove Score" in body
+    assert "Swing Factor" in body
+
+
+@pytest.mark.anyio
+async def test_emotion_analysis_page_renders(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """GET /musehub/ui/{owner}/{repo_slug}/analysis/{ref}/emotion returns 200 HTML."""
+    await _make_repo(db_session)
+    ref = "abc1234567890abcdef"
+    response = await client.get(f"/musehub/ui/testuser/test-beats/analysis/{ref}/emotion")
+    assert response.status_code == 200
+    assert "text/html" in response.headers["content-type"]
+
+
+@pytest.mark.anyio
+async def test_emotion_analysis_page_no_auth_required(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Emotion analysis page must be accessible without a JWT (HTML shell handles auth)."""
+    await _make_repo(db_session)
+    ref = "deadbeef0001"
+    response = await client.get(f"/musehub/ui/testuser/test-beats/analysis/{ref}/emotion")
+    assert response.status_code != 401
+    assert response.status_code == 200
+
+
+@pytest.mark.anyio
+async def test_emotion_analysis_page_contains_emotion_data_labels(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Emotion page must contain primary emotion, valence-arousal plot, and tension bar."""
+    await _make_repo(db_session)
+    ref = "aabbccdd5678"
+    response = await client.get(f"/musehub/ui/testuser/test-beats/analysis/{ref}/emotion")
+    assert response.status_code == 200
+    body = response.text
+    assert "Emotion Analysis" in body
+    assert "Primary Emotion" in body
+    assert "Valence" in body or "valence" in body
+    assert "Arousal" in body or "arousal" in body
+    assert "Tension" in body or "tension" in body
+
+
+@pytest.mark.anyio
+async def test_form_analysis_page_renders(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """GET /musehub/ui/{owner}/{repo_slug}/analysis/{ref}/form returns 200 HTML."""
+    await _make_repo(db_session)
+    ref = "abc1234567890abcdef"
+    response = await client.get(f"/musehub/ui/testuser/test-beats/analysis/{ref}/form")
+    assert response.status_code == 200
+    assert "text/html" in response.headers["content-type"]
+
+
+@pytest.mark.anyio
+async def test_form_analysis_page_no_auth_required(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Form analysis page must be accessible without a JWT (HTML shell handles auth)."""
+    await _make_repo(db_session)
+    ref = "deadbeef0002"
+    response = await client.get(f"/musehub/ui/testuser/test-beats/analysis/{ref}/form")
+    assert response.status_code != 401
+    assert response.status_code == 200
+
+
+@pytest.mark.anyio
+async def test_form_analysis_page_contains_form_data_labels(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Form page must contain form label, section timeline, and sections table."""
+    await _make_repo(db_session)
+    ref = "11223344abcd"
+    response = await client.get(f"/musehub/ui/testuser/test-beats/analysis/{ref}/form")
+    assert response.status_code == 200
+    body = response.text
+    assert "Form Analysis" in body
+    assert "Form Timeline" in body or "formLabel" in body
+    assert "Sections" in body
+    assert "Total Beats" in body
