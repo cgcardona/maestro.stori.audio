@@ -1186,6 +1186,72 @@ Marcus (bass)       2 sessions
 
 ---
 
+### `muse context`
+
+**Purpose:** Output a structured, self-contained musical context document for AI agent consumption. This is the **primary interface between Muse VCS and AI music generation agents** — agents run `muse context` before any generation task to understand the current key, tempo, active tracks, form, harmonic profile, and evolutionary history of the composition.
+
+**Usage:**
+```bash
+muse context [<commit>] [OPTIONS]
+```
+
+**Flags:**
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `<commit>` | positional | HEAD | Target commit ID to inspect |
+| `--depth N` | int | 5 | Number of ancestor commits to include in `history` |
+| `--sections` | flag | off | Expand section-level detail in `musical_state.sections` |
+| `--tracks` | flag | off | Add per-track harmonic and dynamic breakdowns |
+| `--include-history` | flag | off | Annotate history entries with dimensional deltas (future Storpheus integration) |
+| `--format json\|yaml` | string | json | Output format |
+
+**Output example (`--format json`):**
+```json
+{
+  "repo_id": "a1b2c3d4-...",
+  "current_branch": "main",
+  "head_commit": {
+    "commit_id": "abc1234...",
+    "message": "Add piano melody to verse",
+    "author": "Gabriel",
+    "committed_at": "2026-02-27T22:00:00+00:00"
+  },
+  "musical_state": {
+    "active_tracks": ["bass", "drums", "piano"],
+    "key": null,
+    "tempo_bpm": null,
+    "sections": null,
+    "tracks": null
+  },
+  "history": [
+    {
+      "commit_id": "...",
+      "message": "Add bass line",
+      "active_tracks": ["bass", "drums"],
+      "key": null,
+      "tempo_bpm": null
+    }
+  ],
+  "missing_elements": [],
+  "suggestions": {}
+}
+```
+
+**Result type:** `MuseContextResult` — fields: `repo_id`, `current_branch`, `head_commit` (`MuseHeadCommitInfo`), `musical_state` (`MuseMusicalState`), `history` (`list[MuseHistoryEntry]`), `missing_elements`, `suggestions`. See `docs/reference/type_contracts.md`.
+
+**Agent use case:** When Maestro receives a "generate a new section" request, it runs `muse context --format json` to obtain the current musical state, passes the result to the LLM, and the LLM generates music that is harmonically, rhythmically, and structurally coherent with the existing composition. Without this command, generation decisions are musically incoherent.
+
+**Implementation notes:**
+- `active_tracks` is populated from MIDI/audio file names in the snapshot manifest (real data).
+- Musical dimensions (`key`, `tempo_bpm`, `form`, `emotion`, harmonic/dynamic/melodic profiles) are `null` until Storpheus MIDI analysis is integrated. The full schema is defined and stable.
+- `sections` and `tracks` are populated when the respective flags are passed; sections currently use a single "main" stub section containing all active tracks until MIDI region metadata is available.
+- Output is **deterministic**: for the same `commit_id` and flags, the output is always identical.
+
+**Implementation:** `maestro/services/muse_context.py` (service layer), `maestro/muse_cli/commands/context.py` (CLI command). Exit codes: 0 success, 1 user error (bad commit, no commits), 2 outside repo, 3 internal.
+
+---
+
 ### Command Registration Summary
 
 | Command | File | Status | Issue |
@@ -1198,6 +1264,7 @@ Marcus (bass)       2 sessions
 | `muse describe` | `commands/describe.py` | ✅ stub (PR #134) | #125 |
 | `muse ask` | `commands/ask.py` | ✅ stub (PR #132) | #126 |
 | `muse session` | `commands/session.py` | ✅ implemented (PR #129) | #127 |
+| `muse context` | `commands/context.py` | ✅ implemented (PR #—) | #113 |
 
 All stub commands have stable CLI contracts. Full musical analysis (MIDI content
 parsing, vector embeddings, LLM synthesis) is tracked as follow-up issues.
