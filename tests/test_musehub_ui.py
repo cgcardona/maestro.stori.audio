@@ -3522,3 +3522,226 @@ async def test_compare_json_response(
     body = response.json()
     assert "repoId" in body or "base_ref" in body or "baseRef" in body or "owner" in body
 
+
+# ---------------------------------------------------------------------------
+# Arrangement matrix page — issue #212
+# ---------------------------------------------------------------------------
+
+
+# ---------------------------------------------------------------------------
+# Piano roll page tests — issue #209
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.anyio
+async def test_arrange_page_returns_200(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """GET /musehub/ui/{owner}/{slug}/arrange/{ref} returns 200 HTML without a JWT."""
+    await _make_repo(db_session)
+    response = await client.get("/musehub/ui/testuser/test-beats/arrange/HEAD")
+    assert response.status_code == 200
+    assert "text/html" in response.headers["content-type"]
+
+
+@pytest.mark.anyio
+async def test_piano_roll_page_returns_200(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """GET /musehub/ui/{owner}/{slug}/piano-roll/{ref} returns 200 HTML."""
+    await _make_repo(db_session)
+    response = await client.get("/musehub/ui/testuser/test-beats/piano-roll/main")
+    assert response.status_code == 200
+    assert "text/html" in response.headers["content-type"]
+
+
+@pytest.mark.anyio
+async def test_arrange_page_no_auth_required(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Arrangement matrix page is accessible without a JWT (auth handled client-side)."""
+    await _make_repo(db_session)
+    response = await client.get("/musehub/ui/testuser/test-beats/arrange/HEAD")
+    assert response.status_code == 200
+    assert response.status_code != 401
+
+
+@pytest.mark.anyio
+async def test_arrange_page_contains_musehub(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Arrangement matrix page HTML shell contains 'Muse Hub' branding."""
+    await _make_repo(db_session)
+    response = await client.get("/musehub/ui/testuser/test-beats/arrange/abc1234")
+    assert response.status_code == 200
+    assert "Muse Hub" in response.text
+
+
+@pytest.mark.anyio
+async def test_arrange_page_contains_grid_js(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Arrangement matrix page embeds the grid rendering JS (renderMatrix or arrange)."""
+    await _make_repo(db_session)
+    response = await client.get("/musehub/ui/testuser/test-beats/arrange/HEAD")
+    assert response.status_code == 200
+    body = response.text
+    assert "renderMatrix" in body or "arrange" in body.lower()
+
+
+@pytest.mark.anyio
+async def test_arrange_page_contains_density_logic(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Arrangement matrix page includes density colour logic."""
+    await _make_repo(db_session)
+    response = await client.get("/musehub/ui/testuser/test-beats/arrange/HEAD")
+    assert response.status_code == 200
+    body = response.text
+    assert "density" in body.lower() or "noteDensity" in body
+
+
+@pytest.mark.anyio
+async def test_arrange_page_contains_token_form(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Arrangement matrix page includes the JWT token form for client-side auth."""
+    await _make_repo(db_session)
+    response = await client.get("/musehub/ui/testuser/test-beats/arrange/HEAD")
+    assert response.status_code == 200
+    body = response.text
+    assert 'id="token-form"' in body
+    assert "musehub.js" in body
+
+
+@pytest.mark.anyio
+async def test_arrange_page_unknown_repo_returns_404(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """GET /musehub/ui/{unknown}/{slug}/arrange/{ref} returns 404 for unknown repos."""
+    response = await client.get("/musehub/ui/unknown-user/no-such-repo/arrange/HEAD")
+    assert response.status_code == 404
+
+
+@pytest.mark.anyio
+async def test_piano_roll_page_no_auth_required(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Piano roll UI page is accessible without a JWT token."""
+    await _make_repo(db_session)
+    response = await client.get("/musehub/ui/testuser/test-beats/piano-roll/main")
+    assert response.status_code == 200
+
+
+@pytest.mark.anyio
+async def test_piano_roll_page_loads_piano_roll_js(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Piano roll page references piano-roll.js script."""
+    await _make_repo(db_session)
+    response = await client.get("/musehub/ui/testuser/test-beats/piano-roll/main")
+    assert response.status_code == 200
+    assert "piano-roll.js" in response.text
+
+
+@pytest.mark.anyio
+async def test_piano_roll_page_contains_canvas(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Piano roll page embeds a canvas element for rendering."""
+    await _make_repo(db_session)
+    response = await client.get("/musehub/ui/testuser/test-beats/piano-roll/main")
+    assert response.status_code == 200
+    body = response.text
+    assert "PianoRoll" in body or "piano-canvas" in body or "piano-roll.js" in body
+
+
+@pytest.mark.anyio
+async def test_piano_roll_page_has_token_form(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Piano roll page includes the JWT token form for unauthenticated visitors."""
+    await _make_repo(db_session)
+    response = await client.get("/musehub/ui/testuser/test-beats/piano-roll/main")
+    assert response.status_code == 200
+    assert 'id="token-form"' in response.text
+    assert "musehub.js" in response.text
+
+
+@pytest.mark.anyio
+async def test_piano_roll_page_unknown_repo_404(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Piano roll page for an unknown repo returns 404."""
+    response = await client.get("/musehub/ui/nobody/no-repo/piano-roll/main")
+    assert response.status_code == 404
+
+
+@pytest.mark.anyio
+async def test_arrange_tab_in_repo_nav(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Repo home page navigation includes an 'Arrange' tab link."""
+    await _make_repo(db_session)
+    response = await client.get("/musehub/ui/testuser/test-beats")
+    assert response.status_code == 200
+    assert "Arrange" in response.text or "arrange" in response.text
+
+
+@pytest.mark.anyio
+async def test_piano_roll_track_page_returns_200(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """GET /piano-roll/{ref}/{path} (single track) returns 200."""
+    await _make_repo(db_session)
+    response = await client.get(
+        "/musehub/ui/testuser/test-beats/piano-roll/main/tracks/bass.mid"
+    )
+    assert response.status_code == 200
+
+
+@pytest.mark.anyio
+async def test_piano_roll_track_page_embeds_path(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Single-track piano roll page embeds the MIDI file path in the JS context."""
+    await _make_repo(db_session)
+    response = await client.get(
+        "/musehub/ui/testuser/test-beats/piano-roll/main/tracks/bass.mid"
+    )
+    assert response.status_code == 200
+    assert "tracks/bass.mid" in response.text
+
+
+@pytest.mark.anyio
+async def test_piano_roll_js_served(client: AsyncClient) -> None:
+    """GET /musehub/static/piano-roll.js returns 200 JavaScript."""
+    response = await client.get("/musehub/static/piano-roll.js")
+    assert response.status_code == 200
+    assert "javascript" in response.headers.get("content-type", "")
+
+
+@pytest.mark.anyio
+async def test_piano_roll_js_contains_renderer(client: AsyncClient) -> None:
+    """piano-roll.js exports the PianoRoll.render function."""
+    response = await client.get("/musehub/static/piano-roll.js")
+    assert response.status_code == 200
+    body = response.text
+    assert "PianoRoll" in body
+    assert "render" in body

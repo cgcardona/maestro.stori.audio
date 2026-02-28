@@ -1118,3 +1118,247 @@ async def test_compare_emotion_diff_fields(
     for field in ("baseEnergy", "headEnergy", "baseValence", "headValence"):
         assert field in ed
         assert 0.0 <= ed[field] <= 1.0
+
+
+# ---------------------------------------------------------------------------
+# Arrangement matrix endpoint — issue #212
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.anyio
+async def test_arrange_endpoint_returns_200(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    auth_headers: dict[str, str],
+) -> None:
+    """GET /api/v1/musehub/repos/{repo_id}/arrange/{ref} returns 200 with JSON body."""
+    repo = MusehubRepo(
+        name="arrange-test",
+        owner="testuser",
+        slug="arrange-test",
+        visibility="public",
+        owner_user_id="u1",
+    )
+    db_session.add(repo)
+    await db_session.commit()
+    await db_session.refresh(repo)
+    repo_id = str(repo.repo_id)
+
+    resp = await client.get(
+        f"/api/v1/musehub/repos/{repo_id}/arrange/HEAD",
+        headers=auth_headers,
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["repoId"] == repo_id
+    assert data["ref"] == "HEAD"
+
+
+@pytest.mark.anyio
+async def test_arrange_endpoint_has_required_fields(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    auth_headers: dict[str, str],
+) -> None:
+    """Arrangement matrix response contains instruments, sections, cells, and summaries."""
+    repo = MusehubRepo(
+        name="arrange-fields-test",
+        owner="testuser",
+        slug="arrange-fields-test",
+        visibility="public",
+        owner_user_id="u1",
+    )
+    db_session.add(repo)
+    await db_session.commit()
+    await db_session.refresh(repo)
+    repo_id = str(repo.repo_id)
+
+    resp = await client.get(
+        f"/api/v1/musehub/repos/{repo_id}/arrange/abc1234",
+        headers=auth_headers,
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "instruments" in data
+    assert "sections" in data
+    assert "cells" in data
+    assert "rowSummaries" in data
+    assert "columnSummaries" in data
+    assert "totalBeats" in data
+    assert isinstance(data["instruments"], list)
+    assert isinstance(data["sections"], list)
+    assert isinstance(data["cells"], list)
+    assert len(data["instruments"]) > 0
+    assert len(data["sections"]) > 0
+
+
+@pytest.mark.anyio
+async def test_arrange_endpoint_cells_have_required_fields(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    auth_headers: dict[str, str],
+) -> None:
+    """Each cell in the arrangement matrix has instrument, section, noteCount, noteDensity, and active."""
+    repo = MusehubRepo(
+        name="arrange-cells-test",
+        owner="testuser",
+        slug="arrange-cells-test",
+        visibility="public",
+        owner_user_id="u1",
+    )
+    db_session.add(repo)
+    await db_session.commit()
+    await db_session.refresh(repo)
+    repo_id = str(repo.repo_id)
+
+    resp = await client.get(
+        f"/api/v1/musehub/repos/{repo_id}/arrange/main",
+        headers=auth_headers,
+    )
+    assert resp.status_code == 200
+    cells = resp.json()["cells"]
+    assert len(cells) > 0
+    for cell in cells:
+        assert "instrument" in cell
+        assert "section" in cell
+        assert "noteCount" in cell
+        assert "noteDensity" in cell
+        assert "active" in cell
+        assert "beatStart" in cell
+        assert "beatEnd" in cell
+        assert isinstance(cell["noteCount"], int)
+        assert 0.0 <= cell["noteDensity"] <= 1.0
+
+
+@pytest.mark.anyio
+async def test_arrange_endpoint_instruments_x_sections_coverage(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    auth_headers: dict[str, str],
+) -> None:
+    """Cells cover every (instrument, section) pair — no missing combinations."""
+    repo = MusehubRepo(
+        name="arrange-coverage-test",
+        owner="testuser",
+        slug="arrange-coverage-test",
+        visibility="public",
+        owner_user_id="u1",
+    )
+    db_session.add(repo)
+    await db_session.commit()
+    await db_session.refresh(repo)
+    repo_id = str(repo.repo_id)
+
+    resp = await client.get(
+        f"/api/v1/musehub/repos/{repo_id}/arrange/ref-abc",
+        headers=auth_headers,
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    instruments = data["instruments"]
+    sections = data["sections"]
+    cells = data["cells"]
+    expected = len(instruments) * len(sections)
+    assert len(cells) == expected, (
+        f"Expected {expected} cells for {len(instruments)} instruments "
+        f"× {len(sections)} sections, got {len(cells)}"
+    )
+
+
+@pytest.mark.anyio
+async def test_arrange_endpoint_deterministic(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    auth_headers: dict[str, str],
+) -> None:
+    """Arrangement matrix is deterministic — identical ref produces identical data on re-request."""
+    repo = MusehubRepo(
+        name="arrange-det-test",
+        owner="testuser",
+        slug="arrange-det-test",
+        visibility="public",
+        owner_user_id="u1",
+    )
+    db_session.add(repo)
+    await db_session.commit()
+    await db_session.refresh(repo)
+    repo_id = str(repo.repo_id)
+
+    resp1 = await client.get(
+        f"/api/v1/musehub/repos/{repo_id}/arrange/stable-ref",
+        headers=auth_headers,
+    )
+    resp2 = await client.get(
+        f"/api/v1/musehub/repos/{repo_id}/arrange/stable-ref",
+        headers=auth_headers,
+    )
+    assert resp1.status_code == 200
+    assert resp2.status_code == 200
+    assert resp1.json() == resp2.json()
+
+
+@pytest.mark.anyio
+async def test_arrange_endpoint_404_for_unknown_repo(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+) -> None:
+    """GET /api/v1/musehub/repos/{unknown}/arrange/{ref} returns 404 for an unknown repo."""
+    resp = await client.get(
+        "/api/v1/musehub/repos/00000000-0000-0000-0000-000000000000/arrange/HEAD",
+        headers=auth_headers,
+    )
+    assert resp.status_code == 404
+
+
+@pytest.mark.anyio
+async def test_arrange_row_summaries_match_cells(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    auth_headers: dict[str, str],
+) -> None:
+    """Row summaries totalNotes matches the sum of noteCount across that instrument's cells."""
+    repo = MusehubRepo(
+        name="arrange-summary-test",
+        owner="testuser",
+        slug="arrange-summary-test",
+        visibility="public",
+        owner_user_id="u1",
+    )
+    db_session.add(repo)
+    await db_session.commit()
+    await db_session.refresh(repo)
+    repo_id = str(repo.repo_id)
+
+    resp = await client.get(
+        f"/api/v1/musehub/repos/{repo_id}/arrange/HEAD",
+        headers=auth_headers,
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    for row in data["rowSummaries"]:
+        inst = row["instrument"]
+        expected_total = sum(
+            c["noteCount"] for c in data["cells"] if c["instrument"] == inst
+        )
+        assert row["totalNotes"] == expected_total, (
+            f"Row summary for {inst}: expected {expected_total}, got {row['totalNotes']}"
+        )
+
+
+@pytest.mark.anyio
+async def test_arrange_service_direct() -> None:
+    """compute_arrangement_matrix() returns valid ArrangementMatrixResponse without DB."""
+    from maestro.services.musehub_analysis import compute_arrangement_matrix
+
+    result = compute_arrangement_matrix(repo_id="test-repo-id", ref="abc1234")
+    assert result.repo_id == "test-repo-id"
+    assert result.ref == "abc1234"
+    assert len(result.instruments) > 0
+    assert len(result.sections) > 0
+    assert len(result.cells) == len(result.instruments) * len(result.sections)
+    assert result.total_beats > 0
+    # All density values in valid range
+    for cell in result.cells:
+        assert 0.0 <= cell.note_density <= 1.0
+    # Row summary count matches instruments
+    assert len(result.row_summaries) == len(result.instruments)

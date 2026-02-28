@@ -13,6 +13,7 @@ Endpoint summary:
   POST /musehub/repos/{repo_id}/sessions                  — push a recording session
   GET  /musehub/repos/{repo_id}/sessions                  — list recording sessions
   GET  /musehub/repos/{repo_id}/sessions/{session_id}     — get a single session
+  GET  /musehub/repos/{repo_id}/arrange/{ref}            — arrangement matrix (instrument × section grid)
 
 All endpoints require a valid JWT Bearer token.
 No business logic lives here — all persistence is delegated to
@@ -31,6 +32,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from maestro.auth.dependencies import TokenClaims, optional_token, require_valid_token
 from maestro.db import get_db
 from maestro.models.musehub import (
+    ArrangementMatrixResponse,
     BranchListResponse,
     CommitListResponse,
     CommitResponse,
@@ -868,6 +870,38 @@ async def compare_refs(
         emotion_diff=emotion_diff,
         create_pr_url=create_pr_url,
     )
+
+
+@router.get(
+    "/repos/{repo_id}/arrange/{ref}",
+    response_model=ArrangementMatrixResponse,
+    operation_id="getArrangementMatrix",
+    summary="Get the instrument × section arrangement matrix for a Muse commit ref",
+    tags=["Repos"],
+)
+async def get_arrangement_matrix(
+    repo_id: str,
+    ref: str,
+    db: AsyncSession = Depends(get_db),
+    claims: TokenClaims | None = Depends(optional_token),
+) -> ArrangementMatrixResponse:
+    """Return the arrangement matrix for a Muse Hub commit ref.
+
+    The matrix encodes note density for every (instrument, section) pair so
+    the arrangement page can render a colour-coded grid.  Row and column
+    summaries are pre-computed to avoid redundant aggregation in the client.
+
+    Deterministic stub data is seeded by ``ref`` so agents receive consistent
+    responses across retries.  Full MIDI content analysis will be wired in
+    once Storpheus exposes per-section introspection.
+
+    Returns 404 if the repo does not exist.
+    Returns 401 if the repo is private and the caller is unauthenticated.
+    """
+    repo = await musehub_repository.get_repo(db, repo_id)
+    _guard_visibility(repo, claims)
+    result = musehub_analysis.compute_arrangement_matrix(repo_id=repo_id, ref=ref)
+    return result
 
 
 # ── Owner/slug resolver — declared LAST to avoid shadowing /repos/... routes ──

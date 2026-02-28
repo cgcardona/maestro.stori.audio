@@ -7264,29 +7264,82 @@ Full emotion map for a Muse repo ref. Returned by `GET /musehub/repos/{repo_id}/
 
 ---
 
-### `EmotionDiffResponse`
+### `ArrangementCellData`
 
 **Path:** `maestro/models/musehub.py`
 
-`CamelModel` — Emotional delta between base and head refs in a MuseHub compare view. All delta fields are `head_value − base_value` in [−1.0, 1.0]; positive means head is more energetic/positive/tense/dark. Values are derived deterministically from commit SHA hashes.
+`CamelModel` — Data for a single cell in the arrangement matrix grid (instrument × section pair).
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `energy_delta` | `float` | Δenergy (head − base), in [−1.0, 1.0] |
-| `valence_delta` | `float` | Δvalence (head − base), in [−1.0, 1.0] |
-| `tension_delta` | `float` | Δtension (head − base), in [−1.0, 1.0] |
-| `darkness_delta` | `float` | Δdarkness (head − base), in [−1.0, 1.0] |
-| `base_energy` | `float` | Mean energy for base ref |
-| `base_valence` | `float` | Mean valence for base ref |
-| `base_tension` | `float` | Mean tension for base ref |
-| `base_darkness` | `float` | Mean darkness for base ref |
-| `head_energy` | `float` | Mean energy for head ref |
-| `head_valence` | `float` | Mean valence for head ref |
-| `head_tension` | `float` | Mean tension for head ref |
-| `head_darkness` | `float` | Mean darkness for head ref |
+| `instrument` | `str` | Instrument/track name (e.g. `"bass"`, `"keys"`) |
+| `section` | `str` | Section label (e.g. `"intro"`, `"chorus"`) |
+| `note_count` | `int` | Total notes played by this instrument in this section |
+| `note_density` | `float` | Normalised note density in `[0, 1]`; 0 = silent, 1 = densest cell |
+| `beat_start` | `float` | Beat position where this section starts |
+| `beat_end` | `float` | Beat position where this section ends |
+| `pitch_low` | `int` | Lowest MIDI pitch played (0–127) |
+| `pitch_high` | `int` | Highest MIDI pitch played (0–127) |
+| `active` | `bool` | `True` when the instrument has at least one note in this section |
 
-**Produced by:** `maestro.api.routes.musehub.repos._compute_emotion_diff()`
-**Consumed by:** MuseHub compare page (`/musehub/ui/{owner}/{repo_slug}/compare/{base}...{head}`); AI agents evaluating the mood shift between two refs
+**Produced by:** `maestro.services.musehub_analysis.compute_arrangement_matrix()`
+
+---
+
+### `ArrangementColumnSummary`
+
+**Path:** `maestro/models/musehub.py`
+
+`CamelModel` — Aggregated stats for one section column across all instruments in the arrangement matrix.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `section` | `str` | Section label |
+| `total_notes` | `int` | Total note count across all instruments |
+| `active_instruments` | `int` | Number of instruments that play in this section |
+| `beat_start` | `float` | Beat position where this section starts |
+| `beat_end` | `float` | Beat position where this section ends |
+
+**Produced by:** `maestro.services.musehub_analysis.compute_arrangement_matrix()`
+
+---
+
+### `ArrangementMatrixResponse`
+
+**Path:** `maestro/models/musehub.py`
+
+`CamelModel` — Full arrangement matrix for a Muse commit ref, as returned by `GET /repos/{repo_id}/arrange/{ref}`.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `repo_id` | `str` | Internal repo UUID |
+| `ref` | `str` | Commit ref (full SHA or branch name) |
+| `instruments` | `list[str]` | Ordered instrument names (Y-axis) |
+| `sections` | `list[str]` | Ordered section labels (X-axis) |
+| `cells` | `list[ArrangementCellData]` | Flat (instrument × section) cells, row-major order |
+| `row_summaries` | `list[ArrangementRowSummary]` | Per-instrument aggregates, same order as `instruments` |
+| `column_summaries` | `list[ArrangementColumnSummary]` | Per-section aggregates, same order as `sections` |
+| `total_beats` | `float` | Total beat length of the arrangement |
+
+**Produced by:** `maestro.api.routes.musehub.repos.get_arrangement_matrix()`
+**Consumed by:** MuseHub arrangement matrix UI page (`/musehub/ui/{owner}/{repo_slug}/arrange/{ref}`); AI agents evaluating orchestration density across sections
+
+---
+
+### `ArrangementRowSummary`
+
+**Path:** `maestro/models/musehub.py`
+
+`CamelModel` — Aggregated stats for one instrument row across all sections in the arrangement matrix.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `instrument` | `str` | Instrument/track name |
+| `total_notes` | `int` | Total note count across all sections |
+| `active_sections` | `int` | Number of sections where the instrument plays |
+| `mean_density` | `float` | Mean note density across all sections |
+
+**Produced by:** `maestro.services.musehub_analysis.compute_arrangement_matrix()`
 
 ---
 
@@ -7310,6 +7363,32 @@ Full emotion map for a Muse repo ref. Returned by `GET /musehub/repos/{repo_id}/
 
 **Produced by:** `maestro.api.routes.musehub.repos.compare_refs()`
 **Consumed by:** MuseHub compare page (`/musehub/ui/{owner}/{repo_slug}/compare/{base}...{head}`); AI agents deciding whether to open a pull request
+
+---
+
+### `EmotionDiffResponse`
+
+**Path:** `maestro/models/musehub.py`
+
+`CamelModel` — Emotional delta between base and head refs in a MuseHub compare view. All delta fields are `head_value − base_value` in [−1.0, 1.0]; positive means head is more energetic/positive/tense/dark. Values are derived deterministically from commit SHA hashes.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `energy_delta` | `float` | Δenergy (head − base), in [−1.0, 1.0] |
+| `valence_delta` | `float` | Δvalence (head − base), in [−1.0, 1.0] |
+| `tension_delta` | `float` | Δtension (head − base), in [−1.0, 1.0] |
+| `darkness_delta` | `float` | Δdarkness (head − base), in [−1.0, 1.0] |
+| `base_energy` | `float` | Mean energy for base ref |
+| `base_valence` | `float` | Mean valence for base ref |
+| `base_tension` | `float` | Mean tension for base ref |
+| `base_darkness` | `float` | Mean darkness for base ref |
+| `head_energy` | `float` | Mean energy for head ref |
+| `head_valence` | `float` | Mean valence for head ref |
+| `head_tension` | `float` | Mean tension for head ref |
+| `head_darkness` | `float` | Mean darkness for head ref |
+
+**Produced by:** `maestro.api.routes.musehub.repos._compute_emotion_diff()`
+**Consumed by:** MuseHub compare page (`/musehub/ui/{owner}/{repo_slug}/compare/{base}...{head}`); AI agents evaluating the mood shift between two refs
 
 ---
 
