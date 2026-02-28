@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="/musehub/static/tokens.css">
+  <link rel="stylesheet" href="/musehub/static/components.css">
+  <link rel="stylesheet" href="/musehub/static/layout.css">
+  <link rel="stylesheet" href="/musehub/static/icons.css">
+  <link rel="stylesheet" href="/musehub/static/music.css">
+  <title>Piano Roll — {% if path %}{{ path }} @ {% endif %}{{ short_ref }} — Muse Hub</title>
+  <style>
+    /* Piano roll specific layout */
+    .piano-roll-wrapper {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .piano-roll-controls {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+      padding: 10px 14px;
+      background: var(--color-surface, #161b22);
+      border: 1px solid var(--color-border, #30363d);
+      border-radius: 6px;
+    }
+
+    .piano-roll-controls label {
+      font-size: 12px;
+      color: var(--color-text-muted, #8b949e);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .piano-roll-controls select,
+    .piano-roll-controls input[type=range] {
+      font-size: 12px;
+      background: var(--color-canvas, #0d1117);
+      border: 1px solid var(--color-border, #30363d);
+      color: var(--color-text, #e6edf3);
+      border-radius: 4px;
+      padding: 3px 6px;
+    }
+
+    #piano-roll-outer {
+      position: relative;
+      overflow: hidden;
+      border: 1px solid var(--color-border, #30363d);
+      border-radius: 6px;
+      background: #0d1117;
+      cursor: grab;
+      user-select: none;
+    }
+
+    #piano-roll-outer.panning {
+      cursor: grabbing;
+    }
+
+    #piano-canvas {
+      display: block;
+    }
+
+    #tooltip {
+      position: fixed;
+      display: none;
+      background: rgba(13, 17, 23, 0.95);
+      border: 1px solid #30363d;
+      border-radius: 4px;
+      padding: 6px 10px;
+      font-size: 12px;
+      color: #e6edf3;
+      pointer-events: none;
+      z-index: 9999;
+      max-width: 220px;
+    }
+
+    .track-legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      padding: 8px 0;
+    }
+
+    .track-legend-item {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      font-size: 12px;
+      color: var(--color-text-muted, #8b949e);
+    }
+
+    .track-legend-swatch {
+      width: 12px;
+      height: 12px;
+      border-radius: 2px;
+      flex-shrink: 0;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <span class="logo">&#127925; Muse Hub</span>
+    <span class="breadcrumb">
+      <a href="{{ base_url }}">{{ owner }}/{{ repo_slug }}</a> /
+      piano-roll /
+      <span>{{ short_ref }}</span>
+      {% if path %} / <span>{{ path }}</span>{% endif %}
+    </span>
+  </header>
+  <div class="container">
+    <div class="token-form" id="token-form" style="display:none">
+      <p id="token-msg">Enter your Maestro JWT to browse this repo.</p>
+      <input type="password" id="token-input" placeholder="eyJ..." />
+      <button class="btn btn-primary" onclick="saveToken()">Save &amp; Load</button>
+      &nbsp;
+      <button class="btn btn-secondary" onclick="clearToken();location.reload()">Clear</button>
+    </div>
+
+    <div id="content">
+      <p class="loading">Loading piano roll&#8230;</p>
+    </div>
+
+    <div id="tooltip"></div>
+  </div>
+
+  <script src="/musehub/static/musehub.js"></script>
+  <script src="/musehub/static/piano-roll.js"></script>
+  <script>
+    window.addEventListener('DOMContentLoaded', function() {
+      const repoId   = {{ repo_id | tojson }};
+      const ref      = {{ ref | tojson }};
+      const path     = {{ path | tojson }};
+      const base     = {{ base_url | tojson }};
+      const apiBase  = '/api/v1/musehub/repos/' + encodeURIComponent(repoId);
+
+      // Track filter state
+      let selectedTrack = -1;  // -1 = all tracks
+
+      async function load() {
+        const el = document.getElementById('content');
+        try {
+          // Discover MIDI objects at this ref
+          const treeData = await apiFetch(
+            '/repos/' + encodeURIComponent(repoId) + '/tree/' + encodeURIComponent(ref)
+          );
+
+          // Find MIDI files in the tree
+          const entries = (treeData.entries || []).filter(function(e) {
+            return e.name && (e.name.endsWith('.mid') || e.name.endsWith('.midi'));
+          });
+
+          if (path) {
+            // Single-track view: load the specific MIDI object
+            const objData = await apiFetch(
+              '/repos/' + encodeURIComponent(repoId) + '/objects?limit=500'
+            );
+            const objects = (objData.objects || []);
+            const obj = objects.find(function(o) { return o.path === path; });
+            if (!obj) {
+              el.innerHTML = '<p class="error">&#10005; MIDI file not found: ' + escHtml(path) + '</p>';
+              return;
+            }
+            renderFromObjectId(repoId, obj.objectId, el);
+          } else {
+            // All-tracks view: pick first MIDI or show selector
+            if (entries.length === 0) {
+              // Try listing all objects with .mid extension
+              const objData = await apiFetch(
+                '/repos/' + encodeURIComponent(repoId) + '/objects?limit=500'
+              );
+              const midObjects = (objData.objects || []).filter(function(o) {
+                return o.path && (o.path.endsWith('.mid') || o.path.endsWith('.midi'));
+              });
+              if (midObjects.length === 0) {
+                el.innerHTML = '<div class="card"><p style="color:#8b949e">No MIDI files found at ref <strong>' + escHtml(ref) + '</strong>.</p></div>';
+                return;
+              }
+              renderObjectPicker(repoId, midObjects, el);
+            } else {
+              renderObjectPicker(repoId, entries.map(function(e) {
+                return { path: e.path || e.name, objectId: e.objectId };
+              }), el);
+            }
+          }
+        } catch(e) {
+          if (e.message !== 'auth') {
+            el.innerHTML = '<p class="error">&#10005; ' + escHtml(e.message) + '</p>';
+          }
+        }
+      }
+
+      function renderObjectPicker(repoId, objects, el) {
+        if (objects.length === 1) {
+          renderFromObjectId(repoId, objects[0].objectId, el);
+          return;
+        }
+        // Multiple MIDI files — show a selector then render first
+        const opts = objects.map(function(o, i) {
+          return '<option value="' + escHtml(o.objectId) + '">' + escHtml(o.path || ('Track ' + i)) + '</option>';
+        }).join('');
+        el.innerHTML = '<div class="card" style="margin-bottom:12px"><label style="font-size:13px;color:#8b949e">MIDI file: <select id="midi-selector" style="margin-left:8px">' + opts + '</select></label></div><div id="roll-container"><p class="loading">Loading&#8230;</p></div>';
+        document.getElementById('midi-selector').addEventListener('change', function() {
+          renderFromObjectId(repoId, this.value, document.getElementById('roll-container'));
+        });
+        renderFromObjectId(repoId, objects[0].objectId, document.getElementById('roll-container'));
+      }
+
+      async function renderFromObjectId(repoId, objectId, el) {
+        try {
+          el.innerHTML = '<p class="loading">Parsing MIDI&#8230;</p>';
+          const midi = await apiFetch(
+            '/repos/' + encodeURIComponent(repoId) + '/objects/' + encodeURIComponent(objectId) + '/parse-midi'
+          );
+          PianoRoll.render(midi, el, { selectedTrack: selectedTrack });
+        } catch(e) {
+          if (e.message !== 'auth') {
+            el.innerHTML = '<p class="error">&#10005; ' + escHtml(e.message) + '</p>';
+          }
+        }
+      }
+
+      load();
+    });
+  </script>
+</body>
+</html>
