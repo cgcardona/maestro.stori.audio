@@ -28,7 +28,6 @@ import json
 import logging
 import pathlib
 from collections.abc import Mapping
-from typing import Optional
 
 import httpx
 import typer
@@ -257,7 +256,7 @@ async def _pull_async(
 @app.callback(invoke_without_command=True)
 def pull(
     ctx: typer.Context,
-    branch: Optional[str] = typer.Option(
+    branch: str | None = typer.Option(
         None,
         "--branch",
         "-b",

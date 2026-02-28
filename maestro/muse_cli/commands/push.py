@@ -28,7 +28,6 @@ import asyncio
 import json
 import logging
 import pathlib
-from typing import Optional
 
 import httpx
 import typer
@@ -242,7 +241,7 @@ async def _push_async(
 @app.callback(invoke_without_command=True)
 def push(
     ctx: typer.Context,
-    branch: Optional[str] = typer.Option(
+    branch: str | None = typer.Option(
         None,
         "--branch",
         "-b",

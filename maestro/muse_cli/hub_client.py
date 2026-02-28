@@ -21,7 +21,7 @@ from __future__ import annotations
 import logging
 import pathlib
 import types
-from typing import Any, TypedDict
+from typing import TypedDict
 
 import httpx
 import typer
@@ -210,21 +210,21 @@ class MuseHubClient:
             )
         return self._client
 
-    async def get(self, path: str, **kwargs: Any) -> httpx.Response:
+    async def get(self, path: str, **kwargs: object) -> httpx.Response:
         """Issue a GET request to *path*."""
-        return await self._require_client().get(path, **kwargs)
+        return await self._require_client().get(path, **kwargs)  # type: ignore[arg-type]  # httpx stubs use Any for kwargs
 
-    async def post(self, path: str, **kwargs: Any) -> httpx.Response:
+    async def post(self, path: str, **kwargs: object) -> httpx.Response:
         """Issue a POST request to *path*."""
-        return await self._require_client().post(path, **kwargs)
+        return await self._require_client().post(path, **kwargs)  # type: ignore[arg-type]  # httpx stubs use Any for kwargs
 
-    async def put(self, path: str, **kwargs: Any) -> httpx.Response:
+    async def put(self, path: str, **kwargs: object) -> httpx.Response:
         """Issue a PUT request to *path*."""
-        return await self._require_client().put(path, **kwargs)
+        return await self._require_client().put(path, **kwargs)  # type: ignore[arg-type]  # httpx stubs use Any for kwargs
 
-    async def delete(self, path: str, **kwargs: Any) -> httpx.Response:
+    async def delete(self, path: str, **kwargs: object) -> httpx.Response:
         """Issue a DELETE request to *path*."""
-        return await self._require_client().delete(path, **kwargs)
+        return await self._require_client().delete(path, **kwargs)  # type: ignore[arg-type]  # httpx stubs use Any for kwargs
 
 
 __all__ = [
