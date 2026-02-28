@@ -76,12 +76,12 @@ cd "$REPO"
 DEV_SHA=$(git rev-parse dev)
 
 # --- define PRs ---
-# Batch: #170–#173 (show, reset, pathlib fix, Muse Hub web UI)
+# Batch: #155, #154, #153, #152
 declare -a PRS=(
-  "170|feat: muse show <commit> — music-aware commit inspection"
-  "171|feat: muse reset <commit> — reset branch pointer to a prior commit"
-  "172|fix: remove bare import pathlib from status.py + status already dropped from STUB_COMMANDS"
-  "173|feat: Muse Hub web UI — artifact browsing, commit viewer, PR and issue pages"
+  "155|feat: muse update-ref <ref> <new-value> — update a ref (branch or tag pointer)"
+  "154|feat: muse write-tree — write the current muse-work/ state as a snapshot (tree) object"
+  "153|feat: muse cat-object <object-id> — read and display a stored object"
+  "152|feat: muse harmony [<commit>] — analyze and query harmonic content across commits"
 )
 
 # --- create worktrees + task files ---
@@ -375,6 +375,12 @@ STEP 5 — REVIEW:
   6. Red-flag scan — before claiming tests pass, scan the FULL output for:
        ERROR, Traceback, toolError, circuit_breaker_open, FAILED, AssertionError
      Any red-flag = the run is not clean, regardless of the final summary line.
+  6a. Warning scan — also scan the FULL output for:
+       PytestWarning, DeprecationWarning, UserWarning, and any other Warning lines.
+     Warnings are defects, not noise. Fix ALL of them — whether introduced by this PR
+     or pre-existing. Commit pre-existing warning fixes separately:
+       "fix: resolve pre-existing test warning — <brief description>"
+     A clean run has zero warnings AND zero failures. Note all warnings resolved in your report.
   7. Grade the PR (A/B/C/D/F) — OUTPUT GRADE FIRST before any merge command
 
   GRADE B — FIX-OR-TICKET PROTOCOL (apply before proceeding to STEP 6):
@@ -392,8 +398,27 @@ STEP 5 — REVIEW:
     PATH 2 — Create a follow-up ticket (when fix is non-trivial):
       If the concern requires design thought, touches other files, or risks
       introducing new bugs, capture it as a GitHub issue instead of fixing
-      in place. File it BEFORE merging:
-        gh issue create \
+      in place. File it BEFORE merging.
+
+      ── LABEL REFERENCE (only use labels from this list) ────────────────────
+      │ bug              documentation     duplicate         enhancement       │
+      │ good first issue help wanted       invalid           question          │
+      │ wontfix          multimodal        performance       ai-pipeline       │
+      │ muse             muse-cli          muse-hub          storpheus         │
+      │ maestro-integration  mypy          cli               testing           │
+      │ weekend-mvp      muse-music-extensions                                 │
+      │                                                                        │
+      │ ⚠️  Never invent labels (e.g. "tech-debt", "mcp", "budget",           │
+      │    "security" do NOT exist). Using a missing label causes              │
+      │    gh issue create to fail entirely.                                   │
+      └────────────────────────────────────────────────────────────────────────
+
+      ── TWO-STEP PATTERN (always use this — never --label on gh issue create) ──
+      │ Step 1: create the issue without --label (never fails due to labels)  │
+      │ Step 2: apply labels with gh issue edit (|| true = non-fatal)         │
+      └────────────────────────────────────────────────────────────────────────
+
+        FOLLOW_UP_URL=$(gh issue create \
           --title "follow-up: <specific concern from PR #<N>>" \
           --body "$(cat <<'EOF'
         ## Context
@@ -408,9 +433,11 @@ STEP 5 — REVIEW:
         ## Files Affected
         <List of files that need to change>
         EOF
-        )" \
-          --label "enhancement,tech-debt"
-      Report the follow-up issue URL in your final report. Then proceed to STEP 6.
+        )")
+        # Apply labels separately — each on its own line so one failure
+        # doesn't block the others. Pick from the LABEL REFERENCE above only.
+        gh issue edit "$FOLLOW_UP_URL" --add-label "enhancement" 2>/dev/null || true
+      Report the follow-up issue URL ($FOLLOW_UP_URL) in your final report. Then proceed to STEP 6.
 
     ⚠️  A B grade without a fix OR a follow-up ticket URL is not acceptable.
         You must produce one artifact per B-grade concern before merging.
