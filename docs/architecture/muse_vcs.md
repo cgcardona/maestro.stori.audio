@@ -2624,6 +2624,95 @@ Validating working tree …
 must investigate the failing check before committing — a corrupted MIDI would silently
 corrupt the composition history. With `--strict`, agents can enforce zero-warning quality gates.
 
+
+
+## `muse tempo-scale` — Stretch or Compress the Timing of a Commit
+
+**Purpose:** Apply a deterministic time-scaling transformation to a commit,
+stretching or compressing all MIDI note onset/offset times by a factor while
+preserving pitch.  Records the result as a new commit, leaving the source
+commit intact.  Agents use this to explore half-time grooves, double-time
+feels, or to normalise a session to a target BPM before merge.
+
+**Usage:**
+```bash
+muse tempo-scale [<factor>] [<commit>] [OPTIONS]
+```
+
+**Flags:**
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `<factor>` | float | — | Scaling factor: `0.5` = half-time, `2.0` = double-time |
+| `<commit>` | string | HEAD | Source commit SHA to scale |
+| `--bpm N` | float | — | Scale to reach exactly N BPM (`factor = N / source_bpm`). Mutually exclusive with `<factor>` |
+| `--track TEXT` | string | all | Scale only a specific MIDI track |
+| `--preserve-expressions` | flag | off | Scale CC/expression event timing proportionally |
+| `--message TEXT` | string | auto | Commit message for the new scaled commit |
+| `--json` | flag | off | Emit structured JSON for agent consumption |
+
+> **Note on argument order:** Because `muse tempo-scale` is a Typer group
+> command, place all `--options` before the positional `<factor>` argument to
+> ensure correct parsing (e.g. `muse tempo-scale --json 2.0`, not
+> `muse tempo-scale 2.0 --json`).
+
+**Output example (text):**
+```
+Tempo scaled: abc12345 -> d9f3a1b2
+  Factor:  0.5000  (/2.0000)
+  Tempo:   120.0 BPM -> 60.0 BPM
+  Track:   all
+  Message: tempo-scale 0.5000x (stub)
+  (stub -- full MIDI note manipulation pending)
+```
+
+**Output example (JSON, `--json`):**
+```json
+{
+  "source_commit": "abc12345",
+  "new_commit": "d9f3a1b2",
+  "factor": 0.5,
+  "source_bpm": 120.0,
+  "new_bpm": 60.0,
+  "track": "all",
+  "preserve_expressions": false,
+  "message": "tempo-scale 0.5000x (stub)"
+}
+```
+
+**Result type:** `TempoScaleResult` (TypedDict) — fields: `source_commit`,
+`new_commit`, `factor`, `source_bpm`, `new_bpm`, `track`,
+`preserve_expressions`, `message`.
+
+**Factor computation from BPM:**  `factor = target_bpm / source_bpm`.
+Example: to go from 120 BPM to 128 BPM, `factor = 128 / 120 ≈ 1.0667`.
+Both operations are exposed as pure functions (`compute_factor_from_bpm`,
+`apply_factor`) that agents may call directly without spawning the CLI.
+
+**Determinism:** Same `source_commit` + `factor` + `track` + `preserve_expressions`
+always produces the same `new_commit` SHA.  This makes tempo-scale operations
+safe to cache and replay in agentic pipelines.
+
+**Agent use case:** An AI generating a groove variation queries `muse tempo-scale
+--bpm 128 --json` to normalise a 120 BPM sketch to the session BPM before
+committing.  A post-generation agent can scan `muse timeline` to verify the
+tempo evolution, then use `muse tempo-scale 0.5` to create a half-time B-section
+for contrast.
+
+**Implementation:** `maestro/muse_cli/commands/tempo_scale.py` —
+`TempoScaleResult` (TypedDict), `compute_factor_from_bpm()`, `apply_factor()`,
+`_tempo_scale_async()`, `_format_result()`.  Exit codes: 0 success, 1 bad
+arguments (`USER_ERROR`), 2 outside repo (`REPO_NOT_FOUND`), 3 internal error
+(`INTERNAL_ERROR`).
+
+> **Stub note:** The current implementation computes the correct schema and
+> factor but uses a placeholder 120 BPM as the source tempo and generates a
+> deterministic stub commit SHA.  Full MIDI note-event manipulation will be
+> wired in when the Storpheus note-event query route is available.
+
+---
+
+
 ---
 
 ## Command Registration Summary
@@ -2643,7 +2732,113 @@ corrupt the composition history. With `--strict`, agents can enforce zero-warnin
 | `muse session` | `commands/session.py` | ✅ implemented (PR #129) | #127 |
 | `muse swing` | `commands/swing.py` | ✅ stub (PR #131) | #121 |
 | `muse tag` | `commands/tag.py` | ✅ implemented (PR #133) | #123 |
+| `muse tempo-scale` | `commands/tempo_scale.py` | ✅ stub (PR open) | #111 |
 | `muse validate` | `commands/validate.py` | ✅ implemented (PR #TBD) | #99 |
 
 All stub commands have stable CLI contracts. Full musical analysis (MIDI content
 parsing, vector embeddings, LLM synthesis) is tracked as follow-up issues.
+
+
+## `muse contour` — Melodic Contour and Phrase Shape Analysis
+
+**Purpose:** Determines whether a melody rises, falls, arches, or waves — the
+fundamental expressive character that distinguishes two otherwise similar
+melodies.  An AI generation agent uses `muse contour --json HEAD` to
+understand the melodic shape of the current arrangement before layering a
+countermelody, ensuring complementary (not identical) contour.
+
+**Usage:**
+```bash
+muse contour [<commit>] [OPTIONS]
+```
+
+**Flags:**
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `[<commit>]` | string | HEAD | Target commit SHA to analyse |
+| `--track TEXT` | string | all tracks | Restrict to a named melodic track (e.g. `keys`, `lead`) |
+| `--section TEXT` | string | full piece | Scope analysis to a named section (e.g. `verse`, `chorus`) |
+| `--compare COMMIT` | string | — | Compare contour between HEAD (or `[<commit>]`) and this ref |
+| `--history` | flag | off | Show contour evolution across all commits |
+| `--shape` | flag | off | Print the overall shape label only (one line) |
+| `--json` | flag | off | Emit structured JSON for agent consumption |
+
+**Shape vocabulary:**
+| Label | Description |
+|-------|-------------|
+| `ascending` | Net upward movement across the full phrase |
+| `descending` | Net downward movement across the full phrase |
+| `arch` | Rises then falls (single peak) |
+| `inverted-arch` | Falls then rises (valley shape) |
+| `wave` | Multiple peaks; alternating rise and fall |
+| `static` | Narrow pitch range (< 2 semitones spread) |
+
+**Output example (text):**
+```
+Shape: Arch | Range: 2 octaves | Phrases: 4 avg 8 bars
+Commit: a1b2c3d4  Branch: main
+Track: keys  Section: all
+Angularity: 2.5 st avg interval
+(stub — full MIDI analysis pending)
+```
+
+**Output example (`--shape`):**
+```
+Shape: arch
+```
+
+**Output example (`--compare`, text):**
+```
+A (a1b2c3d4)  Shape: arch | Angularity: 2.5 st
+B (HEAD~10)   Shape: arch | Angularity: 2.5 st
+Delta  angularity +0.0 st | tessitura +0 st
+```
+
+**Output example (`--json`):**
+```json
+{
+  "shape": "arch",
+  "tessitura": 24,
+  "avg_interval": 2.5,
+  "phrase_count": 4,
+  "avg_phrase_bars": 8.0,
+  "commit": "a1b2c3d4",
+  "branch": "main",
+  "track": "keys",
+  "section": "all",
+  "source": "stub"
+}
+```
+
+**Result types:**
+- `ContourResult` — fields: `shape` (str), `tessitura` (int, semitones),
+  `avg_interval` (float, semitones), `phrase_count` (int), `avg_phrase_bars`
+  (float), `commit` (str), `branch` (str), `track` (str), `section` (str),
+  `source` (str).
+- `ContourCompareResult` — fields: `commit_a` (ContourResult), `commit_b`
+  (ContourResult), `shape_changed` (bool), `angularity_delta` (float),
+  `tessitura_delta` (int).
+
+See `docs/reference/type_contracts.md § ContourResult`.
+
+**Agent use case:** Before generating a countermelody, an agent calls
+`muse contour --json HEAD --track keys` to determine whether the existing
+melody is arch-shaped with a wide tessitura (high angularity).  It then
+generates a countermelody that is descending and narrow — complementary, not
+imitative.  The `--compare` flag lets the agent detect whether recent edits
+made a melody more angular (fragmented) or smoother (stepwise), informing
+whether the next variation should introduce or reduce leaps.
+
+**Implementation stub note:** `source: "stub"` in the JSON output indicates
+that full MIDI pitch-trajectory analysis is pending a Storpheus pitch-detection
+route.  The CLI contract (flags, output shape, result types) is stable — only
+the computed values will change when the full implementation is wired in.
+
+**Implementation:** `maestro/muse_cli/commands/contour.py` —
+`ContourResult` (TypedDict), `ContourCompareResult` (TypedDict),
+`_contour_detect_async()`, `_contour_compare_async()`,
+`_contour_history_async()`, `_format_detect()`, `_format_compare()`,
+`_format_history()`.  Exit codes: 0 success, 2 outside repo
+(`REPO_NOT_FOUND`), 3 internal error (`INTERNAL_ERROR`).
+
+---
