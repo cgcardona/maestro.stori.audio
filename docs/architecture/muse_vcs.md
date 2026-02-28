@@ -692,6 +692,8 @@ Given the same working tree state, message, and timestamp two machines produce i
   repo.json          Repo identity: repo_id (UUID), schema_version, created_at
   HEAD               Current branch pointer, e.g. "refs/heads/main"
   config.toml        [user], [auth], [remotes] configuration
+  objects/           Local content-addressed object store (written by muse commit)
+    <object_id>      One file per unique object (sha256 of file bytes)
   refs/
     heads/
       main           Commit ID of branch HEAD (empty = no commits yet)
@@ -3842,6 +3844,64 @@ arguments (`USER_ERROR`), 2 outside repo (`REPO_NOT_FOUND`), 3 internal error
 
 ---
 
+## `muse read-tree` — Read a Snapshot into muse-work/
+
+**Purpose:** Hydrate `muse-work/` from any historical snapshot without modifying
+HEAD or branch refs. The plumbing analog of `git read-tree`. AI agents use this to
+inspect or restore a specific composition state before making decisions.
+
+**Usage:**
+```bash
+muse read-tree <snapshot_id> [OPTIONS]
+```
+
+**Flags:**
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `<snapshot_id>` | positional | — | Full 64-char snapshot SHA or abbreviated prefix (≥ 4 chars) |
+| `--dry-run` | flag | off | Print the file list without writing anything |
+| `--reset` | flag | off | Clear all files from muse-work/ before populating |
+
+**Output example (default):**
+```
+✅ muse-work/ populated from snapshot a3f7b891 (3 file(s)).
+```
+
+**Output example (`--dry-run`):**
+```
+Snapshot a3f7b891 — 3 file(s):
+  tracks/bass/groove.mid  (1a2b3c4d)
+  tracks/keys/voicing.mid (9e8f7a6b)
+  mix/final.json          (c4d5e6f7)
+```
+
+**Output example (`--reset`):**
+```
+✅ muse-work/ reset and populated from snapshot a3f7b891 (3 file(s)).
+```
+
+**Result type:** `ReadTreeResult` — fields: `snapshot_id` (str), `files_written` (list[str]),
+`dry_run` (bool), `reset` (bool).
+
+**How objects are stored:** `muse commit` writes each committed file's raw bytes
+into `.muse/objects/<sha256>` (the local content-addressed object store). `muse
+read-tree` reads from that store to reconstruct `muse-work/`. If an object is
+missing (e.g. the snapshot was pulled from a remote without a local commit), the
+command exits with a clear error listing the missing paths.
+
+**Does NOT modify:**
+- `.muse/HEAD`
+- `.muse/refs/heads/<branch>` (any branch ref)
+- The database (read-only command)
+
+**Agent use case:** After `muse pull`, an agent calls `muse read-tree <snapshot_id>`
+to materialize a specific checkpoint into `muse-work/` for further analysis (e.g.
+running `muse dynamics` or `muse swing`) without advancing the branch pointer. This
+is safer than `muse checkout` because it leaves all branch metadata intact.
+
+---
+
 ## `muse update-ref` — Write or Delete a Ref (Branch or Tag Pointer)
 
 **Purpose:** Directly update a branch or tag pointer (`refs/heads/*` or `refs/tags/*`)
@@ -3977,6 +4037,7 @@ commit is needed.
 | `muse import` | `commands/import_cmd.py` | ✅ implemented (PR #142) | #118 |
 | `muse inspect` | `commands/inspect.py` | ✅ implemented (PR #TBD) | #98 |
 | `muse meter` | `commands/meter.py` | ✅ implemented (PR #141) | #117 |
+| `muse read-tree` | `commands/read_tree.py` | ✅ implemented (PR #157) | #90 |
 | `muse recall` | `commands/recall.py` | ✅ stub (PR #135) | #122 |
 | `muse render-preview` | `commands/render_preview.py` | ✅ implemented (issue #96) | #96 |
 | `muse rev-parse` | `commands/rev_parse.py` | ✅ implemented (PR #143) | #92 |
