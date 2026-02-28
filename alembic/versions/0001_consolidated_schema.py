@@ -255,10 +255,15 @@ def upgrade() -> None:
         sa.Column("name", sa.String(255), nullable=False),
         sa.Column("visibility", sa.String(20), nullable=False, server_default="private"),
         sa.Column("owner_user_id", sa.String(36), nullable=False),
+        sa.Column("description", sa.Text(), nullable=False, server_default=""),
+        sa.Column("tags", sa.JSON(), nullable=False, server_default="[]"),
+        sa.Column("key_signature", sa.String(50), nullable=True),
+        sa.Column("tempo_bpm", sa.Integer(), nullable=True),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP")),
         sa.PrimaryKeyConstraint("repo_id"),
     )
     op.create_index("ix_musehub_repos_owner_user_id", "musehub_repos", ["owner_user_id"])
+    op.create_index("ix_musehub_repos_visibility", "musehub_repos", ["visibility"])
 
     op.create_table(
         "musehub_branches",
@@ -354,8 +359,32 @@ def upgrade() -> None:
     )
     op.create_index("ix_musehub_objects_repo_id", "musehub_objects", ["repo_id"])
 
+    # ── Muse Hub — repo starring (explore/discover page) ─────────────────
+    op.create_table(
+        "musehub_stars",
+        sa.Column("star_id", sa.String(36), nullable=False),
+        sa.Column("repo_id", sa.String(36), nullable=False),
+        sa.Column("user_id", sa.String(36), nullable=False),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            nullable=False,
+            server_default=sa.text("CURRENT_TIMESTAMP"),
+        ),
+        sa.ForeignKeyConstraint(["repo_id"], ["musehub_repos.repo_id"], ondelete="CASCADE"),
+        sa.PrimaryKeyConstraint("star_id"),
+        sa.UniqueConstraint("repo_id", "user_id", name="uq_musehub_stars_repo_user"),
+    )
+    op.create_index("ix_musehub_stars_repo_id", "musehub_stars", ["repo_id"])
+    op.create_index("ix_musehub_stars_user_id", "musehub_stars", ["user_id"])
+
 
 def downgrade() -> None:
+    # Muse Hub — repo starring
+    op.drop_index("ix_musehub_stars_user_id", table_name="musehub_stars")
+    op.drop_index("ix_musehub_stars_repo_id", table_name="musehub_stars")
+    op.drop_table("musehub_stars")
+
     # Muse Hub — binary artifact storage
     op.drop_index("ix_musehub_objects_repo_id", table_name="musehub_objects")
     op.drop_table("musehub_objects")
@@ -378,6 +407,7 @@ def downgrade() -> None:
     op.drop_table("musehub_commits")
     op.drop_index("ix_musehub_branches_repo_id", table_name="musehub_branches")
     op.drop_table("musehub_branches")
+    op.drop_index("ix_musehub_repos_visibility", table_name="musehub_repos")
     op.drop_index("ix_musehub_repos_owner_user_id", table_name="musehub_repos")
     op.drop_table("musehub_repos")
 

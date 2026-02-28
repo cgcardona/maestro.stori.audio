@@ -91,6 +91,13 @@ class CreateRepoRequest(CamelModel):
 
     name: str = Field(..., min_length=1, max_length=255, description="Repo name")
     visibility: str = Field("private", pattern="^(public|private)$")
+    description: str = Field("", description="Short description shown on the explore page")
+    tags: list[str] = Field(
+        default_factory=list,
+        description="Free-form tags — genre, key, instrumentation (e.g. 'jazz', 'F# minor', 'bass')",
+    )
+    key_signature: str | None = Field(None, max_length=50, description="Musical key (e.g. 'C major', 'F# minor')")
+    tempo_bpm: int | None = Field(None, ge=20, le=300, description="Tempo in BPM")
 
 
 # ── Response models ───────────────────────────────────────────────────────────
@@ -104,6 +111,10 @@ class RepoResponse(CamelModel):
     visibility: str
     owner_user_id: str
     clone_url: str
+    description: str = ""
+    tags: list[str] = Field(default_factory=list)
+    key_signature: str | None = None
+    tempo_bpm: int | None = None
     created_at: datetime
 
 
@@ -240,3 +251,47 @@ class ObjectMetaListResponse(CamelModel):
     """List of artifact metadata for a repo."""
 
     objects: list[ObjectMetaResponse]
+
+
+# ── Explore / Discover models ──────────────────────────────────────────────────
+
+
+class ExploreRepoResult(CamelModel):
+    """A public repo card shown on the explore/discover page.
+
+    Extends RepoResponse with aggregated counts (star_count, commit_count)
+    that are computed at query time for efficient pagination and sorting.
+    These counts are read-only signals — they are never persisted directly on
+    the repo row to avoid write amplification on every push/star.
+    """
+
+    repo_id: str
+    name: str
+    owner_user_id: str
+    description: str
+    tags: list[str]
+    key_signature: str | None
+    tempo_bpm: int | None
+    star_count: int
+    commit_count: int
+    created_at: datetime
+
+
+class ExploreResponse(CamelModel):
+    """Paginated response from GET /api/v1/musehub/discover/repos.
+
+    ``total`` reflects the full filtered result set size — not just the current
+    page — so clients can render pagination controls without a second query.
+    """
+
+    repos: list[ExploreRepoResult]
+    total: int
+    page: int
+    page_size: int
+
+
+class StarResponse(CamelModel):
+    """Confirmation that a star was added or removed."""
+
+    starred: bool
+    star_count: int

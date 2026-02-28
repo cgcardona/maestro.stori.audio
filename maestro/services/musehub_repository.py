@@ -43,6 +43,10 @@ def _to_repo_response(row: db.MusehubRepo) -> RepoResponse:
         visibility=row.visibility,
         owner_user_id=row.owner_user_id,
         clone_url=_repo_clone_url(row.repo_id),
+        description=row.description,
+        tags=list(row.tags or []),
+        key_signature=row.key_signature,
+        tempo_bpm=row.tempo_bpm,
         created_at=row.created_at,
     )
 
@@ -73,9 +77,21 @@ async def create_repo(
     name: str,
     visibility: str,
     owner_user_id: str,
+    description: str = "",
+    tags: list[str] | None = None,
+    key_signature: str | None = None,
+    tempo_bpm: int | None = None,
 ) -> RepoResponse:
     """Persist a new remote repo and return its wire representation."""
-    repo = db.MusehubRepo(name=name, visibility=visibility, owner_user_id=owner_user_id)
+    repo = db.MusehubRepo(
+        name=name,
+        visibility=visibility,
+        owner_user_id=owner_user_id,
+        description=description,
+        tags=tags or [],
+        key_signature=key_signature,
+        tempo_bpm=tempo_bpm,
+    )
     session.add(repo)
     await session.flush()  # populate default columns before reading
     await session.refresh(repo)
