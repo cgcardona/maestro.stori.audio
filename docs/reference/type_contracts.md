@@ -2535,6 +2535,46 @@ commit that scored at or above the `--threshold` keyword-overlap cutoff.
 
 ---
 
+### `DimensionScore`
+
+**Module:** `maestro/muse_cli/commands/similarity.py`
+
+Per-dimension musical similarity score between two commits.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `dimension` | `str` | One of: `harmonic`, `rhythmic`, `melodic`, `structural`, `dynamic` |
+| `score` | `float` | Normalized similarity ∈ [0.0, 1.0]; 1.0 = identical, 0.0 = completely different |
+| `note` | `str` | Brief human-readable interpretation of the difference |
+
+**Producer:** `_stub_dimension_scores()`
+**Consumer:** `build_similarity_result()`, `render_similarity_text()`, `render_similarity_json()`
+
+---
+
+### `SimilarityResult`
+
+**Module:** `maestro/muse_cli/commands/similarity.py`
+
+Overall similarity comparison between two commits across all requested dimensions.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `commit_a` | `str` | First commit ref as provided by the caller |
+| `commit_b` | `str` | Second commit ref as provided by the caller |
+| `dimensions` | `list[DimensionScore]` | Per-dimension scores (may be a subset if `--dimensions` filtered) |
+| `overall` | `float` | Weighted overall similarity ∈ [0.0, 1.0], rounded to 4 decimal places |
+| `label` | `str` | Human-readable summary (e.g. `"Significantly different — major rework"`) |
+| `max_divergence` | `str` | Dimension name with the lowest score (greatest creative change) |
+
+**Dimension weights:** harmonic=0.25, melodic=0.25, rhythmic=0.20, structural=0.15, dynamic=0.15.
+When a subset of dimensions is requested, weights are renormalized over the requested set.
+
+**Producer:** `build_similarity_result()`
+**Consumer:** `render_similarity_text()`, `render_similarity_json()`, `_similarity_async()`
+
+---
+
 ### `DescribeResult`
 
 **Module:** `maestro/muse_cli/commands/describe.py`
