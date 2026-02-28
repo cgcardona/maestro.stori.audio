@@ -479,12 +479,92 @@ Reuses `maestro.services.muse_log_render.render_ascii_graph` by adapting `MuseCl
 
 Merge commits (two parents) require `muse merge` (issue #35) — `parent2_commit_id` is reserved for that iteration.
 
+### `--oneline` mode
+
+One line per commit: `<short_id> [HEAD marker] <message>`.
+
+```
+a1b2c3d4 (HEAD -> main) boom bap demo take 1
+f9e8d7c6 initial take
+```
+
+### `--stat` mode
+
+Standard header per commit followed by per-file change lines and a totals summary.
+
+```
+commit a1b2c3d4  (HEAD -> main)
+Date:   2026-02-27 17:30:00
+
+    boom bap demo take 1
+
+ muse-work/drums/jazz.mid | added
+ muse-work/bass/old.mid | removed
+ 2 files changed, 1 added, 1 removed
+```
+
+### `--patch` / `-p` mode
+
+Standard header per commit followed by path-level diff blocks showing which files
+were added, removed, or modified.  This is a structural (path-level) diff since
+Muse tracks MIDI/audio blobs, not line-diffable text.
+
+```
+commit a1b2c3d4  (HEAD -> main)
+Date:   2026-02-27 17:30:00
+
+    boom bap demo take 1
+
+--- /dev/null
++++ muse-work/drums/jazz.mid
+--- muse-work/bass/old.mid
++++ /dev/null
+```
+
 ### Flags
 
 | Flag | Default | Description |
 |------|---------|-------------|
 | `--limit N` / `-n N` | 1000 | Cap the walk at N commits |
 | `--graph` | off | ASCII DAG mode |
+| `--oneline` | off | One line per commit: `<short_id> [HEAD] <message>` |
+| `--stat` | off | Show file-change statistics per commit |
+| `--patch` / `-p` | off | Show path-level diff per commit |
+| `--since DATE` | — | Only commits after DATE (ISO or "2 weeks ago") |
+| `--until DATE` | — | Only commits before DATE (ISO or "2 weeks ago") |
+| `--author TEXT` | — | Case-insensitive substring match on author field |
+| `--emotion TEXT` | — | Filter by `emotion:<TEXT>` tag (e.g. `melancholic`) |
+| `--section TEXT` | — | Filter by `section:<TEXT>` tag (e.g. `chorus`) |
+| `--track TEXT` | — | Filter by `track:<TEXT>` tag (e.g. `drums`) |
+
+All flags are combinable. Filters narrow the commit set; output mode flags control formatting.
+Priority when multiple output modes specified: `--graph` > `--oneline` > `--stat` > `--patch` > default.
+
+### Date parsing
+
+`--since` and `--until` accept:
+- ISO dates: `2026-01-15`, `2026-01-15T12:00:00`, `2026-01-15 12:00:00`
+- Relative: `N days ago`, `N weeks ago`, `N months ago`, `N years ago`, `yesterday`, `today`
+
+### Music-native tag filters
+
+`--emotion`, `--section`, and `--track` filter by tags stored in `muse_cli_tags`.
+Tags follow the `emotion:<value>`, `section:<value>`, `track:<value>` naming
+convention.  Multiple tag filters are AND-combined — a commit must carry all
+specified tags to appear in the output.
+
+**Agent use case:** An agent debugging a melancholic chorus can run
+`muse log --emotion melancholic --section chorus` to find exactly when that
+emotional character was committed, then `muse show <commit>` to inspect the
+snapshot or `muse revert <commit>` to undo it.
+
+### Result type
+
+`parse_date_filter(text: str) -> datetime` — converts a human date string to
+UTC-aware `datetime`. Raises `ValueError` on unrecognised formats.
+
+`CommitDiff` — fields: `added: list[str]`, `removed: list[str]`,
+`changed: list[str]`, `total_files: int` (computed property).
 
 ---
 
