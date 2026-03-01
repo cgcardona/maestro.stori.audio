@@ -426,21 +426,40 @@ async def commit_page(
     format: str | None = Query(None, description="Force response format: 'json' or omit for HTML"),
     db: AsyncSession = Depends(get_db),
 ) -> StarletteResponse:
-    """Render the commit detail page or return structured commit data as JSON.
+    """Render the commit detail page with inline audio player, muse_tags metadata,
+    reactions, comment thread, and cross-reference panel.
 
-    HTML (default): metadata + artifact browser rendered via Jinja2.
+    HTML (default): rich commit detail page via Jinja2 with:
+    - Inline WaveSurfer.js audio player (full mix + per-stem track selector +
+      volume control).  Falls back to ``<audio>`` when WaveSurfer is unavailable.
+    - Full metadata panel sourced from analysis APIs (tempo_bpm, key,
+      time_signature; emotion/stage tags rendered as colored pills).  DB-stored
+      ``muse_tags`` are also rendered via the namespace-aware ``tagPill()``
+      helper; ``ref:`` tags whose value is a URL open that source directly.
+    - Reactions row (8 emoji types) backed by the existing reactions API.
+    - Threaded comment section with add/edit/delete and nested reply support.
+    - Cross-references panel showing PRs, issues, and sessions that mention
+      this commit hash.
+    - A 2-sentence prose summary (``buildProseSummary``) synthesised from key,
+      tempo, emotion, and diff-dimension data.
+
     JSON (``Accept: application/json`` or ``?format=json``): returns the full
     ``CommitResponse`` Pydantic model with camelCase keys, or a minimal context
     dict if the commit is not yet in the DB (not yet synced).
 
     Artifacts are displayed by extension:
     - ``.webp/.png/.jpg`` → inline ``<img>``
-    - ``.mp3/.ogg/.wav``  → ``<audio controls>`` player
+    - ``.mp3/.ogg/.wav``  → ``<audio controls>`` player / WaveSurfer stem
+    - ``.mid/.midi``      → piano-roll preview card
+    - ``.abc/.musicxml``  → score preview via abcjs
     - other              → download link
     """
     repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
     commit = await musehub_repository.get_commit(db, repo_id, commit_id)
     commit_description = commit.message if commit is not None else ""
+    short_id = commit_id[:8]
+    listen_url = f"{base_url}/listen/{commit_id}"
+    embed_url = f"{base_url}/embed/{commit_id}"
     return await negotiate_response(
         request=request,
         template_name="musehub/pages/commit.html",
@@ -449,16 +468,19 @@ async def commit_page(
             "repo_slug": repo_slug,
             "repo_id": repo_id,
             "commit_id": commit_id,
+            "short_id": short_id,
             "base_url": base_url,
+            "listen_url": listen_url,
+            "embed_url": embed_url,
             "current_page": "commits",
             "breadcrumb_data": _breadcrumbs(
                 (owner, f"/musehub/ui/{owner}"),
                 (repo_slug, base_url),
                 ("commits", base_url),
-                (commit_id[:8], ""),
+                (short_id, ""),
             ),
             "og_meta": _og_tags(
-                title=f"Commit {commit_id[:8]} · {owner}/{repo_slug} — Muse Hub",
+                title=f"Commit {short_id} · {owner}/{repo_slug} — Muse Hub",
                 description=commit_description,
                 og_type="music.song",
             ),

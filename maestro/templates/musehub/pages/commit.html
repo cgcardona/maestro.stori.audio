@@ -17,10 +17,166 @@ const repoId   = {{ repo_id | tojson }};
 const commitId = {{ commit_id | tojson }};
 const base     = {{ base_url | tojson }};
 const apiBase  = '/api/v1/musehub/repos/' + repoId;
+const listenUrl = {{ listen_url | tojson }};
+const embedUrl  = {{ embed_url | tojson }};
+const shortId   = {{ short_id | tojson }};
 {% endblock %}
 
 {% block page_script %}
 {% raw %}
+// ── Inline audio player state ────────────────────────────────────────────────
+let _playerWs      = null;  // WaveSurfer instance
+let _playerAudioEl = null;  // fallback <audio> element
+let _playerTracks  = [];    // [{name, url}]
+let _playerIdx     = 0;
+let _playerPlaying = false;
+
+/** Build and mount the inline WaveSurfer hero player.
+ *
+ * Uses WaveSurfer.js when available; falls back to a plain <audio> element so
+ * the player renders even if the CDN asset fails to load.  Audio is fetched
+ * via the authenticated content URL so private-repo stems are protected.
+ */
+function buildInlinePlayer(tracks) {
+  _playerTracks = tracks;
+  _playerIdx    = 0;
+  const el = document.getElementById('inline-player-root');
+  if (!el || !tracks.length) {
+    if (el) el.innerHTML = '<p class="text-muted text-sm" style="text-align:center;padding:var(--space-4)">No audio renders attached to this commit.</p>';
+    return;
+  }
+
+  const trackOpts = tracks.map((t, i) =>
+    `<option value="${i}">${escHtml(t.name)}</option>`).join('');
+
+  el.innerHTML = `
+    <div class="iap-title">${escHtml(tracks[0].name)}</div>
+    <div id="iap-waveform" class="iap-waveform-wrap">
+      <div class="iap-waveform-placeholder">🎵 Loading waveform…</div>
+    </div>
+    <div class="iap-controls">
+      <button id="iap-play-btn" class="iap-play-btn" title="Play / Pause" onclick="iapTogglePlay()">▶</button>
+      <div style="flex:1;min-width:0">
+        <div id="iap-progress-bar" class="iap-progress-bar" onclick="iapSeek(event)">
+          <div id="iap-progress-fill" class="iap-progress-fill"></div>
+        </div>
+        <div class="iap-time-row">
+          <span id="iap-current-time">0:00</span>
+          <span id="iap-duration">—</span>
+        </div>
+      </div>
+      <div class="iap-volume-wrap">
+        🔊
+        <input id="iap-volume" type="range" min="0" max="1" step="0.05" value="0.8"
+               class="iap-volume-slider" oninput="iapSetVolume(this.value)" />
+      </div>
+    </div>
+    ${tracks.length > 1 ? `
+    <div class="iap-track-selector">
+      <label class="iap-track-label">Track</label>
+      <select id="iap-track-sel" class="iap-track-select" onchange="iapSwitchTrack(this.value)">
+        ${trackOpts}
+      </select>
+    </div>` : ''}`;
+
+  iapLoad(0);
+}
+
+function iapFmtTime(s) {
+  if (!isFinite(s)) return '—';
+  const m = Math.floor(s / 60);
+  const sec = String(Math.floor(s % 60)).padStart(2, '0');
+  return `${m}:${sec}`;
+}
+
+function iapLoad(idx) {
+  _playerIdx    = idx;
+  _playerPlaying = false;
+  const t       = _playerTracks[idx];
+  const wrapEl  = document.getElementById('iap-waveform');
+  const playBtn = document.getElementById('iap-play-btn');
+  const title   = document.querySelector('#inline-player-root .iap-title');
+  if (title) title.textContent = t.name;
+  if (playBtn) playBtn.textContent = '▶';
+
+  // Destroy existing WaveSurfer
+  if (_playerWs) { try { _playerWs.destroy(); } catch(_) {} _playerWs = null; }
+  if (_playerAudioEl) { _playerAudioEl.pause(); _playerAudioEl = null; }
+
+  if (wrapEl) wrapEl.innerHTML = '<div class="iap-waveform-placeholder">🎵 Loading…</div>';
+
+  if (window.WaveSurfer) {
+    if (wrapEl) wrapEl.innerHTML = '<div id="iap-ws-container" style="height:72px;width:100%"></div>';
+    _playerWs = WaveSurfer.create({
+      container:    '#iap-ws-container',
+      waveColor:    '#30363d',
+      progressColor:'#1f6feb',
+      height:       72,
+      normalize:    true,
+      backend:      'MediaElement',
+      fetchParams:  { headers: authHeaders() },
+    });
+    _playerWs.load(t.url);
+    _playerWs.on('ready', () => {
+      const dur = document.getElementById('iap-duration');
+      if (dur) dur.textContent = iapFmtTime(_playerWs.getDuration());
+    });
+    _playerWs.on('audioprocess', () => {
+      const cur  = document.getElementById('iap-current-time');
+      const fill = document.getElementById('iap-progress-fill');
+      const pct  = (_playerWs.getCurrentTime() / (_playerWs.getDuration() || 1)) * 100;
+      if (cur)  cur.textContent = iapFmtTime(_playerWs.getCurrentTime());
+      if (fill) fill.style.width = pct + '%';
+    });
+    _playerWs.on('finish', () => {
+      _playerPlaying = false;
+      const btn = document.getElementById('iap-play-btn');
+      if (btn) btn.textContent = '▶';
+    });
+    _playerWs.on('error', () => {
+      if (wrapEl) wrapEl.innerHTML = '<div class="iap-waveform-placeholder" style="color:var(--color-danger)">⚠ Could not load audio.</div>';
+    });
+    const vol = document.getElementById('iap-volume');
+    if (vol) _playerWs.setVolume(parseFloat(vol.value));
+  } else {
+    // Fallback: plain <audio>
+    if (wrapEl) wrapEl.innerHTML = `
+      <audio id="iap-audio-fallback" controls preload="none" style="width:100%;margin:var(--space-2) 0">
+        <source src="${t.url}" />
+      </audio>`;
+    _playerAudioEl = document.getElementById('iap-audio-fallback');
+  }
+}
+
+function iapTogglePlay() {
+  const btn = document.getElementById('iap-play-btn');
+  if (_playerWs) {
+    _playerWs.playPause();
+    _playerPlaying = !_playerPlaying;
+    if (btn) btn.textContent = _playerPlaying ? '⏸' : '▶';
+  } else if (_playerAudioEl) {
+    if (_playerAudioEl.paused) { _playerAudioEl.play(); if (btn) btn.textContent = '⏸'; }
+    else { _playerAudioEl.pause(); if (btn) btn.textContent = '▶'; }
+  }
+}
+
+function iapSeek(event) {
+  const bar  = document.getElementById('iap-progress-bar');
+  if (!bar || !_playerWs) return;
+  const rect = bar.getBoundingClientRect();
+  const pct  = (event.clientX - rect.left) / rect.width;
+  _playerWs.seekTo(Math.max(0, Math.min(1, pct)));
+}
+
+function iapSetVolume(v) {
+  if (_playerWs) _playerWs.setVolume(parseFloat(v));
+  else if (_playerAudioEl) _playerAudioEl.volume = parseFloat(v);
+}
+
+function iapSwitchTrack(idx) {
+  iapLoad(parseInt(idx, 10));
+}
+
 const AUDIO_EXTS    = new Set(['mp3','ogg','wav','flac','m4a']);
 const IMAGE_EXTS    = new Set(['webp','png','jpg','jpeg','gif']);
 const MIDI_EXTS     = new Set(['mid','midi']);
@@ -250,6 +406,277 @@ function buildChildLinks(allCommits, thisId, base) {
   ).join(' ');
 }
 
+// ── Muse tags / analysis metadata panel ──────────────────────────────────────
+
+/** Render a tag pill with namespace-specific colours.
+ *
+ * Tags with ``emotion:``, ``stage:``, ``ref:``, ``key:``, ``tempo:``, and
+ * ``time:`` prefixes get distinct colours; unknown namespaces fall back to a
+ * neutral style.
+ *
+ * ``ref:`` pills are special: when the value is a URL (starts with http:// or
+ * https://) the pill links directly to that external resource rather than to
+ * the namespace search page — these represent musical inspiration references.
+ */
+function tagPill(tag) {
+  const colonIdx = tag.indexOf(':');
+  const ns  = colonIdx >= 0 ? tag.slice(0, colonIdx).toLowerCase() : '';
+  const val = colonIdx >= 0 ? tag.slice(colonIdx + 1) : tag;
+  const colourClass = {
+    emotion: 'pill-emotion',
+    stage:   'pill-stage',
+    ref:     'pill-ref',
+    key:     'pill-key',
+    tempo:   'pill-tempo',
+    time:    'pill-time',
+    meter:   'pill-time',
+  }[ns] || 'pill-generic';
+
+  // ref: tags link directly to the URL when the value is an external link
+  const isRefUrl = ns === 'ref' && /^https?:\/\//.test(val);
+  const href = isRefUrl
+    ? val
+    : (ns ? `${base}/tags?namespace=${encodeURIComponent(ns)}` : null);
+  const target = isRefUrl ? ' target="_blank" rel="noopener noreferrer"' : '';
+  const inner = ns
+    ? `<span class="pill-ns">${escHtml(ns)}</span><span class="pill-sep">:</span>${escHtml(val)}`
+    : escHtml(tag);
+  return href
+    ? `<a class="muse-pill ${colourClass}"${target} href="${escHtml(href)}">${inner}</a>`
+    : `<span class="muse-pill ${colourClass}">${inner}</span>`;
+}
+
+/** Build a 2-sentence prose description of this commit from available data.
+ *
+ * Synthesises a human-readable summary from the structural diff (file counts,
+ * dimensions) and analysis results (key, tempo, emotion) so users get an
+ * at-a-glance narrative without needing to parse raw metadata.
+ *
+ * @param {object|null} key      Key analysis result or null
+ * @param {object|null} tempo    Tempo analysis result or null
+ * @param {object|null} meter    Meter analysis result or null
+ * @param {object|null} emotion  Emotion analysis result or null
+ * @param {object|null} diffData Diff-summary result or null
+ * @param {number}      numObjects Number of artifact objects
+ * @returns {string} Two-sentence prose summary HTML or empty string
+ */
+function buildProseSummary(key, tempo, meter, emotion, diffData, numObjects) {
+  const parts1 = [];
+  if (key)   parts1.push(`in ${escHtml(key.tonic)} ${escHtml(key.mode)}`);
+  if (tempo) parts1.push(`at ${escHtml(String(tempo.bpm))} BPM`);
+  if (meter) parts1.push(`in ${escHtml(meter.timeSignature)}`);
+
+  let sentence1 = numObjects > 0
+    ? `This commit contains ${numObjects} artifact${numObjects !== 1 ? 's' : ''}${parts1.length ? ' ' + parts1.join(', ') : ''}.`
+    : parts1.length
+      ? `This commit records musical content ${parts1.join(', ')}.`
+      : '';
+
+  const dims = diffData && diffData.dimensions
+    ? diffData.dimensions.filter(d => d.score >= 0.15).map(d => escHtml(d.dimension))
+    : [];
+  const emotionStr = emotion ? escHtml(emotion.primaryEmotion) : '';
+
+  let sentence2 = '';
+  if (dims.length && emotionStr) {
+    sentence2 = `The primary musical changes are ${dims.join(' and ')}, carrying a ${emotionStr} character.`;
+  } else if (dims.length) {
+    sentence2 = `The primary musical changes are ${dims.join(' and ')}.`;
+  } else if (emotionStr) {
+    sentence2 = `The musical character is ${emotionStr}.`;
+  }
+
+  if (!sentence1 && !sentence2) return '';
+  return `<p class="commit-prose-summary text-sm">${[sentence1, sentence2].filter(Boolean).join(' ')}</p>`;
+}
+
+/** Load the muse tags + analysis metadata panel.
+ *
+ * Accepts the commit's own ``tags`` array (from the DB) so they can be
+ * rendered alongside analysis-derived pills with proper namespace colours.
+ * All analysis fetches are fire-and-forget; individual failures are non-fatal.
+ *
+ * @param {string[]} commitTags Commit's own tags from the DB (may be empty)
+ * @param {object|null} diffData Pre-fetched diff-summary (may be null)
+ * @param {number} numObjects Number of artifacts attached to this commit
+ */
+async function loadMuseTagsPanel(commitTags, diffData, numObjects) {
+  const el = document.getElementById('muse-tags-panel');
+  if (!el) return;
+
+  // Fire all analysis fetches concurrently; individual failures are non-fatal.
+  const [keyRes, tempoRes, meterRes, emotionRes] = await Promise.allSettled([
+    apiFetch('/repos/' + repoId + '/analysis/' + encodeURIComponent(commitId) + '/key'),
+    apiFetch('/repos/' + repoId + '/analysis/' + encodeURIComponent(commitId) + '/tempo'),
+    apiFetch('/repos/' + repoId + '/analysis/' + encodeURIComponent(commitId) + '/meter'),
+    apiFetch('/repos/' + repoId + '/analysis/' + encodeURIComponent(commitId) + '/emotion'),
+  ]);
+
+  const key     = keyRes.status     === 'fulfilled' ? keyRes.value     : null;
+  const tempo   = tempoRes.status   === 'fulfilled' ? tempoRes.value   : null;
+  const meter   = meterRes.status   === 'fulfilled' ? meterRes.value   : null;
+  const emotion = emotionRes.status === 'fulfilled' ? emotionRes.value : null;
+
+  // Build tag pills from each analysis result (synthetic, from audio analysis)
+  const analysisPills = [];
+  if (key)     analysisPills.push(tagPill('key:' + key.tonic + ' ' + key.mode));
+  if (tempo)   analysisPills.push(tagPill('tempo:' + tempo.bpm + 'bpm'));
+  if (meter)   analysisPills.push(tagPill('time:' + meter.timeSignature));
+  if (emotion) analysisPills.push(tagPill('emotion:' + emotion.primaryEmotion));
+  if (emotion && emotion.valence != null) {
+    const v = parseFloat(emotion.valence);
+    const stage = v > 0.6 ? 'positive' : v < 0.4 ? 'tense' : 'neutral';
+    analysisPills.push(tagPill('stage:' + stage));
+  }
+
+  // Render the commit's own DB tags with proper namespace pill colours.
+  // ref:* tags whose value is a URL become direct external links.
+  const dbPills = (commitTags || []).map(t => tagPill(t));
+
+  // Combine: DB tags first (authoritative), then analysis-derived tags
+  const allPills = [...dbPills, ...analysisPills];
+
+  // Build prose metadata cells (structured data grid)
+  const cells = [];
+  if (key) cells.push(`
+    <div class="meta-item">
+      <span class="meta-label">Key</span>
+      <span class="meta-value text-sm">
+        ♭ ${escHtml(key.tonic)} ${escHtml(key.mode)}
+        <span class="text-muted">${(key.keyConfidence * 100).toFixed(0)}%</span>
+      </span>
+    </div>`);
+  if (tempo) cells.push(`
+    <div class="meta-item">
+      <span class="meta-label">Tempo</span>
+      <span class="meta-value text-sm">⏱ ${escHtml(String(tempo.bpm))} BPM
+        ${tempo.timeFeel ? `<span class="text-muted">${escHtml(tempo.timeFeel)}</span>` : ''}
+      </span>
+    </div>`);
+  if (meter) cells.push(`
+    <div class="meta-item">
+      <span class="meta-label">Time sig.</span>
+      <span class="meta-value text-sm">${escHtml(meter.timeSignature)}</span>
+    </div>`);
+  if (emotion) cells.push(`
+    <div class="meta-item">
+      <span class="meta-label">Emotion</span>
+      <span class="meta-value text-sm">
+        ${escHtml(emotion.primaryEmotion)}
+        <span class="text-muted">${(emotion.confidence * 100).toFixed(0)}%</span>
+      </span>
+    </div>`);
+
+  const proseSummary = buildProseSummary(key, tempo, meter, emotion, diffData, numObjects);
+
+  if (!cells.length && !allPills.length && !proseSummary) {
+    el.innerHTML = '<p class="text-muted text-sm">No analysis data available for this commit.</p>';
+    return;
+  }
+
+  el.innerHTML = `
+    ${proseSummary}
+    ${cells.length ? `<div class="meta-row muse-tags-meta-row" style="grid-template-columns:repeat(auto-fill,minmax(140px,1fr));margin-bottom:var(--space-3)">${cells.join('')}</div>` : ''}
+    ${allPills.length ? `<div class="muse-pills-row">${allPills.join('')}</div>` : ''}`;
+}
+
+// ── Cross-references panel ────────────────────────────────────────────────────
+
+async function loadCrossReferences() {
+  const el = document.getElementById('xrefs-body');
+  if (!el) return;
+
+  const shortHash = commitId.substring(0, 8);
+
+  // Fetch PRs, issues, and sessions in parallel; each failure is non-fatal.
+  const [prsRes, issuesRes, sessionsRes] = await Promise.allSettled([
+    apiFetch('/repos/' + repoId + '/pull-requests?limit=100'),
+    apiFetch('/repos/' + repoId + '/issues?limit=100'),
+    apiFetch('/repos/' + repoId + '/sessions?limit=50'),
+  ]);
+
+  const prs      = (prsRes.status      === 'fulfilled' ? prsRes.value.pullRequests      : null) || [];
+  const issues   = (issuesRes.status   === 'fulfilled' ? issuesRes.value.issues          : null) || [];
+  const sessions = (sessionsRes.status === 'fulfilled' ? sessionsRes.value.sessions      : null) || [];
+
+  // PRs that mention this commit in description or title
+  const refPrs = prs.filter(pr =>
+    (pr.description || '').includes(commitId.substring(0, 7)) ||
+    (pr.description || '').includes(shortHash) ||
+    (pr.fromBranch || '').includes(shortHash)
+  );
+
+  // Issues that mention this commit hash
+  const refIssues = issues.filter(i =>
+    (i.body || '').includes(commitId.substring(0, 7)) ||
+    (i.body || '').includes(shortHash) ||
+    (i.title || '').includes(shortHash)
+  );
+
+  // Sessions that contain this commit ID
+  const refSessions = sessions.filter(s =>
+    (s.commitIds || []).includes(commitId) ||
+    (s.description || '').includes(shortHash)
+  );
+
+  if (!refPrs.length && !refIssues.length && !refSessions.length) {
+    el.innerHTML = '<p class="text-muted text-sm" style="margin:0">No cross-references found for this commit.</p>';
+    return;
+  }
+
+  let html = '';
+
+  if (refPrs.length) {
+    html += `<div class="xref-group">
+      <div class="xref-group-label">Pull Requests (${refPrs.length})</div>
+      <div class="xref-list">
+        ${refPrs.map(pr => `
+          <div class="xref-item">
+            <span class="xref-icon ${pr.state === 'open' ? 'xref-open' : 'xref-closed'}">⊕</span>
+            <a href="${base}/pulls/${encodeURIComponent(pr.prId)}" class="xref-link">
+              ${escHtml(pr.title)}
+            </a>
+            <span class="xref-meta">#${escHtml(String(pr.prId))} · ${escHtml(pr.fromBranch || '')} → ${escHtml(pr.toBranch || '')}</span>
+          </div>`).join('')}
+      </div>
+    </div>`;
+  }
+
+  if (refIssues.length) {
+    html += `<div class="xref-group">
+      <div class="xref-group-label">Issues (${refIssues.length})</div>
+      <div class="xref-list">
+        ${refIssues.map(i => `
+          <div class="xref-item">
+            <span class="xref-icon ${i.state === 'open' ? 'xref-open' : 'xref-closed'}">●</span>
+            <a href="${base}/issues/${encodeURIComponent(i.number)}" class="xref-link">
+              ${escHtml(i.title)}
+            </a>
+            <span class="xref-meta">#${escHtml(String(i.number))}</span>
+          </div>`).join('')}
+      </div>
+    </div>`;
+  }
+
+  if (refSessions.length) {
+    html += `<div class="xref-group">
+      <div class="xref-group-label">Sessions (${refSessions.length})</div>
+      <div class="xref-list">
+        ${refSessions.map(s => `
+          <div class="xref-item">
+            <span class="xref-icon xref-session">🎙</span>
+            <a href="${base}/sessions/${encodeURIComponent(s.sessionId)}" class="xref-link">
+              ${escHtml(s.title || s.sessionId.substring(0, 8))}
+            </a>
+            <span class="xref-meta">${fmtDate(s.startedAt || s.createdAt || '')}</span>
+          </div>`).join('')}
+      </div>
+    </div>`;
+  }
+
+  el.innerHTML = html;
+}
+
 async function load() {
   initRepoNav(repoId);
   try {
@@ -388,6 +815,25 @@ async function load() {
           ${renderCommitBody(commit.message)}
         </div>
 
+        <!-- Inline audio hero player (WaveSurfer.js) -->
+        <div class="card iap-card">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:var(--space-3)">
+            <h2 style="margin:0">🎧 Listen</h2>
+            <a href="${listenUrl}" class="btn btn-secondary btn-sm" target="_blank">
+              Open Full Listen Page ↗
+            </a>
+          </div>
+          <div id="inline-player-root">
+            <p class="text-muted text-sm">Loading audio…</p>
+          </div>
+        </div>
+
+        <!-- Muse tags / analysis metadata panel -->
+        <div class="card">
+          <h2 style="margin:0 0 var(--space-3) 0">🏷 Muse Tags &amp; Metadata</h2>
+          <div id="muse-tags-panel"><p class="loading text-sm">Loading analysis…</p></div>
+        </div>
+
         <!-- Commit metadata grid -->
         <div class="card">
           <div class="meta-row" style="grid-template-columns:repeat(auto-fill,minmax(160px,1fr))">
@@ -479,6 +925,14 @@ async function load() {
           </div>
         </div>
 
+        <!-- Cross-references: PRs, issues, sessions mentioning this commit -->
+        <div class="card">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:var(--space-3)">
+            <h2 style="margin:0">🔗 Mentioned In</h2>
+          </div>
+          <div id="xrefs-body"><p class="loading text-sm">Loading cross-references…</p></div>
+        </div>
+
         <!-- Navigation -->
         <div style="display:flex;gap:var(--space-3);margin-top:var(--space-2);flex-wrap:wrap">
           ${commit.parentIds && commit.parentIds.length > 0
@@ -495,6 +949,19 @@ async function load() {
     // Hydrate image artifact cards with authed blob URLs to avoid 401
     hydrateImages();
     loadReactions('commit', commitId, 'commit-reactions');
+
+    // Inline player: mount with all audio objects from this commit
+    const playerTracks = currentAudio.map(obj => ({
+      name: obj.path.split('/').pop().replace(/\.[^.]+$/, ''),
+      url:  '/api/v1/musehub/repos/' + repoId + '/objects/' + obj.objectId + '/content',
+    }));
+    buildInlinePlayer(playerTracks);
+
+    // Async panels — load after main content is painted.
+    // Pass commit.tags (DB annotations) and diff data so the panel can render
+    // namespaced pills and build the prose summary without re-fetching.
+    loadMuseTagsPanel(commit.tags || [], diffData, objects.length);
+    loadCrossReferences();
 
   } catch(e) {
     if (e.message !== 'auth')
@@ -790,6 +1257,7 @@ loadComments();
 {% endblock %}
 
 {% block body_extra %}
+<script src="/musehub/static/vendor/wavesurfer.min.js"></script>
 <!-- Compose Variation Modal -->
 <div id="compose-modal" class="modal" style="display:none" onclick="if(event.target===this)closeCompose()">
   <div class="modal-panel" style="max-width:640px;width:100%">
@@ -827,6 +1295,183 @@ loadComments();
 <script src="https://cdn.jsdelivr.net/npm/abcjs@6.4.4/dist/abcjs-basic-min.js"></script>
 <style>
 .commit-liner-notes { max-width: 860px; margin: 0 auto; }
+/* ── Inline Audio Player ─────────────────────────────────────────────────── */
+.iap-card { border-color: #1f6feb; background: linear-gradient(135deg,#0d1117 0%,#161b22 100%); }
+.iap-title {
+  font-size: var(--font-size-base);
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-primary);
+  margin-bottom: var(--space-3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.iap-waveform-wrap {
+  min-height: 72px;
+  border-radius: var(--radius-sm);
+  background: #0d1117;
+  border: 1px solid var(--border-subtle);
+  margin-bottom: var(--space-3);
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.iap-waveform-placeholder {
+  color: var(--text-muted);
+  font-size: var(--font-size-sm);
+  padding: var(--space-3);
+}
+.iap-controls {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+.iap-play-btn {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: #1f6feb;
+  border: none;
+  color: #fff;
+  font-size: 16px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: background 0.15s, transform 0.1s;
+}
+.iap-play-btn:hover { background: #388bfd; transform: scale(1.05); }
+.iap-progress-bar {
+  height: 6px;
+  background: #21262d;
+  border-radius: 3px;
+  cursor: pointer;
+  position: relative;
+  margin-bottom: 4px;
+}
+.iap-progress-fill {
+  height: 100%;
+  background: #1f6feb;
+  border-radius: 3px;
+  width: 0%;
+  pointer-events: none;
+  transition: width 0.1s linear;
+}
+.iap-time-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+.iap-volume-wrap {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  flex-shrink: 0;
+  font-size: var(--font-size-sm);
+  color: var(--text-muted);
+}
+.iap-volume-slider {
+  width: 72px;
+  accent-color: #1f6feb;
+  cursor: pointer;
+}
+.iap-track-selector {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+}
+.iap-track-label {
+  font-size: var(--font-size-xs);
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+.iap-track-select {
+  flex: 1;
+  font-size: var(--font-size-sm);
+  background: var(--bg-overlay);
+  border: 1px solid var(--border-default);
+  color: var(--text-primary);
+  border-radius: var(--radius-sm);
+  padding: 4px 8px;
+}
+/* ── Muse tags / metadata pills ──────────────────────────────────────────── */
+.commit-prose-summary {
+  color: var(--text-secondary);
+  line-height: 1.6;
+  margin: 0 0 var(--space-3) 0;
+  padding-bottom: var(--space-3);
+  border-bottom: 1px solid var(--border-subtle);
+}
+.muse-tags-meta-row { margin-bottom: var(--space-3); }
+.muse-pills-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+.muse-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px 10px;
+  border-radius: var(--radius-full);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
+  text-decoration: none;
+  white-space: nowrap;
+  border: 1px solid transparent;
+  transition: filter 0.1s;
+}
+.muse-pill:hover { filter: brightness(1.15); }
+.pill-ns { opacity: 0.7; font-weight: var(--font-weight-normal); }
+.pill-sep { opacity: 0.4; margin: 0 1px; }
+.pill-emotion { background: #2d1b45; color: #c084fc; border-color: #7c3aed44; }
+.pill-stage   { background: #1a2e3a; color: #67e8f9; border-color: #0e7490; }
+.pill-ref     { background: #1e2a1e; color: #86efac; border-color: #166534; }
+.pill-key     { background: #3a2e0a; color: #fde047; border-color: #854d0e; }
+.pill-tempo   { background: #3a1515; color: #fca5a5; border-color: #991b1b; }
+.pill-time    { background: #1e1a3a; color: #a5b4fc; border-color: #3730a3; }
+.pill-generic { background: var(--bg-overlay); color: var(--text-secondary); border-color: var(--border-subtle); }
+/* ── Cross-references ────────────────────────────────────────────────────── */
+.xref-group { margin-bottom: var(--space-4); }
+.xref-group:last-child { margin-bottom: 0; }
+.xref-group-label {
+  font-size: var(--font-size-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+  margin-bottom: var(--space-2);
+}
+.xref-list { display: flex; flex-direction: column; gap: var(--space-2); }
+.xref-item {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  font-size: var(--font-size-sm);
+}
+.xref-icon { flex-shrink: 0; font-size: 12px; }
+.xref-open    { color: #3fb950; }
+.xref-closed  { color: #8b949e; }
+.xref-session { color: #f0883e; }
+.xref-link {
+  color: var(--text-primary);
+  text-decoration: none;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.xref-link:hover { text-decoration: underline; }
+.xref-meta {
+  flex-shrink: 0;
+  color: var(--text-muted);
+  font-size: var(--font-size-xs);
+}
 .commit-header-row {
   display: flex;
   align-items: center;
