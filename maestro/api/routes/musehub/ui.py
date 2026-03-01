@@ -77,6 +77,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.responses import Response as StarletteResponse
 
 from maestro.api.routes.musehub.negotiate import negotiate_response
+from maestro.api.routes.musehub.ui_jsonld import jsonld_release, jsonld_repo, render_jsonld_script
 from maestro.db import get_db
 from maestro.models.musehub import CommitListResponse, CommitResponse, RepoResponse, TrackListingResponse
 from maestro.models.musehub import (
@@ -290,6 +291,7 @@ async def repo_page(
     One URL, two audiences — agents get structured data, humans get rich HTML.
     """
     repo, base_url = await _resolve_repo_full(owner, repo_slug, db)
+    page_url = str(request.url)
     return await negotiate_response(
         request=request,
         template_name="musehub/pages/repo_home.html",
@@ -299,6 +301,7 @@ async def repo_page(
             "repo_id": str(repo.repo_id),
             "base_url": base_url,
             "current_page": "home",
+            "jsonld_script": render_jsonld_script(jsonld_repo(repo, page_url)),
         },
         templates=templates,
         json_data=repo,
@@ -1212,7 +1215,13 @@ async def release_detail_page(
     rendered as download cards; unavailable packages show a "not available"
     indicator.
     """
-    repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
+    repo, base_url = await _resolve_repo_full(owner, repo_slug, db)
+    repo_id = str(repo.repo_id)
+    release = await musehub_releases.get_release_by_tag(db, repo_id, tag)
+    page_url = str(request.url)
+    jsonld_script: str | None = None
+    if release is not None:
+        jsonld_script = render_jsonld_script(jsonld_release(release, repo, page_url))
     return templates.TemplateResponse(
         request,
         "musehub/pages/release_detail.html",
@@ -1223,6 +1232,7 @@ async def release_detail_page(
             "tag": tag,
             "base_url": base_url,
             "current_page": "releases",
+            "jsonld_script": jsonld_script,
         },
     )
 
