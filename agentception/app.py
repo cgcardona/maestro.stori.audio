@@ -3,17 +3,20 @@
 Entry point: ``uvicorn agentception.app:app --port 7777 --reload``
 
 Architecture:
-- ``lifespan`` starts a background poller task that periodically refreshes
-  the ``PipelineState`` from the filesystem and GitHub API.
+- ``lifespan`` starts the background ``polling_loop`` task from ``poller.py``
+  that periodically refreshes the ``PipelineState`` from the filesystem and
+  GitHub API.
+- ``GET /events`` streams the live ``PipelineState`` as Server-Sent Events to
+  connected dashboard clients.
 - Static files are served from ``agentception/static/``.
 - HTML pages are rendered via Jinja2 from ``agentception/templates/``.
-- JSON API routes live in ``agentception/routes/`` (stubbed for now).
+- JSON API routes live in ``agentception/routes/``.
 """
 from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -21,9 +24,10 @@ from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from sse_starlette.sse import EventSourceResponse
 from starlette.requests import Request
 
-from agentception.config import settings
+from agentception.poller import polling_loop, subscribe, unsubscribe
 
 logger = logging.getLogger(__name__)
 
@@ -32,28 +36,11 @@ _HERE = Path(__file__).parent
 _TEMPLATES = Jinja2Templates(directory=str(_HERE / "templates"))
 
 
-async def _poll_loop() -> None:
-    """Background task: refresh pipeline state on a fixed interval.
-
-    The initial implementation is a stub — subsequent issues will fill in the
-    actual GitHub + filesystem collection logic. The loop runs until cancelled.
-    """
-    while True:
-        try:
-            await asyncio.sleep(settings.poll_interval_seconds)
-            logger.debug("⏱️  Poll tick (stub — no readers wired yet)")
-        except asyncio.CancelledError:
-            logger.info("✅ Poller stopped cleanly")
-            return
-        except Exception as exc:
-            logger.warning("⚠️  Poller error: %s", exc)
-
-
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Start the background poller on startup; cancel it on shutdown."""
-    poller = asyncio.create_task(_poll_loop(), name="agentception-poller")
-    logger.info("✅ AgentCeption poller started (interval=%ds)", settings.poll_interval_seconds)
+    poller = asyncio.create_task(polling_loop(), name="agentception-poller")
+    logger.info("✅ AgentCeption poller started")
     try:
         yield
     finally:
@@ -79,6 +66,35 @@ app.mount("/static", StaticFiles(directory=str(_HERE / "static")), name="static"
 async def health() -> dict[str, str]:
     """Liveness probe — returns ``{"status": "ok"}`` when the service is up."""
     return {"status": "ok"}
+
+
+@app.get("/events", tags=["sse"])
+async def sse_stream(request: Request) -> EventSourceResponse:
+    """Stream live ``PipelineState`` snapshots as Server-Sent Events.
+
+    Each connected dashboard client receives one event per polling tick
+    (default every 5 s).  The connection is cleaned up automatically when
+    the client disconnects.
+    """
+    q = subscribe()
+
+    async def generator() -> AsyncIterator[dict[str, str]]:
+        try:
+            while True:
+                if await request.is_disconnected():
+                    break
+                try:
+                    state = await asyncio.wait_for(q.get(), timeout=30.0)
+                except asyncio.TimeoutError:
+                    # Keep-alive: yield an empty comment so the connection
+                    # stays open through proxies that close idle SSE streams.
+                    yield {"comment": "ping"}
+                    continue
+                yield {"data": state.model_dump_json()}
+        finally:
+            unsubscribe(q)
+
+    return EventSourceResponse(generator())
 
 
 @app.get("/", response_class=HTMLResponse, tags=["ui"])
