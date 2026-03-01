@@ -44,8 +44,12 @@ from maestro.db.musehub_models import (
     MusehubFollow,
     MusehubFork,
     MusehubIssue,
+    MusehubIssueComment,
+    MusehubIssueMilestone,
+    MusehubMilestone,
     MusehubNotification,
     MusehubObject,
+    MusehubPRComment,
     MusehubProfile,
     MusehubPullRequest,
     MusehubReaction,
@@ -55,6 +59,8 @@ from maestro.db.musehub_models import (
     MusehubStar,
     MusehubViewEvent,
     MusehubWatch,
+    MusehubWebhook,
+    MusehubWebhookDelivery,
 )
 
 
@@ -1254,113 +1260,571 @@ def _make_variation_section(
 
 ISSUE_TEMPLATES: dict[str, list[dict[str, Any]]] = {
     "neo-soul": [
-        dict(n=1, state="open",   title="Bass line loses tension in bar 9",
+        dict(n=1,  state="open",   title="Bass line loses tension in bar 9",
              body="3-against-4 pulse drifts. Ghost note on beat 2.5 recommended.", labels=["groove", "bass"]),
-        dict(n=2, state="open",   title="Add guitar scratch rhythm track",
+        dict(n=2,  state="open",   title="Add guitar scratch rhythm track",
              body="Arrangement too sparse. Scratch guitar would complement Rhodes.", labels=["arrangement"]),
-        dict(n=3, state="closed", title="Tempo fluctuates bars 4-8",
+        dict(n=3,  state="closed", title="Tempo fluctuates bars 4-8",
              body="Resolved by re-quantizing with tight humanization.", labels=["tempo", "drums"]),
-        dict(n=4, state="open",   title="Choir voicing too wide in chorus",
+        dict(n=4,  state="open",   title="Choir voicing too wide in chorus",
              body="Soprano and bass parts are 2+ octaves apart — muddy on small speakers.", labels=["harmony"]),
-        dict(n=5, state="open",   title="Organ swell clashes with Rhodes",
+        dict(n=5,  state="open",   title="Organ swell clashes with Rhodes",
              body="Both sit in mid-range 400-800Hz. Pan or EQ to separate.", labels=["mix"]),
-        dict(n=6, state="closed", title="String pizzicato timing off",
+        dict(n=6,  state="closed", title="String pizzicato timing off",
              body="Fixed — re-quantized to 16th grid with 10ms humanize.", labels=["strings", "timing"]),
-        dict(n=7, state="open",   title="Bridge needs more harmonic tension",
+        dict(n=7,  state="open",   title="Bridge needs more harmonic tension",
              body="The IV-I cadence in the bridge is too resolved. Try IV-bVII.", labels=["harmony", "bridge"]),
-        dict(n=8, state="open",   title="Trumpet counter-melody too high",
+        dict(n=8,  state="open",   title="Trumpet counter-melody too high",
              body="Goes above high C. Alto sax range would be more idiomatic.", labels=["horns"]),
-        dict(n=9, state="closed", title="Bass note collision on beat 1",
+        dict(n=9,  state="closed", title="Bass note collision on beat 1",
              body="Fixed — root changed from F# to C# (5th) to reduce mud.", labels=["bass", "harmony"]),
-        dict(n=10, state="open",  title="Add breakdown section before final chorus",
+        dict(n=10, state="open",   title="Add breakdown section before final chorus",
              body="Energy needs to drop before the big finish. 4-bar bass+drums only.", labels=["arrangement"]),
-        dict(n=11, state="open",  title="Vocals too bright — needs de-essing",
+        dict(n=11, state="open",   title="Vocals too bright — needs de-essing",
              body="Sibilance prominent on headphones. High shelf cut above 10kHz.", labels=["mix", "vocals"]),
-        dict(n=12, state="open",  title="Consider key change to A minor for outro",
+        dict(n=12, state="open",   title="Consider key change to A minor for outro",
              body="A modulation to relative major would give a brighter feel at the end.", labels=["harmony"]),
+        dict(n=13, state="closed", title="Rhodes voicing clashes in bar 12",
+             body="Fixed — upper structure triad replaced with shell voicing (root + 7th).", labels=["piano", "harmony"]),
+        dict(n=14, state="open",   title="Add shaker for groove density in pre-chorus",
+             body="The pre-chorus feels lighter than the verse. A 16th-note shaker would tie the pulse together.",
+             labels=["groove", "perc"]),
+        dict(n=15, state="open",   title="Vocal compression artifacts on sustained notes",
+             body="Long vowels show pumping at attack. Reduce ratio from 8:1 to 4:1 and increase attack to 10ms.",
+             labels=["mix", "vocals"]),
     ],
     "modal-jazz": [
-        dict(n=1, state="open",   title="Phrygian bridge needs ii-V turnaround",
+        dict(n=1,  state="open",   title="Phrygian bridge needs ii-V turnaround",
              body="Jump from D Dorian to E Phrygian is abrupt. Add Am7b5 → D7alt.", labels=["harmony"]),
-        dict(n=2, state="open",   title="Swing factor inconsistent piano vs bass",
+        dict(n=2,  state="open",   title="Swing factor inconsistent piano vs bass",
              body="Piano at 0.65 swing, bass at 0.55. Should match.", labels=["groove", "timing"]),
-        dict(n=3, state="closed", title="Piano pedaling too heavy in changes",
+        dict(n=3,  state="closed", title="Piano pedaling too heavy in changes",
              body="Fixed — reduced sustain pedal range.", labels=["piano"]),
-        dict(n=4, state="open",   title="Guitar chord stabs too loud",
+        dict(n=4,  state="open",   title="Guitar chord stabs too loud",
              body="Freddie Green stabs should sit under the piano. Lower -3dB.", labels=["mix", "guitar"]),
-        dict(n=5, state="open",   title="Head melody needs resolution note",
+        dict(n=5,  state="open",   title="Head melody needs resolution note",
              body="The A section ends on 6th scale degree — unresolved. Add scale degree 1.", labels=["melody"]),
-        dict(n=6, state="open",   title="Tritone sub reharmonization too frequent",
+        dict(n=6,  state="open",   title="Tritone sub reharmonization too frequent",
              body="Using sub every 2 bars sounds formulaic. Reserve for 8-bar phrase end.", labels=["harmony"]),
-        dict(n=7, state="closed", title="Bass solo too long — loses listener",
+        dict(n=7,  state="closed", title="Bass solo too long — loses listener",
              body="Trimmed to 16 bars. Better pacing.", labels=["bass"]),
-        dict(n=8, state="open",   title="Drummer needs to lay back on trumpet solo",
+        dict(n=8,  state="open",   title="Drummer needs to lay back on trumpet solo",
              body="Ride accent too prominent during solo. Comp more sparsely.", labels=["drums"]),
+        dict(n=9,  state="open",   title="Piano comping too busy in A section",
+             body="Left-hand comp obscures walking bass line. Simplify to 2-feel.", labels=["piano", "arrangement"]),
+        dict(n=10, state="closed", title="Trumpet range error — written vs concert pitch",
+             body="Fixed — all trumpet parts transposed down a major 2nd to concert pitch.", labels=["horns"]),
+        dict(n=11, state="open",   title="Add lydian mode variation in B section",
+             body="The B section stays strictly Dorian. A Lydian passage would add color.", labels=["harmony"]),
+        dict(n=12, state="open",   title="Bass register too low in chorus",
+             body="Walking bass drops below E1 — inaudible on most systems. Transpose up an octave.", labels=["bass"]),
+        dict(n=13, state="open",   title="Snare ghost notes need velocity curve",
+             body="All ghosts at velocity 40 — too uniform. Use 20-50 range with slight randomization.", labels=["drums"]),
+        dict(n=14, state="closed", title="Key center ambiguous in intro",
+             body="Fixed — added a clear D Dorian vamp at the start before the head.", labels=["harmony"]),
+        dict(n=15, state="open",   title="Outro needs ritardando",
+             body="The piece ends abruptly at tempo. Gradual slow-down over last 4 bars would give closure.",
+             labels=["arrangement"]),
     ],
     "ambient": [
-        dict(n=1, state="open",   title="Arpeggiator repeats — needs more variation",
+        dict(n=1,  state="open",   title="Arpeggiator repeats — needs more variation",
              body="After 32 bars the pattern becomes predictable. Modulate seed every 8 bars.", labels=["generative"]),
-        dict(n=2, state="open",   title="Pad too washy — needs more definition",
+        dict(n=2,  state="open",   title="Pad too washy — needs more definition",
              body="Attack of 4s is too slow. Try 2s with a short sustain plateau.", labels=["pad"]),
-        dict(n=3, state="closed", title="Stuck note in arp at bar 64",
+        dict(n=3,  state="closed", title="Stuck note in arp at bar 64",
              body="Fixed — MIDI note-off added. Was a gate issue.", labels=["bug", "midi"]),
-        dict(n=4, state="open",   title="Add harmonic movement after bar 48",
+        dict(n=4,  state="open",   title="Add harmonic movement after bar 48",
              body="The Eb pedal has been static for 3 minutes. Move to Ab for 8 bars.", labels=["harmony"]),
-        dict(n=5, state="open",   title="Norwegian church reverb is too bright",
+        dict(n=5,  state="open",   title="Norwegian church reverb is too bright",
              body="High frequency content in reverb tail is distracting. EQ pre-send.", labels=["mix"]),
-        dict(n=6, state="open",   title="Granular density too high in intro",
+        dict(n=6,  state="open",   title="Granular density too high in intro",
              body="Start sparser and build. Currently too dense from bar 1.", labels=["texture"]),
-        dict(n=7, state="closed", title="Phase correlation issues in stereo pad",
+        dict(n=7,  state="closed", title="Phase correlation issues in stereo pad",
              body="Resolved by setting stereo width to 80% (was 120%).", labels=["mix"]),
-        dict(n=8, state="open",   title="Piano melody needs more dynamic variation",
+        dict(n=8,  state="open",   title="Piano melody needs more dynamic variation",
              body="All notes at same velocity. Add cresc/dim on each 4-bar phrase.", labels=["piano", "dynamics"]),
-        dict(n=9, state="open",   title="Wind chimes pitched too high",
+        dict(n=9,  state="open",   title="Wind chimes pitched too high",
              body="7th partial sits above 8kHz on most speakers. Lower source pitch.", labels=["texture"]),
+        dict(n=10, state="open",   title="Generative seed produces repeated rhythmic clusters",
+             body="Seed 42 has a bias toward beat 1 and 3. Rotate seed every 16 bars.",
+             labels=["generative", "bug"]),
+        dict(n=11, state="closed", title="Cello sustain too long — blurs transitions",
+             body="Fixed — reduced release to 2s from 6s. Now transitions are audible.", labels=["strings"]),
+        dict(n=12, state="open",   title="Add breath sounds between sections",
+             body="Silence between sections is too abrupt. A subtle room tone or breath sample would ease transitions.",
+             labels=["texture", "arrangement"]),
+        dict(n=13, state="open",   title="LFO rate too fast on pad filter",
+             body="0.1Hz LFO creates audible tremolo. Slow to 0.02Hz for imperceptible movement.",
+             labels=["pad", "generative"]),
+        dict(n=14, state="open",   title="Mono bass under stereo pad causes phase issues",
+             body="Bass is mono center, pad is 120° wide. Below 200Hz the combination cancels. HPF pad below 250Hz.",
+             labels=["mix"]),
+        dict(n=15, state="closed", title="Arp note lengths too uniform",
+             body="Fixed — gate time now varies from 50% to 90% per note.", labels=["generative"]),
     ],
     "afrobeat": [
-        dict(n=1, state="open",   title="Talking drum pattern needs more swing",
+        dict(n=1,  state="open",   title="Talking drum pattern needs more swing",
              body="Djembe is perfectly quantized — needs human timing ±5ms.", labels=["groove", "perc"]),
-        dict(n=2, state="open",   title="Highlife guitar pattern clash with bass",
+        dict(n=2,  state="open",   title="Highlife guitar pattern clash with bass",
              body="Both emphasise beat 1. Guitar should accent beats 2 and 4.", labels=["arrangement"]),
-        dict(n=3, state="closed", title="Conga timing drift at bar 32",
+        dict(n=3,  state="closed", title="Conga timing drift at bar 32",
              body="Fixed — re-quantized to 8th note grid.", labels=["perc", "timing"]),
-        dict(n=4, state="open",   title="Brass unison too thick — needs harmony",
+        dict(n=4,  state="open",   title="Brass unison too thick — needs harmony",
              body="Four instruments in unison is thin. Split into 3-part harmony.", labels=["horns"]),
-        dict(n=5, state="open",   title="Vocal call-and-response timing off",
+        dict(n=5,  state="open",   title="Vocal call-and-response timing off",
              body="Response phrases enter 1 beat early. Needs 4-beat gap.", labels=["vocals"]),
-        dict(n=6, state="open",   title="Add agogo bell pattern",
+        dict(n=6,  state="open",   title="Add agogo bell pattern",
              body="The timeline/bell pattern is missing. Essential for afrobeat structure.", labels=["perc"]),
-        dict(n=7, state="open",   title="Bass slap too clicky at high velocity",
+        dict(n=7,  state="open",   title="Bass slap too clicky at high velocity",
              body="Velocities above 100 produce unwanted transient click.", labels=["bass"]),
-        dict(n=8, state="closed", title="Organ swell level too high",
+        dict(n=8,  state="closed", title="Organ swell level too high",
              body="Reduced by -4dB. Now sits correctly behind guitar.", labels=["mix"]),
-        dict(n=9, state="open",   title="Yoruba lyric timing — stress on wrong syllable",
+        dict(n=9,  state="open",   title="Yoruba lyric timing — stress on wrong syllable",
              body="Need input from native speaker on placement of tonal accent.", labels=["vocals", "cultural"]),
-        dict(n=10, state="open",  title="Add Talking Heads-style guitar texture",
+        dict(n=10, state="open",   title="Add Talking Heads-style guitar texture",
              body="Open-string plucked guitar arpeggio on top of the rhythm section.", labels=["guitar"]),
+        dict(n=11, state="open",   title="Shekere part clashes with hi-hat",
+             body="Both playing 16th pattern in the same register. Pan shekere hard right, hi-hat left.",
+             labels=["perc", "mix"]),
+        dict(n=12, state="closed", title="Bass register too muddy below 80Hz",
+             body="Fixed — high-pass filter at 60Hz with 6dB/oct slope applied.", labels=["mix", "bass"]),
+        dict(n=13, state="open",   title="Trumpet solo needs call-and-response with guitar",
+             body="Current solo is solo instrument only. Adding guitar responses every 2 bars would honor the tradition.",
+             labels=["horns", "guitar", "arrangement"]),
+        dict(n=14, state="open",   title="Polyrhythm section needs tempo anchor",
+             body="The 3-over-2 polyrhythm section lacks a clear pulse anchor. A kick on beat 1 every bar would help.",
+             labels=["groove", "perc"]),
+        dict(n=15, state="closed", title="Intro too long — listener disengages",
+             body="Fixed — trimmed from 16 bars to 8 bars. Groove now enters at bar 9.", labels=["arrangement"]),
+    ],
+    "microtonal": [  # REPO_KEY_MAP key: "microtonal"
+        dict(n=1,  state="open",   title="31-TET tuning table not loading on export",
+             body="MIDI export falls back to 12-TET. Need to embed the tuning table in SysEx.", labels=["bug", "midi"]),
+        dict(n=2,  state="open",   title="Neutral third interval sounds jarring in context",
+             body="The 11/9 neutral third in bar 7 needs a resolving phrase. It hangs unresolved.", labels=["harmony"]),
+        dict(n=3,  state="closed", title="Playback pitch drift after bar 48",
+             body="Fixed — DAW clock sync issue. Resolved by enabling MIDI clock.", labels=["bug"]),
+        dict(n=4,  state="open",   title="Add justly-tuned overtone drone",
+             body="A drone on the 5th partial (5/4 above root) would anchor the spectral harmony.", labels=["texture", "harmony"]),
+        dict(n=5,  state="open",   title="Spectral voice leading too disjunct",
+             body="Leaps of more than 7 steps in 31-TET feel chromatic. Stepwise motion preferred.", labels=["melody"]),
+        dict(n=6,  state="open",   title="Cello bow speed inconsistency",
+             body="Bow speed changes mid-phrase cause unintended dynamics. Normalize velocity curve.", labels=["strings"]),
+        dict(n=7,  state="closed", title="Score notation doesn't reflect microtonal accidentals",
+             body="Fixed — using Helmholtz-Ellis notation for all quarter-tones.", labels=["notation"]),
+        dict(n=8,  state="open",   title="Overtone series segment 8-16 missing",
+             body="Partials 8-16 not included in the harmonic texture. Add soft flute tones for those partials.",
+             labels=["harmony", "texture"]),
+        dict(n=9,  state="open",   title="Attack transients too sharp in 31-TET scale runs",
+             body="Fast runs in 31-TET sound percussive. Soften attack to 20ms.", labels=["dynamics"]),
+        dict(n=10, state="closed", title="Tuning reference pitch wrong",
+             body="Fixed — set A=432Hz as agreed for this piece.", labels=["tuning"]),
+        dict(n=11, state="open",   title="Add quarter-tone trill in cadential passage",
+             body="The cadence (bars 22-24) lacks ornament. A quarter-tone trill on the leading tone would help.",
+             labels=["melody", "ornament"]),
+        dict(n=12, state="open",   title="Sustain pedal creates pitch smear in 31-TET",
+             body="Held notes at different 31-TET pitches ring together creating beating. Reduce pedal depth.",
+             labels=["piano", "tuning"]),
+        dict(n=13, state="open",   title="Section 3 needs dynamic arc",
+             body="Section 3 stays at mf throughout. Build from pp to ff over 16 bars.", labels=["dynamics"]),
+        dict(n=14, state="closed", title="MIDI velocity map doesn't match 31-TET dynamics",
+             body="Fixed — remapped velocity curve to match the intended dynamic nuance.", labels=["midi"]),
+        dict(n=15, state="open",   title="Missing rest in bar 19 causes overlap",
+             body="Violin and cello overlap by one beat in bar 19. Insert an 8th rest.", labels=["notation", "bug"]),
+    ],
+    "drums": [  # REPO_KEY_MAP key: "drums" (REPO_DRUM_MACHINE)
+        dict(n=1,  state="open",   title="808 kick too short — needs longer decay",
+             body="Kick envelope decay at 0.1s sounds punchy but loses sub presence. Try 0.4s.", labels=["808", "drums"]),
+        dict(n=2,  state="open",   title="Hi-hat pattern too rigid — needs humanize",
+             body="All hats at 16th grid. Add ±8ms timing offset and velocity 60-90 range.", labels=["groove", "drums"]),
+        dict(n=3,  state="closed", title="Clap reverb tail too long",
+             body="Fixed — reduced reverb to 0.8s. Clap now sits in the groove.", labels=["mix"]),
+        dict(n=4,  state="open",   title="Add polyrhythmic hi-hat ostinato",
+             body="Current pattern is 4/4 grid. Add a 3-against-4 hi-hat line as a layer.", labels=["groove", "drums"]),
+        dict(n=5,  state="open",   title="Modular snare too bright at 4kHz",
+             body="High transient spike at 4kHz sounds harsh. EQ notch at 4kHz, -4dB, Q=2.", labels=["mix", "drums"]),
+        dict(n=6,  state="closed", title="Kick/bass frequency masking",
+             body="Fixed — sidechain compression on bass triggered by kick.", labels=["mix"]),
+        dict(n=7,  state="open",   title="Pattern variation needed at bar 17",
+             body="The pattern repeats unmodified for 16 bars. Add a fill at bar 17.", labels=["arrangement", "drums"]),
+        dict(n=8,  state="open",   title="808 tuning: needs pitch envelope",
+             body="Kick pitch stays flat. A fast downward pitch sweep (1 octave, 50ms) would be more musical.",
+             labels=["808"]),
+        dict(n=9,  state="open",   title="Tom fills too frequent",
+             body="Tom fills every 4 bars interrupt the groove flow. Reduce to every 8 bars.", labels=["drums"]),
+        dict(n=10, state="closed", title="Crash cymbal sample too long",
+             body="Fixed — trimmed to 2s with fade-out.", labels=["drums", "mix"]),
+        dict(n=11, state="open",   title="Polyrhythm section: 5-against-4 too abrupt",
+             body="The shift to 5-against-4 at bar 33 needs 2 bars of transition.", labels=["groove", "arrangement"]),
+        dict(n=12, state="open",   title="Missing ghost note pattern in verse",
+             body="Verse section lacks ghost notes — pattern sounds flat. Add 16th ghosts at velocity 25-35.",
+             labels=["drums", "groove"]),
+        dict(n=13, state="closed", title="Open hi-hat not choked by closed hat",
+             body="Fixed — added hat-choke controller message at each closed hat hit.", labels=["drums", "midi"]),
+        dict(n=14, state="open",   title="Rimshot too loud relative to snare",
+             body="Rimshot peaks 3dB above snare. Level down or use snare for fills.", labels=["mix", "drums"]),
+        dict(n=15, state="open",   title="Add shaker for 16th-note pulse reference",
+             body="The groove loses its feel at slower tempo passages. A shaker pulse would anchor the listener.",
+             labels=["perc", "groove"]),
+    ],
+    "chanson": [
+        dict(n=1,  state="open",   title="Piano left hand too busy in verse",
+             body="Alberti bass pattern is too active for chanson miniature style. Try sparse block chords.",
+             labels=["piano", "arrangement"]),
+        dict(n=2,  state="open",   title="Cello pizzicato needs more resonance",
+             body="Pizzicato sounds thin at 52 BPM. Add short room reverb to give note length.",
+             labels=["strings"]),
+        dict(n=3,  state="closed", title="Piano sustain pedal creates blur in slow passage",
+             body="Fixed — split pedaling technique applied to maintain harmonic clarity.", labels=["piano"]),
+        dict(n=4,  state="open",   title="Melody too narrow — stays in A4-E5 range",
+             body="Expand downward to A3. The lower register gives a more intimate chanson character.",
+             labels=["melody"]),
+        dict(n=5,  state="open",   title="Final cadence needs ritardando",
+             body="The piece ends metrically. A gradual slow-down over 2 bars would give weight to the ending.",
+             labels=["arrangement", "dynamics"]),
+        dict(n=6,  state="open",   title="Add optional accordion doubling",
+             body="Chanson tradition supports musette accordion. A soft doubling of the piano melody would be idiomatic.",
+             labels=["arrangement"]),
+        dict(n=7,  state="closed", title="Cello bowing direction markers missing",
+             body="Fixed — down-bows on beats 1 and 3, up-bows on 2 and 4.", labels=["strings", "notation"]),
+        dict(n=8,  state="open",   title="Bridge modulation to C# minor too abrupt",
+             body="The pivot chord (E major = shared dominant) should be held for 2 bars before modulating.",
+             labels=["harmony"]),
+        dict(n=9,  state="open",   title="Silence sections too short",
+             body="Pierre's style uses 4-bar silences. Current rests are only 2 bars — double them.",
+             labels=["arrangement", "dynamics"]),
+        dict(n=10, state="closed", title="Notation: accidentals not consistent",
+             body="Fixed — standardized to sharps throughout (A major context).", labels=["notation"]),
+        dict(n=11, state="open",   title="Piano voicing too wide in left hand",
+             body="Bass notes below C2 sound muddy on a grand piano. Raise left hand by an octave.",
+             labels=["piano"]),
+        dict(n=12, state="open",   title="Add pedal marking for the coda",
+             body="Coda (bars 28-32) has no pedal indication. The color should be hazy — add una corda.",
+             labels=["piano", "dynamics"]),
+        dict(n=13, state="open",   title="Tempo too fast for lyric melancholy",
+             body="52 BPM feels hurried for this material. Try 44 BPM — aligns with Pierre's reference recordings.",
+             labels=["arrangement"]),
+        dict(n=14, state="closed", title="Cello enters too early in bar 5",
+             body="Fixed — shifted cello entrance to bar 6 beat 1.", labels=["strings", "timing"]),
+        dict(n=15, state="open",   title="Middle section lacks harmonic tension",
+             body="The A major tonality is too stable for 8 bars. Introduce a borrowed chord (mode mixture) at bar 20.",
+             labels=["harmony"]),
+    ],
+    "granular": [
+        dict(n=1,  state="open",   title="Grain density parameter too uniform",
+             body="30 grains/sec is constant throughout. Modulate between 5 and 80 for organic feel.",
+             labels=["generative", "texture"]),
+        dict(n=2,  state="open",   title="Source sample quality too clean",
+             body="Found sounds should be degraded. Add vinyl noise and room tone before granulating.",
+             labels=["texture"]),
+        dict(n=3,  state="closed", title="Grain size too small — produces clicks",
+             body="Fixed — minimum grain size set to 40ms (was 5ms). Click-free.", labels=["bug", "generative"]),
+        dict(n=4,  state="open",   title="Pitch randomization range too wide",
+             body="±1 octave pitch spread sounds noisy, not musical. Constrain to ±major 3rd.",
+             labels=["generative", "pitch"]),
+        dict(n=5,  state="open",   title="Add grain position automation over time",
+             body="Reading from fixed position 0.3 in the source. Automate position 0.0→1.0 over 4 minutes.",
+             labels=["generative"]),
+        dict(n=6,  state="closed", title="Stereo pan spread too narrow",
+             body="Fixed — grain pan randomization set to ±45° (was ±10°).", labels=["mix"]),
+        dict(n=7,  state="open",   title="Texture layer too loud vs piano layer",
+             body="Granular texture sits 6dB above the piano melody. Attenuate texture by -6dB.", labels=["mix"]),
+        dict(n=8,  state="open",   title="Add resonant filter sweep through granular cloud",
+             body="A slow bandpass filter sweep (0.05Hz) through the grain cloud would create hypnotic movement.",
+             labels=["texture", "generative"]),
+        dict(n=9,  state="open",   title="Grain envelope too flat — no transients",
+             body="All grains use linear envelope. Add a fast attack (2ms) + slow decay for percussion-like texture.",
+             labels=["generative"]),
+        dict(n=10, state="closed", title="Found sound source too recognizable",
+             body="Fixed — source pitch-shifted and time-stretched until original is unrecognizable.", labels=["texture"]),
+        dict(n=11, state="open",   title="Feedback loop creates unwanted oscillation",
+             body="Grain output fed back into input causes 12Hz oscillation at high density. Add DC blocker.",
+             labels=["bug", "generative"]),
+        dict(n=12, state="open",   title="Density automation ramp too abrupt",
+             body="The jump from 5 to 80 grains/sec happens over 1 bar. Needs 4-bar ramp for smooth transition.",
+             labels=["generative", "arrangement"]),
+        dict(n=13, state="closed", title="Grain position quantized to beat grid",
+             body="Fixed — position now continuous with subtle clock jitter (±10ms).", labels=["generative"]),
+        dict(n=14, state="open",   title="Violin source needs more bow noise character",
+             body="Current sample is too pure. A sul ponticello bowing noise layer would add grit.", labels=["texture"]),
+        dict(n=15, state="open",   title="Outro needs silence interruption",
+             body="The granular outro should be punctuated by 500ms silences every 8 bars — gaps in the cloud.",
+             labels=["arrangement", "texture"]),
+    ],
+    "funk-suite": [  # REPO_KEY_MAP key: "funk-suite" (REPO_FUNK_SUITE)
+        dict(n=1,  state="open",   title="Electric piano comping too dense in verse",
+             body="Clavinet and Rhodes both comp simultaneously. Pick one per section.", labels=["arrangement"]),
+        dict(n=2,  state="open",   title="Wah bass envelope too slow",
+             body="Wah envelope follows ADSR but attack is 80ms — loses the click. Set to 10ms.", labels=["bass"]),
+        dict(n=3,  state="closed", title="Hi-hat and shaker doubling causes flamming",
+             body="Fixed — hi-hat quantized to 16th grid, shaker humanized separately.", labels=["drums", "timing"]),
+        dict(n=4,  state="open",   title="Horns need staccato articulation in bars 9-16",
+             body="Horn stabs are held too long. 16th-note staccato would give the funk punch.", labels=["horns"]),
+        dict(n=5,  state="open",   title="Clavinet tone too trebly",
+             body="Clavinet without a low-pass filter sounds harsh. A gentle 3kHz shelf would smooth it.",
+             labels=["mix"]),
+        dict(n=6,  state="closed", title="Groove falls apart at bar 25",
+             body="Fixed — kick pattern re-programmed with 16th anticipation on beat 3.", labels=["groove", "drums"]),
+        dict(n=7,  state="open",   title="Movement IV needs a climactic peak",
+             body="Movement IV builds but never peaks before the final cadence. Add a unison hit at bar 48.",
+             labels=["arrangement", "dynamics"]),
+        dict(n=8,  state="open",   title="Bass slap velocity too uniform",
+             body="All slap notes at velocity 110. Alternate strong (120) and weak (90) for dynamic groove.",
+             labels=["bass", "groove"]),
+        dict(n=9,  state="open",   title="Pocket drum fills too predictable at phrase ends",
+             body="Fill every 4 bars, always a snare run. Vary: sometimes a kick + tom, sometimes silence.",
+             labels=["drums", "arrangement"]),
+        dict(n=10, state="closed", title="Chord voicings too thick in bridge",
+             body="Fixed — reduced to 3-voice drop-2 voicing in brass section.", labels=["harmony"]),
+        dict(n=11, state="open",   title="Add octave unison in horn section for climax",
+             body="The climax in Movement III (bar 56) lacks weight. Add trombones an octave below trumpets.",
+             labels=["horns", "arrangement"]),
+        dict(n=12, state="open",   title="Movement II transition too abrupt",
+             body="Movement I ends, Movement II starts without transition. Add 2-bar breakdown.",
+             labels=["arrangement"]),
+        dict(n=13, state="closed", title="Clavinet out of tune with Rhodes",
+             body="Fixed — both set to A=440 reference. Clavinet detuned by +12 cents.", labels=["tuning"]),
+        dict(n=14, state="open",   title="Shaker too loud in mix",
+             body="Shaker sits 4dB above hi-hat in the mid-range. Reduce shaker -4dB.", labels=["mix"]),
+        dict(n=15, state="open",   title="Final movement needs a proper ending",
+             body="Suite ends with a fade-out which is too passive. Write a 4-bar coda with a unison hit.",
+             labels=["arrangement"]),
+    ],
+    "jazz-trio": [  # REPO_KEY_MAP key: "jazz-trio" (REPO_JAZZ_TRIO)
+        dict(n=1,  state="open",   title="Piano left hand too busy during bass solo",
+             body="Left-hand comp fills every bar during the bass solo — player needs space.", labels=["piano", "arrangement"]),
+        dict(n=2,  state="open",   title="Brushed snare too loud in A section",
+             body="Brushes are competing with piano in the same frequency range. Reduce snare by -3dB.",
+             labels=["drums", "mix"]),
+        dict(n=3,  state="closed", title="Walking bass accidentally doubles piano left hand",
+             body="Fixed — bass transposed up a 10th in bars 5-8 to avoid doubling.", labels=["bass"]),
+        dict(n=4,  state="open",   title="Tempo rushes during piano solo",
+             body="Drummer accelerates during piano solo — common problem. Add a click track reference.",
+             labels=["tempo", "groove"]),
+        dict(n=5,  state="open",   title="Add ritardando at end of each chorus",
+             body="Each 32-bar chorus ends metrically. A slight rit in the last 2 bars would honor the standard.",
+             labels=["arrangement", "dynamics"]),
+        dict(n=6,  state="closed", title="Bass pizzicato too short — sounds staccato",
+             body="Fixed — gate time extended to 90% of note duration.", labels=["bass"]),
+        dict(n=7,  state="open",   title="Cymbal swell missing at the top of each chorus",
+             body="A ride cymbal swell on beat 4 of bar 32 would signal the chorus repeat elegantly.",
+             labels=["drums", "arrangement"]),
+        dict(n=8,  state="open",   title="Piano voicing too sparse in outer choruses",
+             body="Shell voicings (root + 7th only) are too thin in the outer A sections. Add 3rds.",
+             labels=["piano", "harmony"]),
+        dict(n=9,  state="open",   title="Standards melody not centered in mix",
+             body="Piano melody sits behind the rhythm section. Bump piano +2dB during head.", labels=["mix"]),
+        dict(n=10, state="closed", title="Bass note durations overlap chord changes",
+             body="Fixed — note-offs now aligned to beat boundaries before chord changes.", labels=["bass"]),
+        dict(n=11, state="open",   title="Add sus chord before final turnaround",
+             body="The final turnaround (bars 29-32) lacks a sus chord to build tension before the resolution.",
+             labels=["harmony"]),
+        dict(n=12, state="open",   title="Ride cymbal bell too prominent",
+             body="Bell accent on beat 2 and 4 cuts through the texture. Use shoulder of stick instead.",
+             labels=["drums"]),
+        dict(n=13, state="closed", title="Piano octaves in outro too thick",
+             body="Fixed — reduced to single melody line in the final 4 bars.", labels=["piano"]),
+        dict(n=14, state="open",   title="Tag repeat needs extra bar",
+             body="Standard convention adds 1 extra bar at the final tag. Currently not present.",
+             labels=["arrangement"]),
+        dict(n=15, state="open",   title="Double-time feel section needs hi-hat switch",
+             body="During double-time feel (bars 17-24), hi-hat should move to 2-beat pattern. Currently stays on 4.",
+             labels=["drums", "groove"]),
     ],
 }
 
-# Use a generic template for repos without specific issues
+# Use a generic template for repos without specific issue templates (fork repos)
 GENERIC_ISSUES = [
-    dict(n=1, state="open",   title="Energy drops in the middle section",
+    dict(n=1,  state="open",   title="Energy drops in the middle section",
          body="The arrangement loses momentum around bar 24-32. Add element to sustain interest.",
          labels=["arrangement", "energy"]),
-    dict(n=2, state="open",   title="Dynamics too compressed",
+    dict(n=2,  state="open",   title="Dynamics too compressed",
          body="The quietest and loudest moments are within 3dB. Needs more dynamic range.",
          labels=["mix", "dynamics"]),
-    dict(n=3, state="closed", title="Tempo inconsistency between sections",
+    dict(n=3,  state="closed", title="Tempo inconsistency between sections",
          body="Fixed by applying strict quantize to all MIDI.", labels=["timing"]),
-    dict(n=4, state="open",   title="Add a counter-melody",
+    dict(n=4,  state="open",   title="Add a counter-melody",
          body="The main melody is unaccompanied for too long. Add a secondary voice.",
          labels=["arrangement"]),
-    dict(n=5, state="open",   title="Harmonic rhythm too fast in verse",
+    dict(n=5,  state="open",   title="Harmonic rhythm too fast in verse",
          body="Chord changes every 2 beats feels rushed. Try 4-beat chord duration.",
          labels=["harmony"]),
-    dict(n=6, state="closed", title="Mix: low end muddy",
+    dict(n=6,  state="closed", title="Mix: low end muddy",
          body="Resolved — high-pass filter below 80Hz on all non-bass instruments.",
          labels=["mix"]),
+    dict(n=7,  state="open",   title="Transition between sections too abrupt",
+         body="The jump from section A to B lacks a linking phrase. Add a 2-bar turnaround.",
+         labels=["arrangement"]),
+    dict(n=8,  state="open",   title="Lead instrument too forward in mix",
+         body="The melody sits 6dB above the supporting texture. Reduce by 3dB and add subtle delay.",
+         labels=["mix"]),
+    dict(n=9,  state="closed", title="Reverb tail bleeds into silence",
+         body="Fixed — reduced reverb pre-delay to 20ms, decay to 1.5s.", labels=["mix"]),
+    dict(n=10, state="open",   title="Add introduction before main theme",
+         body="The piece starts on the main theme with no setup. A 4-bar intro would establish context.",
+         labels=["arrangement"]),
+    dict(n=11, state="open",   title="Velocity variation too narrow",
+         body="All MIDI velocities within 90-110 range. Expand to 60-127 for natural expression.",
+         labels=["dynamics"]),
+    dict(n=12, state="open",   title="Stereo field too narrow",
+         body="Mix is mostly center-panned. Pan secondary voices hard left/right for width.",
+         labels=["mix"]),
+    dict(n=13, state="closed", title="Quantization too tight — sounds mechanical",
+         body="Fixed — applied 75% quantize (humanize 25%).", labels=["groove", "timing"]),
+    dict(n=14, state="open",   title="Ending lacks finality",
+         body="The piece fades out rather than closing with a defined cadence. Write a 2-bar coda.",
+         labels=["arrangement"]),
+    dict(n=15, state="open",   title="High frequency content harsh on headphones",
+         body="Content above 8kHz is piercing. A gentle high shelf cut -3dB above 8kHz would help.",
+         labels=["mix"]),
 ]
+
+
+# ---------------------------------------------------------------------------
+# Milestone templates per repo-key — title, description, state, due offset
+# ---------------------------------------------------------------------------
+
+MILESTONE_TEMPLATES: dict[str, list[dict[str, Any]]] = {
+    "neo-soul": [
+        dict(n=1, title="Album v1.0", state="open",
+             description="Full release of Neo-Soul Experiment Vol. 1. All tracks mixed and mastered.",
+             due_days=60),
+        dict(n=2, title="Mixing Complete", state="closed",
+             description="All tracks signed off by mixing engineer. Ready for mastering.",
+             due_days=None),
+    ],
+    "modal-jazz": [
+        dict(n=1, title="Session Complete", state="open",
+             description="All Modal Jazz Sketches tracks recorded and approved.",
+             due_days=30),
+    ],
+    "ambient": [
+        dict(n=1, title="Vol. 1 Complete", state="open",
+             description="All Ambient Textures Vol. 1 compositions finalised.",
+             due_days=45),
+        dict(n=2, title="Mastering Done", state="closed",
+             description="Mastering session at Abbey Road complete.",
+             due_days=None),
+    ],
+    "afrobeat": [
+        dict(n=1, title="Album Launch", state="open",
+             description="Afrobeat Grooves album release. All 12 tracks production-ready.",
+             due_days=30),
+        dict(n=2, title="v1.0 Recording", state="closed",
+             description="All live tracking sessions completed.",
+             due_days=None),
+    ],
+    "microtonal": [
+        dict(n=1, title="Études Complete", state="open",
+             description="All 10 microtonal études composed, engraved, and recorded.",
+             due_days=90),
+    ],
+    "drums": [
+        dict(n=1, title="808 Variations v1.0", state="open",
+             description="All drum variations composed and exported as stems.",
+             due_days=20),
+    ],
+    "chanson": [
+        dict(n=1, title="Score Publication", state="open",
+             description="Score submitted to publisher for Chanson Minimale edition.",
+             due_days=45),
+    ],
+    "granular": [
+        dict(n=1, title="Research Complete", state="open",
+             description="All granular synthesis research documented and recordings exported.",
+             due_days=60),
+    ],
+    "funk-suite": [
+        dict(n=1, title="Suite Release", state="open",
+             description="Funk Suite No. 1 — all four movements completed and sequenced.",
+             due_days=25),
+        dict(n=2, title="Mvt. I–II Done", state="closed",
+             description="Movements I and II approved by the full ensemble.",
+             due_days=None),
+    ],
+    "jazz-trio": [
+        dict(n=1, title="Album Complete", state="open",
+             description="Jazz Trio Sessions album — all takes selected and arranged.",
+             due_days=40),
+    ],
+}
+
+# Issues in each milestone (by issue number n) — controls milestone_id assignment
+MILESTONE_ISSUE_ASSIGNMENTS: dict[str, dict[int, list[int]]] = {
+    # key: repo_key  → {milestone_n: [issue_n, ...]}
+    "neo-soul":   {1: [1, 2, 4, 5, 7, 8, 10, 11, 12, 14, 15],
+                   2: [3, 6, 9, 13]},
+    "modal-jazz": {1: [1, 2, 4, 5, 6, 8, 9, 11, 12, 13, 15]},
+    "ambient":    {1: [1, 2, 4, 5, 6, 8, 9, 10, 12, 13, 14, 15],
+                   2: [3, 7, 11]},
+    "afrobeat":   {1: [1, 2, 4, 5, 6, 7, 9, 10, 11, 13, 14, 15],
+                   2: [3, 8, 12]},
+    "microtonal": {1: [1, 2, 4, 5, 6, 8, 9, 10, 12, 13, 14, 15]},
+    "drums":      {1: [1, 2, 4, 5, 7, 8, 9, 10, 12, 13, 14, 15]},
+    "chanson":    {1: [1, 2, 4, 5, 6, 8, 9, 10, 11, 12, 13, 15]},
+    "granular":   {1: [1, 2, 4, 5, 8, 9, 10, 12, 14, 15]},
+    "funk-suite": {1: [1, 2, 4, 5, 6, 8, 9, 10, 12, 13, 14, 15],
+                   2: [3, 7, 11]},
+    "jazz-trio":  {1: [1, 2, 4, 5, 7, 8, 9, 10, 12, 13, 14, 15]},
+}
+
+
+# ---------------------------------------------------------------------------
+# Issue comment templates
+# ---------------------------------------------------------------------------
+
+ISSUE_COMMENT_BODIES: list[str] = [
+    "Agreed — I noticed this too during the last session. @{mention} have you tried adjusting the velocity curve?",
+    "Good catch. The `{track}` track in `section:{section}` is definitely the culprit here.",
+    "I think we can fix this with:\n```python\n# Adjust humanization range\nhumanize_ms = 12  # was 5\nvelocity_range = (40, 90)  # was (70, 80)\n```",
+    "This has been bothering me since the first mix. The `beats:{beats}` region needs attention.",
+    "@{mention} — can you take a look? This is blocking the v1.0 milestone.",
+    "Fixed in my local branch. The root cause was the `{track}` MIDI channel assignment. Will open a PR.",
+    "I ran an analysis on the affected region:\n```\nFreq: {freq}Hz  Peak: -6dBFS  Phase: +12°\n```\nNeeds a notch filter.",
+    "Confirmed on my system. Happens consistently at bar {bar}. The {track} seems off.",
+    "Not sure this is the right approach. @{mention} what do you think about using a different technique?",
+    "This is now tracked in the v1.0 milestone. Should be resolved before release.",
+    "After further listening, the issue is more subtle than I initially thought. The `section:{section}` transition is the real problem.",
+    "Tested the fix — sounds much better now. The `track:{track}` now sits properly in the mix.",
+    "Adding context: this is related to #3 which had the same root cause in `section:{section}`.",
+    "I think we should prioritize this. The groove feels off and it's the first thing listeners will notice.",
+    "Will take a pass at this during the next session. @{mention} — can you prepare a reference recording?",
+]
+
+ISSUE_COMMENT_MENTIONS = ["gabriel", "sofia", "marcus", "yuki", "aaliya", "chen", "fatou", "pierre"]
+ISSUE_COMMENT_TRACKS   = ["bass", "keys", "drums", "strings", "horns", "guitar", "vocals", "pad"]
+ISSUE_COMMENT_SECTIONS = ["intro", "verse", "chorus", "bridge", "breakdown", "coda", "outro"]
+ISSUE_COMMENT_FREQS    = ["80", "200", "400", "800", "2000", "4000", "8000"]
+
+
+def _make_issue_comment_body(seed: int) -> str:
+    """Generate a realistic issue comment body with @mention, track refs, and code blocks."""
+    template = ISSUE_COMMENT_BODIES[seed % len(ISSUE_COMMENT_BODIES)]
+    mention = ISSUE_COMMENT_MENTIONS[(seed + 1) % len(ISSUE_COMMENT_MENTIONS)]
+    track   = ISSUE_COMMENT_TRACKS[seed % len(ISSUE_COMMENT_TRACKS)]
+    section = ISSUE_COMMENT_SECTIONS[(seed + 2) % len(ISSUE_COMMENT_SECTIONS)]
+    bar     = (seed % 32) + 1
+    freq    = ISSUE_COMMENT_FREQS[seed % len(ISSUE_COMMENT_FREQS)]
+    return (template
+            .replace("{mention}", mention)
+            .replace("{track}", track)
+            .replace("{section}", section)
+            .replace("{bar}", str(bar))
+            .replace("{beats}", f"{bar}-{bar+4}")
+            .replace("{freq}", freq))
+
+
+def _make_issue_musical_refs(body: str) -> list[dict[str, str]]:
+    """Extract musical context references from a comment body."""
+    import re
+    refs: list[dict[str, str]] = []
+    for m in re.finditer(r"track:(\w+)", body):
+        refs.append({"type": "track", "value": m.group(1)})
+    for m in re.finditer(r"section:(\w+)", body):
+        refs.append({"type": "section", "value": m.group(1)})
+    for m in re.finditer(r"beats:(\d+-\d+)", body):
+        refs.append({"type": "beats", "value": m.group(1)})
+    return refs
 
 
 # ---------------------------------------------------------------------------
@@ -1496,6 +1960,163 @@ def _make_sessions(repo_id: str, owner: str, commits: list[dict[str, Any]]) -> l
 
 
 # ---------------------------------------------------------------------------
+# Webhook + delivery templates
+# ---------------------------------------------------------------------------
+
+def _make_webhooks(
+    repo_id: str, owner: str
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Generate 3 webhook subscriptions and 10–15 deliveries per webhook.
+
+    Delivery outcomes cycle through 200 (success), 500 (server error), and
+    0/timeout patterns so every status is represented in the dataset.
+    Returns (webhooks, deliveries).
+    """
+    webhooks: list[dict[str, Any]] = []
+    deliveries: list[dict[str, Any]] = []
+
+    wh_configs = [
+        dict(suffix="push",    url=f"https://hooks.example.com/{owner}/push",
+             events=["push"], active=True),
+        dict(suffix="pr",      url=f"https://hooks.example.com/{owner}/pr",
+             events=["pull_request", "issue"], active=True),
+        dict(suffix="release", url=f"https://hooks.example.com/{owner}/release",
+             events=["release"], active=False),
+    ]
+
+    for wh_spec in wh_configs:
+        wh_suffix: str = wh_spec["suffix"]  # type: ignore[assignment]
+        wh_url: str = wh_spec["url"]  # type: ignore[assignment]
+        wh_events: list[str] = wh_spec["events"]  # type: ignore[assignment]
+        wh_active: bool = wh_spec["active"]  # type: ignore[assignment]
+        wh_id = _uid(f"wh-{repo_id}-{wh_suffix}")
+        webhooks.append(dict(
+            webhook_id=wh_id,
+            repo_id=repo_id,
+            url=wh_url,
+            events=wh_events,
+            secret=_sha(f"secret-{repo_id}-{wh_suffix}")[:32],
+            active=wh_active,
+            created_at=_now(days=60),
+        ))
+
+        # 10–15 deliveries per webhook; cycle through status patterns.
+        n_deliveries = 10 + (int(_sha(f"nd-{repo_id}-{wh_suffix}")[:2], 16) % 6)
+        for j in range(n_deliveries):
+            # Pattern (period 7): 200, 200, 500, 200, 200, timeout, 200
+            pattern = j % 7
+            if pattern in (0, 1, 3, 4, 6):
+                success, status, resp_body = True, 200, '{"ok": true}'
+            elif pattern == 2:
+                success, status, resp_body = False, 500, '{"error": "Internal Server Error"}'
+            else:  # pattern == 5 → timeout
+                success, status, resp_body = False, 0, ""
+
+            event_type = wh_events[j % len(wh_events)]
+            payload_data = (
+                f'{{"event": "{event_type}", "repo": "{repo_id}", '
+                f'"attempt": {(j % 3) + 1}, "ts": "{_now(days=j).isoformat()}"}}'
+            )
+            deliveries.append(dict(
+                delivery_id=_uid(f"del-{wh_id}-{j}"),
+                webhook_id=wh_id,
+                event_type=event_type,
+                payload=payload_data,
+                attempt=(j % 3) + 1,
+                success=success,
+                response_status=status,
+                response_body=resp_body,
+                delivered_at=_now(days=j),
+            ))
+
+    return webhooks, deliveries
+
+
+# ---------------------------------------------------------------------------
+# PR comment templates
+# ---------------------------------------------------------------------------
+
+_PR_COMMENT_POOL: list[dict[str, Any]] = [
+    dict(target_type="general",  target_track=None, target_beat_start=None,
+         target_beat_end=None, target_note_pitch=None,
+         body="Overall approach looks good. The counter-melody adds the harmonic tension the arrangement was missing. LGTM with minor comments below."),
+    dict(target_type="track",    target_track="bass", target_beat_start=None,
+         target_beat_end=None, target_note_pitch=None,
+         body="The bass track humanization is much improved. Ghost notes at beats 2.5 and 3.5 are well-placed.\n\n> Suggest reducing velocity on the ghost at beat 3.5 by 10 units."),
+    dict(target_type="region",   target_track="keys", target_beat_start=9.0,
+         target_beat_end=17.0, target_note_pitch=None,
+         body="Bars 9-16: the Rhodes voicing here feels crowded. Try removing the 5th — root + 3rd + 7th is cleaner."),
+    dict(target_type="note",     target_track="trumpet", target_beat_start=24.0,
+         target_beat_end=None, target_note_pitch=84,
+         body="This high C (MIDI 84) at beat 24 is above idiomatic range. Transpose down an octave to C5 (MIDI 72)."),
+    dict(target_type="general",  target_track=None, target_beat_start=None,
+         target_beat_end=None, target_note_pitch=None,
+         body="The tritone substitution is elegant. I'd approve as-is but @gabriel should confirm alignment with the arrangement plan."),
+    dict(target_type="track",    target_track="drums", target_beat_start=None,
+         target_beat_end=None, target_note_pitch=None,
+         body="Drum humanization is a big improvement. Hi-hat timing now feels natural.\n\nOne nit: the ride bell at beat 4 is slightly too loud — try velocity 85 instead of 100."),
+    dict(target_type="region",   target_track="strings", target_beat_start=25.0,
+         target_beat_end=33.0, target_note_pitch=None,
+         body="Bars 25-32: pizzicato countermelody is beautifully voiced. Staggered entries work well. No changes needed."),
+    dict(target_type="note",     target_track="bass", target_beat_start=13.0,
+         target_beat_end=None, target_note_pitch=42,
+         body="This F# (MIDI 42) at beat 13 creates a very dark sub. If intentional — great. If not, try B1 (MIDI 47)."),
+    dict(target_type="general",  target_track=None, target_beat_start=None,
+         target_beat_end=None, target_note_pitch=None,
+         body="Reviewed all four parallel-5th instances. Bars 7-8 and 15-16 are fixed. Bars 23-24 still have a parallel octave between violin and cello — please fix before merging."),
+    dict(target_type="track",    target_track="vocals", target_beat_start=None,
+         target_beat_end=None, target_note_pitch=None,
+         body="Vocal sibilance is still present on sustained S sounds. De-esser threshold needs to be 3dB lower. Otherwise the PR is ready."),
+]
+
+
+def _make_pr_comments(
+    pr_id: str, repo_id: str, pr_n: int, owner: str, days_ago: int
+) -> list[dict[str, Any]]:
+    """Generate 3–8 inline review comments for a single pull request.
+
+    Uses the rotating _PR_COMMENT_POOL with author cycling across the user roster.
+    Some comments thread as replies via parent_comment_id.
+    """
+    pool_size = len(_PR_COMMENT_POOL)
+    authors = ["gabriel", "sofia", "marcus", "yuki", "aaliya", "chen", "fatou", "pierre"]
+    n_comments = 3 + (pr_n % 6)  # yields 3–8 per PR
+    comments: list[dict[str, Any]] = []
+    first_comment_id: str | None = None
+
+    for i in range(n_comments):
+        pool_entry = _PR_COMMENT_POOL[(pr_n * 5 + i * 3) % pool_size]
+        author = authors[(pr_n + i + 2) % len(authors)]
+        if author == owner and i == 0:
+            author = authors[(pr_n + i + 3) % len(authors)]
+
+        comment_id = _uid(f"pr-cmt-{repo_id}-{pr_n}-{i}")
+        parent_id: str | None = None
+        # Comments 3+ thread under the first comment to simulate replies.
+        if i >= 3 and first_comment_id is not None:
+            parent_id = first_comment_id
+
+        comments.append(dict(
+            comment_id=comment_id,
+            pr_id=pr_id,
+            repo_id=repo_id,
+            author=author,
+            body=pool_entry["body"],
+            target_type=pool_entry["target_type"],
+            target_track=pool_entry["target_track"],
+            target_beat_start=pool_entry["target_beat_start"],
+            target_beat_end=pool_entry["target_beat_end"],
+            target_note_pitch=pool_entry["target_note_pitch"],
+            parent_comment_id=parent_id,
+            created_at=_now(days=days_ago - i),
+        ))
+        if i == 0:
+            first_comment_id = comment_id
+
+    return comments
+
+
+# ---------------------------------------------------------------------------
 # Main seed function
 # ---------------------------------------------------------------------------
 
@@ -1524,13 +2145,19 @@ async def seed(db: AsyncSession, force: bool = False) -> None:
             "muse_note_changes", "muse_phrases", "muse_variations",
             # Muse VCS — innermost first (tags depend on commits, commits depend on snapshots)
             "muse_tags", "muse_commits", "muse_snapshots", "muse_objects",
-            # MuseHub
+            # MuseHub — children before parents (FK order)
             "musehub_download_events", "musehub_view_events", "musehub_forks",
             "musehub_notifications", "musehub_watches", "musehub_follows",
             "musehub_reactions", "musehub_comments",
             "musehub_stars", "musehub_sessions", "musehub_releases",
             "musehub_webhook_deliveries", "musehub_webhooks",
-            "musehub_pull_requests", "musehub_issues", "musehub_branches",
+            # PR children before pull_requests
+            "musehub_pr_comments", "musehub_pr_reviews",
+            "musehub_pull_requests",
+            # Issue children before issues; milestones after (SET NULL FK)
+            "musehub_issue_milestones", "musehub_issue_comments",
+            "musehub_issues", "musehub_milestones",
+            "musehub_branches",
             "musehub_objects", "musehub_commits", "musehub_repos",
             "musehub_profiles",
         ]:
@@ -1632,15 +2259,60 @@ async def seed(db: AsyncSession, force: bool = False) -> None:
 
     await db.flush()
 
-    # ── 5. Issues ─────────────────────────────────────────────────
+    # ── 5a. Milestones (seed before issues so milestone_id can be referenced) ──
+    # Structure: repo_id → {milestone_n → milestone_id}
+    milestone_id_map: dict[str, dict[int, str]] = {}
+    milestone_count = 0
+    for r in REPOS:
+        repo_id = r["repo_id"]
+        rkey = REPO_KEY_MAP.get(repo_id, "neo-soul")
+        ms_list = MILESTONE_TEMPLATES.get(rkey, [])
+        if not ms_list:
+            continue
+        milestone_id_map[repo_id] = {}
+        for ms in ms_list:
+            mid = _uid(f"milestone-{repo_id}-{ms['n']}")
+            due = _now(days=-ms["due_days"]) if ms.get("due_days") else None
+            db.add(MusehubMilestone(
+                milestone_id=mid,
+                repo_id=repo_id,
+                number=ms["n"],
+                title=ms["title"],
+                description=ms["description"],
+                state=ms["state"],
+                author=r["owner"],
+                due_on=due,
+                created_at=_now(days=r["days_ago"]),
+            ))
+            milestone_id_map[repo_id][ms["n"]] = mid
+            milestone_count += 1
+    print(f"  ✅ Milestones: {milestone_count}")
+
+    await db.flush()
+
+    # ── 5b. Issues (track IDs for comment and milestone-link seeding) ──────────
     issue_count = 0
+    # Structure: repo_id → {issue_n → issue_id}
+    issue_id_map: dict[str, dict[int, str]] = {}
     for r in all_repos:
         repo_id = r["repo_id"]
         rkey = REPO_KEY_MAP.get(repo_id, "neo-soul")
         issue_list = ISSUE_TEMPLATES.get(rkey, GENERIC_ISSUES)
         days_base = r["days_ago"]
+        # Determine milestone assignment map for this repo: issue_n → milestone_n
+        ms_assignments = MILESTONE_ISSUE_ASSIGNMENTS.get(rkey, {})
+        issue_to_ms: dict[int, int] = {}
+        for ms_number, issue_ns in ms_assignments.items():
+            for iss_n in issue_ns:
+                issue_to_ms[iss_n] = ms_number
+
+        issue_id_map[repo_id] = {}
         for iss in issue_list:
+            iid = _uid(f"issue-{repo_id}-{iss['n']}")
+            assigned_ms_n: int | None = issue_to_ms.get(iss["n"])
+            ms_id: str | None = milestone_id_map.get(repo_id, {}).get(assigned_ms_n) if assigned_ms_n else None
             db.add(MusehubIssue(
+                issue_id=iid,
                 repo_id=repo_id,
                 number=iss["n"],
                 state=iss["state"],
@@ -1648,10 +2320,54 @@ async def seed(db: AsyncSession, force: bool = False) -> None:
                 body=iss["body"],
                 labels=iss["labels"],
                 author=r["owner"],
+                milestone_id=ms_id,
                 created_at=_now(days=days_base - iss["n"] * 2),
             ))
+            issue_id_map[repo_id][iss["n"]] = iid
+            # Also populate MusehubIssueMilestone join table for repos with milestones
+            if ms_id:
+                db.add(MusehubIssueMilestone(issue_id=iid, milestone_id=ms_id))
             issue_count += 1
     print(f"  ✅ Issues: {issue_count}")
+
+    await db.flush()
+
+    # ── 5c. Issue comments (5-10 per issue, with @mentions and code blocks) ────
+    issue_comment_count = 0
+    users_list = [u[1] for u in USERS]
+    for r in REPOS[:10]:  # Comments on all non-fork repos
+        repo_id = r["repo_id"]
+        rkey = REPO_KEY_MAP.get(repo_id, "neo-soul")
+        issue_list = ISSUE_TEMPLATES.get(rkey, GENERIC_ISSUES)
+        for iss in issue_list:
+            iss_iid: str | None = issue_id_map.get(repo_id, {}).get(iss["n"])
+            if not iss_iid:
+                continue
+            # 5-10 comments per issue (varies by issue number parity)
+            n_comments = 5 + (iss["n"] % 6)
+            iss_cmt_parent: str | None = None
+            for j in range(n_comments):
+                cmt_seed = hash(repo_id + str(iss["n"]) + str(j)) % 1000
+                body = _make_issue_comment_body(cmt_seed)
+                musical_refs = _make_issue_musical_refs(body)
+                author_idx = (abs(hash(repo_id)) + iss["n"] + j) % len(users_list)
+                author = users_list[author_idx]
+                cid = _uid(f"iss-comment-{repo_id}-{iss['n']}-{j}")
+                db.add(MusehubIssueComment(
+                    comment_id=cid,
+                    issue_id=iss_iid,
+                    repo_id=repo_id,
+                    author=author,
+                    body=body,
+                    parent_id=iss_cmt_parent if j > 0 and j % 3 == 0 else None,
+                    musical_refs=musical_refs,
+                    created_at=_now(days=r["days_ago"] - iss["n"] * 2, hours=j * 2),
+                ))
+                issue_comment_count += 1
+                # First comment becomes parent for threaded replies
+                if j == 0:
+                    iss_cmt_parent = cid
+    print(f"  ✅ Issue comments: {issue_comment_count}")
 
     await db.flush()
 
@@ -1667,6 +2383,64 @@ async def seed(db: AsyncSession, force: bool = False) -> None:
             db.add(MusehubPullRequest(**pr))
             pr_count += 1
     print(f"  ✅ Pull Requests: {pr_count}")
+
+    await db.flush()
+
+    # ── 6b. PR comments (3-8 per PR with target_type variety) ─────────────────
+    PR_COMMENT_BODIES: list[tuple[str, str, str | None, float | None, float | None, int | None]] = [
+        # (body, target_type, target_track, beat_start, beat_end, note_pitch)
+        ("General: this PR looks good overall. The groove change is an improvement.",
+         "general", None, None, None, None),
+        ("The `bass` track changes in this PR need review — the wah envelope is still too slow.",
+         "track", "bass", None, None, None),
+        ("This region (beats 16-24) sounds much better with the humanized timing.",
+         "region", "keys", 16.0, 24.0, None),
+        ("The C#4 (MIDI 61) note in the Rhodes feels misplaced — should be D4 for the chord.",
+         "note", "keys", None, None, 61),
+        ("Great improvement in the horns section. The harmony is now correct.",
+         "track", "horns", None, None, None),
+        ("The beat 1-8 region on the bass now locks properly with the kick.",
+         "region", "bass", 1.0, 8.0, None),
+        ("The G3 (MIDI 55) in bar 7 creates an unwanted clash. Remove or lower octave.",
+         "note", "strings", None, None, 55),
+        ("Overall this PR solves the main issue. LGTM with minor nits.",
+         "general", None, None, None, None),
+        ("The `drums` ghost notes are much improved — much more human now.",
+         "track", "drums", None, None, None),
+        ("Beats 32-40 on the guitar feel slightly rushed. Did you check the quantize grid?",
+         "region", "guitar", 32.0, 40.0, None),
+    ]
+
+    pr_comment_count = 0
+    for r in REPOS[:10]:
+        repo_id = r["repo_id"]
+        for pr_id_str in pr_ids.get(repo_id, []):
+            # 3-8 comments per PR
+            n_pr_comments = 3 + (abs(hash(pr_id_str)) % 6)
+            parent_pr_cid: str | None = None
+            for k in range(n_pr_comments):
+                tmpl_idx = (abs(hash(pr_id_str)) + k) % len(PR_COMMENT_BODIES)
+                body, ttype, ttrack, tbs, tbe, tnp = PR_COMMENT_BODIES[tmpl_idx]
+                author_idx = (abs(hash(repo_id)) + k + 1) % len(users_list)
+                pr_cid = _uid(f"pr-comment-{pr_id_str}-{k}")
+                db.add(MusehubPRComment(
+                    comment_id=pr_cid,
+                    pr_id=pr_id_str,
+                    repo_id=repo_id,
+                    author=users_list[author_idx],
+                    body=body,
+                    target_type=ttype,
+                    target_track=ttrack,
+                    target_beat_start=tbs,
+                    target_beat_end=tbe,
+                    target_note_pitch=tnp,
+                    parent_comment_id=parent_pr_cid if k > 0 and k % 4 == 0 else None,
+                    created_at=_now(days=7 - k),
+                ))
+                pr_comment_count += 1
+                if k == 0:
+                    parent_pr_cid = pr_cid
+    print(f"  ✅ PR comments: {pr_comment_count}")
 
     await db.flush()
 
@@ -2156,6 +2930,71 @@ async def seed(db: AsyncSession, force: bool = False) -> None:
                 ))
                 dl_count += 1
     print(f"  ✅ Download events: {dl_count}")
+
+    # ── 17b. Webhooks + deliveries (1-3/repo, 10-20 deliveries each) ──────────
+    WEBHOOK_CONFIGS: list[tuple[str, list[str]]] = [
+        # (url_suffix, events)
+        ("push",    ["push"]),
+        ("pr",      ["pull_request", "push"]),
+        ("release", ["release", "push", "pull_request"]),
+    ]
+    # Delivery outcome patterns: (response_status, success)
+    # Mix of 200 OK, 500 server error, and 0 timeout
+    DELIVERY_OUTCOMES: list[tuple[int, bool, str]] = [
+        (200, True,  '{"status": "ok"}'),
+        (200, True,  '{"accepted": true}'),
+        (200, True,  '{"queued": true}'),
+        (500, False, '{"error": "Internal Server Error"}'),
+        (500, False, '{"error": "Service unavailable"}'),
+        (0,   False, ""),   # timeout — no response
+        (200, True,  '{"ok": 1}'),
+        (404, False, '{"error": "Not Found"}'),
+        (200, True,  '{"received": true}'),
+        (0,   False, ""),   # timeout
+    ]
+    WEBHOOK_EVENT_TYPES = ["push", "pull_request", "release", "issue", "comment"]
+
+    webhook_count = 0
+    delivery_count = 0
+    for r in REPOS[:10]:
+        repo_id = r["repo_id"]
+        # 1-3 webhooks per repo based on repo index
+        repo_idx = REPOS.index(r)
+        n_webhooks = 1 + (repo_idx % 3)
+        for wh_i in range(n_webhooks):
+            url_suffix, events = WEBHOOK_CONFIGS[wh_i % len(WEBHOOK_CONFIGS)]
+            wh_id = _uid(f"webhook-{repo_id}-{wh_i}")
+            db.add(MusehubWebhook(
+                webhook_id=wh_id,
+                repo_id=repo_id,
+                url=f"https://hooks.example.com/{r['owner']}/{r['slug']}/{url_suffix}",
+                events=events,
+                secret=_sha(f"secret-{repo_id}-{wh_i}")[:32],
+                active=True,
+                created_at=_now(days=r["days_ago"] - 5),
+            ))
+            webhook_count += 1
+            # 10-20 deliveries per webhook
+            n_deliveries = 10 + (abs(hash(wh_id)) % 11)
+            for d_i in range(n_deliveries):
+                outcome_idx = (abs(hash(wh_id)) + d_i) % len(DELIVERY_OUTCOMES)
+                status, success, resp_body = DELIVERY_OUTCOMES[outcome_idx]
+                evt = WEBHOOK_EVENT_TYPES[d_i % len(WEBHOOK_EVENT_TYPES)]
+                db.add(MusehubWebhookDelivery(
+                    delivery_id=_uid(f"wh-delivery-{wh_id}-{d_i}"),
+                    webhook_id=wh_id,
+                    event_type=evt,
+                    payload=f'{{"event": "{evt}", "repo": "{repo_id}", "seq": {d_i}}}',
+                    attempt=1 + (d_i % 3),
+                    success=success,
+                    response_status=status,
+                    response_body=resp_body,
+                    delivered_at=_now(days=r["days_ago"] - d_i, hours=d_i % 24),
+                ))
+                delivery_count += 1
+    print(f"  ✅ Webhooks: {webhook_count}  Deliveries: {delivery_count}")
+
+    await db.flush()
 
     # ── 18. Muse variations, phrases, note changes ────────────────
     # Collect stable commit hashes from the two most active repos as base
