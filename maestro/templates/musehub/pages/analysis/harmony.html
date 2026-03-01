@@ -1,0 +1,30 @@
+{% extends "musehub/base.html" %}
+
+{% block title %}Harmony Analysis {{ ref[:8] }} · {{ owner }}/{{ repo_slug }}{% endblock %}
+
+{% block breadcrumb %}
+  <a href="/musehub/ui/{{ owner }}">{{ owner }}</a> /
+  <a href="{{ base_url }}">{{ repo_slug }}</a> /
+  analysis /
+  <a href="{{ base_url }}/analysis/{{ ref }}">{{ ref[:8] }}</a> /
+  harmony
+{% endblock %}
+
+{% block repo_nav %}{% include "musehub/partials/repo_nav.html" %}{% endblock %}
+
+{% block content %}
+{% include "musehub/fragments/analysis/harmony_content.html" %}
+{% endblock %}
+
+{% block page_data %}
+const repoId   = {{ repo_id | tojson }};
+const ref      = {{ ref | tojson }};
+const base     = {{ base_url | tojson }};
+const apiBase  = '/api/v1/musehub/repos/' + repoId;
+{% endblock %}
+
+{% block page_script %}
+{% raw %}
+initRepoNav(repoId);
+{% endraw %}
+{% endblock %}

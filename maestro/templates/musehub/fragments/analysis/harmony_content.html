@@ -1,0 +1,108 @@
+{# Harmony analysis content fragment.
+   Rendered server-side from HarmonyAnalysisResponse.
+   Included by the full page (harmony.html) and returned directly for
+   HTMX partial updates (HX-Request: true). #}
+
+<div style="margin-bottom:12px;display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+  <a href="{{ base_url }}">&larr; Back to repo</a>
+  <span style="color:#8b949e;font-size:13px">
+    Analysis for <code style="background:#161b22;padding:2px 6px;border-radius:4px">{{ ref[:12] }}</code>
+  </span>
+</div>
+
+{# Key summary card #}
+<div class="card" style="border-color:#1f6feb;margin-bottom:16px">
+  <div style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:12px">
+    <div>
+      <h1 style="margin:0;font-size:26px">
+        🎹 {{ harmony_data.key }}
+      </h1>
+      <div style="font-size:14px;color:#8b949e;margin-top:4px">
+        Mode: <strong style="color:#58a6ff">{{ harmony_data.mode }}</strong>
+        &bull; Harmonic rhythm: <strong>{{ "%.2f"|format(harmony_data.harmonic_rhythm_bpm) }} chords/min</strong>
+      </div>
+    </div>
+  </div>
+</div>
+
+{# Roman numeral events #}
+{% if harmony_data.roman_numerals %}
+<div class="card" style="margin-bottom:16px">
+  <h2 style="margin-bottom:12px">🎵 Roman Numeral Analysis</h2>
+  <div style="overflow-x:auto">
+    <table style="width:100%;border-collapse:collapse;font-size:13px">
+      <thead>
+        <tr style="border-bottom:2px solid #30363d">
+          <th style="padding:8px 12px;text-align:left;color:#8b949e;font-weight:600">Beat</th>
+          <th style="padding:8px 12px;text-align:left;color:#8b949e;font-weight:600">Chord</th>
+          <th style="padding:8px 12px;text-align:left;color:#8b949e;font-weight:600">Root</th>
+          <th style="padding:8px 12px;text-align:left;color:#8b949e;font-weight:600">Quality</th>
+          <th style="padding:8px 12px;text-align:left;color:#8b949e;font-weight:600">Function</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for rn in harmony_data.roman_numerals %}
+        <tr style="border-bottom:1px solid #21262d">
+          <td style="padding:8px 12px;font-family:monospace;color:#e6edf3">{{ rn.beat | int }}</td>
+          <td style="padding:8px 12px;font-weight:700;color:#58a6ff">{{ rn.chord }}</td>
+          <td style="padding:8px 12px;color:#e6edf3">{{ rn.root }}</td>
+          <td style="padding:8px 12px;color:#8b949e">{{ rn.quality }}</td>
+          <td style="padding:8px 12px">
+            {% if rn.function == "tonic" %}
+              <span style="color:#3fb950">{{ rn.function }}</span>
+            {% elif rn.function == "dominant" %}
+              <span style="color:#f85149">{{ rn.function }}</span>
+            {% elif rn.function == "subdominant" %}
+              <span style="color:#58a6ff">{{ rn.function }}</span>
+            {% else %}
+              <span style="color:#8b949e">{{ rn.function }}</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+{# Cadence analysis #}
+{% if harmony_data.cadences %}
+<div class="card" style="margin-bottom:16px">
+  <h2 style="margin-bottom:12px">🎼 Cadences</h2>
+  <div style="display:flex;flex-wrap:wrap;gap:var(--space-2)">
+    {% for cadence in harmony_data.cadences %}
+    <div style="padding:var(--space-2) var(--space-3);background:var(--color-surface-2,#161b22);border-radius:6px;border:1px solid #30363d">
+      <div style="font-size:12px;color:#8b949e;margin-bottom:2px">Beat {{ cadence.beat | int }}</div>
+      <div style="font-weight:700;color:#e6edf3">{{ cadence.from_ }} &rarr; {{ cadence.to }}</div>
+      <div style="font-size:11px;color:#8b949e;margin-top:2px">{{ cadence.type }}</div>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+
+{# Modulations #}
+{% if harmony_data.modulations %}
+<div class="card" style="margin-bottom:16px">
+  <h2 style="margin-bottom:12px">🔀 Modulations</h2>
+  {% for mod in harmony_data.modulations %}
+  <div style="display:flex;align-items:center;gap:12px;padding:8px 0;border-bottom:1px solid #21262d">
+    <span style="font-family:monospace;font-size:13px;color:#f0883e;min-width:60px">
+      Beat {{ mod.beat | int }}
+    </span>
+    <span style="font-size:13px">
+      {{ mod.from_key }} &rarr; <strong style="color:#58a6ff">{{ mod.to_key }}</strong>
+    </span>
+    {% if mod.pivot_chord %}
+    <span style="font-size:11px;color:#8b949e">via {{ mod.pivot_chord }}</span>
+    {% endif %}
+  </div>
+  {% endfor %}
+</div>
+{% else %}
+<div class="card" style="margin-bottom:16px">
+  <h2 style="margin-bottom:8px">🔀 Modulations</h2>
+  <p style="color:#3fb950;font-size:13px;margin:0">No modulations detected — piece remains in one key.</p>
+</div>
+{% endif %}
