@@ -1,4 +1,5 @@
 {% extends "musehub/base.html" %}
+{% block jsonld %}{% if jsonld_script %}{{ jsonld_script | safe }}{% endif %}{% endblock %}
 {% block title %}{{ owner }}/{{ repo_slug }}{% endblock %}
 {% block breadcrumb %}<a href="/musehub/ui/{{ owner }}">{{ owner }}</a> / <a href="{{ base_url }}">{{ repo_slug }}</a>{% endblock %}
 
