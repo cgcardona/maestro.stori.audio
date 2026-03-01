@@ -1,21 +1,24 @@
-"""Muse Hub new repo creation wizard — issue #438.
+"""Muse Hub new repo creation wizard — issue #438, SSR migration #562.
 
 Serves the repository creation wizard at /musehub/ui/new.
 
 Routes:
-  GET  /musehub/ui/new        — creation wizard form (HTML shell, auth-agnostic)
+  GET  /musehub/ui/new        — SSR creation wizard form (Jinja2 template)
   POST /musehub/ui/new        — create repo (JSON body, auth required), returns
                                 redirect URL for JS navigation
-  GET  /musehub/ui/new/check  — name availability check (JSON, unauthenticated)
+  GET  /musehub/ui/new/check  — name availability check; returns HTML fragment
+                                when requested by HTMX, JSON otherwise
 
 Auth contract:
-- GET renders the HTML shell without requiring a JWT. Client JS reads the
-  token from localStorage and presents the form when authenticated, or
-  prompts login when not. This matches every other MuseHub UI page.
+- GET renders the SSR form without requiring a JWT. The form fields are
+  rendered server-side; client JS (Alpine.js) handles the visibility toggle
+  and topics tag input only.
 - POST requires a valid JWT in the Authorization header. Returns
   ``{"redirect": "/musehub/ui/{owner}/{slug}?welcome=1"}`` on success so the
   JS can navigate; returns 409 on slug collision.
 - GET /new/check is unauthenticated — slug availability is not secret.
+  When called by HTMX (``HX-Request: true``), returns an HTML fragment
+  (``<span>`` with availability text). Otherwise returns JSON for scripts/agents.
 
 The POST handler delegates all persistence to
 ``maestro.services.musehub_repository.create_repo``, keeping this handler
@@ -33,6 +36,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.responses import Response
 
 from maestro.api.routes.musehub._templates import templates as _templates
+from maestro.api.routes.musehub.htmx_helpers import is_htmx
 from maestro.auth.dependencies import TokenClaims, require_valid_token
 from maestro.db import get_db
 from maestro.models.musehub import CreateRepoRequest
@@ -60,15 +64,17 @@ _LICENSES: list[tuple[str, str]] = [
     operation_id="newRepoWizardPage",
 )
 async def new_repo_page(request: Request) -> Response:
-    """Render the new repo creation wizard form.
+    """Render the SSR new repo creation wizard form.
 
+    License options are rendered server-side into the Jinja2 template so no
+    client-side JS is needed to populate the dropdown.  Alpine.js handles only
+    the visibility radio toggle; HTMX handles the live name availability check.
     Renders without auth so the page is always reachable at a stable URL.
-    Client JS reads the JWT from localStorage and either shows the form or
-    prompts the user to log in — matching every other MuseHub UI page.
     """
     ctx: dict[str, object] = {
         "title": "Create a new repository",
         "licenses": _LICENSES,
+        "current_page": "new_repo",
     }
     return _templates.TemplateResponse(request, "musehub/pages/new_repo.html", ctx)
 
@@ -144,16 +150,28 @@ async def create_repo_wizard(
     operation_id="checkRepoNameAvailable",
 )
 async def check_repo_name(
+    request: Request,
     owner: str = Query(..., description="Owner username to check under"),
     slug: str = Query(..., description="URL-safe slug derived from the repo name"),
     db: AsyncSession = Depends(get_db),
-) -> JSONResponse:
+) -> Response:
     """Return whether a given owner+slug pair is available.
 
-    Used by the live uniqueness checker in the creation wizard. No auth
-    required — slug availability is not secret information.
+    When called by HTMX (``HX-Request: true``), returns a bare HTML
+    ``<span>`` fragment that HTMX swaps into the ``#name-check`` target
+    element — no JavaScript needed for the availability indicator.
 
-    Response: ``{"available": true}`` or ``{"available": false}``.
+    When called without the HTMX header (scripts, agents, legacy JS),
+    returns JSON: ``{"available": true}`` or ``{"available": false}``.
+
+    No auth required — slug availability is not secret information.
     """
     existing = await musehub_repository.get_repo_by_owner_slug(db, owner, slug)
-    return JSONResponse({"available": existing is None})
+    available = existing is None
+    if is_htmx(request):
+        if available:
+            html = '<span style="color:var(--color-success)">✓ Available</span>'
+        else:
+            html = '<span style="color:var(--color-danger)">✗ Already taken</span>'
+        return HTMLResponse(html)
+    return JSONResponse({"available": available})
