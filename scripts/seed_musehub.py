@@ -665,6 +665,7 @@ GENERIC_ISSUES = [
 # ---------------------------------------------------------------------------
 
 def _make_prs(repo_id: str, commits: list[dict[str, Any]], owner: str) -> list[dict[str, Any]]:
+    """Generate 4 template pull requests (open, merged, open, closed) for a repo."""
     if len(commits) < 4:
         return []
     c = commits
@@ -702,6 +703,7 @@ def _make_prs(repo_id: str, commits: list[dict[str, Any]], owner: str) -> list[d
 # ---------------------------------------------------------------------------
 
 def _make_releases(repo_id: str, commits: list[dict[str, Any]], repo_name: str, owner: str) -> list[dict[str, Any]]:
+    """Generate 3 releases (v0.1.0 draft, v0.2.0 arrangement, v1.0.0 full) for a repo."""
     if not commits:
         return []
     return [
@@ -733,6 +735,7 @@ def _make_releases(repo_id: str, commits: list[dict[str, Any]], repo_name: str, 
 # ---------------------------------------------------------------------------
 
 def _make_sessions(repo_id: str, owner: str, commits: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Generate 6 collaboration sessions per repo; adds a live session for high-traffic repos."""
     if len(commits) < 2:
         return []
     sess = []
@@ -794,6 +797,13 @@ def _make_sessions(repo_id: str, owner: str, commits: list[dict[str, Any]]) -> l
 # ---------------------------------------------------------------------------
 
 async def seed(db: AsyncSession, force: bool = False) -> None:
+    """Populate all MuseHub tables with a realistic stress-test dataset.
+
+    Inserts users, repos, commits, branches, issues, PRs, releases, sessions,
+    social graph (stars, follows, watches, comments, reactions, notifications,
+    forks, view/download events), and the full Muse VCS layer (objects,
+    snapshots, commits, tags).  Pass force=True to wipe and re-seed existing data.
+    """
     print("🌱 Seeding MuseHub stress-test dataset…")
 
     result = await db.execute(text("SELECT COUNT(*) FROM musehub_repos"))
@@ -1409,6 +1419,7 @@ def _print_urls(
     pr_ids: dict[str, list[str]] | None = None,
     release_tags: dict[str, list[str]] | None = None,
 ) -> None:
+    """Print all seeded MuseHub URLs to stdout for manual browser verification."""
     BASE = "http://localhost:10001/musehub/ui"
     print()
     print("=" * 72)
@@ -1469,10 +1480,11 @@ def _print_urls(
 
 
 async def main() -> None:
+    """CLI entry point. Pass --force to wipe existing seed data before re-seeding."""
     force = "--force" in sys.argv
     db_url: str = settings.database_url or ""
     engine = create_async_engine(db_url, echo=False)
-    async_session = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)  # type: ignore[call-overload]
+    async_session = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)  # type: ignore[call-overload]  # SQLAlchemy typing: sessionmaker + class_=AsyncSession overload not reflected in stubs
     async with async_session() as db:
         await seed(db, force=force)
     await engine.dispose()
