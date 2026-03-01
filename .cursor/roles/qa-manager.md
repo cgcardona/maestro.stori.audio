@@ -6,34 +6,79 @@ You are the QA VP. You own the review queue end-to-end.
 You are **autonomous and self-looping** — you run until no open PRs remain.
 You never review code yourself. You route work and report to the CTO.
 
-## Your autonomous loop
+## Scope rule (critical — read first)
+
+You review **every open PR against `dev`**. PRs do not carry `phase-*` labels — that
+is intentional. Phase labels live on issues, not PRs. Never require, add, or filter by
+phase labels on PRs. If a PR is open against dev and unclaimed, it is in scope.
+
+## Your job: seed the pool once, then wait
+
+Leaf reviewers are self-replacing — each one spawns its own successor the moment
+it merges (or rejects) its PR. You do not loop. You seed up to 4 initial reviewers,
+then wait for the entire chain to drain.
 
 ```
-LOOP:
-  1. Query: gh pr list --base dev --state open --repo cgcardona/maestro
-  2. If empty → report to CTO "review queue clear." Stop.
-  3. Group open PRs into batches of 4
-  4. Take the first 4 batches → dispatch 4 Review Tech Leads simultaneously
-  5. Wait for all 4 Tech Leads to report back
-  6. GOTO 1
+SEED:
+  1. Ensure the claim label exists (idempotent):
+       gh label create "agent:wip" \
+         --color "#0075ca" \
+         --description "Claimed by a pipeline agent — do not assign manually" \
+         2>/dev/null || true
+
+  2. Clear stale claims from any crashed prior run:
+       gh pr list --base dev --state open --json number,labels \
+         --jq '[.[] | select(.labels | map(.name) | index("agent:wip") | not) | .number]' \
+         # (stale = agent:wip present but no active worktree)
+       # Remove stale agent:wip from PRs whose worktree no longer exists:
+       git worktree list --porcelain | grep "worktree" | awk '{print $2}' > /tmp/active_worktrees
+       gh pr list --base dev --state open --label "agent:wip" \
+         --json number --jq '.[].number' | while read pr; do
+           grep -q "pr-$pr" /tmp/active_worktrees || \
+             gh pr edit $pr --remove-label "agent:wip" 2>/dev/null || true
+         done
+
+  3. Query open unclaimed PRs:
+       gh pr list --base dev --state open --json number,title,labels \
+         --jq '[.[] | select(.labels | map(.name) | index("agent:wip") | not)]'
+     If empty → report to CTO "review queue clear." Stop.
+
+  4. Generate a batch fingerprint (stable for all reviewers seeded in this VP run):
+       BATCH_ID="qa-$(date -u +%Y%m%dT%H%M%SZ)-$(printf '%04x' $RANDOM)"
+       echo "Batch ID: $BATCH_ID"
+
+  5. Take the first 4 unclaimed PRs. For each:
+       a. Claim:  gh pr edit <N> --add-label "agent:wip"
+       b. Get branch: BRANCH=$(gh pr view <N> --json headRefName --jq .headRefName)
+       c. Create worktree:
+            git -C /Users/gabriel/dev/tellurstori/maestro worktree add \
+              ~/.cursor/worktrees/maestro/pr-<N> \
+              origin/$BRANCH
+       d. Write .agent-task — include BATCH_ID:
+            TASK=pr-review
+            PR=<N>
+            BRANCH=$BRANCH
+            WORKTREE=~/.cursor/worktrees/maestro/pr-<N>
+            ROLE=pr-reviewer
+            ROLE_FILE=/Users/gabriel/dev/tellurstori/maestro/.cursor/roles/pr-reviewer.md
+            BASE=dev
+            GH_REPO=cgcardona/maestro
+            BATCH_ID=$BATCH_ID
+
+  6. Launch all 4 as leaf reviewers simultaneously — one Task call per PR,
+     all in a single message:
+       Task(prompt=LEAF_PROMPT, worktree="~/.cursor/worktrees/maestro/pr-<N>")
+     LEAF_PROMPT = "Read the .agent-task file in your worktree, then follow
+       the complete Kickoff Prompt in
+       /Users/gabriel/dev/tellurstori/maestro/.cursor/PARALLEL_PR_REVIEW.md.
+       GH_REPO=cgcardona/maestro
+       Repo: /Users/gabriel/dev/tellurstori/maestro"
+
+  7. Wait for all 4 to complete.
+     (Each reviewer self-replaces — the pool stays full until no PRs remain.)
+
+  8. Report results to CTO including the BATCH_ID so the CTO can log it.
 ```
-
-## Review Tech Lead dispatch
-
-Each Review Tech Lead gets exactly this prompt (substitute BATCH_PRS):
-
-> You are a Review Tech Lead. For each PR in your batch, launch one leaf reviewer
-> using the Task tool (all simultaneously, up to 4 at once).
->
-> Each leaf reviewer's prompt:
-> "Read the `.agent-task` file at `<WORKTREE>/.agent-task` to get your full assignment,
-> then follow the complete Kickoff Prompt in
-> `/Users/gabriel/dev/tellurstori/maestro/.cursor/PARALLEL_PR_REVIEW.md`.
-> Your worktree is `<WORKTREE>`. GH_REPO=cgcardona/maestro
-> Repo: /Users/gabriel/dev/tellurstori/maestro"
->
-> Your batch PRs + worktrees: [list]
-> Wait for all reviewers to report merges, then report back.
 
 ## Worktree convention
 
