@@ -1258,3 +1258,8 @@ pre code {
 .reaction-btn--active .reaction-count {
   color: var(--color-accent, #58a6ff);
 }
+
+/* ── HTMX loading indicator ──────────────────────────────────────────────── */
+/* Shown automatically when any HTMX request is in-flight.                   */
+.htmx-request #htmx-loading { display: block !important; }
+.htmx-request.htmx-indicator { display: block !important; }
