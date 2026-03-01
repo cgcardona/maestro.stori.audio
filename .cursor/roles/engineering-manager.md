@@ -20,14 +20,23 @@ SEED:
          --description "Claimed by a pipeline agent — do not assign manually" \
          2>/dev/null || true
 
-  2. Clear stale claims from any crashed prior run:
-       gh issue list --state open --label "agent:wip" \
-         --json number --jq '.[].number' | \
-         xargs -r -I{} gh issue edit {} --remove-label "agent:wip"
+  2. Clear stale claims — ONLY for issues with no active worktree:
+       # A claim is "stale" only if the worktree is missing (crashed run).
+       # If the worktree exists, the claim is ACTIVE — do NOT touch it.
+       for NUM in $(gh issue list --state open --label "agent:wip" \
+           --repo cgcardona/maestro --json number --jq '.[].number'); do
+         WORKTREE="/Users/gabriel/.cursor/worktrees/maestro/issue-$NUM"
+         if [ ! -d "$WORKTREE" ]; then
+           echo "Clearing stale agent:wip from #$NUM (no worktree)"
+           gh issue edit $NUM --repo cgcardona/maestro --remove-label "agent:wip"
+         else
+           echo "Keeping agent:wip on #$NUM (active worktree exists)"
+         fi
+       done
 
   3. Query open unclaimed issues — ACTIVE_LABEL only (passed by CTO in your dispatch prompt):
-       # ACTIVE_LABEL is the single htmx/* label the CTO assigned to you (e.g. htmx/0-foundation).
-       # NEVER query all htmx/* labels — you are scoped to exactly one label per VP run.
+       # ACTIVE_LABEL is the single agentception/* label the CTO assigned to you (e.g. agentception/0-scaffold).
+       # NEVER query all agentception/* labels — you are scoped to exactly one label per VP run.
        # This prevents you from accidentally claiming issues from a later phase.
        ACTIVE_LABEL="<from CTO dispatch prompt>"
        gh issue list --state open --repo cgcardona/maestro --label "$ACTIVE_LABEL" \
@@ -95,6 +104,7 @@ Worktrees live at: `/Users/gabriel/.cursor/worktrees/maestro/issue-{N}/`
 ```
 TASK=issue-to-pr
 ISSUE_NUMBER=<N>
+ISSUE_LABEL=<primary agentception/* or maestro/* label from gh issue view>
 BRANCH=feat/issue-<N>
 WORKTREE=/Users/gabriel/.cursor/worktrees/maestro/issue-<N>
 ROLE=python-developer
@@ -104,6 +114,8 @@ GH_REPO=cgcardona/maestro
 CLOSES_ISSUES=<N>
 BATCH_ID=<BATCH_ID>
 ```
+
+`ISSUE_LABEL` is the primary scoping label (e.g. `agentception/0-scaffold`). Leaf agents use it to route mypy and tests to the correct codebase container — never cross-run agentception checks on maestro or vice versa.
 
 If a worktree is missing: `git worktree add -b feat/issue-{N} ~/.cursor/worktrees/maestro/issue-{N} origin/dev`
 
