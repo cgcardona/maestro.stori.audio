@@ -285,6 +285,8 @@ def upgrade() -> None:
         sa.Column("key_signature", sa.String(50), nullable=True),
         sa.Column("tempo_bpm", sa.Integer(), nullable=True),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP")),
+        # Soft-delete timestamp; non-null means the repo is logically deleted
+        sa.Column("deleted_at", sa.DateTime(timezone=True), nullable=True),
         sa.PrimaryKeyConstraint("repo_id"),
         sa.UniqueConstraint("owner", "slug", name="uq_musehub_repos_owner_slug"),
     )

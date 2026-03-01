@@ -197,14 +197,14 @@ class RepoResponse(CamelModel):
     created_at: datetime = Field(..., description="Repo creation timestamp (ISO-8601 UTC)")
 
 
-<<<<<<< HEAD
 class TransferOwnershipRequest(CamelModel):
     """Request body for transferring repo ownership to another user."""
 
     new_owner_user_id: str = Field(
         ..., description="User ID of the new repo owner", examples=["a1b2c3d4-e5f6-7890-abcd-ef1234567890"]
     )
-=======
+
+
 class RepoListResponse(CamelModel):
     """Paginated list of repos for the authenticated user.
 
@@ -216,7 +216,6 @@ class RepoListResponse(CamelModel):
     repos: list[RepoResponse] = Field(..., description="Repos on this page (up to 20)")
     next_cursor: str | None = Field(None, description="Pagination cursor — pass as ?cursor= to get the next page")
     total: int = Field(..., description="Total number of repos across all pages")
->>>>>>> origin/dev
 
 
 class BranchResponse(CamelModel):

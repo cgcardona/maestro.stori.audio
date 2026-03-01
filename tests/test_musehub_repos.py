@@ -1829,16 +1829,11 @@ async def test_patch_repo_settings_returns_403_for_non_admin(
 
 
 # ---------------------------------------------------------------------------
-<<<<<<< HEAD
-# DELETE /repos/{repo_id}  — soft-delete (issue #416)
-=======
-# Wizard creation endpoint — issue #434
->>>>>>> origin/dev
+# DELETE /repos/{repo_id} — soft-delete (issue #416)
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.anyio
-<<<<<<< HEAD
 async def test_delete_repo_returns_204(
     client: AsyncClient,
     auth_headers: dict[str, str],
@@ -2016,7 +2011,15 @@ async def test_transfer_repo_requires_auth(
         f"/api/v1/musehub/repos/{repo.repo_id}/transfer",
         json={"newOwnerUserId": "new-user-id"},
     )
-=======
+    assert resp.status_code == 401
+
+
+# ---------------------------------------------------------------------------
+# Wizard creation endpoint — issue #434
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.anyio
 async def test_create_repo_wizard_initialize_creates_branch_and_commit(
     client: AsyncClient,
     auth_headers: dict[str, str],
@@ -2267,12 +2270,10 @@ async def test_list_my_repos_returns_owned_repos(
 async def test_list_my_repos_requires_auth(client: AsyncClient) -> None:
     """GET /repos returns 401 without a Bearer token."""
     resp = await client.get("/api/v1/musehub/repos")
->>>>>>> origin/dev
     assert resp.status_code == 401
 
 
 @pytest.mark.anyio
-<<<<<<< HEAD
 async def test_transfer_repo_returns_403_for_non_owner(
     client: AsyncClient,
     db_session: AsyncSession,
@@ -2348,7 +2349,14 @@ async def test_transfer_repo_service_returns_none_for_unknown(
         db_session, "does-not-exist", "new-owner"
     )
     assert result is None
-=======
+
+
+# ---------------------------------------------------------------------------
+# GET /repos — list repos for authenticated user
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.anyio
 async def test_list_my_repos_total_matches_count(
     client: AsyncClient,
     auth_headers: dict[str, str],
@@ -2443,4 +2451,3 @@ async def test_list_my_repos_service_direct(db_session: AsyncSession) -> None:
     repo_ids = {r.repo_id for r in result.repos}
     assert str(repo_mine.repo_id) in repo_ids
     assert str(repo_other.repo_id) not in repo_ids
->>>>>>> origin/dev
