@@ -53,21 +53,23 @@ LOOP:
   2. If ISSUES == 0 AND PRS == 0 → report completion. Stop.
      If ISSUES == 0 AND PRS > 0 → dispatch QA VPs only (drain remaining reviews).
 
-  3. Allocate VP slots dynamically (VP_BUDGET = 4 total):
+  3. Allocate VP slots — always exactly 1 Eng VP, 1 QA VP max:
 
        ┌────────────────────────────────┬──────────┬─────────┐
        │ Condition                      │ Eng VPs  │  QA VPs │
        ├────────────────────────────────┼──────────┼─────────┤
-       │ ISSUES == 0                    │    0     │    4    │  ← pure review backlog
-       │ PRS == 0                       │    4     │    0    │  ← pure implementation
-       │ ISSUES >= PRS × 3              │    3     │    1    │  ← engineering heavy
-       │ PRS >= ISSUES × 3              │    1     │    3    │  ← review heavy
-       │ otherwise                      │    2     │    2    │  ← balanced
+       │ ISSUES == 0                    │    0     │    1    │  ← drain remaining reviews
+       │ PRS == 0                       │    1     │    0    │  ← pure implementation
+       │ otherwise                      │    1     │    1    │  ← balanced
        └────────────────────────────────┴──────────┴─────────┘
 
-     ⚠️  ACTIVE_LABEL GATE: Engineering VPs ONLY work on ACTIVE_LABEL issues.
-     They MUST NOT claim issues from any other htmx/* label, even if those issues
-     have no unmet dependencies. The label ordering is the sequencing contract.
+     ⚠️  ALWAYS 1 ENG VP, NEVER MORE: One VP seeds up to 4 engineers and the
+     chain self-replaces. Multiple Eng VPs race to claim the same tickets and
+     cause stampedes — this has been proven to break the pipeline. Do not change
+     this to more than 1 Eng VP regardless of queue depth.
+
+     ⚠️  ACTIVE_LABEL GATE: The single Eng VP ONLY works on ACTIVE_LABEL issues.
+     It MUST NOT claim issues from any other htmx/* label.
 
   4. Dispatch all allocated VPs simultaneously in ONE message
      (one Task call per VP, all in the same response):
