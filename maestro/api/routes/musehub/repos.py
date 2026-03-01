@@ -37,7 +37,6 @@ from sqlalchemy import select
 from maestro.models.musehub import (
     ActivityFeedResponse,
     ArrangementMatrixResponse,
-    AudioTrackEntry,
     BranchDetailListResponse,
     BranchListResponse,
     CommitDiffDimensionScore,
@@ -978,32 +977,6 @@ async def get_groove_check(
     )
 
 
-_AUDIO_EXTENSIONS: frozenset[str] = frozenset({".mp3", ".ogg", ".wav", ".m4a", ".flac"})
-_IMAGE_EXTENSIONS: frozenset[str] = frozenset({".webp", ".png", ".jpg", ".jpeg"})
-_FULL_MIX_KEYWORDS: tuple[str, ...] = ("mix", "full", "master", "bounce")
-
-
-def _is_audio(path: str) -> bool:
-    """Return True when the path extension is a recognised audio format."""
-    import os
-    return os.path.splitext(path)[1].lower() in _AUDIO_EXTENSIONS
-
-
-def _piano_roll_url(path: str, object_map: dict[str, str], repo_id: str) -> str | None:
-    """Return an absolute content URL for a matching piano-roll image, or None.
-
-    Looks for a .webp file whose basename (without extension) matches the
-    audio file's basename — a naming convention produced by the Stori DAW.
-    """
-    import os
-    stem = os.path.splitext(os.path.basename(path))[0]
-    for obj_path, obj_id in object_map.items():
-        ext = os.path.splitext(obj_path)[1].lower()
-        if ext in _IMAGE_EXTENSIONS and os.path.splitext(os.path.basename(obj_path))[0] == stem:
-            return f"/api/v1/musehub/repos/{repo_id}/objects/{obj_id}/content"
-    return None
-
-
 @router.get(
     "/repos/{repo_id}/listen/{ref}/tracks",
     response_model=TrackListingResponse,
@@ -1019,68 +992,19 @@ async def list_listen_tracks(
 ) -> TrackListingResponse:
     """Return the full-mix and per-stem track listing for the listen page.
 
-    Scans all stored objects for the repo and filters to audio files, sorting
-    them by path.  The ``full_mix_url`` field is populated from the first file
-    whose basename contains a mix/master keyword; when no such file exists the
-    first audio file is used as the full-mix candidate.
+    Thin wrapper around ``musehub_listen.build_track_listing``.  Auth/visibility
+    is enforced here before delegating scanning logic to the service.
 
     Returns 404 if the repo does not exist or is not accessible.
     The ``has_renders`` flag distinguishes repos with no audio from repos that
     have audio but no recognised full-mix file.
     """
-    import os
+    from maestro.services import musehub_listen
 
     repo = await musehub_repository.get_repo(db, repo_id)
     _guard_visibility(repo, claims)
 
-    objects = await musehub_repository.list_objects(db, repo_id)
-
-    object_map: dict[str, str] = {obj.path: obj.object_id for obj in objects}
-
-    audio_objects = sorted(
-        [obj for obj in objects if _is_audio(obj.path)],
-        key=lambda o: o.path,
-    )
-
-    if not audio_objects:
-        return TrackListingResponse(
-            repo_id=repo_id,
-            ref=ref,
-            full_mix_url=None,
-            tracks=[],
-            has_renders=False,
-        )
-
-    def _audio_url(object_id: str) -> str:
-        return f"/api/v1/musehub/repos/{repo_id}/objects/{object_id}/content"
-
-    full_mix_obj = next(
-        (
-            o for o in audio_objects
-            if any(kw in os.path.basename(o.path).lower() for kw in _FULL_MIX_KEYWORDS)
-        ),
-        audio_objects[0],
-    )
-
-    tracks = [
-        AudioTrackEntry(
-            name=os.path.splitext(os.path.basename(obj.path))[0],
-            path=obj.path,
-            object_id=obj.object_id,
-            audio_url=_audio_url(obj.object_id),
-            piano_roll_url=_piano_roll_url(obj.path, object_map, repo_id),
-            size_bytes=obj.size_bytes,
-        )
-        for obj in audio_objects
-    ]
-
-    return TrackListingResponse(
-        repo_id=repo_id,
-        ref=ref,
-        full_mix_url=_audio_url(full_mix_obj.object_id),
-        tracks=tracks,
-        has_renders=True,
-    )
+    return await musehub_listen.build_track_listing(db, repo_id, ref)
 
 
 def _derive_emotion_vector(commit_id: str) -> tuple[float, float, float, float]:

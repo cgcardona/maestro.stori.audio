@@ -771,58 +771,10 @@ async def listen_page(
     action rather than an empty list, so musicians know what to do next.
     No JWT required — the HTML shell's JS handles auth for private repos.
     """
+    from maestro.services import musehub_listen
+
     repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
-    objects = await musehub_repository.list_objects(db, repo_id)
-
-    import os
-
-    audio_exts: frozenset[str] = frozenset({".mp3", ".ogg", ".wav", ".m4a", ".flac"})
-    audio_objects = sorted(
-        [obj for obj in objects if os.path.splitext(obj.path)[1].lower() in audio_exts],
-        key=lambda o: o.path,
-    )
-    has_renders = bool(audio_objects)
-
-    mix_keywords = ("mix", "full", "master", "bounce")
-    full_mix_obj = None
-    if audio_objects:
-        full_mix_obj = next(
-            (o for o in audio_objects if any(kw in os.path.basename(o.path).lower() for kw in mix_keywords)),
-            audio_objects[0],
-        )
-
-    image_exts: frozenset[str] = frozenset({".webp", ".png", ".jpg", ".jpeg"})
-    object_map: dict[str, str] = {obj.path: obj.object_id for obj in objects}
-    api_base = f"/api/v1/musehub/repos/{repo_id}"
-
-    from maestro.models.musehub import AudioTrackEntry
-
-    tracks: list[AudioTrackEntry] = []
-    for obj in audio_objects:
-        stem = os.path.splitext(os.path.basename(obj.path))[0]
-        piano_roll_url: str | None = None
-        for p, oid in object_map.items():
-            if os.path.splitext(p)[1].lower() in image_exts and os.path.splitext(os.path.basename(p))[0] == stem:
-                piano_roll_url = f"{api_base}/objects/{oid}/content"
-                break
-        tracks.append(
-            AudioTrackEntry(
-                name=stem,
-                path=obj.path,
-                object_id=obj.object_id,
-                audio_url=f"{api_base}/objects/{obj.object_id}/content",
-                piano_roll_url=piano_roll_url,
-                size_bytes=obj.size_bytes,
-            )
-        )
-
-    json_data = TrackListingResponse(
-        repo_id=repo_id,
-        ref=ref,
-        full_mix_url=f"{api_base}/objects/{full_mix_obj.object_id}/content" if full_mix_obj else None,
-        tracks=tracks,
-        has_renders=has_renders,
-    )
+    json_data = await musehub_listen.build_track_listing(db, repo_id, ref)
 
     return await negotiate_response(
         request=request,
