@@ -51,19 +51,20 @@ SEED:
        a. Claim:  gh pr edit <N> --add-label "agent:wip"
        b. Get branch: BRANCH=$(gh pr view <N> --json headRefName --jq .headRefName)
        c. Create worktree:
-            git -C /Users/gabriel/dev/tellurstori/maestro worktree add \
-              ~/.cursor/worktrees/maestro/pr-<N> \
+            git -C "$HOME/dev/tellurstori/maestro" worktree add \
+              "$HOME/.cursor/worktrees/maestro/pr-<N>" \
               origin/$BRANCH
        d. Write .agent-task — include BATCH_ID:
             TASK=pr-review
             PR=<N>
             BRANCH=$BRANCH
-            WORKTREE=~/.cursor/worktrees/maestro/pr-<N>
+            WORKTREE=$HOME/.cursor/worktrees/maestro/pr-<N>
             ROLE=pr-reviewer
-            ROLE_FILE=/Users/gabriel/dev/tellurstori/maestro/.cursor/roles/pr-reviewer.md
+            ROLE_FILE=$HOME/dev/tellurstori/maestro/.cursor/roles/pr-reviewer.md
             BASE=dev
             GH_REPO=cgcardona/maestro
             BATCH_ID=$BATCH_ID
+            SPAWN_MODE=chain
 
   6. Launch all 4 as leaf reviewers simultaneously — one Task call per PR,
      all in a single message:
@@ -82,11 +83,11 @@ SEED:
 
 ## Worktree convention
 
-Worktrees live at: `/Users/gabriel/.cursor/worktrees/maestro/pr-{N}/`
+Worktrees live at: `$HOME/.cursor/worktrees/maestro/pr-{N}/`
 .agent-task files are pre-written in each worktree.
 If a worktree is missing for a new PR:
   `BRANCH=$(gh pr view {N} --json headRefName --jq '.headRefName')`
-  `git worktree add ~/.cursor/worktrees/maestro/pr-{N} origin/$BRANCH`
+  `git -C "$HOME/dev/tellurstori/maestro" worktree add "$HOME/.cursor/worktrees/maestro/pr-{N}" origin/$BRANCH`
   Then write a .agent-task file with TASK=pr-review, PR={N}, BRANCH=..., ROLE=..., etc.
 
 ## MERGE_AFTER protocol

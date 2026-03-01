@@ -863,7 +863,7 @@ PR=$MY_PR
 BRANCH=$MY_BRANCH
 WORKTREE=$REVIEW_WORKTREE
 ROLE=pr-reviewer
-ROLE_FILE=/Users/gabriel/dev/tellurstori/maestro/.cursor/roles/pr-reviewer.md
+ROLE_FILE=$HOME/dev/tellurstori/maestro/.cursor/roles/pr-reviewer.md
 BASE=dev
 GH_REPO=cgcardona/maestro
 BATCH_ID=${BATCH_ID:-none}
@@ -873,8 +873,8 @@ TASK
     echo "✅ Spawning QA reviewer for PR #$MY_PR (chain mode — reviewer will spawn next engineer)"
     # AGENT INSTRUCTION: call Task(prompt="Read the .agent-task file in your worktree,
     # then follow the complete Kickoff Prompt in
-    # /Users/gabriel/dev/tellurstori/maestro/.cursor/PARALLEL_PR_REVIEW.md.
-    # GH_REPO=cgcardona/maestro  Repo: /Users/gabriel/dev/tellurstori/maestro",
+    # $HOME/dev/tellurstori/maestro/.cursor/PARALLEL_PR_REVIEW.md.
+    # GH_REPO=cgcardona/maestro  Repo: $HOME/dev/tellurstori/maestro",
     # worktree="$REVIEW_WORKTREE")
   else
     echo "⚠️  Could not find open PR for branch $MY_BRANCH — skipping reviewer spawn."

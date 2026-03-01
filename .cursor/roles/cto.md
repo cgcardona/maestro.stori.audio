@@ -30,10 +30,12 @@ LOOP:
   1. Survey — determine the ACTIVE_LABEL and counts:
 
        # Labels are processed in strict order — NEVER skip ahead.
-       # Find the lowest-numbered htmx label that still has open issues.
+       # Find the lowest-numbered agentception label that still has open issues.
        ACTIVE_LABEL=""
-       for label in htmx/0-foundation htmx/1-independent htmx/2-main-ui \
-                    htmx/3-analysis htmx/4-canvas htmx/5-cleanup; do
+       for label in agentception/0-scaffold agentception/1-controls \
+                    agentception/2-telemetry agentception/3-roles \
+                    agentception/4-intelligence agentception/5-scaling \
+                    agentception/6-generalization; do
          COUNT=$(gh issue list --state open --repo cgcardona/maestro \
                    --label "$label" --json number --jq 'length')
          if [ "$COUNT" -gt 0 ]; then
@@ -69,7 +71,7 @@ LOOP:
      this to more than 1 Eng VP regardless of queue depth.
 
      ⚠️  ACTIVE_LABEL GATE: The single Eng VP ONLY works on ACTIVE_LABEL issues.
-     It MUST NOT claim issues from any other htmx/* label.
+     It MUST NOT claim issues from any other agentception/* label.
 
   4. Dispatch all allocated VPs simultaneously in ONE message
      (one Task call per VP, all in the same response):
@@ -91,11 +93,11 @@ LOOP:
 
 Pass each VP its role file path, a `CTO_WAVE` identifier, and the **ACTIVE_LABEL**:
 
-> Engineering VP prompt: "Read /Users/gabriel/dev/tellurstori/maestro/.cursor/roles/engineering-manager.md.
-> CTO_WAVE=<wave-N-timestamp>. ACTIVE_LABEL=<htmx/X-label>. Seed your pool and wait for it to drain.
-> You MUST only query and claim issues labeled exactly '<htmx/X-label>' — no other htmx/* labels."
+> Engineering VP prompt: "Read $HOME/dev/tellurstori/maestro/.cursor/roles/engineering-manager.md.
+> CTO_WAVE=<wave-N-timestamp>. ACTIVE_LABEL=<agentception/X-label>. Seed your pool and wait for it to drain.
+> You MUST only query and claim issues labeled exactly '<agentception/X-label>' — no other agentception/* labels."
 
-> QA VP prompt: "Read /Users/gabriel/dev/tellurstori/maestro/.cursor/roles/qa-manager.md.
+> QA VP prompt: "Read $HOME/dev/tellurstori/maestro/.cursor/roles/qa-manager.md.
 > CTO_WAVE=<wave-N-timestamp>. Seed your pool and wait for it to drain."
 
 ## Gating
@@ -105,11 +107,11 @@ CTO and VPs do not track dependencies. The canonical prompts handle it.
 
 ## Label scoping rules (critical)
 
-- **Issues:** only htmx-tagged issues are in scope. Filter every query:
-  `--jq '[.[] | select(.labels | map(.name) | any(startswith("htmx/")))]'`
-- **PRs:** ALL open PRs against `dev` are in scope — PRs never carry `htmx/*` labels.
-  Never add an htmx label to a PR. Never filter PRs by label.
-- The QA VP must NOT require htmx labels on PRs — it reviews every open PR, full stop.
+- **Issues:** only agentception-tagged issues are in scope. Filter every query:
+  `--jq '[.[] | select(.labels | map(.name) | any(startswith("agentception/")))]'`
+- **PRs:** ALL open PRs against `dev` are in scope — PRs never carry `agentception/*` labels.
+  Never add an agentception label to a PR. Never filter PRs by label.
+- The QA VP must NOT require agentception labels on PRs — it reviews every open PR, full stop.
 
 ## What you never do
 

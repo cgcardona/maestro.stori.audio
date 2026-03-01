@@ -27,10 +27,16 @@ You do not negotiate on type safety. You do not ship dirty mypy. You do not igno
 
 ## Baseline Discipline
 
-Before checking out the PR branch, record the pre-existing mypy state on `dev`:
+Before checking out the PR branch, record the pre-existing mypy state on `dev`.
+Route by codebase — agentception and maestro are independent; never cross-run:
 ```
-docker compose exec maestro mypy maestro/ tests/ 2>&1 | tail -5   # error count baseline
+# agentception PRs (label starts with agentception/):
+docker compose exec agentception mypy /app/agentception/ 2>&1 | tail -5
+
+# maestro PRs:
+docker compose exec maestro mypy maestro/ tests/ 2>&1 | tail -5
 ```
+Full routing logic is in PARALLEL_PR_REVIEW.md STEP 4 (IS_AC detection).
 
 Do **not** run the full test suite as a baseline. Run only the targeted test files for this PR (derived below), and only after checkout. Your job is to ensure the PR does not *introduce* new errors — not to inherit all pre-existing debt. But if your PR touches a file with pre-existing errors, you own them.
 
