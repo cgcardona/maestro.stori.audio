@@ -572,8 +572,20 @@ def upgrade() -> None:
         sa.Column("user_id", sa.String(36), nullable=False),
         # URL-friendly handle, e.g. "gabriel" → /musehub/ui/users/gabriel
         sa.Column("username", sa.String(64), nullable=False),
+        # Human-readable display name shown in profile header (e.g. "Johann Sebastian Bach")
+        sa.Column("display_name", sa.String(255), nullable=True),
         sa.Column("bio", sa.Text(), nullable=True),
         sa.Column("avatar_url", sa.String(2048), nullable=True),
+        # Physical or virtual location shown on profile card
+        sa.Column("location", sa.String(255), nullable=True),
+        # Personal website or project homepage URL
+        sa.Column("website_url", sa.String(2048), nullable=True),
+        # Twitter/X handle without the leading @
+        sa.Column("twitter_handle", sa.String(64), nullable=True),
+        # True for Public Domain and Creative Commons licensed archive artists
+        sa.Column("is_verified", sa.Boolean(), nullable=False, server_default="false"),
+        # CC attribution string, e.g. "Public Domain", "CC BY 4.0"; null = all rights reserved
+        sa.Column("cc_license", sa.String(50), nullable=True),
         # JSON list of repo_ids (up to 6) pinned by the user on their profile page
         sa.Column("pinned_repo_ids", sa.JSON(), nullable=False, server_default="[]"),
         sa.Column(
@@ -592,6 +604,7 @@ def upgrade() -> None:
         sa.UniqueConstraint("username", name="uq_musehub_profiles_username"),
     )
     op.create_index("ix_musehub_profiles_username", "musehub_profiles", ["username"])
+    op.create_index("ix_musehub_profiles_is_verified", "musehub_profiles", ["is_verified"])
 
     # ── Muse Hub — webhook subscriptions ─────────────────────────────────
     op.create_table(
@@ -1093,6 +1106,7 @@ def downgrade() -> None:
     op.drop_table("musehub_comments")
 
     # Muse Hub — profiles (no FK deps from other tables)
+    op.drop_index("ix_musehub_profiles_is_verified", table_name="musehub_profiles")
     op.drop_index("ix_musehub_profiles_username", table_name="musehub_profiles")
     op.drop_table("musehub_profiles")
 
