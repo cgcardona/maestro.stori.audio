@@ -374,8 +374,10 @@ STEP 3 — CHECKOUT & SYNC (only if STEP 2 shows the PR is open and unreviewed):
   #    docs/architecture/muse_vcs.md    Keep ALL ## sections from both sides, sort alpha.
   #    docs/reference/type_contracts.md Keep ALL entries from both sides.
   #
-  #    If git reports a conflict in any of these three files, see the
-  #    KNOWN-SAFE CONFLICT PLAYBOOK below. All three are mechanically resolvable.
+  #    ⚡ SHORTCUT: open .cursor/CONFLICT_RULES.md — every common conflict in this
+  #    repo has a one-line mechanical rule. Do NOT use sed/grep/hexdump loops.
+  #    maestro/api/routes/musehub/__init__.py NEVER conflicts (auto-discovery).
+  #    app.py, muse_vcs.md, type_contracts.md use union merge via .gitattributes.
 
   # 4. Merge the latest dev into this feature branch NOW
   git merge origin/dev
