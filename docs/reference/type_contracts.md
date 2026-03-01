@@ -2842,6 +2842,36 @@ with the active filter state.  Entries are sorted alphabetically by path.
 
 ---
 
+### `HarmonyAnalysisResponse` (`maestro/models/musehub_analysis.py`)
+
+Pydantic v2 model — dedicated harmonic analysis returned by
+`GET /api/v1/musehub/repos/{repo_id}/analysis/{ref}/harmony` (issue #414).
+Roman-numeral-centric view designed for agent tonal reasoning.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `key` | `str` | Full key label, e.g. `"C major"`, `"F# minor"` |
+| `mode` | `str` | Detected mode: `"major"`, `"minor"`, `"dorian"`, etc. |
+| `roman_numerals` | `list[RomanNumeralEvent]` | Chord events with beat, Roman symbol, root, quality, tonal function |
+| `cadences` | `list[CadenceEvent]` | Phrase-ending cadences with beat, type, from/to chord |
+| `modulations` | `list[HarmonyModulationEvent]` | Key-area changes with from/to key and pivot chord |
+| `harmonic_rhythm_bpm` | `float` | Rate of chord changes in chords per minute (≥ 0) |
+
+**Sub-types:**
+
+- `RomanNumeralEvent` — `beat`, `chord` (Roman numeral), `root` (pitch class), `quality`, `function`
+- `CadenceEvent` — `beat`, `type` (authentic/half/plagal/deceptive), `from_` (alias: `from`), `to`
+- `HarmonyModulationEvent` — `beat`, `from_key`, `to_key`, `pivot_chord`
+
+**Agent use case:** Query this endpoint before generating a continuation layer to discover
+tonal function (not just raw chord symbols), cadence positions (phrase boundaries), and
+modulations (tonal narrative). Use `key` + `romanNumerals[].function` to ensure generated
+voicings remain diatonic and cadence-aware.
+
+**See also:** `compute_harmony_analysis` in `maestro/services/musehub_analysis.py`.
+
+---
+
 ### `HarmonyResult` (`maestro/muse_cli/commands/harmony.py`)
 
 `TypedDict` — harmonic analysis for a single commit returned by `muse harmony`.

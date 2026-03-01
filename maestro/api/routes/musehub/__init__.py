@@ -42,6 +42,9 @@ router.include_router(releases.router, tags=["Releases"])
 router.include_router(sync.router, tags=["Sync"])
 router.include_router(objects.router, tags=["Objects"])
 router.include_router(search.router, tags=["Search"])
+# harmony_router is included before analysis.router so the specific
+# /analysis/{ref}/harmony path takes priority over the generic /{dimension} catch-all.
+router.include_router(analysis.harmony_router, tags=["Analysis"])
 router.include_router(analysis.router, tags=["Analysis"])
 router.include_router(webhooks.router, tags=["Webhooks"])
 router.include_router(social.router, tags=["Social"])
