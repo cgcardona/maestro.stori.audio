@@ -25,13 +25,29 @@ SEED:
          --json number --jq '.[].number' | \
          xargs -r -I{} gh issue edit {} --remove-label "agent:wip"
 
-  3. Query open unclaimed issues — phase-tagged only, never agent-identity/blockchain:
+  3. Query open unclaimed issues — htmx-tagged only (htmx/0-foundation, htmx/1-independent, etc.):
        gh issue list --state open --repo cgcardona/maestro --json number,title,labels \
          --jq '[.[] | select(
-                 (.labels | map(.name) | any(startswith("phase-"))) and
+                 (.labels | map(.name) | any(startswith("htmx/"))) and
                  (.labels | map(.name) | index("agent:wip") | not)
                )]'
      If empty → report to CTO "implementation queue clear." Stop.
+
+  3.5 Dependency gate — CRITICAL for htmx/0-foundation (sequential issues):
+     For each candidate issue, check if its dependencies are met before seeding.
+     Parse "Depends on #NNN" from the issue body. If any dep issue is still OPEN → skip.
+     Only seed issues whose dependency issues are all CLOSED (i.e. merged).
+     This ensures #553 waits for #552, #554 waits for #553, etc.
+       for NUM in <candidate numbers>; do
+         DEPS=$(gh issue view $NUM --repo cgcardona/maestro --json body \
+           --jq '.body' | grep -oE 'Depends on[^#]*#[0-9]+' | grep -oE '[0-9]+')
+         ALL_MET=true
+         for dep in $DEPS; do
+           STATE=$(gh issue view $dep --repo cgcardona/maestro --json state --jq '.state')
+           [ "$STATE" != "CLOSED" ] && ALL_MET=false && break
+         done
+         [ "$ALL_MET" = "true" ] && echo "SEED $NUM" || echo "SKIP $NUM (deps unmet)"
+       done
 
   4. Generate a batch fingerprint (stable for all agents seeded in this VP run):
        BATCH_ID="eng-$(date -u +%Y%m%dT%H%M%SZ)-$(printf '%04x' $RANDOM)"
