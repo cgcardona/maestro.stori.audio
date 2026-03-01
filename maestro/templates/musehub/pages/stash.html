@@ -1,0 +1,195 @@
+{% extends "musehub/base.html" %}
+
+{% block title %}Stash — {{ owner }}/{{ repo_slug }}{% endblock %}
+{% block breadcrumb %}
+  <a href="/musehub/ui/{{ owner }}">{{ owner }}</a> /
+  <a href="/musehub/ui/{{ owner }}/{{ repo_slug }}">{{ repo_slug }}</a> /
+  stash
+{% endblock %}
+{% block repo_nav %}{% include "musehub/partials/repo_nav.html" %}{% endblock %}
+
+{% block page_data %}
+const repoId = {{ repo_id | tojson }};
+const base   = {{ base_url | tojson }};
+{% endblock %}
+
+{% block page_script %}
+{% raw %}
+// ── State ──────────────────────────────────────────────────────────────────
+let stashEntries = [];
+let currentPage  = 1;
+const PAGE_SIZE  = 20;
+
+// ── Format helpers ─────────────────────────────────────────────────────────
+function stashRef(index) {
+  return 'stash@{' + index + '}';
+}
+
+// ── Confirm + perform stash action ─────────────────────────────────────────
+async function doStashAction(action, stashId, stashRef) {
+  const label = action === 'pop'   ? 'Pop (apply + delete)'
+              : action === 'apply' ? 'Apply (keep in stash)'
+              :                      'Drop (delete without applying)';
+  if (!confirm(label + ' ' + stashRef + '?\n\nThis action cannot be undone.')) return;
+
+  try {
+    const method = action === 'drop' ? 'DELETE' : 'POST';
+    const url    = action === 'drop'
+      ? '/api/v1/musehub/repos/' + encodeURIComponent(repoId) + '/stash/' + encodeURIComponent(stashId)
+      : '/api/v1/musehub/repos/' + encodeURIComponent(repoId) + '/stash/' + encodeURIComponent(stashId) + '/' + action;
+
+    const token = localStorage.getItem('maestro_token');
+    const resp  = await fetch(url, {
+      method,
+      headers: token ? { Authorization: 'Bearer ' + token } : {},
+    });
+
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({ detail: resp.statusText }));
+      alert('Error: ' + (err.detail || resp.statusText));
+      return;
+    }
+
+    // Refresh the stash list after a successful action
+    await load(currentPage);
+  } catch(e) {
+    alert('Error: ' + e.message);
+  }
+}
+
+// ── Render stash rows ──────────────────────────────────────────────────────
+function renderRows(entries, total) {
+  const container = document.getElementById('stash-rows');
+  if (!container) return;
+
+  if (entries.length === 0) {
+    container.innerHTML = `
+      <div class="empty-state">
+        <div class="empty-icon">&#128190;</div>
+        <p class="empty-title">No stash entries</p>
+        <p class="empty-desc">
+          Use <code>muse stash push</code> to save your working-tree changes
+          onto the stash stack.
+        </p>
+      </div>`;
+    return;
+  }
+
+  container.innerHTML = entries.map((entry, i) => {
+    const ref         = stashRef(i);
+    const branch      = escHtml(entry.branch || '—');
+    const message     = escHtml(entry.message || '(no message)');
+    const timestamp   = fmtDate(entry.createdAt || entry.created_at);
+    const entryCount  = Array.isArray(entry.entries) ? entry.entries.length : 0;
+    const stashId     = entry.id;
+
+    return `
+      <div class="pr-row" id="stash-${escHtml(stashId)}">
+        <div style="flex:1;min-width:0">
+          <div style="display:flex;align-items:center;gap:var(--space-2);flex-wrap:wrap">
+            <code style="background:var(--color-surface-2,#21262d);padding:2px 6px;
+                         border-radius:4px;font-size:12px;color:#f0883e">${escHtml(ref)}</code>
+            <span class="branch-pill">${branch}</span>
+            <span style="font-size:13px;color:#e6edf3">${message}</span>
+          </div>
+          <div style="font-size:12px;color:#8b949e;margin-top:4px;display:flex;gap:var(--space-3);flex-wrap:wrap">
+            <span>&#128337; ${timestamp}</span>
+            <span>&#128196; ${entryCount} file${entryCount !== 1 ? 's' : ''}</span>
+          </div>
+        </div>
+        <div style="display:flex;gap:var(--space-1);align-items:flex-start;flex-shrink:0">
+          <button class="btn btn-primary btn-sm"
+                  onclick="doStashAction('pop','${escHtml(stashId)}','${escHtml(ref)}')"
+                  title="Apply and delete this stash entry (muse stash pop)">
+            Pop
+          </button>
+          <button class="btn btn-secondary btn-sm"
+                  onclick="doStashAction('apply','${escHtml(stashId)}','${escHtml(ref)}')"
+                  title="Apply without deleting this stash entry (muse stash apply)">
+            Apply
+          </button>
+          <button class="btn btn-danger btn-sm"
+                  onclick="doStashAction('drop','${escHtml(stashId)}','${escHtml(ref)}')"
+                  title="Delete this stash entry without applying (muse stash drop)">
+            Drop
+          </button>
+        </div>
+      </div>`;
+  }).join('');
+}
+
+// ── Pagination controls ────────────────────────────────────────────────────
+function renderPagination(total, page) {
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const el = document.getElementById('pagination');
+  if (!el) return;
+
+  if (totalPages <= 1) { el.innerHTML = ''; return; }
+
+  const hasPrev = page > 1;
+  const hasNext = page < totalPages;
+
+  el.innerHTML = `
+    <div style="display:flex;align-items:center;gap:var(--space-2);justify-content:center;padding-top:var(--space-3)">
+      <button class="btn btn-secondary btn-sm" ${hasPrev ? '' : 'disabled'}
+              onclick="load(${page - 1})">&#8592; Newer</button>
+      <span style="font-size:13px;color:#8b949e">Page ${page} of ${totalPages}</span>
+      <button class="btn btn-secondary btn-sm" ${hasNext ? '' : 'disabled'}
+              onclick="load(${page + 1})">Older &#8594;</button>
+    </div>`;
+}
+
+// ── Main load ──────────────────────────────────────────────────────────────
+async function load(page) {
+  currentPage = page || 1;
+  initRepoNav(repoId);
+
+  try {
+    const data = await apiFetch(
+      '/repos/' + encodeURIComponent(repoId) + '/stash?page=' + currentPage + '&page_size=' + PAGE_SIZE
+    );
+
+    stashEntries = data.items || [];
+    const total  = data.total || 0;
+
+    document.getElementById('stash-count').textContent =
+      total + ' stash entr' + (total !== 1 ? 'ies' : 'y');
+
+    renderRows(stashEntries, total);
+    renderPagination(total, currentPage);
+
+  } catch(e) {
+    if (e.message !== 'auth')
+      document.getElementById('stash-rows').innerHTML =
+        '<p class="error">&#10005; ' + escHtml(e.message) + '</p>';
+  }
+}
+
+load(1);
+{% endraw %}
+{% endblock %}
+
+{% block content %}
+<div class="card">
+  <div style="display:flex;align-items:center;justify-content:space-between;
+              margin-bottom:var(--space-3);flex-wrap:wrap;gap:var(--space-2)">
+    <h1 style="margin:0">&#128190; Stash</h1>
+    <span id="stash-count" style="font-size:13px;color:#8b949e">Loading…</span>
+  </div>
+
+  <p style="font-size:13px;color:#8b949e;margin-bottom:var(--space-3)">
+    Saved working-tree snapshots — use
+    <code>muse stash push</code> to add,
+    <code>muse stash pop</code> to restore and delete,
+    <code>muse stash apply</code> to restore and keep, or
+    <code>muse stash drop</code> to discard.
+    Stash entries are private — only you can see your own stash.
+  </p>
+
+  <div id="stash-rows">
+    <p class="loading">Loading stash entries&#8230;</p>
+  </div>
+
+  <div id="pagination"></div>
+</div>
+{% endblock %}
