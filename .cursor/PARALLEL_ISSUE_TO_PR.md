@@ -451,14 +451,22 @@ STEP 2 — CHECK CANONICAL STATE BEFORE DOING ANY WORK:
   git ls-remote origin | grep -i "issue-<N>\|fix/.*<N>\|feat/.*<N>"
 
   Decision matrix — act on the FIRST match:
-  ┌──────────────────────────────────────────────────────────────────────┐
-  │ Issue is CLOSED       → STOP. Report closed state. Self-destruct.   │
-  │ Merged PR found       → Close the issue, report PR URL. Self-destruct.│
-  │ Open PR found         → STOP. Report the PR URL. Self-destruct.     │
-  │ Remote branch exists, │                                              │
-  │   no PR yet           → Checkout that branch, skip to STEP 4.      │
-  │ Nothing found         → Continue to STEP 3 (full implementation).   │
-  └──────────────────────────────────────────────────────────────────────┘
+  ┌──────────────────────────────────────────────────────────────────────────┐
+  │ Issue is CLOSED         → STOP. Report closed state. Self-destruct.     │
+  │ Merged PR found AND     │                                                │
+  │   issue is still OPEN   → PR was REVERTED. The issue needs to be        │
+  │                            re-implemented. Continue to STEP 3.          │
+  │                            (A human reopened the issue — that is the    │
+  │                            signal the revert happened. Never auto-close  │
+  │                            an issue that is currently OPEN, even if a   │
+  │                            merged PR exists.)                            │
+  │ Merged PR found AND     │                                                │
+  │   issue is CLOSED       → Work is done. Report PR URL. Self-destruct.   │
+  │ Open PR found           → STOP. Report the PR URL. Self-destruct.       │
+  │ Remote branch exists,   │                                                │
+  │   no PR yet             → Checkout that branch, skip to STEP 4.        │
+  │ Nothing found           → Continue to STEP 3 (full implementation).     │
+  └──────────────────────────────────────────────────────────────────────────┘
 
   Self-destruct when stopping early:
     WORKTREE=$(pwd)
@@ -466,12 +474,10 @@ STEP 2 — CHECK CANONICAL STATE BEFORE DOING ANY WORK:
     git worktree remove --force "$WORKTREE"
     git worktree prune
 
-  ⚠️  MERGED PR FOUND — mandatory close sequence (do not skip):
-    # The issue is still open but work is already merged. Close it before exiting.
-    gh issue close $N \
-      --comment "Closed — implemented and merged via PR #<PR_NUMBER>." \
-      --repo "$GH_REPO" || true
-    # Then self-destruct as normal.
+  ⚠️  MERGED PR + OPEN ISSUE = REVERT SCENARIO — never auto-close:
+    If gh pr list finds a merged PR but the issue is still OPEN, a human
+    explicitly reopened the issue after the PR was reverted. Your job is to
+    re-implement the work from scratch. Proceed to STEP 3. Do NOT close the issue.
 
 STEP 3 — IMPLEMENT (only if STEP 2 found nothing):
   Read and follow every step in .github/CREATE_PR_PROMPT.md exactly.
