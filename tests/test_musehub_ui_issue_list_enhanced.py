@@ -1,60 +1,81 @@
-"""Regression tests for the enhanced issue list page (issue #445).
+"""Tests for the SSR issue list page — reference HTMX implementation (issue #555).
 
-Covers five feature areas added to issue_list.html:
+Covers server-side rendering, HTMX fragment responses, filters, tabs, and
+pagination.  All assertions target Jinja2-rendered content in the HTML
+response body, not JavaScript function definitions.
 
-Filter sidebar
-- test_issue_list_page_returns_200                  — page renders without auth
-- test_issue_list_no_auth_required                  — GET needs no JWT
-- test_issue_list_unknown_repo_404                  — unknown owner/slug → 404
-- test_issue_list_filter_sidebar_present            — filter-sidebar element present
-- test_issue_list_label_chip_container_present      — label-chip-container element present
-- test_issue_list_filter_milestone_select_present   — filter-milestone <select> present
-- test_issue_list_filter_assignee_select_present    — filter-assignee <select> present
-- test_issue_list_filter_author_input_present       — filter-author <input> present
-- test_issue_list_sort_radio_group_present          — sort-radio-group element present
-- test_issue_list_sort_radio_buttons_present        — radio inputs with name="sort-radio" present
-- test_issue_list_clear_filters_btn_present         — clear-all-filters button present
-- test_issue_list_toggle_label_filter_js_present    — toggleLabelFilter() JS function present
-- test_issue_list_clear_all_filters_js_present      — clearAllFilters() JS function present
-- test_issue_list_apply_filters_js_present          — applyFilters() JS function present
+Test areas:
+  Basic rendering
+  - test_issue_list_page_returns_200
+  - test_issue_list_no_auth_required
+  - test_issue_list_unknown_repo_404
 
-Milestone progress sidebar
-- test_issue_list_milestone_progress_heading_present  — milestone-progress-heading element present
-- test_issue_list_milestone_progress_bar_css_present  — milestone-progress-bar-fill CSS present
-- test_issue_list_right_sidebar_present               — sidebar-right element present
-- test_issue_list_render_right_sidebar_js_present     — renderRightSidebar() JS function present
-- test_issue_list_milestone_progress_list_present     — milestone-progress-list element present
+  SSR content — issue data rendered on server
+  - test_issue_list_renders_issue_title_server_side
+  - test_issue_list_filter_form_has_hx_get
+  - test_issue_list_filter_form_has_hx_target
 
-Labels sidebar
-- test_issue_list_labels_summary_heading_present    — labels-summary-heading element present
-- test_issue_list_labels_summary_list_present       — labels-summary-list element present
-- test_issue_list_render_right_sidebar_label_js     — renderRightSidebar contains label sidebar logic
+  Open/closed tab counts
+  - test_issue_list_tab_open_has_hx_get
+  - test_issue_list_open_closed_counts_in_tabs
 
-Bulk actions toolbar
-- test_issue_list_bulk_toolbar_present              — bulk-toolbar element present
-- test_issue_list_bulk_count_present               — bulk-count element present
-- test_issue_list_bulk_label_select_present        — bulk-label-select element present
-- test_issue_list_bulk_milestone_select_present    — bulk-milestone-select element present
-- test_issue_list_bulk_close_button_present        — bulkClose() function present
-- test_issue_list_bulk_reopen_button_present       — bulkReopen() function present
-- test_issue_list_bulk_assign_label_js_present     — bulkAssignLabel() JS function present
-- test_issue_list_bulk_assign_milestone_js_present — bulkAssignMilestone() JS function present
-- test_issue_list_toggle_issue_select_js_present   — toggleIssueSelect() JS function present
-- test_issue_list_deselect_all_js_present          — deselectAll() JS function present
-- test_issue_list_issue_row_checkbox_js_present    — issue-row-check checkbox class present
-- test_issue_list_update_bulk_toolbar_js_present   — updateBulkToolbar() JS function present
+  State filter
+  - test_issue_list_state_filter_closed_shows_closed_only
 
-Issue template selector
-- test_issue_list_template_picker_present          — template-picker element present
-- test_issue_list_template_grid_present            — template-grid element present
-- test_issue_list_template_cards_present           — template-card elements present
-- test_issue_list_show_template_picker_js_present  — showTemplatePicker() JS function present
-- test_issue_list_select_template_js_present       — selectTemplate() JS function present
-- test_issue_list_issue_templates_const_present    — ISSUE_TEMPLATES constant defined
-- test_issue_list_new_issue_btn_calls_template     — new-issue-btn invokes showTemplatePicker
-- test_issue_list_templates_back_btn_present       — ← Templates back button present
-- test_issue_list_blank_template_defined           — blank template in ISSUE_TEMPLATES
-- test_issue_list_bug_template_defined             — bug template in ISSUE_TEMPLATES
+  Label filter
+  - test_issue_list_label_filter_narrows_issues
+
+  HTMX fragment
+  - test_issue_list_htmx_request_returns_fragment
+  - test_issue_list_fragment_contains_issue_title
+  - test_issue_list_fragment_empty_state_when_no_issues
+
+  Pagination
+  - test_issue_list_pagination_renders_next_link
+
+  Right sidebar
+  - test_issue_list_milestone_progress_in_right_sidebar
+  - test_issue_list_right_sidebar_present
+  - test_issue_list_milestone_progress_heading_present
+  - test_issue_list_milestone_progress_bar_css_present
+  - test_issue_list_milestone_progress_list_present
+  - test_issue_list_labels_summary_heading_present
+  - test_issue_list_labels_summary_list_present
+
+  Filter sidebar
+  - test_issue_list_filter_sidebar_present
+  - test_issue_list_label_chip_container_present
+  - test_issue_list_filter_milestone_select_present
+  - test_issue_list_filter_assignee_select_present
+  - test_issue_list_filter_author_input_present
+  - test_issue_list_sort_radio_group_present
+  - test_issue_list_sort_radio_buttons_present
+
+  Template selector / new-issue flow (minimal JS)
+  - test_issue_list_template_picker_present
+  - test_issue_list_template_grid_present
+  - test_issue_list_template_cards_present
+  - test_issue_list_show_template_picker_js_present
+  - test_issue_list_select_template_js_present
+  - test_issue_list_issue_templates_const_present
+  - test_issue_list_new_issue_btn_calls_template
+  - test_issue_list_templates_back_btn_present
+  - test_issue_list_blank_template_defined
+  - test_issue_list_bug_template_defined
+
+  Bulk toolbar structure
+  - test_issue_list_bulk_toolbar_present
+  - test_issue_list_bulk_count_present
+  - test_issue_list_bulk_label_select_present
+  - test_issue_list_bulk_milestone_select_present
+  - test_issue_list_issue_row_checkbox_present
+  - test_issue_list_toggle_issue_select_js_present
+  - test_issue_list_deselect_all_js_present
+  - test_issue_list_update_bulk_toolbar_js_present
+  - test_issue_list_bulk_close_js_present
+  - test_issue_list_bulk_reopen_js_present
+  - test_issue_list_bulk_assign_label_js_present
+  - test_issue_list_bulk_assign_milestone_js_present
 """
 from __future__ import annotations
 
@@ -140,9 +161,14 @@ async def _make_milestone(
     return ms
 
 
-async def _get_page(client: AsyncClient, owner: str = "beatmaker", slug: str = "grooves") -> str:
+async def _get_page(
+    client: AsyncClient,
+    owner: str = "beatmaker",
+    slug: str = "grooves",
+    **params: str,
+) -> str:
     """Fetch the issue list page and return its text body."""
-    resp = await client.get(f"/musehub/ui/{owner}/{slug}/issues")
+    resp = await client.get(f"/musehub/ui/{owner}/{slug}/issues", params=params)
     assert resp.status_code == 200
     return resp.text
 
@@ -186,7 +212,271 @@ async def test_issue_list_unknown_repo_404(
 
 
 # ---------------------------------------------------------------------------
-# Filter sidebar
+# SSR content — issue data is rendered server-side
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.anyio
+async def test_issue_list_renders_issue_title_server_side(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Seeded issue title appears in SSR HTML without JS execution."""
+    repo_id = await _make_repo(db_session)
+    await _make_issue(db_session, repo_id, title="Kick drum too punchy")
+    body = await _get_page(client)
+    assert "Kick drum too punchy" in body
+
+
+@pytest.mark.anyio
+async def test_issue_list_filter_form_has_hx_get(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Filter form carries hx-get attribute for HTMX partial updates."""
+    await _make_repo(db_session)
+    body = await _get_page(client)
+    assert "hx-get" in body
+
+
+@pytest.mark.anyio
+async def test_issue_list_filter_form_has_hx_target(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Filter form targets #issue-rows for HTMX swaps."""
+    await _make_repo(db_session)
+    body = await _get_page(client)
+    assert 'hx-target="#issue-rows"' in body or "hx-target='#issue-rows'" in body
+
+
+# ---------------------------------------------------------------------------
+# Open/closed tab counts
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.anyio
+async def test_issue_list_tab_open_has_hx_get(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Open tab link carries hx-get for HTMX navigation."""
+    await _make_repo(db_session)
+    body = await _get_page(client)
+    assert "tab-open" in body
+    assert "hx-get" in body
+
+
+@pytest.mark.anyio
+async def test_issue_list_open_closed_counts_in_tabs(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Tab badges reflect the actual open and closed issue counts from the DB."""
+    repo_id = await _make_repo(db_session)
+    for i in range(3):
+        await _make_issue(db_session, repo_id, number=i + 1, state="open")
+    for i in range(2):
+        await _make_issue(db_session, repo_id, number=i + 4, state="closed")
+    body = await _get_page(client)
+    assert ">3<" in body or ">3 <" in body or "3</span>" in body
+    assert ">2<" in body or ">2 <" in body or "2</span>" in body
+
+
+# ---------------------------------------------------------------------------
+# State filter
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.anyio
+async def test_issue_list_state_filter_closed_shows_closed_only(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """?state=closed returns only closed issues in the rendered HTML."""
+    repo_id = await _make_repo(db_session)
+    await _make_issue(db_session, repo_id, number=1, title="Open issue", state="open")
+    await _make_issue(db_session, repo_id, number=2, title="Closed issue", state="closed")
+    body = await _get_page(client, state="closed")
+    assert "Closed issue" in body
+    assert "Open issue" not in body
+
+
+# ---------------------------------------------------------------------------
+# Label filter
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.anyio
+async def test_issue_list_label_filter_narrows_issues(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """?label=bug returns only issues labelled 'bug'."""
+    repo_id = await _make_repo(db_session)
+    await _make_issue(db_session, repo_id, number=1, title="Bug: kick too loud", labels=["bug"])
+    await _make_issue(db_session, repo_id, number=2, title="Feature: add reverb", labels=["feature"])
+    body = await _get_page(client, label="bug")
+    assert "Bug: kick too loud" in body
+    assert "Feature: add reverb" not in body
+
+
+# ---------------------------------------------------------------------------
+# HTMX fragment
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.anyio
+async def test_issue_list_htmx_request_returns_fragment(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """HX-Request: true returns a bare fragment — no <html> wrapper."""
+    await _make_repo(db_session)
+    resp = await client.get(
+        "/musehub/ui/beatmaker/grooves/issues",
+        headers={"HX-Request": "true"},
+    )
+    assert resp.status_code == 200
+    assert "<html" not in resp.text
+
+
+@pytest.mark.anyio
+async def test_issue_list_fragment_contains_issue_title(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """HTMX fragment contains the seeded issue title."""
+    repo_id = await _make_repo(db_session)
+    await _make_issue(db_session, repo_id, title="Synth pad too bright")
+    resp = await client.get(
+        "/musehub/ui/beatmaker/grooves/issues",
+        headers={"HX-Request": "true"},
+    )
+    assert resp.status_code == 200
+    assert "Synth pad too bright" in resp.text
+
+
+@pytest.mark.anyio
+async def test_issue_list_fragment_empty_state_when_no_issues(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Fragment returns an empty-state message when no issues match filters."""
+    repo_id = await _make_repo(db_session)
+    await _make_issue(db_session, repo_id, number=1, title="Open issue", state="open")
+    resp = await client.get(
+        "/musehub/ui/beatmaker/grooves/issues",
+        params={"state": "closed"},
+        headers={"HX-Request": "true"},
+    )
+    assert resp.status_code == 200
+    assert "No issues" in resp.text or "no issues" in resp.text.lower()
+
+
+# ---------------------------------------------------------------------------
+# Pagination
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.anyio
+async def test_issue_list_pagination_renders_next_link(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """When total issues exceed per_page, a Next pagination link appears."""
+    repo_id = await _make_repo(db_session)
+    for i in range(30):
+        await _make_issue(db_session, repo_id, number=i + 1, state="open")
+    body = await _get_page(client, per_page="25")
+    assert "Next" in body or "next" in body.lower()
+
+
+# ---------------------------------------------------------------------------
+# Right sidebar
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.anyio
+async def test_issue_list_milestone_progress_in_right_sidebar(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Seeded milestone title appears in the right sidebar progress section."""
+    repo_id = await _make_repo(db_session)
+    await _make_milestone(db_session, repo_id, title="Album Release v1")
+    body = await _get_page(client)
+    assert "Album Release v1" in body
+
+
+@pytest.mark.anyio
+async def test_issue_list_right_sidebar_present(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """sidebar-right element is present in the SSR page."""
+    await _make_repo(db_session)
+    body = await _get_page(client)
+    assert "sidebar-right" in body
+
+
+@pytest.mark.anyio
+async def test_issue_list_milestone_progress_heading_present(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """milestone-progress-heading id is rendered server-side."""
+    await _make_repo(db_session)
+    body = await _get_page(client)
+    assert "milestone-progress-heading" in body
+
+
+@pytest.mark.anyio
+async def test_issue_list_milestone_progress_bar_css_present(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """milestone-progress-bar-fill CSS class is defined in the page."""
+    await _make_repo(db_session)
+    body = await _get_page(client)
+    assert "milestone-progress-bar-fill" in body
+
+
+@pytest.mark.anyio
+async def test_issue_list_milestone_progress_list_present(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """milestone-progress-list element id is present in the page."""
+    await _make_repo(db_session)
+    body = await _get_page(client)
+    assert "milestone-progress-list" in body
+
+
+@pytest.mark.anyio
+async def test_issue_list_labels_summary_heading_present(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """labels-summary-heading id is rendered server-side in the right sidebar."""
+    await _make_repo(db_session)
+    body = await _get_page(client)
+    assert "labels-summary-heading" in body
+
+
+@pytest.mark.anyio
+async def test_issue_list_labels_summary_list_present(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """labels-summary-list id is rendered server-side in the right sidebar."""
+    await _make_repo(db_session)
+    body = await _get_page(client)
+    assert "labels-summary-list" in body
+
+
+# ---------------------------------------------------------------------------
+# Filter sidebar elements
 # ---------------------------------------------------------------------------
 
 
@@ -195,7 +485,7 @@ async def test_issue_list_filter_sidebar_present(
     client: AsyncClient,
     db_session: AsyncSession,
 ) -> None:
-    """The filter-sidebar element is present in the page HTML."""
+    """filter-sidebar id is rendered server-side."""
     await _make_repo(db_session)
     body = await _get_page(client)
     assert "filter-sidebar" in body
@@ -206,7 +496,7 @@ async def test_issue_list_label_chip_container_present(
     client: AsyncClient,
     db_session: AsyncSession,
 ) -> None:
-    """label-chip-container element is rendered in the filter sidebar."""
+    """label-chip-container id is present in the filter sidebar."""
     await _make_repo(db_session)
     body = await _get_page(client)
     assert "label-chip-container" in body
@@ -261,157 +551,130 @@ async def test_issue_list_sort_radio_buttons_present(
     client: AsyncClient,
     db_session: AsyncSession,
 ) -> None:
-    """Radio inputs with name='sort-radio' are present."""
+    """Radio inputs with name='sort' are present (SSR-rendered)."""
     await _make_repo(db_session)
     body = await _get_page(client)
-    assert 'name="sort-radio"' in body or "name='sort-radio'" in body
-
-
-@pytest.mark.anyio
-async def test_issue_list_clear_filters_btn_present(
-    client: AsyncClient,
-    db_session: AsyncSession,
-) -> None:
-    """Clear all filters button is present."""
-    await _make_repo(db_session)
-    body = await _get_page(client)
-    assert "clearAllFilters" in body
-
-
-@pytest.mark.anyio
-async def test_issue_list_toggle_label_filter_js_present(
-    client: AsyncClient,
-    db_session: AsyncSession,
-) -> None:
-    """toggleLabelFilter() JS function is defined in the page."""
-    await _make_repo(db_session)
-    body = await _get_page(client)
-    assert "toggleLabelFilter" in body
-
-
-@pytest.mark.anyio
-async def test_issue_list_clear_all_filters_js_present(
-    client: AsyncClient,
-    db_session: AsyncSession,
-) -> None:
-    """clearAllFilters() JS function is defined in the page."""
-    await _make_repo(db_session)
-    body = await _get_page(client)
-    assert "clearAllFilters" in body
-
-
-@pytest.mark.anyio
-async def test_issue_list_apply_filters_js_present(
-    client: AsyncClient,
-    db_session: AsyncSession,
-) -> None:
-    """applyFilters() JS function is defined in the page."""
-    await _make_repo(db_session)
-    body = await _get_page(client)
-    assert "applyFilters" in body
+    assert 'name="sort"' in body or "name='sort'" in body
 
 
 # ---------------------------------------------------------------------------
-# Milestone progress sidebar
+# Template selector / new-issue flow (minimal JS retained)
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.anyio
-async def test_issue_list_milestone_progress_heading_present(
+async def test_issue_list_template_picker_present(
     client: AsyncClient,
     db_session: AsyncSession,
 ) -> None:
-    """milestone-progress-heading element is present."""
+    """template-picker element is present in the page HTML."""
     await _make_repo(db_session)
     body = await _get_page(client)
-    assert "milestone-progress-heading" in body
+    assert "template-picker" in body
 
 
 @pytest.mark.anyio
-async def test_issue_list_milestone_progress_bar_css_present(
+async def test_issue_list_template_grid_present(
     client: AsyncClient,
     db_session: AsyncSession,
 ) -> None:
-    """milestone-progress-bar-fill CSS class is defined in the page."""
+    """template-grid element is rendered server-side."""
     await _make_repo(db_session)
     body = await _get_page(client)
-    assert "milestone-progress-bar-fill" in body
+    assert "template-grid" in body
 
 
 @pytest.mark.anyio
-async def test_issue_list_right_sidebar_present(
+async def test_issue_list_template_cards_present(
     client: AsyncClient,
     db_session: AsyncSession,
 ) -> None:
-    """sidebar-right element is present in the page HTML."""
+    """template-card class is present (SSR-rendered template cards)."""
     await _make_repo(db_session)
     body = await _get_page(client)
-    assert "sidebar-right" in body
+    assert "template-card" in body
 
 
 @pytest.mark.anyio
-async def test_issue_list_render_right_sidebar_js_present(
+async def test_issue_list_show_template_picker_js_present(
     client: AsyncClient,
     db_session: AsyncSession,
 ) -> None:
-    """renderRightSidebar() JS function is defined in the page."""
+    """showTemplatePicker() JS function is present in the page."""
     await _make_repo(db_session)
     body = await _get_page(client)
-    assert "renderRightSidebar" in body
+    assert "showTemplatePicker" in body
 
 
 @pytest.mark.anyio
-async def test_issue_list_milestone_progress_list_present(
+async def test_issue_list_select_template_js_present(
     client: AsyncClient,
     db_session: AsyncSession,
 ) -> None:
-    """milestone-progress-list element is present in the page HTML."""
+    """selectTemplate() JS function is present in the page."""
     await _make_repo(db_session)
     body = await _get_page(client)
-    assert "milestone-progress-list" in body
+    assert "selectTemplate" in body
+
+
+@pytest.mark.anyio
+async def test_issue_list_issue_templates_const_present(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """ISSUE_TEMPLATES constant is present in the page JS."""
+    await _make_repo(db_session)
+    body = await _get_page(client)
+    assert "ISSUE_TEMPLATES" in body
+
+
+@pytest.mark.anyio
+async def test_issue_list_new_issue_btn_calls_template(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """new-issue-btn invokes showTemplatePicker."""
+    await _make_repo(db_session)
+    body = await _get_page(client)
+    assert "new-issue-btn" in body
+    assert "showTemplatePicker" in body
+
+
+@pytest.mark.anyio
+async def test_issue_list_templates_back_btn_present(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """← Templates back navigation is present in the new issue flow."""
+    await _make_repo(db_session)
+    body = await _get_page(client)
+    assert "Templates" in body
+
+
+@pytest.mark.anyio
+async def test_issue_list_blank_template_defined(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """'blank' template id is present in ISSUE_TEMPLATES."""
+    await _make_repo(db_session)
+    body = await _get_page(client)
+    assert "'blank'" in body or '"blank"' in body
+
+
+@pytest.mark.anyio
+async def test_issue_list_bug_template_defined(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """'bug' template id is present in ISSUE_TEMPLATES."""
+    await _make_repo(db_session)
+    body = await _get_page(client)
+    assert "'bug'" in body or '"bug"' in body
 
 
 # ---------------------------------------------------------------------------
-# Labels sidebar
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.anyio
-async def test_issue_list_labels_summary_heading_present(
-    client: AsyncClient,
-    db_session: AsyncSession,
-) -> None:
-    """labels-summary-heading element is present in the right sidebar."""
-    await _make_repo(db_session)
-    body = await _get_page(client)
-    assert "labels-summary-heading" in body
-
-
-@pytest.mark.anyio
-async def test_issue_list_labels_summary_list_present(
-    client: AsyncClient,
-    db_session: AsyncSession,
-) -> None:
-    """labels-summary-list element is present in the right sidebar."""
-    await _make_repo(db_session)
-    body = await _get_page(client)
-    assert "labels-summary-list" in body
-
-
-@pytest.mark.anyio
-async def test_issue_list_render_right_sidebar_label_js(
-    client: AsyncClient,
-    db_session: AsyncSession,
-) -> None:
-    """renderRightSidebar() references labels-summary-list for the labels sidebar."""
-    await _make_repo(db_session)
-    body = await _get_page(client)
-    assert "labels-summary-list" in body
-    assert "renderRightSidebar" in body
-
-
-# ---------------------------------------------------------------------------
-# Bulk actions toolbar
+# Bulk toolbar structure (SSR-rendered, JS-activated)
 # ---------------------------------------------------------------------------
 
 
@@ -420,7 +683,7 @@ async def test_issue_list_bulk_toolbar_present(
     client: AsyncClient,
     db_session: AsyncSession,
 ) -> None:
-    """bulk-toolbar element is present in the page HTML."""
+    """bulk-toolbar element is rendered in the page HTML."""
     await _make_repo(db_session)
     body = await _get_page(client)
     assert "bulk-toolbar" in body
@@ -460,47 +723,15 @@ async def test_issue_list_bulk_milestone_select_present(
 
 
 @pytest.mark.anyio
-async def test_issue_list_bulk_close_button_present(
+async def test_issue_list_issue_row_checkbox_present(
     client: AsyncClient,
     db_session: AsyncSession,
 ) -> None:
-    """bulkClose() function is defined in the page JS."""
-    await _make_repo(db_session)
+    """issue-row-check CSS class is present (checkbox for bulk selection)."""
+    repo_id = await _make_repo(db_session)
+    await _make_issue(db_session, repo_id, title="Has checkbox")
     body = await _get_page(client)
-    assert "bulkClose" in body
-
-
-@pytest.mark.anyio
-async def test_issue_list_bulk_reopen_button_present(
-    client: AsyncClient,
-    db_session: AsyncSession,
-) -> None:
-    """bulkReopen() function is defined in the page JS."""
-    await _make_repo(db_session)
-    body = await _get_page(client)
-    assert "bulkReopen" in body
-
-
-@pytest.mark.anyio
-async def test_issue_list_bulk_assign_label_js_present(
-    client: AsyncClient,
-    db_session: AsyncSession,
-) -> None:
-    """bulkAssignLabel() JS function is defined in the page."""
-    await _make_repo(db_session)
-    body = await _get_page(client)
-    assert "bulkAssignLabel" in body
-
-
-@pytest.mark.anyio
-async def test_issue_list_bulk_assign_milestone_js_present(
-    client: AsyncClient,
-    db_session: AsyncSession,
-) -> None:
-    """bulkAssignMilestone() JS function is defined in the page."""
-    await _make_repo(db_session)
-    body = await _get_page(client)
-    assert "bulkAssignMilestone" in body
+    assert "issue-row-check" in body
 
 
 @pytest.mark.anyio
@@ -508,7 +739,7 @@ async def test_issue_list_toggle_issue_select_js_present(
     client: AsyncClient,
     db_session: AsyncSession,
 ) -> None:
-    """toggleIssueSelect() JS function is defined in the page."""
+    """toggleIssueSelect() JS function is present in the page."""
     await _make_repo(db_session)
     body = await _get_page(client)
     assert "toggleIssueSelect" in body
@@ -519,21 +750,10 @@ async def test_issue_list_deselect_all_js_present(
     client: AsyncClient,
     db_session: AsyncSession,
 ) -> None:
-    """deselectAll() JS function is defined in the page."""
+    """deselectAll() JS function is present in the page."""
     await _make_repo(db_session)
     body = await _get_page(client)
     assert "deselectAll" in body
-
-
-@pytest.mark.anyio
-async def test_issue_list_issue_row_checkbox_js_present(
-    client: AsyncClient,
-    db_session: AsyncSession,
-) -> None:
-    """issue-row-check CSS class is referenced in the page (for selection checkboxes)."""
-    await _make_repo(db_session)
-    body = await _get_page(client)
-    assert "issue-row-check" in body
 
 
 @pytest.mark.anyio
@@ -541,123 +761,51 @@ async def test_issue_list_update_bulk_toolbar_js_present(
     client: AsyncClient,
     db_session: AsyncSession,
 ) -> None:
-    """updateBulkToolbar() JS function is defined in the page."""
+    """updateBulkToolbar() JS function is present in the page."""
     await _make_repo(db_session)
     body = await _get_page(client)
     assert "updateBulkToolbar" in body
 
 
-# ---------------------------------------------------------------------------
-# Issue template selector
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.anyio
-async def test_issue_list_template_picker_present(
+async def test_issue_list_bulk_close_js_present(
     client: AsyncClient,
     db_session: AsyncSession,
 ) -> None:
-    """template-picker element is present in the page HTML."""
+    """bulkClose() JS stub is present in the page."""
     await _make_repo(db_session)
     body = await _get_page(client)
-    assert "template-picker" in body
+    assert "bulkClose" in body
 
 
 @pytest.mark.anyio
-async def test_issue_list_template_grid_present(
+async def test_issue_list_bulk_reopen_js_present(
     client: AsyncClient,
     db_session: AsyncSession,
 ) -> None:
-    """template-grid element is present in the page HTML."""
+    """bulkReopen() JS stub is present in the page."""
     await _make_repo(db_session)
     body = await _get_page(client)
-    assert "template-grid" in body
+    assert "bulkReopen" in body
 
 
 @pytest.mark.anyio
-async def test_issue_list_template_cards_present(
+async def test_issue_list_bulk_assign_label_js_present(
     client: AsyncClient,
     db_session: AsyncSession,
 ) -> None:
-    """template-card CSS class is present (one card per template)."""
+    """bulkAssignLabel() JS stub is present in the page."""
     await _make_repo(db_session)
     body = await _get_page(client)
-    assert "template-card" in body
+    assert "bulkAssignLabel" in body
 
 
 @pytest.mark.anyio
-async def test_issue_list_show_template_picker_js_present(
+async def test_issue_list_bulk_assign_milestone_js_present(
     client: AsyncClient,
     db_session: AsyncSession,
 ) -> None:
-    """showTemplatePicker() JS function is defined in the page."""
+    """bulkAssignMilestone() JS stub is present in the page."""
     await _make_repo(db_session)
     body = await _get_page(client)
-    assert "showTemplatePicker" in body
-
-
-@pytest.mark.anyio
-async def test_issue_list_select_template_js_present(
-    client: AsyncClient,
-    db_session: AsyncSession,
-) -> None:
-    """selectTemplate() JS function is defined in the page."""
-    await _make_repo(db_session)
-    body = await _get_page(client)
-    assert "selectTemplate" in body
-
-
-@pytest.mark.anyio
-async def test_issue_list_issue_templates_const_present(
-    client: AsyncClient,
-    db_session: AsyncSession,
-) -> None:
-    """ISSUE_TEMPLATES constant is defined in the page JS."""
-    await _make_repo(db_session)
-    body = await _get_page(client)
-    assert "ISSUE_TEMPLATES" in body
-
-
-@pytest.mark.anyio
-async def test_issue_list_new_issue_btn_calls_template(
-    client: AsyncClient,
-    db_session: AsyncSession,
-) -> None:
-    """new-issue-btn onclick invokes showTemplatePicker (not showCreateIssue directly)."""
-    await _make_repo(db_session)
-    body = await _get_page(client)
-    assert "new-issue-btn" in body
-    assert "showTemplatePicker" in body
-
-
-@pytest.mark.anyio
-async def test_issue_list_templates_back_btn_present(
-    client: AsyncClient,
-    db_session: AsyncSession,
-) -> None:
-    """← Templates back navigation button is present in the new issue form."""
-    await _make_repo(db_session)
-    body = await _get_page(client)
-    assert "Templates" in body
-
-
-@pytest.mark.anyio
-async def test_issue_list_blank_template_defined(
-    client: AsyncClient,
-    db_session: AsyncSession,
-) -> None:
-    """'blank' template entry is present in ISSUE_TEMPLATES."""
-    await _make_repo(db_session)
-    body = await _get_page(client)
-    assert "'blank'" in body or '"blank"' in body
-
-
-@pytest.mark.anyio
-async def test_issue_list_bug_template_defined(
-    client: AsyncClient,
-    db_session: AsyncSession,
-) -> None:
-    """'bug' template entry is present in ISSUE_TEMPLATES."""
-    await _make_repo(db_session)
-    body = await _get_page(client)
-    assert "'bug'" in body or '"bug"' in body
+    assert "bulkAssignMilestone" in body

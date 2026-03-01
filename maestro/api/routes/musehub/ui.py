@@ -73,7 +73,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi import status as http_status
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
-from sqlalchemy import func, select as sa_select
+from sqlalchemy import func, select as sa_select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.responses import Response as StarletteResponse
 
@@ -95,7 +95,8 @@ from maestro.models.musehub import (
 )
 from maestro.db import musehub_models as musehub_db
 from maestro.muse_cli.models import MuseCliTag
-from maestro.services import musehub_divergence, musehub_listen, musehub_pull_requests, musehub_releases
+from maestro.db import musehub_label_models as label_db
+from maestro.services import musehub_divergence, musehub_issues, musehub_listen, musehub_pull_requests, musehub_releases
 from maestro.services import musehub_repository
 
 logger = logging.getLogger(__name__)
@@ -863,21 +864,110 @@ async def issue_list_page(
     request: Request,
     owner: str,
     repo_slug: str,
+    state: str = Query("open", pattern="^(open|closed)$"),
+    label: str | None = Query(None),
+    milestone_id: str | None = Query(None),
+    assignee: str | None = Query(None),
+    author: str | None = Query(None),
+    sort: str = Query("newest", pattern="^(newest|oldest|most-commented)$"),
+    page: int = Query(1, ge=1),
+    per_page: int = Query(25, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
 ) -> Response:
-    """Render the issue list page with open/closed/all state filter."""
+    """Render the issue list page with full server-side data and HTMX fragment support.
+
+    Fetches open/closed counts, applies label/milestone/assignee/author filters
+    server-side, paginates the result, and renders either a full page or a bare
+    HTMX fragment depending on the ``HX-Request`` header.
+
+    No JWT required — issue data is publicly readable.
+    """
     repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
+
+    # Fetch all open and closed issues for counts and assignee collection.
+    all_open = await musehub_issues.list_issues(db, repo_id, state="open")
+    all_closed = await musehub_issues.list_issues(db, repo_id, state="closed")
+    open_count = len(all_open)
+    closed_count = len(all_closed)
+
+    # Fetch filtered issues for the active state (label + milestone applied in service).
+    filtered = await musehub_issues.list_issues(
+        db, repo_id, state=state, label=label, milestone_id=milestone_id
+    )
+
+    # Apply remaining Python-side filters (assignee, author).
+    if assignee:
+        filtered = [i for i in filtered if i.assignee == assignee]
+    if author:
+        q = author.lower()
+        filtered = [i for i in filtered if q in (i.author or "").lower()]
+
+    # Server-side sort.
+    if sort == "oldest":
+        filtered.sort(key=lambda i: i.created_at)
+    elif sort == "most-commented":
+        filtered.sort(key=lambda i: i.comment_count, reverse=True)
+    else:
+        filtered.sort(key=lambda i: i.created_at, reverse=True)
+
+    # Pagination.
+    total = len(filtered)
+    offset = (page - 1) * per_page
+    page_issues = filtered[offset : offset + per_page]
+    total_pages = max(1, (total + per_page - 1) // per_page)
+
+    # Labels for the filter sidebar (all labels in the repo).
+    label_rows = (
+        await db.execute(
+            sa_select(label_db.MusehubLabel)
+            .where(label_db.MusehubLabel.repo_id == repo_id)
+            .order_by(label_db.MusehubLabel.name)
+        )
+    ).scalars().all()
+    labels_data = [{"name": r.name, "color": r.color} for r in label_rows]
+
+    # Open milestones for the filter sidebar and right sidebar.
+    milestone_data = await musehub_issues.list_milestones(db, repo_id, state="open")
+    milestones_data = milestone_data.milestones
+
+    # Collect unique assignees from all issues (both states) for the filter dropdown.
+    all_issues_combined = all_open + all_closed
+    assignees = sorted({i.assignee for i in all_issues_combined if i.assignee})
+
     ctx: dict[str, object] = {
         "owner": owner,
         "repo_slug": repo_slug,
         "repo_id": repo_id,
         "base_url": base_url,
         "current_page": "issues",
+        "issues": page_issues,
+        "open_count": open_count,
+        "closed_count": closed_count,
+        "total": total,
+        "page": page,
+        "per_page": per_page,
+        "total_pages": total_pages,
+        "state": state,
+        "active_label": label or "",
+        "active_milestone_id": milestone_id or "",
+        "active_assignee": assignee or "",
+        "active_author": author or "",
+        "active_sort": sort,
+        "labels_data": labels_data,
+        "milestones_data": milestones_data,
+        "assignees": assignees,
+        "breadcrumb_data": _breadcrumbs(
+            (owner, f"/musehub/ui/{owner}"),
+            (repo_slug, base_url),
+            ("Issues", f"{base_url}/issues"),
+        ),
     }
-    return json_or_html(
+    return await htmx_fragment_or_full(
         request,
-        lambda: templates.TemplateResponse(request, "musehub/pages/issue_list.html", ctx),
+        templates,
         ctx,
+        full_template="musehub/pages/issue_list.html",
+        fragment_template="musehub/fragments/issue_rows.html",
     )
 
 
