@@ -66,7 +66,7 @@ async def parse_agent_task(worktree_path: Path) -> TaskFile | None:
         return None
 
     try:
-        content = await asyncio.get_event_loop().run_in_executor(
+        content = await asyncio.get_running_loop().run_in_executor(
             None, task_file_path.read_text, "utf-8"
         )
     except OSError as exc:
@@ -127,7 +127,7 @@ def _build_task_file(fields: dict[str, str], worktree_path: Path) -> TaskFile:
     """
     closes_issues = _parse_int_list(fields.get("CLOSES_ISSUES", ""))
 
-    raw: dict[str, object] = {
+    raw: dict[str, str | int | bool | list[int] | None] = {
         "task": fields.get("TASK") or fields.get("WORKFLOW"),
         "gh_repo": fields.get("GH_REPO"),
         "issue_number": _parse_int(fields.get("ISSUE_NUMBER")),
