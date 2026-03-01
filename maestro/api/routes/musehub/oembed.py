@@ -42,7 +42,7 @@ from __future__ import annotations
 
 import logging
 import re
-from typing import Any
+from typing import TypedDict
 
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import JSONResponse
@@ -66,6 +66,36 @@ _MAX_HEIGHT = 400
 _PROVIDER_NAME = "MuseHub"
 _PROVIDER_URL = "https://musehub.stori.app"
 
+# Functional TypedDict form required because field names contain colons (e.g. "musehub:key"),
+# which are not valid Python identifiers for the class-based TypedDict syntax.
+OEmbedPayload = TypedDict(
+    "OEmbedPayload",
+    {
+        "version": str,
+        "type": str,
+        "title": str,
+        "author_name": str | None,
+        "author_url": str,
+        "provider_name": str,
+        "provider_url": str,
+        "thumbnail_url": str,
+        "thumbnail_width": int,
+        "thumbnail_height": int,
+        "html": str,
+        "width": int,
+        "height": int,
+        "musehub:key": str | None,
+        "musehub:tempo_bpm": int | None,
+        "musehub:time_signature": str | None,
+        "musehub:duration_beats": int | None,
+        "musehub:instruments": list[str] | None,
+        "musehub:license": str | None,
+        "musehub:genre": list[str] | None,
+        "musehub:commit_id": str,
+        "musehub:audio_url": str,
+    },
+)
+
 
 def _build_oembed_payload(
     *,
@@ -77,7 +107,7 @@ def _build_oembed_payload(
     embed_path: str,
     title: str,
     owner: str = "",
-) -> dict[str, Any]:
+) -> OEmbedPayload:
     """Construct the full oEmbed + MuseHub extension payload dict.
 
     All ``musehub:*`` extension fields default to ``None`` because the embed
