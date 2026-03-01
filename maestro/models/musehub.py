@@ -2352,6 +2352,7 @@ class ForkNetworkResponse(CamelModel):
 # Resolve forward reference in self-referential ForkNetworkNode.children
 ForkNetworkNode.model_rebuild()
 
+
 class UserStarredRepoEntry(CamelModel):
     """A single starred-repo entry shown on a user's profile Starred tab.
 
