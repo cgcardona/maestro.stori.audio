@@ -1,12 +1,14 @@
 """Muse Hub release management route handlers.
 
 Endpoint summary:
-  POST   /musehub/repos/{repo_id}/releases                        — create a release
-  GET    /musehub/repos/{repo_id}/releases                        — list all releases (newest first)
-  GET    /musehub/repos/{repo_id}/releases/{tag}                  — get a single release by tag
-  GET    /musehub/repos/{repo_id}/releases/{tag}/downloads        — download count per asset
-  POST   /musehub/repos/{repo_id}/releases/{tag}/assets           — attach asset to release
-  DELETE /musehub/repos/{repo_id}/releases/{tag}/assets/{asset_id} — remove asset from release
+  POST   /musehub/repos/{repo_id}/releases                                    — create a release
+  GET    /musehub/repos/{repo_id}/releases                                    — list all releases (newest first)
+  GET    /musehub/repos/{repo_id}/releases/{tag}                              — get a single release by tag
+  GET    /musehub/repos/{repo_id}/releases/{tag}/assets                       — list assets for a release
+  POST   /musehub/repos/{repo_id}/releases/{tag}/assets                       — attach asset to release
+  POST   /musehub/repos/{repo_id}/releases/{tag}/assets/{asset_id}/download   — record download event
+  DELETE /musehub/repos/{repo_id}/releases/{tag}/assets/{asset_id}            — remove asset from release
+  GET    /musehub/repos/{repo_id}/releases/{tag}/downloads                    — per-asset download counts
 
 A release ties a version tag (e.g. "v1.0") to a commit snapshot and carries
 Markdown release notes plus structured download package URLs. Tags are unique
@@ -28,6 +30,7 @@ from maestro.auth.dependencies import TokenClaims, optional_token, require_valid
 from maestro.db import get_db
 from maestro.models.musehub import (
     ReleaseAssetCreate,
+    ReleaseAssetListResponse,
     ReleaseAssetResponse,
     ReleaseCreate,
     ReleaseDownloadStatsResponse,
@@ -73,6 +76,9 @@ async def create_release(
             body=body.body,
             commit_id=body.commit_id,
             author=token.get("sub", ""),
+            is_prerelease=body.is_prerelease,
+            is_draft=body.is_draft,
+            gpg_signature=body.gpg_signature,
         )
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
@@ -165,6 +171,74 @@ async def _get_release_or_404(
             detail=f"Release '{tag}' not found",
         )
     return release
+
+
+# ── Asset list ────────────────────────────────────────────────────────────────
+
+
+@router.get(
+    "/repos/{repo_id}/releases/{tag}/assets",
+    response_model=ReleaseAssetListResponse,
+    operation_id="listReleaseAssets",
+    summary="List downloadable assets for a release",
+)
+async def list_release_assets(
+    repo_id: str,
+    tag: str,
+    db: AsyncSession = Depends(get_db),
+    claims: TokenClaims | None = Depends(optional_token),
+) -> ReleaseAssetListResponse:
+    """Return all assets attached to the release identified by tag.
+
+    The response includes file size and download count for each asset so the
+    release detail page can render the Assets panel in a single request.
+
+    Returns 404 when the repo or tag does not exist.
+    Returns 401 when the repo is private and no token is supplied.
+    """
+    release = await _get_release_or_404(db, repo_id, tag, claims)
+    return await musehub_releases.list_release_assets(db, release.release_id, tag)
+
+
+# ── Asset download tracking ───────────────────────────────────────────────────
+
+
+@router.post(
+    "/repos/{repo_id}/releases/{tag}/assets/{asset_id}/download",
+    status_code=status.HTTP_204_NO_CONTENT,
+    operation_id="recordAssetDownload",
+    summary="Record a download event for a release asset",
+)
+async def record_asset_download(
+    repo_id: str,
+    tag: str,
+    asset_id: str,
+    db: AsyncSession = Depends(get_db),
+    claims: TokenClaims | None = Depends(optional_token),
+) -> None:
+    """Increment the download counter for the specified asset.
+
+    Called by the UI when a user clicks the Download button on the release
+    detail page. No auth required for public repos — anonymous downloads are
+    counted. The counter is updated atomically via a single UPDATE statement.
+
+    Returns 404 when the repo, tag, or asset does not exist.
+    Returns 401 when the repo is private and no token is supplied.
+    """
+    release = await _get_release_or_404(db, repo_id, tag, claims)
+    asset_row = await musehub_releases.get_asset(db, asset_id)
+    if asset_row is None or asset_row.release_id != release.release_id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Asset '{asset_id}' not found on release '{tag}'",
+        )
+    found = await musehub_releases.increment_asset_download_count(db, asset_id)
+    if not found:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Asset '{asset_id}' not found",
+        )
+    await db.commit()
 
 
 # ── Download stats ────────────────────────────────────────────────────────────

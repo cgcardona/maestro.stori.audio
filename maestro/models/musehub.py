@@ -878,6 +878,12 @@ class ReleaseCreate(CamelModel):
     commit_id: str | None = Field(
         None, description="Commit to pin this release to", examples=["a3f8c1d2e4b5"]
     )
+    is_prerelease: bool = Field(False, description="Mark as a pre-release (beta, rc, alpha)")
+    is_draft: bool = Field(False, description="Save as draft — not yet publicly visible")
+    gpg_signature: str | None = Field(
+        None,
+        description="ASCII-armoured GPG signature for the tag object; omit when unsigned",
+    )
 
 
 class ReleaseDownloadUrls(CamelModel):
@@ -899,7 +905,12 @@ class ReleaseDownloadUrls(CamelModel):
 
 
 class ReleaseResponse(CamelModel):
-    """Wire representation of a Muse Hub release."""
+    """Wire representation of a Muse Hub release.
+
+    is_prerelease and is_draft drive the UI badges on the release detail page.
+    gpg_signature is None when the tag was not GPG-signed; a non-empty string
+    indicates the release carries a verifiable signature and the UI renders a verified badge.
+    """
 
     release_id: str
     tag: str
@@ -908,6 +919,9 @@ class ReleaseResponse(CamelModel):
     commit_id: str | None = None
     download_urls: ReleaseDownloadUrls
     author: str = ""
+    is_prerelease: bool = False
+    is_draft: bool = False
+    gpg_signature: str | None = None
     created_at: datetime
 
 
@@ -961,6 +975,18 @@ class ReleaseAssetResponse(CamelModel):
     download_url: str = Field(..., description="Direct download URL")
     download_count: int = Field(0, ge=0, description="Number of times the asset has been downloaded")
     created_at: datetime = Field(..., description="Asset creation timestamp (ISO-8601 UTC)")
+
+
+class ReleaseAssetListResponse(CamelModel):
+    """List of assets attached to a release, returned by GET .../releases/{tag}/assets.
+
+    Agents use this to surface per-asset download counts and direct download
+    URLs on the release detail page without re-fetching the full release.
+    """
+
+    release_id: str
+    tag: str
+    assets: list[ReleaseAssetResponse]
 
 
 class ReleaseAssetDownloadCount(CamelModel):
