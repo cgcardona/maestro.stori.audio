@@ -32,6 +32,7 @@ import logging
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, Query, Request
+from fastapi.templating import Jinja2Templates
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.responses import Response as StarletteResponse
@@ -48,10 +49,7 @@ router = APIRouter(prefix="/musehub/ui", tags=["musehub-ui"])
 
 _TEMPLATE_DIR = Path(__file__).parent.parent.parent.parent / "templates"
 
-# Jinja2Templates is imported lazily via negotiate_response — use the shared
-# instance from ui.py would create a circular dep, so we instantiate locally.
-from fastapi.templating import Jinja2Templates  # noqa: E402 (after __future__ import)
-
+# Instantiate locally rather than importing from ui.py to avoid a circular dep.
 templates = Jinja2Templates(directory=str(_TEMPLATE_DIR))
 
 
