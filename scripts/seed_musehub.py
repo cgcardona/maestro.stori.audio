@@ -2475,7 +2475,10 @@ async def seed(db: AsyncSession, force: bool = False) -> None:
     await db.flush()
 
     # ── 9. Stars (cross-repo) ─────────────────────────────────────
+    # Every community user stars 5-10 repos; genre/composer archives also get
+    # starred by community users who inspired or forked from them. 50+ total.
     star_pairs = [
+        # Community repos — broad community engagement
         (SOFIA,   REPO_NEO_SOUL, 20),    (MARCUS, REPO_NEO_SOUL, 18),
         (YUKI,    REPO_NEO_SOUL, 15),    (AALIYA, REPO_NEO_SOUL, 12),
         (CHEN,    REPO_NEO_SOUL, 10),    (FATOU,  REPO_NEO_SOUL, 8),
@@ -2504,6 +2507,48 @@ async def seed(db: AsyncSession, force: bool = False) -> None:
         (GABRIEL, REPO_GRANULAR, 5),     (MARCUS, REPO_GRANULAR, 3),
         (GABRIEL, REPO_CHANSON, 4),      (SOFIA,  REPO_CHANSON, 3),
         (GABRIEL, REPO_MICROTONAL, 3),   (SOFIA,  REPO_MICROTONAL, 2),
+
+        # Genre/composer archive repos starred by community users who draw
+        # inspiration from or fork into them
+        (GABRIEL, REPO_GOLDBERG, 25),    (SOFIA,  REPO_GOLDBERG, 22),
+        (MARCUS,  REPO_GOLDBERG, 18),    (AALIYA, REPO_GOLDBERG, 15),
+        (CHEN,    REPO_GOLDBERG, 12),    (FATOU,  REPO_GOLDBERG, 9),
+        (PIERRE,  REPO_GOLDBERG, 7),     (YUKI,   REPO_GOLDBERG, 5),
+
+        (GABRIEL, REPO_WTC, 24),         (SOFIA,  REPO_WTC, 20),
+        (CHEN,    REPO_WTC, 16),         (MARCUS, REPO_WTC, 13),
+        (YUKI,    REPO_WTC, 10),         (PIERRE, REPO_WTC, 6),
+
+        (GABRIEL, REPO_NOCTURNES, 22),   (AALIYA, REPO_NOCTURNES, 18),
+        (SOFIA,   REPO_NOCTURNES, 15),   (CHEN,   REPO_NOCTURNES, 11),
+        (MARCUS,  REPO_NOCTURNES, 8),    (YUKI,   REPO_NOCTURNES, 5),
+
+        (MARCUS,  REPO_MAPLE_LEAF, 20),  (GABRIEL, REPO_MAPLE_LEAF, 17),
+        (AALIYA,  REPO_MAPLE_LEAF, 13),  (FATOU,   REPO_MAPLE_LEAF, 9),
+        (PIERRE,  REPO_MAPLE_LEAF, 6),
+
+        (CHEN,    REPO_CIN_STRINGS, 19), (GABRIEL, REPO_CIN_STRINGS, 15),
+        (SOFIA,   REPO_CIN_STRINGS, 12), (YUKI,    REPO_CIN_STRINGS, 8),
+        (MARCUS,  REPO_CIN_STRINGS, 5),
+
+        # Community genre-fusion repos (created as forks of composer archives)
+        (SOFIA,   REPO_NEO_BAROQUE, 14), (MARCUS, REPO_NEO_BAROQUE, 11),
+        (CHEN,    REPO_NEO_BAROQUE, 8),  (YUKI,   REPO_NEO_BAROQUE, 5),
+        (PIERRE,  REPO_NEO_BAROQUE, 3),
+
+        (GABRIEL, REPO_JAZZ_CHOPIN, 12), (MARCUS, REPO_JAZZ_CHOPIN, 9),
+        (SOFIA,   REPO_JAZZ_CHOPIN, 7),  (CHEN,   REPO_JAZZ_CHOPIN, 4),
+
+        (GABRIEL, REPO_RAGTIME_EDM, 10), (AALIYA, REPO_RAGTIME_EDM, 8),
+        (FATOU,   REPO_RAGTIME_EDM, 6),  (YUKI,   REPO_RAGTIME_EDM, 4),
+
+        (GABRIEL, REPO_FILM_SCORE, 9),   (SOFIA,  REPO_FILM_SCORE, 7),
+        (MARCUS,  REPO_FILM_SCORE, 5),   (AALIYA, REPO_FILM_SCORE, 3),
+
+        (GABRIEL, REPO_COMMUNITY, 8),    (SOFIA,  REPO_COMMUNITY, 6),
+        (MARCUS,  REPO_COMMUNITY, 5),    (AALIYA, REPO_COMMUNITY, 4),
+        (CHEN,    REPO_COMMUNITY, 3),    (FATOU,  REPO_COMMUNITY, 2),
+        (PIERRE,  REPO_COMMUNITY, 1),
     ]
     for user_id, repo_id, days in star_pairs:
         db.add(MusehubStar(repo_id=repo_id, user_id=user_id,
@@ -2569,15 +2614,19 @@ async def seed(db: AsyncSession, force: bool = False) -> None:
     await db.flush()
 
     # ── 11. Reactions ─────────────────────────────────────────────
-    EMOJIS = ["🔥", "🎵", "❤️", "👏", "✨", "🎸", "🎹", "🥁"]
+    # All 8 emoji types from the spec: 👍❤️🎵🔥🎹👏🤔😢. 200+ total across
+    # both community and genre-archive repos.
+    EMOJIS = ["👍", "❤️", "🎵", "🔥", "🎹", "👏", "🤔", "😢"]
     reaction_count = 0
+    all_community_users = [GABRIEL, SOFIA, MARCUS, YUKI, AALIYA, CHEN, FATOU, PIERRE]
+    # Community repos — all 8 users react to last 5 commits on first 6 repos
     for r in REPOS[:6]:
         repo_id = r["repo_id"]
         commits = all_commits.get(repo_id, [])
         if not commits:
             continue
         for commit in commits[-5:]:
-            for i, uid in enumerate([GABRIEL, SOFIA, MARCUS, YUKI, AALIYA]):
+            for i, uid in enumerate(all_community_users):
                 emoji = EMOJIS[i % len(EMOJIS)]
                 try:
                     db.add(MusehubReaction(
@@ -2592,43 +2641,139 @@ async def seed(db: AsyncSession, force: bool = False) -> None:
                     reaction_count += 1
                 except Exception:
                     pass
+    # Genre-archive repos — community users react to last 3 commits, rotating
+    # through all emoji types to ensure full coverage
+    genre_reaction_repos = [
+        REPO_GOLDBERG, REPO_WTC, REPO_NOCTURNES, REPO_MAPLE_LEAF, REPO_CIN_STRINGS,
+    ]
+    for repo_id in genre_reaction_repos:
+        commits = all_commits.get(repo_id, [])
+        if not commits:
+            continue
+        for ci, commit in enumerate(commits[-3:]):
+            for ui, uid in enumerate(all_community_users):
+                emoji = EMOJIS[(ci * len(all_community_users) + ui) % len(EMOJIS)]
+                try:
+                    db.add(MusehubReaction(
+                        reaction_id=_uid(f"reaction-g-{repo_id[:12]}-{commit['commit_id'][:8]}-{uid}"),
+                        repo_id=repo_id,
+                        target_type="commit",
+                        target_id=commit["commit_id"],
+                        user_id=uid,
+                        emoji=emoji,
+                        created_at=_now(days=2),
+                    ))
+                    reaction_count += 1
+                except Exception:
+                    pass
     print(f"  ✅ Reactions: {reaction_count}")
 
     await db.flush()
 
     # ── 12. Follows (social graph) ────────────────────────────────
+    # Rich bidirectional follow graph: gabriel↔sofia, marcus↔fatou,
+    # yuki↔chen, aaliya↔pierre, plus composer-to-community asymmetric follows.
+    # 60+ total, preserving all prior pairs.
     follow_pairs = [
-        (SOFIA, GABRIEL), (MARCUS, GABRIEL), (YUKI, GABRIEL),
-        (AALIYA, GABRIEL), (CHEN, GABRIEL), (FATOU, GABRIEL),
-        (GABRIEL, SOFIA), (MARCUS, SOFIA), (PIERRE, SOFIA),
-        (GABRIEL, MARCUS), (SOFIA, MARCUS), (AALIYA, MARCUS),
-        (GABRIEL, YUKI), (SOFIA, YUKI), (CHEN, YUKI),
-        (GABRIEL, AALIYA), (MARCUS, AALIYA), (FATOU, AALIYA),
-        (GABRIEL, CHEN), (YUKI, CHEN),
-        (GABRIEL, FATOU), (AALIYA, FATOU),
-        (GABRIEL, PIERRE), (SOFIA, PIERRE),
+        # Original follows — gabriel is the hub (everyone follows him)
+        (SOFIA,   GABRIEL), (MARCUS, GABRIEL), (YUKI,   GABRIEL),
+        (AALIYA,  GABRIEL), (CHEN,   GABRIEL), (FATOU,  GABRIEL),
+        (PIERRE,  GABRIEL),
+
+        # Bidirectional close collaborator pairs (symmetric)
+        (GABRIEL, SOFIA),   (SOFIA,   GABRIEL),   # already added above, deduped by _uid
+        (MARCUS,  FATOU),   (FATOU,   MARCUS),
+        (YUKI,    CHEN),    (CHEN,    YUKI),
+        (AALIYA,  PIERRE),  (PIERRE,  AALIYA),
+
+        # Cross-community follows
+        (GABRIEL, MARCUS),  (SOFIA,   MARCUS),  (AALIYA,  MARCUS),
+        (GABRIEL, YUKI),    (SOFIA,   YUKI),
+        (GABRIEL, AALIYA),  (MARCUS,  AALIYA),
+        (GABRIEL, CHEN),
+        (GABRIEL, FATOU),   (AALIYA,  FATOU),
+        (GABRIEL, PIERRE),  (SOFIA,   PIERRE),
+        (MARCUS,  SOFIA),   (PIERRE,  SOFIA),
+        (MARCUS,  YUKI),    (FATOU,   YUKI),
+        (PIERRE,  MARCUS),  (YUKI,    MARCUS),
+        (CHEN,    MARCUS),  (FATOU,   SOFIA),
+        (YUKI,    AALIYA),  (CHEN,    AALIYA),  (FATOU,   AALIYA),
+        (MARCUS,  CHEN),    (AALIYA,  CHEN),    (PIERRE,  CHEN),
+        (SOFIA,   FATOU),   (CHEN,    FATOU),   (PIERRE,  FATOU),
+        (YUKI,    PIERRE),  (MARCUS,  PIERRE),  (CHEN,    PIERRE),
+        (SOFIA,   CHEN),    (AALIYA,  YUKI),    (FATOU,   CHEN),
+
+        # Community users follow composer archive maintainers
+        (GABRIEL, BACH),    (SOFIA,   BACH),    (MARCUS,  BACH),
+        (CHEN,    BACH),    (AALIYA,  BACH),    (YUKI,    BACH),
+        (GABRIEL, CHOPIN),  (AALIYA,  CHOPIN),  (SOFIA,   CHOPIN),
+        (MARCUS,  SCOTT_JOPLIN),  (GABRIEL, SCOTT_JOPLIN),
+        (FATOU,   SCOTT_JOPLIN),
+        (CHEN,    KEVIN_MACLEOD), (GABRIEL, KEVIN_MACLEOD),
     ]
-    for follower, followee in follow_pairs:
+    # Deduplicate pairs so _uid collisions never cause constraint errors
+    seen_follows: set[tuple[str, str]] = set()
+    deduped_follows = []
+    for pair in follow_pairs:
+        if pair not in seen_follows:
+            seen_follows.add(pair)
+            deduped_follows.append(pair)
+    for follower, followee in deduped_follows:
         db.add(MusehubFollow(
             follow_id=_uid(f"follow-{follower}-{followee}"),
             follower_id=follower,
             followee_id=followee,
             created_at=_now(days=15),
         ))
-    print(f"  ✅ Follows: {len(follow_pairs)}")
+    print(f"  ✅ Follows: {len(deduped_follows)}")
 
     await db.flush()
 
     # ── 13. Watches ───────────────────────────────────────────────
+    # 60+ total: community users watch each other's repos and the composer
+    # archive repos they draw inspiration from.
     watch_pairs = [
-        (GABRIEL, REPO_AMBIENT), (GABRIEL, REPO_AFROBEAT), (GABRIEL, REPO_FUNK_SUITE),
-        (SOFIA, REPO_NEO_SOUL), (SOFIA, REPO_FUNK_SUITE), (SOFIA, REPO_CHANSON),
-        (MARCUS, REPO_NEO_SOUL), (MARCUS, REPO_AMBIENT), (MARCUS, REPO_AFROBEAT),
-        (YUKI, REPO_AMBIENT), (YUKI, REPO_GRANULAR), (YUKI, REPO_MICROTONAL),
-        (AALIYA, REPO_NEO_SOUL), (AALIYA, REPO_AFROBEAT), (AALIYA, REPO_FUNK_SUITE),
-        (CHEN, REPO_MICROTONAL), (CHEN, REPO_AMBIENT), (CHEN, REPO_GRANULAR),
-        (FATOU, REPO_AFROBEAT), (FATOU, REPO_DRUM_MACHINE),
-        (PIERRE, REPO_CHANSON), (PIERRE, REPO_AMBIENT),
+        # Community repo watches
+        (GABRIEL, REPO_AMBIENT),     (GABRIEL, REPO_AFROBEAT),   (GABRIEL, REPO_FUNK_SUITE),
+        (GABRIEL, REPO_JAZZ_TRIO),   (GABRIEL, REPO_GRANULAR),   (GABRIEL, REPO_CHANSON),
+        (GABRIEL, REPO_MICROTONAL),  (GABRIEL, REPO_DRUM_MACHINE),
+
+        (SOFIA,   REPO_NEO_SOUL),    (SOFIA,   REPO_FUNK_SUITE),  (SOFIA,   REPO_CHANSON),
+        (SOFIA,   REPO_MODAL_JAZZ),  (SOFIA,   REPO_AFROBEAT),    (SOFIA,   REPO_MICROTONAL),
+
+        (MARCUS,  REPO_NEO_SOUL),    (MARCUS,  REPO_AMBIENT),     (MARCUS,  REPO_AFROBEAT),
+        (MARCUS,  REPO_MODAL_JAZZ),  (MARCUS,  REPO_JAZZ_TRIO),   (MARCUS,  REPO_FUNK_SUITE),
+
+        (YUKI,    REPO_AMBIENT),     (YUKI,    REPO_GRANULAR),    (YUKI,    REPO_MICROTONAL),
+        (YUKI,    REPO_NEO_SOUL),    (YUKI,    REPO_DRUM_MACHINE),
+
+        (AALIYA,  REPO_NEO_SOUL),    (AALIYA,  REPO_AFROBEAT),    (AALIYA,  REPO_FUNK_SUITE),
+        (AALIYA,  REPO_MODAL_JAZZ),  (AALIYA,  REPO_JAZZ_TRIO),   (AALIYA,  REPO_CHANSON),
+
+        (CHEN,    REPO_MICROTONAL),  (CHEN,    REPO_AMBIENT),     (CHEN,    REPO_GRANULAR),
+        (CHEN,    REPO_MODAL_JAZZ),  (CHEN,    REPO_NEO_SOUL),    (CHEN,    REPO_DRUM_MACHINE),
+
+        (FATOU,   REPO_AFROBEAT),    (FATOU,   REPO_DRUM_MACHINE),(FATOU,   REPO_FUNK_SUITE),
+        (FATOU,   REPO_NEO_SOUL),    (FATOU,   REPO_MODAL_JAZZ),  (FATOU,   REPO_GRANULAR),
+
+        (PIERRE,  REPO_CHANSON),     (PIERRE,  REPO_AMBIENT),     (PIERRE,  REPO_NEO_SOUL),
+        (PIERRE,  REPO_MODAL_JAZZ),  (PIERRE,  REPO_MICROTONAL),
+
+        # Composer archive repo watches — community users watching source material
+        (GABRIEL, REPO_GOLDBERG),    (GABRIEL, REPO_WTC),         (GABRIEL, REPO_NOCTURNES),
+        (GABRIEL, REPO_MAPLE_LEAF),  (GABRIEL, REPO_CIN_STRINGS),
+
+        (SOFIA,   REPO_GOLDBERG),    (SOFIA,   REPO_WTC),         (SOFIA,   REPO_NOCTURNES),
+        (MARCUS,  REPO_MAPLE_LEAF),  (MARCUS,  REPO_GOLDBERG),    (MARCUS,  REPO_WTC),
+        (AALIYA,  REPO_NOCTURNES),   (AALIYA,  REPO_MAPLE_LEAF),
+        (CHEN,    REPO_CIN_STRINGS), (CHEN,    REPO_GOLDBERG),
+        (YUKI,    REPO_WTC),         (FATOU,   REPO_MAPLE_LEAF),  (PIERRE,  REPO_NOCTURNES),
+
+        # Genre-fusion community repos
+        (SOFIA,   REPO_NEO_BAROQUE), (MARCUS,  REPO_NEO_BAROQUE),
+        (GABRIEL, REPO_JAZZ_CHOPIN), (MARCUS,  REPO_RAGTIME_EDM),
+        (GABRIEL, REPO_FILM_SCORE),  (SOFIA,   REPO_FILM_SCORE),
+        (GABRIEL, REPO_COMMUNITY),   (AALIYA,  REPO_COMMUNITY),
     ]
     for user_id, repo_id in watch_pairs:
         db.add(MusehubWatch(
@@ -2642,26 +2787,37 @@ async def seed(db: AsyncSession, force: bool = False) -> None:
     await db.flush()
 
     # ── 14. Notifications ─────────────────────────────────────────
-    EVENT_TYPES = ["comment", "pr_opened", "pr_merged", "issue_opened", "new_commit", "new_follower"]
+    # 15-25 unread per user, all event types, all 8 users. 15-25 unread means
+    # we create 20 notifications per user with the first 5 marked as read and
+    # the remaining 15 unread — satisfying the "15-25 unread" spec.
+    EVENT_TYPES = [
+        "comment", "pr_opened", "pr_merged", "issue_opened", "new_commit",
+        "new_follower", "star", "fork", "release", "watch",
+    ]
+    NOTIFS_PER_USER = 20          # 5 read + 15 unread = 15 unread per user
+    READ_THRESHOLD  = 5           # first N are read
+    all_repos_flat = [r["repo_id"] for r in (list(REPOS) + list(GENRE_REPOS))]
     notif_count = 0
-    for i, (uid, uname, _) in enumerate(USERS[:4]):
-        for j in range(8):
+    for i, (uid, uname, _) in enumerate(USERS):
+        for j in range(NOTIFS_PER_USER):
+            actor_user = USERS[(i + j + 1) % len(USERS)]
             db.add(MusehubNotification(
-                notif_id=_uid(f"notif-{uid}-{j}"),
+                notif_id=_uid(f"notif2-{uid}-{j}"),
                 recipient_id=uid,
                 event_type=EVENT_TYPES[j % len(EVENT_TYPES)],
-                repo_id=REPOS[j % len(REPOS)]["repo_id"],
-                actor=USERS[(i + j + 1) % len(USERS)][1],
-                payload={"message": f"Sample notification {j+1} for {uname}"},
-                is_read=j < 3,
+                repo_id=all_repos_flat[(i + j) % len(all_repos_flat)],
+                actor=actor_user[1],
+                payload={"message": f"Notification {j + 1} for {uname}"},
+                is_read=j < READ_THRESHOLD,
                 created_at=_now(days=j),
             ))
             notif_count += 1
-    print(f"  ✅ Notifications: {notif_count}")
+    print(f"  ✅ Notifications: {notif_count} ({NOTIFS_PER_USER - READ_THRESHOLD} unread per user)")
 
     await db.flush()
 
     # ── 15. Forks ─────────────────────────────────────────────────
+    # Original community-to-community forks
     db.add(MusehubFork(
         fork_id=_uid("fork-neo-soul-marcus"),
         source_repo_id=REPO_NEO_SOUL,
@@ -2676,17 +2832,64 @@ async def seed(db: AsyncSession, force: bool = False) -> None:
         forked_by="yuki",
         created_at=_now(days=5),
     ))
-    print("  ✅ Forks: 2")
+    # Genre-archive → community forks: each community repo that remixes a
+    # composer's archive is modelled as a fork of the canonical archive repo.
+    # marcus/ragtime-edm ← scott_joplin/maple-leaf-rag
+    db.add(MusehubFork(
+        fork_id=_uid("fork-maple-leaf-marcus"),
+        source_repo_id=REPO_MAPLE_LEAF,
+        fork_repo_id=REPO_RAGTIME_EDM,
+        forked_by="marcus",
+        created_at=_now(days=30),
+    ))
+    # aaliya/jazz-chopin ← chopin/nocturnes
+    db.add(MusehubFork(
+        fork_id=_uid("fork-nocturnes-aaliya"),
+        source_repo_id=REPO_NOCTURNES,
+        fork_repo_id=REPO_JAZZ_CHOPIN,
+        forked_by="aaliya",
+        created_at=_now(days=28),
+    ))
+    # gabriel/neo-baroque ← bach/goldberg-variations
+    db.add(MusehubFork(
+        fork_id=_uid("fork-goldberg-gabriel-neobaroque"),
+        source_repo_id=REPO_GOLDBERG,
+        fork_repo_id=REPO_NEO_BAROQUE,
+        forked_by="gabriel",
+        created_at=_now(days=25),
+    ))
+    # chen/film-score ← kevin_macleod/cinematic-strings
+    db.add(MusehubFork(
+        fork_id=_uid("fork-cinstrings-chen"),
+        source_repo_id=REPO_CIN_STRINGS,
+        fork_repo_id=REPO_FILM_SCORE,
+        forked_by="chen",
+        created_at=_now(days=22),
+    ))
+    # gabriel/community-collab ← bach/goldberg-variations
+    db.add(MusehubFork(
+        fork_id=_uid("fork-goldberg-gabriel-community"),
+        source_repo_id=REPO_GOLDBERG,
+        fork_repo_id=REPO_COMMUNITY,
+        forked_by="gabriel",
+        created_at=_now(days=20),
+    ))
+    print("  ✅ Forks: 7")
 
     await db.flush()
 
     # ── 16. View events (analytics) ───────────────────────────────
+    # 1000+ total across all repos (community + genre archives). Each repo
+    # receives 30 days of daily view fingerprints; active repos get up to 10
+    # unique viewers per day, quieter repos get fewer.
     view_count = 0
-    for r in REPOS[:8]:
+    view_repos = list(REPOS) + list(GENRE_REPOS)
+    for r in view_repos:
         repo_id = r["repo_id"]
+        star_count = r.get("star_count", 5)
         for day_offset in range(30):
             date_str = (_now(days=day_offset)).strftime("%Y-%m-%d")
-            viewers = r["star_count"] // 3 + 1
+            viewers = max(star_count // 3 + 1, 3)   # at least 3 unique viewers/day
             for v in range(min(viewers, 10)):
                 try:
                     db.add(MusehubViewEvent(
@@ -2704,18 +2907,28 @@ async def seed(db: AsyncSession, force: bool = False) -> None:
     await db.flush()
 
     # ── 17. Download events ───────────────────────────────────────
+    # 5-25 downloads per release tag across all repos. Using release_tags
+    # (built in step 7) so every release gets at least 5 unique downloaders.
+    all_user_ids = [u[0] for u in USERS]
     dl_count = 0
-    for r in REPOS[:6]:
+    dl_repos = list(REPOS) + list(GENRE_REPOS)
+    for r in dl_repos:
         repo_id = r["repo_id"]
-        for i in range(8):
-            db.add(MusehubDownloadEvent(
-                dl_id=_uid(f"dl-{repo_id}-{i}"),
-                repo_id=repo_id,
-                ref="main",
-                downloader_id=[u[0] for u in USERS][i % len(USERS)],
-                created_at=_now(days=i * 3),
-            ))
-            dl_count += 1
+        tags = release_tags.get(repo_id, ["main"])
+        if not tags:
+            tags = ["main"]
+        for ti, tag in enumerate(tags):
+            # 5-15 downloads per release depending on tag index (older = more)
+            n_downloads = max(5, 15 - ti * 2)
+            for i in range(n_downloads):
+                db.add(MusehubDownloadEvent(
+                    dl_id=_uid(f"dl2-{repo_id}-{tag}-{i}"),
+                    repo_id=repo_id,
+                    ref=tag,
+                    downloader_id=all_user_ids[i % len(all_user_ids)],
+                    created_at=_now(days=ti * 7 + i),
+                ))
+                dl_count += 1
     print(f"  ✅ Download events: {dl_count}")
 
     # ── 17b. Webhooks + deliveries (1-3/repo, 10-20 deliveries each) ──────────
