@@ -794,6 +794,57 @@ class AggregateAnalysisResponse(CamelModel):
 
 
 # ---------------------------------------------------------------------------
+# Cross-ref similarity response (issue #406)
+# ---------------------------------------------------------------------------
+
+
+class RefSimilarityDimensions(CamelModel):
+    """Per-dimension similarity scores between two Muse refs.
+
+    Each score is a 0–1 float where 1.0 means identical and 0.0 means
+    maximally different.  Scores are computed independently per dimension
+    so agents can see exactly where two commits agree or diverge.
+    """
+
+    pitch_distribution: float = Field(..., ge=0.0, le=1.0)
+    rhythm_pattern: float = Field(..., ge=0.0, le=1.0)
+    tempo: float = Field(..., ge=0.0, le=1.0)
+    dynamics: float = Field(..., ge=0.0, le=1.0)
+    harmonic_content: float = Field(..., ge=0.0, le=1.0)
+    form: float = Field(..., ge=0.0, le=1.0)
+    instrument_blend: float = Field(..., ge=0.0, le=1.0)
+    groove: float = Field(..., ge=0.0, le=1.0)
+    contour: float = Field(..., ge=0.0, le=1.0)
+    emotion: float = Field(..., ge=0.0, le=1.0)
+
+
+class RefSimilarityResponse(CamelModel):
+    """Cross-ref similarity analysis between two Muse refs.
+
+    Returned by ``GET /musehub/repos/{repo_id}/analysis/{ref}/similarity?compare={ref2}``.
+
+    ``overall_similarity`` is a weighted average of the 10 dimension scores.
+    ``dimensions`` breaks down the score per musical axis so agents can
+    identify exactly where the two refs diverge.
+    ``interpretation`` is a human-readable summary for display in the UI
+    and for agent reasoning without further computation.
+
+    Agent use case: call this before generating a variation to understand
+    how far the target ref deviates from a reference ref, and which
+    dimensions need the most attention to close the gap.
+    """
+
+    base_ref: str = Field(..., description="The ref used as the similarity baseline")
+    compare_ref: str = Field(..., description="The ref compared against base_ref")
+    overall_similarity: float = Field(
+        ..., ge=0.0, le=1.0, description="Weighted average of all 10 dimension scores"
+    )
+    dimensions: RefSimilarityDimensions
+    interpretation: str = Field(
+        ..., description="Human-readable interpretation of the similarity result"
+    )
+
+
 # Emotion diff models (issue #420)
 # ---------------------------------------------------------------------------
 

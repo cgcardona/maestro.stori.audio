@@ -1,20 +1,22 @@
 """Muse Hub repo, branch, commit, credits, and agent context route handlers.
 
 Endpoint summary:
-  POST /musehub/repos                                                     — create a new remote repo
-  GET  /musehub/repos/{repo_id}                                           — get repo metadata (by internal UUID)
-  GET  /musehub/{owner}/{repo_slug}                                       — get repo metadata (by owner/slug)
-  GET  /musehub/repos/{repo_id}/branches                                  — list all branches
-  GET  /musehub/repos/{repo_id}/commits                                   — list commits (newest first)
-  GET  /musehub/repos/{repo_id}/commits/{sha}/render-status               — render job status for a commit
-  GET  /musehub/repos/{repo_id}/credits                                   — aggregated contributor credits
-  GET  /musehub/repos/{repo_id}/context                                   — agent context briefing
-  GET  /musehub/repos/{repo_id}/timeline                                  — chronological timeline with emotion/section/track layers
-  GET  /musehub/repos/{repo_id}/form-structure/{ref}                      — form and structure analysis
-  POST /musehub/repos/{repo_id}/sessions                                  — push a recording session
-  GET  /musehub/repos/{repo_id}/sessions                                  — list recording sessions
-  GET  /musehub/repos/{repo_id}/sessions/{session_id}                     — get a single session
-  GET  /musehub/repos/{repo_id}/arrange/{ref}                             — arrangement matrix (instrument × section grid)
+  POST   /musehub/repos                                                     — create a new remote repo
+  GET    /musehub/repos/{repo_id}                                           — get repo metadata (by internal UUID)
+  DELETE /musehub/repos/{repo_id}                                           — soft-delete a repo (owner only)
+  POST   /musehub/repos/{repo_id}/transfer                                  — transfer repo ownership (owner only)
+  GET    /musehub/{owner}/{repo_slug}                                       — get repo metadata (by owner/slug)
+  GET    /musehub/repos/{repo_id}/branches                                  — list all branches
+  GET    /musehub/repos/{repo_id}/commits                                   — list commits (newest first)
+  GET    /musehub/repos/{repo_id}/commits/{sha}/render-status               — render job status for a commit
+  GET    /musehub/repos/{repo_id}/credits                                   — aggregated contributor credits
+  GET    /musehub/repos/{repo_id}/context                                   — agent context briefing
+  GET    /musehub/repos/{repo_id}/timeline                                  — chronological timeline with emotion/section/track layers
+  GET    /musehub/repos/{repo_id}/form-structure/{ref}                      — form and structure analysis
+  POST   /musehub/repos/{repo_id}/sessions                                  — push a recording session
+  GET    /musehub/repos/{repo_id}/sessions                                  — list recording sessions
+  GET    /musehub/repos/{repo_id}/sessions/{session_id}                     — get a single session
+  GET    /musehub/repos/{repo_id}/arrange/{ref}                             — arrangement matrix (instrument × section grid)
 
 All endpoints require a valid JWT Bearer token.
 No business logic lives here — all persistence is delegated to
@@ -56,6 +58,7 @@ from maestro.models.musehub import (
     GrooveCheckResponse,
     GrooveCommitEntry,
     MuseHubContextResponse,
+    RepoListResponse,
     RepoResponse,
     RepoSettingsPatch,
     RepoSettingsResponse,
@@ -67,6 +70,7 @@ from maestro.models.musehub import (
     SessionResponse,
     SessionStop,
     TrackListingResponse,
+    TransferOwnershipRequest,
 )
 from maestro.models.musehub_analysis import FormStructureResponse
 from maestro.models.musehub_context import (
@@ -96,6 +100,31 @@ def _guard_visibility(repo: RepoResponse | None, claims: TokenClaims | None) -> 
         )
 
 
+@router.get(
+    "/repos",
+    response_model=RepoListResponse,
+    operation_id="listMyRepos",
+    summary="List repos for the authenticated user (own + collaborated)",
+    tags=["Repos"],
+)
+async def list_my_repos(
+    limit: int = Query(20, ge=1, le=100, description="Max repos per page"),
+    cursor: str | None = Query(None, description="Pagination cursor from a previous response"),
+    db: AsyncSession = Depends(get_db),
+    claims: TokenClaims = Depends(require_valid_token),
+) -> RepoListResponse:
+    """Return repos owned by or collaborated on by the authenticated user.
+
+    Results are ordered newest-first.  Pass the ``nextCursor`` value from the
+    previous response as ``?cursor=`` to advance through subsequent pages.
+    An absent ``nextCursor`` in the response means you have reached the last page.
+
+    Auth: requires a valid JWT Bearer token.
+    """
+    user_id: str = claims.get("sub") or ""
+    return await musehub_repository.list_repos_for_user(db, user_id, limit=limit, cursor=cursor)
+
+
 @router.post(
     "/repos",
     response_model=RepoResponse,
@@ -113,6 +142,15 @@ async def create_repo(
 
     ``slug`` is auto-generated from ``name``.  Returns 409 if the ``(owner, slug)``
     pair already exists — the musician must rename the repo to get a distinct slug.
+
+    Wizard behaviors (from the request body):
+    - ``initialize=true``: an empty "Initial commit" + default branch are created
+      immediately so the repo is browsable right away.
+    - ``template_repo_id``: topics/description are copied from a public template repo.
+    - ``license``: stored in the repo settings blob.
+    - ``topics``: merged with ``tags`` into a single tag list.
+
+    Clone URL: ``musehub://{owner}/{slug}``
     """
     owner_user_id: str = claims.get("sub") or ""
     try:
@@ -126,6 +164,11 @@ async def create_repo(
             tags=body.tags,
             key_signature=body.key_signature,
             tempo_bpm=body.tempo_bpm,
+            license=body.license,
+            topics=body.topics,
+            initialize=body.initialize,
+            default_branch=body.default_branch,
+            template_repo_id=body.template_repo_id,
         )
         await db.commit()
     except IntegrityError:
@@ -1263,6 +1306,120 @@ async def get_repo_activity(
         page=page,
         page_size=page_size,
     )
+
+
+# ── Owner guard — stricter than admin: only the repo owner passes ─────────────
+
+
+def _guard_owner(repo: RepoResponse | None, caller_user_id: str) -> None:
+    """Raise 404 if the repo does not exist; raise 403 if the caller is not the owner.
+
+    Transfer and deletion are owner-only operations — admin collaborators are
+    explicitly excluded.  Accepting any collaborator here would allow a
+    compromised collaborator account to destroy or hijack repos.
+    """
+    if repo is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repo not found")
+    if repo.owner_user_id != caller_user_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only the repo owner may perform this action",
+        )
+
+
+# ── Repo DELETE (soft-delete) ─────────────────────────────────────────────────
+
+
+@router.delete(
+    "/repos/{repo_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    operation_id="deleteRepo",
+    summary="Soft-delete a repo (owner only)",
+    tags=["Repos"],
+)
+async def delete_repo(
+    repo_id: str,
+    db: AsyncSession = Depends(get_db),
+    claims: TokenClaims = Depends(require_valid_token),
+) -> Response:
+    """Soft-delete a Muse Hub repo.
+
+    Marks the repo as deleted by recording a ``deleted_at`` timestamp; all
+    data is retained in the database for audit purposes.  Subsequent reads
+    (GET /repos/{repo_id}, branch/commit queries, etc.) will return 404.
+
+    Only the repo owner may delete a repo — admin collaborators are not
+    permitted.
+
+    Returns:
+        204 No Content on success.
+
+    Raises:
+        401: Missing or invalid JWT.
+        403: Caller is not the repo owner.
+        404: Repo not found or already deleted.
+    """
+    caller_user_id: str = claims.get("sub") or ""
+    repo = await musehub_repository.get_repo(db, repo_id)
+    _guard_owner(repo, caller_user_id)
+    deleted = await musehub_repository.delete_repo(db, repo_id)
+    if not deleted:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repo not found")
+    await db.commit()
+    logger.info("✅ Repo %s soft-deleted by user %s", repo_id, caller_user_id)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+# ── Repo ownership transfer ───────────────────────────────────────────────────
+
+
+@router.post(
+    "/repos/{repo_id}/transfer",
+    response_model=RepoResponse,
+    operation_id="transferRepoOwnership",
+    summary="Transfer repo ownership to another user (owner only)",
+    tags=["Repos"],
+)
+async def transfer_repo_ownership(
+    repo_id: str,
+    body: TransferOwnershipRequest,
+    db: AsyncSession = Depends(get_db),
+    claims: TokenClaims = Depends(require_valid_token),
+) -> RepoResponse:
+    """Transfer ownership of a Muse Hub repo to another user.
+
+    Updates ``owner_user_id`` on the repo record.  After a successful transfer
+    the calling user loses owner privileges; the new owner gains them
+    immediately.  The public ``owner`` username slug is NOT automatically
+    changed — the new owner may update it via the settings endpoint.
+
+    Only the current repo owner may initiate a transfer — admin collaborators
+    are not permitted.
+
+    Returns:
+        The updated RepoResponse with the new ``ownerUserId``.
+
+    Raises:
+        401: Missing or invalid JWT.
+        403: Caller is not the repo owner.
+        404: Repo not found or already deleted.
+    """
+    caller_user_id: str = claims.get("sub") or ""
+    repo = await musehub_repository.get_repo(db, repo_id)
+    _guard_owner(repo, caller_user_id)
+    updated = await musehub_repository.transfer_repo_ownership(
+        db, repo_id, body.new_owner_user_id
+    )
+    if updated is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repo not found")
+    await db.commit()
+    logger.info(
+        "✅ Repo %s ownership transferred from %s to %s",
+        repo_id,
+        caller_user_id,
+        body.new_owner_user_id,
+    )
+    return updated
 
 
 # ── Repo settings (GET + PATCH) — declared before catch-all ──────────────────

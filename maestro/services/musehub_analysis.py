@@ -89,6 +89,8 @@ from maestro.models.musehub_analysis import (
     SectionEntry,
     SectionMapEntry,
     SectionSimilarityHeatmap,
+    RefSimilarityDimensions,
+    RefSimilarityResponse,
     SimilarCommit,
     SimilarityData,
     TempoChange,
@@ -1308,6 +1310,7 @@ def compute_arrangement_matrix(*, repo_id: str, ref: str) -> ArrangementMatrixRe
 
 
 # ---------------------------------------------------------------------------
+<<<<<<< HEAD
 # Semantic recall (issue #410)
 # ---------------------------------------------------------------------------
 
@@ -1417,6 +1420,156 @@ def compute_recall(
 
 
 # ---------------------------------------------------------------------------
+=======
+# Cross-ref similarity (issue #406)
+# ---------------------------------------------------------------------------
+
+# Interpretation thresholds: the weighted mean of 10 dimension scores maps
+# to a qualitative label.  Weights are equal (0.1 each) so the overall score
+# is a simple mean, but kept in this lookup to support future re-weighting
+# without changing the response shape.
+_SIMILARITY_WEIGHTS: dict[str, float] = {
+    "pitch_distribution": 0.10,
+    "rhythm_pattern": 0.10,
+    "tempo": 0.10,
+    "dynamics": 0.10,
+    "harmonic_content": 0.10,
+    "form": 0.10,
+    "instrument_blend": 0.10,
+    "groove": 0.10,
+    "contour": 0.10,
+    "emotion": 0.10,
+}
+
+
+def _interpret_similarity(score: float, dims: RefSimilarityDimensions) -> str:
+    """Generate a human-readable interpretation of a cross-ref similarity score.
+
+    The interpretation names the dominant divergence axis when the overall
+    score is below 0.9, giving agents and UIs actionable language without
+    requiring further API calls.
+    """
+    dim_values = {
+        "pitch distribution": dims.pitch_distribution,
+        "rhythm pattern": dims.rhythm_pattern,
+        "tempo": dims.tempo,
+        "dynamics": dims.dynamics,
+        "harmonic content": dims.harmonic_content,
+        "form": dims.form,
+        "instrument blend": dims.instrument_blend,
+        "groove": dims.groove,
+        "contour": dims.contour,
+        "emotion": dims.emotion,
+    }
+    lowest_dim = min(dim_values, key=lambda k: dim_values[k])
+    lowest_score = dim_values[lowest_dim]
+
+    if score >= 0.90:
+        return "Nearly identical arrangements — only subtle differences detected."
+    if score >= 0.75:
+        return (
+            f"Highly similar arrangement with divergent {lowest_dim} choices "
+            f"(score: {lowest_score:.2f})."
+        )
+    if score >= 0.55:
+        return (
+            f"Moderately similar — significant divergence in {lowest_dim} "
+            f"(score: {lowest_score:.2f}) and related dimensions."
+        )
+    return (
+        f"Low similarity — the two refs differ substantially, "
+        f"especially in {lowest_dim} (score: {lowest_score:.2f})."
+    )
+
+
+def compute_ref_similarity(
+    *,
+    repo_id: str,
+    base_ref: str,
+    compare_ref: str,
+) -> RefSimilarityResponse:
+    """Compute cross-ref similarity between two Muse refs.
+
+    Returns a :class:`~maestro.models.musehub_analysis.RefSimilarityResponse`
+    with per-dimension scores and an overall weighted mean.
+
+    Scores are deterministic stubs derived from both ref hashes so that:
+    - The same pair always returns the same result (idempotent for agents).
+    - Swapping base/compare yields scores of the same magnitude (symmetry).
+
+    When real MIDI content analysis is available, replace the stub derivation
+    below with actual per-dimension comparison logic while preserving this
+    function's signature and return type.
+
+    Args:
+        repo_id: Muse repository identifier (used for log context only).
+        base_ref: The baseline ref (branch name, tag, or commit hash).
+        compare_ref: The ref to compare against ``base_ref``.
+
+    Returns:
+        :class:`~maestro.models.musehub_analysis.RefSimilarityResponse`
+        containing 10 dimension scores, an overall similarity, and an
+        auto-generated interpretation string.
+    """
+    base_seed = _ref_hash(base_ref)
+    compare_seed = _ref_hash(compare_ref)
+
+    def _dim_score(offset: int) -> float:
+        """Derive a deterministic 0–1 similarity score for one dimension."""
+        combined = (base_seed + compare_seed + offset) % (2**16)
+        raw = (combined / (2**16 - 1))
+        return round(0.50 + raw * 0.50, 4)
+
+    dims = RefSimilarityDimensions(
+        pitch_distribution=_dim_score(0),
+        rhythm_pattern=_dim_score(1),
+        tempo=_dim_score(2),
+        dynamics=_dim_score(3),
+        harmonic_content=_dim_score(4),
+        form=_dim_score(5),
+        instrument_blend=_dim_score(6),
+        groove=_dim_score(7),
+        contour=_dim_score(8),
+        emotion=_dim_score(9),
+    )
+
+    overall = round(
+        sum(
+            getattr(dims, k.replace(" ", "_").replace("-", "_")) * w
+            for k, w in {
+                "pitch_distribution": 0.10,
+                "rhythm_pattern": 0.10,
+                "tempo": 0.10,
+                "dynamics": 0.10,
+                "harmonic_content": 0.10,
+                "form": 0.10,
+                "instrument_blend": 0.10,
+                "groove": 0.10,
+                "contour": 0.10,
+                "emotion": 0.10,
+            }.items()
+        ),
+        4,
+    )
+
+    interpretation = _interpret_similarity(overall, dims)
+    logger.info(
+        "✅ similarity repo=%s base=%s compare=%s overall=%.2f",
+        repo_id[:8],
+        base_ref[:8],
+        compare_ref[:8],
+        overall,
+    )
+    return RefSimilarityResponse(
+        base_ref=base_ref,
+        compare_ref=compare_ref,
+        overall_similarity=overall,
+        dimensions=dims,
+        interpretation=interpretation,
+    )
+
+
+>>>>>>> origin/dev
 # Emotion diff (issue #420)
 # ---------------------------------------------------------------------------
 
