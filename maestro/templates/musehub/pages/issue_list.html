@@ -1,18 +1,17 @@
 {% extends "musehub/base.html" %}
-{% from "musehub/macros/issue.html" import issue_row %}
-{% from "musehub/macros/milestone.html" import milestone_progress %}
-{% from "musehub/macros/label.html" import label_chip %}
-{% from "musehub/macros/pagination.html" import pagination %}
-{% from "musehub/macros/empty_state.html" import empty_state %}
 
-{% block title %}Issues — {{ owner }}/{{ repo_slug }}{% endblock %}
+{% block title %}Issues{% endblock %}
 {% block breadcrumb %}
-  <a href="/musehub/ui/{{ owner }}">{{ owner }}</a> /
-  <a href="/musehub/ui/{{ owner }}/{{ repo_slug }}">{{ repo_slug }}</a> / issues
+  <a href="/musehub/ui/{{ owner }}/{{ repo_slug }}">{{ owner }}/{{ repo_slug }}</a> / issues
 {% endblock %}
 {% block repo_nav %}{% include "musehub/partials/repo_nav.html" %}{% endblock %}
 
-{% block extra_css %}
+{% block page_data %}
+const repoId = {{ repo_id | tojson }};
+const base   = {{ base_url | tojson }};
+{% endblock %}
+
+{% block extra_style %}
 <style>
 /* ── Issue list layout ─────────────────────────────────────────────────────── */
 .issues-layout {
@@ -97,7 +96,6 @@
   cursor: pointer;
 }
 .filter-clear-btn {
-  display: block;
   width: 100%;
   background: none;
   border: 1px solid var(--color-border);
@@ -106,8 +104,6 @@
   font-size: 11px;
   padding: 4px;
   cursor: pointer;
-  text-align: center;
-  text-decoration: none;
   margin-top: var(--space-2);
 }
 .filter-clear-btn:hover { color: var(--color-fg, #e6edf3); border-color: var(--color-fg, #e6edf3); }
@@ -134,6 +130,17 @@
   letter-spacing: .05em;
   margin: 0 0 var(--space-2) 0;
 }
+.milestone-progress-item { margin-bottom: var(--space-3); }
+.milestone-progress-item:last-child { margin-bottom: 0; }
+.milestone-progress-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-fg, #e6edf3);
+  margin-bottom: 2px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
 .milestone-progress-bar-track {
   height: 6px;
   background: var(--color-surface-3, #0d1117);
@@ -147,7 +154,37 @@
   border-radius: 3px;
   transition: width .4s ease;
 }
-.milestone-progress-counts { font-size: 10px; color: #8b949e; }
+.milestone-progress-counts {
+  font-size: 10px;
+  color: #8b949e;
+}
+.sidebar-label-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 4px;
+}
+.sidebar-label-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.sidebar-label-name {
+  font-size: 12px;
+  color: var(--color-fg, #e6edf3);
+  flex: 1;
+  margin: 0 6px;
+  cursor: pointer;
+}
+.sidebar-label-name:hover { text-decoration: underline; }
+.sidebar-label-count {
+  font-size: 11px;
+  color: #8b949e;
+  background: var(--color-surface-3, #0d1117);
+  border-radius: 10px;
+  padding: 0 6px;
+}
 
 /* ── Bulk actions toolbar ──────────────────────────────────────────────────── */
 #bulk-toolbar {
@@ -159,6 +196,7 @@
   border: 1px solid var(--color-accent, #1f6feb);
   border-radius: 6px;
   margin-bottom: var(--space-3);
+  flex-wrap: wrap;
 }
 #bulk-toolbar.visible { display: flex; }
 #bulk-count { font-size: 13px; color: var(--color-fg, #e6edf3); font-weight: 600; }
@@ -171,6 +209,7 @@
   background: var(--color-surface-2, #161b22);
   color: var(--color-fg, #e6edf3);
 }
+.bulk-action-btn:hover { border-color: var(--color-accent, #1f6feb); }
 #bulk-label-select, #bulk-milestone-select {
   font-size: 12px;
   padding: 4px 6px;
@@ -179,16 +218,25 @@
   background: var(--color-surface-2, #161b22);
   color: var(--color-fg, #e6edf3);
 }
-.bulk-sep { width: 1px; height: 20px; background: var(--color-border); flex-shrink: 0; }
-
-/* ── Issue row checkboxes ──────────────────────────────────────────────────── */
-.issue-row { display: flex; align-items: flex-start; gap: var(--space-2); }
-.issue-row-check {
-  width: 14px; height: 14px; margin-top: 3px; flex-shrink: 0;
-  cursor: pointer; accent-color: var(--color-accent, #1f6feb);
+.bulk-sep {
+  width: 1px;
+  height: 20px;
+  background: var(--color-border);
+  flex-shrink: 0;
 }
 
-/* ── Template selector ─────────────────────────────────────────────────────── */
+/* ── Issue row selection ───────────────────────────────────────────────────── */
+.issue-row { display: flex; align-items: flex-start; gap: var(--space-2); }
+.issue-row-check {
+  width: 14px;
+  height: 14px;
+  margin-top: 3px;
+  flex-shrink: 0;
+  cursor: pointer;
+  accent-color: var(--color-accent, #1f6feb);
+}
+
+/* ── Issue template selector ───────────────────────────────────────────────── */
 .template-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
@@ -210,280 +258,544 @@
 </style>
 {% endblock %}
 
-{% block content %}
-<div class="issues-layout">
+{% block page_script %}
+{% raw %}
+// ── State ──────────────────────────────────────────────────────────────────
+let allIssues        = [];
+let activeLabels     = new Set();   // multi-select label filter
+let activeMilestone  = null;        // milestone_id string or null
+let activeAssignee   = null;        // string or null
+let activeAuthor     = '';          // string (empty = all)
+let activeSort       = 'newest';    // 'newest' | 'oldest' | 'most-commented'
+let commentCounts    = {};
+let issueReactions   = {};
+let cachedOpen       = null;
+let cachedClosed     = null;
+let allLabels        = [];          // [{label_id, name, color, description}]
+let allMilestones    = [];          // [{milestone_id, number, title, open_issues, closed_issues}]
+let selectedIssues   = new Set();   // issue_id strings
 
-  {# ── Left filter sidebar — rendered server-side, no JS needed ── #}
-  <aside class="filter-sidebar" id="filter-sidebar">
-    <form method="get"
-          hx-get="{{ base_url }}/issues"
-          hx-target="#issue-rows"
-          hx-push-url="true"
-          hx-indicator="#htmx-loading"
-          id="issue-filter-form">
+// Issue templates (static definitions — teams can extend via PR)
+const ISSUE_TEMPLATES = [
+  {
+    id: 'blank',
+    icon: '📝',
+    title: 'Blank Issue',
+    description: 'Start with a clean slate.',
+    body: '',
+  },
+  {
+    id: 'bug',
+    icon: '🐛',
+    title: 'Bug Report',
+    description: 'Something isn\'t working as expected.',
+    body: '## What happened?\n\n\n## Steps to reproduce\n\n1. \n2. \n3. \n\n## Expected behaviour\n\n\n## Actual behaviour\n\n',
+  },
+  {
+    id: 'feature',
+    icon: '✨',
+    title: 'Feature Request',
+    description: 'Suggest a new musical idea or capability.',
+    body: '## Summary\n\n\n## Motivation\n\n\n## Proposed approach\n\n',
+  },
+  {
+    id: 'arrangement',
+    icon: '🎵',
+    title: 'Arrangement Issue',
+    description: 'Track needs musical arrangement work.',
+    body: '## Track / Section\n\n\n## Current arrangement\n\n\n## Desired arrangement\n\n\n## Musical context\n\n',
+  },
+  {
+    id: 'theory',
+    icon: '🎼',
+    title: 'Music Theory',
+    description: 'Related to harmony, rhythm, or theory decisions.',
+    body: '## Theory concern\n\n\n## Affected section / instrument\n\n\n## Suggested resolution\n\n',
+  },
+];
 
-      {# Labels — multi-select chips #}
-      <div class="filter-section" id="label-chip-container">
-        <p class="filter-section-title" id="filter-labels-heading">Labels</p>
-        {% if labels_data %}
-          <div style="display:flex;flex-wrap:wrap;gap:2px">
-            {% for lbl in labels_data %}
-              <label>
-                <input type="checkbox" name="label" value="{{ lbl.name }}"
-                       {% if lbl.name == active_label %}checked{% endif %}
-                       onchange="this.form.requestSubmit()" style="display:none"/>
-                {{ label_chip(lbl.name, lbl.color, active=(lbl.name == active_label)) }}
-              </label>
-            {% endfor %}
+// ── Body preview ───────────────────────────────────────────────────────────
+function bodyPreview(body) {
+  if (!body) return '';
+  const first = body.split('\n')[0].trim();
+  return first.length > 100 ? first.slice(0, 97) + '…' : first;
+}
+
+// ── Sorting ────────────────────────────────────────────────────────────────
+function sortedIssues(issues) {
+  const copy = [...issues];
+  if (activeSort === 'oldest') {
+    copy.sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
+  } else if (activeSort === 'most-commented') {
+    copy.sort((a, b) => (commentCounts[b.issueId] || 0) - (commentCounts[a.issueId] || 0));
+  } else {
+    copy.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+  }
+  return copy;
+}
+
+// ── Filter application ─────────────────────────────────────────────────────
+function applyFilters(issues) {
+  let out = issues;
+
+  // Multi-select label filter (issue must have ALL active labels)
+  if (activeLabels.size > 0) {
+    out = out.filter(i => {
+      const iLabels = i.labels || [];
+      for (const l of activeLabels) {
+        if (!iLabels.includes(l)) return false;
+      }
+      return true;
+    });
+  }
+
+  // Milestone filter
+  if (activeMilestone) {
+    out = out.filter(i => i.milestoneId === activeMilestone);
+  }
+
+  // Assignee filter
+  if (activeAssignee) {
+    out = out.filter(i => i.assignee === activeAssignee);
+  }
+
+  // Author filter
+  if (activeAuthor.trim()) {
+    const q = activeAuthor.trim().toLowerCase();
+    out = out.filter(i => (i.author || '').toLowerCase().includes(q));
+  }
+
+  return sortedIssues(out);
+}
+
+// ── Render issue rows ──────────────────────────────────────────────────────
+function renderRows() {
+  const issues = applyFilters(allIssues);
+  const container = document.getElementById('issue-rows');
+  if (!container) return;
+
+  if (issues.length === 0) {
+    container.innerHTML = (activeLabels.size > 0 || activeMilestone || activeAssignee || activeAuthor)
+      ? `<p class="loading">No issues match the current filters. <a href="#" onclick="clearAllFilters();return false;">Clear filters</a></p>`
+      : '<p class="loading">No issues found.</p>';
+    return;
+  }
+
+  container.innerHTML = issues.map(i => {
+    const preview = bodyPreview(i.body);
+    const labels  = (i.labels || []);
+    const commentCount = commentCounts[i.issueId];
+    const commentBadge = commentCount != null
+      ? `<span style="font-size:11px;color:#8b949e">&#128172; ${commentCount}</span>`
+      : '';
+    const topRxns = (issueReactions[i.issueId] || []).slice().sort((a, b) => b.count - a.count).slice(0, 2);
+    const rxnPills = topRxns.map(r =>
+      `<span style="font-size:11px;color:#8b949e;background:var(--color-surface-2,#21262d);border-radius:4px;padding:1px 5px">${r.emoji}&nbsp;${r.count}</span>`
+    ).join('');
+    const isChecked = selectedIssues.has(i.issueId);
+    return `
+      <div class="issue-row" data-issue-id="${i.issueId}">
+        <input type="checkbox" class="issue-row-check"
+               id="chk-${i.issueId}"
+               ${isChecked ? 'checked' : ''}
+               onchange="toggleIssueSelect(${JSON.stringify(i.issueId)}, this.checked)"/>
+        <span class="badge badge-${i.state}">#${i.number}</span>
+        <div style="flex:1;min-width:0">
+          <a href="${base}/issues/${i.number}">${escHtml(i.title)}</a>
+          ${preview ? `<div class="issue-preview">${escHtml(preview)}</div>` : ''}
+          <div style="display:flex;align-items:center;gap:var(--space-2);flex-wrap:wrap;margin-top:4px">
+            ${labels.map(l => {
+              const labelObj = allLabels.find(lb => lb.name === l);
+              const dotColor = labelObj ? labelObj.color : '#8b949e';
+              const isActive = activeLabels.has(l);
+              return `<span class="label label-pill${isActive ? ' label-active' : ''}"
+                            onclick="toggleLabelFilter(${JSON.stringify(l)})"
+                            style="cursor:pointer;border:1px solid ${dotColor};color:${dotColor}"
+                            title="Filter by ${escHtml(l)}">${escHtml(l)}</span>`;
+            }).join('')}
+            <span style="font-size:11px;color:#8b949e">Opened ${fmtDate(i.createdAt)}</span>
+            ${i.author ? `<span style="font-size:11px;color:#8b949e">by ${escHtml(i.author)}</span>` : ''}
+            ${commentBadge}
+            ${rxnPills}
           </div>
-        {% else %}
-          <span style="font-size:11px;color:#8b949e">No labels yet</span>
-        {% endif %}
-      </div>
-
-      {# Milestone dropdown #}
-      <div class="filter-section">
-        <p class="filter-section-title">Milestone</p>
-        <select name="milestone_id" id="filter-milestone" class="filter-select"
-                onchange="this.form.requestSubmit()">
-          <option value="">All milestones</option>
-          {% for ms in milestones_data %}
-            <option value="{{ ms.milestone_id }}"
-                    {% if ms.milestone_id == active_milestone_id %}selected{% endif %}>
-              {{ ms.title }}
-            </option>
-          {% endfor %}
-        </select>
-      </div>
-
-      {# Assignee dropdown #}
-      <div class="filter-section">
-        <p class="filter-section-title">Assignee</p>
-        <select name="assignee" id="filter-assignee" class="filter-select"
-                onchange="this.form.requestSubmit()">
-          <option value="">All assignees</option>
-          {% for a in assignees %}
-            <option value="{{ a }}" {% if a == active_assignee %}selected{% endif %}>{{ a }}</option>
-          {% endfor %}
-        </select>
-      </div>
-
-      {# Author text input #}
-      <div class="filter-section">
-        <p class="filter-section-title">Author</p>
-        <input name="author" id="filter-author" type="text" class="filter-input"
-               placeholder="Filter by author…" value="{{ active_author }}"
-               oninput="clearTimeout(this._t);this._t=setTimeout(()=>this.form.requestSubmit(),300)"/>
-      </div>
-
-      {# Sort radios #}
-      <div class="filter-section">
-        <p class="filter-section-title">Sort</p>
-        <div class="sort-radio-group" id="sort-radio-group">
-          {% for value, lbl in [('newest','Newest'),('oldest','Oldest'),('most-commented','Most commented')] %}
-            <label class="sort-radio-label">
-              <input type="radio" name="sort" value="{{ value }}"
-                     {% if value == active_sort %}checked{% endif %}
-                     onchange="this.form.requestSubmit()"/>
-              {{ lbl }}
-            </label>
-          {% endfor %}
         </div>
+        <span class="badge badge-${i.state}">${i.state}</span>
+      </div>`;
+  }).join('');
+}
+
+// ── Label filter helpers ───────────────────────────────────────────────────
+function toggleLabelFilter(label) {
+  if (activeLabels.has(label)) {
+    activeLabels.delete(label);
+  } else {
+    activeLabels.add(label);
+  }
+  syncFilterSidebar();
+  renderRows();
+}
+
+function clearAllFilters() {
+  activeLabels.clear();
+  activeMilestone = null;
+  activeAssignee  = null;
+  activeAuthor    = '';
+  const msEl = document.getElementById('filter-milestone');
+  if (msEl) msEl.value = '';
+  const assigneeEl = document.getElementById('filter-assignee');
+  if (assigneeEl) assigneeEl.value = '';
+  const authorEl = document.getElementById('filter-author');
+  if (authorEl) authorEl.value = '';
+  syncFilterSidebar();
+  renderRows();
+}
+
+// ── Sync filter sidebar active states ─────────────────────────────────────
+function syncFilterSidebar() {
+  document.querySelectorAll('.label-chip[data-label]').forEach(chip => {
+    const lbl = chip.dataset.label;
+    chip.classList.toggle('active', activeLabels.has(lbl));
+  });
+}
+
+// ── Milestone filter ───────────────────────────────────────────────────────
+function setMilestoneFilter(val) {
+  activeMilestone = val || null;
+  renderRows();
+}
+
+// ── Assignee filter ────────────────────────────────────────────────────────
+function setAssigneeFilter(val) {
+  activeAssignee = val || null;
+  renderRows();
+}
+
+// ── Author filter ──────────────────────────────────────────────────────────
+function setAuthorFilter(val) {
+  activeAuthor = val || '';
+  renderRows();
+}
+
+// ── Sort ───────────────────────────────────────────────────────────────────
+async function changeSort(value) {
+  activeSort = value;
+  if (activeSort === 'most-commented' && allIssues.length > 0) {
+    const uncounted = allIssues.filter(i => commentCounts[i.issueId] == null);
+    if (uncounted.length > 0) {
+      const loadEl = document.getElementById('sort-loading');
+      if (loadEl) loadEl.style.display = '';
+      await loadCommentCounts(uncounted);
+      if (loadEl) loadEl.style.display = 'none';
+    }
+  }
+  // Update sort radio buttons
+  document.querySelectorAll('input[name="sort-radio"]').forEach(r => {
+    r.checked = r.value === activeSort;
+  });
+  renderRows();
+}
+
+// ── Selection & bulk actions ───────────────────────────────────────────────
+function toggleIssueSelect(issueId, checked) {
+  if (checked) {
+    selectedIssues.add(issueId);
+  } else {
+    selectedIssues.delete(issueId);
+  }
+  updateBulkToolbar();
+}
+
+function updateBulkToolbar() {
+  const toolbar = document.getElementById('bulk-toolbar');
+  const countEl = document.getElementById('bulk-count');
+  if (!toolbar || !countEl) return;
+  const n = selectedIssues.size;
+  if (n > 0) {
+    toolbar.classList.add('visible');
+    countEl.textContent = n === 1 ? '1 issue selected' : `${n} issues selected`;
+  } else {
+    toolbar.classList.remove('visible');
+  }
+}
+
+async function bulkClose() {
+  if (selectedIssues.size === 0) return;
+  if (!confirm(`Close ${selectedIssues.size} issue(s)?`)) return;
+  const issues = allIssues.filter(i => selectedIssues.has(i.issueId));
+  await Promise.all(issues.map(async i => {
+    try {
+      await apiFetch('/repos/' + repoId + '/issues/' + i.number + '/close', { method: 'POST' });
+    } catch (_) { /* best-effort */ }
+  }));
+  selectedIssues.clear();
+  await load(document.getElementById('tab-open')?.classList.contains('tab-active') ? 'open' : 'closed');
+}
+
+async function bulkReopen() {
+  if (selectedIssues.size === 0) return;
+  if (!confirm(`Reopen ${selectedIssues.size} issue(s)?`)) return;
+  const issues = allIssues.filter(i => selectedIssues.has(i.issueId));
+  await Promise.all(issues.map(async i => {
+    try {
+      await apiFetch('/repos/' + repoId + '/issues/' + i.number + '/reopen', { method: 'POST' });
+    } catch (_) { /* best-effort */ }
+  }));
+  selectedIssues.clear();
+  await load('open');
+}
+
+async function bulkAssignLabel() {
+  const select = document.getElementById('bulk-label-select');
+  if (!select || !select.value) { alert('Please select a label first.'); return; }
+  if (selectedIssues.size === 0) return;
+  const labelName = select.value;
+  const issues = allIssues.filter(i => selectedIssues.has(i.issueId));
+  await Promise.all(issues.map(async i => {
+    const current = new Set(i.labels || []);
+    current.add(labelName);
+    try {
+      await apiFetch('/repos/' + repoId + '/issues/' + i.number + '/labels', {
+        method: 'POST',
+        body: JSON.stringify({ labels: [...current] }),
+      });
+    } catch (_) { /* best-effort */ }
+  }));
+  selectedIssues.clear();
+  const state = document.getElementById('tab-open')?.classList.contains('tab-active') ? 'open' : 'closed';
+  await load(state);
+}
+
+async function bulkAssignMilestone() {
+  const select = document.getElementById('bulk-milestone-select');
+  if (!select || !select.value) { alert('Please select a milestone first.'); return; }
+  if (selectedIssues.size === 0) return;
+  const milestoneId = select.value;
+  const issues = allIssues.filter(i => selectedIssues.has(i.issueId));
+  await Promise.all(issues.map(async i => {
+    try {
+      await apiFetch('/repos/' + repoId + '/issues/' + i.number + '/milestone?milestone_id=' + encodeURIComponent(milestoneId), {
+        method: 'POST',
+      });
+    } catch (_) { /* best-effort */ }
+  }));
+  selectedIssues.clear();
+  const state = document.getElementById('tab-open')?.classList.contains('tab-active') ? 'open' : 'closed';
+  await load(state);
+}
+
+function deselectAll() {
+  selectedIssues.clear();
+  document.querySelectorAll('.issue-row-check').forEach(c => { c.checked = false; });
+  updateBulkToolbar();
+}
+
+// ── Load comment counts ────────────────────────────────────────────────────
+async function loadCommentCounts(issues) {
+  await Promise.all(issues.map(async i => {
+    try {
+      const rows = await apiFetch('/repos/' + repoId + '/comments?target_type=issue&target_id=' + encodeURIComponent(i.issueId));
+      commentCounts[i.issueId] = Array.isArray(rows) ? rows.length : 0;
+    } catch (_) {
+      commentCounts[i.issueId] = 0;
+    }
+  }));
+}
+
+// ── Load reaction summaries ────────────────────────────────────────────────
+async function loadReactionSummaries(issues) {
+  await Promise.all(issues.map(async i => {
+    try {
+      const rxns = await apiFetch('/repos/' + repoId + '/reactions?target_type=issue&target_id=' + encodeURIComponent(i.issueId));
+      issueReactions[i.issueId] = Array.isArray(rxns) ? rxns : [];
+    } catch (_) {
+      issueReactions[i.issueId] = [];
+    }
+  }));
+}
+
+// ── Load labels for sidebars ───────────────────────────────────────────────
+async function loadLabels() {
+  try {
+    const data = await apiFetch('/repos/' + repoId + '/labels');
+    allLabels = data.items || [];
+  } catch (_) {
+    allLabels = [];
+  }
+}
+
+// ── Load milestones for sidebar ────────────────────────────────────────────
+async function loadMilestones() {
+  try {
+    const data = await apiFetch('/repos/' + repoId + '/milestones?state=open');
+    allMilestones = (data.milestones || []).slice(0, 5); // cap at 5 for sidebar
+  } catch (_) {
+    allMilestones = [];
+  }
+}
+
+// ── Render left filter sidebar ─────────────────────────────────────────────
+function renderFilterSidebar(issues) {
+  const el = document.getElementById('filter-sidebar');
+  if (!el) return;
+
+  // Collect unique assignees from loaded issues
+  const assigneeSet = new Set();
+  for (const i of [...(cachedOpen || []), ...(cachedClosed || [])]) {
+    if (i.assignee) assigneeSet.add(i.assignee);
+  }
+
+  const labelChips = allLabels.map(l => {
+    const isActive = activeLabels.has(l.name);
+    return `<span class="label-chip${isActive ? ' active' : ''}"
+                  data-label="${escHtml(l.name)}"
+                  style="background:${l.color}22;color:${l.color}"
+                  onclick="toggleLabelFilter(${JSON.stringify(l.name)})">
+              <span style="width:6px;height:6px;border-radius:50%;background:${l.color};display:inline-block"></span>
+              ${escHtml(l.name)}
+            </span>`;
+  }).join('');
+
+  const milestoneOptions = allMilestones.map(m =>
+    `<option value="${m.milestoneId}" ${activeMilestone === m.milestoneId ? 'selected' : ''}>${escHtml(m.title)}</option>`
+  ).join('');
+
+  const assigneeOptions = [...assigneeSet].map(a =>
+    `<option value="${escHtml(a)}" ${activeAssignee === a ? 'selected' : ''}>${escHtml(a)}</option>`
+  ).join('');
+
+  el.innerHTML = `
+    <div class="filter-section">
+      <p class="filter-section-title" id="filter-labels-heading">Labels</p>
+      <div id="label-chip-container" style="display:flex;flex-wrap:wrap;gap:2px">
+        ${allLabels.length > 0 ? labelChips : '<span style="font-size:11px;color:#8b949e">No labels yet</span>'}
       </div>
-
-      {# Hidden state field so filter form preserves active tab #}
-      <input type="hidden" name="state" value="{{ state }}"/>
-
-      {% if active_label or active_milestone_id or active_assignee or active_author %}
-        <a href="{{ base_url }}/issues?state={{ state }}" class="filter-clear-btn">✕ Clear filters</a>
-      {% endif %}
-    </form>
-  </aside>
-
-  {# ── Main column ── #}
-  <div style="flex:1;min-width:0">
-
-    {# Bulk actions toolbar — shown via JS when checkboxes are selected #}
-    <div id="bulk-toolbar" aria-live="polite">
-      <span id="bulk-count"></span>
-      <span class="bulk-sep"></span>
-      <select id="bulk-label-select" title="Label to assign">
-        <option value="">Assign label…</option>
-        {% for lbl in labels_data %}
-          <option value="{{ lbl.name }}">{{ lbl.name }}</option>
-        {% endfor %}
-      </select>
-      <button class="bulk-action-btn" onclick="bulkAssignLabel()">Apply label</button>
-      <span class="bulk-sep"></span>
-      <select id="bulk-milestone-select" title="Milestone to assign">
-        <option value="">Assign milestone…</option>
-        {% for ms in milestones_data %}
-          <option value="{{ ms.milestone_id }}">{{ ms.title }}</option>
-        {% endfor %}
-      </select>
-      <button class="bulk-action-btn" onclick="bulkAssignMilestone()">Apply milestone</button>
-      <span class="bulk-sep"></span>
-      <button class="bulk-action-btn" onclick="bulkClose()">Close</button>
-      <button class="bulk-action-btn" onclick="bulkReopen()">Reopen</button>
-      <button class="bulk-action-btn" style="margin-left:auto"
-              onclick="deselectAll()">✕ Deselect</button>
     </div>
 
-    <div class="card">
-      {# Open / Closed tab strip #}
-      <div class="tab-strip" style="display:flex;gap:0;border-bottom:1px solid var(--color-border);margin-bottom:var(--space-3)">
-        <a href="{{ base_url }}/issues?state=open"
-           id="tab-open"
-           class="tab-btn{% if state != 'closed' %} tab-active{% endif %}"
-           hx-get="{{ base_url }}/issues?state=open"
-           hx-target="#issue-rows"
-           hx-push-url="true">
-          ○ Open <span class="tab-count">{{ open_count }}</span>
-        </a>
-        <a href="{{ base_url }}/issues?state=closed"
-           id="tab-closed"
-           class="tab-btn{% if state == 'closed' %} tab-active{% endif %}"
-           hx-get="{{ base_url }}/issues?state=closed"
-           hx-target="#issue-rows"
-           hx-push-url="true">
-          ✓ Closed <span class="tab-count">{{ closed_count }}</span>
-        </a>
-        <div style="margin-left:auto">
-          <button class="btn btn-secondary btn-sm" id="new-issue-btn"
-                  onclick="showTemplatePicker()">+ New Issue</button>
-        </div>
-      </div>
-
-      {# Issue rows — HTMX target for filter/tab swaps #}
-      <div id="issue-rows">
-        {% include "musehub/fragments/issue_rows.html" %}
-      </div>
-
-      {# Pagination #}
-      {{ pagination(page, total_pages, base_url ~ '/issues',
-                    extra_params={'state': state, 'label': active_label, 'sort': active_sort}) }}
+    <div class="filter-section">
+      <p class="filter-section-title">Milestone</p>
+      <select id="filter-milestone" class="filter-select"
+              onchange="setMilestoneFilter(this.value)">
+        <option value="">All milestones</option>
+        ${milestoneOptions}
+      </select>
     </div>
 
-    {# Template picker (shown on + New Issue click) #}
-    <div id="template-picker" style="display:none">
-      <div class="card" style="border-color:var(--color-accent)">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:var(--space-3)">
-          <h2 style="margin:0">Choose a template</h2>
-          <button class="btn btn-ghost btn-sm"
-                  onclick="document.getElementById('template-picker').style.display='none'">✕</button>
-        </div>
-        <div class="template-grid" id="template-grid">
-          {# Template cards rendered server-side so JS-off browsers see them #}
-          {% for tpl in [
-            {'id':'blank','icon':'📝','title':'Blank Issue','desc':'Start with a clean slate.'},
-            {'id':'bug','icon':'🐛','title':'Bug Report','desc':'Something isn\'t working as expected.'},
-            {'id':'feature','icon':'✨','title':'Feature Request','desc':'Suggest a new musical idea or capability.'},
-            {'id':'arrangement','icon':'🎵','title':'Arrangement Issue','desc':'Track needs musical arrangement work.'},
-            {'id':'theory','icon':'🎼','title':'Music Theory','desc':'Related to harmony, rhythm, or theory decisions.'},
-          ] %}
-            <div class="template-card" id="template-card-{{ tpl.id }}"
-                 onclick="selectTemplate('{{ tpl.id }}')">
-              <div class="template-card-icon">{{ tpl.icon }}</div>
-              <div class="template-card-title">{{ tpl.title }}</div>
-              <div class="template-card-desc">{{ tpl.desc }}</div>
+    <div class="filter-section">
+      <p class="filter-section-title">Assignee</p>
+      <select id="filter-assignee" class="filter-select"
+              onchange="setAssigneeFilter(this.value)">
+        <option value="">All assignees</option>
+        ${assigneeOptions}
+      </select>
+    </div>
+
+    <div class="filter-section">
+      <p class="filter-section-title">Author</p>
+      <input id="filter-author" class="filter-input" type="text"
+             placeholder="Filter by author…"
+             value="${escHtml(activeAuthor)}"
+             oninput="setAuthorFilter(this.value)"/>
+    </div>
+
+    <div class="filter-section">
+      <p class="filter-section-title">Sort</p>
+      <div class="sort-radio-group" id="sort-radio-group">
+        <label class="sort-radio-label">
+          <input type="radio" name="sort-radio" value="newest" ${activeSort==='newest'?'checked':''} onchange="changeSort('newest')"/>
+          Newest
+        </label>
+        <label class="sort-radio-label">
+          <input type="radio" name="sort-radio" value="oldest" ${activeSort==='oldest'?'checked':''} onchange="changeSort('oldest')"/>
+          Oldest
+        </label>
+        <label class="sort-radio-label">
+          <input type="radio" name="sort-radio" value="most-commented" ${activeSort==='most-commented'?'checked':''} onchange="changeSort('most-commented')"/>
+          Most commented
+        </label>
+      </div>
+      <span id="sort-loading" style="display:none;font-size:11px;color:#8b949e">Loading…</span>
+    </div>
+
+    <button class="filter-clear-btn" onclick="clearAllFilters()">✕ Clear all filters</button>
+  `;
+}
+
+// ── Render right sidebar (milestones progress + labels summary) ────────────
+function renderRightSidebar(issues) {
+  const el = document.getElementById('sidebar-right');
+  if (!el) return;
+
+  // Milestone progress bars
+  const milestoneHTML = allMilestones.length > 0
+    ? allMilestones.map(m => {
+        const total = (m.openIssues || 0) + (m.closedIssues || 0);
+        const pct = total > 0 ? Math.round((m.closedIssues || 0) / total * 100) : 0;
+        return `
+          <div class="milestone-progress-item" id="milestone-progress-${m.milestoneId}">
+            <div class="milestone-progress-title">
+              <a href="${base}/milestones/${m.number}" style="color:var(--color-fg,#e6edf3);text-decoration:none;font-size:12px">
+                ${escHtml(m.title)}
+              </a>
+              <span style="font-size:11px;color:#8b949e">${pct}%</span>
             </div>
-          {% endfor %}
-        </div>
-        <a href="#" onclick="document.getElementById('template-picker').style.display='none';return false"
-           style="font-size:12px;color:#8b949e">← Templates</a>
-      </div>
-    </div>
+            <div class="milestone-progress-bar-track">
+              <div class="milestone-progress-bar-fill" style="width:${pct}%"></div>
+            </div>
+            <div class="milestone-progress-counts">
+              ${m.closedIssues || 0} closed · ${m.openIssues || 0} open
+            </div>
+          </div>`;
+      }).join('')
+    : '<span style="font-size:11px;color:#8b949e">No open milestones</span>';
 
-    {# New issue form (shown after template selection) #}
-    <div id="create-issue-panel" style="display:none">
-      <div class="card" style="border-color:var(--color-accent)">
-        <div style="display:flex;align-items:center;gap:var(--space-2);margin-bottom:var(--space-3)">
-          <button class="btn btn-ghost btn-sm" onclick="showTemplatePicker()">← Templates</button>
-          <h2 style="margin:0">New Issue</h2>
-        </div>
-        <div class="form-group" style="margin-bottom:var(--space-3)">
-          <label class="form-label" for="issue-title">Title</label>
-          <input id="issue-title" class="form-input" type="text" placeholder="Brief description…"/>
-        </div>
-        <div class="form-group" style="margin-bottom:var(--space-3)">
-          <label class="form-label" for="issue-body">Description</label>
-          <textarea id="issue-body" class="form-input" rows="7"
-                    placeholder="Describe the musical problem or request…"
-                    style="resize:vertical;width:100%;font-family:monospace"></textarea>
-        </div>
-        <div style="display:flex;gap:var(--space-2)">
-          <button class="btn btn-primary" onclick="createIssue()">Submit Issue</button>
-          <button class="btn btn-secondary"
-                  onclick="document.getElementById('create-issue-panel').style.display='none';
-                           document.getElementById('template-picker').style.display='none'">
-            Cancel
-          </button>
-        </div>
-      </div>
-    </div>
-  </div>
+  // Label counts (count against the currently loaded issue list)
+  const allLoadedIssues = [...(cachedOpen || []), ...(cachedClosed || [])];
+  const labelCounts = {};
+  for (const i of allLoadedIssues) {
+    for (const l of (i.labels || [])) labelCounts[l] = (labelCounts[l] || 0) + 1;
+  }
 
-  {# ── Right sidebar — milestone progress + labels summary, server-side ── #}
-  <aside class="sidebar-right" id="sidebar-right">
+  const topLabels = allLabels
+    .map(l => ({ ...l, count: labelCounts[l.name] || 0 }))
+    .filter(l => l.count > 0)
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 8);
+
+  const labelsHTML = topLabels.length > 0
+    ? topLabels.map(l => `
+        <div class="sidebar-label-row" id="sidebar-label-row-${l.label_id}">
+          <span class="sidebar-label-dot" style="background:${l.color}"></span>
+          <span class="sidebar-label-name"
+                onclick="toggleLabelFilter(${JSON.stringify(l.name)})"
+                title="Filter by ${escHtml(l.name)}">
+            ${escHtml(l.name)}
+          </span>
+          <span class="sidebar-label-count">${l.count}</span>
+        </div>`).join('')
+    : '<span style="font-size:11px;color:#8b949e">No labels in use</span>';
+
+  el.innerHTML = `
     <div class="sidebar-section">
       <p class="sidebar-section-title" id="milestone-progress-heading">Milestones</p>
-      <div id="milestone-progress-list">
-        {% for ms in milestones_data %}
-          {{ milestone_progress(ms) }}
-        {% else %}
-          <span style="font-size:11px;color:#8b949e">No open milestones</span>
-        {% endfor %}
-      </div>
-      {% if milestones_data %}
-        <a href="{{ base_url }}/milestones"
-           style="font-size:11px;color:var(--color-accent,#1f6feb);display:block;margin-top:var(--space-2)">
-          View all milestones →
-        </a>
-      {% endif %}
+      <div id="milestone-progress-list">${milestoneHTML}</div>
+      ${allMilestones.length > 0 ? `<a href="${base}/milestones" style="font-size:11px;color:var(--color-accent,#1f6feb);display:block;margin-top:var(--space-2)">View all milestones →</a>` : ''}
     </div>
 
     <div class="sidebar-section">
       <p class="sidebar-section-title" id="labels-summary-heading">Labels</p>
-      <div id="labels-summary-list">
-        {% for lbl in labels_data %}
-          <div class="sidebar-label-row" style="display:flex;align-items:center;margin-bottom:4px">
-            <span style="width:10px;height:10px;border-radius:50%;background:{{ lbl.color }};flex-shrink:0"></span>
-            <a href="{{ base_url }}/issues?label={{ lbl.name }}&state={{ state }}"
-               style="font-size:12px;color:var(--color-fg,#e6edf3);flex:1;margin:0 6px">
-              {{ lbl.name }}
-            </a>
-          </div>
-        {% else %}
-          <span style="font-size:11px;color:#8b949e">No labels in use</span>
-        {% endfor %}
-      </div>
-      <a href="{{ base_url }}/labels"
-         style="font-size:11px;color:var(--color-accent,#1f6feb);display:block;margin-top:var(--space-2)">
-        Manage labels →
-      </a>
+      <div id="labels-summary-list">${labelsHTML}</div>
+      <a href="${base}/labels" style="font-size:11px;color:var(--color-accent,#1f6feb);display:block;margin-top:var(--space-2)">Manage labels →</a>
     </div>
-  </aside>
-</div>
-{% endblock %}
+  `;
+}
 
-{% block page_script %}
-{% raw %}
-// ── Minimal JS for create-issue flow and bulk toolbar ──────────────────────
-const ISSUE_TEMPLATES = [
-  { id: 'blank',       icon: '📝', title: 'Blank Issue',       body: '' },
-  { id: 'bug',         icon: '🐛', title: 'Bug Report',
-    body: '## What happened?\n\n\n## Steps to reproduce\n\n1. \n2. \n\n## Expected\n\n\n## Actual\n\n' },
-  { id: 'feature',     icon: '✨', title: 'Feature Request',
-    body: '## Summary\n\n\n## Motivation\n\n\n## Proposed approach\n\n' },
-  { id: 'arrangement', icon: '🎵', title: 'Arrangement Issue',
-    body: '## Track / Section\n\n\n## Current arrangement\n\n\n## Desired arrangement\n\n' },
-  { id: 'theory',      icon: '🎼', title: 'Music Theory',
-    body: '## Theory concern\n\n\n## Affected section\n\n\n## Suggested resolution\n\n' },
-];
-
+// ── Template selector ──────────────────────────────────────────────────────
 function showTemplatePicker() {
-  document.getElementById('template-picker').style.display = '';
-  document.getElementById('create-issue-panel').style.display = 'none';
+  const panel = document.getElementById('create-issue-panel');
+  const picker = document.getElementById('template-picker');
+  if (!panel || !picker) return;
+  picker.style.display = '';
+  panel.style.display = 'none';
 }
 
 function selectTemplate(tplId) {
@@ -493,6 +805,187 @@ function selectTemplate(tplId) {
   document.getElementById('template-picker').style.display = 'none';
   document.getElementById('create-issue-panel').style.display = '';
   document.getElementById('issue-title').focus();
+}
+
+// ── Build bulk toolbar HTML ────────────────────────────────────────────────
+function buildBulkToolbar() {
+  const labelOptions = allLabels.map(l =>
+    `<option value="${escHtml(l.name)}">${escHtml(l.name)}</option>`
+  ).join('');
+  const msOptions = allMilestones.map(m =>
+    `<option value="${m.milestoneId}">${escHtml(m.title)}</option>`
+  ).join('');
+
+  return `
+    <div id="bulk-toolbar" aria-live="polite">
+      <span id="bulk-count"></span>
+      <span class="bulk-sep"></span>
+      <select id="bulk-label-select" title="Label to assign">
+        <option value="">Assign label…</option>
+        ${labelOptions}
+      </select>
+      <button class="bulk-action-btn" onclick="bulkAssignLabel()">Apply label</button>
+      <span class="bulk-sep"></span>
+      <select id="bulk-milestone-select" title="Milestone to assign">
+        <option value="">Assign milestone…</option>
+        ${msOptions}
+      </select>
+      <button class="bulk-action-btn" onclick="bulkAssignMilestone()">Apply milestone</button>
+      <span class="bulk-sep"></span>
+      <button class="bulk-action-btn" onclick="bulkClose()">Close</button>
+      <button class="bulk-action-btn" onclick="bulkReopen()">Reopen</button>
+      <button class="bulk-action-btn" style="margin-left:auto" onclick="deselectAll()">✕ Deselect</button>
+    </div>`;
+}
+
+// ── Template picker panel ──────────────────────────────────────────────────
+function buildTemplatePicker() {
+  const cards = ISSUE_TEMPLATES.map(tpl => `
+    <div class="template-card" onclick="selectTemplate(${JSON.stringify(tpl.id)})" id="template-card-${tpl.id}">
+      <div class="template-card-icon">${tpl.icon}</div>
+      <div class="template-card-title">${escHtml(tpl.title)}</div>
+      <div class="template-card-desc">${escHtml(tpl.description)}</div>
+    </div>`).join('');
+
+  return `
+    <div id="template-picker" style="display:none">
+      <div class="card" style="border-color:var(--color-accent)">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:var(--space-3)">
+          <h2 style="margin:0">Choose a template</h2>
+          <button class="btn btn-ghost btn-sm" onclick="document.getElementById('template-picker').style.display='none'">✕</button>
+        </div>
+        <div class="template-grid" id="template-grid">${cards}</div>
+      </div>
+    </div>`;
+}
+
+// ── Main load ──────────────────────────────────────────────────────────────
+async function load(state) {
+  initRepoNav(repoId);
+  try {
+    // Parallel fetch: issues (both states) + labels + milestones
+    const [openData, closedData] = await Promise.all([
+      cachedOpen   !== null ? Promise.resolve({ issues: cachedOpen })   : apiFetch('/repos/' + repoId + '/issues?state=open'),
+      cachedClosed !== null ? Promise.resolve({ issues: cachedClosed }) : apiFetch('/repos/' + repoId + '/issues?state=closed'),
+    ]);
+
+    // Always load labels & milestones (cheap; needed for sidebars)
+    await Promise.all([loadLabels(), loadMilestones()]);
+
+    cachedOpen   = openData.issues   || [];
+    cachedClosed = closedData.issues || [];
+
+    const openCount   = cachedOpen.length;
+    const closedCount = cachedClosed.length;
+
+    allIssues       = state === 'closed' ? cachedClosed : cachedOpen;
+    selectedIssues  = new Set();  // clear selection on tab switch
+
+    // Eager social signal pre-fetch
+    const allForSocial = [...cachedOpen, ...cachedClosed];
+    const needCounts = allForSocial.filter(i => commentCounts[i.issueId] == null);
+    const needRxns   = allForSocial.filter(i => issueReactions[i.issueId] == null);
+    await Promise.all([
+      needCounts.length ? loadCommentCounts(needCounts)   : Promise.resolve(),
+      needRxns.length   ? loadReactionSummaries(needRxns) : Promise.resolve(),
+    ]);
+
+    document.getElementById('content').innerHTML = `
+      <div style="display:flex;gap:var(--space-4);align-items:flex-start">
+        <!-- Left filter sidebar -->
+        <div class="filter-sidebar" id="filter-sidebar" style="width:220px;flex-shrink:0"></div>
+
+        <!-- Main column -->
+        <div style="flex:1;min-width:0">
+          ${buildBulkToolbar()}
+          <div class="card">
+            <div style="display:flex;align-items:center;gap:var(--space-3);margin-bottom:var(--space-3);flex-wrap:wrap">
+              <h1 style="margin:0">Issues</h1>
+              <div style="margin-left:auto;display:flex;gap:var(--space-2)">
+                <button class="btn btn-secondary btn-sm" id="new-issue-btn"
+                        onclick="showTemplatePicker()">
+                  + New Issue
+                </button>
+              </div>
+            </div>
+
+            <!-- Open / Closed tabs -->
+            <div style="display:flex;gap:0;border-bottom:1px solid var(--color-border);margin-bottom:var(--space-3)">
+              <button id="tab-open" class="tab-btn${state !== 'closed' ? ' tab-active' : ''}"
+                      onclick="load('open')">
+                &#9711; Open <span class="tab-count">${openCount}</span>
+              </button>
+              <button id="tab-closed" class="tab-btn${state === 'closed' ? ' tab-active' : ''}"
+                      onclick="load('closed')">
+                &#10003; Closed <span class="tab-count">${closedCount}</span>
+              </button>
+            </div>
+
+            <!-- Issue rows -->
+            <div id="issue-rows"></div>
+
+            ${openCount === 0 && closedCount === 0 ? `
+              <div class="empty-state">
+                <div class="empty-icon">&#128203;</div>
+                <p class="empty-title">No issues yet</p>
+                <p class="empty-desc">Found a musical problem or want to track something? Open an issue.</p>
+                <button class="btn btn-primary" onclick="showTemplatePicker()">Open first issue</button>
+              </div>` : ''}
+          </div>
+
+          <!-- Template picker (hidden until + New Issue clicked) -->
+          ${buildTemplatePicker()}
+
+          <!-- New issue form (hidden until template selected) -->
+          <div id="create-issue-panel" style="display:none">
+            <div class="card" style="border-color:var(--color-accent)">
+              <div style="display:flex;align-items:center;gap:var(--space-2);margin-bottom:var(--space-3)">
+                <button class="btn btn-ghost btn-sm" onclick="showTemplatePicker()" title="Change template">← Templates</button>
+                <h2 style="margin:0">New Issue</h2>
+              </div>
+              <div class="form-group" style="margin-bottom:var(--space-3)">
+                <label class="form-label" for="issue-title">Title</label>
+                <input id="issue-title" class="form-input" type="text" placeholder="Brief description of the issue…"/>
+              </div>
+              <div class="form-group" style="margin-bottom:var(--space-3)">
+                <label class="form-label" for="issue-body">Description</label>
+                <textarea id="issue-body" class="form-input" rows="7"
+                          placeholder="Describe the musical problem or request…"
+                          style="resize:vertical;width:100%;font-family:monospace"></textarea>
+                <button class="btn btn-ghost btn-sm" style="margin-top:var(--space-2)"
+                        onclick="suggestIssueBody()">
+                  &#129504; Suggest musical improvements
+                </button>
+              </div>
+              <div style="display:flex;gap:var(--space-2)">
+                <button class="btn btn-primary" onclick="createIssue()">Submit Issue</button>
+                <button class="btn btn-secondary"
+                        onclick="document.getElementById('create-issue-panel').style.display='none';
+                                 document.getElementById('template-picker').style.display='none'">
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Right sidebar -->
+        <div class="sidebar-right" id="sidebar-right" style="width:220px;flex-shrink:0"></div>
+      </div>
+    `;
+
+    // Render sidebars and rows
+    renderFilterSidebar();
+    renderRightSidebar();
+    renderRows();
+  } catch(e) {
+    if (e.message !== 'auth')
+      document.getElementById('content').innerHTML = '<p class="error">&#10005; ' + escHtml(e.message) + '</p>';
+  }
+}
+
+function showCreateIssue() {
+  showTemplatePicker();
 }
 
 async function createIssue() {
@@ -510,37 +1003,25 @@ async function createIssue() {
   }
 }
 
-// ── Checkbox selection and bulk actions ─────────────────────────────────────
-const selectedIssues = new Set();
-
-function toggleIssueSelect(issueId, checked) {
-  if (checked) selectedIssues.add(issueId);
-  else selectedIssues.delete(issueId);
-  updateBulkToolbar();
-}
-
-function updateBulkToolbar() {
-  const toolbar = document.getElementById('bulk-toolbar');
-  const countEl = document.getElementById('bulk-count');
-  if (!toolbar || !countEl) return;
-  const n = selectedIssues.size;
-  if (n > 0) {
-    toolbar.classList.add('visible');
-    countEl.textContent = n === 1 ? '1 issue selected' : n + ' issues selected';
-  } else {
-    toolbar.classList.remove('visible');
+async function suggestIssueBody() {
+  const bodyEl = document.getElementById('issue-body');
+  const title  = document.getElementById('issue-title').value.trim();
+  bodyEl.value = '⏳ Asking Maestro for suggestions…';
+  try {
+    const ctx = await apiFetch('/repos/' + repoId + '/context/HEAD');
+    const suggests = ctx.suggestions || {};
+    const missing  = ctx.missingElements || [];
+    let suggestion = '';
+    if (title && suggests[title]) suggestion = suggests[title];
+    else if (missing.length > 0) suggestion = 'Missing musical elements: ' + missing.join(', ') + '.';
+    else suggestion = Object.values(suggests).slice(0, 2).join('\n') || 'No AI suggestions available — add more commits to get context.';
+    bodyEl.value = suggestion;
+  } catch(e) {
+    bodyEl.value = '';
+    if (e.message !== 'auth') alert('Could not load AI context: ' + e.message);
   }
 }
 
-function deselectAll() {
-  selectedIssues.clear();
-  document.querySelectorAll('.issue-row-check').forEach(c => { c.checked = false; });
-  updateBulkToolbar();
-}
-
-function bulkClose() { alert('Bulk close coming soon'); }
-function bulkReopen() { alert('Bulk reopen coming soon'); }
-function bulkAssignLabel() { alert('Bulk label assignment coming soon'); }
-function bulkAssignMilestone() { alert('Bulk milestone assignment coming soon'); }
+load('open');
 {% endraw %}
 {% endblock %}

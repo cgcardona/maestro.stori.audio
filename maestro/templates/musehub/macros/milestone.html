@@ -11,9 +11,9 @@
 #}
 
 {% macro milestone_progress(milestone) %}
-{% set total = (milestone.open_issues | default(0)) + (milestone.closed_issues | default(0)) %}
-{% set pct = ((milestone.closed_issues | default(0)) / total * 100) | int if total > 0 else 0 %}
-<div class="milestone-progress-item" id="milestone-{{ milestone.milestone_id }}">
+{% set total = (milestone.openIssues | default(0)) + (milestone.closedIssues | default(0)) %}
+{% set pct = ((milestone.closedIssues | default(0)) / total * 100) | int if total > 0 else 0 %}
+<div class="milestone-progress-item" id="milestone-{{ milestone.milestoneId }}">
   <div class="milestone-progress-title">
     <span>{{ milestone.title }}</span>
     <span>{{ pct }}%</span>
@@ -21,6 +21,6 @@
   <div class="milestone-progress-bar-track">
     <div class="milestone-progress-bar-fill" style="width:{{ pct }}%"></div>
   </div>
-  <div class="milestone-progress-counts">{{ milestone.closed_issues | default(0) }} closed · {{ milestone.open_issues | default(0) }} open</div>
+  <div class="milestone-progress-counts">{{ milestone.closedIssues | default(0) }} closed · {{ milestone.openIssues | default(0) }} open</div>
 </div>
 {% endmacro %}
