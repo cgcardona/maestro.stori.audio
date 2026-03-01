@@ -88,34 +88,37 @@ async def _make_private_repo(db_session: AsyncSession, name: str = "private-beat
 
 @pytest.mark.anyio
 async def test_explore_page_renders(client: AsyncClient) -> None:
-    """GET /musehub/ui/explore returns 200 HTML with filter controls."""
+    """GET /musehub/ui/explore returns 200 HTML with the SSR filter sidebar.
+
+    The explore page was migrated from explore_base.html (client-side rendering)
+    to explore.html (SSR Jinja2 template) in issue #576.  This test validates
+    the new SSR structure, not the old inline JS element IDs.
+    """
     response = await client.get("/musehub/ui/explore")
     assert response.status_code == 200
     assert "text/html" in response.headers["content-type"]
     body = response.text
     assert "Muse Hub" in body
     assert "Explore" in body
-    # Filter controls must be present
-    assert "genre-inp" in body
-    assert "key-inp" in body
-    assert "tempo-min" in body
-    assert "sort-sel" in body
-    # Discover API endpoint must be referenced
+    # SSR filter form must be present (replaces old genre-inp / key-inp inputs)
+    assert "filter-form" in body
+    # Repo grid container must be present
+    assert "repo-grid" in body
+    # Discover API endpoint must be referenced for the JS loader
     assert "discover/repos" in body
 
 
 @pytest.mark.anyio
-async def test_trending_page_renders(client: AsyncClient) -> None:
-    """GET /musehub/ui/trending returns 200 HTML with stars sort pre-selected."""
-    response = await client.get("/musehub/ui/trending")
-    assert response.status_code == 200
-    assert "text/html" in response.headers["content-type"]
-    body = response.text
-    assert "Muse Hub" in body
-    assert "Trending" in body
-    # Stars sort option must be pre-selected on the trending page
-    assert 'value="stars" selected' in body or "selected" in body
-    assert "discover/repos" in body
+async def test_trending_page_redirects_to_explore(client: AsyncClient) -> None:
+    """GET /musehub/ui/trending permanently redirects to /explore?sort=stars.
+
+    explore_base.html was removed as part of the HTMX SSR migration (issue #586).
+    The /trending endpoint is now a permanent alias that delegates to the SSR
+    explore page with the stars sort pre-selected.
+    """
+    response = await client.get("/musehub/ui/trending", follow_redirects=False)
+    assert response.status_code == 301
+    assert response.headers["location"] == "/musehub/ui/explore?sort=stars"
 
 
 @pytest.mark.anyio

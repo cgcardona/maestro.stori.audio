@@ -312,18 +312,14 @@ async def explore_page(
 
 
 @fixed_router.get("/trending", summary="Muse Hub trending page")
-async def trending_page(request: Request) -> Response:
-    """Render the trending page -- public repos sorted by star count.
+async def trending_page() -> RedirectResponse:
+    """Redirect to the explore page pre-sorted by stars.
 
-    Identical shell to the explore page but pre-selects sort=stars so the
-    most-starred compositions appear first.
+    /trending is now a permanent alias for /explore?sort=stars.
+    explore_base.html has been removed as part of the HTMX SSR migration
+    (issue #586); all repo discovery is served by the SSR explore page.
     """
-    ctx: dict[str, object] = {"title": "Trending", "breadcrumb": "Trending", "default_sort": "stars"}
-    return json_or_html(
-        request,
-        lambda: templates.TemplateResponse(request, "musehub/explore_base.html", ctx),
-        ctx,
-    )
+    return RedirectResponse(url="/musehub/ui/explore?sort=stars", status_code=301)
 
 
 @fixed_router.get(
