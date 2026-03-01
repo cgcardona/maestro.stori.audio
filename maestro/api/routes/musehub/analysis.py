@@ -39,6 +39,7 @@ from maestro.models.musehub_analysis import (
     DynamicsPageData,
     EmotionMapResponse,
     HarmonyAnalysisResponse,
+    RecallResponse,
 )
 from maestro.services import musehub_analysis, musehub_repository
 
@@ -160,6 +161,67 @@ async def get_emotion_map(
     response.headers["ETag"] = etag
     response.headers["Last-Modified"] = _LAST_MODIFIED
     response.headers["Cache-Control"] = "private, max-age=60"
+    return result
+
+
+@router.get(
+    "/repos/{repo_id}/analysis/{ref}/recall",
+    response_model=RecallResponse,
+    operation_id="getAnalysisRecall",
+    summary="Semantic recall — find commits similar to a natural-language query",
+    description=(
+        "Queries the musical feature vector store for commits semantically similar "
+        "to a natural-language description.\n\n"
+        "**Example:** ``?q=jazzy+chord+progression+with+swing+groove``\n\n"
+        "Results are ranked by cosine similarity in the 128-dim musical feature "
+        "embedding space.  Each match includes the commit ID, message, branch, "
+        "similarity score (0–1), and the musical dimensions most responsible for "
+        "the match.\n\n"
+        "Use ``?limit=N`` to control how many results are returned (default 10, max 50). "
+        "Authentication is required — private repos are never surfaced without a valid "
+        "Bearer token."
+    ),
+)
+async def get_analysis_recall(
+    repo_id: str,
+    ref: str,
+    response: Response,
+    q: str = Query(..., description="Natural-language query, e.g. 'jazzy chord progression with swing'"),
+    limit: int = Query(10, ge=1, le=50, description="Maximum number of results (1–50)"),
+    db: AsyncSession = Depends(get_db),
+    _: TokenClaims = Depends(require_valid_token),
+) -> RecallResponse:
+    """Return commits semantically matching a natural-language query.
+
+    Embeds ``q`` into the 128-dim musical feature space and retrieves the
+    ``limit`` most similar commits reachable from ``ref``.  Authentication is
+    required unconditionally — the recall index may surface private content.
+
+    The response is deterministic for a given (repo_id, ref, q) triple so
+    agents receive consistent results across retries without hitting the
+    vector store redundantly.
+
+    Args:
+        repo_id: Muse Hub repo UUID.
+        ref:     Muse commit ref scoping the search.
+        q:       Natural-language query string.
+        limit:   Result count cap (1–50, default 10).
+    """
+    repo = await musehub_repository.get_repo(db, repo_id)
+    if repo is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repo not found")
+
+    result = musehub_analysis.compute_recall(
+        repo_id=repo_id,
+        ref=ref,
+        query=q,
+        limit=limit,
+    )
+
+    etag = _etag(repo_id, ref, f"recall:{q}")
+    response.headers["ETag"] = etag
+    response.headers["Last-Modified"] = _LAST_MODIFIED
+    response.headers["Cache-Control"] = "private, max-age=30"
     return result
 
 

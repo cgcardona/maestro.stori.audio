@@ -22,6 +22,21 @@ Covers issue #227 (emotion map):
 - test_emotion_map_endpoint_requires_auth       — endpoint returns 401 without auth
 - test_emotion_map_endpoint_unknown_repo_404    — unknown repo returns 404
 - test_emotion_map_endpoint_etag                — ETag header is present
+
+Covers issue #410 (recall / semantic search):
+- test_compute_recall_returns_correct_type       — service returns RecallResponse
+- test_compute_recall_scores_descending          — matches are sorted best-first
+- test_compute_recall_scores_in_range            — all scores are in [0, 1]
+- test_compute_recall_limit_respected            — limit caps the result count
+- test_compute_recall_is_deterministic           — same (ref, q) always returns same matches
+- test_compute_recall_differs_by_query           — different queries produce different results
+- test_compute_recall_match_dimensions_nonempty  — every match has at least one matched dimension
+- test_recall_endpoint_200                       — HTTP GET returns 200 with required fields
+- test_recall_endpoint_requires_auth             — endpoint returns 401 without auth
+- test_recall_endpoint_unknown_repo_404          — unknown repo returns 404
+- test_recall_endpoint_etag_header               — ETag header is present
+- test_recall_endpoint_limit_param               — ?limit=3 caps results to 3
+- test_recall_endpoint_missing_q_422             — missing ?q returns 422
 """
 from __future__ import annotations
 
@@ -1060,3 +1075,228 @@ async def test_harmony_endpoint_track_filter(
     body = resp.json()
     assert "key" in body
     assert "romanNumerals" in body
+
+
+# ---------------------------------------------------------------------------
+# Issue #410 — GET /analysis/{ref}/recall semantic search
+# ---------------------------------------------------------------------------
+
+
+from maestro.models.musehub_analysis import RecallMatch, RecallResponse  # noqa: E402
+from maestro.services.musehub_analysis import compute_recall  # noqa: E402
+
+
+def test_compute_recall_returns_correct_type() -> None:
+    """compute_recall returns a RecallResponse instance."""
+    result = compute_recall(repo_id="repo-test", ref="main", query="jazzy swing groove")
+    assert isinstance(result, RecallResponse)
+
+
+def test_compute_recall_scores_descending() -> None:
+    """Matches are sorted in descending score order (best match first)."""
+    result = compute_recall(repo_id="repo-test", ref="main", query="minor key tension")
+    scores = [m.score for m in result.matches]
+    assert scores == sorted(scores, reverse=True), "Matches must be ranked best-first"
+
+
+def test_compute_recall_scores_in_range() -> None:
+    """All cosine similarity scores must be in [0.0, 1.0]."""
+    result = compute_recall(repo_id="repo-test", ref="main", query="ascending melodic contour")
+    for match in result.matches:
+        assert isinstance(match, RecallMatch)
+        assert 0.0 <= match.score <= 1.0, f"Score out of range: {match.score}"
+
+
+def test_compute_recall_limit_respected() -> None:
+    """The limit parameter caps the number of returned matches."""
+    result = compute_recall(repo_id="repo-test", ref="main", query="swing", limit=3)
+    assert len(result.matches) <= 3
+    assert result.total_matches >= len(result.matches)
+
+
+def test_compute_recall_limit_clamped_to_50() -> None:
+    """Limits above 50 are silently clamped to 50."""
+    result = compute_recall(repo_id="repo-test", ref="main", query="groove", limit=200)
+    assert len(result.matches) <= 50
+
+
+def test_compute_recall_is_deterministic() -> None:
+    """Same (ref, query) always produces identical matches."""
+    r1 = compute_recall(repo_id="repo-a", ref="main", query="jazz harmony")
+    r2 = compute_recall(repo_id="repo-b", ref="main", query="jazz harmony")
+    assert len(r1.matches) == len(r2.matches)
+    for m1, m2 in zip(r1.matches, r2.matches):
+        assert m1.commit_id == m2.commit_id
+        assert m1.score == m2.score
+
+
+def test_compute_recall_differs_by_query() -> None:
+    """Different queries produce different match sets."""
+    r1 = compute_recall(repo_id="repo-test", ref="main", query="swing groove")
+    r2 = compute_recall(repo_id="repo-test", ref="main", query="ascending melodic contour")
+    # At least the first commit IDs should differ between distinct queries.
+    assert r1.matches[0].commit_id != r2.matches[0].commit_id
+
+
+def test_compute_recall_match_dimensions_nonempty() -> None:
+    """Every RecallMatch must carry at least one matched dimension."""
+    result = compute_recall(repo_id="repo-test", ref="main", query="harmonic tension")
+    for match in result.matches:
+        assert len(match.matched_dimensions) >= 1, (
+            f"Match {match.commit_id!r} has no matched_dimensions"
+        )
+
+
+def test_compute_recall_query_echoed() -> None:
+    """The response echoes the query parameter so clients can display it."""
+    q = "brooding minor feel with slow groove"
+    result = compute_recall(repo_id="repo-test", ref="develop", query=q)
+    assert result.query == q
+
+
+def test_compute_recall_embedding_dimensions() -> None:
+    """embedding_dimensions matches the expected 128-dim feature space."""
+    result = compute_recall(repo_id="repo-test", ref="main", query="any query")
+    assert result.embedding_dimensions == 128
+
+
+@pytest.mark.anyio
+async def test_recall_endpoint_200(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+    db_session: AsyncSession,
+) -> None:
+    """GET /api/v1/musehub/repos/{repo_id}/analysis/{ref}/recall?q= returns 200.
+
+    Regression test for issue #410: the recall endpoint must return a ranked list
+    of semantically similar commits so agents can retrieve musically relevant history
+    without issuing expensive dimension-by-dimension comparisons.
+    """
+    repo_id = await _create_repo(client, auth_headers)
+    resp = await client.get(
+        f"/api/v1/musehub/repos/{repo_id}/analysis/main/recall?q=jazzy+swing+groove",
+        headers=auth_headers,
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["repoId"] == repo_id
+    assert body["ref"] == "main"
+    assert body["query"] == "jazzy swing groove"
+    assert "matches" in body
+    assert isinstance(body["matches"], list)
+    assert body["totalMatches"] >= 0
+    assert body["embeddingDimensions"] == 128
+
+
+@pytest.mark.anyio
+async def test_recall_endpoint_match_fields(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+    db_session: AsyncSession,
+) -> None:
+    """Each match carries commitId, commitMessage, branch, score, and matchedDimensions."""
+    repo_id = await _create_repo(client, auth_headers)
+    resp = await client.get(
+        f"/api/v1/musehub/repos/{repo_id}/analysis/main/recall?q=harmony",
+        headers=auth_headers,
+    )
+    assert resp.status_code == 200
+    for match in resp.json()["matches"]:
+        assert "commitId" in match
+        assert "commitMessage" in match
+        assert "branch" in match
+        assert "score" in match
+        assert "matchedDimensions" in match
+        assert 0.0 <= match["score"] <= 1.0
+        assert len(match["matchedDimensions"]) >= 1
+
+
+@pytest.mark.anyio
+async def test_recall_endpoint_requires_auth(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Recall endpoint returns 401 without a Bearer token."""
+    resp = await client.get(
+        "/api/v1/musehub/repos/some-repo/analysis/main/recall?q=groove",
+    )
+    assert resp.status_code == 401
+
+
+@pytest.mark.anyio
+async def test_recall_endpoint_unknown_repo_404(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+    db_session: AsyncSession,
+) -> None:
+    """Recall endpoint returns 404 for an unknown repo_id."""
+    resp = await client.get(
+        "/api/v1/musehub/repos/00000000-0000-0000-0000-000000000000/analysis/main/recall?q=swing",
+        headers=auth_headers,
+    )
+    assert resp.status_code == 404
+
+
+@pytest.mark.anyio
+async def test_recall_endpoint_etag_header(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+    db_session: AsyncSession,
+) -> None:
+    """Recall endpoint includes an ETag header for client-side cache validation."""
+    repo_id = await _create_repo(client, auth_headers)
+    resp = await client.get(
+        f"/api/v1/musehub/repos/{repo_id}/analysis/main/recall?q=groove",
+        headers=auth_headers,
+    )
+    assert resp.status_code == 200
+    assert "etag" in resp.headers
+    assert resp.headers["etag"].startswith('"')
+
+
+@pytest.mark.anyio
+async def test_recall_endpoint_limit_param(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+    db_session: AsyncSession,
+) -> None:
+    """?limit=3 caps the returned matches to at most 3 results."""
+    repo_id = await _create_repo(client, auth_headers)
+    resp = await client.get(
+        f"/api/v1/musehub/repos/{repo_id}/analysis/main/recall?q=swing&limit=3",
+        headers=auth_headers,
+    )
+    assert resp.status_code == 200
+    assert len(resp.json()["matches"]) <= 3
+
+
+@pytest.mark.anyio
+async def test_recall_endpoint_missing_q_422(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+    db_session: AsyncSession,
+) -> None:
+    """Missing ?q returns 422 Unprocessable Entity (required query param)."""
+    repo_id = await _create_repo(client, auth_headers)
+    resp = await client.get(
+        f"/api/v1/musehub/repos/{repo_id}/analysis/main/recall",
+        headers=auth_headers,
+    )
+    assert resp.status_code == 422
+
+
+@pytest.mark.anyio
+async def test_recall_endpoint_scores_descending(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+    db_session: AsyncSession,
+) -> None:
+    """Recall endpoint returns matches sorted best-first (descending score)."""
+    repo_id = await _create_repo(client, auth_headers)
+    resp = await client.get(
+        f"/api/v1/musehub/repos/{repo_id}/analysis/main/recall?q=jazz+harmony",
+        headers=auth_headers,
+    )
+    assert resp.status_code == 200
+    scores = [m["score"] for m in resp.json()["matches"]]
+    assert scores == sorted(scores, reverse=True), "Matches must be in descending score order"

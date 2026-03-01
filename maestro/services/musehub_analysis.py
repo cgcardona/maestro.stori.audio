@@ -79,6 +79,8 @@ from maestro.models.musehub_analysis import (
     MotifRecurrenceCell,
     MotifTransformation,
     MotifsData,
+    RecallMatch,
+    RecallResponse,
     RepetitionEntry,
     RomanNumeralEvent,
     SectionEntry,
@@ -1299,4 +1301,113 @@ def compute_arrangement_matrix(*, repo_id: str, ref: str) -> ArrangementMatrixRe
         row_summaries=row_summaries,
         column_summaries=column_summaries,
         total_beats=total_beats,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Semantic recall (issue #410)
+# ---------------------------------------------------------------------------
+
+_RECALL_DIMENSIONS: list[str] = ["harmony", "groove", "emotion", "motifs", "contour", "tempo"]
+
+_RECALL_MESSAGES: list[str] = [
+    "Add jazzy chord progression with swing feel",
+    "Introduce minor-key bridge with tension build",
+    "Refine melodic contour — ascending arch in chorus",
+    "Adjust groove: add half-time feel in verse",
+    "Add layered pad texture for emotional depth",
+    "Modulate to dominant for climactic section",
+    "Tighten rhythmic grid — straight feel throughout",
+    "Add secondary dominant walkdown before chorus",
+]
+
+_RECALL_BRANCHES: list[str] = ["main", "feature/bridge", "feature/chorus", "experiment/jazz", "develop"]
+
+
+def compute_recall(
+    *,
+    repo_id: str,
+    ref: str,
+    query: str,
+    limit: int = 10,
+) -> RecallResponse:
+    """Query the musical feature vector space for commits semantically matching ``query``.
+
+    Why this exists
+    ---------------
+    Agents and producers need to surface past commits that are musically relevant
+    to a natural-language description (e.g. ``"a jazzy chord progression with swing
+    groove"``).  This endpoint bridges semantic intent and the vector index so that
+    retrieval is based on musical meaning rather than exact keyword matching.
+
+    Stub implementation
+    -------------------
+    The full implementation will embed ``query`` into the 128-dim musical feature
+    space (via ``musehub_embeddings.compute_embedding``), then call
+    ``MusehubQdrantClient.search_similar`` scoped to ``repo_id``.  Until Qdrant
+    is wired, this returns deterministic stub results keyed on the XOR of the ref
+    and query hashes so agents receive consistent responses across retries.
+
+    Args:
+        repo_id:  Muse Hub repo UUID (used for scoping and logging).
+        ref:      Muse commit ref to scope the search to (only reachable commits).
+        query:    Natural-language search string, e.g. ``"swing groove with jazz harmony"``.
+        limit:    Maximum number of matches to return (default 10, max 50).
+
+    Returns:
+        :class:`RecallResponse` with a ranked list of :class:`RecallMatch` entries,
+        sorted descending by cosine similarity score.
+    """
+    limit = max(1, min(limit, 50))
+    q_seed = _ref_hash(query)
+    r_seed = _ref_hash(ref)
+    combined_seed = q_seed ^ r_seed
+
+    # Deterministic total count — varies by query so results feel realistic.
+    total_matches = 4 + (combined_seed % 12)
+    n_to_return = min(limit, total_matches)
+
+    matches: list[RecallMatch] = []
+    for i in range(n_to_return):
+        item_seed = combined_seed ^ (i * 0x9E3779B9)
+        # Score: highest for i=0, decaying with rank (deterministic)
+        base_score = 0.92 - i * 0.06
+        noise = ((item_seed >> (i % 16)) % 8) / 100.0
+        score = round(max(0.0, min(1.0, base_score - noise)), 4)
+
+        commit_hash = hashlib.md5(f"{ref}:{query}:{i}".encode()).hexdigest()[:16]  # noqa: S324
+        message = _RECALL_MESSAGES[(combined_seed + i) % len(_RECALL_MESSAGES)]
+        branch = _RECALL_BRANCHES[(combined_seed + i) % len(_RECALL_BRANCHES)]
+
+        # Pick 1–3 matched dimensions — most relevant first.
+        n_dims = 1 + i % 3
+        dims = [
+            _RECALL_DIMENSIONS[(combined_seed + i + k) % len(_RECALL_DIMENSIONS)]
+            for k in range(n_dims)
+        ]
+        # Deduplicate while preserving order.
+        seen: set[str] = set()
+        unique_dims = [d for d in dims if not (d in seen or seen.add(d))]  # type: ignore[func-returns-value]
+
+        matches.append(
+            RecallMatch(
+                commit_id=commit_hash,
+                commit_message=message,
+                branch=branch,
+                score=score,
+                matched_dimensions=unique_dims,
+            )
+        )
+
+    logger.info(
+        "✅ recall repo=%s ref=%s query=%r matches=%d/%d",
+        repo_id[:8], ref, query[:40], len(matches), total_matches,
+    )
+    return RecallResponse(
+        repo_id=repo_id,
+        ref=ref,
+        query=query,
+        matches=matches,
+        total_matches=total_matches,
+        embedding_dimensions=128,
     )
