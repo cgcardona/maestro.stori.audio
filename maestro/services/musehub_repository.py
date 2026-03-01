@@ -22,6 +22,7 @@ from sqlalchemy.orm import aliased
 from sqlalchemy.sql.elements import ColumnElement
 
 from maestro.db import musehub_models as db
+from maestro.db import musehub_collaborator_models as collab_db
 from maestro.models.musehub import (
     SessionListResponse,
     SessionResponse,
@@ -41,6 +42,7 @@ from maestro.models.musehub import (
     MuseHubContextMusicalState,
     MuseHubContextResponse,
     ObjectMetaResponse,
+    RepoListResponse,
     RepoResponse,
     RepoSettingsPatch,
     RepoSettingsResponse,
@@ -79,9 +81,11 @@ def _generate_slug(name: str) -> str:
 def _repo_clone_url(owner: str, slug: str) -> str:
     """Derive the canonical clone URL from owner and slug.
 
-    Uses the /{owner}/{slug} scheme — no internal UUID exposed in external URLs.
+    Uses the musehub://{owner}/{slug} scheme — the DAW's native protocol handler
+    resolves this to the correct API base at runtime.  No internal UUID is exposed
+    in external URLs.
     """
-    return f"/{owner}/{slug}"
+    return f"musehub://{owner}/{slug}"
 
 
 def _to_repo_response(row: db.MusehubRepo) -> RepoResponse:
@@ -132,12 +136,44 @@ async def create_repo(
     tags: list[str] | None = None,
     key_signature: str | None = None,
     tempo_bpm: int | None = None,
+    # ── Wizard extensions (issue #434) ────────────────────────────────────────
+    license: str | None = None,
+    topics: list[str] | None = None,
+    initialize: bool = False,
+    default_branch: str = "main",
+    template_repo_id: str | None = None,
 ) -> RepoResponse:
     """Persist a new remote repo and return its wire representation.
 
     ``slug`` is auto-generated from ``name``.  The ``(owner, slug)`` pair must
     be unique — callers should catch ``IntegrityError`` and surface a 409.
+
+    Wizard behaviors:
+    - When ``template_repo_id`` is set, the template's description and topics
+      are copied into the new repo (template must be public; silently skipped
+      when it doesn't exist or is private).
+    - When ``initialize=True``, an empty "Initial commit" is written plus the
+      default branch pointer so the repo is immediately browsable.
+    - ``license`` is stored in the settings JSON blob under the ``license`` key.
+    - ``topics`` are merged with ``tags`` into a single unified tag list.
     """
+    # Merge topics into tags (deduplicated, stable order).
+    combined_tags: list[str] = list(dict.fromkeys((tags or []) + (topics or [])))
+
+    # Copy template metadata when a template repo is supplied.
+    if template_repo_id is not None:
+        tmpl = await session.get(db.MusehubRepo, template_repo_id)
+        if tmpl is not None and tmpl.visibility == "public":
+            if not description:
+                description = tmpl.description
+            # Prepend template tags; deduplicate preserving order.
+            combined_tags = list(dict.fromkeys(list(tmpl.tags or []) + combined_tags))
+
+    # Build the settings JSON blob with optional license field.
+    settings: dict[str, object] = {}
+    if license is not None:
+        settings["license"] = license
+
     slug = _generate_slug(name)
     repo = db.MusehubRepo(
         name=name,
@@ -146,16 +182,42 @@ async def create_repo(
         visibility=visibility,
         owner_user_id=owner_user_id,
         description=description,
-        tags=tags or [],
+        tags=combined_tags,
         key_signature=key_signature,
         tempo_bpm=tempo_bpm,
+        settings=settings or None,
     )
     session.add(repo)
     await session.flush()  # populate default columns before reading
     await session.refresh(repo)
+
+    # Wizard initialisation: create default branch + empty initial commit.
+    if initialize:
+        init_commit_id = f"init-{repo.repo_id[:8]}"
+        now = datetime.now(tz=timezone.utc)
+
+        branch = db.MusehubBranch(
+            repo_id=repo.repo_id,
+            name=default_branch,
+            head_commit_id=init_commit_id,
+        )
+        session.add(branch)
+
+        init_commit = db.MusehubCommit(
+            commit_id=init_commit_id,
+            repo_id=repo.repo_id,
+            branch=default_branch,
+            parent_ids=[],
+            message="Initial commit",
+            author=owner_user_id,
+            timestamp=now,
+        )
+        session.add(init_commit)
+        await session.flush()
+
     logger.info(
-        "✅ Created Muse Hub repo %s (%s/%s) for user %s",
-        repo.repo_id, owner, slug, owner_user_id,
+        "✅ Created Muse Hub repo %s (%s/%s) for user %s (initialize=%s)",
+        repo.repo_id, owner, slug, owner_user_id, initialize,
     )
     return _to_repo_response(repo)
 
@@ -221,6 +283,75 @@ async def get_repo_by_owner_slug(
     if row is None:
         return None
     return _to_repo_response(row)
+
+
+_PAGE_SIZE = 20
+
+
+async def list_repos_for_user(
+    session: AsyncSession,
+    user_id: str,
+    *,
+    limit: int = _PAGE_SIZE,
+    cursor: str | None = None,
+) -> RepoListResponse:
+    """Return repos owned by or collaborated on by ``user_id``.
+
+    Results are ordered by ``created_at`` descending (newest first).  Pagination
+    uses an opaque cursor encoding the ``created_at`` ISO timestamp of the last
+    item on the current page — pass it back as ``?cursor=`` to advance.
+
+    Args:
+        session: Active async DB session.
+        user_id: JWT ``sub`` of the authenticated caller.
+        limit: Maximum repos per page (default 20).
+        cursor: Opaque pagination cursor from a previous response.
+
+    Returns:
+        ``RepoListResponse`` with the page of repos, total count, and next cursor.
+    """
+    # Collect repo IDs the user collaborates on (accepted invitations only).
+    collab_stmt = select(collab_db.MusehubCollaborator.repo_id).where(
+        collab_db.MusehubCollaborator.user_id == user_id,
+        collab_db.MusehubCollaborator.accepted_at.is_not(None),
+    )
+    collab_repo_ids_result = (await session.execute(collab_stmt)).scalars().all()
+    collab_repo_ids = list(collab_repo_ids_result)
+
+    # Base filter: repos the caller owns OR collaborates on.
+    base_filter = or_(
+        db.MusehubRepo.owner_user_id == user_id,
+        db.MusehubRepo.repo_id.in_(collab_repo_ids),
+    )
+
+    # Total count across all pages.
+    count_stmt = select(func.count()).select_from(db.MusehubRepo).where(base_filter)
+    total: int = (await session.execute(count_stmt)).scalar_one()
+
+    # Apply cursor: skip repos created at or after the cursor timestamp.
+    page_filter = base_filter
+    if cursor is not None:
+        try:
+            cursor_dt = datetime.fromisoformat(cursor)
+            page_filter = base_filter & (db.MusehubRepo.created_at < cursor_dt)
+        except ValueError:
+            pass  # malformed cursor — ignore and return from the beginning
+
+    stmt = (
+        select(db.MusehubRepo)
+        .where(page_filter)
+        .order_by(desc(db.MusehubRepo.created_at))
+        .limit(limit)
+    )
+    rows = (await session.execute(stmt)).scalars().all()
+    repos = [_to_repo_response(r) for r in rows]
+
+    # Build next cursor from the last item's created_at when there may be more.
+    next_cursor: str | None = None
+    if len(rows) == limit:
+        next_cursor = rows[-1].created_at.isoformat()
+
+    return RepoListResponse(repos=repos, next_cursor=next_cursor, total=total)
 
 
 async def get_repo_orm_by_owner_slug(

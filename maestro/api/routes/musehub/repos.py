@@ -58,6 +58,7 @@ from maestro.models.musehub import (
     GrooveCheckResponse,
     GrooveCommitEntry,
     MuseHubContextResponse,
+    RepoListResponse,
     RepoResponse,
     RepoSettingsPatch,
     RepoSettingsResponse,
@@ -99,6 +100,31 @@ def _guard_visibility(repo: RepoResponse | None, claims: TokenClaims | None) -> 
         )
 
 
+@router.get(
+    "/repos",
+    response_model=RepoListResponse,
+    operation_id="listMyRepos",
+    summary="List repos for the authenticated user (own + collaborated)",
+    tags=["Repos"],
+)
+async def list_my_repos(
+    limit: int = Query(20, ge=1, le=100, description="Max repos per page"),
+    cursor: str | None = Query(None, description="Pagination cursor from a previous response"),
+    db: AsyncSession = Depends(get_db),
+    claims: TokenClaims = Depends(require_valid_token),
+) -> RepoListResponse:
+    """Return repos owned by or collaborated on by the authenticated user.
+
+    Results are ordered newest-first.  Pass the ``nextCursor`` value from the
+    previous response as ``?cursor=`` to advance through subsequent pages.
+    An absent ``nextCursor`` in the response means you have reached the last page.
+
+    Auth: requires a valid JWT Bearer token.
+    """
+    user_id: str = claims.get("sub") or ""
+    return await musehub_repository.list_repos_for_user(db, user_id, limit=limit, cursor=cursor)
+
+
 @router.post(
     "/repos",
     response_model=RepoResponse,
@@ -116,6 +142,15 @@ async def create_repo(
 
     ``slug`` is auto-generated from ``name``.  Returns 409 if the ``(owner, slug)``
     pair already exists — the musician must rename the repo to get a distinct slug.
+
+    Wizard behaviors (from the request body):
+    - ``initialize=true``: an empty "Initial commit" + default branch are created
+      immediately so the repo is browsable right away.
+    - ``template_repo_id``: topics/description are copied from a public template repo.
+    - ``license``: stored in the repo settings blob.
+    - ``topics``: merged with ``tags`` into a single tag list.
+
+    Clone URL: ``musehub://{owner}/{slug}``
     """
     owner_user_id: str = claims.get("sub") or ""
     try:
@@ -129,6 +164,11 @@ async def create_repo(
             tags=body.tags,
             key_signature=body.key_signature,
             tempo_bpm=body.tempo_bpm,
+            license=body.license,
+            topics=body.topics,
+            initialize=body.initialize,
+            default_branch=body.default_branch,
+            template_repo_id=body.template_repo_id,
         )
         await db.commit()
     except IntegrityError:

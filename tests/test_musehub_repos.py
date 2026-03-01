@@ -133,10 +133,10 @@ async def test_list_branches_empty_on_new_repo(
     client: AsyncClient,
     auth_headers: dict[str, str],
 ) -> None:
-    """A newly created repo has an empty branches list."""
+    """A newly created repo has an empty branches list when not initialized."""
     create = await client.post(
         "/api/v1/musehub/repos",
-        json={"name": "drum-patterns", "owner": "testuser"},
+        json={"name": "drum-patterns", "owner": "testuser", "initialize": False},
         headers=auth_headers,
     )
     repo_id = create.json()["repoId"]
@@ -172,10 +172,10 @@ async def test_list_commits_empty_on_new_repo(
     client: AsyncClient,
     auth_headers: dict[str, str],
 ) -> None:
-    """A new repo has no commits."""
+    """A new repo has no commits when initialize=false."""
     create = await client.post(
         "/api/v1/musehub/repos",
-        json={"name": "empty-repo", "owner": "testuser"},
+        json={"name": "empty-repo", "owner": "testuser", "initialize": False},
         headers=auth_headers,
     )
     repo_id = create.json()["repoId"]
@@ -199,10 +199,10 @@ async def test_list_commits_returns_newest_first(
     """Commits are returned newest-first after being pushed."""
     from datetime import datetime, timezone, timedelta
 
-    # Create repo via API
+    # Create repo via API (no init commit so we control the full history)
     create = await client.post(
         "/api/v1/musehub/repos",
-        json={"name": "ordered-commits", "owner": "testuser"},
+        json={"name": "ordered-commits", "owner": "testuser", "initialize": False},
         headers=auth_headers,
     )
     repo_id = create.json()["repoId"]
@@ -252,7 +252,7 @@ async def test_list_commits_limit_param(
 
     create = await client.post(
         "/api/v1/musehub/repos",
-        json={"name": "limited-repo", "owner": "testuser"},
+        json={"name": "limited-repo", "owner": "testuser", "initialize": False},
         headers=auth_headers,
     )
     repo_id = create.json()["repoId"]
@@ -549,10 +549,10 @@ async def test_graph_dag_endpoint_returns_empty_for_new_repo(
     client: AsyncClient,
     auth_headers: dict[str, str],
 ) -> None:
-    """GET /dag returns empty nodes/edges for a repo with no commits."""
+    """GET /dag returns empty nodes/edges for a repo with no commits (initialize=false)."""
     create = await client.post(
         "/api/v1/musehub/repos",
-        json={"name": "dag-empty", "owner": "testuser"},
+        json={"name": "dag-empty", "owner": "testuser", "initialize": False},
         headers=auth_headers,
     )
     repo_id = create.json()["repoId"]
@@ -579,7 +579,7 @@ async def test_graph_dag_has_edges(
 
     create = await client.post(
         "/api/v1/musehub/repos",
-        json={"name": "dag-edges", "owner": "testuser"},
+        json={"name": "dag-edges", "owner": "testuser", "initialize": False},
         headers=auth_headers,
     )
     repo_id = create.json()["repoId"]
@@ -1829,11 +1829,16 @@ async def test_patch_repo_settings_returns_403_for_non_admin(
 
 
 # ---------------------------------------------------------------------------
+<<<<<<< HEAD
 # DELETE /repos/{repo_id}  — soft-delete (issue #416)
+=======
+# Wizard creation endpoint — issue #434
+>>>>>>> origin/dev
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.anyio
+<<<<<<< HEAD
 async def test_delete_repo_returns_204(
     client: AsyncClient,
     auth_headers: dict[str, str],
@@ -2011,10 +2016,263 @@ async def test_transfer_repo_requires_auth(
         f"/api/v1/musehub/repos/{repo.repo_id}/transfer",
         json={"newOwnerUserId": "new-user-id"},
     )
+=======
+async def test_create_repo_wizard_initialize_creates_branch_and_commit(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+    db_session: AsyncSession,
+) -> None:
+    """POST /repos with initialize=true creates a default branch + initial commit."""
+    resp = await client.post(
+        "/api/v1/musehub/repos",
+        json={
+            "name": "wizard-init-repo",
+            "owner": "testuser",
+            "visibility": "public",
+            "initialize": True,
+            "defaultBranch": "main",
+        },
+        headers=auth_headers,
+    )
+    assert resp.status_code == 201
+    repo_id = resp.json()["repoId"]
+
+    branches_resp = await client.get(
+        f"/api/v1/musehub/repos/{repo_id}/branches",
+        headers=auth_headers,
+    )
+    assert branches_resp.status_code == 200
+    branches = branches_resp.json()["branches"]
+    assert any(b["name"] == "main" for b in branches), "Expected 'main' branch to be created"
+
+    commits_resp = await client.get(
+        f"/api/v1/musehub/repos/{repo_id}/commits",
+        headers=auth_headers,
+    )
+    assert commits_resp.status_code == 200
+    commits = commits_resp.json()["commits"]
+    assert len(commits) == 1
+    assert commits[0]["message"] == "Initial commit"
+
+
+@pytest.mark.anyio
+async def test_create_repo_wizard_no_initialize_stays_empty(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+) -> None:
+    """POST /repos with initialize=false leaves branches and commits empty."""
+    resp = await client.post(
+        "/api/v1/musehub/repos",
+        json={
+            "name": "wizard-noinit-repo",
+            "owner": "testuser",
+            "initialize": False,
+        },
+        headers=auth_headers,
+    )
+    assert resp.status_code == 201
+    repo_id = resp.json()["repoId"]
+
+    branches_resp = await client.get(
+        f"/api/v1/musehub/repos/{repo_id}/branches",
+        headers=auth_headers,
+    )
+    assert branches_resp.json()["branches"] == []
+
+    commits_resp = await client.get(
+        f"/api/v1/musehub/repos/{repo_id}/commits",
+        headers=auth_headers,
+    )
+    assert commits_resp.json()["commits"] == []
+
+
+@pytest.mark.anyio
+async def test_create_repo_wizard_topics_merged_into_tags(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+) -> None:
+    """POST /repos with topics merges them into the tag list (deduplicated)."""
+    resp = await client.post(
+        "/api/v1/musehub/repos",
+        json={
+            "name": "topics-test-repo",
+            "owner": "testuser",
+            "tags": ["jazz"],
+            "topics": ["classical", "jazz"],  # 'jazz' deduped
+            "initialize": False,
+        },
+        headers=auth_headers,
+    )
+    assert resp.status_code == 201
+    body = resp.json()
+    tags: list[str] = body["tags"]
+    assert "jazz" in tags
+    assert "classical" in tags
+    assert tags.count("jazz") == 1, "Duplicate 'jazz' must be removed"
+
+
+@pytest.mark.anyio
+async def test_create_repo_wizard_clone_url_uses_musehub_scheme(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+) -> None:
+    """Clone URL returned by POST /repos uses the musehub:// protocol scheme."""
+    resp = await client.post(
+        "/api/v1/musehub/repos",
+        json={"name": "clone-url-test", "owner": "testuser", "initialize": False},
+        headers=auth_headers,
+    )
+    assert resp.status_code == 201
+    clone_url: str = resp.json()["cloneUrl"]
+    assert clone_url.startswith("musehub://"), f"Expected musehub:// prefix, got: {clone_url}"
+    assert "testuser" in clone_url
+
+
+@pytest.mark.anyio
+async def test_create_repo_wizard_template_copies_description(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+    db_session: AsyncSession,
+) -> None:
+    """POST /repos with template_repo_id copies description from a public template."""
+    template = MusehubRepo(
+        name="template-source",
+        owner="template-owner",
+        slug="template-source",
+        visibility="public",
+        owner_user_id="template-owner-id",
+        description="A great neo-baroque composition template",
+        tags=["baroque", "piano"],
+    )
+    db_session.add(template)
+    await db_session.commit()
+    await db_session.refresh(template)
+    template_id = str(template.repo_id)
+
+    resp = await client.post(
+        "/api/v1/musehub/repos",
+        json={
+            "name": "from-template-repo",
+            "owner": "testuser",
+            "initialize": False,
+            "templateRepoId": template_id,
+        },
+        headers=auth_headers,
+    )
+    assert resp.status_code == 201
+    body = resp.json()
+    assert body["description"] == "A great neo-baroque composition template"
+    assert "baroque" in body["tags"]
+    assert "piano" in body["tags"]
+
+
+@pytest.mark.anyio
+async def test_create_repo_wizard_private_template_not_copied(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+    db_session: AsyncSession,
+) -> None:
+    """Private template repo metadata is NOT copied (must be public)."""
+    private_template = MusehubRepo(
+        name="private-template",
+        owner="secret-owner",
+        slug="private-template",
+        visibility="private",
+        owner_user_id="secret-id",
+        description="Secret description",
+        tags=["secret"],
+    )
+    db_session.add(private_template)
+    await db_session.commit()
+    await db_session.refresh(private_template)
+    template_id = str(private_template.repo_id)
+
+    resp = await client.post(
+        "/api/v1/musehub/repos",
+        json={
+            "name": "refused-template-repo",
+            "owner": "testuser",
+            "description": "My own description",
+            "initialize": False,
+            "templateRepoId": template_id,
+        },
+        headers=auth_headers,
+    )
+    assert resp.status_code == 201
+    body = resp.json()
+    # Private template must not override user's own description
+    assert body["description"] == "My own description"
+    assert "secret" not in body["tags"]
+
+
+@pytest.mark.anyio
+async def test_create_repo_wizard_custom_default_branch(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+) -> None:
+    """POST /repos with initialize=true and custom defaultBranch creates the right branch."""
+    resp = await client.post(
+        "/api/v1/musehub/repos",
+        json={
+            "name": "custom-branch-repo",
+            "owner": "testuser",
+            "initialize": True,
+            "defaultBranch": "develop",
+        },
+        headers=auth_headers,
+    )
+    assert resp.status_code == 201
+    repo_id = resp.json()["repoId"]
+
+    branches_resp = await client.get(
+        f"/api/v1/musehub/repos/{repo_id}/branches",
+        headers=auth_headers,
+    )
+    branch_names = [b["name"] for b in branches_resp.json()["branches"]]
+    assert "develop" in branch_names
+    assert "main" not in branch_names
+
+
+# ---------------------------------------------------------------------------
+# GET /repos — list repos for authenticated user  (issue #434)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.anyio
+async def test_list_my_repos_returns_owned_repos(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+) -> None:
+    """GET /repos returns repos created by the authenticated user."""
+    # Create two repos
+    for name in ("owned-repo-a", "owned-repo-b"):
+        await client.post(
+            "/api/v1/musehub/repos",
+            json={"name": name, "owner": "testuser", "initialize": False},
+            headers=auth_headers,
+        )
+
+    resp = await client.get("/api/v1/musehub/repos", headers=auth_headers)
+    assert resp.status_code == 200
+    body = resp.json()
+    assert "repos" in body
+    assert "total" in body
+    assert "nextCursor" in body
+    names = [r["name"] for r in body["repos"]]
+    assert "owned-repo-a" in names
+    assert "owned-repo-b" in names
+
+
+@pytest.mark.anyio
+async def test_list_my_repos_requires_auth(client: AsyncClient) -> None:
+    """GET /repos returns 401 without a Bearer token."""
+    resp = await client.get("/api/v1/musehub/repos")
+>>>>>>> origin/dev
     assert resp.status_code == 401
 
 
 @pytest.mark.anyio
+<<<<<<< HEAD
 async def test_transfer_repo_returns_403_for_non_owner(
     client: AsyncClient,
     db_session: AsyncSession,
@@ -2090,3 +2348,99 @@ async def test_transfer_repo_service_returns_none_for_unknown(
         db_session, "does-not-exist", "new-owner"
     )
     assert result is None
+=======
+async def test_list_my_repos_total_matches_count(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+) -> None:
+    """total field in GET /repos matches the number of repos created."""
+    initial = await client.get("/api/v1/musehub/repos", headers=auth_headers)
+    initial_total: int = initial.json()["total"]
+
+    await client.post(
+        "/api/v1/musehub/repos",
+        json={"name": "total-count-test", "owner": "testuser", "initialize": False},
+        headers=auth_headers,
+    )
+
+    resp = await client.get("/api/v1/musehub/repos", headers=auth_headers)
+    assert resp.status_code == 200
+    assert resp.json()["total"] == initial_total + 1
+
+
+@pytest.mark.anyio
+async def test_list_my_repos_pagination_cursor(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+    db_session: AsyncSession,
+) -> None:
+    """GET /repos with limit=1 returns a nextCursor that fetches the next page."""
+    from datetime import datetime, timedelta, timezone
+
+    owner_user_id = "550e8400-e29b-41d4-a716-446655440000"
+    now = datetime.now(tz=timezone.utc)
+    for i in range(3):
+        repo = MusehubRepo(
+            name=f"paged-repo-{i}",
+            owner="testuser",
+            slug=f"paged-repo-{i}",
+            visibility="public",
+            owner_user_id=owner_user_id,
+        )
+        repo.created_at = now - timedelta(seconds=i)
+        db_session.add(repo)
+    await db_session.commit()
+
+    first_page = await client.get(
+        "/api/v1/musehub/repos?limit=1",
+        headers=auth_headers,
+    )
+    assert first_page.status_code == 200
+    body = first_page.json()
+    assert len(body["repos"]) == 1
+    next_cursor = body["nextCursor"]
+    assert next_cursor is not None
+
+    second_page = await client.get(
+        f"/api/v1/musehub/repos?limit=1&cursor={next_cursor}",
+        headers=auth_headers,
+    )
+    assert second_page.status_code == 200
+    second_body = second_page.json()
+    assert len(second_body["repos"]) == 1
+    # Pages must not overlap
+    first_id = body["repos"][0]["repoId"]
+    second_id = second_body["repos"][0]["repoId"]
+    assert first_id != second_id
+
+
+@pytest.mark.anyio
+async def test_list_my_repos_service_direct(db_session: AsyncSession) -> None:
+    """list_repos_for_user() returns only repos owned by the given user."""
+    from maestro.services.musehub_repository import list_repos_for_user
+
+    owner_id = "user-list-direct"
+    other_id = "user-other-direct"
+
+    repo_mine = MusehubRepo(
+        name="mine-direct",
+        owner="testuser",
+        slug="mine-direct",
+        visibility="private",
+        owner_user_id=owner_id,
+    )
+    repo_other = MusehubRepo(
+        name="not-mine-direct",
+        owner="otheruser",
+        slug="not-mine-direct",
+        visibility="private",
+        owner_user_id=other_id,
+    )
+    db_session.add_all([repo_mine, repo_other])
+    await db_session.commit()
+
+    result = await list_repos_for_user(db_session, owner_id)
+    repo_ids = {r.repo_id for r in result.repos}
+    assert str(repo_mine.repo_id) in repo_ids
+    assert str(repo_other.repo_id) not in repo_ids
+>>>>>>> origin/dev

@@ -119,10 +119,20 @@ class PullResponse(CamelModel):
 
 
 class CreateRepoRequest(CamelModel):
-    """Body for POST /musehub/repos.
+    """Body for POST /musehub/repos — creation wizard.
 
     ``owner`` is the URL-visible username that appears in /{owner}/{slug} paths.
     ``slug`` is auto-generated from ``name`` — lowercase, hyphens, 1–64 chars.
+
+    Wizard fields:
+    - ``initialize``: when True, an empty "Initial commit" + default branch are
+      created immediately so the repo is browsable right away.
+    - ``default_branch``: branch name used when ``initialize=True``.
+    - ``template_repo_id``: if set, topics/description are copied from that
+      public repo before creation.
+    - ``license``: SPDX identifier or common shorthand (e.g. "CC BY 4.0").
+    - ``topics``: genre/mood labels analogous to GitHub topics; merged with
+      ``tags`` into a single tag list on the server.
     """
 
     name: str = Field(..., min_length=1, max_length=255, description="Repo name")
@@ -141,6 +151,26 @@ class CreateRepoRequest(CamelModel):
     )
     key_signature: str | None = Field(None, max_length=50, description="Musical key (e.g. 'C major', 'F# minor')")
     tempo_bpm: int | None = Field(None, ge=20, le=300, description="Tempo in BPM")
+    # ── Wizard extensions (issue #434) ────────────────────────────────────────
+    license: str | None = Field(None, max_length=100, description="License identifier (e.g. 'CC BY 4.0', 'MIT')")
+    topics: list[str] = Field(
+        default_factory=list,
+        description="Genre/mood topic labels merged with tags (e.g. 'classical', 'piano')",
+    )
+    initialize: bool = Field(
+        True,
+        description="When true, create an initial empty commit + default branch so the repo is immediately browsable",
+    )
+    default_branch: str = Field(
+        "main",
+        min_length=1,
+        max_length=255,
+        description="Name of the default branch created when initialize=true",
+    )
+    template_repo_id: str | None = Field(
+        None,
+        description="UUID of a public repo to copy topics/description/labels from; must be public",
+    )
 
 
 # ── Response models ───────────────────────────────────────────────────────────
@@ -167,12 +197,26 @@ class RepoResponse(CamelModel):
     created_at: datetime = Field(..., description="Repo creation timestamp (ISO-8601 UTC)")
 
 
+<<<<<<< HEAD
 class TransferOwnershipRequest(CamelModel):
     """Request body for transferring repo ownership to another user."""
 
     new_owner_user_id: str = Field(
         ..., description="User ID of the new repo owner", examples=["a1b2c3d4-e5f6-7890-abcd-ef1234567890"]
     )
+=======
+class RepoListResponse(CamelModel):
+    """Paginated list of repos for the authenticated user.
+
+    Covers repos they own plus repos they collaborate on.  The ``next_cursor``
+    opaque string is passed back as ``?cursor=`` to retrieve the next page;
+    a null value means there are no more results.
+    """
+
+    repos: list[RepoResponse] = Field(..., description="Repos on this page (up to 20)")
+    next_cursor: str | None = Field(None, description="Pagination cursor — pass as ?cursor= to get the next page")
+    total: int = Field(..., description="Total number of repos across all pages")
+>>>>>>> origin/dev
 
 
 class BranchResponse(CamelModel):
