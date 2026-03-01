@@ -18,6 +18,8 @@
        title="MuseHub oEmbed">{% endblock %}
   {% block extra_css %}{% endblock %}
   {% block jsonld %}{% endblock %}
+  <script src="/musehub/static/alpinejs.min.js" defer></script>
+  <script src="/musehub/static/htmx.min.js"></script>
   <style>
     .nav-notif-bell {
       position: relative;
@@ -52,6 +54,8 @@
   </style>
 </head>
 <body>
+  {# HTMX top-of-page loading bar — shown via .htmx-request CSS class #}
+  <div id="htmx-loading" class="htmx-indicator" aria-hidden="true" style="position:fixed;top:0;left:0;right:0;height:2px;background:var(--color-accent,#1f6feb);z-index:9999;display:none"></div>
   {# Global navigation bar — logo, search, user menu #}
   {% include "musehub/partials/navbar.html" %}
 
@@ -64,7 +68,7 @@
   {# Repo-scoped pages fill this with the repo identity card + tab strip #}
   {% block repo_nav %}{% endblock %}
 
-  <div class="container{% block container_extra_class %}{% endblock %}"{% block container_attrs %}{% endblock %}>
+  <div class="container{% block container_extra_class %}{% endblock %}" hx-boost="true"{% block container_attrs %}{% endblock %}>
     {% block token_form %}
     <div class="token-form" id="token-form" style="display:none">
       <p id="token-msg">Enter your Maestro JWT to browse this repo.</p>
