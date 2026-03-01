@@ -19,18 +19,15 @@ from __future__ import annotations
 import logging
 import uuid
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
-from sqlalchemy import delete, select, text
+from sqlalchemy import text
+from sqlalchemy.engine import RowMapping
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from maestro.auth.dependencies import TokenClaims, require_valid_token
 from maestro.db import get_db
-
-if TYPE_CHECKING:
-    pass  # ORM models imported at runtime below when available
 
 logger = logging.getLogger(__name__)
 
@@ -65,7 +62,7 @@ class StashEntryResponse(BaseModel):
     stash_id: str
     path: str
     object_id: str
-    created_at: datetime
+    position: int
 
 
 class StashResponse(BaseModel):
@@ -110,7 +107,7 @@ async def _get_stash_or_404(
     repo_id: str,
     stash_id: str,
     user_id: str,
-) -> Any:
+) -> RowMapping:
     """Fetch a stash row scoped to repo+user, raise 404 if absent."""
     result = await db.execute(
         text(
@@ -130,10 +127,10 @@ async def _get_stash_entries(db: AsyncSession, stash_id: str) -> list[StashEntry
     """Return all file entries belonging to ``stash_id``."""
     result = await db.execute(
         text(
-            "SELECT id, stash_id, path, object_id, created_at "
-            "FROM musehub_stash_entry "
+            "SELECT id, stash_id, path, object_id, position "
+            "FROM musehub_stash_entries "
             "WHERE stash_id = :stash_id "
-            "ORDER BY path"
+            "ORDER BY position"
         ),
         {"stash_id": stash_id},
     )
@@ -143,13 +140,13 @@ async def _get_stash_entries(db: AsyncSession, stash_id: str) -> list[StashEntry
             stash_id=str(r["stash_id"]),
             path=r["path"],
             object_id=r["object_id"],
-            created_at=r["created_at"],
+            position=r["position"],
         )
         for r in result.mappings().all()
     ]
 
 
-def _row_to_stash_response(row: Any, entries: list[StashEntryResponse] | None = None) -> StashResponse:
+def _row_to_stash_response(row: RowMapping, entries: list[StashEntryResponse] | None = None) -> StashResponse:
     """Convert a DB mapping row to ``StashResponse``."""
     return StashResponse(
         id=str(row["id"]),
@@ -235,8 +232,8 @@ async def push_stash(
 
     await db.execute(
         text(
-            "INSERT INTO musehub_stash (id, repo_id, user_id, message, branch, created_at) "
-            "VALUES (:id, :repo_id, :user_id, :message, :branch, :created_at)"
+            "INSERT INTO musehub_stash (id, repo_id, user_id, message, branch, is_applied, created_at) "
+            "VALUES (:id, :repo_id, :user_id, :message, :branch, :is_applied, :created_at)"
         ),
         {
             "id": stash_id,
@@ -244,24 +241,25 @@ async def push_stash(
             "user_id": user_id,
             "message": body.message,
             "branch": body.branch,
+            "is_applied": False,
             "created_at": now,
         },
     )
 
     entry_responses: list[StashEntryResponse] = []
-    for entry in body.entries:
+    for position, entry in enumerate(body.entries):
         entry_id = str(uuid.uuid4())
         await db.execute(
             text(
-                "INSERT INTO musehub_stash_entry (id, stash_id, path, object_id, created_at) "
-                "VALUES (:id, :stash_id, :path, :object_id, :created_at)"
+                "INSERT INTO musehub_stash_entries (id, stash_id, path, object_id, position) "
+                "VALUES (:id, :stash_id, :path, :object_id, :position)"
             ),
             {
                 "id": entry_id,
                 "stash_id": stash_id,
                 "path": entry.path,
                 "object_id": entry.object_id,
-                "created_at": now,
+                "position": position,
             },
         )
         entry_responses.append(
@@ -270,7 +268,7 @@ async def push_stash(
                 stash_id=stash_id,
                 path=entry.path,
                 object_id=entry.object_id,
-                created_at=now,
+                position=position,
             )
         )
 
@@ -335,7 +333,7 @@ async def pop_stash(
 
     # Delete entries first (FK constraint), then the stash header.
     await db.execute(
-        text("DELETE FROM musehub_stash_entry WHERE stash_id = :stash_id"),
+        text("DELETE FROM musehub_stash_entries WHERE stash_id = :stash_id"),
         {"stash_id": stash_id},
     )
     await db.execute(
@@ -395,7 +393,7 @@ async def drop_stash(
     await _get_stash_or_404(db, repo_id, stash_id, token.get("sub", ""))
 
     await db.execute(
-        text("DELETE FROM musehub_stash_entry WHERE stash_id = :stash_id"),
+        text("DELETE FROM musehub_stash_entries WHERE stash_id = :stash_id"),
         {"stash_id": stash_id},
     )
     await db.execute(
