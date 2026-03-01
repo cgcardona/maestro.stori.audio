@@ -33,12 +33,8 @@ from sqlalchemy import Text, desc, func, outerjoin, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.responses import Response as StarletteResponse
 
-<<<<<<< HEAD
 from maestro.api.routes.musehub._templates import templates
-from maestro.api.routes.musehub.negotiate import negotiate_response
-=======
 from maestro.api.routes.musehub.negotiate import htmx_fragment_or_full
->>>>>>> origin/dev
 from maestro.api.routes.musehub.topics import TopicItem, TopicReposResponse
 from maestro.auth.dependencies import TokenClaims, optional_token
 from maestro.db import get_db
