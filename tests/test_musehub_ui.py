@@ -7863,3 +7863,141 @@ async def test_followers_list_empty_for_user_with_no_followers(
     response = await client.get("/api/v1/musehub/users/lonelyuser295/followers-list")
     assert response.status_code == 200
     assert response.json() == []
+
+
+# ---------------------------------------------------------------------------
+# Open Graph / Twitter card meta tag tests (issue #441)
+# ---------------------------------------------------------------------------
+
+
+def test_og_tags_helper_returns_required_keys() -> None:
+    """_og_tags() always returns og:title, og:type, twitter:card, twitter:title."""
+    from maestro.api.routes.musehub.ui import _og_tags
+
+    tags = _og_tags(title="My Composition — Muse Hub")
+    assert tags["og:title"] == "My Composition — Muse Hub"
+    assert tags["og:type"] == "website"
+    assert tags["twitter:card"] == "summary"
+    assert tags["twitter:title"] == "My Composition — Muse Hub"
+    assert "og:description" not in tags
+    assert "og:image" not in tags
+
+
+def test_og_tags_helper_includes_description_when_provided() -> None:
+    """_og_tags() includes og:description and twitter:description when description is given."""
+    from maestro.api.routes.musehub.ui import _og_tags
+
+    tags = _og_tags(title="My Repo", description="A neo-soul composition")
+    assert tags["og:description"] == "A neo-soul composition"
+    assert tags["twitter:description"] == "A neo-soul composition"
+
+
+def test_og_tags_helper_includes_image_when_provided() -> None:
+    """_og_tags() includes og:image and twitter:image when image URL is given."""
+    from maestro.api.routes.musehub.ui import _og_tags
+
+    tags = _og_tags(title="My Repo", image="https://example.com/cover.webp")
+    assert tags["og:image"] == "https://example.com/cover.webp"
+    assert tags["twitter:image"] == "https://example.com/cover.webp"
+
+
+def test_og_tags_helper_custom_type_and_card() -> None:
+    """_og_tags() propagates custom og_type and twitter_card values."""
+    from maestro.api.routes.musehub.ui import _og_tags
+
+    tags = _og_tags(title="My Profile", og_type="profile", twitter_card="summary_large_image")
+    assert tags["og:type"] == "profile"
+    assert tags["twitter:card"] == "summary_large_image"
+
+
+def test_og_tags_helper_omits_empty_description() -> None:
+    """_og_tags() does not emit og:description when description is empty string."""
+    from maestro.api.routes.musehub.ui import _og_tags
+
+    tags = _og_tags(title="My Repo", description="")
+    assert "og:description" not in tags
+    assert "twitter:description" not in tags
+
+
+@pytest.mark.anyio
+async def test_repo_page_og_meta_does_not_break_render(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Repo landing page continues to render 200 after og_meta is added to context (issue #441).
+
+    The og_meta dict is passed to the template; even before templates render
+    the tags, the route must not raise an exception or return a non-200 status.
+    """
+    repo = MusehubRepo(
+        name="og-test-beats",
+        owner="ogowner",
+        slug="og-test-beats",
+        visibility="public",
+        owner_user_id="og-owner-uid",
+        description="A funky neo-soul composition",
+    )
+    db_session.add(repo)
+    await db_session.commit()
+    await db_session.refresh(repo)
+
+    response = await client.get("/musehub/ui/ogowner/og-test-beats")
+    assert response.status_code == 200
+    body = response.text
+    assert "text/html" in response.headers["content-type"]
+    assert "ogowner" in body or "og-test-beats" in body
+
+
+@pytest.mark.anyio
+async def test_commit_page_og_meta_does_not_break_render(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Commit detail page continues to render 200 after og_meta is added to context (issue #441)."""
+    repo = MusehubRepo(
+        name="og-commit-repo",
+        owner="ogcommituser",
+        slug="og-commit-repo",
+        visibility="public",
+        owner_user_id="og-commit-uid",
+    )
+    db_session.add(repo)
+    await db_session.commit()
+    await db_session.refresh(repo)
+
+    commit_id = "deadbeef12345678deadbeef12345678deadbeef"
+    response = await client.get(f"/musehub/ui/ogcommituser/og-commit-repo/commits/{commit_id}")
+    assert response.status_code == 200
+    assert "text/html" in response.headers["content-type"]
+    body = response.text
+    assert "ogcommituser" in body or "og-commit-repo" in body
+
+
+@pytest.mark.anyio
+async def test_profile_page_og_meta_does_not_break_render(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """User profile page continues to render 200 after og_meta is added to context (issue #441)."""
+    await _make_profile(db_session, username="ogprofileuser")
+    response = await client.get("/musehub/ui/users/ogprofileuser")
+    assert response.status_code == 200
+    assert "text/html" in response.headers["content-type"]
+    body = response.text
+    assert "ogprofileuser" in body
+
+
+def test_og_tags_helper_returns_dict_of_strings() -> None:
+    """_og_tags() return value is dict[str, str] — all values are plain strings."""
+    from maestro.api.routes.musehub.ui import _og_tags
+
+    tags = _og_tags(
+        title="Test",
+        description="Desc",
+        image="https://example.com/img.webp",
+        og_type="music.song",
+        twitter_card="summary",
+    )
+    for key, val in tags.items():
+        assert isinstance(key, str), f"key {key!r} is not str"
+        assert isinstance(val, str), f"value for {key!r} is not str"
