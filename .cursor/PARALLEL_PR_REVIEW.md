@@ -541,15 +541,38 @@ STEP 4 — TARGETED TEST SCOPING (before review):
   #      maestro/daw/                      → tests/test_daw_adapter.py
   #      storpheus/music_service.py        → storpheus/test_gm_resolution.py + storpheus/test_*.py
   #
+  #    AgentCeption (runs on HOST, not in Docker — pytest directly):
+  #      agentception/app.py               → tests/test_agentception_scaffold.py
+  #      agentception/readers/worktrees.py → tests/test_agentception_worktrees.py
+  #      agentception/readers/transcripts.py → tests/test_agentception_transcripts.py
+  #      agentception/readers/github.py    → agentception/tests/test_agentception_github.py
+  #      agentception/poller.py            → agentception/tests/test_agentception_poller.py
+  #      agentception/routes/ui.py         → agentception/tests/test_agentception_ui_overview.py
+  #      agentception/routes/control.py    → agentception/tests/test_agentception_control.py
+  #      agentception/telemetry.py         → agentception/tests/test_agentception_telemetry.py
+  #      agentception/intelligence/*.py    → agentception/tests/test_agentception_dag.py, etc.
+  #      agentception/ (any file)          → run: docker compose exec agentception pytest agentception/tests/ -v
+  #
+  #      agentception tests run in the agentception container (isolated from maestro).
+  #         CORRECT:   cd "$REPO" && docker compose exec agentception pytest agentception/tests/<X>.py -v
+  #         INCORRECT: python3 -m pytest tests/test_agentception_<X>.py (host — wrong deps)
+  #         INCORRECT: docker compose exec maestro pytest (wrong container)
+  #
   # 4. If the PR only changes .cursor/, docs/, or other non-.py files: skip pytest entirely.
   #    mypy is irrelevant too. The review is markdown-content focused.
+  #
+  # ⚠️  NEVER run the full test suite (pytest tests/ or pytest). Only the derived
+  #    test files. The full suite takes 5-6 minutes and includes unrelated codebases.
 
   # 5. Run only the derived targets (substitute real paths):
+  #    For maestro/* changes (in Docker):
   cd "$REPO" && docker compose exec maestro sh -c \
     "PYTHONPATH=/worktrees/$WTNAME pytest \
      /worktrees/$WTNAME/tests/test_<module1>.py \
      /worktrees/$WTNAME/tests/test_<module2>.py \
      -v"
+  #    For agentception/* changes (in agentception container):
+  cd "$REPO" && docker compose exec agentception pytest agentception/tests/test_<module>.py -v
 
 STEP 5 — REVIEW:
   Read and follow every step in .github/PR_REVIEW_PROMPT.md exactly.
@@ -899,13 +922,58 @@ STEP 7 — REGRESSION FEEDBACK LOOP (only if merge succeeded — skip if D/F gra
   # Pull the latest dev (contains the just-merged PR):
   git -C "$REPO" fetch origin && git -C "$REPO" merge origin/dev
 
-  # Run targeted tests for the files this PR touched (not the full suite):
-  FILES_CHANGED_FOR_TEST=$(grep "^FILES_CHANGED=" .agent-task | cut -d= -f2)
-  # Derive test file paths from FILES_CHANGED (e.g. maestro/api/routes/musehub/labels.py
-  # → tests/test_musehub_labels.py). Run only those test files.
-  TEST_OUTPUT=$(cd "$REPO" && docker compose exec maestro sh -c \
-    "PYTHONPATH=/app pytest tests/ -v --tb=short -q 2>&1" 2>&1 | tail -30)
-  echo "$TEST_OUTPUT"
+  # Run TARGETED tests only — never the full suite.
+  # Derive test files from what this PR actually changed:
+  CHANGED_FILES=$(git -C "$REPO" diff --name-only origin/dev~1 origin/dev 2>/dev/null || \
+                  git -C "$REPO" show --name-only --format="" HEAD | head -30)
+
+  # Build a space-separated list of test files to run, using the same mapping as STEP 4:
+  TEST_FILES=""
+  for f in $CHANGED_FILES; do
+    case "$f" in
+      agentception/*)
+        # AgentCeption: run on HOST, not Docker
+        MODULE=$(echo "$f" | sed 's|agentception/||' | sed 's|/|_|g' | sed 's|\.py||')
+        CANDIDATE="$REPO/tests/test_agentception_${MODULE}.py"
+        [ -f "$CANDIDATE" ] && TEST_FILES="$TEST_FILES $CANDIDATE"
+        ;;
+      maestro/*)
+        MODULE=$(echo "$f" | sed 's|maestro/||' | sed 's|/|_|g' | sed 's|\.py||')
+        CANDIDATE="$REPO/tests/test_${MODULE}.py"
+        [ -f "$CANDIDATE" ] && TEST_FILES="$TEST_FILES $CANDIDATE"
+        ;;
+      tests/test_agentception_*.py)
+        TEST_FILES="$TEST_FILES $REPO/$f"
+        ;;
+      tests/test_*.py)
+        TEST_FILES="$TEST_FILES $REPO/$f"
+        ;;
+    esac
+  done
+
+  if [ -z "$TEST_FILES" ]; then
+    echo "ℹ️  No derived test files found — skipping regression run."
+    TEST_OUTPUT="no tests"
+  else
+    # Determine runner: agentception tests run on host; maestro tests run in Docker
+    HAS_AC=$(echo "$TEST_FILES" | grep -c "test_agentception" || true)
+    HAS_MAESTRO=$(echo "$TEST_FILES" | grep -v "test_agentception" | grep -c "test_" || true)
+
+    if [ "$HAS_AC" -gt 0 ]; then
+      AC_TESTS=$(echo "$TEST_FILES" | tr ' ' '\n' | grep "test_agentception" | tr '\n' ' ')
+      # agentception tests run in the agentception container (has the right deps, no maestro conftest)
+      AC_OUTPUT=$(cd "$REPO" && docker compose exec agentception pytest $AC_TESTS -v --tb=short -q 2>&1)
+      echo "$AC_OUTPUT"
+      TEST_OUTPUT="$AC_OUTPUT"
+    fi
+    if [ "$HAS_MAESTRO" -gt 0 ]; then
+      M_TESTS=$(echo "$TEST_FILES" | tr ' ' '\n' | grep -v "test_agentception" | tr '\n' ' ')
+      M_OUTPUT=$(cd "$REPO" && docker compose exec maestro sh -c \
+        "PYTHONPATH=/app pytest $M_TESTS -v --tb=short -q 2>&1")
+      echo "$M_OUTPUT"
+      TEST_OUTPUT="${TEST_OUTPUT}${M_OUTPUT}"
+    fi
+  fi
 
   # Scan for failures:
   FAILED_TESTS=$(echo "$TEST_OUTPUT" | grep "^FAILED " | sed 's/^FAILED //')
@@ -961,15 +1029,35 @@ STEP 8 — SPAWN YOUR SUCCESSOR (run this before self-destructing):
   if [ "$SPAWN_MODE" = "chain" ]; then
     # ── CHAIN MODE: merge happened → spawn next engineer for next unclaimed issue ──
 
-    # Find the next open, unclaimed, htmx-tagged issue whose dependencies are met.
-    NEXT_ISSUE=$(gh issue list \
-      --repo "$GH_REPO" \
-      --state open \
-      --json number,labels \
-      --jq '[.[] | select(
-               (.labels | map(.name) | any(startswith("htmx/"))) and
-               (.labels | map(.name) | index("agent:wip") | not)
-             )] | first | .number // empty')
+    # Mirror the CTO's label-ordering logic: find the lowest-numbered agentception/* label
+    # that still has open issues. NEVER pick from a later label while an earlier one
+    # still has work. This prevents later-phase issues from being claimed prematurely.
+    ACTIVE_LABEL=""
+    for label in agentception/0-scaffold agentception/1-controls \
+                 agentception/2-telemetry agentception/3-roles \
+                 agentception/4-intelligence agentception/5-scaling \
+                 agentception/6-generalization; do
+      COUNT=$(gh issue list --state open --repo "$GH_REPO" \
+                --label "$label" --json number --jq 'length')
+      if [ "$COUNT" -gt 0 ]; then
+        ACTIVE_LABEL="$label"
+        break
+      fi
+    done
+
+    NEXT_ISSUE=""
+    if [ -z "$ACTIVE_LABEL" ]; then
+      echo "ℹ️  No open htmx issues remain — chain complete."
+    else
+      # Pick the next unclaimed issue from ACTIVE_LABEL only.
+      NEXT_ISSUE=$(gh issue list \
+        --repo "$GH_REPO" \
+        --state open \
+        --label "$ACTIVE_LABEL" \
+        --json number,labels \
+        --jq '[.[] | select(.labels | map(.name) | index("agent:wip") | not)
+              ] | sort_by(.number) | first | .number // empty')
+    fi
 
     # Dependency gate: only proceed if all "Depends on #NNN" references are CLOSED.
     if [ -n "$NEXT_ISSUE" ]; then

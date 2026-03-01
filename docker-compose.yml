@@ -204,6 +204,34 @@ services:
       - no-new-privileges:true
 
   # ==========================================================================
+  # AgentCeption — Multi-tier agent pipeline dashboard (port 7777)
+  # ==========================================================================
+  agentception:
+    build:
+      context: .
+      dockerfile: agentception/Dockerfile
+    container_name: maestro-agentception
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:7777:7777"
+    environment:
+      HOME: ${HOME}
+    volumes:
+      # Mount cursor dir at same absolute path so worktree paths match
+      - ${HOME}/.cursor:${HOME}/.cursor
+      # gh CLI auth (read-only)
+      - ${HOME}/.config/gh:${HOME}/.config/gh:ro
+      # Repo itself (for git operations)
+      - ./:${HOME}/dev/tellurstori/maestro
+    networks:
+      - maestro-net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:7777/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  # ==========================================================================
   # Certbot for Let's Encrypt SSL
   # ==========================================================================
   certbot:
