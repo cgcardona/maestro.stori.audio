@@ -34,7 +34,6 @@ from maestro.api.routes.musehub.pagination import (
 
 def _make_request(url: str) -> StarletteRequest:
     """Build a minimal Starlette Request for testing URL construction."""
-    from starlette.datastructures import Headers
     scope = {
         "type": "http",
         "method": "GET",
