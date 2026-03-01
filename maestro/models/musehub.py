@@ -1990,6 +1990,29 @@ class UserForksResponse(CamelModel):
     total: int = Field(..., description="Total number of forked repos")
 
 
+class UserStarredRepoEntry(CamelModel):
+    """A single starred-repo entry shown on a user's profile Starred tab.
+
+    Combines the starred repo's full metadata with the star timestamp so the
+    profile page can render the repo card with owner/slug linked and
+    "starred at {timestamp}" context.
+    """
+
+    star_id: str = Field(..., description="Internal UUID of the star relationship record")
+    repo: RepoResponse = Field(..., description="Full metadata of the starred repo")
+    starred_at: datetime = Field(..., description="Timestamp when the user starred the repo (ISO-8601 UTC)")
+
+
+class UserStarredResponse(CamelModel):
+    """Paginated list of repos starred by a user.
+
+    Returned by ``GET /api/v1/musehub/users/{username}/starred``.
+    """
+
+    starred: list[UserStarredRepoEntry] = Field(..., description="Repos starred by this user")
+    total: int = Field(..., description="Total number of starred repos")
+
+
 # ── Render pipeline ────────────────────────────────────────────────────────
 
 

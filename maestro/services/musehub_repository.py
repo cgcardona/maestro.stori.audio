@@ -51,6 +51,8 @@ from maestro.models.musehub import (
     TreeListResponse,
     UserForkedRepoEntry,
     UserForksResponse,
+    UserStarredRepoEntry,
+    UserStarredResponse,
 )
 
 logger = logging.getLogger(__name__)
@@ -1235,3 +1237,42 @@ async def get_user_forks(db_session: AsyncSession, username: str) -> UserForksRe
     ]
 
     return UserForksResponse(forks=entries, total=len(entries))
+
+
+async def get_user_starred(db_session: AsyncSession, username: str) -> UserStarredResponse:
+    """Return all repos that ``username`` has starred, newest first.
+
+    Joins ``musehub_stars`` (where ``user_id`` matches the profile's user_id)
+    with ``musehub_repos`` to retrieve full repo metadata for each starred repo.
+
+    Returns an empty list (not 404) when the user exists but has starred nothing.
+    Callers are responsible for 404-guarding the username before invoking this.
+    """
+    profile_row = (
+        await db_session.execute(
+            select(db.MusehubProfile).where(db.MusehubProfile.username == username)
+        )
+    ).scalar_one_or_none()
+
+    if profile_row is None:
+        return UserStarredResponse(starred=[], total=0)
+
+    rows = (
+        await db_session.execute(
+            select(db.MusehubStar, db.MusehubRepo)
+            .join(db.MusehubRepo, db.MusehubStar.repo_id == db.MusehubRepo.repo_id)
+            .where(db.MusehubStar.user_id == profile_row.user_id)
+            .order_by(db.MusehubStar.created_at.desc())
+        )
+    ).all()
+
+    entries = [
+        UserStarredRepoEntry(
+            star_id=star.star_id,
+            repo=_to_repo_response(repo),
+            starred_at=star.created_at,
+        )
+        for star, repo in rows
+    ]
+
+    return UserStarredResponse(starred=entries, total=len(entries))

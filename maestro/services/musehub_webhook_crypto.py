@@ -75,6 +75,19 @@ def encrypt_secret(plaintext: str) -> str:
     return token.decode()
 
 
+_FERNET_TOKEN_PREFIX = "gAAAAAB"
+
+
+def is_fernet_token(value: str) -> bool:
+    """Return True if *value* looks like a Fernet token.
+
+    Fernet tokens are base64url-encoded and always begin with "gAAAAAB" (the
+    binary magic bytes 0x80 encoded in URL-safe base64).  We use this prefix
+    to distinguish already-encrypted values from legacy plaintext secrets.
+    """
+    return value.startswith(_FERNET_TOKEN_PREFIX)
+
+
 def decrypt_secret(ciphertext: str) -> str:
     """Decrypt a webhook signing secret retrieved from the database.
 
@@ -82,8 +95,16 @@ def decrypt_secret(ciphertext: str) -> str:
     plaintext when a key is configured, or the value unchanged when no key is set
     (matching the dev fallback in ``encrypt_secret``).
 
-    Raises ``ValueError`` if the ciphertext is invalid or was encrypted with a
-    different key — this prevents silent delivery of a wrong HMAC signature.
+    **Transparent migration fallback:** if decryption fails with ``InvalidToken``
+    and the value does not look like a Fernet token (i.e. it is a pre-migration
+    plaintext secret), the plaintext is returned as-is with a deprecation warning.
+    This prevents hard failures on existing webhooks while
+    ``scripts/migrate_webhook_secrets.py`` (or the automatic transparent path) has
+    not yet re-encrypted every row.  Once all rows are migrated the fallback is
+    never triggered.
+
+    Raises ``ValueError`` only when the value *looks like* a Fernet token but
+    cannot be decrypted — which indicates a genuine key mismatch or corruption.
     Empty values are returned as-is.
     """
     if not ciphertext:
@@ -95,6 +116,16 @@ def decrypt_secret(ciphertext: str) -> str:
         plaintext: bytes = fernet.decrypt(ciphertext.encode())
         return plaintext.decode()
     except InvalidToken as exc:
+        if not is_fernet_token(ciphertext):
+            # Legacy plaintext secret stored before encryption was enabled.
+            # Return it as-is so existing webhooks keep working; callers should
+            # re-encrypt by calling encrypt_secret() and persisting the result.
+            logger.warning(
+                "⚠️ Webhook secret appears to be unencrypted plaintext. "
+                "Run scripts/migrate_webhook_secrets.py to encrypt all legacy "
+                "secrets. This fallback will be removed in a future release."
+            )
+            return ciphertext
         raise ValueError(
             "Failed to decrypt webhook secret — the value may have been encrypted "
             "with a different key or is corrupt. Check STORI_WEBHOOK_SECRET_KEY."

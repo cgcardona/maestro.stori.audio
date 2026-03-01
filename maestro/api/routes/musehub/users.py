@@ -28,7 +28,7 @@ from maestro.auth.dependencies import TokenClaims, optional_token, require_valid
 from maestro.db import get_db
 from maestro.db.musehub_models import MusehubFollow, MusehubProfile
 from maestro.models.base import CamelModel
-from maestro.models.musehub import ProfileResponse, ProfileUpdateRequest, UserForksResponse
+from maestro.models.musehub import ProfileResponse, ProfileUpdateRequest, UserForksResponse, UserStarredResponse
 from maestro.services import musehub_profile as profile_svc
 from maestro.services import musehub_repository as repo_svc
 
@@ -123,6 +123,36 @@ async def get_user_forks(
 
     result = await repo_svc.get_user_forks(db, username)
     logger.info("✅ Served %d forks for username=%s", result.total, username)
+    return result
+
+
+@router.get(
+    "/users/{username}/starred",
+    response_model=UserStarredResponse,
+    operation_id="getUserStarred",
+    summary="List repos starred by a user (public)",
+)
+async def get_user_starred(
+    username: str,
+    db: AsyncSession = Depends(get_db),
+) -> UserStarredResponse:
+    """Return all repos that ``username`` has starred, newest first.
+
+    Joins ``musehub_stars`` (where user_id matches the profile's user_id)
+    with ``musehub_repos`` to surface full repo metadata for each starred repo.
+
+    No JWT required — starred repo lists are publicly accessible.
+    Returns 404 when the username does not exist.
+    """
+    profile = await profile_svc.get_profile_by_username(db, username)
+    if profile is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"No profile found for username '{username}'",
+        )
+
+    result = await repo_svc.get_user_starred(db, username)
+    logger.info("✅ Served %d starred repos for username=%s", result.total, username)
     return result
 
 
