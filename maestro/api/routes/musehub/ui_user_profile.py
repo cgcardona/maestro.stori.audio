@@ -1,4 +1,4 @@
-"""Enhanced Muse Hub user profile page — issue #459.
+"""Enhanced Muse Hub user profile page — issue #459, SSR migration #563.
 
 Replaces the stub profile handler in ui.py with a full-featured profile page:
   - 52×7 GitHub-style contribution heatmap (green intensity by commit count)
@@ -8,7 +8,8 @@ Replaces the stub profile handler in ui.py with a full-featured profile page:
 
 Endpoint summary:
   GET /musehub/ui/users/{username}
-    HTML (default)  → rich profile shell; JavaScript hydrates from ?format=json.
+    HTML (default)  → fully server-rendered Jinja2 template (profile.html).
+                      All data fetched from DB on the server; no JS hydration needed.
     JSON            → EnhancedProfileResponse (badges, heatmap stats, pinned repos,
                       paginated activity feed).  Agents use this for machine-readable
                       profile data without navigating a separate /api/v1/... URL.
@@ -18,6 +19,12 @@ Why a separate module:
   The enhanced version needs DB access, several aggregate queries, and its own
   Pydantic response model — enough complexity to warrant its own file, matching
   the pattern of ui_similarity.py, ui_blame.py, etc.
+
+SSR migration (#563):
+  Deleted _render_profile_html() which built a ~310-line f-string shell.
+  The HTML path now runs the same DB queries as the JSON path and passes all
+  data into profile.html via the Jinja2 template context.  No client-side
+  fetching is needed for the primary profile data.
 """
 from __future__ import annotations
 
@@ -26,12 +33,14 @@ from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi import status as http_status
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import JSONResponse
 from pydantic import Field
 from sqlalchemy import desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.responses import Response as StarletteResponse
 
+from maestro.api.routes.musehub._templates import templates
+from maestro.api.routes.musehub.negotiate import negotiate_response
 from maestro.db import get_db
 from maestro.db import musehub_models as dbm
 from maestro.models.base import CamelModel
@@ -558,475 +567,6 @@ async def _build_enhanced_profile(
 
 
 # ---------------------------------------------------------------------------
-# Inline HTML shell (rendered for human browsers)
-# ---------------------------------------------------------------------------
-
-_EVENT_ICONS: dict[str, str] = {
-    "commit_pushed": "📦",
-    "pr_opened": "🔀",
-    "pr_merged": "✅",
-    "pr_closed": "❌",
-    "issue_opened": "🐛",
-    "issue_closed": "✔️",
-    "branch_created": "🌿",
-    "branch_deleted": "🗑️",
-    "tag_pushed": "🏷️",
-    "session_started": "▶️",
-    "session_ended": "⏹️",
-}
-
-
-def _render_profile_html(username: str) -> str:
-    """Generate the self-contained HTML shell for the enhanced profile page.
-
-    All data is fetched client-side:
-    - Profile/heatmap/repos from ``GET /api/v1/musehub/users/{username}``
-    - Badges, pinned repos, activity from ``GET /musehub/ui/users/{username}?format=json``
-
-    The page is intentionally a shell so it loads instantly and stays
-    auth-agnostic — the JavaScript handles token refresh and 401s.
-    """
-    safe_username = username.replace("'", "\\'").replace('"', '\\"')
-    html = f"""<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <link rel="stylesheet" href="/musehub/static/tokens.css">
-  <link rel="stylesheet" href="/musehub/static/components.css">
-  <link rel="stylesheet" href="/musehub/static/layout.css">
-  <title>@{username} — Muse Hub</title>
-  <style>
-    .heatmap-grid {{display:flex;gap:2px;overflow-x:auto;padding-bottom:4px}}
-    .heatmap-col {{display:flex;flex-direction:column;gap:2px}}
-    .heatmap-cell {{width:12px;height:12px;border-radius:2px;cursor:help}}
-    .heatmap-cell[data-intensity="0"] {{background:#161b22}}
-    .heatmap-cell[data-intensity="1"] {{background:#0e4429}}
-    .heatmap-cell[data-intensity="2"] {{background:#006d32}}
-    .heatmap-cell[data-intensity="3"] {{background:#39d353}}
-    .badge-grid {{display:flex;flex-wrap:wrap;gap:12px}}
-    .badge-card {{
-      display:flex;align-items:center;gap:10px;padding:10px 14px;
-      border-radius:6px;border:1px solid var(--border,#30363d);
-      background:var(--canvas-subtle,#161b22);min-width:200px;flex:1
-    }}
-    .badge-card.earned {{border-color:#39d353;background:#0e4429}}
-    .badge-card.unearned {{opacity:.45}}
-    .badge-icon {{font-size:24px;line-height:1}}
-    .badge-info .badge-name {{font-weight:600;font-size:14px}}
-    .badge-info .badge-desc {{font-size:12px;color:#8b949e;margin-top:2px}}
-    .pinned-grid {{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px}}
-    .pinned-card {{
-      padding:12px;border:1px solid var(--border,#30363d);border-radius:6px;
-      background:var(--canvas-subtle,#161b22)
-    }}
-    .pinned-card h3 {{margin:0 0 6px;font-size:14px}}
-    .pinned-card .pinned-desc {{font-size:12px;color:#8b949e;margin:0 0 8px}}
-    .pinned-meta {{display:flex;gap:12px;font-size:12px;color:#8b949e}}
-    .tab-bar {{display:flex;border-bottom:1px solid var(--border,#30363d);gap:0;margin-bottom:16px}}
-    .tab-btn {{
-      padding:8px 16px;border:none;background:none;cursor:pointer;
-      color:#8b949e;border-bottom:2px solid transparent;font-size:14px
-    }}
-    .tab-btn.active {{color:#e6edf3;border-bottom-color:#58a6ff;font-weight:600}}
-    .activity-row {{
-      display:flex;align-items:flex-start;gap:10px;padding:8px 0;
-      border-bottom:1px solid var(--border,#21262d);font-size:13px
-    }}
-    .activity-icon {{font-size:16px;line-height:1.4;flex-shrink:0}}
-    .activity-desc {{flex:1}}
-    .activity-meta {{color:#8b949e;font-size:11px;white-space:nowrap}}
-    .profile-hdr {{display:flex;align-items:flex-start;gap:16px;flex-wrap:wrap}}
-    .avatar-lg {{
-      width:72px;height:72px;border-radius:50%;display:flex;
-      align-items:center;justify-content:center;font-size:32px;
-      background:#1f6feb;flex-shrink:0;overflow:hidden
-    }}
-    .avatar-lg img {{width:100%;height:100%;object-fit:cover}}
-  </style>
-</head>
-<body>
-  <header>
-    <span class="logo">&#127925; Muse Hub</span>
-    <span class="breadcrumb">
-      <a href="/musehub/ui/users/{username}">@{username}</a>
-    </span>
-  </header>
-  <div class="container">
-    <div id="profile-hdr" class="card"><p class="loading">Loading profile…</p></div>
-    <div id="pinned-section"></div>
-    <div id="badges-section"></div>
-    <div id="heatmap-section"></div>
-    <div id="tabs-section" class="card" style="display:none">
-      <div class="tab-bar">
-        <button class="tab-btn active" data-tab="repos" onclick="switchTab('repos')">Repos</button>
-        <button class="tab-btn" data-tab="stars" onclick="switchTab('stars')">Stars</button>
-        <button class="tab-btn" data-tab="followers" onclick="switchTab('followers')">Followers</button>
-        <button class="tab-btn" data-tab="activity" onclick="switchTab('activity')">Activity</button>
-      </div>
-      <div id="tab-content"><p class="loading">Loading…</p></div>
-    </div>
-  </div>
-
-  <script src="/musehub/static/musehub.js"></script>
-  <script>
-  (function() {{
-    const username = '{safe_username}';
-    const API_PROFILE = '/api/v1/musehub/users/' + username;
-    const API_ENHANCED = '/musehub/ui/users/' + username + '?format=json';
-    const API_STARRED  = '/api/v1/musehub/users/' + username + '/starred';
-    const API_FOLLOWERS = '/api/v1/musehub/users/' + username + '/followers-list';
-    const API_FOLLOWING = '/api/v1/musehub/users/' + username + '/following-list';
-
-    let currentTab = 'repos';
-    let activityFilter = 'all';
-    let activityPage = 1;
-    let totalActivityEvents = 0;
-    let cachedRepos = [];
-
-    function esc(s) {{
-      if (!s) return '';
-      return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-    }}
-
-    function fmtRelative(ts) {{
-      if (!ts) return '';
-      const d = new Date(ts);
-      const diff = Math.floor((Date.now() - d.getTime()) / 1000);
-      if (diff < 60) return 'just now';
-      if (diff < 3600) return Math.floor(diff/60) + 'm ago';
-      if (diff < 86400) return Math.floor(diff/3600) + 'h ago';
-      return Math.floor(diff/86400) + 'd ago';
-    }}
-
-    // ── Heatmap ──────────────────────────────────────────────────────────────
-    function renderHeatmap(stats) {{
-      const days = stats.days || [];
-      // Group into columns of 7 (week columns)
-      const cols = [];
-      let col = [];
-      for (let i = 0; i < days.length; i++) {{
-        col.push(days[i]);
-        if (col.length === 7) {{ cols.push(col); col = []; }}
-      }}
-      if (col.length) cols.push(col);
-
-      const colsHtml = cols.map(c => {{
-        const cells = c.map(d =>
-          `<div class="heatmap-cell" data-intensity="${{d.intensity}}"
-               title="${{esc(d.date)}}: ${{d.count}} commit${{d.count !== 1 ? 's' : ''}}"></div>`
-        ).join('');
-        return `<div class="heatmap-col">${{cells}}</div>`;
-      }}).join('');
-
-      const legend = [0,1,2,3].map(n =>
-        `<div class="heatmap-cell" data-intensity="${{n}}" style="display:inline-block"></div>`
-      ).join('');
-
-      document.getElementById('heatmap-section').innerHTML = `
-        <div class="card">
-          <h2 style="margin-bottom:12px">📈 Contribution Activity</h2>
-          <div class="heatmap-grid">${{colsHtml}}</div>
-          <div style="display:flex;align-items:center;gap:8px;margin-top:8px;font-size:12px;color:#8b949e">
-            Less ${{legend}} More
-            &nbsp;·&nbsp; ${{stats.totalContributions || 0}} contributions in the last year
-            &nbsp;·&nbsp; Longest streak: ${{stats.longestStreak || 0}} days
-            &nbsp;·&nbsp; Current streak: ${{stats.currentStreak || 0}} days
-          </div>
-        </div>`;
-    }}
-
-    // ── Badges ───────────────────────────────────────────────────────────────
-    function renderBadges(badges) {{
-      const cards = badges.map(b => {{
-        const cls = b.earned ? 'earned' : 'unearned';
-        return `<div class="badge-card ${{cls}}" title="${{esc(b.description)}}">
-          <div class="badge-icon">${{esc(b.icon)}}</div>
-          <div class="badge-info">
-            <div class="badge-name">${{esc(b.name)}}</div>
-            <div class="badge-desc">${{esc(b.description)}}</div>
-          </div>
-        </div>`;
-      }}).join('');
-
-      const earned = badges.filter(b => b.earned).length;
-      document.getElementById('badges-section').innerHTML = `
-        <div class="card">
-          <h2 style="margin-bottom:12px">🏆 Achievements (${{earned}}/${{badges.length}})</h2>
-          <div class="badge-grid">${{cards}}</div>
-        </div>`;
-    }}
-
-    // ── Pinned repos ─────────────────────────────────────────────────────────
-    function renderPinned(pinnedRepos, isOwner) {{
-      if (!pinnedRepos || pinnedRepos.length === 0) return;
-      const cards = pinnedRepos.map(r => {{
-        const genre = r.primaryGenre ? `<span>🎵 ${{esc(r.primaryGenre)}}</span>` : '';
-        const lang  = r.language     ? `<span>🔤 ${{esc(r.language)}}</span>`     : '';
-        return `<div class="pinned-card">
-          <h3><a href="/musehub/ui/${{esc(r.owner)}}/${{esc(r.slug)}}">${{esc(r.name)}}</a></h3>
-          ${{r.description ? `<p class="pinned-desc">${{esc(r.description)}}</p>` : ''}}
-          <div class="pinned-meta">
-            ${{genre}} ${{lang}}
-            <span>⭐ ${{r.starCount}}</span>
-            <span>🌿 ${{r.forkCount}}</span>
-          </div>
-        </div>`;
-      }}).join('');
-
-      const customizeBtn = isOwner
-        ? `<button class="btn btn-secondary" style="float:right;font-size:12px"
-             onclick="alert('Customize pins: drag and drop reordering coming soon!')">
-             Customize pins</button>`
-        : '';
-
-      document.getElementById('pinned-section').innerHTML = `
-        <div class="card">
-          <h2 style="margin-bottom:12px">📌 Pinned Repositories ${{customizeBtn}}</h2>
-          <div class="pinned-grid">${{cards}}</div>
-        </div>`;
-    }}
-
-    // ── Profile header ───────────────────────────────────────────────────────
-    function renderProfileHeader(profile) {{
-      const hue = username.split('').reduce((a,c) => a + c.charCodeAt(0), 0) % 360;
-      const initial = (username[0] || '?').toUpperCase();
-      const avatarInner = profile.avatarUrl
-        ? `<img src="${{esc(profile.avatarUrl)}}" alt="avatar">`
-        : `<span style="color:#fff;font-weight:700">${{initial}}</span>`;
-      const avatarStyle = profile.avatarUrl ? '' : `background:hsl(${{hue}},55%,40%)`;
-      const myUsername = getToken ? (() => {{ try {{ const t=getToken(); if(!t) return ''; const p=JSON.parse(atob(t.split('.')[1])); return p.sub||p.username||''; }} catch(e){{return '';}} }})() : '';
-      const isOwner = myUsername === username;
-
-      document.getElementById('profile-hdr').innerHTML = `
-        <div class="profile-hdr">
-          <div class="avatar-lg" style="${{avatarStyle}}">${{avatarInner}}</div>
-          <div style="flex:1">
-            <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
-              <h1 style="margin:0;font-size:22px">@${{esc(profile.username)}}</h1>
-              ${{!isOwner ? `<button class="btn btn-secondary" id="follow-btn"
-                  onclick="toggleFollow()" style="font-size:13px">Follow</button>` : ''}}
-            </div>
-            ${{profile.bio ? `<p style="margin:6px 0;color:#8b949e">${{esc(profile.bio)}}</p>` : ''}}
-            <div style="font-size:13px;color:#8b949e;margin-top:4px" id="follow-stats"></div>
-          </div>
-        </div>`;
-
-      return isOwner;
-    }}
-
-    // ── Follow state ─────────────────────────────────────────────────────────
-    async function loadFollowState() {{
-      try {{
-        const r = await fetch('/api/v1/musehub/users/' + username + '/followers', {{ headers: authHeaders() }});
-        if (!r.ok) return;
-        const data = await r.json();
-        const el = document.getElementById('follow-stats');
-        if (el) el.textContent = (data.follower_count||0) + ' followers · ' + (data.following_count||0) + ' following';
-        const btn = document.getElementById('follow-btn');
-        if (btn && getToken && getToken()) {{
-          btn.dataset.following = data.following ? 'true' : 'false';
-          btn.textContent = data.following ? 'Following' : 'Follow';
-        }}
-      }} catch(_) {{}}
-    }}
-
-    async function toggleFollow() {{
-      const btn = document.getElementById('follow-btn');
-      if (!btn) return;
-      const isFollowing = btn.dataset.following === 'true';
-      const method = isFollowing ? 'DELETE' : 'POST';
-      try {{
-        await fetch('/api/v1/musehub/users/' + username + '/follow', {{ method, headers: authHeaders() }});
-        btn.dataset.following = isFollowing ? 'false' : 'true';
-        btn.textContent = isFollowing ? 'Follow' : 'Following';
-      }} catch(_) {{}}
-    }}
-
-    // ── Tab: Repos ───────────────────────────────────────────────────────────
-    function renderReposTab(repos) {{
-      if (!repos || repos.length === 0) {{
-        document.getElementById('tab-content').innerHTML = '<p class="loading">No public repositories yet.</p>';
-        return;
-      }}
-      const cards = repos.map(r => {{
-        const lastAct = r.lastActivityAt ? fmtRelative(r.lastActivityAt) : 'no commits';
-        return `<div class="card" style="margin-bottom:8px">
-          <h3 style="margin:0 0 4px"><a href="/musehub/ui/${{esc(r.owner)}}/${{esc(r.slug)}}">${{esc(r.name)}}</a></h3>
-          <div style="font-size:12px;color:#8b949e">
-            <span class="badge badge-${{r.visibility}}">${{r.visibility}}</span>
-            &nbsp;· Last activity: ${{lastAct}}
-          </div>
-        </div>`;
-      }}).join('');
-      document.getElementById('tab-content').innerHTML = `<div>${{cards}}</div>`;
-    }}
-
-    // ── Tab: Stars ───────────────────────────────────────────────────────────
-    async function loadStarsTab() {{
-      document.getElementById('tab-content').innerHTML = '<p class="loading">Loading starred repos…</p>';
-      try {{
-        const data = await fetch(API_STARRED).then(r => r.json());
-        const starred = data.starred || [];
-        if (!starred.length) {{
-          document.getElementById('tab-content').innerHTML = '<p class="loading">No starred repositories yet.</p>';
-          return;
-        }}
-        const cards = starred.map(entry => {{
-          const r = entry.repo || entry;
-          return `<div class="card" style="margin-bottom:8px">
-            <h3 style="margin:0 0 4px"><a href="/musehub/ui/${{esc(r.owner)}}/${{esc(r.slug)}}">${{esc(r.owner)}}/${{esc(r.name)}}</a></h3>
-            ${{r.description ? `<p style="font-size:12px;color:#8b949e;margin:4px 0">${{esc(r.description)}}</p>` : ''}}
-          </div>`;
-        }}).join('');
-        document.getElementById('tab-content').innerHTML = cards;
-      }} catch(e) {{
-        document.getElementById('tab-content').innerHTML = '<p class="error">Failed to load starred repos.</p>';
-      }}
-    }}
-
-    // ── Tab: Followers/Following ─────────────────────────────────────────────
-    let socialSubTab = 'followers';
-    async function loadSocialTab(sub) {{
-      socialSubTab = sub;
-      const url = sub === 'followers' ? API_FOLLOWERS : API_FOLLOWING;
-      document.getElementById('tab-content').innerHTML = `
-        <div style="display:flex;gap:8px;margin-bottom:12px">
-          <button class="btn ${{sub==='followers'?'btn-primary':'btn-secondary'}}" onclick="loadSocialTab('followers')">Followers</button>
-          <button class="btn ${{sub==='following'?'btn-primary':'btn-secondary'}}" onclick="loadSocialTab('following')">Following</button>
-        </div>
-        <div id="social-list"><p class="loading">Loading…</p></div>`;
-      try {{
-        const users = await fetch(url).then(r => r.json());
-        const list = Array.isArray(users) ? users : (users.users || []);
-        const el = document.getElementById('social-list');
-        if (!el) return;
-        if (!list.length) {{ el.innerHTML = `<p class="loading">No ${{sub}} yet.</p>`; return; }}
-        el.innerHTML = list.map(u => `
-          <div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border,#21262d)">
-            <a href="/musehub/ui/users/${{esc(u.username)}}" style="font-weight:600">@${{esc(u.username)}}</a>
-            ${{u.bio ? `<span style="color:#8b949e;font-size:12px">${{esc(u.bio.slice(0,60))}}</span>` : ''}}
-          </div>`).join('');
-      }} catch(e) {{
-        const el = document.getElementById('social-list');
-        if (el) el.innerHTML = '<p class="error">Failed to load.</p>';
-      }}
-    }}
-
-    // ── Tab: Activity ────────────────────────────────────────────────────────
-    const FILTER_LABELS = {{all:'All',commits:'Commits',prs:'PRs',issues:'Issues',stars:'Stars'}};
-    const EVENT_ICONS = {{
-      commit_pushed:'📦',pr_opened:'🔀',pr_merged:'✅',pr_closed:'❌',
-      issue_opened:'🐛',issue_closed:'✔️',branch_created:'🌿',branch_deleted:'🗑️',
-      tag_pushed:'🏷️',session_started:'▶️',session_ended:'⏹️'
-    }};
-
-    async function loadActivityTab(filter, page) {{
-      activityFilter = filter || activityFilter;
-      activityPage   = page   || 1;
-
-      const filterBtns = Object.keys(FILTER_LABELS).map(f => {{
-        const active = f === activityFilter ? 'btn-primary' : 'btn-secondary';
-        return `<button class="btn ${{active}}" style="font-size:12px"
-          onclick="loadActivityTab('${{f}}',1)">${{FILTER_LABELS[f]}}</button>`;
-      }}).join('');
-
-      const url = API_ENHANCED + '&tab=' + activityFilter + '&page=' + activityPage + '&per_page=20';
-      document.getElementById('tab-content').innerHTML = `
-        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px">${{filterBtns}}</div>
-        <div id="activity-list"><p class="loading">Loading activity…</p></div>`;
-
-      try {{
-        const data = await fetch(url).then(r => r.json());
-        totalActivityEvents = data.totalEvents || 0;
-        const events = data.activity || [];
-        const listEl = document.getElementById('activity-list');
-        if (!listEl) return;
-        if (!events.length) {{
-          listEl.innerHTML = '<p class="loading">No activity found.</p>';
-          return;
-        }}
-        const rows = events.map(ev => {{
-          const icon = EVENT_ICONS[ev.eventType] || '📌';
-          const repoLink = ev.repoOwner && ev.repoSlug
-            ? ` in <a href="/musehub/ui/${{esc(ev.repoOwner)}}/${{esc(ev.repoSlug)}}">${{esc(ev.repoName||ev.repoSlug)}}</a>`
-            : '';
-          return `<div class="activity-row">
-            <div class="activity-icon">${{icon}}</div>
-            <div class="activity-desc">${{esc(ev.description)}}${{repoLink}}</div>
-            <div class="activity-meta">${{fmtRelative(ev.createdAt)}}</div>
-          </div>`;
-        }}).join('');
-
-        const totalPages = Math.ceil(totalActivityEvents / 20);
-        const pageBtns = totalPages > 1 ? `
-          <div style="display:flex;gap:8px;margin-top:12px;justify-content:center">
-            ${{activityPage > 1 ? `<button class="btn btn-secondary" onclick="loadActivityTab(activityFilter,${{activityPage-1}})">&larr; Prev</button>` : ''}}
-            <span style="font-size:13px;color:#8b949e;padding:6px">Page ${{activityPage}} of ${{totalPages}}</span>
-            ${{activityPage < totalPages ? `<button class="btn btn-secondary" onclick="loadActivityTab(activityFilter,${{activityPage+1}})">Next &rarr;</button>` : ''}}
-          </div>` : '';
-
-        listEl.innerHTML = rows + pageBtns;
-      }} catch(e) {{
-        const el = document.getElementById('activity-list');
-        if (el) el.innerHTML = '<p class="error">Failed to load activity: ' + esc(e.message) + '</p>';
-      }}
-    }}
-
-    // ── Tab switcher ─────────────────────────────────────────────────────────
-    function switchTab(tab) {{
-      currentTab = tab;
-      document.querySelectorAll('.tab-btn').forEach(b => {{
-        b.classList.toggle('active', b.dataset.tab === tab);
-      }});
-      switch (tab) {{
-        case 'repos':     renderReposTab(cachedRepos); break;
-        case 'stars':     loadStarsTab(); break;
-        case 'followers': loadSocialTab('followers'); break;
-        case 'activity':  loadActivityTab('all', 1); break;
-      }}
-    }}
-
-    // ── Main loader ──────────────────────────────────────────────────────────
-    async function init() {{
-      try {{
-        // Fetch both in parallel
-        const [profileData, enhancedData] = await Promise.all([
-          fetch(API_PROFILE).then(r => {{ if (!r.ok) throw new Error(r.status); return r.json(); }}),
-          fetch(API_ENHANCED).then(r => {{ if (!r.ok) throw new Error(r.status); return r.json(); }}),
-        ]);
-
-        const isOwner = renderProfileHeader(profileData);
-        loadFollowState();
-
-        // Heatmap uses profileData.contributionGraph if available, else enhancedData.heatmap
-        const heatmapStats = enhancedData.heatmap || {{
-          days: (profileData.contributionGraph || []).map(d => ({{...d, intensity: d.count===0?0:d.count<=3?1:d.count<=6?2:3}})),
-          totalContributions: 0, longestStreak: 0, currentStreak: 0
-        }};
-        renderHeatmap(heatmapStats);
-        renderBadges(enhancedData.badges || []);
-        renderPinned(enhancedData.pinnedRepos || [], isOwner);
-
-        // Cache repos for the Repos tab
-        cachedRepos = profileData.repos || [];
-        document.getElementById('tabs-section').style.display = '';
-        renderReposTab(cachedRepos);
-      }} catch(e) {{
-        document.getElementById('profile-hdr').innerHTML =
-          `<p class="error">&#10005; Could not load profile for @${{esc(username)}}: ${{esc(e.message)}}</p>`;
-      }}
-    }}
-
-    init();
-  }})();
-  </script>
-</body>
-</html>"""
-    return html
-
-
-# ---------------------------------------------------------------------------
 # Route handler
 # ---------------------------------------------------------------------------
 
@@ -1046,11 +586,14 @@ async def profile_page(
 ) -> StarletteResponse:
     """Render the enhanced Muse Hub user profile page or return structured JSON.
 
+    Both HTML and JSON paths run the same DB queries — no JS hydration required
+    for the primary profile data.  The Jinja2 template (profile.html) renders
+    all data server-side.
+
     HTML (default):
-        Returns a self-contained HTML shell.  Client-side JavaScript fetches
-        profile data, contribution heatmap, badges, pinned repos, and activity
-        from ``/api/v1/musehub/users/{username}`` and from the ``?format=json``
-        alternate of this same URL.
+        Returns a fully server-rendered Jinja2 page with heatmap cells, badge
+        cards, pinned repos, and activity feed all embedded in the HTML at
+        request time.
 
     JSON (``Accept: application/json`` or ``?format=json``):
         Returns ``EnhancedProfileResponse`` with:
@@ -1064,13 +607,38 @@ async def profile_page(
     No JWT required — profile pages are publicly accessible.
     Returns 404 when the username has no registered Muse Hub profile.
     """
-    # Determine if the caller wants JSON
-    accept = request.headers.get("accept", "")
-    wants_json = format == "json" or "application/json" in accept
+    data = await _build_enhanced_profile(db, username, tab, page, per_page)
 
-    if wants_json:
-        data = await _build_enhanced_profile(db, username, tab, page, per_page)
-        return JSONResponse(content=data.model_dump(by_alias=True, mode="json"))
+    # Build a 52-column (week-major) grid for the heatmap template
+    weeks: list[list[HeatmapDay]] = []
+    week: list[HeatmapDay] = []
+    for day in data.heatmap.days:
+        week.append(day)
+        if len(week) == 7:
+            weeks.append(week)
+            week = []
+    if week:
+        weeks.append(week)
 
-    # HTML path — lightweight shell, no DB access needed
-    return HTMLResponse(content=_render_profile_html(username))
+    context = {
+        "username": username,
+        "profile": data,
+        "heatmap_weeks": weeks,
+        "heatmap_stats": data.heatmap,
+        "badges": data.badges,
+        "pinned_repos": data.pinned_repos,
+        "activity": data.activity,
+        "activity_filter": data.activity_filter,
+        "page": data.page,
+        "per_page": data.per_page,
+        "total_events": data.total_events,
+    }
+
+    return await negotiate_response(
+        request=request,
+        template_name="musehub/pages/profile.html",
+        context=context,
+        templates=templates,
+        json_data=data,
+        format_param=format,
+    )
