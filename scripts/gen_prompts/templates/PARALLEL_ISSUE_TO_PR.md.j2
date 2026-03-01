@@ -407,7 +407,7 @@ STEP 0 — READ YOUR TASK FILE:
     git restore --staged <file> for staged undo. Broad undo destroys
     unrelated work. When in doubt: commit, then fix forward.
 
-STEP 0.5 — LOAD YOUR ROLE:
+STEP 0.5 — LOAD YOUR ROLE AND COGNITIVE ARCHITECTURE:
   ROLE=$(grep '^ROLE=' .agent-task | cut -d= -f2)
   REPO=$(git worktree list | head -1 | awk '{print $1}')
   ROLE_FILE="$REPO/.cursor/roles/${ROLE}.md"
@@ -417,8 +417,39 @@ STEP 0.5 — LOAD YOUR ROLE:
   else
     echo "⚠️  No role file found for '$ROLE' — proceeding without role context."
   fi
-  # The decision hierarchy, quality bar, and failure modes in that file govern
-  # all your choices from this point forward.
+
+  # Load cognitive architecture — determines your thinking style AND skill domain
+  COGNITIVE_ARCH=$(grep '^COGNITIVE_ARCH=' .agent-task | cut -d= -f2)
+  if [ -n "$COGNITIVE_ARCH" ]; then
+    echo "🧠 Cognitive architecture: $COGNITIVE_ARCH"
+    echo ""
+    echo "This means:"
+    # Parse figure and skill domain (format: figure+skill_domain or archetype+skill_domain)
+    COGARCH_FIGURE=$(echo "$COGNITIVE_ARCH" | cut -d+ -f1)
+    COGARCH_SKILL=$(echo "$COGNITIVE_ARCH" | cut -d+ -f2)
+    # Load figure/archetype YAML for context (informational — you already have the role file)
+    ARCH_FILE="$REPO/scripts/gen_prompts/cognitive_archetypes/figures/${COGARCH_FIGURE}.yaml"
+    if [ ! -f "$ARCH_FILE" ]; then
+      ARCH_FILE="$REPO/scripts/gen_prompts/cognitive_archetypes/archetypes/${COGARCH_FIGURE}.yaml"
+    fi
+    if [ -f "$ARCH_FILE" ]; then
+      # Print display_name and description for self-awareness
+      grep -A3 "^display_name:" "$ARCH_FILE" | head -4
+      grep -A5 "^description:" "$ARCH_FILE" | head -6
+    fi
+    # Load skill domain context
+    SKILL_FILE="$REPO/scripts/gen_prompts/cognitive_archetypes/skill_domains/${COGARCH_SKILL}.yaml"
+    if [ -f "$SKILL_FILE" ]; then
+      echo "--- Skill domain: $COGARCH_SKILL ---"
+      grep -A3 "^display_name:" "$SKILL_FILE" | head -2
+    fi
+    echo ""
+    echo "Let these govern your approach to this task. See TICKET_TAXONOMY.md for rationale."
+  else
+    echo "⚠️  No COGNITIVE_ARCH set — using default pragmatist+python approach."
+  fi
+  # The cognitive architecture, role file, and .agent-task together form
+  # your full operating context. Honor all three.
 
 STEP 1 — DERIVE PATHS:
   REPO=$(git worktree list | head -1 | awk '{print $1}')   # local filesystem path only
