@@ -191,6 +191,14 @@ async def forks_page(
         source_commit_count=source_commit_count,
     )
 
+    # Serialise fork nodes for the Jinja2 SSR table (snake_case dicts) and
+    # the SVG DAG JS renderer (camelCase JSON via window.__forkNetwork).
+    fork_nodes = [
+        child.model_dump(mode="json")
+        for child in fork_network.root.children
+    ]
+    fork_network_json = fork_network.model_dump(by_alias=True, mode="json")
+
     return await negotiate_response(
         request=request,
         template_name="musehub/pages/forks.html",
@@ -201,6 +209,8 @@ async def forks_page(
             "base_url": base_url,
             "current_page": "forks",
             "total_forks": fork_network.total_forks,
+            "forks": fork_nodes,
+            "fork_network_json": fork_network_json,
             "breadcrumb_data": [
                 {"label": owner, "url": f"/musehub/ui/{owner}"},
                 {"label": repo_slug, "url": base_url},
