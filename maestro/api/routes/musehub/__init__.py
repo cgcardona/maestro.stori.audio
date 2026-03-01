@@ -26,6 +26,7 @@ from maestro.api.routes.musehub import (
     search,
     social,
     sync,
+    topics,
     webhooks,
 )
 
@@ -42,6 +43,7 @@ router.include_router(releases.router, tags=["Releases"])
 router.include_router(sync.router, tags=["Sync"])
 router.include_router(objects.router, tags=["Objects"])
 router.include_router(search.router, tags=["Search"])
+router.include_router(topics.router, tags=["Topics"])
 router.include_router(analysis.router, tags=["Analysis"])
 router.include_router(webhooks.router, tags=["Webhooks"])
 router.include_router(social.router, tags=["Social"])
