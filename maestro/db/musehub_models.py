@@ -593,6 +593,9 @@ class MusehubWebhookDelivery(Base):
         index=True,
     )
     event_type: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    # JSON-encoded payload bytes that were (or will be) sent to the subscriber URL.
+    # Stored so that failed deliveries can be retried with the original payload.
+    payload: Mapped[str] = mapped_column(Text, nullable=False, default="")
     attempt: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     success: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     response_status: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
