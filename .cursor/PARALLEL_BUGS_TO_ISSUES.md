@@ -277,6 +277,7 @@ for i in $(seq 1 $NUM_BATCHES); do
   cat > "$WT/.agent-task" << TASKEOF
 WORKFLOW=bugs-to-issues
 BATCH_NUM=$i
+ROLE=coordinator
 GH_REPO=$GH_REPO
 
 PHASE_LABEL=phase-X/name-here
@@ -369,6 +370,19 @@ STEP 0 — READ YOUR TASK FILE:
     FILE_OWNERSHIP  — which files this batch owns (for your awareness, not action needed)
     DEPENDS_ON      — batch/issue numbers that must be merged before you run
     SPAWN_SUB_AGENTS — if true, follow the sub-coordinator path instead of this path
+
+STEP 0.5 — LOAD YOUR ROLE:
+  ROLE=$(grep '^ROLE=' .agent-task | cut -d= -f2)
+  REPO=$(git worktree list | head -1 | awk '{print $1}')
+  ROLE_FILE="$REPO/.cursor/roles/${ROLE}.md"
+  if [ -f "$ROLE_FILE" ]; then
+    cat "$ROLE_FILE"
+    echo "✅ Operating as role: $ROLE"
+  else
+    echo "⚠️  No role file found for '$ROLE' — proceeding without role context."
+  fi
+  # The decision hierarchy, quality bar, and failure modes in that file govern
+  # all your choices from this point forward.
 
   Export for use in all subsequent commands:
     export GH_REPO=$(grep "^GH_REPO=" .agent-task | cut -d= -f2)

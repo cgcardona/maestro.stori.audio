@@ -232,6 +232,17 @@ for entry in "${SELECTED_ISSUES[@]}"; do
     continue
   fi
   git worktree add --detach "$WT" "$DEV_SHA"
+  # Assign ROLE based on issue labels:
+  #   muse, muse-cli, muse-hub, merge labels → muse-specialist
+  #   phase-1/db-schema, alembic, migration labels → database-architect
+  #   all others → python-developer
+  ISSUE_LABELS=$(gh issue view "$NUM" --repo "$GH_REPO" --json labels --jq '[.labels[].name] | join(",")' 2>/dev/null || echo "")
+  AGENT_ROLE="python-developer"
+  if echo "$ISSUE_LABELS" | grep -qE "muse-cli|muse-hub|muse|merge"; then
+    AGENT_ROLE="muse-specialist"
+  elif echo "$ISSUE_LABELS" | grep -qE "db-schema|alembic|migration"; then
+    AGENT_ROLE="database-architect"
+  fi
 
   # Write rich .agent-task — agent reads ALL context from this file
   # Extract DEPENDS_ON from issue body (looks for "Depends on #NNN" patterns)
@@ -255,6 +266,7 @@ BATCH_LABEL=$BATCH
 ALL_ISSUE_LABELS=$LABELS
 DEPENDS_ON=$DEPENDS_ON
 FILE_OWNERSHIP=$FILE_OWNERSHIP_VALUE
+ROLE=$AGENT_ROLE
 SPAWN_SUB_AGENTS=false
 ATTEMPT_N=0
 REQUIRED_OUTPUT=pr_url
@@ -374,6 +386,19 @@ STEP 0 — READ YOUR TASK FILE:
     to undo your own changes. Use git restore -p <file> (patch mode) or
     git restore --staged <file> for staged undo. Broad undo destroys
     unrelated work. When in doubt: commit, then fix forward.
+
+STEP 0.5 — LOAD YOUR ROLE:
+  ROLE=$(grep '^ROLE=' .agent-task | cut -d= -f2)
+  REPO=$(git worktree list | head -1 | awk '{print $1}')
+  ROLE_FILE="$REPO/.cursor/roles/${ROLE}.md"
+  if [ -f "$ROLE_FILE" ]; then
+    cat "$ROLE_FILE"
+    echo "✅ Operating as role: $ROLE"
+  else
+    echo "⚠️  No role file found for '$ROLE' — proceeding without role context."
+  fi
+  # The decision hierarchy, quality bar, and failure modes in that file govern
+  # all your choices from this point forward.
 
 STEP 1 — DERIVE PATHS:
   REPO=$(git worktree list | head -1 | awk '{print $1}')   # local filesystem path only
@@ -519,9 +544,28 @@ STEP 3 — IMPLEMENT (only if STEP 2 found nothing):
   # grep -r "^down_revision" alembic/versions/  ← verify no two share a down_revision
 
   # ── STEP 3.6 — TESTS ──────────────────────────────────────────────────────
-  # Run targeted tests for the module you modified + any test file that imports it.
-  cd "$REPO" && docker compose exec maestro sh -c \
-    "PYTHONPATH=/worktrees/$WTNAME pytest /worktrees/$WTNAME/tests/path/to/test_file.py -v"
+  pytest — TARGETED TESTS ONLY (never the full suite):
+  The full suite takes several minutes and is CI's job, not an agent's job.
+  Derive test targets from what you changed using module-name convention:
+
+    maestro/core/pipeline.py          → tests/test_pipeline.py
+    maestro/core/intent*.py           → tests/test_intent*.py
+    maestro/core/maestro_handlers.py  → tests/test_maestro_handlers.py
+    maestro/services/muse_*.py        → tests/test_muse_*.py
+    maestro/api/routes/muse.py        → tests/test_muse.py
+    maestro/mcp/                      → tests/test_mcp.py
+    maestro/daw/                      → tests/test_daw_adapter.py
+    storpheus/music_service.py        → storpheus/test_gm_resolution.py + storpheus/test_*.py
+
+  Run only the derived targets:
+    cd "$REPO" && docker compose exec maestro sh -c \
+      "PYTHONPATH=/worktrees/$WTNAME pytest \
+       /worktrees/$WTNAME/tests/test_<module1>.py \
+       /worktrees/$WTNAME/tests/test_<module2>.py \
+       -v"
+
+  If you added a new module with no existing test file, create tests/test_<module>.py
+  and run that. Never fall back to tests/ as a directory.
 
   ⚠️  NEVER pipe mypy or pytest output through grep/head/tail — full output only.
 
