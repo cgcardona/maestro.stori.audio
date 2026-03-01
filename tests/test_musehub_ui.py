@@ -2344,13 +2344,7 @@ async def test_profile_forked_repos_no_auth_required(
     assert response.status_code != 401
 
 
-@pytest.mark.skip(
-    reason=(
-        "Pre-existing failure: profile.html does not yet include loadForkedRepos / "
-        "forked-section / API_FORKS. These JS additions are tracked in a pending PR "
-        "for profile-forked-repos. Skip until that branch is merged into dev."
-    )
-)
+@pytest.mark.skip(reason="Pre-existing failure: profile page template missing loadForkedRepos JS — see #539")
 @pytest.mark.anyio
 async def test_profile_page_has_forked_section_js(
     client: AsyncClient,
@@ -2496,13 +2490,7 @@ async def test_profile_starred_repos_ordered_newest_first(
     assert data["starred"][1]["repo"]["slug"] == "track-alpha"
 
 
-@pytest.mark.skip(
-    reason=(
-        "Pre-existing failure: profile.html does not yet include loadStarredRepos / "
-        "starred-section / API_STARRED. Tracked alongside feat/musehub-profile-starred-repos. "
-        "Skip until that branch is merged into dev."
-    )
-)
+@pytest.mark.skip(reason="Pre-existing failure: profile page template missing loadStarredRepos JS — see #539")
 @pytest.mark.anyio
 async def test_profile_page_has_starred_section_js(
     client: AsyncClient,
@@ -2648,13 +2636,7 @@ async def test_profile_watched_repos_ordered_newest_first(
     assert data["watched"][1]["repo"]["slug"] == "song-alpha"
 
 
-@pytest.mark.skip(
-    reason=(
-        "Pre-existing failure: profile.html does not yet include loadWatchedRepos / "
-        "watched-section / API_WATCHED. Tracked alongside feat/musehub-profile-watched-repos. "
-        "Skip until that branch is merged into dev."
-    )
-)
+@pytest.mark.skip(reason="Pre-existing failure: profile page template missing loadWatchedRepos JS — see #539")
 @pytest.mark.anyio
 async def test_profile_page_has_watched_section_js(
     client: AsyncClient,
@@ -4947,14 +4929,7 @@ async def test_harmony_page_has_token_form(
     assert "musehub.js" in body
 
 
-@pytest.mark.skip(
-    reason=(
-        "Pre-existing failure: HarmonyAnalysisResponse does not include a top-level "
-        "'dimension' field — the test was written against a schema that was never "
-        "implemented. The endpoint returns key/mode/romanNumerals/cadences/modulations. "
-        "This test needs to be rewritten to match the actual HarmonyAnalysisResponse shape."
-    )
-)
+@pytest.mark.skip(reason="Pre-existing failure: harmony API response missing 'dimension' field — see #540")
 @pytest.mark.anyio
 async def test_harmony_json_response(
     client: AsyncClient,
@@ -7783,13 +7758,7 @@ async def _make_follow(
     return row
 
 
-@pytest.mark.skip(
-    reason=(
-        "Pre-existing failure: profile.html does not yet include tab-btn-followers / "
-        "tab-btn-following buttons. Feature tracked in feat/musehub-profile-followers-following. "
-        "Skip until that branch is merged into dev."
-    )
-)
+@pytest.mark.skip(reason="Pre-existing failure: profile page template missing tab-btn-followers element — see #539")
 @pytest.mark.anyio
 async def test_profile_page_has_followers_following_tabs(
     client: AsyncClient,
@@ -7804,13 +7773,7 @@ async def test_profile_page_has_followers_following_tabs(
     assert "tab-btn-following" in body
 
 
-@pytest.mark.skip(
-    reason=(
-        "Pre-existing failure: profile.html does not yet include userCardHtml / loadFollowTab "
-        "JS helpers. Feature tracked in feat/musehub-profile-followers-following. "
-        "Skip until that branch is merged into dev."
-    )
-)
+@pytest.mark.skip(reason="Pre-existing failure: profile page template missing userCardHtml JS — see #539")
 @pytest.mark.anyio
 async def test_profile_page_has_user_card_js(
     client: AsyncClient,
@@ -8159,6 +8122,7 @@ async def test_commit_page_context_passes_listen_and_embed_urls(
 
 # ---------------------------------------------------------------------------
 # Issue #442 — Repo landing page enrichment panels
+# Explore page — filter sidebar + inline audio preview (issue #444)
 # ---------------------------------------------------------------------------
 
 
@@ -8287,3 +8251,137 @@ async def test_repo_home_clone_widget_renders(
     assert "clone-input" in body
     assert "copyClone" in body
     assert "Download ZIP" in body
+async def test_explore_page_returns_200(
+    client: AsyncClient,
+) -> None:
+    """GET /musehub/ui/explore returns 200 without authentication."""
+    response = await client.get("/musehub/ui/explore")
+    assert response.status_code == 200
+
+
+@pytest.mark.anyio
+async def test_explore_page_has_filter_sidebar(
+    client: AsyncClient,
+) -> None:
+    """Explore page renders a filter sidebar with sort, license, and clear-filters sections."""
+    response = await client.get("/musehub/ui/explore")
+    assert response.status_code == 200
+    body = response.text
+    assert "explore-sidebar" in body
+    assert "Clear filters" in body
+    assert "Sort by" in body
+    assert "License" in body
+
+
+@pytest.mark.anyio
+async def test_explore_page_has_sort_options(
+    client: AsyncClient,
+) -> None:
+    """Explore page sidebar includes all four sort radio options."""
+    response = await client.get("/musehub/ui/explore")
+    assert response.status_code == 200
+    body = response.text
+    assert "Most starred" in body
+    assert "Recently updated" in body
+    assert "Most forked" in body
+    assert "Trending" in body
+
+
+@pytest.mark.anyio
+async def test_explore_page_has_license_options(
+    client: AsyncClient,
+) -> None:
+    """Explore page sidebar includes the expected license filter options."""
+    response = await client.get("/musehub/ui/explore")
+    assert response.status_code == 200
+    body = response.text
+    assert "CC0" in body
+    assert "CC BY" in body
+    assert "CC BY-SA" in body
+    assert "CC BY-NC" in body
+    assert "All Rights Reserved" in body
+
+
+@pytest.mark.anyio
+async def test_explore_page_has_repo_grid(
+    client: AsyncClient,
+) -> None:
+    """Explore page includes the repo grid and JS discover API loader."""
+    response = await client.get("/musehub/ui/explore")
+    assert response.status_code == 200
+    body = response.text
+    assert "repo-grid" in body
+    assert "loadExplore" in body
+    assert "DISCOVER_API" in body
+
+
+@pytest.mark.anyio
+async def test_explore_page_has_audio_preview_js(
+    client: AsyncClient,
+) -> None:
+    """Explore page includes the inline hover audio preview JavaScript (500ms delay)."""
+    response = await client.get("/musehub/ui/explore")
+    assert response.status_code == 200
+    body = response.text
+    assert "card-audio-preview" in body
+    assert "toggleCardPreview" in body
+    assert "onCardMouseEnter" in body
+    assert "500" in body
+
+
+@pytest.mark.anyio
+async def test_explore_page_default_sort_stars(
+    client: AsyncClient,
+) -> None:
+    """Explore page defaults to 'stars' sort when no sort param given."""
+    response = await client.get("/musehub/ui/explore")
+    assert response.status_code == 200
+    body = response.text
+    # 'stars' radio should be pre-checked (default sort)
+    assert 'value="stars"' in body
+    assert 'checked' in body
+
+
+@pytest.mark.anyio
+async def test_explore_page_sort_param_honoured(
+    client: AsyncClient,
+) -> None:
+    """Explore page honours the ?sort= query param for pre-selecting a sort option."""
+    response = await client.get("/musehub/ui/explore?sort=updated")
+    assert response.status_code == 200
+    body = response.text
+    assert 'value="updated"' in body
+
+
+@pytest.mark.anyio
+async def test_explore_page_no_auth_required(
+    client: AsyncClient,
+) -> None:
+    """Explore page is publicly accessible — no JWT required (zero-friction discovery)."""
+    response = await client.get("/musehub/ui/explore")
+    assert response.status_code == 200
+    assert response.status_code != 401
+    assert response.status_code != 403
+
+
+@pytest.mark.anyio
+async def test_explore_page_chip_toggle_js(
+    client: AsyncClient,
+) -> None:
+    """Explore page includes toggleChip JS for progressive chip filter enhancement."""
+    response = await client.get("/musehub/ui/explore")
+    assert response.status_code == 200
+    body = response.text
+    assert "toggleChip" in body
+    assert "filter-chip" in body
+
+
+@pytest.mark.anyio
+async def test_explore_page_get_params_preserved(
+    client: AsyncClient,
+) -> None:
+    """Explore page accepts lang, license, topic, sort GET params without error."""
+    response = await client.get(
+        "/musehub/ui/explore?lang=piano&license=CC0&topic=jazz&sort=stars"
+    )
+    assert response.status_code == 200

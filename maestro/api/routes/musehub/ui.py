@@ -73,6 +73,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi import status as http_status
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
+from sqlalchemy import func, select as sa_select
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.responses import Response as StarletteResponse
 
@@ -90,6 +91,8 @@ from maestro.models.musehub import (
     TagListResponse,
     TagResponse,
 )
+from maestro.db import musehub_models as musehub_db
+from maestro.muse_cli.models import MuseCliTag
 from maestro.services import musehub_divergence, musehub_listen, musehub_pull_requests, musehub_releases
 from maestro.services import musehub_repository
 
@@ -233,17 +236,74 @@ async def global_search_page(request: Request, q: str = "", mode: str = "keyword
 
 
 @fixed_router.get("/explore", summary="Muse Hub explore page")
-async def explore_page(request: Request) -> Response:
-    """Render the explore/discover page -- a filterable grid of all public repos.
+async def explore_page(
+    request: Request,
+    lang: list[str] = Query(default=[], alias="lang", description="Language/instrument filter chips (multi-select)"),
+    license_filter: str = Query(default="", alias="license", description="License filter (e.g. CC0, CC BY)"),
+    sort: str = Query(default="stars", description="Sort order: stars | updated | forks | trending"),
+    topic: list[str] = Query(default=[], alias="topic", description="Topic filter chips (multi-select)"),
+    db: AsyncSession = Depends(get_db),
+) -> Response:
+    """Render the explore/discover page — a filterable grid of all public repos.
 
-    No JWT required.  Fetches from the public
-    ``GET /api/v1/musehub/discover/repos`` endpoint.  Filter state lives in
-    query params so results are bookmarkable.
+    No JWT required.  Filter sidebar uses GET params so all filter states are
+    bookmarkable and shareable.  Sidebar data (muse_tag chips, topic chips) is
+    pre-loaded server-side to avoid an extra round-trip on first paint.
+
+    Filter sources:
+    - ``lang`` chips: top 30 distinct values from the ``muse_tags`` table.
+    - ``topic`` chips: top 40 distinct tags from ``musehub_repos.tags`` JSON.
+    - ``license``: fixed enum (CC0, CC BY, CC BY-SA, CC BY-NC, All Rights Reserved).
+    - ``sort``: stars | updated | forks | trending.
     """
-    ctx: dict[str, object] = {"title": "Explore", "breadcrumb": "Explore", "default_sort": "created"}
+    # Fetch top muse_tags for the language/instrument chip cloud.
+    tag_rows = await db.execute(
+        sa_select(MuseCliTag.tag, func.count(MuseCliTag.tag_id).label("cnt"))
+        .group_by(MuseCliTag.tag)
+        .order_by(func.count(MuseCliTag.tag_id).desc())
+        .limit(30)
+    )
+    muse_tag_chips: list[str] = [row.tag for row in tag_rows]
+
+    # Fetch top topics from public repo tag JSON arrays (same logic as topics API).
+    topic_rows = await db.execute(
+        sa_select(musehub_db.MusehubRepo.tags).where(
+            musehub_db.MusehubRepo.visibility == "public"
+        )
+    )
+    topic_counts: dict[str, int] = {}
+    for (tags,) in topic_rows:
+        for t in tags or []:
+            key = str(t).lower()
+            topic_counts[key] = topic_counts.get(key, 0) + 1
+    topic_chips: list[str] = [
+        name
+        for name, _ in sorted(topic_counts.items(), key=lambda kv: (-kv[1], kv[0]))[:40]
+    ]
+
+    _valid_sorts = {"stars", "updated", "forks", "trending"}
+    effective_sort = sort if sort in _valid_sorts else "stars"
+
+    ctx: dict[str, object] = {
+        "title": "Explore",
+        "breadcrumb": "Explore",
+        "default_sort": effective_sort,
+        "muse_tag_chips": muse_tag_chips,
+        "topic_chips": topic_chips,
+        "selected_langs": lang,
+        "selected_license": license_filter,
+        "selected_topics": topic,
+        "license_options": ["", "CC0", "CC BY", "CC BY-SA", "CC BY-NC", "All Rights Reserved"],
+        "sort_options": [
+            ("stars", "Most starred"),
+            ("updated", "Recently updated"),
+            ("forks", "Most forked"),
+            ("trending", "Trending"),
+        ],
+    }
     return json_or_html(
         request,
-        lambda: templates.TemplateResponse(request, "musehub/explore_base.html", ctx),
+        lambda: templates.TemplateResponse(request, "musehub/pages/explore.html", ctx),
         ctx,
     )
 
