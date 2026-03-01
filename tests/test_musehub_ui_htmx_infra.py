@@ -121,14 +121,14 @@ def test_is_htmx_boosted_helper_false() -> None:
 # ── HTTP endpoint reachability ───────────────────────────────────────────────
 
 @pytest.mark.anyio
-async def test_htmx_min_js_served_over_http(async_client: AsyncClient) -> None:
+async def test_htmx_min_js_served_over_http(client: AsyncClient) -> None:
     """GET /musehub/static/htmx.min.js must return 200."""
-    resp = await async_client.get("/musehub/static/htmx.min.js")
+    resp = await client.get("/musehub/static/htmx.min.js")
     assert resp.status_code == 200, f"Expected 200, got {resp.status_code}"
 
 
 @pytest.mark.anyio
-async def test_alpinejs_min_js_served_over_http(async_client: AsyncClient) -> None:
+async def test_alpinejs_min_js_served_over_http(client: AsyncClient) -> None:
     """GET /musehub/static/alpinejs.min.js must return 200."""
-    resp = await async_client.get("/musehub/static/alpinejs.min.js")
+    resp = await client.get("/musehub/static/alpinejs.min.js")
     assert resp.status_code == 200, f"Expected 200, got {resp.status_code}"
