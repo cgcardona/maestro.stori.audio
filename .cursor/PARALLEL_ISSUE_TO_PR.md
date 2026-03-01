@@ -324,11 +324,25 @@ the container. After creating your feature branch, your worktree's code is
 REPO=$(git worktree list | head -1 | awk '{print $1}')
 WTNAME=$(basename "$(pwd)")
 
-# mypy
-cd "$REPO" && docker compose exec maestro sh -c "PYTHONPATH=/worktrees/$WTNAME mypy /worktrees/$WTNAME/maestro/ /worktrees/$WTNAME/tests/"
+# Detect codebase from issue label in .agent-task
+ISSUE_LABEL=$(grep "^ISSUE_LABEL=" .agent-task 2>/dev/null | cut -d= -f2 || echo "")
+IS_AC=$(echo "$ISSUE_LABEL" | grep -c "^agentception" || true)
 
-# pytest (specific file)
-cd "$REPO" && docker compose exec maestro sh -c "PYTHONPATH=/worktrees/$WTNAME pytest /worktrees/$WTNAME/tests/path/to/test_file.py -v"
+# mypy — route by codebase (agentception and maestro are independent; never cross-run)
+if [ "$IS_AC" -gt 0 ]; then
+  cd "$REPO" && docker compose exec agentception mypy /app/agentception/
+else
+  cd "$REPO" && docker compose exec maestro sh -c \
+    "PYTHONPATH=/worktrees/$WTNAME mypy /worktrees/$WTNAME/maestro/ /worktrees/$WTNAME/tests/"
+fi
+
+# pytest — route by codebase
+if [ "$IS_AC" -gt 0 ]; then
+  cd "$REPO" && docker compose exec agentception pytest agentception/tests/test_<module>.py -v
+else
+  cd "$REPO" && docker compose exec maestro sh -c \
+    "PYTHONPATH=/worktrees/$WTNAME pytest /worktrees/$WTNAME/tests/path/to/test_file.py -v"
+fi
 ```
 
 **⚠️ NEVER copy files into the main repo** for testing purposes. That pollutes
@@ -500,10 +514,19 @@ STEP 3 — IMPLEMENT (only if STEP 2 found nothing):
   # ── STEP 3.1 — BASELINE HEALTH SNAPSHOT (before touching any code) ────────
   # Record the pre-existing state of dev SO YOU KNOW what errors are yours vs.
   # what was already broken. This baseline is your contract with the next agent.
+  # Detect codebase from .agent-task label — set once, used throughout this run.
+  ISSUE_LABEL=$(grep "^ISSUE_LABEL=" .agent-task 2>/dev/null | cut -d= -f2 || echo "")
+  IS_AC=$(echo "$ISSUE_LABEL" | grep -c "^agentception" || true)
+
   echo "=== PRE-EXISTING MYPY BASELINE (dev, before any changes) ==="
-  cd "$REPO" && docker compose exec maestro sh -c \
-    "PYTHONPATH=/worktrees/$WTNAME mypy /worktrees/$WTNAME/maestro/ /worktrees/$WTNAME/tests/" \
-    2>&1 | tail -5
+  # Route by codebase — agentception and maestro are independent; never cross-run.
+  if [ "$IS_AC" -gt 0 ]; then
+    cd "$REPO" && docker compose exec agentception mypy /app/agentception/ 2>&1 | tail -5
+  else
+    cd "$REPO" && docker compose exec maestro sh -c \
+      "PYTHONPATH=/worktrees/$WTNAME mypy /worktrees/$WTNAME/maestro/ /worktrees/$WTNAME/tests/" \
+      2>&1 | tail -5
+  fi
   # Record the error count. After implementation, the error count must not increase.
   # Errors you did NOT introduce: fix them if they are in files you are touching.
   # Errors in files you are NOT touching: file a follow-up GitHub issue and note it.
@@ -531,11 +554,15 @@ STEP 3 — IMPLEMENT (only if STEP 2 found nothing):
   # These trailers are permanent — they appear in `git log` forever and allow
   # any commit to be traced back to the pipeline batch and agent session.
 
-  # ── STEP 3.4 — MYPY (FULL CODEBASE — not just your files) ─────────────────
-  # Run mypy across the ENTIRE codebase, not just your worktree files.
-  # This catches errors in other files that your changes may expose.
-  cd "$REPO" && docker compose exec maestro sh -c \
-    "PYTHONPATH=/worktrees/$WTNAME mypy /worktrees/$WTNAME/maestro/ /worktrees/$WTNAME/tests/"
+  # ── STEP 3.4 — MYPY (scoped to your codebase only) ────────────────────────
+  # Route by IS_AC set in STEP 3.1. agentception and maestro are independent
+  # codebases — never run maestro mypy for an agentception issue, and vice versa.
+  if [ "$IS_AC" -gt 0 ]; then
+    cd "$REPO" && docker compose exec agentception mypy /app/agentception/
+  else
+    cd "$REPO" && docker compose exec maestro sh -c \
+      "PYTHONPATH=/worktrees/$WTNAME mypy /worktrees/$WTNAME/maestro/ /worktrees/$WTNAME/tests/"
+  fi
 
   ⚠️  MYPY RULES — fix correctly, never work around:
     - No cast() at call sites — fix the callee's return type.
@@ -741,6 +768,8 @@ Maestro-Session: $AGENT_SESSION"
   │                                                                              │
   │ STEP E — Re-run mypy only if Python files were in conflict:                 │
   │   app.py changed → run mypy. Markdown-only conflicts → skip mypy.          │
+  │   agentception: docker compose exec agentception mypy /app/agentception/   │
+  │   maestro:      docker compose exec maestro sh -c "... mypy ..."           │
   │   Re-run targeted tests only if logic files changed.                        │
   │                                                                              │
   │ STEP F — Advanced diagnostics if needed:                                    │

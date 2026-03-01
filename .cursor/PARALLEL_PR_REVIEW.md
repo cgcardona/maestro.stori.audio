@@ -226,11 +226,25 @@ the container. After checking out the PR branch, your worktree's code is
 REPO=$(git worktree list | head -1 | awk '{print $1}')
 WTNAME=$(basename "$(pwd)")
 
-# mypy
-cd "$REPO" && docker compose exec maestro sh -c "PYTHONPATH=/worktrees/$WTNAME mypy /worktrees/$WTNAME/maestro/ /worktrees/$WTNAME/tests/"
+# Detect codebase from PR labels (agentception/* vs maestro/storpheus)
+IS_AC=$(gh pr view $PR --repo $GH_REPO --json labels \
+  --jq '.labels[].name' | grep -c "^agentception" || true)
 
-# pytest (specific file)
-cd "$REPO" && docker compose exec maestro sh -c "PYTHONPATH=/worktrees/$WTNAME pytest /worktrees/$WTNAME/tests/path/to/test_file.py -v"
+# mypy — route by codebase (NEVER run both; they are independent codebases)
+if [ "$IS_AC" -gt 0 ]; then
+  cd "$REPO" && docker compose exec agentception mypy /app/agentception/
+else
+  cd "$REPO" && docker compose exec maestro sh -c \
+    "PYTHONPATH=/worktrees/$WTNAME mypy /worktrees/$WTNAME/maestro/ /worktrees/$WTNAME/tests/"
+fi
+
+# pytest (specific file) — route by codebase
+if [ "$IS_AC" -gt 0 ]; then
+  cd "$REPO" && docker compose exec agentception pytest agentception/tests/test_<module>.py -v
+else
+  cd "$REPO" && docker compose exec maestro sh -c \
+    "PYTHONPATH=/worktrees/$WTNAME pytest /worktrees/$WTNAME/tests/path/to/test_file.py -v"
+fi
 ```
 
 **⚠️ NEVER copy files into the main repo** for testing purposes. That pollutes
@@ -500,7 +514,8 @@ STEP 3 — CHECKOUT & SYNC (only if STEP 2 shows the PR is open and unreviewed):
   │                                                                              │
   │ STEP E — Re-run mypy only if resolved files contain Python changes:         │
   │   app.py changed → run mypy. Markdown-only conflicts → skip mypy.          │
-  │   cd "$REPO" && docker compose exec maestro sh -c "PYTHONPATH=/worktrees/$WTNAME mypy /worktrees/$WTNAME/maestro/"        │
+  │   agentception PR: docker compose exec agentception mypy /app/agentception/ │
+  │   maestro PR:      docker compose exec maestro sh -c "PYTHONPATH=/worktrees/$WTNAME mypy /worktrees/$WTNAME/maestro/" │
   │                                                                              │
   │ STEP F — Advanced diagnostics if needed:                                    │
   │   git log --oneline origin/dev...HEAD  ← commits this PR adds              │
@@ -541,38 +556,40 @@ STEP 4 — TARGETED TEST SCOPING (before review):
   #      maestro/daw/                      → tests/test_daw_adapter.py
   #      storpheus/music_service.py        → storpheus/test_gm_resolution.py + storpheus/test_*.py
   #
-  #    AgentCeption (runs on HOST, not in Docker — pytest directly):
-  #      agentception/app.py               → tests/test_agentception_scaffold.py
-  #      agentception/readers/worktrees.py → tests/test_agentception_worktrees.py
-  #      agentception/readers/transcripts.py → tests/test_agentception_transcripts.py
+  #    AgentCeption (agentception container — NEVER maestro container):
+  #      agentception/app.py               → agentception/tests/test_agentception_scaffold.py
+  #      agentception/readers/worktrees.py → agentception/tests/test_agentception_worktrees.py
+  #      agentception/readers/transcripts.py → agentception/tests/test_agentception_transcripts.py
   #      agentception/readers/github.py    → agentception/tests/test_agentception_github.py
   #      agentception/poller.py            → agentception/tests/test_agentception_poller.py
   #      agentception/routes/ui.py         → agentception/tests/test_agentception_ui_overview.py
   #      agentception/routes/control.py    → agentception/tests/test_agentception_control.py
   #      agentception/telemetry.py         → agentception/tests/test_agentception_telemetry.py
   #      agentception/intelligence/*.py    → agentception/tests/test_agentception_dag.py, etc.
-  #      agentception/ (any file)          → run: docker compose exec agentception pytest agentception/tests/ -v
   #
-  #      agentception tests run in the agentception container (isolated from maestro).
-  #         CORRECT:   cd "$REPO" && docker compose exec agentception pytest agentception/tests/<X>.py -v
-  #         INCORRECT: python3 -m pytest tests/test_agentception_<X>.py (host — wrong deps)
-  #         INCORRECT: docker compose exec maestro pytest (wrong container)
+  # ⚠️  CODEBASE ISOLATION — agentception and maestro are independent. NEVER cross-run:
+  #         CORRECT:   docker compose exec agentception pytest agentception/tests/<X>.py -v
+  #         INCORRECT: docker compose exec maestro pytest agentception/... (wrong container/deps)
+  #         INCORRECT: python3 -m pytest ... (host — missing deps)
   #
   # 4. If the PR only changes .cursor/, docs/, or other non-.py files: skip pytest entirely.
   #    mypy is irrelevant too. The review is markdown-content focused.
   #
-  # ⚠️  NEVER run the full test suite (pytest tests/ or pytest). Only the derived
-  #    test files. The full suite takes 5-6 minutes and includes unrelated codebases.
+  # ⚠️  NEVER run the full test suite. Only the derived test files for this PR's codebase.
 
-  # 5. Run only the derived targets (substitute real paths):
-  #    For maestro/* changes (in Docker):
-  cd "$REPO" && docker compose exec maestro sh -c \
-    "PYTHONPATH=/worktrees/$WTNAME pytest \
-     /worktrees/$WTNAME/tests/test_<module1>.py \
-     /worktrees/$WTNAME/tests/test_<module2>.py \
-     -v"
-  #    For agentception/* changes (in agentception container):
-  cd "$REPO" && docker compose exec agentception pytest agentception/tests/test_<module>.py -v
+  # 5. Run only the derived targets — route by IS_AC detected above:
+  if [ "$IS_AC" -gt 0 ]; then
+    #    agentception PRs:
+    cd "$REPO" && docker compose exec agentception pytest \
+      agentception/tests/test_<module>.py -v
+  else
+    #    maestro PRs:
+    cd "$REPO" && docker compose exec maestro sh -c \
+      "PYTHONPATH=/worktrees/$WTNAME pytest \
+       /worktrees/$WTNAME/tests/test_<module1>.py \
+       /worktrees/$WTNAME/tests/test_<module2>.py \
+       -v"
+  fi
 
 STEP 5 — REVIEW:
   Read and follow every step in .github/PR_REVIEW_PROMPT.md exactly.
@@ -605,9 +622,14 @@ STEP 5 — REVIEW:
   git stash  # if you already have the PR branch checked out
   git checkout dev
   echo "=== PRE-EXISTING MYPY BASELINE (dev before PR) ==="
-  cd "$REPO" && docker compose exec maestro sh -c \
-    "PYTHONPATH=/worktrees/$WTNAME mypy /worktrees/$WTNAME/maestro/ /worktrees/$WTNAME/tests/" \
-    2>&1 | tail -10
+  # Route by codebase — agentception and maestro are independent; never cross-run.
+  if [ "$IS_AC" -gt 0 ]; then
+    cd "$REPO" && docker compose exec agentception mypy /app/agentception/ 2>&1 | tail -10
+  else
+    cd "$REPO" && docker compose exec maestro sh -c \
+      "PYTHONPATH=/worktrees/$WTNAME mypy /worktrees/$WTNAME/maestro/ /worktrees/$WTNAME/tests/" \
+      2>&1 | tail -10
+  fi
   # Note: any error shown here is pre-existing on dev — you own fixing it if it
   # is in a file this PR touches. Errors in untouched files → file a follow-up issue.
 
@@ -632,14 +654,19 @@ STEP 5 — REVIEW:
   # If the chain is broken → MANDATORY fix before grading. Renumber the migration and
   # update its down_revision. This is a C-grade issue at minimum.
 
-  4. Run mypy (FULL CODEBASE) then TARGETED tests (Docker-native):
-     ⚠️  Run mypy across the ENTIRE codebase, not just the PR's files.
-         This catches errors the PR may expose in sibling files.
+  4. Run mypy then TARGETED tests — scoped to the PR's codebase only:
+     ⚠️  agentception and maestro are independent codebases. NEVER cross-run their checks.
      ⚠️  Tests: targeted files only — but cross-reference the baseline from STEP 5.A.
      ⚠️  Never pipe mypy/pytest through grep/head/tail — full output, exit code is authoritative.
 
-  cd "$REPO" && docker compose exec maestro sh -c \
-    "PYTHONPATH=/worktrees/$WTNAME mypy /worktrees/$WTNAME/maestro/ /worktrees/$WTNAME/tests/"
+  # agentception PRs:
+  if [ "$IS_AC" -gt 0 ]; then
+    cd "$REPO" && docker compose exec agentception mypy /app/agentception/
+  else
+    # maestro PRs:
+    cd "$REPO" && docker compose exec maestro sh -c \
+      "PYTHONPATH=/worktrees/$WTNAME mypy /worktrees/$WTNAME/maestro/ /worktrees/$WTNAME/tests/"
+  fi
 
   5. Pre-existing failures — you own them if they are in files this PR touches:
      ─── mypy errors ───
@@ -932,9 +959,8 @@ STEP 7 — REGRESSION FEEDBACK LOOP (only if merge succeeded — skip if D/F gra
   for f in $CHANGED_FILES; do
     case "$f" in
       agentception/*)
-        # AgentCeption: run on HOST, not Docker
         MODULE=$(echo "$f" | sed 's|agentception/||' | sed 's|/|_|g' | sed 's|\.py||')
-        CANDIDATE="$REPO/tests/test_agentception_${MODULE}.py"
+        CANDIDATE="$REPO/agentception/tests/test_agentception_${MODULE}.py"
         [ -f "$CANDIDATE" ] && TEST_FILES="$TEST_FILES $CANDIDATE"
         ;;
       maestro/*)
@@ -942,7 +968,7 @@ STEP 7 — REGRESSION FEEDBACK LOOP (only if merge succeeded — skip if D/F gra
         CANDIDATE="$REPO/tests/test_${MODULE}.py"
         [ -f "$CANDIDATE" ] && TEST_FILES="$TEST_FILES $CANDIDATE"
         ;;
-      tests/test_agentception_*.py)
+      agentception/tests/test_*.py|tests/test_agentception_*.py)
         TEST_FILES="$TEST_FILES $REPO/$f"
         ;;
       tests/test_*.py)
@@ -955,13 +981,12 @@ STEP 7 — REGRESSION FEEDBACK LOOP (only if merge succeeded — skip if D/F gra
     echo "ℹ️  No derived test files found — skipping regression run."
     TEST_OUTPUT="no tests"
   else
-    # Determine runner: agentception tests run on host; maestro tests run in Docker
+    # Route by codebase — agentception and maestro are isolated; never cross-run.
     HAS_AC=$(echo "$TEST_FILES" | grep -c "test_agentception" || true)
     HAS_MAESTRO=$(echo "$TEST_FILES" | grep -v "test_agentception" | grep -c "test_" || true)
 
     if [ "$HAS_AC" -gt 0 ]; then
       AC_TESTS=$(echo "$TEST_FILES" | tr ' ' '\n' | grep "test_agentception" | tr '\n' ' ')
-      # agentception tests run in the agentception container (has the right deps, no maestro conftest)
       AC_OUTPUT=$(cd "$REPO" && docker compose exec agentception pytest $AC_TESTS -v --tb=short -q 2>&1)
       echo "$AC_OUTPUT"
       TEST_OUTPUT="$AC_OUTPUT"
