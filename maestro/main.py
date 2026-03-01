@@ -31,6 +31,7 @@ from maestro.api.routes.musehub import ui_notifications as musehub_ui_notificati
 from maestro.api.routes.musehub import ui_collaborators as musehub_ui_collab_routes
 from maestro.api.routes.musehub import ui_settings as musehub_ui_settings_routes
 from maestro.api.routes.musehub import ui_similarity as musehub_ui_similarity_routes
+from maestro.api.routes.musehub import ui_topics as musehub_ui_topics_routes
 from maestro.api.routes.musehub import ui_forks as musehub_ui_forks_routes
 from maestro.api.routes.musehub import ui_emotion_diff as musehub_ui_emotion_diff_routes
 from maestro.api.routes.musehub import ui_user_profile as musehub_ui_profile_routes
@@ -230,6 +231,8 @@ app.include_router(musehub.router, prefix="/api/v1")
 # UI routers: notifications first (concrete path) so it is not shadowed by the
 # /{username} catch-all declared in fixed_router, then fixed-path routes, then wildcards.
 app.include_router(musehub_ui_notifications_routes.router, tags=["musehub-ui-notifications"])
+# Topics browse: concrete /musehub/ui/topics path must be before the /{username} catch-all.
+app.include_router(musehub_ui_topics_routes.router, tags=["musehub-ui"])
 # Enhanced profile page: registered before fixed_router so it shadows the old stub route.
 app.include_router(musehub_ui_profile_routes.router, tags=["musehub-ui"])
 # New-repo wizard: registered before fixed_router so /new is not captured by /{username}.
