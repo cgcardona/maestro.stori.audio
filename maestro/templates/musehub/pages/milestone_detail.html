@@ -1,0 +1,220 @@
+{% extends "musehub/base.html" %}
+
+{% block title %}Milestone #{{ milestone_number }}{% endblock %}
+{% block breadcrumb %}
+  <a href="/musehub/ui/{{ owner }}/{{ repo_slug }}">{{ owner }}/{{ repo_slug }}</a> /
+  <a href="/musehub/ui/{{ owner }}/{{ repo_slug }}/milestones">milestones</a> /
+  #{{ milestone_number }}
+{% endblock %}
+{% block repo_nav %}{% include "musehub/partials/repo_nav.html" %}{% endblock %}
+
+{% block extra_css %}
+<style>
+.progress-bar-track {
+  width: 100%;
+  height: 10px;
+  border-radius: 5px;
+  background: var(--bg-overlay, #161b22);
+  border: 1px solid var(--border, #30363d);
+  overflow: hidden;
+  margin-bottom: 4px;
+}
+.progress-bar-fill {
+  height: 100%;
+  border-radius: 5px;
+  background: var(--green, #3fb950);
+  transition: width 0.3s;
+}
+.progress-label { font-size: 13px; color: var(--text-muted, #8b949e); }
+.issue-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--border, #30363d);
+}
+.issue-row:last-child { border-bottom: none; }
+.issue-meta { font-size: 12px; color: var(--text-muted, #8b949e); margin-top: 3px; }
+.issue-labels {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 4px;
+}
+.issue-label-badge {
+  padding: 1px 7px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 500;
+  background: var(--bg-overlay, #161b22);
+  border: 1px solid var(--border, #30363d);
+  color: var(--text-secondary, #c9d1d9);
+}
+.state-tabs {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 16px;
+  border-bottom: 1px solid var(--border, #30363d);
+  padding-bottom: 0;
+}
+.state-tab {
+  padding: 6px 14px;
+  font-size: 13px;
+  font-weight: 500;
+  border: none;
+  background: none;
+  color: var(--text-muted, #8b949e);
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  text-decoration: none;
+}
+.state-tab.active {
+  color: var(--text-primary, #e6edf3);
+  border-bottom-color: var(--accent, #58a6ff);
+}
+.state-tab:hover { color: var(--text-primary, #e6edf3); }
+</style>
+{% endblock %}
+
+{% block page_data %}
+const repoId          = {{ repo_id | tojson }};
+const milestoneId     = {{ milestone_id | tojson }};
+const milestoneNumber = {{ milestone_number }};
+const base            = {{ base_url | tojson }};
+const initIssueState  = {{ issue_state | tojson }};
+{% endblock %}
+
+{% block page_script %}
+{% raw %}
+let currentIssueState = initIssueState;
+
+function pct(ms) {
+  const total = (ms.openIssues || 0) + (ms.closedIssues || 0);
+  if (total === 0) return 0;
+  return Math.round((ms.closedIssues / total) * 100);
+}
+
+function dueDateLabel(dueOn) {
+  if (!dueOn) return '';
+  const d = new Date(dueOn);
+  const now = new Date();
+  const overdue = d < now;
+  const label = d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+  const color = overdue ? 'var(--red, #f85149)' : 'var(--text-muted, #8b949e)';
+  return `<span style="color:${color}">📅 Due ${escHtml(label)}${overdue ? ' (overdue)' : ''}</span>`;
+}
+
+function renderIssueRows(issues) {
+  if (!issues || issues.length === 0) {
+    return '<p class="loading">No ' + currentIssueState + ' issues in this milestone.</p>';
+  }
+  return issues.map(issue => {
+    const labels = (issue.labels || []).map(l =>
+      `<span class="issue-label-badge">${escHtml(l)}</span>`
+    ).join('');
+    return `
+      <div class="issue-row">
+        <span style="margin-top:2px;font-size:16px">${issue.state === 'open' ? '🟢' : '🟣'}</span>
+        <div style="flex:1;min-width:0">
+          <a href="${base}/issues/${issue.number}" style="font-weight:600">
+            ${escHtml(issue.title)}
+          </a>
+          <div class="issue-meta">
+            #${issue.number}
+            &bull; opened ${fmtDate(issue.createdAt)}
+            ${issue.assignee ? ' &bull; assigned to ' + escHtml(issue.assignee) : ''}
+            ${issue.commentCount > 0 ? ' &bull; 💬 ' + issue.commentCount : ''}
+          </div>
+          ${labels ? `<div class="issue-labels">${labels}</div>` : ''}
+        </div>
+        <span class="badge ${issue.state === 'open' ? 'badge-open' : 'badge-closed'}">${issue.state}</span>
+      </div>`;
+  }).join('');
+}
+
+function buildUrl(issueState) {
+  return base + '/milestones/' + milestoneNumber + '?state=' + encodeURIComponent(issueState);
+}
+
+async function load() {
+  initRepoNav(repoId);
+  document.getElementById('content').innerHTML = '<p class="loading">Loading milestone…</p>';
+  try {
+    const [msData, issuesData] = await Promise.all([
+      apiFetch('/repos/' + repoId + '/milestones/' + milestoneNumber),
+      apiFetch('/repos/' + repoId + '/issues?state=' + encodeURIComponent(currentIssueState)
+               + '&milestone_id=' + encodeURIComponent(milestoneId)),
+    ]);
+
+    const ms     = msData;
+    const issues = issuesData.issues || [];
+    const p      = pct(ms);
+    const total  = (ms.openIssues || 0) + (ms.closedIssues || 0);
+
+    document.getElementById('content').innerHTML = `
+      <div style="margin-bottom:12px">
+        <a href="${base}/milestones">&larr; All milestones</a>
+      </div>
+
+      <!-- Milestone header card -->
+      <div class="card" style="margin-bottom:16px">
+        <div style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:12px">
+          <div>
+            <h1 style="margin:0 0 4px">🏁 ${escHtml(ms.title)}</h1>
+            <span class="badge ${ms.state === 'open' ? 'badge-open' : 'badge-closed'}">${ms.state}</span>
+            <span style="font-size:12px;color:var(--text-muted,#8b949e);margin-left:6px">
+              #${ms.number} &bull; ${total} issue${total !== 1 ? 's' : ''}
+            </span>
+          </div>
+          ${ms.dueOn ? `<div style="font-size:13px">${dueDateLabel(ms.dueOn)}</div>` : ''}
+        </div>
+
+        ${ms.description ? `<p style="color:var(--text-secondary,#c9d1d9);margin-bottom:12px">${escHtml(ms.description)}</p>` : ''}
+
+        <!-- Progress bar -->
+        <div style="max-width:400px">
+          <div class="progress-bar-track">
+            <div class="progress-bar-fill" style="width:${p}%"></div>
+          </div>
+          <div class="progress-label">
+            ${p}% complete &bull; ${ms.openIssues} open &bull; ${ms.closedIssues} closed
+          </div>
+        </div>
+      </div>
+
+      <!-- Issues section -->
+      <div class="card">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:8px">
+          <h2 style="margin:0">Issues</h2>
+          <span style="font-size:13px;color:var(--text-muted,#8b949e)">${issues.length} shown</span>
+        </div>
+
+        <!-- State filter tabs -->
+        <div class="state-tabs">
+          ${['open','closed','all'].map(s => `
+            <a class="state-tab ${currentIssueState === s ? 'active' : ''}"
+               href="${buildUrl(s)}"
+               onclick="event.preventDefault();setFilter('${s}')">${s.charAt(0).toUpperCase()+s.slice(1)}</a>
+          `).join('')}
+        </div>
+
+        <div id="issue-rows">
+          ${renderIssueRows(issues)}
+        </div>
+      </div>`;
+  } catch(e) {
+    if (e.message !== 'auth')
+      document.getElementById('content').innerHTML = '<p class="error">✕ ' + escHtml(e.message) + '</p>';
+  }
+}
+
+function setFilter(issueState) {
+  currentIssueState = issueState;
+  history.replaceState({}, '', buildUrl(issueState));
+  load();
+}
+
+load();
+{% endraw %}
+{% endblock %}

@@ -25,6 +25,7 @@ from slowapi.errors import RateLimitExceeded
 from maestro.config import settings
 from maestro.api.routes import maestro, maestro_ui, health, users, conversations, assets, variation, muse, musehub
 from maestro.api.routes.musehub import ui as musehub_ui_routes
+from maestro.api.routes.musehub import ui_milestones as musehub_ui_milestones_routes
 from maestro.api.routes.musehub import ui_blame as musehub_ui_blame_routes
 from maestro.api.routes.musehub import ui_notifications as musehub_ui_notifications_routes
 from maestro.api.routes.musehub import ui_collaborators as musehub_ui_collab_routes
@@ -226,6 +227,9 @@ app.include_router(musehub.router, prefix="/api/v1")
 # /{username} catch-all declared in fixed_router, then fixed-path routes, then wildcards.
 app.include_router(musehub_ui_notifications_routes.router, tags=["musehub-ui-notifications"])
 app.include_router(musehub_ui_routes.fixed_router, tags=["musehub-ui"])
+# Milestones UI routes registered before the main UI wildcard router so the
+# /{owner}/{repo_slug}/milestones paths are matched before /{owner}/{repo_slug}.
+app.include_router(musehub_ui_milestones_routes.router, tags=["musehub-ui"])
 app.include_router(musehub_ui_collab_routes.router, tags=["musehub-ui"])
 app.include_router(musehub_ui_routes.router, tags=["musehub-ui"])
 app.include_router(musehub_ui_blame_routes.router, tags=["musehub-ui"])
