@@ -27,7 +27,6 @@ from maestro.models.musehub import (
     PRCommentCreate,
     PRCommentListResponse,
     PRCreate,
-    PRDiffDimensionScore,
     PRDiffResponse,
     PRListResponse,
     PRMergeRequest,
@@ -215,70 +214,18 @@ async def get_pull_request_diff(
             branch_b=pr.from_branch,
         )
     except ValueError:
-        # Branches with no commits yet — return zero-score placeholder so the page renders.
-        dimensions = [
-            PRDiffDimensionScore(
-                dimension=dim,
-                score=0.0,
-                level="NONE",
-                delta_label="unchanged",
-                description="No commits on one or both branches yet.",
-                from_branch_commits=0,
-                to_branch_commits=0,
-            )
-            for dim in musehub_divergence.ALL_DIMENSIONS
-        ]
-        return PRDiffResponse(
+        return musehub_divergence.build_zero_diff_response(
             pr_id=pr_id,
             repo_id=repo_id,
             from_branch=pr.from_branch,
             to_branch=pr.to_branch,
-            dimensions=dimensions,
-            overall_score=0.0,
-            common_ancestor=None,
-            affected_sections=[],
         )
 
-    def _delta_label(score: float) -> str:
-        """Convert a divergence score to a human-readable delta badge label."""
-        pct = round(score * 100, 1)
-        if pct == 0.0:
-            return "unchanged"
-        return f"+{pct}"
-
-    dimensions = [
-        PRDiffDimensionScore(
-            dimension=d.dimension,
-            score=d.score,
-            level=d.level.value,
-            delta_label=_delta_label(d.score),
-            description=d.description,
-            from_branch_commits=d.branch_b_commits,
-            to_branch_commits=d.branch_a_commits,
-        )
-        for d in result.dimensions
-    ]
-
-    # Derive affected sections from commit messages that mention structural keywords.
-    section_keywords = ("bridge", "chorus", "verse", "intro", "outro", "section")
-    affected: list[str] = []
-    seen: set[str] = set()
-    for d in result.dimensions:
-        if d.dimension == "structural" and d.score > 0.0:
-            for kw in section_keywords:
-                if kw not in seen:
-                    seen.add(kw)
-                    affected.append(kw.capitalize())
-
-    return PRDiffResponse(
+    return musehub_divergence.build_pr_diff_response(
         pr_id=pr_id,
-        repo_id=repo_id,
         from_branch=pr.from_branch,
         to_branch=pr.to_branch,
-        dimensions=dimensions,
-        overall_score=result.overall_score,
-        common_ancestor=result.common_ancestor,
-        affected_sections=affected,
+        result=result,
     )
 
 

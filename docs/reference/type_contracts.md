@@ -1198,7 +1198,7 @@ On failure: `success=False` plus `error` (and optionally `message`).
 | `dimensions` | `list[PRDiffDimensionScore]` | Per-dimension divergence scores (always five entries) |
 | `overall_score` | `float` | Mean of all five dimension scores in [0.0, 1.0] |
 | `common_ancestor` | `str \| None` | Merge-base commit ID; `None` if no common ancestor |
-| `affected_sections` | `list[str]` | Section/track names that changed (derived from commit messages) |
+| `affected_sections` | `list[str]` | Capitalised section keywords (Bridge, Chorus, Verse, Intro, Outro, Section) found in commit messages from both branches since the merge base.  Empty list when no commit mentions any section keyword.  Never inferred from divergence scores alone. |
 
 **Endpoint:** `GET /api/v1/musehub/repos/{repo_id}/pull-requests/{pr_id}/diff`
 
