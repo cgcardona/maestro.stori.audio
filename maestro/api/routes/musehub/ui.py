@@ -593,12 +593,30 @@ async def pr_detail_page(
     format: str | None = Query(None, pattern="^json$", description="Set to 'json' to receive structured data"),
     db: AsyncSession = Depends(get_db),
 ) -> Response:
-    """Render the PR detail page with before/after piano roll, audio A/B, and radar chart.
+    """Render the PR detail page with musical diff, reviewer panel, and sidebar.
 
-    HTML response includes the full musical diff UI: five-axis radar chart showing
-    harmonic/rhythmic/melodic/structural/dynamic deltas, side-by-side piano roll
-    comparison, audio A/B toggle, diff summary badges, merge strategy selector, and
-    PR timeline.
+    HTML response includes the full musical diff UI enhanced with five additions:
+
+    1. **Reviewer status panel** — avatar chips for each requested reviewer with
+       pending / approved / changes_requested / dismissed badges, plus a
+       "Submit your review" form (approve / request changes / comment) for
+       authenticated maintainers.
+
+    2. **Merge options** — three strategy buttons (merge commit / squash / rebase)
+       with a "Delete branch after merge" checkbox.  All controls are disabled when
+       the PR is not mergeable (``pr.mergeable == false``).
+
+    3. **Collapsible commit diff panels** — one ``<details>`` element per head-branch
+       commit showing similarity % to the base branch and an inline 8-axis
+       emotion-diff mini radar chart (via the ``/analysis/{ref}/similarity`` and
+       ``/analysis/{ref}/emotion-diff`` APIs).
+
+    4. **Markdown description** — ``pr.body`` is rendered as formatted HTML rather
+       than a raw ``<pre>`` block, using the inline ``renderMarkdown()`` helper.
+
+    5. **Labels and milestone sidebar** — labels assigned to the PR are shown as
+       colour-coded chips with add / remove controls for maintainers; the milestone
+       title (if set) is displayed below.
 
     JSON response (``?format=json`` or ``Accept: application/json``) returns the
     PR metadata merged with per-dimension diff scores — suitable for AI agent
@@ -606,7 +624,7 @@ async def pr_detail_page(
 
     The merge action calls
     ``POST /api/v1/musehub/repos/{repo_id}/pull-requests/{pr_id}/merge``
-    with the selected ``mergeStrategy`` and reloads the page on success.
+    with the selected ``mergeStrategy`` and optional ``deleteBranch`` flag.
     """
     repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
 
