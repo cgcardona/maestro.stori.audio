@@ -32,19 +32,18 @@ module exposes a ``router`` attribute.  No changes to ``__init__.py`` needed.
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
-from pathlib import Path
+from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi import status as http_status
 from fastapi.requests import Request
-from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, ConfigDict
 from pydantic.alias_generators import to_camel
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.responses import Response
 
+from maestro.api.routes.musehub._templates import templates
 from maestro.api.routes.musehub.htmx_helpers import htmx_fragment_or_full
 from maestro.api.routes.musehub.negotiate import negotiate_response
 from maestro.auth.dependencies import TokenClaims, optional_token
@@ -55,11 +54,6 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/musehub/ui", tags=["musehub-ui-notifications"])
 
-_TEMPLATE_DIR = Path(__file__).parent.parent.parent.parent / "templates"
-templates = Jinja2Templates(directory=str(_TEMPLATE_DIR))
-
-# Register a relative-time filter so templates can render ``created_at``
-# strings as human-readable durations without a client-side JavaScript call.
 _EVENT_TYPES = [
     "comment",
     "mention",
@@ -73,37 +67,6 @@ _EVENT_TYPES = [
     "fork",
 ]
 
-
-def _fmt_relative(value: str) -> str:
-    """Format an ISO 8601 datetime string as a human-readable relative duration.
-
-    Used as a Jinja2 template filter (``| fmtrelative``) so notification
-    timestamps are displayed as "5m ago" instead of raw ISO strings.
-
-    Handles both tz-aware (e.g. "2026-03-01T19:00:00+00:00") and tz-naive
-    (e.g. "2026-03-01T19:00:00") strings so SQLite — which strips timezone info
-    on roundtrip — doesn't cause a TypeError at comparison time.
-    Returns the raw value unchanged if parsing fails.
-    """
-    try:
-        dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
-        if dt.tzinfo is not None:
-            now: datetime = datetime.now(timezone.utc)
-        else:
-            now = datetime.now()
-        diff = int((now - dt).total_seconds())
-        if diff < 60:
-            return "just now"
-        if diff < 3600:
-            return f"{diff // 60}m ago"
-        if diff < 86400:
-            return f"{diff // 3600}h ago"
-        return f"{diff // 86400}d ago"
-    except (ValueError, AttributeError):
-        return str(value)
-
-
-templates.env.filters["fmtrelative"] = _fmt_relative
 
 
 # ---------------------------------------------------------------------------
