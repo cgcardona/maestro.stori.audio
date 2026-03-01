@@ -4,7 +4,7 @@ Verifies that the worktree reader correctly discovers active agent worktrees
 and parses their .agent-task files into TaskFile models.
 
 Run targeted:
-    pytest tests/test_agentception_worktrees.py -v
+    pytest agentception/tests/test_agentception_worktrees.py -v
 """
 from __future__ import annotations
 

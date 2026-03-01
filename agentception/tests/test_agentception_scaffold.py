@@ -4,7 +4,7 @@ These tests verify the foundational service plumbing — settings, models, and
 the FastAPI app itself — before any reader or poller logic is wired in.
 
 Run targeted:
-    pytest tests/test_agentception_scaffold.py -v
+    pytest agentception/tests/test_agentception_scaffold.py -v
 """
 from __future__ import annotations
 

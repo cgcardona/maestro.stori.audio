@@ -4,7 +4,7 @@ Covers JSONL parsing, role/status heuristics, and AgentNode tree construction.
 All tests use temporary directories — no dependency on live ~/.cursor/projects/.
 
 Run targeted:
-    pytest tests/test_agentception_transcripts.py -v
+    pytest agentception/tests/test_agentception_transcripts.py -v
 """
 from __future__ import annotations
 

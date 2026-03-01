@@ -8,7 +8,7 @@ Coverage:
 - polling_loop() advances state on each iteration (mock sleep)
 
 Run targeted:
-    pytest tests/test_agentception_poller.py -v
+    pytest agentception/tests/test_agentception_poller.py -v
 """
 from __future__ import annotations
 
