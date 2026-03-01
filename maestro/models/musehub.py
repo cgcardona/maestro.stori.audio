@@ -2170,6 +2170,62 @@ class UserForksResponse(CamelModel):
     total: int = Field(..., description="Total number of forked repos")
 
 
+class ForkNetworkNode(CamelModel):
+    """A single node in the fork network tree.
+
+    Represents one repo (root or fork) with its owner/slug identity,
+    the number of commits it has diverged from its immediate parent,
+    and its own children in the tree.
+
+    Used by ``GET /musehub/ui/{owner}/{repo_slug}/forks`` (JSON path)
+    to surface the full network graph for programmatic traversal.
+    """
+
+    owner: str = Field(..., description="Owner username of this repo")
+    repo_slug: str = Field(..., description="Slug of this repo")
+    repo_id: str = Field(..., description="Internal UUID of this repo")
+    divergence_commits: int = Field(
+        ...,
+        description="Commits this fork has ahead of its immediate parent (0 for root)",
+    )
+    forked_by: str = Field(
+        ..., description="User ID who created the fork (empty string for root repo)"
+    )
+    forked_at: datetime | None = Field(
+        None, description="Timestamp when the fork was created (None for root repo)"
+    )
+    children: list["ForkNetworkNode"] = Field(
+        default_factory=list,
+        description="Direct forks of this repo, each recursively carrying their own children",
+    )
+
+
+class ForkNetworkResponse(CamelModel):
+    """Fork network graph for a repo — root with recursive children.
+
+    Returned by ``GET /musehub/ui/{owner}/{repo_slug}/forks?format=json``.
+
+    The ``root`` node represents the canonical upstream repo.  Each
+    ``ForkNetworkNode`` in ``root.children`` is a direct fork; their
+    own ``children`` lists contain second-level forks, and so on.
+
+    ``total_forks`` is the flat count of all fork nodes in the tree
+    (excluding the root), so callers can display "N forks" without
+    walking the tree.
+
+    Agent use case: determine how many downstream forks exist, identify
+    the most-diverged fork before proposing a merge-back PR, or decide
+    which fork to merge into the root.
+    """
+
+    root: ForkNetworkNode = Field(..., description="Root repo (the upstream source)")
+    total_forks: int = Field(..., description="Total number of fork nodes in the network")
+
+
+# Resolve forward reference in self-referential ForkNetworkNode.children
+ForkNetworkNode.model_rebuild()
+
+
 class UserStarredRepoEntry(CamelModel):
     """A single starred-repo entry shown on a user's profile Starred tab.
 

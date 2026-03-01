@@ -1,0 +1,129 @@
+{% extends "musehub/base.html" %}
+
+{% block title %}Forks — {{ owner }}/{{ repo_slug }}{% endblock %}
+{% block breadcrumb %}
+  <a href="/musehub/ui/{{ owner }}/{{ repo_slug }}">{{ owner }}/{{ repo_slug }}</a> / forks
+{% endblock %}
+{% block repo_nav %}{% include "musehub/partials/repo_nav.html" %}{% endblock %}
+
+{% block page_data %}
+const repoId  = {{ repo_id | tojson }};
+const apiBase = '/api/v1/musehub/repos/' + repoId;
+const uiBase  = {{ base_url | tojson }};
+const owner   = {{ owner | tojson }};
+const repoSlug = {{ repo_slug | tojson }};
+{% endblock %}
+
+{% block page_script %}
+{% raw %}
+
+function commitBar(n) {
+  if (n === 0) return '<span style="color:#8b949e;font-size:11px">in sync</span>';
+  const color = n < 5 ? '#3fb950' : n < 10 ? '#f0883e' : '#f85149';
+  return `<span style="color:${color};font-size:12px;font-weight:600">+${n} commits</span>`;
+}
+
+function renderNode(node, depth) {
+  const indent = depth * 24;
+  const branchLine = depth > 0
+    ? `<span style="display:inline-block;width:${indent}px;border-left:2px solid #30363d;border-bottom:2px solid #30363d;height:20px;margin-right:8px;vertical-align:middle;position:relative;top:-2px"></span>`
+    : '';
+
+  const forkUrl = `/musehub/ui/${encodeURIComponent(node.owner)}/${encodeURIComponent(node.repoSlug)}`;
+  const forkedAt = node.forkedAt
+    ? `<span class="commit-meta">${fmtDate(node.forkedAt)}</span>`
+    : '';
+  const forkedBy = node.forkedBy
+    ? `<span style="font-size:11px;color:#8b949e">forked by <a href="/musehub/ui/users/${encodeURIComponent(node.forkedBy)}">${escHtml(node.forkedBy)}</a></span>`
+    : '';
+
+  const badge = depth === 0
+    ? '<span class="badge badge-open" style="font-size:10px;margin-left:6px">upstream</span>'
+    : '';
+
+  let html = `
+    <div style="padding:12px 0;border-bottom:1px solid #21262d;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+      <div style="display:flex;align-items:center;gap:0">
+        ${branchLine}
+        <span style="font-size:16px">&#127968;</span>
+      </div>
+      <div style="flex:1;min-width:0">
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+          <a href="${forkUrl}" style="font-weight:600;font-size:14px;color:#58a6ff">
+            ${escHtml(node.owner)}/${escHtml(node.repoSlug)}
+          </a>
+          ${badge}
+        </div>
+        <div style="display:flex;align-items:center;gap:12px;margin-top:4px;flex-wrap:wrap">
+          ${forkedBy}
+          ${forkedAt}
+          ${commitBar(node.divergenceCommits)}
+        </div>
+      </div>
+      ${depth > 0 ? `
+      <div style="display:flex;gap:6px;flex-shrink:0">
+        <a href="${forkUrl}/compare/main...main" class="btn btn-secondary" style="font-size:12px;padding:4px 10px">
+          Compare
+        </a>
+        <a href="/musehub/ui/${encodeURIComponent(node.owner)}/${encodeURIComponent(repoSlug)}/pulls/new?head=${encodeURIComponent(node.repoSlug)}" class="btn btn-primary" style="font-size:12px;padding:4px 10px">
+          PR
+        </a>
+      </div>` : ''}
+    </div>`;
+
+  for (const child of (node.children || [])) {
+    html += renderNode(child, depth + 1);
+  }
+  return html;
+}
+
+async function load() {
+  initRepoNav(repoId);
+  try {
+    const data = await apiFetch('/repos/' + repoId + '/forks');
+    const forks = data.forks || [];
+    const total = data.total || 0;
+
+    // Build a synthetic root node from the API list response
+    // (the JSON endpoint on the UI route returns ForkNetworkResponse,
+    //  but the API route returns ForkListResponse).
+    const rootNode = {
+      owner: owner,
+      repoSlug: repoSlug,
+      repoId: repoId,
+      divergenceCommits: 0,
+      forkedBy: '',
+      forkedAt: null,
+      children: forks.map(f => ({
+        owner: f.forkOwner,
+        repoSlug: f.forkSlug,
+        repoId: f.forkRepoId,
+        divergenceCommits: 0,
+        forkedBy: f.forkedBy,
+        forkedAt: f.createdAt,
+        children: [],
+      })),
+    };
+
+    document.getElementById('content').innerHTML = `
+      <div style="margin-bottom:12px">
+        <a href="${uiBase}">&larr; Back to repo</a>
+      </div>
+      <div class="card">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+          <h1 style="margin:0">&#127956; Fork Network</h1>
+          <span style="font-size:13px;color:#8b949e">${total} fork${total === 1 ? '' : 's'}</span>
+        </div>
+        ${total === 0
+          ? '<p class="loading">No forks yet. Be the first to fork this repo!</p>'
+          : renderNode(rootNode, 0)}
+      </div>`;
+  } catch(e) {
+    if (e.message !== 'auth')
+      document.getElementById('content').innerHTML = '<p class="error">&#10005; ' + escHtml(e.message) + '</p>';
+  }
+}
+
+load();
+{% endraw %}
+{% endblock %}
