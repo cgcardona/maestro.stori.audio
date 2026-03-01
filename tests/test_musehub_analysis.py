@@ -22,6 +22,19 @@ Covers issue #227 (emotion map):
 - test_emotion_map_endpoint_requires_auth       — endpoint returns 401 without auth
 - test_emotion_map_endpoint_unknown_repo_404    — unknown repo returns 404
 - test_emotion_map_endpoint_etag                — ETag header is present
+
+Covers issue #420 (emotion diff):
+- test_compute_emotion_diff_returns_correct_type    — service returns EmotionDiffResponse
+- test_emotion_diff_vectors_in_range               — all 8D axes are in [0, 1]
+- test_emotion_diff_delta_is_head_minus_base       — delta == head - base per axis
+- test_emotion_diff_interpretation_nonempty        — interpretation is a non-empty string
+- test_emotion_diff_is_deterministic               — same refs always produce same result
+- test_emotion_diff_different_refs_differ          — different refs produce different vectors
+- test_emotion_diff_endpoint_200                   — HTTP GET returns 200 with required fields
+- test_emotion_diff_endpoint_requires_auth         — endpoint returns 401 without auth
+- test_emotion_diff_endpoint_unknown_repo_404      — unknown repo returns 404
+- test_emotion_diff_endpoint_etag                  — ETag header is present
+- test_emotion_diff_endpoint_missing_base_422      — missing required ?base param returns 422
 """
 from __future__ import annotations
 
@@ -39,9 +52,12 @@ from maestro.models.musehub_analysis import (
     DivergenceData,
     DynamicsData,
     EmotionData,
+    EmotionDelta8D,
+    EmotionDiffResponse,
     EmotionDrift,
     EmotionMapResponse,
     EmotionVector,
+    EmotionVector8D,
     FormData,
     GrooveData,
     HarmonyData,
@@ -56,6 +72,7 @@ from maestro.services.musehub_analysis import (
     compute_aggregate_analysis,
     compute_analysis_response,
     compute_dimension,
+    compute_emotion_diff,
     compute_emotion_map,
 )
 
@@ -832,3 +849,198 @@ async def test_analysis_aggregate_endpoint_returns_all_dimensions(
         assert "computedAt" in dim_entry
         assert "data" in dim_entry
         assert "filtersApplied" in dim_entry
+
+
+# ---------------------------------------------------------------------------
+# Emotion diff service unit tests (issue #420)
+# ---------------------------------------------------------------------------
+
+
+def test_compute_emotion_diff_returns_correct_type() -> None:
+    """compute_emotion_diff returns an EmotionDiffResponse instance."""
+    result = compute_emotion_diff(repo_id="test-repo", head_ref="main", base_ref="main~1")
+    assert isinstance(result, EmotionDiffResponse)
+
+
+def test_emotion_diff_vectors_in_range() -> None:
+    """All 8 axes of base_emotion and head_emotion are in [0, 1]."""
+    result = compute_emotion_diff(repo_id="test-repo", head_ref="feature/jazz", base_ref="main")
+    for vec in (result.base_emotion, result.head_emotion):
+        assert isinstance(vec, EmotionVector8D)
+        assert 0.0 <= vec.valence <= 1.0
+        assert 0.0 <= vec.energy <= 1.0
+        assert 0.0 <= vec.tension <= 1.0
+        assert 0.0 <= vec.complexity <= 1.0
+        assert 0.0 <= vec.warmth <= 1.0
+        assert 0.0 <= vec.brightness <= 1.0
+        assert 0.0 <= vec.darkness <= 1.0
+        assert 0.0 <= vec.playfulness <= 1.0
+
+
+def test_emotion_diff_delta_is_head_minus_base() -> None:
+    """delta is an EmotionDelta8D with values == round(head - base, 4) per axis."""
+    result = compute_emotion_diff(repo_id="test-repo", head_ref="main", base_ref="develop")
+    b = result.base_emotion
+    h = result.head_emotion
+    d = result.delta
+    assert isinstance(d, EmotionDelta8D)
+    assert d.valence == pytest.approx(round(h.valence - b.valence, 4), abs=1e-4)
+    assert d.energy == pytest.approx(round(h.energy - b.energy, 4), abs=1e-4)
+    assert d.tension == pytest.approx(round(h.tension - b.tension, 4), abs=1e-4)
+    assert d.complexity == pytest.approx(round(h.complexity - b.complexity, 4), abs=1e-4)
+    assert d.warmth == pytest.approx(round(h.warmth - b.warmth, 4), abs=1e-4)
+    assert d.brightness == pytest.approx(round(h.brightness - b.brightness, 4), abs=1e-4)
+    assert d.darkness == pytest.approx(round(h.darkness - b.darkness, 4), abs=1e-4)
+    assert d.playfulness == pytest.approx(round(h.playfulness - b.playfulness, 4), abs=1e-4)
+
+
+def test_emotion_diff_interpretation_nonempty() -> None:
+    """interpretation is a non-empty string describing the dominant shift."""
+    result = compute_emotion_diff(repo_id="test-repo", head_ref="main", base_ref="main~1")
+    assert isinstance(result.interpretation, str)
+    assert len(result.interpretation) > 10
+
+
+def test_emotion_diff_ref_fields_set_correctly() -> None:
+    """base_ref and head_ref match the arguments passed to the service function."""
+    result = compute_emotion_diff(repo_id="test-repo", head_ref="feat/bridge", base_ref="main")
+    assert result.base_ref == "main"
+    assert result.head_ref == "feat/bridge"
+
+
+def test_emotion_diff_is_deterministic() -> None:
+    """Same head_ref and base_ref always produce the same result."""
+    r1 = compute_emotion_diff(repo_id="r1", head_ref="abc123", base_ref="def456")
+    r2 = compute_emotion_diff(repo_id="r2", head_ref="abc123", base_ref="def456")
+    assert r1.base_emotion.valence == r2.base_emotion.valence
+    assert r1.head_emotion.tension == r2.head_emotion.tension
+    assert r1.delta.darkness == r2.delta.darkness
+
+
+def test_emotion_diff_different_refs_differ() -> None:
+    """Different refs produce different emotion vectors (seed is ref-keyed)."""
+    r1 = compute_emotion_diff(repo_id="test-repo", head_ref="main", base_ref="develop")
+    r2 = compute_emotion_diff(repo_id="test-repo", head_ref="feature/x", base_ref="develop")
+    # head vecs should differ (different head refs)
+    assert r1.head_emotion.valence != r2.head_emotion.valence or r1.head_emotion.energy != r2.head_emotion.energy
+
+
+def test_emotion_diff_same_ref_zero_delta() -> None:
+    """Comparing a ref against itself yields zero delta across all axes."""
+    result = compute_emotion_diff(repo_id="test-repo", head_ref="main", base_ref="main")
+    d = result.delta
+    assert d.valence == pytest.approx(0.0, abs=1e-4)
+    assert d.energy == pytest.approx(0.0, abs=1e-4)
+    assert d.tension == pytest.approx(0.0, abs=1e-4)
+    assert d.complexity == pytest.approx(0.0, abs=1e-4)
+    assert d.warmth == pytest.approx(0.0, abs=1e-4)
+    assert d.brightness == pytest.approx(0.0, abs=1e-4)
+    assert d.darkness == pytest.approx(0.0, abs=1e-4)
+    assert d.playfulness == pytest.approx(0.0, abs=1e-4)
+
+
+# ---------------------------------------------------------------------------
+# Emotion diff HTTP endpoint tests (issue #420)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.anyio
+async def test_emotion_diff_endpoint_200(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+    db_session: AsyncSession,
+) -> None:
+    """GET /analysis/{ref}/emotion-diff?base={base} returns 200 with all required fields."""
+    repo_id = await _create_repo(client, auth_headers)
+    resp = await client.get(
+        f"/api/v1/musehub/repos/{repo_id}/analysis/main/emotion-diff?base=main~1",
+        headers=auth_headers,
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["repoId"] == repo_id
+    assert body["baseRef"] == "main~1"
+    assert body["headRef"] == "main"
+    assert "baseEmotion" in body
+    assert "headEmotion" in body
+    assert "delta" in body
+    assert "interpretation" in body
+    assert "computedAt" in body
+
+
+@pytest.mark.anyio
+async def test_emotion_diff_endpoint_response_shape(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+    db_session: AsyncSession,
+) -> None:
+    """All 8 axes are present in baseEmotion, headEmotion, and delta."""
+    repo_id = await _create_repo(client, auth_headers)
+    resp = await client.get(
+        f"/api/v1/musehub/repos/{repo_id}/analysis/feature-jazz/emotion-diff?base=main",
+        headers=auth_headers,
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    expected_axes = {"valence", "energy", "tension", "complexity", "warmth", "brightness", "darkness", "playfulness"}
+    for field in ("baseEmotion", "headEmotion", "delta"):
+        returned_keys = {k for k in body[field]}
+        assert expected_axes.issubset(returned_keys), f"{field} missing axes: {expected_axes - returned_keys}"
+
+
+@pytest.mark.anyio
+async def test_emotion_diff_endpoint_requires_auth(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Emotion diff endpoint returns 401 without a Bearer token."""
+    resp = await client.get(
+        "/api/v1/musehub/repos/some-id/analysis/main/emotion-diff?base=main~1",
+    )
+    assert resp.status_code == 401
+
+
+@pytest.mark.anyio
+async def test_emotion_diff_endpoint_unknown_repo_404(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+    db_session: AsyncSession,
+) -> None:
+    """Emotion diff endpoint returns 404 for an unknown repo_id."""
+    resp = await client.get(
+        "/api/v1/musehub/repos/00000000-0000-0000-0000-000000000000/analysis/main/emotion-diff?base=main~1",
+        headers=auth_headers,
+    )
+    assert resp.status_code == 404
+
+
+@pytest.mark.anyio
+async def test_emotion_diff_endpoint_missing_base_422(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+    db_session: AsyncSession,
+) -> None:
+    """Missing required ?base query param returns 422 Unprocessable Entity."""
+    repo_id = await _create_repo(client, auth_headers)
+    resp = await client.get(
+        f"/api/v1/musehub/repos/{repo_id}/analysis/main/emotion-diff",
+        headers=auth_headers,
+    )
+    assert resp.status_code == 422
+
+
+@pytest.mark.anyio
+async def test_emotion_diff_endpoint_etag(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+    db_session: AsyncSession,
+) -> None:
+    """Emotion diff endpoint includes ETag header for client-side caching."""
+    repo_id = await _create_repo(client, auth_headers)
+    resp = await client.get(
+        f"/api/v1/musehub/repos/{repo_id}/analysis/main/emotion-diff?base=develop",
+        headers=auth_headers,
+    )
+    assert resp.status_code == 200
+    assert "etag" in resp.headers
+    assert resp.headers["etag"].startswith('"')
