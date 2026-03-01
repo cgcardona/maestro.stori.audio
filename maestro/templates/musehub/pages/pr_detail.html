@@ -175,10 +175,12 @@ function selectStrategy(strategy) {
 
 async function mergePrWithStrategy() {
   if (!confirm(`Merge this pull request using "${_mergeStrategy}" strategy?`)) return;
+  const deleteBranchEl = document.getElementById('cb-delete-branch');
+  const deleteBranch = deleteBranchEl ? deleteBranchEl.checked : true;
   try {
     await apiFetch(apiBase + '/pull-requests/' + prId + '/merge', {
       method: 'POST',
-      body: JSON.stringify({ mergeStrategy: _mergeStrategy }),
+      body: JSON.stringify({ mergeStrategy: _mergeStrategy, deleteBranch }),
     });
     location.reload();
   } catch (e) {
@@ -345,6 +347,362 @@ async function toggleReaction(targetType, targetId, emoji, containerId) {
   }
 }
 
+// ── Lightweight Markdown renderer ────────────────────────────────────────────
+/**
+ * Convert a Markdown string to safe HTML without an external library.
+ * Supports: headings, bold, italic, inline code, code fences, links,
+ * unordered lists, ordered lists, blockquotes, and horizontal rules.
+ * All literal HTML in the source is escaped first to prevent XSS.
+ */
+function renderMarkdown(text) {
+  if (!text) return '';
+  // Escape raw HTML first.
+  let s = text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+  // Fenced code blocks (``` … ```).
+  s = s.replace(/```([^`]*?)```/gs,
+    (_, code) => `<pre style="background:#161b22;border:1px solid #30363d;border-radius:6px;padding:12px;overflow-x:auto;font-size:12px"><code>${code}</code></pre>`);
+  // Headings.
+  s = s.replace(/^### (.+)$/gm, '<h3 style="font-size:14px;margin:12px 0 6px;color:#e6edf3">$1</h3>');
+  s = s.replace(/^## (.+)$/gm,  '<h2 style="font-size:16px;margin:14px 0 6px;color:#e6edf3">$1</h2>');
+  s = s.replace(/^# (.+)$/gm,   '<h1 style="font-size:18px;margin:16px 0 8px;color:#e6edf3">$1</h1>');
+  // Horizontal rules.
+  s = s.replace(/^---+$/gm, '<hr style="border:none;border-top:1px solid #30363d;margin:12px 0">');
+  // Blockquotes.
+  s = s.replace(/^&gt; (.+)$/gm,
+    '<blockquote style="border-left:3px solid #388bfd;margin:0;padding:4px 12px;color:#8b949e;font-style:italic">$1</blockquote>');
+  // Unordered lists.
+  s = s.replace(/^[*\-] (.+)$/gm, '<li style="margin-left:20px;margin-bottom:2px">$1</li>');
+  // Ordered lists.
+  s = s.replace(/^\d+\. (.+)$/gm, '<li style="margin-left:20px;margin-bottom:2px;list-style:decimal">$1</li>');
+  // Bold and italic.
+  s = s.replace(/\*\*\*(.+?)\*\*\*/g, '<strong><em>$1</em></strong>');
+  s = s.replace(/\*\*(.+?)\*\*/g,     '<strong>$1</strong>');
+  s = s.replace(/\*(.+?)\*/g,         '<em>$1</em>');
+  s = s.replace(/__(.+?)__/g,         '<strong>$1</strong>');
+  s = s.replace(/_(.+?)_/g,           '<em>$1</em>');
+  // Inline code.
+  s = s.replace(/`([^`]+)`/g,
+    '<code style="background:#21262d;border-radius:3px;padding:1px 5px;font-size:12px">$1</code>');
+  // Links [text](url). Only allow http/https/relative/anchor URLs to prevent javascript: XSS.
+  s = s.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_, text, url) => {
+    const safeUrl = /^(https?:\/\/|\/|#)/i.test(url) ? url : '#';
+    return `<a href="${safeUrl}" style="color:#58a6ff" target="_blank" rel="noopener noreferrer">${text}</a>`;
+  });
+  // Paragraphs: blank lines → paragraph break.
+  s = s.replace(/\n{2,}/g, '</p><p style="margin:8px 0">');
+  s = `<p style="margin:8px 0">${s}</p>`;
+  return s;
+}
+
+// ── Mini 8-axis emotion radar (inline SVG for commit diff panels) ─────────────
+/**
+ * Render a compact 8-axis spider chart from an EmotionDelta8D delta object.
+ * Each axis shows absolute |delta| magnitude; sign is indicated by colour.
+ */
+function miniEmotionRadarSvg(delta) {
+  const axes = ['valence','energy','tension','complexity','warmth','brightness','darkness','playfulness'];
+  const cx = 80, cy = 80, r = 60;
+  const n = axes.length;
+  const vals = axes.map(a => delta[a] !== undefined ? Math.abs(delta[a]) : 0);
+  const colors = axes.map(a => (delta[a] || 0) >= 0 ? '#3fb950' : '#f85149');
+
+  const grid = [0.25, 0.5, 0.75, 1.0].map(frac => {
+    const pts = axes.map((_, i) => {
+      const angle = (i / n) * 2 * Math.PI - Math.PI / 2;
+      return `${cx + frac * r * Math.cos(angle)},${cy + frac * r * Math.sin(angle)}`;
+    }).join(' ');
+    return `<polygon points="${pts}" fill="none" stroke="#21262d" stroke-width="1"/>`;
+  }).join('');
+
+  const axisLines = axes.map((_, i) => {
+    const angle = (i / n) * 2 * Math.PI - Math.PI / 2;
+    const ex = cx + r * Math.cos(angle), ey = cy + r * Math.sin(angle);
+    return `<line x1="${cx}" y1="${cy}" x2="${ex}" y2="${ey}" stroke="#30363d" stroke-width="1"/>`;
+  }).join('');
+
+  const dataPts = vals.map((v, i) => {
+    const angle = (i / n) * 2 * Math.PI - Math.PI / 2;
+    return `${cx + v * r * Math.cos(angle)},${cy + v * r * Math.sin(angle)}`;
+  }).join(' ');
+
+  const dots = vals.map((v, i) => {
+    const angle = (i / n) * 2 * Math.PI - Math.PI / 2;
+    const px = cx + v * r * Math.cos(angle), py = cy + v * r * Math.sin(angle);
+    return `<circle cx="${px}" cy="${py}" r="3" fill="${colors[i]}" stroke="#0d1117" stroke-width="1.5"/>`;
+  }).join('');
+
+  const labels = axes.map((a, i) => {
+    const angle = (i / n) * 2 * Math.PI - Math.PI / 2;
+    const lx = cx + (r + 14) * Math.cos(angle);
+    const ly = cy + (r + 14) * Math.sin(angle);
+    return `<text x="${lx}" y="${ly + 3}" text-anchor="middle" font-size="7" fill="#8b949e">${a.slice(0,5)}</text>`;
+  }).join('');
+
+  return `<svg viewBox="0 0 160 160" xmlns="http://www.w3.org/2000/svg"
+      style="width:160px;height:160px;display:block">
+    ${grid}${axisLines}
+    <polygon points="${dataPts}" fill="rgba(88,166,255,0.12)" stroke="#58a6ff" stroke-width="1.5"/>
+    ${dots}${labels}
+  </svg>`;
+}
+
+// ── Reviewer status panel ─────────────────────────────────────────────────────
+
+/** Map review state → display label + colour. */
+const REVIEW_STATE_STYLE = {
+  pending:           { label: 'Pending',            color: '#8b949e', bg: '#21262d' },
+  approved:          { label: 'Approved',            color: '#3fb950', bg: '#0d2b00' },
+  changes_requested: { label: 'Changes requested',   color: '#f0883e', bg: '#341a00' },
+  dismissed:         { label: 'Dismissed',           color: '#484f58', bg: '#161b22' },
+};
+
+/** Render one reviewer avatar chip. */
+function reviewerChip(review) {
+  const style = REVIEW_STATE_STYLE[review.reviewerUsername ? review.state : 'pending'] || REVIEW_STATE_STYLE.pending;
+  const initial = (review.reviewerUsername || '?').charAt(0).toUpperCase();
+  return `<div title="${escHtml(review.reviewerUsername)} — ${style.label}"
+      style="display:inline-flex;align-items:center;gap:6px;padding:4px 10px 4px 4px;
+        border-radius:var(--radius-full,999px);border:1px solid ${style.color}44;
+        background:${style.bg};cursor:default">
+    <span style="display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;
+      border-radius:50%;background:${style.color}33;color:${style.color};font-size:12px;font-weight:700">
+      ${initial}
+    </span>
+    <span style="font-size:12px;color:#e6edf3">${escHtml(review.reviewerUsername)}</span>
+    <span style="font-size:10px;padding:1px 6px;border-radius:10px;background:${style.color}22;color:${style.color}">
+      ${style.label}
+    </span>
+  </div>`;
+}
+
+/**
+ * Fetch and render the reviewer status panel.
+ * Requires a DOM element #reviewer-chips and (optionally) #review-form-section.
+ */
+async function loadReviewers() {
+  const chipsEl = document.getElementById('reviewer-chips');
+  if (!chipsEl) return;
+  try {
+    const data = await apiFetch('/repos/' + repoId + '/pull-requests/' + prId + '/reviews');
+    const reviews = (data && data.reviews) ? data.reviews : [];
+    chipsEl.innerHTML = reviews.length
+      ? reviews.map(reviewerChip).join('')
+      : '<span style="font-size:13px;color:#8b949e">No reviewers assigned.</span>';
+  } catch (e) {
+    if (e.message !== 'auth') chipsEl.innerHTML = '<span style="color:#8b949e;font-size:13px">Could not load reviewers.</span>';
+  }
+}
+
+/**
+ * Submit a review (approve / request_changes / comment) for the authenticated user.
+ * event must be one of: 'approve' | 'request_changes' | 'comment'
+ */
+async function submitReview(event) {
+  const bodyEl = document.getElementById('review-body');
+  const body = bodyEl ? bodyEl.value.trim() : '';
+  if (event === 'request_changes' && !body) {
+    alert('A review body is required when requesting changes.');
+    return;
+  }
+  try {
+    await apiFetch('/repos/' + repoId + '/pull-requests/' + prId + '/reviews', {
+      method: 'POST',
+      body: JSON.stringify({ event, body }),
+    });
+    if (bodyEl) bodyEl.value = '';
+    await loadReviewers();
+    // Collapse the submit form.
+    const details = document.getElementById('review-form-details');
+    if (details) details.removeAttribute('open');
+  } catch (e) {
+    if (e.message !== 'auth') alert('Review submission failed: ' + e.message);
+  }
+}
+
+// ── Labels sidebar ────────────────────────────────────────────────────────────
+
+/**
+ * Fetch labels assigned to this PR and repo labels (for edit controls).
+ * Renders into #pr-labels-section.
+ */
+async function loadPRLabels() {
+  const section = document.getElementById('pr-labels-section');
+  if (!section) return;
+  try {
+    // Fetch the repo's full label catalogue first (always available).
+    const allLabels = await apiFetch('/repos/' + repoId + '/labels').catch(() => []);
+
+    // Try to fetch current PR labels (endpoint may not exist yet — degrade gracefully).
+    let prLabels = [];
+    try {
+      const prLabelData = await apiFetch('/repos/' + repoId + '/pull-requests/' + prId + '/labels');
+      prLabels = Array.isArray(prLabelData) ? prLabelData : [];
+    } catch (_) { /* no GET endpoint yet — show empty */ }
+
+    const prLabelIds = new Set(prLabels.map(l => l.id || l.label_id || ''));
+    const authed = !!getToken();
+
+    const labelChips = prLabels.length
+      ? prLabels.map(l =>
+          `<span style="display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:10px;
+            font-size:11px;font-weight:600;background:${l.color ? l.color + '33' : '#21262d'};
+            color:${l.color || '#8b949e'};border:1px solid ${l.color ? l.color + '55' : '#30363d'}">
+            ${escHtml(l.name)}
+            ${authed ? `<button onclick="removePRLabel('${escHtml(l.id || l.label_id || '')}')"
+              style="background:none;border:none;color:${l.color || '#8b949e'};cursor:pointer;
+                font-size:10px;padding:0;margin-left:2px" title="Remove label">×</button>` : ''}
+          </span>`).join(' ')
+      : '<span style="font-size:12px;color:#8b949e">None yet</span>';
+
+    let editHtml = '';
+    if (authed && allLabels.length > 0) {
+      const opts = allLabels
+        .filter(l => !prLabelIds.has(l.id || l.label_id || ''))
+        .map(l => `<option value="${escHtml(l.id || l.label_id || '')}">${escHtml(l.name)}</option>`)
+        .join('');
+      editHtml = opts ? `
+        <div style="margin-top:8px;display:flex;gap:6px;align-items:center">
+          <select id="label-add-select" style="flex:1;background:#21262d;color:#e6edf3;
+            border:1px solid #30363d;border-radius:4px;padding:3px 6px;font-size:12px">
+            <option value="">Add label…</option>
+            ${opts}
+          </select>
+          <button onclick="addPRLabel()" style="padding:3px 10px;border-radius:4px;border:1px solid #30363d;
+            background:#21262d;color:#e6edf3;cursor:pointer;font-size:12px">Add</button>
+        </div>` : '';
+    }
+
+    section.innerHTML = `
+      <h3 style="font-size:13px;font-weight:600;color:#8b949e;margin:0 0 8px;text-transform:uppercase;
+        letter-spacing:.05em">Labels</h3>
+      <div style="display:flex;flex-wrap:wrap;gap:4px">${labelChips}</div>
+      ${editHtml}`;
+  } catch (e) {
+    // Non-fatal — label section degrades gracefully.
+  }
+}
+
+/** Assign a label to this PR (maintainer action). */
+async function addPRLabel() {
+  const sel = document.getElementById('label-add-select');
+  if (!sel || !sel.value) return;
+  try {
+    await apiFetch('/repos/' + repoId + '/pull-requests/' + prId + '/labels', {
+      method: 'POST',
+      body: JSON.stringify({ label_ids: [sel.value] }),
+    });
+    await loadPRLabels();
+  } catch (e) {
+    if (e.message !== 'auth') alert('Could not add label: ' + e.message);
+  }
+}
+
+/** Remove a label from this PR (maintainer action). */
+async function removePRLabel(labelId) {
+  if (!labelId) return;
+  try {
+    await apiFetch('/repos/' + repoId + '/pull-requests/' + prId + '/labels/' + labelId,
+      { method: 'DELETE' });
+    await loadPRLabels();
+  } catch (e) {
+    if (e.message !== 'auth') alert('Could not remove label: ' + e.message);
+  }
+}
+
+// ── Collapsible commit diff panels ────────────────────────────────────────────
+
+/**
+ * Fetch the commits on the head branch that are not on the base branch,
+ * then for each commit render a collapsible panel showing similarity % and
+ * an 8-axis emotion-diff mini radar chart relative to the to_branch.
+ */
+async function loadCommitDiffPanels(fromBranch, toBranch) {
+  const container = document.getElementById('commit-diff-panels');
+  if (!container) return;
+  container.innerHTML = '<p style="color:#8b949e;font-size:13px">Loading commit diffs…</p>';
+  try {
+    // Fetch head-branch commits (newest first, limit to 8 for performance).
+    const commitsData = await apiFetch(
+      '/repos/' + repoId + '/commits?branch=' + encodeURIComponent(fromBranch) + '&limit=8'
+    ).catch(() => null);
+    const commits = (commitsData && commitsData.commits) ? commitsData.commits : [];
+    if (!commits.length) {
+      container.innerHTML = '<p style="color:#8b949e;font-size:13px">No commits found on this branch.</p>';
+      return;
+    }
+
+    // Render a placeholder panel for each commit immediately, then fill async.
+    container.innerHTML = commits.map((c, idx) => `
+      <details id="commit-panel-${idx}" style="margin-bottom:8px;border:1px solid #30363d;
+          border-radius:6px;background:#0d1117;overflow:hidden">
+        <summary style="display:flex;align-items:center;gap:10px;padding:8px 12px;cursor:pointer;
+            list-style:none;user-select:none;background:#161b22">
+          <span style="font-family:monospace;font-size:12px;color:#58a6ff">${escHtml((c.commitId || '').substring(0,8))}</span>
+          <span style="flex:1;font-size:13px;color:#e6edf3;overflow:hidden;text-overflow:ellipsis;
+              white-space:nowrap">${escHtml(c.message || '(no message)')}</span>
+          <span style="font-size:11px;color:#8b949e">${fmtDate(c.createdAt || c.committedAt || null)}</span>
+          <span style="font-size:11px">▸</span>
+        </summary>
+        <div id="commit-panel-body-${idx}" style="padding:12px">
+          <p style="color:#8b949e;font-size:12px">Loading diff…</p>
+        </div>
+      </details>`).join('');
+
+    // Fill each panel body asynchronously.
+    commits.forEach(async (c, idx) => {
+      const bodyEl = document.getElementById('commit-panel-body-' + idx);
+      if (!bodyEl) return;
+      try {
+        const commitRef = c.commitId || c.sha || '';
+        const [sim, emo] = await Promise.allSettled([
+          apiFetch('/repos/' + repoId + '/analysis/' + encodeURIComponent(commitRef) +
+                   '/similarity?compare=' + encodeURIComponent(toBranch)),
+          apiFetch('/repos/' + repoId + '/analysis/' + encodeURIComponent(commitRef) +
+                   '/emotion-diff?base=' + encodeURIComponent(toBranch)),
+        ]);
+
+        const simData  = sim.status  === 'fulfilled' ? sim.value  : null;
+        const emoData  = emo.status  === 'fulfilled' ? emo.value  : null;
+
+        const simPct = simData ? Math.round((simData.overallSimilarity || 0) * 100) : null;
+        const simColor = simPct === null ? '#8b949e'
+          : simPct >= 80 ? '#3fb950' : simPct >= 50 ? '#f0883e' : '#f85149';
+
+        const simHtml = simPct !== null
+          ? `<div style="display:inline-flex;align-items:center;gap:6px;padding:4px 10px;
+              border-radius:4px;background:#0d2b00;border:1px solid ${simColor}33">
+              <span style="font-size:20px;font-weight:700;color:${simColor}">${simPct}%</span>
+              <span style="font-size:11px;color:#8b949e">similarity<br>to ${escHtml(toBranch)}</span>
+            </div>`
+          : '<span style="font-size:12px;color:#8b949e">Similarity unavailable</span>';
+
+        const deltaObj = (emoData && emoData.delta) ? emoData.delta : null;
+        const emoHtml  = deltaObj
+          ? `<div>
+              <div style="font-size:11px;color:#8b949e;margin-bottom:4px">Emotion delta vs ${escHtml(toBranch)}</div>
+              ${miniEmotionRadarSvg(deltaObj)}
+              ${emoData.interpretation
+                ? `<p style="font-size:11px;color:#8b949e;margin:4px 0 0">${escHtml(emoData.interpretation)}</p>` : ''}
+            </div>`
+          : '<span style="font-size:12px;color:#8b949e">Emotion diff unavailable</span>';
+
+        bodyEl.innerHTML = `
+          <div style="display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap">
+            ${simHtml}
+            ${emoHtml}
+          </div>`;
+      } catch (e) {
+        bodyEl.innerHTML = '<p style="color:#8b949e;font-size:12px">Diff unavailable for this commit.</p>';
+      }
+    });
+  } catch (e) {
+    container.innerHTML = '<p style="color:#8b949e;font-size:13px">Could not load commit diffs.</p>';
+  }
+}
+
 // ── General discussion helpers ────────────────────────────────────────────────
 
 /**
@@ -390,28 +748,46 @@ async function load() {
     const toBranch      = pr.toBranch   || '';
 
     // ── Merge controls (only for open PRs) ───────────────────────────────────
+    // pr.mergeable may be absent in older API responses — treat undefined as true.
+    const isMergeable = pr.mergeable !== false;
     const mergeSection = pr.state === 'open' ? `
       <div class="card" style="margin-top:24px">
         <h2 style="margin:0 0 12px;font-size:16px;color:#e6edf3">Merge Pull Request</h2>
+        ${!isMergeable ? `<div style="padding:8px 12px;border-radius:6px;background:#341a00;border:1px solid #f0883e44;
+            font-size:13px;color:#f0883e;margin-bottom:12px">
+          ⚠️ This pull request has conflicts and cannot be merged automatically.
+        </div>` : ''}
         <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">
           <button id="strategy-merge_commit" onclick="selectStrategy('merge_commit')"
-            style="padding:6px 14px;border-radius:6px;border:1px solid #1f6feb;cursor:pointer;
-              font-size:13px;background:#1f6feb;color:#fff">
+            ${!isMergeable ? 'disabled' : ''}
+            style="padding:6px 14px;border-radius:6px;border:1px solid #1f6feb;cursor:${isMergeable ? 'pointer' : 'not-allowed'};
+              font-size:13px;background:#1f6feb;color:#fff;opacity:${isMergeable ? '1' : '0.5'}">
             Merge commit
           </button>
           <button id="strategy-squash" onclick="selectStrategy('squash')"
-            style="padding:6px 14px;border-radius:6px;border:1px solid #30363d;cursor:pointer;
-              font-size:13px;background:#21262d;color:#8b949e">
+            ${!isMergeable ? 'disabled' : ''}
+            style="padding:6px 14px;border-radius:6px;border:1px solid #30363d;cursor:${isMergeable ? 'pointer' : 'not-allowed'};
+              font-size:13px;background:#21262d;color:#8b949e;opacity:${isMergeable ? '1' : '0.5'}">
             Squash &amp; merge
           </button>
           <button id="strategy-rebase" onclick="selectStrategy('rebase')"
-            style="padding:6px 14px;border-radius:6px;border:1px solid #30363d;cursor:pointer;
-              font-size:13px;background:#21262d;color:#8b949e">
+            ${!isMergeable ? 'disabled' : ''}
+            style="padding:6px 14px;border-radius:6px;border:1px solid #30363d;cursor:${isMergeable ? 'pointer' : 'not-allowed'};
+              font-size:13px;background:#21262d;color:#8b949e;opacity:${isMergeable ? '1' : '0.5'}">
             Rebase &amp; merge
           </button>
         </div>
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
+          <input type="checkbox" id="cb-delete-branch" checked
+            style="width:14px;height:14px;accent-color:#1f6feb;cursor:pointer">
+          <label for="cb-delete-branch" style="font-size:13px;color:#e6edf3;cursor:pointer">
+            Delete branch after merge
+          </label>
+        </div>
         <button class="btn btn-primary" onclick="mergePrWithStrategy()"
-          style="font-size:14px;padding:10px 24px">
+          ${!isMergeable ? 'disabled' : ''}
+          style="font-size:14px;padding:10px 24px;opacity:${isMergeable ? '1' : '0.5'};
+            cursor:${isMergeable ? 'pointer' : 'not-allowed'}">
           &#10003; Merge pull request
         </button>
       </div>` : '';
@@ -483,13 +859,41 @@ async function load() {
             </span>
           </div>` : ''}
         </div>
-        ${pr.body ? '<pre style="margin-top:12px">' + escHtml(pr.body) + '</pre>' : ''}
+        ${pr.body ? `<div style="margin-top:12px;font-size:14px;color:#e6edf3;line-height:1.6;
+            border-top:1px solid #21262d;padding-top:12px">${renderMarkdown(pr.body)}</div>` : ''}
         ${mergeSection}
       </div>
 
-      <!-- ── Reactions ────────────────────────────────────────────────── -->
-      <div class="card" style="padding:var(--space-3) var(--space-4);margin-bottom:24px">
-        <div id="pr-reactions" class="reaction-bar"><p class="text-muted text-sm">Loading reactions…</p></div>
+      <!-- ── Sidebar: Labels + Milestone ─────────────────────────────── -->
+      <div style="display:grid;grid-template-columns:1fr 240px;gap:16px;margin-bottom:24px;
+          align-items:start" class="pr-sidebar-grid">
+        <!-- Main meta (reactions) -->
+        <div class="card" style="padding:var(--space-3) var(--space-4)">
+          <div id="pr-reactions" class="reaction-bar"><p class="text-muted text-sm">Loading reactions…</p></div>
+        </div>
+        <!-- Sidebar column -->
+        <div style="display:flex;flex-direction:column;gap:12px">
+          <!-- Labels -->
+          <div class="card" style="padding:12px">
+            <div id="pr-labels-section">
+              <h3 style="font-size:13px;font-weight:600;color:#8b949e;margin:0 0 8px;text-transform:uppercase;
+                letter-spacing:.05em">Labels</h3>
+              <p style="font-size:12px;color:#8b949e;margin:0">Loading…</p>
+            </div>
+          </div>
+          <!-- Milestone -->
+          ${(pr.milestoneId || pr.milestone_id || pr.milestoneTitle || pr.milestone_title) ? `
+          <div class="card" style="padding:12px">
+            <h3 style="font-size:13px;font-weight:600;color:#8b949e;margin:0 0 8px;text-transform:uppercase;
+              letter-spacing:.05em">Milestone</h3>
+            <div style="display:flex;align-items:center;gap:6px">
+              <span style="font-size:14px">🏁</span>
+              <span style="font-size:13px;color:#e6edf3">
+                ${escHtml(pr.milestoneTitle || pr.milestone_title || pr.milestoneId || pr.milestone_id || '')}
+              </span>
+            </div>
+          </div>` : ''}
+        </div>
       </div>
 
       <!-- ── Musical diff radar + badges ───────────────────────────────── -->
@@ -513,6 +917,41 @@ async function load() {
         </div>
       </div>` : ''}
 
+      <!-- ── Reviewer status panel ────────────────────────────────────── -->
+      <div class="card" style="margin-bottom:24px">
+        <h2 style="margin:0 0 12px;font-size:16px;color:#e6edf3">Reviewers</h2>
+        <div id="reviewer-chips" style="display:flex;flex-wrap:wrap;gap:8px;min-height:28px">
+          <p style="color:#8b949e;font-size:13px;margin:0">Loading reviewers…</p>
+        </div>
+        ${pr.state === 'open' && getToken() ? `
+        <details id="review-form-details" style="margin-top:16px;border-top:1px solid #21262d;padding-top:12px">
+          <summary style="cursor:pointer;font-weight:600;color:#58a6ff;font-size:14px;
+              list-style:none;user-select:none">
+            ▸ Submit your review
+          </summary>
+          <div style="margin-top:12px">
+            <textarea id="review-body" rows="3"
+              placeholder="Leave a review comment (required when requesting changes)…"
+              style="width:100%;background:#21262d;color:#e6edf3;border:1px solid #30363d;
+                border-radius:6px;padding:8px;resize:vertical;font-size:13px;box-sizing:border-box"></textarea>
+            <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">
+              <button onclick="submitReview('approve')" class="btn btn-primary"
+                style="font-size:13px;padding:6px 14px">✓ Approve</button>
+              <button onclick="submitReview('request_changes')"
+                style="padding:6px 14px;border-radius:6px;border:1px solid #f0883e;cursor:pointer;
+                  font-size:13px;background:#341a00;color:#f0883e">
+                ⚠ Request changes
+              </button>
+              <button onclick="submitReview('comment')"
+                style="padding:6px 14px;border-radius:6px;border:1px solid #30363d;cursor:pointer;
+                  font-size:13px;background:#21262d;color:#8b949e">
+                💬 Comment only
+              </button>
+            </div>
+          </div>
+        </details>` : ''}
+      </div>
+
       <!-- ── Piano roll diff ───────────────────────────────────────────── -->
       <div class="card" style="margin-bottom:24px">
         <h2 style="margin:0 0 12px;font-size:16px;color:#e6edf3">Piano Roll Comparison</h2>
@@ -521,6 +960,16 @@ async function load() {
           <code>${escHtml(fromBranch)}</code>, red = removed.
         </div>
         ${pianoRollSvg(fromBranch, toBranch)}
+      </div>
+
+      <!-- ── Collapsible musical diff panels (per commit) ────────────── -->
+      <div class="card" style="margin-bottom:24px">
+        <h2 style="margin:0 0 12px;font-size:16px;color:#e6edf3">Commit Musical Diffs</h2>
+        <p style="font-size:12px;color:#8b949e;margin:0 0 12px">
+          Similarity to <code style="font-size:11px">${escHtml(toBranch)}</code> and
+          emotional character shift for each commit on <code style="font-size:11px">${escHtml(fromBranch)}</code>.
+        </p>
+        <div id="commit-diff-panels"></div>
       </div>
 
       <!-- ── Audio A/B comparison ──────────────────────────────────────── -->
@@ -596,6 +1045,9 @@ async function load() {
       </div>`;
 
     loadReactions('pull_request', prId, 'pr-reactions');
+    loadReviewers();
+    loadPRLabels();
+    loadCommitDiffPanels(fromBranch, toBranch);
     await loadComments();
   } catch(e) {
     if (e.message !== 'auth')
@@ -652,6 +1104,33 @@ load();
   font-size: 11px;
   font-weight: 600;
 }
+
+/* ── PR sidebar grid (labels + milestone) ───────────────────────────────────── */
+.pr-sidebar-grid {
+  grid-template-columns: 1fr 240px;
+}
+@media (max-width: 720px) {
+  .pr-sidebar-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ── Reviewer chip states ────────────────────────────────────────────────────── */
+.reviewer-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px 4px 4px;
+  border-radius: var(--radius-full, 999px);
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-overlay);
+  font-size: 12px;
+  cursor: default;
+}
+
+/* ── Commit diff panels ──────────────────────────────────────────────────────── */
+#commit-diff-panels details > summary::-webkit-details-marker { display: none; }
+#commit-diff-panels details[open] > summary > span:last-child { transform: rotate(90deg); display: inline-block; }
 
 /* ── Comment threads ────────────────────────────────────────────────────────── */
 .comment-list {
