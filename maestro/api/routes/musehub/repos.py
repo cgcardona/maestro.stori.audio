@@ -29,19 +29,20 @@ import logging
 
 import yaml
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from maestro.auth.dependencies import TokenClaims, optional_token, require_valid_token
 from maestro.db import get_db
-from maestro.db import musehub_models as db_models
 from maestro.db import musehub_collaborator_models as collab_models
-from sqlalchemy import select
+from maestro.db import musehub_models as db_models
 from maestro.models.musehub import (
     ActivityFeedResponse,
     ArrangementMatrixResponse,
     BranchDetailListResponse,
     BranchListResponse,
+    CollaboratorAccessResponse,
     CommitDiffDimensionScore,
     CommitDiffSummaryResponse,
     CommitListResponse,
@@ -1531,6 +1532,69 @@ async def patch_repo_settings(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repo not found")
     await db.commit()
     return updated
+
+
+# ── Collaborator access-check — before owner/slug catch-all ──────────────────
+
+
+@router.get(
+    "/repos/{repo_id}/collaborators/{username}/permission",
+    response_model=CollaboratorAccessResponse,
+    operation_id="checkCollaboratorAccess",
+    summary="Check a user's effective permission level on a repo",
+    tags=["Repos"],
+)
+async def check_collaborator_access(
+    repo_id: str,
+    username: str,
+    db: AsyncSession = Depends(get_db),
+    _: TokenClaims = Depends(require_valid_token),
+) -> CollaboratorAccessResponse:
+    """Return the effective permission level for *username* on *repo_id*.
+
+    The repo owner's effective permission is always ``"owner"`` with
+    ``accepted_at: null`` (ownership is immediate, not via invitation).
+
+    If *username* is found in the accepted collaborator list, the row's
+    ``permission`` and ``accepted_at`` values are returned.
+
+    Raises 404 when *username* is neither the owner nor an accepted collaborator,
+    so callers can distinguish a known absence from a positive grant.
+
+    Auth: requires a valid JWT Bearer token.
+    """
+    repo = await musehub_repository.get_repo(db, repo_id)
+    if repo is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repo not found")
+
+    # Owner case: always returns "owner" permission immediately.
+    if username == repo.owner_user_id:
+        return CollaboratorAccessResponse(
+            username=username,
+            permission="owner",
+            accepted_at=None,
+        )
+
+    stmt = (
+        select(collab_models.MusehubCollaborator)
+        .where(
+            collab_models.MusehubCollaborator.repo_id == repo_id,
+            collab_models.MusehubCollaborator.user_id == username,
+        )
+    )
+    collab = (await db.execute(stmt)).scalar_one_or_none()
+
+    if collab is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"{username} is not a collaborator on this repo",
+        )
+
+    return CollaboratorAccessResponse(
+        username=username,
+        permission=str(collab.permission),
+        accepted_at=collab.accepted_at,
+    )
 
 
 # ── Owner/slug resolver — declared LAST to avoid shadowing /repos/... routes ──
