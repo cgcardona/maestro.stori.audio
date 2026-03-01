@@ -387,9 +387,14 @@ class IssueResponse(CamelModel):
 
 
 class IssueListResponse(CamelModel):
-    """List of issues for a repo."""
+    """Paginated list of issues for a repo.
+
+    ``total`` reflects the total number of matching issues before pagination.
+    Clients should use the RFC 8288 ``Link`` response header to navigate pages.
+    """
 
     issues: list[IssueResponse]
+    total: int = Field(0, ge=0, description="Total matching issues across all pages")
 
 
 # ── Musical context reference models ──────────────────────────────────────────
@@ -564,9 +569,14 @@ class PRResponse(CamelModel):
 
 
 class PRListResponse(CamelModel):
-    """List of pull requests for a repo."""
+    """Paginated list of pull requests for a repo.
+
+    ``total`` reflects the total number of matching PRs before pagination.
+    Clients should use the RFC 8288 ``Link`` response header to navigate pages.
+    """
 
     pull_requests: list[PRResponse]
+    total: int = Field(0, ge=0, description="Total matching pull requests across all pages")
 
 
 class PRMergeRequest(CamelModel):

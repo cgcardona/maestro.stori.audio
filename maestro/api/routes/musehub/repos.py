@@ -26,7 +26,8 @@ from __future__ import annotations
 import logging
 
 import yaml
-from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
+from maestro.api.routes.musehub.pagination import build_link_header, build_cursor_link_header
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -105,6 +106,8 @@ def _guard_visibility(repo: RepoResponse | None, claims: TokenClaims | None) -> 
     tags=["Repos"],
 )
 async def list_my_repos(
+    request: Request,
+    response: Response,
     limit: int = Query(20, ge=1, le=100, description="Max repos per page"),
     cursor: str | None = Query(None, description="Pagination cursor from a previous response"),
     db: AsyncSession = Depends(get_db),
@@ -116,10 +119,17 @@ async def list_my_repos(
     previous response as ``?cursor=`` to advance through subsequent pages.
     An absent ``nextCursor`` in the response means you have reached the last page.
 
+    When ``nextCursor`` is present the response also includes an RFC 8288
+    ``Link: <url>; rel="next"`` header so that machine clients can follow
+    pagination using standard HTTP link-following without inspecting the body.
+
     Auth: requires a valid JWT Bearer token.
     """
     user_id: str = claims.get("sub") or ""
-    return await musehub_repository.list_repos_for_user(db, user_id, limit=limit, cursor=cursor)
+    result = await musehub_repository.list_repos_for_user(db, user_id, limit=limit, cursor=cursor)
+    if result.next_cursor is not None:
+        response.headers["Link"] = build_cursor_link_header(request, result.next_cursor, limit)
+    return result
 
 
 @router.post(
@@ -253,6 +263,8 @@ async def list_branches_detail(
 )
 async def list_commits(
     repo_id: str,
+    request: Request,
+    response: Response,
     branch: str | None = Query(None, description="Filter by branch name"),
     limit: int = Query(50, ge=1, le=200, description="Max commits to return"),
     page: int = Query(1, ge=1, description="Page number (1-indexed, used with per_page)"),
@@ -265,6 +277,10 @@ async def list_commits(
     Supports two pagination modes:
     - Legacy: ``limit`` controls max rows returned, no offset.
     - Page-based: ``per_page`` > 0 enables page/per_page navigation; ``limit`` is ignored.
+
+    When using page-based mode (``per_page`` > 0) the response includes an
+    RFC 8288 ``Link`` header with ``rel="first"``, ``rel="last"``, ``rel="prev"``,
+    and ``rel="next"`` links for machine-navigable pagination.
     """
     repo = await musehub_repository.get_repo(db, repo_id)
     _guard_visibility(repo, claims)
@@ -273,6 +289,8 @@ async def list_commits(
     commits, total = await musehub_repository.list_commits(
         db, repo_id, branch=branch, limit=effective_limit, offset=offset
     )
+    if per_page > 0:
+        response.headers["Link"] = build_link_header(request, total, page, per_page)
     return CommitListResponse(commits=commits, total=total)
 
 
