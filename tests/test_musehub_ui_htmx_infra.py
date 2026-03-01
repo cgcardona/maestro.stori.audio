@@ -25,7 +25,7 @@ from __future__ import annotations
 
 import pytest
 from httpx import AsyncClient
-from starlette.testclient import TestClient
+from starlette.requests import Request
 
 from maestro.api.routes.musehub.htmx_helpers import is_htmx, is_htmx_boosted
 from maestro.main import app
@@ -105,11 +105,8 @@ async def test_musehub_js_has_htmx_after_swap_hook(client: AsyncClient) -> None:
 # ---------------------------------------------------------------------------
 
 
-def _make_request(headers: dict[str, str]) -> object:
-    """Return a minimal Request-like object for unit testing helpers."""
-    from starlette.requests import Request
-    from starlette.datastructures import Headers
-
+def _make_request(headers: dict[str, str]) -> Request:
+    """Return a minimal Starlette Request for unit testing header-inspection helpers."""
     scope = {
         "type": "http",
         "method": "GET",
@@ -123,22 +120,22 @@ def _make_request(headers: dict[str, str]) -> object:
 def test_is_htmx_helper_true() -> None:
     """is_htmx() returns True when HX-Request: true header is present."""
     req = _make_request({"HX-Request": "true"})
-    assert is_htmx(req) is True  # type: ignore[arg-type]
+    assert is_htmx(req) is True
 
 
 def test_is_htmx_helper_false() -> None:
     """is_htmx() returns False when HX-Request header is absent."""
     req = _make_request({})
-    assert is_htmx(req) is False  # type: ignore[arg-type]
+    assert is_htmx(req) is False
 
 
 def test_is_htmx_boosted_helper_true() -> None:
     """is_htmx_boosted() returns True when HX-Boosted: true header is present."""
     req = _make_request({"HX-Boosted": "true"})
-    assert is_htmx_boosted(req) is True  # type: ignore[arg-type]
+    assert is_htmx_boosted(req) is True
 
 
 def test_is_htmx_boosted_helper_false() -> None:
     """is_htmx_boosted() returns False when HX-Boosted header is absent."""
     req = _make_request({})
-    assert is_htmx_boosted(req) is False  # type: ignore[arg-type]
+    assert is_htmx_boosted(req) is False
