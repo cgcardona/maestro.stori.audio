@@ -2076,3 +2076,53 @@ class RenderStatusResponse(CamelModel):
         default=None,
         description="Error details when status is 'failed'; null otherwise",
     )
+
+
+# ── Blame models ────────────────────────────────────────────────────────────
+
+
+class BlameEntry(CamelModel):
+    """A single blame annotation entry attributing a note event to a commit.
+
+    Each entry maps a note (identified by pitch, track, and beat range) to the
+    commit that last introduced or modified it.  When filtering by ``track`` or
+    ``beat_start``/``beat_end``, only entries within the specified scope are
+    returned.
+
+    Consumers (e.g. the blame UI page) use ``commit_id`` to deep-link to the
+    commit detail view and ``author`` / ``timestamp`` to display inline
+    attribution labels on the piano roll.
+    """
+
+    commit_id: str = Field(..., description="ID of the commit that last modified this note")
+    commit_message: str = Field(..., description="Commit message from the attributing commit")
+    author: str = Field(..., description="Display name or identifier of the commit author")
+    timestamp: datetime = Field(..., description="UTC timestamp of the attributing commit")
+    beat_start: float = Field(..., description="Start position of the note in quarter-note beats")
+    beat_end: float = Field(..., description="End position of the note in quarter-note beats")
+    track: str = Field(..., description="Instrument track name this note belongs to")
+    note_pitch: int = Field(..., description="MIDI pitch value (0–127)")
+    note_velocity: int = Field(..., description="MIDI velocity (0–127)")
+    note_duration_beats: float = Field(..., description="Duration of the note in quarter-note beats")
+
+
+class BlameResponse(CamelModel):
+    """Response envelope for the blame API.
+
+    ``entries`` is the list of blame annotations, each attributing a note to the
+    commit that last modified it.  ``total_entries`` reflects the total number of
+    matching entries before any client-side pagination.
+
+    When no matching notes are found (e.g. the path does not exist at ``ref``
+    or the track/beat filters exclude all notes), ``entries`` is empty and
+    ``total_entries`` is 0 — the endpoint never returns 404 for an empty result.
+    """
+
+    entries: list[BlameEntry] = Field(
+        default_factory=list,
+        description="Blame annotations, each attributing a note to its last-modifying commit",
+    )
+    total_entries: int = Field(
+        default=0,
+        description="Total number of blame entries in the response",
+    )
