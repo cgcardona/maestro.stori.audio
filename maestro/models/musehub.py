@@ -1544,6 +1544,59 @@ class ActivityFeedResponse(CamelModel):
     event_type_filter: str | None = None
 
 
+# ── User public activity feed models ─────────────────────────────────────────
+
+
+class UserActivityEventItem(CamelModel):
+    """A single event in a user's public activity feed.
+
+    Uses the public API type vocabulary (push, pull_request, issue, release)
+    rather than the internal DB event_type vocabulary (commit_pushed, pr_opened, …).
+    ``repo`` is the human-readable "{owner}/{slug}" identifier for deep-linking
+    to the repo page without exposing internal repo_id UUIDs.
+    ``payload`` carries event-specific structured data (e.g. branch name and
+    head commit message for push events, PR number and title for pull_request events).
+    """
+
+    id: str = Field(..., description="Internal UUID for this event")
+    type: str = Field(
+        ...,
+        description="Public event type: push | pull_request | issue | release | push",
+    )
+    actor: str = Field(..., description="Username who triggered the event")
+    repo: str = Field(..., description="Repo identifier as '{owner}/{slug}'")
+    payload: dict[str, object] = Field(
+        default_factory=dict,
+        description="Event-specific structured data for deep-link rendering",
+    )
+    created_at: datetime = Field(..., description="Event creation timestamp (ISO-8601 UTC)")
+
+
+class UserActivityFeedResponse(CamelModel):
+    """Cursor-paginated public activity feed for a Muse Hub user (newest-first).
+
+    ``events`` contains up to ``limit`` events for the given user, filtered to
+    public repos only (or all repos when the caller is the profile owner).
+    ``next_cursor`` is the event UUID to pass as ``before_id`` in the next
+    request to fetch the subsequent page; None when there are no more events.
+    ``type_filter`` echoes back the ``type`` query param, or None when all types
+    are shown.
+
+    Agent use case: stream this feed to build a real-time view of what a
+    collaborator has been working on across all their public repos.
+    """
+
+    events: list[UserActivityEventItem]
+    next_cursor: str | None = Field(
+        None,
+        description="Pass as before_id to fetch the next page; None on the last page",
+    )
+    type_filter: str | None = Field(
+        None,
+        description="Active type filter value, or None when all types are shown",
+    )
+
+
 class SimilarCommitResponse(CamelModel):
     """A single result from a MuseHub semantic similarity search.
 
@@ -2075,4 +2128,54 @@ class RenderStatusResponse(CamelModel):
     error_message: str | None = Field(
         default=None,
         description="Error details when status is 'failed'; null otherwise",
+    )
+
+
+# ── Blame models ────────────────────────────────────────────────────────────
+
+
+class BlameEntry(CamelModel):
+    """A single blame annotation entry attributing a note event to a commit.
+
+    Each entry maps a note (identified by pitch, track, and beat range) to the
+    commit that last introduced or modified it.  When filtering by ``track`` or
+    ``beat_start``/``beat_end``, only entries within the specified scope are
+    returned.
+
+    Consumers (e.g. the blame UI page) use ``commit_id`` to deep-link to the
+    commit detail view and ``author`` / ``timestamp`` to display inline
+    attribution labels on the piano roll.
+    """
+
+    commit_id: str = Field(..., description="ID of the commit that last modified this note")
+    commit_message: str = Field(..., description="Commit message from the attributing commit")
+    author: str = Field(..., description="Display name or identifier of the commit author")
+    timestamp: datetime = Field(..., description="UTC timestamp of the attributing commit")
+    beat_start: float = Field(..., description="Start position of the note in quarter-note beats")
+    beat_end: float = Field(..., description="End position of the note in quarter-note beats")
+    track: str = Field(..., description="Instrument track name this note belongs to")
+    note_pitch: int = Field(..., description="MIDI pitch value (0–127)")
+    note_velocity: int = Field(..., description="MIDI velocity (0–127)")
+    note_duration_beats: float = Field(..., description="Duration of the note in quarter-note beats")
+
+
+class BlameResponse(CamelModel):
+    """Response envelope for the blame API.
+
+    ``entries`` is the list of blame annotations, each attributing a note to the
+    commit that last modified it.  ``total_entries`` reflects the total number of
+    matching entries before any client-side pagination.
+
+    When no matching notes are found (e.g. the path does not exist at ``ref``
+    or the track/beat filters exclude all notes), ``entries`` is empty and
+    ``total_entries`` is 0 — the endpoint never returns 404 for an empty result.
+    """
+
+    entries: list[BlameEntry] = Field(
+        default_factory=list,
+        description="Blame annotations, each attributing a note to its last-modifying commit",
+    )
+    total_entries: int = Field(
+        default=0,
+        description="Total number of blame entries in the response",
     )
