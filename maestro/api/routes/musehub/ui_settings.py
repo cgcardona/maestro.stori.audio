@@ -23,8 +23,11 @@ Auth contract:
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 
-from fastapi import APIRouter, Depends, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import status as http_status
+from fastapi.templating import Jinja2Templates
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.responses import Response
 
@@ -36,9 +39,6 @@ from maestro.services import musehub_repository
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/musehub/ui", tags=["musehub-ui-settings"])
-
-from pathlib import Path
-from fastapi.templating import Jinja2Templates
 
 _TEMPLATE_DIR = Path(__file__).parent.parent.parent.parent / "templates"
 _templates = Jinja2Templates(directory=str(_TEMPLATE_DIR))
@@ -95,8 +95,6 @@ async def settings_page(
     """
     row = await musehub_repository.get_repo_orm_by_owner_slug(db, owner, repo_slug)
     if row is None:
-        from fastapi import HTTPException
-        from fastapi import status as http_status
         raise HTTPException(
             status_code=http_status.HTTP_404_NOT_FOUND,
             detail=f"Repo '{owner}/{repo_slug}' not found",
