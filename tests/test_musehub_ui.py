@@ -927,12 +927,28 @@ async def test_diff_api_affected_sections_populated_from_commit_message(
     from maestro.db.musehub_models import MusehubBranch, MusehubCommit, MusehubPullRequest
 
     repo_id = await _make_repo(db_session)
+    # main branch needs at least one commit for compute_hub_divergence to succeed
+    main_commit_id = uuid.uuid4().hex
+    main_commit = MusehubCommit(
+        commit_id=main_commit_id,
+        repo_id=repo_id,
+        branch="main",
+        parent_ids=[],
+        message="Initial composition",
+        author="musician",
+        timestamp=datetime.now(tz=timezone.utc),
+    )
+    main_branch = MusehubBranch(
+        repo_id=repo_id,
+        name="main",
+        head_commit_id=main_commit_id,
+    )
     commit_id = uuid.uuid4().hex
     commit = MusehubCommit(
         commit_id=commit_id,
         repo_id=repo_id,
         branch="feat/chorus-rework",
-        parent_ids=[],
+        parent_ids=[main_commit_id],
         message="Rewrite the chorus to be more energetic and add new bridge",
         author="musician",
         timestamp=datetime.now(tz=timezone.utc),
@@ -953,7 +969,7 @@ async def test_diff_api_affected_sections_populated_from_commit_message(
         to_branch="main",
         author="musician",
     )
-    db_session.add_all([commit, branch, pr])
+    db_session.add_all([main_commit, main_branch, commit, branch, pr])
     await db_session.commit()
 
     response = await client.get(
@@ -981,12 +997,28 @@ async def test_ui_diff_json_affected_sections_from_commit_message(
     from maestro.db.musehub_models import MusehubBranch, MusehubCommit, MusehubPullRequest
 
     repo_id = await _make_repo(db_session)
+    # main branch needs at least one commit for compute_hub_divergence to succeed
+    main_commit_id = uuid.uuid4().hex
+    main_commit = MusehubCommit(
+        commit_id=main_commit_id,
+        repo_id=repo_id,
+        branch="main",
+        parent_ids=[],
+        message="Initial composition",
+        author="musician",
+        timestamp=datetime.now(tz=timezone.utc),
+    )
+    main_branch = MusehubBranch(
+        repo_id=repo_id,
+        name="main",
+        head_commit_id=main_commit_id,
+    )
     commit_id = uuid.uuid4().hex
     commit = MusehubCommit(
         commit_id=commit_id,
         repo_id=repo_id,
         branch="feat/verse-update",
-        parent_ids=[],
+        parent_ids=[main_commit_id],
         message="Extend verse 2 with new melodic motif",
         author="musician",
         timestamp=datetime.now(tz=timezone.utc),
@@ -1007,7 +1039,7 @@ async def test_ui_diff_json_affected_sections_from_commit_message(
         to_branch="main",
         author="musician",
     )
-    db_session.add_all([commit, branch, pr])
+    db_session.add_all([main_commit, main_branch, commit, branch, pr])
     await db_session.commit()
 
     response = await client.get(
