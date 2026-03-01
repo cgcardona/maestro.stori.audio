@@ -160,35 +160,33 @@ async def _list_stash_items(
     )
     total: int = count_row.scalar_one()
 
+    # Single query with LEFT JOIN to avoid N+1 COUNT queries per stash entry.
     rows_result = await db.execute(
         text(
-            "SELECT id, message, branch, created_at "
-            "FROM musehub_stash "
-            "WHERE repo_id = :repo_id AND user_id = :user_id "
-            "ORDER BY created_at DESC "
+            "SELECT s.id, s.message, s.branch, s.created_at, "
+            "COUNT(e.id) AS entry_count "
+            "FROM musehub_stash s "
+            "LEFT JOIN musehub_stash_entries e ON e.stash_id = s.id "
+            "WHERE s.repo_id = :repo_id AND s.user_id = :user_id "
+            "GROUP BY s.id, s.message, s.branch, s.created_at "
+            "ORDER BY s.created_at DESC "
             "LIMIT :limit OFFSET :offset"
         ),
         {"repo_id": repo_id, "user_id": user_id, "limit": page_size, "offset": offset},
     )
     rows = rows_result.mappings().all()
 
-    items: list[StashItem] = []
-    for idx, row in enumerate(rows):
-        entry_count_row = await db.execute(
-            text("SELECT COUNT(*) FROM musehub_stash_entries WHERE stash_id = :sid"),
-            {"sid": str(row["id"])},
+    items: list[StashItem] = [
+        StashItem(
+            id=str(row["id"]),
+            ref=f"stash@{{{offset + idx}}}",
+            branch=row["branch"],
+            message=row["message"],
+            created_at=row["created_at"],
+            entry_count=int(row["entry_count"]),
         )
-        entry_count: int = entry_count_row.scalar_one()
-        items.append(
-            StashItem(
-                id=str(row["id"]),
-                ref=f"stash@{{{offset + idx}}}",
-                branch=row["branch"],
-                message=row["message"],
-                created_at=row["created_at"],
-                entry_count=entry_count,
-            )
-        )
+        for idx, row in enumerate(rows)
+    ]
     return items, total
 
 
