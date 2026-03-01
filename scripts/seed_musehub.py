@@ -79,7 +79,7 @@ def _uid(seed: str) -> str:
 # Constants — stable IDs so URLs never change between re-seeds
 # ---------------------------------------------------------------------------
 
-# Users
+# Users — original community
 GABRIEL  = "user-gabriel-001"
 SOFIA    = "user-sofia-002"
 MARCUS   = "user-marcus-003"
@@ -100,7 +100,27 @@ USERS = [
     (PIERRE,  "pierre",  "French chanson meets minimalism. Piano, cello, and long silences."),
 ]
 
-# Repos
+# Users — historical composers and licensed artists (batch-13)
+BACH          = "user-bach-000000009"
+CHOPIN        = "user-chopin-00000010"
+SCOTT_JOPLIN  = "user-sjoplin-0000011"
+KEVIN_MACLEOD = "user-kmacleod-000012"
+KAI_ENGEL     = "user-kaiengl-000013"
+
+COMPOSER_USERS = [
+    (BACH,          "bach",          "Johann Sebastian Bach (1685-1750). Baroque counterpoint, fugue, and harmony. Archive upload by Stori community."),
+    (CHOPIN,        "chopin",        "Frédéric Chopin (1810-1849). Romantic piano. Nocturnes, études, ballades. Archive upload by Stori community."),
+    (SCOTT_JOPLIN,  "scott_joplin",  "Scott Joplin (1868-1917). King of Ragtime. Maple Leaf Rag, The Entertainer. Archive upload by Stori community."),
+    (KEVIN_MACLEOD, "kevin_macleod", "Kevin MacLeod. Cinematic, orchestral, ambient. Thousands of royalty-free compositions. incompetech.com."),
+    (KAI_ENGEL,     "kai_engel",     "Kai Engel. Ambient, neoclassical, cinematic. Delicate textures and patient melodies. Free Music Archive."),
+]
+
+# All contributors for community-collab cycling (8 existing users)
+ALL_CONTRIBUTORS = [
+    "gabriel", "sofia", "marcus", "yuki", "aaliya", "chen", "fatou", "pierre",
+]
+
+# Repos — original community projects
 REPO_NEO_SOUL     = "repo-neo-soul-00000001"
 REPO_MODAL_JAZZ   = "repo-modal-jazz-000001"
 REPO_AMBIENT      = "repo-ambient-textures-1"
@@ -113,6 +133,20 @@ REPO_FUNK_SUITE   = "repo-funk-suite-0000001"
 REPO_JAZZ_TRIO    = "repo-jazz-trio-0000001"
 REPO_NEO_SOUL_FORK = "repo-neo-soul-fork-0001"
 REPO_AMBIENT_FORK  = "repo-ambient-fork-0001"
+
+# Repos — 12 genre archive repos (batch-13)
+REPO_WTC          = "repo-well-tempered-cl01"  # bach/well-tempered-clavier
+REPO_GOLDBERG     = "repo-goldberg-vars00001"  # bach/goldberg-variations
+REPO_NOCTURNES    = "repo-chopin-nocturnes01"  # chopin/nocturnes
+REPO_MAPLE_LEAF   = "repo-maple-leaf-rag0001"  # scott_joplin/maple-leaf-rag
+REPO_CIN_STRINGS  = "repo-cinematic-strngs01"  # kevin_macleod/cinematic-strings
+REPO_KAI_AMBIENT  = "repo-kai-ambient-txtr01"  # kai_engel/ambient-textures
+REPO_NEO_BAROQUE  = "repo-neo-baroque-000001"  # gabriel/neo-baroque
+REPO_JAZZ_CHOPIN  = "repo-jazz-chopin-000001"  # aaliya/jazz-chopin
+REPO_RAGTIME_EDM  = "repo-ragtime-edm-000001"  # marcus/ragtime-edm
+REPO_FILM_SCORE   = "repo-film-score-000001"   # chen/film-score
+REPO_POLYRHYTHM   = "repo-polyrhythm-000001"   # fatou/polyrhythm
+REPO_COMMUNITY    = "repo-community-collab01"  # gabriel/community-collab
 
 REPOS: list[dict[str, Any]] = [
     dict(repo_id=REPO_NEO_SOUL, name="Neo-Soul Experiment", owner="gabriel", slug="neo-soul-experiment",
@@ -176,6 +210,73 @@ REPOS: list[dict[str, Any]] = [
          description="Fork of sofia/ambient-textures-vol-1 — Yuki's granular re-imagining.",
          tags=["ambient", "granular", "fork"],
          key_signature="Eb major", tempo_bpm=60, days_ago=5, star_count=0, fork_count=0),
+]
+
+# Genre archive repos — batch-13 additions with structured muse_tags
+GENRE_REPOS: list[dict[str, Any]] = [
+    dict(repo_id=REPO_WTC, name="The Well-Tempered Clavier", owner="bach", slug="well-tempered-clavier",
+         owner_user_id=BACH, visibility="public",
+         description="Bach's 48 preludes and fugues — one in each major and minor key. The definitive study in tonal harmony.",
+         tags=["genre:baroque", "key:C", "key:Am", "key:G", "key:F", "key:Bb", "stage:released", "emotion:serene", "emotion:complex"],
+         key_signature="C major (all 24 keys)", tempo_bpm=72, days_ago=365, star_count=88, fork_count=12),
+    dict(repo_id=REPO_GOLDBERG, name="Goldberg Variations", owner="bach", slug="goldberg-variations",
+         owner_user_id=BACH, visibility="public",
+         description="Aria with 30 variations. Bach's monumental keyboard work — from simple canon to ornate arabesque.",
+         tags=["genre:baroque", "stage:released", "emotion:joyful", "emotion:melancholic", "key:G"],
+         key_signature="G major", tempo_bpm=60, days_ago=350, star_count=74, fork_count=9),
+    dict(repo_id=REPO_NOCTURNES, name="Nocturnes", owner="chopin", slug="nocturnes",
+         owner_user_id=CHOPIN, visibility="public",
+         description="21 nocturnes for solo piano — poetry in sound. Lyrical melodies over arpeggiated left-hand accompaniment.",
+         tags=["genre:romantic", "emotion:melancholic", "emotion:tender", "stage:released", "key:Bb", "key:Eb"],
+         key_signature="Bb minor", tempo_bpm=58, days_ago=300, star_count=62, fork_count=8),
+    dict(repo_id=REPO_MAPLE_LEAF, name="Maple Leaf Rag", owner="scott_joplin", slug="maple-leaf-rag",
+         owner_user_id=SCOTT_JOPLIN, visibility="public",
+         description="The rag that launched a revolution. Syncopated right-hand melody over an oom-pah bass. The birth of ragtime.",
+         tags=["genre:ragtime", "emotion:playful", "stage:released", "key:Ab", "tempo:march"],
+         key_signature="Ab major", tempo_bpm=100, days_ago=280, star_count=51, fork_count=7),
+    dict(repo_id=REPO_CIN_STRINGS, name="Cinematic Strings", owner="kevin_macleod", slug="cinematic-strings",
+         owner_user_id=KEVIN_MACLEOD, visibility="public",
+         description="Orchestral string textures for cinematic use. Builds from delicate pianissimo to full tutti climax.",
+         tags=["genre:cinematic", "emotion:triumphant", "stage:released", "tempo:adagio", "key:D"],
+         key_signature="D minor", tempo_bpm=64, days_ago=180, star_count=43, fork_count=5),
+    dict(repo_id=REPO_KAI_AMBIENT, name="Ambient Textures", owner="kai_engel", slug="ambient-textures",
+         owner_user_id=KAI_ENGEL, visibility="public",
+         description="Patient, breathing soundscapes. Piano, strings, and silence woven into evolving ambient fields.",
+         tags=["genre:ambient", "emotion:serene", "stage:released", "tempo:largo", "key:C"],
+         key_signature="C major", tempo_bpm=50, days_ago=150, star_count=38, fork_count=4),
+    dict(repo_id=REPO_NEO_BAROQUE, name="Neo-Baroque Studies", owner="gabriel", slug="neo-baroque",
+         owner_user_id=GABRIEL, visibility="public",
+         description="What if Bach wrote jazz? Modal harmony and quartal voicings dressed in baroque counterpoint.",
+         tags=["genre:baroque", "genre:jazz", "stage:rough-mix", "emotion:complex", "ref:bach", "key:D"],
+         key_signature="D Dorian", tempo_bpm=84, days_ago=120, star_count=29, fork_count=3),
+    dict(repo_id=REPO_JAZZ_CHOPIN, name="Jazz Chopin", owner="aaliya", slug="jazz-chopin",
+         owner_user_id=AALIYA, visibility="public",
+         description="Chopin nocturnes reharmonized through a Coltrane lens. Rootless voicings, tritone substitutions, and more.",
+         tags=["genre:jazz", "genre:romantic", "emotion:tender", "ref:chopin", "ref:coltrane", "stage:mixing"],
+         key_signature="Bb minor", tempo_bpm=68, days_ago=90, star_count=34, fork_count=4),
+    dict(repo_id=REPO_RAGTIME_EDM, name="Ragtime EDM", owner="marcus", slug="ragtime-edm",
+         owner_user_id=MARCUS, visibility="public",
+         description="Scott Joplin meets the dancefloor. Syncopated MIDI melodies over trap hi-hats and house kick patterns.",
+         tags=["genre:edm", "genre:ragtime", "stage:production", "emotion:playful", "tempo:dance"],
+         key_signature="Ab major", tempo_bpm=128, days_ago=70, star_count=26, fork_count=3),
+    dict(repo_id=REPO_FILM_SCORE, name="Film Score — Untitled", owner="chen", slug="film-score",
+         owner_user_id=CHEN, visibility="public",
+         description="Three-act cinematic score. Microtonal tension in Act I, spectral climax in Act II, resolution in Act III.",
+         tags=["genre:cinematic", "emotion:tense", "emotion:triumphant", "stage:mixing", "key:C"],
+         key_signature="C (31-TET)", tempo_bpm=72, days_ago=55, star_count=18, fork_count=2),
+    dict(repo_id=REPO_POLYRHYTHM, name="Polyrhythm Studies", owner="fatou", slug="polyrhythm",
+         owner_user_id=FATOU, visibility="public",
+         description="West African rhythmic philosophy through a modular lens. 7-over-4, 5-over-3, and beyond.",
+         tags=["genre:afrobeats", "emotion:playful", "emotion:energetic", "stage:rough-mix", "tempo:polyrhythm"],
+         key_signature="A minor", tempo_bpm=92, days_ago=35, star_count=21, fork_count=2),
+    dict(repo_id=REPO_COMMUNITY, name="Community Collab", owner="gabriel", slug="community-collab",
+         owner_user_id=GABRIEL, visibility="public",
+         description="An open canvas for all eight contributors. Every genre, every voice, one evolving composition.",
+         tags=["genre:baroque", "genre:jazz", "genre:romantic", "genre:ragtime", "genre:cinematic",
+               "genre:ambient", "genre:edm", "genre:afrobeats", "emotion:serene", "emotion:complex",
+               "emotion:joyful", "emotion:melancholic", "emotion:tender", "emotion:playful",
+               "emotion:energetic", "emotion:triumphant", "emotion:tense", "stage:rough-mix"],
+         key_signature="C major", tempo_bpm=90, days_ago=200, star_count=95, fork_count=15),
 ]
 
 
@@ -372,6 +473,270 @@ def _make_commits(repo_id: str, repo_key: str, n: int) -> list[dict[str, Any]]:
             ("fix(drums): remove extraneous kick note on bar 9", "marcus"),
             ("feat(piano): final cadenza — rubato", "marcus"),
         ],
+        # Genre archive repos — batch-13
+        "wtc": [
+            ("init: Book I — Prelude No.1 in C major — arpeggiated harmony", "gabriel"),
+            ("feat(fugue): Fugue No.1 in C major — 4-voice exposition", "gabriel"),
+            ("feat(prelude): Prelude No.2 in C minor — perpetual motion 16ths", "sofia"),
+            ("feat(fugue): Fugue No.2 in C minor — chromatic subject", "gabriel"),
+            ("feat(prelude): Prelude No.3 in C# major — arpeggiated texture", "chen"),
+            ("feat(fugue): Fugue No.3 in C# major — 3-voice stretto", "gabriel"),
+            ("refactor(harmony): correct spelling of diminished 7th in bar 8", "pierre"),
+            ("feat(prelude): Prelude No.4 in C# minor — lyrical melody", "gabriel"),
+            ("feat(fugue): Fugue No.4 in C# minor — 5-voice exposition", "sofia"),
+            ("feat(prelude): Prelude No.5 in D major — driving 16th notes", "gabriel"),
+            ("feat(fugue): Fugue No.5 in D major — invertible counterpoint", "chen"),
+            ("fix(voice-leading): resolve parallel 5ths in C major fugue bar 14", "gabriel"),
+            ("feat(prelude): Prelude No.6 in D minor — expressive chromatics", "pierre"),
+            ("feat(fugue): Fugue No.6 in D minor — augmentation in bass", "gabriel"),
+            ("feat(prelude): Prelude No.7 in Eb major — ornate passagework", "sofia"),
+            ("feat(fugue): Fugue No.7 in Eb major — inversion of subject", "gabriel"),
+            ("refactor(ornamentation): add trills per Baroque convention — bars 1-4", "chen"),
+            ("feat(prelude): Prelude No.8 in Eb minor — chromatic descent", "gabriel"),
+            ("feat(fugue): Fugue No.8 in Eb minor — 3-voice with episode", "pierre"),
+            ("feat(prelude): Prelude No.9 in E major — binary form", "gabriel"),
+            ("feat(fugue): Fugue No.9 in E major — motivic development", "sofia"),
+            ("fix(tuning): retune to equal temperament from well-temperament", "chen"),
+            ("feat(prelude): Prelude No.10 in E minor — two-part invention style", "gabriel"),
+            ("feat(fugue): Fugue No.10 in E minor — rhythmic diminution", "gabriel"),
+            ("feat(book2): Book II — Prelude No.1 in C major — extended version", "sofia"),
+            ("feat(book2): Fugue No.1 BK2 in C major — 4-voice with tonal answer", "gabriel"),
+            ("feat(book2): Prelude No.2 BK2 in C minor — turbulent arpeggios", "pierre"),
+            ("feat(book2): Fugue No.2 BK2 — chromatic subject, 4 voices", "gabriel"),
+            ("refactor(dynamics): add hairpin dynamics per Urtext edition", "sofia"),
+            ("feat(book2): Prelude No.3 BK2 in C# major — serene cantabile", "gabriel"),
+        ],
+        "goldberg": [
+            ("init: Goldberg Aria — sarabande in G major, ornate upper voice", "gabriel"),
+            ("feat(var1): Variation 1 — two-voice in parallel 3rds", "gabriel"),
+            ("feat(var2): Variation 2 — one voice per hand, canonic imitation", "sofia"),
+            ("feat(var3): Variation 3 — canon at the unison", "gabriel"),
+            ("feat(var4): Variation 4 — robust 4-voice passepied", "pierre"),
+            ("feat(var5): Variation 5 — hand-crossing, one voice each hand", "gabriel"),
+            ("feat(var6): Variation 6 — canon at the second", "sofia"),
+            ("feat(var7): Variation 7 — gigue in 6/8, dance character", "gabriel"),
+            ("feat(var8): Variation 8 — two-voice inversion in 3rds and 6ths", "chen"),
+            ("feat(var13): Variation 13 — lyrical aria-like melody, experimental rubato", "gabriel"),
+            ("fix(ornaments): correct trill resolution in Variation 13 bar 9", "sofia"),
+            ("feat(var25): Variation 25 — chromatic aria, the emotional heart", "gabriel"),
+            ("feat(var30): Variation 30 — Quodlibet, quotes folk songs", "gabriel"),
+            ("feat(aria-reprise): Aria da capo — return of opening theme", "pierre"),
+            ("refactor(voicing): ensure aria melody sits above all inner voices", "gabriel"),
+            ("fix(voice-leading): remove parallel octaves in Variation 4 bar 12", "sofia"),
+            ("refactor(tempo): apply consistent note values in 3/4 Variations", "gabriel"),
+            ("feat(var21): Variation 21 — chromatic canon at the 7th", "chen"),
+        ],
+        "nocturnes": [
+            ("init: Op.9 No.1 in Bb minor — gentle arpeggiated bass, yearning melody", "aaliya"),
+            ("feat(op9-2): Op.9 No.2 in Eb major — the iconic theme, ornate reprise", "aaliya"),
+            ("feat(op9-3): Op.9 No.3 in B major — agitated middle section", "gabriel"),
+            ("feat(op15-1): Op.15 No.1 in F major — pastoral melody, stormy development", "aaliya"),
+            ("feat(op15-2): Op.15 No.2 in F# major — murmuring bass, cantabile melody", "sofia"),
+            ("feat(op15-3): Op.15 No.3 in G minor — solemn choral opening", "aaliya"),
+            ("feat(op27-1): Op.27 No.1 in C# minor — tragic opening, ecstatic climax", "gabriel"),
+            ("feat(op27-2): Op.27 No.2 in Db major — sustained melody, ornate inner voice", "aaliya"),
+            ("refactor(rubato): add tempo fluctuation markings per Chopin's own notation", "pierre"),
+            ("fix(pedaling): correct sustain pedal placement in Op.9 No.2 bar 5", "aaliya"),
+            ("feat(op32-1): Op.32 No.1 in B major — introspective, questioning end", "sofia"),
+            ("feat(op32-2): Op.32 No.2 in Ab major — gentle but harmonically complex", "aaliya"),
+            ("feat(op37-1): Op.37 No.1 in G minor — chorale-like, organistic", "gabriel"),
+            ("feat(op37-2): Op.37 No.2 in G major — barcarolle-style 6/8", "aaliya"),
+            ("refactor(ornamentation): add mordents and grace notes per autograph", "sofia"),
+            ("fix(voice-leading): eliminate voice crossing in Op.15 No.3 bar 7", "aaliya"),
+            ("feat(op48-1): Op.48 No.1 in C minor — grand and tragic", "gabriel"),
+            ("feat(op48-2): Op.48 No.2 in F# minor — agitated and restless", "aaliya"),
+            ("feat(op55-1): Op.55 No.1 in F minor — melancholic cantabile", "sofia"),
+            ("feat(op55-2): Op.55 No.2 in Eb major — flowing, conversational", "aaliya"),
+            ("feat(op62-1): Op.62 No.1 in B major — late style, fragmented ornament", "gabriel"),
+            ("feat(op62-2): Op.62 No.2 in E major — tender farewell, inner voices", "aaliya"),
+        ],
+        "maple-leaf": [
+            ("init: Maple Leaf Rag in Ab major — 4/4 at 100 BPM", "marcus"),
+            ("feat(A): Section A — syncopated melody over oom-pah bass, bars 1-16", "marcus"),
+            ("feat(A-repeat): Section A repeat with octave doubling in melody", "gabriel"),
+            ("feat(B): Section B — contrast, moves to Eb major", "marcus"),
+            ("feat(B-repeat): Section B repeat — velocity humanized", "marcus"),
+            ("feat(C): Section C (trio) — moves to Db major, more lyrical", "marcus"),
+            ("feat(C-repeat): Section C repeat with improvised embellishment", "gabriel"),
+            ("feat(D): Section D — returns to Ab, triumphant restatement", "marcus"),
+            ("refactor(bass): tighten oom-pah bass timing — was 8ms ahead", "marcus"),
+            ("fix(melody): correct grace note in bar 9 — was wrong pitch Eb not D", "gabriel"),
+            ("feat(slow): slow-version — halftime feel, rubato allowed", "marcus"),
+            ("feat(slow): slow-version extended ornaments in melody", "gabriel"),
+            ("feat(edm): marcus-edm-remix — trap hi-hats under ragtime melody", "marcus"),
+            ("feat(edm): marcus-edm-remix — 808 bass replacing oom-pah pattern", "marcus"),
+        ],
+        "cinematic-strings": [
+            ("init: Cinematic Strings in D minor — string orchestra at 64 BPM", "gabriel"),
+            ("feat(intro): solo cello theme — bars 1-8 — pp, col arco", "chen"),
+            ("feat(build): violas enter — pizzicato counter-rhythm, bars 9-16", "gabriel"),
+            ("feat(build): second violins add sustained harmonic pad", "sofia"),
+            ("feat(climax): full orchestra tutti — bars 33-40 — ff", "gabriel"),
+            ("feat(climax): timpani and brass reinforcement at climax peak", "chen"),
+            ("feat(resolution): strings return to solo cello — reprise of theme", "gabriel"),
+            ("refactor(dynamics): smooth crescendo from pp to ff over 32 bars", "sofia"),
+            ("fix(intonation): retune violin II section — was sharp by 5 cents", "gabriel"),
+            ("feat(orchestral): orchestral branch — add oboe and clarinet doubling", "chen"),
+            ("feat(orchestral): French horn countermelody in orchestral version", "gabriel"),
+            ("feat(piano): stripped-piano branch — piano reduction of string score", "pierre"),
+            ("feat(piano): add pedal markings to piano reduction", "sofia"),
+            ("refactor(tempo): add ritardando at bar 38 for dramatic pause", "gabriel"),
+            ("fix(articulation): add sul ponticello marking to Variation 2 strings", "chen"),
+        ],
+        "kai-ambient": [
+            ("init: Kai Engel ambient field — C major, slow morphing pad", "pierre"),
+            ("feat(pad1): first layer — high strings, ppp, infinite sustain", "pierre"),
+            ("feat(pad2): second pad — piano harmonics, prepared technique", "sofia"),
+            ("feat(piano): sparse piano melody — whole notes, bars 9-24", "pierre"),
+            ("feat(v1): v1 branch — original release version, 8-minute version", "pierre"),
+            ("refactor(v1): v1 — master level adjusted to -14 LUFS", "sofia"),
+            ("feat(v2): v2-extended — added 4-minute drone coda", "pierre"),
+            ("feat(v2): v2-extended — new string layer in coda, sul tasto", "sofia"),
+            ("fix(phase): reduce stereo width in pad2 to avoid phase cancellation", "pierre"),
+            ("refactor(mix): filter low end on pad1 — HPF at 80Hz", "pierre"),
+        ],
+        "neo-baroque": [
+            ("init: Neo-Baroque in D Dorian — harpsichord + electric bass at 84 BPM", "gabriel"),
+            ("feat(counterpoint): two-voice invention — right hand melody, left hand bass", "gabriel"),
+            ("feat(jazz): jazz-voicings branch — quartal harmony replaces triads", "gabriel"),
+            ("feat(jazz): tritone substitution in bar 8 turnaround — jazz-voicings", "marcus"),
+            ("feat(jazz): rootless 9th voicings in right hand — jazz-voicings", "gabriel"),
+            ("feat(harmony): harmonic sequence — descending 5ths in bass", "gabriel"),
+            ("feat(rhythm): syncopated baroque rhythm — quarter-note displacement", "gabriel"),
+            ("feat(edm): edm-bassline branch — 808 sub bass under baroque melody", "marcus"),
+            ("feat(edm): four-on-the-floor kick added — edm-bassline", "gabriel"),
+            ("feat(edm): filter sweep into bridge — edm-bassline", "marcus"),
+            ("feat(harpsichord): feature/add-harpsichord — harpsichord replaces piano", "gabriel"),
+            ("feat(harpsichord): double manual technique — feature/add-harpsichord", "pierre"),
+            ("fix(voice-leading): parallel 5ths in bar 5 inner voices corrected", "gabriel"),
+            ("refactor(form): add da capo repeat — bars 1-8 return at end", "gabriel"),
+            ("feat(improv): jazz improvisation section — 8 bars over baroque changes", "marcus"),
+            ("fix(timing): realign baroque ornaments to 16th grid", "gabriel"),
+            ("feat(strings): add pizzicato baroque strings — bars 17-32", "sofia"),
+            ("refactor(harmony): rewrite cadence — Phrygian half cadence, bar 16", "gabriel"),
+            ("feat(coda): extended coda with fugal stretto — all voices", "gabriel"),
+            ("fix(harpsichord): velocity normalization — harpsichord lacks dynamics", "gabriel"),
+            ("feat(modal): modal interchange — borrow from D minor in bridge", "marcus"),
+            ("refactor(mix): balance harpsichord vs bass — HF boost on harpsichord", "gabriel"),
+            ("feat(ornament): mordent on beat 1 of each 4-bar phrase", "pierre"),
+            ("feat(jazz2): jazz-voicings v2 — add upper-structure triads", "gabriel"),
+            ("refactor(form): restructure to AABBA form — stronger contrast", "gabriel"),
+            ("feat(bass): walking bass line for jazz-voicings bridge section", "marcus"),
+            ("fix(modal): correct Dorian vs natural minor in bar 12", "gabriel"),
+            ("feat(fugue): mini fugue in coda — 3-voice, 8 bars", "gabriel"),
+        ],
+        "jazz-chopin": [
+            ("init: Jazz Chopin — Op.9 No.2 reharmonized, Bb minor at 68 BPM", "aaliya"),
+            ("feat(reharmonize): tritone sub on V7 chord — bar 4", "aaliya"),
+            ("feat(reharmonize): minor ii-V-I substitution in bridge", "gabriel"),
+            ("feat(voicing): rootless 9th chord voicings — left hand", "aaliya"),
+            ("feat(reharmonize): Coltrane substitution pattern in climax — reharmonized", "aaliya"),
+            ("feat(reharmonize): add chromatic approach chords — reharmonized", "marcus"),
+            ("feat(trio): trio-arrangement — add bass and drums", "aaliya"),
+            ("feat(trio): walking bass added under reharmonized changes", "marcus"),
+            ("feat(trio): brushed snare — light jazz feel, trio-arrangement", "gabriel"),
+            ("fix(voice-leading): parallel 5ths in reharmonized bridge, bar 9", "aaliya"),
+            ("refactor(melody): add bebop ornaments to Chopin melody line", "aaliya"),
+            ("feat(reharmonize): backdoor ii-V substitution in outro", "aaliya"),
+            ("fix(bass): fix intonation issue on low Bb — walking bass", "marcus"),
+            ("feat(trio): piano solo chorus over jazz changes — trio-arrangement", "aaliya"),
+            ("refactor(tempo): add ritardando at 4-bar phrase ends", "aaliya"),
+            ("feat(reharmonize): modal interchange — iv chord from parallel minor", "gabriel"),
+            ("fix(drums): remove unintentional kick on beat 3 — trio", "aaliya"),
+            ("feat(coda): free improvisation coda — all three voices", "aaliya"),
+            ("refactor(harmony): ensure all substitutions maintain melodic identity", "aaliya"),
+            ("feat(reharmonize): full reharmonized version complete — all 3 sections", "aaliya"),
+        ],
+        "ragtime-edm": [
+            ("init: Ragtime EDM — Maple Leaf Rag MIDI over trap beat at 128 BPM", "marcus"),
+            ("feat(trap): trap hi-hat grid — 16th triplets with velocity variation", "marcus"),
+            ("feat(trap): 808 kick on 1 and 3 — trap-version", "marcus"),
+            ("feat(trap): snare on 2 and 4 with ghosted 16ths — trap-version", "gabriel"),
+            ("feat(ragtime): ragtime melody quantized to EDM grid — bars 1-16", "marcus"),
+            ("feat(house): house-version — 4-on-floor kick, Chicago-style", "marcus"),
+            ("feat(house): sidechain compression on ragtime bass — house-version", "gabriel"),
+            ("feat(house): filter sweep on ragtime melody — house-version", "marcus"),
+            ("feat(swing): electro-swing branch — shuffle quantize 16ths to swing", "marcus"),
+            ("feat(swing): brass sample layer on ragtime melody — electro-swing", "gabriel"),
+            ("fix(pitch): transpose ragtime melody up one semitone to Ab for EDM mix", "marcus"),
+            ("refactor(mix): sidechain bass to kick for pumping effect — all versions", "marcus"),
+            ("feat(drop): big drop transition — silence then tutti return", "marcus"),
+            ("fix(timing): tighten ragtime melody to EDM grid — was 10ms behind", "gabriel"),
+            ("refactor(master): normalize to -8 LUFS for streaming platforms", "marcus"),
+            ("feat(bridge): 8-bar bridge — minimal, just kick and ragtime melody fragment", "marcus"),
+            ("feat(outro): outro — gradual filter close on all elements", "marcus"),
+        ],
+        "film-score": [
+            ("init: Film Score — Act I, C (31-TET) — establishing motif, tense, pp", "chen"),
+            ("feat(act1): act1 — microtonal string cluster, bars 1-8", "chen"),
+            ("feat(act1): act1 — ascending quarter-tone figure in winds", "chen"),
+            ("feat(act1): act1 — timpani accent on beat 3 — instability motif", "gabriel"),
+            ("feat(act1): act1 — brass pedal — low brass drone, bars 9-16", "chen"),
+            ("feat(act2): act2 branch — spectral climax, full orchestra tutti", "chen"),
+            ("feat(act2): act2 — strings in high register, ff, sul ponticello", "sofia"),
+            ("feat(act2): act2 — timpani rolls and brass fanfare — climax peak", "chen"),
+            ("feat(act2): act2 — dissonant chord cluster, all 31-TET pitches", "gabriel"),
+            ("feat(act3): act3 branch — resolution, return to simple C major", "chen"),
+            ("feat(act3): act3 — solo violin melody, simple diatonic, pp", "sofia"),
+            ("feat(act3): act3 — gradual orchestral return from silence", "chen"),
+            ("feat(act3): act3 — final chord — C major, fff, held for 8 bars", "gabriel"),
+            ("fix(tuning): recalibrate all instruments to 31-TET in Act I", "chen"),
+            ("refactor(dynamics): smooth transition from Act I pp to Act II ff", "chen"),
+            ("fix(voice-leading): remove dissonance clash in Act III resolution", "sofia"),
+            ("refactor(score): add rehearsal letter marks every 8 bars", "chen"),
+            ("feat(leitmotif): recurring motif appears in each act — unifying thread", "gabriel"),
+        ],
+        "polyrhythm": [
+            ("init: Polyrhythm Studies — A minor at 92 BPM — 7-over-4 base", "fatou"),
+            ("feat(7-4): 7-over-4 — djembe in 7, talking drum in 4", "fatou"),
+            ("feat(7-4): 7-over-4 — bass guitar anchors common pulse", "fatou"),
+            ("feat(7-4): 7-over-4 — listener orientation — hi-hat on beat 1 only", "aaliya"),
+            ("refactor(7-4): humanize djembe timing — ±8ms variance", "fatou"),
+            ("feat(5-3): 5-over-3-experiment — conga in 5, shekere in 3", "fatou"),
+            ("feat(5-3): 5-over-3-experiment — bass anchors on shared beat", "aaliya"),
+            ("feat(5-3): 5-over-3-experiment — add melody on shared downbeats only", "fatou"),
+            ("fix(phase): fix drifting phase in 7-over-4 at bar 32 — MIDI timing", "fatou"),
+            ("feat(groove): add cross-stick snare to bridge the two rhythmic worlds", "aaliya"),
+            ("refactor(mix): bring up djembe attack — was buried under bass", "fatou"),
+        ],
+        "community": [
+            ("init: Community Collab — open canvas — C major, 90 BPM", "gabriel"),
+            ("feat(counterpoint): sofia's counterpoint — Bach-inspired 2-voice invention", "sofia"),
+            ("feat(ornament): yuki's ornaments — granular delay on all voices", "yuki"),
+            ("feat(analysis): pierre's analysis annotations — harmonic function labels", "pierre"),
+            ("feat(bass): marcus's bassline — funk groove under baroque counterpoint", "marcus"),
+            ("feat(rhythm): fatou's polyrhythm layer — 5-over-3 pattern over 4/4", "fatou"),
+            ("feat(reharmonize): aaliya's jazz reharmonization of C major progression", "aaliya"),
+            ("feat(microtonal): chen's microtonal ornaments — quarter-tone glissandi", "chen"),
+            ("refactor(structure): gabriel rebalances all layers — new mix", "gabriel"),
+            ("feat(baroque): sofia adds fugal episode — subject and answer", "sofia"),
+            ("feat(texture): yuki adds granular texture layer — sparse grain scatter", "yuki"),
+            ("fix(voice-leading): pierre fixes parallel 5ths — bars 12-13", "pierre"),
+            ("feat(groove): marcus adds clavinet stabs — funk energy", "marcus"),
+            ("feat(perc): fatou adds shekere pulse — holds everything together", "fatou"),
+            ("feat(jazz): aaliya adds blue notes to melody — jazzy feel", "aaliya"),
+            ("feat(tuning): chen corrects micro-tuning in ornament layer", "chen"),
+            ("feat(improv): gabriel improvises bridge over new changes", "gabriel"),
+            ("feat(strings): sofia adds lush string pad — bars 33-48", "sofia"),
+            ("feat(reverb): yuki adds cathedral reverb to string layer", "yuki"),
+            ("feat(harmony): pierre adds 9th and 11th extensions to all chords", "pierre"),
+            ("feat(bass2): marcus doubles bassline at octave — thicker low end", "marcus"),
+            ("feat(perc2): fatou adds djembe solo — bars 49-56", "fatou"),
+            ("feat(modal): aaliya introduces Dorian mode shift in bridge", "aaliya"),
+            ("feat(spectral): chen adds spectral filter sweep — act of transformation", "chen"),
+            ("feat(motif): gabriel introduces 4-note motif — appears in all layers", "gabriel"),
+            ("refactor(mix): sofia adjusts balance — counterpoint more prominent", "sofia"),
+            ("feat(scatter): yuki reduces grain density for introspective section", "yuki"),
+            ("feat(chorale): pierre writes 4-voice chorale climax — bars 57-64", "pierre"),
+            ("feat(solo): marcus piano solo over baroque changes", "marcus"),
+            ("feat(perc3): fatou polyrhythm climax — all layers simultaneously", "fatou"),
+            ("feat(reprise): aaliya leads reprise of opening theme — reharmonized", "aaliya"),
+            ("feat(finale): chen's finale motif — microtonal glissando into last chord", "chen"),
+            ("feat(coda): gabriel's coda — reduces to solo piano, pp", "gabriel"),
+            ("refactor(final-mix): sofia final mix pass — all dynamics balanced", "sofia"),
+            ("feat(outro): yuki granular outro — voices dissolve into texture", "yuki"),
+            ("feat(credits): pierre adds annotation — credits all contributors", "pierre"),
+        ],
     }
 
     key = repo_key
@@ -434,6 +799,30 @@ REPO_TRACKS: dict[str, list[tuple[str, str]]] = {
                      ("perc", "tracks/congas.mid")],
     "jazz-trio":    [("piano", "tracks/piano.mid"), ("bass", "tracks/bass.mid"),
                      ("drums", "tracks/drums.mid")],
+    # Genre archive repos — batch-13
+    "wtc":              [("piano", "tracks/piano.mid"), ("harpsichord", "tracks/harpsichord.mid")],
+    "goldberg":         [("piano", "tracks/piano.mid"), ("harpsichord", "tracks/harpsichord.mid")],
+    "nocturnes":        [("piano", "tracks/piano.mid")],
+    "maple-leaf":       [("piano", "tracks/piano.mid"), ("bass", "tracks/bass.mid")],
+    "cinematic-strings":[("violin1", "tracks/violin1.mid"), ("violin2", "tracks/violin2.mid"),
+                         ("viola", "tracks/viola.mid"), ("cello", "tracks/cello.mid"),
+                         ("bass", "tracks/double_bass.mid"), ("timp", "tracks/timpani.mid")],
+    "kai-ambient":      [("pad", "tracks/pad.mid"), ("piano", "tracks/piano.mid"),
+                         ("strings", "tracks/strings.mid")],
+    "neo-baroque":      [("harpsichord", "tracks/harpsichord.mid"), ("bass", "tracks/bass.mid"),
+                         ("strings", "tracks/strings.mid")],
+    "jazz-chopin":      [("piano", "tracks/piano.mid"), ("bass", "tracks/bass.mid"),
+                         ("drums", "tracks/drums.mid")],
+    "ragtime-edm":      [("piano", "tracks/piano.mid"), ("kick", "tracks/kick.mid"),
+                         ("snare", "tracks/snare.mid"), ("hihat", "tracks/hihat.mid"),
+                         ("808", "tracks/808.mid")],
+    "film-score":       [("strings", "tracks/strings.mid"), ("brass", "tracks/brass.mid"),
+                         ("woodwinds", "tracks/woodwinds.mid"), ("timp", "tracks/timpani.mid")],
+    "polyrhythm":       [("djembe", "tracks/djembe.mid"), ("tama", "tracks/talking_drum.mid"),
+                         ("shekere", "tracks/shekere.mid"), ("bass", "tracks/bass.mid")],
+    "community":        [("piano", "tracks/piano.mid"), ("bass", "tracks/bass.mid"),
+                         ("strings", "tracks/strings.mid"), ("perc", "tracks/djembe.mid"),
+                         ("harpsichord", "tracks/harpsichord.mid"), ("pad", "tracks/granular_pad.mid")],
 }
 
 REPO_KEY_MAP = {
@@ -449,6 +838,19 @@ REPO_KEY_MAP = {
     REPO_JAZZ_TRIO:    "jazz-trio",
     REPO_NEO_SOUL_FORK: "neo-soul",
     REPO_AMBIENT_FORK:  "ambient",
+    # Genre archive repos — batch-13
+    REPO_WTC:          "wtc",
+    REPO_GOLDBERG:     "goldberg",
+    REPO_NOCTURNES:    "nocturnes",
+    REPO_MAPLE_LEAF:   "maple-leaf",
+    REPO_CIN_STRINGS:  "cinematic-strings",
+    REPO_KAI_AMBIENT:  "kai-ambient",
+    REPO_NEO_BAROQUE:  "neo-baroque",
+    REPO_JAZZ_CHOPIN:  "jazz-chopin",
+    REPO_RAGTIME_EDM:  "ragtime-edm",
+    REPO_FILM_SCORE:   "film-score",
+    REPO_POLYRHYTHM:   "polyrhythm",
+    REPO_COMMUNITY:    "community",
 }
 
 COMMIT_COUNTS = {
@@ -464,6 +866,36 @@ COMMIT_COUNTS = {
     REPO_JAZZ_TRIO:    32,
     REPO_NEO_SOUL_FORK: 8,
     REPO_AMBIENT_FORK:  5,
+    # Genre archive repos — batch-13
+    REPO_WTC:          60,
+    REPO_GOLDBERG:     35,
+    REPO_NOCTURNES:    45,
+    REPO_MAPLE_LEAF:   25,
+    REPO_CIN_STRINGS:  30,
+    REPO_KAI_AMBIENT:  20,
+    REPO_NEO_BAROQUE:  55,
+    REPO_JAZZ_CHOPIN:  40,
+    REPO_RAGTIME_EDM:  35,
+    REPO_FILM_SCORE:   28,
+    REPO_POLYRHYTHM:   22,
+    REPO_COMMUNITY:    70,
+}
+
+# Specific branch configurations for genre archive repos (batch-13).
+# Each entry: list of (branch_name, commit_offset_from_end) — offset 0 = HEAD.
+GENRE_REPO_BRANCHES: dict[str, list[tuple[str, int]]] = {
+    REPO_WTC:         [("prelude-bk1", 50), ("fugue-bk1", 42), ("prelude-bk2", 20), ("fugue-bk2", 10)],
+    REPO_GOLDBERG:    [("aria-only", 30), ("variation-13-experimental", 15)],
+    REPO_NOCTURNES:   [("op9", 38), ("op15", 25), ("op27", 12)],
+    REPO_MAPLE_LEAF:  [("slow-version", 10), ("marcus-edm-remix", 5)],
+    REPO_CIN_STRINGS: [("orchestral", 20), ("stripped-piano", 8)],
+    REPO_KAI_AMBIENT: [("v1", 14), ("v2-extended", 6)],
+    REPO_NEO_BAROQUE: [("experiment/jazz-voicings", 45), ("experiment/edm-bassline", 30), ("feature/add-harpsichord", 15)],
+    REPO_JAZZ_CHOPIN: [("reharmonized", 30), ("trio-arrangement", 15)],
+    REPO_RAGTIME_EDM: [("trap-version", 28), ("house-version", 18), ("electro-swing", 8)],
+    REPO_FILM_SCORE:  [("act1", 22), ("act2", 14), ("act3", 6)],
+    REPO_POLYRHYTHM:  [("7-over-4", 16), ("5-over-3-experiment", 8)],
+    REPO_COMMUNITY:   [("sofias-counterpoint", 60), ("yukis-ornaments", 50), ("pierres-analysis", 40), ("marcuss-bassline", 25)],
 }
 
 
@@ -742,7 +1174,8 @@ async def seed(db: AsyncSession, force: bool = False) -> None:
         await db.flush()
 
     # ── 1. User profiles ──────────────────────────────────────────
-    for uid, uname, bio in USERS:
+    all_user_profiles = list(USERS) + list(COMPOSER_USERS)
+    for uid, uname, bio in all_user_profiles:
         db.add(MusehubProfile(
             user_id=uid,
             username=uname,
@@ -750,10 +1183,11 @@ async def seed(db: AsyncSession, force: bool = False) -> None:
             avatar_url=f"https://api.dicebear.com/7.x/avataaars/svg?seed={uname}",
             pinned_repo_ids=[],
         ))
-    print(f"  ✅ Profiles: {len(USERS)} users")
+    print(f"  ✅ Profiles: {len(all_user_profiles)} users ({len(USERS)} community + {len(COMPOSER_USERS)} composer/archive)")
 
     # ── 2. Repos ──────────────────────────────────────────────────
-    for r in REPOS:
+    all_repos = list(REPOS) + list(GENRE_REPOS)
+    for r in all_repos:
         db.add(MusehubRepo(
             repo_id=r["repo_id"],
             name=r["name"],
@@ -767,14 +1201,14 @@ async def seed(db: AsyncSession, force: bool = False) -> None:
             tempo_bpm=r["tempo_bpm"],
             created_at=_now(days=r["days_ago"]),
         ))
-    print(f"  ✅ Repos: {len(REPOS)}")
+    print(f"  ✅ Repos: {len(all_repos)} ({len(REPOS)} original + {len(GENRE_REPOS)} genre archive)")
 
     await db.flush()
 
-    # ── 3. Commits ────────────────────────────────────────────────
+    # ── 3. Commits + Branches ─────────────────────────────────────
     all_commits: dict[str, list[dict[str, Any]]] = {}
     total_commits = 0
-    for r in REPOS:
+    for r in all_repos:
         repo_id = r["repo_id"]
         rkey = REPO_KEY_MAP.get(repo_id, "neo-soul")
         n = COMMIT_COUNTS.get(repo_id, 20)
@@ -783,22 +1217,33 @@ async def seed(db: AsyncSession, force: bool = False) -> None:
         total_commits += len(commits)
         for c in commits:
             db.add(MusehubCommit(**c))
-        # Branches
+        # main branch always points to HEAD
         db.add(MusehubBranch(repo_id=repo_id, name="main",
                              head_commit_id=commits[-1]["commit_id"]))
-        if len(commits) > 10:
-            db.add(MusehubBranch(repo_id=repo_id, name="feat/develop",
-                                 head_commit_id=commits[-4]["commit_id"]))
-        if len(commits) > 20:
-            db.add(MusehubBranch(repo_id=repo_id, name="experiment/alternate-harmony",
-                                 head_commit_id=commits[-8]["commit_id"]))
-    print(f"  ✅ Commits: {total_commits} across {len(REPOS)} repos")
+        if repo_id in GENRE_REPO_BRANCHES:
+            # Genre archive repos: use specific named branches
+            for branch_name, offset in GENRE_REPO_BRANCHES[repo_id]:
+                idx = max(0, len(commits) - 1 - offset)
+                db.add(MusehubBranch(
+                    repo_id=repo_id,
+                    name=branch_name,
+                    head_commit_id=commits[idx]["commit_id"],
+                ))
+        else:
+            # Original repos: generic feature branches
+            if len(commits) > 10:
+                db.add(MusehubBranch(repo_id=repo_id, name="feat/develop",
+                                     head_commit_id=commits[-4]["commit_id"]))
+            if len(commits) > 20:
+                db.add(MusehubBranch(repo_id=repo_id, name="experiment/alternate-harmony",
+                                     head_commit_id=commits[-8]["commit_id"]))
+    print(f"  ✅ Commits: {total_commits} across {len(all_repos)} repos")
 
     await db.flush()
 
     # ── 4. Objects (track breakdown bar) ──────────────────────────
     obj_count = 0
-    for r in REPOS:
+    for r in all_repos:
         repo_id = r["repo_id"]
         rkey = REPO_KEY_MAP.get(repo_id, "neo-soul")
         tracks = REPO_TRACKS.get(rkey, REPO_TRACKS["neo-soul"])
@@ -825,7 +1270,7 @@ async def seed(db: AsyncSession, force: bool = False) -> None:
 
     # ── 5. Issues ─────────────────────────────────────────────────
     issue_count = 0
-    for r in REPOS:
+    for r in all_repos:
         repo_id = r["repo_id"]
         rkey = REPO_KEY_MAP.get(repo_id, "neo-soul")
         issue_list = ISSUE_TEMPLATES.get(rkey, GENERIC_ISSUES)
@@ -849,7 +1294,7 @@ async def seed(db: AsyncSession, force: bool = False) -> None:
     # ── 6. Pull Requests ──────────────────────────────────────────
     pr_count = 0
     pr_ids: dict[str, list[str]] = {}
-    for r in REPOS:
+    for r in all_repos:
         repo_id = r["repo_id"]
         commits = all_commits.get(repo_id, [])
         prs = _make_prs(repo_id, commits, r["owner"])
@@ -864,7 +1309,7 @@ async def seed(db: AsyncSession, force: bool = False) -> None:
     # ── 7. Releases ───────────────────────────────────────────────
     release_count = 0
     release_tags: dict[str, list[str]] = {}
-    for r in REPOS:
+    for r in all_repos:
         repo_id = r["repo_id"]
         commits = all_commits.get(repo_id, [])
         releases = _make_releases(repo_id, commits, r["name"], r["owner"])
@@ -879,7 +1324,7 @@ async def seed(db: AsyncSession, force: bool = False) -> None:
     # ── 8. Sessions ───────────────────────────────────────────────
     session_count = 0
     session_ids: dict[str, list[str]] = {}
-    for r in REPOS:
+    for r in all_repos:
         repo_id = r["repo_id"]
         commits = all_commits.get(repo_id, [])
         sessions = _make_sessions(repo_id, r["owner"], commits)
@@ -1153,7 +1598,7 @@ def _print_urls(
     print("=" * 72)
 
     print("\n── User profiles ────────────────────────────────────────────────")
-    for _, uname, _ in USERS:
+    for _, uname, _ in list(USERS) + list(COMPOSER_USERS):
         print(f"  {BASE}/users/{uname}")
         print(f"  {BASE}/{uname}  (redirects → above)")
 
@@ -1163,7 +1608,8 @@ def _print_urls(
     print(f"  {BASE}/search")
     print(f"  {BASE}/feed")
 
-    for r in REPOS[:8]:  # Skip fork repos from URL dump
+    all_repos_for_urls = list(REPOS[:8]) + list(GENRE_REPOS)
+    for r in all_repos_for_urls:  # Skip fork repos from URL dump
         owner, slug = r["owner"], r["slug"]
         repo_id = r["repo_id"]
         rbase = f"{BASE}/{owner}/{slug}"
