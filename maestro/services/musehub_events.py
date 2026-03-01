@@ -29,11 +29,16 @@ from __future__ import annotations
 
 import logging
 
-from sqlalchemy import func, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from maestro.db import musehub_models as db
-from maestro.models.musehub import ActivityEventResponse, ActivityFeedResponse
+from maestro.models.musehub import (
+    ActivityEventResponse,
+    ActivityFeedResponse,
+    UserActivityEventItem,
+    UserActivityFeedResponse,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -149,4 +154,163 @@ async def list_events(
         page=page,
         page_size=page_size,
         event_type_filter=event_type,
+    )
+
+
+# ---------------------------------------------------------------------------
+# User public activity feed
+# ---------------------------------------------------------------------------
+
+# Maps public API type vocabulary → internal DB event_type values.
+# Types with no DB equivalent (star, fork, comment) map to empty lists and
+# will always return an empty result when used as a filter.
+_USER_TYPE_TO_DB_TYPES: dict[str, list[str]] = {
+    "push": ["commit_pushed", "branch_created", "branch_deleted"],
+    "pull_request": ["pr_opened", "pr_merged", "pr_closed"],
+    "issue": ["issue_opened", "issue_closed"],
+    "release": ["tag_pushed"],
+    "star": [],
+    "fork": [],
+    "comment": [],
+}
+
+# Maps DB event_type → public API type vocabulary for the response payload.
+_DB_TYPE_TO_USER_TYPE: dict[str, str] = {
+    "commit_pushed": "push",
+    "branch_created": "push",
+    "branch_deleted": "push",
+    "pr_opened": "pull_request",
+    "pr_merged": "pull_request",
+    "pr_closed": "pull_request",
+    "issue_opened": "issue",
+    "issue_closed": "issue",
+    "tag_pushed": "release",
+    "session_started": "push",
+    "session_ended": "push",
+}
+
+
+def _to_user_activity_item(
+    event: db.MusehubEvent,
+    repo: db.MusehubRepo,
+) -> UserActivityEventItem:
+    """Convert an ORM event row + its repo into the public user activity response shape."""
+    return UserActivityEventItem(
+        id=event.event_id,
+        type=_DB_TYPE_TO_USER_TYPE.get(event.event_type, event.event_type),
+        actor=event.actor,
+        repo=f"{repo.owner}/{repo.slug}",
+        payload=dict(event.event_metadata),
+        created_at=event.created_at,
+    )
+
+
+async def list_user_activity(
+    session: AsyncSession,
+    username: str,
+    *,
+    caller_user_id: str | None = None,
+    type_filter: str | None = None,
+    limit: int = 30,
+    before_id: str | None = None,
+) -> UserActivityFeedResponse:
+    """Return a cursor-paginated public activity feed for ``username``.
+
+    Events are drawn from the ``musehub_events`` table, filtered to repos the
+    caller is allowed to see:
+    - Public repos: always visible.
+    - Private repos: visible only when ``caller_user_id`` matches the repo owner.
+
+    ``type_filter`` accepts the public API vocabulary (push, pull_request, issue,
+    release, star, fork, comment) and maps it to the DB's internal event_type
+    values.  Types without DB equivalents (star, fork, comment) always return
+    an empty feed.
+
+    Cursor pagination: pass the ``next_cursor`` value from a previous response
+    as ``before_id`` to fetch the next page.  Events are returned newest-first;
+    ``before_id`` is the event UUID of the *oldest* event on the last page, and
+    this function returns events created *before* that event's timestamp.
+    """
+    limit = max(1, min(limit, 100))
+
+    # Resolve the db event_type list from the public API filter.
+    db_types: list[str] | None = None
+    if type_filter is not None:
+        db_types = _USER_TYPE_TO_DB_TYPES.get(type_filter, [])
+        if not db_types:
+            # Type has no DB equivalent (star/fork/comment) or is unknown.
+            return UserActivityFeedResponse(
+                events=[], next_cursor=None, type_filter=type_filter
+            )
+
+    # Resolve the cursor anchor (before_id → created_at timestamp).
+    cursor_dt = None
+    cursor_event_id: str | None = None
+    if before_id is not None:
+        anchor = (
+            await session.execute(
+                select(db.MusehubEvent).where(db.MusehubEvent.event_id == before_id)
+            )
+        ).scalar_one_or_none()
+        if anchor is not None:
+            cursor_dt = anchor.created_at
+            cursor_event_id = anchor.event_id
+
+    # Build the query: join events → repos, filter by actor and visibility.
+    # Public repos are always visible; private repos are visible only to their owner.
+    if caller_user_id is not None:
+        visibility_filter = or_(
+            db.MusehubRepo.visibility == "public",
+            db.MusehubRepo.owner_user_id == caller_user_id,
+        )
+    else:
+        visibility_filter = db.MusehubRepo.visibility == "public"
+
+    stmt = (
+        select(db.MusehubEvent, db.MusehubRepo)
+        .join(db.MusehubRepo, db.MusehubEvent.repo_id == db.MusehubRepo.repo_id)
+        .where(
+            and_(
+                db.MusehubEvent.actor == username,
+                visibility_filter,
+            )
+        )
+        .order_by(db.MusehubEvent.created_at.desc(), db.MusehubEvent.event_id.desc())
+        .limit(limit + 1)  # fetch one extra to detect if there is a next page
+    )
+
+    if db_types is not None:
+        stmt = stmt.where(db.MusehubEvent.event_type.in_(db_types))
+
+    if cursor_dt is not None:
+        # Cursor pagination: events strictly before the anchor timestamp,
+        # or same timestamp but earlier event_id (deterministic ordering).
+        stmt = stmt.where(
+            or_(
+                db.MusehubEvent.created_at < cursor_dt,
+                and_(
+                    db.MusehubEvent.created_at == cursor_dt,
+                    db.MusehubEvent.event_id < (cursor_event_id or ""),
+                ),
+            )
+        )
+
+    rows = (await session.execute(stmt)).all()
+
+    has_more = len(rows) > limit
+    page_rows = rows[:limit]
+
+    items = [_to_user_activity_item(ev, repo) for ev, repo in page_rows]
+    next_cursor = items[-1].id if has_more and items else None
+
+    logger.debug(
+        "✅ User activity feed username=%s count=%d has_more=%s",
+        username,
+        len(items),
+        has_more,
+    )
+    return UserActivityFeedResponse(
+        events=items,
+        next_cursor=next_cursor,
+        type_filter=type_filter,
     )

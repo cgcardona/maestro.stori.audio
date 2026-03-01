@@ -843,3 +843,105 @@ class RefSimilarityResponse(CamelModel):
     interpretation: str = Field(
         ..., description="Human-readable interpretation of the similarity result"
     )
+
+
+# Dedicated harmony endpoint models (issue #414) — muse harmony command
+# ---------------------------------------------------------------------------
+
+
+class RomanNumeralEvent(CamelModel):
+    """A single chord event described using Roman numeral analysis.
+
+    Provides enough harmonic context for an AI agent to compose a
+    harmonically coherent continuation: the Roman numeral (scale degree),
+    the root pitch class, the chord quality, and the tonal function.
+
+    ``beat`` is the onset position in beats from the top of the ref.
+    ``function`` classifies the tonal role: tonic, subdominant, dominant,
+    pre-dominant, or secondary-dominant.
+    """
+
+    beat: float = Field(..., description="Onset beat position from the top of the ref")
+    chord: str = Field(..., description="Roman numeral symbol, e.g. 'I', 'IV', 'V7', 'IIm7'")
+    root: str = Field(..., description="Root pitch class, e.g. 'C', 'F', 'G'")
+    quality: str = Field(
+        ..., description="Chord quality: major, minor, dominant, diminished, augmented, half-diminished"
+    )
+    function: str = Field(
+        ..., description="Tonal function: tonic, subdominant, dominant, pre-dominant, secondary-dominant"
+    )
+
+
+class CadenceEvent(CamelModel):
+    """A detected harmonic cadence — a goal-directed chord motion that articulates phrase endings.
+
+    Agents use cadence positions to identify phrase boundaries and to ensure
+    generated continuations respect established cadence types (e.g. do not
+    interrupt an authentic cadence with a deceptive resolution).
+
+    ``beat`` is the beat position of the *resolution* chord (the final chord
+    in the cadence formula, not the approach chord).
+    ``from_`` is the departure chord (e.g. 'V') and ``to`` is the resolution
+    (e.g. 'I').  Named ``from_`` in Python to avoid the reserved keyword;
+    serialised as ``from`` on the wire.
+    """
+
+    beat: float = Field(..., description="Beat position of the cadence resolution chord")
+    type: str = Field(
+        ...,
+        description=(
+            "Cadence type: authentic, half, plagal, deceptive, "
+            "imperfect-authentic, or perfect-authentic"
+        ),
+    )
+    from_: str = Field(..., alias="from", description="Departure chord symbol, e.g. 'V'")
+    to: str = Field(..., description="Resolution chord symbol, e.g. 'I'")
+
+    model_config = {"populate_by_name": True}
+
+
+class HarmonyModulationEvent(CamelModel):
+    """A detected key-area change (modulation) within the ref.
+
+    Agents use this to track tonal narrative — a modulation to the dominant
+    (V) indicates intensification, while a return to tonic signals resolution.
+
+    ``pivot_chord`` is the enharmonic chord that belongs to both keys and
+    enables the smooth modulation.  May be an empty string if the modulation
+    is abrupt (direct modulation).
+    """
+
+    beat: float = Field(..., description="Beat position where the new key is established")
+    from_key: str = Field(..., description="Source key, e.g. 'C major'")
+    to_key: str = Field(..., description="Destination key, e.g. 'G major'")
+    pivot_chord: str = Field(
+        ..., description="Pivot chord label (empty string for direct/chromatic modulations)"
+    )
+
+
+class HarmonyAnalysisResponse(CamelModel):
+    """Dedicated harmonic analysis response for a Muse commit ref.
+
+    Returned by ``GET /api/v1/musehub/repos/{repo_id}/analysis/{ref}/harmony``.
+    Maps to the ``muse harmony --ref {ref}`` command output.
+
+    Unlike the generic ``harmony`` dimension in :class:`AnalysisResponse` (which
+    returns :class:`HarmonyData` with tension curve and chord progression),
+    this endpoint returns a Roman-numeral-centric view that is more useful for
+    agents that need to reason about harmonic function, cadence structure, and
+    tonal narrative.
+
+    ``key`` is the full key label (tonic + mode), e.g. ``"C major"``.
+    ``harmonic_rhythm_bpm`` is the rate of chord changes in beats per minute
+    (chords per minute), not the tempo BPM.  A value of 2.0 means one chord
+    change every 0.5 beats (half-beat harmonic rhythm).
+    """
+
+    key: str = Field(..., description="Detected key, e.g. 'C major', 'F# minor'")
+    mode: str = Field(..., description="Detected mode, e.g. 'major', 'minor', 'dorian'")
+    roman_numerals: list[RomanNumeralEvent]
+    cadences: list[CadenceEvent]
+    modulations: list[HarmonyModulationEvent]
+    harmonic_rhythm_bpm: float = Field(
+        ..., ge=0.0, description="Chord change rate in chords per minute"
+    )

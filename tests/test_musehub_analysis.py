@@ -22,18 +22,6 @@ Covers issue #227 (emotion map):
 - test_emotion_map_endpoint_requires_auth       — endpoint returns 401 without auth
 - test_emotion_map_endpoint_unknown_repo_404    — unknown repo returns 404
 - test_emotion_map_endpoint_etag                — ETag header is present
-
-Covers issue #406 (cross-ref similarity):
-- test_compute_ref_similarity_returns_correct_type — service returns RefSimilarityResponse
-- test_compute_ref_similarity_dimensions_in_range  — all 10 dimensions in [0.0, 1.0]
-- test_compute_ref_similarity_overall_in_range     — overall_similarity in [0.0, 1.0]
-- test_compute_ref_similarity_is_deterministic     — same pair always returns same result
-- test_compute_ref_similarity_interpretation_nonempty — interpretation is a non-empty string
-- test_ref_similarity_endpoint_200                 — HTTP GET returns 200 with required fields
-- test_ref_similarity_endpoint_requires_compare    — missing compare param returns 422
-- test_ref_similarity_endpoint_requires_auth       — private repo returns 401 without auth
-- test_ref_similarity_endpoint_unknown_repo_404    — unknown repo returns 404
-- test_ref_similarity_endpoint_etag                — ETag header is present
 """
 from __future__ import annotations
 
@@ -61,7 +49,6 @@ from maestro.models.musehub_analysis import (
     MeterData,
     MotifEntry,
     MotifsData,
-    RefSimilarityResponse,
     SimilarityData,
     TempoData,
 )
@@ -360,7 +347,13 @@ async def test_analysis_harmony_endpoint(
     auth_headers: dict[str, str],
     db_session: AsyncSession,
 ) -> None:
-    """GET /musehub/repos/{repo_id}/analysis/{ref}/harmony returns structured data."""
+    """GET /musehub/repos/{repo_id}/analysis/{ref}/harmony returns dedicated harmony data.
+
+    The /harmony path is now handled by the dedicated HarmonyAnalysisResponse endpoint
+    (issue #414) rather than the generic /{dimension} catch-all.  It returns
+    Roman-numeral-centric data (key, mode, romanNumerals, cadences, modulations)
+    rather than the generic AnalysisResponse envelope.
+    """
     repo_id = await _create_repo(client, auth_headers)
     resp = await client.get(
         f"/api/v1/musehub/repos/{repo_id}/analysis/main/harmony",
@@ -368,15 +361,13 @@ async def test_analysis_harmony_endpoint(
     )
     assert resp.status_code == 200
     body = resp.json()
-    assert body["dimension"] == "harmony"
-    assert body["ref"] == "main"
-    assert "computedAt" in body
-    assert "data" in body
-    assert "filtersApplied" in body
-    data = body["data"]
-    assert "tonic" in data
-    assert "mode" in data
-    assert "chordProgression" in data
+    # Dedicated harmony endpoint — HarmonyAnalysisResponse shape (not AnalysisResponse)
+    assert "key" in body
+    assert "mode" in body
+    assert "romanNumerals" in body
+    assert "cadences" in body
+    assert "modulations" in body
+    assert "harmonicRhythmBpm" in body
 
 
 @pytest.mark.anyio
@@ -573,7 +564,13 @@ async def test_analysis_all_13_dimensions_individually(
     auth_headers: dict[str, str],
     db_session: AsyncSession,
 ) -> None:
-    """Each of the 13 dimension endpoints returns 200 with correct dimension field."""
+    """Each of the 13 dimensions returns 200; harmony now has a dedicated endpoint.
+
+    The ``harmony`` dimension path is handled by the dedicated HarmonyAnalysisResponse
+    endpoint (issue #414) which returns a different response shape (no ``dimension``
+    envelope field).  All other 12 dimensions continue to use the generic AnalysisResponse
+    envelope and are verified here.
+    """
     repo_id = await _create_repo(client, auth_headers)
     for dim in ALL_DIMENSIONS:
         # /similarity is a dedicated cross-ref endpoint requiring ?compare=
@@ -585,9 +582,17 @@ async def test_analysis_all_13_dimensions_individually(
         )
         assert resp.status_code == 200, f"Dimension {dim!r} returned {resp.status_code}"
         body = resp.json()
-        # /similarity returns RefSimilarityResponse (no envelope `dimension` field)
-        if dim != "similarity":
-            assert body["dimension"] == dim, f"Expected dimension={dim!r}, got {body['dimension']!r}"
+        if dim == "harmony":
+            # Dedicated endpoint — HarmonyAnalysisResponse (no "dimension" envelope)
+            assert "key" in body, f"Harmony endpoint missing 'key' field"
+            assert "romanNumerals" in body, f"Harmony endpoint missing 'romanNumerals' field"
+        elif dim == "similarity":
+            # Dedicated endpoint — RefSimilarityResponse (no "dimension" envelope)
+            pass  # tested separately in test_ref_similarity_endpoint_*
+        else:
+            assert body["dimension"] == dim, (
+                f"Expected dimension={dim!r}, got {body['dimension']!r}"
+            )
 
 
 # ---------------------------------------------------------------------------
@@ -854,6 +859,217 @@ async def test_analysis_aggregate_endpoint_returns_all_dimensions(
 
 
 # ---------------------------------------------------------------------------
+# Issue #414 — GET /analysis/{ref}/harmony endpoint
+# ---------------------------------------------------------------------------
+
+
+from maestro.models.musehub_analysis import HarmonyAnalysisResponse  # noqa: E402
+from maestro.services.musehub_analysis import compute_harmony_analysis  # noqa: E402
+
+
+def test_compute_harmony_analysis_returns_correct_type() -> None:
+    """compute_harmony_analysis returns a HarmonyAnalysisResponse instance."""
+    result = compute_harmony_analysis(repo_id="repo-test", ref="main")
+    assert isinstance(result, HarmonyAnalysisResponse)
+
+
+def test_compute_harmony_analysis_key_has_mode() -> None:
+    """The key field includes both tonic and mode, e.g. 'C major'."""
+    result = compute_harmony_analysis(repo_id="repo-test", ref="main")
+    assert result.mode in result.key
+    assert len(result.key.split()) == 2  # "C major", "F minor", etc.
+
+
+def test_compute_harmony_analysis_roman_numerals_nonempty() -> None:
+    """roman_numerals must contain at least one chord event."""
+    result = compute_harmony_analysis(repo_id="repo-test", ref="main")
+    assert len(result.roman_numerals) >= 1
+    for rn in result.roman_numerals:
+        assert rn.beat >= 0.0
+        assert rn.chord != ""
+        assert rn.root != ""
+        assert rn.quality != ""
+        assert rn.function != ""
+
+
+def test_compute_harmony_analysis_cadences_nonempty() -> None:
+    """cadences must contain at least one entry with valid from/to fields."""
+    result = compute_harmony_analysis(repo_id="repo-test", ref="main")
+    assert len(result.cadences) >= 1
+    for cadence in result.cadences:
+        assert cadence.beat >= 0.0
+        assert cadence.type != ""
+        assert cadence.from_ != ""
+        assert cadence.to != ""
+
+
+def test_compute_harmony_analysis_harmonic_rhythm_positive() -> None:
+    """harmonic_rhythm_bpm must be a positive float."""
+    result = compute_harmony_analysis(repo_id="repo-test", ref="main")
+    assert result.harmonic_rhythm_bpm > 0.0
+
+
+def test_compute_harmony_analysis_is_deterministic() -> None:
+    """Same ref always produces the same key and mode (deterministic stub)."""
+    r1 = compute_harmony_analysis(repo_id="repo-a", ref="abc123")
+    r2 = compute_harmony_analysis(repo_id="repo-b", ref="abc123")
+    assert r1.key == r2.key
+    assert r1.mode == r2.mode
+    assert r1.harmonic_rhythm_bpm == r2.harmonic_rhythm_bpm
+
+
+def test_compute_harmony_analysis_different_refs_differ() -> None:
+    """Different refs produce different harmonic data."""
+    r1 = compute_harmony_analysis(repo_id="repo-test", ref="ref-aaa")
+    r2 = compute_harmony_analysis(repo_id="repo-test", ref="ref-zzz")
+    # At least the key or mode differs across distinct refs.
+    assert (r1.key != r2.key) or (r1.mode != r2.mode) or (r1.harmonic_rhythm_bpm != r2.harmonic_rhythm_bpm)
+
+
+@pytest.mark.anyio
+async def test_harmony_endpoint_returns_200(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+    db_session: AsyncSession,
+) -> None:
+    """GET /analysis/{ref}/harmony returns 200 with all required fields.
+
+    Regression test for issue #414: the dedicated harmony endpoint must return
+    structured Roman-numeral harmonic data so agents can reason about tonal
+    function, cadence structure, and modulations without parsing raw chord symbols.
+    """
+    repo_id = await _create_repo(client, auth_headers)
+    resp = await client.get(
+        f"/api/v1/musehub/repos/{repo_id}/analysis/main/harmony",
+        headers=auth_headers,
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert "key" in body
+    assert "mode" in body
+    assert "romanNumerals" in body
+    assert "cadences" in body
+    assert "modulations" in body
+    assert "harmonicRhythmBpm" in body
+    assert isinstance(body["romanNumerals"], list)
+    assert len(body["romanNumerals"]) >= 1
+    assert isinstance(body["cadences"], list)
+    assert len(body["cadences"]) >= 1
+    assert body["harmonicRhythmBpm"] > 0.0
+
+
+@pytest.mark.anyio
+async def test_harmony_endpoint_roman_numerals_fields(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+    db_session: AsyncSession,
+) -> None:
+    """Each roman numeral event carries beat, chord, root, quality, and function."""
+    repo_id = await _create_repo(client, auth_headers)
+    resp = await client.get(
+        f"/api/v1/musehub/repos/{repo_id}/analysis/main/harmony",
+        headers=auth_headers,
+    )
+    assert resp.status_code == 200
+    for rn in resp.json()["romanNumerals"]:
+        assert "beat" in rn
+        assert "chord" in rn
+        assert "root" in rn
+        assert "quality" in rn
+        assert "function" in rn
+
+
+@pytest.mark.anyio
+async def test_harmony_endpoint_cadence_fields(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+    db_session: AsyncSession,
+) -> None:
+    """Each cadence event carries beat, type, from, and to fields."""
+    repo_id = await _create_repo(client, auth_headers)
+    resp = await client.get(
+        f"/api/v1/musehub/repos/{repo_id}/analysis/main/harmony",
+        headers=auth_headers,
+    )
+    assert resp.status_code == 200
+    for cadence in resp.json()["cadences"]:
+        assert "beat" in cadence
+        assert "type" in cadence
+        assert "from" in cadence
+        assert "to" in cadence
+
+
+@pytest.mark.anyio
+async def test_harmony_endpoint_etag_header(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+    db_session: AsyncSession,
+) -> None:
+    """GET /analysis/{ref}/harmony includes an ETag header for cache validation."""
+    repo_id = await _create_repo(client, auth_headers)
+    resp = await client.get(
+        f"/api/v1/musehub/repos/{repo_id}/analysis/main/harmony",
+        headers=auth_headers,
+    )
+    assert resp.status_code == 200
+    assert "etag" in resp.headers
+
+
+@pytest.mark.anyio
+async def test_harmony_endpoint_requires_auth_for_private_repo(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+    db_session: AsyncSession,
+) -> None:
+    """GET /analysis/{ref}/harmony on a private repo without auth returns 401."""
+    # Create a private repo with valid auth, then access without auth.
+    resp = await client.post(
+        "/api/v1/musehub/repos",
+        json={"name": "private-harmony-repo", "owner": "testuser", "visibility": "private"},
+        headers=auth_headers,
+    )
+    assert resp.status_code == 201
+    repo_id = str(resp.json()["repoId"])
+
+    resp = await client.get(
+        f"/api/v1/musehub/repos/{repo_id}/analysis/main/harmony",
+    )
+    assert resp.status_code == 401
+
+
+@pytest.mark.anyio
+async def test_harmony_endpoint_unknown_repo_404(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+    db_session: AsyncSession,
+) -> None:
+    """GET /analysis/{ref}/harmony with an unknown repo_id returns 404."""
+    resp = await client.get(
+        "/api/v1/musehub/repos/nonexistent-repo-id/analysis/main/harmony",
+        headers=auth_headers,
+    )
+    assert resp.status_code == 404
+
+
+@pytest.mark.anyio
+async def test_harmony_endpoint_track_filter(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+    db_session: AsyncSession,
+) -> None:
+    """GET /analysis/{ref}/harmony?track=keys returns 200 (filter accepted)."""
+    repo_id = await _create_repo(client, auth_headers)
+    resp = await client.get(
+        f"/api/v1/musehub/repos/{repo_id}/analysis/main/harmony?track=keys",
+        headers=auth_headers,
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert "key" in body
+    assert "romanNumerals" in body
+
+
+# ---------------------------------------------------------------------------
 # Issue #406 — Cross-ref similarity service unit tests
 # ---------------------------------------------------------------------------
 
@@ -983,12 +1199,7 @@ async def test_ref_similarity_endpoint_requires_auth(
     auth_headers: dict[str, str],
     db_session: AsyncSession,
 ) -> None:
-    """Private repo returns 401 when no auth token is provided.
-
-    Uses a real private repo so the repo lookup succeeds before the auth
-    check fires — consistent with the optional_token pattern used by this
-    and other analysis endpoints (auth is checked after repo visibility).
-    """
+    """Private repo returns 401 when no auth token is provided."""
     repo_id = await _create_repo(client, auth_headers)
     resp = await client.get(
         f"/api/v1/musehub/repos/{repo_id}/analysis/main/similarity?compare=dev",
