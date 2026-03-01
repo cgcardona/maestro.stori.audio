@@ -818,8 +818,9 @@ STEP 6 — PRE-MERGE SYNC (only if grade is A or B):
   # 6. Delete the remote branch manually (now safe — merge is done):
        git push origin --delete "$BRANCH"
 
-  # 6a. Delete the local branch (worktree remove destroys the directory but NOT the branch ref):
-       git -C "$REPO" branch -D "$BRANCH"
+  # NOTE: Do NOT delete the local branch here — the branch is still checked out
+  # in this worktree, so git will refuse. The local branch ref is cleaned up in
+  # STEP 8 (SELF-DESTRUCT) AFTER the worktree is removed.
 
   # 7. Close every referenced issue.
   #    CLOSES_ISSUES is pre-populated from .agent-task (the coordinator extracted
@@ -922,9 +923,11 @@ side-effect of the changes in PR #$N. Start investigation there.
 
 STEP 8 — SELF-DESTRUCT (always run this, merge or not, early stop or not):
   WORKTREE=$(pwd)
+  BRANCH_TO_DELETE=$(git rev-parse --abbrev-ref HEAD)
   cd "$REPO"
-  git worktree remove --force "$WORKTREE"
+  git worktree remove --force "$WORKTREE"   # must come FIRST — branch is checked out here
   git worktree prune
+  git branch -D "$BRANCH_TO_DELETE" 2>/dev/null || true  # safe now that worktree is gone
 
 ⚠️  NEVER copy files to the main repo for testing.
 ⚠️  NEVER start a review without completing STEP 2. Skipping the check causes

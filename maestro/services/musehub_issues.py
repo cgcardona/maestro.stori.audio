@@ -369,6 +369,70 @@ async def assign_issue(
     return _to_issue_response(row, count)
 
 
+async def assign_labels(
+    session: AsyncSession,
+    repo_id: str,
+    issue_number: int,
+    *,
+    labels: list[str],
+) -> IssueResponse | None:
+    """Replace the label list on an issue with the provided labels.
+
+    Returns None if the issue is not found.
+    The replacement is total — callers must merge old and new labels themselves
+    when they only want to append.
+    """
+    stmt = (
+        select(db.MusehubIssue)
+        .options(selectinload(db.MusehubIssue.milestone))
+        .where(
+            db.MusehubIssue.repo_id == repo_id,
+            db.MusehubIssue.number == issue_number,
+        )
+    )
+    row = (await session.execute(stmt)).scalar_one_or_none()
+    if row is None:
+        return None
+    row.labels = labels
+    await session.flush()
+    await session.refresh(row)
+    logger.info("✅ Assigned labels %r to issue #%d for repo %s", labels, issue_number, repo_id)
+    count = await _count_comments(session, row.issue_id)
+    return _to_issue_response(row, count)
+
+
+async def remove_label(
+    session: AsyncSession,
+    repo_id: str,
+    issue_number: int,
+    *,
+    label: str,
+) -> IssueResponse | None:
+    """Remove a single label from an issue's label list.
+
+    Silently no-ops when the label is not present (idempotent).
+    Returns None if the issue is not found.
+    """
+    stmt = (
+        select(db.MusehubIssue)
+        .options(selectinload(db.MusehubIssue.milestone))
+        .where(
+            db.MusehubIssue.repo_id == repo_id,
+            db.MusehubIssue.number == issue_number,
+        )
+    )
+    row = (await session.execute(stmt)).scalar_one_or_none()
+    if row is None:
+        return None
+    current: list[str] = list(row.labels or [])
+    row.labels = [lbl for lbl in current if lbl != label]
+    await session.flush()
+    await session.refresh(row)
+    logger.info("✅ Removed label %r from issue #%d for repo %s", label, issue_number, repo_id)
+    count = await _count_comments(session, row.issue_id)
+    return _to_issue_response(row, count)
+
+
 async def set_issue_milestone(
     session: AsyncSession,
     repo_id: str,
