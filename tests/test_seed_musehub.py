@@ -650,3 +650,136 @@ def test_solo_instrument_sizes_in_range() -> None:
                   ]
     for sz in solo_sizes:
         assert 8 * 1024 <= sz <= 40 * 1024, f"Size {sz} out of 8KB–40KB range"
+
+
+# ---------------------------------------------------------------------------
+# Issue templates — 15 issues per repo (Phase 6, Issue #453)
+# ---------------------------------------------------------------------------
+
+# Import only the data structures, not the script entry point.
+import sys, importlib.util  # noqa: E402
+from pathlib import Path  # noqa: E402
+
+def _load_seed_constants() -> dict[str, object]:
+    """Load top-level constants from seed_musehub without executing asyncio.run."""
+    seed_path = Path(__file__).parent.parent / "scripts" / "seed_musehub.py"
+    spec = importlib.util.spec_from_file_location("seed_musehub", seed_path)
+    assert spec and spec.loader
+    mod = importlib.util.module_from_spec(spec)
+    # Prevent __main__ execution — the script guards on __name__
+    mod.__name__ = "seed_musehub_imported"
+    spec.loader.exec_module(mod)  # type: ignore[union-attr]
+    return vars(mod)
+
+
+@pytest.fixture(scope="module")
+def seed_mod() -> dict[str, object]:
+    """Loaded seed_musehub module constants (once per test session)."""
+    return _load_seed_constants()
+
+
+def test_issue_templates_have_15_entries_each(seed_mod: dict[str, object]) -> None:
+    """Every repo-specific issue template must have exactly 15 entries."""
+    ISSUE_TEMPLATES = seed_mod["ISSUE_TEMPLATES"]
+    assert isinstance(ISSUE_TEMPLATES, dict)
+    for key, entries in ISSUE_TEMPLATES.items():
+        assert isinstance(entries, list)
+        assert len(entries) == 15, (
+            f"ISSUE_TEMPLATES[{key!r}] has {len(entries)} entries — expected 15"
+        )
+
+
+def test_issue_templates_have_sequential_numbers(seed_mod: dict[str, object]) -> None:
+    """Each issue template list must have sequential n values from 1 to 15."""
+    ISSUE_TEMPLATES = seed_mod["ISSUE_TEMPLATES"]
+    assert isinstance(ISSUE_TEMPLATES, dict)
+    for key, entries in ISSUE_TEMPLATES.items():
+        assert isinstance(entries, list)
+        numbers = [e["n"] for e in entries]
+        assert numbers == list(range(1, 16)), (
+            f"ISSUE_TEMPLATES[{key!r}] has non-sequential n values: {numbers}"
+        )
+
+
+def test_generic_issues_have_15_entries(seed_mod: dict[str, object]) -> None:
+    """GENERIC_ISSUES fallback must also have 15 entries."""
+    GENERIC_ISSUES = seed_mod["GENERIC_ISSUES"]
+    assert isinstance(GENERIC_ISSUES, list)
+    assert len(GENERIC_ISSUES) == 15, (
+        f"GENERIC_ISSUES has {len(GENERIC_ISSUES)} entries — expected 15"
+    )
+
+
+def test_milestone_templates_exist_for_all_repo_keys(seed_mod: dict[str, object]) -> None:
+    """MILESTONE_TEMPLATES should have entries for all 10 non-fork repo keys."""
+    MILESTONE_TEMPLATES = seed_mod["MILESTONE_TEMPLATES"]
+    REPO_KEY_MAP = seed_mod["REPO_KEY_MAP"]
+    assert isinstance(MILESTONE_TEMPLATES, dict)
+    assert isinstance(REPO_KEY_MAP, dict)
+    # All non-fork repo keys that have specific issue templates should have milestones
+    expected_keys = {
+        "neo-soul", "modal-jazz", "ambient", "afrobeat", "microtonal",
+        "drums", "chanson", "granular", "funk-suite", "jazz-trio",
+    }
+    for key in expected_keys:
+        assert key in MILESTONE_TEMPLATES, f"Missing milestone template for {key!r}"
+        assert len(MILESTONE_TEMPLATES[key]) >= 1, f"Empty milestone list for {key!r}"
+
+
+def test_milestone_issue_assignments_reference_valid_issues(seed_mod: dict[str, object]) -> None:
+    """Every issue number in MILESTONE_ISSUE_ASSIGNMENTS must exist in ISSUE_TEMPLATES."""
+    MILESTONE_ISSUE_ASSIGNMENTS = seed_mod["MILESTONE_ISSUE_ASSIGNMENTS"]
+    ISSUE_TEMPLATES = seed_mod["ISSUE_TEMPLATES"]
+    assert isinstance(MILESTONE_ISSUE_ASSIGNMENTS, dict)
+    assert isinstance(ISSUE_TEMPLATES, dict)
+    for rkey, ms_map in MILESTONE_ISSUE_ASSIGNMENTS.items():
+        template_issues = {e["n"] for e in ISSUE_TEMPLATES.get(rkey, [])}
+        for ms_n, issue_ns in ms_map.items():
+            for iss_n in issue_ns:
+                assert iss_n in template_issues, (
+                    f"Milestone {ms_n} for {rkey!r} references non-existent issue #{iss_n}"
+                )
+
+
+def test_pr_comment_pool_covers_all_target_types(seed_mod: dict[str, object]) -> None:
+    """_PR_COMMENT_POOL must contain entries for all four target_type values."""
+    pool = seed_mod["_PR_COMMENT_POOL"]
+    assert isinstance(pool, list)
+    target_types = {entry["target_type"] for entry in pool}
+    expected_types = {"general", "track", "region", "note"}
+    assert target_types == expected_types, (
+        f"Missing target types: {expected_types - target_types}"
+    )
+
+
+def test_issue_comment_body_generator_produces_varied_output(seed_mod: dict[str, object]) -> None:
+    """_make_issue_comment_body must return different strings for different seeds."""
+    fn = seed_mod["_make_issue_comment_body"]
+    assert callable(fn)
+    bodies = {fn(i) for i in range(20)}
+    assert len(bodies) > 5, "Expected varied comment bodies — too many duplicates"
+
+
+def test_webhook_configs_cover_push_pr_release(seed_mod: dict[str, object]) -> None:
+    """_make_webhooks must produce webhooks for push, pull_request, and release events."""
+    fn = seed_mod["_make_webhooks"]
+    assert callable(fn)
+    webhooks, deliveries = fn("repo-test-id-001", "gabriel")
+    event_sets = [set(wh["events"]) for wh in webhooks]
+    all_events: set[str] = set()
+    for es in event_sets:
+        all_events |= es
+    assert "push" in all_events, "push event not covered"
+    assert "pull_request" in all_events, "pull_request event not covered"
+    assert "release" in all_events, "release event not covered"
+
+
+def test_webhook_deliveries_have_mixed_outcomes(seed_mod: dict[str, object]) -> None:
+    """Webhook deliveries must include both successes and failures."""
+    fn = seed_mod["_make_webhooks"]
+    assert callable(fn)
+    _, deliveries = fn("repo-test-id-002", "sofia")
+    outcomes = {(d["response_status"], d["success"]) for d in deliveries}
+    statuses = {d["response_status"] for d in deliveries}
+    assert 200 in statuses, "No 200 OK deliveries found"
+    assert 500 in statuses or 0 in statuses, "No failure deliveries found (expected 500 or timeout)"
