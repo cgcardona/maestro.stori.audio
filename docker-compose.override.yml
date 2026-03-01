@@ -45,3 +45,10 @@ services:
       # Cursor worktrees — parallel review agents need this to run mypy/pytest
       # against their worktree storpheus files via "cd /worktrees/<id> && mypy ."
       - /Users/gabriel/.cursor/worktrees/maestro:/worktrees
+
+  agentception:
+    volumes:
+      # Live code — host edits are instantly visible; no rebuild needed
+      - ./agentception:/app/agentception
+      # agentception tests live under agentception/tests/ (isolated from maestro conftest)
+      - /Users/gabriel/.cursor/worktrees/maestro:/worktrees
