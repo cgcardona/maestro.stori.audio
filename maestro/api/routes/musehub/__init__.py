@@ -18,7 +18,10 @@ from fastapi import APIRouter
 
 from maestro.api.routes.musehub import (
     analysis,
+    collaborators,
     issues,
+    labels,
+    milestones,
     objects,
     pull_requests,
     releases,
@@ -37,7 +40,10 @@ router = APIRouter(
 # All fixed-path subrouters are included BEFORE repos.router so they are matched
 # first and are not shadowed by the /{owner}/{repo_slug} wildcard route declared
 # last in repos.py.
+router.include_router(collaborators.router, tags=["Collaborators"])
 router.include_router(issues.router, tags=["Issues"])
+router.include_router(labels.router, tags=["Labels"])
+router.include_router(milestones.router, tags=["Milestones"])
 router.include_router(pull_requests.router, tags=["Pull Requests"])
 router.include_router(releases.router, tags=["Releases"])
 router.include_router(sync.router, tags=["Sync"])
