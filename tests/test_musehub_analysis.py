@@ -22,7 +22,6 @@ Covers issue #227 (emotion map):
 - test_emotion_map_endpoint_requires_auth       — endpoint returns 401 without auth
 - test_emotion_map_endpoint_unknown_repo_404    — unknown repo returns 404
 - test_emotion_map_endpoint_etag                — ETag header is present
-<<<<<<< HEAD
 
 Covers issue #420 (emotion diff):
 - test_compute_emotion_diff_returns_correct_type    — service returns EmotionDiffResponse
@@ -52,8 +51,6 @@ Covers issue #410 (recall / semantic search):
 - test_recall_endpoint_etag_header               — ETag header is present
 - test_recall_endpoint_limit_param               — ?limit=3 caps results to 3
 - test_recall_endpoint_missing_q_422             — missing ?q returns 422
-=======
->>>>>>> origin/dev
 """
 from __future__ import annotations
 
@@ -71,9 +68,12 @@ from maestro.models.musehub_analysis import (
     DivergenceData,
     DynamicsData,
     EmotionData,
+    EmotionDelta8D,
+    EmotionDiffResponse,
     EmotionDrift,
     EmotionMapResponse,
     EmotionVector,
+    EmotionVector8D,
     FormData,
     GrooveData,
     HarmonyData,
@@ -81,9 +81,8 @@ from maestro.models.musehub_analysis import (
     MeterData,
     MotifEntry,
     MotifsData,
-    EmotionDelta8D,
-    EmotionDiffResponse,
-    EmotionVector8D,
+    RecallMatch,
+    RecallResponse,
     RefSimilarityResponse,
     SimilarityData,
     TempoData,
@@ -94,6 +93,7 @@ from maestro.services.musehub_analysis import (
     compute_dimension,
     compute_emotion_diff,
     compute_emotion_map,
+    compute_recall,
     compute_ref_similarity,
 )
 
@@ -1107,13 +1107,8 @@ async def test_harmony_endpoint_track_filter(
 
 
 # ---------------------------------------------------------------------------
-<<<<<<< HEAD
 # Issue #410 — GET /analysis/{ref}/recall semantic search
 # ---------------------------------------------------------------------------
-
-
-from maestro.models.musehub_analysis import RecallMatch, RecallResponse  # noqa: E402
-from maestro.services.musehub_analysis import compute_recall  # noqa: E402
 
 
 def test_compute_recall_returns_correct_type() -> None:
@@ -1192,7 +1187,147 @@ def test_compute_recall_embedding_dimensions() -> None:
 
 @pytest.mark.anyio
 async def test_recall_endpoint_200(
-=======
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+    db_session: AsyncSession,
+) -> None:
+    """GET /api/v1/musehub/repos/{repo_id}/analysis/{ref}/recall?q= returns 200.
+
+    Regression test for issue #410: the recall endpoint must return a ranked list
+    of semantically similar commits so agents can retrieve musically relevant history
+    without issuing expensive dimension-by-dimension comparisons.
+    """
+    repo_id = await _create_repo(client, auth_headers)
+    resp = await client.get(
+        f"/api/v1/musehub/repos/{repo_id}/analysis/main/recall?q=jazzy+swing+groove",
+        headers=auth_headers,
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["repoId"] == repo_id
+    assert body["ref"] == "main"
+    assert body["query"] == "jazzy swing groove"
+    assert "matches" in body
+    assert isinstance(body["matches"], list)
+    assert body["totalMatches"] >= 0
+    assert body["embeddingDimensions"] == 128
+
+
+@pytest.mark.anyio
+async def test_recall_endpoint_match_fields(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+    db_session: AsyncSession,
+) -> None:
+    """Each match carries commitId, commitMessage, branch, score, and matchedDimensions."""
+    repo_id = await _create_repo(client, auth_headers)
+    resp = await client.get(
+        f"/api/v1/musehub/repos/{repo_id}/analysis/main/recall?q=harmony",
+        headers=auth_headers,
+    )
+    assert resp.status_code == 200
+    for match in resp.json()["matches"]:
+        assert "commitId" in match
+        assert "commitMessage" in match
+        assert "branch" in match
+        assert "score" in match
+        assert "matchedDimensions" in match
+        assert 0.0 <= match["score"] <= 1.0
+        assert len(match["matchedDimensions"]) >= 1
+
+
+@pytest.mark.anyio
+async def test_recall_endpoint_requires_auth(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Recall endpoint returns 401 without a Bearer token."""
+    resp = await client.get(
+        "/api/v1/musehub/repos/some-repo/analysis/main/recall?q=groove",
+    )
+    assert resp.status_code == 401
+
+
+@pytest.mark.anyio
+async def test_recall_endpoint_unknown_repo_404(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+    db_session: AsyncSession,
+) -> None:
+    """Recall endpoint returns 404 for an unknown repo_id."""
+    resp = await client.get(
+        "/api/v1/musehub/repos/00000000-0000-0000-0000-000000000000/analysis/main/recall?q=swing",
+        headers=auth_headers,
+    )
+    assert resp.status_code == 404
+
+
+@pytest.mark.anyio
+async def test_recall_endpoint_etag_header(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+    db_session: AsyncSession,
+) -> None:
+    """Recall endpoint includes an ETag header for client-side cache validation."""
+    repo_id = await _create_repo(client, auth_headers)
+    resp = await client.get(
+        f"/api/v1/musehub/repos/{repo_id}/analysis/main/recall?q=groove",
+        headers=auth_headers,
+    )
+    assert resp.status_code == 200
+    assert "etag" in resp.headers
+    assert resp.headers["etag"].startswith('"')
+
+
+@pytest.mark.anyio
+async def test_recall_endpoint_limit_param(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+    db_session: AsyncSession,
+) -> None:
+    """?limit=3 caps the returned matches to at most 3 results."""
+    repo_id = await _create_repo(client, auth_headers)
+    resp = await client.get(
+        f"/api/v1/musehub/repos/{repo_id}/analysis/main/recall?q=swing&limit=3",
+        headers=auth_headers,
+    )
+    assert resp.status_code == 200
+    assert len(resp.json()["matches"]) <= 3
+
+
+@pytest.mark.anyio
+async def test_recall_endpoint_missing_q_422(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+    db_session: AsyncSession,
+) -> None:
+    """Missing ?q returns 422 Unprocessable Entity (required query param)."""
+    repo_id = await _create_repo(client, auth_headers)
+    resp = await client.get(
+        f"/api/v1/musehub/repos/{repo_id}/analysis/main/recall",
+        headers=auth_headers,
+    )
+    assert resp.status_code == 422
+
+
+@pytest.mark.anyio
+async def test_recall_endpoint_scores_descending(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+    db_session: AsyncSession,
+) -> None:
+    """Recall endpoint returns matches sorted best-first (descending score)."""
+    repo_id = await _create_repo(client, auth_headers)
+    resp = await client.get(
+        f"/api/v1/musehub/repos/{repo_id}/analysis/main/recall?q=jazz+harmony",
+        headers=auth_headers,
+    )
+    assert resp.status_code == 200
+    scores = [m["score"] for m in resp.json()["matches"]]
+    assert scores == sorted(scores, reverse=True), "Matches must be in descending score order"
+
+
+# ---------------------------------------------------------------------------
 # Issue #406 — Cross-ref similarity service unit tests
 # ---------------------------------------------------------------------------
 
@@ -1267,44 +1402,18 @@ def test_compute_ref_similarity_interpretation_nonempty() -> None:
 
 @pytest.mark.anyio
 async def test_ref_similarity_endpoint_200(
->>>>>>> origin/dev
     client: AsyncClient,
     auth_headers: dict[str, str],
     db_session: AsyncSession,
 ) -> None:
-<<<<<<< HEAD
-    """GET /api/v1/musehub/repos/{repo_id}/analysis/{ref}/recall?q= returns 200.
-
-    Regression test for issue #410: the recall endpoint must return a ranked list
-    of semantically similar commits so agents can retrieve musically relevant history
-    without issuing expensive dimension-by-dimension comparisons.
-    """
-    repo_id = await _create_repo(client, auth_headers)
-    resp = await client.get(
-        f"/api/v1/musehub/repos/{repo_id}/analysis/main/recall?q=jazzy+swing+groove",
-=======
     """GET /analysis/{ref}/similarity returns 200 with required fields."""
     repo_id = await _create_repo(client, auth_headers)
     resp = await client.get(
         f"/api/v1/musehub/repos/{repo_id}/analysis/main/similarity?compare=dev",
->>>>>>> origin/dev
         headers=auth_headers,
     )
     assert resp.status_code == 200
     body = resp.json()
-<<<<<<< HEAD
-    assert body["repoId"] == repo_id
-    assert body["ref"] == "main"
-    assert body["query"] == "jazzy swing groove"
-    assert "matches" in body
-    assert isinstance(body["matches"], list)
-    assert body["totalMatches"] >= 0
-    assert body["embeddingDimensions"] == 128
-
-
-@pytest.mark.anyio
-async def test_recall_endpoint_match_fields(
-=======
     assert body["baseRef"] == "main"
     assert body["compareRef"] == "dev"
     assert "overallSimilarity" in body
@@ -1329,38 +1438,10 @@ async def test_recall_endpoint_match_fields(
 
 @pytest.mark.anyio
 async def test_ref_similarity_endpoint_requires_compare(
->>>>>>> origin/dev
     client: AsyncClient,
     auth_headers: dict[str, str],
     db_session: AsyncSession,
 ) -> None:
-<<<<<<< HEAD
-    """Each match carries commitId, commitMessage, branch, score, and matchedDimensions."""
-    repo_id = await _create_repo(client, auth_headers)
-    resp = await client.get(
-        f"/api/v1/musehub/repos/{repo_id}/analysis/main/recall?q=harmony",
-        headers=auth_headers,
-    )
-    assert resp.status_code == 200
-    for match in resp.json()["matches"]:
-        assert "commitId" in match
-        assert "commitMessage" in match
-        assert "branch" in match
-        assert "score" in match
-        assert "matchedDimensions" in match
-        assert 0.0 <= match["score"] <= 1.0
-        assert len(match["matchedDimensions"]) >= 1
-
-
-@pytest.mark.anyio
-async def test_recall_endpoint_requires_auth(
-    client: AsyncClient,
-    db_session: AsyncSession,
-) -> None:
-    """Recall endpoint returns 401 without a Bearer token."""
-    resp = await client.get(
-        "/api/v1/musehub/repos/some-repo/analysis/main/recall?q=groove",
-=======
     """Missing compare param returns 422 Unprocessable Entity."""
     repo_id = await _create_repo(client, auth_headers)
     resp = await client.get(
@@ -1380,56 +1461,34 @@ async def test_ref_similarity_endpoint_requires_auth(
     repo_id = await _create_repo(client, auth_headers)
     resp = await client.get(
         f"/api/v1/musehub/repos/{repo_id}/analysis/main/similarity?compare=dev",
->>>>>>> origin/dev
     )
     assert resp.status_code == 401
 
 
 @pytest.mark.anyio
-<<<<<<< HEAD
-async def test_recall_endpoint_unknown_repo_404(
-=======
 async def test_ref_similarity_endpoint_unknown_repo_404(
->>>>>>> origin/dev
     client: AsyncClient,
     auth_headers: dict[str, str],
     db_session: AsyncSession,
 ) -> None:
-<<<<<<< HEAD
-    """Recall endpoint returns 404 for an unknown repo_id."""
-    resp = await client.get(
-        "/api/v1/musehub/repos/00000000-0000-0000-0000-000000000000/analysis/main/recall?q=swing",
-=======
     """Unknown repo_id returns 404."""
     resp = await client.get(
         "/api/v1/musehub/repos/00000000-0000-0000-0000-000000000000/analysis/main/similarity?compare=dev",
->>>>>>> origin/dev
         headers=auth_headers,
     )
     assert resp.status_code == 404
 
 
 @pytest.mark.anyio
-<<<<<<< HEAD
-async def test_recall_endpoint_etag_header(
-=======
 async def test_ref_similarity_endpoint_etag(
->>>>>>> origin/dev
     client: AsyncClient,
     auth_headers: dict[str, str],
     db_session: AsyncSession,
 ) -> None:
-<<<<<<< HEAD
-    """Recall endpoint includes an ETag header for client-side cache validation."""
-    repo_id = await _create_repo(client, auth_headers)
-    resp = await client.get(
-        f"/api/v1/musehub/repos/{repo_id}/analysis/main/recall?q=groove",
-=======
     """Similarity endpoint includes ETag header for client-side caching."""
     repo_id = await _create_repo(client, auth_headers)
     resp = await client.get(
         f"/api/v1/musehub/repos/{repo_id}/analysis/main/similarity?compare=dev",
->>>>>>> origin/dev
         headers=auth_headers,
     )
     assert resp.status_code == 200
@@ -1437,55 +1496,6 @@ async def test_ref_similarity_endpoint_etag(
     assert resp.headers["etag"].startswith('"')
 
 
-<<<<<<< HEAD
-@pytest.mark.anyio
-async def test_recall_endpoint_limit_param(
-    client: AsyncClient,
-    auth_headers: dict[str, str],
-    db_session: AsyncSession,
-) -> None:
-    """?limit=3 caps the returned matches to at most 3 results."""
-    repo_id = await _create_repo(client, auth_headers)
-    resp = await client.get(
-        f"/api/v1/musehub/repos/{repo_id}/analysis/main/recall?q=swing&limit=3",
-        headers=auth_headers,
-    )
-    assert resp.status_code == 200
-    assert len(resp.json()["matches"]) <= 3
-
-
-@pytest.mark.anyio
-async def test_recall_endpoint_missing_q_422(
-    client: AsyncClient,
-    auth_headers: dict[str, str],
-    db_session: AsyncSession,
-) -> None:
-    """Missing ?q returns 422 Unprocessable Entity (required query param)."""
-    repo_id = await _create_repo(client, auth_headers)
-    resp = await client.get(
-        f"/api/v1/musehub/repos/{repo_id}/analysis/main/recall",
-        headers=auth_headers,
-    )
-    assert resp.status_code == 422
-
-
-@pytest.mark.anyio
-async def test_recall_endpoint_scores_descending(
-    client: AsyncClient,
-    auth_headers: dict[str, str],
-    db_session: AsyncSession,
-) -> None:
-    """Recall endpoint returns matches sorted best-first (descending score)."""
-    repo_id = await _create_repo(client, auth_headers)
-    resp = await client.get(
-        f"/api/v1/musehub/repos/{repo_id}/analysis/main/recall?q=jazz+harmony",
-        headers=auth_headers,
-    )
-    assert resp.status_code == 200
-    scores = [m["score"] for m in resp.json()["matches"]]
-    assert scores == sorted(scores, reverse=True), "Matches must be in descending score order"
-=======
->>>>>>> origin/dev
 # ---------------------------------------------------------------------------
 # Service unit tests — emotion diff (issue #420)
 # ---------------------------------------------------------------------------

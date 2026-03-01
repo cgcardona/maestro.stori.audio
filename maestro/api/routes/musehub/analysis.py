@@ -3,6 +3,7 @@
 Endpoint summary:
   GET /musehub/repos/{repo_id}/analysis/{ref}                       — all 13 dimensions
   GET /musehub/repos/{repo_id}/analysis/{ref}/emotion-map           — emotion map (issue #227)
+  GET /musehub/repos/{repo_id}/analysis/{ref}/recall?q=<query>      — semantic recall (issue #410)
   GET /musehub/repos/{repo_id}/analysis/{ref}/similarity            — cross-ref similarity (issue #406)
   GET /musehub/repos/{repo_id}/analysis/{ref}/emotion-diff?base=X   — 8-axis emotion diff (issue #420)
   GET /musehub/repos/{repo_id}/analysis/{ref}/dynamics/page         — per-track dynamics page
@@ -235,7 +236,6 @@ async def get_emotion_diff(
 
 
 @router.get(
-<<<<<<< HEAD
     "/repos/{repo_id}/analysis/{ref}/recall",
     response_model=RecallResponse,
     operation_id="getAnalysisRecall",
@@ -277,7 +277,26 @@ async def get_analysis_recall(
         ref:     Muse commit ref scoping the search.
         q:       Natural-language query string.
         limit:   Result count cap (1–50, default 10).
-=======
+    """
+    repo = await musehub_repository.get_repo(db, repo_id)
+    if repo is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repo not found")
+
+    result = musehub_analysis.compute_recall(
+        repo_id=repo_id,
+        ref=ref,
+        query=q,
+        limit=limit,
+    )
+
+    etag = _etag(repo_id, ref, f"recall:{q}")
+    response.headers["ETag"] = etag
+    response.headers["Last-Modified"] = _LAST_MODIFIED
+    response.headers["Cache-Control"] = "private, max-age=30"
+    return result
+
+
+@router.get(
     "/repos/{repo_id}/analysis/{ref}/similarity",
     response_model=RefSimilarityResponse,
     operation_id="getAnalysisRefSimilarity",
@@ -325,25 +344,10 @@ async def get_ref_similarity(
     Route ordering: this route MUST remain registered before ``/{dimension}``
     so FastAPI matches the fixed ``/similarity`` segment before the catch-all
     parameter captures it.
->>>>>>> origin/dev
     """
     repo = await musehub_repository.get_repo(db, repo_id)
     if repo is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repo not found")
-<<<<<<< HEAD
-
-    result = musehub_analysis.compute_recall(
-        repo_id=repo_id,
-        ref=ref,
-        query=q,
-        limit=limit,
-    )
-
-    etag = _etag(repo_id, ref, f"recall:{q}")
-    response.headers["ETag"] = etag
-    response.headers["Last-Modified"] = _LAST_MODIFIED
-    response.headers["Cache-Control"] = "private, max-age=30"
-=======
     if repo.visibility != "public" and claims is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -361,7 +365,6 @@ async def get_ref_similarity(
     response.headers["ETag"] = etag
     response.headers["Last-Modified"] = _LAST_MODIFIED
     response.headers["Cache-Control"] = "private, max-age=60"
->>>>>>> origin/dev
     return result
 
 
