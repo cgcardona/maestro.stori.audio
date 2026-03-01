@@ -25,6 +25,10 @@ from slowapi.errors import RateLimitExceeded
 from maestro.config import settings
 from maestro.api.routes import maestro, maestro_ui, health, users, conversations, assets, variation, muse, musehub
 from maestro.api.routes.musehub import ui as musehub_ui_routes
+from maestro.api.routes.musehub import ui_notifications as musehub_ui_notifications_routes
+from maestro.api.routes.musehub import ui_collaborators as musehub_ui_collab_routes
+from maestro.api.routes.musehub import ui_settings as musehub_ui_settings_routes
+from maestro.api.routes.musehub import ui_similarity as musehub_ui_similarity_routes
 from maestro.api.routes.musehub import discover as musehub_discover_routes
 from maestro.api.routes.musehub import users as musehub_user_routes
 from maestro.api.routes.musehub import oembed as musehub_oembed_routes
@@ -217,9 +221,14 @@ app.include_router(musehub_discover_routes.router, prefix="/api/v1", tags=["Disc
 app.include_router(musehub_discover_routes.star_router, prefix="/api/v1", tags=["Social"])
 # Main musehub router — includes the /{owner}/{repo_slug} wildcard last.
 app.include_router(musehub.router, prefix="/api/v1")
-# UI routers: fixed-path routes (users, explore, trending) first, then wildcards.
+# UI routers: notifications first (concrete path) so it is not shadowed by the
+# /{username} catch-all declared in fixed_router, then fixed-path routes, then wildcards.
+app.include_router(musehub_ui_notifications_routes.router, tags=["musehub-ui-notifications"])
 app.include_router(musehub_ui_routes.fixed_router, tags=["musehub-ui"])
+app.include_router(musehub_ui_collab_routes.router, tags=["musehub-ui"])
 app.include_router(musehub_ui_routes.router, tags=["musehub-ui"])
+app.include_router(musehub_ui_settings_routes.router, tags=["musehub-ui-settings"])
+app.include_router(musehub_ui_similarity_routes.router, tags=["musehub-ui"])
 app.include_router(musehub_oembed_routes.router, tags=["musehub-oembed"])
 app.include_router(musehub_raw_routes.router, prefix="/api/v1", tags=["musehub-raw"])
 # Sitemap and robots.txt — top-level (no /api/v1 prefix), outside musehub auto-discovery.
