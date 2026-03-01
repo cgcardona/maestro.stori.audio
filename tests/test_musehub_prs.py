@@ -1,6 +1,6 @@
 """Tests for Muse Hub pull request endpoints.
 
-Covers every acceptance criterion from issues #41 and #215:
+Covers every acceptance criterion from issues #41, #215, and #384:
 - POST /musehub/repos/{repo_id}/pull-requests creates PR in open state
 - 422 when from_branch == to_branch
 - 404 when from_branch does not exist
@@ -12,6 +12,8 @@ Covers every acceptance criterion from issues #41 and #215:
 - POST /pull-requests/{pr_id}/merge accepts squash and rebase strategies
 - 409 when merging an already-merged PR
 - All endpoints require valid JWT
+- affected_sections derived from commit message text, not structural score heuristic
+- build_pr_diff_response / build_zero_diff_response service helpers produce valid output
 
 All tests use the shared ``client``, ``auth_headers``, and ``db_session``
 fixtures from conftest.py.
@@ -788,3 +790,157 @@ async def test_reply_to_comment(
     reply = data["comments"][0]["replies"][0]
     assert reply["body"] == "Reply here."
     assert reply["parentCommentId"] == parent_id
+
+
+# ---------------------------------------------------------------------------
+# Issue #384 — affected_sections and divergence service helpers
+# ---------------------------------------------------------------------------
+
+
+def test_extract_affected_sections_returns_empty_when_no_keywords() -> None:
+    """affected_sections is empty when no commit mentions a section keyword."""
+    from maestro.services.musehub_divergence import extract_affected_sections
+
+    messages: tuple[str, ...] = (
+        "add jazzy chord voicing",
+        "fix drum quantization",
+        "update harmonic progression",
+    )
+    assert extract_affected_sections(messages) == []
+
+
+def test_extract_affected_sections_returns_only_mentioned_keywords() -> None:
+    """affected_sections lists only the sections actually named in commits."""
+    from maestro.services.musehub_divergence import extract_affected_sections
+
+    messages: tuple[str, ...] = (
+        "rework the chorus melody",
+        "add a new bridge transition",
+        "fix drum quantization",
+    )
+    result = extract_affected_sections(messages)
+    assert "Chorus" in result
+    assert "Bridge" in result
+    assert "Verse" not in result
+    assert "Intro" not in result
+    assert "Outro" not in result
+
+
+def test_extract_affected_sections_case_insensitive() -> None:
+    """Keyword matching is case-insensitive."""
+    from maestro.services.musehub_divergence import extract_affected_sections
+
+    messages: tuple[str, ...] = ("rewrite VERSE chord progression",)
+    result = extract_affected_sections(messages)
+    assert result == ["Verse"]
+
+
+def test_extract_affected_sections_deduplicates() -> None:
+    """The same keyword appearing in multiple commits is only returned once."""
+    from maestro.services.musehub_divergence import extract_affected_sections
+
+    messages: tuple[str, ...] = (
+        "update chorus dynamics",
+        "fix chorus timing",
+        "tweak chorus reverb",
+    )
+    result = extract_affected_sections(messages)
+    assert result.count("Chorus") == 1
+
+
+def test_build_zero_diff_response_structure() -> None:
+    """build_zero_diff_response returns five dimensions all at score 0.0."""
+    from maestro.services.musehub_divergence import ALL_DIMENSIONS, build_zero_diff_response
+
+    resp = build_zero_diff_response(
+        pr_id="pr-abc",
+        repo_id="repo-xyz",
+        from_branch="feat/test",
+        to_branch="main",
+    )
+    assert resp.pr_id == "pr-abc"
+    assert resp.repo_id == "repo-xyz"
+    assert resp.from_branch == "feat/test"
+    assert resp.to_branch == "main"
+    assert resp.overall_score == 0.0
+    assert resp.common_ancestor is None
+    assert resp.affected_sections == []
+    assert len(resp.dimensions) == len(ALL_DIMENSIONS)
+    for dim in resp.dimensions:
+        assert dim.score == 0.0
+        assert dim.level == "NONE"
+        assert dim.delta_label == "unchanged"
+
+
+def test_build_pr_diff_response_affected_sections_uses_commit_messages() -> None:
+    """build_pr_diff_response derives affected_sections from commit messages, not score heuristic."""
+    from maestro.services.musehub_divergence import (
+        MuseHubDimensionDivergence,
+        MuseHubDivergenceLevel,
+        MuseHubDivergenceResult,
+        build_pr_diff_response,
+    )
+
+    # Structural score > 0, but NO section keyword in any commit message.
+    structural_dim = MuseHubDimensionDivergence(
+        dimension="structural",
+        level=MuseHubDivergenceLevel.LOW,
+        score=0.3,
+        description="Minor structural divergence.",
+        branch_a_commits=1,
+        branch_b_commits=0,
+    )
+    result = MuseHubDivergenceResult(
+        repo_id="repo-1",
+        branch_a="main",
+        branch_b="feat/changes",
+        common_ancestor="abc123",
+        dimensions=(structural_dim,),
+        overall_score=0.3,
+        all_messages=("refactor arrangement flow", "update drum pattern"),
+    )
+    resp = build_pr_diff_response(
+        pr_id="pr-1",
+        from_branch="feat/changes",
+        to_branch="main",
+        result=result,
+    )
+    # No section keyword in commit messages → empty list, even though structural score > 0
+    assert resp.affected_sections == []
+
+
+def test_build_pr_diff_response_affected_sections_non_empty_when_keywords_present() -> None:
+    """build_pr_diff_response populates affected_sections from commit message keywords."""
+    from maestro.services.musehub_divergence import (
+        MuseHubDimensionDivergence,
+        MuseHubDivergenceLevel,
+        MuseHubDivergenceResult,
+        build_pr_diff_response,
+    )
+
+    structural_dim = MuseHubDimensionDivergence(
+        dimension="structural",
+        level=MuseHubDivergenceLevel.LOW,
+        score=0.3,
+        description="Minor structural divergence.",
+        branch_a_commits=2,
+        branch_b_commits=1,
+    )
+    result = MuseHubDivergenceResult(
+        repo_id="repo-2",
+        branch_a="main",
+        branch_b="feat/rewrite",
+        common_ancestor="def456",
+        dimensions=(structural_dim,),
+        overall_score=0.3,
+        all_messages=("add new verse section", "polish intro melody"),
+    )
+    resp = build_pr_diff_response(
+        pr_id="pr-2",
+        from_branch="feat/rewrite",
+        to_branch="main",
+        result=result,
+    )
+    assert "Verse" in resp.affected_sections
+    assert "Intro" in resp.affected_sections
+    assert "Chorus" not in resp.affected_sections

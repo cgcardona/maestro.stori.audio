@@ -697,6 +697,361 @@ async def test_pr_detail_json_response(
     assert "deltaLabel" in dim
 
 
+# ---------------------------------------------------------------------------
+# Tests for musehub_divergence service helpers (issue #384)
+# ---------------------------------------------------------------------------
+
+
+def test_extract_affected_sections_empty_when_no_section_keywords() -> None:
+    """affected_sections returns [] when no commit message mentions a section keyword."""
+    from maestro.services.musehub_divergence import extract_affected_sections
+
+    messages = (
+        "Add jazzy chord progression in Dm",
+        "Rework drum pattern for more swing",
+        "Fix melody pitch drift on lead synth",
+    )
+    assert extract_affected_sections(messages) == []
+
+
+def test_extract_affected_sections_finds_mentioned_keywords() -> None:
+    """affected_sections returns only section keywords actually present in commit messages."""
+    from maestro.services.musehub_divergence import extract_affected_sections
+
+    messages = (
+        "Rewrite chorus melody to be more catchy",
+        "Add tension to the bridge section",
+        "Clean up drum loop in verse 2",
+    )
+    result = extract_affected_sections(messages)
+    assert "Chorus" in result
+    assert "Bridge" in result
+    assert "Verse" in result
+    # Keywords NOT mentioned should not appear
+    assert "Intro" not in result
+    assert "Outro" not in result
+
+
+def test_extract_affected_sections_case_insensitive() -> None:
+    """Section keyword matching is case-insensitive."""
+    from maestro.services.musehub_divergence import extract_affected_sections
+
+    messages = ("CHORUS rework", "New INTRO material", "bridge transition")
+    result = extract_affected_sections(messages)
+    assert "Chorus" in result
+    assert "Intro" in result
+    assert "Bridge" in result
+
+
+def test_extract_affected_sections_deduplicates() -> None:
+    """Each keyword appears at most once even when mentioned in multiple commits."""
+    from maestro.services.musehub_divergence import extract_affected_sections
+
+    messages = ("fix chorus", "rewrite chorus progression", "shorten chorus tail")
+    result = extract_affected_sections(messages)
+    assert result.count("Chorus") == 1
+
+
+def test_build_pr_diff_response_affected_sections_from_commits() -> None:
+    """build_pr_diff_response populates affected_sections from commit messages, not score."""
+    from maestro.services.musehub_divergence import (
+        MuseHubDimensionDivergence,
+        MuseHubDivergenceLevel,
+        MuseHubDivergenceResult,
+        build_pr_diff_response,
+    )
+
+    structural_dim = MuseHubDimensionDivergence(
+        dimension="structural",
+        level=MuseHubDivergenceLevel.HIGH,
+        score=0.9,
+        description="High structural divergence",
+        branch_a_commits=3,
+        branch_b_commits=0,
+    )
+    other_dims = tuple(
+        MuseHubDimensionDivergence(
+            dimension=dim,
+            level=MuseHubDivergenceLevel.NONE,
+            score=0.0,
+            description=f"No {dim} changes.",
+            branch_a_commits=0,
+            branch_b_commits=0,
+        )
+        for dim in ("melodic", "harmonic", "rhythmic", "dynamic")
+    )
+    result = MuseHubDivergenceResult(
+        repo_id="repo-1",
+        branch_a="main",
+        branch_b="feat/new-structure",
+        common_ancestor="abc123",
+        dimensions=(structural_dim,) + other_dims,
+        overall_score=0.18,
+        # No section keywords in any commit message → affected_sections should be []
+        all_messages=("Add chord progression", "Refine drum groove"),
+    )
+
+    response = build_pr_diff_response(
+        pr_id="pr-abc",
+        from_branch="feat/new-structure",
+        to_branch="main",
+        result=result,
+    )
+
+    assert response.affected_sections == []
+    assert response.overall_score == 0.18
+    assert len(response.dimensions) == 5
+
+
+def test_build_pr_diff_response_affected_sections_present_when_mentioned() -> None:
+    """build_pr_diff_response returns affected_sections when commits mention section keywords."""
+    from maestro.services.musehub_divergence import (
+        MuseHubDimensionDivergence,
+        MuseHubDivergenceLevel,
+        MuseHubDivergenceResult,
+        build_pr_diff_response,
+    )
+
+    dims = tuple(
+        MuseHubDimensionDivergence(
+            dimension=dim,
+            level=MuseHubDivergenceLevel.NONE,
+            score=0.0,
+            description=f"No {dim} changes.",
+            branch_a_commits=0,
+            branch_b_commits=0,
+        )
+        for dim in ("melodic", "harmonic", "rhythmic", "structural", "dynamic")
+    )
+    result = MuseHubDivergenceResult(
+        repo_id="repo-2",
+        branch_a="main",
+        branch_b="feat/chorus-rework",
+        common_ancestor="def456",
+        dimensions=dims,
+        overall_score=0.0,
+        all_messages=("Rework the chorus hook", "Add bridge leading into outro"),
+    )
+
+    response = build_pr_diff_response(
+        pr_id="pr-def",
+        from_branch="feat/chorus-rework",
+        to_branch="main",
+        result=result,
+    )
+
+    assert "Chorus" in response.affected_sections
+    assert "Bridge" in response.affected_sections
+    assert "Outro" in response.affected_sections
+    assert "Verse" not in response.affected_sections
+
+
+def test_build_zero_diff_response_returns_empty_affected_sections() -> None:
+    """build_zero_diff_response always returns [] for affected_sections."""
+    from maestro.services.musehub_divergence import build_zero_diff_response
+
+    response = build_zero_diff_response(
+        pr_id="pr-zero",
+        repo_id="repo-zero",
+        from_branch="feat/empty",
+        to_branch="main",
+    )
+
+    assert response.affected_sections == []
+    assert response.overall_score == 0.0
+    assert all(d.score == 0.0 for d in response.dimensions)
+    assert len(response.dimensions) == 5
+
+
+@pytest.mark.anyio
+async def test_diff_api_affected_sections_empty_without_section_keywords(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    auth_headers: dict[str, str],
+) -> None:
+    """GET /diff returns affected_sections=[] when commit messages mention no section keywords."""
+    import uuid
+    from datetime import datetime, timezone
+
+    from maestro.db.musehub_models import MusehubBranch, MusehubCommit, MusehubPullRequest
+
+    repo_id = await _make_repo(db_session)
+    commit_id = uuid.uuid4().hex
+    commit = MusehubCommit(
+        commit_id=commit_id,
+        repo_id=repo_id,
+        branch="feat/harmonic-twist",
+        parent_ids=[],
+        message="Add jazzy chord progression in Dm",
+        author="musician",
+        timestamp=datetime.now(tz=timezone.utc),
+    )
+    branch = MusehubBranch(
+        repo_id=repo_id,
+        name="feat/harmonic-twist",
+        head_commit_id=commit_id,
+    )
+    pr_id = uuid.uuid4().hex
+    pr = MusehubPullRequest(
+        pr_id=pr_id,
+        repo_id=repo_id,
+        title="Harmonic twist",
+        body="",
+        state="open",
+        from_branch="feat/harmonic-twist",
+        to_branch="main",
+        author="musician",
+    )
+    db_session.add_all([commit, branch, pr])
+    await db_session.commit()
+
+    response = await client.get(
+        f"/api/v1/musehub/repos/{repo_id}/pull-requests/{pr_id}/diff",
+        headers=auth_headers,
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["affectedSections"] == []
+
+
+@pytest.mark.anyio
+async def test_diff_api_affected_sections_populated_from_commit_message(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    auth_headers: dict[str, str],
+) -> None:
+    """GET /diff returns affected_sections populated from commit messages mentioning sections."""
+    import uuid
+    from datetime import datetime, timezone
+
+    from maestro.db.musehub_models import MusehubBranch, MusehubCommit, MusehubPullRequest
+
+    repo_id = await _make_repo(db_session)
+    # main branch needs at least one commit for compute_hub_divergence to succeed
+    main_commit_id = uuid.uuid4().hex
+    main_commit = MusehubCommit(
+        commit_id=main_commit_id,
+        repo_id=repo_id,
+        branch="main",
+        parent_ids=[],
+        message="Initial composition",
+        author="musician",
+        timestamp=datetime.now(tz=timezone.utc),
+    )
+    main_branch = MusehubBranch(
+        repo_id=repo_id,
+        name="main",
+        head_commit_id=main_commit_id,
+    )
+    commit_id = uuid.uuid4().hex
+    commit = MusehubCommit(
+        commit_id=commit_id,
+        repo_id=repo_id,
+        branch="feat/chorus-rework",
+        parent_ids=[main_commit_id],
+        message="Rewrite the chorus to be more energetic and add new bridge",
+        author="musician",
+        timestamp=datetime.now(tz=timezone.utc),
+    )
+    branch = MusehubBranch(
+        repo_id=repo_id,
+        name="feat/chorus-rework",
+        head_commit_id=commit_id,
+    )
+    pr_id = uuid.uuid4().hex
+    pr = MusehubPullRequest(
+        pr_id=pr_id,
+        repo_id=repo_id,
+        title="Chorus rework",
+        body="",
+        state="open",
+        from_branch="feat/chorus-rework",
+        to_branch="main",
+        author="musician",
+    )
+    db_session.add_all([main_commit, main_branch, commit, branch, pr])
+    await db_session.commit()
+
+    response = await client.get(
+        f"/api/v1/musehub/repos/{repo_id}/pull-requests/{pr_id}/diff",
+        headers=auth_headers,
+    )
+    assert response.status_code == 200
+    data = response.json()
+    sections = data["affectedSections"]
+    assert "Chorus" in sections
+    assert "Bridge" in sections
+    assert "Verse" not in sections
+
+
+@pytest.mark.anyio
+async def test_ui_diff_json_affected_sections_from_commit_message(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    auth_headers: dict[str, str],
+) -> None:
+    """PR detail ?format=json returns affected_sections derived from commit messages."""
+    import uuid
+    from datetime import datetime, timezone
+
+    from maestro.db.musehub_models import MusehubBranch, MusehubCommit, MusehubPullRequest
+
+    repo_id = await _make_repo(db_session)
+    # main branch needs at least one commit for compute_hub_divergence to succeed
+    main_commit_id = uuid.uuid4().hex
+    main_commit = MusehubCommit(
+        commit_id=main_commit_id,
+        repo_id=repo_id,
+        branch="main",
+        parent_ids=[],
+        message="Initial composition",
+        author="musician",
+        timestamp=datetime.now(tz=timezone.utc),
+    )
+    main_branch = MusehubBranch(
+        repo_id=repo_id,
+        name="main",
+        head_commit_id=main_commit_id,
+    )
+    commit_id = uuid.uuid4().hex
+    commit = MusehubCommit(
+        commit_id=commit_id,
+        repo_id=repo_id,
+        branch="feat/verse-update",
+        parent_ids=[main_commit_id],
+        message="Extend verse 2 with new melodic motif",
+        author="musician",
+        timestamp=datetime.now(tz=timezone.utc),
+    )
+    branch = MusehubBranch(
+        repo_id=repo_id,
+        name="feat/verse-update",
+        head_commit_id=commit_id,
+    )
+    pr_id = uuid.uuid4().hex
+    pr = MusehubPullRequest(
+        pr_id=pr_id,
+        repo_id=repo_id,
+        title="Verse update",
+        body="",
+        state="open",
+        from_branch="feat/verse-update",
+        to_branch="main",
+        author="musician",
+    )
+    db_session.add_all([main_commit, main_branch, commit, branch, pr])
+    await db_session.commit()
+
+    response = await client.get(
+        f"/musehub/ui/testuser/test-beats/pulls/{pr_id}?format=json",
+        headers=auth_headers,
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert "Verse" in data["affectedSections"]
+    assert "Chorus" not in data["affectedSections"]
+
+
 @pytest.mark.anyio
 async def test_ui_issue_detail_page_returns_200(
     client: AsyncClient,

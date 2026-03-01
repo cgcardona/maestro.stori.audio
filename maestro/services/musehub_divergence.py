@@ -31,6 +31,7 @@ Boundary rules
 from __future__ import annotations
 
 import logging
+import re
 from dataclasses import dataclass
 from enum import Enum
 
@@ -38,6 +39,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
 from maestro.db.musehub_models import MusehubCommit
+from maestro.models.musehub import PRDiffDimensionScore, PRDiffResponse
 
 logger = logging.getLogger(__name__)
 
@@ -51,6 +53,15 @@ ALL_DIMENSIONS: tuple[str, ...] = (
     "rhythmic",
     "structural",
     "dynamic",
+)
+
+#: Section names that may appear in ``PRDiffResponse.affected_sections``.
+_SECTION_KEYWORDS: tuple[str, ...] = ("bridge", "chorus", "verse", "intro", "outro", "section")
+
+#: Pre-compiled word-boundary regex for scanning commit messages for section keywords.
+_SECTION_RE: re.Pattern[str] = re.compile(
+    r"\b(?:bridge|chorus|verse|intro|outro|section)\b",
+    re.IGNORECASE,
 )
 
 #: Keyword patterns used to classify commit messages into musical dimensions.
@@ -128,6 +139,9 @@ class MuseHubDivergenceResult:
         common_ancestor: Commit ID of the merge base, or ``None`` if disjoint.
         dimensions:      Per-dimension divergence results (always 5 entries).
         overall_score:   Mean of all per-dimension scores in [0.0, 1.0].
+        all_messages:    All commit messages from both branches since the merge
+                         base.  Used by :func:`build_pr_diff_response` to derive
+                         ``affected_sections`` from actual commit text.
     """
 
     repo_id: str
@@ -136,6 +150,7 @@ class MuseHubDivergenceResult:
     common_ancestor: str | None
     dimensions: tuple[MuseHubDimensionDivergence, ...]
     overall_score: float
+    all_messages: tuple[str, ...] = ()
 
 
 # ---------------------------------------------------------------------------
@@ -401,6 +416,8 @@ async def compute_hub_divergence(
         else 0.0
     )
 
+    all_messages = tuple(c.message for c in a_since) + tuple(c.message for c in b_since)
+
     return MuseHubDivergenceResult(
         repo_id=repo_id,
         branch_a=branch_a,
@@ -408,4 +425,137 @@ async def compute_hub_divergence(
         common_ancestor=common_ancestor,
         dimensions=dimensions,
         overall_score=overall,
+        all_messages=all_messages,
+    )
+
+
+# ---------------------------------------------------------------------------
+# PRDiffResponse builder helpers (shared by pull_requests and ui routes)
+# ---------------------------------------------------------------------------
+
+
+def extract_affected_sections(messages: tuple[str, ...]) -> list[str]:
+    """Return section keywords mentioned in any of *messages*.
+
+    Scans each commit message for structural section names (bridge, chorus,
+    verse, intro, outro, section) using a word-boundary regex.  Returns the
+    unique matches in stable order, capitalised.  Returns an empty list when
+    no commit mentions any section keyword.
+
+    Args:
+        messages: Commit messages from both branches since the merge base.
+
+    Returns:
+        Unique capitalised section keywords found, preserving keyword order.
+    """
+    seen: set[str] = set()
+    result: list[str] = []
+    for msg in messages:
+        for match in _SECTION_RE.finditer(msg):
+            kw = match.group(0).lower()
+            if kw not in seen:
+                seen.add(kw)
+                result.append(kw.capitalize())
+    return result
+
+
+def _delta_label(score: float) -> str:
+    """Convert a divergence score to a human-readable delta badge label."""
+    pct = round(score * 100, 1)
+    if pct == 0.0:
+        return "unchanged"
+    return f"+{pct}"
+
+
+def build_pr_diff_response(
+    pr_id: str,
+    from_branch: str,
+    to_branch: str,
+    result: MuseHubDivergenceResult,
+) -> PRDiffResponse:
+    """Assemble a :class:`PRDiffResponse` from a divergence computation result.
+
+    Extracts ``affected_sections`` by scanning the commit messages stored in
+    *result* for structural section keywords.  Only sections actually mentioned
+    in commit text are returned — an empty list is correct when no commit
+    references a section name.
+
+    Args:
+        pr_id:       Pull request UUID.
+        from_branch: Source branch name (for the response payload).
+        to_branch:   Target branch name (for the response payload).
+        result:      Output of :func:`compute_hub_divergence`.
+
+    Returns:
+        A fully-populated :class:`PRDiffResponse`.
+    """
+    dimensions = [
+        PRDiffDimensionScore(
+            dimension=d.dimension,
+            score=d.score,
+            level=d.level.value,
+            delta_label=_delta_label(d.score),
+            description=d.description,
+            from_branch_commits=d.branch_b_commits,
+            to_branch_commits=d.branch_a_commits,
+        )
+        for d in result.dimensions
+    ]
+
+    affected = extract_affected_sections(result.all_messages)
+
+    return PRDiffResponse(
+        pr_id=pr_id,
+        repo_id=result.repo_id,
+        from_branch=from_branch,
+        to_branch=to_branch,
+        dimensions=dimensions,
+        overall_score=result.overall_score,
+        common_ancestor=result.common_ancestor,
+        affected_sections=affected,
+    )
+
+
+def build_zero_diff_response(
+    pr_id: str,
+    repo_id: str,
+    from_branch: str,
+    to_branch: str,
+) -> PRDiffResponse:
+    """Return a zero-score :class:`PRDiffResponse` placeholder.
+
+    Used when :func:`compute_hub_divergence` raises :exc:`ValueError` because
+    one or both branches have no commits yet.  Ensures the PR detail page
+    always renders even for brand-new branches.
+
+    Args:
+        pr_id:       Pull request UUID.
+        repo_id:     Repository UUID.
+        from_branch: Source branch name.
+        to_branch:   Target branch name.
+
+    Returns:
+        A :class:`PRDiffResponse` with all five dimensions at score 0.0.
+    """
+    dimensions = [
+        PRDiffDimensionScore(
+            dimension=dim,
+            score=0.0,
+            level="NONE",
+            delta_label="unchanged",
+            description="No commits on one or both branches yet.",
+            from_branch_commits=0,
+            to_branch_commits=0,
+        )
+        for dim in ALL_DIMENSIONS
+    ]
+    return PRDiffResponse(
+        pr_id=pr_id,
+        repo_id=repo_id,
+        from_branch=from_branch,
+        to_branch=to_branch,
+        dimensions=dimensions,
+        overall_score=0.0,
+        common_ancestor=None,
+        affected_sections=[],
     )

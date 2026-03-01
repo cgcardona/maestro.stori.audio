@@ -83,7 +83,6 @@ from maestro.models.musehub import (
     BranchDetailListResponse,
     CommitListResponse,
     CommitResponse,
-    PRDiffDimensionScore,
     PRDiffResponse,
     RepoResponse,
     TagListResponse,
@@ -555,49 +554,18 @@ async def pr_detail_page(
                     branch_a=pr.to_branch,
                     branch_b=pr.from_branch,
                 )
-                dimensions = [
-                    PRDiffDimensionScore(
-                        dimension=d.dimension,
-                        score=d.score,
-                        level=d.level.value,
-                        delta_label="unchanged" if d.score == 0.0 else f"+{round(d.score * 100, 1)}",
-                        description=d.description,
-                        from_branch_commits=d.branch_b_commits,
-                        to_branch_commits=d.branch_a_commits,
-                    )
-                    for d in result.dimensions
-                ]
-                json_data = PRDiffResponse(
+                json_data = musehub_divergence.build_pr_diff_response(
                     pr_id=pr_id,
-                    repo_id=repo_id,
                     from_branch=pr.from_branch,
                     to_branch=pr.to_branch,
-                    dimensions=dimensions,
-                    overall_score=result.overall_score,
-                    common_ancestor=result.common_ancestor,
-                    affected_sections=[],
+                    result=result,
                 )
             except ValueError:
-                json_data = PRDiffResponse(
+                json_data = musehub_divergence.build_zero_diff_response(
                     pr_id=pr_id,
                     repo_id=repo_id,
                     from_branch=pr.from_branch,
                     to_branch=pr.to_branch,
-                    dimensions=[
-                        PRDiffDimensionScore(
-                            dimension=dim,
-                            score=0.0,
-                            level="NONE",
-                            delta_label="unchanged",
-                            description="No commits on one or both branches yet.",
-                            from_branch_commits=0,
-                            to_branch_commits=0,
-                        )
-                        for dim in musehub_divergence.ALL_DIMENSIONS
-                    ],
-                    overall_score=0.0,
-                    common_ancestor=None,
-                    affected_sections=[],
                 )
 
     return await negotiate_response(

@@ -2160,9 +2160,13 @@ The PR detail page (`GET /musehub/ui/{owner}/{repo_slug}/pulls/{pr_id}`) now sho
 
 Returns `PRDiffResponse` — a `PRDiffDimensionScore` for each of the five musical dimensions plus `overall_score`, `common_ancestor`, and `affected_sections`.
 
+`affected_sections` is derived by scanning commit messages from both branches since the merge base for structural section keywords (bridge, chorus, verse, intro, outro, section) using a word-boundary regex.  Only sections actually mentioned in commit text are returned; an empty list is correct when no commit references a section name.  The field is **never** derived from divergence scores alone.
+
 **Content negotiation:** `GET /musehub/ui/{owner}/{repo_slug}/pulls/{pr_id}?format=json` returns the full `PRDiffResponse` for AI agent consumption. Agents use this to reason about musical impact before approving a merge — e.g. a large harmonic delta with unchanged rhythm signals a chord progression update that preserves the groove.
 
 **Graceful degradation:** When one or both branches have no commits (divergence engine raises `ValueError`), the endpoint returns five zero-score placeholder dimensions so the page always renders cleanly.
+
+**Divergence builder service:** Both the pull-requests route and the UI route delegate PRDiffResponse assembly to `maestro.services.musehub_divergence.build_pr_diff_response` (success path) and `build_zero_diff_response` (no-commit fallback).  Route handlers remain thin callers with no duplicated mapping logic.
 
 ### Sync Protocol Design
 
