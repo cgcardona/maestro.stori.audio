@@ -23,20 +23,42 @@ Every migration you write or touch must satisfy:
 - Every new table has a primary key, `created_at`/`updated_at` timestamps, and at minimum an index on the most likely filter column.
 - ORM models in `maestro/db/models/` are updated in the same commit as the migration — never out of sync.
 
-## Migration Chain Rules (Maestro-Specific)
+## Maestro Migration Policy — READ THIS FIRST
 
-The current chain in this repo:
-```
-0001_consolidated_schema → 0003_labels → ...
-```
-`0002_milestones` was folded into `0001`. Any migration referencing `0002_milestones` is broken. Always verify with:
+**There is exactly one migration file: `alembic/versions/0001_consolidated_schema.py`.**
+
+This is a deliberate development-phase policy. The schema is too young and too active for a long chain of migrations — a flat single-file schema is far easier to reason about, for humans and agents alike.
+
+### When you need to add a new table
+
+**Do NOT create a new migration file.** Instead:
+
+1. Add the `op.create_table(...)` and `op.create_index(...)` calls to the **bottom of `upgrade()`** in `0001_consolidated_schema.py`.
+2. Add the corresponding `op.drop_index(...)` / `op.drop_table(...)` calls to the **top of `downgrade()`** (reverse order — newest tables first).
+3. Add the table name to the docstring at the top of the file.
+4. Delete the database and rebuild from scratch:
+   ```
+   docker compose exec postgres psql -U maestro -d postgres -c \
+     "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname='maestro' AND pid<>pg_backend_pid();"
+   docker compose exec postgres psql -U maestro -d postgres -c "DROP DATABASE maestro;"
+   docker compose exec postgres psql -U maestro -d postgres -c "CREATE DATABASE maestro;"
+   docker compose exec maestro alembic upgrade head
+   ```
+5. Verify: `alembic heads` must return exactly `0001 (head)`.
+
+### Never do these
+
+- Create `0002_*.py`, `0006_*.py`, or any new migration file.
+- Reference a revision ID other than `"0001"` in `down_revision`.
+- Run `alembic revision --autogenerate` (it will create a new file — delete it immediately and fold manually).
+
+### Verify before done
 
 ```
-docker compose exec maestro alembic heads
-docker compose exec maestro alembic history --verbose
+docker compose exec maestro alembic heads           # must print: 0001 (head)
+docker compose exec maestro alembic history         # must print: <base> -> 0001 (head)
+docker compose exec maestro alembic upgrade head    # must complete with no errors
 ```
-
-Before adding a new migration, confirm the chain is clean. After adding one, confirm it again.
 
 ## Failure Modes to Avoid
 
