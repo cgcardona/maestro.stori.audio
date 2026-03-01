@@ -1,0 +1,542 @@
+{% extends "musehub/base.html" %}
+
+{% block title %}Explore{% endblock %}
+{% block breadcrumb %}Explore{% endblock %}
+
+{% block container_extra_class %}-wide{% endblock %}
+
+{% block extra_css %}
+<style>
+  /* ── Two-column layout: sidebar + grid ───────────────────────────────── */
+  .explore-layout {
+    display: grid;
+    grid-template-columns: 220px 1fr;
+    gap: var(--space-5);
+    align-items: start;
+  }
+  @media (max-width: 768px) {
+    .explore-layout { grid-template-columns: 1fr; }
+    .explore-sidebar { display: none; }
+    .explore-sidebar.open { display: block; }
+  }
+
+  /* ── Filter sidebar ───────────────────────────────────────────────────── */
+  .explore-sidebar {
+    position: sticky;
+    top: 72px;
+  }
+  .sidebar-section {
+    margin-bottom: var(--space-4);
+  }
+  .sidebar-section-title {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-muted, #8b949e);
+    margin: 0 0 var(--space-2) 0;
+  }
+  .filter-chip {
+    display: inline-block;
+    font-size: 11px;
+    padding: 3px 10px;
+    border-radius: 12px;
+    background: var(--surface-raised, #2a2a3e);
+    color: var(--text-secondary, #aaa);
+    border: 1px solid var(--border, #333);
+    cursor: pointer;
+    margin: 2px 3px 2px 0;
+    text-decoration: none;
+    transition: background 0.15s, color 0.15s, border-color 0.15s;
+  }
+  .filter-chip:hover {
+    background: var(--surface-hover, #333);
+    color: var(--text-primary, #e6edf3);
+  }
+  .filter-chip.active {
+    background: rgba(100, 120, 255, 0.18);
+    color: var(--accent, #7b93ff);
+    border-color: rgba(100, 120, 255, 0.4);
+  }
+  .sidebar-select {
+    width: 100%;
+    padding: 6px 8px;
+    border-radius: 6px;
+    background: var(--surface-raised, #2a2a3e);
+    color: var(--text-primary, #e6edf3);
+    border: 1px solid var(--border, #333);
+    font-size: 13px;
+    cursor: pointer;
+  }
+  .sidebar-sort-option {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    color: var(--text-secondary, #aaa);
+    cursor: pointer;
+    padding: 3px 0;
+  }
+  .sidebar-sort-option input[type="radio"] { accent-color: var(--accent, #7b93ff); }
+  .clear-filters-link {
+    font-size: 12px;
+    color: var(--accent, #7b93ff);
+    text-decoration: none;
+    opacity: 0.8;
+  }
+  .clear-filters-link:hover { opacity: 1; text-decoration: underline; }
+  .mobile-filter-toggle {
+    display: none;
+    margin-bottom: var(--space-3);
+  }
+  @media (max-width: 768px) {
+    .mobile-filter-toggle { display: block; }
+  }
+
+  /* ── Repo card ─────────────────────────────────────────────────────────── */
+  .repo-card {
+    position: relative;
+    background: var(--surface-raised, #2a2a3e);
+    border: 1px solid var(--border, #333);
+    border-radius: 10px;
+    padding: var(--space-3);
+    cursor: pointer;
+    transition: border-color 0.15s, box-shadow 0.15s;
+    overflow: hidden;
+  }
+  .repo-card:hover { border-color: var(--accent, #7b93ff); box-shadow: 0 2px 12px rgba(100,120,255,0.1); }
+  .repo-card-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 2px; }
+  .repo-card-name { font-weight: 600; font-size: 14px; }
+  .repo-card-meta { display: flex; gap: var(--space-3); font-size: 12px; color: var(--text-muted, #8b949e); margin-top: var(--space-2); flex-wrap: wrap; }
+  .repo-card-meta-pills { display: flex; gap: 6px; flex-wrap: wrap; margin: 6px 0 2px; }
+  .repo-meta-pill {
+    font-size: 11px; padding: 2px 8px; border-radius: 10px;
+    background: var(--surface-raised, #2a2a3e); color: var(--text-secondary, #aaa); border: 1px solid var(--border, #333);
+  }
+  .tag-pill {
+    font-size: 11px; padding: 2px 8px; border-radius: 10px;
+    background: rgba(100, 120, 255, 0.12); color: var(--accent, #7b93ff); border: 1px solid rgba(100, 120, 255, 0.2);
+  }
+  .repo-card-desc-trunc {
+    font-size: 13px; color: var(--text-muted, #8b949e); margin: 4px 0 0; line-height: 1.4;
+  }
+  .repo-card-play {
+    position: absolute; bottom: 10px; right: 10px;
+    background: rgba(100,120,255,0.18); border: 1px solid rgba(100,120,255,0.35);
+    color: var(--accent, #7b93ff); border-radius: 50%; width: 30px; height: 30px;
+    display: flex; align-items: center; justify-content: center; cursor: pointer; font-size: 12px;
+    transition: background 0.15s;
+  }
+  .repo-card-play:hover { background: rgba(100,120,255,0.35); }
+  .waveform-bar { display: flex; align-items: flex-end; height: 36px; gap: 1px; opacity: 0.5; }
+  .wave-col { flex: 1; background: var(--accent, #7b93ff); border-radius: 1px; min-height: 4px; }
+  .rank-badge {
+    position: absolute; top: 10px; left: 10px;
+    background: var(--accent, #7b93ff); color: #fff; font-weight: 700; font-size: 13px;
+    width: 28px; height: 28px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center; z-index: 1; pointer-events: none;
+  }
+
+  /* ── Inline hover audio preview ────────────────────────────────────────── */
+  .card-audio-preview {
+    position: absolute;
+    bottom: 0; left: 0; right: 0;
+    background: rgba(20, 20, 35, 0.94);
+    border-top: 1px solid rgba(100,120,255,0.25);
+    padding: 8px 10px;
+    display: none;
+    align-items: center;
+    gap: 8px;
+    z-index: 5;
+    border-radius: 0 0 10px 10px;
+    backdrop-filter: blur(4px);
+  }
+  .card-audio-preview.visible { display: flex; }
+  .card-preview-btn {
+    background: rgba(100,120,255,0.2); border: 1px solid rgba(100,120,255,0.3);
+    color: var(--accent, #7b93ff); border-radius: 50%; width: 26px; height: 26px;
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer; font-size: 11px; flex-shrink: 0;
+    transition: background 0.15s;
+  }
+  .card-preview-btn:hover { background: rgba(100,120,255,0.4); }
+  .card-preview-wave { display: flex; align-items: center; gap: 1px; height: 22px; flex: 1; min-width: 0; }
+  .card-preview-wave .wave-col { background: var(--accent, #7b93ff); opacity: 0.6; }
+  .card-preview-wave .wave-col.active { opacity: 1; animation: pulse-col 0.4s ease-in-out infinite alternate; }
+  @keyframes pulse-col { from { transform: scaleY(0.6); } to { transform: scaleY(1); } }
+  .card-preview-label { font-size: 10px; color: var(--text-muted, #8b949e); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 80px; }
+</style>
+{% endblock %}
+
+{# Replace default content area with two-column layout #}
+{% block token_form %}
+  <button class="btn btn-secondary btn-sm mobile-filter-toggle"
+          onclick="document.querySelector('.explore-sidebar').classList.toggle('open')">
+    &#9776; Filters
+  </button>
+
+  <div class="explore-layout">
+    <!-- ── Filter sidebar ─────────────────────────────────── -->
+    <aside class="explore-sidebar card" style="padding:var(--space-4)">
+      <form id="filter-form" method="GET" action="">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:var(--space-3)">
+          <strong style="font-size:14px">Filters</strong>
+          <a href="/musehub/ui/explore" class="clear-filters-link">Clear filters</a>
+        </div>
+
+        <!-- Sort -->
+        <div class="sidebar-section">
+          <p class="sidebar-section-title">Sort by</p>
+          {% for value, label in sort_options %}
+          <label class="sidebar-sort-option">
+            <input type="radio" name="sort" value="{{ value }}"
+                   {% if default_sort == value %}checked{% endif %}
+                   onchange="this.form.submit()">
+            {{ label }}
+          </label>
+          {% endfor %}
+        </div>
+
+        <!-- Language / instrument chips from muse_tags -->
+        <div class="sidebar-section">
+          <p class="sidebar-section-title">Language / Instrument</p>
+          {% if muse_tag_chips %}
+            <div id="lang-chips">
+              {% for tag in muse_tag_chips %}
+              <a href="#"
+                 class="filter-chip {% if tag in selected_langs %}active{% endif %}"
+                 data-filter="lang"
+                 data-value="{{ tag | e }}"
+                 onclick="toggleChip(event,'lang','{{ tag | e }}')">{{ tag }}</a>
+              {% endfor %}
+            </div>
+            {# Hidden inputs carry selected values when the form submits #}
+            {% for tag in selected_langs %}
+            <input type="hidden" name="lang" value="{{ tag | e }}" class="lang-hidden">
+            {% endfor %}
+          {% else %}
+            <p style="font-size:12px;color:var(--text-muted)">No tags yet</p>
+          {% endif %}
+        </div>
+
+        <!-- License -->
+        <div class="sidebar-section">
+          <p class="sidebar-section-title">License</p>
+          <select name="license" class="sidebar-select" onchange="this.form.submit()">
+            {% for opt in license_options %}
+            <option value="{{ opt | e }}" {% if selected_license == opt %}selected{% endif %}>
+              {{ opt if opt else 'Any license' }}
+            </option>
+            {% endfor %}
+          </select>
+        </div>
+
+        <!-- Topics from musehub_repos.tags -->
+        <div class="sidebar-section">
+          <p class="sidebar-section-title">Topics</p>
+          {% if topic_chips %}
+            <div id="topic-chips">
+              {% for t in topic_chips %}
+              <a href="#"
+                 class="filter-chip {% if t in selected_topics %}active{% endif %}"
+                 data-filter="topic"
+                 data-value="{{ t | e }}"
+                 onclick="toggleChip(event,'topic','{{ t | e }}')">{{ t }}</a>
+              {% endfor %}
+            </div>
+            {% for t in selected_topics %}
+            <input type="hidden" name="topic" value="{{ t | e }}" class="topic-hidden">
+            {% endfor %}
+          {% else %}
+            <p style="font-size:12px;color:var(--text-muted)">No topics yet</p>
+          {% endif %}
+        </div>
+      </form>
+    </aside>
+
+    <!-- ── Repo grid ──────────────────────────────────────── -->
+    <div>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:var(--space-3)">
+        <h2 id="section-title" style="margin:0">{{ title }}</h2>
+        <span id="result-count" class="text-muted text-sm"></span>
+      </div>
+
+      <input type="hidden" id="cur-page" value="1"/>
+      <div id="repo-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:var(--space-4)">
+        <p class="loading">Loading&#8230;</p>
+      </div>
+      <div id="pager" style="margin-top:var(--space-6)"></div>
+    </div>
+  </div>
+
+  {# Hidden audio element for card-level hover previews — shared across all cards #}
+  <audio id="card-preview-audio" preload="none"></audio>
+{% endblock %}
+
+{% block page_script %}
+{% raw %}
+const DISCOVER_API = '/api/v1/musehub';
+const PAGE_SIZE    = 24;
+
+// ── Filter state from URL params ──────────────────────────────────────────────
+const _qp          = new URLSearchParams(location.search);
+const ACTIVE_SORT  = _qp.get('sort')    || 'stars';
+const ACTIVE_LANGS = _qp.getAll('lang');
+const ACTIVE_LIC   = _qp.get('license') || '';
+const ACTIVE_TOPICS= _qp.getAll('topic');
+
+// ── Deterministic waveform bars ───────────────────────────────────────────────
+function waveformBars(seed, n = 32) {
+  const bars = [];
+  let x = seed;
+  for (let i = 0; i < n; i++) {
+    x = (x * 1103515245 + 12345) & 0x7fffffff;
+    bars.push(`<div class="wave-col" style="height:${20 + (x % 70)}%"></div>`);
+  }
+  return bars.join('');
+}
+
+function slugSeed(s) {
+  return (s || '').split('').reduce((a, c) => a + c.charCodeAt(0), 0);
+}
+
+// ── Repo card builder ─────────────────────────────────────────────────────────
+function repoCard(r, idx) {
+  const owner      = r.owner || r.ownerUserId || '';
+  const slug       = r.slug  || '';
+  const repoUrl    = '/musehub/ui/' + encodeURIComponent(owner) + '/' + encodeURIComponent(slug);
+  const seed       = slugSeed(slug);
+  const audioUrl   = r.latestAudioUrl || null;
+  const name       = r.name || slug;
+
+  const pills = [];
+  if (r.tempoBpm)     pills.push(`<span class="repo-meta-pill">&#9833; ${r.tempoBpm} BPM</span>`);
+  if (r.keySignature) pills.push(`<span class="repo-meta-pill">&#9837; ${escHtml(r.keySignature)}</span>`);
+  const allTags  = r.tags || [];
+  const tagSlice = allTags.slice(0, 3);
+  const extra    = allTags.length - 3;
+  const tagHtml  = tagSlice.map(t => `<span class="tag-pill">${escHtml(t)}</span>`).join('');
+  const extraHtml= extra > 0 ? `<span class="tag-pill" style="opacity:.6">+${extra}</span>` : '';
+  const raw      = r.description || '';
+  const desc     = raw.length > 110 ? escHtml(raw.slice(0, 110)) + '&#8230;' : escHtml(raw);
+
+  const previewId = 'card-preview-' + encodeURIComponent(owner) + '-' + encodeURIComponent(slug);
+
+  // Audio preview panel — rendered only when latestAudioUrl is present
+  const previewPanel = audioUrl ? `
+    <div class="card-audio-preview" id="${escHtml(previewId)}">
+      <button class="card-preview-btn" title="Play preview"
+              onclick="event.stopPropagation();toggleCardPreview('${escHtml(previewId)}','${escHtml(audioUrl)}','${escHtml(name)}','${escHtml(owner)}')">
+        &#9654;
+      </button>
+      <div class="card-preview-wave">${waveformBars(seed, 20)}</div>
+      <span class="card-preview-label">${escHtml(name)}</span>
+    </div>` : '';
+
+  return `
+    <div class="repo-card"
+         onclick="location.href='${repoUrl}'"
+         data-owner="${escHtml(owner)}"
+         data-slug="${escHtml(slug)}"
+         data-audio-url="${escHtml(audioUrl || '')}"
+         data-preview-id="${escHtml(previewId)}">
+      <div class="repo-card-header">
+        <span class="repo-card-name">
+          <a href="${repoUrl}" onclick="event.stopPropagation()">${escHtml(name)}</a>
+        </span>
+        <span class="badge ${r.visibility === 'public' ? 'badge-clean' : 'badge-neutral'}" style="font-size:10px">${escHtml(r.visibility || 'public')}</span>
+      </div>
+      <div class="text-xs text-muted" style="margin-bottom:var(--space-1)">
+        <a href="/musehub/ui/users/${escHtml(owner)}" onclick="event.stopPropagation()">${escHtml(owner)}</a>
+      </div>
+      ${pills.length ? `<div class="repo-card-meta-pills">${pills.join('')}</div>` : ''}
+      ${(tagHtml || extraHtml) ? `<div class="repo-card-meta-pills">${tagHtml}${extraHtml}</div>` : ''}
+      ${desc ? `<p class="repo-card-desc-trunc">${desc}</p>` : ''}
+      <div class="waveform-bar" style="margin:var(--space-2) 0">${waveformBars(seed)}</div>
+      <div class="repo-card-meta">
+        <span>&#9733; ${r.starCount || 0}</span>
+        <span>&#128190; ${r.commitCount || 0} commits</span>
+        ${r.lastCommitAt ? `<span>${fmtRelative(r.lastCommitAt)}</span>` : ''}
+      </div>
+      ${audioUrl ? `
+      <button class="repo-card-play" title="Preview audio"
+              onclick="event.stopPropagation();queueAudio('${escHtml(audioUrl)}','${escHtml(name)}','${escHtml(owner)}')">
+        &#9654;
+      </button>` : ''}
+      ${previewPanel}
+    </div>`;
+}
+
+// ── Card hover audio preview (500ms delay) ────────────────────────────────────
+let _hoverTimer   = null;
+let _activePreview= null;   // id of currently-visible preview panel
+const _previewAudio = document.getElementById('card-preview-audio');
+
+function showCardPreview(card) {
+  const previewId = card.dataset.previewId;
+  const audioUrl  = card.dataset.audioUrl;
+  if (!previewId || !audioUrl) return;
+  const panel = document.getElementById(previewId);
+  if (!panel) return;
+  if (_activePreview && _activePreview !== previewId) hideActivePreview();
+  panel.classList.add('visible');
+  _activePreview = previewId;
+}
+
+function hideActivePreview() {
+  if (!_activePreview) return;
+  const panel = document.getElementById(_activePreview);
+  if (panel) {
+    panel.classList.remove('visible');
+    // Pause the preview audio if this panel owned it
+    if (_previewAudio && !_previewAudio.paused) _previewAudio.pause();
+  }
+  _activePreview = null;
+}
+
+function onCardMouseEnter(e) {
+  const card = e.currentTarget;
+  if (!card.dataset.audioUrl) return;
+  _hoverTimer = setTimeout(() => showCardPreview(card), 500);
+}
+
+function onCardMouseLeave(e) {
+  clearTimeout(_hoverTimer);
+  _hoverTimer = null;
+  // Auto-pause when hover ends, but keep panel visible so user can interact briefly
+  // Give 300 ms grace to move pointer into the preview panel itself before hiding
+  const card = e.currentTarget;
+  setTimeout(() => {
+    // Only hide if the pointer is outside both the card and its preview panel
+    const panel = _activePreview ? document.getElementById(_activePreview) : null;
+    if (!card.matches(':hover') && (!panel || !panel.matches(':hover'))) {
+      if (_previewAudio && !_previewAudio.paused) _previewAudio.pause();
+      hideActivePreview();
+    }
+  }, 300);
+}
+
+function attachCardHoverListeners() {
+  document.querySelectorAll('.repo-card[data-audio-url]').forEach(card => {
+    if (!card.dataset.audioUrl) return;
+    card.addEventListener('mouseenter', onCardMouseEnter);
+    card.addEventListener('mouseleave', onCardMouseLeave);
+    const panel = card.querySelector('.card-audio-preview');
+    if (panel) {
+      panel.addEventListener('mouseleave', () => {
+        if (!card.matches(':hover')) {
+          if (_previewAudio && !_previewAudio.paused) _previewAudio.pause();
+          hideActivePreview();
+        }
+      });
+    }
+  });
+}
+
+// Toggle card-level preview play/pause.
+window.toggleCardPreview = function(previewId, audioUrl, title, owner) {
+  const panel = document.getElementById(previewId);
+  if (!panel) return;
+  const btn = panel.querySelector('.card-preview-btn');
+
+  if (_previewAudio.dataset.src === audioUrl) {
+    // Same track — toggle play/pause
+    if (_previewAudio.paused) {
+      _previewAudio.play().catch(() => {});
+      if (btn) btn.innerHTML = '&#9646;&#9646;';
+      panel.querySelectorAll('.wave-col').forEach((c, i) => {
+        if (i % 4 === 0) c.classList.add('active');
+      });
+    } else {
+      _previewAudio.pause();
+      if (btn) btn.innerHTML = '&#9654;';
+      panel.querySelectorAll('.wave-col').forEach(c => c.classList.remove('active'));
+    }
+  } else {
+    // New track — load and play
+    _previewAudio.pause();
+    _previewAudio.dataset.src = audioUrl;
+    _previewAudio.src = audioUrl;
+    _previewAudio.play().catch(() => {});
+    if (btn) btn.innerHTML = '&#9646;&#9646;';
+    panel.querySelectorAll('.wave-col').forEach((c, i) => {
+      if (i % 4 === 0) c.classList.add('active');
+    });
+  }
+};
+
+// ── Discover API loader ───────────────────────────────────────────────────────
+async function loadExplore(page) {
+  const params = new URLSearchParams({ page, page_size: PAGE_SIZE, sort: ACTIVE_SORT });
+  ACTIVE_LANGS.forEach(l  => params.append('instrumentation', l));
+  if (ACTIVE_LIC)          params.set('license', ACTIVE_LIC);
+  ACTIVE_TOPICS.forEach(t => params.append('genre', t));
+
+  document.getElementById('repo-grid').innerHTML = '<p class="loading">Loading&#8230;</p>';
+
+  try {
+    const res  = await fetch(DISCOVER_API + '/discover/repos?' + params.toString());
+    if (!res.ok) throw new Error(res.status + ': ' + await res.text());
+    const data  = await res.json();
+    const repos = data.repos || [];
+    const total = data.total || 0;
+    const pages = Math.ceil(total / PAGE_SIZE) || 1;
+
+    document.getElementById('result-count').textContent =
+      total + ' repo' + (total !== 1 ? 's' : '');
+
+    const grid = repos.length === 0
+      ? `<div class="empty-state" style="grid-column:1/-1">
+           <div class="empty-icon">&#127925;</div>
+           <p class="empty-title">No repos found</p>
+           <p class="empty-desc">Try adjusting your filters, or check back as more composers push their work.</p>
+         </div>`
+      : repos.map((r, i) => repoCard(r, i)).join('');
+
+    document.getElementById('repo-grid').innerHTML = grid;
+    attachCardHoverListeners();
+
+    document.getElementById('pager').innerHTML = pages <= 1 ? '' : `
+      <div style="display:flex;align-items:center;justify-content:center;gap:var(--space-3)">
+        ${page > 1 ? `<button class="btn btn-secondary btn-sm" onclick="go(${page-1})">&larr; Prev</button>` : ''}
+        <span class="text-muted text-sm">Page ${page} of ${pages}</span>
+        ${page < pages ? `<button class="btn btn-secondary btn-sm" onclick="go(${page+1})">Next &rarr;</button>` : ''}
+      </div>`;
+  } catch (e) {
+    document.getElementById('repo-grid').innerHTML =
+      '<p class="error">&#10005; ' + escHtml(e.message) + '</p>';
+  }
+}
+
+function go(page) {
+  document.getElementById('cur-page').value = page;
+  loadExplore(page);
+}
+
+window.go = go;
+go(1);
+
+// ── Chip toggle helper (JS enhancement — GET form still works without JS) ─────
+window.toggleChip = function(evt, filterName, value) {
+  evt.preventDefault();
+  const form   = document.getElementById('filter-form');
+  const cls    = filterName + '-hidden';
+  const hiddens= Array.from(form.querySelectorAll('input.' + cls));
+  const exists = hiddens.find(h => h.value === value);
+  if (exists) {
+    exists.remove();
+  } else {
+    const inp = document.createElement('input');
+    inp.type  = 'hidden';
+    inp.name  = filterName;
+    inp.value = value;
+    inp.classList.add(cls);
+    form.appendChild(inp);
+  }
+  // Update chip active state
+  const chip = evt.currentTarget;
+  chip.classList.toggle('active');
+  form.submit();
+};
+{% endraw %}
+{% endblock %}
