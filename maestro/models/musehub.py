@@ -2092,6 +2092,66 @@ class UserWatchedResponse(CamelModel):
 # ── Render pipeline ────────────────────────────────────────────────────────
 
 
+class RepoSettingsResponse(CamelModel):
+    """Mutable settings for a Muse Hub repo.
+
+    Returned by ``GET /api/v1/musehub/repos/{repo_id}/settings``.
+
+    Fields map to GitHub-style repo settings.  ``name``, ``description``,
+    ``visibility``, and ``topics`` are stored in dedicated repo columns;
+    all remaining flags are stored in the ``settings`` JSON blob.
+
+    Agent use case: read before updating project metadata, toggling features,
+    or configuring merge strategy for a repo's PR workflow.
+    """
+
+    name: str = Field(..., description="Human-readable repo name")
+    description: str = Field("", description="Short description shown on the explore page")
+    visibility: str = Field(..., description="'public' or 'private'")
+    default_branch: str = Field("main", description="Default branch name (used for clone and PRs)")
+    has_issues: bool = Field(True, description="Whether the issues tracker is enabled")
+    has_projects: bool = Field(False, description="Whether the projects board is enabled")
+    has_wiki: bool = Field(False, description="Whether the wiki is enabled")
+    topics: list[str] = Field(default_factory=list, description="Free-form topic tags")
+    license: str | None = Field(None, description="SPDX license identifier or display name, e.g. 'CC BY 4.0'")
+    homepage_url: str | None = Field(None, description="Project homepage URL")
+    allow_merge_commit: bool = Field(True, description="Allow merge commits on PRs")
+    allow_squash_merge: bool = Field(True, description="Allow squash merges on PRs")
+    allow_rebase_merge: bool = Field(False, description="Allow rebase merges on PRs")
+    delete_branch_on_merge: bool = Field(True, description="Auto-delete head branch after PR merge")
+
+
+class RepoSettingsPatch(CamelModel):
+    """Partial update body for ``PATCH /api/v1/musehub/repos/{repo_id}/settings``.
+
+    All fields are optional — only provided fields are updated.
+    ``visibility`` must be ``'public'`` or ``'private'`` when supplied.
+    Caller must hold owner or admin collaborator permission; otherwise 403 is returned.
+
+    Agent use case: update repo visibility, merge strategy, or homepage URL
+    without knowing the full settings object.
+    """
+
+    name: str | None = Field(None, description="New repo name")
+    description: str | None = Field(None, description="New description")
+    visibility: str | None = Field(
+        None,
+        pattern="^(public|private)$",
+        description="'public' or 'private'",
+    )
+    default_branch: str | None = Field(None, description="New default branch name")
+    has_issues: bool | None = Field(None, description="Enable/disable issues tracker")
+    has_projects: bool | None = Field(None, description="Enable/disable projects board")
+    has_wiki: bool | None = Field(None, description="Enable/disable wiki")
+    topics: list[str] | None = Field(None, description="Replace topic tags (full list)")
+    license: str | None = Field(None, description="SPDX license identifier or display name")
+    homepage_url: str | None = Field(None, description="Project homepage URL")
+    allow_merge_commit: bool | None = Field(None, description="Allow merge commits on PRs")
+    allow_squash_merge: bool | None = Field(None, description="Allow squash merges on PRs")
+    allow_rebase_merge: bool | None = Field(None, description="Allow rebase merges on PRs")
+    delete_branch_on_merge: bool | None = Field(None, description="Auto-delete head branch after PR merge")
+
+
 class RenderStatusResponse(CamelModel):
     """Render job status for a single commit's auto-generated artifacts.
 
