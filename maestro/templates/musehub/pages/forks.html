@@ -1,0 +1,408 @@
+{% extends "musehub/base.html" %}
+
+{% block title %}Fork Network — {{ owner }}/{{ repo_slug }}{% endblock %}
+{% block breadcrumb %}
+  <a href="/musehub/ui/{{ owner }}">{{ owner }}</a> /
+  <a href="/musehub/ui/{{ owner }}/{{ repo_slug }}">{{ repo_slug }}</a> / forks
+{% endblock %}
+{% block repo_nav %}{% include "musehub/partials/repo_nav.html" %}{% endblock %}
+
+{% block extra_css %}
+<style>
+/* ── Fork network SVG canvas ────────────────────────────────────────────── */
+#fork-canvas {
+  width: 100%;
+  overflow-x: auto;
+  background: var(--bg-canvas, #0d1117);
+  border: 1px solid var(--border, #30363d);
+  border-radius: 8px;
+  padding: 16px;
+  min-height: 220px;
+}
+.fork-svg {
+  display: block;
+  overflow: visible;
+}
+
+/* Nodes */
+.fork-node-label {
+  font-family: ui-monospace, monospace;
+  font-size: 11px;
+  fill: var(--text-primary, #e6edf3);
+  text-anchor: middle;
+  dominant-baseline: middle;
+  pointer-events: none;
+}
+.fork-node-sub {
+  font-size: 10px;
+  fill: var(--text-muted, #8b949e);
+  text-anchor: middle;
+  dominant-baseline: middle;
+  pointer-events: none;
+}
+
+/* Legend */
+.legend {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+  font-size: 12px;
+  color: var(--text-muted, #8b949e);
+  align-items: center;
+}
+.legend-swatch {
+  display: inline-block;
+  width: 28px;
+  height: 4px;
+  border-radius: 2px;
+  vertical-align: middle;
+  margin-right: 4px;
+}
+
+/* Detail panel */
+#fork-detail { margin-top: 16px; display: none; }
+.fork-card {
+  background: var(--bg-overlay, #161b22);
+  border: 1px solid var(--border, #30363d);
+  border-radius: 8px;
+  padding: 16px 20px;
+}
+.fork-card-title {
+  font-size: 15px;
+  font-weight: 600;
+  margin-bottom: 8px;
+  color: var(--text-primary, #e6edf3);
+}
+.fork-card-meta {
+  font-size: 12px;
+  color: var(--text-muted, #8b949e);
+  margin-bottom: 12px;
+}
+.fork-card-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+
+/* Stats bar */
+.stats-bar {
+  display: flex;
+  gap: 20px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+  font-size: 13px;
+  color: var(--text-secondary, #c9d1d9);
+}
+.stat { display: flex; align-items: center; gap: 4px; }
+.stat-count { font-weight: 600; color: var(--text-primary, #e6edf3); }
+
+/* Fork table */
+.fork-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  margin-top: 16px;
+}
+.fork-table th {
+  text-align: left;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border, #30363d);
+  color: var(--text-muted, #8b949e);
+  font-weight: 500;
+  font-size: 12px;
+}
+.fork-table td {
+  padding: 10px;
+  border-bottom: 1px solid var(--border, #21262d);
+  color: var(--text-secondary, #c9d1d9);
+  vertical-align: middle;
+}
+.fork-table tr:last-child td { border-bottom: none; }
+.fork-table tr:hover td { background: rgba(255,255,255,0.03); }
+.avatar-badge {
+  display: inline-flex;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--bg-overlay, #161b22);
+  border: 1px solid var(--border, #30363d);
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted, #8b949e);
+  vertical-align: middle;
+  margin-right: 6px;
+}
+</style>
+{% endblock %}
+
+{% block page_data %}
+const repoId   = {{ repo_id | tojson }};
+const owner    = {{ owner | tojson }};
+const repoSlug = {{ repo_slug | tojson }};
+const base     = {{ base_url | tojson }};
+{% endblock %}
+
+{% block page_script %}
+{% raw %}
+// ── Colour scale by divergence (commits ahead) ────────────────────────────
+function divColour(ahead) {
+  if (ahead === 0)  return '#3fb950'; // green  — in sync
+  if (ahead <= 5)   return '#d29922'; // yellow — slightly ahead
+  if (ahead <= 20)  return '#e3964e'; // orange — moderately diverged
+  return '#f85149';                    // red    — highly diverged
+}
+
+// ── SVG namespace helper ──────────────────────────────────────────────────
+function svgEl(tag, attrs) {
+  const el = document.createElementNS('http://www.w3.org/2000/svg', tag);
+  for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, String(v));
+  return el;
+}
+
+// ── Layout constants ──────────────────────────────────────────────────────
+const NW = 140, NH = 50, HGAP = 50, VGAP = 80, PAD = 20;
+
+function buildLayout(rootNode, forks) {
+  const colCount = Math.max(1, forks.length);
+  const svgW = Math.max(500, colCount * (NW + HGAP) + HGAP);
+
+  const rootX = svgW / 2 - NW / 2;
+  const rootY = PAD;
+
+  const childY   = PAD + NH + VGAP;
+  const totalW   = forks.length * NW + Math.max(0, forks.length - 1) * HGAP;
+  const startX   = svgW / 2 - totalW / 2;
+  const svgH     = forks.length > 0 ? childY + NH + PAD : NH + PAD * 2;
+
+  const children = forks.map((f, i) => ({
+    x: startX + i * (NW + HGAP),
+    y: childY,
+    node: f,
+  }));
+
+  return { svgW, svgH, rootX, rootY, children };
+}
+
+// ── Render the SVG DAG ────────────────────────────────────────────────────
+function renderDAG(rootNode, forks) {
+  const { svgW, svgH, rootX, rootY, children } = buildLayout(rootNode, forks);
+  const svg = document.getElementById('fork-svg');
+  if (!svg) return;
+  while (svg.firstChild) svg.removeChild(svg.firstChild);
+
+  svg.setAttribute('viewBox', `0 0 ${svgW} ${svgH}`);
+  svg.setAttribute('width', svgW);
+  svg.setAttribute('height', svgH);
+
+  // Arrowhead marker
+  const defs   = svgEl('defs', {});
+  const marker = svgEl('marker', {
+    id: 'arr', markerWidth: '8', markerHeight: '6',
+    refX: '7', refY: '3', orient: 'auto',
+  });
+  marker.appendChild(svgEl('polygon', { points: '0 0, 8 3, 0 6', fill: '#8b949e' }));
+  defs.appendChild(marker);
+  svg.appendChild(defs);
+
+  // Edges from root to children
+  const rx = rootX + NW / 2, ry = rootY + NH;
+  for (const { x, y, node } of children) {
+    const cx  = x + NW / 2;
+    const mid = (ry + y) / 2;
+    const col = divColour(node.divergenceCommits || 0);
+    svg.appendChild(svgEl('path', {
+      d: `M${rx},${ry} C${rx},${mid} ${cx},${mid} ${cx},${y}`,
+      fill: 'none',
+      stroke: col,
+      'stroke-width': '1.5',
+      'marker-end': 'url(#arr)',
+    }));
+  }
+
+  // Root node
+  svg.appendChild(makeNode(rootX, rootY, rootNode, true));
+
+  // Fork children
+  for (const { x, y, node } of children) {
+    svg.appendChild(makeNode(x, y, node, false));
+  }
+}
+
+function makeNode(x, y, node, isRoot) {
+  const g = svgEl('g', { style: 'cursor:pointer', tabindex: '0', role: 'button',
+                          'aria-label': `${node.owner}/${node.repoSlug}` });
+  const col = isRoot ? '#3fb950' : divColour(node.divergenceCommits || 0);
+
+  // Background
+  g.appendChild(svgEl('rect', {
+    x, y, width: NW, height: NH,
+    rx: '8', ry: '8',
+    fill: 'var(--bg-overlay, #161b22)',
+    stroke: col, 'stroke-width': isRoot ? '2' : '1.5',
+  }));
+
+  // Label: owner/slug
+  const lbl = svgEl('text', { x: x + NW / 2, y: y + 18, class: 'fork-node-label' });
+  lbl.textContent = `${node.owner}/${node.repoSlug}`;
+  g.appendChild(lbl);
+
+  // Sub-label: divergence
+  const sub = svgEl('text', { x: x + NW / 2, y: y + 34, class: 'fork-node-sub', fill: col });
+  if (isRoot) {
+    sub.textContent = '◉ upstream';
+    sub.setAttribute('fill', '#3fb950');
+  } else {
+    const a = node.divergenceCommits || 0;
+    sub.textContent = a === 0 ? '≡ in sync' : `+${a} ahead`;
+  }
+  g.appendChild(sub);
+
+  g.addEventListener('click', () => showDetail(node, isRoot));
+  g.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') showDetail(node, isRoot); });
+
+  return g;
+}
+
+// ── Detail panel ──────────────────────────────────────────────────────────
+function showDetail(node, isRoot) {
+  const panel = document.getElementById('fork-detail');
+  if (!panel) return;
+  panel.style.display = '';
+
+  const ahead   = node.divergenceCommits || 0;
+  const col     = divColour(ahead);
+  const initial = (node.owner || '?').charAt(0).toUpperCase();
+  const repoHref = `/musehub/ui/${escHtml(node.owner)}/${escHtml(node.repoSlug)}`;
+  const compareHref  = `${base}/compare/${encodeURIComponent(node.repoSlug)}`;
+  const prHref = `${base}/pulls/new?head=${encodeURIComponent(node.owner + ':main')}`;
+
+  panel.innerHTML = `
+    <div class="fork-card">
+      <div class="fork-card-title">
+        <span class="avatar-badge">${escHtml(initial)}</span>
+        <a href="${repoHref}" style="color:var(--accent,#58a6ff)">
+          ${escHtml(node.owner)}/${escHtml(node.repoSlug)}
+        </a>
+        ${isRoot ? ' <span style="font-size:12px;color:#3fb950">◉ upstream</span>' : ''}
+      </div>
+      <div class="fork-card-meta">
+        ${isRoot
+          ? 'This is the upstream (source) repository.'
+          : `Forked by <strong>${escHtml(node.forkedBy || node.owner)}</strong>
+             &bull; <span style="color:${col}">+${ahead} commit${ahead !== 1 ? 's' : ''} ahead</span>`}
+      </div>
+      <div class="fork-card-actions">
+        ${!isRoot ? `
+          <a class="btn btn-secondary" href="${compareHref}" style="font-size:13px">🔀 Compare</a>
+          <a class="btn btn-primary"   href="${prHref}"      style="font-size:13px">↑ Contribute upstream</a>
+        ` : ''}
+        <a class="btn btn-secondary" href="${repoHref}" style="font-size:13px">View repo →</a>
+      </div>
+    </div>`;
+}
+
+// ── Fork table ─────────────────────────────────────────────────────────────
+function renderTable(forks) {
+  if (!forks.length) {
+    return '<p style="color:var(--text-muted,#8b949e);margin-top:12px">No forks yet — be the first!</p>';
+  }
+  const rows = forks.map(f => {
+    const ahead    = f.divergenceCommits || 0;
+    const col      = divColour(ahead);
+    const initial  = (f.owner || '?').charAt(0).toUpperCase();
+    const repoHref = `/musehub/ui/${escHtml(f.owner)}/${escHtml(f.repoSlug)}`;
+    const cmpHref  = `${base}/compare/${encodeURIComponent(f.repoSlug)}`;
+    const prHref   = `${base}/pulls/new?head=${encodeURIComponent(f.owner + ':main')}`;
+    return `
+      <tr>
+        <td>
+          <span class="avatar-badge">${escHtml(initial)}</span>
+          <a href="${repoHref}" style="color:var(--accent,#58a6ff);font-weight:500">
+            ${escHtml(f.owner)}/${escHtml(f.repoSlug)}
+          </a>
+        </td>
+        <td style="color:${col}">${ahead === 0 ? '≡ in sync' : `+${ahead} ahead`}</td>
+        <td>
+          <a class="btn btn-secondary" href="${cmpHref}" style="font-size:12px">Compare</a>
+          <a class="btn btn-secondary" href="${prHref}"  style="font-size:12px;margin-left:4px">Contribute upstream</a>
+        </td>
+      </tr>`;
+  }).join('');
+  return `
+    <table class="fork-table">
+      <thead><tr><th>Fork</th><th>Divergence</th><th>Actions</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>`;
+}
+
+// ── Main ──────────────────────────────────────────────────────────────────
+async function load() {
+  initRepoNav(repoId);
+  document.getElementById('content').innerHTML = '<p class="loading">Loading fork network…</p>';
+  try {
+    // Public endpoint — no auth needed; use plain fetch to bypass apiFetch's auth guard.
+    const res = await fetch(`/musehub/ui/${owner}/${repoSlug}/forks?format=json`, {
+      headers: { Accept: 'application/json' }
+    });
+    if (!res.ok) throw new Error(res.status + ': ' + res.statusText);
+    const data  = await res.json();
+
+    const root  = data.root || {};
+    const forks = (root.children) || [];
+    const total = data.totalForks || 0;
+
+    const inSync = forks.filter(f => (f.divergenceCommits || 0) === 0).length;
+    const high   = forks.filter(f => (f.divergenceCommits || 0) > 20).length;
+
+    document.getElementById('content').innerHTML = `
+      <div style="margin-bottom:12px"><a href="${base}">&larr; Back to repo</a></div>
+      <div class="card">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:8px">
+          <h1 style="margin:0">🍴 Fork Network</h1>
+          <span style="font-size:13px;color:var(--text-muted,#8b949e)">${total} fork${total !== 1 ? 's' : ''}</span>
+        </div>
+
+        <!-- Divergence legend -->
+        <div class="legend">
+          <span><span class="legend-swatch" style="background:#3fb950"></span>In sync / upstream</span>
+          <span><span class="legend-swatch" style="background:#d29922"></span>1–5 commits ahead</span>
+          <span><span class="legend-swatch" style="background:#e3964e"></span>6–20 ahead</span>
+          <span><span class="legend-swatch" style="background:#f85149"></span>&gt;20 ahead</span>
+        </div>
+
+        <!-- Stats -->
+        <div class="stats-bar">
+          <div class="stat">🍴 <span class="stat-count">${total}</span> fork${total !== 1 ? 's' : ''}</div>
+          ${inSync > 0 ? `<div class="stat">✅ <span class="stat-count">${inSync}</span> in sync</div>` : ''}
+          ${high > 0   ? `<div class="stat">⚠️ <span class="stat-count">${high}</span> highly diverged</div>` : ''}
+        </div>
+
+        <!-- SVG DAG — click nodes to inspect -->
+        <div id="fork-canvas">
+          <svg id="fork-svg" class="fork-svg"
+               role="img"
+               aria-label="Fork network DAG — ${total} fork${total !== 1 ? 's' : ''}"></svg>
+        </div>
+        <p style="font-size:12px;color:var(--text-muted,#8b949e);margin-top:6px">
+          Click a node to view fork details and action buttons.
+        </p>
+
+        <!-- Click-selected detail panel -->
+        <div id="fork-detail"></div>
+
+        <!-- Tabular fallback list -->
+        <div id="fork-table-wrap">
+          ${renderTable(forks)}
+        </div>
+      </div>`;
+
+    renderDAG(root, forks);
+
+  } catch(e) {
+    document.getElementById('content').innerHTML =
+      '<p class="error">✕ ' + escHtml(e.message) + '</p>';
+  }
+}
+
+load();
+{% endraw %}
+{% endblock %}
