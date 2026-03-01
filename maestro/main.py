@@ -34,6 +34,7 @@ from maestro.api.routes.musehub import discover as musehub_discover_routes
 from maestro.api.routes.musehub import users as musehub_user_routes
 from maestro.api.routes.musehub import oembed as musehub_oembed_routes
 from maestro.api.routes.musehub import raw as musehub_raw_routes
+from maestro.api.routes.musehub import sitemap as musehub_sitemap_routes
 from maestro.api.routes import mcp as mcp_routes
 from maestro.db import init_db, close_db
 from maestro.services.storpheus import get_storpheus_client, close_storpheus_client
@@ -232,6 +233,8 @@ app.include_router(musehub_ui_settings_routes.router, tags=["musehub-ui-settings
 app.include_router(musehub_ui_similarity_routes.router, tags=["musehub-ui"])
 app.include_router(musehub_oembed_routes.router, tags=["musehub-oembed"])
 app.include_router(musehub_raw_routes.router, prefix="/api/v1", tags=["musehub-raw"])
+# Sitemap and robots.txt — top-level (no /api/v1 prefix), outside musehub auto-discovery.
+app.include_router(musehub_sitemap_routes.router, tags=["musehub-sitemap"])
 app.include_router(mcp_routes.router, prefix="/api/v1/mcp", tags=["mcp"])
 
 from maestro.protocol.endpoints import router as protocol_router
