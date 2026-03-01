@@ -1,4 +1,4 @@
-"""Alembic environment configuration for Stori Maestro."""
+"""Alembic environment configuration for Maestro."""
 from __future__ import annotations
 
 import asyncio

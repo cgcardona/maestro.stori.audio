@@ -1,4 +1,4 @@
-# Stori Maestro — Agent Contract
+# Maestro — Agent Contract
 
 This document defines how AI agents operate in this repository. It applies to all agents — backend (Python/Maestro/Storpheus), frontend (Swift/macOS DAW), and cross-cutting (DevOps, security, documentation).
 

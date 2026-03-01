@@ -1,5 +1,5 @@
 #!/bin/bash
-# Initialize SSL certificates for Stori Maestro
+# Initialize SSL certificates for Maestro
 #
 # Usage: sudo ./scripts/deploy/init-ssl.sh <domain> <email>
 #   domain  Your public domain (e.g. maestro.example.com)
@@ -24,7 +24,7 @@ if [ -z "$DOMAIN" ] || [ -z "$EMAIL" ]; then
 fi
 
 echo "================================================"
-echo "Stori Maestro SSL Initialization"
+echo "Maestro SSL Initialization"
 echo "Domain: $DOMAIN"
 echo "Email: $EMAIL"
 echo "================================================"
@@ -58,7 +58,7 @@ server {
     }
 
     location / {
-        return 200 'Stori Maestro - SSL setup in progress...';
+        return 200 'Maestro - SSL setup in progress...';
         add_header Content-Type text/plain;
     }
 }

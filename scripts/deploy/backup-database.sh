@@ -1,6 +1,6 @@
 #!/bin/bash
 # =============================================================================
-# Stori Maestro - Database Backup Script
+# Maestro - Database Backup Script
 # =============================================================================
 #
 # This script backs up the PostgreSQL database to:

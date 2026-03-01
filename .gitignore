@@ -208,7 +208,7 @@ __marimo__/
 
 .DS_Store
 
-# Stori Maestro
+# Maestro
 # Database files
 *.db
 stori.db

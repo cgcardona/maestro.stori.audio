@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Architectural boundary checker for Stori Maestro.
+"""Architectural boundary checker for Maestro.
 
 Run locally or in CI to verify that internal module boundaries have not
 been violated.  Exits non-zero on any violation.
@@ -544,7 +544,7 @@ def check_muse_log_graph_isolation() -> None:
 
 def main() -> int:
     print("=" * 60)
-    print("Stori Maestro — Architectural Boundary Check")
+    print("Maestro — Architectural Boundary Check")
     print("=" * 60)
 
     check_variation_service_isolation()

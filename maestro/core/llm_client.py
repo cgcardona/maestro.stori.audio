@@ -193,8 +193,8 @@ class LLMClient:
         if self._client is None:
             headers = {"Authorization": f"Bearer {self.api_key}"}
             if self.provider == LLMProvider.OPENROUTER:
-                headers["HTTP-Referer"] = "https://maestro.ai"
-                headers["X-Title"] = "Stori Maestro"
+                headers["HTTP-Referer"] = "https://stori.audio"
+                headers["X-Title"] = "Maestro"
             self._client = httpx.AsyncClient(timeout=self.timeout, headers=headers)
         return self._client
     

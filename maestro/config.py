@@ -84,7 +84,7 @@ class Settings(BaseSettings):
     """Application settings loaded from environment variables."""
     
     # Service Info (app_version: single source is pyproject.toml when installed; else fallback)
-    app_name: str = "Stori Maestro"
+    app_name: str = "Maestro"
     app_version: str = _app_version_from_package()
     debug: bool = False
     
