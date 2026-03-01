@@ -1,0 +1,286 @@
+{% extends "musehub/base.html" %}
+
+{% block title %}Similarity {{ base_ref }}...{{ head_ref }} · {{ owner }}/{{ repo_slug }}{% endblock %}
+{% block breadcrumb %}
+  <a href="/musehub/ui/{{ owner }}">{{ owner }}</a> /
+  <a href="{{ base_url }}">{{ repo_slug }}</a> /
+  similarity /
+  <span class="text-mono">{{ base_ref }}...{{ head_ref }}</span>
+{% endblock %}
+
+{% block repo_nav %}{% include "musehub/partials/repo_nav.html" %}{% endblock %}
+
+{% block page_data %}
+const repoId  = {{ repo_id | tojson }};
+const baseRef = {{ base_ref | tojson }};
+const headRef = {{ head_ref | tojson }};
+const uiBase  = {{ base_url | tojson }};
+const apiBase = '/api/v1/musehub/repos/' + repoId;
+{% endblock %}
+
+{% block page_script %}
+{% raw %}
+// ── 10 musical dimensions ────────────────────────────────────────────────────
+const DIMENSIONS = [
+  { key: 'pitchDistribution',  label: 'Pitch'       },
+  { key: 'rhythmPattern',      label: 'Rhythm'      },
+  { key: 'tempo',              label: 'Tempo'       },
+  { key: 'dynamics',           label: 'Dynamics'    },
+  { key: 'harmonicContent',    label: 'Harmony'     },
+  { key: 'form',               label: 'Form'        },
+  { key: 'instrumentBlend',    label: 'Blend'       },
+  { key: 'groove',             label: 'Groove'      },
+  { key: 'contour',            label: 'Contour'     },
+  { key: 'emotion',            label: 'Emotion'     },
+];
+
+// ── Interpretation thresholds ────────────────────────────────────────────────
+function interpretBadge(score) {
+  if (score >= 0.90) return { label: 'Nearly Identical', color: '#3fb950', bg: '#0d2a12' };
+  if (score >= 0.75) return { label: 'Very Similar',     color: '#58a6ff', bg: '#0d1d3a' };
+  if (score >= 0.60) return { label: 'Moderately Similar', color: '#f0883e', bg: '#341a00' };
+  if (score >= 0.45) return { label: 'Somewhat Different', color: '#ffa657', bg: '#2d1c00' };
+  return                   { label: 'Very Different',    color: '#f85149', bg: '#3d0000' };
+}
+
+// ── Dual-polygon radar chart (base = solid, head = dashed) ──────────────────
+//
+// The base ref is rendered as a filled solid polygon; the head ref is a
+// dashed stroke-only overlay.  Both use the same 10-axis grid so the viewer
+// can immediately spot axes where the two refs diverge.
+//
+// baseScores and headScores: arrays of 10 floats in [0,1].
+function radarSvg(baseScores, headScores) {
+  const cx = 190, cy = 190, r = 150;
+  const n = DIMENSIONS.length;
+
+  function pts(scores, frac) {
+    return scores.map((s, i) => {
+      const angle = (i / n) * 2 * Math.PI - Math.PI / 2;
+      const sr = (frac !== undefined ? frac : s) * r;
+      return { x: cx + sr * Math.cos(angle), y: cy + sr * Math.sin(angle) };
+    });
+  }
+
+  // Grid rings at 0.25, 0.5, 0.75, 1.0
+  const gridLines = [0.25, 0.5, 0.75, 1.0].map(frac => {
+    const gPts = DIMENSIONS.map((_, i) => {
+      const angle = (i / n) * 2 * Math.PI - Math.PI / 2;
+      return `${cx + frac * r * Math.cos(angle)},${cy + frac * r * Math.sin(angle)}`;
+    }).join(' ');
+    return `<polygon points="${gPts}" fill="none" stroke="#21262d" stroke-width="1"/>`;
+  }).join('');
+
+  // Axis spokes
+  const axisLines = DIMENSIONS.map((_, i) => {
+    const angle = (i / n) * 2 * Math.PI - Math.PI / 2;
+    const ex = cx + r * Math.cos(angle), ey = cy + r * Math.sin(angle);
+    return `<line x1="${cx}" y1="${cy}" x2="${ex}" y2="${ey}" stroke="#30363d" stroke-width="1"/>`;
+  }).join('');
+
+  // Axis labels
+  const labels = DIMENSIONS.map((d, i) => {
+    const angle = (i / n) * 2 * Math.PI - Math.PI / 2;
+    const lx = cx + (r + 26) * Math.cos(angle);
+    const ly = cy + (r + 26) * Math.sin(angle);
+    return `<text x="${lx}" y="${ly + 4}" text-anchor="middle"
+      font-size="11" fill="#8b949e" font-family="system-ui">${d.label}</text>`;
+  }).join('');
+
+  // Base polygon — filled, solid stroke
+  const basePts = pts(baseScores);
+  const basePoly = basePts.map(p => `${p.x},${p.y}`).join(' ');
+
+  // Head polygon — no fill, dashed stroke
+  const headPts = pts(headScores);
+  const headPoly = headPts.map(p => `${p.x},${p.y}`).join(' ');
+
+  // Dots on base and head vertices
+  const baseDots = basePts.map(p =>
+    `<circle cx="${p.x}" cy="${p.y}" r="3" fill="#58a6ff" stroke="#0d1117" stroke-width="2"/>`
+  ).join('');
+  const headDots = headPts.map(p =>
+    `<circle cx="${p.x}" cy="${p.y}" r="3" fill="#f0883e" stroke="#0d1117" stroke-width="2"/>`
+  ).join('');
+
+  return `<svg viewBox="0 0 380 380" xmlns="http://www.w3.org/2000/svg"
+      style="width:100%;max-width:380px;display:block;margin:0 auto">
+    ${gridLines}${axisLines}
+    <polygon points="${basePoly}" fill="rgba(88,166,255,0.12)" stroke="#58a6ff" stroke-width="2"/>
+    <polygon points="${headPoly}" fill="none" stroke="#f0883e" stroke-width="2" stroke-dasharray="5,3"/>
+    ${baseDots}${headDots}
+    ${labels}
+  </svg>`;
+}
+
+// ── Dimension breakdown table row ────────────────────────────────────────────
+function dimRow(dim, baseScore, headScore) {
+  const pctBase = Math.round(baseScore * 100);
+  const pctHead = Math.round(headScore * 100);
+  const delta   = headScore - baseScore;
+  const sign    = delta >= 0 ? '+' : '';
+  const deltaColor = Math.abs(delta) < 0.05
+    ? '#8b949e'
+    : delta > 0 ? '#3fb950' : '#f85149';
+
+  // Bar using head score, coloured by similarity level
+  const barColor = pctHead >= 90 ? '#3fb950'
+    : pctHead >= 75 ? '#58a6ff'
+    : pctHead >= 60 ? '#f0883e'
+    : '#f85149';
+
+  return `<tr style="border-bottom:1px solid #21262d">
+    <td style="padding:8px 12px;font-size:13px;color:#e6edf3;white-space:nowrap">${dim.label}</td>
+    <td style="padding:8px 12px;text-align:right;font-size:13px;color:#8b949e">${pctBase}%</td>
+    <td style="padding:8px 12px;text-align:right;font-size:13px;color:#8b949e">${pctHead}%</td>
+    <td style="padding:8px 12px;text-align:right;font-size:13px;color:${deltaColor};font-weight:600">${sign}${Math.round(delta * 100)}%</td>
+    <td style="padding:8px 12px;min-width:120px">
+      <div style="background:#21262d;border-radius:3px;height:6px;overflow:hidden">
+        <div style="height:100%;width:${pctHead}%;background:${barColor};border-radius:3px;transition:width .3s"></div>
+      </div>
+    </td>
+  </tr>`;
+}
+
+// ── Main loader ──────────────────────────────────────────────────────────────
+async function load() {
+  initRepoNav(repoId);
+
+  document.getElementById('content').innerHTML =
+    '<p class="loading">Computing musical similarity&#8230;</p>';
+
+  try {
+    // Fetch similarity scores for base vs. head.
+    // The API takes `ref` as the base and `compare` as the second ref.
+    const d = await apiFetch(
+      `/repos/${repoId}/analysis/${encodeURIComponent(baseRef)}/similarity?compare=${encodeURIComponent(headRef)}`
+    );
+
+    const overall = d.overallSimilarity ?? 0;
+    const pct     = Math.round(overall * 100);
+    const badge   = interpretBadge(overall);
+    const dims    = d.dimensions || {};
+    const interp  = d.interpretation || '';
+
+    // Build parallel score arrays for the radar chart
+    const baseScores = DIMENSIONS.map(d2 => dims[d2.key] ?? 0.5);
+    // Head scores are the same values — the similarity endpoint reports the
+    // similarity *between* the two refs per dimension, not separate per-ref
+    // vectors.  We visualise the combined score polygon on the base ring and
+    // the perfect-similarity ring (1.0) as the head reference, so the gap
+    // shows where similarity falls short.
+    const perfectScores = DIMENSIONS.map(() => 1.0);
+
+    const diffUrl   = `${uiBase}/compare/${encodeURIComponent(baseRef)}...${encodeURIComponent(headRef)}`;
+    const createPrUrl = `${uiBase}/pulls/new?base=${encodeURIComponent(baseRef)}&head=${encodeURIComponent(headRef)}`;
+
+    document.getElementById('content').innerHTML = `
+
+      <!-- ── Page header ──────────────────────────────────────────────── -->
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:12px">
+        <div>
+          <h1 style="margin:0;font-size:18px;color:#e6edf3">
+            Similarity:
+            <code style="font-size:14px">${escHtml(baseRef)}</code>
+            &hellip;
+            <code style="font-size:14px">${escHtml(headRef)}</code>
+          </h1>
+          <div style="font-size:12px;color:#8b949e;margin-top:4px">${escHtml(interp)}</div>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <a href="${escHtml(diffUrl)}" class="btn btn-secondary" style="font-size:13px">
+            &#128200; Open Full Diff
+          </a>
+          <a href="${escHtml(createPrUrl)}" class="btn btn-primary" style="font-size:13px">
+            &#10133; Create Pull Request
+          </a>
+        </div>
+      </div>
+
+      <!-- ── Overall badge + radar ────────────────────────────────────── -->
+      <div style="display:grid;grid-template-columns:1fr auto;gap:24px;align-items:start;margin-bottom:24px">
+        <div>
+          <!-- Large similarity badge -->
+          <div class="card" style="background:${badge.bg};border-color:${badge.color};text-align:center;padding:var(--space-5) var(--space-4);margin-bottom:16px">
+            <div style="font-size:56px;font-weight:800;color:${badge.color};line-height:1">${pct}%</div>
+            <div style="font-size:15px;font-weight:700;color:${badge.color};margin-top:6px">${badge.label}</div>
+            <div style="font-size:12px;color:#8b949e;margin-top:4px">overall musical similarity</div>
+          </div>
+
+          <!-- Legend -->
+          <div class="card" style="padding:var(--space-3) var(--space-4)">
+            <div style="font-size:12px;color:#8b949e;margin-bottom:6px;font-weight:600">Colour scale</div>
+            ${[
+              { min: 90, label: '≥ 90% — Nearly Identical', color: '#3fb950' },
+              { min: 75, label: '≥ 75% — Very Similar',     color: '#58a6ff' },
+              { min: 60, label: '≥ 60% — Moderately Similar', color: '#f0883e' },
+              { min: 45, label: '≥ 45% — Somewhat Different', color: '#ffa657' },
+              { min:  0, label: '< 45% — Very Different',    color: '#f85149' },
+            ].map(row => `
+              <div style="display:flex;align-items:center;gap:8px;padding:3px 0">
+                <span style="display:inline-block;width:12px;height:12px;border-radius:2px;background:${row.color}"></span>
+                <span style="font-size:12px;color:#8b949e">${row.label}</span>
+              </div>`).join('')}
+          </div>
+        </div>
+
+        <!-- Radar chart -->
+        <div style="flex-shrink:0">
+          <div style="width:300px">
+            ${radarSvg(baseScores, perfectScores)}
+          </div>
+          <div style="font-size:11px;color:#8b949e;text-align:center;margin-top:6px">
+            <span style="display:inline-block;width:20px;height:2px;background:#58a6ff;vertical-align:middle;margin-right:4px"></span>similarity score
+            <span style="display:inline-block;width:20px;height:2px;background:#f0883e;vertical-align:middle;margin-left:12px;margin-right:4px;border-top:2px dashed #f0883e;height:0"></span>perfect (1.0)
+          </div>
+        </div>
+      </div>
+
+      <!-- ── 10-dimension breakdown table ─────────────────────────────── -->
+      <div class="card" style="margin-bottom:24px;overflow-x:auto">
+        <h2 style="margin:0 0 12px;font-size:16px;color:#e6edf3">Dimension Breakdown</h2>
+        <table style="width:100%;border-collapse:collapse;font-size:13px">
+          <thead>
+            <tr style="border-bottom:2px solid #30363d">
+              <th style="padding:8px 12px;text-align:left;color:#8b949e;font-weight:600">Dimension</th>
+              <th style="padding:8px 12px;text-align:right;color:#58a6ff;font-weight:600" title="${escHtml(baseRef)}">Base %</th>
+              <th style="padding:8px 12px;text-align:right;color:#f0883e;font-weight:600" title="${escHtml(headRef)}">Head %</th>
+              <th style="padding:8px 12px;text-align:right;color:#8b949e;font-weight:600">Δ</th>
+              <th style="padding:8px 12px;color:#8b949e;font-weight:600">Similarity</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${DIMENSIONS.map(dim => {
+              const score = dims[dim.key] ?? 0.5;
+              return dimRow(dim, score, score);
+            }).join('')}
+          </tbody>
+        </table>
+      </div>
+
+      <!-- ── Action CTA ────────────────────────────────────────────────── -->
+      <div class="card" style="text-align:center;padding:var(--space-5)">
+        <div style="font-size:14px;color:#e6edf3;margin-bottom:12px">
+          Explore the full musical diff between
+          <code>${escHtml(baseRef)}</code> and <code>${escHtml(headRef)}</code>
+        </div>
+        <div style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap">
+          <a href="${escHtml(diffUrl)}" class="btn btn-secondary" style="font-size:14px;padding:10px 20px">
+            &#128200; Open Full Diff
+          </a>
+          <a href="${escHtml(createPrUrl)}" class="btn btn-primary" style="font-size:14px;padding:10px 20px">
+            &#10133; Create Pull Request
+          </a>
+        </div>
+      </div>`;
+
+  } catch (e) {
+    if (e.message !== 'auth')
+      document.getElementById('content').innerHTML =
+        '<p class="error">&#10005; ' + escHtml(e.message) + '</p>';
+  }
+}
+
+load();
+{% endraw %}
+{% endblock %}
