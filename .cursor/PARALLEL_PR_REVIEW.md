@@ -106,7 +106,7 @@ for entry in "${PRS[@]}"; do
     continue
   fi
   git worktree add --detach "$WT" "$DEV_SHA"
-  printf "WORKFLOW=pr-review\nPR_NUMBER=%s\nPR_TITLE=%s\nPR_URL=https://github.com/cgcardona/maestro/pull/%s\n" \
+  printf "WORKFLOW=pr-review\nPR_NUMBER=%s\nPR_TITLE=%s\nPR_URL=https://github.com/cgcardona/maestro/pull/%s\nROLE=pr-reviewer\n" \
     "$NUM" "$TITLE" "$NUM" > "$WT/.agent-task"
   echo "✅ worktree pr-$NUM ready"
 done
@@ -192,6 +192,19 @@ STEP 0 — READ YOUR TASK:
   cat .agent-task
   This file tells you your PR number, title, and URL. Substitute your actual
   PR number wherever you see <N> below.
+
+STEP 0.5 — LOAD YOUR ROLE:
+  ROLE=$(grep '^ROLE=' .agent-task | cut -d= -f2)
+  REPO=$(git worktree list | head -1 | awk '{print $1}')
+  ROLE_FILE="$REPO/.cursor/roles/${ROLE}.md"
+  if [ -f "$ROLE_FILE" ]; then
+    cat "$ROLE_FILE"
+    echo "✅ Operating as role: $ROLE"
+  else
+    echo "⚠️  No role file found for '$ROLE' — proceeding without role context."
+  fi
+  # The decision hierarchy, quality bar, and failure modes in that file govern
+  # all your choices from this point forward.
 
 STEP 1 — DERIVE PATHS:
   REPO=$(git worktree list | head -1 | awk '{print $1}')   # local filesystem path only

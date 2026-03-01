@@ -77,6 +77,7 @@ for i in $(seq 1 $NUM_AGENTS); do
   cat > "$WT/.agent-task" <<EOF
 WORKFLOW=bugs-to-issues
 BATCH_NUM=$i
+ROLE=coordinator
 
 BUGS:
 # Paste bug descriptions for batch $i below, one per section.
@@ -133,6 +134,19 @@ PARALLEL AGENT COORDINATION — BUGS TO ISSUES
 STEP 0 — READ YOUR TASK:
   cat .agent-task
   This file contains your batch of bug reports to convert into GitHub issues.
+
+STEP 0.5 — LOAD YOUR ROLE:
+  ROLE=$(grep '^ROLE=' .agent-task | cut -d= -f2)
+  REPO=$(git worktree list | head -1 | awk '{print $1}')
+  ROLE_FILE="$REPO/.cursor/roles/${ROLE}.md"
+  if [ -f "$ROLE_FILE" ]; then
+    cat "$ROLE_FILE"
+    echo "✅ Operating as role: $ROLE"
+  else
+    echo "⚠️  No role file found for '$ROLE' — proceeding without role context."
+  fi
+  # The decision hierarchy, quality bar, and failure modes in that file govern
+  # all your choices from this point forward.
 
 STEP 1 — SET GITHUB REPO AND VERIFY AUTH:
   # GitHub repo slug — ALWAYS hardcoded. NEVER derive from directory name or local path.

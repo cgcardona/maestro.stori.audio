@@ -213,8 +213,16 @@ for entry in "${SELECTED_ISSUES[@]}"; do
     continue
   fi
   git worktree add --detach "$WT" "$DEV_SHA"
-  printf "WORKFLOW=issue-to-pr\nISSUE_NUMBER=%s\nISSUE_TITLE=%s\nISSUE_URL=https://github.com/%s/issues/%s\nPHASE_LABEL=%s\n" \
-    "$NUM" "$TITLE" "$GH_REPO" "$NUM" "$PHASE_LABEL" > "$WT/.agent-task"
+  # Assign ROLE based on issue labels:
+  #   phase-1/db-schema or alembic labels → database-architect
+  #   all others → python-developer
+  ISSUE_LABELS=$(gh issue view "$NUM" --repo "$GH_REPO" --json labels --jq '[.labels[].name] | join(",")' 2>/dev/null || echo "")
+  AGENT_ROLE="python-developer"
+  if echo "$ISSUE_LABELS" | grep -qE "db-schema|alembic|migration"; then
+    AGENT_ROLE="database-architect"
+  fi
+  printf "WORKFLOW=issue-to-pr\nISSUE_NUMBER=%s\nISSUE_TITLE=%s\nISSUE_URL=https://github.com/%s/issues/%s\nPHASE_LABEL=%s\nROLE=%s\n" \
+    "$NUM" "$TITLE" "$GH_REPO" "$NUM" "$PHASE_LABEL" "$AGENT_ROLE" > "$WT/.agent-task"
   echo "✅ worktree issue-$NUM ready"
 done
 
@@ -300,6 +308,19 @@ STEP 0 — READ YOUR TASK:
   cat .agent-task
   This file tells you your issue number, title, and URL. Substitute your actual
   issue number wherever you see <N> below.
+
+STEP 0.5 — LOAD YOUR ROLE:
+  ROLE=$(grep '^ROLE=' .agent-task | cut -d= -f2)
+  REPO=$(git worktree list | head -1 | awk '{print $1}')
+  ROLE_FILE="$REPO/.cursor/roles/${ROLE}.md"
+  if [ -f "$ROLE_FILE" ]; then
+    cat "$ROLE_FILE"
+    echo "✅ Operating as role: $ROLE"
+  else
+    echo "⚠️  No role file found for '$ROLE' — proceeding without role context."
+  fi
+  # The decision hierarchy, quality bar, and failure modes in that file govern
+  # all your choices from this point forward.
 
 STEP 1 — DERIVE PATHS:
   REPO=$(git worktree list | head -1 | awk '{print $1}')   # local filesystem path only
