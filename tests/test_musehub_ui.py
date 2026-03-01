@@ -4729,6 +4729,140 @@ async def test_listen_page_json_response(
     assert isinstance(body["tracks"], list)
 
 
+# ---------------------------------------------------------------------------
+# Issue #366 — musehub_listen service function (direct unit tests)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.anyio
+async def test_build_track_listing_returns_full_mix_and_tracks(
+    db_session: AsyncSession,
+) -> None:
+    """build_track_listing() returns a populated TrackListingResponse with mix + stems."""
+    from maestro.services.musehub_listen import build_track_listing
+
+    repo = MusehubRepo(
+        name="svc-listen-test",
+        owner="svcuser",
+        slug="svc-listen-test",
+        visibility="public",
+        owner_user_id="svc-owner",
+    )
+    db_session.add(repo)
+    await db_session.commit()
+    await db_session.refresh(repo)
+    repo_id = str(repo.repo_id)
+
+    for path, size in [
+        ("mix/full_mix.mp3", 204800),
+        ("tracks/bass.mp3", 51200),
+        ("tracks/keys.mp3", 61440),
+        ("tracks/bass.webp", 8192),
+    ]:
+        obj = MusehubObject(
+            object_id=f"sha256:svc_{path.replace('/', '_')}",
+            repo_id=repo_id,
+            path=path,
+            size_bytes=size,
+            disk_path=f"/tmp/svc_{path.replace('/', '_')}",
+        )
+        db_session.add(obj)
+    await db_session.commit()
+
+    result = await build_track_listing(db_session, repo_id, "main")
+
+    assert result.has_renders is True
+    assert result.repo_id == repo_id
+    assert result.ref == "main"
+    # full-mix URL points to the mix file (contains "mix" keyword)
+    assert result.full_mix_url is not None
+    assert "full_mix" in result.full_mix_url or "mix" in result.full_mix_url
+    # Two audio tracks (bass.mp3 + keys.mp3); bass.webp is not audio
+    assert len(result.tracks) == 3  # mix/full_mix.mp3, tracks/bass.mp3, tracks/keys.mp3
+    track_paths = {t.path for t in result.tracks}
+    assert "tracks/bass.mp3" in track_paths
+    assert "tracks/keys.mp3" in track_paths
+    # Piano-roll URL attached to bass.mp3 (matching bass.webp exists)
+    bass_track = next(t for t in result.tracks if t.path == "tracks/bass.mp3")
+    assert bass_track.piano_roll_url is not None
+
+
+@pytest.mark.anyio
+async def test_build_track_listing_no_audio_returns_empty(
+    db_session: AsyncSession,
+) -> None:
+    """build_track_listing() returns has_renders=False when no audio objects exist."""
+    from maestro.services.musehub_listen import build_track_listing
+
+    repo = MusehubRepo(
+        name="svc-silent-test",
+        owner="svcuser",
+        slug="svc-silent-test",
+        visibility="public",
+        owner_user_id="svc-owner",
+    )
+    db_session.add(repo)
+    await db_session.commit()
+    await db_session.refresh(repo)
+    repo_id = str(repo.repo_id)
+
+    # Only a non-audio object
+    obj = MusehubObject(
+        object_id="sha256:svc_midi",
+        repo_id=repo_id,
+        path="tracks/bass.mid",
+        size_bytes=1024,
+        disk_path="/tmp/svc_bass.mid",
+    )
+    db_session.add(obj)
+    await db_session.commit()
+
+    result = await build_track_listing(db_session, repo_id, "dev")
+
+    assert result.has_renders is False
+    assert result.full_mix_url is None
+    assert result.tracks == []
+
+
+@pytest.mark.anyio
+async def test_build_track_listing_no_mix_keyword_uses_first_alphabetically(
+    db_session: AsyncSession,
+) -> None:
+    """When no file matches _FULL_MIX_KEYWORDS, the first audio file (by path) is used."""
+    from maestro.services.musehub_listen import build_track_listing
+
+    repo = MusehubRepo(
+        name="svc-nomix-test",
+        owner="svcuser",
+        slug="svc-nomix-test",
+        visibility="public",
+        owner_user_id="svc-owner",
+    )
+    db_session.add(repo)
+    await db_session.commit()
+    await db_session.refresh(repo)
+    repo_id = str(repo.repo_id)
+
+    for path, size in [
+        ("tracks/bass.mp3", 51200),
+        ("tracks/drums.mp3", 61440),
+    ]:
+        obj = MusehubObject(
+            object_id=f"sha256:svc_nomix_{path.replace('/', '_')}",
+            repo_id=repo_id,
+            path=path,
+            size_bytes=size,
+            disk_path=f"/tmp/svc_nomix_{path.replace('/', '_')}",
+        )
+        db_session.add(obj)
+    await db_session.commit()
+
+    result = await build_track_listing(db_session, repo_id, "main")
+
+    assert result.has_renders is True
+    # 'tracks/bass.mp3' sorts before 'tracks/drums.mp3'
+    assert result.full_mix_url is not None
+    assert "bass" in result.full_mix_url
 
 
 # ---------------------------------------------------------------------------

@@ -7877,7 +7877,7 @@ Full emotion map for a Muse repo ref. Returned by `GET /musehub/repos/{repo_id}/
 | `piano_roll_url` | `str \| None` | Absolute URL to the matching piano-roll image, if available |
 | `size_bytes` | `int` | File size in bytes |
 
-**Produced by:** `maestro.api.routes.musehub.repos.list_listen_tracks()` and `maestro.api.routes.musehub.ui.listen_page()`
+**Produced by:** `maestro.services.musehub_listen.build_track_listing()` (canonical). Route handlers `list_listen_tracks()` and `listen_page()` delegate to the service.
 **Consumed by:** MuseHub listen page (`/musehub/ui/{owner}/{repo_slug}/listen/{ref}`); AI agents enumerating audio stems
 
 ---
@@ -7896,7 +7896,7 @@ Full emotion map for a Muse repo ref. Returned by `GET /musehub/repos/{repo_id}/
 | `tracks` | `list[AudioTrackEntry]` | All audio artifacts at this ref, sorted by path |
 | `has_renders` | `bool` | True when at least one audio artifact exists at this ref |
 
-**Produced by:** `maestro.api.routes.musehub.repos.list_listen_tracks()` (`GET /api/v1/musehub/repos/{repo_id}/listen/{ref}/tracks`) and `maestro.api.routes.musehub.ui.listen_page()` (JSON content negotiation)
+**Produced by:** `maestro.services.musehub_listen.build_track_listing()` — the single canonical source of audio scanning logic. Both `maestro.api.routes.musehub.repos.list_listen_tracks()` (`GET /api/v1/musehub/repos/{repo_id}/listen/{ref}/tracks`) and `maestro.api.routes.musehub.ui.listen_page()` (JSON content negotiation) delegate to this service function.
 **Consumed by:** MuseHub listen page JS; AI agents that need to enumerate audio stems without visiting the UI
 
 ---
