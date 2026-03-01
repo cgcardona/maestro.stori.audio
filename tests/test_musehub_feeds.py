@@ -204,13 +204,19 @@ async def test_commit_rss_feed_empty_repo_returns_valid_xml(
     client: AsyncClient,
     auth_headers: dict[str, str],
 ) -> None:
-    """Commit RSS feed is valid XML even when the repo has no commits."""
+    """Commit RSS feed is valid XML for a repo with only the auto-created initial commit.
+
+    Repo creation always inserts an initial commit, so the feed always contains
+    at least one <item>. This test verifies the XML envelope is well-formed.
+    """
     repo_id = await _create_public_repo(client, auth_headers, "rss-commit-empty")
     response = await client.get(f"/api/v1/musehub/repos/{repo_id}/feed.rss")
     assert response.status_code == 200
     body = response.text
     assert '<rss version="2.0">' in body
-    assert "<item>" not in body
+    assert "<channel>" in body
+    assert "</channel>" in body
+    assert "</rss>" in body
 
 
 # ---------------------------------------------------------------------------
@@ -405,11 +411,20 @@ async def test_commit_atom_feed_empty_repo_valid_xml(
     client: AsyncClient,
     auth_headers: dict[str, str],
 ) -> None:
-    """Atom feed is valid XML with no <entry> tags when repo has no commits."""
+    """Atom feed is valid XML for a repo with only the auto-created initial commit.
+
+    Repo creation always inserts an initial commit, so the Atom feed always
+    contains at least one <entry>. This test verifies the feed envelope is
+    well-formed Atom 1.0.
+    """
     repo_id = await _create_public_repo(client, auth_headers, "atom-commit-empty")
     response = await client.get(f"/api/v1/musehub/repos/{repo_id}/feed.atom")
     assert response.status_code == 200
-    assert "<entry>" not in response.text
+    body = response.text
+    assert 'xmlns="http://www.w3.org/2005/Atom"' in body
+    assert "<feed" in body
+    assert "</feed>" in body
+    assert "<updated>" in body
 
 
 # ---------------------------------------------------------------------------
