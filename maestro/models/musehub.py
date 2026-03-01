@@ -899,6 +899,80 @@ class ReleaseListResponse(CamelModel):
     releases: list[ReleaseResponse]
 
 
+# ── Release asset models ───────────────────────────────────────────────────
+
+
+class ReleaseAssetCreate(CamelModel):
+    """Body for POST /musehub/repos/{repo_id}/releases/{tag}/assets.
+
+    ``name`` is the filename shown in the UI (e.g. "summer-v1.0.mid").
+    ``download_url`` is the pre-signed or CDN URL from which clients
+    download the artifact; Maestro stores it verbatim.
+    """
+
+    name: str = Field(
+        ..., min_length=1, max_length=500, description="Filename shown in the UI"
+    )
+    label: str = Field(
+        "",
+        max_length=255,
+        description="Optional human-readable label, e.g. 'MIDI Bundle'",
+    )
+    content_type: str = Field(
+        "",
+        max_length=128,
+        description="MIME type, e.g. 'audio/midi', 'application/zip'",
+    )
+    size: int = Field(
+        0, ge=0, description="File size in bytes; 0 when unknown"
+    )
+    download_url: str = Field(
+        ..., min_length=1, max_length=2048, description="Direct download URL for the artifact"
+    )
+
+
+class ReleaseAssetResponse(CamelModel):
+    """Wire representation of a single release asset."""
+
+    asset_id: str = Field(..., description="Internal UUID for this asset")
+    release_id: str = Field(..., description="UUID of the owning release")
+    name: str = Field(..., description="Filename shown in the UI")
+    label: str = Field("", description="Optional human-readable label")
+    content_type: str = Field("", description="MIME type of the artifact")
+    size: int = Field(0, ge=0, description="File size in bytes; 0 when unknown")
+    download_url: str = Field(..., description="Direct download URL")
+    download_count: int = Field(0, ge=0, description="Number of times the asset has been downloaded")
+    created_at: datetime = Field(..., description="Asset creation timestamp (ISO-8601 UTC)")
+
+
+class ReleaseAssetDownloadCount(CamelModel):
+    """Per-asset download count entry in a release download stats response."""
+
+    asset_id: str = Field(..., description="Internal UUID for the asset")
+    name: str = Field(..., description="Filename shown in the UI")
+    label: str = Field("", description="Optional human-readable label")
+    download_count: int = Field(0, ge=0, description="Number of times this asset has been downloaded")
+
+
+class ReleaseDownloadStatsResponse(CamelModel):
+    """Download counts per asset for a single release.
+
+    Returned by ``GET /repos/{repo_id}/releases/{tag}/downloads``.
+    ``total_downloads`` is the sum of ``download_count`` across all assets,
+    providing a quick headline metric without client-side aggregation.
+    """
+
+    release_id: str = Field(..., description="UUID of the release")
+    tag: str = Field(..., description="Version tag of the release")
+    assets: list[ReleaseAssetDownloadCount] = Field(
+        default_factory=list,
+        description="Per-asset download counts; empty when no assets have been attached",
+    )
+    total_downloads: int = Field(
+        0, ge=0, description="Sum of download_count across all assets"
+    )
+
+
 # ── Credits models ────────────────────────────────────────────────────────────
 
 
