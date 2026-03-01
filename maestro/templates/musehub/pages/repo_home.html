@@ -15,6 +15,9 @@ const owner    = {{ owner | tojson }};
 const repoSlug = {{ repo_slug | tojson }};
 const base     = {{ base_url | tojson }};
 const apiBase  = '/api/v1/musehub/repos/' + repoId;
+const CLONE_MUSEHUB = {{ clone_url_musehub | tojson }};
+const CLONE_SSH     = {{ clone_url_ssh | tojson }};
+const CLONE_HTTPS   = {{ clone_url_https | tojson }};
 {% endblock %}
 
 {% block page_script %}
@@ -367,6 +370,245 @@ async function loadReadme() {
 }
 
 /* ═══════════════════════════════════════════════════════
+ * Contributors panel — top-10 by commit count (credits API)
+ * ═══════════════════════════════════════════════════════ */
+async function loadContributors() {
+  const el = document.getElementById('contributors-panel');
+  if (!el) return;
+  try {
+    const data = await apiFetch('/repos/' + repoId + '/credits?sort=count');
+    const contribs = (data.contributors || []).slice(0, 10);
+    if (!contribs.length) {
+      el.innerHTML = `<div class="card">
+        <h3 style="margin:0 0 var(--space-3)">&#128100; Contributors</h3>
+        <p class="text-muted text-sm">No contributors yet — push your first commit.</p>
+      </div>`;
+      return;
+    }
+    const avatars = contribs.map(c => {
+      const hue = [...(c.author || '')].reduce((h, ch) => (h * 31 + ch.charCodeAt(0)) % 360, 0);
+      const color = `hsl(${hue}, 50%, 38%)`;
+      const initials = (c.author || '?').slice(0, 2).toUpperCase();
+      const username = encodeURIComponent(c.author || '');
+      const count = c.sessionCount ?? 0;
+      return `<a href="/musehub/ui/users/${username}" class="contrib-avatar" style="background:${color}" title="${escHtml(c.author)} · ${count} commit${count !== 1 ? 's' : ''}">
+        ${escHtml(initials)}
+        <span class="contrib-badge">${count}</span>
+      </a>`;
+    }).join('');
+    el.innerHTML = `<div class="card">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:var(--space-3)">
+        <h3 style="margin:0">&#128100; Contributors</h3>
+        <a href="${base}/credits" class="text-xs text-muted">View all &rarr;</a>
+      </div>
+      <div class="contrib-grid">${avatars}</div>
+    </div>`;
+  } catch(e) { /* non-critical */ }
+}
+
+/* ═══════════════════════════════════════════════════════
+ * Activity heatmap — 52-week GitHub-style grid
+ * ═══════════════════════════════════════════════════════ */
+async function loadActivityHeatmap() {
+  const el = document.getElementById('activity-heatmap');
+  if (!el) return;
+  try {
+    /* Fetch up to 365 commits to cover one full year */
+    const data    = await apiFetch('/repos/' + repoId + '/commits?limit=365');
+    const commits = data.commits || [];
+
+    /* Build a day-keyed frequency map: "YYYY-MM-DD" → count */
+    const freq = {};
+    commits.forEach(c => {
+      if (!c.timestamp) return;
+      const d = new Date(c.timestamp);
+      const key = d.toISOString().slice(0, 10);
+      freq[key] = (freq[key] || 0) + 1;
+    });
+
+    const maxCount = Math.max(1, ...Object.values(freq));
+
+    /* Build a 52-week grid anchored at today, columns = weeks (left=oldest), rows = days */
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const DAY_MS = 86400000;
+    /* Start on the Sunday 52 weeks ago */
+    const startOffset = today.getDay(); /* days since last Sunday */
+    const gridStart   = new Date(today.getTime() - (51 * 7 + startOffset) * DAY_MS);
+
+    const DAYS      = 52 * 7;
+    const DAY_NAMES = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+    const MONTH_ABB = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
+    let cols = '';
+    let prevMonth = -1;
+    let monthLabels = '';
+    let monthColIdx = 0;
+
+    for (let week = 0; week < 52; week++) {
+      let cells = '';
+      for (let dow = 0; dow < 7; dow++) {
+        const idx  = week * 7 + dow;
+        const date = new Date(gridStart.getTime() + idx * DAY_MS);
+        const key  = date.toISOString().slice(0, 10);
+        const cnt  = freq[key] || 0;
+        const pct  = cnt / maxCount;
+        /* Four-level colour intensity matching GitHub's palette */
+        const bg = cnt === 0 ? 'var(--hm-0)'
+          : pct < 0.25 ? 'var(--hm-1)'
+          : pct < 0.50 ? 'var(--hm-2)'
+          : pct < 0.75 ? 'var(--hm-3)'
+          : 'var(--hm-4)';
+        const label = `${DAY_NAMES[dow]} ${key}: ${cnt} commit${cnt !== 1 ? 's' : ''}`;
+        cells += `<div class="hm-cell" style="background:${bg}" title="${label}"></div>`;
+
+        /* Track month label positions */
+        if (dow === 0) {
+          const mo = date.getMonth();
+          if (mo !== prevMonth) {
+            monthLabels += `<span class="hm-month" style="grid-column:${week + 1}">${MONTH_ABB[mo]}</span>`;
+            prevMonth = mo;
+          }
+        }
+      }
+      cols += `<div class="hm-col">${cells}</div>`;
+    }
+
+    el.innerHTML = `<div class="card">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:var(--space-3)">
+        <h3 style="margin:0">&#128200; Activity</h3>
+        <span class="text-xs text-muted">${commits.length} commit${commits.length !== 1 ? 's' : ''} in the last 52 weeks</span>
+      </div>
+      <div class="hm-wrapper">
+        <div class="hm-months">${monthLabels}</div>
+        <div class="hm-grid">${cols}</div>
+      </div>
+      <div class="hm-legend">
+        <span class="text-xs text-muted">Less</span>
+        <div class="hm-cell" style="background:var(--hm-0)"></div>
+        <div class="hm-cell" style="background:var(--hm-1)"></div>
+        <div class="hm-cell" style="background:var(--hm-2)"></div>
+        <div class="hm-cell" style="background:var(--hm-3)"></div>
+        <div class="hm-cell" style="background:var(--hm-4)"></div>
+        <span class="text-xs text-muted">More</span>
+      </div>
+    </div>`;
+  } catch(e) { /* non-critical */ }
+}
+
+/* ═══════════════════════════════════════════════════════
+ * Instrument bar — stacked distribution across latest commit
+ * ═══════════════════════════════════════════════════════ */
+async function loadInstrumentBar() {
+  const el = document.getElementById('instrument-bar');
+  if (!el) return;
+  try {
+    const commitData = await apiFetch('/repos/' + repoId + '/commits?limit=1');
+    const commits    = commitData.commits || [];
+    if (!commits.length) { el.style.display = 'none'; return; }
+
+    const objData = await apiFetch(
+      '/repos/' + repoId + '/objects?ref=' + encodeURIComponent(commits[0].commitId)
+    );
+    const objects = objData.objects || [];
+
+    /* Derive instrument name from object path — strip directory and extension */
+    const instrCount = {};
+    objects.forEach(o => {
+      if (!o.path) return;
+      /* Skip non-MIDI/audio files (README, images, etc.) */
+      const lower = o.path.toLowerCase();
+      if (!lower.endsWith('.mid') && !lower.endsWith('.midi') &&
+          !lower.endsWith('.mp3') && !lower.endsWith('.wav') &&
+          !lower.endsWith('.ogg') && !lower.endsWith('.flac')) return;
+      const filename = (o.path.split('/').pop() || o.path).replace(/\.[^.]+$/, '');
+      /* Use role field if present, fall back to filename stem */
+      const role = o.role || filename || 'unknown';
+      instrCount[role] = (instrCount[role] || 0) + 1;
+    });
+
+    const entries = Object.entries(instrCount).sort((a, b) => b[1] - a[1]);
+    if (!entries.length) { el.style.display = 'none'; return; }
+
+    const total = entries.reduce((s, [, n]) => s + n, 0);
+    const PALETTE = ['#f778ba','#a97bff','#e8d44d','#58a6ff','#3fb950','#f0883e','#ff7b72','#79c0ff'];
+    const segments = entries.map(([name, count], i) => {
+      const pct  = ((count / total) * 100).toFixed(1);
+      const color = PALETTE[i % PALETTE.length];
+      return `<div class="instr-seg" style="width:${pct}%;background:${color}" title="${escHtml(name)}: ${pct}%">
+        <span class="instr-label">${escHtml(name)} ${pct}%</span>
+      </div>`;
+    }).join('');
+
+    const legend = entries.slice(0, 8).map(([name, count], i) => {
+      const pct   = ((count / total) * 100).toFixed(1);
+      const color = PALETTE[i % PALETTE.length];
+      return `<span class="instr-legend-item">
+        <span class="instr-dot" style="background:${color}"></span>
+        ${escHtml(name)} <span class="text-muted">${pct}%</span>
+      </span>`;
+    }).join('');
+
+    el.innerHTML = `<div class="card">
+      <h3 style="margin:0 0 var(--space-3)">&#127925; Instrument Distribution</h3>
+      <div class="instr-bar">${segments}</div>
+      <div class="instr-legend">${legend}</div>
+      <div class="text-xs text-muted" style="margin-top:var(--space-2)">
+        Based on ${objects.length} file${objects.length !== 1 ? 's' : ''} in the latest commit.
+      </div>
+    </div>`;
+  } catch(e) { el.style.display = 'none'; }
+}
+
+/* ═══════════════════════════════════════════════════════
+ * Clone widget — copy-to-clipboard with protocol variants
+ * ═══════════════════════════════════════════════════════ */
+function renderCloneWidget() {
+  const el = document.getElementById('clone-widget');
+  if (!el) return;
+
+  function copyInput(id) {
+    const inp = document.getElementById(id);
+    if (!inp) return;
+    navigator.clipboard.writeText(inp.value).then(() => {
+      const btn = inp.nextElementSibling;
+      if (btn) { btn.textContent = '✓ Copied'; setTimeout(() => { btn.textContent = 'Copy'; }, 2000); }
+    }).catch(() => { inp.select(); document.execCommand('copy'); });
+  }
+
+  function cloneRow(label, icon, url, inputId) {
+    return `<div class="clone-row">
+      <span class="clone-label">${icon} ${label}</span>
+      <div class="clone-input-wrap">
+        <input id="${inputId}" class="clone-input" type="text" value="${escHtml(url)}" readonly>
+        <button class="btn btn-secondary btn-sm clone-copy-btn" onclick="copyClone('${inputId}')">Copy</button>
+      </div>
+    </div>`;
+  }
+
+  const zipUrl = '/api/v1/musehub/repos/' + repoId + '/archive.zip';
+
+  el.innerHTML = `<div class="card">
+    <h3 style="margin:0 0 var(--space-3)">&#128190; Clone</h3>
+    ${cloneRow('Stori DAW', '&#127925;', CLONE_MUSEHUB, 'clone-musehub')}
+    ${cloneRow('SSH', '&#128274;', CLONE_SSH, 'clone-ssh')}
+    ${cloneRow('HTTPS', '&#127760;', CLONE_HTTPS, 'clone-https')}
+    <div style="margin-top:var(--space-3)">
+      <a href="${zipUrl}" class="btn btn-secondary btn-sm" download>&#8681; Download ZIP</a>
+    </div>
+  </div>`;
+}
+
+function copyClone(id) {
+  const inp = document.getElementById(id);
+  if (!inp) return;
+  navigator.clipboard.writeText(inp.value).then(() => {
+    const btn = inp.nextElementSibling;
+    if (btn) { btn.textContent = '✓ Copied'; setTimeout(() => { btn.textContent = 'Copy'; }, 2000); }
+  }).catch(() => { inp.select(); document.execCommand('copy'); });
+}
+
+/* ═══════════════════════════════════════════════════════
  * Quick-link tab strip
  * ═══════════════════════════════════════════════════════ */
 function renderQuickLinks() {
@@ -412,13 +654,21 @@ function load() {
         <div id="arrangement-matrix" style="margin-bottom:var(--space-4)">
           <p class="loading">Loading arrangement&hellip;</p>
         </div>
+        <div id="activity-heatmap" style="margin-bottom:var(--space-4)">
+          <p class="loading">Loading activity&hellip;</p>
+        </div>
+        <div id="instrument-bar" style="margin-bottom:var(--space-4)"></div>
         <div id="recent-commits" style="margin-bottom:var(--space-4)">
           <p class="loading">Loading commits&hellip;</p>
         </div>
         <div id="readme-section"></div>
       </main>
 
-      <!-- Sidebar placeholder — inherited from repo.html pattern -->
+      <!-- Sidebar -->
+      <aside class="repo-sidebar">
+        <div id="clone-widget" style="margin-bottom:var(--space-4)"></div>
+        <div id="contributors-panel" style="margin-bottom:var(--space-4)"></div>
+      </aside>
     </div>
   `;
 
@@ -428,8 +678,12 @@ function load() {
   loadStats();
   loadAudioPlayer();
   loadArrangementMatrix();
+  loadActivityHeatmap();
+  loadInstrumentBar();
   loadRecentCommits();
   loadReadme();
+  renderCloneWidget();
+  loadContributors();
 }
 
 load();
@@ -514,5 +768,174 @@ load();
     border-radius: var(--radius-base);
     font-size: 14px;
   }
+
+  /* ── Repo layout with sidebar ── */
+  .repo-layout {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: var(--space-4);
+  }
+  @media (min-width: 900px) {
+    .repo-layout {
+      grid-template-columns: 1fr 280px;
+      align-items: start;
+    }
+    .repo-sidebar { position: sticky; top: var(--space-4); }
+  }
+
+  /* ── Contributors panel ── */
+  .contrib-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+  }
+  .contrib-avatar {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    font-size: 13px;
+    font-weight: 700;
+    color: #fff;
+    text-decoration: none;
+    transition: transform 0.15s, box-shadow 0.15s;
+  }
+  .contrib-avatar:hover { transform: scale(1.1); box-shadow: 0 2px 8px rgba(0,0,0,0.4); }
+  .contrib-badge {
+    position: absolute;
+    bottom: -4px;
+    right: -4px;
+    background: var(--color-bg, #0d1117);
+    border: 1px solid var(--border-subtle, rgba(255,255,255,0.12));
+    border-radius: 8px;
+    font-size: 9px;
+    font-weight: 700;
+    padding: 1px 3px;
+    line-height: 1;
+    color: var(--color-text-muted);
+    min-width: 14px;
+    text-align: center;
+  }
+
+  /* ── Activity heatmap ── */
+  :root {
+    --hm-0: rgba(255,255,255,0.05);
+    --hm-1: #0e4429;
+    --hm-2: #006d32;
+    --hm-3: #26a641;
+    --hm-4: #39d353;
+  }
+  .hm-wrapper { overflow-x: auto; }
+  .hm-months {
+    display: grid;
+    grid-template-columns: repeat(52, 12px);
+    gap: 2px;
+    margin-bottom: 2px;
+    padding-left: 0;
+  }
+  .hm-month {
+    font-size: 9px;
+    color: var(--color-text-muted);
+    white-space: nowrap;
+  }
+  .hm-grid {
+    display: flex;
+    gap: 2px;
+  }
+  .hm-col {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .hm-cell {
+    width: 11px;
+    height: 11px;
+    border-radius: 2px;
+  }
+  .hm-legend {
+    display: flex;
+    align-items: center;
+    gap: var(--space-1);
+    margin-top: var(--space-2);
+    justify-content: flex-end;
+  }
+
+  /* ── Instrument bar ── */
+  .instr-bar {
+    display: flex;
+    height: 20px;
+    border-radius: var(--radius-base);
+    overflow: hidden;
+    margin-bottom: var(--space-3);
+  }
+  .instr-seg {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 24px;
+    overflow: hidden;
+    transition: flex 0.3s;
+  }
+  .instr-label {
+    font-size: 9px;
+    font-weight: 600;
+    color: rgba(0,0,0,0.75);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    padding: 0 3px;
+  }
+  .instr-legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+  }
+  .instr-legend-item {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 11px;
+  }
+  .instr-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+
+  /* ── Clone widget ── */
+  .clone-row {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+    margin-bottom: var(--space-3);
+  }
+  .clone-label {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--color-text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+  .clone-input-wrap {
+    display: flex;
+    gap: var(--space-1);
+  }
+  .clone-input {
+    flex: 1;
+    font-size: 12px;
+    font-family: var(--font-mono, monospace);
+    padding: var(--space-1) var(--space-2);
+    background: var(--bg-subtle, rgba(255,255,255,0.04));
+    border: 1px solid var(--border-subtle, rgba(255,255,255,0.12));
+    border-radius: var(--radius-base);
+    color: var(--color-text);
+    min-width: 0;
+  }
+  .clone-copy-btn { flex-shrink: 0; }
 </style>
 {% endblock %}

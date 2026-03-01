@@ -325,11 +325,22 @@ async def repo_page(
 ) -> StarletteResponse:
     """Render the repo home page with arrangement matrix, audio player, stats, and recent commits.
 
+    Also renders four enrichment panels:
+    - Contributors: top-10 avatar grid derived from the credits endpoint.
+    - Activity heatmap: 52-week GitHub-style heatmap from commit timestamps.
+    - Instrument bar: stacked distribution of instrument tracks from commit objects.
+    - Clone widget: musehub://, SSH, and HTTPS clone URLs with copy-to-clipboard.
+
     Content negotiation:
     - ``?format=json`` or ``Accept: application/json`` → full ``RepoResponse`` with camelCase keys.
     - Everything else → HTML home page via ``repo_home.html`` template.
 
     One URL, two audiences — agents get structured data, humans get rich HTML.
+
+    Clone URL variants passed to the template:
+    - ``clone_url_musehub``: native DAW protocol (``musehub://{owner}/{slug}``)
+    - ``clone_url_ssh``: SSH git remote (``ssh://git@musehub.stori.app/{owner}/{slug}.git``)
+    - ``clone_url_https``: HTTPS git remote (``https://musehub.stori.app/{owner}/{slug}.git``)
     """
     repo, base_url = await _resolve_repo_full(owner, repo_slug, db)
     page_url = str(request.url)
@@ -348,6 +359,11 @@ async def repo_page(
                 description=repo.description or f"Music composition repository by {owner}",
                 og_type="website",
             ),
+            # Clone URL variants for the clone widget panel — derived server-side
+            # so the template never has to reconstruct them from owner/slug.
+            "clone_url_musehub": f"musehub://{owner}/{repo_slug}",
+            "clone_url_ssh": f"ssh://git@musehub.stori.app/{owner}/{repo_slug}.git",
+            "clone_url_https": f"https://musehub.stori.app/{owner}/{repo_slug}.git",
         },
         templates=templates,
         json_data=repo,
