@@ -6,8 +6,8 @@
 >
 > **Your job — the full list, nothing more:**
 > 1. Pull `dev` to confirm it is up to date.
-> 2. Run the Setup script below to create one worktree per PR.
-> 3. Launch one sub-agent per worktree by pasting the Kickoff Prompt (found at the bottom of this document) into a separate Cursor composer window rooted in that worktree.
+> 2. Run the Setup script below to create one worktree per PR and write a `.agent-task` file into each.
+> 3. Launch one sub-agent per worktree using the **Task tool** (preferred — no limit on simultaneous agents) or a Cursor composer window rooted in that worktree.
 > 4. Report back once all sub-agents have been launched.
 >
 > **You do NOT:**
@@ -17,7 +17,35 @@
 > - Read PR diffs or study code yourself.
 >
 > The **Kickoff Prompt** at the bottom of this document is for the sub-agents, not for you.
-> Copy it verbatim into each sub-agent's window. Do not follow it yourself.
+> Do not follow it yourself.
+
+---
+
+## Why `.agent-task` files unlock more than 4 parallel agents
+
+The Task tool can launch multiple review agents simultaneously from a single
+coordinator message. Each agent reads its own `.agent-task` file, which carries
+the PR number, branch, expected grade threshold, and file-overlap context.
+The coordinator needs only the worktree path and the kickoff prompt — no
+per-PR content to embed in the call:
+
+```python
+# All launched simultaneously — no 4-agent limit
+Task(worktree="/path/to/pr-315", prompt=KICKOFF_PROMPT)
+Task(worktree="/path/to/pr-316", prompt=KICKOFF_PROMPT)
+Task(worktree="/path/to/pr-317", prompt=KICKOFF_PROMPT)
+Task(worktree="/path/to/pr-318", prompt=KICKOFF_PROMPT)
+Task(worktree="/path/to/pr-319", prompt=KICKOFF_PROMPT)
+```
+
+**Nested orchestration:** A review agent whose `.agent-task` contains
+`SPAWN_SUB_AGENTS=true` acts as a sub-coordinator — useful when a large PR
+needs multiple independent reviewers (e.g. one for types, one for tests, one
+for docs). Each sub-reviewer writes its grade and findings into its own
+worktree; the sub-coordinator collects them and emits a composite grade.
+
+See `PARALLEL_BUGS_TO_ISSUES.md` → "Agent Task File Reference" for the
+full field reference.
 
 ---
 
@@ -87,8 +115,9 @@ git config rerere.enabled true || true
 # Snapshot dev tip — all worktrees start here; agents checkout their PR branch in STEP 3
 DEV_SHA=$(git rev-parse dev)
 
-# --- define PRs ---
-# Batch: #315, #316, #317, #318 (MuseHub — Notifications, Sessions, Explore, Insights)
+# ── DEFINE PRs ───────────────────────────────────────────────────────────────
+# Format: "PR_NUMBER|PR_TITLE"
+# Update this list for each review batch.
 declare -a PRS=(
   "315|feat(musehub): unread notification badge in nav header"
   "316|feat(musehub): session detail — participant avatars, profile links, commit cards"
@@ -96,7 +125,7 @@ declare -a PRS=(
   "318|feat(musehub): insights dashboard — view count, download count, traffic sparkline"
 )
 
-# --- create worktrees + task files ---
+# ── CREATE WORKTREES + AGENT TASK FILES ──────────────────────────────────────
 for entry in "${PRS[@]}"; do
   NUM="${entry%%|*}"
   TITLE="${entry##*|}"
@@ -106,16 +135,47 @@ for entry in "${PRS[@]}"; do
     continue
   fi
   git worktree add --detach "$WT" "$DEV_SHA"
-  printf "WORKFLOW=pr-review\nPR_NUMBER=%s\nPR_TITLE=%s\nPR_URL=https://github.com/cgcardona/maestro/pull/%s\n" \
-    "$NUM" "$TITLE" "$NUM" > "$WT/.agent-task"
-  echo "✅ worktree pr-$NUM ready"
+
+  # Fetch PR metadata for the task file
+  PR_BRANCH=$(gh pr view "$NUM" --repo "$GH_REPO" --json headRefName --jq '.headRefName' 2>/dev/null || echo "unknown")
+  PR_FILES=$(gh pr diff "$NUM" --repo "$GH_REPO" --name-only 2>/dev/null | tr '\n' ',' | sed 's/,$//')
+  PR_BODY=$(gh pr view "$NUM" --repo "$GH_REPO" --json body --jq '.body' 2>/dev/null || echo "")
+  CLOSES_ISSUE=$(echo "$PR_BODY" | grep -oE '[Cc]loses?\s+#[0-9]+' | grep -oE '[0-9]+' | tr '\n' ',' | sed 's/,$//')
+  # MERGE_AFTER: PR number that must be merged before this one (for Alembic chain safety).
+  # Set automatically if the PR body contains "Merges after #NNN" or "Depends on PR #NNN".
+  # The coordinator can also set this manually for known sequential batches.
+  MERGE_AFTER_VAL=$(echo "$PR_BODY" | grep -oiE 'merge after #[0-9]+|depends on pr #[0-9]+' | grep -oE '[0-9]+' | head -1)
+  [ -z "$MERGE_AFTER_VAL" ] && MERGE_AFTER_VAL="${MERGE_AFTER:-none}"
+  # HAS_MIGRATION: auto-detect. If true, reviewer must run Alembic chain validation.
+  HAS_MIGRATION=$(echo "$PR_FILES" | grep -c "alembic/versions/" || echo 0)
+  [ "$HAS_MIGRATION" -gt 0 ] && HAS_MIGRATION_VAL=true || HAS_MIGRATION_VAL=false
+
+  cat > "$WT/.agent-task" << TASKEOF
+WORKFLOW=pr-review
+GH_REPO=$GH_REPO
+PR_NUMBER=$NUM
+PR_TITLE=$TITLE
+PR_URL=https://github.com/$GH_REPO/pull/$NUM
+PR_BRANCH=$PR_BRANCH
+CLOSES_ISSUES=$CLOSES_ISSUE
+FILES_CHANGED=$PR_FILES
+MERGE_AFTER=$MERGE_AFTER_VAL
+HAS_MIGRATION=$HAS_MIGRATION_VAL
+SPAWN_SUB_AGENTS=false
+ATTEMPT_N=0
+REQUIRED_OUTPUT=grade,merge_status,pr_url
+ON_BLOCK=stop
+TASKEOF
+
+  echo "✅ worktree pr-$NUM ready (.agent-task written with branch and file list)"
 done
 
 git worktree list
 ```
 
-After running this, open one Cursor composer window per worktree, each rooted
-in its `pr-<N>` directory, and paste the Kickoff Prompt below.
+After running this, launch one agent per worktree using the **Task tool**
+(preferred — no limit on simultaneous agents) or a Cursor composer window
+rooted in each `pr-<N>` directory.
 
 ---
 
@@ -188,10 +248,42 @@ Read .cursor/AGENT_COMMAND_POLICY.md before issuing any shell commands.
 Green-tier commands run without confirmation. Yellow = check scope first.
 Red = never, ask the user instead.
 
-STEP 0 — READ YOUR TASK:
+STEP 0 — READ YOUR TASK FILE:
   cat .agent-task
-  This file tells you your PR number, title, and URL. Substitute your actual
-  PR number wherever you see <N> below.
+
+  Parse all KEY=value fields from the header:
+    GH_REPO          → GitHub repo slug (export immediately)
+    PR_NUMBER        → your PR number (substitute for <N> throughout)
+    PR_TITLE         → PR title
+    PR_URL           → full GitHub URL for reference
+    PR_BRANCH        → feature branch name (use instead of querying GitHub)
+    CLOSES_ISSUES    → comma-separated issue numbers this PR closes (from PR body)
+    FILES_CHANGED    → comma-separated list of files this PR touches
+    MERGE_AFTER      → PR number that must be merged before this one ("none" = no gate)
+    HAS_MIGRATION    → "true" if this PR includes Alembic migration files
+    SPAWN_SUB_AGENTS → if true, act as sub-coordinator (create sub-reviewers
+                       for types/tests/docs and emit a composite grade)
+
+  Export for all subsequent commands:
+    export GH_REPO=$(grep "^GH_REPO=" .agent-task | cut -d= -f2)
+    export GH_REPO=${GH_REPO:-cgcardona/maestro}
+    N=$(grep "^PR_NUMBER=" .agent-task | cut -d= -f2)
+    BRANCH=$(grep "^PR_BRANCH=" .agent-task | cut -d= -f2)
+    MERGE_AFTER=$(grep "^MERGE_AFTER=" .agent-task | cut -d= -f2)
+    HAS_MIGRATION=$(grep "^HAS_MIGRATION=" .agent-task | cut -d= -f2)
+    ATTEMPT_N=$(grep "^ATTEMPT_N=" .agent-task | cut -d= -f2)
+
+  ⚠️  ANTI-LOOP GUARD: if ATTEMPT_N > 2 → STOP immediately.
+    Self-destruct and escalate. Report the exact failure. Never loop blindly.
+
+  ⚠️  RETRY-WITHOUT-STRATEGY-MUTATION: if a merge or fix attempt fails twice
+    with the same error → change strategy. Two identical failures = wrong approach.
+
+  Use FILES_CHANGED as your starting point for the review — check each file
+  listed rather than running a full diff scan from scratch.
+
+  ⚠️  If HAS_MIGRATION=true → you MUST run STEP 5.B (Alembic chain validation)
+      before grading. A broken migration chain is an automatic C → mandatory fix.
 
 STEP 1 — DERIVE PATHS:
   REPO=$(git worktree list | head -1 | awk '{print $1}')   # local filesystem path only
@@ -422,14 +514,66 @@ STEP 5 — REVIEW:
     - Docs in the same commit as code (not a follow-up PR)
 
   3. Add/fix tests if weak or missing
-  4. Run mypy first, then TARGETED tests (Docker-native, $REPO and $WTNAME from STEP 1).
-     ⚠️  TARGETED TESTS ONLY — run only the test files relevant to this PR's changes.
-         Do NOT run the full suite. Full suite = developer/CI responsibility only.
+
+  ── STEP 5.A — BASELINE HEALTH SNAPSHOT (run BEFORE checking out the PR branch) ──
+  Record the pre-existing state of dev so you know what errors are yours vs. already broken.
+  This is your contract with the next agent — never skip it.
+
+  # Checkout dev tip first, run full mypy + targeted tests, record results.
+  git stash  # if you already have the PR branch checked out
+  git checkout dev
+  echo "=== PRE-EXISTING MYPY BASELINE (dev before PR) ==="
+  cd "$REPO" && docker compose exec maestro sh -c \
+    "PYTHONPATH=/worktrees/$WTNAME mypy /worktrees/$WTNAME/maestro/ /worktrees/$WTNAME/tests/" \
+    2>&1 | tail -10
+  # Note: any error shown here is pre-existing on dev — you own fixing it if it
+  # is in a file this PR touches. Errors in untouched files → file a follow-up issue.
+
+  echo "=== PRE-EXISTING TEST BASELINE (targeted) ==="
+  # (Run targeted tests relevant to the PR's module — same files you'll test after merge)
+  # Any failure here is pre-existing. Fix it before grading this PR.
+
+  # Then check out the PR branch for review:
+  git checkout "$PR_BRANCH" 2>/dev/null || git fetch origin && git checkout "$PR_BRANCH"
+
+  ── STEP 5.B — MIGRATION CHAIN VALIDATION (skip if no migration files) ──────────
+  # If the PR adds Alembic migration files, validate the revision chain before grading.
+  # Two agents creating migrations in the same batch both named 0006_* is a chain break.
+  #
+  # 1. List all revision and down_revision lines:
+  #    grep -r "^revision\|^down_revision" alembic/versions/
+  # 2. Every down_revision must point to an existing revision ID.
+  # 3. No two files may share the same revision ID.
+  # 4. No two files may share the same down_revision (that creates a branch, not a chain).
+  # 5. alembic heads must return exactly one head after merging this PR.
+  #    cd "$REPO" && docker compose exec maestro alembic heads
+  # If the chain is broken → MANDATORY fix before grading. Renumber the migration and
+  # update its down_revision. This is a C-grade issue at minimum.
+
+  4. Run mypy (FULL CODEBASE) then TARGETED tests (Docker-native):
+     ⚠️  Run mypy across the ENTIRE codebase, not just the PR's files.
+         This catches errors the PR may expose in sibling files.
+     ⚠️  Tests: targeted files only — but cross-reference the baseline from STEP 5.A.
      ⚠️  Never pipe mypy/pytest through grep/head/tail — full output, exit code is authoritative.
-  5. Broken tests from other PRs:
-     If you find a failing test NOT caused by this PR, fix it anyway. Commit the fix
-     with message: "fix: repair broken test <name> (pre-existing failure from dev)"
-     Note it in your report. Do not leave it for the next agent to discover.
+
+  cd "$REPO" && docker compose exec maestro sh -c \
+    "PYTHONPATH=/worktrees/$WTNAME mypy /worktrees/$WTNAME/maestro/ /worktrees/$WTNAME/tests/"
+
+  5. Pre-existing failures — you own them if they are in files this PR touches:
+     ─── mypy errors ───
+     Any mypy error in a file this PR modifies that was ALSO present in the baseline
+     (STEP 5.A) must be fixed in this review cycle. Commit the fix separately:
+       "fix: resolve pre-existing mypy error in <file> — <brief description>"
+     Errors in files this PR does NOT touch: file a GitHub issue, note it in report,
+     do NOT block this merge on it.
+
+     ─── broken tests ───
+     Any test that failed in the baseline AND still fails after the PR is applied must
+     be fixed before grading. Commit the fix separately:
+       "fix: repair pre-existing broken test <name>"
+     If the fix requires a major refactor (>30 min of work), add a pytest.mark.skip
+     with a comment referencing a new GitHub issue. Never leave a silent red test.
+
   6. Red-flag scan — before claiming tests pass, scan the FULL output for:
        ERROR, Traceback, toolError, circuit_breaker_open, FAILED, AssertionError
      Any red-flag = the run is not clean, regardless of the final summary line.
@@ -457,6 +601,32 @@ STEP 5 — REVIEW:
       If the concern requires design thought, touches other files, or risks
       introducing new bugs, capture it as a GitHub issue instead of fixing
       in place. File it BEFORE merging.
+
+  GRADE C — MANDATORY FIX PROTOCOL (never stop on a C — always fix and re-grade):
+    A C grade means the quality bar was not met, but the work is recoverable.
+    ⚠️  You MUST attempt to fix every C-grade issue in place. Do NOT self-destruct.
+    ⚠️  "C → stop" breaks sequential merge chains and wastes all upstream work.
+
+    Treat a C exactly like a B-PATH-1: fix it here in the worktree, re-run
+    mypy + targeted tests, and re-grade. Common C-grade fixes:
+      - Missing from __future__ import annotations → add it
+      - Any in return type → replace with a concrete type or TypedDict
+      - Missing docstrings → add them
+      - dict[str, Any] crossing a module boundary → wrap in a NamedTuple/TypedDict
+      - Missing downgrade() in a migration → add it
+      - Missing index in upgrade() → add it
+      - Weak error handling → add specific exception types
+
+    After fixing, commit with:
+      git commit -m "fix: upgrade C-grade review concerns to A — <one-line summary>"
+    Then re-grade. If the re-grade is A or B → proceed to STEP 6 (merge).
+
+    ESCALATE only if the C-grade issue is architecturally broken (wrong data model,
+    missing foreign key chain, irrecoverable schema conflict). In that case:
+      - DO NOT merge
+      - File a GitHub issue describing exactly what must change
+      - Self-destruct and report the issue URL to the coordinator
+      - Never loop or block silently
 
       ── LABEL REFERENCE (only use labels from this list) ────────────────────
       │ bug              documentation     duplicate         enhancement       │
@@ -500,8 +670,47 @@ STEP 5 — REVIEW:
     ⚠️  A B grade without a fix OR a follow-up ticket URL is not acceptable.
         You must produce one artifact per B-grade concern before merging.
 
-  8. If grade is A or B: proceed to STEP 6 (pre-merge sync)
-     If grade is C/D/F: skip to STEP 7 (self-destruct)
+  8. Grade decision:
+     A       → proceed to STEP 5.5 (merge order gate)
+     B       → fix-or-ticket per GRADE B protocol above, then STEP 5.5
+     C       → fix in place per GRADE C protocol above, re-grade, then STEP 5.5
+     D or F  → DO NOT merge. File a GitHub issue. Self-destruct. Report to user.
+
+STEP 5.5 — MERGE ORDER GATE (sequential chain safety):
+  Read the MERGE_AFTER field from .agent-task:
+    MERGE_AFTER=$(grep "^MERGE_AFTER=" .agent-task | cut -d= -f2)
+
+  If MERGE_AFTER is empty or "none" → skip this step, go directly to STEP 6.
+
+  If MERGE_AFTER is a PR number → poll until that PR is MERGED before proceeding.
+  This preserves Alembic migration chains and any other ordered dependencies.
+
+  ⚠️  Max 15 attempts × 60 s = 15 minutes. If the gate PR has not merged in
+  that window it almost certainly received a D/F or had an infrastructure failure.
+  DO NOT loop indefinitely — escalate and self-destruct instead.
+
+    for i in $(seq 1 15); do
+      STATE=$(gh pr view "$MERGE_AFTER" --repo "$GH_REPO" --json state --jq '.state' 2>/dev/null)
+      echo "[$i/15] Gate PR #$MERGE_AFTER state: $STATE"
+      if [ "$STATE" = "MERGED" ]; then
+        echo "✅ Gate cleared — PR #$MERGE_AFTER is merged. Proceeding to merge."
+        break
+      fi
+      if [ $i -eq 15 ]; then
+        echo "❌ ESCALATE: PR #$MERGE_AFTER did not merge within 15 minutes."
+        echo "   Possible causes: gate PR received D/F grade, infrastructure failure,"
+        echo "   or requires manual intervention."
+        echo "   This PR (#$N) will NOT be merged — merging out of order would break"
+        echo "   the dependency chain."
+        echo "   Action: fix PR #$MERGE_AFTER manually, then re-run this review agent."
+        WORKTREE=$(pwd)
+        cd "$REPO"
+        git worktree remove --force "$WORKTREE"
+        git worktree prune
+        exit 1
+      fi
+      sleep 60
+    done
 
 STEP 6 — PRE-MERGE SYNC (only if grade is A or B):
   ⚠️  Other agents may have merged PRs while you were reviewing. Sync once more
@@ -566,30 +775,105 @@ STEP 6 — PRE-MERGE SYNC (only if grade is A or B):
        git -C "$REPO" branch -D "$BRANCH"
 
   # 7. Close every referenced issue.
-  #    Find ALL "Closes #N" issue numbers from the PR body and close each one.
+  #    CLOSES_ISSUES is pre-populated from .agent-task (the coordinator extracted
+  #    it at setup time). Use it directly to avoid re-parsing the PR body.
   #    ⚠️  Do NOT use `grep -o '#[0-9]*'` — it matches any #N (commit hashes,
   #    mentions, literal numbers) and silently closes the wrong issue.
   #    ⚠️  Do NOT use `while read` — the `read` builtin triggers a sandbox prompt.
-  #    Always match the explicit "Closes #N" pattern and use xargs:
-       gh pr view <N> --json body --jq '.body' \
-         | grep -oE '[Cc]loses?\s+#[0-9]+' \
-         | grep -oE '[0-9]+' \
-         | xargs -I{} gh issue close {} \
-             --comment "Fixed by PR #<N>." \
-             --repo "$GH_REPO"
+       CLOSES_ISSUES=$(grep "^CLOSES_ISSUES=" .agent-task | cut -d= -f2)
+       if [ -n "$CLOSES_ISSUES" ]; then
+         echo "$CLOSES_ISSUES" | tr ',' '\n' | xargs -I{} gh issue close {} \
+           --comment "Fixed by PR #$N." \
+           --repo "$GH_REPO"
+       else
+         # Fallback: re-parse the PR body if CLOSES_ISSUES was empty in task file
+         gh pr view "$N" --json body --jq '.body' \
+           | grep -oE '[Cc]loses?\s+#[0-9]+' \
+           | grep -oE '[0-9]+' \
+           | xargs -I{} gh issue close {} \
+               --comment "Fixed by PR #$N." \
+               --repo "$GH_REPO"
+       fi
 
   ⚠️  Never use --delete-branch with gh pr merge in a multi-worktree setup.
       gh attempts to checkout dev locally to delete the feature branch, but dev
       is already checked out in the main worktree and git will refuse.
 
-  # 8. Pull the merge into the main repo's local dev — so the coordinator's
+  # 8. Mark linked issues as merged (conductor reads this as "done").
+  CLOSES_ISSUES_FOR_LABEL=$(grep "^CLOSES_ISSUES=" .agent-task | cut -d= -f2)
+  if [ -n "$CLOSES_ISSUES_FOR_LABEL" ]; then
+    echo "$CLOSES_ISSUES_FOR_LABEL" | tr ',' '\n' | xargs -I{} sh -c \
+      'gh issue edit {} --repo "$GH_REPO" --remove-label "status/pr-open" 2>/dev/null || true
+       gh issue edit {} --repo "$GH_REPO" --add-label "status/merged" 2>/dev/null || true'
+  fi
+
+  # 9. Pull the merge into the main repo's local dev — so the coordinator's
   #    working copy reflects reality and the next batch starts from the true tip.
   #    This is the step that prevents "relation does not exist" DB errors when the
   #    coordinator tries to apply migrations before fetching.
   git -C "$REPO" fetch origin
   git -C "$REPO" merge origin/dev
 
-STEP 7 — SELF-DESTRUCT (always run this, merge or not, early stop or not):
+STEP 7 — REGRESSION FEEDBACK LOOP (only if merge succeeded — skip if D/F grade):
+  After a successful merge, run targeted tests against dev to detect regressions
+  introduced by this batch. Any new failures become GitHub issues automatically
+  and re-enter the pipeline — no human triage required.
+
+  # Pull the latest dev (contains the just-merged PR):
+  git -C "$REPO" fetch origin && git -C "$REPO" merge origin/dev
+
+  # Run targeted tests for the files this PR touched (not the full suite):
+  FILES_CHANGED_FOR_TEST=$(grep "^FILES_CHANGED=" .agent-task | cut -d= -f2)
+  # Derive test file paths from FILES_CHANGED (e.g. maestro/api/routes/musehub/labels.py
+  # → tests/test_musehub_labels.py). Run only those test files.
+  TEST_OUTPUT=$(cd "$REPO" && docker compose exec maestro sh -c \
+    "PYTHONPATH=/app pytest tests/ -v --tb=short -q 2>&1" 2>&1 | tail -30)
+  echo "$TEST_OUTPUT"
+
+  # Scan for failures:
+  FAILED_TESTS=$(echo "$TEST_OUTPUT" | grep "^FAILED " | sed 's/^FAILED //')
+  if [ -n "$FAILED_TESTS" ]; then
+    echo "⚠️  New failures detected post-merge. Creating regression issues..."
+    while IFS= read -r test_line; do
+      [ -z "$test_line" ] && continue
+      # Create a bug fix issue for each failing test
+      BUG_URL=$(gh issue create \
+        --repo "$GH_REPO" \
+        --title "fix: regression — $test_line (introduced near batch merge)" \
+        --body "## Regression Report
+
+**Failing test:** \`$test_line\`
+**Detected after merging:** PR #$N (batch: $(grep '^BATCH_LABEL=' .agent-task | cut -d= -f2))
+**Detection method:** post-merge targeted test run in PR_REVIEW STEP 7
+
+## Reproduction
+\`\`\`bash
+docker compose exec maestro pytest $test_line -v
+\`\`\`
+
+## Context
+This failure was not present before this PR was merged. The most likely cause is a
+side-effect of the changes in PR #$N. Start investigation there.
+
+## Acceptance Criteria
+- [ ] Test passes again
+- [ ] No other tests regressed by the fix
+- [ ] mypy clean after fix
+")
+      # Apply labels (two-step pattern — label failures are non-fatal)
+      gh issue edit "$BUG_URL" --add-label "bug" 2>/dev/null || true
+      # Apply the next available batch label (pipeline picks it up automatically)
+      NEXT_BATCH=$(gh label list --repo "$GH_REPO" \
+        --search "batch-" --json name --jq '[.[].name] | sort | last' 2>/dev/null || echo "")
+      [ -n "$NEXT_BATCH" ] && \
+        gh issue edit "$BUG_URL" --add-label "$NEXT_BATCH" 2>/dev/null || true
+      echo "✅ Regression issue created: $BUG_URL"
+    done <<< "$FAILED_TESTS"
+  else
+    echo "✅ No regressions detected. Post-merge test run clean."
+  fi
+
+STEP 8 — SELF-DESTRUCT (always run this, merge or not, early stop or not):
   WORKTREE=$(pwd)
   cd "$REPO"
   git worktree remove --force "$WORKTREE"
@@ -612,11 +896,11 @@ Report: PR number, grade, merge status, any improvements made, follow-up issues 
 
 | Grade | Meaning | Action |
 |-------|---------|--------|
-| **A** | Production-ready. Types, tests, docs all solid. | Merge immediately |
-| **B** | Solid fix, one or more named minor concerns. | Fix concern in place → upgrade to A (preferred), OR file a follow-up GitHub issue per concern → then merge. **A PR URL + fix commit OR follow-up issue URL is required.** |
-| **C** | Fix works but quality bar not met. | Do NOT merge. State exactly what must change. |
-| **D** | Unsafe, incomplete, or breaks a contract. | Do NOT merge. |
-| **F** | Regression, security hole, or architectural violation. | Reject. |
+| **A** | Production-ready. Types, tests, docs all solid. | Merge immediately. |
+| **B** | Solid but has named minor concerns. | Fix in place → upgrade to A (preferred), OR file follow-up ticket → then merge. Fix commit OR issue URL required. |
+| **C** | Quality bar not met but recoverable. | **Fix in place and re-grade. Never stop on a C.** Same as B-PATH-1. Escalate only if architecturally irrecoverable — file issue URL, self-destruct, report to user. |
+| **D** | Unsafe, incomplete, or breaks a contract. | Do NOT merge. File GitHub issue. Self-destruct. Report issue URL to user. |
+| **F** | Regression, security hole, or architectural violation. | Reject. File GitHub issue. Self-destruct. Report issue URL to user. |
 
 ---
 

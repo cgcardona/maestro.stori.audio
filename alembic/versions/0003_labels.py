@@ -1,7 +1,7 @@
 """Add musehub_labels, musehub_issue_labels, and musehub_pr_labels tables.
 
 Revision ID: 0003_labels
-Revises: 0002_milestones
+Revises: 0001
 Create Date: 2026-02-28 00:00:00.000000
 
 Adds coloured label tags that can be applied to issues and pull requests
@@ -10,6 +10,9 @@ for categorisation. Three tables:
   musehub_labels           — label definitions per repo (name, hex colour)
   musehub_issue_labels     — many-to-many join: issues ↔ labels
   musehub_pr_labels        — many-to-many join: pull requests ↔ labels
+
+Note: 0002_milestones was folded into 0001_consolidated_schema (commit 82d7a8b).
+This migration chains directly from 0001.
 """
 from __future__ import annotations
 
@@ -17,7 +20,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision = "0003_labels"
-down_revision = "0002_milestones"
+down_revision = "0001"
 branch_labels = None
 depends_on = None
 
