@@ -167,6 +167,7 @@ from maestro.db.musehub_models import (
     MusehubRepo,
     MusehubSession,
     MusehubStar,
+    MusehubWatch,
 )
 
 
@@ -2147,6 +2148,150 @@ async def test_profile_page_has_starred_section_js(
     assert "starred-section" in body
     assert "API_STARRED" in body
     assert "starredRepoCardHtml" in body
+
+
+# ---------------------------------------------------------------------------
+# Watched repos tab (issue #300)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.anyio
+async def test_profile_watched_repos_empty_list(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """GET /api/v1/musehub/users/{username}/watched returns empty list when user watches nothing."""
+    await _make_profile(db_session, "freshwatchuser")
+    response = await client.get("/api/v1/musehub/users/freshwatchuser/watched")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["watched"] == []
+    assert data["total"] == 0
+
+
+@pytest.mark.anyio
+async def test_profile_watched_repos_returns_watched(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """GET /api/v1/musehub/users/{username}/watched returns watched repos with full metadata."""
+    await _make_profile(db_session, "watcheruser")
+
+    repo = MusehubRepo(
+        name="cool-composition",
+        owner="composer",
+        slug="cool-composition",
+        visibility="public",
+        owner_user_id="composer-id",
+        description="A cool composition",
+        key_signature="G minor",
+        tempo_bpm=90,
+    )
+    db_session.add(repo)
+    await db_session.commit()
+    await db_session.refresh(repo)
+
+    watch = MusehubWatch(
+        repo_id=repo.repo_id,
+        user_id=_TEST_USER_ID,
+    )
+    db_session.add(watch)
+    await db_session.commit()
+
+    response = await client.get("/api/v1/musehub/users/watcheruser/watched")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["total"] == 1
+    assert len(data["watched"]) == 1
+    entry = data["watched"][0]
+    assert entry["repo"]["owner"] == "composer"
+    assert entry["repo"]["slug"] == "cool-composition"
+    assert entry["repo"]["description"] == "A cool composition"
+    assert "watchId" in entry
+    assert "watchedAt" in entry
+
+
+@pytest.mark.anyio
+async def test_profile_watched_repos_404_for_unknown_user(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """GET /api/v1/musehub/users/{unknown}/watched returns 404 when user doesn't exist."""
+    response = await client.get("/api/v1/musehub/users/ghost-no-watch-profile/watched")
+    assert response.status_code == 404
+
+
+@pytest.mark.anyio
+async def test_profile_watched_repos_no_auth_required(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """GET /api/v1/musehub/users/{username}/watched is publicly accessible without a JWT."""
+    await _make_profile(db_session, "public-watchuser")
+    response = await client.get("/api/v1/musehub/users/public-watchuser/watched")
+    assert response.status_code == 200
+    assert response.status_code != 401
+
+
+@pytest.mark.anyio
+async def test_profile_watched_repos_ordered_newest_first(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """GET /api/v1/musehub/users/{username}/watched returns watches newest first."""
+    import datetime as dt
+    from datetime import timezone
+
+    await _make_profile(db_session, "multiwatchuser")
+
+    repo_a = MusehubRepo(
+        name="song-alpha", owner="band-a", slug="song-alpha",
+        visibility="public", owner_user_id="band-a-id",
+    )
+    repo_b = MusehubRepo(
+        name="song-beta", owner="band-b", slug="song-beta",
+        visibility="public", owner_user_id="band-b-id",
+    )
+    db_session.add_all([repo_a, repo_b])
+    await db_session.commit()
+    await db_session.refresh(repo_a)
+    await db_session.refresh(repo_b)
+
+    watch_a = MusehubWatch(
+        repo_id=repo_a.repo_id,
+        user_id=_TEST_USER_ID,
+        created_at=dt.datetime(2024, 1, 1, tzinfo=timezone.utc),
+    )
+    watch_b = MusehubWatch(
+        repo_id=repo_b.repo_id,
+        user_id=_TEST_USER_ID,
+        created_at=dt.datetime(2024, 6, 1, tzinfo=timezone.utc),
+    )
+    db_session.add_all([watch_a, watch_b])
+    await db_session.commit()
+
+    response = await client.get("/api/v1/musehub/users/multiwatchuser/watched")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["total"] == 2
+    # newest first: watch_b (June) before watch_a (January)
+    assert data["watched"][0]["repo"]["slug"] == "song-beta"
+    assert data["watched"][1]["repo"]["slug"] == "song-alpha"
+
+
+@pytest.mark.anyio
+async def test_profile_page_has_watched_section_js(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Profile HTML page includes the watched repos JS (loadWatchedRepos, watched-section)."""
+    await _make_profile(db_session, "jswatchuser")
+    response = await client.get("/musehub/ui/users/jswatchuser")
+    assert response.status_code == 200
+    body = response.text
+    assert "loadWatchedRepos" in body
+    assert "watched-section" in body
+    assert "API_WATCHED" in body
 
 
 @pytest.mark.anyio

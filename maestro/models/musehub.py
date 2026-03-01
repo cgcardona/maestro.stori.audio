@@ -2013,6 +2013,29 @@ class UserStarredResponse(CamelModel):
     total: int = Field(..., description="Total number of starred repos")
 
 
+class UserWatchedRepoEntry(CamelModel):
+    """A single watched-repo entry shown on a user's profile Watching tab.
+
+    Combines the watched repo's full metadata with the watch timestamp so the
+    profile page can render the repo card with owner/slug linked and
+    "watching since {timestamp}" context.
+    """
+
+    watch_id: str = Field(..., description="Internal UUID of the watch relationship record")
+    repo: RepoResponse = Field(..., description="Full metadata of the watched repo")
+    watched_at: datetime = Field(..., description="Timestamp when the user started watching the repo (ISO-8601 UTC)")
+
+
+class UserWatchedResponse(CamelModel):
+    """Paginated list of repos watched by a user.
+
+    Returned by ``GET /api/v1/musehub/users/{username}/watched``.
+    """
+
+    watched: list[UserWatchedRepoEntry] = Field(..., description="Repos watched by this user")
+    total: int = Field(..., description="Total number of watched repos")
+
+
 # ── Render pipeline ────────────────────────────────────────────────────────
 
 

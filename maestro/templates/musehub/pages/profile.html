@@ -8,6 +8,7 @@ const username        = {{ username | tojson }};
 const API_PROFILE     = '/api/v1/musehub/users/' + username;
 const API_FORKS       = '/api/v1/musehub/users/' + username + '/forks';
 const API_STARRED     = '/api/v1/musehub/users/' + username + '/starred';
+const API_WATCHED     = '/api/v1/musehub/users/' + username + '/watched';
 const API_FOLLOWERS   = '/api/v1/musehub/users/' + username + '/followers-list';
 const API_FOLLOWING   = '/api/v1/musehub/users/' + username + '/following-list';
 {% endblock %}
@@ -85,6 +86,26 @@ function starredRepoCardHtml(entry) {
       ${typeof starCount === 'number' ? `&bull; &#11088; ${starCount}` : ''}
     </div>
   </div>`;
+}
+
+async function loadWatchedRepos() {
+  try {
+    const data = await fetch(API_WATCHED).then(r => r.json());
+    const watched = data.watched || [];
+    const section = document.getElementById('watched-section');
+    if (!section) return;
+    if (watched.length === 0) {
+      section.innerHTML = '<div class="card"><p class="loading">No watched repositories yet.</p></div>';
+      return;
+    }
+    section.innerHTML = `<div class="card">
+      <h2 style="margin-bottom:12px">&#128065; Watching (${watched.length})</h2>
+      <div class="repo-grid">${watched.map(starredRepoCardHtml).join('')}</div>
+    </div>`;
+  } catch(e) {
+    const section = document.getElementById('watched-section');
+    if (section) section.innerHTML = '';
+  }
 }
 
 async function loadStarredRepos() {
@@ -302,9 +323,11 @@ async function load() {
     ${reposSection}
     <div id="forked-section"></div>
     <div id="starred-section"></div>
+    <div id="watched-section"></div>
   `;
   loadForkedRepos();
   loadStarredRepos();
+  loadWatchedRepos();
 }
 
 // Style active social tab button via JS since we're in a raw-string context
