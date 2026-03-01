@@ -3,311 +3,347 @@
 {% block title %}@{{ username }}{% endblock %}
 {% block breadcrumb %}<a href="/musehub/ui/users/{{ username }}">@{{ username }}</a>{% endblock %}
 
-{% block extra_css %}
-<style>
-/* ── Profile layout ─────────────────────────────────────────────────────── */
-.profile-layout {
-  display: grid;
-  grid-template-columns: 260px 1fr;
-  gap: var(--space-4);
-  align-items: start;
-}
-@media (max-width: 768px) {
-  .profile-layout { grid-template-columns: 1fr; }
-}
-
-/* ── Avatar ─────────────────────────────────────────────────────────────── */
-.profile-avatar {
-  width: 100%;
-  aspect-ratio: 1;
-  border-radius: 50%;
-  object-fit: cover;
-  margin-bottom: var(--space-3);
-  display: block;
-}
-.profile-avatar-placeholder {
-  width: 100%;
-  aspect-ratio: 1;
-  background: var(--color-surface-2, #161b22);
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 3rem;
-  color: #e6edf3;
-  margin-bottom: var(--space-3);
-}
-
-/* ── Contribution heatmap ───────────────────────────────────────────────── */
-.heatmap-grid {
-  display: grid;
-  grid-template-columns: repeat(52, 1fr);
-  gap: 2px;
-  margin-bottom: var(--space-3);
-  overflow-x: auto;
-}
-.heatmap-week {
-  display: grid;
-  grid-template-rows: repeat(7, 1fr);
-  gap: 2px;
-}
-.heatmap-cell {
-  height: 12px;
-  border-radius: 2px;
-  background: var(--color-surface-2, #161b22);
-}
-.heatmap-cell[data-level="1"] { background: #0d4429; }
-.heatmap-cell[data-level="2"] { background: #006d32; }
-.heatmap-cell[data-level="3"] { background: #26a641; }
-.heatmap-cell[data-level="4"] { background: #39d353; }
-
-/* ── Badge cards ────────────────────────────────────────────────────────── */
-.badge-grid {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2);
-  margin-bottom: var(--space-4);
-}
-.badge-card {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  padding: var(--space-2) var(--space-3);
-  border-radius: 6px;
-  border: 1px solid var(--border, #30363d);
-  background: var(--color-surface-2, #161b22);
-  opacity: 0.45;
-}
-.badge-card.earned {
-  border-color: #39d353;
-  background: #0d4429;
-  opacity: 1;
-}
-.badge-icon { font-size: 1.4rem; line-height: 1; }
-.badge-name { font-weight: 600; font-size: 13px; }
-.badge-desc { font-size: 11px; color: #8b949e; margin-top: 2px; }
-
-/* ── Pinned repos ───────────────────────────────────────────────────────── */
-.pinned-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  gap: var(--space-3);
-  margin-bottom: var(--space-4);
-}
-.pinned-card {
-  padding: var(--space-3);
-  border: 1px solid var(--border, #30363d);
-  border-radius: 6px;
-  background: var(--color-surface-2, #161b22);
-}
-.pinned-card h3 { margin: 0 0 var(--space-2); font-size: 14px; }
-.pinned-card p  { font-size: 12px; color: #8b949e; margin: 0 0 var(--space-2); }
-.pinned-meta    { display: flex; gap: var(--space-2); font-size: 11px; color: #8b949e; }
-
-/* ── Activity feed ──────────────────────────────────────────────────────── */
-.activity-row {
-  display: flex;
-  align-items: flex-start;
-  gap: var(--space-2);
-  padding: var(--space-2) 0;
-  border-bottom: 1px solid var(--border, #21262d);
-  font-size: 13px;
-}
-.activity-type {
-  font-size: 11px;
-  color: #8b949e;
-  white-space: nowrap;
-  padding-top: 2px;
-  min-width: 100px;
-}
-.activity-desc { flex: 1; }
-.activity-date { font-size: 11px; color: #8b949e; white-space: nowrap; }
-</style>
+{% block page_data %}
+const username        = {{ username | tojson }};
+const API_PROFILE     = '/api/v1/musehub/users/' + username;
+const API_FORKS       = '/api/v1/musehub/users/' + username + '/forks';
+const API_STARRED     = '/api/v1/musehub/users/' + username + '/starred';
+const API_WATCHED     = '/api/v1/musehub/users/' + username + '/watched';
+const API_FOLLOWERS   = '/api/v1/musehub/users/' + username + '/followers-list';
+const API_FOLLOWING   = '/api/v1/musehub/users/' + username + '/following-list';
 {% endblock %}
 
-{% block content %}
-<div class="profile-layout">
+{% block page_script %}
+{% raw %}
+function escHtml(s) {
+  if (!s) return '';
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
 
-  {# ── Left column: avatar, bio, meta ────────────────────────────────────── #}
-  <aside>
-    {% if profile.avatar_url %}
-      <img class="profile-avatar" src="{{ profile.avatar_url }}" alt="{{ username }}" />
-    {% else %}
-      <div class="profile-avatar-placeholder">{{ username[0] | upper }}</div>
-    {% endif %}
+function bucketCount(n) {
+  if (n === 0) return 0;
+  if (n <= 2)  return 1;
+  if (n <= 5)  return 2;
+  if (n <= 9)  return 3;
+  return 4;
+}
 
-    <h1 style="font-size:1.25rem;margin:0 0 var(--space-1)">
-      {{ profile.display_name or username }}
-    </h1>
-    <p style="color:#8b949e;margin:0 0 var(--space-2)">@{{ username }}</p>
+function buildContribGraph(graph) {
+  const weeks = [];
+  let week = [];
+  graph.forEach((d, i) => {
+    week.push(d);
+    if (week.length === 7) { weeks.push(week); week = []; }
+  });
+  if (week.length) weeks.push(week);
 
-    {% if profile.bio %}
-      <p style="margin:0 0 var(--space-2)">{{ profile.bio }}</p>
-    {% endif %}
+  const weeksHtml = weeks.map(w => {
+    const days = w.map(d => {
+      const b = bucketCount(d.count);
+      return `<div class="contrib-day" data-count="${b}" title="${d.date}: ${d.count} commit${d.count !== 1 ? 's' : ''}"></div>`;
+    }).join('');
+    return `<div class="contrib-week">${days}</div>`;
+  }).join('');
 
-    {% if profile.location %}
-      <p style="font-size:13px;margin:0 0 var(--space-1)">📍 {{ profile.location }}</p>
-    {% endif %}
+  return `<div class="contrib-graph">${weeksHtml}</div>`;
+}
 
-    {% if profile.website_url %}
-      <p style="font-size:13px;margin:0 0 var(--space-1)">
-        <a href="{{ profile.website_url }}" rel="nofollow noreferrer">{{ profile.website_url }}</a>
-      </p>
-    {% endif %}
-
-    {% if profile.twitter_handle %}
-      <p style="font-size:13px;margin:0 0 var(--space-1)">
-        <a href="https://twitter.com/{{ profile.twitter_handle }}" rel="nofollow noreferrer">
-          @{{ profile.twitter_handle }}
-        </a>
-      </p>
-    {% endif %}
-
-    {% if profile.is_verified %}
-      <span class="badge badge-open" style="margin-top:var(--space-2);display:inline-block">
-        ✓ Verified
-      </span>
-    {% endif %}
-
-    {% if profile.cc_license %}
-      <p style="font-size:12px;color:#8b949e;margin-top:var(--space-2)">
-        🎵 {{ profile.cc_license }}
-      </p>
-    {% endif %}
-  </aside>
-
-  {# ── Right column: heatmap, badges, pinned repos, activity ─────────────── #}
-  <main>
-
-    {# 52×7 contribution heatmap — server-rendered CSS grid, no JS #}
-    <div class="card" style="margin-bottom:var(--space-4)">
-      <h2 style="margin-bottom:var(--space-3)">📈 Contribution Activity</h2>
-      <div class="heatmap-grid">
-        {% for week in heatmap_weeks %}
-        <div class="heatmap-week">
-          {% for day in week %}
-          <div class="heatmap-cell"
-               data-level="{{ day.intensity }}"
-               title="{{ day.date }}: {{ day.count }} commit{{ 's' if day.count != 1 else '' }}">
-          </div>
-          {% endfor %}
-        </div>
-        {% endfor %}
-      </div>
-      <p style="font-size:12px;color:#8b949e;margin:var(--space-2) 0 0">
-        {{ heatmap_stats.total_contributions }} contributions in the last year
-        · Longest streak: {{ heatmap_stats.longest_streak }} days
-        · Current streak: {{ heatmap_stats.current_streak }} days
-      </p>
+function repoCardHtml(r) {
+  const lastAct = r.lastActivityAt ? fmtDate(r.lastActivityAt) : 'No commits yet';
+  return `<div class="repo-card">
+    <h3><a href="/musehub/ui/${r.owner}/${r.slug}">${escHtml(r.name)}</a></h3>
+    <div class="repo-meta">
+      <span class="badge badge-${r.visibility}">${r.visibility}</span>
+      &bull; Last activity: ${lastAct}
     </div>
+  </div>`;
+}
 
-    {# Achievement badges — server-rendered, earned ones highlighted #}
-    {% if badges %}
-    <div class="card" style="margin-bottom:var(--space-4)">
-      {% set earned_count = badges | selectattr('earned') | list | length %}
-      <h2 style="margin-bottom:var(--space-3)">
-        🏆 Achievements ({{ earned_count }}/{{ badges | length }})
-      </h2>
-      <div class="badge-grid">
-        {% for badge in badges %}
-        <div class="badge-card {% if badge.earned %}earned{% endif %}"
-             title="{{ badge.description }}">
-          <span class="badge-icon">{{ badge.icon }}</span>
-          <div>
-            <div class="badge-name">{{ badge.name }}</div>
-            <div class="badge-desc">{{ badge.description }}</div>
-          </div>
-        </div>
-        {% endfor %}
-      </div>
+function forkedRepoCardHtml(entry) {
+  const r = entry.forkRepo;
+  const sourceLink = `/musehub/ui/${escHtml(entry.sourceOwner)}/${escHtml(entry.sourceSlug)}`;
+  return `<div class="repo-card">
+    <h3><a href="/musehub/ui/${escHtml(r.owner)}/${escHtml(r.slug)}">${escHtml(r.name)}</a></h3>
+    <div class="repo-meta">
+      <span class="badge badge-${r.visibility}">${r.visibility}</span>
+      &bull; forked from <a href="${sourceLink}">${escHtml(entry.sourceOwner)}/${escHtml(entry.sourceSlug)}</a>
     </div>
-    {% endif %}
+  </div>`;
+}
 
-    {# Pinned repos — up to 6, server-rendered #}
-    {% if pinned_repos %}
-    <div class="card" style="margin-bottom:var(--space-4)">
-      <h2 style="margin-bottom:var(--space-3)">📌 Pinned Repositories</h2>
-      <div class="pinned-grid">
-        {% for repo in pinned_repos %}
-        <div class="pinned-card">
-          <h3>
-            <a href="/musehub/ui/{{ repo.owner }}/{{ repo.slug }}">{{ repo.name }}</a>
-          </h3>
-          {% if repo.description %}
-            <p>{{ repo.description }}</p>
-          {% endif %}
-          <div class="pinned-meta">
-            {% if repo.primary_genre %}
-              <span>🎵 {{ repo.primary_genre }}</span>
-            {% endif %}
-            {% if repo.language %}
-              <span>🔤 {{ repo.language }}</span>
-            {% endif %}
-            <span>⭐ {{ repo.star_count }}</span>
-            <span>🌿 {{ repo.fork_count }}</span>
-          </div>
-        </div>
-        {% endfor %}
-      </div>
+function starredRepoCardHtml(entry) {
+  const r = entry.repo;
+  const key = r.keySignature ? escHtml(r.keySignature) : null;
+  const bpm = r.tempoBpm ? r.tempoBpm + ' BPM' : null;
+  const meta = [key, bpm].filter(Boolean).join(' &bull; ');
+  const starCount = typeof r.starCount !== 'undefined' ? r.starCount : '';
+  return `<div class="repo-card">
+    <h3><a href="/musehub/ui/${escHtml(r.owner)}/${escHtml(r.slug)}">${escHtml(r.owner)}/${escHtml(r.name)}</a></h3>
+    ${r.description ? `<p style="font-size:13px;color:var(--fg-muted);margin:4px 0">${escHtml(r.description)}</p>` : ''}
+    <div class="repo-meta">
+      <span class="badge badge-${r.visibility}">${r.visibility}</span>
+      ${meta ? '&bull; ' + meta : ''}
+      ${typeof starCount === 'number' ? `&bull; &#11088; ${starCount}` : ''}
     </div>
-    {% endif %}
+  </div>`;
+}
 
-    {# Activity feed — server-rendered, paginated #}
+async function loadWatchedRepos() {
+  try {
+    const data = await fetch(API_WATCHED).then(r => r.json());
+    const watched = data.watched || [];
+    const section = document.getElementById('watched-section');
+    if (!section) return;
+    if (watched.length === 0) {
+      section.innerHTML = '<div class="card"><p class="loading">No watched repositories yet.</p></div>';
+      return;
+    }
+    section.innerHTML = `<div class="card">
+      <h2 style="margin-bottom:12px">&#128065; Watching (${watched.length})</h2>
+      <div class="repo-grid">${watched.map(starredRepoCardHtml).join('')}</div>
+    </div>`;
+  } catch(e) {
+    const section = document.getElementById('watched-section');
+    if (section) section.innerHTML = '';
+  }
+}
+
+async function loadStarredRepos() {
+  try {
+    const data = await fetch(API_STARRED).then(r => r.json());
+    const starred = data.starred || [];
+    const section = document.getElementById('starred-section');
+    if (!section) return;
+    if (starred.length === 0) {
+      section.innerHTML = '<div class="card"><p class="loading">No starred repositories yet.</p></div>';
+      return;
+    }
+    section.innerHTML = `<div class="card">
+      <h2 style="margin-bottom:12px">&#11088; Starred Repositories (${starred.length})</h2>
+      <div class="repo-grid">${starred.map(starredRepoCardHtml).join('')}</div>
+    </div>`;
+  } catch(e) {
+    const section = document.getElementById('starred-section');
+    if (section) section.innerHTML = '';
+  }
+}
+
+async function loadForkedRepos() {
+  try {
+    const data = await fetch(API_FORKS).then(r => r.json());
+    const forks = data.forks || [];
+    const section = document.getElementById('forked-section');
+    if (!section) return;
+    if (forks.length === 0) {
+      section.innerHTML = '<div class="card"><p class="loading">No forked repositories yet.</p></div>';
+      return;
+    }
+    section.innerHTML = `<div class="card">
+      <h2 style="margin-bottom:12px">&#127860; Forked Repositories (${forks.length})</h2>
+      <div class="repo-grid">${forks.map(forkedRepoCardHtml).join('')}</div>
+    </div>`;
+  } catch(e) {
+    const section = document.getElementById('forked-section');
+    if (section) section.innerHTML = '';
+  }
+}
+
+async function toggleFollow() {
+  const btn = document.getElementById('follow-btn');
+  if (!btn) return;
+  const isFollowing = btn.dataset.following === 'true';
+  try {
+    if (isFollowing) {
+      await fetch('/api/v1/musehub/users/' + username + '/follow', { method: 'DELETE', headers: authHeaders() });
+      btn.dataset.following = 'false';
+      btn.textContent = 'Follow';
+      btn.classList.remove('following');
+    } else {
+      await fetch('/api/v1/musehub/users/' + username + '/follow', { method: 'POST', headers: authHeaders() });
+      btn.dataset.following = 'true';
+      btn.textContent = 'Following';
+      btn.classList.add('following');
+    }
+  } catch(e) { /* non-critical */ }
+}
+
+function userCardHtml(u) {
+  const bio = u.bio ? escHtml(u.bio.slice(0, 60)) + (u.bio.length > 60 ? '…' : '') : '';
+  const hue = u.username.split('').reduce((acc, c) => acc + c.charCodeAt(0), 0) % 360;
+  const initial = (u.username[0] || '?').toUpperCase();
+  const avatar = u.avatarUrl
+    ? `<img src="${escHtml(u.avatarUrl)}" alt="${escHtml(u.username)}" style="width:40px;height:40px;border-radius:50%;object-fit:cover" />`
+    : `<div style="width:40px;height:40px;border-radius:50%;background:hsl(${hue},55%,45%);display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;font-size:18px;flex-shrink:0">${initial}</div>`;
+  return `<div class="user-card" style="display:flex;align-items:center;gap:var(--space-3);padding:var(--space-3) 0;border-bottom:1px solid var(--border)">
+    <a href="/musehub/ui/users/${escHtml(u.username)}" style="flex-shrink:0">${avatar}</a>
+    <div style="flex:1;min-width:0">
+      <a href="/musehub/ui/users/${escHtml(u.username)}" style="font-weight:600">@${escHtml(u.username)}</a>
+      ${bio ? `<p style="margin:2px 0 0;font-size:13px;color:var(--fg-muted)">${bio}</p>` : ''}
+    </div>
+  </div>`;
+}
+
+async function loadFollowTab(tab) {
+  const container = document.getElementById('social-tab-content');
+  if (!container) return;
+  container.innerHTML = '<p class="loading">Loading…</p>';
+  try {
+    const url = tab === 'followers' ? API_FOLLOWERS : API_FOLLOWING;
+    const users = await fetch(url).then(r => r.json());
+    if (!Array.isArray(users) || users.length === 0) {
+      container.innerHTML = `<p class="loading">No ${tab} yet.</p>`;
+      return;
+    }
+    container.innerHTML = users.map(userCardHtml).join('');
+  } catch(e) {
+    container.innerHTML = `<p class="error">Failed to load ${tab}.</p>`;
+  }
+}
+
+function switchTab(tab) {
+  document.querySelectorAll('.social-tab-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.tab === tab);
+  });
+  loadFollowTab(tab);
+}
+
+async function loadFollowState() {
+  try {
+    const data = await fetch('/api/v1/musehub/users/' + username + '/followers', { headers: authHeaders() }).then(r => r.json());
+    const countEl = document.getElementById('follower-count');
+    if (countEl) {
+      countEl.textContent = (data.follower_count || 0) + ' followers · ' + (data.following_count || 0) + ' following';
+    }
+    const followersTabBtn = document.getElementById('tab-btn-followers');
+    const followingTabBtn = document.getElementById('tab-btn-following');
+    if (followersTabBtn) followersTabBtn.textContent = 'Followers (' + (data.follower_count || 0) + ')';
+    if (followingTabBtn) followingTabBtn.textContent = 'Following (' + (data.following_count || 0) + ')';
+    if (getToken() && document.getElementById('follow-btn')) {
+      document.getElementById('follow-btn').style.display = '';
+      document.getElementById('follow-btn').dataset.following = data.following ? 'true' : 'false';
+      document.getElementById('follow-btn').textContent = data.following ? 'Following' : 'Follow';
+      if (data.following) document.getElementById('follow-btn').classList.add('following');
+    }
+  } catch(e) { /* non-critical */ }
+}
+
+async function load() {
+  loadFollowState();
+  let profile;
+  try {
+    profile = await fetch(API_PROFILE).then(r => {
+      if (r.status === 404) throw new Error('404');
+      if (!r.ok) throw new Error(r.status);
+      return r.json();
+    });
+  } catch(e) {
+    if (e.message === '404') {
+      document.getElementById('content').innerHTML =
+        '<div class="card"><p class="error">&#10005; No profile found for <strong>' + escHtml(username) + '</strong>.</p></div>';
+    } else {
+      document.getElementById('content').innerHTML =
+        '<p class="error">Failed to load profile: ' + escHtml(e.message) + '</p>';
+    }
+    return;
+  }
+
+  const avatarHtml = profile.avatarUrl
+    ? `<img src="${escHtml(profile.avatarUrl)}" alt="avatar" />`
+    : '&#127925;';
+
+  const pinnedRepos = (profile.repos || []).filter(r => (profile.pinnedRepoIds || []).includes(r.repoId));
+  const publicRepos = profile.repos || [];
+
+  const pinnedSection = pinnedRepos.length > 0 ? `
     <div class="card">
-      <h2 style="margin-bottom:var(--space-3)">⚡ Activity</h2>
+      <h2 style="margin-bottom:12px">&#128204; Pinned</h2>
+      <div class="repo-grid">${pinnedRepos.map(repoCardHtml).join('')}</div>
+    </div>` : '';
 
-      {# Filter tabs #}
-      <div style="display:flex;gap:var(--space-2);flex-wrap:wrap;margin-bottom:var(--space-3)">
-        {% for filter_key, filter_label in [
-            ('all', 'All'), ('commits', 'Commits'), ('prs', 'PRs'),
-            ('issues', 'Issues'), ('stars', 'Stars')] %}
-        <a href="?tab={{ filter_key }}&page=1"
-           class="btn {% if activity_filter == filter_key %}btn-primary{% else %}btn-secondary{% endif %}"
-           style="font-size:12px">
-          {{ filter_label }}
-        </a>
-        {% endfor %}
+  const reposSection = publicRepos.length > 0 ? `
+    <div class="card">
+      <h2 style="margin-bottom:12px">&#127963; Public Repositories (${publicRepos.length})</h2>
+      <div class="repo-grid">${publicRepos.map(repoCardHtml).join('')}</div>
+    </div>` : '<div class="card"><p class="loading">No public repositories yet.</p></div>';
+
+  const graphSection = `
+    <div class="card">
+      <h2 style="margin-bottom:12px">&#128200; Contribution Activity (last 52 weeks)</h2>
+      ${buildContribGraph(profile.contributionGraph || [])}
+      <p style="font-size:12px;color:#8b949e;margin-top:8px">
+        Less &nbsp;
+        <span style="display:inline-flex;gap:2px;vertical-align:middle">
+          ${[0,1,2,3,4].map(n => '<span class="contrib-day" data-count="' + n + '" style="display:inline-block"></span>').join('')}
+        </span>
+        &nbsp; More
+      </p>
+    </div>`;
+
+  const socialTabsSection = `
+    <div class="card" style="padding-bottom:0">
+      <div style="display:flex;gap:0;border-bottom:1px solid var(--border);margin:0 calc(-1 * var(--space-4))">
+        <button id="tab-btn-followers" class="social-tab-btn active" data-tab="followers"
+          onclick="switchTab('followers')"
+          style="padding:var(--space-2) var(--space-4);border:none;background:none;cursor:pointer;font-weight:600;color:var(--fg);border-bottom:2px solid transparent">
+          Followers
+        </button>
+        <button id="tab-btn-following" class="social-tab-btn" data-tab="following"
+          onclick="switchTab('following')"
+          style="padding:var(--space-2) var(--space-4);border:none;background:none;cursor:pointer;color:var(--fg-muted);border-bottom:2px solid transparent">
+          Following
+        </button>
       </div>
+      <div id="social-tab-content" style="padding-top:var(--space-3)">
+        <p class="loading">Loading…</p>
+      </div>
+    </div>`;
 
-      {% if activity %}
-        {% for event in activity %}
-        <div class="activity-row">
-          <span class="activity-type">{{ event.event_type | replace('_', ' ') }}</span>
-          <span class="activity-desc">
-            {{ event.description }}
-            {% if event.repo_owner and event.repo_slug %}
-              in <a href="/musehub/ui/{{ event.repo_owner }}/{{ event.repo_slug }}">
-                {{ event.repo_name or event.repo_slug }}</a>
-            {% endif %}
-          </span>
-          <span class="activity-date">{{ event.created_at | fmtrelative }}</span>
+  document.getElementById('content').innerHTML = `
+    <div class="card profile-header">
+      <div class="avatar">${avatarHtml}</div>
+      <div class="profile-meta">
+        <div style="display:flex;align-items:center;gap:var(--space-3);flex-wrap:wrap">
+          <h1 style="margin:0">${escHtml(profile.username)}</h1>
+          <button class="follow-btn" id="follow-btn" style="display:none"
+                  onclick="toggleFollow()">Follow</button>
         </div>
-        {% endfor %}
-
-        {# Pagination #}
-        {% set total_pages = ((total_events + per_page - 1) // per_page) %}
-        {% if total_pages > 1 %}
-        <div style="display:flex;gap:var(--space-2);justify-content:center;margin-top:var(--space-3)">
-          {% if page > 1 %}
-            <a href="?tab={{ activity_filter }}&page={{ page - 1 }}" class="btn btn-secondary">
-              ← Prev
-            </a>
-          {% endif %}
-          <span style="font-size:13px;color:#8b949e;padding:6px">
-            Page {{ page }} of {{ total_pages }}
-          </span>
-          {% if page < total_pages %}
-            <a href="?tab={{ activity_filter }}&page={{ page + 1 }}" class="btn btn-secondary">
-              Next →
-            </a>
-          {% endif %}
+        ${profile.bio ? '<p class="bio">' + escHtml(profile.bio) + '</p>' : ''}
+        <div style="display:flex;gap:var(--space-4);align-items:center;flex-wrap:wrap;margin-top:var(--space-2)">
+          <div class="credits-badge">
+            <span class="num">${profile.sessionCredits || 0}</span>
+            <span>session credits</span>
+          </div>
+          <span class="text-muted text-sm" id="follower-count"></span>
         </div>
-        {% endif %}
-      {% else %}
-        <p style="color:#8b949e">No activity yet.</p>
-      {% endif %}
+      </div>
     </div>
+    ${pinnedSection}
+    ${socialTabsSection}
+    ${graphSection}
+    ${reposSection}
+    <div id="forked-section"></div>
+    <div id="starred-section"></div>
+    <div id="watched-section"></div>
+  `;
+  loadForkedRepos();
+  loadStarredRepos();
+  loadWatchedRepos();
+}
 
-  </main>
-</div>
+// Style active social tab button via JS since we're in a raw-string context
+document.addEventListener('click', e => {
+  if (e.target.classList.contains('social-tab-btn')) {
+    document.querySelectorAll('.social-tab-btn').forEach(b => {
+      b.style.borderBottomColor = 'transparent';
+      b.style.color = 'var(--fg-muted)';
+      b.style.fontWeight = '';
+    });
+    e.target.style.borderBottomColor = 'var(--color-accent)';
+    e.target.style.color = 'var(--fg)';
+    e.target.style.fontWeight = '600';
+  }
+});
+
+load().then(() => { loadFollowTab('followers'); });
+{% endraw %}
 {% endblock %}
