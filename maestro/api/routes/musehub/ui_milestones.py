@@ -205,7 +205,7 @@ async def milestone_detail_page(
     linked_issues = await musehub_issues.list_issues(
         db, repo_id, state=issue_state, milestone_id=str(milestone.milestone_id)
     )
-    issue_list = IssueListResponse(issues=linked_issues)
+    issue_list = IssueListResponse(issues=linked_issues, total=len(linked_issues))
 
     class _MilestoneDetailResponse(MilestoneResponse):
         """Composite response: milestone + linked issues for JSON consumers."""

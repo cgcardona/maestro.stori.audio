@@ -22,10 +22,11 @@ from __future__ import annotations
 
 import logging
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from maestro.auth.dependencies import TokenClaims, optional_token, require_valid_token
+from maestro.api.routes.musehub.pagination import PaginationParams, build_link_header, paginate_list
 from maestro.db import get_db
 from maestro.models.musehub import (
     PRCommentCreate,
@@ -120,15 +121,23 @@ async def create_pull_request(
 )
 async def list_pull_requests(
     repo_id: str,
+    request: Request,
+    response: Response,
     state: str = Query(
         "all",
         pattern="^(open|merged|closed|all)$",
         description="Filter by state (open, merged, closed, all)",
     ),
+    pagination: PaginationParams = Depends(PaginationParams),
     db: AsyncSession = Depends(get_db),
     claims: TokenClaims | None = Depends(optional_token),
 ) -> PRListResponse:
     """Return pull requests for a repo, ordered by creation time.
+
+    Supports RFC 8288 page-based pagination via ``?page=N&per_page=N``.
+    The ``Link`` response header contains ``rel="first"``, ``rel="last"``,
+    ``rel="prev"`` (when not on the first page), and ``rel="next"`` (when
+    more pages remain).
 
     Use ?state=open to filter to open PRs only. Defaults to all states.
     """
@@ -141,8 +150,10 @@ async def list_pull_requests(
             detail="Authentication required to access private repos.",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    prs = await musehub_pull_requests.list_prs(db, repo_id, state=state)
-    return PRListResponse(pull_requests=prs)
+    all_prs = await musehub_pull_requests.list_prs(db, repo_id, state=state)
+    page_prs, total = paginate_list(all_prs, pagination.page, pagination.per_page)
+    response.headers["Link"] = build_link_header(request, total, pagination.page, pagination.per_page)
+    return PRListResponse(pull_requests=page_prs, total=total)
 
 
 @router.get(

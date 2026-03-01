@@ -1,4 +1,5 @@
 {% extends "musehub/base.html" %}
+{% block jsonld %}{% if jsonld_script %}{{ jsonld_script | safe }}{% endif %}{% endblock %}
 
 {% block title %}Release {{ tag[:20] }}{% endblock %}
 {% block breadcrumb %}

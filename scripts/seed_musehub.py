@@ -34,6 +34,8 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
 
 from maestro.config import settings
+from maestro.contracts.json_types import NoteDict
+from maestro.db.muse_models import NoteChange, Phrase, Variation
 from maestro.db.musehub_models import (
     MusehubBranch,
     MusehubComment,
@@ -79,7 +81,7 @@ def _uid(seed: str) -> str:
 # Constants — stable IDs so URLs never change between re-seeds
 # ---------------------------------------------------------------------------
 
-# Users
+# Users — original community
 GABRIEL  = "user-gabriel-001"
 SOFIA    = "user-sofia-002"
 MARCUS   = "user-marcus-003"
@@ -100,7 +102,27 @@ USERS = [
     (PIERRE,  "pierre",  "French chanson meets minimalism. Piano, cello, and long silences."),
 ]
 
-# Repos
+# Users — historical composers and licensed artists (batch-13)
+BACH          = "user-bach-000000009"
+CHOPIN        = "user-chopin-00000010"
+SCOTT_JOPLIN  = "user-sjoplin-0000011"
+KEVIN_MACLEOD = "user-kmacleod-000012"
+KAI_ENGEL     = "user-kaiengl-000013"
+
+COMPOSER_USERS = [
+    (BACH,          "bach",          "Johann Sebastian Bach (1685-1750). Baroque counterpoint, fugue, and harmony. Archive upload by Stori community."),
+    (CHOPIN,        "chopin",        "Frédéric Chopin (1810-1849). Romantic piano. Nocturnes, études, ballades. Archive upload by Stori community."),
+    (SCOTT_JOPLIN,  "scott_joplin",  "Scott Joplin (1868-1917). King of Ragtime. Maple Leaf Rag, The Entertainer. Archive upload by Stori community."),
+    (KEVIN_MACLEOD, "kevin_macleod", "Kevin MacLeod. Cinematic, orchestral, ambient. Thousands of royalty-free compositions. incompetech.com."),
+    (KAI_ENGEL,     "kai_engel",     "Kai Engel. Ambient, neoclassical, cinematic. Delicate textures and patient melodies. Free Music Archive."),
+]
+
+# All contributors for community-collab cycling (8 existing users)
+ALL_CONTRIBUTORS = [
+    "gabriel", "sofia", "marcus", "yuki", "aaliya", "chen", "fatou", "pierre",
+]
+
+# Repos — original community projects
 REPO_NEO_SOUL     = "repo-neo-soul-00000001"
 REPO_MODAL_JAZZ   = "repo-modal-jazz-000001"
 REPO_AMBIENT      = "repo-ambient-textures-1"
@@ -113,6 +135,20 @@ REPO_FUNK_SUITE   = "repo-funk-suite-0000001"
 REPO_JAZZ_TRIO    = "repo-jazz-trio-0000001"
 REPO_NEO_SOUL_FORK = "repo-neo-soul-fork-0001"
 REPO_AMBIENT_FORK  = "repo-ambient-fork-0001"
+
+# Repos — 12 genre archive repos (batch-13)
+REPO_WTC          = "repo-well-tempered-cl01"  # bach/well-tempered-clavier
+REPO_GOLDBERG     = "repo-goldberg-vars00001"  # bach/goldberg-variations
+REPO_NOCTURNES    = "repo-chopin-nocturnes01"  # chopin/nocturnes
+REPO_MAPLE_LEAF   = "repo-maple-leaf-rag0001"  # scott_joplin/maple-leaf-rag
+REPO_CIN_STRINGS  = "repo-cinematic-strngs01"  # kevin_macleod/cinematic-strings
+REPO_KAI_AMBIENT  = "repo-kai-ambient-txtr01"  # kai_engel/ambient-textures
+REPO_NEO_BAROQUE  = "repo-neo-baroque-000001"  # gabriel/neo-baroque
+REPO_JAZZ_CHOPIN  = "repo-jazz-chopin-000001"  # aaliya/jazz-chopin
+REPO_RAGTIME_EDM  = "repo-ragtime-edm-000001"  # marcus/ragtime-edm
+REPO_FILM_SCORE   = "repo-film-score-000001"   # chen/film-score
+REPO_POLYRHYTHM   = "repo-polyrhythm-000001"   # fatou/polyrhythm
+REPO_COMMUNITY    = "repo-community-collab01"  # gabriel/community-collab
 
 REPOS: list[dict[str, Any]] = [
     dict(repo_id=REPO_NEO_SOUL, name="Neo-Soul Experiment", owner="gabriel", slug="neo-soul-experiment",
@@ -176,6 +212,73 @@ REPOS: list[dict[str, Any]] = [
          description="Fork of sofia/ambient-textures-vol-1 — Yuki's granular re-imagining.",
          tags=["ambient", "granular", "fork"],
          key_signature="Eb major", tempo_bpm=60, days_ago=5, star_count=0, fork_count=0),
+]
+
+# Genre archive repos — batch-13 additions with structured muse_tags
+GENRE_REPOS: list[dict[str, Any]] = [
+    dict(repo_id=REPO_WTC, name="The Well-Tempered Clavier", owner="bach", slug="well-tempered-clavier",
+         owner_user_id=BACH, visibility="public",
+         description="Bach's 48 preludes and fugues — one in each major and minor key. The definitive study in tonal harmony.",
+         tags=["genre:baroque", "key:C", "key:Am", "key:G", "key:F", "key:Bb", "stage:released", "emotion:serene", "emotion:complex"],
+         key_signature="C major (all 24 keys)", tempo_bpm=72, days_ago=365, star_count=88, fork_count=12),
+    dict(repo_id=REPO_GOLDBERG, name="Goldberg Variations", owner="bach", slug="goldberg-variations",
+         owner_user_id=BACH, visibility="public",
+         description="Aria with 30 variations. Bach's monumental keyboard work — from simple canon to ornate arabesque.",
+         tags=["genre:baroque", "stage:released", "emotion:joyful", "emotion:melancholic", "key:G"],
+         key_signature="G major", tempo_bpm=60, days_ago=350, star_count=74, fork_count=9),
+    dict(repo_id=REPO_NOCTURNES, name="Nocturnes", owner="chopin", slug="nocturnes",
+         owner_user_id=CHOPIN, visibility="public",
+         description="21 nocturnes for solo piano — poetry in sound. Lyrical melodies over arpeggiated left-hand accompaniment.",
+         tags=["genre:romantic", "emotion:melancholic", "emotion:tender", "stage:released", "key:Bb", "key:Eb"],
+         key_signature="Bb minor", tempo_bpm=58, days_ago=300, star_count=62, fork_count=8),
+    dict(repo_id=REPO_MAPLE_LEAF, name="Maple Leaf Rag", owner="scott_joplin", slug="maple-leaf-rag",
+         owner_user_id=SCOTT_JOPLIN, visibility="public",
+         description="The rag that launched a revolution. Syncopated right-hand melody over an oom-pah bass. The birth of ragtime.",
+         tags=["genre:ragtime", "emotion:playful", "stage:released", "key:Ab", "tempo:march"],
+         key_signature="Ab major", tempo_bpm=100, days_ago=280, star_count=51, fork_count=7),
+    dict(repo_id=REPO_CIN_STRINGS, name="Cinematic Strings", owner="kevin_macleod", slug="cinematic-strings",
+         owner_user_id=KEVIN_MACLEOD, visibility="public",
+         description="Orchestral string textures for cinematic use. Builds from delicate pianissimo to full tutti climax.",
+         tags=["genre:cinematic", "emotion:triumphant", "stage:released", "tempo:adagio", "key:D"],
+         key_signature="D minor", tempo_bpm=64, days_ago=180, star_count=43, fork_count=5),
+    dict(repo_id=REPO_KAI_AMBIENT, name="Ambient Textures", owner="kai_engel", slug="ambient-textures",
+         owner_user_id=KAI_ENGEL, visibility="public",
+         description="Patient, breathing soundscapes. Piano, strings, and silence woven into evolving ambient fields.",
+         tags=["genre:ambient", "emotion:serene", "stage:released", "tempo:largo", "key:C"],
+         key_signature="C major", tempo_bpm=50, days_ago=150, star_count=38, fork_count=4),
+    dict(repo_id=REPO_NEO_BAROQUE, name="Neo-Baroque Studies", owner="gabriel", slug="neo-baroque",
+         owner_user_id=GABRIEL, visibility="public",
+         description="What if Bach wrote jazz? Modal harmony and quartal voicings dressed in baroque counterpoint.",
+         tags=["genre:baroque", "genre:jazz", "stage:rough-mix", "emotion:complex", "ref:bach", "key:D"],
+         key_signature="D Dorian", tempo_bpm=84, days_ago=120, star_count=29, fork_count=3),
+    dict(repo_id=REPO_JAZZ_CHOPIN, name="Jazz Chopin", owner="aaliya", slug="jazz-chopin",
+         owner_user_id=AALIYA, visibility="public",
+         description="Chopin nocturnes reharmonized through a Coltrane lens. Rootless voicings, tritone substitutions, and more.",
+         tags=["genre:jazz", "genre:romantic", "emotion:tender", "ref:chopin", "ref:coltrane", "stage:mixing"],
+         key_signature="Bb minor", tempo_bpm=68, days_ago=90, star_count=34, fork_count=4),
+    dict(repo_id=REPO_RAGTIME_EDM, name="Ragtime EDM", owner="marcus", slug="ragtime-edm",
+         owner_user_id=MARCUS, visibility="public",
+         description="Scott Joplin meets the dancefloor. Syncopated MIDI melodies over trap hi-hats and house kick patterns.",
+         tags=["genre:edm", "genre:ragtime", "stage:production", "emotion:playful", "tempo:dance"],
+         key_signature="Ab major", tempo_bpm=128, days_ago=70, star_count=26, fork_count=3),
+    dict(repo_id=REPO_FILM_SCORE, name="Film Score — Untitled", owner="chen", slug="film-score",
+         owner_user_id=CHEN, visibility="public",
+         description="Three-act cinematic score. Microtonal tension in Act I, spectral climax in Act II, resolution in Act III.",
+         tags=["genre:cinematic", "emotion:tense", "emotion:triumphant", "stage:mixing", "key:C"],
+         key_signature="C (31-TET)", tempo_bpm=72, days_ago=55, star_count=18, fork_count=2),
+    dict(repo_id=REPO_POLYRHYTHM, name="Polyrhythm Studies", owner="fatou", slug="polyrhythm",
+         owner_user_id=FATOU, visibility="public",
+         description="West African rhythmic philosophy through a modular lens. 7-over-4, 5-over-3, and beyond.",
+         tags=["genre:afrobeats", "emotion:playful", "emotion:energetic", "stage:rough-mix", "tempo:polyrhythm"],
+         key_signature="A minor", tempo_bpm=92, days_ago=35, star_count=21, fork_count=2),
+    dict(repo_id=REPO_COMMUNITY, name="Community Collab", owner="gabriel", slug="community-collab",
+         owner_user_id=GABRIEL, visibility="public",
+         description="An open canvas for all eight contributors. Every genre, every voice, one evolving composition.",
+         tags=["genre:baroque", "genre:jazz", "genre:romantic", "genre:ragtime", "genre:cinematic",
+               "genre:ambient", "genre:edm", "genre:afrobeats", "emotion:serene", "emotion:complex",
+               "emotion:joyful", "emotion:melancholic", "emotion:tender", "emotion:playful",
+               "emotion:energetic", "emotion:triumphant", "emotion:tense", "stage:rough-mix"],
+         key_signature="C major", tempo_bpm=90, days_ago=200, star_count=95, fork_count=15),
 ]
 
 
@@ -372,6 +475,270 @@ def _make_commits(repo_id: str, repo_key: str, n: int) -> list[dict[str, Any]]:
             ("fix(drums): remove extraneous kick note on bar 9", "marcus"),
             ("feat(piano): final cadenza — rubato", "marcus"),
         ],
+        # Genre archive repos — batch-13
+        "wtc": [
+            ("init: Book I — Prelude No.1 in C major — arpeggiated harmony", "gabriel"),
+            ("feat(fugue): Fugue No.1 in C major — 4-voice exposition", "gabriel"),
+            ("feat(prelude): Prelude No.2 in C minor — perpetual motion 16ths", "sofia"),
+            ("feat(fugue): Fugue No.2 in C minor — chromatic subject", "gabriel"),
+            ("feat(prelude): Prelude No.3 in C# major — arpeggiated texture", "chen"),
+            ("feat(fugue): Fugue No.3 in C# major — 3-voice stretto", "gabriel"),
+            ("refactor(harmony): correct spelling of diminished 7th in bar 8", "pierre"),
+            ("feat(prelude): Prelude No.4 in C# minor — lyrical melody", "gabriel"),
+            ("feat(fugue): Fugue No.4 in C# minor — 5-voice exposition", "sofia"),
+            ("feat(prelude): Prelude No.5 in D major — driving 16th notes", "gabriel"),
+            ("feat(fugue): Fugue No.5 in D major — invertible counterpoint", "chen"),
+            ("fix(voice-leading): resolve parallel 5ths in C major fugue bar 14", "gabriel"),
+            ("feat(prelude): Prelude No.6 in D minor — expressive chromatics", "pierre"),
+            ("feat(fugue): Fugue No.6 in D minor — augmentation in bass", "gabriel"),
+            ("feat(prelude): Prelude No.7 in Eb major — ornate passagework", "sofia"),
+            ("feat(fugue): Fugue No.7 in Eb major — inversion of subject", "gabriel"),
+            ("refactor(ornamentation): add trills per Baroque convention — bars 1-4", "chen"),
+            ("feat(prelude): Prelude No.8 in Eb minor — chromatic descent", "gabriel"),
+            ("feat(fugue): Fugue No.8 in Eb minor — 3-voice with episode", "pierre"),
+            ("feat(prelude): Prelude No.9 in E major — binary form", "gabriel"),
+            ("feat(fugue): Fugue No.9 in E major — motivic development", "sofia"),
+            ("fix(tuning): retune to equal temperament from well-temperament", "chen"),
+            ("feat(prelude): Prelude No.10 in E minor — two-part invention style", "gabriel"),
+            ("feat(fugue): Fugue No.10 in E minor — rhythmic diminution", "gabriel"),
+            ("feat(book2): Book II — Prelude No.1 in C major — extended version", "sofia"),
+            ("feat(book2): Fugue No.1 BK2 in C major — 4-voice with tonal answer", "gabriel"),
+            ("feat(book2): Prelude No.2 BK2 in C minor — turbulent arpeggios", "pierre"),
+            ("feat(book2): Fugue No.2 BK2 — chromatic subject, 4 voices", "gabriel"),
+            ("refactor(dynamics): add hairpin dynamics per Urtext edition", "sofia"),
+            ("feat(book2): Prelude No.3 BK2 in C# major — serene cantabile", "gabriel"),
+        ],
+        "goldberg": [
+            ("init: Goldberg Aria — sarabande in G major, ornate upper voice", "gabriel"),
+            ("feat(var1): Variation 1 — two-voice in parallel 3rds", "gabriel"),
+            ("feat(var2): Variation 2 — one voice per hand, canonic imitation", "sofia"),
+            ("feat(var3): Variation 3 — canon at the unison", "gabriel"),
+            ("feat(var4): Variation 4 — robust 4-voice passepied", "pierre"),
+            ("feat(var5): Variation 5 — hand-crossing, one voice each hand", "gabriel"),
+            ("feat(var6): Variation 6 — canon at the second", "sofia"),
+            ("feat(var7): Variation 7 — gigue in 6/8, dance character", "gabriel"),
+            ("feat(var8): Variation 8 — two-voice inversion in 3rds and 6ths", "chen"),
+            ("feat(var13): Variation 13 — lyrical aria-like melody, experimental rubato", "gabriel"),
+            ("fix(ornaments): correct trill resolution in Variation 13 bar 9", "sofia"),
+            ("feat(var25): Variation 25 — chromatic aria, the emotional heart", "gabriel"),
+            ("feat(var30): Variation 30 — Quodlibet, quotes folk songs", "gabriel"),
+            ("feat(aria-reprise): Aria da capo — return of opening theme", "pierre"),
+            ("refactor(voicing): ensure aria melody sits above all inner voices", "gabriel"),
+            ("fix(voice-leading): remove parallel octaves in Variation 4 bar 12", "sofia"),
+            ("refactor(tempo): apply consistent note values in 3/4 Variations", "gabriel"),
+            ("feat(var21): Variation 21 — chromatic canon at the 7th", "chen"),
+        ],
+        "nocturnes": [
+            ("init: Op.9 No.1 in Bb minor — gentle arpeggiated bass, yearning melody", "aaliya"),
+            ("feat(op9-2): Op.9 No.2 in Eb major — the iconic theme, ornate reprise", "aaliya"),
+            ("feat(op9-3): Op.9 No.3 in B major — agitated middle section", "gabriel"),
+            ("feat(op15-1): Op.15 No.1 in F major — pastoral melody, stormy development", "aaliya"),
+            ("feat(op15-2): Op.15 No.2 in F# major — murmuring bass, cantabile melody", "sofia"),
+            ("feat(op15-3): Op.15 No.3 in G minor — solemn choral opening", "aaliya"),
+            ("feat(op27-1): Op.27 No.1 in C# minor — tragic opening, ecstatic climax", "gabriel"),
+            ("feat(op27-2): Op.27 No.2 in Db major — sustained melody, ornate inner voice", "aaliya"),
+            ("refactor(rubato): add tempo fluctuation markings per Chopin's own notation", "pierre"),
+            ("fix(pedaling): correct sustain pedal placement in Op.9 No.2 bar 5", "aaliya"),
+            ("feat(op32-1): Op.32 No.1 in B major — introspective, questioning end", "sofia"),
+            ("feat(op32-2): Op.32 No.2 in Ab major — gentle but harmonically complex", "aaliya"),
+            ("feat(op37-1): Op.37 No.1 in G minor — chorale-like, organistic", "gabriel"),
+            ("feat(op37-2): Op.37 No.2 in G major — barcarolle-style 6/8", "aaliya"),
+            ("refactor(ornamentation): add mordents and grace notes per autograph", "sofia"),
+            ("fix(voice-leading): eliminate voice crossing in Op.15 No.3 bar 7", "aaliya"),
+            ("feat(op48-1): Op.48 No.1 in C minor — grand and tragic", "gabriel"),
+            ("feat(op48-2): Op.48 No.2 in F# minor — agitated and restless", "aaliya"),
+            ("feat(op55-1): Op.55 No.1 in F minor — melancholic cantabile", "sofia"),
+            ("feat(op55-2): Op.55 No.2 in Eb major — flowing, conversational", "aaliya"),
+            ("feat(op62-1): Op.62 No.1 in B major — late style, fragmented ornament", "gabriel"),
+            ("feat(op62-2): Op.62 No.2 in E major — tender farewell, inner voices", "aaliya"),
+        ],
+        "maple-leaf": [
+            ("init: Maple Leaf Rag in Ab major — 4/4 at 100 BPM", "marcus"),
+            ("feat(A): Section A — syncopated melody over oom-pah bass, bars 1-16", "marcus"),
+            ("feat(A-repeat): Section A repeat with octave doubling in melody", "gabriel"),
+            ("feat(B): Section B — contrast, moves to Eb major", "marcus"),
+            ("feat(B-repeat): Section B repeat — velocity humanized", "marcus"),
+            ("feat(C): Section C (trio) — moves to Db major, more lyrical", "marcus"),
+            ("feat(C-repeat): Section C repeat with improvised embellishment", "gabriel"),
+            ("feat(D): Section D — returns to Ab, triumphant restatement", "marcus"),
+            ("refactor(bass): tighten oom-pah bass timing — was 8ms ahead", "marcus"),
+            ("fix(melody): correct grace note in bar 9 — was wrong pitch Eb not D", "gabriel"),
+            ("feat(slow): slow-version — halftime feel, rubato allowed", "marcus"),
+            ("feat(slow): slow-version extended ornaments in melody", "gabriel"),
+            ("feat(edm): marcus-edm-remix — trap hi-hats under ragtime melody", "marcus"),
+            ("feat(edm): marcus-edm-remix — 808 bass replacing oom-pah pattern", "marcus"),
+        ],
+        "cinematic-strings": [
+            ("init: Cinematic Strings in D minor — string orchestra at 64 BPM", "gabriel"),
+            ("feat(intro): solo cello theme — bars 1-8 — pp, col arco", "chen"),
+            ("feat(build): violas enter — pizzicato counter-rhythm, bars 9-16", "gabriel"),
+            ("feat(build): second violins add sustained harmonic pad", "sofia"),
+            ("feat(climax): full orchestra tutti — bars 33-40 — ff", "gabriel"),
+            ("feat(climax): timpani and brass reinforcement at climax peak", "chen"),
+            ("feat(resolution): strings return to solo cello — reprise of theme", "gabriel"),
+            ("refactor(dynamics): smooth crescendo from pp to ff over 32 bars", "sofia"),
+            ("fix(intonation): retune violin II section — was sharp by 5 cents", "gabriel"),
+            ("feat(orchestral): orchestral branch — add oboe and clarinet doubling", "chen"),
+            ("feat(orchestral): French horn countermelody in orchestral version", "gabriel"),
+            ("feat(piano): stripped-piano branch — piano reduction of string score", "pierre"),
+            ("feat(piano): add pedal markings to piano reduction", "sofia"),
+            ("refactor(tempo): add ritardando at bar 38 for dramatic pause", "gabriel"),
+            ("fix(articulation): add sul ponticello marking to Variation 2 strings", "chen"),
+        ],
+        "kai-ambient": [
+            ("init: Kai Engel ambient field — C major, slow morphing pad", "pierre"),
+            ("feat(pad1): first layer — high strings, ppp, infinite sustain", "pierre"),
+            ("feat(pad2): second pad — piano harmonics, prepared technique", "sofia"),
+            ("feat(piano): sparse piano melody — whole notes, bars 9-24", "pierre"),
+            ("feat(v1): v1 branch — original release version, 8-minute version", "pierre"),
+            ("refactor(v1): v1 — master level adjusted to -14 LUFS", "sofia"),
+            ("feat(v2): v2-extended — added 4-minute drone coda", "pierre"),
+            ("feat(v2): v2-extended — new string layer in coda, sul tasto", "sofia"),
+            ("fix(phase): reduce stereo width in pad2 to avoid phase cancellation", "pierre"),
+            ("refactor(mix): filter low end on pad1 — HPF at 80Hz", "pierre"),
+        ],
+        "neo-baroque": [
+            ("init: Neo-Baroque in D Dorian — harpsichord + electric bass at 84 BPM", "gabriel"),
+            ("feat(counterpoint): two-voice invention — right hand melody, left hand bass", "gabriel"),
+            ("feat(jazz): jazz-voicings branch — quartal harmony replaces triads", "gabriel"),
+            ("feat(jazz): tritone substitution in bar 8 turnaround — jazz-voicings", "marcus"),
+            ("feat(jazz): rootless 9th voicings in right hand — jazz-voicings", "gabriel"),
+            ("feat(harmony): harmonic sequence — descending 5ths in bass", "gabriel"),
+            ("feat(rhythm): syncopated baroque rhythm — quarter-note displacement", "gabriel"),
+            ("feat(edm): edm-bassline branch — 808 sub bass under baroque melody", "marcus"),
+            ("feat(edm): four-on-the-floor kick added — edm-bassline", "gabriel"),
+            ("feat(edm): filter sweep into bridge — edm-bassline", "marcus"),
+            ("feat(harpsichord): feature/add-harpsichord — harpsichord replaces piano", "gabriel"),
+            ("feat(harpsichord): double manual technique — feature/add-harpsichord", "pierre"),
+            ("fix(voice-leading): parallel 5ths in bar 5 inner voices corrected", "gabriel"),
+            ("refactor(form): add da capo repeat — bars 1-8 return at end", "gabriel"),
+            ("feat(improv): jazz improvisation section — 8 bars over baroque changes", "marcus"),
+            ("fix(timing): realign baroque ornaments to 16th grid", "gabriel"),
+            ("feat(strings): add pizzicato baroque strings — bars 17-32", "sofia"),
+            ("refactor(harmony): rewrite cadence — Phrygian half cadence, bar 16", "gabriel"),
+            ("feat(coda): extended coda with fugal stretto — all voices", "gabriel"),
+            ("fix(harpsichord): velocity normalization — harpsichord lacks dynamics", "gabriel"),
+            ("feat(modal): modal interchange — borrow from D minor in bridge", "marcus"),
+            ("refactor(mix): balance harpsichord vs bass — HF boost on harpsichord", "gabriel"),
+            ("feat(ornament): mordent on beat 1 of each 4-bar phrase", "pierre"),
+            ("feat(jazz2): jazz-voicings v2 — add upper-structure triads", "gabriel"),
+            ("refactor(form): restructure to AABBA form — stronger contrast", "gabriel"),
+            ("feat(bass): walking bass line for jazz-voicings bridge section", "marcus"),
+            ("fix(modal): correct Dorian vs natural minor in bar 12", "gabriel"),
+            ("feat(fugue): mini fugue in coda — 3-voice, 8 bars", "gabriel"),
+        ],
+        "jazz-chopin": [
+            ("init: Jazz Chopin — Op.9 No.2 reharmonized, Bb minor at 68 BPM", "aaliya"),
+            ("feat(reharmonize): tritone sub on V7 chord — bar 4", "aaliya"),
+            ("feat(reharmonize): minor ii-V-I substitution in bridge", "gabriel"),
+            ("feat(voicing): rootless 9th chord voicings — left hand", "aaliya"),
+            ("feat(reharmonize): Coltrane substitution pattern in climax — reharmonized", "aaliya"),
+            ("feat(reharmonize): add chromatic approach chords — reharmonized", "marcus"),
+            ("feat(trio): trio-arrangement — add bass and drums", "aaliya"),
+            ("feat(trio): walking bass added under reharmonized changes", "marcus"),
+            ("feat(trio): brushed snare — light jazz feel, trio-arrangement", "gabriel"),
+            ("fix(voice-leading): parallel 5ths in reharmonized bridge, bar 9", "aaliya"),
+            ("refactor(melody): add bebop ornaments to Chopin melody line", "aaliya"),
+            ("feat(reharmonize): backdoor ii-V substitution in outro", "aaliya"),
+            ("fix(bass): fix intonation issue on low Bb — walking bass", "marcus"),
+            ("feat(trio): piano solo chorus over jazz changes — trio-arrangement", "aaliya"),
+            ("refactor(tempo): add ritardando at 4-bar phrase ends", "aaliya"),
+            ("feat(reharmonize): modal interchange — iv chord from parallel minor", "gabriel"),
+            ("fix(drums): remove unintentional kick on beat 3 — trio", "aaliya"),
+            ("feat(coda): free improvisation coda — all three voices", "aaliya"),
+            ("refactor(harmony): ensure all substitutions maintain melodic identity", "aaliya"),
+            ("feat(reharmonize): full reharmonized version complete — all 3 sections", "aaliya"),
+        ],
+        "ragtime-edm": [
+            ("init: Ragtime EDM — Maple Leaf Rag MIDI over trap beat at 128 BPM", "marcus"),
+            ("feat(trap): trap hi-hat grid — 16th triplets with velocity variation", "marcus"),
+            ("feat(trap): 808 kick on 1 and 3 — trap-version", "marcus"),
+            ("feat(trap): snare on 2 and 4 with ghosted 16ths — trap-version", "gabriel"),
+            ("feat(ragtime): ragtime melody quantized to EDM grid — bars 1-16", "marcus"),
+            ("feat(house): house-version — 4-on-floor kick, Chicago-style", "marcus"),
+            ("feat(house): sidechain compression on ragtime bass — house-version", "gabriel"),
+            ("feat(house): filter sweep on ragtime melody — house-version", "marcus"),
+            ("feat(swing): electro-swing branch — shuffle quantize 16ths to swing", "marcus"),
+            ("feat(swing): brass sample layer on ragtime melody — electro-swing", "gabriel"),
+            ("fix(pitch): transpose ragtime melody up one semitone to Ab for EDM mix", "marcus"),
+            ("refactor(mix): sidechain bass to kick for pumping effect — all versions", "marcus"),
+            ("feat(drop): big drop transition — silence then tutti return", "marcus"),
+            ("fix(timing): tighten ragtime melody to EDM grid — was 10ms behind", "gabriel"),
+            ("refactor(master): normalize to -8 LUFS for streaming platforms", "marcus"),
+            ("feat(bridge): 8-bar bridge — minimal, just kick and ragtime melody fragment", "marcus"),
+            ("feat(outro): outro — gradual filter close on all elements", "marcus"),
+        ],
+        "film-score": [
+            ("init: Film Score — Act I, C (31-TET) — establishing motif, tense, pp", "chen"),
+            ("feat(act1): act1 — microtonal string cluster, bars 1-8", "chen"),
+            ("feat(act1): act1 — ascending quarter-tone figure in winds", "chen"),
+            ("feat(act1): act1 — timpani accent on beat 3 — instability motif", "gabriel"),
+            ("feat(act1): act1 — brass pedal — low brass drone, bars 9-16", "chen"),
+            ("feat(act2): act2 branch — spectral climax, full orchestra tutti", "chen"),
+            ("feat(act2): act2 — strings in high register, ff, sul ponticello", "sofia"),
+            ("feat(act2): act2 — timpani rolls and brass fanfare — climax peak", "chen"),
+            ("feat(act2): act2 — dissonant chord cluster, all 31-TET pitches", "gabriel"),
+            ("feat(act3): act3 branch — resolution, return to simple C major", "chen"),
+            ("feat(act3): act3 — solo violin melody, simple diatonic, pp", "sofia"),
+            ("feat(act3): act3 — gradual orchestral return from silence", "chen"),
+            ("feat(act3): act3 — final chord — C major, fff, held for 8 bars", "gabriel"),
+            ("fix(tuning): recalibrate all instruments to 31-TET in Act I", "chen"),
+            ("refactor(dynamics): smooth transition from Act I pp to Act II ff", "chen"),
+            ("fix(voice-leading): remove dissonance clash in Act III resolution", "sofia"),
+            ("refactor(score): add rehearsal letter marks every 8 bars", "chen"),
+            ("feat(leitmotif): recurring motif appears in each act — unifying thread", "gabriel"),
+        ],
+        "polyrhythm": [
+            ("init: Polyrhythm Studies — A minor at 92 BPM — 7-over-4 base", "fatou"),
+            ("feat(7-4): 7-over-4 — djembe in 7, talking drum in 4", "fatou"),
+            ("feat(7-4): 7-over-4 — bass guitar anchors common pulse", "fatou"),
+            ("feat(7-4): 7-over-4 — listener orientation — hi-hat on beat 1 only", "aaliya"),
+            ("refactor(7-4): humanize djembe timing — ±8ms variance", "fatou"),
+            ("feat(5-3): 5-over-3-experiment — conga in 5, shekere in 3", "fatou"),
+            ("feat(5-3): 5-over-3-experiment — bass anchors on shared beat", "aaliya"),
+            ("feat(5-3): 5-over-3-experiment — add melody on shared downbeats only", "fatou"),
+            ("fix(phase): fix drifting phase in 7-over-4 at bar 32 — MIDI timing", "fatou"),
+            ("feat(groove): add cross-stick snare to bridge the two rhythmic worlds", "aaliya"),
+            ("refactor(mix): bring up djembe attack — was buried under bass", "fatou"),
+        ],
+        "community": [
+            ("init: Community Collab — open canvas — C major, 90 BPM", "gabriel"),
+            ("feat(counterpoint): sofia's counterpoint — Bach-inspired 2-voice invention", "sofia"),
+            ("feat(ornament): yuki's ornaments — granular delay on all voices", "yuki"),
+            ("feat(analysis): pierre's analysis annotations — harmonic function labels", "pierre"),
+            ("feat(bass): marcus's bassline — funk groove under baroque counterpoint", "marcus"),
+            ("feat(rhythm): fatou's polyrhythm layer — 5-over-3 pattern over 4/4", "fatou"),
+            ("feat(reharmonize): aaliya's jazz reharmonization of C major progression", "aaliya"),
+            ("feat(microtonal): chen's microtonal ornaments — quarter-tone glissandi", "chen"),
+            ("refactor(structure): gabriel rebalances all layers — new mix", "gabriel"),
+            ("feat(baroque): sofia adds fugal episode — subject and answer", "sofia"),
+            ("feat(texture): yuki adds granular texture layer — sparse grain scatter", "yuki"),
+            ("fix(voice-leading): pierre fixes parallel 5ths — bars 12-13", "pierre"),
+            ("feat(groove): marcus adds clavinet stabs — funk energy", "marcus"),
+            ("feat(perc): fatou adds shekere pulse — holds everything together", "fatou"),
+            ("feat(jazz): aaliya adds blue notes to melody — jazzy feel", "aaliya"),
+            ("feat(tuning): chen corrects micro-tuning in ornament layer", "chen"),
+            ("feat(improv): gabriel improvises bridge over new changes", "gabriel"),
+            ("feat(strings): sofia adds lush string pad — bars 33-48", "sofia"),
+            ("feat(reverb): yuki adds cathedral reverb to string layer", "yuki"),
+            ("feat(harmony): pierre adds 9th and 11th extensions to all chords", "pierre"),
+            ("feat(bass2): marcus doubles bassline at octave — thicker low end", "marcus"),
+            ("feat(perc2): fatou adds djembe solo — bars 49-56", "fatou"),
+            ("feat(modal): aaliya introduces Dorian mode shift in bridge", "aaliya"),
+            ("feat(spectral): chen adds spectral filter sweep — act of transformation", "chen"),
+            ("feat(motif): gabriel introduces 4-note motif — appears in all layers", "gabriel"),
+            ("refactor(mix): sofia adjusts balance — counterpoint more prominent", "sofia"),
+            ("feat(scatter): yuki reduces grain density for introspective section", "yuki"),
+            ("feat(chorale): pierre writes 4-voice chorale climax — bars 57-64", "pierre"),
+            ("feat(solo): marcus piano solo over baroque changes", "marcus"),
+            ("feat(perc3): fatou polyrhythm climax — all layers simultaneously", "fatou"),
+            ("feat(reprise): aaliya leads reprise of opening theme — reharmonized", "aaliya"),
+            ("feat(finale): chen's finale motif — microtonal glissando into last chord", "chen"),
+            ("feat(coda): gabriel's coda — reduces to solo piano, pp", "gabriel"),
+            ("refactor(final-mix): sofia final mix pass — all dynamics balanced", "sofia"),
+            ("feat(outro): yuki granular outro — voices dissolve into texture", "yuki"),
+            ("feat(credits): pierre adds annotation — credits all contributors", "pierre"),
+        ],
     }
 
     key = repo_key
@@ -434,6 +801,30 @@ REPO_TRACKS: dict[str, list[tuple[str, str]]] = {
                      ("perc", "tracks/congas.mid")],
     "jazz-trio":    [("piano", "tracks/piano.mid"), ("bass", "tracks/bass.mid"),
                      ("drums", "tracks/drums.mid")],
+    # Genre archive repos — batch-13
+    "wtc":              [("piano", "tracks/piano.mid"), ("harpsichord", "tracks/harpsichord.mid")],
+    "goldberg":         [("piano", "tracks/piano.mid"), ("harpsichord", "tracks/harpsichord.mid")],
+    "nocturnes":        [("piano", "tracks/piano.mid")],
+    "maple-leaf":       [("piano", "tracks/piano.mid"), ("bass", "tracks/bass.mid")],
+    "cinematic-strings":[("violin1", "tracks/violin1.mid"), ("violin2", "tracks/violin2.mid"),
+                         ("viola", "tracks/viola.mid"), ("cello", "tracks/cello.mid"),
+                         ("bass", "tracks/double_bass.mid"), ("timp", "tracks/timpani.mid")],
+    "kai-ambient":      [("pad", "tracks/pad.mid"), ("piano", "tracks/piano.mid"),
+                         ("strings", "tracks/strings.mid")],
+    "neo-baroque":      [("harpsichord", "tracks/harpsichord.mid"), ("bass", "tracks/bass.mid"),
+                         ("strings", "tracks/strings.mid")],
+    "jazz-chopin":      [("piano", "tracks/piano.mid"), ("bass", "tracks/bass.mid"),
+                         ("drums", "tracks/drums.mid")],
+    "ragtime-edm":      [("piano", "tracks/piano.mid"), ("kick", "tracks/kick.mid"),
+                         ("snare", "tracks/snare.mid"), ("hihat", "tracks/hihat.mid"),
+                         ("808", "tracks/808.mid")],
+    "film-score":       [("strings", "tracks/strings.mid"), ("brass", "tracks/brass.mid"),
+                         ("woodwinds", "tracks/woodwinds.mid"), ("timp", "tracks/timpani.mid")],
+    "polyrhythm":       [("djembe", "tracks/djembe.mid"), ("tama", "tracks/talking_drum.mid"),
+                         ("shekere", "tracks/shekere.mid"), ("bass", "tracks/bass.mid")],
+    "community":        [("piano", "tracks/piano.mid"), ("bass", "tracks/bass.mid"),
+                         ("strings", "tracks/strings.mid"), ("perc", "tracks/djembe.mid"),
+                         ("harpsichord", "tracks/harpsichord.mid"), ("pad", "tracks/granular_pad.mid")],
 }
 
 REPO_KEY_MAP = {
@@ -449,6 +840,19 @@ REPO_KEY_MAP = {
     REPO_JAZZ_TRIO:    "jazz-trio",
     REPO_NEO_SOUL_FORK: "neo-soul",
     REPO_AMBIENT_FORK:  "ambient",
+    # Genre archive repos — batch-13
+    REPO_WTC:          "wtc",
+    REPO_GOLDBERG:     "goldberg",
+    REPO_NOCTURNES:    "nocturnes",
+    REPO_MAPLE_LEAF:   "maple-leaf",
+    REPO_CIN_STRINGS:  "cinematic-strings",
+    REPO_KAI_AMBIENT:  "kai-ambient",
+    REPO_NEO_BAROQUE:  "neo-baroque",
+    REPO_JAZZ_CHOPIN:  "jazz-chopin",
+    REPO_RAGTIME_EDM:  "ragtime-edm",
+    REPO_FILM_SCORE:   "film-score",
+    REPO_POLYRHYTHM:   "polyrhythm",
+    REPO_COMMUNITY:    "community",
 }
 
 COMMIT_COUNTS = {
@@ -464,7 +868,384 @@ COMMIT_COUNTS = {
     REPO_JAZZ_TRIO:    32,
     REPO_NEO_SOUL_FORK: 8,
     REPO_AMBIENT_FORK:  5,
+    # Genre archive repos — batch-13
+    REPO_WTC:          60,
+    REPO_GOLDBERG:     35,
+    REPO_NOCTURNES:    45,
+    REPO_MAPLE_LEAF:   25,
+    REPO_CIN_STRINGS:  30,
+    REPO_KAI_AMBIENT:  20,
+    REPO_NEO_BAROQUE:  55,
+    REPO_JAZZ_CHOPIN:  40,
+    REPO_RAGTIME_EDM:  35,
+    REPO_FILM_SCORE:   28,
+    REPO_POLYRHYTHM:   22,
+    REPO_COMMUNITY:    70,
 }
+
+# Specific branch configurations for genre archive repos (batch-13).
+# Each entry: list of (branch_name, commit_offset_from_end) — offset 0 = HEAD.
+GENRE_REPO_BRANCHES: dict[str, list[tuple[str, int]]] = {
+    REPO_WTC:         [("prelude-bk1", 50), ("fugue-bk1", 42), ("prelude-bk2", 20), ("fugue-bk2", 10)],
+    REPO_GOLDBERG:    [("aria-only", 30), ("variation-13-experimental", 15)],
+    REPO_NOCTURNES:   [("op9", 38), ("op15", 25), ("op27", 12)],
+    REPO_MAPLE_LEAF:  [("slow-version", 10), ("marcus-edm-remix", 5)],
+    REPO_CIN_STRINGS: [("orchestral", 20), ("stripped-piano", 8)],
+    REPO_KAI_AMBIENT: [("v1", 14), ("v2-extended", 6)],
+    REPO_NEO_BAROQUE: [("experiment/jazz-voicings", 45), ("experiment/edm-bassline", 30), ("feature/add-harpsichord", 15)],
+    REPO_JAZZ_CHOPIN: [("reharmonized", 30), ("trio-arrangement", 15)],
+    REPO_RAGTIME_EDM: [("trap-version", 28), ("house-version", 18), ("electro-swing", 8)],
+    REPO_FILM_SCORE:  [("act1", 22), ("act2", 14), ("act3", 6)],
+    REPO_POLYRHYTHM:  [("7-over-4", 16), ("5-over-3-experiment", 8)],
+    REPO_COMMUNITY:   [("sofias-counterpoint", 60), ("yukis-ornaments", 50), ("pierres-analysis", 40), ("marcuss-bassline", 25)],
+}
+
+# ---------------------------------------------------------------------------
+# Muse VCS — content-addressed MIDI objects, snapshots, commits, tags
+# ---------------------------------------------------------------------------
+
+# Track files per repo for Muse VCS — realistic MIDI instrument names and sizes.
+# Piano solo: 8KB–40KB; ensemble: 50KB–200KB (task spec).
+# Each tuple is (filename, base_size_bytes).
+MUSE_VCS_FILES: dict[str, list[tuple[str, int]]] = {
+    REPO_NEO_SOUL:     [("piano.mid", 24576),  ("bass.mid", 12288),   ("drums.mid", 16384),
+                        ("violin.mid", 18432),  ("trumpet.mid", 13312)],
+    REPO_FUNK_SUITE:   [("piano.mid", 22528),  ("bass.mid", 13312),   ("drums.mid", 16384),
+                        ("trumpet.mid", 12288), ("flute.mid", 10240)],
+    REPO_AFROBEAT:     [("bass.mid", 14336),   ("drums.mid", 18432),  ("violin.mid", 15360),
+                        ("cello.mid", 14336),   ("trumpet.mid", 12288)],
+    REPO_AMBIENT:      [("piano.mid", 32768),  ("violin.mid", 20480), ("cello.mid", 17408),
+                        ("viola.mid", 15360),   ("flute.mid", 11264)],
+    REPO_MODAL_JAZZ:   [("piano.mid", 28672),  ("bass.mid", 10240),   ("drums.mid", 14336),
+                        ("trumpet.mid", 11264)],
+    REPO_JAZZ_TRIO:    [("piano.mid", 26624),  ("bass.mid", 11264),   ("drums.mid", 13312)],
+    REPO_MICROTONAL:   [("piano.mid", 20480),  ("violin.mid", 16384), ("cello.mid", 14336)],
+    REPO_DRUM_MACHINE: [("drums.mid", 18432),  ("bass.mid", 12288)],
+    REPO_CHANSON:      [("piano.mid", 36864),  ("cello.mid", 17408)],
+    REPO_GRANULAR:     [("piano.mid", 15360),  ("violin.mid", 12288), ("flute.mid", 9216)],
+    REPO_NEO_SOUL_FORK:[("piano.mid", 24576),  ("bass.mid", 12288),   ("drums.mid", 16384)],
+    REPO_AMBIENT_FORK: [("piano.mid", 32768),  ("violin.mid", 20480), ("cello.mid", 17408)],
+}
+
+# Metadata per repo for muse_commits.metadata JSON field.
+MUSE_COMMIT_META: dict[str, dict[str, object]] = {
+    REPO_NEO_SOUL:     {"tempo_bpm": 92.0,  "key": "F# minor", "time_signature": "4/4", "instrument_count": 5},
+    REPO_FUNK_SUITE:   {"tempo_bpm": 108.0, "key": "E minor",  "time_signature": "4/4", "instrument_count": 5},
+    REPO_AFROBEAT:     {"tempo_bpm": 128.0, "key": "G major",  "time_signature": "12/8","instrument_count": 5},
+    REPO_AMBIENT:      {"tempo_bpm": 60.0,  "key": "Eb major", "time_signature": "4/4", "instrument_count": 5},
+    REPO_MODAL_JAZZ:   {"tempo_bpm": 120.0, "key": "D Dorian", "time_signature": "4/4", "instrument_count": 4},
+    REPO_JAZZ_TRIO:    {"tempo_bpm": 138.0, "key": "Bb major", "time_signature": "3/4", "instrument_count": 3},
+    REPO_MICROTONAL:   {"tempo_bpm": 76.0,  "key": "C (31-TET)","time_signature":"4/4", "instrument_count": 3},
+    REPO_DRUM_MACHINE: {"tempo_bpm": 100.0, "key": "A minor",  "time_signature": "4/4", "instrument_count": 2},
+    REPO_CHANSON:      {"tempo_bpm": 52.0,  "key": "A major",  "time_signature": "4/4", "instrument_count": 2},
+    REPO_GRANULAR:     {"tempo_bpm": 70.0,  "key": "E minor",  "time_signature": "4/4", "instrument_count": 3},
+    REPO_NEO_SOUL_FORK:{"tempo_bpm": 92.0,  "key": "F# minor", "time_signature": "4/4", "instrument_count": 3},
+    REPO_AMBIENT_FORK: {"tempo_bpm": 60.0,  "key": "Eb major", "time_signature": "4/4", "instrument_count": 3},
+}
+
+# Muse tag taxonomy — ALL values from the task spec must appear in the seed.
+MUSE_EMOTION_TAGS = [
+    "melancholic", "joyful", "tense", "serene", "triumphant",
+    "mysterious", "playful", "tender", "energetic", "complex",
+]
+MUSE_STAGE_TAGS = [
+    "sketch", "rough-mix", "arrangement", "production", "mixing", "mastering", "released",
+]
+MUSE_KEY_TAGS = [
+    "C", "Am", "G", "Em", "Bb", "F#", "Db", "Abm", "D", "Bm", "A", "F", "Eb", "Cm",
+]
+MUSE_TEMPO_TAGS = [
+    "60bpm", "72bpm", "80bpm", "96bpm", "120bpm", "132bpm", "140bpm", "160bpm",
+]
+MUSE_GENRE_TAGS = [
+    "baroque", "romantic", "ragtime", "edm", "ambient", "cinematic",
+    "jazz", "afrobeats", "classical", "fusion",
+]
+MUSE_REF_TAGS = [
+    "bach", "chopin", "debussy", "coltrane", "daft-punk", "beethoven", "joplin", "monk",
+]
+
+# Full flat list of all taxonomy tags — used when cycling through commits.
+_ALL_MUSE_TAGS: list[str] = (
+    MUSE_EMOTION_TAGS
+    + MUSE_STAGE_TAGS
+    + MUSE_KEY_TAGS
+    + MUSE_TEMPO_TAGS
+    + MUSE_GENRE_TAGS
+    + MUSE_REF_TAGS
+)
+
+# Repos that get the full rich tag taxonomy (most active, richest history).
+MUSE_RICH_TAG_REPOS = {REPO_NEO_SOUL, REPO_FUNK_SUITE}
+
+
+# ---------------------------------------------------------------------------
+# Muse variation history — DAW project constants
+# ---------------------------------------------------------------------------
+
+# Two most active DAW projects used for variation seeding.
+# project_id values are deterministic UUIDs so they survive re-seeds.
+PROJECT_NEO_BAROQUE    = _uid("project-gabriel-neo-baroque")
+PROJECT_COMMUNITY_COLLAB = _uid("project-gabriel-community-collab")
+
+PHRASE_TYPES = ["melody", "harmony", "bass", "rhythm", "pad", "lead"]
+
+VARIATION_INTENTS_NEO_BAROQUE = [
+    "Add counterpoint line above the baroque theme in bars 9-16",
+    "Reharmonize the continuo with IV-V-I instead of I-IV-V",
+    "Double the melody at the upper octave in the A section",
+    "Reduce note density in the ornament layer — too busy",
+    "Add a fermata on the penultimate chord for dramatic pause",
+    "Transpose the inner voice down a third for smoother voice-leading",
+    "Replace the parallel motion with contrary motion in bars 5-8",
+    "Add suspensions (4-3, 7-6) on the strong beats of the progression",
+    "Introduce a sequence pattern (descending thirds) in the episode",
+    "Thicken the bass line with octave doubling",
+    "Add a ritardando in the final four bars",
+    "Experiment with a Neapolitan chord before the final cadence",
+    "Restructure the ornamentation — trills only on structural beats",
+    "Add an inner pedal point on the dominant during the development",
+    "Rewrite the melodic leap (octave) as stepwise with passing tones",
+    "Apply tierce de Picardie on the final chord",
+    "Compress the sequence pattern to fit 2-bar phrases",
+    "Add imitation between soprano and bass at the interval of a 4th",
+    "Slow harmonic rhythm in the development section",
+    "Introduce a chromatic passing tone in bar 12 inner voice",
+]
+
+VARIATION_INTENTS_COMMUNITY_COLLAB = [
+    "Blend the neo-soul groove with the afrobeat polyrhythm layer",
+    "Merge gabriel's chord voicings with aaliya's bass pattern",
+    "Add marcus's funk stabs over the ambient pad foundation",
+    "Cross-fade between yuki's granular texture and sofia's arp",
+    "Combine pierre's chanson melody with the modal jazz harmony",
+    "Overlay chen's microtonal texture on the funk groove",
+    "Mix fatou's djembe pattern with the electronic kick drum",
+    "Harmonise gabriel's melody with aaliya's Yoruba vocal line",
+    "Layer marcus's Rhodes over the afrobeat rhythm section",
+    "Merge the granular scatter with the orchestral strings",
+    "Add a call-and-response between the jazz trio and the afrobeat horns",
+    "Blend microtonal pitch-bends with the neo-soul Rhodes voicing",
+    "Cross-fade the ambient pad into the funk breakdown",
+    "Combine pierre's cello with fatou's 808 bass for a hybrid outro",
+    "Layer gabriel's polyrhythm with yuki's rhythmic granular engine",
+    "Blend chen's otonal hexad with sofia's generative arpeggio",
+    "Mix aaliya's talking drum with marcus's brushed snare",
+    "Overlay the modal jazz walking bass under the afrobeat groove",
+    "Merge the Chanson ostinato with the funk electric piano stabs",
+    "Cross-fade the microtonal étude into the neo-baroque continuo",
+]
+
+TRACK_IDS_NEO_BAROQUE = [
+    _uid("track-nb-soprano"),
+    _uid("track-nb-alto"),
+    _uid("track-nb-tenor"),
+    _uid("track-nb-bass"),
+    _uid("track-nb-continuo"),
+    _uid("track-nb-violin"),
+]
+
+TRACK_IDS_COMMUNITY = [
+    _uid("track-cc-lead"),
+    _uid("track-cc-harmony"),
+    _uid("track-cc-bass"),
+    _uid("track-cc-drums"),
+    _uid("track-cc-pad"),
+    _uid("track-cc-horns"),
+]
+
+REGION_IDS_NEO_BAROQUE = [_uid(f"region-nb-{i}") for i in range(8)]
+REGION_IDS_COMMUNITY   = [_uid(f"region-cc-{i}") for i in range(8)]
+
+
+def _make_note_dict(
+    pitch: int,
+    velocity: int,
+    start_beat: float,
+    duration_beats: float,
+    track_id: str,
+    region_id: str,
+) -> NoteDict:
+    """Build a NoteDict payload for before_json / after_json."""
+    return NoteDict(
+        pitch=pitch,
+        velocity=velocity,
+        start_beat=start_beat,
+        duration_beats=duration_beats,
+        track_id=track_id,
+        region_id=region_id,
+    )
+
+
+def _make_variation_section(
+    project_id: str,
+    intents: list[str],
+    track_ids: list[str],
+    region_ids: list[str],
+    base_commit_hashes: list[str],
+    seed_prefix: str,
+) -> tuple[list[Variation], list[Phrase], list[NoteChange]]:
+    """Generate 30 variations (20 accepted, 5 discarded, 5 pending) with
+    realistic phrase and note-change children for a single DAW project.
+
+    Parent chains (draft → refined → final) are formed in groups of 3-5.
+    Three variations are merge variations with parent2_variation_id set.
+    """
+    variations: list[Variation] = []
+    phrases: list[Phrase] = []
+    note_changes: list[NoteChange] = []
+
+    # Build 30 variations. Status distribution:
+    #   [0..19] accepted, [20..24] discarded, [25..29] pending
+    STATUS_MAP = (
+        ["accepted"] * 20
+        + ["discarded"] * 5
+        + ["pending"] * 5
+    )
+
+    var_ids: list[str] = [
+        _uid(f"{seed_prefix}-var-{i}") for i in range(30)
+    ]
+
+    # Form parent chains in groups: [0-3], [4-7], [8-11], [12-15], [16-19],
+    # [20-22], [23-24], [25-27], [28-29]
+    chain_groups = [
+        [0, 1, 2, 3],   # accepted chain of 4
+        [4, 5, 6, 7],   # accepted chain of 4
+        [8, 9, 10, 11], # accepted chain of 4
+        [12, 13, 14],   # accepted chain of 3
+        [15, 16, 17, 18, 19],  # accepted chain of 5
+        [20, 21, 22],   # discarded chain of 3
+        [23, 24],       # discarded chain of 2
+        [25, 26, 27],   # pending chain of 3
+        [28, 29],       # pending chain of 2
+    ]
+
+    # Merge variations at indices 3, 7, 11 — they get parent2_variation_id
+    merge_indices = {3, 7, 11}
+    # Cross-chain parent2: index 3 merges chain [0-3] with chain [4-7] start
+    merge_parent2_map = {
+        3:  var_ids[4],   # merge from chain-2 start
+        7:  var_ids[0],   # merge from chain-1 end
+        11: var_ids[8],   # merge from chain-3 start
+    }
+
+    # Build parent_variation_id mapping
+    parent_map: dict[int, str | None] = {}
+    for chain in chain_groups:
+        for pos, idx in enumerate(chain):
+            parent_map[idx] = var_ids[chain[pos - 1]] if pos > 0 else None
+
+    now = _now()
+
+    for i in range(30):
+        status = STATUS_MAP[i]
+        intent = intents[i % len(intents)]
+        base_hash = base_commit_hashes[i % len(base_commit_hashes)]
+        parent_vid = parent_map.get(i)
+        parent2_vid = merge_parent2_map.get(i) if i in merge_indices else None
+        is_head = status == "accepted" and i == 19
+
+        var = Variation(
+            variation_id=var_ids[i],
+            project_id=project_id,
+            base_state_id=base_hash,
+            conversation_id=_uid(f"{seed_prefix}-conv-{i // 5}"),
+            intent=intent,
+            explanation=f"Variation {i+1}: {intent[:60]}",
+            status=status,
+            affected_tracks=[track_ids[i % len(track_ids)]],
+            affected_regions=[region_ids[i % len(region_ids)]],
+            beat_range_start=float((i % 8) * 8),
+            beat_range_end=float((i % 8) * 8 + 16),
+            parent_variation_id=parent_vid,
+            parent2_variation_id=parent2_vid,
+            commit_state_id=base_hash if status == "accepted" else None,
+            is_head=is_head,
+            created_at=_now(days=30 - i),
+            updated_at=_now(days=30 - i),
+        )
+        variations.append(var)
+
+        # 2-5 phrases per variation
+        phrase_count = 2 + (i % 4)
+        for p in range(phrase_count):
+            start_beat = float(((i % 8) * 8 + p * 4) % 64)
+            end_beat = start_beat + 4.0 + float((p % 3) * 4)
+            phrase_type = PHRASE_TYPES[p % len(PHRASE_TYPES)]
+            tid = track_ids[(i + p) % len(track_ids)]
+            rid = region_ids[(i + p) % len(region_ids)]
+
+            # CC events attached to phrases with sustain/expression/modulation/volume
+            cc_data = [
+                {"cc": 64, "beat": start_beat + 0.5, "value": 127},
+                {"cc": 11, "beat": start_beat + 1.0, "value": 90},
+            ] if p % 2 == 0 else [
+                {"cc": 1,  "beat": start_beat + 0.5, "value": 50},
+                {"cc": 7,  "beat": start_beat + 1.0, "value": 100},
+            ]
+
+            # Pitch bend on every third phrase
+            pitch_bends_data = (
+                [{"beat": start_beat + 2.5, "value": 4096}]
+                if p % 3 == 0 else None
+            )
+
+            phrase = Phrase(
+                phrase_id=_uid(f"{seed_prefix}-phrase-{i}-{p}"),
+                variation_id=var_ids[i],
+                sequence=p,
+                track_id=tid,
+                region_id=rid,
+                start_beat=start_beat,
+                end_beat=end_beat,
+                label=phrase_type,
+                tags=[phrase_type, "seed"],
+                explanation=f"Phrase {p+1} ({phrase_type}) of variation {i+1}",
+                cc_events=cc_data,
+                pitch_bends=pitch_bends_data,
+                aftertouch=None,
+                region_start_beat=start_beat,
+                region_duration_beats=end_beat - start_beat,
+                region_name=f"Region-{rid[:8]}",
+            )
+            phrases.append(phrase)
+
+            # 4-20 note changes per phrase
+            note_count = 4 + ((i * 3 + p * 7) % 17)
+            for n in range(note_count):
+                pitch_base = 48 + (n * 4) % 60  # MIDI 48-108
+                vel = 30 + (n * 7) % 98          # velocity 30-127
+                nb = start_beat + float(n) * 0.5
+                dur = 0.25 + float(n % 4) * 0.25 + float((n // 4) % 4) * 0.5
+
+                # Cycle through change types — canonical values from contracts/json_types.py
+                if n % 3 == 0:
+                    change_type = "added"
+                    before_j = None
+                    after_j = _make_note_dict(pitch_base, vel, nb, dur, tid, rid)
+                elif n % 3 == 1:
+                    change_type = "removed"
+                    before_j = _make_note_dict(pitch_base, vel, nb, dur, tid, rid)
+                    after_j = None
+                else:
+                    change_type = "modified"
+                    orig_pitch = pitch_base - 2
+                    orig_vel   = max(30, vel - 12)
+                    orig_beat  = nb - 0.25
+                    before_j = _make_note_dict(orig_pitch, orig_vel, orig_beat, dur, tid, rid)
+                    after_j  = _make_note_dict(pitch_base, vel, nb, dur, tid, rid)
+
+                nc = NoteChange(
+                    id=_uid(f"{seed_prefix}-nc-{i}-{p}-{n}"),
+                    phrase_id=_uid(f"{seed_prefix}-phrase-{i}-{p}"),
+                    change_type=change_type,
+                    before_json=before_j,
+                    after_json=after_j,
+                )
+                note_changes.append(nc)
+
+    return variations, phrases, note_changes
 
 
 # ---------------------------------------------------------------------------
@@ -587,6 +1368,7 @@ GENERIC_ISSUES = [
 # ---------------------------------------------------------------------------
 
 def _make_prs(repo_id: str, commits: list[dict[str, Any]], owner: str) -> list[dict[str, Any]]:
+    """Generate 4 template pull requests (open, merged, open, closed) for a repo."""
     if len(commits) < 4:
         return []
     c = commits
@@ -624,6 +1406,7 @@ def _make_prs(repo_id: str, commits: list[dict[str, Any]], owner: str) -> list[d
 # ---------------------------------------------------------------------------
 
 def _make_releases(repo_id: str, commits: list[dict[str, Any]], repo_name: str, owner: str) -> list[dict[str, Any]]:
+    """Generate 3 releases (v0.1.0 draft, v0.2.0 arrangement, v1.0.0 full) for a repo."""
     if not commits:
         return []
     return [
@@ -655,6 +1438,7 @@ def _make_releases(repo_id: str, commits: list[dict[str, Any]], repo_name: str, 
 # ---------------------------------------------------------------------------
 
 def _make_sessions(repo_id: str, owner: str, commits: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Generate 6 collaboration sessions per repo; adds a live session for high-traffic repos."""
     if len(commits) < 2:
         return []
     sess = []
@@ -716,6 +1500,13 @@ def _make_sessions(repo_id: str, owner: str, commits: list[dict[str, Any]]) -> l
 # ---------------------------------------------------------------------------
 
 async def seed(db: AsyncSession, force: bool = False) -> None:
+    """Populate all MuseHub tables with a realistic stress-test dataset.
+
+    Inserts users, repos, commits, branches, issues, PRs, releases, sessions,
+    social graph (stars, follows, watches, comments, reactions, notifications,
+    forks, view/download events), and the full Muse VCS layer (objects,
+    snapshots, commits, tags).  Pass force=True to wipe and re-seed existing data.
+    """
     print("🌱 Seeding MuseHub stress-test dataset…")
 
     result = await db.execute(text("SELECT COUNT(*) FROM musehub_repos"))
@@ -729,6 +1520,11 @@ async def seed(db: AsyncSession, force: bool = False) -> None:
     if existing > 0 and force:
         print("  🗑  --force: clearing existing seed data…")
         for tbl in [
+            # Muse variation children first (FK order)
+            "muse_note_changes", "muse_phrases", "muse_variations",
+            # Muse VCS — innermost first (tags depend on commits, commits depend on snapshots)
+            "muse_tags", "muse_commits", "muse_snapshots", "muse_objects",
+            # MuseHub
             "musehub_download_events", "musehub_view_events", "musehub_forks",
             "musehub_notifications", "musehub_watches", "musehub_follows",
             "musehub_reactions", "musehub_comments",
@@ -742,7 +1538,8 @@ async def seed(db: AsyncSession, force: bool = False) -> None:
         await db.flush()
 
     # ── 1. User profiles ──────────────────────────────────────────
-    for uid, uname, bio in USERS:
+    all_user_profiles = list(USERS) + list(COMPOSER_USERS)
+    for uid, uname, bio in all_user_profiles:
         db.add(MusehubProfile(
             user_id=uid,
             username=uname,
@@ -750,10 +1547,11 @@ async def seed(db: AsyncSession, force: bool = False) -> None:
             avatar_url=f"https://api.dicebear.com/7.x/avataaars/svg?seed={uname}",
             pinned_repo_ids=[],
         ))
-    print(f"  ✅ Profiles: {len(USERS)} users")
+    print(f"  ✅ Profiles: {len(all_user_profiles)} users ({len(USERS)} community + {len(COMPOSER_USERS)} composer/archive)")
 
     # ── 2. Repos ──────────────────────────────────────────────────
-    for r in REPOS:
+    all_repos = list(REPOS) + list(GENRE_REPOS)
+    for r in all_repos:
         db.add(MusehubRepo(
             repo_id=r["repo_id"],
             name=r["name"],
@@ -767,14 +1565,14 @@ async def seed(db: AsyncSession, force: bool = False) -> None:
             tempo_bpm=r["tempo_bpm"],
             created_at=_now(days=r["days_ago"]),
         ))
-    print(f"  ✅ Repos: {len(REPOS)}")
+    print(f"  ✅ Repos: {len(all_repos)} ({len(REPOS)} original + {len(GENRE_REPOS)} genre archive)")
 
     await db.flush()
 
-    # ── 3. Commits ────────────────────────────────────────────────
+    # ── 3. Commits + Branches ─────────────────────────────────────
     all_commits: dict[str, list[dict[str, Any]]] = {}
     total_commits = 0
-    for r in REPOS:
+    for r in all_repos:
         repo_id = r["repo_id"]
         rkey = REPO_KEY_MAP.get(repo_id, "neo-soul")
         n = COMMIT_COUNTS.get(repo_id, 20)
@@ -783,22 +1581,33 @@ async def seed(db: AsyncSession, force: bool = False) -> None:
         total_commits += len(commits)
         for c in commits:
             db.add(MusehubCommit(**c))
-        # Branches
+        # main branch always points to HEAD
         db.add(MusehubBranch(repo_id=repo_id, name="main",
                              head_commit_id=commits[-1]["commit_id"]))
-        if len(commits) > 10:
-            db.add(MusehubBranch(repo_id=repo_id, name="feat/develop",
-                                 head_commit_id=commits[-4]["commit_id"]))
-        if len(commits) > 20:
-            db.add(MusehubBranch(repo_id=repo_id, name="experiment/alternate-harmony",
-                                 head_commit_id=commits[-8]["commit_id"]))
-    print(f"  ✅ Commits: {total_commits} across {len(REPOS)} repos")
+        if repo_id in GENRE_REPO_BRANCHES:
+            # Genre archive repos: use specific named branches
+            for branch_name, offset in GENRE_REPO_BRANCHES[repo_id]:
+                idx = max(0, len(commits) - 1 - offset)
+                db.add(MusehubBranch(
+                    repo_id=repo_id,
+                    name=branch_name,
+                    head_commit_id=commits[idx]["commit_id"],
+                ))
+        else:
+            # Original repos: generic feature branches
+            if len(commits) > 10:
+                db.add(MusehubBranch(repo_id=repo_id, name="feat/develop",
+                                     head_commit_id=commits[-4]["commit_id"]))
+            if len(commits) > 20:
+                db.add(MusehubBranch(repo_id=repo_id, name="experiment/alternate-harmony",
+                                     head_commit_id=commits[-8]["commit_id"]))
+    print(f"  ✅ Commits: {total_commits} across {len(all_repos)} repos")
 
     await db.flush()
 
     # ── 4. Objects (track breakdown bar) ──────────────────────────
     obj_count = 0
-    for r in REPOS:
+    for r in all_repos:
         repo_id = r["repo_id"]
         rkey = REPO_KEY_MAP.get(repo_id, "neo-soul")
         tracks = REPO_TRACKS.get(rkey, REPO_TRACKS["neo-soul"])
@@ -825,7 +1634,7 @@ async def seed(db: AsyncSession, force: bool = False) -> None:
 
     # ── 5. Issues ─────────────────────────────────────────────────
     issue_count = 0
-    for r in REPOS:
+    for r in all_repos:
         repo_id = r["repo_id"]
         rkey = REPO_KEY_MAP.get(repo_id, "neo-soul")
         issue_list = ISSUE_TEMPLATES.get(rkey, GENERIC_ISSUES)
@@ -849,7 +1658,7 @@ async def seed(db: AsyncSession, force: bool = False) -> None:
     # ── 6. Pull Requests ──────────────────────────────────────────
     pr_count = 0
     pr_ids: dict[str, list[str]] = {}
-    for r in REPOS:
+    for r in all_repos:
         repo_id = r["repo_id"]
         commits = all_commits.get(repo_id, [])
         prs = _make_prs(repo_id, commits, r["owner"])
@@ -864,7 +1673,7 @@ async def seed(db: AsyncSession, force: bool = False) -> None:
     # ── 7. Releases ───────────────────────────────────────────────
     release_count = 0
     release_tags: dict[str, list[str]] = {}
-    for r in REPOS:
+    for r in all_repos:
         repo_id = r["repo_id"]
         commits = all_commits.get(repo_id, [])
         releases = _make_releases(repo_id, commits, r["name"], r["owner"])
@@ -879,7 +1688,7 @@ async def seed(db: AsyncSession, force: bool = False) -> None:
     # ── 8. Sessions ───────────────────────────────────────────────
     session_count = 0
     session_ids: dict[str, list[str]] = {}
-    for r in REPOS:
+    for r in all_repos:
         repo_id = r["repo_id"]
         commits = all_commits.get(repo_id, [])
         sessions = _make_sessions(repo_id, r["owner"], commits)
@@ -1135,6 +1944,234 @@ async def seed(db: AsyncSession, force: bool = False) -> None:
             dl_count += 1
     print(f"  ✅ Download events: {dl_count}")
 
+    # ── 18. Muse variations, phrases, note changes ────────────────
+    # Collect stable commit hashes from the two most active repos as base
+    # state IDs.  muse_variations.base_state_id links a variation to the DAW
+    # snapshot it was proposed against — we reuse musehub commit hashes as a
+    # realistic stand-in for DAW project state hashes.
+    neo_commits  = all_commits.get(REPO_NEO_SOUL, [])
+    jazz_commits = all_commits.get(REPO_MODAL_JAZZ, [])
+    neo_hashes  = [c["commit_id"] for c in neo_commits[-15:]]  or [_sha("nb-fallback")]
+    jazz_hashes = [c["commit_id"] for c in jazz_commits[-15:]] or [_sha("cc-fallback")]
+
+    var_nb, phrase_nb, nc_nb = _make_variation_section(
+        project_id=PROJECT_NEO_BAROQUE,
+        intents=VARIATION_INTENTS_NEO_BAROQUE,
+        track_ids=TRACK_IDS_NEO_BAROQUE,
+        region_ids=REGION_IDS_NEO_BAROQUE,
+        base_commit_hashes=neo_hashes,
+        seed_prefix="nb",
+    )
+    var_cc, phrase_cc, nc_cc = _make_variation_section(
+        project_id=PROJECT_COMMUNITY_COLLAB,
+        intents=VARIATION_INTENTS_COMMUNITY_COLLAB,
+        track_ids=TRACK_IDS_COMMUNITY,
+        region_ids=REGION_IDS_COMMUNITY,
+        base_commit_hashes=jazz_hashes,
+        seed_prefix="cc",
+    )
+
+    all_variations  = var_nb  + var_cc
+    all_phrases     = phrase_nb + phrase_cc
+    all_note_changes = nc_nb  + nc_cc
+
+    for var in all_variations:
+        db.add(var)
+    await db.flush()
+
+    for ph in all_phrases:
+        db.add(ph)
+    await db.flush()
+
+    for nc in all_note_changes:
+        db.add(nc)
+    await db.flush()
+
+    print(f"  ✅ Variations: {len(all_variations)} ({len(var_nb)} neo-baroque, {len(var_cc)} community-collab)")
+    print(f"  ✅ Phrases: {len(all_phrases)}")
+    print(f"  ✅ Note changes: {len(all_note_changes)}")
+    # ── 19. Muse VCS — muse_objects, muse_snapshots, muse_commits, muse_tags ─
+    #
+    # Inserts content-addressed MIDI blobs, snapshot manifests, a proper DAG
+    # of Muse commits (including merge commits), and the full tag taxonomy.
+    #
+    # Insertion order respects FK constraints:
+    #   muse_objects → muse_snapshots → muse_commits → muse_tags
+    #
+    muse_obj_count = 0
+    muse_snap_count = 0
+    muse_commit_count = 0
+    muse_tag_count = 0
+
+    # Running objects pool so the same content can be deduplicated across
+    # snapshots (object_ids that haven't changed reuse the same sha256).
+    # Structure: repo_id → {filename: object_id}
+    _prev_objects: dict[str, dict[str, str]] = {}
+
+    for r in REPOS:
+        repo_id = r["repo_id"]
+        hub_commits = all_commits.get(repo_id, [])
+        if not hub_commits:
+            continue
+
+        track_files = MUSE_VCS_FILES.get(repo_id, MUSE_VCS_FILES[REPO_AMBIENT])
+        meta = MUSE_COMMIT_META.get(repo_id, MUSE_COMMIT_META[REPO_AMBIENT])
+        is_rich = repo_id in MUSE_RICH_TAG_REPOS
+
+        prev_objects: dict[str, str] = {}  # filename → object_id for this repo
+        muse_commit_ids: list[str] = []    # ordered muse commit_ids for this repo
+
+        for i, hub_c in enumerate(hub_commits):
+            snap_seed = f"snap-muse-{repo_id}-{i}"
+            committed_at = hub_c["timestamp"]
+
+            # Build this commit's object set.
+            # Every commit, ~2 files "change" (get fresh object_ids).
+            # The rest reuse from the previous commit — simulating deduplication.
+            changed_indices = {i % len(track_files), (i + 2) % len(track_files)}
+            commit_objects: dict[str, str] = {}
+
+            for fi, (fname, base_size) in enumerate(track_files):
+                if fi in changed_indices or fname not in prev_objects:
+                    # New or modified file → fresh content-addressed blob.
+                    obj_id = _sha(f"midi-{repo_id}-{fname}-v{i}")
+                    size = base_size + (i * 128) % 4096
+                    await db.execute(
+                        text(
+                            "INSERT INTO muse_objects (object_id, size_bytes, created_at)"
+                            " VALUES (:oid, :sz, :ca)"
+                            " ON CONFLICT (object_id) DO NOTHING"
+                        ),
+                        {"oid": obj_id, "sz": size, "ca": committed_at},
+                    )
+                    muse_obj_count += 1
+                else:
+                    # Unchanged file → reuse previous object_id (deduplication).
+                    obj_id = prev_objects[fname]
+                commit_objects[fname] = obj_id
+
+            prev_objects = commit_objects
+
+            # Snapshot — manifest maps track paths to object_ids.
+            snapshot_id = _sha(snap_seed)
+            manifest: dict[str, str] = {f"tracks/{fname}": oid for fname, oid in commit_objects.items()}
+            await db.execute(
+                text(
+                    "INSERT INTO muse_snapshots (snapshot_id, manifest, created_at)"
+                    " VALUES (:sid, :manifest, :ca)"
+                    " ON CONFLICT (snapshot_id) DO NOTHING"
+                ),
+                {"sid": snapshot_id, "manifest": manifest, "ca": committed_at},
+            )
+            muse_snap_count += 1
+
+            # Muse commit — derives its ID from snapshot + parent + message.
+            parent_id: str | None = muse_commit_ids[-1] if muse_commit_ids else None
+            # Merge commit every 7 commits (from commit 7 onward) — parent2 is the
+            # commit from 5 positions back, simulating a merged feature branch.
+            # Interval of 7 guarantees ≥5 merges per repo for repos with ≥35 commits.
+            parent2_id: str | None = None
+            if i >= 7 and i % 7 == 0 and len(muse_commit_ids) >= 6:
+                parent2_id = muse_commit_ids[-6]
+
+            commit_id = _sha(f"muse-c-{snapshot_id}-{parent_id or ''}-{hub_c['message']}")
+            await db.execute(
+                text(
+                    "INSERT INTO muse_commits"
+                    " (commit_id, repo_id, branch, parent_commit_id, parent2_commit_id,"
+                    "  snapshot_id, message, author, committed_at, created_at, metadata)"
+                    " VALUES"
+                    " (:cid, :rid, :branch, :pid, :p2id,"
+                    "  :sid, :msg, :author, :cat, :cat, :meta)"
+                    " ON CONFLICT (commit_id) DO NOTHING"
+                ),
+                {
+                    "cid":    commit_id,
+                    "rid":    repo_id,
+                    "branch": hub_c["branch"],
+                    "pid":    parent_id,
+                    "p2id":   parent2_id,
+                    "sid":    snapshot_id,
+                    "msg":    hub_c["message"],
+                    "author": hub_c["author"],
+                    "cat":    committed_at,
+                    "meta":   meta,
+                },
+            )
+            muse_commit_ids.append(commit_id)
+            muse_commit_count += 1
+
+            # Tags: apply cycling taxonomy to every commit.
+            # Rich repos get ALL taxonomy values; others get a representative subset.
+            if is_rich:
+                # Cycle through all 57 tag values across commits so every value appears.
+                tag_val = _ALL_MUSE_TAGS[i % len(_ALL_MUSE_TAGS)]
+                tag_vals = [tag_val]
+                # Also add a second tag from a different category group.
+                second_idx = (i + len(MUSE_EMOTION_TAGS)) % len(_ALL_MUSE_TAGS)
+                if second_idx != i % len(_ALL_MUSE_TAGS):
+                    tag_vals.append(_ALL_MUSE_TAGS[second_idx])
+            else:
+                # Non-rich repos get one tag per commit drawn from a trimmed pool.
+                _trimmed = MUSE_EMOTION_TAGS + MUSE_STAGE_TAGS + MUSE_GENRE_TAGS
+                tag_vals = [_trimmed[i % len(_trimmed)]]
+
+            for tag_val in tag_vals:
+                tag_id = _uid(f"muse-tag-{commit_id}-{tag_val}")
+                await db.execute(
+                    text(
+                        "INSERT INTO muse_tags (tag_id, repo_id, commit_id, tag, created_at)"
+                        " VALUES (:tid, :rid, :cid, :tag, :ca)"
+                        " ON CONFLICT (tag_id) DO NOTHING"
+                    ),
+                    {"tid": tag_id, "rid": repo_id, "cid": commit_id,
+                     "tag": tag_val, "ca": committed_at},
+                )
+                muse_tag_count += 1
+
+        _prev_objects[repo_id] = prev_objects
+
+    # Ensure every tag taxonomy value appears at least once in REPO_NEO_SOUL.
+    # Walk through ALL values and seed any that haven't been covered yet.
+    if all_commits.get(REPO_NEO_SOUL):
+        hub_commits_ns = all_commits[REPO_NEO_SOUL]
+        muse_ids_ns: list[str] = []
+        for i, hub_c in enumerate(hub_commits_ns):
+            snap_seed = f"snap-muse-{REPO_NEO_SOUL}-{i}"
+            snapshot_id = _sha(snap_seed)
+            parent_id_ns: str | None = muse_ids_ns[-1] if muse_ids_ns else None
+            commit_id_ns = _sha(f"muse-c-{snapshot_id}-{parent_id_ns or ''}-{hub_c['message']}")
+            muse_ids_ns.append(commit_id_ns)
+
+        # Fetch existing tags for REPO_NEO_SOUL.
+        result = await db.execute(
+            text("SELECT tag FROM muse_tags WHERE repo_id = :rid"),
+            {"rid": REPO_NEO_SOUL},
+        )
+        existing_tags: set[str] = {row[0] for row in result.fetchall()}
+        missing_tags = [t for t in _ALL_MUSE_TAGS if t not in existing_tags]
+
+        for j, missing_tag in enumerate(missing_tags):
+            commit_id_ns = muse_ids_ns[j % len(muse_ids_ns)]
+            committed_at_ns = hub_commits_ns[j % len(hub_commits_ns)]["timestamp"]
+            tag_id = _uid(f"muse-tag-fill-{REPO_NEO_SOUL}-{missing_tag}")
+            await db.execute(
+                text(
+                    "INSERT INTO muse_tags (tag_id, repo_id, commit_id, tag, created_at)"
+                    " VALUES (:tid, :rid, :cid, :tag, :ca)"
+                    " ON CONFLICT (tag_id) DO NOTHING"
+                ),
+                {"tid": tag_id, "rid": REPO_NEO_SOUL, "cid": commit_id_ns,
+                 "tag": missing_tag, "ca": committed_at_ns},
+            )
+            muse_tag_count += 1
+
+    await db.flush()
+    print(f"  ✅ Muse objects:    {muse_obj_count} blobs")
+    print(f"  ✅ Muse snapshots:  {muse_snap_count} manifests")
+    print(f"  ✅ Muse commits:    {muse_commit_count} (DAG; includes merge commits)")
+    print(f"  ✅ Muse tags:       {muse_tag_count} (full taxonomy)")
+
     await db.commit()
     print()
     _print_urls(all_commits, session_ids, pr_ids, release_tags)
@@ -1146,6 +2183,7 @@ def _print_urls(
     pr_ids: dict[str, list[str]] | None = None,
     release_tags: dict[str, list[str]] | None = None,
 ) -> None:
+    """Print all seeded MuseHub URLs to stdout for manual browser verification."""
     BASE = "http://localhost:10001/musehub/ui"
     print()
     print("=" * 72)
@@ -1153,7 +2191,7 @@ def _print_urls(
     print("=" * 72)
 
     print("\n── User profiles ────────────────────────────────────────────────")
-    for _, uname, _ in USERS:
+    for _, uname, _ in list(USERS) + list(COMPOSER_USERS):
         print(f"  {BASE}/users/{uname}")
         print(f"  {BASE}/{uname}  (redirects → above)")
 
@@ -1163,7 +2201,8 @@ def _print_urls(
     print(f"  {BASE}/search")
     print(f"  {BASE}/feed")
 
-    for r in REPOS[:8]:  # Skip fork repos from URL dump
+    all_repos_for_urls = list(REPOS[:8]) + list(GENRE_REPOS)
+    for r in all_repos_for_urls:  # Skip fork repos from URL dump
         owner, slug = r["owner"], r["slug"]
         repo_id = r["repo_id"]
         rbase = f"{BASE}/{owner}/{slug}"
@@ -1206,10 +2245,11 @@ def _print_urls(
 
 
 async def main() -> None:
+    """CLI entry point. Pass --force to wipe existing seed data before re-seeding."""
     force = "--force" in sys.argv
     db_url: str = settings.database_url or ""
     engine = create_async_engine(db_url, echo=False)
-    async_session = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)  # type: ignore[call-overload]
+    async_session = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)  # type: ignore[call-overload]  # SQLAlchemy typing: sessionmaker + class_=AsyncSession overload not reflected in stubs
     async with async_session() as db:
         await seed(db, force=force)
     await engine.dispose()
