@@ -2182,3 +2182,188 @@ async def test_list_my_repos_service_direct(db_session: AsyncSession) -> None:
     repo_ids = {r.repo_id for r in result.repos}
     assert str(repo_mine.repo_id) in repo_ids
     assert str(repo_other.repo_id) not in repo_ids
+
+
+# ---------------------------------------------------------------------------
+# GET /repos/{repo_id}/collaborators/{username}/permission  (issue #424)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.anyio
+async def test_collab_access_owner_returns_owner_permission(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    auth_headers: dict[str, str],
+) -> None:
+    """Owner's username returns permission='owner' with accepted_at=null."""
+    from maestro.db.musehub_collaborator_models import MusehubCollaborator
+
+    owner_id = TEST_OWNER_USER_ID
+    repo = MusehubRepo(
+        name="access-owner-test",
+        owner="testuser",
+        slug="access-owner-test",
+        visibility="private",
+        owner_user_id=owner_id,
+    )
+    db_session.add(repo)
+    await db_session.commit()
+    await db_session.refresh(repo)
+
+    resp = await client.get(
+        f"/api/v1/musehub/repos/{repo.repo_id}/collaborators/{owner_id}/permission",
+        headers=auth_headers,
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["username"] == owner_id
+    assert body["permission"] == "owner"
+    assert body["acceptedAt"] is None
+
+
+@pytest.mark.anyio
+async def test_collab_access_collaborator_returns_permission(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    auth_headers: dict[str, str],
+) -> None:
+    """A known collaborator returns their permission level and accepted_at."""
+    from datetime import datetime, timezone
+
+    from maestro.db.musehub_collaborator_models import MusehubCollaborator
+
+    owner_id = TEST_OWNER_USER_ID
+    collab_user_id = "collab-user-write"
+
+    repo = MusehubRepo(
+        name="access-collab-test",
+        owner="testuser",
+        slug="access-collab-test",
+        visibility="private",
+        owner_user_id=owner_id,
+    )
+    db_session.add(repo)
+    await db_session.commit()
+    await db_session.refresh(repo)
+
+    accepted = datetime(2026, 1, 10, 10, 0, 0, tzinfo=timezone.utc)
+    collab = MusehubCollaborator(
+        repo_id=str(repo.repo_id),
+        user_id=collab_user_id,
+        permission="write",
+        accepted_at=accepted,
+    )
+    db_session.add(collab)
+    await db_session.commit()
+
+    resp = await client.get(
+        f"/api/v1/musehub/repos/{repo.repo_id}/collaborators/{collab_user_id}/permission",
+        headers=auth_headers,
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["username"] == collab_user_id
+    assert body["permission"] == "write"
+    assert body["acceptedAt"] is not None
+
+
+@pytest.mark.anyio
+async def test_collab_access_non_collaborator_returns_404(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    auth_headers: dict[str, str],
+) -> None:
+    """A user who is not a collaborator returns 404 with an informative message."""
+    repo = MusehubRepo(
+        name="access-404-test",
+        owner="testuser",
+        slug="access-404-test",
+        visibility="private",
+        owner_user_id=TEST_OWNER_USER_ID,
+    )
+    db_session.add(repo)
+    await db_session.commit()
+    await db_session.refresh(repo)
+
+    stranger = "total-stranger-user"
+    resp = await client.get(
+        f"/api/v1/musehub/repos/{repo.repo_id}/collaborators/{stranger}/permission",
+        headers=auth_headers,
+    )
+    assert resp.status_code == 404
+    assert stranger in resp.json()["detail"]
+
+
+@pytest.mark.anyio
+async def test_collab_access_unknown_repo_returns_404(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+) -> None:
+    """Querying an unknown repo_id returns 404."""
+    resp = await client.get(
+        "/api/v1/musehub/repos/nonexistent-repo/collaborators/anyone/permission",
+        headers=auth_headers,
+    )
+    assert resp.status_code == 404
+
+
+@pytest.mark.anyio
+async def test_collab_access_requires_auth(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """GET /collaborators/{username}/permission returns 401 without a Bearer token."""
+    repo = MusehubRepo(
+        name="access-auth-test",
+        owner="testuser",
+        slug="access-auth-test",
+        visibility="public",
+        owner_user_id=TEST_OWNER_USER_ID,
+    )
+    db_session.add(repo)
+    await db_session.commit()
+    await db_session.refresh(repo)
+
+    resp = await client.get(
+        f"/api/v1/musehub/repos/{repo.repo_id}/collaborators/anyone/permission"
+    )
+    assert resp.status_code == 401
+
+
+@pytest.mark.anyio
+async def test_collab_access_admin_permission(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    auth_headers: dict[str, str],
+) -> None:
+    """A collaborator with admin permission returns permission='admin'."""
+    from maestro.db.musehub_collaborator_models import MusehubCollaborator
+
+    repo = MusehubRepo(
+        name="access-admin-test",
+        owner="testuser",
+        slug="access-admin-test",
+        visibility="private",
+        owner_user_id=TEST_OWNER_USER_ID,
+    )
+    db_session.add(repo)
+    await db_session.commit()
+    await db_session.refresh(repo)
+
+    admin_user = "admin-collab-user"
+    collab = MusehubCollaborator(
+        repo_id=str(repo.repo_id),
+        user_id=admin_user,
+        permission="admin",
+        accepted_at=None,
+    )
+    db_session.add(collab)
+    await db_session.commit()
+
+    resp = await client.get(
+        f"/api/v1/musehub/repos/{repo.repo_id}/collaborators/{admin_user}/permission",
+        headers=auth_headers,
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["permission"] == "admin"

@@ -5,7 +5,9 @@ Endpoint summary:
   POST   /musehub/repos/{repo_id}/collaborators                          — invite collaborator (auth required, admin+)
   PUT    /musehub/repos/{repo_id}/collaborators/{user_id}/permission     — update permission level (auth required, admin+)
   DELETE /musehub/repos/{repo_id}/collaborators/{user_id}               — remove collaborator (auth required, admin+)
-  GET    /musehub/repos/{repo_id}/collaborators/{user_id}/permission     — check collaborator status and permission level (auth required)
+
+  The read-only access-check endpoint (GET /repos/{repo_id}/collaborators/{username}/permission)
+  lives in repos.py — it has a different response shape and 404-on-absence semantics.
 
 Permission hierarchy: owner > admin > write > read
 
@@ -93,14 +95,6 @@ class CollaboratorListResponse(CamelModel):
 
     collaborators: list[CollaboratorResponse]
     total: int = Field(..., description="Total number of collaborators")
-
-
-class CollaboratorPermissionResponse(CamelModel):
-    """Response for the permission-check endpoint."""
-
-    user_id: str
-    is_collaborator: bool
-    permission: str | None = Field(None, description="Permission level if the user is a collaborator")
 
 
 # ── Helper ───────────────────────────────────────────────────────────────────
@@ -362,41 +356,3 @@ async def remove_collaborator(
     )
 
 
-@router.get(
-    "/repos/{repo_id}/collaborators/{user_id}/permission",
-    response_model=CollaboratorPermissionResponse,
-    operation_id="checkCollaboratorPermission",
-    summary="Check if a user is a collaborator and their permission level",
-)
-async def check_collaborator_permission(
-    repo_id: str,
-    user_id: str,
-    db: AsyncSession = Depends(get_db),
-    token: TokenClaims = Depends(require_valid_token),
-) -> CollaboratorPermissionResponse:
-    """Return collaborator status and permission level for *user_id* on *repo_id*.
-
-    Returns ``is_collaborator: false`` (with ``permission: null``) if the user
-    is not currently a collaborator rather than raising 404, so callers can
-    safely use this as a presence check without special-casing the error.
-    """
-    repo = await musehub_repository.get_repo(db, repo_id)
-    if repo is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repo not found")
-
-    result = await db.execute(
-        select(MusehubCollaborator).where(
-            MusehubCollaborator.repo_id == repo_id,
-            MusehubCollaborator.user_id == user_id,
-        )
-    )
-    collab = result.scalar_one_or_none()
-
-    if collab is None:
-        return CollaboratorPermissionResponse(user_id=user_id, is_collaborator=False, permission=None)
-
-    return CollaboratorPermissionResponse(
-        user_id=user_id,
-        is_collaborator=True,
-        permission=str(collab.permission),
-    )

@@ -2366,3 +2366,29 @@ class BlameResponse(CamelModel):
         default=0,
         description="Total number of blame entries in the response",
     )
+
+
+# ── Collaborator access-check model ─────────────────────────────────────────
+
+
+class CollaboratorAccessResponse(CamelModel):
+    """Response for the collaborator access-check endpoint.
+
+    Returns the effective permission level for a given username on a repo.
+    The owner's effective permission is always ``"owner"``.  Non-collaborators
+    are reported as 404 rather than returning a ``"none"`` permission value,
+    so callers can distinguish a known absence (404) from a positive result.
+
+    ``accepted_at`` is ``null`` for the repo owner (ownership is immediate)
+    and for collaborators whose invitation is still pending acceptance.
+    """
+
+    username: str = Field(..., description="User identifier supplied in the request path")
+    permission: str = Field(
+        ...,
+        description="Effective permission level: 'read' | 'write' | 'admin' | 'owner'",
+    )
+    accepted_at: datetime | None = Field(
+        None,
+        description="UTC timestamp when the collaborator accepted the invitation; null for owners",
+    )
