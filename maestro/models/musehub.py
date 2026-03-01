@@ -514,6 +514,20 @@ class IssueAssignRequest(CamelModel):
     )
 
 
+class IssueLabelAssignRequest(CamelModel):
+    """Body for POST /musehub/repos/{repo_id}/issues/{number}/labels.
+
+    Replaces the entire label list on the issue.  To append labels, fetch the
+    current list first, merge client-side, and post the merged result.
+    """
+
+    labels: list[str] = Field(
+        ...,
+        description="Replacement label list for the issue",
+        examples=[["harmony", "needs-review"]],
+    )
+
+
 # ── Pull request models ────────────────────────────────────────────────────────
 
 
