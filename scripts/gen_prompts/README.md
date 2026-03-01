@@ -35,16 +35,51 @@ bash scripts/gen_prompts/sync_labels.sh
 
 ```
 scripts/gen_prompts/
-  config.yaml                ← edit this to reconfigure a run
-  generate.py                ← run this to regenerate .cursor/ files
-  sync_labels.sh             ← auto-generated; run once to sync GitHub labels
-  COGNITIVE_ARCHITECTURE_SPEC.md  ← spec for the cognitive architecture mixer
-  cognitive_archetypes/      ← YAML component library for agent cognition
-    personality/
-    archetype/
-    skill_domain/
-    decision_framework/
-  templates/
+  config.yaml                      ← edit this to reconfigure a run
+  generate.py                      ← run this to regenerate .cursor/ files
+  sync_labels.sh                   ← auto-generated; run once to sync GitHub labels
+  COGNITIVE_ARCHITECTURE_SPEC.md   ← full spec for the cognitive architecture mixer
+  README.md                        ← this file
+  cognitive_archetypes/            ← YAML component library (4-layer inheritance)
+    atoms/                         ← Layer 0: primitive cognitive dimensions
+      epistemic_style.yaml         #   how knowledge is acquired/validated
+      cognitive_rhythm.yaml        #   pacing and work structure
+      creativity_level.yaml        #   conventional → inventive → disruptive
+      quality_bar.yaml             #   pragmatic → craftsman → perfectionist
+      error_posture.yaml           #   fail_loud / fail_safe / retry_first / escalate
+      communication_style.yaml     #   terse / expository / socratic / visual
+      scope_instinct.yaml          #   minimal / comprehensive / opportunistic / scoped
+      uncertainty_handling.yaml    #   probabilistic / conservative / aggressive
+      collaboration_posture.yaml   #   autonomous / consultative / delegating / pair
+      mental_model.yaml            #   systems / objects / functions / flows
+    skill_domains/                 ← Layer 1: technical expertise (orthogonal to personality)
+      python.yaml                  #   FastAPI, Pydantic v2, async, mypy strict
+      audio_midi.yaml              #   MIDI pipeline, GM, Storpheus, Orpheus
+      devops.yaml                  #   Docker Compose, containers, service reliability
+      ml_ai.yaml                   #   LLM APIs, RAG, embedding, OpenRouter
+    archetypes/                    ← Layer 2: named bundles of atoms (inheritable)
+      the_architect.yaml           #   deductive + deep_focus + systems + craftsman
+      the_guardian.yaml            #   deductive + fail_loud + perfectionist + minimal
+      the_pragmatist.yaml          #   abductive + iterative + pragmatic + scoped
+      the_visionary.yaml           #   analogical + exploratory + inventive + comprehensive
+      the_scholar.yaml             #   inductive + exploratory + perfectionist + functions
+      the_hacker.yaml              #   empirical + burst + creative + expedient + flows
+      the_mentor.yaml              #   empirical + pair + socratic + craftsman + opportunistic
+      the_operator.yaml            #   empirical + deep_focus + retry_first + pragmatic
+    figures/                       ← Layer 3: historical figures (extend archetypes)
+      einstein.yaml                #   → the_visionary  (abductive, gedankenexperiment)
+      turing.yaml                  #   → the_architect  (formal machines, computability)
+      von_neumann.yaml             #   → the_scholar    (burst, comprehensive, cross-domain)
+      dijkstra.yaml                #   → the_guardian   (terse, correctness-by-construction)
+      feynman.yaml                 #   → the_mentor     (empirical, socratic, great explainer)
+      hopper.yaml                  #   → the_hacker     (builds tools that build tools)
+      shannon.yaml                 #   → the_architect  (information theory, flows, entropy)
+      lovelace.yaml                #   → the_visionary  (sees the machine behind the machine)
+      knuth.yaml                   #   → the_guardian   (programs as literature, loop invariants)
+      hamming.yaml                 #   → the_pragmatist (work on the important problems)
+      mccarthy.yaml                #   → the_architect  (formalize first, solve within formalism)
+      ritchie.yaml                 #   → the_operator   (minimal tools that compose cleanly)
+  templates/                       ← Jinja2 templates for all .cursor/ prompt files
     roles/
       cto.md.j2
       engineering-manager.md.j2
@@ -135,11 +170,74 @@ and description for labels that do.
 
 ## Cognitive Architecture Mixer
 
-See `COGNITIVE_ARCHITECTURE_SPEC.md` for the full design. In short: the
-`cognitive_archetypes/` directory holds YAML component definitions
-(personality, archetype, skill domain, decision framework, etc.). The
-engineering-manager selects and injects components per task, creating a
-custom cognitive architecture for each leaf agent.
+See `COGNITIVE_ARCHITECTURE_SPEC.md` for the full design.
+
+### The 4-Layer Inheritance Model
+
+```
+Layer 3: FIGURES        Einstein, Turing, von Neumann, Dijkstra, Feynman ...
+              ↑ extends
+Layer 2: ARCHETYPES     the_architect, the_scholar, the_visionary, the_guardian ...
+              ↑ composed from
+Layer 1: SKILL DOMAINS  python, audio_midi, devops, ml_ai ...
+              ↑ orthogonal
+Layer 0: ATOMS          epistemic_style, cognitive_rhythm, creativity_level ...
+```
+
+**Atoms** are primitive cognitive genes — each has a small set of named values
+(e.g. `epistemic_style: deductive | inductive | abductive | analogical | empirical`).
+Each value carries a `prompt_fragment` — actual text that gets injected into the agent.
+
+**Archetypes** bundle atoms into named characters (`the_architect`, `the_guardian`, etc.).
+
+**Figures** extend archetypes and override specific atoms, carrying a narrative
+`prompt_injection` written in the figure's voice.
+
+### Usage in `.agent-task`
+
+The engineering-manager writes `COGNITIVE_ARCH` to `.agent-task` at spawn time:
+
+```bash
+ISSUE=671
+WORKTREE="$HOME/.cursor/worktrees/maestro/issue-671"
+ROLE_FILE="$HOME/.cursor/roles/python-developer.md"
+ISSUE_LABEL="agentception/2-telemetry"
+SPAWN_MODE=direct
+COGNITIVE_ARCH=dijkstra+python        # figure + skill domain
+```
+
+### Selection Examples
+
+| Task signal | Suggested `COGNITIVE_ARCH` |
+|-------------|---------------------------|
+| Type errors / mypy failures | `dijkstra+python` |
+| New test coverage | `feynman+python` |
+| Phase 0 scaffold / foundation | `the_architect` |
+| Performance problem | `von_neumann` or `knuth` |
+| API design / interface | `the_architect` or `shannon` |
+| Bug investigation | `the_guardian` |
+| Refactor / cleanup | `hopper` |
+| Documentation | `feynman` |
+| Default / no signal | `the_pragmatist+python` |
+
+### Blend Multiple Figures
+
+```bash
+COGNITIVE_ARCH=turing,feynman         # Turing's rigor + Feynman's pedagogy
+COGNITIVE_ARCH=von_neumann,hopper     # von Neumann's breadth + Hopper's pragmatism
+```
+
+When blending, conflicting atoms are resolved left-to-right (first listed wins).
+
+### Adding a New Figure
+
+1. Create `cognitive_archetypes/figures/<id>.yaml` extending any archetype.
+2. Specify only the atoms that differ from the archetype in `overrides:`.
+3. Write the `prompt_injection.prefix` in the figure's authentic voice.
+4. Reference the figure by ID in `COGNITIVE_ARCH` in any `.agent-task`.
+
+No generator run needed — figures are read at agent spawn time by `resolve_arch.py`
+(the companion resolver script, to be implemented as a follow-on).
 
 ## Dependencies
 
