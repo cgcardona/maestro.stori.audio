@@ -94,6 +94,25 @@ class TestJsonOrHtml:
         assert resp.status_code == 200
         assert resp.headers["content-type"].startswith("text/html")
 
+    def test_bot_ua_html_response_includes_discovery_header(self) -> None:
+        """json_or_html wires add_json_available_header into the HTML path."""
+        resp = _client.get(
+            "/test-page",
+            headers={"User-Agent": "claude-agent/1.0"},
+        )
+        assert resp.status_code == 200
+        assert resp.headers["content-type"].startswith("text/html")
+        assert resp.headers.get("x-musehub-json-available") == "true"
+
+    def test_browser_ua_html_response_omits_discovery_header(self) -> None:
+        """json_or_html does not add discovery header for browser User-Agents."""
+        resp = _client.get(
+            "/test-page",
+            headers={"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 14) AppleWebKit/537.36"},
+        )
+        assert resp.status_code == 200
+        assert "x-musehub-json-available" not in resp.headers
+
     def test_accept_json_with_quality_returns_json(self) -> None:
         resp = _client.get(
             "/test-page",

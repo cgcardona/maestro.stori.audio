@@ -70,7 +70,7 @@ def json_or_html(
             }
         )
     logger.debug("✅ json_or_html: HTML path — %s", str(request.url))
-    return template_fn()
+    return add_json_available_header(template_fn(), request)
 
 
 def add_json_available_header(response: Response, request: Request) -> Response:
