@@ -8121,11 +8121,136 @@ async def test_commit_page_context_passes_listen_and_embed_urls(
 
 
 # ---------------------------------------------------------------------------
+# Issue #442 — Repo landing page enrichment panels
 # Explore page — filter sidebar + inline audio preview (issue #444)
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.anyio
+async def test_repo_home_contributors_panel_js(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Repo home page includes the contributors panel JS (issue #442).
+
+    The panel calls the /credits endpoint and renders top-10 contributor
+    avatars linked to user profile pages with a commit count badge.
+    """
+    repo = MusehubRepo(
+        name="contrib-panel-test",
+        owner="contribowner",
+        slug="contrib-panel-test",
+        visibility="public",
+        owner_user_id="contrib-uid",
+    )
+    db_session.add(repo)
+    await db_session.commit()
+
+    response = await client.get("/musehub/ui/contribowner/contrib-panel-test")
+    assert response.status_code == 200
+    body = response.text
+    assert "loadContributors" in body
+    assert "contributors-panel" in body
+    assert "contrib-avatar" in body
+    assert "contrib-badge" in body
+    assert "credits" in body
+
+
+@pytest.mark.anyio
+async def test_repo_home_activity_heatmap_js(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Repo home page includes the activity heatmap JS (issue #442).
+
+    The heatmap renders a 52-week GitHub-style grid from commit timestamps
+    with tooltip-on-hover showing date and commit count.
+    """
+    repo = MusehubRepo(
+        name="heatmap-panel-test",
+        owner="heatmapowner",
+        slug="heatmap-panel-test",
+        visibility="public",
+        owner_user_id="heatmap-uid",
+    )
+    db_session.add(repo)
+    await db_session.commit()
+
+    response = await client.get("/musehub/ui/heatmapowner/heatmap-panel-test")
+    assert response.status_code == 200
+    body = response.text
+    assert "loadActivityHeatmap" in body
+    assert "activity-heatmap" in body
+    assert "hm-cell" in body
+    assert "hm-grid" in body
+
+
+@pytest.mark.anyio
+async def test_repo_home_instrument_bar_js(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Repo home page includes the instrument distribution bar JS (issue #442).
+
+    The bar shows stacked segments labelled with instrument names and
+    percentages, derived from MIDI/audio object paths in the latest commit.
+    """
+    repo = MusehubRepo(
+        name="instrbar-panel-test",
+        owner="instrbarowner",
+        slug="instrbar-panel-test",
+        visibility="public",
+        owner_user_id="instrbar-uid",
+    )
+    db_session.add(repo)
+    await db_session.commit()
+
+    response = await client.get("/musehub/ui/instrbarowner/instrbar-panel-test")
+    assert response.status_code == 200
+    body = response.text
+    assert "loadInstrumentBar" in body
+    assert "instrument-bar" in body
+    assert "instr-bar" in body
+    assert "instr-seg" in body
+
+
+@pytest.mark.anyio
+async def test_repo_home_clone_widget_renders(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Repo home page includes the clone widget with musehub://, SSH, and HTTPS URLs (issue #442).
+
+    The widget shows three copy-to-clipboard inputs and a Download ZIP button.
+    Clone URLs are injected server-side by repo_page() so the JS template
+    never has to reconstruct them from owner/slug.
+    """
+    repo = MusehubRepo(
+        name="clone-widget-test",
+        owner="cloneowner",
+        slug="clone-widget-test",
+        visibility="public",
+        owner_user_id="clone-uid",
+    )
+    db_session.add(repo)
+    await db_session.commit()
+
+    response = await client.get("/musehub/ui/cloneowner/clone-widget-test")
+    assert response.status_code == 200
+    body = response.text
+
+    # Clone URL constants injected by repo_page()
+    assert "CLONE_MUSEHUB" in body
+    assert "musehub://cloneowner/clone-widget-test" in body
+    assert "ssh://git@musehub.stori.app/cloneowner/clone-widget-test.git" in body
+    assert "https://musehub.stori.app/cloneowner/clone-widget-test.git" in body
+
+    # DOM elements rendered by renderCloneWidget()
+    assert "clone-widget" in body
+    assert "renderCloneWidget" in body
+    assert "clone-input" in body
+    assert "copyClone" in body
+    assert "Download ZIP" in body
 async def test_explore_page_returns_200(
     client: AsyncClient,
 ) -> None:
