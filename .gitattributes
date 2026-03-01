@@ -1,0 +1,16 @@
+# Merge strategy for files that are purely additive across parallel agent branches.
+# The `union` driver takes all lines from both sides — no conflict markers, no loops.
+# Used for files where every agent adds unique lines and the result of "keep both"
+# is always correct.
+
+# Muse CLI command registry — every new `muse <cmd>` adds import + cli.add_typer().
+maestro/muse_cli/app.py merge=union
+
+# Muse VCS architecture doc — every new command adds a ## section.
+docs/architecture/muse_vcs.md merge=union
+
+# Type contracts registry — every new result type adds an entry.
+docs/reference/type_contracts.md merge=union
+
+# API reference — every new endpoint adds a section.
+docs/reference/api.md merge=union

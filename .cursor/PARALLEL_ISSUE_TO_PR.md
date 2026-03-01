@@ -613,6 +613,11 @@ STEP 4 — PRE-PUSH SYNC (critical — always run before pushing):
   git fetch origin
   git merge origin/dev
 
+  ⚡ CONFLICT SHORTCUT: open .cursor/CONFLICT_RULES.md FIRST.
+  Every common conflict has a one-line rule. NO sed/grep/hexdump loops.
+  maestro/api/routes/musehub/__init__.py NEVER conflicts (auto-discovery).
+  app.py, muse_vcs.md, type_contracts.md use union merge (.gitattributes).
+
   ── CONFLICT PLAYBOOK (reference this immediately when git reports conflicts) ──
   │                                                                              │
   │ STEP A — See what conflicted (one command):                                 │
