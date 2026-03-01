@@ -29,6 +29,7 @@ from maestro.api.routes.musehub import ui_milestones as musehub_ui_milestones_ro
 from maestro.api.routes.musehub import ui_blame as musehub_ui_blame_routes
 from maestro.api.routes.musehub import ui_notifications as musehub_ui_notifications_routes
 from maestro.api.routes.musehub import ui_collaborators as musehub_ui_collab_routes
+from maestro.api.routes.musehub import ui_labels as musehub_ui_labels_routes
 from maestro.api.routes.musehub import ui_settings as musehub_ui_settings_routes
 from maestro.api.routes.musehub import ui_similarity as musehub_ui_similarity_routes
 from maestro.api.routes.musehub import ui_user_profile as musehub_ui_profile_routes
@@ -234,6 +235,8 @@ app.include_router(musehub_ui_routes.fixed_router, tags=["musehub-ui"])
 # /{owner}/{repo_slug}/milestones paths are matched before /{owner}/{repo_slug}.
 app.include_router(musehub_ui_milestones_routes.router, tags=["musehub-ui"])
 app.include_router(musehub_ui_collab_routes.router, tags=["musehub-ui"])
+# Label management UI page — registered before the wildcard router so /labels paths are matched first.
+app.include_router(musehub_ui_labels_routes.router, tags=["musehub-ui"])
 app.include_router(musehub_ui_routes.router, tags=["musehub-ui"])
 app.include_router(musehub_ui_blame_routes.router, tags=["musehub-ui"])
 app.include_router(musehub_ui_settings_routes.router, tags=["musehub-ui-settings"])
