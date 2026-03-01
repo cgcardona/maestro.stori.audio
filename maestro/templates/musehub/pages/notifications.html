@@ -1,0 +1,342 @@
+{% extends "musehub/base.html" %}
+
+{% block title %}Notifications{% endblock %}
+{% block breadcrumb %}Notifications{% endblock %}
+
+{% block page_script %}
+{% raw %}
+// ── Config ─────────────────────────────────────────────────────────────────
+
+/** How many notifications to show per page. Synced from template context. */
+const PER_PAGE = typeof notifPerPage !== 'undefined' ? notifPerPage : 25;
+
+/** Active filter state — preserved across mark-as-read calls. */
+let currentType    = (new URLSearchParams(location.search)).get('type')    || '';
+let currentUnread  = (new URLSearchParams(location.search)).get('unread_only') === 'true';
+let currentPage    = parseInt((new URLSearchParams(location.search)).get('page') || '1', 10);
+
+// ── Event metadata ─────────────────────────────────────────────────────────
+
+const EVENT_META = {
+  comment:      { icon: '🗨️',  label: 'commented',       sentence: (a, r) => `${actorLink(a)} commented on ${repoLink(r)}` },
+  mention:      { icon: '💬',  label: 'mentioned you',   sentence: (a, r) => `${actorLink(a)} mentioned you in ${repoLink(r)}` },
+  pr_opened:    { icon: '🔀',  label: 'opened a PR',     sentence: (a, r) => `${actorLink(a)} opened a PR in ${repoLink(r)}` },
+  pr_merged:    { icon: '✅',  label: 'merged a PR',     sentence: (a, r) => `${actorLink(a)} merged a PR in ${repoLink(r)}` },
+  issue_opened: { icon: '🐛',  label: 'opened an issue', sentence: (a, r) => `${actorLink(a)} opened an issue in ${repoLink(r)}` },
+  issue_closed: { icon: '✔️', label: 'closed an issue', sentence: (a, r) => `${actorLink(a)} closed an issue in ${repoLink(r)}` },
+  new_commit:   { icon: '🎵',  label: 'committed',       sentence: (a, r) => `${actorLink(a)} committed to ${repoLink(r)}` },
+  new_follower: { icon: '👤',  label: 'followed you',    sentence: (a) => `${actorLink(a)} followed you` },
+  watch:        { icon: '👁️', label: 'watched',         sentence: (a, r) => `${actorLink(a)} started watching ${repoLink(r)}` },
+  fork:         { icon: '🍴',  label: 'forked',          sentence: (a, r) => `${actorLink(a)} forked ${repoLink(r)}` },
+};
+
+// ── DOM helpers ────────────────────────────────────────────────────────────
+
+/**
+ * Deterministic HSL hue from an actor string — stable, visually distinct
+ * colour per user without any stored data.
+ */
+function actorHsl(actor) {
+  let hash = 0;
+  for (let i = 0; i < actor.length; i++) {
+    hash = actor.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  return 'hsl(' + (Math.abs(hash) % 360) + ',50%,38%)';
+}
+
+function actorAvatar(actor) {
+  const bg      = actorHsl(actor);
+  const initial = escHtml((actor || '?').charAt(0).toUpperCase());
+  return `<div class="comment-avatar" style="background:${bg};color:#e6edf3;font-weight:700;font-size:14px;border:none">${initial}</div>`;
+}
+
+function actorLink(actor) {
+  return `<a href="/musehub/ui/users/${encodeURIComponent(actor)}" style="color:var(--text-primary);font-weight:600">${escHtml(actor)}</a>`;
+}
+
+function repoLink(repoId) {
+  if (!repoId) return '';
+  const parts = repoId.split('/');
+  const label = parts.length >= 2 ? escHtml(parts[1]) : escHtml(repoId);
+  return `<a href="/musehub/ui/${encodeURIComponent(repoId)}" style="color:var(--color-accent)">${label}</a>`;
+}
+
+// ── Notification card ──────────────────────────────────────────────────────
+
+/**
+ * Render a single notification as an inbox card.
+ *
+ * Unread cards have a left-border accent and a ✓ "Mark read" button that
+ * calls POST /notifications/{notif_id}/read and applies the read style in-
+ * place without a full page reload.
+ */
+function notifCard(item) {
+  const meta      = EVENT_META[item.eventType] || { icon: '•', sentence: (a) => actorLink(a) };
+  const icon      = meta.icon;
+  const sentence  = meta.sentence(item.actor, item.repoId || '');
+  const timestamp = fmtRelative(item.createdAt);
+  const isUnread  = !item.isRead;
+
+  const cardStyle = isUnread
+    ? 'border-left:3px solid var(--color-accent);padding-left:calc(var(--space-3) - 3px);'
+    : 'border-left:3px solid transparent;padding-left:calc(var(--space-3) - 3px);opacity:0.75;';
+
+  const markReadBtn = isUnread
+    ? `<button
+         class="mark-read-btn"
+         data-notif-id="${escHtml(item.notifId)}"
+         onclick="markOneRead(this)"
+         title="Mark as read"
+         style="background:none;border:1px solid var(--border-color);border-radius:50%;width:22px;height:22px;cursor:pointer;color:var(--text-muted);font-size:12px;line-height:1;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;margin-left:var(--space-2)"
+       >&#10003;</button>`
+    : '';
+
+  const unreadDot = isUnread
+    ? '<span class="unread-dot" style="display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--color-accent);margin-left:var(--space-2);flex-shrink:0"></span>'
+    : '';
+
+  return `
+    <div class="comment-item" data-notif-id="${escHtml(item.notifId)}" style="${cardStyle}">
+      ${actorAvatar(item.actor)}
+      <div class="comment-body" style="flex:1;min-width:0">
+        <div class="comment-meta" style="display:flex;align-items:center;gap:var(--space-2);flex-wrap:wrap">
+          <span style="font-size:16px;line-height:1;flex-shrink:0">${icon}</span>
+          <span style="flex:1;min-width:0">${sentence}${unreadDot}</span>
+          <span style="white-space:nowrap;display:flex;align-items:center;gap:var(--space-2);flex-shrink:0">
+            <span style="color:var(--text-muted);font-size:12px">${escHtml(timestamp)}</span>
+            ${markReadBtn}
+          </span>
+        </div>
+      </div>
+    </div>`;
+}
+
+// ── Mark-as-read actions ───────────────────────────────────────────────────
+
+/**
+ * Mark a single notification as read via POST /notifications/{id}/read.
+ * Updates the card styling and nav badge count in-place on success.
+ */
+async function markOneRead(btn) {
+  const notifId = btn.dataset.notifId;
+  if (!notifId) return;
+  try {
+    await apiFetch('/notifications/' + encodeURIComponent(notifId) + '/read', { method: 'POST' });
+    const card = document.querySelector('.comment-item[data-notif-id="' + CSS.escape(notifId) + '"]');
+    if (card) {
+      card.style.borderLeft = '3px solid transparent';
+      card.style.opacity    = '0.75';
+      const dot = card.querySelector('.unread-dot');
+      if (dot) dot.remove();
+    }
+    btn.remove();
+    decrementNavBadge();
+  } catch (e) {
+    if (e.message !== 'auth') btn.style.color = 'var(--color-danger)';
+  }
+}
+
+/**
+ * Mark all notifications as read via POST /notifications/read-all.
+ * Applies read styling to every card and resets the nav badge to 0.
+ */
+async function markAllRead() {
+  const markAllBtn = document.getElementById('mark-all-read-btn');
+  if (markAllBtn) markAllBtn.disabled = true;
+  try {
+    await apiFetch('/notifications/read-all', { method: 'POST' });
+    document.querySelectorAll('.comment-item').forEach(card => {
+      card.style.borderLeft = '3px solid transparent';
+      card.style.opacity    = '0.75';
+      const dot = card.querySelector('.unread-dot');
+      if (dot) dot.remove();
+      const btn = card.querySelector('.mark-read-btn');
+      if (btn) btn.remove();
+    });
+    const badge = document.getElementById('nav-notif-badge');
+    if (badge) badge.style.display = 'none';
+    if (markAllBtn) markAllBtn.remove();
+  } catch (e) {
+    if (markAllBtn) markAllBtn.disabled = false;
+    if (e.message !== 'auth') {
+      const err = document.getElementById('notif-error');
+      if (err) err.textContent = 'Could not mark all as read: ' + e.message;
+    }
+  }
+}
+
+/**
+ * Decrement the nav badge count by 1; hide it when it reaches 0.
+ */
+function decrementNavBadge() {
+  const badge = document.getElementById('nav-notif-badge');
+  if (!badge) return;
+  const current = parseInt(badge.textContent, 10);
+  if (isNaN(current) || current <= 1) {
+    badge.style.display = 'none';
+  } else {
+    badge.textContent = String(current - 1);
+  }
+}
+
+// ── Filters ────────────────────────────────────────────────────────────────
+
+/**
+ * Apply filter changes and reload: update currentType / currentUnread /
+ * currentPage, push a new history state (for back-button support), and
+ * fetch notifications with the updated parameters.
+ */
+function applyFilters() {
+  const typeSel    = document.getElementById('type-filter');
+  const unreadChk  = document.getElementById('unread-filter');
+  currentType      = typeSel   ? typeSel.value           : currentType;
+  currentUnread    = unreadChk ? unreadChk.checked        : currentUnread;
+  currentPage      = 1;
+  pushState();
+  loadNotifications();
+}
+
+function goToPage(p) {
+  currentPage = p;
+  pushState();
+  loadNotifications();
+}
+
+/** Update the browser URL without a full reload. */
+function pushState() {
+  const qs = buildQs();
+  history.pushState({}, '', '/musehub/ui/notifications' + (qs ? '?' + qs : ''));
+}
+
+function buildQs() {
+  const params = new URLSearchParams();
+  if (currentType)   params.set('type', currentType);
+  if (currentUnread) params.set('unread_only', 'true');
+  if (currentPage > 1) params.set('page', String(currentPage));
+  return params.toString();
+}
+
+// ── Pagination ─────────────────────────────────────────────────────────────
+
+function renderPagination(page, totalPages) {
+  if (totalPages <= 1) return '';
+  const prev = page > 1
+    ? `<button class="btn btn-secondary" style="font-size:12px;padding:4px 10px" onclick="goToPage(${page - 1})">&#8592; Prev</button>`
+    : `<button class="btn btn-secondary" style="font-size:12px;padding:4px 10px;opacity:0.4" disabled>&#8592; Prev</button>`;
+  const next = page < totalPages
+    ? `<button class="btn btn-secondary" style="font-size:12px;padding:4px 10px" onclick="goToPage(${page + 1})">Next &#8594;</button>`
+    : `<button class="btn btn-secondary" style="font-size:12px;padding:4px 10px;opacity:0.4" disabled>Next &#8594;</button>`;
+  return `
+    <div style="display:flex;align-items:center;gap:var(--space-2);justify-content:center;padding:var(--space-3)">
+      ${prev}
+      <span style="font-size:13px;color:var(--text-muted)">Page ${page} of ${totalPages}</span>
+      ${next}
+    </div>`;
+}
+
+// ── Main loader ────────────────────────────────────────────────────────────
+
+async function loadNotifications() {
+  document.getElementById('content').innerHTML = '<p class="loading">Loading notifications&#8230;</p>';
+  try {
+    const qsBase = buildQs();
+    const qs = qsBase ? qsBase + '&format=json' : 'format=json';
+    // Fetch the UI endpoint directly (not via apiFetch which prepends /api/v1/musehub).
+    // The UI endpoint serves JSON when ?format=json is present and a valid JWT is sent.
+    const res = await fetch('/musehub/ui/notifications?' + qs, { headers: authHeaders() });
+    if (res.status === 401 || res.status === 403) {
+      showTokenForm('Session expired or invalid token — please re-enter your JWT.');
+      throw new Error('auth');
+    }
+    if (!res.ok) { throw new Error(res.status + ': ' + (await res.text())); }
+    const data = await res.json();
+
+    const items      = data.notifications || [];
+    const total      = data.total        || 0;
+    const totalPages = data.totalPages   || 1;
+    const unread     = data.unreadCount  || 0;
+
+    // Refresh nav badge to global unread count.
+    const badge = document.getElementById('nav-notif-badge');
+    if (badge) {
+      if (unread > 0) {
+        badge.textContent = String(Math.min(unread, 99));
+        badge.style.display = 'inline-flex';
+      } else {
+        badge.style.display = 'none';
+      }
+    }
+
+    const hasUnread  = items.some(n => !n.isRead);
+    const markAllBtn = hasUnread && getToken()
+      ? `<button id="mark-all-read-btn" class="btn btn-secondary"
+           style="font-size:12px;padding:4px 10px" onclick="markAllRead()">&#10003; Mark all as read</button>`
+      : '';
+
+    // Build type filter options.
+    const typeOptions = [
+      { value: '',        label: 'All types' },
+      { value: 'mention', label: '💬 Mentions' },
+      { value: 'watch',   label: '👁️ Watches' },
+      { value: 'fork',    label: '🍴 Forks' },
+      { value: 'comment', label: '🗨️ Comments' },
+      { value: 'pr_opened',    label: '🔀 PRs opened' },
+      { value: 'pr_merged',    label: '✅ PRs merged' },
+      { value: 'issue_opened', label: '🐛 Issues opened' },
+      { value: 'issue_closed', label: '✔️ Issues closed' },
+      { value: 'new_commit',   label: '🎵 Commits' },
+      { value: 'new_follower', label: '👤 Followers' },
+    ].map(o =>
+      `<option value="${escHtml(o.value)}" ${o.value === currentType ? 'selected' : ''}>${escHtml(o.label)}</option>`
+    ).join('');
+
+    const listHtml = items.length > 0
+      ? `<div class="card" style="padding:0">${items.map(notifCard).join('')}</div>`
+      : `<div class="empty-state">
+           <div class="empty-icon">&#128276;</div>
+           <p class="empty-title">${currentUnread ? 'No unread notifications' : 'No notifications yet'}</p>
+           <p class="empty-desc">
+             ${currentUnread
+               ? 'You are all caught up. <a href="/musehub/ui/notifications">View all notifications</a>.'
+               : 'Follow musicians, watch repos, and contribute to see notifications here.'}
+           </p>
+         </div>`;
+
+    document.getElementById('content').innerHTML = `
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:var(--space-2);margin-bottom:var(--space-4)">
+        <h1 style="margin:0">
+          Notifications
+          ${total > 0 ? `<span style="font-size:14px;font-weight:400;color:var(--text-muted);margin-left:var(--space-2)">${total} total</span>` : ''}
+        </h1>
+        ${markAllBtn}
+      </div>
+
+      <p id="notif-error" style="color:var(--color-danger);font-size:13px"></p>
+
+      <div style="display:flex;align-items:center;gap:var(--space-3);flex-wrap:wrap;margin-bottom:var(--space-4)">
+        <label style="display:flex;align-items:center;gap:var(--space-2);font-size:13px;color:var(--text-muted)">
+          Type:
+          <select id="type-filter" onchange="applyFilters()"
+                  style="font-size:13px;padding:4px 8px;background:var(--bg-secondary);border:1px solid var(--border-color);border-radius:6px;color:var(--text-primary)">
+            ${typeOptions}
+          </select>
+        </label>
+        <label style="display:flex;align-items:center;gap:var(--space-2);font-size:13px;color:var(--text-muted);cursor:pointer">
+          <input type="checkbox" id="unread-filter" ${currentUnread ? 'checked' : ''} onchange="applyFilters()">
+          Unread only
+        </label>
+      </div>
+
+      ${listHtml}
+      ${renderPagination(currentPage, totalPages)}`;
+
+  } catch (e) {
+    if (e.message !== 'auth')
+      document.getElementById('content').innerHTML =
+        '<p class="error">&#10005; ' + escHtml(e.message) + '</p>';
+  }
+}
+
+loadNotifications();
+{% endraw %}
+{% endblock %}

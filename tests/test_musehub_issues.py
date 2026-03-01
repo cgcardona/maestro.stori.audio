@@ -917,3 +917,209 @@ async def test_list_milestones_sort_by_title(
     assert response.status_code == 200
     titles = [m["title"] for m in response.json()["milestones"]]
     assert titles == sorted(titles)
+
+
+# ---------------------------------------------------------------------------
+# Issue #419 — milestone and label assignment endpoints
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.anyio
+async def test_delete_issue_milestone_removes_link(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+) -> None:
+    """DELETE /issues/{number}/milestone clears the milestone link on an issue."""
+    repo_id = await _create_repo(client, auth_headers, "del-milestone-repo")
+    issue = await _create_issue(client, auth_headers, repo_id, title="Issue with milestone")
+
+    ms_resp = await client.post(
+        f"/api/v1/musehub/repos/{repo_id}/milestones",
+        json={"title": "Temp Milestone"},
+        headers=auth_headers,
+    )
+    milestone_id: str = ms_resp.json()["milestoneId"]
+
+    # Link milestone
+    await client.post(
+        f"/api/v1/musehub/repos/{repo_id}/issues/{issue['number']}/milestone",
+        params={"milestone_id": milestone_id},
+        headers=auth_headers,
+    )
+
+    # Remove milestone via DELETE
+    response = await client.delete(
+        f"/api/v1/musehub/repos/{repo_id}/issues/{issue['number']}/milestone",
+        headers=auth_headers,
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["milestoneId"] is None
+    assert data["milestoneTitle"] is None
+
+
+@pytest.mark.anyio
+async def test_delete_issue_milestone_idempotent(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+) -> None:
+    """DELETE /milestone on an issue with no milestone succeeds silently."""
+    repo_id = await _create_repo(client, auth_headers, "del-milestone-idempotent-repo")
+    issue = await _create_issue(client, auth_headers, repo_id, title="No milestone issue")
+
+    response = await client.delete(
+        f"/api/v1/musehub/repos/{repo_id}/issues/{issue['number']}/milestone",
+        headers=auth_headers,
+    )
+    assert response.status_code == 200
+    assert response.json()["milestoneId"] is None
+
+
+@pytest.mark.anyio
+async def test_delete_issue_milestone_not_found(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+) -> None:
+    """DELETE /issues/999/milestone returns 404 for an unknown issue."""
+    repo_id = await _create_repo(client, auth_headers, "del-milestone-404-repo")
+
+    response = await client.delete(
+        f"/api/v1/musehub/repos/{repo_id}/issues/999/milestone",
+        headers=auth_headers,
+    )
+    assert response.status_code == 404
+
+
+@pytest.mark.anyio
+async def test_assign_issue_labels_replaces_labels(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+) -> None:
+    """POST /issues/{number}/labels replaces the entire label list."""
+    repo_id = await _create_repo(client, auth_headers, "label-assign-repo")
+    issue = await _create_issue(
+        client, auth_headers, repo_id, title="Label test issue", labels=["old-label"]
+    )
+    assert issue["labels"] == ["old-label"]
+
+    response = await client.post(
+        f"/api/v1/musehub/repos/{repo_id}/issues/{issue['number']}/labels",
+        json={"labels": ["harmony", "needs-review"]},
+        headers=auth_headers,
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["labels"] == ["harmony", "needs-review"]
+    assert "old-label" not in data["labels"]
+
+
+@pytest.mark.anyio
+async def test_assign_issue_labels_empty_clears_labels(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+) -> None:
+    """POST /issues/{number}/labels with empty list clears all labels."""
+    repo_id = await _create_repo(client, auth_headers, "label-clear-repo")
+    issue = await _create_issue(
+        client, auth_headers, repo_id, title="Labelled issue", labels=["bug", "musical"]
+    )
+
+    response = await client.post(
+        f"/api/v1/musehub/repos/{repo_id}/issues/{issue['number']}/labels",
+        json={"labels": []},
+        headers=auth_headers,
+    )
+    assert response.status_code == 200
+    assert response.json()["labels"] == []
+
+
+@pytest.mark.anyio
+async def test_assign_issue_labels_not_found(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+) -> None:
+    """POST /issues/999/labels returns 404 for an unknown issue."""
+    repo_id = await _create_repo(client, auth_headers, "label-assign-404-repo")
+
+    response = await client.post(
+        f"/api/v1/musehub/repos/{repo_id}/issues/999/labels",
+        json={"labels": ["bug"]},
+        headers=auth_headers,
+    )
+    assert response.status_code == 404
+
+
+@pytest.mark.anyio
+async def test_remove_issue_label_removes_single_label(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+) -> None:
+    """DELETE /issues/{number}/labels/{name} removes one label and leaves the rest."""
+    repo_id = await _create_repo(client, auth_headers, "label-remove-repo")
+    issue = await _create_issue(
+        client,
+        auth_headers,
+        repo_id,
+        title="Multi-label issue",
+        labels=["bug", "harmony", "needs-review"],
+    )
+
+    response = await client.delete(
+        f"/api/v1/musehub/repos/{repo_id}/issues/{issue['number']}/labels/harmony",
+        headers=auth_headers,
+    )
+    assert response.status_code == 200
+    remaining = response.json()["labels"]
+    assert "harmony" not in remaining
+    assert "bug" in remaining
+    assert "needs-review" in remaining
+
+
+@pytest.mark.anyio
+async def test_remove_issue_label_idempotent(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+) -> None:
+    """DELETE /labels/{name} silently succeeds when the label is not present."""
+    repo_id = await _create_repo(client, auth_headers, "label-remove-idempotent-repo")
+    issue = await _create_issue(
+        client, auth_headers, repo_id, title="No such label issue", labels=["bug"]
+    )
+
+    response = await client.delete(
+        f"/api/v1/musehub/repos/{repo_id}/issues/{issue['number']}/labels/nonexistent",
+        headers=auth_headers,
+    )
+    assert response.status_code == 200
+    assert response.json()["labels"] == ["bug"]
+
+
+@pytest.mark.anyio
+async def test_remove_issue_label_not_found(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+) -> None:
+    """DELETE /issues/999/labels/{name} returns 404 for an unknown issue."""
+    repo_id = await _create_repo(client, auth_headers, "label-remove-404-repo")
+
+    response = await client.delete(
+        f"/api/v1/musehub/repos/{repo_id}/issues/999/labels/bug",
+        headers=auth_headers,
+    )
+    assert response.status_code == 404
+
+
+@pytest.mark.anyio
+async def test_new_endpoints_require_auth(client: AsyncClient) -> None:
+    """DELETE /milestone, POST /labels, DELETE /labels/{name} all require authentication."""
+    endpoints: list[tuple[str, str, dict[str, object]]] = [
+        ("DELETE", "/api/v1/musehub/repos/some-repo/issues/1/milestone", {}),
+        ("POST", "/api/v1/musehub/repos/some-repo/issues/1/labels", {"labels": ["bug"]}),
+        ("DELETE", "/api/v1/musehub/repos/some-repo/issues/1/labels/bug", {}),
+    ]
+    for method, url, payload in endpoints:
+        if method == "DELETE":
+            response = await client.delete(url)
+        else:
+            response = await client.post(url, json=payload)
+        assert response.status_code == 401, f"{method} {url} should require auth"

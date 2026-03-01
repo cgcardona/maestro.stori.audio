@@ -197,6 +197,14 @@ class RepoResponse(CamelModel):
     created_at: datetime = Field(..., description="Repo creation timestamp (ISO-8601 UTC)")
 
 
+class TransferOwnershipRequest(CamelModel):
+    """Request body for transferring repo ownership to another user."""
+
+    new_owner_user_id: str = Field(
+        ..., description="User ID of the new repo owner", examples=["a1b2c3d4-e5f6-7890-abcd-ef1234567890"]
+    )
+
+
 class RepoListResponse(CamelModel):
     """Paginated list of repos for the authenticated user.
 
@@ -516,6 +524,20 @@ class IssueAssignRequest(CamelModel):
         None,
         description="Display name or user ID to assign; null to unassign",
         examples=["miles_davis"],
+    )
+
+
+class IssueLabelAssignRequest(CamelModel):
+    """Body for POST /musehub/repos/{repo_id}/issues/{number}/labels.
+
+    Replaces the entire label list on the issue.  To append labels, fetch the
+    current list first, merge client-side, and post the merged result.
+    """
+
+    labels: list[str] = Field(
+        ...,
+        description="Replacement label list for the issue",
+        examples=[["harmony", "needs-review"]],
     )
 
 
@@ -893,6 +915,80 @@ class ReleaseListResponse(CamelModel):
     """List of releases for a repo (newest first)."""
 
     releases: list[ReleaseResponse]
+
+
+# ── Release asset models ───────────────────────────────────────────────────
+
+
+class ReleaseAssetCreate(CamelModel):
+    """Body for POST /musehub/repos/{repo_id}/releases/{tag}/assets.
+
+    ``name`` is the filename shown in the UI (e.g. "summer-v1.0.mid").
+    ``download_url`` is the pre-signed or CDN URL from which clients
+    download the artifact; Maestro stores it verbatim.
+    """
+
+    name: str = Field(
+        ..., min_length=1, max_length=500, description="Filename shown in the UI"
+    )
+    label: str = Field(
+        "",
+        max_length=255,
+        description="Optional human-readable label, e.g. 'MIDI Bundle'",
+    )
+    content_type: str = Field(
+        "",
+        max_length=128,
+        description="MIME type, e.g. 'audio/midi', 'application/zip'",
+    )
+    size: int = Field(
+        0, ge=0, description="File size in bytes; 0 when unknown"
+    )
+    download_url: str = Field(
+        ..., min_length=1, max_length=2048, description="Direct download URL for the artifact"
+    )
+
+
+class ReleaseAssetResponse(CamelModel):
+    """Wire representation of a single release asset."""
+
+    asset_id: str = Field(..., description="Internal UUID for this asset")
+    release_id: str = Field(..., description="UUID of the owning release")
+    name: str = Field(..., description="Filename shown in the UI")
+    label: str = Field("", description="Optional human-readable label")
+    content_type: str = Field("", description="MIME type of the artifact")
+    size: int = Field(0, ge=0, description="File size in bytes; 0 when unknown")
+    download_url: str = Field(..., description="Direct download URL")
+    download_count: int = Field(0, ge=0, description="Number of times the asset has been downloaded")
+    created_at: datetime = Field(..., description="Asset creation timestamp (ISO-8601 UTC)")
+
+
+class ReleaseAssetDownloadCount(CamelModel):
+    """Per-asset download count entry in a release download stats response."""
+
+    asset_id: str = Field(..., description="Internal UUID for the asset")
+    name: str = Field(..., description="Filename shown in the UI")
+    label: str = Field("", description="Optional human-readable label")
+    download_count: int = Field(0, ge=0, description="Number of times this asset has been downloaded")
+
+
+class ReleaseDownloadStatsResponse(CamelModel):
+    """Download counts per asset for a single release.
+
+    Returned by ``GET /repos/{repo_id}/releases/{tag}/downloads``.
+    ``total_downloads`` is the sum of ``download_count`` across all assets,
+    providing a quick headline metric without client-side aggregation.
+    """
+
+    release_id: str = Field(..., description="UUID of the release")
+    tag: str = Field(..., description="Version tag of the release")
+    assets: list[ReleaseAssetDownloadCount] = Field(
+        default_factory=list,
+        description="Per-asset download counts; empty when no assets have been attached",
+    )
+    total_downloads: int = Field(
+        0, ge=0, description="Sum of download_count across all assets"
+    )
 
 
 # ── Credits models ────────────────────────────────────────────────────────────
@@ -1305,11 +1401,17 @@ class WebhookListResponse(CamelModel):
 
 
 class WebhookDeliveryResponse(CamelModel):
-    """Wire representation of a single webhook delivery attempt."""
+    """Wire representation of a single webhook delivery attempt.
+
+    ``payload`` is the JSON body that was (or will be) sent to the subscriber.
+    It is stored verbatim so that operators can inspect the exact bytes delivered
+    and so the redeliver endpoint can replay the original payload without guessing.
+    """
 
     delivery_id: str
     webhook_id: str
     event_type: str
+    payload: str = Field("", description="JSON body sent to the subscriber URL")
     attempt: int
     success: bool
     response_status: int
@@ -1321,6 +1423,21 @@ class WebhookDeliveryListResponse(CamelModel):
     """Paginated list of delivery attempts for a webhook."""
 
     deliveries: list[WebhookDeliveryResponse]
+
+
+class WebhookRedeliverResponse(CamelModel):
+    """Confirmation that a delivery reattempt was executed.
+
+    ``success`` reflects the final outcome after all retry attempts.
+    ``original_delivery_id`` links back to the delivery row that was replayed.
+    """
+
+    original_delivery_id: str = Field(..., description="ID of the original delivery row that was retried")
+    webhook_id: str = Field(..., description="Webhook the payload was redelivered to")
+    event_type: str = Field(..., description="Event type of the redelivered payload")
+    success: bool = Field(..., description="True when the redeliver attempt received a 2xx response")
+    response_status: int = Field(..., description="HTTP status code from the final attempt (0 for network errors)")
+    response_body: str = Field("", description="Response body snippet from the final attempt (≤512 chars)")
 
 
 # ── Webhook event payload TypedDicts ─────────────────────────────────────────
@@ -2375,4 +2492,30 @@ class BlameResponse(CamelModel):
     total_entries: int = Field(
         default=0,
         description="Total number of blame entries in the response",
+    )
+
+
+# ── Collaborator access-check model ─────────────────────────────────────────
+
+
+class CollaboratorAccessResponse(CamelModel):
+    """Response for the collaborator access-check endpoint.
+
+    Returns the effective permission level for a given username on a repo.
+    The owner's effective permission is always ``"owner"``.  Non-collaborators
+    are reported as 404 rather than returning a ``"none"`` permission value,
+    so callers can distinguish a known absence (404) from a positive result.
+
+    ``accepted_at`` is ``null`` for the repo owner (ownership is immediate)
+    and for collaborators whose invitation is still pending acceptance.
+    """
+
+    username: str = Field(..., description="User identifier supplied in the request path")
+    permission: str = Field(
+        ...,
+        description="Effective permission level: 'read' | 'write' | 'admin' | 'owner'",
+    )
+    accepted_at: datetime | None = Field(
+        None,
+        description="UTC timestamp when the collaborator accepted the invitation; null for owners",
     )
