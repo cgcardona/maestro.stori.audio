@@ -23,7 +23,7 @@ Single source-of-truth migration for Stori Maestro. Creates:
 
   Muse Hub — remote collaboration backend
   - musehub_repos, musehub_branches, musehub_commits, musehub_issues
-  - musehub_pull_requests (PR workflow between branches)
+  - musehub_pull_requests (PR workflow; merged_at records exact merge timestamp)
   - musehub_objects (content-addressed binary artifact storage)
   - musehub_stars (per-user repo starring for the explore/discover page)
   - musehub_profiles (public user profile pages — bio, avatar, pinned repos)
@@ -31,6 +31,10 @@ Single source-of-truth migration for Stori Maestro. Creates:
   - musehub_releases (published version releases with download packages)
   - musehub_webhooks (registered event-driven webhook subscriptions)
   - musehub_webhook_deliveries (delivery log per dispatch attempt)
+  - musehub_render_jobs (async audio render pipeline)
+  - musehub_comments, musehub_reactions, musehub_follows, musehub_watches
+  - musehub_notifications, musehub_forks, musehub_view_events, musehub_download_events
+  - musehub_events (activity event stream)
 
 Fresh install:
   docker compose exec maestro alembic upgrade head
@@ -276,7 +280,6 @@ def upgrade() -> None:
     op.create_index("ix_musehub_repos_owner", "musehub_repos", ["owner"])
     op.create_index("ix_musehub_repos_slug", "musehub_repos", ["slug"])
     op.create_index("ix_musehub_repos_owner_user_id", "musehub_repos", ["owner_user_id"])
-    op.create_index("ix_musehub_repos_visibility", "musehub_repos", ["visibility"])
 
     op.create_table(
         "musehub_branches",
@@ -423,6 +426,9 @@ def upgrade() -> None:
             nullable=False,
             server_default=sa.text("CURRENT_TIMESTAMP"),
         ),
+        # Set by merge_pr() at the exact moment of merge; NULL for open/unmerged PRs.
+        # Used by the timeline overlay to position PR markers at merge time, not open time.
+        sa.Column("merged_at", sa.DateTime(timezone=True), nullable=True),
         sa.ForeignKeyConstraint(["repo_id"], ["musehub_repos.repo_id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("pr_id"),
     )
@@ -618,8 +624,10 @@ def upgrade() -> None:
         sa.PrimaryKeyConstraint("comment_id"),
     )
     op.create_index("ix_musehub_comments_repo_id", "musehub_comments", ["repo_id"])
-    op.create_index("ix_musehub_comments_target", "musehub_comments", ["target_type", "target_id"])
     op.create_index("ix_musehub_comments_author", "musehub_comments", ["author"])
+    op.create_index("ix_musehub_comments_created_at", "musehub_comments", ["created_at"])
+    op.create_index("ix_musehub_comments_target_type", "musehub_comments", ["target_type"])
+    op.create_index("ix_musehub_comments_target_id", "musehub_comments", ["target_id"])
 
     op.create_table(
         "musehub_reactions",
@@ -633,7 +641,10 @@ def upgrade() -> None:
         sa.PrimaryKeyConstraint("reaction_id"),
         sa.UniqueConstraint("user_id", "target_type", "target_id", "emoji", name="uq_musehub_reactions"),
     )
-    op.create_index("ix_musehub_reactions_target", "musehub_reactions", ["target_type", "target_id"])
+    op.create_index("ix_musehub_reactions_repo_id", "musehub_reactions", ["repo_id"])
+    op.create_index("ix_musehub_reactions_target_type", "musehub_reactions", ["target_type"])
+    op.create_index("ix_musehub_reactions_target_id", "musehub_reactions", ["target_id"])
+    op.create_index("ix_musehub_reactions_user_id", "musehub_reactions", ["user_id"])
 
     op.create_table(
         "musehub_follows",
@@ -674,6 +685,7 @@ def upgrade() -> None:
     )
     op.create_index("ix_musehub_notifications_recipient_id", "musehub_notifications", ["recipient_id"])
     op.create_index("ix_musehub_notifications_is_read", "musehub_notifications", ["is_read"])
+    op.create_index("ix_musehub_notifications_created_at", "musehub_notifications", ["created_at"])
 
     op.create_table(
         "musehub_forks",
@@ -688,6 +700,7 @@ def upgrade() -> None:
         sa.UniqueConstraint("source_repo_id", "fork_repo_id", name="uq_musehub_forks"),
     )
     op.create_index("ix_musehub_forks_source_repo_id", "musehub_forks", ["source_repo_id"])
+    op.create_index("ix_musehub_forks_fork_repo_id", "musehub_forks", ["fork_repo_id"])
 
     op.create_table(
         "musehub_view_events",
@@ -713,6 +726,7 @@ def upgrade() -> None:
         sa.PrimaryKeyConstraint("dl_id"),
     )
     op.create_index("ix_musehub_download_events_repo_id", "musehub_download_events", ["repo_id"])
+    op.create_index("ix_musehub_download_events_created_at", "musehub_download_events", ["created_at"])
 
     # ── MuseHub — render pipeline (Phase 5) ──────────────────────────────
     op.create_table(
@@ -784,12 +798,15 @@ def downgrade() -> None:
     op.drop_table("musehub_render_jobs")
 
     # Muse Hub — social layer (Phase 4)
+    op.drop_index("ix_musehub_download_events_created_at", table_name="musehub_download_events")
     op.drop_index("ix_musehub_download_events_repo_id", table_name="musehub_download_events")
     op.drop_table("musehub_download_events")
     op.drop_index("ix_musehub_view_events_repo_id", table_name="musehub_view_events")
     op.drop_table("musehub_view_events")
+    op.drop_index("ix_musehub_forks_fork_repo_id", table_name="musehub_forks")
     op.drop_index("ix_musehub_forks_source_repo_id", table_name="musehub_forks")
     op.drop_table("musehub_forks")
+    op.drop_index("ix_musehub_notifications_created_at", table_name="musehub_notifications")
     op.drop_index("ix_musehub_notifications_is_read", table_name="musehub_notifications")
     op.drop_index("ix_musehub_notifications_recipient_id", table_name="musehub_notifications")
     op.drop_table("musehub_notifications")
@@ -799,10 +816,15 @@ def downgrade() -> None:
     op.drop_index("ix_musehub_follows_followee_id", table_name="musehub_follows")
     op.drop_index("ix_musehub_follows_follower_id", table_name="musehub_follows")
     op.drop_table("musehub_follows")
-    op.drop_index("ix_musehub_reactions_target", table_name="musehub_reactions")
+    op.drop_index("ix_musehub_reactions_user_id", table_name="musehub_reactions")
+    op.drop_index("ix_musehub_reactions_target_id", table_name="musehub_reactions")
+    op.drop_index("ix_musehub_reactions_target_type", table_name="musehub_reactions")
+    op.drop_index("ix_musehub_reactions_repo_id", table_name="musehub_reactions")
     op.drop_table("musehub_reactions")
+    op.drop_index("ix_musehub_comments_target_id", table_name="musehub_comments")
+    op.drop_index("ix_musehub_comments_target_type", table_name="musehub_comments")
+    op.drop_index("ix_musehub_comments_created_at", table_name="musehub_comments")
     op.drop_index("ix_musehub_comments_author", table_name="musehub_comments")
-    op.drop_index("ix_musehub_comments_target", table_name="musehub_comments")
     op.drop_index("ix_musehub_comments_repo_id", table_name="musehub_comments")
     op.drop_table("musehub_comments")
 
@@ -839,7 +861,7 @@ def downgrade() -> None:
     op.drop_index("ix_musehub_objects_repo_id", table_name="musehub_objects")
     op.drop_table("musehub_objects")
 
-    # Muse Hub — pull requests (depends on repos)
+    # Muse Hub — pull requests (depends on repos; merged_at included in table creation)
     op.drop_index("ix_musehub_pull_requests_state", table_name="musehub_pull_requests")
     op.drop_index("ix_musehub_pull_requests_repo_id", table_name="musehub_pull_requests")
     op.drop_table("musehub_pull_requests")
@@ -875,7 +897,6 @@ def downgrade() -> None:
     op.drop_table("musehub_branches")
 
     # Muse Hub — repos (root)
-    op.drop_index("ix_musehub_repos_visibility", table_name="musehub_repos")
     op.drop_index("ix_musehub_repos_owner_user_id", table_name="musehub_repos")
     op.drop_index("ix_musehub_repos_slug", table_name="musehub_repos")
     op.drop_index("ix_musehub_repos_owner", table_name="musehub_repos")
