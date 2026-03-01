@@ -17,7 +17,9 @@ from pathlib import Path
 
 import pytest
 
+from maestro.contracts.json_types import JSONObject
 from maestro.services.muse_rerere import (
+    ConflictDict,
     apply_rerere,
     clear_rerere,
     forget_rerere,
@@ -40,14 +42,14 @@ def repo_root(tmp_path: Path) -> Path:
     return tmp_path
 
 
-def _make_conflicts(region_id: str = "region-1", pitch: int = 60) -> list[dict[str, object]]:
+def _make_conflicts(region_id: str = "region-1", pitch: int = 60) -> list[ConflictDict]:
     """Helper: build a minimal conflict list."""
     return [
-        {
-            "region_id": region_id,
-            "type": "note",
-            "description": f"Both sides modified note at pitch={pitch} beat=1.0",
-        }
+        ConflictDict(
+            region_id=region_id,
+            type="note",
+            description=f"Both sides modified note at pitch={pitch} beat=1.0",
+        )
     ]
 
 
@@ -102,7 +104,7 @@ def test_record_resolution_stores_postimage(repo_root: Path) -> None:
     """record_resolution writes the postimage file for an existing conflict hash."""
     conflicts = _make_conflicts()
     h = record_conflict(repo_root, conflicts)
-    resolution = {"strategy": "ours", "region_id": "region-1"}
+    resolution: JSONObject = {"strategy": "ours", "region_id": "region-1"}
 
     record_resolution(repo_root, h, resolution)
 
@@ -127,7 +129,7 @@ def test_apply_rerere_returns_applied_count_on_cache_hit(repo_root: Path) -> Non
     """apply_rerere returns (len(conflicts), resolution) when a postimage exists."""
     conflicts = _make_conflicts()
     h = record_conflict(repo_root, conflicts)
-    resolution = {"strategy": "ours"}
+    resolution: JSONObject = {"strategy": "ours"}
     record_resolution(repo_root, h, resolution)
 
     applied, returned_resolution = apply_rerere(repo_root, conflicts)

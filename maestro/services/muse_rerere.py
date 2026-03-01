@@ -26,10 +26,22 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import re
 from pathlib import Path
-from typing import Any
+
+from typing_extensions import TypedDict
+
+from maestro.contracts.json_types import JSONObject
 
 logger = logging.getLogger(__name__)
+
+
+class ConflictDict(TypedDict):
+    """Minimal structural descriptor of a single merge conflict for rerere fingerprinting."""
+
+    region_id: str
+    type: str
+    description: str
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -50,7 +62,10 @@ def _rr_cache_root(repo_root: Path) -> Path:
     return cache
 
 
-def _conflict_fingerprint(conflicts: list[dict[str, Any]]) -> str:
+_PITCH_RE = re.compile(r"pitch=(\d+)")
+
+
+def _conflict_fingerprint(conflicts: list[ConflictDict]) -> str:
     """Compute a normalised, transposition-independent fingerprint for *conflicts*.
 
     Normalisation steps:
@@ -61,29 +76,24 @@ def _conflict_fingerprint(conflicts: list[dict[str, Any]]) -> str:
         This makes the fingerprint invariant to transposition.
     3.  SHA-256 the resulting JSON.
     """
-    # Collect all numeric pitch values mentioned in descriptions for normalisation.
-    import re
-
-    pitch_re = re.compile(r"pitch=(\d+)")
-
     all_pitches: list[int] = []
     for c in conflicts:
-        for m in pitch_re.finditer(c.get("description", "")):
+        for m in _PITCH_RE.finditer(c.get("description", "")):
             all_pitches.append(int(m.group(1)))
 
     min_pitch = min(all_pitches) if all_pitches else 0
 
-    def _normalise(c: dict[str, Any]) -> dict[str, Any]:
+    def _normalise(c: ConflictDict) -> ConflictDict:
         desc = c.get("description", "")
-        normalised_desc = pitch_re.sub(
+        normalised_desc = _PITCH_RE.sub(
             lambda m: f"pitch={int(m.group(1)) - min_pitch}",
             desc,
         )
-        return {
-            "region_id": c.get("region_id", ""),
-            "type": c.get("type", ""),
-            "description": normalised_desc,
-        }
+        return ConflictDict(
+            region_id=c.get("region_id", ""),
+            type=c.get("type", ""),
+            description=normalised_desc,
+        )
 
     normalised = sorted(
         [_normalise(c) for c in conflicts],
@@ -103,7 +113,7 @@ def _hash_dir(repo_root: Path, conflict_hash: str) -> Path:
 # ---------------------------------------------------------------------------
 
 
-def record_conflict(repo_root: Path, conflicts: list[dict[str, Any]]) -> str:
+def record_conflict(repo_root: Path, conflicts: list[ConflictDict]) -> str:
     """Record a conflict shape in the rr-cache.
 
     If the same conflict shape is already cached this is a no-op (idempotent).
@@ -136,7 +146,7 @@ def record_conflict(repo_root: Path, conflicts: list[dict[str, Any]]) -> str:
 def record_resolution(
     repo_root: Path,
     conflict_hash: str,
-    resolution: dict[str, Any],
+    resolution: JSONObject,
 ) -> None:
     """Persist a resolution for an existing conflict fingerprint.
 
@@ -165,8 +175,8 @@ def record_resolution(
 
 def apply_rerere(
     repo_root: Path,
-    conflicts: list[dict[str, Any]],
-) -> tuple[int, dict[str, Any] | None]:
+    conflicts: list[ConflictDict],
+) -> tuple[int, JSONObject | None]:
     """Attempt to auto-apply a cached resolution for *conflicts*.
 
     Args:
@@ -187,7 +197,7 @@ def apply_rerere(
         logger.debug("muse rerere: no cached resolution for %s", h[:12])
         return 0, None
 
-    resolution: dict[str, Any] = json.loads(postimage.read_text(encoding="utf-8"))
+    resolution: JSONObject = json.loads(postimage.read_text(encoding="utf-8"))
     applied = len(conflicts)
     logger.info(
         "✅ muse rerere: resolved %d conflict(s) using rerere (hash %s)",

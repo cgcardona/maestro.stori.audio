@@ -289,14 +289,18 @@ async def build_merge_checkout_plan(
         # never prevent the caller from receiving the conflict report.
         if repo_root is not None:
             try:
-                from maestro.services.muse_rerere import apply_rerere, record_conflict
+                from maestro.services.muse_rerere import (
+                    ConflictDict,
+                    apply_rerere,
+                    record_conflict,
+                )
 
                 conflict_dicts = [
-                    {
-                        "region_id": c.region_id,
-                        "type": c.type,
-                        "description": c.description,
-                    }
+                    ConflictDict(
+                        region_id=c.region_id,
+                        type=c.type,
+                        description=c.description,
+                    )
                     for c in result.conflicts
                 ]
                 record_conflict(repo_root, conflict_dicts)

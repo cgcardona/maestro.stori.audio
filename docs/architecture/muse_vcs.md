@@ -8671,6 +8671,29 @@ $ muse rerere clear
 ✅ muse rerere: resolved N conflict(s) using rerere.
 ```
 
+### Result Types
+
+| Function | Return Type | Description |
+|----------|-------------|-------------|
+| `record_conflict(repo_root, conflicts)` | `str` | SHA-256 hex fingerprint identifying the conflict shape |
+| `record_resolution(repo_root, hash, resolution)` | `None` | Writes `postimage` to cache; raises `FileNotFoundError` if hash not found |
+| `apply_rerere(repo_root, conflicts)` | `tuple[int, JSONObject \| None]` | `(n_resolved, resolution)` — `n_resolved` is 0 on miss or `len(conflicts)` on hit |
+| `list_rerere(repo_root)` | `list[str]` | Sorted list of all fingerprint hashes in the cache |
+| `forget_rerere(repo_root, hash)` | `bool` | `True` if removed, `False` if not found (idempotent) |
+| `clear_rerere(repo_root)` | `int` | Count of entries removed |
+
+The conflict dict type (`ConflictDict`) has fields: `region_id: str`, `type: str`, `description: str`. The resolution type is `JSONObject` (`dict[str, JSONValue]`) — intentionally opaque to support arbitrary resolution strategies.
+
+### Agent Use Case
+
+`muse rerere` is designed for AI agents running parallel Muse branch workflows. When an agent resolves a merge conflict (e.g. choosing the harmonic arrangement from `feature/harmony` over `feature/rhythm` for a contested region), it records the resolution via `record_resolution()`. Subsequent agents encountering structurally identical conflicts — even in a different key — receive the cached resolution automatically through `apply_rerere()`, eliminating repeated human intervention.
+
+**Typical agent workflow:**
+1. `build_merge_checkout_plan()` encounters conflicts → `record_conflict()` is called automatically.
+2. Agent examines conflicts and calls `record_resolution()` with the chosen strategy.
+3. On the next parallel merge with the same conflict shape: `apply_rerere()` returns the resolution, the agent logs a single `✅ resolved N conflict(s) using rerere` line, and proceeds.
+4. Use `muse rerere list` to audit cached resolutions; `muse rerere forget <hash>` or `muse rerere clear` when resolutions are stale.
+
 ### Implementation
 
 | Layer | File |

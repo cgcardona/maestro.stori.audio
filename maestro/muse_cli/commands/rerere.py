@@ -28,6 +28,7 @@ import typer
 from maestro.muse_cli._repo import require_repo
 from maestro.muse_cli.errors import ExitCode
 from maestro.services.muse_rerere import (
+    ConflictDict,
     apply_rerere,
     clear_rerere,
     forget_rerere,
@@ -48,7 +49,7 @@ app = typer.Typer(
 # ---------------------------------------------------------------------------
 
 
-def _load_current_conflicts(root: pathlib.Path) -> list[dict[str, object]]:
+def _load_current_conflicts(root: pathlib.Path) -> list[ConflictDict]:
     """Read conflict list from .muse/MERGE_STATE.json, if present."""
     import json
 
@@ -61,7 +62,7 @@ def _load_current_conflicts(root: pathlib.Path) -> list[dict[str, object]]:
         # conflict_paths is a list of file-path strings in the merge engine
         # (file-level conflicts), not MergeConflict dicts.  Wrap each path
         # in a minimal dict so rerere can fingerprint it.
-        return [{"region_id": p, "type": "file", "description": f"conflict in {p}"} for p in raw]
+        return [ConflictDict(region_id=p, type="file", description=f"conflict in {p}") for p in raw]
     except Exception as exc:  # noqa: BLE001
         logger.warning("⚠️ muse rerere: could not read MERGE_STATE.json: %s", exc)
         return []
