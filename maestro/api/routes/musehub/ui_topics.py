@@ -7,10 +7,7 @@ Serves two routes from a single module — both render the same template with a
   GET /musehub/ui/topics/{tag}    — single topic detail (featured repos + repo grid)
 
 Content negotiation (one URL, two audiences):
-  HTML (default) — server-side rendered via Jinja2 using ``musehub/pages/topics.html``.
-    HTMX partial requests (``HX-Request: true``) receive only the inner fragment:
-    ``fragments/topic_grid.html`` (index mode) or ``fragments/topic_repos.html``
-    (detail mode), enabling client-side partial updates without a full reload.
+  HTML (default) — rendered via Jinja2 using ``musehub/pages/topics.html``.
   JSON (``?format=json`` or ``Accept: application/json``) — returns the
   appropriate Pydantic response model for machine consumption.
 
@@ -26,15 +23,16 @@ Agent use case:
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 
 from fastapi import APIRouter, Depends, Query, Request
+from fastapi.templating import Jinja2Templates
 from pydantic import Field
 from sqlalchemy import Text, desc, func, outerjoin, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.responses import Response as StarletteResponse
 
-from maestro.api.routes.musehub._templates import templates
-from maestro.api.routes.musehub.negotiate import htmx_fragment_or_full
+from maestro.api.routes.musehub.negotiate import negotiate_response
 from maestro.api.routes.musehub.topics import TopicItem, TopicReposResponse
 from maestro.auth.dependencies import TokenClaims, optional_token
 from maestro.db import get_db
@@ -45,6 +43,9 @@ from maestro.models.musehub import ExploreRepoResult
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/musehub/ui", tags=["musehub-ui"])
+
+_TEMPLATE_DIR = Path(__file__).parent.parent.parent.parent / "templates"
+templates = Jinja2Templates(directory=str(_TEMPLATE_DIR))
 
 # ---------------------------------------------------------------------------
 # Curated topic groups — surfaced on the index page for quick navigation.
@@ -252,14 +253,15 @@ async def topics_index_page(
     db_session: AsyncSession = Depends(get_db),
     _: TokenClaims | None = Depends(optional_token),
 ) -> StarletteResponse:
-    """Render the topics index page (SSR) or return structured JSON.
+    """Render the topics index page or return structured JSON.
 
     HTML (default):
-        A two-column layout — ranked topic grid on the left, curated category
-        groups (Genres, Instruments, Eras) on the right.  All topic data is
-        server-side rendered — no client-side fetch required.  HTMX requests
-        (``HX-Request: true``) receive only the ``topic_grid`` fragment for
-        partial-page updates.
+        A two-column layout — search/filter input on the left, topic grid on
+        the right.  Each topic card shows its slug and ``repo_count`` badge.
+        Below the grid, curated groups (Genres, Instruments, Eras) are rendered
+        as collapsible sections for quick category navigation.  All topic data
+        is fetched client-side via the ``?format=json`` alternate so the page
+        shell loads instantly without a server-side DB round-trip on HTML requests.
 
     JSON (``?format=json`` or ``Accept: application/json``):
         Returns ``TopicsIndexResponse`` with:
@@ -279,20 +281,15 @@ async def topics_index_page(
 
     logger.info("✅ Topics index UI: %d distinct topics", len(all_topics))
 
-    ctx: dict[str, object] = {
-        "mode": "index",
-        "current_page": "topics",
-        "topics": all_topics,
-        "curated_groups": curated_groups,
-        "total": len(all_topics),
-        "breadcrumb_items": [{"label": "Topics", "url": "/musehub/ui/topics"}],
-    }
-    return await htmx_fragment_or_full(
-        request,
-        templates,
-        ctx,
-        full_template="musehub/pages/topics.html",
-        fragment_template="musehub/fragments/topic_grid.html",
+    return await negotiate_response(
+        request=request,
+        template_name="musehub/pages/topics.html",
+        context={
+            "mode": "index",
+            "current_page": "topics",
+            "breadcrumb_items": [{"label": "Topics", "url": "/musehub/ui/topics"}],
+        },
+        templates=templates,
         json_data=json_data,
         format_param=format,
     )
@@ -320,16 +317,15 @@ async def topic_detail_page(
     db_session: AsyncSession = Depends(get_db),
     _: TokenClaims | None = Depends(optional_token),
 ) -> StarletteResponse:
-    """Render the topic detail page (SSR) for a single tag slug.
+    """Render the topic detail page for a single tag slug.
 
     HTML (default):
-        Two sections rendered server-side:
+        Two sections rendered client-side:
         1. Featured repos — the top-3 most-starred repos for this topic,
            displayed as prominent cards with description and star count.
         2. Full repo grid — paginated, sortable (stars|updated) repo cards
-           matching the tag.
-        HTMX requests (``HX-Request: true``) receive only the ``topic_repos``
-        fragment, enabling sort/pagination updates without a full reload.
+           matching the tag, using the same card style as the explore page.
+        A topic description is shown when the slug maps to a known curated group.
 
     JSON (``?format=json`` or ``Accept: application/json``):
         Returns ``TopicReposResponse`` (tag, repos, total, page, page_size).
@@ -356,28 +352,22 @@ async def topic_detail_page(
         topic_data.total,
     )
 
-    total_pages = max(1, (topic_data.total + page_size - 1) // page_size)
-    ctx: dict[str, object] = {
-        "mode": "topic",
-        "tag": tag.lower(),
-        "sort": sort,
-        "page": page,
-        "page_size": page_size,
-        "repos": topic_data.repos,
-        "total": topic_data.total,
-        "total_pages": total_pages,
-        "current_page": "topics",
-        "breadcrumb_items": [
-            {"label": "Topics", "url": "/musehub/ui/topics"},
-            {"label": f"#{tag.lower()}", "url": ""},
-        ],
-    }
-    return await htmx_fragment_or_full(
-        request,
-        templates,
-        ctx,
-        full_template="musehub/pages/topics.html",
-        fragment_template="musehub/fragments/topic_repos.html",
+    return await negotiate_response(
+        request=request,
+        template_name="musehub/pages/topics.html",
+        context={
+            "mode": "topic",
+            "tag": tag.lower(),
+            "sort": sort,
+            "page": page,
+            "page_size": page_size,
+            "current_page": "topics",
+            "breadcrumb_items": [
+                {"label": "Topics", "url": "/musehub/ui/topics"},
+                {"label": f"#{tag.lower()}", "url": ""},
+            ],
+        },
+        templates=templates,
         json_data=topic_data,
         format_param=format,
     )

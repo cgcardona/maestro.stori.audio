@@ -23,13 +23,14 @@ Auto-discovered by the package ``__init__.py`` — do NOT edit that file.
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi import status as http_status
+from fastapi.templating import Jinja2Templates
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.responses import Response as StarletteResponse
 
-from maestro.api.routes.musehub._templates import templates
 from maestro.api.routes.musehub.negotiate import negotiate_response
 from maestro.db import get_db
 from maestro.services import musehub_analysis, musehub_repository
@@ -37,6 +38,9 @@ from maestro.services import musehub_analysis, musehub_repository
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/musehub/ui", tags=["musehub-ui"])
+
+_TEMPLATE_DIR = Path(__file__).parent.parent.parent.parent / "templates"
+templates = Jinja2Templates(directory=str(_TEMPLATE_DIR))
 
 
 async def _resolve_repo(

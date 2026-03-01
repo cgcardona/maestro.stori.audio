@@ -110,12 +110,12 @@ async def test_topics_index_html_has_page_mode(
     client: AsyncClient,
     db_session: AsyncSession,
 ) -> None:
-    """HTML response must render the index mode — Topics heading server-side."""
+    """HTML response must embed PAGE_MODE = 'index' as a JS variable."""
     response = await client.get(_INDEX_URL)
     assert response.status_code == 200
     body = response.text
-    # SSR: mode is rendered as HTML content, not a JS variable
-    assert "🏷️ Topics" in body
+    assert "PAGE_MODE" in body
+    assert '"index"' in body
 
 
 @pytest.mark.anyio
@@ -123,10 +123,11 @@ async def test_topics_index_html_has_curated_groups(
     client: AsyncClient,
     db_session: AsyncSession,
 ) -> None:
-    """HTML must render curated group labels and link to the topics index."""
+    """HTML shell must reference the topics data endpoint for client-side loading."""
     response = await client.get(_INDEX_URL)
     assert response.status_code == 200
     body = response.text
+    # The JS references the UI endpoint for data loading
     assert "/musehub/ui/topics" in body
 
 
@@ -278,12 +279,12 @@ async def test_topic_detail_tag_injected_in_js(
     client: AsyncClient,
     db_session: AsyncSession,
 ) -> None:
-    """Tag slug must appear in the server-rendered HTML (breadcrumb and heading)."""
+    """Tag slug must be passed as the TOPIC_TAG JS variable."""
     response = await client.get(_DETAIL_URL)
     assert response.status_code == 200
     body = response.text
-    # SSR: tag rendered in breadcrumb and heading, not as a JS variable
-    assert "#jazz" in body
+    assert "TOPIC_TAG" in body
+    assert '"jazz"' in body
 
 
 @pytest.mark.anyio
@@ -291,12 +292,12 @@ async def test_topic_detail_sort_injected_in_js(
     client: AsyncClient,
     db_session: AsyncSession,
 ) -> None:
-    """Sort state must appear in sort control links in the server-rendered HTML."""
+    """Sort param must be passed as the TOPIC_SORT JS variable."""
     response = await client.get(_DETAIL_URL + "?sort=updated")
     assert response.status_code == 200
     body = response.text
-    # SSR: sort=updated is reflected in sort button active state / URL links
-    assert "sort=updated" in body
+    assert "TOPIC_SORT" in body
+    assert '"updated"' in body
 
 
 @pytest.mark.anyio
@@ -317,7 +318,7 @@ async def test_topic_detail_html_references_api(
     client: AsyncClient,
     db_session: AsyncSession,
 ) -> None:
-    """HTML must contain links back to the topics index (breadcrumb and sort links)."""
+    """HTML must reference the topics UI data endpoint for client-side data fetching."""
     response = await client.get(_DETAIL_URL)
     assert response.status_code == 200
     body = response.text
