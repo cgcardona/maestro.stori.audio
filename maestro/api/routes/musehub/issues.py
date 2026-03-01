@@ -14,9 +14,7 @@ Endpoint summary:
   POST /musehub/repos/{repo_id}/issues/{issue_number}/comments      — create comment (auth required)
   DELETE /musehub/repos/{repo_id}/issues/{issue_number}/comments/{comment_id} — delete comment (auth)
 
-  GET  /musehub/repos/{repo_id}/milestones                          — list milestones (public: no auth)
-  POST /musehub/repos/{repo_id}/milestones                          — create milestone (auth required)
-  GET  /musehub/repos/{repo_id}/milestones/{milestone_number}       — get milestone (public: no auth)
+Milestone CRUD (GET/POST/GET-single/PATCH/DELETE) lives in maestro.api.routes.musehub.milestones.
 
 Read endpoints use optional_token — unauthenticated access is allowed for public repos.
 Write endpoints always require a valid JWT Bearer token.
@@ -41,9 +39,6 @@ from maestro.models.musehub import (
     IssueListResponse,
     IssueResponse,
     IssueUpdate,
-    MilestoneCreate,
-    MilestoneListResponse,
-    MilestoneResponse,
 )
 from maestro.services import musehub_issues
 from maestro.services import musehub_repository
@@ -441,89 +436,3 @@ async def delete_comment(
     if not deleted:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Comment not found")
     await db.commit()
-
-
-# ── Milestones ─────────────────────────────────────────────────────────────────
-
-
-@router.get(
-    "/repos/{repo_id}/milestones",
-    response_model=MilestoneListResponse,
-    operation_id="listMilestones",
-    summary="List milestones for a Muse Hub repo",
-)
-async def list_milestones(
-    repo_id: str,
-    state: str = Query("open", pattern="^(open|closed|all)$", description="Filter by state"),
-    db: AsyncSession = Depends(get_db),
-    claims: TokenClaims | None = Depends(optional_token),
-) -> MilestoneListResponse:
-    """Return milestones for a repo. Defaults to open milestones only."""
-    repo = await musehub_repository.get_repo(db, repo_id)
-    if repo is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repo not found")
-    if repo.visibility != "public" and claims is None:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Authentication required to access private repos.",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-    return await musehub_issues.list_milestones(db, repo_id, state=state)
-
-
-@router.post(
-    "/repos/{repo_id}/milestones",
-    response_model=MilestoneResponse,
-    status_code=status.HTTP_201_CREATED,
-    operation_id="createMilestone",
-    summary="Create a milestone for a Muse Hub repo",
-)
-async def create_milestone(
-    repo_id: str,
-    body: MilestoneCreate,
-    db: AsyncSession = Depends(get_db),
-    token: TokenClaims = Depends(require_valid_token),
-) -> MilestoneResponse:
-    """Create a new milestone in ``open`` state."""
-    repo = await musehub_repository.get_repo(db, repo_id)
-    if repo is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repo not found")
-
-    milestone = await musehub_issues.create_milestone(
-        db,
-        repo_id=repo_id,
-        title=body.title,
-        description=body.description,
-        author=token.get("sub", ""),
-        due_on=body.due_on,
-    )
-    await db.commit()
-    return milestone
-
-
-@router.get(
-    "/repos/{repo_id}/milestones/{milestone_number}",
-    response_model=MilestoneResponse,
-    operation_id="getMilestone",
-    summary="Get a single milestone by its per-repo number",
-)
-async def get_milestone(
-    repo_id: str,
-    milestone_number: int,
-    db: AsyncSession = Depends(get_db),
-    claims: TokenClaims | None = Depends(optional_token),
-) -> MilestoneResponse:
-    """Return a single milestone with open and closed issue counts."""
-    repo = await musehub_repository.get_repo(db, repo_id)
-    if repo is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repo not found")
-    if repo.visibility != "public" and claims is None:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Authentication required to access private repos.",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-    milestone = await musehub_issues.get_milestone(db, repo_id, milestone_number)
-    if milestone is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Milestone not found")
-    return milestone
