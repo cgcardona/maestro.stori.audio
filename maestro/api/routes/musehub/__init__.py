@@ -20,12 +20,15 @@ from maestro.api.routes.musehub import (
     analysis,
     collaborators,
     issues,
+    labels,
+    milestones,
     objects,
     pull_requests,
     releases,
     repos,
     search,
     social,
+    stash,
     sync,
     webhooks,
 )
@@ -39,6 +42,8 @@ router = APIRouter(
 # last in repos.py.
 router.include_router(collaborators.router, tags=["Collaborators"])
 router.include_router(issues.router, tags=["Issues"])
+router.include_router(labels.router, tags=["Labels"])
+router.include_router(milestones.router, tags=["Milestones"])
 router.include_router(pull_requests.router, tags=["Pull Requests"])
 router.include_router(releases.router, tags=["Releases"])
 router.include_router(sync.router, tags=["Sync"])
@@ -47,6 +52,7 @@ router.include_router(search.router, tags=["Search"])
 router.include_router(analysis.router, tags=["Analysis"])
 router.include_router(webhooks.router, tags=["Webhooks"])
 router.include_router(social.router, tags=["Social"])
+router.include_router(stash.router, tags=["Stash"])
 # repos.router last — contains the /{owner}/{repo_slug} wildcard route.
 router.include_router(repos.router, tags=["Repos"])
 
