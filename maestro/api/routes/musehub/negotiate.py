@@ -3,17 +3,11 @@
 Every MuseHub URL can serve two audiences from the same path:
 - HTML to browsers (default, ``Accept: text/html``)
 - JSON to agents/scripts (``Accept: application/json`` or ``?format=json``)
-- HTMX fragment to HTMX requests (``HX-Request: true``)
 
 This module provides two helpers:
 
-``negotiate_response()`` — inspects headers and an optional ``?format`` query
-parameter, then dispatches to the correct serialiser.  Priority order (first
-match wins):
-
-1. ``HX-Request: true`` + ``fragment_template`` provided → return bare fragment
-2. ``?format=json`` or ``Accept: application/json`` → return JSON
-3. Default → return full HTML page
+``negotiate_response()`` — inspects the ``Accept`` header and an optional
+``?format`` query parameter, then dispatches to the correct serialiser.
 
 ``htmx_fragment_or_full()`` — for SSR pages migrated to HTMX: inspects the
 ``HX-Request`` header to decide whether to return just the inner fragment
@@ -21,8 +15,8 @@ match wins):
 navigations).
 
 Design rationale:
-- One URL, three audiences — HTMX gets fragments, agents get JSON, humans get HTML.
-- No separate ``/api/v1/...`` endpoint needed; one handler serves all.
+- One URL, two audiences — agents get structured JSON, humans get rich HTML.
+- No separate ``/api/v1/...`` endpoint needed; one handler serves both.
 - ``?format=json`` as a fallback for clients that cannot set ``Accept`` headers
   (e.g. browser ``<a>`` links, ``curl`` without ``-H``).
 - JSON keys use camelCase via Pydantic ``by_alias=True``, matching the existing
@@ -41,8 +35,6 @@ from fastapi.responses import JSONResponse
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 from starlette.responses import Response
-
-from maestro.api.routes.musehub.htmx_helpers import is_htmx
 
 logger = logging.getLogger(__name__)
 
@@ -79,22 +71,13 @@ async def negotiate_response(
     templates: Jinja2Templates,
     json_data: BaseModel | None = None,
     format_param: str | None = None,
-    fragment_template: str | None = None,
 ) -> Response:
-    """Return an HTML, fragment, or JSON response based on the caller's preference.
+    """Return an HTML or JSON response based on the caller's preference.
 
     Route handlers should call this instead of constructing responses directly.
     The handler prepares:
-    - ``context``           — Jinja2 template variables for both HTML paths.
-    - ``json_data``         — Pydantic model for the JSON path (camelCase serialised).
-    - ``fragment_template`` — Bare fragment template for HTMX partial updates.
-
-    Priority order (first match wins):
-    1. HTMX request (``HX-Request: true``) + ``fragment_template`` provided
-       → returns bare fragment (no ``<html>``, ``<head>``, or nav).
-    2. JSON requested (``?format=json`` or ``Accept: application/json``)
-       → returns ``JSONResponse`` with camelCase keys.
-    3. Default → returns full ``TemplateResponse`` using ``template_name``.
+    - ``context``   — Jinja2 template variables for the HTML path.
+    - ``json_data`` — Pydantic model for the JSON path (camelCase serialised).
 
     When ``json_data`` is ``None`` and JSON is requested, ``context`` is
     serialised as-is.  This is a fallback for pages that have no structured
@@ -102,22 +85,15 @@ async def negotiate_response(
 
     Args:
         request: The incoming FastAPI request (needed for template rendering).
-        template_name: Jinja2 template path for the full-page HTML response.
+        template_name: Jinja2 template path relative to the templates dir.
         context: Template context dict (also used as fallback JSON payload).
         templates: The ``Jinja2Templates`` instance from the route module.
         json_data: Optional Pydantic model to serialise for the JSON path.
         format_param: Value of the ``?format`` query parameter, or ``None``.
-        fragment_template: Optional Jinja2 path to a bare fragment template
-            (no ``{% extends %}``). When provided, HTMX requests receive this
-            fragment instead of the full page.
 
     Returns:
-        ``TemplateResponse`` (fragment or full page), or ``JSONResponse``.
+        ``JSONResponse`` with camelCase keys, or ``TemplateResponse`` for HTML.
     """
-    if is_htmx(request) and fragment_template is not None:
-        logger.debug("✅ negotiate_response: HTMX fragment path — %s", fragment_template)
-        return templates.TemplateResponse(request, fragment_template, context)
-
     if _wants_json(request, format_param):
         if json_data is not None:
             payload: dict[str, Any] = json_data.model_dump(by_alias=True, mode="json")
