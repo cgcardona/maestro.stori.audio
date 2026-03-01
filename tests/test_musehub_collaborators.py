@@ -161,16 +161,14 @@ async def test_check_permission_not_collaborator(
     client: AsyncClient,
     auth_headers: dict[str, str],
 ) -> None:
-    """Permission check returns is_collaborator=false for a non-member user."""
+    """Permission check returns 404 for a non-member user (access-check semantics)."""
     repo_id = await _create_repo(client, auth_headers, "perm-check-not-member-repo")
     response = await client.get(
         f"/api/v1/musehub/repos/{repo_id}/collaborators/{_COLLABORATOR_ID}/permission",
         headers=auth_headers,
     )
-    assert response.status_code == 200
-    body = response.json()
-    assert body["isCollaborator"] is False
-    assert body["permission"] is None
+    assert response.status_code == 404
+    assert _COLLABORATOR_ID in response.json()["detail"]
 
 
 @pytest.mark.anyio
@@ -178,7 +176,7 @@ async def test_check_permission_is_collaborator(
     client: AsyncClient,
     auth_headers: dict[str, str],
 ) -> None:
-    """Permission check returns is_collaborator=true with correct level after invite."""
+    """Permission check returns username and permission level after invite."""
     repo_id = await _create_repo(client, auth_headers, "perm-check-member-repo")
     await _invite_collaborator(client, auth_headers, repo_id, permission="admin")
 
@@ -188,7 +186,7 @@ async def test_check_permission_is_collaborator(
     )
     assert response.status_code == 200
     body = response.json()
-    assert body["isCollaborator"] is True
+    assert body["username"] == _COLLABORATOR_ID
     assert body["permission"] == "admin"
 
 
