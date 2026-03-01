@@ -1975,6 +1975,38 @@ Returns all 13 dimensions in a single response.
 
 ---
 
+### GET /api/v1/musehub/repos/{repo_id}/analysis/{ref}/harmony
+
+Dedicated harmonic analysis endpoint (issue #414). Returns `HarmonyAnalysisResponse` —
+a Roman-numeral-centric view for agent tonal reasoning. Maps to `muse harmony --ref {ref}`.
+
+**Path params:** `repo_id`, `ref`
+
+**Query params:** `?track=<instrument>`, `?section=<label>`
+
+**Response `200 application/json`:**
+```json
+{
+  "key": "C major",
+  "mode": "major",
+  "romanNumerals": [
+    { "beat": 0.0, "chord": "I", "root": "C", "quality": "major", "function": "tonic" },
+    { "beat": 4.0, "chord": "IV", "root": "F", "quality": "major", "function": "subdominant" }
+  ],
+  "cadences": [
+    { "beat": 7.0, "type": "authentic", "from": "V", "to": "I" }
+  ],
+  "modulations": [
+    { "beat": 32.0, "fromKey": "C major", "toKey": "G major", "pivotChord": "G" }
+  ],
+  "harmonicRhythmBpm": 2.0
+}
+```
+
+**Auth:** public repos accessible without token; private repos require `Authorization: Bearer <JWT>`.
+
+---
+
 ### GET /api/v1/musehub/repos/{repo_id}/analysis/{ref}/{dimension}
 
 Returns structured JSON for one musical dimension.
@@ -1982,8 +2014,11 @@ Returns structured JSON for one musical dimension.
 **Path params:**
 - `repo_id` — Muse Hub repo UUID
 - `ref` — commit ref
-- `dimension` — one of: `harmony`, `dynamics`, `motifs`, `form`, `groove`, `emotion`,
-  `chord-map`, `contour`, `key`, `tempo`, `meter`, `similarity`, `divergence`
+- `dimension` — one of: `harmony` (redirected to dedicated endpoint above), `dynamics`,
+  `motifs`, `form`, `groove`, `emotion`, `chord-map`, `contour`, `key`, `tempo`, `meter`,
+  `similarity`, `divergence`.  Note: requesting `harmony` via this path is now handled by
+  the dedicated `/harmony` endpoint above which returns `HarmonyAnalysisResponse` instead
+  of the generic `AnalysisResponse` envelope.
 
 **Query params:** same as aggregate endpoint (`?track=`, `?section=`)
 
@@ -2222,6 +2257,67 @@ curl https://musehub.stori.com/api/v1/musehub/repos/<repo_id>/raw/main/tracks/ba
 - **401** — private repo accessed without a valid Bearer token
 - **404** — repo not found, or no object exists at the given path
 - **410** — object metadata exists in DB but the file was removed from disk
+
+---
+
+## Muse Hub User Profile API
+
+Public user profile and social endpoints. No `Authorization` header required for read-only routes (profiles are publicly discoverable).
+
+### GET `/api/v1/musehub/users/{username}/activity`
+
+Return the public activity feed for a Muse Hub user — a cursor-paginated, newest-first list of events the user has triggered across their public repos.
+
+**Auth:** Optional. Unauthenticated callers see only events from public repos. The authenticated owner also sees events from their private repos.
+
+**Path params:**
+- `username` — URL-friendly Muse Hub username (e.g. `gabriel`)
+
+**Query params:**
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `type` | string | — | Filter by public API event type: `push` \| `pull_request` \| `issue` \| `release` \| `star` \| `fork` \| `comment` |
+| `limit` | int | `30` | Maximum events to return (1–100) |
+| `before_id` | UUID | — | Cursor: event UUID from a previous response's `nextCursor` |
+
+**Response (200):** `UserActivityFeedResponse`
+
+```json
+{
+  "events": [
+    {
+      "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+      "type": "push",
+      "actor": "gabriel",
+      "repo": "gabriel/neo-baroque",
+      "payload": {
+        "sha": "abc123",
+        "message": "Add jazz voicings"
+      },
+      "createdAt": "2026-02-28T10:00:00Z"
+    }
+  ],
+  "nextCursor": "b2c3d4e5-f6a7-8901-bcde-f12345678901",
+  "typeFilter": null
+}
+```
+
+**Cursor pagination:** Pass `nextCursor` from the response as `before_id` in the next request to fetch the subsequent page. When `nextCursor` is `null`, there are no more events.
+
+**Public API `type` vocabulary → DB event types:**
+| API `type` | DB `event_type` values |
+|------------|------------------------|
+| `push` | `commit_pushed`, `branch_created`, `branch_deleted` |
+| `pull_request` | `pr_opened`, `pr_merged`, `pr_closed` |
+| `issue` | `issue_opened`, `issue_closed` |
+| `release` | `tag_pushed` |
+| `star`, `fork`, `comment` | Not yet in DB — always returns empty feed |
+
+**Errors:**
+- **404** — username not found
+- **422** — `type` param is not one of the accepted values
+
+**Response type:** [`UserActivityFeedResponse`](./type_contracts.md#useractivityfeedresponse)
 
 ---
 

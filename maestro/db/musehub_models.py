@@ -72,6 +72,11 @@ class MusehubRepo(Base):
     # Music-semantic metadata for filter-based discovery
     key_signature: Mapped[str | None] = mapped_column(String(50), nullable=True)
     tempo_bpm: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Feature-flag settings not covered by dedicated columns (JSON blob).
+    # Keys: has_issues, has_projects, has_wiki, license, homepage_url,
+    #       allow_merge_commit, allow_squash_merge, allow_rebase_merge,
+    #       delete_branch_on_merge, default_branch.
+    settings: Mapped[dict[str, object] | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=_utc_now
     )

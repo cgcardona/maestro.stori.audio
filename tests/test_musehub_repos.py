@@ -1598,3 +1598,231 @@ async def test_list_forks_returns_fork_entry(
     assert isinstance(body, list)
     assert len(body) == 1
     assert body[0]["source_repo_id"] == repo_id
+
+
+# ---------------------------------------------------------------------------
+# GET /repos/{repo_id}/settings  (issue #412)
+# ---------------------------------------------------------------------------
+
+TEST_OWNER_USER_ID = "550e8400-e29b-41d4-a716-446655440000"
+
+
+@pytest.mark.anyio
+async def test_get_repo_settings_returns_defaults(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    auth_headers: dict[str, str],
+) -> None:
+    """GET /repos/{repo_id}/settings returns full settings with canonical defaults."""
+    repo = MusehubRepo(
+        name="settings-get-test",
+        owner="testuser",
+        slug="settings-get-test",
+        visibility="private",
+        owner_user_id=TEST_OWNER_USER_ID,
+    )
+    db_session.add(repo)
+    await db_session.commit()
+    await db_session.refresh(repo)
+
+    resp = await client.get(
+        f"/api/v1/musehub/repos/{repo.repo_id}/settings",
+        headers=auth_headers,
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["name"] == "settings-get-test"
+    assert body["visibility"] == "private"
+    assert body["hasIssues"] is True
+    assert body["allowMergeCommit"] is True
+    assert body["allowRebaseMerge"] is False
+    assert body["deleteBranchOnMerge"] is True
+    assert body["defaultBranch"] == "main"
+
+
+@pytest.mark.anyio
+async def test_get_repo_settings_requires_auth(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """GET /repos/{repo_id}/settings returns 401 without a Bearer token."""
+    repo = MusehubRepo(
+        name="settings-noauth",
+        owner="testuser",
+        slug="settings-noauth",
+        visibility="private",
+        owner_user_id=TEST_OWNER_USER_ID,
+    )
+    db_session.add(repo)
+    await db_session.commit()
+    await db_session.refresh(repo)
+
+    resp = await client.get(f"/api/v1/musehub/repos/{repo.repo_id}/settings")
+    assert resp.status_code == 401
+
+
+@pytest.mark.anyio
+async def test_get_repo_settings_returns_403_for_non_admin(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    auth_headers: dict[str, str],
+) -> None:
+    """GET /repos/{repo_id}/settings returns 403 when caller is not owner or admin."""
+    repo = MusehubRepo(
+        name="settings-403-test",
+        owner="other-owner",
+        slug="settings-403-test",
+        visibility="public",
+        owner_user_id="other-user-id-not-test",
+    )
+    db_session.add(repo)
+    await db_session.commit()
+    await db_session.refresh(repo)
+
+    resp = await client.get(
+        f"/api/v1/musehub/repos/{repo.repo_id}/settings",
+        headers=auth_headers,
+    )
+    assert resp.status_code == 403
+
+
+@pytest.mark.anyio
+async def test_get_repo_settings_returns_404_for_unknown_repo(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+) -> None:
+    """GET /repos/{repo_id}/settings returns 404 for a non-existent repo."""
+    resp = await client.get(
+        "/api/v1/musehub/repos/nonexistent-repo-id/settings",
+        headers=auth_headers,
+    )
+    assert resp.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# PATCH /repos/{repo_id}/settings  (issue #412)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.anyio
+async def test_patch_repo_settings_updates_fields(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    auth_headers: dict[str, str],
+) -> None:
+    """PATCH /repos/{repo_id}/settings owner can update dedicated and flag fields."""
+    repo = MusehubRepo(
+        name="settings-patch-test",
+        owner="testuser",
+        slug="settings-patch-test",
+        visibility="private",
+        owner_user_id=TEST_OWNER_USER_ID,
+    )
+    db_session.add(repo)
+    await db_session.commit()
+    await db_session.refresh(repo)
+
+    resp = await client.patch(
+        f"/api/v1/musehub/repos/{repo.repo_id}/settings",
+        json={
+            "description": "Updated description",
+            "visibility": "public",
+            "hasIssues": False,
+            "allowRebaseMerge": True,
+            "homepageUrl": "https://stori.com",
+            "topics": ["classical", "baroque"],
+        },
+        headers=auth_headers,
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["description"] == "Updated description"
+    assert body["visibility"] == "public"
+    assert body["hasIssues"] is False
+    assert body["allowRebaseMerge"] is True
+    assert body["homepageUrl"] == "https://stori.com"
+    assert body["topics"] == ["classical", "baroque"]
+    # Untouched field should retain its default
+    assert body["allowMergeCommit"] is True
+
+
+@pytest.mark.anyio
+async def test_patch_repo_settings_partial_update_preserves_other_fields(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    auth_headers: dict[str, str],
+) -> None:
+    """PATCH with a single field leaves all other settings unchanged."""
+    repo = MusehubRepo(
+        name="settings-partial-test",
+        owner="testuser",
+        slug="settings-partial-test",
+        visibility="private",
+        owner_user_id=TEST_OWNER_USER_ID,
+    )
+    db_session.add(repo)
+    await db_session.commit()
+    await db_session.refresh(repo)
+
+    resp = await client.patch(
+        f"/api/v1/musehub/repos/{repo.repo_id}/settings",
+        json={"defaultBranch": "develop"},
+        headers=auth_headers,
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["defaultBranch"] == "develop"
+    # Other fields kept
+    assert body["name"] == "settings-partial-test"
+    assert body["visibility"] == "private"
+    assert body["hasIssues"] is True
+
+
+@pytest.mark.anyio
+async def test_patch_repo_settings_requires_auth(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """PATCH /repos/{repo_id}/settings returns 401 without a Bearer token."""
+    repo = MusehubRepo(
+        name="settings-patch-noauth",
+        owner="testuser",
+        slug="settings-patch-noauth",
+        visibility="private",
+        owner_user_id=TEST_OWNER_USER_ID,
+    )
+    db_session.add(repo)
+    await db_session.commit()
+    await db_session.refresh(repo)
+
+    resp = await client.patch(
+        f"/api/v1/musehub/repos/{repo.repo_id}/settings",
+        json={"visibility": "public"},
+    )
+    assert resp.status_code == 401
+
+
+@pytest.mark.anyio
+async def test_patch_repo_settings_returns_403_for_non_admin(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    auth_headers: dict[str, str],
+) -> None:
+    """PATCH /repos/{repo_id}/settings returns 403 when caller is not owner or admin."""
+    repo = MusehubRepo(
+        name="settings-patch-403",
+        owner="other-owner",
+        slug="settings-patch-403",
+        visibility="public",
+        owner_user_id="other-user-not-test",
+    )
+    db_session.add(repo)
+    await db_session.commit()
+    await db_session.refresh(repo)
+
+    resp = await client.patch(
+        f"/api/v1/musehub/repos/{repo.repo_id}/settings",
+        json={"hasWiki": True},
+        headers=auth_headers,
+    )
+    assert resp.status_code == 403

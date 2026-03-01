@@ -1628,6 +1628,59 @@ class ActivityFeedResponse(CamelModel):
     event_type_filter: str | None = None
 
 
+# ── User public activity feed models ─────────────────────────────────────────
+
+
+class UserActivityEventItem(CamelModel):
+    """A single event in a user's public activity feed.
+
+    Uses the public API type vocabulary (push, pull_request, issue, release)
+    rather than the internal DB event_type vocabulary (commit_pushed, pr_opened, …).
+    ``repo`` is the human-readable "{owner}/{slug}" identifier for deep-linking
+    to the repo page without exposing internal repo_id UUIDs.
+    ``payload`` carries event-specific structured data (e.g. branch name and
+    head commit message for push events, PR number and title for pull_request events).
+    """
+
+    id: str = Field(..., description="Internal UUID for this event")
+    type: str = Field(
+        ...,
+        description="Public event type: push | pull_request | issue | release | push",
+    )
+    actor: str = Field(..., description="Username who triggered the event")
+    repo: str = Field(..., description="Repo identifier as '{owner}/{slug}'")
+    payload: dict[str, object] = Field(
+        default_factory=dict,
+        description="Event-specific structured data for deep-link rendering",
+    )
+    created_at: datetime = Field(..., description="Event creation timestamp (ISO-8601 UTC)")
+
+
+class UserActivityFeedResponse(CamelModel):
+    """Cursor-paginated public activity feed for a Muse Hub user (newest-first).
+
+    ``events`` contains up to ``limit`` events for the given user, filtered to
+    public repos only (or all repos when the caller is the profile owner).
+    ``next_cursor`` is the event UUID to pass as ``before_id`` in the next
+    request to fetch the subsequent page; None when there are no more events.
+    ``type_filter`` echoes back the ``type`` query param, or None when all types
+    are shown.
+
+    Agent use case: stream this feed to build a real-time view of what a
+    collaborator has been working on across all their public repos.
+    """
+
+    events: list[UserActivityEventItem]
+    next_cursor: str | None = Field(
+        None,
+        description="Pass as before_id to fetch the next page; None on the last page",
+    )
+    type_filter: str | None = Field(
+        None,
+        description="Active type filter value, or None when all types are shown",
+    )
+
+
 class SimilarCommitResponse(CamelModel):
     """A single result from a MuseHub semantic similarity search.
 
@@ -2123,6 +2176,66 @@ class UserWatchedResponse(CamelModel):
 # ── Render pipeline ────────────────────────────────────────────────────────
 
 
+class RepoSettingsResponse(CamelModel):
+    """Mutable settings for a Muse Hub repo.
+
+    Returned by ``GET /api/v1/musehub/repos/{repo_id}/settings``.
+
+    Fields map to GitHub-style repo settings.  ``name``, ``description``,
+    ``visibility``, and ``topics`` are stored in dedicated repo columns;
+    all remaining flags are stored in the ``settings`` JSON blob.
+
+    Agent use case: read before updating project metadata, toggling features,
+    or configuring merge strategy for a repo's PR workflow.
+    """
+
+    name: str = Field(..., description="Human-readable repo name")
+    description: str = Field("", description="Short description shown on the explore page")
+    visibility: str = Field(..., description="'public' or 'private'")
+    default_branch: str = Field("main", description="Default branch name (used for clone and PRs)")
+    has_issues: bool = Field(True, description="Whether the issues tracker is enabled")
+    has_projects: bool = Field(False, description="Whether the projects board is enabled")
+    has_wiki: bool = Field(False, description="Whether the wiki is enabled")
+    topics: list[str] = Field(default_factory=list, description="Free-form topic tags")
+    license: str | None = Field(None, description="SPDX license identifier or display name, e.g. 'CC BY 4.0'")
+    homepage_url: str | None = Field(None, description="Project homepage URL")
+    allow_merge_commit: bool = Field(True, description="Allow merge commits on PRs")
+    allow_squash_merge: bool = Field(True, description="Allow squash merges on PRs")
+    allow_rebase_merge: bool = Field(False, description="Allow rebase merges on PRs")
+    delete_branch_on_merge: bool = Field(True, description="Auto-delete head branch after PR merge")
+
+
+class RepoSettingsPatch(CamelModel):
+    """Partial update body for ``PATCH /api/v1/musehub/repos/{repo_id}/settings``.
+
+    All fields are optional — only provided fields are updated.
+    ``visibility`` must be ``'public'`` or ``'private'`` when supplied.
+    Caller must hold owner or admin collaborator permission; otherwise 403 is returned.
+
+    Agent use case: update repo visibility, merge strategy, or homepage URL
+    without knowing the full settings object.
+    """
+
+    name: str | None = Field(None, description="New repo name")
+    description: str | None = Field(None, description="New description")
+    visibility: str | None = Field(
+        None,
+        pattern="^(public|private)$",
+        description="'public' or 'private'",
+    )
+    default_branch: str | None = Field(None, description="New default branch name")
+    has_issues: bool | None = Field(None, description="Enable/disable issues tracker")
+    has_projects: bool | None = Field(None, description="Enable/disable projects board")
+    has_wiki: bool | None = Field(None, description="Enable/disable wiki")
+    topics: list[str] | None = Field(None, description="Replace topic tags (full list)")
+    license: str | None = Field(None, description="SPDX license identifier or display name")
+    homepage_url: str | None = Field(None, description="Project homepage URL")
+    allow_merge_commit: bool | None = Field(None, description="Allow merge commits on PRs")
+    allow_squash_merge: bool | None = Field(None, description="Allow squash merges on PRs")
+    allow_rebase_merge: bool | None = Field(None, description="Allow rebase merges on PRs")
+    delete_branch_on_merge: bool | None = Field(None, description="Auto-delete head branch after PR merge")
+
+
 class RenderStatusResponse(CamelModel):
     """Render job status for a single commit's auto-generated artifacts.
 
@@ -2159,4 +2272,54 @@ class RenderStatusResponse(CamelModel):
     error_message: str | None = Field(
         default=None,
         description="Error details when status is 'failed'; null otherwise",
+    )
+
+
+# ── Blame models ────────────────────────────────────────────────────────────
+
+
+class BlameEntry(CamelModel):
+    """A single blame annotation entry attributing a note event to a commit.
+
+    Each entry maps a note (identified by pitch, track, and beat range) to the
+    commit that last introduced or modified it.  When filtering by ``track`` or
+    ``beat_start``/``beat_end``, only entries within the specified scope are
+    returned.
+
+    Consumers (e.g. the blame UI page) use ``commit_id`` to deep-link to the
+    commit detail view and ``author`` / ``timestamp`` to display inline
+    attribution labels on the piano roll.
+    """
+
+    commit_id: str = Field(..., description="ID of the commit that last modified this note")
+    commit_message: str = Field(..., description="Commit message from the attributing commit")
+    author: str = Field(..., description="Display name or identifier of the commit author")
+    timestamp: datetime = Field(..., description="UTC timestamp of the attributing commit")
+    beat_start: float = Field(..., description="Start position of the note in quarter-note beats")
+    beat_end: float = Field(..., description="End position of the note in quarter-note beats")
+    track: str = Field(..., description="Instrument track name this note belongs to")
+    note_pitch: int = Field(..., description="MIDI pitch value (0–127)")
+    note_velocity: int = Field(..., description="MIDI velocity (0–127)")
+    note_duration_beats: float = Field(..., description="Duration of the note in quarter-note beats")
+
+
+class BlameResponse(CamelModel):
+    """Response envelope for the blame API.
+
+    ``entries`` is the list of blame annotations, each attributing a note to the
+    commit that last modified it.  ``total_entries`` reflects the total number of
+    matching entries before any client-side pagination.
+
+    When no matching notes are found (e.g. the path does not exist at ``ref``
+    or the track/beat filters exclude all notes), ``entries`` is empty and
+    ``total_entries`` is 0 — the endpoint never returns 404 for an empty result.
+    """
+
+    entries: list[BlameEntry] = Field(
+        default_factory=list,
+        description="Blame annotations, each attributing a note to its last-modifying commit",
+    )
+    total_entries: int = Field(
+        default=0,
+        description="Total number of blame entries in the response",
     )

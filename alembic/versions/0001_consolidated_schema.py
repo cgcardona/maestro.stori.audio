@@ -45,6 +45,7 @@ Single source-of-truth migration for Maestro. Creates:
   - musehub_collaborators (repo access control beyond owner)
   - musehub_stash, musehub_stash_entries (git-stash-style temporary shelving)
   - musehub_pr_reviews (reviewer assignment and approval tracking per PR)
+  - musehub_repos.settings (nullable JSON column for feature-flag settings)
 
 Fresh install:
   docker compose exec maestro alembic upgrade head
@@ -971,6 +972,12 @@ def upgrade() -> None:
     )
     op.create_index("ix_musehub_pr_reviews_state", "musehub_pr_reviews", ["state"])
 
+    # Muse Hub — repo settings (folded from 0006_repo_settings)
+    op.add_column(
+        "musehub_repos",
+        sa.Column("settings", sa.JSON(), nullable=True),
+    )
+
 
 def downgrade() -> None:
     # Drop in reverse creation order, respecting foreign-key dependencies.
@@ -982,6 +989,9 @@ def downgrade() -> None:
     )
     op.drop_index("ix_musehub_pr_reviews_pr_id", table_name="musehub_pr_reviews")
     op.drop_table("musehub_pr_reviews")
+
+    # Muse Hub — repo settings (folded from 0006_repo_settings)
+    op.drop_column("musehub_repos", "settings")
 
     # Muse Hub — stash (folded from 0005_stash)
     op.drop_index("ix_musehub_stash_entries_stash_id", table_name="musehub_stash_entries")
