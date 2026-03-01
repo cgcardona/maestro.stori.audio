@@ -5,10 +5,15 @@ subcommands (amend, arrange, ask, bisect, blame, cat-object, checkout, cherry-pi
 chord-map, clone, commit, commit-tree, context, contour, describe, diff, divergence,
 dynamics, emotion-diff, export, fetch, find, form, grep, groove-check, harmony,
 hash-object, humanize, import, init, inspect, key, log, merge, meter, motif, open,
-play, pull, push, read-tree, rebase, recall, release, remote, render-preview, reset,
-resolve, restore, rev-parse, revert, session, show, similarity, stash, status, swing,
-symbolic-ref, tag, tempo, tempo-scale, timeline, transpose, update-ref, validate,
-worktree, write-tree) as Typer sub-applications.
+play, pull, push, read-tree, rebase, recall, release, remote, render-preview, rerere,
+subcommands (amend, arrange, ask, attributes, bisect, blame, cat-object, checkout,
+cherry-pick, chord-map, clone, commit, commit-tree, context, contour, describe, diff,
+divergence, dynamics, emotion-diff, export, fetch, find, form, grep, groove-check,
+harmony, hash-object, humanize, import, init, inspect, key, log, merge, meter, motif,
+open, play, pull, push, read-tree, rebase, recall, release, remote, render-preview,
+reset, resolve, restore, rev-parse, revert, session, show, similarity, stash, status,
+swing, symbolic-ref, tag, tempo, tempo-scale, timeline, transpose, update-ref,
+validate, worktree, write-tree) as Typer sub-applications.
 """
 from __future__ import annotations
 
@@ -16,6 +21,7 @@ import typer
 
 from maestro.muse_cli.commands import (
     amend,
+    attributes,
     arrange,
     ask,
     bisect,
@@ -61,6 +67,7 @@ from maestro.muse_cli.commands import (
     release,
     remote,
     render_preview,
+    rerere,
     reset,
     resolve,
     restore,
@@ -91,6 +98,7 @@ cli = typer.Typer(
 )
 
 cli.add_typer(amend.app, name="amend", help="Fold working-tree changes into the most recent commit.")
+cli.add_typer(attributes.app, name="attributes", help="Read and validate the .museattributes merge-strategy configuration.")
 cli.add_typer(bisect.app, name="bisect", help="Binary search for the commit that introduced a regression.")
 cli.add_typer(blame.app, name="blame", help="Annotate files with the commit that last changed each one.")
 cli.add_typer(cat_object.app, name="cat-object", help="Read and display a stored object by its SHA-256 hash.")
@@ -149,6 +157,7 @@ cli.add_typer(symbolic_ref.app, name="symbolic-ref", help="Read or write a symbo
 cli.add_typer(show.app, name="show", help="Inspect a commit: metadata, snapshot, diff, MIDI files, and audio preview.")
 cli.add_typer(render_preview.app, name="render-preview", help="Generate an audio preview of a commit's snapshot.")
 cli.add_typer(reset.app, name="reset", help="Reset the branch pointer to a prior commit.")
+cli.add_typer(rerere.app, name="rerere", help="Reuse recorded resolutions for musical merge conflicts.")
 cli.add_typer(resolve.app, name="resolve", help="Mark a conflicted file as resolved (--ours or --theirs).")
 cli.add_typer(restore.app, name="restore", help="Restore specific files from a commit or index into muse-work/.")
 cli.add_typer(groove_check.app, name="groove-check", help="Analyze rhythmic drift across commits to find groove regressions.")
