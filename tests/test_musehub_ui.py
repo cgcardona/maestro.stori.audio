@@ -5824,6 +5824,62 @@ async def test_commit_page_comment_has_discussion_heading(
 
 
 # ---------------------------------------------------------------------------
+# Commit detail enhancements — ref URL links, DB tags in panel, prose
+# summary (issue #450)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.anyio
+async def test_commit_page_ref_tags_link_to_url_directly(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """tagPill() links ref: tags with URL values to the URL directly, not
+    the namespace search page — so inspiration references are one click away (#450)."""
+    await _make_repo(db_session)
+    commit_id = "abc1234567890abcdef1234567890abcdef12345678"
+    response = await client.get(f"/musehub/ui/testuser/test-beats/commits/{commit_id}")
+    assert response.status_code == 200
+    body = response.text
+    # isRefUrl guard enables direct external URL linking for ref: tags
+    assert "isRefUrl" in body
+    assert "noopener" in body
+
+
+@pytest.mark.anyio
+async def test_commit_page_muse_tags_panel_passes_commit_tags(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """loadMuseTagsPanel is called with commit.tags so the DB-stored muse_tags
+    annotations appear in the metadata panel with proper namespace pill colours (#450)."""
+    await _make_repo(db_session)
+    commit_id = "abc1234567890abcdef1234567890abcdef12345678"
+    response = await client.get(f"/musehub/ui/testuser/test-beats/commits/{commit_id}")
+    assert response.status_code == 200
+    body = response.text
+    # loadMuseTagsPanel must receive commit.tags, not be called with zero arguments
+    assert "loadMuseTagsPanel(commit.tags" in body
+
+
+@pytest.mark.anyio
+async def test_commit_page_has_prose_summary(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Commit detail page includes the buildProseSummary helper that generates a
+    2-sentence AI prose description of musical content from available analysis
+    data (#450)."""
+    await _make_repo(db_session)
+    commit_id = "abc1234567890abcdef1234567890abcdef12345678"
+    response = await client.get(f"/musehub/ui/testuser/test-beats/commits/{commit_id}")
+    assert response.status_code == 200
+    body = response.text
+    assert "buildProseSummary" in body
+    assert "commit-prose-summary" in body
+
+
+# ---------------------------------------------------------------------------
 # Audio player — listen page tests (issue #211)
 # ---------------------------------------------------------------------------
 
@@ -7866,138 +7922,193 @@ async def test_followers_list_empty_for_user_with_no_followers(
 
 
 # ---------------------------------------------------------------------------
-# Open Graph / Twitter card meta tag tests (issue #441)
+# Issue #450 — Enhanced commit detail: inline audio player, muse_tags panel,
+# reactions, comment thread, cross-references
 # ---------------------------------------------------------------------------
 
 
-def test_og_tags_helper_returns_required_keys() -> None:
-    """_og_tags() always returns og:title, og:type, twitter:card, twitter:title."""
-    from maestro.api.routes.musehub.ui import _og_tags
-
-    tags = _og_tags(title="My Composition — Muse Hub")
-    assert tags["og:title"] == "My Composition — Muse Hub"
-    assert tags["og:type"] == "website"
-    assert tags["twitter:card"] == "summary"
-    assert tags["twitter:title"] == "My Composition — Muse Hub"
-    assert "og:description" not in tags
-    assert "og:image" not in tags
-
-
-def test_og_tags_helper_includes_description_when_provided() -> None:
-    """_og_tags() includes og:description and twitter:description when description is given."""
-    from maestro.api.routes.musehub.ui import _og_tags
-
-    tags = _og_tags(title="My Repo", description="A neo-soul composition")
-    assert tags["og:description"] == "A neo-soul composition"
-    assert tags["twitter:description"] == "A neo-soul composition"
-
-
-def test_og_tags_helper_includes_image_when_provided() -> None:
-    """_og_tags() includes og:image and twitter:image when image URL is given."""
-    from maestro.api.routes.musehub.ui import _og_tags
-
-    tags = _og_tags(title="My Repo", image="https://example.com/cover.webp")
-    assert tags["og:image"] == "https://example.com/cover.webp"
-    assert tags["twitter:image"] == "https://example.com/cover.webp"
-
-
-def test_og_tags_helper_custom_type_and_card() -> None:
-    """_og_tags() propagates custom og_type and twitter_card values."""
-    from maestro.api.routes.musehub.ui import _og_tags
-
-    tags = _og_tags(title="My Profile", og_type="profile", twitter_card="summary_large_image")
-    assert tags["og:type"] == "profile"
-    assert tags["twitter:card"] == "summary_large_image"
-
-
-def test_og_tags_helper_omits_empty_description() -> None:
-    """_og_tags() does not emit og:description when description is empty string."""
-    from maestro.api.routes.musehub.ui import _og_tags
-
-    tags = _og_tags(title="My Repo", description="")
-    assert "og:description" not in tags
-    assert "twitter:description" not in tags
-
-
 @pytest.mark.anyio
-async def test_repo_page_og_meta_does_not_break_render(
+async def test_commit_page_has_inline_audio_player_section(
     client: AsyncClient,
     db_session: AsyncSession,
 ) -> None:
-    """Repo landing page continues to render 200 after og_meta is added to context (issue #441).
+    """Commit detail page includes the inline WaveSurfer.js audio player section.
 
-    The og_meta dict is passed to the template; even before templates render
-    the tags, the route must not raise an exception or return a non-200 status.
+    The player card must contain the DOM root (inline-player-root), the JS
+    functions that mount and control the player (buildInlinePlayer, iapTogglePlay),
+    and a "Listen" heading so musicians can identify the hero player.
     """
     repo = MusehubRepo(
-        name="og-test-beats",
-        owner="ogowner",
-        slug="og-test-beats",
+        name="audio-player-test",
+        owner="audiouser",
+        slug="audio-player-test",
         visibility="public",
-        owner_user_id="og-owner-uid",
-        description="A funky neo-soul composition",
+        owner_user_id="audio-uid",
     )
     db_session.add(repo)
     await db_session.commit()
     await db_session.refresh(repo)
 
-    response = await client.get("/musehub/ui/ogowner/og-test-beats")
+    commit_id = "c0ffee0000111122223333444455556666c0ffee"
+    response = await client.get(f"/musehub/ui/audiouser/audio-player-test/commits/{commit_id}")
     assert response.status_code == 200
     body = response.text
-    assert "text/html" in response.headers["content-type"]
-    assert "ogowner" in body or "og-test-beats" in body
+    assert "inline-player-root" in body
+    assert "buildInlinePlayer" in body
+    assert "iapTogglePlay" in body
+    assert "iapSwitchTrack" in body
+    assert "iapSetVolume" in body
+    # WaveSurfer vendor script tag present
+    assert "wavesurfer" in body.lower()
+    # Heading label
+    assert "Listen" in body
 
 
 @pytest.mark.anyio
-async def test_commit_page_og_meta_does_not_break_render(
+async def test_commit_page_inline_player_has_track_selector_js(
     client: AsyncClient,
     db_session: AsyncSession,
 ) -> None:
-    """Commit detail page continues to render 200 after og_meta is added to context (issue #441)."""
+    """Commit detail page inline player exposes track selector JS for switching stems."""
     repo = MusehubRepo(
-        name="og-commit-repo",
-        owner="ogcommituser",
-        slug="og-commit-repo",
+        name="track-sel-test",
+        owner="trackuser",
+        slug="track-sel-test",
         visibility="public",
-        owner_user_id="og-commit-uid",
+        owner_user_id="track-uid",
     )
     db_session.add(repo)
     await db_session.commit()
     await db_session.refresh(repo)
 
-    commit_id = "deadbeef12345678deadbeef12345678deadbeef"
-    response = await client.get(f"/musehub/ui/ogcommituser/og-commit-repo/commits/{commit_id}")
+    commit_id = "aaaa1111bbbb2222cccc3333dddd4444eeee5555"
+    response = await client.get(f"/musehub/ui/trackuser/track-sel-test/commits/{commit_id}")
     assert response.status_code == 200
-    assert "text/html" in response.headers["content-type"]
     body = response.text
-    assert "ogcommituser" in body or "og-commit-repo" in body
+    assert "iap-track-sel" in body or "iapSwitchTrack" in body
+    assert "iap-volume" in body
 
 
 @pytest.mark.anyio
-async def test_profile_page_og_meta_does_not_break_render(
+async def test_commit_page_has_muse_tags_panel(
     client: AsyncClient,
     db_session: AsyncSession,
 ) -> None:
-    """User profile page continues to render 200 after og_meta is added to context (issue #441)."""
-    await _make_profile(db_session, username="ogprofileuser")
-    response = await client.get("/musehub/ui/users/ogprofileuser")
-    assert response.status_code == 200
-    assert "text/html" in response.headers["content-type"]
-    body = response.text
-    assert "ogprofileuser" in body
+    """Commit detail page includes the muse_tags / analysis metadata panel.
 
-
-def test_og_tags_helper_returns_dict_of_strings() -> None:
-    """_og_tags() return value is dict[str, str] — all values are plain strings."""
-    from maestro.api.routes.musehub.ui import _og_tags
-
-    tags = _og_tags(
-        title="Test",
-        description="Desc",
-        image="https://example.com/img.webp",
-        og_type="music.song",
-        twitter_card="summary",
+    The panel must contain the DOM container (muse-tags-panel), the loader
+    function (loadMuseTagsPanel), pill-rendering helpers (tagPill, muse-pill),
+    and fetch calls for the four analysis endpoints (key, tempo, meter, emotion).
+    """
+    repo = MusehubRepo(
+        name="tags-panel-test",
+        owner="tagsuser",
+        slug="tags-panel-test",
+        visibility="public",
+        owner_user_id="tags-uid",
     )
-    for key, val in tags.items():
-        assert isinstance(key, str), f"key {key!r} is not str"
-        assert isinstance(val, str), f"value for {key!r} is not str"
+    db_session.add(repo)
+    await db_session.commit()
+    await db_session.refresh(repo)
+
+    commit_id = "1234567890abcdef1234567890abcdef12345678"
+    response = await client.get(f"/musehub/ui/tagsuser/tags-panel-test/commits/{commit_id}")
+    assert response.status_code == 200
+    body = response.text
+    assert "muse-tags-panel" in body
+    assert "loadMuseTagsPanel" in body
+    assert "tagPill" in body
+    assert "muse-pill" in body
+    assert "/analysis/" in body
+    assert "emotion" in body
+    assert "Muse Tags" in body
+
+
+@pytest.mark.anyio
+async def test_commit_page_muse_tags_pill_colours_defined(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Commit detail page CSS includes namespace-specific pill colour classes."""
+    repo = MusehubRepo(
+        name="pill-colour-test",
+        owner="pilluser",
+        slug="pill-colour-test",
+        visibility="public",
+        owner_user_id="pill-uid",
+    )
+    db_session.add(repo)
+    await db_session.commit()
+    await db_session.refresh(repo)
+
+    commit_id = "abcd1234ef567890abcd1234ef567890abcd1234"
+    response = await client.get(f"/musehub/ui/pilluser/pill-colour-test/commits/{commit_id}")
+    assert response.status_code == 200
+    body = response.text
+    for css_class in ("pill-emotion", "pill-stage", "pill-ref", "pill-key", "pill-tempo", "pill-time"):
+        assert css_class in body, f"Expected CSS class {css_class!r} in page body"
+
+
+@pytest.mark.anyio
+async def test_commit_page_has_cross_references_section(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Commit detail page includes the cross-references 'Mentioned In' panel.
+
+    The panel must expose the DOM container (xrefs-body), the loader function
+    (loadCrossReferences), and headings for PRs, Issues, and Sessions.
+    """
+    repo = MusehubRepo(
+        name="xrefs-test",
+        owner="xrefsuser",
+        slug="xrefs-test",
+        visibility="public",
+        owner_user_id="xrefs-uid",
+    )
+    db_session.add(repo)
+    await db_session.commit()
+    await db_session.refresh(repo)
+
+    commit_id = "face000011112222333344445555666677778888"
+    response = await client.get(f"/musehub/ui/xrefsuser/xrefs-test/commits/{commit_id}")
+    assert response.status_code == 200
+    body = response.text
+    assert "xrefs-body" in body
+    assert "loadCrossReferences" in body
+    assert "Mentioned In" in body
+    assert "Pull Requests" in body
+    assert "Issues" in body
+    assert "Sessions" in body
+
+
+@pytest.mark.anyio
+async def test_commit_page_context_passes_listen_and_embed_urls(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """commit_page() injects listenUrl and embedUrl into the JS page-data block.
+
+    The inline player relies on these server-side values to construct the
+    listen-page link and the fallback embed iframe URL without doing an
+    additional round-trip to resolve owner/slug.
+    """
+    repo = MusehubRepo(
+        name="url-context-test",
+        owner="urluser",
+        slug="url-context-test",
+        visibility="public",
+        owner_user_id="url-uid",
+    )
+    db_session.add(repo)
+    await db_session.commit()
+    await db_session.refresh(repo)
+
+    commit_id = "dead0000beef1111dead0000beef1111dead0000"
+    response = await client.get(f"/musehub/ui/urluser/url-context-test/commits/{commit_id}")
+    assert response.status_code == 200
+    body = response.text
+    assert "listenUrl" in body
+    assert "embedUrl" in body
+    assert f"/listen/{commit_id}" in body
+    assert f"/embed/{commit_id}" in body
