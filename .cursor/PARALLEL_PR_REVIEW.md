@@ -1072,7 +1072,7 @@ STEP 8 — SPAWN YOUR SUCCESSOR (run this before self-destructing):
 
     NEXT_ISSUE=""
     if [ -z "$ACTIVE_LABEL" ]; then
-      echo "ℹ️  No open htmx issues remain — chain complete."
+      echo "ℹ️  No open agentception issues remain — chain complete."
     else
       # Pick the next unclaimed issue from ACTIVE_LABEL only.
       NEXT_ISSUE=$(gh issue list \
@@ -1111,17 +1111,23 @@ STEP 8 — SPAWN YOUR SUCCESSOR (run this before self-destructing):
       NEXT_WORKTREE="$HOME/.cursor/worktrees/maestro/issue-$NEXT_ISSUE"
       git -C "$REPO" worktree add -b "feat/issue-$NEXT_ISSUE" "$NEXT_WORKTREE" origin/dev
 
+      # Resolve the primary label so the engineer can route mypy/tests correctly.
+      NEXT_ISSUE_LABEL=$(gh issue view "$NEXT_ISSUE" --repo "$GH_REPO" \
+        --json labels --jq '[.labels[].name | select(startswith("agentception/"))] | first // ""')
+
       cat > "$NEXT_WORKTREE/.agent-task" <<TASK
 TASK=issue-to-pr
 ISSUE_NUMBER=$NEXT_ISSUE
+ISSUE_LABEL=$NEXT_ISSUE_LABEL
 BRANCH=feat/issue-$NEXT_ISSUE
 WORKTREE=$NEXT_WORKTREE
 ROLE=python-developer
-ROLE_FILE=/Users/gabriel/dev/tellurstori/maestro/.cursor/roles/python-developer.md
+ROLE_FILE=$HOME/dev/tellurstori/maestro/.cursor/roles/python-developer.md
 BASE=dev
 GH_REPO=cgcardona/maestro
 CLOSES_ISSUES=$NEXT_ISSUE
 BATCH_ID=${BATCH_ID:-none}
+SPAWN_MODE=chain
 TASK
 
       echo "✅ Chain: spawning engineer for issue #$NEXT_ISSUE (will spawn its own reviewer when done)"
@@ -1157,7 +1163,7 @@ PR=$NEXT_PR
 BRANCH=$NEXT_BRANCH
 WORKTREE=$NEXT_WORKTREE
 ROLE=pr-reviewer
-ROLE_FILE=/Users/gabriel/dev/tellurstori/maestro/.cursor/roles/pr-reviewer.md
+ROLE_FILE=$HOME/dev/tellurstori/maestro/.cursor/roles/pr-reviewer.md
 BASE=dev
 GH_REPO=cgcardona/maestro
 BATCH_ID=${BATCH_ID:-none}
