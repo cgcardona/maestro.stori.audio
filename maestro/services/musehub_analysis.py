@@ -61,10 +61,13 @@ from maestro.models.musehub_analysis import (
     DynamicsData,
     DynamicsPageData,
     EmotionData,
+    EmotionDelta8D,
+    EmotionDiffResponse,
     EmotionDrift,
     EmotionMapPoint,
     EmotionMapResponse,
     EmotionVector,
+    EmotionVector8D,
     FormData,
     FormStructureResponse,
     GrooveData,
@@ -84,6 +87,8 @@ from maestro.models.musehub_analysis import (
     SectionEntry,
     SectionMapEntry,
     SectionSimilarityHeatmap,
+    RefSimilarityDimensions,
+    RefSimilarityResponse,
     SimilarCommit,
     SimilarityData,
     TempoChange,
@@ -1299,4 +1304,290 @@ def compute_arrangement_matrix(*, repo_id: str, ref: str) -> ArrangementMatrixRe
         row_summaries=row_summaries,
         column_summaries=column_summaries,
         total_beats=total_beats,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Cross-ref similarity (issue #406)
+# ---------------------------------------------------------------------------
+
+# Interpretation thresholds: the weighted mean of 10 dimension scores maps
+# to a qualitative label.  Weights are equal (0.1 each) so the overall score
+# is a simple mean, but kept in this lookup to support future re-weighting
+# without changing the response shape.
+_SIMILARITY_WEIGHTS: dict[str, float] = {
+    "pitch_distribution": 0.10,
+    "rhythm_pattern": 0.10,
+    "tempo": 0.10,
+    "dynamics": 0.10,
+    "harmonic_content": 0.10,
+    "form": 0.10,
+    "instrument_blend": 0.10,
+    "groove": 0.10,
+    "contour": 0.10,
+    "emotion": 0.10,
+}
+
+
+def _interpret_similarity(score: float, dims: RefSimilarityDimensions) -> str:
+    """Generate a human-readable interpretation of a cross-ref similarity score.
+
+    The interpretation names the dominant divergence axis when the overall
+    score is below 0.9, giving agents and UIs actionable language without
+    requiring further API calls.
+    """
+    dim_values = {
+        "pitch distribution": dims.pitch_distribution,
+        "rhythm pattern": dims.rhythm_pattern,
+        "tempo": dims.tempo,
+        "dynamics": dims.dynamics,
+        "harmonic content": dims.harmonic_content,
+        "form": dims.form,
+        "instrument blend": dims.instrument_blend,
+        "groove": dims.groove,
+        "contour": dims.contour,
+        "emotion": dims.emotion,
+    }
+    lowest_dim = min(dim_values, key=lambda k: dim_values[k])
+    lowest_score = dim_values[lowest_dim]
+
+    if score >= 0.90:
+        return "Nearly identical arrangements — only subtle differences detected."
+    if score >= 0.75:
+        return (
+            f"Highly similar arrangement with divergent {lowest_dim} choices "
+            f"(score: {lowest_score:.2f})."
+        )
+    if score >= 0.55:
+        return (
+            f"Moderately similar — significant divergence in {lowest_dim} "
+            f"(score: {lowest_score:.2f}) and related dimensions."
+        )
+    return (
+        f"Low similarity — the two refs differ substantially, "
+        f"especially in {lowest_dim} (score: {lowest_score:.2f})."
+    )
+
+
+def compute_ref_similarity(
+    *,
+    repo_id: str,
+    base_ref: str,
+    compare_ref: str,
+) -> RefSimilarityResponse:
+    """Compute cross-ref similarity between two Muse refs.
+
+    Returns a :class:`~maestro.models.musehub_analysis.RefSimilarityResponse`
+    with per-dimension scores and an overall weighted mean.
+
+    Scores are deterministic stubs derived from both ref hashes so that:
+    - The same pair always returns the same result (idempotent for agents).
+    - Swapping base/compare yields scores of the same magnitude (symmetry).
+
+    When real MIDI content analysis is available, replace the stub derivation
+    below with actual per-dimension comparison logic while preserving this
+    function's signature and return type.
+
+    Args:
+        repo_id: Muse repository identifier (used for log context only).
+        base_ref: The baseline ref (branch name, tag, or commit hash).
+        compare_ref: The ref to compare against ``base_ref``.
+
+    Returns:
+        :class:`~maestro.models.musehub_analysis.RefSimilarityResponse`
+        containing 10 dimension scores, an overall similarity, and an
+        auto-generated interpretation string.
+    """
+    base_seed = _ref_hash(base_ref)
+    compare_seed = _ref_hash(compare_ref)
+
+    def _dim_score(offset: int) -> float:
+        """Derive a deterministic 0–1 similarity score for one dimension."""
+        combined = (base_seed + compare_seed + offset) % (2**16)
+        raw = (combined / (2**16 - 1))
+        return round(0.50 + raw * 0.50, 4)
+
+    dims = RefSimilarityDimensions(
+        pitch_distribution=_dim_score(0),
+        rhythm_pattern=_dim_score(1),
+        tempo=_dim_score(2),
+        dynamics=_dim_score(3),
+        harmonic_content=_dim_score(4),
+        form=_dim_score(5),
+        instrument_blend=_dim_score(6),
+        groove=_dim_score(7),
+        contour=_dim_score(8),
+        emotion=_dim_score(9),
+    )
+
+    overall = round(
+        sum(
+            getattr(dims, k.replace(" ", "_").replace("-", "_")) * w
+            for k, w in {
+                "pitch_distribution": 0.10,
+                "rhythm_pattern": 0.10,
+                "tempo": 0.10,
+                "dynamics": 0.10,
+                "harmonic_content": 0.10,
+                "form": 0.10,
+                "instrument_blend": 0.10,
+                "groove": 0.10,
+                "contour": 0.10,
+                "emotion": 0.10,
+            }.items()
+        ),
+        4,
+    )
+
+    interpretation = _interpret_similarity(overall, dims)
+    logger.info(
+        "✅ similarity repo=%s base=%s compare=%s overall=%.2f",
+        repo_id[:8],
+        base_ref[:8],
+        compare_ref[:8],
+        overall,
+    )
+    return RefSimilarityResponse(
+        base_ref=base_ref,
+        compare_ref=compare_ref,
+        overall_similarity=overall,
+        dimensions=dims,
+        interpretation=interpretation,
+    )
+
+
+# Emotion diff (issue #420)
+# ---------------------------------------------------------------------------
+
+# Axis labels in declaration order — used for delta interpretation
+_EMOTION_8D_AXES: list[str] = [
+    "valence", "energy", "tension", "complexity",
+    "warmth", "brightness", "darkness", "playfulness",
+]
+
+
+def _build_emotion_vector_8d(ref: str) -> EmotionVector8D:
+    """Build a deterministic 8-axis emotion vector for a ref.
+
+    All eight axes are derived from independent bit-slices of the ref hash so
+    they vary independently across refs — avoids correlated stubs.
+
+    Why 8D not 4D: the emotion-diff endpoint uses an extended radar chart that
+    separates warmth/brightness/playfulness/complexity from the core
+    valence/energy/tension/darkness axes used in the emotion-map endpoint.
+    """
+    seed = _ref_hash(ref)
+    # Each axis is derived from a different slice of the 128-bit hash to avoid correlation.
+    def _axis(shift: int, base: float = 0.1, spread: float = 0.8) -> float:
+        return round(base + ((seed >> shift) % 100) * spread / 100, 4)
+
+    return EmotionVector8D(
+        valence=_axis(0),
+        energy=_axis(8),
+        tension=_axis(16),
+        complexity=_axis(24),
+        warmth=_axis(32),
+        brightness=_axis(40),
+        darkness=_axis(48),
+        playfulness=_axis(56),
+    )
+
+
+def _clamp(value: float) -> float:
+    """Clamp a delta value to [-1, 1] for the signed delta field."""
+    return max(-1.0, min(1.0, round(value, 4)))
+
+
+def compute_emotion_diff(
+    *,
+    repo_id: str,
+    head_ref: str,
+    base_ref: str,
+) -> EmotionDiffResponse:
+    """Compute an 8-axis emotional diff between two Muse commit refs.
+
+    Returns the per-axis emotion vectors for ``base_ref`` and ``head_ref``,
+    their signed delta (``head - base``), and a natural-language interpretation
+    of the most significant shifts.
+
+    Why this is separate from the generic emotion dimension
+    -------------------------------------------------------
+    The generic ``emotion`` dimension returns a single aggregate snapshot with
+    a 2-axis (valence/arousal) model.  This endpoint uses an extended 8-axis
+    radar model and computes a *comparative* diff between two refs — the
+    information the ``muse emotion-diff`` CLI command and the PR detail page
+    need to answer "how did this commit change the emotional character?"
+
+    Args:
+        repo_id:   Muse Hub repo UUID (used for logging).
+        head_ref:  The ref being evaluated (the head commit).
+        base_ref:  The ref used as comparison baseline (e.g. parent commit, ``main``).
+
+    Returns:
+        :class:`EmotionDiffResponse` with base, head, delta vectors, and interpretation.
+    """
+    base_vec = _build_emotion_vector_8d(base_ref)
+    head_vec = _build_emotion_vector_8d(head_ref)
+
+    # Compute signed per-axis delta (head - base), clamped to [-1, 1]
+    delta = EmotionDelta8D(
+        valence=_clamp(head_vec.valence - base_vec.valence),
+        energy=_clamp(head_vec.energy - base_vec.energy),
+        tension=_clamp(head_vec.tension - base_vec.tension),
+        complexity=_clamp(head_vec.complexity - base_vec.complexity),
+        warmth=_clamp(head_vec.warmth - base_vec.warmth),
+        brightness=_clamp(head_vec.brightness - base_vec.brightness),
+        darkness=_clamp(head_vec.darkness - base_vec.darkness),
+        playfulness=_clamp(head_vec.playfulness - base_vec.playfulness),
+    )
+
+    # Build natural-language interpretation of the largest shifts
+    raw_deltas: list[tuple[str, float]] = [
+        ("valence", delta.valence),
+        ("energy", delta.energy),
+        ("tension", delta.tension),
+        ("complexity", delta.complexity),
+        ("warmth", delta.warmth),
+        ("brightness", delta.brightness),
+        ("darkness", delta.darkness),
+        ("playfulness", delta.playfulness),
+    ]
+    # Sort by absolute magnitude, descending
+    sorted_deltas = sorted(raw_deltas, key=lambda x: abs(x[1]), reverse=True)
+    dominant_axis, dominant_value = sorted_deltas[0]
+
+    if abs(dominant_value) < 0.05:
+        interpretation = (
+            "This commit introduced minimal emotional change — the character of the "
+            "piece is nearly identical to the base ref across all eight perceptual axes."
+        )
+    else:
+        direction = "increased" if dominant_value > 0 else "decreased"
+        secondary_parts: list[str] = []
+        for axis, value in sorted_deltas[1:3]:
+            if abs(value) >= 0.05:
+                secondary_parts.append(
+                    f"{axis} {'rose' if value > 0 else 'fell'} by {abs(value):.2f}"
+                )
+        secondary_text = (
+            f" Notable secondary shifts: {', '.join(secondary_parts)}." if secondary_parts else ""
+        )
+        interpretation = (
+            f"This commit {direction} {dominant_axis} by {abs(dominant_value):.2f} "
+            f"(the dominant emotional shift).{secondary_text}"
+        )
+
+    logger.info(
+        "✅ emotion-diff repo=%s head=%s base=%s dominant=%s delta=%.3f",
+        repo_id[:8], head_ref, base_ref, dominant_axis, dominant_value,
+    )
+    return EmotionDiffResponse(
+        repo_id=repo_id,
+        base_ref=base_ref,
+        head_ref=head_ref,
+        computed_at=_utc_now(),
+        base_emotion=base_vec,
+        head_emotion=head_vec,
+        delta=delta,
+        interpretation=interpretation,
     )

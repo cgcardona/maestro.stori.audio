@@ -738,6 +738,90 @@ class PRCommentListResponse(CamelModel):
 PRCommentResponse.model_rebuild()
 
 
+# ── PR reviewer / review models ───────────────────────────────────────────────
+
+
+class PRReviewerRequest(CamelModel):
+    """Body for POST /musehub/repos/{repo_id}/pull-requests/{pr_id}/reviewers.
+
+    Requests a review from one or more users.  Each username is added as a
+    ``pending`` review row.  Duplicate requests for the same reviewer are
+    idempotent — the state is not reset if the reviewer already submitted.
+    """
+
+    reviewers: list[str] = Field(
+        ...,
+        min_length=1,
+        description="List of usernames to request reviews from",
+        examples=[["alice", "bob"]],
+    )
+
+
+class PRReviewResponse(CamelModel):
+    """Wire representation of a single PR review.
+
+    ``state`` reflects the current disposition of the reviewer:
+      - ``pending``           — review requested, not yet submitted
+      - ``approved``          — reviewer approved the changes
+      - ``changes_requested`` — reviewer blocked the merge pending fixes
+      - ``dismissed``         — a previous review was dismissed by the PR author
+
+    ``submitted_at`` is ``None`` while the review is in ``pending`` state.
+    """
+
+    id: str = Field(..., description="Internal UUID for this review row")
+    pr_id: str = Field(..., description="Pull request this review belongs to")
+    reviewer_username: str = Field(..., description="Username of the reviewer")
+    state: str = Field(
+        ...,
+        description="Review state: pending | approved | changes_requested | dismissed",
+        examples=["approved"],
+    )
+    body: str | None = Field(None, description="Review comment body (Markdown); null for bare assignments")
+    submitted_at: datetime | None = Field(None, description="UTC timestamp when the review was submitted")
+    created_at: datetime = Field(..., description="Row creation timestamp (ISO-8601 UTC)")
+
+
+class PRReviewListResponse(CamelModel):
+    """List of reviews for a pull request.
+
+    Used by the PR detail page review panel and by AI agents evaluating
+    merge readiness.  Includes both pending assignments and submitted reviews.
+    """
+
+    reviews: list[PRReviewResponse] = Field(
+        default_factory=list,
+        description="All review rows for this PR (pending and submitted)",
+    )
+    total: int = Field(0, ge=0, description="Total number of review rows")
+
+
+class PRReviewCreate(CamelModel):
+    """Body for POST /musehub/repos/{repo_id}/pull-requests/{pr_id}/reviews.
+
+    Submits a formal review for the authenticated user.  If the user was
+    previously assigned as a reviewer, the existing ``pending`` row is updated
+    in-place.  If no prior row exists, a new one is created.
+
+    ``event`` governs the new review state:
+      - ``approve``          → state = approved
+      - ``request_changes``  → state = changes_requested
+      - ``comment``          → state = pending (body-only feedback, no verdict)
+    """
+
+    event: str = Field(
+        ...,
+        pattern="^(approve|request_changes|comment)$",
+        description="Review event: approve | request_changes | comment",
+        examples=["approve"],
+    )
+    body: str = Field(
+        "",
+        description="Review body (Markdown). Required when event='request_changes'.",
+        examples=["Sounds great — the harmonic transitions in the bridge are exactly right."],
+    )
+
+
 # ── Release models ────────────────────────────────────────────────────────────
 
 

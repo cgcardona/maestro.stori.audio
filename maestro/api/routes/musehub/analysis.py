@@ -1,9 +1,12 @@
 """Muse Hub Analysis API — agent-friendly structured JSON for all musical dimensions.
 
 Endpoint summary:
-  GET /musehub/repos/{repo_id}/analysis/{ref}                  — all 13 dimensions
-  GET /musehub/repos/{repo_id}/analysis/{ref}/emotion-map      — emotion map (issue #227)
-  GET /musehub/repos/{repo_id}/analysis/{ref}/{dimension}      — one dimension
+  GET /musehub/repos/{repo_id}/analysis/{ref}                       — all 13 dimensions
+  GET /musehub/repos/{repo_id}/analysis/{ref}/emotion-map           — emotion map (issue #227)
+  GET /musehub/repos/{repo_id}/analysis/{ref}/similarity            — cross-ref similarity (issue #406)
+  GET /musehub/repos/{repo_id}/analysis/{ref}/emotion-diff?base=X   — 8-axis emotion diff (issue #420)
+  GET /musehub/repos/{repo_id}/analysis/{ref}/dynamics/page         — per-track dynamics page
+  GET /musehub/repos/{repo_id}/analysis/{ref}/{dimension}           — one dimension
 
 Supported dimensions (13):
   harmony, dynamics, motifs, form, groove, emotion, chord-map, contour,
@@ -12,6 +15,11 @@ Supported dimensions (13):
 Query params (both endpoints):
   ?track=<instrument>   — restrict analysis to a named instrument track
   ?section=<label>      — restrict analysis to a named musical section (e.g. chorus)
+
+Route ordering note:
+  Specific fixed-segment routes (/emotion-map, /similarity, /dynamics/page) MUST be
+  registered before the /{dimension} catch-all so FastAPI matches them first.  New
+  fixed-segment routes added in future batches must follow this same ordering rule.
 
 Cache semantics:
   Responses include ETag (MD5 of dimension + ref) and Last-Modified headers.
@@ -37,7 +45,9 @@ from maestro.models.musehub_analysis import (
     AggregateAnalysisResponse,
     AnalysisResponse,
     DynamicsPageData,
+    EmotionDiffResponse,
     EmotionMapResponse,
+    RefSimilarityResponse,
     HarmonyAnalysisResponse,
 )
 from maestro.services import musehub_analysis, musehub_repository
@@ -157,6 +167,138 @@ async def get_emotion_map(
     )
 
     etag = _etag(repo_id, ref, "emotion-map")
+    response.headers["ETag"] = etag
+    response.headers["Last-Modified"] = _LAST_MODIFIED
+    response.headers["Cache-Control"] = "private, max-age=60"
+    return result
+
+
+# NOTE: emotion-diff is registered HERE (before the generic {dimension} catch-all)
+# because FastAPI matches routes in registration order — a literal segment like
+# "emotion-diff" does NOT automatically take precedence over a path parameter.
+@router.get(
+    "/repos/{repo_id}/analysis/{ref}/emotion-diff",
+    response_model=EmotionDiffResponse,
+    operation_id="getEmotionDiff",
+    summary="Emotion diff — 8-axis emotional radar comparing two Muse refs",
+    description=(
+        "Returns an 8-axis emotional diff between ``ref`` (head) and ``base`` (baseline). "
+        "The eight axes are: valence, energy, tension, complexity, warmth, brightness, "
+        "darkness, and playfulness — all normalised to [0, 1].\n\n"
+        "``delta`` is the signed per-axis difference (head − base); positive means the "
+        "head commit increased that emotional dimension.\n\n"
+        "``interpretation`` provides a natural-language summary of the dominant shifts "
+        "for human and agent readability.\n\n"
+        "Maps to the ``muse emotion-diff`` CLI command and the PR detail emotion radar."
+    ),
+)
+async def get_emotion_diff(
+    repo_id: str,
+    ref: str,
+    response: Response,
+    base: str = Query(
+        ...,
+        description="Base ref to compare against, e.g. 'main', 'main~1', or a commit SHA",
+    ),
+    db: AsyncSession = Depends(get_db),
+    _: TokenClaims = Depends(require_valid_token),
+) -> EmotionDiffResponse:
+    """Return an 8-axis emotional diff between two Muse commit refs.
+
+    Compares the emotional character of ``ref`` (head) against ``base``,
+    returning per-axis emotion vectors for each ref, their signed delta, and a
+    natural-language interpretation of the dominant shifts.
+
+    Requires authentication — emotion diff reveals musical context that may be
+    private to the repo owner.
+
+    The eight dimensions extend the four-axis emotion-map model with
+    ``complexity``, ``warmth``, ``brightness``, and ``playfulness`` so the PR
+    detail page can render a full radar chart without a separate request.
+    """
+    repo = await musehub_repository.get_repo(db, repo_id)
+    if repo is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repo not found")
+
+    result = musehub_analysis.compute_emotion_diff(
+        repo_id=repo_id,
+        head_ref=ref,
+        base_ref=base,
+    )
+
+    etag = _etag(repo_id, f"{base}..{ref}", "emotion-diff")
+    response.headers["ETag"] = etag
+    response.headers["Last-Modified"] = _LAST_MODIFIED
+    response.headers["Cache-Control"] = "private, max-age=60"
+    return result
+
+
+@router.get(
+    "/repos/{repo_id}/analysis/{ref}/similarity",
+    response_model=RefSimilarityResponse,
+    operation_id="getAnalysisRefSimilarity",
+    summary="Cross-ref similarity — compare two Muse refs across 10 musical dimensions",
+    description=(
+        "Compares two Muse refs (branches, tags, or commit hashes) and returns a "
+        "per-dimension similarity score plus an overall weighted mean.\n\n"
+        "The ``compare`` query parameter is **required** — it specifies the second "
+        "ref to compare against the ``{ref}`` path parameter.\n\n"
+        "**10 dimensions scored (0–1 each):** pitch_distribution, rhythm_pattern, "
+        "tempo, dynamics, harmonic_content, form, instrument_blend, groove, "
+        "contour, emotion.\n\n"
+        "``overall_similarity`` is a weighted mean of all 10 dimensions. "
+        "``interpretation`` is auto-generated text suitable for display and for "
+        "agent reasoning without further computation.\n\n"
+        "Maps to ``muse similarity --base {ref} --head {ref2} --dimensions all``."
+    ),
+)
+async def get_ref_similarity(
+    repo_id: str,
+    ref: str,
+    response: Response,
+    compare: str = Query(
+        ...,
+        description="Second ref to compare against (branch name, tag, or commit hash)",
+    ),
+    db: AsyncSession = Depends(get_db),
+    claims: TokenClaims | None = Depends(optional_token),
+) -> RefSimilarityResponse:
+    """Return cross-ref similarity between ``ref`` and ``compare`` for a Muse repo.
+
+    Scores all 10 musical dimensions independently, then computes an overall
+    weighted mean.  The ``interpretation`` field provides a human-readable
+    summary identifying the dominant divergence axis when overall similarity
+    is below 0.90.
+
+    Authentication follows the same rules as other analysis endpoints:
+    public repos are readable without a token; private repos require a valid
+    JWT Bearer token.
+
+    Cache semantics: ETag is derived from ``repo_id``, ``ref``, and
+    ``compare`` so that the same pair always returns the same cached
+    response until invalidated by a new commit.
+
+    Route ordering: this route MUST remain registered before ``/{dimension}``
+    so FastAPI matches the fixed ``/similarity`` segment before the catch-all
+    parameter captures it.
+    """
+    repo = await musehub_repository.get_repo(db, repo_id)
+    if repo is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repo not found")
+    if repo.visibility != "public" and claims is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required to access private repos.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    result = musehub_analysis.compute_ref_similarity(
+        repo_id=repo_id,
+        base_ref=ref,
+        compare_ref=compare,
+    )
+
+    etag = _etag(repo_id, f"{ref}:{compare}", "similarity")
     response.headers["ETag"] = etag
     response.headers["Last-Modified"] = _LAST_MODIFIED
     response.headers["Cache-Control"] = "private, max-age=60"
