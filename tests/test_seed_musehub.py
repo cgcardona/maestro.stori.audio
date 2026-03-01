@@ -666,9 +666,9 @@ def _load_seed_constants() -> dict[str, object]:
     spec = importlib.util.spec_from_file_location("seed_musehub", seed_path)
     assert spec and spec.loader
     mod = importlib.util.module_from_spec(spec)
-    # Prevent __main__ execution — the script guards on __name__
-    mod.__name__ = "seed_musehub_imported"
-    spec.loader.exec_module(mod)  # type: ignore[union-attr]
+    # module_from_spec sets __name__ = "seed_musehub" (from spec), not "__main__",
+    # so the if __name__ == "__main__": guard in the script naturally prevents execution.
+    spec.loader.exec_module(mod)
     return vars(mod)
 
 
