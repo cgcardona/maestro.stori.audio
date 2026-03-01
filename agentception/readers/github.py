@@ -21,22 +21,24 @@ import asyncio
 import json
 import logging
 import time
-from typing import cast
 
 from agentception.config import settings
 
 logger = logging.getLogger(__name__)
 
+# JSON-compatible value union — the true return type of json.loads().
+# Using an explicit union avoids both bare `object` and `Any` while remaining
+# honest about what the gh CLI can produce.
+JsonValue = str | int | float | bool | list[object] | dict[str, object] | None
+
 # ---------------------------------------------------------------------------
 # Internal TTL cache
 # ---------------------------------------------------------------------------
 # Format: {cache_key: (result, expires_at_unix)}
-# ``object`` is intentional — callers are responsible for knowing the shape of
-# what they stored (each public function wraps a specific type).
-_cache: dict[str, tuple[object, float]] = {}
+_cache: dict[str, tuple[JsonValue, float]] = {}
 
 
-def _cache_get(key: str) -> object | None:
+def _cache_get(key: str) -> JsonValue:
     """Return cached value if it exists and has not expired, else None."""
     entry = _cache.get(key)
     if entry is None:
@@ -48,7 +50,7 @@ def _cache_get(key: str) -> object | None:
     return result
 
 
-def _cache_set(key: str, value: object) -> None:
+def _cache_set(key: str, value: JsonValue) -> None:
     """Store *value* in the cache with a TTL of ``github_cache_seconds``."""
     expires_at = time.monotonic() + settings.github_cache_seconds
     _cache[key] = (value, expires_at)
@@ -68,7 +70,7 @@ def _cache_invalidate() -> None:
 # Low-level subprocess helper
 # ---------------------------------------------------------------------------
 
-async def gh_json(args: list[str], jq: str, cache_key: str) -> object:
+async def gh_json(args: list[str], jq: str, cache_key: str) -> JsonValue:
     """Run ``gh`` with ``--json`` + ``--jq`` and cache the result.
 
     Parameters
@@ -87,9 +89,9 @@ async def gh_json(args: list[str], jq: str, cache_key: str) -> object:
 
     Returns
     -------
-    object
+    JsonValue
         Parsed JSON (list, dict, str, int, …) — shape depends on the ``jq``
-        filter.  Callers must narrow the type themselves.
+        filter.  Callers must narrow the type with ``isinstance`` checks.
 
     Raises
     ------
@@ -118,10 +120,7 @@ async def gh_json(args: list[str], jq: str, cache_key: str) -> object:
         )
 
     raw = stdout.decode().strip()
-    if not raw:
-        result: object = []
-    else:
-        result = json.loads(raw)
+    result: JsonValue = [] if not raw else json.loads(raw)
 
     _cache_set(cache_key, result)
     return result
@@ -154,7 +153,9 @@ async def get_open_issues(label: str | None = None) -> list[dict[str, object]]:
 
     cache_key = f"get_open_issues:label={label}"
     result = await gh_json(args, ".", cache_key)
-    return cast(list[dict[str, object]], result)
+    if not isinstance(result, list):
+        raise RuntimeError(f"get_open_issues: expected list from gh, got {type(result).__name__}")
+    return [item for item in result if isinstance(item, dict)]
 
 
 async def get_open_prs() -> list[dict[str, object]]:
@@ -172,7 +173,9 @@ async def get_open_prs() -> list[dict[str, object]]:
         "--json", "number,title,headRefName,labels",
     ]
     result = await gh_json(args, ".", "get_open_prs")
-    return cast(list[dict[str, object]], result)
+    if not isinstance(result, list):
+        raise RuntimeError(f"get_open_prs: expected list from gh, got {type(result).__name__}")
+    return [item for item in result if isinstance(item, dict)]
 
 
 async def get_wip_issues() -> list[dict[str, object]]:
@@ -201,10 +204,11 @@ async def get_active_label() -> str | None:
         "--json", "labels",
     ]
     result = await gh_json(args, "[.[].labels[].name]", "get_active_label")
-    all_label_names = cast(list[str], result)
+    if not isinstance(result, list):
+        raise RuntimeError(f"get_active_label: expected list from gh, got {type(result).__name__}")
 
     agentception_labels: set[str] = {
-        name for name in all_label_names if name.startswith("agentception/")
+        name for name in result if isinstance(name, str) and name.startswith("agentception/")
     }
     if not agentception_labels:
         return None
@@ -239,7 +243,9 @@ async def get_issue_body(number: int) -> str:
         "--json", "body",
     ]
     result = await gh_json(args, ".body", f"get_issue_body:{number}")
-    return cast(str, result)
+    if not isinstance(result, str):
+        raise RuntimeError(f"get_issue_body: expected str from gh, got {type(result).__name__}")
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -267,7 +273,7 @@ async def close_pr(number: int, comment: str) -> None:
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
     )
-    stdout, stderr = await proc.communicate()
+    _stdout, stderr = await proc.communicate()
 
     if proc.returncode != 0:
         raise RuntimeError(
@@ -301,7 +307,7 @@ async def clear_wip_label(issue_number: int) -> None:
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
     )
-    stdout, stderr = await proc.communicate()
+    _stdout, stderr = await proc.communicate()
 
     if proc.returncode != 0:
         raise RuntimeError(
