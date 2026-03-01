@@ -106,9 +106,17 @@ for entry in "${PRS[@]}"; do
     continue
   fi
   git worktree add --detach "$WT" "$DEV_SHA"
-  printf "WORKFLOW=pr-review\nPR_NUMBER=%s\nPR_TITLE=%s\nPR_URL=https://github.com/cgcardona/maestro/pull/%s\nROLE=pr-reviewer\n" \
-    "$NUM" "$TITLE" "$NUM" > "$WT/.agent-task"
-  echo "✅ worktree pr-$NUM ready"
+  # Assign ROLE based on PR labels:
+  #   muse, muse-cli, muse-hub, merge labels → muse-specialist (with pr-reviewer discipline)
+  #   all others → pr-reviewer
+  PR_LABELS=$(gh pr view "$NUM" --repo "$GH_REPO" --json labels --jq '[.labels[].name] | join(",")' 2>/dev/null || echo "")
+  REVIEW_ROLE="pr-reviewer"
+  if echo "$PR_LABELS" | grep -qE "muse-cli|muse-hub|muse|merge"; then
+    REVIEW_ROLE="muse-specialist"
+  fi
+  printf "WORKFLOW=pr-review\nPR_NUMBER=%s\nPR_TITLE=%s\nPR_URL=https://github.com/cgcardona/maestro/pull/%s\nROLE=%s\n" \
+    "$NUM" "$TITLE" "$NUM" "$REVIEW_ROLE" > "$WT/.agent-task"
+  echo "✅ worktree pr-$NUM ready (role: $REVIEW_ROLE)"
 done
 
 git worktree list

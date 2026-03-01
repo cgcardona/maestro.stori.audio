@@ -214,11 +214,14 @@ for entry in "${SELECTED_ISSUES[@]}"; do
   fi
   git worktree add --detach "$WT" "$DEV_SHA"
   # Assign ROLE based on issue labels:
-  #   phase-1/db-schema or alembic labels → database-architect
+  #   muse, muse-cli, muse-hub, merge labels → muse-specialist
+  #   phase-1/db-schema, alembic, migration labels → database-architect
   #   all others → python-developer
   ISSUE_LABELS=$(gh issue view "$NUM" --repo "$GH_REPO" --json labels --jq '[.labels[].name] | join(",")' 2>/dev/null || echo "")
   AGENT_ROLE="python-developer"
-  if echo "$ISSUE_LABELS" | grep -qE "db-schema|alembic|migration"; then
+  if echo "$ISSUE_LABELS" | grep -qE "muse-cli|muse-hub|muse|merge"; then
+    AGENT_ROLE="muse-specialist"
+  elif echo "$ISSUE_LABELS" | grep -qE "db-schema|alembic|migration"; then
     AGENT_ROLE="database-architect"
   fi
   printf "WORKFLOW=issue-to-pr\nISSUE_NUMBER=%s\nISSUE_TITLE=%s\nISSUE_URL=https://github.com/%s/issues/%s\nPHASE_LABEL=%s\nROLE=%s\n" \
