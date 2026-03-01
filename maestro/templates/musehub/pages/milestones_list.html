@@ -1,0 +1,217 @@
+{% extends "musehub/base.html" %}
+
+{% block title %}Milestones{% endblock %}
+{% block breadcrumb %}
+  <a href="/musehub/ui/{{ owner }}/{{ repo_slug }}">{{ owner }}/{{ repo_slug }}</a> / milestones
+{% endblock %}
+{% block repo_nav %}{% include "musehub/partials/repo_nav.html" %}{% endblock %}
+
+{% block extra_css %}
+<style>
+.milestone-row {
+  padding: 16px 0;
+  border-bottom: 1px solid var(--border, #30363d);
+}
+.milestone-row:last-child { border-bottom: none; }
+.milestone-title-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 6px;
+  flex-wrap: wrap;
+}
+.milestone-meta { font-size: 12px; color: var(--text-muted, #8b949e); margin-bottom: 6px; }
+.progress-bar-track {
+  width: 100%;
+  max-width: 300px;
+  height: 8px;
+  border-radius: 4px;
+  background: var(--bg-overlay, #161b22);
+  border: 1px solid var(--border, #30363d);
+  overflow: hidden;
+  margin-bottom: 4px;
+}
+.progress-bar-fill {
+  height: 100%;
+  border-radius: 4px;
+  background: var(--green, #3fb950);
+  transition: width 0.3s;
+}
+.progress-label { font-size: 12px; color: var(--text-muted, #8b949e); }
+.state-tabs {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 16px;
+  border-bottom: 1px solid var(--border, #30363d);
+  padding-bottom: 0;
+}
+.state-tab {
+  padding: 6px 14px;
+  font-size: 13px;
+  font-weight: 500;
+  border: none;
+  background: none;
+  color: var(--text-muted, #8b949e);
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  text-decoration: none;
+}
+.state-tab.active {
+  color: var(--text-primary, #e6edf3);
+  border-bottom-color: var(--accent, #58a6ff);
+}
+.state-tab:hover { color: var(--text-primary, #e6edf3); }
+.sort-controls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 16px;
+  font-size: 13px;
+  color: var(--text-muted, #8b949e);
+}
+.sort-btn {
+  padding: 4px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--border, #30363d);
+  background: var(--bg-overlay, #161b22);
+  color: var(--text-secondary, #c9d1d9);
+  font-size: 12px;
+  cursor: pointer;
+}
+.sort-btn.active {
+  border-color: var(--accent, #58a6ff);
+  color: var(--accent, #58a6ff);
+}
+.sort-btn:hover { border-color: var(--accent, #58a6ff); }
+</style>
+{% endblock %}
+
+{% block page_data %}
+const repoId  = {{ repo_id | tojson }};
+const base    = {{ base_url | tojson }};
+const initState = {{ state | tojson }};
+const initSort  = {{ sort | tojson }};
+{% endblock %}
+
+{% block page_script %}
+{% raw %}
+let currentState = initState;
+let currentSort  = initSort;
+
+function pct(ms) {
+  const total = (ms.openIssues || 0) + (ms.closedIssues || 0);
+  if (total === 0) return 0;
+  return Math.round((ms.closedIssues / total) * 100);
+}
+
+function dueDateLabel(dueOn) {
+  if (!dueOn) return '';
+  const d = new Date(dueOn);
+  const now = new Date();
+  const diff = d - now;
+  const overdue = diff < 0;
+  const label = d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+  const color = overdue ? 'var(--red, #f85149)' : 'var(--text-muted, #8b949e)';
+  const icon  = overdue ? '⚠ ' : '📅 ';
+  return `<span style="color:${color};font-size:12px">${icon}Due ${escHtml(label)}</span>`;
+}
+
+function renderMilestones(milestones) {
+  if (milestones.length === 0) {
+    return '<p class="loading">No ' + currentState + ' milestones.</p>';
+  }
+  return milestones.map(ms => {
+    const p = pct(ms);
+    const total = (ms.openIssues || 0) + (ms.closedIssues || 0);
+    return `
+      <div class="milestone-row">
+        <div class="milestone-title-row">
+          <a href="${base}/milestones/${ms.number}" style="font-weight:600;font-size:15px">
+            ${escHtml(ms.title)}
+          </a>
+          <span class="badge ${ms.state === 'open' ? 'badge-open' : 'badge-closed'}">
+            ${ms.state}
+          </span>
+        </div>
+        <div class="milestone-meta">
+          #${ms.number}
+          &bull; ${total} issue${total !== 1 ? 's' : ''} (${ms.openIssues} open, ${ms.closedIssues} closed)
+          ${ms.dueOn ? ' &bull; ' + dueDateLabel(ms.dueOn) : ''}
+          ${ms.description ? ' — ' + escHtml(ms.description.slice(0, 80)) + (ms.description.length > 80 ? '…' : '') : ''}
+        </div>
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+          <div>
+            <div class="progress-bar-track">
+              <div class="progress-bar-fill" style="width:${p}%"></div>
+            </div>
+            <div class="progress-label">${p}% complete</div>
+          </div>
+        </div>
+      </div>`;
+  }).join('');
+}
+
+function buildUrl(state, sort) {
+  return base + '/milestones?state=' + encodeURIComponent(state) + '&sort=' + encodeURIComponent(sort);
+}
+
+async function load() {
+  initRepoNav(repoId);
+  document.getElementById('content').innerHTML = '<p class="loading">Loading milestones…</p>';
+  try {
+    const data = await apiFetch(
+      '/repos/' + repoId + '/milestones?state=' + encodeURIComponent(currentState) +
+      '&sort=' + encodeURIComponent(currentSort)
+    );
+    const milestones = data.milestones || [];
+
+    document.getElementById('content').innerHTML = `
+      <div style="margin-bottom:12px">
+        <a href="${base}">&larr; Back to repo</a>
+      </div>
+      <div class="card">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:8px">
+          <h1 style="margin:0">🏁 Milestones</h1>
+          <span style="font-size:13px;color:var(--text-muted,#8b949e)">${milestones.length} milestone${milestones.length !== 1 ? 's' : ''}</span>
+        </div>
+
+        <!-- State tabs -->
+        <div class="state-tabs">
+          ${['open','closed','all'].map(s => `
+            <a class="state-tab ${currentState === s ? 'active' : ''}"
+               href="${buildUrl(s, currentSort)}"
+               onclick="event.preventDefault();setFilter('${s}',currentSort)">${s.charAt(0).toUpperCase()+s.slice(1)}</a>
+          `).join('')}
+        </div>
+
+        <!-- Sort controls -->
+        <div class="sort-controls">
+          Sort by:
+          ${[['due_on','Due date'],['title','Title'],['completeness','Completeness']].map(([k,l]) => `
+            <button class="sort-btn ${currentSort === k ? 'active' : ''}"
+                    onclick="setFilter(currentState,'${k}')">${l}</button>
+          `).join('')}
+        </div>
+
+        <!-- Milestone rows -->
+        <div id="milestone-rows">
+          ${renderMilestones(milestones)}
+        </div>
+      </div>`;
+  } catch(e) {
+    if (e.message !== 'auth')
+      document.getElementById('content').innerHTML = '<p class="error">✕ ' + escHtml(e.message) + '</p>';
+  }
+}
+
+function setFilter(state, sort) {
+  currentState = state;
+  currentSort  = sort;
+  history.replaceState({}, '', buildUrl(state, sort));
+  load();
+}
+
+load();
+{% endraw %}
+{% endblock %}
