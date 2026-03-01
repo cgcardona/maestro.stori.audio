@@ -1,0 +1,602 @@
+{% extends "musehub/base.html" %}
+
+{% block title %}Create a new repository{% endblock %}
+
+{% block breadcrumb %}<a href="/musehub/ui/explore">Explore</a> / New repository{% endblock %}
+
+{% block extra_css %}
+<style>
+.wizard-layout {
+  max-width: 760px;
+  margin: 0 auto;
+  padding: var(--space-5) 0;
+}
+.wizard-header {
+  margin-bottom: var(--space-5);
+  border-bottom: 1px solid var(--border-subtle);
+  padding-bottom: var(--space-4);
+}
+.wizard-title {
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 0 0 var(--space-2) 0;
+}
+.wizard-subtitle {
+  font-size: 13px;
+  color: var(--text-muted);
+  margin: 0;
+}
+.form-group {
+  margin-bottom: var(--space-4);
+}
+.form-label {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: var(--space-1);
+  color: var(--text-primary);
+}
+.form-label .required {
+  color: #f85149;
+  margin-left: 2px;
+}
+.form-description {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-bottom: var(--space-2);
+}
+.form-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 6px 10px;
+  background: var(--bg-surface, #0d1117);
+  border: 1px solid var(--border-default, #30363d);
+  border-radius: var(--radius-md, 6px);
+  color: var(--text-primary);
+  font-size: 13px;
+}
+.form-input:focus {
+  outline: none;
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-accent) 25%, transparent);
+}
+.form-input.error { border-color: #f85149; }
+.form-input.ok    { border-color: #3fb950; }
+.owner-name-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.owner-sep {
+  font-size: 20px;
+  color: var(--text-muted);
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+.owner-input { flex: 0 0 220px; }
+.name-input  { flex: 1; }
+.availability-msg {
+  font-size: 12px;
+  margin-top: 4px;
+  min-height: 16px;
+}
+.availability-msg.ok    { color: #3fb950; }
+.availability-msg.error { color: #f85149; }
+.visibility-row {
+  display: flex;
+  gap: var(--space-3);
+}
+.visibility-card {
+  flex: 1;
+  padding: var(--space-3);
+  border: 2px solid var(--border-default, #30363d);
+  border-radius: var(--radius-md, 6px);
+  cursor: pointer;
+  background: var(--bg-surface);
+  transition: border-color 0.15s;
+}
+.visibility-card.selected { border-color: var(--color-accent); }
+.visibility-card-title { font-size: 13px; font-weight: 600; color: var(--text-primary); }
+.visibility-card-desc  { font-size: 12px; color: var(--text-muted); margin-top: 4px; }
+.visibility-icon { font-size: 18px; margin-bottom: 4px; }
+.form-checkbox-row {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  background: var(--bg-surface, #0d1117);
+  border: 1px solid var(--border-subtle, #21262d);
+  border-radius: var(--radius-md, 6px);
+  margin-bottom: var(--space-2);
+}
+.form-checkbox-row input[type=checkbox] { margin-top: 2px; flex-shrink: 0; }
+.form-checkbox-label { font-size: 13px; font-weight: 600; color: var(--text-primary); }
+.form-checkbox-desc  { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+.branch-row { margin-top: var(--space-3); }
+.tag-input-container {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 6px 8px;
+  background: var(--bg-surface, #0d1117);
+  border: 1px solid var(--border-default, #30363d);
+  border-radius: var(--radius-md, 6px);
+  min-height: 38px;
+  cursor: text;
+}
+.tag-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: var(--bg-overlay);
+  border: 1px solid var(--border-subtle);
+  border-radius: 20px;
+  padding: 2px 8px;
+  font-size: 12px;
+  color: var(--text-primary);
+}
+.tag-pill-remove {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--text-muted);
+  font-size: 14px;
+  padding: 0;
+  line-height: 1;
+}
+.tag-pill-remove:hover { color: #f85149; }
+.tag-text-input {
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--text-primary);
+  font-size: 13px;
+  min-width: 100px;
+  flex: 1;
+}
+.template-search {
+  position: relative;
+}
+.template-results {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  z-index: 50;
+  background: var(--bg-overlay, #161b22);
+  border: 1px solid var(--border-default, #30363d);
+  border-radius: var(--radius-md, 6px);
+  margin-top: 2px;
+  max-height: 200px;
+  overflow-y: auto;
+  display: none;
+}
+.template-result-item {
+  padding: 8px 12px;
+  cursor: pointer;
+  font-size: 13px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+.template-result-item:last-child { border-bottom: none; }
+.template-result-item:hover { background: var(--bg-surface); }
+.template-selected-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--bg-overlay);
+  border: 1px solid var(--border-subtle);
+  border-radius: 20px;
+  padding: 4px 10px;
+  font-size: 12px;
+  color: var(--text-primary);
+  margin-top: 6px;
+}
+.wizard-divider {
+  border: none;
+  border-top: 1px solid var(--border-subtle);
+  margin: var(--space-5) 0;
+}
+.wizard-actions {
+  display: flex;
+  gap: var(--space-3);
+  align-items: center;
+  margin-top: var(--space-5);
+}
+.submit-error {
+  color: #f85149;
+  font-size: 13px;
+  display: none;
+}
+.submit-success {
+  color: #3fb950;
+  font-size: 13px;
+  display: none;
+}
+</style>
+{% endblock %}
+
+{% block token_form %}
+<div class="token-form" id="token-form" style="display:none">
+  <p id="token-msg">Sign in with your Maestro JWT to create a new repository.</p>
+  <input type="password" id="token-input" placeholder="eyJ..." />
+  <button class="btn btn-primary" onclick="saveToken()">Sign in</button>
+  &nbsp;
+  <button class="btn btn-secondary" onclick="clearToken();location.reload()">Clear</button>
+</div>
+{% endblock %}
+
+{% block page_data %}
+const LICENSES = {{ licenses | tojson }};
+{% endblock %}
+
+{% block page_script %}
+{% raw %}
+// ── State ──────────────────────────────────────────────────────────────────────
+let _topics = [];
+let _templateRepoId = null;
+let _templateRepoName = '';
+let _checkTimer = null;
+let _visibility = 'private';
+
+// ── Slug generation (mirrors server-side _generate_slug) ──────────────────────
+function toSlug(name) {
+  let s = name.toLowerCase();
+  s = s.replace(/[^a-z0-9]+/g, '-');
+  s = s.replace(/^-+|-+$/g, '');
+  s = s.substring(0, 64).replace(/-+$/, '');
+  return s || 'repo';
+}
+
+// ── Topic tag management ───────────────────────────────────────────────────────
+function renderTopics() {
+  const container = document.getElementById('topics-container');
+  if (!container) return;
+  const pills = _topics.map((t, i) =>
+    `<span class="tag-pill">${escHtml(t)}<button class="tag-pill-remove" onclick="removeTopic(${i})" title="Remove">&#215;</button></span>`
+  ).join('');
+  const input = `<input class="tag-text-input" id="topic-input" placeholder="${_topics.length === 0 ? 'Add topics (comma-separated)…' : ''}"
+    onkeydown="onTopicKey(event)" oninput="onTopicInput(event)">`;
+  container.innerHTML = pills + input;
+  const inp = document.getElementById('topic-input');
+  if (inp) inp.focus();
+}
+
+function removeTopic(i) {
+  _topics.splice(i, 1);
+  renderTopics();
+}
+
+function onTopicKey(e) {
+  const inp = e.target;
+  if (e.key === 'Enter' || e.key === ',') {
+    e.preventDefault();
+    const val = inp.value.trim().replace(/,/g, '');
+    if (val && !_topics.includes(val)) _topics.push(val);
+    inp.value = '';
+    renderTopics();
+  } else if (e.key === 'Backspace' && inp.value === '' && _topics.length > 0) {
+    _topics.pop();
+    renderTopics();
+  }
+}
+
+function onTopicInput(e) {
+  const val = e.target.value;
+  if (val.endsWith(',')) {
+    const tag = val.slice(0, -1).trim();
+    if (tag && !_topics.includes(tag)) _topics.push(tag);
+    e.target.value = '';
+    renderTopics();
+  }
+}
+
+// ── Name availability check ───────────────────────────────────────────────────
+function scheduleCheck() {
+  clearTimeout(_checkTimer);
+  _checkTimer = setTimeout(checkAvailability, 400);
+}
+
+async function checkAvailability() {
+  const owner = document.getElementById('f-owner').value.trim();
+  const name  = document.getElementById('f-name').value.trim();
+  const msg   = document.getElementById('availability-msg');
+  const nameEl = document.getElementById('f-name');
+  if (!owner || !name) {
+    if (msg) { msg.textContent = ''; msg.className = 'availability-msg'; }
+    return;
+  }
+  const slug = toSlug(name);
+  if (!msg) return;
+  msg.textContent = 'Checking…';
+  msg.className = 'availability-msg';
+  try {
+    const res = await fetch(`/musehub/ui/new/check?owner=${encodeURIComponent(owner)}&slug=${encodeURIComponent(slug)}`);
+    const data = await res.json();
+    if (data.available) {
+      msg.textContent = `✅ ${owner}/${slug} is available`;
+      msg.className = 'availability-msg ok';
+      if (nameEl) nameEl.classList.remove('error');
+      if (nameEl) nameEl.classList.add('ok');
+    } else {
+      msg.textContent = `❌ ${owner}/${slug} is already taken`;
+      msg.className = 'availability-msg error';
+      if (nameEl) nameEl.classList.add('error');
+      if (nameEl) nameEl.classList.remove('ok');
+    }
+  } catch (e) {
+    msg.textContent = '';
+    msg.className = 'availability-msg';
+  }
+}
+
+// ── Visibility toggle ─────────────────────────────────────────────────────────
+function selectVisibility(v) {
+  _visibility = v;
+  document.querySelectorAll('.visibility-card').forEach(el => {
+    el.classList.toggle('selected', el.dataset.v === v);
+  });
+}
+
+// ── Template repo search ──────────────────────────────────────────────────────
+let _templateTimer = null;
+
+async function searchTemplates() {
+  const q = document.getElementById('template-search-input').value.trim();
+  const results = document.getElementById('template-results');
+  if (!results) return;
+  if (!q) { results.style.display = 'none'; return; }
+
+  clearTimeout(_templateTimer);
+  _templateTimer = setTimeout(async () => {
+    try {
+      const res = await fetch(`/api/v1/musehub/discover/repos?q=${encodeURIComponent(q)}&visibility=public&limit=8`);
+      if (!res.ok) { results.style.display = 'none'; return; }
+      const data = await res.json();
+      const repos = Array.isArray(data) ? data : (data.repos || data.results || []);
+      if (!repos.length) { results.style.display = 'none'; return; }
+      results.innerHTML = repos.map(r =>
+        `<div class="template-result-item" onclick="selectTemplate('${escHtml(r.repoId || r.repo_id || '')}', '${escHtml(r.owner || '')}/${escHtml(r.slug || r.name || '')}')">
+          <strong>${escHtml(r.owner || '')}/${escHtml(r.slug || r.name || '')}</strong>
+          ${r.description ? `<span style="color:var(--text-muted);margin-left:6px">— ${escHtml(r.description)}</span>` : ''}
+        </div>`
+      ).join('');
+      results.style.display = 'block';
+    } catch (e) { results.style.display = 'none'; }
+  }, 350);
+}
+
+function selectTemplate(id, label) {
+  _templateRepoId = id;
+  _templateRepoName = label;
+  const badge = document.getElementById('template-selected');
+  if (badge) badge.innerHTML = `Using template: <strong>${escHtml(label)}</strong> <button style="background:none;border:none;cursor:pointer;color:var(--text-muted)" onclick="clearTemplate()">&#215;</button>`;
+  if (badge) badge.style.display = 'inline-flex';
+  const results = document.getElementById('template-results');
+  if (results) results.style.display = 'none';
+  document.getElementById('template-search-input').value = '';
+}
+
+function clearTemplate() {
+  _templateRepoId = null;
+  _templateRepoName = '';
+  const badge = document.getElementById('template-selected');
+  if (badge) badge.style.display = 'none';
+}
+
+// ── Form submission ───────────────────────────────────────────────────────────
+async function submitForm(e) {
+  e.preventDefault();
+  const errorEl   = document.getElementById('submit-error');
+  const successEl = document.getElementById('submit-success');
+  const btn       = document.getElementById('submit-btn');
+  if (errorEl)   { errorEl.style.display   = 'none'; }
+  if (successEl) { successEl.style.display = 'none'; }
+
+  const owner       = document.getElementById('f-owner').value.trim();
+  const name        = document.getElementById('f-name').value.trim();
+  const description = document.getElementById('f-description').value.trim();
+  const licenseEl   = document.getElementById('f-license');
+  const license     = licenseEl ? (licenseEl.value || null) : null;
+  const initialize  = document.getElementById('f-initialize') ? document.getElementById('f-initialize').checked : true;
+  const branch      = document.getElementById('f-branch') ? document.getElementById('f-branch').value.trim() || 'main' : 'main';
+
+  // Collect any remaining text in topic input as a tag.
+  const topicInput = document.getElementById('topic-input');
+  if (topicInput && topicInput.value.trim()) {
+    const val = topicInput.value.trim();
+    if (!_topics.includes(val)) _topics.push(val);
+  }
+
+  const body = {
+    owner,
+    name,
+    description,
+    visibility: _visibility,
+    license: license || null,
+    topics: _topics,
+    tags: [],
+    initialize,
+    defaultBranch: branch,
+    templateRepoId: _templateRepoId || null,
+  };
+
+  if (btn) { btn.disabled = true; btn.textContent = 'Creating…'; }
+
+  try {
+    const token = getToken();
+    if (!token) { showTokenForm('Sign in to create a repository.'); return; }
+    const res = await fetch('/musehub/ui/new', {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    if (res.status === 401 || res.status === 403) {
+      showTokenForm('Session expired — please re-enter your JWT.');
+      return;
+    }
+    const data = await res.json();
+    if (res.status === 201) {
+      if (successEl) { successEl.textContent = '✅ Repository created! Redirecting…'; successEl.style.display = 'block'; }
+      setTimeout(() => { window.location.href = data.redirect; }, 600);
+      return;
+    }
+    if (errorEl) {
+      errorEl.textContent = '❌ ' + (data.detail || 'Failed to create repository.');
+      errorEl.style.display = 'block';
+    }
+  } catch (ex) {
+    if (errorEl) { errorEl.textContent = '❌ ' + ex.message; errorEl.style.display = 'block'; }
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = 'Create repository'; }
+  }
+}
+
+// ── License dropdown builder ──────────────────────────────────────────────────
+function buildLicenseOptions() {
+  const sel = document.getElementById('f-license');
+  if (!sel) return;
+  sel.innerHTML = LICENSES.map(([val, label]) =>
+    `<option value="${escHtml(val)}">${escHtml(label)}</option>`
+  ).join('');
+}
+
+// ── Main render ───────────────────────────────────────────────────────────────
+function load() {
+  const token = getToken();
+
+  document.getElementById('content').innerHTML = `
+    <div class="wizard-layout">
+      <div class="wizard-header">
+        <h1 class="wizard-title">&#127381; Create a new repository</h1>
+        <p class="wizard-subtitle">A repository contains all your project's files, commit history, and collaboration records.</p>
+      </div>
+
+      <form id="wizard-form" onsubmit="submitForm(event)">
+
+        <!-- Owner / name row -->
+        <div class="form-group">
+          <label class="form-label">Owner &amp; repository name <span class="required">*</span></label>
+          <div class="form-description">Choose your username as the owner. The name determines the URL.</div>
+          <div class="owner-name-row">
+            <input class="form-input owner-input" id="f-owner" type="text" placeholder="your-username"
+              pattern="^[a-z0-9]([a-z0-9\\-]{0,62}[a-z0-9])?$" required maxlength="64"
+              title="Lowercase letters, numbers, and hyphens only; no leading/trailing hyphens"
+              oninput="scheduleCheck()">
+            <span class="owner-sep">/</span>
+            <input class="form-input name-input" id="f-name" type="text" placeholder="my-composition"
+              required maxlength="255" oninput="scheduleCheck()">
+          </div>
+          <div class="availability-msg" id="availability-msg"></div>
+        </div>
+
+        <!-- Description -->
+        <div class="form-group">
+          <label class="form-label" for="f-description">Description</label>
+          <div class="form-description">A short summary shown on the explore page and your profile.</div>
+          <textarea class="form-input" id="f-description" rows="2" maxlength="350"
+            placeholder="A jazz trio arrangement in D minor…" style="resize:vertical"></textarea>
+        </div>
+
+        <hr class="wizard-divider">
+
+        <!-- Visibility -->
+        <div class="form-group">
+          <label class="form-label">Visibility <span class="required">*</span></label>
+          <div class="visibility-row">
+            <div class="visibility-card" data-v="public" onclick="selectVisibility('public')">
+              <div class="visibility-icon">&#127758;</div>
+              <div class="visibility-card-title">Public</div>
+              <div class="visibility-card-desc">Anyone on Muse Hub can view this repository.</div>
+            </div>
+            <div class="visibility-card selected" data-v="private" onclick="selectVisibility('private')">
+              <div class="visibility-icon">&#128274;</div>
+              <div class="visibility-card-title">Private</div>
+              <div class="visibility-card-desc">Only you and your collaborators can view this repository.</div>
+            </div>
+          </div>
+        </div>
+
+        <hr class="wizard-divider">
+
+        <!-- License -->
+        <div class="form-group">
+          <label class="form-label" for="f-license">License</label>
+          <div class="form-description">Tell others what they can and cannot do with your music.</div>
+          <select class="form-input" id="f-license" style="max-width:380px"></select>
+        </div>
+
+        <!-- Topics -->
+        <div class="form-group">
+          <label class="form-label">Topics</label>
+          <div class="form-description">Tag your repo with genres, moods, or instruments. Press <kbd>Enter</kbd> or <kbd>,</kbd> to add a tag.</div>
+          <div class="tag-input-container" id="topics-container"
+               onclick="document.getElementById('topic-input') && document.getElementById('topic-input').focus()">
+            <input class="tag-text-input" id="topic-input"
+              placeholder="jazz, piano, D minor…"
+              onkeydown="onTopicKey(event)" oninput="onTopicInput(event)">
+          </div>
+        </div>
+
+        <hr class="wizard-divider">
+
+        <!-- Initialize repo -->
+        <div class="form-group">
+          <label class="form-label">Initialise this repository</label>
+          <div class="form-checkbox-row">
+            <input type="checkbox" id="f-initialize" checked onchange="toggleBranchRow()">
+            <div>
+              <div class="form-checkbox-label">Add an initial commit</div>
+              <div class="form-checkbox-desc">Creates an empty "Initial commit" so the repository is immediately browsable.</div>
+            </div>
+          </div>
+          <div class="branch-row" id="branch-row">
+            <label class="form-label" for="f-branch">Default branch name</label>
+            <input class="form-input" id="f-branch" type="text" value="main" maxlength="255"
+              style="max-width:240px" placeholder="main">
+          </div>
+        </div>
+
+        <!-- Template repo -->
+        <div class="form-group">
+          <label class="form-label">Template repository</label>
+          <div class="form-description">Copy topics, description, and labels from an existing public repository.</div>
+          <div class="template-search">
+            <input class="form-input" id="template-search-input" type="text"
+              placeholder="Search public repositories…" oninput="searchTemplates()"
+              autocomplete="off">
+            <div class="template-results" id="template-results"></div>
+          </div>
+          <div class="template-selected-badge" id="template-selected" style="display:none"></div>
+        </div>
+
+        <hr class="wizard-divider">
+
+        <!-- Actions -->
+        <div class="wizard-actions">
+          <button class="btn btn-primary" type="submit" id="submit-btn" ${token ? '' : 'disabled'}>
+            Create repository
+          </button>
+          <a class="btn btn-secondary" href="/musehub/ui/explore">Cancel</a>
+          <span class="submit-error" id="submit-error"></span>
+          <span class="submit-success" id="submit-success"></span>
+        </div>
+
+        ${!token ? '<p style="color:#f85149;font-size:13px;margin-top:var(--space-3)">&#9888; You must be signed in to create a repository. <a href="#" onclick="showTokenForm(\'Enter your JWT to continue.\')">Sign in</a></p>' : ''}
+      </form>
+    </div>
+  `;
+
+  buildLicenseOptions();
+  renderTopics();
+}
+
+function toggleBranchRow() {
+  const checked = document.getElementById('f-initialize') && document.getElementById('f-initialize').checked;
+  const row = document.getElementById('branch-row');
+  if (row) row.style.display = checked ? '' : 'none';
+}
+
+load();
+{% endraw %}
+{% endblock %}
