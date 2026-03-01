@@ -41,6 +41,7 @@ from maestro.models.musehub_analysis import (
     DynamicsPageData,
     EmotionDiffResponse,
     EmotionMapResponse,
+    HarmonyAnalysisResponse,
 )
 from maestro.services import musehub_analysis, musehub_repository
 
@@ -339,6 +340,75 @@ async def get_dynamics_page_data(
     )
 
     etag = _etag(repo_id, ref, "dynamics-page")
+    response.headers["ETag"] = etag
+    response.headers["Last-Modified"] = _LAST_MODIFIED
+    response.headers["Cache-Control"] = "private, max-age=60"
+    return result
+
+
+# Dedicated harmony router — must be included BEFORE the main analysis router in
+# __init__.py so this specific path takes priority over the generic /{dimension}
+# catch-all route.  See: maestro/api/routes/musehub/__init__.py.
+harmony_router = APIRouter()
+
+
+@harmony_router.get(
+    "/repos/{repo_id}/analysis/{ref}/harmony",
+    response_model=HarmonyAnalysisResponse,
+    operation_id="getAnalysisHarmony",
+    summary="Harmonic analysis — Roman numerals, cadences, and modulations for a ref",
+    description=(
+        "Returns a Roman-numeral-centric harmonic analysis of a Muse commit ref. "
+        "Maps to the ``muse harmony --ref {ref}`` CLI command.\n\n"
+        "Unlike the generic ``/analysis/{ref}/harmony`` dimension (which returns "
+        "raw chord symbols and a tension curve), this endpoint returns:\n\n"
+        "- **key** and **mode**: detected tonal centre and scale type\n"
+        "- **roman_numerals**: each chord event labelled with scale degree, root, "
+        "quality, and tonal function (tonic / subdominant / dominant)\n"
+        "- **cadences**: detected phrase-ending cadence types and their beat positions\n"
+        "- **modulations**: key-area changes with from/to key and pivot chord\n"
+        "- **harmonic_rhythm_bpm**: rate of chord changes in chords per minute\n\n"
+        "Agents use this to compose harmonically coherent continuations that respect "
+        "existing tonal narrative, cadence structure, and phrase boundaries. "
+        "Use ``?track=<instrument>`` or ``?section=<label>`` to narrow the scope."
+    ),
+)
+async def get_harmony_analysis(
+    repo_id: str,
+    ref: str,
+    response: Response,
+    track: str | None = Query(None, description="Instrument track filter, e.g. 'bass', 'keys'"),
+    section: str | None = Query(None, description="Section filter, e.g. 'chorus', 'verse_1'"),
+    db: AsyncSession = Depends(get_db),
+    claims: TokenClaims | None = Depends(optional_token),
+) -> HarmonyAnalysisResponse:
+    """Return dedicated harmonic analysis for a Muse repo ref.
+
+    Provides a Roman-numeral view of the harmonic content — scale degrees,
+    tonal functions, cadence positions, and detected modulations — structured
+    for agent consumption.  Maps to ``muse harmony --ref {ref}``.
+
+    Access control mirrors the other analysis endpoints: public repos are
+    accessible without authentication; private repos require a valid JWT.
+    """
+    repo = await musehub_repository.get_repo(db, repo_id)
+    if repo is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repo not found")
+    if repo.visibility != "public" and claims is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required to access private repos.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    result = musehub_analysis.compute_harmony_analysis(
+        repo_id=repo_id,
+        ref=ref,
+        track=track,
+        section=section,
+    )
+
+    etag = _etag(repo_id, ref, "harmony")
     response.headers["ETag"] = etag
     response.headers["Last-Modified"] = _LAST_MODIFIED
     response.headers["Cache-Control"] = "private, max-age=60"

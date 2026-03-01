@@ -28,7 +28,8 @@ from maestro.auth.dependencies import TokenClaims, optional_token, require_valid
 from maestro.db import get_db
 from maestro.db.musehub_models import MusehubFollow, MusehubProfile
 from maestro.models.base import CamelModel
-from maestro.models.musehub import ProfileResponse, ProfileUpdateRequest, UserForksResponse, UserStarredResponse, UserWatchedResponse
+from maestro.models.musehub import ProfileResponse, ProfileUpdateRequest, UserActivityFeedResponse, UserForksResponse, UserStarredResponse, UserWatchedResponse
+from maestro.services import musehub_events as events_svc
 from maestro.services import musehub_profile as profile_svc
 from maestro.services import musehub_repository as repo_svc
 
@@ -384,3 +385,65 @@ async def list_following(
             cards.append(card)
     logger.info("✅ Following list username=%s count=%d", username, len(cards))
     return cards
+
+
+# ---------------------------------------------------------------------------
+# Public activity feed
+# ---------------------------------------------------------------------------
+
+
+@router.get(
+    "/users/{username}/activity",
+    response_model=UserActivityFeedResponse,
+    operation_id="getUserActivity",
+    summary="Get a user's public activity feed (newest-first, cursor-paginated)",
+)
+async def get_user_activity(
+    username: str,
+    type: str | None = Query(
+        None,
+        description="Filter by event type: push | pull_request | issue | release | star | fork | comment",
+        pattern=r"^(push|pull_request|issue|release|star|fork|comment)$",
+    ),
+    limit: int = Query(30, ge=1, le=100, description="Maximum events to return (default 30, max 100)"),
+    before_id: str | None = Query(None, description="Cursor: event UUID from a previous response's next_cursor"),
+    db: AsyncSession = Depends(get_db),
+    claims: TokenClaims | None = Depends(optional_token),
+) -> UserActivityFeedResponse:
+    """Return the public activity feed for ``username``.
+
+    Events are sourced from public repos only, unless the authenticated caller
+    is the profile owner — in which case events from private repos are also
+    included.  Events are returned newest-first.
+
+    Cursor pagination: the ``next_cursor`` field in the response contains the
+    event UUID to pass as ``before_id`` on the next request.  When
+    ``next_cursor`` is null the caller has reached the end of the feed.
+
+    No JWT required — the activity feed is publicly discoverable.  Returns 404
+    when the username does not match any registered profile.
+    """
+    profile = await profile_svc.get_profile_by_username(db, username)
+    if profile is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"No profile found for username '{username}'",
+        )
+
+    caller_user_id: str | None = claims.get("sub") if claims is not None else None
+
+    result = await events_svc.list_user_activity(
+        db,
+        username,
+        caller_user_id=caller_user_id,
+        type_filter=type,
+        limit=limit,
+        before_id=before_id,
+    )
+    logger.info(
+        "✅ Activity feed username=%s count=%d type=%s",
+        username,
+        len(result.events),
+        type,
+    )
+    return result

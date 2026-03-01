@@ -25,7 +25,7 @@ from __future__ import annotations
 
 import logging
 
-import yaml  # PyYAML ships no py.typed marker
+import yaml
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -33,6 +33,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from maestro.auth.dependencies import TokenClaims, optional_token, require_valid_token
 from maestro.db import get_db
 from maestro.db import musehub_models as db_models
+from maestro.db import musehub_collaborator_models as collab_models
 from sqlalchemy import select
 from maestro.models.musehub import (
     ActivityFeedResponse,
@@ -56,6 +57,8 @@ from maestro.models.musehub import (
     GrooveCommitEntry,
     MuseHubContextResponse,
     RepoResponse,
+    RepoSettingsPatch,
+    RepoSettingsResponse,
     RepoStatsResponse,
     CreditsResponse,
     RenderStatusResponse,
@@ -1260,6 +1263,117 @@ async def get_repo_activity(
         page=page,
         page_size=page_size,
     )
+
+
+# ── Repo settings (GET + PATCH) — declared before catch-all ──────────────────
+
+
+async def _guard_admin(
+    repo: RepoResponse | None, caller_user_id: str, db: AsyncSession
+) -> None:
+    """Raise 404 if repo is absent; raise 403 if caller lacks admin permission.
+
+    Admin permission is granted when the caller is the repo owner OR when they
+    have an accepted collaborator row with ``permission='admin'``.
+
+    Args:
+        repo: The repo metadata (None triggers 404).
+        caller_user_id: JWT ``sub`` of the authenticated caller.
+        db: Active async DB session for the collaborator lookup.
+    """
+    if repo is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repo not found")
+    if repo.owner_user_id == caller_user_id:
+        return
+    stmt = (
+        select(collab_models.MusehubCollaborator)
+        .where(
+            collab_models.MusehubCollaborator.repo_id == repo.repo_id,
+            collab_models.MusehubCollaborator.user_id == caller_user_id,
+            collab_models.MusehubCollaborator.permission == "admin",
+            collab_models.MusehubCollaborator.accepted_at.is_not(None),
+        )
+    )
+    row = (await db.execute(stmt)).scalar_one_or_none()
+    if row is None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin permission required to access repo settings",
+        )
+
+
+@router.get(
+    "/repos/{repo_id}/settings",
+    response_model=RepoSettingsResponse,
+    operation_id="getRepoSettings",
+    summary="Get mutable settings for a repo",
+    tags=["Repos"],
+)
+async def get_repo_settings(
+    repo_id: str,
+    db: AsyncSession = Depends(get_db),
+    claims: TokenClaims = Depends(require_valid_token),
+) -> RepoSettingsResponse:
+    """Return the mutable settings for a repo.
+
+    Only the repo owner or an admin collaborator may call this endpoint.
+    Returns 403 when the caller lacks admin permission; 404 when the repo
+    does not exist.
+
+    Settings combine dedicated-column values (name, description, visibility,
+    topics) with feature flags stored in the ``settings`` JSON blob
+    (has_issues, allow_merge_commit, etc.).  Missing flags are back-filled
+    with canonical defaults on first read so every response is fully
+    populated regardless of when the repo was created.
+
+    Agent use case: read before updating project metadata or configuring the
+    PR merge strategy.
+    """
+    caller_user_id: str = claims.get("sub") or ""
+    repo = await musehub_repository.get_repo(db, repo_id)
+    await _guard_admin(repo, caller_user_id, db)
+    settings = await musehub_repository.get_repo_settings(db, repo_id)
+    if settings is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repo not found")
+    return settings
+
+
+@router.patch(
+    "/repos/{repo_id}/settings",
+    response_model=RepoSettingsResponse,
+    operation_id="patchRepoSettings",
+    summary="Update mutable settings for a repo",
+    tags=["Repos"],
+)
+async def patch_repo_settings(
+    repo_id: str,
+    body: RepoSettingsPatch,
+    db: AsyncSession = Depends(get_db),
+    claims: TokenClaims = Depends(require_valid_token),
+) -> RepoSettingsResponse:
+    """Partially update mutable settings for a repo.
+
+    Only the repo owner or an admin collaborator may call this endpoint.
+    All request body fields are optional — only non-null values are written.
+
+    ``visibility`` must be ``'public'`` or ``'private'`` when supplied.
+    ``topics`` replaces the full tag list when provided.
+
+    Returns 403 when the caller lacks admin permission; 404 when the repo
+    does not exist.  On success, the full updated settings object is returned
+    so callers do not need a follow-up GET.
+
+    Agent use case: update visibility, merge strategy, or homepage URL
+    atomically without touching other settings fields.
+    """
+    caller_user_id: str = claims.get("sub") or ""
+    repo = await musehub_repository.get_repo(db, repo_id)
+    await _guard_admin(repo, caller_user_id, db)
+    updated = await musehub_repository.update_repo_settings(db, repo_id, body)
+    if updated is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repo not found")
+    await db.commit()
+    return updated
 
 
 # ── Owner/slug resolver — declared LAST to avoid shadowing /repos/... routes ──

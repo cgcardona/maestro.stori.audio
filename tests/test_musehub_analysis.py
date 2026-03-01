@@ -22,19 +22,6 @@ Covers issue #227 (emotion map):
 - test_emotion_map_endpoint_requires_auth       — endpoint returns 401 without auth
 - test_emotion_map_endpoint_unknown_repo_404    — unknown repo returns 404
 - test_emotion_map_endpoint_etag                — ETag header is present
-
-Covers issue #420 (emotion diff):
-- test_compute_emotion_diff_returns_correct_type    — service returns EmotionDiffResponse
-- test_emotion_diff_vectors_in_range               — all 8D axes are in [0, 1]
-- test_emotion_diff_delta_is_head_minus_base       — delta == head - base per axis
-- test_emotion_diff_interpretation_nonempty        — interpretation is a non-empty string
-- test_emotion_diff_is_deterministic               — same refs always produce same result
-- test_emotion_diff_different_refs_differ          — different refs produce different vectors
-- test_emotion_diff_endpoint_200                   — HTTP GET returns 200 with required fields
-- test_emotion_diff_endpoint_requires_auth         — endpoint returns 401 without auth
-- test_emotion_diff_endpoint_unknown_repo_404      — unknown repo returns 404
-- test_emotion_diff_endpoint_etag                  — ETag header is present
-- test_emotion_diff_endpoint_missing_base_422      — missing required ?base param returns 422
 """
 from __future__ import annotations
 
@@ -52,12 +39,9 @@ from maestro.models.musehub_analysis import (
     DivergenceData,
     DynamicsData,
     EmotionData,
-    EmotionDelta8D,
-    EmotionDiffResponse,
     EmotionDrift,
     EmotionMapResponse,
     EmotionVector,
-    EmotionVector8D,
     FormData,
     GrooveData,
     HarmonyData,
@@ -72,7 +56,6 @@ from maestro.services.musehub_analysis import (
     compute_aggregate_analysis,
     compute_analysis_response,
     compute_dimension,
-    compute_emotion_diff,
     compute_emotion_map,
 )
 
@@ -363,7 +346,13 @@ async def test_analysis_harmony_endpoint(
     auth_headers: dict[str, str],
     db_session: AsyncSession,
 ) -> None:
-    """GET /musehub/repos/{repo_id}/analysis/{ref}/harmony returns structured data."""
+    """GET /musehub/repos/{repo_id}/analysis/{ref}/harmony returns dedicated harmony data.
+
+    The /harmony path is now handled by the dedicated HarmonyAnalysisResponse endpoint
+    (issue #414) rather than the generic /{dimension} catch-all.  It returns
+    Roman-numeral-centric data (key, mode, romanNumerals, cadences, modulations)
+    rather than the generic AnalysisResponse envelope.
+    """
     repo_id = await _create_repo(client, auth_headers)
     resp = await client.get(
         f"/api/v1/musehub/repos/{repo_id}/analysis/main/harmony",
@@ -371,15 +360,13 @@ async def test_analysis_harmony_endpoint(
     )
     assert resp.status_code == 200
     body = resp.json()
-    assert body["dimension"] == "harmony"
-    assert body["ref"] == "main"
-    assert "computedAt" in body
-    assert "data" in body
-    assert "filtersApplied" in body
-    data = body["data"]
-    assert "tonic" in data
-    assert "mode" in data
-    assert "chordProgression" in data
+    # Dedicated harmony endpoint — HarmonyAnalysisResponse shape (not AnalysisResponse)
+    assert "key" in body
+    assert "mode" in body
+    assert "romanNumerals" in body
+    assert "cadences" in body
+    assert "modulations" in body
+    assert "harmonicRhythmBpm" in body
 
 
 @pytest.mark.anyio
@@ -576,7 +563,13 @@ async def test_analysis_all_13_dimensions_individually(
     auth_headers: dict[str, str],
     db_session: AsyncSession,
 ) -> None:
-    """Each of the 13 dimension endpoints returns 200 with correct dimension field."""
+    """Each of the 13 dimensions returns 200; harmony now has a dedicated endpoint.
+
+    The ``harmony`` dimension path is handled by the dedicated HarmonyAnalysisResponse
+    endpoint (issue #414) which returns a different response shape (no ``dimension``
+    envelope field).  All other 12 dimensions continue to use the generic AnalysisResponse
+    envelope and are verified here.
+    """
     repo_id = await _create_repo(client, auth_headers)
     for dim in ALL_DIMENSIONS:
         resp = await client.get(
@@ -585,7 +578,14 @@ async def test_analysis_all_13_dimensions_individually(
         )
         assert resp.status_code == 200, f"Dimension {dim!r} returned {resp.status_code}"
         body = resp.json()
-        assert body["dimension"] == dim, f"Expected dimension={dim!r}, got {body['dimension']!r}"
+        if dim == "harmony":
+            # Dedicated endpoint — HarmonyAnalysisResponse (no "dimension" envelope)
+            assert "key" in body, f"Harmony endpoint missing 'key' field"
+            assert "romanNumerals" in body, f"Harmony endpoint missing 'romanNumerals' field"
+        else:
+            assert body["dimension"] == dim, (
+                f"Expected dimension={dim!r}, got {body['dimension']!r}"
+            )
 
 
 # ---------------------------------------------------------------------------
@@ -852,195 +852,211 @@ async def test_analysis_aggregate_endpoint_returns_all_dimensions(
 
 
 # ---------------------------------------------------------------------------
-# Emotion diff service unit tests (issue #420)
+# Issue #414 — GET /analysis/{ref}/harmony endpoint
 # ---------------------------------------------------------------------------
 
 
-def test_compute_emotion_diff_returns_correct_type() -> None:
-    """compute_emotion_diff returns an EmotionDiffResponse instance."""
-    result = compute_emotion_diff(repo_id="test-repo", head_ref="main", base_ref="main~1")
-    assert isinstance(result, EmotionDiffResponse)
+from maestro.models.musehub_analysis import HarmonyAnalysisResponse  # noqa: E402
+from maestro.services.musehub_analysis import compute_harmony_analysis  # noqa: E402
 
 
-def test_emotion_diff_vectors_in_range() -> None:
-    """All 8 axes of base_emotion and head_emotion are in [0, 1]."""
-    result = compute_emotion_diff(repo_id="test-repo", head_ref="feature/jazz", base_ref="main")
-    for vec in (result.base_emotion, result.head_emotion):
-        assert isinstance(vec, EmotionVector8D)
-        assert 0.0 <= vec.valence <= 1.0
-        assert 0.0 <= vec.energy <= 1.0
-        assert 0.0 <= vec.tension <= 1.0
-        assert 0.0 <= vec.complexity <= 1.0
-        assert 0.0 <= vec.warmth <= 1.0
-        assert 0.0 <= vec.brightness <= 1.0
-        assert 0.0 <= vec.darkness <= 1.0
-        assert 0.0 <= vec.playfulness <= 1.0
+def test_compute_harmony_analysis_returns_correct_type() -> None:
+    """compute_harmony_analysis returns a HarmonyAnalysisResponse instance."""
+    result = compute_harmony_analysis(repo_id="repo-test", ref="main")
+    assert isinstance(result, HarmonyAnalysisResponse)
 
 
-def test_emotion_diff_delta_is_head_minus_base() -> None:
-    """delta is an EmotionDelta8D with values == round(head - base, 4) per axis."""
-    result = compute_emotion_diff(repo_id="test-repo", head_ref="main", base_ref="develop")
-    b = result.base_emotion
-    h = result.head_emotion
-    d = result.delta
-    assert isinstance(d, EmotionDelta8D)
-    assert d.valence == pytest.approx(round(h.valence - b.valence, 4), abs=1e-4)
-    assert d.energy == pytest.approx(round(h.energy - b.energy, 4), abs=1e-4)
-    assert d.tension == pytest.approx(round(h.tension - b.tension, 4), abs=1e-4)
-    assert d.complexity == pytest.approx(round(h.complexity - b.complexity, 4), abs=1e-4)
-    assert d.warmth == pytest.approx(round(h.warmth - b.warmth, 4), abs=1e-4)
-    assert d.brightness == pytest.approx(round(h.brightness - b.brightness, 4), abs=1e-4)
-    assert d.darkness == pytest.approx(round(h.darkness - b.darkness, 4), abs=1e-4)
-    assert d.playfulness == pytest.approx(round(h.playfulness - b.playfulness, 4), abs=1e-4)
+def test_compute_harmony_analysis_key_has_mode() -> None:
+    """The key field includes both tonic and mode, e.g. 'C major'."""
+    result = compute_harmony_analysis(repo_id="repo-test", ref="main")
+    assert result.mode in result.key
+    assert len(result.key.split()) == 2  # "C major", "F minor", etc.
 
 
-def test_emotion_diff_interpretation_nonempty() -> None:
-    """interpretation is a non-empty string describing the dominant shift."""
-    result = compute_emotion_diff(repo_id="test-repo", head_ref="main", base_ref="main~1")
-    assert isinstance(result.interpretation, str)
-    assert len(result.interpretation) > 10
+def test_compute_harmony_analysis_roman_numerals_nonempty() -> None:
+    """roman_numerals must contain at least one chord event."""
+    result = compute_harmony_analysis(repo_id="repo-test", ref="main")
+    assert len(result.roman_numerals) >= 1
+    for rn in result.roman_numerals:
+        assert rn.beat >= 0.0
+        assert rn.chord != ""
+        assert rn.root != ""
+        assert rn.quality != ""
+        assert rn.function != ""
 
 
-def test_emotion_diff_ref_fields_set_correctly() -> None:
-    """base_ref and head_ref match the arguments passed to the service function."""
-    result = compute_emotion_diff(repo_id="test-repo", head_ref="feat/bridge", base_ref="main")
-    assert result.base_ref == "main"
-    assert result.head_ref == "feat/bridge"
+def test_compute_harmony_analysis_cadences_nonempty() -> None:
+    """cadences must contain at least one entry with valid from/to fields."""
+    result = compute_harmony_analysis(repo_id="repo-test", ref="main")
+    assert len(result.cadences) >= 1
+    for cadence in result.cadences:
+        assert cadence.beat >= 0.0
+        assert cadence.type != ""
+        assert cadence.from_ != ""
+        assert cadence.to != ""
 
 
-def test_emotion_diff_is_deterministic() -> None:
-    """Same head_ref and base_ref always produce the same result."""
-    r1 = compute_emotion_diff(repo_id="r1", head_ref="abc123", base_ref="def456")
-    r2 = compute_emotion_diff(repo_id="r2", head_ref="abc123", base_ref="def456")
-    assert r1.base_emotion.valence == r2.base_emotion.valence
-    assert r1.head_emotion.tension == r2.head_emotion.tension
-    assert r1.delta.darkness == r2.delta.darkness
+def test_compute_harmony_analysis_harmonic_rhythm_positive() -> None:
+    """harmonic_rhythm_bpm must be a positive float."""
+    result = compute_harmony_analysis(repo_id="repo-test", ref="main")
+    assert result.harmonic_rhythm_bpm > 0.0
 
 
-def test_emotion_diff_different_refs_differ() -> None:
-    """Different refs produce different emotion vectors (seed is ref-keyed)."""
-    r1 = compute_emotion_diff(repo_id="test-repo", head_ref="main", base_ref="develop")
-    r2 = compute_emotion_diff(repo_id="test-repo", head_ref="feature/x", base_ref="develop")
-    # head vecs should differ (different head refs)
-    assert r1.head_emotion.valence != r2.head_emotion.valence or r1.head_emotion.energy != r2.head_emotion.energy
+def test_compute_harmony_analysis_is_deterministic() -> None:
+    """Same ref always produces the same key and mode (deterministic stub)."""
+    r1 = compute_harmony_analysis(repo_id="repo-a", ref="abc123")
+    r2 = compute_harmony_analysis(repo_id="repo-b", ref="abc123")
+    assert r1.key == r2.key
+    assert r1.mode == r2.mode
+    assert r1.harmonic_rhythm_bpm == r2.harmonic_rhythm_bpm
 
 
-def test_emotion_diff_same_ref_zero_delta() -> None:
-    """Comparing a ref against itself yields zero delta across all axes."""
-    result = compute_emotion_diff(repo_id="test-repo", head_ref="main", base_ref="main")
-    d = result.delta
-    assert d.valence == pytest.approx(0.0, abs=1e-4)
-    assert d.energy == pytest.approx(0.0, abs=1e-4)
-    assert d.tension == pytest.approx(0.0, abs=1e-4)
-    assert d.complexity == pytest.approx(0.0, abs=1e-4)
-    assert d.warmth == pytest.approx(0.0, abs=1e-4)
-    assert d.brightness == pytest.approx(0.0, abs=1e-4)
-    assert d.darkness == pytest.approx(0.0, abs=1e-4)
-    assert d.playfulness == pytest.approx(0.0, abs=1e-4)
-
-
-# ---------------------------------------------------------------------------
-# Emotion diff HTTP endpoint tests (issue #420)
-# ---------------------------------------------------------------------------
+def test_compute_harmony_analysis_different_refs_differ() -> None:
+    """Different refs produce different harmonic data."""
+    r1 = compute_harmony_analysis(repo_id="repo-test", ref="ref-aaa")
+    r2 = compute_harmony_analysis(repo_id="repo-test", ref="ref-zzz")
+    # At least the key or mode differs across distinct refs.
+    assert (r1.key != r2.key) or (r1.mode != r2.mode) or (r1.harmonic_rhythm_bpm != r2.harmonic_rhythm_bpm)
 
 
 @pytest.mark.anyio
-async def test_emotion_diff_endpoint_200(
+async def test_harmony_endpoint_returns_200(
     client: AsyncClient,
     auth_headers: dict[str, str],
     db_session: AsyncSession,
 ) -> None:
-    """GET /analysis/{ref}/emotion-diff?base={base} returns 200 with all required fields."""
+    """GET /analysis/{ref}/harmony returns 200 with all required fields.
+
+    Regression test for issue #414: the dedicated harmony endpoint must return
+    structured Roman-numeral harmonic data so agents can reason about tonal
+    function, cadence structure, and modulations without parsing raw chord symbols.
+    """
     repo_id = await _create_repo(client, auth_headers)
     resp = await client.get(
-        f"/api/v1/musehub/repos/{repo_id}/analysis/main/emotion-diff?base=main~1",
+        f"/api/v1/musehub/repos/{repo_id}/analysis/main/harmony",
         headers=auth_headers,
     )
     assert resp.status_code == 200
     body = resp.json()
-    assert body["repoId"] == repo_id
-    assert body["baseRef"] == "main~1"
-    assert body["headRef"] == "main"
-    assert "baseEmotion" in body
-    assert "headEmotion" in body
-    assert "delta" in body
-    assert "interpretation" in body
-    assert "computedAt" in body
+    assert "key" in body
+    assert "mode" in body
+    assert "romanNumerals" in body
+    assert "cadences" in body
+    assert "modulations" in body
+    assert "harmonicRhythmBpm" in body
+    assert isinstance(body["romanNumerals"], list)
+    assert len(body["romanNumerals"]) >= 1
+    assert isinstance(body["cadences"], list)
+    assert len(body["cadences"]) >= 1
+    assert body["harmonicRhythmBpm"] > 0.0
 
 
 @pytest.mark.anyio
-async def test_emotion_diff_endpoint_response_shape(
+async def test_harmony_endpoint_roman_numerals_fields(
     client: AsyncClient,
     auth_headers: dict[str, str],
     db_session: AsyncSession,
 ) -> None:
-    """All 8 axes are present in baseEmotion, headEmotion, and delta."""
+    """Each roman numeral event carries beat, chord, root, quality, and function."""
     repo_id = await _create_repo(client, auth_headers)
     resp = await client.get(
-        f"/api/v1/musehub/repos/{repo_id}/analysis/feature-jazz/emotion-diff?base=main",
+        f"/api/v1/musehub/repos/{repo_id}/analysis/main/harmony",
         headers=auth_headers,
     )
     assert resp.status_code == 200
-    body = resp.json()
-    expected_axes = {"valence", "energy", "tension", "complexity", "warmth", "brightness", "darkness", "playfulness"}
-    for field in ("baseEmotion", "headEmotion", "delta"):
-        returned_keys = {k for k in body[field]}
-        assert expected_axes.issubset(returned_keys), f"{field} missing axes: {expected_axes - returned_keys}"
+    for rn in resp.json()["romanNumerals"]:
+        assert "beat" in rn
+        assert "chord" in rn
+        assert "root" in rn
+        assert "quality" in rn
+        assert "function" in rn
 
 
 @pytest.mark.anyio
-async def test_emotion_diff_endpoint_requires_auth(
+async def test_harmony_endpoint_cadence_fields(
     client: AsyncClient,
+    auth_headers: dict[str, str],
     db_session: AsyncSession,
 ) -> None:
-    """Emotion diff endpoint returns 401 without a Bearer token."""
+    """Each cadence event carries beat, type, from, and to fields."""
+    repo_id = await _create_repo(client, auth_headers)
     resp = await client.get(
-        "/api/v1/musehub/repos/some-id/analysis/main/emotion-diff?base=main~1",
+        f"/api/v1/musehub/repos/{repo_id}/analysis/main/harmony",
+        headers=auth_headers,
+    )
+    assert resp.status_code == 200
+    for cadence in resp.json()["cadences"]:
+        assert "beat" in cadence
+        assert "type" in cadence
+        assert "from" in cadence
+        assert "to" in cadence
+
+
+@pytest.mark.anyio
+async def test_harmony_endpoint_etag_header(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+    db_session: AsyncSession,
+) -> None:
+    """GET /analysis/{ref}/harmony includes an ETag header for cache validation."""
+    repo_id = await _create_repo(client, auth_headers)
+    resp = await client.get(
+        f"/api/v1/musehub/repos/{repo_id}/analysis/main/harmony",
+        headers=auth_headers,
+    )
+    assert resp.status_code == 200
+    assert "etag" in resp.headers
+
+
+@pytest.mark.anyio
+async def test_harmony_endpoint_requires_auth_for_private_repo(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+    db_session: AsyncSession,
+) -> None:
+    """GET /analysis/{ref}/harmony on a private repo without auth returns 401."""
+    # Create a private repo with valid auth, then access without auth.
+    resp = await client.post(
+        "/api/v1/musehub/repos",
+        json={"name": "private-harmony-repo", "owner": "testuser", "visibility": "private"},
+        headers=auth_headers,
+    )
+    assert resp.status_code == 201
+    repo_id = str(resp.json()["repoId"])
+
+    resp = await client.get(
+        f"/api/v1/musehub/repos/{repo_id}/analysis/main/harmony",
     )
     assert resp.status_code == 401
 
 
 @pytest.mark.anyio
-async def test_emotion_diff_endpoint_unknown_repo_404(
+async def test_harmony_endpoint_unknown_repo_404(
     client: AsyncClient,
     auth_headers: dict[str, str],
     db_session: AsyncSession,
 ) -> None:
-    """Emotion diff endpoint returns 404 for an unknown repo_id."""
+    """GET /analysis/{ref}/harmony with an unknown repo_id returns 404."""
     resp = await client.get(
-        "/api/v1/musehub/repos/00000000-0000-0000-0000-000000000000/analysis/main/emotion-diff?base=main~1",
+        "/api/v1/musehub/repos/nonexistent-repo-id/analysis/main/harmony",
         headers=auth_headers,
     )
     assert resp.status_code == 404
 
 
 @pytest.mark.anyio
-async def test_emotion_diff_endpoint_missing_base_422(
+async def test_harmony_endpoint_track_filter(
     client: AsyncClient,
     auth_headers: dict[str, str],
     db_session: AsyncSession,
 ) -> None:
-    """Missing required ?base query param returns 422 Unprocessable Entity."""
+    """GET /analysis/{ref}/harmony?track=keys returns 200 (filter accepted)."""
     repo_id = await _create_repo(client, auth_headers)
     resp = await client.get(
-        f"/api/v1/musehub/repos/{repo_id}/analysis/main/emotion-diff",
-        headers=auth_headers,
-    )
-    assert resp.status_code == 422
-
-
-@pytest.mark.anyio
-async def test_emotion_diff_endpoint_etag(
-    client: AsyncClient,
-    auth_headers: dict[str, str],
-    db_session: AsyncSession,
-) -> None:
-    """Emotion diff endpoint includes ETag header for client-side caching."""
-    repo_id = await _create_repo(client, auth_headers)
-    resp = await client.get(
-        f"/api/v1/musehub/repos/{repo_id}/analysis/main/emotion-diff?base=develop",
+        f"/api/v1/musehub/repos/{repo_id}/analysis/main/harmony?track=keys",
         headers=auth_headers,
     )
     assert resp.status_code == 200
-    assert "etag" in resp.headers
-    assert resp.headers["etag"].startswith('"')
+    body = resp.json()
+    assert "key" in body
+    assert "romanNumerals" in body

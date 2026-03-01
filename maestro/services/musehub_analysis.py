@@ -49,6 +49,7 @@ from maestro.models.musehub_analysis import (
     AlternateKey,
     AnalysisFilters,
     AnalysisResponse,
+    CadenceEvent,
     ChangedDimension,
     ChordEvent,
     ChordMapData,
@@ -70,7 +71,9 @@ from maestro.models.musehub_analysis import (
     FormData,
     FormStructureResponse,
     GrooveData,
+    HarmonyAnalysisResponse,
     HarmonyData,
+    HarmonyModulationEvent,
     IrregularSection,
     KeyData,
     MeterData,
@@ -80,6 +83,7 @@ from maestro.models.musehub_analysis import (
     MotifTransformation,
     MotifsData,
     RepetitionEntry,
+    RomanNumeralEvent,
     SectionEntry,
     SectionMapEntry,
     SectionSimilarityHeatmap,
@@ -1004,6 +1008,154 @@ def compute_aggregate_analysis(
         computed_at=now,
         dimensions=dimensions,
         filters_applied=AnalysisFilters(track=track, section=section),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Dedicated harmony endpoint (issue #414) — muse harmony command
+# ---------------------------------------------------------------------------
+
+_ROMAN_NUMERALS_BY_MODE: dict[str, list[tuple[str, str, str, str]]] = {
+    # (roman, quality, function, root-offset-label)
+    # root-offset-label is relative; actual root derived from tonic + offset
+    "major": [
+        ("I",    "major",   "tonic",            "P1"),
+        ("IIm7", "minor",   "pre-dominant",     "M2"),
+        ("IIIm", "minor",   "tonic",            "M3"),
+        ("IV",   "major",   "subdominant",      "P4"),
+        ("V7",   "dominant","dominant",         "P5"),
+        ("VIm",  "minor",   "tonic",            "M6"),
+        ("VIIø", "half-diminished", "dominant", "M7"),
+    ],
+    "minor": [
+        ("Im",   "minor",   "tonic",            "P1"),
+        ("IIø",  "half-diminished", "pre-dominant", "M2"),
+        ("bIII", "major",   "tonic",            "m3"),
+        ("IVm",  "minor",   "subdominant",      "P4"),
+        ("V7",   "dominant","dominant",         "P5"),
+        ("bVI",  "major",   "subdominant",      "m6"),
+        ("bVII", "major",   "subdominant",      "m7"),
+    ],
+}
+
+# Semitone offsets for scale degrees so we can compute the actual root pitch.
+_SEMITONE_OFFSETS: dict[str, int] = {
+    "P1": 0, "M2": 2, "M3": 4, "P4": 5, "P5": 7,
+    "M6": 9, "M7": 11, "m3": 3, "m6": 8, "m7": 10,
+}
+
+_CHROMATIC_SCALE = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
+
+_CADENCE_TYPES = ["authentic", "half", "plagal", "deceptive", "perfect-authentic"]
+
+_HARMONY_MODES = ["major", "minor"]
+
+
+def _transpose_root(tonic: str, semitones: int) -> str:
+    """Return the pitch class that is ``semitones`` above ``tonic``."""
+    try:
+        base_idx = _CHROMATIC_SCALE.index(tonic)
+    except ValueError:
+        # Fallback for flat spellings like Bb, Eb — map to sharp equivalent.
+        _FLAT_TO_SHARP = {"Bb": "A#", "Eb": "D#", "Ab": "G#", "Db": "C#", "Gb": "F#"}
+        base_idx = _CHROMATIC_SCALE.index(_FLAT_TO_SHARP.get(tonic, "C"))
+    return _CHROMATIC_SCALE[(base_idx + semitones) % 12]
+
+
+def compute_harmony_analysis(
+    *,
+    repo_id: str,
+    ref: str,
+    track: str | None = None,
+    section: str | None = None,
+) -> HarmonyAnalysisResponse:
+    """Build a dedicated harmonic analysis for a Muse commit ref.
+
+    Returns a Roman-numeral-centric view of the harmonic content.  Unlike the
+    generic ``harmony`` dimension (which returns :class:`HarmonyData` with raw
+    chord symbols and a tension curve), this response is structured for tonal
+    reasoning: Roman numerals with function labels, cadence positions, and
+    detected modulations.
+
+    Maps to the ``muse harmony --ref {ref}`` CLI command.
+
+    The stub data is deterministic for a given ``ref`` so agents receive
+    consistent responses across retries.  Harmonic content is keyed on
+    tonic/mode derived from the ref hash — the same tonic and mode that the
+    generic harmony dimension uses, ensuring cross-endpoint consistency.
+
+    Args:
+        repo_id:  Muse Hub repo UUID (used only for logging).
+        ref:      Muse commit ref (seeds the deterministic data).
+        track:    Optional track filter (recorded in response; stub ignores it).
+        section:  Optional section filter (recorded in response; stub ignores it).
+
+    Returns:
+        :class:`HarmonyAnalysisResponse` ready for the harmony endpoint.
+    """
+    seed = _ref_hash(ref)
+    tonic = _pick(seed, _TONICS)
+    mode = _pick(seed, _HARMONY_MODES, offset=1)
+    key_label = f"{tonic} {mode}"
+
+    # Build Roman numeral events — use the first 5 chords from the mode table.
+    rn_table = _ROMAN_NUMERALS_BY_MODE.get(mode, _ROMAN_NUMERALS_BY_MODE["major"])
+    chord_count = 4 + (seed % 3)  # 4–6 chord events
+    roman_numerals: list[RomanNumeralEvent] = []
+    beat = 0.0
+    for i in range(min(chord_count, len(rn_table))):
+        roman, quality, function, offset_label = rn_table[i]
+        semitones = _SEMITONE_OFFSETS.get(offset_label, 0)
+        root = _transpose_root(tonic, semitones)
+        roman_numerals.append(
+            RomanNumeralEvent(
+                beat=beat,
+                chord=roman,
+                root=root,
+                quality=quality,
+                function=function,
+            )
+        )
+        beat += 4.0
+
+    # Build cadences — one or two, positioned at phrase boundaries.
+    cadence_type = _pick(seed, _CADENCE_TYPES, offset=2)
+    cadence_beat = float((seed % 4) * 4 + 4)
+    cadences: list[CadenceEvent] = [
+        CadenceEvent.model_validate({"from": "V", "to": "I", "beat": cadence_beat, "type": cadence_type}),
+    ]
+    if seed % 3 == 0:
+        cadences.append(
+            CadenceEvent.model_validate({"from": "IV", "to": "I", "beat": cadence_beat + 16.0, "type": "plagal"}),
+        )
+
+    # Build modulations — 0 or 1, depending on ref seed.
+    modulations: list[HarmonyModulationEvent] = []
+    if seed % 4 == 0:
+        dom_root = _transpose_root(tonic, 7)  # dominant (P5)
+        modulations.append(
+            HarmonyModulationEvent(
+                beat=32.0,
+                from_key=key_label,
+                to_key=f"{dom_root} {mode}",
+                pivot_chord=dom_root,
+            )
+        )
+
+    # Harmonic rhythm: chord changes per minute.  Assumes ~120 BPM tempo.
+    # With chords every 4 beats at 120 BPM → 30 chord changes per minute.
+    # Varies slightly per ref to feel alive.
+    base_rhythm = 2.0
+    harmonic_rhythm_bpm = round(base_rhythm + (seed % 5) * 0.25, 2)
+
+    logger.info("✅ harmony/analysis repo=%s ref=%s key=%s", repo_id[:8], ref[:8], key_label)
+    return HarmonyAnalysisResponse(
+        key=key_label,
+        mode=mode,
+        roman_numerals=roman_numerals,
+        cadences=cadences,
+        modulations=modulations,
+        harmonic_rhythm_bpm=harmonic_rhythm_bpm,
     )
 
 
