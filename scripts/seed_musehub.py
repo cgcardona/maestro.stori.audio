@@ -34,6 +34,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
 
 from maestro.config import settings
+from maestro.db.muse_models import NoteChange, Phrase, Variation
 from maestro.db.musehub_models import (
     MusehubBranch,
     MusehubComment,
@@ -468,6 +469,275 @@ COMMIT_COUNTS = {
 
 
 # ---------------------------------------------------------------------------
+# Muse variation history — DAW project constants
+# ---------------------------------------------------------------------------
+
+# Two most active DAW projects used for variation seeding.
+# project_id values are deterministic UUIDs so they survive re-seeds.
+PROJECT_NEO_BAROQUE    = _uid("project-gabriel-neo-baroque")
+PROJECT_COMMUNITY_COLLAB = _uid("project-gabriel-community-collab")
+
+PHRASE_TYPES = ["melody", "harmony", "bass", "rhythm", "pad", "lead"]
+
+VARIATION_INTENTS_NEO_BAROQUE = [
+    "Add counterpoint line above the baroque theme in bars 9-16",
+    "Reharmonize the continuo with IV-V-I instead of I-IV-V",
+    "Double the melody at the upper octave in the A section",
+    "Reduce note density in the ornament layer — too busy",
+    "Add a fermata on the penultimate chord for dramatic pause",
+    "Transpose the inner voice down a third for smoother voice-leading",
+    "Replace the parallel motion with contrary motion in bars 5-8",
+    "Add suspensions (4-3, 7-6) on the strong beats of the progression",
+    "Introduce a sequence pattern (descending thirds) in the episode",
+    "Thicken the bass line with octave doubling",
+    "Add a ritardando in the final four bars",
+    "Experiment with a Neapolitan chord before the final cadence",
+    "Restructure the ornamentation — trills only on structural beats",
+    "Add an inner pedal point on the dominant during the development",
+    "Rewrite the melodic leap (octave) as stepwise with passing tones",
+    "Apply tierce de Picardie on the final chord",
+    "Compress the sequence pattern to fit 2-bar phrases",
+    "Add imitation between soprano and bass at the interval of a 4th",
+    "Slow harmonic rhythm in the development section",
+    "Introduce a chromatic passing tone in bar 12 inner voice",
+]
+
+VARIATION_INTENTS_COMMUNITY_COLLAB = [
+    "Blend the neo-soul groove with the afrobeat polyrhythm layer",
+    "Merge gabriel's chord voicings with aaliya's bass pattern",
+    "Add marcus's funk stabs over the ambient pad foundation",
+    "Cross-fade between yuki's granular texture and sofia's arp",
+    "Combine pierre's chanson melody with the modal jazz harmony",
+    "Overlay chen's microtonal texture on the funk groove",
+    "Mix fatou's djembe pattern with the electronic kick drum",
+    "Harmonise gabriel's melody with aaliya's Yoruba vocal line",
+    "Layer marcus's Rhodes over the afrobeat rhythm section",
+    "Merge the granular scatter with the orchestral strings",
+    "Add a call-and-response between the jazz trio and the afrobeat horns",
+    "Blend microtonal pitch-bends with the neo-soul Rhodes voicing",
+    "Cross-fade the ambient pad into the funk breakdown",
+    "Combine pierre's cello with fatou's 808 bass for a hybrid outro",
+    "Layer gabriel's polyrhythm with yuki's rhythmic granular engine",
+    "Blend chen's otonal hexad with sofia's generative arpeggio",
+    "Mix aaliya's talking drum with marcus's brushed snare",
+    "Overlay the modal jazz walking bass under the afrobeat groove",
+    "Merge the Chanson ostinato with the funk electric piano stabs",
+    "Cross-fade the microtonal étude into the neo-baroque continuo",
+]
+
+TRACK_IDS_NEO_BAROQUE = [
+    _uid("track-nb-soprano"),
+    _uid("track-nb-alto"),
+    _uid("track-nb-tenor"),
+    _uid("track-nb-bass"),
+    _uid("track-nb-continuo"),
+    _uid("track-nb-violin"),
+]
+
+TRACK_IDS_COMMUNITY = [
+    _uid("track-cc-lead"),
+    _uid("track-cc-harmony"),
+    _uid("track-cc-bass"),
+    _uid("track-cc-drums"),
+    _uid("track-cc-pad"),
+    _uid("track-cc-horns"),
+]
+
+REGION_IDS_NEO_BAROQUE = [_uid(f"region-nb-{i}") for i in range(8)]
+REGION_IDS_COMMUNITY   = [_uid(f"region-cc-{i}") for i in range(8)]
+
+
+def _make_note_dict(
+    pitch: int,
+    velocity: int,
+    start_beat: float,
+    duration_beats: float,
+    track_id: str,
+    region_id: str,
+) -> dict[str, object]:
+    """Build a NoteDict-compatible payload for before_json / after_json."""
+    return {
+        "pitch": pitch,
+        "velocity": velocity,
+        "start_beat": start_beat,
+        "duration_beats": duration_beats,
+        "track_id": track_id,
+        "region_id": region_id,
+    }
+
+
+def _make_variation_section(
+    project_id: str,
+    intents: list[str],
+    track_ids: list[str],
+    region_ids: list[str],
+    base_commit_hashes: list[str],
+    seed_prefix: str,
+) -> tuple[list[Variation], list[Phrase], list[NoteChange]]:
+    """Generate 30 variations (20 accepted, 5 discarded, 5 pending) with
+    realistic phrase and note-change children for a single DAW project.
+
+    Parent chains (draft → refined → final) are formed in groups of 3-5.
+    Three variations are merge variations with parent2_variation_id set.
+    """
+    variations: list[Variation] = []
+    phrases: list[Phrase] = []
+    note_changes: list[NoteChange] = []
+
+    # Build 30 variations. Status distribution:
+    #   [0..19] accepted, [20..24] discarded, [25..29] pending
+    STATUS_MAP = (
+        ["accepted"] * 20
+        + ["discarded"] * 5
+        + ["pending"] * 5
+    )
+
+    var_ids: list[str] = [
+        _uid(f"{seed_prefix}-var-{i}") for i in range(30)
+    ]
+
+    # Form parent chains in groups: [0-3], [4-7], [8-11], [12-15], [16-19],
+    # [20-22], [23-24], [25-27], [28-29]
+    chain_groups = [
+        [0, 1, 2, 3],   # accepted chain of 4
+        [4, 5, 6, 7],   # accepted chain of 4
+        [8, 9, 10, 11], # accepted chain of 4
+        [12, 13, 14],   # accepted chain of 3
+        [15, 16, 17, 18, 19],  # accepted chain of 5
+        [20, 21, 22],   # discarded chain of 3
+        [23, 24],       # discarded chain of 2
+        [25, 26, 27],   # pending chain of 3
+        [28, 29],       # pending chain of 2
+    ]
+
+    # Merge variations at indices 3, 7, 11 — they get parent2_variation_id
+    merge_indices = {3, 7, 11}
+    # Cross-chain parent2: index 3 merges chain [0-3] with chain [4-7] start
+    merge_parent2_map = {
+        3:  var_ids[4],   # merge from chain-2 start
+        7:  var_ids[0],   # merge from chain-1 end
+        11: var_ids[8],   # merge from chain-3 start
+    }
+
+    # Build parent_variation_id mapping
+    parent_map: dict[int, str | None] = {}
+    for chain in chain_groups:
+        for pos, idx in enumerate(chain):
+            parent_map[idx] = var_ids[chain[pos - 1]] if pos > 0 else None
+
+    now = _now()
+
+    for i in range(30):
+        status = STATUS_MAP[i]
+        intent = intents[i % len(intents)]
+        base_hash = base_commit_hashes[i % len(base_commit_hashes)]
+        parent_vid = parent_map.get(i)
+        parent2_vid = merge_parent2_map.get(i) if i in merge_indices else None
+        is_head = status == "accepted" and i == 19
+
+        var = Variation(
+            variation_id=var_ids[i],
+            project_id=project_id,
+            base_state_id=base_hash,
+            conversation_id=_uid(f"{seed_prefix}-conv-{i // 5}"),
+            intent=intent,
+            explanation=f"Variation {i+1}: {intent[:60]}",
+            status=status,
+            affected_tracks=[track_ids[i % len(track_ids)]],
+            affected_regions=[region_ids[i % len(region_ids)]],
+            beat_range_start=float((i % 8) * 8),
+            beat_range_end=float((i % 8) * 8 + 16),
+            parent_variation_id=parent_vid,
+            parent2_variation_id=parent2_vid,
+            commit_state_id=base_hash if status == "accepted" else None,
+            is_head=is_head,
+            created_at=_now(days=30 - i),
+            updated_at=_now(days=30 - i),
+        )
+        variations.append(var)
+
+        # 2-5 phrases per variation
+        phrase_count = 2 + (i % 4)
+        for p in range(phrase_count):
+            start_beat = float(((i % 8) * 8 + p * 4) % 64)
+            end_beat = start_beat + 4.0 + float((p % 3) * 4)
+            phrase_type = PHRASE_TYPES[p % len(PHRASE_TYPES)]
+            tid = track_ids[(i + p) % len(track_ids)]
+            rid = region_ids[(i + p) % len(region_ids)]
+
+            # CC events attached to phrases with sustain/expression/modulation/volume
+            cc_data = [
+                {"cc": 64, "beat": start_beat + 0.5, "value": 127},
+                {"cc": 11, "beat": start_beat + 1.0, "value": 90},
+            ] if p % 2 == 0 else [
+                {"cc": 1,  "beat": start_beat + 0.5, "value": 50},
+                {"cc": 7,  "beat": start_beat + 1.0, "value": 100},
+            ]
+
+            # Pitch bend on every third phrase
+            pitch_bends_data = (
+                [{"beat": start_beat + 2.5, "value": 4096}]
+                if p % 3 == 0 else None
+            )
+
+            phrase = Phrase(
+                phrase_id=_uid(f"{seed_prefix}-phrase-{i}-{p}"),
+                variation_id=var_ids[i],
+                sequence=p,
+                track_id=tid,
+                region_id=rid,
+                start_beat=start_beat,
+                end_beat=end_beat,
+                label=phrase_type,
+                tags=[phrase_type, "seed"],
+                explanation=f"Phrase {p+1} ({phrase_type}) of variation {i+1}",
+                cc_events=cc_data,
+                pitch_bends=pitch_bends_data,
+                aftertouch=None,
+                region_start_beat=start_beat,
+                region_duration_beats=end_beat - start_beat,
+                region_name=f"Region-{rid[:8]}",
+            )
+            phrases.append(phrase)
+
+            # 4-20 note changes per phrase
+            note_count = 4 + ((i * 3 + p * 7) % 17)
+            for n in range(note_count):
+                pitch_base = 48 + (n * 4) % 60  # MIDI 48-108
+                vel = 30 + (n * 7) % 98          # velocity 30-127
+                nb = start_beat + float(n) * 0.5
+                dur = 0.25 + float(n % 4) * 0.25 + float((n // 4) % 4) * 0.5
+
+                # Cycle through change types
+                if n % 3 == 0:
+                    change_type = "add"
+                    before_j = None
+                    after_j = _make_note_dict(pitch_base, vel, nb, dur, tid, rid)
+                elif n % 3 == 1:
+                    change_type = "remove"
+                    before_j = _make_note_dict(pitch_base, vel, nb, dur, tid, rid)
+                    after_j = None
+                else:
+                    change_type = "modify"
+                    orig_pitch = pitch_base - 2
+                    orig_vel   = max(30, vel - 12)
+                    orig_beat  = nb - 0.25
+                    before_j = _make_note_dict(orig_pitch, orig_vel, orig_beat, dur, tid, rid)
+                    after_j  = _make_note_dict(pitch_base, vel, nb, dur, tid, rid)
+
+                nc = NoteChange(
+                    id=_uid(f"{seed_prefix}-nc-{i}-{p}-{n}"),
+                    phrase_id=_uid(f"{seed_prefix}-phrase-{i}-{p}"),
+                    change_type=change_type,
+                    before_json=before_j,
+                    after_json=after_j,
+                )
+                note_changes.append(nc)
+
+    return variations, phrases, note_changes
+
+
+# ---------------------------------------------------------------------------
 # Issue templates
 # ---------------------------------------------------------------------------
 
@@ -729,6 +999,7 @@ async def seed(db: AsyncSession, force: bool = False) -> None:
     if existing > 0 and force:
         print("  🗑  --force: clearing existing seed data…")
         for tbl in [
+            "muse_note_changes", "muse_phrases", "muse_variations",
             "musehub_download_events", "musehub_view_events", "musehub_forks",
             "musehub_notifications", "musehub_watches", "musehub_follows",
             "musehub_reactions", "musehub_comments",
@@ -1134,6 +1405,53 @@ async def seed(db: AsyncSession, force: bool = False) -> None:
             ))
             dl_count += 1
     print(f"  ✅ Download events: {dl_count}")
+
+    # ── 18. Muse variations, phrases, note changes ────────────────
+    # Collect stable commit hashes from the two most active repos as base
+    # state IDs.  muse_variations.base_state_id links a variation to the DAW
+    # snapshot it was proposed against — we reuse musehub commit hashes as a
+    # realistic stand-in for DAW project state hashes.
+    neo_commits  = all_commits.get(REPO_NEO_SOUL, [])
+    jazz_commits = all_commits.get(REPO_MODAL_JAZZ, [])
+    neo_hashes  = [c["commit_id"] for c in neo_commits[-15:]]  or [_sha("nb-fallback")]
+    jazz_hashes = [c["commit_id"] for c in jazz_commits[-15:]] or [_sha("cc-fallback")]
+
+    var_nb, phrase_nb, nc_nb = _make_variation_section(
+        project_id=PROJECT_NEO_BAROQUE,
+        intents=VARIATION_INTENTS_NEO_BAROQUE,
+        track_ids=TRACK_IDS_NEO_BAROQUE,
+        region_ids=REGION_IDS_NEO_BAROQUE,
+        base_commit_hashes=neo_hashes,
+        seed_prefix="nb",
+    )
+    var_cc, phrase_cc, nc_cc = _make_variation_section(
+        project_id=PROJECT_COMMUNITY_COLLAB,
+        intents=VARIATION_INTENTS_COMMUNITY_COLLAB,
+        track_ids=TRACK_IDS_COMMUNITY,
+        region_ids=REGION_IDS_COMMUNITY,
+        base_commit_hashes=jazz_hashes,
+        seed_prefix="cc",
+    )
+
+    all_variations  = var_nb  + var_cc
+    all_phrases     = phrase_nb + phrase_cc
+    all_note_changes = nc_nb  + nc_cc
+
+    for var in all_variations:
+        db.add(var)
+    await db.flush()
+
+    for ph in all_phrases:
+        db.add(ph)
+    await db.flush()
+
+    for nc in all_note_changes:
+        db.add(nc)
+    await db.flush()
+
+    print(f"  ✅ Variations: {len(all_variations)} ({len(var_nb)} neo-baroque, {len(var_cc)} community-collab)")
+    print(f"  ✅ Phrases: {len(all_phrases)}")
+    print(f"  ✅ Note changes: {len(all_note_changes)}")
 
     await db.commit()
     print()
