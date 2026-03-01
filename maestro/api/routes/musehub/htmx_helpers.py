@@ -1,13 +1,11 @@
 """HTMX helper utilities for MuseHub SSR routes.
 
-Provides ``htmx_fragment_or_full`` — a single function that route handlers
-call after building a template context.  The function detects whether the
-caller is an HTMX partial-update request (via the ``HX-Request`` header) and
-returns the appropriate template: the fragment for HTMX swaps, the full page
-otherwise.
+Provides thin utilities that read HTMX-specific request headers, plus
+``htmx_fragment_or_full`` — a single function that route handlers call after
+building a template context to return either an HTMX fragment or a full page.
 
-This avoids duplicating the detection logic across every route handler and
-keeps the route handlers thin — they build context, then call this function.
+Design rationale: centralise HTMX header detection so handlers stay thin —
+they build context, then call these helpers rather than inspecting headers.
 """
 from __future__ import annotations
 
@@ -19,6 +17,16 @@ from fastapi.templating import Jinja2Templates
 from starlette.responses import Response
 
 logger = logging.getLogger(__name__)
+
+
+def is_htmx(request: Request) -> bool:
+    """Return True when the request was initiated by HTMX (HX-Request header present)."""
+    return request.headers.get("HX-Request") == "true"
+
+
+def is_htmx_boosted(request: Request) -> bool:
+    """Return True when the request came from an hx-boost link (HX-Boosted header present)."""
+    return request.headers.get("HX-Boosted") == "true"
 
 
 async def htmx_fragment_or_full(
@@ -49,7 +57,6 @@ async def htmx_fragment_or_full(
     Returns:
         A Starlette ``TemplateResponse`` — either the full page or the fragment.
     """
-    is_htmx = request.headers.get("HX-Request") == "true"
-    template = fragment_template if is_htmx else full_template
-    logger.debug("🔀 htmx_fragment_or_full → %s (htmx=%s)", template, is_htmx)
+    template = fragment_template if is_htmx(request) else full_template
+    logger.debug("🔀 htmx_fragment_or_full → %s (htmx=%s)", template, is_htmx(request))
     return templates.TemplateResponse(request, template, context)

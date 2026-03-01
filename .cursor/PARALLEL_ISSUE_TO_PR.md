@@ -248,7 +248,7 @@ for entry in "${SELECTED_ISSUES[@]}"; do
   # Write rich .agent-task — agent reads ALL context from this file
   # Extract DEPENDS_ON from issue body (looks for "Depends on #NNN" patterns)
   ISSUE_BODY=$(gh issue view "$NUM" --repo "$GH_REPO" --json body --jq '.body' 2>/dev/null)
-  DEPENDS_ON=$(echo "$ISSUE_BODY" | grep -oE 'Depends on #[0-9]+' | grep -oE '[0-9]+' | tr '\n' ',' | sed 's/,$//')
+  DEPENDS_ON=$(echo "$ISSUE_BODY" | grep -oE 'Depends on[^#]*#[0-9]+' | grep -oE '[0-9]+' | tr '\n' ',' | sed 's/,$//')
   [ -z "$DEPENDS_ON" ] && DEPENDS_ON=none
 
   # FILE_OWNERSHIP: coordinator should fill this in manually from the taxonomy
