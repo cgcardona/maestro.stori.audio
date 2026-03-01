@@ -4,26 +4,27 @@ Revision ID: 0001
 Revises:
 Create Date: 2026-02-27 00:00:00.000000
 
-Single source-of-truth migration for Stori Maestro. Creates:
+Single source-of-truth migration for Maestro. Creates:
 
   Auth & usage
-  - users, usage_logs, access_tokens
+  - maestro_users, maestro_usage_logs, maestro_access_tokens
 
   Conversations
-  - conversations, conversation_messages, message_actions
+  - maestro_conversations, maestro_conversation_messages, maestro_message_actions
 
-  Muse VCS — DAW-level variation history
-  - variations, phrases, note_changes
+  Muse — DAW-level variation history
+  - muse_variations, muse_phrases, muse_note_changes
 
-  Muse CLI — filesystem commit history
-  - muse_cli_objects, muse_cli_snapshots, muse_cli_commits
+  Muse — filesystem commit history
+  - muse_objects, muse_snapshots, muse_commits
     (includes parent2_commit_id for merge commits; metadata JSON blob for
     commit-level annotations e.g. tempo_bpm set via ``muse tempo --set``)
-  - muse_cli_tags (music-semantic tags attached to commits)
+  - muse_tags (music-semantic tags attached to commits)
 
   Muse Hub — remote collaboration backend
   - musehub_repos, musehub_branches, musehub_commits, musehub_issues
   - musehub_pull_requests (PR workflow; merged_at records exact merge timestamp)
+  - musehub_pr_comments (inline review comments on musical diffs within PRs)
   - musehub_objects (content-addressed binary artifact storage)
   - musehub_stars (per-user repo starring for the explore/discover page)
   - musehub_profiles (public user profile pages — bio, avatar, pinned repos)
@@ -54,7 +55,7 @@ depends_on = None
 def upgrade() -> None:
     # ── Users & auth ──────────────────────────────────────────────────────
     op.create_table(
-        "users",
+        "maestro_users",
         sa.Column("id", sa.String(36), nullable=False),
         sa.Column("budget_cents", sa.Integer(), nullable=False, server_default="500"),
         sa.Column("budget_limit_cents", sa.Integer(), nullable=False, server_default="500"),
@@ -64,7 +65,7 @@ def upgrade() -> None:
     )
 
     op.create_table(
-        "usage_logs",
+        "maestro_usage_logs",
         sa.Column("id", sa.String(36), nullable=False),
         sa.Column("user_id", sa.String(36), nullable=False),
         sa.Column("prompt", sa.Text(), nullable=True),
@@ -73,29 +74,29 @@ def upgrade() -> None:
         sa.Column("completion_tokens", sa.Integer(), nullable=False, server_default="0"),
         sa.Column("cost_cents", sa.Integer(), nullable=False, server_default="0"),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP")),
-        sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
+        sa.ForeignKeyConstraint(["user_id"], ["maestro_users.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
     )
-    op.create_index("ix_usage_logs_user_id", "usage_logs", ["user_id"])
-    op.create_index("ix_usage_logs_created_at", "usage_logs", ["created_at"])
+    op.create_index("ix_maestro_usage_logs_user_id", "maestro_usage_logs", ["user_id"])
+    op.create_index("ix_maestro_usage_logs_created_at", "maestro_usage_logs", ["created_at"])
 
     op.create_table(
-        "access_tokens",
+        "maestro_access_tokens",
         sa.Column("id", sa.String(36), nullable=False),
         sa.Column("user_id", sa.String(36), nullable=False),
         sa.Column("token_hash", sa.String(64), nullable=False),
         sa.Column("expires_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("revoked", sa.Boolean(), nullable=False, server_default="false"),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP")),
-        sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
+        sa.ForeignKeyConstraint(["user_id"], ["maestro_users.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
     )
-    op.create_index("ix_access_tokens_user_id", "access_tokens", ["user_id"])
-    op.create_index("ix_access_tokens_token_hash", "access_tokens", ["token_hash"], unique=True)
+    op.create_index("ix_maestro_access_tokens_user_id", "maestro_access_tokens", ["user_id"])
+    op.create_index("ix_maestro_access_tokens_token_hash", "maestro_access_tokens", ["token_hash"], unique=True)
 
     # ── Conversations ─────────────────────────────────────────────────────
     op.create_table(
-        "conversations",
+        "maestro_conversations",
         sa.Column("id", sa.String(36), nullable=False),
         sa.Column("user_id", sa.String(36), nullable=False),
         sa.Column("project_id", sa.String(36), nullable=True),
@@ -104,16 +105,16 @@ def upgrade() -> None:
         sa.Column("project_context", postgresql.JSONB(astext_type=sa.Text()), nullable=True),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP")),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP")),
-        sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
+        sa.ForeignKeyConstraint(["user_id"], ["maestro_users.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
     )
-    op.create_index("ix_conversations_user_id", "conversations", ["user_id"])
-    op.create_index("ix_conversations_project_id", "conversations", ["project_id"])
-    op.create_index("ix_conversations_is_archived", "conversations", ["is_archived"])
-    op.create_index("ix_conversations_updated_at", "conversations", ["updated_at"])
+    op.create_index("ix_maestro_conversations_user_id", "maestro_conversations", ["user_id"])
+    op.create_index("ix_maestro_conversations_project_id", "maestro_conversations", ["project_id"])
+    op.create_index("ix_maestro_conversations_is_archived", "maestro_conversations", ["is_archived"])
+    op.create_index("ix_maestro_conversations_updated_at", "maestro_conversations", ["updated_at"])
 
     op.create_table(
-        "conversation_messages",
+        "maestro_conversation_messages",
         sa.Column("id", sa.String(36), nullable=False),
         sa.Column("conversation_id", sa.String(36), nullable=False),
         sa.Column("role", sa.String(20), nullable=False),
@@ -125,14 +126,14 @@ def upgrade() -> None:
         sa.Column("sse_events", postgresql.JSONB(astext_type=sa.Text()), nullable=True),
         sa.Column("extra_metadata", postgresql.JSONB(astext_type=sa.Text()), nullable=True),
         sa.Column("timestamp", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP")),
-        sa.ForeignKeyConstraint(["conversation_id"], ["conversations.id"], ondelete="CASCADE"),
+        sa.ForeignKeyConstraint(["conversation_id"], ["maestro_conversations.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
     )
-    op.create_index("ix_conversation_messages_conversation_id", "conversation_messages", ["conversation_id"])
-    op.create_index("ix_conversation_messages_timestamp", "conversation_messages", ["timestamp"])
+    op.create_index("ix_maestro_conversation_messages_conversation_id", "maestro_conversation_messages", ["conversation_id"])
+    op.create_index("ix_maestro_conversation_messages_timestamp", "maestro_conversation_messages", ["timestamp"])
 
     op.create_table(
-        "message_actions",
+        "maestro_message_actions",
         sa.Column("id", sa.String(36), nullable=False),
         sa.Column("message_id", sa.String(36), nullable=False),
         sa.Column("action_type", sa.String(50), nullable=False),
@@ -141,14 +142,14 @@ def upgrade() -> None:
         sa.Column("error_message", sa.Text(), nullable=True),
         sa.Column("extra_metadata", postgresql.JSONB(astext_type=sa.Text()), nullable=True),
         sa.Column("timestamp", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP")),
-        sa.ForeignKeyConstraint(["message_id"], ["conversation_messages.id"], ondelete="CASCADE"),
+        sa.ForeignKeyConstraint(["message_id"], ["maestro_conversation_messages.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
     )
-    op.create_index("ix_message_actions_message_id", "message_actions", ["message_id"])
+    op.create_index("ix_maestro_message_actions_message_id", "maestro_message_actions", ["message_id"])
 
     # ── Muse VCS — DAW-level variation history ────────────────────────────
     op.create_table(
-        "variations",
+        "muse_variations",
         sa.Column("variation_id", sa.String(36), nullable=False),
         sa.Column("project_id", sa.String(36), nullable=False),
         sa.Column("base_state_id", sa.String(36), nullable=False),
@@ -160,20 +161,20 @@ def upgrade() -> None:
         sa.Column("affected_regions", sa.JSON(), nullable=True),
         sa.Column("beat_range_start", sa.Float(), nullable=False, server_default="0"),
         sa.Column("beat_range_end", sa.Float(), nullable=False, server_default="0"),
-        sa.Column("parent_variation_id", sa.String(36), sa.ForeignKey("variations.variation_id", ondelete="SET NULL"), nullable=True),
-        sa.Column("parent2_variation_id", sa.String(36), sa.ForeignKey("variations.variation_id", ondelete="SET NULL"), nullable=True),
+        sa.Column("parent_variation_id", sa.String(36), sa.ForeignKey("muse_variations.variation_id", ondelete="SET NULL"), nullable=True),
+        sa.Column("parent2_variation_id", sa.String(36), sa.ForeignKey("muse_variations.variation_id", ondelete="SET NULL"), nullable=True),
         sa.Column("commit_state_id", sa.String(36), nullable=True),
         sa.Column("is_head", sa.Boolean(), nullable=False, server_default="false"),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP")),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP")),
         sa.PrimaryKeyConstraint("variation_id"),
     )
-    op.create_index("ix_variations_project_id", "variations", ["project_id"])
-    op.create_index("ix_variations_status", "variations", ["status"])
-    op.create_index("ix_variations_parent_variation_id", "variations", ["parent_variation_id"])
+    op.create_index("ix_muse_variations_project_id", "muse_variations", ["project_id"])
+    op.create_index("ix_muse_variations_status", "muse_variations", ["status"])
+    op.create_index("ix_muse_variations_parent_variation_id", "muse_variations", ["parent_variation_id"])
 
     op.create_table(
-        "phrases",
+        "muse_phrases",
         sa.Column("phrase_id", sa.String(36), nullable=False),
         sa.Column("variation_id", sa.String(36), nullable=False),
         sa.Column("sequence", sa.Integer(), nullable=False),
@@ -190,26 +191,26 @@ def upgrade() -> None:
         sa.Column("region_start_beat", sa.Float(), nullable=True),
         sa.Column("region_duration_beats", sa.Float(), nullable=True),
         sa.Column("region_name", sa.String(255), nullable=True),
-        sa.ForeignKeyConstraint(["variation_id"], ["variations.variation_id"], ondelete="CASCADE"),
+        sa.ForeignKeyConstraint(["variation_id"], ["muse_variations.variation_id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("phrase_id"),
     )
-    op.create_index("ix_phrases_variation_id", "phrases", ["variation_id"])
+    op.create_index("ix_muse_phrases_variation_id", "muse_phrases", ["variation_id"])
 
     op.create_table(
-        "note_changes",
+        "muse_note_changes",
         sa.Column("id", sa.String(36), nullable=False),
         sa.Column("phrase_id", sa.String(36), nullable=False),
         sa.Column("change_type", sa.String(20), nullable=False),
         sa.Column("before_json", sa.JSON(), nullable=True),
         sa.Column("after_json", sa.JSON(), nullable=True),
-        sa.ForeignKeyConstraint(["phrase_id"], ["phrases.phrase_id"], ondelete="CASCADE"),
+        sa.ForeignKeyConstraint(["phrase_id"], ["muse_phrases.phrase_id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
     )
-    op.create_index("ix_note_changes_phrase_id", "note_changes", ["phrase_id"])
+    op.create_index("ix_muse_note_changes_phrase_id", "muse_note_changes", ["phrase_id"])
 
     # ── Muse CLI — filesystem commit history ──────────────────────────────
     op.create_table(
-        "muse_cli_objects",
+        "muse_objects",
         sa.Column("object_id", sa.String(64), nullable=False),
         sa.Column("size_bytes", sa.Integer(), nullable=False),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
@@ -217,7 +218,7 @@ def upgrade() -> None:
     )
 
     op.create_table(
-        "muse_cli_snapshots",
+        "muse_snapshots",
         sa.Column("snapshot_id", sa.String(64), nullable=False),
         sa.Column("manifest", sa.JSON(), nullable=False),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
@@ -225,7 +226,7 @@ def upgrade() -> None:
     )
 
     op.create_table(
-        "muse_cli_commits",
+        "muse_commits",
         sa.Column("commit_id", sa.String(64), nullable=False),
         sa.Column("repo_id", sa.String(36), nullable=False),
         sa.Column("branch", sa.String(255), nullable=False),
@@ -237,26 +238,26 @@ def upgrade() -> None:
         sa.Column("committed_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("metadata", sa.JSON(), nullable=True),
-        sa.ForeignKeyConstraint(["snapshot_id"], ["muse_cli_snapshots.snapshot_id"], ondelete="RESTRICT"),
+        sa.ForeignKeyConstraint(["snapshot_id"], ["muse_snapshots.snapshot_id"], ondelete="RESTRICT"),
         sa.PrimaryKeyConstraint("commit_id"),
     )
-    op.create_index("ix_muse_cli_commits_repo_id", "muse_cli_commits", ["repo_id"])
-    op.create_index("ix_muse_cli_commits_parent_commit_id", "muse_cli_commits", ["parent_commit_id"])
-    op.create_index("ix_muse_cli_commits_parent2_commit_id", "muse_cli_commits", ["parent2_commit_id"])
+    op.create_index("ix_muse_commits_repo_id", "muse_commits", ["repo_id"])
+    op.create_index("ix_muse_commits_parent_commit_id", "muse_commits", ["parent_commit_id"])
+    op.create_index("ix_muse_commits_parent2_commit_id", "muse_commits", ["parent2_commit_id"])
 
     op.create_table(
-        "muse_cli_tags",
+        "muse_tags",
         sa.Column("tag_id", sa.String(36), nullable=False),
         sa.Column("repo_id", sa.String(36), nullable=False),
         sa.Column("commit_id", sa.String(64), nullable=False),
         sa.Column("tag", sa.Text(), nullable=False),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
-        sa.ForeignKeyConstraint(["commit_id"], ["muse_cli_commits.commit_id"], ondelete="CASCADE"),
+        sa.ForeignKeyConstraint(["commit_id"], ["muse_commits.commit_id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("tag_id"),
     )
-    op.create_index("ix_muse_cli_tags_repo_id", "muse_cli_tags", ["repo_id"])
-    op.create_index("ix_muse_cli_tags_commit_id", "muse_cli_tags", ["commit_id"])
-    op.create_index("ix_muse_cli_tags_tag", "muse_cli_tags", ["tag"])
+    op.create_index("ix_muse_tags_repo_id", "muse_tags", ["repo_id"])
+    op.create_index("ix_muse_tags_commit_id", "muse_tags", ["commit_id"])
+    op.create_index("ix_muse_tags_tag", "muse_tags", ["tag"])
 
     # ── Muse Hub — remote collaboration backend ───────────────────────────
     op.create_table(
@@ -434,6 +435,34 @@ def upgrade() -> None:
     )
     op.create_index("ix_musehub_pull_requests_repo_id", "musehub_pull_requests", ["repo_id"])
     op.create_index("ix_musehub_pull_requests_state", "musehub_pull_requests", ["state"])
+
+    # ── Muse Hub — PR review comments ────────────────────────────────────
+    op.create_table(
+        "musehub_pr_comments",
+        sa.Column("comment_id", sa.String(36), nullable=False),
+        sa.Column("pr_id", sa.String(36), nullable=False),
+        sa.Column("repo_id", sa.String(36), nullable=False),
+        sa.Column("author", sa.String(255), nullable=False),
+        sa.Column("body", sa.Text(), nullable=False),
+        sa.Column("target_type", sa.String(20), nullable=False, server_default="general"),
+        sa.Column("target_track", sa.String(255), nullable=True),
+        sa.Column("target_beat_start", sa.Float(), nullable=True),
+        sa.Column("target_beat_end", sa.Float(), nullable=True),
+        sa.Column("target_note_pitch", sa.Integer(), nullable=True),
+        sa.Column("parent_comment_id", sa.String(36), nullable=True),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            nullable=False,
+            server_default=sa.text("CURRENT_TIMESTAMP"),
+        ),
+        sa.ForeignKeyConstraint(["pr_id"], ["musehub_pull_requests.pr_id"], ondelete="CASCADE"),
+        sa.PrimaryKeyConstraint("comment_id"),
+    )
+    op.create_index("ix_musehub_pr_comments_pr_id", "musehub_pr_comments", ["pr_id"])
+    op.create_index("ix_musehub_pr_comments_repo_id", "musehub_pr_comments", ["repo_id"])
+    op.create_index("ix_musehub_pr_comments_parent_comment_id", "musehub_pr_comments", ["parent_comment_id"])
+    op.create_index("ix_musehub_pr_comments_created_at", "musehub_pr_comments", ["created_at"])
 
     # ── Muse Hub — binary artifact storage ───────────────────────────────
     op.create_table(
@@ -861,6 +890,13 @@ def downgrade() -> None:
     op.drop_index("ix_musehub_objects_repo_id", table_name="musehub_objects")
     op.drop_table("musehub_objects")
 
+    # Muse Hub — PR review comments (depends on pull_requests)
+    op.drop_index("ix_musehub_pr_comments_created_at", table_name="musehub_pr_comments")
+    op.drop_index("ix_musehub_pr_comments_parent_comment_id", table_name="musehub_pr_comments")
+    op.drop_index("ix_musehub_pr_comments_repo_id", table_name="musehub_pr_comments")
+    op.drop_index("ix_musehub_pr_comments_pr_id", table_name="musehub_pr_comments")
+    op.drop_table("musehub_pr_comments")
+
     # Muse Hub — pull requests (depends on repos; merged_at included in table creation)
     op.drop_index("ix_musehub_pull_requests_state", table_name="musehub_pull_requests")
     op.drop_index("ix_musehub_pull_requests_repo_id", table_name="musehub_pull_requests")
@@ -903,47 +939,47 @@ def downgrade() -> None:
     op.drop_table("musehub_repos")
 
     # Muse CLI — tags (depends on commits)
-    op.drop_index("ix_muse_cli_tags_tag", table_name="muse_cli_tags")
-    op.drop_index("ix_muse_cli_tags_commit_id", table_name="muse_cli_tags")
-    op.drop_index("ix_muse_cli_tags_repo_id", table_name="muse_cli_tags")
-    op.drop_table("muse_cli_tags")
+    op.drop_index("ix_muse_tags_tag", table_name="muse_tags")
+    op.drop_index("ix_muse_tags_commit_id", table_name="muse_tags")
+    op.drop_index("ix_muse_tags_repo_id", table_name="muse_tags")
+    op.drop_table("muse_tags")
 
     # Muse CLI — commits (depends on snapshots)
-    op.drop_index("ix_muse_cli_commits_parent2_commit_id", table_name="muse_cli_commits")
-    op.drop_index("ix_muse_cli_commits_parent_commit_id", table_name="muse_cli_commits")
-    op.drop_index("ix_muse_cli_commits_repo_id", table_name="muse_cli_commits")
-    op.drop_table("muse_cli_commits")
+    op.drop_index("ix_muse_commits_parent2_commit_id", table_name="muse_commits")
+    op.drop_index("ix_muse_commits_parent_commit_id", table_name="muse_commits")
+    op.drop_index("ix_muse_commits_repo_id", table_name="muse_commits")
+    op.drop_table("muse_commits")
 
-    op.drop_table("muse_cli_snapshots")
-    op.drop_table("muse_cli_objects")
+    op.drop_table("muse_snapshots")
+    op.drop_table("muse_objects")
 
     # Muse VCS
-    op.drop_index("ix_note_changes_phrase_id", table_name="note_changes")
-    op.drop_table("note_changes")
-    op.drop_index("ix_phrases_variation_id", table_name="phrases")
-    op.drop_table("phrases")
-    op.drop_index("ix_variations_parent_variation_id", table_name="variations")
-    op.drop_index("ix_variations_status", table_name="variations")
-    op.drop_index("ix_variations_project_id", table_name="variations")
-    op.drop_table("variations")
+    op.drop_index("ix_muse_note_changes_phrase_id", table_name="muse_note_changes")
+    op.drop_table("muse_note_changes")
+    op.drop_index("ix_muse_phrases_variation_id", table_name="muse_phrases")
+    op.drop_table("muse_phrases")
+    op.drop_index("ix_muse_variations_parent_variation_id", table_name="muse_variations")
+    op.drop_index("ix_muse_variations_status", table_name="muse_variations")
+    op.drop_index("ix_muse_variations_project_id", table_name="muse_variations")
+    op.drop_table("muse_variations")
 
     # Conversations
-    op.drop_index("ix_message_actions_message_id", table_name="message_actions")
-    op.drop_table("message_actions")
-    op.drop_index("ix_conversation_messages_timestamp", table_name="conversation_messages")
-    op.drop_index("ix_conversation_messages_conversation_id", table_name="conversation_messages")
-    op.drop_table("conversation_messages")
-    op.drop_index("ix_conversations_updated_at", table_name="conversations")
-    op.drop_index("ix_conversations_is_archived", table_name="conversations")
-    op.drop_index("ix_conversations_project_id", table_name="conversations")
-    op.drop_index("ix_conversations_user_id", table_name="conversations")
-    op.drop_table("conversations")
+    op.drop_index("ix_maestro_message_actions_message_id", table_name="maestro_message_actions")
+    op.drop_table("maestro_message_actions")
+    op.drop_index("ix_maestro_conversation_messages_timestamp", table_name="maestro_conversation_messages")
+    op.drop_index("ix_maestro_conversation_messages_conversation_id", table_name="maestro_conversation_messages")
+    op.drop_table("maestro_conversation_messages")
+    op.drop_index("ix_maestro_conversations_updated_at", table_name="maestro_conversations")
+    op.drop_index("ix_maestro_conversations_is_archived", table_name="maestro_conversations")
+    op.drop_index("ix_maestro_conversations_project_id", table_name="maestro_conversations")
+    op.drop_index("ix_maestro_conversations_user_id", table_name="maestro_conversations")
+    op.drop_table("maestro_conversations")
 
     # Auth & usage
-    op.drop_index("ix_access_tokens_token_hash", table_name="access_tokens")
-    op.drop_index("ix_access_tokens_user_id", table_name="access_tokens")
-    op.drop_table("access_tokens")
-    op.drop_index("ix_usage_logs_created_at", table_name="usage_logs")
-    op.drop_index("ix_usage_logs_user_id", table_name="usage_logs")
-    op.drop_table("usage_logs")
-    op.drop_table("users")
+    op.drop_index("ix_maestro_access_tokens_token_hash", table_name="maestro_access_tokens")
+    op.drop_index("ix_maestro_access_tokens_user_id", table_name="maestro_access_tokens")
+    op.drop_table("maestro_access_tokens")
+    op.drop_index("ix_maestro_usage_logs_created_at", table_name="maestro_usage_logs")
+    op.drop_index("ix_maestro_usage_logs_user_id", table_name="maestro_usage_logs")
+    op.drop_table("maestro_usage_logs")
+    op.drop_table("maestro_users")

@@ -2,12 +2,12 @@
 SQLAlchemy ORM models for Maestro.
 
 Tables:
-- users: User accounts with budget tracking
-- usage_logs: Request history with prompts and costs
-- access_tokens: JWT token tracking for revocation
-- conversations: Conversation threads per user
-- conversation_messages: Messages within conversations
-- message_actions: Actions performed during message execution
+- maestro_users: User accounts with budget tracking
+- maestro_usage_logs: Request history with prompts and costs
+- maestro_access_tokens: JWT token tracking for revocation
+- maestro_conversations: Conversation threads per user
+- maestro_conversation_messages: Messages within conversations
+- maestro_message_actions: Actions performed during message execution
 """
 from __future__ import annotations
 
@@ -52,7 +52,7 @@ class User(Base):
     and as X-Device-ID on asset requests; the JWT sub claim should be this same
     UUID so one identity is used everywhere. Budget is tracked in cents.
     """
-    __tablename__ = "users"
+    __tablename__ = "maestro_users"
 
     # Primary key = device UUID (app-generated, single identifier for this user)
     id: Mapped[str] = mapped_column(
@@ -128,7 +128,7 @@ class UsageLog(Base):
     Prompts are stored for training data unless the user opts out.
     Cost is tracked in cents for precision.
     """
-    __tablename__ = "usage_logs"
+    __tablename__ = "maestro_usage_logs"
     
     id: Mapped[str] = mapped_column(
         String(36),
@@ -139,7 +139,7 @@ class UsageLog(Base):
     # Foreign key to user
     user_id: Mapped[str] = mapped_column(
         String(36),
-        ForeignKey("users.id", ondelete="CASCADE"),
+        ForeignKey("maestro_users.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
@@ -204,7 +204,7 @@ class AccessToken(Base):
     
     Stores a hash of the JWT token (not the token itself) for security.
     """
-    __tablename__ = "access_tokens"
+    __tablename__ = "maestro_access_tokens"
     
     id: Mapped[str] = mapped_column(
         String(36),
@@ -215,7 +215,7 @@ class AccessToken(Base):
     # Foreign key to user
     user_id: Mapped[str] = mapped_column(
         String(36),
-        ForeignKey("users.id", ondelete="CASCADE"),
+        ForeignKey("maestro_users.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
@@ -261,7 +261,7 @@ class Conversation(Base):
     Each user can have multiple conversations, each containing
     a history of messages with the AI assistant.
     """
-    __tablename__ = "conversations"
+    __tablename__ = "maestro_conversations"
     
     id: Mapped[str] = mapped_column(
         String(36),
@@ -272,7 +272,7 @@ class Conversation(Base):
     # Foreign key to user
     user_id: Mapped[str] = mapped_column(
         String(36),
-        ForeignKey("users.id", ondelete="CASCADE"),
+        ForeignKey("maestro_users.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
@@ -338,7 +338,7 @@ class ConversationMessage(Base):
     Stores user prompts and assistant responses, including
     token usage, costs, and tool calls.
     """
-    __tablename__ = "conversation_messages"
+    __tablename__ = "maestro_conversation_messages"
     
     id: Mapped[str] = mapped_column(
         String(36),
@@ -349,7 +349,7 @@ class ConversationMessage(Base):
     # Foreign key to conversation
     conversation_id: Mapped[str] = mapped_column(
         String(36),
-        ForeignKey("conversations.id", ondelete="CASCADE"),
+        ForeignKey("maestro_conversations.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
@@ -438,7 +438,7 @@ class MessageAction(Base):
     Tracks tool calls and their outcomes (track added, region created, etc.)
     for audit trail and potential undo/redo functionality.
     """
-    __tablename__ = "message_actions"
+    __tablename__ = "maestro_message_actions"
     
     id: Mapped[str] = mapped_column(
         String(36),
@@ -449,7 +449,7 @@ class MessageAction(Base):
     # Foreign key to message
     message_id: Mapped[str] = mapped_column(
         String(36),
-        ForeignKey("conversation_messages.id", ondelete="CASCADE"),
+        ForeignKey("maestro_conversation_messages.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )

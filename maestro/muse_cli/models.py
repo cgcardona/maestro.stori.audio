@@ -1,16 +1,16 @@
-"""SQLAlchemy ORM models for Muse CLI commit history.
+"""SQLAlchemy ORM models for Muse commit history.
 
 Tables:
-- muse_cli_objects: content-addressed file blobs (sha256 keyed)
-- muse_cli_snapshots: snapshot manifests mapping paths to object IDs
-- muse_cli_commits: commit history with parent linkage, branch tracking,
+- muse_objects: content-addressed file blobs (sha256 keyed)
+- muse_snapshots: snapshot manifests mapping paths to object IDs
+- muse_commits: commit history with parent linkage, branch tracking,
   and an extensible ``extra_metadata`` JSON blob for annotations such as
   meter (time signature), tempo, key, and other compositional metadata.
-- muse_cli_tags: music-semantic tags attached to commits
+- muse_tags: music-semantic tags attached to commits
 
 These tables are owned by the Muse CLI (``muse commit``) and are
-distinct from the Muse VCS variation tables (``variations``, ``phrases``,
-``note_changes``) which track DAW-level note editing history.
+distinct from the Muse variation tables (``muse_variations``, ``muse_phrases``,
+``muse_note_changes``) which track DAW-level note editing history.
 
 ``muse_cli_commits.metadata`` is an extensible JSON blob for commit-level
 annotations.  Current keys:
@@ -42,7 +42,7 @@ class MuseCliObject(Base):
     two different branches is stored exactly once.
     """
 
-    __tablename__ = "muse_cli_objects"
+    __tablename__ = "muse_objects"
 
     object_id: Mapped[str] = mapped_column(String(64), primary_key=True)
     size_bytes: Mapped[int] = mapped_column(Integer, nullable=False)
@@ -61,7 +61,7 @@ class MuseCliSnapshot(Base):
     Content-addressed: two identical working trees produce the same snapshot_id.
     """
 
-    __tablename__ = "muse_cli_snapshots"
+    __tablename__ = "muse_snapshots"
 
     snapshot_id: Mapped[str] = mapped_column(String(64), primary_key=True)
     manifest: Mapped[dict[str, str]] = mapped_column(JSON, nullable=False)
@@ -85,7 +85,7 @@ class MuseCliCommit(Base):
     is the wall-clock DB write time and is non-deterministic.
     """
 
-    __tablename__ = "muse_cli_commits"
+    __tablename__ = "muse_commits"
 
     commit_id: Mapped[str] = mapped_column(String(64), primary_key=True)
     repo_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
@@ -98,7 +98,7 @@ class MuseCliCommit(Base):
     )
     snapshot_id: Mapped[str] = mapped_column(
         String(64),
-        ForeignKey("muse_cli_snapshots.snapshot_id", ondelete="RESTRICT"),
+        ForeignKey("muse_snapshots.snapshot_id", ondelete="RESTRICT"),
         nullable=False,
     )
     message: Mapped[str] = mapped_column(Text, nullable=False)
@@ -135,7 +135,7 @@ class MuseCliTag(Base):
     repo so that different local repos can use independent tag spaces.
     """
 
-    __tablename__ = "muse_cli_tags"
+    __tablename__ = "muse_tags"
 
     tag_id: Mapped[str] = mapped_column(
         String(36), primary_key=True, default=lambda: str(uuid.uuid4())
@@ -143,7 +143,7 @@ class MuseCliTag(Base):
     repo_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
     commit_id: Mapped[str] = mapped_column(
         String(64),
-        ForeignKey("muse_cli_commits.commit_id", ondelete="CASCADE"),
+        ForeignKey("muse_commits.commit_id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )

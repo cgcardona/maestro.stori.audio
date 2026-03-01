@@ -1,9 +1,9 @@
 """SQLAlchemy ORM models for Muse persistent variation history.
 
 Tables:
-- variations: Top-level variation proposals with lineage tracking
-- phrases: Independently reviewable musical phrases within a variation
-- note_changes: Individual note-level diffs within a phrase
+- muse_variations: Top-level variation proposals with lineage tracking
+- muse_phrases: Independently reviewable musical phrases within a variation
+- muse_note_changes: Individual note-level diffs within a phrase
 """
 
 from __future__ import annotations
@@ -21,7 +21,7 @@ from maestro.db.models import generate_uuid, utc_now
 class Variation(Base):
     """A persisted variation proposal with lineage tracking."""
 
-    __tablename__ = "variations"
+    __tablename__ = "muse_variations"
 
     variation_id: Mapped[str] = mapped_column(String(36), primary_key=True)
     project_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
@@ -38,13 +38,13 @@ class Variation(Base):
     # ── Lineage (Phase 5) ────────────────────────────────────────────
     parent_variation_id: Mapped[str | None] = mapped_column(
         String(36),
-        ForeignKey("variations.variation_id", ondelete="SET NULL"),
+        ForeignKey("muse_variations.variation_id", ondelete="SET NULL"),
         nullable=True,
         index=True,
     )
     parent2_variation_id: Mapped[str | None] = mapped_column(
         String(36),
-        ForeignKey("variations.variation_id", ondelete="SET NULL"),
+        ForeignKey("muse_variations.variation_id", ondelete="SET NULL"),
         nullable=True,
     )
     commit_state_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
@@ -77,12 +77,12 @@ class Variation(Base):
 class Phrase(Base):
     """A persisted musical phrase within a variation."""
 
-    __tablename__ = "phrases"
+    __tablename__ = "muse_phrases"
 
     phrase_id: Mapped[str] = mapped_column(String(36), primary_key=True)
     variation_id: Mapped[str] = mapped_column(
         String(36),
-        ForeignKey("variations.variation_id", ondelete="CASCADE"),
+        ForeignKey("muse_variations.variation_id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
@@ -116,12 +116,12 @@ class Phrase(Base):
 class NoteChange(Base):
     """A persisted note-level diff within a phrase."""
 
-    __tablename__ = "note_changes"
+    __tablename__ = "muse_note_changes"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=generate_uuid)
     phrase_id: Mapped[str] = mapped_column(
         String(36),
-        ForeignKey("phrases.phrase_id", ondelete="CASCADE"),
+        ForeignKey("muse_phrases.phrase_id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
