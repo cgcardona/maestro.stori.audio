@@ -28,12 +28,12 @@ The pool stays at 4 concurrent workers continuously until the queue drains.
 ```
 LOOP:
   1. Survey — run both queries simultaneously:
-       # Issues: count only phase-tagged ones — never count agent-identity, blockchain,
-       # or other non-phase issues. PRs: all open PRs against dev are always in scope
-       # (PRs do not carry phase labels — their scope comes from the issue they close).
+       # Issues: count only htmx-tagged ones (htmx/0-foundation, htmx/1-independent, etc.)
+       # PRs: all open PRs against dev are always in scope
+       # (PRs do not carry htmx labels — their scope comes from the issue they close).
        ISSUES=$(gh issue list --state open --repo cgcardona/maestro \
                   --json number,labels \
-                  --jq '[.[] | select(.labels | map(.name) | any(startswith("phase-")))] | length')
+                  --jq '[.[] | select(.labels | map(.name) | any(startswith("htmx/")))] | length')
        PRS=$(gh pr list --base dev --state open --repo cgcardona/maestro \
                --json number --jq 'length')
 
@@ -83,11 +83,11 @@ CTO and VPs do not track dependencies. The canonical prompts handle it.
 
 ## Label scoping rules (critical)
 
-- **Issues:** only phase-tagged issues are in scope. Filter every query:
-  `--jq '[.[] | select(.labels | map(.name) | any(startswith("phase-")))]'`
-- **PRs:** ALL open PRs against `dev` are in scope — PRs never carry `phase-*` labels.
-  Never add a phase label to a PR. Never filter PRs by label.
-- The QA VP must NOT require phase labels on PRs — it reviews every open PR, full stop.
+- **Issues:** only htmx-tagged issues are in scope. Filter every query:
+  `--jq '[.[] | select(.labels | map(.name) | any(startswith("htmx/")))]'`
+- **PRs:** ALL open PRs against `dev` are in scope — PRs never carry `htmx/*` labels.
+  Never add an htmx label to a PR. Never filter PRs by label.
+- The QA VP must NOT require htmx labels on PRs — it reviews every open PR, full stop.
 
 ## What you never do
 
