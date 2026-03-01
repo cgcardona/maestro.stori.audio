@@ -18,6 +18,7 @@ from fastapi import APIRouter
 
 from maestro.api.routes.musehub import (
     analysis,
+    blame,
     collaborators,
     issues,
     labels,
@@ -48,6 +49,7 @@ router.include_router(pull_requests.router, tags=["Pull Requests"])
 router.include_router(releases.router, tags=["Releases"])
 router.include_router(sync.router, tags=["Sync"])
 router.include_router(objects.router, tags=["Objects"])
+router.include_router(blame.router, tags=["Blame"])
 router.include_router(search.router, tags=["Search"])
 router.include_router(analysis.router, tags=["Analysis"])
 router.include_router(webhooks.router, tags=["Webhooks"])
