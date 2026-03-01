@@ -1027,3 +1027,54 @@ class HarmonyAnalysisResponse(CamelModel):
     harmonic_rhythm_bpm: float = Field(
         ..., ge=0.0, description="Chord change rate in chords per minute"
     )
+
+
+# ---------------------------------------------------------------------------
+# Recall / semantic search models (issue #410)
+# ---------------------------------------------------------------------------
+
+
+class RecallMatch(CamelModel):
+    """A single commit matched by semantic recall search.
+
+    ``score`` is a cosine similarity value in [0.0, 1.0] where 1.0 means
+    maximally similar to the query.  Results are returned pre-sorted
+    descending by score so callers can render a ranked list directly.
+
+    ``matched_dimensions`` names the musical dimensions most responsible for
+    the match (e.g. ``["harmony", "groove"]``) so agents can explain why a
+    commit was recalled.
+    """
+
+    commit_id: str = Field(..., description="Muse Hub commit SHA that matched the query")
+    commit_message: str = Field(..., description="Human-readable commit message")
+    branch: str = Field(..., description="Branch the commit lives on, e.g. 'main'")
+    score: float = Field(..., ge=0.0, le=1.0, description="Cosine similarity score (0–1, higher = more similar)")
+    matched_dimensions: list[str] = Field(
+        ..., description="Musical dimensions most responsible for this match"
+    )
+
+
+class RecallResponse(CamelModel):
+    """Response for the semantic recall endpoint.
+
+    Returned by ``GET /api/v1/musehub/repos/{repo_id}/analysis/{ref}/recall?q=``.
+
+    Agents use this to surface musically relevant commits given a natural-language
+    query (e.g. ``"a jazzy chord progression with swing groove"``).  The results
+    are ranked by cosine similarity in the 128-dim musical feature embedding space.
+
+    ``query`` echoes the ``?q=`` parameter so clients can display it alongside
+    results.  ``ref`` is the ref scope — only commits reachable from this ref
+    are returned (scoped recall).  ``total_matches`` is the total number of
+    matching commits before ``limit`` was applied.
+    """
+
+    repo_id: str = Field(..., description="Muse Hub repo UUID")
+    ref: str = Field(..., description="Muse commit ref used as the search scope")
+    query: str = Field(..., description="Natural-language query supplied by the caller")
+    matches: list[RecallMatch] = Field(..., description="Ranked list of matching commits, best first")
+    total_matches: int = Field(..., ge=0, description="Total matches before limit was applied")
+    embedding_dimensions: int = Field(
+        ..., description="Dimensionality of the musical feature space used for search"
+    )
