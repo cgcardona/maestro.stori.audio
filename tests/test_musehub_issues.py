@@ -753,3 +753,167 @@ async def test_list_milestones(
     assert len(data["milestones"]) == 2
     assert data["milestones"][0]["title"] == "Phase 1"
     assert data["milestones"][1]["title"] == "Phase 2"
+
+
+@pytest.mark.anyio
+async def test_get_milestone_by_number(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+) -> None:
+    """GET /milestones/{number} returns a single milestone with issue counts."""
+    repo_id = await _create_repo(client, auth_headers, "milestone-get-repo")
+
+    ms_resp = await client.post(
+        f"/api/v1/musehub/repos/{repo_id}/milestones",
+        json={"title": "Single Milestone", "description": "Only one here"},
+        headers=auth_headers,
+    )
+    assert ms_resp.status_code == 201
+    number = ms_resp.json()["number"]
+
+    response = await client.get(
+        f"/api/v1/musehub/repos/{repo_id}/milestones/{number}",
+        headers=auth_headers,
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["title"] == "Single Milestone"
+    assert data["description"] == "Only one here"
+    assert data["state"] == "open"
+    assert data["openIssues"] == 0
+    assert data["closedIssues"] == 0
+
+
+@pytest.mark.anyio
+async def test_get_milestone_not_found(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+) -> None:
+    """GET /milestones/{number} returns 404 for a non-existent milestone number."""
+    repo_id = await _create_repo(client, auth_headers, "milestone-get-404-repo")
+
+    response = await client.get(
+        f"/api/v1/musehub/repos/{repo_id}/milestones/999",
+        headers=auth_headers,
+    )
+    assert response.status_code == 404
+
+
+@pytest.mark.anyio
+async def test_update_milestone_title_and_state(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+) -> None:
+    """PATCH /milestones/{number} updates only the provided fields."""
+    repo_id = await _create_repo(client, auth_headers, "milestone-patch-repo")
+
+    ms_resp = await client.post(
+        f"/api/v1/musehub/repos/{repo_id}/milestones",
+        json={"title": "Initial Title"},
+        headers=auth_headers,
+    )
+    number = ms_resp.json()["number"]
+
+    response = await client.patch(
+        f"/api/v1/musehub/repos/{repo_id}/milestones/{number}",
+        json={"title": "Revised Title", "state": "closed"},
+        headers=auth_headers,
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["title"] == "Revised Title"
+    assert data["state"] == "closed"
+
+
+@pytest.mark.anyio
+async def test_update_milestone_clear_due_on(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+) -> None:
+    """PATCH /milestones/{number} with due_on=null clears the due date."""
+    repo_id = await _create_repo(client, auth_headers, "milestone-clear-due-repo")
+
+    ms_resp = await client.post(
+        f"/api/v1/musehub/repos/{repo_id}/milestones",
+        json={"title": "Dated Milestone", "dueOn": "2026-12-31T00:00:00Z"},
+        headers=auth_headers,
+    )
+    number = ms_resp.json()["number"]
+
+    response = await client.patch(
+        f"/api/v1/musehub/repos/{repo_id}/milestones/{number}",
+        json={"dueOn": None},
+        headers=auth_headers,
+    )
+    assert response.status_code == 200
+    assert response.json()["dueOn"] is None
+
+
+@pytest.mark.anyio
+async def test_delete_milestone_unlinks_issues(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+) -> None:
+    """DELETE /milestones/{number} removes the milestone but leaves issues intact."""
+    repo_id = await _create_repo(client, auth_headers, "milestone-delete-repo")
+
+    ms_resp = await client.post(
+        f"/api/v1/musehub/repos/{repo_id}/milestones",
+        json={"title": "Ephemeral Milestone"},
+        headers=auth_headers,
+    )
+    number = ms_resp.json()["number"]
+    milestone_id: str = ms_resp.json()["milestoneId"]
+
+    issue = await _create_issue(client, auth_headers, repo_id, title="Issue to unlink")
+    await client.post(
+        f"/api/v1/musehub/repos/{repo_id}/issues/{issue['number']}/milestone",
+        params={"milestone_id": milestone_id},
+        headers=auth_headers,
+    )
+
+    delete_resp = await client.delete(
+        f"/api/v1/musehub/repos/{repo_id}/milestones/{number}",
+        headers=auth_headers,
+    )
+    assert delete_resp.status_code == 204
+
+    # Milestone is gone
+    get_resp = await client.get(
+        f"/api/v1/musehub/repos/{repo_id}/milestones/{number}",
+        headers=auth_headers,
+    )
+    assert get_resp.status_code == 404
+
+    # Issue still exists with milestone unlinked
+    issue_resp = await client.get(
+        f"/api/v1/musehub/repos/{repo_id}/issues/{issue['number']}",
+        headers=auth_headers,
+    )
+    assert issue_resp.status_code == 200
+    assert issue_resp.json()["milestoneId"] is None
+
+
+@pytest.mark.anyio
+async def test_list_milestones_sort_by_title(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+) -> None:
+    """GET /milestones?sort=title returns milestones sorted alphabetically."""
+    repo_id = await _create_repo(client, auth_headers, "milestone-sort-title-repo")
+
+    for title in ["Zeta", "Alpha", "Mu"]:
+        await client.post(
+            f"/api/v1/musehub/repos/{repo_id}/milestones",
+            json={"title": title},
+            headers=auth_headers,
+        )
+
+    response = await client.get(
+        f"/api/v1/musehub/repos/{repo_id}/milestones",
+        params={"sort": "title"},
+        headers=auth_headers,
+    )
+    assert response.status_code == 200
+    titles = [m["title"] for m in response.json()["milestones"]]
+    assert titles == sorted(titles)
