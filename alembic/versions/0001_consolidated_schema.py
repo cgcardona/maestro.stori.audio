@@ -657,6 +657,9 @@ def upgrade() -> None:
         sa.Column("commit_id", sa.String(64), nullable=True),
         sa.Column("download_urls", sa.JSON(), nullable=False, server_default="{}"),
         sa.Column("author", sa.String(255), nullable=False, server_default=""),
+        sa.Column("is_prerelease", sa.Boolean(), nullable=False, server_default="false"),
+        sa.Column("is_draft", sa.Boolean(), nullable=False, server_default="false"),
+        sa.Column("gpg_signature", sa.Text(), nullable=True),
         sa.Column(
             "created_at",
             sa.DateTime(timezone=True),

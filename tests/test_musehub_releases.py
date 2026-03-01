@@ -941,3 +941,260 @@ async def test_get_download_stats_aggregates_correctly(db_session: AsyncSession)
     assert stats.tag == "v1.0"
     assert len(stats.assets) == 2
     assert stats.total_downloads == 0
+
+
+
+# ── Regression tests for issue #449 ───────────────────────────────────────────
+# New fields: is_prerelease, is_draft, gpg_signature, list_release_assets,
+# increment_asset_download_count, and the GET/POST asset endpoints.
+
+
+@pytest.mark.anyio
+async def test_create_release_is_prerelease_flag(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+    db_session: AsyncSession,
+) -> None:
+    """is_prerelease is stored and returned on create."""
+    repo = await musehub_repository.create_repo(
+        db_session,
+        name="prerelease-flag-repo",
+        owner="testuser",
+        visibility="public",
+        owner_user_id="user-pr1",
+    )
+    await db_session.commit()
+
+    resp = await client.post(
+        f"/api/v1/musehub/repos/{repo.repo_id}/releases",
+        json={"tag": "v0.9-beta", "title": "Beta build", "body": "", "isPrerelease": True},
+        headers=auth_headers,
+    )
+    assert resp.status_code == 201
+    data = resp.json()
+    assert data["isPrerelease"] is True
+    assert data["isDraft"] is False
+    assert data["gpgSignature"] is None
+
+
+@pytest.mark.anyio
+async def test_create_release_is_draft_flag(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+    db_session: AsyncSession,
+) -> None:
+    """is_draft is stored and returned on create."""
+    repo = await musehub_repository.create_repo(
+        db_session,
+        name="draft-flag-repo",
+        owner="testuser",
+        visibility="public",
+        owner_user_id="user-dr1",
+    )
+    await db_session.commit()
+
+    resp = await client.post(
+        f"/api/v1/musehub/repos/{repo.repo_id}/releases",
+        json={"tag": "v1.0-draft", "title": "Draft release", "body": "", "isDraft": True},
+        headers=auth_headers,
+    )
+    assert resp.status_code == 201
+    data = resp.json()
+    assert data["isDraft"] is True
+
+
+@pytest.mark.anyio
+async def test_create_release_gpg_signature(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+    db_session: AsyncSession,
+) -> None:
+    """gpg_signature is stored and returned when provided."""
+    repo = await musehub_repository.create_repo(
+        db_session,
+        name="gpg-sig-repo",
+        owner="testuser",
+        visibility="public",
+        owner_user_id="user-gpg1",
+    )
+    await db_session.commit()
+
+    sig = "-----BEGIN PGP SIGNATURE-----\nMockSignatureData==\n-----END PGP SIGNATURE-----"
+    resp = await client.post(
+        f"/api/v1/musehub/repos/{repo.repo_id}/releases",
+        json={"tag": "v1.0", "title": "Signed release", "body": "", "gpgSignature": sig},
+        headers=auth_headers,
+    )
+    assert resp.status_code == 201
+    data = resp.json()
+    assert data["gpgSignature"] == sig
+
+
+@pytest.mark.anyio
+async def test_create_release_defaults_for_new_fields(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+    db_session: AsyncSession,
+) -> None:
+    """New optional fields default to safe values when not specified."""
+    repo = await musehub_repository.create_repo(
+        db_session,
+        name="defaults-new-fields-repo",
+        owner="testuser",
+        visibility="public",
+        owner_user_id="user-def1",
+    )
+    await db_session.commit()
+
+    resp = await client.post(
+        f"/api/v1/musehub/repos/{repo.repo_id}/releases",
+        json={"tag": "v1.0", "title": "Default fields release", "body": ""},
+        headers=auth_headers,
+    )
+    assert resp.status_code == 201
+    data = resp.json()
+    assert data["isPrerelease"] is False
+    assert data["isDraft"] is False
+    assert data["gpgSignature"] is None
+
+
+@pytest.mark.anyio
+async def test_list_release_assets_endpoint(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+    db_session: AsyncSession,
+) -> None:
+    """GET /repos/{repo_id}/releases/{tag}/assets returns attached assets."""
+    repo = await musehub_repository.create_repo(
+        db_session,
+        name="list-assets-endpoint-repo",
+        owner="testuser",
+        visibility="public",
+        owner_user_id="user-la1",
+    )
+    await db_session.commit()
+
+    rel = await musehub_releases.create_release(
+        db_session,
+        repo_id=repo.repo_id,
+        tag="v1.0",
+        title="Asset list test",
+        body="",
+        commit_id=None,
+    )
+    await musehub_releases.attach_asset(
+        db_session,
+        release_id=rel.release_id,
+        repo_id=repo.repo_id,
+        name="mix.mp3",
+        label="MP3 Mix",
+        content_type="audio/mpeg",
+        size=4096000,
+        download_url="https://cdn.example.com/mix.mp3",
+    )
+    await db_session.commit()
+
+    resp = await client.get(
+        f"/api/v1/musehub/repos/{repo.repo_id}/releases/v1.0/assets"
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["tag"] == "v1.0"
+    assert len(data["assets"]) == 1
+    asset = data["assets"][0]
+    assert asset["name"] == "mix.mp3"
+    assert asset["label"] == "MP3 Mix"
+    assert asset["size"] == 4096000
+    assert asset["downloadCount"] == 0
+
+
+@pytest.mark.anyio
+async def test_record_asset_download_increments_counter(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+    db_session: AsyncSession,
+) -> None:
+    """POST /repos/{repo_id}/releases/{tag}/assets/{id}/download increments download_count."""
+    repo = await musehub_repository.create_repo(
+        db_session,
+        name="record-dl-endpoint-repo",
+        owner="testuser",
+        visibility="public",
+        owner_user_id="user-rdl1",
+    )
+    await db_session.commit()
+
+    rel = await musehub_releases.create_release(
+        db_session,
+        repo_id=repo.repo_id,
+        tag="v1.0",
+        title="Download tracking test",
+        body="",
+        commit_id=None,
+    )
+    asset = await musehub_releases.attach_asset(
+        db_session,
+        release_id=rel.release_id,
+        repo_id=repo.repo_id,
+        name="stems.zip",
+        download_url="https://cdn.example.com/stems.zip",
+    )
+    await db_session.commit()
+
+    resp = await client.post(
+        f"/api/v1/musehub/repos/{repo.repo_id}/releases/v1.0/assets/{asset.asset_id}/download"
+    )
+    assert resp.status_code == 204
+
+    stats = await musehub_releases.get_download_stats(db_session, rel.release_id, "v1.0")
+    assert stats.total_downloads == 1
+
+
+@pytest.mark.anyio
+async def test_increment_asset_download_count_service(
+    db_session: AsyncSession,
+) -> None:
+    """increment_asset_download_count atomically increments the counter and returns True."""
+    repo = await musehub_repository.create_repo(
+        db_session,
+        name="incr-dl-svc-repo",
+        owner="testuser",
+        visibility="public",
+        owner_user_id="user-idl1",
+    )
+    await db_session.commit()
+
+    rel = await musehub_releases.create_release(
+        db_session,
+        repo_id=repo.repo_id,
+        tag="v1.0",
+        title="Increment test",
+        body="",
+        commit_id=None,
+    )
+    asset = await musehub_releases.attach_asset(
+        db_session,
+        release_id=rel.release_id,
+        repo_id=repo.repo_id,
+        name="test.mid",
+        download_url="https://cdn.example.com/test.mid",
+    )
+    await db_session.commit()
+
+    found = await musehub_releases.increment_asset_download_count(db_session, asset.asset_id)
+    assert found is True
+    await db_session.commit()
+
+    stats = await musehub_releases.get_download_stats(db_session, rel.release_id, "v1.0")
+    assert stats.total_downloads == 1
+
+
+@pytest.mark.anyio
+async def test_increment_asset_download_count_missing_asset(
+    db_session: AsyncSession,
+) -> None:
+    """increment_asset_download_count returns False for a non-existent asset_id."""
+    found = await musehub_releases.increment_asset_download_count(
+        db_session, "non-existent-uuid"
+    )
+    assert found is False

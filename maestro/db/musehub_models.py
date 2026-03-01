@@ -545,6 +545,12 @@ class MusehubRelease(Base):
     download_urls: Mapped[dict[str, str]] = mapped_column(JSON, nullable=False, default=dict)
     # Display name or identifier of the user who published this release
     author: Mapped[str] = mapped_column(String(255), nullable=False, default="")
+    # True when this release is not yet stable (e.g. "v2.0-beta").
+    is_prerelease: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    # True when the release is saved but not yet publicly visible.
+    is_draft: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    # Optional ASCII-armoured GPG signature for the tag object.
+    gpg_signature: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=_utc_now
     )

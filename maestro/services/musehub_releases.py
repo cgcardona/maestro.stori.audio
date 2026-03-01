@@ -24,6 +24,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from maestro.db import musehub_models as db
 from maestro.models.musehub import (
     ReleaseAssetDownloadCount,
+    ReleaseAssetListResponse,
     ReleaseAssetResponse,
     ReleaseDownloadStatsResponse,
     ReleaseDownloadUrls,
@@ -56,6 +57,9 @@ def _to_release_response(row: db.MusehubRelease) -> ReleaseResponse:
         commit_id=row.commit_id,
         download_urls=_urls_from_json(raw),
         author=row.author,
+        is_prerelease=row.is_prerelease,
+        is_draft=row.is_draft,
+        gpg_signature=row.gpg_signature,
         created_at=row.created_at,
     )
 
@@ -80,6 +84,9 @@ async def create_release(
     commit_id: str | None,
     download_urls: ReleaseDownloadUrls | None = None,
     author: str = "",
+    is_prerelease: bool = False,
+    is_draft: bool = False,
+    gpg_signature: str | None = None,
 ) -> ReleaseResponse:
     """Persist a new release and return its wire representation.
 
@@ -96,6 +103,9 @@ async def create_release(
         commit_id: Optional commit to pin this release to.
         download_urls: Pre-built download URL map; defaults to empty URLs.
         author: Display name or identifier of the user publishing this release.
+        is_prerelease: Mark as pre-release (shows badge in UI).
+        is_draft: Save as draft — not yet publicly visible.
+        gpg_signature: ASCII-armoured GPG signature for the tag object.
 
     Returns:
         ``ReleaseResponse`` with all fields populated.
@@ -127,6 +137,9 @@ async def create_release(
         commit_id=commit_id,
         download_urls=urls_dict,
         author=author,
+        is_prerelease=is_prerelease,
+        is_draft=is_draft,
+        gpg_signature=gpg_signature,
     )
     session.add(release)
     await session.flush()
@@ -363,3 +376,64 @@ async def get_download_stats(
         assets=asset_counts,
         total_downloads=total,
     )
+
+
+async def list_release_assets(
+    session: AsyncSession,
+    release_id: str,
+    tag: str,
+) -> ReleaseAssetListResponse:
+    """Return all assets attached to a release, ordered by creation time.
+
+    Called by the release detail page to populate the Assets panel.
+    Each asset exposes its file size, download count, and direct download URL
+    so the UI can render the panel without additional API calls.
+
+    Args:
+        session: Active async DB session.
+        release_id: UUID of the owning release.
+        tag: Version tag — echoed back in the response for convenience.
+
+    Returns:
+        ``ReleaseAssetListResponse`` with assets ordered oldest-first.
+    """
+    stmt = (
+        select(db.MusehubReleaseAsset)
+        .where(db.MusehubReleaseAsset.release_id == release_id)
+        .order_by(db.MusehubReleaseAsset.created_at.asc())
+    )
+    rows = (await session.execute(stmt)).scalars().all()
+    return ReleaseAssetListResponse(
+        release_id=release_id,
+        tag=tag,
+        assets=[_to_asset_response(r) for r in rows],
+    )
+
+
+async def increment_asset_download_count(
+    session: AsyncSession,
+    asset_id: str,
+) -> bool:
+    """Atomically increment the download counter for a release asset.
+
+    Called by the UI download-tracking endpoint each time a user clicks a
+    Download button on the release detail page. Uses an UPDATE statement so
+    the counter increment is atomic and does not require a SELECT+UPDATE pair.
+
+    Args:
+        session: Active async DB session.
+        asset_id: UUID of the asset to increment.
+
+    Returns:
+        ``True`` if the asset was found and updated; ``False`` otherwise.
+    """
+    from sqlalchemy import update as sa_update
+    from sqlalchemy.engine import CursorResult
+
+    raw = await session.execute(
+        sa_update(db.MusehubReleaseAsset)
+        .where(db.MusehubReleaseAsset.asset_id == asset_id)
+        .values(download_count=db.MusehubReleaseAsset.download_count + 1)
+    )
+    cursor: CursorResult[tuple[()]] = raw  # type: ignore[assignment]  # SQLAlchemy UPDATE always returns CursorResult
+    return cursor.rowcount > 0

@@ -12,31 +12,265 @@
 const repoId = {{ repo_id | tojson }};
 const tag    = {{ tag | tojson }};
 const base   = {{ base_url | tojson }};
+const owner  = {{ owner | tojson }};
+const repoSlug = {{ repo_slug | tojson }};
+{% endblock %}
+
+{% block body_extra %}
+<script src="/musehub/static/vendor/wavesurfer.min.js"></script>
+<script src="/musehub/static/audio-player.js"></script>
 {% endblock %}
 
 {% block page_script %}
 {% raw %}
-// ── Release ID resolved after load() fetches the release ────────────────────
+// ── Release state ─────────────────────────────────────────────────────────────
 let releaseId = null;
+let audioPlayer = null;
 
-function downloadCard(label, desc, url) {
-  if (url) {
-    return `
-      <div class="download-card">
-        <span class="pkg-name">${label}</span>
-        <span class="pkg-desc">${desc}</span>
-        <a class="btn btn-secondary" href="${escHtml(url)}" download>&#11015; Download</a>
-      </div>`;
-  }
-  return `
-    <div class="download-card" style="opacity:0.5">
-      <span class="pkg-name">${label}</span>
-      <span class="pkg-desc">${desc}</span>
-      <span style="font-size:12px;color:#8b949e">Not available</span>
-    </div>`;
+// ── Utilities ─────────────────────────────────────────────────────────────────
+
+function fmtBytes(n) {
+  if (!n || n <= 0) return '';
+  if (n < 1024) return n + ' B';
+  if (n < 1048576) return (n / 1024).toFixed(1) + ' KB';
+  if (n < 1073741824) return (n / 1048576).toFixed(1) + ' MB';
+  return (n / 1073741824).toFixed(2) + ' GB';
 }
 
-// ── Comment helpers ──────────────────────────────────────────────────────────
+/**
+ * Minimal Markdown → safe HTML renderer.
+ *
+ * Handles: headings (h1–h3), bold, italic, inline code, code blocks,
+ * bullet/ordered lists, blockquotes, horizontal rules, links (href only —
+ * no javascript: or data: schemes), and paragraph breaks.
+ */
+function renderMarkdown(md) {
+  if (!md) return '';
+  // Escape HTML first, then re-insert markup.
+  function esc(s) {
+    return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+
+  const lines = md.split('\n');
+  const out = [];
+  let inCode = false, codeLang = '', codeLines = [];
+  let inList = null; // 'ul' | 'ol' | null
+  let inBlockquote = false;
+
+  function flushList() {
+    if (inList) { out.push('</' + inList + '>'); inList = null; }
+  }
+  function flushBlockquote() {
+    if (inBlockquote) { out.push('</blockquote>'); inBlockquote = false; }
+  }
+
+  function inlineMarkup(s) {
+    // Safe link — reject javascript: and data: schemes
+    s = s.replace(/\[([^\]]+)\]\((https?:\/\/[^)]+|\/[^)]*)\)/g, (_, text, href) =>
+      `<a href="${esc(href)}" rel="noopener">${esc(text)}</a>`);
+    s = s.replace(/`([^`]+)`/g, (_, c) => `<code>${esc(c)}</code>`);
+    s = s.replace(/\*\*([^*]+)\*\*/g, (_, t) => `<strong>${esc(t)}</strong>`);
+    s = s.replace(/\*([^*]+)\*/g, (_, t) => `<em>${esc(t)}</em>`);
+    return s;
+  }
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+
+    // Code block fence
+    if (line.startsWith('```')) {
+      if (!inCode) {
+        flushList(); flushBlockquote();
+        inCode = true;
+        codeLang = esc(line.slice(3).trim());
+        codeLines = [];
+      } else {
+        out.push(`<pre class="code-block"${codeLang ? ` data-lang="${codeLang}"` : ''}><code>${codeLines.map(esc).join('\n')}</code></pre>`);
+        inCode = false; codeLang = ''; codeLines = [];
+      }
+      continue;
+    }
+    if (inCode) { codeLines.push(line); continue; }
+
+    // Blockquote
+    if (line.startsWith('> ')) {
+      flushList();
+      if (!inBlockquote) { out.push('<blockquote class="md-blockquote">'); inBlockquote = true; }
+      out.push('<p>' + inlineMarkup(esc(line.slice(2))) + '</p>');
+      continue;
+    }
+    flushBlockquote();
+
+    // Horizontal rule
+    if (/^(\*\*\*|---|___)\s*$/.test(line)) {
+      flushList();
+      out.push('<hr>');
+      continue;
+    }
+
+    // Headings
+    const hMatch = line.match(/^(#{1,3})\s+(.+)/);
+    if (hMatch) {
+      flushList();
+      const level = hMatch[1].length + 1; // h2–h4 (h1 is the release title)
+      out.push(`<h${level} class="md-h${level}">${inlineMarkup(esc(hMatch[2]))}</h${level}>`);
+      continue;
+    }
+
+    // Unordered list
+    const ulMatch = line.match(/^[-*+]\s+(.+)/);
+    if (ulMatch) {
+      if (inList !== 'ul') { if (inList) out.push('</' + inList + '>'); out.push('<ul class="md-list">'); inList = 'ul'; }
+      out.push('<li>' + inlineMarkup(esc(ulMatch[1])) + '</li>');
+      continue;
+    }
+
+    // Ordered list
+    const olMatch = line.match(/^\d+\.\s+(.+)/);
+    if (olMatch) {
+      if (inList !== 'ol') { if (inList) out.push('</' + inList + '>'); out.push('<ol class="md-list">'); inList = 'ol'; }
+      out.push('<li>' + inlineMarkup(esc(olMatch[1])) + '</li>');
+      continue;
+    }
+
+    flushList();
+
+    // Blank line = paragraph break
+    if (line.trim() === '') {
+      out.push('<br>');
+      continue;
+    }
+
+    out.push('<p class="md-p">' + inlineMarkup(esc(line)) + '</p>');
+  }
+
+  if (inCode && codeLines.length) out.push(`<pre class="code-block"><code>${codeLines.map(esc).join('\n')}</code></pre>`);
+  flushList();
+  flushBlockquote();
+
+  return out.join('\n');
+}
+
+function releaseBadges(r) {
+  const badges = [];
+  badges.push(`<span class="badge badge-release">${escHtml(r.tag)}</span>`);
+  // Prefer the API flag; fall back to tag-name heuristic for older releases.
+  const prerelease = r.isPrerelease ?? /alpha|beta|rc\d*|pre|dev|nightly|snapshot/i.test(r.tag);
+  if (prerelease) {
+    badges.push('<span class="badge badge-prerelease" title="Pre-release build">Pre-release</span>');
+  }
+  if (r.isDraft) {
+    badges.push('<span class="badge badge-draft" title="Draft — not yet publicly visible">Draft</span>');
+  }
+  return badges.join(' ');
+}
+
+// ── Audio player ──────────────────────────────────────────────────────────────
+
+function initAudioPlayer(mp3Url) {
+  const section = document.getElementById('audio-section');
+  if (!section) return;
+  section.style.display = '';
+  section.innerHTML = `
+    <div class="audio-player-wrap">
+      <div class="audio-player-controls">
+        <button id="ap-play" class="btn btn-primary ap-play-btn" disabled>&#9654;</button>
+        <span class="ap-time"><span id="ap-cur">0:00</span> / <span id="ap-dur">0:00</span></span>
+        <select id="ap-speed" class="ap-speed-sel" title="Playback speed"></select>
+        <input id="ap-vol" type="range" min="0" max="1" step="0.05" value="1"
+               class="ap-vol-slider" title="Volume">
+        <button id="ap-loop" class="btn btn-ghost btn-sm" style="display:none" title="Clear loop">&#8635; Clear Loop</button>
+      </div>
+      <div id="ap-waveform" class="ap-waveform"></div>
+      <div id="ap-loop-info" class="ap-loop-info text-sm text-muted" style="display:none"></div>
+      <div style="margin-top:var(--space-2);display:flex;gap:var(--space-2);align-items:center">
+        <a class="btn btn-secondary btn-sm" href="${escHtml(mp3Url)}" download>&#11015; Download MP3</a>
+      </div>
+    </div>`;
+
+  audioPlayer = AudioPlayer.init({
+    waveformEl: document.getElementById('ap-waveform'),
+    playBtnEl:  document.getElementById('ap-play'),
+    timeCurEl:  document.getElementById('ap-cur'),
+    timeDurEl:  document.getElementById('ap-dur'),
+    speedSelEl: document.getElementById('ap-speed'),
+    loopBtnEl:  document.getElementById('ap-loop'),
+    loopInfoEl: document.getElementById('ap-loop-info'),
+    volSliderEl: document.getElementById('ap-vol'),
+  });
+  audioPlayer.load(mp3Url);
+}
+
+// ── Assets panel ──────────────────────────────────────────────────────────────
+
+async function loadAssets(tag) {
+  const container = document.getElementById('assets-list');
+  if (!container) return;
+  try {
+    const resp = await apiFetch('/repos/' + repoId + '/releases/' + encodeURIComponent(tag) + '/assets');
+    const assets = (resp && resp.assets) || [];
+    if (!assets.length) {
+      container.innerHTML = '<p class="text-muted text-sm">No assets attached to this release.</p>';
+      return;
+    }
+    container.innerHTML = assets.map(a => {
+      const sizeTxt = a.size ? fmtBytes(a.size) : '';
+      const dlCount = a.downloadCount != null ? a.downloadCount : 0;
+      return `
+        <div class="asset-row">
+          <div class="asset-info">
+            <span class="asset-icon">&#128229;</span>
+            <div>
+              <a class="asset-name" href="${escHtml(a.downloadUrl)}"
+                 download onclick="recordDownload('${escHtml(a.assetId)}','${escHtml(tag)}')">${escHtml(a.name)}</a>
+              ${a.label ? `<span class="asset-label text-muted text-sm"> — ${escHtml(a.label)}</span>` : ''}
+              <div class="asset-meta text-sm text-muted">
+                ${sizeTxt ? `<span>${sizeTxt}</span>` : ''}
+                <span>&#11015; ${dlCount} download${dlCount !== 1 ? 's' : ''}</span>
+              </div>
+            </div>
+          </div>
+          <a class="btn btn-secondary btn-sm" href="${escHtml(a.downloadUrl)}"
+             download onclick="recordDownload('${escHtml(a.assetId)}','${escHtml(tag)}')">
+            &#11015; Download
+          </a>
+        </div>`;
+    }).join('');
+  } catch (e) {
+    if (e.message !== 'auth')
+      container.innerHTML = '<p class="error text-sm">&#10005; Could not load assets.</p>';
+  }
+}
+
+async function recordDownload(assetId, assetTag) {
+  try {
+    await apiFetch(
+      '/repos/' + repoId + '/releases/' + encodeURIComponent(assetTag) + '/assets/' + encodeURIComponent(assetId) + '/download',
+      { method: 'POST' }
+    );
+  } catch (_) { /* non-blocking — download proceeds regardless */ }
+}
+
+// ── Compare link ──────────────────────────────────────────────────────────────
+
+async function loadCompareLink(currentTag) {
+  try {
+    const list = await apiFetch('/repos/' + repoId + '/releases');
+    const releases = (list && list.releases) || [];
+    const idx = releases.findIndex(r => r.tag === currentTag);
+    if (idx < 0 || idx + 1 >= releases.length) return;
+    const prevTag = releases[idx + 1].tag;
+    const el = document.getElementById('compare-link');
+    if (el) {
+      el.href = '/musehub/ui/' + encodeURIComponent(owner) + '/' + encodeURIComponent(repoSlug) +
+                '/compare/' + encodeURIComponent(prevTag) + '...' + encodeURIComponent(currentTag);
+      el.textContent = 'Compare ' + currentTag + ' \u2190 ' + prevTag;
+      el.style.display = '';
+    }
+  } catch (_) { /* compare is best-effort */ }
+}
+
+// ── Comment helpers ───────────────────────────────────────────────────────────
 
 function avatarHtml(author) {
   return `<span class="comment-avatar">${escHtml(author.charAt(0).toUpperCase())}</span>`;
@@ -172,7 +406,7 @@ function toggleReplyForm(commentId) {
   }
 }
 
-// ── Main load ────────────────────────────────────────────────────────────────
+// ── Main load ─────────────────────────────────────────────────────────────────
 
 async function load() {
   initRepoNav(repoId);
@@ -181,32 +415,35 @@ async function load() {
     const dl = r.downloadUrls || {};
     releaseId = r.releaseId || r.id || r.tag || tag;
 
-    const downloads = `
-      <div class="download-grid">
-        ${downloadCard('Full MIDI', 'All tracks as a single .mid file', dl.midiBubdle || dl.midiBuddle || dl.midiBundle)}
-        ${downloadCard('MIDI Stems', 'Individual track stems (zip of .mid files)', dl.stems)}
-        ${downloadCard('MP3 Mix', 'Full mix audio render', dl.mp3)}
-        ${downloadCard('MusicXML', 'Notation export for sheet music editors', dl.musicxml)}
-        ${downloadCard('Metadata', 'JSON manifest: tempo, key, arrangement', dl.metadata)}
-      </div>`;
-
     const myUsername = _currentUser();
+    const rssUrl = '/musehub/repos/' + repoId + '/releases.rss';
 
+    // ── Header section ────────────────────────────────────────────────────────
     document.getElementById('content').innerHTML = `
-      <div style="margin-bottom:12px">
+      <div class="release-nav-row">
         <a href="${base}/releases">&larr; Back to releases</a>
-      </div>
-      <div class="card">
-        <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px">
-          <h1 style="margin:0">${escHtml(r.title)}</h1>
-          <span class="badge badge-release">${escHtml(r.tag)}</span>
+        <div class="release-nav-right">
+          <a id="compare-link" class="btn btn-ghost btn-sm" href="#" style="display:none">Compare…</a>
+          <a class="btn btn-ghost btn-sm rss-btn" href="${escHtml(rssUrl)}" title="Subscribe via RSS">
+            &#9112; RSS
+          </a>
         </div>
+      </div>
+
+      <div class="card">
+        <!-- Title + badges row -->
+        <div class="release-header">
+          <h1 class="release-title">${escHtml(r.title)}</h1>
+          <div class="release-badges">${releaseBadges(r)}</div>
+        </div>
+
+        <!-- Meta row -->
         <div class="meta-row">
           ${r.author ? `
           <div class="meta-item">
             <span class="meta-label">Author</span>
             <span class="meta-value" style="display:flex;align-items:center;gap:6px">
-              <span style="display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:50%;background:var(--accent,#58a6ff);color:#0d1117;font-size:11px;font-weight:700;flex-shrink:0">${escHtml(r.author.charAt(0).toUpperCase())}</span>
+              <span class="author-avatar">${escHtml(r.author.charAt(0).toUpperCase())}</span>
               <a href="${base.replace(/\/[^/]+\/[^/]+$/, '')}/users/${encodeURIComponent(escHtml(r.author))}">${escHtml(r.author)}</a>
             </span>
           </div>` : ''}
@@ -223,12 +460,64 @@ async function load() {
               </a>
             </span>
           </div>` : ''}
+          <div class="meta-item">
+            <span class="meta-label">Signature</span>
+            ${r.gpgSignature
+              ? '<span class="meta-value gpg-badge gpg-verified" title="GPG-signed tag">&#128275; Verified</span>'
+              : '<span class="meta-value gpg-badge gpg-unverified" title="No GPG signature">&#128274; Unverified</span>'}
+          </div>
         </div>
-        ${r.body ? '<h2 style="margin-top:16px;margin-bottom:8px">Release Notes</h2><pre>' + escHtml(r.body) + '</pre>' : ''}
-        <h2 style="margin-top:16px;margin-bottom:8px">Download Packages</h2>
-        ${downloads}
+
+        <!-- Audio player (shown only when MP3 is available) -->
+        <div id="audio-section" class="audio-section" style="display:none">
+          <h2 class="section-heading">&#127925; Listen</h2>
+        </div>
+
+        <!-- Release notes (Markdown rendered) -->
+        ${r.body ? `
+        <div class="release-notes-section">
+          <h2 class="section-heading">Release Notes</h2>
+          <div class="release-notes md-content">${renderMarkdown(r.body)}</div>
+        </div>` : ''}
+
+        <!-- Download packages (legacy URL map) -->
+        <h2 class="section-heading" style="margin-top:var(--space-4)">Download Packages</h2>
+        <div class="download-grid">
+          ${dl.midiBundle ? `<div class="download-card">
+            <span class="pkg-name">Full MIDI</span>
+            <span class="pkg-desc">All tracks as a single .mid file</span>
+            <a class="btn btn-secondary" href="${escHtml(dl.midiBundle)}" download>&#11015; Download</a>
+          </div>` : '<div class="download-card" style="opacity:0.5"><span class="pkg-name">Full MIDI</span><span class="pkg-desc">All tracks as a single .mid file</span><span style="font-size:12px;color:#8b949e">Not available</span></div>'}
+          ${dl.stems ? `<div class="download-card">
+            <span class="pkg-name">MIDI Stems</span>
+            <span class="pkg-desc">Individual track stems (zip)</span>
+            <a class="btn btn-secondary" href="${escHtml(dl.stems)}" download>&#11015; Download</a>
+          </div>` : '<div class="download-card" style="opacity:0.5"><span class="pkg-name">MIDI Stems</span><span class="pkg-desc">Individual track stems (zip)</span><span style="font-size:12px;color:#8b949e">Not available</span></div>'}
+          ${dl.mp3 ? `<div class="download-card">
+            <span class="pkg-name">MP3 Mix</span>
+            <span class="pkg-desc">Full mix audio render</span>
+            <a class="btn btn-secondary" href="${escHtml(dl.mp3)}" download>&#11015; Download MP3</a>
+          </div>` : '<div class="download-card" style="opacity:0.5"><span class="pkg-name">MP3 Mix</span><span class="pkg-desc">Full mix audio render</span><span style="font-size:12px;color:#8b949e">Not available</span></div>'}
+          ${dl.musicxml ? `<div class="download-card">
+            <span class="pkg-name">MusicXML</span>
+            <span class="pkg-desc">Notation export</span>
+            <a class="btn btn-secondary" href="${escHtml(dl.musicxml)}" download>&#11015; Download</a>
+          </div>` : '<div class="download-card" style="opacity:0.5"><span class="pkg-name">MusicXML</span><span class="pkg-desc">Notation export</span><span style="font-size:12px;color:#8b949e">Not available</span></div>'}
+          ${dl.metadata ? `<div class="download-card">
+            <span class="pkg-name">Metadata</span>
+            <span class="pkg-desc">JSON: tempo, key, arrangement</span>
+            <a class="btn btn-secondary" href="${escHtml(dl.metadata)}" download>&#11015; Download</a>
+          </div>` : '<div class="download-card" style="opacity:0.5"><span class="pkg-name">Metadata</span><span class="pkg-desc">JSON: tempo, key, arrangement</span><span style="font-size:12px;color:#8b949e">Not available</span></div>'}
+        </div>
       </div>
 
+      <!-- Assets panel -->
+      <div class="card">
+        <h2 class="section-heading" style="margin-bottom:var(--space-3)">&#128229; Assets</h2>
+        <div id="assets-list"><p class="text-muted text-sm">Loading assets…</p></div>
+      </div>
+
+      <!-- Reactions -->
       <div class="card" style="padding:var(--space-3) var(--space-4)">
         <div id="release-reactions"><p class="text-muted text-sm">Loading reactions…</p></div>
       </div>
@@ -253,8 +542,13 @@ async function load() {
         </p>`}
       </div>`;
 
+    // ── Trigger async side-panels ─────────────────────────────────────────────
+    if (dl.mp3) initAudioPlayer(dl.mp3);
+    loadAssets(tag);
+    loadCompareLink(tag);
     loadReactions('release', tag, 'release-reactions');
     await renderComments(releaseId);
+
   } catch(e) {
     if (e.message !== 'auth')
       document.getElementById('content').innerHTML = '<p class="error">&#10005; ' + escHtml(e.message) + '</p>';
@@ -267,7 +561,204 @@ load();
 
 {% block extra_css %}
 <style>
-/* ── Comment thread styles ─────────────────────────────────────────────────── */
+/* ── Release header ─────────────────────────────────────────────────────────── */
+.release-nav-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--space-3);
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+.release-nav-right { display: flex; gap: var(--space-2); align-items: center; }
+.rss-btn { color: var(--color-warning, #f0a500); }
+.rss-btn:hover { color: var(--color-warning, #f0a500); opacity: 0.8; }
+
+.release-header {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  margin-bottom: var(--space-3);
+}
+.release-title { margin: 0; font-size: 1.5rem; }
+.release-badges { display: flex; gap: var(--space-2); flex-wrap: wrap; align-items: center; padding-top: 4px; }
+
+.badge-prerelease {
+  background: rgba(240,165,0,0.15);
+  color: var(--color-warning, #f0a500);
+  border: 1px solid rgba(240,165,0,0.3);
+  border-radius: 20px;
+  padding: 2px 10px;
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.badge-draft {
+  background: rgba(110,118,129,0.12);
+  color: var(--text-muted, #8b949e);
+  border: 1px solid rgba(110,118,129,0.3);
+  border-radius: 20px;
+  padding: 2px 10px;
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.author-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--accent, #58a6ff);
+  color: #0d1117;
+  font-size: 11px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+/* ── GPG badge ──────────────────────────────────────────────────────────────── */
+.gpg-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: var(--font-size-xs);
+  font-weight: 500;
+  border-radius: 4px;
+  padding: 2px 8px;
+}
+.gpg-unverified {
+  background: rgba(139,148,158,0.1);
+  color: var(--text-muted, #8b949e);
+  border: 1px solid rgba(139,148,158,0.2);
+}
+.gpg-verified {
+  background: rgba(63,185,80,0.1);
+  color: var(--color-success, #3fb950);
+  border: 1px solid rgba(63,185,80,0.3);
+}
+
+/* ── Audio player ───────────────────────────────────────────────────────────── */
+.audio-section { margin-top: var(--space-4); }
+.section-heading { margin-top: 0; margin-bottom: var(--space-2); font-size: 1rem; }
+.audio-player-wrap {
+  background: var(--bg-overlay, #161b22);
+  border: 1px solid var(--border-subtle, #30363d);
+  border-radius: var(--radius-md, 6px);
+  padding: var(--space-3);
+}
+.audio-player-controls {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: var(--space-2);
+  flex-wrap: wrap;
+}
+.ap-play-btn { min-width: 40px; font-size: 16px; }
+.ap-time { font-size: var(--font-size-sm); color: var(--text-muted, #8b949e); font-family: monospace; white-space: nowrap; }
+.ap-speed-sel {
+  background: var(--bg-canvas, #0d1117);
+  color: var(--text-primary, #c9d1d9);
+  border: 1px solid var(--border-subtle, #30363d);
+  border-radius: var(--radius-sm, 4px);
+  padding: 2px 6px;
+  font-size: var(--font-size-sm);
+}
+.ap-vol-slider { width: 80px; }
+.ap-waveform {
+  border-radius: var(--radius-sm, 4px);
+  overflow: hidden;
+  cursor: pointer;
+  background: var(--bg-canvas, #0d1117);
+  min-height: 80px;
+}
+.ap-loop-info { margin-top: var(--space-1); }
+
+/* ── Release notes (Markdown) ───────────────────────────────────────────────── */
+.release-notes-section { margin-top: var(--space-4); }
+.md-content {
+  color: var(--text-secondary, #8b949e);
+  font-size: var(--font-size-sm);
+  line-height: 1.7;
+}
+.md-content .md-p { margin: 0 0 var(--space-2); }
+.md-content .md-h2 { font-size: 1.1rem; color: var(--text-primary); margin: var(--space-4) 0 var(--space-2); }
+.md-content .md-h3 { font-size: 1rem; color: var(--text-primary); margin: var(--space-3) 0 var(--space-1); }
+.md-content .md-h4 { font-size: 0.9rem; color: var(--text-primary); margin: var(--space-2) 0 var(--space-1); }
+.md-content .md-list { margin: var(--space-2) 0; padding-left: var(--space-5); }
+.md-content .md-list li { margin-bottom: var(--space-1); }
+.md-content .md-blockquote {
+  border-left: 3px solid var(--border-default, #30363d);
+  margin: var(--space-2) 0;
+  padding-left: var(--space-3);
+  color: var(--text-muted, #8b949e);
+}
+.md-content .code-block {
+  background: var(--bg-overlay, #161b22);
+  border: 1px solid var(--border-subtle, #30363d);
+  border-radius: var(--radius-sm, 4px);
+  padding: var(--space-2) var(--space-3);
+  overflow-x: auto;
+  font-size: var(--font-size-sm);
+  font-family: monospace;
+  margin: var(--space-2) 0;
+}
+.md-content code {
+  background: var(--bg-overlay, #161b22);
+  border-radius: 3px;
+  padding: 1px 5px;
+  font-family: monospace;
+  font-size: 0.9em;
+}
+
+/* ── Download packages grid ─────────────────────────────────────────────────── */
+.download-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: var(--space-3);
+  margin-top: var(--space-2);
+}
+.download-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  background: var(--bg-overlay, #161b22);
+  border: 1px solid var(--border-subtle, #30363d);
+  border-radius: var(--radius-md, 6px);
+  padding: var(--space-3);
+}
+.pkg-name {
+  font-weight: var(--font-weight-medium);
+  font-size: var(--font-size-sm);
+  color: var(--text-primary);
+}
+.pkg-desc {
+  font-size: var(--font-size-xs);
+  color: var(--text-muted, #8b949e);
+  flex: 1;
+}
+
+/* ── Assets panel ───────────────────────────────────────────────────────────── */
+.asset-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-2) 0;
+  border-bottom: 1px solid var(--border-subtle, #30363d);
+  flex-wrap: wrap;
+}
+.asset-row:last-child { border-bottom: none; }
+.asset-info { display: flex; align-items: flex-start; gap: var(--space-2); flex: 1; min-width: 0; }
+.asset-icon { font-size: 20px; flex-shrink: 0; }
+.asset-name { font-weight: var(--font-weight-medium); word-break: break-word; }
+.asset-label { }
+.asset-meta { display: flex; gap: var(--space-3); margin-top: 2px; }
+
+/* ── Comment thread styles ──────────────────────────────────────────────────── */
 .comment-item {
   padding: var(--space-3) 0;
   border-bottom: 1px solid var(--border-subtle);
