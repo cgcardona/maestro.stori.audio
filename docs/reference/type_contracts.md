@@ -8450,3 +8450,36 @@ Pydantic `BaseModel` — Request body for bulk-assigning labels to an issue or p
 
 **Produced by:** Callers of `POST .../issues/{number}/labels` and `POST .../pull-requests/{pr_id}/labels`
 **Consumed by:** `maestro.api.routes.musehub.labels.assign_labels_to_issue()` and `assign_labels_to_pr()`
+
+---
+
+### `CuratedGroup`
+
+**Path:** `maestro/api/routes/musehub/ui_topics.py`
+
+Pydantic `CamelModel` — A labelled set of topic items for the topics index page, grouping tags into human-readable categories (Genres, Instruments, Eras) with live repo counts.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `label` | `str` | Display label for the group (e.g. `"Genres"`) |
+| `topics` | `list[TopicItem]` | Topics in this group with their current `repo_count` |
+
+**Produced by:** `maestro.api.routes.musehub.ui_topics._build_curated_groups()`
+**Consumed by:** `TopicsIndexResponse.curated_groups`; `GET /musehub/ui/topics?format=json`
+
+---
+
+### `TopicsIndexResponse`
+
+**Path:** `maestro/api/routes/musehub/ui_topics.py`
+
+Pydantic `CamelModel` — JSON response for `GET /musehub/ui/topics`. Combines the full ranked topics list with curated groupings for single-round-trip index page loading.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `all_topics` | `list[TopicItem]` | All public topics sorted by `repo_count` descending |
+| `curated_groups` | `list[CuratedGroup]` | Genres, Instruments, and Eras groupings with counts |
+| `total` | `int` | Total number of distinct public topics |
+
+**Produced by:** `maestro.api.routes.musehub.ui_topics.topics_index_page()`
+**Consumed by:** `GET /musehub/ui/topics?format=json` or `Accept: application/json`; agent use case: call this to get both ranked and grouped topic data in one request

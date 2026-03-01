@@ -1,0 +1,390 @@
+{% extends "musehub/base.html" %}
+
+{% block title %}Emotion Diff {{ base_ref[:8] }}...{{ head_ref[:8] }} · {{ owner }}/{{ repo_slug }}{% endblock %}
+{% block breadcrumb %}
+  <a href="/musehub/ui/{{ owner }}">{{ owner }}</a> /
+  <a href="{{ base_url }}">{{ repo_slug }}</a> /
+  emotion-diff /
+  <span class="text-mono">{{ base_ref[:8] }}...{{ head_ref[:8] }}</span>
+{% endblock %}
+
+{% block repo_nav %}{% include "musehub/partials/repo_nav.html" %}{% endblock %}
+
+{% block page_data %}
+const repoId  = {{ repo_id | tojson }};
+const baseRef = {{ base_ref | tojson }};
+const headRef = {{ head_ref | tojson }};
+const uiBase  = {{ base_url | tojson }};
+const apiBase = '/api/v1/musehub/repos/' + repoId;
+{% endblock %}
+
+{% block page_script %}
+{% raw %}
+// ── 8 emotional dimensions (matches EmotionVector8D model) ───────────────────
+const DIMENSIONS = [
+  { key: 'valence',     label: 'Valence',     desc: 'dark/negative → bright/positive'  },
+  { key: 'energy',      label: 'Energy',      desc: 'passive/still → active/driving'   },
+  { key: 'tension',     label: 'Tension',     desc: 'relaxed → tense/dissonant'        },
+  { key: 'complexity',  label: 'Complexity',  desc: 'sparse/simple → dense/complex'    },
+  { key: 'warmth',      label: 'Warmth',      desc: 'cold/sterile → warm/intimate'     },
+  { key: 'brightness',  label: 'Brightness',  desc: 'dark/dull → bright/shimmering'    },
+  { key: 'darkness',    label: 'Darkness',    desc: 'luminous → brooding/ominous'      },
+  { key: 'playfulness', label: 'Playfulness', desc: 'serious/solemn → playful/whimsical' },
+];
+
+const BASE_COLOR = '#58a6ff';
+const HEAD_COLOR = '#f0883e';
+const INC_COLOR  = '#3fb950';
+const DEC_COLOR  = '#f85149';
+const NEU_COLOR  = '#8b949e';
+
+// ── Single-ref 8D radar chart SVG ────────────────────────────────────────────
+//
+// Renders a single filled polygon for a given 8-axis score array.
+// Used side-by-side: one for base, one for head.
+function radarSvg(scores, color, label) {
+  const cx = 160, cy = 160, r = 120;
+  const n = DIMENSIONS.length;
+
+  function pt(score, i) {
+    const angle = (i / n) * 2 * Math.PI - Math.PI / 2;
+    const sr = score * r;
+    return { x: cx + sr * Math.cos(angle), y: cy + sr * Math.sin(angle) };
+  }
+
+  // Grid rings at 0.25, 0.5, 0.75, 1.0
+  const gridLines = [0.25, 0.5, 0.75, 1.0].map(frac => {
+    const gPts = DIMENSIONS.map((_, i) => {
+      const angle = (i / n) * 2 * Math.PI - Math.PI / 2;
+      return `${cx + frac * r * Math.cos(angle)},${cy + frac * r * Math.sin(angle)}`;
+    }).join(' ');
+    return `<polygon points="${gPts}" fill="none" stroke="#21262d" stroke-width="1"/>`;
+  }).join('');
+
+  // Axis spokes
+  const axisLines = DIMENSIONS.map((_, i) => {
+    const angle = (i / n) * 2 * Math.PI - Math.PI / 2;
+    const ex = cx + r * Math.cos(angle), ey = cy + r * Math.sin(angle);
+    return `<line x1="${cx}" y1="${cy}" x2="${ex}" y2="${ey}" stroke="#30363d" stroke-width="1"/>`;
+  }).join('');
+
+  // Axis labels
+  const axisLabels = DIMENSIONS.map((d, i) => {
+    const angle = (i / n) * 2 * Math.PI - Math.PI / 2;
+    const lx = cx + (r + 24) * Math.cos(angle);
+    const ly = cy + (r + 24) * Math.sin(angle);
+    return `<text x="${lx}" y="${ly + 4}" text-anchor="middle"
+      font-size="10" fill="#8b949e" font-family="system-ui">${d.label}</text>`;
+  }).join('');
+
+  // Data polygon
+  const pts = scores.map((s, i) => pt(s, i));
+  const poly = pts.map(p => `${p.x},${p.y}`).join(' ');
+
+  // Vertex dots
+  const dots = pts.map(p =>
+    `<circle cx="${p.x}" cy="${p.y}" r="3" fill="${color}" stroke="#0d1117" stroke-width="1.5"/>`
+  ).join('');
+
+  // Ref label in centre
+  const shortLabel = label.length > 10 ? label.slice(0, 8) + '…' : label;
+
+  return `<svg viewBox="0 0 320 320" xmlns="http://www.w3.org/2000/svg"
+      style="width:100%;max-width:320px;display:block;margin:0 auto" role="img"
+      aria-label="8-axis emotion radar for ${label}">
+    ${gridLines}${axisLines}
+    <polygon points="${poly}"
+      fill="${color}20" stroke="${color}" stroke-width="2"/>
+    ${dots}
+    ${axisLabels}
+    <text x="${cx}" y="${cy + 4}" text-anchor="middle"
+      font-size="10" fill="${color}" font-family="monospace">${escHtml(shortLabel)}</text>
+  </svg>`;
+}
+
+// ── Delta bar chart row ───────────────────────────────────────────────────────
+//
+// Each row shows the per-axis delta value as a centred bar: bars to the right
+// of centre are green (increase), bars to the left are red (decrease).
+function deltaRow(dim, delta) {
+  const pct = Math.round(delta * 100);
+  const sign = delta >= 0 ? '+' : '';
+  const color = Math.abs(delta) < 0.04 ? NEU_COLOR : delta > 0 ? INC_COLOR : DEC_COLOR;
+  const label = Math.abs(delta) < 0.04 ? 'unchanged' : delta > 0 ? '▲ increase' : '▼ decrease';
+
+  // Bar: centred at 50%. Positive deltas extend right; negative extend left.
+  const barWidthPct = Math.min(50, Math.abs(pct / 2));
+  const barLeft = delta >= 0 ? 50 : (50 - barWidthPct);
+
+  return `<tr style="border-bottom:1px solid #21262d">
+    <td style="padding:8px 12px;font-size:13px;color:#e6edf3;white-space:nowrap;min-width:110px">
+      ${dim.label}
+    </td>
+    <td style="padding:8px 12px;min-width:200px">
+      <div style="position:relative;height:12px;background:#21262d;border-radius:4px;overflow:hidden">
+        <!-- Centre divider -->
+        <div style="position:absolute;left:50%;top:0;width:1px;height:100%;background:#30363d"></div>
+        <!-- Delta bar -->
+        <div style="position:absolute;top:1px;height:10px;border-radius:2px;
+                    left:${barLeft}%;width:${barWidthPct}%;background:${color}"></div>
+      </div>
+    </td>
+    <td style="padding:8px 12px;text-align:right;font-size:13px;font-weight:600;color:${color};white-space:nowrap">
+      ${sign}${pct}%
+    </td>
+    <td style="padding:8px 12px;font-size:11px;color:${color};white-space:nowrap">
+      ${label}
+    </td>
+  </tr>`;
+}
+
+// ── Trajectory timeline ───────────────────────────────────────────────────────
+//
+// Renders a mini sparkline per dimension showing how each 8D axis evolved
+// across the commits returned by the emotion-map endpoint.
+// Points are normalised to [0, 1]; each line is drawn as an SVG polyline.
+function trajectorySection(trajectory) {
+  if (!trajectory || trajectory.length < 2) {
+    return `<p style="color:#8b949e;font-size:13px">
+      Not enough commits in the range to render a trajectory timeline.
+    </p>`;
+  }
+
+  const W = 300, H = 48, PAD = 4;
+  const n = trajectory.length;
+
+  // One sparkline per dimension
+  const sparklines = DIMENSIONS.map(dim => {
+    const values = trajectory.map(c => c[dim.key] ?? 0.5);
+    const pts = values.map((v, i) => {
+      const x = PAD + (i / (n - 1)) * (W - PAD * 2);
+      const y = H - PAD - v * (H - PAD * 2);
+      return `${x},${y}`;
+    }).join(' ');
+
+    // Colour the sparkline by average value
+    const avg = values.reduce((a, b) => a + b, 0) / values.length;
+    const lineColor = avg > 0.65 ? INC_COLOR : avg < 0.35 ? DEC_COLOR : BASE_COLOR;
+
+    return `<div style="margin-bottom:12px">
+      <div style="font-size:11px;color:#8b949e;margin-bottom:4px">${dim.label}</div>
+      <svg viewBox="0 0 ${W} ${H}" style="width:100%;height:${H}px;display:block"
+           role="img" aria-label="${dim.label} trajectory">
+        <polyline points="${pts}"
+          fill="none" stroke="${lineColor}" stroke-width="1.5"
+          stroke-linejoin="round" stroke-linecap="round"/>
+        <!-- Start and end markers -->
+        ${values.length > 0 ? (() => {
+          const sx = PAD, sy = H - PAD - values[0] * (H - PAD * 2);
+          const ex = PAD + (W - PAD * 2), ey = H - PAD - values[n - 1] * (H - PAD * 2);
+          return `<circle cx="${sx}" cy="${sy}" r="3" fill="${BASE_COLOR}"/>
+                  <circle cx="${ex}" cy="${ey}" r="3" fill="${HEAD_COLOR}"/>`;
+        })() : ''}
+      </svg>
+    </div>`;
+  }).join('');
+
+  return `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:16px">
+    ${sparklines}
+  </div>
+  <div style="font-size:11px;color:#8b949e;margin-top:8px">
+    <span style="display:inline-block;width:10px;height:2px;background:${BASE_COLOR};vertical-align:middle;margin-right:4px"></span>base ref
+    <span style="display:inline-block;width:10px;height:2px;background:${HEAD_COLOR};vertical-align:middle;margin-left:12px;margin-right:4px"></span>head ref
+    <span style="margin-left:16px">${n} commits in range</span>
+  </div>`;
+}
+
+// ── Main loader ───────────────────────────────────────────────────────────────
+async function load() {
+  initRepoNav(repoId);
+
+  document.getElementById('content').innerHTML =
+    '<p class="loading">Computing emotional diff&#8230;</p>';
+
+  try {
+    // ── Fetch 8-axis emotion diff ────────────────────────────────────────────
+    const diff = await apiFetch(
+      `/repos/${repoId}/analysis/${encodeURIComponent(headRef)}/emotion-diff` +
+      `?base=${encodeURIComponent(baseRef)}`
+    );
+
+    const base  = diff.baseEmotion  || {};
+    const head  = diff.headEmotion  || {};
+    const delta = diff.delta        || {};
+    const interp = diff.interpretation || '';
+
+    const baseScores = DIMENSIONS.map(d => base[d.key] ?? 0);
+    const headScores = DIMENSIONS.map(d => head[d.key] ?? 0);
+    const deltas     = DIMENSIONS.map(d => delta[d.key] ?? 0);
+
+    // ── Fetch emotional trajectory via emotion-map ────────────────────────────
+    let trajectory = [];
+    try {
+      const mapData = await apiFetch(
+        `/repos/${repoId}/analysis/${encodeURIComponent(headRef)}/emotion-map`
+      );
+      // The trajectory is the per-beat emotion list; for the timeline we use
+      // per-commit snapshots if available, else fall back to the beat trajectory.
+      trajectory = mapData.commitTrajectory || mapData.beats || [];
+      // Normalise beat objects to the same key shape as DIMENSIONS
+      if (trajectory.length > 0 && trajectory[0].primaryEmotion !== undefined) {
+        // Beat objects — map to pseudo-vector using available fields
+        trajectory = trajectory.map(b => ({
+          valence:     b.valence     ?? 0.5,
+          energy:      b.arousal     ?? 0.5,   // arousal ≈ energy
+          tension:     b.tension     ?? 0.5,
+          complexity:  b.complexity  ?? 0.5,
+          warmth:      b.warmth      ?? 0.5,
+          brightness:  b.brightness  ?? 0.5,
+          darkness:    b.darkness    ?? 0.5,
+          playfulness: b.playfulness ?? 0.5,
+        }));
+      }
+    } catch (_) {
+      // Trajectory is optional — page still works without it
+    }
+
+    const listenBaseUrl = `${uiBase}/listen/${encodeURIComponent(baseRef)}`;
+    const listenHeadUrl = `${uiBase}/listen/${encodeURIComponent(headRef)}`;
+    const compareUrl    = `${uiBase}/compare/${encodeURIComponent(baseRef)}...${encodeURIComponent(headRef)}`;
+
+    document.getElementById('content').innerHTML = `
+
+      <!-- ── Page header ────────────────────────────────────────────────── -->
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;
+                  margin-bottom:20px;flex-wrap:wrap;gap:12px">
+        <div>
+          <h1 style="margin:0;font-size:18px;color:#e6edf3">
+            Emotion Diff:
+            <code style="font-size:14px">${escHtml(baseRef.slice(0, 10))}</code>
+            &hellip;
+            <code style="font-size:14px">${escHtml(headRef.slice(0, 10))}</code>
+          </h1>
+          <div style="font-size:12px;color:#8b949e;margin-top:6px;max-width:620px;line-height:1.5">
+            ${escHtml(interp)}
+          </div>
+        </div>
+        <!-- ── "Listen to comparison" button ─────────────────────────────── -->
+        <div style="display:flex;gap:8px;flex-wrap:wrap;flex-shrink:0">
+          <a href="${escHtml(listenBaseUrl)}" class="btn btn-secondary" style="font-size:13px"
+             title="Listen to base ref: ${escHtml(baseRef)}">
+            &#9654; Listen Base
+          </a>
+          <a href="${escHtml(listenHeadUrl)}" class="btn btn-secondary" style="font-size:13px"
+             title="Listen to head ref: ${escHtml(headRef)}">
+            &#9654; Listen Head
+          </a>
+          <a href="${escHtml(compareUrl)}" class="btn btn-primary" style="font-size:13px">
+            &#128200; Full Diff
+          </a>
+        </div>
+      </div>
+
+      <!-- ── Side-by-side radar charts ─────────────────────────────────── -->
+      <div class="card" style="margin-bottom:24px">
+        <h2 style="margin:0 0 16px;font-size:15px;color:#e6edf3">
+          8-Dimension Emotional Signature
+        </h2>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:24px;align-items:start">
+          <!-- Base radar -->
+          <div>
+            <div style="text-align:center;margin-bottom:8px">
+              <span style="font-size:12px;color:${BASE_COLOR};font-weight:600">
+                Base — <code style="font-size:11px">${escHtml(baseRef.slice(0, 10))}</code>
+              </span>
+            </div>
+            ${radarSvg(baseScores, BASE_COLOR, baseRef)}
+          </div>
+          <!-- Head radar -->
+          <div>
+            <div style="text-align:center;margin-bottom:8px">
+              <span style="font-size:12px;color:${HEAD_COLOR};font-weight:600">
+                Head — <code style="font-size:11px">${escHtml(headRef.slice(0, 10))}</code>
+              </span>
+            </div>
+            ${radarSvg(headScores, HEAD_COLOR, headRef)}
+          </div>
+        </div>
+        <!-- Axis key -->
+        <div style="margin-top:16px;display:flex;flex-wrap:wrap;gap:8px 16px">
+          ${DIMENSIONS.map(d => `
+            <div style="font-size:11px;color:#8b949e">
+              <strong style="color:#e6edf3">${d.label}:</strong> ${d.desc}
+            </div>`).join('')}
+        </div>
+      </div>
+
+      <!-- ── Delta bar chart ────────────────────────────────────────────── -->
+      <div class="card" style="margin-bottom:24px;overflow-x:auto">
+        <h2 style="margin:0 0 12px;font-size:15px;color:#e6edf3">
+          Per-Axis Delta
+          <span style="font-size:12px;font-weight:400;color:#8b949e;margin-left:8px">
+            (head &minus; base)
+          </span>
+        </h2>
+        <!-- Legend -->
+        <div style="font-size:11px;color:#8b949e;margin-bottom:12px;display:flex;gap:16px">
+          <span>
+            <span style="display:inline-block;width:10px;height:10px;background:${INC_COLOR};border-radius:2px;vertical-align:middle;margin-right:4px"></span>
+            increase
+          </span>
+          <span>
+            <span style="display:inline-block;width:10px;height:10px;background:${DEC_COLOR};border-radius:2px;vertical-align:middle;margin-right:4px"></span>
+            decrease
+          </span>
+          <span>
+            <span style="display:inline-block;width:10px;height:10px;background:${NEU_COLOR};border-radius:2px;vertical-align:middle;margin-right:4px"></span>
+            unchanged (&lt;4%)
+          </span>
+        </div>
+        <table style="width:100%;border-collapse:collapse">
+          <thead>
+            <tr style="border-bottom:2px solid #30363d">
+              <th style="padding:8px 12px;text-align:left;color:#8b949e;font-weight:600;font-size:12px">Dimension</th>
+              <th style="padding:8px 12px;text-align:left;color:#8b949e;font-weight:600;font-size:12px">Shift</th>
+              <th style="padding:8px 12px;text-align:right;color:#8b949e;font-weight:600;font-size:12px">Δ</th>
+              <th style="padding:8px 12px;text-align:left;color:#8b949e;font-weight:600;font-size:12px">Direction</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${DIMENSIONS.map((dim, i) => deltaRow(dim, deltas[i])).join('')}
+          </tbody>
+        </table>
+      </div>
+
+      <!-- ── Emotional trajectory timeline ────────────────────────────── -->
+      <div class="card" style="margin-bottom:24px">
+        <h2 style="margin:0 0 12px;font-size:15px;color:#e6edf3">
+          Emotional Trajectory
+          <span style="font-size:12px;font-weight:400;color:#8b949e;margin-left:8px">
+            how the 8 dimensions evolved between base and head
+          </span>
+        </h2>
+        ${trajectorySection(trajectory)}
+      </div>
+
+      <!-- ── Listen to comparison CTA ──────────────────────────────────── -->
+      <div class="card" style="text-align:center;padding:var(--space-5)">
+        <div style="font-size:14px;color:#e6edf3;margin-bottom:12px">
+          Listen to both refs and compare the emotional character directly
+        </div>
+        <div style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap">
+          <a href="${escHtml(listenBaseUrl)}" class="btn btn-secondary" style="font-size:14px;padding:10px 20px">
+            &#9654; Base: <code style="font-size:12px">${escHtml(baseRef.slice(0, 10))}</code>
+          </a>
+          <a href="${escHtml(listenHeadUrl)}" class="btn btn-primary" style="font-size:14px;padding:10px 20px">
+            &#9654; Head: <code style="font-size:12px">${escHtml(headRef.slice(0, 10))}</code>
+          </a>
+        </div>
+      </div>`;
+
+  } catch (e) {
+    if (e.message !== 'auth')
+      document.getElementById('content').innerHTML =
+        '<p class="error">&#10005; ' + escHtml(e.message) + '</p>';
+  }
+}
+
+load();
+{% endraw %}
+{% endblock %}
