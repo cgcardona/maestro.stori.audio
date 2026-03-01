@@ -28,7 +28,13 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from maestro.db import musehub_models as db
-from maestro.models.musehub import PRCommentListResponse, PRCommentResponse, PRResponse
+from maestro.models.musehub import (
+    PRCommentListResponse,
+    PRCommentResponse,
+    PRResponse,
+    PRReviewListResponse,
+    PRReviewResponse,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -335,3 +341,190 @@ async def list_pr_comments(
                 parent.replies.append(by_id[row.comment_id])
 
     return PRCommentListResponse(comments=top_level, total=len(rows))
+
+
+# ---------------------------------------------------------------------------
+# PR reviews (reviewer assignment + approval workflow)
+# ---------------------------------------------------------------------------
+
+
+def _to_review_response(row: db.MusehubPRReview) -> PRReviewResponse:
+    return PRReviewResponse(
+        id=row.id,
+        pr_id=row.pr_id,
+        reviewer_username=row.reviewer_username,
+        state=row.state,
+        body=row.body,
+        submitted_at=row.submitted_at,
+        created_at=row.created_at,
+    )
+
+
+async def _assert_pr_exists(session: AsyncSession, repo_id: str, pr_id: str) -> None:
+    """Raise ``ValueError`` if the PR does not exist in the given repo."""
+    stmt = select(db.MusehubPullRequest).where(
+        db.MusehubPullRequest.pr_id == pr_id,
+        db.MusehubPullRequest.repo_id == repo_id,
+    )
+    pr = (await session.execute(stmt)).scalar_one_or_none()
+    if pr is None:
+        raise ValueError(f"Pull request {pr_id} not found in repo {repo_id}")
+
+
+async def request_reviewers(
+    session: AsyncSession,
+    *,
+    repo_id: str,
+    pr_id: str,
+    reviewers: list[str],
+) -> PRReviewListResponse:
+    """Add reviewer assignments to a PR, creating a ``pending`` row for each.
+
+    Idempotent: if a reviewer already has a row (in any state), the existing row
+    is left unchanged so a submitted approval is never reset by a re-request.
+
+    Raises ``ValueError`` if the PR does not exist in the repo.
+
+    Returns the full updated review list for the PR.
+    """
+    await _assert_pr_exists(session, repo_id, pr_id)
+
+    for username in reviewers:
+        existing_stmt = select(db.MusehubPRReview).where(
+            db.MusehubPRReview.pr_id == pr_id,
+            db.MusehubPRReview.reviewer_username == username,
+        )
+        existing = (await session.execute(existing_stmt)).scalar_one_or_none()
+        if existing is None:
+            review = db.MusehubPRReview(pr_id=pr_id, reviewer_username=username, state="pending")
+            session.add(review)
+            logger.info("✅ Requested review from '%s' on PR %s", username, pr_id)
+
+    await session.flush()
+    return await list_reviews(session, repo_id=repo_id, pr_id=pr_id)
+
+
+async def remove_reviewer(
+    session: AsyncSession,
+    *,
+    repo_id: str,
+    pr_id: str,
+    username: str,
+) -> PRReviewListResponse:
+    """Remove a pending review request for ``username`` on a PR.
+
+    Only ``pending`` rows may be removed — submitted reviews are immutable to
+    preserve the audit trail.
+
+    Raises ``ValueError`` if the PR does not exist, the reviewer was never
+    requested, or the reviewer has already submitted a non-pending review.
+
+    Returns the updated review list.
+    """
+    await _assert_pr_exists(session, repo_id, pr_id)
+
+    stmt = select(db.MusehubPRReview).where(
+        db.MusehubPRReview.pr_id == pr_id,
+        db.MusehubPRReview.reviewer_username == username,
+    )
+    row = (await session.execute(stmt)).scalar_one_or_none()
+    if row is None:
+        raise ValueError(f"Reviewer '{username}' was not requested on PR {pr_id}")
+    if row.state != "pending":
+        raise ValueError(
+            f"Cannot remove reviewer '{username}': review already submitted (state={row.state})"
+        )
+
+    await session.delete(row)
+    await session.flush()
+    logger.info("✅ Removed review request for '%s' from PR %s", username, pr_id)
+    return await list_reviews(session, repo_id=repo_id, pr_id=pr_id)
+
+
+async def list_reviews(
+    session: AsyncSession,
+    *,
+    repo_id: str,
+    pr_id: str,
+    state: str | None = None,
+) -> PRReviewListResponse:
+    """Return all reviews for a PR, optionally filtered by state.
+
+    ``state`` may be one of ``pending``, ``approved``, ``changes_requested``,
+    or ``dismissed``.  When ``None``, all reviews are returned.
+
+    Raises ``ValueError`` if the PR does not exist in the repo.
+    """
+    await _assert_pr_exists(session, repo_id, pr_id)
+
+    stmt = select(db.MusehubPRReview).where(db.MusehubPRReview.pr_id == pr_id)
+    if state is not None:
+        stmt = stmt.where(db.MusehubPRReview.state == state)
+    stmt = stmt.order_by(db.MusehubPRReview.created_at)
+    rows = (await session.execute(stmt)).scalars().all()
+    reviews = [_to_review_response(r) for r in rows]
+    return PRReviewListResponse(reviews=reviews, total=len(reviews))
+
+
+async def submit_review(
+    session: AsyncSession,
+    *,
+    repo_id: str,
+    pr_id: str,
+    reviewer_username: str,
+    event: str,
+    body: str = "",
+) -> PRReviewResponse:
+    """Submit or update a formal review for ``reviewer_username`` on a PR.
+
+    ``event`` maps to a new state:
+      - ``approve``         → ``approved``
+      - ``request_changes`` → ``changes_requested``
+      - ``comment``         → ``pending`` (body-only, no verdict change)
+
+    If an existing row for this reviewer already exists, it is updated in-place.
+    If no row exists (reviewer was not formally requested), a new row is created
+    so ad-hoc reviews are allowed.
+
+    Raises ``ValueError`` if the PR does not exist in the repo.
+    """
+    await _assert_pr_exists(session, repo_id, pr_id)
+
+    _EVENT_TO_STATE: dict[str, str] = {
+        "approve": "approved",
+        "request_changes": "changes_requested",
+        "comment": "pending",
+    }
+    new_state = _EVENT_TO_STATE[event]
+
+    stmt = select(db.MusehubPRReview).where(
+        db.MusehubPRReview.pr_id == pr_id,
+        db.MusehubPRReview.reviewer_username == reviewer_username,
+    )
+    row = (await session.execute(stmt)).scalar_one_or_none()
+
+    now = _utc_now()
+    if row is None:
+        row = db.MusehubPRReview(
+            pr_id=pr_id,
+            reviewer_username=reviewer_username,
+            state=new_state,
+            body=body or None,
+            submitted_at=now if event != "comment" else None,
+        )
+        session.add(row)
+    else:
+        row.state = new_state
+        row.body = body or None
+        row.submitted_at = now if event != "comment" else row.submitted_at
+
+    await session.flush()
+    await session.refresh(row)
+    logger.info(
+        "✅ Review submitted by '%s' on PR %s: event=%s state=%s",
+        reviewer_username,
+        pr_id,
+        event,
+        new_state,
+    )
+    return _to_review_response(row)
