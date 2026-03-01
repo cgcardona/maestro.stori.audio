@@ -53,6 +53,8 @@ from maestro.models.musehub import (
     UserForksResponse,
     UserStarredRepoEntry,
     UserStarredResponse,
+    UserWatchedRepoEntry,
+    UserWatchedResponse,
 )
 
 logger = logging.getLogger(__name__)
@@ -1276,3 +1278,42 @@ async def get_user_starred(db_session: AsyncSession, username: str) -> UserStarr
     ]
 
     return UserStarredResponse(starred=entries, total=len(entries))
+
+
+async def get_user_watched(db_session: AsyncSession, username: str) -> UserWatchedResponse:
+    """Return all repos that ``username`` is watching, newest first.
+
+    Joins ``musehub_watches`` (where ``user_id`` matches the profile's user_id)
+    with ``musehub_repos`` to retrieve full repo metadata for each watched repo.
+
+    Returns an empty list (not 404) when the user exists but watches nothing.
+    Callers are responsible for 404-guarding the username before invoking this.
+    """
+    profile_row = (
+        await db_session.execute(
+            select(db.MusehubProfile).where(db.MusehubProfile.username == username)
+        )
+    ).scalar_one_or_none()
+
+    if profile_row is None:
+        return UserWatchedResponse(watched=[], total=0)
+
+    rows = (
+        await db_session.execute(
+            select(db.MusehubWatch, db.MusehubRepo)
+            .join(db.MusehubRepo, db.MusehubWatch.repo_id == db.MusehubRepo.repo_id)
+            .where(db.MusehubWatch.user_id == profile_row.user_id)
+            .order_by(db.MusehubWatch.created_at.desc())
+        )
+    ).all()
+
+    entries = [
+        UserWatchedRepoEntry(
+            watch_id=watch.watch_id,
+            repo=_to_repo_response(repo),
+            watched_at=watch.created_at,
+        )
+        for watch, repo in rows
+    ]
+
+    return UserWatchedResponse(watched=entries, total=len(entries))
