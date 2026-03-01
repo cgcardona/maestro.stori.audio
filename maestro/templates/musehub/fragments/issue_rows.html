@@ -1,0 +1,28 @@
+{#
+  issue_rows.html — HTMX fragment: issue list rows.
+
+  Returned by issue_list_page() when HX-Request header is present.
+  Also included by issue_list.html on full-page load so the initial render
+  and HTMX partial updates share the same markup.
+
+  Required context variables:
+    issues         list[IssueResponse]  — paginated issues to render
+    base_url       str                  — canonical UI base URL for this repo
+    labels_data    list[dict]           — label dicts with 'name' and 'color'
+    active_label   str                  — currently active label filter (empty = none)
+    state          str                  — active state filter ('open' or 'closed')
+#}
+{% from "musehub/macros/issue.html" import issue_row %}
+{% from "musehub/macros/empty_state.html" import empty_state %}
+
+{% if issues %}
+  {% for issue in issues %}
+    {{ issue_row(issue, base_url=base_url,
+                 labels=labels_data,
+                 active_labels=[active_label] if active_label else [],
+                 show_checkbox=True) }}
+  {% endfor %}
+{% else %}
+  {{ empty_state("📋", "No issues",
+                 "No issues match the current filters." if (active_label or active_milestone_id or active_assignee or active_author) else "No " ~ state ~ " issues found.") }}
+{% endif %}
