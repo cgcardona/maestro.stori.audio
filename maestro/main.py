@@ -33,6 +33,7 @@ from maestro.api.routes.musehub import ui_settings as musehub_ui_settings_routes
 from maestro.api.routes.musehub import ui_similarity as musehub_ui_similarity_routes
 from maestro.api.routes.musehub import ui_forks as musehub_ui_forks_routes
 from maestro.api.routes.musehub import ui_user_profile as musehub_ui_profile_routes
+from maestro.api.routes.musehub import ui_new_repo as musehub_ui_new_repo_routes
 from maestro.api.routes.musehub import discover as musehub_discover_routes
 from maestro.api.routes.musehub import users as musehub_user_routes
 from maestro.api.routes.musehub import oembed as musehub_oembed_routes
@@ -230,6 +231,8 @@ app.include_router(musehub.router, prefix="/api/v1")
 app.include_router(musehub_ui_notifications_routes.router, tags=["musehub-ui-notifications"])
 # Enhanced profile page: registered before fixed_router so it shadows the old stub route.
 app.include_router(musehub_ui_profile_routes.router, tags=["musehub-ui"])
+# New-repo wizard: registered before fixed_router so /new is not captured by /{username}.
+app.include_router(musehub_ui_new_repo_routes.router, tags=["musehub-ui"])
 app.include_router(musehub_ui_routes.fixed_router, tags=["musehub-ui"])
 # Milestones UI routes registered before the main UI wildcard router so the
 # /{owner}/{repo_slug}/milestones paths are matched before /{owner}/{repo_slug}.
