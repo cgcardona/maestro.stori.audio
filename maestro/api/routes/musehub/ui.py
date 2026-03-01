@@ -77,8 +77,6 @@ from sqlalchemy import func, select as sa_select
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.responses import Response as StarletteResponse
 
-from maestro.api.routes.musehub.htmx_helpers import htmx_fragment_or_full, htmx_trigger, is_htmx
-from maestro.api.routes.musehub.jinja2_filters import register_musehub_filters
 from maestro.api.routes.musehub.json_alternate import json_or_html
 from maestro.api.routes.musehub.negotiate import negotiate_response
 from maestro.api.routes.musehub.ui_jsonld import jsonld_release, jsonld_repo, render_jsonld_script
@@ -108,7 +106,6 @@ fixed_router = APIRouter(prefix="/musehub/ui", tags=["musehub-ui"])
 
 _TEMPLATE_DIR = Path(__file__).parent.parent.parent.parent / "templates"
 templates = Jinja2Templates(directory=str(_TEMPLATE_DIR))
-register_musehub_filters(templates.env)
 
 
 # ---------------------------------------------------------------------------

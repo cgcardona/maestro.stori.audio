@@ -54,24 +54,6 @@ function saveToken() {
 }
 
 /* ═══════════════════════════════════════════════════════════════
- * 1b. HTMX integration hooks
- * ═══════════════════════════════════════════════════════════════ */
-
-// Inject Bearer token on every HTMX request so HTMX mutations are authenticated
-// without requiring per-page auth setup — mirrors apiFetch() behaviour for HTMX.
-document.addEventListener('htmx:configRequest', (evt) => {
-  const token = getToken();
-  if (token) evt.detail.headers['Authorization'] = 'Bearer ' + token;
-});
-
-// After a fragment swap, re-run initRepoNav so the repo identity card stays
-// populated when navigating between repo pages via hx-boost.
-document.addEventListener('htmx:afterSwap', (evt) => {
-  const repoId = window.__repoId;
-  if (repoId) initRepoNav(repoId);
-});
-
-/* ═══════════════════════════════════════════════════════════════
  * 2. Formatting helpers
  * ═══════════════════════════════════════════════════════════════ */
 
@@ -453,3 +435,23 @@ function parseCommitMeta(message) {
   });
   return meta;
 }
+
+/* ═══════════════════════════════════════════════════════════════
+ * 6. HTMX integration hooks
+ *    Registered at parse time so they fire on every HTMX request
+ *    regardless of which page loads musehub.js.
+ * ═══════════════════════════════════════════════════════════════ */
+
+// HTMX JWT auth bridge — inject Bearer token on every HTMX request so
+// mutations work without per-page auth setup.
+document.addEventListener('htmx:configRequest', (evt) => {
+  const token = getToken();
+  if (token) evt.detail.headers['Authorization'] = 'Bearer ' + token;
+});
+
+// HTMX after-swap hook — re-run initRepoNav after fragment swaps so the
+// repo identity card and tab counts stay current after partial page updates.
+document.addEventListener('htmx:afterSwap', (evt) => {
+  const repoId = window.__repoId;
+  if (repoId) initRepoNav(repoId);
+});

@@ -1259,7 +1259,9 @@ pre code {
   color: var(--color-accent, #58a6ff);
 }
 
-/* ── HTMX loading indicator ──────────────────────────────────────────────── */
-/* Shown automatically when any HTMX request is in-flight.                   */
+/* ── HTMX loading indicator ────────────────────────────────────────────────
+   The #htmx-loading bar (defined in base.html) becomes visible whenever an
+   HTMX request is in-flight. HTMX adds .htmx-request to <body> during the
+   request and removes it on completion. */
 .htmx-request #htmx-loading { display: block !important; }
 .htmx-request.htmx-indicator { display: block !important; }

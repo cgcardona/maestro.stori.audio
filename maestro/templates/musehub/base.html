@@ -56,7 +56,6 @@
 <body>
   {# HTMX top-of-page loading bar — shown via .htmx-request CSS class #}
   <div id="htmx-loading" class="htmx-indicator" aria-hidden="true" style="position:fixed;top:0;left:0;right:0;height:2px;background:var(--color-accent,#1f6feb);z-index:9999;display:none"></div>
-
   {# Global navigation bar — logo, search, user menu #}
   {% include "musehub/partials/navbar.html" %}
 
@@ -79,7 +78,7 @@
       <button class="btn btn-secondary" onclick="clearToken();location.reload()">Clear</button>
     </div>
     {% endblock %}
-    <div id="content">{% block content %}<p class="loading">Loading&#8230;</p>{% endblock %}</div>
+    <div id="content"><p class="loading">Loading&#8230;</p></div>
   </div>
 
   {% block body_extra %}{% endblock %}

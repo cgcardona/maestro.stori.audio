@@ -3,9 +3,6 @@
 Covers issue #200 — negotiate_response() dispatches HTML vs JSON based on
 Accept header and ?format query param.
 
-Covers issue #554 — negotiate_response() dispatches HTMX fragment when
-HX-Request header is present and fragment_template is provided.
-
 Tests:
 - test_negotiate_wants_json_format_param         — ?format=json → JSON path
 - test_negotiate_wants_json_accept_header        — Accept: application/json → JSON path
@@ -14,9 +11,6 @@ Tests:
 - test_negotiate_json_uses_pydantic_by_alias     — camelCase keys in JSON output
 - test_negotiate_json_fallback_to_context        — no json_data → context dict as JSON
 - test_negotiate_accept_partial_match            — mixed Accept header containing json
-- test_negotiate_htmx_fragment_path              — HX-Request + fragment_template → fragment
-- test_negotiate_htmx_no_fragment_template       — HX-Request but no fragment_template → HTML
-- test_negotiate_htmx_fragment_beats_json        — HX-Request takes priority over JSON Accept
 """
 from __future__ import annotations
 
@@ -177,86 +171,3 @@ async def test_negotiate_format_param_overrides_html_accept() -> None:
     )
     assert isinstance(resp, JSONResponse)
     templates.TemplateResponse.assert_not_called()
-
-
-# ---------------------------------------------------------------------------
-# negotiate_response — HTMX fragment path (added in issue #554)
-# ---------------------------------------------------------------------------
-
-
-def _make_htmx_request(accept: str = "") -> Any:
-    """Build a minimal mock Request with the HX-Request: true header set."""
-    req = MagicMock()
-    headers: dict[str, str] = {"HX-Request": "true"}
-    if accept:
-        headers["accept"] = accept
-    req.headers = headers
-    return req
-
-
-@pytest.mark.anyio
-async def test_negotiate_htmx_fragment_path() -> None:
-    """HTMX request + fragment_template → TemplateResponse with fragment template."""
-    req = _make_htmx_request()
-    mock_fragment_resp = MagicMock()
-    templates = MagicMock()
-    templates.TemplateResponse.return_value = mock_fragment_resp
-
-    resp = await negotiate_response(
-        request=req,
-        template_name="musehub/pages/repo.html",
-        context={"owner": "alice"},
-        templates=templates,
-        fragment_template="musehub/fragments/repo_card.html",
-    )
-
-    templates.TemplateResponse.assert_called_once_with(
-        req, "musehub/fragments/repo_card.html", {"owner": "alice"}
-    )
-    assert resp is mock_fragment_resp
-
-
-@pytest.mark.anyio
-async def test_negotiate_htmx_no_fragment_template() -> None:
-    """HTMX request with no fragment_template falls through to full HTML page."""
-    req = _make_htmx_request()
-    mock_full_resp = MagicMock()
-    templates = MagicMock()
-    templates.TemplateResponse.return_value = mock_full_resp
-
-    resp = await negotiate_response(
-        request=req,
-        template_name="musehub/pages/repo.html",
-        context={"owner": "alice"},
-        templates=templates,
-        fragment_template=None,
-    )
-
-    templates.TemplateResponse.assert_called_once_with(
-        req, "musehub/pages/repo.html", {"owner": "alice"}
-    )
-    assert resp is mock_full_resp
-
-
-@pytest.mark.anyio
-async def test_negotiate_htmx_fragment_beats_json() -> None:
-    """HTMX fragment path takes priority over Accept: application/json."""
-    req = _make_htmx_request(accept="application/json")
-    mock_fragment_resp = MagicMock()
-    templates = MagicMock()
-    templates.TemplateResponse.return_value = mock_fragment_resp
-
-    model = _SampleModel(repo_id="xyz", star_count=7)
-    resp = await negotiate_response(
-        request=req,
-        template_name="musehub/pages/repo.html",
-        context={"owner": "alice"},
-        templates=templates,
-        json_data=model,
-        fragment_template="musehub/fragments/repo_card.html",
-    )
-
-    templates.TemplateResponse.assert_called_once_with(
-        req, "musehub/fragments/repo_card.html", {"owner": "alice"}
-    )
-    assert not isinstance(resp, JSONResponse)

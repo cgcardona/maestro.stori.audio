@@ -25,13 +25,15 @@ SEED:
          --json number --jq '.[].number' | \
          xargs -r -I{} gh issue edit {} --remove-label "agent:wip"
 
-  3. Query open unclaimed issues — htmx-tagged only (htmx/0-foundation, htmx/1-independent, etc.):
-       gh issue list --state open --repo cgcardona/maestro --json number,title,labels \
-         --jq '[.[] | select(
-                 (.labels | map(.name) | any(startswith("htmx/"))) and
-                 (.labels | map(.name) | index("agent:wip") | not)
-               )]'
-     If empty → report to CTO "implementation queue clear." Stop.
+  3. Query open unclaimed issues — ACTIVE_LABEL only (passed by CTO in your dispatch prompt):
+       # ACTIVE_LABEL is the single htmx/* label the CTO assigned to you (e.g. htmx/0-foundation).
+       # NEVER query all htmx/* labels — you are scoped to exactly one label per VP run.
+       # This prevents you from accidentally claiming issues from a later phase.
+       ACTIVE_LABEL="<from CTO dispatch prompt>"
+       gh issue list --state open --repo cgcardona/maestro --label "$ACTIVE_LABEL" \
+         --json number,title,labels \
+         --jq '[.[] | select(.labels | map(.name) | index("agent:wip") | not)]'
+     If empty → report to CTO "implementation queue clear for $ACTIVE_LABEL." Stop.
 
   3.5 Dependency gate — CRITICAL for htmx/0-foundation (sequential issues):
      For each candidate issue, check if its dependencies are met before seeding.
