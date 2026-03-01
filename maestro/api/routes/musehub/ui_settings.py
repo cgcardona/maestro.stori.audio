@@ -23,13 +23,14 @@ Auth contract:
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi import status as http_status
+from fastapi.templating import Jinja2Templates
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.responses import Response
 
-from maestro.api.routes.musehub._templates import templates as _templates
 from maestro.api.routes.musehub.negotiate import negotiate_response
 from maestro.db import get_db
 from maestro.models.musehub import RepoSettingsResponse
@@ -38,6 +39,9 @@ from maestro.services import musehub_repository
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/musehub/ui", tags=["musehub-ui-settings"])
+
+_TEMPLATE_DIR = Path(__file__).parent.parent.parent.parent / "templates"
+_templates = Jinja2Templates(directory=str(_TEMPLATE_DIR))
 
 
 def _base_url(owner: str, repo_slug: str) -> str:
