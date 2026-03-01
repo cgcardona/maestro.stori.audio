@@ -7,6 +7,7 @@ Tables:
 - musehub_issues: Issue tracker entries per repo
 - musehub_issue_comments: Threaded comments on issues
 - musehub_milestones: Milestone groupings for issues
+- musehub_issue_milestones: Many-to-many join between issues and milestones
 - musehub_pull_requests: Pull requests proposing branch merges
 - musehub_pr_comments: Inline review comments on musical diffs within PRs
 - musehub_objects: Content-addressed binary artifact storage
@@ -24,7 +25,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Index, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.types import JSON
 
@@ -230,6 +231,45 @@ class MusehubMilestone(Base):
     )
     issues: Mapped[list[MusehubIssue]] = relationship(
         "MusehubIssue", back_populates="milestone", foreign_keys="[MusehubIssue.milestone_id]"
+    )
+    issue_milestones: Mapped[list[MusehubIssueMilestone]] = relationship(
+        "MusehubIssueMilestone",
+        back_populates="milestone",
+        cascade="all, delete-orphan",
+    )
+
+
+class MusehubIssueMilestone(Base):
+    """Join table linking issues to milestones (many-to-many).
+
+    A single issue can belong to multiple milestones and a milestone can
+    contain many issues. The composite primary key on ``(issue_id,
+    milestone_id)`` enforces uniqueness without a surrogate key.
+
+    Cascade deletes ensure rows are removed when either the issue or the
+    milestone is deleted.
+    """
+
+    __tablename__ = "musehub_issue_milestones"
+    __table_args__ = (
+        Index("ix_musehub_issue_milestones_milestone_id", "milestone_id"),
+    )
+
+    issue_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("musehub_issues.issue_id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    milestone_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("musehub_milestones.milestone_id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+
+    issue: Mapped[MusehubIssue] = relationship("MusehubIssue")
+    milestone: Mapped[MusehubMilestone] = relationship(
+        "MusehubMilestone",
+        back_populates="issue_milestones",
     )
 
 
