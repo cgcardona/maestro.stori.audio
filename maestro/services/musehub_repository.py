@@ -1366,7 +1366,7 @@ async def get_repo_settings(
     if row is None:
         return None
 
-    flags = _merge_settings(row.settings)  # type: ignore[arg-type]
+    flags = _merge_settings(row.settings)
 
     # Derive default_branch from stored flag; fall back to "main"
     default_branch = str(flags.get("default_branch") or "main")
@@ -1420,7 +1420,7 @@ async def update_repo_settings(
         row.tags = patch.topics
 
     # ── Feature-flag JSON blob ───────────────────────────────────────────────
-    current_flags = _merge_settings(row.settings)  # type: ignore[arg-type]
+    current_flags = _merge_settings(row.settings)
 
     flag_updates: dict[str, object] = {}
     if patch.default_branch is not None:
@@ -1446,7 +1446,7 @@ async def update_repo_settings(
 
     if flag_updates:
         current_flags.update(flag_updates)
-        row.settings = current_flags  # type: ignore[assignment]
+        row.settings = current_flags
 
     logger.info("✅ Updated settings for repo %s", repo_id)
     return await get_repo_settings(session, repo_id)

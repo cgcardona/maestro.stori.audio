@@ -25,7 +25,7 @@ from __future__ import annotations
 
 import logging
 
-import yaml  # type: ignore[import-untyped]  # PyYAML ships no py.typed marker
+import yaml
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -33,6 +33,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from maestro.auth.dependencies import TokenClaims, optional_token, require_valid_token
 from maestro.db import get_db
 from maestro.db import musehub_models as db_models
+from maestro.db import musehub_collaborator_models as collab_models
 from sqlalchemy import select
 from maestro.models.musehub import (
     ActivityFeedResponse,
@@ -1285,12 +1286,12 @@ async def _guard_admin(
     if repo.owner_user_id == caller_user_id:
         return
     stmt = (
-        select(db_models.MusehubCollaborator)
+        select(collab_models.MusehubCollaborator)
         .where(
-            db_models.MusehubCollaborator.repo_id == repo.repo_id,
-            db_models.MusehubCollaborator.user_id == caller_user_id,
-            db_models.MusehubCollaborator.permission == "admin",
-            db_models.MusehubCollaborator.accepted_at.is_not(None),
+            collab_models.MusehubCollaborator.repo_id == repo.repo_id,
+            collab_models.MusehubCollaborator.user_id == caller_user_id,
+            collab_models.MusehubCollaborator.permission == "admin",
+            collab_models.MusehubCollaborator.accepted_at.is_not(None),
         )
     )
     row = (await db.execute(stmt)).scalar_one_or_none()
