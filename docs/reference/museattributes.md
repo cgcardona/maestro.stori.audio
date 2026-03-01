@@ -124,13 +124,35 @@ Use `--json` for machine-readable output:
 
 ---
 
+## Dimension Implementation Status
+
+The five dimension names are all valid in `.museattributes` and are parsed correctly. However, not all dimensions are currently wired into `build_merge_result`. The table below shows the current state:
+
+| Dimension | Status | Planned event-type mapping |
+|-----------|--------|---------------------------|
+| `melodic` | **Reserved — future** | Note pitch / pitch-class resolution |
+| `rhythmic` | **Reserved — future** | Note start-beat / duration resolution |
+| `harmonic` | **Reserved — future** | Pitch-bend event resolution |
+| `dynamic` | **Reserved — future** | CC and aftertouch event resolution |
+| `structural` | **Reserved — future** | Section / region-level merge |
+
+> **Current behaviour:** `build_merge_result` performs a pure three-way merge for all event
+> types (notes, CC, pitch bends, aftertouch) regardless of any `.museattributes` rules.
+> A rule such as `drums/*  rhythmic  ours` is parsed and stored correctly but has **no
+> effect on the merge outcome today**. All five dimensions are reserved for a future
+> implementation that will wire each event type to its corresponding dimension strategy.
+>
+> Writing dimension-specific rules is safe — they will take effect automatically once
+> the merge engine is updated.
+
+---
+
 ## Behaviour During `muse merge`
 
 1. `muse merge` calls `load_attributes(repo_path)` to read the file.
-2. For each region in the merge, the region's track name and dimension are passed to `resolve_strategy(attributes, track, dimension)`.
-3. If the resolved strategy is `ours`, the left (current) snapshot is taken without conflict detection.
-4. If the resolved strategy is `theirs`, the right (incoming) snapshot is taken without conflict detection.
-5. For all other strategies (`union`, `auto`, `manual`), the normal three-way merge runs and may produce conflicts.
+2. `resolve_strategy(attributes, track, dimension)` is available for callers to query the configured strategy for any track + dimension pair.
+3. **Dimension strategies are not yet applied inside `build_merge_result`.** All event types currently go through the normal three-way merge regardless of the resolved strategy.
+4. When dimension wiring is complete: if the resolved strategy is `ours`, the left (current) snapshot will be taken without conflict detection; if `theirs`, the right (incoming) snapshot will be taken; all other strategies (`union`, `auto`, `manual`) will fall through to the three-way merge.
 
 ---
 
