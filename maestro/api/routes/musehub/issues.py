@@ -28,10 +28,11 @@ from __future__ import annotations
 
 import logging
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from maestro.auth.dependencies import TokenClaims, optional_token, require_valid_token
+from maestro.api.routes.musehub.pagination import PaginationParams, build_link_header, paginate_list
 from maestro.db import get_db
 from maestro.models.musehub import (
     IssueAssignRequest,
@@ -110,13 +111,21 @@ async def create_issue(
 )
 async def list_issues(
     repo_id: str,
+    request: Request,
+    response: Response,
     state: str = Query("open", pattern="^(open|closed|all)$", description="Filter by state"),
     label: str | None = Query(None, description="Filter by label string"),
     milestone_id: str | None = Query(None, description="Filter by milestone UUID"),
+    pagination: PaginationParams = Depends(PaginationParams),
     db: AsyncSession = Depends(get_db),
     claims: TokenClaims | None = Depends(optional_token),
 ) -> IssueListResponse:
     """Return issues for a repo. Defaults to open issues only.
+
+    Supports RFC 8288 page-based pagination via ``?page=N&per_page=N``.
+    The ``Link`` response header contains ``rel="first"``, ``rel="last"``,
+    ``rel="prev"`` (when not on the first page), and ``rel="next"`` (when
+    more pages remain).
 
     Use ``?state=all`` to include closed issues, ``?state=closed`` for closed only.
     Use ``?label=<string>`` to filter by a specific label.
@@ -131,10 +140,12 @@ async def list_issues(
             detail="Authentication required to access private repos.",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    issues = await musehub_issues.list_issues(
+    all_issues = await musehub_issues.list_issues(
         db, repo_id, state=state, label=label, milestone_id=milestone_id
     )
-    return IssueListResponse(issues=issues)
+    page_issues, total = paginate_list(all_issues, pagination.page, pagination.per_page)
+    response.headers["Link"] = build_link_header(request, total, pagination.page, pagination.per_page)
+    return IssueListResponse(issues=page_issues, total=total)
 
 
 @router.get(
