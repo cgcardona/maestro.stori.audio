@@ -32,6 +32,7 @@ from maestro.api.routes.musehub import ui_collaborators as musehub_ui_collab_rou
 from maestro.api.routes.musehub import ui_settings as musehub_ui_settings_routes
 from maestro.api.routes.musehub import ui_similarity as musehub_ui_similarity_routes
 from maestro.api.routes.musehub import ui_forks as musehub_ui_forks_routes
+from maestro.api.routes.musehub import ui_emotion_diff as musehub_ui_emotion_diff_routes
 from maestro.api.routes.musehub import ui_user_profile as musehub_ui_profile_routes
 from maestro.api.routes.musehub import ui_new_repo as musehub_ui_new_repo_routes
 from maestro.api.routes.musehub import discover as musehub_discover_routes
@@ -243,6 +244,7 @@ app.include_router(musehub_ui_routes.router, tags=["musehub-ui"])
 app.include_router(musehub_ui_blame_routes.router, tags=["musehub-ui"])
 app.include_router(musehub_ui_settings_routes.router, tags=["musehub-ui-settings"])
 app.include_router(musehub_ui_similarity_routes.router, tags=["musehub-ui"])
+app.include_router(musehub_ui_emotion_diff_routes.router, tags=["musehub-ui"])
 app.include_router(musehub_oembed_routes.router, tags=["musehub-oembed"])
 app.include_router(musehub_raw_routes.router, prefix="/api/v1", tags=["musehub-raw"])
 # Sitemap and robots.txt — top-level (no /api/v1 prefix), outside musehub auto-discovery.
