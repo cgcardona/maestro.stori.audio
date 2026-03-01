@@ -42,6 +42,8 @@ from maestro.models.musehub import (
     MuseHubContextResponse,
     ObjectMetaResponse,
     RepoResponse,
+    RepoSettingsPatch,
+    RepoSettingsResponse,
     TimelineCommitEvent,
     TimelineEmotionEvent,
     TimelineResponse,
@@ -1317,3 +1319,134 @@ async def get_user_watched(db_session: AsyncSession, username: str) -> UserWatch
     ]
 
     return UserWatchedResponse(watched=entries, total=len(entries))
+
+
+# ── Repo settings helpers ─────────────────────────────────────────────────────
+
+_SETTINGS_DEFAULTS: dict[str, object] = {
+    "default_branch": "main",
+    "has_issues": True,
+    "has_projects": False,
+    "has_wiki": False,
+    "license": None,
+    "homepage_url": None,
+    "allow_merge_commit": True,
+    "allow_squash_merge": True,
+    "allow_rebase_merge": False,
+    "delete_branch_on_merge": True,
+}
+
+
+def _merge_settings(stored: dict[str, object] | None) -> dict[str, object]:
+    """Return a complete settings dict by filling missing keys with defaults.
+
+    ``stored`` may be None (new repos) or a partial dict (old rows that predate
+    individual flag additions).  Defaults are applied for any absent key so callers
+    always receive a fully-populated dict.
+    """
+    base = dict(_SETTINGS_DEFAULTS)
+    if stored:
+        base.update(stored)
+    return base
+
+
+async def get_repo_settings(
+    session: AsyncSession, repo_id: str
+) -> RepoSettingsResponse | None:
+    """Return the mutable settings for a repo, or None if the repo does not exist.
+
+    Combines dedicated column values (name, description, visibility, tags) with
+    feature-flag values from the ``settings`` JSON blob.  Missing flags are
+    back-filled with ``_SETTINGS_DEFAULTS`` so new and legacy repos both return
+    a complete response.
+
+    Called by ``GET /api/v1/musehub/repos/{repo_id}/settings``.
+    """
+    row = await session.get(db.MusehubRepo, repo_id)
+    if row is None:
+        return None
+
+    flags = _merge_settings(row.settings)  # type: ignore[arg-type]
+
+    # Derive default_branch from stored flag; fall back to "main"
+    default_branch = str(flags.get("default_branch") or "main")
+
+    return RepoSettingsResponse(
+        name=row.name,
+        description=row.description,
+        visibility=row.visibility,
+        default_branch=default_branch,
+        has_issues=bool(flags.get("has_issues", True)),
+        has_projects=bool(flags.get("has_projects", False)),
+        has_wiki=bool(flags.get("has_wiki", False)),
+        topics=list(row.tags or []),
+        license=flags.get("license") if flags.get("license") is not None else None,  # type: ignore[arg-type]
+        homepage_url=flags.get("homepage_url") if flags.get("homepage_url") is not None else None,  # type: ignore[arg-type]
+        allow_merge_commit=bool(flags.get("allow_merge_commit", True)),
+        allow_squash_merge=bool(flags.get("allow_squash_merge", True)),
+        allow_rebase_merge=bool(flags.get("allow_rebase_merge", False)),
+        delete_branch_on_merge=bool(flags.get("delete_branch_on_merge", True)),
+    )
+
+
+async def update_repo_settings(
+    session: AsyncSession,
+    repo_id: str,
+    patch: RepoSettingsPatch,
+) -> RepoSettingsResponse | None:
+    """Apply a partial settings update to a repo and return the updated settings.
+
+    Only non-None fields in ``patch`` are written.  Dedicated columns
+    (name, description, visibility, tags) are updated directly on the ORM row;
+    feature flags are merged into the ``settings`` JSON blob.
+
+    Returns None if the repo does not exist.  The caller is responsible for
+    committing the session after a successful return.
+
+    Called by ``PATCH /api/v1/musehub/repos/{repo_id}/settings``.
+    """
+    row = await session.get(db.MusehubRepo, repo_id)
+    if row is None:
+        return None
+
+    # ── Dedicated column fields ──────────────────────────────────────────────
+    if patch.name is not None:
+        row.name = patch.name
+    if patch.description is not None:
+        row.description = patch.description
+    if patch.visibility is not None:
+        row.visibility = patch.visibility
+    if patch.topics is not None:
+        row.tags = patch.topics
+
+    # ── Feature-flag JSON blob ───────────────────────────────────────────────
+    current_flags = _merge_settings(row.settings)  # type: ignore[arg-type]
+
+    flag_updates: dict[str, object] = {}
+    if patch.default_branch is not None:
+        flag_updates["default_branch"] = patch.default_branch
+    if patch.has_issues is not None:
+        flag_updates["has_issues"] = patch.has_issues
+    if patch.has_projects is not None:
+        flag_updates["has_projects"] = patch.has_projects
+    if patch.has_wiki is not None:
+        flag_updates["has_wiki"] = patch.has_wiki
+    if patch.license is not None:
+        flag_updates["license"] = patch.license
+    if patch.homepage_url is not None:
+        flag_updates["homepage_url"] = patch.homepage_url
+    if patch.allow_merge_commit is not None:
+        flag_updates["allow_merge_commit"] = patch.allow_merge_commit
+    if patch.allow_squash_merge is not None:
+        flag_updates["allow_squash_merge"] = patch.allow_squash_merge
+    if patch.allow_rebase_merge is not None:
+        flag_updates["allow_rebase_merge"] = patch.allow_rebase_merge
+    if patch.delete_branch_on_merge is not None:
+        flag_updates["delete_branch_on_merge"] = patch.delete_branch_on_merge
+
+    if flag_updates:
+        current_flags.update(flag_updates)
+        row.settings = current_flags  # type: ignore[assignment]
+
+    logger.info("✅ Updated settings for repo %s", repo_id)
+    return await get_repo_settings(session, repo_id)
