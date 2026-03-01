@@ -1,14 +1,14 @@
 """Muse CLI — Typer application root.
 
 Entry point for the ``muse`` console script. Registers all MVP
-subcommands (amend, arrange, ask, bisect, blame, cat-object, checkout, cherry-pick,
-chord-map, clone, commit, commit-tree, context, contour, describe, diff, divergence,
-dynamics, emotion-diff, export, fetch, find, form, grep, groove-check, harmony,
-hash-object, humanize, import, init, inspect, key, log, merge, meter, motif, open,
-play, pull, push, read-tree, rebase, recall, release, remote, render-preview, reset,
-resolve, restore, rev-parse, revert, session, show, similarity, stash, status, swing,
-symbolic-ref, tag, tempo, tempo-scale, timeline, transpose, update-ref, validate,
-worktree, write-tree) as Typer sub-applications.
+subcommands (amend, arrange, ask, attributes, bisect, blame, cat-object, checkout,
+cherry-pick, chord-map, clone, commit, commit-tree, context, contour, describe, diff,
+divergence, dynamics, emotion-diff, export, fetch, find, form, grep, groove-check,
+harmony, hash-object, humanize, import, init, inspect, key, log, merge, meter, motif,
+open, play, pull, push, read-tree, rebase, recall, release, remote, render-preview,
+reset, resolve, restore, rev-parse, revert, session, show, similarity, stash, status,
+swing, symbolic-ref, tag, tempo, tempo-scale, timeline, transpose, update-ref,
+validate, worktree, write-tree) as Typer sub-applications.
 """
 from __future__ import annotations
 
@@ -16,6 +16,7 @@ import typer
 
 from maestro.muse_cli.commands import (
     amend,
+    attributes,
     arrange,
     ask,
     bisect,
@@ -91,6 +92,7 @@ cli = typer.Typer(
 )
 
 cli.add_typer(amend.app, name="amend", help="Fold working-tree changes into the most recent commit.")
+cli.add_typer(attributes.app, name="attributes", help="Read and validate the .museattributes merge-strategy configuration.")
 cli.add_typer(bisect.app, name="bisect", help="Binary search for the commit that introduced a regression.")
 cli.add_typer(blame.app, name="blame", help="Annotate files with the commit that last changed each one.")
 cli.add_typer(cat_object.app, name="cat-object", help="Read and display a stored object by its SHA-256 hash.")

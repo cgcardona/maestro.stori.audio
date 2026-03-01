@@ -4,6 +4,11 @@ Produces a ``MergeResult`` by comparing base, left, and right snapshots.
 Auto-merges non-conflicting changes; reports conflicts when both sides
 modify the same note or controller event.
 
+Consults ``.museattributes`` (via ``muse_attributes``) to resolve per-dimension
+merge strategies before running the three-way diff.  When a strategy of
+``ours`` or ``theirs`` is configured for a dimension, conflict detection for
+that dimension is skipped and the winning side is taken wholesale.
+
 Boundary rules:
   - Must NOT import StateStore, executor, MCP tools, or handlers.
   - May import muse_repository, muse_replay, muse_checkout, note_matching.
@@ -12,8 +17,9 @@ Boundary rules:
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable, Sequence
+from collections.abc import Callable
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Literal, TypeVar
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -27,6 +33,12 @@ from maestro.contracts.json_types import (
     RegionCCMap,
     RegionNotesMap,
     RegionPitchBendMap,
+)
+from maestro.services.muse_attributes import (
+    MergeStrategy,
+    MuseAttribute,
+    load_attributes,
+    resolve_strategy,
 )
 from maestro.services.muse_checkout import CheckoutPlan, build_checkout_plan
 from maestro.services.muse_merge_base import find_merge_base
@@ -124,6 +136,7 @@ def build_merge_result(
     base: HeadSnapshot,
     left: HeadSnapshot,
     right: HeadSnapshot,
+    attributes: list[MuseAttribute] | None = None,
 ) -> MergeResult:
     """Perform a three-way merge of musical state.
 
@@ -132,9 +145,17 @@ def build_merge_result(
     - Neither changed → keep base.
     - Both changed → per-note/event conflict detection.
 
+    When ``attributes`` are provided (from a ``.museattributes`` file), the
+    configured strategy for each region's track + dimension is consulted
+    before running conflict detection.  ``ours`` takes the left snapshot,
+    ``theirs`` takes the right snapshot — both skip conflict detection entirely.
+    ``union``, ``auto``, and ``manual`` fall through to normal three-way merge.
+
     Returns a MergeResult with the merged snapshot (if conflict-free)
     or the list of conflicts.
     """
+    attrs: list[MuseAttribute] = attributes or []
+
     all_regions = sorted(
         set(base.notes.keys())
         | set(left.notes.keys())
@@ -164,42 +185,68 @@ def build_merge_result(
         merged_region_starts.update(rs)
 
     for rid in all_regions:
+        # Determine the track name for this region so we can look up attributes.
+        track_name = merged_track_regions.get(rid, rid)
+
+        # --- notes (melodic/rhythmic dimension) ---
+        note_strategy = resolve_strategy(attrs, track_name, "melodic")
         b_notes = base.notes.get(rid, [])
         l_notes = left.notes.get(rid, [])
         r_notes = right.notes.get(rid, [])
 
-        notes_result, note_conflicts = _merge_note_layer(
-            b_notes, l_notes, r_notes, rid,
-        )
-        merged_notes[rid] = notes_result
-        conflicts.extend(note_conflicts)
+        if note_strategy == MergeStrategy.OURS:
+            merged_notes[rid] = l_notes
+        elif note_strategy == MergeStrategy.THEIRS:
+            merged_notes[rid] = r_notes
+        else:
+            notes_result, note_conflicts = _merge_note_layer(b_notes, l_notes, r_notes, rid)
+            merged_notes[rid] = notes_result
+            conflicts.extend(note_conflicts)
 
+        # --- CC events (dynamic dimension) ---
+        cc_strategy = resolve_strategy(attrs, track_name, "dynamic")
         b_cc = base.cc.get(rid, [])
         l_cc = left.cc.get(rid, [])
         r_cc = right.cc.get(rid, [])
-        cc_result, cc_conflicts = _merge_event_layer(
-            b_cc, l_cc, r_cc, rid, "cc", match_cc_events,
-        )
-        merged_cc[rid] = cc_result
-        conflicts.extend(cc_conflicts)
 
+        if cc_strategy == MergeStrategy.OURS:
+            merged_cc[rid] = l_cc
+        elif cc_strategy == MergeStrategy.THEIRS:
+            merged_cc[rid] = r_cc
+        else:
+            cc_result, cc_conflicts = _merge_event_layer(b_cc, l_cc, r_cc, rid, "cc", match_cc_events)
+            merged_cc[rid] = cc_result
+            conflicts.extend(cc_conflicts)
+
+        # --- Pitch bends (harmonic dimension) ---
+        pb_strategy = resolve_strategy(attrs, track_name, "harmonic")
         b_pb = base.pitch_bends.get(rid, [])
         l_pb = left.pitch_bends.get(rid, [])
         r_pb = right.pitch_bends.get(rid, [])
-        pb_result, pb_conflicts = _merge_event_layer(
-            b_pb, l_pb, r_pb, rid, "pb", match_pitch_bends,
-        )
-        merged_pb[rid] = pb_result
-        conflicts.extend(pb_conflicts)
 
+        if pb_strategy == MergeStrategy.OURS:
+            merged_pb[rid] = l_pb
+        elif pb_strategy == MergeStrategy.THEIRS:
+            merged_pb[rid] = r_pb
+        else:
+            pb_result, pb_conflicts = _merge_event_layer(b_pb, l_pb, r_pb, rid, "pb", match_pitch_bends)
+            merged_pb[rid] = pb_result
+            conflicts.extend(pb_conflicts)
+
+        # --- Aftertouch (dynamic dimension, expression layer) ---
+        at_strategy = resolve_strategy(attrs, track_name, "dynamic")
         b_at = base.aftertouch.get(rid, [])
         l_at = left.aftertouch.get(rid, [])
         r_at = right.aftertouch.get(rid, [])
-        at_result, at_conflicts = _merge_event_layer(
-            b_at, l_at, r_at, rid, "at", match_aftertouch,
-        )
-        merged_at[rid] = at_result
-        conflicts.extend(at_conflicts)
+
+        if at_strategy == MergeStrategy.OURS:
+            merged_at[rid] = l_at
+        elif at_strategy == MergeStrategy.THEIRS:
+            merged_at[rid] = r_at
+        else:
+            at_result, at_conflicts = _merge_event_layer(b_at, l_at, r_at, rid, "at", match_aftertouch)
+            merged_at[rid] = at_result
+            conflicts.extend(at_conflicts)
 
     conflict_tuple = tuple(conflicts)
     has_conflicts = len(conflict_tuple) > 0
@@ -242,13 +289,19 @@ async def build_merge_checkout_plan(
     working_cc: RegionCCMap | None = None,
     working_pb: RegionPitchBendMap | None = None,
     working_at: RegionAftertouchMap | None = None,
+    repo_path: Path | None = None,
 ) -> MergeCheckoutPlan:
     """Build a complete merge plan: merge-base → three-way diff → checkout plan.
+
+    Loads ``.museattributes`` from ``repo_path`` (if provided) to apply
+    per-track, per-dimension merge strategies before conflict detection.
 
     If conflicts exist, returns them without a checkout plan.
     If conflict-free, builds a CheckoutPlan that would apply the merged
     state to the working tree.
     """
+    attributes = load_attributes(repo_path) if repo_path is not None else []
+
     base_id = await find_merge_base(session, left_id, right_id)
     if base_id is None:
         return MergeCheckoutPlan(
@@ -275,6 +328,7 @@ async def build_merge_checkout_plan(
 
     result = build_merge_result(
         base=snapshots.base, left=snapshots.left, right=snapshots.right,
+        attributes=attributes,
     )
 
     if result.has_conflicts:
