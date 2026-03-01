@@ -188,6 +188,34 @@ Repo: /Users/gabriel/dev/tellurstori/maestro
 
 ---
 
+## Platform Constraint: 4-Wide Branching, Unlimited Depth
+
+**The Task tool supports 4 concurrent sub-agents per spawning agent.**
+
+This is a branching factor, not a ceiling. Use it as a tree:
+
+```
+CTO (autonomous, loops until pipeline empty)
+ ├── Engineering VP  (autonomous, loops until no open issues)
+ │    ├── Batch Tech Lead A  →  4 leaf engineers
+ │    ├── Batch Tech Lead B  →  4 leaf engineers
+ │    ├── Batch Tech Lead C  →  4 leaf engineers
+ │    └── Batch Tech Lead D  →  4 leaf engineers
+ └── QA VP  (autonomous, loops until no open PRs)
+      ├── Review Tech Lead A  →  4 leaf reviewers
+      ├── Review Tech Lead B  →  4 leaf reviewers
+      ├── Review Tech Lead C  →  4 leaf reviewers
+      └── Review Tech Lead D  →  4 leaf reviewers
+```
+
+**2 levels below CTO = 4 × 4 = 16 concurrent leaf workers per wave.**
+Each level loops — when its queue empties it re-queries and dispatches the next wave.
+
+**You just launch one CTO.** It runs autonomously until GitHub is empty.
+As you push new issues to GitHub, the CTO's next survey picks them up.
+
+---
+
 ## The Leaf Agent Prompt (copy-paste template)
 
 This is the ONLY thing you pass to a leaf agent. Do not add anything.
