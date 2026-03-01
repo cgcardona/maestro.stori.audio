@@ -10,10 +10,12 @@ correctly.
 """
 from __future__ import annotations
 
+import ast
 import importlib
 import inspect
 import sys
 import types
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -197,13 +199,11 @@ class TestHelpers:
 # Narrative content tests (count/coverage checks on hard-coded data)
 # ---------------------------------------------------------------------------
 
-def _find_list_elts(src: str, var_name: str) -> list[Any] | None:
+def _find_list_elts(src: str, var_name: str) -> Sequence[ast.expr | None] | None:
     """Return the elements of the first list/dict assignment to ``var_name``
     in the given source, handling both plain ``Assign`` and annotated
     ``AnnAssign`` nodes (which mypy-typed code generates).
     """
-    import ast
-
     tree = ast.parse(src)
     for node in ast.walk(tree):
         value: ast.expr | None = None
@@ -228,7 +228,6 @@ class TestScenarioContent:
 
     def test_bach_pr_comment_count(self) -> None:
         """Bach Remix War must have exactly 15 PR comments."""
-        import inspect
         mod = _load_module()
         src = inspect.getsource(mod._seed_bach_remix_war)
         elts = _find_list_elts(src, "pr_comment_thread")
@@ -237,7 +236,6 @@ class TestScenarioContent:
 
     def test_chopin_coltrane_comment_count(self) -> None:
         """Chopin+Coltrane must have exactly 20 PR comments."""
-        import inspect
         mod = _load_module()
         src = inspect.getsource(mod._seed_chopin_coltrane)
         elts = _find_list_elts(src, "resolution_debate")
@@ -246,7 +244,6 @@ class TestScenarioContent:
 
     def test_ragtime_commit_count(self) -> None:
         """Ragtime EDM must have exactly 8 commits."""
-        import inspect
         mod = _load_module()
         src = inspect.getsource(mod._seed_ragtime_edm)
         elts = _find_list_elts(src, "ragtime_commits")
@@ -255,7 +252,6 @@ class TestScenarioContent:
 
     def test_community_pr_count(self) -> None:
         """Community Chaos must have exactly 5 PR configs."""
-        import inspect
         mod = _load_module()
         src = inspect.getsource(mod._seed_community_chaos)
         elts = _find_list_elts(src, "pr_configs")
@@ -264,7 +260,6 @@ class TestScenarioContent:
 
     def test_community_key_debate_count(self) -> None:
         """Community Chaos key debate must have exactly 25 comments."""
-        import inspect
         mod = _load_module()
         src = inspect.getsource(mod._seed_community_chaos)
         elts = _find_list_elts(src, "key_debate")
@@ -273,7 +268,6 @@ class TestScenarioContent:
 
     def test_goldberg_var25_debate_count(self) -> None:
         """Goldberg Var 25 debate must have exactly 18 comments."""
-        import inspect
         mod = _load_module()
         src = inspect.getsource(mod._seed_goldberg_milestone)
         elts = _find_list_elts(src, "var25_debate")
@@ -282,7 +276,6 @@ class TestScenarioContent:
 
     def test_goldberg_variation_metadata_coverage(self) -> None:
         """All 30 Goldberg variations must have metadata entries."""
-        import inspect
         mod = _load_module()
         src = inspect.getsource(mod._seed_goldberg_milestone)
         elts = _find_list_elts(src, "variation_metadata")
@@ -292,7 +285,6 @@ class TestScenarioContent:
     def test_goldberg_28_of_30_done(self) -> None:
         """The Goldberg scenario marks variations 1-28 as closed, 29-30 as open."""
         mod = _load_module()
-        import ast, inspect
         src = inspect.getsource(mod._seed_goldberg_milestone)
         # Check for 'n <= 28' logic pattern
         assert "n <= 28" in src, (

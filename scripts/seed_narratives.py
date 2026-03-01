@@ -1259,7 +1259,7 @@ async def main() -> None:
     force = "--force" in sys.argv
     db_url: str = settings.database_url or ""
     engine = create_async_engine(db_url, echo=False)
-    async_session = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)  # type: ignore[call-overload]
+    async_session = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)  # type: ignore[call-overload]  # SQLAlchemy: sessionmaker with class_=AsyncSession triggers call-overload false positive
     async with async_session() as db:
         await seed_narratives(db, force=force)
     await engine.dispose()
