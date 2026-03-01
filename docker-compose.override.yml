@@ -34,6 +34,9 @@ services:
       - ./alembic:/app/alembic
       - ./tourdeforce:/app/tourdeforce
       - ./pyproject.toml:/app/pyproject.toml
+      # .cursor/ — mounted so `generate.py` can write prompt files from inside the container.
+      # Run the generator with: docker compose exec maestro python3 /app/scripts/gen_prompts/generate.py
+      - ./.cursor:/app/.cursor
       # Cursor worktrees — agents run mypy/pytest directly against their worktree
       # via PYTHONPATH=/worktrees/<id>. No file copies needed. See .cursor/PARALLEL_ISSUE_TO_PR.md.
       - ${HOME}/.cursor/worktrees/maestro:/worktrees
