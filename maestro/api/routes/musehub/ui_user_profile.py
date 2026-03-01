@@ -203,7 +203,7 @@ async def _build_heatmap(session: AsyncSession, user_id: str) -> HeatmapStats:
 
 _BADGE_DEFS: list[tuple[str, str, str, str]] = [
     ("first_commit", "First Commit", "Made your first commit to Muse Hub", "🎵"),
-    ("genre_pioneer", "Genre Pioneer", "Explored 3+ distinct genres across your repos", "🎸"),
+    ("genre_pioneer", "Genre Pioneer", "Explored 3+ distinct tags across your repos", "🎸"),
     ("100_commits", "100 Commits", "Reached 100 cumulative commits — serious dedication", "💯"),
     ("collaborator", "Collaborator", "Contributed to 3+ repos you don't own", "🤝"),
     ("fork_architect", "Fork Architect", "Had 5+ of your repos forked by others", "🌿"),
@@ -1052,8 +1052,6 @@ async def profile_page(
 
     if wants_json:
         data = await _build_enhanced_profile(db, username, tab, page, per_page)
-        from fastapi.responses import JSONResponse  # already imported but explicit here
-
         return JSONResponse(content=data.model_dump(by_alias=True, mode="json"))
 
     # HTML path — lightweight shell, no DB access needed
