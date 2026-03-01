@@ -582,6 +582,13 @@ STEP 6 — PRE-MERGE SYNC (only if grade is A or B):
       gh attempts to checkout dev locally to delete the feature branch, but dev
       is already checked out in the main worktree and git will refuse.
 
+  # 8. Pull the merge into the main repo's local dev — so the coordinator's
+  #    working copy reflects reality and the next batch starts from the true tip.
+  #    This is the step that prevents "relation does not exist" DB errors when the
+  #    coordinator tries to apply migrations before fetching.
+  git -C "$REPO" fetch origin
+  git -C "$REPO" merge origin/dev
+
 STEP 7 — SELF-DESTRUCT (always run this, merge or not, early stop or not):
   WORKTREE=$(pwd)
   cd "$REPO"
