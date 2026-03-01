@@ -909,6 +909,319 @@ def test_build_pr_diff_response_affected_sections_uses_commit_messages() -> None
     assert resp.affected_sections == []
 
 
+# ---------------------------------------------------------------------------
+# PR reviewer assignment endpoints — issue #415
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.anyio
+async def test_request_reviewers_creates_pending_rows(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+    db_session: AsyncSession,
+) -> None:
+    """POST /reviewers creates pending review rows for each requested username."""
+    repo_id = await _create_repo(client, auth_headers, "reviewer-create-repo")
+    await _push_branch(db_session, repo_id, "feat/reviewer-test")
+    pr = await _create_pr(client, auth_headers, repo_id, from_branch="feat/reviewer-test")
+    pr_id = pr["prId"]
+
+    response = await client.post(
+        f"/api/v1/musehub/repos/{repo_id}/pull-requests/{pr_id}/reviewers",
+        json={"reviewers": ["alice", "bob"]},
+        headers=auth_headers,
+    )
+    assert response.status_code == 201
+    data = response.json()
+    assert "reviews" in data
+    assert data["total"] == 2
+    usernames = {r["reviewerUsername"] for r in data["reviews"]}
+    assert usernames == {"alice", "bob"}
+    for review in data["reviews"]:
+        assert review["state"] == "pending"
+        assert review["submittedAt"] is None
+
+
+@pytest.mark.anyio
+async def test_request_reviewers_idempotent(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+    db_session: AsyncSession,
+) -> None:
+    """Re-requesting the same reviewer does not create a duplicate row."""
+    repo_id = await _create_repo(client, auth_headers, "reviewer-idempotent-repo")
+    await _push_branch(db_session, repo_id, "feat/idempotent")
+    pr = await _create_pr(client, auth_headers, repo_id, from_branch="feat/idempotent")
+    pr_id = pr["prId"]
+
+    await client.post(
+        f"/api/v1/musehub/repos/{repo_id}/pull-requests/{pr_id}/reviewers",
+        json={"reviewers": ["alice"]},
+        headers=auth_headers,
+    )
+    # Second request for the same reviewer
+    response = await client.post(
+        f"/api/v1/musehub/repos/{repo_id}/pull-requests/{pr_id}/reviewers",
+        json={"reviewers": ["alice"]},
+        headers=auth_headers,
+    )
+    assert response.status_code == 201
+    assert response.json()["total"] == 1  # still only one row
+
+
+@pytest.mark.anyio
+async def test_request_reviewers_requires_auth(client: AsyncClient) -> None:
+    """POST /reviewers returns 401 without a Bearer token."""
+    response = await client.post(
+        "/api/v1/musehub/repos/r/pull-requests/p/reviewers",
+        json={"reviewers": ["alice"]},
+    )
+    assert response.status_code == 401
+
+
+@pytest.mark.anyio
+async def test_remove_reviewer_deletes_pending_row(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+    db_session: AsyncSession,
+) -> None:
+    """DELETE /reviewers/{username} removes a pending reviewer assignment."""
+    repo_id = await _create_repo(client, auth_headers, "reviewer-delete-repo")
+    await _push_branch(db_session, repo_id, "feat/remove-reviewer")
+    pr = await _create_pr(client, auth_headers, repo_id, from_branch="feat/remove-reviewer")
+    pr_id = pr["prId"]
+
+    await client.post(
+        f"/api/v1/musehub/repos/{repo_id}/pull-requests/{pr_id}/reviewers",
+        json={"reviewers": ["alice", "bob"]},
+        headers=auth_headers,
+    )
+
+    response = await client.delete(
+        f"/api/v1/musehub/repos/{repo_id}/pull-requests/{pr_id}/reviewers/alice",
+        headers=auth_headers,
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["total"] == 1
+    assert data["reviews"][0]["reviewerUsername"] == "bob"
+
+
+@pytest.mark.anyio
+async def test_remove_reviewer_not_found_returns_404(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+    db_session: AsyncSession,
+) -> None:
+    """DELETE /reviewers/{username} returns 404 when the reviewer was never requested."""
+    repo_id = await _create_repo(client, auth_headers, "reviewer-404-repo")
+    await _push_branch(db_session, repo_id, "feat/remove-404")
+    pr = await _create_pr(client, auth_headers, repo_id, from_branch="feat/remove-404")
+    pr_id = pr["prId"]
+
+    response = await client.delete(
+        f"/api/v1/musehub/repos/{repo_id}/pull-requests/{pr_id}/reviewers/nobody",
+        headers=auth_headers,
+    )
+    assert response.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# PR review submission endpoints — issue #415
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.anyio
+async def test_list_reviews_empty_for_new_pr(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+    db_session: AsyncSession,
+) -> None:
+    """GET /reviews returns an empty list for a PR with no reviews assigned."""
+    repo_id = await _create_repo(client, auth_headers, "reviews-empty-repo")
+    await _push_branch(db_session, repo_id, "feat/list-reviews-empty")
+    pr = await _create_pr(client, auth_headers, repo_id, from_branch="feat/list-reviews-empty")
+    pr_id = pr["prId"]
+
+    response = await client.get(
+        f"/api/v1/musehub/repos/{repo_id}/pull-requests/{pr_id}/reviews",
+        headers=auth_headers,
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["total"] == 0
+    assert data["reviews"] == []
+
+
+@pytest.mark.anyio
+async def test_list_reviews_filter_by_state(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+    db_session: AsyncSession,
+) -> None:
+    """GET /reviews?state=pending returns only pending reviews."""
+    repo_id = await _create_repo(client, auth_headers, "reviews-filter-repo")
+    await _push_branch(db_session, repo_id, "feat/filter-state")
+    pr = await _create_pr(client, auth_headers, repo_id, from_branch="feat/filter-state")
+    pr_id = pr["prId"]
+
+    await client.post(
+        f"/api/v1/musehub/repos/{repo_id}/pull-requests/{pr_id}/reviewers",
+        json={"reviewers": ["alice", "bob"]},
+        headers=auth_headers,
+    )
+
+    response = await client.get(
+        f"/api/v1/musehub/repos/{repo_id}/pull-requests/{pr_id}/reviews?state=pending",
+        headers=auth_headers,
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["total"] == 2
+    for r in data["reviews"]:
+        assert r["state"] == "pending"
+
+
+@pytest.mark.anyio
+async def test_submit_review_approve(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+    db_session: AsyncSession,
+) -> None:
+    """POST /reviews with event=approve sets state to approved and records submitted_at."""
+    repo_id = await _create_repo(client, auth_headers, "review-approve-repo")
+    await _push_branch(db_session, repo_id, "feat/approve-test")
+    pr = await _create_pr(client, auth_headers, repo_id, from_branch="feat/approve-test")
+    pr_id = pr["prId"]
+
+    response = await client.post(
+        f"/api/v1/musehub/repos/{repo_id}/pull-requests/{pr_id}/reviews",
+        json={"event": "approve", "body": "Sounds great — the harmonic transitions are perfect."},
+        headers=auth_headers,
+    )
+    assert response.status_code == 201
+    data = response.json()
+    assert data["state"] == "approved"
+    assert data["submittedAt"] is not None
+    assert "Sounds great" in (data["body"] or "")
+
+
+@pytest.mark.anyio
+async def test_submit_review_request_changes(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+    db_session: AsyncSession,
+) -> None:
+    """POST /reviews with event=request_changes sets state to changes_requested."""
+    repo_id = await _create_repo(client, auth_headers, "review-changes-repo")
+    await _push_branch(db_session, repo_id, "feat/changes-test")
+    pr = await _create_pr(client, auth_headers, repo_id, from_branch="feat/changes-test")
+    pr_id = pr["prId"]
+
+    response = await client.post(
+        f"/api/v1/musehub/repos/{repo_id}/pull-requests/{pr_id}/reviews",
+        json={"event": "request_changes", "body": "The bridge needs more harmonic tension."},
+        headers=auth_headers,
+    )
+    assert response.status_code == 201
+    data = response.json()
+    assert data["state"] == "changes_requested"
+    assert data["submittedAt"] is not None
+
+
+@pytest.mark.anyio
+async def test_submit_review_updates_existing_row(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+    db_session: AsyncSession,
+) -> None:
+    """Submitting a second review replaces the existing row state in-place."""
+    repo_id = await _create_repo(client, auth_headers, "review-update-repo")
+    await _push_branch(db_session, repo_id, "feat/update-review")
+    pr = await _create_pr(client, auth_headers, repo_id, from_branch="feat/update-review")
+    pr_id = pr["prId"]
+
+    # First: request changes
+    await client.post(
+        f"/api/v1/musehub/repos/{repo_id}/pull-requests/{pr_id}/reviews",
+        json={"event": "request_changes", "body": "Not happy with the bridge."},
+        headers=auth_headers,
+    )
+
+    # After author fixes, reviewer now approves
+    response = await client.post(
+        f"/api/v1/musehub/repos/{repo_id}/pull-requests/{pr_id}/reviews",
+        json={"event": "approve", "body": "Looks good now!"},
+        headers=auth_headers,
+    )
+    assert response.status_code == 201
+    data = response.json()
+    assert data["state"] == "approved"
+
+    # Only one review row should exist
+    list_resp = await client.get(
+        f"/api/v1/musehub/repos/{repo_id}/pull-requests/{pr_id}/reviews",
+        headers=auth_headers,
+    )
+    assert list_resp.json()["total"] == 1
+
+
+@pytest.mark.anyio
+async def test_remove_reviewer_after_submit_returns_409(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+    db_session: AsyncSession,
+) -> None:
+    """DELETE /reviewers/{username} returns 409 when reviewer already submitted a review.
+
+    The test JWT sub is the user UUID '550e8400-e29b-41d4-a716-446655440000'.
+    Submitting a review via POST /reviews creates a row with that UUID as
+    reviewer_username, and state=approved.  Attempting to DELETE that reviewer
+    must return 409 because the row is no longer pending.
+    """
+    test_jwt_sub = "550e8400-e29b-41d4-a716-446655440000"
+
+    repo_id = await _create_repo(client, auth_headers, "reviewer-submitted-repo")
+    await _push_branch(db_session, repo_id, "feat/submitted-review")
+    pr = await _create_pr(client, auth_headers, repo_id, from_branch="feat/submitted-review")
+    pr_id = pr["prId"]
+
+    # Submit a review — this creates an "approved" row for the JWT sub
+    submit_resp = await client.post(
+        f"/api/v1/musehub/repos/{repo_id}/pull-requests/{pr_id}/reviews",
+        json={"event": "approve", "body": "Approved"},
+        headers=auth_headers,
+    )
+    assert submit_resp.status_code == 201
+
+    # Attempting to remove the reviewer whose row is already approved must return 409
+    response = await client.delete(
+        f"/api/v1/musehub/repos/{repo_id}/pull-requests/{pr_id}/reviewers/{test_jwt_sub}",
+        headers=auth_headers,
+    )
+    assert response.status_code == 409
+
+
+@pytest.mark.anyio
+async def test_submit_review_invalid_event_returns_422(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+    db_session: AsyncSession,
+) -> None:
+    """POST /reviews with an invalid event value returns 422 Unprocessable Entity."""
+    repo_id = await _create_repo(client, auth_headers, "review-invalid-event-repo")
+    await _push_branch(db_session, repo_id, "feat/invalid-event")
+    pr = await _create_pr(client, auth_headers, repo_id, from_branch="feat/invalid-event")
+    pr_id = pr["prId"]
+
+    response = await client.post(
+        f"/api/v1/musehub/repos/{repo_id}/pull-requests/{pr_id}/reviews",
+        json={"event": "INVALID", "body": ""},
+        headers=auth_headers,
+    )
+    assert response.status_code == 422
+
+
 def test_build_pr_diff_response_affected_sections_non_empty_when_keywords_present() -> None:
     """build_pr_diff_response populates affected_sections from commit message keywords."""
     from maestro.services.musehub_divergence import (
