@@ -1,9 +1,11 @@
 """Muse Hub Analysis API — agent-friendly structured JSON for all musical dimensions.
 
 Endpoint summary:
-  GET /musehub/repos/{repo_id}/analysis/{ref}                  — all 13 dimensions
-  GET /musehub/repos/{repo_id}/analysis/{ref}/emotion-map      — emotion map (issue #227)
-  GET /musehub/repos/{repo_id}/analysis/{ref}/{dimension}      — one dimension
+  GET /musehub/repos/{repo_id}/analysis/{ref}                       — all 13 dimensions
+  GET /musehub/repos/{repo_id}/analysis/{ref}/emotion-map           — emotion map (issue #227)
+  GET /musehub/repos/{repo_id}/analysis/{ref}/emotion-diff?base=X   — 8-axis emotion diff (issue #420)
+  GET /musehub/repos/{repo_id}/analysis/{ref}/dynamics/page         — per-track dynamics page
+  GET /musehub/repos/{repo_id}/analysis/{ref}/{dimension}           — one dimension
 
 Supported dimensions (13):
   harmony, dynamics, motifs, form, groove, emotion, chord-map, contour,
@@ -37,6 +39,7 @@ from maestro.models.musehub_analysis import (
     AggregateAnalysisResponse,
     AnalysisResponse,
     DynamicsPageData,
+    EmotionDiffResponse,
     EmotionMapResponse,
     HarmonyAnalysisResponse,
     RecallResponse,
@@ -158,6 +161,66 @@ async def get_emotion_map(
     )
 
     etag = _etag(repo_id, ref, "emotion-map")
+    response.headers["ETag"] = etag
+    response.headers["Last-Modified"] = _LAST_MODIFIED
+    response.headers["Cache-Control"] = "private, max-age=60"
+    return result
+
+
+# NOTE: emotion-diff is registered HERE (before the generic {dimension} catch-all)
+# because FastAPI matches routes in registration order — a literal segment like
+# "emotion-diff" does NOT automatically take precedence over a path parameter.
+@router.get(
+    "/repos/{repo_id}/analysis/{ref}/emotion-diff",
+    response_model=EmotionDiffResponse,
+    operation_id="getEmotionDiff",
+    summary="Emotion diff — 8-axis emotional radar comparing two Muse refs",
+    description=(
+        "Returns an 8-axis emotional diff between ``ref`` (head) and ``base`` (baseline). "
+        "The eight axes are: valence, energy, tension, complexity, warmth, brightness, "
+        "darkness, and playfulness — all normalised to [0, 1].\n\n"
+        "``delta`` is the signed per-axis difference (head − base); positive means the "
+        "head commit increased that emotional dimension.\n\n"
+        "``interpretation`` provides a natural-language summary of the dominant shifts "
+        "for human and agent readability.\n\n"
+        "Maps to the ``muse emotion-diff`` CLI command and the PR detail emotion radar."
+    ),
+)
+async def get_emotion_diff(
+    repo_id: str,
+    ref: str,
+    response: Response,
+    base: str = Query(
+        ...,
+        description="Base ref to compare against, e.g. 'main', 'main~1', or a commit SHA",
+    ),
+    db: AsyncSession = Depends(get_db),
+    _: TokenClaims = Depends(require_valid_token),
+) -> EmotionDiffResponse:
+    """Return an 8-axis emotional diff between two Muse commit refs.
+
+    Compares the emotional character of ``ref`` (head) against ``base``,
+    returning per-axis emotion vectors for each ref, their signed delta, and a
+    natural-language interpretation of the dominant shifts.
+
+    Requires authentication — emotion diff reveals musical context that may be
+    private to the repo owner.
+
+    The eight dimensions extend the four-axis emotion-map model with
+    ``complexity``, ``warmth``, ``brightness``, and ``playfulness`` so the PR
+    detail page can render a full radar chart without a separate request.
+    """
+    repo = await musehub_repository.get_repo(db, repo_id)
+    if repo is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repo not found")
+
+    result = musehub_analysis.compute_emotion_diff(
+        repo_id=repo_id,
+        head_ref=ref,
+        base_ref=base,
+    )
+
+    etag = _etag(repo_id, f"{base}..{ref}", "emotion-diff")
     response.headers["ETag"] = etag
     response.headers["Last-Modified"] = _LAST_MODIFIED
     response.headers["Cache-Control"] = "private, max-age=60"

@@ -61,10 +61,13 @@ from maestro.models.musehub_analysis import (
     DynamicsData,
     DynamicsPageData,
     EmotionData,
+    EmotionDelta8D,
+    EmotionDiffResponse,
     EmotionDrift,
     EmotionMapPoint,
     EmotionMapResponse,
     EmotionVector,
+    EmotionVector8D,
     FormData,
     FormStructureResponse,
     GrooveData,
@@ -1410,4 +1413,139 @@ def compute_recall(
         matches=matches,
         total_matches=total_matches,
         embedding_dimensions=128,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Emotion diff (issue #420)
+# ---------------------------------------------------------------------------
+
+# Axis labels in declaration order — used for delta interpretation
+_EMOTION_8D_AXES: list[str] = [
+    "valence", "energy", "tension", "complexity",
+    "warmth", "brightness", "darkness", "playfulness",
+]
+
+
+def _build_emotion_vector_8d(ref: str) -> EmotionVector8D:
+    """Build a deterministic 8-axis emotion vector for a ref.
+
+    All eight axes are derived from independent bit-slices of the ref hash so
+    they vary independently across refs — avoids correlated stubs.
+
+    Why 8D not 4D: the emotion-diff endpoint uses an extended radar chart that
+    separates warmth/brightness/playfulness/complexity from the core
+    valence/energy/tension/darkness axes used in the emotion-map endpoint.
+    """
+    seed = _ref_hash(ref)
+
+    def _axis(shift: int, base: float = 0.1, spread: float = 0.8) -> float:
+        return round(base + ((seed >> shift) % 100) * spread / 100, 4)
+
+    return EmotionVector8D(
+        valence=_axis(0),
+        energy=_axis(8),
+        tension=_axis(16),
+        complexity=_axis(24),
+        warmth=_axis(32),
+        brightness=_axis(40),
+        darkness=_axis(48),
+        playfulness=_axis(56),
+    )
+
+
+def _clamp(value: float) -> float:
+    """Clamp a delta value to [-1, 1] for the signed delta field."""
+    return max(-1.0, min(1.0, round(value, 4)))
+
+
+def compute_emotion_diff(
+    *,
+    repo_id: str,
+    head_ref: str,
+    base_ref: str,
+) -> EmotionDiffResponse:
+    """Compute an 8-axis emotional diff between two Muse commit refs.
+
+    Returns the per-axis emotion vectors for ``base_ref`` and ``head_ref``,
+    their signed delta (``head - base``), and a natural-language interpretation
+    of the most significant shifts.
+
+    Why this is separate from the generic emotion dimension
+    -------------------------------------------------------
+    The generic ``emotion`` dimension returns a single aggregate snapshot with
+    a 2-axis (valence/arousal) model.  This endpoint uses an extended 8-axis
+    radar model and computes a *comparative* diff between two refs — the
+    information the ``muse emotion-diff`` CLI command and the PR detail page
+    need to answer "how did this commit change the emotional character?"
+
+    Args:
+        repo_id:   Muse Hub repo UUID (used for logging).
+        head_ref:  The ref being evaluated (the head commit).
+        base_ref:  The ref used as comparison baseline (e.g. parent commit, ``main``).
+
+    Returns:
+        :class:`EmotionDiffResponse` with base, head, delta vectors, and interpretation.
+    """
+    base_vec = _build_emotion_vector_8d(base_ref)
+    head_vec = _build_emotion_vector_8d(head_ref)
+
+    delta = EmotionDelta8D(
+        valence=_clamp(head_vec.valence - base_vec.valence),
+        energy=_clamp(head_vec.energy - base_vec.energy),
+        tension=_clamp(head_vec.tension - base_vec.tension),
+        complexity=_clamp(head_vec.complexity - base_vec.complexity),
+        warmth=_clamp(head_vec.warmth - base_vec.warmth),
+        brightness=_clamp(head_vec.brightness - base_vec.brightness),
+        darkness=_clamp(head_vec.darkness - base_vec.darkness),
+        playfulness=_clamp(head_vec.playfulness - base_vec.playfulness),
+    )
+
+    raw_deltas: list[tuple[str, float]] = [
+        ("valence", delta.valence),
+        ("energy", delta.energy),
+        ("tension", delta.tension),
+        ("complexity", delta.complexity),
+        ("warmth", delta.warmth),
+        ("brightness", delta.brightness),
+        ("darkness", delta.darkness),
+        ("playfulness", delta.playfulness),
+    ]
+    sorted_deltas = sorted(raw_deltas, key=lambda x: abs(x[1]), reverse=True)
+    dominant_axis, dominant_value = sorted_deltas[0]
+
+    if abs(dominant_value) < 0.05:
+        interpretation = (
+            "This commit introduced minimal emotional change — the character of the "
+            "piece is nearly identical to the base ref across all eight perceptual axes."
+        )
+    else:
+        direction = "increased" if dominant_value > 0 else "decreased"
+        secondary_parts: list[str] = []
+        for axis, value in sorted_deltas[1:3]:
+            if abs(value) >= 0.05:
+                secondary_parts.append(
+                    f"{axis} {'rose' if value > 0 else 'fell'} by {abs(value):.2f}"
+                )
+        secondary_text = (
+            f" Notable secondary shifts: {', '.join(secondary_parts)}." if secondary_parts else ""
+        )
+        interpretation = (
+            f"This commit {direction} {dominant_axis} by {abs(dominant_value):.2f} "
+            f"(the dominant emotional shift).{secondary_text}"
+        )
+
+    logger.info(
+        "✅ emotion-diff repo=%s head=%s base=%s dominant=%s delta=%.3f",
+        repo_id[:8], head_ref, base_ref, dominant_axis, dominant_value,
+    )
+    return EmotionDiffResponse(
+        repo_id=repo_id,
+        base_ref=base_ref,
+        head_ref=head_ref,
+        computed_at=_utc_now(),
+        base_emotion=base_vec,
+        head_emotion=head_vec,
+        delta=delta,
+        interpretation=interpretation,
     )
