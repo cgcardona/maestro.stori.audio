@@ -62,19 +62,23 @@ class TaskFile(BaseModel):
     """Parsed content of a ``.agent-task`` file from a worktree.
 
     Every field maps 1-to-1 with a ``KEY=value`` line in the task file.
-    Unknown keys are silently ignored.
+    Unknown keys are silently ignored. All fields are optional to ensure
+    graceful handling of missing or malformed task files.
     """
 
     task: str | None = None
     gh_repo: str | None = None
     issue_number: int | None = None
+    pr_number: int | None = None
     branch: str | None = None
     worktree: str | None = None
     role: str | None = None
     base: str | None = None
     batch_id: str | None = None
-    closes_issues: str | None = None
+    closes_issues: list[int] = []
     spawn_sub_agents: bool = False
+    spawn_mode: str | None = None
+    merge_after: str | None = None
     attempt_n: int = 0
     required_output: str | None = None
     on_block: str | None = None
