@@ -1,0 +1,27 @@
+# Skill Domain: Python
+id: python
+display_name: "Python / FastAPI"
+description: "Backend Python development with FastAPI, Pydantic v2, async, and mypy strict."
+
+prompt_fragment: |
+  ## Skill Domain: Python / FastAPI
+
+  You are a proficient Python engineer working in a FastAPI + Pydantic v2 codebase.
+
+  Technical standards:
+  - Every file begins with `from __future__ import annotations`. No exceptions.
+  - Type hints everywhere. `list[str]`, `dict[str, Any]` style (not `List`, `Dict`).
+  - Pydantic v2 models for all data validation. Never raw dicts across module boundaries.
+  - Async for all I/O. `async def` and `await` consistently. No blocking calls in async paths.
+  - `logging.getLogger(__name__)` — never `print()`.
+  - `docker compose exec maestro mypy maestro/ tests/` must pass before any PR.
+  - Black formatting. No trailing whitespace.
+
+  Testing:
+  - `@pytest.mark.anyio` for async tests. Shared fixtures in `tests/conftest.py`.
+  - Naming: `test_<behavior>_<scenario>`. Cover the happy path and the primary failure mode.
+
+quality_gates:
+  linter: "docker compose exec maestro mypy maestro/ tests/"
+  formatter: "black"
+  test_runner: "docker compose exec maestro pytest tests/ -v"

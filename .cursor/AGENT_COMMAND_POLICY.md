@@ -70,7 +70,7 @@ Clear the existing allowlist entirely, then paste the block below into
 > commands in kickoff prompts must be written as single lines.
 
 ```
-ls, ls -la, ls -lah, ls -l, pwd, cat, head, tail, echo, true, false, seq, wc, file, which, date, basename, dirname, printf, jq, sort, uniq, tr, awk, sed, cut, xargs, tee, rg, grep, find, mkdir, cp, mv, rm, touch, ln -s, cd, sleep, break, continue, exit, exit 0, exit 1, mapfile, IFS=, python3 -c, python3 -m, REPO=, WTNAME=, DEV_SHA=, WT=, NUM=, TITLE=, BRANCH=, PRTREES=, WORKTREE=, ENTRY=, FOLLOW_UP_URL=, ISSUE_URL=, GH_REPO=, export GH_REPO=, declare -a, declare -A, declare -a ISSUES=, declare -a PRS=, for entry in, for NUM in, for WT in, for i in, for label in, for n in, N=$(grep, N=$(printf, BRANCH=$(grep, MERGE_AFTER=$(grep, LABELS_TO_APPLY=$(grep, CLOSES_ISSUES=$(grep, STATE=$(gh, PR_BRANCH=$(gh, PR_FILES=$(gh, CLOSES_ISSUE=$(gh, OPEN_PRS=$(gh, REMAINING=$(gh, NUM=$(echo, TITLE=$(echo, LABELS=$(echo, PHASE=$(echo, BATCH=$(echo, SHORT=$(grep, git, gh, docker compose ps, docker compose logs, docker compose config, docker compose -f, docker ps, docker inspect, docker compose exec maestro mypy, docker compose exec maestro pytest, docker compose exec maestro sh -c, docker compose exec maestro python -m coverage, docker compose exec maestro python -c, docker compose exec maestro python3 -m, docker compose exec maestro ps, docker compose exec maestro ls, docker compose exec maestro cat, docker compose exec maestro sed, docker compose exec maestro head, docker compose exec maestro tail, docker compose exec maestro wc, docker compose exec maestro awk, docker compose exec maestro rg, docker compose exec maestro grep, docker compose exec maestro find, docker compose exec maestro alembic history, docker compose exec maestro alembic current, docker compose exec maestro alembic heads, docker compose exec maestro alembic upgrade head, docker compose exec maestro python3, docker compose exec storpheus mypy, docker compose exec storpheus pytest, docker compose exec storpheus sh -c, docker compose exec storpheus ls, docker compose exec storpheus cat, docker compose exec storpheus rg, docker compose exec storpheus grep, docker compose exec storpheus python3, docker compose exec postgres psql, ps aux, ps -ef, pgrep, nc -z, curl, REPO=$(git, WTNAME=$(basename, DEV_SHA=$(git, WT=$HOME, BRANCH=$(git, cd $HOME/.cursor, cd $HOME/dev
+ls, ls -la, ls -lah, ls -l, pwd, cat, head, tail, echo, true, false, seq, wc, file, stat, which, date, basename, dirname, printf, jq, sort, uniq, tr, awk, sed, cut, xargs, tee, rg, grep, find, mkdir, cp, mv, rm, touch, ln -s, cd, sleep, break, continue, exit, exit 0, exit 1, mapfile, read, IFS=, python3, python3 -c, python3 -m, check_issue_deps, check_deps, REPO=, WTNAME=, DEV_SHA=, WT=, NUM=, TITLE=, BRANCH=, PRTREES=, WORKTREE=, ENTRY=, FOLLOW_UP_URL=, ISSUE_URL=, GH_REPO=, export GH_REPO=, declare -a, declare -A, declare -a ISSUES=, declare -a PRS=, for entry in, for NUM in, for WT in, for i in, for label in, for n in, N=$(grep, N=$(printf, BRANCH=$(grep, MERGE_AFTER=$(grep, LABELS_TO_APPLY=$(grep, CLOSES_ISSUES=$(grep, STATE=$(gh, PR_BRANCH=$(gh, PR_FILES=$(gh, CLOSES_ISSUE=$(gh, OPEN_PRS=$(gh, REMAINING=$(gh, NUM=$(echo, TITLE=$(echo, LABELS=$(echo, PHASE=$(echo, BATCH=$(echo, SHORT=$(grep, git, gh, docker compose, docker compose ps, docker compose logs, docker compose config, docker compose -f, docker ps, docker inspect, docker compose exec maestro mypy, docker compose exec maestro pytest, docker compose exec maestro sh -c, docker compose exec maestro python -m coverage, docker compose exec maestro python -c, docker compose exec maestro python3 -m, docker compose exec maestro ps, docker compose exec maestro ls, docker compose exec maestro cat, docker compose exec maestro sed, docker compose exec maestro head, docker compose exec maestro tail, docker compose exec maestro wc, docker compose exec maestro awk, docker compose exec maestro rg, docker compose exec maestro grep, docker compose exec maestro find, docker compose exec maestro alembic history, docker compose exec maestro alembic current, docker compose exec maestro alembic heads, docker compose exec maestro alembic upgrade head, docker compose exec maestro python3, docker compose exec storpheus mypy, docker compose exec storpheus pytest, docker compose exec storpheus sh -c, docker compose exec storpheus ls, docker compose exec storpheus cat, docker compose exec storpheus rg, docker compose exec storpheus grep, docker compose exec storpheus python3, docker compose exec postgres psql, pip3, ps aux, ps -ef, pgrep, nc -z, curl, REPO=$(git, WTNAME=$(basename, DEV_SHA=$(git, WT=$HOME, BRANCH=$(git, cd $HOME/.cursor, cd $HOME/dev
 ```
 
 ---
@@ -90,6 +90,7 @@ false                         ← null-op complement; used in boolean control fl
 seq <N>                       ← integer sequence; used in merge-gate polling loops: for i in $(seq 1 15)
 wc / wc -l
 file <path>
+stat <path>                   ← file/directory existence and metadata checks
 which <cmd>
 date
 basename / dirname
@@ -115,7 +116,10 @@ break                         ← bash loop exit; used in merge-gate polling loo
 continue                      ← bash loop skip; used in for loops
 exit / exit 0 / exit 1        ← script exit; used in merge-gate escalation and idempotency gates
 mapfile -t <ARRAY> < <(...)   ← bash builtin for reading command output into an array
+read                          ← bash builtin; used in IFS-split and while-read loops
 IFS=',' read -ra <ARRAY> <<< ← bash IFS-split; used to iterate LABELS_TO_APPLY and similar CSV fields
+check_issue_deps              ← coordinator helper; checks issue dependency gates before merging
+check_deps                    ← agentception helper; checks dependency gates before claiming an issue
 declare -a ISSUES=(...)       ← indexed array declaration in coordinator setup scripts
 declare -a PRS=(...)          ← indexed array declaration in coordinator setup scripts
 declare -A <MAP>=(...)        ← associative array declaration; used in coordinator setup scripts
@@ -309,6 +313,7 @@ gh issue edit <N> --add-label "..."        ← apply labels here, after creation
 
 ### Docker — Inspection
 ```
+docker compose             ← general prefix; covers any subcommand not listed below
 docker compose ps
 docker compose -f <file> ps   ← explicit compose file; used by coordinator pre-flight
 docker compose logs <service>
@@ -371,11 +376,14 @@ pgrep <name>
 
 ### Python — Host-side one-liners (read-only data processing only)
 ```
+python3                        ← running scripts directly (e.g. python3 script.py)
 python3 -c "<one-liner>"      ← JSON parsing, string manipulation of gh/git output ONLY
                                ← No file writes, no imports beyond stdlib, no network calls
                                ← Longer scripts or any I/O must use docker compose exec
 python3 -m json.tool           ← pretty-printing JSON output from curl or gh commands
 python3 -m <stdlib-module>     ← stdlib modules only (json, base64, hashlib, etc.)
+pip3 install                   ← agentception host-side dependency installs ONLY
+                               ← All other package installs must use docker compose exec
 ```
 
 ### Network — Read-only probes
