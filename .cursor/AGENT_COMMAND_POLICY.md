@@ -432,6 +432,17 @@ git push origin dev             ← NEVER push directly to dev
 git push origin main            ← NEVER push directly to main
 ```
 
+### Checking out PR branches in the main repo
+```
+gh pr checkout <N>              ← FORBIDDEN in any context
+```
+`gh pr checkout` runs `git checkout` against the main repo's working directory, not
+against the current worktree. This silently moves the main repo onto the feature branch,
+poisoning every subsequent `git worktree list` result and leaving dirty state that
+cascades across all concurrent agents. **Always use `git checkout "$BRANCH"` from within
+your worktree directory instead.** If you think you need `gh pr checkout`, you don't —
+the reviewer worktree is already at the correct branch tip when it is created.
+
 ### Hard reset (discards history / working state)
 ```
 git reset --hard <anything>

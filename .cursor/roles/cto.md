@@ -27,17 +27,31 @@ The pool stays at 4 concurrent workers continuously until the queue drains.
 
 ```
 LOOP:
-  1. Survey — run both queries simultaneously:
-       # Issues: count only htmx-tagged ones (htmx/0-foundation, htmx/1-independent, etc.)
-       # PRs: all open PRs against dev are always in scope
-       # (PRs do not carry htmx labels — their scope comes from the issue they close).
-       ISSUES=$(gh issue list --state open --repo cgcardona/maestro \
-                  --json number,labels \
-                  --jq '[.[] | select(.labels | map(.name) | any(startswith("htmx/")))] | length')
+  1. Survey — determine the ACTIVE_LABEL and counts:
+
+       # Labels are processed in strict order — NEVER skip ahead.
+       # Find the lowest-numbered htmx label that still has open issues.
+       ACTIVE_LABEL=""
+       for label in htmx/0-foundation htmx/1-independent htmx/2-main-ui \
+                    htmx/3-analysis htmx/4-canvas htmx/5-cleanup; do
+         COUNT=$(gh issue list --state open --repo cgcardona/maestro \
+                   --label "$label" --json number --jq 'length')
+         if [ "$COUNT" -gt 0 ]; then
+           ACTIVE_LABEL="$label"
+           ISSUES=$COUNT
+           break
+         fi
+       done
+
+       # PRs: all open PRs against dev are always in scope.
        PRS=$(gh pr list --base dev --state open --repo cgcardona/maestro \
                --json number --jq 'length')
 
+       # If no active label found, all issues are closed — check PRs only.
+       [ -z "$ACTIVE_LABEL" ] && ISSUES=0
+
   2. If ISSUES == 0 AND PRS == 0 → report completion. Stop.
+     If ISSUES == 0 AND PRS > 0 → dispatch QA VPs only (drain remaining reviews).
 
   3. Allocate VP slots dynamically (VP_BUDGET = 4 total):
 
@@ -51,16 +65,21 @@ LOOP:
        │ otherwise                      │    2     │    2    │  ← balanced
        └────────────────────────────────┴──────────┴─────────┘
 
+     ⚠️  ACTIVE_LABEL GATE: Engineering VPs ONLY work on ACTIVE_LABEL issues.
+     They MUST NOT claim issues from any other htmx/* label, even if those issues
+     have no unmet dependencies. The label ordering is the sequencing contract.
+
   4. Dispatch all allocated VPs simultaneously in ONE message
      (one Task call per VP, all in the same response):
        - Each Engineering VP → reads engineering-manager.md, seeds 4 leaf engineers
+         (pass ACTIVE_LABEL so the VP only queries that label)
        - Each QA VP          → reads qa-manager.md, seeds 4 leaf reviewers
        - VPs do NOT loop — they seed once and wait for their pool to drain
 
   5. Wait for all dispatched VPs to report back.
 
   6. Log the allocation decision and results:
-       "Wave N: ISSUES=X PRS=Y → dispatched ENG_VPs engineering VPs,
+       "Wave N: ACTIVE_LABEL=X ISSUES=Y PRS=Z → dispatched ENG_VPs engineering VPs,
         QA_VPs QA VPs. Results: [summary]"
 
   7. GOTO 1
@@ -68,10 +87,11 @@ LOOP:
 
 ## VP dispatch context
 
-Pass each VP its role file path and a `CTO_WAVE` identifier so it can tag its batch:
+Pass each VP its role file path, a `CTO_WAVE` identifier, and the **ACTIVE_LABEL**:
 
 > Engineering VP prompt: "Read /Users/gabriel/dev/tellurstori/maestro/.cursor/roles/engineering-manager.md.
-> CTO_WAVE=<wave-N-timestamp>. Seed your pool and wait for it to drain."
+> CTO_WAVE=<wave-N-timestamp>. ACTIVE_LABEL=<htmx/X-label>. Seed your pool and wait for it to drain.
+> You MUST only query and claim issues labeled exactly '<htmx/X-label>' — no other htmx/* labels."
 
 > QA VP prompt: "Read /Users/gabriel/dev/tellurstori/maestro/.cursor/roles/qa-manager.md.
 > CTO_WAVE=<wave-N-timestamp>. Seed your pool and wait for it to drain."

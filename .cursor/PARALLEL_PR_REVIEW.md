@@ -364,8 +364,15 @@ STEP 3 — CHECKOUT & SYNC (only if STEP 2 shows the PR is open and unreviewed):
   git add -A
   git diff --cached --quiet || git commit -m "chore: stage worktree before dev sync"
 
-  # 1. Checkout the PR branch into this worktree
-  gh pr checkout <N>
+  # 1. Checkout the PR branch in this worktree.
+  #
+  # ⚠️  NEVER use `gh pr checkout <N>` — it runs `git checkout` against the MAIN repo's
+  #    working directory, not this worktree. This is what causes feat/* branches to appear
+  #    checked out in the main repo. It is a known, recurring failure mode.
+  #
+  # ALWAYS use plain git inside this worktree directory:
+  git fetch origin "$BRANCH"
+  git checkout -b "$BRANCH" --track "origin/$BRANCH" 2>/dev/null || git checkout "$BRANCH"
 
   # 2. Fetch ALL remote refs (other agents may have merged PRs while you work)
   git fetch origin
