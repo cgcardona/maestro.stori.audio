@@ -70,7 +70,7 @@ from maestro.models.musehub_context import (
     ContextDepth,
     ContextFormat,
 )
-from maestro.services import musehub_analysis, musehub_context, musehub_credits, musehub_divergence, musehub_events, musehub_releases, musehub_repository, musehub_sessions
+from maestro.services import musehub_analysis, musehub_context, musehub_credits, musehub_divergence, musehub_events, musehub_listen, musehub_releases, musehub_repository, musehub_sessions
 from maestro.services.muse_groove_check import (
     DEFAULT_THRESHOLD,
     compute_groove_check,
@@ -999,8 +999,6 @@ async def list_listen_tracks(
     The ``has_renders`` flag distinguishes repos with no audio from repos that
     have audio but no recognised full-mix file.
     """
-    from maestro.services import musehub_listen
-
     repo = await musehub_repository.get_repo(db, repo_id)
     _guard_visibility(repo, claims)
 

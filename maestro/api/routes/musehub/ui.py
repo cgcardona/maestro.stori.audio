@@ -89,7 +89,7 @@ from maestro.models.musehub import (
     TagListResponse,
     TagResponse,
 )
-from maestro.services import musehub_divergence, musehub_pull_requests, musehub_releases
+from maestro.services import musehub_divergence, musehub_listen, musehub_pull_requests, musehub_releases
 from maestro.services import musehub_repository
 
 logger = logging.getLogger(__name__)
@@ -771,8 +771,6 @@ async def listen_page(
     action rather than an empty list, so musicians know what to do next.
     No JWT required — the HTML shell's JS handles auth for private repos.
     """
-    from maestro.services import musehub_listen
-
     repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
     json_data = await musehub_listen.build_track_listing(db, repo_id, ref)
 
