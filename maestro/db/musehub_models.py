@@ -80,6 +80,10 @@ class MusehubRepo(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=_utc_now
     )
+    # Soft-delete timestamp; non-null means the repo is logically deleted
+    deleted_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, default=None
+    )
 
     branches: Mapped[list[MusehubBranch]] = relationship(
         "MusehubBranch", back_populates="repo", cascade="all, delete-orphan"
@@ -546,7 +550,51 @@ class MusehubRelease(Base):
     )
 
     repo: Mapped[MusehubRepo] = relationship("MusehubRepo", back_populates="releases")
+    assets: Mapped[list[MusehubReleaseAsset]] = relationship(
+        "MusehubReleaseAsset", back_populates="release", cascade="all, delete-orphan"
+    )
 
+
+class MusehubReleaseAsset(Base):
+    """An asset (file attachment) associated with a Muse Hub release.
+
+    Assets represent downloadable artifacts attached to a release — for example
+    a MIDI bundle, a stems archive, or a rendered MP3. ``download_count``
+    tracks how many times the asset has been downloaded so the release page
+    can surface popularity metrics without querying the analytics pipeline.
+
+    ``release_id`` is the FK to the owning release and participates in cascade
+    deletes: removing the release removes all its assets.
+    """
+
+    __tablename__ = "musehub_release_assets"
+
+    asset_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_new_uuid)
+    release_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("musehub_releases.release_id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    # Denormalised so we can query assets by repo without joining releases.
+    repo_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
+    # Filename shown in the UI, e.g. "summer-sessions-v1.0.mid"
+    name: Mapped[str] = mapped_column(String(500), nullable=False)
+    # Optional human-readable label, e.g. "MIDI Bundle", "Stems Archive"
+    label: Mapped[str] = mapped_column(String(255), nullable=False, default="")
+    # MIME type, e.g. "audio/midi", "application/zip"
+    content_type: Mapped[str] = mapped_column(String(128), nullable=False, default="")
+    # File size in bytes; 0 when unknown
+    size: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    # Direct download URL for the artifact (pre-signed or CDN URL)
+    download_url: Mapped[str] = mapped_column(String(2048), nullable=False)
+    # Incrementing counter updated each time the asset is downloaded
+    download_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=_utc_now
+    )
+
+    release: Mapped[MusehubRelease] = relationship("MusehubRelease", back_populates="assets")
 
 
 class MusehubProfile(Base):
@@ -639,6 +687,9 @@ class MusehubWebhookDelivery(Base):
         index=True,
     )
     event_type: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    # JSON-encoded payload bytes that were (or will be) sent to the subscriber URL.
+    # Stored so that failed deliveries can be retried with the original payload.
+    payload: Mapped[str] = mapped_column(Text, nullable=False, default="")
     attempt: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     success: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     response_status: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
