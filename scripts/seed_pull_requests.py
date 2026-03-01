@@ -739,7 +739,7 @@ async def main() -> None:
     force = "--force" in sys.argv
     db_url: str = settings.database_url or ""
     engine = create_async_engine(db_url, echo=False)
-    async_session = sessionmaker(  # type: ignore[call-overload]
+    async_session = sessionmaker(  # type: ignore[call-overload]  # SQLAlchemy 2.x async stubs don't type class_= kwarg correctly
         engine, class_=AsyncSession, expire_on_commit=False
     )
     async with async_session() as db:
