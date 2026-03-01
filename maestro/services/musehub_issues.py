@@ -529,15 +529,26 @@ async def list_milestones(
     repo_id: str,
     *,
     state: str = "open",
+    sort: str = "due_on",
 ) -> MilestoneListResponse:
-    """Return milestones for a repo filtered by state.
+    """Return milestones for a repo filtered by state and sorted by ``sort``.
 
     ``state`` may be ``"open"``, ``"closed"``, or ``"all"``.
+    ``sort`` may be ``"due_on"``, ``"title"``, or ``"completeness"``
+    (percentage of closed issues, computed in Python after fetching counts).
     """
     stmt = select(db.MusehubMilestone).where(db.MusehubMilestone.repo_id == repo_id)
     if state != "all":
         stmt = stmt.where(db.MusehubMilestone.state == state)
-    stmt = stmt.order_by(db.MusehubMilestone.number)
+
+    # Apply DB-level ordering for sortable columns; completeness sorts in Python below.
+    if sort == "title":
+        stmt = stmt.order_by(db.MusehubMilestone.title)
+    elif sort == "due_on":
+        stmt = stmt.order_by(db.MusehubMilestone.due_on.asc().nulls_last())
+    else:
+        stmt = stmt.order_by(db.MusehubMilestone.number)
+
     rows = (await session.execute(stmt)).scalars().all()
 
     milestones: list[MilestoneResponse] = []
@@ -553,6 +564,13 @@ async def list_milestones(
         open_count: int = (await session.execute(open_count_stmt)).scalar_one()
         closed_count: int = (await session.execute(closed_count_stmt)).scalar_one()
         milestones.append(_to_milestone_response(ms, open_count, closed_count))
+
+    if sort == "completeness":
+        # Sort descending by fraction of closed issues; fully closed milestones first.
+        milestones.sort(
+            key=lambda m: m.closed_issues / max(m.open_issues + m.closed_issues, 1),
+            reverse=True,
+        )
 
     return MilestoneListResponse(milestones=milestones)
 

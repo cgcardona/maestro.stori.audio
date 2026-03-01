@@ -4,6 +4,10 @@ Revision ID: 0001
 Revises:
 Create Date: 2026-02-27 00:00:00.000000
 
+THIS IS THE ONLY MIGRATION. All new tables are folded in here during
+development. Do NOT create new migration files — add tables directly to
+upgrade() and their drops (in reverse order) to the top of downgrade().
+
 Single source-of-truth migration for Maestro. Creates:
 
   Auth & usage
@@ -37,6 +41,9 @@ Single source-of-truth migration for Maestro. Creates:
   - musehub_comments, musehub_reactions, musehub_follows, musehub_watches
   - musehub_notifications, musehub_forks, musehub_view_events, musehub_download_events
   - musehub_events (activity event stream)
+  - musehub_labels, musehub_issue_labels, musehub_pr_labels (label tagging)
+  - musehub_collaborators (repo access control beyond owner)
+  - musehub_stash, musehub_stash_entries (git-stash-style temporary shelving)
 
 Fresh install:
   docker compose exec maestro alembic upgrade head
@@ -834,9 +841,128 @@ def upgrade() -> None:
     op.create_index("ix_musehub_events_event_type", "musehub_events", ["event_type"])
     op.create_index("ix_musehub_events_created_at", "musehub_events", ["created_at"])
 
+    # Muse Hub — labels (folded from 0003_labels)
+    op.create_table(
+        "musehub_labels",
+        sa.Column("id", sa.String(36), nullable=False),
+        sa.Column("repo_id", sa.String(36), nullable=False),
+        sa.Column("name", sa.String(50), nullable=False),
+        sa.Column("color", sa.String(7), nullable=False),
+        sa.Column("description", sa.String(200), nullable=True),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            nullable=False,
+            server_default=sa.text("CURRENT_TIMESTAMP"),
+        ),
+        sa.ForeignKeyConstraint(["repo_id"], ["musehub_repos.repo_id"], ondelete="CASCADE"),
+        sa.PrimaryKeyConstraint("id"),
+        sa.UniqueConstraint("repo_id", "name", name="uq_musehub_labels_repo_name"),
+    )
+    op.create_index("ix_musehub_labels_repo_id", "musehub_labels", ["repo_id"])
+
+    op.create_table(
+        "musehub_issue_labels",
+        sa.Column("issue_id", sa.String(36), nullable=False),
+        sa.Column("label_id", sa.String(36), nullable=False),
+        sa.ForeignKeyConstraint(["issue_id"], ["musehub_issues.issue_id"], ondelete="CASCADE"),
+        sa.ForeignKeyConstraint(["label_id"], ["musehub_labels.id"], ondelete="CASCADE"),
+        sa.PrimaryKeyConstraint("issue_id", "label_id"),
+    )
+    op.create_index("ix_musehub_issue_labels_label_id", "musehub_issue_labels", ["label_id"])
+
+    op.create_table(
+        "musehub_pr_labels",
+        sa.Column("pr_id", sa.String(36), nullable=False),
+        sa.Column("label_id", sa.String(36), nullable=False),
+        sa.ForeignKeyConstraint(["pr_id"], ["musehub_pull_requests.pr_id"], ondelete="CASCADE"),
+        sa.ForeignKeyConstraint(["label_id"], ["musehub_labels.id"], ondelete="CASCADE"),
+        sa.PrimaryKeyConstraint("pr_id", "label_id"),
+    )
+    op.create_index("ix_musehub_pr_labels_label_id", "musehub_pr_labels", ["label_id"])
+
+    # Muse Hub — collaborators (folded from 0004_collaborators)
+    op.create_table(
+        "musehub_collaborators",
+        sa.Column("id", sa.String(36), nullable=False),
+        sa.Column("repo_id", sa.String(36), nullable=False),
+        sa.Column("user_id", sa.String(36), nullable=False),
+        sa.Column("permission", sa.String(20), nullable=False, server_default="write"),
+        sa.Column("invited_by", sa.String(36), nullable=True),
+        sa.Column(
+            "invited_at",
+            sa.DateTime(timezone=True),
+            nullable=False,
+            server_default=sa.text("CURRENT_TIMESTAMP"),
+        ),
+        sa.Column("accepted_at", sa.DateTime(timezone=True), nullable=True),
+        sa.ForeignKeyConstraint(["repo_id"], ["musehub_repos.repo_id"], ondelete="CASCADE"),
+        sa.ForeignKeyConstraint(["user_id"], ["maestro_users.id"], ondelete="CASCADE"),
+        sa.ForeignKeyConstraint(["invited_by"], ["maestro_users.id"], ondelete="SET NULL"),
+        sa.PrimaryKeyConstraint("id"),
+        sa.UniqueConstraint("repo_id", "user_id", name="uq_musehub_collaborators_repo_user"),
+    )
+    op.create_index("ix_musehub_collaborators_repo_id", "musehub_collaborators", ["repo_id"])
+    op.create_index("ix_musehub_collaborators_user_id", "musehub_collaborators", ["user_id"])
+
+    # Muse Hub — stash (folded from 0005_stash)
+    op.create_table(
+        "musehub_stash",
+        sa.Column("id", sa.String(36), nullable=False),
+        sa.Column("repo_id", sa.String(36), nullable=False),
+        sa.Column("user_id", sa.String(36), nullable=False),
+        sa.Column("branch", sa.String(255), nullable=False),
+        sa.Column("message", sa.String(500), nullable=True),
+        sa.Column("is_applied", sa.Boolean(), nullable=False, server_default=sa.false()),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            nullable=False,
+            server_default=sa.text("CURRENT_TIMESTAMP"),
+        ),
+        sa.Column("applied_at", sa.DateTime(timezone=True), nullable=True),
+        sa.ForeignKeyConstraint(["repo_id"], ["musehub_repos.repo_id"], ondelete="CASCADE"),
+        sa.ForeignKeyConstraint(["user_id"], ["maestro_users.id"], ondelete="CASCADE"),
+        sa.PrimaryKeyConstraint("id"),
+    )
+    op.create_index("ix_musehub_stash_repo_id", "musehub_stash", ["repo_id"])
+    op.create_index("ix_musehub_stash_user_id", "musehub_stash", ["user_id"])
+
+    op.create_table(
+        "musehub_stash_entries",
+        sa.Column("id", sa.String(36), nullable=False),
+        sa.Column("stash_id", sa.String(36), nullable=False),
+        sa.Column("path", sa.String(1024), nullable=False),
+        sa.Column("object_id", sa.String(128), nullable=False),
+        sa.Column("position", sa.Integer(), nullable=False),
+        sa.ForeignKeyConstraint(["stash_id"], ["musehub_stash.id"], ondelete="CASCADE"),
+        sa.PrimaryKeyConstraint("id"),
+    )
+    op.create_index("ix_musehub_stash_entries_stash_id", "musehub_stash_entries", ["stash_id"])
+
 
 def downgrade() -> None:
     # Drop in reverse creation order, respecting foreign-key dependencies.
+
+    # Muse Hub — stash (folded from 0005_stash)
+    op.drop_index("ix_musehub_stash_entries_stash_id", table_name="musehub_stash_entries")
+    op.drop_table("musehub_stash_entries")
+    op.drop_index("ix_musehub_stash_user_id", table_name="musehub_stash")
+    op.drop_index("ix_musehub_stash_repo_id", table_name="musehub_stash")
+    op.drop_table("musehub_stash")
+
+    # Muse Hub — collaborators (folded from 0004_collaborators)
+    op.drop_index("ix_musehub_collaborators_user_id", table_name="musehub_collaborators")
+    op.drop_index("ix_musehub_collaborators_repo_id", table_name="musehub_collaborators")
+    op.drop_table("musehub_collaborators")
+
+    # Muse Hub — labels (folded from 0003_labels)
+    op.drop_index("ix_musehub_pr_labels_label_id", table_name="musehub_pr_labels")
+    op.drop_table("musehub_pr_labels")
+    op.drop_index("ix_musehub_issue_labels_label_id", table_name="musehub_issue_labels")
+    op.drop_table("musehub_issue_labels")
+    op.drop_index("ix_musehub_labels_repo_id", table_name="musehub_labels")
+    op.drop_table("musehub_labels")
 
     # MuseHub — activity event stream (Phase 6)
     op.drop_index("ix_musehub_events_created_at", table_name="musehub_events")
