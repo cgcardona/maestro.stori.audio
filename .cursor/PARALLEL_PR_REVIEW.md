@@ -232,8 +232,12 @@ IS_AC=$(gh pr view $PR --repo $GH_REPO --json labels \
   --jq '.labels[].name' | grep -c "^agentception/" || true)
 
 # mypy — route by codebase (NEVER run both; they are independent codebases)
+# Both codebases use the same pattern: PYTHONPATH=/worktrees/$WTNAME pointing at the
+# PR branch code. /app/agentception/ is the live main-repo mount — never use it for
+# PR review; it doesn't contain the branch's changes.
 if [ "$IS_AC" -gt 0 ]; then
-  cd "$REPO" && docker compose exec agentception mypy /app/agentception/
+  cd "$REPO" && docker compose exec agentception sh -c \
+    "PYTHONPATH=/worktrees/$WTNAME mypy /worktrees/$WTNAME/agentception/"
 else
   cd "$REPO" && docker compose exec maestro sh -c \
     "PYTHONPATH=/worktrees/$WTNAME mypy /worktrees/$WTNAME/maestro/ /worktrees/$WTNAME/tests/"
@@ -241,7 +245,8 @@ fi
 
 # pytest (specific file) — route by codebase
 if [ "$IS_AC" -gt 0 ]; then
-  cd "$REPO" && docker compose exec agentception pytest agentception/tests/test_<module>.py -v
+  cd "$REPO" && docker compose exec agentception sh -c \
+    "PYTHONPATH=/worktrees/$WTNAME pytest /worktrees/$WTNAME/agentception/tests/test_<module>.py -v"
 else
   cd "$REPO" && docker compose exec maestro sh -c \
     "PYTHONPATH=/worktrees/$WTNAME pytest /worktrees/$WTNAME/tests/path/to/test_file.py -v"
@@ -515,7 +520,7 @@ STEP 3 — CHECKOUT & SYNC (only if STEP 2 shows the PR is open and unreviewed):
   │                                                                              │
   │ STEP E — Re-run mypy only if resolved files contain Python changes:         │
   │   app.py changed → run mypy. Markdown-only conflicts → skip mypy.          │
-  │   agentception PR: docker compose exec agentception mypy /app/agentception/ │
+  │   agentception PR: docker compose exec agentception sh -c "PYTHONPATH=/worktrees/$WTNAME mypy /worktrees/$WTNAME/agentception/" │
   │   maestro PR:      docker compose exec maestro sh -c "PYTHONPATH=/worktrees/$WTNAME mypy /worktrees/$WTNAME/maestro/" │
   │                                                                              │
   │ STEP F — Advanced diagnostics if needed:                                    │
@@ -569,7 +574,8 @@ STEP 4 — TARGETED TEST SCOPING (before review):
   #      agentception/intelligence/*.py    → agentception/tests/test_agentception_dag.py, etc.
   #
   # ⚠️  CODEBASE ISOLATION — agentception and maestro are independent. NEVER cross-run:
-  #         CORRECT:   docker compose exec agentception pytest agentception/tests/<X>.py -v
+  #         CORRECT:   docker compose exec agentception sh -c "PYTHONPATH=/worktrees/$WTNAME pytest /worktrees/$WTNAME/agentception/tests/<X>.py -v"
+  #         INCORRECT: docker compose exec agentception pytest agentception/tests/... (tests /app/ not the PR branch)
   #         INCORRECT: docker compose exec maestro pytest agentception/... (wrong container/deps)
   #         INCORRECT: python3 -m pytest ... (host — missing deps)
   #
@@ -580,9 +586,10 @@ STEP 4 — TARGETED TEST SCOPING (before review):
 
   # 5. Run only the derived targets — route by IS_AC detected above:
   if [ "$IS_AC" -gt 0 ]; then
-    #    agentception PRs:
-    cd "$REPO" && docker compose exec agentception pytest \
-      agentception/tests/test_<module>.py -v
+    #    agentception PRs — worktree path, not /app/ (which is the live main-repo mount):
+    cd "$REPO" && docker compose exec agentception sh -c \
+      "PYTHONPATH=/worktrees/$WTNAME pytest \
+       /worktrees/$WTNAME/agentception/tests/test_<module>.py -v"
   else
     #    maestro PRs:
     cd "$REPO" && docker compose exec maestro sh -c \
@@ -624,6 +631,8 @@ STEP 5 — REVIEW:
   git checkout dev
   echo "=== PRE-EXISTING MYPY BASELINE (dev before PR) ==="
   # Route by codebase — agentception and maestro are independent; never cross-run.
+  # Baseline uses /app/agentception/ (the live dev bind-mount) — correct here because
+  # we haven't checked out the PR branch yet. After checkout, switch to /worktrees/$WTNAME/.
   if [ "$IS_AC" -gt 0 ]; then
     cd "$REPO" && docker compose exec agentception mypy /app/agentception/ 2>&1 | tail -10
   else
@@ -660,9 +669,11 @@ STEP 5 — REVIEW:
      ⚠️  Tests: targeted files only — but cross-reference the baseline from STEP 5.A.
      ⚠️  Never pipe mypy/pytest through grep/head/tail — full output, exit code is authoritative.
 
-  # agentception PRs:
+  # Run mypy against the PR branch code in the worktree — NOT /app/agentception/
+  # (that mount always reflects dev, never the PR branch).
   if [ "$IS_AC" -gt 0 ]; then
-    cd "$REPO" && docker compose exec agentception mypy /app/agentception/
+    cd "$REPO" && docker compose exec agentception sh -c \
+      "PYTHONPATH=/worktrees/$WTNAME mypy /worktrees/$WTNAME/agentception/"
   else
     # maestro PRs:
     cd "$REPO" && docker compose exec maestro sh -c \
@@ -987,8 +998,12 @@ STEP 7 — REGRESSION FEEDBACK LOOP (only if merge succeeded — skip if D/F gra
     HAS_MAESTRO=$(echo "$TEST_FILES" | grep -v "test_agentception" | grep -c "test_" || true)
 
     if [ "$HAS_AC" -gt 0 ]; then
-      AC_TESTS=$(echo "$TEST_FILES" | tr ' ' '\n' | grep "test_agentception" | tr '\n' ' ')
-      AC_OUTPUT=$(cd "$REPO" && docker compose exec agentception pytest $AC_TESTS -v --tb=short -q 2>&1)
+      # Convert host paths ($REPO/agentception/tests/...) to container-relative paths
+      # (agentception/tests/...) so pytest runs from the container's /app WORKDIR.
+      AC_TESTS_CONTAINER=$(echo "$TEST_FILES" | tr ' ' '\n' | grep "test_agentception" | \
+        sed "s|$REPO/||" | tr '\n' ' ')
+      AC_OUTPUT=$(cd "$REPO" && docker compose exec agentception sh -c \
+        "pytest $AC_TESTS_CONTAINER -v --tb=short -q" 2>&1)
       echo "$AC_OUTPUT"
       TEST_OUTPUT="$AC_OUTPUT"
     fi
