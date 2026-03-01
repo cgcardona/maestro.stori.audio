@@ -9,6 +9,7 @@ Tables:
 - musehub_milestones: Milestone groupings for issues
 - musehub_issue_milestones: Many-to-many join between issues and milestones
 - musehub_pull_requests: Pull requests proposing branch merges
+- musehub_pr_reviews: Formal reviews (approval / changes requested / dismissed) on PRs
 - musehub_pr_comments: Inline review comments on musical diffs within PRs
 - musehub_objects: Content-addressed binary artifact storage
 - musehub_releases: Tagged releases
@@ -409,9 +410,54 @@ class MusehubPullRequest(Base):
     )
 
     repo: Mapped[MusehubRepo] = relationship("MusehubRepo", back_populates="pull_requests")
+    reviews: Mapped[list[MusehubPRReview]] = relationship(
+        "MusehubPRReview", back_populates="pull_request", cascade="all, delete-orphan"
+    )
     review_comments: Mapped[list[MusehubPRComment]] = relationship(
         "MusehubPRComment", back_populates="pull_request", cascade="all, delete-orphan"
     )
+
+class MusehubPRReview(Base):
+    """A formal review submission on a pull request.
+
+    Tracks both reviewer assignment (``pending`` state) and submitted reviews
+    (``approved``, ``changes_requested``, ``dismissed``).  One row per
+    (pr_id, reviewer_username) pair — a reviewer can only hold one active state
+    at a time.  Re-submitting replaces the previous state.
+
+    State lifecycle:
+      requested (by PR author) → pending
+      reviewer submits         → approved | changes_requested | dismissed
+
+    A PR is merge-ready when every pending/changes_requested review has been
+    resolved to ``approved``, or the owner forces a merge.
+    """
+
+    __tablename__ = "musehub_pr_reviews"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_new_uuid)
+    pr_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("musehub_pull_requests.pr_id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    # Display name / JWT sub of the requested reviewer
+    reviewer_username: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    # pending | approved | changes_requested | dismissed
+    state: Mapped[str] = mapped_column(String(30), nullable=False, default="pending", index=True)
+    # Markdown body of the review; null for bare reviewer assignments
+    body: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Populated when reviewer submits; null for pending assignments
+    submitted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=_utc_now
+    )
+
+    pull_request: Mapped[MusehubPullRequest] = relationship(
+        "MusehubPullRequest", back_populates="reviews"
+    )
+
 
 class MusehubPRComment(Base):
     """Inline review comment on a musical diff within a pull request.
