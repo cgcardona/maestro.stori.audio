@@ -16,28 +16,38 @@ A fully saturated, self-managing pipeline where:
 
 ---
 
-## The Three-Tier Architecture
+## The Architecture — Self-Replacing Pool
 
 ```
 YOU (human)
     │
-    └─► CTO Agent  (reads cto.md — sees the whole board, dispatches managers)
+    └─► CTO Agent  (reads cto.md — sees the whole board, dispatches VPs)
             │
-            ├─► Engineering Manager  (reads engineering-manager.md — saturates the implementation queue)
+            ├─► Engineering VP 1  (seeds 4 leaf engineers)
             │        │
-            │        ├─► Leaf Agent: issue-423  (reads .agent-task → follows PARALLEL_ISSUE_TO_PR.md)
-            │        ├─► Leaf Agent: issue-425  (reads .agent-task → follows PARALLEL_ISSUE_TO_PR.md)
-            │        ├─► Leaf Agent: issue-428  (...)
-            │        └─► ... N agents, one per issue, all simultaneously
+            │        ├─► Leaf Agent: issue-423  → opens PR → spawns replacement for issue-427 →
+            │        │                             issue-427 opens PR → spawns replacement for issue-431 → ...
+            │        ├─► Leaf Agent: issue-424  → opens PR → spawns replacement for issue-428 → ...
+            │        ├─► Leaf Agent: issue-425  → opens PR → spawns replacement for issue-429 → ...
+            │        └─► Leaf Agent: issue-426  → opens PR → spawns replacement for issue-430 → ...
             │
-            └─► QA Manager  (reads qa-manager.md — saturates the review queue)
-                     │
-                     ├─► Leaf Agent: PR #485  (reads .agent-task → follows PARALLEL_PR_REVIEW.md)
-                     ├─► Leaf Agent: PR #486  (reads .agent-task → follows PARALLEL_PR_REVIEW.md)
-                     └─► ... N agents, one per PR, all simultaneously
+            ├─► Engineering VP 2  (seeds 4 more leaf engineers — same self-replacing pattern)
+            │
+            ├─► QA VP 1  (seeds 4 leaf reviewers)
+            │        │
+            │        ├─► Reviewer: PR #485  → merges → spawns replacement for PR #489 → ...
+            │        └─► ... 4 concurrent reviewers, each self-replacing
+            │
+            └─► QA VP 2  (seeds 4 more leaf reviewers — same pattern)
 ```
 
-**The golden rule:** Managers route work. Canonical prompts describe work. Never cross the streams.
+**How it works:** VPs seed the initial pool. Each leaf agent, the moment it finishes
+its work (PR opened / PR merged), queries GitHub for the next unclaimed item, claims
+it with an `agent:wip` label, creates a new worktree, and spawns a fresh leaf agent
+via the Task tool — before it exits. No batch boundaries. No waiting for the slowest
+agent. The pool stays at N concurrent workers continuously until the queue drains.
+
+**The golden rule:** VPs seed. Leaf agents replace themselves. Canonical prompts describe work. Never cross the streams.
 
 ---
 
@@ -89,17 +99,18 @@ Every worktree gets exactly one `.agent-task` file. The canonical prompts parse 
 
 ```
 TASK=issue-to-pr          # or pr-review
-ISSUE=423                 # issue number (for issue-to-pr)
+ISSUE_NUMBER=423          # issue number (for issue-to-pr)
 PR=485                    # PR number (for pr-review)
 BRANCH=feat/issue-423     # git branch name
 WORKTREE=/Users/gabriel/.cursor/worktrees/maestro/issue-423
 ROLE=python-developer     # which cognitive architecture to load
 ROLE_FILE=/Users/gabriel/dev/tellurstori/maestro/.cursor/roles/python-developer.md
 BASE=dev
-BATCH=07
+GH_REPO=cgcardona/maestro
 CLOSES_ISSUES=423         # comma-separated issue numbers to close on merge
 MERGE_AFTER=none          # or: issue number whose PR must merge first
 CONFLICT_RISK=none        # none | low | high — informs agent behavior
+BATCH_ID=eng-20260301T053412Z-a7f2   # VP-level batch fingerprint (propagated to successors)
 
 PRIMARY_FILE=maestro/api/routes/musehub/ui_blame.py   # main file being created/modified
 TEST_FILE=tests/test_musehub_ui_blame.py              # targeted test file
@@ -107,6 +118,41 @@ TEST_FILE=tests/test_musehub_ui_blame.py              # targeted test file
 SCOPE:
   Multi-line description of exactly what to implement.
   This is what the leaf agent reads to know what to build.
+```
+
+## Agent Fingerprinting
+
+Every piece of pipeline work is permanently signed at two granularities:
+
+### BATCH_ID — VP-level identifier
+Generated once per VP seed run: `eng-<YYYYMMDDTHHMMSSZ>-<4hex>` (engineering) or `qa-<…>` (QA).
+Propagated to every leaf agent in that VP's pool, and carried forward through every self-replacing successor.
+Lets you answer: *"Which VP wave spawned this PR?"*
+
+### AGENT_SESSION — leaf-level identifier
+Generated fresh by each individual leaf agent: `eng-<timestamp>-<4hex>` or `qa-<…>`.
+One session = one agent run = one PR or review.
+Lets you answer: *"Which specific agent opened this PR / merged this PR?"*
+
+### Where fingerprints appear
+
+| Artifact | What's embedded |
+|----------|----------------|
+| Every git commit | `Maestro-Batch:` and `Maestro-Session:` trailers in the commit message |
+| PR description | `<!-- maestro-fingerprint … -->` metadata block + human-readable footer line |
+| Post-merge PR comment (reviews) | `🤖 Maestro Review Fingerprint` table with grade, timestamp, batch, session |
+
+### How to trace back
+
+```bash
+# Find all commits from a specific batch:
+git log --all --grep="Maestro-Batch: eng-20260301T053412Z-a7f2"
+
+# Find the PR opened by a specific agent session:
+gh pr list --repo cgcardona/maestro --state all --search "eng-20260301T053412Z-a7f2"
+
+# Find which batch a commit came from:
+git show <sha> | grep "Maestro-"
 ```
 
 ---
