@@ -1829,6 +1829,192 @@ async def test_patch_repo_settings_returns_403_for_non_admin(
 
 
 # ---------------------------------------------------------------------------
+# DELETE /repos/{repo_id} — soft-delete (issue #416)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.anyio
+async def test_delete_repo_returns_204(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+) -> None:
+    """DELETE /repos/{repo_id} soft-deletes a repo owned by the caller and returns 204."""
+    create = await client.post(
+        "/api/v1/musehub/repos",
+        json={"name": "to-delete", "owner": "testuser", "visibility": "private"},
+        headers=auth_headers,
+    )
+    assert create.status_code == 201
+    repo_id = create.json()["repoId"]
+
+    resp = await client.delete(f"/api/v1/musehub/repos/{repo_id}", headers=auth_headers)
+    assert resp.status_code == 204
+
+
+@pytest.mark.anyio
+async def test_delete_repo_hides_repo_from_get(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+) -> None:
+    """After DELETE, GET /repos/{repo_id} returns 404."""
+    create = await client.post(
+        "/api/v1/musehub/repos",
+        json={"name": "hidden-after-delete", "owner": "testuser", "visibility": "private"},
+        headers=auth_headers,
+    )
+    repo_id = create.json()["repoId"]
+
+    await client.delete(f"/api/v1/musehub/repos/{repo_id}", headers=auth_headers)
+
+    get_resp = await client.get(f"/api/v1/musehub/repos/{repo_id}", headers=auth_headers)
+    assert get_resp.status_code == 404
+
+
+@pytest.mark.anyio
+async def test_delete_repo_requires_auth(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """DELETE /repos/{repo_id} returns 401 without a Bearer token."""
+    repo = MusehubRepo(
+        name="delete-noauth",
+        owner="testuser",
+        slug="delete-noauth",
+        visibility="public",
+        owner_user_id=TEST_OWNER_USER_ID,
+    )
+    db_session.add(repo)
+    await db_session.commit()
+    await db_session.refresh(repo)
+
+    resp = await client.delete(f"/api/v1/musehub/repos/{repo.repo_id}")
+    assert resp.status_code == 401
+
+
+@pytest.mark.anyio
+async def test_delete_repo_returns_403_for_non_owner(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    auth_headers: dict[str, str],
+) -> None:
+    """DELETE /repos/{repo_id} returns 403 when caller is not the owner."""
+    repo = MusehubRepo(
+        name="delete-403",
+        owner="other-owner",
+        slug="delete-403",
+        visibility="public",
+        owner_user_id="some-other-user-id",
+    )
+    db_session.add(repo)
+    await db_session.commit()
+    await db_session.refresh(repo)
+
+    resp = await client.delete(
+        f"/api/v1/musehub/repos/{repo.repo_id}", headers=auth_headers
+    )
+    assert resp.status_code == 403
+
+
+@pytest.mark.anyio
+async def test_delete_repo_returns_404_for_unknown_repo(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+) -> None:
+    """DELETE /repos/{repo_id} returns 404 for a non-existent repo."""
+    resp = await client.delete(
+        "/api/v1/musehub/repos/nonexistent-repo-id", headers=auth_headers
+    )
+    assert resp.status_code == 404
+
+
+@pytest.mark.anyio
+async def test_delete_repo_service_sets_deleted_at(
+    db_session: AsyncSession,
+) -> None:
+    """delete_repo() service sets deleted_at on the row."""
+    repo = await musehub_repository.create_repo(
+        db_session,
+        name="svc-delete-test",
+        owner="testuser",
+        visibility="private",
+        owner_user_id="user-abc",
+    )
+    await db_session.commit()
+
+    deleted = await musehub_repository.delete_repo(db_session, repo.repo_id)
+    await db_session.commit()
+
+    assert deleted is True
+    # get_repo should return None for soft-deleted repos
+    fetched = await musehub_repository.get_repo(db_session, repo.repo_id)
+    assert fetched is None
+
+
+@pytest.mark.anyio
+async def test_delete_repo_service_returns_false_for_unknown(
+    db_session: AsyncSession,
+) -> None:
+    """delete_repo() returns False for a non-existent repo."""
+    result = await musehub_repository.delete_repo(db_session, "does-not-exist")
+    assert result is False
+
+
+# ---------------------------------------------------------------------------
+# POST /repos/{repo_id}/transfer  — transfer ownership (issue #416)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.anyio
+async def test_transfer_repo_ownership_returns_200(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+) -> None:
+    """POST /repos/{repo_id}/transfer returns 200 with updated ownerUserId."""
+    create = await client.post(
+        "/api/v1/musehub/repos",
+        json={"name": "transfer-me", "owner": "testuser", "visibility": "private"},
+        headers=auth_headers,
+    )
+    assert create.status_code == 201
+    repo_id = create.json()["repoId"]
+    new_owner = "another-user-uuid-1234"
+
+    resp = await client.post(
+        f"/api/v1/musehub/repos/{repo_id}/transfer",
+        json={"newOwnerUserId": new_owner},
+        headers=auth_headers,
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["ownerUserId"] == new_owner
+    assert body["repoId"] == repo_id
+
+
+@pytest.mark.anyio
+async def test_transfer_repo_requires_auth(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """POST /repos/{repo_id}/transfer returns 401 without a Bearer token."""
+    repo = MusehubRepo(
+        name="transfer-noauth",
+        owner="testuser",
+        slug="transfer-noauth",
+        visibility="public",
+        owner_user_id=TEST_OWNER_USER_ID,
+    )
+    db_session.add(repo)
+    await db_session.commit()
+    await db_session.refresh(repo)
+
+    resp = await client.post(
+        f"/api/v1/musehub/repos/{repo.repo_id}/transfer",
+        json={"newOwnerUserId": "new-user-id"},
+    )
+    assert resp.status_code == 401
+
+
+# ---------------------------------------------------------------------------
 # Wizard creation endpoint — issue #434
 # ---------------------------------------------------------------------------
 
@@ -2088,6 +2274,89 @@ async def test_list_my_repos_requires_auth(client: AsyncClient) -> None:
 
 
 @pytest.mark.anyio
+async def test_transfer_repo_returns_403_for_non_owner(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    auth_headers: dict[str, str],
+) -> None:
+    """POST /repos/{repo_id}/transfer returns 403 when caller is not the owner."""
+    repo = MusehubRepo(
+        name="transfer-403",
+        owner="other-owner",
+        slug="transfer-403",
+        visibility="public",
+        owner_user_id="some-other-user-id",
+    )
+    db_session.add(repo)
+    await db_session.commit()
+    await db_session.refresh(repo)
+
+    resp = await client.post(
+        f"/api/v1/musehub/repos/{repo.repo_id}/transfer",
+        json={"newOwnerUserId": "attacker-user-id"},
+        headers=auth_headers,
+    )
+    assert resp.status_code == 403
+
+
+@pytest.mark.anyio
+async def test_transfer_repo_returns_404_for_unknown_repo(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+) -> None:
+    """POST /repos/{repo_id}/transfer returns 404 for a non-existent repo."""
+    resp = await client.post(
+        "/api/v1/musehub/repos/nonexistent-repo-id/transfer",
+        json={"newOwnerUserId": "some-user"},
+        headers=auth_headers,
+    )
+    assert resp.status_code == 404
+
+
+@pytest.mark.anyio
+async def test_transfer_repo_service_updates_owner_user_id(
+    db_session: AsyncSession,
+) -> None:
+    """transfer_repo_ownership() service updates owner_user_id on the row."""
+    repo = await musehub_repository.create_repo(
+        db_session,
+        name="svc-transfer-test",
+        owner="testuser",
+        visibility="private",
+        owner_user_id="original-owner-id",
+    )
+    await db_session.commit()
+
+    updated = await musehub_repository.transfer_repo_ownership(
+        db_session, repo.repo_id, "new-owner-id"
+    )
+    await db_session.commit()
+
+    assert updated is not None
+    assert updated.owner_user_id == "new-owner-id"
+    # Verify persisted
+    fetched = await musehub_repository.get_repo(db_session, repo.repo_id)
+    assert fetched is not None
+    assert fetched.owner_user_id == "new-owner-id"
+
+
+@pytest.mark.anyio
+async def test_transfer_repo_service_returns_none_for_unknown(
+    db_session: AsyncSession,
+) -> None:
+    """transfer_repo_ownership() returns None for a non-existent repo."""
+    result = await musehub_repository.transfer_repo_ownership(
+        db_session, "does-not-exist", "new-owner"
+    )
+    assert result is None
+
+
+# ---------------------------------------------------------------------------
+# GET /repos — list repos for authenticated user
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.anyio
 async def test_list_my_repos_total_matches_count(
     client: AsyncClient,
     auth_headers: dict[str, str],
@@ -2182,3 +2451,188 @@ async def test_list_my_repos_service_direct(db_session: AsyncSession) -> None:
     repo_ids = {r.repo_id for r in result.repos}
     assert str(repo_mine.repo_id) in repo_ids
     assert str(repo_other.repo_id) not in repo_ids
+
+
+# ---------------------------------------------------------------------------
+# GET /repos/{repo_id}/collaborators/{username}/permission  (issue #424)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.anyio
+async def test_collab_access_owner_returns_owner_permission(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    auth_headers: dict[str, str],
+) -> None:
+    """Owner's username returns permission='owner' with accepted_at=null."""
+    from maestro.db.musehub_collaborator_models import MusehubCollaborator
+
+    owner_id = TEST_OWNER_USER_ID
+    repo = MusehubRepo(
+        name="access-owner-test",
+        owner="testuser",
+        slug="access-owner-test",
+        visibility="private",
+        owner_user_id=owner_id,
+    )
+    db_session.add(repo)
+    await db_session.commit()
+    await db_session.refresh(repo)
+
+    resp = await client.get(
+        f"/api/v1/musehub/repos/{repo.repo_id}/collaborators/{owner_id}/permission",
+        headers=auth_headers,
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["username"] == owner_id
+    assert body["permission"] == "owner"
+    assert body["acceptedAt"] is None
+
+
+@pytest.mark.anyio
+async def test_collab_access_collaborator_returns_permission(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    auth_headers: dict[str, str],
+) -> None:
+    """A known collaborator returns their permission level and accepted_at."""
+    from datetime import datetime, timezone
+
+    from maestro.db.musehub_collaborator_models import MusehubCollaborator
+
+    owner_id = TEST_OWNER_USER_ID
+    collab_user_id = "collab-user-write"
+
+    repo = MusehubRepo(
+        name="access-collab-test",
+        owner="testuser",
+        slug="access-collab-test",
+        visibility="private",
+        owner_user_id=owner_id,
+    )
+    db_session.add(repo)
+    await db_session.commit()
+    await db_session.refresh(repo)
+
+    accepted = datetime(2026, 1, 10, 10, 0, 0, tzinfo=timezone.utc)
+    collab = MusehubCollaborator(
+        repo_id=str(repo.repo_id),
+        user_id=collab_user_id,
+        permission="write",
+        accepted_at=accepted,
+    )
+    db_session.add(collab)
+    await db_session.commit()
+
+    resp = await client.get(
+        f"/api/v1/musehub/repos/{repo.repo_id}/collaborators/{collab_user_id}/permission",
+        headers=auth_headers,
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["username"] == collab_user_id
+    assert body["permission"] == "write"
+    assert body["acceptedAt"] is not None
+
+
+@pytest.mark.anyio
+async def test_collab_access_non_collaborator_returns_404(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    auth_headers: dict[str, str],
+) -> None:
+    """A user who is not a collaborator returns 404 with an informative message."""
+    repo = MusehubRepo(
+        name="access-404-test",
+        owner="testuser",
+        slug="access-404-test",
+        visibility="private",
+        owner_user_id=TEST_OWNER_USER_ID,
+    )
+    db_session.add(repo)
+    await db_session.commit()
+    await db_session.refresh(repo)
+
+    stranger = "total-stranger-user"
+    resp = await client.get(
+        f"/api/v1/musehub/repos/{repo.repo_id}/collaborators/{stranger}/permission",
+        headers=auth_headers,
+    )
+    assert resp.status_code == 404
+    assert stranger in resp.json()["detail"]
+
+
+@pytest.mark.anyio
+async def test_collab_access_unknown_repo_returns_404(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+) -> None:
+    """Querying an unknown repo_id returns 404."""
+    resp = await client.get(
+        "/api/v1/musehub/repos/nonexistent-repo/collaborators/anyone/permission",
+        headers=auth_headers,
+    )
+    assert resp.status_code == 404
+
+
+@pytest.mark.anyio
+async def test_collab_access_requires_auth(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """GET /collaborators/{username}/permission returns 401 without a Bearer token."""
+    repo = MusehubRepo(
+        name="access-auth-test",
+        owner="testuser",
+        slug="access-auth-test",
+        visibility="public",
+        owner_user_id=TEST_OWNER_USER_ID,
+    )
+    db_session.add(repo)
+    await db_session.commit()
+    await db_session.refresh(repo)
+
+    resp = await client.get(
+        f"/api/v1/musehub/repos/{repo.repo_id}/collaborators/anyone/permission"
+    )
+    assert resp.status_code == 401
+
+
+@pytest.mark.anyio
+async def test_collab_access_admin_permission(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    auth_headers: dict[str, str],
+) -> None:
+    """A collaborator with admin permission returns permission='admin'."""
+    from maestro.db.musehub_collaborator_models import MusehubCollaborator
+
+    repo = MusehubRepo(
+        name="access-admin-test",
+        owner="testuser",
+        slug="access-admin-test",
+        visibility="private",
+        owner_user_id=TEST_OWNER_USER_ID,
+    )
+    db_session.add(repo)
+    await db_session.commit()
+    await db_session.refresh(repo)
+
+    admin_user = "admin-collab-user"
+    collab = MusehubCollaborator(
+        repo_id=str(repo.repo_id),
+        user_id=admin_user,
+        permission="admin",
+        accepted_at=None,
+    )
+    db_session.add(collab)
+    await db_session.commit()
+
+    resp = await client.get(
+        f"/api/v1/musehub/repos/{repo.repo_id}/collaborators/{admin_user}/permission",
+        headers=auth_headers,
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["permission"] == "admin"

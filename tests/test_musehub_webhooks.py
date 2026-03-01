@@ -1,10 +1,11 @@
 """Tests for Muse Hub webhook subscription endpoints and dispatch.
 
-Covers every acceptance criterion from issue #247:
+Covers every acceptance criterion from issue #247 and #422:
 - POST /musehub/repos/{repo_id}/webhooks registers a webhook with URL and events
 - GET  /musehub/repos/{repo_id}/webhooks lists registered webhooks
 - DELETE /musehub/repos/{repo_id}/webhooks/{webhook_id} removes a webhook
 - GET /musehub/repos/{repo_id}/webhooks/{webhook_id}/deliveries lists delivery history
+- POST /musehub/repos/{repo_id}/webhooks/{webhook_id}/deliveries/{id}/redeliver retries delivery
 - HMAC-SHA256 signature computation is correct
 - Webhook dispatch fires for matching events
 - Delivery logging records success/failure per attempt
@@ -746,6 +747,261 @@ def test_decrypt_plaintext_secret_returns_value_when_key_set() -> None:
             assert not plaintext_secret.startswith("gAAAAAB")
             result = crypto.decrypt_secret(plaintext_secret)
             assert result == plaintext_secret
+
+
+# ---------------------------------------------------------------------------
+# POST /musehub/repos/{repo_id}/webhooks/{webhook_id}/deliveries/{id}/redeliver
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.anyio
+async def test_redeliver_delivery_succeeds(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+    db_session: AsyncSession,
+) -> None:
+    """POST /redeliver replays the original payload and returns success=True on 2xx."""
+    from maestro.services import musehub_webhook_dispatcher as disp
+
+    repo_id = await _create_repo(client, auth_headers, "redeliver-ok-repo")
+    wh_data = await _create_webhook(client, auth_headers, repo_id, events=["push"])
+    webhook_id = wh_data["webhookId"]
+
+    push_payload: PushEventPayload = {
+        "repoId": repo_id,
+        "branch": "main",
+        "headCommitId": "redeliv01",
+        "pushedBy": "test-user",
+        "commitCount": 1,
+    }
+
+    async def _fail_then_ok(url: str, **kwargs: Any) -> MagicMock:
+        mock_resp = MagicMock()
+        mock_resp.is_success = False
+        mock_resp.status_code = 503
+        mock_resp.text = "unavailable"
+        return mock_resp
+
+    # Create an initial (failed) delivery so we have a delivery_id.
+    with (
+        patch("httpx.AsyncClient") as mock_cls,
+        patch("asyncio.sleep", new_callable=AsyncMock),
+    ):
+        mock_client = AsyncMock()
+        mock_client.post = _fail_then_ok
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+        mock_cls.return_value = mock_client
+        await disp.dispatch_event(db_session, repo_id=repo_id, event_type="push", payload=push_payload)
+    await db_session.commit()
+
+    # Get the first (failed) delivery ID.
+    deliveries_resp = await client.get(
+        f"/api/v1/musehub/repos/{repo_id}/webhooks/{webhook_id}/deliveries",
+        headers=auth_headers,
+    )
+    assert deliveries_resp.status_code == 200
+    deliveries = deliveries_resp.json()["deliveries"]
+    assert len(deliveries) > 0
+    delivery_id = deliveries[0]["deliveryId"]
+
+    # Now redeliver — this time the subscriber returns 200.
+    async def _ok(url: str, **kwargs: Any) -> MagicMock:
+        mock_resp = MagicMock()
+        mock_resp.is_success = True
+        mock_resp.status_code = 200
+        mock_resp.text = "accepted"
+        return mock_resp
+
+    with patch("httpx.AsyncClient") as mock_cls2:
+        mock_client2 = AsyncMock()
+        mock_client2.post = _ok
+        mock_client2.__aenter__ = AsyncMock(return_value=mock_client2)
+        mock_client2.__aexit__ = AsyncMock(return_value=False)
+        mock_cls2.return_value = mock_client2
+
+        redeliver_resp = await client.post(
+            f"/api/v1/musehub/repos/{repo_id}/webhooks/{webhook_id}/deliveries/{delivery_id}/redeliver",
+            headers=auth_headers,
+        )
+
+    assert redeliver_resp.status_code == 200
+    data = redeliver_resp.json()
+    assert data["originalDeliveryId"] == delivery_id
+    assert data["webhookId"] == webhook_id
+    assert data["success"] is True
+    assert data["responseStatus"] == 200
+
+
+@pytest.mark.anyio
+async def test_redeliver_delivery_not_found_returns_404(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+) -> None:
+    """POST /redeliver for a non-existent delivery_id returns 404."""
+    repo_id = await _create_repo(client, auth_headers, "redeliver-404-repo")
+    wh_data = await _create_webhook(client, auth_headers, repo_id)
+    webhook_id = wh_data["webhookId"]
+
+    resp = await client.post(
+        f"/api/v1/musehub/repos/{repo_id}/webhooks/{webhook_id}/deliveries/does-not-exist/redeliver",
+        headers=auth_headers,
+    )
+    assert resp.status_code == 404
+
+
+@pytest.mark.anyio
+async def test_redeliver_delivery_wrong_webhook_returns_404(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+) -> None:
+    """POST /redeliver with a wrong webhook_id returns 404."""
+    repo_id = await _create_repo(client, auth_headers, "redeliver-wrong-wh-repo")
+    resp = await client.post(
+        f"/api/v1/musehub/repos/{repo_id}/webhooks/no-such-webhook/deliveries/some-delivery/redeliver",
+        headers=auth_headers,
+    )
+    assert resp.status_code == 404
+
+
+@pytest.mark.anyio
+async def test_redeliver_delivery_requires_auth(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+) -> None:
+    """POST /redeliver without JWT returns 401."""
+    repo_id = await _create_repo(client, auth_headers, "redeliver-auth-repo")
+    wh_data = await _create_webhook(client, auth_headers, repo_id)
+    webhook_id = wh_data["webhookId"]
+
+    resp = await client.post(
+        f"/api/v1/musehub/repos/{repo_id}/webhooks/{webhook_id}/deliveries/some-id/redeliver",
+    )
+    assert resp.status_code == 401
+
+
+@pytest.mark.anyio
+async def test_redeliver_delivery_stores_new_delivery_row(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+    db_session: AsyncSession,
+) -> None:
+    """POST /redeliver persists new delivery rows without mutating the original."""
+    from sqlalchemy import select
+    from maestro.db import musehub_models as db_models
+    from maestro.services import musehub_webhook_dispatcher as disp
+
+    repo_id = await _create_repo(client, auth_headers, "redeliver-rows-repo")
+    wh_data = await _create_webhook(client, auth_headers, repo_id, events=["push"])
+    webhook_id = wh_data["webhookId"]
+
+    push_payload: PushEventPayload = {
+        "repoId": repo_id,
+        "branch": "main",
+        "headCommitId": "rows-test",
+        "pushedBy": "test-user",
+        "commitCount": 1,
+    }
+
+    async def _ok(url: str, **kwargs: Any) -> MagicMock:
+        mock_resp = MagicMock()
+        mock_resp.is_success = True
+        mock_resp.status_code = 200
+        mock_resp.text = "ok"
+        return mock_resp
+
+    # Initial delivery.
+    with patch("httpx.AsyncClient") as mock_cls:
+        mock_client = AsyncMock()
+        mock_client.post = _ok
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+        mock_cls.return_value = mock_client
+        await disp.dispatch_event(db_session, repo_id=repo_id, event_type="push", payload=push_payload)
+    await db_session.commit()
+
+    deliveries_resp = await client.get(
+        f"/api/v1/musehub/repos/{repo_id}/webhooks/{webhook_id}/deliveries",
+        headers=auth_headers,
+    )
+    delivery_id = deliveries_resp.json()["deliveries"][0]["deliveryId"]
+
+    # Redeliver.
+    with patch("httpx.AsyncClient") as mock_cls2:
+        mock_client2 = AsyncMock()
+        mock_client2.post = _ok
+        mock_client2.__aenter__ = AsyncMock(return_value=mock_client2)
+        mock_client2.__aexit__ = AsyncMock(return_value=False)
+        mock_cls2.return_value = mock_client2
+        await client.post(
+            f"/api/v1/musehub/repos/{repo_id}/webhooks/{webhook_id}/deliveries/{delivery_id}/redeliver",
+            headers=auth_headers,
+        )
+
+    await db_session.commit()
+
+    # Two delivery rows should exist: the original + the redeliver attempt.
+    stmt = select(db_models.MusehubWebhookDelivery).where(
+        db_models.MusehubWebhookDelivery.webhook_id == webhook_id
+    )
+    rows = (await db_session.execute(stmt)).scalars().all()
+    assert len(rows) == 2
+
+    # Original row unchanged — the redeliver adds a brand-new row.
+    original = next(r for r in rows if r.delivery_id == delivery_id)
+    assert original.success is True
+
+    # New row also has the stored payload.
+    new_row = next(r for r in rows if r.delivery_id != delivery_id)
+    assert new_row.payload != ""
+    assert new_row.event_type == "push"
+
+
+@pytest.mark.anyio
+async def test_list_deliveries_includes_payload_field(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+    db_session: AsyncSession,
+) -> None:
+    """GET /deliveries returns a ``payload`` field on each delivery."""
+    from maestro.services import musehub_webhook_dispatcher as disp
+
+    repo_id = await _create_repo(client, auth_headers, "delivery-payload-repo")
+    wh_data = await _create_webhook(client, auth_headers, repo_id, events=["push"])
+    webhook_id = wh_data["webhookId"]
+
+    push_payload: PushEventPayload = {
+        "repoId": repo_id,
+        "branch": "main",
+        "headCommitId": "pay123",
+        "pushedBy": "test-user",
+        "commitCount": 1,
+    }
+
+    async def _ok(url: str, **kwargs: Any) -> MagicMock:
+        mock_resp = MagicMock()
+        mock_resp.is_success = True
+        mock_resp.status_code = 200
+        mock_resp.text = "ok"
+        return mock_resp
+
+    with patch("httpx.AsyncClient") as mock_cls:
+        mock_client = AsyncMock()
+        mock_client.post = _ok
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+        mock_cls.return_value = mock_client
+        await disp.dispatch_event(db_session, repo_id=repo_id, event_type="push", payload=push_payload)
+    await db_session.commit()
+
+    resp = await client.get(
+        f"/api/v1/musehub/repos/{repo_id}/webhooks/{webhook_id}/deliveries",
+        headers=auth_headers,
+    )
+    assert resp.status_code == 200
+    delivery = resp.json()["deliveries"][0]
+    assert "payload" in delivery
+    assert delivery["payload"] != ""
 
 
 def test_is_fernet_token_detects_prefix() -> None:

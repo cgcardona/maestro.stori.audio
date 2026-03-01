@@ -1,10 +1,11 @@
 """Muse Hub webhook subscription route handlers.
 
 Endpoint summary:
-  POST   /musehub/repos/{repo_id}/webhooks                          — register a webhook
-  GET    /musehub/repos/{repo_id}/webhooks                          — list webhooks
-  DELETE /musehub/repos/{repo_id}/webhooks/{webhook_id}             — remove a webhook
-  GET    /musehub/repos/{repo_id}/webhooks/{webhook_id}/deliveries  — delivery history
+  POST   /musehub/repos/{repo_id}/webhooks                                              — register a webhook
+  GET    /musehub/repos/{repo_id}/webhooks                                              — list webhooks
+  DELETE /musehub/repos/{repo_id}/webhooks/{webhook_id}                                — remove a webhook
+  GET    /musehub/repos/{repo_id}/webhooks/{webhook_id}/deliveries                     — delivery history
+  POST   /musehub/repos/{repo_id}/webhooks/{webhook_id}/deliveries/{delivery_id}/redeliver — retry a delivery
 
 All endpoints require a valid JWT Bearer token.
 No business logic lives here — all persistence is delegated to
@@ -24,6 +25,7 @@ from maestro.models.musehub import (
     WebhookCreate,
     WebhookDeliveryListResponse,
     WebhookListResponse,
+    WebhookRedeliverResponse,
     WebhookResponse,
 )
 from maestro.services import musehub_repository, musehub_webhook_dispatcher
@@ -145,3 +147,48 @@ async def list_deliveries(
 
     deliveries = await musehub_webhook_dispatcher.list_deliveries(db, webhook_id, limit=limit)
     return WebhookDeliveryListResponse(deliveries=deliveries)
+
+
+@router.post(
+    "/repos/{repo_id}/webhooks/{webhook_id}/deliveries/{delivery_id}/redeliver",
+    response_model=WebhookRedeliverResponse,
+    operation_id="redeliverWebhookDelivery",
+    summary="Retry a failed webhook delivery",
+)
+async def redeliver_delivery(
+    repo_id: str,
+    webhook_id: str,
+    delivery_id: str,
+    db: AsyncSession = Depends(get_db),
+    _: TokenClaims = Depends(require_valid_token),
+) -> WebhookRedeliverResponse:
+    """Re-send the original payload from a past delivery attempt.
+
+    Looks up the delivery by ``delivery_id`` and POSTs its stored payload to
+    the webhook's current URL.  Each retry attempt is recorded as a new
+    delivery row — the original row is never mutated.
+
+    Returns 404 when the repo, webhook, or delivery cannot be found.
+    Returns 422 when the delivery predates payload storage and cannot be replayed.
+    """
+    repo = await musehub_repository.get_repo(db, repo_id)
+    if repo is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repo not found")
+
+    webhook = await musehub_webhook_dispatcher.get_webhook(db, repo_id, webhook_id)
+    if webhook is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Webhook not found")
+
+    delivery = await musehub_webhook_dispatcher.get_delivery(db, webhook_id, delivery_id)
+    if delivery is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Delivery not found")
+
+    try:
+        result = await musehub_webhook_dispatcher.redeliver_delivery(
+            db, repo_id=repo_id, webhook_id=webhook_id, delivery_id=delivery_id
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc))
+
+    await db.commit()
+    return result

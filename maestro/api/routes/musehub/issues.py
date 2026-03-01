@@ -9,6 +9,9 @@ Endpoint summary:
   POST /musehub/repos/{repo_id}/issues/{issue_number}/reopen        — reopen issue (auth required)
   POST /musehub/repos/{repo_id}/issues/{issue_number}/assign        — set/clear assignee (auth required)
   POST /musehub/repos/{repo_id}/issues/{issue_number}/milestone     — set/clear milestone (auth required)
+  DELETE /musehub/repos/{repo_id}/issues/{issue_number}/milestone   — remove milestone (auth required)
+  POST /musehub/repos/{repo_id}/issues/{issue_number}/labels        — bulk assign labels (auth required)
+  DELETE /musehub/repos/{repo_id}/issues/{issue_number}/labels/{label_name} — remove one label (auth required)
 
   GET  /musehub/repos/{repo_id}/issues/{issue_number}/comments      — list comments (public: no auth)
   POST /musehub/repos/{repo_id}/issues/{issue_number}/comments      — create comment (auth required)
@@ -36,6 +39,7 @@ from maestro.models.musehub import (
     IssueCommentListResponse,
     IssueCreate,
     IssueEventPayload,
+    IssueLabelAssignRequest,
     IssueListResponse,
     IssueResponse,
     IssueUpdate,
@@ -436,3 +440,98 @@ async def delete_comment(
     if not deleted:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Comment not found")
     await db.commit()
+
+
+# ── Milestone and label assignment extensions ──────────────────────────────────
+
+
+@router.delete(
+    "/repos/{repo_id}/issues/{issue_number}/milestone",
+    response_model=IssueResponse,
+    operation_id="removeIssueMilestone",
+    summary="Remove the milestone from an issue",
+)
+async def remove_issue_milestone(
+    repo_id: str,
+    issue_number: int,
+    db: AsyncSession = Depends(get_db),
+    _: TokenClaims = Depends(require_valid_token),
+) -> IssueResponse:
+    """Clear the milestone link on an issue.
+
+    Equivalent to calling POST /milestone with no ``milestone_id``, but follows
+    REST semantics — DELETE on the sub-resource removes it.
+    """
+    repo = await musehub_repository.get_repo(db, repo_id)
+    if repo is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repo not found")
+
+    issue = await musehub_issues.set_issue_milestone(
+        db, repo_id, issue_number, milestone_id=None
+    )
+    if issue is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Issue not found")
+    await db.commit()
+    return issue
+
+
+@router.post(
+    "/repos/{repo_id}/issues/{issue_number}/labels",
+    response_model=IssueResponse,
+    operation_id="assignIssueLabels",
+    summary="Bulk-assign labels to an issue",
+)
+async def assign_issue_labels(
+    repo_id: str,
+    issue_number: int,
+    body: IssueLabelAssignRequest,
+    db: AsyncSession = Depends(get_db),
+    _: TokenClaims = Depends(require_valid_token),
+) -> IssueResponse:
+    """Replace the issue's label list with the provided labels.
+
+    This is a full replacement — send the complete desired label list.
+    To append a label, read the current list first, merge, and post the result.
+    """
+    repo = await musehub_repository.get_repo(db, repo_id)
+    if repo is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repo not found")
+
+    issue = await musehub_issues.assign_labels(
+        db, repo_id, issue_number, labels=body.labels
+    )
+    if issue is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Issue not found")
+    await db.commit()
+    return issue
+
+
+@router.delete(
+    "/repos/{repo_id}/issues/{issue_number}/labels/{label_name}",
+    response_model=IssueResponse,
+    operation_id="removeIssueLabel",
+    summary="Remove a single label from an issue",
+)
+async def remove_issue_label(
+    repo_id: str,
+    issue_number: int,
+    label_name: str,
+    db: AsyncSession = Depends(get_db),
+    _: TokenClaims = Depends(require_valid_token),
+) -> IssueResponse:
+    """Remove one label from the issue's label list.
+
+    Idempotent — silently succeeds if the label is not present.
+    Returns 404 when the repo or issue is not found.
+    """
+    repo = await musehub_repository.get_repo(db, repo_id)
+    if repo is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repo not found")
+
+    issue = await musehub_issues.remove_label(
+        db, repo_id, issue_number, label=label_name
+    )
+    if issue is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Issue not found")
+    await db.commit()
+    return issue

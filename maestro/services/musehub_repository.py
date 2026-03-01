@@ -223,11 +223,49 @@ async def create_repo(
 
 
 async def get_repo(session: AsyncSession, repo_id: str) -> RepoResponse | None:
-    """Return repo metadata by internal UUID, or None if not found."""
+    """Return repo metadata by internal UUID, or None if not found or soft-deleted."""
     result = await session.get(db.MusehubRepo, repo_id)
-    if result is None:
+    if result is None or result.deleted_at is not None:
         return None
     return _to_repo_response(result)
+
+
+async def delete_repo(session: AsyncSession, repo_id: str) -> bool:
+    """Soft-delete a repo by recording its deletion timestamp.
+
+    Returns True when the repo existed and was deleted; False when the repo
+    was not found or had already been soft-deleted.  The caller is responsible
+    for committing the session.
+    """
+    row = await session.get(db.MusehubRepo, repo_id)
+    if row is None or row.deleted_at is not None:
+        return False
+    row.deleted_at = datetime.now(timezone.utc)
+    await session.flush()
+    logger.info("✅ Soft-deleted Muse Hub repo %s", repo_id)
+    return True
+
+
+async def transfer_repo_ownership(
+    session: AsyncSession, repo_id: str, new_owner_user_id: str
+) -> RepoResponse | None:
+    """Transfer repo ownership to a new user.
+
+    Only touches ``owner_user_id`` — the public ``owner`` username slug is
+    intentionally NOT changed here; the owner username update (if desired) is a
+    settings-level change the new owner makes separately.
+
+    Returns the updated RepoResponse, or None when the repo is not found or
+    has been soft-deleted.  The caller is responsible for committing the session.
+    """
+    row = await session.get(db.MusehubRepo, repo_id)
+    if row is None or row.deleted_at is not None:
+        return None
+    row.owner_user_id = new_owner_user_id
+    await session.flush()
+    await session.refresh(row)
+    logger.info("✅ Transferred Muse Hub repo %s ownership to user %s", repo_id, new_owner_user_id)
+    return _to_repo_response(row)
 
 
 async def get_repo_by_owner_slug(
