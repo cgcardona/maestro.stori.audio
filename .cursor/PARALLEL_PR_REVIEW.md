@@ -954,15 +954,29 @@ STEP 8 — SPAWN YOUR SUCCESSOR (run this before self-destructing):
   if [ "$SPAWN_MODE" = "chain" ]; then
     # ── CHAIN MODE: merge happened → spawn next engineer for next unclaimed issue ──
 
-    # Find the next open, unclaimed, phase-tagged issue.
+    # Find the next open, unclaimed, htmx-tagged issue whose dependencies are met.
     NEXT_ISSUE=$(gh issue list \
       --repo "$GH_REPO" \
       --state open \
       --json number,labels \
       --jq '[.[] | select(
-               (.labels | map(.name) | any(startswith("phase-"))) and
+               (.labels | map(.name) | any(startswith("htmx/"))) and
                (.labels | map(.name) | index("agent:wip") | not)
              )] | first | .number // empty')
+
+    # Dependency gate: only proceed if all "Depends on #NNN" references are CLOSED.
+    if [ -n "$NEXT_ISSUE" ]; then
+      BODY=$(gh issue view "$NEXT_ISSUE" --repo "$GH_REPO" --json body --jq '.body' 2>/dev/null || echo "")
+      DEPS=$(echo "$BODY" | grep -oE 'Depends on[^#]*#[0-9]+' | grep -oE '[0-9]+')
+      for dep in $DEPS; do
+        DEP_STATE=$(gh issue view "$dep" --repo "$GH_REPO" --json state --jq '.state' 2>/dev/null || echo "OPEN")
+        if [ "$DEP_STATE" != "CLOSED" ]; then
+          echo "ℹ️  Issue #$NEXT_ISSUE blocked by open dependency #$dep — chain complete for now."
+          NEXT_ISSUE=""
+          break
+        fi
+      done
+    fi
 
     # Guard against race: verify no branch already exists.
     if [ -n "$NEXT_ISSUE" ]; then
