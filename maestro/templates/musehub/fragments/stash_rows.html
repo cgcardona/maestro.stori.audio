@@ -1,0 +1,51 @@
+{#
+  stash_rows.html — HTMX fragment: stash list rows.
+
+  Returned by stash_list_page() when HX-Request header is present.
+  Also included by stash.html on full-page load so initial render and
+  subsequent HTMX swaps produce identical markup.
+
+  Required context variables:
+    stashes   list[dict]  — stash entries to render (id, ref, branch, message,
+                            created_at, entry_count)
+    base_url  str         — canonical UI base URL for this repo (no trailing slash)
+    page      int         — current 1-based page number
+    page_size int         — items per page (used to compute stash@{N} offset)
+#}
+{% from "musehub/macros/empty_state.html" import empty_state %}
+{% if stashes %}
+  {% for stash in stashes %}
+  <div class="stash-row" id="stash-{{ stash.id }}">
+    <div class="stash-ref"><code>{{ stash.ref }}</code></div>
+    <div class="stash-message">
+      {% if stash.message %}
+        {{ stash.message[:80] }}{% if stash.message | length > 80 %}…{% endif %}
+      {% else %}
+        <em style="color:var(--text-muted,#8b949e)">WIP on {{ stash.branch }}</em>
+      {% endif %}
+    </div>
+    <div class="stash-meta">
+      <span title="Branch">🌿 <span class="stash-branch">{{ stash.branch }}</span></span>
+      <span title="Saved">🕐 {{ stash.created_at | fmtrelative }}</span>
+      <span title="Files">📄
+        {{ stash.entry_count }}
+        {{ 'file' if stash.entry_count == 1 else 'files' }}
+      </span>
+    </div>
+    <div class="stash-actions">
+      <form method="post" action="{{ base_url }}/stash/{{ stash.id }}/apply" style="display:inline">
+        <button type="submit" class="btn btn-apply" title="Apply stash without removing it">Apply</button>
+      </form>
+      <form method="post" action="{{ base_url }}/stash/{{ stash.id }}/pop" style="display:inline">
+        <button type="submit" class="btn btn-pop" title="Apply stash and remove it from the stack">Pop</button>
+      </form>
+      <form method="post" action="{{ base_url }}/stash/{{ stash.id }}/drop" style="display:inline"
+            hx-confirm="Drop {{ stash.ref }}? This will permanently discard the stashed changes.">
+        <button type="submit" class="btn btn-drop" title="Discard stash without applying">Drop</button>
+      </form>
+    </div>
+  </div>
+  {% endfor %}
+{% else %}
+  {{ empty_state("📦", "No stashed changes", "Use 'muse stash' in the DAW to save uncommitted work.", '', '') }}
+{% endif %}

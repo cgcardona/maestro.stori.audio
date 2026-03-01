@@ -294,6 +294,7 @@ async def stash_list_page(
         templates=templates,
         json_data=page_data,
         format_param=format,
+        fragment_template="musehub/fragments/stash_rows.html",
     )
 
 
