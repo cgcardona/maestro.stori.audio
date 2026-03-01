@@ -3,9 +3,9 @@
 Endpoint summary:
   GET    /musehub/repos/{repo_id}/collaborators                          — list collaborators with permission level (auth required)
   POST   /musehub/repos/{repo_id}/collaborators                          — invite collaborator (auth required, admin+)
-  PUT    /musehub/repos/{repo_id}/collaborators/{username}/permission     — update permission level (auth required, admin+)
-  DELETE /musehub/repos/{repo_id}/collaborators/{username}               — remove collaborator (auth required, admin+)
-  GET    /musehub/repos/{repo_id}/collaborators/{username}/permission     — check collaborator status and permission level (auth required)
+  PUT    /musehub/repos/{repo_id}/collaborators/{user_id}/permission     — update permission level (auth required, admin+)
+  DELETE /musehub/repos/{repo_id}/collaborators/{user_id}               — remove collaborator (auth required, admin+)
+  GET    /musehub/repos/{repo_id}/collaborators/{user_id}/permission     — check collaborator status and permission level (auth required)
 
 Permission hierarchy: owner > admin > write > read
 
@@ -17,15 +17,16 @@ from __future__ import annotations
 import logging
 import uuid
 from enum import Enum
-from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel, Field
+from pydantic import Field
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from maestro.auth.dependencies import TokenClaims, require_valid_token
 from maestro.db import get_db
+from maestro.db.musehub_collaborator_models import MusehubCollaborator
+from maestro.models.base import CamelModel
 from maestro.services import musehub_repository
 
 logger = logging.getLogger(__name__)
@@ -47,10 +48,10 @@ class Permission(str, Enum):
 
 # Permission rank for comparison: higher is more privileged.
 _PERMISSION_RANK: dict[str, int] = {
-    Permission.read: 1,
-    Permission.write: 2,
-    Permission.admin: 3,
-    Permission.owner: 4,
+    Permission.read.value: 1,
+    Permission.write.value: 2,
+    Permission.admin.value: 3,
+    Permission.owner.value: 4,
 }
 
 
@@ -64,72 +65,55 @@ def _has_permission(actor_permission: str, required: Permission) -> bool:
 # ── Pydantic request / response models ───────────────────────────────────────
 
 
-class CollaboratorInviteRequest(BaseModel):
+class CollaboratorInviteRequest(CamelModel):
     """Body for POST /collaborators — invite a new collaborator."""
 
-    username: str = Field(..., min_length=1, max_length=255, description="Username of the user to invite")
-    permission: Permission = Field(Permission.read, description="Initial permission level (read | write | admin)")
+    user_id: str = Field(..., min_length=1, max_length=36, description="UUID of the user to invite")
+    permission: Permission = Field(Permission.write, description="Initial permission level (read | write | admin)")
 
 
-class CollaboratorPermissionUpdate(BaseModel):
-    """Body for PUT /collaborators/{username}/permission — update permission."""
+class CollaboratorPermissionUpdate(CamelModel):
+    """Body for PUT /collaborators/{user_id}/permission — update permission."""
 
     permission: Permission = Field(..., description="New permission level (read | write | admin)")
 
 
-class CollaboratorResponse(BaseModel):
+class CollaboratorResponse(CamelModel):
     """A single collaborator entry."""
 
-    collaborator_id: str = Field(..., description="Unique collaborator record ID")
+    collaborator_id: str = Field(..., description="Unique collaborator record ID (primary key)")
     repo_id: str = Field(..., description="Repository ID")
-    username: str = Field(..., description="Collaborator username")
+    user_id: str = Field(..., description="Collaborator user ID (UUID)")
     permission: str = Field(..., description="Current permission level")
-    invited_by: str = Field(..., description="Username of the inviter")
+    invited_by: str | None = Field(None, description="User ID of the inviter (null if added programmatically)")
 
 
-class CollaboratorListResponse(BaseModel):
+class CollaboratorListResponse(CamelModel):
     """Paginated list of repository collaborators."""
 
     collaborators: list[CollaboratorResponse]
     total: int = Field(..., description="Total number of collaborators")
 
 
-class CollaboratorPermissionResponse(BaseModel):
+class CollaboratorPermissionResponse(CamelModel):
     """Response for the permission-check endpoint."""
 
-    username: str
+    user_id: str
     is_collaborator: bool
     permission: str | None = Field(None, description="Permission level if the user is a collaborator")
 
 
-# ── Helper — load ORM model at runtime ───────────────────────────────────────
+# ── Helper ───────────────────────────────────────────────────────────────────
 
 
-def _require_orm() -> Any:
-    """Return the MusehubCollaborator ORM class or raise HTTP 503.
-
-    The ORM model lives in batch-01 (maestro.db.musehub_collaborator_models).
-    If that migration is not yet merged, this function raises HTTP 503 rather
-    than crashing at import time or returning a bad response.
-    """
-    try:
-        from maestro.db.musehub_collaborator_models import MusehubCollaborator  # noqa: PLC0415
-        return MusehubCollaborator
-    except ImportError:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Collaborator ORM not yet available — batch-01 migration pending",
-        )
-
-
-def _orm_to_response(collab: Any) -> CollaboratorResponse:
+def _orm_to_response(collab: MusehubCollaborator) -> CollaboratorResponse:
     """Convert an ORM MusehubCollaborator row to a CollaboratorResponse."""
     return CollaboratorResponse(
-        collaborator_id=str(collab.collaborator_id),
+        collaborator_id=str(collab.id),
         repo_id=str(collab.repo_id),
-        username=str(collab.username),
+        user_id=str(collab.user_id),
         permission=str(collab.permission),
-        invited_by=str(collab.invited_by),
+        invited_by=str(collab.invited_by) if collab.invited_by is not None else None,
     )
 
 
@@ -156,9 +140,7 @@ async def list_collaborators(
     if repo is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repo not found")
 
-    MusehubCollaborator: Any = _require_orm()
-
-    result: Any = await db.execute(
+    result = await db.execute(
         select(MusehubCollaborator).where(MusehubCollaborator.repo_id == repo_id)
     )
     rows = result.scalars().all()
@@ -179,7 +161,7 @@ async def invite_collaborator(
     db: AsyncSession = Depends(get_db),
     token: TokenClaims = Depends(require_valid_token),
 ) -> CollaboratorResponse:
-    """Invite *username* as a collaborator with the given *permission* level.
+    """Invite *user_id* as a collaborator with the given *permission* level.
 
     Requires admin+ permission on the repository. The owner's permission level
     cannot be downgraded via this endpoint — use the dedicated update endpoint.
@@ -188,19 +170,17 @@ async def invite_collaborator(
     if repo is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repo not found")
 
-    MusehubCollaborator: Any = _require_orm()
-
     actor: str = token.get("sub", "")
-    repo_owner: str = str(getattr(repo, "owner_id", ""))
+    repo_owner: str = str(repo.owner_user_id)
 
     # Look up the actor's permission on this repo.
-    actor_result: Any = await db.execute(
+    actor_result = await db.execute(
         select(MusehubCollaborator).where(
             MusehubCollaborator.repo_id == repo_id,
-            MusehubCollaborator.username == actor,
+            MusehubCollaborator.user_id == actor,
         )
     )
-    actor_collab: Any = actor_result.scalar_one_or_none()
+    actor_collab = actor_result.scalar_one_or_none()
     actor_permission: str = str(actor_collab.permission) if actor_collab is not None else ""
 
     # Repo owner also counts as admin+.
@@ -211,22 +191,22 @@ async def invite_collaborator(
         )
 
     # Check for duplicate.
-    existing_result: Any = await db.execute(
+    existing_result = await db.execute(
         select(MusehubCollaborator).where(
             MusehubCollaborator.repo_id == repo_id,
-            MusehubCollaborator.username == body.username,
+            MusehubCollaborator.user_id == body.user_id,
         )
     )
     if existing_result.scalar_one_or_none() is not None:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail=f"User '{body.username}' is already a collaborator",
+            detail=f"User '{body.user_id}' is already a collaborator",
         )
 
-    new_collab: Any = MusehubCollaborator(
-        collaborator_id=str(uuid.uuid4()),
+    new_collab = MusehubCollaborator(
+        id=str(uuid.uuid4()),
         repo_id=repo_id,
-        username=body.username,
+        user_id=body.user_id,
         permission=body.permission.value,
         invited_by=actor,
     )
@@ -236,27 +216,27 @@ async def invite_collaborator(
 
     logger.info(
         "✅ Collaborator '%s' added to repo '%s' with permission '%s'",
-        body.username,
+        body.user_id,
         repo_id,
-        body.permission,
+        body.permission.value,
     )
     return _orm_to_response(new_collab)
 
 
 @router.put(
-    "/repos/{repo_id}/collaborators/{username}/permission",
+    "/repos/{repo_id}/collaborators/{user_id}/permission",
     response_model=CollaboratorResponse,
     operation_id="updateCollaboratorPermission",
     summary="Update a collaborator's permission level",
 )
 async def update_collaborator_permission(
     repo_id: str,
-    username: str,
+    user_id: str,
     body: CollaboratorPermissionUpdate,
     db: AsyncSession = Depends(get_db),
     token: TokenClaims = Depends(require_valid_token),
 ) -> CollaboratorResponse:
-    """Update *username*'s permission on *repo_id*.
+    """Update *user_id*'s permission on *repo_id*.
 
     Requires admin+ permission. The owner's permission cannot be changed via
     this endpoint — ownership transfer is a separate, deliberate operation.
@@ -265,18 +245,16 @@ async def update_collaborator_permission(
     if repo is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repo not found")
 
-    MusehubCollaborator: Any = _require_orm()
-
     actor: str = token.get("sub", "")
-    repo_owner: str = str(getattr(repo, "owner_id", ""))
+    repo_owner: str = str(repo.owner_user_id)
 
-    actor_result: Any = await db.execute(
+    actor_result = await db.execute(
         select(MusehubCollaborator).where(
             MusehubCollaborator.repo_id == repo_id,
-            MusehubCollaborator.username == actor,
+            MusehubCollaborator.user_id == actor,
         )
     )
-    actor_collab: Any = actor_result.scalar_one_or_none()
+    actor_collab = actor_result.scalar_one_or_none()
     actor_permission: str = str(actor_collab.permission) if actor_collab is not None else ""
 
     if actor != repo_owner and not _has_permission(actor_permission, Permission.admin):
@@ -285,13 +263,13 @@ async def update_collaborator_permission(
             detail="Admin or owner permission required to update collaborator permissions",
         )
 
-    target_result: Any = await db.execute(
+    target_result = await db.execute(
         select(MusehubCollaborator).where(
             MusehubCollaborator.repo_id == repo_id,
-            MusehubCollaborator.username == username,
+            MusehubCollaborator.user_id == user_id,
         )
     )
-    target: Any = target_result.scalar_one_or_none()
+    target = target_result.scalar_one_or_none()
     if target is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Collaborator not found")
 
@@ -307,26 +285,26 @@ async def update_collaborator_permission(
 
     logger.info(
         "✅ Collaborator '%s' permission updated to '%s' on repo '%s'",
-        username,
-        body.permission,
+        user_id,
+        body.permission.value,
         repo_id,
     )
     return _orm_to_response(target)
 
 
 @router.delete(
-    "/repos/{repo_id}/collaborators/{username}",
+    "/repos/{repo_id}/collaborators/{user_id}",
     status_code=status.HTTP_204_NO_CONTENT,
     operation_id="removeCollaborator",
     summary="Remove a collaborator from the repository",
 )
 async def remove_collaborator(
     repo_id: str,
-    username: str,
+    user_id: str,
     db: AsyncSession = Depends(get_db),
     token: TokenClaims = Depends(require_valid_token),
 ) -> None:
-    """Remove *username* from the collaborator list of *repo_id*.
+    """Remove *user_id* from the collaborator list of *repo_id*.
 
     Requires admin+ permission. The repository owner cannot be removed.
     """
@@ -334,18 +312,16 @@ async def remove_collaborator(
     if repo is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repo not found")
 
-    MusehubCollaborator: Any = _require_orm()
-
     actor: str = token.get("sub", "")
-    repo_owner: str = str(getattr(repo, "owner_id", ""))
+    repo_owner: str = str(repo.owner_user_id)
 
-    actor_result: Any = await db.execute(
+    actor_result = await db.execute(
         select(MusehubCollaborator).where(
             MusehubCollaborator.repo_id == repo_id,
-            MusehubCollaborator.username == actor,
+            MusehubCollaborator.user_id == actor,
         )
     )
-    actor_collab: Any = actor_result.scalar_one_or_none()
+    actor_collab = actor_result.scalar_one_or_none()
     actor_permission: str = str(actor_collab.permission) if actor_collab is not None else ""
 
     if actor != repo_owner and not _has_permission(actor_permission, Permission.admin):
@@ -354,13 +330,13 @@ async def remove_collaborator(
             detail="Admin or owner permission required to remove collaborators",
         )
 
-    target_result: Any = await db.execute(
+    target_result = await db.execute(
         select(MusehubCollaborator).where(
             MusehubCollaborator.repo_id == repo_id,
-            MusehubCollaborator.username == username,
+            MusehubCollaborator.user_id == user_id,
         )
     )
-    target: Any = target_result.scalar_one_or_none()
+    target = target_result.scalar_one_or_none()
     if target is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Collaborator not found")
 
@@ -373,32 +349,32 @@ async def remove_collaborator(
     await db.execute(
         delete(MusehubCollaborator).where(
             MusehubCollaborator.repo_id == repo_id,
-            MusehubCollaborator.username == username,
+            MusehubCollaborator.user_id == user_id,
         )
     )
     await db.commit()
 
     logger.info(
         "✅ Collaborator '%s' removed from repo '%s' by '%s'",
-        username,
+        user_id,
         repo_id,
         actor,
     )
 
 
 @router.get(
-    "/repos/{repo_id}/collaborators/{username}/permission",
+    "/repos/{repo_id}/collaborators/{user_id}/permission",
     response_model=CollaboratorPermissionResponse,
     operation_id="checkCollaboratorPermission",
     summary="Check if a user is a collaborator and their permission level",
 )
 async def check_collaborator_permission(
     repo_id: str,
-    username: str,
+    user_id: str,
     db: AsyncSession = Depends(get_db),
     token: TokenClaims = Depends(require_valid_token),
 ) -> CollaboratorPermissionResponse:
-    """Return collaborator status and permission level for *username* on *repo_id*.
+    """Return collaborator status and permission level for *user_id* on *repo_id*.
 
     Returns ``is_collaborator: false`` (with ``permission: null``) if the user
     is not currently a collaborator rather than raising 404, so callers can
@@ -408,21 +384,19 @@ async def check_collaborator_permission(
     if repo is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repo not found")
 
-    MusehubCollaborator: Any = _require_orm()
-
-    result: Any = await db.execute(
+    result = await db.execute(
         select(MusehubCollaborator).where(
             MusehubCollaborator.repo_id == repo_id,
-            MusehubCollaborator.username == username,
+            MusehubCollaborator.user_id == user_id,
         )
     )
-    collab: Any = result.scalar_one_or_none()
+    collab = result.scalar_one_or_none()
 
     if collab is None:
-        return CollaboratorPermissionResponse(username=username, is_collaborator=False, permission=None)
+        return CollaboratorPermissionResponse(user_id=user_id, is_collaborator=False, permission=None)
 
     return CollaboratorPermissionResponse(
-        username=username,
+        user_id=user_id,
         is_collaborator=True,
         permission=str(collab.permission),
     )
