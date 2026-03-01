@@ -794,6 +794,139 @@ class AggregateAnalysisResponse(CamelModel):
 
 
 # ---------------------------------------------------------------------------
+# Cross-ref similarity response (issue #406)
+# ---------------------------------------------------------------------------
+
+
+class RefSimilarityDimensions(CamelModel):
+    """Per-dimension similarity scores between two Muse refs.
+
+    Each score is a 0–1 float where 1.0 means identical and 0.0 means
+    maximally different.  Scores are computed independently per dimension
+    so agents can see exactly where two commits agree or diverge.
+    """
+
+    pitch_distribution: float = Field(..., ge=0.0, le=1.0)
+    rhythm_pattern: float = Field(..., ge=0.0, le=1.0)
+    tempo: float = Field(..., ge=0.0, le=1.0)
+    dynamics: float = Field(..., ge=0.0, le=1.0)
+    harmonic_content: float = Field(..., ge=0.0, le=1.0)
+    form: float = Field(..., ge=0.0, le=1.0)
+    instrument_blend: float = Field(..., ge=0.0, le=1.0)
+    groove: float = Field(..., ge=0.0, le=1.0)
+    contour: float = Field(..., ge=0.0, le=1.0)
+    emotion: float = Field(..., ge=0.0, le=1.0)
+
+
+class RefSimilarityResponse(CamelModel):
+    """Cross-ref similarity analysis between two Muse refs.
+
+    Returned by ``GET /musehub/repos/{repo_id}/analysis/{ref}/similarity?compare={ref2}``.
+
+    ``overall_similarity`` is a weighted average of the 10 dimension scores.
+    ``dimensions`` breaks down the score per musical axis so agents can
+    identify exactly where the two refs diverge.
+    ``interpretation`` is a human-readable summary for display in the UI
+    and for agent reasoning without further computation.
+
+    Agent use case: call this before generating a variation to understand
+    how far the target ref deviates from a reference ref, and which
+    dimensions need the most attention to close the gap.
+    """
+
+    base_ref: str = Field(..., description="The ref used as the similarity baseline")
+    compare_ref: str = Field(..., description="The ref compared against base_ref")
+    overall_similarity: float = Field(
+        ..., ge=0.0, le=1.0, description="Weighted average of all 10 dimension scores"
+    )
+    dimensions: RefSimilarityDimensions
+    interpretation: str = Field(
+        ..., description="Human-readable interpretation of the similarity result"
+    )
+
+
+# Emotion diff models (issue #420)
+# ---------------------------------------------------------------------------
+
+
+class EmotionVector8D(CamelModel):
+    """Eight-axis emotion vector for a single Muse commit, all axes in [0, 1].
+
+    Extends the four-axis :class:`EmotionVector` with four additional perceptual
+    dimensions used by the emotion-diff radar chart:
+
+    - ``valence``      — 0 (dark/negative) to 1 (bright/positive)
+    - ``energy``       — 0 (passive/still) to 1 (active/driving)
+    - ``tension``      — 0 (relaxed) to 1 (tense/dissonant)
+    - ``complexity``   — 0 (sparse/simple) to 1 (dense/complex)
+    - ``warmth``       — 0 (cold/sterile) to 1 (warm/intimate)
+    - ``brightness``   — 0 (dark/dull) to 1 (bright/shimmering)
+    - ``darkness``     — 0 (luminous) to 1 (brooding/ominous)
+    - ``playfulness``  — 0 (serious/solemn) to 1 (playful/whimsical)
+    """
+
+    valence: float = Field(..., ge=0.0, le=1.0)
+    energy: float = Field(..., ge=0.0, le=1.0)
+    tension: float = Field(..., ge=0.0, le=1.0)
+    complexity: float = Field(..., ge=0.0, le=1.0)
+    warmth: float = Field(..., ge=0.0, le=1.0)
+    brightness: float = Field(..., ge=0.0, le=1.0)
+    darkness: float = Field(..., ge=0.0, le=1.0)
+    playfulness: float = Field(..., ge=0.0, le=1.0)
+
+
+class EmotionDelta8D(CamelModel):
+    """Signed per-axis delta between two 8-axis emotion vectors.
+
+    Values are in [-1, 1]: positive means the head ref increased that axis
+    relative to the base ref; negative means it decreased.
+
+    Separate from :class:`EmotionVector8D` because the delta allows negative
+    values while the absolute vectors are constrained to [0, 1].
+    """
+
+    valence: float = Field(..., ge=-1.0, le=1.0)
+    energy: float = Field(..., ge=-1.0, le=1.0)
+    tension: float = Field(..., ge=-1.0, le=1.0)
+    complexity: float = Field(..., ge=-1.0, le=1.0)
+    warmth: float = Field(..., ge=-1.0, le=1.0)
+    brightness: float = Field(..., ge=-1.0, le=1.0)
+    darkness: float = Field(..., ge=-1.0, le=1.0)
+    playfulness: float = Field(..., ge=-1.0, le=1.0)
+
+
+class EmotionDiffResponse(CamelModel):
+    """Emotional diff between two Muse commit refs across eight perceptual axes.
+
+    Returned by ``GET /musehub/repos/{repo_id}/analysis/{ref}/emotion-diff?base={base_ref}``.
+
+    Agents use this to detect emotional character shifts between commits — e.g.
+    identify whether a generative commit pushed the piece toward higher tension,
+    darkness, or playfulness relative to a reference state.
+
+    ``delta`` is ``head_emotion - base_emotion`` per axis (signed; negative means
+    the axis decreased).  ``interpretation`` is an auto-generated natural-language
+    summary of the most significant shifts for human and agent readability.
+    """
+
+    repo_id: str
+    base_ref: str = Field(..., description="The reference ref used as the comparison baseline")
+    head_ref: str = Field(..., description="The ref being evaluated (the head)")
+    computed_at: datetime
+    base_emotion: EmotionVector8D
+    head_emotion: EmotionVector8D
+    delta: EmotionDelta8D = Field(
+        ...,
+        description=(
+            "Signed per-axis delta: head_emotion - base_emotion. "
+            "Positive = axis increased, negative = axis decreased. Range: [-1, 1]."
+        ),
+    )
+    interpretation: str = Field(
+        ..., description="Auto-generated text describing the dominant emotional shifts"
+    )
+
+
 # Dedicated harmony endpoint models (issue #414) — muse harmony command
 # ---------------------------------------------------------------------------
 
