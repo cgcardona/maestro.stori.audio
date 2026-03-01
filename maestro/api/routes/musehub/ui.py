@@ -282,33 +282,6 @@ async def profile_redirect(username: str) -> RedirectResponse:
     )
 
 
-@fixed_router.get(
-    "/users/{username}",
-    response_class=HTMLResponse,
-    summary='Muse Hub user profile page',
-)
-async def profile_page(request: Request, username: str) -> HTMLResponse:
-    """Render the public user profile page.
-
-    Displays bio, avatar, pinned repos, all public repos with last-activity,
-    a GitHub-style contribution heatmap, and aggregated session credits.
-    Auth is handled client-side -- the profile itself is public.
-    """
-    return templates.TemplateResponse(
-        request,
-        "musehub/pages/profile.html",
-        {
-            "title": f"@{username}",
-            "username": username,
-            "og_meta": _og_tags(
-                title=f"@{username} — Muse Hub",
-                description=f"{username}'s music repos on Muse Hub",
-                og_type="profile",
-            ),
-        },
-    )
-
-
 # ---------------------------------------------------------------------------
 # Repo-scoped pages
 # ---------------------------------------------------------------------------
