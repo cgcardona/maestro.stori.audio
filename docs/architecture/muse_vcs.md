@@ -253,6 +253,49 @@ This merge implementation operates at **file-path level**. Two commits that modi
 
 ---
 
+## `.museattributes` — Per-Repo Merge Strategy Configuration
+
+`.museattributes` is an optional configuration file placed in the repository root (next to `.muse/`). It encodes per-track, per-dimension merge strategy rules so that `muse merge` can skip conflict detection for well-understood cases.
+
+### File Format
+
+```
+# one rule per line: <track-pattern>  <dimension>  <strategy>
+drums/*   *         ours
+keys/*    harmonic  theirs
+*         *         auto
+```
+
+- **`track-pattern`**: `fnmatch` glob against the track name.
+- **`dimension`**: one of `harmonic`, `rhythmic`, `melodic`, `structural`, `dynamic`, or `*` (all).
+- **`strategy`**: `ours` | `theirs` | `union` | `auto` | `manual`.
+
+First matching rule wins. If no rule matches, `auto` is used.
+
+### Integration with `muse merge`
+
+When `build_merge_checkout_plan` is called with a `repo_path`, it loads `.museattributes` automatically and passes the parsed rules to `build_merge_result`. For each region:
+
+1. The track name is resolved from `track_regions`.
+2. `resolve_strategy(attributes, track, dimension)` returns the configured strategy.
+3. `ours` → take the left snapshot, no conflict detection.
+4. `theirs` → take the right snapshot, no conflict detection.
+5. All other strategies → normal three-way merge.
+
+### CLI
+
+```
+muse attributes [--json]
+```
+
+Displays the parsed rules in a human-readable table or JSON.
+
+### Reference
+
+Full reference: [`docs/reference/museattributes.md`](../reference/museattributes.md)
+
+---
+
 ## Artifact Resolution (`artifact_resolver.py`)
 
 `resolve_artifact_async(path_or_commit_id, root, session)` resolves a user-supplied
@@ -8613,6 +8656,96 @@ Issues may be reopened after closing: `POST /issues/{number}/reopen`. Both close
 | UI template | `maestro/templates/musehub/pages/issue_detail.html` — threaded UI |
 | Migration | `alembic/versions/0001_consolidated_schema.py` — new tables and columns |
 | Tests | `tests/test_musehub_issues.py` — 12 new tests covering all acceptance criteria |
+
+---
+
+
+## muse rerere
+
+### Purpose
+
+In parallel multi-branch Muse workflows, identical merge conflicts appear repeatedly — the same MIDI region modified in the same structural way on two independent branches. `muse rerere` (reuse recorded resolutions) records conflict shapes and their resolutions so they can be applied automatically on subsequent merges.
+
+The fingerprint is **transposition-invariant**: two conflicts with the same structural shape but different absolute pitches are treated as the same conflict, allowing a resolution recorded in one key to be applied in another.
+
+### Cache Layout
+
+```
+.muse/rr-cache/<sha256-hash>/
+    conflict    — serialised conflict fingerprint (JSON)
+    postimage   — serialised resolution (JSON, written only after resolve)
+```
+
+Entries marked `[R]` (in `muse rerere list`) have a `postimage`; entries marked `[C]` are conflict-only (awaiting resolution).
+
+### Commands
+
+| Command | Description |
+|---------|-------------|
+| `muse rerere` | Auto-apply any cached resolution for current merge conflicts |
+| `muse rerere list` | Show all conflict fingerprints in the rr-cache (`[R]` = resolved, `[C]` = conflict-only) |
+| `muse rerere forget <hash>` | Remove a single cached entry from the rr-cache |
+| `muse rerere clear` | Purge the entire rr-cache |
+
+### Example Output
+
+```
+$ muse merge feature/harmony-rework
+CONFLICT (note): Both sides modified note at pitch=64 beat=3.0 in region r1
+✅ muse rerere: resolved 1 conflict(s) using rerere (hash a3f7c2e1…)
+
+$ muse rerere list
+rr-cache (2 entries):
+  [R] a3f7c2e1d9b4...
+  [C] 88f02c3a71e4...
+
+$ muse rerere forget a3f7c2e1d9b4...
+✅ Forgot rerere entry a3f7c2e1d9b4…
+
+$ muse rerere clear
+✅ Cleared 1 rr-cache entry.
+```
+
+### Hook Integration
+
+`build_merge_checkout_plan()` in `maestro/services/muse_merge.py` automatically calls `record_conflict()` and `apply_rerere()` whenever conflicts are detected and a `repo_root` is provided. On a cache hit it logs:
+
+```
+✅ muse rerere: resolved N conflict(s) using rerere.
+```
+
+### Result Types
+
+| Function | Return Type | Description |
+|----------|-------------|-------------|
+| `record_conflict(repo_root, conflicts)` | `str` | SHA-256 hex fingerprint identifying the conflict shape |
+| `record_resolution(repo_root, hash, resolution)` | `None` | Writes `postimage` to cache; raises `FileNotFoundError` if hash not found |
+| `apply_rerere(repo_root, conflicts)` | `tuple[int, JSONObject \| None]` | `(n_resolved, resolution)` — `n_resolved` is 0 on miss or `len(conflicts)` on hit |
+| `list_rerere(repo_root)` | `list[str]` | Sorted list of all fingerprint hashes in the cache |
+| `forget_rerere(repo_root, hash)` | `bool` | `True` if removed, `False` if not found (idempotent) |
+| `clear_rerere(repo_root)` | `int` | Count of entries removed |
+
+The conflict dict type (`ConflictDict`) has fields: `region_id: str`, `type: str`, `description: str`. The resolution type is `JSONObject` (`dict[str, JSONValue]`) — intentionally opaque to support arbitrary resolution strategies.
+
+### Agent Use Case
+
+`muse rerere` is designed for AI agents running parallel Muse branch workflows. When an agent resolves a merge conflict (e.g. choosing the harmonic arrangement from `feature/harmony` over `feature/rhythm` for a contested region), it records the resolution via `record_resolution()`. Subsequent agents encountering structurally identical conflicts — even in a different key — receive the cached resolution automatically through `apply_rerere()`, eliminating repeated human intervention.
+
+**Typical agent workflow:**
+1. `build_merge_checkout_plan()` encounters conflicts → `record_conflict()` is called automatically.
+2. Agent examines conflicts and calls `record_resolution()` with the chosen strategy.
+3. On the next parallel merge with the same conflict shape: `apply_rerere()` returns the resolution, the agent logs a single `✅ resolved N conflict(s) using rerere` line, and proceeds.
+4. Use `muse rerere list` to audit cached resolutions; `muse rerere forget <hash>` or `muse rerere clear` when resolutions are stale.
+
+### Implementation
+
+| Layer | File |
+|-------|------|
+| Service | `maestro/services/muse_rerere.py` — fingerprinting, cache storage, all CRUD functions |
+| CLI commands | `maestro/muse_cli/commands/rerere.py` — `rerere`, `rerere list`, `rerere forget`, `rerere clear` |
+| CLI app | `maestro/muse_cli/app.py` — registered as `muse rerere` sub-app |
+| Merge hook | `maestro/services/muse_merge.py` — auto-apply after conflict detection |
+| Tests | `tests/test_muse_rerere.py` — full unit test coverage |
 
 ---
 
