@@ -8,6 +8,12 @@ Covers every acceptance criterion from issue #242:
 - All endpoints require valid JWT (401 without token)
 - Service layer: create_release, list_releases, get_release_by_tag, get_latest_release
 
+Covers issue #421 (asset management and download stats):
+- GET  /repos/{repo_id}/releases/{tag}/downloads — download count per asset
+- POST /repos/{repo_id}/releases/{tag}/assets    — attach asset to release
+- DELETE /repos/{repo_id}/releases/{tag}/assets/{asset_id} — remove asset
+- Service layer: attach_asset, get_asset, remove_asset, get_download_stats
+
 All tests use the shared ``client``, ``auth_headers``, and ``db_session``
 fixtures from conftest.py.
 """
@@ -562,3 +568,376 @@ async def test_create_release_author_persisted_in_list(
     assert len(releases) == 1
     assert "author" in releases[0]
     assert isinstance(releases[0]["author"], str)
+
+
+# ---------------------------------------------------------------------------
+# Issue #421 — Asset management and download stats
+# ---------------------------------------------------------------------------
+
+# ── Helper ────────────────────────────────────────────────────────────────────
+
+
+async def _attach_asset(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+    repo_id: str,
+    tag: str,
+    name: str = "track.mid",
+    label: str = "MIDI Bundle",
+    download_url: str = "https://cdn.example.com/track.mid",
+) -> dict[str, object]:
+    """Attach an asset to a release via the API and return the response body."""
+    response = await client.post(
+        f"/api/v1/musehub/repos/{repo_id}/releases/{tag}/assets",
+        json={
+            "name": name,
+            "label": label,
+            "contentType": "audio/midi",
+            "size": 1024,
+            "downloadUrl": download_url,
+        },
+        headers=auth_headers,
+    )
+    assert response.status_code == 201, response.text
+    result: dict[str, object] = response.json()
+    return result
+
+
+# ── POST /releases/{tag}/assets ───────────────────────────────────────────────
+
+
+@pytest.mark.anyio
+async def test_attach_asset_returns_all_fields(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+) -> None:
+    """POST /assets creates an asset and returns all required fields."""
+    repo_id = await _create_repo(client, auth_headers, "attach-asset-repo")
+    await _create_release(client, auth_headers, repo_id, tag="v1.0")
+
+    asset = await _attach_asset(client, auth_headers, repo_id, "v1.0")
+
+    assert "assetId" in asset
+    assert "releaseId" in asset
+    assert asset["name"] == "track.mid"
+    assert asset["label"] == "MIDI Bundle"
+    assert asset["downloadCount"] == 0
+    assert "createdAt" in asset
+
+
+@pytest.mark.anyio
+async def test_attach_asset_release_not_found_returns_404(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+) -> None:
+    """POST /assets returns 404 when the release tag does not exist."""
+    repo_id = await _create_repo(client, auth_headers, "attach-asset-404-repo")
+    response = await client.post(
+        f"/api/v1/musehub/repos/{repo_id}/releases/nonexistent-tag/assets",
+        json={"name": "file.mid", "downloadUrl": "https://cdn.example.com/file.mid"},
+        headers=auth_headers,
+    )
+    assert response.status_code == 404
+
+
+@pytest.mark.anyio
+async def test_attach_asset_repo_not_found_returns_404(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+) -> None:
+    """POST /assets returns 404 when the repo does not exist."""
+    response = await client.post(
+        "/api/v1/musehub/repos/ghost-repo/releases/v1.0/assets",
+        json={"name": "file.mid", "downloadUrl": "https://cdn.example.com/file.mid"},
+        headers=auth_headers,
+    )
+    assert response.status_code == 404
+
+
+@pytest.mark.anyio
+async def test_attach_asset_requires_auth(client: AsyncClient) -> None:
+    """POST /assets returns 401 without a Bearer token."""
+    response = await client.post(
+        "/api/v1/musehub/repos/some-repo/releases/v1.0/assets",
+        json={"name": "file.mid", "downloadUrl": "https://cdn.example.com/file.mid"},
+    )
+    assert response.status_code == 401
+
+
+# ── DELETE /releases/{tag}/assets/{asset_id} ─────────────────────────────────
+
+
+@pytest.mark.anyio
+async def test_delete_asset_removes_from_release(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+) -> None:
+    """DELETE /assets/{asset_id} removes the asset and subsequent download stats show 0 assets."""
+    repo_id = await _create_repo(client, auth_headers, "delete-asset-repo")
+    await _create_release(client, auth_headers, repo_id, tag="v1.0")
+    asset = await _attach_asset(client, auth_headers, repo_id, "v1.0")
+    asset_id = asset["assetId"]
+
+    response = await client.delete(
+        f"/api/v1/musehub/repos/{repo_id}/releases/v1.0/assets/{asset_id}",
+        headers=auth_headers,
+    )
+    assert response.status_code == 204
+
+    # Confirm asset is gone from download stats.
+    stats_response = await client.get(
+        f"/api/v1/musehub/repos/{repo_id}/releases/v1.0/downloads",
+        headers=auth_headers,
+    )
+    assert stats_response.status_code == 200
+    assert stats_response.json()["assets"] == []
+
+
+@pytest.mark.anyio
+async def test_delete_asset_not_found_returns_404(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+) -> None:
+    """DELETE /assets/{asset_id} returns 404 when the asset_id does not exist."""
+    repo_id = await _create_repo(client, auth_headers, "delete-asset-404-repo")
+    await _create_release(client, auth_headers, repo_id, tag="v1.0")
+
+    response = await client.delete(
+        f"/api/v1/musehub/repos/{repo_id}/releases/v1.0/assets/nonexistent-id",
+        headers=auth_headers,
+    )
+    assert response.status_code == 404
+
+
+@pytest.mark.anyio
+async def test_delete_asset_wrong_release_returns_404(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+) -> None:
+    """DELETE /assets/{asset_id} returns 404 when the asset belongs to a different release."""
+    repo_id = await _create_repo(client, auth_headers, "delete-asset-wrong-rel-repo")
+    await _create_release(client, auth_headers, repo_id, tag="v1.0")
+    await _create_release(client, auth_headers, repo_id, tag="v2.0")
+
+    # Attach to v1.0 but try to delete from v2.0.
+    asset = await _attach_asset(client, auth_headers, repo_id, "v1.0")
+    asset_id = asset["assetId"]
+
+    response = await client.delete(
+        f"/api/v1/musehub/repos/{repo_id}/releases/v2.0/assets/{asset_id}",
+        headers=auth_headers,
+    )
+    assert response.status_code == 404
+
+
+@pytest.mark.anyio
+async def test_delete_asset_requires_auth(client: AsyncClient) -> None:
+    """DELETE /assets/{asset_id} returns 401 without a Bearer token."""
+    response = await client.delete(
+        "/api/v1/musehub/repos/repo/releases/v1.0/assets/some-asset-id"
+    )
+    assert response.status_code == 401
+
+
+# ── GET /releases/{tag}/downloads ────────────────────────────────────────────
+
+
+@pytest.mark.anyio
+async def test_download_stats_empty_when_no_assets(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+) -> None:
+    """GET /downloads returns zero assets and total when no assets have been attached."""
+    repo_id = await _create_repo(client, auth_headers, "dl-stats-empty-repo")
+    await _create_release(client, auth_headers, repo_id, tag="v1.0")
+
+    response = await client.get(
+        f"/api/v1/musehub/repos/{repo_id}/releases/v1.0/downloads",
+        headers=auth_headers,
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["assets"] == []
+    assert body["totalDownloads"] == 0
+    assert "releaseId" in body
+    assert body["tag"] == "v1.0"
+
+
+@pytest.mark.anyio
+async def test_download_stats_lists_assets_with_counts(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+) -> None:
+    """GET /downloads returns one entry per attached asset with its download count."""
+    repo_id = await _create_repo(client, auth_headers, "dl-stats-populated-repo")
+    await _create_release(client, auth_headers, repo_id, tag="v1.0")
+
+    await _attach_asset(
+        client, auth_headers, repo_id, "v1.0",
+        name="track.mid", label="MIDI Bundle", download_url="https://cdn.example.com/track.mid"
+    )
+    await _attach_asset(
+        client, auth_headers, repo_id, "v1.0",
+        name="stems.zip", label="Stems", download_url="https://cdn.example.com/stems.zip"
+    )
+
+    response = await client.get(
+        f"/api/v1/musehub/repos/{repo_id}/releases/v1.0/downloads",
+        headers=auth_headers,
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert len(body["assets"]) == 2
+    # Fresh assets always start at zero.
+    assert all(a["downloadCount"] == 0 for a in body["assets"])
+    assert body["totalDownloads"] == 0
+    names = {a["name"] for a in body["assets"]}
+    assert names == {"track.mid", "stems.zip"}
+
+
+@pytest.mark.anyio
+async def test_download_stats_release_not_found_returns_404(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+) -> None:
+    """GET /downloads returns 404 when the release tag does not exist."""
+    repo_id = await _create_repo(client, auth_headers, "dl-stats-404-repo")
+    response = await client.get(
+        f"/api/v1/musehub/repos/{repo_id}/releases/nonexistent-tag/downloads",
+        headers=auth_headers,
+    )
+    assert response.status_code == 404
+
+
+# ── Service layer — direct DB tests ──────────────────────────────────────────
+
+
+@pytest.mark.anyio
+async def test_attach_asset_service_persists_to_db(db_session: AsyncSession) -> None:
+    """attach_asset() persists a row and all fields are correct."""
+    repo = await musehub_repository.create_repo(
+        db_session,
+        name="asset-svc-repo",
+        owner="testuser",
+        visibility="private",
+        owner_user_id="user-101",
+    )
+    await db_session.commit()
+
+    release = await musehub_releases.create_release(
+        db_session,
+        repo_id=repo.repo_id,
+        tag="v1.0",
+        title="Asset Test Release",
+        body="",
+        commit_id=None,
+    )
+    await db_session.commit()
+
+    asset = await musehub_releases.attach_asset(
+        db_session,
+        release_id=release.release_id,
+        repo_id=repo.repo_id,
+        name="bass.mid",
+        label="Bass MIDI",
+        content_type="audio/midi",
+        size=2048,
+        download_url="https://cdn.example.com/bass.mid",
+    )
+    await db_session.commit()
+
+    assert asset.asset_id
+    assert asset.release_id == release.release_id
+    assert asset.name == "bass.mid"
+    assert asset.download_count == 0
+
+
+@pytest.mark.anyio
+async def test_remove_asset_service_deletes_row(db_session: AsyncSession) -> None:
+    """remove_asset() deletes the row and returns True; subsequent get returns None."""
+    repo = await musehub_repository.create_repo(
+        db_session,
+        name="remove-asset-svc-repo",
+        owner="testuser",
+        visibility="private",
+        owner_user_id="user-102",
+    )
+    await db_session.commit()
+
+    release = await musehub_releases.create_release(
+        db_session,
+        repo_id=repo.repo_id,
+        tag="v1.0",
+        title="Remove Asset Test",
+        body="",
+        commit_id=None,
+    )
+    await db_session.commit()
+
+    asset = await musehub_releases.attach_asset(
+        db_session,
+        release_id=release.release_id,
+        repo_id=repo.repo_id,
+        name="keys.mid",
+        download_url="https://cdn.example.com/keys.mid",
+    )
+    await db_session.commit()
+
+    removed = await musehub_releases.remove_asset(db_session, asset.asset_id)
+    await db_session.commit()
+    assert removed is True
+
+    gone = await musehub_releases.get_asset(db_session, asset.asset_id)
+    assert gone is None
+
+
+@pytest.mark.anyio
+async def test_remove_asset_nonexistent_returns_false(db_session: AsyncSession) -> None:
+    """remove_asset() returns False when the asset_id does not exist."""
+    removed = await musehub_releases.remove_asset(db_session, "no-such-asset-id")
+    assert removed is False
+
+
+@pytest.mark.anyio
+async def test_get_download_stats_aggregates_correctly(db_session: AsyncSession) -> None:
+    """get_download_stats() returns correct counts and total across multiple assets."""
+    repo = await musehub_repository.create_repo(
+        db_session,
+        name="dl-stats-svc-repo",
+        owner="testuser",
+        visibility="private",
+        owner_user_id="user-103",
+    )
+    await db_session.commit()
+
+    release = await musehub_releases.create_release(
+        db_session,
+        repo_id=repo.repo_id,
+        tag="v1.0",
+        title="Stats Test Release",
+        body="",
+        commit_id=None,
+    )
+    await db_session.commit()
+
+    await musehub_releases.attach_asset(
+        db_session,
+        release_id=release.release_id,
+        repo_id=repo.repo_id,
+        name="a.mid",
+        download_url="https://cdn.example.com/a.mid",
+    )
+    await musehub_releases.attach_asset(
+        db_session,
+        release_id=release.release_id,
+        repo_id=repo.repo_id,
+        name="b.zip",
+        download_url="https://cdn.example.com/b.zip",
+    )
+    await db_session.commit()
+
+    stats = await musehub_releases.get_download_stats(db_session, release.release_id, "v1.0")
+    assert stats.release_id == release.release_id
+    assert stats.tag == "v1.0"
+    assert len(stats.assets) == 2
+    assert stats.total_downloads == 0
