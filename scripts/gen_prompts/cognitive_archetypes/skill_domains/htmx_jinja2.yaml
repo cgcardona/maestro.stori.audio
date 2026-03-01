@@ -1,0 +1,118 @@
+# Skill Domain: HTMX + Jinja2 + Alpine.js
+id: htmx_jinja2
+display_name: "HTMX / Jinja2 / Alpine.js"
+description: |
+  Server-side rendering with HTMX for partial updates, Jinja2 templates,
+  and Alpine.js for lightweight client-side reactivity. The primary UI
+  pattern throughout the AgentCeption dashboard.
+
+prompt_fragment: |
+  ## Skill Domain: HTMX / Jinja2 / Alpine.js
+
+  You are building a server-rendered FastAPI application. The UI pattern is:
+  - **HTMX** handles all partial page updates — no full-page refreshes except for
+    initial load. Every interactive element uses `hx-*` attributes.
+  - **Jinja2** templates render HTML on the server. Business logic stays in Python;
+    templates are for presentation only.
+  - **Alpine.js** handles lightweight client-side reactivity (dropdowns, toggles,
+    modal state). Never use Alpine where a pure HTMX solution exists.
+
+  ### HTMX Patterns
+
+  ```html
+  <!-- Polling / live updates -->
+  <div hx-get="/api/pipeline" hx-trigger="every 5s" hx-target="#tree" hx-swap="innerHTML">
+
+  <!-- SSE streaming -->
+  <div hx-ext="sse" sse-connect="/events" sse-swap="message" hx-target="#tree">
+
+  <!-- Form submission without page reload -->
+  <form hx-post="/api/control/kill/{{ worktree_slug }}" hx-target="#alerts" hx-swap="outerHTML">
+
+  <!-- Clicking loads a detail panel -->
+  <button hx-get="/agents/{{ agent_id }}" hx-target="#detail-panel" hx-swap="innerHTML">
+  ```
+
+  ### Jinja2 Template Structure
+
+  ```
+  agentception/templates/
+    base.html          ← base layout (nav, head, scripts)
+    overview.html      ← extends base.html
+    agent.html         ← extends base.html
+    partials/
+      agent_tree.html  ← HTMX target fragment (no base wrapper)
+      alert_banner.html
+  ```
+
+  - `templates/base.html` loads HTMX, Alpine.js, and all CSS from CDN.
+  - Partials (HTMX targets) extend nothing — they are bare HTML fragments.
+  - Macros for reusable UI components: `{% macro status_badge(status) %}`.
+  - Pass `request` as first context key (FastAPI + Jinja2 requirement).
+
+  ### Alpine.js Patterns
+
+  ```html
+  <!-- Toggle panel visibility -->
+  <div x-data="{ open: false }">
+    <button @click="open = !open">Details</button>
+    <div x-show="open">...</div>
+  </div>
+
+  <!-- Bind to API response -->
+  <div x-data="{ count: 0 }" x-init="fetch('/api/count').then(r=>r.json()).then(d=>count=d)">
+    <span x-text="count"></span>
+  </div>
+  ```
+
+  ### FastAPI Route Pattern
+
+  ```python
+  # agentception/routes/ui.py
+  from fastapi import APIRouter, Request
+  from fastapi.responses import HTMLResponse
+  from agentception.templates import templates  # Jinja2Templates instance
+
+  router = APIRouter()
+
+  @router.get("/", response_class=HTMLResponse)
+  async def overview(request: Request) -> HTMLResponse:
+      state = get_state() or PipelineState.empty()
+      return templates.TemplateResponse("overview.html", {
+          "request": request,
+          "state": state,
+      })
+
+  # HTMX partial (returns fragment, not full page)
+  @router.get("/partials/tree", response_class=HTMLResponse)
+  async def tree_partial(request: Request) -> HTMLResponse:
+      state = get_state() or PipelineState.empty()
+      return templates.TemplateResponse("partials/agent_tree.html", {
+          "request": request,
+          "state": state,
+      })
+  ```
+
+  ### CDN Versions (use these — do not bundle)
+
+  - HTMX: `https://unpkg.com/htmx.org@2.0.4/dist/htmx.min.js`
+  - HTMX SSE ext: `https://unpkg.com/htmx-ext-sse@2.2.2/sse.js`
+  - Alpine.js: `https://unpkg.com/alpinejs@3.14.1/dist/cdn.min.js`
+
+  ### CSS Convention
+
+  No CSS framework. Use a single `agentception/static/style.css` with:
+  - CSS custom properties for colors (dark theme: `--bg: #0d1117`, `--fg: #e6edf3`)
+  - Flexbox for layout, CSS Grid for dashboards
+  - Status colors: implementing=`#3b82f6`, reviewing=`#f59e0b`, done=`#22c55e`, stale=`#ef4444`
+
+  ### Quality Standards
+
+  - Templates have no business logic — only conditionals and loops over data passed in.
+  - Every HTMX target has a stable `id`. No anonymous targets.
+  - Partials are tested by requesting them directly with `pytest` + `httpx`.
+  - `hx-indicator` on every non-trivial HTMX request (loading state).
+
+quality_gates:
+  linter: "docker compose exec agentception mypy /app/agentception/"
+  test_runner: "docker compose exec agentception pytest agentception/tests/ -v"

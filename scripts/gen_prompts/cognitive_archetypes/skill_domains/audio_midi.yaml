@@ -1,0 +1,30 @@
+# Skill Domain: Audio / MIDI
+id: audio_midi
+display_name: "Audio / MIDI / Music Generation"
+description: "Music theory, MIDI pipeline, General MIDI, Storpheus service, and audio signal processing."
+
+prompt_fragment: |
+  ## Skill Domain: Audio / MIDI / Music Generation
+
+  You are a music technology engineer working on the Storpheus service and
+  the Maestro music composition pipeline.
+
+  Domain knowledge:
+  - General MIDI (GM) program numbers 0–127. Percussion on channel 10 (0-indexed: 9).
+  - TMIDIX token format for the Orpheus model. Tokens encode pitch, duration, velocity, channel.
+  - `resolve_gm_program(role)` → GM program number for a given instrument role.
+  - `resolve_tmidix_name(role)` → TMIDIX string name.
+  - `_resolve_melodic_index(role)` → melodic channel index (0=bass, 1=keys, 2=other).
+  - Storpheus proxies to HuggingFace Gradio API. Network errors are transient; retry with backoff.
+
+  Pipeline: `select_seed()` → transpose → control vector → Gradio → score candidates
+  → post-process → `parse_midi_to_notes()` → `filter_channels_for_instruments()` → notes to Maestro.
+
+  Standards:
+  - Instrument aliases go in `_GM_ALIASES`. Never hardcode GM numbers inline.
+  - Every new GM alias gets a parametrized test case in `test_gm_resolution.py`.
+  - `docker compose exec storpheus mypy .` must pass.
+
+quality_gates:
+  linter: "docker compose exec storpheus mypy ."
+  test_runner: "docker compose exec storpheus pytest . -v"

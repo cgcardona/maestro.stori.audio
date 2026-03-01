@@ -34,9 +34,12 @@ services:
       - ./alembic:/app/alembic
       - ./tourdeforce:/app/tourdeforce
       - ./pyproject.toml:/app/pyproject.toml
+      # .cursor/ — mounted so `generate.py` can write prompt files from inside the container.
+      # Run the generator with: docker compose exec maestro python3 /app/scripts/gen_prompts/generate.py
+      - ./.cursor:/app/.cursor
       # Cursor worktrees — agents run mypy/pytest directly against their worktree
       # via PYTHONPATH=/worktrees/<id>. No file copies needed. See .cursor/PARALLEL_ISSUE_TO_PR.md.
-      - /Users/gabriel/.cursor/worktrees/maestro:/worktrees
+      - ${HOME}/.cursor/worktrees/maestro:/worktrees
 
   storpheus:
     volumes:
@@ -44,4 +47,11 @@ services:
       - ./storpheus:/app
       # Cursor worktrees — parallel review agents need this to run mypy/pytest
       # against their worktree storpheus files via "cd /worktrees/<id> && mypy ."
-      - /Users/gabriel/.cursor/worktrees/maestro:/worktrees
+      - ${HOME}/.cursor/worktrees/maestro:/worktrees
+
+  agentception:
+    volumes:
+      # Live code — host edits are instantly visible; no rebuild needed
+      - ./agentception:/app/agentception
+      # agentception tests live under agentception/tests/ (isolated from maestro conftest)
+      - ${HOME}/.cursor/worktrees/maestro:/worktrees
