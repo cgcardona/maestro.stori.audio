@@ -29,18 +29,17 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime
-from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi import status as http_status
 from fastapi.requests import Request
-from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, ConfigDict
 from pydantic.alias_generators import to_camel
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.responses import Response
 
+from maestro.api.routes.musehub._templates import templates
 from maestro.api.routes.musehub.negotiate import negotiate_response
 from maestro.auth.dependencies import TokenClaims, optional_token
 from maestro.db import get_db
@@ -49,9 +48,6 @@ from maestro.db.musehub_models import MusehubNotification
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/musehub/ui", tags=["musehub-ui-notifications"])
-
-_TEMPLATE_DIR = Path(__file__).parent.parent.parent.parent / "templates"
-templates = Jinja2Templates(directory=str(_TEMPLATE_DIR))
 
 
 # ---------------------------------------------------------------------------

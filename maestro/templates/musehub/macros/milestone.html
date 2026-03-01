@@ -1,0 +1,26 @@
+{# macros/milestone.html — reusable milestone progress bar building block.
+   Import with:
+     {% from "musehub/macros/milestone.html" import milestone_progress %}
+   Then call:
+     {{ milestone_progress(milestone) }}
+   milestone object must expose:
+     .milestoneId   — used as the DOM element id
+     .title         — display text
+     .openIssues    — count of open issues (may be absent / 0)
+     .closedIssues  — count of closed issues (may be absent / 0)
+#}
+
+{% macro milestone_progress(milestone) %}
+{% set total = (milestone.openIssues | default(0)) + (milestone.closedIssues | default(0)) %}
+{% set pct = ((milestone.closedIssues | default(0)) / total * 100) | int if total > 0 else 0 %}
+<div class="milestone-progress-item" id="milestone-{{ milestone.milestoneId }}">
+  <div class="milestone-progress-title">
+    <span>{{ milestone.title }}</span>
+    <span>{{ pct }}%</span>
+  </div>
+  <div class="milestone-progress-bar-track">
+    <div class="milestone-progress-bar-fill" style="width:{{ pct }}%"></div>
+  </div>
+  <div class="milestone-progress-counts">{{ milestone.closedIssues | default(0) }} closed · {{ milestone.openIssues | default(0) }} open</div>
+</div>
+{% endmacro %}

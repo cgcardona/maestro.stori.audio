@@ -1,0 +1,17 @@
+{# macros/label.html — reusable label chip building block.
+   Import with:
+     {% from "musehub/macros/label.html" import label_chip %}
+   Then call:
+     {{ label_chip(name=label.name, color=label.color) }}
+   Optional kwargs:
+     active — True when this label is the current filter selection
+     href   — when set, wraps the label name in an <a> tag
+#}
+
+{% macro label_chip(name, color, active=False, href='') %}
+<span class="label-chip{% if active %} active{% endif %}"
+      style="background:{{ color }}22;color:{{ color }};border-color:{{ color }}">
+  <span class="label-dot" style="background:{{ color }}"></span>
+  {% if href %}<a href="{{ href }}" style="color:inherit">{{ name }}</a>{% else %}{{ name }}{% endif %}
+</span>
+{% endmacro %}

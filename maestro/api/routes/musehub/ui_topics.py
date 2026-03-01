@@ -26,15 +26,14 @@ Agent use case:
 from __future__ import annotations
 
 import logging
-from pathlib import Path
 
 from fastapi import APIRouter, Depends, Query, Request
-from fastapi.templating import Jinja2Templates
 from pydantic import Field
 from sqlalchemy import Text, desc, func, outerjoin, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.responses import Response as StarletteResponse
 
+from maestro.api.routes.musehub._templates import templates
 from maestro.api.routes.musehub.negotiate import htmx_fragment_or_full
 from maestro.api.routes.musehub.topics import TopicItem, TopicReposResponse
 from maestro.auth.dependencies import TokenClaims, optional_token
@@ -46,9 +45,6 @@ from maestro.models.musehub import ExploreRepoResult
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/musehub/ui", tags=["musehub-ui"])
-
-_TEMPLATE_DIR = Path(__file__).parent.parent.parent.parent / "templates"
-templates = Jinja2Templates(directory=str(_TEMPLATE_DIR))
 
 # ---------------------------------------------------------------------------
 # Curated topic groups — surfaced on the index page for quick navigation.
