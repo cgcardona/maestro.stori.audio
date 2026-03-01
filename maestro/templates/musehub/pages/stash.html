@@ -1,0 +1,255 @@
+{% extends "musehub/base.html" %}
+
+{% block title %}Stash — {{ owner }}/{{ repo_slug }}{% endblock %}
+{% block breadcrumb %}
+  <a href="/musehub/ui/{{ owner }}">{{ owner }}</a> /
+  <a href="/musehub/ui/{{ owner }}/{{ repo_slug }}">{{ repo_slug }}</a> /
+  stash
+{% endblock %}
+{% block repo_nav %}{% include "musehub/partials/repo_nav.html" %}{% endblock %}
+
+{% block extra_css %}
+<style>
+.stash-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+.stash-header h1 { margin: 0; }
+.stash-count {
+  font-size: 13px;
+  color: var(--text-muted, #8b949e);
+}
+.stash-row {
+  padding: 16px 0;
+  border-bottom: 1px solid var(--border, #30363d);
+}
+.stash-row:last-child { border-bottom: none; }
+.stash-ref {
+  font-family: var(--font-mono, "Fira Code", monospace);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--accent, #58a6ff);
+  margin-bottom: 4px;
+}
+.stash-message {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-primary, #e6edf3);
+  margin-bottom: 4px;
+  word-break: break-word;
+}
+.stash-meta {
+  font-size: 12px;
+  color: var(--text-muted, #8b949e);
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+.stash-branch {
+  font-family: var(--font-mono, "Fira Code", monospace);
+  background: var(--bg-overlay, #161b22);
+  border: 1px solid var(--border, #30363d);
+  border-radius: 4px;
+  padding: 1px 6px;
+  font-size: 11px;
+}
+.stash-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.btn {
+  padding: 4px 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: opacity 0.15s;
+}
+.btn:hover { opacity: 0.8; }
+.btn-apply {
+  background: var(--bg-overlay, #161b22);
+  border-color: var(--accent, #58a6ff);
+  color: var(--accent, #58a6ff);
+}
+.btn-pop {
+  background: var(--bg-overlay, #161b22);
+  border-color: var(--green, #3fb950);
+  color: var(--green, #3fb950);
+}
+.btn-drop {
+  background: var(--bg-overlay, #161b22);
+  border-color: var(--red, #f85149);
+  color: var(--red, #f85149);
+}
+.empty-state {
+  text-align: center;
+  padding: 40px 0;
+  color: var(--text-muted, #8b949e);
+}
+.empty-state .empty-icon { font-size: 32px; margin-bottom: 8px; }
+.pagination {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 16px;
+}
+.page-btn {
+  padding: 5px 12px;
+  border-radius: 6px;
+  border: 1px solid var(--border, #30363d);
+  background: var(--bg-overlay, #161b22);
+  color: var(--text-secondary, #c9d1d9);
+  font-size: 12px;
+  cursor: pointer;
+  text-decoration: none;
+}
+.page-btn.disabled {
+  opacity: 0.4;
+  pointer-events: none;
+}
+.page-btn.active {
+  border-color: var(--accent, #58a6ff);
+  color: var(--accent, #58a6ff);
+}
+</style>
+{% endblock %}
+
+{% block page_data %}
+const repoId   = {{ repo_id | tojson }};
+const base     = {{ base_url | tojson }};
+const owner    = {{ owner | tojson }};
+const repoSlug = {{ repo_slug | tojson }};
+const initPage = {{ page | tojson }};
+const pageSize = {{ page_size | tojson }};
+const initTotal = {{ total | tojson }};
+/* Server-rendered stash snapshot (avoids an extra round-trip on first load) */
+const initStashes = {{ stashes | tojson }};
+{% endblock %}
+
+{% block page_script %}
+{% raw %}
+/* ─── Stash list rendering ─────────────────────────────────────────────────
+ *
+ * The page is server-rendered with a snapshot of the stash list on first
+ * load (initStashes).  Action buttons (apply/pop/drop) POST to the UI
+ * endpoints which redirect back here after success, giving a clean
+ * reload-based update cycle without requiring extra client state.
+ *
+ * For JSON-API consumers (agents / Stori DAW MCP tool):
+ *   GET /musehub/ui/{owner}/{repo_slug}/stash?format=json
+ * ──────────────────────────────────────────────────────────────────────── */
+
+let currentPage = initPage;
+let currentTotal = initTotal;
+
+function fmtEntryCount(n) {
+  return n === 1 ? '1 file' : `${n} files`;
+}
+
+function buildActionUrl(stashId, action) {
+  return `/musehub/ui/${owner}/${repoSlug}/stash/${stashId}/${action}`;
+}
+
+function renderStashes(stashes) {
+  if (!stashes || stashes.length === 0) {
+    return `
+      <div class="empty-state">
+        <div class="empty-icon">📦</div>
+        <p>No stash entries yet.</p>
+        <p style="font-size:12px">Use <code>muse stash push</code> to save work-in-progress changes.</p>
+      </div>`;
+  }
+
+  return stashes.map(s => {
+    const msg = s.message
+      ? escHtml(s.message.length > 80 ? s.message.slice(0, 80) + '…' : s.message)
+      : '<em style="color:var(--text-muted,#8b949e)">WIP on ' + escHtml(s.branch) + '</em>';
+
+    return `
+      <div class="stash-row" data-stash-id="${escHtml(s.id)}">
+        <div class="stash-ref">${escHtml(s.ref)}</div>
+        <div class="stash-message">${msg}</div>
+        <div class="stash-meta">
+          <span title="Branch">🌿 <span class="stash-branch">${escHtml(s.branch)}</span></span>
+          <span title="Saved">🕐 ${fmtRelative(s.created_at)}</span>
+          <span title="Files">📄 ${fmtEntryCount(s.entry_count)}</span>
+        </div>
+        <div class="stash-actions">
+          <form method="POST" action="${buildActionUrl(s.id, 'apply')}" style="display:inline">
+            <button type="submit" class="btn btn-apply" title="Apply stash without removing it">Apply</button>
+          </form>
+          <form method="POST" action="${buildActionUrl(s.id, 'pop')}" style="display:inline">
+            <button type="submit" class="btn btn-pop" title="Apply stash and remove it from the stack">Pop</button>
+          </form>
+          <form method="POST" action="${buildActionUrl(s.id, 'drop')}" style="display:inline"
+                onsubmit="return confirm('Drop stash entry ${escHtml(s.ref)}?\\nThis will permanently discard the stashed changes.')">
+            <button type="submit" class="btn btn-drop" title="Discard stash without applying">Drop</button>
+          </form>
+        </div>
+      </div>`;
+  }).join('');
+}
+
+function renderPagination(total, page, ps) {
+  const pages = Math.ceil(total / ps);
+  if (pages <= 1) return '';
+  const prev = page > 1
+    ? `<a class="page-btn" href="?page=${page - 1}&page_size=${ps}">&laquo; Prev</a>`
+    : `<span class="page-btn disabled">&laquo; Prev</span>`;
+  const next = page < pages
+    ? `<a class="page-btn" href="?page=${page + 1}&page_size=${ps}">Next &raquo;</a>`
+    : `<span class="page-btn disabled">Next &raquo;</span>`;
+  return `<div class="pagination">${prev}<span class="page-btn active">${page} / ${pages}</span>${next}</div>`;
+}
+
+function render(stashes, total) {
+  const countLabel = total === 1 ? '1 stash entry' : `${total} stash entries`;
+  document.getElementById('content').innerHTML = `
+    <div style="margin-bottom:12px">
+      <a href="${base}">&larr; Back to repo</a>
+    </div>
+    <div class="card">
+      <div class="stash-header">
+        <h1>📦 Stash</h1>
+        <span class="stash-count">${countLabel}</span>
+      </div>
+      <div id="stash-rows">
+        ${renderStashes(stashes)}
+      </div>
+      ${renderPagination(total, currentPage, pageSize)}
+    </div>`;
+}
+
+async function load() {
+  initRepoNav(repoId);
+
+  /* Use server-rendered snapshot on first page load to avoid a second round-trip. */
+  if (currentPage === initPage && initStashes !== null) {
+    render(initStashes, currentTotal);
+    return;
+  }
+
+  document.getElementById('content').innerHTML = '<p class="loading">Loading stash…</p>';
+  try {
+    const data = await apiFetch(
+      `/musehub/ui/${owner}/${repoSlug}/stash?format=json&page=${currentPage}&page_size=${pageSize}`
+    );
+    render(data.stashes || [], data.total || 0);
+  } catch (e) {
+    if (e.message !== 'auth') {
+      document.getElementById('content').innerHTML =
+        '<p class="error">✕ ' + escHtml(e.message) + '</p>';
+    }
+  }
+}
+
+load();
+{% endraw %}
+{% endblock %}
