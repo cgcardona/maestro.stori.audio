@@ -6,7 +6,7 @@ interface is thin (``asyncio.create_subprocess_exec``), so patching it at the
 module level gives complete control over return values and exit codes.
 
 Run targeted:
-    pytest tests/test_agentception_github.py -v
+    pytest agentception/tests/test_agentception_github.py -v
 """
 from __future__ import annotations
 
