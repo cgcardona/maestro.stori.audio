@@ -281,6 +281,11 @@ STEP 0 — READ YOUR TASK FILE:
     MERGE_AFTER=$(grep "^MERGE_AFTER=" .agent-task | cut -d= -f2)
     HAS_MIGRATION=$(grep "^HAS_MIGRATION=" .agent-task | cut -d= -f2)
     ATTEMPT_N=$(grep "^ATTEMPT_N=" .agent-task | cut -d= -f2)
+    BATCH_ID=$(grep "^BATCH_ID=" .agent-task | cut -d= -f2)
+
+  Generate your unique reviewer session ID (identifies THIS specific reviewer run):
+    AGENT_SESSION="qa-$(date -u +%Y%m%dT%H%M%SZ)-$(printf '%04x' $RANDOM)"
+    echo "🤖 Reviewer session: $AGENT_SESSION  Batch: ${BATCH_ID:-unset}"
 
   ⚠️  ANTI-LOOP GUARD: if ATTEMPT_N > 2 → STOP immediately.
     Self-destruct and escalate. Report the exact failure. Never loop blindly.
@@ -818,6 +823,23 @@ STEP 6 — PRE-MERGE SYNC (only if grade is A or B):
   # 6. Delete the remote branch manually (now safe — merge is done):
        git push origin --delete "$BRANCH"
 
+  # 7. Post a fingerprint comment on the PR so every merge is permanently traceable:
+       gh pr comment <N> --repo "$GH_REPO" --body "$(cat <<EOF
+  🤖 **Maestro Review Fingerprint**
+
+  | Field | Value |
+  |-------|-------|
+  | Role | \`pr-reviewer\` |
+  | Batch | \`${BATCH_ID:-none}\` |
+  | Session | \`${AGENT_SESSION}\` |
+  | Grade | \`<A/B/C/D/F>\` |
+  | Merged at | \`$(date -u +%Y-%m-%dT%H:%M:%SZ)\` |
+
+  *To trace this review: search agent transcripts for session \`${AGENT_SESSION}\`
+  or batch \`${BATCH_ID:-none}\`.*
+  EOF
+  )"
+
   # NOTE: Do NOT delete the local branch here — the branch is still checked out
   # in this worktree, so git will refuse. The local branch ref is cleaned up in
   # STEP 8 (SELF-DESTRUCT) AFTER the worktree is removed.
@@ -921,7 +943,105 @@ side-effect of the changes in PR #$N. Start investigation there.
     echo "✅ No regressions detected. Post-merge test run clean."
   fi
 
-STEP 8 — SELF-DESTRUCT (always run this, merge or not, early stop or not):
+STEP 8 — SPAWN YOUR SUCCESSOR (run this before self-destructing):
+
+  # Read SPAWN_MODE from .agent-task to determine what to spawn next.
+  # SPAWN_MODE=chain  → spawned by an engineer; spawn the next ENGINEER for the next issue
+  # SPAWN_MODE=pool   → spawned by a QA VP; spawn the next REVIEWER for the next PR (legacy pool behavior)
+  # (absent/empty)    → default to pool behavior
+  SPAWN_MODE=$(grep "^SPAWN_MODE=" "$WORKTREE/.agent-task" 2>/dev/null | cut -d= -f2)
+
+  if [ "$SPAWN_MODE" = "chain" ]; then
+    # ── CHAIN MODE: merge happened → spawn next engineer for next unclaimed issue ──
+
+    # Find the next open, unclaimed, phase-tagged issue.
+    NEXT_ISSUE=$(gh issue list \
+      --repo "$GH_REPO" \
+      --state open \
+      --json number,labels \
+      --jq '[.[] | select(
+               (.labels | map(.name) | any(startswith("phase-"))) and
+               (.labels | map(.name) | index("agent:wip") | not)
+             )] | first | .number // empty')
+
+    # Guard against race: verify no branch already exists.
+    if [ -n "$NEXT_ISSUE" ]; then
+      if git -C "$REPO" ls-remote --exit-code origin "refs/heads/feat/issue-$NEXT_ISSUE" &>/dev/null; then
+        NEXT_ISSUE=""   # another agent already claimed it
+      fi
+    fi
+
+    if [ -n "$NEXT_ISSUE" ]; then
+      gh issue edit "$NEXT_ISSUE" --repo "$GH_REPO" --add-label "agent:wip" 2>/dev/null || true
+
+      NEXT_WORKTREE="$HOME/.cursor/worktrees/maestro/issue-$NEXT_ISSUE"
+      git -C "$REPO" worktree add -b "feat/issue-$NEXT_ISSUE" "$NEXT_WORKTREE" origin/dev
+
+      cat > "$NEXT_WORKTREE/.agent-task" <<TASK
+TASK=issue-to-pr
+ISSUE_NUMBER=$NEXT_ISSUE
+BRANCH=feat/issue-$NEXT_ISSUE
+WORKTREE=$NEXT_WORKTREE
+ROLE=python-developer
+ROLE_FILE=/Users/gabriel/dev/tellurstori/maestro/.cursor/roles/python-developer.md
+BASE=dev
+GH_REPO=cgcardona/maestro
+CLOSES_ISSUES=$NEXT_ISSUE
+BATCH_ID=${BATCH_ID:-none}
+TASK
+
+      echo "✅ Chain: spawning engineer for issue #$NEXT_ISSUE (will spawn its own reviewer when done)"
+      # AGENT INSTRUCTION: call Task(prompt="Read the .agent-task file in your worktree,
+      # then follow the complete Kickoff Prompt in
+      # /Users/gabriel/dev/tellurstori/maestro/.cursor/PARALLEL_ISSUE_TO_PR.md.
+      # GH_REPO=cgcardona/maestro  Repo: /Users/gabriel/dev/tellurstori/maestro",
+      # worktree="$NEXT_WORKTREE")
+    else
+      echo "ℹ️  Chain complete — no unclaimed issues remaining."
+    fi
+
+  else
+    # ── POOL MODE: spawned by QA VP; spawn the next REVIEWER for the next open PR ──
+
+    NEXT_PR=$(gh pr list \
+      --repo "$GH_REPO" \
+      --base dev \
+      --state open \
+      --json number,labels \
+      --jq '[.[] | select(.labels | map(.name) | index("agent:wip") | not)] | first | .number // empty')
+
+    if [ -n "$NEXT_PR" ]; then
+      gh pr edit "$NEXT_PR" --repo "$GH_REPO" --add-label "agent:wip" 2>/dev/null || true
+
+      NEXT_BRANCH=$(gh pr view "$NEXT_PR" --repo "$GH_REPO" --json headRefName --jq .headRefName)
+      NEXT_WORKTREE="$HOME/.cursor/worktrees/maestro/pr-$NEXT_PR"
+      git -C "$REPO" worktree add "$NEXT_WORKTREE" "origin/$NEXT_BRANCH"
+
+      cat > "$NEXT_WORKTREE/.agent-task" <<TASK
+TASK=pr-review
+PR=$NEXT_PR
+BRANCH=$NEXT_BRANCH
+WORKTREE=$NEXT_WORKTREE
+ROLE=pr-reviewer
+ROLE_FILE=/Users/gabriel/dev/tellurstori/maestro/.cursor/roles/pr-reviewer.md
+BASE=dev
+GH_REPO=cgcardona/maestro
+BATCH_ID=${BATCH_ID:-none}
+SPAWN_MODE=pool
+TASK
+
+      echo "✅ Pool: spawning replacement reviewer for PR #$NEXT_PR"
+      # AGENT INSTRUCTION: call Task(prompt="Read the .agent-task file in your worktree,
+      # then follow the complete Kickoff Prompt in
+      # /Users/gabriel/dev/tellurstori/maestro/.cursor/PARALLEL_PR_REVIEW.md.
+      # GH_REPO=cgcardona/maestro  Repo: /Users/gabriel/dev/tellurstori/maestro",
+      # worktree="$NEXT_WORKTREE")
+    else
+      echo "ℹ️  Pool complete — no unclaimed PRs remaining."
+    fi
+  fi
+
+STEP 9 — SELF-DESTRUCT (always run this after STEP 8, merge or not, early stop or not):
   WORKTREE=$(pwd)
   BRANCH_TO_DELETE=$(git rev-parse --abbrev-ref HEAD)
   cd "$REPO"

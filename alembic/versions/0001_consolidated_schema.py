@@ -37,7 +37,7 @@ Single source-of-truth migration for Maestro. Creates:
   - musehub_releases (published version releases with download packages)
   - musehub_release_assets (downloadable file attachments per release with download counts)
   - musehub_webhooks (registered event-driven webhook subscriptions)
-  - musehub_webhook_deliveries (delivery log per dispatch attempt)
+  - musehub_webhook_deliveries (delivery log per dispatch attempt; payload column stores JSON body for retry)
   - musehub_render_jobs (async audio render pipeline)
   - musehub_comments, musehub_reactions, musehub_follows, musehub_watches
   - musehub_notifications, musehub_forks, musehub_view_events, musehub_download_events
@@ -181,7 +181,6 @@ def upgrade() -> None:
         sa.PrimaryKeyConstraint("variation_id"),
     )
     op.create_index("ix_muse_variations_project_id", "muse_variations", ["project_id"])
-    op.create_index("ix_muse_variations_status", "muse_variations", ["status"])
     op.create_index("ix_muse_variations_parent_variation_id", "muse_variations", ["parent_variation_id"])
 
     op.create_table(
@@ -623,6 +622,8 @@ def upgrade() -> None:
         sa.Column("success", sa.Boolean(), nullable=False, server_default="false"),
         sa.Column("response_status", sa.Integer(), nullable=False, server_default="0"),
         sa.Column("response_body", sa.Text(), nullable=False, server_default=""),
+        # JSON-encoded payload stored so failed deliveries can be retried via redeliver endpoint
+        sa.Column("payload", sa.Text(), nullable=False, server_default=""),
         sa.Column(
             "delivered_at",
             sa.DateTime(timezone=True),
@@ -1209,7 +1210,6 @@ def downgrade() -> None:
     op.drop_index("ix_muse_phrases_variation_id", table_name="muse_phrases")
     op.drop_table("muse_phrases")
     op.drop_index("ix_muse_variations_parent_variation_id", table_name="muse_variations")
-    op.drop_index("ix_muse_variations_status", table_name="muse_variations")
     op.drop_index("ix_muse_variations_project_id", table_name="muse_variations")
     op.drop_table("muse_variations")
 

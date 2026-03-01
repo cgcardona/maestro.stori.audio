@@ -70,7 +70,8 @@ Kickoff (coordinator)
 Agent (per worktree)
   └─ cat .agent-task                        ← knows exactly what to do
   └─ gh pr list --search "closes #<N>"     ← CHECK FIRST: existing PR or branch?
-     git ls-remote origin | grep issue-<N>   if found → stop + self-destruct
+     if merged PR found → close issue + self-destruct
+     if open PR found   → stop + self-destruct
   └─ git checkout -b feat/<description>     ← creates feature branch (only if new)
   └─ implement → mypy → tests → commit      ← build the fix
   └─ git fetch origin && git merge origin/dev  ← sync dev before pushing
@@ -373,6 +374,11 @@ STEP 0 — READ YOUR TASK FILE:
     export GH_REPO=${GH_REPO:-cgcardona/maestro}
     N=$(grep "^ISSUE_NUMBER=" .agent-task | cut -d= -f2)
     ATTEMPT_N=$(grep "^ATTEMPT_N=" .agent-task | cut -d= -f2)
+    BATCH_ID=$(grep "^BATCH_ID=" .agent-task | cut -d= -f2)
+
+  Generate your unique agent session ID (identifies THIS specific agent run):
+    AGENT_SESSION="eng-$(date -u +%Y%m%dT%H%M%SZ)-$(printf '%04x' $RANDOM)"
+    echo "🤖 Agent session: $AGENT_SESSION  Batch: ${BATCH_ID:-unset}"
 
   ⚠️  ANTI-LOOP GUARD: if ATTEMPT_N > 2 → STOP immediately.
     You have retried this task 3+ times. Self-destruct and escalate with the
@@ -447,7 +453,7 @@ STEP 2 — CHECK CANONICAL STATE BEFORE DOING ANY WORK:
   Decision matrix — act on the FIRST match:
   ┌──────────────────────────────────────────────────────────────────────┐
   │ Issue is CLOSED       → STOP. Report closed state. Self-destruct.   │
-  │ Merged PR found       → STOP. Report the PR URL. Self-destruct.     │
+  │ Merged PR found       → Close the issue, report PR URL. Self-destruct.│
   │ Open PR found         → STOP. Report the PR URL. Self-destruct.     │
   │ Remote branch exists, │                                              │
   │   no PR yet           → Checkout that branch, skip to STEP 4.      │
@@ -459,6 +465,13 @@ STEP 2 — CHECK CANONICAL STATE BEFORE DOING ANY WORK:
     cd "$REPO"
     git worktree remove --force "$WORKTREE"
     git worktree prune
+
+  ⚠️  MERGED PR FOUND — mandatory close sequence (do not skip):
+    # The issue is still open but work is already merged. Close it before exiting.
+    gh issue close $N \
+      --comment "Closed — implemented and merged via PR #<PR_NUMBER>." \
+      --repo "$GH_REPO" || true
+    # Then self-destruct as normal.
 
 STEP 3 — IMPLEMENT (only if STEP 2 found nothing):
   Read and follow every step in .github/CREATE_PR_PROMPT.md exactly.
@@ -500,6 +513,17 @@ STEP 3 — IMPLEMENT (only if STEP 2 found nothing):
 
   # ── STEP 3.3 — IMPLEMENT ──────────────────────────────────────────────────
   # (implement the feature per the issue spec)
+  #
+  # When committing your work, ALWAYS append agent trailers to every commit message:
+  #
+  #   git commit -m "feat: <description>
+  #
+  #   Closes #${N}
+  #   Maestro-Batch: ${BATCH_ID:-none}
+  #   Maestro-Session: ${AGENT_SESSION}"
+  #
+  # These trailers are permanent — they appear in `git log` forever and allow
+  # any commit to be traced back to the pipeline batch and agent session.
 
   # ── STEP 3.4 — MYPY (FULL CODEBASE — not just your files) ─────────────────
   # Run mypy across the ENTIRE codebase, not just your worktree files.
@@ -600,7 +624,10 @@ STEP 4 — PRE-PUSH SYNC (critical — always run before pushing):
   An uncommitted working tree WILL abort. This guard prevents that.
 
   git add -A
-  git diff --cached --quiet || git commit -m "chore: commit remaining changes before dev sync"
+  git diff --cached --quiet || git commit -m "chore: commit remaining changes before dev sync
+
+Maestro-Batch: ${BATCH_ID:-none}
+Maestro-Session: $AGENT_SESSION"
 
   # Pre-check: these three files conflict on virtually every parallel Muse batch.
   # Know the rules before you merge so you can resolve mechanically, not by guessing.
@@ -723,9 +750,9 @@ STEP 5 — PUSH & CREATE PR:
     --base dev \
     --head feat/<short-description> \
     --title "feat: <issue title>" \
-    --body "$(cat <<'EOF'
+    --body "$(cat <<EOF
   ## Summary
-  Closes #<N> — <one-line description>.
+  Closes #${N} — <one-line description>.
 
   ## Root Cause / Motivation
   <What was wrong or missing and why>
@@ -737,6 +764,16 @@ STEP 5 — PUSH & CREATE PR:
   - [ ] mypy clean
   - [ ] Tests pass
   - [ ] Docs updated
+
+  ---
+  <!-- maestro-fingerprint
+  role: python-developer
+  batch: ${BATCH_ID:-none}
+  session: ${AGENT_SESSION}
+  issue: ${N}
+  timestamp: $(date -u +%Y-%m-%dT%H:%M:%SZ)
+  -->
+  > 🤖 *Opened by Maestro pipeline — batch \`${BATCH_ID:-none}\`, session \`${AGENT_SESSION}\`*
   EOF
   )"
 
@@ -751,7 +788,7 @@ STEP 5 — PUSH & CREATE PR:
   # appears verbatim in the PR body. Verify now so you don't leave a ghost issue.
 
   PR_BODY=$(gh pr list \
-    --repo cgcardona/maestro \
+    --repo "$GH_REPO" \
     --head feat/<short-description> \
     --json body \
     --jq '.[0].body')
@@ -764,7 +801,51 @@ STEP 5 — PUSH & CREATE PR:
   #
   # Closes #<N>"
 
-STEP 6 — SELF-DESTRUCT (always run this after the PR is open or after an early stop):
+STEP 6 — SPAWN A QA REVIEWER FOR YOUR OWN PR (run this before self-destructing):
+
+  # Chain mode: instead of spawning the next engineer, hand off immediately to a
+  # QA reviewer for the PR you just opened. The reviewer merges, then spawns the
+  # next engineer — keeping dev current before any new branch is created.
+
+  # Discover the PR number for the branch you just pushed.
+  MY_BRANCH=$(git -C "$WORKTREE" rev-parse --abbrev-ref HEAD)
+  MY_PR=$(gh pr list --repo "$GH_REPO" --head "$MY_BRANCH" --state open \
+    --json number --jq '.[0].number // empty')
+
+  if [ -n "$MY_PR" ] && [ "$MY_PR" != "null" ]; then
+    # Claim the PR so no other reviewer picks it up concurrently.
+    gh pr edit "$MY_PR" --repo "$GH_REPO" --add-label "agent:wip" 2>/dev/null || true
+
+    # Create a fresh review worktree at the PR branch tip.
+    REVIEW_WORKTREE="$HOME/.cursor/worktrees/maestro/pr-$MY_PR"
+    git -C "$REPO" worktree add "$REVIEW_WORKTREE" "origin/$MY_BRANCH"
+
+    # Write the reviewer's .agent-task.
+    # SPAWN_MODE=chain tells the reviewer to spawn the next ENGINEER (not reviewer) when done.
+    cat > "$REVIEW_WORKTREE/.agent-task" <<TASK
+TASK=pr-review
+PR=$MY_PR
+BRANCH=$MY_BRANCH
+WORKTREE=$REVIEW_WORKTREE
+ROLE=pr-reviewer
+ROLE_FILE=/Users/gabriel/dev/tellurstori/maestro/.cursor/roles/pr-reviewer.md
+BASE=dev
+GH_REPO=cgcardona/maestro
+BATCH_ID=${BATCH_ID:-none}
+SPAWN_MODE=chain
+TASK
+
+    echo "✅ Spawning QA reviewer for PR #$MY_PR (chain mode — reviewer will spawn next engineer)"
+    # AGENT INSTRUCTION: call Task(prompt="Read the .agent-task file in your worktree,
+    # then follow the complete Kickoff Prompt in
+    # /Users/gabriel/dev/tellurstori/maestro/.cursor/PARALLEL_PR_REVIEW.md.
+    # GH_REPO=cgcardona/maestro  Repo: /Users/gabriel/dev/tellurstori/maestro",
+    # worktree="$REVIEW_WORKTREE")
+  else
+    echo "⚠️  Could not find open PR for branch $MY_BRANCH — skipping reviewer spawn."
+  fi
+
+STEP 7 — SELF-DESTRUCT (always run this after STEP 6, whether or not a replacement was spawned):
   WORKTREE=$(pwd)
   cd "$REPO"
   git worktree remove --force "$WORKTREE"
@@ -792,8 +873,9 @@ Run this before touching the Setup script:
 
 ```bash
 # List every open issue for the current phase — this IS your candidate pool.
+GH_REPO=cgcardona/maestro   # ← single place to change if the repo slug ever changes
 gh issue list \
-  --repo cgcardona/maestro \
+  --repo "$GH_REPO" \
   --label "phase-1" \
   --state open \
   --json number,title,url \
@@ -813,7 +895,8 @@ From the label audit output, choose issues that satisfy **both** criteria in
 candidate's body to identify affected files:
 
 ```bash
-gh issue view <N> --repo cgcardona/maestro --json body,title
+GH_REPO=cgcardona/maestro   # ← single place to change if the repo slug ever changes
+gh issue view <N> --repo "$GH_REPO" --json body,title
 ```
 
 Confirm no two selected issues share a file. Document your selection in the
@@ -894,8 +977,10 @@ Run this after all PRs in the batch are **merged** (not just opened):
 ```bash
 PHASE_LABEL="phase-1"   # match the label used in Setup
 
+GH_REPO=cgcardona/maestro   # ← single place to change if the repo slug ever changes
+
 REMAINING=$(gh issue list \
-  --repo cgcardona/maestro \
+  --repo "$GH_REPO" \
   --label "$PHASE_LABEL" \
   --state open \
   --json number \
@@ -904,7 +989,7 @@ REMAINING=$(gh issue list \
 if [ "$REMAINING" -gt 0 ]; then
   echo "⚠️  $REMAINING open issue(s) still labeled '$PHASE_LABEL':"
   gh issue list \
-    --repo cgcardona/maestro \
+    --repo "$GH_REPO" \
     --label "$PHASE_LABEL" \
     --state open \
     --json number,title,url \
@@ -925,7 +1010,8 @@ fi
 ### 2 — PR audit
 
 ```bash
-gh pr list --repo cgcardona/maestro --state open
+GH_REPO=cgcardona/maestro   # ← single place to change if the repo slug ever changes
+gh pr list --repo "$GH_REPO" --state open
 ```
 
 All PRs from this batch should be open (awaiting review) or merged. None should be closed/rejected without a corresponding issue closure.
