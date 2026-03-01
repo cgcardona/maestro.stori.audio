@@ -11,7 +11,7 @@ Usage::
 Exit codes:
 - ``0``: parsed successfully (or file not found — that is not an error).
 - ``1``: file is present but contains no valid rules.
-- ``2``: internal error.
+- ``3``: internal error.
 """
 from __future__ import annotations
 
