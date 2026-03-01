@@ -10,9 +10,10 @@
 #}
 
 {% macro issue_row(issue, base_url, labels=[], active_labels=[], show_checkbox=False) %}
-<div class="issue-row" data-issue-id="{{ issue.issueId }}">
+<div class="issue-row" data-issue-id="{{ issue.issue_id }}">
   {% if show_checkbox %}
-    <input type="checkbox" class="issue-row-check" name="selected" value="{{ issue.issueId }}"/>
+    <input type="checkbox" class="issue-row-check" name="selected" value="{{ issue.issue_id }}"
+           onchange="toggleIssueSelect('{{ issue.issue_id }}', this.checked)"/>
   {% endif %}
   <span class="badge badge-{{ issue.state }}">#{{ issue.number }}</span>
   <div style="flex:1;min-width:0">
@@ -24,7 +25,7 @@
         <span class="label label-pill{% if label in active_labels %} label-active{% endif %}"
               style="border-color:{{ color }};color:{{ color }}">{{ label }}</span>
       {% endfor %}
-      <span class="issue-date">Opened {{ issue.createdAt | fmtdate }}</span>
+      <span class="issue-date">Opened {{ issue.created_at | fmtdate }}</span>
       {% if issue.author %}<span class="issue-author">by {{ issue.author }}</span>{% endif %}
     </div>
   </div>
