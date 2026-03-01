@@ -29,14 +29,14 @@ import logging
 
 import yaml
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from maestro.auth.dependencies import TokenClaims, optional_token, require_valid_token
 from maestro.db import get_db
-from maestro.db import musehub_models as db_models
 from maestro.db import musehub_collaborator_models as collab_models
-from sqlalchemy import select
+from maestro.db import musehub_models as db_models
 from maestro.models.musehub import (
     ActivityFeedResponse,
     ArrangementMatrixResponse,
