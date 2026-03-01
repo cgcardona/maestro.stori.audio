@@ -34,6 +34,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
 
 from maestro.config import settings
+from maestro.contracts.json_types import NoteDict
 from maestro.db.muse_models import NoteChange, Phrase, Variation
 from maestro.db.musehub_models import (
     MusehubBranch,
@@ -554,16 +555,16 @@ def _make_note_dict(
     duration_beats: float,
     track_id: str,
     region_id: str,
-) -> dict[str, object]:
-    """Build a NoteDict-compatible payload for before_json / after_json."""
-    return {
-        "pitch": pitch,
-        "velocity": velocity,
-        "start_beat": start_beat,
-        "duration_beats": duration_beats,
-        "track_id": track_id,
-        "region_id": region_id,
-    }
+) -> NoteDict:
+    """Build a NoteDict payload for before_json / after_json."""
+    return NoteDict(
+        pitch=pitch,
+        velocity=velocity,
+        start_beat=start_beat,
+        duration_beats=duration_beats,
+        track_id=track_id,
+        region_id=region_id,
+    )
 
 
 def _make_variation_section(
@@ -708,17 +709,17 @@ def _make_variation_section(
                 nb = start_beat + float(n) * 0.5
                 dur = 0.25 + float(n % 4) * 0.25 + float((n // 4) % 4) * 0.5
 
-                # Cycle through change types
+                # Cycle through change types — canonical values from contracts/json_types.py
                 if n % 3 == 0:
-                    change_type = "add"
+                    change_type = "added"
                     before_j = None
                     after_j = _make_note_dict(pitch_base, vel, nb, dur, tid, rid)
                 elif n % 3 == 1:
-                    change_type = "remove"
+                    change_type = "removed"
                     before_j = _make_note_dict(pitch_base, vel, nb, dur, tid, rid)
                     after_j = None
                 else:
-                    change_type = "modify"
+                    change_type = "modified"
                     orig_pitch = pitch_base - 2
                     orig_vel   = max(30, vel - 12)
                     orig_beat  = nb - 0.25
@@ -1527,7 +1528,7 @@ async def main() -> None:
     force = "--force" in sys.argv
     db_url: str = settings.database_url or ""
     engine = create_async_engine(db_url, echo=False)
-    async_session = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)  # type: ignore[call-overload]
+    async_session = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)  # type: ignore[call-overload]  # sqlalchemy stubs incomplete for async sessionmaker
     async with async_session() as db:
         await seed(db, force=force)
     await engine.dispose()

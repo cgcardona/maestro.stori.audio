@@ -246,8 +246,9 @@ def test_note_changes_belong_to_known_phrases(
 def test_note_change_types_are_valid(
     neo_baroque_section: tuple[list[Variation], list[Phrase], list[NoteChange]],
 ) -> None:
+    """Canonical values from Literal["added", "removed", "modified"] in json_types.py."""
     _, _, note_changes = neo_baroque_section
-    valid = {"add", "remove", "modify"}
+    valid = {"added", "removed", "modified"}
     for nc in note_changes:
         assert nc.change_type in valid
 
@@ -257,7 +258,7 @@ def test_add_changes_have_no_before_json(
 ) -> None:
     _, _, note_changes = neo_baroque_section
     for nc in note_changes:
-        if nc.change_type == "add":
+        if nc.change_type == "added":
             assert nc.before_json is None
             assert nc.after_json is not None
 
@@ -267,7 +268,7 @@ def test_remove_changes_have_no_after_json(
 ) -> None:
     _, _, note_changes = neo_baroque_section
     for nc in note_changes:
-        if nc.change_type == "remove":
+        if nc.change_type == "removed":
             assert nc.after_json is None
             assert nc.before_json is not None
 
@@ -277,7 +278,7 @@ def test_modify_changes_have_both_json_fields(
 ) -> None:
     _, _, note_changes = neo_baroque_section
     for nc in note_changes:
-        if nc.change_type == "modify":
+        if nc.change_type == "modified":
             assert nc.before_json is not None
             assert nc.after_json is not None
 
