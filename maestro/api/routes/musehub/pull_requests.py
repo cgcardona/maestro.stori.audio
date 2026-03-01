@@ -1,13 +1,17 @@
 """Muse Hub pull request route handlers.
 
 Endpoint summary:
-  POST /musehub/repos/{repo_id}/pull-requests                              — open a PR
-  GET  /musehub/repos/{repo_id}/pull-requests                              — list PRs
-  GET  /musehub/repos/{repo_id}/pull-requests/{pr_id}                      — get a PR
-  GET  /musehub/repos/{repo_id}/pull-requests/{pr_id}/diff                 — musical diff (radar data)
-  POST /musehub/repos/{repo_id}/pull-requests/{pr_id}/merge                — merge a PR
-  POST /musehub/repos/{repo_id}/pull-requests/{pr_id}/comments             — create review comment
-  GET  /musehub/repos/{repo_id}/pull-requests/{pr_id}/comments             — list review comments (threaded)
+  POST   /musehub/repos/{repo_id}/pull-requests                                    — open a PR
+  GET    /musehub/repos/{repo_id}/pull-requests                                    — list PRs
+  GET    /musehub/repos/{repo_id}/pull-requests/{pr_id}                            — get a PR
+  GET    /musehub/repos/{repo_id}/pull-requests/{pr_id}/diff                       — musical diff (radar data)
+  POST   /musehub/repos/{repo_id}/pull-requests/{pr_id}/merge                      — merge a PR
+  POST   /musehub/repos/{repo_id}/pull-requests/{pr_id}/comments                   — create review comment
+  GET    /musehub/repos/{repo_id}/pull-requests/{pr_id}/comments                   — list review comments (threaded)
+  POST   /musehub/repos/{repo_id}/pull-requests/{pr_id}/reviewers                  — request review from users
+  DELETE /musehub/repos/{repo_id}/pull-requests/{pr_id}/reviewers/{username}       — remove review request
+  GET    /musehub/repos/{repo_id}/pull-requests/{pr_id}/reviews                    — list reviews
+  POST   /musehub/repos/{repo_id}/pull-requests/{pr_id}/reviews                    — submit a review
 
 All endpoints require a valid JWT Bearer token (except diff which accepts anonymous reads
 of public repos, matching the same visibility rules as get_pull_request).
@@ -32,6 +36,10 @@ from maestro.models.musehub import (
     PRMergeRequest,
     PRMergeResponse,
     PRResponse,
+    PRReviewCreate,
+    PRReviewListResponse,
+    PRReviewResponse,
+    PRReviewerRequest,
     PullRequestEventPayload,
 )
 from maestro.services import musehub_divergence, musehub_pull_requests, musehub_repository
@@ -376,3 +384,194 @@ async def list_pr_comments(
     if pr is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Pull request not found")
     return await musehub_pull_requests.list_pr_comments(db, pr_id=pr_id, repo_id=repo_id)
+
+
+# ---------------------------------------------------------------------------
+# Reviewer assignment endpoints
+# ---------------------------------------------------------------------------
+
+
+@router.post(
+    "/repos/{repo_id}/pull-requests/{pr_id}/reviewers",
+    response_model=PRReviewListResponse,
+    status_code=status.HTTP_201_CREATED,
+    operation_id="requestPRReviewers",
+    summary="Request a review from one or more users",
+)
+async def request_pr_reviewers(
+    repo_id: str,
+    pr_id: str,
+    body: PRReviewerRequest,
+    db: AsyncSession = Depends(get_db),
+    _: TokenClaims = Depends(require_valid_token),
+) -> PRReviewListResponse:
+    """Add one or more users as requested reviewers on a PR.
+
+    Creates a ``pending`` review row for each username that does not already
+    have one.  Existing rows (any state) are left unchanged so submitted
+    approvals are never silently reset.
+
+    Returns the full updated review list for the PR.
+
+    Returns 404 if the repo or PR is not found.
+    """
+    repo = await musehub_repository.get_repo(db, repo_id)
+    if repo is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repo not found")
+
+    try:
+        result = await musehub_pull_requests.request_reviewers(
+            db,
+            repo_id=repo_id,
+            pr_id=pr_id,
+            reviewers=body.reviewers,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
+
+    await db.commit()
+    return result
+
+
+@router.delete(
+    "/repos/{repo_id}/pull-requests/{pr_id}/reviewers/{username}",
+    response_model=PRReviewListResponse,
+    operation_id="removePRReviewer",
+    summary="Remove a pending review request for a user",
+)
+async def remove_pr_reviewer(
+    repo_id: str,
+    pr_id: str,
+    username: str,
+    db: AsyncSession = Depends(get_db),
+    _: TokenClaims = Depends(require_valid_token),
+) -> PRReviewListResponse:
+    """Remove a pending review request for ``username`` from a PR.
+
+    Only ``pending`` assignments may be removed.  Submitted reviews (approved,
+    changes_requested, dismissed) are immutable to preserve the audit trail.
+
+    Returns the updated review list after deletion.
+
+    Returns 404 if the repo, PR, or reviewer assignment is not found.
+    Returns 409 if the reviewer has already submitted a review.
+    """
+    repo = await musehub_repository.get_repo(db, repo_id)
+    if repo is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repo not found")
+
+    try:
+        result = await musehub_pull_requests.remove_reviewer(
+            db,
+            repo_id=repo_id,
+            pr_id=pr_id,
+            username=username,
+        )
+    except ValueError as exc:
+        msg = str(exc)
+        if "already submitted" in msg:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=msg)
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=msg)
+
+    await db.commit()
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Review submission endpoints
+# ---------------------------------------------------------------------------
+
+
+@router.get(
+    "/repos/{repo_id}/pull-requests/{pr_id}/reviews",
+    response_model=PRReviewListResponse,
+    operation_id="listPRReviews",
+    summary="List reviews for a pull request",
+)
+async def list_pr_reviews(
+    repo_id: str,
+    pr_id: str,
+    state: str | None = Query(
+        None,
+        pattern="^(pending|approved|changes_requested|dismissed)$",
+        description="Filter by review state (pending, approved, changes_requested, dismissed)",
+    ),
+    db: AsyncSession = Depends(get_db),
+    claims: TokenClaims | None = Depends(optional_token),
+) -> PRReviewListResponse:
+    """Return all reviews for a PR, optionally filtered by state.
+
+    Includes both pending reviewer assignments and submitted reviews.
+    Public repo reviews are readable without authentication; private repos
+    require a Bearer token.
+
+    Returns 404 if the repo or PR is not found.
+    """
+    repo = await musehub_repository.get_repo(db, repo_id)
+    if repo is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repo not found")
+    if repo.visibility != "public" and claims is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required to access private repos.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    try:
+        return await musehub_pull_requests.list_reviews(
+            db,
+            repo_id=repo_id,
+            pr_id=pr_id,
+            state=state,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
+
+
+@router.post(
+    "/repos/{repo_id}/pull-requests/{pr_id}/reviews",
+    response_model=PRReviewResponse,
+    status_code=status.HTTP_201_CREATED,
+    operation_id="submitPRReview",
+    summary="Submit a formal review on a pull request",
+)
+async def submit_pr_review(
+    repo_id: str,
+    pr_id: str,
+    body: PRReviewCreate,
+    db: AsyncSession = Depends(get_db),
+    token: TokenClaims = Depends(require_valid_token),
+) -> PRReviewResponse:
+    """Submit a formal review for the authenticated user.
+
+    ``event`` governs the resulting review state:
+      - ``approve``          → sets state to ``approved``
+      - ``request_changes``  → sets state to ``changes_requested``
+      - ``comment``          → leaves state as ``pending`` (body-only feedback)
+
+    If the user already has a review row on this PR it is updated in-place;
+    otherwise a new row is created.  This allows reviewers to revise their
+    verdict after seeing author responses.
+
+    Returns 404 if the repo or PR is not found.
+    """
+    repo = await musehub_repository.get_repo(db, repo_id)
+    if repo is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repo not found")
+
+    reviewer = token.get("sub", "")
+
+    try:
+        result = await musehub_pull_requests.submit_review(
+            db,
+            repo_id=repo_id,
+            pr_id=pr_id,
+            reviewer_username=reviewer,
+            event=body.event,
+            body=body.body,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
+
+    await db.commit()
+    return result
