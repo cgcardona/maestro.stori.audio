@@ -19,7 +19,6 @@ import logging
 from collections.abc import AsyncGenerator, AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Any
 
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
@@ -79,7 +78,7 @@ async def sse_stream(request: Request) -> EventSourceResponse:
     """
     q = subscribe()
 
-    async def generator() -> AsyncIterator[dict[str, Any]]:
+    async def generator() -> AsyncIterator[dict[str, str]]:
         try:
             while True:
                 if await request.is_disconnected():
