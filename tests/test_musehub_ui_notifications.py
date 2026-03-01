@@ -1,28 +1,28 @@
 """Tests for the Muse Hub notification inbox UI page (ui_notifications.py).
 
-Covers issue #428 — GET /musehub/ui/notifications:
+Covers the SSR handler at GET /musehub/ui/notifications.
 
-HTML page (unauthenticated shell):
+HTML page:
 - test_notifications_page_returns_200_html         — page renders without auth
-- test_notifications_page_contains_load_function   — loadNotifications() JS present
-- test_notifications_page_contains_filter_controls — type filter and unread-only controls
+- test_notifications_page_unauthenticated_shows_login — unauthenticated → login prompt
 - test_notifications_page_contains_mark_all_read   — markAllRead() JS function present
 - test_notifications_page_contains_mark_one_read   — markOneRead() JS function present
-- test_notifications_page_contains_pagination      — renderPagination() JS function present
 
 JSON alternate (authenticated):
 - test_notifications_json_requires_auth            — JSON path returns 401 without token
+- test_notifications_json_requires_auth_accept_header — Accept: application/json also 401
 - test_notifications_json_returns_empty_inbox      — authenticated user with no notifs
+- test_notifications_json_empty_state_structure    — empty inbox returns valid schema
 - test_notifications_json_pagination               — per_page / page respected
-- test_notifications_json_type_filter_mention      — type=mention filters by event_type
-- test_notifications_json_type_filter_watch        — type=watch filters by event_type
-- test_notifications_json_type_filter_fork         — type=fork filters by event_type
+- test_notifications_json_pagination_metadata      — total / total_pages / page in response
+- test_notifications_json_type_filter_mention      — type_filter=mention filters by event_type
+- test_notifications_json_type_filter_watch        — type_filter=watch filters by event_type
+- test_notifications_json_type_filter_fork         — type_filter=fork filters by event_type
 - test_notifications_json_unread_only              — unread_only=true excludes read items
 - test_notifications_json_mark_one_read_reflected  — read status respected in JSON response
 - test_notifications_json_unread_count_global      — unread_count not scoped by type filter
 - test_notifications_json_accept_header            — Accept: application/json triggers JSON path
-- test_notifications_json_pagination_metadata      — total / total_pages / page in response
-- test_notifications_json_empty_state_structure    — empty inbox returns valid schema
+- test_notifications_json_only_own_notifications   — other users' notifs not returned
 """
 from __future__ import annotations
 
@@ -69,7 +69,7 @@ async def _seed(db: AsyncSession, *notifs: MusehubNotification) -> None:
 
 
 # ---------------------------------------------------------------------------
-# HTML page (unauthenticated shell)
+# HTML page
 # ---------------------------------------------------------------------------
 
 
@@ -82,44 +82,44 @@ async def test_notifications_page_returns_200_html(client: AsyncClient) -> None:
 
 
 @pytest.mark.anyio
-async def test_notifications_page_contains_load_function(client: AsyncClient) -> None:
-    """The HTML shell embeds the loadNotifications() JavaScript function."""
+async def test_notifications_page_unauthenticated_shows_login(
+    client: AsyncClient,
+) -> None:
+    """Unauthenticated GET renders a login prompt, not client-side JS shell."""
     resp = await client.get(_UI_PATH)
     assert resp.status_code == 200
-    assert "loadNotifications" in resp.text
+    # SSR: unauthenticated path renders empty-state login prompt
+    assert "Sign in to see notifications" in resp.text
 
 
 @pytest.mark.anyio
-async def test_notifications_page_contains_filter_controls(client: AsyncClient) -> None:
-    """The page includes type filter select and unread-only checkbox JS."""
-    resp = await client.get(_UI_PATH)
-    assert resp.status_code == 200
-    assert "type-filter" in resp.text
-    assert "unread-filter" in resp.text
+async def test_notifications_page_contains_mark_all_read(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+) -> None:
+    """Authenticated page includes markAllRead() for inline read-state updates.
 
-
-@pytest.mark.anyio
-async def test_notifications_page_contains_mark_all_read(client: AsyncClient) -> None:
-    """The page includes the markAllRead() JS function."""
-    resp = await client.get(_UI_PATH)
+    The function is only rendered in the authenticated view — the unauthenticated
+    login prompt has no JS because there are no notifications to manage.
+    """
+    resp = await client.get(_UI_PATH, headers=auth_headers)
     assert resp.status_code == 200
     assert "markAllRead" in resp.text
 
 
 @pytest.mark.anyio
-async def test_notifications_page_contains_mark_one_read(client: AsyncClient) -> None:
-    """The page includes the markOneRead() JS function."""
-    resp = await client.get(_UI_PATH)
+async def test_notifications_page_contains_mark_one_read(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+) -> None:
+    """Authenticated page includes markOneRead() for per-row read-state updates.
+
+    Same rationale as markAllRead — the function lives in the authenticated
+    section of the template.
+    """
+    resp = await client.get(_UI_PATH, headers=auth_headers)
     assert resp.status_code == 200
     assert "markOneRead" in resp.text
-
-
-@pytest.mark.anyio
-async def test_notifications_page_contains_pagination(client: AsyncClient) -> None:
-    """The page includes renderPagination() for multi-page navigation."""
-    resp = await client.get(_UI_PATH)
-    assert resp.status_code == 200
-    assert "renderPagination" in resp.text
 
 
 # ---------------------------------------------------------------------------
@@ -181,7 +181,9 @@ async def test_notifications_json_empty_state_structure(
         "notifications", "total", "page", "perPage",
         "totalPages", "unreadCount", "typeFilter", "unreadOnly",
     }
-    assert required_fields <= set(data.keys()), f"Missing fields: {required_fields - set(data.keys())}"
+    assert required_fields <= set(data.keys()), (
+        f"Missing fields: {required_fields - set(data.keys())}"
+    )
 
 
 @pytest.mark.anyio
@@ -232,7 +234,7 @@ async def test_notifications_json_type_filter_mention(
     auth_headers: dict[str, str],
     db_session: AsyncSession,
 ) -> None:
-    """type=mention returns only mention events."""
+    """type_filter=mention returns only mention events."""
     await _seed(
         db_session,
         _make_notif(_TEST_USER_ID, event_type="mention"),
@@ -240,7 +242,7 @@ async def test_notifications_json_type_filter_mention(
     )
     resp = await client.get(
         _UI_PATH,
-        params={"format": "json", "type": "mention"},
+        params={"format": "json", "type_filter": "mention"},
         headers=auth_headers,
     )
     assert resp.status_code == 200
@@ -256,7 +258,7 @@ async def test_notifications_json_type_filter_watch(
     auth_headers: dict[str, str],
     db_session: AsyncSession,
 ) -> None:
-    """type=watch returns only watch events."""
+    """type_filter=watch returns only watch events."""
     await _seed(
         db_session,
         _make_notif(_TEST_USER_ID, event_type="watch"),
@@ -264,7 +266,7 @@ async def test_notifications_json_type_filter_watch(
     )
     resp = await client.get(
         _UI_PATH,
-        params={"format": "json", "type": "watch"},
+        params={"format": "json", "type_filter": "watch"},
         headers=auth_headers,
     )
     assert resp.status_code == 200
@@ -279,7 +281,7 @@ async def test_notifications_json_type_filter_fork(
     auth_headers: dict[str, str],
     db_session: AsyncSession,
 ) -> None:
-    """type=fork returns only fork events."""
+    """type_filter=fork returns only fork events."""
     await _seed(
         db_session,
         _make_notif(_TEST_USER_ID, event_type="fork"),
@@ -287,7 +289,7 @@ async def test_notifications_json_type_filter_fork(
     )
     resp = await client.get(
         _UI_PATH,
-        params={"format": "json", "type": "fork"},
+        params={"format": "json", "type_filter": "fork"},
         headers=auth_headers,
     )
     assert resp.status_code == 200
@@ -354,7 +356,7 @@ async def test_notifications_json_unread_count_global(
     # Filter to mention only — but unread_count must reflect BOTH unread items.
     resp = await client.get(
         _UI_PATH,
-        params={"format": "json", "type": "mention"},
+        params={"format": "json", "type_filter": "mention"},
         headers=auth_headers,
     )
     assert resp.status_code == 200
