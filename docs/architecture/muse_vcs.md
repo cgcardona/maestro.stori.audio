@@ -3113,6 +3113,38 @@ adds chromatic tension at the right moment rather than resolving early.
 modulated, shifted mode, or changed its harmonic rhythm — all decisions an AI
 needs to make coherent musical choices across versions.
 
+**HTTP API endpoint (issue #414):**
+
+```
+GET /api/v1/musehub/repos/{repo_id}/analysis/{ref}/harmony
+```
+
+Returns `HarmonyAnalysisResponse` — a Roman-numeral-centric view of the harmonic content.
+Unlike the generic `/analysis/{ref}/{dimension}` endpoint (which returns the dimension
+envelope with `HarmonyData`), this dedicated endpoint returns:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `key` | string | Full key label, e.g. `"C major"`, `"F# minor"` |
+| `mode` | string | Detected mode: `major`, `minor`, `dorian`, etc. |
+| `romanNumerals` | `RomanNumeralEvent[]` | Chord events with beat, Roman symbol, root, quality, function |
+| `cadences` | `CadenceEvent[]` | Phrase-ending cadences with beat, type, from/to chord |
+| `modulations` | `HarmonyModulationEvent[]` | Key-area changes with from/to key and pivot chord |
+| `harmonicRhythmBpm` | float | Rate of chord changes in chords per minute |
+
+Optional query params: `?track=<instrument>`, `?section=<label>`.
+Auth: public repos accessible without token; private repos require Bearer JWT.
+Cache: `ETag` and `Cache-Control: private, max-age=60` headers included.
+
+**Agent use case:** An agent that needs to compose a harmonically coherent continuation
+calls this endpoint to get Roman numerals (tonal function), cadence positions (phrase
+boundaries), and any modulations (tonal narrative), without having to parse raw chord
+symbols from the generic `HarmonyData` model.
+
+**Implementation:** `maestro/api/routes/musehub/analysis.py` (`harmony_router` / `get_harmony_analysis`),
+`maestro/services/musehub_analysis.py` (`compute_harmony_analysis`),
+`maestro/models/musehub_analysis.py` (`RomanNumeralEvent`, `CadenceEvent`, `HarmonyModulationEvent`, `HarmonyAnalysisResponse`).
+
 **Implementation:** `maestro/muse_cli/commands/harmony.py` — `_harmony_analyze_async`
 (injectable async core), `HarmonyResult` / `HarmonyCompareResult` (TypedDict result
 entities), `_stub_harmony` (placeholder data), `_tension_label` (arc classifier),

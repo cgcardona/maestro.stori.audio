@@ -1975,6 +1975,38 @@ Returns all 13 dimensions in a single response.
 
 ---
 
+### GET /api/v1/musehub/repos/{repo_id}/analysis/{ref}/harmony
+
+Dedicated harmonic analysis endpoint (issue #414). Returns `HarmonyAnalysisResponse` —
+a Roman-numeral-centric view for agent tonal reasoning. Maps to `muse harmony --ref {ref}`.
+
+**Path params:** `repo_id`, `ref`
+
+**Query params:** `?track=<instrument>`, `?section=<label>`
+
+**Response `200 application/json`:**
+```json
+{
+  "key": "C major",
+  "mode": "major",
+  "romanNumerals": [
+    { "beat": 0.0, "chord": "I", "root": "C", "quality": "major", "function": "tonic" },
+    { "beat": 4.0, "chord": "IV", "root": "F", "quality": "major", "function": "subdominant" }
+  ],
+  "cadences": [
+    { "beat": 7.0, "type": "authentic", "from": "V", "to": "I" }
+  ],
+  "modulations": [
+    { "beat": 32.0, "fromKey": "C major", "toKey": "G major", "pivotChord": "G" }
+  ],
+  "harmonicRhythmBpm": 2.0
+}
+```
+
+**Auth:** public repos accessible without token; private repos require `Authorization: Bearer <JWT>`.
+
+---
+
 ### GET /api/v1/musehub/repos/{repo_id}/analysis/{ref}/{dimension}
 
 Returns structured JSON for one musical dimension.
@@ -1982,8 +2014,11 @@ Returns structured JSON for one musical dimension.
 **Path params:**
 - `repo_id` — Muse Hub repo UUID
 - `ref` — commit ref
-- `dimension` — one of: `harmony`, `dynamics`, `motifs`, `form`, `groove`, `emotion`,
-  `chord-map`, `contour`, `key`, `tempo`, `meter`, `similarity`, `divergence`
+- `dimension` — one of: `harmony` (redirected to dedicated endpoint above), `dynamics`,
+  `motifs`, `form`, `groove`, `emotion`, `chord-map`, `contour`, `key`, `tempo`, `meter`,
+  `similarity`, `divergence`.  Note: requesting `harmony` via this path is now handled by
+  the dedicated `/harmony` endpoint above which returns `HarmonyAnalysisResponse` instead
+  of the generic `AnalysisResponse` envelope.
 
 **Query params:** same as aggregate endpoint (`?track=`, `?section=`)
 
