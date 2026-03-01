@@ -23,6 +23,7 @@ Single source-of-truth migration for Maestro. Creates:
 
   Muse Hub — remote collaboration backend
   - musehub_repos, musehub_branches, musehub_commits, musehub_issues
+  - musehub_issue_milestones (many-to-many join: issues ↔ milestones)
   - musehub_pull_requests (PR workflow; merged_at records exact merge timestamp)
   - musehub_pr_comments (inline review comments on musical diffs within PRs)
   - musehub_objects (content-addressed binary artifact storage)
@@ -407,6 +408,29 @@ def upgrade() -> None:
     op.create_index("ix_musehub_issue_comments_issue_id", "musehub_issue_comments", ["issue_id"])
     op.create_index("ix_musehub_issue_comments_repo_id", "musehub_issue_comments", ["repo_id"])
     op.create_index("ix_musehub_issue_comments_parent_id", "musehub_issue_comments", ["parent_id"])
+
+    # ── Muse Hub — issue-milestone join table ─────────────────────────────
+    op.create_table(
+        "musehub_issue_milestones",
+        sa.Column("issue_id", sa.String(36), nullable=False),
+        sa.Column("milestone_id", sa.String(36), nullable=False),
+        sa.ForeignKeyConstraint(
+            ["issue_id"],
+            ["musehub_issues.issue_id"],
+            ondelete="CASCADE",
+        ),
+        sa.ForeignKeyConstraint(
+            ["milestone_id"],
+            ["musehub_milestones.milestone_id"],
+            ondelete="CASCADE",
+        ),
+        sa.PrimaryKeyConstraint("issue_id", "milestone_id"),
+    )
+    op.create_index(
+        "ix_musehub_issue_milestones_milestone_id",
+        "musehub_issue_milestones",
+        ["milestone_id"],
+    )
     op.create_index("ix_musehub_issue_comments_created_at", "musehub_issue_comments", ["created_at"])
 
     # ── Muse Hub — pull requests ──────────────────────────────────────────
@@ -908,6 +932,13 @@ def downgrade() -> None:
     op.drop_index("ix_musehub_issue_comments_repo_id", table_name="musehub_issue_comments")
     op.drop_index("ix_musehub_issue_comments_issue_id", table_name="musehub_issue_comments")
     op.drop_table("musehub_issue_comments")
+
+    # Muse Hub — issue-milestone join table (depends on issues and milestones)
+    op.drop_index(
+        "ix_musehub_issue_milestones_milestone_id",
+        table_name="musehub_issue_milestones",
+    )
+    op.drop_table("musehub_issue_milestones")
 
     # Muse Hub — issues (depends on repos and milestones)
     op.drop_index("ix_musehub_issues_milestone_id", table_name="musehub_issues")
