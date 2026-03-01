@@ -1309,11 +1309,17 @@ class WebhookListResponse(CamelModel):
 
 
 class WebhookDeliveryResponse(CamelModel):
-    """Wire representation of a single webhook delivery attempt."""
+    """Wire representation of a single webhook delivery attempt.
+
+    ``payload`` is the JSON body that was (or will be) sent to the subscriber.
+    It is stored verbatim so that operators can inspect the exact bytes delivered
+    and so the redeliver endpoint can replay the original payload without guessing.
+    """
 
     delivery_id: str
     webhook_id: str
     event_type: str
+    payload: str = Field("", description="JSON body sent to the subscriber URL")
     attempt: int
     success: bool
     response_status: int
@@ -1325,6 +1331,21 @@ class WebhookDeliveryListResponse(CamelModel):
     """Paginated list of delivery attempts for a webhook."""
 
     deliveries: list[WebhookDeliveryResponse]
+
+
+class WebhookRedeliverResponse(CamelModel):
+    """Confirmation that a delivery reattempt was executed.
+
+    ``success`` reflects the final outcome after all retry attempts.
+    ``original_delivery_id`` links back to the delivery row that was replayed.
+    """
+
+    original_delivery_id: str = Field(..., description="ID of the original delivery row that was retried")
+    webhook_id: str = Field(..., description="Webhook the payload was redelivered to")
+    event_type: str = Field(..., description="Event type of the redelivered payload")
+    success: bool = Field(..., description="True when the redeliver attempt received a 2xx response")
+    response_status: int = Field(..., description="HTTP status code from the final attempt (0 for network errors)")
+    response_body: str = Field("", description="Response body snippet from the final attempt (≤512 chars)")
 
 
 # ── Webhook event payload TypedDicts ─────────────────────────────────────────
