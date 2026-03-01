@@ -70,7 +70,7 @@ Clear the existing allowlist entirely, then paste the block below into
 > commands in kickoff prompts must be written as single lines.
 
 ```
-ls, ls -la, ls -lah, ls -l, pwd, cat, head, tail, echo, true, false, wc, file, which, date, basename, dirname, printf, jq, sort, uniq, tr, awk, sed, cut, xargs, tee, rg, grep, find, mkdir, cp, mv, touch, ln -s, cd, sleep, continue, python3 -c, python3 -m, REPO=, WTNAME=, DEV_SHA=, WT=, NUM=, TITLE=, BRANCH=, PRTREES=, WORKTREE=, ENTRY=, FOLLOW_UP_URL=, ISSUE_URL=, GH_REPO=, export GH_REPO=, declare -a, declare -a ISSUES=, declare -a PRS=, for entry in, for NUM in, for WT in, git status, git log, git diff, git show, git branch, git fetch, git fetch origin, git pull, git pull origin, git pull origin dev, git stash list, git worktree list, git ls-remote, git rev-parse, git ls-files, git merge-base, git describe, git cat-file, git config rerere.enabled, git -C, git -C /Users, git worktree list --porcelain, git bisect, git bisect start, git bisect bad, git bisect good, git bisect log, git bisect reset, git checkout -b, git checkout, git add, git add -A, git commit, git merge origin/dev, git merge, git stash, git stash pop, git stash apply, git restore, git restore --staged, git push origin, git push -u origin, git push origin --delete, git worktree add, git worktree add --detach, git worktree remove --force, git worktree prune, docker compose ps, docker compose logs, docker compose config, docker compose -f, docker ps, docker inspect, docker compose exec maestro mypy, docker compose exec maestro pytest, docker compose exec maestro sh -c, docker compose exec maestro python -m coverage, docker compose exec maestro python -c, docker compose exec maestro python3 -m, docker compose exec maestro ps, docker compose exec maestro ls, docker compose exec maestro cat, docker compose exec maestro rg, docker compose exec maestro grep, docker compose exec maestro find, docker compose exec maestro alembic history, docker compose exec maestro alembic current, docker compose exec maestro alembic heads, docker compose exec maestro alembic upgrade head, docker compose exec maestro python3, docker compose exec storpheus mypy, docker compose exec storpheus pytest, docker compose exec storpheus sh -c, docker compose exec storpheus ls, docker compose exec storpheus cat, docker compose exec storpheus rg, docker compose exec storpheus grep, docker compose exec storpheus python3, docker compose exec postgres psql, gh auth status, gh repo view, gh pr view, gh pr list, gh pr diff, gh pr create, gh pr edit, gh pr checkout, gh pr merge, gh pr comment, gh pr review, gh issue view, gh issue list, gh issue create, gh issue close, gh issue comment, gh issue edit, gh label list, gh run list, gh run view, gh release list, gh release view, gh api, ps aux, ps -ef, pgrep, nc -z, curl, REPO=$(git, WTNAME=$(basename, DEV_SHA=$(git, WT=$HOME, BRANCH=$(git
+ls, ls -la, ls -lah, ls -l, pwd, cat, head, tail, echo, true, false, seq, wc, file, which, date, basename, dirname, printf, jq, sort, uniq, tr, awk, sed, cut, xargs, tee, rg, grep, find, mkdir, cp, mv, touch, ln -s, cd, sleep, break, continue, exit, exit 0, exit 1, mapfile, IFS=, python3 -c, python3 -m, REPO=, WTNAME=, DEV_SHA=, WT=, NUM=, TITLE=, BRANCH=, PRTREES=, WORKTREE=, ENTRY=, FOLLOW_UP_URL=, ISSUE_URL=, GH_REPO=, export GH_REPO=, declare -a, declare -A, declare -a ISSUES=, declare -a PRS=, for entry in, for NUM in, for WT in, for i in, for label in, for n in, N=$(grep, N=$(printf, BRANCH=$(grep, MERGE_AFTER=$(grep, LABELS_TO_APPLY=$(grep, CLOSES_ISSUES=$(grep, STATE=$(gh, PR_BRANCH=$(gh, PR_FILES=$(gh, CLOSES_ISSUE=$(gh, OPEN_PRS=$(gh, REMAINING=$(gh, NUM=$(echo, TITLE=$(echo, LABELS=$(echo, PHASE=$(echo, BATCH=$(echo, SHORT=$(grep, git status, git log, git diff, git show, git branch, git branch -D, git fetch, git fetch origin, git pull, git pull origin, git pull origin dev, git stash list, git worktree list, git ls-remote, git rev-parse, git ls-files, git merge-base, git describe, git cat-file, git config rerere.enabled, git -C, git -C /Users, git worktree list --porcelain, git bisect, git bisect start, git bisect bad, git bisect good, git bisect log, git bisect reset, git checkout -b, git checkout, git add, git add -A, git commit, git merge origin/dev, git merge, git stash, git stash pop, git stash apply, git restore, git restore --staged, git push origin, git push -u origin, git push origin --delete, git worktree add, git worktree add --detach, git worktree remove --force, git worktree prune, docker compose ps, docker compose logs, docker compose config, docker compose -f, docker ps, docker inspect, docker compose exec maestro mypy, docker compose exec maestro pytest, docker compose exec maestro sh -c, docker compose exec maestro python -m coverage, docker compose exec maestro python -c, docker compose exec maestro python3 -m, docker compose exec maestro ps, docker compose exec maestro ls, docker compose exec maestro cat, docker compose exec maestro rg, docker compose exec maestro grep, docker compose exec maestro find, docker compose exec maestro alembic history, docker compose exec maestro alembic current, docker compose exec maestro alembic heads, docker compose exec maestro alembic upgrade head, docker compose exec maestro python3, docker compose exec storpheus mypy, docker compose exec storpheus pytest, docker compose exec storpheus sh -c, docker compose exec storpheus ls, docker compose exec storpheus cat, docker compose exec storpheus rg, docker compose exec storpheus grep, docker compose exec storpheus python3, docker compose exec postgres psql, gh auth status, gh repo view, gh pr view, gh pr list, gh pr diff, gh pr create, gh pr edit, gh pr checkout, gh pr merge, gh pr comment, gh pr review, gh issue view, gh issue list, gh issue create, gh issue close, gh issue comment, gh issue edit, gh label list, gh label create, gh label delete, gh label edit, gh run list, gh run view, gh release list, gh release view, gh api, ps aux, ps -ef, pgrep, nc -z, curl, REPO=$(git, WTNAME=$(basename, DEV_SHA=$(git, WT=$HOME, BRANCH=$(git
 ```
 
 ---
@@ -87,7 +87,7 @@ tail -n N <file>              ← file inspection ONLY (never to filter test out
 echo
 true                          ← null-op; used as || true for safe error suppression in scripts
 false                         ← null-op complement; used in boolean control flow
-continue                      ← bash loop control (skip to next iteration); used in for loops
+seq <N>                       ← integer sequence; used in merge-gate polling loops: for i in $(seq 1 15)
 wc / wc -l
 file <path>
 which <cmd>
@@ -98,11 +98,21 @@ jq <filter> <file>            ← JSON parsing
 sleep <N>                     ← harmless pause; agents use between push and gh pr create
 ```
 
-### Shell — Bash control flow (coordinator setup scripts)
+### Shell — Bash control flow (coordinator setup scripts and polling loops)
 ```
-declare -a ISSUES=(...)       ← array declaration in coordinator setup scripts
-declare -a PRS=(...)          ← array declaration in coordinator setup scripts
-for entry in "${ARRAY[@]}"    ← iteration in coordinator setup scripts
+break                         ← bash loop exit; used in merge-gate polling loops
+continue                      ← bash loop skip; used in for loops
+exit / exit 0 / exit 1        ← script exit; used in merge-gate escalation and idempotency gates
+mapfile -t <ARRAY> < <(...)   ← bash builtin for reading command output into an array
+IFS=',' read -ra <ARRAY> <<< ← bash IFS-split; used to iterate LABELS_TO_APPLY and similar CSV fields
+declare -a ISSUES=(...)       ← indexed array declaration in coordinator setup scripts
+declare -a PRS=(...)          ← indexed array declaration in coordinator setup scripts
+declare -A <MAP>=(...)        ← associative array declaration; used in coordinator setup scripts
+for entry in "${ARRAY[@]}"    ← iteration over indexed arrays
+for i in $(seq 1 <N>)        ← counted loop; used in merge-gate polling
+for label in "${LABELS[@]}"  ← iteration over label arrays (label pre-flight scripts)
+for NUM in <list>             ← iteration over explicit issue/PR number lists
+for n in <list>               ← iteration over explicit number lists
 PRTREES=<path>                ← variable assignment
 WORKTREE=<path>               ← variable assignment
 ENTRY=<value>                 ← variable assignment
@@ -110,6 +120,30 @@ FOLLOW_UP_URL=<value>         ← B-grade follow-up issue URL
 ISSUE_URL=<value>             ← captured issue URL in scripts
 GH_REPO=cgcardona/maestro     ← hardcoded repo slug — NEVER derive from local path
 export GH_REPO=cgcardona/maestro
+```
+
+### Shell — Variable assignments from command substitution (task-file parsing)
+These patterns appear in every agent kickoff when parsing `.agent-task` KEY=value fields.
+Cursor treats each `VAR=$(cmd)` prefix as a command token — all must be on the allowlist.
+```
+N=$(grep                      ← parse PR_NUMBER / ISSUE_NUMBER from .agent-task
+N=$(printf                    ← zero-pad batch number: N=$(printf "%02d" $i)
+BRANCH=$(grep                 ← parse PR_BRANCH from .agent-task
+MERGE_AFTER=$(grep            ← parse MERGE_AFTER gate from .agent-task
+LABELS_TO_APPLY=$(grep        ← parse comma-separated label list from .agent-task
+CLOSES_ISSUES=$(grep          ← parse linked issue numbers from .agent-task
+STATE=$(gh                    ← capture live PR/issue state: STATE=$(gh pr view ...)
+PR_BRANCH=$(gh                ← fetch PR branch name from GitHub
+PR_FILES=$(gh                 ← fetch PR file list from GitHub
+CLOSES_ISSUE=$(gh             ← fetch close-links from PR body
+OPEN_PRS=$(gh                 ← list open PRs for overlap check
+REMAINING=$(gh                ← count remaining open issues in phase closure audit
+NUM=$(echo                    ← extract issue/PR number from pipe: NUM="${entry%%|*}"
+TITLE=$(echo                  ← extract title from pipe: TITLE="${entry##*|}"
+LABELS=$(echo                 ← extract label string from pipe output
+PHASE=$(echo                  ← extract phase label from comma-separated labels
+BATCH=$(echo                  ← extract batch label from comma-separated labels
+SHORT=$(grep                  ← extract short slug for branch naming
 ```
 
 ### Shell — Text Processing (read-only transforms)
@@ -210,6 +244,8 @@ git push origin <feature-branch>          ← non-main, non-dev branches ONLY
 git push -u origin <feature-branch>       ← same as above with upstream tracking; -u writes to .git/config
                                            ← must be on the allowlist so it runs outside sandbox
 git push origin --delete <feature-branch> ← remote branch cleanup after PR merge
+git branch -D <feature-branch>            ← delete LOCAL branch ref after PR squash-merge
+                                           ← worktree remove destroys the directory but NOT the local ref
 ```
 
 ### GitHub CLI — Read Only
@@ -227,6 +263,15 @@ gh run view <id>
 gh release list
 gh release view [<tag>]
 gh api <GET-endpoint>              ← read-only API calls only
+```
+
+### GitHub CLI — Label Management (Label Pre-flight scripts)
+```
+gh label create <name> --color <hex> --description "..."  ← idempotent; pre-flight before any batch
+gh label delete <name> --yes                              ← removes stale/conflicting labels
+gh label edit <name> --color <hex> --description "..."    ← updates existing label metadata
+# ⚠️  Label pre-flight MUST run before worktrees are created for any batch.
+#    Without it, gh issue edit --add-label fails silently and issues are mislabeled.
 ```
 
 ### GitHub CLI — Safe Writes

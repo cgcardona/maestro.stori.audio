@@ -5,10 +5,10 @@
 > If you are an AI agent reading this document, your role is **coordinator only**.
 >
 > **Your job — the full list, nothing more:**
-> 1. Query GitHub for the current phase label to get your canonical batch — **never use a hardcoded list**.
+> 1. Query GitHub for the current batch label to get your canonical issue set — **never use a hardcoded list**.
 > 2. Pull `dev` to confirm it is up to date.
-> 3. Run the Setup script below to create one worktree per issue.
-> 4. Launch one sub-agent per worktree by pasting the Kickoff Prompt (found at the bottom of this document) into a separate Cursor composer window rooted in that worktree.
+> 3. Run the Setup script below to create one worktree per issue and write a `.agent-task` file into each.
+> 4. Launch one sub-agent per worktree using the **Task tool** (preferred — allows unlimited parallel agents) or a Cursor composer window rooted in that worktree.
 > 5. Report back once all sub-agents have been launched.
 >
 > **You do NOT:**
@@ -16,10 +16,37 @@
 > - Run mypy or pytest yourself.
 > - Create PRs yourself.
 > - Read issue bodies or study code yourself.
-> - Hardcode issue numbers — **the GitHub label is the single source of truth**.
+> - Hardcode issue numbers — **the GitHub batch label is the single source of truth**.
 >
 > The **Kickoff Prompt** at the bottom of this document is for the sub-agents, not for you.
-> Copy it verbatim into each sub-agent's window. Do not follow it yourself.
+> Do not follow it yourself.
+
+---
+
+## Why `.agent-task` files unlock more than 4 parallel agents
+
+The Task tool can launch multiple agents from a single coordinator message.
+Each agent reads its own `.agent-task` file, so the coordinator does not
+need to pass any content as prompt text — just the worktree path and the
+kickoff prompt. This means you can launch 10, 20, or 50 agents in one message:
+
+```python
+# All launched simultaneously — no 4-agent limit
+Task(worktree="/path/to/issue-402", prompt=KICKOFF_PROMPT)
+Task(worktree="/path/to/issue-403", prompt=KICKOFF_PROMPT)
+Task(worktree="/path/to/issue-407", prompt=KICKOFF_PROMPT)
+Task(worktree="/path/to/issue-411", prompt=KICKOFF_PROMPT)
+Task(worktree="/path/to/issue-405", prompt=KICKOFF_PROMPT)
+# ... as many as you have worktrees
+```
+
+**Nested orchestration:** An agent whose `.agent-task` contains
+`SPAWN_SUB_AGENTS=true` acts as a sub-coordinator: it creates its own
+sub-worktrees with sub-task files and launches leaf agents. This creates
+a tree of unlimited depth and width.
+
+See `PARALLEL_BUGS_TO_ISSUES.md` → "Agent Task File Reference" for the
+full field reference including nested orchestration patterns.
 
 ---
 
@@ -139,60 +166,47 @@ PRTREES="$HOME/.cursor/worktrees/$(basename "$REPO")"
 mkdir -p "$PRTREES"
 cd "$REPO"
 
-# GitHub repo slug — hardcoded. NEVER derive from local path.
 GH_REPO=cgcardona/maestro
 
-# Enable rerere so git caches conflict resolutions across agents.
-# When multiple agents resolve the same conflict (e.g. muse_vcs.md), rerere
-# automatically reuses the recorded resolution — no manual work needed.
-# || true: the sandbox blocks .git/config writes (EPERM) when this runs as
-# part of a multi-statement block. rerere is an optimization, not critical.
 git config rerere.enabled true || true
 
-# ── PHASE LABEL ─────────────────────────────────────────────────────────────
-# Change this to the current phase label. This is the ONLY value you update.
-PHASE_LABEL="phase-1"
+# ── BATCH LABEL ─────────────────────────────────────────────────────────────
+# Set this to the batch label to implement. The batch label is the ONLY
+# value you change between runs.  Example: "batch-01", "batch-02", ...
+# This is more precise than a phase label when issues are pre-grouped.
+BATCH_LABEL="batch-01"
 
-# ── DERIVE BATCH FROM GITHUB — never hardcode issue numbers ─────────────────
-# The label on GitHub is the single source of truth. If an issue is labeled
-# phase-1 but not in this list, it WILL be skipped and the phase will appear
-# complete when it isn't. Always derive from the label.
-echo "📋 Querying GitHub for open '$PHASE_LABEL' issues..."
+# ── DERIVE ISSUES FROM GITHUB — never hardcode issue numbers ─────────────────
+echo "📋 Querying GitHub for open '$BATCH_LABEL' issues..."
 mapfile -t RAW_ISSUES < <(
   gh issue list \
     --repo "$GH_REPO" \
-    --label "$PHASE_LABEL" \
+    --label "$BATCH_LABEL" \
     --state open \
-    --json number,title \
-    --jq '.[] | "\(.number)|\(.title)"'
+    --json number,title,labels \
+    --jq '.[] | "\(.number)|\(.title)|\(.labels | map(.name) | join(","))"'
 )
 
 if [ ${#RAW_ISSUES[@]} -eq 0 ]; then
-  echo "✅ No open issues with label '$PHASE_LABEL'. Phase is complete."
+  echo "✅ No open issues with label '$BATCH_LABEL'. Batch is complete."
   exit 0
 fi
 
 echo "Found ${#RAW_ISSUES[@]} open issue(s):"
 for entry in "${RAW_ISSUES[@]}"; do
-  echo "  #${entry%%|*}: ${entry##*|}"
+  echo "  #${entry%%|*}: $(echo "$entry" | cut -d'|' -f2)"
 done
 
 # ── ISSUE SELECTION (coordinator applies both criteria before proceeding) ────
-# From RAW_ISSUES, select up to 4 that satisfy:
-#   Criterion 1 — Foundational first (see Issue selection section above)
-#   Criterion 2 — Zero file overlap between any two selected issues
+# Issues in the same batch label are pre-screened for file isolation,
+# so you can usually select all of them. Verify with the file-overlap check
+# in "Before launching" below before finalising.
 #
-# Document your selection and rationale in the comments below, then populate
-# SELECTED_ISSUES. Do NOT skip this review — blindly passing all RAW_ISSUES
-# to agents causes merge conflicts when issues share files.
-#
-# Example (replace with your actual selection):
-#   #NNN → files: maestro/foo.py, tests/test_foo.py
-#   #MMM → files: maestro/bar.py, tests/test_bar.py
-#   Load-bearing order: #NNN (shared fixture) → #MMM (consumer)
+# Load-bearing order: within a batch, issues are numbered by implementation
+# priority (1→2→3→4). If issue B's body says "Depends on #A", serialize them.
 declare -a SELECTED_ISSUES=(
-  # Paste selected entries from RAW_ISSUES here, one per line:
-  # "NNN|title of issue NNN"
+  # Paste selected entries from RAW_ISSUES here:
+  # "NNN|Issue title|label1,label2,..."
 )
 
 if [ ${#SELECTED_ISSUES[@]} -eq 0 ]; then
@@ -200,29 +214,74 @@ if [ ${#SELECTED_ISSUES[@]} -eq 0 ]; then
   exit 1
 fi
 
-# ── SNAPSHOT DEV TIP — all worktrees start here ──────────────────────────────
+# ── SNAPSHOT DEV TIP ─────────────────────────────────────────────────────────
 DEV_SHA=$(git rev-parse dev)
 
-# ── CREATE WORKTREES + TASK FILES ────────────────────────────────────────────
+# ── CREATE WORKTREES + AGENT TASK FILES ──────────────────────────────────────
 for entry in "${SELECTED_ISSUES[@]}"; do
-  NUM="${entry%%|*}"
-  TITLE="${entry##*|}"
+  NUM=$(echo "$entry" | cut -d'|' -f1)
+  TITLE=$(echo "$entry" | cut -d'|' -f2)
+  LABELS=$(echo "$entry" | cut -d'|' -f3)
+  # Derive phase label from the issue's labels (first label matching phase-*)
+  PHASE=$(echo "$LABELS" | tr ',' '\n' | grep "^phase-" | head -1)
+  BATCH=$(echo "$LABELS" | tr ',' '\n' | grep "^batch-" | head -1)
+
   WT="$PRTREES/issue-$NUM"
   if [ -d "$WT" ]; then
     echo "⚠️  worktree issue-$NUM already exists, skipping"
     continue
   fi
   git worktree add --detach "$WT" "$DEV_SHA"
-  printf "WORKFLOW=issue-to-pr\nISSUE_NUMBER=%s\nISSUE_TITLE=%s\nISSUE_URL=https://github.com/%s/issues/%s\nPHASE_LABEL=%s\n" \
-    "$NUM" "$TITLE" "$GH_REPO" "$NUM" "$PHASE_LABEL" > "$WT/.agent-task"
-  echo "✅ worktree issue-$NUM ready"
+  # Assign ROLE based on issue labels:
+  #   muse, muse-cli, muse-hub, merge labels → muse-specialist
+  #   phase-1/db-schema, alembic, migration labels → database-architect
+  #   all others → python-developer
+  ISSUE_LABELS=$(gh issue view "$NUM" --repo "$GH_REPO" --json labels --jq '[.labels[].name] | join(",")' 2>/dev/null || echo "")
+  AGENT_ROLE="python-developer"
+  if echo "$ISSUE_LABELS" | grep -qE "muse-cli|muse-hub|muse|merge"; then
+    AGENT_ROLE="muse-specialist"
+  elif echo "$ISSUE_LABELS" | grep -qE "db-schema|alembic|migration"; then
+    AGENT_ROLE="database-architect"
+  fi
+
+  # Write rich .agent-task — agent reads ALL context from this file
+  # Extract DEPENDS_ON from issue body (looks for "Depends on #NNN" patterns)
+  ISSUE_BODY=$(gh issue view "$NUM" --repo "$GH_REPO" --json body --jq '.body' 2>/dev/null)
+  DEPENDS_ON=$(echo "$ISSUE_BODY" | grep -oE 'Depends on #[0-9]+' | grep -oE '[0-9]+' | tr '\n' ',' | sed 's/,$//')
+  [ -z "$DEPENDS_ON" ] && DEPENDS_ON=none
+
+  # FILE_OWNERSHIP: coordinator should fill this in manually from the taxonomy
+  # to prevent agents from stepping on each other. Format: comma-separated paths.
+  # Leave as "tbd" if unknown — agent will document its actual files in the PR body.
+  FILE_OWNERSHIP_VALUE="${FILE_OWNERSHIP:-tbd}"
+
+  cat > "$WT/.agent-task" << TASKEOF
+WORKFLOW=issue-to-pr
+GH_REPO=$GH_REPO
+ISSUE_NUMBER=$NUM
+ISSUE_TITLE=$TITLE
+ISSUE_URL=https://github.com/$GH_REPO/issues/$NUM
+PHASE_LABEL=$PHASE
+BATCH_LABEL=$BATCH
+ALL_ISSUE_LABELS=$LABELS
+DEPENDS_ON=$DEPENDS_ON
+FILE_OWNERSHIP=$FILE_OWNERSHIP_VALUE
+ROLE=$AGENT_ROLE
+SPAWN_SUB_AGENTS=false
+ATTEMPT_N=0
+REQUIRED_OUTPUT=pr_url
+ON_BLOCK=stop
+TASKEOF
+
+  echo "✅ worktree issue-$NUM ready (.agent-task written)"
 done
 
 git worktree list
 ```
 
-After running this, open one Cursor composer window per worktree, each rooted
-in its `issue-<N>` directory, and paste the Kickoff Prompt below.
+After running this, launch one agent per worktree using the **Task tool**
+(preferred — no limit on simultaneous agents) or a Cursor composer window
+rooted in each `issue-<N>` directory.
 
 ---
 
@@ -296,10 +355,50 @@ Read .cursor/AGENT_COMMAND_POLICY.md before issuing any shell commands.
 Green-tier commands run without confirmation. Yellow = check scope first.
 Red = never, ask the user instead.
 
-STEP 0 — READ YOUR TASK:
+STEP 0 — READ YOUR TASK FILE:
   cat .agent-task
-  This file tells you your issue number, title, and URL. Substitute your actual
-  issue number wherever you see <N> below.
+
+  Parse all KEY=value fields from the header:
+    GH_REPO          → GitHub repo slug (export immediately)
+    ISSUE_NUMBER     → your issue number (substitute for <N> throughout)
+    ISSUE_TITLE      → issue title
+    ISSUE_URL        → full GitHub URL for reference
+    PHASE_LABEL      → phase label already applied on GitHub
+    BATCH_LABEL      → batch label already applied on GitHub
+    SPAWN_SUB_AGENTS → if true, act as sub-coordinator (spawn leaf agents
+                       from sub-task sections in this file, then self-destruct)
+
+  Export for all subsequent commands:
+    export GH_REPO=$(grep "^GH_REPO=" .agent-task | cut -d= -f2)
+    export GH_REPO=${GH_REPO:-cgcardona/maestro}
+    N=$(grep "^ISSUE_NUMBER=" .agent-task | cut -d= -f2)
+    ATTEMPT_N=$(grep "^ATTEMPT_N=" .agent-task | cut -d= -f2)
+
+  ⚠️  ANTI-LOOP GUARD: if ATTEMPT_N > 2 → STOP immediately.
+    You have retried this task 3+ times. Self-destruct and escalate with the
+    exact last failure so a human can diagnose. Never loop blindly.
+
+  ⚠️  RETRY-WITHOUT-STRATEGY-MUTATION: if any command fails twice with the same
+    error → change strategy entirely. Two identical failures = wrong approach.
+    Stop. Redesign. Or escalate. Do NOT tweak parameters and retry.
+
+  ⚠️  SURGICAL UNDO ONLY: never run git reset --hard or git restore .
+    to undo your own changes. Use git restore -p <file> (patch mode) or
+    git restore --staged <file> for staged undo. Broad undo destroys
+    unrelated work. When in doubt: commit, then fix forward.
+
+STEP 0.5 — LOAD YOUR ROLE:
+  ROLE=$(grep '^ROLE=' .agent-task | cut -d= -f2)
+  REPO=$(git worktree list | head -1 | awk '{print $1}')
+  ROLE_FILE="$REPO/.cursor/roles/${ROLE}.md"
+  if [ -f "$ROLE_FILE" ]; then
+    cat "$ROLE_FILE"
+    echo "✅ Operating as role: $ROLE"
+  else
+    echo "⚠️  No role file found for '$ROLE' — proceeding without role context."
+  fi
+  # The decision hierarchy, quality bar, and failure modes in that file govern
+  # all your choices from this point forward.
 
 STEP 1 — DERIVE PATHS:
   REPO=$(git worktree list | head -1 | awk '{print $1}')   # local filesystem path only
@@ -323,6 +422,9 @@ STEP 1 — DERIVE PATHS:
 STEP 2 — CHECK CANONICAL STATE BEFORE DOING ANY WORK:
   ⚠️  Query GitHub first. Do NOT create a branch, write a file, or run mypy until
   you have confirmed no prior work exists. This is the idempotency gate.
+
+  # Mark issue as in-progress so the conductor and other agents see it's claimed.
+  gh issue edit <N> --repo "$GH_REPO" --add-label "status/in-progress" 2>/dev/null || true
 
   # 0. Is the issue itself already closed? (fastest exit — check this FIRST)
   ISSUE_STATE=$(gh issue view <N> --json state --jq '.state')
@@ -360,32 +462,127 @@ STEP 2 — CHECK CANONICAL STATE BEFORE DOING ANY WORK:
 
 STEP 3 — IMPLEMENT (only if STEP 2 found nothing):
   Read and follow every step in .github/CREATE_PR_PROMPT.md exactly.
-  Steps: issue analysis → branch (from dev) → implement → mypy → tests → commit → docs → PR.
+  Steps: baseline → branch → implement → mypy → tests → commit → docs → PR.
 
-  # Create your feature branch from current HEAD (already at dev tip)
+  # ── STEP 3.0 — DEPENDENCY GATE ────────────────────────────────────────────
+  # Read DEPENDS_ON from .agent-task. If set, verify those PRs/issues are merged
+  # before implementing — your code may import from them at runtime.
+  DEPENDS_ON=$(grep "^DEPENDS_ON=" .agent-task | cut -d= -f2)
+  if [ -n "$DEPENDS_ON" ] && [ "$DEPENDS_ON" != "none" ]; then
+    echo "ℹ️  DEPENDS_ON: $DEPENDS_ON"
+    echo "   Checking whether dependencies are already on dev..."
+    # For each PR number listed, verify it is MERGED. If not, note it in the PR body
+    # so reviewers know to merge dependencies first. Do NOT block implementation —
+    # implement against dev and note the dependency clearly in the PR description.
+    # If the dependency is a missing ORM model or missing module, use TYPE_CHECKING
+    # guard for the import so mypy passes on the current dev state.
+  fi
+
+  # ── STEP 3.1 — BASELINE HEALTH SNAPSHOT (before touching any code) ────────
+  # Record the pre-existing state of dev SO YOU KNOW what errors are yours vs.
+  # what was already broken. This baseline is your contract with the next agent.
+  echo "=== PRE-EXISTING MYPY BASELINE (dev, before any changes) ==="
+  cd "$REPO" && docker compose exec maestro sh -c \
+    "PYTHONPATH=/worktrees/$WTNAME mypy /worktrees/$WTNAME/maestro/ /worktrees/$WTNAME/tests/" \
+    2>&1 | tail -5
+  # Record the error count. After implementation, the error count must not increase.
+  # Errors you did NOT introduce: fix them if they are in files you are touching.
+  # Errors in files you are NOT touching: file a follow-up GitHub issue and note it.
+
+  echo "=== PRE-EXISTING TEST BASELINE (targeted files) ==="
+  # Run targeted tests BEFORE branching to capture baseline failures.
+  # Any test that fails before your change is pre-existing — you own fixing it.
+  FILE_OWNERSHIP=$(grep "^FILE_OWNERSHIP=" .agent-task | cut -d= -f2)
+  # (Run targeted tests for the module you're about to modify)
+
+  # ── STEP 3.2 — CREATE BRANCH ──────────────────────────────────────────────
   git checkout -b feat/<short-description>
 
-  mypy (run BEFORE tests — fix all type errors first):
-    cd "$REPO" && docker compose exec maestro sh -c "PYTHONPATH=/worktrees/$WTNAME mypy /worktrees/$WTNAME/maestro/ /worktrees/$WTNAME/tests/"
+  # ── STEP 3.3 — IMPLEMENT ──────────────────────────────────────────────────
+  # (implement the feature per the issue spec)
 
-  ⚠️  TYPE-SYSTEM RULES — mypy must be fixed correctly, not worked around:
-    - No cast() at call sites — fix the callee's return type, not the caller.
-    - No Any. Use TypeAlias, TypeVar, Protocol, Union, or typed wrappers at 3rd-party edges.
+  # ── STEP 3.4 — MYPY (FULL CODEBASE — not just your files) ─────────────────
+  # Run mypy across the ENTIRE codebase, not just your worktree files.
+  # This catches errors in other files that your changes may expose.
+  cd "$REPO" && docker compose exec maestro sh -c \
+    "PYTHONPATH=/worktrees/$WTNAME mypy /worktrees/$WTNAME/maestro/ /worktrees/$WTNAME/tests/"
+
+  ⚠️  MYPY RULES — fix correctly, never work around:
+    - No cast() at call sites — fix the callee's return type.
+    - No Any in return types, parameters, or TypedDict fields.
     - No `object` as a type annotation — be specific.
-    - No naked collections at boundaries: dict[str, Any], list[dict], bare tuples = code smell.
-      Wrap in a named entity. Convention: <Domain><Concept>Result (DynamicsResult, SwingAnalysis).
-    - No # type: ignore without an inline comment citing the specific 3rd-party issue.
-    - No non-ASCII characters inside b"..." bytes literals — mypy rejects them with
-      "Bytes can only contain ASCII literal characters". Use only plain ASCII in byte
-      strings; encode Unicode values explicitly (e.g. "MIDI v2 \u2014 newer".encode()).
-    - Two failed fix attempts = stop and redesign — never loop with incremental tweaks.
-    - Every public function signature is a contract. Register new result types in docs/reference/type_contracts.md.
+    - No naked collections crossing module boundaries (dict[str, Any], list[dict],
+      bare tuples) — wrap in a named entity: <Domain><Concept>Result.
+    - No # type: ignore without an inline comment naming the specific 3rd-party issue.
+    - No non-ASCII characters inside b"..." — encode explicitly.
+    - Two failed fix attempts = stop and redesign.
+    - Every new public function signature is a contract — register result types in
+      docs/reference/type_contracts.md.
 
+  ⚠️  PRE-EXISTING MYPY ERRORS — you own them if they are in files you touch:
+    - If an error was already present on dev (confirmed by STEP 3.1 baseline) AND
+      is in a file your PR modifies → fix it in the same commit.
+    - If it is in a file you do NOT touch → file a GitHub issue, note it in your
+      PR description, and do NOT block your PR on it.
+    - NEVER leave a file you modified in a worse mypy state than you found it.
+
+  # ── STEP 3.5 — ALEMBIC CHAIN VALIDATION (migrations only) ────────────────
+  # If your implementation adds an Alembic migration, validate the revision chain.
+  # This prevents two agents creating migrations with the same revision ID or
+  # the same down_revision, which breaks alembic upgrade head.
+  #
+  # 1. Find the current head revision on dev:
+  cd "$REPO" && docker compose exec maestro alembic heads
+  #
+  # 2. Your new migration's down_revision MUST equal that head.
+  # 3. Your new migration's revision MUST be unique (not used by any existing file).
+  # 4. If two agents created migrations with the same revision number (e.g. both
+  #    named 0006_*), the second must be renumbered (e.g. 0007_*) and its
+  #    down_revision updated to point to the first.
+  #
+  # grep -r "^revision" alembic/versions/   ← list all revision IDs
+  # grep -r "^down_revision" alembic/versions/  ← verify no two share a down_revision
+
+  # ── STEP 3.6 — TESTS ──────────────────────────────────────────────────────
   pytest — TARGETED TESTS ONLY (never the full suite):
-    cd "$REPO" && docker compose exec maestro sh -c "PYTHONPATH=/worktrees/$WTNAME pytest /worktrees/$WTNAME/tests/path/to/test_file.py -v"
+  The full suite takes several minutes and is CI's job, not an agent's job.
+  Derive test targets from what you changed using module-name convention:
 
-  The full suite takes several minutes and is the responsibility of developers/CI,
-  not parallel agents. Run only the test files directly related to your changes.
+    maestro/core/pipeline.py          → tests/test_pipeline.py
+    maestro/core/intent*.py           → tests/test_intent*.py
+    maestro/core/maestro_handlers.py  → tests/test_maestro_handlers.py
+    maestro/services/muse_*.py        → tests/test_muse_*.py
+    maestro/api/routes/muse.py        → tests/test_muse.py
+    maestro/mcp/                      → tests/test_mcp.py
+    maestro/daw/                      → tests/test_daw_adapter.py
+    storpheus/music_service.py        → storpheus/test_gm_resolution.py + storpheus/test_*.py
+
+  Run only the derived targets:
+    cd "$REPO" && docker compose exec maestro sh -c \
+      "PYTHONPATH=/worktrees/$WTNAME pytest \
+       /worktrees/$WTNAME/tests/test_<module1>.py \
+       /worktrees/$WTNAME/tests/test_<module2>.py \
+       -v"
+
+  If you added a new module with no existing test file, create tests/test_<module>.py
+  and run that. Never fall back to tests/ as a directory.
+
+  ⚠️  NEVER pipe mypy or pytest output through grep/head/tail — full output only.
+
+  After tests pass — cascading failure scan:
+    Search for similar assertions or fixtures across other test files before declaring
+    complete. A fix that changes a constant, model field, or shared contract likely
+    affects more than one test file. Find and fix all of them in the same commit.
+
+  ⚠️  PRE-EXISTING BROKEN TESTS — you own them:
+    If a test was ALREADY failing before your change (confirmed by STEP 3.1 baseline):
+    - Fix it unconditionally. Do not leave it for the next agent.
+    - Commit the fix separately: "fix: repair pre-existing broken test <name>"
+    - Note every pre-existing fix in your PR description.
+    If you cannot fix a pre-existing failure without a major refactor:
+    - File a GitHub issue describing the failure exactly.
+    - Add a pytest.mark.skip with a comment referencing the issue number.
+    - Include the skip commit in your PR. Never leave a red test silently.
 
   DOCS — non-negotiable, same commit as code:
     - Docstrings on every new module, class, and public function (why + contract, not what)
@@ -393,17 +590,6 @@ STEP 3 — IMPLEMENT (only if STEP 2 found nothing):
         purpose, flags table, output example, result type, agent use case
     - Register new named result types in docs/reference/type_contracts.md
     - Docs are written for AI agent consumers — explain the contract and when to call this
-
-  After tests pass — cascading failure scan:
-    Search for similar assertions or fixtures across other test files before declaring complete.
-    A fix that changes a constant, model field, or shared contract likely affects more than one
-    test file. Find and fix all of them in the same commit.
-
-  Broken tests from other agents — fix them anyway:
-    If you encounter a failing test that your implementation did NOT introduce,
-    fix it before opening your PR. Include the fix in your branch with message:
-    "fix: repair broken test <name> (pre-existing failure from dev)"
-    Note it in your PR description. Never leave a broken test for the next agent.
 
 STEP 4 — PRE-PUSH SYNC (critical — always run before pushing):
   ⚠️  Other agents may have merged PRs while you were implementing. Sync with dev
@@ -548,6 +734,12 @@ STEP 5 — PUSH & CREATE PR:
   - [ ] Docs updated
   EOF
   )"
+
+  # Transition status label: in-progress → pr-open
+  gh issue edit <N> --repo "$GH_REPO" \
+    --remove-label "status/in-progress" 2>/dev/null || true
+  gh issue edit <N> --repo "$GH_REPO" \
+    --add-label "status/pr-open" 2>/dev/null || true
 
   ⚠️  VERIFY AUTO-CLOSE LINKAGE — run immediately after gh pr create:
   # GitHub auto-closes issue #<N> when the PR is merged ONLY if "Closes #<N>"

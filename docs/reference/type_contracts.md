@@ -8291,3 +8291,54 @@ aggregate totals, a full per-day trend list, and fork-detail records for the ins
 **Produced by:** `maestro.api.routes.musehub.social.get_social_analytics()`
 **Consumed by:** `GET /api/v1/musehub/repos/{repo_id}/analytics/social` (default window: 90 days, max: 365); insights dashboard Social Trends card and "Who forked this" panel
 
+
+---
+
+### `LabelResponse`
+
+**Path:** `maestro/api/routes/musehub/labels.py`
+
+Pydantic `BaseModel` — Public wire representation of a single Muse Hub label. Returned by
+label CRUD endpoints and embedded in `LabelListResponse`.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `label_id` | `str` | UUID of the label |
+| `repo_id` | `str` | UUID of the owning repo |
+| `name` | `str` | Human-readable label name (unique within repo) |
+| `color` | `str` | Hex colour string, e.g. `"#d73a4a"` |
+| `description` | `str \| None` | Optional human-readable description |
+
+**Produced by:** `maestro.api.routes.musehub.labels` (all label endpoints)
+**Consumed by:** `GET /api/v1/musehub/repos/{repo_id}/labels`, `POST .../labels`, `PATCH .../labels/{label_id}`; issue and PR label assignment responses
+
+---
+
+### `LabelListResponse`
+
+**Path:** `maestro/api/routes/musehub/labels.py`
+
+Pydantic `BaseModel` — Paginated list of labels for a repo.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `items` | `list[LabelResponse]` | Labels ordered alphabetically by name |
+| `total` | `int` | Total count of labels in the repo |
+
+**Produced by:** `maestro.api.routes.musehub.labels.list_labels()`
+**Consumed by:** `GET /api/v1/musehub/repos/{repo_id}/labels`
+
+---
+
+### `AssignLabelsRequest`
+
+**Path:** `maestro/api/routes/musehub/labels.py`
+
+Pydantic `BaseModel` — Request body for bulk-assigning labels to an issue or pull request.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `label_ids` | `list[str]` | Array of label UUIDs to assign (minimum 1 item) |
+
+**Produced by:** Callers of `POST .../issues/{number}/labels` and `POST .../pull-requests/{pr_id}/labels`
+**Consumed by:** `maestro.api.routes.musehub.labels.assign_labels_to_issue()` and `assign_labels_to_pr()`
