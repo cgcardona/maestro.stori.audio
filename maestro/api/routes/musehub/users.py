@@ -28,7 +28,7 @@ from maestro.auth.dependencies import TokenClaims, optional_token, require_valid
 from maestro.db import get_db
 from maestro.db.musehub_models import MusehubFollow, MusehubProfile
 from maestro.models.base import CamelModel
-from maestro.models.musehub import ProfileResponse, ProfileUpdateRequest, UserForksResponse, UserStarredResponse
+from maestro.models.musehub import ProfileResponse, ProfileUpdateRequest, UserForksResponse, UserStarredResponse, UserWatchedResponse
 from maestro.services import musehub_profile as profile_svc
 from maestro.services import musehub_repository as repo_svc
 
@@ -153,6 +153,36 @@ async def get_user_starred(
 
     result = await repo_svc.get_user_starred(db, username)
     logger.info("✅ Served %d starred repos for username=%s", result.total, username)
+    return result
+
+
+@router.get(
+    "/users/{username}/watched",
+    response_model=UserWatchedResponse,
+    operation_id="getUserWatched",
+    summary="List repos watched by a user (public)",
+)
+async def get_user_watched(
+    username: str,
+    db: AsyncSession = Depends(get_db),
+) -> UserWatchedResponse:
+    """Return all repos that ``username`` is currently watching, newest first.
+
+    Joins ``musehub_watches`` (where user_id matches the profile's user_id)
+    with ``musehub_repos`` to surface full repo metadata for each watched repo.
+
+    No JWT required — watched repo lists are publicly accessible.
+    Returns 404 when the username does not exist.
+    """
+    profile = await profile_svc.get_profile_by_username(db, username)
+    if profile is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"No profile found for username '{username}'",
+        )
+
+    result = await repo_svc.get_user_watched(db, username)
+    logger.info("✅ Served %d watched repos for username=%s", result.total, username)
     return result
 
 

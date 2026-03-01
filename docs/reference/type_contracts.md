@@ -1744,6 +1744,34 @@ starred, newest first.
 | `starred` | `list[UserStarredRepoEntry]` | Repos starred by this user |
 | `total` | `int` | Total number of starred repos |
 
+#### `UserWatchedRepoEntry`
+
+**Path:** `maestro/models/musehub.py`
+**Endpoint:** `GET /api/v1/musehub/users/{username}/watched`
+
+A single watched-repo entry shown on a user's profile Watching tab. Combines
+the watched repo's full metadata with the watch timestamp so the UI can render
+the repo card with owner/slug linked and "watching since {timestamp}" context.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `watch_id` | `str` | Internal UUID of the watch relationship record |
+| `repo` | `RepoResponse` | Full metadata of the watched repo |
+| `watched_at` | `datetime` | ISO-8601 UTC timestamp when the user started watching the repo |
+
+#### `UserWatchedResponse`
+
+**Path:** `maestro/models/musehub.py`
+**Endpoint:** `GET /api/v1/musehub/users/{username}/watched`
+
+Returned by the public watched endpoint. Lists all repos that a given user is
+watching, newest first.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `watched` | `list[UserWatchedRepoEntry]` | Repos watched by this user |
+| `total` | `int` | Total number of watched repos |
+
 #### `FollowResponse`
 
 **Path:** `maestro/api/routes/musehub/social.py`
