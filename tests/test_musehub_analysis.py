@@ -576,13 +576,18 @@ async def test_analysis_all_13_dimensions_individually(
     """Each of the 13 dimension endpoints returns 200 with correct dimension field."""
     repo_id = await _create_repo(client, auth_headers)
     for dim in ALL_DIMENSIONS:
+        # /similarity is a dedicated cross-ref endpoint requiring ?compare=
+        params = {"compare": "main"} if dim == "similarity" else {}
         resp = await client.get(
             f"/api/v1/musehub/repos/{repo_id}/analysis/main/{dim}",
             headers=auth_headers,
+            params=params,
         )
         assert resp.status_code == 200, f"Dimension {dim!r} returned {resp.status_code}"
         body = resp.json()
-        assert body["dimension"] == dim, f"Expected dimension={dim!r}, got {body['dimension']!r}"
+        # /similarity returns RefSimilarityResponse (no envelope `dimension` field)
+        if dim != "similarity":
+            assert body["dimension"] == dim, f"Expected dimension={dim!r}, got {body['dimension']!r}"
 
 
 # ---------------------------------------------------------------------------
