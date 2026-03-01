@@ -1,4 +1,4 @@
-# Stori Maestro - Docker Compose Configuration
+# Maestro - Docker Compose Configuration
 #
 # Usage:
 #   Development: docker compose up
@@ -76,7 +76,7 @@ services:
           memory: 128M
 
   # ==========================================================================
-  # Stori Maestro API
+  # Maestro API
   # ==========================================================================
   maestro:
     build:

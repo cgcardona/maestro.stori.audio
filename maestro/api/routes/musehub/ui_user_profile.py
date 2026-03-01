@@ -104,11 +104,23 @@ class EnhancedProfileResponse(CamelModel):
 
     Agents consume this to inspect a user's contribution history, badges, and
     recent activity without navigating the HTML profile page.
+
+    CC attribution fields (``is_verified``, ``cc_license``) were added in
+    issue #448 to surface Public Domain / Creative Commons status inline so
+    the frontend can render the CC badge without a secondary API call.
     """
 
     username: str
+    display_name: str | None = None
     bio: str | None = None
     avatar_url: str | None = None
+    location: str | None = None
+    website_url: str | None = None
+    twitter_handle: str | None = None
+    # True for Public Domain / CC licensed archive artists (e.g. bach, chopin, kevin_macleod)
+    is_verified: bool = False
+    # CC attribution string such as "Public Domain" or "CC BY 4.0"; None = all rights reserved
+    cc_license: str | None = None
     heatmap: HeatmapStats
     badges: list[Badge]
     pinned_repos: list[PinnedRepoCard]
@@ -526,8 +538,14 @@ async def _build_enhanced_profile(
 
     return EnhancedProfileResponse(
         username=profile.username,
+        display_name=profile.display_name,
         bio=profile.bio,
         avatar_url=profile.avatar_url,
+        location=profile.location,
+        website_url=profile.website_url,
+        twitter_handle=profile.twitter_handle,
+        is_verified=profile.is_verified,
+        cc_license=profile.cc_license,
         heatmap=heatmap,
         badges=badges,
         pinned_repos=pinned_repos,

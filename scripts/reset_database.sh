@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-echo "🗑️  Stori Maestro Database Reset Script"
+echo "🗑️  Maestro Database Reset Script"
 echo "========================================"
 echo ""
 

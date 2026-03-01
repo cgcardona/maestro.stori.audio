@@ -1277,10 +1277,16 @@ class ProfileUpdateRequest(CamelModel):
     """Body for PUT /api/v1/musehub/users/{username}.
 
     All fields are optional -- send only the ones to change.
+    ``is_verified`` and ``cc_license`` are intentionally excluded: they are
+    set by the platform (not self-reported) when an archive upload is approved.
     """
 
+    display_name: str | None = Field(None, max_length=255, description="Human-readable display name")
     bio: str | None = Field(None, max_length=500, description="Short bio (Markdown supported)")
     avatar_url: str | None = Field(None, max_length=2048, description="Avatar image URL")
+    location: str | None = Field(None, max_length=255, description="City or region")
+    website_url: str | None = Field(None, max_length=2048, description="Personal website or project URL")
+    twitter_handle: str | None = Field(None, max_length=64, description="Twitter/X handle without leading @")
     pinned_repo_ids: list[str] | None = Field(
         None, max_length=6, description="Up to 6 repo_ids to pin on the profile page"
     )
@@ -1343,12 +1349,23 @@ class ProfileResponse(CamelModel):
     ``contribution_graph`` is the last 52 weeks of daily commit activity.
     ``session_credits`` is the total number of commits across all repos
     (a proxy for creative session activity).
+
+    CC attribution fields added in issue #448:
+    ``is_verified`` is True for Public Domain / Creative Commons artists.
+    ``cc_license`` is the SPDX-style license string (e.g. "CC BY 4.0") or
+    None for community users who retain all rights.
     """
 
     user_id: str
     username: str
+    display_name: str | None = None
     bio: str | None = None
     avatar_url: str | None = None
+    location: str | None = None
+    website_url: str | None = None
+    twitter_handle: str | None = None
+    is_verified: bool = False
+    cc_license: str | None = None
     pinned_repo_ids: list[str]
     repos: list[ProfileRepoSummary]
     contribution_graph: list[ContributionDay]

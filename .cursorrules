@@ -1,8 +1,8 @@
-# Stori Maestro — Agent Rules
+# Maestro — Agent Rules
 
 ## Identity
 
-Stori Maestro — AI music composition backend (FastAPI + MCP) for the Stori DAW, a **macOS app** (never say "iOS"). Tagline: "the infinite music machine."
+Maestro — AI music composition backend (FastAPI + MCP) for the Stori DAW, a **macOS app** (never say "iOS"). Tagline: "the infinite music machine."
 
 - **Entry points:** `POST /api/v1/maestro/stream` (human in DAW) and MCP tools (Cursor/Claude). Same engine, same pipeline.
 - **Stack:** Python 3.11+, FastAPI, Pydantic v2, fully async. Storpheus required for generation (no fallback).

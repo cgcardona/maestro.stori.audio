@@ -26,7 +26,7 @@ Environment:
   AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY (or IAM role)
   AWS_S3_ASSET_BUCKET (or --bucket)
   AWS_REGION (or --region)
-  ASSET_AUTHOR  Optional; default "Stori Maestro" (used when kit.json omits author)
+  ASSET_AUTHOR  Optional; default "Maestro" (used when kit.json omits author)
   ASSET_LICENSE Optional; default "CC0" (used when kit.json omits license)
 """
 from __future__ import annotations
@@ -64,7 +64,7 @@ def normalize_kit_meta(meta: dict, kit_id: str) -> dict:
     """Ensure kit.json has name, author, sounds, license, version (see ASSETS_API.md)."""
     out = dict(meta)
     out.setdefault("name", kit_id)
-    out.setdefault("author", os.environ.get("ASSET_AUTHOR", "Stori Maestro"))
+    out.setdefault("author", os.environ.get("ASSET_AUTHOR", "Maestro"))
     out.setdefault("license", os.environ.get("ASSET_LICENSE", "CC0"))
     out.setdefault("version", "1.0")
     out.setdefault("sounds", {})

@@ -307,7 +307,7 @@ All write endpoints and private-repo reads require a Bearer JWT. The spec docume
 
 ## MCP (Cursor / Claude)
 
-Stori Maestro is an MCP server. Cursor, Claude Desktop, or any MCP client can list and call tools. Same tool set as the Stori app; DAW tools are forwarded to the Stori instance connected via WebSocket.
+Maestro is an MCP server. Cursor, Claude Desktop, or any MCP client can list and call tools. Same tool set as the Stori app; DAW tools are forwarded to the Stori instance connected via WebSocket.
 
 **WebSocket (DAW):** Stori connects to `ws://<host>:10001/api/v1/mcp/daw` (with `?token=<jwt>`). When an MCP client calls a DAW tool, Maestro forwards it to that connected DAW.
 

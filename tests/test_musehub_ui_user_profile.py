@@ -362,3 +362,121 @@ async def test_profile_page_json_camel_case_keys(
     assert "avatar_url" not in body
     assert "total_events" not in body
     assert "pinned_repos" not in body
+
+
+# ---------------------------------------------------------------------------
+# Issue #448 — rich artist profiles with CC attribution fields
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.anyio
+async def test_profile_model_rich_fields_stored_and_retrieved(
+    db_session: AsyncSession,
+) -> None:
+    """MusehubProfile stores and retrieves all CC-attribution fields added in #448.
+
+    Regression: before this fix, display_name / location / website_url /
+    twitter_handle / is_verified / cc_license did not exist on the model or
+    schema; saving them would silently discard the data.
+    """
+    profile = MusehubProfile(
+        user_id="user-test-cc-001",
+        username="kevin_macleod_test",
+        display_name="Kevin MacLeod",
+        bio="Prolific composer. Every genre. Royalty-free forever.",
+        location="Sandpoint, Idaho",
+        website_url="https://incompetech.com",
+        twitter_handle="kmacleod",
+        is_verified=True,
+        cc_license="CC BY 4.0",
+        pinned_repo_ids=[],
+    )
+    db_session.add(profile)
+    await db_session.commit()
+    await db_session.refresh(profile)
+
+    assert profile.display_name == "Kevin MacLeod"
+    assert profile.location == "Sandpoint, Idaho"
+    assert profile.website_url == "https://incompetech.com"
+    assert profile.twitter_handle == "kmacleod"
+    assert profile.is_verified is True
+    assert profile.cc_license == "CC BY 4.0"
+
+
+@pytest.mark.anyio
+async def test_profile_model_verified_defaults_false(
+    db_session: AsyncSession,
+) -> None:
+    """is_verified defaults to False for community users — no accidental verification."""
+    profile = MusehubProfile(
+        user_id="user-test-community-002",
+        username="community_user_test",
+        bio="Just a regular community user.",
+        pinned_repo_ids=[],
+    )
+    db_session.add(profile)
+    await db_session.commit()
+    await db_session.refresh(profile)
+
+    assert profile.is_verified is False
+    assert profile.cc_license is None
+    assert profile.display_name is None
+    assert profile.location is None
+    assert profile.twitter_handle is None
+
+
+@pytest.mark.anyio
+async def test_profile_model_public_domain_artist(
+    db_session: AsyncSession,
+) -> None:
+    """Public Domain composers get is_verified=True and cc_license='Public Domain'."""
+    profile = MusehubProfile(
+        user_id="user-test-bach-003",
+        username="bach_test",
+        display_name="Johann Sebastian Bach",
+        bio="Baroque composer. 48 preludes, 48 fugues.",
+        location="Leipzig, Saxony (1723-1750)",
+        website_url="https://www.bach-digital.de",
+        twitter_handle=None,
+        is_verified=True,
+        cc_license="Public Domain",
+        pinned_repo_ids=[],
+    )
+    db_session.add(profile)
+    await db_session.commit()
+    await db_session.refresh(profile)
+
+    assert profile.is_verified is True
+    assert profile.cc_license == "Public Domain"
+    assert profile.twitter_handle is None
+
+
+@pytest.mark.anyio
+async def test_profile_page_json_includes_verified_and_license(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Profile JSON endpoint exposes isVerified and ccLicense fields for CC artists."""
+    profile = MusehubProfile(
+        user_id="user-test-cc-api-004",
+        username="kai_engel_test",
+        display_name="Kai Engel",
+        bio="Ambient architect. Long-form textures.",
+        location="Germany",
+        website_url="https://freemusicarchive.org/music/Kai_Engel",
+        twitter_handle=None,
+        is_verified=True,
+        cc_license="CC BY 4.0",
+        pinned_repo_ids=[],
+    )
+    db_session.add(profile)
+    await db_session.commit()
+
+    response = await client.get("/musehub/ui/users/kai_engel_test?format=json")
+    assert response.status_code == 200
+    body = response.json()
+
+    # The profile card must surface verification status and license so the
+    # frontend can render the CC badge without a secondary API call.
+    assert body.get("isVerified") is True
+    assert body.get("ccLicense") == "CC BY 4.0"

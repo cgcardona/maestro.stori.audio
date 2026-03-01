@@ -51,8 +51,14 @@ def _to_profile_response(
     return ProfileResponse(
         user_id=profile.user_id,
         username=profile.username,
+        display_name=profile.display_name,
         bio=profile.bio,
         avatar_url=profile.avatar_url,
+        location=profile.location,
+        website_url=profile.website_url,
+        twitter_handle=profile.twitter_handle,
+        is_verified=profile.is_verified,
+        cc_license=profile.cc_license,
         pinned_repo_ids=list(profile.pinned_repo_ids or []),
         repos=repos,
         contribution_graph=contribution_graph,
@@ -118,10 +124,18 @@ async def update_profile(
     Only fields present in ``patch`` (non-None) are updated so callers can
     send a sparse payload.
     """
+    if patch.display_name is not None:
+        profile.display_name = patch.display_name
     if patch.bio is not None:
         profile.bio = patch.bio
     if patch.avatar_url is not None:
         profile.avatar_url = patch.avatar_url
+    if patch.location is not None:
+        profile.location = patch.location
+    if patch.website_url is not None:
+        profile.website_url = patch.website_url
+    if patch.twitter_handle is not None:
+        profile.twitter_handle = patch.twitter_handle
     if patch.pinned_repo_ids is not None:
         profile.pinned_repo_ids = patch.pinned_repo_ids[:_MAX_PINNED]
     profile.updated_at = datetime.now(tz=timezone.utc)

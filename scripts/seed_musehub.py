@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import json
 import sys
 import uuid
 from datetime import datetime, timedelta, timezone
@@ -35,12 +36,27 @@ from sqlalchemy.orm import sessionmaker
 
 from maestro.config import settings
 from maestro.contracts.json_types import NoteDict
+from maestro.db.models import (
+    AccessToken,
+    Conversation,
+    ConversationMessage,
+    MessageAction,
+    UsageLog,
+    User,
+)
 from maestro.db.muse_models import NoteChange, Phrase, Variation
+from maestro.db.musehub_collaborator_models import MusehubCollaborator
+from maestro.db.musehub_label_models import (
+    MusehubIssueLabel,
+    MusehubLabel,
+    MusehubPRLabel,
+)
 from maestro.db.musehub_models import (
     MusehubBranch,
     MusehubComment,
     MusehubCommit,
     MusehubDownloadEvent,
+    MusehubEvent,
     MusehubFollow,
     MusehubFork,
     MusehubIssue,
@@ -50,10 +66,13 @@ from maestro.db.musehub_models import (
     MusehubNotification,
     MusehubObject,
     MusehubPRComment,
+    MusehubPRReview,
     MusehubProfile,
     MusehubPullRequest,
     MusehubReaction,
     MusehubRelease,
+    MusehubReleaseAsset,
+    MusehubRenderJob,
     MusehubRepo,
     MusehubSession,
     MusehubStar,
@@ -62,6 +81,7 @@ from maestro.db.musehub_models import (
     MusehubWebhook,
     MusehubWebhookDelivery,
 )
+from maestro.db.musehub_stash_models import MusehubStash, MusehubStashEntry
 
 
 # ---------------------------------------------------------------------------
@@ -122,6 +142,129 @@ COMPOSER_USERS = [
     (KEVIN_MACLEOD, "kevin_macleod", "Kevin MacLeod. Cinematic, orchestral, ambient. Thousands of royalty-free compositions. incompetech.com."),
     (KAI_ENGEL,     "kai_engel",     "Kai Engel. Ambient, neoclassical, cinematic. Delicate textures and patient melodies. Free Music Archive."),
 ]
+
+# Rich profile metadata for all users — display names, locations, CC attribution, social links.
+# Keyed by user_id (stable VARCHAR(36) identifier). Used when seeding musehub_profiles.
+# CC attribution: "Public Domain" for composers expired >70 yrs; "CC BY 4.0" for explicitly licensed artists.
+PROFILE_DATA: dict[str, dict[str, str | bool | None]] = {
+    GABRIEL: dict(
+        display_name="Gabriel",
+        bio="Building the infinite music machine. Neo-baroque meets modern production. Every session is a new fugue.",
+        location="San Francisco, CA",
+        website_url="https://stori.music",
+        twitter_handle="gabrielstori",
+        is_verified=False,
+        cc_license=None,
+    ),
+    SOFIA: dict(
+        display_name="Sofia",
+        bio="Counterpoint scholar and baroque revival composer. Polyphony enthusiast. Bach is the north star.",
+        location="Vienna, Austria",
+        website_url="https://sofia.stori.music",
+        twitter_handle="sofia_counterpoint",
+        is_verified=False,
+        cc_license=None,
+    ),
+    MARCUS: dict(
+        display_name="Marcus",
+        bio="EDM producer. Sampling the classics. 808s and Scarlatti. Ragtime breakbeats are a real genre now.",
+        location="Detroit, MI",
+        website_url="https://marcus.stori.music",
+        twitter_handle="marcus_808",
+        is_verified=False,
+        cc_license=None,
+    ),
+    YUKI: dict(
+        display_name="Yuki",
+        bio="Music theorist and Muse power user. Harmonic analysis obsessive. Every chord has a reason.",
+        location="Tokyo, Japan",
+        website_url="https://yuki.stori.music",
+        twitter_handle="yuki_harmony",
+        is_verified=False,
+        cc_license=None,
+    ),
+    AALIYA: dict(
+        display_name="Aaliya",
+        bio="Jazz fusion meets romantic piano. Coltrane changes on Chopin. Lagos-born, Berlin-based.",
+        location="Berlin, Germany",
+        website_url="https://aaliya.stori.music",
+        twitter_handle="aaliya_jazzpiano",
+        is_verified=False,
+        cc_license=None,
+    ),
+    CHEN: dict(
+        display_name="Chen",
+        bio="Film composer. Every emotion has a chord. Every scene has a theme. Microtonal when the script demands.",
+        location="Shanghai, China",
+        website_url="https://chen.stori.music",
+        twitter_handle="chen_filmscore",
+        is_verified=False,
+        cc_license=None,
+    ),
+    FATOU: dict(
+        display_name="Fatou",
+        bio="Afrobeats composer. Polyrhythm is natural. 7 over 4 makes sense to me. Griot traditions meet modular synthesis.",
+        location="Dakar, Senegal",
+        website_url="https://fatou.stori.music",
+        twitter_handle="fatou_polyrhythm",
+        is_verified=False,
+        cc_license=None,
+    ),
+    PIERRE: dict(
+        display_name="Pierre",
+        bio="French chanson meets minimalism. Piano, cello, and long silences. Satie would approve.",
+        location="Paris, France",
+        website_url="https://pierre.stori.music",
+        twitter_handle="pierre_chanson",
+        is_verified=False,
+        cc_license=None,
+    ),
+    BACH: dict(
+        display_name="Johann Sebastian Bach",
+        bio="Baroque composer. 48 preludes, 48 fugues. All 24 keys. Music is the arithmetic of the soul.",
+        location="Leipzig, Saxony (1723–1750)",
+        website_url="https://www.bach-digital.de",
+        twitter_handle=None,
+        is_verified=True,
+        cc_license="Public Domain",
+    ),
+    CHOPIN: dict(
+        display_name="Frédéric Chopin",
+        bio="Romantic pianist. Nocturnes, ballades, études. Expressive beyond measure. The piano speaks in my voice.",
+        location="Paris, France (1831–1849)",
+        website_url="https://chopin.nifc.pl",
+        twitter_handle=None,
+        is_verified=True,
+        cc_license="Public Domain",
+    ),
+    SCOTT_JOPLIN: dict(
+        display_name="Scott Joplin",
+        bio="King of Ragtime. Maple Leaf Rag. The Entertainer. Syncopation is poetry in motion.",
+        location="Sedalia, Missouri (1890s)",
+        website_url="https://www.scottjoplin.org",
+        twitter_handle=None,
+        is_verified=True,
+        cc_license="Public Domain",
+    ),
+    KEVIN_MACLEOD: dict(
+        display_name="Kevin MacLeod",
+        bio="Prolific composer. Every genre. Royalty-free forever. CC BY 4.0. If you use my music, just credit me.",
+        location="Sandpoint, Idaho",
+        website_url="https://incompetech.com",
+        twitter_handle="kmacleod",
+        is_verified=True,
+        cc_license="CC BY 4.0",
+    ),
+    KAI_ENGEL: dict(
+        display_name="Kai Engel",
+        bio="Ambient architect. Long-form textures. Silence is also music. Free Music Archive.",
+        location="Germany",
+        website_url="https://freemusicarchive.org/music/Kai_Engel",
+        twitter_handle=None,
+        is_verified=True,
+        cc_license="CC BY 4.0",
+    ),
+}
 
 # All contributors for community-collab cycling (8 existing users)
 ALL_CONTRIBUTORS = [
@@ -1127,13 +1270,14 @@ def _make_variation_section(
         [28, 29],       # pending chain of 2
     ]
 
-    # Merge variations at indices 3, 7, 11 — they get parent2_variation_id
-    merge_indices = {3, 7, 11}
-    # Cross-chain parent2: index 3 merges chain [0-3] with chain [4-7] start
+    # Merge variations at indices 7, 11, 15 — they get parent2_variation_id.
+    # All parent2 references point BACKWARD (earlier in the sequence) so the
+    # entire batch can be flushed in one call without FK violations.
+    merge_indices = {7, 11, 15}
     merge_parent2_map = {
-        3:  var_ids[4],   # merge from chain-2 start
-        7:  var_ids[0],   # merge from chain-1 end
-        11: var_ids[8],   # merge from chain-3 start
+        7:  var_ids[0],   # end of chain-2 merges with start of chain-1
+        11: var_ids[3],   # end of chain-3 merges with end of chain-1
+        15: var_ids[7],   # start of chain-5 merges with end of chain-2
     }
 
     # Build parent_variation_id mapping
@@ -1148,6 +1292,9 @@ def _make_variation_section(
         status = STATUS_MAP[i]
         intent = intents[i % len(intents)]
         base_hash = base_commit_hashes[i % len(base_commit_hashes)]
+        # muse_variations.base_state_id / commit_state_id are VARCHAR(36) — derive
+        # a UUID from the 64-char SHA-256 commit hash so it fits the column.
+        base_state_uuid = _uid(base_hash)
         parent_vid = parent_map.get(i)
         parent2_vid = merge_parent2_map.get(i) if i in merge_indices else None
         is_head = status == "accepted" and i == 19
@@ -1155,7 +1302,7 @@ def _make_variation_section(
         var = Variation(
             variation_id=var_ids[i],
             project_id=project_id,
-            base_state_id=base_hash,
+            base_state_id=base_state_uuid,
             conversation_id=_uid(f"{seed_prefix}-conv-{i // 5}"),
             intent=intent,
             explanation=f"Variation {i+1}: {intent[:60]}",
@@ -1166,7 +1313,7 @@ def _make_variation_section(
             beat_range_end=float((i % 8) * 8 + 16),
             parent_variation_id=parent_vid,
             parent2_variation_id=parent2_vid,
-            commit_state_id=base_hash if status == "accepted" else None,
+            commit_state_id=base_state_uuid if status == "accepted" else None,
             is_head=is_head,
             created_at=_now(days=30 - i),
             updated_at=_now(days=30 - i),
@@ -1870,23 +2017,30 @@ def _make_prs(repo_id: str, commits: list[dict[str, Any]], owner: str) -> list[d
 # ---------------------------------------------------------------------------
 
 def _make_releases(repo_id: str, commits: list[dict[str, Any]], repo_name: str, owner: str) -> list[dict[str, Any]]:
-    """Generate 3 releases (v0.1.0 draft, v0.2.0 arrangement, v1.0.0 full) for a repo."""
+    """Generate 3 releases (v0.1.0 draft, v0.2.0 arrangement, v1.0.0 full) for a repo.
+
+    Each release dict includes a deterministic ``release_id`` so downstream
+    code (release assets seeding) can reference it without a separate DB query.
+    """
     if not commits:
         return []
     return [
-        dict(repo_id=repo_id, tag="v0.1.0", title="Early Draft",
+        dict(release_id=_uid(f"release-{repo_id}-v0.1.0"),
+             repo_id=repo_id, tag="v0.1.0", title="Early Draft",
              body=f"## v0.1.0 — Early Draft\n\nFirst checkpoint. Basic groove locked in.\n\n### Tracks\n- Main groove\n- Bass foundation\n\n### Technical\nInitial BPM and key established.",
              commit_id=commits[min(4, len(commits)-1)]["commit_id"],
              download_urls={"midi_bundle": f"/releases/{repo_id}-v0.1.0.zip"},
              author=owner,
              created_at=_now(days=45)),
-        dict(repo_id=repo_id, tag="v0.2.0", title="Arrangement Draft",
+        dict(release_id=_uid(f"release-{repo_id}-v0.2.0"),
+             repo_id=repo_id, tag="v0.2.0", title="Arrangement Draft",
              body=f"## v0.2.0 — Arrangement Draft\n\nAll major sections sketched.\n\n### What's new\n- Additional instrument layers\n- Section transitions defined\n- Dynamic arc mapped",
              commit_id=commits[min(12, len(commits)-1)]["commit_id"],
              download_urls={"midi_bundle": f"/releases/{repo_id}-v0.2.0.zip", "mp3": f"/releases/{repo_id}-v0.2.0.mp3"},
              author=owner,
              created_at=_now(days=25)),
-        dict(repo_id=repo_id, tag="v1.0.0", title=f"{repo_name} — Full Release",
+        dict(release_id=_uid(f"release-{repo_id}-v1.0.0"),
+             repo_id=repo_id, tag="v1.0.0", title=f"{repo_name} — Full Release",
              body=f"## v1.0.0 — Full Release\n\nProduction-ready state.\n\n### Highlights\n- Complete arrangement with all instruments\n- Mixed and mastered\n- Stems included\n\n### Downloads\nMIDI bundle, MP3 stereo mix, individual stems",
              commit_id=commits[-1]["commit_id"],
              download_urls={"midi_bundle": f"/releases/{repo_id}-v1.0.0.zip",
@@ -2141,6 +2295,9 @@ async def seed(db: AsyncSession, force: bool = False) -> None:
     if existing > 0 and force:
         print("  🗑  --force: clearing existing seed data…")
         for tbl in [
+            # Conversation children first
+            "maestro_message_actions", "maestro_conversation_messages",
+            "maestro_conversations", "maestro_usage_logs", "maestro_access_tokens",
             # Muse variation children first (FK order)
             "muse_note_changes", "muse_phrases", "muse_variations",
             # Muse VCS — innermost first (tags depend on commits, commits depend on snapshots)
@@ -2149,32 +2306,85 @@ async def seed(db: AsyncSession, force: bool = False) -> None:
             "musehub_download_events", "musehub_view_events", "musehub_forks",
             "musehub_notifications", "musehub_watches", "musehub_follows",
             "musehub_reactions", "musehub_comments",
-            "musehub_stars", "musehub_sessions", "musehub_releases",
+            "musehub_render_jobs",
+            "musehub_events",
+            # Stash children before stash (FK to maestro_users + repos)
+            "musehub_stash_entries", "musehub_stash",
+            # Collaborators (FK to maestro_users + repos)
+            "musehub_collaborators",
+            "musehub_stars", "musehub_sessions",
+            # Release assets before releases
+            "musehub_release_assets", "musehub_releases",
             "musehub_webhook_deliveries", "musehub_webhooks",
             # PR children before pull_requests
-            "musehub_pr_comments", "musehub_pr_reviews",
+            "musehub_pr_labels", "musehub_pr_comments", "musehub_pr_reviews",
             "musehub_pull_requests",
             # Issue children before issues; milestones after (SET NULL FK)
-            "musehub_issue_milestones", "musehub_issue_comments",
+            "musehub_issue_labels", "musehub_issue_milestones",
+            "musehub_issue_comments",
             "musehub_issues", "musehub_milestones",
+            # Labels after issues/PRs
+            "musehub_labels",
             "musehub_branches",
             "musehub_objects", "musehub_commits", "musehub_repos",
             "musehub_profiles",
+            # maestro_users last (other tables FK to it)
+            "maestro_users",
         ]:
             await db.execute(text(f"DELETE FROM {tbl}"))
         await db.flush()
 
-    # ── 1. User profiles ──────────────────────────────────────────
+    # ── 1. maestro_users (required FK for collaborators + stash) ─────────────
+    # Mirrors the same user IDs used in musehub_profiles so the FK chain is
+    # consistent across the whole schema.
+    all_user_ids_and_names = list(USERS) + list(COMPOSER_USERS)
+    for uid, _uname, _bio in all_user_ids_and_names:
+        db.add(User(
+            id=uid,
+            budget_cents=2500,
+            budget_limit_cents=5000,
+            created_at=_now(days=120),
+            updated_at=_now(days=1),
+        ))
+    print(f"  ✅ maestro_users: {len(all_user_ids_and_names)}")
+
+    await db.flush()
+
+    # ── 1b. User profiles (musehub_profiles) ──────────────────────
+    # Pinned repos show the owner's most prominent repos on their profile page.
+    _PROFILE_PINS: dict[str, list[str]] = {
+        GABRIEL:  [REPO_NEO_SOUL, REPO_MODAL_JAZZ, REPO_NEO_BAROQUE, REPO_COMMUNITY],
+        SOFIA:    [REPO_AMBIENT],
+        MARCUS:   [REPO_FUNK_SUITE, REPO_JAZZ_TRIO, REPO_RAGTIME_EDM],
+        YUKI:     [REPO_GRANULAR],
+        AALIYA:   [REPO_AFROBEAT, REPO_JAZZ_CHOPIN],
+        CHEN:     [REPO_MICROTONAL, REPO_FILM_SCORE],
+        FATOU:    [REPO_DRUM_MACHINE, REPO_POLYRHYTHM],
+        PIERRE:   [REPO_CHANSON],
+        BACH:     [REPO_WTC, REPO_GOLDBERG],
+        CHOPIN:   [REPO_NOCTURNES],
+        SCOTT_JOPLIN:  [REPO_MAPLE_LEAF],
+        KEVIN_MACLEOD: [REPO_CIN_STRINGS],
+        KAI_ENGEL:     [REPO_KAI_AMBIENT],
+    }
     all_user_profiles = list(USERS) + list(COMPOSER_USERS)
-    for uid, uname, bio in all_user_profiles:
+    for uid, uname, _bio in all_user_profiles:
+        p = PROFILE_DATA.get(uid, {})
         db.add(MusehubProfile(
             user_id=uid,
             username=uname,
-            bio=bio,
+            display_name=str(p["display_name"]) if p.get("display_name") else uname,
+            bio=str(p["bio"]) if p.get("bio") else _bio,
             avatar_url=f"https://api.dicebear.com/7.x/avataaars/svg?seed={uname}",
-            pinned_repo_ids=[],
+            location=str(p["location"]) if p.get("location") else None,
+            website_url=str(p["website_url"]) if p.get("website_url") else None,
+            twitter_handle=str(p["twitter_handle"]) if p.get("twitter_handle") else None,
+            is_verified=bool(p.get("is_verified", False)),
+            cc_license=str(p["cc_license"]) if p.get("cc_license") else None,
+            pinned_repo_ids=_PROFILE_PINS.get(uid, []),
         ))
-    print(f"  ✅ Profiles: {len(all_user_profiles)} users ({len(USERS)} community + {len(COMPOSER_USERS)} composer/archive)")
+    verified_count = sum(1 for uid, _, __ in all_user_profiles if PROFILE_DATA.get(uid, {}).get("is_verified"))
+    print(f"  ✅ Profiles: {len(all_user_profiles)} users ({len(USERS)} community + {len(COMPOSER_USERS)} composer/archive, {verified_count} verified CC)")
 
     # ── 2. Repos ──────────────────────────────────────────────────
     all_repos = list(REPOS) + list(GENRE_REPOS)
@@ -2259,6 +2469,45 @@ async def seed(db: AsyncSession, force: bool = False) -> None:
 
     await db.flush()
 
+    # ── 4b. Labels (scoped to each repo — seeded before issues/PRs) ───────────
+    _LABEL_DEFS: list[tuple[str, str, str]] = [
+        # (name, color, description)
+        ("bug",          "#d73a4a", "Something isn't working correctly"),
+        ("enhancement",  "#a2eeef", "New feature or improvement request"),
+        ("documentation","#0075ca", "Documentation update or correction"),
+        ("question",     "#d876e3", "Further information requested"),
+        ("wontfix",      "#ffffff", "This will not be addressed"),
+        ("good first issue", "#7057ff", "Good for newcomers to the project"),
+        ("help wanted",  "#008672", "Extra attention needed"),
+        ("in progress",  "#e4e669", "Currently being worked on"),
+        ("blocked",      "#e11d48", "Blocked by another issue or dependency"),
+        ("harmony",      "#fbbf24", "Harmonic or tonal issue"),
+        ("timing",       "#6366f1", "Timing, groove or quantization issue"),
+        ("mixing",       "#10b981", "Mix balance, levels or EQ"),
+        ("arrangement",  "#f97316", "Arrangement or structure feedback"),
+    ]
+    # Structure: repo_id → {label_name → label_id}
+    label_id_map: dict[str, dict[str, str]] = {}
+    label_count = 0
+    for r in all_repos:
+        repo_id = r["repo_id"]
+        label_id_map[repo_id] = {}
+        for lname, lcolor, ldesc in _LABEL_DEFS:
+            lid = _uid(f"label-{repo_id}-{lname}")
+            db.add(MusehubLabel(
+                id=lid,
+                repo_id=repo_id,
+                name=lname,
+                color=lcolor,
+                description=ldesc,
+                created_at=_now(days=r["days_ago"]),
+            ))
+            label_id_map[repo_id][lname] = lid
+            label_count += 1
+    print(f"  ✅ Labels: {label_count} ({len(_LABEL_DEFS)} per repo × {len(all_repos)} repos)")
+
+    await db.flush()
+
     # ── 5a. Milestones (seed before issues so milestone_id can be referenced) ──
     # Structure: repo_id → {milestone_n → milestone_id}
     milestone_id_map: dict[str, dict[int, str]] = {}
@@ -2332,6 +2581,45 @@ async def seed(db: AsyncSession, force: bool = False) -> None:
 
     await db.flush()
 
+    # ── 5b-ii. Issue labels (many-to-many join) ────────────────────────────────
+    _ISSUE_LABEL_PICKS: list[list[str]] = [
+        # Cycling pattern of label combos assigned to issues by index
+        ["bug"],
+        ["enhancement"],
+        ["bug", "in progress"],
+        ["question"],
+        ["harmony"],
+        ["timing"],
+        ["mixing"],
+        ["arrangement"],
+        ["enhancement", "help wanted"],
+        ["bug", "blocked"],
+        ["documentation"],
+        ["good first issue"],
+        ["wontfix"],
+        ["enhancement", "in progress"],
+        ["harmony", "help wanted"],
+    ]
+    issue_label_count = 0
+    for r in all_repos:
+        repo_id = r["repo_id"]
+        rkey = REPO_KEY_MAP.get(repo_id, "neo-soul")
+        issue_list = ISSUE_TEMPLATES.get(rkey, GENERIC_ISSUES)
+        repo_labels = label_id_map.get(repo_id, {})
+        for iss in issue_list:
+            il_iid: str | None = issue_id_map.get(repo_id, {}).get(iss["n"])
+            if not il_iid:
+                continue
+            picks = _ISSUE_LABEL_PICKS[iss["n"] % len(_ISSUE_LABEL_PICKS)]
+            for lname in picks:
+                il_lid: str | None = repo_labels.get(lname)
+                if il_lid:
+                    db.add(MusehubIssueLabel(issue_id=il_iid, label_id=il_lid))
+                    issue_label_count += 1
+    print(f"  ✅ Issue labels: {issue_label_count}")
+
+    await db.flush()
+
     # ── 5c. Issue comments (5-10 per issue, with @mentions and code blocks) ────
     issue_comment_count = 0
     users_list = [u[1] for u in USERS]
@@ -2340,7 +2628,7 @@ async def seed(db: AsyncSession, force: bool = False) -> None:
         rkey = REPO_KEY_MAP.get(repo_id, "neo-soul")
         issue_list = ISSUE_TEMPLATES.get(rkey, GENERIC_ISSUES)
         for iss in issue_list:
-            iss_iid: str | None = issue_id_map.get(repo_id, {}).get(iss["n"])
+            iss_iid = issue_id_map.get(repo_id, {}).get(iss["n"])
             if not iss_iid:
                 continue
             # 5-10 comments per issue (varies by issue number parity)
@@ -2444,6 +2732,66 @@ async def seed(db: AsyncSession, force: bool = False) -> None:
 
     await db.flush()
 
+    # ── 6c. PR Reviews (reviewer assignment + approved/changes_requested) ──────
+    _PR_REVIEW_STATES = ["approved", "approved", "changes_requested", "pending", "dismissed"]
+    _PR_REVIEW_BODIES = [
+        "LGTM — the harmonic changes are solid and the voice-leading is now clean.",
+        "Approved. The groove is much tighter after the timing adjustments.",
+        "Changes requested: the bass still feels muddy in bars 9-16. Please reduce low-mids.",
+        "Pending review — I'll listen through the changes this weekend.",
+        "Approved with nits: the coda could be shorter, but the core change is correct.",
+        "Changes requested: parallel fifths still present in bar 7 on the strings voice.",
+        "LGTM — the new arrangement section is exactly what the composition needed.",
+    ]
+    pr_review_count = 0
+    for r in REPOS[:10]:
+        repo_id = r["repo_id"]
+        owner = r["owner"]
+        for pr_id_str in pr_ids.get(repo_id, []):
+            # 1-2 reviewers per PR, drawn from the community pool (not the PR author)
+            n_reviewers = 1 + (abs(hash(pr_id_str)) % 2)
+            reviewers_pool = [u for u in users_list if u != owner]
+            for ri in range(n_reviewers):
+                reviewer = reviewers_pool[(abs(hash(pr_id_str)) + ri) % len(reviewers_pool)]
+                state = _PR_REVIEW_STATES[(abs(hash(pr_id_str)) + ri) % len(_PR_REVIEW_STATES)]
+                body = _PR_REVIEW_BODIES[(abs(hash(pr_id_str)) + ri) % len(_PR_REVIEW_BODIES)]
+                submitted = _now(days=5 - ri) if state != "pending" else None
+                db.add(MusehubPRReview(
+                    id=_uid(f"pr-review-{pr_id_str}-{ri}"),
+                    pr_id=pr_id_str,
+                    reviewer_username=reviewer,
+                    state=state,
+                    body=body if state != "pending" else None,
+                    submitted_at=submitted,
+                    created_at=_now(days=7 - ri),
+                ))
+                pr_review_count += 1
+    print(f"  ✅ PR reviews: {pr_review_count}")
+
+    await db.flush()
+
+    # ── 6d. PR Labels (label tags on pull requests) ────────────────────────────
+    _PR_LABEL_PICKS: list[list[str]] = [
+        ["enhancement"],
+        ["bug"],
+        ["enhancement", "in progress"],
+        ["wontfix"],
+    ]
+    pr_label_count = 0
+    for r in all_repos:
+        repo_id = r["repo_id"]
+        repo_labels = label_id_map.get(repo_id, {})
+        for pi, pr_id_str in enumerate(pr_ids.get(repo_id, [])):
+            picks = _PR_LABEL_PICKS[pi % len(_PR_LABEL_PICKS)]
+            for lname in picks:
+                prl_lid: str | None = repo_labels.get(lname)
+                if prl_lid:
+                    db.add(MusehubPRLabel(pr_id=pr_id_str, label_id=prl_lid))
+                    pr_label_count += 1
+    print(f"  ✅ PR labels: {pr_label_count}")
+
+    await db.flush()
+
     # ── 7. Releases ───────────────────────────────────────────────
     release_count = 0
     release_tags: dict[str, list[str]] = {}
@@ -2459,6 +2807,45 @@ async def seed(db: AsyncSession, force: bool = False) -> None:
 
     await db.flush()
 
+    # ── 7b. Release Assets (downloadable file attachments per release) ─────────
+    _ASSET_TYPES: list[tuple[str, str, str, int]] = [
+        # (name_suffix, label, content_type, approx_size_bytes)
+        ("-midi-bundle.zip",   "MIDI Bundle",   "application/zip",  2_400_000),
+        ("-stereo-mix.mp3",    "Stereo Mix",    "audio/mpeg",       8_200_000),
+        ("-stems.zip",         "Stems Archive", "application/zip",  42_000_000),
+        ("-score.pdf",         "Score PDF",     "application/pdf",  1_100_000),
+        ("-metadata.json",     "Metadata",      "application/json",    18_000),
+    ]
+    # Only full releases (v1.0.0) get all 5 assets; earlier releases get 2.
+    release_asset_count = 0
+    for r in all_repos:
+        repo_id = r["repo_id"]
+        tags = release_tags.get(repo_id, [])
+        for ti, tag in enumerate(tags):
+            # release_id is deterministic — matches what _make_releases sets
+            rel_id = _uid(f"release-{repo_id}-{tag}")
+            # Full release gets all asset types; earlier releases get 2
+            n_assets = len(_ASSET_TYPES) if ti == len(tags) - 1 else 2
+            base_slug = r["slug"]
+            for ai, (sfx, label, ctype, base_size) in enumerate(_ASSET_TYPES[:n_assets]):
+                dl_count = max(0, (50 - ti * 15) - ai * 5 + abs(hash(repo_id + tag)) % 20)
+                db.add(MusehubReleaseAsset(
+                    asset_id=_uid(f"asset-{rel_id}-{ai}"),
+                    release_id=rel_id,
+                    repo_id=repo_id,
+                    name=f"{base_slug}-{tag}{sfx}",
+                    label=label,
+                    content_type=ctype,
+                    size=base_size + abs(hash(repo_id)) % 500_000,
+                    download_url=f"/releases/{repo_id}/{tag}{sfx}",
+                    download_count=dl_count,
+                    created_at=_now(days=max(1, 45 - ti * 20)),
+                ))
+                release_asset_count += 1
+    print(f"  ✅ Release assets: {release_asset_count}")
+
+    await db.flush()
+
     # ── 8. Sessions ───────────────────────────────────────────────
     session_count = 0
     session_ids: dict[str, list[str]] = {}
@@ -2471,6 +2858,103 @@ async def seed(db: AsyncSession, force: bool = False) -> None:
             db.add(MusehubSession(**sess))
             session_count += 1
     print(f"  ✅ Sessions: {session_count}")
+
+    await db.flush()
+
+    # ── 8b. Collaborators (repo access beyond owner) ───────────────────────────
+    # Each active repo gets 1-3 collaborators from the community pool.
+    # Collaborators have write permission; the most active repos get an admin.
+    _COLLAB_CONFIGS: list[tuple[str, str, list[tuple[str, str]]]] = [
+        # (repo_id, owner_user_id, [(collab_user_id, permission)])
+        (REPO_NEO_SOUL,   GABRIEL, [(MARCUS, "write"), (SOFIA, "write"), (AALIYA, "admin")]),
+        (REPO_MODAL_JAZZ, GABRIEL, [(MARCUS, "write"), (CHEN, "write")]),
+        (REPO_AMBIENT,    SOFIA,   [(YUKI, "write"), (PIERRE, "write"), (GABRIEL, "admin")]),
+        (REPO_AFROBEAT,   AALIYA,  [(FATOU, "write"), (GABRIEL, "write")]),
+        (REPO_MICROTONAL, CHEN,    [(PIERRE, "write")]),
+        (REPO_DRUM_MACHINE, FATOU, [(AALIYA, "write"), (MARCUS, "write")]),
+        (REPO_CHANSON,    PIERRE,  [(SOFIA, "write")]),
+        (REPO_GRANULAR,   YUKI,    [(SOFIA, "write"), (CHEN, "write")]),
+        (REPO_FUNK_SUITE, MARCUS,  [(GABRIEL, "write"), (AALIYA, "admin")]),
+        (REPO_JAZZ_TRIO,  MARCUS,  [(GABRIEL, "write")]),
+        (REPO_NEO_BAROQUE, GABRIEL, [(PIERRE, "write"), (CHEN, "write")]),
+        (REPO_JAZZ_CHOPIN, AALIYA, [(GABRIEL, "write"), (MARCUS, "write")]),
+        (REPO_COMMUNITY,  GABRIEL, [(SOFIA, "admin"), (MARCUS, "write"), (YUKI, "write"),
+                                    (AALIYA, "write"), (CHEN, "write"), (FATOU, "write"), (PIERRE, "write")]),
+    ]
+    collab_count = 0
+    for repo_id, owner_uid, collab_list in _COLLAB_CONFIGS:
+        for collab_uid, perm in collab_list:
+            accepted = _now(days=abs(hash(collab_uid + repo_id)) % 20 + 1)
+            db.add(MusehubCollaborator(
+                id=_uid(f"collab-{repo_id}-{collab_uid}"),
+                repo_id=repo_id,
+                user_id=collab_uid,
+                permission=perm,
+                invited_by=owner_uid,
+                invited_at=_now(days=abs(hash(collab_uid + repo_id)) % 20 + 3),
+                accepted_at=accepted,
+            ))
+            collab_count += 1
+    print(f"  ✅ Collaborators: {collab_count}")
+
+    await db.flush()
+
+    # ── 8c. Stash (shelved in-progress work per user/repo) ────────────────────
+    _STASH_MESSAGES: list[str] = [
+        "WIP: Rhodes chord voicings — not ready to commit",
+        "Experiment: tritone sub on IV chord — might revert",
+        "Sketching counter-melody — needs more work",
+        "Bass line draft — 3-against-4 groove not locked yet",
+        "Drum fills experiment — comparing two approaches",
+        "Harmony sketch: parallel 10ths — maybe too classical?",
+        "Tempo map idea: ritardando at bar 36 — not sure yet",
+    ]
+    _STASH_CONFIGS: list[tuple[str, str, str]] = [
+        # (repo_id, user_id, branch)
+        (REPO_NEO_SOUL,    GABRIEL, "feat/counter-melody"),
+        (REPO_AMBIENT,     SOFIA,   "experiment/drone-layer"),
+        (REPO_AFROBEAT,    AALIYA,  "feat/brass-section"),
+        (REPO_FUNK_SUITE,  MARCUS,  "experiment/fretless-bass"),
+        (REPO_MICROTONAL,  CHEN,    "feat/spectral-harmony"),
+        (REPO_GRANULAR,    YUKI,    "experiment/formant-filter"),
+        (REPO_CHANSON,     PIERRE,  "feat/coda-extension"),
+        (REPO_COMMUNITY,   GABRIEL, "collab/all-genre-finale"),
+        (REPO_MODAL_JAZZ,  GABRIEL, "feat/mcoy-voicings"),
+        (REPO_NEO_BAROQUE, GABRIEL, "experiment/fugue-development"),
+    ]
+    stash_count = 0
+    stash_entry_count = 0
+    for si, (repo_id, user_id, branch) in enumerate(_STASH_CONFIGS):
+        stash_id = _uid(f"stash-{repo_id}-{user_id}-{si}")
+        msg = _STASH_MESSAGES[si % len(_STASH_MESSAGES)]
+        is_applied = si % 5 == 0  # Every 5th stash has been popped
+        applied_at = _now(days=1) if is_applied else None
+        db.add(MusehubStash(
+            id=stash_id,
+            repo_id=repo_id,
+            user_id=user_id,
+            branch=branch,
+            message=msg,
+            is_applied=is_applied,
+            created_at=_now(days=si + 2),
+            applied_at=applied_at,
+        ))
+        stash_count += 1
+        # 2-4 MIDI file entries per stash
+        rkey = REPO_KEY_MAP.get(repo_id, "neo-soul")
+        stash_tracks = REPO_TRACKS.get(rkey, REPO_TRACKS["neo-soul"])
+        n_entries = 2 + (si % 3)
+        for ei, (role, fpath) in enumerate(stash_tracks[:n_entries]):
+            obj_id = f"sha256:{_sha(f'stash-obj-{stash_id}-{role}')}"
+            db.add(MusehubStashEntry(
+                id=_uid(f"stash-entry-{stash_id}-{ei}"),
+                stash_id=stash_id,
+                path=f"tracks/{fpath}",
+                object_id=obj_id,
+                position=ei,
+            ))
+            stash_entry_count += 1
+    print(f"  ✅ Stash: {stash_count} stashes, {stash_entry_count} entries")
 
     await db.flush()
 
@@ -2996,6 +3480,113 @@ async def seed(db: AsyncSession, force: bool = False) -> None:
 
     await db.flush()
 
+    # ── 17c. Render Jobs (async audio render pipeline) ─────────────────────────
+    # Creates completed, processing, and failed render jobs across repos.
+    # Each job ties a commit to a set of generated MP3/piano-roll artifact IDs.
+    _RENDER_STATUSES = ["completed", "completed", "completed", "processing", "failed"]
+    render_job_count = 0
+    for r in all_repos[:16]:  # Community + most popular genre archive repos
+        repo_id = r["repo_id"]
+        commits = all_commits.get(repo_id, [])
+        if not commits:
+            continue
+        # 2-3 render jobs per repo (latest commits)
+        target_commits = commits[-3:]
+        for ji, c in enumerate(target_commits):
+            rj_cid: str = c["commit_id"]
+            rj_status: str = _RENDER_STATUSES[(abs(hash(repo_id)) + ji) % len(_RENDER_STATUSES)]
+            err_msg = "Storpheus timeout after 30s" if rj_status == "failed" else None
+            mp3_ids = (
+                [f"sha256:{_sha(f'mp3-{rj_cid}-{i}')}" for i in range(3)]
+                if rj_status == "completed" else []
+            )
+            img_ids = (
+                [f"sha256:{_sha(f'img-{rj_cid}-{i}')}" for i in range(2)]
+                if rj_status == "completed" else []
+            )
+            try:
+                db.add(MusehubRenderJob(
+                    render_job_id=_uid(f"rjob-{repo_id}-{rj_cid[:12]}"),
+                    repo_id=repo_id,
+                    commit_id=rj_cid,
+                    status=rj_status,
+                    error_message=err_msg,
+                    midi_count=len(REPO_TRACKS.get(REPO_KEY_MAP.get(repo_id, "neo-soul"),
+                                                   REPO_TRACKS["neo-soul"])),
+                    mp3_object_ids=mp3_ids,
+                    image_object_ids=img_ids,
+                    created_at=_now(days=ji + 1),
+                    updated_at=_now(days=ji),
+                ))
+                render_job_count += 1
+            except Exception:
+                pass  # unique constraint on (repo_id, commit_id) — skip dupes
+    print(f"  ✅ Render jobs: {render_job_count}")
+
+    await db.flush()
+
+    # ── 17d. Activity Event Stream (musehub_events) ────────────────────────────
+    # Captures the most recent activity on each repo: push, pr_open, pr_merge,
+    # issue_open, issue_close, release, tag, session, fork, star events.
+    _EVENT_TEMPLATES: list[tuple[str, str]] = [
+        ("push",          "pushed {n} commits to {branch}"),
+        ("push",          "force-pushed to {branch} (rebase)"),
+        ("pr_open",       "opened pull request: {title}"),
+        ("pr_merge",      "merged pull request into {branch}"),
+        ("pr_close",      "closed pull request without merging"),
+        ("issue_open",    "opened issue: {title}"),
+        ("issue_close",   "closed issue #{n}"),
+        ("release",       "published release {tag}"),
+        ("tag",           "created tag {tag} at {branch}"),
+        ("session_start", "started recording session"),
+        ("session_end",   "ended recording session — {n} commits"),
+        ("fork",          "forked this repo"),
+        ("star",          "starred this repo"),
+        ("branch_create", "created branch {branch}"),
+    ]
+    _EVENT_ACTORS_POOL = list(ALL_CONTRIBUTORS)
+    event_count = 0
+    for r in all_repos:
+        repo_id = r["repo_id"]
+        commits = all_commits.get(repo_id, [])
+        owner = r["owner"]
+        actor_pool = [owner] * 3 + _EVENT_ACTORS_POOL  # Weight owner higher
+        # Generate 8-15 events per repo spread over the last 60 days
+        n_events = 8 + abs(hash(repo_id)) % 8
+        for ei in range(n_events):
+            tmpl_type, tmpl_body = _EVENT_TEMPLATES[ei % len(_EVENT_TEMPLATES)]
+            actor = actor_pool[(abs(hash(repo_id)) + ei) % len(actor_pool)]
+            n_val = (ei % 10) + 1
+            branch = "main" if ei % 3 == 0 else f"feat/{r['slug'][:20]}-{ei}"
+            tag = f"v{ei // 3 + 1}.0.{'0' if ei % 2 == 0 else '1'}"
+            description = (
+                tmpl_body
+                .replace("{n}", str(n_val))
+                .replace("{branch}", branch)
+                .replace("{title}", f"Issue/PR title for event {ei}")
+                .replace("{tag}", tag)
+            )
+            meta: dict[str, object] = {
+                "actor": actor,
+                "branch": branch,
+                "commit_count": n_val,
+            }
+            if commits and ei < len(commits):
+                meta["commit_id"] = commits[ei]["commit_id"]
+            db.add(MusehubEvent(
+                event_id=_uid(f"event-{repo_id}-{ei}"),
+                repo_id=repo_id,
+                event_type=tmpl_type,
+                actor=actor,
+                description=description,
+                event_metadata=meta,
+                created_at=_now(days=60 - ei * 4, hours=ei * 3 % 24),
+            ))
+            event_count += 1
+    print(f"  ✅ Events: {event_count}")
+
+    await db.flush()
+
     # ── 18. Muse variations, phrases, note changes ────────────────
     # Collect stable commit hashes from the two most active repos as base
     # state IDs.  muse_variations.base_state_id links a variation to the DAW
@@ -3113,7 +3704,7 @@ async def seed(db: AsyncSession, force: bool = False) -> None:
                     " VALUES (:sid, :manifest, :ca)"
                     " ON CONFLICT (snapshot_id) DO NOTHING"
                 ),
-                {"sid": snapshot_id, "manifest": manifest, "ca": committed_at},
+                {"sid": snapshot_id, "manifest": json.dumps(manifest), "ca": committed_at},
             )
             muse_snap_count += 1
 
@@ -3147,7 +3738,7 @@ async def seed(db: AsyncSession, force: bool = False) -> None:
                     "msg":    hub_c["message"],
                     "author": hub_c["author"],
                     "cat":    committed_at,
-                    "meta":   meta,
+                    "meta":   json.dumps(meta),
                 },
             )
             muse_commit_ids.append(commit_id)
@@ -3223,6 +3814,148 @@ async def seed(db: AsyncSession, force: bool = False) -> None:
     print(f"  ✅ Muse snapshots:  {muse_snap_count} manifests")
     print(f"  ✅ Muse commits:    {muse_commit_count} (DAG; includes merge commits)")
     print(f"  ✅ Muse tags:       {muse_tag_count} (full taxonomy)")
+
+    await db.flush()
+
+    # ── 20. Usage Logs (billing history per user) ─────────────────────────────
+    _USAGE_MODELS = ["anthropic/claude-sonnet-4.6", "anthropic/claude-opus-4.6"]
+    _USAGE_PROMPTS = [
+        "Add a counter-melody above the baroque theme",
+        "Reharmonize the bridge using tritone substitutions",
+        "Humanize the drum timing across all tracks",
+        "Add string pad layer to the ambient section",
+        "Transpose bass line down a perfect fifth",
+        "Generate a jazz piano voicing for the IV chord",
+        "Thicken the horns arrangement with parallel 3rds",
+        "Reduce note density in bars 9-16 on the keys track",
+    ]
+    usage_count = 0
+    for uid, uname, _ in USERS:  # Only community users generate usage
+        n_logs = 8 + abs(hash(uid)) % 12  # 8-20 usage logs per user
+        for li in range(n_logs):
+            model = _USAGE_MODELS[li % len(_USAGE_MODELS)]
+            prompt = _USAGE_PROMPTS[li % len(_USAGE_PROMPTS)]
+            prompt_tok = 800 + abs(hash(uid + str(li))) % 1200
+            compl_tok = 300 + abs(hash(uid + str(li) + "c")) % 800
+            cost = (prompt_tok * 3 + compl_tok * 15) // 100  # ~cents approximation
+            db.add(UsageLog(
+                id=_uid(f"usage-{uid}-{li}"),
+                user_id=uid,
+                prompt=f"[{uname}] {prompt} (iteration {li + 1})",
+                model=model,
+                prompt_tokens=prompt_tok,
+                completion_tokens=compl_tok,
+                cost_cents=cost,
+                created_at=_now(days=60 - li * 3),
+            ))
+            usage_count += 1
+    print(f"  ✅ Usage logs: {usage_count}")
+
+    await db.flush()
+
+    # ── 21. Access Tokens (API key tracking) ──────────────────────────────────
+    token_count = 0
+    for uid, uname, _ in USERS:
+        # 1-3 access tokens per user (active, revoked, expired)
+        n_tokens = 1 + abs(hash(uid)) % 3
+        for ti in range(n_tokens):
+            is_revoked = ti > 0 and ti % 2 == 0
+            db.add(AccessToken(
+                id=_uid(f"token-{uid}-{ti}"),
+                user_id=uid,
+                token_hash=_sha(f"tok-{uid}-{ti}-secret"),
+                expires_at=_now(days=-30 * ti) if is_revoked else _now(days=-365),
+                revoked=is_revoked,
+                created_at=_now(days=90 - ti * 15),
+            ))
+            token_count += 1
+    print(f"  ✅ Access tokens: {token_count}")
+
+    await db.flush()
+
+    # ── 22. Conversations + Messages + Actions ────────────────────────────────
+    _CONV_TITLES = [
+        "Neo-Soul chord voicing session",
+        "Ambient texture generation",
+        "Jazz reharmonization experiment",
+        "Drum groove exploration",
+        "Counter-melody development",
+        "Bridge arrangement help",
+        "Mix balance discussion",
+        "Modal jazz improvisation sketch",
+    ]
+    _MSG_CONTENTS: list[tuple[str, str]] = [
+        ("user",      "Can you add a counter-melody above the baroque theme in bars 9-16?"),
+        ("assistant", "I'll add a counter-melody that follows the harmonic rhythm of the baroque theme. The new voice will move in contrary motion to create interest."),
+        ("user",      "Make the counter-melody more chromatic — use passing tones"),
+        ("assistant", "Adding chromatic passing tones between the structural chord tones. The counter-melody now has richer harmonic color while maintaining the baroque style."),
+        ("user",      "What key is this section in?"),
+        ("assistant", "The section is in D Dorian — a natural minor mode built on D. The characteristic raised 6th (B natural) gives it the distinctive minor-but-not-sad quality."),
+        ("user",      "Add a jazz-influenced harmony to the bridge"),
+        ("assistant", "I'll reharmonize the bridge using tritone substitutions on the dominant chords and quartal voicings on the tonic. This will give it a Coltrane-influenced quality."),
+    ]
+    _ACTION_TYPES = ["generate_notes", "reharmonize", "transpose", "humanize", "analyze"]
+    conv_count = 0
+    msg_count = 0
+    action_count = 0
+    for uid, uname, _ in USERS:
+        n_convs = 3 + abs(hash(uid)) % 4  # 3-7 conversations per user
+        for ci in range(n_convs):
+            conv_id = _uid(f"conv-{uid}-{ci}")
+            title = _CONV_TITLES[(abs(hash(uid)) + ci) % len(_CONV_TITLES)]
+            project_repo = all_repos[(abs(hash(uid)) + ci) % len(all_repos)]
+            db.add(Conversation(
+                id=conv_id,
+                user_id=uid,
+                project_id=project_repo["repo_id"],
+                title=title,
+                is_archived=ci == 0 and abs(hash(uid)) % 3 == 0,
+                project_context={
+                    "repo_id": project_repo["repo_id"],
+                    "key_signature": project_repo.get("key_signature"),
+                    "tempo_bpm": project_repo.get("tempo_bpm"),
+                },
+                created_at=_now(days=30 - ci * 5),
+                updated_at=_now(days=30 - ci * 5, hours=ci * 2),
+            ))
+            conv_count += 1
+            # 4-8 messages per conversation (user/assistant alternating)
+            n_msgs = 4 + (abs(hash(conv_id)) % 5)
+            prev_msg_id: str | None = None
+            for mi in range(min(n_msgs, len(_MSG_CONTENTS))):
+                role, content = _MSG_CONTENTS[mi]
+                msg_id = _uid(f"msg-{conv_id}-{mi}")
+                model_used = _USAGE_MODELS[mi % len(_USAGE_MODELS)] if role == "assistant" else None
+                tok = {"prompt": 800 + mi * 50, "completion": 300 + mi * 30} if role == "assistant" else None
+                db.add(ConversationMessage(
+                    id=msg_id,
+                    conversation_id=conv_id,
+                    role=role,
+                    content=content,
+                    model_used=model_used,
+                    tokens_used=tok,
+                    cost_cents=((tok["prompt"] * 3 + tok["completion"] * 15) // 100) if tok else 0,
+                    timestamp=_now(days=30 - ci * 5, hours=mi),
+                ))
+                msg_count += 1
+                # Add an action for assistant messages
+                if role == "assistant" and mi > 0:
+                    action_type = _ACTION_TYPES[mi % len(_ACTION_TYPES)]
+                    db.add(MessageAction(
+                        id=_uid(f"action-{msg_id}"),
+                        message_id=msg_id,
+                        action_type=action_type,
+                        description=f"{action_type.replace('_', ' ').title()} performed on track",
+                        success=mi % 5 != 4,  # Mostly successful
+                        error_message=None if mi % 5 != 4 else "Tool execution timeout",
+                        extra_metadata={"track": "keys", "bars": f"{mi * 8}-{mi * 8 + 8}"},
+                        timestamp=_now(days=30 - ci * 5, hours=mi),
+                    ))
+                    action_count += 1
+                prev_msg_id = msg_id
+    print(f"  ✅ Conversations: {conv_count}  Messages: {msg_count}  Actions: {action_count}")
+
+    await db.flush()
 
     await db.commit()
     print()

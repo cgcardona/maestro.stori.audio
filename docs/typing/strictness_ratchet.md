@@ -1,6 +1,6 @@
 # mypy Strictness Ratchet
 
-This document describes the typing strictness plan for the Stori Maestro codebase.
+This document describes the typing strictness plan for the Maestro codebase.
 
 ## Current State
 

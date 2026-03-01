@@ -7368,14 +7368,51 @@ Full wire representation of a Muse Hub user profile.
 |-------|------|-------------|
 | `user_id` | `str` | JWT sub — matches `musehub_repos.owner_user_id` |
 | `username` | `str` | URL-friendly handle |
+| `display_name` | `str \| None` | Human-readable display name (e.g. "Johann Sebastian Bach") |
 | `bio` | `str \| None` | Short bio (Markdown) |
 | `avatar_url` | `str \| None` | Avatar image URL |
+| `location` | `str \| None` | Physical or virtual location shown on the profile card |
+| `website_url` | `str \| None` | Personal website or project homepage URL |
+| `twitter_handle` | `str \| None` | Twitter/X handle without leading `@` |
+| `is_verified` | `bool` | `True` for Public Domain / Creative Commons archive artists; `False` for community users |
+| `cc_license` | `str \| None` | SPDX-style license string (e.g. `"Public Domain"`, `"CC BY 4.0"`); `None` = all rights reserved |
 | `pinned_repo_ids` | `list[str]` | Up to 6 pinned repo IDs |
 | `repos` | `list[ProfileRepoSummary]` | Public repos, newest first |
 | `contribution_graph` | `list[ContributionDay]` | 52-week daily commit history |
 | `session_credits` | `int` | Total commits across all repos |
 | `created_at` | `datetime` | Profile creation timestamp |
 | `updated_at` | `datetime` | Last update timestamp |
+
+**Note:** `is_verified` and `cc_license` are read-only — they are set by the platform when an archive upload is approved, not by the user via `PUT /api/v1/musehub/users/{username}`.
+
+---
+
+## EnhancedProfileResponse
+
+**Module:** `maestro.api.routes.musehub.ui_user_profile`
+**Returned by:** `GET /musehub/ui/users/{username}?format=json`
+
+Extended profile response for the Muse Hub UI profile page. Includes all `ProfileResponse` identity fields plus computed aggregates (heatmap, badges, pinned repos, activity). Consumed by agents to inspect a user's full contribution history without navigating the HTML page.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `username` | `str` | URL-friendly handle |
+| `display_name` | `str \| None` | Human-readable display name |
+| `bio` | `str \| None` | Short bio (Markdown) |
+| `avatar_url` | `str \| None` | Avatar image URL |
+| `location` | `str \| None` | Physical or virtual location |
+| `website_url` | `str \| None` | Personal website or project homepage URL |
+| `twitter_handle` | `str \| None` | Twitter/X handle without leading `@` |
+| `is_verified` | `bool` | `True` for Public Domain / CC licensed archive artists |
+| `cc_license` | `str \| None` | License string or `None` for community users |
+| `heatmap` | `HeatmapStats` | 52-week contribution heatmap |
+| `badges` | `list[Badge]` | Earned achievement badges |
+| `pinned_repos` | `list[PinnedRepoCard]` | Up to 6 pinned repos with metadata |
+| `activity` | `list[ActivityEvent]` | Recent activity events (commits, PRs, issues) |
+| `total_commits` | `int` | Total commits across all repos |
+| `total_repos` | `int` | Number of public repos owned |
+
+**Agent use case:** Use `isVerified` + `ccLicense` to determine whether a user's music is freely remixable without a secondary API call. Render the CC badge when `isVerified` is `True`.
 
 ---
 

@@ -1,5 +1,5 @@
 """
-Tool argument validation package for Stori Maestro.
+Tool argument validation package for Maestro.
 
 Validates tool calls before execution:
 1. Allowlist check (intent-derived or MCP)

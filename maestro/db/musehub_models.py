@@ -611,6 +611,11 @@ class MusehubProfile(Base):
     When no profile exists for a user, their repos are still accessible by
     ``owner_user_id`` but they have no public profile page.
 
+    ``is_verified`` is set to True for Public Domain and Creative Commons
+    licensed archive artists (e.g. bach, chopin, kevin_macleod). The badge
+    signals to community users that the work is freely remixable under the
+    stated ``cc_license`` (e.g. "Public Domain", "CC BY 4.0").
+
     ``pinned_repo_ids`` is a JSON list of up to 6 repo_ids the user has
     chosen to highlight on their profile. Order is preserved.
     """
@@ -622,8 +627,22 @@ class MusehubProfile(Base):
     user_id: Mapped[str] = mapped_column(String(36), primary_key=True)
     # URL-friendly handle, e.g. "gabriel" → /musehub/ui/users/gabriel
     username: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    # Human-readable display name shown in profile header
+    display_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     bio: Mapped[str | None] = mapped_column(Text, nullable=True)
     avatar_url: Mapped[str | None] = mapped_column(String(2048), nullable=True)
+    # Physical or virtual location shown on the profile card
+    location: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # Personal website or project homepage
+    website_url: Mapped[str | None] = mapped_column(String(2048), nullable=True)
+    # Twitter/X handle without the leading @
+    twitter_handle: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # True for Public Domain / Creative Commons licensed archive artists
+    is_verified: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, index=True
+    )
+    # CC attribution string; None means all rights reserved (community users)
+    cc_license: Mapped[str | None] = mapped_column(String(50), nullable=True)
     # JSON list of repo_ids (up to 6) pinned by the user
     pinned_repo_ids: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
     created_at: Mapped[datetime] = mapped_column(

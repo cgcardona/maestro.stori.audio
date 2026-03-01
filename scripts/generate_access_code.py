@@ -2,7 +2,7 @@
 """
 Access Code Generator CLI
 
-Generate time-limited access codes for Stori Maestro.
+Generate time-limited access codes for Maestro.
 Codes are cryptographically signed JWTs that expire after the specified duration.
 All tokens must include a user ID (sub claim) for budget tracking.
 
@@ -35,7 +35,7 @@ logger = logging.getLogger(__name__)
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Generate time-limited access codes for Stori Maestro",
+        description="Generate time-limited access codes for Maestro",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
@@ -137,9 +137,9 @@ Environment:
 
             logger.info("\n" + "=" * 60)
             if args.admin:
-                logger.info("STORI MAESTRO ADMIN ACCESS CODE")
+                logger.info("MAESTRO ADMIN ACCESS CODE")
             else:
-                logger.info("STORI MAESTRO ACCESS CODE")
+                logger.info("MAESTRO ACCESS CODE")
             logger.info("=" * 60)
             logger.info("\nDuration: %s", duration_str)
             logger.info("Expires:  %s", expiration.strftime("%Y-%m-%d %H:%M:%S UTC"))

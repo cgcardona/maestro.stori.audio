@@ -2,7 +2,7 @@
 
 ## Context
 
-Stori Maestro's backend resolves every compose request against a live snapshot
+Maestro's backend resolves every compose request against a live snapshot
 of the current DAW project. If that snapshot is absent or incomplete, several
 critical features silently break:
 

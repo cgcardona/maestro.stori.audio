@@ -1,6 +1,6 @@
 #!/bin/bash
 # =============================================================================
-# Stori Maestro - Database Restore Script
+# Maestro - Database Restore Script
 # =============================================================================
 #
 # This script restores the PostgreSQL database from a backup file.

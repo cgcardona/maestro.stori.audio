@@ -1,4 +1,4 @@
-# Stori Maestro — Parallel Agent Pipeline: How to Kick It Off
+# Maestro — Parallel Agent Pipeline: How to Kick It Off
 
 This document captures the exact architecture and launch procedure for the
 three-tier parallel agent pipeline. Read this before starting any new wave of work.
