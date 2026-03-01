@@ -49,6 +49,7 @@ from maestro.models.musehub_analysis import (
     MeterData,
     MotifEntry,
     MotifsData,
+    RefSimilarityResponse,
     SimilarityData,
     TempoData,
 )
