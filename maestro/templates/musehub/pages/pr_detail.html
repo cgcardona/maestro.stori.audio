@@ -386,9 +386,11 @@ function renderMarkdown(text) {
   // Inline code.
   s = s.replace(/`([^`]+)`/g,
     '<code style="background:#21262d;border-radius:3px;padding:1px 5px;font-size:12px">$1</code>');
-  // Links [text](url).
-  s = s.replace(/\[([^\]]+)\]\(([^)]+)\)/g,
-    '<a href="$2" style="color:#58a6ff" target="_blank" rel="noopener noreferrer">$1</a>');
+  // Links [text](url). Only allow http/https/relative/anchor URLs to prevent javascript: XSS.
+  s = s.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_, text, url) => {
+    const safeUrl = /^(https?:\/\/|\/|#)/i.test(url) ? url : '#';
+    return `<a href="${safeUrl}" style="color:#58a6ff" target="_blank" rel="noopener noreferrer">${text}</a>`;
+  });
   // Paragraphs: blank lines → paragraph break.
   s = s.replace(/\n{2,}/g, '</p><p style="margin:8px 0">');
   s = `<p style="margin:8px 0">${s}</p>`;
