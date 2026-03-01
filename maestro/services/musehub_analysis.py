@@ -1119,11 +1119,11 @@ def compute_harmony_analysis(
     cadence_type = _pick(seed, _CADENCE_TYPES, offset=2)
     cadence_beat = float((seed % 4) * 4 + 4)
     cadences: list[CadenceEvent] = [
-        CadenceEvent(**{"from": "V", "to": "I", "beat": cadence_beat, "type": cadence_type}),
+        CadenceEvent.model_validate({"from": "V", "to": "I", "beat": cadence_beat, "type": cadence_type}),
     ]
     if seed % 3 == 0:
         cadences.append(
-            CadenceEvent(**{"from": "IV", "to": "I", "beat": cadence_beat + 16.0, "type": "plagal"}),
+            CadenceEvent.model_validate({"from": "IV", "to": "I", "beat": cadence_beat + 16.0, "type": "plagal"}),
         )
 
     # Build modulations — 0 or 1, depending on ref seed.
