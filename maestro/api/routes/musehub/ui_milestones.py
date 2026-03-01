@@ -1,26 +1,32 @@
-"""Muse Hub milestones UI route handlers.
+"""Muse Hub milestones UI route handlers — SSR with HTMX fragments.
 
-Serves browser-readable HTML pages for the milestones section of a Muse Hub
+Serves server-rendered HTML pages for the milestones section of a Muse Hub
 repo — analogous to GitHub's Milestones tab but for music projects.
 
-All pages are rendered via Jinja2 templates.  Route handlers resolve
-server-side data (repo_id, owner, slug, milestone data) and pass a minimal
-context dict to the template engine; all HTML, CSS, and JavaScript lives in
-the template files, not here.
+Data is fetched from the DB in the route handler and placed in the Jinja2
+template context (SSR pattern).  Browsers receive fully-rendered HTML on
+first load; HTMX handles subsequent tab/sort switches by requesting only
+the rows fragment.
 
 Endpoint summary:
-  GET /musehub/ui/{owner}/{repo_slug}/milestones        — milestones list with progress bars
-  GET /musehub/ui/{owner}/{repo_slug}/milestones/{number} — milestone detail with linked issues
+  GET /musehub/ui/{owner}/{repo_slug}/milestones          — SSR milestones list
+  GET /musehub/ui/{owner}/{repo_slug}/milestones/{number} — SSR milestone detail
 
-Content negotiation applies to both endpoints:
-  - Default (HTML): Jinja2 template with progress bars and issue counts.
-  - ``?format=json`` or ``Accept: application/json``: returns the raw Pydantic
-    response model with camelCase keys — the same contract used by the
-    ``/api/v1/musehub/...`` endpoints.
+HTMX partial updates:
+  Both endpoints detect the ``HX-Request: true`` header.  When present they
+  return a bare HTML fragment (no ``<html>`` shell) so HTMX can swap just
+  the rows section without a full page reload.
 
-These routes require NO JWT auth — they return HTML shells whose embedded
-JavaScript fetches data from the authed JSON API (``/api/v1/musehub/...``)
-using a token stored in ``localStorage``.
+Content negotiation (``?format=json`` or ``Accept: application/json``):
+  Returns raw Pydantic model with camelCase keys — same contract as
+  ``/api/v1/musehub/...``.  Useful for agents and scripts.
+
+No JWT auth required — milestones are publicly readable.
+
+Note: full HTMX interactivity requires issue #552 (HTMX infrastructure) and
+the fragment helper from issue #554 to be merged first.  The SSR rendering
+works independently of HTMX; tab switching degrades to full page navigation
+until those PRs land.
 """
 from __future__ import annotations
 
@@ -122,23 +128,38 @@ async def milestones_list_page(
     milestone_data: MilestoneListResponse = await musehub_issues.list_milestones(
         db, repo_id, state=state, sort=sort
     )
+    milestones = milestone_data.milestones
+    open_count = sum(1 for m in milestones if m.state == "open")
+    closed_count = sum(1 for m in milestones if m.state == "closed")
+
+    ctx: dict[str, object] = {
+        "owner": owner,
+        "repo_slug": repo_slug,
+        "repo_id": repo_id,
+        "base_url": base_url,
+        "current_page": "milestones",
+        "state": state,
+        "sort": sort,
+        "milestones": milestones,
+        "open_count": open_count,
+        "closed_count": closed_count,
+        "breadcrumb_data": _breadcrumbs(
+            (owner, f"/musehub/ui/{owner}"),
+            (repo_slug, base_url),
+            ("milestones", ""),
+        ),
+    }
+
+    # HTMX partial request — return just the rows fragment for tab/sort swaps.
+    if request.headers.get("HX-Request"):
+        return templates.TemplateResponse(
+            request, "musehub/fragments/milestone_rows.html", ctx
+        )
+
     return await negotiate_response(
         request=request,
         template_name="musehub/pages/milestones_list.html",
-        context={
-            "owner": owner,
-            "repo_slug": repo_slug,
-            "repo_id": repo_id,
-            "base_url": base_url,
-            "current_page": "milestones",
-            "state": state,
-            "sort": sort,
-            "breadcrumb_data": _breadcrumbs(
-                (owner, f"/musehub/ui/{owner}"),
-                (repo_slug, base_url),
-                ("milestones", ""),
-            ),
-        },
+        context=ctx,
         templates=templates,
         json_data=milestone_data,
         format_param=format,
@@ -213,25 +234,39 @@ async def milestone_detail_page(
         linked_issues=issue_list,
     )
 
+    total_issues = milestone.open_issues + milestone.closed_issues
+    pct = round(milestone.closed_issues / total_issues * 100) if total_issues > 0 else 0
+
+    detail_ctx: dict[str, object] = {
+        "owner": owner,
+        "repo_slug": repo_slug,
+        "repo_id": repo_id,
+        "milestone_id": str(milestone.milestone_id),
+        "milestone_number": number,
+        "milestone": milestone,
+        "linked_issues": linked_issues,
+        "pct": pct,
+        "base_url": base_url,
+        "current_page": "milestones",
+        "issue_state": issue_state,
+        "breadcrumb_data": _breadcrumbs(
+            (owner, f"/musehub/ui/{owner}"),
+            (repo_slug, base_url),
+            ("milestones", f"{base_url}/milestones"),
+            (f"#{number}", ""),
+        ),
+    }
+
+    # HTMX partial request — return just the issue rows fragment for tab swaps.
+    if request.headers.get("HX-Request"):
+        return templates.TemplateResponse(
+            request, "musehub/fragments/milestone_issue_rows.html", detail_ctx
+        )
+
     return await negotiate_response(
         request=request,
         template_name="musehub/pages/milestone_detail.html",
-        context={
-            "owner": owner,
-            "repo_slug": repo_slug,
-            "repo_id": repo_id,
-            "milestone_id": str(milestone.milestone_id),
-            "milestone_number": number,
-            "base_url": base_url,
-            "current_page": "milestones",
-            "issue_state": issue_state,
-            "breadcrumb_data": _breadcrumbs(
-                (owner, f"/musehub/ui/{owner}"),
-                (repo_slug, base_url),
-                ("milestones", f"{base_url}/milestones"),
-                (f"#{number}", ""),
-            ),
-        },
+        context=detail_ctx,
         templates=templates,
         json_data=json_data,
         format_param=format,
