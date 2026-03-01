@@ -141,7 +141,7 @@ async def list_milestones(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    return await musehub_issues.list_milestones(db_session, repo_id, state=state)
+    return await musehub_issues.list_milestones(db_session, repo_id, state=state, sort=sort)
 
 
 @router.post(
