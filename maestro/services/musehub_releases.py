@@ -22,7 +22,14 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from maestro.db import musehub_models as db
-from maestro.models.musehub import ReleaseDownloadUrls, ReleaseListResponse, ReleaseResponse
+from maestro.models.musehub import (
+    ReleaseAssetDownloadCount,
+    ReleaseAssetResponse,
+    ReleaseDownloadStatsResponse,
+    ReleaseDownloadUrls,
+    ReleaseListResponse,
+    ReleaseResponse,
+)
 from maestro.services.musehub_release_packager import build_empty_download_urls
 
 logger = logging.getLogger(__name__)
@@ -217,3 +224,142 @@ async def get_release_list_response(
     """
     releases = await list_releases(session, repo_id)
     return ReleaseListResponse(releases=releases)
+
+
+# ── Release asset helpers ─────────────────────────────────────────────────────
+
+
+def _to_asset_response(row: db.MusehubReleaseAsset) -> ReleaseAssetResponse:
+    """Convert a ``MusehubReleaseAsset`` ORM row to its wire representation."""
+    return ReleaseAssetResponse(
+        asset_id=row.asset_id,
+        release_id=row.release_id,
+        name=row.name,
+        label=row.label,
+        content_type=row.content_type,
+        size=row.size,
+        download_url=row.download_url,
+        download_count=row.download_count,
+        created_at=row.created_at,
+    )
+
+
+async def attach_asset(
+    session: AsyncSession,
+    *,
+    release_id: str,
+    repo_id: str,
+    name: str,
+    label: str = "",
+    content_type: str = "",
+    size: int = 0,
+    download_url: str,
+) -> ReleaseAssetResponse:
+    """Attach a new downloadable asset to an existing release.
+
+    The caller is responsible for committing the session after this call.
+
+    Args:
+        session: Active async DB session.
+        release_id: UUID of the release to attach the asset to.
+        repo_id: UUID of the owning repo (denormalised for efficient queries).
+        name: Filename shown in the UI.
+        label: Optional human-readable label (e.g. "MIDI Bundle").
+        content_type: MIME type of the artifact.
+        size: File size in bytes; 0 when unknown.
+        download_url: Direct download URL for the artifact.
+
+    Returns:
+        ``ReleaseAssetResponse`` for the newly created asset.
+    """
+    asset = db.MusehubReleaseAsset(
+        release_id=release_id,
+        repo_id=repo_id,
+        name=name,
+        label=label,
+        content_type=content_type,
+        size=size,
+        download_url=download_url,
+    )
+    session.add(asset)
+    await session.flush()
+    await session.refresh(asset)
+    logger.info("✅ Attached asset %r to release %s", name, release_id)
+    return _to_asset_response(asset)
+
+
+async def get_asset(
+    session: AsyncSession,
+    asset_id: str,
+) -> db.MusehubReleaseAsset | None:
+    """Return the ``MusehubReleaseAsset`` row for ``asset_id``, or ``None``.
+
+    Used by route handlers to validate that the asset belongs to the
+    expected release before performing mutations.
+    """
+    stmt = select(db.MusehubReleaseAsset).where(
+        db.MusehubReleaseAsset.asset_id == asset_id
+    )
+    return (await session.execute(stmt)).scalar_one_or_none()
+
+
+async def remove_asset(
+    session: AsyncSession,
+    asset_id: str,
+) -> bool:
+    """Delete a release asset by its ID.
+
+    The caller is responsible for committing the session after this call.
+
+    Args:
+        session: Active async DB session.
+        asset_id: UUID of the asset to remove.
+
+    Returns:
+        ``True`` if the asset was found and deleted; ``False`` if not found.
+    """
+    row = await get_asset(session, asset_id)
+    if row is None:
+        return False
+    await session.delete(row)
+    logger.info("✅ Removed asset %s", asset_id)
+    return True
+
+
+async def get_download_stats(
+    session: AsyncSession,
+    release_id: str,
+    tag: str,
+) -> ReleaseDownloadStatsResponse:
+    """Return per-asset download counts for a release.
+
+    Args:
+        session: Active async DB session.
+        release_id: UUID of the release.
+        tag: Version tag — echoed back in the response for convenience.
+
+    Returns:
+        ``ReleaseDownloadStatsResponse`` with per-asset counts and total.
+    """
+    stmt = (
+        select(db.MusehubReleaseAsset)
+        .where(db.MusehubReleaseAsset.release_id == release_id)
+        .order_by(db.MusehubReleaseAsset.created_at.asc())
+    )
+    rows = (await session.execute(stmt)).scalars().all()
+    asset_counts = [
+        ReleaseAssetDownloadCount(
+            asset_id=row.asset_id,
+            name=row.name,
+            label=row.label,
+            download_count=row.download_count,
+        )
+        for row in rows
+    ]
+    total = sum(a.download_count for a in asset_counts)
+    return ReleaseDownloadStatsResponse(
+        release_id=release_id,
+        tag=tag,
+        assets=asset_counts,
+        total_downloads=total,
+    )

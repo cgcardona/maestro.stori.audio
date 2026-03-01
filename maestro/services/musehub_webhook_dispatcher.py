@@ -38,6 +38,7 @@ from maestro.db.database import AsyncSessionLocal
 from maestro.models.musehub import (
     WebhookDeliveryResponse,
     WebhookEventPayload,
+    WebhookRedeliverResponse,
     WebhookResponse,
 )
 from maestro.services.musehub_webhook_crypto import decrypt_secret, encrypt_secret
@@ -86,6 +87,7 @@ def _to_delivery_response(row: db.MusehubWebhookDelivery) -> WebhookDeliveryResp
         delivery_id=row.delivery_id,
         webhook_id=row.webhook_id,
         event_type=row.event_type,
+        payload=row.payload,
         attempt=row.attempt,
         success=row.success,
         response_status=row.response_status,
@@ -197,6 +199,132 @@ async def list_deliveries(
     return [_to_delivery_response(r) for r in rows]
 
 
+async def get_delivery(
+    session: AsyncSession,
+    webhook_id: str,
+    delivery_id: str,
+) -> WebhookDeliveryResponse | None:
+    """Return a single delivery record by ID, or None if not found for this webhook."""
+    stmt = select(db.MusehubWebhookDelivery).where(
+        db.MusehubWebhookDelivery.webhook_id == webhook_id,
+        db.MusehubWebhookDelivery.delivery_id == delivery_id,
+    )
+    row = (await session.execute(stmt)).scalar_one_or_none()
+    if row is None:
+        return None
+    return _to_delivery_response(row)
+
+
+async def redeliver_delivery(
+    session: AsyncSession,
+    repo_id: str,
+    webhook_id: str,
+    delivery_id: str,
+) -> WebhookRedeliverResponse:
+    """Retry a single past delivery attempt using its stored payload.
+
+    Fetches the original delivery row to recover the event type and payload,
+    then executes one new delivery attempt (with full retry policy) against
+    the webhook's current URL.  Each retry attempt is persisted as a new
+    ``MusehubWebhookDelivery`` row — the original row is never mutated.
+
+    Raises ``ValueError`` when the delivery or webhook cannot be found, or
+    when the stored payload is empty (delivery predates payload storage).
+    The caller must commit the session after a successful return.
+    """
+    delivery_stmt = select(db.MusehubWebhookDelivery).where(
+        db.MusehubWebhookDelivery.webhook_id == webhook_id,
+        db.MusehubWebhookDelivery.delivery_id == delivery_id,
+    )
+    delivery_row = (await session.execute(delivery_stmt)).scalar_one_or_none()
+    if delivery_row is None:
+        raise ValueError(f"Delivery {delivery_id!r} not found for webhook {webhook_id!r}")
+
+    if not delivery_row.payload:
+        raise ValueError(
+            f"Delivery {delivery_id!r} has no stored payload — "
+            "it predates payload storage and cannot be redelivered"
+        )
+
+    webhook_stmt = select(db.MusehubWebhook).where(
+        db.MusehubWebhook.webhook_id == webhook_id,
+        db.MusehubWebhook.repo_id == repo_id,
+    )
+    webhook_row = (await session.execute(webhook_stmt)).scalar_one_or_none()
+    if webhook_row is None:
+        raise ValueError(f"Webhook {webhook_id!r} not found for repo {repo_id!r}")
+
+    payload_bytes = delivery_row.payload.encode()
+    event_type = delivery_row.event_type
+    new_delivery_id = _new_uuid()
+    final_success = False
+    final_status = 0
+    final_body = ""
+
+    async with httpx.AsyncClient() as client:
+        for attempt in range(1, _MAX_ATTEMPTS + 1):
+            success, status_code, response_body = await _attempt_delivery(
+                client,
+                webhook=webhook_row,
+                event_type=event_type,
+                payload_bytes=payload_bytes,
+                delivery_id=new_delivery_id,
+                attempt=attempt,
+            )
+            new_row = db.MusehubWebhookDelivery(
+                webhook_id=webhook_id,
+                event_type=event_type,
+                payload=delivery_row.payload,
+                attempt=attempt,
+                success=success,
+                response_status=status_code,
+                response_body=response_body,
+            )
+            session.add(new_row)
+            await session.flush()
+
+            final_success = success
+            final_status = status_code
+            final_body = response_body
+
+            if success:
+                logger.info(
+                    "✅ Redelivery of %s (webhook %s) succeeded on attempt %d (status %d)",
+                    delivery_id,
+                    webhook_id,
+                    attempt,
+                    status_code,
+                )
+                break
+
+            if attempt < _MAX_ATTEMPTS:
+                backoff = _BACKOFF_BASE * (2 ** (attempt - 1))
+                logger.warning(
+                    "⚠️ Redelivery of %s attempt %d failed (status %d) — retrying in %.1fs",
+                    delivery_id,
+                    attempt,
+                    status_code,
+                    backoff,
+                )
+                await asyncio.sleep(backoff)
+            else:
+                logger.error(
+                    "❌ Redelivery of %s failed after %d attempts (last status %d)",
+                    delivery_id,
+                    _MAX_ATTEMPTS,
+                    status_code,
+                )
+
+    return WebhookRedeliverResponse(
+        original_delivery_id=delivery_id,
+        webhook_id=webhook_id,
+        event_type=event_type,
+        success=final_success,
+        response_status=final_status,
+        response_body=final_body,
+    )
+
+
 # ---------------------------------------------------------------------------
 # Dispatch
 # ---------------------------------------------------------------------------
@@ -293,6 +421,7 @@ async def dispatch_event(
                 delivery_row = db.MusehubWebhookDelivery(
                     webhook_id=webhook.webhook_id,
                     event_type=event_type,
+                    payload=payload_bytes.decode(),
                     attempt=attempt,
                     success=success,
                     response_status=status_code,
