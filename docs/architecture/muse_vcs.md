@@ -8616,3 +8616,70 @@ Issues may be reopened after closing: `POST /issues/{number}/reopen`. Both close
 
 ---
 
+
+## muse rerere
+
+### Purpose
+
+In parallel multi-branch Muse workflows, identical merge conflicts appear repeatedly — the same MIDI region modified in the same structural way on two independent branches. `muse rerere` (reuse recorded resolutions) records conflict shapes and their resolutions so they can be applied automatically on subsequent merges.
+
+The fingerprint is **transposition-invariant**: two conflicts with the same structural shape but different absolute pitches are treated as the same conflict, allowing a resolution recorded in one key to be applied in another.
+
+### Cache Layout
+
+```
+.muse/rr-cache/<sha256-hash>/
+    conflict    — serialised conflict fingerprint (JSON)
+    postimage   — serialised resolution (JSON, written only after resolve)
+```
+
+Entries marked `[R]` (in `muse rerere list`) have a `postimage`; entries marked `[C]` are conflict-only (awaiting resolution).
+
+### Commands
+
+| Command | Description |
+|---------|-------------|
+| `muse rerere` | Auto-apply any cached resolution for current merge conflicts |
+| `muse rerere list` | Show all conflict fingerprints in the rr-cache (`[R]` = resolved, `[C]` = conflict-only) |
+| `muse rerere forget <hash>` | Remove a single cached entry from the rr-cache |
+| `muse rerere clear` | Purge the entire rr-cache |
+
+### Example Output
+
+```
+$ muse merge feature/harmony-rework
+CONFLICT (note): Both sides modified note at pitch=64 beat=3.0 in region r1
+✅ muse rerere: resolved 1 conflict(s) using rerere (hash a3f7c2e1…)
+
+$ muse rerere list
+rr-cache (2 entries):
+  [R] a3f7c2e1d9b4...
+  [C] 88f02c3a71e4...
+
+$ muse rerere forget a3f7c2e1d9b4...
+✅ Forgot rerere entry a3f7c2e1d9b4…
+
+$ muse rerere clear
+✅ Cleared 1 rr-cache entry.
+```
+
+### Hook Integration
+
+`build_merge_checkout_plan()` in `maestro/services/muse_merge.py` automatically calls `record_conflict()` and `apply_rerere()` whenever conflicts are detected and a `repo_root` is provided. On a cache hit it logs:
+
+```
+✅ muse rerere: resolved N conflict(s) using rerere.
+```
+
+### Implementation
+
+| Layer | File |
+|-------|------|
+| Service | `maestro/services/muse_rerere.py` — fingerprinting, cache storage, all CRUD functions |
+| CLI commands | `maestro/muse_cli/commands/rerere.py` — `rerere`, `rerere list`, `rerere forget`, `rerere clear` |
+| CLI app | `maestro/muse_cli/app.py` — registered as `muse rerere` sub-app |
+| Merge hook | `maestro/services/muse_merge.py` — auto-apply after conflict detection |
+| Tests | `tests/test_muse_rerere.py` — full unit test coverage |
+
+---
+

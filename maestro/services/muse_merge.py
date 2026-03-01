@@ -4,6 +4,10 @@ Produces a ``MergeResult`` by comparing base, left, and right snapshots.
 Auto-merges non-conflicting changes; reports conflicts when both sides
 modify the same note or controller event.
 
+After a conflict-free merge, :func:`build_merge_checkout_plan` attempts to
+auto-apply any cached rerere resolution so that repeated identical conflicts
+are resolved without user intervention.
+
 Boundary rules:
   - Must NOT import StateStore, executor, MCP tools, or handlers.
   - May import muse_repository, muse_replay, muse_checkout, note_matching.
@@ -14,6 +18,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Literal, TypeVar
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -242,6 +247,7 @@ async def build_merge_checkout_plan(
     working_cc: RegionCCMap | None = None,
     working_pb: RegionPitchBendMap | None = None,
     working_at: RegionAftertouchMap | None = None,
+    repo_root: Path | None = None,
 ) -> MergeCheckoutPlan:
     """Build a complete merge plan: merge-base → three-way diff → checkout plan.
 
@@ -278,6 +284,33 @@ async def build_merge_checkout_plan(
     )
 
     if result.has_conflicts:
+        # Record conflict shape and attempt rerere auto-resolution when a repo
+        # root is available.  This is a best-effort hook — rerere failures must
+        # never prevent the caller from receiving the conflict report.
+        if repo_root is not None:
+            try:
+                from maestro.services.muse_rerere import apply_rerere, record_conflict
+
+                conflict_dicts = [
+                    {
+                        "region_id": c.region_id,
+                        "type": c.type,
+                        "description": c.description,
+                    }
+                    for c in result.conflicts
+                ]
+                record_conflict(repo_root, conflict_dicts)
+                applied, _resolution = apply_rerere(repo_root, conflict_dicts)
+                if applied:
+                    logger.info(
+                        "✅ muse rerere: resolved %d conflict(s) using rerere.",
+                        applied,
+                    )
+            except Exception as _rerere_exc:  # noqa: BLE001
+                logger.warning(
+                    "⚠️ muse rerere hook failed (non-fatal): %s", _rerere_exc
+                )
+
         return MergeCheckoutPlan(
             is_conflict=True,
             conflicts=result.conflicts,
