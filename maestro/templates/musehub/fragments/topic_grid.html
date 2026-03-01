@@ -1,0 +1,22 @@
+{#
+  Fragment: topic chip grid for the topics index page.
+
+  Context variables (supplied by topics_index_page() via htmx_fragment_or_full):
+    topics        — list[TopicItem]: all public topics sorted by repo_count desc
+    total         — int: total distinct topic count
+
+  Returned standalone for HX-Request: true (HTMX partial swap).
+  Included directly by pages/topics.html for full-page renders.
+#}
+<div id="topic-grid" style="display:flex;flex-wrap:wrap;gap:8px">
+  {% for topic in topics %}
+    <a href="/musehub/ui/topics/{{ topic.name | urlencode }}"
+       class="topic-chip"
+       data-name="{{ topic.name }}">
+      <span style="font-weight:600">#{{ topic.name }}</span>
+      <span class="topic-chip-count">{{ topic.repo_count }}</span>
+    </a>
+  {% else %}
+    <p style="color:var(--text-muted,#8b949e);font-size:14px">No topics found.</p>
+  {% endfor %}
+</div>
