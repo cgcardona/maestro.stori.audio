@@ -253,6 +253,49 @@ This merge implementation operates at **file-path level**. Two commits that modi
 
 ---
 
+## `.museattributes` — Per-Repo Merge Strategy Configuration
+
+`.museattributes` is an optional configuration file placed in the repository root (next to `.muse/`). It encodes per-track, per-dimension merge strategy rules so that `muse merge` can skip conflict detection for well-understood cases.
+
+### File Format
+
+```
+# one rule per line: <track-pattern>  <dimension>  <strategy>
+drums/*   *         ours
+keys/*    harmonic  theirs
+*         *         auto
+```
+
+- **`track-pattern`**: `fnmatch` glob against the track name.
+- **`dimension`**: one of `harmonic`, `rhythmic`, `melodic`, `structural`, `dynamic`, or `*` (all).
+- **`strategy`**: `ours` | `theirs` | `union` | `auto` | `manual`.
+
+First matching rule wins. If no rule matches, `auto` is used.
+
+### Integration with `muse merge`
+
+When `build_merge_checkout_plan` is called with a `repo_path`, it loads `.museattributes` automatically and passes the parsed rules to `build_merge_result`. For each region:
+
+1. The track name is resolved from `track_regions`.
+2. `resolve_strategy(attributes, track, dimension)` returns the configured strategy.
+3. `ours` → take the left snapshot, no conflict detection.
+4. `theirs` → take the right snapshot, no conflict detection.
+5. All other strategies → normal three-way merge.
+
+### CLI
+
+```
+muse attributes [--json]
+```
+
+Displays the parsed rules in a human-readable table or JSON.
+
+### Reference
+
+Full reference: [`docs/reference/museattributes.md`](../reference/museattributes.md)
+
+---
+
 ## Artifact Resolution (`artifact_resolver.py`)
 
 `resolve_artifact_async(path_or_commit_id, root, session)` resolves a user-supplied

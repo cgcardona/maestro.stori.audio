@@ -247,7 +247,7 @@ async def build_merge_checkout_plan(
     working_cc: RegionCCMap | None = None,
     working_pb: RegionPitchBendMap | None = None,
     working_at: RegionAftertouchMap | None = None,
-    repo_root: Path | None = None,
+    repo_path: Path | None = None,
 ) -> MergeCheckoutPlan:
     """Build a complete merge plan: merge-base → three-way diff → checkout plan.
 
@@ -287,7 +287,7 @@ async def build_merge_checkout_plan(
         # Record conflict shape and attempt rerere auto-resolution when a repo
         # root is available.  This is a best-effort hook — rerere failures must
         # never prevent the caller from receiving the conflict report.
-        if repo_root is not None:
+        if repo_path is not None:
             try:
                 from maestro.services.muse_rerere import (
                     ConflictDict,
@@ -303,8 +303,8 @@ async def build_merge_checkout_plan(
                     )
                     for c in result.conflicts
                 ]
-                record_conflict(repo_root, conflict_dicts)
-                applied, _resolution = apply_rerere(repo_root, conflict_dicts)
+                record_conflict(repo_path, conflict_dicts)
+                applied, _resolution = apply_rerere(repo_path, conflict_dicts)
                 if applied:
                     logger.info(
                         "✅ muse rerere: resolved %d conflict(s) using rerere.",
