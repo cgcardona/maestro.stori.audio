@@ -11,36 +11,92 @@
 {% block repo_nav %}{% include "musehub/partials/repo_nav.html" %}{% endblock %}
 
 {% block page_data %}
-const repoId  = {{ repo_id | tojson }};
-const base    = {{ base_url | tojson }};
-const curPage = {{ page }};
-const perPage = {{ per_page }};
+const repoId     = {{ repo_id | tojson }};
+const base       = {{ base_url | tojson }};
+const curPage    = {{ page }};
+const perPage    = {{ per_page }};
 const totalPages = {{ total_pages }};
 const curBranch  = {{ (branch or '') | tojson }};
 {% endblock %}
 
 {% block extra_css %}
 <style>
-/* ── Commit list layout ── */
+/* ── Layout ── */
 .commits-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
   flex-wrap: wrap;
   gap: var(--space-3);
-  margin-bottom: var(--space-4);
+  margin-bottom: var(--space-3);
 }
 .commits-header h1 { margin: 0; font-size: var(--font-size-xl); }
 
+/* ── Filter bar ── */
+.filter-bar {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  padding: var(--space-3) var(--space-4);
+  margin-bottom: var(--space-4);
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  align-items: flex-end;
+}
+.filter-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+.filter-group label {
+  font-size: var(--font-size-xs);
+  color: var(--text-muted);
+  font-weight: var(--font-weight-medium);
+  white-space: nowrap;
+}
+.filter-group input,
+.filter-group select {
+  font-size: var(--font-size-sm);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-default);
+  background: var(--bg-base);
+  color: var(--text-primary);
+  min-width: 120px;
+}
+.filter-group input[type="date"] { min-width: 140px; }
+.filter-group input[type="search"] { min-width: 200px; }
+.filter-bar-actions {
+  display: flex;
+  gap: var(--space-2);
+  align-items: flex-end;
+  margin-left: auto;
+}
+.filter-active-badge {
+  font-size: var(--font-size-xs);
+  background: var(--color-accent);
+  color: #fff;
+  border-radius: 999px;
+  padding: 1px 7px;
+  margin-left: var(--space-1);
+}
+
+/* ── Toolbar (branch selector + compare + DAG link) ── */
+.commits-toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  margin-bottom: var(--space-4);
+}
 .branch-select-form {
   display: flex;
   align-items: center;
   gap: var(--space-2);
 }
-.branch-select-form label {
-  font-size: var(--font-size-sm);
-  color: var(--text-muted);
-}
+.branch-select-form label { font-size: var(--font-size-sm); color: var(--text-muted); }
 .branch-select-form select {
   font-size: var(--font-size-sm);
   padding: var(--space-1) var(--space-2);
@@ -51,20 +107,36 @@ const curBranch  = {{ (branch or '') | tojson }};
   cursor: pointer;
 }
 
-/* ── DAG column ── */
-.commit-list-table {
-  display: flex;
-  flex-direction: column;
+/* ── Compare mode toolbar strip ── */
+.compare-strip {
+  display: none;
+  align-items: center;
+  gap: var(--space-3);
+  background: var(--bg-surface);
+  border: 1px solid var(--color-accent);
+  border-radius: var(--radius-md);
+  padding: var(--space-2) var(--space-3);
+  margin-bottom: var(--space-3);
+  font-size: var(--font-size-sm);
 }
+.compare-strip.visible { display: flex; }
+#compare-count { font-weight: var(--font-weight-semibold); }
+
+/* ── Commit list ── */
+.commit-list-table { display: flex; flex-direction: column; }
 .commit-list-row {
   display: grid;
-  grid-template-columns: 32px 1fr;
+  grid-template-columns: 32px 28px 1fr;
   align-items: stretch;
   border-bottom: 1px solid var(--border-subtle);
-  min-height: 56px;
+  min-height: 60px;
+  transition: background 0.1s;
 }
 .commit-list-row:last-child { border-bottom: none; }
+.commit-list-row:hover { background: var(--bg-surface-hover, var(--bg-surface)); }
+.commit-list-row.compare-selected { background: color-mix(in srgb, var(--color-accent) 8%, transparent); }
 
+/* ── Mini-lane (DAG column) ── */
 .dag-col {
   display: flex;
   flex-direction: column;
@@ -72,12 +144,8 @@ const curBranch  = {{ (branch or '') | tojson }};
   position: relative;
   padding: 0;
 }
-.dag-line {
-  width: 2px;
-  background: var(--border-default);
-  flex: 1;
-}
-.dag-line-top    { min-height: 12px; }
+.dag-line { width: 2px; background: var(--border-default); flex: 1; }
+.dag-line-top  { min-height: 12px; }
 .dag-line-bottom { min-height: 12px; }
 .dag-node {
   width: 10px;
@@ -89,20 +157,36 @@ const curBranch  = {{ (branch or '') | tojson }};
   flex-shrink: 0;
   z-index: 1;
 }
-.dag-node-merge {
-  background: var(--color-purple);
-  box-shadow: 0 0 0 2px var(--color-purple);
-}
-.dag-node-root {
-  background: var(--color-success);
-  box-shadow: 0 0 0 2px var(--color-success);
+.dag-node-merge  { background: var(--color-purple, #8b5cf6); box-shadow: 0 0 0 2px var(--color-purple, #8b5cf6); }
+.dag-node-root   { background: var(--color-success); box-shadow: 0 0 0 2px var(--color-success); }
+/* Second parent indicator line for merge commits */
+.dag-merge-arm {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 10px;
+  height: 2px;
+  background: var(--color-purple, #8b5cf6);
+  transform: translateY(-50%);
+  border-radius: 1px;
 }
 
+/* ── Compare checkbox column ── */
+.compare-col {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 var(--space-1);
+}
+.compare-check { display: none; cursor: pointer; accent-color: var(--color-accent); width: 15px; height: 15px; }
+body.compare-mode .compare-check { display: block; }
+
+/* ── Commit cell ── */
 .commit-cell {
   display: flex;
   flex-direction: column;
   justify-content: center;
-  padding: var(--space-3) var(--space-2) var(--space-3) var(--space-3);
+  padding: var(--space-3) var(--space-2) var(--space-3) var(--space-2);
   gap: var(--space-1);
   min-width: 0;
 }
@@ -127,7 +211,7 @@ const curBranch  = {{ (branch or '') | tojson }};
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  max-width: 480px;
+  max-width: 460px;
 }
 .commit-subject-link:hover { color: var(--color-accent); text-decoration: underline; }
 .commit-sha-link {
@@ -149,9 +233,28 @@ const curBranch  = {{ (branch or '') | tojson }};
 }
 .merge-indicator {
   font-size: var(--font-size-xs);
-  color: var(--color-purple);
+  color: var(--color-purple, #8b5cf6);
   font-weight: var(--font-weight-medium);
 }
+
+/* ── Metadata badge chips ── */
+.meta-badges { display: flex; gap: var(--space-1); flex-wrap: wrap; align-items: center; }
+.meta-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 10px;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 999px;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+.chip-tempo    { background: #fef3c7; color: #92400e; border: 1px solid #fcd34d; }
+.chip-key      { background: #dbeafe; color: #1e40af; border: 1px solid #93c5fd; }
+.chip-emotion  { background: #ede9fe; color: #5b21b6; border: 1px solid #c4b5fd; }
+.chip-stage    { background: #f3f4f6; color: #374151; border: 1px solid #d1d5db; }
+.chip-instr    { background: #d1fae5; color: #065f46; border: 1px solid #6ee7b7; font-size: 9px; }
 
 /* ── Pagination ── */
 .pagination-bar {
@@ -164,74 +267,268 @@ const curBranch  = {{ (branch or '') | tojson }};
   padding-top: var(--space-3);
   border-top: 1px solid var(--border-subtle);
 }
-.pagination-info {
-  font-size: var(--font-size-sm);
-  color: var(--text-muted);
-}
-.pagination-nav { display: flex; gap: var(--space-2); align-items: center; }
+.pagination-info { font-size: var(--font-size-sm); color: var(--text-muted); }
+.pagination-nav  { display: flex; gap: var(--space-2); align-items: center; }
 
 /* ── Empty state ── */
 .commits-empty {
   padding: var(--space-8) var(--space-4);
   text-align: center;
 }
-.commits-empty .empty-icon { font-size: 2.5rem; margin-bottom: var(--space-3); }
+.commits-empty .empty-icon  { font-size: 2.5rem; margin-bottom: var(--space-3); }
 .commits-empty .empty-title { font-size: var(--font-size-lg); font-weight: var(--font-weight-semibold); margin-bottom: var(--space-2); }
 .commits-empty .empty-desc  { font-size: var(--font-size-sm); color: var(--text-muted); }
+
+/* dark-mode tweaks for chips */
+@media (prefers-color-scheme: dark) {
+  .chip-tempo   { background: #451a03; color: #fcd34d; border-color: #78350f; }
+  .chip-key     { background: #1e3a5f; color: #93c5fd; border-color: #1d4ed8; }
+  .chip-emotion { background: #2e1065; color: #c4b5fd; border-color: #6d28d9; }
+  .chip-stage   { background: #1f2937; color: #d1d5db; border-color: #374151; }
+  .chip-instr   { background: #022c22; color: #6ee7b7; border-color: #059669; }
+}
 </style>
 {% endblock %}
 
 {% block page_script %}
 {% raw %}
-// Branch-selector navigation: preserve page=1 on branch switch, keep per_page
-function onBranchChange(sel) {
+// ── Helpers ──────────────────────────────────────────────────────────────────
+
+function buildQueryString(overrides) {
   const url = new URL(window.location.href);
-  const branch = sel.value;
-  if (branch) {
-    url.searchParams.set('branch', branch);
-  } else {
-    url.searchParams.delete('branch');
+  for (const [k, v] of Object.entries(overrides)) {
+    if (v === null || v === undefined || v === '') {
+      url.searchParams.delete(k);
+    } else {
+      url.searchParams.set(k, v);
+    }
   }
-  url.searchParams.set('page', '1');
-  window.location.href = url.toString();
+  return url.toString();
 }
 
-// Initialise repo nav sidebar (star counts etc.)
+// ── Branch selector ───────────────────────────────────────────────────────────
+function onBranchChange(sel) {
+  const v = sel.value;
+  window.location.href = buildQueryString({ branch: v || null, page: 1 });
+}
+
+// ── Filter form submission ────────────────────────────────────────────────────
+function submitFilters(e) {
+  e.preventDefault();
+  const form = document.getElementById('filter-form');
+  const params = {
+    author:   form.elements['author'].value   || null,
+    q:        form.elements['q'].value        || null,
+    dateFrom: form.elements['dateFrom'].value || null,
+    dateTo:   form.elements['dateTo'].value   || null,
+    tag:      form.elements['tag'].value      || null,
+    page: 1,
+  };
+  window.location.href = buildQueryString(params);
+}
+
+function clearFilters() {
+  window.location.href = buildQueryString({
+    author: null, q: null, dateFrom: null, dateTo: null, tag: null, page: 1,
+  });
+}
+
+// ── Per-commit metadata badge extraction ──────────────────────────────────────
+// Parses commit messages client-side to extract music metadata for badge chips.
+// Patterns match common muse commit message conventions.
+const TEMPO_RE  = /\b(\d{2,3})\s*(?:bpm|BPM)\b/;
+const KEY_RE    = /\b([A-G][b#]?(?:m(?:aj(?:or)?)?|min(?:or)?|M)?)\b/;
+const EMOTION_RE = /emotion:([\w-]+)/i;
+const STAGE_RE   = /stage:([\w-]+)/i;
+const INSTR_RE   = /\b(piano|bass|drums?|keys|strings?|guitar|synth|pad|lead|brass|horn|flute|cello|violin|organ|arp|vocals?|percussion|kick|snare|hihat|hi-hat|clap)\b/gi;
+
+function extractBadges(message) {
+  const badges = [];
+  const tm = TEMPO_RE.exec(message);
+  if (tm) badges.push({ cls: 'chip-tempo', label: '♩ ' + tm[1] + ' BPM' });
+
+  const km = KEY_RE.exec(message);
+  if (km) badges.push({ cls: 'chip-key', label: '🎵 ' + km[1] });
+
+  const em = EMOTION_RE.exec(message);
+  if (em) badges.push({ cls: 'chip-emotion', label: '💜 ' + em[1] });
+
+  const sm = STAGE_RE.exec(message);
+  if (sm) badges.push({ cls: 'chip-stage', label: sm[1] });
+
+  // Collect unique instrument mentions (max 3 shown)
+  const instrs = new Set();
+  let im;
+  while ((im = INSTR_RE.exec(message)) !== null) instrs.add(im[1].toLowerCase());
+  if (instrs.size) {
+    const shown = [...instrs].slice(0, 3);
+    badges.push({ cls: 'chip-instr', label: shown.join(' · ') });
+  }
+  return badges;
+}
+
+function renderBadges() {
+  document.querySelectorAll('.commit-list-row[data-message]').forEach(function(row) {
+    const msg     = row.dataset.message || '';
+    const badges  = extractBadges(msg);
+    const target  = row.querySelector('.meta-badges');
+    if (!target || !badges.length) return;
+    target.innerHTML = badges.map(function(b) {
+      return '<span class="meta-chip ' + b.cls + '">' + b.label + '</span>';
+    }).join('');
+  });
+}
+
+// ── Compare mode ──────────────────────────────────────────────────────────────
+let compareMode = false;
+const selected  = new Set();
+
+function toggleCompareMode() {
+  compareMode = !compareMode;
+  document.body.classList.toggle('compare-mode', compareMode);
+  selected.clear();
+  document.querySelectorAll('.compare-check').forEach(function(cb) { cb.checked = false; });
+  document.querySelectorAll('.commit-list-row').forEach(function(r) { r.classList.remove('compare-selected'); });
+  updateCompareStrip();
+  const btn = document.getElementById('compare-toggle-btn');
+  if (btn) btn.textContent = compareMode ? '✕ Exit Compare' : '⊞ Compare';
+}
+
+function onCompareCheck(cb, commitId) {
+  const row = cb.closest('.commit-list-row');
+  if (cb.checked) {
+    if (selected.size >= 2) { cb.checked = false; return; }
+    selected.add(commitId);
+    if (row) row.classList.add('compare-selected');
+  } else {
+    selected.delete(commitId);
+    if (row) row.classList.remove('compare-selected');
+  }
+  updateCompareStrip();
+}
+
+function updateCompareStrip() {
+  const strip = document.getElementById('compare-strip');
+  const link  = document.getElementById('compare-link');
+  if (!strip) return;
+  const n = selected.size;
+  document.getElementById('compare-count').textContent = n + ' selected';
+  if (n === 2 && link) {
+    const [a, b] = [...selected];
+    link.href = base + '/compare/' + a + '...' + b;
+    link.style.display = '';
+  } else if (link) {
+    link.style.display = 'none';
+  }
+  strip.classList.toggle('visible', compareMode);
+}
+
+// ── Relative timestamps ───────────────────────────────────────────────────────
+function upgradeTimestamps() {
+  document.querySelectorAll('.js-rel-time[data-ts]').forEach(function(el) {
+    try { if (typeof fmtDate === 'function') el.textContent = fmtDate(el.dataset.ts); } catch(e) {}
+  });
+}
+
+// ── Init ─────────────────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', function () {
   if (typeof initRepoNav === 'function') initRepoNav(repoId);
+  renderBadges();
+  upgradeTimestamps();
 });
 {% endraw %}
 {% endblock %}
 
 {% block body_extra %}
 <div id="content">
-  <!-- Header -->
+
+  <!-- ── Page header ── -->
   <div class="commits-header">
     <div style="display:flex;align-items:center;gap:var(--space-3)">
       <h1>&#128196; Commits</h1>
       <span class="badge" style="font-size:var(--font-size-xs)">{{ total }}</span>
-    </div>
-
-    <div style="display:flex;align-items:center;gap:var(--space-3);flex-wrap:wrap">
-      <!-- Branch selector -->
-      {% if branches %}
-      <div class="branch-select-form">
-        <label for="branch-sel">Branch:</label>
-        <select id="branch-sel" onchange="onBranchChange(this)">
-          <option value="" {% if not branch %}selected{% endif %}>All branches</option>
-          {% for b in branches %}
-          <option value="{{ b.name | e }}" {% if branch == b.name %}selected{% endif %}>{{ b.name | e }}</option>
-          {% endfor %}
-        </select>
-      </div>
+      {% set n_active = [filter_author, filter_q, filter_date_from, filter_date_to, filter_tag] | select | list | length %}
+      {% if n_active %}
+      <span class="filter-active-badge">{{ n_active }} filter{{ 's' if n_active != 1 else '' }}</span>
       {% endif %}
-
-      <!-- Link to full DAG -->
-      <a href="{{ base_url }}/graph" class="btn btn-secondary btn-sm">&#127760; DAG Graph</a>
     </div>
   </div>
 
-  <!-- Commit list -->
+  <!-- ── Filter bar ── -->
+  <form id="filter-form" class="filter-bar" onsubmit="submitFilters(event)">
+    <!-- Author dropdown -->
+    <div class="filter-group">
+      <label for="f-author">Author</label>
+      <select id="f-author" name="author">
+        <option value="">All authors</option>
+        {% for a in all_authors %}
+        <option value="{{ a | e }}" {% if filter_author == a %}selected{% endif %}>{{ a | e }}</option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <!-- Message search -->
+    <div class="filter-group">
+      <label for="f-q">Search commits</label>
+      <input type="search" id="f-q" name="q" placeholder="keyword in message…" value="{{ filter_q | e }}">
+    </div>
+
+    <!-- Date from -->
+    <div class="filter-group">
+      <label for="f-from">From</label>
+      <input type="date" id="f-from" name="dateFrom" value="{{ filter_date_from | e }}">
+    </div>
+
+    <!-- Date to -->
+    <div class="filter-group">
+      <label for="f-to">To</label>
+      <input type="date" id="f-to" name="dateTo" value="{{ filter_date_to | e }}">
+    </div>
+
+    <!-- Tag filter -->
+    <div class="filter-group">
+      <label for="f-tag">Tag</label>
+      <input type="search" id="f-tag" name="tag" placeholder="emotion:happy…" value="{{ filter_tag | e }}" style="min-width:150px">
+    </div>
+
+    <div class="filter-bar-actions">
+      <button type="submit" class="btn btn-primary btn-sm">Filter</button>
+      {% if n_active %}
+      <a href="javascript:clearFilters()" class="btn btn-secondary btn-sm">Clear</a>
+      {% endif %}
+    </div>
+  </form>
+
+  <!-- ── Toolbar ── -->
+  <div class="commits-toolbar">
+    <!-- Branch selector -->
+    {% if branches %}
+    <div class="branch-select-form">
+      <label for="branch-sel">Branch:</label>
+      <select id="branch-sel" onchange="onBranchChange(this)">
+        <option value="" {% if not branch %}selected{% endif %}>All branches</option>
+        {% for b in branches %}
+        <option value="{{ b.name | e }}" {% if branch == b.name %}selected{% endif %}>{{ b.name | e }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    {% endif %}
+
+    <!-- Compare toggle -->
+    <button id="compare-toggle-btn" class="btn btn-secondary btn-sm" onclick="toggleCompareMode()">&#8862; Compare</button>
+
+    <!-- DAG graph link -->
+    <a href="{{ base_url }}/graph" class="btn btn-secondary btn-sm">&#127760; DAG Graph</a>
+  </div>
+
+  <!-- ── Compare strip (shown when compare mode is active) ── -->
+  <div id="compare-strip" class="compare-strip">
+    <span>&#8862; <span id="compare-count">0 selected</span> (select exactly 2 commits)</span>
+    <a id="compare-link" href="#" class="btn btn-primary btn-sm" style="display:none">Compare selected &#8594;</a>
+    <button onclick="toggleCompareMode()" class="btn btn-ghost btn-sm">Cancel</button>
+  </div>
+
+  <!-- ── Commit list ── -->
   <div class="card" style="padding:0;overflow:hidden">
     {% if commits %}
     <div class="commit-list-table">
@@ -241,39 +538,60 @@ document.addEventListener('DOMContentLoaded', function () {
       {% set is_first = loop.first %}
       {% set is_last  = loop.last %}
       {% set sha8 = commit.commit_id[:8] %}
-      {% set parsed = namespace(type=None, scope=None, subject=commit.message) %}
 
-      <div class="commit-list-row">
-        <!-- DAG column -->
-        <div class="dag-col">
+      <div class="commit-list-row"
+           data-commit-id="{{ commit.commit_id | e }}"
+           data-message="{{ commit.message | e }}">
+
+        <!-- Mini-lane: DAG column -->
+        <div class="dag-col" title="{% if is_merge %}Merge commit ({{ commit.parent_ids | length }} parents){% elif is_root %}Root commit{% else %}Commit{% endif %}">
           <div class="dag-line dag-line-top" {% if is_first %}style="background:transparent"{% endif %}></div>
-          <div class="dag-node{% if is_merge %} dag-node-merge{% elif is_root %} dag-node-root{% endif %}" title="{% if is_merge %}Merge commit{% elif is_root %}Root commit{% else %}Commit{% endif %}"></div>
+          <div class="dag-node{% if is_merge %} dag-node-merge{% elif is_root %} dag-node-root{% endif %}" style="position:relative">
+            {% if is_merge %}
+            <span class="dag-merge-arm"></span>
+            {% endif %}
+          </div>
           <div class="dag-line dag-line-bottom" {% if is_last %}style="background:transparent"{% endif %}></div>
+        </div>
+
+        <!-- Compare checkbox column -->
+        <div class="compare-col">
+          <input type="checkbox"
+                 class="compare-check"
+                 aria-label="Select commit {{ sha8 }} for compare"
+                 onchange="onCompareCheck(this, {{ commit.commit_id | tojson }})">
         </div>
 
         <!-- Commit info -->
         <div class="commit-cell">
           <div class="commit-cell-top">
-            <!-- Commit message (truncated) -->
+            <!-- Commit message -->
             <a href="{{ base_url }}/commits/{{ commit.commit_id }}"
                class="commit-subject-link"
                title="{{ commit.message | e }}">{{ commit.message | truncate(80, True, '…') | e }}</a>
 
-            <!-- Merge indicator -->
+            <!-- Merge indicator badge -->
             {% if is_merge %}
-            <span class="merge-indicator" title="Merge commit ({{ commit.parent_ids | length }} parents)">⊕ merge</span>
+            <span class="merge-indicator">⊕ merge</span>
             {% endif %}
+
+            <!-- Music metadata chips (populated by JS from commit message) -->
+            <span class="meta-badges"></span>
           </div>
 
           <div class="commit-cell-bottom">
-            <!-- SHA link -->
+            <!-- Short SHA -->
             <a href="{{ base_url }}/commits/{{ commit.commit_id }}"
                class="commit-sha-link" title="{{ commit.commit_id }}">{{ sha8 }}</a>
 
             <!-- Author -->
             <span class="commit-meta-item">
               <svg width="10" height="10" viewBox="0 0 16 16" fill="currentColor" style="opacity:.6"><path d="M8 8a3 3 0 1 0 0-6 3 3 0 0 0 0 6zm5 8a5 5 0 0 0-10 0h10z"/></svg>
-              {{ commit.author | e }}
+              {% if filter_author == commit.author %}
+              <strong>{{ commit.author | e }}</strong>
+              {% else %}
+              <a href="?author={{ commit.author | urlencode }}&page=1" style="color:inherit;text-decoration:none" title="Filter by this author">{{ commit.author | e }}</a>
+              {% endif %}
             </span>
 
             <!-- Timestamp -->
@@ -282,7 +600,7 @@ document.addEventListener('DOMContentLoaded', function () {
               <span class="js-rel-time" data-ts="{{ commit.timestamp.isoformat() }}">{{ commit.timestamp.strftime('%Y-%m-%d') }}</span>
             </span>
 
-            <!-- Branch badge (only when "all branches" view) -->
+            <!-- Branch (shown only in all-branches view) -->
             {% if not branch and commit.branch %}
             <span class="commit-meta-item">
               <svg width="10" height="10" viewBox="0 0 16 16" fill="currentColor" style="opacity:.6"><path d="M11.75 2.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5zm-2.25.75a2.25 2.25 0 1 1 3 2.122V6A2.5 2.5 0 0 1 10 8.5H6a1 1 0 0 0-1 1v1.128a2.251 2.251 0 1 1-1.5 0V5.372a2.25 2.25 0 1 1 1.5 0v1.836A2.492 2.492 0 0 1 6 7h4a1 1 0 0 0 1-1v-.628A2.25 2.25 0 0 1 9.5 3.25z"/></svg>
@@ -304,14 +622,14 @@ document.addEventListener('DOMContentLoaded', function () {
     <!-- Pagination -->
     {% set offset_start = (page - 1) * per_page + 1 %}
     {% set offset_end   = [page * per_page, total] | min %}
+    {% macro page_link(p) %}?{% for k, v in active_filters.items() %}{{ k }}={{ v | urlencode }}&{% endfor %}page={{ p }}&per_page={{ per_page }}{% endmacro %}
     <div class="pagination-bar" style="padding:var(--space-3) var(--space-4)">
       <span class="pagination-info">
         Showing {{ offset_start }}–{{ offset_end }} of {{ total }} commit{% if total != 1 %}s{% endif %}
       </span>
       <div class="pagination-nav">
         {% if page > 1 %}
-        <a href="?{% if branch %}branch={{ branch | urlencode }}&{% endif %}page={{ page - 1 }}&per_page={{ per_page }}"
-           class="btn btn-secondary btn-sm">&#8592; Newer</a>
+        <a href="{{ page_link(page - 1) }}" class="btn btn-secondary btn-sm">&#8592; Newer</a>
         {% else %}
         <span class="btn btn-secondary btn-sm" style="opacity:.4;cursor:default">&#8592; Newer</span>
         {% endif %}
@@ -321,8 +639,7 @@ document.addEventListener('DOMContentLoaded', function () {
         </span>
 
         {% if page < total_pages %}
-        <a href="?{% if branch %}branch={{ branch | urlencode }}&{% endif %}page={{ page + 1 }}&per_page={{ per_page }}"
-           class="btn btn-secondary btn-sm">Older &#8594;</a>
+        <a href="{{ page_link(page + 1) }}" class="btn btn-secondary btn-sm">Older &#8594;</a>
         {% else %}
         <span class="btn btn-secondary btn-sm" style="opacity:.4;cursor:default">Older &#8594;</span>
         {% endif %}
@@ -333,27 +650,24 @@ document.addEventListener('DOMContentLoaded', function () {
     <!-- Empty state -->
     <div class="commits-empty">
       <div class="empty-icon">&#128196;</div>
-      <p class="empty-title">No commits yet</p>
+      {% if n_active %}
+      <p class="empty-title">No commits match your filters</p>
       <p class="empty-desc">
-        {% if branch %}
+        Try broadening the filter criteria or
+        <a href="javascript:clearFilters()">clear all filters</a>.
+      </p>
+      {% elif branch %}
+      <p class="empty-title">No commits on this branch</p>
+      <p class="empty-desc">
         No commits on branch <strong>{{ branch | e }}</strong>.
         <a href="{{ base_url }}/commits">View all branches</a>
-        {% else %}
-        Push your first musical commit with <code>muse push</code> to see history here.
-        {% endif %}
       </p>
+      {% else %}
+      <p class="empty-title">No commits yet</p>
+      <p class="empty-desc">Push your first musical commit with <code>muse push</code> to see history here.</p>
+      {% endif %}
     </div>
     {% endif %}
   </div>
 </div>
-
-<script>
-// Upgrade static timestamps to relative time ("2 hours ago")
-document.querySelectorAll('.js-rel-time[data-ts]').forEach(function(el) {
-  try {
-    var d = new Date(el.dataset.ts);
-    if (typeof fmtDate === 'function') el.textContent = fmtDate(el.dataset.ts);
-  } catch(e) {}
-});
-</script>
 {% endblock %}

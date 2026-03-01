@@ -443,25 +443,121 @@ async def commits_list_page(
     page: int = Query(1, ge=1, description="Page number (1-indexed)"),
     per_page: int = Query(30, ge=1, le=200, description="Commits per page"),
     format: str | None = Query(None, description="Force response format: 'json' or omit for HTML"),
+    author: str | None = Query(None, description="Filter by commit author"),
+    q: str | None = Query(None, description="Full-text search over commit messages"),
+    date_from: str | None = Query(None, alias="dateFrom", description="ISO date lower bound (inclusive), e.g. 2026-01-01"),
+    date_to: str | None = Query(None, alias="dateTo", description="ISO date upper bound (inclusive), e.g. 2026-12-31"),
+    tag_filter: str | None = Query(None, alias="tag", description="Filter by muse_tag prefix, e.g. 'emotion:happy', 'stage:chorus'"),
     db: AsyncSession = Depends(get_db),
 ) -> StarletteResponse:
     """Render the paginated commits list page or return structured commit data as JSON.
 
-    HTML (default): renders ``commits.html`` with paginated history, branch
-    selector, inline DAG indicators, and tag badges.
+    HTML (default): renders ``commits.html`` with:
+    - Rich filter bar: author dropdown, date range pickers, message search, tag filter.
+    - Per-commit metadata badges: tempo (♩ BPM), key, emotion, stage, instruments.
+    - Compare mode: checkbox per row; selecting exactly 2 activates a compare link.
+    - Visual mini-lane: DAG dots with merge-commit indicators.
+    - Paginated history, branch selector.
+
     JSON (``Accept: application/json`` or ``?format=json``): returns
     ``CommitListResponse`` with the newest commits first for the requested page.
 
-    Agents use this to inspect a repo's commit history without navigating
-    a separate ``/api/v1/...`` endpoint.
+    Filter params (``author``, ``q``, ``dateFrom``, ``dateTo``, ``tag``) are
+    applied server-side so pagination counts stay accurate.  They are forwarded
+    through pagination links so the filter state persists across pages.
     """
+    from datetime import date as _date, timedelta as _td
+
+    import sqlalchemy as _sa
+
     repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
-    offset = (page - 1) * per_page
-    commits, total = await musehub_repository.list_commits(
-        db, repo_id, branch=branch, limit=per_page, offset=offset
+
+    # ── Build the filtered SQLAlchemy query ──────────────────────────────────
+    base_stmt = sa_select(musehub_db.MusehubCommit).where(
+        musehub_db.MusehubCommit.repo_id == repo_id
     )
+    if branch:
+        base_stmt = base_stmt.where(musehub_db.MusehubCommit.branch == branch)
+    if author:
+        base_stmt = base_stmt.where(musehub_db.MusehubCommit.author == author)
+    if q:
+        base_stmt = base_stmt.where(
+            musehub_db.MusehubCommit.message.ilike(f"%{q}%")
+        )
+    if date_from:
+        try:
+            df = _date.fromisoformat(date_from)
+            base_stmt = base_stmt.where(musehub_db.MusehubCommit.timestamp >= df.isoformat())
+        except ValueError:
+            pass  # ignore malformed date — show all results
+    if date_to:
+        try:
+            dt = _date.fromisoformat(date_to)
+            dt_end = (dt + _td(days=1)).isoformat()  # inclusive upper bound
+            base_stmt = base_stmt.where(musehub_db.MusehubCommit.timestamp < dt_end)
+        except ValueError:
+            pass
+
+    # tag_filter matches muse_tag namespace prefixes embedded in commit messages
+    # (e.g. "emotion:happy", "stage:chorus") since musehub_commits has no
+    # separate tags column — tags live in commit messages by convention.
+    if tag_filter:
+        base_stmt = base_stmt.where(
+            musehub_db.MusehubCommit.message.ilike(f"%{tag_filter}%")
+        )
+
+    total_stmt = sa_select(func.count()).select_from(base_stmt.subquery())
+    total: int = (await db.execute(total_stmt)).scalar_one()
+
+    offset = (page - 1) * per_page
+    rows_stmt = (
+        base_stmt.order_by(_sa.desc(musehub_db.MusehubCommit.timestamp))
+        .offset(offset)
+        .limit(per_page)
+    )
+    rows = (await db.execute(rows_stmt)).scalars().all()
+
+    # Build CommitResponse objects inline — same mapping as the service layer.
+    commits = [
+        CommitResponse(
+            commit_id=r.commit_id,
+            branch=r.branch,
+            parent_ids=list(r.parent_ids or []),
+            message=r.message,
+            author=r.author,
+            timestamp=r.timestamp,
+            snapshot_id=r.snapshot_id,
+        )
+        for r in rows
+    ]
+
+    # ── Distinct authors for the filter dropdown ──────────────────────────────
+    author_stmt = (
+        sa_select(musehub_db.MusehubCommit.author)
+        .where(musehub_db.MusehubCommit.repo_id == repo_id)
+        .distinct()
+        .order_by(musehub_db.MusehubCommit.author)
+    )
+    all_authors: list[str] = list((await db.execute(author_stmt)).scalars().all())
+
     branches = await musehub_repository.list_branches(db, repo_id)
     total_pages = max(1, (total + per_page - 1) // per_page)
+
+    # ── Active filter set (forwarded to pagination links) ────────────────────
+    active_filters: dict[str, str] = {}
+    if branch:
+        active_filters["branch"] = branch
+    if author:
+        active_filters["author"] = author
+    if q:
+        active_filters["q"] = q
+    if date_from:
+        active_filters["dateFrom"] = date_from
+    if date_to:
+        active_filters["dateTo"] = date_to
+    if tag_filter:
+        active_filters["tag"] = tag_filter
+
     return await negotiate_response(
         request=request,
         template_name="musehub/pages/commits.html",
@@ -478,6 +574,13 @@ async def commits_list_page(
             "total_pages": total_pages,
             "branch": branch,
             "branches": branches,
+            "all_authors": all_authors,
+            "filter_author": author or "",
+            "filter_q": q or "",
+            "filter_date_from": date_from or "",
+            "filter_date_to": date_to or "",
+            "filter_tag": tag_filter or "",
+            "active_filters": active_filters,
             "breadcrumb_data": _breadcrumbs(
                 (owner, f"/musehub/ui/{owner}"),
                 (repo_slug, base_url),
