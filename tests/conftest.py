@@ -1,47 +1,131 @@
-"""Worktree conftest — makes shared fixtures available for worktree tests.
-
-Pytest discovers conftest.py by traversing up from the test file, not from rootdir.
-Since this worktree lives outside /app, we must explicitly import the shared fixtures
-from the main repo's tests/conftest.py using importlib, then re-export them so
-pytest discovers them in this conftest's local namespace.
-"""
+"""Pytest configuration and fixtures."""
 from __future__ import annotations
 
-import importlib.util
-import sys
-from pathlib import Path
-
-# Ensure the main app code is importable when running from this worktree.
-_APP_ROOT = Path("/app")
-if str(_APP_ROOT) not in sys.path:
-    sys.path.insert(0, str(_APP_ROOT))
-
-# Load the main repo's conftest.py as a module named _main_conftest to avoid
-# the naming collision that occurs when pytest also loads it as "conftest".
-_main_conftest_path = _APP_ROOT / "tests" / "conftest.py"
-_spec = importlib.util.spec_from_file_location("_main_conftest", _main_conftest_path)
-assert _spec is not None and _spec.loader is not None
-_main_conftest = importlib.util.module_from_spec(_spec)
-sys.modules["_main_conftest"] = _main_conftest
-_spec.loader.exec_module(_main_conftest)  # type: ignore[union-attr]
-
-# Re-export every pytest fixture so this conftest acts as a transparent proxy.
-# Pytest collects fixtures from module globals; assigning them here makes them
-# available to all tests discovered under this directory.
-from _main_conftest import (  # noqa: E402  # type: ignore[import]
-    anyio_backend,
-    client,
-    db_session,
-    pytest_configure,
-    _disable_storpheus_hard_gate,
-    _reset_variation_store,
+import logging
+from collections.abc import AsyncGenerator, Generator
+import pytest
+import pytest_asyncio
+from httpx import AsyncClient, ASGITransport
+from sqlalchemy.ext.asyncio import (
+    AsyncSession,
+    async_sessionmaker,
+    create_async_engine,
 )
+from sqlalchemy.pool import StaticPool
 
-__all__ = [
-    "anyio_backend",
-    "client",
-    "db_session",
-    "pytest_configure",
-    "_disable_storpheus_hard_gate",
-    "_reset_variation_store",
-]
+from maestro.db import database
+from maestro.db.database import Base, get_db
+from maestro.db.models import User
+from maestro.main import app
+
+
+def pytest_configure(config: pytest.Config) -> None:
+
+    """Ensure asyncio_mode is auto so async fixtures work (e.g. in Docker when pyproject not in cwd)."""
+    if hasattr(config.option, "asyncio_mode") and config.option.asyncio_mode is None:
+        config.option.asyncio_mode = "auto"
+    logging.getLogger("httpcore").setLevel(logging.CRITICAL)
+
+
+@pytest.fixture
+def anyio_backend() -> str:
+    return "asyncio"
+
+
+@pytest.fixture(autouse=True)
+def _disable_storpheus_hard_gate() -> Generator[None, None, None]:
+    """Tests don't have Storpheus running — disable the pre-flight hard gate."""
+    from maestro.config import settings
+    original = settings.storpheus_required
+    settings.storpheus_required = False
+    yield
+    settings.storpheus_required = original
+
+
+@pytest.fixture(autouse=True)
+def _reset_variation_store() -> Generator[None, None, None]:
+    """Reset the singleton VariationStore between tests to prevent cross-test pollution."""
+    yield
+    from maestro.variation.storage.variation_store import reset_variation_store
+    reset_variation_store()
+
+
+@pytest_asyncio.fixture
+async def db_session() -> AsyncGenerator[AsyncSession, None]:
+    """Create an in-memory test database session."""
+    engine = create_async_engine(
+        "sqlite+aiosqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+
+    async_session_factory = async_sessionmaker(
+        bind=engine,
+        class_=AsyncSession,
+        expire_on_commit=False,
+    )
+    old_engine = database._engine
+    old_factory = database._async_session_factory
+    database._engine = engine
+    database._async_session_factory = async_session_factory
+    try:
+        async with async_session_factory() as session:
+            async def override_get_db() -> AsyncGenerator[AsyncSession, None]:
+                yield session
+            app.dependency_overrides[get_db] = override_get_db
+            yield session
+            app.dependency_overrides.clear()
+    finally:
+        database._engine = old_engine
+        database._async_session_factory = old_factory
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.drop_all)
+    await engine.dispose()
+
+
+@pytest_asyncio.fixture
+async def client(db_session: AsyncSession) -> AsyncGenerator[AsyncClient, None]:
+
+    """Create an async test client. Depends on db_session so auth revocation check uses test DB."""
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as ac:
+        yield ac
+
+
+# -----------------------------------------------------------------------------
+# Auth fixtures for API contract and integration tests
+# -----------------------------------------------------------------------------
+
+@pytest_asyncio.fixture
+async def test_user(db_session: AsyncSession) -> User:
+
+    """Create a test user with budget (for authenticated route tests)."""
+    user = User(
+        id="550e8400-e29b-41d4-a716-446655440000",
+        budget_cents=500,
+        budget_limit_cents=500,
+    )
+    db_session.add(user)
+    await db_session.commit()
+    await db_session.refresh(user)
+    return user
+
+
+@pytest.fixture
+def auth_token(test_user: User) -> str:
+
+    """JWT for test_user (1 hour)."""
+    from maestro.auth.tokens import create_access_token
+    return create_access_token(user_id=test_user.id, expires_hours=1)
+
+
+@pytest.fixture
+def auth_headers(auth_token: str) -> dict[str, str]:
+
+    """Headers with Bearer token and JSON content type."""
+    return {
+        "Authorization": f"Bearer {auth_token}",
+        "Content-Type": "application/json",
+    }
