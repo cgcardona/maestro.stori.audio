@@ -70,7 +70,79 @@ SEED:
               -b feat/issue-<N> \
               "$HOME/.cursor/worktrees/{{ repo_name }}/issue-<N>" \
               origin/dev
-       c. Write .agent-task — include BATCH_ID (see Worktree convention below)
+       c. Select the cognitive architecture for this specific issue:
+
+          Read the issue body once and apply heuristics to set COGNITIVE_ARCH.
+          First match wins. This ensures every leaf agent gets the right skill
+          domain and personality for its task — not just a generic Python engineer.
+
+          ```bash
+          ISSUE_BODY="$(gh issue view <N> --repo {{ gh_repo }} --json body -q .body)"
+
+          # --- Skill domain (what tech stack is this issue building?) ---
+          if echo "$ISSUE_BODY" | grep -qiE "monaco|vs/loader|editor.*cdn|cdn.*editor"; then
+            SKILL_DOMAIN="monaco_editor"
+          elif echo "$ISSUE_BODY" | grep -qiE "d3\.js|force-directed|d3\.force|d3\.select"; then
+            SKILL_DOMAIN="d3_js"
+          elif echo "$ISSUE_BODY" | grep -qiE "htmx|hx-|jinja2|\.html|sse-connect|alpine|x-data|hx-ext"; then
+            SKILL_DOMAIN="htmx_jinja2"
+          elif echo "$ISSUE_BODY" | grep -qiE "dockerfile|FROM python|compose.*service|container.*port"; then
+            SKILL_DOMAIN="devops"
+          elif echo "$ISSUE_BODY" | grep -qiE "midi|storpheus|gm.program|tmidix|orpheus"; then
+            SKILL_DOMAIN="audio_midi"
+          elif echo "$ISSUE_BODY" | grep -qiE "llm|embedding|rag|openrouter|claude.*model"; then
+            SKILL_DOMAIN="ml_ai"
+          else
+            SKILL_DOMAIN="python"
+          fi
+
+          # --- Figure/archetype (how should the agent think?) ---
+          if echo "$ISSUE_BODY" | grep -qiE "parse.*body|depends on.*#|DAG|directed.acyclic|formal.*grammar"; then
+            FIGURE="turing"
+          elif echo "$ISSUE_BODY" | grep -qiE "kill|stale.*claim|out-of-order|invariant|correctness.*critical"; then
+            FIGURE="the_guardian"
+          elif echo "$ISSUE_BODY" | grep -qiE "asyncio|SSE|broadcast|subscribe|fanout|information.*flow"; then
+            FIGURE="shannon"
+          elif echo "$ISSUE_BODY" | grep -qiE "readme|explain.*simply|tutorial|document|onboard"; then
+            FIGURE="feynman"
+          elif echo "$ISSUE_BODY" | grep -qiE "dockerfile|FROM |entrypoint|compose.*service"; then
+            FIGURE="ritchie"
+          elif echo "$ISSUE_BODY" | grep -qiE "scaling|advisor|queue.*depth|heuristic.*important"; then
+            FIGURE="hamming"
+          elif echo "$ISSUE_BODY" | grep -qiE "wave|aggregate|batch_id|synthesize|cross.*domain"; then
+            FIGURE="von_neumann"
+          elif echo "$ISSUE_BODY" | grep -qiE "schema|load-bearing|interface.*design|config.*schema|api.*contract"; then
+            FIGURE="the_architect"
+          elif echo "$ISSUE_BODY" | grep -qiE "visualization|force.*directed|D3|beautiful.*graph|render.*graph"; then
+            FIGURE="lovelace"
+          elif echo "$ISSUE_BODY" | grep -qiE "manual.*spawn|tool.*for|direct.*control|bypass.*loop"; then
+            FIGURE="hopper"
+          elif echo "$ISSUE_BODY" | grep -qiE "classify|ticket.*analyze|natural.*language.*parse|formal.*model"; then
+            FIGURE="mccarthy"
+          elif echo "$ISSUE_BODY" | grep -qiE "A/B|variant|experiment|alternate.*role"; then
+            FIGURE="hopper"
+          elif echo "$ISSUE_BODY" | grep -qiE "inspector|transcript.*viewer|detail.*page|make.*visible"; then
+            FIGURE="feynman"
+          elif echo "$ISSUE_BODY" | grep -qiE "overview.*page|live.*tree|pipeline.*dashboard|meta.*view"; then
+            FIGURE="lovelace"
+          elif echo "$ISSUE_BODY" | grep -qiE "recommendation|comparison.*table|teach|mentor.*style"; then
+            FIGURE="the_mentor"
+          elif echo "$ISSUE_BODY" | grep -qiE "pause|resume|sentinel|operational|keep.*running"; then
+            FIGURE="the_operator"
+          elif echo "$ISSUE_BODY" | grep -qiE "diff|version.*track|atomic.*write|history"; then
+            FIGURE="dijkstra"
+          else
+            FIGURE="the_pragmatist"
+          fi
+
+          COGNITIVE_ARCH="${FIGURE}+${SKILL_DOMAIN}"
+          echo "Selected cognitive architecture: $COGNITIVE_ARCH"
+          ```
+
+          See scripts/gen_prompts/TICKET_TAXONOMY.md for the full rationale behind
+          each mapping. The taxonomy also serves as a reference for adding new issues.
+
+       d. Write .agent-task — include BATCH_ID and COGNITIVE_ARCH (see Worktree convention below)
 
   6. Launch all 4 as leaf agents simultaneously — one Task call per issue,
      all in a single message:
@@ -112,9 +184,12 @@ BASE=dev
 GH_REPO={{ gh_repo }}
 CLOSES_ISSUES=<N>
 BATCH_ID=<BATCH_ID>
+COGNITIVE_ARCH=<COGNITIVE_ARCH from step 5c above, e.g. "feynman+htmx_jinja2">
 ```
 
 `ISSUE_LABEL` is the primary scoping label (e.g. `{{ active_label_prefix }}0-scaffold`). Leaf agents use it to route mypy and tests to the correct codebase container — never cross-run {{ active_name }} checks on maestro or vice versa.
+
+`COGNITIVE_ARCH` is the selected cognitive architecture for this specific issue (figure+skill_domain or archetype+skill_domain). Leaf agents display it in their opening message and let it guide their approach. See `scripts/gen_prompts/TICKET_TAXONOMY.md` for the full taxonomy and rationale.
 
 If a worktree is missing: `git -C "$HOME/dev/tellurstori/{{ repo_name }}" worktree add -b feat/issue-{N} "$HOME/.cursor/worktrees/{{ repo_name }}/issue-{N}" origin/dev`
 
