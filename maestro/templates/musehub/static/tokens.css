@@ -154,3 +154,8 @@
   --z-toast:   300;
   --z-tooltip: 400;
 }
+
+/* ── HTMX loading indicator ────────────────────────────────────────────────── */
+/* Show the #htmx-loading progress bar while any HTMX request is in flight.    */
+.htmx-request #htmx-loading { display: block !important; }
+.htmx-request.htmx-indicator { display: block !important; }

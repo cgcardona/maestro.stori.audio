@@ -1258,3 +1258,10 @@ pre code {
 .reaction-btn--active .reaction-count {
   color: var(--color-accent, #58a6ff);
 }
+
+/* ── HTMX loading indicator ────────────────────────────────────────────────
+   The #htmx-loading bar (defined in base.html) becomes visible whenever an
+   HTMX request is in-flight. HTMX adds .htmx-request to <body> during the
+   request and removes it on completion. */
+.htmx-request #htmx-loading { display: block !important; }
+.htmx-request.htmx-indicator { display: block !important; }
