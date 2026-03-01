@@ -74,8 +74,9 @@ def _shortsha(value: str | None) -> str:
 def _label_text_color(hex_bg: str) -> str:
     """Return '#000' or '#fff' for readable contrast against the given hex background.
 
-    Uses the WCAG relative luminance formula so text remains legible across
-    the full range of GitHub-style label colours.
+    Uses the BT.601 perceived-luminance formula (coefficients 0.299 / 0.587 / 0.114),
+    the same heuristic GitHub uses for label text colour.  Text is black when
+    luminance > 0.5, white otherwise.
     """
     hex_bg = hex_bg.lstrip("#")
     if len(hex_bg) != 6:
