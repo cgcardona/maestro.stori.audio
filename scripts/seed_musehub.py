@@ -468,6 +468,84 @@ COMMIT_COUNTS = {
     REPO_AMBIENT_FORK:  5,
 }
 
+# ---------------------------------------------------------------------------
+# Muse VCS — content-addressed MIDI objects, snapshots, commits, tags
+# ---------------------------------------------------------------------------
+
+# Track files per repo for Muse VCS — realistic MIDI instrument names and sizes.
+# Piano solo: 8KB–40KB; ensemble: 50KB–200KB (task spec).
+# Each tuple is (filename, base_size_bytes).
+MUSE_VCS_FILES: dict[str, list[tuple[str, int]]] = {
+    REPO_NEO_SOUL:     [("piano.mid", 24576),  ("bass.mid", 12288),   ("drums.mid", 16384),
+                        ("violin.mid", 18432),  ("trumpet.mid", 13312)],
+    REPO_FUNK_SUITE:   [("piano.mid", 22528),  ("bass.mid", 13312),   ("drums.mid", 16384),
+                        ("trumpet.mid", 12288), ("flute.mid", 10240)],
+    REPO_AFROBEAT:     [("bass.mid", 14336),   ("drums.mid", 18432),  ("violin.mid", 15360),
+                        ("cello.mid", 14336),   ("trumpet.mid", 12288)],
+    REPO_AMBIENT:      [("piano.mid", 32768),  ("violin.mid", 20480), ("cello.mid", 17408),
+                        ("viola.mid", 15360),   ("flute.mid", 11264)],
+    REPO_MODAL_JAZZ:   [("piano.mid", 28672),  ("bass.mid", 10240),   ("drums.mid", 14336),
+                        ("trumpet.mid", 11264)],
+    REPO_JAZZ_TRIO:    [("piano.mid", 26624),  ("bass.mid", 11264),   ("drums.mid", 13312)],
+    REPO_MICROTONAL:   [("piano.mid", 20480),  ("violin.mid", 16384), ("cello.mid", 14336)],
+    REPO_DRUM_MACHINE: [("drums.mid", 18432),  ("bass.mid", 12288)],
+    REPO_CHANSON:      [("piano.mid", 36864),  ("cello.mid", 17408)],
+    REPO_GRANULAR:     [("piano.mid", 15360),  ("violin.mid", 12288), ("flute.mid", 9216)],
+    REPO_NEO_SOUL_FORK:[("piano.mid", 24576),  ("bass.mid", 12288),   ("drums.mid", 16384)],
+    REPO_AMBIENT_FORK: [("piano.mid", 32768),  ("violin.mid", 20480), ("cello.mid", 17408)],
+}
+
+# Metadata per repo for muse_commits.metadata JSON field.
+MUSE_COMMIT_META: dict[str, dict[str, object]] = {
+    REPO_NEO_SOUL:     {"tempo_bpm": 92.0,  "key": "F# minor", "time_signature": "4/4", "instrument_count": 5},
+    REPO_FUNK_SUITE:   {"tempo_bpm": 108.0, "key": "E minor",  "time_signature": "4/4", "instrument_count": 5},
+    REPO_AFROBEAT:     {"tempo_bpm": 128.0, "key": "G major",  "time_signature": "12/8","instrument_count": 5},
+    REPO_AMBIENT:      {"tempo_bpm": 60.0,  "key": "Eb major", "time_signature": "4/4", "instrument_count": 5},
+    REPO_MODAL_JAZZ:   {"tempo_bpm": 120.0, "key": "D Dorian", "time_signature": "4/4", "instrument_count": 4},
+    REPO_JAZZ_TRIO:    {"tempo_bpm": 138.0, "key": "Bb major", "time_signature": "3/4", "instrument_count": 3},
+    REPO_MICROTONAL:   {"tempo_bpm": 76.0,  "key": "C (31-TET)","time_signature":"4/4", "instrument_count": 3},
+    REPO_DRUM_MACHINE: {"tempo_bpm": 100.0, "key": "A minor",  "time_signature": "4/4", "instrument_count": 2},
+    REPO_CHANSON:      {"tempo_bpm": 52.0,  "key": "A major",  "time_signature": "4/4", "instrument_count": 2},
+    REPO_GRANULAR:     {"tempo_bpm": 70.0,  "key": "E minor",  "time_signature": "4/4", "instrument_count": 3},
+    REPO_NEO_SOUL_FORK:{"tempo_bpm": 92.0,  "key": "F# minor", "time_signature": "4/4", "instrument_count": 3},
+    REPO_AMBIENT_FORK: {"tempo_bpm": 60.0,  "key": "Eb major", "time_signature": "4/4", "instrument_count": 3},
+}
+
+# Muse tag taxonomy — ALL values from the task spec must appear in the seed.
+MUSE_EMOTION_TAGS = [
+    "melancholic", "joyful", "tense", "serene", "triumphant",
+    "mysterious", "playful", "tender", "energetic", "complex",
+]
+MUSE_STAGE_TAGS = [
+    "sketch", "rough-mix", "arrangement", "production", "mixing", "mastering", "released",
+]
+MUSE_KEY_TAGS = [
+    "C", "Am", "G", "Em", "Bb", "F#", "Db", "Abm", "D", "Bm", "A", "F", "Eb", "Cm",
+]
+MUSE_TEMPO_TAGS = [
+    "60bpm", "72bpm", "80bpm", "96bpm", "120bpm", "132bpm", "140bpm", "160bpm",
+]
+MUSE_GENRE_TAGS = [
+    "baroque", "romantic", "ragtime", "edm", "ambient", "cinematic",
+    "jazz", "afrobeats", "classical", "fusion",
+]
+MUSE_REF_TAGS = [
+    "bach", "chopin", "debussy", "coltrane", "daft-punk", "beethoven", "joplin", "monk",
+]
+
+# Full flat list of all taxonomy tags — used when cycling through commits.
+_ALL_MUSE_TAGS: list[str] = (
+    MUSE_EMOTION_TAGS
+    + MUSE_STAGE_TAGS
+    + MUSE_KEY_TAGS
+    + MUSE_TEMPO_TAGS
+    + MUSE_GENRE_TAGS
+    + MUSE_REF_TAGS
+)
+
+# Repos that get the full rich tag taxonomy (most active, richest history).
+MUSE_RICH_TAG_REPOS = {REPO_NEO_SOUL, REPO_FUNK_SUITE}
+
 
 # ---------------------------------------------------------------------------
 # Muse variation history — DAW project constants
@@ -858,6 +936,7 @@ GENERIC_ISSUES = [
 # ---------------------------------------------------------------------------
 
 def _make_prs(repo_id: str, commits: list[dict[str, Any]], owner: str) -> list[dict[str, Any]]:
+    """Generate 4 template pull requests (open, merged, open, closed) for a repo."""
     if len(commits) < 4:
         return []
     c = commits
@@ -895,6 +974,7 @@ def _make_prs(repo_id: str, commits: list[dict[str, Any]], owner: str) -> list[d
 # ---------------------------------------------------------------------------
 
 def _make_releases(repo_id: str, commits: list[dict[str, Any]], repo_name: str, owner: str) -> list[dict[str, Any]]:
+    """Generate 3 releases (v0.1.0 draft, v0.2.0 arrangement, v1.0.0 full) for a repo."""
     if not commits:
         return []
     return [
@@ -926,6 +1006,7 @@ def _make_releases(repo_id: str, commits: list[dict[str, Any]], repo_name: str, 
 # ---------------------------------------------------------------------------
 
 def _make_sessions(repo_id: str, owner: str, commits: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Generate 6 collaboration sessions per repo; adds a live session for high-traffic repos."""
     if len(commits) < 2:
         return []
     sess = []
@@ -987,6 +1068,13 @@ def _make_sessions(repo_id: str, owner: str, commits: list[dict[str, Any]]) -> l
 # ---------------------------------------------------------------------------
 
 async def seed(db: AsyncSession, force: bool = False) -> None:
+    """Populate all MuseHub tables with a realistic stress-test dataset.
+
+    Inserts users, repos, commits, branches, issues, PRs, releases, sessions,
+    social graph (stars, follows, watches, comments, reactions, notifications,
+    forks, view/download events), and the full Muse VCS layer (objects,
+    snapshots, commits, tags).  Pass force=True to wipe and re-seed existing data.
+    """
     print("🌱 Seeding MuseHub stress-test dataset…")
 
     result = await db.execute(text("SELECT COUNT(*) FROM musehub_repos"))
@@ -1000,7 +1088,11 @@ async def seed(db: AsyncSession, force: bool = False) -> None:
     if existing > 0 and force:
         print("  🗑  --force: clearing existing seed data…")
         for tbl in [
+            # Muse variation children first (FK order)
             "muse_note_changes", "muse_phrases", "muse_variations",
+            # Muse VCS — innermost first (tags depend on commits, commits depend on snapshots)
+            "muse_tags", "muse_commits", "muse_snapshots", "muse_objects",
+            # MuseHub
             "musehub_download_events", "musehub_view_events", "musehub_forks",
             "musehub_notifications", "musehub_watches", "musehub_follows",
             "musehub_reactions", "musehub_comments",
@@ -1453,6 +1545,187 @@ async def seed(db: AsyncSession, force: bool = False) -> None:
     print(f"  ✅ Variations: {len(all_variations)} ({len(var_nb)} neo-baroque, {len(var_cc)} community-collab)")
     print(f"  ✅ Phrases: {len(all_phrases)}")
     print(f"  ✅ Note changes: {len(all_note_changes)}")
+    # ── 19. Muse VCS — muse_objects, muse_snapshots, muse_commits, muse_tags ─
+    #
+    # Inserts content-addressed MIDI blobs, snapshot manifests, a proper DAG
+    # of Muse commits (including merge commits), and the full tag taxonomy.
+    #
+    # Insertion order respects FK constraints:
+    #   muse_objects → muse_snapshots → muse_commits → muse_tags
+    #
+    muse_obj_count = 0
+    muse_snap_count = 0
+    muse_commit_count = 0
+    muse_tag_count = 0
+
+    # Running objects pool so the same content can be deduplicated across
+    # snapshots (object_ids that haven't changed reuse the same sha256).
+    # Structure: repo_id → {filename: object_id}
+    _prev_objects: dict[str, dict[str, str]] = {}
+
+    for r in REPOS:
+        repo_id = r["repo_id"]
+        hub_commits = all_commits.get(repo_id, [])
+        if not hub_commits:
+            continue
+
+        track_files = MUSE_VCS_FILES.get(repo_id, MUSE_VCS_FILES[REPO_AMBIENT])
+        meta = MUSE_COMMIT_META.get(repo_id, MUSE_COMMIT_META[REPO_AMBIENT])
+        is_rich = repo_id in MUSE_RICH_TAG_REPOS
+
+        prev_objects: dict[str, str] = {}  # filename → object_id for this repo
+        muse_commit_ids: list[str] = []    # ordered muse commit_ids for this repo
+
+        for i, hub_c in enumerate(hub_commits):
+            snap_seed = f"snap-muse-{repo_id}-{i}"
+            committed_at = hub_c["timestamp"]
+
+            # Build this commit's object set.
+            # Every commit, ~2 files "change" (get fresh object_ids).
+            # The rest reuse from the previous commit — simulating deduplication.
+            changed_indices = {i % len(track_files), (i + 2) % len(track_files)}
+            commit_objects: dict[str, str] = {}
+
+            for fi, (fname, base_size) in enumerate(track_files):
+                if fi in changed_indices or fname not in prev_objects:
+                    # New or modified file → fresh content-addressed blob.
+                    obj_id = _sha(f"midi-{repo_id}-{fname}-v{i}")
+                    size = base_size + (i * 128) % 4096
+                    await db.execute(
+                        text(
+                            "INSERT INTO muse_objects (object_id, size_bytes, created_at)"
+                            " VALUES (:oid, :sz, :ca)"
+                            " ON CONFLICT (object_id) DO NOTHING"
+                        ),
+                        {"oid": obj_id, "sz": size, "ca": committed_at},
+                    )
+                    muse_obj_count += 1
+                else:
+                    # Unchanged file → reuse previous object_id (deduplication).
+                    obj_id = prev_objects[fname]
+                commit_objects[fname] = obj_id
+
+            prev_objects = commit_objects
+
+            # Snapshot — manifest maps track paths to object_ids.
+            snapshot_id = _sha(snap_seed)
+            manifest: dict[str, str] = {f"tracks/{fname}": oid for fname, oid in commit_objects.items()}
+            await db.execute(
+                text(
+                    "INSERT INTO muse_snapshots (snapshot_id, manifest, created_at)"
+                    " VALUES (:sid, :manifest, :ca)"
+                    " ON CONFLICT (snapshot_id) DO NOTHING"
+                ),
+                {"sid": snapshot_id, "manifest": manifest, "ca": committed_at},
+            )
+            muse_snap_count += 1
+
+            # Muse commit — derives its ID from snapshot + parent + message.
+            parent_id: str | None = muse_commit_ids[-1] if muse_commit_ids else None
+            # Merge commit every 7 commits (from commit 7 onward) — parent2 is the
+            # commit from 5 positions back, simulating a merged feature branch.
+            # Interval of 7 guarantees ≥5 merges per repo for repos with ≥35 commits.
+            parent2_id: str | None = None
+            if i >= 7 and i % 7 == 0 and len(muse_commit_ids) >= 6:
+                parent2_id = muse_commit_ids[-6]
+
+            commit_id = _sha(f"muse-c-{snapshot_id}-{parent_id or ''}-{hub_c['message']}")
+            await db.execute(
+                text(
+                    "INSERT INTO muse_commits"
+                    " (commit_id, repo_id, branch, parent_commit_id, parent2_commit_id,"
+                    "  snapshot_id, message, author, committed_at, created_at, metadata)"
+                    " VALUES"
+                    " (:cid, :rid, :branch, :pid, :p2id,"
+                    "  :sid, :msg, :author, :cat, :cat, :meta)"
+                    " ON CONFLICT (commit_id) DO NOTHING"
+                ),
+                {
+                    "cid":    commit_id,
+                    "rid":    repo_id,
+                    "branch": hub_c["branch"],
+                    "pid":    parent_id,
+                    "p2id":   parent2_id,
+                    "sid":    snapshot_id,
+                    "msg":    hub_c["message"],
+                    "author": hub_c["author"],
+                    "cat":    committed_at,
+                    "meta":   meta,
+                },
+            )
+            muse_commit_ids.append(commit_id)
+            muse_commit_count += 1
+
+            # Tags: apply cycling taxonomy to every commit.
+            # Rich repos get ALL taxonomy values; others get a representative subset.
+            if is_rich:
+                # Cycle through all 57 tag values across commits so every value appears.
+                tag_val = _ALL_MUSE_TAGS[i % len(_ALL_MUSE_TAGS)]
+                tag_vals = [tag_val]
+                # Also add a second tag from a different category group.
+                second_idx = (i + len(MUSE_EMOTION_TAGS)) % len(_ALL_MUSE_TAGS)
+                if second_idx != i % len(_ALL_MUSE_TAGS):
+                    tag_vals.append(_ALL_MUSE_TAGS[second_idx])
+            else:
+                # Non-rich repos get one tag per commit drawn from a trimmed pool.
+                _trimmed = MUSE_EMOTION_TAGS + MUSE_STAGE_TAGS + MUSE_GENRE_TAGS
+                tag_vals = [_trimmed[i % len(_trimmed)]]
+
+            for tag_val in tag_vals:
+                tag_id = _uid(f"muse-tag-{commit_id}-{tag_val}")
+                await db.execute(
+                    text(
+                        "INSERT INTO muse_tags (tag_id, repo_id, commit_id, tag, created_at)"
+                        " VALUES (:tid, :rid, :cid, :tag, :ca)"
+                        " ON CONFLICT (tag_id) DO NOTHING"
+                    ),
+                    {"tid": tag_id, "rid": repo_id, "cid": commit_id,
+                     "tag": tag_val, "ca": committed_at},
+                )
+                muse_tag_count += 1
+
+        _prev_objects[repo_id] = prev_objects
+
+    # Ensure every tag taxonomy value appears at least once in REPO_NEO_SOUL.
+    # Walk through ALL values and seed any that haven't been covered yet.
+    if all_commits.get(REPO_NEO_SOUL):
+        hub_commits_ns = all_commits[REPO_NEO_SOUL]
+        muse_ids_ns: list[str] = []
+        for i, hub_c in enumerate(hub_commits_ns):
+            snap_seed = f"snap-muse-{REPO_NEO_SOUL}-{i}"
+            snapshot_id = _sha(snap_seed)
+            parent_id_ns: str | None = muse_ids_ns[-1] if muse_ids_ns else None
+            commit_id_ns = _sha(f"muse-c-{snapshot_id}-{parent_id_ns or ''}-{hub_c['message']}")
+            muse_ids_ns.append(commit_id_ns)
+
+        # Fetch existing tags for REPO_NEO_SOUL.
+        result = await db.execute(
+            text("SELECT tag FROM muse_tags WHERE repo_id = :rid"),
+            {"rid": REPO_NEO_SOUL},
+        )
+        existing_tags: set[str] = {row[0] for row in result.fetchall()}
+        missing_tags = [t for t in _ALL_MUSE_TAGS if t not in existing_tags]
+
+        for j, missing_tag in enumerate(missing_tags):
+            commit_id_ns = muse_ids_ns[j % len(muse_ids_ns)]
+            committed_at_ns = hub_commits_ns[j % len(hub_commits_ns)]["timestamp"]
+            tag_id = _uid(f"muse-tag-fill-{REPO_NEO_SOUL}-{missing_tag}")
+            await db.execute(
+                text(
+                    "INSERT INTO muse_tags (tag_id, repo_id, commit_id, tag, created_at)"
+                    " VALUES (:tid, :rid, :cid, :tag, :ca)"
+                    " ON CONFLICT (tag_id) DO NOTHING"
+                ),
+                {"tid": tag_id, "rid": REPO_NEO_SOUL, "cid": commit_id_ns,
+                 "tag": missing_tag, "ca": committed_at_ns},
+            )
+            muse_tag_count += 1
+
+    await db.flush()
+    print(f"  ✅ Muse objects:    {muse_obj_count} blobs")
+    print(f"  ✅ Muse snapshots:  {muse_snap_count} manifests")
+    print(f"  ✅ Muse commits:    {muse_commit_count} (DAG; includes merge commits)")
+    print(f"  ✅ Muse tags:       {muse_tag_count} (full taxonomy)")
 
     await db.commit()
     print()
@@ -1465,6 +1738,7 @@ def _print_urls(
     pr_ids: dict[str, list[str]] | None = None,
     release_tags: dict[str, list[str]] | None = None,
 ) -> None:
+    """Print all seeded MuseHub URLs to stdout for manual browser verification."""
     BASE = "http://localhost:10001/musehub/ui"
     print()
     print("=" * 72)
@@ -1525,10 +1799,11 @@ def _print_urls(
 
 
 async def main() -> None:
+    """CLI entry point. Pass --force to wipe existing seed data before re-seeding."""
     force = "--force" in sys.argv
     db_url: str = settings.database_url or ""
     engine = create_async_engine(db_url, echo=False)
-    async_session = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)  # type: ignore[call-overload]  # sqlalchemy stubs incomplete for async sessionmaker
+    async_session = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)  # type: ignore[call-overload]  # SQLAlchemy typing: sessionmaker + class_=AsyncSession overload not reflected in stubs
     async with async_session() as db:
         await seed(db, force=force)
     await engine.dispose()
