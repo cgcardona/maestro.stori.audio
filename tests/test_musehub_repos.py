@@ -1826,3 +1826,267 @@ async def test_patch_repo_settings_returns_403_for_non_admin(
         headers=auth_headers,
     )
     assert resp.status_code == 403
+
+
+# ---------------------------------------------------------------------------
+# DELETE /repos/{repo_id}  — soft-delete (issue #416)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.anyio
+async def test_delete_repo_returns_204(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+) -> None:
+    """DELETE /repos/{repo_id} soft-deletes a repo owned by the caller and returns 204."""
+    create = await client.post(
+        "/api/v1/musehub/repos",
+        json={"name": "to-delete", "owner": "testuser", "visibility": "private"},
+        headers=auth_headers,
+    )
+    assert create.status_code == 201
+    repo_id = create.json()["repoId"]
+
+    resp = await client.delete(f"/api/v1/musehub/repos/{repo_id}", headers=auth_headers)
+    assert resp.status_code == 204
+
+
+@pytest.mark.anyio
+async def test_delete_repo_hides_repo_from_get(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+) -> None:
+    """After DELETE, GET /repos/{repo_id} returns 404."""
+    create = await client.post(
+        "/api/v1/musehub/repos",
+        json={"name": "hidden-after-delete", "owner": "testuser", "visibility": "private"},
+        headers=auth_headers,
+    )
+    repo_id = create.json()["repoId"]
+
+    await client.delete(f"/api/v1/musehub/repos/{repo_id}", headers=auth_headers)
+
+    get_resp = await client.get(f"/api/v1/musehub/repos/{repo_id}", headers=auth_headers)
+    assert get_resp.status_code == 404
+
+
+@pytest.mark.anyio
+async def test_delete_repo_requires_auth(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """DELETE /repos/{repo_id} returns 401 without a Bearer token."""
+    repo = MusehubRepo(
+        name="delete-noauth",
+        owner="testuser",
+        slug="delete-noauth",
+        visibility="public",
+        owner_user_id=TEST_OWNER_USER_ID,
+    )
+    db_session.add(repo)
+    await db_session.commit()
+    await db_session.refresh(repo)
+
+    resp = await client.delete(f"/api/v1/musehub/repos/{repo.repo_id}")
+    assert resp.status_code == 401
+
+
+@pytest.mark.anyio
+async def test_delete_repo_returns_403_for_non_owner(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    auth_headers: dict[str, str],
+) -> None:
+    """DELETE /repos/{repo_id} returns 403 when caller is not the owner."""
+    repo = MusehubRepo(
+        name="delete-403",
+        owner="other-owner",
+        slug="delete-403",
+        visibility="public",
+        owner_user_id="some-other-user-id",
+    )
+    db_session.add(repo)
+    await db_session.commit()
+    await db_session.refresh(repo)
+
+    resp = await client.delete(
+        f"/api/v1/musehub/repos/{repo.repo_id}", headers=auth_headers
+    )
+    assert resp.status_code == 403
+
+
+@pytest.mark.anyio
+async def test_delete_repo_returns_404_for_unknown_repo(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+) -> None:
+    """DELETE /repos/{repo_id} returns 404 for a non-existent repo."""
+    resp = await client.delete(
+        "/api/v1/musehub/repos/nonexistent-repo-id", headers=auth_headers
+    )
+    assert resp.status_code == 404
+
+
+@pytest.mark.anyio
+async def test_delete_repo_service_sets_deleted_at(
+    db_session: AsyncSession,
+) -> None:
+    """delete_repo() service sets deleted_at on the row."""
+    repo = await musehub_repository.create_repo(
+        db_session,
+        name="svc-delete-test",
+        owner="testuser",
+        visibility="private",
+        owner_user_id="user-abc",
+    )
+    await db_session.commit()
+
+    deleted = await musehub_repository.delete_repo(db_session, repo.repo_id)
+    await db_session.commit()
+
+    assert deleted is True
+    # get_repo should return None for soft-deleted repos
+    fetched = await musehub_repository.get_repo(db_session, repo.repo_id)
+    assert fetched is None
+
+
+@pytest.mark.anyio
+async def test_delete_repo_service_returns_false_for_unknown(
+    db_session: AsyncSession,
+) -> None:
+    """delete_repo() returns False for a non-existent repo."""
+    result = await musehub_repository.delete_repo(db_session, "does-not-exist")
+    assert result is False
+
+
+# ---------------------------------------------------------------------------
+# POST /repos/{repo_id}/transfer  — transfer ownership (issue #416)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.anyio
+async def test_transfer_repo_ownership_returns_200(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+) -> None:
+    """POST /repos/{repo_id}/transfer returns 200 with updated ownerUserId."""
+    create = await client.post(
+        "/api/v1/musehub/repos",
+        json={"name": "transfer-me", "owner": "testuser", "visibility": "private"},
+        headers=auth_headers,
+    )
+    assert create.status_code == 201
+    repo_id = create.json()["repoId"]
+    new_owner = "another-user-uuid-1234"
+
+    resp = await client.post(
+        f"/api/v1/musehub/repos/{repo_id}/transfer",
+        json={"newOwnerUserId": new_owner},
+        headers=auth_headers,
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["ownerUserId"] == new_owner
+    assert body["repoId"] == repo_id
+
+
+@pytest.mark.anyio
+async def test_transfer_repo_requires_auth(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """POST /repos/{repo_id}/transfer returns 401 without a Bearer token."""
+    repo = MusehubRepo(
+        name="transfer-noauth",
+        owner="testuser",
+        slug="transfer-noauth",
+        visibility="public",
+        owner_user_id=TEST_OWNER_USER_ID,
+    )
+    db_session.add(repo)
+    await db_session.commit()
+    await db_session.refresh(repo)
+
+    resp = await client.post(
+        f"/api/v1/musehub/repos/{repo.repo_id}/transfer",
+        json={"newOwnerUserId": "new-user-id"},
+    )
+    assert resp.status_code == 401
+
+
+@pytest.mark.anyio
+async def test_transfer_repo_returns_403_for_non_owner(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    auth_headers: dict[str, str],
+) -> None:
+    """POST /repos/{repo_id}/transfer returns 403 when caller is not the owner."""
+    repo = MusehubRepo(
+        name="transfer-403",
+        owner="other-owner",
+        slug="transfer-403",
+        visibility="public",
+        owner_user_id="some-other-user-id",
+    )
+    db_session.add(repo)
+    await db_session.commit()
+    await db_session.refresh(repo)
+
+    resp = await client.post(
+        f"/api/v1/musehub/repos/{repo.repo_id}/transfer",
+        json={"newOwnerUserId": "attacker-user-id"},
+        headers=auth_headers,
+    )
+    assert resp.status_code == 403
+
+
+@pytest.mark.anyio
+async def test_transfer_repo_returns_404_for_unknown_repo(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+) -> None:
+    """POST /repos/{repo_id}/transfer returns 404 for a non-existent repo."""
+    resp = await client.post(
+        "/api/v1/musehub/repos/nonexistent-repo-id/transfer",
+        json={"newOwnerUserId": "some-user"},
+        headers=auth_headers,
+    )
+    assert resp.status_code == 404
+
+
+@pytest.mark.anyio
+async def test_transfer_repo_service_updates_owner_user_id(
+    db_session: AsyncSession,
+) -> None:
+    """transfer_repo_ownership() service updates owner_user_id on the row."""
+    repo = await musehub_repository.create_repo(
+        db_session,
+        name="svc-transfer-test",
+        owner="testuser",
+        visibility="private",
+        owner_user_id="original-owner-id",
+    )
+    await db_session.commit()
+
+    updated = await musehub_repository.transfer_repo_ownership(
+        db_session, repo.repo_id, "new-owner-id"
+    )
+    await db_session.commit()
+
+    assert updated is not None
+    assert updated.owner_user_id == "new-owner-id"
+    # Verify persisted
+    fetched = await musehub_repository.get_repo(db_session, repo.repo_id)
+    assert fetched is not None
+    assert fetched.owner_user_id == "new-owner-id"
+
+
+@pytest.mark.anyio
+async def test_transfer_repo_service_returns_none_for_unknown(
+    db_session: AsyncSession,
+) -> None:
+    """transfer_repo_ownership() returns None for a non-existent repo."""
+    result = await musehub_repository.transfer_repo_ownership(
+        db_session, "does-not-exist", "new-owner"
+    )
+    assert result is None
