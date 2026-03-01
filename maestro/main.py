@@ -25,6 +25,7 @@ from slowapi.errors import RateLimitExceeded
 from maestro.config import settings
 from maestro.api.routes import maestro, maestro_ui, health, users, conversations, assets, variation, muse, musehub
 from maestro.api.routes.musehub import ui as musehub_ui_routes
+from maestro.api.routes.musehub import ui_collaborators as musehub_ui_collab_routes
 from maestro.api.routes.musehub import ui_settings as musehub_ui_settings_routes
 from maestro.api.routes.musehub import ui_similarity as musehub_ui_similarity_routes
 from maestro.api.routes.musehub import discover as musehub_discover_routes
@@ -220,6 +221,7 @@ app.include_router(musehub_discover_routes.star_router, prefix="/api/v1", tags=[
 app.include_router(musehub.router, prefix="/api/v1")
 # UI routers: fixed-path routes (users, explore, trending) first, then wildcards.
 app.include_router(musehub_ui_routes.fixed_router, tags=["musehub-ui"])
+app.include_router(musehub_ui_collab_routes.router, tags=["musehub-ui"])
 app.include_router(musehub_ui_routes.router, tags=["musehub-ui"])
 app.include_router(musehub_ui_settings_routes.router, tags=["musehub-ui-settings"])
 app.include_router(musehub_ui_similarity_routes.router, tags=["musehub-ui"])

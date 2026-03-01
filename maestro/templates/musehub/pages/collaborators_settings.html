@@ -1,0 +1,263 @@
+{% extends "musehub/base.html" %}
+
+{% block title %}Collaborators · {{ owner }}/{{ repo_slug }}{% endblock %}
+
+{% block extra_css %}
+<style>
+/* Permission badge colour coding */
+.badge-perm-read    { background: var(--bg-overlay, #21262d); color: var(--text-muted, #8b949e); }
+.badge-perm-write   { background: #1f4e96; color: #58a6ff; }
+.badge-perm-admin   { background: #7d2a00; color: #f0883e; }
+.badge-perm-owner   { background: #5a3e00; color: #e3b341; }
+
+/* Collaborator table */
+.collab-table { width: 100%; border-collapse: collapse; }
+.collab-table th,
+.collab-table td { padding: 10px 12px; text-align: left; border-bottom: 1px solid var(--border-subtle, #21262d); font-size: 13px; }
+.collab-table th  { font-weight: 600; color: var(--text-muted, #8b949e); font-size: 12px; text-transform: uppercase; letter-spacing: .04em; }
+.collab-table tr:last-child td { border-bottom: none; }
+
+/* Invite form */
+.invite-grid { display: grid; grid-template-columns: 1fr auto auto; gap: 8px; align-items: center; }
+@media (max-width: 600px) { .invite-grid { grid-template-columns: 1fr; } }
+
+/* Settings tab bar */
+.settings-tabs { display: flex; gap: 0; border-bottom: 1px solid var(--border-subtle, #21262d); margin-bottom: 20px; }
+.settings-tab  { padding: 8px 16px; font-size: 13px; color: var(--text-muted, #8b949e); text-decoration: none; border-bottom: 2px solid transparent; margin-bottom: -1px; }
+.settings-tab.active { color: var(--text-primary, #e6edf3); border-bottom-color: #f0883e; font-weight: 600; }
+</style>
+{% endblock %}
+
+{% block breadcrumb %}
+  <a href="/musehub/ui/{{ owner }}">{{ owner }}</a> /
+  <a href="{{ base_url }}">{{ repo_slug }}</a> /
+  <a href="{{ base_url }}/settings">Settings</a> /
+  Collaborators
+{% endblock %}
+
+{% block repo_nav %}{% include "musehub/partials/repo_nav.html" %}{% endblock %}
+
+{% block page_data %}
+const repoId    = {{ repo_id | tojson }};
+const base      = {{ base_url | tojson }};
+const apiBase   = '/api/v1/musehub/repos/' + encodeURIComponent(repoId);
+{% endblock %}
+
+{% block page_script %}
+{% raw %}
+// ── State ───────────────────────────────────────────────────────────────────
+let currentUserId = null;   // authenticated user's sub claim from JWT
+let repoOwnerId   = null;   // owner_user_id from repo metadata
+
+// ── Helpers ─────────────────────────────────────────────────────────────────
+function permBadge(perm) {
+  const cls = {
+    read:  'badge-perm-read',
+    write: 'badge-perm-write',
+    admin: 'badge-perm-admin',
+    owner: 'badge-perm-owner',
+  }[perm] || 'badge-perm-read';
+  const crown = perm === 'owner' ? ' 👑' : '';
+  return `<span class="badge ${cls}" style="border-radius:4px;padding:2px 8px;font-size:11px;font-weight:600">
+    ${escHtml(perm)}${crown}
+  </span>`;
+}
+
+function isAdminOrOwner(collabs) {
+  if (!currentUserId) return false;
+  const me = collabs.find(c => c.userId === currentUserId);
+  if (!me) return false;
+  return me.permission === 'admin' || me.permission === 'owner';
+}
+
+// ── Render collaborators table ───────────────────────────────────────────────
+function renderTable(collabs) {
+  if (!collabs || collabs.length === 0) {
+    return '<p class="loading" style="text-align:center;padding:24px">No collaborators yet.</p>';
+  }
+  const canEdit = isAdminOrOwner(collabs);
+
+  const rows = collabs.map(c => {
+    const isOwner = c.permission === 'owner';
+    const isSelf  = c.userId === currentUserId;
+
+    const permSelect = canEdit && !isOwner
+      ? `<select onchange="updatePerm('${escHtml(c.userId)}',this.value)"
+                style="background:var(--bg-surface,#161b22);border:1px solid var(--border-subtle,#21262d);
+                       color:var(--text-primary,#e6edf3);padding:3px 6px;border-radius:4px;font-size:12px">
+          ${['read','write','admin'].map(p =>
+            `<option value="${p}"${c.permission===p?' selected':''}>${p}</option>`
+          ).join('')}
+        </select>`
+      : permBadge(c.permission);
+
+    const removeBtn = canEdit && !isOwner && !isSelf
+      ? `<button class="btn btn-danger" style="font-size:12px;padding:3px 10px"
+                 onclick="removeCollab('${escHtml(c.userId)}')">Remove</button>`
+      : '';
+
+    return `<tr>
+      <td>
+        <div style="display:flex;align-items:center;gap:10px">
+          <div style="width:32px;height:32px;border-radius:50%;background:var(--bg-overlay,#21262d);
+                      display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0">
+            👤
+          </div>
+          <div>
+            <span style="font-weight:600;font-size:13px">${escHtml(c.userId)}</span>
+            ${isSelf ? '<span style="font-size:11px;color:var(--text-muted,#8b949e);margin-left:6px">(you)</span>' : ''}
+            ${c.invitedBy ? `<div style="font-size:11px;color:var(--text-muted,#8b949e)">Invited by ${escHtml(c.invitedBy)}</div>` : ''}
+          </div>
+        </div>
+      </td>
+      <td>${permSelect}</td>
+      <td style="text-align:right">${removeBtn}</td>
+    </tr>`;
+  }).join('');
+
+  return `<table class="collab-table">
+    <thead><tr>
+      <th>Collaborator</th>
+      <th>Permission</th>
+      <th></th>
+    </tr></thead>
+    <tbody>${rows}</tbody>
+  </table>`;
+}
+
+// ── Invite form ──────────────────────────────────────────────────────────────
+function renderInviteForm(canEdit) {
+  if (!canEdit) {
+    return `<div class="card" style="border-color:var(--border-subtle,#21262d)">
+      <p style="color:var(--text-muted,#8b949e);font-size:13px">
+        ⚠️ Admin or owner permission required to manage collaborators.
+      </p>
+    </div>`;
+  }
+  return `<div class="card">
+    <h3 style="margin-bottom:12px">Invite a collaborator</h3>
+    <div class="invite-grid">
+      <input type="text" id="invite-user-id"
+             placeholder="User ID (UUID)"
+             style="background:var(--bg-overlay,#21262d);border:1px solid var(--border-subtle,#30363d);
+                    color:var(--text-primary,#e6edf3);padding:7px 10px;border-radius:6px;font-size:13px;width:100%" />
+      <select id="invite-perm"
+              style="background:var(--bg-overlay,#21262d);border:1px solid var(--border-subtle,#30363d);
+                     color:var(--text-primary,#e6edf3);padding:7px 10px;border-radius:6px;font-size:13px">
+        <option value="read">read</option>
+        <option value="write" selected>write</option>
+        <option value="admin">admin</option>
+      </select>
+      <button class="btn btn-primary" onclick="inviteCollab()" style="white-space:nowrap">
+        + Invite
+      </button>
+    </div>
+    <div id="invite-msg" style="margin-top:8px;font-size:12px;min-height:18px"></div>
+  </div>`;
+}
+
+// ── API actions ──────────────────────────────────────────────────────────────
+async function inviteCollab() {
+  const userId = (document.getElementById('invite-user-id')?.value || '').trim();
+  const perm   = document.getElementById('invite-perm')?.value || 'write';
+  const msg    = document.getElementById('invite-msg');
+  if (!userId) { if (msg) msg.innerHTML = '<span style="color:#f85149">User ID is required.</span>'; return; }
+  if (msg) msg.innerHTML = '<span style="color:#8b949e">Inviting…</span>';
+  try {
+    await apiFetch('/repos/' + encodeURIComponent(repoId) + '/collaborators', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId, permission: perm }),
+    });
+    if (msg) msg.innerHTML = '<span style="color:#3fb950">✅ Invited successfully.</span>';
+    const inp = document.getElementById('invite-user-id');
+    if (inp) inp.value = '';
+    await load();
+  } catch (e) {
+    if (msg) msg.innerHTML = `<span style="color:#f85149">❌ ${escHtml(e.message)}</span>`;
+  }
+}
+
+async function updatePerm(userId, newPerm) {
+  try {
+    await apiFetch(
+      '/repos/' + encodeURIComponent(repoId) + '/collaborators/' + encodeURIComponent(userId) + '/permission',
+      { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ permission: newPerm }) }
+    );
+    await load();
+  } catch (e) {
+    alert('Failed to update permission: ' + e.message);
+    await load(); // re-render to restore original value
+  }
+}
+
+async function removeCollab(userId) {
+  if (!confirm('Remove this collaborator? They will lose access immediately.')) return;
+  try {
+    await apiFetch(
+      '/repos/' + encodeURIComponent(repoId) + '/collaborators/' + encodeURIComponent(userId),
+      { method: 'DELETE' }
+    );
+    await load();
+  } catch (e) {
+    alert('Failed to remove collaborator: ' + e.message);
+  }
+}
+
+// ── Main loader ──────────────────────────────────────────────────────────────
+async function load() {
+  document.getElementById('content').innerHTML = '<p class="loading">Loading team…</p>';
+  try {
+    const data = await apiFetch('/repos/' + encodeURIComponent(repoId) + '/collaborators');
+    const collabs = data.collaborators || [];
+
+    // Identify the current user from the JWT stored in localStorage.
+    try {
+      const raw = localStorage.getItem('musehub_token') || localStorage.getItem('token') || '';
+      if (raw) {
+        const payload = JSON.parse(atob(raw.split('.')[1].replace(/-/g,'+').replace(/_/g,'/')));
+        currentUserId = payload.sub || null;
+      }
+    } catch (_) { currentUserId = null; }
+
+    const canEdit = isAdminOrOwner(collabs);
+
+    document.getElementById('content').innerHTML = `
+      <!-- Settings tab bar -->
+      <nav class="settings-tabs">
+        <a class="settings-tab"        href="${escHtml(base)}/settings">General</a>
+        <a class="settings-tab active" href="${escHtml(base)}/settings/collaborators">Collaborators</a>
+      </nav>
+
+      <h2 style="margin-bottom:16px">🤝 Collaborators &amp; Teams</h2>
+
+      <!-- Invite form -->
+      ${renderInviteForm(canEdit)}
+
+      <!-- Collaborators list -->
+      <div class="card" style="padding:0;overflow:hidden">
+        <div style="padding:12px 16px;border-bottom:1px solid var(--border-subtle,#21262d);
+                    display:flex;align-items:center;justify-content:space-between">
+          <span style="font-weight:600;font-size:14px">
+            ${collabs.length} collaborator${collabs.length !== 1 ? 's' : ''}
+          </span>
+          <span style="font-size:12px;color:var(--text-muted,#8b949e)">
+            <span class="badge badge-perm-read" style="border-radius:4px;padding:1px 6px;font-size:10px">read</span>
+            <span class="badge badge-perm-write" style="border-radius:4px;padding:1px 6px;font-size:10px">write</span>
+            <span class="badge badge-perm-admin" style="border-radius:4px;padding:1px 6px;font-size:10px">admin</span>
+            <span class="badge badge-perm-owner" style="border-radius:4px;padding:1px 6px;font-size:10px">owner 👑</span>
+          </span>
+        </div>
+        ${renderTable(collabs)}
+      </div>
+    `;
+  } catch (e) {
+    if (e.message === 'auth') return; // musehub.js already showed the login form
+    document.getElementById('content').innerHTML =
+      `<p class="error">❌ ${escHtml(e.message)}</p>`;
+  }
+}
+
+load();
+{% endraw %}
+{% endblock %}
