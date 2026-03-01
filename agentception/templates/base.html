@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>{% block title %}AgentCeption{% endblock %}</title>
+
+  <!-- Dark-mode base styles — no external CSS framework -->
+  <link rel="stylesheet" href="/static/app.css" />
+
+  <!-- HTMX 2.x — server-driven hypermedia from CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/htmx.org@2.0.4/dist/htmx.min.js"
+          integrity="sha256-YADM5XNYL2VfHKqKBCPhwQlEGr8vG3FkFTzlECr/KIM="
+          crossorigin="anonymous" defer></script>
+
+  <!-- Alpine.js 3.x — lightweight reactivity from CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.3/dist/cdn.min.js"
+          defer></script>
+
+  {% block head %}{% endblock %}
+</head>
+<body class="layout">
+
+  <nav class="topnav" role="navigation" aria-label="Main navigation">
+    <span class="brand">⚡ AgentCeption</span>
+    <a href="/"
+       class="{% if request.url.path == '/' %}active{% endif %}">
+      Overview
+    </a>
+    <a href="/agents"
+       class="{% if request.url.path.startswith('/agents') %}active{% endif %}">
+      Agents
+    </a>
+    <a href="/telemetry"
+       class="{% if request.url.path.startswith('/telemetry') %}active{% endif %}">
+      Telemetry
+    </a>
+    <a href="/roles"
+       class="{% if request.url.path.startswith('/roles') %}active{% endif %}">
+      Roles
+    </a>
+    <a href="/controls"
+       class="{% if request.url.path.startswith('/controls') %}active{% endif %}">
+      Controls
+    </a>
+  </nav>
+
+  <main role="main">
+    {% block content %}
+    <div class="card">
+      <p class="text-muted">Welcome to <strong>AgentCeption</strong> — the Maestro pipeline dashboard.</p>
+      <p class="mt-1 text-muted">Select a section from the navigation above to get started.</p>
+    </div>
+    {% endblock %}
+  </main>
+
+</body>
+</html>
