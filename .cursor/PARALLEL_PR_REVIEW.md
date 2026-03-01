@@ -407,19 +407,42 @@ STEP 3 — CHECKOUT & SYNC (only if STEP 2 shows the PR is open and unreviewed):
         git checkout -- <file>   ← discard checkout-introduced changes, then retry merge
     - Then retry: git merge origin/dev
 
-STEP 4 — REGRESSION CHECK (before review):
-  Check whether any commits that landed on dev since this branch diverged
-  overlap with files this PR modifies. If overlap exists, run the full test
-  suite — not just the PR-specific tests — to confirm no regressions.
+STEP 4 — TARGETED TEST SCOPING (before review):
+  Identify which test files to run based on what this PR changes.
+  NEVER run the full suite — that is CI's job, not an agent's job.
 
-  # What did dev gain since this branch diverged?
+  # 1. What Python files does this PR change?
+  CHANGED_PY=$(git diff origin/dev...HEAD --name-only | grep '\.py$')
+  echo "$CHANGED_PY"
+
+  # 2. What commits landed on dev since this branch diverged?
   git log --oneline HEAD..origin/dev
 
-  # Do any of those commits touch the same files?
-  git diff HEAD..origin/dev --name-only
+  # 3. Derive test targets using module-name convention:
+  #    maestro/core/pipeline.py        → tests/test_pipeline.py
+  #    maestro/services/muse_vcs.py    → tests/test_muse_vcs.py
+  #    maestro/api/routes/muse.py      → tests/test_muse.py (or e2e/test_muse_e2e_harness.py)
+  #    storpheus/music_service.py      → storpheus/test_music_service.py
+  #    tests/test_*.py (already a test)→ run it directly
+  #
+  #    Quick reference (from .cursorrules):
+  #      maestro/core/intent*.py           → tests/test_intent*.py
+  #      maestro/core/pipeline.py          → tests/test_pipeline.py
+  #      maestro/core/maestro_handlers.py  → tests/test_maestro_handlers.py
+  #      maestro/services/muse_*.py        → tests/test_muse_*.py
+  #      maestro/mcp/                      → tests/test_mcp.py
+  #      maestro/daw/                      → tests/test_daw_adapter.py
+  #      storpheus/music_service.py        → storpheus/test_gm_resolution.py + storpheus/test_*.py
+  #
+  # 4. If the PR only changes .cursor/, docs/, or other non-.py files: skip pytest entirely.
+  #    mypy is irrelevant too. The review is markdown-content focused.
 
-  # If overlap found, run full suite:
-  cd "$REPO" && docker compose exec maestro sh -c "PYTHONPATH=/worktrees/$WTNAME pytest /worktrees/$WTNAME/tests/ -v --timeout=60"
+  # 5. Run only the derived targets (substitute real paths):
+  cd "$REPO" && docker compose exec maestro sh -c \
+    "PYTHONPATH=/worktrees/$WTNAME pytest \
+     /worktrees/$WTNAME/tests/test_<module1>.py \
+     /worktrees/$WTNAME/tests/test_<module2>.py \
+     -v"
 
 STEP 5 — REVIEW:
   Read and follow every step in .github/PR_REVIEW_PROMPT.md exactly.

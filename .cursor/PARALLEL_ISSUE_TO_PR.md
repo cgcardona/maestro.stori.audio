@@ -406,10 +406,27 @@ STEP 3 — IMPLEMENT (only if STEP 2 found nothing):
     - Every public function signature is a contract. Register new result types in docs/reference/type_contracts.md.
 
   pytest — TARGETED TESTS ONLY (never the full suite):
-    cd "$REPO" && docker compose exec maestro sh -c "PYTHONPATH=/worktrees/$WTNAME pytest /worktrees/$WTNAME/tests/path/to/test_file.py -v"
+  The full suite takes several minutes and is CI's job, not an agent's job.
+  Derive test targets from what you changed using module-name convention:
 
-  The full suite takes several minutes and is the responsibility of developers/CI,
-  not parallel agents. Run only the test files directly related to your changes.
+    maestro/core/pipeline.py          → tests/test_pipeline.py
+    maestro/core/intent*.py           → tests/test_intent*.py
+    maestro/core/maestro_handlers.py  → tests/test_maestro_handlers.py
+    maestro/services/muse_*.py        → tests/test_muse_*.py
+    maestro/api/routes/muse.py        → tests/test_muse.py
+    maestro/mcp/                      → tests/test_mcp.py
+    maestro/daw/                      → tests/test_daw_adapter.py
+    storpheus/music_service.py        → storpheus/test_gm_resolution.py + storpheus/test_*.py
+
+  Run only the derived targets:
+    cd "$REPO" && docker compose exec maestro sh -c \
+      "PYTHONPATH=/worktrees/$WTNAME pytest \
+       /worktrees/$WTNAME/tests/test_<module1>.py \
+       /worktrees/$WTNAME/tests/test_<module2>.py \
+       -v"
+
+  If you added a new module with no existing test file, create tests/test_<module>.py
+  and run that. Never fall back to tests/ as a directory.
 
   DOCS — non-negotiable, same commit as code:
     - Docstrings on every new module, class, and public function (why + contract, not what)

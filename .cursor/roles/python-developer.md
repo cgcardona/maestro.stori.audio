@@ -46,7 +46,23 @@ Run in order — types before tests:
 
 ```
 docker compose exec maestro mypy maestro/ tests/
-docker compose exec maestro pytest <affected_file> -v
 ```
 
+Then run **only the test files for modules you changed** — never `tests/` as a directory:
+
+```
+# Module-name convention:
+# maestro/core/pipeline.py          → tests/test_pipeline.py
+# maestro/core/intent*.py           → tests/test_intent*.py
+# maestro/core/maestro_handlers.py  → tests/test_maestro_handlers.py
+# maestro/services/muse_*.py        → tests/test_muse_*.py
+# maestro/api/routes/muse.py        → tests/test_muse.py
+# maestro/mcp/                      → tests/test_mcp.py
+# maestro/daw/                      → tests/test_daw_adapter.py
+# storpheus/music_service.py        → storpheus/test_gm_resolution.py
+
+docker compose exec maestro pytest tests/test_<your_module>.py -v
+```
+
+The full suite is CI's job. Running it in every agent session doesn't scale.
 Never skip mypy. A test that passes with a type error is a ticking clock.
