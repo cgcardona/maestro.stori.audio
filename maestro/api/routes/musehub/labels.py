@@ -25,7 +25,7 @@ from typing import TYPE_CHECKING
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
-from sqlalchemy import delete, select, text
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from maestro.auth.dependencies import TokenClaims, optional_token, require_valid_token
@@ -114,9 +114,9 @@ async def _get_label_or_404(db: AsyncSession, repo_id: str, label_id: str) -> La
     """
     result = await db.execute(
         text(
-            "SELECT label_id, repo_id, name, color, description "
+            "SELECT id AS label_id, repo_id, name, color, description "
             "FROM musehub_labels "
-            "WHERE label_id = :label_id AND repo_id = :repo_id"
+            "WHERE id = :label_id AND repo_id = :repo_id"
         ),
         {"label_id": label_id, "repo_id": repo_id},
     )
@@ -150,7 +150,7 @@ async def list_labels(
 
     result = await db.execute(
         text(
-            "SELECT label_id, repo_id, name, color, description "
+            "SELECT id AS label_id, repo_id, name, color, description "
             "FROM musehub_labels "
             "WHERE repo_id = :repo_id "
             "ORDER BY name ASC"
@@ -200,8 +200,8 @@ async def create_label(
     label_id = str(uuid.uuid4())
     await db.execute(
         text(
-            "INSERT INTO musehub_labels (label_id, repo_id, name, color, description) "
-            "VALUES (:label_id, :repo_id, :name, :color, :description)"
+            "INSERT INTO musehub_labels (id, repo_id, name, color, description, created_at) "
+            "VALUES (:label_id, :repo_id, :name, :color, :description, CURRENT_TIMESTAMP)"
         ),
         {
             "label_id": label_id,
@@ -251,7 +251,7 @@ async def update_label(
         existing = await db.execute(
             text(
                 "SELECT 1 FROM musehub_labels "
-                "WHERE repo_id = :repo_id AND name = :name AND label_id != :label_id"
+                "WHERE repo_id = :repo_id AND name = :name AND id != :label_id"
             ),
             {"repo_id": repo_id, "name": body.name, "label_id": label_id},
         )
@@ -265,7 +265,7 @@ async def update_label(
         text(
             "UPDATE musehub_labels "
             "SET name = :name, color = :color, description = :description "
-            "WHERE label_id = :label_id AND repo_id = :repo_id"
+            "WHERE id = :label_id AND repo_id = :repo_id"
         ),
         {
             "name": new_name,
@@ -314,7 +314,7 @@ async def delete_label(
         {"label_id": label_id},
     )
     await db.execute(
-        text("DELETE FROM musehub_labels WHERE label_id = :label_id AND repo_id = :repo_id"),
+        text("DELETE FROM musehub_labels WHERE id = :label_id AND repo_id = :repo_id"),
         {"label_id": label_id, "repo_id": repo_id},
     )
     await db.commit()
@@ -527,8 +527,8 @@ async def seed_default_labels(db: AsyncSession, repo_id: str) -> None:
             continue  # Already seeded — skip.
         await db.execute(
             text(
-                "INSERT INTO musehub_labels (label_id, repo_id, name, color, description) "
-                "VALUES (:label_id, :repo_id, :name, :color, :description)"
+                "INSERT INTO musehub_labels (id, repo_id, name, color, description, created_at) "
+                "VALUES (:label_id, :repo_id, :name, :color, :description, CURRENT_TIMESTAMP)"
             ),
             {
                 "label_id": str(uuid.uuid4()),
