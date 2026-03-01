@@ -19,6 +19,7 @@ from fastapi import APIRouter
 from maestro.api.routes.musehub import (
     analysis,
     issues,
+    labels,
     milestones,
     objects,
     pull_requests,
@@ -26,6 +27,7 @@ from maestro.api.routes.musehub import (
     repos,
     search,
     social,
+    stash,
     sync,
     webhooks,
 )
@@ -38,6 +40,7 @@ router = APIRouter(
 # first and are not shadowed by the /{owner}/{repo_slug} wildcard route declared
 # last in repos.py.
 router.include_router(issues.router, tags=["Issues"])
+router.include_router(labels.router, tags=["Labels"])
 router.include_router(milestones.router, tags=["Milestones"])
 router.include_router(pull_requests.router, tags=["Pull Requests"])
 router.include_router(releases.router, tags=["Releases"])
@@ -47,6 +50,7 @@ router.include_router(search.router, tags=["Search"])
 router.include_router(analysis.router, tags=["Analysis"])
 router.include_router(webhooks.router, tags=["Webhooks"])
 router.include_router(social.router, tags=["Social"])
+router.include_router(stash.router, tags=["Stash"])
 # repos.router last — contains the /{owner}/{repo_slug} wildcard route.
 router.include_router(repos.router, tags=["Repos"])
 
