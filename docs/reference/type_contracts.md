@@ -8153,6 +8153,43 @@ as JSON by `GET /api/v1/musehub/repos/{repo_id}/objects/{object_id}/parse-midi`.
 
 ---
 
+### `UserActivityEventItem`
+
+**Path:** `maestro/models/musehub.py`
+
+`CamelModel` — A single event in a user's public activity feed. Uses the public API type vocabulary (`push`, `pull_request`, `issue`, `release`) rather than the internal DB `event_type` strings. `repo` is the human-readable `{owner}/{slug}` identifier.
+
+| Field | Type | Notes |
+|-------|------|-------|
+| `id` | `str` | Internal event UUID |
+| `type` | `str` | Public API type: `push` \| `pull_request` \| `issue` \| `release` |
+| `actor` | `str` | Username who triggered the event |
+| `repo` | `str` | `"{owner}/{slug}"` repo identifier for deep-linking |
+| `payload` | `dict[str, object]` | Event-specific structured data (e.g. commit SHA, PR title) |
+| `created_at` | `datetime` | UTC timestamp of the event |
+
+**Produced by:** `musehub_events.list_user_activity()` → `users.get_user_activity` route handler
+**Consumed by:** User profile activity tab; AI agents auditing a collaborator's work
+
+---
+
+### `UserActivityFeedResponse`
+
+**Path:** `maestro/models/musehub.py`
+
+`CamelModel` — Cursor-paginated public activity feed returned by `GET /api/v1/musehub/users/{username}/activity`. Covers all public repos the user has contributed to; private repos are included only for the authenticated owner.
+
+| Field | Type | Notes |
+|-------|------|-------|
+| `events` | `list[UserActivityEventItem]` | Events newest-first, up to `limit` items |
+| `next_cursor` | `str \| None` | Pass as `before_id` in the next request; `None` on the last page |
+| `type_filter` | `str \| None` | Echoes the `type` query param, or `None` when all types are shown |
+
+**Produced by:** `musehub_events.list_user_activity()` → `users.get_user_activity` route handler
+**Consumed by:** User profile activity tab; AI agents scanning a collaborator's recent activity
+
+---
+
 ### `IssueCommentResponse`
 
 **Path:** `maestro/models/musehub.py`

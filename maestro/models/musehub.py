@@ -1544,6 +1544,59 @@ class ActivityFeedResponse(CamelModel):
     event_type_filter: str | None = None
 
 
+# ── User public activity feed models ─────────────────────────────────────────
+
+
+class UserActivityEventItem(CamelModel):
+    """A single event in a user's public activity feed.
+
+    Uses the public API type vocabulary (push, pull_request, issue, release)
+    rather than the internal DB event_type vocabulary (commit_pushed, pr_opened, …).
+    ``repo`` is the human-readable "{owner}/{slug}" identifier for deep-linking
+    to the repo page without exposing internal repo_id UUIDs.
+    ``payload`` carries event-specific structured data (e.g. branch name and
+    head commit message for push events, PR number and title for pull_request events).
+    """
+
+    id: str = Field(..., description="Internal UUID for this event")
+    type: str = Field(
+        ...,
+        description="Public event type: push | pull_request | issue | release | push",
+    )
+    actor: str = Field(..., description="Username who triggered the event")
+    repo: str = Field(..., description="Repo identifier as '{owner}/{slug}'")
+    payload: dict[str, object] = Field(
+        default_factory=dict,
+        description="Event-specific structured data for deep-link rendering",
+    )
+    created_at: datetime = Field(..., description="Event creation timestamp (ISO-8601 UTC)")
+
+
+class UserActivityFeedResponse(CamelModel):
+    """Cursor-paginated public activity feed for a Muse Hub user (newest-first).
+
+    ``events`` contains up to ``limit`` events for the given user, filtered to
+    public repos only (or all repos when the caller is the profile owner).
+    ``next_cursor`` is the event UUID to pass as ``before_id`` in the next
+    request to fetch the subsequent page; None when there are no more events.
+    ``type_filter`` echoes back the ``type`` query param, or None when all types
+    are shown.
+
+    Agent use case: stream this feed to build a real-time view of what a
+    collaborator has been working on across all their public repos.
+    """
+
+    events: list[UserActivityEventItem]
+    next_cursor: str | None = Field(
+        None,
+        description="Pass as before_id to fetch the next page; None on the last page",
+    )
+    type_filter: str | None = Field(
+        None,
+        description="Active type filter value, or None when all types are shown",
+    )
+
+
 class SimilarCommitResponse(CamelModel):
     """A single result from a MuseHub semantic similarity search.
 
