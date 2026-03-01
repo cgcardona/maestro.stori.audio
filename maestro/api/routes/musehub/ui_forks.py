@@ -159,12 +159,10 @@ async def forks_page(
 ) -> Response:
     """Render the fork network page or return structured fork data as JSON.
 
-    HTML (default): renders an interactive SVG DAG where each node represents
-    a fork of the source repo.  Edges are coloured by divergence (commits
-    ahead of the parent).  Each node shows the fork owner's avatar, last
-    commit message, commits ahead/behind, and star count.  Action buttons
-    link to the Compare page and open a PR against the parent ("Contribute
-    upstream").
+    HTML (default): renders an SSR fork table and an interactive SVG DAG where
+    each node represents a fork of the source repo.  The table is rendered
+    server-side by Jinja2; the DAG is driven by JavaScript using fork data
+    injected as ``window.__forkNetwork`` (no async fetch needed).
 
     JSON (``Accept: application/json`` or ``?format=json``): returns
     ``ForkNetworkResponse`` with a recursive ``ForkNetworkNode`` tree — the
@@ -187,6 +185,11 @@ async def forks_page(
         source_commit_count=source_commit_count,
     )
 
+    # Pre-serialize the full network for the SVG DAG JavaScript renderer.
+    # Jinja2's tojson filter cannot serialize Pydantic models directly, so we
+    # convert to a plain dict (camelCase, JSON-safe) before passing to the template.
+    fork_network_json: dict[str, object] = fork_network.model_dump(by_alias=True, mode="json")
+
     return await negotiate_response(
         request=request,
         template_name="musehub/pages/forks.html",
@@ -197,6 +200,8 @@ async def forks_page(
             "base_url": base_url,
             "current_page": "forks",
             "total_forks": fork_network.total_forks,
+            "forks": fork_network.root.children,
+            "fork_network_json": fork_network_json,
             "breadcrumb_data": [
                 {"label": owner, "url": f"/musehub/ui/{owner}"},
                 {"label": repo_slug, "url": base_url},
