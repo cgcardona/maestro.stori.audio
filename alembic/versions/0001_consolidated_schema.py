@@ -35,6 +35,7 @@ Single source-of-truth migration for Maestro. Creates:
   - musehub_profiles (public user profile pages — bio, avatar, pinned repos)
   - musehub_sessions (recording session metadata — participants, intent, commits)
   - musehub_releases (published version releases with download packages)
+  - musehub_release_assets (downloadable file attachments per release with download counts)
   - musehub_webhooks (registered event-driven webhook subscriptions)
   - musehub_webhook_deliveries (delivery log per dispatch attempt)
   - musehub_render_jobs (async audio render pipeline)
@@ -285,6 +286,8 @@ def upgrade() -> None:
         sa.Column("key_signature", sa.String(50), nullable=True),
         sa.Column("tempo_bpm", sa.Integer(), nullable=True),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP")),
+        # Soft-delete timestamp; non-null means the repo is logically deleted
+        sa.Column("deleted_at", sa.DateTime(timezone=True), nullable=True),
         sa.PrimaryKeyConstraint("repo_id"),
         sa.UniqueConstraint("owner", "slug", name="uq_musehub_repos_owner_slug"),
     )
@@ -667,6 +670,35 @@ def upgrade() -> None:
     op.create_index("ix_musehub_releases_repo_id", "musehub_releases", ["repo_id"])
     op.create_index("ix_musehub_releases_tag", "musehub_releases", ["tag"])
 
+    # ── Muse Hub — release assets ─────────────────────────────────────────
+    op.create_table(
+        "musehub_release_assets",
+        sa.Column("asset_id", sa.String(36), nullable=False),
+        sa.Column("release_id", sa.String(36), nullable=False),
+        sa.Column("repo_id", sa.String(36), nullable=False),
+        sa.Column("name", sa.String(500), nullable=False),
+        sa.Column("label", sa.String(255), nullable=False, server_default=""),
+        sa.Column("content_type", sa.String(128), nullable=False, server_default=""),
+        sa.Column("size", sa.Integer(), nullable=False, server_default="0"),
+        sa.Column("download_url", sa.String(2048), nullable=False),
+        sa.Column("download_count", sa.Integer(), nullable=False, server_default="0"),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            nullable=False,
+            server_default=sa.text("CURRENT_TIMESTAMP"),
+        ),
+        sa.ForeignKeyConstraint(
+            ["release_id"], ["musehub_releases.release_id"], ondelete="CASCADE"
+        ),
+        sa.PrimaryKeyConstraint("asset_id"),
+    )
+    op.create_index(
+        "ix_musehub_release_assets_release_id", "musehub_release_assets", ["release_id"]
+    )
+    op.create_index(
+        "ix_musehub_release_assets_repo_id", "musehub_release_assets", ["repo_id"]
+    )
 
     # ── Muse Hub — social layer (Phase 4) ────────────────────────────────
 
@@ -1068,6 +1100,15 @@ def downgrade() -> None:
     # Muse Hub — webhooks (depends on repos)
     op.drop_index("ix_musehub_webhooks_repo_id", table_name="musehub_webhooks")
     op.drop_table("musehub_webhooks")
+
+    # Muse Hub — release assets (depends on musehub_releases)
+    op.drop_index(
+        "ix_musehub_release_assets_repo_id", table_name="musehub_release_assets"
+    )
+    op.drop_index(
+        "ix_musehub_release_assets_release_id", table_name="musehub_release_assets"
+    )
+    op.drop_table("musehub_release_assets")
 
     # Muse Hub — releases (depends on repos)
     op.drop_index("ix_musehub_releases_tag", table_name="musehub_releases")
