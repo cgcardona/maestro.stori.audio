@@ -79,5 +79,11 @@ ignore_missing_imports = true
 module = ["boto3", "botocore.*", "gradio_client", "mido", "yaml"]
 ignore_missing_imports = true
 
+[[tool.mypy.overrides]]
+# lint_migration and stress_test are injected via sys.path at test-time (tools/ and scripts/e2e/).
+# They are not importable at mypy's analysis phase, so suppress the missing-import error.
+module = ["lint_migration", "stress_test"]
+ignore_missing_imports = true
+
 [tool.hatch.build.targets.wheel]
 packages = ["maestro"]
