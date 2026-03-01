@@ -1,0 +1,32 @@
+{% from "musehub/macros/empty_state.html" import empty_state %}
+{# Fragment rendered for HTMX filter/pagination swaps on the notifications page.
+   Also included inline by the full page template so the initial render and
+   subsequent HTMX swaps produce identical markup. #}
+{% if notifications %}
+  {% for notif in notifications %}
+  <div class="notification-row{% if not notif.isRead %} notification-unread{% endif %}"
+       id="notif-{{ notif.notifId }}"
+       style="{% if not notif.isRead %}border-left:3px solid var(--color-accent);{% else %}border-left:3px solid transparent;opacity:0.75;{% endif %}padding:var(--space-3);display:flex;align-items:flex-start;gap:var(--space-3)">
+    <span class="notif-type-badge notif-{{ notif.eventType }}"
+          style="flex-shrink:0;font-size:12px;padding:2px 8px;border-radius:10px;background:var(--bg-tertiary);color:var(--text-muted)">{{ notif.eventType }}</span>
+    <div class="notif-body" style="flex:1;min-width:0">
+      <strong>{{ notif.actor }}</strong>
+      {{ notif.payload.description | default(notif.eventType) }}
+      {% if notif.repoId %}
+        in <a href="/musehub/ui/{{ notif.payload.owner | default('') }}/{{ notif.payload.slug | default('') }}"
+              style="color:var(--color-accent)">{{ notif.payload.repoName | default(notif.repoId) }}</a>
+      {% endif %}
+    </div>
+    <span class="notif-date" style="white-space:nowrap;font-size:12px;color:var(--text-muted);flex-shrink:0">{{ notif.createdAt | fmtrelative }}</span>
+    {% if not notif.isRead %}
+    <button class="mark-read-btn"
+            data-notif-id="{{ notif.notifId }}"
+            onclick="markOneRead(this)"
+            title="Mark as read"
+            style="background:none;border:1px solid var(--border-color);border-radius:50%;width:22px;height:22px;cursor:pointer;color:var(--text-muted);font-size:12px;line-height:1;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;margin-left:var(--space-2)">&#10003;</button>
+    {% endif %}
+  </div>
+  {% endfor %}
+{% else %}
+  {{ empty_state("🔔", "No notifications", "You're all caught up!") }}
+{% endif %}

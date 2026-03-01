@@ -1,0 +1,41 @@
+{% macro pagination(page, total_pages, base_url, extra_params={}, target="#notification-rows") %}
+{# Renders prev/next pagination links for HTMX-aware SSR pages.
+   extra_params is a dict of additional query-string values to carry forward
+   (e.g. active filters) so navigation doesn't reset the filter state.
+   target is the HTMX hx-target selector for in-place swaps. #}
+{% if total_pages > 1 %}
+<div style="display:flex;align-items:center;gap:var(--space-2);justify-content:center;padding:var(--space-3)">
+  {% set qs_parts = [] %}
+  {% for k, v in extra_params.items() if v %}
+    {% set _ = qs_parts.append(k ~ '=' ~ v) %}
+  {% endfor %}
+  {% set base_qs = qs_parts | join('&') %}
+
+  {% if page > 1 %}
+    {% set prev_qs = base_qs ~ ('&' if base_qs else '') ~ 'page=' ~ (page - 1) %}
+    <a href="{{ base_url }}?{{ prev_qs }}"
+       class="btn btn-secondary"
+       style="font-size:12px;padding:4px 10px"
+       hx-get="{{ base_url }}?{{ prev_qs }}"
+       hx-target="{{ target }}"
+       hx-push-url="true">&#8592; Prev</a>
+  {% else %}
+    <button class="btn btn-secondary" style="font-size:12px;padding:4px 10px;opacity:0.4" disabled>&#8592; Prev</button>
+  {% endif %}
+
+  <span style="font-size:13px;color:var(--text-muted)">Page {{ page }} of {{ total_pages }}</span>
+
+  {% if page < total_pages %}
+    {% set next_qs = base_qs ~ ('&' if base_qs else '') ~ 'page=' ~ (page + 1) %}
+    <a href="{{ base_url }}?{{ next_qs }}"
+       class="btn btn-secondary"
+       style="font-size:12px;padding:4px 10px"
+       hx-get="{{ base_url }}?{{ next_qs }}"
+       hx-target="{{ target }}"
+       hx-push-url="true">Next &#8594;</a>
+  {% else %}
+    <button class="btn btn-secondary" style="font-size:12px;padding:4px 10px;opacity:0.4" disabled>Next &#8594;</button>
+  {% endif %}
+</div>
+{% endif %}
+{% endmacro %}

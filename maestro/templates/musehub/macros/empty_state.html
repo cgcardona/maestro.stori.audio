@@ -1,0 +1,16 @@
+{% macro empty_state(icon, title, description, action_url="", action_label="") %}
+{# Reusable empty-state block for SSR pages.
+   icon:         Emoji or character for the large centred icon (e.g. "🔔").
+   title:        Short heading (e.g. "No notifications").
+   description:  One-sentence explanation of why the state is empty.
+   action_url:   Optional CTA link href.
+   action_label: Optional CTA link text; shown only when action_url is set. #}
+<div class="empty-state">
+  <div class="empty-icon">{{ icon }}</div>
+  <p class="empty-title">{{ title }}</p>
+  <p class="empty-desc">{{ description }}</p>
+  {% if action_url and action_label %}
+    <a href="{{ action_url }}" class="btn btn-primary">{{ action_label }}</a>
+  {% endif %}
+</div>
+{% endmacro %}

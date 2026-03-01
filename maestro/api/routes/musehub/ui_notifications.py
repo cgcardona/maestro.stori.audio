@@ -4,23 +4,27 @@ Serves the authenticated notification inbox at ``/musehub/ui/notifications``.
 
 Endpoint:
   GET /musehub/ui/notifications
-    - HTML (default): paginated, filterable notification inbox with
-      mark-as-read and mark-all-read controls.
+    - HTML (default): full SSR paginated, filterable notification inbox
+      with HTMX filter swaps.  Authenticated users see their notifications
+      server-side rendered on the first load; unauthenticated users see a
+      login prompt.
+    - HTMX (``HX-Request: true``): returns only the notification rows
+      fragment so the filter form can swap the list in-place.
     - JSON (``?format=json`` or ``Accept: application/json``): structured
       ``NotificationsPageResponse`` for agent consumption.
 
 Query parameters (HTML and JSON):
-  type        Filter by notification event type (e.g. ``mention``, ``watch``,
-              ``fork``).  Omit to show all types.
-  unread_only Show only unread notifications (default: ``false``).
-  page        Page number (1-indexed, default: 1).
-  per_page    Items per page (1–100, default: 25).
-  format      Force ``json`` response regardless of Accept header.
+  type_filter  Filter by notification event type (e.g. ``mention``, ``watch``,
+               ``fork``).  Omit to show all types.
+  unread_only  Show only unread notifications (default: ``false``).
+  page         Page number (1-indexed, default: 1).
+  per_page     Items per page (1–100, default: 25).
+  format       Force ``json`` response regardless of Accept header.
 
-Auth: JWT required for JSON responses (personal data); the HTML shell is
-served without auth so the browser can display a JWT entry prompt for users
-who are not yet authenticated.  Client-side JavaScript enforces auth via the
-``localStorage`` token before fetching notification data from the API.
+Auth: JWT is optional for HTML responses.  When a valid JWT is present the
+handler fetches and renders notification data server-side.  When absent, the
+page renders a login prompt.  The JSON path enforces auth directly because
+there is no HTML shell to fall back to.
 
 Auto-discovered by ``maestro.api.routes.musehub.__init__`` because this
 module exposes a ``router`` attribute.  No changes to ``__init__.py`` needed.
@@ -28,7 +32,7 @@ module exposes a ``router`` attribute.  No changes to ``__init__.py`` needed.
 from __future__ import annotations
 
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -41,6 +45,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.responses import Response
 
+from maestro.api.routes.musehub.htmx_helpers import htmx_fragment_or_full
 from maestro.api.routes.musehub.negotiate import negotiate_response
 from maestro.auth.dependencies import TokenClaims, optional_token
 from maestro.db import get_db
@@ -52,6 +57,53 @@ router = APIRouter(prefix="/musehub/ui", tags=["musehub-ui-notifications"])
 
 _TEMPLATE_DIR = Path(__file__).parent.parent.parent.parent / "templates"
 templates = Jinja2Templates(directory=str(_TEMPLATE_DIR))
+
+# Register a relative-time filter so templates can render ``created_at``
+# strings as human-readable durations without a client-side JavaScript call.
+_EVENT_TYPES = [
+    "comment",
+    "mention",
+    "pr_opened",
+    "pr_merged",
+    "issue_opened",
+    "issue_closed",
+    "new_commit",
+    "new_follower",
+    "watch",
+    "fork",
+]
+
+
+def _fmt_relative(value: str) -> str:
+    """Format an ISO 8601 datetime string as a human-readable relative duration.
+
+    Used as a Jinja2 template filter (``| fmtrelative``) so notification
+    timestamps are displayed as "5m ago" instead of raw ISO strings.
+
+    Handles both tz-aware (e.g. "2026-03-01T19:00:00+00:00") and tz-naive
+    (e.g. "2026-03-01T19:00:00") strings so SQLite — which strips timezone info
+    on roundtrip — doesn't cause a TypeError at comparison time.
+    Returns the raw value unchanged if parsing fails.
+    """
+    try:
+        dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        if dt.tzinfo is not None:
+            now: datetime = datetime.now(timezone.utc)
+        else:
+            now = datetime.now()
+        diff = int((now - dt).total_seconds())
+        if diff < 60:
+            return "just now"
+        if diff < 3600:
+            return f"{diff // 60}m ago"
+        if diff < 86400:
+            return f"{diff // 3600}h ago"
+        return f"{diff // 86400}d ago"
+    except (ValueError, AttributeError):
+        return str(value)
+
+
+templates.env.filters["fmtrelative"] = _fmt_relative
 
 
 # ---------------------------------------------------------------------------
@@ -121,7 +173,7 @@ class NotificationsPageResponse(BaseModel):
 )
 async def notifications_page(
     request: Request,
-    type: str | None = Query(
+    type_filter: str | None = Query(
         None,
         description="Filter by notification event type (e.g. mention, watch, fork)",
     ),
@@ -134,14 +186,18 @@ async def notifications_page(
     db: AsyncSession = Depends(get_db),
     claims: TokenClaims | None = Depends(optional_token),
 ) -> Response:
-    """Render the notification inbox or return paginated JSON for agent consumption.
+    """Render the SSR notification inbox or return paginated JSON for agents.
 
-    Why auth is split between HTML and JSON paths: the HTML shell is always
-    returned so the browser can display a JWT entry form for unauthenticated
-    users; the JSON path enforces auth directly because there is no shell to
-    fall back to and notification data is personal.
+    HTML path (default):
+      - Authenticated: fetches notifications server-side and renders the full
+        inbox with HTMX filter support.  HTMX requests (``HX-Request: true``)
+        return only the notification rows fragment for in-place swaps.
+      - Unauthenticated: renders a login prompt without touching the DB.
 
-    Filters are applied additively: ``type`` narrows by event type and
+    JSON path (``?format=json`` or ``Accept: application/json``):
+      - Requires a valid JWT.  Returns ``NotificationsPageResponse``.
+
+    Filters applied additively: ``type_filter`` narrows by event type and
     ``unread_only`` further restricts to unread rows when both are supplied.
     """
     wants_json = _prefers_json(request, format)
@@ -154,34 +210,69 @@ async def notifications_page(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    context: dict[str, object] = {
-        "title": "Notifications",
-        "type_filter": type or "",
-        "unread_only": unread_only,
-        "page": page,
-        "per_page": per_page,
-        "current_page": "notifications",
-    }
-
-    json_data: NotificationsPageResponse | None = None
     if wants_json and claims is not None:
         user_id: str = claims.get("sub", "")
         json_data = await _build_notifications_page(
             db=db,
             user_id=user_id,
-            type_filter=type,
+            type_filter=type_filter,
             unread_only=unread_only,
             page=page,
             per_page=per_page,
         )
+        return await negotiate_response(
+            request=request,
+            template_name="musehub/pages/notifications.html",
+            context={},
+            templates=templates,
+            json_data=json_data,
+            format_param=format,
+        )
 
-    return await negotiate_response(
-        request=request,
-        template_name="musehub/pages/notifications.html",
-        context=context,
-        templates=templates,
-        json_data=json_data,
-        format_param=format,
+    # HTML path: SSR when authenticated, login prompt otherwise.
+    if claims is None:
+        ctx: dict[str, object] = {
+            "title": "Notifications",
+            "authenticated": False,
+            "current_page": "notifications",
+        }
+        return templates.TemplateResponse(
+            request, "musehub/pages/notifications.html", ctx
+        )
+
+    user_id = claims.get("sub", "")
+    notif_page = await _build_notifications_page(
+        db=db,
+        user_id=user_id,
+        type_filter=type_filter,
+        unread_only=unread_only,
+        page=page,
+        per_page=per_page,
+    )
+    # Serialize to camelCase dicts so templates access notif.notifId etc.
+    notif_dicts = [
+        n.model_dump(by_alias=True) for n in notif_page.notifications
+    ]
+    ctx = {
+        "title": "Notifications",
+        "authenticated": True,
+        "current_page": "notifications",
+        "notifications": notif_dicts,
+        "total": notif_page.total,
+        "unread_count": notif_page.unread_count,
+        "type_filter": type_filter,
+        "unread_only": unread_only,
+        "page": page,
+        "per_page": per_page,
+        "total_pages": notif_page.total_pages,
+        "event_types": _EVENT_TYPES,
+    }
+    return await htmx_fragment_or_full(
+        request,
+        templates,
+        ctx,
+        full_template="musehub/pages/notifications.html",
+        fragment_template="musehub/fragments/notification_rows.html",
     )
 
 
