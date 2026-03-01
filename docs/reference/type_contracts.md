@@ -7849,6 +7849,84 @@ Full emotion map for a Muse repo ref. Returned by `GET /musehub/repos/{repo_id}/
 
 ---
 
+### EmotionVector8D
+
+**Location:** `maestro/models/musehub_analysis.py`
+**Kind:** Pydantic `CamelModel`
+
+Eight-axis emotion vector for a single Muse commit. All axes normalised to [0, 1]. Extends the four-axis `EmotionVector` with four additional perceptual dimensions required by the emotion-diff radar chart.
+
+| Field | Type | Range | Description |
+|-------|------|-------|-------------|
+| `valence` | `float` | [0, 1] | 0 = dark/negative, 1 = bright/positive |
+| `energy` | `float` | [0, 1] | 0 = passive/still, 1 = active/driving |
+| `tension` | `float` | [0, 1] | 0 = relaxed, 1 = tense/dissonant |
+| `complexity` | `float` | [0, 1] | 0 = sparse/simple, 1 = dense/complex |
+| `warmth` | `float` | [0, 1] | 0 = cold/sterile, 1 = warm/intimate |
+| `brightness` | `float` | [0, 1] | 0 = dark/dull, 1 = bright/shimmering |
+| `darkness` | `float` | [0, 1] | 0 = luminous, 1 = brooding/ominous |
+| `playfulness` | `float` | [0, 1] | 0 = serious/solemn, 1 = playful/whimsical |
+
+**Produced by:** `maestro.services.musehub_analysis._build_emotion_vector_8d()`
+**Consumed by:** `EmotionDiffResponse.base_emotion` and `EmotionDiffResponse.head_emotion`
+
+---
+
+### EmotionDelta8D
+
+**Location:** `maestro/models/musehub_analysis.py`
+**Kind:** Pydantic `CamelModel`
+
+Signed per-axis delta between two `EmotionVector8D` instances. Values are in [-1, 1]; positive means the head ref increased that axis relative to the base ref. Separate from `EmotionVector8D` because the delta allows negative values while absolute vectors are constrained to [0, 1].
+
+| Field | Type | Range | Description |
+|-------|------|-------|-------------|
+| `valence` | `float` | [-1, 1] | Δvalence (head − base) |
+| `energy` | `float` | [-1, 1] | Δenergy (head − base) |
+| `tension` | `float` | [-1, 1] | Δtension (head − base) |
+| `complexity` | `float` | [-1, 1] | Δcomplexity (head − base) |
+| `warmth` | `float` | [-1, 1] | Δwarmth (head − base) |
+| `brightness` | `float` | [-1, 1] | Δbrightness (head − base) |
+| `darkness` | `float` | [-1, 1] | Δdarkness (head − base) |
+| `playfulness` | `float` | [-1, 1] | Δplayfulness (head − base) |
+
+**Produced by:** `maestro.services.musehub_analysis.compute_emotion_diff()`
+**Consumed by:** `EmotionDiffResponse.delta`
+
+---
+
+### EmotionDiffResponse (musehub_analysis)
+
+**Location:** `maestro/models/musehub_analysis.py`
+**Kind:** Pydantic `CamelModel`
+
+Eight-axis emotional diff between two Muse commit refs. Returned by `GET /musehub/repos/{repo_id}/analysis/{ref}/emotion-diff?base={base_ref}`. Distinct from the `EmotionDiffResponse` in `musehub.py` (which is a 4-axis compare-page model); this is the dedicated analysis-endpoint model with a full 8D radar.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `repo_id` | `str` | Repo UUID |
+| `base_ref` | `str` | The ref used as comparison baseline |
+| `head_ref` | `str` | The ref being evaluated (the head) |
+| `computed_at` | `datetime` | When the diff was computed |
+| `base_emotion` | `EmotionVector8D` | 8-axis emotion vector for the base ref |
+| `head_emotion` | `EmotionVector8D` | 8-axis emotion vector for the head ref |
+| `delta` | `EmotionDelta8D` | Signed per-axis delta: head − base, range [-1, 1] |
+| `interpretation` | `str` | Auto-generated text describing the dominant emotional shifts |
+
+**Service function:** `maestro.services.musehub_analysis.compute_emotion_diff()`
+**Produced by:** `GET /api/v1/musehub/repos/{repo_id}/analysis/{ref}/emotion-diff?base={base_ref}`
+**Consumed by:** `muse emotion-diff` CLI command; MuseHub PR detail emotion radar; AI agents evaluating whether a commit changed the emotional character of a piece
+
+Agent call pattern:
+```python
+GET /api/v1/musehub/repos/{repo_id}/analysis/{head_ref}/emotion-diff?base={base_ref}
+# Returns EmotionDiffResponse — inspect delta.tension, delta.darkness etc.
+# A large positive delta.tension means the commit increased harmonic tension.
+# interpretation gives a natural-language summary of the top shifts.
+```
+
+---
+
 ## Muse Hub — Groove Check API Types (`maestro/models/musehub.py`)
 
 ### `GrooveCommitEntry`
