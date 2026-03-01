@@ -253,15 +253,15 @@ function renderTimeline() {
   }
 
   /* PR merge markers — vertical solid purple line with triangle cap.
-     NOTE: PRResponse currently only exposes createdAt (PR open date), not mergedAt.
-     Until the backend adds merged_at to PRResponse (see issue #332), markers are
-     positioned at PR creation time rather than merge time. */
+     Positioned at mergedAt when available (added in #349); falls back to createdAt
+     for any legacy PRs that pre-date the merged_at column. */
   if (layers.prs && mergedPRs.length > 0) {
     const visPRs = filterByWindow(mergedPRs, 'createdAt', tMin, tMax);
     visPRs.forEach(pr => {
-      const x     = tsToX(new Date(pr.createdAt).getTime(), tMin, tMax, svgW);
+      const mergeTs = pr.mergedAt ? new Date(pr.mergedAt).getTime() : new Date(pr.createdAt).getTime();
+      const x     = tsToX(mergeTs, tMin, tMax, svgW);
       const title = escHtml((pr.title || 'PR').substring(0, 50));
-      const ts    = new Date(pr.createdAt).toLocaleString();
+      const ts    = pr.mergedAt ? new Date(pr.mergedAt).toLocaleString() : new Date(pr.createdAt).toLocaleString();
       /* Triangle marker pointing down at PR_MARKER_Y */
       const ty = PR_MARKER_Y;
       markers += `

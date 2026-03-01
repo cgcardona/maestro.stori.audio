@@ -2301,6 +2301,112 @@ async def test_timeline_page_overlay_legend(
     assert "gold" in body.lower()
 
 
+@pytest.mark.anyio
+async def test_timeline_pr_markers_use_merged_at_for_positioning(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Timeline JS must use pr.mergedAt (falling back to pr.createdAt) for marker X position.
+
+    Regression test for issue #349: previously the overlay always used
+    createdAt, which positioned merge markers at PR *open* time instead of
+    merge time, sometimes off by days or weeks.
+    """
+    await _make_repo(db_session)
+    response = await client.get("/musehub/ui/testuser/test-beats/timeline")
+    assert response.status_code == 200
+    body = response.text
+    # The fix: JS should reference pr.mergedAt and fall back to pr.createdAt.
+    assert "pr.mergedAt" in body
+    assert "pr.createdAt" in body
+    # The tooltip timestamp must also use mergedAt.
+    assert "new Date(pr.mergedAt)" in body
+
+
+@pytest.mark.anyio
+async def test_pr_response_includes_merged_at_after_merge(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    auth_headers: dict[str, str],
+) -> None:
+    """PRResponse must expose merged_at set to the merge timestamp (not None) after merge.
+
+    Regression test for issue #349: before this fix merged_at was absent from
+    PRResponse, forcing the timeline to fall back to createdAt.
+    """
+    from datetime import datetime, timezone
+
+    from maestro.services import musehub_pull_requests, musehub_repository
+
+    repo_id = await _make_repo(db_session)
+
+    # Create two branches with commits so the merge can proceed.
+    import uuid as _uuid
+
+    from maestro.db import musehub_models as dbm
+
+    commit_a_id = _uuid.uuid4().hex
+    commit_main_id = _uuid.uuid4().hex
+
+    commit_a = dbm.MusehubCommit(
+        commit_id=commit_a_id,
+        repo_id=repo_id,
+        branch="feat/test-merge",
+        parent_ids=[],
+        message="test commit on feature branch",
+        author="tester",
+        timestamp=datetime.now(timezone.utc),
+    )
+    branch_a = dbm.MusehubBranch(
+        repo_id=repo_id, name="feat/test-merge", head_commit_id=commit_a_id
+    )
+    db_session.add(commit_a)
+    db_session.add(branch_a)
+
+    commit_main = dbm.MusehubCommit(
+        commit_id=commit_main_id,
+        repo_id=repo_id,
+        branch="main",
+        parent_ids=[],
+        message="initial commit on main",
+        author="tester",
+        timestamp=datetime.now(timezone.utc),
+    )
+    branch_main = dbm.MusehubBranch(
+        repo_id=repo_id, name="main", head_commit_id=commit_main_id
+    )
+    db_session.add(commit_main)
+    db_session.add(branch_main)
+    await db_session.flush()
+
+    pr = await musehub_pull_requests.create_pr(
+        db_session,
+        repo_id=repo_id,
+        title="Test merge PR",
+        from_branch="feat/test-merge",
+        to_branch="main",
+        body="",
+        author="tester",
+    )
+    await db_session.flush()
+
+    before_merge = datetime.now(timezone.utc)
+    merged_pr = await musehub_pull_requests.merge_pr(
+        db_session, repo_id, pr.pr_id, merge_strategy="merge_commit"
+    )
+    after_merge = datetime.now(timezone.utc)
+
+    assert merged_pr.merged_at is not None, "merged_at must be set after merge"
+    # merged_at must be a timezone-aware datetime between before and after the merge call.
+    merged_at = merged_pr.merged_at
+    if merged_at.tzinfo is None:
+        merged_at = merged_at.replace(tzinfo=timezone.utc)
+    assert before_merge <= merged_at <= after_merge, (
+        f"merged_at {merged_at} is outside the expected range [{before_merge}, {after_merge}]"
+    )
+    assert merged_pr.state == "merged"
+
+
 # ---------------------------------------------------------------------------
 # Embed player route tests (issue #244)
 # ---------------------------------------------------------------------------

@@ -355,6 +355,8 @@ class MusehubPullRequest(Base):
     to_branch: Mapped[str] = mapped_column(String(255), nullable=False)
     # Populated when state transitions to 'merged'
     merge_commit_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # Populated with the exact UTC timestamp when the PR is merged; None while open/closed
+    merged_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     # Display name or identifier of the user who opened this PR
     author: Mapped[str] = mapped_column(String(255), nullable=False, default="")
     created_at: Mapped[datetime] = mapped_column(

@@ -1140,6 +1140,29 @@ On failure: `success=False` plus `error` (and optionally `message`).
 
 ---
 
+#### `PRResponse`
+
+**Path:** `maestro/models/musehub.py`
+
+**Pydantic model** — Wire representation of a Muse Hub pull request.  Returned by the PR list, get, and merge endpoints.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `pr_id` | `str` | Internal UUID for this pull request |
+| `title` | `str` | PR title |
+| `body` | `str` | PR description (Markdown) |
+| `state` | `str` | `"open"`, `"merged"`, or `"closed"` |
+| `from_branch` | `str` | Source branch name |
+| `to_branch` | `str` | Target branch name |
+| `merge_commit_id` | `str \| None` | Merge commit ID; only set after merge |
+| `merged_at` | `datetime \| None` | UTC timestamp when the PR was merged; `None` while open or closed.  Used by the timeline overlay to position PR merge markers at the actual merge time rather than the PR creation date (#349). |
+| `author` | `str` | Display name or JWT sub of the PR opener |
+| `created_at` | `datetime` | PR creation timestamp (ISO-8601 UTC) |
+
+**Endpoints:** `POST /api/v1/musehub/repos/{repo_id}/pull-requests`, `GET /api/v1/musehub/repos/{repo_id}/pull-requests`, `GET /api/v1/musehub/repos/{repo_id}/pull-requests/{pr_id}`, `POST /api/v1/musehub/repos/{repo_id}/pull-requests/{pr_id}/merge`
+
+---
+
 #### `PRDiffDimensionScore`
 
 **Path:** `maestro/models/musehub.py`
