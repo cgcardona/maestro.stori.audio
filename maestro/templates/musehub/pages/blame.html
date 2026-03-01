@@ -1,0 +1,321 @@
+{% extends "musehub/base.html" %}
+
+{% block title %}{{ owner }}/{{ repo_slug }} — blame/{{ short_ref }}/{{ short_path }}{% endblock %}
+
+{% block breadcrumb %}
+  <a href="/musehub/ui/{{ owner }}">{{ owner }}</a> /
+  <a href="/musehub/ui/{{ owner }}/{{ repo_slug }}">{{ repo_slug }}</a> /
+  blame /
+  <a href="/musehub/ui/{{ owner }}/{{ repo_slug }}/tree/{{ ref }}">{{ short_ref }}</a> /
+  {{ short_path }}
+{% endblock %}
+
+{% block repo_nav %}{% include "musehub/partials/repo_nav.html" %}{% endblock %}
+
+{% block extra_css %}
+<style>
+.blame-header {
+  display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap;
+  gap: 12px; margin-bottom: 16px;
+}
+.blame-filter-bar {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  background: #161b22; border: 1px solid #30363d; border-radius: 8px;
+  padding: 10px 16px; margin-bottom: 16px;
+}
+.blame-filter-bar label { font-size: 13px; color: #8b949e; display: flex; align-items: center; gap: 6px; }
+.blame-filter-bar select,
+.blame-filter-bar input[type="number"] {
+  background: #21262d; color: #c9d1d9; border: 1px solid #30363d;
+  border-radius: 6px; padding: 5px 10px; font-size: 13px; min-width: 90px;
+}
+.blame-filter-bar select:hover,
+.blame-filter-bar input[type="number"]:hover { border-color: #58a6ff; }
+.blame-table-wrap {
+  border: 1px solid #30363d; border-radius: 8px; overflow: hidden; margin-bottom: 16px;
+}
+.blame-table {
+  width: 100%; border-collapse: collapse; background: #0d1117;
+  font-size: 13px;
+}
+.blame-table th {
+  background: #161b22; color: #8b949e; padding: 9px 14px;
+  text-align: left; font-weight: 600; font-size: 12px;
+  border-bottom: 1px solid #30363d; white-space: nowrap;
+}
+.blame-table td {
+  padding: 9px 14px; border-bottom: 1px solid #21262d; color: #c9d1d9;
+  vertical-align: middle;
+}
+.blame-table tr:last-child td { border-bottom: none; }
+.blame-table tr:hover td { background: #161b22; }
+.commit-sha {
+  font-family: monospace; font-size: 12px;
+  color: #58a6ff; text-decoration: none; white-space: nowrap;
+}
+.commit-sha:hover { text-decoration: underline; }
+.blame-author { font-size: 12px; color: #8b949e; }
+.blame-date { font-size: 12px; color: #8b949e; white-space: nowrap; }
+.blame-msg {
+  max-width: 240px; overflow: hidden; text-overflow: ellipsis;
+  white-space: nowrap; color: #e6edf3;
+}
+.pitch-badge {
+  display: inline-block; padding: 2px 8px;
+  border-radius: 12px; font-size: 11px; font-weight: 600;
+  background: #1f6feb33; color: #58a6ff; white-space: nowrap;
+}
+.track-badge {
+  display: inline-block; padding: 2px 8px;
+  border-radius: 12px; font-size: 11px; font-weight: 600;
+  background: #2ea04333; color: #3fb950; white-space: nowrap;
+}
+.beat-range { font-size: 12px; color: #8b949e; white-space: nowrap; }
+.velocity-bar {
+  display: inline-block; width: 60px; height: 6px;
+  background: #21262d; border-radius: 3px; vertical-align: middle;
+}
+.velocity-fill {
+  display: inline-block; height: 100%; border-radius: 3px;
+  background: #f0883e;
+}
+.blame-empty {
+  padding: 48px 16px; text-align: center; color: #8b949e;
+  font-size: 14px;
+}
+.blame-summary {
+  font-size: 13px; color: #8b949e; margin-bottom: 12px;
+}
+.blame-summary strong { color: #c9d1d9; }
+</style>
+{% endblock %}
+
+{% block page_data %}
+const repoId   = {{ repo_id | tojson }};
+const ref      = {{ ref | tojson }};
+const filePath = {{ path | tojson }};
+const owner    = {{ owner | tojson }};
+const repoSlug = {{ repo_slug | tojson }};
+const base     = {{ base_url | tojson }};
+const apiBase  = '/api/v1/musehub/repos/' + repoId;
+const initTrack     = {{ track | tojson }};
+const initBeatStart = {{ (beat_start | string) if beat_start is not none else 'null' }};
+const initBeatEnd   = {{ (beat_end | string) if beat_end is not none else 'null' }};
+{% endblock %}
+
+{% block page_script %}
+{% raw %}
+(function () {
+  // ── Pitch label helpers ───────────────────────────────────────────────────
+  const NOTE_NAMES = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
+  function pitchName(midi) {
+    return NOTE_NAMES[midi % 12] + Math.floor(midi / 12 - 1);
+  }
+
+  function escHtml(s) {
+    if (s === null || s === undefined) return '—';
+    return String(s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+
+  // ── Filter state ──────────────────────────────────────────────────────────
+  let currentTrack     = initTrack || '';
+  let currentBeatStart = initBeatStart;
+  let currentBeatEnd   = initBeatEnd;
+
+  // ── Build query string from current filters ───────────────────────────────
+  function buildQs() {
+    const parts = [];
+    if (filePath)          parts.push('path=' + encodeURIComponent(filePath));
+    if (currentTrack)      parts.push('track=' + encodeURIComponent(currentTrack));
+    if (currentBeatStart !== null && currentBeatStart !== '') {
+      parts.push('beatStart=' + currentBeatStart);
+    }
+    if (currentBeatEnd !== null && currentBeatEnd !== '') {
+      parts.push('beatEnd=' + currentBeatEnd);
+    }
+    return parts.length ? '?' + parts.join('&') : '';
+  }
+
+  // ── Blame table renderer ──────────────────────────────────────────────────
+  function renderBlameTable(entries, total) {
+    const content = document.getElementById('content');
+    if (entries.length === 0) {
+      content.innerHTML = `
+        <div class="blame-empty">
+          <p>&#x1F3B5; No blame entries found for this path and filter combination.</p>
+          <p style="font-size:12px;margin-top:8px">
+            Try removing track or beat range filters, or check that the path is correct.
+          </p>
+        </div>`;
+      return;
+    }
+
+    const rows = entries.map(e => {
+      const shortSha = (e.commitId || '').substring(0, 8);
+      const commitUrl = base + '/commits/' + encodeURIComponent(e.commitId || '');
+      const velPct = Math.round(((e.noteVelocity || 0) / 127) * 100);
+      const dateStr = e.timestamp
+        ? new Date(e.timestamp).toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'})
+        : '—';
+      return `
+        <tr>
+          <td>
+            <a class="commit-sha" href="${commitUrl}">${escHtml(shortSha)}</a>
+          </td>
+          <td class="blame-msg" title="${escHtml(e.commitMessage)}">${escHtml(e.commitMessage)}</td>
+          <td class="blame-author">${escHtml(e.author)}</td>
+          <td class="blame-date">${dateStr}</td>
+          <td><span class="track-badge">${escHtml(e.track)}</span></td>
+          <td><span class="pitch-badge">${escHtml(pitchName(e.notePitch || 0))}</span></td>
+          <td class="beat-range">${(e.beatStart || 0).toFixed(2)} – ${(e.beatEnd || 0).toFixed(2)}</td>
+          <td>
+            <div class="velocity-bar" title="Velocity ${e.noteVelocity}">
+              <div class="velocity-fill" style="width:${velPct}%"></div>
+            </div>
+            <span style="font-size:11px;color:#8b949e;margin-left:4px">${e.noteVelocity}</span>
+          </td>
+          <td style="font-size:12px;color:#8b949e">${(e.noteDurationBeats || 0).toFixed(2)}b</td>
+        </tr>`;
+    }).join('');
+
+    content.innerHTML = `
+      <div class="blame-summary">
+        Showing <strong>${entries.length}</strong> of <strong>${total}</strong> blame entries
+        for <code style="background:#161b22;padding:2px 6px;border-radius:4px">${escHtml(filePath)}</code>
+        at <code style="background:#161b22;padding:2px 6px;border-radius:4px">${escHtml((ref||'').substring(0,12))}</code>
+      </div>
+      <div class="blame-table-wrap">
+        <table class="blame-table">
+          <thead>
+            <tr>
+              <th>Commit</th>
+              <th>Message</th>
+              <th>Author</th>
+              <th>Date</th>
+              <th>Track</th>
+              <th>Pitch</th>
+              <th>Beat range</th>
+              <th>Velocity</th>
+              <th>Duration</th>
+            </tr>
+          </thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>`;
+  }
+
+  // ── Main data loader ───────────────────────────────────────────────────────
+  async function load() {
+    document.getElementById('content').innerHTML =
+      '<p class="loading">Loading blame data&#8230;</p>';
+    try {
+      const qs = buildQs();
+      const url = '/repos/' + encodeURIComponent(repoId) + '/blame/' + encodeURIComponent(ref) + qs;
+      const resp = await apiFetch(url);
+      renderBlameTable(resp.entries || [], resp.totalEntries || 0);
+    } catch (e) {
+      if (e.message !== 'auth') {
+        document.getElementById('content').innerHTML =
+          '<p class="error">&#10005; ' + escHtml(e.message) + '</p>';
+      }
+    }
+  }
+
+  // ── Filter controls ───────────────────────────────────────────────────────
+  function applyFilters() {
+    const trackSel = document.getElementById('blame-track-sel');
+    const bsInput  = document.getElementById('blame-beat-start');
+    const beInput  = document.getElementById('blame-beat-end');
+    currentTrack     = trackSel ? trackSel.value : '';
+    currentBeatStart = bsInput && bsInput.value !== '' ? parseFloat(bsInput.value) : null;
+    currentBeatEnd   = beInput && beInput.value !== '' ? parseFloat(beInput.value) : null;
+    load();
+  }
+
+  // Expose globally so onclick attributes work.
+  window.applyBlameFilters = applyFilters;
+
+  load();
+}());
+{% endraw %}
+{% endblock %}
+
+{% block body_extra %}
+<div class="blame-header"
+     style="padding: 0 0 8px; border-bottom: 1px solid #30363d; margin-bottom: 16px; margin-top: -8px;">
+  <div>
+    <h2 style="margin: 0; font-size: 18px; color: #e6edf3;">
+      &#x1F4CB; Blame &#8212;
+      <code style="font-size: 15px; background: #161b22; padding: 2px 8px; border-radius: 4px;">
+        {{ short_path }}
+      </code>
+    </h2>
+    <p style="margin: 4px 0 0; font-size: 13px; color: #8b949e;">
+      Per-note commit attribution at ref
+      <code style="background: #161b22; padding: 2px 6px; border-radius: 4px;">{{ short_ref }}</code>
+      &bull;
+      <a href="{{ base_url }}/tree/{{ ref }}/{{ path }}"
+         style="color: #58a6ff; text-decoration: none; font-size: 13px;">
+        View file &#8599;
+      </a>
+    </p>
+  </div>
+  <div style="display: flex; gap: 8px;">
+    <a href="{{ base_url }}/commits" class="btn btn-secondary" style="font-size: 12px;">
+      &#x1F4DC; Commits
+    </a>
+    <a href="{{ base_url }}/piano-roll/{{ ref }}/{{ path }}"
+       class="btn btn-secondary" style="font-size: 12px;">
+      &#127929; Piano Roll
+    </a>
+  </div>
+</div>
+
+<div class="blame-filter-bar" id="blame-filter-bar" style="display: none;">
+  <label>
+    Track:
+    <select id="blame-track-sel">
+      <option value="">All tracks</option>
+      <option value="piano">piano</option>
+      <option value="bass">bass</option>
+      <option value="drums">drums</option>
+      <option value="keys">keys</option>
+      <option value="strings">strings</option>
+      <option value="guitar">guitar</option>
+      <option value="lead">lead</option>
+      <option value="pads">pads</option>
+    </select>
+  </label>
+  <label>
+    Beat start ≥
+    <input type="number" id="blame-beat-start" min="0" step="0.25"
+           placeholder="0.0" style="width: 80px;" />
+  </label>
+  <label>
+    Beat end &lt;
+    <input type="number" id="blame-beat-end" min="0" step="0.25"
+           placeholder="32.0" style="width: 80px;" />
+  </label>
+  <button class="btn btn-primary" onclick="applyBlameFilters()" style="font-size: 13px;">
+    Apply
+  </button>
+</div>
+
+<script>
+  window.addEventListener('DOMContentLoaded', function () {
+    // Pre-populate filter controls from server-side values.
+    var trackSel = document.getElementById('blame-track-sel');
+    if (trackSel && initTrack) trackSel.value = initTrack;
+    var bsInput = document.getElementById('blame-beat-start');
+    if (bsInput && initBeatStart !== null) bsInput.value = initBeatStart;
+    var beInput = document.getElementById('blame-beat-end');
+    if (beInput && initBeatEnd !== null) beInput.value = initBeatEnd;
+
+    // Show the filter bar after JS variables are available.
+    var bar = document.getElementById('blame-filter-bar');
+    if (bar) bar.style.display = 'flex';
+  });
+</script>
+{% endblock %}

@@ -158,6 +158,45 @@ async def _resolve_repo_full(
     return repo, _base_url(owner, repo_slug)
 
 
+def _og_tags(
+    *,
+    title: str,
+    description: str = "",
+    image: str = "",
+    og_type: str = "website",
+    twitter_card: str = "summary",
+) -> dict[str, str]:
+    """Build Open Graph and Twitter Card meta tag dict for a page template.
+
+    Returns a flat mapping of meta property name → content string.  Template
+    authors receive this as ``og_meta`` in the template context and iterate
+    over it to emit ``<meta property="..." content="...">`` tags in the
+    document ``<head>``.
+
+    Why a helper: OG tags are structurally repetitive (title, description, and
+    image appear once for OG and once for Twitter).  Centralising the mapping
+    ensures both protocol families stay in sync and reduces copy-paste errors
+    in handlers.
+
+    Call this for any page that should expose rich-preview metadata to social
+    crawlers and link-unfurling bots.  Omit ``image`` when no canonical preview
+    image exists — crawlers fall back to the site default.
+    """
+    tags: dict[str, str] = {
+        "og:title": title,
+        "og:type": og_type,
+        "twitter:card": twitter_card,
+        "twitter:title": title,
+    }
+    if description:
+        tags["og:description"] = description
+        tags["twitter:description"] = description
+    if image:
+        tags["og:image"] = image
+        tags["twitter:image"] = image
+    return tags
+
+
 # ---------------------------------------------------------------------------
 # Fixed-path routes (registered before wildcard routes in main.py)
 # ---------------------------------------------------------------------------
@@ -252,7 +291,15 @@ async def profile_page(request: Request, username: str) -> Response:
     a GitHub-style contribution heatmap, and aggregated session credits.
     Auth is handled client-side -- the profile itself is public.
     """
-    ctx: dict[str, object] = {"title": f"@{username}", "username": username}
+    ctx: dict[str, object] = {
+        "title": f"@{username}",
+        "username": username,
+        "og_meta": _og_tags(
+            title=f"@{username} — Muse Hub",
+            description=f"{username}'s music repos on Muse Hub",
+            og_type="profile",
+        ),
+    }
     return json_or_html(
         request,
         lambda: templates.TemplateResponse(request, "musehub/pages/profile.html", ctx),
@@ -294,6 +341,11 @@ async def repo_page(
             "repo_id": str(repo.repo_id),
             "base_url": base_url,
             "current_page": "home",
+            "og_meta": _og_tags(
+                title=f"{owner}/{repo_slug} — Muse Hub",
+                description=repo.description or f"Music composition repository by {owner}",
+                og_type="website",
+            ),
         },
         templates=templates,
         json_data=repo,
@@ -386,6 +438,7 @@ async def commit_page(
     """
     repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
     commit = await musehub_repository.get_commit(db, repo_id, commit_id)
+    commit_description = commit.message if commit is not None else ""
     return await negotiate_response(
         request=request,
         template_name="musehub/pages/commit.html",
@@ -401,6 +454,11 @@ async def commit_page(
                 (repo_slug, base_url),
                 ("commits", base_url),
                 (commit_id[:8], ""),
+            ),
+            "og_meta": _og_tags(
+                title=f"Commit {commit_id[:8]} · {owner}/{repo_slug} — Muse Hub",
+                description=commit_description,
+                og_type="music.song",
             ),
         },
         templates=templates,

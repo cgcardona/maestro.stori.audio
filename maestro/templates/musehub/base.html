@@ -10,6 +10,12 @@
   <link rel="stylesheet" href="/musehub/static/music.css">
   <title>{% block title %}Muse Hub{% endblock %} — Muse Hub</title>
   <link rel="alternate" type="application/json" href="{{ request.url }}">
+  {# oEmbed discovery — lets CMS/blog platforms auto-embed MuseHub pages.
+     Emits a <link> tag pointing to the oEmbed endpoint for the current URL.
+     Individual pages may override this block to supply a more specific ref. #}
+  {% block oembed_link %}<link rel="alternate" type="application/json+oembed"
+       href="https://musehub.stori.app/musehub/oembed?url={{ request.url | urlencode }}"
+       title="MuseHub oEmbed">{% endblock %}
   {% block extra_css %}{% endblock %}
   <style>
     .nav-notif-bell {
