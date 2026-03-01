@@ -80,6 +80,10 @@ class MusehubRepo(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=_utc_now
     )
+    # Soft-delete timestamp; non-null means the repo is logically deleted
+    deleted_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, default=None
+    )
 
     branches: Mapped[list[MusehubBranch]] = relationship(
         "MusehubBranch", back_populates="repo", cascade="all, delete-orphan"
