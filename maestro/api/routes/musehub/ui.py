@@ -76,6 +76,7 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.responses import Response as StarletteResponse
 
+from maestro.api.routes.musehub.json_alternate import json_or_html
 from maestro.api.routes.musehub.negotiate import negotiate_response
 from maestro.db import get_db
 from maestro.models.musehub import CommitListResponse, CommitResponse, RepoResponse, TrackListingResponse
@@ -157,19 +158,63 @@ async def _resolve_repo_full(
     return repo, _base_url(owner, repo_slug)
 
 
+def _og_tags(
+    *,
+    title: str,
+    description: str = "",
+    image: str = "",
+    og_type: str = "website",
+    twitter_card: str = "summary",
+) -> dict[str, str]:
+    """Build Open Graph and Twitter Card meta tag dict for a page template.
+
+    Returns a flat mapping of meta property name → content string.  Template
+    authors receive this as ``og_meta`` in the template context and iterate
+    over it to emit ``<meta property="..." content="...">`` tags in the
+    document ``<head>``.
+
+    Why a helper: OG tags are structurally repetitive (title, description, and
+    image appear once for OG and once for Twitter).  Centralising the mapping
+    ensures both protocol families stay in sync and reduces copy-paste errors
+    in handlers.
+
+    Call this for any page that should expose rich-preview metadata to social
+    crawlers and link-unfurling bots.  Omit ``image`` when no canonical preview
+    image exists — crawlers fall back to the site default.
+    """
+    tags: dict[str, str] = {
+        "og:title": title,
+        "og:type": og_type,
+        "twitter:card": twitter_card,
+        "twitter:title": title,
+    }
+    if description:
+        tags["og:description"] = description
+        tags["twitter:description"] = description
+    if image:
+        tags["og:image"] = image
+        tags["twitter:image"] = image
+    return tags
+
+
 # ---------------------------------------------------------------------------
 # Fixed-path routes (registered before wildcard routes in main.py)
 # ---------------------------------------------------------------------------
 
 
-@fixed_router.get("/feed", response_class=HTMLResponse, summary="Muse Hub activity feed")
-async def feed_page(request: Request) -> HTMLResponse:
+@fixed_router.get("/feed", summary="Muse Hub activity feed")
+async def feed_page(request: Request) -> Response:
     """Render the activity feed page — events from followed users and watched repos."""
-    return templates.TemplateResponse(request, "musehub/pages/feed.html", {"title": "Feed"})
+    ctx: dict[str, object] = {"title": "Feed"}
+    return json_or_html(
+        request,
+        lambda: templates.TemplateResponse(request, "musehub/pages/feed.html", ctx),
+        ctx,
+    )
 
 
-@fixed_router.get("/search", response_class=HTMLResponse, summary="Muse Hub global search page")
-async def global_search_page(request: Request, q: str = "", mode: str = "keyword") -> HTMLResponse:
+@fixed_router.get("/search", summary="Muse Hub global search page")
+async def global_search_page(request: Request, q: str = "", mode: str = "keyword") -> Response:
     """Render the global cross-repo search page.
 
     Query params ``q`` and ``mode`` are pre-filled into the search form so
@@ -178,50 +223,42 @@ async def global_search_page(request: Request, q: str = "", mode: str = "keyword
     """
     safe_q = q.replace("'", "\\'").replace('"', '\\"').replace("\n", "").replace("\r", "")
     safe_mode = mode if mode in ("keyword", "pattern") else "keyword"
-    return templates.TemplateResponse(
+    ctx: dict[str, object] = {"initial_q": safe_q, "initial_mode": safe_mode}
+    return json_or_html(
         request,
-        "musehub/pages/global_search.html",
-        {
-            "initial_q": safe_q,
-            "initial_mode": safe_mode,
-        },
+        lambda: templates.TemplateResponse(request, "musehub/pages/global_search.html", ctx),
+        ctx,
     )
 
 
-@fixed_router.get("/explore", response_class=HTMLResponse, summary="Muse Hub explore page")
-async def explore_page(request: Request) -> HTMLResponse:
+@fixed_router.get("/explore", summary="Muse Hub explore page")
+async def explore_page(request: Request) -> Response:
     """Render the explore/discover page -- a filterable grid of all public repos.
 
     No JWT required.  Fetches from the public
     ``GET /api/v1/musehub/discover/repos`` endpoint.  Filter state lives in
     query params so results are bookmarkable.
     """
-    return templates.TemplateResponse(
+    ctx: dict[str, object] = {"title": "Explore", "breadcrumb": "Explore", "default_sort": "created"}
+    return json_or_html(
         request,
-        "musehub/explore_base.html",
-        {
-            "title": "Explore",
-            "breadcrumb": "Explore",
-            "default_sort": "created",
-        },
+        lambda: templates.TemplateResponse(request, "musehub/explore_base.html", ctx),
+        ctx,
     )
 
 
-@fixed_router.get("/trending", response_class=HTMLResponse, summary="Muse Hub trending page")
-async def trending_page(request: Request) -> HTMLResponse:
+@fixed_router.get("/trending", summary="Muse Hub trending page")
+async def trending_page(request: Request) -> Response:
     """Render the trending page -- public repos sorted by star count.
 
     Identical shell to the explore page but pre-selects sort=stars so the
     most-starred compositions appear first.
     """
-    return templates.TemplateResponse(
+    ctx: dict[str, object] = {"title": "Trending", "breadcrumb": "Trending", "default_sort": "stars"}
+    return json_or_html(
         request,
-        "musehub/explore_base.html",
-        {
-            "title": "Trending",
-            "breadcrumb": "Trending",
-            "default_sort": "stars",
-        },
+        lambda: templates.TemplateResponse(request, "musehub/explore_base.html", ctx),
+        ctx,
     )
 
 
@@ -245,23 +282,28 @@ async def profile_redirect(username: str) -> RedirectResponse:
 
 @fixed_router.get(
     "/users/{username}",
-    response_class=HTMLResponse,
     summary='Muse Hub user profile page',
 )
-async def profile_page(request: Request, username: str) -> HTMLResponse:
+async def profile_page(request: Request, username: str) -> Response:
     """Render the public user profile page.
 
     Displays bio, avatar, pinned repos, all public repos with last-activity,
     a GitHub-style contribution heatmap, and aggregated session credits.
     Auth is handled client-side -- the profile itself is public.
     """
-    return templates.TemplateResponse(
+    ctx: dict[str, object] = {
+        "title": f"@{username}",
+        "username": username,
+        "og_meta": _og_tags(
+            title=f"@{username} — Muse Hub",
+            description=f"{username}'s music repos on Muse Hub",
+            og_type="profile",
+        ),
+    }
+    return json_or_html(
         request,
-        "musehub/pages/profile.html",
-        {
-            "title": f"@{username}",
-            "username": username,
-        },
+        lambda: templates.TemplateResponse(request, "musehub/pages/profile.html", ctx),
+        ctx,
     )
 
 
@@ -299,6 +341,11 @@ async def repo_page(
             "repo_id": str(repo.repo_id),
             "base_url": base_url,
             "current_page": "home",
+            "og_meta": _og_tags(
+                title=f"{owner}/{repo_slug} — Muse Hub",
+                description=repo.description or f"Music composition repository by {owner}",
+                og_type="website",
+            ),
         },
         templates=templates,
         json_data=repo,
@@ -391,6 +438,7 @@ async def commit_page(
     """
     repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
     commit = await musehub_repository.get_commit(db, repo_id, commit_id)
+    commit_description = commit.message if commit is not None else ""
     return await negotiate_response(
         request=request,
         template_name="musehub/pages/commit.html",
@@ -407,6 +455,11 @@ async def commit_page(
                 ("commits", base_url),
                 (commit_id[:8], ""),
             ),
+            "og_meta": _og_tags(
+                title=f"Commit {commit_id[:8]} · {owner}/{repo_slug} — Muse Hub",
+                description=commit_description,
+                og_type="music.song",
+            ),
         },
         templates=templates,
         json_data=commit,
@@ -416,7 +469,6 @@ async def commit_page(
 
 @router.get(
     "/{owner}/{repo_slug}/commits/{commit_id}/diff",
-    response_class=HTMLResponse,
     summary="Muse Hub musical diff view",
 )
 async def diff_page(
@@ -425,7 +477,7 @@ async def diff_page(
     repo_slug: str,
     commit_id: str,
     db: AsyncSession = Depends(get_db),
-) -> HTMLResponse:
+) -> Response:
     """Render the musical diff between a commit and its parent.
 
     Shows key/tempo/time-signature deltas, tracks added/removed/modified,
@@ -433,23 +485,23 @@ async def diff_page(
     from the API client-side.
     """
     repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
-    return templates.TemplateResponse(
+    ctx: dict[str, object] = {
+        "owner": owner,
+        "repo_slug": repo_slug,
+        "repo_id": repo_id,
+        "commit_id": commit_id,
+        "base_url": base_url,
+        "current_page": "commits",
+    }
+    return json_or_html(
         request,
-        "musehub/pages/diff.html",
-        {
-            "owner": owner,
-            "repo_slug": repo_slug,
-            "repo_id": repo_id,
-            "commit_id": commit_id,
-            "base_url": base_url,
-            "current_page": "commits",
-        },
+        lambda: templates.TemplateResponse(request, "musehub/pages/diff.html", ctx),
+        ctx,
     )
 
 
 @router.get(
     "/{owner}/{repo_slug}/graph",
-    response_class=HTMLResponse,
     summary="Muse Hub interactive DAG commit graph",
 )
 async def graph_page(
@@ -457,29 +509,29 @@ async def graph_page(
     owner: str,
     repo_slug: str,
     db: AsyncSession = Depends(get_db),
-) -> HTMLResponse:
+) -> Response:
     """Render the interactive DAG commit graph.
 
     Client-side SVG renderer with branch colour-coding, merge-commit diamonds,
     zoom/pan, hover popovers, and click-to-navigate.
     """
     repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
-    return templates.TemplateResponse(
+    ctx: dict[str, object] = {
+        "owner": owner,
+        "repo_slug": repo_slug,
+        "repo_id": repo_id,
+        "base_url": base_url,
+        "current_page": "graph",
+    }
+    return json_or_html(
         request,
-        "musehub/pages/graph.html",
-        {
-            "owner": owner,
-            "repo_slug": repo_slug,
-            "repo_id": repo_id,
-            "base_url": base_url,
-            "current_page": "graph",
-        },
+        lambda: templates.TemplateResponse(request, "musehub/pages/graph.html", ctx),
+        ctx,
     )
 
 
 @router.get(
     "/{owner}/{repo_slug}/pulls",
-    response_class=HTMLResponse,
     summary="Muse Hub pull request list page",
 )
 async def pr_list_page(
@@ -487,19 +539,20 @@ async def pr_list_page(
     owner: str,
     repo_slug: str,
     db: AsyncSession = Depends(get_db),
-) -> HTMLResponse:
+) -> Response:
     """Render the PR list page with open/all state filter."""
     repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
-    return templates.TemplateResponse(
+    ctx: dict[str, object] = {
+        "owner": owner,
+        "repo_slug": repo_slug,
+        "repo_id": repo_id,
+        "base_url": base_url,
+        "current_page": "pulls",
+    }
+    return json_or_html(
         request,
-        "musehub/pages/pr_list.html",
-        {
-            "owner": owner,
-            "repo_slug": repo_slug,
-            "repo_id": repo_id,
-            "base_url": base_url,
-            "current_page": "pulls",
-        },
+        lambda: templates.TemplateResponse(request, "musehub/pages/pr_list.html", ctx),
+        ctx,
     )
 
 
@@ -580,7 +633,6 @@ async def pr_detail_page(
 
 @router.get(
     "/{owner}/{repo_slug}/issues",
-    response_class=HTMLResponse,
     summary="Muse Hub issue list page",
 )
 async def issue_list_page(
@@ -588,25 +640,25 @@ async def issue_list_page(
     owner: str,
     repo_slug: str,
     db: AsyncSession = Depends(get_db),
-) -> HTMLResponse:
+) -> Response:
     """Render the issue list page with open/closed/all state filter."""
     repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
-    return templates.TemplateResponse(
+    ctx: dict[str, object] = {
+        "owner": owner,
+        "repo_slug": repo_slug,
+        "repo_id": repo_id,
+        "base_url": base_url,
+        "current_page": "issues",
+    }
+    return json_or_html(
         request,
-        "musehub/pages/issue_list.html",
-        {
-            "owner": owner,
-            "repo_slug": repo_slug,
-            "repo_id": repo_id,
-            "base_url": base_url,
-            "current_page": "issues",
-        },
+        lambda: templates.TemplateResponse(request, "musehub/pages/issue_list.html", ctx),
+        ctx,
     )
 
 
 @router.get(
     "/{owner}/{repo_slug}/context/{ref}",
-    response_class=HTMLResponse,
     summary="Muse Hub AI context viewer",
 )
 async def context_page(
@@ -615,30 +667,30 @@ async def context_page(
     repo_slug: str,
     ref: str,
     db: AsyncSession = Depends(get_db),
-) -> HTMLResponse:
+) -> Response:
     """Render the AI context viewer for a given commit ref.
 
     Shows the MuseHubContextResponse as a structured human-readable document:
     musical state, history summary, missing elements, suggestions, and raw JSON.
     """
     repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
-    return templates.TemplateResponse(
+    ctx: dict[str, object] = {
+        "owner": owner,
+        "repo_slug": repo_slug,
+        "repo_id": repo_id,
+        "ref": ref,
+        "base_url": base_url,
+        "current_page": "analysis",
+    }
+    return json_or_html(
         request,
-        "musehub/pages/context.html",
-        {
-            "owner": owner,
-            "repo_slug": repo_slug,
-            "repo_id": repo_id,
-            "ref": ref,
-            "base_url": base_url,
-            "current_page": "analysis",
-        },
+        lambda: templates.TemplateResponse(request, "musehub/pages/context.html", ctx),
+        ctx,
     )
 
 
 @router.get(
     "/{owner}/{repo_slug}/issues/{number}",
-    response_class=HTMLResponse,
     summary="Muse Hub issue detail page",
 )
 async def issue_detail_page(
@@ -647,7 +699,7 @@ async def issue_detail_page(
     repo_slug: str,
     number: int,
     db: AsyncSession = Depends(get_db),
-) -> HTMLResponse:
+) -> Response:
     """Render the issue detail page with close button.
 
     The close button calls
@@ -655,17 +707,18 @@ async def issue_detail_page(
     and reloads the page on success.
     """
     repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
-    return templates.TemplateResponse(
+    ctx: dict[str, object] = {
+        "owner": owner,
+        "repo_slug": repo_slug,
+        "repo_id": repo_id,
+        "issue_number": number,
+        "base_url": base_url,
+        "current_page": "issues",
+    }
+    return json_or_html(
         request,
-        "musehub/pages/issue_detail.html",
-        {
-            "owner": owner,
-            "repo_slug": repo_slug,
-            "repo_id": repo_id,
-            "issue_number": number,
-            "base_url": base_url,
-            "current_page": "issues",
-        },
+        lambda: templates.TemplateResponse(request, "musehub/pages/issue_detail.html", ctx),
+        ctx,
     )
 
 
@@ -848,7 +901,6 @@ async def listen_track_page(
 
 @router.get(
     "/{owner}/{repo_slug}/credits",
-    response_class=HTMLResponse,
     summary="Muse Hub dynamic credits page",
 )
 async def credits_page(
@@ -856,7 +908,7 @@ async def credits_page(
     owner: str,
     repo_slug: str,
     db: AsyncSession = Depends(get_db),
-) -> HTMLResponse:
+) -> Response:
     """Render the dynamic credits page -- album liner notes for the repo.
 
     Displays every contributor with session count, inferred roles, and activity
@@ -864,21 +916,21 @@ async def credits_page(
     attribution using schema.org ``MusicComposition`` vocabulary.
     """
     repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
-    return templates.TemplateResponse(
+    ctx: dict[str, object] = {
+        "owner": owner,
+        "repo_slug": repo_slug,
+        "repo_id": repo_id,
+        "base_url": base_url,
+        "current_page": "credits",
+    }
+    return json_or_html(
         request,
-        "musehub/pages/credits.html",
-        {
-            "owner": owner,
-            "repo_slug": repo_slug,
-            "repo_id": repo_id,
-            "base_url": base_url,
-            "current_page": "credits",
-        },
+        lambda: templates.TemplateResponse(request, "musehub/pages/credits.html", ctx),
+        ctx,
     )
 
 @router.get(
     "/{owner}/{repo_slug}/analysis/{ref}",
-    response_class=HTMLResponse,
     summary="Muse Hub analysis dashboard -- all musical dimensions at a glance",
 )
 async def analysis_dashboard_page(
@@ -887,7 +939,7 @@ async def analysis_dashboard_page(
     repo_slug: str,
     ref: str,
     db: AsyncSession = Depends(get_db),
-) -> HTMLResponse:
+) -> Response:
     """Render the analysis dashboard: summary cards for all 10 musical dimensions.
 
     Why this exists: musicians and AI agents need a single entry point that
@@ -903,23 +955,23 @@ async def analysis_dashboard_page(
     - Graceful empty state when analysis data is not yet available.
     """
     repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
-    return templates.TemplateResponse(
+    ctx: dict[str, object] = {
+        "owner": owner,
+        "repo_slug": repo_slug,
+        "repo_id": repo_id,
+        "ref": ref,
+        "base_url": base_url,
+        "current_page": "analysis",
+    }
+    return json_or_html(
         request,
-        "musehub/pages/analysis.html",
-        {
-            "owner": owner,
-            "repo_slug": repo_slug,
-            "repo_id": repo_id,
-            "ref": ref,
-            "base_url": base_url,
-            "current_page": "analysis",
-        },
+        lambda: templates.TemplateResponse(request, "musehub/pages/analysis.html", ctx),
+        ctx,
     )
 
 
 @router.get(
     "/{owner}/{repo_slug}/search",
-    response_class=HTMLResponse,
     summary="Muse Hub in-repo search page",
 )
 async def search_page(
@@ -927,7 +979,7 @@ async def search_page(
     owner: str,
     repo_slug: str,
     db: AsyncSession = Depends(get_db),
-) -> HTMLResponse:
+) -> Response:
     """Render the in-repo search page with four mode tabs.
 
     Modes:
@@ -937,22 +989,22 @@ async def search_page(
     - Pattern (``mode=pattern``) -- substring match against messages and branches.
     """
     repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
-    return templates.TemplateResponse(
+    ctx: dict[str, object] = {
+        "owner": owner,
+        "repo_slug": repo_slug,
+        "repo_id": repo_id,
+        "base_url": base_url,
+        "current_page": "search",
+    }
+    return json_or_html(
         request,
-        "musehub/pages/search.html",
-        {
-            "owner": owner,
-            "repo_slug": repo_slug,
-            "repo_id": repo_id,
-            "base_url": base_url,
-            "current_page": "search",
-        },
+        lambda: templates.TemplateResponse(request, "musehub/pages/search.html", ctx),
+        ctx,
     )
 
 
 @router.get(
     "/{owner}/{repo_slug}/analysis/{ref}/motifs",
-    response_class=HTMLResponse,
     summary="Muse Hub motif browser page",
 )
 async def motifs_page(
@@ -961,7 +1013,7 @@ async def motifs_page(
     repo_slug: str,
     ref: str,
     db: AsyncSession = Depends(get_db),
-) -> HTMLResponse:
+) -> Response:
     """Render the motif browser for a given commit ref.
 
     Fetches ``GET /api/v1/musehub/repos/{repo_id}/analysis/{ref}/motifs``
@@ -978,23 +1030,23 @@ async def motifs_page(
     pages.  No JWT is required to render the HTML shell.
     """
     repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
-    return templates.TemplateResponse(
+    ctx: dict[str, object] = {
+        "owner": owner,
+        "repo_slug": repo_slug,
+        "repo_id": repo_id,
+        "ref": ref,
+        "base_url": base_url,
+        "current_page": "analysis",
+    }
+    return json_or_html(
         request,
-        "musehub/pages/motifs.html",
-        {
-            "owner": owner,
-            "repo_slug": repo_slug,
-            "repo_id": repo_id,
-            "ref": ref,
-            "base_url": base_url,
-            "current_page": "analysis",
-        },
+        lambda: templates.TemplateResponse(request, "musehub/pages/motifs.html", ctx),
+        ctx,
     )
 
 
 @router.get(
     "/{owner}/{repo_slug}/arrange/{ref}",
-    response_class=HTMLResponse,
     summary="Muse Hub arrangement matrix page",
 )
 async def arrange_page(
@@ -1003,7 +1055,7 @@ async def arrange_page(
     repo_slug: str,
     ref: str,
     db: AsyncSession = Depends(get_db),
-) -> HTMLResponse:
+) -> Response:
     """Render the arrangement matrix page for a given commit ref.
 
     Fetches ``GET /api/v1/musehub/repos/{repo_id}/arrange/{ref}`` and renders
@@ -1017,25 +1069,22 @@ async def arrange_page(
     - Row summaries show per-instrument note totals and section activity counts
     - Column summaries show per-section note totals and active instrument counts
 
-    Content negotiation is NOT applied here — the JSON data lives at
-    ``GET /api/v1/musehub/repos/{repo_id}/arrange/{ref}`` which returns
-    :class:`~maestro.models.musehub.ArrangementMatrixResponse`.
-
     Auth is handled client-side via localStorage JWT, matching all other UI
     pages.  No JWT is required to render the HTML shell.
     """
     repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
-    return templates.TemplateResponse(
+    ctx: dict[str, object] = {
+        "owner": owner,
+        "repo_slug": repo_slug,
+        "repo_id": repo_id,
+        "ref": ref,
+        "base_url": base_url,
+        "current_page": "arrange",
+    }
+    return json_or_html(
         request,
-        "musehub/pages/arrange.html",
-        {
-            "owner": owner,
-            "repo_slug": repo_slug,
-            "repo_id": repo_id,
-            "ref": ref,
-            "base_url": base_url,
-            "current_page": "arrange",
-        },
+        lambda: templates.TemplateResponse(request, "musehub/pages/arrange.html", ctx),
+        ctx,
     )
 
 
@@ -1109,7 +1158,6 @@ async def compare_page(
 
 @router.get(
     "/{owner}/{repo_slug}/divergence",
-    response_class=HTMLResponse,
     summary="Muse Hub divergence visualization page",
 )
 async def divergence_page(
@@ -1117,29 +1165,29 @@ async def divergence_page(
     owner: str,
     repo_slug: str,
     db: AsyncSession = Depends(get_db),
-) -> HTMLResponse:
+) -> Response:
     """Render the divergence visualization: radar chart + dimension detail panels.
 
     Compares two branches across five musical dimensions
     (melodic/harmonic/rhythmic/structural/dynamic).
     """
     repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
-    return templates.TemplateResponse(
+    ctx: dict[str, object] = {
+        "owner": owner,
+        "repo_slug": repo_slug,
+        "repo_id": repo_id,
+        "base_url": base_url,
+        "current_page": "analysis",
+    }
+    return json_or_html(
         request,
-        "musehub/pages/divergence.html",
-        {
-            "owner": owner,
-            "repo_slug": repo_slug,
-            "repo_id": repo_id,
-            "base_url": base_url,
-            "current_page": "analysis",
-        },
+        lambda: templates.TemplateResponse(request, "musehub/pages/divergence.html", ctx),
+        ctx,
     )
 
 
 @router.get(
     "/{owner}/{repo_slug}/timeline",
-    response_class=HTMLResponse,
     summary="Muse Hub timeline page",
 )
 async def timeline_page(
@@ -1147,7 +1195,7 @@ async def timeline_page(
     owner: str,
     repo_slug: str,
     db: AsyncSession = Depends(get_db),
-) -> HTMLResponse:
+) -> Response:
     """Render the layered chronological timeline visualisation.
 
     Four independently toggleable layers: commits, emotion line chart,
@@ -1155,22 +1203,22 @@ async def timeline_page(
     scrubber and zoom controls (day/week/month/all-time).
     """
     repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
-    return templates.TemplateResponse(
+    ctx: dict[str, object] = {
+        "owner": owner,
+        "repo_slug": repo_slug,
+        "repo_id": repo_id,
+        "base_url": base_url,
+        "current_page": "timeline",
+    }
+    return json_or_html(
         request,
-        "musehub/pages/timeline.html",
-        {
-            "owner": owner,
-            "repo_slug": repo_slug,
-            "repo_id": repo_id,
-            "base_url": base_url,
-            "current_page": "timeline",
-        },
+        lambda: templates.TemplateResponse(request, "musehub/pages/timeline.html", ctx),
+        ctx,
     )
 
 
 @router.get(
     "/{owner}/{repo_slug}/releases",
-    response_class=HTMLResponse,
     summary="Muse Hub release list page",
 )
 async def release_list_page(
@@ -1178,25 +1226,25 @@ async def release_list_page(
     owner: str,
     repo_slug: str,
     db: AsyncSession = Depends(get_db),
-) -> HTMLResponse:
+) -> Response:
     """Render the release list page: all published versions newest first."""
     repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
-    return templates.TemplateResponse(
+    ctx: dict[str, object] = {
+        "owner": owner,
+        "repo_slug": repo_slug,
+        "repo_id": repo_id,
+        "base_url": base_url,
+        "current_page": "releases",
+    }
+    return json_or_html(
         request,
-        "musehub/pages/release_list.html",
-        {
-            "owner": owner,
-            "repo_slug": repo_slug,
-            "repo_id": repo_id,
-            "base_url": base_url,
-            "current_page": "releases",
-        },
+        lambda: templates.TemplateResponse(request, "musehub/pages/release_list.html", ctx),
+        ctx,
     )
 
 
 @router.get(
     "/{owner}/{repo_slug}/releases/{tag}",
-    response_class=HTMLResponse,
     summary="Muse Hub release detail page",
 )
 async def release_detail_page(
@@ -1205,7 +1253,7 @@ async def release_detail_page(
     repo_slug: str,
     tag: str,
     db: AsyncSession = Depends(get_db),
-) -> HTMLResponse:
+) -> Response:
     """Render the release detail page: title, release notes, download packages.
 
     Download packages (MIDI bundle, stems, MP3, MusicXML, metadata) are
@@ -1213,23 +1261,23 @@ async def release_detail_page(
     indicator.
     """
     repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
-    return templates.TemplateResponse(
+    ctx: dict[str, object] = {
+        "owner": owner,
+        "repo_slug": repo_slug,
+        "repo_id": repo_id,
+        "tag": tag,
+        "base_url": base_url,
+        "current_page": "releases",
+    }
+    return json_or_html(
         request,
-        "musehub/pages/release_detail.html",
-        {
-            "owner": owner,
-            "repo_slug": repo_slug,
-            "repo_id": repo_id,
-            "tag": tag,
-            "base_url": base_url,
-            "current_page": "releases",
-        },
+        lambda: templates.TemplateResponse(request, "musehub/pages/release_detail.html", ctx),
+        ctx,
     )
 
 
 @router.get(
     "/{owner}/{repo_slug}/sessions",
-    response_class=HTMLResponse,
     summary="Muse Hub session log page",
 )
 async def sessions_page(
@@ -1237,28 +1285,28 @@ async def sessions_page(
     owner: str,
     repo_slug: str,
     db: AsyncSession = Depends(get_db),
-) -> HTMLResponse:
+) -> Response:
     """Render the session log page -- all recording sessions newest first.
 
     Active sessions are highlighted with a live indicator at the top of the list.
     """
     repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
-    return templates.TemplateResponse(
+    ctx: dict[str, object] = {
+        "owner": owner,
+        "repo_slug": repo_slug,
+        "repo_id": repo_id,
+        "base_url": base_url,
+        "current_page": "sessions",
+    }
+    return json_or_html(
         request,
-        "musehub/pages/sessions.html",
-        {
-            "owner": owner,
-            "repo_slug": repo_slug,
-            "repo_id": repo_id,
-            "base_url": base_url,
-            "current_page": "sessions",
-        },
+        lambda: templates.TemplateResponse(request, "musehub/pages/sessions.html", ctx),
+        ctx,
     )
 
 
 @router.get(
     "/{owner}/{repo_slug}/sessions/{session_id}",
-    response_class=HTMLResponse,
     summary="Muse Hub session detail page",
 )
 async def session_detail_page(
@@ -1267,7 +1315,7 @@ async def session_detail_page(
     repo_slug: str,
     session_id: str,
     db: AsyncSession = Depends(get_db),
-) -> HTMLResponse:
+) -> Response:
     """Render the full session detail page.
 
     Shows metadata, participants with session-count badges, commits made during
@@ -1275,23 +1323,23 @@ async def session_detail_page(
     returns 404, so agents can distinguish missing sessions from server errors.
     """
     repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
-    return templates.TemplateResponse(
+    ctx: dict[str, object] = {
+        "owner": owner,
+        "repo_slug": repo_slug,
+        "repo_id": repo_id,
+        "session_id": session_id,
+        "base_url": base_url,
+        "current_page": "sessions",
+    }
+    return json_or_html(
         request,
-        "musehub/pages/session_detail.html",
-        {
-            "owner": owner,
-            "repo_slug": repo_slug,
-            "repo_id": repo_id,
-            "session_id": session_id,
-            "base_url": base_url,
-            "current_page": "sessions",
-        },
+        lambda: templates.TemplateResponse(request, "musehub/pages/session_detail.html", ctx),
+        ctx,
     )
 
 
 @router.get(
     "/{owner}/{repo_slug}/insights",
-    response_class=HTMLResponse,
     summary="Muse Hub repo insights dashboard",
 )
 async def insights_page(
@@ -1299,7 +1347,7 @@ async def insights_page(
     owner: str,
     repo_slug: str,
     db: AsyncSession = Depends(get_db),
-) -> HTMLResponse:
+) -> Response:
     """Render the repo insights dashboard.
 
     Shows commit frequency heatmap, contributor breakdown, musical evolution
@@ -1307,22 +1355,22 @@ async def insights_page(
     statistics.
     """
     repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
-    return templates.TemplateResponse(
+    ctx: dict[str, object] = {
+        "owner": owner,
+        "repo_slug": repo_slug,
+        "repo_id": repo_id,
+        "base_url": base_url,
+        "current_page": "insights",
+    }
+    return json_or_html(
         request,
-        "musehub/pages/insights.html",
-        {
-            "owner": owner,
-            "repo_slug": repo_slug,
-            "repo_id": repo_id,
-            "base_url": base_url,
-            "current_page": "insights",
-        },
+        lambda: templates.TemplateResponse(request, "musehub/pages/insights.html", ctx),
+        ctx,
     )
 
 
 @router.get(
     "/{owner}/{repo_slug}/analysis/{ref}/contour",
-    response_class=HTMLResponse,
     summary="Muse Hub melodic contour analysis page",
 )
 async def contour_page(
@@ -1331,30 +1379,30 @@ async def contour_page(
     repo_slug: str,
     ref: str,
     db: AsyncSession = Depends(get_db),
-) -> HTMLResponse:
+) -> Response:
     """Render the melodic contour analysis page for a Muse commit ref.
 
     Visualises per-track melodic shapes, tessitura, and cross-commit contour
     comparison via a pitch-curve line graph in SVG.
     """
     repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
-    return templates.TemplateResponse(
+    ctx: dict[str, object] = {
+        "owner": owner,
+        "repo_slug": repo_slug,
+        "repo_id": repo_id,
+        "ref": ref,
+        "base_url": base_url,
+        "current_page": "analysis",
+    }
+    return json_or_html(
         request,
-        "musehub/pages/contour.html",
-        {
-            "owner": owner,
-            "repo_slug": repo_slug,
-            "repo_id": repo_id,
-            "ref": ref,
-            "base_url": base_url,
-            "current_page": "analysis",
-        },
+        lambda: templates.TemplateResponse(request, "musehub/pages/contour.html", ctx),
+        ctx,
     )
 
 
 @router.get(
     "/{owner}/{repo_slug}/analysis/{ref}/tempo",
-    response_class=HTMLResponse,
     summary="Muse Hub tempo analysis page",
 )
 async def tempo_page(
@@ -1363,29 +1411,29 @@ async def tempo_page(
     repo_slug: str,
     ref: str,
     db: AsyncSession = Depends(get_db),
-) -> HTMLResponse:
+) -> Response:
     """Render the tempo analysis page for a Muse commit ref.
 
     Displays BPM, time feel, stability, and a timeline of tempo change events.
     """
     repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
-    return templates.TemplateResponse(
+    ctx: dict[str, object] = {
+        "owner": owner,
+        "repo_slug": repo_slug,
+        "repo_id": repo_id,
+        "ref": ref,
+        "base_url": base_url,
+        "current_page": "analysis",
+    }
+    return json_or_html(
         request,
-        "musehub/pages/tempo.html",
-        {
-            "owner": owner,
-            "repo_slug": repo_slug,
-            "repo_id": repo_id,
-            "ref": ref,
-            "base_url": base_url,
-            "current_page": "analysis",
-        },
+        lambda: templates.TemplateResponse(request, "musehub/pages/tempo.html", ctx),
+        ctx,
     )
 
 
 @router.get(
     "/{owner}/{repo_slug}/analysis/{ref}/dynamics",
-    response_class=HTMLResponse,
     summary="Muse Hub dynamics analysis page",
 )
 async def dynamics_analysis_page(
@@ -1394,30 +1442,30 @@ async def dynamics_analysis_page(
     repo_slug: str,
     ref: str,
     db: AsyncSession = Depends(get_db),
-) -> HTMLResponse:
+) -> Response:
     """Render the dynamics analysis page for a Muse commit ref.
 
     Visualises velocity profiles, arc classifications, and per-track loudness
     so a mixing engineer can spot dynamic imbalances without running the CLI.
     """
     repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
-    return templates.TemplateResponse(
+    ctx: dict[str, object] = {
+        "owner": owner,
+        "repo_slug": repo_slug,
+        "repo_id": repo_id,
+        "ref": ref,
+        "base_url": base_url,
+        "current_page": "analysis",
+    }
+    return json_or_html(
         request,
-        "musehub/pages/dynamics.html",
-        {
-            "owner": owner,
-            "repo_slug": repo_slug,
-            "repo_id": repo_id,
-            "ref": ref,
-            "base_url": base_url,
-            "current_page": "analysis",
-        },
+        lambda: templates.TemplateResponse(request, "musehub/pages/dynamics.html", ctx),
+        ctx,
     )
 
 
 @router.get(
     "/{owner}/{repo_slug}/analysis/{ref}/key",
-    response_class=HTMLResponse,
     summary="Muse Hub key detection analysis page",
 )
 async def key_analysis_page(
@@ -1426,7 +1474,7 @@ async def key_analysis_page(
     repo_slug: str,
     ref: str,
     db: AsyncSession = Depends(get_db),
-) -> HTMLResponse:
+) -> Response:
     """Render the key detection analysis page for a Muse commit ref.
 
     Displays the detected tonic, mode, relative key, confidence bar, and a
@@ -1434,23 +1482,23 @@ async def key_analysis_page(
     tonal centre before generating harmonically compatible material.
     """
     repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
-    return templates.TemplateResponse(
+    ctx: dict[str, object] = {
+        "owner": owner,
+        "repo_slug": repo_slug,
+        "repo_id": repo_id,
+        "ref": ref,
+        "base_url": base_url,
+        "current_page": "analysis",
+    }
+    return json_or_html(
         request,
-        "musehub/pages/key.html",
-        {
-            "owner": owner,
-            "repo_slug": repo_slug,
-            "repo_id": repo_id,
-            "ref": ref,
-            "base_url": base_url,
-            "current_page": "analysis",
-        },
+        lambda: templates.TemplateResponse(request, "musehub/pages/key.html", ctx),
+        ctx,
     )
 
 
 @router.get(
     "/{owner}/{repo_slug}/analysis/{ref}/meter",
-    response_class=HTMLResponse,
     summary="Muse Hub meter analysis page",
 )
 async def meter_analysis_page(
@@ -1459,7 +1507,7 @@ async def meter_analysis_page(
     repo_slug: str,
     ref: str,
     db: AsyncSession = Depends(get_db),
-) -> HTMLResponse:
+) -> Response:
     """Render the metric analysis page for a Muse commit ref.
 
     Shows the primary time signature, compound/simple classification, a
@@ -1467,23 +1515,23 @@ async def meter_analysis_page(
     Agents use this to generate rhythmically coherent material.
     """
     repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
-    return templates.TemplateResponse(
+    ctx: dict[str, object] = {
+        "owner": owner,
+        "repo_slug": repo_slug,
+        "repo_id": repo_id,
+        "ref": ref,
+        "base_url": base_url,
+        "current_page": "analysis",
+    }
+    return json_or_html(
         request,
-        "musehub/pages/meter.html",
-        {
-            "owner": owner,
-            "repo_slug": repo_slug,
-            "repo_id": repo_id,
-            "ref": ref,
-            "base_url": base_url,
-            "current_page": "analysis",
-        },
+        lambda: templates.TemplateResponse(request, "musehub/pages/meter.html", ctx),
+        ctx,
     )
 
 
 @router.get(
     "/{owner}/{repo_slug}/analysis/{ref}/chord-map",
-    response_class=HTMLResponse,
     summary="Muse Hub chord map analysis page",
 )
 async def chord_map_analysis_page(
@@ -1492,7 +1540,7 @@ async def chord_map_analysis_page(
     repo_slug: str,
     ref: str,
     db: AsyncSession = Depends(get_db),
-) -> HTMLResponse:
+) -> Response:
     """Render the chord map analysis page for a Muse commit ref.
 
     Lists the full chord progression with beat positions, Roman-numeral
@@ -1500,23 +1548,23 @@ async def chord_map_analysis_page(
     Agents use this to generate harmonically idiomatic accompaniment.
     """
     repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
-    return templates.TemplateResponse(
+    ctx: dict[str, object] = {
+        "owner": owner,
+        "repo_slug": repo_slug,
+        "repo_id": repo_id,
+        "ref": ref,
+        "base_url": base_url,
+        "current_page": "analysis",
+    }
+    return json_or_html(
         request,
-        "musehub/pages/chord_map.html",
-        {
-            "owner": owner,
-            "repo_slug": repo_slug,
-            "repo_id": repo_id,
-            "ref": ref,
-            "base_url": base_url,
-            "current_page": "analysis",
-        },
+        lambda: templates.TemplateResponse(request, "musehub/pages/chord_map.html", ctx),
+        ctx,
     )
 
 
 @router.get(
     "/{owner}/{repo_slug}/analysis/{ref}/groove",
-    response_class=HTMLResponse,
     summary="Muse Hub groove analysis page",
 )
 async def groove_analysis_page(
@@ -1525,7 +1573,7 @@ async def groove_analysis_page(
     repo_slug: str,
     ref: str,
     db: AsyncSession = Depends(get_db),
-) -> HTMLResponse:
+) -> Response:
     """Render the rhythmic groove analysis page for a Muse commit ref.
 
     Displays groove style, BPM, grid resolution, onset deviation, groove
@@ -1533,23 +1581,23 @@ async def groove_analysis_page(
     feel when generating continuation material.
     """
     repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
-    return templates.TemplateResponse(
+    ctx: dict[str, object] = {
+        "owner": owner,
+        "repo_slug": repo_slug,
+        "repo_id": repo_id,
+        "ref": ref,
+        "base_url": base_url,
+        "current_page": "analysis",
+    }
+    return json_or_html(
         request,
-        "musehub/pages/groove.html",
-        {
-            "owner": owner,
-            "repo_slug": repo_slug,
-            "repo_id": repo_id,
-            "ref": ref,
-            "base_url": base_url,
-            "current_page": "analysis",
-        },
+        lambda: templates.TemplateResponse(request, "musehub/pages/groove.html", ctx),
+        ctx,
     )
 
 
 @router.get(
     "/{owner}/{repo_slug}/analysis/{ref}/emotion",
-    response_class=HTMLResponse,
     summary="Muse Hub emotion analysis page",
 )
 async def emotion_analysis_page(
@@ -1558,7 +1606,7 @@ async def emotion_analysis_page(
     repo_slug: str,
     ref: str,
     db: AsyncSession = Depends(get_db),
-) -> HTMLResponse:
+) -> Response:
     """Render the emotion analysis page for a Muse commit ref.
 
     Displays primary emotion label, valence-arousal plot, tension bar, and
@@ -1566,23 +1614,23 @@ async def emotion_analysis_page(
     introduce deliberate contrast in the next section.
     """
     repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
-    return templates.TemplateResponse(
+    ctx: dict[str, object] = {
+        "owner": owner,
+        "repo_slug": repo_slug,
+        "repo_id": repo_id,
+        "ref": ref,
+        "base_url": base_url,
+        "current_page": "analysis",
+    }
+    return json_or_html(
         request,
-        "musehub/pages/emotion.html",
-        {
-            "owner": owner,
-            "repo_slug": repo_slug,
-            "repo_id": repo_id,
-            "ref": ref,
-            "base_url": base_url,
-            "current_page": "analysis",
-        },
+        lambda: templates.TemplateResponse(request, "musehub/pages/emotion.html", ctx),
+        ctx,
     )
 
 
 @router.get(
     "/{owner}/{repo_slug}/analysis/{ref}/form",
-    response_class=HTMLResponse,
     summary="Muse Hub form analysis page",
 )
 async def form_analysis_page(
@@ -1591,7 +1639,7 @@ async def form_analysis_page(
     repo_slug: str,
     ref: str,
     db: AsyncSession = Depends(get_db),
-) -> HTMLResponse:
+) -> Response:
     """Render the formal structure analysis page for a Muse commit ref.
 
     Shows the detected macro form label (e.g. AABA, verse-chorus), a colour-coded
@@ -1599,23 +1647,23 @@ async def form_analysis_page(
     Agents use this to understand where they are in the compositional arc.
     """
     repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
-    return templates.TemplateResponse(
+    ctx: dict[str, object] = {
+        "owner": owner,
+        "repo_slug": repo_slug,
+        "repo_id": repo_id,
+        "ref": ref,
+        "base_url": base_url,
+        "current_page": "analysis",
+    }
+    return json_or_html(
         request,
-        "musehub/pages/form.html",
-        {
-            "owner": owner,
-            "repo_slug": repo_slug,
-            "repo_id": repo_id,
-            "ref": ref,
-            "base_url": base_url,
-            "current_page": "analysis",
-        },
+        lambda: templates.TemplateResponse(request, "musehub/pages/form.html", ctx),
+        ctx,
     )
 
 
 @router.get(
     "/{owner}/{repo_slug}/tree/{ref}",
-    response_class=HTMLResponse,
     summary="Muse Hub file tree browser — repo root",
 )
 async def tree_page(
@@ -1624,7 +1672,7 @@ async def tree_page(
     repo_slug: str,
     ref: str,
     db: AsyncSession = Depends(get_db),
-) -> HTMLResponse:
+) -> Response:
     """Render the file tree browser for the repo root at a given ref.
 
     Displays all top-level files and directories with music-aware file-type
@@ -1637,24 +1685,24 @@ async def tree_page(
     the Accept header is application/json.
     """
     repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
-    return templates.TemplateResponse(
+    ctx: dict[str, object] = {
+        "owner": owner,
+        "repo_slug": repo_slug,
+        "repo_id": repo_id,
+        "ref": ref,
+        "dir_path": "",
+        "base_url": base_url,
+        "current_page": "tree",
+    }
+    return json_or_html(
         request,
-        "musehub/pages/tree.html",
-        {
-            "owner": owner,
-            "repo_slug": repo_slug,
-            "repo_id": repo_id,
-            "ref": ref,
-            "dir_path": "",
-            "base_url": base_url,
-            "current_page": "tree",
-        },
+        lambda: templates.TemplateResponse(request, "musehub/pages/tree.html", ctx),
+        ctx,
     )
 
 
 @router.get(
     "/{owner}/{repo_slug}/tree/{ref}/{path:path}",
-    response_class=HTMLResponse,
     summary="Muse Hub file tree browser — subdirectory",
 )
 async def tree_subdir_page(
@@ -1664,7 +1712,7 @@ async def tree_subdir_page(
     ref: str,
     path: str,
     db: AsyncSession = Depends(get_db),
-) -> HTMLResponse:
+) -> Response:
     """Render the file tree browser for a subdirectory at a given ref.
 
     Behaves identically to ``tree_page`` but scoped to the subdirectory
@@ -1675,24 +1723,24 @@ async def tree_subdir_page(
     /{owner}/{repo_slug}/blob/{ref}/{path}
     """
     repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
-    return templates.TemplateResponse(
+    ctx: dict[str, object] = {
+        "owner": owner,
+        "repo_slug": repo_slug,
+        "repo_id": repo_id,
+        "ref": ref,
+        "dir_path": path,
+        "base_url": base_url,
+        "current_page": "tree",
+    }
+    return json_or_html(
         request,
-        "musehub/pages/tree.html",
-        {
-            "owner": owner,
-            "repo_slug": repo_slug,
-            "repo_id": repo_id,
-            "ref": ref,
-            "dir_path": path,
-            "base_url": base_url,
-            "current_page": "tree",
-        },
+        lambda: templates.TemplateResponse(request, "musehub/pages/tree.html", ctx),
+        ctx,
     )
 
 
 @router.get(
     "/{owner}/{repo_slug}/groove-check",
-    response_class=HTMLResponse,
     summary="Muse Hub groove check page",
 )
 async def groove_check_page(
@@ -1700,7 +1748,7 @@ async def groove_check_page(
     owner: str,
     repo_slug: str,
     db: AsyncSession = Depends(get_db),
-) -> HTMLResponse:
+) -> Response:
     """Render the rhythmic consistency dashboard for a repo.
 
     Displays a summary of groove metrics, an SVG bar chart of groove scores
@@ -1715,16 +1763,17 @@ async def groove_check_page(
     Muse Hub UI pages.
     """
     repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
-    return templates.TemplateResponse(
+    ctx: dict[str, object] = {
+        "owner": owner,
+        "repo_slug": repo_slug,
+        "repo_id": repo_id,
+        "base_url": base_url,
+        "current_page": "groove-check",
+    }
+    return json_or_html(
         request,
-        "musehub/pages/groove_check.html",
-        {
-            "owner": owner,
-            "repo_slug": repo_slug,
-            "repo_id": repo_id,
-            "base_url": base_url,
-            "current_page": "groove-check",
-        },
+        lambda: templates.TemplateResponse(request, "musehub/pages/groove_check.html", ctx),
+        ctx,
     )
 
 
@@ -1840,14 +1889,13 @@ async def tags_page(
 
 @router.get(
     "/{repo_id}/form-structure/{ref}",
-    response_class=HTMLResponse,
     summary="Muse Hub form and structure page",
 )
 async def form_structure_page(
     request: Request,
     repo_id: str,
     ref: str,
-) -> HTMLResponse:
+) -> Response:
     """Render the form and structure analysis page for a commit ref.
 
     Fetches ``GET /api/v1/musehub/repos/{repo_id}/form-structure/{ref}`` and
@@ -1865,23 +1913,19 @@ async def form_structure_page(
     pages.  No JWT is required to load the HTML shell.
     """
     short_ref = ref[:8] if len(ref) >= 8 else ref
-    return templates.TemplateResponse(
+    ctx: dict[str, object] = {"repo_id": repo_id, "ref": ref, "short_ref": short_ref}
+    return json_or_html(
         request,
-        "musehub/pages/form_structure.html",
-        {
-            "repo_id": repo_id,
-            "ref": ref,
-            "short_ref": short_ref,
-        },
+        lambda: templates.TemplateResponse(request, "musehub/pages/form_structure.html", ctx),
+        ctx,
     )
 
 
 @router.get(
     "/{repo_id}/analysis/{ref}/harmony",
-    response_class=HTMLResponse,
     summary="Muse Hub harmony analysis page",
 )
-async def harmony_analysis_page(repo_id: str, ref: str) -> HTMLResponse:
+async def harmony_analysis_page(request: Request, repo_id: str, ref: str) -> Response:
     """Render the harmony analysis page for a Muse commit ref.
 
     Fetches harmonic and key data from:
@@ -2308,12 +2352,15 @@ async def harmony_analysis_page(repo_id: str, ref: str) -> HTMLResponse:
   </script>
 </body>
 </html>"""
-    return HTMLResponse(content=html)
+    return json_or_html(
+        request,
+        lambda: HTMLResponse(content=html),
+        {"repo_id": repo_id, "ref": ref, "short_ref": short_ref},
+    )
 
 
 @router.get(
     "/{owner}/{repo_slug}/piano-roll/{ref}",
-    response_class=HTMLResponse,
     summary="Muse Hub piano roll — all MIDI tracks",
 )
 async def piano_roll_page(
@@ -2322,7 +2369,7 @@ async def piano_roll_page(
     repo_slug: str,
     ref: str,
     db: AsyncSession = Depends(get_db),
-) -> HTMLResponse:
+) -> Response:
     """Render the Canvas-based interactive piano roll for all MIDI tracks at ``ref``.
 
     The page shell fetches a list of MIDI artifacts at the given ref from the
@@ -2344,25 +2391,25 @@ async def piano_roll_page(
     """
     repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
     short_ref = ref[:8] if len(ref) >= 8 else ref
-    return templates.TemplateResponse(
+    ctx: dict[str, object] = {
+        "owner": owner,
+        "repo_slug": repo_slug,
+        "repo_id": repo_id,
+        "ref": ref,
+        "short_ref": short_ref,
+        "path": None,
+        "base_url": base_url,
+        "current_page": "piano-roll",
+    }
+    return json_or_html(
         request,
-        "musehub/pages/piano_roll.html",
-        {
-            "owner": owner,
-            "repo_slug": repo_slug,
-            "repo_id": repo_id,
-            "ref": ref,
-            "short_ref": short_ref,
-            "path": None,
-            "base_url": base_url,
-            "current_page": "piano-roll",
-        },
+        lambda: templates.TemplateResponse(request, "musehub/pages/piano_roll.html", ctx),
+        ctx,
     )
 
 
 @router.get(
     "/{owner}/{repo_slug}/piano-roll/{ref}/{path:path}",
-    response_class=HTMLResponse,
     summary="Muse Hub piano roll — single MIDI track",
 )
 async def piano_roll_track_page(
@@ -2372,7 +2419,7 @@ async def piano_roll_track_page(
     ref: str,
     path: str,
     db: AsyncSession = Depends(get_db),
-) -> HTMLResponse:
+) -> Response:
     """Render the Canvas-based piano roll scoped to a single MIDI file ``path``.
 
     Identical to :func:`piano_roll_page` but restricts the view to one specific
@@ -2386,25 +2433,25 @@ async def piano_roll_track_page(
     """
     repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
     short_ref = ref[:8] if len(ref) >= 8 else ref
-    return templates.TemplateResponse(
+    ctx: dict[str, object] = {
+        "owner": owner,
+        "repo_slug": repo_slug,
+        "repo_id": repo_id,
+        "ref": ref,
+        "short_ref": short_ref,
+        "path": path,
+        "base_url": base_url,
+        "current_page": "piano-roll",
+    }
+    return json_or_html(
         request,
-        "musehub/pages/piano_roll.html",
-        {
-            "owner": owner,
-            "repo_slug": repo_slug,
-            "repo_id": repo_id,
-            "ref": ref,
-            "short_ref": short_ref,
-            "path": path,
-            "base_url": base_url,
-            "current_page": "piano-roll",
-        },
+        lambda: templates.TemplateResponse(request, "musehub/pages/piano_roll.html", ctx),
+        ctx,
     )
 
 
 @router.get(
     "/{owner}/{repo_slug}/blob/{ref}/{path:path}",
-    response_class=HTMLResponse,
     summary="Muse Hub file blob viewer — music-aware file rendering",
 )
 async def blob_page(
@@ -2414,7 +2461,7 @@ async def blob_page(
     ref: str,
     path: str,
     db: AsyncSession = Depends(get_db),
-) -> HTMLResponse:
+) -> Response:
     """Render the music-aware blob viewer for a single file at a given ref.
 
     Dispatches to the appropriate rendering mode based on file extension:
@@ -2434,25 +2481,25 @@ async def blob_page(
     """
     repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
     filename = path.split("/")[-1] if path else ""
-    return templates.TemplateResponse(
+    ctx: dict[str, object] = {
+        "owner": owner,
+        "repo_slug": repo_slug,
+        "repo_id": repo_id,
+        "ref": ref,
+        "file_path": path,
+        "filename": filename,
+        "base_url": base_url,
+        "current_page": "tree",
+    }
+    return json_or_html(
         request,
-        "musehub/pages/blob.html",
-        {
-            "owner": owner,
-            "repo_slug": repo_slug,
-            "repo_id": repo_id,
-            "ref": ref,
-            "file_path": path,
-            "filename": filename,
-            "base_url": base_url,
-            "current_page": "tree",
-        },
+        lambda: templates.TemplateResponse(request, "musehub/pages/blob.html", ctx),
+        ctx,
     )
 
 
 @router.get(
     "/{owner}/{repo_slug}/score/{ref}",
-    response_class=HTMLResponse,
     summary="Muse Hub score renderer — full score, all tracks",
 )
 async def score_page(
@@ -2461,7 +2508,7 @@ async def score_page(
     repo_slug: str,
     ref: str,
     db: AsyncSession = Depends(get_db),
-) -> HTMLResponse:
+) -> Response:
     """Render the sheet music score page for a given commit ref (all tracks).
 
     Displays all instrument parts as standard music notation rendered via a
@@ -2481,24 +2528,24 @@ async def score_page(
     to one instrument track.
     """
     repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
-    return templates.TemplateResponse(
+    ctx: dict[str, object] = {
+        "owner": owner,
+        "repo_slug": repo_slug,
+        "repo_id": repo_id,
+        "ref": ref,
+        "base_url": base_url,
+        "path": "",
+        "current_page": "score",
+    }
+    return json_or_html(
         request,
-        "musehub/pages/score.html",
-        {
-            "owner": owner,
-            "repo_slug": repo_slug,
-            "repo_id": repo_id,
-            "ref": ref,
-            "base_url": base_url,
-            "path": "",
-            "current_page": "score",
-        },
+        lambda: templates.TemplateResponse(request, "musehub/pages/score.html", ctx),
+        ctx,
     )
 
 
 @router.get(
     "/{owner}/{repo_slug}/activity",
-    response_class=HTMLResponse,
     summary="Muse Hub activity feed — repo-level event stream",
 )
 async def activity_page(
@@ -2506,7 +2553,7 @@ async def activity_page(
     owner: str,
     repo_slug: str,
     db: AsyncSession = Depends(get_db),
-) -> HTMLResponse:
+) -> Response:
     """Render the repo-level activity feed page.
 
     Shows a chronological, paginated event stream for the repo covering:
@@ -2517,22 +2564,22 @@ async def activity_page(
     via localStorage JWT, matching all other UI pages.
     """
     repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
-    return templates.TemplateResponse(
+    ctx: dict[str, object] = {
+        "owner": owner,
+        "repo_slug": repo_slug,
+        "repo_id": repo_id,
+        "base_url": base_url,
+        "current_page": "activity",
+    }
+    return json_or_html(
         request,
-        "musehub/pages/activity.html",
-        {
-            "owner": owner,
-            "repo_slug": repo_slug,
-            "repo_id": repo_id,
-            "base_url": base_url,
-            "current_page": "activity",
-        },
+        lambda: templates.TemplateResponse(request, "musehub/pages/activity.html", ctx),
+        ctx,
     )
 
 
 @router.get(
     "/{owner}/{repo_slug}/score/{ref}/{path:path}",
-    response_class=HTMLResponse,
     summary="Muse Hub score renderer — single-track part view",
 )
 async def score_part_page(
@@ -2542,7 +2589,7 @@ async def score_part_page(
     ref: str,
     path: str,
     db: AsyncSession = Depends(get_db),
-) -> HTMLResponse:
+) -> Response:
     """Render the sheet music score page filtered to a single instrument part.
 
     Identical to ``score/{ref}`` but the ``path`` segment identifies a specific
@@ -2552,16 +2599,17 @@ async def score_part_page(
     No JWT is required to render the HTML shell.
     """
     repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
-    return templates.TemplateResponse(
+    ctx: dict[str, object] = {
+        "owner": owner,
+        "repo_slug": repo_slug,
+        "repo_id": repo_id,
+        "ref": ref,
+        "base_url": base_url,
+        "path": path,
+        "current_page": "score",
+    }
+    return json_or_html(
         request,
-        "musehub/pages/score.html",
-        {
-            "owner": owner,
-            "repo_slug": repo_slug,
-            "repo_id": repo_id,
-            "ref": ref,
-            "base_url": base_url,
-            "path": path,
-            "current_page": "score",
-        },
+        lambda: templates.TemplateResponse(request, "musehub/pages/score.html", ctx),
+        ctx,
     )
