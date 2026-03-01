@@ -22,6 +22,18 @@ Covers issue #227 (emotion map):
 - test_emotion_map_endpoint_requires_auth       — endpoint returns 401 without auth
 - test_emotion_map_endpoint_unknown_repo_404    — unknown repo returns 404
 - test_emotion_map_endpoint_etag                — ETag header is present
+
+Covers issue #406 (cross-ref similarity):
+- test_compute_ref_similarity_returns_correct_type — service returns RefSimilarityResponse
+- test_compute_ref_similarity_dimensions_in_range  — all 10 dimensions in [0.0, 1.0]
+- test_compute_ref_similarity_overall_in_range     — overall_similarity in [0.0, 1.0]
+- test_compute_ref_similarity_is_deterministic     — same pair always returns same result
+- test_compute_ref_similarity_interpretation_nonempty — interpretation is a non-empty string
+- test_ref_similarity_endpoint_200                 — HTTP GET returns 200 with required fields
+- test_ref_similarity_endpoint_requires_compare    — missing compare param returns 422
+- test_ref_similarity_endpoint_requires_auth       — private repo returns 401 without auth
+- test_ref_similarity_endpoint_unknown_repo_404    — unknown repo returns 404
+- test_ref_similarity_endpoint_etag                — ETag header is present
 """
 from __future__ import annotations
 
@@ -49,6 +61,7 @@ from maestro.models.musehub_analysis import (
     MeterData,
     MotifEntry,
     MotifsData,
+    RefSimilarityResponse,
     SimilarityData,
     TempoData,
 )
@@ -57,6 +70,7 @@ from maestro.services.musehub_analysis import (
     compute_analysis_response,
     compute_dimension,
     compute_emotion_map,
+    compute_ref_similarity,
 )
 
 
@@ -832,3 +846,177 @@ async def test_analysis_aggregate_endpoint_returns_all_dimensions(
         assert "computedAt" in dim_entry
         assert "data" in dim_entry
         assert "filtersApplied" in dim_entry
+
+
+# ---------------------------------------------------------------------------
+# Issue #406 — Cross-ref similarity service unit tests
+# ---------------------------------------------------------------------------
+
+
+def test_compute_ref_similarity_returns_correct_type() -> None:
+    """compute_ref_similarity returns a RefSimilarityResponse."""
+    result = compute_ref_similarity(
+        repo_id="repo-1",
+        base_ref="main",
+        compare_ref="experiment/jazz-voicings",
+    )
+    assert isinstance(result, RefSimilarityResponse)
+
+
+def test_compute_ref_similarity_dimensions_in_range() -> None:
+    """All 10 dimension scores are within [0.0, 1.0]."""
+    result = compute_ref_similarity(
+        repo_id="repo-1",
+        base_ref="main",
+        compare_ref="feat/new-bridge",
+    )
+    dims = result.dimensions
+    for attr in (
+        "pitch_distribution",
+        "rhythm_pattern",
+        "tempo",
+        "dynamics",
+        "harmonic_content",
+        "form",
+        "instrument_blend",
+        "groove",
+        "contour",
+        "emotion",
+    ):
+        score = getattr(dims, attr)
+        assert 0.0 <= score <= 1.0, f"{attr} out of range: {score}"
+
+
+def test_compute_ref_similarity_overall_in_range() -> None:
+    """overall_similarity is within [0.0, 1.0]."""
+    result = compute_ref_similarity(
+        repo_id="repo-1",
+        base_ref="v1.0",
+        compare_ref="v2.0",
+    )
+    assert 0.0 <= result.overall_similarity <= 1.0
+
+
+def test_compute_ref_similarity_is_deterministic() -> None:
+    """Same ref pair always returns the same overall_similarity."""
+    a = compute_ref_similarity(repo_id="r", base_ref="main", compare_ref="dev")
+    b = compute_ref_similarity(repo_id="r", base_ref="main", compare_ref="dev")
+    assert a.overall_similarity == b.overall_similarity
+    assert a.dimensions == b.dimensions
+
+
+def test_compute_ref_similarity_interpretation_nonempty() -> None:
+    """interpretation is a non-empty string."""
+    result = compute_ref_similarity(
+        repo_id="repo-1",
+        base_ref="main",
+        compare_ref="feature/rhythm-variations",
+    )
+    assert isinstance(result.interpretation, str)
+    assert len(result.interpretation) > 0
+
+
+# ---------------------------------------------------------------------------
+# Issue #406 — Cross-ref similarity HTTP endpoint tests
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.anyio
+async def test_ref_similarity_endpoint_200(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+    db_session: AsyncSession,
+) -> None:
+    """GET /analysis/{ref}/similarity returns 200 with required fields."""
+    repo_id = await _create_repo(client, auth_headers)
+    resp = await client.get(
+        f"/api/v1/musehub/repos/{repo_id}/analysis/main/similarity?compare=dev",
+        headers=auth_headers,
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["baseRef"] == "main"
+    assert body["compareRef"] == "dev"
+    assert "overallSimilarity" in body
+    assert "dimensions" in body
+    assert "interpretation" in body
+    dims = body["dimensions"]
+    for key in (
+        "pitchDistribution",
+        "rhythmPattern",
+        "tempo",
+        "dynamics",
+        "harmonicContent",
+        "form",
+        "instrumentBlend",
+        "groove",
+        "contour",
+        "emotion",
+    ):
+        assert key in dims, f"Missing dimension key: {key}"
+        assert 0.0 <= dims[key] <= 1.0
+
+
+@pytest.mark.anyio
+async def test_ref_similarity_endpoint_requires_compare(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+    db_session: AsyncSession,
+) -> None:
+    """Missing compare param returns 422 Unprocessable Entity."""
+    repo_id = await _create_repo(client, auth_headers)
+    resp = await client.get(
+        f"/api/v1/musehub/repos/{repo_id}/analysis/main/similarity",
+        headers=auth_headers,
+    )
+    assert resp.status_code == 422
+
+
+@pytest.mark.anyio
+async def test_ref_similarity_endpoint_requires_auth(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+    db_session: AsyncSession,
+) -> None:
+    """Private repo returns 401 when no auth token is provided.
+
+    Uses a real private repo so the repo lookup succeeds before the auth
+    check fires — consistent with the optional_token pattern used by this
+    and other analysis endpoints (auth is checked after repo visibility).
+    """
+    repo_id = await _create_repo(client, auth_headers)
+    resp = await client.get(
+        f"/api/v1/musehub/repos/{repo_id}/analysis/main/similarity?compare=dev",
+    )
+    assert resp.status_code == 401
+
+
+@pytest.mark.anyio
+async def test_ref_similarity_endpoint_unknown_repo_404(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+    db_session: AsyncSession,
+) -> None:
+    """Unknown repo_id returns 404."""
+    resp = await client.get(
+        "/api/v1/musehub/repos/00000000-0000-0000-0000-000000000000/analysis/main/similarity?compare=dev",
+        headers=auth_headers,
+    )
+    assert resp.status_code == 404
+
+
+@pytest.mark.anyio
+async def test_ref_similarity_endpoint_etag(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+    db_session: AsyncSession,
+) -> None:
+    """Similarity endpoint includes ETag header for client-side caching."""
+    repo_id = await _create_repo(client, auth_headers)
+    resp = await client.get(
+        f"/api/v1/musehub/repos/{repo_id}/analysis/main/similarity?compare=dev",
+        headers=auth_headers,
+    )
+    assert resp.status_code == 200
+    assert "etag" in resp.headers
+    assert resp.headers["etag"].startswith('"')
