@@ -1,0 +1,690 @@
+{% extends "musehub/base.html" %}
+{% block title %}Settings · {{ owner }}/{{ repo_slug }}{% endblock %}
+{% block extra_css %}
+<style>
+.settings-layout {
+  display: grid;
+  grid-template-columns: 220px 1fr;
+  gap: var(--space-5);
+  align-items: start;
+}
+@media (max-width: 700px) {
+  .settings-layout { grid-template-columns: 1fr; }
+  .settings-sidebar { display: flex; flex-wrap: wrap; gap: var(--space-2); border-right: none; padding-right: 0; border-bottom: 1px solid var(--border-subtle); padding-bottom: var(--space-3); margin-bottom: var(--space-3); }
+}
+.settings-sidebar {
+  border-right: 1px solid var(--border-subtle);
+  padding-right: var(--space-4);
+  position: sticky;
+  top: 72px;
+}
+.settings-nav-link {
+  display: block;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md, 6px);
+  font-size: var(--font-size-sm, 13px);
+  color: var(--text-primary);
+  text-decoration: none;
+  margin-bottom: 2px;
+  cursor: pointer;
+  border: none;
+  background: none;
+  width: 100%;
+  text-align: left;
+}
+.settings-nav-link:hover { background: var(--bg-overlay); }
+.settings-nav-link.active { background: var(--bg-overlay); font-weight: 600; color: var(--color-accent); }
+.settings-nav-group { margin-bottom: var(--space-3); }
+.settings-nav-group-label {
+  font-size: var(--font-size-xs, 11px);
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 0 var(--space-3);
+  margin-bottom: var(--space-1);
+}
+.settings-section { display: none; }
+.settings-section.active { display: block; }
+.form-group { margin-bottom: var(--space-4); }
+.form-label { display: block; font-size: var(--font-size-sm, 13px); font-weight: 600; margin-bottom: var(--space-1); color: var(--text-primary); }
+.form-description { font-size: var(--font-size-xs, 11px); color: var(--text-muted); margin-bottom: var(--space-2); }
+.form-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 6px 10px;
+  background: var(--bg-surface, #0d1117);
+  border: 1px solid var(--border-default, #30363d);
+  border-radius: var(--radius-md, 6px);
+  color: var(--text-primary);
+  font-size: var(--font-size-sm, 13px);
+}
+.form-input:focus { outline: none; border-color: var(--color-accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-accent) 25%, transparent); }
+.form-checkbox-row {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  background: var(--bg-surface, #0d1117);
+  border: 1px solid var(--border-subtle, #21262d);
+  border-radius: var(--radius-md, 6px);
+  margin-bottom: var(--space-2);
+}
+.form-checkbox-row input[type=checkbox] { margin-top: 2px; flex-shrink: 0; }
+.form-checkbox-label { font-size: var(--font-size-sm, 13px); font-weight: 600; color: var(--text-primary); }
+.form-checkbox-desc { font-size: var(--font-size-xs, 11px); color: var(--text-muted); margin-top: 2px; }
+.danger-zone {
+  border: 1px solid #f85149;
+  border-radius: var(--radius-md, 6px);
+  overflow: hidden;
+}
+.danger-zone-header {
+  background: rgba(248,81,73,0.08);
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid #f8514920;
+  font-size: 14px;
+  font-weight: 600;
+  color: #f85149;
+}
+.danger-action-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--border-subtle);
+  gap: var(--space-4);
+}
+.danger-action-row:last-child { border-bottom: none; }
+.danger-action-info { flex: 1; }
+.danger-action-title { font-size: var(--font-size-sm, 13px); font-weight: 600; color: var(--text-primary); }
+.danger-action-desc { font-size: var(--font-size-xs, 11px); color: var(--text-muted); margin-top: 2px; }
+.confirm-modal-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.6);
+  z-index: 1000;
+  align-items: center;
+  justify-content: center;
+}
+.confirm-modal-overlay.open { display: flex; }
+.confirm-modal {
+  background: var(--bg-canvas, #0d1117);
+  border: 1px solid var(--border-default, #30363d);
+  border-radius: var(--radius-lg, 12px);
+  padding: var(--space-5);
+  max-width: 440px;
+  width: 90%;
+}
+.confirm-modal h3 { margin: 0 0 var(--space-3); font-size: 16px; color: #f85149; }
+.confirm-modal p { font-size: var(--font-size-sm, 13px); color: var(--text-muted); margin-bottom: var(--space-3); }
+.confirm-modal-actions { display: flex; gap: var(--space-3); justify-content: flex-end; margin-top: var(--space-4); }
+.tag-input-container { display: flex; flex-wrap: wrap; gap: 6px; padding: 6px 8px; background: var(--bg-surface, #0d1117); border: 1px solid var(--border-default, #30363d); border-radius: var(--radius-md, 6px); cursor: text; }
+.tag-pill { display: inline-flex; align-items: center; gap: 4px; background: var(--bg-overlay); border-radius: 20px; padding: 2px 8px; font-size: 12px; color: var(--text-primary); }
+.tag-pill-remove { cursor: pointer; color: var(--text-muted); font-size: 14px; line-height: 1; background: none; border: none; padding: 0; }
+.tag-pill-remove:hover { color: #f85149; }
+.tag-text-input { border: none; outline: none; background: transparent; color: var(--text-primary); font-size: var(--font-size-sm, 13px); min-width: 80px; flex: 1; }
+</style>
+{% endblock %}
+{% block breadcrumb %}
+  <a href="/musehub/ui/{{ owner }}">{{ owner }}</a> /
+  <a href="{{ base_url }}">{{ repo_slug }}</a> /
+  Settings
+{% endblock %}
+
+{% block repo_nav %}
+{% include "musehub/partials/repo_nav.html" %}
+{% endblock %}
+
+{% block page_data %}
+const repoId      = {{ repo_id | tojson }};
+const owner       = {{ owner | tojson }};
+const repoSlug    = {{ repo_slug | tojson }};
+const base        = {{ base_url | tojson }};
+const apiBase     = '/api/v1/musehub/repos/' + repoId;
+const activeSection = {{ active_section | tojson }};
+{% endblock %}
+
+{% block token_form %}
+<div class="token-form" id="token-form" style="display:none">
+  <p id="token-msg">Enter your Maestro JWT to manage this repo's settings.</p>
+  <input type="password" id="token-input" placeholder="eyJ..." />
+  <button class="btn btn-primary" onclick="saveToken()">Save &amp; Load</button>
+  &nbsp;
+  <button class="btn btn-secondary" onclick="clearToken();location.reload()">Clear</button>
+</div>
+{% endblock %}
+
+{% block page_script %}
+{% raw %}
+// ── State ─────────────────────────────────────────────────────────────────────
+let _settings  = null;
+let _topics    = [];
+let _activeSection = activeSection || 'general';
+
+// ── Sidebar navigation ────────────────────────────────────────────────────────
+function activateSection(name) {
+  _activeSection = name;
+  document.querySelectorAll('.settings-nav-link').forEach(el => {
+    el.classList.toggle('active', el.dataset.section === name);
+  });
+  document.querySelectorAll('.settings-section').forEach(el => {
+    el.classList.toggle('active', el.id === 'section-' + name);
+  });
+  history.replaceState(null, '', '?section=' + encodeURIComponent(name));
+}
+
+// ── Topic tag input ───────────────────────────────────────────────────────────
+function renderTopics() {
+  const container = document.getElementById('topics-container');
+  if (!container) return;
+  const pills = _topics.map((t, i) =>
+    `<span class="tag-pill">
+      ${escHtml(t)}
+      <button class="tag-pill-remove" onclick="removeTopic(${i})" title="Remove">&times;</button>
+    </span>`
+  ).join('');
+  const input = '<input class="tag-text-input" id="topic-input" placeholder="Add topic…" onkeydown="onTopicKey(event)" maxlength="50">';
+  container.innerHTML = pills + input;
+  // Re-focus after render if user typed
+}
+
+function onTopicKey(e) {
+  if (e.key === 'Enter' || e.key === ',') {
+    e.preventDefault();
+    const val = e.target.value.trim().toLowerCase().replace(/[^a-z0-9-]/g, '-');
+    if (val && !_topics.includes(val) && _topics.length < 20) {
+      _topics.push(val);
+      renderTopics();
+      const inp = document.getElementById('topic-input');
+      if (inp) inp.focus();
+    }
+  } else if (e.key === 'Backspace' && e.target.value === '' && _topics.length > 0) {
+    _topics.pop();
+    renderTopics();
+    const inp = document.getElementById('topic-input');
+    if (inp) inp.focus();
+  }
+}
+
+function removeTopic(i) {
+  _topics.splice(i, 1);
+  renderTopics();
+}
+
+// ── Save helpers ──────────────────────────────────────────────────────────────
+function showMsg(id, text, isError) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.textContent = text;
+  el.style.color = isError ? '#f85149' : '#3fb950';
+  el.style.display = 'block';
+  setTimeout(() => { el.style.display = 'none'; }, 5000);
+}
+
+async function patchSettings(patch, msgId) {
+  try {
+    const token = getToken();
+    if (!token) {
+      showMsg(msgId, '⚠️ A JWT is required to save settings.', true);
+      return false;
+    }
+    const resp = await fetch(apiBase + '/settings', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+      body: JSON.stringify(patch),
+    });
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({ detail: resp.statusText }));
+      showMsg(msgId, '❌ ' + (err.detail || 'Failed to save.'), true);
+      return false;
+    }
+    showMsg(msgId, '✅ Saved.', false);
+    return true;
+  } catch (e) {
+    showMsg(msgId, '❌ ' + e.message, true);
+    return false;
+  }
+}
+
+// ── General section ───────────────────────────────────────────────────────────
+async function saveGeneral(e) {
+  e.preventDefault();
+  const name        = document.getElementById('s-name').value.trim();
+  const description = document.getElementById('s-description').value.trim();
+  const homepageUrl = document.getElementById('s-homepage').value.trim() || null;
+  const visibility  = document.getElementById('s-visibility').value;
+  const license     = document.getElementById('s-license').value.trim() || null;
+  if (!name) { showMsg('general-msg', '⚠️ Repo name is required.', true); return; }
+  const ok = await patchSettings({ name, description, homepageUrl, visibility, license, topics: _topics }, 'general-msg');
+  if (ok) {
+    _settings.name        = name;
+    _settings.description = description;
+    _settings.homepageUrl = homepageUrl;
+    _settings.visibility  = visibility;
+    _settings.license     = license;
+    _settings.topics      = [..._topics];
+    document.title = 'Settings · ' + escHtml(owner) + '/' + escHtml(name) + ' — Muse Hub';
+  }
+}
+
+// ── Merge settings section ────────────────────────────────────────────────────
+async function saveMerge(e) {
+  e.preventDefault();
+  const patch = {
+    allowMergeCommit:    document.getElementById('s-merge-commit').checked,
+    allowSquashMerge:    document.getElementById('s-squash-merge').checked,
+    allowRebaseMerge:    document.getElementById('s-rebase-merge').checked,
+    deleteBranchOnMerge: document.getElementById('s-delete-branch').checked,
+  };
+  await patchSettings(patch, 'merge-msg');
+}
+
+// ── Danger zone actions ───────────────────────────────────────────────────────
+function openModal(id) {
+  const overlay = document.getElementById(id);
+  if (overlay) overlay.classList.add('open');
+}
+
+function closeModal(id) {
+  const overlay = document.getElementById(id);
+  if (overlay) {
+    overlay.classList.remove('open');
+    // Clear any confirmation inputs
+    const inp = overlay.querySelector('.confirm-name-input');
+    if (inp) inp.value = '';
+  }
+}
+
+async function archiveRepo() {
+  const ok = await patchSettings({ archived: true }, 'danger-msg');
+  if (ok) {
+    closeModal('modal-archive');
+    window.location.href = base;
+  }
+}
+
+async function deleteRepo() {
+  const input = document.getElementById('confirm-delete-name');
+  const expected = owner + '/' + repoSlug;
+  if (!input || input.value.trim() !== expected) {
+    document.getElementById('delete-name-error').style.display = 'block';
+    return;
+  }
+  try {
+    const token = getToken();
+    if (!token) { showMsg('danger-msg', '⚠️ A JWT is required.', true); return; }
+    const resp = await fetch(apiBase, {
+      method: 'DELETE',
+      headers: { 'Authorization': 'Bearer ' + token },
+    });
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({ detail: resp.statusText }));
+      showMsg('danger-msg', '❌ ' + (err.detail || 'Delete failed.'), true);
+      closeModal('modal-delete');
+      return;
+    }
+    closeModal('modal-delete');
+    window.location.href = '/musehub/ui/' + encodeURIComponent(owner);
+  } catch (e) {
+    showMsg('danger-msg', '❌ ' + e.message, true);
+    closeModal('modal-delete');
+  }
+}
+
+async function transferOwnership() {
+  const newOwner = document.getElementById('confirm-transfer-owner').value.trim();
+  if (!newOwner) {
+    document.getElementById('transfer-owner-error').textContent = 'New owner username is required.';
+    document.getElementById('transfer-owner-error').style.display = 'block';
+    return;
+  }
+  try {
+    const token = getToken();
+    if (!token) { showMsg('danger-msg', '⚠️ A JWT is required.', true); return; }
+    const resp = await fetch(apiBase + '/transfer', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+      body: JSON.stringify({ newOwner }),
+    });
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({ detail: resp.statusText }));
+      document.getElementById('transfer-owner-error').textContent = err.detail || 'Transfer failed.';
+      document.getElementById('transfer-owner-error').style.display = 'block';
+      return;
+    }
+    closeModal('modal-transfer');
+    window.location.href = '/musehub/ui/' + encodeURIComponent(newOwner) + '/' + encodeURIComponent(repoSlug);
+  } catch (e) {
+    document.getElementById('transfer-owner-error').textContent = e.message;
+    document.getElementById('transfer-owner-error').style.display = 'block';
+  }
+}
+
+// ── Main loader ───────────────────────────────────────────────────────────────
+async function load() {
+  initRepoNav(repoId);
+
+  try {
+    _settings = await apiFetch('/repos/' + repoId + '/settings');
+  } catch (e) {
+    if (e.message !== 'auth')
+      document.getElementById('content').innerHTML = '<p class="error">&#10005; ' + escHtml(e.message) + '</p>';
+    return;
+  }
+
+  _topics = Array.isArray(_settings.topics) ? [..._settings.topics] : [];
+
+  const visOpts = ['public', 'private'].map(v =>
+    `<option value="${v}"${_settings.visibility === v ? ' selected' : ''}>${v.charAt(0).toUpperCase() + v.slice(1)}</option>`
+  ).join('');
+
+  document.getElementById('content').innerHTML = `
+    <div class="settings-layout">
+      <!-- Sidebar -->
+      <nav class="settings-sidebar" aria-label="Settings navigation">
+        <div class="settings-nav-group">
+          <div class="settings-nav-group-label">Repository</div>
+          <button class="settings-nav-link" data-section="general" onclick="activateSection('general')">General</button>
+          <button class="settings-nav-link" data-section="collaboration" onclick="activateSection('collaboration')">Collaboration</button>
+          <button class="settings-nav-link" data-section="merge" onclick="activateSection('merge')">Merge settings</button>
+        </div>
+        <div class="settings-nav-group">
+          <div class="settings-nav-group-label">Risk</div>
+          <button class="settings-nav-link" data-section="danger" onclick="activateSection('danger')"
+                  style="color:#f85149">Danger Zone</button>
+        </div>
+      </nav>
+
+      <!-- Content panels -->
+      <div class="settings-content">
+
+        <!-- ── General ──────────────────────────────────────────────────────── -->
+        <section id="section-general" class="settings-section">
+          <div class="card">
+            <h2 style="margin-bottom:var(--space-4)">General Settings</h2>
+            <form id="form-general" onsubmit="saveGeneral(event)">
+              <div class="form-group">
+                <label class="form-label" for="s-name">Repository name</label>
+                <div class="form-description">The name used in URLs. Changing it will redirect old links.</div>
+                <input class="form-input" id="s-name" type="text" value="${escHtml(_settings.name)}" required maxlength="100" pattern="[a-zA-Z0-9._-]+" title="Alphanumeric, hyphens, underscores, dots only">
+              </div>
+
+              <div class="form-group">
+                <label class="form-label" for="s-description">Description</label>
+                <div class="form-description">A short description shown on your repo's home page and explore grid.</div>
+                <input class="form-input" id="s-description" type="text" value="${escHtml(_settings.description || '')}" maxlength="350">
+              </div>
+
+              <div class="form-group">
+                <label class="form-label" for="s-homepage">Website URL</label>
+                <div class="form-description">A link to your project's home page, portfolio, or streaming platform.</div>
+                <input class="form-input" id="s-homepage" type="url" value="${escHtml(_settings.homepageUrl || '')}" placeholder="https://example.com">
+              </div>
+
+              <div class="form-group">
+                <label class="form-label">Topics</label>
+                <div class="form-description">Free-form keyword tags that help listeners discover your repo. Press <kbd>Enter</kbd> or <kbd>,</kbd> to add.</div>
+                <div class="tag-input-container" id="topics-container" onclick="document.getElementById('topic-input') && document.getElementById('topic-input').focus()"></div>
+              </div>
+
+              <div class="form-group">
+                <label class="form-label" for="s-license">License</label>
+                <div class="form-description">SPDX identifier or display name (e.g. <code>CC BY 4.0</code>, <code>MIT</code>).</div>
+                <input class="form-input" id="s-license" type="text" value="${escHtml(_settings.license || '')}" placeholder="CC BY 4.0" maxlength="100">
+              </div>
+
+              <div class="form-group">
+                <label class="form-label" for="s-visibility">Visibility</label>
+                <div class="form-description">Public repos are visible to everyone. Private repos are only visible to you and your collaborators.</div>
+                <select class="form-input" id="s-visibility">${visOpts}</select>
+              </div>
+
+              <div style="display:flex;align-items:center;gap:var(--space-3)">
+                <button class="btn btn-primary" type="submit">Save changes</button>
+                <span id="general-msg" style="font-size:13px;display:none"></span>
+              </div>
+            </form>
+          </div>
+        </section>
+
+        <!-- ── Collaboration ─────────────────────────────────────────────────── -->
+        <section id="section-collaboration" class="settings-section">
+          <div class="card">
+            <h2 style="margin-bottom:var(--space-2)">Collaborators</h2>
+            <p class="form-description" style="margin-bottom:var(--space-4)">
+              Manage who has access to this repository. Collaborators can push commits,
+              review pull requests, and manage issues depending on their permission level.
+            </p>
+            <div id="collaborators-list"><p class="loading">Loading collaborators&#8230;</p></div>
+
+            <div style="margin-top:var(--space-5);padding-top:var(--space-4);border-top:1px solid var(--border-subtle)">
+              <h3 style="margin-bottom:var(--space-3)">Invite a collaborator</h3>
+              <div style="display:flex;gap:var(--space-3)">
+                <input class="form-input" id="invite-username" type="text" placeholder="GitHub username" style="max-width:260px">
+                <select class="form-input" id="invite-role" style="max-width:140px">
+                  <option value="read">Read</option>
+                  <option value="write" selected>Write</option>
+                  <option value="admin">Admin</option>
+                </select>
+                <button class="btn btn-primary" onclick="inviteCollaborator()">Invite</button>
+              </div>
+              <span id="invite-msg" style="font-size:13px;display:none;margin-top:8px;display:none"></span>
+            </div>
+          </div>
+        </section>
+
+        <!-- ── Merge settings ────────────────────────────────────────────────── -->
+        <section id="section-merge" class="settings-section">
+          <div class="card">
+            <h2 style="margin-bottom:var(--space-2)">Merge settings</h2>
+            <p class="form-description" style="margin-bottom:var(--space-4)">
+              Choose which merge strategies are allowed when merging pull requests.
+              At least one strategy must remain enabled.
+            </p>
+            <form id="form-merge" onsubmit="saveMerge(event)">
+              <div class="form-checkbox-row">
+                <input type="checkbox" id="s-merge-commit" ${_settings.allowMergeCommit ? 'checked' : ''}>
+                <div>
+                  <div class="form-checkbox-label">Allow merge commits</div>
+                  <div class="form-checkbox-desc">Add all commits from the head branch to the base branch with a merge commit.</div>
+                </div>
+              </div>
+              <div class="form-checkbox-row">
+                <input type="checkbox" id="s-squash-merge" ${_settings.allowSquashMerge ? 'checked' : ''}>
+                <div>
+                  <div class="form-checkbox-label">Allow squash merging</div>
+                  <div class="form-checkbox-desc">Combine all commits from the head branch into a single commit before merging.</div>
+                </div>
+              </div>
+              <div class="form-checkbox-row">
+                <input type="checkbox" id="s-rebase-merge" ${_settings.allowRebaseMerge ? 'checked' : ''}>
+                <div>
+                  <div class="form-checkbox-label">Allow rebase merging</div>
+                  <div class="form-checkbox-desc">Add all commits from the head branch individually to the base branch.</div>
+                </div>
+              </div>
+              <div class="form-checkbox-row" style="margin-top:var(--space-4)">
+                <input type="checkbox" id="s-delete-branch" ${_settings.deleteBranchOnMerge ? 'checked' : ''}>
+                <div>
+                  <div class="form-checkbox-label">Automatically delete head branches</div>
+                  <div class="form-checkbox-desc">After pull requests are merged, delete head branches automatically.</div>
+                </div>
+              </div>
+              <div style="display:flex;align-items:center;gap:var(--space-3);margin-top:var(--space-4)">
+                <button class="btn btn-primary" type="submit">Save merge settings</button>
+                <span id="merge-msg" style="font-size:13px;display:none"></span>
+              </div>
+            </form>
+          </div>
+        </section>
+
+        <!-- ── Danger Zone ───────────────────────────────────────────────────── -->
+        <section id="section-danger" class="settings-section">
+          <span id="danger-msg" style="font-size:13px;display:none;margin-bottom:var(--space-3)"></span>
+          <div class="danger-zone">
+            <div class="danger-zone-header">&#9888; Danger Zone</div>
+
+            <div class="danger-action-row">
+              <div class="danger-action-info">
+                <div class="danger-action-title">Archive this repository</div>
+                <div class="danger-action-desc">Mark this repo as read-only. Commits, pull requests, and issues will be disabled. This can be reversed.</div>
+              </div>
+              <button class="btn" style="border:1px solid #f85149;color:#f85149;white-space:nowrap" onclick="openModal('modal-archive')">Archive repository</button>
+            </div>
+
+            <div class="danger-action-row">
+              <div class="danger-action-info">
+                <div class="danger-action-title">Transfer ownership</div>
+                <div class="danger-action-desc">Transfer this repository to another user or organisation. You will lose owner access.</div>
+              </div>
+              <button class="btn" style="border:1px solid #f85149;color:#f85149;white-space:nowrap" onclick="openModal('modal-transfer')">Transfer ownership</button>
+            </div>
+
+            <div class="danger-action-row">
+              <div class="danger-action-info">
+                <div class="danger-action-title">Delete this repository</div>
+                <div class="danger-action-desc">Once deleted, this repository and all its data cannot be recovered. Think twice.</div>
+              </div>
+              <button class="btn" style="background:#f85149;color:#fff;border:none;white-space:nowrap" onclick="openModal('modal-delete')">Delete repository</button>
+            </div>
+          </div>
+        </section>
+
+      </div><!-- /.settings-content -->
+    </div><!-- /.settings-layout -->
+
+    <!-- ── Archive confirmation modal ──────────────────────────────────────── -->
+    <div class="confirm-modal-overlay" id="modal-archive">
+      <div class="confirm-modal">
+        <h3>&#9888; Archive repository?</h3>
+        <p>Archiving makes the repository read-only. Commits, issues, and pull requests will be disabled. You can unarchive later from this settings page.</p>
+        <div class="confirm-modal-actions">
+          <button class="btn btn-secondary" onclick="closeModal('modal-archive')">Cancel</button>
+          <button class="btn" style="background:#f85149;color:#fff;border:none" onclick="archiveRepo()">Archive</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Transfer confirmation modal ─────────────────────────────────────── -->
+    <div class="confirm-modal-overlay" id="modal-transfer">
+      <div class="confirm-modal">
+        <h3>Transfer ownership</h3>
+        <p>Enter the username of the new owner. You will lose owner access to this repository and all its data will be transferred.</p>
+        <div class="form-group">
+          <label class="form-label" for="confirm-transfer-owner">New owner username</label>
+          <input class="form-input confirm-name-input" id="confirm-transfer-owner" type="text" placeholder="username" autocomplete="off">
+          <span id="transfer-owner-error" style="font-size:12px;color:#f85149;display:none;margin-top:4px;display:none"></span>
+        </div>
+        <div class="confirm-modal-actions">
+          <button class="btn btn-secondary" onclick="closeModal('modal-transfer')">Cancel</button>
+          <button class="btn" style="background:#f85149;color:#fff;border:none" onclick="transferOwnership()">Transfer</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Delete confirmation modal ────────────────────────────────────────── -->
+    <div class="confirm-modal-overlay" id="modal-delete">
+      <div class="confirm-modal">
+        <h3>&#128465; Delete repository?</h3>
+        <p>This action <strong>cannot be undone</strong>. All commits, pull requests, issues, and objects will be permanently deleted.</p>
+        <div class="form-group">
+          <label class="form-label" for="confirm-delete-name">
+            Type <code>${escHtml(owner + '/' + repoSlug)}</code> to confirm
+          </label>
+          <input class="form-input confirm-name-input" id="confirm-delete-name" type="text" placeholder="${escHtml(owner + '/' + repoSlug)}" autocomplete="off">
+          <span id="delete-name-error" style="font-size:12px;color:#f85149;display:none;margin-top:4px">
+            The name you entered does not match.
+          </span>
+        </div>
+        <div class="confirm-modal-actions">
+          <button class="btn btn-secondary" onclick="closeModal('modal-delete')">Cancel</button>
+          <button class="btn" style="background:#f85149;color:#fff;border:none" onclick="deleteRepo()">Delete forever</button>
+        </div>
+      </div>
+    </div>
+  `;
+
+  // Render topics tag-input
+  renderTopics();
+
+  // Load collaborators
+  loadCollaborators();
+
+  // Activate the section requested in the URL
+  activateSection(_activeSection);
+}
+
+// ── Collaborators loader ──────────────────────────────────────────────────────
+async function loadCollaborators() {
+  const el = document.getElementById('collaborators-list');
+  if (!el) return;
+  try {
+    const data = await apiFetch('/repos/' + repoId + '/collaborators');
+    const collabs = data.collaborators || [];
+    if (collabs.length === 0) {
+      el.innerHTML = '<p class="text-muted text-sm">No collaborators yet. Invite someone below.</p>';
+      return;
+    }
+    el.innerHTML = collabs.map(c => `
+      <div style="display:flex;align-items:center;gap:var(--space-3);padding:var(--space-2) 0;border-bottom:1px solid var(--border-subtle)">
+        <div style="flex:1">
+          <a href="/musehub/ui/users/${escHtml(c.username)}" class="text-sm" style="font-weight:500">${escHtml(c.username)}</a>
+          <span class="badge badge-${c.role === 'admin' ? 'open' : 'inactive'}" style="font-size:10px;margin-left:6px">${escHtml(c.role)}</span>
+        </div>
+        <button class="btn btn-secondary btn-sm" onclick="removeCollaborator('${escHtml(c.username)}')">Remove</button>
+      </div>`
+    ).join('');
+  } catch (e) {
+    if (e.message !== 'auth')
+      el.innerHTML = '<p class="error text-sm">Could not load collaborators.</p>';
+  }
+}
+
+async function inviteCollaborator() {
+  const username = document.getElementById('invite-username').value.trim();
+  const role     = document.getElementById('invite-role').value;
+  const msgEl    = document.getElementById('invite-msg');
+  if (!username) return;
+  try {
+    const token = getToken();
+    if (!token) { showMsg('invite-msg', '⚠️ JWT required.', true); return; }
+    const resp = await fetch(apiBase + '/collaborators', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+      body: JSON.stringify({ username, role }),
+    });
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({ detail: resp.statusText }));
+      showMsg('invite-msg', '❌ ' + (err.detail || 'Invite failed.'), true);
+      return;
+    }
+    document.getElementById('invite-username').value = '';
+    showMsg('invite-msg', '✅ Invited ' + escHtml(username), false);
+    loadCollaborators();
+  } catch (e) {
+    showMsg('invite-msg', '❌ ' + e.message, true);
+  }
+}
+
+async function removeCollaborator(username) {
+  try {
+    const token = getToken();
+    if (!token) { showMsg('danger-msg', '⚠️ JWT required.', true); return; }
+    const resp = await fetch(apiBase + '/collaborators/' + encodeURIComponent(username), {
+      method: 'DELETE',
+      headers: { 'Authorization': 'Bearer ' + token },
+    });
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({ detail: resp.statusText }));
+      alert('Remove failed: ' + (err.detail || resp.statusText));
+      return;
+    }
+    loadCollaborators();
+  } catch (e) {
+    alert('Remove failed: ' + e.message);
+  }
+}
+
+load();
+{% endraw %}
+{% endblock %}
