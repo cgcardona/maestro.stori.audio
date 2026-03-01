@@ -44,6 +44,7 @@ Single source-of-truth migration for Maestro. Creates:
   - musehub_labels, musehub_issue_labels, musehub_pr_labels (label tagging)
   - musehub_collaborators (repo access control beyond owner)
   - musehub_stash, musehub_stash_entries (git-stash-style temporary shelving)
+  - musehub_pr_reviews (reviewer assignment and approval tracking per PR)
 
 Fresh install:
   docker compose exec maestro alembic upgrade head
@@ -940,9 +941,47 @@ def upgrade() -> None:
     )
     op.create_index("ix_musehub_stash_entries_stash_id", "musehub_stash_entries", ["stash_id"])
 
+    # Muse Hub — PR reviews (folded from 0006_pr_reviews)
+    op.create_table(
+        "musehub_pr_reviews",
+        sa.Column("id", sa.String(36), nullable=False),
+        sa.Column("pr_id", sa.String(36), nullable=False),
+        sa.Column("reviewer_username", sa.String(255), nullable=False),
+        sa.Column("state", sa.String(30), nullable=False, server_default="pending"),
+        sa.Column("body", sa.Text(), nullable=True),
+        sa.Column("submitted_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            nullable=False,
+            server_default=sa.text("CURRENT_TIMESTAMP"),
+        ),
+        sa.ForeignKeyConstraint(
+            ["pr_id"],
+            ["musehub_pull_requests.pr_id"],
+            ondelete="CASCADE",
+        ),
+        sa.PrimaryKeyConstraint("id"),
+    )
+    op.create_index("ix_musehub_pr_reviews_pr_id", "musehub_pr_reviews", ["pr_id"])
+    op.create_index(
+        "ix_musehub_pr_reviews_reviewer_username",
+        "musehub_pr_reviews",
+        ["reviewer_username"],
+    )
+    op.create_index("ix_musehub_pr_reviews_state", "musehub_pr_reviews", ["state"])
+
 
 def downgrade() -> None:
     # Drop in reverse creation order, respecting foreign-key dependencies.
+
+    # Muse Hub — PR reviews (folded from 0006_pr_reviews)
+    op.drop_index("ix_musehub_pr_reviews_state", table_name="musehub_pr_reviews")
+    op.drop_index(
+        "ix_musehub_pr_reviews_reviewer_username", table_name="musehub_pr_reviews"
+    )
+    op.drop_index("ix_musehub_pr_reviews_pr_id", table_name="musehub_pr_reviews")
+    op.drop_table("musehub_pr_reviews")
 
     # Muse Hub — stash (folded from 0005_stash)
     op.drop_index("ix_musehub_stash_entries_stash_id", table_name="musehub_stash_entries")
