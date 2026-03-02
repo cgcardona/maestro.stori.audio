@@ -267,17 +267,31 @@ async def _upsert_prs(
 # ---------------------------------------------------------------------------
 
 
+_ACTIVE_STATUSES = {"implementing", "reviewing", "stale"}
+"""Statuses that indicate a run is expected to have a live worktree.
+
+Runs in these states that are absent from the current poller tick are
+orphaned (worktree was removed without a clean status transition) and
+must be flipped to ``unknown`` so the UI does not show phantom agents.
+"""
+
+
 async def _upsert_agent_runs(
     session: object,
     agents: list[AgentNode],
 ) -> None:
+    from sqlalchemy import or_
+
     from sqlalchemy.ext.asyncio import AsyncSession
 
     assert isinstance(session, AsyncSession)
     now = _now()
 
+    live_ids: set[str] = set()
+
     for agent in agents:
         run_id = agent.id
+        live_ids.add(run_id)
         result = await session.execute(
             select(ACAgentRun).where(ACAgentRun.id == run_id)
         )
@@ -303,6 +317,21 @@ async def _upsert_agent_runs(
             existing.status = agent.status.value
             existing.pr_number = agent.pr_number
             existing.last_activity_at = now
+
+    # Orphan sweep: any run that was active in a previous tick but is no
+    # longer backed by a live worktree gets flipped to "unknown".  This
+    # prevents phantom "implementing" rows from persisting in the Run
+    # History after a worktree is removed without a clean shutdown.
+    orphan_result = await session.execute(
+        select(ACAgentRun).where(
+            ACAgentRun.status.in_(_ACTIVE_STATUSES),
+        )
+    )
+    for orphan in orphan_result.scalars().all():
+        if orphan.id not in live_ids:
+            orphan.status = "unknown"
+            orphan.last_activity_at = now
+            logger.debug("🧹 Orphan run %s flipped to unknown", orphan.id)
 
 
 # ---------------------------------------------------------------------------
