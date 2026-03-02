@@ -66,6 +66,7 @@ The embed route sets ``X-Frame-Options: ALLOWALL`` for cross-origin iframe use.
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 from pathlib import Path
@@ -3149,11 +3150,17 @@ async def blob_page(
         is_binary = True
 
     # Read text content for small non-binary files so we can SSR line numbers.
+    # Use asyncio.to_thread so the blocking file read does not stall the event loop.
     content: str | None = None
     if obj is not None and not is_binary and os.path.exists(obj.disk_path):
+        _disk_path = obj.disk_path
+
+        def _read_file() -> str:
+            with open(_disk_path, encoding="utf-8", errors="replace") as fh:
+                return fh.read()
+
         try:
-            with open(obj.disk_path, encoding="utf-8", errors="replace") as fh:
-                content = fh.read()
+            content = await asyncio.to_thread(_read_file)
         except OSError:
             logger.warning("⚠️ blob_page: could not read %s", obj.disk_path)
 

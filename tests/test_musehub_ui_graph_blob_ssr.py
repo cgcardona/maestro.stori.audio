@@ -183,7 +183,6 @@ async def test_graph_page_shows_branch_count(
 async def test_blob_page_renders_file_content_server_side(
     client: AsyncClient,
     db_session: AsyncSession,
-    tmp_path: object,
 ) -> None:
     """Text file content is rendered in the initial HTML without JS.
 
