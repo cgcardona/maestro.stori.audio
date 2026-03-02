@@ -11,6 +11,7 @@
  * Function index:
  *   projectSwitcher()                         — nav project dropdown
  *   pipelineDashboard(initial)                — overview SSE board
+ *   agentCard()                               — expandable agent row with live transcript
  *   phaseSwitcher(label, labels, pinned)      — phase dropdown
  *   pipelineControl(paused)                   — pause/resume toggle
  *   waveControl()                             — start-wave button
@@ -111,6 +112,112 @@ function pipelineDashboard(initial) {
       if (secs < 60)   return secs + 's ago';
       if (secs < 3600) return Math.floor(secs / 60) + 'm ago';
       return Math.floor(secs / 3600) + 'h ago';
+    },
+
+    /** Find the first live agent working on a given issue number (for board cross-reference). */
+    agentForIssue(issueNumber) {
+      if (!this.state || !this.state.agents) return null;
+      return this.state.agents.find(a => a.issue_number === issueNumber) || null;
+    },
+
+    /** Sum of message_count across all currently tracked agents. */
+    totalMsgCount() {
+      if (!this.state || !this.state.agents) return 0;
+      return this.state.agents.reduce((sum, a) => sum + (a.message_count || 0), 0);
+    },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Overview — expandable agent card with live transcript
+// ---------------------------------------------------------------------------
+
+/**
+ * Powers each agent row in the Agent Tree.
+ *
+ * The card manages its own expansion state and the on-demand transcript fetch.
+ * Reactive agent data (status, issue_number, etc.) lives in the parent SSE
+ * scope and is passed in via x-effect so re-fetching triggers automatically
+ * when message_count changes.
+ *
+ * Usage in template:
+ *   <div x-data="agentCard()" x-effect="checkRefresh(agent, agent.message_count)">
+ */
+function agentCard() {
+  return {
+    expanded:         false,
+    transcript:       [],
+    transcriptLoading: false,
+    transcriptError:  null,
+    showKillModal:    false,
+    _prevMsgCount:    0,
+
+    /** Toggle expand/collapse; fetch transcript on first open. */
+    toggle(agentId) {
+      this.expanded = !this.expanded;
+      if (this.expanded && this.transcript.length === 0) {
+        this.fetchTranscript(agentId);
+      }
+    },
+
+    /**
+     * Fetch the agent's transcript from the REST endpoint.
+     * Called on expand and when message_count changes while expanded.
+     */
+    async fetchTranscript(agentId) {
+      this.transcriptLoading = true;
+      this.transcriptError   = null;
+      try {
+        const res = await fetch(`/api/agents/${encodeURIComponent(agentId)}/transcript`);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        // API may return an array directly or {messages:[]} — handle both.
+        this.transcript = Array.isArray(data) ? data : (data.messages || []);
+        this._scrollFeed();
+      } catch (err) {
+        this.transcriptError = err.message || 'Failed to load transcript';
+      } finally {
+        this.transcriptLoading = false;
+      }
+    },
+
+    /**
+     * Called from x-effect="checkRefresh(agent, agent.message_count)".
+     * The explicit agent.message_count arg makes Alpine track it as a dependency
+     * so this re-runs on every SSE tick where the count changed.
+     */
+    checkRefresh(agent, msgCount) {
+      const count = msgCount || 0;
+      if (this.expanded && count !== this._prevMsgCount) {
+        this.fetchTranscript(agent.id);
+      }
+      this._prevMsgCount = count;
+    },
+
+    /** Scroll the transcript feed to the latest message. */
+    _scrollFeed() {
+      this.$nextTick(() => {
+        const feed = this.$el.querySelector('.transcript-feed');
+        if (feed) feed.scrollTop = feed.scrollHeight;
+      });
+    },
+
+    /** Format a kebab-case role name as Title Case words. */
+    formatRole(role) {
+      return (role || '').split('-')
+        .map(w => w.charAt(0).toUpperCase() + w.slice(1))
+        .join(' ');
+    },
+
+    /** True for statuses that mean the agent is actively working. */
+    isActive(status) {
+      return status === 'implementing' || status === 'reviewing';
+    },
+
+    /** Clip long text for compact transcript preview. */
+    truncate(text, maxLen) {
+      if (!text) return '';
+      return text.length > maxLen ? text.slice(0, maxLen) + '…' : text;
     },
   };
 }
