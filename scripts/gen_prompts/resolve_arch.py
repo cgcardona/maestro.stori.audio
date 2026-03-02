@@ -31,7 +31,12 @@ import argparse
 import sys
 from pathlib import Path
 
-import yaml
+try:
+    import yaml as _yaml
+    _YAML_AVAILABLE = True
+except ImportError:
+    _yaml = None  # noqa: F841 — only used via _YAML_AVAILABLE guard at runtime
+    _YAML_AVAILABLE = False
 
 SCRIPT_DIR = Path(__file__).parent
 _YamlDict = dict[str, object]
@@ -75,12 +80,14 @@ def parse_cognitive_arch(raw: str) -> tuple[list[str], list[str]]:
 
 def load_figure_or_archetype(id_: str) -> _YamlDict:
     """Load a figure or archetype YAML file. Tries figures/ first, then archetypes/."""
+    if not _YAML_AVAILABLE:
+        raise ImportError("PyYAML is not installed in the host environment. Install pyyaml or run via docker compose exec maestro.")
     candidate_figure = FIGURES_DIR / f"{id_}.yaml"
     candidate_arch = ARCH_DIR / f"{id_}.yaml"
 
     for path in (candidate_figure, candidate_arch):
         if path.exists():
-            data: object = yaml.safe_load(path.read_text())
+            data: object = _yaml.safe_load(path.read_text())
             if data is None:
                 raise ValueError(f"Empty YAML file: {path}")
             if not isinstance(data, dict):
@@ -97,13 +104,15 @@ def load_figure_or_archetype(id_: str) -> _YamlDict:
 
 def load_skill(id_: str) -> _YamlDict:
     """Load a skill domain YAML file from skill_domains/."""
+    if not _YAML_AVAILABLE:
+        raise ImportError("PyYAML is not installed in the host environment. Install pyyaml or run via docker compose exec maestro.")
     path = SKILLS_DIR / f"{id_}.yaml"
     if not path.exists():
         raise FileNotFoundError(
             f"Cannot find skill domain '{id_}' at:\n  {path}\n"
             "Check that the id matches a file in cognitive_archetypes/skill_domains/."
         )
-    raw: object = yaml.safe_load(path.read_text())
+    raw: object = _yaml.safe_load(path.read_text())
     if raw is None:
         raise ValueError(f"Empty skill domain YAML: {path}")
     if not isinstance(raw, dict):
@@ -285,7 +294,7 @@ def render_fingerprint(
     try:
         figure_ids, skill_ids = parse_cognitive_arch(arch)
         _figures_str, skills_str = _resolve_display_names(figure_ids, skill_ids)
-    except (ValueError, FileNotFoundError):
+    except (ValueError, FileNotFoundError, ImportError):
         pass
 
     rows = [
@@ -360,9 +369,13 @@ def main() -> None:
         print(f"❌ {exc}", file=sys.stderr)
         sys.exit(1)
 
+    if not _YAML_AVAILABLE:
+        print("❌ PyYAML is not installed. Run: pip3 install pyyaml  OR use docker compose exec maestro python3 ...", file=sys.stderr)
+        sys.exit(2)
+
     try:
         output = assemble(figure_ids, skill_ids, mode=args.mode)
-    except FileNotFoundError as exc:
+    except (FileNotFoundError, ImportError) as exc:
         print(f"❌ {exc}", file=sys.stderr)
         sys.exit(2)
 
