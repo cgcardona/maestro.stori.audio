@@ -1,0 +1,73 @@
+{#  fragments/branch_rows.html — bare HTMX fragment: branch list rows.
+
+    Rendered in two contexts:
+
+    1. Full-page load: included inline by musehub/pages/branches.html inside
+       ``#branch-rows`` so the initial render and subsequent HTMX swaps produce
+       identical markup.
+
+    2. HTMX partial swap: returned directly when the handler detects
+       ``HX-Request: true``, replacing only the ``#branch-rows`` div.
+
+    Required context variables
+    --------------------------
+    branches       : list[BranchDetailResponse]  — branches for this repo
+    default_branch : BranchDetailResponse | None — the default branch object (or None)
+    base_url       : str                         — repo UI base URL
+#}
+{% from "musehub/macros/empty_state.html" import empty_state %}
+
+{% if branches %}
+  {% for branch in branches %}
+  <div class="branch-row" id="branch-{{ branch.name }}"
+       style="padding:16px 0;border-bottom:1px solid var(--color-border,#30363d)">
+    <div style="display:flex;align-items:flex-start;gap:12px">
+      <div style="flex:1;min-width:0">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+          <span style="font-weight:600;font-size:14px;color:var(--color-fg-default,#e6edf3)">
+            {{ branch.name }}
+          </span>
+          {% if branch.is_default %}
+            <span class="badge" style="font-size:10px">default</span>
+          {% endif %}
+        </div>
+        <div style="font-size:12px;color:var(--color-fg-muted,#8b949e);display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+          {% if branch.head_commit_id %}
+            <a href="{{ base_url }}/commits/{{ branch.head_commit_id }}"
+               style="font-family:monospace;color:var(--color-accent,#58a6ff)">
+              {{ branch.head_commit_id | shortsha }}
+            </a>
+          {% else %}
+            <span style="font-family:monospace">—</span>
+          {% endif %}
+          {% if not branch.is_default %}
+            {% if branch.ahead_count > 0 %}
+              <span style="color:var(--color-success,#3fb950)">↑{{ branch.ahead_count }} ahead</span>
+            {% endif %}
+            {% if branch.behind_count > 0 %}
+              <span style="color:var(--color-danger,#f85149)">↓{{ branch.behind_count }} behind</span>
+            {% endif %}
+            {% if branch.ahead_count == 0 and branch.behind_count == 0 %}
+              <span style="font-size:11px">up to date</span>
+            {% endif %}
+          {% endif %}
+        </div>
+      </div>
+      {% if not branch.is_default and default_branch %}
+      <div style="display:flex;flex-direction:column;gap:6px;flex-shrink:0">
+        <a href="{{ base_url }}/compare/{{ default_branch.name }}...{{ branch.name }}"
+           class="btn btn-secondary" style="font-size:12px;padding:4px 10px">
+          Compare
+        </a>
+        <a href="{{ base_url }}/pulls/new?head={{ branch.name }}"
+           class="btn btn-primary" style="font-size:12px;padding:4px 10px">
+          New Pull Request
+        </a>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+  {% endfor %}
+{% else %}
+  {{ empty_state("🌿", "No branches", "Create a branch to start working on a new musical idea.") }}
+{% endif %}
