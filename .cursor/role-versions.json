@@ -1,7 +1,7 @@
 {
   "versions": {
     "cto": {
-      "current": "v2",
+      "current": "v4",
       "history": [
         {
           "sha": "abcdef1234567890abcdef1234567890abcdef12",
@@ -12,6 +12,16 @@
           "sha": "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
           "label": "v2",
           "timestamp": 1772429688
+        },
+        {
+          "sha": "abcdef1234567890abcdef1234567890abcdef12",
+          "label": "v3",
+          "timestamp": 1772435633
+        },
+        {
+          "sha": "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
+          "label": "v4",
+          "timestamp": 1772435633
         }
       ]
     }
