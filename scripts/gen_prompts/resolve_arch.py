@@ -228,6 +228,12 @@ def assemble(  # noqa: C901  (acceptable complexity for an assembler)
         if arch_suffix.strip():
             sections.append(arch_suffix.rstrip())
 
+    if not sections:
+        print(
+            "⚠️  No content assembled for COGNITIVE_ARCH — figures/skills may have empty "
+            "prompt_injection fields. Check the YAML files for this architecture.",
+            file=sys.stderr,
+        )
     return "\n\n---\n\n".join(sections) + "\n"
 
 
@@ -274,11 +280,13 @@ def render_fingerprint(
     this and embed the output verbatim — same block, same format, everywhere.
     Pass started_at (ISO-8601 string) to include a Started at row (reviewer context).
     """
+    _figures_str = arch  # fallback if parse fails
+    skills_str = "unknown"  # fallback if parse fails
     try:
         figure_ids, skill_ids = parse_cognitive_arch(arch)
         _figures_str, skills_str = _resolve_display_names(figure_ids, skill_ids)
     except (ValueError, FileNotFoundError):
-        skills_str = "unknown"
+        pass
 
     rows = [
         f"| **Architecture** | `{arch}` |",

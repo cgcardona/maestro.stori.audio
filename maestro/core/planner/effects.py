@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
+import logging
+
 from maestro.core.plan_schemas import MixStep
+
+logger = logging.getLogger(__name__)
 
 # Per-role effects always applied regardless of style
 _ROLE_ALWAYS_EFFECTS: dict[str, list[str]] = {
@@ -80,12 +84,16 @@ def _infer_mix_steps(style: str, roles: list[str]) -> list[MixStep]:
             try:
                 steps.append(MixStep(action="add_insert", track=track_name, type=efx))
             except Exception:
-                pass
+                logger.warning(
+                    "⚠️ Unknown effect %r for track %r — skipping", efx, track_name, exc_info=True
+                )
 
         if "reverb" in effects and needs_reverb_bus:
             try:
                 steps.append(MixStep(action="add_send", track=track_name, bus="Reverb"))
             except Exception:
-                pass
+                logger.warning(
+                    "⚠️ Failed to add reverb send for track %r — skipping", track_name, exc_info=True
+                )
 
     return steps

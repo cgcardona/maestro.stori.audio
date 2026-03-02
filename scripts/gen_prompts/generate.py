@@ -108,7 +108,7 @@ def _phases_shell(phases: list[str]) -> str:
     for i, phase in enumerate(phases):
         token = f" {phase}"
         last = i == len(phases) - 1
-        if len(current + token) > 76 and lines:
+        if len(current + token) > 76 and i > 0:
             lines.append(current + " \\")
             current = indent + phase
         elif current == "       for label in":

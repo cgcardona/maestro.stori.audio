@@ -249,7 +249,7 @@ for entry in "${SELECTED_ISSUES[@]}"; do
   # Write rich .agent-task — agent reads ALL context from this file
   # Extract DEPENDS_ON from issue body (looks for "Depends on #NNN" patterns)
   ISSUE_BODY=$(gh issue view "$NUM" --repo "$GH_REPO" --json body --jq '.body' 2>/dev/null)
-  DEPENDS_ON=$(echo "$ISSUE_BODY" | grep -oE 'Depends on[^#]*#[0-9]+' | grep -oE '[0-9]+' | tr '\n' ',' | sed 's/,$//')
+  DEPENDS_ON=$(echo "$ISSUE_BODY" | grep -oE 'Depends on[^.]+' | grep -oE '[0-9]+' | tr '\n' ',' | sed 's/,$//')
   [ -z "$DEPENDS_ON" ] && DEPENDS_ON=none
 
   # FILE_OWNERSHIP: coordinator should fill this in manually from the taxonomy
@@ -343,11 +343,16 @@ rooted in each `issue-<N>` directory.
 Every command that touches Python must go through Docker:
 
 ```bash
-# CORRECT
-cd "$REPO" && docker compose exec maestro mypy maestro/ tests/
-cd "$REPO" && docker compose exec agentception sh -c "PYTHONPATH=/worktrees/$WTNAME mypy /worktrees/$WTNAME/agentception/"
+# CORRECT — always use worktree-scoped paths
+cd "$REPO" && docker compose exec maestro sh -c \
+  "PYTHONPATH=/worktrees/$WTNAME mypy /worktrees/$WTNAME/maestro/ /worktrees/$WTNAME/tests/"
+cd "$REPO" && docker compose exec agentception sh -c \
+  "PYTHONPATH=/worktrees/$WTNAME mypy /worktrees/$WTNAME/agentception/"
 
-# WRONG — will fail with "No module named mypy"
+# WRONG — runs mypy on main repo code, not your feature branch changes
+cd "$REPO" && docker compose exec maestro mypy maestro/ tests/
+
+# WRONG — will fail with "No module named mypy" (you are on the host)
 python3 -m mypy ...
 mypy ...
 pytest ...
@@ -561,7 +566,8 @@ $CLAIM_FINGERPRINT
   ISSUE_STATE=$(gh issue view <N> --json state --jq '.state')
   if [ "$ISSUE_STATE" = "CLOSED" ]; then
     echo "⚠️  Issue #<N> is already CLOSED on GitHub. No work needed."
-    # Self-destruct and stop.
+    gh issue edit <N> --repo "$GH_REPO" --remove-label "status/in-progress" 2>/dev/null || true
+    gh issue edit <N> --repo "$GH_REPO" --remove-label "agent:wip" 2>/dev/null || true
     WORKTREE=$(pwd)
     cd "$REPO"
     git worktree remove --force "$WORKTREE"
@@ -594,6 +600,8 @@ $CLAIM_FINGERPRINT
   └──────────────────────────────────────────────────────────────────────────┘
 
   Self-destruct when stopping early:
+    gh issue edit <N> --repo "$GH_REPO" --remove-label "status/in-progress" 2>/dev/null || true
+    gh issue edit <N> --repo "$GH_REPO" --remove-label "agent:wip" 2>/dev/null || true
     WORKTREE=$(pwd)
     cd "$REPO"
     git worktree remove --force "$WORKTREE"
@@ -625,17 +633,30 @@ STEP 3 — IMPLEMENT (only if STEP 2 found nothing):
       DEP=$(echo "$DEP" | tr -d '[:space:]')
       [ -z "$DEP" ] && continue
       DEP_STATE=$(gh issue view "$DEP" --repo "$GH_REPO" --json state --jq '.state' 2>/dev/null || echo "UNKNOWN")
-      if [ "$DEP_STATE" != "CLOSED" ]; then
-        echo "⚠️  Dependency #$DEP is $DEP_STATE (not yet merged). Note in PR body."
+      DEP_REASON=$(gh issue view "$DEP" --repo "$GH_REPO" --json stateReason --jq '.stateReason' 2>/dev/null || echo "UNKNOWN")
+      if [ "$DEP_STATE" != "CLOSED" ] || [ "$DEP_REASON" != "COMPLETED" ]; then
+        echo "⚠️  Dependency #$DEP is $DEP_STATE (reason=$DEP_REASON) — not yet merged to dev. Note in PR body."
         ALL_DEPS_MET=false
       else
-        echo "✅ Dependency #$DEP is CLOSED (merged)."
+        echo "✅ Dependency #$DEP is CLOSED and COMPLETED (merged to dev)."
       fi
     done
-    # Do NOT block implementation — implement against dev and note unmet deps clearly
-    # in the PR description. If a dependency introduces a missing module, use a
-    # TYPE_CHECKING guard for the import so mypy passes on the current dev state.
-    [ "$ALL_DEPS_MET" = "false" ] && echo "⚠️  Some deps unmet — document in PR body."
+    if [ "$ALL_DEPS_MET" = "false" ]; then
+      echo "⚠️  Unmet dependencies detected."
+      echo "   Options:"
+      echo "   A) If the dependency's code is NOT needed to implement this issue → proceed."
+      echo "      Note unmet deps in the PR body. Use TYPE_CHECKING guards for any missing imports."
+      echo "   B) If the dependency's code IS required (e.g. imports a module that doesn't exist yet)"
+      echo "      → clean abort: remove agent:wip, remove this worktree, and skip this issue."
+      echo "      CLEAN ABORT sequence:"
+      echo "        gh issue edit $N --repo \"\$GH_REPO\" --remove-label \"agent:wip\" 2>/dev/null || true"
+      echo "        gh issue edit $N --repo \"\$GH_REPO\" --remove-label \"status/in-progress\" 2>/dev/null || true"
+      echo "        cd \"\$REPO\""
+      echo "        git worktree remove --force \"\$WORKTREE\""
+      echo "        git worktree prune"
+      echo "        exit 0"
+      echo "   Choose A or B based on whether the missing dep code is actually needed."
+    fi
   fi
 
   # ── STEP 3.1 — BASELINE HEALTH SNAPSHOT (before touching any code) ────────

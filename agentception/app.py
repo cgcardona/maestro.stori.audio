@@ -28,6 +28,7 @@ from starlette.requests import Request
 from agentception.poller import polling_loop, subscribe, unsubscribe
 from agentception.routes.api import router as api_router
 from agentception.routes.control import router as control_router
+from agentception.routes.roles import router as roles_router
 from agentception.routes.ui import router as ui_router
 
 logger = logging.getLogger(__name__)
@@ -61,10 +62,11 @@ app = FastAPI(
 # Mount static assets — CSS, future JS bundles.
 app.mount("/static", StaticFiles(directory=str(_HERE / "static")), name="static")
 
-# Register UI, API, and control-plane routers — each owns their own path prefix.
+# Register UI, API, control-plane, and roles routers — each owns their own path prefix.
 app.include_router(ui_router)
 app.include_router(api_router)
 app.include_router(control_router)
+app.include_router(roles_router)
 
 
 @app.get("/health", tags=["health"])

@@ -156,3 +156,55 @@ class SpawnResult(BaseModel):
     worktree: str
     branch: str
     agent_task: str
+
+
+class RoleMeta(BaseModel):
+    """Metadata for a managed role or cursor configuration file.
+
+    Used by the Role Studio API (AC-301) to describe each file without
+    returning full content — callers fetch content separately via GET /api/roles/{slug}.
+    ``last_commit_sha`` and ``last_commit_message`` are empty strings when the
+    file has never been committed (e.g. in tests with a temp directory).
+    """
+
+    slug: str
+    path: str
+    line_count: int
+    mtime: float
+    last_commit_sha: str
+    last_commit_message: str
+
+
+class RoleUpdateRequest(BaseModel):
+    """Request body for ``PUT /api/roles/{slug}`` (Role Studio AC-301).
+
+    Wraps the raw ``content`` string so FastAPI can validate and document the
+    request body rather than accepting an untyped naked dict.
+    """
+
+    content: str
+
+
+class RoleContent(BaseModel):
+    """Response for ``GET /api/roles/{slug}`` — full file content with metadata.
+
+    Returned by the Role Studio reader endpoint so the UI (AC-302/303) has
+    both the Markdown source and the git provenance in one round-trip.
+    """
+
+    slug: str
+    content: str
+    meta: RoleMeta
+
+
+class RoleUpdateResponse(BaseModel):
+    """Response for ``PUT /api/roles/{slug}`` — diff and refreshed metadata.
+
+    ``diff`` is the raw output of ``git diff HEAD -- <path>`` immediately after
+    writing; an empty string means the written content was identical to what
+    was already committed.
+    """
+
+    slug: str
+    diff: str
+    meta: RoleMeta
