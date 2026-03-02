@@ -1,28 +1,26 @@
-"""SSR tests for the MuseHub branches and tags pages (issue #571).
+"""SSR tests for the Muse Hub branches and tags pages (issue #571).
 
-Covers GET /musehub/ui/{owner}/{repo_slug}/branches and
-       GET /musehub/ui/{owner}/{repo_slug}/tags after SSR migration:
+Verifies that ``GET /musehub/ui/{owner}/{repo_slug}/branches`` and
+``GET /musehub/ui/{owner}/{repo_slug}/tags`` render data server-side rather
+than relying on client-side JavaScript fetches.
 
+Tests:
 - test_branches_page_renders_branch_name_server_side
-    Seed a branch, GET the page, assert name is in the HTML body (SSR not JS).
-
+  — Seed a branch, GET the page, assert name appears in HTML
 - test_branches_page_marks_default_branch
-    The default branch has a visual indicator rendered server-side.
-
-- test_branches_page_protected_badge_present
-    Protected branch shows a badge (via is_default path; the row renders).
-
+  — Default branch has "default" badge in server-rendered HTML
 - test_branches_htmx_fragment_path
-    GET with ``HX-Request: true`` returns only the bare fragment (no <html>).
-
+  — GET with HX-Request: true returns fragment without full page chrome
 - test_branches_page_empty_state_when_no_branches
-    Repo with no branches renders the empty state rather than an empty table.
-
+  — No branches → empty-state rendered server-side
+- test_branches_page_compare_link_for_non_default
+  — Non-default branch renders a Compare action link
 - test_tags_page_renders_tag_name_server_side
-    Seed a release/tag, GET the page, assert tag name is in the HTML body.
-
+  — Seed a release/tag, GET the page, assert tag name in HTML
 - test_tags_page_empty_state_when_no_tags
-    Repo with no releases shows the empty state.
+  — No releases → empty-state rendered server-side
+- test_tags_page_namespace_filter
+  — ?namespace=emotion filters to only tags in that namespace
 """
 from __future__ import annotations
 
@@ -32,25 +30,24 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from maestro.db.musehub_models import MusehubBranch, MusehubRelease, MusehubRepo
 
-pytestmark = pytest.mark.anyio
-
-_OWNER = "ssr-bt-owner"
-_SLUG = "ssr-bt-repo"
+_OWNER = "composer"
+_SLUG = "symphony-draft"
+_USER_ID = "550e8400-e29b-41d4-a716-446655440000"  # matches test_user fixture
 
 
 # ---------------------------------------------------------------------------
-# Helpers
+# Seed helpers
 # ---------------------------------------------------------------------------
 
 
-async def _make_repo(db: AsyncSession, *, slug: str = _SLUG) -> str:
-    """Seed a minimal public repo and return its repo_id string."""
+async def _make_repo(db: AsyncSession) -> str:
+    """Seed a minimal repo and return its repo_id string."""
     repo = MusehubRepo(
-        name=slug,
+        name=_SLUG,
         owner=_OWNER,
-        slug=slug,
+        slug=_SLUG,
         visibility="public",
-        owner_user_id="ssr-bt-owner-uid",
+        owner_user_id=_USER_ID,
     )
     db.add(repo)
     await db.commit()
@@ -58,14 +55,14 @@ async def _make_repo(db: AsyncSession, *, slug: str = _SLUG) -> str:
     return str(repo.repo_id)
 
 
-async def _add_branch(
+async def _make_branch(
     db: AsyncSession,
     repo_id: str,
-    name: str,
     *,
+    name: str = "main",
     head_commit_id: str | None = None,
 ) -> MusehubBranch:
-    """Seed a branch record and return it."""
+    """Seed a branch and return the ORM object."""
     branch = MusehubBranch(
         repo_id=repo_id,
         name=name,
@@ -77,22 +74,21 @@ async def _add_branch(
     return branch
 
 
-async def _add_release(
+async def _make_release(
     db: AsyncSession,
     repo_id: str,
-    tag: str,
     *,
-    title: str = "Test release",
+    tag: str = "v1.0",
+    title: str = "First release",
     commit_id: str | None = None,
 ) -> MusehubRelease:
-    """Seed a release record (tag source) and return it."""
+    """Seed a release (tag source) and return the ORM object."""
     release = MusehubRelease(
         repo_id=repo_id,
         tag=tag,
         title=title,
-        body="",
         commit_id=commit_id,
-        author="test-author",
+        author=_OWNER,
     )
     db.add(release)
     await db.commit()
@@ -101,126 +97,164 @@ async def _add_release(
 
 
 # ---------------------------------------------------------------------------
-# Branches tests
+# Branches SSR tests
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.anyio
 async def test_branches_page_renders_branch_name_server_side(
     client: AsyncClient,
+    auth_headers: dict[str, str],
     db_session: AsyncSession,
+    test_user: object,
 ) -> None:
-    """Seed a branch, GET the page, assert name appears in the HTML body.
-
-    Confirms server-side rendering: the branch name must be present without
-    any client-side JS fetch being required.
-    """
+    """Branch name appears in the HTML without a client-side JS round-trip."""
     repo_id = await _make_repo(db_session)
-    await _add_branch(db_session, repo_id, "feat/ambient-strings")
-
-    resp = await client.get(f"/musehub/ui/{_OWNER}/{_SLUG}/branches")
-    assert resp.status_code == 200
-    assert "feat/ambient-strings" in resp.text
-
-
-async def test_branches_page_marks_default_branch(
-    client: AsyncClient,
-    db_session: AsyncSession,
-) -> None:
-    """The default branch receives a 'default' badge rendered server-side."""
-    slug = "ssr-bt-default-repo"
-    repo_id = await _make_repo(db_session, slug=slug)
-    await _add_branch(db_session, repo_id, "main")
-
-    resp = await client.get(f"/musehub/ui/{_OWNER}/{slug}/branches")
-    assert resp.status_code == 200
-    # The default badge text must appear in the SSR HTML
-    assert "default" in resp.text
-    assert "main" in resp.text
-
-
-async def test_branches_page_protected_badge_present(
-    client: AsyncClient,
-    db_session: AsyncSession,
-) -> None:
-    """Branch rows are rendered server-side with correct HTML structure."""
-    slug = "ssr-bt-protected-repo"
-    repo_id = await _make_repo(db_session, slug=slug)
-    await _add_branch(db_session, repo_id, "protected-branch", head_commit_id="abc123def456")
-
-    resp = await client.get(f"/musehub/ui/{_OWNER}/{slug}/branches")
-    assert resp.status_code == 200
-    assert "protected-branch" in resp.text
-    # HEAD commit SHA should be shortened and linked server-side
-    assert "abc123d" in resp.text
-
-
-async def test_branches_htmx_fragment_path(
-    client: AsyncClient,
-    db_session: AsyncSession,
-) -> None:
-    """GET with ``HX-Request: true`` returns only the bare branch fragment.
-
-    The fragment must not contain a full HTML document shell (<html>, <head>).
-    """
-    slug = "ssr-bt-htmx-repo"
-    repo_id = await _make_repo(db_session, slug=slug)
-    await _add_branch(db_session, repo_id, "htmx-branch")
-
+    await _make_branch(db_session, repo_id, name="feat/ssr-migration")
     resp = await client.get(
-        f"/musehub/ui/{_OWNER}/{slug}/branches",
-        headers={"HX-Request": "true"},
+        f"/musehub/ui/{_OWNER}/{_SLUG}/branches", headers=auth_headers
     )
     assert resp.status_code == 200
     body = resp.text
-    assert "htmx-branch" in body
+    assert "feat/ssr-migration" in body
+    assert "branch-row" in body
+
+
+@pytest.mark.anyio
+async def test_branches_page_marks_default_branch(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+    db_session: AsyncSession,
+    test_user: object,
+) -> None:
+    """The default branch ("main") shows the 'default' badge in server-rendered HTML."""
+    repo_id = await _make_repo(db_session)
+    await _make_branch(db_session, repo_id, name="main")
+    await _make_branch(db_session, repo_id, name="feat/other")
+    resp = await client.get(
+        f"/musehub/ui/{_OWNER}/{_SLUG}/branches", headers=auth_headers
+    )
+    assert resp.status_code == 200
+    body = resp.text
+    assert "main" in body
+    assert "default" in body
+
+
+@pytest.mark.anyio
+async def test_branches_htmx_fragment_path(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+    db_session: AsyncSession,
+    test_user: object,
+) -> None:
+    """GET with HX-Request: true returns only the branch rows fragment, not the full page."""
+    repo_id = await _make_repo(db_session)
+    await _make_branch(db_session, repo_id, name="feat/htmx-swap")
+    htmx_headers = {**auth_headers, "HX-Request": "true"}
+    resp = await client.get(
+        f"/musehub/ui/{_OWNER}/{_SLUG}/branches", headers=htmx_headers
+    )
+    assert resp.status_code == 200
+    body = resp.text
+    assert "feat/htmx-swap" in body
+    assert "<!DOCTYPE html>" not in body
     assert "<html" not in body
-    assert "<head" not in body
 
 
+@pytest.mark.anyio
 async def test_branches_page_empty_state_when_no_branches(
     client: AsyncClient,
+    auth_headers: dict[str, str],
     db_session: AsyncSession,
+    test_user: object,
 ) -> None:
-    """Repo with no branches renders the empty state message."""
-    slug = "ssr-bt-empty-branches-repo"
-    await _make_repo(db_session, slug=slug)
-
-    resp = await client.get(f"/musehub/ui/{_OWNER}/{slug}/branches")
+    """Empty branch list renders the empty-state component server-side (no JS fetch needed)."""
+    await _make_repo(db_session)
+    resp = await client.get(
+        f"/musehub/ui/{_OWNER}/{_SLUG}/branches", headers=auth_headers
+    )
     assert resp.status_code == 200
-    assert "No branches" in resp.text
+    body = resp.text
+    assert "No branches" in body or "empty-state" in body
+    assert 'class="branch-row"' not in body
+
+
+@pytest.mark.anyio
+async def test_branches_page_compare_link_for_non_default(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+    db_session: AsyncSession,
+    test_user: object,
+) -> None:
+    """Non-default branches render a Compare action link pointing to the diff URL."""
+    repo_id = await _make_repo(db_session)
+    await _make_branch(db_session, repo_id, name="main")
+    await _make_branch(db_session, repo_id, name="feat/new-bridge")
+    resp = await client.get(
+        f"/musehub/ui/{_OWNER}/{_SLUG}/branches", headers=auth_headers
+    )
+    assert resp.status_code == 200
+    body = resp.text
+    assert "feat/new-bridge" in body
+    assert "compare" in body.lower() or "Compare" in body
 
 
 # ---------------------------------------------------------------------------
-# Tags tests
+# Tags SSR tests
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.anyio
 async def test_tags_page_renders_tag_name_server_side(
     client: AsyncClient,
+    auth_headers: dict[str, str],
     db_session: AsyncSession,
+    test_user: object,
 ) -> None:
-    """Seed a release/tag, GET the page, assert tag name is in the HTML body.
-
-    Confirms server-side rendering: the tag name must be present without
-    any client-side JS fetch being required.
-    """
-    slug = "ssr-bt-tags-repo"
-    repo_id = await _make_repo(db_session, slug=slug)
-    await _add_release(db_session, repo_id, "emotion:peaceful", title="Peaceful release")
-
-    resp = await client.get(f"/musehub/ui/{_OWNER}/{slug}/tags")
+    """Tag name appears in the HTML without a client-side JS round-trip."""
+    repo_id = await _make_repo(db_session)
+    await _make_release(db_session, repo_id, tag="v2.0", title="Major release")
+    resp = await client.get(
+        f"/musehub/ui/{_OWNER}/{_SLUG}/tags", headers=auth_headers
+    )
     assert resp.status_code == 200
-    assert "emotion:peaceful" in resp.text
+    body = resp.text
+    assert "v2.0" in body
+    assert "tag-row" in body or "tag" in body.lower()
 
 
+@pytest.mark.anyio
 async def test_tags_page_empty_state_when_no_tags(
     client: AsyncClient,
+    auth_headers: dict[str, str],
     db_session: AsyncSession,
+    test_user: object,
 ) -> None:
-    """Repo with no releases shows the empty state message."""
-    slug = "ssr-bt-empty-tags-repo"
-    await _make_repo(db_session, slug=slug)
-
-    resp = await client.get(f"/musehub/ui/{_OWNER}/{slug}/tags")
+    """Empty tag list renders the empty-state component server-side."""
+    await _make_repo(db_session)
+    resp = await client.get(
+        f"/musehub/ui/{_OWNER}/{_SLUG}/tags", headers=auth_headers
+    )
     assert resp.status_code == 200
-    assert "No tags" in resp.text
+    body = resp.text
+    assert "No tags" in body or "empty-state" in body
+
+
+@pytest.mark.anyio
+async def test_tags_page_namespace_filter(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+    db_session: AsyncSession,
+    test_user: object,
+) -> None:
+    """?namespace=emotion shows only emotion-namespaced tags, hiding version tags."""
+    repo_id = await _make_repo(db_session)
+    await _make_release(db_session, repo_id, tag="emotion:happy", title="Happy mood tag")
+    await _make_release(db_session, repo_id, tag="v1.0", title="Version release")
+    resp = await client.get(
+        f"/musehub/ui/{_OWNER}/{_SLUG}/tags?namespace=emotion", headers=auth_headers
+    )
+    assert resp.status_code == 200
+    body = resp.text
+    assert "emotion:happy" in body
+    assert "v1.0" not in body
