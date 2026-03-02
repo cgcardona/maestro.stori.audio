@@ -17,7 +17,7 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException
 
 from agentception.config import settings
-from agentception.models import RoleMeta
+from agentception.models import RoleContent, RoleMeta, RoleUpdateRequest, RoleUpdateResponse
 
 logger = logging.getLogger(__name__)
 
@@ -144,16 +144,8 @@ async def list_roles() -> list[RoleMeta]:
 
 
 @router.get("/{slug}", summary="Get content and metadata for a single role file")
-async def get_role(slug: str) -> dict[str, object]:
+async def get_role(slug: str) -> RoleContent:
     """Return the full file content and metadata for a managed slug.
-
-    Response shape::
-
-        {
-            "slug": "python-developer",
-            "content": "...",
-            "meta": { ...RoleMeta fields... }
-        }
 
     Raises HTTP 404 when the slug is not in the managed allowlist or the file
     does not exist on disk.
@@ -162,11 +154,11 @@ async def get_role(slug: str) -> dict[str, object]:
     meta = await _build_meta(slug, rel_path)
     abs_path = settings.repo_dir / rel_path
     content = abs_path.read_text(encoding="utf-8")
-    return {"slug": slug, "content": content, "meta": meta.model_dump()}
+    return RoleContent(slug=slug, content=content, meta=meta)
 
 
 @router.put("/{slug}", summary="Write new content to a managed role file")
-async def update_role(slug: str, body: dict[str, str]) -> dict[str, object]:
+async def update_role(slug: str, body: RoleUpdateRequest) -> RoleUpdateResponse:
     """Overwrite a managed file with new content and return a diff vs HEAD.
 
     Does NOT auto-commit — the caller is responsible for committing the change
@@ -174,21 +166,12 @@ async def update_role(slug: str, body: dict[str, str]) -> dict[str, object]:
     of ``git diff HEAD -- <path>`` immediately after writing; an empty string
     means the content was identical to the committed version.
 
-    Request body::
-
-        { "content": "<new file content>" }
-
-    Raises HTTP 400 when ``content`` is missing from the request body.
     Raises HTTP 404 when the slug is not in the managed allowlist.
     """
     rel_path = _resolve_slug(slug)
-    new_content = body.get("content")
-    if new_content is None:
-        raise HTTPException(status_code=400, detail="Request body must include 'content'")
-
     abs_path = settings.repo_dir / rel_path
-    abs_path.write_text(new_content, encoding="utf-8")
-    logger.info("✅ Wrote %d bytes to %s", len(new_content), rel_path)
+    abs_path.write_text(body.content, encoding="utf-8")
+    logger.info("✅ Wrote %d bytes to %s", len(body.content), rel_path)
 
     proc = await asyncio.create_subprocess_exec(
         "git", "-C", str(settings.repo_dir),
@@ -200,7 +183,7 @@ async def update_role(slug: str, body: dict[str, str]) -> dict[str, object]:
     diff = stdout.decode()
 
     meta = await _build_meta(slug, rel_path)
-    return {"slug": slug, "diff": diff, "meta": meta.model_dump()}
+    return RoleUpdateResponse(slug=slug, diff=diff, meta=meta)
 
 
 @router.get("/{slug}/history", summary="Return git commit history for a managed role file")

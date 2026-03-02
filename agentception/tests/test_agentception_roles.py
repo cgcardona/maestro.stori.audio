@@ -44,11 +44,6 @@ def tmp_repo(tmp_path: Path) -> Path:
     return tmp_path
 
 
-def _patch_repo(tmp_repo: Path) -> object:
-    """Return a context manager that patches settings.repo_dir to tmp_repo."""
-    return patch("agentception.routes.roles.settings") 
-
-
 # ── list_roles ────────────────────────────────────────────────────────────────
 
 
