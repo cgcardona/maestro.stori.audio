@@ -233,9 +233,9 @@ async def update_config(body: PipelineConfig) -> PipelineConfig:
 async def switch_project_endpoint(body: SwitchProjectRequest) -> PipelineConfig:
     """Switch the active project in ``pipeline-config.json``.
 
-    Sets ``active_project`` to *body.project_name* and persists the updated
-    config.  The dashboard reloads paths (``gh_repo``, ``repo_dir``,
-    ``worktrees_dir``) for the new project on the next service restart.
+    Sets ``active_project`` to *body.project_name*, persists the updated
+    config, then immediately reloads ``settings`` so the poller targets the
+    new repo on its very next tick — no service restart required.
 
     Parameters
     ----------
@@ -254,7 +254,12 @@ async def switch_project_endpoint(body: SwitchProjectRequest) -> PipelineConfig:
         When *project_name* does not match any configured project.
     """
     try:
-        return await switch_project(body.project_name)
+        result = await switch_project(body.project_name)
+        # Apply the new project's paths immediately — readers pick them up
+        # on the very next call without waiting for a service restart.
+        from agentception.config import settings
+        settings.reload()
+        return result
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 

@@ -412,8 +412,8 @@
         <template x-if="waveResult">
           <div class="wave-result mt-1">
             <p class="text-success">
-              ✅ <strong x-text="waveResult.spawned.length"></strong> worktree(s) created.
-              Launch a Cursor Task for each path below.
+              ✅ <strong x-text="waveResult.spawned.length"></strong> agent worktree<span x-text="waveResult.spawned.length === 1 ? '' : 's'"></span> launching.
+              Open each path in Cursor to start the agents.
             </p>
             <template x-for="s in waveResult.spawned" :key="s.spawned">
               <div class="wave-worktree-row">

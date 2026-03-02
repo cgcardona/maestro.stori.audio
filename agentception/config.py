@@ -7,6 +7,10 @@ When ``pipeline-config.json`` contains a ``projects`` list and an
 ``active_project`` name, the model validator applies the matching project's
 ``gh_repo``, ``repo_dir``, and ``worktrees_dir`` values over the env-var
 defaults.  This is the primary mechanism for multi-repo generalisation (AC-601).
+
+:func:`settings.reload` re-applies the active project on demand.  The poller
+calls it at the top of every tick so a project switch via the GUI takes effect
+within one polling interval — no service restart required.
 """
 from __future__ import annotations
 
@@ -20,12 +24,41 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 logger = logging.getLogger(__name__)
 
 
+def _resolve_project(raw: dict[str, object], target: AgentCeptionSettings) -> None:
+    """Apply the active project's path overrides from *raw* onto *target* in-place.
+
+    Extracted as a module-level helper so both the Pydantic validator and
+    :meth:`AgentCeptionSettings.reload` can share identical logic without
+    duplication.
+    """
+    active_name: object = raw.get("active_project")
+    projects: object = raw.get("projects", [])
+    if not isinstance(projects, list) or not active_name:
+        return
+    for proj in projects:
+        if not isinstance(proj, dict) or proj.get("name") != active_name:
+            continue
+        if "gh_repo" in proj and isinstance(proj["gh_repo"], str):
+            target.gh_repo = proj["gh_repo"]
+        if "repo_dir" in proj and isinstance(proj["repo_dir"], str):
+            target.repo_dir = Path(proj["repo_dir"])
+        if "worktrees_dir" in proj and isinstance(proj["worktrees_dir"], str):
+            wd = proj["worktrees_dir"]
+            if wd.startswith("~/"):
+                wd = str(Path.home()) + wd[1:]
+            target.worktrees_dir = Path(wd)
+        break
+
+
 class AgentCeptionSettings(BaseSettings):
     """Runtime configuration for the AgentCeption dashboard service.
 
     Path settings are resolved in order:
     1. Environment variables (``AC_REPO_DIR``, ``AC_WORKTREES_DIR``, etc.)
     2. Active project from ``pipeline-config.json`` (overrides env vars when present)
+
+    Call :meth:`reload` to pick up a changed ``active_project`` at runtime
+    without restarting the service.
     """
 
     model_config = SettingsConfigDict(env_prefix="AC_")
@@ -63,24 +96,32 @@ class AgentCeptionSettings(BaseSettings):
             return self
         if not isinstance(raw, dict):
             return self
-        active_name: object = raw.get("active_project")
-        projects: object = raw.get("projects", [])
-        if not isinstance(projects, list) or not active_name:
-            return self
-        for proj in projects:
-            if not isinstance(proj, dict) or proj.get("name") != active_name:
-                continue
-            if "gh_repo" in proj and isinstance(proj["gh_repo"], str):
-                self.gh_repo = proj["gh_repo"]
-            if "repo_dir" in proj and isinstance(proj["repo_dir"], str):
-                self.repo_dir = Path(proj["repo_dir"])
-            if "worktrees_dir" in proj and isinstance(proj["worktrees_dir"], str):
-                wd = proj["worktrees_dir"]
-                if wd.startswith("~/"):
-                    wd = str(Path.home()) + wd[1:]
-                self.worktrees_dir = Path(wd)
-            break
+        _resolve_project(raw, self)
         return self
+
+    def reload(self) -> None:
+        """Re-read ``pipeline-config.json`` and apply the active project's paths in-place.
+
+        Called by the poller at the start of each tick and by the
+        ``switch-project`` API endpoint so project switches take effect
+        within one polling interval — no service restart required.
+
+        This method is synchronous: reading a small local JSON file is fast
+        enough that wrapping it in an executor would add more overhead than
+        it saves.
+        """
+        config_path = self.repo_dir / ".cursor" / "pipeline-config.json"
+        if not config_path.exists():
+            return
+        try:
+            raw: object = json.loads(config_path.read_text(encoding="utf-8"))
+        except Exception as exc:
+            logger.warning("⚠️ Could not read pipeline-config.json during reload: %s", exc)
+            return
+        if not isinstance(raw, dict):
+            return
+        _resolve_project(raw, self)
+        logger.debug("✅ Settings reloaded — gh_repo=%s repo_dir=%s", self.gh_repo, self.repo_dir)
 
 
 settings = AgentCeptionSettings()
