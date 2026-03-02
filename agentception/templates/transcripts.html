@@ -3,71 +3,287 @@
 {% block title %}AgentCeption — Transcripts{% endblock %}
 
 {% block content %}
-<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem;">
+
+{# ── Page header ──────────────────────────────────────────────────── #}
+<div class="page-header">
   <div>
-    <h1 class="section-title">Transcript Browser</h1>
-    <p class="text-muted" style="margin-top:0.25rem;font-size:0.85rem;">
-      {{ transcripts | length }} conversations found
-      {% if transcripts_dir %} in <code style="font-size:0.8rem;">{{ transcripts_dir }}</code>{% endif %}
+    <h1 class="page-title">Transcript Browser</h1>
+    <p class="page-subtitle">
+      {{ total }} conversation{{ 's' if total != 1 else '' }} found
+      {% if transcripts_dir %} · <code style="font-size:0.78rem;color:var(--text-muted);">{{ transcripts_dir }}</code>{% endif %}
     </p>
   </div>
-  {% if filter_issue %}
-  <a href="/transcripts" class="btn btn-secondary">Clear filter</a>
-  {% endif %}
 </div>
 
 {% if error %}
-<div class="card" style="border-left:3px solid var(--danger);">
-  <p class="text-muted">⚠️ {{ error }}</p>
+<div class="card" style="border-left:3px solid var(--danger);margin-bottom:1rem;">
+  <p style="color:var(--danger-dim);">⚠️ {{ error }}</p>
 </div>
 {% endif %}
 
-{% if transcripts %}
-<div class="card" style="padding:0;overflow:hidden;">
-  <table class="telemetry-table" style="width:100%;margin:0;">
-    <thead>
-      <tr>
-        <th>UUID</th>
-        <th>Messages</th>
-        <th>Sub-agents</th>
-        <th>First user message</th>
-        <th>Issues</th>
-        <th>Modified</th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for t in transcripts %}
-      <tr>
-        <td>
-          <span style="font-family:monospace;font-size:0.78rem;color:var(--text-muted);" title="{{ t.uuid }}">
-            {{ t.uuid[:8] }}…
-          </span>
-        </td>
-        <td style="text-align:right;">{{ t.message_count }}</td>
-        <td style="text-align:right;">{{ t.subagent_count }}</td>
-        <td style="max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:0.82rem;color:var(--text-muted);">
-          {{ t.preview or '—' }}
-        </td>
-        <td>
-          {% for n in t.linked_issues %}
-          <a href="/issues/{{ n }}">#{{ n }}</a>
-          {% endfor %}
-          {% if not t.linked_issues %}—{% endif %}
-        </td>
-        <td style="font-size:0.75rem;color:var(--text-muted);">
-          {{ t.mtime | int | timestamp_to_date }}
-        </td>
-      </tr>
+{# ── Filter bar (Alpine-powered) ──────────────────────────────────── #}
+<div
+  class="filter-group"
+  x-data="{
+    q: {{ filter_q | tojson }},
+    sort: 'mtime',
+    filterRole: {{ filter_role | tojson }},
+    filterStatus: {{ filter_status | tojson }},
+    get rows() {
+      let r = Array.from(document.querySelectorAll('[data-transcript-row]'));
+      return r;
+    },
+    applyFilters() {
+      const qLow = this.q.toLowerCase();
+      document.querySelectorAll('[data-transcript-row]').forEach(el => {
+        const preview = (el.dataset.preview || '').toLowerCase();
+        const role    = el.dataset.role || '';
+        const status  = el.dataset.status || '';
+        const matchQ  = !qLow || preview.includes(qLow);
+        const matchR  = !this.filterRole || role === this.filterRole;
+        const matchS  = !this.filterStatus || status === this.filterStatus;
+        el.style.display = (matchQ && matchR && matchS) ? '' : 'none';
+      });
+      this.applySortDom();
+    },
+    applySortDom() {
+      const tbody = document.getElementById('transcript-tbody');
+      if (!tbody) return;
+      const rows = Array.from(tbody.querySelectorAll('[data-transcript-row]'));
+      rows.sort((a, b) => {
+        if (this.sort === 'mtime')    return parseFloat(b.dataset.mtime) - parseFloat(a.dataset.mtime);
+        if (this.sort === 'messages') return parseInt(b.dataset.messages) - parseInt(a.dataset.messages);
+        if (this.sort === 'words')    return parseInt(b.dataset.words) - parseInt(a.dataset.words);
+        if (this.sort === 'subagents')return parseInt(b.dataset.subagents) - parseInt(a.dataset.subagents);
+        return 0;
+      });
+      rows.forEach(r => tbody.appendChild(r));
+    },
+  }"
+  x-init="applyFilters()"
+>
+  <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;margin-bottom:1rem;">
+    {# Search #}
+    <div style="position:relative;flex:1;min-width:200px;">
+      <input
+        type="search"
+        placeholder="Search conversations…"
+        class="filter-input"
+        style="width:100%;padding-left:2rem;"
+        x-model="q"
+        @input.debounce.200ms="applyFilters()"
+      />
+      <span style="position:absolute;left:0.6rem;top:50%;transform:translateY(-50%);color:var(--text-muted);pointer-events:none;">🔍</span>
+    </div>
+
+    {# Role filter #}
+    <select
+      class="filter-input"
+      x-model="filterRole"
+      @change="applyFilters()"
+      style="min-width:160px;"
+    >
+      <option value="">All roles</option>
+      {% for r in all_roles %}
+      <option value="{{ r }}" {% if filter_role == r %}selected{% endif %}>{{ r }}</option>
       {% endfor %}
-    </tbody>
-  </table>
-</div>
-{% elif not error %}
-<div class="card">
-  <p class="text-muted empty-state">
-    No transcripts found. Make sure the Cursor projects directory is mounted correctly.
-  </p>
-</div>
-{% endif %}
+    </select>
+
+    {# Status filter #}
+    <select
+      class="filter-input"
+      x-model="filterStatus"
+      @change="applyFilters()"
+      style="min-width:130px;"
+    >
+      <option value="">All statuses</option>
+      <option value="done" {% if filter_status == 'done' %}selected{% endif %}>✅ Done</option>
+      <option value="unknown" {% if filter_status == 'unknown' %}selected{% endif %}>⏳ In-progress</option>
+    </select>
+
+    {# Sort #}
+    <select
+      class="filter-input"
+      x-model="sort"
+      @change="applySortDom()"
+      style="min-width:150px;"
+    >
+      <option value="mtime">Sort: recent first</option>
+      <option value="messages">Sort: most messages</option>
+      <option value="words">Sort: most words</option>
+      <option value="subagents">Sort: most sub-agents</option>
+    </select>
+
+    {% if filter_role or filter_status or filter_issue or filter_q %}
+    <a href="/transcripts" class="btn btn-secondary" style="white-space:nowrap;">✕ Clear filters</a>
+    {% endif %}
+  </div>
+
+  {# ── Transcript table ────────────────────────────────────────────── #}
+  {% if transcripts %}
+  <div class="card" style="padding:0;overflow:hidden;">
+    <table class="telemetry-table" style="width:100%;margin:0;table-layout:fixed;">
+      <colgroup>
+        <col style="width:7rem;">   {# UUID #}
+        <col style="width:10rem;">  {# Role #}
+        <col style="width:7rem;">   {# Status #}
+        <col>                       {# Preview #}
+        <col style="width:5rem;">   {# Msgs #}
+        <col style="width:5.5rem;"> {# Sub-agents #}
+        <col style="width:7rem;">   {# Issues #}
+        <col style="width:6.5rem;"> {# Modified #}
+      </colgroup>
+      <thead>
+        <tr>
+          <th>UUID</th>
+          <th>Role</th>
+          <th>Status</th>
+          <th>First message</th>
+          <th style="text-align:right;">Msgs</th>
+          <th style="text-align:right;">Sub-agents</th>
+          <th>Issues</th>
+          <th style="text-align:right;">Modified</th>
+        </tr>
+      </thead>
+      <tbody id="transcript-tbody">
+        {% for t in transcripts %}
+        <tr
+          data-transcript-row
+          data-preview="{{ t.preview | e }}"
+          data-role="{{ t.role }}"
+          data-status="{{ t.status }}"
+          data-mtime="{{ t.mtime }}"
+          data-messages="{{ t.message_count }}"
+          data-words="{{ t.word_count }}"
+          data-subagents="{{ t.subagent_count }}"
+          class="transcript-row"
+          onclick="window.location='/transcripts/{{ t.uuid }}'"
+          style="cursor:pointer;"
+          title="Open conversation {{ t.uuid }}"
+        >
+          {# UUID #}
+          <td>
+            <span class="mono-badge" title="{{ t.uuid }}">{{ t.uuid[:8] }}…</span>
+            {% if t.is_coordinator %}
+            <span class="badge badge--purple" style="font-size:0.62rem;margin-left:0.25rem;">coord</span>
+            {% endif %}
+          </td>
+
+          {# Role badge #}
+          <td>
+            {% set role_class = {
+              'cto': 'badge--orange',
+              'engineering-vp': 'badge--blue',
+              'engineering-manager': 'badge--blue',
+              'qa-vp': 'badge--purple',
+              'python-developer': 'badge--green',
+              'pr-reviewer': 'badge--teal',
+              'muse-specialist': 'badge--pink',
+              'database-architect': 'badge--yellow',
+              'unknown': 'badge--gray',
+            }.get(t.role, 'badge--gray') %}
+            <span class="badge {{ role_class }}">{{ t.role }}</span>
+          </td>
+
+          {# Status badge #}
+          <td>
+            {% if t.status == 'done' %}
+            <span class="badge badge--green">✓ done</span>
+            {% else %}
+            <span class="badge badge--gray">⏳ active</span>
+            {% endif %}
+          </td>
+
+          {# Preview #}
+          <td style="max-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:0.82rem;color:var(--text-primary);">
+            {{ t.preview or '—' }}
+          </td>
+
+          {# Message count #}
+          <td style="text-align:right;font-variant-numeric:tabular-nums;font-size:0.82rem;">
+            {{ t.message_count }}
+          </td>
+
+          {# Sub-agents #}
+          <td style="text-align:right;">
+            {% if t.has_subagents %}
+            <span class="badge badge--blue" style="font-size:0.68rem;">{{ t.subagent_count }}</span>
+            {% else %}
+            <span style="color:var(--text-faint);font-size:0.75rem;">—</span>
+            {% endif %}
+          </td>
+
+          {# Linked issues #}
+          <td style="font-size:0.78rem;">
+            {% for n in (t.linked_issues or [])[:3] %}
+            <a href="/issues/{{ n }}" onclick="event.stopPropagation();" class="issue-link">#{{ n }}</a>{% if not loop.last %} {% endif %}
+            {% endfor %}
+            {% if (t.linked_issues | length) > 3 %}
+            <span style="color:var(--text-muted);">+{{ (t.linked_issues | length) - 3 }}</span>
+            {% endif %}
+            {% if not t.linked_issues %}
+            <span style="color:var(--text-faint);">—</span>
+            {% endif %}
+          </td>
+
+          {# Modified date #}
+          <td style="text-align:right;font-size:0.75rem;color:var(--text-muted);">
+            {{ t.mtime | int | timestamp_to_date }}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  {% elif not error %}
+  <div class="card">
+    <p class="text-muted empty-state">
+      No transcripts found. Make sure the Cursor projects directory is mounted correctly.
+    </p>
+  </div>
+  {% endif %}
+
+</div>{# /filter-group #}
+
+<style>
+  .filter-input {
+    background: var(--bg-elevated);
+    border: 1px solid var(--border-default);
+    color: var(--text-primary);
+    border-radius: 6px;
+    padding: 0.4rem 0.65rem;
+    font-size: 0.83rem;
+    outline: none;
+    transition: border-color 0.15s;
+  }
+  .filter-input:focus { border-color: var(--accent); }
+  .filter-input option { background: var(--bg-elevated); }
+
+  .transcript-row:hover td { background: var(--bg-elevated); }
+  .transcript-row td { transition: background 0.1s; }
+
+  .mono-badge {
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    color: var(--text-muted);
+    background: var(--bg-surface);
+    border: 1px solid var(--border-subtle);
+    border-radius: 4px;
+    padding: 0.15rem 0.35rem;
+  }
+
+  .issue-link {
+    color: var(--accent-bright);
+    font-size: 0.75rem;
+    text-decoration: none;
+  }
+  .issue-link:hover { text-decoration: underline; }
+
+  .badge--teal   { background: rgba(20,184,166,0.15); color: #5eead4; border-color: rgba(20,184,166,0.3); }
+  .badge--pink   { background: rgba(236,72,153,0.15); color: #f9a8d4; border-color: rgba(236,72,153,0.3); }
+  .badge--yellow { background: rgba(234,179,8,0.15);  color: #fde047; border-color: rgba(234,179,8,0.3); }
+  .badge--orange { background: rgba(249,115,22,0.15); color: #fdba74; border-color: rgba(249,115,22,0.3); }
+</style>
 
 {% endblock %}

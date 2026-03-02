@@ -8,8 +8,11 @@ Public API:
     find_transcript_root()        → locate the transcripts directory
     build_agent_tree()            → parse one root UUID into an AgentNode tree
     read_transcript_messages()    → parse a JSONL file into [{role, text}]
+    read_transcript_full()        → full detail payload for the detail view
     infer_role_from_messages()    → keyword heuristic → role string
     infer_status_from_messages()  → PR-URL heuristic → AgentStatus
+    extract_pr_urls()             → all GitHub PR URLs found in messages
+    index_transcripts()           → metadata list for the browser list view
 """
 from __future__ import annotations
 
@@ -35,7 +38,8 @@ _ROLE_KEYWORDS: list[tuple[str, str]] = [
     ("pr-reviewer", "pr-reviewer"),
 ]
 
-_PR_URL_RE = re.compile(r"github\.com/[^/\s]+/[^/\s]+/pull/\d+")
+_PR_URL_RE = re.compile(r"https?://github\.com/([^/\s]+/[^/\s]+/pull/\d+)")
+_ISSUE_RE = re.compile(r"#(\d+)")
 
 
 async def find_transcript_root() -> Path | None:
@@ -158,7 +162,17 @@ def infer_status_from_messages(messages: list[dict[str, str]]) -> AgentStatus:
     return AgentStatus.UNKNOWN
 
 
-_ISSUE_RE = re.compile(r"#(\d+)")
+def extract_pr_urls(messages: list[dict[str, str]]) -> list[str]:
+    """Return all unique GitHub PR URLs found across all messages, preserving order."""
+    seen: set[str] = set()
+    urls: list[str] = []
+    for msg in messages:
+        for match in _PR_URL_RE.finditer(msg.get("text", "")):
+            url = f"https://github.com/{match.group(1)}"
+            if url not in seen:
+                seen.add(url)
+                urls.append(url)
+    return urls
 
 
 async def index_transcripts(
@@ -169,14 +183,24 @@ async def index_transcripts(
 
     Each entry has:
     - ``uuid``           — top-level conversation UUID (directory name)
-    - ``message_count`` — number of JSONL lines in the parent .jsonl file
-    - ``subagent_count``— number of files in subagents/ subdirectory
+    - ``message_count`` — total JSONL lines (user + assistant)
+    - ``user_msg_count``— lines with role == "user"
+    - ``asst_msg_count``— lines with role == "assistant"
+    - ``subagent_count``— number of .jsonl files in subagents/ subdirectory
     - ``mtime``         — last-modified time (Unix seconds) of the JSONL file
-    - ``preview``       — first 80 chars of first user message
-    - ``linked_issues`` — list of issue numbers found in the first 500 chars
+    - ``preview``       — first 160 chars of the first meaningful user message
+    - ``linked_issues`` — list of issue numbers found across all user messages
+    - ``pr_urls``       — list of unique GitHub PR URLs found in the transcript
+    - ``role``          — inferred role string ("python-developer", "cto", …)
+    - ``status``        — inferred ``AgentStatus`` value ("done" or "unknown")
+    - ``word_count``    — approximate total word count of all messages
+    - ``has_subagents`` — ``True`` when at least one subagent is present
+    - ``is_coordinator``— ``True`` when the parent .jsonl is absent (pure coordinator)
 
     Results are sorted by mtime descending (most recently active first).
     Only parent UUIDs (directories directly under transcripts_dir) are included.
+    Directories that contain *only* a subagents/ folder (no root JSONL) are
+    still indexed so coordinator sessions are visible in the browser.
     """
     entries: list[dict[str, object]] = []
 
@@ -185,55 +209,219 @@ async def index_transcripts(
             continue
         uuid = uuid_dir.name
         parent_jsonl = uuid_dir / f"{uuid}.jsonl"
-        if not parent_jsonl.exists():
+        subagents_dir = uuid_dir / "subagents"
+        subagent_count = (
+            sum(1 for _ in subagents_dir.glob("*.jsonl"))
+            if subagents_dir.is_dir()
+            else 0
+        )
+        is_coordinator = not parent_jsonl.exists() and subagent_count > 0
+        if not parent_jsonl.exists() and not is_coordinator:
             continue
 
-        mtime = parent_jsonl.stat().st_mtime
+        mtime = (
+            parent_jsonl.stat().st_mtime
+            if parent_jsonl.exists()
+            else uuid_dir.stat().st_mtime
+        )
         message_count = 0
+        user_msg_count = 0
+        asst_msg_count = 0
+        word_count = 0
         preview = ""
         linked_issues: list[int] = []
+        pr_urls: list[str] = []
+        messages: list[dict[str, str]] = []
 
-        try:
-            raw = parent_jsonl.read_text(encoding="utf-8", errors="replace")
-            lines = [l for l in raw.splitlines() if l.strip()]
-            message_count = len(lines)
+        if parent_jsonl.exists():
+            try:
+                raw = parent_jsonl.read_text(encoding="utf-8", errors="replace")
+                lines = [ln for ln in raw.splitlines() if ln.strip()]
+                message_count = len(lines)
 
-            # Extract preview and linked issues from first 500 chars of user messages.
-            first_500 = raw[:500]
-            linked_issues = [int(m) for m in _ISSUE_RE.findall(first_500)]
+                issue_seen: set[int] = set()
+                pr_seen: set[str] = set()
 
-            for line in lines:
-                try:
-                    entry = json.loads(line)
-                    if entry.get("role") == "user":
+                for line in lines:
+                    try:
+                        entry = json.loads(line)
+                        role = entry.get("role", "")
+                        if role == "user":
+                            user_msg_count += 1
+                        elif role == "assistant":
+                            asst_msg_count += 1
+
                         parts = entry.get("message", {}).get("content", [])
                         for p in parts:
-                            if isinstance(p, dict) and p.get("type") == "text":
-                                preview = (p.get("text") or "")[:80]
-                                break
-                    if preview:
-                        break
-                except (json.JSONDecodeError, AttributeError):
-                    continue
-        except OSError:
-            pass
+                            if not isinstance(p, dict) or p.get("type") != "text":
+                                continue
+                            text = p.get("text") or ""
+                            word_count += len(text.split())
+                            messages.append({"role": role, "text": text})
 
-        subagent_count = 0
-        subagents_dir = uuid_dir / "subagents"
-        if subagents_dir.is_dir():
-            subagent_count = sum(1 for _ in subagents_dir.glob("*.jsonl"))
+                            # Harvest issues from all user messages.
+                            if role == "user":
+                                for m in _ISSUE_RE.finditer(text):
+                                    n = int(m.group(1))
+                                    if n not in issue_seen:
+                                        issue_seen.add(n)
+                                        linked_issues.append(n)
+                                # Use first substantive user message as preview
+                                # (skip short/system lines like "[Image]")
+                                clean = text.strip()
+                                if not preview and len(clean) > 20:
+                                    # Strip XML-like wrapper tags common in task files.
+                                    clean = re.sub(r"<[^>]+>", "", clean).strip()
+                                    preview = clean[:160]
+
+                            # Harvest PR URLs from all messages.
+                            for match in _PR_URL_RE.finditer(text):
+                                url = f"https://github.com/{match.group(1)}"
+                                if url not in pr_seen:
+                                    pr_seen.add(url)
+                                    pr_urls.append(url)
+                    except (json.JSONDecodeError, AttributeError):
+                        continue
+            except OSError:
+                pass
+
+        role_str = infer_role_from_messages(messages)
+        status = infer_status_from_messages(messages)
 
         entries.append({
             "uuid": uuid,
             "message_count": message_count,
+            "user_msg_count": user_msg_count,
+            "asst_msg_count": asst_msg_count,
             "subagent_count": subagent_count,
             "mtime": mtime,
             "preview": preview,
             "linked_issues": linked_issues,
+            "pr_urls": pr_urls,
+            "role": role_str,
+            "status": status.value,
+            "word_count": word_count,
+            "has_subagents": subagent_count > 0,
+            "is_coordinator": is_coordinator,
         })
 
     entries.sort(key=lambda e: float(str(e["mtime"])), reverse=True)
     return entries[:limit]
+
+
+async def read_transcript_full(
+    uuid: str,
+    transcripts_dir: Path,
+    max_messages: int = 300,
+) -> dict[str, object] | None:
+    """Load the full detail payload for a single transcript UUID.
+
+    Returns a dict with:
+    - ``uuid``            — the conversation UUID
+    - ``messages``        — list of ``{role, text}`` dicts (capped at *max_messages*)
+    - ``total_messages``  — true count before capping
+    - ``role``            — inferred role string
+    - ``status``          — inferred status string ("done" | "unknown")
+    - ``linked_issues``   — unique issue numbers found in user messages
+    - ``pr_urls``         — unique GitHub PR URLs in the whole transcript
+    - ``word_count``      — total word count
+    - ``user_msg_count``  — count of user messages
+    - ``asst_msg_count``  — count of assistant messages
+    - ``subagents``       — list of ``{uuid, role, status, message_count, preview}``
+    - ``mtime``           — last modified Unix timestamp
+    - ``is_coordinator``  — True when no root JSONL exists (pure coordinator)
+
+    Returns ``None`` when the UUID directory does not exist.
+    """
+    uuid_dir = transcripts_dir / uuid
+    if not uuid_dir.exists():
+        return None
+
+    parent_jsonl = uuid_dir / f"{uuid}.jsonl"
+    subagents_dir = uuid_dir / "subagents"
+    is_coordinator = not parent_jsonl.exists()
+
+    mtime = (
+        parent_jsonl.stat().st_mtime
+        if parent_jsonl.exists()
+        else uuid_dir.stat().st_mtime
+    )
+
+    all_messages = await read_transcript_messages(parent_jsonl)
+    total_messages = len(all_messages)
+
+    # Build per-role counts and linked artefacts from the full message list.
+    user_msg_count = sum(1 for m in all_messages if m.get("role") == "user")
+    asst_msg_count = sum(1 for m in all_messages if m.get("role") == "assistant")
+    word_count = sum(len(m.get("text", "").split()) for m in all_messages)
+
+    issue_seen: set[int] = set()
+    pr_seen: set[str] = set()
+    linked_issues: list[int] = []
+    pr_urls: list[str] = []
+    for msg in all_messages:
+        text = msg.get("text", "")
+        if msg.get("role") == "user":
+            for m in _ISSUE_RE.finditer(text):
+                n = int(m.group(1))
+                if n not in issue_seen:
+                    issue_seen.add(n)
+                    linked_issues.append(n)
+        for match in _PR_URL_RE.finditer(text):
+            url = f"https://github.com/{match.group(1)}"
+            if url not in pr_seen:
+                pr_seen.add(url)
+                pr_urls.append(url)
+
+    role_str = infer_role_from_messages(all_messages)
+    status = infer_status_from_messages(all_messages)
+
+    # Cap messages for the detail view — show the most recent ones when over limit.
+    messages_display = (
+        all_messages[-max_messages:]
+        if len(all_messages) > max_messages
+        else all_messages
+    )
+
+    # Build subagent metadata list.
+    subagents: list[dict[str, object]] = []
+    if subagents_dir.is_dir():
+        for child_jsonl in sorted(subagents_dir.glob("*.jsonl")):
+            child_uuid = child_jsonl.stem
+            child_messages = await read_transcript_messages(child_jsonl)
+            child_role = infer_role_from_messages(child_messages)
+            child_status = infer_status_from_messages(child_messages)
+            child_preview = ""
+            for cm in child_messages:
+                if cm.get("role") == "user":
+                    raw_text = re.sub(r"<[^>]+>", "", cm.get("text", "")).strip()
+                    if len(raw_text) > 20:
+                        child_preview = raw_text[:120]
+                        break
+            subagents.append({
+                "uuid": child_uuid,
+                "role": child_role,
+                "status": child_status.value,
+                "message_count": len(child_messages),
+                "preview": child_preview,
+            })
+
+    return {
+        "uuid": uuid,
+        "messages": messages_display,
+        "total_messages": total_messages,
+        "role": role_str,
+        "status": status.value,
+        "linked_issues": linked_issues,
+        "pr_urls": pr_urls,
+        "word_count": word_count,
+        "user_msg_count": user_msg_count,
+        "asst_msg_count": asst_msg_count,
+        "subagents": subagents,
+        "mtime": mtime,
+        "is_coordinator": is_coordinator,
+        "truncated": total_messages > max_messages,
+    }
 
 
 async def build_agent_tree(
