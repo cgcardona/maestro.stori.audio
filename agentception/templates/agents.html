@@ -32,10 +32,11 @@
 
   {# ── Status sections ──────────────────────────────────────────────────────── #}
   {% set statuses = [
-    ("running",  "🟢 Running"),
-    ("blocked",  "🟡 Blocked"),
-    ("done",     "✅ Done"),
-    ("unknown",  "⬜ Unknown"),
+    ("implementing", "🔵 Implementing"),
+    ("reviewing",    "🟡 Reviewing"),
+    ("done",         "✅ Done"),
+    ("stale",        "🔴 Stale"),
+    ("unknown",      "⬜ Unknown"),
   ] %}
 
   {% for status_val, status_label in statuses %}
@@ -163,32 +164,13 @@
 <style>
 .agents-page { display: flex; flex-direction: column; gap: 1.5rem; }
 
-.page-header { margin-bottom: 0.5rem; }
-.page-title { font-size: 1.5rem; font-weight: 700; display: flex; align-items: center; gap: 0.5rem; }
-
-.badge-count {
-  display: inline-flex; align-items: center; justify-content: center;
-  background: var(--color-border);
-  color: var(--color-text-muted);
-  border-radius: 999px;
-  font-size: 0.7rem; font-weight: 600;
-  padding: 0.1rem 0.5rem;
-  min-width: 1.5rem;
-}
-
-.empty-state {
-  text-align: center;
-  padding: 3rem 1.5rem;
-}
-.empty-icon { font-size: 3rem; margin-bottom: 0.75rem; }
-.empty-title { font-size: 1.1rem; font-weight: 600; }
-
 .agents-section { display: flex; flex-direction: column; gap: 0.75rem; }
 .agents-section-title {
-  font-size: 1rem; font-weight: 600;
+  font-size: 0.875rem; font-weight: 600;
   display: flex; align-items: center; gap: 0.5rem;
-  border-bottom: 1px solid var(--color-border);
+  border-bottom: 1px solid var(--border-subtle);
   padding-bottom: 0.4rem;
+  color: var(--text-secondary);
 }
 
 .agents-grid {
@@ -199,33 +181,37 @@
 
 .agent-card {
   display: flex; flex-direction: column; gap: 0.5rem;
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-default);
+  border-left: 3px solid var(--border-strong);
   border-radius: var(--radius);
-  padding: 0.85rem 1rem;
+  padding: 0.875rem 1rem;
   text-decoration: none;
   color: inherit;
-  transition: border-color 0.15s, box-shadow 0.15s;
+  transition: border-color 0.15s, box-shadow 0.15s, transform 0.12s;
 }
 .agent-card:hover {
-  border-color: var(--color-accent);
-  box-shadow: 0 0 0 1px var(--color-accent);
+  border-color: var(--border-strong);
+  box-shadow: var(--shadow-md);
+  transform: translateY(-1px);
+  text-decoration: none;
+  color: inherit;
 }
-.agent-card--running { border-left: 3px solid #22c55e; }
-.agent-card--blocked { border-left: 3px solid #eab308; }
-.agent-card--done    { border-left: 3px solid #3b82f6; }
+.agent-card--implementing { border-left-color: #3b82f6; }
+.agent-card--reviewing    { border-left-color: var(--warning); }
+.agent-card--done         { border-left-color: var(--success); }
+.agent-card--stale        { border-left-color: var(--danger); }
+.agent-card--unknown      { border-left-color: var(--border-strong); }
 
 .agent-card-header {
   display: flex; align-items: center; justify-content: space-between;
 }
-.agent-card-id { font-size: 0.7rem; color: var(--color-text-muted); }
-.agent-card-role { font-size: 0.9rem; font-weight: 600; }
-.agent-card-meta { display: flex; flex-wrap: wrap; gap: 0.35rem; }
-.meta-chip--sm { font-size: 0.7rem; padding: 0.1rem 0.4rem; }
+.agent-card-id { font-size: 0.6875rem; font-family: var(--font-mono); color: var(--text-muted); }
+.agent-card-role { font-size: 0.9rem; font-weight: 600; color: var(--text-primary); }
+.agent-card-meta { display: flex; flex-wrap: wrap; gap: 0.35rem; margin-top: 0.125rem; }
+.meta-chip--sm { font-size: 0.6875rem; padding: 0.1rem 0.4rem; }
 .agent-card-children { margin-top: 0.25rem; }
 
-.btn { display: inline-block; padding: 0.4rem 1rem; border-radius: var(--radius); text-decoration: none; font-size: 0.85rem; font-weight: 500; }
-.btn-primary { background: var(--color-accent); color: #fff; }
-.btn-primary:hover { opacity: 0.88; }
+.agents-run-history { display: flex; flex-direction: column; gap: 0.75rem; }
 </style>
 {% endblock %}
