@@ -600,7 +600,7 @@ class TestMusehubMcpServerRouting:
 
         assert result.success is False
         assert result.is_error is True
-        assert "db_unavailable" not in result.content[0]["text"] or True  # message is surfaced
+        assert "not initialised" in result.content[0]["text"]
 
     @pytest.mark.anyio
     async def test_musehub_get_context_response_is_json(
