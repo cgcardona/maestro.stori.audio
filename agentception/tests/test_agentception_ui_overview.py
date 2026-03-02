@@ -79,10 +79,13 @@ def test_overview_contains_tree_element(client: TestClient, empty_state: Pipelin
 
 
 def test_overview_sse_connect_attribute(client: TestClient, empty_state: PipelineState) -> None:
-    """GET / HTML must wire the EventSource to /events for live updates."""
+    """GET / HTML must load app.js, which wires the EventSource to /events."""
     with patch("agentception.routes.ui.get_state", return_value=empty_state):
         response = client.get("/")
-    assert "EventSource('/events')" in response.text
+    # EventSource logic lives in app.js; verify the script is loaded and
+    # the pipelineDashboard x-data binding is present in the HTML.
+    assert "/static/app.js" in response.text
+    assert "pipelineDashboard(" in response.text
 
 
 def test_overview_contains_summary_bar(client: TestClient, empty_state: PipelineState) -> None:

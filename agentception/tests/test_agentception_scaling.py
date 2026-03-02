@@ -461,6 +461,10 @@ def test_banner_hidden_when_dismissed_markup_present() -> None:
     assert response.status_code == 200
     html = response.text
     # Banner container with Alpine dismissed-state guard must be rendered.
-    assert "scalingAdvisor()" in html, "Alpine scalingAdvisor component must be in the page"
-    assert "/api/intelligence/scaling-advice/apply" in html, "Apply endpoint URL must be in the page"
+    # scalingAdvisor() is defined in app.js; the HTML uses it via x-data invocation.
+    assert "scalingAdvisor(" in html, "Alpine scalingAdvisor x-data invocation must be in the page"
+    # Apply logic (POST /api/intelligence/scaling-advice/apply) lives in app.js,
+    # invoked via @click="apply()". Verify the button and app.js are present.
+    assert '@click="apply()"' in html, "Apply button must delegate to scalingAdvisor.apply()"
+    assert "/static/app.js" in html, "app.js must be loaded for scalingAdvisor to work"
     assert "Dismiss" in html, "Dismiss button must be rendered"
