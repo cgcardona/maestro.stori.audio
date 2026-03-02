@@ -159,6 +159,43 @@ for entry in "${PRS[@]}"; do
   HAS_MIGRATION=$(echo "$PR_FILES" | grep -c "alembic/versions/" || echo 0)
   [ "$HAS_MIGRATION" -gt 0 ] && HAS_MIGRATION_VAL=true || HAS_MIGRATION_VAL=false
 
+  # Resolve reviewer cognitive architecture from PR content
+  PR_CONTENT="$TITLE $PR_BODY"
+  if echo "$PR_CONTENT" | grep -qiE "monaco|vs/loader|editor.*cdn"; then
+    R_SKILLS="monaco"
+  elif echo "$PR_CONTENT" | grep -qiE "d3\.js|force-directed|d3\.force"; then
+    R_SKILLS="d3:javascript"
+  elif echo "$PR_CONTENT" | grep -qiE "htmx|hx-|sse-connect"; then
+    R_SKILLS="htmx"
+    echo "$PR_CONTENT" | grep -qiE "jinja2|\.html|TemplateResponse|extends.*html" && R_SKILLS="${R_SKILLS}:jinja2"
+    echo "$PR_CONTENT" | grep -qiE "alpine|x-data|x-show" && R_SKILLS="${R_SKILLS}:alpine"
+  elif echo "$PR_CONTENT" | grep -qiE "postgres|alembic|migration"; then
+    R_SKILLS="postgresql:python"
+  elif echo "$PR_CONTENT" | grep -qiE "APIRouter|FastAPI|Depends"; then
+    R_SKILLS="fastapi:python"
+  elif echo "$PR_CONTENT" | grep -qiE "midi|storpheus|tmidix"; then
+    R_SKILLS="midi:python"
+  elif echo "$PR_CONTENT" | grep -qiE "llm|embedding|rag|openrouter"; then
+    R_SKILLS="llm:python"
+  else
+    R_SKILLS="python"
+  fi
+  if echo "$PR_CONTENT" | grep -qiE "migration|alembic|schema"; then
+    R_FIGURE="dijkstra"
+  elif echo "$PR_CONTENT" | grep -qiE "SSE|broadcast|async|asyncio"; then
+    R_FIGURE="shannon"
+  elif echo "$PR_CONTENT" | grep -qiE "security|auth|jwt|secret"; then
+    R_FIGURE="the_guardian"
+  elif echo "$PR_CONTENT" | grep -qiE "overview|dashboard|pipeline|tree"; then
+    R_FIGURE="lovelace"
+  elif echo "$PR_CONTENT" | grep -qiE "api|endpoint|route|contract"; then
+    R_FIGURE="turing"
+  else
+    R_FIGURE="knuth"
+  fi
+  R_COGNITIVE_ARCH="${R_FIGURE}:${R_SKILLS}"
+  R_BATCH_ID="qa-$(date -u +%Y%m%dT%H%M%SZ)-$(printf '%04x' $RANDOM)"
+
   cat > "$WT/.agent-task" << TASKEOF
 WORKFLOW=pr-review
 GH_REPO=$GH_REPO
@@ -166,11 +203,20 @@ PR_NUMBER=$NUM
 PR_TITLE=$TITLE
 PR_URL=https://github.com/$GH_REPO/pull/$NUM
 PR_BRANCH=$PR_BRANCH
+WORKTREE=$WT
+BASE=dev
 CLOSES_ISSUES=$CLOSES_ISSUE
 FILES_CHANGED=$PR_FILES
 MERGE_AFTER=$MERGE_AFTER_VAL
 HAS_MIGRATION=$HAS_MIGRATION_VAL
 ROLE=$REVIEW_ROLE
+ROLE_FILE=$HOME/dev/tellurstori/maestro/.cursor/roles/${REVIEW_ROLE}.md
+COGNITIVE_ARCH=$R_COGNITIVE_ARCH
+BATCH_ID=$R_BATCH_ID
+WAVE=${CTO_WAVE:-unset}
+CREATED_AT=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
+SPAWN_MODE=pool
+LINKED_PR=none
 SPAWN_SUB_AGENTS=false
 ATTEMPT_N=0
 REQUIRED_OUTPUT=grade,merge_status,pr_url
@@ -1195,17 +1241,39 @@ TASK
       NEXT_WORKTREE="$HOME/.cursor/worktrees/maestro/pr-$NEXT_PR"
       git -C "$REPO" worktree add "$NEXT_WORKTREE" "origin/$NEXT_BRANCH"
 
+      NEXT_PR_TITLE=$(gh pr view "$NEXT_PR" --repo "$GH_REPO" --json title --jq '.title' 2>/dev/null || echo "")
+      NEXT_PR_BODY=$(gh pr view "$NEXT_PR" --repo "$GH_REPO" --json body --jq '.body' 2>/dev/null || echo "")
+      NEXT_FILES=$(gh pr diff "$NEXT_PR" --repo "$GH_REPO" --name-only 2>/dev/null | tr '\n' ',' | sed 's/,$//')
+      NEXT_CLOSES=$(echo "$NEXT_PR_BODY" | grep -oE '[Cc]loses?\s+#[0-9]+' | grep -oE '[0-9]+' | tr '\n' ',' | sed 's/,$//')
+      NEXT_MERGE_AFTER=$(echo "$NEXT_PR_BODY" | grep -oiE 'merge after #[0-9]+|depends on pr #[0-9]+' | grep -oE '[0-9]+' | head -1)
+      [ -z "$NEXT_MERGE_AFTER" ] && NEXT_MERGE_AFTER=none
+      NEXT_HAS_MIG=$(echo "$NEXT_FILES" | grep -c "alembic/versions/" || echo 0)
+      [ "$NEXT_HAS_MIG" -gt 0 ] && NEXT_HAS_MIG_VAL=true || NEXT_HAS_MIG_VAL=false
       cat > "$NEXT_WORKTREE/.agent-task" <<TASK
-TASK=pr-review
-PR=$NEXT_PR
-BRANCH=$NEXT_BRANCH
+WORKFLOW=pr-review
+GH_REPO=cgcardona/maestro
+PR_NUMBER=$NEXT_PR
+PR_TITLE=$NEXT_PR_TITLE
+PR_URL=https://github.com/cgcardona/maestro/pull/$NEXT_PR
+PR_BRANCH=$NEXT_BRANCH
 WORKTREE=$NEXT_WORKTREE
+BASE=dev
+CLOSES_ISSUES=$NEXT_CLOSES
+FILES_CHANGED=$NEXT_FILES
+MERGE_AFTER=$NEXT_MERGE_AFTER
+HAS_MIGRATION=$NEXT_HAS_MIG_VAL
 ROLE=pr-reviewer
 ROLE_FILE=$HOME/dev/tellurstori/maestro/.cursor/roles/pr-reviewer.md
-BASE=dev
-GH_REPO=cgcardona/maestro
+COGNITIVE_ARCH=${COGNITIVE_ARCH:-knuth:python}
 BATCH_ID=${BATCH_ID:-none}
+WAVE=${WAVE:-unset}
+CREATED_AT=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
 SPAWN_MODE=pool
+LINKED_PR=$NEXT_PR
+SPAWN_SUB_AGENTS=false
+ATTEMPT_N=0
+REQUIRED_OUTPUT=grade,merge_status,pr_url
+ON_BLOCK=stop
 TASK
 
       echo "✅ Pool: spawning replacement reviewer for PR #$NEXT_PR"

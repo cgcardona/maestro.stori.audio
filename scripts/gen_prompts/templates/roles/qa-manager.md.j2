@@ -110,18 +110,41 @@ SEED:
             COGNITIVE_ARCH="${FIGURE}:${SKILLS}"
             echo "PR #<N>: reviewer cognitive arch = $COGNITIVE_ARCH"
 
-       e. Write .agent-task — include BATCH_ID and COGNITIVE_ARCH:
-            TASK=pr-review
-            PR=<N>
-            BRANCH=$BRANCH
-            WORKTREE=$HOME/.cursor/worktrees/{{ repo_name }}/pr-<N>
-            ROLE=pr-reviewer
-            ROLE_FILE=$HOME/dev/tellurstori/{{ repo_name }}/.cursor/roles/pr-reviewer.md
-            BASE=dev
-            GH_REPO={{ gh_repo }}
-            BATCH_ID=$BATCH_ID
-            COGNITIVE_ARCH=$COGNITIVE_ARCH
-            SPAWN_MODE=chain
+       e. Fetch full PR metadata, then write .agent-task with every field:
+            PR_URL="https://github.com/{{ gh_repo }}/pull/<N>"
+            CLOSES_ISSUE=$(echo "$PR_BODY" | grep -oE '[Cc]loses?\s+#[0-9]+' | grep -oE '[0-9]+' | tr '\n' ',' | sed 's/,$//')
+            PR_FILES=$(gh pr diff <N> --repo {{ gh_repo }} --name-only 2>/dev/null | tr '\n' ',' | sed 's/,$//')
+            MERGE_AFTER_VAL=$(echo "$PR_BODY" | grep -oiE 'merge after #[0-9]+|depends on pr #[0-9]+' | grep -oE '[0-9]+' | head -1)
+            [ -z "$MERGE_AFTER_VAL" ] && MERGE_AFTER_VAL=none
+            HAS_MIGRATION=$(echo "$PR_FILES" | grep -c "alembic/versions/" || echo 0)
+            [ "$HAS_MIGRATION" -gt 0 ] && HAS_MIGRATION_VAL=true || HAS_MIGRATION_VAL=false
+
+            cat > "$HOME/.cursor/worktrees/{{ repo_name }}/pr-<N>/.agent-task" <<TASKEOF
+WORKFLOW=pr-review
+GH_REPO={{ gh_repo }}
+PR_NUMBER=<N>
+PR_TITLE=$PR_TITLE
+PR_URL=$PR_URL
+PR_BRANCH=$BRANCH
+WORKTREE=$HOME/.cursor/worktrees/{{ repo_name }}/pr-<N>
+BASE=dev
+CLOSES_ISSUES=$CLOSES_ISSUE
+FILES_CHANGED=$PR_FILES
+MERGE_AFTER=$MERGE_AFTER_VAL
+HAS_MIGRATION=$HAS_MIGRATION_VAL
+ROLE=pr-reviewer
+ROLE_FILE=$HOME/dev/tellurstori/{{ repo_name }}/.cursor/roles/pr-reviewer.md
+COGNITIVE_ARCH=$COGNITIVE_ARCH
+BATCH_ID=$BATCH_ID
+WAVE=$CTO_WAVE
+CREATED_AT=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
+SPAWN_MODE=pool
+SPAWN_SUB_AGENTS=false
+ATTEMPT_N=0
+REQUIRED_OUTPUT=grade,merge_status,pr_url
+ON_BLOCK=stop
+LINKED_PR=none
+TASKEOF
 
   6. Launch all 4 as leaf reviewers simultaneously — one Task call per PR,
      all in a single message:
