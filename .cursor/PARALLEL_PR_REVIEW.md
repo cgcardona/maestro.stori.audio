@@ -371,7 +371,20 @@ STEP 0 — READ YOUR TASK FILE:
 
   Generate your unique reviewer session ID (identifies THIS specific reviewer run):
     AGENT_SESSION="qa-$(date -u +%Y%m%dT%H%M%SZ)-$(printf '%04x' $RANDOM)"
-    echo "🤖 Reviewer session: $AGENT_SESSION  Batch: ${BATCH_ID:-unset}"
+    COGNITIVE_ARCH=$(grep "^COGNITIVE_ARCH=" .agent-task | cut -d= -f2)
+    WAVE=$(grep "^WAVE=" .agent-task | cut -d= -f2)
+    echo "🤖 Reviewer session: $AGENT_SESSION  Batch: ${BATCH_ID:-unset}  Arch: ${COGNITIVE_ARCH:-unset}"
+
+  Post an identity comment on the PR immediately so the audit trail is visible from the start:
+    REVIEWER_ID_LINE=$(python3 "$REPO/scripts/gen_prompts/resolve_arch.py" "$COGNITIVE_ARCH" 2>&1 1>/dev/null || echo "$COGNITIVE_ARCH")
+    gh pr comment "$N" --repo "$GH_REPO" --body "$(cat <<EOF
+🔍 **Review started**
+- **Reviewer:** \`${COGNITIVE_ARCH:-unset}\` (${REVIEWER_ID_LINE#🎭 })
+- **Batch:** \`${BATCH_ID:-none}\` · **Wave:** \`${WAVE:-unset}\`
+- **Session:** \`${AGENT_SESSION}\`
+- **Started at:** $(date -u '+%Y-%m-%dT%H:%M:%SZ')
+EOF
+)" 2>/dev/null || true
 
   ⚠️  ANTI-LOOP GUARD: if ATTEMPT_N > 2 → STOP immediately.
     Self-destruct and escalate. Report the exact failure. Never loop blindly.
@@ -959,21 +972,21 @@ STEP 6 — PRE-MERGE SYNC (only if grade is A or B):
        git push origin --delete "$BRANCH"
 
   # 7. Post a fingerprint comment on the PR so every merge is permanently traceable:
-       gh pr comment <N> --repo "$GH_REPO" --body "$(cat <<EOF
-  🤖 **Maestro Review Fingerprint**
+       gh pr comment "$N" --repo "$GH_REPO" --body "$(cat <<EOF
+✅ **Maestro Review Complete**
 
-  | Field | Value |
-  |-------|-------|
-  | Role | \`pr-reviewer\` |
-  | Batch | \`${BATCH_ID:-none}\` |
-  | Session | \`${AGENT_SESSION}\` |
-  | Grade | \`<A/B/C/D/F>\` |
-  | Merged at | \`$(date -u +%Y-%m-%dT%H:%M:%SZ)\` |
+| Field | Value |
+|-------|-------|
+| Reviewer | \`${COGNITIVE_ARCH:-unset}\` |
+| Grade | \`<A/B/C/D/F>\` |
+| Batch | \`${BATCH_ID:-none}\` |
+| Wave | \`${WAVE:-unset}\` |
+| Session | \`${AGENT_SESSION}\` |
+| Merged at | \`$(date -u +%Y-%m-%dT%H:%M:%SZ)\` |
 
-  *To trace this review: search agent transcripts for session \`${AGENT_SESSION}\`
-  or batch \`${BATCH_ID:-none}\`.*
-  EOF
-  )"
+*Trace: search transcripts for session \`${AGENT_SESSION}\` or batch \`${BATCH_ID:-none}\`.*
+EOF
+)"
 
   # NOTE: Do NOT delete the local branch here — the branch is still checked out
   # in this worktree, so git will refuse. The local branch ref is cleaned up in
