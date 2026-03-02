@@ -127,6 +127,65 @@ Add your own for smoke tests and demos.
 
 ---
 
+## MuseHub UI / HTMX SSR tests
+
+### What changed in the SSR migration
+
+The HTMX migration (issues #555–#587) converted all MuseHub listing and CRUD pages from
+**"HTML shell + client-side `apiFetch`"** to **"server-rendered Jinja2 + HTMX fragment
+swaps"**.  Test assertions must reflect this:
+
+| Old pattern (pre-migration) | New pattern (post-migration) |
+|---|---|
+| `assert "apiFetch" in body` | ❌ Delete — apiFetch no longer present in migrated pages |
+| `assert "function renderRows" in body` | ❌ Delete — no inline JS row builders |
+| `assert response.status_code == 200` | ✅ Keep — routes still return 200 |
+| Assert JS function name in body | ✅ Replace with Jinja2-rendered content (e.g. `assert "v1.0" in body`) |
+| Check for rendered HTML content | ✅ Keep and strengthen |
+
+### SSR test naming convention
+
+```
+test_musehub_ui_<feature>_ssr.py   — SSR rendering tests for a migrated page
+test_musehub_ui_htmx_infra.py      — HTMX infrastructure (static assets, bridges)
+test_musehub_htmx_migration_final.py — Final audit: apiFetch absence, fragment paths
+```
+
+### Writing a new SSR test
+
+1. **Seed the minimum data** needed to render a non-empty state.
+2. **Make an unauthenticated GET** to the page URL (MuseHub pages are public).
+3. **Assert rendered Jinja2 content** appears in `response.text` (e.g. repo name, tag).
+4. **Assert HTMX fragment path**: repeat the request with `headers={"HX-Request": "true"}`;
+   verify `"<html"` is NOT in the response (bare fragment only).
+5. **Assert empty-state** with no seeded data (no 500 — graceful empty state required).
+
+```python
+@pytest.mark.anyio
+async def test_releases_list_renders_tag_server_side(
+    client: AsyncClient, db_session: AsyncSession,
+) -> None:
+    repo_id = await _make_repo(db_session)
+    await _make_release(db_session, repo_id, tag="v2.5.0")
+    response = await client.get("/musehub/ui/musician/my-album/releases")
+    assert response.status_code == 200
+    assert "v2.5.0" in response.text          # Jinja2-rendered, no JS required
+```
+
+### Canvas/audio/visualization pages — exception
+
+Pages that render interactive canvases, audio waveforms, or music analysis charts
+use `apiFetch` intentionally for client-side data fetching.  Do NOT add SSR assertions
+for these pages unless a specific widget was extracted to SSR:
+
+- `arrange.html`, `piano_roll.html` — canvas piano roll
+- `listen.html`, `embed.html` — WaveSurfer.js
+- `score.html` — abcjs
+- `analysis.html`, `tempo.html`, `emotion.html`, `chord_map.html`, etc. — chart.js
+- `graph.html`, `timeline.html`, `compare.html`, `divergence.html` — D3 / SVG
+
+---
+
 ## Architectural boundary checks
 
 Automated guardrails prevent architectural regression across the Maestro/Muse boundary.
