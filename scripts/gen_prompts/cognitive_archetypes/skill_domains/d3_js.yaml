@@ -98,6 +98,16 @@ prompt_fragment: |
   - Click target is the whole node `<g>`, not just the circle.
   - Zoom reset button always present.
 
+review_checklist: |
+  - .data() joins are keyed — no anonymous join causing O(n²) DOM thrash
+  - enter/exit/merge pattern is complete — no orphaned DOM nodes
+  - Force simulation is stopped (simulation.stop()) on component unmount
+  - SVG has viewBox — no hardcoded width/height that breaks on resize
+  - D3 CDN version matches d3@7.x reference; not mixed with older pinned version
+  - Nodes have <title> elements for accessibility
+  - Zoom reset button present; click target is the full <g> node not just the circle
+  - Graph data is inlined via Jinja2 | tojson — no extra fetch on load
+
 quality_gates:
   linter: "docker compose exec agentception mypy /app/agentception/"
   test_runner: "docker compose exec agentception pytest agentception/tests/ -v -k dag"

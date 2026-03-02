@@ -113,6 +113,18 @@ prompt_fragment: |
   - Partials are tested by requesting them directly with `pytest` + `httpx`.
   - `hx-indicator` on every non-trivial HTMX request (loading state).
 
+review_checklist: |
+  - hx-* attribute values are quoted and target stable id= CSS selectors
+  - SSE uses hx-ext="sse" + sse-connect; sse-swap target exists in DOM at event fire time
+  - Full pages extend base.html; partials extend nothing (bare HTML fragments)
+  - No business logic in templates — only loops and conditionals over data passed in
+  - request is first positional arg to TemplateResponse (not a keyword arg)
+  - HTMLResponse return type declared on all Jinja2 route handlers
+  - Alpine x-data scopes don't shadow parent scopes inadvertently
+  - No inline <script> duplicating logic already in app.css or Alpine
+  - Every HTMX target has a stable id — no anonymous targets
+  - hx-indicator present on every non-trivial HTMX request
+
 quality_gates:
   linter: "docker compose exec agentception mypy /app/agentception/"
   test_runner: "docker compose exec agentception pytest agentception/tests/ -v"

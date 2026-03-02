@@ -25,6 +25,16 @@ prompt_fragment: |
   - Every new GM alias gets a parametrized test case in `test_gm_resolution.py`.
   - `docker compose exec storpheus mypy .` must pass.
 
+review_checklist: |
+  - Instrument aliases are in _GM_ALIASES — no hardcoded GM numbers inline
+  - Every new GM alias has a parametrized test case in test_gm_resolution.py
+  - Percussion is on channel 10 (0-indexed: 9) — never on a melodic channel
+  - TMIDIX tokens encode pitch/duration/velocity/channel in the correct order
+  - Storpheus network errors use retry-with-backoff, not immediate failure
+  - No time-in-seconds in NoteChange, Phrase, or Variation models — beats only
+  - resolve_gm_program, resolve_tmidix_name, _resolve_melodic_index are the only
+    instrument-resolution entry points — no ad-hoc lookups elsewhere
+
 quality_gates:
   linter: "docker compose exec storpheus mypy ."
   test_runner: "docker compose exec storpheus pytest . -v"

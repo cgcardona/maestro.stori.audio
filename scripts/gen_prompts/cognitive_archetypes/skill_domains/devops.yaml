@@ -26,5 +26,15 @@ prompt_fragment: |
   - No ports exposed beyond what the service needs.
   - Nginx is the single ingress point. Never expose app ports directly in production compose.
 
+review_checklist: |
+  - FROM base image is pinned to an exact version tag (no :latest)
+  - No secrets in ENV — only ${VAR} references from compose environment section
+  - New services bind ports on 127.0.0.1 only (never 0.0.0.0) unless nginx-fronted
+  - requirements.txt changes are accompanied by a rebuild note in the PR body
+  - entrypoint.sh changes are validated by bringing the container up and hitting /health
+  - No hardcoded $HOME or usernames — use ${HOME}
+  - Health check defined on every new service
+  - docker-compose.override.yml changes are local-dev-only (no production secrets)
+
 quality_gates:
   verify: "docker compose ps && docker compose logs --tail=20"
