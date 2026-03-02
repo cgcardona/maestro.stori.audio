@@ -15,23 +15,41 @@ entire chain to drain.
 
 ```
 SEED:
-  1. Ensure the claim label exists (idempotent):
+  1. Ensure the claim label exists with canonical color (idempotent):
+       # create first; if it already exists, edit to enforce the canonical color.
+       # Never rely on create alone — it fails silently if the label exists, leaving
+       # a stale color from a previous run.
        gh label create "agent:wip" \
-         --color "#0075ca" \
+         --color "0075ca" \
          --description "Claimed by a pipeline agent — do not assign manually" \
-         2>/dev/null || true
+         --repo cgcardona/maestro 2>/dev/null || \
+       gh label edit "agent:wip" \
+         --color "0075ca" \
+         --description "Claimed by a pipeline agent — do not assign manually" \
+         --repo cgcardona/maestro 2>/dev/null || true
 
-  2. Clear stale claims — ONLY for issues with no active worktree:
-       # A claim is "stale" only if the worktree is missing (crashed run).
-       # If the worktree exists, the claim is ACTIVE — do NOT touch it.
+  2. Clear stale claims — worktree missing OR no commits ahead of dev:
+       # A claim is stale when EITHER:
+       #   (a) the worktree directory is missing (crashed/cleaned run), OR
+       #   (b) the worktree exists but has zero commits ahead of dev
+       #       (worktree was created but the leaf agent never started).
+       # If the worktree exists AND has commits, the claim is ACTIVE — do NOT touch it.
+       MAIN_REPO=$(git -C "$HOME/dev/tellurstori/maestro" rev-parse --show-toplevel 2>/dev/null || echo "$HOME/dev/tellurstori/maestro")
        for NUM in $(gh issue list --state open --label "agent:wip" \
            --repo cgcardona/maestro --json number --jq '.[].number'); do
          WORKTREE="$HOME/.cursor/worktrees/maestro/issue-$NUM"
          if [ ! -d "$WORKTREE" ]; then
-           echo "Clearing stale agent:wip from #$NUM (no worktree)"
+           echo "Clearing stale agent:wip from #$NUM (worktree missing)"
            gh issue edit $NUM --repo cgcardona/maestro --remove-label "agent:wip"
          else
-           echo "Keeping agent:wip on #$NUM (active worktree exists)"
+           BRANCH=$(git -C "$WORKTREE" branch --show-current 2>/dev/null || echo "")
+           AHEAD=$(git -C "$MAIN_REPO" rev-list --count "dev..${BRANCH}" 2>/dev/null || echo "0")
+           if [ "${AHEAD:-0}" -eq 0 ]; then
+             echo "Clearing stale agent:wip from #$NUM (worktree exists but 0 commits ahead of dev)"
+             gh issue edit $NUM --repo cgcardona/maestro --remove-label "agent:wip"
+           else
+             echo "Keeping agent:wip on #$NUM (active: $AHEAD commit(s) ahead of dev)"
+           fi
          fi
        done
 
@@ -49,14 +67,18 @@ SEED:
      For each candidate issue, check if its dependencies are met before seeding.
      Parse "Depends on #NNN" from the issue body. If any dep issue is still OPEN → skip.
      Only seed issues whose dependency issues are all CLOSED (i.e. merged).
+     ⚠️  grep produces newline-separated numbers — iterate them one at a time.
+     NEVER pass the full grep output as a single argument to `gh issue view`.
        for NUM in <candidate numbers>; do
+         # Extract dependency numbers one per line, then iterate individually.
          DEPS=$(gh issue view $NUM --repo cgcardona/maestro --json body \
            --jq '.body' | grep -oE 'Depends on[^#]*#[0-9]+' | grep -oE '[0-9]+')
          ALL_MET=true
-         for dep in $DEPS; do
-           STATE=$(gh issue view $dep --repo cgcardona/maestro --json state --jq '.state')
+         while IFS= read -r dep; do
+           [ -z "$dep" ] && continue
+           STATE=$(gh issue view "$dep" --repo cgcardona/maestro --json state --jq '.state' 2>/dev/null || echo "UNKNOWN")
            [ "$STATE" != "CLOSED" ] && ALL_MET=false && break
-         done
+         done <<< "$DEPS"
          [ "$ALL_MET" = "true" ] && echo "SEED $NUM" || echo "SKIP $NUM (deps unmet)"
        done
 
@@ -80,21 +102,34 @@ SEED:
           ```bash
           ISSUE_BODY="$(gh issue view <N> --repo cgcardona/maestro --json body -q .body)"
 
-          # --- Skill domain (what tech stack is this issue building?) ---
+          # --- Skill domains (colon-separated, up to 3, first-match-wins per layer) ---
+          # Layer 1: specialised UI skills
+          SKILLS=""
           if echo "$ISSUE_BODY" | grep -qiE "monaco|vs/loader|editor.*cdn|cdn.*editor"; then
-            SKILL_DOMAIN="monaco_editor"
+            SKILLS="monaco"
           elif echo "$ISSUE_BODY" | grep -qiE "d3\.js|force-directed|d3\.force|d3\.select"; then
-            SKILL_DOMAIN="d3_js"
-          elif echo "$ISSUE_BODY" | grep -qiE "htmx|hx-|jinja2|\.html|sse-connect|alpine|x-data|hx-ext"; then
-            SKILL_DOMAIN="htmx_jinja2"
+            SKILLS="d3:javascript"
+          elif echo "$ISSUE_BODY" | grep -qiE "htmx|hx-|sse-connect|hx-ext"; then
+            # Detect additional UI layers for the same issue
+            SKILLS="htmx"
+            echo "$ISSUE_BODY" | grep -qiE "jinja2|\.html|template|TemplateResponse|extends.*html" && SKILLS="${SKILLS}:jinja2"
+            echo "$ISSUE_BODY" | grep -qiE "alpine|x-data|x-show|x-bind" && SKILLS="${SKILLS}:alpine"
+          elif echo "$ISSUE_BODY" | grep -qiE "jinja2|\.html\.j2|TemplateResponse|extends.*html"; then
+            SKILLS="jinja2"
+            echo "$ISSUE_BODY" | grep -qiE "alpine|x-data|x-show" && SKILLS="${SKILLS}:alpine"
+          # Layer 2: backend skills
           elif echo "$ISSUE_BODY" | grep -qiE "dockerfile|FROM python|compose.*service|container.*port"; then
-            SKILL_DOMAIN="devops"
+            SKILLS="devops"
           elif echo "$ISSUE_BODY" | grep -qiE "midi|storpheus|gm.program|tmidix|orpheus"; then
-            SKILL_DOMAIN="audio_midi"
+            SKILLS="midi:python"
           elif echo "$ISSUE_BODY" | grep -qiE "llm|embedding|rag|openrouter|claude.*model"; then
-            SKILL_DOMAIN="ml_ai"
+            SKILLS="llm:python"
+          elif echo "$ISSUE_BODY" | grep -qiE "postgres|alembic|migration|sqlalchemy|select.*from"; then
+            SKILLS="postgresql:python"
+          elif echo "$ISSUE_BODY" | grep -qiE "APIRouter|FastAPI|Depends|response_model"; then
+            SKILLS="fastapi:python"
           else
-            SKILL_DOMAIN="python"
+            SKILLS="python"
           fi
 
           # --- Figure/archetype (how should the agent think?) ---
@@ -136,12 +171,12 @@ SEED:
             FIGURE="the_pragmatist"
           fi
 
-          COGNITIVE_ARCH="${FIGURE}+${SKILL_DOMAIN}"
+          COGNITIVE_ARCH="${FIGURE}:${SKILLS}"
           echo "Selected cognitive architecture: $COGNITIVE_ARCH"
           ```
 
-          See scripts/gen_prompts/TICKET_TAXONOMY.md for the full rationale behind
-          each mapping. The taxonomy also serves as a reference for adding new issues.
+          Format: `figure:skill1:skill2` (colon-separated, up to 3 skills).
+          See scripts/gen_prompts/TICKET_TAXONOMY.md for the full rationale and examples.
 
        d. Write .agent-task — include BATCH_ID and COGNITIVE_ARCH (see Worktree convention below)
 
@@ -185,12 +220,12 @@ BASE=dev
 GH_REPO=cgcardona/maestro
 CLOSES_ISSUES=<N>
 BATCH_ID=<BATCH_ID>
-COGNITIVE_ARCH=<COGNITIVE_ARCH from step 5c above, e.g. "feynman+htmx_jinja2">
+COGNITIVE_ARCH=<COGNITIVE_ARCH from step 5c above, e.g. "lovelace:htmx:jinja2:alpine">
 ```
 
 `ISSUE_LABEL` is the primary scoping label (e.g. `agentception/0-scaffold`). Leaf agents use it to route mypy and tests to the correct codebase container — never cross-run agentception checks on maestro or vice versa.
 
-`COGNITIVE_ARCH` is the selected cognitive architecture for this specific issue (figure+skill_domain or archetype+skill_domain). Leaf agents display it in their opening message and let it guide their approach. See `scripts/gen_prompts/TICKET_TAXONOMY.md` for the full taxonomy and rationale.
+`COGNITIVE_ARCH` is the selected cognitive architecture for this specific issue. Format: `figure:skill1:skill2` (up to 3 skills). Leaf agents pass it to `python3 /app/scripts/gen_prompts/resolve_arch.py "$COGNITIVE_ARCH"` to assemble their context block. See `scripts/gen_prompts/TICKET_TAXONOMY.md` for the full taxonomy and rationale.
 
 If a worktree is missing: `git -C "$HOME/dev/tellurstori/maestro" worktree add -b feat/issue-{N} "$HOME/.cursor/worktrees/maestro/issue-{N}" origin/dev`
 

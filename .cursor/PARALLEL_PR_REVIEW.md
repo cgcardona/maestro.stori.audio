@@ -913,16 +913,21 @@ STEP 6 — PRE-MERGE SYNC (only if grade is A or B):
   # in this worktree, so git will refuse. The local branch ref is cleaned up in
   # STEP 8 (SELF-DESTRUCT) AFTER the worktree is removed.
 
-  # 7. Close every referenced issue.
+  # 7. Close every referenced issue — only the reviewer who merges the PR does this.
   #    CLOSES_ISSUES is pre-populated from .agent-task (the coordinator extracted
   #    it at setup time). Use it directly to avoid re-parsing the PR body.
   #    ⚠️  Do NOT use `grep -o '#[0-9]*'` — it matches any #N (commit hashes,
   #    mentions, literal numbers) and silently closes the wrong issue.
   #    ⚠️  Do NOT use `while read` — the `read` builtin triggers a sandbox prompt.
+       REVIEWER_IDENTITY=$(python3 "$REPO/scripts/gen_prompts/resolve_arch.py" "$COGNITIVE_ARCH" 2>&1 1>/dev/null)
+       CLOSE_COMMENT="✅ Closed by PR #$N (merged).
+🤖 **Reviewer identity:** \`$COGNITIVE_ARCH\` (${REVIEWER_IDENTITY#🎭 })
+📅 **Merged at:** $(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+
        CLOSES_ISSUES=$(grep "^CLOSES_ISSUES=" .agent-task | cut -d= -f2)
        if [ -n "$CLOSES_ISSUES" ]; then
          echo "$CLOSES_ISSUES" | tr ',' '\n' | xargs -I{} gh issue close {} \
-           --comment "Fixed by PR #$N." \
+           --comment "$CLOSE_COMMENT" \
            --repo "$GH_REPO"
        else
          # Fallback: re-parse the PR body if CLOSES_ISSUES was empty in task file
@@ -930,7 +935,7 @@ STEP 6 — PRE-MERGE SYNC (only if grade is A or B):
            | grep -oE '[Cc]loses?\s+#[0-9]+' \
            | grep -oE '[0-9]+' \
            | xargs -I{} gh issue close {} \
-               --comment "Fixed by PR #$N." \
+               --comment "$CLOSE_COMMENT" \
                --repo "$GH_REPO"
        fi
 

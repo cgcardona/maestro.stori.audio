@@ -21,6 +21,16 @@ prompt_fragment: |
   - `@pytest.mark.anyio` for async tests. Shared fixtures in `tests/conftest.py`.
   - Naming: `test_<behavior>_<scenario>`. Cover the happy path and the primary failure mode.
 
+review_checklist: |
+  - from __future__ import annotations is first import in every new/modified file
+  - No Any in function signatures, return types, or Pydantic model fields
+  - No bare except: — always except SomeError as e:
+  - No blocking calls inside async def functions
+  - logging.getLogger(__name__) used — no print() anywhere
+  - Pydantic models at all module boundaries — no naked dicts crossing layers
+  - Every new public function/class has a docstring explaining why, not what
+  - No # type: ignore without an inline comment naming the upstream bug or limitation
+
 quality_gates:
   linter: "docker compose exec maestro mypy maestro/ tests/"
   formatter: "black"

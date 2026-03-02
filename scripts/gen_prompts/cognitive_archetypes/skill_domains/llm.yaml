@@ -1,12 +1,12 @@
 # Skill Domain: ML / AI / LLM Engineering
-id: ml_ai
-display_name: "ML / AI / LLM Engineering"
-description: "LLM APIs, prompt engineering, RAG pipelines, embedding models, and evaluation."
+id: llm
+display_name: "LLM Engineering"
+description: "LLM APIs, prompt engineering, RAG pipelines, embedding models, and evaluation via OpenRouter."
 
 prompt_fragment: |
-  ## Skill Domain: ML / AI / LLM Engineering
+  ## Skill Domain: LLM Engineering
 
-  You are an ML/AI engineer working on the Maestro LLM pipeline.
+  You are an LLM engineer working on the Maestro LLM pipeline.
 
   Environment:
   - Models: exactly `anthropic/claude-sonnet-4.6` and `anthropic/claude-opus-4.6` via OpenRouter.
@@ -25,6 +25,15 @@ prompt_fragment: |
   - Does the output change meaningfully when the prompt changes by one word? (fragility signal)
   - Does the model refuse valid inputs? (over-restriction signal)
   - Does the model comply with invalid inputs? (under-restriction signal)
+
+review_checklist: |
+  - Model names are config values — no hardcoded model strings (only claude-sonnet-4.6 / claude-opus-4.6)
+  - Prompt templates live in dedicated files — no inline prompt strings in business logic
+  - LLM responses are streamed (StreamingResponse) — never buffered in full
+  - Token usage is logged; unexpected spikes produce a warning log line
+  - Failed LLM calls are not retried with identical input — a diagnosis step precedes retry
+  - RAG queries use Qdrant via config-sourced embedding model — no hardcoded collection names
+  - System prompts have at least one test asserting expected model behavior on a representative input
 
 quality_gates:
   linter: "docker compose exec maestro mypy maestro/ tests/"

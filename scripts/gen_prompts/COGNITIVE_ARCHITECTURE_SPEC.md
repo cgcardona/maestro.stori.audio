@@ -27,7 +27,7 @@ Layer 3: FIGURES        Einstein, Turing, von Neumann, Dijkstra, Feynman ...
               ↑ extends
 Layer 2: ARCHETYPES     the_architect, the_scholar, the_visionary, the_guardian ...
               ↑ composed from
-Layer 1: SKILL DOMAINS  python, swift, sql, devops, audio_midi, ml_ai ...
+Layer 1: SKILL DOMAINS  python, swift, sql, devops, midi, llm ...
               ↑ orthogonal
 Layer 0: ATOMS          epistemic_style, cognitive_rhythm, creativity_level ...
 ```
@@ -141,16 +141,32 @@ injected prompt.
 ## Layer 1 — Skill Domains
 
 Skill domains are **orthogonal** to personality. An agent can have any personality
-and any skill domain. Each domain defines:
-- Technical context injected into the prompt
+and any number of skill domains (up to `max_skills` from `team.yaml`, default 3).
+Each domain defines:
+- Technical context injected into the prompt (`prompt_fragment`)
+- Domain-specific review criteria (`review_checklist`)
 - Which linter/type-checker to run
-- Which test patterns to look for
 - Domain-specific quality criteria
 
 Defined in: `cognitive_archetypes/skill_domains/*.yaml`
 
-Current domains: `python`, `typescript`, `swift`, `sql`, `devops`,
-`ml_ai`, `audio_midi`, `bash`, `security`, `data_engineering`
+Current atomic domains:
+
+| ID | Description |
+|----|-------------|
+| `python` | Core Python patterns, async I/O, type safety |
+| `fastapi` | Routing, dependency injection, response classes |
+| `postgresql` | Query patterns, indexing, Alembic migrations |
+| `htmx` | HTMX attributes, SSE, polling, partials |
+| `jinja2` | Template inheritance, macros, TemplateResponse |
+| `alpine` | x-data, x-show, x-bind, scope rules |
+| `javascript` | Vanilla JS, async/await, fetch, DOM manipulation |
+| `d3` | Force-directed graphs, SVG, D3 selections |
+| `monaco` | In-browser code editor CDN integration |
+| `devops` | Docker, Compose, Nginx, CI/CD |
+| `midi` | MIDI pipeline, GM programs, Storpheus integration |
+| `llm` | LLM calls, embeddings, RAG, OpenRouter |
+
 
 ---
 
@@ -292,41 +308,60 @@ prompt_injection:
 
 ## Composition Rules
 
-### Single selection
-
-The most common case. Pick one figure or archetype.
+### COGNITIVE_ARCH string format
 
 ```
-COGNITIVE_ARCH=einstein
-COGNITIVE_ARCH=the_guardian
+figures:skill1:skill2:...
 ```
 
-### Figure + skill domain override
+- **figures**: comma-separated (for blends), colon-separates from skills
+- **skills**: colon-separated atomic skill domain ids, up to `max_skills` (default 3)
 
-The figure's default domains are replaced with the explicit ones.
+Shell parsing (used everywhere in templates):
 
-```
-COGNITIVE_ARCH=dijkstra+python        # Dijkstra's discipline applied to Python
-COGNITIVE_ARCH=feynman+audio_midi     # Feynman's pedagogy applied to MIDI/audio
-```
-
-### Blend (multi-figure)
-
-When multiple figures are listed, conflicting atoms are resolved by taking
-the first listed figure's value (left-to-right precedence). The prompt
-injection prefixes are concatenated in order.
-
-```
-COGNITIVE_ARCH=turing,feynman         # Turing's rigor + Feynman's pedagogy
-COGNITIVE_ARCH=von_neumann,hopper     # von Neumann's breadth + Hopper's pragmatism
+```bash
+FIGURES_PART=$(echo "$COGNITIVE_ARCH" | cut -d: -f1)
+SKILLS_RAW=$(echo "$COGNITIVE_ARCH" | cut -d: -f2-)
+IFS=',' read -ra FIGURES <<< "$FIGURES_PART"
+IFS=':' read -ra SKILLS <<< "$SKILLS_RAW"
 ```
 
-### Direct atom overrides
-
-Escape hatch for fine-grained control without naming a figure.
+### Single figure + one skill
 
 ```
-COGNITIVE_ARCH=the_architect+{creativity_level:inventive,quality_bar:perfectionist}
+COGNITIVE_ARCH=dijkstra:python
+COGNITIVE_ARCH=the_guardian:python
+COGNITIVE_ARCH=feynman:midi
+```
+
+### Single figure + multiple skills
+
+Up to `max_skills` (default 3) skills are loaded and concatenated:
+
+```
+COGNITIVE_ARCH=lovelace:htmx:jinja2:alpine
+COGNITIVE_ARCH=shannon:python:fastapi
+COGNITIVE_ARCH=lovelace:d3:javascript
+```
+
+### Multi-figure blend + multiple skills
+
+Conflicting atoms resolved left-to-right (first figure wins).
+Prompt prefixes concatenated in order; suffixes concatenated in reverse.
+
+```
+COGNITIVE_ARCH=lovelace,shannon:htmx:jinja2:d3
+COGNITIVE_ARCH=turing,feynman:python:fastapi
+```
+
+### Figure only (no explicit skills)
+
+When no skills are specified, the agent's skill context is empty —
+the figure persona still applies. Used for orchestrators (CTO/VPs).
+
+```
+COGNITIVE_ARCH=von_neumann
+COGNITIVE_ARCH=dijkstra
 ```
 
 ---
@@ -345,95 +380,133 @@ WORKTREE="/path/to/worktree"
 ROLE_FILE="$HOME/.cursor/roles/python-developer.md"
 ISSUE_LABEL="agentception/2-telemetry"
 SPAWN_MODE=direct
-COGNITIVE_ARCH=dijkstra+python       # ← new field
+COGNITIVE_ARCH=lovelace:htmx:jinja2:alpine   # ← new multi-skill format
 ```
 
 ### Prompt injection flow
 
-At agent startup, before reading the role file:
+At agent startup (STEP 0.5 of `PARALLEL_ISSUE_TO_PR.md`):
 
 ```bash
-# PARALLEL_ISSUE_TO_PR.md (in the Setup section)
-COGARCH="${COGNITIVE_ARCH:-the_pragmatist}"
-COGARCH_PROMPT="$(python3 /app/scripts/gen_prompts/resolve_arch.py "$COGARCH")"
-# COGARCH_PROMPT is prepended to the role file content
+COGNITIVE_ARCH=$(grep '^COGNITIVE_ARCH=' .agent-task | cut -d= -f2)
+ARCH_CONTEXT=$(python3 "$REPO/scripts/gen_prompts/resolve_arch.py" \
+  "$COGNITIVE_ARCH" --mode implementer)
+echo "$ARCH_CONTEXT"
 ```
+
+For reviewers (`pr-reviewer.md`), pass `--mode reviewer` to load skill-specific
+review checklists instead of implementer fragments.
 
 ### `resolve_arch.py`
 
-A companion script (to be built) that:
-1. Reads the `COGNITIVE_ARCH` string from `.agent-task`
-2. Walks the inheritance chain (figure → archetype → atoms)
-3. Returns the rendered `prompt_injection.prefix` + `prompt_injection.suffix`
+Located at `scripts/gen_prompts/resolve_arch.py`. Fully operational.
 
-The output is a Markdown block that can be prepended to any role file.
+```bash
+# Implementer context (prompt_fragment for each skill)
+python3 scripts/gen_prompts/resolve_arch.py "lovelace:htmx:jinja2" --mode implementer
+
+# Reviewer context (review_checklist for each skill)
+python3 scripts/gen_prompts/resolve_arch.py "dijkstra:python:fastapi" --mode reviewer
+
+# Multi-figure blend
+python3 scripts/gen_prompts/resolve_arch.py "lovelace,shannon:d3:javascript"
+```
+
+Assembly order:
+1. Figure prefix(es) — left to right
+2. Archetype prefix (primary figure's `extends` target, if not already in figures list)
+3. Skill sections — `prompt_fragment` (implementer) or `review_checklist` (reviewer)
+4. Figure suffix(es) — right to left
+5. Archetype suffix
+
+### `team.yaml` — Declarative org chart
+
+Located at `scripts/gen_prompts/team.yaml`. Defines:
+- Which figures/archetypes are assigned to CTO and VP roles
+- The `figure_pool`, `archetype_pool`, and `skill_pool` available to leaf agents
+- `max_skills` cap (default 3) to prevent context bloat
+- Heuristics table for auto-selection by the Engineering VP
+
+`generate.py` reads `team.yaml` at generation time and validates that every
+referenced figure, archetype, and skill file exists on disk.
 
 ### Selection heuristics for engineering-manager
 
-The engineering-manager can choose an architecture based on signals in the
-issue. Suggested heuristics:
+The engineering-manager runs the heuristics from `team.yaml` against the issue
+body to auto-select `COGNITIVE_ARCH`. First-match wins.
 
 | Signal | Suggested architecture |
 |--------|----------------------|
-| Label `mypy` or body contains "type error" | `dijkstra+python` |
-| Label `testing` | `feynman+python` (teach by example) |
+| Body contains "mypy" or "type error" | `dijkstra:python` |
+| Body contains "htmx", "hx-", "sse-connect" | `lovelace:htmx:jinja2:alpine` |
+| Body contains "d3.js", "force-directed" | `lovelace:d3:javascript` |
+| Body contains "monaco", "editor" | `lovelace:monaco` |
+| Body contains "fastapi", "APIRouter" | `shannon:fastapi:python` |
+| Body contains "postgres", "alembic" | `dijkstra:postgresql:python` |
 | Phase 0 (scaffold/foundation) | `the_architect` |
-| Phase 1+ (features) | `the_pragmatist` or figure matching domain |
-| Body mentions "performance" | `von_neumann` or `knuth` |
-| Body mentions "design" or "interface" | `the_architect` or `shannon` |
-| Body mentions "bug" | `the_guardian` |
-| Body mentions "refactor" | `hopper` (build first, prove later) |
-| Default / no signal | `the_pragmatist+python` |
+| Body contains "docker", "compose" | `ritchie:devops` |
+| Body contains "kill", "stale claim", "invariant" | `the_guardian:python` |
+| Body contains "asyncio", "SSE", "broadcast" | `shannon:python` |
+| Body contains "readme", "document", "onboard" | `feynman:python` |
+| Default / no signal | `the_pragmatist:python` |
 
 ---
 
 ## File Layout
 
 ```
-scripts/gen_prompts/cognitive_archetypes/
-  atoms/
-    epistemic_style.yaml       ← all values + prompt fragments for this dimension
-    cognitive_rhythm.yaml
-    uncertainty_handling.yaml
-    collaboration_posture.yaml
-    communication_style.yaml
-    error_posture.yaml
-    creativity_level.yaml
-    quality_bar.yaml
-    scope_instinct.yaml
-    mental_model.yaml
-  skill_domains/
-    python.yaml
-    typescript.yaml
-    swift.yaml
-    sql.yaml
-    devops.yaml
-    ml_ai.yaml
-    audio_midi.yaml
-    bash.yaml
-    security.yaml
-  archetypes/
-    the_architect.yaml
-    the_hacker.yaml
-    the_scholar.yaml
-    the_pragmatist.yaml
-    the_visionary.yaml
-    the_guardian.yaml
-    the_mentor.yaml
-    the_operator.yaml
-  figures/
-    einstein.yaml
-    turing.yaml
-    von_neumann.yaml
-    dijkstra.yaml
-    feynman.yaml
-    hopper.yaml
-    shannon.yaml
-    lovelace.yaml
-    knuth.yaml
-    hamming.yaml
-    mccarthy.yaml
-    ritchie.yaml
+scripts/gen_prompts/
+  team.yaml                    ← declarative org chart (figures, skill pools, max_skills)
+  resolve_arch.py              ← runtime assembler (parse → load → render Markdown)
+  COGNITIVE_ARCHITECTURE_SPEC.md
+  TICKET_TAXONOMY.md
+  cognitive_archetypes/
+    atoms/
+      epistemic_style.yaml     ← primitive cognitive genes
+      cognitive_rhythm.yaml
+      uncertainty_handling.yaml
+      collaboration_posture.yaml
+      communication_style.yaml
+      error_posture.yaml
+      creativity_level.yaml
+      quality_bar.yaml
+      scope_instinct.yaml
+      mental_model.yaml
+    skill_domains/
+      python.yaml              ← atomic (single technology per file)
+      fastapi.yaml             ← new
+      postgresql.yaml          ← new
+      htmx.yaml                ← split from htmx_jinja2
+      jinja2.yaml              ← split from htmx_jinja2
+      alpine.yaml           ← split from htmx_jinja2
+      javascript.yaml          ← new
+      d3.yaml
+      monaco.yaml
+      devops.yaml
+      midi.yaml
+      llm.yaml
+    archetypes/
+      the_architect.yaml
+      the_hacker.yaml
+      the_scholar.yaml
+      the_pragmatist.yaml
+      the_visionary.yaml
+      the_guardian.yaml
+      the_mentor.yaml
+      the_operator.yaml
+    figures/
+      einstein.yaml
+      turing.yaml
+      von_neumann.yaml
+      dijkstra.yaml
+      feynman.yaml
+      hopper.yaml
+      shannon.yaml
+      lovelace.yaml
+      knuth.yaml
+      hamming.yaml
+      mccarthy.yaml
+      ritchie.yaml
 ```
 
 ---
@@ -464,18 +537,33 @@ scripts/gen_prompts/cognitive_archetypes/
 
 ---
 
+## Design Principles
+
+1. **One skill per file.** Each `skill_domains/*.yaml` covers exactly one technology.
+   Never mix technologies in a single skill file — that's why `htmx_jinja2` is
+   deprecated and split into three atomic files.
+
+2. **Unlimited stacking, bounded by max_skills.** Up to `max_skills` skills can be
+   combined per agent. The cap prevents context bloat — three skills is the sweet spot.
+
+3. **Inheritance, not copy-paste.** Figures define only their deltas from the
+   archetype. Nothing is repeated.
+
+4. **resolve_arch.py is deterministic.** No network calls, no LLM generation.
+   YAML files are committed. The assembler is a pure function.
+
+5. **team.yaml is the single source of truth.** All pool memberships, max_skills
+   caps, and heuristics live there. generate.py validates it at generation time.
+
 ## Future Extensions
 
-- **Blended figures**: `COGNITIVE_ARCH=turing,feynman` — weighted average of
-  atom sets, concatenated prompts. Enables "Turing's rigor with Feynman's
-  communication style."
 - **Domain-specific figures**: `einstein_audio` — Einstein's cognition applied
-  to audio/music theory. Figures can have domain variants.
+  to audio/music theory. Figures can have domain variants that inherit from the base.
 - **Dynamic selection**: The engineering-manager calls a lightweight classifier
   to select the best architecture for an issue, logged to AgentCeption for
-  A/B testing.
+  A/B testing and convergence measurement.
 - **User-defined figures**: A `custom_figures/` directory alongside the
   standard library. Override the library without touching committed files.
 - **AgentCeption integration**: The dashboard shows which architecture each
   active agent is running, with the rendered prompt injection visible in the
-  role studio panel.
+  role studio panel (issue #624 — Monaco editor — is the vehicle for this).
