@@ -101,6 +101,11 @@ def test_config_page_shows_current_values(client: TestClient) -> None:
     assert "label-list" in body
     # Save button must be present.
     assert "btn-save-config" in body
+    # SSR hydration — custom config values must appear in the initial JS state
+    # so the page reflects current settings before Alpine.js fetches the API.
+    assert '"max_eng_vps": 3' in body
+    assert '"max_qa_vps": 2' in body
+    assert '"pool_size_per_vp": 6' in body
 
 
 def test_config_page_contains_api_put_endpoint(client: TestClient) -> None:

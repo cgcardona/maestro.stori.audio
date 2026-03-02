@@ -313,12 +313,7 @@
 <script>
   function configPanel() {
     return {
-      config: {
-        max_eng_vps: 1,
-        max_qa_vps: 1,
-        pool_size_per_vp: 4,
-        active_labels_order: [],
-      },
+      config: {{ config.model_dump() | tojson | safe if config else '{"max_eng_vps":1,"max_qa_vps":1,"pool_size_per_vp":4,"active_labels_order":[]}' | safe }},
       newLabel: '',
       saving: false,
       toast: { msg: '', cls: '' },
