@@ -80,15 +80,15 @@
     </div>
     <div class="summary-item">
       <span class="summary-label">Agents active</span>
-      <span class="summary-value" x-text="state.agents.length"></span>
+      <span class="summary-value" style="color:var(--success);" x-text="state.agents.length"></span>
     </div>
     <div class="summary-item">
       <span class="summary-label">Merged today</span>
-      <span class="summary-value" x-text="state.merged_prs_count ?? 0"></span>
+      <span class="summary-value" style="color:var(--accent-bright);" x-text="state.merged_prs_count ?? 0"></span>
     </div>
     <div class="summary-item">
       <span class="summary-label">Closed today</span>
-      <span class="summary-value" x-text="state.closed_issues_count ?? 0"></span>
+      <span class="summary-value" style="color:var(--accent-bright);" x-text="state.closed_issues_count ?? 0"></span>
     </div>
     <div class="summary-item" x-show="(state.stale_branches || []).length > 0">
       <span class="summary-label" style="color:var(--warning);">Stale branches</span>
@@ -96,7 +96,7 @@
     </div>
     <div class="summary-item">
       <span class="summary-label">Last polled</span>
-      <span class="summary-value" x-text="relativeTime(state.polled_at)"></span>
+      <span class="summary-value" style="font-size:1rem;letter-spacing:0;" x-text="relativeTime(state.polled_at)"></span>
     </div>
     {#
       Poller status + pause/resume — grouped at the far right of the summary bar.
@@ -207,7 +207,7 @@
         </div>
 
         <template x-for="agent in state.agents" :key="agent.id">
-          <div class="agent-row" x-data="{ showKillModal: false }">
+          <div class="agent-row" :class="'agent-row--status-' + agent.status" x-data="{ showKillModal: false }">
             <div class="agent-row-header">
               <span
                 class="status-badge"
@@ -280,7 +280,7 @@
             <template x-if="agent.children && agent.children.length > 0">
               <div class="agent-children">
                 <template x-for="child in agent.children" :key="child.id">
-                  <div class="agent-row agent-row--child" x-data="{ showKillModal: false }">
+                  <div class="agent-row agent-row--child" :class="'agent-row--status-' + child.status" x-data="{ showKillModal: false }">
                     <div class="agent-row-header">
                       <span
                         class="status-badge"
