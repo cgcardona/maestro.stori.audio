@@ -37,6 +37,8 @@ from collections.abc import Callable
 from datetime import datetime, timezone
 from typing import Literal, Optional
 
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from maestro.models.musehub import (
     ArrangementCellData,
     ArrangementColumnSummary,
@@ -54,9 +56,14 @@ from maestro.models.musehub_analysis import (
     ChordEvent,
     ChordMapData,
     CommitEmotionSnapshot,
+    CompareDimension,
+    CompareResult,
     ContourData,
+    ContextResult,
     DimensionData,
     DivergenceData,
+    DivergenceDimension,
+    DivergenceResult,
     DynamicArc,
     DynamicsData,
     DynamicsPageData,
@@ -1700,3 +1707,106 @@ def compute_emotion_diff(
         delta=delta,
         interpretation=interpretation,
     )
+
+
+# ---------------------------------------------------------------------------
+# SSR aggregation functions — compare / divergence / context pages
+# ---------------------------------------------------------------------------
+
+_MUSICAL_DIMENSIONS = ["Melodic", "Harmonic", "Rhythmic", "Structural", "Dynamic"]
+
+
+async def compare_refs(
+    db: AsyncSession,
+    repo_id: str,
+    base: str,
+    head: str,
+) -> CompareResult:
+    """Return a per-dimension comparison between two refs for SSR rendering.
+
+    Produces deterministic stub scores keyed on the ref values.  Callers
+    should treat this as a realistic approximation until Storpheus exposes
+    per-ref MIDI introspection.
+
+    The returned :class:`CompareResult` is consumed directly by
+    ``pages/analysis/compare.html`` — no client-side fetch required.
+    """
+    base_seed = _ref_hash(base)
+    head_seed = _ref_hash(head)
+    dimensions: list[CompareDimension] = []
+    for i, name in enumerate(_MUSICAL_DIMENSIONS):
+        base_val = round(((base_seed + i * 31) % 100) / 100.0, 4)
+        head_val = round(((head_seed + i * 31) % 100) / 100.0, 4)
+        delta = round(head_val - base_val, 4)
+        dimensions.append(CompareDimension(name=name, base_value=base_val, head_value=head_val, delta=delta))
+    logger.info("✅ compare-refs repo=%s base=%s head=%s", repo_id[:8], base[:8], head[:8])
+    return CompareResult(base=base, head=head, dimensions=dimensions)
+
+
+async def compute_divergence(
+    db: AsyncSession,
+    repo_id: str,
+    fork_repo_id: str | None = None,
+) -> DivergenceResult:
+    """Return a musical divergence score between a repo and its fork for SSR rendering.
+
+    Produces deterministic stub scores.  When ``fork_repo_id`` is ``None`` the
+    divergence is computed relative to the repo's own HEAD (self-comparison → score=0).
+
+    Consumed directly by ``pages/analysis/divergence.html``.
+    """
+    seed = _ref_hash(fork_repo_id or repo_id)
+    repo_seed = _ref_hash(repo_id)
+    dimensions: list[DivergenceDimension] = []
+    for i, name in enumerate(_MUSICAL_DIMENSIONS):
+        raw = abs(((seed + i * 37) % 100) - ((repo_seed + i * 37) % 100)) / 100.0
+        divergence = round(min(raw, 1.0), 4)
+        dimensions.append(DivergenceDimension(name=name, divergence=divergence))
+    overall = round(sum(d.divergence for d in dimensions) / len(dimensions), 4)
+    logger.info(
+        "✅ compute-divergence repo=%s fork=%s score=%.3f",
+        repo_id[:8], (fork_repo_id or "self")[:8], overall,
+    )
+    return DivergenceResult(score=overall, dimensions=dimensions)
+
+
+async def get_context(
+    db: AsyncSession,
+    repo_id: str,
+    ref: str,
+) -> ContextResult:
+    """Return a musical context summary for the given ref for SSR rendering.
+
+    Produces deterministic stub data keyed on the ref value.  Full LLM-generated
+    summaries will replace this once the Maestro pipeline is wired to the context
+    endpoint.
+
+    Consumed directly by ``pages/analysis/context.html``.
+    """
+    seed = _ref_hash(ref)
+    missing_pool = [
+        "bass line",
+        "kick drum",
+        "reverb tail",
+        "chord voicings",
+        "melodic counter-line",
+        "dynamic variation",
+    ]
+    suggestion_pool = {
+        "Groove": "Introduce a 16th-note hi-hat pattern to add rhythmic density.",
+        "Harmony": "Extend the chord to a 9th to enrich the harmonic texture.",
+        "Melody": "Add a pentatonic counter-melody in the upper register.",
+        "Dynamics": "Apply a decrescendo into the final bar for a softer landing.",
+    }
+    n_missing = (seed % 3) + 1
+    missing = missing_pool[: n_missing]
+    n_suggestions = (seed % 3) + 2
+    suggestions = dict(list(suggestion_pool.items())[:n_suggestions])
+    summary = (
+        f"Ref {ref[:8]} establishes a {_pick(seed, _MODES)}-mode foundation "
+        f"at {60 + (seed % 60)} BPM with a {_pick(seed + 1, _GROOVES)} groove. "
+        f"The arrangement currently features {5 - n_missing} of the expected core elements. "
+        f"Maestro suggests {n_suggestions} compositional refinements."
+    )
+    logger.info("✅ get-context repo=%s ref=%s", repo_id[:8], ref[:8])
+    return ContextResult(summary=summary, missing_elements=missing, suggestions=suggestions)

@@ -1,0 +1,73 @@
+{% extends "musehub/base.html" %}
+
+{% block title %}Musical Context {{ ref[:8] }} · {{ owner }}/{{ repo_slug }}{% endblock %}
+
+{% block breadcrumb %}
+  <a href="/musehub/ui/{{ owner }}/{{ repo_slug }}">{{ owner }}/{{ repo_slug }}</a> /
+  context / {{ ref[:8] }}
+{% endblock %}
+
+{% block repo_nav %}{% include "musehub/partials/repo_nav.html" %}{% endblock %}
+
+{% block page_data %}
+const repoId = {{ repo_id | tojson }};
+const ref    = {{ ref | tojson }};
+const base   = {{ base_url | tojson }};
+const apiBase = '/api/v1/musehub/repos/' + repoId;
+{% endblock %}
+
+{% block content %}
+<div style="max-width:900px;margin:0 auto;padding:var(--space-4)">
+
+  {# ── Header ────────────────────────────────────────────────────────────── #}
+  <div class="card" style="margin-bottom:var(--space-4)">
+    <h1 style="margin:0;font-size:1.25rem;display:flex;align-items:center;gap:var(--space-2)">
+      Musical Context
+      <span class="badge" style="font-size:0.75rem;padding:2px 8px;border-radius:10px;background:var(--color-surface-2);color:#8b949e;font-family:monospace">{{ ref[:8] }}</span>
+    </h1>
+  </div>
+
+  {# ── Summary ────────────────────────────────────────────────────────────── #}
+  {% if context_data.summary %}
+  <div class="card context-summary" style="margin-bottom:var(--space-4)">
+    <h2 style="margin:0 0 var(--space-2);font-size:1rem;color:#8b949e;text-transform:uppercase;letter-spacing:.06em">Summary</h2>
+    <p style="margin:0;line-height:1.6">{{ context_data.summary }}</p>
+  </div>
+  {% endif %}
+
+  {# ── Missing Elements ───────────────────────────────────────────────────── #}
+  {% if context_data.missing_elements %}
+  <div class="card context-missing" style="margin-bottom:var(--space-4);border-left:3px solid var(--color-danger)">
+    <h2 style="margin:0 0 var(--space-2);font-size:1rem;color:var(--color-danger);text-transform:uppercase;letter-spacing:.06em">Missing Elements</h2>
+    <ul style="margin:0;padding-left:var(--space-4);display:flex;flex-direction:column;gap:var(--space-1)">
+      {% for elem in context_data.missing_elements %}
+      <li style="color:#8b949e">{{ elem }}</li>
+      {% endfor %}
+    </ul>
+  </div>
+  {% endif %}
+
+  {# ── Suggestions ────────────────────────────────────────────────────────── #}
+  {% if context_data.suggestions %}
+  <div class="context-suggestions">
+    <h2 style="margin:0 0 var(--space-3);font-size:1rem;color:#8b949e;text-transform:uppercase;letter-spacing:.06em">Maestro Suggestions</h2>
+    <div style="display:grid;gap:var(--space-3)">
+      {% for key, suggestion in context_data.suggestions.items() %}
+      <div class="suggestion-card card" style="border-left:3px solid var(--color-accent)">
+        <strong style="display:block;margin-bottom:var(--space-1);font-size:0.875rem">{{ key }}</strong>
+        <p style="margin:0;color:#8b949e;font-size:0.875rem;line-height:1.5">{{ suggestion }}</p>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
+  {# ── Empty state ────────────────────────────────────────────────────────── #}
+  {% if not context_data.summary and not context_data.missing_elements and not context_data.suggestions %}
+  <div class="card" style="text-align:center;padding:var(--space-8);color:#8b949e">
+    <p style="margin:0">No context data available for ref <code>{{ ref[:8] }}</code>.</p>
+  </div>
+  {% endif %}
+
+</div>
+{% endblock %}
