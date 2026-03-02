@@ -132,7 +132,7 @@
     dismisses the banner on success.  "Dismiss" hides without applying.
   #}
   <div
-    x-data="scalingAdvisor({{ scaling_advice | tojson }})"
+    x-data='scalingAdvisor({{ scaling_advice | tojson }})'
     x-show="!dismissed && recommendation !== null && recommendation.action !== 'no_change'"
     x-cloak
     class="alert-banner alert-banner--info"
@@ -171,7 +171,7 @@
     page reload.  Alpine.js manages the fetch lifecycle.
   #}
   <div
-    x-data="prViolations({{ pr_violations | tojson }})"
+    x-data='prViolations({{ pr_violations | tojson }})'
   >
     <template x-for="v in violations" :key="v.pr_number">
       <div class="alert-banner alert-banner--violation" role="alert">
