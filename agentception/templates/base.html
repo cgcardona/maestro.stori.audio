@@ -55,7 +55,69 @@
        class="{% if request.url.path.startswith('/ab-testing') %}active{% endif %}">
       A/B
     </a>
+
+    {#
+      Project switcher — shown only when pipeline-config.json defines multiple
+      projects.  Fetches GET /api/config on mount to read the projects list and
+      active_project name, then POSTs to /api/config/switch-project on change
+      and reloads the page so all paths reflect the new active project.
+    #}
+    <div
+      class="project-switcher"
+      id="project-switcher"
+      x-data="projectSwitcher()"
+      x-init="load()"
+      x-show="projects.length > 0"
+    >
+      <label for="project-select" class="project-switcher__label">Project:</label>
+      <select
+        id="project-select"
+        class="project-switcher__select"
+        x-model="activeProject"
+        @change="switchProject($event.target.value)"
+        aria-label="Switch active project"
+      >
+        <template x-for="p in projects" :key="p.name">
+          <option :value="p.name" x-text="p.name" :selected="p.name === activeProject"></option>
+        </template>
+      </select>
+    </div>
   </nav>
+
+  <script>
+    function projectSwitcher() {
+      return {
+        projects: [],
+        activeProject: null,
+        async load() {
+          try {
+            const res = await fetch('/api/config');
+            if (!res.ok) return;
+            const cfg = await res.json();
+            this.projects = cfg.projects || [];
+            this.activeProject = cfg.active_project || null;
+          } catch (_) { /* network error — silently suppress */ }
+        },
+        async switchProject(name) {
+          if (!name || name === this.activeProject) return;
+          try {
+            const res = await fetch('/api/config/switch-project', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ project_name: name }),
+            });
+            if (res.ok) {
+              window.location.reload();
+            } else {
+              console.error('Project switch failed:', await res.text());
+            }
+          } catch (err) {
+            console.error('Project switch error:', err);
+          }
+        },
+      };
+    }
+  </script>
 
   <main role="main">
     {% block content %}
