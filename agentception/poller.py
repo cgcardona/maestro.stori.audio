@@ -338,6 +338,10 @@ async def tick() -> PipelineState:
     """
     global _state
 
+    # Reload active project from pipeline-config.json so a project switch
+    # via the GUI takes effect within one polling interval — no restart needed.
+    settings.reload()
+
     worktrees = await list_active_worktrees()
     github = await build_github_board()
     agents = await merge_agents(worktrees, github)
