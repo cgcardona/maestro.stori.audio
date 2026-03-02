@@ -1,0 +1,31 @@
+{% from "musehub/macros/empty_state.html" import empty_state %}
+{# Fragment rendered for HTMX pagination swaps on the stash page.
+   Also included inline by the full page template so initial render and
+   subsequent HTMX swaps produce identical markup. #}
+{% if stashes %}
+  {% for stash in stashes %}
+  <div class="stash-row" id="stash-{{ stash.id }}">
+    <div class="stash-ref"><code>stash@{{ '{' }}{{ (page - 1) * page_size + loop.index0 }}{{ '}' }}</code></div>
+    <div class="stash-meta">
+      <span class="stash-branch">{{ stash.branch }}</span>
+      <span class="stash-message">{{ stash.message or '(no message)' }}</span>
+      <span class="stash-date">{{ stash.created_at | fmtrelative }}</span>
+      <span class="stash-entries">{{ stash.entry_count }} file{{ 's' if stash.entry_count != 1 else '' }}</span>
+    </div>
+    <div class="stash-actions">
+      <form method="post" action="{{ base_url }}/stash/{{ stash.id }}/apply" hx-boost="true">
+        <button type="submit" class="btn btn-apply">Apply</button>
+      </form>
+      <form method="post" action="{{ base_url }}/stash/{{ stash.id }}/pop" hx-boost="true">
+        <button type="submit" class="btn btn-pop">Pop</button>
+      </form>
+      <form method="post" action="{{ base_url }}/stash/{{ stash.id }}/drop" hx-boost="true"
+            hx-confirm="Drop this stash entry? This cannot be undone.">
+        <button type="submit" class="btn btn-drop">Drop</button>
+      </form>
+    </div>
+  </div>
+  {% endfor %}
+{% else %}
+  {{ empty_state("📦", "No stashed changes", "Use 'muse stash' in the DAW to save uncommitted work.") }}
+{% endif %}
