@@ -13,12 +13,14 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any
 
 from agentception.config import settings
+from agentception.models import PipelineConfig
 
-# Default values mirror the spec exactly — used when the file is absent.
-_DEFAULTS: dict[str, Any] = {
+# Default values mirror the spec exactly — used when the config file is absent.
+# Kept as a typed dict so tests can inspect individual keys without constructing
+# a full PipelineConfig.
+_DEFAULTS: dict[str, int | list[str]] = {
     "max_eng_vps": 1,
     "max_qa_vps": 1,
     "pool_size_per_vp": 4,
@@ -46,25 +48,31 @@ def _config_path() -> Path:
     return _CONFIG_PATH
 
 
-async def read_pipeline_config() -> dict[str, Any]:
-    """Read and return the pipeline configuration from disk.
+async def read_pipeline_config() -> PipelineConfig:
+    """Read and return the pipeline configuration from disk, validated as a PipelineConfig.
 
-    Falls back to :data:`_DEFAULTS` when the config file does not exist yet,
-    giving callers a safe, fully-typed dict in all environments.
+    Falls back to :data:`_DEFAULTS` when the config file does not exist yet.
+    Uses ``model_validate`` to give callers a schema-checked value in all
+    environments, including when the on-disk file was hand-edited.
 
     Returns
     -------
-    dict
-        Keys: ``max_eng_vps`` (int), ``max_qa_vps`` (int),
-        ``pool_size_per_vp`` (int), ``active_labels_order`` (list[str]).
+    PipelineConfig
+        The current allocation settings, guaranteed to satisfy the Pydantic schema.
+
+    Raises
+    ------
+    pydantic.ValidationError
+        When the file exists but its contents do not conform to the PipelineConfig schema.
     """
     path = _config_path()
     if not path.exists():
-        return dict(_DEFAULTS)
-    return json.loads(path.read_text(encoding="utf-8"))  # type: ignore[no-any-return]
+        return PipelineConfig.model_validate(_DEFAULTS)
+    raw: object = json.loads(path.read_text(encoding="utf-8"))
+    return PipelineConfig.model_validate(raw)
 
 
-async def write_pipeline_config(config: dict[str, Any]) -> dict[str, Any]:
+async def write_pipeline_config(config: PipelineConfig) -> PipelineConfig:
     """Persist *config* to disk and return the saved value.
 
     The file is written with 2-space indentation so it remains human-readable.
@@ -73,16 +81,16 @@ async def write_pipeline_config(config: dict[str, Any]) -> dict[str, Any]:
     Parameters
     ----------
     config:
-        Mapping to persist.  Callers are responsible for schema validation
-        before calling this function (the ``PUT /api/config`` route validates
-        via Pydantic).
+        Validated PipelineConfig to persist.  The ``PUT /api/config`` route
+        validates the incoming body against the Pydantic schema before calling
+        this function, so corrupt values never reach the filesystem.
 
     Returns
     -------
-    dict
-        The config dict that was written, identical to *config*.
+    PipelineConfig
+        The config that was written, identical to *config*.
     """
     path = _config_path()
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(config, indent=2), encoding="utf-8")
+    path.write_text(config.model_dump_json(indent=2), encoding="utf-8")
     return config

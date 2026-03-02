@@ -157,8 +157,7 @@ async def get_config() -> PipelineConfig:
     manual edits to the file are reflected immediately without a service restart.
     Falls back to compiled-in defaults when the file does not exist.
     """
-    raw = await read_pipeline_config()
-    return PipelineConfig(**raw)
+    return await read_pipeline_config()
 
 
 @router.put("/config", tags=["config"])
@@ -171,8 +170,7 @@ async def update_config(body: PipelineConfig) -> PipelineConfig:
 
     Returns the saved config so callers can confirm what was written.
     """
-    saved = await write_pipeline_config(body.model_dump())
-    return PipelineConfig(**saved)
+    return await write_pipeline_config(body)
 
 
 def _build_agent_task(
