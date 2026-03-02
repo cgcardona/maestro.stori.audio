@@ -1018,13 +1018,12 @@ STEP 6 — SPAWN A QA REVIEWER FOR YOUR OWN PR (run this before self-destructing
     --json number --jq '.[0].number // empty')
 
   if [ -n "$MY_PR" ] && [ "$MY_PR" != "null" ]; then
-    # Do NOT add agent:wip here. The reviewer adds it when it claims the PR.
-    # Pre-claiming caused PRs to get stuck with agent:wip when the reviewer
-    # spawn failed, making them invisible to the QA pool.
-
     # Create a fresh review worktree at the PR branch tip.
     REVIEW_WORKTREE="$HOME/.cursor/worktrees/maestro/pr-$MY_PR"
     git -C "$REPO" worktree add "$REVIEW_WORKTREE" "origin/$MY_BRANCH"
+    # Add label only after worktree is confirmed created — prevents permanent lock on creation failure.
+    # The coordinator owns label-add in all spawn paths; the reviewer only removes it on exit.
+    gh pr edit "$MY_PR" --repo "$GH_REPO" --add-label "agent:wip" 2>/dev/null || true
 
     # Write the reviewer's .agent-task.
     # SPAWN_MODE=chain tells the reviewer to spawn the next ENGINEER (not reviewer) when done.
