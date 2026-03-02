@@ -1,4 +1,4 @@
-"""Tests for the Role file reader/writer API (AC-301).
+"""Tests for the Role file reader/writer API (AC-301) and Role Studio UI (AC-302).
 
 Covers:
 - list_roles returns all managed files that exist on disk
@@ -6,6 +6,7 @@ Covers:
 - get_role returns 404 for an unknown slug
 - update_role writes new content to disk
 - role_history returns a list of commit dicts
+- GET /roles page returns 200 with file list and Monaco CDN script
 
 Run targeted:
     pytest agentception/tests/test_agentception_roles.py -v
@@ -181,3 +182,71 @@ def test_role_history_returns_commits(
     assert history[0]["sha"] == "aaa111"
     assert history[0]["subject"] == "feat: role update"
     assert "date" in history[0]
+
+
+# ── GET /roles — Role Studio UI (AC-302) ──────────────────────────────────────
+
+
+def test_roles_page_returns_200(
+    client: TestClient,
+    tmp_repo: Path,
+) -> None:
+    """GET /roles must return HTTP 200 with valid HTML."""
+    with patch("agentception.routes.roles.settings") as mock_settings:
+        mock_settings.repo_dir = tmp_repo
+
+        with patch(
+            "agentception.routes.roles._git_log_one",
+            new=AsyncMock(return_value=("abc123", "initial commit")),
+        ):
+            response = client.get("/roles")
+
+    assert response.status_code == 200
+    assert "text/html" in response.headers["content-type"]
+
+
+def test_roles_page_lists_all_files(
+    client: TestClient,
+    tmp_repo: Path,
+) -> None:
+    """GET /roles HTML must list all managed files that exist on disk.
+
+    Uses the same tmp_repo fixture that creates cto.md, python-developer.md,
+    and PARALLEL_ISSUE_TO_PR.md — so those three slugs must appear in the page.
+    """
+    with patch("agentception.routes.roles.settings") as mock_settings:
+        mock_settings.repo_dir = tmp_repo
+
+        with patch(
+            "agentception.routes.roles._git_log_one",
+            new=AsyncMock(return_value=("abc123", "initial commit")),
+        ):
+            response = client.get("/roles")
+
+    assert response.status_code == 200
+    html = response.text
+    assert "cto" in html
+    assert "python-developer" in html
+    assert "PARALLEL_ISSUE_TO_PR" in html
+
+
+def test_roles_page_includes_monaco_cdn(
+    client: TestClient,
+    tmp_repo: Path,
+) -> None:
+    """GET /roles HTML must include the Monaco Editor CDN loader script tag.
+
+    The Monaco AMD loader URL must appear verbatim — frontend consumers
+    depend on this exact CDN path for Monaco to initialise.
+    """
+    with patch("agentception.routes.roles.settings") as mock_settings:
+        mock_settings.repo_dir = tmp_repo
+
+        with patch(
+            "agentception.routes.roles._git_log_one",
+            new=AsyncMock(return_value=("", "")),
+        ):
+            response = client.get("/roles")
+
+    assert response.status_code == 200
+    assert "cdn.jsdelivr.net/npm/monaco-editor@0.52.0/min/vs/loader.js" in response.text
