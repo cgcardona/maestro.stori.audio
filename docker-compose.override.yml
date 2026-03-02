@@ -3,24 +3,22 @@
 # Auto-merged by `docker compose up` (no -f flag needed).
 # Production: `docker compose -f docker-compose.yml up` skips this file.
 #
-# ┌─────────────────────────────────────────────────────────────────────┐
-# │  REBUILD GUIDE — when do you need `docker compose build <service>`? │
-# ├─────────────────────────────────────────────────────────────────────┤
-# │  REBUILD REQUIRED          │  NO REBUILD — live via bind-mount      │
-# ├────────────────────────────┼────────────────────────────────────────┤
-# │  requirements.txt changed  │  maestro/**/*.py                       │
-# │  Dockerfile changed        │  tests/**/*.py                         │
-# │  New top-level dir added   │  scripts/**                            │
-# │  (not yet in volumes below)│  alembic/**                            │
-# │                            │  /worktrees/<id>/**  (worktrees)       │
-# │                            │  tourdeforce/**                  │
-# │                            │  tools/**                              │
-# │                            │  pyproject.toml                        │
-# │                            │  storpheus/**/*.py                     │
-# └────────────────────────────┴────────────────────────────────────────┘
+# ┌──────────────────────────────────────────────────────────────────────────┐
+# │  REBUILD GUIDE — when do you need `docker compose build <service>`?      │
+# ├────────────────────────────────┬─────────────────────────────────────────┤
+# │  REBUILD REQUIRED              │  NO REBUILD — live via bind-mount       │
+# ├────────────────────────────────┼─────────────────────────────────────────┤
+# │  requirements.txt changed      │  maestro/**/*.py  (uvicorn --reload)    │
+# │  Dockerfile changed            │  agentception/**/*.py  (uvicorn --reload)│
+# │  New top-level dir added       │  tests/**/*.py                          │
+# │  (not yet in volumes below)    │  storpheus/**/*.py                      │
+# │                                │  scripts/**, tools/**, alembic/**       │
+# │                                │  /worktrees/<id>/**  (worktrees)        │
+# └────────────────────────────────┴─────────────────────────────────────────┘
 #
 # Bind-mounts shadow the COPY'd code in the image — host edits are
-# immediately visible inside the container with zero restart needed.
+# immediately visible inside the container.  Both maestro and agentception
+# run uvicorn with --reload so Python changes hot-reload without any restart.
 # The baked image layer only matters for dependencies (wheels/pip installs).
 
 services:
@@ -50,6 +48,15 @@ services:
       - ${HOME}/.cursor/worktrees/maestro:/worktrees
 
   agentception:
+    # Enable hot-reload so Python code changes on the host take effect without
+    # `docker compose restart agentception`.  Uvicorn watches /app/agentception/
+    # (which is bind-mounted from ./agentception/) for .py file changes.
+    command: >
+      uvicorn agentception.app:app
+        --host 0.0.0.0
+        --port 7777
+        --reload
+        --reload-dir /app/agentception
     environment:
       # Host keychain token passed in so gh CLI works inside the container.
       # The hosts.yml mount is read-only and contains no token when the host

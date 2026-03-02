@@ -373,7 +373,12 @@
             </div>
           </div>
 
-          {# Start Wave — reactive: shown when there are unclaimed issues #}
+          {#
+            Three mutually exclusive CTA states — evaluated in priority order:
+            1. Unclaimed issues exist → "Start Wave" button
+            2. Board has issues, all claimed → "All claimed ✓" badge
+            3. Board is empty (DB not yet synced) → "Syncing…" hint
+          #}
           <template x-if="state.active_label && unclaimedCount() > 0">
             <button
               class="btn btn-primary btn-wave-start"
@@ -384,8 +389,11 @@
               aria-label="Start pipeline wave"
             ></button>
           </template>
-          <template x-if="state.active_label && unclaimedCount() === 0">
+          <template x-if="state.active_label && state.board_issues && state.board_issues.length > 0 && unclaimedCount() === 0">
             <span class="badge badge--green">All claimed ✓</span>
+          </template>
+          <template x-if="state.active_label && (!state.board_issues || state.board_issues.length === 0)">
+            <span class="text-muted board-syncing">Syncing…</span>
           </template>
         </div>
 
