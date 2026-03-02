@@ -9,6 +9,7 @@ Covers:
 - test_piano_roll_page_renders_instrument_sidebar
 - test_piano_roll_page_canvas_has_data_midi_url
 - test_piano_roll_page_transport_bar_present
+- test_piano_roll_track_page_canvas_has_data_instruments
 - test_score_page_renders_title_server_side
 - test_score_page_score_container_has_data_abc_url
 - test_score_page_no_blank_shell
