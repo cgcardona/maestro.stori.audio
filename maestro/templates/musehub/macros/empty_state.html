@@ -1,0 +1,37 @@
+{#
+  empty_state — renders a centred empty-state card with icon, title, and description.
+
+  Use this whenever a list page has zero results so every empty state in
+  MuseHub is visually consistent.
+
+  Parameters
+  ----------
+  icon : str
+    A single emoji or SVG string rendered inside a large icon container.
+  title : str
+    Short headline, e.g. "No issues yet".
+  desc : str
+    Explanatory sentence, e.g. "Open an issue to start tracking work.".
+  action_url : str
+    If provided (together with action_label), renders a primary CTA button.
+    Defaults to '' (no button).
+  action_label : str
+    Button label text, e.g. "Open an issue".  Defaults to ''.
+
+  Usage
+  -----
+  {% from "musehub/macros/empty_state.html" import empty_state %}
+  {{ empty_state("📭", "No issues yet", "Open an issue to start tracking work.",
+                 action_url=base_url + "/issues/new",
+                 action_label="Open an issue") }}
+#}
+{% macro empty_state(icon, title, desc, action_url='', action_label='') %}
+<div class="empty-state">
+  <div class="empty-icon">{{ icon }}</div>
+  <p class="empty-title">{{ title }}</p>
+  <p class="empty-desc">{{ desc }}</p>
+  {% if action_url and action_label %}
+    <a href="{{ action_url }}" class="btn btn-primary">{{ action_label }}</a>
+  {% endif %}
+</div>
+{% endmacro %}
