@@ -12,7 +12,6 @@ Run targeted:
 """
 from __future__ import annotations
 
-from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
 import pytest
