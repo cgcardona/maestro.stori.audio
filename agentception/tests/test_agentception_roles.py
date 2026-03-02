@@ -209,29 +209,30 @@ def test_roles_page_returns_200(
     assert "text/html" in response.headers["content-type"]
 
 
-def test_roles_page_lists_all_files(
+def test_roles_page_loads_successfully(
     client: TestClient,
     tmp_repo: Path,
 ) -> None:
-    """GET /roles HTML must list all managed files that exist on disk.
+    """GET /roles HTML must return 200 with the three-panel Cognitive Architecture UI.
 
-    Uses the same tmp_repo fixture that creates cto.md, python-developer.md,
-    and PARALLEL_ISSUE_TO_PR.md — so those three slugs must appear in the page.
+    The new design fetches role data from /api/roles/taxonomy via JS, so the
+    initial HTML contains structural elements rather than a rendered role list.
     """
     with patch("agentception.routes.roles.settings") as mock_settings:
         mock_settings.repo_dir = tmp_repo
 
-        with patch(
-            "agentception.routes.roles._git_log_one",
-            new=AsyncMock(return_value=("abc123", "initial commit")),
-        ):
-            response = client.get("/roles")
+        response = client.get("/roles")
 
     assert response.status_code == 200
     html = response.text
-    assert "cto" in html
-    assert "python-developer" in html
-    assert "PARALLEL_ISSUE_TO_PR" in html
+    # Three-panel layout markers
+    assert "org-tree" in html
+    assert "panel-center" in html
+    assert "panel-editor" in html
+    # JS bootstrap fetches taxonomy
+    assert "/api/roles/taxonomy" in html
+    assert "/api/roles/personas" in html
+    assert "/api/roles/atoms" in html
 
 
 def test_roles_page_includes_monaco_cdn(
@@ -392,3 +393,156 @@ def test_commit_creates_correct_message(
     assert response.status_code == 200
     data = response.json()
     assert data["message"] == "role(agentception): update cto"
+
+
+# ---------------------------------------------------------------------------
+# Cognitive Architecture API — taxonomy / personas / atoms
+# ---------------------------------------------------------------------------
+
+
+def test_taxonomy_returns_three_levels(client: TestClient) -> None:
+    """GET /api/roles/taxonomy must return levels for c_suite, vp, and worker."""
+    response = client.get("/api/roles/taxonomy")
+    assert response.status_code == 200
+    data = response.json()
+    assert "levels" in data
+    level_ids = [lv["id"] for lv in data["levels"]]
+    assert "c_suite" in level_ids
+    assert "vp" in level_ids
+    assert "worker" in level_ids
+
+
+def test_taxonomy_c_suite_contains_cto(client: TestClient) -> None:
+    """Taxonomy must include the existing CTO role in the C-Suite level."""
+    response = client.get("/api/roles/taxonomy")
+    assert response.status_code == 200
+    data = response.json()
+    c_suite = next(lv for lv in data["levels"] if lv["id"] == "c_suite")
+    slugs = [r["slug"] for r in c_suite["roles"]]
+    assert "cto" in slugs
+
+
+def test_taxonomy_worker_roles_are_spawnable(client: TestClient) -> None:
+    """All worker-level roles in the taxonomy must be marked spawnable=True."""
+    response = client.get("/api/roles/taxonomy")
+    assert response.status_code == 200
+    data = response.json()
+    worker_level = next(lv for lv in data["levels"] if lv["id"] == "worker")
+    for role in worker_level["roles"]:
+        assert role["spawnable"] is True, f"Worker role {role['slug']} should be spawnable"
+
+
+def test_taxonomy_c_suite_roles_are_not_spawnable(client: TestClient) -> None:
+    """C-Suite orchestration roles must NOT be marked spawnable via spawn API."""
+    response = client.get("/api/roles/taxonomy")
+    assert response.status_code == 200
+    data = response.json()
+    c_suite = next(lv for lv in data["levels"] if lv["id"] == "c_suite")
+    for role in c_suite["roles"]:
+        assert role["spawnable"] is False, f"C-Suite role {role['slug']} should not be spawnable"
+
+
+def test_taxonomy_role_has_required_fields(client: TestClient) -> None:
+    """Every role entry must have slug, label, title, description, compatible_figures."""
+    response = client.get("/api/roles/taxonomy")
+    assert response.status_code == 200
+    data = response.json()
+    for level in data["levels"]:
+        for role in level["roles"]:
+            assert "slug" in role
+            assert "label" in role
+            assert "title" in role
+            assert "description" in role
+            assert "compatible_figures" in role
+            assert "compatible_skill_domains" in role
+            assert "spawnable" in role
+            assert "file_exists" in role
+
+
+def test_personas_returns_list(client: TestClient) -> None:
+    """GET /api/roles/personas must return a non-empty personas list."""
+    response = client.get("/api/roles/personas")
+    assert response.status_code == 200
+    data = response.json()
+    assert "personas" in data
+    assert len(data["personas"]) > 0
+
+
+def test_personas_contains_new_figures(client: TestClient) -> None:
+    """GET /api/roles/personas must include the 13 new industry personas."""
+    response = client.get("/api/roles/personas")
+    assert response.status_code == 200
+    data = response.json()
+    persona_ids = {p["id"] for p in data["personas"]}
+    new_personas = {
+        "steve_jobs", "satya_nadella", "jeff_bezos", "werner_vogels",
+        "margaret_hamilton", "linus_torvalds", "bjarne_stroustrup",
+        "martin_fowler", "kent_beck", "yann_lecun", "andrej_karpathy",
+        "bruce_schneier", "guido_van_rossum",
+    }
+    for pid in new_personas:
+        assert pid in persona_ids, f"New persona '{pid}' missing from /api/roles/personas"
+
+
+def test_personas_have_required_fields(client: TestClient) -> None:
+    """Each persona entry must have id, display_name, extends, description, prompt_prefix."""
+    response = client.get("/api/roles/personas")
+    assert response.status_code == 200
+    data = response.json()
+    for persona in data["personas"]:
+        assert "id" in persona
+        assert "display_name" in persona
+        assert "extends" in persona
+        assert "description" in persona
+        assert "prompt_prefix" in persona
+        assert "overrides" in persona
+
+
+def test_atoms_returns_all_dimensions(client: TestClient) -> None:
+    """GET /api/roles/atoms must return the 10 cognitive atom dimensions."""
+    response = client.get("/api/roles/atoms")
+    assert response.status_code == 200
+    data = response.json()
+    assert "atoms" in data
+    assert len(data["atoms"]) >= 10
+
+
+def test_atoms_each_dimension_has_values(client: TestClient) -> None:
+    """Each atom dimension must have at least 2 named values for the composer dropdowns."""
+    response = client.get("/api/roles/atoms")
+    assert response.status_code == 200
+    data = response.json()
+    for atom in data["atoms"]:
+        assert "dimension" in atom
+        assert "values" in atom
+        assert len(atom["values"]) >= 2, f"Atom '{atom['dimension']}' has fewer than 2 values"
+        for val in atom["values"]:
+            assert "id" in val
+            assert "label" in val
+
+
+def test_new_worker_roles_in_managed_files(client: TestClient) -> None:
+    """The new worker role slugs must be listable via GET /api/roles."""
+    response = client.get("/api/roles")
+    assert response.status_code == 200
+    data = response.json()
+    slugs = {r["slug"] for r in data}
+    new_workers = {
+        "frontend-developer", "full-stack-developer", "mobile-developer",
+        "systems-programmer", "ml-engineer", "data-engineer", "devops-engineer",
+        "security-engineer", "test-engineer", "architect", "api-developer",
+        "technical-writer",
+    }
+    for slug in new_workers:
+        assert slug in slugs, f"New worker slug '{slug}' missing from /api/roles"
+
+
+def test_new_c_suite_roles_in_managed_files(client: TestClient) -> None:
+    """The new C-Suite role slugs must be listable via GET /api/roles."""
+    response = client.get("/api/roles")
+    assert response.status_code == 200
+    data = response.json()
+    slugs = {r["slug"] for r in data}
+    new_csuite = {"ceo", "cpo", "cfo", "ciso", "cdo", "cmo", "coo"}
+    for slug in new_csuite:
+        assert slug in slugs, f"New C-Suite slug '{slug}' missing from /api/roles"

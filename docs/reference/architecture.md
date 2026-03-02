@@ -974,3 +974,78 @@ free of `apiFetch` calls:
 | `timeline.html`, `divergence.html`, `compare.html` | Complex data-vis with interactive overlays |
 | `commit.html` | Per-commit audio analysis, inline comments, reaction widgets |
 | `feed.html` | Real-time notification feed |
+
+---
+
+## AgentCeption Cognitive Architecture API
+
+The Cognitive Architecture API is the system that assembles a per-agent personality and expertise profile at spawn time. It is composed of two parallel tracks that work together.
+
+### Track A — Org Roles (`.cursor/roles/*.md`)
+
+Markdown files that define the organizational identity and operational constraints for each role in the pipeline. These are the "what is this role responsible for" documents.
+
+**Role taxonomy** (`scripts/gen_prompts/role-taxonomy.yaml`): The canonical source for the full three-tier org hierarchy.
+
+| Tier | Count | Examples |
+|------|-------|---------|
+| C-Suite | 8 | CEO, CTO, CPO, CFO, CISO, CDO, CMO, COO |
+| VP Level | 10 | VP Engineering, VP QA, VP Product, VP Design, VP Data, VP Security, VP Infrastructure, VP Mobile, VP Platform, VP ML |
+| Workers | 15 | python-developer, database-architect, pr-reviewer, frontend-developer, full-stack-developer, mobile-developer, systems-programmer, ml-engineer, data-engineer, devops-engineer, security-engineer, test-engineer, architect, api-developer, technical-writer |
+
+Managed via the Role Studio UI (`GET /roles`) and the roles API (`/api/roles/*`).
+
+Only roles in `VALID_ROLES` (defined in `agentception/models.py`) can be spawned as leaf agents via `POST /api/control/spawn`. Orchestration roles (CTO, VPs) are spawnable only through the CTO pipeline.
+
+### Track B — Cognitive Architecture (YAML composition)
+
+A composable YAML system in `scripts/gen_prompts/cognitive_archetypes/` that defines how an agent thinks, not what it is responsible for.
+
+**Hierarchy (bottom-up):**
+
+```
+atoms/          — 10 cognitive dimensions (epistemic_style, quality_bar, creativity_level, …)
+archetypes/     — 8 named profiles composed from atoms (the_architect, the_guardian, the_hacker, …)
+figures/        — 25 named personas extending archetypes (historical + industry leaders)
+skill_domains/  — 12 technology-specific skill checklists
+```
+
+**25 figures (12 original + 13 new):**
+
+Original historical figures: `dijkstra`, `einstein`, `feynman`, `hamming`, `hopper`, `knuth`, `lovelace`, `mccarthy`, `ritchie`, `shannon`, `turing`, `von_neumann`
+
+New industry personas: `steve_jobs`, `satya_nadella`, `jeff_bezos`, `werner_vogels`, `margaret_hamilton`, `linus_torvalds`, `bjarne_stroustrup`, `martin_fowler`, `kent_beck`, `yann_lecun`, `andrej_karpathy`, `bruce_schneier`, `guido_van_rossum`
+
+**COGNITIVE_ARCH string format:**
+
+```
+COGNITIVE_ARCH=figure1,figure2:skill1:skill2:skill3
+```
+
+Example: `COGNITIVE_ARCH=andrej_karpathy:llm:python` — Karpathy's build-from-scratch empiricism, with LLM and Python skill checklists injected into the agent's context.
+
+**Resolution:** `scripts/gen_prompts/resolve_arch.py` assembles the final Markdown block that gets injected into each agent's running context at spawn time.
+
+### Cognitive Architecture API endpoints
+
+| Endpoint | Description |
+|----------|-------------|
+| `GET /api/roles/taxonomy` | Full 3-tier org hierarchy from `role-taxonomy.yaml`. Returns levels → roles with `file_exists` flag. |
+| `GET /api/roles/personas` | All 25 figure YAMLs as structured JSON. Used by the GUI persona cards. |
+| `GET /api/roles/atoms` | All 10 atom dimensions with named values. Used by the primitive composer dropdowns. |
+| `GET /api/roles` | List all managed role files with metadata. |
+| `GET /api/roles/{slug}` | Get full content + metadata for one role. |
+| `PUT /api/roles/{slug}` | Write new content (no commit). |
+| `POST /api/roles/{slug}/diff` | Preview diff vs HEAD. |
+| `POST /api/roles/{slug}/commit` | Write + git commit + record version. |
+| `GET /api/roles/{slug}/versions` | Structured version history. |
+
+### Role Studio GUI (`/roles`)
+
+Three-panel layout:
+
+- **Left — Org Hierarchy:** Collapsible tree by tier (C-Suite / VP / Worker). Color-coded dots: green = file authored, purple = spawnable leaf agent, grey = draft. Click to select.
+- **Center — Personas + Composer:** Two tabs:
+  - *Personas*: Card grid of compatible historical/industry personas for the selected role. Click to apply to the composer.
+  - *Primitive Composer*: Dropdowns for figure, per-atom overrides, and skill domain checkboxes. Displays the assembled `COGNITIVE_ARCH` string.
+- **Right — Role Studio:** Monaco editor for editing the selected role's `.md` file. Diff preview and git commit via the existing roles API.
