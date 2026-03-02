@@ -127,7 +127,7 @@ def hash_list_canonical(items: list[str]) -> str:
     """Collision-proof parent hash from a list of child hashes.
 
     Sorts lexicographically, JSON-encodes the sorted list, then
-    SHA-256 hashes the result.  Returns the first 16 hex chars.
+    SHA-256 hashes the result. Returns the first 16 hex chars.
 
     This replaces the old ``SHA256("hashA:hashB")`` pattern which
     was vulnerable to delimiter collisions.
@@ -140,7 +140,7 @@ def compute_execution_hash(contract_hash: str, trace_id: str) -> str:
     """Bind an execution to a specific contract + session.
 
     Prevents replay attacks: same contract in a different session
-    produces a different execution_hash.  Returns 16 hex chars.
+    produces a different execution_hash. Returns 16 hex chars.
     """
     payload = (contract_hash + trace_id).encode("utf-8")
     return hashlib.sha256(payload).hexdigest()[:16]

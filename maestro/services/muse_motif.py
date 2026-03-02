@@ -55,12 +55,12 @@ RhythmSequence = tuple[float, ...]
 class MotifTransformation(str, Enum):
     """Detected relationship between a found motif and the query motif.
 
-    - ``EXACT``       — identical interval sequence (possibly transposed).
-    - ``INVERSION``   — each interval negated (melodic mirror).
-    - ``RETROGRADE``  — interval sequence reversed.
-    - ``RETRO_INV``   — retrograde + inversion combined.
-    - ``AUGMENTED``   — same intervals; note durations scaled up.
-    - ``DIMINISHED``  — same intervals; note durations scaled down.
+    - ``EXACT`` — identical interval sequence (possibly transposed).
+    - ``INVERSION`` — each interval negated (melodic mirror).
+    - ``RETROGRADE`` — interval sequence reversed.
+    - ``RETRO_INV`` — retrograde + inversion combined.
+    - ``AUGMENTED`` — same intervals; note durations scaled up.
+    - ``DIMINISHED`` — same intervals; note durations scaled down.
     - ``APPROXIMATE`` — similar contour but not an exact variant.
     """
 
@@ -83,12 +83,12 @@ class MotifOccurrence:
     """A single occurrence of a motif within a commit or pattern search.
 
     Attributes:
-        commit_id:       Short commit SHA where the motif was found.
-        track:           Track name (e.g. ``"melody"``, ``"bass"``).
-        section:         Named section the occurrence falls in (optional).
-        start_position:  Position index of the first note of the motif.
-        transformation:  Relationship to the query motif.
-        pitch_sequence:  Literal pitch values at this occurrence (MIDI note numbers).
+        commit_id: Short commit SHA where the motif was found.
+        track: Track name (e.g. ``"melody"``, ``"bass"``).
+        section: Named section the occurrence falls in (optional).
+        start_position: Position index of the first note of the motif.
+        transformation: Relationship to the query motif.
+        pitch_sequence: Literal pitch values at this occurrence (MIDI note numbers).
         interval_fingerprint: Normalised interval sequence used for matching.
     """
 
@@ -106,12 +106,12 @@ class MotifFindResult:
     """Results from ``muse motif find`` — recurring patterns in a single commit.
 
     Attributes:
-        commit_id:    Short commit SHA analysed.
-        branch:       Branch name.
-        min_length:   Minimum motif length requested.
-        motifs:       Detected recurring motif groups, sorted by occurrence count desc.
-        total_found:  Total number of distinct recurring motifs identified.
-        source:       ``"stub"`` until full MIDI analysis is wired; ``"live"`` thereafter.
+        commit_id: Short commit SHA analysed.
+        branch: Branch name.
+        min_length: Minimum motif length requested.
+        motifs: Detected recurring motif groups, sorted by occurrence count desc.
+        total_found: Total number of distinct recurring motifs identified.
+        source: ``"stub"`` until full MIDI analysis is wired; ``"live"`` thereafter.
     """
 
     commit_id: str
@@ -127,10 +127,10 @@ class MotifGroup:
     """A single recurring motif and all its occurrences in the scanned commit.
 
     Attributes:
-        fingerprint:   Normalised interval sequence (the motif's identity).
-        count:         Number of times the motif appears.
-        occurrences:   All detected occurrences.
-        label:         Human-readable contour label (e.g. ``"ascending-step"``,
+        fingerprint: Normalised interval sequence (the motif's identity).
+        count: Number of times the motif appears.
+        occurrences: All detected occurrences.
+        label: Human-readable contour label (e.g. ``"ascending-step"``,
                        ``"arch"``, ``"descending-leap"``).
     """
 
@@ -145,12 +145,12 @@ class MotifTrackResult:
     """Results from ``muse motif track`` — appearances of a pattern across history.
 
     Attributes:
-        pattern:      The query pattern (as a space-separated pitch string or
+        pattern: The query pattern (as a space-separated pitch string or
                       interval fingerprint).
-        fingerprint:  Normalised interval sequence derived from the pattern.
-        occurrences:  All commits where the motif (or a transformation) was found.
+        fingerprint: Normalised interval sequence derived from the pattern.
+        occurrences: All commits where the motif (or a transformation) was found.
         total_commits_scanned: How many commits were searched.
-        source:       ``"stub"`` or ``"live"``.
+        source: ``"stub"`` or ``"live"``.
     """
 
     pattern: str
@@ -165,9 +165,9 @@ class MotifDiffEntry:
     """One side of a motif diff comparison.
 
     Attributes:
-        commit_id:    Short commit SHA.
-        fingerprint:  Interval sequence at this commit.
-        label:        Contour label.
+        commit_id: Short commit SHA.
+        fingerprint: Interval sequence at this commit.
+        label: Contour label.
         pitch_sequence: Literal pitches (if available).
     """
 
@@ -182,11 +182,11 @@ class MotifDiffResult:
     """Results from ``muse motif diff`` — how a motif transformed between commits.
 
     Attributes:
-        commit_a:       Analysis of the motif at the first commit.
-        commit_b:       Analysis of the motif at the second commit.
+        commit_a: Analysis of the motif at the first commit.
+        commit_b: Analysis of the motif at the second commit.
         transformation: How the motif changed from commit A to commit B.
-        description:    Human-readable description of the transformation.
-        source:         ``"stub"`` or ``"live"``.
+        description: Human-readable description of the transformation.
+        source: ``"stub"`` or ``"live"``.
     """
 
     commit_a: MotifDiffEntry
@@ -201,9 +201,9 @@ class SavedMotif:
     """A named motif stored in ``.muse/motifs/``.
 
     Attributes:
-        name:        User-assigned motif name (e.g. ``"main-theme"``).
+        name: User-assigned motif name (e.g. ``"main-theme"``).
         fingerprint: Stored interval fingerprint.
-        created_at:  ISO-8601 timestamp when the motif was named.
+        created_at: ISO-8601 timestamp when the motif was named.
         description: Optional free-text annotation.
     """
 
@@ -290,7 +290,7 @@ def detect_transformation(
     combined retrograde-inversion.
 
     Args:
-        query:     The reference interval sequence.
+        query: The reference interval sequence.
         candidate: The interval sequence to test.
 
     Returns:
@@ -354,8 +354,8 @@ def parse_pitch_string(pattern: str) -> tuple[int, ...]:
     """Parse a space-separated pitch-name or MIDI-number string into pitch values.
 
     Supports:
-    - MIDI integers:  ``"60 62 64 67"``
-    - Note names:     ``"C D E G"`` (middle octave assumed, sharps as ``C#``/``Cs``)
+    - MIDI integers: ``"60 62 64 67"``
+    - Note names: ``"C D E G"`` (middle octave assumed, sharps as ``C#``/``Cs``)
 
     Args:
         pattern: Space-separated pitch tokens.
@@ -409,8 +409,8 @@ def _stub_motif_groups(
     """Return placeholder MotifGroup entries for stub mode.
 
     Args:
-        commit_id:  Short commit SHA to embed in occurrences.
-        track:      Track filter (if provided, used as the occurrence track name).
+        commit_id: Short commit SHA to embed in occurrences.
+        track: Track filter (if provided, used as the occurrence track name).
         min_length: Minimum motif length filter (intervals of length ≥ min_length - 1).
 
     Returns:
@@ -450,7 +450,7 @@ def _intervals_to_pitches(
 
     Args:
         intervals: Signed semitone intervals.
-        start:     MIDI pitch of the first note (default: 60 = middle C).
+        start: MIDI pitch of the first note (default: 60 = middle C).
 
     Returns:
         Tuple of MIDI pitch values.
@@ -482,13 +482,13 @@ async def find_motifs(
     fingerprint, and returns them sorted by occurrence count.
 
     Args:
-        commit_id:  Short or full commit SHA to analyse.
-        branch:     Branch name (for context in the result).
+        commit_id: Short or full commit SHA to analyse.
+        branch: Branch name (for context in the result).
         min_length: Minimum motif length in notes (default: 3). Shorter
                     motifs tend to be musically trivial.
-        track:      Restrict analysis to a single named track, or ``None`` for all.
-        section:    Restrict to a named section/region, or ``None`` for all.
-        as_json:    Unused here — rendered by the CLI layer.
+        track: Restrict analysis to a single named track, or ``None`` for all.
+        section: Restrict to a named section/region, or ``None`` for all.
+        as_json: Unused here — rendered by the CLI layer.
 
     Returns:
         A :class:`MotifFindResult` with all detected recurring motifs.
@@ -518,9 +518,9 @@ async def track_motif(
     retrograde, retrograde-inversion).
 
     Args:
-        pattern:     Space-separated pitch names (e.g. ``"C D E G"``) or MIDI
+        pattern: Space-separated pitch names (e.g. ``"C D E G"``) or MIDI
                      numbers (e.g. ``"60 62 64 67"``).
-        commit_ids:  Ordered list of commit SHAs to scan (newest first).
+        commit_ids: Ordered list of commit SHAs to scan (newest first).
 
     Returns:
         A :class:`MotifTrackResult` with all occurrences found.

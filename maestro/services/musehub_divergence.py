@@ -7,11 +7,11 @@ touches.
 
 Dimensions analysed
 -------------------
-- ``melodic``    — melody, lead, solo, vocal, tune, note, pitch, riff, arpeggio
-- ``harmonic``   — chord, harmony, key, scale, progression, voicing
-- ``rhythmic``   — beat, drum, rhythm, groove, percussion, swing, tempo, bpm
+- ``melodic`` — melody, lead, solo, vocal, tune, note, pitch, riff, arpeggio
+- ``harmonic`` — chord, harmony, key, scale, progression, voicing
+- ``rhythmic`` — beat, drum, rhythm, groove, percussion, swing, tempo, bpm
 - ``structural`` — structure, form, section, bridge, chorus, verse, intro, outro
-- ``dynamic``    — mix, master, volume, level, dynamics, eq, compressor, reverb
+- ``dynamic`` — mix, master, volume, level, dynamics, eq, compressor, reverb
 
 Score formula (per dimension)
 ------------------------------
@@ -96,8 +96,8 @@ class MuseHubDivergenceLevel(str, Enum):
     Thresholds mirror the CLI divergence engine for consistency.
 
     - ``NONE`` — score < 0.15
-    - ``LOW``  — 0.15 ≤ score < 0.40
-    - ``MED``  — 0.40 ≤ score < 0.70
+    - ``LOW`` — 0.15 ≤ score < 0.40
+    - ``MED`` — 0.40 ≤ score < 0.70
     - ``HIGH`` — score ≥ 0.70
     """
 
@@ -112,10 +112,10 @@ class MuseHubDimensionDivergence:
     """Divergence score and description for a single musical dimension.
 
     Attributes:
-        dimension:        Dimension name (e.g. ``"melodic"``).
-        level:            Qualitative divergence level label.
-        score:            Normalised divergence score in [0.0, 1.0].
-        description:      Human-readable divergence summary.
+        dimension: Dimension name (e.g. ``"melodic"``).
+        level: Qualitative divergence level label.
+        score: Normalised divergence score in [0.0, 1.0].
+        description: Human-readable divergence summary.
         branch_a_commits: Number of commits in this dimension on branch A.
         branch_b_commits: Number of commits in this dimension on branch B.
     """
@@ -133,14 +133,14 @@ class MuseHubDivergenceResult:
     """Full musical divergence report between two Muse Hub branches.
 
     Attributes:
-        repo_id:         Repository ID.
-        branch_a:        Name of the first branch.
-        branch_b:        Name of the second branch.
+        repo_id: Repository ID.
+        branch_a: Name of the first branch.
+        branch_b: Name of the second branch.
         common_ancestor: Commit ID of the merge base, or ``None`` if disjoint.
-        dimensions:      Per-dimension divergence results (always 5 entries).
-        overall_score:   Mean of all per-dimension scores in [0.0, 1.0].
-        all_messages:    All commit messages from both branches since the merge
-                         base.  Used by :func:`build_pr_diff_response` to derive
+        dimensions: Per-dimension divergence results (always 5 entries).
+        overall_score: Mean of all per-dimension scores in [0.0, 1.0].
+        all_messages: All commit messages from both branches since the merge
+                         base. Used by :func:`build_pr_diff_response` to derive
                          ``affected_sections`` from actual commit text.
     """
 
@@ -161,14 +161,14 @@ class MuseHubDivergenceResult:
 def classify_message(message: str) -> set[str]:
     """Return the set of musical dimensions this commit message touches.
 
-    Matching is case-insensitive and keyword-based.  A single message may map
+    Matching is case-insensitive and keyword-based. A single message may map
     to multiple dimensions (e.g. "add jazzy chord melody" → melodic + harmonic).
 
     Args:
         message: Commit message text.
 
     Returns:
-        Set of dimension names that the message matches.  Empty if unclassified.
+        Set of dimension names that the message matches. Empty if unclassified.
     """
     lower = message.lower()
     return {
@@ -212,11 +212,11 @@ def compute_hub_dimension_divergence(
     - 1.0 → no overlap — completely diverged.
 
     Args:
-        dimension:     Dimension name (one of :data:`ALL_DIMENSIONS`).
-        a_commit_ids:  Commit IDs for branch A since the merge base.
-        b_commit_ids:  Commit IDs for branch B since the merge base.
-        a_messages:    Mapping of commit_id → message for branch A.
-        b_messages:    Mapping of commit_id → message for branch B.
+        dimension: Dimension name (one of :data:`ALL_DIMENSIONS`).
+        a_commit_ids: Commit IDs for branch A since the merge base.
+        b_commit_ids: Commit IDs for branch B since the merge base.
+        a_messages: Mapping of commit_id → message for branch A.
+        b_messages: Mapping of commit_id → message for branch B.
 
     Returns:
         A :class:`MuseHubDimensionDivergence` with score, level, and summary.
@@ -270,9 +270,9 @@ async def get_branch_commits(
     """Return all commits on *branch* for *repo_id*, newest first.
 
     Args:
-        session:  Open async DB session.
-        repo_id:  Repository identifier.
-        branch:   Branch name.
+        session: Open async DB session.
+        repo_id: Repository identifier.
+        branch: Branch name.
 
     Returns:
         List of :class:`MusehubCommit` objects ordered by timestamp descending.
@@ -339,7 +339,7 @@ def get_commits_since(
     histories — no common ancestor).
 
     Args:
-        all_commits:    All commits for a branch (newest first).
+        all_commits: All commits for a branch (newest first).
         base_commit_id: Common ancestor commit ID to exclude, or ``None``.
 
     Returns:
@@ -369,8 +369,8 @@ async def compute_hub_divergence(
     per-dimension Jaccard divergence score.
 
     Args:
-        session:  Open async DB session.
-        repo_id:  Repository ID.
+        session: Open async DB session.
+        repo_id: Repository ID.
         branch_a: Name of the first branch.
         branch_b: Name of the second branch.
 
@@ -438,8 +438,8 @@ def extract_affected_sections(messages: tuple[str, ...]) -> list[str]:
     """Return section keywords mentioned in any of *messages*.
 
     Scans each commit message for structural section names (bridge, chorus,
-    verse, intro, outro, section) using a word-boundary regex.  Returns the
-    unique matches in stable order, capitalised.  Returns an empty list when
+    verse, intro, outro, section) using a word-boundary regex. Returns the
+    unique matches in stable order, capitalised. Returns an empty list when
     no commit mentions any section keyword.
 
     Args:
@@ -476,15 +476,15 @@ def build_pr_diff_response(
     """Assemble a :class:`PRDiffResponse` from a divergence computation result.
 
     Extracts ``affected_sections`` by scanning the commit messages stored in
-    *result* for structural section keywords.  Only sections actually mentioned
+    *result* for structural section keywords. Only sections actually mentioned
     in commit text are returned — an empty list is correct when no commit
     references a section name.
 
     Args:
-        pr_id:       Pull request UUID.
+        pr_id: Pull request UUID.
         from_branch: Source branch name (for the response payload).
-        to_branch:   Target branch name (for the response payload).
-        result:      Output of :func:`compute_hub_divergence`.
+        to_branch: Target branch name (for the response payload).
+        result: Output of :func:`compute_hub_divergence`.
 
     Returns:
         A fully-populated :class:`PRDiffResponse`.
@@ -525,14 +525,14 @@ def build_zero_diff_response(
     """Return a zero-score :class:`PRDiffResponse` placeholder.
 
     Used when :func:`compute_hub_divergence` raises :exc:`ValueError` because
-    one or both branches have no commits yet.  Ensures the PR detail page
+    one or both branches have no commits yet. Ensures the PR detail page
     always renders even for brand-new branches.
 
     Args:
-        pr_id:       Pull request UUID.
-        repo_id:     Repository UUID.
+        pr_id: Pull request UUID.
+        repo_id: Repository UUID.
         from_branch: Source branch name.
-        to_branch:   Target branch name.
+        to_branch: Target branch name.
 
     Returns:
         A :class:`PRDiffResponse` with all five dimensions at score 0.0.

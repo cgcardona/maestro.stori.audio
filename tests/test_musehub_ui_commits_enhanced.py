@@ -1,36 +1,36 @@
-"""Regression tests for the enhanced commits list page (issue #446).
+"""Regression tests for the enhanced commits list page.
 
 Covers the four feature areas added to commits_list_page():
 
 Filter bar
-- test_commits_enhanced_filter_bar_present          — filter-bar HTML element present
-- test_commits_enhanced_author_dropdown_present      — author <select> with 'All authors' default
-- test_commits_enhanced_date_picker_inputs_present   — dateFrom / dateTo date inputs present
-- test_commits_enhanced_search_input_present         — message search <input> present
-- test_commits_enhanced_tag_filter_input_present     — tag filter <input> present
+- test_commits_enhanced_filter_bar_present — filter-bar HTML element present
+- test_commits_enhanced_author_dropdown_present — author <select> with 'All authors' default
+- test_commits_enhanced_date_picker_inputs_present — dateFrom / dateTo date inputs present
+- test_commits_enhanced_search_input_present — message search <input> present
+- test_commits_enhanced_tag_filter_input_present — tag filter <input> present
 
 Server-side filtering
 - test_commits_enhanced_author_filter_narrows_results — ?author= returns only that author's commits
 - test_commits_enhanced_author_filter_excludes_others — commits by other authors absent
 - test_commits_enhanced_search_filter_matches_message — ?q= matches substring in commit message
 - test_commits_enhanced_search_filter_excludes_others — non-matching commits absent
-- test_commits_enhanced_date_from_filter             — ?dateFrom= excludes older commits
-- test_commits_enhanced_tag_filter_matches_tag       — ?tag=emotion:funky matches message substring
+- test_commits_enhanced_date_from_filter — ?dateFrom= excludes older commits
+- test_commits_enhanced_tag_filter_matches_tag — ?tag=emotion:funky matches message substring
 
 Compare mode
-- test_commits_enhanced_compare_toggle_btn_present   — compare-toggle-btn button present
-- test_commits_enhanced_compare_strip_present        — compare-strip container present
+- test_commits_enhanced_compare_toggle_btn_present — compare-toggle-btn button present
+- test_commits_enhanced_compare_strip_present — compare-strip container present
 - test_commits_enhanced_compare_check_inputs_present — compare-check checkboxes per row
-- test_commits_enhanced_compare_js_function          — toggleCompareMode() JS function present
+- test_commits_enhanced_compare_js_function — toggleCompareMode() JS function present
 
 Metadata badges (client-side JS)
 - test_commits_enhanced_meta_badges_container_present — meta-badges span present per row
-- test_commits_enhanced_badge_js_extract_function    — extractBadges() JS function present
-- test_commits_enhanced_chip_css_classes_present     — chip-tempo / chip-key / chip-emotion CSS defined
+- test_commits_enhanced_badge_js_extract_function — extractBadges() JS function present
+- test_commits_enhanced_chip_css_classes_present — chip-tempo / chip-key / chip-emotion CSS defined
 
 Mini-lane
-- test_commits_enhanced_dag_merge_arm_present        — dag-merge-arm element on merge commits
-- test_commits_enhanced_mini_lane_dag_col_present    — dag-col column present
+- test_commits_enhanced_dag_merge_arm_present — dag-merge-arm element on merge commits
+- test_commits_enhanced_mini_lane_dag_col_present — dag-col column present
 
 Pagination with active filters
 - test_commits_enhanced_pagination_preserves_filters — page links carry active filter params
@@ -53,8 +53,8 @@ _SLUG = "enhanced-commits"
 
 _SHA_ALICE_1 = "a1" + "0" * 38
 _SHA_ALICE_2 = "a2" + "0" * 38
-_SHA_BOB_1   = "b1" + "0" * 38
-_SHA_MERGE   = "cc" + "0" * 38
+_SHA_BOB_1 = "b1" + "0" * 38
+_SHA_MERGE = "cc" + "0" * 38
 
 # ── Seed helpers ──────────────────────────────────────────────────────────────
 
@@ -186,7 +186,7 @@ async def test_commits_enhanced_tag_filter_input_present(
     resp = await client.get(_url())
     assert resp.status_code == 200
     assert 'name="tag"' in resp.text
-    assert "emotion:" in resp.text  # placeholder hint text
+    assert "emotion:" in resp.text # placeholder hint text
 
 
 # ── Server-side filtering ─────────────────────────────────────────────────────

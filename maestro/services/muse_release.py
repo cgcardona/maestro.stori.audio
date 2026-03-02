@@ -5,25 +5,25 @@ This service is the music-native publish step: given a tag (applied via
 and renders it to audio/MIDI artifacts for distribution.
 
 Boundary contract:
-- Input:  tag string, snapshot manifest, output directory, release options.
+- Input: tag string, snapshot manifest, output directory, release options.
 - Output: ``ReleaseResult`` — paths written, manifest JSON path, format,
           commit short ID, and a ``stubbed`` flag when Storpheus audio render
           is not yet available.
-- Side effects:  Writes files under ``output_dir``.  Never modifies the Muse
+- Side effects: Writes files under ``output_dir``. Never modifies the Muse
   repository or the database.
 
 Output layout::
 
     <output_dir>/
-        release-manifest.json        # always written; includes SHA-256 checksums
-        audio/<commit8>.<format>     # --render-audio
-        midi/<stem>.mid (zipped)     # --render-midi  → midi-bundle.zip
-        stems/<stem>.<format>        # --export-stems (one file per track)
+        release-manifest.json # always written; includes SHA-256 checksums
+        audio/<commit8>.<format> # --render-audio
+        midi/<stem>.mid (zipped) # --render-midi → midi-bundle.zip
+        stems/<stem>.<format> # --export-stems (one file per track)
 
 Storpheus render status:
   The Storpheus service exposes MIDI generation at ``POST /generate``.
   A dedicated ``POST /render`` endpoint (MIDI-in → audio-out) is planned but
-  not yet deployed.  Until that endpoint ships this module performs a health
+  not yet deployed. Until that endpoint ships this module performs a health
   check, then copies the first MIDI file to the audio output path as a stub.
   When ``/render`` is available, replace ``_render_midi_to_audio`` with a
   real POST call and set ``stubbed=False`` on the result.
@@ -125,7 +125,7 @@ def _collect_midi_paths(
 ) -> tuple[list[pathlib.Path], int]:
     """Collect MIDI file paths from the snapshot manifest.
 
-    Applies optional track/section substring filters.  Missing files are
+    Applies optional track/section substring filters. Missing files are
     counted in the skipped total and logged at WARNING level.
 
     Args:
@@ -238,7 +238,7 @@ def _render_midi_to_audio(
     """Render a MIDI file to audio via Storpheus ``POST /render``.
 
     This is a *stub implementation*: the Storpheus ``/render`` endpoint
-    (MIDI-in → audio-out) is not yet deployed.  Until it ships the function
+    (MIDI-in → audio-out) is not yet deployed. Until it ships the function
     copies the MIDI file to ``output_path`` as a placeholder and returns
     ``True`` (stubbed=True).
 
@@ -259,7 +259,7 @@ def _render_midi_to_audio(
         True when the output is a MIDI stub (no real audio render occurred).
     """
     logger.warning(
-        "⚠️ Storpheus /render endpoint not yet available — "
+        "⚠️ Storpheus /render endpoint not yet available"
         "copying MIDI as placeholder for %s",
         output_path.name,
     )
@@ -285,7 +285,7 @@ def _write_release_manifest(
     """Write the ``release-manifest.json`` to *output_dir*.
 
     The manifest is the authoritative index of everything produced by
-    ``muse release``.  It is always the last artifact written so that its
+    ``muse release``. It is always the last artifact written so that its
     presence signals a complete, consistent release directory.
 
     Manifest shape::
@@ -359,7 +359,7 @@ def build_release(
 ) -> ReleaseResult:
     """Build a release artifact bundle from a tagged Muse commit snapshot.
 
-    Entry point for the ``muse release`` command.  Depending on the flags
+    Entry point for the ``muse release`` command. Depending on the flags
     passed it:
 
     - Renders the primary MIDI file to audio via Storpheus (``render_audio``).

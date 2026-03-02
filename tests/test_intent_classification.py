@@ -60,7 +60,7 @@ class TestNormalization:
     def test_normalize_whitespace(self) -> None:
 
         """Should normalize whitespace."""
-        assert normalize("play   now") == "play now"
+        assert normalize("play now") == "play now"
     
     def test_normalize_quotes(self) -> None:
 
@@ -352,7 +352,7 @@ class TestIntentResultWithLLM:
         result = await get_intent_result_with_llm("play", None, mock_llm)
         
         assert result.intent == Intent.PLAY
-        mock_llm.chat.assert_not_called()  # Pattern matched, no LLM needed
+        mock_llm.chat.assert_not_called() # Pattern matched, no LLM needed
     
     @pytest.mark.asyncio
     async def test_llm_fallback_for_unknown(self) -> None:

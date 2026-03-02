@@ -28,18 +28,18 @@ class TestStatHelpers:
     def test_stdev_known_values(self) -> None:
 
         result = _stdev([2, 4, 4, 4, 5, 5, 7, 9])
-        assert 1.9 < result < 2.2  # sample stdev ≈ 2.14
+        assert 1.9 < result < 2.2 # sample stdev ≈ 2.14
 
     def test_pitch_class_entropy_single_class(self) -> None:
 
-        pitches = [60, 72, 48, 84]  # all C
+        pitches = [60, 72, 48, 84] # all C
         assert _pitch_class_entropy(pitches) == 0.0
 
     def test_pitch_class_entropy_uniform(self) -> None:
 
-        pitches = list(range(60, 72))  # all 12 pitch classes
+        pitches = list(range(60, 72)) # all 12 pitch classes
         entropy = _pitch_class_entropy(pitches)
-        assert 3.5 < entropy < 3.6  # log2(12) ≈ 3.585
+        assert 3.5 < entropy < 3.6 # log2(12) ≈ 3.585
 
     def test_pitch_class_entropy_empty(self) -> None:
 
@@ -49,13 +49,13 @@ class TestStatHelpers:
 
         pitches = [60, 62, 64, 60, 62, 64, 60, 62, 64]
         score = _repetition_score(pitches)
-        assert score > 0.3  # high repetition
+        assert score > 0.3 # high repetition
 
     def test_repetition_score_varied(self) -> None:
 
         pitches = [60, 64, 55, 72, 61, 68, 50, 75, 59, 66, 53, 70]
         score = _repetition_score(pitches)
-        assert score < 0.5  # varied intervals → lower repetition
+        assert score < 0.5 # varied intervals → lower repetition
 
     def test_polyphony_single_note(self) -> None:
 
@@ -67,7 +67,7 @@ class TestStatHelpers:
         starts = [0.0, 0.0, 0.0]
         durs = [2.0, 2.0, 2.0]
         poly = _polyphony_estimate(starts, durs)
-        assert poly >= 1.5  # at least partial overlap
+        assert poly >= 1.5 # at least partial overlap
 
 
 class TestAnalyzeToolCallNotes:

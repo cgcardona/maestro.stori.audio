@@ -89,13 +89,13 @@ def phase_for_tool(tool_name: str) -> str:
     """Map a tool name to its DAW workflow phase.
 
     Phases (mirrors a professional DAW session, in order):
-      setup       — project scaffolding: tempo, key, track/region creation,
+      setup — project scaffolding: tempo, key, track/region creation,
                     instrument selection, cosmetics, transport, UI
       composition — creative content: notes, MIDI generators
       arrangement — structural editing: move, transpose, quantize, swing, clear
       soundDesign — tone shaping: insert effects (EQ, compression, reverb…)
-      expression  — performance data: MIDI CC, pitch bend, aftertouch
-      mixing      — balance & routing: volume, pan, mute/solo, buses, sends,
+      expression — performance data: MIDI CC, pitch bend, aftertouch
+      mixing — balance & routing: volume, pan, mute/solo, buses, sends,
                     automation
     """
     if tool_name in _SETUP_TOOL_NAMES:
@@ -519,9 +519,9 @@ async def _apply_single_tool_call(
 
     **SSE contract:** This function never emits SSE events directly.
     When ``emit_sse=True`` it *builds* typed MaestroEvent instances and
-    returns them in ``_ToolCallOutcome.sse_events``.  The caller decides
+    returns them in ``_ToolCallOutcome.sse_events``. The caller decides
     whether to yield them to the client (editing path) or queue them
-    (agent-team path).  When ``emit_sse=False`` the list is empty.
+    (agent-team path). When ``emit_sse=False`` the list is empty.
 
     Args:
         tc_id: Tool call ID (from LLM response or synthetic UUID).

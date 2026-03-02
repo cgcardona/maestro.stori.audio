@@ -1119,7 +1119,7 @@ Expression:
   narrative: |
     The whisper is a secret you tell yourself at 3am. The gathering is
     the courage to say it out loud. The storm is everything you have been
-    holding. The silence on bar 24 beat 4 — one single beat of nothing —
+    holding. The silence on bar 24 beat 4 — one single beat of nothing
     is the moment before you let go. And then the catharsis. Bar 25 is
     the dam breaking. Everything you have held in, finally coming out.
     Not anger. Not sadness. Relief. Freedom. The crash on bar 25 beat 1
@@ -1262,7 +1262,7 @@ Constraints:
 Vibe: [intimate x3, bittersweet x2, peaceful, flowing, noble, tender]
 
 Request: |
-  A full string quartet movement in four sections. 8-bar exposition —
+  A full string quartet movement in four sections. 8-bar exposition
   Violin I states the main theme over Gmaj7-Em7, an arching melody with
   chromatic passing tones, while the cello provides a walking quarter-
   note bass line. Violin II and Viola sustain long inner voices. 8-bar
@@ -2040,7 +2040,7 @@ Request: |
   electronic bass adds deep sub weight under the Andalusian cadence
   (Am-G-F-E), palmas (handclaps) double the accent pattern, and the
   dark atmospheric pad sustains open 5ths. The guitar alternates between
-  picado runs and tremolo on sustained notes. 8-bar rasgueado climax —
+  picado runs and tremolo on sustained notes. 8-bar rasgueado climax
   the guitar explodes into rasgueado strumming on the E major chord
   (Phrygian surprise), the cajon hits fortissimo, the bass distortion
   increases, and the piece builds to maximum intensity. The final bar
@@ -2162,7 +2162,7 @@ Expression:
     the cajon whispers at bar 5, the call has been heard. The verse
     at bar 9 is the answer — the full ensemble enters, and the
     Andalusian cadence descends like ancient stairs into something
-    deeper. The rasgueado at bar 17 is not played. It erupts. Duende —
+    deeper. The rasgueado at bar 17 is not played. It erupts. Duende
     the dark mysterious spirit of flamenco — arrives uninvited. The
     music comes from somewhere below rational thought. The final struck
     E major chord at bar 24 hangs in the air like a question that
@@ -2296,7 +2296,7 @@ Request: |
   (kick on 1 and 2-and, then 3 and 4-and), tight rimshot snare on
   2 and 4, 16th-note partially-open hi-hats, rolling bass following
   the kick syncopation exactly. The vocal chop doubles and the pad
-  stabs shift to upbeats. Craig David era, updated. 8-bar evolution —
+  stabs shift to upbeats. Craig David era, updated. 8-bar evolution
   the bass pattern gets more complex (adds 16th-note fills between
   kick hits), the vocal chop adds a third pitch (Db5), the hi-hat
   pattern opens up, and the pad introduces a new chord (Bbm7-Gbmaj7).
@@ -2531,7 +2531,7 @@ Constraints:
 Vibe: [psychedelic x3, driving x2, mystical, fuzzy, Turkish, 1970s, garage]
 
 Request: |
-  A 1970s Anatolian psych rock piece in three sections. 8-bar riff —
+  A 1970s Anatolian psych rock piece in three sections. 8-bar riff
   the electric saz (GM 105 banjo with fuzz) plays a hypnotic riff in
   E phrygian (E-F-G#-A-B-C-D), the augmented 2nd between F and G#
   giving it a distinctly Turkish psychedelic feel. The rock organ

@@ -1,14 +1,14 @@
 """Muse Restore Service — restore specific files from a commit or index.
 
 ``muse restore`` is surgical: restore one instrument track from a specific
-commit while keeping everything else at HEAD.  Critical for music production
+commit while keeping everything else at HEAD. Critical for music production
 where you want "the bass from take 3, everything else from take 7."
 
 Restore modes
 -------------
 **worktree** (default, ``--worktree``)
     Copy the file content recorded in the *source* snapshot directly into
-    ``muse-work/``.  Branch pointer and index are not changed.  This is the
+    ``muse-work/``. Branch pointer and index are not changed. This is the
     primary use case: "put the bass from take 3 back into my working tree."
 
 **staged** (``--staged``)
@@ -17,16 +17,16 @@ Restore modes
     In the current Muse model (no separate staging area) ``--staged`` is
     documented for forward-compatibility and behaves identically to
     ``--worktree``: it restores the file in ``muse-work/`` from the source
-    snapshot.  When a staging index is added this module will be updated.
+    snapshot. When a staging index is added this module will be updated.
 
 **source** (``--source <commit>``)
-    Selects which snapshot to extract the file from.  Defaults to ``HEAD``
+    Selects which snapshot to extract the file from. Defaults to ``HEAD``
     when omitted.
 
 Object store contract
 ---------------------
 Restore reads objects from ``.muse/objects/`` exactly like ``muse reset
---hard``.  If an object is missing, :class:`MissingObjectError` is raised
+--hard``. If an object is missing, :class:`MissingObjectError` is raised
 and ``muse-work/`` is left unchanged (the restore is atomic per path).
 
 This module is a pure service layer — no Typer, no CLI, no StateStore.
@@ -62,9 +62,9 @@ class RestoreResult:
 
     Attributes:
         source_commit_id: Full SHA of the commit the files were extracted from.
-        paths_restored:   Relative paths (within ``muse-work/``) that were
+        paths_restored: Relative paths (within ``muse-work/``) that were
                           written to disk.
-        staged:           Whether ``--staged`` mode was active.
+        staged: Whether ``--staged`` mode was active.
     """
 
     source_commit_id: str
@@ -76,7 +76,7 @@ class PathNotInSnapshotError(Exception):
     """Raised when a requested path is absent from the source snapshot.
 
     Attributes:
-        rel_path:         The path that was not found.
+        rel_path: The path that was not found.
         source_commit_id: The commit that was searched.
     """
 
@@ -114,15 +114,15 @@ async def perform_restore(
     The branch pointer is never modified — only ``muse-work/`` files are written.
 
     Args:
-        root:       Muse repository root (directory containing ``.muse/``).
-        session:    Open async DB session.
-        paths:      Relative paths within ``muse-work/`` to restore.  Must be
-                    non-empty.  Paths may be given as ``muse-work/bass/bassline.mid``
+        root: Muse repository root (directory containing ``.muse/``).
+        session: Open async DB session.
+        paths: Relative paths within ``muse-work/`` to restore. Must be
+                    non-empty. Paths may be given as ``muse-work/bass/bassline.mid``
                     or bare ``bass/bassline.mid`` — the ``muse-work/`` prefix is
                     stripped if present.
         source_ref: Commit reference to restore from (``HEAD``, ``HEAD~N``, SHA,
                     or ``None`` for HEAD).
-        staged:     When ``True``, ``--staged`` mode is active.  In the current
+        staged: When ``True``, ``--staged`` mode is active. In the current
                     Muse model (no separate staging area) this is semantically
                     equivalent to ``--worktree``.
 
@@ -130,9 +130,9 @@ async def perform_restore(
         :class:`RestoreResult` describing the completed operation.
 
     Raises:
-        typer.Exit:              On user-facing errors (ref not found, no commits).
-        PathNotInSnapshotError:  When any requested path is absent from the source.
-        MissingObjectError:      When a required blob is absent from the object store.
+        typer.Exit: On user-facing errors (ref not found, no commits).
+        PathNotInSnapshotError: When any requested path is absent from the source.
+        MissingObjectError: When a required blob is absent from the object store.
     """
     import json
 
@@ -147,8 +147,8 @@ async def perform_restore(
     repo_id = repo_data["repo_id"]
 
     # ── Current branch ───────────────────────────────────────────────────
-    head_ref = (muse_dir / "HEAD").read_text().strip()  # "refs/heads/main"
-    branch = head_ref.rsplit("/", 1)[-1]  # "main"
+    head_ref = (muse_dir / "HEAD").read_text().strip() # "refs/heads/main"
+    branch = head_ref.rsplit("/", 1)[-1] # "main"
     ref_path = muse_dir / pathlib.Path(head_ref)
 
     if not ref_path.exists() or not ref_path.read_text().strip():

@@ -1,7 +1,7 @@
 """muse motif — identify, track, and compare recurring melodic motifs.
 
 A motif is a short melodic or rhythmic idea that reappears and transforms
-throughout a composition.  This command group surfaces motif-level analysis
+throughout a composition. This command group surfaces motif-level analysis
 over the Muse VCS commit history.
 
 Subcommands
@@ -11,9 +11,9 @@ Subcommands
     Detect recurring melodic/rhythmic patterns in a commit (default: HEAD).
 
 ``muse motif track <pattern>``
-    Search all commits for appearances of a specific motif.  The pattern
+    Search all commits for appearances of a specific motif. The pattern
     is expressed as space-separated note names (``"C D E G"``) or MIDI
-    numbers (``"60 62 64 67"``).  Transpositions and standard transformations
+    numbers (``"60 62 64 67"``). Transpositions and standard transformations
     (inversion, retrograde, retrograde-inversion) are detected automatically.
 
 ``muse motif diff <commit-a> <commit-b>``
@@ -24,23 +24,23 @@ Subcommands
 
 Flags on ``find``
 -----------------
---min-length N     Minimum motif length in notes (default: 3).
---section TEXT     Scope to a named section/region.
---track TEXT       Scope to a named MIDI track.
---json             Machine-readable JSON output.
+--min-length N Minimum motif length in notes (default: 3).
+--section TEXT Scope to a named section/region.
+--track TEXT Scope to a named MIDI track.
+--json Machine-readable JSON output.
 
 All subcommands support ``--json`` for agent consumption.
 
 Output example (find, default)::
 
-    Recurring motifs — commit a1b2c3d4  (HEAD -> main)
+    Recurring motifs — commit a1b2c3d4 (HEAD -> main)
     ── stub mode: full MIDI analysis pending ──
 
-    #  Fingerprint          Contour           Count
-    -  -------------------  ----------------  -----
-    1  [+2, +2, -1, +2]     ascending-step    3
-    2  [-2, -2, +1, -2]     descending-step   2
-    3  [+4, -2, +3]         arch              2
+    # Fingerprint Contour Count
+    - ------------------- ---------------- -----
+    1 [+2, +2, -1, +2] ascending-step 3
+    2 [-2, -2, +1, -2] descending-step 2
+    3 [+4, -2, +3] arch 2
 
     3 motifs found (min-length 3)
 """
@@ -111,17 +111,17 @@ def _format_find(result: MotifFindResult, *, as_json: bool) -> str:
         return json.dumps(payload, indent=2)
 
     lines: list[str] = [
-        f"Recurring motifs — commit {result.commit_id}  (HEAD -> {result.branch})",
+        f"Recurring motifs — commit {result.commit_id} (HEAD -> {result.branch})",
     ]
     if result.source == "stub":
         lines.append("── stub mode: full MIDI analysis pending ──")
     lines.append("")
-    lines.append(f"{'#':<3}  {'Fingerprint':<22}  {'Contour':<18}  {'Count':>5}")
-    lines.append(f"{'-':<3}  {'-'*22}  {'-'*18}  {'-'*5}")
+    lines.append(f"{'#':<3} {'Fingerprint':<22} {'Contour':<18} {'Count':>5}")
+    lines.append(f"{'-':<3} {'-'*22} {'-'*18} {'-'*5}")
     for idx, group in enumerate(result.motifs, start=1):
         fp_str = "[" + ", ".join(f"{'+' if i >= 0 else ''}{i}" for i in group.fingerprint) + "]"
         lines.append(
-            f"{idx:<3}  {fp_str:<22}  {group.label:<18}  {group.count:>5}"
+            f"{idx:<3} {fp_str:<22} {group.label:<18} {group.count:>5}"
         )
     lines.append("")
     lines.append(f"{result.total_found} motif(s) found (min-length {result.min_length})")
@@ -164,12 +164,12 @@ def _format_track(result: MotifTrackResult, *, as_json: bool) -> str:
         lines.append("No occurrences found.")
         return "\n".join(lines)
 
-    lines.append(f"{'Commit':<10}  {'Track':<12}  {'Transform':<14}  {'Position':>8}")
-    lines.append(f"{'-'*10}  {'-'*12}  {'-'*14}  {'-'*8}")
+    lines.append(f"{'Commit':<10} {'Track':<12} {'Transform':<14} {'Position':>8}")
+    lines.append(f"{'-'*10} {'-'*12} {'-'*14} {'-'*8}")
     for occ in result.occurrences:
         lines.append(
-            f"{occ.commit_id:<10}  {occ.track:<12}  "
-            f"{occ.transformation.value:<14}  {occ.start_position:>8}"
+            f"{occ.commit_id:<10} {occ.track:<12} "
+            f"{occ.transformation.value:<14} {occ.start_position:>8}"
         )
     lines.append("")
     lines.append(f"{len(result.occurrences)} occurrence(s) found.")
@@ -204,8 +204,8 @@ def _format_diff(result: MotifDiffResult, *, as_json: bool) -> str:
     lines: list[str] = [
         f"Motif diff: {result.commit_a.commit_id} → {result.commit_b.commit_id}",
         "",
-        f"  A ({result.commit_a.commit_id}): {_fp(result.commit_a.fingerprint)}  [{result.commit_a.label}]",
-        f"  B ({result.commit_b.commit_id}): {_fp(result.commit_b.fingerprint)}  [{result.commit_b.label}]",
+        f" A ({result.commit_a.commit_id}): {_fp(result.commit_a.fingerprint)} [{result.commit_a.label}]",
+        f" B ({result.commit_b.commit_id}): {_fp(result.commit_b.fingerprint)} [{result.commit_b.label}]",
         "",
         f"Transformation: {result.transformation.value.upper()}",
         f"{result.description}",
@@ -237,12 +237,12 @@ def _format_list(result: MotifListResult, *, as_json: bool) -> str:
         return "No named motifs saved. Use `muse motif find` to discover them."
 
     lines: list[str] = ["Named motifs:", ""]
-    lines.append(f"{'Name':<20}  {'Fingerprint':<22}  {'Created':<24}  Description")
-    lines.append(f"{'-'*20}  {'-'*22}  {'-'*24}  {'-'*30}")
+    lines.append(f"{'Name':<20} {'Fingerprint':<22} {'Created':<24} Description")
+    lines.append(f"{'-'*20} {'-'*22} {'-'*24} {'-'*30}")
     for m in result.motifs:
         fp_str = "[" + ", ".join(f"{'+' if i >= 0 else ''}{i}" for i in m.fingerprint) + "]"
         desc = (m.description or "")[:30]
-        lines.append(f"{m.name:<20}  {fp_str:<22}  {m.created_at:<24}  {desc}")
+        lines.append(f"{m.name:<20} {fp_str:<22} {m.created_at:<24} {desc}")
     return "\n".join(lines)
 
 
@@ -253,7 +253,7 @@ def _resolve_head(root: pathlib.Path) -> tuple[str, str]:
         root: Repository root (directory containing ``.muse/``).
 
     Returns:
-        A ``(commit_id, branch)`` pair.  ``commit_id`` is at most 8 chars;
+        A ``(commit_id, branch)`` pair. ``commit_id`` is at most 8 chars;
         ``branch`` is the branch name extracted from the HEAD ref.
     """
     muse_dir = root / ".muse"
@@ -311,7 +311,7 @@ def motif_find(
     root = require_repo()
 
     async def _run() -> None:
-        async with open_session() as session:  # noqa: F841 — reserved for DB queries
+        async with open_session() as session: # noqa: F841 — reserved for DB queries
             commit_id, branch = _resolve_head(root)
             resolved = commit or commit_id
             result = await find_motifs(
@@ -363,7 +363,7 @@ def motif_track(
     root = require_repo()
 
     async def _run() -> None:
-        async with open_session() as session:  # noqa: F841 — reserved for DB queries
+        async with open_session() as session: # noqa: F841 — reserved for DB queries
             muse_dir = root / ".muse"
             commit_ids: list[str] = []
             head_ref = (muse_dir / "HEAD").read_text().strip()

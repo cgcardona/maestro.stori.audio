@@ -1,16 +1,16 @@
 """Unit tests for the MuseHub content negotiation helper.
 
-Covers issue #200 — negotiate_response() dispatches HTML vs JSON based on
+Covers — negotiate_response() dispatches HTML vs JSON based on
 Accept header and ?format query param.
 
 Tests:
-- test_negotiate_wants_json_format_param         — ?format=json → JSON path
-- test_negotiate_wants_json_accept_header        — Accept: application/json → JSON path
-- test_negotiate_wants_html_by_default           — no header/param → HTML path
-- test_negotiate_wants_html_text_html_header     — Accept: text/html → HTML path
-- test_negotiate_json_uses_pydantic_by_alias     — camelCase keys in JSON output
-- test_negotiate_json_fallback_to_context        — no json_data → context dict as JSON
-- test_negotiate_accept_partial_match            — mixed Accept header containing json
+- test_negotiate_wants_json_format_param — ?format=json → JSON path
+- test_negotiate_wants_json_accept_header — Accept: application/json → JSON path
+- test_negotiate_wants_html_by_default — no header/param → HTML path
+- test_negotiate_wants_html_text_html_header — Accept: text/html → HTML path
+- test_negotiate_json_uses_pydantic_by_alias — camelCase keys in JSON output
+- test_negotiate_json_fallback_to_context — no json_data → context dict as JSON
+- test_negotiate_accept_partial_match — mixed Accept header containing json
 """
 from __future__ import annotations
 

@@ -85,7 +85,7 @@ class TestObjectStore:
         # Second write with different bytes — should be skipped (content-addressed).
         assert write_object(tmp_path, oid, b"different") is False
         dest = object_path(tmp_path, oid)
-        assert dest.read_bytes() == content  # Original bytes preserved.
+        assert dest.read_bytes() == content # Original bytes preserved.
 
     def test_has_object_false_before_write(self, tmp_path: pathlib.Path) -> None:
         _init_muse_repo(tmp_path)
@@ -290,7 +290,7 @@ async def test_read_tree_dry_run_does_not_write(
     snap_id = compute_snapshot_id(manifest)
 
     original_file = tmp_path / "muse-work" / "bass.mid"
-    original_file.unlink()  # Remove so we can detect if it's restored.
+    original_file.unlink() # Remove so we can detect if it's restored.
 
     result = await _read_tree_async(
         snapshot_id=snap_id,
@@ -473,7 +473,7 @@ async def test_read_tree_abbreviated_snapshot_id(
     (tmp_path / "muse-work" / "keys.mid").unlink()
 
     result = await _read_tree_async(
-        snapshot_id=snap_id[:8],  # 8-char abbreviated ID
+        snapshot_id=snap_id[:8], # 8-char abbreviated ID
         root=tmp_path,
         session=muse_cli_db_session,
     )

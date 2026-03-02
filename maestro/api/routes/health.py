@@ -16,20 +16,20 @@ router = APIRouter()
 class HealthDependencyDict(TypedDict, total=False):
     """Status entry for one external dependency in the full health check.
 
-    ``status`` is always present.  Additional keys depend on the dependency:
+    ``status`` is always present. Additional keys depend on the dependency:
     ``provider`` for LLM, ``url`` for Storpheus, ``bucket`` for S3.
     """
 
     status: Required[str]
-    provider: str   # LLM only
-    url: str        # Storpheus only
-    bucket: str     # S3 only
+    provider: str # LLM only
+    url: str # Storpheus only
+    bucket: str # S3 only
 
 
 class FullHealthCheckDict(TypedDict):
     """Response shape for ``GET /health/full``."""
 
-    status: str             # "ok" | "degraded"
+    status: str # "ok" | "degraded"
     service: str
     version: str
     tagline: str

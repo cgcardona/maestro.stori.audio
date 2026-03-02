@@ -8,8 +8,8 @@ Directory layout::
 
     .muse/
         sessions/
-            current.json        ← active session (only while recording)
-            <uuid>.json         ← completed sessions (one file each)
+            current.json ← active session (only while recording)
+            <uuid>.json ← completed sessions (one file each)
 
 Session JSON schema::
 
@@ -27,10 +27,10 @@ Session JSON schema::
 
 Subcommands
 -----------
-- ``start``   — open a new session (writes ``current.json``)
-- ``end``     — finalise the active session (moves to ``<uuid>.json``)
-- ``log``     — list all completed sessions, newest first
-- ``show``    — print a specific session by ID (prefix match supported)
+- ``start`` — open a new session (writes ``current.json``)
+- ``end`` — finalise the active session (moves to ``<uuid>.json``)
+- ``log`` — list all completed sessions, newest first
+- ``show`` — print a specific session by ID (prefix match supported)
 - ``credits`` — aggregate all participants across completed sessions
 """
 from __future__ import annotations
@@ -183,7 +183,7 @@ def start(
 
     if current_path.exists():
         typer.echo(
-            "⚠️  A session is already active. Run `muse session end` before starting a new one."
+            "⚠️ A session is already active. Run `muse session end` before starting a new one."
         )
         raise typer.Exit(code=ExitCode.USER_ERROR)
 
@@ -202,13 +202,13 @@ def start(
     }
     _write_session(current_path, session)
 
-    typer.echo(f"✅ Session started  [{session_id}]")
+    typer.echo(f"✅ Session started [{session_id}]")
     if participant_list:
-        typer.echo(f"   Participants : {', '.join(participant_list)}")
+        typer.echo(f" Participants : {', '.join(participant_list)}")
     if location:
-        typer.echo(f"   Location     : {location}")
+        typer.echo(f" Location : {location}")
     if intent:
-        typer.echo(f"   Intent       : {intent}")
+        typer.echo(f" Intent : {intent}")
     logger.info("✅ Session started: %s", session_id)
 
 
@@ -229,7 +229,7 @@ def end(
     current_path = sessions_dir / _CURRENT
 
     if not current_path.exists():
-        typer.echo("⚠️  No active session. Run `muse session start` first.")
+        typer.echo("⚠️ No active session. Run `muse session start` first.")
         raise typer.Exit(code=ExitCode.USER_ERROR)
 
     session = _read_session(current_path)
@@ -253,8 +253,8 @@ def end(
         typer.echo(f"❌ Failed to finalise session: {exc}")
         raise typer.Exit(code=ExitCode.INTERNAL_ERROR) from exc
 
-    typer.echo(f"✅ Session ended    [{session_id}]")
-    typer.echo(f"   Saved to       : .muse/sessions/{session_id}.json")
+    typer.echo(f"✅ Session ended [{session_id}]")
+    typer.echo(f" Saved to : .muse/sessions/{session_id}.json")
     logger.info("✅ Session ended: %s", session_id)
 
 
@@ -276,7 +276,7 @@ def log_sessions() -> None:
         parts = s.get("participants", [])
         part_list = parts if isinstance(parts, list) else []
         part_str = ", ".join(str(p) for p in part_list)
-        typer.echo(f"{sid[:8]}  {started[:19]}  →  {ended[:19]}  [{part_str}]")
+        typer.echo(f"{sid[:8]} {started[:19]} → {ended[:19]} [{part_str}]")
 
 
 @app.command("show")
@@ -306,7 +306,7 @@ def show(
 
     if len(matches) > 1:
         typer.echo(
-            f"⚠️  Ambiguous prefix '{session_id}' matches {len(matches)} sessions. "
+            f"⚠️ Ambiguous prefix '{session_id}' matches {len(matches)} sessions. "
             "Provide more characters."
         )
         raise typer.Exit(code=ExitCode.USER_ERROR)
@@ -341,4 +341,4 @@ def credits_cmd() -> None:
 
     typer.echo("Session credits:")
     for name, n in sorted(counts.items(), key=lambda kv: kv[1], reverse=True):
-        typer.echo(f"  {name:30s}  {n} session{'s' if n != 1 else ''}")
+        typer.echo(f" {name:30s} {n} session{'s' if n != 1 else ''}")

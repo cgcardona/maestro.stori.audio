@@ -6,7 +6,7 @@ export the best seeds per genre as MIDI files + metadata index.
 Usage:
     python build_seed_library.py [--output-dir seed_library] [--top-n 10]
 
-Requires ~2-4 GB RAM to load the pickle.  Writes MIDI files and a
+Requires ~2-4 GB RAM to load the pickle. Writes MIDI files and a
 metadata.json index to the output directory.
 """
 from __future__ import annotations
@@ -24,7 +24,7 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Any
 
-logging.basicConfig(level=logging.INFO, format="%(levelname)s  %(message)s")
+logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
@@ -117,7 +117,7 @@ def classify_genre(title: str, artist: str) -> str:
 def score_token_sequence(tokens: list[int]) -> float:
     """Score a token sequence for seed quality (0-1).
 
-    Higher is better.  We reward:
+    Higher is better. We reward:
     - Length (more context for the model)
     - Diversity of token values (harmonic richness)
     - Moderate repetition (musical structure, not noise)
@@ -152,12 +152,12 @@ def tokens_to_midi_bytes(tokens: list[int], tempo: int = 120) -> bytes:
 
     Uses the exact same decoding as the HF Space's ``save_midi()`` in app.py:
 
-    - Tokens   0-255:   time delta (value * 16 ms)
+    - Tokens 0-255: time delta (value * 16 ms)
     - Tokens 256-16767: patch/pitch — patch=(tok-256)//128, pitch=(tok-256)%128
     - Tokens 16768-18815: dur/vel — dur=((tok-16768)//8)*16, vel=(((tok-16768)%8)+1)*15
-    - Token  18816: SOS (ignored)
-    - Token  18817: Outro (ignored)
-    - Token  18818: EOS (ignored)
+    - Token 18816: SOS (ignored)
+    - Token 18817: Outro (ignored)
+    - Token 18818: EOS (ignored)
     """
     ticks_per_beat = 480
     microseconds_per_beat = int(60_000_000 / tempo)
@@ -172,10 +172,10 @@ def tokens_to_midi_bytes(tokens: list[int], tempo: int = 120) -> bytes:
 
     patches: list[int] = [-1] * 16
     channels: list[int] = [0] * 16
-    channels[9] = 1  # channel 9 reserved for drums
+    channels[9] = 1 # channel 9 reserved for drums
 
-    events: list[tuple[int, int, int, int, int, int]] = []  # (tick, ch, note, vel, dur_ticks, patch)
-    program_changes: list[tuple[int, int, int]] = []  # (tick, ch, program)
+    events: list[tuple[int, int, int, int, int, int]] = [] # (tick, ch, note, vel, dur_ticks, patch)
+    program_changes: list[tuple[int, int, int]] = [] # (tick, ch, program)
 
     for tok in tokens:
         if tok == 18816 or tok == 18817 or tok == 18818:
@@ -319,11 +319,11 @@ def main() -> None:
         })
 
         if (idx + 1) % 50000 == 0:
-            logger.info(f"   Processed {idx + 1}/{len(dataset)}...")
+            logger.info(f" Processed {idx + 1}/{len(dataset)}...")
 
     logger.info(f"📊 Classified into {len(genre_buckets)} genres")
     for g, items in sorted(genre_buckets.items(), key=lambda x: -len(x[1])):
-        logger.info(f"   {g}: {len(items)} loops")
+        logger.info(f" {g}: {len(items)} loops")
 
     # ── Select top-N per genre and export MIDI ──
     metadata: dict[str, list[dict[str, Any]]] = {}
@@ -353,7 +353,7 @@ def main() -> None:
                 "sha256": hashlib.sha256(midi_bytes).hexdigest()[:16],
             }
             genre_meta.append(entry_meta)
-            logger.info(f"   ✅ {slug}: score={item['score']:.4f}, {item['token_count']} tokens — {item['title']}")
+            logger.info(f" ✅ {slug}: score={item['score']:.4f}, {item['token_count']} tokens — {item['title']}")
 
         metadata[genre] = genre_meta
 
@@ -369,7 +369,7 @@ def main() -> None:
         }, f, indent=2)
 
     logger.info(f"\n🎉 Seed library built: {index_path}")
-    logger.info(f"   {sum(len(v) for v in metadata.values())} seed files across {len(metadata)} genres")
+    logger.info(f" {sum(len(v) for v in metadata.values())} seed files across {len(metadata)} genres")
 
 
 if __name__ == "__main__":

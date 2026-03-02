@@ -1,6 +1,6 @@
 """Tests for ``maestro.muse_cli._repo`` and public ``maestro.muse_cli.repo``.
 
-Covers every acceptance criterion from issue #46:
+Covers every acceptance criterion:
 
 - Returns current dir if ``.muse/`` is present
 - Traverses up and finds a parent ``.muse/``
@@ -121,7 +121,7 @@ def test_require_repo_exits_2_when_no_muse(tmp_path: pathlib.Path) -> None:
 
 
 def test_require_repo_error_message_matches_standard(tmp_path: pathlib.Path) -> None:
-    """The error message matches the git-style format specified in issue #46."""
+    """The error message matches the git-style format specified."""
     prev = os.getcwd()
     try:
         os.chdir(tmp_path)

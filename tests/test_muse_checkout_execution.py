@@ -23,7 +23,7 @@ from maestro.core.state_store import StateStore
 from maestro.core.tracing import TraceContext
 from maestro.core.tools import ToolName
 from maestro.db.database import Base
-from maestro.db import muse_models  # noqa: F401 — register tables
+from maestro.db import muse_models # noqa: F401 — register tables
 from maestro.models.variation import (
     MidiNoteSnapshot,
     NoteChange,

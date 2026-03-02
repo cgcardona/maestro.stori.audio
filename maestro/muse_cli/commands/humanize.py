@@ -7,31 +7,31 @@ preserving the musical identity of the original.
 
 Presets
 -------
-``--tight``    Subtle humanization: timing ±5 ms, velocity ±5.
-``--natural``  Moderate humanization: timing ±12 ms, velocity ±10.  (default)
-``--loose``    Heavy humanization: timing ±20 ms, velocity ±15.
+``--tight`` Subtle humanization: timing ±5 ms, velocity ±5.
+``--natural`` Moderate humanization: timing ±12 ms, velocity ±10. (default)
+``--loose`` Heavy humanization: timing ±20 ms, velocity ±15.
 
 Custom control
 --------------
-``--factor FLOAT``  0.0 = no change; 1.0 = maximum natural variation (maps to
+``--factor FLOAT`` 0.0 = no change; 1.0 = maximum natural variation (maps to
                     the ``--loose`` ceiling).
-``--timing-only``   Apply timing variation only; preserve all velocities.
+``--timing-only`` Apply timing variation only; preserve all velocities.
 ``--velocity-only`` Apply velocity variation only; preserve all note positions.
 
 Scoping
 -------
-``--track TEXT``    Restrict humanization to a single named track.
-``--section TEXT``  Restrict humanization to a named section/region.
+``--track TEXT`` Restrict humanization to a single named track.
+``--section TEXT`` Restrict humanization to a named section/region.
 
 Reproducibility
 ---------------
-``--seed N``  Fix the random seed so the same invocation produces identical
-              output every time.  Without ``--seed``, each run is stochastic.
+``--seed N`` Fix the random seed so the same invocation produces identical
+              output every time. Without ``--seed``, each run is stochastic.
 
 Output
 ------
 Default: human-readable summary table showing per-track timing/velocity deltas.
-``--json``    Emit a machine-readable JSON payload — use in agentic pipelines.
+``--json`` Emit a machine-readable JSON payload — use in agentic pipelines.
 
 Example::
 
@@ -142,10 +142,10 @@ def _resolve_preset(
     Default when no flag is given: ``natural`` preset.
 
     Args:
-        tight:   ``--tight`` flag.
+        tight: ``--tight`` flag.
         natural: ``--natural`` flag.
-        loose:   ``--loose`` flag.
-        factor:  ``--factor`` float, if provided.
+        loose: ``--loose`` flag.
+        factor: ``--factor`` float, if provided.
 
     Returns:
         Tuple of (preset_label, normalized_factor).
@@ -214,16 +214,16 @@ def _apply_humanization(
     identity — only velocity humanization is applied to the drum track.
 
     This is a stub: real implementation will load MIDI notes from the commit
-    snapshot, apply the offsets, and write back a new object.  The returned
+    snapshot, apply the offsets, and write back a new object. The returned
     ``notes_affected`` count is a realistic placeholder.
 
     Args:
-        track_name:     Name of the MIDI track.
-        timing_ms:      Maximum timing offset in milliseconds (±).
+        track_name: Name of the MIDI track.
+        timing_ms: Maximum timing offset in milliseconds (±).
         velocity_range: Maximum velocity offset (±).
-        timing_only:    If True, skip velocity humanization.
-        velocity_only:  If True, skip timing humanization.
-        rng:            Seeded random instance for deterministic output.
+        timing_only: If True, skip velocity humanization.
+        velocity_only: If True, skip timing humanization.
+        rng: Seeded random instance for deterministic output.
 
     Returns:
         :class:`TrackHumanizeResult` with applied delta metadata.
@@ -268,7 +268,7 @@ async def _humanize_async(
     """Apply humanization to a commit's MIDI and emit the result.
 
     Stub implementation: computes per-track humanization metadata from the
-    resolved factor and produces a new (fake) commit ID.  The full
+    resolved factor and produces a new (fake) commit ID. The full
     implementation will:
 
     1. Load MIDI notes from the source commit's snapshot.
@@ -278,18 +278,18 @@ async def _humanize_async(
     4. Commit the snapshot via the Muse VCS commit engine.
 
     Args:
-        root:          Repository root (containing ``.muse/``).
-        session:       Open async DB session (reserved for full implementation).
+        root: Repository root (containing ``.muse/``).
+        session: Open async DB session (reserved for full implementation).
         source_commit: Source commit ref, or ``None`` for HEAD.
-        preset:        Preset label (``tight``, ``natural``, ``loose``, ``custom``).
-        factor:        Normalized humanization factor [0.0, 1.0].
-        seed:          Random seed for deterministic output; ``None`` = stochastic.
-        timing_only:   If True, skip velocity humanization.
+        preset: Preset label (``tight``, ``natural``, ``loose``, ``custom``).
+        factor: Normalized humanization factor [0.0, 1.0].
+        seed: Random seed for deterministic output; ``None`` = stochastic.
+        timing_only: If True, skip velocity humanization.
         velocity_only: If True, skip timing humanization.
-        track:         Restrict to a single named track; ``None`` = all tracks.
-        section:       Restrict to a named section/region (stub: noted in output).
-        message:       Commit message override; ``None`` = auto-generated.
-        as_json:       Emit JSON instead of ASCII table.
+        track: Restrict to a single named track; ``None`` = all tracks.
+        section: Restrict to a named section/region (stub: noted in output).
+        message: Commit message override; ``None`` = auto-generated.
+        as_json: Emit JSON instead of ASCII table.
 
     Returns:
         :class:`HumanizeResult` with full metadata for agent consumption.
@@ -315,7 +315,7 @@ async def _humanize_async(
         all_tracks = [t for t in all_tracks if t.lower().startswith(track.lower())]
 
     if section:
-        logger.warning("⚠️  --section %s: region scoping not yet implemented.", section)
+        logger.warning("⚠️ --section %s: region scoping not yet implemented.", section)
 
     track_results = [
         _apply_humanization(
@@ -361,42 +361,42 @@ async def _humanize_async(
 # Renderers
 # ---------------------------------------------------------------------------
 
-_COL_WIDTHS = (12, 12, 10, 14, 16)  # track, timing_ms, vel_range, notes, drum_excluded
+_COL_WIDTHS = (12, 12, 10, 14, 16) # track, timing_ms, vel_range, notes, drum_excluded
 
 
 def _render_table(result: HumanizeResult) -> None:
     """Emit a human-readable summary of the humanization pass."""
-    seed_note = f"  seed={result['seed']}" if result["seed"] is not None else ""
+    seed_note = f" seed={result['seed']}" if result["seed"] is not None else ""
     typer.echo(
         f"Humanize — {result['preset']} (factor={result['factor']:.2f})"
-        f"  source={result['source_commit']}{seed_note}"
+        f" source={result['source_commit']}{seed_note}"
     )
     typer.echo("")
 
     header = (
-        f"{'Track':<{_COL_WIDTHS[0]}}  "
-        f"{'Timing ±ms':>{_COL_WIDTHS[1]}}  "
-        f"{'Vel ±':>{_COL_WIDTHS[2]}}  "
-        f"{'Notes':>{_COL_WIDTHS[3]}}  "
+        f"{'Track':<{_COL_WIDTHS[0]}} "
+        f"{'Timing ±ms':>{_COL_WIDTHS[1]}} "
+        f"{'Vel ±':>{_COL_WIDTHS[2]}} "
+        f"{'Notes':>{_COL_WIDTHS[3]}} "
         f"{'Drum excluded':<{_COL_WIDTHS[4]}}"
     )
-    sep = "  ".join("-" * w for w in _COL_WIDTHS)
+    sep = " ".join("-" * w for w in _COL_WIDTHS)
     typer.echo(header)
     typer.echo(sep)
 
     for tr in result["tracks"]:
         drum_flag = "yes" if tr["drum_channel_excluded"] else "no"
         typer.echo(
-            f"{tr['track']:<{_COL_WIDTHS[0]}}  "
-            f"{tr['timing_range_ms']:>{_COL_WIDTHS[1]}}  "
-            f"{tr['velocity_range']:>{_COL_WIDTHS[2]}}  "
-            f"{tr['notes_affected']:>{_COL_WIDTHS[3]}}  "
+            f"{tr['track']:<{_COL_WIDTHS[0]}} "
+            f"{tr['timing_range_ms']:>{_COL_WIDTHS[1]}} "
+            f"{tr['velocity_range']:>{_COL_WIDTHS[2]}} "
+            f"{tr['notes_affected']:>{_COL_WIDTHS[3]}} "
             f"{drum_flag:<{_COL_WIDTHS[4]}}"
         )
 
     typer.echo("")
     typer.echo(f"✅ New commit: {result['new_commit_id']}")
-    typer.echo("   (stub — full MIDI rewrite pending Storpheus note-level access)")
+    typer.echo(" (stub — full MIDI rewrite pending Storpheus note-level access)")
 
 
 def _render_json(result: HumanizeResult) -> None:
@@ -513,7 +513,7 @@ def humanize(
 
     Produces a new Muse commit with realistic human-performance variation.
     Use ``--seed`` for deterministic output; omit it for a fresh stochastic
-    pass each invocation.  Drum tracks are automatically excluded from timing
+    pass each invocation. Drum tracks are automatically excluded from timing
     variation to preserve groove identity.
     """
     root = require_repo()

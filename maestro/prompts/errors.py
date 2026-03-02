@@ -1,7 +1,7 @@
 """Prompt parsing errors.
 
 These are raised by the parser and caught by route handlers to produce
-structured 400 responses.  They are *not* logged as server errors — they
+structured 400 responses. They are *not* logged as server errors — they
 represent invalid client input.
 """
 from __future__ import annotations

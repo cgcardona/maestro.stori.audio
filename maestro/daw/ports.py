@@ -1,7 +1,7 @@
 """DAW adapter protocol — the only DAW interface Maestro core may depend on.
 
 Concrete adapters (e.g. ``app.daw.stori.adapter.StoriDAWAdapter``) implement
-this protocol.  Maestro orchestration code imports ``DAWAdapter`` and
+this protocol. Maestro orchestration code imports ``DAWAdapter`` and
 ``ToolRegistry``; it never imports a concrete adapter directly.
 """
 from __future__ import annotations

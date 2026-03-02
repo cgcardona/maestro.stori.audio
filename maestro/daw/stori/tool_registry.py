@@ -1,6 +1,6 @@
 """Stori DAW tool registry — metadata, MCP definitions, and derived sets.
 
-Single entry point for all Stori tool vocabulary.  Consolidates the MCP
+Single entry point for all Stori tool vocabulary. Consolidates the MCP
 wire definitions, LLM tool schemas, per-tool metadata, and derived
 classification sets (server-side vs. DAW, categories).
 """

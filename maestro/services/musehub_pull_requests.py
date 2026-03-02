@@ -84,7 +84,7 @@ async def create_pr(
     ``author`` identifies the user opening the PR — typically the JWT ``sub``
     claim from the request token, or a display name from the seed script.
 
-    Raises ``ValueError`` if ``from_branch`` does not exist in the repo —
+    Raises ``ValueError`` if ``from_branch`` does not exist in the repo
     the caller should surface this as HTTP 404.
     """
     branch = await _get_branch(session, repo_id, from_branch)
@@ -154,7 +154,7 @@ async def merge_pr(
 
     Creates a merge commit on ``to_branch`` with parent_ids =
     [to_branch head, from_branch head], updates the branch head pointer, and
-    marks the PR as ``merged``.  Sets ``merged_at`` to the current UTC time
+    marks the PR as ``merged``. Sets ``merged_at`` to the current UTC time
     so the timeline overlay can position the merge marker at the actual merge
     instant rather than the PR creation date.
 
@@ -310,7 +310,7 @@ async def list_pr_comments(
 
     Top-level comments (``parent_comment_id`` is None) form the root list.
     Each carries a ``replies`` list with direct children sorted by
-    ``created_at`` ascending.  Grandchildren are not supported — the caller
+    ``created_at`` ascending. Grandchildren are not supported — the caller
     should reply to the original top-level comment.
 
     Returns ``PRCommentListResponse`` with ``total`` covering all levels.
@@ -451,7 +451,7 @@ async def list_reviews(
     """Return all reviews for a PR, optionally filtered by state.
 
     ``state`` may be one of ``pending``, ``approved``, ``changes_requested``,
-    or ``dismissed``.  When ``None``, all reviews are returned.
+    or ``dismissed``. When ``None``, all reviews are returned.
 
     Raises ``ValueError`` if the PR does not exist in the repo.
     """
@@ -478,9 +478,9 @@ async def submit_review(
     """Submit or update a formal review for ``reviewer_username`` on a PR.
 
     ``event`` maps to a new state:
-      - ``approve``         → ``approved``
+      - ``approve`` → ``approved``
       - ``request_changes`` → ``changes_requested``
-      - ``comment``         → ``pending`` (body-only, no verdict change)
+      - ``comment`` → ``pending`` (body-only, no verdict change)
 
     If an existing row for this reviewer already exists, it is updated in-place.
     If no row exists (reviewer was not formally requested), a new row is created

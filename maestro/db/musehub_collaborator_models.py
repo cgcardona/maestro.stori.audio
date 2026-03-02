@@ -26,7 +26,7 @@ class MusehubCollaborator(Base):
     """A collaborator record granting a user explicit access to a repo.
 
     ``permission`` is one of "read" | "write" | "admin"; defaults to "write".
-    ``invited_by`` references the user who extended the invitation (nullable —
+    ``invited_by`` references the user who extended the invitation (nullable
     some collaborators may be added programmatically without an inviter).
     ``accepted_at`` is null until the invited user explicitly accepts.
     """

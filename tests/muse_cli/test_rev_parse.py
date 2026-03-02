@@ -2,7 +2,7 @@
 
 All async tests call ``_rev_parse_async`` directly with an in-memory SQLite
 session and a ``tmp_path`` repo root — no real Postgres or running process
-required.  Commits are seeded via ``_commit_async`` for realistic parent
+required. Commits are seeded via ``_commit_async`` for realistic parent
 chain data.
 
 Covers all revision expression types:
@@ -102,7 +102,7 @@ async def test_rev_parse_HEAD_returns_head_commit(
         abbrev_ref=False,
     )
     out = capsys.readouterr().out.strip()
-    assert out == cids[-1]  # newest commit
+    assert out == cids[-1] # newest commit
 
 
 # ---------------------------------------------------------------------------
@@ -147,7 +147,7 @@ async def test_rev_parse_full_commit_id(
     """``muse rev-parse <full_id>`` echoes the same commit ID back."""
     _init_muse_repo(tmp_path)
     cids = await _make_commits(tmp_path, muse_cli_db_session, ["v1", "v2", "v3"])
-    target = cids[1]  # middle commit
+    target = cids[1] # middle commit
 
     capsys.readouterr()
     await _rev_parse_async(
@@ -216,7 +216,7 @@ async def test_rev_parse_HEAD_tilde_1(
         abbrev_ref=False,
     )
     out = capsys.readouterr().out.strip()
-    assert out == cids[1]  # one step back from cids[2]
+    assert out == cids[1] # one step back from cids[2]
 
 
 # ---------------------------------------------------------------------------
@@ -244,7 +244,7 @@ async def test_rev_parse_HEAD_tilde_2(
         abbrev_ref=False,
     )
     out = capsys.readouterr().out.strip()
-    assert out == cids[0]  # two steps back from cids[2]
+    assert out == cids[0] # two steps back from cids[2]
 
 
 # ---------------------------------------------------------------------------
@@ -402,7 +402,7 @@ async def test_rev_parse_tilde_beyond_root_returns_nothing(
     _init_muse_repo(tmp_path)
     await _make_commits(tmp_path, muse_cli_db_session, ["one", "two"])
 
-    capsys.readouterr()  # discard commit output from _make_commits
+    capsys.readouterr() # discard commit output from _make_commits
     await _rev_parse_async(
         root=tmp_path,
         session=muse_cli_db_session,

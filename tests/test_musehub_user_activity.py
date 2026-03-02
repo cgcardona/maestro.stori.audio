@@ -1,4 +1,4 @@
-"""Tests for GET /musehub/users/{username}/activity — issue #418.
+"""Tests for GET /musehub/users/{username}/activity — .
 
 Covers:
 - 404 for unknown username

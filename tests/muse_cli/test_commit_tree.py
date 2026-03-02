@@ -1,7 +1,7 @@
 """Tests for ``muse commit-tree``.
 
 Tests exercise ``_commit_tree_async`` directly with an in-memory SQLite session
-so no real Postgres instance is required.  The ``muse_cli_db_session`` fixture
+so no real Postgres instance is required. The ``muse_cli_db_session`` fixture
 (from tests/muse_cli/conftest.py) provides the isolated SQLite session.
 
 All async tests use ``@pytest.mark.anyio``.
@@ -29,7 +29,7 @@ from maestro.muse_cli.snapshot import compute_commit_tree_id
 
 async def _seed_snapshot(session: AsyncSession, files: int = 2) -> str:
     """Insert a minimal MuseCliSnapshot row and return its snapshot_id."""
-    snapshot_id = "a" * 64  # fixed deterministic value for test simplicity
+    snapshot_id = "a" * 64 # fixed deterministic value for test simplicity
     manifest: dict[str, str] = {f"track{i}.mid": "b" * 64 for i in range(files)}
     snap = MuseCliSnapshot(snapshot_id=snapshot_id, manifest=manifest)
     session.add(snap)
@@ -99,7 +99,7 @@ async def test_commit_tree_does_not_update_any_ref(
     refs_dir = muse_dir / "refs" / "heads"
     refs_dir.mkdir(parents=True)
     (muse_dir / "HEAD").write_text("refs/heads/main")
-    (refs_dir / "main").write_text("deadbeef" * 8)  # fake HEAD SHA
+    (refs_dir / "main").write_text("deadbeef" * 8) # fake HEAD SHA
 
     snapshot_id = await _seed_snapshot(muse_cli_db_session)
 

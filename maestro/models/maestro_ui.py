@@ -1,6 +1,6 @@
 """Pydantic models for the Maestro Default UI endpoints.
 
-Serves prompt inspiration cards, placeholder strings, and budget status —
+Serves prompt inspiration cards, placeholder strings, and budget status
 all consumed by the macOS client's creative launchpad view.
 """
 from __future__ import annotations

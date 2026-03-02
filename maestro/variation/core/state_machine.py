@@ -5,13 +5,13 @@ Explicit state transitions for the Muse/Variation lifecycle.
 Never mutate variation status directly — always go through assert_transition().
 
 States:
-    CREATED   — Variation record exists; generation not started
+    CREATED — Variation record exists; generation not started
     STREAMING — Generation in progress; events flowing
-    READY     — Generation complete; all phrases emitted; safe to commit
+    READY — Generation complete; all phrases emitted; safe to commit
     COMMITTED — Accepted phrases applied; canonical state advanced
     DISCARDED — Variation canceled; no canonical mutation
-    FAILED    — Terminal error; no canonical mutation
-    EXPIRED   — TTL cleanup; no canonical mutation
+    FAILED — Terminal error; no canonical mutation
+    EXPIRED — TTL cleanup; no canonical mutation
 
 Invariants:
     1. No mutation of canonical state during CREATED/STREAMING/READY.

@@ -2,7 +2,7 @@
 
 All async tests call ``_recall_async`` directly with an in-memory SQLite
 session and a ``tmp_path`` repo root — no real Postgres or running process
-required.  Commits are seeded via ``_commit_async`` so the two commands
+required. Commits are seeded via ``_commit_async`` so the two commands
 are exercised as an integrated pair.
 
 Covers:
@@ -280,7 +280,7 @@ async def test_recall_json_output_valid_schema(
     """``--json`` output is valid JSON with expected fields."""
     _init_muse_repo(tmp_path)
     await _make_commits(tmp_path, muse_cli_db_session, ["jazz drum groove"])
-    capsys.readouterr()  # discard commit output before testing recall JSON
+    capsys.readouterr() # discard commit output before testing recall JSON
 
     await _recall_async(
         root=tmp_path,
@@ -449,7 +449,7 @@ def test_recall_bad_since_date_exits_1() -> None:
 
     with pytest.raises(typer.Exit) as exc_info:
         recall_cmd(
-            ctx=None,  # type: ignore[arg-type]
+            ctx=None, # type: ignore[arg-type]
             query="jazz",
             limit=5,
             threshold=0.6,
@@ -478,7 +478,7 @@ def test_recall_bad_until_date_exits_1() -> None:
 
     with pytest.raises(typer.Exit) as exc_info:
         recall_cmd(
-            ctx=None,  # type: ignore[arg-type]
+            ctx=None, # type: ignore[arg-type]
             query="jazz",
             limit=5,
             threshold=0.6,

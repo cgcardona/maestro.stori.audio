@@ -2,19 +2,19 @@
 
 Converts a Muse snapshot manifest into external file formats:
 
-- ``midi``     — copy raw MIDI files from the snapshot (native format).
-- ``json``     — structured JSON note representation for AI/tooling.
+- ``midi`` — copy raw MIDI files from the snapshot (native format).
+- ``json`` — structured JSON note representation for AI/tooling.
 - ``musicxml`` — MusicXML for notation software (MuseScore, Sibelius, etc.).
-- ``abc``      — ABC notation text for folk/traditional music.
-- ``wav``      — render audio via Storpheus (requires Storpheus reachable).
+- ``abc`` — ABC notation text for folk/traditional music.
+- ``wav`` — render audio via Storpheus (requires Storpheus reachable).
 
 All format handlers accept the same inputs (manifest, root, options) and
-return a MuseExportResult describing what was written.  The WAV handler
+return a MuseExportResult describing what was written. The WAV handler
 raises StorpheusUnavailableError when the service cannot be reached so the
 CLI can surface a human-readable error.
 
 Design note: export is a read-only Muse operation — no commit is created,
-no DB writes occur.  The same commit + format always produces identical
+no DB writes occur. The same commit + format always produces identical
 output (deterministic).
 """
 from __future__ import annotations
@@ -109,8 +109,8 @@ def filter_manifest(
     """Return a filtered copy of *manifest* matching the given criteria.
 
     Both *track* and *section* are case-insensitive substring matches
-    against the full path string.  Only entries matching ALL provided
-    filters are kept.  When both are ``None`` the full manifest is returned.
+    against the full path string. Only entries matching ALL provided
+    filters are kept. When both are ``None`` the full manifest is returned.
 
     Args:
         manifest: ``{rel_path: object_id}`` from MuseCliSnapshot.
@@ -386,7 +386,7 @@ def export_wav(
     """Export MIDI files to WAV audio via Storpheus.
 
     Performs a synchronous health check against storpheus_url before
-    attempting any conversion.  Raises StorpheusUnavailableError
+    attempting any conversion. Raises StorpheusUnavailableError
     immediately if Storpheus is not reachable.
 
     Args:
@@ -424,7 +424,7 @@ def export_wav(
     result.skipped_count = len(manifest)
     logger.warning(
         "WAV render delegation to Storpheus is not yet fully implemented; "
-        "returning empty result.  Full WAV rendering is tracked as a follow-up."
+        "returning empty result. Full WAV rendering is tracked as a follow-up."
     )
     return result
 
@@ -562,7 +562,7 @@ def _midi_to_musicxml(path: pathlib.Path) -> str:
     """Convert a MIDI file to a minimal MusicXML string.
 
     Uses mido to read Note On/Off events and emits one <part> per MIDI
-    channel.  Durations are passed through as raw tick values.
+    channel. Durations are passed through as raw tick values.
 
     This is a best-effort transcription — MIDI does not carry notation
     semantics so the output is suitable for import review, not engraving.
@@ -586,7 +586,7 @@ def _midi_to_musicxml(path: pathlib.Path) -> str:
     for ch_idx, channel in enumerate(sorted(channel_notes.keys()), 1):
         part_id = f"P{ch_idx}"
         part_list_items.append(
-            f'    <score-part id="{part_id}">'
+            f' <score-part id="{part_id}">'
             f"<part-name>Channel {channel}</part-name>"
             f"</score-part>"
         )
@@ -595,22 +595,22 @@ def _midi_to_musicxml(path: pathlib.Path) -> str:
             duration_ticks = max(1, end_tick - start_tick)
             step, octave = _midi_note_to_step_octave(pitch)
             notes_xml.append(
-                f"      <note>"
+                f" <note>"
                 f"<pitch><step>{step}</step><octave>{octave}</octave></pitch>"
                 f"<duration>{duration_ticks}</duration>"
                 f"<type>quarter</type>"
                 f"</note>"
             )
-        notes_block = "\n".join(notes_xml) if notes_xml else "      <!-- no notes -->"
+        notes_block = "\n".join(notes_xml) if notes_xml else " <!-- no notes -->"
         parts.append(
-            f'  <part id="{part_id}">\n'
-            f'    <measure number="1">\n'
-            f"      <attributes>"
+            f' <part id="{part_id}">\n'
+            f' <measure number="1">\n'
+            f" <attributes>"
             f"<divisions>{divisions}</divisions>"
             f"</attributes>\n"
             f"{notes_block}\n"
-            f"    </measure>\n"
-            f"  </part>"
+            f" </measure>\n"
+            f" </part>"
         )
 
     part_list_xml = "\n".join(part_list_items)
@@ -619,10 +619,10 @@ def _midi_to_musicxml(path: pathlib.Path) -> str:
     return (
         '<?xml version="1.0" encoding="UTF-8"?>\n'
         '<!DOCTYPE score-partwise PUBLIC\n'
-        '  "-//Recordare//DTD MusicXML 4.0 Partwise//EN"\n'
-        '  "http://www.musicxml.org/dtds/partwise.dtd">\n'
+        ' "-//Recordare//DTD MusicXML 4.0 Partwise//EN"\n'
+        ' "http://www.musicxml.org/dtds/partwise.dtd">\n'
         '<score-partwise version="4.0">\n'
-        f"  <part-list>\n{part_list_xml}\n  </part-list>\n"
+        f" <part-list>\n{part_list_xml}\n </part-list>\n"
         f"{parts_xml}\n"
         "</score-partwise>\n"
     )

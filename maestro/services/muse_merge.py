@@ -285,7 +285,7 @@ async def build_merge_checkout_plan(
 
     if result.has_conflicts:
         # Record conflict shape and attempt rerere auto-resolution when a repo
-        # root is available.  This is a best-effort hook — rerere failures must
+        # root is available. This is a best-effort hook — rerere failures must
         # never prevent the caller from receiving the conflict report.
         if repo_path is not None:
             try:
@@ -310,7 +310,7 @@ async def build_merge_checkout_plan(
                         "✅ muse rerere: resolved %d conflict(s) using rerere.",
                         applied,
                     )
-            except Exception as _rerere_exc:  # noqa: BLE001
+            except Exception as _rerere_exc: # noqa: BLE001
                 logger.warning(
                     "⚠️ muse rerere hook failed (non-fatal): %s", _rerere_exc
                 )

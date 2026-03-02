@@ -108,7 +108,7 @@ _DEFAULT_SPACE = "cgcardona/Orpheus-Music-Transformer"
 _KEEPALIVE_INTERVAL = int(os.environ.get("STORPHEUS_KEEPALIVE_INTERVAL", "600"))
 _MAX_CONCURRENT = int(os.environ.get("STORPHEUS_MAX_CONCURRENT", "1"))
 _MAX_QUEUE_DEPTH = int(os.environ.get("STORPHEUS_MAX_QUEUE_DEPTH", "20"))
-_JOB_TTL_SECONDS = int(os.environ.get("STORPHEUS_JOB_TTL", "300"))  # 5 min
+_JOB_TTL_SECONDS = int(os.environ.get("STORPHEUS_JOB_TTL", "300")) # 5 min
 _COOLDOWN_SECONDS = float(os.environ.get("STORPHEUS_COOLDOWN_SECONDS", "3"))
 
 _CACHE_DIR = pathlib.Path(os.environ.get("STORPHEUS_CACHE_DIR", "/tmp/storpheus_cache"))
@@ -124,12 +124,12 @@ _FUZZY_EPSILON = float(os.environ.get("STORPHEUS_FUZZY_EPSILON", "0.35"))
 
 # ── Inference optimization config ─────────────────────────────────────────
 # How many /add_batch indices to try from a single /generate_music_and_state
-# result before paying the cost of a full re-generate.  The HF Space produces
+# result before paying the cost of a full re-generate. The HF Space produces
 # 10 stochastic batches per call; trying multiple indices is cheap (~2s each)
-# vs. a full re-generate (25-65s).  Set to 1 to disable multi-batch sampling.
+# vs. a full re-generate (25-65s). Set to 1 to disable multi-batch sampling.
 STORPHEUS_MULTI_BATCH_TRIES = int(os.environ.get("STORPHEUS_MULTI_BATCH_TRIES", "3"))
 
-# Score threshold below which we trigger a full re-generate.  Above this
+# Score threshold below which we trigger a full re-generate. Above this
 # threshold the best multi-batch result is accepted without re-generating.
 STORPHEUS_REGEN_THRESHOLD = float(os.environ.get("STORPHEUS_REGEN_THRESHOLD", "0.5"))
 
@@ -145,18 +145,18 @@ STORPHEUS_KV_CACHE_ENABLED: bool = os.environ.get(
     "STORPHEUS_KV_CACHE", "false"
 ).lower() in ("1", "true", "yes")
 
-# ── Chunked generation config (#25) ────────────────────────────────────────
+# ── Chunked generation config ────────────────────────────────────────
 # Compositions above the threshold are split into sequential chunks that each
 # fit within the HF Space's 1024 gen-token hard cap (~8 bars at 128 tok/bar).
 # Each chunk uses the previous chunk's output MIDI as its seed, implementing a
 # sliding context window for smooth long-form continuation.
 #
 # STORPHEUS_CHUNKED_THRESHOLD_BARS — request.bars above which chunked mode activates.
-#   Default 16: requests ≤ 16 bars use the standard single-pass path (no regression).
+# Default 16: requests ≤ 16 bars use the standard single-pass path (no regression).
 # STORPHEUS_CHUNK_BARS — bars generated per chunk. Must satisfy chunk_bars * 128 ≤ 1024.
-#   Default 8: exactly fills the HF Space's gen-token budget.
+# Default 8: exactly fills the HF Space's gen-token budget.
 # STORPHEUS_CHUNK_FADE_BEATS — beats over which velocity is cross-faded at boundaries.
-#   Default 4.0: one beat of fade in / fade out at each chunk boundary.
+# Default 4.0: one beat of fade in / fade out at each chunk boundary.
 _CHUNKED_GEN_THRESHOLD_BARS: int = int(
     os.environ.get("STORPHEUS_CHUNKED_THRESHOLD_BARS", "16")
 )
@@ -170,7 +170,7 @@ class GenerationTiming:
 
     Populated throughout ``_do_generate`` and attached to response metadata
     so callers can baseline current latency and measure the impact of future
-    optimizations (torch.compile, FlashAttention, KV-cache — see #26).
+    optimizations (torch.compile, FlashAttention, KV-cache —).
     """
 
     request_start: float = field(default_factory=time)
@@ -210,7 +210,7 @@ class _ClientPool:
     """Pool of Gradio clients — one per worker.
 
     IMPORTANT: each Gradio session accumulates ``final_composition``
-    state via ``/add_batch``.  To get independent output per generation,
+    state via ``/add_batch``. To get independent output per generation,
     callers must either use ``fresh()`` (creates a new disposable client)
     or call ``reset(worker_id)`` before generating so the next ``get()``
     returns a clean session.
@@ -308,8 +308,8 @@ from collections import OrderedDict
 from time import time
 
 # Cache configuration
-MAX_CACHE_SIZE = 1000  # Maximum number of cached results
-CACHE_TTL_SECONDS = 86400  # 24 hours
+MAX_CACHE_SIZE = 1000 # Maximum number of cached results
+CACHE_TTL_SECONDS = 86400 # 24 hours
 
 @dataclass
 class CacheEntry:
@@ -543,11 +543,11 @@ class EmotionVectorPayload(BaseModel):
 
     Transmitted losslessly so Orpheus never has to guess emotion.
     """
-    energy: float = 0.5         # [0, 1]
-    valence: float = 0.0        # [-1, 1]
-    tension: float = 0.3        # [0, 1]
-    intimacy: float = 0.5       # [0, 1]
-    motion: float = 0.5         # [0, 1]
+    energy: float = 0.5 # [0, 1]
+    valence: float = 0.0 # [-1, 1]
+    tension: float = 0.3 # [0, 1]
+    intimacy: float = 0.5 # [0, 1]
+    motion: float = 0.5 # [0, 1]
 
 
 class GenerationConstraintsPayload(BaseModel):
@@ -574,7 +574,7 @@ class IntentGoal(BaseModel):
     """A single weighted goal in the intent specification."""
     name: str
     weight: float = 1.0
-    constraint_type: str = "soft"  # "hard" | "soft"
+    constraint_type: str = "soft" # "hard" | "soft"
 
 
 class GenerateRequest(BaseModel):
@@ -619,7 +619,7 @@ class GenerateResponse(BaseModel):
     """Response from a generation request.
 
     ``notes`` and ``channel_notes`` use the camelCase wire format (``WireNoteDict``)
-    for direct consumption by Maestro.  Internal processing uses ``StorpheusNoteDict``
+    for direct consumption by Maestro. Internal processing uses ``StorpheusNoteDict``
     (snake_case) up until the response is assembled.
     """
 
@@ -715,7 +715,7 @@ class JobQueue:
     def __init__(self, max_queue: int = 20, max_workers: int = 2) -> None:
         self._queue: asyncio.Queue[Job] = asyncio.Queue(maxsize=max_queue)
         self._jobs: dict[str, Job] = {}
-        self._dedupe: dict[str, str] = {}  # dedupe_key -> job_id
+        self._dedupe: dict[str, str] = {} # dedupe_key -> job_id
         self._max_workers = max_workers
         self._max_queue = max_queue
         self._workers: list[asyncio.Task[None]] = []
@@ -875,12 +875,12 @@ class JobQueue:
 # =============================================================================
 # GM instrument resolution — full 128-program coverage
 #
-# Full 128-program GM table.  Everything is keyed by GM program
+# Full 128-program GM table. Everything is keyed by GM program
 # number (0-127); string names are only produced at the Gradio boundary
 # via _TMIDIX_PATCH_NAMES.
 # =============================================================================
 
-# Authoritative TMIDIX Number2patch table.  Index = GM program number.
+# Authoritative TMIDIX Number2patch table. Index = GM program number.
 # Must match the list compiled into the Orpheus HF Space's TMIDIX module.
 _TMIDIX_PATCH_NAMES: tuple[str, ...] = (
     # Piano (0-7)
@@ -1165,18 +1165,18 @@ def resolve_tmidix_name(role: str) -> str | None:
 
 # GM family groups for human-readable channel labels (program → family name).
 _GM_FAMILY: tuple[tuple[int, int, str], ...] = (
-    (0,   7,  "piano"),
-    (8,  15,  "chromatic_perc"),
-    (16, 23,  "organ"),
-    (24, 31,  "guitar"),
-    (32, 39,  "bass"),
-    (40, 47,  "strings"),
-    (48, 55,  "ensemble"),
-    (56, 63,  "brass"),
-    (64, 71,  "reed"),
-    (72, 79,  "pipe"),
-    (80, 87,  "synth_lead"),
-    (88, 95,  "synth_pad"),
+    (0, 7, "piano"),
+    (8, 15, "chromatic_perc"),
+    (16, 23, "organ"),
+    (24, 31, "guitar"),
+    (32, 39, "bass"),
+    (40, 47, "strings"),
+    (48, 55, "ensemble"),
+    (56, 63, "brass"),
+    (64, 71, "reed"),
+    (72, 79, "pipe"),
+    (80, 87, "synth_lead"),
+    (88, 95, "synth_pad"),
     (96, 103, "synth_fx"),
     (104, 111, "ethnic"),
     (112, 119, "percussive"),
@@ -1200,7 +1200,7 @@ def _channel_label(
 
     When ``program_changes`` is provided, the actual GM program number
     for the channel is used to derive the family label (bass, piano,
-    guitar, etc.).  This produces correct labels for multi-instrument
+    guitar, etc.). This produces correct labels for multi-instrument
     output where the model assigns distinct programs per channel.
 
     Falls back to channel-index heuristics when no program info is
@@ -1243,22 +1243,22 @@ def _resolve_melodic_index(role: str) -> int | None:
         return None
     program = resolve_gm_program(key)
     if program is None:
-        return 2  # unknown melodic → default to channel 2
+        return 2 # unknown melodic → default to channel 2
     if 32 <= program <= 39:
-        return 0  # bass family
+        return 0 # bass family
     if program <= 7 or 16 <= program <= 23:
-        return 1  # piano/keys/organ
-    return 2  # everything else
+        return 1 # piano/keys/organ
+    return 2 # everything else
 
 
 # GM program ranges that map to the HARMONY tier in progressive generation.
 # Includes piano (0-7), chromatic perc (8-15), organ (16-23), guitar (24-31),
 # ensemble strings (40-47), ensemble (48-55), and synth pads (88-95).
 _HARMONY_GM_RANGES: tuple[tuple[int, int], ...] = (
-    (0, 15),    # Piano + chromatic percussion (vibraphone, marimba, …)
-    (16, 23),   # Organ
-    (40, 55),   # Strings + ensemble (violin, cello, choir, …)
-    (88, 95),   # Synth pads (new age, warm, polysynth, choir, bowed, …)
+    (0, 15), # Piano + chromatic percussion (vibraphone, marimba, …)
+    (16, 23), # Organ
+    (40, 55), # Strings + ensemble (violin, cello, choir, …)
+    (88, 95), # Synth pads (new age, warm, polysynth, choir, bowed, …)
 )
 
 
@@ -1266,10 +1266,10 @@ def classify_instrument_tier(role: str) -> InstrumentTier:
     """Classify an instrument role into its musical dependency tier.
 
     Tiers map to the generation order:
-        DRUMS   — channel-10 percussion; no harmonic context needed
-        BASS    — GM 32-39 (bass family); establishes root motion
+        DRUMS — channel-10 percussion; no harmonic context needed
+        BASS — GM 32-39 (bass family); establishes root motion
         HARMONY — GM piano, organ, strings, pads; chords and colour
-        MELODY  — everything else (lead, guitar, brass, wind, …)
+        MELODY — everything else (lead, guitar, brass, wind, …)
 
     Unknown roles that cannot be resolved default to MELODY so they
     receive the richest harmonic seed before generation.
@@ -1296,7 +1296,7 @@ def group_instruments_by_tier(
     """Partition a flat instrument list into ordered dependency tiers.
 
     Returns a dict keyed by ``InstrumentTier`` in dependency order.
-    Tiers with no instruments are omitted.  Preserves original role strings
+    Tiers with no instruments are omitted. Preserves original role strings
     (lowercased) so downstream callers can pass them directly to Orpheus.
     """
     groups: dict[InstrumentTier, list[str]] = {}
@@ -1717,14 +1717,14 @@ async def cache_stats() -> dict[str, object]:
     total_hits = 0
     expired_count = 0
     
-    for key, entry in list(_result_cache.items())[:20]:  # Top 20
+    for key, entry in list(_result_cache.items())[:20]: # Top 20
         age = now - entry.timestamp
         is_expired = age > CACHE_TTL_SECONDS
         if is_expired:
             expired_count += 1
             
         entries_info.append({
-            "key": key[:8],  # Abbreviated
+            "key": key[:8], # Abbreviated
             "hits": entry.hits,
             "age_seconds": int(age),
             "expired": is_expired,
@@ -1894,9 +1894,9 @@ class ParameterSweepRequest(BaseModel):
     summary with a statistical-significance flag.
 
     Fields:
-        base_config     Template GenerateRequest (instruments, bars, etc.)
-        temperatures    Temperature values to sweep (max 5 to bound cost)
-        top_ps          top_p values to sweep (max 3)
+        base_config Template GenerateRequest (instruments, bars, etc.)
+        temperatures Temperature values to sweep (max 5 to bound cost)
+        top_ps top_p values to sweep (max 3)
     """
 
     base_config: GenerateRequest
@@ -1916,7 +1916,7 @@ async def parameter_sweep(request: ParameterSweepRequest) -> SweepABTestResult:
 
     Generates one candidate per (temperature, top_p) pair using the
     ``base_config`` as a template, overriding only the two sampling
-    parameters.  Results are ranked by composite quality score and a
+    parameters. Results are ranked by composite quality score and a
     ``significant`` flag is set when the max-min gap ≥ 0.05 — indicating
     that parameter choice materially affects quality for this genre.
 
@@ -2027,14 +2027,14 @@ class CompositionState:
     call_count: int = 0
 
 _composition_states: dict[str, CompositionState] = {}
-_COMPOSITION_STATE_TTL = 3600  # 1 hour
+_COMPOSITION_STATE_TTL = 3600 # 1 hour
 
 
 def _get_or_create_session(composition_id: str | None) -> tuple[str, CompositionState]:
     """Return (session_hash, CompositionState) for the composition.
 
     If the composition already has accumulated state, reuse the same
-    session_id so Gradio's gr.State preserves token context.  When the
+    session_id so Gradio's gr.State preserves token context. When the
     accumulated tokens exceed MAX_SESSION_TOKENS, rotate the session to
     prevent model degradation (truncation via fresh session, not full reset).
     """
@@ -2079,16 +2079,16 @@ def _apply_velocity_fade(
 ) -> list[WireNoteDict]:
     """Apply linear velocity fade-in / fade-out at chunk boundaries.
 
-    Avoids jarring amplitude jumps where consecutive chunks meet.  Both
+    Avoids jarring amplitude jumps where consecutive chunks meet. Both
     ``fade_in`` and ``fade_out`` are applied independently; a chunk that is
-    neither first nor last receives both.  A ``fade_beats`` of 0.0 is a no-op.
+    neither first nor last receives both. A ``fade_beats`` of 0.0 is a no-op.
 
     Args:
-        notes:        Wire-format notes for a single chunk (beats relative to chunk start).
-        chunk_bars:   Duration of this chunk in bars.
-        fade_beats:   Width of the fade envelope in beats (applied to each edge).
-        fade_in:      True for every chunk except the first.
-        fade_out:     True for every chunk except the last.
+        notes: Wire-format notes for a single chunk (beats relative to chunk start).
+        chunk_bars: Duration of this chunk in bars.
+        fade_beats: Width of the fade envelope in beats (applied to each edge).
+        fade_in: True for every chunk except the first.
+        fade_out: True for every chunk except the last.
         beats_per_bar: Beats per bar (always 4 for 4/4; parameterised for future metres).
 
     Returns:
@@ -2132,15 +2132,15 @@ async def _generate_chunked(
     naturally continues where the previous chunk left off.
 
     Beat offsets are applied so that all chunks produce a contiguous timeline
-    spanning the full requested bar count.  A linear velocity cross-fade is
+    spanning the full requested bar count. A linear velocity cross-fade is
     applied at each chunk boundary to smooth amplitude transitions.
 
     Args:
-        request:    Original GenerateRequest with bars > _CHUNKED_GEN_THRESHOLD_BARS.
-        worker_id:  Worker slot passed through to each inner _do_generate call.
+        request: Original GenerateRequest with bars > _CHUNKED_GEN_THRESHOLD_BARS.
+        worker_id: Worker slot passed through to each inner _do_generate call.
 
     Returns:
-        GenerateResponse whose notes span the full requested duration.  On
+        GenerateResponse whose notes span the full requested duration. On
         partial failure the response is marked unsuccessful but any already-
         stitched notes are included for debugging.
     """
@@ -2193,7 +2193,7 @@ async def _generate_chunked(
             composition_id=chunked_comp_id,
             # Only attach outro token on the final chunk
             add_outro=request.add_outro and is_last,
-            unified_output=False,  # chunked always returns flat notes; caller re-wraps
+            unified_output=False, # chunked always returns flat notes; caller re-wraps
         )
 
         logger.info(
@@ -2317,9 +2317,9 @@ async def _do_generate(request: GenerateRequest, worker_id: int = 0) -> Generate
     Long compositions (``request.bars > _CHUNKED_GEN_THRESHOLD_BARS``) are
     transparently routed to ``_generate_chunked`` which breaks the request into
     sequential _CHUNK_BARS-bar slices, each within the HF Space's 1024 gen-token
-    hard cap.  Short compositions use the standard single-pass path unchanged.
+    hard cap. Short compositions use the standard single-pass path unchanged.
     """
-    # Route long compositions to sliding window chunked generation (#25)
+    # Route long compositions to sliding window chunked generation
     if request.bars > _CHUNKED_GEN_THRESHOLD_BARS:
         return await _generate_chunked(request, worker_id=worker_id)
 
@@ -2483,9 +2483,9 @@ async def _do_generate(request: GenerateRequest, worker_id: int = 0) -> Generate
                 f"(notes={seed_report.get('seed_notes', '?')}, hash={seed_hash})"
             )
 
-        # Seed MIDI already provides drum context when present.  The HF Space's
+        # Seed MIDI already provides drum context when present. The HF Space's
         # add_drums flag appends a random drum-pitch token that conflicts with
-        # seeds that already contain percussion.  Only enable when there is no
+        # seeds that already contain percussion. Only enable when there is no
         # seed MIDI to provide drum context.
         _has_drums = "drums" in [i.lower() for i in request.instruments]
         _is_multi_instrument = request.unified_output and len(request.instruments) > 1
@@ -2514,7 +2514,7 @@ async def _do_generate(request: GenerateRequest, worker_id: int = 0) -> Generate
         # ── Seed-first mode ──
         # The HF Space is a continuation model: seed MIDI provides 1000-2000
         # tokens of genre-appropriate context; prime_instruments alone produces
-        # only ~8 tokens.  Always prefer seed MIDI for quality.  When seed MIDI
+        # only ~8 tokens. Always prefer seed MIDI for quality. When seed MIDI
         # is provided the Space ignores prime_instruments (mutually exclusive
         # code paths in app.py), which is fine — we rely on channel extraction
         # (_extract_channel_for_role) to pick instruments from the output.
@@ -2543,11 +2543,11 @@ async def _do_generate(request: GenerateRequest, worker_id: int = 0) -> Generate
 
         # ── Batch selection with rejection sampling and multi-batch optimization ──
         # The HF Space generates 10 stochastic batches per /generate_music_and_state
-        # call.  Rather than doing one full re-generate per candidate (the original
+        # call. Rather than doing one full re-generate per candidate (the original
         # approach), we first exhaust STORPHEUS_MULTI_BATCH_TRIES cheap /add_batch
-        # calls (~2s each) on the current generate result.  Only when the best score
+        # calls (~2s each) on the current generate result. Only when the best score
         # is still below STORPHEUS_REGEN_THRESHOLD do we pay the cost of a full
-        # re-generate (25-65s).  For a "quality" preset (4 candidates) this can
+        # re-generate (25-65s). For a "quality" preset (4 candidates) this can
         # reduce total latency from 4×(25-65s) → 1×(25-65s) + 3×(~2s).
         _num_candidates = quality_preset_to_batch_count(request.quality_preset)
         _rejection_threshold = float(os.environ.get("STORPHEUS_REJECTION_THRESHOLD", "0.3"))
@@ -3105,7 +3105,7 @@ async def _do_progressive_generate(
             top_p=request.top_p,
             composition_id=composition_id,
             add_outro=False,
-            unified_output=True,  # always get per-channel notes for seeding
+            unified_output=True, # always get per-channel notes for seeding
         )
 
         response = await _do_generate(tier_request)
@@ -3179,7 +3179,7 @@ def _job_response(job: Job) -> dict[str, object]:
 
 @app.post("/generate", response_model=None)
 async def generate(request: GenerateRequest) -> dict[str, object] | JSONResponse:
-    """Submit a generation job.  Cache hits return immediately; misses enqueue."""
+    """Submit a generation job. Cache hits return immediately; misses enqueue."""
     assert _job_queue is not None, "JobQueue not initialized"
 
     cache_key = get_cache_key(request)
@@ -3220,12 +3220,12 @@ async def generate_progressive(
     """Generate instruments in dependency order with cascaded MIDI seeding.
 
     Partitions ``request.instruments`` into four tiers (drums → bass →
-    harmony → melody) and generates each tier sequentially.  Each tier's
+    harmony → melody) and generates each tier sequentially. Each tier's
     output MIDI seeds the next, so bass inherits drum groove, harmony
     inherits bass root motion, and melody inherits the full harmonic context.
 
     Returns immediately with the full ``ProgressiveGenerationResult`` once
-    all tiers complete.  For large arrangements (many instruments, high
+    all tiers complete. For large arrangements (many instruments, high
     quality preset) this may take 60–120 s.
 
     Unlike ``POST /generate``, this endpoint bypasses the job queue and runs

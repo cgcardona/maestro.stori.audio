@@ -40,7 +40,7 @@ def test_analyze_basic_notes() -> None:
     result = analyze_quality(notes, bars=4, tempo=120)
 
     assert result["note_count"] == 3
-    assert result["notes_per_bar"] == 0.75  # 3 notes / 4 bars
+    assert result["notes_per_bar"] == 0.75 # 3 notes / 4 bars
     assert result["pitch_min"] == 60
     assert result["pitch_max"] == 67
     assert result["pitch_range"] == 7
@@ -51,11 +51,11 @@ def test_quality_score_reasonable_density() -> None:
     """Test quality score favors reasonable note density."""
     good_notes = [
         _note(60 + i, i * 0.5, 0.25, 80)
-        for i in range(32)  # 32 notes over 4 bars = 8/bar
+        for i in range(32) # 32 notes over 4 bars = 8/bar
     ]
     sparse_notes = [
         _note(60, float(i), 1.0, 80)
-        for i in range(4)  # 1 note/bar
+        for i in range(4) # 1 note/bar
     ]
 
     good_result = analyze_quality(good_notes, bars=4, tempo=120)
@@ -88,7 +88,7 @@ def test_pitch_range_scoring() -> None:
     """Test that reasonable pitch ranges score better."""
     good_notes = [
         _note(60 + i * 2, i * 0.5, 0.5, 80)
-        for i in range(13)  # C4 to C6 (pitches 60..84, range=24)
+        for i in range(13) # C4 to C6 (pitches 60..84, range=24)
     ]
     narrow_notes = [
         _note(60, i * 0.5, 0.5, 80)
@@ -107,9 +107,9 @@ def test_pattern_repetition() -> None:
     musical_notes = [
         _note(60, 0.0, 0.5, 80),
         _note(64, 0.5, 0.5, 80),
-        _note(60, 1.0, 0.5, 80),  # Repeat
-        _note(64, 1.5, 0.5, 80),  # Repeat
-        _note(67, 2.0, 0.5, 80),  # New
+        _note(60, 1.0, 0.5, 80), # Repeat
+        _note(64, 1.5, 0.5, 80), # Repeat
+        _note(67, 2.0, 0.5, 80), # New
     ]
 
     result = analyze_quality(musical_notes, bars=2, tempo=120)
@@ -121,11 +121,11 @@ def test_compare_generations() -> None:
     """Test comparison between two generations."""
     better_notes = [
         _note(60 + i % 7, i * 0.5, 0.5, 80 + i % 20)
-        for i in range(32)  # 8 notes/bar
+        for i in range(32) # 8 notes/bar
     ]
     worse_notes = [
         _note(60, float(i), 1.0, 80)
-        for i in range(4)  # 1 note/bar
+        for i in range(4) # 1 note/bar
     ]
 
     comparison = compare_generations(better_notes, worse_notes, bars=4, tempo=120)

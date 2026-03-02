@@ -85,7 +85,7 @@ class RAGService:
         self.qdrant = QdrantClient(
             host=qdrant_host, 
             port=qdrant_port,
-            check_compatibility=False,  # Skip version check
+            check_compatibility=False, # Skip version check
         )
         self.llm_client = llm_client
         self._hf_api_key: str | None = None
@@ -213,7 +213,7 @@ class RAGService:
     async def answer(
         self,
         question: str,
-        model: str = "anthropic/claude-3.5-sonnet",
+        model: str = "anthropic/claude-sonnet-4.6",
     ) -> AsyncGenerator[str, None]:
         """
         Generate an answer using RAG.
@@ -256,7 +256,7 @@ Please provide a clear, helpful answer. Use the documentation context when it's 
             
             async for chunk in self.llm_client.chat_completion_stream(
                 messages=messages,
-                tools=None,  # No tools for Q&A
+                tools=None, # No tools for Q&A
             ):
                 if chunk["type"] == "content_delta":
                     yield chunk["text"]
@@ -267,7 +267,7 @@ Please provide a clear, helpful answer. Use the documentation context when it's 
     async def answer_simple(
         self,
         question: str,
-        model: str = "anthropic/claude-3.5-sonnet",
+        model: str = "anthropic/claude-sonnet-4.6",
     ) -> str:
         """
         Generate a complete answer (non-streaming).

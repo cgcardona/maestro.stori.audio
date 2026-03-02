@@ -58,17 +58,17 @@ class GenerationControlVector:
     Values are normalized 0-1 for consistency.
     """
     # Core continuous controls (0-1)
-    creativity: float = 0.5          # How much variation/surprise (→ temperature)
-    density: float = 0.5             # Note/event density (→ tokens_per_bar)
-    complexity: float = 0.5          # Harmonic/rhythmic complexity (→ token count, seed choice)
-    brightness: float = 0.5          # Pitch range, tonal color (→ seed patterns)
-    tension: float = 0.5             # Dissonance, unstable tones (→ seed harmony)
-    groove: float = 0.5              # Swing/humanization (→ velocity variation, timing)
+    creativity: float = 0.5 # How much variation/surprise (→ temperature)
+    density: float = 0.5 # Note/event density (→ tokens_per_bar)
+    complexity: float = 0.5 # Harmonic/rhythmic complexity (→ token count, seed choice)
+    brightness: float = 0.5 # Pitch range, tonal color (→ seed patterns)
+    tension: float = 0.5 # Dissonance, unstable tones (→ seed harmony)
+    groove: float = 0.5 # Swing/humanization (→ velocity variation, timing)
     
     # Structural controls
-    section_type: str | None = None      # "intro", "verse", "drop", "bridge"
-    loopable: bool = True                   # Should it loop seamlessly?
-    build_intensity: bool = False           # Should it build/escalate?
+    section_type: str | None = None # "intro", "verse", "drop", "bridge"
+    loopable: bool = True # Should it loop seamlessly?
+    build_intensity: bool = False # Should it build/escalate?
     
     # Quality preset
     quality_preset: Literal["fast", "balanced", "quality"] = "balanced"
@@ -88,11 +88,11 @@ def intent_to_controls(
     genre: str,
     tempo: int,
     musical_goals: list[str] | None = None,
-    tone_brightness: float = 0.0,      # -1 to 1 from IntentVector
+    tone_brightness: float = 0.0, # -1 to 1 from IntentVector
     tone_warmth: float = 0.0,
     energy_intensity: float = 0.0,
     energy_excitement: float = 0.0,
-    complexity_hint: float = 0.5,      # 0-1 from user or inferred
+    complexity_hint: float = 0.5, # 0-1 from user or inferred
     quality_preset: str = "balanced",
 ) -> GenerationControlVector:
     """
@@ -115,7 +115,7 @@ def intent_to_controls(
         GenerationControlVector with normalized 0-1 values
     """
     # Start with neutral defaults
-    controls = GenerationControlVector(quality_preset=quality_preset)  # type: ignore[arg-type]  # validated by caller
+    controls = GenerationControlVector(quality_preset=quality_preset) # type: ignore[arg-type] # validated by caller
     
     # Apply each factor compositionally
     controls = apply_genre_baseline(controls, genre)
@@ -145,44 +145,44 @@ def apply_genre_baseline(controls: GenerationControlVector, genre: str) -> Gener
     
     # Repetitive/minimal genres → lower creativity, higher density
     if any(x in genre_lower for x in ["techno", "house", "trance", "minimal"]):
-        controls.creativity *= 0.85      # More deterministic
-        controls.density *= 1.1          # More regular patterns
-        controls.complexity *= 0.9       # Simpler structures
+        controls.creativity *= 0.85 # More deterministic
+        controls.density *= 1.1 # More regular patterns
+        controls.complexity *= 0.9 # Simpler structures
         controls.loopable = True
         
     # Complex/improvisational genres → higher creativity
     elif any(x in genre_lower for x in ["jazz", "fusion", "prog", "experimental"]):
-        controls.creativity *= 1.2       # More variation
-        controls.complexity *= 1.3       # More complex harmony/rhythm
-        controls.density *= 1.15         # More notes
-        controls.loopable = False        # Through-composed
+        controls.creativity *= 1.2 # More variation
+        controls.complexity *= 1.3 # More complex harmony/rhythm
+        controls.density *= 1.15 # More notes
+        controls.loopable = False # Through-composed
         
     # Trap/modern hip-hop → high rhythmic variation, moderate creativity
     elif any(x in genre_lower for x in ["trap", "drill", "plugg"]):
-        controls.creativity *= 1.05      # Some variation for hi-hats
-        controls.density *= 1.2          # Dense hi-hat patterns
-        controls.groove *= 1.1           # Rhythmic complexity
+        controls.creativity *= 1.05 # Some variation for hi-hats
+        controls.density *= 1.2 # Dense hi-hat patterns
+        controls.groove *= 1.1 # Rhythmic complexity
         
     # Classic boom bap → moderate everything, groove emphasis
     elif any(x in genre_lower for x in ["boom", "bap", "hip", "hop"]):
-        controls.creativity *= 0.95      # Relatively stable
-        controls.groove *= 1.25          # Strong swing/feel
-        controls.density *= 0.95         # Not too dense
+        controls.creativity *= 0.95 # Relatively stable
+        controls.groove *= 1.25 # Strong swing/feel
+        controls.density *= 0.95 # Not too dense
         
     # Lo-fi/chill → warm, simple, groovy
     elif any(x in genre_lower for x in ["lofi", "lo-fi", "chill", "ambient"]):
         controls.creativity *= 0.9
-        controls.complexity *= 0.8       # Simpler
-        controls.groove *= 1.3           # Heavy swing
-        controls.brightness *= 0.85      # Darker, warmer
+        controls.complexity *= 0.8 # Simpler
+        controls.groove *= 1.3 # Heavy swing
+        controls.brightness *= 0.85 # Darker, warmer
         
     return controls
 
 
 def apply_tone_vector(
     controls: GenerationControlVector,
-    brightness: float,  # -1 to 1
-    warmth: float,      # -1 to 1
+    brightness: float, # -1 to 1
+    warmth: float, # -1 to 1
 ) -> GenerationControlVector:
     """
     Apply tonal characteristics to controls.
@@ -192,23 +192,23 @@ def apply_tone_vector(
     """
     # Brightness: brighter = more creative, higher range
     # Map -1..1 to multiplier
-    brightness_factor = 1.0 + brightness * 0.15  # ±15%
+    brightness_factor = 1.0 + brightness * 0.15 # ±15%
     controls.creativity *= brightness_factor
     controls.brightness = normalize_signed(brightness)
     
     # Warmth: warmer = more groove, less harsh complexity
     warmth_factor = 1.0 + warmth * 0.1
     controls.groove *= warmth_factor
-    if warmth < 0:  # Cold = more sparse
-        controls.density *= (1.0 + warmth * 0.15)  # Up to -15%
+    if warmth < 0: # Cold = more sparse
+        controls.density *= (1.0 + warmth * 0.15) # Up to -15%
     
     return controls
 
 
 def apply_energy_vector(
     controls: GenerationControlVector,
-    intensity: float,   # -1 to 1
-    excitement: float,  # -1 to 1
+    intensity: float, # -1 to 1
+    excitement: float, # -1 to 1
 ) -> GenerationControlVector:
     """
     Apply energy characteristics to controls.
@@ -218,7 +218,7 @@ def apply_energy_vector(
     """
     # Intensity: high intensity = more dense, more tense
     intensity_normalized = normalize_signed(intensity)
-    controls.density *= (0.8 + intensity_normalized * 0.4)  # 0.8x to 1.2x
+    controls.density *= (0.8 + intensity_normalized * 0.4) # 0.8x to 1.2x
     controls.tension = intensity_normalized
     
     # Excitement: high excitement = more variation, more groove
@@ -238,8 +238,8 @@ def apply_complexity(controls: GenerationControlVector, complexity: float) -> Ge
     controls.complexity = complexity
     
     # More complex = more creative, denser, more variation
-    controls.creativity *= (0.85 + complexity * 0.3)  # 0.85x to 1.15x
-    controls.density *= (0.9 + complexity * 0.2)      # 0.9x to 1.1x
+    controls.creativity *= (0.85 + complexity * 0.3) # 0.85x to 1.15x
+    controls.density *= (0.9 + complexity * 0.2) # 0.9x to 1.1x
     
     return controls
 
@@ -256,7 +256,7 @@ def apply_musical_goals(controls: GenerationControlVector, goals: list[str]) -> 
     if any(x in goals_lower for x in ["dark", "moody", "ominous"]):
         controls.brightness *= 0.7
         controls.tension *= 1.3
-        controls.creativity *= 1.05  # Slightly more variation
+        controls.creativity *= 1.05 # Slightly more variation
         
     # Bright → more brightness, less tension
     if any(x in goals_lower for x in ["bright", "happy", "uplifting"]):
@@ -313,7 +313,7 @@ def apply_tempo_adjustments(controls: GenerationControlVector, tempo: int) -> Ge
     elif tempo > 140:
         # Fast tempo: keep it simpler
         controls.complexity *= 0.9
-        controls.density *= 0.95  # Don't oversaturate
+        controls.density *= 0.95 # Don't oversaturate
         
     return controls
 
@@ -345,7 +345,7 @@ def build_controls(
         3. role_profile_summary (data-driven priors)
         4. genre/tempo heuristic baseline (last resort)
     """
-    controls = GenerationControlVector(quality_preset=quality_preset)  # type: ignore[arg-type]  # validated by caller
+    controls = GenerationControlVector(quality_preset=quality_preset) # type: ignore[arg-type] # validated by caller
 
     # ── Tension: from emotion_vector (Maestro is authoritative) ──
     if emotion_vector is not None:
@@ -363,7 +363,7 @@ def build_controls(
     if role_profile_summary is not None:
         controls.complexity = role_profile_summary.contour_complexity
     elif generation_constraints is not None:
-        controls.complexity = 0.5  # neutral when constraints drive everything
+        controls.complexity = 0.5 # neutral when constraints drive everything
 
     # ── Brightness: from emotion valence ──
     if emotion_vector is not None:
@@ -485,7 +485,7 @@ def build_fulfillment_report(
 # Control Vector → Orpheus Params (Control → Generator)
 # =============================================================================
 
-# Orpheus Music Transformer defaults.  The HF Space ships 0.9/0.96 and
+# Orpheus Music Transformer defaults. The HF Space ships 0.9/0.96 and
 # our A/B testing confirmed these values produce the best output when
 # paired with high-quality seed MIDIs from the rebuilt seed library.
 DEFAULT_TEMPERATURE = 0.9
@@ -503,7 +503,7 @@ def allocate_token_budget(bars: int) -> tuple[int, int]:
     """Return (num_prime_tokens, num_gen_tokens) for a generation request.
 
     Strategy: maximise prime context (the model is a continuation engine),
-    keep gen tokens within the HF Space's proven range.  Floor at 512 to
+    keep gen tokens within the HF Space's proven range. Floor at 512 to
     match the Space's default — fewer tokens produce sparse, low-quality output.
     """
     gen = min(max(bars * _TOKENS_PER_BAR, _MIN_GEN_TOKENS), _MAX_GEN_TOKENS)
@@ -519,79 +519,79 @@ def allocate_token_budget(bars: int) -> tuple[int, int]:
 # and top_p that would be derived from the control vector alone.
 #
 # Rationale per genre:
-#   jazz        High creativity/complexity → higher temperature; full prime context.
-#   fusion      Similar to jazz but slightly tighter.
-#   prog        Prog-rock/progressive: moderate temp, complex harmonic palette.
-#   experimental  Maximal randomness within safe range.
-#   techno      Tight, repetitive → lower temperature for determinism.
-#   house       Slightly warmer than techno; denser patterns.
-#   trance      Melodic repetition; moderate temperature.
-#   minimal     Very low temperature and density — austere.
-#   trap        Hi-hat density; modest temperature with high density.
-#   drill       Similar to trap but darker — keep it lean.
-#   boom_bap    Classic hip-hop: moderate everything, groove emphasis.
-#   lofi        Warm and simple; lower temp, reduced prime for shorter windows.
-#   ambient     Very low density, maximum prime context for long-form continuity.
-#   cinematic   High creativity, builds; keep full prime.
-#   soul        High velocity variation; slightly warm temperature.
-#   rnb         Smooth; moderate temp, low-ish density.
-#   funk        Syncopated; moderate temp with groove.
+# jazz High creativity/complexity → higher temperature; full prime context.
+# fusion Similar to jazz but slightly tighter.
+# prog Prog-rock/progressive: moderate temp, complex harmonic palette.
+# experimental Maximal randomness within safe range.
+# techno Tight, repetitive → lower temperature for determinism.
+# house Slightly warmer than techno; denser patterns.
+# trance Melodic repetition; moderate temperature.
+# minimal Very low temperature and density — austere.
+# trap Hi-hat density; modest temperature with high density.
+# drill Similar to trap but darker — keep it lean.
+# boom_bap Classic hip-hop: moderate everything, groove emphasis.
+# lofi Warm and simple; lower temp, reduced prime for shorter windows.
+# ambient Very low density, maximum prime context for long-form continuity.
+# cinematic High creativity, builds; keep full prime.
+# soul High velocity variation; slightly warm temperature.
+# rnb Smooth; moderate temp, low-ish density.
+# funk Syncopated; moderate temp with groove.
 
 _GENRE_PRIORS: dict[str, GenreParameterPrior] = {
     # ── Complex / improvisational ──────────────────────────────────────
-    "jazz":         GenreParameterPrior(temperature=0.95, top_p=0.97, density_offset=0.05),
-    "fusion":       GenreParameterPrior(temperature=0.93, top_p=0.97, density_offset=0.05),
-    "prog":         GenreParameterPrior(temperature=0.92, top_p=0.96, density_offset=0.0),
-    "experimental": GenreParameterPrior(temperature=1.0,  top_p=0.98, density_offset=0.0),
+    "jazz": GenreParameterPrior(temperature=0.95, top_p=0.97, density_offset=0.05),
+    "fusion": GenreParameterPrior(temperature=0.93, top_p=0.97, density_offset=0.05),
+    "prog": GenreParameterPrior(temperature=0.92, top_p=0.96, density_offset=0.0),
+    "experimental": GenreParameterPrior(temperature=1.0, top_p=0.98, density_offset=0.0),
 
     # ── Electronic / repetitive ────────────────────────────────────────
-    "techno":  GenreParameterPrior(temperature=0.78, top_p=0.92, density_offset=0.1),
-    "house":   GenreParameterPrior(temperature=0.82, top_p=0.93, density_offset=0.1),
-    "trance":  GenreParameterPrior(temperature=0.83, top_p=0.94, density_offset=0.05),
+    "techno": GenreParameterPrior(temperature=0.78, top_p=0.92, density_offset=0.1),
+    "house": GenreParameterPrior(temperature=0.82, top_p=0.93, density_offset=0.1),
+    "trance": GenreParameterPrior(temperature=0.83, top_p=0.94, density_offset=0.05),
     "minimal": GenreParameterPrior(temperature=0.75, top_p=0.91, density_offset=-0.15),
 
     # ── Hip-hop ────────────────────────────────────────────────────────
-    "trap":     GenreParameterPrior(temperature=0.87, top_p=0.95, density_offset=0.15),
-    "drill":    GenreParameterPrior(temperature=0.84, top_p=0.93, density_offset=0.1),
+    "trap": GenreParameterPrior(temperature=0.87, top_p=0.95, density_offset=0.15),
+    "drill": GenreParameterPrior(temperature=0.84, top_p=0.93, density_offset=0.1),
     "boom_bap": GenreParameterPrior(temperature=0.86, top_p=0.95, density_offset=0.0),
 
     # ── Chill / atmospheric ────────────────────────────────────────────
-    "lofi":    GenreParameterPrior(temperature=0.82, top_p=0.93, density_offset=-0.1,  prime_ratio=0.8),
+    "lofi": GenreParameterPrior(temperature=0.82, top_p=0.93, density_offset=-0.1, prime_ratio=0.8),
     "ambient": GenreParameterPrior(temperature=0.80, top_p=0.92, density_offset=-0.25, prime_ratio=1.0),
 
     # ── Cinematic / soul / rnb ─────────────────────────────────────────
     "cinematic": GenreParameterPrior(temperature=0.94, top_p=0.97, density_offset=0.0),
-    "soul":      GenreParameterPrior(temperature=0.90, top_p=0.96, density_offset=-0.05),
-    "rnb":       GenreParameterPrior(temperature=0.88, top_p=0.95, density_offset=-0.1),
-    "funk":      GenreParameterPrior(temperature=0.90, top_p=0.96, density_offset=0.05),
+    "soul": GenreParameterPrior(temperature=0.90, top_p=0.96, density_offset=-0.05),
+    "rnb": GenreParameterPrior(temperature=0.88, top_p=0.95, density_offset=-0.1),
+    "funk": GenreParameterPrior(temperature=0.90, top_p=0.96, density_offset=0.05),
 }
 
 # Fuzzy aliases: substring tokens → canonical key in _GENRE_PRIORS.
 # Checked in order; first match wins.
 _GENRE_ALIAS_TOKENS: list[tuple[str, str]] = [
     ("experimental", "experimental"),
-    ("fusion",    "fusion"),
-    ("jazz",      "jazz"),
-    ("prog",      "prog"),
-    ("techno",    "techno"),
-    ("house",     "house"),
-    ("trance",    "trance"),
-    ("minimal",   "minimal"),
-    ("trap",      "trap"),
-    ("drill",     "drill"),
-    ("boom",      "boom_bap"),
-    ("bap",       "boom_bap"),
-    ("hip",       "boom_bap"),
-    ("lofi",      "lofi"),
-    ("lo-fi",     "lofi"),
-    ("chill",     "lofi"),
-    ("ambient",   "ambient"),
+    ("fusion", "fusion"),
+    ("jazz", "jazz"),
+    ("prog", "prog"),
+    ("techno", "techno"),
+    ("house", "house"),
+    ("trance", "trance"),
+    ("minimal", "minimal"),
+    ("trap", "trap"),
+    ("drill", "drill"),
+    ("boom", "boom_bap"),
+    ("bap", "boom_bap"),
+    ("hip", "boom_bap"),
+    ("lofi", "lofi"),
+    ("lo-fi", "lofi"),
+    ("chill", "lofi"),
+    ("ambient", "ambient"),
     ("cinematic", "cinematic"),
-    ("soul",      "soul"),
-    ("neo soul",  "soul"),
-    ("rnb",       "rnb"),
-    ("r&b",       "rnb"),
-    ("funk",      "funk"),
+    ("soul", "soul"),
+    ("neo soul", "soul"),
+    ("rnb", "rnb"),
+    ("r&b", "rnb"),
+    ("funk", "funk"),
 ]
 
 
@@ -599,7 +599,7 @@ def get_genre_prior(genre: str) -> GenreParameterPrior | None:
     """Return the ``GenreParameterPrior`` for *genre*, or ``None`` if unknown.
 
     Matching is fuzzy: genre string is lowercased and checked for substring
-    tokens defined in ``_GENRE_ALIAS_TOKENS``.  First match wins so that
+    tokens defined in ``_GENRE_ALIAS_TOKENS``. First match wins so that
     compound strings like ``"dark minimal techno"`` resolve to ``"techno"``.
 
     Returns ``None`` for genres not covered by any alias, allowing the
@@ -658,7 +658,7 @@ def quality_preset_to_batch_count(preset: str) -> int:
 # ── Control vector → Gradio API parameter mapping ─────────────────
 
 # Orpheus temperature range: lower → more deterministic / repetitive,
-# higher → more creative / chaotic.  Space ships 0.9; safe range 0.7–1.0.
+# higher → more creative / chaotic. Space ships 0.9; safe range 0.7–1.0.
 _TEMP_MIN = 0.7
 _TEMP_MAX = 1.0
 
@@ -686,7 +686,7 @@ def apply_controls_to_params(
     ``complexity`` scales prime context.
 
     When *genre_prior* is supplied, its ``temperature`` and ``top_p``
-    values **replace** the control-vector-derived ones.  Its
+    values **replace** the control-vector-derived ones. Its
     ``density_offset`` is applied to ``controls.density`` before token
     allocation, and ``prime_ratio`` scales the prime token budget.
     """

@@ -1,33 +1,33 @@
-"""Tests for the Muse Hub new-repo creation wizard (issue #438).
+"""Tests for the Muse Hub new-repo creation wizard.
 
 Covers ``maestro/api/routes/musehub/ui_new_repo.py``:
 
-  GET  /musehub/ui/new
+  GET /musehub/ui/new
   POST /musehub/ui/new
-  GET  /musehub/ui/new/check
+  GET /musehub/ui/new/check
 
 Test matrix:
-  test_new_repo_page_returns_200             — GET returns HTTP 200 HTML
-  test_new_repo_page_no_auth_required        — GET works without a JWT
-  test_new_repo_page_has_form               — HTML contains the wizard form
-  test_new_repo_page_has_owner_input         — HTML has owner input field
-  test_new_repo_page_has_visibility_options  — HTML has Public/Private toggle
-  test_new_repo_page_has_license_options     — JS references LICENSES constant
-  test_new_repo_page_has_topics_input        — HTML has topics container
+  test_new_repo_page_returns_200 — GET returns HTTP 200 HTML
+  test_new_repo_page_no_auth_required — GET works without a JWT
+  test_new_repo_page_has_form — HTML contains the wizard form
+  test_new_repo_page_has_owner_input — HTML has owner input field
+  test_new_repo_page_has_visibility_options — HTML has Public/Private toggle
+  test_new_repo_page_has_license_options — JS references LICENSES constant
+  test_new_repo_page_has_topics_input — HTML has topics container
   test_new_repo_page_has_initialize_checkbox — HTML has initialize checkbox
-  test_new_repo_page_has_branch_input        — HTML has default branch input
-  test_new_repo_page_has_template_search     — HTML has template search input
-  test_check_available_returns_true          — GET /new/check → available=true
-  test_check_taken_returns_false             — GET /new/check → available=false
-  test_check_requires_owner_and_slug         — GET /new/check → 422 when missing params
-  test_create_repo_requires_auth             — POST without token → 401/403
-  test_create_repo_success                   — POST with valid body → 201 + redirect
-  test_create_repo_409_on_duplicate          — POST duplicate → 409
-  test_create_repo_redirect_url_format       — redirect URL contains /musehub/ui/{owner}/{slug}?welcome=1
-  test_create_repo_private_default           — POST without visibility → defaults to private
-  test_create_repo_initializes_repo          — POST with initialize=true creates the repo
-  test_create_repo_with_license              — POST with license field stored correctly
-  test_create_repo_with_topics               — POST with topics stored as tags
+  test_new_repo_page_has_branch_input — HTML has default branch input
+  test_new_repo_page_has_template_search — HTML has template search input
+  test_check_available_returns_true — GET /new/check → available=true
+  test_check_taken_returns_false — GET /new/check → available=false
+  test_check_requires_owner_and_slug — GET /new/check → 422 when missing params
+  test_create_repo_requires_auth — POST without token → 401/403
+  test_create_repo_success — POST with valid body → 201 + redirect
+  test_create_repo_409_on_duplicate — POST duplicate → 409
+  test_create_repo_redirect_url_format — redirect URL contains /musehub/ui/{owner}/{slug}?welcome=1
+  test_create_repo_private_default — POST without visibility → defaults to private
+  test_create_repo_initializes_repo — POST with initialize=true creates the repo
+  test_create_repo_with_license — POST with license field stored correctly
+  test_create_repo_with_topics — POST with topics stored as tags
 """
 from __future__ import annotations
 

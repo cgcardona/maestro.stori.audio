@@ -3,8 +3,8 @@
 Serves two routes from a single module — both render the same template with a
 ``mode`` switch that distinguishes the index view from the per-tag detail view:
 
-  GET /musehub/ui/topics          — topics index (grid + curated groups + search)
-  GET /musehub/ui/topics/{tag}    — single topic detail (featured repos + repo grid)
+  GET /musehub/ui/topics — topics index (grid + curated groups + search)
+  GET /musehub/ui/topics/{tag} — single topic detail (featured repos + repo grid)
 
 Content negotiation (one URL, two audiences):
   HTML (default) — rendered via Jinja2 using ``musehub/pages/topics.html``.
@@ -126,7 +126,7 @@ async def _fetch_all_topics(db_session: AsyncSession) -> list[TopicItem]:
     """Aggregate all topic slugs from public repos, sorted by popularity.
 
     Performs a full scan of ``musehub_repos.tags`` and counts tag occurrences
-    in Python — safe across PostgreSQL and SQLite (used in tests).  Private
+    in Python — safe across PostgreSQL and SQLite (used in tests). Private
     repo tags are excluded so callers cannot infer private repo existence.
     """
     rows = await db_session.execute(
@@ -173,7 +173,7 @@ async def _fetch_topic_repos(
 
     Duplicates the query from ``topics.list_repos_by_topic`` intentionally:
     the UI layer owns its own DB access to stay decoupled from the API layer's
-    internal implementation.  Sort options: ``stars`` or ``updated``.
+    internal implementation. Sort options: ``stars`` or ``updated``.
     """
     tag_lower = tag.lower()
     offset = (max(page, 1) - 1) * page_size
@@ -257,17 +257,17 @@ async def topics_index_page(
 
     HTML (default):
         A two-column layout — search/filter input on the left, topic grid on
-        the right.  Each topic card shows its slug and ``repo_count`` badge.
+        the right. Each topic card shows its slug and ``repo_count`` badge.
         Below the grid, curated groups (Genres, Instruments, Eras) are rendered
-        as collapsible sections for quick category navigation.  All topic data
+        as collapsible sections for quick category navigation. All topic data
         is fetched client-side via the ``?format=json`` alternate so the page
         shell loads instantly without a server-side DB round-trip on HTML requests.
 
     JSON (``?format=json`` or ``Accept: application/json``):
         Returns ``TopicsIndexResponse`` with:
-        - ``allTopics``     — all topics ranked by repo_count (most popular first).
+        - ``allTopics`` — all topics ranked by repo_count (most popular first).
         - ``curatedGroups`` — Genres, Instruments, Eras groupings with counts.
-        - ``total``         — distinct topic count.
+        - ``total`` — distinct topic count.
 
     No JWT required — the topics index is a public discovery surface.
     """

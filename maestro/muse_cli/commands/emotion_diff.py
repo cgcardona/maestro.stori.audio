@@ -1,8 +1,8 @@
 """muse emotion-diff — compare emotion vectors between two commits.
 
 Answers "how did the emotional character of my composition change?" by comparing
-two commits' emotion profiles.  When explicit ``emotion:*`` tags exist (set via
-``muse tag add emotion:<label> <commit>``), those are diffed directly.  When tags
+two commits' emotion profiles. When explicit ``emotion:*`` tags exist (set via
+``muse tag add emotion:<label> <commit>``), those are diffed directly. When tags
 are absent, the engine infers an emotion vector from available musical metadata
 (tempo, commit annotation) and reports it alongside an ``[inferred]`` notice.
 
@@ -29,15 +29,15 @@ Output example (text mode)
     Emotion diff — a1b2c3d4 → f9e8d7c6
     Source: explicit_tags
 
-    Commit A (a1b2c3d4):  melancholic
-    Commit B (f9e8d7c6):  joyful
+    Commit A (a1b2c3d4): melancholic
+    Commit B (f9e8d7c6): joyful
 
-    Dimension      Commit A   Commit B   Delta
-    -----------    --------   --------   -----
-    energy           0.3000     0.8000  +0.5000
-    valence          0.3000     0.9000  +0.6000
-    tension          0.4000     0.2000  -0.2000
-    darkness         0.6000     0.1000  -0.5000
+    Dimension Commit A Commit B Delta
+    ----------- -------- -------- -----
+    energy 0.3000 0.8000 +0.5000
+    valence 0.3000 0.9000 +0.6000
+    tension 0.4000 0.2000 -0.2000
+    darkness 0.6000 0.1000 -0.5000
 
     Drift: 0.9747 (major)
     melancholic → joyful (+valence, -darkness) [explicit_tags]
@@ -63,12 +63,12 @@ Output example (JSON mode)
 
 Flags
 -----
-``COMMIT_A``      First (baseline) commit ref. Default: HEAD~1.
-``COMMIT_B``      Second (target) commit ref. Default: HEAD.
-``--track TEXT``  Scope analysis to a specific track (noted; full per-track
+``COMMIT_A`` First (baseline) commit ref. Default: HEAD~1.
+``COMMIT_B`` Second (target) commit ref. Default: HEAD.
+``--track TEXT`` Scope analysis to a specific track (noted; full per-track
                   scoping requires MIDI content — tracked as follow-up).
 ``--section TEXT`` Scope to a named section (same stub note as --track).
-``--json``        Emit structured JSON for agent or tool consumption.
+``--json`` Emit structured JSON for agent or tool consumption.
 """
 from __future__ import annotations
 
@@ -169,7 +169,7 @@ def _resolve_repo_id(root: pathlib.Path) -> str:
 # Renderers
 # ---------------------------------------------------------------------------
 
-_COL_WIDTHS = (11, 9, 9, 8)  # dimension, commit_a, commit_b, delta
+_COL_WIDTHS = (11, 9, 9, 8) # dimension, commit_a, commit_b, delta
 
 
 def render_text(result: EmotionDiffResult) -> None:
@@ -184,33 +184,33 @@ def render_text(result: EmotionDiffResult) -> None:
 
     label_a_str = result.label_a or "(inferred)"
     label_b_str = result.label_b or "(inferred)"
-    typer.echo(f"Commit A ({result.commit_a}):  {label_a_str}")
-    typer.echo(f"Commit B ({result.commit_b}):  {label_b_str}")
+    typer.echo(f"Commit A ({result.commit_a}): {label_a_str}")
+    typer.echo(f"Commit B ({result.commit_b}): {label_b_str}")
 
     if result.track:
         typer.echo(f"Track filter: {result.track}")
-        typer.echo("⚠️  Per-track emotion scoping not yet implemented — showing full-commit vectors.")
+        typer.echo("⚠️ Per-track emotion scoping not yet implemented — showing full-commit vectors.")
     if result.section:
         typer.echo(f"Section filter: {result.section}")
-        typer.echo("⚠️  Section-scoped emotion analysis not yet implemented.")
+        typer.echo("⚠️ Section-scoped emotion analysis not yet implemented.")
 
     typer.echo("")
 
     if result.vector_a is None or result.vector_b is None:
-        typer.echo("⚠️  One or both commits have no emotion data available.")
+        typer.echo("⚠️ One or both commits have no emotion data available.")
         return
 
     # Header
     header = (
-        f"{'Dimension':<{_COL_WIDTHS[0]}}  "
-        f"{'Commit A':>{_COL_WIDTHS[1]}}  "
-        f"{'Commit B':>{_COL_WIDTHS[2]}}  "
+        f"{'Dimension':<{_COL_WIDTHS[0]}} "
+        f"{'Commit A':>{_COL_WIDTHS[1]}} "
+        f"{'Commit B':>{_COL_WIDTHS[2]}} "
         f"{'Delta':>{_COL_WIDTHS[3]}}"
     )
     sep = (
-        f"{'-' * _COL_WIDTHS[0]}  "
-        f"{'-' * _COL_WIDTHS[1]}  "
-        f"{'-' * _COL_WIDTHS[2]}  "
+        f"{'-' * _COL_WIDTHS[0]} "
+        f"{'-' * _COL_WIDTHS[1]} "
+        f"{'-' * _COL_WIDTHS[2]} "
         f"{'-' * _COL_WIDTHS[3]}"
     )
     typer.echo(header)
@@ -219,9 +219,9 @@ def render_text(result: EmotionDiffResult) -> None:
     for dim in result.dimensions:
         sign = "+" if dim.delta > 0 else ""
         typer.echo(
-            f"{dim.dimension:<{_COL_WIDTHS[0]}}  "
-            f"{dim.value_a:>{_COL_WIDTHS[1]}.4f}  "
-            f"{dim.value_b:>{_COL_WIDTHS[2]}.4f}  "
+            f"{dim.dimension:<{_COL_WIDTHS[0]}} "
+            f"{dim.value_a:>{_COL_WIDTHS[1]}.4f} "
+            f"{dim.value_b:>{_COL_WIDTHS[2]}.4f} "
             f"{sign}{dim.delta:>{_COL_WIDTHS[3] - 1}.4f}"
         )
 
@@ -283,13 +283,13 @@ async def _emotion_diff_async(
     renders the result in text or JSON format.
 
     Args:
-        root:      Repository root (directory containing ``.muse/``).
-        session:   Open async DB session.
-        commit_a:  First commit ref (baseline).
-        commit_b:  Second commit ref (target).
-        track:     Optional track name filter.
-        section:   Optional section name filter.
-        as_json:   If ``True``, render JSON; otherwise render text table.
+        root: Repository root (directory containing ``.muse/``).
+        session: Open async DB session.
+        commit_a: First commit ref (baseline).
+        commit_b: Second commit ref (target).
+        track: Optional track name filter.
+        section: Optional section name filter.
+        as_json: If ``True``, render JSON; otherwise render text table.
     """
     branch = _resolve_branch(root)
     repo_id = _resolve_repo_id(root)
@@ -353,7 +353,7 @@ def emotion_diff(
     """Compare emotion vectors between two commits.
 
     Reads ``emotion:*`` tags on COMMIT_A and COMMIT_B and reports the shift
-    in emotional space.  When explicit tags are absent, infers emotion from
+    in emotional space. When explicit tags are absent, infers emotion from
     available musical metadata and notes the inference source.
 
     Defaults to comparing HEAD~1 against HEAD so that ``muse emotion-diff``

@@ -1,0 +1,182 @@
+{% extends "base.html" %}
+
+{% block title %}AgentCeption — Telemetry{% endblock %}
+
+{% block content %}
+{#
+  Telemetry page: wave history as a CSS-only horizontal bar chart and a
+  summary table with per-wave timing, cost, and agent details expandable
+  via Alpine x-show.  No JS charting library — all bar widths are
+  percentages computed by the route handler.
+#}
+
+{# ── Summary stats bar ───────────────────────────────────────────────────── #}
+{# Totals are pre-computed by the route handler and passed as context variables. #}
+
+<div class="pipeline-summary-bar" role="status" aria-label="Telemetry summary">
+  <div class="summary-item">
+    <span class="summary-label">Waves run</span>
+    <span class="summary-value">{{ waves | length }}</span>
+  </div>
+  <div class="summary-item">
+    <span class="summary-label">Issues worked</span>
+    <span class="summary-value">{{ total_issues }}</span>
+  </div>
+  <div class="summary-item">
+    <span class="summary-label">Est. cost (USD)</span>
+    <span class="summary-value">${{ "%.4f" | format(total_cost_usd) }}</span>
+  </div>
+  <div class="summary-item">
+    <span class="summary-label">All-time agents</span>
+    <span class="summary-value">{{ total_agents }}</span>
+  </div>
+</div>
+
+{# ── Empty state ─────────────────────────────────────────────────────────── #}
+{% if not waves %}
+<div class="card mt-2">
+  <p class="text-muted empty-state">No wave history available yet. Waves appear once agents start running.</p>
+</div>
+{% else %}
+
+{# ── CSS timeline bar chart ──────────────────────────────────────────────── #}
+<section class="telemetry-chart-section mt-2" aria-label="Wave timeline">
+  <h2 class="section-title">Timeline</h2>
+  <div class="telemetry-chart card">
+    {% for wave in waves %}
+    {%   set duration_s = (wave.ended_at - wave.started_at) if wave.ended_at is not none else 0 %}
+    {%   if max_duration_s > 0 and wave.ended_at is not none %}
+    {%     set pct = ((duration_s / max_duration_s) * 100) | round(1) %}
+    {%   else %}
+    {%     set pct = 100 %}
+    {%   endif %}
+    {#   Colour: active → yellow, very short (<10 s) → grey, complete → green #}
+    {%   if wave.ended_at is none %}
+    {%     set bar_class = "telemetry-bar--active" %}
+    {%   elif duration_s < 10 %}
+    {%     set bar_class = "telemetry-bar--short" %}
+    {%   else %}
+    {%     set bar_class = "telemetry-bar--complete" %}
+    {%   endif %}
+    <div class="telemetry-bar-row" title="Batch: {{ wave.batch_id }} | Duration: {{ duration_s | int }}s | Issues: {{ wave.issues_worked | join(', ') }} | Cost: ${{ '%.4f' | format(wave.estimated_cost_usd) }}">
+      <span class="telemetry-bar-label text-muted">{{ wave.batch_id }}</span>
+      <div class="telemetry-bar-track">
+        <div class="telemetry-bar {{ bar_class }}" style="width: {{ pct }}%">
+          {% if pct > 15 %}
+          <span class="telemetry-bar-text">{{ duration_s | int }}s · {{ wave.issues_worked | length }} issue{{ 's' if wave.issues_worked | length != 1 else '' }}</span>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+</section>
+
+{# ── Wave summary table ───────────────────────────────────────────────────── #}
+<section class="mt-3" aria-label="Wave table">
+  <h2 class="section-title">Wave History</h2>
+  <div class="telemetry-table-wrap card">
+    <table class="telemetry-table" role="table">
+      <thead>
+        <tr>
+          <th class="telemetry-th">Batch ID</th>
+          <th class="telemetry-th">Start</th>
+          <th class="telemetry-th">Duration</th>
+          <th class="telemetry-th">Issues</th>
+          <th class="telemetry-th">PRs opened</th>
+          <th class="telemetry-th">PRs merged</th>
+          <th class="telemetry-th">Est. tokens</th>
+          <th class="telemetry-th">Est. cost</th>
+          <th class="telemetry-th"></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for wave in waves %}
+        {%   set row_id = "wave-" ~ loop.index %}
+        {%   set duration_s = (wave.ended_at - wave.started_at) | int if wave.ended_at is not none else none %}
+        <tr
+          class="telemetry-row"
+          x-data="{ open: false }"
+        >
+          <td class="telemetry-td telemetry-td--batch">
+            <code class="telemetry-batch-id">{{ wave.batch_id }}</code>
+          </td>
+          <td class="telemetry-td text-muted">
+            {% if wave.started_at %}
+              {{ wave.started_at | format_ts }}
+            {% else %}
+              —
+            {% endif %}
+          </td>
+          <td class="telemetry-td text-muted">
+            {% if duration_s is not none %}
+              {{ duration_s }}s
+            {% elif wave.ended_at is none %}
+              <span class="text-warning">active</span>
+            {% else %}
+              —
+            {% endif %}
+          </td>
+          <td class="telemetry-td">
+            {% if wave.issues_worked %}
+              <span class="text-muted">{{ wave.issues_worked | join(', ') }}</span>
+            {% else %}
+              <span class="text-muted">—</span>
+            {% endif %}
+          </td>
+          <td class="telemetry-td text-muted">{{ wave.prs_opened }}</td>
+          <td class="telemetry-td text-muted">{{ wave.prs_merged }}</td>
+          <td class="telemetry-td text-muted">{{ wave.estimated_tokens | int | format_number }}</td>
+          <td class="telemetry-td text-muted">${{ "%.4f" | format(wave.estimated_cost_usd) }}</td>
+          <td class="telemetry-td">
+            {% if wave.agents %}
+            <button
+              class="btn btn-secondary telemetry-expand-btn"
+              @click="open = !open"
+              :aria-expanded="open.toString()"
+              aria-label="Toggle agent details"
+              x-text="open ? 'Hide' : 'Agents (' + {{ wave.agents | length }} + ')'"
+            ></button>
+            {% endif %}
+          </td>
+        </tr>
+
+        {# Expandable agent details row #}
+        {% if wave.agents %}
+        <tr x-show="open" x-cloak class="telemetry-agents-row">
+          <td colspan="9" class="telemetry-agents-cell">
+            <div class="telemetry-agents-list">
+              {% for agent in wave.agents %}
+              <div class="telemetry-agent-item">
+                <span
+                  class="status-badge status-badge--{{ agent.status.value }}"
+                >{{ agent.status.value }}</span>
+                <a
+                  href="/agents/{{ agent.id }}"
+                  class="telemetry-agent-role"
+                >{{ agent.role }}</a>
+                {% if agent.issue_number is not none %}
+                <span class="agent-meta">#{{ agent.issue_number }}</span>
+                {% endif %}
+                {% if agent.pr_number is not none %}
+                <span class="agent-meta">PR {{ agent.pr_number }}</span>
+                {% endif %}
+                {% if agent.branch %}
+                <span class="agent-meta text-muted">{{ agent.branch }}</span>
+                {% endif %}
+              </div>
+              {% endfor %}
+            </div>
+          </td>
+        </tr>
+        {% endif %}
+
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+{% endif %}{# if not waves #}
+
+{% endblock %}

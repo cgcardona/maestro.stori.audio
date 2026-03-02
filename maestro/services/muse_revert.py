@@ -93,7 +93,7 @@ def _filter_paths(
     """Return the set of paths in *manifest* that match the given filters.
 
     A path matches if it starts with ``tracks/<track>/`` (for --track)
-    or ``sections/<section>/`` (for --section).  When both are supplied the
+    or ``sections/<section>/`` (for --section). When both are supplied the
     union of matching paths is returned.
 
     Returns all paths in *manifest* when neither filter is given.
@@ -125,7 +125,7 @@ def compute_revert_manifest(
     (or removed if they did not exist in the parent).
 
     Returns:
-        Tuple of (revert_manifest, scoped_paths_tuple).  ``scoped_paths_tuple``
+        Tuple of (revert_manifest, scoped_paths_tuple). ``scoped_paths_tuple``
         is empty for an unscoped revert.
 
     Pure function — no I/O, no DB.
@@ -226,7 +226,7 @@ async def _revert_async(
 ) -> RevertResult:
     """Core revert pipeline — resolve, validate, and execute the revert.
 
-    Called by the CLI callback and by tests.  All filesystem and DB
+    Called by the CLI callback and by tests. All filesystem and DB
     side-effects are isolated here so tests can inject an in-memory
     SQLite session and a ``tmp_path`` root.
 
@@ -259,7 +259,7 @@ async def _revert_async(
     if merge_state is not None and merge_state.conflict_paths:
         typer.echo(
             "❌ Revert blocked: unresolved merge conflicts in progress.\n"
-            "   Resolve all conflicts, then run 'muse commit' before reverting."
+            " Resolve all conflicts, then run 'muse commit' before reverting."
         )
         raise typer.Exit(code=ExitCode.USER_ERROR)
 
@@ -342,16 +342,16 @@ async def _revert_async(
         )
         if paths_missing:
             typer.echo(
-                "⚠️  Some files cannot be restored automatically (bytes not in object store):\n"
-                + "\n".join(f"   missing: {p}" for p in sorted(paths_missing))
+                "⚠️ Some files cannot be restored automatically (bytes not in object store):\n"
+                + "\n".join(f" missing: {p}" for p in sorted(paths_missing))
             )
         if paths_deleted:
             typer.echo(
                 "✅ Staged revert (--no-commit). Files removed:\n"
-                + "\n".join(f"   deleted: {p}" for p in sorted(paths_deleted))
+                + "\n".join(f" deleted: {p}" for p in sorted(paths_deleted))
             )
         else:
-            typer.echo("⚠️  --no-commit: no file deletions were needed.")
+            typer.echo("⚠️ --no-commit: no file deletions were needed.")
         return RevertResult(
             commit_id="",
             target_commit_id=target_commit_id,

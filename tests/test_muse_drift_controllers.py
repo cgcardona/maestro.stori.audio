@@ -18,7 +18,7 @@ from maestro.contracts.json_types import AftertouchDict, CCEventDict, NoteDict, 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from maestro.db.database import Base
-from maestro.db import muse_models  # noqa: F401 — register tables
+from maestro.db import muse_models # noqa: F401 — register tables
 from maestro.models.variation import (
     MidiNoteSnapshot,
     NoteChange,

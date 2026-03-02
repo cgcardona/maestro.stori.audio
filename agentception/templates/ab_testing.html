@@ -1,0 +1,225 @@
+{% extends "base.html" %}
+
+{% block title %}AgentCeption — A/B Testing{% endblock %}
+
+{% block content %}
+{#
+  A/B role variant comparison dashboard (AC-505).
+  Two side-by-side cards compare Variant A (even-second BATCH_ID) against
+  Variant B (odd-second BATCH_ID) across: PRs opened, merge rate, average
+  reviewer grade, and batch count.  A winner badge appears when one variant's
+  merge rate clearly outperforms the other.  Below the cards is a raw data
+  table listing each batch, its assigned variant, PRs opened, and grade.
+#}
+
+<h1 class="section-title">A/B Role Variant Comparison</h1>
+<p class="text-muted mt-1" style="margin-bottom: 1.5rem;">
+  Comparing agent outcomes across two role prompt variants.
+  <strong>Variant A</strong> = even-second BATCH_ID &nbsp;·&nbsp;
+  <strong>Variant B</strong> = odd-second BATCH_ID.
+</p>
+
+{# ── Error banner ─────────────────────────────────────────────────────────── #}
+{% if error %}
+<div class="card mt-2" style="border-left: 3px solid var(--color-error, #dc2626);">
+  <p class="text-muted">⚠️ {{ error }}</p>
+</div>
+{% endif %}
+
+{# ── Comparison cards ─────────────────────────────────────────────────────── #}
+{% if variant_a and variant_b %}
+<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-top: 1rem;">
+
+  {# Variant A card #}
+  <div class="card" style="position: relative;">
+    {% if winner == "A" %}
+    <span class="badge badge--green" style="position: absolute; top: 0.75rem; right: 0.75rem;">
+      🏆 Winner
+    </span>
+    {% endif %}
+    <h2 class="section-title" style="margin-bottom: 0.75rem;">
+      Variant A
+      {% if winner == "A" %}<span style="color: var(--color-success, #16a34a);">✓</span>{% endif %}
+    </h2>
+    {% if variant_a.role_sha %}
+    <p class="text-muted" style="font-family: monospace; font-size: 0.8rem; margin-bottom: 0.75rem;">
+      SHA: {{ variant_a.role_sha[:12] }}
+    </p>
+    {% endif %}
+
+    <table class="telemetry-table" style="width: 100%;">
+      <tbody>
+        <tr>
+          <td class="text-muted">Batches</td>
+          <td><strong>{{ variant_a.batch_ids | length }}</strong></td>
+        </tr>
+        <tr>
+          <td class="text-muted">PRs opened</td>
+          <td><strong>{{ variant_a.prs_opened }}</strong></td>
+        </tr>
+        <tr>
+          <td class="text-muted">PRs merged</td>
+          <td><strong>{{ variant_a.prs_merged }}</strong></td>
+        </tr>
+        <tr>
+          <td class="text-muted">Merge rate</td>
+          <td>
+            <strong>
+              {% if variant_a.merge_rate > 0 %}
+              {{ "%.0f%%" | format(variant_a.merge_rate * 100) }}
+              {% else %}
+              —
+              {% endif %}
+            </strong>
+          </td>
+        </tr>
+        <tr>
+          <td class="text-muted">Avg grade</td>
+          <td>
+            <strong>
+              {% if variant_a.avg_grade %}
+              <span class="badge
+                {%- if variant_a.avg_grade == 'A' %} badge--green
+                {%- elif variant_a.avg_grade == 'B' %} badge--blue
+                {%- elif variant_a.avg_grade in ('D', 'F') %} badge--red
+                {%- else %} badge--grey
+                {%- endif %}">
+                {{ variant_a.avg_grade }}
+              </span>
+              {% else %}
+              <span class="text-muted">—</span>
+              {% endif %}
+            </strong>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  {# Variant B card #}
+  <div class="card" style="position: relative;">
+    {% if winner == "B" %}
+    <span class="badge badge--green" style="position: absolute; top: 0.75rem; right: 0.75rem;">
+      🏆 Winner
+    </span>
+    {% endif %}
+    <h2 class="section-title" style="margin-bottom: 0.75rem;">
+      Variant B
+      {% if winner == "B" %}<span style="color: var(--color-success, #16a34a);">✓</span>{% endif %}
+    </h2>
+    {% if variant_b.role_sha %}
+    <p class="text-muted" style="font-family: monospace; font-size: 0.8rem; margin-bottom: 0.75rem;">
+      SHA: {{ variant_b.role_sha[:12] }}
+    </p>
+    {% endif %}
+
+    <table class="telemetry-table" style="width: 100%;">
+      <tbody>
+        <tr>
+          <td class="text-muted">Batches</td>
+          <td><strong>{{ variant_b.batch_ids | length }}</strong></td>
+        </tr>
+        <tr>
+          <td class="text-muted">PRs opened</td>
+          <td><strong>{{ variant_b.prs_opened }}</strong></td>
+        </tr>
+        <tr>
+          <td class="text-muted">PRs merged</td>
+          <td><strong>{{ variant_b.prs_merged }}</strong></td>
+        </tr>
+        <tr>
+          <td class="text-muted">Merge rate</td>
+          <td>
+            <strong>
+              {% if variant_b.merge_rate > 0 %}
+              {{ "%.0f%%" | format(variant_b.merge_rate * 100) }}
+              {% else %}
+              —
+              {% endif %}
+            </strong>
+          </td>
+        </tr>
+        <tr>
+          <td class="text-muted">Avg grade</td>
+          <td>
+            <strong>
+              {% if variant_b.avg_grade %}
+              <span class="badge
+                {%- if variant_b.avg_grade == 'A' %} badge--green
+                {%- elif variant_b.avg_grade == 'B' %} badge--blue
+                {%- elif variant_b.avg_grade in ('D', 'F') %} badge--red
+                {%- else %} badge--grey
+                {%- endif %}">
+                {{ variant_b.avg_grade }}
+              </span>
+              {% else %}
+              <span class="text-muted">—</span>
+              {% endif %}
+            </strong>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+{# ── No-winner note ───────────────────────────────────────────────────────── #}
+{% if not winner %}
+<p class="text-muted mt-2" style="text-align: center; font-style: italic;">
+  No clear winner yet — variants are tied or insufficient data.
+</p>
+{% endif %}
+
+{# ── Raw data: batch breakdown ────────────────────────────────────────────── #}
+{% if variant_a.batch_ids or variant_b.batch_ids %}
+<section class="mt-2">
+  <h2 class="section-title">Batch Breakdown</h2>
+  <div class="card" style="padding: 0; overflow: hidden;">
+    <table class="telemetry-table" style="width: 100%; margin: 0;">
+      <thead>
+        <tr>
+          <th>Batch ID</th>
+          <th>Variant</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for batch_id in variant_a.batch_ids %}
+        <tr>
+          <td style="font-family: monospace; font-size: 0.85rem;">{{ batch_id }}</td>
+          <td>
+            <span class="badge badge--blue">A</span>
+          </td>
+        </tr>
+        {% endfor %}
+        {% for batch_id in variant_b.batch_ids %}
+        <tr>
+          <td style="font-family: monospace; font-size: 0.85rem;">{{ batch_id }}</td>
+          <td>
+            <span class="badge badge--grey">B</span>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% else %}
+<div class="card mt-2">
+  <p class="text-muted empty-state">
+    No A/B batch data yet. Batches appear once agents run with A/B mode enabled.
+  </p>
+</div>
+{% endif %}
+
+{% else %}
+{# Fallback: results unavailable (e.g. error before compute_ab_results returned) #}
+{% if not error %}
+<div class="card mt-2">
+  <p class="text-muted empty-state">
+    A/B results are unavailable. Enable A/B mode in the pipeline config and run at least one wave.
+  </p>
+</div>
+{% endif %}
+{% endif %}
+
+{% endblock %}

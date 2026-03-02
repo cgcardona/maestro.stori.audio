@@ -1,7 +1,7 @@
 """Tests for the three-level agent architecture.
 
 Covers: SectionSignals, SectionResult, _run_section_child, and
-_dispatch_section_children.  Edge cases: single-section, no-drums,
+_dispatch_section_children. Edge cases: single-section, no-drums,
 no-bass, section child failure, missing regionId.
 """
 from __future__ import annotations
@@ -1041,7 +1041,7 @@ class TestDispatchSectionChildren:
         """planStepUpdate(completed) is queued for content_step_id after children finish.
 
         Regression for P2: before the fix _dispatch_section_children activated
-        content_step_id but never completed it.  The outer loop's active_step_id
+        content_step_id but never completed it. The outer loop's active_step_id
         was never updated from the multi-section path, so the step stayed stuck
         in 'active' indefinitely on the macOS client.
         """
@@ -1140,7 +1140,7 @@ class TestDispatchSectionChildren:
         """generatorStart and generatorComplete events in section children carry agentId.
 
         The _emit() helper in section_agent tags all _AGENT_TAGGED_EVENTS with
-        agentId + sectionName.  This test verifies that a section child's queued
+        agentId + sectionName. This test verifies that a section child's queued
         events contain agentId so the macOS client can route them to the correct
         instrument card.
         """
@@ -1369,7 +1369,7 @@ class TestOrphanedRegionHandling:
     Before this fix, the LLM would send N regions in Turn 1 without generates.
     ``_dispatch_section_children`` used ``zip(region_tcs, generate_tcs)``
     producing 0 pairs, so regions were never executed and _regions_completed
-    stayed at 0.  ``_missing_stages()`` then told the LLM all stages were
+    stayed at 0. ``_missing_stages()`` then told the LLM all stages were
     still pending, wasting all max_turns and producing zero notes.
     """
 
@@ -1496,10 +1496,10 @@ class TestExtractExpressivenessBlocks:
         prompt = (
             "Title: Test\nStyle: house\n\n"
             "MidiExpressiveness:\n"
-            "  modulation:\n"
-            "    instrument: lead\n"
-            "    depth: strong\n"
-            "\nStructure:\n  Verse: 8 bars\n"
+            " modulation:\n"
+            " instrument: lead\n"
+            " depth: strong\n"
+            "\nStructure:\n Verse: 8 bars\n"
         )
         result = _extract_expressiveness_blocks(prompt)
         assert "MidiExpressiveness:" in result
@@ -1516,9 +1516,9 @@ class TestExtractExpressivenessBlocks:
         prompt = (
             "Title: Test\n\n"
             "Automation:\n"
-            "  filter_sweep:\n"
-            "    target: cutoff\n"
-            "\nStructure:\n  Verse: 8 bars\n"
+            " filter_sweep:\n"
+            " target: cutoff\n"
+            "\nStructure:\n Verse: 8 bars\n"
         )
         result = _extract_expressiveness_blocks(prompt)
         assert "Automation:" in result
@@ -1534,13 +1534,13 @@ class TestExtractExpressivenessBlocks:
         prompt = (
             "Title: Test\n\n"
             "MidiExpressiveness:\n"
-            "  cc_curves:\n"
-            "    - cc: 74\n"
+            " cc_curves:\n"
+            " - cc: 74\n"
             "\n"
             "Automation:\n"
-            "  filter:\n"
-            "    cutoff: sweep\n"
-            "\nStructure:\n  Verse: 8 bars\n"
+            " filter:\n"
+            " cutoff: sweep\n"
+            "\nStructure:\n Verse: 8 bars\n"
         )
         result = _extract_expressiveness_blocks(prompt)
         assert "MidiExpressiveness:" in result
@@ -1553,7 +1553,7 @@ class TestExtractExpressivenessBlocks:
             _extract_expressiveness_blocks,
         )
 
-        prompt = "Title: Test\nStyle: house\nStructure:\n  Verse: 8 bars\n"
+        prompt = "Title: Test\nStyle: house\nStructure:\n Verse: 8 bars\n"
         result = _extract_expressiveness_blocks(prompt)
         assert result == ""
 
@@ -1704,10 +1704,10 @@ class TestExpressionRefinementStreaming:
             raw_prompt=(
                 "Title: Test\n\n"
                 "MidiExpressiveness:\n"
-                "  modulation:\n"
-                "    instrument: lead\n"
-                "    depth: strong vibrato — CC 1 value 60-90\n"
-                "\nStructure:\n  Verse: 8 bars\n"
+                " modulation:\n"
+                " instrument: lead\n"
+                " depth: strong vibrato — CC 1 value 60-90\n"
+                "\nStructure:\n Verse: 8 bars\n"
             ),
         )
 
@@ -1767,7 +1767,7 @@ class TestExpressionRefinementStreaming:
         mock_llm = MagicMock()
 
         _runtime_ctx = RuntimeContext(
-            raw_prompt="Title: Simple\nStyle: house\nStructure:\n  Verse: 8 bars\n",
+            raw_prompt="Title: Simple\nStyle: house\nStructure:\n Verse: 8 bars\n",
         )
 
         result = SectionResult(success=True, section_name="verse", notes_generated=24)
@@ -1825,10 +1825,10 @@ class TestExpressionRefinementStreaming:
             raw_prompt=(
                 "Title: Deep house\n\n"
                 "MidiExpressiveness:\n"
-                "  modulation:\n"
-                "    instrument: pad\n"
-                "    depth: subtle vibrato — CC 1 value 30-50\n"
-                "\nStructure:\n  Verse: 8 bars\n"
+                " modulation:\n"
+                " instrument: pad\n"
+                " depth: subtle vibrato — CC 1 value 30-50\n"
+                "\nStructure:\n Verse: 8 bars\n"
             ),
         )
 
@@ -2211,7 +2211,7 @@ class TestServerOwnedRetries:
 class TestPreEmitGeneratorEvents:
     """Regression for SSE relay bug where generatorStart/toolStart were
     accumulated in a local list inside _execute_agent_generator and only
-    returned after mg.generate() completed.  This starved the SSE queue
+    returned after mg.generate() completed. This starved the SSE queue
     during long Storpheus calls, causing the frontend to time out.
 
     The fix adds a ``pre_emit_callback`` that flushes toolStart and
@@ -2408,6 +2408,6 @@ class TestPreEmitGeneratorEvents:
             if e.type == "generatorStart"
         ]
         assert len(gen_start_in_queue) >= 1, (
-            "generatorStart must be in the SSE queue BEFORE mg.generate() runs — "
+            "generatorStart must be in the SSE queue BEFORE mg.generate() runs"
             "this is the fix for the frontend timeout bug"
         )

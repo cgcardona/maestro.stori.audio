@@ -1,8 +1,8 @@
 """Webhook secret encryption — AES-256 envelope encryption for musehub_webhooks.secret.
 
 Webhook signing secrets must be recoverable at delivery time (so we can compute the
-HMAC-SHA256 header for subscribers).  One-way hashing (bcrypt/SHA256) is therefore
-not an option.  Instead we use Fernet symmetric encryption (AES-128-CBC + HMAC-SHA256
+HMAC-SHA256 header for subscribers). One-way hashing (bcrypt/SHA256) is therefore
+not an option. Instead we use Fernet symmetric encryption (AES-128-CBC + HMAC-SHA256
 under the hood, equivalent security to AES-256 for the threat model here) keyed with
 STORI_WEBHOOK_SECRET_KEY from the environment.
 
@@ -82,7 +82,7 @@ def is_fernet_token(value: str) -> bool:
     """Return True if *value* looks like a Fernet token.
 
     Fernet tokens are base64url-encoded and always begin with "gAAAAAB" (the
-    binary magic bytes 0x80 encoded in URL-safe base64).  We use this prefix
+    binary magic bytes 0x80 encoded in URL-safe base64). We use this prefix
     to distinguish already-encrypted values from legacy plaintext secrets.
     """
     return value.startswith(_FERNET_TOKEN_PREFIX)
@@ -91,7 +91,7 @@ def is_fernet_token(value: str) -> bool:
 def decrypt_secret(ciphertext: str) -> str:
     """Decrypt a webhook signing secret retrieved from the database.
 
-    Accepts a Fernet token produced by ``encrypt_secret``.  Returns the original
+    Accepts a Fernet token produced by ``encrypt_secret``. Returns the original
     plaintext when a key is configured, or the value unchanged when no key is set
     (matching the dev fallback in ``encrypt_secret``).
 
@@ -100,7 +100,7 @@ def decrypt_secret(ciphertext: str) -> str:
     plaintext secret), the plaintext is returned as-is with a deprecation warning.
     This prevents hard failures on existing webhooks while
     ``scripts/migrate_webhook_secrets.py`` (or the automatic transparent path) has
-    not yet re-encrypted every row.  Once all rows are migrated the fallback is
+    not yet re-encrypted every row. Once all rows are migrated the fallback is
     never triggered.
 
     Raises ``ValueError`` only when the value *looks like* a Fernet token but

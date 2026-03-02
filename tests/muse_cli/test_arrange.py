@@ -155,9 +155,9 @@ class TestBuildArrangementMatrix:
 
     def test_files_without_section_structure_are_ignored(self) -> None:
         manifest = {
-            "drums/beat.mid": "oid1",           # 1 dir + filename = 2 parts, ignored (< 3)
-            "solo.mid": "oid2",                  # flat file = ignored
-            "intro/drums/beat.mid": "oid3",     # valid: section/instrument/filename
+            "drums/beat.mid": "oid1", # 1 dir + filename = 2 parts, ignored (< 3)
+            "solo.mid": "oid2", # flat file = ignored
+            "intro/drums/beat.mid": "oid3", # valid: section/instrument/filename
         }
         matrix = build_arrangement_matrix("abcd1234" * 8, manifest)
         assert matrix.instruments == ["drums"]
@@ -196,7 +196,7 @@ class TestRenderMatrixText:
         manifest = {"chorus/piano/chords.mid": "oid1"}
         matrix = build_arrangement_matrix("abcd1234" * 8, manifest)
         output = render_matrix_text(matrix)
-        assert "\u2588\u2588\u2588\u2588" in output  # ████
+        assert "\u2588\u2588\u2588\u2588" in output # ████
 
     def test_inactive_cell_shows_light_shade(self) -> None:
         manifest = {
@@ -205,7 +205,7 @@ class TestRenderMatrixText:
         }
         matrix = build_arrangement_matrix("abcd1234" * 8, manifest)
         output = render_matrix_text(matrix)
-        assert "\u2591\u2591\u2591\u2591" in output  # ░░░░
+        assert "\u2591\u2591\u2591\u2591" in output # ░░░░
 
     def test_section_filter(self) -> None:
         manifest = {
@@ -393,7 +393,7 @@ async def test_arrange_renders_matrix_for_commit(
     assert "chorus" in matrix.sections
 
     assert matrix.get_cell("intro", "drums").active is True
-    assert matrix.get_cell("intro", "strings").active is False  # strings only in verse/chorus
+    assert matrix.get_cell("intro", "strings").active is False # strings only in verse/chorus
 
 
 @pytest.mark.anyio

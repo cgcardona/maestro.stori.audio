@@ -1,24 +1,24 @@
 """Tests for the MuseHub sitemap.xml and robots.txt endpoints.
 
-Covers acceptance criteria from issue #439:
-- test_sitemap_returns_xml                   — GET /sitemap.xml returns 200 with XML content-type
-- test_sitemap_contains_static_pages        — static explore/trending/topics URLs are always present
-- test_sitemap_contains_public_repo         — a seeded public repo appears in the sitemap
-- test_sitemap_excludes_private_repo        — private repos do NOT appear in the sitemap
-- test_sitemap_contains_user_profile        — seeded user profile URL appears in sitemap
-- test_sitemap_contains_topic_urls          — repo tags generate /topics/{tag} entries
-- test_sitemap_contains_release_url         — a release URL appears for repos with releases
-- test_sitemap_xml_well_formed              — sitemap can be parsed as valid XML
-- test_sitemap_loc_uses_request_host        — loc entries use the base URL from the request
-- test_robots_txt_returns_plain_text        — GET /robots.txt returns 200 text/plain
-- test_robots_txt_allows_musehub_ui         — Allow: /musehub/ui/ is present
-- test_robots_txt_disallows_settings        — settings path is disallowed
-- test_robots_txt_disallows_notifications   — notifications path is disallowed
-- test_robots_txt_disallows_api             — /api/ directory is disallowed
-- test_robots_txt_contains_sitemap_url      — Sitemap: directive points to /sitemap.xml
-- test_robots_txt_names_known_agents        — known AI bots appear with explicit Allow
-- test_robots_txt_no_auth_required          — endpoint is accessible without JWT
-- test_sitemap_no_auth_required             — sitemap is accessible without JWT
+Covers acceptance criteria:
+- test_sitemap_returns_xml — GET /sitemap.xml returns 200 with XML content-type
+- test_sitemap_contains_static_pages — static explore/trending/topics URLs are always present
+- test_sitemap_contains_public_repo — a seeded public repo appears in the sitemap
+- test_sitemap_excludes_private_repo — private repos do NOT appear in the sitemap
+- test_sitemap_contains_user_profile — seeded user profile URL appears in sitemap
+- test_sitemap_contains_topic_urls — repo tags generate /topics/{tag} entries
+- test_sitemap_contains_release_url — a release URL appears for repos with releases
+- test_sitemap_xml_well_formed — sitemap can be parsed as valid XML
+- test_sitemap_loc_uses_request_host — loc entries use the base URL from the request
+- test_robots_txt_returns_plain_text — GET /robots.txt returns 200 text/plain
+- test_robots_txt_allows_musehub_ui — Allow: /musehub/ui/ is present
+- test_robots_txt_disallows_settings — settings path is disallowed
+- test_robots_txt_disallows_notifications — notifications path is disallowed
+- test_robots_txt_disallows_api — /api/ directory is disallowed
+- test_robots_txt_contains_sitemap_url — Sitemap: directive points to /sitemap.xml
+- test_robots_txt_names_known_agents — known AI bots appear with explicit Allow
+- test_robots_txt_no_auth_required — endpoint is accessible without JWT
+- test_sitemap_no_auth_required — sitemap is accessible without JWT
 """
 from __future__ import annotations
 

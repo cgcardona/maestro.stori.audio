@@ -8,10 +8,10 @@ Endpoints:
 
   GET /musehub/repos/{repo_id}/search?q={q}&mode={mode}
     — In-repo commit search with four modes:
-        property  — filter by musical properties (harmony, rhythm, etc.)
-        ask       — natural-language query (keyword extraction + overlap scoring)
-        keyword   — keyword/phrase overlap scored search
-        pattern   — substring pattern match against message and branch name
+        property — filter by musical properties (harmony, rhythm, etc.)
+        ask — natural-language query (keyword extraction + overlap scoring)
+        keyword — keyword/phrase overlap scored search
+        pattern — substring pattern match against message and branch name
 
 Authentication: JWT Bearer token required (inherited from musehub router).
 
@@ -66,7 +66,7 @@ async def global_search(
     Results are grouped by repo — each group contains up to 20 matching
     commits ordered newest-first with repo-level metadata (name, owner).
 
-    Only ``visibility='public'`` repos are searched.  Private repos are
+    Only ``visibility='public'`` repos are searched. Private repos are
     excluded at the persistence layer regardless of caller identity.
 
     Pagination applies to repo-groups: ``page=1&page_size=10`` returns the
@@ -78,7 +78,7 @@ async def global_search(
     - ``pattern``: raw SQL LIKE pattern applied to commit messages only.
       Use ``%`` as wildcard (e.g. ``q=%minor%``).
 
-    Content negotiation: this endpoint always returns JSON.  The companion
+    Content negotiation: this endpoint always returns JSON. The companion
     HTML page at ``GET /musehub/ui/search`` renders the browser UI shell.
     """
     effective_mode = mode if mode in _GLOBAL_VALID_MODES else "keyword"
@@ -199,19 +199,19 @@ async def search_repo(
 
     - **property** — filter commits by musical properties using AND logic.
       Supply any of ``harmony``, ``rhythm``, ``melody``, ``structure``,
-      ``dynamic``, ``emotion`` query params.  Accepts ``key=low-high`` range
+      ``dynamic``, ``emotion`` query params. Accepts ``key=low-high`` range
       syntax (e.g. ``rhythm=tempo=120-130``).
 
-    - **ask** — treat ``q`` as a natural-language question.  Stop-words are
+    - **ask** — treat ``q`` as a natural-language question. Stop-words are
       stripped; remaining keywords are scored by overlap coefficient.
 
     - **keyword** — score commits by keyword overlap against ``q``.
       Useful for exact term search (e.g. ``q=Fmin_jazz_bassline``).
 
     - **pattern** — case-insensitive substring match of ``q`` against commit
-      messages and branch names.  No scoring; matched rows returned newest-first.
+      messages and branch names. No scoring; matched rows returned newest-first.
 
-    Returns 404 if the repo does not exist.  Returns an empty ``matches`` list
+    Returns 404 if the repo does not exist. Returns an empty ``matches`` list
     when no commits satisfy the criteria (not a 404).
     """
     if mode not in _REPO_VALID_MODES:

@@ -19,8 +19,8 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from sqlalchemy.orm import selectinload
 
 from maestro.db.database import Base
-from maestro.db import models as _user_models  # noqa: F401 — register maestro_users table
-from maestro.db import musehub_models as _hub_models  # noqa: F401 — register musehub_repos table
+from maestro.db import models as _user_models # noqa: F401 — register maestro_users table
+from maestro.db import musehub_models as _hub_models # noqa: F401 — register musehub_repos table
 from maestro.db.musehub_stash_models import MusehubStash, MusehubStashEntry
 
 
@@ -34,7 +34,7 @@ async def async_session() -> AsyncGenerator[AsyncSession, None]:
     """In-memory SQLite async session.
 
     SQLite does not enforce foreign-key constraints by default, so we can
-    insert stash records without needing real parent repo/user rows.  All
+    insert stash records without needing real parent repo/user rows. All
     tables registered on Base.metadata are created so the schema is
     consistent across the whole suite.
     """
@@ -82,7 +82,7 @@ async def test_stash_defaults_id_generated(async_session: AsyncSession) -> None:
     async_session.add(stash)
     await async_session.flush()
     assert stash.id is not None
-    assert len(stash.id) == 36  # UUID canonical form: 8-4-4-4-12
+    assert len(stash.id) == 36 # UUID canonical form: 8-4-4-4-12
 
 
 @pytest.mark.anyio

@@ -1,7 +1,7 @@
 """muse restore — restore specific files from a commit or index.
 
 Surgical file-level restore: bring back "the bass from take 3" without
-touching any other track.  Unlike ``muse reset --hard`` (which resets the
+touching any other track. Unlike ``muse reset --hard`` (which resets the
 entire working tree), ``restore`` targets individual paths only.
 
 Usage patterns
@@ -24,10 +24,10 @@ Restore both worktree and staged (explicit ``--worktree``)::
 
 Exit codes
 ----------
-0  success
-1  user error (path not in snapshot, ref not found, no commits)
-2  not a Muse repo
-3  internal error (DB inconsistency, missing object blobs)
+0 success
+1 user error (path not in snapshot, ref not found, no commits)
+2 not a Muse repo
+3 internal error (DB inconsistency, missing object blobs)
 """
 from __future__ import annotations
 
@@ -112,7 +112,7 @@ def restore(
                 f"✅ Restored {len(result.paths_restored)} files from commit {short_id}:"
             )
             for p in result.paths_restored:
-                typer.echo(f"   • {p}")
+                typer.echo(f" • {p}")
 
     try:
         asyncio.run(_run())

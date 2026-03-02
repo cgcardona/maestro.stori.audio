@@ -161,7 +161,7 @@ def _require_token(credentials: HTTPAuthorizationCredentials | None) -> None:
     """Raise 401 if credentials are absent or the JWT is invalid/expired.
 
     Private repos gate behind the same JWT validation as the rest of the
-    musehub API.  This helper is intentionally narrow: it validates the token
+    musehub API. This helper is intentionally narrow: it validates the token
     but does NOT check revocation (that would require a DB round-trip on
     every raw download for private repos — acceptable as a future hardening
     step once revocation is indexed by hash).

@@ -2,25 +2,25 @@
 
 Progressive generation types (``InstrumentTier``, ``ProgressiveTierResult``,
 ``ProgressiveGenerationResult``) define the dependency-ordered generation
-pipeline introduced in issue #27 (drums → bass → harmony → melody).
+pipeline introduced (drums → bass → harmony → melody).
 
 Defines the MIDI event shapes, parsed result types, and scoring entities
-used throughout the Storpheus codebase.  These mirror ``app/contracts/json_types.py``
+used throughout the Storpheus codebase. These mirror ``app/contracts/json_types.py``
 in the Maestro service but are defined independently to avoid
 cross-container imports.
 
 MIDI primitive ranges (enforced in dataclass ``__post_init__`` methods;
 documented here for TypedDicts which have no runtime enforcement):
 
-    pitch         0–127   MIDI note number
-    velocity      0–127   0 = note-off equivalent; 1–127 audible
-    channel       0–15    16 MIDI channels, zero-indexed
-    cc            0–127   CC controller number
-    cc value      0–127   CC value
-    pitch bend    −8192–8191  14-bit signed; 0 = centre
-    aftertouch    0–127   pressure value
-    tempo (BPM)   20–300  always an integer
-    bars          ≥ 1     positive integer
+    pitch 0–127 MIDI note number
+    velocity 0–127 0 = note-off equivalent; 1–127 audible
+    channel 0–15 16 MIDI channels, zero-indexed
+    cc 0–127 CC controller number
+    cc value 0–127 CC value
+    pitch bend −8192–8191 14-bit signed; 0 = centre
+    aftertouch 0–127 pressure value
+    tempo (BPM) 20–300 always an integer
+    bars ≥ 1 positive integer
 """
 from __future__ import annotations
 
@@ -52,10 +52,10 @@ class StorpheusNoteDict(TypedDict, total=False):
     """A single MIDI note as parsed from a MIDI file.
 
     Field ranges:
-        pitch         0–127   MIDI note number
-        start_beat    ≥ 0.0   beat position (fractional allowed)
-        duration_beats > 0.0  beat duration (fractional allowed)
-        velocity      0–127   note velocity
+        pitch 0–127 MIDI note number
+        start_beat ≥ 0.0 beat position (fractional allowed)
+        duration_beats > 0.0 beat duration (fractional allowed)
+        velocity 0–127 note velocity
     """
 
     pitch: Required[int]
@@ -68,9 +68,9 @@ class StorpheusCCEvent(TypedDict):
     """A MIDI Control Change event.
 
     Field ranges:
-        cc    0–127   controller number
-        beat  ≥ 0.0   beat position (fractional allowed)
-        value 0–127   controller value
+        cc 0–127 controller number
+        beat ≥ 0.0 beat position (fractional allowed)
+        value 0–127 controller value
     """
 
     cc: int
@@ -82,8 +82,8 @@ class StorpheusPitchBend(TypedDict):
     """A MIDI Pitch Bend event.
 
     Field ranges:
-        beat  ≥ 0.0          beat position (fractional allowed)
-        value −8192–8191     14-bit signed; 0 = centre
+        beat ≥ 0.0 beat position (fractional allowed)
+        value −8192–8191 14-bit signed; 0 = centre
     """
 
     beat: float
@@ -94,9 +94,9 @@ class StorpheusAftertouch(TypedDict, total=False):
     """A MIDI Aftertouch event (channel or poly).
 
     Field ranges:
-        beat  ≥ 0.0   beat position (fractional allowed)
-        value 0–127   pressure value
-        pitch 0–127   note number (poly aftertouch only; omit for channel pressure)
+        beat ≥ 0.0 beat position (fractional allowed)
+        value 0–127 pressure value
+        pitch 0–127 note number (poly aftertouch only; omit for channel pressure)
     """
 
     beat: Required[float]
@@ -151,7 +151,7 @@ class GradioGenerationParams(TypedDict):
 class WireNoteDict(TypedDict):
     """A single MIDI note in the camelCase wire format sent to Maestro.
 
-    ``StorpheusNoteDict`` is used internally (snake_case).  This type is
+    ``StorpheusNoteDict`` is used internally (snake_case). This type is
     used only in ``GenerateResponse`` fields that cross the API boundary.
     """
 
@@ -166,7 +166,7 @@ class GenerationComparison(TypedDict):
 
     generation_a: dict[str, float]
     generation_b: dict[str, float]
-    winner: str  # "a" | "b" | "tie"
+    winner: str # "a" | "b" | "tie"
     confidence: float
 
 
@@ -194,12 +194,12 @@ class ScoringParams:
     the candidate-selection loop so each call is explicit and typed.
 
     Field ranges:
-        bars              ≥ 1       positive integer
-        expected_channels ≥ 1       number of MIDI channels expected
-        register_center   0–127     target pitch center (MIDI note number)
-        register_spread   0–64      semitone spread around ``register_center``
-        velocity_floor    0–127     minimum acceptable note velocity
-        velocity_ceiling  0–127     maximum acceptable note velocity
+        bars ≥ 1 positive integer
+        expected_channels ≥ 1 number of MIDI channels expected
+        register_center 0–127 target pitch center (MIDI note number)
+        register_spread 0–64 semitone spread around ``register_center``
+        velocity_floor 0–127 minimum acceptable note velocity
+        velocity_ceiling 0–127 maximum acceptable note velocity
     """
 
     bars: int
@@ -242,7 +242,7 @@ class BestCandidate:
     a loosely-typed ``dict`` through the generation pipeline.
     """
 
-    midi_result: Sequence[object]  # Gradio response: [audio, plot, midi_path, …]
+    midi_result: Sequence[object] # Gradio response: [audio, plot, midi_path, …]
     midi_path: str
     parsed: ParsedMidiResult
     flat_notes: list[StorpheusNoteDict]
@@ -250,7 +250,7 @@ class BestCandidate:
 
 
 # ---------------------------------------------------------------------------
-# Progressive generation — dependency-ordered per-role pipeline (#27)
+# Progressive generation — dependency-ordered per-role pipeline
 # ---------------------------------------------------------------------------
 
 
@@ -260,10 +260,10 @@ class InstrumentTier(str, Enum):
     Each tier is generated sequentially, with the previous tier's output MIDI
     used as the seed (prime) for the next tier (cascaded seeding):
 
-        1. DRUMS   — independent; no harmonic context required
-        2. BASS    — seeded from drums; establishes root motion
+        1. DRUMS — independent; no harmonic context required
+        2. BASS — seeded from drums; establishes root motion
         3. HARMONY — seeded from drums+bass; chords, pads, piano
-        4. MELODY  — seeded from drums+bass+harmony; lead, guitar, arp
+        4. MELODY — seeded from drums+bass+harmony; lead, guitar, arp
 
     Ordering matches musical dependency: rhythm → foundation → colour → line.
     """
@@ -281,7 +281,7 @@ class ProgressiveTierResult(TypedDict):
     that contains at least one requested instrument.
     """
 
-    tier: str  # InstrumentTier.value
+    tier: str # InstrumentTier.value
     instruments: list[str]
     notes: list[WireNoteDict]
     channel_notes: dict[str, list[WireNoteDict]] | None
@@ -292,7 +292,7 @@ class ProgressiveTierResult(TypedDict):
 class ProgressiveGenerationResult(TypedDict):
     """Full result of a progressive per-role generation run.
 
-    Aggregates all tier results.  ``all_notes`` is a flat union of every
+    Aggregates all tier results. ``all_notes`` is a flat union of every
     tier's notes for consumers that do not need per-tier resolution.
 
     Registered in ``docs/reference/type_contracts.md``.
@@ -307,7 +307,7 @@ class ProgressiveGenerationResult(TypedDict):
 
 
 # ---------------------------------------------------------------------------
-# Genre parameter priors and telemetry — per-genre quality tuning (#26)
+# Genre parameter priors and telemetry — per-genre quality tuning
 # ---------------------------------------------------------------------------
 
 
@@ -316,15 +316,15 @@ class GenreParameterPrior:
     """Explicit per-genre parameter priors for the Orpheus model.
 
     These are tuned from listening tests and A/B experiments to produce
-    genre-appropriate output.  All temperature/top_p values override the
+    genre-appropriate output. All temperature/top_p values override the
     defaults derived from the control-vector mapping; density_offset biases
     the GenerationControlVector before token-budget allocation.
 
     Ranges:
-        temperature     0.7–1.0   Orpheus safe range (default 0.9)
-        top_p           0.90–0.98 Orpheus safe range (default 0.96)
-        density_offset  -0.3–0.3  Additive offset on GenerationControlVector.density
-        prime_ratio     0.5–1.0   Fraction of max prime tokens to supply
+        temperature 0.7–1.0 Orpheus safe range (default 0.9)
+        top_p 0.90–0.98 Orpheus safe range (default 0.96)
+        density_offset -0.3–0.3 Additive offset on GenerationControlVector.density
+        prime_ratio 0.5–1.0 Fraction of max prime tokens to supply
     """
 
     temperature: float
@@ -340,25 +340,25 @@ class GenerationTelemetryRecord(TypedDict, total=False):
     consumers (log aggregators, dashboards) can ingest without parsing.
 
     Input fields (always present):
-        genre           Musical style string
-        tempo           BPM
-        bars            Requested bar count
-        instruments     List of requested instrument roles
-        quality_preset  "fast" | "balanced" | "quality"
-        temperature     Orpheus model temperature used
-        top_p           Orpheus model top_p used
-        num_prime_tokens  Prime context tokens supplied to the model
-        num_gen_tokens    Generation tokens requested from the model
-        genre_prior_applied  Whether a genre-specific prior overrode defaults
+        genre Musical style string
+        tempo BPM
+        bars Requested bar count
+        instruments List of requested instrument roles
+        quality_preset "fast" | "balanced" | "quality"
+        temperature Orpheus model temperature used
+        top_p Orpheus model top_p used
+        num_prime_tokens Prime context tokens supplied to the model
+        num_gen_tokens Generation tokens requested from the model
+        genre_prior_applied Whether a genre-specific prior overrode defaults
 
     Output fields (present on success):
-        note_count          Total notes in the selected candidate
-        pitch_range         Max MIDI pitch - min MIDI pitch
-        velocity_variation  Coefficient of variation for note velocities
-        quality_score       Composite quality score 0–1
-        rejection_score     Rejection-sampling score of selected candidate
-        candidate_count     How many candidates were evaluated
-        generation_ok       True = at least one candidate was accepted
+        note_count Total notes in the selected candidate
+        pitch_range Max MIDI pitch - min MIDI pitch
+        velocity_variation Coefficient of variation for note velocities
+        quality_score Composite quality score 0–1
+        rejection_score Rejection-sampling score of selected candidate
+        candidate_count How many candidates were evaluated
+        generation_ok True = at least one candidate was accepted
     """
 
     genre: Required[str]
@@ -403,11 +403,11 @@ class SweepABTestResult(TypedDict):
     best_top_p: float
     best_quality_score: float
     score_range: float
-    significant: bool  # True when max-min quality gap ≥ 0.05
+    significant: bool # True when max-min quality gap ≥ 0.05
 
 
 # ---------------------------------------------------------------------------
-# Chunked generation — sliding window for long compositions (#25)
+# Chunked generation — sliding window for long compositions
 # ---------------------------------------------------------------------------
 
 
@@ -415,11 +415,11 @@ class ChunkMetadata(TypedDict):
     """Per-chunk metadata emitted during a chunked generation run.
 
     Field ranges:
-        chunk        ≥ 0    zero-based chunk index
-        bars         ≥ 1    bar count for this chunk (last chunk may be smaller)
-        notes        ≥ 0    notes produced by this chunk after beat-trimming
-        beat_offset  ≥ 0.0  beat position of chunk start in the final timeline
-        rejection_score  0.0–1.0  candidate rejection score for this chunk; None if unavailable
+        chunk ≥ 0 zero-based chunk index
+        bars ≥ 1 bar count for this chunk (last chunk may be smaller)
+        notes ≥ 0 notes produced by this chunk after beat-trimming
+        beat_offset ≥ 0.0 beat position of chunk start in the final timeline
+        rejection_score 0.0–1.0 candidate rejection score for this chunk; None if unavailable
     """
 
     chunk: int

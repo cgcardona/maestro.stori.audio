@@ -25,7 +25,7 @@ async def _store_variation(
     """Persist a Variation to both in-memory VariationStore and Postgres.
 
     Called from the maestro/stream path after ``execute_plan_variation``
-    returns.  The caller provides ``base_state_id``, ``conversation_id``,
+    returns. The caller provides ``base_state_id``, ``conversation_id``,
     and ``region_metadata`` — this function never accesses StateStore or
     EntityRegistry directly.
 

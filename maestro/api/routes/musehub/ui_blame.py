@@ -1,6 +1,6 @@
 """Muse Hub blame view page — per-note commit attribution browser.
 
-Serves the blame UI page for a given MIDI file path at a commit ref.  Each note
+Serves the blame UI page for a given MIDI file path at a commit ref. Each note
 event is annotated with the commit that last introduced or modified it, giving
 musicians and AI agents a per-measure provenance view of the composition.
 
@@ -14,7 +14,7 @@ Content negotiation (one URL, two audiences):
   mirroring the ``/api/v1/musehub/repos/{repo_id}/blame/{ref}`` API contract.
 
 Auth:
-  No JWT required to receive the HTML shell.  The client-side JavaScript reads
+  No JWT required to receive the HTML shell. The client-side JavaScript reads
   a token from ``localStorage`` and passes it as a Bearer header when calling the
   JSON API, matching all other Muse Hub UI pages.
 """
@@ -94,17 +94,17 @@ async def blame_page(
 
     Why this exists: musicians and AI agents need to know *which commit* last
     changed each note or measure in a composition — the musical equivalent of
-    ``git blame``.  This page renders each note event coloured by its originating
+    ``git blame``. This page renders each note event coloured by its originating
     commit, with inline author and timestamp labels, so a reviewer can trace
     the evolution of any musical idea across the project's history.
 
-    HTML (default): interactive piano-roll-style blame view via Jinja2.  The
+    HTML (default): interactive piano-roll-style blame view via Jinja2. The
     page shell fetches blame data from the JSON API client-side using the token
-    stored in ``localStorage``.  The optional ``track``, ``beatStart``, and
+    stored in ``localStorage``. The optional ``track``, ``beatStart``, and
     ``beatEnd`` query params are forwarded to the client for pre-filtering.
 
     JSON (``Accept: application/json`` or ``?format=json``): returns
-    ``BlameResponse`` with camelCase keys.  Blame entries are built
+    ``BlameResponse`` with camelCase keys. Blame entries are built
     deterministically from the repo's commit history so agents can reason about
     provenance without navigating the HTML page.
 

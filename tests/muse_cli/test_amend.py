@@ -1,13 +1,13 @@
 """Tests for ``muse amend``.
 
 Exercises ``_amend_async`` directly with an in-memory SQLite session so no
-real Postgres instance is required.  The ``muse_cli_db_session`` fixture
+real Postgres instance is required. The ``muse_cli_db_session`` fixture
 (defined in tests/muse_cli/conftest.py) provides the isolated session.
 
 Test coverage
 -------------
-- ``test_muse_amend_updates_last_commit``  — regression: amend replaces HEAD ref
-- ``test_muse_amend_message_only``         — -m flag updates message
+- ``test_muse_amend_updates_last_commit`` — regression: amend replaces HEAD ref
+- ``test_muse_amend_message_only`` — -m flag updates message
 - ``test_muse_amend_blocked_during_merge`` — blocked when MERGE_STATE.json exists
 - Plus: no-commits guard, parent inheritance, --no-edit, --reset-author,
         outside-repo exit code, empty muse-work/ guard, missing muse-work/ guard.
@@ -43,7 +43,7 @@ def _init_muse_repo(root: pathlib.Path, repo_id: str | None = None) -> str:
         json.dumps({"repo_id": rid, "schema_version": "1"})
     )
     (muse / "HEAD").write_text("refs/heads/main")
-    (muse / "refs" / "heads" / "main").write_text("")  # no commits yet
+    (muse / "refs" / "heads" / "main").write_text("") # no commits yet
     return rid
 
 

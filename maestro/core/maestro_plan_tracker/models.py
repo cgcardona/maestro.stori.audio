@@ -18,24 +18,24 @@ class _PlanStep:
     status: str = "pending"
     result: str | None = None
     track_name: str | None = None
-    tool_name: str | None = None  # canonical tool name for frontend icon/color rendering
+    tool_name: str | None = None # canonical tool name for frontend icon/color rendering
     tool_indices: list[int] = field(default_factory=list)
-    parallel_group: str | None = None  # steps sharing a group run concurrently
-    phase: str = "composition"  # setup | composition | arrangement | soundDesign | expression | mixing
+    parallel_group: str | None = None # steps sharing a group run concurrently
+    phase: str = "composition" # setup | composition | arrangement | soundDesign | expression | mixing
 
 
 @dataclass
 class _ToolCallOutcome:
     """Outcome of executing one tool call in editing/agent mode.
 
-    The caller decides what to do with SSE events and message objects —
+    The caller decides what to do with SSE events and message objects
     either yield them directly (editing path) or put them into a queue
     (agent-team path).
     """
     enriched_params: dict[str, JSONValue]
     tool_result: dict[str, JSONValue]
     sse_events: list[MaestroEvent]
-    msg_call: AssistantMessage          # assistant message containing the tool call
-    msg_result: ToolResultMessage       # tool response message
-    skipped: bool = False               # True when rejected by circuit-breaker or validation
-    extra_tool_calls: list[ToolCallDict] = field(default_factory=list)  # synthetic calls (icon)
+    msg_call: AssistantMessage # assistant message containing the tool call
+    msg_result: ToolResultMessage # tool response message
+    skipped: bool = False # True when rejected by circuit-breaker or validation
+    extra_tool_calls: list[ToolCallDict] = field(default_factory=list) # synthetic calls (icon)

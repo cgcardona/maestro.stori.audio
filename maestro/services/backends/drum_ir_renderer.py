@@ -68,7 +68,7 @@ def _kick_placements(groove_template: str, bar_in_phrase: int) -> list[float]:
     if groove_template in ("trap_triplet", "trap_straight"):
         # Trap: 1 and 3, or 1 and 3.5
         if groove_template == "trap_triplet":
-            return [0.0, 2.0, 2.666]  # triplet feel
+            return [0.0, 2.0, 2.666] # triplet feel
         return [0.0, 2.0, 3.5]
     if groove_template == "boom_bap_swing":
         return [0.0, 2.5]
@@ -78,11 +78,11 @@ def _kick_placements(groove_template: str, bar_in_phrase: int) -> list[float]:
 def _hat_subdivision(groove_template: str) -> int:
     """Number of hat hits per beat (2=8ths, 4=16ths)."""
     if groove_template == "trap_straight":
-        return 4  # 16ths
+        return 4 # 16ths
     if groove_template == "trap_triplet":
-        return 3  # triplets
+        return 3 # triplets
     if groove_template == "boom_bap_swing":
-        return 2  # 8ths swung
+        return 2 # 8ths swung
     if groove_template == "house_four_on_floor":
         return 4
     return 4
@@ -92,7 +92,7 @@ def _snare_placements(groove_template: str) -> list[float]:
     """Snare/clap backbeat positions (beats within bar)."""
     if groove_template == "house_four_on_floor":
         return [1.0, 3.0]
-    return [1.0, 3.0]  # 2 and 4
+    return [1.0, 3.0] # 2 and 4
 
 
 def _syncopation_probability(groove_template: str) -> float:
@@ -276,7 +276,7 @@ def _render_ghost(
     prob = _syncopation_probability(drum_spec.groove_template)
     v_lo, v_hi = layer.velocity_range
     for i in range(8):
-        beat_in_bar = 0.5 * i + 0.25  # offbeats
+        beat_in_bar = 0.5 * i + 0.25 # offbeats
         if random.random() > prob:
             continue
         beat = bar_start + beat_in_bar

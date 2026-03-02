@@ -91,7 +91,7 @@ def _build_minimal_midi(
     Produces a syntactically valid MIDI file with:
     - MThd header (format 0, 1 track, 480 ticks/quarter)
     - One MTrk chunk with:
-      - delta(0) Note-On  channel note velocity
+      - delta(0) Note-On channel note velocity
       - delta(480) Note-Off channel note 0
       - delta(0) End-of-Track meta
 
@@ -101,9 +101,9 @@ def _build_minimal_midi(
     note_off_status = 0x80 | (channel & 0x0F)
 
     track_events = bytes([
-        0x00, note_on_status, note, velocity,        # delta=0, note on
-        0x83, 0x60, note_off_status, note, 0x00,     # delta=480 (VLQ), note off
-        0x00, 0xFF, 0x2F, 0x00,                      # delta=0, end of track
+        0x00, note_on_status, note, velocity, # delta=0, note on
+        0x83, 0x60, note_off_status, note, 0x00, # delta=480 (VLQ), note off
+        0x00, 0xFF, 0x2F, 0x00, # delta=0, end of track
     ])
 
     header = b"MThd" + struct.pack(">I", 6) + struct.pack(">HHH", 0, 1, 480)
@@ -206,10 +206,10 @@ def test_transpose_semitones_updates_key_metadata() -> None:
 @pytest.mark.parametrize("key_str,semitones,expected", [
     ("C major", 2, "D major"),
     ("C major", -1, "B major"),
-    ("F# minor", 2, "Ab minor"),  # G#/Ab are enharmonic; service uses flat names
+    ("F# minor", 2, "Ab minor"), # G#/Ab are enharmonic; service uses flat names
     ("Bb major", 3, "Db major"),
-    ("A minor", 12, "A minor"),    # octave → same key
-    ("G major", -7, "C major"),   # down perfect 5th
+    ("A minor", 12, "A minor"), # octave → same key
+    ("G major", -7, "C major"), # down perfect 5th
     ("Eb major", 2, "F major"),
     ("Eb major", 3, "F# major"),
 ])
@@ -251,7 +251,7 @@ def test_transpose_midi_bytes_transposes_note() -> None:
 
 def test_transpose_excludes_drum_channel_from_pitch_shift() -> None:
     """Note-on events on channel 9 (drums) must NOT be transposed (regression test)."""
-    drum_midi = _build_minimal_midi(note=36, channel=9)  # channel 9 = drums
+    drum_midi = _build_minimal_midi(note=36, channel=9) # channel 9 = drums
     transposed, count = transpose_midi_bytes(drum_midi, semitones=5)
     assert count == 0, "Drum notes must not be transposed"
     assert transposed == drum_midi, "Drum MIDI bytes must be identical after transpose"
@@ -375,7 +375,7 @@ def test_apply_transpose_to_workdir_missing_workdir(
     tmp_path: pathlib.Path,
 ) -> None:
     """Missing muse-work/ directory returns empty lists without raising."""
-    workdir = tmp_path / "muse-work"  # intentionally not created
+    workdir = tmp_path / "muse-work" # intentionally not created
     modified, skipped = apply_transpose_to_workdir(workdir, semitones=3)
     assert modified == []
     assert skipped == []

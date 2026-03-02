@@ -75,8 +75,8 @@ _NO_REMOTE_MSG = (
 )
 
 _DIVERGED_MSG = (
-    "⚠️  Local branch has diverged from {remote}/{branch}.\n"
-    "   Run `muse merge {remote}/{branch}` to integrate remote changes."
+    "⚠️ Local branch has diverged from {remote}/{branch}.\n"
+    " Run `muse merge {remote}/{branch}` to integrate remote changes."
 )
 
 
@@ -95,11 +95,11 @@ async def _rebase_commits_onto(
     """Replay *commits_to_rebase* (oldest-first) on top of *new_base_commit_id*.
 
     Creates new MuseCliCommit rows with updated parent IDs but the same
-    snapshot, message, and author.  Commit IDs are recomputed deterministically
+    snapshot, message, and author. Commit IDs are recomputed deterministically
     via :func:`~maestro.muse_cli.snapshot.compute_commit_tree_id` so that
     running the same rebase twice does not insert duplicate rows.
 
-    This implements a linear rebase: no conflict detection is performed.  When
+    This implements a linear rebase: no conflict detection is performed. When
     the caller needs path-level conflict handling it should use ``muse merge``
     instead.
 
@@ -165,7 +165,7 @@ def _is_ancestor(
     """Return True if *ancestor_id* is a reachable ancestor of *descendant_id*.
 
     Walks the parent chain starting from *descendant_id* and returns ``True``
-    if *ancestor_id* is encountered.  Returns ``False`` if the chain ends
+    if *ancestor_id* is encountered. Returns ``False`` if the chain ends
     without finding the candidate (including when either ID is unknown).
 
     ``commits_by_id`` maps commit_id → MuseCliCommit (or any object with a
@@ -239,7 +239,7 @@ async def _pull_async(
         have_objects = await get_all_object_ids(session, repo_id)
 
     mode_hint = " (--rebase)" if rebase else " (--ff-only)" if ff_only else ""
-    typer.echo(f"⬇️  Pulling {remote_name}/{effective_branch}{mode_hint} …")
+    typer.echo(f"⬇️ Pulling {remote_name}/{effective_branch}{mode_hint} …")
 
     pull_request = PullRequest(
         branch=effective_branch,
@@ -423,7 +423,7 @@ async def _pull_async(
                 )
             else:
                 typer.echo(
-                    f"⟳  Rebasing {len(local_above_base)} local commit(s) onto "
+                    f"⟳ Rebasing {len(local_above_base)} local commit(s) onto "
                     f"{remote_head_from_hub[:8]} …"
                 )
                 new_head = await _rebase_commits_onto(
@@ -509,7 +509,7 @@ def pull(
     """Download commits from the remote Muse Hub into the local repository.
 
     Contacts the remote Hub, receives commits and objects that are not yet in
-    the local database, and stores them.  Post-fetch integration depends on flags:
+    the local database, and stores them. Post-fetch integration depends on flags:
 
     - Default: warn if diverged, suggest ``muse merge``.
     - ``--ff-only``: fast-forward or fail.

@@ -20,7 +20,7 @@ class GenerationStep(BaseModel):
     """A single MIDI generation step in an execution plan.
 
     Produced by the planner from a ``MaestroPrompt`` and validated before
-    the plan is handed to the executor.  Every ``GenerationStep`` maps to
+    the plan is handed to the executor. Every ``GenerationStep`` maps to
     one ``stori_generate_midi`` tool call.
 
     Example::
@@ -29,8 +29,8 @@ class GenerationStep(BaseModel):
 
     ``constraints`` holds arbitrary key-value generation hints (density,
     syncopation, swing, etc.) parsed from the MAESTRO PROMPT ``Constraints:``
-    block.  It is typed ``dict[str, PydanticJson]`` — not ``dict[str, JSONValue]``
-    — because this model is a Pydantic ``BaseModel``.  Convert to/from
+    block. It is typed ``dict[str, PydanticJson]`` — not ``dict[str, JSONValue]``
+    — because this model is a Pydantic ``BaseModel``. Convert to/from
     ``dict[str, JSONValue]`` at call sites using ``wrap_dict`` / ``unwrap_dict``
     from ``app.contracts.pydantic_types``.
     """
@@ -47,7 +47,7 @@ class GenerationStep(BaseModel):
         default=None,
         description=(
             "Additional generation constraints (density, syncopation, swing, etc.) "
-            "from the MAESTRO PROMPT Constraints block.  PydanticJson instead of JSONValue "
+            "from the MAESTRO PROMPT Constraints block. PydanticJson instead of JSONValue "
             "because this field lives in a Pydantic BaseModel — use wrap_dict/unwrap_dict "
             "to cross the boundary."
         ),
@@ -190,7 +190,7 @@ class PlanValidationResult(BaseModel):
     """Result of plan validation.
 
     ``raw_llm_output`` holds the raw dict that was attempted before Pydantic
-    validation.  Its values are typed ``object`` (not ``JSONValue``) because
+    validation. Its values are typed ``object`` (not ``JSONValue``) because
     this is opaque pre-validation data from an LLM — see json_types.py for
     the Pydantic compatibility rule.
     """

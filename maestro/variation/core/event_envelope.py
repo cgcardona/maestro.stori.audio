@@ -8,12 +8,12 @@ This guarantees frontend and agents receive identical data regardless
 of transport.
 
 Envelope fields:
-    type          — meta | phrase | done | error | heartbeat
-    sequence      — strictly increasing integer (per variation)
-    variation_id  — UUID of the variation
-    project_id    — UUID of the project
+    type — meta | phrase | done | error | heartbeat
+    sequence — strictly increasing integer (per variation)
+    variation_id — UUID of the variation
+    project_id — UUID of the project
     base_state_id — baseline version at proposal time
-    payload       — event-specific JSON
+    payload — event-specific JSON
 
 Ordering rules:
     1. meta must be sequence = 1
@@ -58,38 +58,38 @@ class MetaPayload(TypedDict, total=False):
     """
 
     intent: str
-    aiExplanation: str | None  # noqa: N815
-    affectedTracks: list[str]  # noqa: N815
-    affectedRegions: list[str]  # noqa: N815
-    noteCounts: dict[str, int]  # noqa: N815
+    aiExplanation: str | None # noqa: N815
+    affectedTracks: list[str] # noqa: N815
+    affectedRegions: list[str] # noqa: N815
+    noteCounts: dict[str, int] # noqa: N815
 
 
 class PhrasePayload(TypedDict, total=False):
     """Payload for ``type="phrase"`` envelopes.
 
-    One generated MIDI phrase.  Both camelCase (wire) and snake_case (internal)
+    One generated MIDI phrase. Both camelCase (wire) and snake_case (internal)
     key forms are accepted — consumers should prefer camelCase.
     """
 
-    phraseId: str  # noqa: N815
-    phrase_id: str  # snake_case fallback
-    trackId: str  # noqa: N815
-    track_id: str  # snake_case fallback
-    regionId: str  # noqa: N815
-    region_id: str  # snake_case fallback
-    startBeat: float  # noqa: N815
-    start_beat: float  # snake_case fallback
-    endBeat: float  # noqa: N815
-    end_beat: float  # snake_case fallback
+    phraseId: str # noqa: N815
+    phrase_id: str # snake_case fallback
+    trackId: str # noqa: N815
+    track_id: str # snake_case fallback
+    regionId: str # noqa: N815
+    region_id: str # snake_case fallback
+    startBeat: float # noqa: N815
+    start_beat: float # snake_case fallback
+    endBeat: float # noqa: N815
+    end_beat: float # snake_case fallback
     label: str
     tags: list[str]
     explanation: str | None
-    noteChanges: list[NoteChangeEntryDict]  # noqa: N815
-    note_changes: list[NoteChangeEntryDict]  # snake_case fallback
-    ccEvents: list[CCEventDict]  # noqa: N815
-    cc_events: list[CCEventDict]  # snake_case fallback
-    pitchBends: list[PitchBendDict]  # noqa: N815
-    pitch_bends: list[PitchBendDict]  # snake_case fallback
+    noteChanges: list[NoteChangeEntryDict] # noqa: N815
+    note_changes: list[NoteChangeEntryDict] # snake_case fallback
+    ccEvents: list[CCEventDict] # noqa: N815
+    cc_events: list[CCEventDict] # snake_case fallback
+    pitchBends: list[PitchBendDict] # noqa: N815
+    pitch_bends: list[PitchBendDict] # snake_case fallback
     aftertouch: list[AftertouchDict]
 
 
@@ -97,8 +97,8 @@ class DonePayload(TypedDict, total=False):
     """Payload for ``type="done"`` envelopes (always last in a variation stream)."""
 
     status: str
-    phraseCount: int  # noqa: N815
-    phrase_count: int  # snake_case fallback
+    phraseCount: int # noqa: N815
+    phrase_count: int # snake_case fallback
 
 
 class ErrorPayload(TypedDict, total=False):
@@ -112,7 +112,7 @@ EnvelopePayload = Union[MetaPayload, PhrasePayload, DonePayload, ErrorPayload]
 """Union of all typed envelope payload shapes.
 
 ``EventEnvelope[P].payload`` holds exactly one of these depending on
-``EventEnvelope.type``.  Transport layers that accept any envelope use
+``EventEnvelope.type``. Transport layers that accept any envelope use
 ``AnyEnvelope`` (the pre-built union alias below).
 """
 
@@ -134,13 +134,13 @@ class EventEnvelope(Generic[_P]):
 
     Generic over the payload type ``_P`` so each typed builder produces a
     precise return type — e.g. ``build_meta_envelope`` returns
-    ``EventEnvelope[MetaPayload]``.  Transport layers that handle any envelope
+    ``EventEnvelope[MetaPayload]``. Transport layers that handle any envelope
     use the ``AnyEnvelope`` union alias.
 
     Attributes:
         type: Event type discriminator — one of ``meta``, ``phrase``, ``done``,
             ``error``, or ``heartbeat``.
-        sequence: Strictly increasing integer per variation stream.  ``meta``
+        sequence: Strictly increasing integer per variation stream. ``meta``
             is always sequence 1; subsequent events increment from there.
         variation_id: UUID of the variation this event belongs to.
         project_id: UUID of the project (denormalized for client convenience).
@@ -216,7 +216,7 @@ def build_envelope(
     """Build a transport-agnostic event envelope.
 
     Generic over the payload type — the return type is ``EventEnvelope[_T]``
-    where ``_T`` is inferred from the ``payload`` argument.  Callers that
+    where ``_T`` is inferred from the ``payload`` argument. Callers that
     need a specific payload type will get it without any casting.
     """
     return EventEnvelope(
@@ -331,7 +331,7 @@ AnyEnvelope = Union[
 """Union of all concretely-typed envelopes.
 
 Transport layers (``SSEBroadcaster``, ``stream_router``, ``stream.py``) that
-accept any envelope use this alias.  Accepting ``AnyEnvelope`` instead of a
+accept any envelope use this alias. Accepting ``AnyEnvelope`` instead of a
 bare ``EventEnvelope`` is safe because all variants share the same non-payload
 fields and the payload is serialized without inspection.
 """
@@ -379,7 +379,7 @@ def build_phrase_payload(phrase: Phrase) -> PhrasePayload:
 
     Single serialization point shared by the SSE streaming path
     (``propose.py``) and the background storage path
-    (``maestro_composing/storage.py``).  Both paths call this function so
+    (``maestro_composing/storage.py``). Both paths call this function so
     the two wire representations are guaranteed to be identical.
     """
     return PhrasePayload(

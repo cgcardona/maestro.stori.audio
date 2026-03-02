@@ -65,14 +65,14 @@ _ROLE_KEYWORDS: dict[str, list[str]] = {
 }
 
 _GM_ROLE_RANGES: list[tuple[int, int, str]] = [
-    (0, 7, "chords"),     # Piano family
-    (16, 23, "pads"),     # Organ family
-    (24, 31, "chords"),   # Guitar family
-    (32, 39, "bass"),     # Bass family
-    (40, 55, "melody"),   # Strings / orchestral
-    (56, 79, "melody"),   # Brass / Winds
-    (80, 87, "lead"),     # Synth Leads
-    (88, 103, "pads"),    # Synth Pads / FX
+    (0, 7, "chords"), # Piano family
+    (16, 23, "pads"), # Organ family
+    (24, 31, "chords"), # Guitar family
+    (32, 39, "bass"), # Bass family
+    (40, 55, "melody"), # Strings / orchestral
+    (56, 79, "melody"), # Brass / Winds
+    (80, 87, "lead"), # Synth Leads
+    (88, 103, "pads"), # Synth Pads / FX
 ]
 
 
@@ -164,7 +164,7 @@ def format_project_context(project: ProjectContext) -> str:
                 region_desc = "; ".join(parts)
 
             lines.append(
-                f"  {i}. {tname} ({instrument}) [role={role}] [trackId={tid}] — {region_desc}"
+                f" {i}. {tname} ({instrument}) [role={role}] [trackId={tid}] — {region_desc}"
             )
 
     lines.append("")

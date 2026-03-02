@@ -10,7 +10,7 @@ from sqlalchemy.pool import StaticPool
 from maestro.db.database import Base
 
 # Register MuseCli* models with Base.metadata before create_all is called.
-import maestro.muse_cli.models  # noqa: F401, E402
+import maestro.muse_cli.models # noqa: F401, E402
 
 
 @pytest_asyncio.fixture

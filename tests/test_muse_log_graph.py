@@ -18,7 +18,7 @@ from collections.abc import AsyncGenerator
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from maestro.db.database import Base
-from maestro.db import muse_models  # noqa: F401
+from maestro.db import muse_models # noqa: F401
 from maestro.models.variation import (
     MidiNoteSnapshot,
     NoteChange,
@@ -123,7 +123,7 @@ class TestLinearHistory:
     @pytest.mark.anyio
     async def test_linear_order_preserved(self, async_session: AsyncSession) -> None:
 
-        """C0 -> C1 -> C2  — nodes must appear in that order."""
+        """C0 -> C1 -> C2 — nodes must appear in that order."""
         c0 = _make_variation([_note(60, 0.0)], intent="init")
         c0_id = await _save(async_session, c0, "proj-lin")
 

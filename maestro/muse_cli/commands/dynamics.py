@@ -5,33 +5,33 @@ and reports per-track statistics with an arc classification.
 
 Output (default tabular)::
 
-    Dynamic profile — commit a1b2c3d4  (HEAD -> main)
+    Dynamic profile — commit a1b2c3d4 (HEAD -> main)
 
-    Track      Avg Vel  Peak  Range  Arc
-    ---------  -------  ----  -----  -----------
-    drums           88   110     42  terraced
-    bass            72    85     28  flat
-    keys            64    95     56  crescendo
-    lead            79   105     38  swell
+    Track Avg Vel Peak Range Arc
+    --------- ------- ---- ----- -----------
+    drums 88 110 42 terraced
+    bass 72 85 28 flat
+    keys 64 95 56 crescendo
+    lead 79 105 38 swell
 
 Arc vocabulary
 --------------
-- flat        — velocity variance < 10; steady throughout
-- crescendo   — monotonically rising from start to end
+- flat — velocity variance < 10; steady throughout
+- crescendo — monotonically rising from start to end
 - decrescendo — monotonically falling from start to end
-- terraced    — step-wise plateaus; sudden jumps between stable levels
-- swell       — rises then falls (arch shape)
+- terraced — step-wise plateaus; sudden jumps between stable levels
+- swell — rises then falls (arch shape)
 
 Flags
 -----
---track TEXT     Filter to a single track (case-insensitive prefix match).
---section TEXT   Restrict analysis to a named section/region.
+--track TEXT Filter to a single track (case-insensitive prefix match).
+--section TEXT Restrict analysis to a named section/region.
 --compare COMMIT Compare dynamics of <commit> against <COMMIT>.
---history        Print dynamics for every commit in the branch history.
---peak           Show only tracks whose peak velocity exceeds the branch average.
---range          Sort output by velocity range (descending).
---arc            Filter to only tracks matching the arc label given via --track.
---json           Emit results as JSON instead of the ASCII table.
+--history Print dynamics for every commit in the branch history.
+--peak Show only tracks whose peak velocity exceeds the branch average.
+--range Sort output by velocity range (descending).
+--arc Filter to only tracks matching the arc label given via --track.
+--json Emit results as JSON instead of the ASCII table.
 """
 from __future__ import annotations
 
@@ -56,7 +56,7 @@ app = typer.Typer()
 # Types
 # ---------------------------------------------------------------------------
 
-ArcLabel = str  # one of: flat | crescendo | decrescendo | terraced | swell
+ArcLabel = str # one of: flat | crescendo | decrescendo | terraced | swell
 
 _ARC_LABELS: tuple[str, ...] = ("flat", "crescendo", "decrescendo", "terraced", "swell")
 
@@ -122,28 +122,28 @@ def _stub_profiles() -> list[TrackDynamics]:
 # Rendering
 # ---------------------------------------------------------------------------
 
-_COL_WIDTHS = (9, 7, 4, 5, 11)  # track, avg, peak, range, arc
+_COL_WIDTHS = (9, 7, 4, 5, 11) # track, avg, peak, range, arc
 
 
 def _render_table(rows: list[TrackDynamics], commit_ref: str, branch: str) -> None:
     """Print a human-readable ASCII table of dynamics."""
-    head_label = f"  (HEAD -> {branch})" if branch else ""
+    head_label = f" (HEAD -> {branch})" if branch else ""
     typer.echo(f"Dynamic profile — commit {commit_ref}{head_label}")
     typer.echo("")
 
     # Header
     header = (
-        f"{'Track':<{_COL_WIDTHS[0]}}  "
-        f"{'Avg Vel':>{_COL_WIDTHS[1]}}  "
-        f"{'Peak':>{_COL_WIDTHS[2]}}  "
-        f"{'Range':>{_COL_WIDTHS[3]}}  "
+        f"{'Track':<{_COL_WIDTHS[0]}} "
+        f"{'Avg Vel':>{_COL_WIDTHS[1]}} "
+        f"{'Peak':>{_COL_WIDTHS[2]}} "
+        f"{'Range':>{_COL_WIDTHS[3]}} "
         f"{'Arc':<{_COL_WIDTHS[4]}}"
     )
     sep = (
-        f"{'-' * _COL_WIDTHS[0]}  "
-        f"{'-' * _COL_WIDTHS[1]}  "
-        f"{'-' * _COL_WIDTHS[2]}  "
-        f"{'-' * _COL_WIDTHS[3]}  "
+        f"{'-' * _COL_WIDTHS[0]} "
+        f"{'-' * _COL_WIDTHS[1]} "
+        f"{'-' * _COL_WIDTHS[2]} "
+        f"{'-' * _COL_WIDTHS[3]} "
         f"{'-' * _COL_WIDTHS[4]}"
     )
     typer.echo(header)
@@ -151,10 +151,10 @@ def _render_table(rows: list[TrackDynamics], commit_ref: str, branch: str) -> No
 
     for row in rows:
         typer.echo(
-            f"{row.name:<{_COL_WIDTHS[0]}}  "
-            f"{row.avg_velocity:>{_COL_WIDTHS[1]}}  "
-            f"{row.peak_velocity:>{_COL_WIDTHS[2]}}  "
-            f"{row.velocity_range:>{_COL_WIDTHS[3]}}  "
+            f"{row.name:<{_COL_WIDTHS[0]}} "
+            f"{row.avg_velocity:>{_COL_WIDTHS[1]}} "
+            f"{row.peak_velocity:>{_COL_WIDTHS[2]}} "
+            f"{row.velocity_range:>{_COL_WIDTHS[3]}} "
             f"{row.arc:<{_COL_WIDTHS[4]}}"
         )
     typer.echo("")
@@ -200,22 +200,22 @@ async def _dynamics_async(
     a formatted table or JSON payload.
 
     Args:
-        root:       Repository root (directory containing ``.muse/``).
-        session:    Open async DB session (reserved for full implementation).
-        commit:     Commit ref to analyse; defaults to HEAD.
-        track:      Case-insensitive prefix filter; only matching tracks shown.
-        section:    Restrict analysis to a named region (future: pass to query).
-        compare:    Second commit ref for side-by-side comparison (stub: noted).
-        history:    If True, show dynamics for every commit in branch history.
-        peak:       If True, show only tracks whose peak exceeds branch average.
+        root: Repository root (directory containing ``.muse/``).
+        session: Open async DB session (reserved for full implementation).
+        commit: Commit ref to analyse; defaults to HEAD.
+        track: Case-insensitive prefix filter; only matching tracks shown.
+        section: Restrict analysis to a named region (future: pass to query).
+        compare: Second commit ref for side-by-side comparison (stub: noted).
+        history: If True, show dynamics for every commit in branch history.
+        peak: If True, show only tracks whose peak exceeds branch average.
         range_flag: If True, sort by velocity range descending.
-        arc:        If True, filter tracks to the arc matching the --track value.
-        as_json:    Emit JSON instead of ASCII table.
+        arc: If True, filter tracks to the arc matching the --track value.
+        as_json: Emit JSON instead of ASCII table.
     """
     muse_dir = root / ".muse"
 
     # -- Resolve branch / commit ref --
-    head_ref = (muse_dir / "HEAD").read_text().strip()  # "refs/heads/main"
+    head_ref = (muse_dir / "HEAD").read_text().strip() # "refs/heads/main"
     branch = head_ref.rsplit("/", 1)[-1] if "/" in head_ref else head_ref
     ref_path = muse_dir / pathlib.Path(head_ref)
 
@@ -239,7 +239,7 @@ async def _dynamics_async(
             # --arc mode: filter to tracks whose arc matches the --track value as arc label
             if prefix not in _VALID_ARCS:
                 typer.echo(
-                    f"⚠️  '{track}' is not a valid arc label. "
+                    f"⚠️ '{track}' is not a valid arc label. "
                     f"Valid arcs: {', '.join(sorted(_VALID_ARCS))}"
                 )
                 raise typer.Exit(code=ExitCode.USER_ERROR)
@@ -259,19 +259,19 @@ async def _dynamics_async(
     # -- --history mode: note the stub boundary --
     if history:
         typer.echo(
-            f"⚠️  --history: full commit-chain dynamics not yet implemented. "
+            f"⚠️ --history: full commit-chain dynamics not yet implemented. "
             f"Showing HEAD ({commit_ref}) only."
         )
 
     # -- --compare note --
     if compare:
         typer.echo(
-            f"⚠️  --compare {compare}: side-by-side comparison not yet implemented."
+            f"⚠️ --compare {compare}: side-by-side comparison not yet implemented."
         )
 
     # -- --section note --
     if section:
-        typer.echo(f"⚠️  --section {section}: region filtering not yet implemented.")
+        typer.echo(f"⚠️ --section {section}: region filtering not yet implemented.")
 
     # -- Render --
     if not profiles:

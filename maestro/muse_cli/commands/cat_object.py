@@ -2,10 +2,10 @@
 
 Mirrors ``git cat-file`` plumbing semantics for Muse's three object types:
 
-- **object**   — a content-addressed file blob (``MuseCliObject``)
+- **object** — a content-addressed file blob (``MuseCliObject``)
 - **snapshot** — an immutable manifest mapping paths to object IDs
   (``MuseCliSnapshot``)
-- **commit**   — a versioned record pointing to a snapshot and its parent
+- **commit** — a versioned record pointing to a snapshot and its parent
   (``MuseCliCommit``)
 
 The command tries each table in order (object → snapshot → commit) until it
@@ -18,9 +18,9 @@ Output modes
 
 Default (no flags) — human-readable metadata summary::
 
-    type:       object
-    object_id:  a1b2c3d4...
-    size:       4096 bytes
+    type: object
+    object_id: a1b2c3d4...
+    size: 4096 bytes
     created_at: 2026-02-27T17:30:00+00:00
 
 ``-t / --type`` — print only the type string (one of ``object``,
@@ -38,7 +38,7 @@ Default (no flags) — human-readable metadata summary::
 Agent use case
 --------------
 AI agents use ``muse cat-object`` to inspect object metadata before
-deciding whether to re-fetch, export, or reference an artifact.  The
+deciding whether to re-fetch, export, or reference an artifact. The
 ``-p`` flag gives structured JSON that agents can parse directly.
 """
 from __future__ import annotations
@@ -63,7 +63,7 @@ app = typer.Typer()
 # Result type
 # ---------------------------------------------------------------------------
 
-ObjectType = str  # "object" | "snapshot" | "commit"
+ObjectType = str # "object" | "snapshot" | "commit"
 
 
 class CatObjectResult:
@@ -74,7 +74,7 @@ class CatObjectResult:
 
     Args:
         object_type: One of ``"object"``, ``"snapshot"``, or ``"commit"``.
-        row:         The ORM row (``MuseCliObject | MuseCliSnapshot |
+        row: The ORM row (``MuseCliObject | MuseCliSnapshot |
                      MuseCliCommit``).
     """
 
@@ -145,7 +145,7 @@ async def _lookup_object(
     Returns ``None`` when the ID is not found in any table.
 
     Args:
-        session:   An open async DB session.
+        session: An open async DB session.
         object_id: The full SHA-256 hash to look up (64 hex chars).
     """
     obj = await session.get(MuseCliObject, object_id)
@@ -173,13 +173,13 @@ async def _cat_object_async(
     """Core cat-object logic — fully injectable for tests.
 
     Resolves *object_id* across all three Muse object tables and prints
-    the requested representation.  Exits non-zero when the object is not found.
+    the requested representation. Exits non-zero when the object is not found.
 
     Args:
-        session:   Open async DB session.
+        session: Open async DB session.
         object_id: Full SHA-256 hash to look up.
         type_only: When ``True``, print only the type string and exit.
-        pretty:    When ``True``, pretty-print the object's content as JSON.
+        pretty: When ``True``, pretty-print the object's content as JSON.
     """
     result = await _lookup_object(session, object_id)
     if result is None:
@@ -203,9 +203,9 @@ def _render_metadata(result: CatObjectResult) -> None:
     if result.object_type == "object":
         obj = result.row
         assert isinstance(obj, MuseCliObject)
-        typer.echo(f"type:       object")
-        typer.echo(f"object_id:  {obj.object_id}")
-        typer.echo(f"size:       {obj.size_bytes} bytes")
+        typer.echo(f"type: object")
+        typer.echo(f"object_id: {obj.object_id}")
+        typer.echo(f"size: {obj.size_bytes} bytes")
         typer.echo(f"created_at: {obj.created_at.isoformat()}")
         return
 
@@ -213,22 +213,22 @@ def _render_metadata(result: CatObjectResult) -> None:
         snap = result.row
         assert isinstance(snap, MuseCliSnapshot)
         file_count = len(snap.manifest) if snap.manifest else 0
-        typer.echo(f"type:        snapshot")
+        typer.echo(f"type: snapshot")
         typer.echo(f"snapshot_id: {snap.snapshot_id}")
-        typer.echo(f"files:       {file_count}")
-        typer.echo(f"created_at:  {snap.created_at.isoformat()}")
+        typer.echo(f"files: {file_count}")
+        typer.echo(f"created_at: {snap.created_at.isoformat()}")
         return
 
     # commit
     commit = result.row
     assert isinstance(commit, MuseCliCommit)
-    typer.echo(f"type:       commit")
-    typer.echo(f"commit_id:  {commit.commit_id}")
-    typer.echo(f"branch:     {commit.branch}")
-    typer.echo(f"snapshot:   {commit.snapshot_id}")
-    typer.echo(f"message:    {commit.message}")
+    typer.echo(f"type: commit")
+    typer.echo(f"commit_id: {commit.commit_id}")
+    typer.echo(f"branch: {commit.branch}")
+    typer.echo(f"snapshot: {commit.snapshot_id}")
+    typer.echo(f"message: {commit.message}")
     if commit.parent_commit_id:
-        typer.echo(f"parent:     {commit.parent_commit_id}")
+        typer.echo(f"parent: {commit.parent_commit_id}")
     typer.echo(f"committed_at: {commit.committed_at.isoformat()}")
 
 
@@ -265,7 +265,7 @@ def cat_object(
     """Read and display a stored Muse object by its SHA-256 hash.
 
     Probes the object store (blob, snapshot, commit) for the given ID and
-    prints a summary.  Use ``-t`` to get just the type, or ``-p`` to get
+    prints a summary. Use ``-t`` to get just the type, or ``-p`` to get
     the full JSON representation.
     """
     if type_only and pretty:

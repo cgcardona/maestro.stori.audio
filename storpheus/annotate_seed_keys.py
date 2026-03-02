@@ -5,7 +5,7 @@ annotate metadata.json with ``"key": "C major"`` fields.
 Run inside the orpheus container:
     docker compose exec orpheus python annotate_seed_keys.py
 
-Idempotent — safe to re-run.  Seeds that already have a ``key`` field
+Idempotent — safe to re-run. Seeds that already have a ``key`` field
 are skipped unless ``--force`` is passed.
 """
 
@@ -51,13 +51,13 @@ def main() -> None:
 
             seed_path = _LIBRARY_DIR / entry["file"]
             if not seed_path.exists():
-                print(f"  ⚠️ Missing: {entry['file']}")
+                print(f" ⚠️ Missing: {entry['file']}")
                 failed += 1
                 continue
 
             result = detect_key(seed_path)
             if result is None:
-                print(f"  ⚠️ Could not detect key: {entry['file']}")
+                print(f" ⚠️ Could not detect key: {entry['file']}")
                 entry["key"] = None
                 entry["key_confidence"] = 0.0
                 failed += 1
@@ -70,22 +70,22 @@ def main() -> None:
             detected += 1
 
             print(
-                f"  🎵 {entry['file']:40s} → {key_str:10s} "
+                f" 🎵 {entry['file']:40s} → {key_str:10s} "
                 f"(confidence={confidence:.3f})"
             )
 
-    print(f"\n{'DRY RUN — ' if args.dry_run else ''}Summary:")
-    print(f"  Total seeds:  {total}")
-    print(f"  Detected:     {detected}")
-    print(f"  Failed:       {failed}")
-    print(f"  Skipped:      {skipped}")
+    print(f"\n{'DRY RUN' if args.dry_run else ''}Summary:")
+    print(f" Total seeds: {total}")
+    print(f" Detected: {detected}")
+    print(f" Failed: {failed}")
+    print(f" Skipped: {skipped}")
 
     if not args.dry_run and detected > 0:
         tmp = _METADATA_PATH.with_suffix(".tmp")
         with open(tmp, "w") as f:
             json.dump(metadata, f, indent=2)
         tmp.rename(_METADATA_PATH)
-        print(f"  ✅ Updated {_METADATA_PATH}")
+        print(f" ✅ Updated {_METADATA_PATH}")
 
 
 if __name__ == "__main__":

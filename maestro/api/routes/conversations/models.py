@@ -101,7 +101,7 @@ class ConversationUpdateResponse(CamelModel):
 
     Contains only the fields that may have changed — the caller already knows
     the full conversation from a prior ``GET`` and only needs to reconcile the
-    delta.  Immutable fields (``created_at``, ``is_archived``, ``messages``,
+    delta. Immutable fields (``created_at``, ``is_archived``, ``messages``,
     etc.) are intentionally omitted to keep the response minimal.
 
     Wire format: camelCase (via ``CamelModel``) — e.g. ``projectId``,
@@ -109,13 +109,13 @@ class ConversationUpdateResponse(CamelModel):
 
     Attributes:
         id: UUID of the conversation that was updated.
-        title: Current title of the conversation after the update.  If the
+        title: Current title of the conversation after the update. If the
             request did not supply a new title, this echoes the existing value.
         project_id: UUID of the project the conversation is now linked to, or
             ``None`` if the conversation was unlinked (client sent
             ``project_id: "null"``).
         updated_at: ISO-8601 UTC timestamp of the moment the record was last
-            modified.  Refreshed on every successful PATCH.
+            modified. Refreshed on every successful PATCH.
     """
 
     id: str = Field(description="UUID of the conversation that was updated.")

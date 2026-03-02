@@ -22,7 +22,7 @@ import pytest
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from maestro.db.database import Base
-from maestro.db import muse_models  # noqa: F401  — registers ORM models with Base
+from maestro.db import muse_models # noqa: F401 — registers ORM models with Base
 from maestro.muse_cli.models import MuseCliCommit, MuseCliSnapshot
 from maestro.services.muse_divergence import (
     ALL_DIMENSIONS,
@@ -329,7 +329,7 @@ class TestComputeDivergencePerDimensionScores:
     ) -> None:
         """Branch A adds melody.mid; Branch B adds chord.mid.
 
-        Melodic: only A → HIGH.  Harmonic: only B → HIGH.
+        Melodic: only A → HIGH. Harmonic: only B → HIGH.
         Rhythmic: neither → NONE.
         """
         base_snap = _make_snapshot({})

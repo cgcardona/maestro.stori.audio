@@ -1,24 +1,24 @@
 """muse rev-parse — resolve a revision expression to a commit ID.
 
 Translates a symbolic revision expression into a concrete commit ID, mirroring
-``git rev-parse`` semantics for the Muse VCS.  Designed to be used both
+``git rev-parse`` semantics for the Muse VCS. Designed to be used both
 interactively and as a plumbing primitive that other commands can call
 internally to resolve user-supplied refs.
 
 Supported revision expressions
 --------------------------------
-- ``HEAD``          — current branch tip
-- ``<branch>``      — tip of a named branch
-- ``<commit_id>``   — full or abbreviated (prefix) commit ID
-- ``HEAD~N``        — N parents back from HEAD
-- ``<branch>~N``    — N parents back from branch tip
+- ``HEAD`` — current branch tip
+- ``<branch>`` — tip of a named branch
+- ``<commit_id>`` — full or abbreviated (prefix) commit ID
+- ``HEAD~N`` — N parents back from HEAD
+- ``<branch>~N`` — N parents back from branch tip
 
 Flags
 ------
-- ``--short``       — print only the first 8 characters of the resolved ID
-- ``--verify``      — exit 1 when the expression does not resolve (default:
+- ``--short`` — print only the first 8 characters of the resolved ID
+- ``--verify`` — exit 1 when the expression does not resolve (default:
                       print nothing and exit 0)
-- ``--abbrev-ref``  — print the branch name rather than the commit ID
+- ``--abbrev-ref`` — print the branch name rather than the commit ID
                       (meaningful for HEAD and branch refs; for a raw commit ID
                       the branch of that commit is printed)
 
@@ -58,7 +58,7 @@ class RevParseResult:
     """Resolved output of a revision expression.
 
     Returned by ``_resolve_revision`` so that callers have access to both the
-    full commit ID and its branch without re-querying the database.  Treat as
+    full commit ID and its branch without re-querying the database. Treat as
     an immutable value object — all fields are set in ``__init__`` and never
     mutated.
 
@@ -138,7 +138,7 @@ async def _walk_parents(
 ) -> MuseCliCommit | None:
     """Walk *steps* parent hops from *start*, returning the ancestor or None.
 
-    ``steps=0`` returns *start* unchanged.  Each step follows
+    ``steps=0`` returns *start* unchanged. Each step follows
     ``parent_commit_id``; if a parent is missing from the DB the walk stops
     and ``None`` is returned.
     """
@@ -179,9 +179,9 @@ async def resolve_revision(
     ----------------
     1. Strip a ``~N`` suffix and record *steps*.
     2. Resolve the base token:
-       a. ``HEAD``              → tip of *current_branch*
-       b. Named branch (ref file exists)  → tip of that branch
-       c. Commit ID / prefix   → exact or prefix match
+       a. ``HEAD`` → tip of *current_branch*
+       b. Named branch (ref file exists) → tip of that branch
+       c. Commit ID / prefix → exact or prefix match
     3. Walk *steps* parent hops from the resolved base.
     4. Return ``RevParseResult`` or ``None`` when unresolvable.
     """
@@ -233,15 +233,15 @@ async def _rev_parse_async(
     """Core rev-parse logic — fully injectable for tests.
 
     Reads repo state from ``.muse/``, resolves *revision*, and writes output
-    via ``typer.echo``.  Raises ``typer.Exit`` on resolution failure when
+    via ``typer.echo``. Raises ``typer.Exit`` on resolution failure when
     ``--verify`` is set.
     """
     muse_dir = root / ".muse"
     repo_data: dict[str, str] = json.loads((muse_dir / "repo.json").read_text())
     repo_id = repo_data["repo_id"]
 
-    head_ref = (muse_dir / "HEAD").read_text().strip()   # "refs/heads/main"
-    current_branch = head_ref.rsplit("/", 1)[-1]         # "main"
+    head_ref = (muse_dir / "HEAD").read_text().strip() # "refs/heads/main"
+    current_branch = head_ref.rsplit("/", 1)[-1] # "main"
 
     result = await resolve_revision(
         session=session,

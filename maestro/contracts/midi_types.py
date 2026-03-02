@@ -15,22 +15,22 @@ These ``Annotated`` aliases carry constraint metadata at every layer:
 MIDI standard ranges
 --------------------
 +-------------------+-------------------+----------------------------------+
-| Primitive         | Range             | Notes                            |
+| Primitive | Range | Notes |
 +===================+===================+==================================+
-| Pitch             | 0 – 127           | C-1=0, Middle C=60, G9=127       |
-| Velocity          | 0 – 127           | 0 = note-off equivalent          |
-| Channel           | 0 – 15            | 16 channels, drums = ch 9        |
-| CC number         | 0 – 127           | Controller number                |
-| CC value          | 0 – 127           | Controller value                 |
-| Aftertouch        | 0 – 127           | Pressure value                   |
-| Pitch bend        | −8192 – 8191      | 14-bit signed, 0 = centre        |
-| GM program        | 0 – 127           | General MIDI patch number        |
-| Tempo (BPM)       | 20 – 300          | Fractional BPM is not a concept  |
-| Beat position     | ≥ 0.0             | Fractional; e.g. 1.5 = "and" 1  |
-| Beat duration     | > 0.0             | Must be strictly positive        |
-| Arrangement beat  | ≥ 0 (int)         | Bar-aligned section offset       |
-| Arrangement dur.  | ≥ 1 (int)         | bars × time-sig numerator        |
-| Bars              | ≥ 1               | Positive integer                 |
+| Pitch | 0 – 127 | C-1=0, Middle C=60, G9=127 |
+| Velocity | 0 – 127 | 0 = note-off equivalent |
+| Channel | 0 – 15 | 16 channels, drums = ch 9 |
+| CC number | 0 – 127 | Controller number |
+| CC value | 0 – 127 | Controller value |
+| Aftertouch | 0 – 127 | Pressure value |
+| Pitch bend | −8192 – 8191 | 14-bit signed, 0 = centre |
+| GM program | 0 – 127 | General MIDI patch number |
+| Tempo (BPM) | 20 – 300 | Fractional BPM is not a concept |
+| Beat position | ≥ 0.0 | Fractional; e.g. 1.5 = "and" 1 |
+| Beat duration | > 0.0 | Must be strictly positive |
+| Arrangement beat | ≥ 0 (int) | Bar-aligned section offset |
+| Arrangement dur. | ≥ 1 (int) | bars × time-sig numerator |
+| Bars | ≥ 1 | Positive integer |
 +-------------------+-------------------+----------------------------------+
 """
 from __future__ import annotations
@@ -73,7 +73,7 @@ MidiPitchBend = Annotated[int, Field(ge=-8192, le=8191)]
 MidiBPM = Annotated[int, Field(ge=20, le=300)]
 """Composition tempo in beats per minute.
 
-Always an integer — fractional BPM is not a DAW concept.  Practical
+Always an integer — fractional BPM is not a DAW concept. Practical
 compositions live in [40, 240]; the wider [20, 300] window accommodates
 extreme styles without rejecting valid user input.
 """
@@ -104,7 +104,7 @@ def _assert_range(value: int | float, lo: int | float, hi: int | float, name: st
     """Raise ``ValueError`` when ``value`` is outside ``[lo, hi]``.
 
     Used in dataclass ``__post_init__`` methods where Pydantic's field
-    validation is unavailable.  Prefer Pydantic ``Field(ge=..., le=...)``
+    validation is unavailable. Prefer Pydantic ``Field(ge=..., le=...)``
     for BaseModel fields; use this only for frozen dataclasses.
     """
     if not (lo <= value <= hi):

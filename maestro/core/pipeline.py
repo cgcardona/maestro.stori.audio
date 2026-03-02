@@ -47,7 +47,7 @@ class PipelineOutput:
     intent route:
 
     - ``REASONING`` → ``llm_response`` set, ``plan`` is ``None``
-    - ``EDITING``   → ``llm_response`` set (tool calls inside), ``plan`` is ``None``
+    - ``EDITING`` → ``llm_response`` set (tool calls inside), ``plan`` is ``None``
     - ``COMPOSING`` → ``plan`` set, ``llm_response`` is ``None``
 
     Callers discriminate on ``route.sse_state`` (or ``route.intent``) first,

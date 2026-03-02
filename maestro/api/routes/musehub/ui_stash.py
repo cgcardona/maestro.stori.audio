@@ -1,19 +1,19 @@
 """Muse Hub stash UI route handlers.
 
-Serves browser-readable HTML pages for the stash section of a Muse Hub repo —
+Serves browser-readable HTML pages for the stash section of a Muse Hub repo
 analogous to ``git stash list`` but rendered as a rich, interactive page.
 
 Endpoint summary:
-  GET  /musehub/ui/{owner}/{repo_slug}/stash                          — stash list page
-  POST /musehub/ui/{owner}/{repo_slug}/stash/{stash_ref}/apply        — apply stash (no delete)
-  POST /musehub/ui/{owner}/{repo_slug}/stash/{stash_ref}/pop          — apply + delete stash
-  POST /musehub/ui/{owner}/{repo_slug}/stash/{stash_ref}/drop         — delete stash without applying
+  GET /musehub/ui/{owner}/{repo_slug}/stash — stash list page
+  POST /musehub/ui/{owner}/{repo_slug}/stash/{stash_ref}/apply — apply stash (no delete)
+  POST /musehub/ui/{owner}/{repo_slug}/stash/{stash_ref}/pop — apply + delete stash
+  POST /musehub/ui/{owner}/{repo_slug}/stash/{stash_ref}/drop — delete stash without applying
 
 Auth:
-  All four endpoints require a valid JWT Bearer token.  Stash data is always
-  private — users can only see and act on their own stash entries.  Unauthenticated
+  All four endpoints require a valid JWT Bearer token. Stash data is always
+  private — users can only see and act on their own stash entries. Unauthenticated
   GET requests receive a 401 so the DAW / agent consumer knows to supply a token
-  before rendering the page.  The HTML response itself embeds a token-entry prompt
+  before rendering the page. The HTML response itself embeds a token-entry prompt
   via the base template so browsers can recover gracefully.
 
 Content negotiation (GET only):
@@ -28,7 +28,7 @@ POST responses:
     DELETE /api/v1/musehub/repos/{repo_id}/stash/{stash_id}
 
 Auto-discovered by ``maestro.api.routes.musehub.__init__`` because this module
-exposes a ``router`` attribute.  No changes to ``__init__.py`` are needed.
+exposes a ``router`` attribute. No changes to ``__init__.py`` are needed.
 """
 from __future__ import annotations
 
@@ -85,7 +85,7 @@ class StashItem(BaseModel):
 
     ``ref`` is computed by position in the chronologically-descending stash
     list (newest = ``stash@{0}``), matching the convention used by
-    ``muse stash list`` in the CLI.  It is NOT stored in the database.
+    ``muse stash list`` in the CLI. It is NOT stored in the database.
     """
 
     model_config = ConfigDict(
@@ -198,7 +198,7 @@ async def _get_stash_or_404(
 ) -> str:
     """Verify a stash entry belongs to this user/repo; return its id.
 
-    ``stash_ref`` is the stash UUID (the ``id`` column).  Returns the id
+    ``stash_ref`` is the stash UUID (the ``id`` column). Returns the id
     string so callers can run DELETE/UPDATE without a second query.
     Raises 404 if not found or not owned by the caller.
     """
@@ -254,7 +254,7 @@ async def stash_list_page(
 
     HTML (default): renders a list of stash entries with ref labels
     (``stash@{0}``, ``stash@{1}``…), branch name, message, timestamp, and
-    entry count.  Each entry has Apply, Pop, and Drop buttons; Drop includes a
+    entry count. Each entry has Apply, Pop, and Drop buttons; Drop includes a
     confirmation dialog to prevent accidental data loss.
 
     JSON (``Accept: application/json`` or ``?format=json``): returns
@@ -321,7 +321,7 @@ async def stash_apply(
     """Apply the stash entry without deleting it (``muse stash apply``).
 
     The stash entry remains on the stack after this call — use ``pop`` to
-    apply and remove in one step.  Redirects back to the stash list on success.
+    apply and remove in one step. Redirects back to the stash list on success.
 
     Auth required — only the owning user may apply their own stash entries.
     """
@@ -359,7 +359,7 @@ async def stash_pop(
     """Apply the stash entry and delete it (``muse stash pop``).
 
     Atomically returns the stash contents to the caller and removes the
-    entry from the stack.  Redirects back to the stash list on success.
+    entry from the stack. Redirects back to the stash list on success.
 
     Auth required — only the owning user may pop their own stash entries.
     """
@@ -397,9 +397,9 @@ async def stash_drop(
 ) -> RedirectResponse:
     """Permanently delete a stash entry without applying its contents (``muse stash drop``).
 
-    The stash contents are discarded — this is a destructive operation.  The
+    The stash contents are discarded — this is a destructive operation. The
     UI template shows a JavaScript ``confirm()`` dialog before submitting the
-    form so users have a final confirmation step.  Redirects back to the stash
+    form so users have a final confirmation step. Redirects back to the stash
     list on success.
 
     Auth required — only the owning user may drop their own stash entries.

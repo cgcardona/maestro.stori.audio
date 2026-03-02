@@ -1,28 +1,28 @@
 """Tests for the canonical Muse object store — ``maestro.muse_cli.object_store``.
 
-This file is the authoritative test suite for the shared blob store.  Every
+This file is the authoritative test suite for the shared blob store. Every
 Muse command that reads or writes objects (``muse commit``, ``muse read-tree``,
-``muse reset --hard``) must route through this module.  Tests here verify:
+``muse reset --hard``) must route through this module. Tests here verify:
 
 Unit tests (pure filesystem, no DB):
-- test_object_path_uses_sharded_layout        — path is <sha2>/<sha62>
-- test_object_path_shard_dir_is_first_two     — shard dir name is first 2 chars
-- test_write_object_creates_shard_dir         — shard dir created on first write
-- test_write_object_stores_content            — bytes are persisted correctly
-- test_write_object_idempotent_returns_false  — second write returns False, file unchanged
-- test_write_object_from_path_stores_content  — path-based write stores bytes correctly
-- test_write_object_from_path_idempotent      — path-based write is idempotent
-- test_read_object_returns_bytes              — returns stored content
-- test_read_object_returns_none_when_missing  — returns None for absent object
-- test_has_object_true_after_write            — True after write_object
-- test_has_object_false_before_write          — False when absent
-- test_restore_object_copies_to_dest          — file appears at dest
-- test_restore_object_creates_parent_dirs     — dest parent dirs are created
-- test_restore_object_returns_false_missing   — returns False when object absent
+- test_object_path_uses_sharded_layout — path is <sha2>/<sha62>
+- test_object_path_shard_dir_is_first_two — shard dir name is first 2 chars
+- test_write_object_creates_shard_dir — shard dir created on first write
+- test_write_object_stores_content — bytes are persisted correctly
+- test_write_object_idempotent_returns_false — second write returns False, file unchanged
+- test_write_object_from_path_stores_content — path-based write stores bytes correctly
+- test_write_object_from_path_idempotent — path-based write is idempotent
+- test_read_object_returns_bytes — returns stored content
+- test_read_object_returns_none_when_missing — returns None for absent object
+- test_has_object_true_after_write — True after write_object
+- test_has_object_false_before_write — False when absent
+- test_restore_object_copies_to_dest — file appears at dest
+- test_restore_object_creates_parent_dirs — dest parent dirs are created
+- test_restore_object_returns_false_missing — returns False when object absent
 
 Regression tests (cross-command round-trips):
-- test_same_layout_commit_then_read_tree      — objects written by commit are found by read-tree
-- test_same_layout_commit_then_reset_hard     — objects written by commit are found by reset --hard
+- test_same_layout_commit_then_read_tree — objects written by commit are found by read-tree
+- test_same_layout_commit_then_reset_hard — objects written by commit are found by reset --hard
 """
 from __future__ import annotations
 
@@ -36,7 +36,7 @@ import pytest
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from maestro.db.database import Base
-from maestro.muse_cli import models as cli_models  # noqa: F401 — register tables
+from maestro.muse_cli import models as cli_models # noqa: F401 — register tables
 from maestro.muse_cli.models import MuseCliCommit, MuseCliObject, MuseCliSnapshot
 from maestro.muse_cli.object_store import (
     has_object,
@@ -97,7 +97,7 @@ class TestObjectPath:
     def test_object_path_uses_sharded_layout(self, tmp_path: pathlib.Path) -> None:
         """object_path returns .muse/objects/<sha2>/<sha62> — the sharded layout."""
         root = tmp_path
-        object_id = "ab" + "cd" * 31  # 64 hex chars
+        object_id = "ab" + "cd" * 31 # 64 hex chars
         result = object_path(root, object_id)
         expected = root / ".muse" / "objects" / "ab" / ("cd" * 31)
         assert result == expected
@@ -166,8 +166,8 @@ class TestWriteObject:
         result = write_object(tmp_path, object_id, b"different content")
 
         assert result is False
-        assert dest.stat().st_mtime == mtime_first  # file not touched
-        assert dest.read_bytes() == b"original content"  # original content preserved
+        assert dest.stat().st_mtime == mtime_first # file not touched
+        assert dest.read_bytes() == b"original content" # original content preserved
 
 
 # ---------------------------------------------------------------------------
@@ -319,7 +319,7 @@ class TestRestoreObject:
 # ---------------------------------------------------------------------------
 # Cross-command round-trip tests
 #
-# These are the regression tests the issue specifically calls for.  They wire
+# These are the regression tests the issue specifically calls for. They wire
 # together the real _commit_async / _read_tree_async / perform_reset cores
 # against the shared object store to prove that objects written by one command
 # are found by every other command.
@@ -376,9 +376,9 @@ class TestCrossCommandRoundTrips:
     ) -> None:
         """Objects written via write_object_from_path (commit) are readable by read_tree.
 
-        This is the primary regression for issue #177: flat-layout objects
+        This is the primary regression: flat-layout objects
         written by muse commit could not be found by muse read-tree which
-        used the same module.  Both now use the sharded layout.
+        used the same module. Both now use the sharded layout.
         """
         from maestro.muse_cli.commands.read_tree import _read_tree_async
 
@@ -427,9 +427,9 @@ class TestCrossCommandRoundTrips:
     ) -> None:
         """Objects written via write_object_from_path (commit) are readable by reset --hard.
 
-        This is the primary regression for issue #177: muse reset --hard used a
+        This is the primary regression: muse reset --hard used a
         sharded layout but muse commit used a flat layout, so reset could never
-        find the objects commit had stored.  Both now use the same sharded layout.
+        find the objects commit had stored. Both now use the same sharded layout.
         """
         from maestro.services.muse_reset import ResetMode, perform_reset
 
@@ -507,5 +507,5 @@ class TestCrossCommandRoundTrips:
         write_object_from_path(repo_root, object_id, src)
         p_path = object_path(repo_root, object_id)
 
-        assert p_bytes == p_path  # identical paths
+        assert p_bytes == p_path # identical paths
         assert p_path.read_bytes() == content

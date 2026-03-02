@@ -1,0 +1,37 @@
+{#
+  pagination — renders page navigation (Prev / Page N of M / Next).
+
+  Renders nothing when total_pages ≤ 1 so callers never need to guard
+  against it.
+
+  Parameters
+  ----------
+  page : int
+    Current page number (1-based).
+  total_pages : int
+    Total number of pages.
+  url : str
+    Base URL for page links (without query string).
+  extra_params : dict[str, str]
+    Additional query-string parameters to preserve across page links
+    (e.g. {"q": search_term, "label": active_label}).  Defaults to {}.
+
+  Usage
+  -----
+  {% from "musehub/macros/pagination.html" import pagination %}
+  {{ pagination(page, total_pages, url="/musehub/ui/owner/repo/issues",
+                extra_params={"q": q, "state": state}) }}
+#}
+{% macro pagination(page, total_pages, url, extra_params={}) %}
+{% if total_pages > 1 %}
+<nav class="pagination" aria-label="Pagination">
+  {% if page > 1 %}
+    <a class="btn btn-ghost btn-sm" href="{{ url }}?page={{ page - 1 }}{% for k,v in extra_params.items() %}&{{ k }}={{ v }}{% endfor %}">← Prev</a>
+  {% endif %}
+  <span class="pagination-info">Page {{ page }} of {{ total_pages }}</span>
+  {% if page < total_pages %}
+    <a class="btn btn-ghost btn-sm" href="{{ url }}?page={{ page + 1 }}{% for k,v in extra_params.items() %}&{{ k }}={{ v }}{% endfor %}">Next →</a>
+  {% endif %}
+</nav>
+{% endif %}
+{% endmacro %}

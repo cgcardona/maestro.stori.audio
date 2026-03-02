@@ -343,8 +343,8 @@ class TestOrderingInvariants:
 
         """Phrase events should have sequence > 1."""
         counter = SequenceCounter()
-        meta_seq = counter.next()  # 1
-        phrase_seq = counter.next()  # 2
+        meta_seq = counter.next() # 1
+        phrase_seq = counter.next() # 2
 
         assert meta_seq == 1
         assert phrase_seq == 2
@@ -354,10 +354,10 @@ class TestOrderingInvariants:
 
         """Done event should have the highest sequence number."""
         counter = SequenceCounter()
-        counter.next()  # meta = 1
-        counter.next()  # phrase = 2
-        counter.next()  # phrase = 3
-        done_seq = counter.next()  # done = 4
+        counter.next() # meta = 1
+        counter.next() # phrase = 2
+        counter.next() # phrase = 3
+        done_seq = counter.next() # done = 4
 
         assert done_seq == 4
         assert done_seq == counter.current
@@ -366,9 +366,9 @@ class TestOrderingInvariants:
 
         """Error should be followed by done, in strict sequence order."""
         counter = SequenceCounter()
-        counter.next()  # meta = 1
-        error_seq = counter.next()  # error = 2
-        done_seq = counter.next()  # done = 3
+        counter.next() # meta = 1
+        error_seq = counter.next() # error = 2
+        done_seq = counter.next() # done = 3
 
         assert done_seq == error_seq + 1
 
@@ -416,7 +416,7 @@ class TestOrderingInvariants:
         # Verify strictly increasing sequence
         sequences = [e.sequence for e in events]
         assert sequences == sorted(sequences)
-        assert len(set(sequences)) == len(sequences)  # No duplicates
+        assert len(set(sequences)) == len(sequences) # No duplicates
 
         # Verify all events share the same variation context
         for event in events:

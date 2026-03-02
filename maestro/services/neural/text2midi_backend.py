@@ -201,9 +201,9 @@ class Text2MidiBackend:
         # Empirically derived mapping (from comprehensive testing)
         # Format: (target_beats, max_length, actual_beats_achieved)
         mapping = [
-            (16, 500, 15.5),   # 4 bars
-            (40, 700, 40.9),   # 10 bars
-            (64, 900, 60.0),   # 16 bars (most common)
+            (16, 500, 15.5), # 4 bars
+            (40, 700, 40.9), # 10 bars
+            (64, 900, 60.0), # 16 bars (most common)
             (100, 1400, 100.0), # 25 bars
         ]
         
@@ -238,7 +238,7 @@ class Text2MidiBackend:
         
         # Fallback (should never reach here)
         logger.warning(f"[text2midi] Could not map {target_beats} beats, using default")
-        return 900  # 16 bars, safe default
+        return 900 # 16 bars, safe default
     
     async def generate(
         self,
@@ -259,7 +259,7 @@ class Text2MidiBackend:
         """
         try:
             # Calculate target duration in beats
-            target_beats = bars * 4  # 4 beats per bar
+            target_beats = bars * 4 # 4 beats per bar
             max_length = self._beats_to_max_length(target_beats)
             
             # Generate text description from emotion vector
@@ -389,7 +389,7 @@ class Text2MidiBackend:
             notes: list[NoteDict] = []
             
             # Get tempo (microseconds per beat)
-            tempo = 500000  # Default 120 BPM
+            tempo = 500000 # Default 120 BPM
             for track in mid.tracks:
                 for msg in track:
                     if msg.type == "set_tempo":
@@ -460,7 +460,7 @@ class Text2MidiMelodyBackend:
             key=request.key,
             emotion_vector=request.emotion_vector,
             style=getattr(request, "style", None),
-            instrument="piano",  # text2midi is best with piano
+            instrument="piano", # text2midi is best with piano
             temperature=getattr(request, "temperature", 1.0),
         )
         

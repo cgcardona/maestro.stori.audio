@@ -28,7 +28,7 @@ from maestro.services.neural.tokenizer import MidiTokenizer, TokenizerConfig
 class MelodyGenerationMetadata(GenerationMetadata, total=False):
     """Metadata produced by melody generation backends.
 
-    Inherits all optional fields from ``GenerationMetadata``.  All melody-specific
+    Inherits all optional fields from ``GenerationMetadata``. All melody-specific
     fields (hf_params, raw_note_count) live in ``GenerationMetadata`` so that
     any backend can populate them without subclassing.
     """
@@ -42,11 +42,11 @@ class MelodyGenerationRequest:
     bars: int
     tempo: int
     key: str
-    chords: list[str]  # One chord per bar (or empty)
+    chords: list[str] # One chord per bar (or empty)
     emotion_vector: EmotionVector
     
     # Optional conditioning
-    seed_notes: list[NoteDict] | None = None  # Prime with these notes
+    seed_notes: list[NoteDict] | None = None # Prime with these notes
     temperature: float = 1.0
     top_p: float = 0.9
 
@@ -139,13 +139,13 @@ class MockNeuralMelodyBackend(MelodyModelBackend):
         scale = self._get_scale(request.key)
         
         # Calculate note density based on motion and energy
-        notes_per_bar = int(4 + (1 - constraints.rest_density) * 8)  # 4-12 notes/bar
+        notes_per_bar = int(4 + (1 - constraints.rest_density) * 8) # 4-12 notes/bar
         
         # Starting pitch based on register
         current_pitch = constraints.register_center
         
         for bar_idx in range(request.bars):
-            bar_start = bar_idx * 4.0  # 4 beats per bar
+            bar_start = bar_idx * 4.0 # 4 beats per bar
             
             # Get chord for this bar
             chord_idx = bar_idx % len(request.chords) if request.chords else 0
@@ -163,7 +163,7 @@ class MockNeuralMelodyBackend(MelodyModelBackend):
                     continue
                 
                 # Pitch selection
-                if rng.random() < 0.3:  # 30% chance to hit chord tone
+                if rng.random() < 0.3: # 30% chance to hit chord tone
                     pitch = chord_root + rng.choice([0, 4, 7]) + 60
                 else:
                     # Scale tone with contour
@@ -211,8 +211,8 @@ class MockNeuralMelodyBackend(MelodyModelBackend):
         # Simplified: just use major or minor
         is_minor = "m" in key.lower() and "maj" not in key.lower()
         if is_minor:
-            return [0, 2, 3, 5, 7, 8, 10]  # Natural minor
-        return [0, 2, 4, 5, 7, 9, 11]  # Major
+            return [0, 2, 3, 5, 7, 8, 10] # Natural minor
+        return [0, 2, 4, 5, 7, 9, 11] # Major
     
     def _chord_root(self, chord: str) -> int:
         """Get chord root as pitch class (0-11)."""
@@ -252,15 +252,15 @@ class MockNeuralMelodyBackend(MelodyModelBackend):
 # =============================================================================
 
 # class MuseCocoBackend(MelodyModelBackend):
-#     """
-#     MuseCoco model integration.
-#     
-#     MuseCoco is designed for text-to-symbolic music generation
-#     with attribute conditioning.
-#     
-#     See: https://github.com/microsoft/muzic/tree/main/musecoco
-#     """
-#     pass
+# """
+# MuseCoco model integration.
+# 
+# MuseCoco is designed for text-to-symbolic music generation
+# with attribute conditioning.
+# 
+# See: https://github.com/microsoft/muzic/tree/main/musecoco
+# """
+# pass
 
 
 # =============================================================================
@@ -311,7 +311,7 @@ class NeuralMelodyGenerator:
         
         # Default chords
         if not chords:
-            chords = [key] * bars  # Just use tonic
+            chords = [key] * bars # Just use tonic
         
         request = MelodyGenerationRequest(
             bars=bars,

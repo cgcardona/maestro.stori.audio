@@ -1,6 +1,6 @@
 """Tests for Muse Hub push/pull sync protocol.
 
-Covers every acceptance criterion from issue #40:
+Covers every acceptance criterion:
 - POST /push stores commits and objects (upsert)
 - POST /push updates the branch head to head_commit_id
 - POST /push rejects non-fast-forward updates with 409 (unless force=true)
@@ -207,7 +207,7 @@ async def test_push_non_fast_forward_returns_409(
                     commits=[
                         {
                             "commitId": "c002",
-                            "parentIds": [],  # no parent → diverged
+                            "parentIds": [], # no parent → diverged
                             "message": "diverged commit",
                             "timestamp": "2024-01-02T00:00:00Z",
                         }

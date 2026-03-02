@@ -1,12 +1,12 @@
 """Tests for ``muse init`` — initialise a new Muse repository.
 
-Covers every acceptance criterion from issue #31:
+Covers every acceptance criterion:
 - Creates .muse/ with all required files
 - Idempotent: exits 1 without --force when .muse/ already exists
 - --force reinitialises and preserves existing repo_id
 - muse status after init shows "On branch main, no commits yet"
 
-Covers acceptance criteria from issue #85:
+Covers acceptance criteria:
 - --bare creates .muse/ without muse-work/ and writes bare = true in config.toml
 - --template copies template directory contents into muse-work/
 - --default-branch names the initial branch instead of "main"
@@ -144,7 +144,7 @@ def test_init_writes_config_toml(tmp_path: pathlib.Path) -> None:
 
 def test_init_config_toml_is_valid_toml(tmp_path: pathlib.Path) -> None:
     """``config.toml`` produced by ``muse init`` is valid TOML (parseable via stdlib)."""
-    import tomllib  # Python 3.11+ stdlib
+    import tomllib # Python 3.11+ stdlib
 
     _run_init(tmp_path)
     config_path = tmp_path / ".muse" / "config.toml"
@@ -162,7 +162,7 @@ def test_init_config_toml_is_valid_toml(tmp_path: pathlib.Path) -> None:
 def test_init_idempotent_without_force_exits_1(tmp_path: pathlib.Path) -> None:
     """Second ``muse init`` without ``--force`` exits 1 with an informative message."""
     _run_init(tmp_path)
-    result = _run_init(tmp_path)  # second call
+    result = _run_init(tmp_path) # second call
 
     assert result.exit_code == int(ExitCode.USER_ERROR), result.output
     assert "Already a Muse repository" in result.output
@@ -207,7 +207,7 @@ def test_init_success_output_contains_path(tmp_path: pathlib.Path) -> None:
 
 
 # ---------------------------------------------------------------------------
-# muse status after muse init (acceptance criterion from issue #31)
+# muse status after muse init (acceptance criterion)
 # ---------------------------------------------------------------------------
 
 
@@ -270,7 +270,7 @@ def test_init_oserror_exits_3(
 
 
 # ---------------------------------------------------------------------------
-# --bare flag (issue #85)
+# --bare flag
 # ---------------------------------------------------------------------------
 
 
@@ -321,7 +321,7 @@ def test_normal_init_repo_json_has_no_bare_flag(tmp_path: pathlib.Path) -> None:
 
 
 # ---------------------------------------------------------------------------
-# --template flag (issue #85)
+# --template flag
 # ---------------------------------------------------------------------------
 
 
@@ -369,7 +369,7 @@ def test_template_ignored_for_bare_repos(tmp_path: pathlib.Path) -> None:
 
 
 # ---------------------------------------------------------------------------
-# --default-branch flag (issue #85)
+# --default-branch flag
 # ---------------------------------------------------------------------------
 
 

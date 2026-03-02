@@ -10,9 +10,9 @@ shapes inside committed snapshots — is reserved for a future iteration.
 
 Pattern formats recognised (planned for MIDI content search, not yet analysed):
 
-- Note sequence:  ``"C4 E4 G4"``
-- Interval run:   ``"+4 +3"``
-- Chord symbol:   ``"Cm7"``
+- Note sequence: ``"C4 E4 G4"``
+- Interval run: ``"+4 +3"``
+- Chord symbol: ``"Cm7"``
 
 Future work (MIDI analysis)
 ---------------------------
@@ -63,14 +63,14 @@ class GrepMatch:
 
     ``match_source`` records *where* the pattern was found:
     - ``"message"`` — in the commit message (implemented)
-    - ``"branch"``  — in the branch name (implemented)
+    - ``"branch"`` — in the branch name (implemented)
     - ``"midi_content"`` — inside a committed MIDI snapshot (future work)
     """
 
     commit_id: str
     branch: str
     message: str
-    committed_at: str  # ISO-8601 string
+    committed_at: str # ISO-8601 string
     match_source: str
 
 
@@ -112,7 +112,7 @@ def _match_commit(
     """Return a :class:`GrepMatch` if the commit matches *pattern*, else ``None``.
 
     Currently performs case-insensitive substring matching against commit
-    messages and branch names.  The ``track``, ``section``,
+    messages and branch names. The ``track``, ``section``,
     ``transposition_invariant``, and ``rhythm_invariant`` flags are accepted
     for API stability but are no-ops until MIDI content search is implemented.
     """
@@ -137,7 +137,7 @@ def _match_commit(
         )
 
     # NOTE: MIDI content search (track / section / transposition / rhythm filters)
-    # is not yet implemented.  The flags above will be wired here in future.
+    # is not yet implemented. The flags above will be wired here in future.
     return None
 
 
@@ -159,8 +159,8 @@ async def _grep_async(
     all :class:`GrepMatch` objects that satisfy *pattern*.
     """
     muse_dir = root / ".muse"
-    head_ref = (muse_dir / "HEAD").read_text().strip()  # "refs/heads/main"
-    branch = head_ref.rsplit("/", 1)[-1]  # "main"
+    head_ref = (muse_dir / "HEAD").read_text().strip() # "refs/heads/main"
+    branch = head_ref.rsplit("/", 1)[-1] # "main"
     ref_path = muse_dir / pathlib.Path(head_ref)
 
     head_commit_id = ""
@@ -199,9 +199,9 @@ def _render_matches(
     """Write grep results to stdout.
 
     Three output modes:
-    - ``--json``:    machine-readable JSON array.
+    - ``--json``: machine-readable JSON array.
     - ``--commits``: one ``commit_id`` per line (like ``git grep --name-only``).
-    - default:       human-readable summary with context.
+    - default: human-readable summary with context.
     """
     if output_json:
         typer.echo(
@@ -222,12 +222,12 @@ def _render_matches(
         return
 
     # Default human-readable output
-    typer.echo(f"Pattern: {pattern!r}  ({len(matches)} match(es))\n")
+    typer.echo(f"Pattern: {pattern!r} ({len(matches)} match(es))\n")
     for m in matches:
         typer.echo(f"commit {m.commit_id}")
-        typer.echo(f"Branch:  {m.branch}")
-        typer.echo(f"Date:    {m.committed_at}")
-        typer.echo(f"Match:   [{m.match_source}]")
+        typer.echo(f"Branch: {m.branch}")
+        typer.echo(f"Date: {m.committed_at}")
+        typer.echo(f"Match: [{m.match_source}]")
         typer.echo(f"Message: {m.message}")
         typer.echo("")
 
@@ -277,7 +277,7 @@ def grep(
     """Search for a musical pattern across all commits.
 
     NOTE: The current implementation searches commit *messages* and *branch
-    names* for the pattern string.  Full MIDI content analysis (note
+    names* for the pattern string. Full MIDI content analysis (note
     sequences, intervals, chord symbols) is planned for a future release.
     Flags marked [Future] are accepted now for API stability but have no
     effect on text-only matching.
@@ -286,11 +286,11 @@ def grep(
 
     # Warn when MIDI-analysis flags are supplied — they are no-ops right now.
     if track is not None:
-        typer.echo("⚠️  --track is not yet implemented (MIDI analysis is future work).")
+        typer.echo("⚠️ --track is not yet implemented (MIDI analysis is future work).")
     if section is not None:
-        typer.echo("⚠️  --section is not yet implemented (MIDI analysis is future work).")
+        typer.echo("⚠️ --section is not yet implemented (MIDI analysis is future work).")
     if rhythm_invariant:
-        typer.echo("⚠️  --rhythm-invariant is not yet implemented (MIDI analysis is future work).")
+        typer.echo("⚠️ --rhythm-invariant is not yet implemented (MIDI analysis is future work).")
 
     async def _run() -> list[GrepMatch]:
         async with open_session() as session:

@@ -2,33 +2,33 @@
 
 Detects which commit in a range "killed the groove" by measuring how much
 the average note-onset deviation from the quantization grid shifted between
-adjacent commits.  A large drift_delta signals a quantize operation that was
+adjacent commits. A large drift_delta signals a quantize operation that was
 too aggressive, a tempo map change that made the pocket feel stiff, or any
 edit that disrupted rhythmic consistency.
 
 Output (default tabular)::
 
-    Groove-check — range HEAD~6..HEAD  threshold 0.1 beats
+    Groove-check — range HEAD~6..HEAD threshold 0.1 beats
 
-    Commit    Groove Score  Drift Δ  Status
-    --------  ------------  -------  ------
-    a1b2c3d4        0.0400   0.0000  OK
-    e5f6a7b8        0.0500   0.0100  OK
-    c9d0e1f2        0.0600   0.0100  OK
-    a3b4c5d6        0.0900   0.0300  OK
-    e7f8a9b0        0.1500   0.0600  WARN
-    c1d2e3f4        0.1300   0.0200  OK
+    Commit Groove Score Drift Δ Status
+    -------- ------------ ------- ------
+    a1b2c3d4 0.0400 0.0000 OK
+    e5f6a7b8 0.0500 0.0100 OK
+    c9d0e1f2 0.0600 0.0100 OK
+    a3b4c5d6 0.0900 0.0300 OK
+    e7f8a9b0 0.1500 0.0600 WARN
+    c1d2e3f4 0.1300 0.0200 OK
 
-    Flagged: 1 / 6 commits  (worst: e7f8a9b0)
+    Flagged: 1 / 6 commits (worst: e7f8a9b0)
 
 Flags
 -----
-[range]            Commit range to analyze (e.g. HEAD~5..HEAD). Default: last 10.
---track TEXT       Scope analysis to a specific instrument track.
---section TEXT     Scope analysis to a specific musical section.
---threshold FLOAT  Drift threshold in beats (default 0.1). Commits that exceed
+[range] Commit range to analyze (e.g. HEAD~5..HEAD). Default: last 10.
+--track TEXT Scope analysis to a specific instrument track.
+--section TEXT Scope analysis to a specific musical section.
+--threshold FLOAT Drift threshold in beats (default 0.1). Commits that exceed
                    this value are flagged WARN; >2× threshold = FAIL.
---json             Emit machine-readable JSON output.
+--json Emit machine-readable JSON output.
 """
 from __future__ import annotations
 
@@ -80,20 +80,20 @@ def _render_table(result: GrooveCheckResult) -> None:
     """
     typer.echo(
         f"Groove-check — range {result.commit_range}"
-        f"  threshold {result.threshold} beats"
+        f" threshold {result.threshold} beats"
     )
     typer.echo("")
 
     header = (
-        f"{'Commit':<{_COL_COMMIT}}  "
-        f"{'Groove Score':>{_COL_SCORE}}  "
-        f"{'Drift Δ':>{_COL_DELTA}}  "
+        f"{'Commit':<{_COL_COMMIT}} "
+        f"{'Groove Score':>{_COL_SCORE}} "
+        f"{'Drift Δ':>{_COL_DELTA}} "
         f"{'Status':<{_COL_STATUS}}"
     )
     sep = (
-        f"{'-' * _COL_COMMIT}  "
-        f"{'-' * _COL_SCORE}  "
-        f"{'-' * _COL_DELTA}  "
+        f"{'-' * _COL_COMMIT} "
+        f"{'-' * _COL_SCORE} "
+        f"{'-' * _COL_DELTA} "
         f"{'-' * _COL_STATUS}"
     )
     typer.echo(header)
@@ -101,15 +101,15 @@ def _render_table(result: GrooveCheckResult) -> None:
 
     for entry in result.entries:
         typer.echo(
-            f"{entry.commit:<{_COL_COMMIT}}  "
-            f"{entry.groove_score:>{_COL_SCORE}.4f}  "
-            f"{entry.drift_delta:>{_COL_DELTA}.4f}  "
+            f"{entry.commit:<{_COL_COMMIT}} "
+            f"{entry.groove_score:>{_COL_SCORE}.4f} "
+            f"{entry.drift_delta:>{_COL_DELTA}.4f} "
             f"{entry.status.value:<{_COL_STATUS}}"
         )
 
     typer.echo("")
     worst_label = (
-        f"  (worst: {result.worst_commit})" if result.worst_commit else ""
+        f" (worst: {result.worst_commit})" if result.worst_commit else ""
     )
     typer.echo(
         f"Flagged: {result.flagged_commits} / {result.total_commits} commits"
@@ -166,13 +166,13 @@ async def _groove_check_async(
     :func:`compute_groove_check` (pure, stub-backed), and renders output.
 
     Args:
-        root:         Repository root (directory containing ``.muse/``).
-        session:      Open async DB session (reserved for full implementation).
+        root: Repository root (directory containing ``.muse/``).
+        session: Open async DB session (reserved for full implementation).
         commit_range: Explicit range string or None to use the last 10 commits.
-        track:        Restrict analysis to a named instrument track.
-        section:      Restrict analysis to a named musical section.
-        threshold:    Drift threshold in beats for WARN/FAIL classification.
-        as_json:      Emit JSON instead of the ASCII table.
+        track: Restrict analysis to a named instrument track.
+        section: Restrict analysis to a named musical section.
+        threshold: Drift threshold in beats for WARN/FAIL classification.
+        as_json: Emit JSON instead of the ASCII table.
 
     Returns:
         The :class:`GrooveCheckResult` produced by the analysis.
@@ -265,7 +265,7 @@ def groove_check(
 
     Computes note-onset deviation from the quantization grid for each commit
     in the range, then flags commits where the deviation shifted significantly
-    relative to their neighbors.  Use this after a session to spot which
+    relative to their neighbors. Use this after a session to spot which
     commit made the pocket feel stiff.
     """
     root = require_repo()

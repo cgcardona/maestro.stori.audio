@@ -340,10 +340,10 @@ Constraints:
 Vibe: [dreamy x3, atmospheric x2, minimal, peaceful, distant, transcendent]
 
 Request: |
-  A 32-bar ambient meditation in four phases. 8 bars of pure stillness —
+  A 32-bar ambient meditation in four phases. 8 bars of pure stillness
   only the sub drone on D1, barely audible, and the faintest granular
   texture like dust in light. 8 bars of awakening — a warm analog pad
-  fades in with an open Dmaj9, painfully slow attack. 8 bars of drift —
+  fades in with an open Dmaj9, painfully slow attack. 8 bars of drift
   a pentatonic arp enters, random-gated, drifting in and out of focus,
   and a single prepared piano note rings once every 4 bars. 8 bars of
   dissolve — the arp thins, the pad opens up, the filter slowly closes,
@@ -610,7 +610,7 @@ Request: |
   primal, warrior energy. 8-bar ocean — the pan flute (GM 75) enters
   with a Polynesian melody in A minor pentatonic, long sustained
   notes like wind over the Pacific. The taiko continues but softens.
-  The log drums create a flowing 8th-note pattern. 8-bar convergence —
+  The log drums create a flowing 8th-note pattern. 8-bar convergence
   the choir (GM 52) enters with a haka-style chant on the root (A),
   rhythmic and powerful, doubling the taiko pattern. The pan flute
   soars. All elements converge on the downbeat of bar 21 in a massive
@@ -714,7 +714,7 @@ Expression:
     The taiko at bar 1 is the mountain — each hit a declaration of
     existence, reverberating across the valley. The 5/4 meter is
     asymmetric and ancient, a heartbeat that limps because it is older
-    than symmetry. When the pan flute enters at bar 9, it is the ocean —
+    than symmetry. When the pan flute enters at bar 9, it is the ocean
     the Pacific, endless, carrying songs between islands. The choir at
     bar 17 is the haka — the warrior dance, rhythmic and primal, voices
     as percussion. The convergence at bar 21 is the moment the mountain
@@ -734,7 +734,7 @@ Texture:
       the upper-mid register — the woody click is sharp and defined.
       The pan flute floats in the highs — breathy, ethereal, sky.
       Between these three, there is enormous empty space. That
-      emptiness is the Pacific Ocean. The choir at bar 17 fills it —
+      emptiness is the Pacific Ocean. The choir at bar 17 fills it
       the haka chant is the human voice claiming the space between
       earth and sky, between mountain and ocean. The convergence at
       bar 21 is every register occupied at maximum force. The
@@ -1095,7 +1095,7 @@ Constraints:
 Vibe: [sacred x4, ancient x3, still, stone, eternal, monastic, candlelight]
 
 Request: |
-  A Gregorian chant ambient piece in three sections. 8-bar silence —
+  A Gregorian chant ambient piece in three sections. 8-bar silence
   a deep drone on D0 (sustained pad or low organ), barely audible,
   the sound of stone walls. At bar 5, tubular bells (GM 14) strike
   a single D3 that rings for 4 bars. Nothing else. 8-bar chant — the
@@ -1873,7 +1873,7 @@ Request: |
   A Steve Reich-inspired minimalist phasing piece in four sections.
   8-bar unison — two marimbas (GM 12) play the same 12-note pattern
   in C major (C-E-G-D-F-A-E-G-B-D-F-C) in exact unison, 8th notes,
-  steady, precise. The pattern repeats. Exact copies. 8-bar phase 1 —
+  steady, precise. The pattern repeats. Exact copies. 8-bar phase 1
   marimba 2 begins to pull slightly ahead (one 16th note per bar),
   creating interference patterns, new melodies emerging from the overlap.
   The listener hears melodies that neither player is playing. This is

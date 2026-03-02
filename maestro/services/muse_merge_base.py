@@ -28,7 +28,7 @@ async def find_merge_base(
 
     Walks ``parent_variation_id`` chains for both ``a`` and ``b``,
     then returns the most recent variation_id that appears in both
-    lineages.  Returns None if the variations share no common history.
+    lineages. Returns None if the variations share no common history.
 
     Deterministic: for the same inputs, always returns the same result.
     """

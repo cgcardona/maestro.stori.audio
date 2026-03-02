@@ -3,7 +3,7 @@
 Two complementary systems:
 
 - **SectionSignals** — asyncio.Event per section for drum-to-bass
-  pipelining (readiness gating).  Keyed by ``"{section_id}:{contract_hash}"``
+  pipelining (readiness gating). Keyed by ``"{section_id}:{contract_hash}"``
   to bind signals to specific contract lineage (swarm safety).
 - **SectionState** — immutable telemetry snapshots per section per
   instrument for deterministic cross-instrument musical awareness
@@ -55,9 +55,9 @@ class SectionSignals:
     """Per-section event signaling for drum-to-bass RhythmSpine coupling.
 
     The coordinator creates one ``SectionSignals`` instance shared across
-    drum and bass instrument parents.  Each drum section child calls
+    drum and bass instrument parents. Each drum section child calls
     ``signal_complete`` after generating, storing its notes and setting
-    the corresponding asyncio.Event.  The matching bass section child
+    the corresponding asyncio.Event. The matching bass section child
     calls ``wait_for`` before generating, receiving the drum notes so it
     can build a per-section RhythmSpine.
 
@@ -99,7 +99,7 @@ class SectionSignals:
         """Signal that a drum section has completed (success or failure).
 
         Idempotent: subsequent calls for the same key are silently
-        ignored (first write wins).  ``drum_notes`` is stored before
+        ignored (first write wins). ``drum_notes`` is stored before
         the event is set to guarantee store-before-signal ordering.
         """
         key = _signal_key(section_id, contract_hash)
@@ -123,11 +123,11 @@ class SectionSignals:
     ) -> SectionSignalResult | None:
         """Wait for a drum section to complete with typed result.
 
-        Verifies the signal's ``contract_hash`` matches.  Raises
+        Verifies the signal's ``contract_hash`` matches. Raises
         ``ProtocolViolationError`` on mismatch (swarm safety).
 
         Returns ``None`` if the key has no registered event (e.g.
-        composition has no drums).  Raises ``asyncio.TimeoutError``
+        composition has no drums). Raises ``asyncio.TimeoutError``
         if the drum section does not signal within ``timeout`` seconds.
         """
         key = _signal_key(section_id, contract_hash)
@@ -177,7 +177,7 @@ class SectionState:
         """Write ``telemetry`` for ``key`` (acquires lock — safe for concurrent callers).
 
         ``key`` must follow ``"Instrument: section_id"`` format (e.g.
-        ``"Drums: 0:verse"``).  Written values are frozen ``SectionTelemetry``
+        ``"Drums: 0:verse"``). Written values are frozen ``SectionTelemetry``
         dataclasses — subsequent reads return the same object.
         """
         async with self._lock:

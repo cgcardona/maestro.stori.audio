@@ -1,25 +1,25 @@
 """Tests for the Muse Hub topics/tag browse API endpoints.
 
-Covers acceptance criteria from issue #408:
-- test_list_topics_empty                   — no public repos → empty topics list
-- test_list_topics_aggregates_counts       — counts reflect public repos only
-- test_list_topics_excludes_private_repos  — private repo tags are not counted
-- test_list_topics_sorted_by_count_desc    — most popular topic appears first
-- test_repos_by_topic_empty               — unknown tag → empty list (not 404)
+Covers acceptance criteria:
+- test_list_topics_empty — no public repos → empty topics list
+- test_list_topics_aggregates_counts — counts reflect public repos only
+- test_list_topics_excludes_private_repos — private repo tags are not counted
+- test_list_topics_sorted_by_count_desc — most popular topic appears first
+- test_repos_by_topic_empty — unknown tag → empty list (not 404)
 - test_repos_by_topic_returns_tagged_repos — only repos with exact tag returned
-- test_repos_by_topic_excludes_private     — private repos are hidden
-- test_repos_by_topic_sort_by_stars        — stars sort returns most-starred first
-- test_repos_by_topic_sort_by_updated      — updated sort returns most-recently-committed first
-- test_repos_by_topic_invalid_sort         — invalid sort param returns 422
-- test_repos_by_topic_pagination           — page 2 returns different repos
-- test_set_topics_requires_auth            — POST without JWT returns 401
-- test_set_topics_owner_only               — non-owner gets 403
-- test_set_topics_replaces_list            — new list replaces old list entirely
-- test_set_topics_deduplicates             — duplicate slugs are collapsed
-- test_set_topics_invalid_slug             — bad slug characters return 422
-- test_set_topics_too_many                 — more than 20 topics returns 422
-- test_set_topics_clears_list              — empty body clears all topics
-- test_set_topics_repo_not_found           — unknown repo_id returns 404
+- test_repos_by_topic_excludes_private — private repos are hidden
+- test_repos_by_topic_sort_by_stars — stars sort returns most-starred first
+- test_repos_by_topic_sort_by_updated — updated sort returns most-recently-committed first
+- test_repos_by_topic_invalid_sort — invalid sort param returns 422
+- test_repos_by_topic_pagination — page 2 returns different repos
+- test_set_topics_requires_auth — POST without JWT returns 401
+- test_set_topics_owner_only — non-owner gets 403
+- test_set_topics_replaces_list — new list replaces old list entirely
+- test_set_topics_deduplicates — duplicate slugs are collapsed
+- test_set_topics_invalid_slug — bad slug characters return 422
+- test_set_topics_too_many — more than 20 topics returns 422
+- test_set_topics_clears_list — empty body clears all topics
+- test_set_topics_repo_not_found — unknown repo_id returns 404
 """
 from __future__ import annotations
 
@@ -133,7 +133,7 @@ async def test_list_topics_excludes_private_repos(
     assert response.status_code == 200
 
     topics = {t["name"]: t["repo_count"] for t in response.json()["topics"]}
-    assert topics.get("jazz") == 1  # only the public repo
+    assert topics.get("jazz") == 1 # only the public repo
     assert "secret-tag" not in topics
 
 
@@ -150,8 +150,8 @@ async def test_list_topics_sorted_by_count_desc(
     assert response.status_code == 200
 
     topics = response.json()["topics"]
-    assert topics[0]["name"] == "baroque"  # 3 repos
-    assert topics[1]["name"] == "jazz"  # 2 repos
+    assert topics[0]["name"] == "baroque" # 3 repos
+    assert topics[1]["name"] == "jazz" # 2 repos
 
 
 # ---------------------------------------------------------------------------
@@ -197,7 +197,7 @@ async def test_repos_by_topic_excludes_private(
 
     response = await client.get("/api/v1/musehub/topics/classical/repos")
     assert response.status_code == 200
-    assert response.json()["total"] == 1  # only the public repo
+    assert response.json()["total"] == 1 # only the public repo
 
 
 @pytest.mark.anyio

@@ -76,7 +76,7 @@ class TestDeterministicPlan:
             style="melodic techno",
             tempo=126,
             roles=["drums", "bass"],
-            constraints={},  # no bars
+            constraints={}, # no bars
         )
 
         llm = AsyncMock()
@@ -266,9 +266,9 @@ class TestWeightedVibes:
             ("darker", 2),
         ])
         assert len(matches) == 3
-        assert matches[0].weight == 3  # punchier
-        assert matches[1].weight == 2  # darker
-        assert matches[2].weight == 1  # wider
+        assert matches[0].weight == 3 # punchier
+        assert matches[1].weight == 2 # darker
+        assert matches[2].weight == 1 # wider
 
     def test_unknown_vibe_skipped(self) -> None:
 

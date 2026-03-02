@@ -2,7 +2,7 @@
 
 All async tests call ``_ask_async`` directly with an in-memory SQLite
 session and a ``tmp_path`` repo root — no real Postgres or running
-process required.  Commits are seeded via ``_commit_async`` so the
+process required. Commits are seeded via ``_commit_async`` so the
 commands are tested as an integrated pair.
 """
 from __future__ import annotations
@@ -336,7 +336,7 @@ async def test_ask_cite_flag_shows_full_commit_id(
     )
 
     plain = result.to_plain()
-    assert cids[0] in plain  # full 64-char ID present
+    assert cids[0] in plain # full 64-char ID present
 
 
 @pytest.mark.anyio
