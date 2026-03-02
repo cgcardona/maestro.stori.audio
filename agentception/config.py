@@ -32,7 +32,7 @@ class AgentCeptionSettings(BaseSettings):
 
     cursor_projects_dir: Path = Path.home() / ".cursor/projects"
     worktrees_dir: Path = Path.home() / ".cursor/worktrees/maestro"
-    repo_dir: Path = Path("/Users/gabriel/dev/tellurstori/maestro")
+    repo_dir: Path = Path.cwd()
     gh_repo: str = "cgcardona/maestro"
     poll_interval_seconds: int = 5
     github_cache_seconds: int = 10
