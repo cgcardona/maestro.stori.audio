@@ -123,6 +123,25 @@ The backend serves the frontend via SSE streaming and tool calls. The SSE event 
 - **Before finishing any task:** Confirm types pass (mypy), tests pass, imports resolve, no orphaned code.
 - **No rebuild needed for code changes.** Dev bind mounts (`docker-compose.override.yml`) ensure host file edits are live inside the container immediately. Only rebuild (`docker compose build <service> && docker compose up -d`) when `requirements.txt`, `Dockerfile`, or `entrypoint.sh` change.
 
+### Jinja2 + Alpine.js / HTMX: always single-quote attributes containing `tojson`
+
+`tojson` outputs double-quoted JSON strings. If the surrounding HTML attribute also uses double quotes, the browser terminates the attribute at the first `"` inside the JSON — Alpine sees a truncated expression and throws `SyntaxError` / `ReferenceError` for every variable inside it.
+
+**Rule: any HTML attribute whose value contains `{{ ... | tojson }}` must use single quotes.**
+
+```html
+{# ✅ correct — single-quoted attribute, double-quoted JSON inside #}
+x-data='phaseSwitcher({{ label | tojson }}, {{ labels | tojson }})'
+@click='selectLabel({{ lbl | tojson }})'
+:class='active === {{ lbl | tojson }} ? "cls" : ""'
+
+{# ❌ wrong — double-quoted attribute broken by double-quoted JSON #}
+x-data="phaseSwitcher({{ label | tojson }})"
+@click="selectLabel({{ lbl | tojson }})"
+```
+
+This applies to `x-data`, `x-text`, `:class`, `@click`, `hx-vals`, and every other Alpine.js or HTMX directive. We introduced this bug three times in production before writing this rule.
+
 ---
 
 ## Verification Checklist

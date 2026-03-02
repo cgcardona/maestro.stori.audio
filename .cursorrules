@@ -68,6 +68,7 @@ When uncertain: (1) preserve existing patterns, (2) prefer smaller changes over 
 - Tests on live APIs without skip guards. `sleep()` in tests. Asserting implementation details instead of behavior.
 - `print()` for diagnostics. Backgrounding streaming curl. Committing ephemeral scripts.
 - Adding pip dependencies without updating Dockerfile. Running Python on the host.
+- **Jinja2 `tojson` inside double-quoted HTML attributes.** `tojson` emits double-quoted JSON strings; wrapping them in a double-quoted attribute truncates the value at the first `"`. **Always use single-quoted HTML attributes when the value contains `tojson` output.** This applies to `x-data`, `x-text`, `:class`, `@click`, and any other Alpine.js or HTMX directive. Example — correct: `x-data='fn({{ val | tojson }})'`; wrong: `x-data="fn({{ val | tojson }})"`. We introduced this bug three times before codifying this rule.
 
 ## Doc locations
 
