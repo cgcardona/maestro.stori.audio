@@ -1577,7 +1577,7 @@ Each `files[]` entry:
 - Cache hits are **included** with `"cached": true`
 - All paths are relative to the repo root (never absolute)
 
-See `docs/architecture/muse_vcs.md` for the full generate → commit workflow.
+See `docs/architecture/muse-vcs.md` for the full generate → commit workflow.
 
 ---
 
