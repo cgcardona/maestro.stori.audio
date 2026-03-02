@@ -1,0 +1,64 @@
+{# Analysis dashboard content fragment — rendered server-side, used by both full page and HTMX swaps. #}
+<div style="margin-bottom:12px">
+  <a href="{{ base_url }}">&larr; Back to repo</a>
+</div>
+
+<div class="card" style="margin-bottom:16px">
+  <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+    <h1 style="margin:0">🎶 Analysis</h1>
+    <code class="ref-badge">{{ ref[:16] }}{% if ref|length > 16 %}&hellip;{% endif %}</code>
+  </div>
+  <p style="color:#8b949e;margin-top:8px;margin-bottom:0;font-size:14px">
+    Musical analysis across all dimensions for ref <code>{{ ref[:8] }}</code>.
+    Click a card to explore the full dimension page.
+  </p>
+</div>
+
+{% set card_config = [
+  ('key',       '🎵', 'Key',       'tonic', 'mode'),
+  ('tempo',     '⏱️',  'Tempo',     'bpm',   'time_feel'),
+  ('meter',     '🥁', 'Meter',     'time_signature', 'is_compound'),
+  ('groove',    '🎸', 'Groove',    'style', 'groove_score'),
+  ('form',      '📋', 'Form',      'form_label', 'sections'),
+  ('dynamics',  '🔊', 'Dynamics',  none, none),
+  ('emotion',   '🎭', 'Emotion',   none, none),
+  ('chord-map', '🎹', 'Chord Map', none, none),
+  ('motifs',    '🔁', 'Motifs',    none, none),
+  ('contour',   '📈', 'Contour',   none, none),
+] %}
+
+<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:var(--space-3)">
+  {% for dim_id, icon, label, field1, field2 in card_config %}
+  {% set dim_data = dim_map.get(dim_id) %}
+  <a href="{{ base_url }}/analysis/{{ ref | urlencode }}/{{ dim_id }}" class="analysis-card" style="
+    display:block;padding:var(--space-3) var(--space-4);
+    background:#161b22;border:1px solid #30363d;border-radius:8px;
+    text-decoration:none;color:inherit;transition:border-color 0.15s;
+  " onmouseover="this.style.borderColor='#58a6ff'" onmouseout="this.style.borderColor='#30363d'">
+    <div style="font-size:1.75rem;margin-bottom:6px">{{ icon }}</div>
+    <div style="font-weight:600;color:#e6edf3;margin-bottom:4px">{{ label }}</div>
+    {% if dim_data %}
+      {% if dim_id == 'key' %}
+        <div style="font-size:15px;color:#58a6ff;font-family:monospace">{{ dim_data.tonic }} {{ dim_data.mode }}</div>
+        <div style="font-size:12px;color:#8b949e">confidence: {{ (dim_data.confidence * 100) | round | int }}%</div>
+      {% elif dim_id == 'tempo' %}
+        <div style="font-size:15px;color:#f0883e;font-family:monospace">{{ dim_data.bpm | round | int }} BPM</div>
+        <div style="font-size:12px;color:#8b949e">{{ dim_data.time_feel }}</div>
+      {% elif dim_id == 'meter' %}
+        <div style="font-size:15px;color:#bc8cff;font-family:monospace">{{ dim_data.time_signature }}</div>
+        <div style="font-size:12px;color:#8b949e">{{ 'compound' if dim_data.is_compound else 'simple' }}</div>
+      {% elif dim_id == 'groove' %}
+        <div style="font-size:15px;color:#3fb950;font-family:monospace">{{ dim_data.style }}</div>
+        <div style="font-size:12px;color:#8b949e">score: {{ (dim_data.groove_score * 100) | round | int }}%</div>
+      {% elif dim_id == 'form' %}
+        <div style="font-size:15px;color:#ffa657;font-family:monospace">{{ dim_data.form_label }}</div>
+        <div style="font-size:12px;color:#8b949e">{{ dim_data.sections | length }} sections</div>
+      {% else %}
+        <div style="font-size:12px;color:#8b949e">Available</div>
+      {% endif %}
+    {% else %}
+      <div style="font-size:12px;color:#8b949e;font-style:italic">Not yet analyzed</div>
+    {% endif %}
+  </a>
+  {% endfor %}
+</div>

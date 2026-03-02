@@ -1,0 +1,87 @@
+{# Groove analysis content fragment — server-side rendered, reused for full page and HTMX swaps. #}
+{% set style_colors = {
+  'straight': '#3fb950', 'swing': '#58a6ff', 'shuffled': '#bc8cff',
+  'latin': '#ffa657', 'funk': '#f0883e',
+} %}
+{% set style_color = style_colors.get(groove_data.style, '#8b949e') %}
+{% set score_pct = (groove_data.groove_score * 100) | round | int %}
+{% set score_color = '#3fb950' if groove_data.groove_score >= 0.8 else ('#f0883e' if groove_data.groove_score >= 0.6 else '#f85149') %}
+{% set swing_pct = (groove_data.swing_factor * 100) | round | int %}
+{% if groove_data.swing_factor < 0.53 %}
+  {% set swing_label = 'straight' %}
+{% elif groove_data.swing_factor < 0.60 %}
+  {% set swing_label = 'light swing' %}
+{% else %}
+  {% set swing_label = 'hard swing' %}
+{% endif %}
+
+<div style="margin-bottom:12px">
+  <a href="{{ base_url }}/analysis/{{ ref }}">&larr; Back to analysis</a>
+</div>
+
+<div class="card">
+  <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:20px">
+    <h1 style="margin:0">🎸 Groove Analysis</h1>
+    <code style="font-size:13px;background:#0d1117;padding:2px 8px;border-radius:4px;color:#8b949e">
+      ref: {{ ref[:8] }}
+    </code>
+  </div>
+
+  <div class="meta-row" style="margin-bottom:20px;flex-wrap:wrap">
+    <div class="meta-item">
+      <span class="meta-label">Style</span>
+      <span class="meta-value">
+        <span class="badge" style="
+          background:{{ style_color }}22;color:{{ style_color }};
+          border:1px solid {{ style_color }}44;font-size:14px;
+          text-transform:capitalize;padding:3px 8px;border-radius:4px">
+          {{ groove_data.style }}
+        </span>
+      </span>
+    </div>
+    <div class="meta-item">
+      <span class="meta-label">BPM</span>
+      <span class="meta-value" style="font-size:22px;font-weight:700;color:#e6edf3">
+        {{ groove_data.bpm | round(1) }}
+      </span>
+    </div>
+    <div class="meta-item">
+      <span class="meta-label">Grid Resolution</span>
+      <span class="meta-value" style="font-family:monospace">{{ groove_data.grid_resolution }}</span>
+    </div>
+    <div class="meta-item">
+      <span class="meta-label">Onset Deviation</span>
+      <span class="meta-value">{{ "%.4f" | format(groove_data.onset_deviation) }} beats</span>
+    </div>
+  </div>
+
+  {# Groove score gauge #}
+  <div style="background:#0d1117;border:1px solid #30363d;border-radius:6px;padding:14px;margin-bottom:14px">
+    <span class="meta-label" style="display:block;margin-bottom:4px">Groove Score</span>
+    <div style="margin-top:8px">
+      <div style="display:flex;justify-content:space-between;margin-bottom:4px">
+        <span style="font-size:12px;color:#8b949e">0 (loose)</span>
+        <span style="font-size:14px;font-weight:700;color:{{ score_color }}">{{ score_pct }}%</span>
+        <span style="font-size:12px;color:#8b949e">100 (tight)</span>
+      </div>
+      <div style="height:10px;background:#21262d;border-radius:5px;overflow:hidden">
+        <div style="height:100%;width:{{ score_pct }}%;background:{{ score_color }};border-radius:5px"></div>
+      </div>
+    </div>
+  </div>
+
+  {# Swing factor bar #}
+  <div style="background:#0d1117;border:1px solid #30363d;border-radius:6px;padding:14px">
+    <span class="meta-label" style="display:block;margin-bottom:4px">Swing Factor</span>
+    <div style="margin-top:8px">
+      <div style="display:flex;justify-content:space-between;margin-bottom:4px">
+        <span style="font-size:12px;color:#8b949e">0.5 (straight)</span>
+        <span style="font-size:13px;color:#e6edf3">{{ "%.3f" | format(groove_data.swing_factor) }} — {{ swing_label }}</span>
+        <span style="font-size:12px;color:#8b949e">0.67 (triplet)</span>
+      </div>
+      <div style="height:8px;background:#21262d;border-radius:4px;overflow:hidden">
+        <div style="height:100%;width:{{ swing_pct }}%;background:#58a6ff;border-radius:4px"></div>
+      </div>
+    </div>
+  </div>
+</div>
