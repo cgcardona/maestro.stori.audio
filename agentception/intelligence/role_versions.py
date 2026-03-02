@@ -171,7 +171,8 @@ async def get_version_for_batch(slug: str, batch_id: str) -> str | None:
         logger.warning("⚠️  Cannot parse batch_id timestamp: %s", batch_id)
         return None
 
-    # Walk history in reverse to find the latest version committed before or at batch_ts.
+    # Walk history forward (oldest first): keep updating active_version each time an entry
+    # precedes batch_ts, then break on the first entry that post-dates the batch.
     active_version: str | None = None
     for entry in history:
         if not isinstance(entry, dict):
