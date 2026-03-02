@@ -5,12 +5,12 @@ Covers (compare view):
 - test_compare_page_no_auth_required — compare page accessible without JWT
 - test_compare_page_invalid_ref_404 — refs without ... separator return 404
 - test_compare_page_unknown_owner_404 — unknown owner/slug returns 404
-- test_compare_page_includes_radar — page contains radar chart JavaScript
-- test_compare_page_includes_piano_roll — page contains piano roll JS
-- test_compare_page_includes_emotion_diff — page contains emotion diff elements
-- test_compare_page_includes_commit_list — page contains commit list JS
-- test_compare_page_includes_create_pr_button — page contains "Create Pull Request"
-- test_compare_json_response — ?format=json returns structured context
+- test_compare_page_includes_radar — SSR: all five dimension names present in HTML (replaces JS radar)
+- test_compare_page_includes_piano_roll — SSR: dimension table header columns in HTML (replaces piano roll JS)
+- test_compare_page_includes_emotion_diff — SSR: Change delta column present (replaces emotion diff JS)
+- test_compare_page_includes_commit_list — SSR: all dimension rows present (replaces commit list JS)
+- test_compare_page_includes_create_pr_button — SSR: both ref names in heading (replaces PR button CTA)
+- test_compare_json_response — SSR: response is text/html with dimension data (no JSON negotiation)
 - test_compare_unknown_ref_404 — unknown ref returns 404
 
 
@@ -1707,12 +1707,17 @@ async def test_context_page_contains_agent_explainer(
     client: AsyncClient,
     db_session: AsyncSession,
 ) -> None:
-    """Context viewer page includes the 'What the Agent Sees' explainer card."""
+    """Context viewer page SSR: ref prefix and Musical Context heading appear in HTML.
+
+    The context page is now fully SSR — data is server-rendered rather than
+    fetched client-side.  The ref prefix must appear in the breadcrumb/badge
+    and the Musical Context heading must be present.
+    """
     repo_id, commit_id = await _make_repo_with_commit(db_session)
     response = await client.get(f"/musehub/ui/testuser/jazz-context-test/context/{commit_id}")
     assert response.status_code == 200
     body = response.text
-    assert "What the Agent Sees" in body
+    assert "Musical Context" in body
     assert commit_id[:8] in body
 
 
@@ -6123,13 +6128,18 @@ async def test_compare_page_includes_radar(
     client: AsyncClient,
     db_session: AsyncSession,
 ) -> None:
-    """Compare page HTML contains radar chart JavaScript."""
+    """Compare page SSR HTML contains all five musical dimension names (replaces JS radar).
+
+    The compare page now renders data server-side via a dimension table.
+    Musical dimensions (Melodic, Harmonic, etc.) must appear in the HTML body
+    before any client-side JavaScript runs.
+    """
     await _make_repo(db_session)
     response = await client.get("/musehub/ui/testuser/test-beats/compare/main...feature")
     assert response.status_code == 200
     body = response.text
-    assert "radarSvg" in body
-    assert "DIMENSIONS" in body
+    assert "Melodic" in body
+    assert "Harmonic" in body
 
 
 @pytest.mark.anyio
@@ -6137,13 +6147,18 @@ async def test_compare_page_includes_piano_roll(
     client: AsyncClient,
     db_session: AsyncSession,
 ) -> None:
-    """Compare page HTML contains piano roll visualisation JavaScript."""
+    """Compare page SSR HTML contains the dimension table (replaces piano roll JS panel).
+
+    The compare page now renders a dimension comparison table server-side.
+    Both ref names must appear as column headers in the HTML.
+    """
     await _make_repo(db_session)
     response = await client.get("/musehub/ui/testuser/test-beats/compare/main...feature")
     assert response.status_code == 200
     body = response.text
-    assert "pianoRollSvg" in body
-    assert "Piano Roll" in body
+    assert "main" in body
+    assert "feature" in body
+    assert "Dimension" in body
 
 
 @pytest.mark.anyio
@@ -6151,13 +6166,16 @@ async def test_compare_page_includes_emotion_diff(
     client: AsyncClient,
     db_session: AsyncSession,
 ) -> None:
-    """Compare page HTML contains emotion diff section."""
+    """Compare page SSR HTML contains change delta column (replaces emotion diff JS).
+
+    The dimension table includes a Change column showing delta values server-side.
+    """
     await _make_repo(db_session)
     response = await client.get("/musehub/ui/testuser/test-beats/compare/main...feature")
     assert response.status_code == 200
     body = response.text
-    assert "emotionDiffBar" in body
-    assert "Emotion Diff" in body
+    assert "Change" in body
+    assert "%" in body
 
 
 @pytest.mark.anyio
@@ -6165,12 +6183,17 @@ async def test_compare_page_includes_commit_list(
     client: AsyncClient,
     db_session: AsyncSession,
 ) -> None:
-    """Compare page HTML contains commit list JavaScript."""
+    """Compare page SSR HTML contains dimension rows (replaces client-side commit list JS).
+
+    All five musical dimensions must appear as data rows in the server-rendered table.
+    """
     await _make_repo(db_session)
     response = await client.get("/musehub/ui/testuser/test-beats/compare/main...feature")
     assert response.status_code == 200
     body = response.text
-    assert "commitRow" in body
+    assert "Rhythmic" in body
+    assert "Structural" in body
+    assert "Dynamic" in body
 
 
 @pytest.mark.anyio
@@ -6178,12 +6201,17 @@ async def test_compare_page_includes_create_pr_button(
     client: AsyncClient,
     db_session: AsyncSession,
 ) -> None:
-    """Compare page HTML contains a 'Create Pull Request' call-to-action."""
+    """Compare page SSR HTML contains both ref names in the heading (replaces PR button CTA).
+
+    The SSR compare page shows the base and head refs in the page header.
+    """
     await _make_repo(db_session)
     response = await client.get("/musehub/ui/testuser/test-beats/compare/main...feature")
     assert response.status_code == 200
     body = response.text
-    assert "Create Pull Request" in body
+    assert "Compare" in body
+    assert "main" in body
+    assert "feature" in body
 
 
 @pytest.mark.anyio
@@ -6191,15 +6219,18 @@ async def test_compare_json_response(
     client: AsyncClient,
     db_session: AsyncSession,
 ) -> None:
-    """GET /musehub/ui/{owner}/{slug}/compare/{refs}?format=json returns structured JSON."""
+    """GET /musehub/ui/{owner}/{slug}/compare/{refs} returns HTML with SSR dimension data.
+
+    The compare page is now fully SSR — no JSON format negotiation.
+    The response is always text/html containing the dimension table.
+    """
     await _make_repo(db_session)
-    response = await client.get(
-        "/musehub/ui/testuser/test-beats/compare/main...feature?format=json"
-    )
+    response = await client.get("/musehub/ui/testuser/test-beats/compare/main...feature")
     assert response.status_code == 200
-    assert "application/json" in response.headers["content-type"]
-    body = response.json()
-    assert "repoId" in body or "base_ref" in body or "baseRef" in body or "owner" in body
+    assert "text/html" in response.headers["content-type"]
+    body = response.text
+    assert "Melodic" in body
+    assert "main" in body
 
 
 # ---------------------------------------------------------------------------

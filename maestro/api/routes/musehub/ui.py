@@ -1099,12 +1099,14 @@ async def context_page(
     ref: str,
     db: AsyncSession = Depends(get_db),
 ) -> Response:
-    """Render the AI context viewer for a given commit ref.
+    """Render the AI context viewer for a given commit ref — fully SSR.
 
-    Shows the MuseHubContextResponse as a structured human-readable document:
-    musical state, history summary, missing elements, suggestions, and raw JSON.
+    Calls :func:`musehub_analysis.get_context` to fetch musical summary,
+    missing elements, and Maestro suggestions server-side so the template
+    receives a populated ``context_data`` object with no client fetch required.
     """
     repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
+    context_data = await musehub_analysis.get_context(db, repo_id, ref=ref)
     ctx: dict[str, object] = {
         "owner": owner,
         "repo_slug": repo_slug,
@@ -1112,12 +1114,9 @@ async def context_page(
         "ref": ref,
         "base_url": base_url,
         "current_page": "analysis",
+        "context_data": context_data,
     }
-    return json_or_html(
-        request,
-        lambda: templates.TemplateResponse(request, "musehub/pages/context.html", ctx),
-        ctx,
-    )
+    return templates.TemplateResponse(request, "musehub/pages/analysis/context.html", ctx)
 
 
 @router.get(
@@ -1594,19 +1593,16 @@ async def compare_page(
     owner: str,
     repo_slug: str,
     refs: str,
-    format: str | None = Query(None, description="Force response format: 'json' or omit for HTML"),
     db: AsyncSession = Depends(get_db),
-) -> StarletteResponse:
-    """Render the compare view for two refs (branches, tags, or commit SHAs).
+) -> Response:
+    """Render the compare view for two refs — fully SSR.
 
     The ``refs`` path segment encodes both refs separated by ``...``:
     ``main...feature-branch`` compares ``main`` (base) against
     ``feature-branch`` (head).
 
-    HTML (default): renders the compare page with radar chart, dimension
-    panels, piano roll, emotion diff, and commit list.
-    JSON (``Accept: application/json`` or ``?format=json``): returns the
-    full ``CompareResponse`` from the API endpoint.
+    Calls :func:`musehub_analysis.compare_refs` server-side so the template
+    receives a populated ``compare_data`` object with no client fetch required.
 
     Returns 404 when:
     - The repo owner/slug is unknown.
@@ -1625,8 +1621,9 @@ async def compare_page(
             detail="Both base and head refs must be non-empty",
         )
     repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
+    compare_data = await musehub_analysis.compare_refs(db, repo_id, base=base_ref, head=head_ref)
 
-    context = {
+    context: dict[str, object] = {
         "owner": owner,
         "repo_slug": repo_slug,
         "repo_id": repo_id,
@@ -1635,6 +1632,7 @@ async def compare_page(
         "refs": refs,
         "base_url": base_url,
         "current_page": "compare",
+        "compare_data": compare_data,
         "breadcrumb_data": _breadcrumbs(
             (owner, f"/musehub/ui/{owner}"),
             (repo_slug, base_url),
@@ -1642,14 +1640,7 @@ async def compare_page(
             (f"{base_ref}...{head_ref}", ""),
         ),
     }
-    return await negotiate_response(
-        request=request,
-        template_name="musehub/pages/compare.html",
-        context=context,
-        templates=templates,
-        json_data=None,
-        format_param=format,
-    )
+    return templates.TemplateResponse(request, "musehub/pages/analysis/compare.html", context)
 
 
 @router.get(
@@ -1660,26 +1651,30 @@ async def divergence_page(
     request: Request,
     owner: str,
     repo_slug: str,
+    fork_repo_id: str | None = Query(None, description="Fork repo UUID to compare against; omit for self-comparison"),
     db: AsyncSession = Depends(get_db),
 ) -> Response:
-    """Render the divergence visualization: radar chart + dimension detail panels.
+    """Render the divergence visualization — fully SSR.
 
-    Compares two branches across five musical dimensions
-    (melodic/harmonic/rhythmic/structural/dynamic).
+    Calls :func:`musehub_analysis.compute_divergence` server-side so the
+    template receives a populated ``divergence_data`` object containing the
+    overall score and per-dimension breakdown with no client fetch required.
+
+    Optional ``?fork_repo_id=<uuid>`` compares against a specific fork.
+    When omitted the comparison is relative to the repo itself (score=0).
     """
     repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
+    divergence_data = await musehub_analysis.compute_divergence(db, repo_id, fork_repo_id=fork_repo_id)
     ctx: dict[str, object] = {
         "owner": owner,
         "repo_slug": repo_slug,
         "repo_id": repo_id,
         "base_url": base_url,
         "current_page": "analysis",
+        "fork_repo_id": fork_repo_id or "",
+        "divergence_data": divergence_data,
     }
-    return json_or_html(
-        request,
-        lambda: templates.TemplateResponse(request, "musehub/pages/divergence.html", ctx),
-        ctx,
-    )
+    return templates.TemplateResponse(request, "musehub/pages/analysis/divergence.html", ctx)
 
 
 @router.get(
