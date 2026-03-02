@@ -1,0 +1,82 @@
+{#
+  label_list.html — HTMX fragment: label list rows.
+
+  Returned by labels_page() when HX-Request header is present.
+  Also included by musehub/pages/labels.html on full-page load.
+  All mutation handlers (create, edit, delete, reset) return this fragment
+  so the list refreshes in place without a full page reload.
+
+  Required context variables:
+    labels    list[_LabelRow]  — labels to render (with issue_count)
+    base_url  str              — canonical UI base URL for this repo
+    owner     str              — repo owner (used in aria labels)
+    repo_slug str              — repo slug (used in aria labels)
+#}
+{% from "musehub/macros/empty_state.html" import empty_state %}
+{% from "musehub/macros/label.html" import label_chip %}
+
+{% if labels %}
+<div class="label-list">
+  {% for label in labels %}
+  <div class="label-row" id="label-row-{{ label.label_id }}"
+       x-data="{ editing: false }">
+    <div class="label-pill-wrap">
+      {{ label_chip(name=label.name, color=label.color) }}
+    </div>
+    <div class="label-info">
+      {% if label.description %}
+        <span class="label-desc">{{ label.description | e }}</span>
+      {% endif %}
+      <span class="issue-count-badge">
+        {{ label.issue_count }} issue{{ 's' if label.issue_count != 1 else '' }}
+      </span>
+    </div>
+    <div class="label-row-actions">
+      <button class="btn btn-secondary" style="font-size:12px"
+              x-on:click="editing = !editing"
+              :aria-expanded="editing"
+              aria-label="Edit label {{ label.name | e }}">Edit</button>
+      <form method="post" action="{{ base_url }}/labels/{{ label.label_id }}/delete"
+            hx-post="{{ base_url }}/labels/{{ label.label_id }}/delete"
+            hx-target="#label-list"
+            hx-confirm="Delete label '{{ label.name | e }}'? This will remove it from all issues and PRs."
+            style="display:inline">
+        <button type="submit" class="btn btn-danger" style="font-size:12px"
+                aria-label="Delete label {{ label.name | e }}">Delete</button>
+      </form>
+    </div>
+    {# Inline edit form — shown/hidden via Alpine.js #}
+    <form class="label-edit-form" x-show="editing" x-cloak
+          method="post" action="{{ base_url }}/labels/{{ label.label_id }}/edit"
+          hx-post="{{ base_url }}/labels/{{ label.label_id }}/edit"
+          hx-target="#label-list"
+          hx-on::after-request="editing = false">
+      <div class="label-form-row">
+        <div class="label-form-group">
+          <label>Name *</label>
+          <input type="text" name="name" value="{{ label.name | e }}"
+                 maxlength="50" required>
+        </div>
+        <div class="label-form-group" style="flex:0 0 auto">
+          <label>Colour</label>
+          <input type="color" name="color" value="{{ label.color }}">
+        </div>
+        <div class="label-form-group">
+          <label>Description</label>
+          <input type="text" name="description"
+                 value="{{ label.description | e if label.description else '' }}"
+                 maxlength="200">
+        </div>
+      </div>
+      <div class="form-actions">
+        <button type="submit" class="btn btn-primary" style="font-size:13px">Save changes</button>
+        <button type="button" class="btn btn-secondary" style="font-size:13px"
+                x-on:click="editing = false">Cancel</button>
+      </div>
+    </form>
+  </div>
+  {% endfor %}
+</div>
+{% else %}
+{{ empty_state("🏷️", "No labels yet", "Create a label to categorise issues and pull requests.") }}
+{% endif %}
