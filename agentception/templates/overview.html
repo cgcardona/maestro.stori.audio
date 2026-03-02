@@ -90,9 +90,13 @@
       <span class="summary-label">Closed today</span>
       <span class="summary-value" style="color:var(--accent-bright);" x-text="state.closed_issues_count ?? 0"></span>
     </div>
-    <div class="summary-item" x-show="(state.stale_branches || []).length > 0">
-      <span class="summary-label" style="color:var(--warning);">Stale branches</span>
-      <span class="summary-value" style="color:var(--warning);" x-text="(state.stale_branches || []).length"></span>
+    <div class="summary-item" :style="(state.stale_branches || []).length > 0 ? 'opacity:1' : 'opacity:0.45'">
+      <span class="summary-label" :style="(state.stale_branches || []).length > 0 ? 'color:var(--warning)' : ''">Stale branches</span>
+      <span class="summary-value" :style="(state.stale_branches || []).length > 0 ? 'color:var(--warning)' : ''" x-text="(state.stale_branches || []).length"></span>
+    </div>
+    <div class="summary-item">
+      <span class="summary-label">Messages</span>
+      <span class="summary-value" style="color:var(--accent-bright);" x-text="totalMsgCount()"></span>
     </div>
     <div class="summary-item">
       <span class="summary-label">Last polled</span>
@@ -202,51 +206,178 @@
       <h2 class="section-title">Agent Tree</h2>
 
       <div id="tree">
+
+        {# Empty state #}
         <div x-show="state.agents.length === 0" class="empty-state text-muted">
-          No active agents.
+          <p>The pipeline is idle.</p>
+          <p class="text-sm mt-1">Start a wave or spawn an agent to begin.</p>
         </div>
 
+        {# Root agent cards — each is an expandable agentCard() component #}
         <template x-for="agent in state.agents" :key="agent.id">
-          <div class="agent-row" :class="'agent-row--status-' + agent.status" x-data="{ showKillModal: false }">
-            <div class="agent-row-header">
+          <div
+            class="agent-row"
+            :class="'agent-row--status-' + agent.status"
+            x-data="agentCard()"
+            x-effect="checkRefresh(agent, agent.message_count)"
+          >
+
+            {# ── Collapsed header (click to expand) ──────────────────────── #}
+            <div class="agent-card__header" @click="toggle(agent.id)">
+
+              {# Animated pulse for active statuses #}
+              <span
+                class="agent-pulse"
+                :class="'agent-pulse--' + agent.status"
+                x-show="isActive(agent.status)"
+              ></span>
+
+              {# Status badge #}
               <span
                 class="status-badge"
                 :class="'status-badge--' + agent.status"
                 x-text="agent.status"
               ></span>
+
+              {# Role (formatted) #}
+              <span class="agent-role-name" x-text="formatRole(agent.role)"></span>
+
+              {# Issue chip #}
               <a
-                :href="'/agents/' + agent.id"
-                class="agent-role"
-                x-text="agent.role"
-              ></a>
-              <span class="agent-meta" x-show="agent.issue_number != null">
-                #<span x-text="agent.issue_number"></span>
+                x-show="agent.issue_number != null"
+                :href="GH_BASE_URL + '/issues/' + agent.issue_number"
+                class="agent-meta-chip agent-meta-chip--issue"
+                target="_blank" rel="noopener noreferrer"
+                @click.stop
+              >#<span x-text="agent.issue_number"></span></a>
+
+              {# PR chip #}
+              <a
+                x-show="agent.pr_number != null"
+                :href="GH_BASE_URL + '/pull/' + agent.pr_number"
+                class="agent-meta-chip agent-meta-chip--pr"
+                target="_blank" rel="noopener noreferrer"
+                @click.stop
+              >PR&nbsp;#<span x-text="agent.pr_number"></span></a>
+
+              {# Branch #}
+              <code
+                class="agent-branch-chip text-muted"
+                x-show="agent.branch"
+                x-text="agent.branch"
+              ></code>
+
+              {# Message count #}
+              <span class="agent-meta text-muted" x-show="agent.message_count > 0">
+                <span x-text="agent.message_count"></span> msgs
               </span>
-              <span class="agent-meta" x-show="agent.pr_number != null">
-                PR&nbsp;<span x-text="agent.pr_number"></span>
-              </span>
-              <span
-                class="agent-meta text-muted"
-                x-show="agent.batch_id != null"
-                x-text="agent.batch_id"
-              ></span>
+
+              {# Last activity #}
               <span
                 class="agent-meta text-muted"
                 x-show="agent.last_activity_mtime > 0"
                 x-text="relativeTime(agent.last_activity_mtime)"
               ></span>
 
-              {# Kill button — only for IMPLEMENTING / REVIEWING / STALE agents with a worktree #}
+              {# Expand chevron — auto-margin pushes it to the far right #}
+              <span
+                class="agent-card__chevron"
+                :class="{ 'agent-card__chevron--open': expanded }"
+              >›</span>
+
+              {# Kill button — revealed on row hover #}
               <button
                 class="btn-kill-inline"
                 x-show="agent.worktree_path != null && ['implementing','reviewing','stale'].includes(agent.status)"
-                @click.prevent="showKillModal = true"
+                @click.stop="showKillModal = true"
                 title="Kill agent"
                 aria-label="Kill agent"
               >✕</button>
             </div>
 
-            {# Inline kill confirmation for this row #}
+            {# ── Expanded body ─────────────────────────────────────────────── #}
+            <div class="agent-card__body" x-show="expanded" x-transition>
+
+              {# Transcript feed #}
+              <div class="transcript-feed">
+
+                <div x-show="transcriptLoading" class="transcript-loading">
+                  Loading transcript…
+                </div>
+
+                <div
+                  x-show="transcriptError"
+                  class="transcript-error"
+                  x-text="transcriptError"
+                ></div>
+
+                <template x-for="(msg, idx) in transcript" :key="idx">
+                  <div class="transcript-msg" :class="'transcript-msg--' + msg.role">
+                    <span class="transcript-msg__icon" x-text="msg.role === 'user' ? '🧑' : '🤖'"></span>
+                    <div class="transcript-msg__body">
+                      <div class="transcript-msg__role" x-text="msg.role"></div>
+                      <div class="transcript-msg__text" x-text="truncate(msg.text, 500)"></div>
+                    </div>
+                  </div>
+                </template>
+
+                {# "Thinking" spinner — visible when agent is active #}
+                <div
+                  class="transcript-thinking"
+                  x-show="isActive(agent.status) && !transcriptLoading"
+                >
+                  <span class="transcript-thinking__dot"></span>
+                  <span>Agent is working…</span>
+                </div>
+
+                {# Empty state #}
+                <div
+                  x-show="!transcriptLoading && !transcriptError && transcript.length === 0 && !isActive(agent.status)"
+                  class="transcript-empty"
+                >No transcript recorded yet.</div>
+
+              </div>
+
+              {# Task details table #}
+              <div class="agent-task-details">
+                <div class="agent-task-details__title">Task Details</div>
+                <div class="agent-task-grid">
+                  <span class="agent-task-grid__key">Branch</span>
+                  <span class="agent-task-grid__value" x-text="agent.branch || '—'"></span>
+                  <span class="agent-task-grid__key">Batch</span>
+                  <span class="agent-task-grid__value" x-text="agent.batch_id || '—'"></span>
+                  <span class="agent-task-grid__key">Worktree</span>
+                  <span class="agent-task-grid__value" x-text="agent.worktree_path || '—'"></span>
+                  <span class="agent-task-grid__key">Messages</span>
+                  <span class="agent-task-grid__value" x-text="agent.message_count || 0"></span>
+                </div>
+              </div>
+
+              {# Quick action links #}
+              <div class="agent-card-actions">
+                <a
+                  x-show="agent.issue_number"
+                  :href="GH_BASE_URL + '/issues/' + agent.issue_number"
+                  target="_blank" rel="noopener noreferrer"
+                  class="btn btn-sm btn-secondary"
+                  @click.stop
+                >View Issue ↗</a>
+                <a
+                  x-show="agent.pr_number"
+                  :href="GH_BASE_URL + '/pull/' + agent.pr_number"
+                  target="_blank" rel="noopener noreferrer"
+                  class="btn btn-sm btn-secondary"
+                  @click.stop
+                >View PR ↗</a>
+                <a
+                  :href="'/agents/' + agent.id"
+                  class="btn btn-sm btn-secondary"
+                  @click.stop
+                >Full Detail →</a>
+              </div>
+            </div>
+
+            {# ── Kill confirmation modal ───────────────────────────────────── #}
             <div
               class="modal-backdrop"
               x-show="showKillModal"
@@ -256,7 +387,9 @@
               aria-modal="true"
             >
               <div class="modal-box">
-                <h2 class="modal-title">Kill agent<span x-show="agent.issue_number != null"> for issue #<span x-text="agent.issue_number"></span></span>?</h2>
+                <h2 class="modal-title">
+                  Kill agent<span x-show="agent.issue_number != null"> for issue #<span x-text="agent.issue_number"></span></span>?
+                </h2>
                 <p class="modal-body">
                   Removes the worktree and clears the <code>agent:wip</code> label.
                   The issue will be available for re-claim.
@@ -269,77 +402,86 @@
                     hx-target="closest .agent-row"
                     hx-swap="outerHTML"
                     @click="showKillModal = false"
-                  >
-                    Confirm Kill
-                  </button>
+                  >Confirm Kill</button>
                 </div>
               </div>
             </div>
 
-            {# Nested children (one level — recursive nesting deferred to AC-007) #}
+            {# ── Child agents (one level deep) ────────────────────────────── #}
             <template x-if="agent.children && agent.children.length > 0">
               <div class="agent-children">
                 <template x-for="child in agent.children" :key="child.id">
-                  <div class="agent-row agent-row--child" :class="'agent-row--status-' + child.status" x-data="{ showKillModal: false }">
-                    <div class="agent-row-header">
-                      <span
-                        class="status-badge"
-                        :class="'status-badge--' + child.status"
-                        x-text="child.status"
-                      ></span>
-                      <a
-                        :href="'/agents/' + child.id"
-                        class="agent-role"
-                        x-text="child.role"
-                      ></a>
-                      <span class="agent-meta" x-show="child.issue_number != null">
-                        #<span x-text="child.issue_number"></span>
-                      </span>
-
-                      {# Kill button for child agents #}
-                      <button
-                        class="btn-kill-inline"
-                        x-show="child.worktree_path != null && ['implementing','reviewing','stale'].includes(child.status)"
-                        @click.prevent="showKillModal = true"
-                        title="Kill agent"
-                        aria-label="Kill agent"
-                      >✕</button>
+                  <div
+                    class="agent-row agent-row--child"
+                    :class="'agent-row--status-' + child.status"
+                    x-data="agentCard()"
+                    x-effect="checkRefresh(child, child.message_count)"
+                  >
+                    <div class="agent-card__header" @click="toggle(child.id)">
+                      <span class="agent-pulse" :class="'agent-pulse--' + child.status" x-show="isActive(child.status)"></span>
+                      <span class="status-badge" :class="'status-badge--' + child.status" x-text="child.status"></span>
+                      <span class="agent-role-name" x-text="formatRole(child.role)"></span>
+                      <a x-show="child.issue_number != null" :href="GH_BASE_URL + '/issues/' + child.issue_number" class="agent-meta-chip agent-meta-chip--issue" target="_blank" rel="noopener noreferrer" @click.stop>#<span x-text="child.issue_number"></span></a>
+                      <a x-show="child.pr_number != null" :href="GH_BASE_URL + '/pull/' + child.pr_number" class="agent-meta-chip agent-meta-chip--pr" target="_blank" rel="noopener noreferrer" @click.stop>PR&nbsp;#<span x-text="child.pr_number"></span></a>
+                      <code class="agent-branch-chip text-muted" x-show="child.branch" x-text="child.branch"></code>
+                      <span class="agent-meta text-muted" x-show="child.message_count > 0"><span x-text="child.message_count"></span> msgs</span>
+                      <span class="agent-meta text-muted" x-show="child.last_activity_mtime > 0" x-text="relativeTime(child.last_activity_mtime)"></span>
+                      <span class="agent-card__chevron" :class="{ 'agent-card__chevron--open': expanded }">›</span>
+                      <button class="btn-kill-inline" x-show="child.worktree_path != null && isActive(child.status)" @click.stop="showKillModal = true" title="Kill agent" aria-label="Kill agent">✕</button>
                     </div>
 
-                    {# Inline kill confirmation for child row #}
-                    <div
-                      class="modal-backdrop"
-                      x-show="showKillModal"
-                      x-cloak
-                      @keydown.escape.window="showKillModal = false"
-                      role="dialog"
-                      aria-modal="true"
-                    >
+                    <div class="agent-card__body" x-show="expanded" x-transition>
+                      <div class="transcript-feed">
+                        <div x-show="transcriptLoading" class="transcript-loading">Loading transcript…</div>
+                        <div x-show="transcriptError" class="transcript-error" x-text="transcriptError"></div>
+                        <template x-for="(msg, idx) in transcript" :key="idx">
+                          <div class="transcript-msg" :class="'transcript-msg--' + msg.role">
+                            <span class="transcript-msg__icon" x-text="msg.role === 'user' ? '🧑' : '🤖'"></span>
+                            <div class="transcript-msg__body">
+                              <div class="transcript-msg__role" x-text="msg.role"></div>
+                              <div class="transcript-msg__text" x-text="truncate(msg.text, 500)"></div>
+                            </div>
+                          </div>
+                        </template>
+                        <div class="transcript-thinking" x-show="isActive(child.status) && !transcriptLoading">
+                          <span class="transcript-thinking__dot"></span>
+                          <span>Agent is working…</span>
+                        </div>
+                        <div x-show="!transcriptLoading && !transcriptError && transcript.length === 0 && !isActive(child.status)" class="transcript-empty">No transcript recorded yet.</div>
+                      </div>
+                      <div class="agent-task-details">
+                        <div class="agent-task-details__title">Task Details</div>
+                        <div class="agent-task-grid">
+                          <span class="agent-task-grid__key">Branch</span><span class="agent-task-grid__value" x-text="child.branch || '—'"></span>
+                          <span class="agent-task-grid__key">Batch</span><span class="agent-task-grid__value" x-text="child.batch_id || '—'"></span>
+                          <span class="agent-task-grid__key">Messages</span><span class="agent-task-grid__value" x-text="child.message_count || 0"></span>
+                        </div>
+                      </div>
+                      <div class="agent-card-actions">
+                        <a x-show="child.pr_number" :href="GH_BASE_URL + '/pull/' + child.pr_number" target="_blank" rel="noopener noreferrer" class="btn btn-sm btn-secondary" @click.stop>View PR ↗</a>
+                        <a :href="'/agents/' + child.id" class="btn btn-sm btn-secondary" @click.stop>Full Detail →</a>
+                      </div>
+                    </div>
+
+                    <div class="modal-backdrop" x-show="showKillModal" x-cloak @keydown.escape.window="showKillModal = false" role="dialog" aria-modal="true">
                       <div class="modal-box">
                         <h2 class="modal-title">Kill agent<span x-show="child.issue_number != null"> for issue #<span x-text="child.issue_number"></span></span>?</h2>
-                        <p class="modal-body">
-                          Removes the worktree and clears the <code>agent:wip</code> label.
-                        </p>
+                        <p class="modal-body">Removes the worktree and clears the <code>agent:wip</code> label.</p>
                         <div class="modal-actions">
                           <button class="btn btn-secondary" @click="showKillModal = false">Cancel</button>
-                          <button
-                            class="btn btn-danger"
-                            :hx-post="'/api/control/kill/' + child.id"
-                            hx-target="closest .agent-row"
-                            hx-swap="outerHTML"
-                            @click="showKillModal = false"
-                          >
-                            Confirm Kill
-                          </button>
+                          <button class="btn btn-danger" :hx-post="'/api/control/kill/' + child.id" hx-target="closest .agent-row" hx-swap="outerHTML" @click="showKillModal = false">Confirm Kill</button>
                         </div>
                       </div>
                     </div>
+
                   </div>
                 </template>
               </div>
             </template>
+
           </div>
         </template>
+
       </div>
     </section>
 
@@ -408,17 +550,19 @@
           </template>
         </div>
 
-        {# Wave launch result #}
+        {# Wave launch result — no Cursor instructions; agent tree updates via SSE #}
         <template x-if="waveResult">
           <div class="wave-result mt-1">
             <p class="text-success">
-              ✅ <strong x-text="waveResult.spawned.length"></strong> agent worktree<span x-text="waveResult.spawned.length === 1 ? '' : 's'"></span> launching.
-              Open each path in Cursor to start the agents.
+              ✅ Wave launched —
+              <strong x-text="waveResult.spawned.length"></strong>
+              agent<span x-text="waveResult.spawned.length === 1 ? '' : 's'"></span>
+              claimed. Agent tree updates automatically.
             </p>
             <template x-for="s in waveResult.spawned" :key="s.spawned">
               <div class="wave-worktree-row">
                 <span class="wave-issue-num">#<span x-text="s.spawned"></span></span>
-                <code class="wave-worktree-path" x-text="s.host_worktree"></code>
+                <code class="wave-branch" x-text="s.branch"></code>
               </div>
             </template>
             <template x-if="waveResult.skipped.length > 0">
@@ -533,6 +677,29 @@
             <div class="issue-card-labels" x-show="issue.labels && issue.labels.length > 0">
               <template x-for="lbl in (issue.labels || [])" :key="lbl">
                 <span class="label-chip label-chip--small" x-text="lbl"></span>
+              </template>
+            </div>
+            {#
+              Status slot — cross-references board_issues[].claimed with state.agents[]
+              to determine whether the issue is available, being implemented, or has a PR.
+              agentForIssue() is a helper on the parent pipelineDashboard scope.
+            #}
+            <div class="issue-card-status">
+              <template x-if="!issue.claimed">
+                <span class="issue-status-badge issue-status-badge--available">Available</span>
+              </template>
+              <template x-if="issue.claimed">
+                <template x-if="agentForIssue(issue.number) && agentForIssue(issue.number).pr_number">
+                  <a
+                    :href="GH_BASE_URL + '/pull/' + agentForIssue(issue.number).pr_number"
+                    class="issue-status-badge issue-status-badge--pr"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >PR #<span x-text="agentForIssue(issue.number).pr_number"></span> open ↗</a>
+                </template>
+                <template x-if="!(agentForIssue(issue.number) && agentForIssue(issue.number).pr_number)">
+                  <span class="issue-status-badge issue-status-badge--implementing">Implementing</span>
+                </template>
               </template>
             </div>
             <div class="issue-card-actions">
