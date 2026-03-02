@@ -52,7 +52,7 @@ class UsageTracker:
     """Tracks token usage across LLM calls."""
     prompt_tokens: int = 0
     completion_tokens: int = 0
-    # Full input tokens from the most recent LLM call.  Each call in an agentic
+    # Full input tokens from the most recent LLM call. Each call in an agentic
     # loop sends the entire conversation history, so the last call's input_tokens
     # is the best proxy for current context-window occupancy.
     last_input_tokens: int = 0
@@ -60,7 +60,7 @@ class UsageTracker:
     def add(self, prompt: int, completion: int) -> None:
         self.prompt_tokens += prompt
         self.completion_tokens += completion
-        self.last_input_tokens = prompt  # snapshot of context window at this call
+        self.last_input_tokens = prompt # snapshot of context window at this call
 
 
 # ---------------------------------------------------------------------------
@@ -79,9 +79,9 @@ _ENTITY_CREATING_TOOLS: set[str] = {
 
 # Which ID fields to echo back per entity-creating tool.
 _ENTITY_ID_ECHO: dict[str, list[str]] = {
-    "stori_add_midi_track":   ["trackId"],
-    "stori_add_midi_region":  ["regionId", "trackId"],
-    "stori_ensure_bus":       ["busId"],
+    "stori_add_midi_track": ["trackId"],
+    "stori_add_midi_region": ["regionId", "trackId"],
+    "stori_ensure_bus": ["busId"],
     "stori_duplicate_region": ["newRegionId", "regionId"],
 }
 
@@ -127,9 +127,9 @@ def _enrich_params_with_track_context(
     """Inject trackName/trackId into SSE toolCall params for region-scoped tools.
 
     Tools such as stori_add_midi_cc, stori_add_pitch_bend, stori_quantize_notes,
-    etc. receive only a regionId and carry no track context.  The Swift frontend
+    etc. receive only a regionId and carry no track context. The Swift frontend
     uses trackName to humanise feed entries; without it the label falls back to a
-    generic string.  We resolve the parent track at emit time and append the two
+    generic string. We resolve the parent track at emit time and append the two
     supplementary fields.
 
     Rules:
@@ -416,14 +416,14 @@ async def _stream_llm_response(
 
     Args:
         suppress_content: When True, content deltas are accumulated on the
-            response but NOT emitted as SSE events.  Used by the EDITING
+            response but NOT emitted as SSE events. Used by the EDITING
             handler because the LLM often interleaves tool-call argument
             syntax (e.g. ``(key="G major")``) into the content stream,
-            which is meaningless to the user.  The caller decides whether
+            which is meaningless to the user. The caller decides whether
             to emit ``response.content`` after the stream ends.
     """
     response_content = None
-    response_tool_calls: list[ToolCallEntry] = []  # boundary: OpenAI tool call entries
+    response_tool_calls: list[ToolCallEntry] = [] # boundary: OpenAI tool call entries
     finish_reason: str | None = None
     usage: UsageStats = {}
     reasoning_buf = ReasoningBuffer()

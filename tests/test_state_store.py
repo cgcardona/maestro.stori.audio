@@ -4,21 +4,21 @@ Comprehensive tests for app.core.state_store.StateStore.
 StateStore is the canonical in-memory DAW state — the engine everything
 writes through. Zero test coverage previously. This file covers:
 
-  1.  Initialization — defaults, IDs, properties
-  2.  Entity creation — tracks, regions, buses; event log side-effects
-  3.  Transaction lifecycle — begin, commit, rollback
-  4.  Transaction atomicity — rollback restores registry + notes exactly
-  5.  Nested / double transaction guards
-  6.  State modification — set_tempo, set_key, add_notes, remove_notes, add_effect
-  7.  Note materialization — add accumulates, remove filters, get returns copy
-  8.  _notes_match helper — pitch/start_beat/duration_beats matching + tolerance
-  9.  sync_from_client — clears stale state, populates registry + notes + metadata
- 10.  Snapshot / restore — rollback restores entities, notes, tempo, key
- 11.  Event log — version increments, get_events_since, get_entity_events
- 12.  Serialization — to_dict shape
- 13.  Optimistic concurrency — get_state_id, check_state_id
- 14.  Store registry — get_or_create_store, clear_store, clear_all_stores
- 15.  get_region_track_id, get_track_name, get_or_create_bus
+  1. Initialization — defaults, IDs, properties
+  2. Entity creation — tracks, regions, buses; event log side-effects
+  3. Transaction lifecycle — begin, commit, rollback
+  4. Transaction atomicity — rollback restores registry + notes exactly
+  5. Nested / double transaction guards
+  6. State modification — set_tempo, set_key, add_notes, remove_notes, add_effect
+  7. Note materialization — add accumulates, remove filters, get returns copy
+  8. _notes_match helper — pitch/start_beat/duration_beats matching + tolerance
+  9. sync_from_client — clears stale state, populates registry + notes + metadata
+ 10. Snapshot / restore — rollback restores entities, notes, tempo, key
+ 11. Event log — version increments, get_events_since, get_entity_events
+ 12. Serialization — to_dict shape
+ 13. Optimistic concurrency — get_state_id, check_state_id
+ 14. Store registry — get_or_create_store, clear_store, clear_all_stores
+ 15. get_region_track_id, get_track_name, get_or_create_bus
 """
 from __future__ import annotations
 
@@ -313,7 +313,7 @@ class TestTransactionLifecycle:
         tx = store.begin_transaction()
         store.commit(tx)
         with pytest.raises(ValueError):
-            store.commit(tx)  # already committed
+            store.commit(tx) # already committed
 
     def test_rollback_without_transaction_raises(self) -> None:
 
@@ -367,7 +367,7 @@ class TestTransactionAtomicity:
 
         tx = store.begin_transaction()
         store.add_notes(rid, [_note(62), _note(64)], transaction=tx)
-        assert len(store.get_region_notes(rid)) == 3  # 1 + 2
+        assert len(store.get_region_notes(rid)) == 3 # 1 + 2
         store.rollback(tx)
         # Notes must revert to 1
         assert len(store.get_region_notes(rid)) == 1
@@ -375,7 +375,7 @@ class TestTransactionAtomicity:
     def test_rollback_restores_tempo(self) -> None:
 
         store = _fresh()
-        store.set_tempo(120)  # committed
+        store.set_tempo(120) # committed
         tx = store.begin_transaction()
         store.set_tempo(140, transaction=tx)
         assert store.tempo == 140
@@ -448,7 +448,7 @@ class TestTransactionGuards:
         # Begin new transaction to make commit fail for old one
         tx2 = store.begin_transaction()
         with pytest.raises(ValueError):
-            store.commit(tx)  # old tx, wrong id
+            store.commit(tx) # old tx, wrong id
         store.rollback(tx2)
 
     def test_new_transaction_after_commit(self) -> None:
@@ -456,7 +456,7 @@ class TestTransactionGuards:
         store = _fresh()
         tx1 = store.begin_transaction()
         store.commit(tx1)
-        tx2 = store.begin_transaction()  # must not raise
+        tx2 = store.begin_transaction() # must not raise
         assert tx2.is_active
         store.commit(tx2)
 
@@ -465,7 +465,7 @@ class TestTransactionGuards:
         store = _fresh()
         tx1 = store.begin_transaction()
         store.rollback(tx1)
-        tx2 = store.begin_transaction()  # must not raise
+        tx2 = store.begin_transaction() # must not raise
         assert tx2.is_active
         store.rollback(tx2)
 
@@ -589,7 +589,7 @@ class TestNoteMaterialization:
 
         store, _, rid = self._setup()
         store.add_notes(rid, [_note(60), _note(62)])
-        store.remove_notes(rid, [_note(99, 99.0, 99.0)])  # no match
+        store.remove_notes(rid, [_note(99, 99.0, 99.0)]) # no match
         assert len(store.get_region_notes(rid)) == 2
 
     def test_remove_notes_records_event(self) -> None:
@@ -653,13 +653,13 @@ class TestNotesMatch:
     def test_float_tolerance_passes(self) -> None:
 
         """Differences within 1e-6 are treated as equal."""
-        n: InternalNoteDict = {"pitch": 60, "start_beat": 0.0,       "duration_beats": 1.0}
-        c: InternalNoteDict = {"pitch": 60, "start_beat": 1e-7,      "duration_beats": 1.0 + 1e-7}
+        n: InternalNoteDict = {"pitch": 60, "start_beat": 0.0, "duration_beats": 1.0}
+        c: InternalNoteDict = {"pitch": 60, "start_beat": 1e-7, "duration_beats": 1.0 + 1e-7}
         assert _notes_match(n, c)
 
     def test_float_outside_tolerance_fails(self) -> None:
 
-        n: InternalNoteDict = {"pitch": 60, "start_beat": 0.0,  "duration_beats": 1.0}
+        n: InternalNoteDict = {"pitch": 60, "start_beat": 0.0, "duration_beats": 1.0}
         c: InternalNoteDict = {"pitch": 60, "start_beat": 1e-5, "duration_beats": 1.0}
         assert not _notes_match(n, c)
 
@@ -993,7 +993,7 @@ class TestOptimisticConcurrency:
     def test_check_state_id_fails_after_mutation(self) -> None:
 
         store = _fresh()
-        sid = store.get_state_id()  # "0"
+        sid = store.get_state_id() # "0"
         store.create_track("T")
         assert not store.check_state_id(sid)
 

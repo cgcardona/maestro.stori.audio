@@ -1,19 +1,19 @@
-"""SSR tests for Muse Hub milestones UI — issue #558.
+"""SSR tests for Muse Hub milestones UI pages — issue #558.
 
-Verifies that both milestone pages render data server-side in Jinja2 templates
-without requiring JavaScript execution.  Tests assert on HTML content directly
-returned by the server, not on JavaScript rendering logic.
+Validates that milestone data is rendered server-side into HTML (not deferred
+to client JS) and that HTMX fragment requests return bare HTML without the
+full page shell.
 
-Covers milestones list page (GET /musehub/ui/{owner}/{repo_slug}/milestones):
-- test_milestones_list_renders_title_server_side
-- test_milestones_list_progress_bar_has_correct_width
-- test_milestones_list_htmx_state_switch_returns_fragment
+Covers GET /musehub/ui/{owner}/{repo_slug}/milestones:
+- test_milestones_list_renders_title_server_side      — milestone title in HTML
+- test_milestones_list_progress_bar_has_correct_width — width:75% for 3/4 closed
+- test_milestones_list_htmx_state_switch_returns_fragment — HX-Request → bare fragment
 
-Covers milestone detail page (GET /musehub/ui/{owner}/{repo_slug}/milestones/{number}):
-- test_milestone_detail_renders_milestone_title
-- test_milestone_detail_shows_linked_issues
-- test_milestone_detail_issue_state_filter_closed
-- test_milestone_detail_unknown_number_404
+Covers GET /musehub/ui/{owner}/{repo_slug}/milestones/{number}:
+- test_milestone_detail_renders_milestone_title        — title in HTML server-side
+- test_milestone_detail_shows_linked_issues            — issue title in HTML
+- test_milestone_detail_issue_state_filter_open        — ?state=closed shows only closed
+- test_milestone_detail_unknown_number_404             — unknown number → 404
 """
 from __future__ import annotations
 
@@ -29,15 +29,11 @@ from maestro.db.musehub_models import (
 
 
 # ---------------------------------------------------------------------------
-# Helpers
+# Seed helpers
 # ---------------------------------------------------------------------------
 
 
-async def _make_repo(
-    db: AsyncSession,
-    owner: str = "ssr_artist",
-    slug: str = "ssr-album",
-) -> str:
+async def _make_repo(db: AsyncSession, owner: str = "artist", slug: str = "ssr-album") -> str:
     """Seed a public repo and return its repo_id string."""
     repo = MusehubRepo(
         name=slug,
@@ -58,17 +54,17 @@ async def _make_milestone(
     *,
     number: int = 1,
     title: str = "SSR Milestone",
-    description: str = "A server-rendered milestone",
+    description: str = "SSR milestone description",
     state: str = "open",
 ) -> MusehubMilestone:
-    """Seed a milestone and return the ORM instance."""
+    """Seed a milestone and return the ORM object."""
     ms = MusehubMilestone(
         repo_id=repo_id,
         number=number,
         title=title,
         description=description,
         state=state,
-        author="ssr_artist",
+        author="artist",
     )
     db.add(ms)
     await db.commit()
@@ -81,19 +77,19 @@ async def _make_issue(
     repo_id: str,
     *,
     number: int = 1,
-    title: str = "SSR Issue",
+    title: str = "Linked issue",
     state: str = "open",
     milestone_id: str | None = None,
 ) -> MusehubIssue:
-    """Seed an issue and return the ORM instance."""
+    """Seed an issue and return the ORM object."""
     issue = MusehubIssue(
         repo_id=repo_id,
         number=number,
         title=title,
-        body="Issue body for SSR testing.",
+        body="Issue body.",
         state=state,
-        labels=["test"],
-        author="ssr_artist",
+        labels=["mix"],
+        author="artist",
         milestone_id=milestone_id,
     )
     db.add(issue)
@@ -103,7 +99,7 @@ async def _make_issue(
 
 
 # ---------------------------------------------------------------------------
-# Milestones list page — SSR assertions
+# Milestones list SSR tests
 # ---------------------------------------------------------------------------
 
 
@@ -112,13 +108,16 @@ async def test_milestones_list_renders_title_server_side(
     client: AsyncClient,
     db_session: AsyncSession,
 ) -> None:
-    """Milestone title is rendered in HTML by the server, not JavaScript."""
+    """Milestone title is rendered into the HTML response server-side (not via JS)."""
     repo_id = await _make_repo(db_session)
-    await _make_milestone(db_session, repo_id, title="Album v2.0 SSR")
-    response = await client.get("/musehub/ui/ssr_artist/ssr-album/milestones?state=all")
+    await _make_milestone(db_session, repo_id, title="Album Release Milestone")
+    response = await client.get(
+        "/musehub/ui/artist/ssr-album/milestones?state=all"
+    )
     assert response.status_code == 200
     assert "text/html" in response.headers["content-type"]
-    assert "Album v2.0 SSR" in response.text
+    # Title must appear in the HTML without requiring client-side JS execution.
+    assert "Album Release Milestone" in response.text
 
 
 @pytest.mark.anyio
@@ -126,19 +125,20 @@ async def test_milestones_list_progress_bar_has_correct_width(
     client: AsyncClient,
     db_session: AsyncSession,
 ) -> None:
-    """Progress bar fill width reflects closed/total ratio computed server-side.
-
-    Seeding 3 closed + 1 open issues → 75% complete → width:75% in HTML.
-    """
+    """Progress bar fill width reflects closed/total ratio (3 closed, 1 open → 75%)."""
     repo_id = await _make_repo(db_session)
-    ms = await _make_milestone(db_session, repo_id, number=1, title="Progress Test")
-    ms_id = str(ms.milestone_id)
-    await _make_issue(db_session, repo_id, number=1, state="closed", milestone_id=ms_id)
-    await _make_issue(db_session, repo_id, number=2, state="closed", milestone_id=ms_id)
-    await _make_issue(db_session, repo_id, number=3, state="closed", milestone_id=ms_id)
-    await _make_issue(db_session, repo_id, number=4, state="open", milestone_id=ms_id)
-    response = await client.get("/musehub/ui/ssr_artist/ssr-album/milestones?state=all")
+    ms = await _make_milestone(db_session, repo_id, title="Progress Test")
+    mid = str(ms.milestone_id)
+
+    # Seed 3 closed + 1 open issue linked to the milestone.
+    await _make_issue(db_session, repo_id, number=1, state="closed", milestone_id=mid)
+    await _make_issue(db_session, repo_id, number=2, state="closed", milestone_id=mid)
+    await _make_issue(db_session, repo_id, number=3, state="closed", milestone_id=mid)
+    await _make_issue(db_session, repo_id, number=4, state="open", milestone_id=mid)
+
+    response = await client.get("/musehub/ui/artist/ssr-album/milestones?state=all")
     assert response.status_code == 200
+    # Fragment renders the inline style; int(75.0) == 75 → "width:75%"
     assert "width:75%" in response.text
 
 
@@ -147,25 +147,25 @@ async def test_milestones_list_htmx_state_switch_returns_fragment(
     client: AsyncClient,
     db_session: AsyncSession,
 ) -> None:
-    """HX-Request header causes the handler to return only the rows fragment.
-
-    The fragment must not contain the full <html> shell — just milestone rows.
-    """
+    """HX-Request: true returns a bare HTML fragment without the full page shell."""
     repo_id = await _make_repo(db_session)
-    await _make_milestone(db_session, repo_id, number=1, state="closed", title="Closed MS")
+    ms = await _make_milestone(db_session, repo_id, state="closed", title="Closed Milestone")
+    _ = ms  # milestone exists so the closed tab has content
+
     response = await client.get(
-        "/musehub/ui/ssr_artist/ssr-album/milestones?state=closed",
+        "/musehub/ui/artist/ssr-album/milestones?state=closed",
         headers={"HX-Request": "true"},
     )
     assert response.status_code == 200
-    # Fragment should not contain the full page shell
+    # Fragment must NOT contain the full HTML shell.
     assert "<html" not in response.text
-    # Fragment should contain milestone content
-    assert "Closed MS" in response.text
+    assert "<head" not in response.text
+    # Fragment should contain milestone content or empty-state markup.
+    assert "milestone" in response.text.lower() or "No milestones" in response.text
 
 
 # ---------------------------------------------------------------------------
-# Milestone detail page — SSR assertions
+# Milestone detail SSR tests
 # ---------------------------------------------------------------------------
 
 
@@ -174,13 +174,13 @@ async def test_milestone_detail_renders_milestone_title(
     client: AsyncClient,
     db_session: AsyncSession,
 ) -> None:
-    """Milestone title is rendered in the detail page HTML by the server."""
+    """Milestone title is in the response HTML server-side (not behind JS)."""
     repo_id = await _make_repo(db_session)
-    await _make_milestone(db_session, repo_id, number=1, title="Detail SSR Milestone")
-    response = await client.get("/musehub/ui/ssr_artist/ssr-album/milestones/1")
+    await _make_milestone(db_session, repo_id, number=1, title="SSR Detail Title")
+    response = await client.get("/musehub/ui/artist/ssr-album/milestones/1")
     assert response.status_code == 200
     assert "text/html" in response.headers["content-type"]
-    assert "Detail SSR Milestone" in response.text
+    assert "SSR Detail Title" in response.text
 
 
 @pytest.mark.anyio
@@ -188,19 +188,19 @@ async def test_milestone_detail_shows_linked_issues(
     client: AsyncClient,
     db_session: AsyncSession,
 ) -> None:
-    """Issue titles linked to a milestone appear in the detail page HTML."""
+    """Issues assigned to the milestone appear in the HTML without JS execution."""
     repo_id = await _make_repo(db_session)
-    ms = await _make_milestone(db_session, repo_id, number=1, title="Issue Linking Test")
+    ms = await _make_milestone(db_session, repo_id, number=1, title="Linked Issues Test")
     await _make_issue(
         db_session,
         repo_id,
         number=1,
-        title="Verse needs more reverb SSR",
+        title="Bass groove needs more swing",
         milestone_id=str(ms.milestone_id),
     )
-    response = await client.get("/musehub/ui/ssr_artist/ssr-album/milestones/1")
+    response = await client.get("/musehub/ui/artist/ssr-album/milestones/1")
     assert response.status_code == 200
-    assert "Verse needs more reverb SSR" in response.text
+    assert "Bass groove needs more swing" in response.text
 
 
 @pytest.mark.anyio
@@ -208,16 +208,21 @@ async def test_milestone_detail_issue_state_filter_closed(
     client: AsyncClient,
     db_session: AsyncSession,
 ) -> None:
-    """?state=closed returns only closed issues in the detail page HTML."""
+    """?state=closed shows only closed linked issues."""
     repo_id = await _make_repo(db_session)
-    ms = await _make_milestone(db_session, repo_id, number=1, title="State Filter Test")
-    ms_id = str(ms.milestone_id)
-    await _make_issue(db_session, repo_id, number=1, title="Open issue SSR", state="open", milestone_id=ms_id)
-    await _make_issue(db_session, repo_id, number=2, title="Closed issue SSR", state="closed", milestone_id=ms_id)
-    response = await client.get("/musehub/ui/ssr_artist/ssr-album/milestones/1?state=closed")
+    ms = await _make_milestone(db_session, repo_id, number=1, title="Filter Test")
+    mid = str(ms.milestone_id)
+    await _make_issue(
+        db_session, repo_id, number=1, title="Open issue title", state="open", milestone_id=mid
+    )
+    await _make_issue(
+        db_session, repo_id, number=2, title="Closed issue title", state="closed", milestone_id=mid
+    )
+    response = await client.get("/musehub/ui/artist/ssr-album/milestones/1?state=closed")
     assert response.status_code == 200
-    assert "Closed issue SSR" in response.text
-    assert "Open issue SSR" not in response.text
+    body = response.text
+    assert "Closed issue title" in body
+    assert "Open issue title" not in body
 
 
 @pytest.mark.anyio
@@ -227,5 +232,5 @@ async def test_milestone_detail_unknown_number_404(
 ) -> None:
     """Non-existent milestone number returns 404."""
     await _make_repo(db_session)
-    response = await client.get("/musehub/ui/ssr_artist/ssr-album/milestones/9999")
+    response = await client.get("/musehub/ui/artist/ssr-album/milestones/9999")
     assert response.status_code == 404

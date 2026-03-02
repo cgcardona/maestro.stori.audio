@@ -1,13 +1,13 @@
 """Per-section child agent — Level 3 of the three-level agent architecture.
 
 Each section child executes a pre-planned (region + generate) pair for one
-musical section of one instrument.  No LLM call is needed for the core
+musical section of one instrument. No LLM call is needed for the core
 pipeline; the parent agent already wrote the section-specific prompt.
 
 Contract model (v1):
     L3 receives a frozen ``SectionContract`` that contains every structural
     decision (beat range, role, section character) as immutable fields.
-    L3 may only reason about HOW to phrase the Orpheus generation prompt —
+    L3 may only reason about HOW to phrase the Orpheus generation prompt
     it MUST NOT reinterpret section boundaries, beat ranges, or musical role.
     Advisory fields like ``l2_generate_prompt`` are clearly marked and may
     be overridden by canonical descriptions baked into the contract.
@@ -137,8 +137,8 @@ async def _run_section_child(
     """Execute one section's region + generate pipeline against a contract.
 
     The ``SectionContract`` is the single source of truth for structural
-    decisions — beat range, track, section name, role.  ``RuntimeContext``
-    carries pure data (prompt, emotion vector).  ``ExecutionServices``
+    decisions — beat range, track, section name, role. ``RuntimeContext``
+    carries pure data (prompt, emotion vector). ``ExecutionServices``
     carries mutable coordination (signals, state).
     """
     sec_name = contract.section_name
@@ -175,7 +175,7 @@ async def _run_section_child(
     async def _emit(outcome: _ToolCallOutcome) -> None:
         for evt in outcome.sse_events:
             # The section child is the authoritative owner of agent_id and
-            # section_name for every event it emits.  Stamp unconditionally —
+            # section_name for every event it emits. Stamp unconditionally
             # never rely on whatever placeholder value tool_execution set.
             _updates: dict[str, JSONValue] = {}
             if hasattr(evt, "agent_id"):
@@ -238,7 +238,7 @@ async def _run_section_child(
             except asyncio.TimeoutError:
                 _wait_elapsed = asyncio.get_event_loop().time() - _wait_start
                 logger.error(
-                    f"{child_log} ⏰ Bass wait TIMED OUT after {_wait_elapsed:.1f}s — "
+                    f"{child_log} ⏰ Bass wait TIMED OUT after {_wait_elapsed:.1f}s"
                     f"drum section '{sec_name}' never signaled. "
                     f"Proceeding without drum spine."
                 )
@@ -289,7 +289,7 @@ async def _run_section_child(
 
         # ── Execute stori_add_midi_region ──
         # All structural params come from the frozen contract — never from
-        # the L2's tool-call params.  This eliminates region collision drift.
+        # the L2's tool-call params. This eliminates region collision drift.
         region_params: dict[str, JSONValue] = {
             "trackId": contract.track_id,
             "startBeat": contract.start_beat,
@@ -344,8 +344,8 @@ async def _run_section_child(
 
         # ── Execute stori_generate_midi ──
         # Orpheus is a token-continuation model — the "prompt" field is
-        # ignored by the generator.  Seed selection (D1) will handle musical
-        # intent.  Skip the L3 reasoning LLM call entirely to save tokens.
+        # ignored by the generator. Seed selection (D1) will handle musical
+        # intent. Skip the L3 reasoning LLM call entirely to save tokens.
         _final_prompt = (
             contract.l2_generate_prompt
             or f"{contract.section.character} — {contract.instrument_name}"
@@ -443,7 +443,7 @@ async def _run_section_child(
                 name="stori_generate_midi",
                 error=(
                     f"Low note count ({result.notes_generated}) for "
-                    f"{contract.instrument_name}/{sec_name} — "
+                    f"{contract.instrument_name}/{sec_name}"
                     f"MIDI may be near-empty"
                 ),
                 agent_id=agent_id,
@@ -570,12 +570,12 @@ async def _reason_before_generate(
 ) -> str | None:
     """Brief LLM reasoning about a section's musical approach (Level 3 CoT).
 
-    All context comes from the frozen ``SectionContract``.  The L3 is allowed
+    All context comes from the frozen ``SectionContract``. The L3 is allowed
     to reason about HOW to phrase the Orpheus prompt — it must not
     reinterpret the section identity, beat range, or role.
 
     Streams ``type=reasoning`` events tagged with ``sectionName`` so the
-    frontend can display per-section musical thinking.  Returns a refined
+    frontend can display per-section musical thinking. Returns a refined
     prompt string for the generate call, or ``None`` to keep the original.
     """
     sec_name = contract.section_name
@@ -602,7 +602,7 @@ async def _reason_before_generate(
         f"\nTASK: Think about what makes this section's "
         f"{contract.instrument_name} part distinctive — density, register, "
         f"rhythmic approach, and how it serves the arrangement energy at "
-        f"this point.  Then write a refined 1-2 sentence generation prompt "
+        f"this point. Then write a refined 1-2 sentence generation prompt "
         f"for Orpheus that captures your musical intent for this specific "
         f"section.\n\n"
         f"Output ONLY the refined prompt (no explanation, no tool calls)."

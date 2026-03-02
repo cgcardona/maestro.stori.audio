@@ -1,35 +1,35 @@
-"""Tests for the Muse Hub topics browsing UI pages (issue #437).
+"""Tests for the Muse Hub topics browsing UI pages.
 
 Covers:
 Topics Index (/musehub/ui/topics):
-- test_topics_index_renders_200              — GET /musehub/ui/topics returns 200 HTML
-- test_topics_index_no_auth_required        — page is accessible without a JWT
+- test_topics_index_renders_200 — GET /musehub/ui/topics returns 200 HTML
+- test_topics_index_no_auth_required — page is accessible without a JWT
 - test_topics_index_json_content_negotiation — Accept: application/json returns JSON
-- test_topics_index_format_param            — ?format=json returns JSON without Accept header
-- test_topics_index_json_schema             — JSON has allTopics, curatedGroups, total keys
-- test_topics_index_empty_state             — no repos returns allTopics=[] total=0
-- test_topics_index_counts_public_only      — private repos excluded from counts
-- test_topics_index_sorted_by_popularity    — topics sorted by repo_count descending
-- test_topics_index_html_has_page_mode      — HTML body contains PAGE_MODE JS variable
+- test_topics_index_format_param — ?format=json returns JSON without Accept header
+- test_topics_index_json_schema — JSON has allTopics, curatedGroups, total keys
+- test_topics_index_empty_state — no repos returns allTopics=[] total=0
+- test_topics_index_counts_public_only — private repos excluded from counts
+- test_topics_index_sorted_by_popularity — topics sorted by repo_count descending
+- test_topics_index_html_has_page_mode — HTML body contains PAGE_MODE JS variable
 - test_topics_index_html_has_curated_groups — HTML body references curated group labels
 - test_topics_index_curated_groups_populated — curated groups carry correct repo counts
 
 Single Topic Page (/musehub/ui/topics/{tag}):
-- test_topic_detail_renders_200             — GET /musehub/ui/topics/{tag} returns 200 HTML
-- test_topic_detail_no_auth_required        — page is accessible without a JWT
-- test_topic_detail_json_response           — Accept: application/json returns JSON
-- test_topic_detail_json_schema             — JSON has tag, repos, total, page, pageSize keys
-- test_topic_detail_empty_topic             — unknown tag returns 200 with empty repos
-- test_topic_detail_filters_by_tag          — only repos with that tag are returned
-- test_topic_detail_private_excluded        — private repos excluded from results
-- test_topic_detail_sort_stars              — ?sort=stars returns repos sorted by star count
-- test_topic_detail_sort_updated            — ?sort=updated accepted without error
-- test_topic_detail_invalid_sort_fallback   — invalid sort silently falls back to stars
-- test_topic_detail_pagination              — ?page=2 returns next page
-- test_topic_detail_tag_injected_in_js      — tag slug passed as TOPIC_TAG JS variable
-- test_topic_detail_sort_injected_in_js     — sort passed as TOPIC_SORT JS variable
-- test_topic_detail_html_has_breadcrumb     — breadcrumb references Topics and tag slug
-- test_topic_detail_html_references_api     — HTML references the topics UI data endpoint
+- test_topic_detail_renders_200 — GET /musehub/ui/topics/{tag} returns 200 HTML
+- test_topic_detail_no_auth_required — page is accessible without a JWT
+- test_topic_detail_json_response — Accept: application/json returns JSON
+- test_topic_detail_json_schema — JSON has tag, repos, total, page, pageSize keys
+- test_topic_detail_empty_topic — unknown tag returns 200 with empty repos
+- test_topic_detail_filters_by_tag — only repos with that tag are returned
+- test_topic_detail_private_excluded — private repos excluded from results
+- test_topic_detail_sort_stars — ?sort=stars returns repos sorted by star count
+- test_topic_detail_sort_updated — ?sort=updated accepted without error
+- test_topic_detail_invalid_sort_fallback — invalid sort silently falls back to stars
+- test_topic_detail_pagination — ?page=2 returns next page
+- test_topic_detail_tag_injected_in_js — tag slug passed as TOPIC_TAG JS variable
+- test_topic_detail_sort_injected_in_js — sort passed as TOPIC_SORT JS variable
+- test_topic_detail_html_has_breadcrumb — breadcrumb references Topics and tag slug
+- test_topic_detail_html_references_api — HTML references the topics UI data endpoint
 """
 from __future__ import annotations
 
@@ -110,12 +110,12 @@ async def test_topics_index_html_has_page_mode(
     client: AsyncClient,
     db_session: AsyncSession,
 ) -> None:
-    """HTML response must render the index mode — Topics heading server-side."""
+    """HTML response must embed PAGE_MODE = 'index' as a JS variable."""
     response = await client.get(_INDEX_URL)
     assert response.status_code == 200
     body = response.text
-    # SSR: mode is rendered as HTML content, not a JS variable
-    assert "🏷️ Topics" in body
+    assert "PAGE_MODE" in body
+    assert '"index"' in body
 
 
 @pytest.mark.anyio
@@ -123,10 +123,11 @@ async def test_topics_index_html_has_curated_groups(
     client: AsyncClient,
     db_session: AsyncSession,
 ) -> None:
-    """HTML must render curated group labels and link to the topics index."""
+    """HTML shell must reference the topics data endpoint for client-side loading."""
     response = await client.get(_INDEX_URL)
     assert response.status_code == 200
     body = response.text
+    # The JS references the UI endpoint for data loading
     assert "/musehub/ui/topics" in body
 
 
@@ -278,12 +279,12 @@ async def test_topic_detail_tag_injected_in_js(
     client: AsyncClient,
     db_session: AsyncSession,
 ) -> None:
-    """Tag slug must appear in the server-rendered HTML (breadcrumb and heading)."""
+    """Tag slug must be passed as the TOPIC_TAG JS variable."""
     response = await client.get(_DETAIL_URL)
     assert response.status_code == 200
     body = response.text
-    # SSR: tag rendered in breadcrumb and heading, not as a JS variable
-    assert "#jazz" in body
+    assert "TOPIC_TAG" in body
+    assert '"jazz"' in body
 
 
 @pytest.mark.anyio
@@ -291,12 +292,12 @@ async def test_topic_detail_sort_injected_in_js(
     client: AsyncClient,
     db_session: AsyncSession,
 ) -> None:
-    """Sort state must appear in sort control links in the server-rendered HTML."""
+    """Sort param must be passed as the TOPIC_SORT JS variable."""
     response = await client.get(_DETAIL_URL + "?sort=updated")
     assert response.status_code == 200
     body = response.text
-    # SSR: sort=updated is reflected in sort button active state / URL links
-    assert "sort=updated" in body
+    assert "TOPIC_SORT" in body
+    assert '"updated"' in body
 
 
 @pytest.mark.anyio
@@ -317,7 +318,7 @@ async def test_topic_detail_html_references_api(
     client: AsyncClient,
     db_session: AsyncSession,
 ) -> None:
-    """HTML must contain links back to the topics index (breadcrumb and sort links)."""
+    """HTML must reference the topics UI data endpoint for client-side data fetching."""
     response = await client.get(_DETAIL_URL)
     assert response.status_code == 200
     body = response.text

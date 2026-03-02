@@ -215,7 +215,7 @@ class TestStructuredPromptComposingFastPath:
                 "- kick\n"
                 "- bass\n"
                 "Constraints:\n"
-                "  bars: 8\n"
+                " bars: 8\n"
                 "Request: Make the groove"
             ),
             project_state={},
@@ -240,7 +240,7 @@ class TestStructuredPromptComposingFastPath:
                 "Role:\n"
                 "- kick\n"
                 "Constraints:\n"
-                "  bars: 4\n"
+                " bars: 4\n"
                 "Request: pound the floor"
             ),
             project_state={},
@@ -271,7 +271,7 @@ class TestStructuredPromptComposingFastPath:
                 "Position: after intro\n"
                 "Role:\n"
                 "- kick\n"
-                "Request: verse groove"  # no Constraints: bars, forces LLM
+                "Request: verse groove" # no Constraints: bars, forces LLM
             ),
             project_state={
                 "tracks": [

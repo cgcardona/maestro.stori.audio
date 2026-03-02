@@ -1,6 +1,6 @@
 """Stori DAW tool definitions in OpenAI function-calling format.
 
-These schemas are sent to the LLM for tool selection.  They mirror the
+These schemas are sent to the LLM for tool selection. They mirror the
 MCP definitions in ``app.daw.stori.tools`` but use the OpenAI
 ``{"type": "function", "function": {...}}`` shape required by the
 LLM client.

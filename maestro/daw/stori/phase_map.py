@@ -3,9 +3,9 @@
 Classifies every tool into one of three execution phases for the
 parallel instrument pipeline:
 
-  * ``setup``      — project-level (tempo, key)
+  * ``setup`` — project-level (tempo, key)
   * ``instrument`` — per-instrument (track, region, notes, generation)
-  * ``mixing``     — shared buses, sends, volume/pan
+  * ``mixing`` — shared buses, sends, volume/pan
 """
 from __future__ import annotations
 

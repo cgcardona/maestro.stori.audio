@@ -1,6 +1,6 @@
 """Tests for ``muse remote`` subcommands.
 
-Covers acceptance criteria from issues #38 and #81:
+Covers acceptance criteria from issues #38:
 - ``muse remote add origin <url>`` writes to ``.muse/config.toml``.
 - ``muse remote -v`` prints all remotes with their URLs.
 - ``muse remote remove <name>`` removes config entry and tracking refs.

@@ -1,26 +1,26 @@
 """Typed structures for OpenAI-format chat messages and API boundaries.
 
 Every shape used by ``LLMClient`` is defined here as a typed TypedDict so
-mypy can verify all field access statically.  No ``Any`` lives in this file.
+mypy can verify all field access statically. No ``Any`` lives in this file.
 
 Organisation:
-  Chat messages          → ``SystemMessage``, ``UserMessage``,
+  Chat messages → ``SystemMessage``, ``UserMessage``,
                            ``AssistantMessage``, ``ToolResultMessage``,
                            ``ChatMessage`` (union)
-  Tool schemas           → ``OpenAIPropertyDef``, ``ToolParametersDict``,
+  Tool schemas → ``OpenAIPropertyDef``, ``ToolParametersDict``,
                            ``ToolFunctionDict``, ``ToolSchemaDict``,
                            ``OpenAIToolChoiceDict``, ``ToolCallFunction``,
                            ``ToolCallEntry``
-  Token usage            → ``PromptTokenDetails``, ``UsageStats``
-  Request payload        → ``ProviderConfig``, ``ReasoningConfig``,
+  Token usage → ``PromptTokenDetails``, ``UsageStats``
+  Request payload → ``ProviderConfig``, ``ReasoningConfig``,
                            ``OpenAIRequestPayload``
   Non-streaming response → ``ResponseFunction``, ``ResponseToolCall``,
                            ``ResponseMessage``, ``ResponseChoice``,
                            ``OpenAIResponse``
-  Streaming chunks       → ``ReasoningDetail``, ``ToolCallFunctionDelta``,
+  Streaming chunks → ``ReasoningDetail``, ``ToolCallFunctionDelta``,
                            ``ToolCallDelta``, ``StreamDelta``,
                            ``StreamChoice``, ``OpenAIStreamChunk``
-  Stream events          → ``ReasoningDeltaEvent``, ``ContentDeltaEvent``,
+  Stream events → ``ReasoningDeltaEvent``, ``ContentDeltaEvent``,
                            ``DoneStreamEvent``, ``StreamEvent`` (union)
 """
 from __future__ import annotations
@@ -97,14 +97,14 @@ class OpenAIPropertyDef(TypedDict, total=False):
     All constraint fields are optional.
     """
 
-    type: Required[str]       # "string", "number", "integer", "boolean", "array", "object"
+    type: Required[str] # "string", "number", "integer", "boolean", "array", "object"
     description: str
     enum: list[str]
     minimum: float
     maximum: float
     default: JSONValue
-    items: dict[str, JSONValue]   # array item schema (simplified)
-    properties: dict[str, "OpenAIPropertyDef"]  # nested object schema
+    items: dict[str, JSONValue] # array item schema (simplified)
+    properties: dict[str, "OpenAIPropertyDef"] # nested object schema
 
 
 class ToolParametersDict(TypedDict, total=False):
@@ -122,8 +122,8 @@ class OpenAIToolChoiceDict(TypedDict):
     ``"required"`` or this dict to force a specific function.
     """
 
-    type: str      # always "function" when forcing a specific tool
-    function: dict[str, str]  # {"name": "<tool_name>"}
+    type: str # always "function" when forcing a specific tool
+    function: dict[str, str] # {"name": "<tool_name>"}
 
 
 class ToolFunctionDict(TypedDict):
@@ -144,7 +144,7 @@ class ToolSchemaDict(TypedDict):
 class CacheControlDict(TypedDict):
     """Anthropic prompt-caching marker added to the last tool definition."""
 
-    type: str  # always "ephemeral"
+    type: str # always "ephemeral"
 
 
 class CachedToolSchemaDict(TypedDict, total=False):
@@ -170,15 +170,15 @@ class PromptTokenDetails(TypedDict, total=False):
     model and API version — both are included here.
     """
 
-    cached_tokens: int       # cache read hits (OR standard)
-    cache_write_tokens: int  # cache write/creation (OR standard)
+    cached_tokens: int # cache read hits (OR standard)
+    cache_write_tokens: int # cache write/creation (OR standard)
 
 
 class UsageStats(TypedDict, total=False):
     """Token usage and cost stats returned by OpenAI/Anthropic/OpenRouter.
 
     All fields are optional because the exact set varies by model and API
-    version.  ``_extract_cache_stats`` normalises all known field names.
+    version. ``_extract_cache_stats`` normalises all known field names.
     """
 
     prompt_tokens: int
@@ -217,7 +217,7 @@ class ReasoningConfig(TypedDict, total=False):
 class OpenAIRequestPayload(TypedDict, total=False):
     """Full request body sent to OpenRouter's chat completions endpoint.
 
-    ``tools`` is ``list[ToolSchemaDict]`` for base tool definitions.  When
+    ``tools`` is ``list[ToolSchemaDict]`` for base tool definitions. When
     prompt-caching is active, the LLM client adds a ``cache_control`` key to
     the last entry — handled by widening to ``dict[str, JSONValue]`` at that
     insertion point only.
@@ -362,7 +362,7 @@ StreamEvent = Union[ReasoningDeltaEvent, ContentDeltaEvent, DoneStreamEvent]
 """Discriminated union of all events yielded by ``LLMClient.chat_completion_stream``."""
 
 # Kept as a type alias: either a string shorthand ("auto", "none", "required")
-# or an explicit tool-selector dict.  The dict form is rarely used but
+# or an explicit tool-selector dict. The dict form is rarely used but
 # specified by the OpenAI API.
 OpenAIToolChoice = str | OpenAIToolChoiceDict
 """Either a string shorthand (``"auto"``, ``"none"``, ``"required"``) or an

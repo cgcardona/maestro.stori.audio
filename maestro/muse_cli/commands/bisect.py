@@ -1,6 +1,6 @@
 """muse bisect — binary search for the commit that introduced a regression.
 
-Music-domain analogue of ``git bisect``.  Given a known-good and a known-bad
+Music-domain analogue of ``git bisect``. Given a known-good and a known-bad
 commit on the history of a Muse repository, this command binary-searches the
 ancestry path to identify the exact commit that first introduced a rhythmic
 drift, mix regression, or other quality regression.
@@ -8,20 +8,20 @@ drift, mix regression, or other quality regression.
 Subcommands
 -----------
 ``muse bisect start``
-    Begin a bisect session.  Records the pre-bisect HEAD ref in
-    ``.muse/BISECT_STATE.json`` so ``reset`` can restore it.  Blocked if a
+    Begin a bisect session. Records the pre-bisect HEAD ref in
+    ``.muse/BISECT_STATE.json`` so ``reset`` can restore it. Blocked if a
     merge is in progress (``.muse/MERGE_STATE.json`` exists).
 
 ``muse bisect good <commit>``
-    Mark *commit* as known-good.  If both good and bad are set, checks out
+    Mark *commit* as known-good. If both good and bad are set, checks out
     the midpoint commit into muse-work/ and reports how many steps remain.
 
 ``muse bisect bad <commit>``
-    Mark *commit* as known-bad.  Same auto-advance logic as ``good``.
+    Mark *commit* as known-bad. Same auto-advance logic as ``good``.
 
 ``muse bisect run <cmd>``
-    Automate the bisect loop.  Runs *cmd* in a shell after each checkout;
-    exit 0 → good, exit 1 (or non-zero) → bad.  Stops when the culprit is
+    Automate the bisect loop. Runs *cmd* in a shell after each checkout;
+    exit 0 → good, exit 1 (or non-zero) → bad. Stops when the culprit is
     identified.
 
 ``muse bisect reset``
@@ -34,14 +34,14 @@ Subcommands
 Session state
 -------------
 Persisted in ``.muse/BISECT_STATE.json`` so the session survives across shell
-invocations.  ``muse bisect start`` blocks if the file already exists.
+invocations. ``muse bisect start`` blocks if the file already exists.
 
 Exit codes
 ----------
-0  — success (or culprit identified)
-1  — user error (bad args, session already active, commit not found)
-2  — not a Muse repository
-3  — internal error
+0 — success (or culprit identified)
+1 — user error (bad args, session already active, commit not found)
+2 — not a Muse repository
+3 — internal error
 """
 from __future__ import annotations
 
@@ -94,7 +94,7 @@ def _resolve_commit_id(root: pathlib.Path, ref: str) -> str:
 
     Args:
         root: Repository root.
-        ref:  Commit reference string from the user.
+        ref: Commit reference string from the user.
 
     Returns:
         The commit ID string (may be an abbreviation; DB validates).
@@ -130,8 +130,8 @@ async def _checkout_snapshot_into_workdir(
     Returns the number of files written (0 if the snapshot is empty).
 
     Args:
-        session:   Open async DB session.
-        root:      Repository root.
+        session: Open async DB session.
+        root: Repository root.
         commit_id: Target commit whose snapshot to check out.
     """
     from maestro.muse_cli.models import MuseCliCommit, MuseCliSnapshot
@@ -171,7 +171,7 @@ async def _checkout_snapshot_into_workdir(
     for rel_path, object_id in sorted(manifest.items()):
         content = read_object(root, object_id)
         if content is None:
-            logger.warning("⚠️  Object %s missing from local store; skipping", object_id[:8])
+            logger.warning("⚠️ Object %s missing from local store; skipping", object_id[:8])
             continue
         dest = workdir / rel_path
         dest.parent.mkdir(parents=True, exist_ok=True)
@@ -207,19 +207,19 @@ def bisect_start() -> None:
     if existing is not None:
         typer.echo(
             "❌ Bisect already in progress.\n"
-            "   Run 'muse bisect reset' to end the current session first."
+            " Run 'muse bisect reset' to end the current session first."
         )
         raise typer.Exit(code=ExitCode.USER_ERROR)
 
     # Capture current HEAD.
-    head_ref = (muse_dir / "HEAD").read_text().strip()  # e.g. "refs/heads/main"
+    head_ref = (muse_dir / "HEAD").read_text().strip() # e.g. "refs/heads/main"
     pre_bisect_commit = ""
     if head_ref.startswith("refs/"):
         ref_path = muse_dir / pathlib.Path(head_ref)
         if ref_path.exists():
             pre_bisect_commit = ref_path.read_text().strip()
     else:
-        pre_bisect_commit = head_ref  # detached HEAD — store the commit ID directly
+        pre_bisect_commit = head_ref # detached HEAD — store the commit ID directly
 
     state = BisectState(
         good=None,
@@ -233,14 +233,14 @@ def bisect_start() -> None:
 
     typer.echo(
         "✅ Bisect session started.\n"
-        "   Now mark a good commit:  muse bisect good <commit>\n"
-        "   And a bad commit:        muse bisect bad <commit>"
+        " Now mark a good commit: muse bisect good <commit>\n"
+        " And a bad commit: muse bisect bad <commit>"
     )
     logger.info("✅ muse bisect start (pre_bisect_ref=%r commit=%s)", head_ref, pre_bisect_commit[:8] if pre_bisect_commit else "none")
 
 
 # ---------------------------------------------------------------------------
-# good / bad  (shared implementation)
+# good / bad (shared implementation)
 # ---------------------------------------------------------------------------
 
 
@@ -251,8 +251,8 @@ def _bisect_mark(root: pathlib.Path, ref: str, verdict: str) -> None:
     search, and checks out the next midpoint into muse-work/.
 
     Args:
-        root:    Repository root.
-        ref:     Commit reference from the user (SHA, branch name, ``HEAD``).
+        root: Repository root.
+        ref: Commit reference from the user (SHA, branch name, ``HEAD``).
         verdict: Either ``"good"`` or ``"bad"``.
     """
     state = read_bisect_state(root)
@@ -359,8 +359,8 @@ def bisect_run(
 ) -> None:
     """Automate the bisect loop by running a command after each checkout.
 
-    The command is executed in a shell.  Exit code 0 → good; any non-zero
-    exit code → bad.  The loop stops when the culprit commit is identified
+    The command is executed in a shell. Exit code 0 → good; any non-zero
+    exit code → bad. The loop stops when the culprit commit is identified
     or when --max-steps iterations are exhausted.
 
     Music example::
@@ -377,7 +377,7 @@ def bisect_run(
     if state.good is None or state.bad is None:
         typer.echo(
             "❌ Both good and bad commits must be set before running 'muse bisect run'.\n"
-            "   Mark them first:  muse bisect good <commit>  /  muse bisect bad <commit>"
+            " Mark them first: muse bisect good <commit> / muse bisect bad <commit>"
         )
         raise typer.Exit(code=ExitCode.USER_ERROR)
 
@@ -455,12 +455,12 @@ def bisect_run(
             raise typer.Exit(code=ExitCode.INTERNAL_ERROR)
 
         test_commit = current_state.current
-        typer.echo(f"⟳  Testing {test_commit[:8]}…")
+        typer.echo(f"⟳ Testing {test_commit[:8]}…")
 
         # Run the user's test command.
         proc = subprocess.run(cmd, shell=True, cwd=str(root))
         verdict = "good" if proc.returncode == 0 else "bad"
-        typer.echo(f"   exit={proc.returncode} → {verdict}")
+        typer.echo(f" exit={proc.returncode} → {verdict}")
 
         # Advance the state machine.
         async def _advance(cid: str, v: str) -> BisectStepResult:
@@ -486,7 +486,7 @@ def bisect_run(
             return
 
     typer.echo(
-        f"⚠️  Safety limit reached ({max_steps} steps). "
+        f"⚠️ Safety limit reached ({max_steps} steps). "
         "Bisect session is still active; inspect manually."
     )
     raise typer.Exit(code=ExitCode.USER_ERROR)
@@ -509,7 +509,7 @@ def bisect_reset() -> None:
 
     state = read_bisect_state(root)
     if state is None:
-        typer.echo("⚠️  No bisect session in progress. Nothing to reset.")
+        typer.echo("⚠️ No bisect session in progress. Nothing to reset.")
         raise typer.Exit(code=ExitCode.SUCCESS)
 
     muse_dir = root / ".muse"
@@ -519,7 +519,7 @@ def bisect_reset() -> None:
         (muse_dir / "HEAD").write_text(f"{state.pre_bisect_ref}\n")
         logger.info("✅ bisect reset: HEAD restored to %r", state.pre_bisect_ref)
     else:
-        logger.warning("⚠️  pre_bisect_ref missing from BISECT_STATE.json — HEAD not restored")
+        logger.warning("⚠️ pre_bisect_ref missing from BISECT_STATE.json — HEAD not restored")
 
     # Restore muse-work/ from pre-bisect snapshot if possible.
     if state.pre_bisect_commit:
@@ -533,12 +533,12 @@ def bisect_reset() -> None:
             files = asyncio.run(_restore())
             typer.echo(f"✅ muse-work/ restored ({files} file(s)) from pre-bisect snapshot.")
         except typer.Exit:
-            pass  # Commit not found — leave muse-work/ as-is; not fatal.
+            pass # Commit not found — leave muse-work/ as-is; not fatal.
         except Exception as exc:
-            typer.echo(f"⚠️  Could not restore muse-work/: {exc}")
-            logger.warning("⚠️  bisect reset restore failed: %s", exc)
+            typer.echo(f"⚠️ Could not restore muse-work/: {exc}")
+            logger.warning("⚠️ bisect reset restore failed: %s", exc)
     else:
-        typer.echo("⚠️  No pre-bisect commit recorded; muse-work/ not restored.")
+        typer.echo("⚠️ No pre-bisect commit recorded; muse-work/ not restored.")
 
     # Remove state file.
     clear_bisect_state(root)
@@ -580,9 +580,9 @@ def bisect_log(
         return
 
     typer.echo("Bisect session state:")
-    typer.echo(f"  good:    {state.good or '(not set)'}")
-    typer.echo(f"  bad:     {state.bad or '(not set)'}")
-    typer.echo(f"  current: {state.current or '(not set)'}")
-    typer.echo(f"  tested ({len(state.tested)} commit(s)):")
+    typer.echo(f" good: {state.good or '(not set)'}")
+    typer.echo(f" bad: {state.bad or '(not set)'}")
+    typer.echo(f" current: {state.current or '(not set)'}")
+    typer.echo(f" tested ({len(state.tested)} commit(s)):")
     for cid, verdict in sorted(state.tested.items()):
-        typer.echo(f"    {cid[:8]}  {verdict}")
+        typer.echo(f" {cid[:8]} {verdict}")

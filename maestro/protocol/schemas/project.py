@@ -4,7 +4,7 @@ Validates the project payload sent by the Stori macOS app.
 Uses extra="allow" so unknown fields from newer FE versions
 pass through without breaking older backends.
 
-Critical fields are typed and validated.  Non-critical fields
+Critical fields are typed and validated. Non-critical fields
 are Optional with sensible defaults.
 """
 

@@ -34,7 +34,7 @@ async def test_require_device_id_missing() -> None:
 async def test_require_device_id_empty_string() -> None:
     """Empty X-Device-ID raises 400."""
     with pytest.raises(HTTPException) as exc_info:
-        await require_device_id(x_device_id="   ")
+        await require_device_id(x_device_id=" ")
     assert exc_info.value.status_code == 400
     assert "X-Device-ID" in exc_info.value.detail
 
@@ -52,7 +52,7 @@ async def test_require_device_id_invalid_uuid() -> None:
 async def test_require_device_id_valid_uuid() -> None:
     """Valid UUID returns the stripped value."""
     device_id = str(uuid.uuid4())
-    result = await require_device_id(x_device_id=f"  {device_id}  ")
+    result = await require_device_id(x_device_id=f" {device_id} ")
     assert result == device_id
 
 
@@ -112,7 +112,7 @@ async def test_require_valid_token_revoked_returns_401() -> None:
     creds = HTTPAuthorizationCredentials(scheme="Bearer", credentials=token)
 
     with patch("maestro.auth.dependencies._check_and_register_token", new_callable=AsyncMock) as mock_check:
-        mock_check.return_value = True  # Simulate revoked
+        mock_check.return_value = True # Simulate revoked
         with pytest.raises(HTTPException) as exc_info:
             await require_valid_token(credentials=creds)
     assert exc_info.value.status_code == 401

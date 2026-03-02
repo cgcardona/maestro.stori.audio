@@ -20,15 +20,15 @@ Music-domain flags
 ------------------
 ``--section TEXT``
     Tag the commit as belonging to a musical section (e.g. ``verse``,
-    ``chorus``, ``bridge``).  Stored in ``commit_metadata["section"]``.
+    ``chorus``, ``bridge``). Stored in ``commit_metadata["section"]``.
 
 ``--track TEXT``
     Tag the commit as affecting a specific instrument track (e.g. ``drums``,
-    ``bass``, ``keys``).  Stored in ``commit_metadata["track"]``.
+    ``bass``, ``keys``). Stored in ``commit_metadata["track"]``.
 
 ``--emotion TEXT``
     Attach an emotion vector label to the commit (e.g. ``joyful``,
-    ``melancholic``, ``tense``).  Stored in ``commit_metadata["emotion"]``.
+    ``melancholic``, ``tense``). Stored in ``commit_metadata["emotion"]``.
     Foundation for future ``muse log --emotion melancholic`` queries.
 
 ``--co-author TEXT``
@@ -41,17 +41,17 @@ Music-domain flags
 
 ``--amend``
     Fold working-tree changes into the most recent commit, equivalent to
-    running ``muse amend``.  Music-domain flags apply to the amended commit.
+    running ``muse amend``. Music-domain flags apply to the amended commit.
 
 ``--no-verify``
-    Bypass pre-commit hooks.  Accepted for forward-compatibility; currently
+    Bypass pre-commit hooks. Accepted for forward-compatibility; currently
     a no-op because the hook system has not been implemented yet.
 
 ``--from-batch <path>``
 -----------------------
 When this flag is provided, the commit pipeline reads ``muse-batch.json``
 and restricts the snapshot to only the files listed in the manifest's
-``files`` array.  The ``commit_message_suggestion`` from the batch is used
+``files`` array. The ``commit_message_suggestion`` from the batch is used
 as the commit message, making this a fast path for::
 
     muse commit --from-batch muse-batch.json
@@ -103,7 +103,7 @@ app = typer.Typer()
 def load_muse_batch(batch_path: pathlib.Path) -> dict[str, object]:
     """Read and validate a muse-batch.json file.
 
-    Returns the parsed dict.  Raises ``typer.Exit`` with ``USER_ERROR`` if
+    Returns the parsed dict. Raises ``typer.Exit`` with ``USER_ERROR`` if
     the file is missing or malformed so the Typer callback surfaces a clean
     message.
     """
@@ -129,7 +129,7 @@ def build_snapshot_manifest_from_batch(
     or a partial run).
 
     ``batch_data["files"]`` entries use paths relative to the repo root
-    (e.g. ``"muse-work/tracks/drums/jazz_4b_abc.mid"``).  The returned
+    (e.g. ``"muse-work/tracks/drums/jazz_4b_abc.mid"``). The returned
     manifest uses paths relative to ``muse-work/`` so it is compatible with
     ``build_snapshot_manifest``.
 
@@ -167,7 +167,7 @@ def _append_co_author(message: str, co_author: str) -> str:
     """Append a Co-authored-by trailer to *message*.
 
     Follows the Git convention: a blank line separates the message body from
-    trailers.  Multiple calls are safe — each appends a new line.
+    trailers. Multiple calls are safe — each appends a new line.
     """
     trailer = f"Co-authored-by: {co_author}"
     return f"{message}\n\n{trailer}" if message else trailer
@@ -258,10 +258,10 @@ async def _commit_async(
     if merge_state is not None and merge_state.conflict_paths:
         typer.echo(
             "❌ You have unresolved merge conflicts.\n"
-            "   Fix conflicts in the listed files, then run 'muse commit'."
+            " Fix conflicts in the listed files, then run 'muse commit'."
         )
         for path in sorted(merge_state.conflict_paths):
-            typer.echo(f"\tboth modified:   {path}")
+            typer.echo(f"\tboth modified: {path}")
         raise typer.Exit(code=ExitCode.USER_ERROR)
 
     # ── Repo identity ────────────────────────────────────────────────────
@@ -269,8 +269,8 @@ async def _commit_async(
     repo_id = repo_data["repo_id"]
 
     # ── Current branch ───────────────────────────────────────────────────
-    head_ref = (muse_dir / "HEAD").read_text().strip()   # "refs/heads/main"
-    branch = head_ref.rsplit("/", 1)[-1]                 # "main"
+    head_ref = (muse_dir / "HEAD").read_text().strip() # "refs/heads/main"
+    branch = head_ref.rsplit("/", 1)[-1] # "main"
     ref_path = muse_dir / pathlib.Path(head_ref)
 
     parent_commit_id: str | None = None
@@ -293,22 +293,22 @@ async def _commit_async(
         manifest = build_snapshot_manifest_from_batch(batch_data, root)
         if not manifest:
             typer.echo(
-                "⚠️  No files from muse-batch.json found on disk — nothing to commit.\n"
-                f"     Batch: {batch_path}"
+                "⚠️ No files from muse-batch.json found on disk — nothing to commit.\n"
+                f" Batch: {batch_path}"
             )
             raise typer.Exit(code=ExitCode.USER_ERROR)
     else:
         # Standard path: walk the entire muse-work/ directory
         if not workdir.exists():
             typer.echo(
-                "⚠️  No muse-work/ directory found. Generate some artifacts first.\n"
-                "     Tip: run the Maestro stress test to populate muse-work/."
+                "⚠️ No muse-work/ directory found. Generate some artifacts first.\n"
+                " Tip: run the Maestro stress test to populate muse-work/."
             )
             raise typer.Exit(code=ExitCode.USER_ERROR)
 
         manifest = build_snapshot_manifest(workdir)
         if not manifest:
-            typer.echo("⚠️  muse-work/ is empty — nothing to commit.")
+            typer.echo("⚠️ muse-work/ is empty — nothing to commit.")
             raise typer.Exit(code=ExitCode.USER_ERROR)
 
     snapshot_id = compute_snapshot_id(manifest)
@@ -346,7 +346,7 @@ async def _commit_async(
         await upsert_object(session, object_id=object_id, size_bytes=size)
         # Write the file into the local content-addressed store so that
         # ``muse read-tree`` and ``muse reset --hard`` can reconstruct
-        # muse-work/ from any historical snapshot.  Path-based copy avoids
+        # muse-work/ from any historical snapshot. Path-based copy avoids
         # loading large blobs (audio previews, dense MIDI renders) into memory.
         write_object_from_path(root, object_id, file_path)
 
@@ -394,17 +394,17 @@ def commit(
         None,
         "--from-batch",
         help=(
-            "Path to muse-batch.json produced by the stress test.  "
+            "Path to muse-batch.json produced by the stress test. "
             "Uses commit_message_suggestion from the batch and snapshots only "
-            "the files listed in files[].  Overrides -m when present."
+            "the files listed in files[]. Overrides -m when present."
         ),
     ),
     amend: bool = typer.Option(
         False,
         "--amend",
         help=(
-            "Fold working-tree changes into the most recent commit.  "
-            "Equivalent to running 'muse amend'.  Music-domain flags "
+            "Fold working-tree changes into the most recent commit. "
+            "Equivalent to running 'muse amend'. Music-domain flags "
             "(--section, --track, --emotion, --co-author) apply to the "
             "amended commit."
         ),
@@ -413,7 +413,7 @@ def commit(
         False,
         "--no-verify",
         help=(
-            "Bypass pre-commit hooks.  Currently a no-op — accepted for "
+            "Bypass pre-commit hooks. Currently a no-op — accepted for "
             "forward-compatibility with the planned hook system."
         ),
     ),
@@ -422,7 +422,7 @@ def commit(
         "--section",
         help=(
             "Tag this commit as belonging to a musical section "
-            "(e.g. verse, chorus, bridge).  Stored in commit_metadata and "
+            "(e.g. verse, chorus, bridge). Stored in commit_metadata and "
             "queryable via 'muse log --section <value>'."
         ),
     ),
@@ -431,7 +431,7 @@ def commit(
         "--track",
         help=(
             "Tag this commit as affecting a specific instrument track "
-            "(e.g. drums, bass, keys).  Stored in commit_metadata and "
+            "(e.g. drums, bass, keys). Stored in commit_metadata and "
             "queryable via 'muse log --track <value>'."
         ),
     ),
@@ -440,7 +440,7 @@ def commit(
         "--emotion",
         help=(
             "Attach an emotion vector label to this commit "
-            "(e.g. joyful, melancholic, tense).  Foundation for future "
+            "(e.g. joyful, melancholic, tense). Foundation for future "
             "'muse log --emotion melancholic' queries."
         ),
     ),
@@ -448,7 +448,7 @@ def commit(
         None,
         "--co-author",
         help=(
-            "Add a Co-authored-by trailer to the commit message.  "
+            "Add a Co-authored-by trailer to the commit message. "
             "Use 'Name <email>' format for Git-compatible attribution."
         ),
     ),
@@ -457,7 +457,7 @@ def commit(
         "--allow-empty",
         help=(
             "Allow committing even when the working tree has not changed "
-            "since HEAD.  Useful for milestone markers or metadata-only "
+            "since HEAD. Useful for milestone markers or metadata-only "
             "annotations (e.g. 'muse commit --allow-empty --emotion joyful')."
         ),
     ),
@@ -481,7 +481,7 @@ def commit(
                 # Resolve effective message for co_author appending.
                 # When -m is provided, use it directly.
                 # When --amend without -m, _amend_async will use the HEAD message
-                # (no_edit path).  We need to read HEAD here so we can append
+                # (no_edit path). We need to read HEAD here so we can append
                 # the co_author trailer before passing to _amend_async.
                 effective_message = message
                 if co_author:
@@ -499,7 +499,7 @@ def commit(
                     effective_message = _append_co_author(effective_message or "", co_author)
 
                 # When we've computed a final message, pass no_edit=False so
-                # _amend_async uses it verbatim.  Otherwise let _amend_async
+                # _amend_async uses it verbatim. Otherwise let _amend_async
                 # fall through to its own no_edit logic.
                 use_no_edit = effective_message is None
                 commit_id = await _amend_async(

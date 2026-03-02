@@ -57,7 +57,7 @@ def _write_artifacts(root: pathlib.Path, version: str) -> None:
     """Write the initial set of synthetic muse-work/ artifacts.
 
     ``drums.json`` is always written with a fixed content so that only
-    ``section-1.json`` varies between branches.  This ensures the merge
+    ``section-1.json`` varies between branches. This ensures the merge
     conflict in golden-path tests is scoped to ``section-1.json`` only.
     """
     workdir = root / "muse-work"
@@ -313,7 +313,7 @@ async def test_golden_path_log_shows_merge_commit(tmp_path: pathlib.Path) -> Non
 async def test_golden_path_remote(tmp_path: pathlib.Path) -> None:
     """Push/pull round-trip: after pull, Rene's log matches Gabriel's.
 
-    Skipped unless ``MUSE_HUB_URL`` is set in the environment.  This test
+    Skipped unless ``MUSE_HUB_URL`` is set in the environment. This test
     is intended to run in environments where the Muse Hub is reachable.
     """
     hub_url = os.environ["MUSE_HUB_URL"]

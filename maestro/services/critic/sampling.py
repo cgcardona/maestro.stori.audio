@@ -7,8 +7,8 @@ from typing import Callable, Generic, TypeVar
 
 logger = logging.getLogger(__name__)
 
-_R = TypeVar("_R")  # result type returned by generate_fn
-_N = TypeVar("_N")  # notes type passed between generate_fn and scorer_fn
+_R = TypeVar("_R") # result type returned by generate_fn
+_N = TypeVar("_N") # notes type passed between generate_fn and scorer_fn
 
 
 @dataclass
@@ -16,7 +16,7 @@ class RejectionSamplingResult(Generic[_R]):
     """Result of a rejection sampling loop.
 
     Generic over ``_R``, the result type returned as the first element of
-    each ``generate_fn()`` call.  ``best_result`` is ``None`` only when
+    each ``generate_fn()`` call. ``best_result`` is ``None`` only when
     every generation attempt produced an empty result.
     """
 

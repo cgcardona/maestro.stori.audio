@@ -1,7 +1,7 @@
 """Regression tests for strict Maestro protocol event and tool call contracts.
 
 Every required field that is missing or malformed causes the FE to drop
-the event silently.  These tests ensure the backend never omits a
+the event silently. These tests ensure the backend never omits a
 required field on any event type.
 """
 
@@ -625,7 +625,7 @@ class TestAgentIdTaggingRegression:
         Regression for P2 (generatorStart/generatorComplete missing agentId):
         before the fix these events had no agentId field at the source level.
         Section children added it via _emit, but single-section paths and any
-        future consumer that bypassed _emit would not get the field.  The fix
+        future consumer that bypassed _emit would not get the field. The fix
         bakes agentId = role into the event inside _execute_agent_generator.
         """
         from unittest.mock import AsyncMock, MagicMock, patch
@@ -779,7 +779,7 @@ class TestCompleteEventSuccessField:
         base = self._success_for(notes=notes, regions=regions)
         assert base is False
         if tool_errors > 0 and notes == 0:
-            assert True  # coordinator forces success=false
+            assert True # coordinator forces success=false
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -1315,7 +1315,7 @@ class TestFailedRegionSkipsGenerator:
 
 class TestTruncatedResultGuidance:
     """BUG 3 regression: With server-owned retries and collapsed summaries,
-    truncation is no longer a risk.  The truncation guidance was removed from
+    truncation is no longer a risk. The truncation guidance was removed from
     the system prompt — verify the replacement architecture instead."""
 
     def test_collapsed_summary_replaces_truncation_guidance(self) -> None:
@@ -1511,7 +1511,7 @@ class TestSectionBriefMismatchFix:
 
 class TestAgentContractProtocol:
     """Verify the contract-based handoff between L2 and L3 prevents
-    protocol drift.  Contracts are frozen, structural fields are
+    protocol drift. Contracts are frozen, structural fields are
     immutable, and advisory fields are clearly labelled."""
 
     def test_section_spec_frozen(self) -> None:
@@ -1843,7 +1843,7 @@ class TestL2ToolCallValidation:
 
 
 class TestIdempotentRegionCreation:
-    """BUG 1 regression (cumbia session): create_region must be idempotent —
+    """BUG 1 regression (cumbia session): create_region must be idempotent
     if a region at the same beat range already exists on the track, return
     the existing region ID instead of creating a duplicate."""
 
@@ -2093,7 +2093,7 @@ class TestServerOwnedRetryContracts:
     def test_dispatched_sections_prevent_useless_retry_turns(self) -> None:
 
         """Once _dispatch_section_children handles all sections (including failures),
-        _missing_stages() must NOT trigger retry turns.  The LLM cannot fix
+        _missing_stages() must NOT trigger retry turns. The LLM cannot fix
         Storpheus failures and server-owned retries already ran.
         """
         import inspect

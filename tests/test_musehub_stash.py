@@ -1,12 +1,12 @@
 """Tests for Muse Hub stash endpoints (musehub/stash.py).
 
 Covers all 6 endpoints introduced in PR #467:
-  - list_stash:   GET  /repos/{repo_id}/stash  (paginated, user-scoped)
-  - push_stash:   POST /repos/{repo_id}/stash
-  - get_stash:    GET  /repos/{repo_id}/stash/{stash_id}
-  - pop_stash:    POST /repos/{repo_id}/stash/{stash_id}/pop
-  - apply_stash:  POST /repos/{repo_id}/stash/{stash_id}/apply
-  - drop_stash:   DELETE /repos/{repo_id}/stash/{stash_id}
+  - list_stash: GET /repos/{repo_id}/stash (paginated, user-scoped)
+  - push_stash: POST /repos/{repo_id}/stash
+  - get_stash: GET /repos/{repo_id}/stash/{stash_id}
+  - pop_stash: POST /repos/{repo_id}/stash/{stash_id}/pop
+  - apply_stash: POST /repos/{repo_id}/stash/{stash_id}/apply
+  - drop_stash: DELETE /repos/{repo_id}/stash/{stash_id}
 
 Key invariants asserted:
   - Stash entries are user-scoped: user A cannot see user B's stash

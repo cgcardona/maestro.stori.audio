@@ -15,7 +15,7 @@ Content negotiation:
   ``GET /api/v1/musehub/repos/{repo_id}/settings``.
 
 Auth contract:
-- The HTML shell requires no JWT to render.  Client-side JavaScript reads the
+- The HTML shell requires no JWT to render. Client-side JavaScript reads the
   JWT from ``localStorage`` and fetches/patches settings via the API.
 - Write operations (rename, visibility change, delete) call the authed API
   endpoints and are rejected with 401/403 by the API when unauthenticated.
@@ -23,13 +23,14 @@ Auth contract:
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi import status as http_status
+from fastapi.templating import Jinja2Templates
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.responses import Response
 
-from maestro.api.routes.musehub._templates import templates as _templates
 from maestro.api.routes.musehub.negotiate import negotiate_response
 from maestro.db import get_db
 from maestro.models.musehub import RepoSettingsResponse
@@ -38,6 +39,9 @@ from maestro.services import musehub_repository
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/musehub/ui", tags=["musehub-ui-settings"])
+
+_TEMPLATE_DIR = Path(__file__).parent.parent.parent.parent / "templates"
+_templates = Jinja2Templates(directory=str(_TEMPLATE_DIR))
 
 
 def _base_url(owner: str, repo_slug: str) -> str:
@@ -69,11 +73,11 @@ async def settings_page(
     and agents have a predictable entry point for administrative changes.
 
     HTML sections (sidebar navigation):
-    - ``general``       — Basic identity: name, description, URL, topics, license, visibility.
+    - ``general`` — Basic identity: name, description, URL, topics, license, visibility.
     - ``collaboration`` — Invite/remove collaborators; set per-collaborator permissions.
-    - ``merge``         — Enable/disable merge commit, squash, and rebase merge strategies;
+    - ``merge`` — Enable/disable merge commit, squash, and rebase merge strategies;
                           toggle auto-delete of head branch after merge.
-    - ``danger``        — Archive repo (read-only), transfer to another owner,
+    - ``danger`` — Archive repo (read-only), transfer to another owner,
                           delete repo (requires typing the full repo name to confirm).
 
     Content negotiation:
@@ -86,7 +90,7 @@ async def settings_page(
     The ``?section=`` param pre-scrolls the sidebar to the requested section
     on load, so deep-links like ``?section=danger`` work without JS.
 
-    No JWT required to render the HTML shell.  All write operations require
+    No JWT required to render the HTML shell. All write operations require
     a valid owner/admin JWT, enforced by the API layer.
     """
     row = await musehub_repository.get_repo_orm_by_owner_slug(db, owner, repo_slug)

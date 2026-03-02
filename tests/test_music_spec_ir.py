@@ -115,7 +115,7 @@ class TestDefaultHarmonicSpec:
     def test_c_minor(self) -> None:
 
         spec = default_harmonic_spec(key="C", scale="natural_minor", bars=8)
-        assert len(spec.chord_schedule) == 4  # one chord per 2 bars
+        assert len(spec.chord_schedule) == 4 # one chord per 2 bars
         assert spec.chord_palette[0] == "Cm"
 
     def test_custom_chords(self) -> None:
@@ -197,13 +197,13 @@ class TestBuildFullMusicSpec:
 
         spec = build_full_music_spec(bars=16)
         assert spec.global_spec.section_map is not None
-        assert len(spec.global_spec.section_map) == 3  # intro, main, outro
+        assert len(spec.global_spec.section_map) == 3 # intro, main, outro
 
     def test_section_map_medium(self) -> None:
 
         spec = build_full_music_spec(bars=8)
         assert spec.global_spec.section_map is not None
-        assert len(spec.global_spec.section_map) == 2  # intro, main
+        assert len(spec.global_spec.section_map) == 2 # intro, main
 
     def test_section_map_short(self) -> None:
 

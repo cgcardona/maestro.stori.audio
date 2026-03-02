@@ -1,4 +1,4 @@
-"""Tests for Muse Hub Analysis endpoints — issue #248.
+"""Tests for Muse Hub Analysis endpoints — .
 
 Covers all acceptance criteria:
 - GET /musehub/repos/{repo_id}/analysis/{ref}/{dimension} returns structured JSON
@@ -11,46 +11,46 @@ Covers all acceptance criteria:
 - Service layer: compute_dimension raises ValueError for unknown dimension
 - Service layer: each dimension returns the correct model type
 
-Covers issue #227 (emotion map):
+Covers (emotion map):
 - test_compute_emotion_map_returns_correct_type — service returns EmotionMapResponse
-- test_emotion_map_evolution_has_beat_samples   — evolution list is non-empty with valid vectors
-- test_emotion_map_trajectory_ordered           — trajectory is oldest-first with head last
-- test_emotion_map_drift_count                  — drift has len(trajectory)-1 entries
-- test_emotion_map_narrative_nonempty           — narrative is a non-empty string
-- test_emotion_map_is_deterministic             — same ref always returns same summary_vector
-- test_emotion_map_endpoint_200                 — HTTP GET returns 200 with required fields
-- test_emotion_map_endpoint_requires_auth       — endpoint returns 401 without auth
-- test_emotion_map_endpoint_unknown_repo_404    — unknown repo returns 404
-- test_emotion_map_endpoint_etag                — ETag header is present
+- test_emotion_map_evolution_has_beat_samples — evolution list is non-empty with valid vectors
+- test_emotion_map_trajectory_ordered — trajectory is oldest-first with head last
+- test_emotion_map_drift_count — drift has len(trajectory)-1 entries
+- test_emotion_map_narrative_nonempty — narrative is a non-empty string
+- test_emotion_map_is_deterministic — same ref always returns same summary_vector
+- test_emotion_map_endpoint_200 — HTTP GET returns 200 with required fields
+- test_emotion_map_endpoint_requires_auth — endpoint returns 401 without auth
+- test_emotion_map_endpoint_unknown_repo_404 — unknown repo returns 404
+- test_emotion_map_endpoint_etag — ETag header is present
 
-Covers issue #420 (emotion diff):
-- test_compute_emotion_diff_returns_correct_type    — service returns EmotionDiffResponse
-- test_emotion_diff_base_emotion_axes_in_range      — base vector axes are all in [0, 1]
-- test_emotion_diff_head_emotion_axes_in_range      — head vector axes are all in [0, 1]
-- test_emotion_diff_delta_axes_in_range             — delta axes are all in [-1, 1]
-- test_emotion_diff_delta_equals_head_minus_base    — delta = head - base per axis
-- test_emotion_diff_interpretation_nonempty         — interpretation string is non-empty
-- test_emotion_diff_is_deterministic                — same refs always return same delta
-- test_emotion_diff_different_refs_differ           — distinct refs produce distinct vectors
-- test_emotion_diff_endpoint_200                    — HTTP GET returns 200 with required fields
-- test_emotion_diff_endpoint_requires_auth          — endpoint returns 401 without auth
-- test_emotion_diff_endpoint_unknown_repo_404       — unknown repo returns 404
-- test_emotion_diff_endpoint_etag                   — ETag header is present
+Covers (emotion diff):
+- test_compute_emotion_diff_returns_correct_type — service returns EmotionDiffResponse
+- test_emotion_diff_base_emotion_axes_in_range — base vector axes are all in [0, 1]
+- test_emotion_diff_head_emotion_axes_in_range — head vector axes are all in [0, 1]
+- test_emotion_diff_delta_axes_in_range — delta axes are all in [-1, 1]
+- test_emotion_diff_delta_equals_head_minus_base — delta = head - base per axis
+- test_emotion_diff_interpretation_nonempty — interpretation string is non-empty
+- test_emotion_diff_is_deterministic — same refs always return same delta
+- test_emotion_diff_different_refs_differ — distinct refs produce distinct vectors
+- test_emotion_diff_endpoint_200 — HTTP GET returns 200 with required fields
+- test_emotion_diff_endpoint_requires_auth — endpoint returns 401 without auth
+- test_emotion_diff_endpoint_unknown_repo_404 — unknown repo returns 404
+- test_emotion_diff_endpoint_etag — ETag header is present
 
-Covers issue #410 (recall / semantic search):
-- test_compute_recall_returns_correct_type       — service returns RecallResponse
-- test_compute_recall_scores_descending          — matches are sorted best-first
-- test_compute_recall_scores_in_range            — all scores are in [0, 1]
-- test_compute_recall_limit_respected            — limit caps the result count
-- test_compute_recall_is_deterministic           — same (ref, q) always returns same matches
-- test_compute_recall_differs_by_query           — different queries produce different results
-- test_compute_recall_match_dimensions_nonempty  — every match has at least one matched dimension
-- test_recall_endpoint_200                       — HTTP GET returns 200 with required fields
-- test_recall_endpoint_requires_auth             — endpoint returns 401 without auth
-- test_recall_endpoint_unknown_repo_404          — unknown repo returns 404
-- test_recall_endpoint_etag_header               — ETag header is present
-- test_recall_endpoint_limit_param               — ?limit=3 caps results to 3
-- test_recall_endpoint_missing_q_422             — missing ?q returns 422
+Covers (recall / semantic search):
+- test_compute_recall_returns_correct_type — service returns RecallResponse
+- test_compute_recall_scores_descending — matches are sorted best-first
+- test_compute_recall_scores_in_range — all scores are in [0, 1]
+- test_compute_recall_limit_respected — limit caps the result count
+- test_compute_recall_is_deterministic — same (ref, q) always returns same matches
+- test_compute_recall_differs_by_query — different queries produce different results
+- test_compute_recall_match_dimensions_nonempty — every match has at least one matched dimension
+- test_recall_endpoint_200 — HTTP GET returns 200 with required fields
+- test_recall_endpoint_requires_auth — endpoint returns 401 without auth
+- test_recall_endpoint_unknown_repo_404 — unknown repo returns 404
+- test_recall_endpoint_etag_header — ETag header is present
+- test_recall_endpoint_limit_param — ?limit=3 caps results to 3
+- test_recall_endpoint_missing_q_422 — missing ?q returns 422
 """
 from __future__ import annotations
 
@@ -386,8 +386,7 @@ async def test_analysis_harmony_endpoint(
 ) -> None:
     """GET /musehub/repos/{repo_id}/analysis/{ref}/harmony returns dedicated harmony data.
 
-    The /harmony path is now handled by the dedicated HarmonyAnalysisResponse endpoint
-    (issue #414) rather than the generic /{dimension} catch-all.  It returns
+    The /harmony path is now handled by the dedicated HarmonyAnalysisResponse endpoint rather than the generic /{dimension} catch-all. It returns
     Roman-numeral-centric data (key, mode, romanNumerals, cadences, modulations)
     rather than the generic AnalysisResponse envelope.
     """
@@ -604,8 +603,8 @@ async def test_analysis_all_13_dimensions_individually(
     """Each of the 13 dimensions returns 200; harmony now has a dedicated endpoint.
 
     The ``harmony`` dimension path is handled by the dedicated HarmonyAnalysisResponse
-    endpoint (issue #414) which returns a different response shape (no ``dimension``
-    envelope field).  All other 12 dimensions continue to use the generic AnalysisResponse
+    endpoint which returns a different response shape (no ``dimension``
+    envelope field). All other 12 dimensions continue to use the generic AnalysisResponse
     envelope and are verified here.
     """
     repo_id = await _create_repo(client, auth_headers)
@@ -625,7 +624,7 @@ async def test_analysis_all_13_dimensions_individually(
             assert "romanNumerals" in body, f"Harmony endpoint missing 'romanNumerals' field"
         elif dim == "similarity":
             # Dedicated endpoint — RefSimilarityResponse (no "dimension" envelope)
-            pass  # tested separately in test_ref_similarity_endpoint_*
+            pass # tested separately in test_ref_similarity_endpoint_*
         else:
             assert body["dimension"] == dim, (
                 f"Expected dimension={dim!r}, got {body['dimension']!r}"
@@ -633,7 +632,7 @@ async def test_analysis_all_13_dimensions_individually(
 
 
 # ---------------------------------------------------------------------------
-# Emotion map service unit tests (issue #227)
+# Emotion map service unit tests
 # ---------------------------------------------------------------------------
 
 
@@ -724,7 +723,7 @@ def test_emotion_map_filters_propagated() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Emotion map HTTP endpoint tests (issue #227)
+# Emotion map HTTP endpoint tests
 # ---------------------------------------------------------------------------
 
 
@@ -819,7 +818,7 @@ async def test_contour_track_filter(
 ) -> None:
     """Track filter is applied and reflected in filtersApplied for the contour dimension.
 
-    Verifies issue #228 acceptance criterion: contour analysis respects the
+    Verifies acceptance criterion: contour analysis respects the
     ``?track=`` query parameter so melodists can view per-instrument contour.
     """
     repo_id = await _create_repo(client, auth_headers)
@@ -870,7 +869,7 @@ async def test_analysis_aggregate_endpoint_returns_all_dimensions(
 ) -> None:
     """GET /api/v1/musehub/repos/{repo_id}/analysis/{ref} returns all 13 dimensions.
 
-    Regression test for issue #221: the aggregate endpoint must return all 13
+    Regression test: the aggregate endpoint must return all 13
     musical dimensions so the analysis dashboard can render summary cards for each
     in a single round-trip — agents must not have to query dimensions individually.
     """
@@ -900,8 +899,8 @@ async def test_analysis_aggregate_endpoint_returns_all_dimensions(
 # ---------------------------------------------------------------------------
 
 
-from maestro.models.musehub_analysis import HarmonyAnalysisResponse  # noqa: E402
-from maestro.services.musehub_analysis import compute_harmony_analysis  # noqa: E402
+from maestro.models.musehub_analysis import HarmonyAnalysisResponse # noqa: E402
+from maestro.services.musehub_analysis import compute_harmony_analysis # noqa: E402
 
 
 def test_compute_harmony_analysis_returns_correct_type() -> None:
@@ -914,7 +913,7 @@ def test_compute_harmony_analysis_key_has_mode() -> None:
     """The key field includes both tonic and mode, e.g. 'C major'."""
     result = compute_harmony_analysis(repo_id="repo-test", ref="main")
     assert result.mode in result.key
-    assert len(result.key.split()) == 2  # "C major", "F minor", etc.
+    assert len(result.key.split()) == 2 # "C major", "F minor", etc.
 
 
 def test_compute_harmony_analysis_roman_numerals_nonempty() -> None:
@@ -971,7 +970,7 @@ async def test_harmony_endpoint_returns_200(
 ) -> None:
     """GET /analysis/{ref}/harmony returns 200 with all required fields.
 
-    Regression test for issue #414: the dedicated harmony endpoint must return
+    Regression test: the dedicated harmony endpoint must return
     structured Roman-numeral harmonic data so agents can reason about tonal
     function, cadence structure, and modulations without parsing raw chord symbols.
     """
@@ -1193,7 +1192,7 @@ async def test_recall_endpoint_200(
 ) -> None:
     """GET /api/v1/musehub/repos/{repo_id}/analysis/{ref}/recall?q= returns 200.
 
-    Regression test for issue #410: the recall endpoint must return a ranked list
+    Regression test: the recall endpoint must return a ranked list
     of semantically similar commits so agents can retrieve musically relevant history
     without issuing expensive dimension-by-dimension comparisons.
     """
@@ -1497,7 +1496,7 @@ async def test_ref_similarity_endpoint_etag(
 
 
 # ---------------------------------------------------------------------------
-# Service unit tests — emotion diff (issue #420)
+# Service unit tests — emotion diff
 # ---------------------------------------------------------------------------
 
 
@@ -1580,7 +1579,7 @@ def test_emotion_diff_different_refs_differ() -> None:
 
 
 # ---------------------------------------------------------------------------
-# HTTP integration tests — emotion diff endpoint (issue #420)
+# HTTP integration tests — emotion diff endpoint
 # ---------------------------------------------------------------------------
 
 

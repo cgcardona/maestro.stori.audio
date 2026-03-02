@@ -32,7 +32,7 @@ class MuseLogNodeResponse(BaseModel):
     """Wire representation of a single node in the Muse commit DAG.
 
     Produced by ``MuseLogNode.to_response()`` and serialised as JSON by the
-    ``GET /muse/log`` endpoint.  Field names are camelCase to match the Stori
+    ``GET /muse/log`` endpoint. Field names are camelCase to match the Stori
     DAW Swift convention.
 
     Attributes:
@@ -44,12 +44,12 @@ class MuseLogNodeResponse(BaseModel):
         isHead: ``True`` if this node is the current HEAD pointer for the
             project (i.e. the variation the DAW currently has loaded).
         timestamp: POSIX timestamp (seconds since epoch, float) of when the
-            variation was committed.  Used for topological sort tie-breaking
+            variation was committed. Used for topological sort tie-breaking
             and for display in the DAW's history panel.
         intent: Free-text intent string supplied when the variation was created
             (e.g. ``"add bass groove"``), or ``None`` if none was provided.
         regions: List of region IDs whose MIDI content was affected by this
-            variation.  Empty for root / no-op commits.
+            variation. Empty for root / no-op commits.
     """
 
     id: str = Field(description="UUID of this variation (commit).")
@@ -64,7 +64,7 @@ class MuseLogNodeResponse(BaseModel):
     )
     isHead: bool = Field(
         description=(
-            "True if this node is the current HEAD pointer — "
+            "True if this node is the current HEAD pointer"
             "the variation the DAW currently has loaded."
         )
     )
@@ -92,7 +92,7 @@ class MuseLogGraphResponse(BaseModel):
     """Wire representation of the full Muse commit DAG for a project.
 
     Produced by ``MuseLogGraph.to_response()`` and returned directly by
-    ``GET /muse/log``.  The Swift frontend renders this as a visual commit
+    ``GET /muse/log``. The Swift frontend renders this as a visual commit
     timeline, highlighting the HEAD node and drawing parent edges.
 
     Attributes:
@@ -100,7 +100,7 @@ class MuseLogGraphResponse(BaseModel):
         head: UUID of the current HEAD variation, or ``None`` if no HEAD has
             been set yet (brand-new project with no commits).
         nodes: Topologically sorted list of all variations (commits) for this
-            project.  Parents always appear before their children; ties are
+            project. Parents always appear before their children; ties are
             broken by timestamp then variation UUID.
     """
 
@@ -188,7 +188,7 @@ async def build_muse_log_graph(
     """Build the full commit DAG for a project.
 
     Performs a single bulk query, then computes the topological ordering
-    in memory.  Parents always appear before children; ties are broken
+    in memory. Parents always appear before children; ties are broken
     by timestamp (earliest first), then by variation_id for determinism.
     """
     summaries = await get_variations_for_project(session, project_id)

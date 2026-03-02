@@ -228,7 +228,7 @@ class TestApplyVariationPhrases:
 
         result = await apply_variation_phrases(
             variation=variation,
-            accepted_phrase_ids=["p-adds"],  # Only adds
+            accepted_phrase_ids=["p-adds"], # Only adds
             project_state={},
             store=mock_store,
         )
@@ -431,7 +431,7 @@ class TestUpdatedRegions:
         region_data = result.updated_regions[0]
         assert region_data["region_id"] == "region-bass"
         assert region_data["track_id"] == "track-bass"
-        assert len(region_data["notes"]) == 3  # 2 original + 1 added
+        assert len(region_data["notes"]) == 3 # 2 original + 1 added
         pitches = {n["pitch"] for n in region_data["notes"]}
         assert pitches == {40, 43, 45}
 
@@ -639,7 +639,7 @@ class TestAftertouchDictContract:
     def test_beat_type_is_float(self) -> None:
         """beat is Required[float] — integer literal is also float-compatible."""
         from maestro.contracts.json_types import AftertouchDict
-        at: AftertouchDict = {"beat": 0, "value": 127}  # 0 coerces to float at runtime
+        at: AftertouchDict = {"beat": 0, "value": 127} # 0 coerces to float at runtime
         assert isinstance(at["beat"], (int, float))
 
     def test_value_range(self) -> None:

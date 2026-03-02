@@ -1,6 +1,6 @@
 """Tests for the MuseHub collaborators/team management UI page.
 
-Covers issue #436 — GET /musehub/ui/{owner}/{repo_slug}/settings/collaborators
+Covers — GET /musehub/ui/{owner}/{repo_slug}/settings/collaborators
 
 Test index:
 - test_collaborators_settings_page_returns_200
@@ -113,7 +113,7 @@ async def test_collaborators_settings_page_no_auth_required(
     await _make_repo(db_session)
     resp = await client.get(
         f"/musehub/ui/{_OWNER}/{_SLUG}/settings/collaborators",
-        headers={},  # explicit: no Authorization header
+        headers={}, # explicit: no Authorization header
     )
     assert resp.status_code == 200
 

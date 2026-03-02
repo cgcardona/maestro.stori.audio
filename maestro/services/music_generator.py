@@ -6,7 +6,7 @@ other backends (IR, HuggingFace, LLM) can be used when explicitly requested
 or configured in priority.
 
 Unified generation: all instruments for a section are generated in a single
-Storpheus call so the model produces coherent, musically-related parts.  A
+Storpheus call so the model produces coherent, musically-related parts. A
 per-section cache ensures that concurrent instrument agents sharing the same
 section only trigger ONE GPU call; subsequent agents read from cache.
 """
@@ -38,7 +38,7 @@ logger = logging.getLogger(__name__)
 #
 # Storpheus labels channels by GM family (e.g. "piano", "bass", "drums",
 # "guitar", "strings") while the LLM uses musical role names (e.g. "keys",
-# "chords", "rhythm guitar", "pad").  This map bridges the two vocabularies.
+# "chords", "rhythm guitar", "pad"). This map bridges the two vocabularies.
 # ---------------------------------------------------------------------------
 _ROLE_TO_FAMILIES: dict[str, list[str]] = {
     # Piano / keys roles → piano family
@@ -428,7 +428,7 @@ class MusicGenerator:
 
         if not role_notes and unified.notes:
             logger.warning(
-                f"⚠️ No channel match for '{instrument}' in {list(channel_notes.keys())} — "
+                f"⚠️ No channel match for '{instrument}' in {list(channel_notes.keys())}"
                 f"falling back to ALL flat notes ({len(unified.notes)} notes)"
             )
             role_notes = unified.notes
@@ -460,7 +460,7 @@ class MusicGenerator:
 
         Notes may arrive with either camelCase (startBeat / durationBeats, from
         the DAW / Storpheus) or snake_case (start_beat / duration_beats, from
-        IR renderers).  Critics always expect snake_case.  Explicit per-field
+        IR renderers). Critics always expect snake_case. Explicit per-field
         extraction avoids a dynamic key loop and satisfies mypy.
         """
         out: list[NoteDict] = []
@@ -540,7 +540,7 @@ class MusicGenerator:
         }
         if role in _HARMONIC_ROLES or backend_type == GeneratorBackend.HARMONIC_IR:
             return lambda notes: score_chord_notes(_snake(notes))
-        return None  # unknown role — no scoring
+        return None # unknown role — no scoring
 
     def _candidates_for_role(
         self,

@@ -1,6 +1,6 @@
 """Tests for the Muse Hub export endpoint and musehub_exporter service.
 
-Covers every acceptance criterion from issue #243:
+Covers every acceptance criterion:
 - GET /musehub/repos/{repo_id}/export/{ref}?format=midi returns a .mid file
 - GET /musehub/repos/{repo_id}/export/{ref}?format=json returns valid JSON
 - split_tracks=true bundles artifacts into a ZIP with per-track files
@@ -36,8 +36,8 @@ from maestro.services.musehub_exporter import (
 # Helpers
 # ---------------------------------------------------------------------------
 
-_MIDI_BYTES = b"MThd\x00\x00\x00\x06\x00\x01\x00\x01\x01\xe0"  # minimal valid MIDI header
-_MP3_BYTES = b"\xff\xfb\x90\x00" + b"\x00" * 60  # minimal MP3 frame marker
+_MIDI_BYTES = b"MThd\x00\x00\x00\x06\x00\x01\x00\x01\x01\xe0" # minimal valid MIDI header
+_MP3_BYTES = b"\xff\xfb\x90\x00" + b"\x00" * 60 # minimal MP3 frame marker
 
 
 def _b64(data: bytes) -> str:

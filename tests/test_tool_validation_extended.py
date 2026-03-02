@@ -3,14 +3,14 @@ Extended tests for app.core.tool_validation — gaps not covered by
 test_tool_validation.py and test_tool_validation_fe.py.
 
 Covers:
-  1.  ValidationError / ValidationResult data model
-  2.  _find_closest_match (prefix/suffix, substring, character-overlap, empty)
-  3.  _validate_type  (all JSON schema types)
-  4.  _validate_value_ranges (all VALUE_RANGES boundaries, notes-array range checks)
-  5.  _validate_tool_specific  (notes pitch/velocity/startBeat/durationBeats)
-  6.  Bus entity resolution (resolve by name, unknown bus)
-  7.  Icon validation (stori_set_track_icon)
-  8.  validate_tool_calls_batch helpers (all_valid, collect_errors)
+  1. ValidationError / ValidationResult data model
+  2. _find_closest_match (prefix/suffix, substring, character-overlap, empty)
+  3. _validate_type (all JSON schema types)
+  4. _validate_value_ranges (all VALUE_RANGES boundaries, notes-array range checks)
+  5. _validate_tool_specific (notes pitch/velocity/startBeat/durationBeats)
+  6. Bus entity resolution (resolve by name, unknown bus)
+  7. Icon validation (stori_set_track_icon)
+  8. validate_tool_calls_batch helpers (all_valid, collect_errors)
 """
 from __future__ import annotations
 
@@ -305,7 +305,7 @@ class TestValidateValueRanges:
     def test_notes_array_not_list_no_crash(self) -> None:
 
         """If notes is not a list, range validation skips it."""
-        _validate_value_ranges({"notes": "not a list"})  # must not raise
+        _validate_value_ranges({"notes": "not a list"}) # must not raise
 
     def test_start_beat_zero_ok(self) -> None:
 
@@ -327,7 +327,7 @@ class TestValidateValueRanges:
     def test_non_numeric_value_skipped(self) -> None:
 
         """Non-numeric values in range fields must not crash."""
-        _validate_value_ranges({"tempo": "fast"})  # must not raise
+        _validate_value_ranges({"tempo": "fast"}) # must not raise
 
 
 # ===========================================================================

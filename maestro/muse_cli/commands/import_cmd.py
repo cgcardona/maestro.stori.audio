@@ -13,12 +13,12 @@ Workflow
 
 Flags
 -----
-``<file>``            File to import (.mid/.midi/.xml/.musicxml).
-``--message TEXT``    Commit message (default: "Import <filename>").
-``--track-map TEXT``  Channel→name mapping, e.g. ``ch0=bass,ch1=piano,ch9=drums``.
-``--section TEXT``    Section tag stored in the commit metadata JSON.
-``--analyze``         Run analysis and display results after importing.
-``--dry-run``         Validate only — do not write files or create a commit.
+``<file>`` File to import (.mid/.midi/.xml/.musicxml).
+``--message TEXT`` Commit message (default: "Import <filename>").
+``--track-map TEXT`` Channel→name mapping, e.g. ``ch0=bass,ch1=piano,ch9=drums``.
+``--section TEXT`` Section tag stored in the commit metadata JSON.
+``--analyze`` Run analysis and display results after importing.
+``--dry-run`` Validate only — do not write files or create a commit.
 """
 from __future__ import annotations
 
@@ -120,10 +120,10 @@ async def _import_async(
     # ── Dry-run: validate only ────────────────────────────────────────────
     if dry_run:
         typer.echo(f"✅ Dry run: '{file_path.name}' is valid ({data.format})")
-        typer.echo(f"   Notes: {len(data.notes)}, Tracks: {len(data.tracks)}, Tempo: {data.tempo_bpm:.1f} BPM")
-        typer.echo(f"   Would commit: {effective_message!r}")
+        typer.echo(f" Notes: {len(data.notes)}, Tracks: {len(data.tracks)}, Tempo: {data.tempo_bpm:.1f} BPM")
+        typer.echo(f" Would commit: {effective_message!r}")
         if section:
-            typer.echo(f"   Section: {section!r}")
+            typer.echo(f" Section: {section!r}")
         if analyze:
             typer.echo("\nAnalysis:")
             typer.echo(analyze_import(data))
@@ -163,7 +163,7 @@ async def _import_async(
 
     typer.echo(f"✅ Imported '{file_path.name}' as commit {commit_id[:8]}")
     if section:
-        typer.echo(f"   Section: {section!r}")
+        typer.echo(f" Section: {section!r}")
 
     # ── Analysis ─────────────────────────────────────────────────────────
     if analyze:

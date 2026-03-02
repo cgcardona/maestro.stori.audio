@@ -68,7 +68,7 @@ class CheckoutPlan:
     """Deterministic, immutable plan for restoring a variation's state.
 
     Produced by ``build_checkout_plan`` — a pure function that diffs the
-    current working tree against the target variation.  Consumed by
+    current working tree against the target variation. Consumed by
     ``execute_checkout_plan`` in ``muse_checkout_executor``.
 
     Pure data — no side effects, no mutations.
@@ -122,7 +122,7 @@ def _build_region_note_calls(
 ) -> tuple[list[CheckoutToolCall], bool]:
     """Produce tool calls to transition notes from working → target.
 
-    Returns (tool_calls, was_reset).  Uses region reset (clear + add) when
+    Returns (tool_calls, was_reset). Uses region reset (clear + add) when
     there are removals/modifications or the diff exceeds the threshold,
     because there is no individual note-remove tool.
     """

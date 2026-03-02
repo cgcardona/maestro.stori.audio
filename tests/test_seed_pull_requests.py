@@ -225,7 +225,7 @@ def test_make_prs_conflict_pr_body_mentions_conflict() -> None:
     )
     conflict_pr = next(p for p in prs if "CONFLICT" in p["title"])
     assert "conflict" in conflict_pr["body"].lower()
-    assert "25" in conflict_pr["body"]  # measure range 25-32 mentioned
+    assert "25" in conflict_pr["body"] # measure range 25-32 mentioned
 
 
 def test_make_prs_all_have_required_fields() -> None:
@@ -262,7 +262,7 @@ def test_make_prs_works_with_empty_merge_commit_list() -> None:
     """_make_prs must not crash when no merge commit IDs are available.
 
     This handles the case where the repo was seeded without commits (e.g.
-    seed_musehub.py ran but issue #452 seed_commits has not yet run).
+    seed_musehub.py ran but seed_commits has not yet run).
     """
     prs = _make_prs(
         REPO_CHANSON,

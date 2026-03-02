@@ -70,14 +70,14 @@ def parse_file(path: pathlib.Path) -> MuseImportData:
         return parse_musicxml_file(path)
     supported = ", ".join(sorted(SUPPORTED_EXTENSIONS))
     raise ValueError(
-        f"Unsupported file extension '{path.suffix}'.  Supported: {supported}"
+        f"Unsupported file extension '{path.suffix}'. Supported: {supported}"
     )
 
 
 def parse_midi_file(path: pathlib.Path) -> MuseImportData:
     """Parse a Standard MIDI File into a :class:`MuseImportData`.
 
-    Uses ``mido``.  Note-on with velocity=0 is treated as note-off.
+    Uses ``mido``. Note-on with velocity=0 is treated as note-off.
 
     Raises:
         RuntimeError: When ``mido`` cannot read the file.
@@ -86,7 +86,7 @@ def parse_midi_file(path: pathlib.Path) -> MuseImportData:
         import mido
     except ImportError:
         raise RuntimeError(
-            "mido is required for MIDI import.  "
+            "mido is required for MIDI import. "
             "It is pre-installed in the Maestro Docker image."
         )
 
@@ -96,7 +96,7 @@ def parse_midi_file(path: pathlib.Path) -> MuseImportData:
         raise RuntimeError(f"Cannot parse MIDI file '{path}': {exc}") from exc
 
     ticks_per_beat = int(mid.ticks_per_beat)
-    tempo_us: int = 500_000  # 120 BPM default
+    tempo_us: int = 500_000 # 120 BPM default
     notes: list[NoteEvent] = []
     # (channel, pitch) -> (start_tick, velocity)
     active: dict[tuple[int, int], tuple[int, int]] = {}
@@ -180,7 +180,7 @@ def parse_musicxml_file(path: pathlib.Path) -> MuseImportData:
 
     if root.tag not in (t("score-partwise"), "score-partwise"):
         raise RuntimeError(
-            f"Unrecognised MusicXML root element '{root.tag}'.  "
+            f"Unrecognised MusicXML root element '{root.tag}'. "
             "Expected <score-partwise>."
         )
 
@@ -196,7 +196,7 @@ def parse_musicxml_file(path: pathlib.Path) -> MuseImportData:
                 except ValueError:
                     pass
 
-    ticks_per_beat = 480  # internal default for MusicXML
+    ticks_per_beat = 480 # internal default for MusicXML
 
     part_names: list[str] = []
     for pn in root.iter(t("part-name")):
@@ -321,7 +321,7 @@ def parse_track_map_arg(raw: str) -> dict[str, str]:
             continue
         if "=" not in pair:
             raise ValueError(
-                f"Invalid track-map entry {pair!r}.  Expected KEY=VALUE (e.g. ch0=bass)."
+                f"Invalid track-map entry {pair!r}. Expected KEY=VALUE (e.g. ch0=bass)."
             )
         key, _, value = pair.partition("=")
         result[key.strip()] = value.strip()
@@ -332,7 +332,7 @@ def analyze_import(data: MuseImportData) -> str:
     """Return a multi-line analysis of *data* covering harmonic, rhythmic, and dynamic dimensions."""
     notes = data.notes
     if not notes:
-        return "  (no notes found — file may be empty or contain only meta events)"
+        return " (no notes found — file may be empty or contain only meta events)"
 
     _NOTE_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
     pitches = [n.pitch for n in notes]
@@ -363,23 +363,23 @@ def analyze_import(data: MuseImportData) -> str:
 
     track_summary = ", ".join(data.tracks) if data.tracks else "(none)"
     return "\n".join([
-        f"  Format:      {data.format}",
-        f"  Tempo:       {data.tempo_bpm:.1f} BPM",
-        f"  Tracks:      {track_summary}",
+        f" Format: {data.format}",
+        f" Tempo: {data.tempo_bpm:.1f} BPM",
+        f" Tracks: {track_summary}",
         "",
-        "  ── Harmonic ──────────────────────────────────",
-        f"  Pitch range: {_NOTE_NAMES[pitch_min % 12]}{pitch_min // 12 - 1}"
+        " ── Harmonic ──────────────────────────────────",
+        f" Pitch range: {_NOTE_NAMES[pitch_min % 12]}{pitch_min // 12 - 1}"
         f"–{_NOTE_NAMES[pitch_max % 12]}{pitch_max // 12 - 1}",
-        f"  Top pitches: {top_str}",
+        f" Top pitches: {top_str}",
         "",
-        "  ── Rhythmic ──────────────────────────────────",
-        f"  Notes:       {total}",
-        f"  Span:        {span_beats:.1f} beats",
-        f"  Density:     {density:.1f} notes/beat",
+        " ── Rhythmic ──────────────────────────────────",
+        f" Notes: {total}",
+        f" Span: {span_beats:.1f} beats",
+        f" Density: {density:.1f} notes/beat",
         "",
-        "  ── Dynamic ───────────────────────────────────",
-        f"  Velocity:    avg={avg_vel:.0f}, min={vel_min}, max={vel_max}",
-        f"  Character:   {_band(avg_vel)}",
+        " ── Dynamic ───────────────────────────────────",
+        f" Velocity: avg={avg_vel:.0f}, min={vel_min}, max={vel_max}",
+        f" Character: {_band(avg_vel)}",
     ])
 
 

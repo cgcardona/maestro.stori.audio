@@ -11,13 +11,13 @@ Algorithm
 
 ``--continue`` / ``--abort``
 -----------------------------
-Mid-rebase state is stored in ``.muse/REBASE_STATE.json``.  On conflict:
+Mid-rebase state is stored in ``.muse/REBASE_STATE.json``. On conflict:
 - ``muse rebase --continue``: resume after manually resolving conflicts.
 - ``muse rebase --abort``: restore the branch pointer to its pre-rebase HEAD.
 
 ``--interactive`` / ``-i``
 ---------------------------
-Opens ``$EDITOR`` with a plan file listing all commits to replay.  Each line is::
+Opens ``$EDITOR`` with a plan file listing all commits to replay. Each line is::
 
     pick <short-sha> <message>
 

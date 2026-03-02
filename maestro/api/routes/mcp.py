@@ -96,7 +96,7 @@ def _parse_daw_response(raw: JSONValue) -> DAWToolResponse:
     """Parse an untyped WebSocket/HTTP payload into a typed DAWToolResponse.
 
     This is the single deserialization boundary for tool responses arriving
-    from the DAW.  Explicit ``is True`` comparison avoids treating any
+    from the DAW. Explicit ``is True`` comparison avoids treating any
     truthy object as a successful response — only JSON ``true`` qualifies.
     """
     if isinstance(raw, dict) and "success" in raw:
@@ -116,16 +116,16 @@ class MCPToolListResponse(CamelModel):
 class ConnectionCreatedResponse(CamelModel):
     """Server-issued connection ID for the MCP SSE flow.
 
-    Returned by ``POST /mcp/connection``.  The caller must include this ID in
+    Returned by ``POST /mcp/connection``. The caller must include this ID in
     subsequent ``GET /mcp/stream/{connection_id}`` (to receive tool calls) and
-    ``POST /mcp/response/{connection_id}`` (to post results) requests.  IDs
+    ``POST /mcp/response/{connection_id}`` (to post results) requests. IDs
     are valid for 5 minutes and are validated on every use.
 
     Wire format: camelCase (via ``CamelModel``) — serialised as
     ``{"connectionId": "…"}``.
 
     Attributes:
-        connection_id: UUID issued by the server.  Opaque to the client;
+        connection_id: UUID issued by the server. Opaque to the client;
             must be treated as a single-session token and not persisted or
             shared across sessions.
     """
@@ -142,7 +142,7 @@ class ToolResponseReceivedResponse(CamelModel):
     """Acknowledgement that the DAW's tool-execution result was received.
 
     Returned by ``POST /mcp/response/{connection_id}`` after the server has
-    handed the result off to the waiting MCP coroutine.  A ``200 OK`` with
+    handed the result off to the waiting MCP coroutine. A ``200 OK`` with
     this body means the result was queued; it does not guarantee the tool call
     itself succeeded (that is reported via the SSE stream).
 
@@ -150,7 +150,7 @@ class ToolResponseReceivedResponse(CamelModel):
     ``{"status": "ok"}``.
 
     Attributes:
-        status: Always ``"ok"`` on success.  The endpoint raises ``404`` for
+        status: Always ``"ok"`` on success. The endpoint raises ``404`` for
             unknown or expired connection IDs rather than returning a non-ok
             status here.
     """

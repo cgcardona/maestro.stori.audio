@@ -1,12 +1,12 @@
 """Muse Hub stash route handlers.
 
 Endpoint summary:
-  GET    /musehub/repos/{repo_id}/stash                          — list stash entries (auth required)
-  POST   /musehub/repos/{repo_id}/stash                          — push new stash (auth required)
-  GET    /musehub/repos/{repo_id}/stash/{stash_id}               — get stash detail + entries (auth required)
-  POST   /musehub/repos/{repo_id}/stash/{stash_id}/pop           — apply + delete stash (auth required)
-  POST   /musehub/repos/{repo_id}/stash/{stash_id}/apply         — apply stash without deleting (auth required)
-  DELETE /musehub/repos/{repo_id}/stash/{stash_id}               — drop a stash entry (auth required)
+  GET /musehub/repos/{repo_id}/stash — list stash entries (auth required)
+  POST /musehub/repos/{repo_id}/stash — push new stash (auth required)
+  GET /musehub/repos/{repo_id}/stash/{stash_id} — get stash detail + entries (auth required)
+  POST /musehub/repos/{repo_id}/stash/{stash_id}/pop — apply + delete stash (auth required)
+  POST /musehub/repos/{repo_id}/stash/{stash_id}/apply — apply stash without deleting (auth required)
+  DELETE /musehub/repos/{repo_id}/stash/{stash_id} — drop a stash entry (auth required)
 
 Maps to CLI commands: muse stash push, list, show, pop, apply, drop.
 Stash entries are scoped per repo+user — users can only see their own stash.
@@ -223,7 +223,7 @@ async def push_stash(
 ) -> StashResponse:
     """Create a new stash entry containing the provided file entries.
 
-    Corresponds to ``muse stash push``.  The stash is owned by the calling
+    Corresponds to ``muse stash push``. The stash is owned by the calling
     user and scoped to ``repo_id``.
     """
     user_id = token.get("sub", "")
@@ -301,7 +301,7 @@ async def get_stash(
 ) -> StashResponse:
     """Return the stash entry identified by ``stash_id`` along with all its file entries.
 
-    Corresponds to ``muse stash show``.  Returns 404 if the stash does not
+    Corresponds to ``muse stash show``. Returns 404 if the stash does not
     belong to the authenticated user in the given repo.
     """
     row = await _get_stash_or_404(db, repo_id, stash_id, token.get("sub", ""))
@@ -324,7 +324,7 @@ async def pop_stash(
 ) -> StashApplyResponse:
     """Atomically apply the stash entries and remove the stash.
 
-    Corresponds to ``muse stash pop``.  The stash entry and all its file
+    Corresponds to ``muse stash pop``. The stash entry and all its file
     entries are deleted after the entries are returned to the caller.
     Returns 404 if the stash does not belong to the caller.
     """
@@ -361,7 +361,7 @@ async def apply_stash(
 ) -> StashApplyResponse:
     """Apply the stash entries without deleting the stash.
 
-    Corresponds to ``muse stash apply``.  The stash entry remains on the
+    Corresponds to ``muse stash apply``. The stash entry remains on the
     stack after this call — use ``pop`` to apply and remove in one step.
     Returns 404 if the stash does not belong to the caller.
     """
@@ -386,8 +386,8 @@ async def drop_stash(
 ) -> None:
     """Permanently delete a stash entry and all its file entries.
 
-    Corresponds to ``muse stash drop``.  The stash contents are discarded
-    without being applied.  Returns 404 if the stash does not belong to
+    Corresponds to ``muse stash drop``. The stash contents are discarded
+    without being applied. Returns 404 if the stash does not belong to
     the caller in the given repo.
     """
     await _get_stash_or_404(db, repo_id, stash_id, token.get("sub", ""))

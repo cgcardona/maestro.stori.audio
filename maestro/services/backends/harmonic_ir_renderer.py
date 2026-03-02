@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 def _voicing_octaves(voicing: str) -> int:
     """Number of octaves to span for voicing (piano)."""
     if voicing == "root_third_seventh":
-        return 2  # root in one octave, third/fifth/7 in next
+        return 2 # root in one octave, third/fifth/7 in next
     return 2
 
 
@@ -42,7 +42,7 @@ def render_harmonic_spec(
     rng = random.Random()
 
     num_voices = 4 if harmonic_spec.voicing == "root_third_seventh" else 3
-    piano_octave = 4  # middle register for chords
+    piano_octave = 4 # middle register for chords
 
     if harmonic_spec.chord_rhythm == "whole":
         chord_rhythm_beats = 4.0
@@ -57,7 +57,7 @@ def render_harmonic_spec(
     for i, entry in enumerate(schedule):
         bar_start = entry.bar * 4.0
         next_bar = schedule[i + 1].bar * 4.0 if i + 1 < len(schedule) else bars * 4.0
-        duration = min(chord_rhythm_beats * 2, next_bar - bar_start)  # hold until next chord or 2 units
+        duration = min(chord_rhythm_beats * 2, next_bar - bar_start) # hold until next chord or 2 units
         if duration <= 0:
             duration = 2.0
 

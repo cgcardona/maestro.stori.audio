@@ -39,7 +39,7 @@ class TestGenerateAccessCode:
         """Should generate valid token with hours duration."""
         token = generate_access_code(duration_hours=24)
         assert token is not None
-        assert len(token) > 50  # JWT tokens are reasonably long
+        assert len(token) > 50 # JWT tokens are reasonably long
         
         # Verify it's a valid JWT
         payload = jwt.decode(token, TEST_SECRET, algorithms=["HS256"])
@@ -80,7 +80,7 @@ class TestGenerateAccessCode:
         
         exp = payload["exp"]
         iat = payload["iat"]
-        expected_seconds = (24 + 12) * 3600  # 36 hours
+        expected_seconds = (24 + 12) * 3600 # 36 hours
         assert exp - iat == pytest.approx(expected_seconds, abs=5)
     
     def test_generate_no_duration_raises(self) -> None:
@@ -128,8 +128,8 @@ class TestValidateAccessCode:
         now = int(datetime.now(timezone.utc).timestamp())
         payload = {
             "type": "access",
-            "iat": now - 3600,  # Issued 1 hour ago
-            "exp": now - 1,      # Expired 1 second ago
+            "iat": now - 3600, # Issued 1 hour ago
+            "exp": now - 1, # Expired 1 second ago
         }
         token = jwt.encode(payload, TEST_SECRET, algorithm="HS256")
         
@@ -143,7 +143,7 @@ class TestValidateAccessCode:
         
         # Tamper with the token
         parts = token.split(".")
-        parts[2] = parts[2][:-5] + "XXXXX"  # Corrupt signature
+        parts[2] = parts[2][:-5] + "XXXXX" # Corrupt signature
         tampered_token = ".".join(parts)
         
         with pytest.raises(AccessCodeError, match="Invalid access code"):
@@ -169,7 +169,7 @@ class TestValidateAccessCode:
 
         """Should reject token with wrong type."""
         payload = {
-            "type": "refresh",  # Wrong type
+            "type": "refresh", # Wrong type
             "iat": int(datetime.now(timezone.utc).timestamp()),
             "exp": int(datetime.now(timezone.utc).timestamp()) + 3600,
         }

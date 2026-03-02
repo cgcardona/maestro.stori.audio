@@ -56,7 +56,7 @@ class TestKeyDetection:
 
     def test_c_major_scale(self) -> None:
         """C major scale should detect as C major."""
-        pitches = [60, 62, 64, 65, 67, 69, 71, 72]  # C D E F G A B C
+        pitches = [60, 62, 64, 65, 67, 69, 71, 72] # C D E F G A B C
         result = detect_key_from_pitches(pitches)
         assert result is not None
         tonic, mode, confidence = result
@@ -66,7 +66,7 @@ class TestKeyDetection:
 
     def test_a_minor_scale(self) -> None:
         """A minor scale should detect as A minor."""
-        pitches = [57, 59, 60, 62, 64, 65, 67, 69]  # A B C D E F G A
+        pitches = [57, 59, 60, 62, 64, 65, 67, 69] # A B C D E F G A
         result = detect_key_from_pitches(pitches)
         assert result is not None
         tonic, mode, confidence = result
@@ -86,7 +86,7 @@ class TestKeyDetection:
 
     def test_chromatic_detection(self) -> None:
         """Chromatic passage should still return something."""
-        pitches = list(range(48, 72))  # 24 notes, all pitches
+        pitches = list(range(48, 72)) # 24 notes, all pitches
         result = detect_key_from_pitches(pitches)
         assert result is not None
         # Low confidence expected for chromatic music
@@ -100,10 +100,10 @@ class TestKeyDetection:
 
     def test_g_major_pattern(self) -> None:
         """G major pentatonic should detect as G major or close relative."""
-        pitches = [55, 57, 59, 62, 64, 67, 69, 71, 74, 76]  # G major pentatonic
+        pitches = [55, 57, 59, 62, 64, 67, 69, 71, 74, 76] # G major pentatonic
         result = detect_key_from_pitches(pitches)
         assert result is not None
-        assert result[0] in ("G", "D", "C")  # G or close relatives
+        assert result[0] in ("G", "D", "C") # G or close relatives
 
 
 class TestKeyUtilities:
@@ -284,7 +284,7 @@ class TestCandidateScoring:
         assert score > 0.3, f"Default density should handle typical Orpheus output, got {score}"
 
     def test_register_compliance(self) -> None:
-        pitches = list(range(55, 66))  # centered around 60
+        pitches = list(range(55, 66)) # centered around 60
         score = _register_compliance(pitches, 60, 12)
         assert score > 0.7
 
@@ -336,7 +336,7 @@ class TestPostProcessing:
         ]
         result = pp.process(notes)
         median = sorted(n["pitch"] for n in result)[1]
-        assert abs(median - 72) <= 12  # within one octave
+        assert abs(median - 72) <= 12 # within one octave
 
     def test_quantization_16th(self) -> None:
         config = PostProcessorConfig(subdivision=16)
@@ -369,8 +369,8 @@ class TestPostProcessing:
             StorpheusNoteDict(pitch=64, start_beat=0.5, duration_beats=0.25, velocity=80),
         ]
         result = pp.process(notes)
-        assert result[0]["start_beat"] == 0.0  # downbeat unchanged
-        assert result[1]["start_beat"] > 0.25  # odd 16th delayed
+        assert result[0]["start_beat"] == 0.0 # downbeat unchanged
+        assert result[1]["start_beat"] > 0.25 # odd 16th delayed
 
     def test_no_transforms_when_disabled(self) -> None:
         config = PostProcessorConfig(velocity_floor=40, velocity_ceiling=80, enabled=False)

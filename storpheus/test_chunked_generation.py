@@ -1,4 +1,4 @@
-"""Tests for sliding window chunked generation (#25).
+"""Tests for sliding window chunked generation.
 
 Validates:
 - _apply_velocity_fade — velocity envelope at chunk boundaries
@@ -67,27 +67,27 @@ class TestApplyVelocityFade:
     def test_fade_in_reduces_early_velocity(self) -> None:
         """Notes near beat 0 should have lower velocity when fade_in=True."""
         notes = [
-            _note(start=0.0, vel=100),   # start of fade region → vel ≈ 0
-            _note(start=2.0, vel=100),   # mid fade → vel ≈ 50
-            _note(start=4.0, vel=100),   # end of fade → vel = 100
-            _note(start=8.0, vel=100),   # past fade → vel = 100
+            _note(start=0.0, vel=100), # start of fade region → vel ≈ 0
+            _note(start=2.0, vel=100), # mid fade → vel ≈ 50
+            _note(start=4.0, vel=100), # end of fade → vel = 100
+            _note(start=8.0, vel=100), # past fade → vel = 100
         ]
         result = _apply_velocity_fade(
             notes, chunk_bars=8, fade_beats=4.0, fade_in=True, fade_out=False
         )
-        assert result[0]["velocity"] == 1       # 0/4 * 100 → clamped to 1
-        assert result[1]["velocity"] == 50      # 2/4 * 100
-        assert result[2]["velocity"] == 100     # 4/4 * 100
-        assert result[3]["velocity"] == 100     # no fade
+        assert result[0]["velocity"] == 1 # 0/4 * 100 → clamped to 1
+        assert result[1]["velocity"] == 50 # 2/4 * 100
+        assert result[2]["velocity"] == 100 # 4/4 * 100
+        assert result[3]["velocity"] == 100 # no fade
 
     def test_fade_out_reduces_late_velocity(self) -> None:
         """Notes near the end of a chunk should fade out when fade_out=True."""
         # chunk_bars=4, total_beats=16, fade_beats=4.0 → fade window [12, 16)
         notes = [
-            _note(start=0.0, vel=100),    # before fade → unchanged
-            _note(start=12.0, vel=100),   # start of fade window → 100%
-            _note(start=14.0, vel=100),   # mid fade → (16-14)/4 * 100 = 50
-            _note(start=15.0, vel=100),   # deep fade → (16-15)/4 * 100 = 25
+            _note(start=0.0, vel=100), # before fade → unchanged
+            _note(start=12.0, vel=100), # start of fade window → 100%
+            _note(start=14.0, vel=100), # mid fade → (16-14)/4 * 100 = 50
+            _note(start=15.0, vel=100), # deep fade → (16-15)/4 * 100 = 25
         ]
         result = _apply_velocity_fade(
             notes, chunk_bars=4, fade_beats=4.0, fade_in=False, fade_out=True
@@ -232,7 +232,7 @@ class TestGenerateChunked:
 
     async def test_beat_offsets_applied_correctly(self) -> None:
         """Each chunk's notes must be offset by chunk_idx * chunk_bars * 4."""
-        total_bars = _CHUNK_BARS * 2  # two exact chunks
+        total_bars = _CHUNK_BARS * 2 # two exact chunks
 
         calls: list[int] = []
 
@@ -378,7 +378,7 @@ class TestThresholdRouting:
             genre="jazz",
             tempo=120,
             instruments=["piano"],
-            bars=_CHUNKED_GEN_THRESHOLD_BARS,  # at the threshold — no chunking
+            bars=_CHUNKED_GEN_THRESHOLD_BARS, # at the threshold — no chunking
         )
 
         with patch("music_service._generate_chunked") as mock_chunked:
@@ -388,7 +388,7 @@ class TestThresholdRouting:
                 from music_service import _do_generate
                 await _do_generate(request)
             except Exception:
-                pass  # expected — no real Gradio client in tests
+                pass # expected — no real Gradio client in tests
 
         mock_chunked.assert_not_called()
 

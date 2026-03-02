@@ -1,7 +1,7 @@
 """Muse Hub webhook dispatcher — event-driven HTTP notification delivery.
 
 This module is the single point responsible for delivering webhook events to
-registered subscriber URLs.  It is called by route handlers after a state-
+registered subscriber URLs. It is called by route handlers after a state-
 changing operation completes (push, issue create/close, PR create/merge, etc.).
 
 Delivery contract:
@@ -111,7 +111,7 @@ async def create_webhook(
 ) -> WebhookResponse:
     """Persist a new webhook subscription and return its wire representation.
 
-    The webhook is created in active state.  The caller must commit the session.
+    The webhook is created in active state. The caller must commit the session.
     """
     webhook = db.MusehubWebhook(
         repo_id=repo_id,
@@ -162,7 +162,7 @@ async def delete_webhook(
     repo_id: str,
     webhook_id: str,
 ) -> bool:
-    """Delete a webhook by ID.  Returns True if deleted, False if not found.
+    """Delete a webhook by ID. Returns True if deleted, False if not found.
 
     The caller must commit the session after a True result.
     """
@@ -225,7 +225,7 @@ async def redeliver_delivery(
 
     Fetches the original delivery row to recover the event type and payload,
     then executes one new delivery attempt (with full retry policy) against
-    the webhook's current URL.  Each retry attempt is persisted as a new
+    the webhook's current URL. Each retry attempt is persisted as a new
     ``MusehubWebhookDelivery`` row — the original row is never mutated.
 
     Raises ``ValueError`` when the delivery or webhook cannot be found, or
@@ -242,7 +242,7 @@ async def redeliver_delivery(
 
     if not delivery_row.payload:
         raise ValueError(
-            f"Delivery {delivery_id!r} has no stored payload — "
+            f"Delivery {delivery_id!r} has no stored payload"
             "it predates payload storage and cannot be redelivered"
         )
 
@@ -378,11 +378,11 @@ async def dispatch_event(
 ) -> None:
     """Dispatch a webhook event to all active subscribers for ``repo_id``.
 
-    Called by route handlers after a state-changing operation.  Does NOT block
+    Called by route handlers after a state-changing operation. Does NOT block
     the caller's HTTP response — this function handles its own retries internally
     and logs each attempt to ``musehub_webhook_deliveries``.
 
-    The ``payload`` dict is serialised to camelCase JSON before delivery.  It
+    The ``payload`` dict is serialised to camelCase JSON before delivery. It
     should use snake_case keys; the serialiser converts them automatically via
     the Pydantic CamelModel aliases so that wire format is consistent with the
     rest of the MuseHub API.
@@ -467,7 +467,7 @@ async def dispatch_event_background(
     """Fire-and-forget webhook dispatch that manages its own DB session.
 
     Intended for use with FastAPI ``BackgroundTasks`` so that webhook delivery
-    does not block the HTTP response.  Errors are logged but never re-raised.
+    does not block the HTTP response. Errors are logged but never re-raised.
 
     Usage in a route handler::
 

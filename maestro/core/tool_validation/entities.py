@@ -212,7 +212,7 @@ def resolve_tool_entities(
     """Resolve entity names to IDs in tool call params.
 
     Public wrapper around ``_resolve_and_validate_entities`` that returns
-    only the resolved params dict.  Callers who need validation errors
+    only the resolved params dict. Callers who need validation errors
     should use ``validate_tool_call`` instead.
     """
     return _resolve_and_validate_entities(tool_name, params, registry)["params"]

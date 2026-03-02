@@ -18,7 +18,7 @@ from collections.abc import AsyncGenerator
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from maestro.db.database import Base
-from maestro.db import muse_models  # noqa: F401 — register tables
+from maestro.db import muse_models # noqa: F401 — register tables
 from maestro.models.variation import (
     MidiNoteSnapshot,
     NoteChange,
@@ -396,7 +396,7 @@ class TestDriftReportProperties:
             },
             track_regions={"r1": "t1", "r2": "t2"},
         )
-        assert report.total_changes == 2  # 1 add + 1 remove
+        assert report.total_changes == 2 # 1 add + 1 remove
 
     def test_no_legacy_flags(self) -> None:
 

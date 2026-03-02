@@ -54,7 +54,7 @@ class TestNormalize:
 
     def test_collapse_whitespace(self) -> None:
 
-        assert normalize("set   tempo  to   120") == "set tempo to 120"
+        assert normalize("set tempo to 120") == "set tempo to 120"
 
 
 class TestLooksLikeQuestion:

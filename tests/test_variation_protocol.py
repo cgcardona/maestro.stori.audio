@@ -316,12 +316,12 @@ class TestCommitCorrectness:
         # Only first phrase
         accepted = variation.get_accepted_notes(["phrase-1"])
         assert len(accepted) == 1
-        assert accepted[0]["pitch"] == 37  # 36 + 1
+        assert accepted[0]["pitch"] == 37 # 36 + 1
 
         # Only second phrase
         accepted2 = variation.get_accepted_notes(["phrase-2"])
         assert len(accepted2) == 1
-        assert accepted2[0]["pitch"] == 38  # 36 + 2
+        assert accepted2[0]["pitch"] == 38 # 36 + 2
 
         # Both
         accepted_both = variation.get_accepted_notes(["phrase-1", "phrase-2"])
@@ -380,9 +380,9 @@ class TestEventSequencing:
 
         """Phrases must have sequence > 1."""
         counter = SequenceCounter()
-        meta_seq = counter.next()  # 1
-        phrase_seqs = [counter.next() for _ in range(3)]  # 2, 3, 4
-        done_seq = counter.next()  # 5
+        meta_seq = counter.next() # 1
+        phrase_seqs = [counter.next() for _ in range(3)] # 2, 3, 4
+        done_seq = counter.next() # 5
 
         assert meta_seq == 1
         assert phrase_seqs == [2, 3, 4]

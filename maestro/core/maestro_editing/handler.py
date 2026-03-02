@@ -79,7 +79,7 @@ async def _run_llm_tool_loop(
 ) -> AsyncIterator[str]:
     """Shared LLM iteration loop — dispatches tool calls and accumulates results.
 
-    Yields SSE event strings.  Appends executed tool call dicts to ``collected``
+    Yields SSE event strings. Appends executed tool call dicts to ``collected``
     so the caller can inspect what was dispatched.
     """
     from maestro.core.tools import ALL_TOOLS
@@ -283,7 +283,7 @@ async def _run_llm_tool_loop(
                     "Use the IDs above for subsequent tool calls. "
                     "Do NOT re-add notes to regions that already have notes. "
                     "Do NOT call stori_clear_notes unless explicitly replacing content. "
-                    "A successful stori_add_notes response means the notes were stored — "
+                    "A successful stori_add_notes response means the notes were stored"
                     "do not redo the call."
                 ),
             })
@@ -351,7 +351,7 @@ async def _run_llm_tool_loop(
                     })
                     expressive_msg = (
                         "EXPRESSIVE PHASE — call ALL of these in ONE batch, then stop:\n"
-                        + "\n".join(f"  {i+1}. {m}" for i, m in enumerate(missing_expressive))
+                        + "\n".join(f" {i+1}. {m}" for i, m in enumerate(missing_expressive))
                         + f"\n\n{manifest}"
                         + "\n\nBatch ALL tool calls in a single response. No text. Just the tool calls."
                     )

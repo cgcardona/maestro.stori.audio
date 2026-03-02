@@ -18,9 +18,9 @@ class SSESequencer:
     """Injects a monotonic ``seq`` counter into SSE ``data:`` frames.
 
     Each SSE stream must create its own instance so counters are
-    independent.  The counter starts at 0 for the first event
+    independent. The counter starts at 0 for the first event
     (``state``) and increments by 1 for every subsequent ``data:``
-    frame.  SSE comments (e.g. ``: heartbeat``) pass through unchanged.
+    frame. SSE comments (e.g. ``: heartbeat``) pass through unchanged.
 
     Thread-safety: a single ``SSESequencer`` is used within one async
     generator — no concurrent access — so no lock is needed.
@@ -58,7 +58,7 @@ class ReasoningBuffer:
     """Buffer raw BPE reasoning tokens and emit sanitized text at word boundaries.
 
     BPE tokenizers split words into sub-word pieces (e.g. "Trey" → "T" + "rey").
-    Emitting each piece as a separate SSE event causes display artifacts.  This
+    Emitting each piece as a separate SSE event causes display artifacts. This
     buffer accumulates tokens and flushes at word boundaries — when a new token
     starts with a space or newline, the previous accumulated text forms complete
     words and is safe to emit.
@@ -68,7 +68,7 @@ class ReasoningBuffer:
         self._buffer: str = ""
 
     def add(self, text: str) -> str | None:
-        """Add a BPE token.  Returns sanitized text to emit, or None if still buffering."""
+        """Add a BPE token. Returns sanitized text to emit, or None if still buffering."""
         if not text:
             return None
 
@@ -84,7 +84,7 @@ class ReasoningBuffer:
         return None
 
     def flush(self) -> str | None:
-        """Flush remaining buffer.  Call at end of reasoning / transition to content."""
+        """Flush remaining buffer. Call at end of reasoning / transition to content."""
         if self._buffer:
             result = sanitize_reasoning(self._buffer)
             self._buffer = ""
@@ -97,7 +97,7 @@ def strip_tool_echoes(text: str) -> str:
 
     When the LLM generates tool calls, it sometimes echoes fragments of the
     call syntax into the content stream — parenthesized keyword arguments,
-    standalone closing parens, etc.  This function strips those fragments
+    standalone closing parens, etc. This function strips those fragments
     while preserving natural-language text.
 
     Examples of stripped content::
@@ -129,7 +129,7 @@ def strip_tool_echoes(text: str) -> str:
             if "=" in stripped or re.match(r"^\([,\s]*\)$", stripped):
                 continue
 
-        # Multi-line tool echo opening: (, notes=  or  (key=
+        # Multi-line tool echo opening: (, notes= or (key=
         if stripped.startswith("(") and "=" in stripped and ")" not in stripped:
             in_tool_echo = True
             continue

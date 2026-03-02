@@ -35,11 +35,11 @@ class TestMaestroPromptAccepted:
         assert result.mode == "compose"
 
     def test_with_leading_whitespace_lines(self) -> None:
-        result = parse_prompt("\n\n  \nMAESTRO PROMPT\nMode: compose\nRequest: go")
+        result = parse_prompt("\n\n \nMAESTRO PROMPT\nMode: compose\nRequest: go")
         assert isinstance(result, MaestroPrompt)
 
     def test_trailing_whitespace_on_header(self) -> None:
-        result = parse_prompt("MAESTRO PROMPT   \nMode: compose\nRequest: go")
+        result = parse_prompt("MAESTRO PROMPT \nMode: compose\nRequest: go")
         assert isinstance(result, MaestroPrompt)
 
 
@@ -84,7 +84,7 @@ class TestNearMissHeadersRejected:
         assert parse_prompt("MAESTRO_PROMPT\nMode: compose\nRequest: go") is None
 
     def test_double_space_maestro_prompt(self) -> None:
-        assert parse_prompt("MAESTRO  PROMPT\nMode: compose\nRequest: go") is None
+        assert parse_prompt("MAESTRO PROMPT\nMode: compose\nRequest: go") is None
 
     def test_extra_word(self) -> None:
         assert parse_prompt("MAESTRO PROMPT V2\nMode: compose\nRequest: go") is None
@@ -101,7 +101,7 @@ class TestPromptPoolGuard:
 
         for item in PROMPT_POOL:
             assert item.full_prompt.startswith("MAESTRO PROMPT"), (
-                f"Pool item '{item.id}' uses legacy header — "
+                f"Pool item '{item.id}' uses legacy header"
                 f"starts with: {item.full_prompt[:30]!r}"
             )
 
@@ -181,7 +181,7 @@ class TestNoLegacyPatterns:
         hits = _scan_files()
         if hits:
             report = "\n".join(
-                f"  {path}:{lineno}: {pattern!r} in: {line[:120]}"
+                f" {path}:{lineno}: {pattern!r} in: {line[:120]}"
                 for path, lineno, line, pattern in hits
             )
             pytest.fail(

@@ -105,7 +105,7 @@ def remote_remove(
     """Remove a configured remote and all its local tracking refs.
 
     Deletes ``[remotes.<name>]`` from ``.muse/config.toml`` and removes the
-    ``.muse/remotes/<name>/`` directory tree.  Errors if the remote does not
+    ``.muse/remotes/<name>/`` directory tree. Errors if the remote does not
     exist.
 
     Example::
@@ -132,7 +132,7 @@ def remote_rename(
     """Rename a remote in config and move its tracking ref paths.
 
     Updates ``[remotes.<old>]`` → ``[remotes.<new>]`` in ``.muse/config.toml``
-    and moves ``.muse/remotes/<old>/`` → ``.muse/remotes/<new>/``.  Errors if
+    and moves ``.muse/remotes/<old>/`` → ``.muse/remotes/<new>/``. Errors if
     the old remote does not exist or the new name is already taken.
 
     Example::
@@ -165,7 +165,7 @@ def remote_set_url(
 ) -> None:
     """Update the URL of an existing remote without touching tracking refs.
 
-    Updates ``[remotes.<name>] url`` in ``.muse/config.toml``.  Unlike
+    Updates ``[remotes.<name>] url`` in ``.muse/config.toml``. Unlike
     ``muse remote add``, this command errors if the remote does not already
     exist — use ``add`` for first-time registration.
 

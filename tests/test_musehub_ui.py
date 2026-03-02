@@ -1,58 +1,58 @@
 """Tests for Muse Hub web UI endpoints.
 
-Covers issue #217 (compare view):
-- test_compare_page_renders         — GET /musehub/ui/{owner}/{slug}/compare/{base}...{head} returns 200
+Covers (compare view):
+- test_compare_page_renders — GET /musehub/ui/{owner}/{slug}/compare/{base}...{head} returns 200
 - test_compare_page_no_auth_required — compare page accessible without JWT
 - test_compare_page_invalid_ref_404 — refs without ... separator return 404
 - test_compare_page_unknown_owner_404 — unknown owner/slug returns 404
-- test_compare_page_includes_radar  — page contains radar chart JavaScript
+- test_compare_page_includes_radar — page contains radar chart JavaScript
 - test_compare_page_includes_piano_roll — page contains piano roll JS
 - test_compare_page_includes_emotion_diff — page contains emotion diff elements
 - test_compare_page_includes_commit_list — page contains commit list JS
 - test_compare_page_includes_create_pr_button — page contains "Create Pull Request"
-- test_compare_json_response        — ?format=json returns structured context
-- test_compare_unknown_ref_404      — unknown ref returns 404
+- test_compare_json_response — ?format=json returns structured context
+- test_compare_unknown_ref_404 — unknown ref returns 404
 
 
-Covers acceptance criteria from issue #206 (commit list page):
-- test_commits_list_page_returns_200              — GET /{owner}/{repo}/commits returns HTML
-- test_commits_list_page_shows_commit_sha        — SHA of seeded commit appears in page
-- test_commits_list_page_shows_commit_message    — message appears in page
-- test_commits_list_page_dag_indicator           — DAG node element present
-- test_commits_list_page_pagination_links        — Older/Newer nav links present when multi-page
-- test_commits_list_page_branch_selector         — branch <select> present when branches exist
+Covers acceptance criteria (commit list page):
+- test_commits_list_page_returns_200 — GET /{owner}/{repo}/commits returns HTML
+- test_commits_list_page_shows_commit_sha — SHA of seeded commit appears in page
+- test_commits_list_page_shows_commit_message — message appears in page
+- test_commits_list_page_dag_indicator — DAG node element present
+- test_commits_list_page_pagination_links — Older/Newer nav links present when multi-page
+- test_commits_list_page_branch_selector — branch <select> present when branches exist
 - test_commits_list_page_json_content_negotiation — ?format=json returns CommitListResponse
-- test_commits_list_page_json_pagination         — ?format=json&per_page=1&page=2 returns page 2
-- test_commits_list_page_branch_filter_html      — ?branch=main filters to that branch
-- test_commits_list_page_empty_state             — repo with no commits shows empty state
-- test_commits_list_page_merge_indicator         — merge commit shows merge indicator
-- test_commits_list_page_graph_link              — link to DAG graph page present
+- test_commits_list_page_json_pagination — ?format=json&per_page=1&page=2 returns page 2
+- test_commits_list_page_branch_filter_html — ?branch=main filters to that branch
+- test_commits_list_page_empty_state — repo with no commits shows empty state
+- test_commits_list_page_merge_indicator — merge commit shows merge indicator
+- test_commits_list_page_graph_link — link to DAG graph page present
 
-Covers the minimum acceptance criteria from issue #43 and issue #232:
-- test_ui_repo_page_returns_200        — GET /musehub/ui/{repo_id} returns HTML
+Covers the minimum acceptance criteria and :
+- test_ui_repo_page_returns_200 — GET /musehub/ui/{repo_id} returns HTML
 - test_ui_commit_page_shows_artifact_links — commit page HTML mentions img/download
-- test_ui_pr_list_page_returns_200     — PR list page renders without error
-- test_ui_issue_list_page_returns_200          — Issue list page renders without error
-- test_ui_issue_list_has_open_closed_tabs      — Open/Closed tab buttons present (#299)
-- test_ui_issue_list_has_sort_controls         — Sort buttons (newest/oldest/most-commented) present (#299)
-- test_ui_issue_list_has_label_filter_js       — Client-side label filter JS present (#299)
-- test_ui_issue_list_has_body_preview_js       — Body preview helper and CSS class present (#299)
-- test_ui_issue_detail_has_comment_section     — Comment thread section below issue body (#289)
-- test_ui_issue_detail_has_render_comments_js  — buildCommentThread() renders the comment thread (#289)
-- test_ui_issue_detail_has_submit_comment_js   — submitComment() posts new comments (#289)
-- test_ui_issue_detail_has_delete_comment_js   — deleteComment() removes own comments (#289)
-- test_ui_issue_detail_has_reply_support_js    — startReply() enables threaded replies (#289)
-- test_ui_issue_detail_comment_section_below_body — comment section follows issue body card (#289)
-- test_ui_pr_list_has_comment_badge_js         — PR list has comment count badge JS (#298)
-- test_ui_pr_list_has_reaction_pills_js        — PR list has reaction pills JS (#298)
-- test_ui_issue_list_has_reaction_pills_js     — Issue list has reaction pills JS (#298)
-- test_ui_issue_list_eager_social_signals      — Issue list eagerly pre-fetches social signals (#298)
-- test_context_page_renders            — context viewer page returns 200 HTML
-- test_context_json_response           — JSON returns MuseHubContextResponse structure
-- test_context_includes_musical_state  — response includes active_tracks field
-- test_context_unknown_ref_404         — nonexistent ref returns 404
+- test_ui_pr_list_page_returns_200 — PR list page renders without error
+- test_ui_issue_list_page_returns_200 — Issue list page renders without error
+- test_ui_issue_list_has_open_closed_tabs — Open/Closed tab buttons present
+- test_ui_issue_list_has_sort_controls — Sort buttons (newest/oldest/most-commented) present
+- test_ui_issue_list_has_label_filter_js — Client-side label filter JS present
+- test_ui_issue_list_has_body_preview_js — Body preview helper and CSS class present
+- test_ui_issue_detail_has_comment_section — Comment thread section below issue body
+- test_ui_issue_detail_has_render_comments_js — buildCommentThread() renders the comment thread
+- test_ui_issue_detail_has_submit_comment_js — submitComment() posts new comments
+- test_ui_issue_detail_has_delete_comment_js — deleteComment() removes own comments
+- test_ui_issue_detail_has_reply_support_js — startReply() enables threaded replies
+- test_ui_issue_detail_comment_section_below_body — comment section follows issue body card
+- test_ui_pr_list_has_comment_badge_js — PR list has comment count badge JS
+- test_ui_pr_list_has_reaction_pills_js — PR list has reaction pills JS
+- test_ui_issue_list_has_reaction_pills_js — Issue list has reaction pills JS
+- test_ui_issue_list_eager_social_signals — Issue list eagerly pre-fetches social signals
+- test_context_page_renders — context viewer page returns 200 HTML
+- test_context_json_response — JSON returns MuseHubContextResponse structure
+- test_context_includes_musical_state — response includes active_tracks field
+- test_context_unknown_ref_404 — nonexistent ref returns 404
 
-Covers acceptance criteria from issue #204 (tree browser):
+Covers acceptance criteria (tree browser):
 - test_tree_root_lists_directories
 - test_tree_subdirectory_lists_files
 - test_tree_file_icons_by_type
@@ -60,92 +60,92 @@ Covers acceptance criteria from issue #204 (tree browser):
 - test_tree_json_response
 - test_tree_unknown_ref_404
 
-Covers acceptance criteria from issue #244 (embed player):
-- test_embed_page_renders              — GET /musehub/ui/{repo_id}/embed/{ref} returns 200
-- test_embed_no_auth_required          — Public embed accessible without JWT
-- test_embed_page_x_frame_options      — Response sets X-Frame-Options: ALLOWALL
-- test_embed_page_contains_player_ui   — Player elements present in embed HTML
+Covers acceptance criteria (embed player):
+- test_embed_page_renders — GET /musehub/ui/{repo_id}/embed/{ref} returns 200
+- test_embed_no_auth_required — Public embed accessible without JWT
+- test_embed_page_x_frame_options — Response sets X-Frame-Options: ALLOWALL
+- test_embed_page_contains_player_ui — Player elements present in embed HTML
 
-Covers issue #227 (emotion map page), migrated to owner/slug routing in #348:
-- test_emotion_page_renders            — GET /musehub/ui/{owner}/{repo_slug}/analysis/{ref}/emotion returns 200
-- test_emotion_page_no_auth_required   — emotion UI page accessible without JWT
-- test_emotion_page_includes_charts    — page embeds valence-arousal plot and axis labels
-- test_emotion_page_includes_filters   — page includes primary emotion and confidence display
-- test_emotion_json_response           — JSON endpoint returns emotion map with required fields
-- test_emotion_trajectory              — cross-commit trajectory data is present and ordered
-- test_emotion_drift_distances         — drift list has one entry per consecutive commit pair
+Covers (emotion map page), migrated to owner/slug routing:
+- test_emotion_page_renders — GET /musehub/ui/{owner}/{repo_slug}/analysis/{ref}/emotion returns 200
+- test_emotion_page_no_auth_required — emotion UI page accessible without JWT
+- test_emotion_page_includes_charts — page embeds valence-arousal plot and axis labels
+- test_emotion_page_includes_filters — page includes primary emotion and confidence display
+- test_emotion_json_response — JSON endpoint returns emotion map with required fields
+- test_emotion_trajectory — cross-commit trajectory data is present and ordered
+- test_emotion_drift_distances — drift list has one entry per consecutive commit pair
 
-Covers issue #292 (rich event cards in activity feed):
-- test_feed_page_returns_200                 — GET /musehub/ui/feed returns 200 HTML
-- test_feed_page_no_raw_json_payload         — page does not render raw JSON.stringify of payload
+Covers (rich event cards in activity feed):
+- test_feed_page_returns_200 — GET /musehub/ui/feed returns 200 HTML
+- test_feed_page_no_raw_json_payload — page does not render raw JSON.stringify of payload
 - test_feed_page_has_event_meta_for_all_types — EVENT_META covers all 8 event types
-- test_feed_page_has_data_notif_id_attribute  — cards carry data-notif-id for mark-as-read hook
-- test_feed_page_has_unread_indicator        — unread highlight border logic present
-- test_feed_page_has_actor_avatar_logic      — actorAvatar / actorHsl helper present
-- test_feed_page_has_relative_timestamp      — fmtRelative called in card rendering
+- test_feed_page_has_data_notif_id_attribute — cards carry data-notif-id for mark-as-read hook
+- test_feed_page_has_unread_indicator — unread highlight border logic present
+- test_feed_page_has_actor_avatar_logic — actorAvatar / actorHsl helper present
+- test_feed_page_has_relative_timestamp — fmtRelative called in card rendering
 
-Covers issue #293 (mark-as-read UX in activity feed):
-- test_feed_page_has_mark_one_read_function          — markOneRead() defined for per-card action
-- test_feed_page_has_mark_all_read_function          — markAllRead() defined for bulk action
-- test_feed_page_has_decrement_nav_badge_function    — decrementNavBadge() keeps badge in sync
+Covers (mark-as-read UX in activity feed):
+- test_feed_page_has_mark_one_read_function — markOneRead() defined for per-card action
+- test_feed_page_has_mark_all_read_function — markAllRead() defined for bulk action
+- test_feed_page_has_decrement_nav_badge_function — decrementNavBadge() keeps badge in sync
 - test_feed_page_mark_read_btn_targets_notification_endpoint — calls POST /notifications/{id}/read
-- test_feed_page_mark_all_btn_targets_read_all_endpoint      — calls POST /notifications/read-all
-- test_feed_page_mark_all_btn_present_in_template    — mark-all-read-btn element in page HTML
-- test_feed_page_mark_read_updates_nav_badge         — nav-notif-badge updated after mark-all
+- test_feed_page_mark_all_btn_targets_read_all_endpoint — calls POST /notifications/read-all
+- test_feed_page_mark_all_btn_present_in_template — mark-all-read-btn element in page HTML
+- test_feed_page_mark_read_updates_nav_badge — nav-notif-badge updated after mark-all
 
 UI routes require no JWT auth (they return HTML shells whose JS handles auth).
 The HTML content tests assert structural markers present in every rendered page.
 
-Covers issue #290 (release detail comment threads):
-- test_ui_release_detail_has_comment_section        — Discussion section present in HTML
-- test_ui_release_detail_has_render_comments_js     — renderComments/submitComment/deleteComment JS present
+Covers (release detail comment threads):
+- test_ui_release_detail_has_comment_section — Discussion section present in HTML
+- test_ui_release_detail_has_render_comments_js — renderComments/submitComment/deleteComment JS present
 - test_ui_release_detail_comment_uses_release_target_type — target_type='release' used in JS
-- test_ui_release_detail_has_reply_thread_js        — toggleReplyForm/submitReply for thread support
+- test_ui_release_detail_has_reply_thread_js — toggleReplyForm/submitReply for thread support
 
-Covers issue #286 (commit comment threads):
-- test_commit_page_has_comment_section_html     — comments-section container present in HTML
-- test_commit_page_has_comment_js_functions     — renderComments/submitComment/deleteComment/loadComments JS present
+Covers (commit comment threads):
+- test_commit_page_has_comment_section_html — comments-section container present in HTML
+- test_commit_page_has_comment_js_functions — renderComments/submitComment/deleteComment/loadComments JS present
 - test_commit_page_comment_calls_load_on_startup — loadComments() called at page startup
 - test_commit_page_comment_uses_correct_api_path — fetches /comments?target_type=commit
-- test_commit_page_comment_has_avatar_logic     — avatarColor() HSL helper present
+- test_commit_page_comment_has_avatar_logic — avatarColor() HSL helper present
 - test_commit_page_comment_has_new_comment_form — new-comment textarea form present
-- test_commit_page_comment_has_discussion_heading — "Discussion" heading present
+- test_commit_page_comment_has_discussion_heading"Discussion" heading present
 
 Covers regression for PR #282 (owner/slug URL scheme):
-- test_ui_nav_links_use_owner_slug_not_uuid_*  — every page handler injects
+- test_ui_nav_links_use_owner_slug_not_uuid_* — every page handler injects
   ``const base = '/musehub/ui/{owner}/{slug}'`` not a UUID-based path.
-- test_ui_unknown_owner_slug_returns_404        — bad owner/slug → 404.
+- test_ui_unknown_owner_slug_returns_404 — bad owner/slug → 404.
 
-Covers issue #221 (analysis dashboard):
-- test_analysis_dashboard_renders               — GET /musehub/ui/{owner}/{slug}/analysis/{ref} returns 200
-- test_analysis_dashboard_no_auth_required      — accessible without JWT
-- test_analysis_dashboard_all_dimension_labels  — 10 dimension labels present in HTML
+Covers (analysis dashboard):
+- test_analysis_dashboard_renders — GET /musehub/ui/{owner}/{slug}/analysis/{ref} returns 200
+- test_analysis_dashboard_no_auth_required — accessible without JWT
+- test_analysis_dashboard_all_dimension_labels — 10 dimension labels present in HTML
 - test_analysis_dashboard_sparkline_logic_present — sparkline JS present
 - test_analysis_dashboard_card_links_to_dimensions — /analysis/ path in page
 See also test_musehub_analysis.py::test_analysis_aggregate_endpoint_returns_all_dimensions
 
-Covers issue #208 (branch list and tag browser):
-- test_branches_page_lists_all          — GET /musehub/ui/{owner}/{slug}/branches returns 200 HTML
-- test_branches_default_marked          — default branch badge present in JSON response
-- test_branches_compare_link            — compare link JS present on branches page
-- test_branches_new_pr_button           — new pull request link JS present
-- test_branches_json_response           — JSON returns BranchDetailListResponse with ahead/behind
-- test_tags_page_lists_all             — GET /musehub/ui/{owner}/{slug}/tags returns 200 HTML
-- test_tags_namespace_filter           — namespace filter JS present on tags page
-- test_tags_json_response              — JSON returns TagListResponse with namespace grouping
+Covers (branch list and tag browser):
+- test_branches_page_lists_all — GET /musehub/ui/{owner}/{slug}/branches returns 200 HTML
+- test_branches_default_marked — default branch badge present in JSON response
+- test_branches_compare_link — compare link JS present on branches page
+- test_branches_new_pr_button — new pull request link JS present
+- test_branches_json_response — JSON returns BranchDetailListResponse with ahead/behind
+- test_tags_page_lists_all — GET /musehub/ui/{owner}/{slug}/tags returns 200 HTML
+- test_tags_namespace_filter — namespace filter JS present on tags page
+- test_tags_json_response — JSON returns TagListResponse with namespace grouping
 
-Covers issue #211 (audio player — listen page):
-- test_listen_page_renders                     — GET /musehub/ui/{owner}/{slug}/listen/{ref} returns 200
-- test_listen_page_no_auth_required            — listen page accessible without JWT
-- test_listen_page_contains_waveform_ui        — waveform container and controls present
-- test_listen_page_contains_play_button        — play button element present in HTML
-- test_listen_page_contains_speed_selector     — speed selector element present
-- test_listen_page_contains_ab_loop_ui         — A/B loop controls present
-- test_listen_page_loads_wavesurfer_vendor     — page loads vendored wavesurfer.min.js (no CDN)
-- test_listen_page_loads_audio_player_js       — page loads audio-player.js component script
-- test_listen_track_page_renders               — GET /musehub/ui/{owner}/{slug}/listen/{ref}/{path} returns 200
-- test_listen_track_page_has_track_path_in_js  — track path injected into page JS context
-- test_listen_page_unknown_repo_404            — bad owner/slug → 404
+Covers (audio player — listen page):
+- test_listen_page_renders — GET /musehub/ui/{owner}/{slug}/listen/{ref} returns 200
+- test_listen_page_no_auth_required — listen page accessible without JWT
+- test_listen_page_contains_waveform_ui — waveform container and controls present
+- test_listen_page_contains_play_button — play button element present in HTML
+- test_listen_page_contains_speed_selector — speed selector element present
+- test_listen_page_contains_ab_loop_ui — A/B loop controls present
+- test_listen_page_loads_wavesurfer_vendor — page loads vendored wavesurfer.min.js (no CDN)
+- test_listen_page_loads_audio_player_js — page loads audio-player.js component script
+- test_listen_track_page_renders — GET /musehub/ui/{owner}/{slug}/listen/{ref}/{path} returns 200
+- test_listen_track_page_has_track_path_in_js — track path injected into page JS context
+- test_listen_page_unknown_repo_404 — bad owner/slug → 404
 - test_listen_page_keyboard_shortcuts_documented — keyboard shortcuts mentioned in page
 """
 from __future__ import annotations
@@ -469,7 +469,7 @@ async def test_ui_pr_list_has_comment_badge_js(
     client: AsyncClient,
     db_session: AsyncSession,
 ) -> None:
-    """PR list page HTML includes JS for fetching and rendering comment count badges (#298)."""
+    """PR list page HTML includes JS for fetching and rendering comment count badges."""
     await _make_repo(db_session)
     response = await client.get("/musehub/ui/testuser/test-beats/pulls")
     assert response.status_code == 200
@@ -477,7 +477,7 @@ async def test_ui_pr_list_has_comment_badge_js(
     # Comment count badge rendered via loadSocialSignals
     assert "loadSocialSignals" in body
     assert "prCommentCounts" in body
-    assert "&#128172;" in body  # 💬 comment icon HTML entity
+    assert "&#128172;" in body # 💬 comment icon HTML entity
 
 
 @pytest.mark.anyio
@@ -485,7 +485,7 @@ async def test_ui_pr_list_has_reaction_pills_js(
     client: AsyncClient,
     db_session: AsyncSession,
 ) -> None:
-    """PR list page HTML includes JS for fetching and rendering reaction pills (#298)."""
+    """PR list page HTML includes JS for fetching and rendering reaction pills."""
     await _make_repo(db_session)
     response = await client.get("/musehub/ui/testuser/test-beats/pulls")
     assert response.status_code == 200
@@ -502,7 +502,7 @@ async def test_ui_issue_list_has_reaction_pills_js(
     client: AsyncClient,
     db_session: AsyncSession,
 ) -> None:
-    """Issue list page HTML includes JS for fetching and rendering reaction pills (#298)."""
+    """Issue list page HTML includes JS for fetching and rendering reaction pills."""
     await _make_repo(db_session)
     response = await client.get("/musehub/ui/testuser/test-beats/issues")
     assert response.status_code == 200
@@ -521,7 +521,7 @@ async def test_ui_issue_list_eager_social_signals(
     client: AsyncClient,
     db_session: AsyncSession,
 ) -> None:
-    """Issue list page eagerly pre-fetches comment counts and reactions on load (#298)."""
+    """Issue list page eagerly pre-fetches comment counts and reactions on load."""
     await _make_repo(db_session)
     response = await client.get("/musehub/ui/testuser/test-beats/issues")
     assert response.status_code == 200
@@ -698,7 +698,7 @@ async def test_pr_detail_json_response(
 
 
 # ---------------------------------------------------------------------------
-# Tests for musehub_divergence service helpers (issue #384)
+# Tests for musehub_divergence service helpers
 # ---------------------------------------------------------------------------
 
 
@@ -1072,7 +1072,7 @@ async def test_ui_issue_detail_has_comment_section(
     client: AsyncClient,
     db_session: AsyncSession,
 ) -> None:
-    """Issue detail page includes a comment thread section below the issue body (#289)."""
+    """Issue detail page includes a comment thread section below the issue body."""
     await _make_repo(db_session)
     response = await client.get("/musehub/ui/testuser/test-beats/issues/1")
     assert response.status_code == 200
@@ -1087,7 +1087,7 @@ async def test_ui_issue_detail_has_render_comments_js(
     client: AsyncClient,
     db_session: AsyncSession,
 ) -> None:
-    """Issue detail page embeds buildCommentThread() for rendering the comment thread (#289)."""
+    """Issue detail page embeds buildCommentThread() for rendering the comment thread."""
     await _make_repo(db_session)
     response = await client.get("/musehub/ui/testuser/test-beats/issues/1")
     assert response.status_code == 200
@@ -1101,7 +1101,7 @@ async def test_ui_issue_detail_has_submit_comment_js(
     client: AsyncClient,
     db_session: AsyncSession,
 ) -> None:
-    """Issue detail page embeds submitComment() for posting new comments (#289)."""
+    """Issue detail page embeds submitComment() for posting new comments."""
     await _make_repo(db_session)
     response = await client.get("/musehub/ui/testuser/test-beats/issues/1")
     assert response.status_code == 200
@@ -1115,7 +1115,7 @@ async def test_ui_issue_detail_has_delete_comment_js(
     client: AsyncClient,
     db_session: AsyncSession,
 ) -> None:
-    """Issue detail page embeds deleteComment() for removing own comments (#289)."""
+    """Issue detail page embeds deleteComment() for removing own comments."""
     await _make_repo(db_session)
     response = await client.get("/musehub/ui/testuser/test-beats/issues/1")
     assert response.status_code == 200
@@ -1128,7 +1128,7 @@ async def test_ui_issue_detail_has_reply_support_js(
     client: AsyncClient,
     db_session: AsyncSession,
 ) -> None:
-    """Issue detail page embeds startReply() for threaded replies via reply indicator (#289)."""
+    """Issue detail page embeds startReply() for threaded replies via reply indicator."""
     await _make_repo(db_session)
     response = await client.get("/musehub/ui/testuser/test-beats/issues/1")
     assert response.status_code == 200
@@ -1142,7 +1142,7 @@ async def test_ui_issue_detail_comment_section_below_body(
     client: AsyncClient,
     db_session: AsyncSession,
 ) -> None:
-    """Comment section appears after the issue body card in document order (#289)."""
+    """Comment section appears after the issue body card in document order."""
     await _make_repo(db_session)
     response = await client.get("/musehub/ui/testuser/test-beats/issues/1")
     assert response.status_code == 200
@@ -1308,7 +1308,7 @@ async def test_ui_release_detail_has_comment_section(
     client: AsyncClient,
     db_session: AsyncSession,
 ) -> None:
-    """Release detail page HTML includes the Discussion comment section (issue #290)."""
+    """Release detail page HTML includes the Discussion comment section."""
     await _make_repo(db_session)
     response = await client.get("/musehub/ui/testuser/test-beats/releases/v1.0")
     assert response.status_code == 200
@@ -1322,7 +1322,7 @@ async def test_ui_release_detail_has_render_comments_js(
     client: AsyncClient,
     db_session: AsyncSession,
 ) -> None:
-    """Release detail page includes renderComments() JavaScript function (issue #290)."""
+    """Release detail page includes renderComments() JavaScript function."""
     await _make_repo(db_session)
     response = await client.get("/musehub/ui/testuser/test-beats/releases/v1.0")
     assert response.status_code == 200
@@ -1337,7 +1337,7 @@ async def test_ui_release_detail_comment_uses_release_target_type(
     client: AsyncClient,
     db_session: AsyncSession,
 ) -> None:
-    """Release detail page posts comments with target_type='release' (issue #290)."""
+    """Release detail page posts comments with target_type='release'."""
     await _make_repo(db_session)
     response = await client.get("/musehub/ui/testuser/test-beats/releases/v1.0")
     assert response.status_code == 200
@@ -1350,7 +1350,7 @@ async def test_ui_release_detail_has_reply_thread_js(
     client: AsyncClient,
     db_session: AsyncSession,
 ) -> None:
-    """Release detail page includes toggleReplyForm and submitReply for threaded comments (issue #290)."""
+    """Release detail page includes toggleReplyForm and submitReply for threaded comments."""
     await _make_repo(db_session)
     response = await client.get("/musehub/ui/testuser/test-beats/releases/v1.0")
     assert response.status_code == 200
@@ -1464,8 +1464,8 @@ async def test_get_object_content_404_for_unknown_object(
 
 
 # ---------------------------------------------------------------------------
-# Credits UI page tests (issue #241)
-# DAG graph UI page tests (issue #229)
+# Credits UI page tests
+# DAG graph UI page tests
 # ---------------------------------------------------------------------------
 
 
@@ -1502,10 +1502,10 @@ async def test_graph_page_renders(
 
 
 # ---------------------------------------------------------------------------
-# Context viewer tests (issue #232)
+# Context viewer tests
 # ---------------------------------------------------------------------------
 
-_FIXED_COMMIT_ID = "aabbccdd" * 8  # 64-char hex string
+_FIXED_COMMIT_ID = "aabbccdd" * 8 # 64-char hex string
 
 
 async def _make_repo_with_commit(db_session: AsyncSession) -> tuple[str, str]:
@@ -1717,7 +1717,7 @@ async def test_context_page_contains_agent_explainer(
 
 
 # ---------------------------------------------------------------------------
-# Embed player route tests (issue #244)
+# Embed player route tests
 # ---------------------------------------------------------------------------
 
 
@@ -1778,7 +1778,7 @@ async def test_embed_page_contains_player_ui(
     assert repo_id in body
 
 # ---------------------------------------------------------------------------
-# Groove check page and endpoint tests (issue #226)
+# Groove check page and endpoint tests
 
 # ---------------------------------------------------------------------------
 
@@ -1825,7 +1825,7 @@ async def test_credits_page_contains_sort_options_slug_route(
     body = response.text
     assert "Most prolific" in body
     assert "Most recent" in body
-    assert "A" in body  # "A – Z" option
+    assert "A" in body # "A – Z" option
 
 
 @pytest.mark.anyio
@@ -2091,7 +2091,7 @@ async def test_repo_page_contains_groove_check_link(
 
 
 # ---------------------------------------------------------------------------
-# User profile page tests (issue #233 — pre-existing from dev, fixed here)
+# User profile page tests (— pre-existing from dev, fixed here)
 # ---------------------------------------------------------------------------
 
 
@@ -2249,7 +2249,7 @@ async def test_profile_page_unknown_user_renders_404_inline(
 
 
 # ---------------------------------------------------------------------------
-# Forked repos endpoint tests (issue #303)
+# Forked repos endpoint tests
 # ---------------------------------------------------------------------------
 
 
@@ -2344,7 +2344,7 @@ async def test_profile_forked_repos_no_auth_required(
     assert response.status_code != 401
 
 
-@pytest.mark.skip(reason="Pre-existing failure: profile page template missing loadForkedRepos JS — see #539")
+@pytest.mark.skip(reason="Pre-existing failure: profile page template missing loadForkedRepos JS")
 @pytest.mark.anyio
 async def test_profile_page_has_forked_section_js(
     client: AsyncClient,
@@ -2362,7 +2362,7 @@ async def test_profile_page_has_forked_section_js(
 
 
 # ---------------------------------------------------------------------------
-# Starred repos tab (issue #297)
+# Starred repos tab
 # ---------------------------------------------------------------------------
 
 
@@ -2490,7 +2490,7 @@ async def test_profile_starred_repos_ordered_newest_first(
     assert data["starred"][1]["repo"]["slug"] == "track-alpha"
 
 
-@pytest.mark.skip(reason="Pre-existing failure: profile page template missing loadStarredRepos JS — see #539")
+@pytest.mark.skip(reason="Pre-existing failure: profile page template missing loadStarredRepos JS")
 @pytest.mark.anyio
 async def test_profile_page_has_starred_section_js(
     client: AsyncClient,
@@ -2508,7 +2508,7 @@ async def test_profile_page_has_starred_section_js(
 
 
 # ---------------------------------------------------------------------------
-# Watched repos tab (issue #300)
+# Watched repos tab
 # ---------------------------------------------------------------------------
 
 
@@ -2636,7 +2636,7 @@ async def test_profile_watched_repos_ordered_newest_first(
     assert data["watched"][1]["repo"]["slug"] == "song-alpha"
 
 
-@pytest.mark.skip(reason="Pre-existing failure: profile page template missing loadWatchedRepos JS — see #539")
+@pytest.mark.skip(reason="Pre-existing failure: profile page template missing loadWatchedRepos JS")
 @pytest.mark.anyio
 async def test_profile_page_has_watched_section_js(
     client: AsyncClient,
@@ -2733,7 +2733,7 @@ async def test_timeline_page_contains_overlay_toggles(
 ) -> None:
     """Timeline page must include Sessions, PRs, and Releases layer toggle checkboxes.
 
-    Regression test for issue #307 — before this fix the timeline had no
+    Regression test — before this fix the timeline had no
     overlay markers for repo lifecycle events (sessions, PR merges, releases).
     """
     await _make_repo(db_session)
@@ -2811,7 +2811,7 @@ async def test_timeline_pr_markers_use_merged_at_for_positioning(
 ) -> None:
     """Timeline JS must use pr.mergedAt (falling back to pr.createdAt) for marker X position.
 
-    Regression test for issue #349: previously the overlay always used
+    Regression test: previously the overlay always used
     createdAt, which positioned merge markers at PR *open* time instead of
     merge time, sometimes off by days or weeks.
     """
@@ -2834,7 +2834,7 @@ async def test_pr_response_includes_merged_at_after_merge(
 ) -> None:
     """PRResponse must expose merged_at set to the merge timestamp (not None) after merge.
 
-    Regression test for issue #349: before this fix merged_at was absent from
+    Regression test: before this fix merged_at was absent from
     PRResponse, forcing the timeline to fall back to createdAt.
     """
     from datetime import datetime, timezone
@@ -2911,7 +2911,7 @@ async def test_pr_response_includes_merged_at_after_merge(
 
 
 # ---------------------------------------------------------------------------
-# Embed player route tests (issue #244)
+# Embed player route tests
 # ---------------------------------------------------------------------------
 
 
@@ -2940,10 +2940,10 @@ async def test_graph_page_contains_session_ring_js(
 ) -> None:
     """Graph page embeds session-marker and reaction-count JavaScript.
 
-    Regression guard for issue #313: ensures the template contains the three
+    Regression guard: ensures the template contains the three
     new client-side components added by this feature — SESSION_RING_COLOR (the
     teal ring constant), buildSessionMap (commit→session index builder), and
-    fetchReactions (batch reaction fetcher).  A missing symbol means the graph
+    fetchReactions (batch reaction fetcher). A missing symbol means the graph
     will silently render with no session markers or reaction counts.
     """
     await _make_repo(db_session)
@@ -3024,7 +3024,7 @@ async def test_session_detail_404_marker(
     """Session detail page renders a 404 error message for unknown session IDs.
 
     The page itself returns 200 (HTML shell) — the 404 is detected client-side
-    when the JS calls the JSON API.  The page must include error-handling JS that
+    when the JS calls the JSON API. The page must include error-handling JS that
     checks for a 404 response and shows a user-friendly message.
     """
     repo_id = await _make_repo(db_session)
@@ -3367,8 +3367,8 @@ async def test_session_response_commits_field_present(
 ) -> None:
     """Sessions API response includes the 'commits' field for each session.
 
-    Regression guard for issue #313: the graph page uses the session commits
-    list to build the session→commit index (buildSessionMap).  If this field
+    Regression guard: the graph page uses the session commits
+    list to build the session→commit index (buildSessionMap). If this field
     is absent or empty when commits exist, no session rings will appear on
     the DAG graph.
     """
@@ -3651,7 +3651,7 @@ async def test_tempo_json_response(
 
 
 # ---------------------------------------------------------------------------
-# Form and structure page tests (issue #225)
+# Form and structure page tests
 # ---------------------------------------------------------------------------
 
 
@@ -3859,7 +3859,7 @@ async def test_form_structure_json_requires_auth(
 
 
 # ---------------------------------------------------------------------------
-# Emotion map page tests (issue #227, migrated to owner/slug routing in #348)
+# Emotion map page tests (migrated to owner/slug routing)
 # ---------------------------------------------------------------------------
 
 _EMOTION_REF = "deadbeef12345678"
@@ -4018,8 +4018,8 @@ async def test_ui_nav_links_use_owner_slug_not_uuid_repo_page(
     """Repo page must inject owner/slug base URL, not the internal UUID.
 
     Before the fix, every handler except repo_page used ``const base =
-    '/musehub/ui/' + repoId``.  That produced UUID-based hrefs that 404 under
-    the new /{owner}/{repo_slug} routing.  This test guards the regression.
+    '/musehub/ui/' + repoId``. That produced UUID-based hrefs that 404 under
+    the new /{owner}/{repo_slug} routing. This test guards the regression.
     """
     await _make_repo(db_session)
     response = await client.get("/musehub/ui/testuser/test-beats")
@@ -4124,7 +4124,7 @@ async def test_design_tokens_css_served(client: AsyncClient) -> None:
 async def test_components_css_served(client: AsyncClient) -> None:
     """GET /musehub/static/components.css must return 200 with CSS content.
 
-    Verifies the component class file is reachable.  These classes (.card,
+    Verifies the component class file is reachable. These classes (.card,
     .badge, .btn, etc.) are used on every MuseHub page.
     """
     response = await client.get("/musehub/static/components.css")
@@ -4170,7 +4170,7 @@ async def test_repo_page_uses_design_system(
 ) -> None:
     """Repo page HTML must reference all five design system CSS files.
 
-    This is the regression guard for the monolithic _CSS removal.  If the
+    This is the regression guard for the monolithic _CSS removal. If the
     _page() helper ever reverts to embedding CSS inline, this test will
     catch it by asserting the external link tags are present.
     """
@@ -4278,7 +4278,7 @@ async def test_no_inline_css_on_repo_page(
 
     Regression test: verifies the _CSS removal was not accidentally reverted.
     The old _CSS block contained the literal string 'background: #0d1117'
-    inside a <style> tag in the <head>.  After the design system migration,
+    inside a <style> tag in the <head>. After the design system migration,
     all styling comes from external files.
     """
     await _make_repo(db_session)
@@ -4293,7 +4293,7 @@ async def test_no_inline_css_on_repo_page(
 
 
 # ---------------------------------------------------------------------------
-# Analysis dashboard UI tests (issue #221)
+# Analysis dashboard UI tests
 # ---------------------------------------------------------------------------
 
 
@@ -4332,7 +4332,7 @@ async def test_analysis_dashboard_all_dimension_labels(
 ) -> None:
     """Dashboard HTML embeds all 10 required dimension card labels in the page script.
 
-    Regression test for issue #221: if any card label is missing the JS template
+    Regression test: if any card label is missing the JS template
     will silently skip rendering that dimension, so agents get an incomplete picture.
     """
     await _make_repo(db_session)
@@ -4378,8 +4378,7 @@ async def test_analysis_dashboard_card_links_to_dimensions(
 
 
 # ---------------------------------------------------------------------------
-# Motifs browser page — issue #224
-# ---------------------------------------------------------------------------
+# Motifs browser page — # ---------------------------------------------------------------------------
 
 
 @pytest.mark.anyio
@@ -4463,7 +4462,7 @@ async def test_motifs_page_shows_transformation_badges(
 
 
 # ---------------------------------------------------------------------------
-# Content negotiation & repo home page tests — issue #200 / #203
+# Content negotiation & repo home page tests — / #203
 # ---------------------------------------------------------------------------
 
 
@@ -4592,8 +4591,7 @@ async def test_commits_list_html_default(
 
 
 # ---------------------------------------------------------------------------
-# Tree browser tests — issue #204
-# ---------------------------------------------------------------------------
+# Tree browser tests — # ---------------------------------------------------------------------------
 
 
 async def _seed_tree_fixtures(db_session: AsyncSession) -> str:
@@ -4761,8 +4759,7 @@ async def test_tree_unknown_ref_404(
 
 
 # ---------------------------------------------------------------------------
-# Harmony analysis page tests — issue #222
-# ---------------------------------------------------------------------------
+# Harmony analysis page tests — # ---------------------------------------------------------------------------
 
 
 @pytest.mark.anyio
@@ -4929,7 +4926,7 @@ async def test_harmony_page_has_token_form(
     assert "musehub.js" in body
 
 
-@pytest.mark.skip(reason="Pre-existing failure: harmony API response missing 'dimension' field — see #540")
+@pytest.mark.skip(reason="Pre-existing failure: harmony API response missing 'dimension' field")
 @pytest.mark.anyio
 async def test_harmony_json_response(
     client: AsyncClient,
@@ -4970,7 +4967,7 @@ async def test_harmony_json_response(
     assert "totalBeats" in data
     assert data["totalBeats"] > 0
 
-# Listen page tests (issue #213)
+# Listen page tests
 # ---------------------------------------------------------------------------
 
 
@@ -5137,7 +5134,7 @@ async def test_build_track_listing_returns_full_mix_and_tracks(
     assert result.full_mix_url is not None
     assert "full_mix" in result.full_mix_url or "mix" in result.full_mix_url
     # Two audio tracks (bass.mp3 + keys.mp3); bass.webp is not audio
-    assert len(result.tracks) == 3  # mix/full_mix.mp3, tracks/bass.mp3, tracks/keys.mp3
+    assert len(result.tracks) == 3 # mix/full_mix.mp3, tracks/bass.mp3, tracks/keys.mp3
     track_paths = {t.path for t in result.tracks}
     assert "tracks/bass.mp3" in track_paths
     assert "tracks/keys.mp3" in track_paths
@@ -5426,7 +5423,7 @@ async def test_commits_list_page_pagination_page2(
     )
     assert resp.status_code == 200
     body = resp.text
-    assert "page=1" in body  # "Newer" link points back to page 1
+    assert "page=1" in body # "Newer" link points back to page 1
 
 
 @pytest.mark.anyio
@@ -5517,8 +5514,7 @@ async def test_commits_list_page_empty_state(
 
 
 # ---------------------------------------------------------------------------
-# Commit detail enhancements — issue #207
-# ---------------------------------------------------------------------------
+# Commit detail enhancements — # ---------------------------------------------------------------------------
 
 
 async def _seed_commit_detail_fixtures(
@@ -5547,7 +5543,7 @@ async def _seed_commit_detail_fixtures(
     db_session.add(branch)
 
     parent_commit_id = "aaaa0000111122223333444455556666aaaabbbb"
-    child_commit_id  = "bbbb1111222233334444555566667777bbbbcccc"
+    child_commit_id = "bbbb1111222233334444555566667777bbbbcccc"
 
     parent_commit = MusehubCommit(
         repo_id=repo_id,
@@ -5711,13 +5707,12 @@ async def test_commit_detail_diff_summary_unknown_commit_404(
     repo_id, _p, _c = await _seed_commit_detail_fixtures(db_session)
     response = await client.get(
         f"/api/v1/musehub/repos/{repo_id}/commits/deadbeefdeadbeefdeadbeef/diff-summary",
-        headers=auth_headers,    )
+        headers=auth_headers, )
     assert response.status_code == 404
 
 
 # ---------------------------------------------------------------------------
-# Commit comment threads — issue #286
-# ---------------------------------------------------------------------------
+# Commit comment threads — # ---------------------------------------------------------------------------
 
 
 @pytest.mark.anyio
@@ -5725,7 +5720,7 @@ async def test_commit_page_has_comment_section_html(
     client: AsyncClient,
     db_session: AsyncSession,
 ) -> None:
-    """Commit detail page HTML includes the comment section container (#286)."""
+    """Commit detail page HTML includes the comment section container."""
     await _make_repo(db_session)
     commit_id = "abc1234567890abcdef1234567890abcdef12345678"
     response = await client.get(f"/musehub/ui/testuser/test-beats/commits/{commit_id}")
@@ -5740,7 +5735,7 @@ async def test_commit_page_has_comment_js_functions(
     client: AsyncClient,
     db_session: AsyncSession,
 ) -> None:
-    """Commit detail page JS includes renderComments, submitComment, deleteComment (#286)."""
+    """Commit detail page JS includes renderComments, submitComment, deleteComment."""
     await _make_repo(db_session)
     commit_id = "abc1234567890abcdef1234567890abcdef12345678"
     response = await client.get(f"/musehub/ui/testuser/test-beats/commits/{commit_id}")
@@ -5758,7 +5753,7 @@ async def test_commit_page_comment_calls_load_on_startup(
     client: AsyncClient,
     db_session: AsyncSession,
 ) -> None:
-    """Commit detail page calls loadComments() at startup (#286)."""
+    """Commit detail page calls loadComments() at startup."""
     await _make_repo(db_session)
     commit_id = "abc1234567890abcdef1234567890abcdef12345678"
     response = await client.get(f"/musehub/ui/testuser/test-beats/commits/{commit_id}")
@@ -5772,7 +5767,7 @@ async def test_commit_page_comment_uses_correct_api_path(
     client: AsyncClient,
     db_session: AsyncSession,
 ) -> None:
-    """Comment section fetches /repos/{repo_id}/comments with target_type=commit (#286)."""
+    """Comment section fetches /repos/{repo_id}/comments with target_type=commit."""
     await _make_repo(db_session)
     commit_id = "abc1234567890abcdef1234567890abcdef12345678"
     response = await client.get(f"/musehub/ui/testuser/test-beats/commits/{commit_id}")
@@ -5787,7 +5782,7 @@ async def test_commit_page_comment_has_avatar_logic(
     client: AsyncClient,
     db_session: AsyncSession,
 ) -> None:
-    """Commit page includes deterministic HSL avatar generation (#286)."""
+    """Commit page includes deterministic HSL avatar generation."""
     await _make_repo(db_session)
     commit_id = "abc1234567890abcdef1234567890abcdef12345678"
     response = await client.get(f"/musehub/ui/testuser/test-beats/commits/{commit_id}")
@@ -5802,7 +5797,7 @@ async def test_commit_page_comment_has_new_comment_form(
     client: AsyncClient,
     db_session: AsyncSession,
 ) -> None:
-    """Commit page includes the new-comment textarea form element (#286)."""
+    """Commit page includes the new-comment textarea form element."""
     await _make_repo(db_session)
     commit_id = "abc1234567890abcdef1234567890abcdef12345678"
     response = await client.get(f"/musehub/ui/testuser/test-beats/commits/{commit_id}")
@@ -5818,7 +5813,7 @@ async def test_commit_page_comment_has_discussion_heading(
     client: AsyncClient,
     db_session: AsyncSession,
 ) -> None:
-    """Commit page includes 'Discussion' heading in the comment section (#286)."""
+    """Commit page includes 'Discussion' heading in the comment section."""
     await _make_repo(db_session)
     commit_id = "abc1234567890abcdef1234567890abcdef12345678"
     response = await client.get(f"/musehub/ui/testuser/test-beats/commits/{commit_id}")
@@ -5829,7 +5824,7 @@ async def test_commit_page_comment_has_discussion_heading(
 
 # ---------------------------------------------------------------------------
 # Commit detail enhancements — ref URL links, DB tags in panel, prose
-# summary (issue #450)
+# summary
 # ---------------------------------------------------------------------------
 
 
@@ -5839,7 +5834,7 @@ async def test_commit_page_ref_tags_link_to_url_directly(
     db_session: AsyncSession,
 ) -> None:
     """tagPill() links ref: tags with URL values to the URL directly, not
-    the namespace search page — so inspiration references are one click away (#450)."""
+    the namespace search page — so inspiration references are one click away."""
     await _make_repo(db_session)
     commit_id = "abc1234567890abcdef1234567890abcdef12345678"
     response = await client.get(f"/musehub/ui/testuser/test-beats/commits/{commit_id}")
@@ -5856,7 +5851,7 @@ async def test_commit_page_muse_tags_panel_passes_commit_tags(
     db_session: AsyncSession,
 ) -> None:
     """loadMuseTagsPanel is called with commit.tags so the DB-stored muse_tags
-    annotations appear in the metadata panel with proper namespace pill colours (#450)."""
+    annotations appear in the metadata panel with proper namespace pill colours."""
     await _make_repo(db_session)
     commit_id = "abc1234567890abcdef1234567890abcdef12345678"
     response = await client.get(f"/musehub/ui/testuser/test-beats/commits/{commit_id}")
@@ -5873,7 +5868,7 @@ async def test_commit_page_has_prose_summary(
 ) -> None:
     """Commit detail page includes the buildProseSummary helper that generates a
     2-sentence AI prose description of musical content from available analysis
-    data (#450)."""
+    data."""
     await _make_repo(db_session)
     commit_id = "abc1234567890abcdef1234567890abcdef12345678"
     response = await client.get(f"/musehub/ui/testuser/test-beats/commits/{commit_id}")
@@ -5884,7 +5879,7 @@ async def test_commit_page_has_prose_summary(
 
 
 # ---------------------------------------------------------------------------
-# Audio player — listen page tests (issue #211)
+# Audio player — listen page tests
 # ---------------------------------------------------------------------------
 
 
@@ -6065,7 +6060,7 @@ async def test_listen_page_keyboard_shortcuts_documented(
 
 
 # ---------------------------------------------------------------------------
-# Compare view (issue #217)
+# Compare view
 # ---------------------------------------------------------------------------
 
 
@@ -6459,13 +6454,11 @@ async def test_tags_json_response(
 
 
 # ---------------------------------------------------------------------------
-# Arrangement matrix page — issue #212
-# ---------------------------------------------------------------------------
+# Arrangement matrix page — # ---------------------------------------------------------------------------
 
 
 # ---------------------------------------------------------------------------
-# Piano roll page tests — issue #209
-# ---------------------------------------------------------------------------
+# Piano roll page tests — # ---------------------------------------------------------------------------
 
 
 @pytest.mark.anyio
@@ -7023,13 +7016,11 @@ async def test_score_unknown_repo_404(
 
 
 # ---------------------------------------------------------------------------
-# Arrangement matrix page — issue #212
-# ---------------------------------------------------------------------------
+# Arrangement matrix page — # ---------------------------------------------------------------------------
 
 
 # ---------------------------------------------------------------------------
-# Piano roll page tests — issue #209
-# ---------------------------------------------------------------------------
+# Piano roll page tests — # ---------------------------------------------------------------------------
 
 
 @pytest.mark.anyio
@@ -7059,8 +7050,7 @@ async def test_ui_commit_page_artifact_auth_uses_blob_proxy(
 
 
 # ---------------------------------------------------------------------------
-# Reaction bars — issue #296
-# ---------------------------------------------------------------------------
+# Reaction bars — # ---------------------------------------------------------------------------
 
 
 @pytest.mark.anyio
@@ -7202,7 +7192,7 @@ async def test_reaction_api_allows_release_and_session_target_types(
 ) -> None:
     """POST /reactions must accept 'release' and 'session' as target_type values.
 
-    These target types were added in issue #296 to support reaction bars on
+    These target types were added to support reaction bars on
     release_detail and session_detail pages.
     """
     from maestro.db.musehub_models import MusehubRepo
@@ -7266,7 +7256,7 @@ async def test_reaction_bar_components_css_has_styles(
 
 
 # ---------------------------------------------------------------------------
-# Feed page tests — issue #292 (rich event cards)
+# Feed page tests — (rich event cards)
 # ---------------------------------------------------------------------------
 
 
@@ -7289,7 +7279,7 @@ async def test_feed_page_no_raw_json_payload(
 ) -> None:
     """Feed page must not render raw JSON.stringify of notification payload.
 
-    Regression guard for issue #292: the old implementation called
+    Regression guard: the old implementation called
     JSON.stringify(item.payload) directly into the DOM, exposing raw JSON
     to users. The new rich card templates must not do this.
     """
@@ -7329,7 +7319,7 @@ async def test_feed_page_has_data_notif_id_attribute(
 ) -> None:
     """Each event card must carry a data-notif-id attribute.
 
-    This attribute is the hook that issue #293 (mark-as-read UX) will use to
+    This attribute is the hook that (mark-as-read UX) will use to
     attach action buttons to each card without restructuring the DOM.
     """
     response = await client.get("/musehub/ui/feed")
@@ -7375,8 +7365,7 @@ async def test_feed_page_has_relative_timestamp(
 
 
 # ---------------------------------------------------------------------------
-# Mark-as-read UX tests — issue #293
-# ---------------------------------------------------------------------------
+# Mark-as-read UX tests — # ---------------------------------------------------------------------------
 
 
 @pytest.mark.anyio
@@ -7461,7 +7450,7 @@ async def test_feed_page_mark_read_updates_nav_badge(
 
 
 # ---------------------------------------------------------------------------
-# Per-dimension analysis detail pages (issue #332)
+# Per-dimension analysis detail pages
 # ---------------------------------------------------------------------------
 
 
@@ -7758,13 +7747,13 @@ async def _make_follow(
     return row
 
 
-@pytest.mark.skip(reason="Pre-existing failure: profile page template missing tab-btn-followers element — see #539")
+@pytest.mark.skip(reason="Pre-existing failure: profile page template missing tab-btn-followers element")
 @pytest.mark.anyio
 async def test_profile_page_has_followers_following_tabs(
     client: AsyncClient,
     db_session: AsyncSession,
 ) -> None:
-    """Profile page must render Followers and Following tab buttons (issue #295)."""
+    """Profile page must render Followers and Following tab buttons."""
     await _make_profile(db_session, username="tabuser")
     response = await client.get("/musehub/ui/users/tabuser")
     assert response.status_code == 200
@@ -7773,13 +7762,13 @@ async def test_profile_page_has_followers_following_tabs(
     assert "tab-btn-following" in body
 
 
-@pytest.mark.skip(reason="Pre-existing failure: profile page template missing userCardHtml JS — see #539")
+@pytest.mark.skip(reason="Pre-existing failure: profile page template missing userCardHtml JS")
 @pytest.mark.anyio
 async def test_profile_page_has_user_card_js(
     client: AsyncClient,
     db_session: AsyncSession,
 ) -> None:
-    """Profile page must include userCardHtml and loadFollowTab JS helpers (issue #295)."""
+    """Profile page must include userCardHtml and loadFollowTab JS helpers."""
     await _make_profile(db_session, username="cardjsuser")
     response = await client.get("/musehub/ui/users/cardjsuser")
     assert response.status_code == 200
@@ -7793,7 +7782,7 @@ async def test_profile_page_has_switch_tab_js(
     client: AsyncClient,
     db_session: AsyncSession,
 ) -> None:
-    """Profile page must include switchTab() to toggle between followers and following (issue #295)."""
+    """Profile page must include switchTab() to toggle between followers and following."""
     await _make_profile(db_session, username="switchtabuser")
     response = await client.get("/musehub/ui/users/switchtabuser")
     assert response.status_code == 200
@@ -7805,7 +7794,7 @@ async def test_followers_list_endpoint_returns_200(
     client: AsyncClient,
     db_session: AsyncSession,
 ) -> None:
-    """GET /api/v1/musehub/users/{username}/followers-list returns 200 for known user (issue #295)."""
+    """GET /api/v1/musehub/users/{username}/followers-list returns 200 for known user."""
     await _make_profile(db_session, username="followerlistuser")
     response = await client.get("/api/v1/musehub/users/followerlistuser/followers-list")
     assert response.status_code == 200
@@ -7817,7 +7806,7 @@ async def test_followers_list_returns_user_cards_for_known_user(
     client: AsyncClient,
     db_session: AsyncSession,
 ) -> None:
-    """followers-list returns UserCard objects when followers exist (issue #295)."""
+    """followers-list returns UserCard objects when followers exist."""
     import uuid
 
     target = MusehubProfile(
@@ -7853,7 +7842,7 @@ async def test_following_list_returns_user_cards_for_known_user(
     client: AsyncClient,
     db_session: AsyncSession,
 ) -> None:
-    """following-list returns UserCard objects for users that the target follows (issue #295)."""
+    """following-list returns UserCard objects for users that the target follows."""
     actor = MusehubProfile(
         user_id="actor-user-fl-02",
         username="flcactor",
@@ -7886,7 +7875,7 @@ async def test_followers_list_unknown_user_404(
     client: AsyncClient,
     db_session: AsyncSession,
 ) -> None:
-    """followers-list returns 404 when the target username does not exist (issue #295)."""
+    """followers-list returns 404 when the target username does not exist."""
     response = await client.get("/api/v1/musehub/users/nonexistent-ghost-user/followers-list")
     assert response.status_code == 404
 
@@ -7896,7 +7885,7 @@ async def test_following_list_unknown_user_404(
     client: AsyncClient,
     db_session: AsyncSession,
 ) -> None:
-    """following-list returns 404 when the target username does not exist (issue #295)."""
+    """following-list returns 404 when the target username does not exist."""
     response = await client.get("/api/v1/musehub/users/nonexistent-ghost-user/following-list")
     assert response.status_code == 404
 
@@ -7906,7 +7895,7 @@ async def test_followers_response_includes_following_count(
     client: AsyncClient,
     db_session: AsyncSession,
 ) -> None:
-    """GET /users/{username}/followers now includes following_count in response (issue #295)."""
+    """GET /users/{username}/followers now includes following_count in response."""
     await _make_profile(db_session, username="followcountuser")
     response = await client.get("/api/v1/musehub/users/followcountuser/followers")
     assert response.status_code == 200
@@ -7920,7 +7909,7 @@ async def test_followers_list_empty_for_user_with_no_followers(
     client: AsyncClient,
     db_session: AsyncSession,
 ) -> None:
-    """followers-list returns an empty list when no one follows the user (issue #295)."""
+    """followers-list returns an empty list when no one follows the user."""
     await _make_profile(db_session, username="lonelyuser295")
     response = await client.get("/api/v1/musehub/users/lonelyuser295/followers-list")
     assert response.status_code == 200
@@ -8122,7 +8111,7 @@ async def test_commit_page_context_passes_listen_and_embed_urls(
 
 # ---------------------------------------------------------------------------
 # Issue #442 — Repo landing page enrichment panels
-# Explore page — filter sidebar + inline audio preview (issue #444)
+# Explore page — filter sidebar + inline audio preview
 # ---------------------------------------------------------------------------
 
 
@@ -8131,7 +8120,7 @@ async def test_repo_home_contributors_panel_js(
     client: AsyncClient,
     db_session: AsyncSession,
 ) -> None:
-    """Repo home page includes the contributors panel JS (issue #442).
+    """Repo home page includes the contributors panel JS.
 
     The panel calls the /credits endpoint and renders top-10 contributor
     avatars linked to user profile pages with a commit count badge.
@@ -8161,7 +8150,7 @@ async def test_repo_home_activity_heatmap_js(
     client: AsyncClient,
     db_session: AsyncSession,
 ) -> None:
-    """Repo home page includes the activity heatmap JS (issue #442).
+    """Repo home page includes the activity heatmap JS.
 
     The heatmap renders a 52-week GitHub-style grid from commit timestamps
     with tooltip-on-hover showing date and commit count.
@@ -8190,7 +8179,7 @@ async def test_repo_home_instrument_bar_js(
     client: AsyncClient,
     db_session: AsyncSession,
 ) -> None:
-    """Repo home page includes the instrument distribution bar JS (issue #442).
+    """Repo home page includes the instrument distribution bar JS.
 
     The bar shows stacked segments labelled with instrument names and
     percentages, derived from MIDI/audio object paths in the latest commit.
@@ -8219,7 +8208,7 @@ async def test_repo_home_clone_widget_renders(
     client: AsyncClient,
     db_session: AsyncSession,
 ) -> None:
-    """Repo home page includes the clone widget with musehub://, SSH, and HTTPS URLs (issue #442).
+    """Repo home page includes the clone widget with musehub://, SSH, and HTTPS URLs.
 
     The widget shows three copy-to-clipboard inputs and a Download ZIP button.
     Clone URLs are injected server-side by repo_page() so the JS template

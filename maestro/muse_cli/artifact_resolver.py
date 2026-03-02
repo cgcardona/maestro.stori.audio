@@ -35,7 +35,7 @@ _HEX_CHARS = frozenset("0123456789abcdef")
 def _looks_like_commit_prefix(s: str) -> bool:
     """Return True if *s* could be a commit-ID prefix.
 
-    Accepts 4–64 lower-case hex characters.  Intentionally conservative:
+    Accepts 4–64 lower-case hex characters. Intentionally conservative:
     actual filesystem paths that happen to be hex strings are excluded
     early by the existence-check callers perform before calling this.
     """
@@ -94,7 +94,7 @@ async def resolve_artifact_async(
             f"❌ Ambiguous commit prefix '{prefix[:8]}' — matches {len(commits)} commits:"
         )
         for c in commits:
-            typer.echo(f"   {c.commit_id[:8]}  {c.message[:60]}")
+            typer.echo(f" {c.commit_id[:8]} {c.message[:60]}")
         typer.echo("Use a longer prefix to disambiguate.")
         raise typer.Exit(code=ExitCode.USER_ERROR)
 
@@ -113,7 +113,7 @@ async def resolve_artifact_async(
         typer.echo(f"Commit {commit.commit_id[:8]} — {commit.message}")
         typer.echo("Files in this snapshot:")
         for i, p in enumerate(paths, 1):
-            typer.echo(f"  [{i}] {p}")
+            typer.echo(f" [{i}] {p}")
         raw = typer.prompt("Select file number", default="1")
         try:
             idx = int(raw) - 1
@@ -128,7 +128,7 @@ async def resolve_artifact_async(
     if not resolved.exists():
         typer.echo(
             f"❌ '{chosen}' from commit {commit.commit_id[:8]} is no longer in muse-work/.\n"
-            "   The snapshot references files that have been removed from the working tree."
+            " The snapshot references files that have been removed from the working tree."
         )
         raise typer.Exit(code=ExitCode.USER_ERROR)
 
@@ -143,7 +143,7 @@ def resolve_artifact(
     """Synchronous wrapper around ``resolve_artifact_async``.
 
     Opens its own DB session via ``open_session()`` which reads
-    ``DATABASE_URL`` from settings.  Suitable for use in Typer command
+    ``DATABASE_URL`` from settings. Suitable for use in Typer command
     callbacks that need a blocking call.
     """
 

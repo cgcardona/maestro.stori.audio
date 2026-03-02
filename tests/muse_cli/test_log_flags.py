@@ -1,15 +1,15 @@
-"""Tests for the extended ``muse log`` flag set (issue #76).
+"""Tests for the extended ``muse log`` flag set.
 
 Covers all new flags added to ``_log_async``:
-- ``--oneline``       — one line per commit
-- ``--stat``          — file-change statistics per commit
-- ``--patch``         — path-level diff per commit
+- ``--oneline`` — one line per commit
+- ``--stat`` — file-change statistics per commit
+- ``--patch`` — path-level diff per commit
 - ``--since`` / ``--until`` — date range filtering
-- ``--author``        — author substring filter
+- ``--author`` — author substring filter
 - ``--emotion`` / ``--section`` / ``--track`` — music-native tag filters
 
 All tests call ``_log_async`` directly with an in-memory SQLite session and
-a ``tmp_path`` repo root.  Tag-based tests insert ``MuseCliTag`` rows directly
+a ``tmp_path`` repo root. Tag-based tests insert ``MuseCliTag`` rows directly
 to avoid depending on ``muse commit --emotion`` (a separate issue).
 """
 from __future__ import annotations
@@ -263,8 +263,8 @@ async def test_log_since_filter(
     )
     out = capsys.readouterr().out
 
-    assert cids[1] in out      # recent commit present
-    assert cids[0] not in out  # old commit excluded
+    assert cids[1] in out # recent commit present
+    assert cids[0] not in out # old commit excluded
 
 
 @pytest.mark.anyio
@@ -296,8 +296,8 @@ async def test_log_until_filter(
     )
     out = capsys.readouterr().out
 
-    assert cids[0] in out       # past commit present
-    assert cids[1] not in out   # future commit excluded
+    assert cids[0] in out # past commit present
+    assert cids[1] not in out # future commit excluded
 
 
 @pytest.mark.anyio
@@ -316,9 +316,9 @@ async def test_log_since_until_combined(
     # Arrange timestamps: very old = 20 days ago, in window = 5 days ago, very new = now
     commits = [await muse_cli_db_session.get(MuseCliCommit, cid) for cid in cids]
     assert all(c is not None for c in commits)
-    commits[0].committed_at = now - timedelta(days=20)   # type: ignore[union-attr]
-    commits[1].committed_at = now - timedelta(days=5)    # type: ignore[union-attr]
-    commits[2].committed_at = now                        # type: ignore[union-attr]
+    commits[0].committed_at = now - timedelta(days=20) # type: ignore[union-attr]
+    commits[1].committed_at = now - timedelta(days=5) # type: ignore[union-attr]
+    commits[2].committed_at = now # type: ignore[union-attr]
     for c in commits:
         muse_cli_db_session.add(c)
     await muse_cli_db_session.flush()
@@ -337,9 +337,9 @@ async def test_log_since_until_combined(
     )
     out = capsys.readouterr().out
 
-    assert cids[1] in out       # in window
-    assert cids[0] not in out   # too old
-    assert cids[2] not in out   # too new
+    assert cids[1] in out # in window
+    assert cids[0] not in out # too old
+    assert cids[2] not in out # too new
 
 
 # ---------------------------------------------------------------------------
@@ -394,7 +394,7 @@ async def test_log_author_filter_case_insensitive(
         session=muse_cli_db_session,
         limit=1000,
         graph=False,
-        author="alice",  # lowercase query, uppercase author
+        author="alice", # lowercase query, uppercase author
     )
     out = capsys.readouterr().out
     assert cids[0] in out
@@ -522,10 +522,10 @@ async def test_log_emotion_section_combined(
     )
     out = capsys.readouterr().out
 
-    assert cids[0] in out       # has both
-    assert cids[1] not in out   # only emotion
-    assert cids[2] not in out   # only section
-    assert cids[3] not in out   # neither
+    assert cids[0] in out # has both
+    assert cids[1] not in out # only emotion
+    assert cids[2] not in out # only section
+    assert cids[3] not in out # neither
 
 
 # ---------------------------------------------------------------------------

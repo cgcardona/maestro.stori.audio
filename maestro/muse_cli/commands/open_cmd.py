@@ -3,11 +3,11 @@
 Dispatches to ``open`` (macOS ``NSWorkspace``), which opens the file in
 whatever the system default app is for that file type:
 
-- ``.mid``  → Stori DAW or GarageBand
+- ``.mid`` → Stori DAW or GarageBand
 - ``.webp`` / ``.png`` → Preview
-- ``.mp3``  → QuickTime
+- ``.mp3`` → QuickTime
 
-macOS-only.  Exits 1 with a clear error on other platforms.
+macOS-only. Exits 1 with a clear error on other platforms.
 """
 from __future__ import annotations
 

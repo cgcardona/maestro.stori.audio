@@ -22,22 +22,18 @@ Content negotiation (``?format=json`` or ``Accept: application/json``):
   ``/api/v1/musehub/...``.  Useful for agents and scripts.
 
 No JWT auth required — milestones are publicly readable.
-
-Note: full HTMX interactivity requires issue #552 (HTMX infrastructure) and
-the fragment helper from issue #554 to be merged first.  The SSR rendering
-works independently of HTMX; tab switching degrades to full page navigation
-until those PRs land.
 """
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi import status as http_status
+from fastapi.templating import Jinja2Templates
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.responses import Response as StarletteResponse
 
-from maestro.api.routes.musehub._templates import templates
 from maestro.api.routes.musehub.negotiate import negotiate_response
 from maestro.db import get_db
 from maestro.models.musehub import (
@@ -50,6 +46,9 @@ from maestro.services import musehub_issues, musehub_repository
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/musehub/ui", tags=["musehub-ui"])
+
+_TEMPLATE_DIR = Path(__file__).parent.parent.parent.parent / "templates"
+templates = Jinja2Templates(directory=str(_TEMPLATE_DIR))
 
 
 # ---------------------------------------------------------------------------
@@ -122,7 +121,7 @@ async def milestones_list_page(
     tracking compositional goals (album completion, mix revision milestones).
     Progress bars make the completion status immediately scannable.
 
-    No JWT required — HTML shell; JS fetches authed data via localStorage token.
+    No JWT required — milestones are publicly readable.
     """
     repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
     milestone_data: MilestoneListResponse = await musehub_issues.list_milestones(
@@ -206,7 +205,7 @@ async def milestone_detail_page(
     The linked issues list lets them triage remaining work without switching
     to the issues tab.
 
-    No JWT required — HTML shell; JS fetches authed data via localStorage token.
+    No JWT required — milestones are publicly readable.
     """
     repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
 

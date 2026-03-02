@@ -6,18 +6,18 @@ Usage::
     muse export --format json
     muse export --format musicxml --track piano
     muse export --format midi --split-tracks
-    muse export --format wav   # fails clearly when Storpheus is down
+    muse export --format wav # fails clearly when Storpheus is down
 
 Flags:
-    <commit>          Short commit ID prefix (default: HEAD).
-    --format          Target format: midi | json | musicxml | abc | wav.
-    --track           Export only files matching this track name substring.
-    --section         Export only files matching this section name substring.
-    --output PATH     Destination path (default: ./exports/<commit8>.<format>).
-    --split-tracks    Write one file per track (MIDI only).
+    <commit> Short commit ID prefix (default: HEAD).
+    --format Target format: midi | json | musicxml | abc | wav.
+    --track Export only files matching this track name substring.
+    --section Export only files matching this section name substring.
+    --output PATH Destination path (default: ./exports/<commit8>.<format>).
+    --split-tracks Write one file per track (MIDI only).
 
 This command is read-only — it never creates a new commit or modifies the
-working tree.  The same commit + format always produces identical output.
+working tree. The same commit + format always produces identical output.
 """
 from __future__ import annotations
 
@@ -52,7 +52,7 @@ _DEFAULT_EXPORTS_DIR = "exports"
 def _default_output_path(commit_id: str, fmt: ExportFormat) -> pathlib.Path:
     """Return the default output path for an export.
 
-    Pattern: ``./exports/<commit8>.<format>``.  For MIDI with --split-tracks
+    Pattern: ``./exports/<commit8>.<format>``. For MIDI with --split-tracks
     or multi-file exports the caller converts this to a directory.
     """
     short = commit_id[:8]
@@ -113,7 +113,7 @@ async def _export_async(
                 f"— matches {len(matches)} commits:"
             )
             for c in matches:
-                typer.echo(f"   {c.commit_id[:8]}  {c.message[:60]}")
+                typer.echo(f" {c.commit_id[:8]} {c.message[:60]}")
             typer.echo("Use a longer prefix to disambiguate.")
             raise typer.Exit(code=ExitCode.USER_ERROR)
         full_commit_id = matches[0].commit_id
@@ -127,7 +127,7 @@ async def _export_async(
         raise typer.Exit(code=ExitCode.USER_ERROR)
 
     if not manifest:
-        typer.echo(f"⚠️  Snapshot for commit {full_commit_id[:8]} is empty — nothing to export.")
+        typer.echo(f"⚠️ Snapshot for commit {full_commit_id[:8]} is empty — nothing to export.")
         raise typer.Exit(code=ExitCode.USER_ERROR)
 
     # Resolve output path.
@@ -187,14 +187,14 @@ def export(
     """Export a Muse snapshot to an external format.
 
     Exports the snapshot referenced by COMMIT (default: HEAD) to the
-    specified format.  This is a read-only operation — no commit is created.
+    specified format. This is a read-only operation — no commit is created.
 
     Supported formats:
-      midi      Raw MIDI file(s) — native format, lossless.
-      json      Structured JSON note index (AI/tooling consumption).
-      musicxml  MusicXML for notation software (MuseScore, Sibelius, etc.).
-      abc       ABC notation for folk/traditional music tools.
-      wav       Audio render via Storpheus (requires Storpheus running).
+      midi Raw MIDI file(s) — native format, lossless.
+      json Structured JSON note index (AI/tooling consumption).
+      musicxml MusicXML for notation software (MuseScore, Sibelius, etc.).
+      abc ABC notation for folk/traditional music tools.
+      wav Audio render via Storpheus (requires Storpheus running).
     """
     root = require_repo()
 
@@ -227,15 +227,15 @@ def export(
     # Report results.
     if not result.paths_written:
         typer.echo(
-            f"⚠️  No {fmt.value} files found in snapshot {result.commit_id[:8]}."
+            f"⚠️ No {fmt.value} files found in snapshot {result.commit_id[:8]}."
         )
         if result.skipped_count:
-            typer.echo(f"   ({result.skipped_count} files skipped — wrong type or missing.)")
+            typer.echo(f" ({result.skipped_count} files skipped — wrong type or missing.)")
         raise typer.Exit(code=ExitCode.SUCCESS)
 
     typer.echo(f"✅ Exported {len(result.paths_written)} file(s) [{fmt.value}]:")
     for p in result.paths_written:
-        typer.echo(f"   {p}")
+        typer.echo(f" {p}")
     logger.info(
         "muse export: commit=%s format=%s files=%d",
         result.commit_id[:8],

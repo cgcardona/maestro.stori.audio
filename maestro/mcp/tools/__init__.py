@@ -4,10 +4,10 @@ DAW tool definitions (``stori_*``) come from ``maestro.daw.stori.tool_registry``
 MuseHub browsing tools (``musehub_*``) are defined here and are always
 server-side (never forwarded to the DAW).
 
-``MCP_TOOLS``         — full combined list (DAW + MuseHub), used by the MCP server.
+``MCP_TOOLS`` — full combined list (DAW + MuseHub), used by the MCP server.
 ``SERVER_SIDE_TOOLS`` — names of all server-side tools (generation + musehub).
-``DAW_TOOLS``         — names of all DAW-forwarded tools.
-``TOOL_CATEGORIES``   — maps every tool name to its category string.
+``DAW_TOOLS`` — names of all DAW-forwarded tools.
+``TOOL_CATEGORIES`` — maps every tool name to its category string.
 ``MUSEHUB_TOOL_NAMES``— set of ``musehub_*`` tool names for routing.
 """
 from __future__ import annotations

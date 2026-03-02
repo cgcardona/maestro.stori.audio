@@ -37,7 +37,7 @@ ENTITY_REF_FIELDS: dict[str, str] = {
     "trackId": "track",
     "regionId": "region",
     "busId": "bus",
-    "trackName": "track",  # resolved to trackId
+    "trackName": "track", # resolved to trackId
 }
 
 # Entity-creating tools → ID fields to skip validation on (server replaces with fresh UUIDs)

@@ -145,7 +145,7 @@ class TestStructuredPromptContextStandalone:
 
         parsed = _parse(
             "MAESTRO PROMPT\nMode: compose\n"
-            "Harmony:\n  progression: ii-V-I\n"
+            "Harmony:\n progression: ii-V-I\n"
             "Request: go\n"
         )
         ctx = structured_prompt_context(parsed)
@@ -167,7 +167,7 @@ class TestStructuredPromptContextStandalone:
 
         parsed = _parse(
             "MAESTRO PROMPT\nMode: compose\n"
-            "Constraints:\n  bars: 16\n  density: high\n"
+            "Constraints:\n bars: 16\n density: high\n"
             "Request: go\n"
         )
         ctx = structured_prompt_context(parsed)
@@ -312,7 +312,7 @@ class TestCombinedContextNoDuplicates:
 
         ctx = self._combined(
             "MAESTRO PROMPT\nMode: compose\nSection: verse\nPosition: after intro\n"
-            "Harmony:\n  progression: ii-V-I\n"
+            "Harmony:\n progression: ii-V-I\n"
             "Request: go",
             {"tracks": [{"name": "intro", "regions": [
                 {"name": "intro", "startBeat": 0, "durationBeats": 64}
@@ -497,7 +497,7 @@ class TestStructuredPromptRoutingContext:
 
         parsed = _parse(
             "MAESTRO PROMPT\nMode: compose\n"
-            "Constraints:\n  bars: 16\n  density: high\n"
+            "Constraints:\n bars: 16\n density: high\n"
             "Request: go\n"
         )
         ctx = structured_prompt_routing_context(parsed)

@@ -2,7 +2,7 @@
 
 This is the only file that assembles all Stori-specific pieces (tool
 registry, phase mapping, validation) into a single ``DAWAdapter``
-implementation.  DI/bootstrap code creates an instance and injects it
+implementation. DI/bootstrap code creates an instance and injects it
 into the Maestro orchestrator.
 """
 from __future__ import annotations
@@ -50,7 +50,7 @@ class StoriDAWAdapter:
         allowed_tools: set[str],
     ) -> ValidationResult:
         from maestro.contracts.json_types import JSONValue
-        typed_params: dict[str, JSONValue] = params  # type: ignore[assignment]
+        typed_params: dict[str, JSONValue] = params # type: ignore[assignment]
         return validate_stori_tool_call(name, typed_params, allowed_tools)
 
     def phase_for_tool(self, name: str) -> str:

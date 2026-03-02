@@ -1,7 +1,7 @@
 """Domain-bleed regression tests — enforce the DAW adapter boundary.
 
 These static tests ensure that Maestro core does not bleed Stori-specific
-vocabulary into its internals.  They run without network or Docker.
+vocabulary into its internals. They run without network or Docker.
 
 Three categories:
   a) **Forbidden imports** — Maestro core must not import maestro.daw.stori
@@ -113,7 +113,7 @@ class TestForbiddenImports:
 
         if violations:
             msg = "Forbidden app.daw.stori imports in Maestro core:\n"
-            msg += "\n".join(f"  - {v}" for v in violations)
+            msg += "\n".join(f" - {v}" for v in violations)
             pytest.fail(msg)
 
 
@@ -149,7 +149,7 @@ class TestNaming:
 
         if violations:
             msg = "Stori-branded class names found in Maestro core:\n"
-            msg += "\n".join(f"  - {v}" for v in violations)
+            msg += "\n".join(f" - {v}" for v in violations)
             pytest.fail(msg)
 
     def test_no_stori_function_in_core(self) -> None:
@@ -164,7 +164,7 @@ class TestNaming:
 
         if violations:
             msg = "stori_* function names found in Maestro core:\n"
-            msg += "\n".join(f"  - {v}" for v in violations)
+            msg += "\n".join(f" - {v}" for v in violations)
             pytest.fail(msg)
 
 

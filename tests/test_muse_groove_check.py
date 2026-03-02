@@ -22,7 +22,7 @@ from sqlalchemy.pool import StaticPool
 from typer.testing import CliRunner
 
 from maestro.db.database import Base
-import maestro.muse_cli.models  # noqa: F401  — registers MuseCli* with Base.metadata
+import maestro.muse_cli.models # noqa: F401 — registers MuseCli* with Base.metadata
 from maestro.muse_cli.app import cli
 from maestro.muse_cli.commands.groove_check import (
     _groove_check_async,
@@ -499,7 +499,7 @@ async def test_groove_check_outputs_table_with_drift_status(
 ) -> None:
     """Regression: groove-check always outputs a table with commit/drift/status columns.
 
-    This is the primary acceptance-criteria test from issue #95:
+    This is the primary acceptance-criteria test:
     the table must include commit refs, groove_score, drift_delta, and a status
     column with OK/WARN/FAIL values.
     """

@@ -23,14 +23,14 @@ can resume or abandon the operation:
 
     {
         "upstream_commit": "abc123...",
-        "base_commit":     "def456...",
+        "base_commit": "def456...",
         "original_branch": "feature",
-        "original_head":   "ghi789...",
+        "original_head": "ghi789...",
         "commits_to_replay": ["cid1", "cid2", "cid3"],
-        "current_onto":    "abc123...",
+        "current_onto": "abc123...",
         "completed_pairs": [["cid1", "new_cid1"]],
-        "current_commit":  "cid2",
-        "conflict_paths":  ["beat.mid"]
+        "current_commit": "cid2",
+        "conflict_paths": ["beat.mid"]
     }
 
 Boundary rules:
@@ -160,7 +160,7 @@ class RebaseState:
 def read_rebase_state(root: pathlib.Path) -> RebaseState | None:
     """Return :class:`RebaseState` if a rebase is in progress, else ``None``.
 
-    Reads ``.muse/REBASE_STATE.json``.  Returns ``None`` when the file does
+    Reads ``.muse/REBASE_STATE.json``. Returns ``None`` when the file does
     not exist or cannot be parsed.
 
     Args:
@@ -210,7 +210,7 @@ def write_rebase_state(root: pathlib.Path, state: RebaseState) -> None:
     """Persist *state* to ``.muse/REBASE_STATE.json``.
 
     Args:
-        root:  Repository root.
+        root: Repository root.
         state: Current rebase session state.
     """
     state_path = root / ".muse" / _REBASE_STATE_FILENAME
@@ -332,7 +332,7 @@ async def _collect_branch_commits_since_base(
 ) -> list[MuseCliCommit]:
     """Collect commits reachable from *head_commit_id* but not from *base_commit_id*.
 
-    Returns them in topological order, oldest first (replay order).  Merge
+    Returns them in topological order, oldest first (replay order). Merge
     commits (two parents) are included as single units; their second parent is
     not traversed — i.e. only the primary-parent chain is followed.
 
@@ -465,8 +465,8 @@ class InteractivePlan:
     def from_text(cls, text: str) -> InteractivePlan:
         """Parse a plan from the editor text.
 
-        Lines starting with ``#`` are comments and are ignored.  Blank lines
-        are ignored.  Each non-comment line must be ``<action> <sha> <msg>``.
+        Lines starting with ``#`` are comments and are ignored. Blank lines
+        are ignored. Each non-comment line must be ``<action> <sha> <msg>``.
 
         Args:
             text: Raw plan text as produced by :meth:`to_text`.
@@ -662,7 +662,7 @@ async def _rebase_async(
         root: Repository root (directory containing ``.muse/``).
         session: Open async DB session.
         interactive: When ``True``, open $EDITOR with the rebase plan before
-            executing.  The edited plan controls action, order, and squash
+            executing. The edited plan controls action, order, and squash
             behaviour.
         autosquash: When ``True``, automatically detect ``fixup!`` commits and
             move them after their matching target commit.

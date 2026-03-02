@@ -1,18 +1,18 @@
 """muse similarity — compute musical similarity score between two commits.
 
 Compares two Muse commits across up to five musical dimensions and
-produces per-dimension scores plus a weighted overall score.  An AI
+produces per-dimension scores plus a weighted overall score. An AI
 agent can use this output to calibrate how much new material to generate:
 a similarity of 0.9 suggests a small variation; 0.4 suggests a major
 rework.
 
 Dimensions
 ----------
-- harmonic   — key, chord vocabulary, chord progression similarity
-- rhythmic   — tempo, time signature, rhythmic density
-- melodic    — motif reuse, interval contour, pitch range
+- harmonic — key, chord vocabulary, chord progression similarity
+- rhythmic — tempo, time signature, rhythmic density
+- melodic — motif reuse, interval contour, pitch range
 - structural — section layout (intro, verse, bridge, outro lengths)
-- dynamic    — velocity profile, crescendo/decrescendo patterns
+- dynamic — velocity profile, crescendo/decrescendo patterns
 
 Scores are normalized to [0.0, 1.0]:
     1.0 = identical
@@ -22,23 +22,23 @@ Output (default)::
 
     Similarity: HEAD~10 vs HEAD
 
-    Harmonic:   0.45  ██████████░░░░░░░░░░  (key modulation, new chords)
-    Rhythmic:   0.89  ████████████████████  (same tempo, slightly more swing)
-    Melodic:    0.72  ██████████████████░░  (same motifs, extended range)
-    Structural: 0.65  █████████████░░░░░░░  (bridge added, intro shortened)
-    Dynamic:    0.55  ███████████░░░░░░░░░  (much louder, crescendo added)
+    Harmonic: 0.45 ██████████░░░░░░░░░░ (key modulation, new chords)
+    Rhythmic: 0.89 ████████████████████ (same tempo, slightly more swing)
+    Melodic: 0.72 ██████████████████░░ (same motifs, extended range)
+    Structural: 0.65 █████████████░░░░░░░ (bridge added, intro shortened)
+    Dynamic: 0.55 ███████████░░░░░░░░░ (much louder, crescendo added)
 
-    Overall:    0.65  (Significantly different — major rework)
+    Overall: 0.65 (Significantly different — major rework)
 
 Flags
 -----
-COMMIT-A    First commit ref (required).
-COMMIT-B    Second commit ref (required).
---dimensions TEXT    Comma-separated subset of dimensions (default: all five).
---section TEXT       Scope comparison to a named section/region.
---track TEXT         Scope comparison to a specific track.
---json               Emit machine-readable JSON.
---threshold FLOAT    Exit 1 if overall similarity < threshold (for scripting).
+COMMIT-A First commit ref (required).
+COMMIT-B Second commit ref (required).
+--dimensions TEXT Comma-separated subset of dimensions (default: all five).
+--section TEXT Scope comparison to a named section/region.
+--track TEXT Scope comparison to a specific track.
+--json Emit machine-readable JSON.
+--threshold FLOAT Exit 1 if overall similarity < threshold (for scripting).
 """
 from __future__ import annotations
 
@@ -93,7 +93,7 @@ _LABEL_THRESHOLDS: tuple[tuple[float, str], ...] = (
     (0.00, "Completely different — new direction"),
 )
 
-_BAR_WIDTH = 20  # characters in the progress bar
+_BAR_WIDTH = 20 # characters in the progress bar
 
 
 # ---------------------------------------------------------------------------
@@ -106,8 +106,8 @@ class DimensionScore(TypedDict):
 
     Contract:
         dimension — one of the five canonical dimension names
-        score     — normalized similarity in [0.0, 1.0]
-        note      — brief human-readable interpretation of the difference
+        score — normalized similarity in [0.0, 1.0]
+        note — brief human-readable interpretation of the difference
     """
 
     dimension: str
@@ -119,11 +119,11 @@ class SimilarityResult(TypedDict):
     """Overall similarity result between two commits.
 
     Contract:
-        commit_a       — first commit ref as provided by the caller
-        commit_b       — second commit ref as provided by the caller
-        dimensions     — list of per-dimension scores (may be a subset)
-        overall        — weighted overall similarity in [0.0, 1.0]
-        label          — human-readable summary of the overall score
+        commit_a — first commit ref as provided by the caller
+        commit_b — second commit ref as provided by the caller
+        dimensions — list of per-dimension scores (may be a subset)
+        overall — weighted overall similarity in [0.0, 1.0]
+        label — human-readable summary of the overall score
         max_divergence — dimension name with the lowest score
     """
 
@@ -215,7 +215,7 @@ def build_similarity_result(
     Args:
         commit_a: First commit ref.
         commit_b: Second commit ref.
-        scores:   Per-dimension scores (may be a subset of all five).
+        scores: Per-dimension scores (may be a subset of all five).
 
     Returns:
         A SimilarityResult with all fields populated.
@@ -264,15 +264,15 @@ def render_similarity_text(result: SimilarityResult) -> str:
         dim_label = f"{score['dimension'].capitalize()}:".ljust(label_width + 1)
         bar = _bar(score["score"])
         lines.append(
-            f"  {dim_label} {score['score']:.2f}  {bar}  ({score['note']})"
+            f" {dim_label} {score['score']:.2f} {bar} ({score['note']})"
         )
 
     lines.append("")
-    lines.append(f"  Overall:    {result['overall']:.2f}  ({result['label']})")
+    lines.append(f" Overall: {result['overall']:.2f} ({result['label']})")
 
     if result["max_divergence"]:
         lines.append(
-            f"  Max divergence: {result['max_divergence']} dimension"
+            f" Max divergence: {result['max_divergence']} dimension"
         )
 
     return "\n".join(lines)
@@ -307,15 +307,15 @@ async def _similarity_async(
     SimilarityResult, renders output, and returns an exit code.
 
     Args:
-        root:       Repository root (directory containing .muse/).
-        session:    Open async DB session (reserved for full implementation).
-        commit_a:   First commit ref.
-        commit_b:   Second commit ref.
+        root: Repository root (directory containing .muse/).
+        session: Open async DB session (reserved for full implementation).
+        commit_a: First commit ref.
+        commit_b: Second commit ref.
         dimensions: Set of dimension names to compute.
-        section:    Named section to scope comparison (stub: noted).
-        track:      Named track to scope comparison (stub: noted).
-        threshold:  Exit 1 if overall < threshold; None means no check.
-        as_json:    Emit JSON instead of text.
+        section: Named section to scope comparison (stub: noted).
+        track: Named track to scope comparison (stub: noted).
+        threshold: Exit 1 if overall < threshold; None means no check.
+        as_json: Emit JSON instead of text.
 
     Returns:
         Integer exit code — 0 on success, 1 if below threshold.

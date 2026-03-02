@@ -84,11 +84,11 @@ class TestIndexBoundaryConditions:
 
         prior: list[dict[str, JSONValue]] = [{"trackId": "t1"}]
         result = _resolve_variable_refs({"trackId": "$5.trackId"}, prior)
-        assert result["trackId"] == "$5.trackId"  # unchanged
+        assert result["trackId"] == "$5.trackId" # unchanged
 
     def test_index_exactly_at_boundary_preserved(self) -> None:
 
-        prior: list[dict[str, JSONValue]] = [{"trackId": "t1"}]  # len=1, valid index=0
+        prior: list[dict[str, JSONValue]] = [{"trackId": "t1"}] # len=1, valid index=0
         result = _resolve_variable_refs({"trackId": "$1.trackId"}, prior)
         assert result["trackId"] == "$1.trackId"
 
@@ -166,14 +166,14 @@ class TestMissingFieldInResult:
 
     def test_missing_field_preserves_ref_string(self) -> None:
 
-        prior: list[dict[str, JSONValue]] = [{"trackId": "t1"}]  # no "regionId"
+        prior: list[dict[str, JSONValue]] = [{"trackId": "t1"}] # no "regionId"
         result = _resolve_variable_refs({"regionId": "$0.regionId"}, prior)
         assert result["regionId"] == "$0.regionId"
 
     def test_typo_in_field_name_preserves_ref(self) -> None:
 
         prior: list[dict[str, JSONValue]] = [{"trackId": "t1"}]
-        result = _resolve_variable_refs({"trackId": "$0.trackid"}, prior)  # lowercase 'i'
+        result = _resolve_variable_refs({"trackId": "$0.trackid"}, prior) # lowercase 'i'
         assert result["trackId"] == "$0.trackid"
 
     def test_empty_dict_in_prior_preserves_ref(self) -> None:
@@ -191,18 +191,18 @@ class TestVariableRefPattern:
     """_VAR_REF_RE must match exactly $N.field and nothing else."""
 
     @pytest.mark.parametrize("value,should_match", [
-        ("$0.trackId",       True),
-        ("$1.regionId",      True),
-        ("$99.busId",        True),
-        ("$0.newRegionId",   True),
-        ("$0.trackId extra", False),   # trailing content
-        ("prefix $0.trackId", False),  # leading content
-        ("$0",               False),   # no field
-        ("0.trackId",        False),   # missing $
-        ("$.trackId",        False),   # missing index
-        ("$-1.trackId",      False),   # negative index
-        ("",                 False),
-        ("$0.",              False),   # empty field
+        ("$0.trackId", True),
+        ("$1.regionId", True),
+        ("$99.busId", True),
+        ("$0.newRegionId", True),
+        ("$0.trackId extra", False), # trailing content
+        ("prefix $0.trackId", False), # leading content
+        ("$0", False), # no field
+        ("0.trackId", False), # missing $
+        ("$.trackId", False), # missing index
+        ("$-1.trackId", False), # negative index
+        ("", False),
+        ("$0.", False), # empty field
     ])
     def test_pattern(self, value: str, should_match: bool) -> None:
 
@@ -239,11 +239,11 @@ class TestMixedParams:
             {"regionId": "r1", "trackId": "t1"},
         ]
         params: dict[str, JSONValue] = {
-            "trackId":       "$0.trackId",    # → "t1"
-            "regionId":      "$1.regionId",   # → "r1"
-            "startBeat":     0,               # literal int
-            "durationBeats": 16,              # literal int
-            "name":          "My Pattern",    # literal string
+            "trackId": "$0.trackId", # → "t1"
+            "regionId": "$1.regionId", # → "r1"
+            "startBeat": 0, # literal int
+            "durationBeats": 16, # literal int
+            "name": "My Pattern", # literal string
         }
         result = _resolve_variable_refs(params, prior)
         assert result["trackId"] == "t1"
@@ -269,16 +269,16 @@ class TestMixedParams:
 class TestRealisticSequence:
     """
     Simulates a real LLM tool call batch:
-      call 0: stori_add_midi_track  → {trackId: "t-uuid"}
+      call 0: stori_add_midi_track → {trackId: "t-uuid"}
       call 1: stori_add_midi_region → {regionId: "r-uuid", trackId: "t-uuid"}
-      call 2: stori_add_notes       → regionId="$1.regionId" resolved from call 1
+      call 2: stori_add_notes → regionId="$1.regionId" resolved from call 1
     """
 
     def test_add_notes_refs_region_from_prior_call(self) -> None:
 
         prior_results: list[dict[str, JSONValue]] = [
-            {"trackId": "t-uuid-001"},                              # call 0 result
-            {"regionId": "r-uuid-002", "trackId": "t-uuid-001"},   # call 1 result
+            {"trackId": "t-uuid-001"}, # call 0 result
+            {"regionId": "r-uuid-002", "trackId": "t-uuid-001"}, # call 1 result
         ]
         add_notes_params: dict[str, JSONValue] = {
             "regionId": "$1.regionId",

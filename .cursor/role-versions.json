@@ -1,0 +1,25 @@
+{
+  "versions": {
+    "cto": {
+      "current": "v2",
+      "history": [
+        {
+          "sha": "abcdef1234567890abcdef1234567890abcdef12",
+          "label": "v1",
+          "timestamp": 1772429688
+        },
+        {
+          "sha": "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
+          "label": "v2",
+          "timestamp": 1772429688
+        }
+      ]
+    }
+  },
+  "ab_mode": {
+    "enabled": false,
+    "target_role": null,
+    "variant_a_sha": null,
+    "variant_b_sha": null
+  }
+}

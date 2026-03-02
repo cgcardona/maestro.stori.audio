@@ -1,7 +1,7 @@
 """Integration tests for ``muse commit``.
 
 Tests exercise ``_commit_async`` directly with an in-memory SQLite session
-so no real Postgres instance is required.  The ``muse_cli_db_session``
+so no real Postgres instance is required. The ``muse_cli_db_session``
 fixture (defined in tests/muse_cli/conftest.py) provides the isolated
 SQLite session.
 
@@ -48,7 +48,7 @@ def _init_muse_repo(root: pathlib.Path, repo_id: str | None = None) -> str:
         json.dumps({"repo_id": rid, "schema_version": "1"})
     )
     (muse / "HEAD").write_text("refs/heads/main")
-    (muse / "refs" / "heads" / "main").write_text("")  # no commits yet
+    (muse / "refs" / "heads" / "main").write_text("") # no commits yet
     return rid
 
 
@@ -321,7 +321,7 @@ async def test_commit_empty_workdir_exits_1(
     import typer
 
     _init_muse_repo(tmp_path)
-    (tmp_path / "muse-work").mkdir()  # empty directory
+    (tmp_path / "muse-work").mkdir() # empty directory
 
     with pytest.raises(typer.Exit) as exc_info:
         await _commit_async(
@@ -378,7 +378,7 @@ async def test_commit_from_batch_uses_suggestion(
     )
 
     commit_id = await _commit_async(
-        message="",  # overridden by batch suggestion
+        message="", # overridden by batch suggestion
         root=tmp_path,
         session=muse_cli_db_session,
         batch_path=batch_path,
@@ -813,10 +813,10 @@ async def test_apply_commit_music_metadata_updates_existing_commit(
     assert updated is not None
     meta = updated.commit_metadata
     assert meta is not None
-    assert meta.get("tempo_bpm") == 120.0      # preserved
-    assert meta.get("section") == "bridge"     # added
-    assert meta.get("emotion") == "melancholic"  # added
-    assert "track" not in meta                 # not supplied → absent
+    assert meta.get("tempo_bpm") == 120.0 # preserved
+    assert meta.get("section") == "bridge" # added
+    assert meta.get("emotion") == "melancholic" # added
+    assert "track" not in meta # not supplied → absent
 
 
 @pytest.mark.anyio
@@ -843,7 +843,7 @@ async def test_apply_commit_music_metadata_noop_when_no_keys(
 
     row = await muse_cli_db_session.get(MuseCliCommit, commit_id)
     assert row is not None
-    assert row.commit_metadata is None  # untouched
+    assert row.commit_metadata is None # untouched
 
 
 # ---------------------------------------------------------------------------

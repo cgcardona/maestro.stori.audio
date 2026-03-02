@@ -6,14 +6,14 @@ Route handlers delegate here; no business logic lives in routes.
 Why this exists
 ---------------
 AI agents need structured, typed JSON data to make informed composition
-decisions.  HTML analysis pages are not machine-readable.  This service
+decisions. HTML analysis pages are not machine-readable. This service
 bridges the gap by returning fully-typed Pydantic models for every musical
 dimension of a Muse commit.
 
 Stub implementation
 -------------------
 Full MIDI content analysis will be wired in once Storpheus exposes a
-per-dimension introspection route.  Until then, the service returns
+per-dimension introspection route. Until then, the service returns
 deterministic stub data keyed on the ``ref`` value — deterministic so that
 agents receive consistent responses across retries and across sessions.
 
@@ -118,7 +118,7 @@ _DEFAULT_TRACKS = ["bass", "keys", "drums", "melody", "pads"]
 
 def _ref_hash(ref: str) -> int:
     """Derive a stable integer seed from a ref string for deterministic stubs."""
-    return int(hashlib.md5(ref.encode()).hexdigest(), 16)  # noqa: S324 — non-crypto use
+    return int(hashlib.md5(ref.encode()).hexdigest(), 16) # noqa: S324 — non-crypto use
 
 
 def _pick(seed: int, items: list[str], offset: int = 0) -> str:
@@ -135,7 +135,7 @@ def _utc_now() -> datetime:
 
 
 def _build_harmony(ref: str, track: Optional[str], section: Optional[str]) -> HarmonyData:
-    """Build stub harmonic analysis.  Deterministic for a given ref."""
+    """Build stub harmonic analysis. Deterministic for a given ref."""
     seed = _ref_hash(ref)
     tonic = _pick(seed, _TONICS)
     mode = _pick(seed, _MODES)
@@ -226,7 +226,7 @@ def _retrograde_intervals(intervals: list[int]) -> list[int]:
 def _build_motifs(ref: str, track: Optional[str], section: Optional[str]) -> MotifsData:
     """Build stub motif analysis with transformations, contour, and recurrence grid.
 
-    Deterministic for a given ``ref`` value.  Produces 2–4 motifs, each with:
+    Deterministic for a given ``ref`` value. Produces 2–4 motifs, each with:
     - Original interval sequence and occurrence beats
     - Melodic contour label (arch, valley, oscillating, etc.)
     - All tracks where the motif or its transformations appear
@@ -496,7 +496,7 @@ def _build_similarity(ref: str, track: Optional[str], section: Optional[str]) ->
     n = 1 + (seed % 3)
     similar = [
         SimilarCommit(
-            ref=f"commit_{hashlib.md5(f'{ref}{i}'.encode()).hexdigest()[:8]}",  # noqa: S324
+            ref=f"commit_{hashlib.md5(f'{ref}{i}'.encode()).hexdigest()[:8]}", # noqa: S324
             score=round(0.5 + (seed >> i) % 50 / 100, 4),
             shared_motifs=[f"M{j + 1:02d}" for j in range(1 + i % 2)],
             commit_message=f"Add {'bridge' if i == 0 else 'variation'} section",
@@ -570,9 +570,9 @@ def compute_dimension(
 
     Args:
         dimension: One of the 13 supported dimension names.
-        ref:       Muse commit ref (branch name, commit ID, or tag).
-        track:     Optional instrument track filter.
-        section:   Optional musical section filter.
+        ref: Muse commit ref (branch name, commit ID, or tag).
+        track: Optional instrument track filter.
+        section: Optional musical section filter.
 
     Returns:
         Dimension-specific Pydantic data model.
@@ -599,11 +599,11 @@ def compute_analysis_response(
     This is the primary entry point for the single-dimension endpoint.
 
     Args:
-        repo_id:   Muse Hub repo UUID.
+        repo_id: Muse Hub repo UUID.
         dimension: Analysis dimension name.
-        ref:       Muse commit ref.
-        track:     Optional track filter.
-        section:   Optional section filter.
+        ref: Muse commit ref.
+        track: Optional track filter.
+        section: Optional section filter.
 
     Returns:
         :class:`AnalysisResponse` with typed ``data`` and filter metadata.
@@ -633,7 +633,7 @@ def compute_form_structure(*, repo_id: str, ref: str) -> FormStructureResponse:
 
     Args:
         repo_id: Muse Hub repo UUID (used for logging only).
-        ref:     Muse commit ref.
+        ref: Muse commit ref.
 
     Returns:
         :class:`FormStructureResponse` with section_map, repetition_structure,
@@ -784,15 +784,15 @@ def compute_dynamics_page_data(
     """Build per-track dynamics data for the Dynamics Analysis page.
 
     Returns one :class:`TrackDynamicsProfile` per active track, or a single
-    entry when ``track`` filter is applied.  Each profile includes a velocity
+    entry when ``track`` filter is applied. Each profile includes a velocity
     curve suitable for rendering a profile graph, an arc classification badge,
     and peak/range metrics for the loudness comparison bar chart.
 
     Args:
-        repo_id:  Muse Hub repo UUID.
-        ref:      Muse commit ref (branch name, commit ID, or tag).
-        track:    Optional track filter — if set, only that track is returned.
-        section:  Optional section filter (recorded in ``filters_applied``).
+        repo_id: Muse Hub repo UUID.
+        ref: Muse commit ref (branch name, commit ID, or tag).
+        track: Optional track filter — if set, only that track is returned.
+        section: Optional section filter (recorded in ``filters_applied``).
 
     Returns:
         :class:`DynamicsPageData` with per-track profiles.
@@ -827,20 +827,20 @@ def compute_emotion_map(
 
     Returns per-beat intra-ref evolution, cross-commit trajectory, drift
     distances between consecutive commits, a generated narrative, and source
-    attribution.  All data is deterministic for a given ``ref`` so agents
+    attribution. All data is deterministic for a given ``ref`` so agents
     receive consistent results across retries.
 
     Why separate from ``compute_dimension('emotion', ...)``
     -------------------------------------------------------
-    The generic emotion dimension returns a single aggregate snapshot.  This
+    The generic emotion dimension returns a single aggregate snapshot. This
     function returns the *temporal* and *cross-commit* shape of the emotional
     arc — the information needed to render line charts and trajectory plots.
 
     Args:
-        repo_id:  Muse Hub repo UUID (used for logging).
-        ref:      Head Muse commit ref (branch name or commit ID).
-        track:    Optional instrument track filter.
-        section:  Optional musical section filter.
+        repo_id: Muse Hub repo UUID (used for logging).
+        ref: Head Muse commit ref (branch name or commit ID).
+        track: Optional instrument track filter.
+        section: Optional musical section filter.
 
     Returns:
         :class:`EmotionMapResponse` with evolution, trajectory, drift, and narrative.
@@ -892,7 +892,7 @@ def compute_emotion_map(
         darkness_traj = round(max(0.0, min(1.0, 1.0 - valence_traj * 0.7)), 4)
         trajectory.append(
             CommitEmotionSnapshot(
-                commit_id=hashlib.md5(f"{ref}:{j}".encode()).hexdigest()[:16],  # noqa: S324
+                commit_id=hashlib.md5(f"{ref}:{j}".encode()).hexdigest()[:16], # noqa: S324
                 message=f"Ancestor commit {n_commits - j}: {em} passage",
                 timestamp=f"2026-0{1 + j % 9}-{10 + j:02d}T12:00:00Z",
                 vector=EmotionVector(
@@ -955,7 +955,7 @@ def compute_emotion_map(
     narrative = " ".join(narrative_parts)
 
     # ── Source attribution ─────────────────────────────────────────────────
-    source: Literal["explicit", "inferred", "mixed"] = "inferred"  # Full implementation will check commit metadata for explicit tags
+    source: Literal["explicit", "inferred", "mixed"] = "inferred" # Full implementation will check commit metadata for explicit tags
 
     logger.info("✅ emotion-map repo=%s ref=%s beats=%d commits=%d", repo_id[:8], ref, n, len(trajectory))
     return EmotionMapResponse(
@@ -981,15 +981,15 @@ def compute_aggregate_analysis(
 ) -> AggregateAnalysisResponse:
     """Build a complete :class:`AggregateAnalysisResponse` for all 13 dimensions.
 
-    This is the primary entry point for the aggregate endpoint.  All 13
+    This is the primary entry point for the aggregate endpoint. All 13
     dimensions are computed in a single call so agents can retrieve the full
     musical picture without issuing 13 sequential requests.
 
     Args:
-        repo_id:  Muse Hub repo UUID.
-        ref:      Muse commit ref.
-        track:    Optional track filter (applied to all dimensions).
-        section:  Optional section filter (applied to all dimensions).
+        repo_id: Muse Hub repo UUID.
+        ref: Muse commit ref.
+        track: Optional track filter (applied to all dimensions).
+        section: Optional section filter (applied to all dimensions).
 
     Returns:
         :class:`AggregateAnalysisResponse` with one entry per dimension.
@@ -1016,29 +1016,29 @@ def compute_aggregate_analysis(
 
 
 # ---------------------------------------------------------------------------
-# Dedicated harmony endpoint (issue #414) — muse harmony command
+# Dedicated harmony endpoint — muse harmony command
 # ---------------------------------------------------------------------------
 
 _ROMAN_NUMERALS_BY_MODE: dict[str, list[tuple[str, str, str, str]]] = {
     # (roman, quality, function, root-offset-label)
     # root-offset-label is relative; actual root derived from tonic + offset
     "major": [
-        ("I",    "major",   "tonic",            "P1"),
-        ("IIm7", "minor",   "pre-dominant",     "M2"),
-        ("IIIm", "minor",   "tonic",            "M3"),
-        ("IV",   "major",   "subdominant",      "P4"),
-        ("V7",   "dominant","dominant",         "P5"),
-        ("VIm",  "minor",   "tonic",            "M6"),
+        ("I", "major", "tonic", "P1"),
+        ("IIm7", "minor", "pre-dominant", "M2"),
+        ("IIIm", "minor", "tonic", "M3"),
+        ("IV", "major", "subdominant", "P4"),
+        ("V7", "dominant","dominant", "P5"),
+        ("VIm", "minor", "tonic", "M6"),
         ("VIIø", "half-diminished", "dominant", "M7"),
     ],
     "minor": [
-        ("Im",   "minor",   "tonic",            "P1"),
-        ("IIø",  "half-diminished", "pre-dominant", "M2"),
-        ("bIII", "major",   "tonic",            "m3"),
-        ("IVm",  "minor",   "subdominant",      "P4"),
-        ("V7",   "dominant","dominant",         "P5"),
-        ("bVI",  "major",   "subdominant",      "m6"),
-        ("bVII", "major",   "subdominant",      "m7"),
+        ("Im", "minor", "tonic", "P1"),
+        ("IIø", "half-diminished", "pre-dominant", "M2"),
+        ("bIII", "major", "tonic", "m3"),
+        ("IVm", "minor", "subdominant", "P4"),
+        ("V7", "dominant","dominant", "P5"),
+        ("bVI", "major", "subdominant", "m6"),
+        ("bVII", "major", "subdominant", "m7"),
     ],
 }
 
@@ -1075,7 +1075,7 @@ def compute_harmony_analysis(
 ) -> HarmonyAnalysisResponse:
     """Build a dedicated harmonic analysis for a Muse commit ref.
 
-    Returns a Roman-numeral-centric view of the harmonic content.  Unlike the
+    Returns a Roman-numeral-centric view of the harmonic content. Unlike the
     generic ``harmony`` dimension (which returns :class:`HarmonyData` with raw
     chord symbols and a tension curve), this response is structured for tonal
     reasoning: Roman numerals with function labels, cadence positions, and
@@ -1084,15 +1084,15 @@ def compute_harmony_analysis(
     Maps to the ``muse harmony --ref {ref}`` CLI command.
 
     The stub data is deterministic for a given ``ref`` so agents receive
-    consistent responses across retries.  Harmonic content is keyed on
+    consistent responses across retries. Harmonic content is keyed on
     tonic/mode derived from the ref hash — the same tonic and mode that the
     generic harmony dimension uses, ensuring cross-endpoint consistency.
 
     Args:
-        repo_id:  Muse Hub repo UUID (used only for logging).
-        ref:      Muse commit ref (seeds the deterministic data).
-        track:    Optional track filter (recorded in response; stub ignores it).
-        section:  Optional section filter (recorded in response; stub ignores it).
+        repo_id: Muse Hub repo UUID (used only for logging).
+        ref: Muse commit ref (seeds the deterministic data).
+        track: Optional track filter (recorded in response; stub ignores it).
+        section: Optional section filter (recorded in response; stub ignores it).
 
     Returns:
         :class:`HarmonyAnalysisResponse` ready for the harmony endpoint.
@@ -1104,7 +1104,7 @@ def compute_harmony_analysis(
 
     # Build Roman numeral events — use the first 5 chords from the mode table.
     rn_table = _ROMAN_NUMERALS_BY_MODE.get(mode, _ROMAN_NUMERALS_BY_MODE["major"])
-    chord_count = 4 + (seed % 3)  # 4–6 chord events
+    chord_count = 4 + (seed % 3) # 4–6 chord events
     roman_numerals: list[RomanNumeralEvent] = []
     beat = 0.0
     for i in range(min(chord_count, len(rn_table))):
@@ -1136,7 +1136,7 @@ def compute_harmony_analysis(
     # Build modulations — 0 or 1, depending on ref seed.
     modulations: list[HarmonyModulationEvent] = []
     if seed % 4 == 0:
-        dom_root = _transpose_root(tonic, 7)  # dominant (P5)
+        dom_root = _transpose_root(tonic, 7) # dominant (P5)
         modulations.append(
             HarmonyModulationEvent(
                 beat=32.0,
@@ -1146,7 +1146,7 @@ def compute_harmony_analysis(
             )
         )
 
-    # Harmonic rhythm: chord changes per minute.  Assumes ~120 BPM tempo.
+    # Harmonic rhythm: chord changes per minute. Assumes ~120 BPM tempo.
     # With chords every 4 beats at 120 BPM → 30 chord changes per minute.
     # Varies slightly per ref to feel alive.
     base_rhythm = 2.0
@@ -1170,25 +1170,25 @@ def compute_harmony_analysis(
 _ARRANGEMENT_INSTRUMENTS: list[str] = ["bass", "keys", "guitar", "drums", "lead", "pads"]
 _ARRANGEMENT_SECTIONS: list[str] = ["intro", "verse_1", "chorus", "bridge", "outro"]
 
-# Beat positions for each section (start, end).  Realistic 4/4 structure with
+# Beat positions for each section (start, end). Realistic 4/4 structure with
 # 8-bar sections at 120 BPM (32 beats per section).
 _SECTION_BEATS: dict[str, tuple[float, float]] = {
-    "intro":   (0.0,   32.0),
-    "verse_1": (32.0,  64.0),
-    "chorus":  (64.0,  96.0),
-    "bridge":  (96.0, 112.0),
-    "outro":   (112.0, 128.0),
+    "intro": (0.0, 32.0),
+    "verse_1": (32.0, 64.0),
+    "chorus": (64.0, 96.0),
+    "bridge": (96.0, 112.0),
+    "outro": (112.0, 128.0),
 }
 
 # Probability that an instrument is active in a given section (realistic
 # arrangement logic — drums always play, bass almost always, pads lighter).
 _ACTIVE_PROBABILITY: dict[str, dict[str, float]] = {
-    "bass":   {"intro": 0.7, "verse_1": 1.0, "chorus": 1.0, "bridge": 0.8, "outro": 0.6},
-    "keys":   {"intro": 0.5, "verse_1": 0.8, "chorus": 1.0, "bridge": 0.7, "outro": 0.5},
+    "bass": {"intro": 0.7, "verse_1": 1.0, "chorus": 1.0, "bridge": 0.8, "outro": 0.6},
+    "keys": {"intro": 0.5, "verse_1": 0.8, "chorus": 1.0, "bridge": 0.7, "outro": 0.5},
     "guitar": {"intro": 0.3, "verse_1": 0.7, "chorus": 0.9, "bridge": 0.6, "outro": 0.3},
-    "drums":  {"intro": 0.5, "verse_1": 1.0, "chorus": 1.0, "bridge": 0.8, "outro": 0.4},
-    "lead":   {"intro": 0.2, "verse_1": 0.5, "chorus": 0.8, "bridge": 0.9, "outro": 0.3},
-    "pads":   {"intro": 0.8, "verse_1": 0.6, "chorus": 0.7, "bridge": 1.0, "outro": 0.9},
+    "drums": {"intro": 0.5, "verse_1": 1.0, "chorus": 1.0, "bridge": 0.8, "outro": 0.4},
+    "lead": {"intro": 0.2, "verse_1": 0.5, "chorus": 0.8, "bridge": 0.9, "outro": 0.3},
+    "pads": {"intro": 0.8, "verse_1": 0.6, "chorus": 0.7, "bridge": 1.0, "outro": 0.9},
 }
 
 
@@ -1199,17 +1199,17 @@ def compute_arrangement_matrix(*, repo_id: str, ref: str) -> ArrangementMatrixRe
     render a colour-coded grid without downloading any audio or MIDI files.
 
     The stub data is deterministically seeded by ``ref`` so that agents receive
-    consistent responses across retries.  Note counts and density values are
+    consistent responses across retries. Note counts and density values are
     drawn from realistic ranges for a 6-instrument soul/pop arrangement.
 
     Args:
-        repo_id:  Muse Hub repo UUID (used only for logging).
-        ref:      Muse commit ref (seeds the deterministic RNG).
+        repo_id: Muse Hub repo UUID (used only for logging).
+        ref: Muse commit ref (seeds the deterministic RNG).
 
     Returns:
         :class:`ArrangementMatrixResponse` ready for the arrange endpoint.
     """
-    seed_int = int(hashlib.md5(ref.encode()).hexdigest()[:8], 16)  # noqa: S324 — non-crypto
+    seed_int = int(hashlib.md5(ref.encode()).hexdigest()[:8], 16) # noqa: S324 — non-crypto
 
     instruments = _ARRANGEMENT_INSTRUMENTS
     sections = _ARRANGEMENT_SECTIONS
@@ -1310,7 +1310,7 @@ def compute_arrangement_matrix(*, repo_id: str, ref: str) -> ArrangementMatrixRe
 
 
 # ---------------------------------------------------------------------------
-# Semantic recall (issue #410)
+# Semantic recall
 # ---------------------------------------------------------------------------
 
 _RECALL_DIMENSIONS: list[str] = ["harmony", "groove", "emotion", "motifs", "contour", "tempo"]
@@ -1342,22 +1342,22 @@ def compute_recall(
     ---------------
     Agents and producers need to surface past commits that are musically relevant
     to a natural-language description (e.g. ``"a jazzy chord progression with swing
-    groove"``).  This endpoint bridges semantic intent and the vector index so that
+    groove"``). This endpoint bridges semantic intent and the vector index so that
     retrieval is based on musical meaning rather than exact keyword matching.
 
     Stub implementation
     -------------------
     The full implementation will embed ``query`` into the 128-dim musical feature
     space (via ``musehub_embeddings.compute_embedding``), then call
-    ``MusehubQdrantClient.search_similar`` scoped to ``repo_id``.  Until Qdrant
+    ``MusehubQdrantClient.search_similar`` scoped to ``repo_id``. Until Qdrant
     is wired, this returns deterministic stub results keyed on the XOR of the ref
     and query hashes so agents receive consistent responses across retries.
 
     Args:
-        repo_id:  Muse Hub repo UUID (used for scoping and logging).
-        ref:      Muse commit ref to scope the search to (only reachable commits).
-        query:    Natural-language search string, e.g. ``"swing groove with jazz harmony"``.
-        limit:    Maximum number of matches to return (default 10, max 50).
+        repo_id: Muse Hub repo UUID (used for scoping and logging).
+        ref: Muse commit ref to scope the search to (only reachable commits).
+        query: Natural-language search string, e.g. ``"swing groove with jazz harmony"``.
+        limit: Maximum number of matches to return (default 10, max 50).
 
     Returns:
         :class:`RecallResponse` with a ranked list of :class:`RecallMatch` entries,
@@ -1380,7 +1380,7 @@ def compute_recall(
         noise = ((item_seed >> (i % 16)) % 8) / 100.0
         score = round(max(0.0, min(1.0, base_score - noise)), 4)
 
-        commit_hash = hashlib.md5(f"{ref}:{query}:{i}".encode()).hexdigest()[:16]  # noqa: S324
+        commit_hash = hashlib.md5(f"{ref}:{query}:{i}".encode()).hexdigest()[:16] # noqa: S324
         message = _RECALL_MESSAGES[(combined_seed + i) % len(_RECALL_MESSAGES)]
         branch = _RECALL_BRANCHES[(combined_seed + i) % len(_RECALL_BRANCHES)]
 
@@ -1392,7 +1392,7 @@ def compute_recall(
         ]
         # Deduplicate while preserving order.
         seen: set[str] = set()
-        unique_dims = [d for d in dims if not (d in seen or seen.add(d))]  # type: ignore[func-returns-value]
+        unique_dims = [d for d in dims if not (d in seen or seen.add(d))] # type: ignore[func-returns-value]
 
         matches.append(
             RecallMatch(
@@ -1419,11 +1419,11 @@ def compute_recall(
 
 
 # ---------------------------------------------------------------------------
-# Cross-ref similarity (issue #406)
+# Cross-ref similarity
 # ---------------------------------------------------------------------------
 
 # Interpretation thresholds: the weighted mean of 10 dimension scores maps
-# to a qualitative label.  Weights are equal (0.1 each) so the overall score
+# to a qualitative label. Weights are equal (0.1 each) so the overall score
 # is a simple mean, but kept in this lookup to support future re-weighting
 # without changing the response shape.
 _SIMILARITY_WEIGHTS: dict[str, float] = {
@@ -1568,7 +1568,7 @@ def compute_ref_similarity(
 
 
 # ---------------------------------------------------------------------------
-# Emotion diff (issue #420)
+# Emotion diff
 # ---------------------------------------------------------------------------
 
 # Axis labels in declaration order — used for delta interpretation
@@ -1625,15 +1625,15 @@ def compute_emotion_diff(
     Why this is separate from the generic emotion dimension
     -------------------------------------------------------
     The generic ``emotion`` dimension returns a single aggregate snapshot with
-    a 2-axis (valence/arousal) model.  This endpoint uses an extended 8-axis
+    a 2-axis (valence/arousal) model. This endpoint uses an extended 8-axis
     radar model and computes a *comparative* diff between two refs — the
     information the ``muse emotion-diff`` CLI command and the PR detail page
     need to answer "how did this commit change the emotional character?"
 
     Args:
-        repo_id:   Muse Hub repo UUID (used for logging).
-        head_ref:  The ref being evaluated (the head commit).
-        base_ref:  The ref used as comparison baseline (e.g. parent commit, ``main``).
+        repo_id: Muse Hub repo UUID (used for logging).
+        head_ref: The ref being evaluated (the head commit).
+        base_ref: The ref used as comparison baseline (e.g. parent commit, ``main``).
 
     Returns:
         :class:`EmotionDiffResponse` with base, head, delta vectors, and interpretation.

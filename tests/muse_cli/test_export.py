@@ -84,9 +84,9 @@ def _make_minimal_midi() -> bytes:
     header = b"MThd\x00\x00\x00\x06\x00\x00\x00\x01\x01\xe0"
     # Track: Note On C4, wait 480 ticks, Note Off C4, end-of-track
     track_data = (
-        b"\x00\x90\x3c\x40"     # delta=0, Note On ch=0, pitch=60, vel=64
+        b"\x00\x90\x3c\x40" # delta=0, Note On ch=0, pitch=60, vel=64
         b"\x81\x60\x80\x3c\x00" # delta=480 (var-len), Note Off ch=0, pitch=60, vel=0
-        b"\x00\xff\x2f\x00"     # delta=0, End of Track
+        b"\x00\xff\x2f\x00" # delta=0, End of Track
     )
     track_len = len(track_data).to_bytes(4, "big")
     return header + b"MTrk" + track_len + track_data
@@ -224,7 +224,7 @@ def test_export_section_scoped_midi(tmp_path: pathlib.Path) -> None:
     result = export_midi(filtered, tmp_path, opts)
 
     assert len(result.paths_written) == 1
-    assert "chorus" not in result.paths_written[0].name  # stem is "piano"
+    assert "chorus" not in result.paths_written[0].name # stem is "piano"
     assert result.paths_written[0].name == "piano.mid"
 
 
@@ -255,7 +255,7 @@ def test_export_json_outputs_full_note_structure(tmp_path: pathlib.Path) -> None
     """export_json writes a JSON file with commit_id, exported_at, and files array."""
     manifest = _make_manifest_with_midi(tmp_path, ["beat.mid"])
     out = tmp_path / "exports" / "out.json"
-    commit_id = "deadbeef" * 8  # 64-char hex
+    commit_id = "deadbeef" * 8 # 64-char hex
     opts = MuseExportOptions(
         format=ExportFormat.JSON,
         commit_id=commit_id,
@@ -352,7 +352,7 @@ def test_export_wav_non_200_raises_unavailable(tmp_path: pathlib.Path) -> None:
 
 def test_export_no_commits_exits_user_error(tmp_path: pathlib.Path) -> None:
     """``muse export --format json`` exits 1 when there are no commits (HEAD empty)."""
-    _init_muse_repo(tmp_path)  # HEAD ref file is empty
+    _init_muse_repo(tmp_path) # HEAD ref file is empty
 
     with patch.dict("os.environ", {"MUSE_REPO_ROOT": str(tmp_path)}):
         result = runner.invoke(cli, ["export", "--format", "json"])
@@ -420,7 +420,7 @@ async def test_export_commit_prefix_resolution(
     _set_head(tmp_path, commit_id)
 
     result = await _export_async(
-        commit_ref=commit_id[:8],  # use short prefix
+        commit_ref=commit_id[:8], # use short prefix
         fmt=ExportFormat.JSON,
         output=tmp_path / "prefix_out.json",
         track=None,
@@ -489,7 +489,7 @@ def test_resolve_commit_id_returns_prefix(tmp_path: pathlib.Path) -> None:
 
 def test_resolve_commit_id_raises_when_no_commits(tmp_path: pathlib.Path) -> None:
     """resolve_commit_id raises ValueError when HEAD has no commits."""
-    _init_muse_repo(tmp_path)  # HEAD ref is empty
+    _init_muse_repo(tmp_path) # HEAD ref is empty
 
     with pytest.raises(ValueError, match="No commits yet"):
         resolve_commit_id(tmp_path, None)

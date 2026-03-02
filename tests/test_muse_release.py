@@ -28,7 +28,7 @@ import pytest
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from maestro.db.database import Base
-from maestro.muse_cli import models as cli_models  # noqa: F401 — register tables
+from maestro.muse_cli import models as cli_models # noqa: F401 — register tables
 from maestro.muse_cli.models import MuseCliCommit, MuseCliObject, MuseCliSnapshot, MuseCliTag
 from maestro.services.muse_release import (
     ReleaseAudioFormat,
@@ -156,7 +156,7 @@ def test_build_release_writes_manifest_only(
 
     with patch(
         "maestro.services.muse_release._check_storpheus_reachable"
-    ):  # not called — no audio flags
+    ): # not called — no audio flags
         result = build_release(
             tag="v1.0",
             commit_id="b" * 64,
@@ -294,7 +294,7 @@ def test_build_release_raises_when_no_midi_files(
     """build_release raises ValueError when no MIDI files exist in snapshot."""
     workdir = repo_root / "muse-work"
     workdir.mkdir()
-    (workdir / "notes.json").write_text("{}")  # not a MIDI file
+    (workdir / "notes.json").write_text("{}") # not a MIDI file
 
     manifest = {"notes.json": "c" * 64}
     output_dir = tmp_path / "releases" / "v1.0"
@@ -375,7 +375,7 @@ def test_collect_midi_paths_skips_missing_files(
     """_collect_midi_paths counts missing files in skipped_count."""
     workdir = repo_root / "muse-work"
     workdir.mkdir()
-    manifest = {"missing.mid": "c" * 64}  # file does not exist on disk
+    manifest = {"missing.mid": "c" * 64} # file does not exist on disk
 
     paths, skipped = _collect_midi_paths(manifest, repo_root)
     assert paths == []
@@ -425,7 +425,7 @@ async def test_resolve_tag_to_commit_uses_most_recent_when_ambiguous(
     await async_session.flush()
 
     t1 = datetime.datetime(2024, 1, 1, tzinfo=datetime.timezone.utc)
-    t2 = datetime.datetime(2024, 6, 1, tzinfo=datetime.timezone.utc)  # more recent
+    t2 = datetime.datetime(2024, 6, 1, tzinfo=datetime.timezone.utc) # more recent
 
     async_session.add(
         MuseCliCommit(
@@ -483,7 +483,7 @@ async def test_release_resolves_tag_and_exports_manifest(
 ) -> None:
     """Regression: _release_async resolves tag, fetches manifest, writes manifest.json.
 
-    This is the primary acceptance criterion for issue #82: a producer runs
+    This is the primary acceptance criterion: a producer runs
     'muse release v1.0' and receives a release-manifest.json pinning the
     tagged snapshot.
     """

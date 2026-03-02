@@ -18,8 +18,8 @@ class SectionMapEntry:
     """One section in the section map (intro, main, outro, etc.)."""
     bar_start: int
     bar_end: int
-    section: str  # "intro" | "main" | "outro" | "bridge" etc.
-    energy: float = 0.8  # 0..1
+    section: str # "intro" | "main" | "outro" | "bridge" etc.
+    energy: float = 0.8 # 0..1
 
 
 @dataclass
@@ -28,13 +28,13 @@ class GlobalSpec:
     tempo: int = 120
     key: str = "C"
     scale: str = "natural_minor"
-    swing: float = 0.0  # 0 = straight, 0.5 = light swing, 1.0 = heavy shuffle
+    swing: float = 0.0 # 0 = straight, 0.5 = light swing, 1.0 = heavy shuffle
     bars: int = 16
     time_signature: tuple[int, int] = (4, 4)
-    microtiming_jitter_ms: tuple[int, int] = (-15, 15)  # [min_ms, max_ms] for humanization
-    humanize_profile: str = "tight"  # "laid_back" | "tight" | "pushed"
+    microtiming_jitter_ms: tuple[int, int] = (-15, 15) # [min_ms, max_ms] for humanization
+    humanize_profile: str = "tight" # "laid_back" | "tight" | "pushed"
     section_map: list[SectionMapEntry] = field(default_factory=list)
-    energy_curve: str | None = None  # "rise_hold_fall" | "flat" | etc.
+    energy_curve: str | None = None # "rise_hold_fall" | "flat" | etc.
 
 
 # -----------------------------------------------------------------------------
@@ -56,14 +56,14 @@ class DensityTarget:
 class DrumLayerSpec:
     """One drum layer (core, timekeepers, ghost, fills, etc.)."""
     role: str
-    instruments: list[int]  # GM pitches
+    instruments: list[int] # GM pitches
     density_target: DensityTarget
     velocity_range: tuple[int, int] = (70, 100)
     required: bool = True
     variation_rate: float = 0.0
-    placement: str | None = None  # e.g. "offbeats_and_before_backbeat"
-    probability: float = 1.0  # for ear_candy
-    fill_bars: list[int] | None = None  # for fills layer
+    placement: str | None = None # e.g. "offbeats_and_before_backbeat"
+    probability: float = 1.0 # for ear_candy
+    fill_bars: list[int] | None = None # for fills layer
     max_fill_density_per_bar: int | None = None
 
 
@@ -108,7 +108,7 @@ class DrumSpec:
 
 def default_drum_spec(style: str = "trap", bars: int = 4) -> DrumSpec:
     """Build a DrumSpec with full 16-piece layering and salience."""
-    fill_bars = [b for b in range(3, bars, 4)]  # bar 3, 7, 11, ... (0-based, last bar of each 4-bar phrase)
+    fill_bars = [b for b in range(3, bars, 4)] # bar 3, 7, 11, ... (0-based, last bar of each 4-bar phrase)
     if not fill_bars and bars >= 1:
         fill_bars = [bars - 1]
 
@@ -126,14 +126,14 @@ def default_drum_spec(style: str = "trap", bars: int = 4) -> DrumSpec:
         layers={
             "core": DrumLayerSpec(
                 role="kick_snare",
-                instruments=[36, 38, 39],  # kick, snare, clap
+                instruments=[36, 38, 39], # kick, snare, clap
                 density_target=DensityTarget(min_hits_per_bar=2, max_hits_per_bar=4),
                 velocity_range=(85, 110),
                 required=True,
             ),
             "timekeepers": DrumLayerSpec(
                 role="hats",
-                instruments=[42, 44, 46],  # closed, pedal, open hi-hat
+                instruments=[42, 44, 46], # closed, pedal, open hi-hat
                 density_target=DensityTarget(min_hits_per_bar=8, max_hits_per_bar=16),
                 velocity_range=(60, 95),
                 variation_rate=0.3,
@@ -148,7 +148,7 @@ def default_drum_spec(style: str = "trap", bars: int = 4) -> DrumSpec:
             ),
             "ghost_layer": DrumLayerSpec(
                 role="ghost_snare_rim_perc",
-                instruments=[37, 38, 40, 41, 43, 45, 47],  # rim, snare, e.snare, toms
+                instruments=[37, 38, 40, 41, 43, 45, 47], # rim, snare, e.snare, toms
                 density_target=DensityTarget(min_hits_per_4_bars=2, max_hits_per_4_bars=12),
                 velocity_range=(40, 70),
                 placement="offbeats_and_before_backbeat",
@@ -156,7 +156,7 @@ def default_drum_spec(style: str = "trap", bars: int = 4) -> DrumSpec:
             ),
             "fills": DrumLayerSpec(
                 role="toms_rolls",
-                instruments=[41, 43, 45, 47, 48, 50],  # toms
+                instruments=[41, 43, 45, 47, 48, 50], # toms
                 density_target=DensityTarget(min_hits_per_bar=0, max_hits_per_bar=8),
                 fill_bars=fill_bars,
                 max_fill_density_per_bar=8,
@@ -164,7 +164,7 @@ def default_drum_spec(style: str = "trap", bars: int = 4) -> DrumSpec:
             ),
             "ear_candy": DrumLayerSpec(
                 role="perc",
-                instruments=[54, 56, 69, 70, 75],  # tambourine, cowbell, cabasa, maracas, claves
+                instruments=[54, 56, 69, 70, 75], # tambourine, cowbell, cabasa, maracas, claves
                 density_target=DensityTarget(min_hits_per_8_bars=0, max_hits_per_8_bars=4),
                 probability=0.2,
                 required=False,
@@ -209,16 +209,16 @@ class BassNoteLength:
 class BassSpec:
     """Bass plan: rhythm lock to kick, register, 808 slides, chord follow."""
     style: str = "trap"
-    register: str = "low"  # "low" | "mid" | "high"
-    root_octave: int = 2  # MIDI octave for root
-    rhythm_lock: str = "kick"  # "kick" | "clave" | "chord_rhythm" | "free"
+    register: str = "low" # "low" | "mid" | "high"
+    root_octave: int = 2 # MIDI octave for root
+    rhythm_lock: str = "kick" # "kick" | "clave" | "chord_rhythm" | "free"
     kick_follow_probability: float = 0.7
     anticipation_allowed: bool = True
     octave_jump_probability: float = 0.15
     note_length: BassNoteLength = field(default_factory=BassNoteLength)
     syncopation_allowed: bool = True
     slide_808_probability: float = 0.3
-    chord_follow: str = "root_and_fifth"  # "root" | "root_and_fifth" | "arpeggio"
+    chord_follow: str = "root_and_fifth" # "root" | "root_and_fifth" | "arpeggio"
     density_target: BassDensityTarget = field(default_factory=BassDensityTarget)
 
 
@@ -235,17 +235,17 @@ def default_bass_spec(style: str = "trap", bars: int = 16) -> BassSpec:
 class ChordScheduleEntry:
     """One (bar, chord) in the chord schedule."""
     bar: int
-    chord: str  # e.g. "Cm", "Eb", "Ab"
+    chord: str # e.g. "Cm", "Eb", "Ab"
 
 
 @dataclass
 class HarmonicSpec:
     """Chord plan: chord_schedule (bar → chord), voicing, tension points."""
-    chord_rhythm: str = "half_note"  # "whole" | "half_note" | "quarter" | "syncopated"
+    chord_rhythm: str = "half_note" # "whole" | "half_note" | "quarter" | "syncopated"
     chord_palette: list[str] = field(default_factory=list)
     chord_schedule: list[ChordScheduleEntry] = field(default_factory=list)
     tension_points: list[int] = field(default_factory=list)
-    voicing: str = "root_third_seventh"  # "root" | "root_third" | "root_third_seventh"
+    voicing: str = "root_third_seventh" # "root" | "root_third" | "root_third_seventh"
     velocity_range: tuple[int, int] = (70, 95)
 
 
@@ -265,7 +265,7 @@ def default_harmonic_spec(
     return HarmonicSpec(
         chord_palette=palette,
         chord_schedule=schedule,
-        tension_points=[b for b in range(7, bars, 8)],  # e.g. bar 7, 15
+        tension_points=[b for b in range(7, bars, 8)], # e.g. bar 7, 15
     )
 
 
@@ -308,16 +308,16 @@ class MelodySpec:
     motif_length_bars: int = 2
     call_response: bool = True
     phrase_boundaries: list[int] = field(default_factory=list)
-    contour: str = "arc"  # "arc" | "ascending" | "descending" | "wave"
-    register: str = "mid_high"  # "low" | "mid" | "mid_high" | "high"
-    rest_density: float = 0.3  # fraction of beats that are rest
+    contour: str = "arc" # "arc" | "ascending" | "descending" | "wave"
+    register: str = "mid_high" # "low" | "mid" | "mid_high" | "high"
+    rest_density: float = 0.3 # fraction of beats that are rest
     scale_lock: bool = True
 
 
 def default_melody_spec(bars: int = 16) -> MelodySpec:
     """Build MelodySpec from bar count."""
     return MelodySpec(
-        phrase_boundaries=[b for b in range(4, bars + 1, 4)],  # 4, 8, 12, 16
+        phrase_boundaries=[b for b in range(4, bars + 1, 4)], # 4, 8, 12, 16
     )
 
 
@@ -389,11 +389,11 @@ def build_full_music_spec(
 def apply_policy_to_music_spec(
     spec: MusicSpec,
     *,
-    density: float = 0.5,  # 0 = sparse, 1 = dense
-    complexity: float = 0.5,  # syncopation + variation rate
-    tension: float = 0.5,  # fill probability, cymbal density
-    brightness: float = 0.5,  # cymbal vs tom emphasis
-    groove: str | None = None,  # swing/shuffle override
+    density: float = 0.5, # 0 = sparse, 1 = dense
+    complexity: float = 0.5, # syncopation + variation rate
+    tension: float = 0.5, # fill probability, cymbal density
+    brightness: float = 0.5, # cymbal vs tom emphasis
+    groove: str | None = None, # swing/shuffle override
 ) -> MusicSpec:
     """
     Apply policy (density, complexity, tension, brightness, groove) to MusicSpec.

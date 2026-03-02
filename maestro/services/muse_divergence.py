@@ -5,14 +5,14 @@ each branch introduced since their common ancestor (merge base).
 
 Dimensions analysed
 -------------------
-- ``melodic``    — lead/melody/solo/vocal files
-- ``harmonic``   — harmony/chord/key/scale files
-- ``rhythmic``   — beat/drum/rhythm/groove/percussion files
+- ``melodic`` — lead/melody/solo/vocal files
+- ``harmonic`` — harmony/chord/key/scale files
+- ``rhythmic`` — beat/drum/rhythm/groove/percussion files
 - ``structural`` — form/section/arrangement/bridge/chorus/verse files
-- ``dynamic``    — mix/master/volume/level files
+- ``dynamic`` — mix/master/volume/level files
 
 A path is assigned to one or more dimensions by keyword matching on the
-lowercase filename.  Paths that do not match any dimension keyword are counted
+lowercase filename. Paths that do not match any dimension keyword are counted
 as unclassified and excluded from individual dimension scores but may
 contribute to the ``overall_score``.
 
@@ -64,11 +64,11 @@ ALL_DIMENSIONS: tuple[str, ...] = (
 
 #: Lowercase keyword patterns used to classify file paths into musical dimensions.
 _DIMENSION_PATTERNS: dict[str, tuple[str, ...]] = {
-    "melodic":    ("melody", "lead", "solo", "vocal"),
-    "harmonic":   ("harm", "chord", "key", "scale"),
-    "rhythmic":   ("beat", "drum", "rhythm", "groove", "perc"),
+    "melodic": ("melody", "lead", "solo", "vocal"),
+    "harmonic": ("harm", "chord", "key", "scale"),
+    "rhythmic": ("beat", "drum", "rhythm", "groove", "perc"),
     "structural": ("struct", "form", "section", "bridge", "chorus", "verse", "intro", "outro"),
-    "dynamic":    ("mix", "master", "volume", "level", "dyn"),
+    "dynamic": ("mix", "master", "volume", "level", "dyn"),
 }
 
 
@@ -83,8 +83,8 @@ class DivergenceLevel(str, Enum):
     Thresholds
     ----------
     - ``NONE`` — score < 0.15
-    - ``LOW``  — 0.15 ≤ score < 0.40
-    - ``MED``  — 0.40 ≤ score < 0.70
+    - ``LOW`` — 0.15 ≤ score < 0.40
+    - ``MED`` — 0.40 ≤ score < 0.70
     - ``HIGH`` — score ≥ 0.70
     """
 
@@ -99,10 +99,10 @@ class DimensionDivergence:
     """Divergence score and description for a single musical dimension.
 
     Attributes:
-        dimension:        Dimension name (e.g. ``"melodic"``).
-        level:            Qualitative divergence level.
-        score:            Normalised divergence score in [0.0, 1.0].
-        description:      Human-readable divergence summary.
+        dimension: Dimension name (e.g. ``"melodic"``).
+        level: Qualitative divergence level.
+        score: Normalised divergence score in [0.0, 1.0].
+        description: Human-readable divergence summary.
         branch_a_summary: How many files in this dimension changed on branch A.
         branch_b_summary: How many files in this dimension changed on branch B.
     """
@@ -120,11 +120,11 @@ class MuseDivergenceResult:
     """Full musical divergence report between two CLI branches.
 
     Attributes:
-        branch_a:        Name of the first branch.
-        branch_b:        Name of the second branch.
+        branch_a: Name of the first branch.
+        branch_b: Name of the second branch.
         common_ancestor: Commit ID of the merge base, or ``None`` if disjoint.
-        dimensions:      Per-dimension divergence results.
-        overall_score:   Mean of all per-dimension scores in [0.0, 1.0].
+        dimensions: Per-dimension divergence results.
+        overall_score: Mean of all per-dimension scores in [0.0, 1.0].
     """
 
     branch_a: str
@@ -142,14 +142,14 @@ class MuseDivergenceResult:
 def classify_path(path: str) -> set[str]:
     """Return the set of dimensions this file path belongs to.
 
-    Matching is case-insensitive and keyword-based.  A single path may belong
+    Matching is case-insensitive and keyword-based. A single path may belong
     to multiple dimensions (e.g. ``"vocal_melody.mid"`` → ``melodic``).
 
     Args:
         path: POSIX-style relative file path from a snapshot manifest.
 
     Returns:
-        Set of dimension names that the path matches.  Empty set if unclassified.
+        Set of dimension names that the path matches. Empty set if unclassified.
     """
     lower = path.lower()
     return {
@@ -190,7 +190,7 @@ def compute_dimension_divergence(
     - 1.0 → no overlap — completely diverged.
 
     Args:
-        dimension:        Dimension name (one of :data:`ALL_DIMENSIONS`).
+        dimension: Dimension name (one of :data:`ALL_DIMENSIONS`).
         branch_a_changed: Paths changed on branch A since the merge base.
         branch_b_changed: Paths changed on branch B since the merge base.
 
@@ -245,9 +245,9 @@ async def get_branch_head_commit_id(
     """Return the most recent commit ID on *branch* for *repo_id*.
 
     Args:
-        session:  Open async DB session.
-        repo_id:  Repository identifier (from ``.muse/repo.json``).
-        branch:   Branch name.
+        session: Open async DB session.
+        repo_id: Repository identifier (from ``.muse/repo.json``).
+        branch: Branch name.
 
     Returns:
         Commit ID string, or ``None`` if the branch has no commits.
@@ -280,8 +280,8 @@ async def collect_changed_paths_since(
     *tip_commit_id*'s snapshot are returned.
 
     Args:
-        session:        Open async DB session.
-        tip_commit_id:  Branch HEAD commit ID.
+        session: Open async DB session.
+        tip_commit_id: Branch HEAD commit ID.
         base_commit_id: Merge-base commit ID, or ``None``.
 
     Returns:
@@ -296,11 +296,11 @@ async def collect_changed_paths_since(
     tip_paths = set(tip_manifest)
 
     changed: set[str] = set()
-    changed |= tip_paths - base_paths          # added
-    changed |= base_paths - tip_paths          # deleted
+    changed |= tip_paths - base_paths # added
+    changed |= base_paths - tip_paths # deleted
     for path in base_paths & tip_paths:
         if base_manifest[path] != tip_manifest[path]:
-            changed.add(path)                  # modified
+            changed.add(path) # modified
 
     return changed
 
@@ -325,11 +325,11 @@ async def compute_divergence(
     base on each branch, and computes a per-dimension divergence score.
 
     Args:
-        session:    Open async DB session.
-        repo_id:    Repository ID (from ``.muse/repo.json``).
-        branch_a:   First branch name.
-        branch_b:   Second branch name.
-        since:      Common ancestor commit ID override (auto-detected if ``None``).
+        session: Open async DB session.
+        repo_id: Repository ID (from ``.muse/repo.json``).
+        branch_a: First branch name.
+        branch_b: Second branch name.
+        since: Common ancestor commit ID override (auto-detected if ``None``).
         dimensions: Dimensions to analyse (default: all in :data:`ALL_DIMENSIONS`).
 
     Returns:

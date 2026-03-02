@@ -1,6 +1,6 @@
 """muse symbolic-ref — read or write a symbolic ref in the Muse repository.
 
-A symbolic ref is a file whose contents point to another ref.  The canonical
+A symbolic ref is a file whose contents point to another ref. The canonical
 example is ``.muse/HEAD``, which contains ``refs/heads/main`` when on the main
 branch and a bare 40-char SHA when in detached HEAD state.
 
@@ -8,10 +8,10 @@ Usage
 -----
 ::
 
-    muse symbolic-ref HEAD                          # read: prints refs/heads/main
-    muse symbolic-ref --short HEAD                  # read short: prints main
-    muse symbolic-ref HEAD refs/heads/feature/x    # write new target
-    muse symbolic-ref --delete HEAD                 # delete (detached HEAD scenarios)
+    muse symbolic-ref HEAD # read: prints refs/heads/main
+    muse symbolic-ref --short HEAD # read short: prints main
+    muse symbolic-ref HEAD refs/heads/feature/x # write new target
+    muse symbolic-ref --delete HEAD # delete (detached HEAD scenarios)
     -q / --quiet suppresses error output when the ref is not symbolic.
 
 Design notes
@@ -76,12 +76,12 @@ def read_symbolic_ref(
     """Read a symbolic ref from ``muse_dir``.
 
     Returns a :class:`SymbolicRefResult` when the file exists and its content
-    starts with ``refs/``.  Returns ``None`` when:
+    starts with ``refs/``. Returns ``None`` when:
     - The file does not exist.
     - The content does not start with ``refs/`` (detached HEAD / bare SHA).
 
     When *quiet* is ``False`` and the ref is not symbolic, a warning is written
-    via the module logger.  Callers may also echo to the user themselves.
+    via the module logger. Callers may also echo to the user themselves.
 
     Args:
         muse_dir: Path to the ``.muse/`` directory.

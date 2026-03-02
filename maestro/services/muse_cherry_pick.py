@@ -1,7 +1,7 @@
 """Muse Cherry-Pick Service — apply a specific commit's diff on top of HEAD.
 
 Cherry-pick is the surgical transplant: given a source commit C with parent P,
-compute diff(P → C) and apply that patch to the current HEAD snapshot.  The
+compute diff(P → C) and apply that patch to the current HEAD snapshot. The
 result is a new commit whose content is HEAD's snapshot plus the delta that C
 introduced, without bringing in any other commits from C's branch.
 
@@ -22,8 +22,8 @@ Written when conflicts are detected, consumed by ``--continue`` and ``--abort``.
 .. code-block:: json
 
     {
-        "cherry_commit":  "abc123...",
-        "head_commit":    "def456...",
+        "cherry_commit": "abc123...",
+        "head_commit": "def456...",
         "conflict_paths": ["beat.mid"]
     }
 
@@ -34,7 +34,7 @@ Boundary rules:
     muse_cli.snapshot.
 
 Domain analogy: a producer recorded the perfect guitar solo in an experimental
-branch.  ``muse cherry-pick <commit>`` transplants just that solo into main,
+branch. ``muse cherry-pick <commit>`` transplants just that solo into main,
 leaving the other 20 unrelated commits behind.
 """
 from __future__ import annotations
@@ -72,8 +72,8 @@ class CherryPickState:
     """Describes an in-progress cherry-pick with unresolved conflicts.
 
     Attributes:
-        cherry_commit:  Commit ID being cherry-picked.
-        head_commit:    Commit ID of HEAD when the cherry-pick was initiated.
+        cherry_commit: Commit ID being cherry-picked.
+        head_commit: Commit ID of HEAD when the cherry-pick was initiated.
         conflict_paths: Relative POSIX paths that have unresolved conflicts.
     """
 
@@ -87,15 +87,15 @@ class CherryPickResult:
     """Outcome of a ``muse cherry-pick`` operation.
 
     Attributes:
-        commit_id:        New commit ID (empty when ``no_commit=True`` or conflict).
+        commit_id: New commit ID (empty when ``no_commit=True`` or conflict).
         cherry_commit_id: Source commit that was cherry-picked.
-        head_commit_id:   HEAD commit at cherry-pick time.
-        new_snapshot_id:  Snapshot ID of the resulting state.
-        message:          Commit message (prefixed with cherry-pick attribution).
-        no_commit:        True when ``--no-commit`` was requested.
-        conflict:         True when conflicts were detected (state file written).
-        conflict_paths:   Conflicting paths (non-empty iff ``conflict=True``).
-        branch:           Branch on which the new commit was created.
+        head_commit_id: HEAD commit at cherry-pick time.
+        new_snapshot_id: Snapshot ID of the resulting state.
+        message: Commit message (prefixed with cherry-pick attribution).
+        no_commit: True when ``--no-commit`` was requested.
+        conflict: True when conflicts were detected (state file written).
+        conflict_paths: Conflicting paths (non-empty iff ``conflict=True``).
+        branch: Branch on which the new commit was created.
     """
 
     commit_id: str
@@ -117,7 +117,7 @@ class CherryPickResult:
 def read_cherry_pick_state(root: pathlib.Path) -> CherryPickState | None:
     """Return :class:`CherryPickState` if a cherry-pick is in progress, else ``None``.
 
-    Reads ``.muse/CHERRY_PICK_STATE.json``.  Returns ``None`` when absent or unparseable.
+    Reads ``.muse/CHERRY_PICK_STATE.json``. Returns ``None`` when absent or unparseable.
 
     Args:
         root: Repository root (directory containing ``.muse/``).
@@ -152,9 +152,9 @@ def write_cherry_pick_state(
     """Write ``.muse/CHERRY_PICK_STATE.json`` to record a paused cherry-pick.
 
     Args:
-        root:           Repository root.
-        cherry_commit:  Commit ID being cherry-picked.
-        head_commit:    Commit ID of HEAD at cherry-pick time.
+        root: Repository root.
+        cherry_commit: Commit ID being cherry-picked.
+        head_commit: Commit ID of HEAD at cherry-pick time.
         conflict_paths: Paths with unresolved conflicts.
     """
     state_path = root / ".muse" / _CHERRY_PICK_STATE_FILENAME
@@ -199,11 +199,11 @@ def compute_cherry_manifest(
     Paths not in ``cherry_diff`` remain at their HEAD values.
 
     Args:
-        base_manifest:   Manifest of the cherry commit's parent (P).
-        head_manifest:   Manifest of HEAD (ours).
+        base_manifest: Manifest of the cherry commit's parent (P).
+        head_manifest: Manifest of HEAD (ours).
         cherry_manifest: Manifest of the cherry commit (C).
-        cherry_diff:     Paths changed by C relative to P.
-        head_diff:       Paths changed by HEAD relative to P.
+        cherry_diff: Paths changed by C relative to P.
+        head_diff: Paths changed by HEAD relative to P.
 
     Returns:
         Tuple of (result_manifest, conflict_paths) where ``conflict_paths``
@@ -224,7 +224,7 @@ def compute_cherry_manifest(
                 pass
             else:
                 conflicts.add(path)
-                continue  # leave HEAD's version in result for now
+                continue # leave HEAD's version in result for now
 
         # Apply the cherry change: add/modify or delete
         if cherry_oid is not None:
@@ -250,15 +250,15 @@ async def _cherry_pick_async(
 ) -> CherryPickResult:
     """Core cherry-pick pipeline — resolve, validate, apply, and commit.
 
-    Called by the CLI callback and by tests.  All filesystem and DB
+    Called by the CLI callback and by tests. All filesystem and DB
     side-effects are isolated here so tests can inject an in-memory SQLite
     session and a ``tmp_path`` root.
 
     Args:
         commit_ref: Commit ID (full or abbreviated) to cherry-pick.
-        root:       Repo root (must contain ``.muse/``).
-        session:    Async DB session (caller owns commit/rollback lifecycle).
-        no_commit:  When ``True``, stage changes to muse-work/ but do not
+        root: Repo root (must contain ``.muse/``).
+        session: Async DB session (caller owns commit/rollback lifecycle).
+        no_commit: When ``True``, stage changes to muse-work/ but do not
                     create a new commit record.
 
     Returns:
@@ -278,7 +278,7 @@ async def _cherry_pick_async(
     if merge_state is not None and merge_state.conflict_paths:
         typer.echo(
             "❌ Cherry-pick blocked: unresolved merge conflicts in progress.\n"
-            "   Resolve all conflicts, then run 'muse commit' before cherry-picking."
+            " Resolve all conflicts, then run 'muse commit' before cherry-picking."
         )
         raise typer.Exit(code=ExitCode.USER_ERROR)
 
@@ -287,8 +287,8 @@ async def _cherry_pick_async(
     if existing_state is not None:
         typer.echo(
             "❌ Cherry-pick already in progress.\n"
-            "   Resolve conflicts and run 'muse cherry-pick --continue', or\n"
-            "   run 'muse cherry-pick --abort' to cancel."
+            " Resolve conflicts and run 'muse cherry-pick --continue', or\n"
+            " run 'muse cherry-pick --abort' to cancel."
         )
         raise typer.Exit(code=ExitCode.USER_ERROR)
 
@@ -342,7 +342,7 @@ async def _cherry_pick_async(
     # ── Guard: cherry-pick of HEAD itself is a noop ───────────────────────
     if cherry_commit_id == head_commit_id:
         typer.echo(
-            f"⚠️  Commit {cherry_commit_id[:8]} is already HEAD — nothing to cherry-pick."
+            f"⚠️ Commit {cherry_commit_id[:8]} is already HEAD — nothing to cherry-pick."
         )
         raise typer.Exit(code=ExitCode.SUCCESS)
 
@@ -385,7 +385,7 @@ async def _cherry_pick_async(
         )
         typer.echo(f"❌ Cherry-pick conflict in {len(conflict_paths)} file(s):")
         for path in sorted(conflict_paths):
-            typer.echo(f"\tboth modified:   {path}")
+            typer.echo(f"\tboth modified: {path}")
         typer.echo(
             "Fix conflicts and run 'muse cherry-pick --continue' to create the commit."
         )
@@ -447,7 +447,7 @@ async def _cherry_pick_async(
 
     typer.echo(
         f"✅ [{branch} {new_commit_id[:8]}] {cherry_commit.message}\n"
-        f"   (cherry picked from commit {short_id})"
+        f" (cherry picked from commit {short_id})"
     )
     logger.info(
         "✅ muse cherry-pick %s → %s on %r",
@@ -481,7 +481,7 @@ async def _cherry_pick_continue_async(
     commit, advances the branch pointer, and clears the state file.
 
     Args:
-        root:    Repository root.
+        root: Repository root.
         session: Open async DB session.
 
     Raises:
@@ -501,7 +501,7 @@ async def _cherry_pick_continue_async(
     if state.conflict_paths:
         typer.echo(
             f"❌ {len(state.conflict_paths)} conflict(s) not yet resolved:\n"
-            + "\n".join(f"\tboth modified:   {p}" for p in state.conflict_paths)
+            + "\n".join(f"\tboth modified: {p}" for p in state.conflict_paths)
             + "\nRun 'muse resolve <path> --ours/--theirs' for each file."
         )
         raise typer.Exit(code=ExitCode.USER_ERROR)
@@ -526,12 +526,12 @@ async def _cherry_pick_continue_async(
     # Build snapshot from current muse-work/ (conflicts already resolved)
     workdir = root / "muse-work"
     if not workdir.exists():
-        typer.echo("⚠️  muse-work/ is missing. Cannot create cherry-pick snapshot.")
+        typer.echo("⚠️ muse-work/ is missing. Cannot create cherry-pick snapshot.")
         raise typer.Exit(code=ExitCode.USER_ERROR)
 
     manifest = build_snapshot_manifest(workdir)
     if not manifest:
-        typer.echo("⚠️  muse-work/ is empty. Nothing to commit for the cherry-pick.")
+        typer.echo("⚠️ muse-work/ is empty. Nothing to commit for the cherry-pick.")
         raise typer.Exit(code=ExitCode.USER_ERROR)
 
     snapshot_id = compute_snapshot_id(manifest)
@@ -568,7 +568,7 @@ async def _cherry_pick_continue_async(
 
     typer.echo(
         f"✅ [{branch} {new_commit_id[:8]}] {cherry_commit_row.message}\n"
-        f"   (cherry picked from commit {short_id})"
+        f" (cherry picked from commit {short_id})"
     )
     logger.info(
         "✅ muse cherry-pick --continue: commit %s on %r (cherry: %s)",
@@ -601,7 +601,7 @@ async def _cherry_pick_abort_async(
     resets the branch pointer, and removes the state file.
 
     Args:
-        root:    Repository root.
+        root: Repository root.
         session: Open async DB session (unused but required for interface consistency).
 
     Raises:

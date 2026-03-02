@@ -22,7 +22,7 @@ import pytest
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from maestro.db.database import Base
-from maestro.muse_cli import models as cli_models  # noqa: F401 — register tables
+from maestro.muse_cli import models as cli_models # noqa: F401 — register tables
 from maestro.muse_cli.errors import ExitCode
 from maestro.muse_cli.models import MuseCliCommit, MuseCliObject, MuseCliSnapshot, MuseCliTag
 from maestro.muse_cli.commands.tag import (
@@ -210,7 +210,7 @@ async def test_tag_add_uses_head_when_no_commit_ref(
 
     await _tag_add_async(
         tag="key:Am",
-        commit_ref=None,  # use HEAD
+        commit_ref=None, # use HEAD
         root=repo_root,
         session=async_session,
     )

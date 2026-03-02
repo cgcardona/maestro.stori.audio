@@ -2,16 +2,16 @@
 Tests for app.auth.tokens — JWT generation and validation.
 
 Covers:
-  1.  hash_token
-  2.  generate_access_code — duration variants, admin flag, user_id
-  3.  validate_access_code — happy path, expiry, wrong type, tampered signature
-  4.  create_access_token — alias compatibility
-  5.  get_user_id_from_token — with and without sub
-  6.  get_token_expiration — valid and malformed tokens
-  7.  AccessCodeError — raised correctly
-  8.  Secret not configured — raises cleanly
+  1. hash_token
+  2. generate_access_code — duration variants, admin flag, user_id
+  3. validate_access_code — happy path, expiry, wrong type, tampered signature
+  4. create_access_token — alias compatibility
+  5. get_user_id_from_token — with and without sub
+  6. get_token_expiration — valid and malformed tokens
+  7. AccessCodeError — raised correctly
+  8. Secret not configured — raises cleanly
 
-JWT operations require ACCESS_TOKEN_SECRET.  We monkeypatch settings
+JWT operations require ACCESS_TOKEN_SECRET. We monkeypatch settings
 rather than relying on env, so these tests are hermetic.
 """
 from __future__ import annotations
@@ -118,7 +118,7 @@ class TestGenerateAccessCode:
         assert payload["type"] == "access"
         # exp should be roughly 24 hours from now
         age = payload["exp"] - payload["iat"]
-        assert abs(age - 86400) < 5  # within 5 seconds
+        assert abs(age - 86400) < 5 # within 5 seconds
 
     def test_duration_days(self) -> None:
 
@@ -225,7 +225,7 @@ class TestValidateAccessCode:
         payload = {
             "type": "access",
             "iat": now - 10,
-            "exp": now - 1,  # already expired
+            "exp": now - 1, # already expired
         }
         expired_token = jwt.encode(payload, _SECRET, algorithm=_ALGO)
         with _patch_settings():
@@ -349,7 +349,7 @@ class TestGetTokenExpiration:
         exp = get_token_expiration(token)
         now = datetime.now(timezone.utc)
         diff = (exp - now).total_seconds()
-        assert 3590 < diff < 3610  # ~1 hour, ±10 seconds
+        assert 3590 < diff < 3610 # ~1 hour, ±10 seconds
 
     def test_malformed_token_raises(self) -> None:
 

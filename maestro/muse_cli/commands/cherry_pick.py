@@ -4,15 +4,15 @@ Transplants the changes introduced by a single commit (from any branch)
 onto the current branch, without bringing in other commits from that branch.
 
 Domain analogy: a producer recorded the perfect guitar solo in
-``experiment/guitar-solo``.  ``muse cherry-pick <commit>`` transplants just
+``experiment/guitar-solo``. ``muse cherry-pick <commit>`` transplants just
 that solo into main, leaving the other 20 unrelated commits behind.
 
 Flags
 -----
-COMMIT TEXT       Commit ID to cherry-pick (required, positional, accepts prefix).
---no-commit       Apply the changes to muse-work/ without committing.
---continue        Resume after resolving conflicts from a previous cherry-pick.
---abort           Abort in-progress cherry-pick and restore pre-cherry-pick state.
+COMMIT TEXT Commit ID to cherry-pick (required, positional, accepts prefix).
+--no-commit Apply the changes to muse-work/ without committing.
+--continue Resume after resolving conflicts from a previous cherry-pick.
+--abort Abort in-progress cherry-pick and restore pre-cherry-pick state.
 """
 from __future__ import annotations
 

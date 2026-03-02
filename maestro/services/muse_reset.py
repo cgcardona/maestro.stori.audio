@@ -4,38 +4,38 @@ Implements three reset modes that mirror git's semantics, adapted for the
 Muse VCS filesystem model (``muse-work/`` working tree, ``.muse/refs/`` branch
 pointers, ``.muse/objects/`` content-addressed blob store):
 
-- **soft**  — advance/retreat the branch ref; muse-work/ and the object
-  store are left completely untouched.  A subsequent ``muse commit``
+- **soft** — advance/retreat the branch ref; muse-work/ and the object
+  store are left completely untouched. A subsequent ``muse commit``
   captures the current working tree on top of the new HEAD.
 
 - **mixed** (default) — same as soft for the branch ref; semantically
-  marks the index as "unstaged".  In the current Muse model (no explicit
-  staging area) this is equivalent to soft.  Exists for API symmetry with
+  marks the index as "unstaged". In the current Muse model (no explicit
+  staging area) this is equivalent to soft. Exists for API symmetry with
   git and for forward-compatibility when a staging index is added.
 
 - **hard** — moves the branch ref AND overwrites ``muse-work/`` with the
-  exact file contents captured in the target commit's snapshot.  Files are
+  exact file contents captured in the target commit's snapshot. Files are
   restored via :mod:`maestro.muse_cli.object_store` (the canonical blob
-  store shared by all Muse commands).  Any files in ``muse-work/`` that
+  store shared by all Muse commands). Any files in ``muse-work/`` that
   are NOT in the target snapshot are deleted.
 
 HEAD~N syntax
 -------------
 ``resolve_ref`` understands ``HEAD``, ``HEAD~N``, a full 64-char SHA, and
-any SHA prefix of ≥ 4 characters.  N-step parent traversal walks
+any SHA prefix of ≥ 4 characters. N-step parent traversal walks
 ``parent_commit_id`` only (primary parent for linear history); merge
 parents (``parent2_commit_id``) are ignored for the ``~N`` walk.
 
 Merge-in-progress guard
 -----------------------
-Reset is blocked when ``.muse/MERGE_STATE.json`` exists.  A merge in
+Reset is blocked when ``.muse/MERGE_STATE.json`` exists. A merge in
 progress must be completed or aborted before resetting.
 
 Object store contract
 ---------------------
 Hard reset requires that every object in the target snapshot's manifest
-exists in ``.muse/objects/``.  Objects are written there by ``muse commit``
-via :mod:`maestro.muse_cli.object_store`.  If an object is missing, hard
+exists in ``.muse/objects/``. Objects are written there by ``muse commit``
+via :mod:`maestro.muse_cli.object_store`. If an object is missing, hard
 reset raises ``MissingObjectError`` rather than silently leaving the working
 tree in a partial state.
 
@@ -73,10 +73,10 @@ class ResetMode(str, enum.Enum):
     """Three-level reset hierarchy, mirroring git semantics.
 
     Attributes:
-        SOFT:  Move branch pointer only; working tree and object store unchanged.
+        SOFT: Move branch pointer only; working tree and object store unchanged.
         MIXED: Move branch pointer and conceptually reset the index.
                Equivalent to SOFT in the current Muse model (no staging area).
-        HARD:  Move branch pointer AND overwrite muse-work/ with the target snapshot.
+        HARD: Move branch pointer AND overwrite muse-work/ with the target snapshot.
     """
 
     SOFT = "soft"
@@ -90,10 +90,10 @@ class ResetResult:
 
     Attributes:
         target_commit_id: Full SHA of the commit the branch now points to.
-        mode:             The reset mode that was applied.
-        branch:           Name of the branch that was reset.
-        files_restored:   Number of files written to muse-work/ (hard only).
-        files_deleted:    Number of files deleted from muse-work/ (hard only).
+        mode: The reset mode that was applied.
+        branch: Name of the branch that was reset.
+        files_restored: Number of files written to muse-work/ (hard only).
+        files_deleted: Number of files deleted from muse-work/ (hard only).
     """
 
     target_commit_id: str
@@ -107,8 +107,8 @@ class MissingObjectError(Exception):
     """Raised when a hard reset cannot find required blob content.
 
     Attributes:
-        object_id:  The missing content-addressed object SHA.
-        rel_path:   File path in the snapshot that required this object.
+        object_id: The missing content-addressed object SHA.
+        rel_path: File path in the snapshot that required this object.
     """
 
     def __init__(self, object_id: str, rel_path: str) -> None:
@@ -136,16 +136,16 @@ async def resolve_ref(
 
     Understands the following ref syntaxes (all case-insensitive for keywords):
 
-    - ``HEAD``     — most recent commit on *branch*.
-    - ``HEAD~N``   — N steps back from HEAD along the primary parent chain.
-    - ``<sha>``    — exact 64-character commit SHA.
+    - ``HEAD`` — most recent commit on *branch*.
+    - ``HEAD~N`` — N steps back from HEAD along the primary parent chain.
+    - ``<sha>`` — exact 64-character commit SHA.
     - ``<prefix>`` — any prefix of ≥ 1 character; returns first match.
 
     Args:
-        session:  Open async DB session.
-        repo_id:  Repository ID (from ``.muse/repo.json``).
-        branch:   Current branch name (used for HEAD resolution).
-        ref:      User-supplied reference string.
+        session: Open async DB session.
+        repo_id: Repository ID (from ``.muse/repo.json``).
+        branch: Current branch name (used for HEAD resolution).
+        ref: User-supplied reference string.
 
     Returns:
         The resolved ``MuseCliCommit`` row, or ``None`` when not found.
@@ -174,7 +174,7 @@ async def resolve_ref(
             return head_commit
 
         # Walk N parents back (primary parent only)
-        assert tilde_match is not None  # guaranteed: tilde_match truthy → not None
+        assert tilde_match is not None # guaranteed: tilde_match truthy → not None
         n_steps = int(tilde_match.group(1))
         current: MuseCliCommit | None = head_commit
         for _ in range(n_steps):
@@ -215,20 +215,20 @@ async def perform_reset(
     overwrites ``muse-work/`` with the target snapshot's file content.
 
     This function is the testable async core — it performs all filesystem
-    and DB I/O.  The Typer CLI wrapper in ``muse_cli/commands/reset.py``
+    and DB I/O. The Typer CLI wrapper in ``muse_cli/commands/reset.py``
     handles argument parsing, user confirmation, and error display.
 
     Raises:
-        typer.Exit:        On user-facing errors (merge in progress, ref not found,
+        typer.Exit: On user-facing errors (merge in progress, ref not found,
                            branch has no commits).
         MissingObjectError: When ``--hard`` cannot find a required blob in the
                            object store.
 
     Args:
-        root:    Muse repository root (directory containing ``.muse/``).
+        root: Muse repository root (directory containing ``.muse/``).
         session: Open async DB session.
-        ref:     Commit reference string (e.g. ``HEAD~2``, ``abc123``).
-        mode:    Which reset mode to apply.
+        ref: Commit reference string (e.g. ``HEAD~2``, ``abc123``).
+        mode: Which reset mode to apply.
 
     Returns:
         ``ResetResult`` describing the completed operation.
@@ -253,8 +253,8 @@ async def perform_reset(
     repo_id = repo_data["repo_id"]
 
     # ── Current branch ───────────────────────────────────────────────────
-    head_ref = (muse_dir / "HEAD").read_text().strip()  # "refs/heads/main"
-    branch = head_ref.rsplit("/", 1)[-1]  # "main"
+    head_ref = (muse_dir / "HEAD").read_text().strip() # "refs/heads/main"
+    branch = head_ref.rsplit("/", 1)[-1] # "main"
     ref_path = muse_dir / pathlib.Path(head_ref)
 
     if not ref_path.exists() or not ref_path.read_text().strip():

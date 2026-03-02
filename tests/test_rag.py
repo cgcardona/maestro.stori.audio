@@ -54,7 +54,7 @@ async def test_embed_text_success(rag_service: RAGService) -> None:
     """Test successful text embedding with HuggingFace."""
     mock_response = MagicMock()
     mock_response.status_code = 200
-    mock_response.json.return_value = [0.1, 0.2, 0.3]  # Simple embedding
+    mock_response.json.return_value = [0.1, 0.2, 0.3] # Simple embedding
     
     with patch("httpx.AsyncClient") as mock_client_class:
         mock_client = AsyncMock()
@@ -205,7 +205,7 @@ async def test_search_with_score_threshold(rag_service: RAGService) -> None:
             chunks = await rag_service.search(
                 "test query",
                 top_k=5,
-                score_threshold=0.8,  # Should filter results
+                score_threshold=0.8, # Should filter results
             )
             
             assert len(chunks) == 1

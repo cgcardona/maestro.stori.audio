@@ -1,27 +1,27 @@
 """Tests for ``muse rebase`` — commit replay onto a new base.
 
 Verifies:
-- test_rebase_linear_replays_commits              — regression: linear rebase replays commits onto upstream tip
-- test_rebase_noop_already_up_to_date             — noop when branch is already at upstream
-- test_rebase_fast_forward_advances_pointer       — current branch behind upstream → fast-forward
-- test_rebase_already_ahead_noop                  — upstream is base (current ahead) → noop
-- test_rebase_interactive_plan_from_commits       — InteractivePlan.from_commits produces pick entries
-- test_rebase_interactive_plan_parse_drop         — drop entries are excluded from resolved list
-- test_rebase_interactive_plan_invalid_action     — unrecognised action raises ValueError
-- test_rebase_interactive_plan_ambiguous_sha      — ambiguous SHA prefix raises ValueError
-- test_rebase_autosquash_moves_fixup_commits      — fixup! commits reordered after their targets
-- test_rebase_autosquash_no_fixups                — no fixup! commits → list unchanged
-- test_rebase_compute_delta_additions             — compute_delta detects added paths
-- test_rebase_compute_delta_deletions             — compute_delta detects removed paths
-- test_rebase_compute_delta_modifications         — compute_delta detects modified paths
-- test_rebase_apply_delta_applies_changes         — apply_delta patches an onto manifest
-- test_rebase_collect_commits_since_base          — collects only commits beyond the base
-- test_rebase_abort_restores_branch               — --abort rewrites branch pointer and clears state
-- test_rebase_continue_replays_remaining          — --continue replays remaining commits
-- test_rebase_continue_no_state_errors            — --continue with no state file exits 1
-- test_rebase_abort_no_state_errors               — --abort with no state file exits 1
-- test_rebase_state_roundtrip                     — write/read roundtrip for REBASE_STATE.json
-- test_boundary_no_forbidden_imports              — AST boundary seal
+- test_rebase_linear_replays_commits — regression: linear rebase replays commits onto upstream tip
+- test_rebase_noop_already_up_to_date — noop when branch is already at upstream
+- test_rebase_fast_forward_advances_pointer — current branch behind upstream → fast-forward
+- test_rebase_already_ahead_noop — upstream is base (current ahead) → noop
+- test_rebase_interactive_plan_from_commits — InteractivePlan.from_commits produces pick entries
+- test_rebase_interactive_plan_parse_drop — drop entries are excluded from resolved list
+- test_rebase_interactive_plan_invalid_action — unrecognised action raises ValueError
+- test_rebase_interactive_plan_ambiguous_sha — ambiguous SHA prefix raises ValueError
+- test_rebase_autosquash_moves_fixup_commits — fixup! commits reordered after their targets
+- test_rebase_autosquash_no_fixups — no fixup! commits → list unchanged
+- test_rebase_compute_delta_additions — compute_delta detects added paths
+- test_rebase_compute_delta_deletions — compute_delta detects removed paths
+- test_rebase_compute_delta_modifications — compute_delta detects modified paths
+- test_rebase_apply_delta_applies_changes — apply_delta patches an onto manifest
+- test_rebase_collect_commits_since_base — collects only commits beyond the base
+- test_rebase_abort_restores_branch — --abort rewrites branch pointer and clears state
+- test_rebase_continue_replays_remaining — --continue replays remaining commits
+- test_rebase_continue_no_state_errors — --continue with no state file exits 1
+- test_rebase_abort_no_state_errors — --abort with no state file exits 1
+- test_rebase_state_roundtrip — write/read roundtrip for REBASE_STATE.json
+- test_boundary_no_forbidden_imports — AST boundary seal
 """
 from __future__ import annotations
 
@@ -37,7 +37,7 @@ import typer
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from maestro.db.database import Base
-from maestro.muse_cli import models as _cli_models  # noqa: F401 — register tables
+from maestro.muse_cli import models as _cli_models # noqa: F401 — register tables
 from maestro.muse_cli.db import insert_commit, upsert_snapshot
 from maestro.muse_cli.models import MuseCliCommit, MuseCliSnapshot
 from maestro.muse_cli.snapshot import compute_commit_id, compute_snapshot_id
@@ -411,7 +411,7 @@ async def test_rebase_linear_replays_commits(
       base → c1 → c2 (on 'main')
 
     After rebase main onto dev:
-      dev → c1' → c2'  (main)
+      dev → c1' → c2' (main)
     """
     muse_dir = repo_root / ".muse"
 

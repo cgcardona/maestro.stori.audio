@@ -23,11 +23,11 @@ Filesystem helpers:
 .. code-block:: json
 
     {
-        "base_commit":    "abc123...",
-        "ours_commit":    "def456...",
-        "theirs_commit":  "789abc...",
+        "base_commit": "abc123...",
+        "ours_commit": "def456...",
+        "theirs_commit": "789abc...",
         "conflict_paths": ["beat.mid", "lead.mp3"],
-        "other_branch":   "feature/experiment"
+        "other_branch": "feature/experiment"
     }
 
 ``other_branch`` is optional; all other fields are required when conflicts exist.
@@ -60,10 +60,10 @@ class MergeState:
 
     Attributes:
         conflict_paths: Relative paths (POSIX) of files with merge conflicts.
-        base_commit:    Commit ID of the common ancestor (merge base).
-        ours_commit:    Commit ID of HEAD when the merge was initiated.
-        theirs_commit:  Commit ID of the branch being merged in.
-        other_branch:   Name of the branch being merged in, if recorded.
+        base_commit: Commit ID of the common ancestor (merge base).
+        ours_commit: Commit ID of HEAD when the merge was initiated.
+        theirs_commit: Commit ID of the branch being merged in.
+        other_branch: Name of the branch being merged in, if recorded.
     """
 
     conflict_paths: list[str] = field(default_factory=list)
@@ -81,7 +81,7 @@ class MergeState:
 def read_merge_state(root: pathlib.Path) -> MergeState | None:
     """Return :class:`MergeState` if a merge is in progress, otherwise ``None``.
 
-    Reads ``.muse/MERGE_STATE.json`` from *root*.  Returns ``None`` when the
+    Reads ``.muse/MERGE_STATE.json`` from *root*. Returns ``None`` when the
     file does not exist (no in-progress merge) or when it cannot be parsed.
 
     Args:
@@ -130,12 +130,12 @@ def write_merge_state(
     """Write ``.muse/MERGE_STATE.json`` to signal an in-progress conflicted merge.
 
     Args:
-        root:           Repository root (directory containing ``.muse/``).
-        base_commit:    Commit ID of the merge base (LCA).
-        ours_commit:    Commit ID of HEAD at merge time.
-        theirs_commit:  Commit ID of the branch being merged in.
+        root: Repository root (directory containing ``.muse/``).
+        base_commit: Commit ID of the merge base (LCA).
+        ours_commit: Commit ID of HEAD at merge time.
+        theirs_commit: Commit ID of the branch being merged in.
         conflict_paths: List of POSIX paths with unresolved conflicts.
-        other_branch:   Human-readable name of the branch being merged in.
+        other_branch: Human-readable name of the branch being merged in.
     """
     merge_state_path = root / ".muse" / _MERGE_STATE_FILENAME
     data: dict[str, object] = {
@@ -170,8 +170,8 @@ def apply_resolution(
     the caller to know the internal object store layout.
 
     Args:
-        root:      Repository root (directory containing ``.muse/``).
-        rel_path:  POSIX path relative to ``muse-work/``.
+        root: Repository root (directory containing ``.muse/``).
+        rel_path: POSIX path relative to ``muse-work/``.
         object_id: sha256 hex digest of the desired object content.
 
     Raises:
@@ -200,7 +200,7 @@ def is_conflict_resolved(merge_state: MergeState, rel_path: str) -> bool:
 
     Args:
         merge_state: The current in-progress merge state.
-        rel_path:    POSIX path to check (relative to ``muse-work/``).
+        rel_path: POSIX path to check (relative to ``muse-work/``).
 
     Returns:
         ``True`` if the path is already resolved, ``False`` if it still conflicts.
@@ -226,7 +226,7 @@ def diff_snapshots(
     - **modified** — present in both but with a different ``object_id``.
 
     Args:
-        base_manifest:  ``{path: object_id}`` for the common ancestor snapshot.
+        base_manifest: ``{path: object_id}`` for the common ancestor snapshot.
         other_manifest: ``{path: object_id}`` for the branch snapshot.
 
     Returns:
@@ -250,11 +250,11 @@ def detect_conflicts(
     """Return paths changed on *both* branches since the merge base.
 
     A conflict occurs when both ``ours`` and ``theirs`` modified the same path
-    independently.  The caller decides how to handle these (write
+    independently. The caller decides how to handle these (write
     ``MERGE_STATE.json`` and exit, or apply one side's version).
 
     Args:
-        ours_changed:   Paths changed on the current branch since the base.
+        ours_changed: Paths changed on the current branch since the base.
         theirs_changed: Paths changed on the target branch since the base.
 
     Returns:
@@ -280,10 +280,10 @@ def apply_merge(
     - Conflict paths → excluded (caller already wrote ``MERGE_STATE.json``).
 
     Args:
-        base_manifest:  ``{path: object_id}`` for the common ancestor.
-        ours_manifest:  ``{path: object_id}`` for the current branch HEAD.
+        base_manifest: ``{path: object_id}`` for the common ancestor.
+        ours_manifest: ``{path: object_id}`` for the current branch HEAD.
         theirs_manifest: ``{path: object_id}`` for the target branch HEAD.
-        ours_changed:   Paths changed on the current branch since base.
+        ours_changed: Paths changed on the current branch since base.
         theirs_changed: Paths changed on the target branch since base.
         conflict_paths: Paths with conflicts (must be empty for a clean merge).
 
@@ -329,9 +329,9 @@ async def find_merge_base(
     ``parent2_commit_id``).
 
     Args:
-        session:      An open async DB session.
-        commit_id_a:  First commit ID (e.g., current branch HEAD).
-        commit_id_b:  Second commit ID (e.g., target branch HEAD).
+        session: An open async DB session.
+        commit_id_a: First commit ID (e.g., current branch HEAD).
+        commit_id_b: Second commit ID (e.g., target branch HEAD).
 
     Returns:
         The LCA commit ID, or ``None`` if the commits share no common ancestor

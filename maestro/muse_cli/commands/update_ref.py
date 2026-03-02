@@ -1,7 +1,7 @@
 """muse update-ref — write or delete a ref (branch or tag pointer).
 
 Plumbing command that directly updates ``refs/heads/<branch>`` or
-``refs/tags/<tag>`` inside the ``.muse/`` directory.  Mirrors
+``refs/tags/<tag>`` inside the ``.muse/`` directory. Mirrors
 ``git update-ref`` and is primarily intended for scripting scenarios
 where a higher-level command (checkout, merge) is too heavy.
 
@@ -13,14 +13,14 @@ Behaviour
 
 ``muse update-ref <ref> <new-value> --old-value <expected>``
     Compare-and-swap (CAS): only update if the current ref value matches
-    *expected*.  Safe for scripting under concurrent access.
+    *expected*. Safe for scripting under concurrent access.
 
 ``muse update-ref <ref> -d``
-    Delete the ref file.  Exits ``USER_ERROR`` when the ref does not exist.
+    Delete the ref file. Exits ``USER_ERROR`` when the ref does not exist.
 
 Ref format
 ----------
-*ref* must begin with ``refs/heads/`` or ``refs/tags/``.  The
+*ref* must begin with ``refs/heads/`` or ``refs/tags/``. The
 corresponding file inside ``.muse/`` stores the raw commit_id string.
 """
 from __future__ import annotations
@@ -93,13 +93,13 @@ async def _update_ref_async(
     """Write *new_value* to the ref file, with optional CAS guard.
 
     Why: Plumbing commands are the building blocks scripting agents use to
-    manipulate the Muse object graph.  Centralising the validation here keeps
+    manipulate the Muse object graph. Centralising the validation here keeps
     higher-level commands (checkout, merge) simple — they delegate to this core
     when they need to advance a branch pointer atomically.
 
     Args:
         ref: Fully-qualified ref name (e.g. ``refs/heads/main``).
-        new_value: Commit ID to write.  Must exist in ``muse_cli_commits``.
+        new_value: Commit ID to write. Must exist in ``muse_cli_commits``.
         old_value: If provided, the current ref value must match exactly;
             mismatch exits with ``USER_ERROR`` (compare-and-swap).
         root: Repo root (directory containing ``.muse/``).

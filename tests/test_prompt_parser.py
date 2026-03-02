@@ -30,23 +30,23 @@ class TestFullParse:
         "Tempo: 126\n"
         "\n"
         "Role:\n"
-        "  - kick\n"
-        "  - bass\n"
-        "  - arp\n"
-        "  - pad\n"
+        " - kick\n"
+        " - bass\n"
+        " - arp\n"
+        " - pad\n"
         "\n"
         "Constraints:\n"
-        "  bars: 16\n"
-        "  density: medium\n"
-        "  instruments: analog kick, sub bass, pluck\n"
+        " bars: 16\n"
+        " density: medium\n"
+        " instruments: analog kick, sub bass, pluck\n"
         "\n"
         "Vibe:\n"
-        "  - darker:2\n"
-        "  - hypnotic:3\n"
-        "  - wider:1\n"
+        " - darker:2\n"
+        " - hypnotic:3\n"
+        " - wider:1\n"
         "\n"
         "Request: |\n"
-        "  Build an intro groove that evolves every 4 bars and opens into a club-ready loop.\n"
+        " Build an intro groove that evolves every 4 bars and opens into a club-ready loop.\n"
     )
 
     def test_parses_successfully(self) -> None:
@@ -128,12 +128,12 @@ class TestEditTrackParse:
         "Target: track:Bass\n"
         "\n"
         "Vibe:\n"
-        "  - punchier:3\n"
-        "  - tighter low end:2\n"
+        " - punchier:3\n"
+        " - tighter low end:2\n"
         "\n"
         "Constraints:\n"
-        "  compressor: analog\n"
-        "  eq_focus: 200hz cleanup\n"
+        " compressor: analog\n"
+        " eq_focus: 200hz cleanup\n"
         "\n"
         "Request: Tighten the bass and make it hit harder without increasing loudness.\n"
     )
@@ -469,7 +469,7 @@ class TestNonStructuredFallthrough:
 
     def test_whitespace_only(self) -> None:
 
-        assert parse_prompt("   \n\n  ") is None
+        assert parse_prompt(" \n\n ") is None
 
     def test_header_only_no_fields(self) -> None:
 
@@ -485,7 +485,7 @@ class TestNonStructuredFallthrough:
         result = parse_prompt("MAESTRO PROMPT\nMode: compose")
         assert result is not None
         assert result.mode == "compose"
-        assert result.request  # synthesised default
+        assert result.request # synthesised default
 
     def test_invalid_mode_value(self) -> None:
 
@@ -515,7 +515,7 @@ class TestNonStructuredFallthrough:
 class TestWhitespaceTolerance:
     def test_leading_whitespace(self) -> None:
 
-        prompt = "  \n  MAESTRO PROMPT\nMode: compose\nRequest: go"
+        prompt = " \n MAESTRO PROMPT\nMode: compose\nRequest: go"
         result = parse_prompt(prompt)
         assert result is not None
 
@@ -533,7 +533,7 @@ class TestWhitespaceTolerance:
 
     def test_trailing_whitespace_on_values(self) -> None:
 
-        prompt = "MAESTRO PROMPT\nMode:  compose  \nRequest:  do it  "
+        prompt = "MAESTRO PROMPT\nMode: compose \nRequest: do it "
         result = parse_prompt(prompt)
         assert result is not None
         assert result.mode == "compose"
@@ -551,9 +551,9 @@ class TestMultiLineRequest:
             "MAESTRO PROMPT\n"
             "Mode: compose\n"
             "Request: |\n"
-            "  Build an evolving groove.\n"
-            "  It should slowly open into a main loop.\n"
-            "  Keep the energy building.\n"
+            " Build an evolving groove.\n"
+            " It should slowly open into a main loop.\n"
+            " Keep the energy building.\n"
         )
         result = parse_prompt(prompt)
         assert result is not None
@@ -578,8 +578,8 @@ class TestMixedStructureAndFreeform:
         result = parse_prompt(prompt)
         assert result is not None
         assert result.mode == "compose"
-        assert result.tempo is None  # Not in a Tempo field
-        assert "126 bpm" in result.request  # Preserved in request text
+        assert result.tempo is None # Not in a Tempo field
+        assert "126 bpm" in result.request # Preserved in request text
 
 
 # ─── Raw field preserved ────────────────────────────────────────────────────
@@ -602,7 +602,7 @@ class TestYamlBodyParsing:
 
     def test_yaml_list_for_role(self) -> None:
 
-        prompt = "MAESTRO PROMPT\nMode: compose\nRole:\n  - drums\n  - bass\nRequest: go"
+        prompt = "MAESTRO PROMPT\nMode: compose\nRole:\n - drums\n - bass\nRequest: go"
         result = parse_prompt(prompt)
         assert result is not None
         assert result.roles == ["drums", "bass"]
@@ -618,7 +618,7 @@ class TestYamlBodyParsing:
 
         prompt = (
             "MAESTRO PROMPT\nMode: compose\n"
-            "Constraints:\n  bars: 8\n  density: sparse\nRequest: go"
+            "Constraints:\n bars: 8\n density: sparse\nRequest: go"
         )
         result = parse_prompt(prompt)
         assert result is not None
@@ -629,7 +629,7 @@ class TestYamlBodyParsing:
 
         prompt = (
             "MAESTRO PROMPT\nMode: compose\n"
-            "Request: |\n  Line one.\n  Line two.\n"
+            "Request: |\n Line one.\n Line two.\n"
         )
         result = parse_prompt(prompt)
         assert result is not None
@@ -663,14 +663,14 @@ class TestMaestroExtensions:
         "Mode: compose\n"
         "Request: verse groove\n"
         "Harmony:\n"
-        "  progression: [Cm7, Abmaj7]\n"
-        "  voicing: rootless\n"
+        " progression: [Cm7, Abmaj7]\n"
+        " voicing: rootless\n"
         "Melody:\n"
-        "  scale: C dorian\n"
-        "  register: mid\n"
+        " scale: C dorian\n"
+        " register: mid\n"
         "Expression:\n"
-        "  narrative: 3am, empty diner\n"
-        "  arc: melancholic to hopeful\n"
+        " narrative: 3am, empty diner\n"
+        " arc: melancholic to hopeful\n"
     )
 
     def test_extensions_populated(self) -> None:
@@ -741,33 +741,33 @@ class TestMaestroExtensions:
             "Tempo: 75\n"
             "Role: [drums, bass, piano, melody]\n"
             "Constraints:\n"
-            "  bars: 8\n"
-            "  density: medium-sparse\n"
+            " bars: 8\n"
+            " density: medium-sparse\n"
             "Vibe: [dusty x3, warm x2, laid back]\n"
             "Request: Verse groove with lazy boom bap.\n"
             "Harmony:\n"
-            "  progression: [Cm7, Abmaj7, Ebmaj7, Bb7sus4]\n"
-            "  voicing: rootless close position\n"
+            " progression: [Cm7, Abmaj7, Ebmaj7, Bb7sus4]\n"
+            " voicing: rootless close position\n"
             "Melody:\n"
-            "  scale: C dorian\n"
-            "  register: mid\n"
+            " scale: C dorian\n"
+            " register: mid\n"
             "Rhythm:\n"
-            "  feel: behind the beat\n"
-            "  swing: 55%\n"
+            " feel: behind the beat\n"
+            " swing: 55%\n"
             "Dynamics:\n"
-            "  overall: mp throughout\n"
+            " overall: mp throughout\n"
             "Orchestration:\n"
-            "  drums:\n"
-            "    kit: boom bap\n"
-            "    kick: slightly late\n"
+            " drums:\n"
+            " kit: boom bap\n"
+            " kick: slightly late\n"
             "Effects:\n"
-            "  drums:\n"
-            "    saturation: tape, subtle\n"
+            " drums:\n"
+            " saturation: tape, subtle\n"
             "Expression:\n"
-            "  arc: resignation to acceptance\n"
-            "  narrative: Late night, alone. At peace with it.\n"
+            " arc: resignation to acceptance\n"
+            " narrative: Late night, alone. At peace with it.\n"
             "Texture:\n"
-            "  density: medium-sparse\n"
+            " density: medium-sparse\n"
         )
         result = parse_prompt(prompt)
         assert result is not None
@@ -838,7 +838,7 @@ class TestPositionField:
     def test_absolute_bar(self) -> None:
 
         pos = self._p("at bar 5")
-        assert pos is not None and pos.kind == "absolute" and pos.beat == 16.0  # (5-1)*4
+        assert pos is not None and pos.kind == "absolute" and pos.beat == 16.0 # (5-1)*4
 
     # Last
     def test_last(self) -> None:
@@ -891,7 +891,7 @@ class TestPositionField:
 
         pos = self._p("within verse bar 3")
         assert pos is not None and pos.kind == "within" and pos.ref == "verse"
-        assert pos.offset == 8.0  # (3-1)*4
+        assert pos.offset == 8.0 # (3-1)*4
 
     # Absent
     def test_position_absent_is_none(self) -> None:
@@ -945,13 +945,13 @@ class TestResolvePosition:
             ]},
             {"name": "Intro Bass", "regions": [
                 {"startBeat": 0, "durationBeats": 16},
-                {"startBeat": 16, "durationBeats": 4},   # ends at 20
+                {"startBeat": 16, "durationBeats": 4}, # ends at 20
             ]},
             {"name": "Verse Pad", "regions": [
-                {"startBeat": 20, "durationBeats": 16},  # ends at 36
+                {"startBeat": 20, "durationBeats": 16}, # ends at 36
             ]},
             {"name": "Chorus Lead", "regions": [
-                {"startBeat": 36, "durationBeats": 16},  # ends at 52
+                {"startBeat": 36, "durationBeats": 16}, # ends at 52
             ]},
         ]
     }

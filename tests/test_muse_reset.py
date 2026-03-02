@@ -1,20 +1,20 @@
 """Tests for ``muse reset`` — branch pointer reset with soft/mixed/hard modes.
 
 Verifies:
-- test_muse_reset_soft_moves_ref_only             — soft: ref moved, muse-work/ unchanged
-- test_muse_reset_mixed_resets_index              — mixed: behaves like soft in current model
-- test_muse_reset_hard_overwrites_worktree        — hard: ref moved + files restored
-- test_muse_reset_hard_deletes_extra_files        — hard: files not in target snapshot deleted
-- test_muse_reset_head_minus_n                    — HEAD~N syntax resolves correctly
-- test_muse_reset_head_minus_n_too_far            — HEAD~N beyond root returns error
-- test_muse_reset_blocked_during_merge            — blocked when MERGE_STATE.json exists
-- test_muse_reset_hard_missing_object             — hard fails cleanly on missing blob
-- test_muse_reset_ref_not_found                  — unknown ref returns USER_ERROR
-- test_muse_reset_hard_confirmation               — hard prompts for confirmation
-- test_muse_reset_abbreviated_sha                 — abbreviated SHA prefix resolves
-- test_resolve_ref_head                           — resolve_ref("HEAD")
-- test_resolve_ref_head_tilde_zero                — resolve_ref("HEAD~0") = HEAD
-- test_boundary_no_forbidden_imports              — AST boundary seal
+- test_muse_reset_soft_moves_ref_only — soft: ref moved, muse-work/ unchanged
+- test_muse_reset_mixed_resets_index — mixed: behaves like soft in current model
+- test_muse_reset_hard_overwrites_worktree — hard: ref moved + files restored
+- test_muse_reset_hard_deletes_extra_files — hard: files not in target snapshot deleted
+- test_muse_reset_head_minus_n — HEAD~N syntax resolves correctly
+- test_muse_reset_head_minus_n_too_far — HEAD~N beyond root returns error
+- test_muse_reset_blocked_during_merge — blocked when MERGE_STATE.json exists
+- test_muse_reset_hard_missing_object — hard fails cleanly on missing blob
+- test_muse_reset_ref_not_found — unknown ref returns USER_ERROR
+- test_muse_reset_hard_confirmation — hard prompts for confirmation
+- test_muse_reset_abbreviated_sha — abbreviated SHA prefix resolves
+- test_resolve_ref_head — resolve_ref("HEAD")
+- test_resolve_ref_head_tilde_zero — resolve_ref("HEAD~0") = HEAD
+- test_boundary_no_forbidden_imports — AST boundary seal
 
 Object store unit tests live in ``tests/test_muse_object_store.py``.
 Cross-command round-trip tests (commit → read-tree, commit → reset) also
@@ -34,7 +34,7 @@ import pytest
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from maestro.db.database import Base
-from maestro.muse_cli import models as cli_models  # noqa: F401 — register tables
+from maestro.muse_cli import models as cli_models # noqa: F401 — register tables
 from maestro.muse_cli.errors import ExitCode
 from maestro.muse_cli.merge_engine import write_merge_state
 from maestro.muse_cli.models import MuseCliCommit, MuseCliObject, MuseCliSnapshot
@@ -476,7 +476,7 @@ class TestResetHeadMinusN:
             await perform_reset(
                 root=repo_root,
                 session=async_session,
-                ref="HEAD~5",  # only 0 parents exist
+                ref="HEAD~5", # only 0 parents exist
                 mode=ResetMode.SOFT,
             )
         assert exc_info.value.exit_code == ExitCode.USER_ERROR
@@ -571,7 +571,7 @@ class TestResetRefNotFound:
         result = await perform_reset(
             root=repo_root,
             session=async_session,
-            ref=c1.commit_id[:12],  # abbreviated prefix
+            ref=c1.commit_id[:12], # abbreviated prefix
             mode=ResetMode.SOFT,
         )
 
@@ -605,7 +605,7 @@ class TestResetResult:
             files_deleted=2,
         )
         with pytest.raises(Exception):
-            r.files_restored = 99  # type: ignore[misc]
+            r.files_restored = 99 # type: ignore[misc]
 
 
 # ---------------------------------------------------------------------------

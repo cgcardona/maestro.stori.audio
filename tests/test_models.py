@@ -55,10 +55,10 @@ class TestGenerateRequest:
         assert req.tempo == 120
         
         with pytest.raises(ValidationError):
-            GenerateRequest(tempo=300)  # Too fast
+            GenerateRequest(tempo=300) # Too fast
         
         with pytest.raises(ValidationError):
-            GenerateRequest(tempo=20)  # Too slow
+            GenerateRequest(tempo=20) # Too slow
     
     def test_bars_range(self) -> None:
 
@@ -67,7 +67,7 @@ class TestGenerateRequest:
         assert req.bars == 16
         
         with pytest.raises(ValidationError):
-            GenerateRequest(bars=100)  # Too many
+            GenerateRequest(bars=100) # Too many
 
 
 class TestMidiNote:
@@ -83,8 +83,8 @@ class TestMidiNote:
     def test_pitch_range(self) -> None:
 
         """Test pitch validation."""
-        MidiNote(pitch=0, start_beat=0, duration_beats=1.0)  # Lowest
-        MidiNote(pitch=127, start_beat=0, duration_beats=1.0)  # Highest
+        MidiNote(pitch=0, start_beat=0, duration_beats=1.0) # Lowest
+        MidiNote(pitch=127, start_beat=0, duration_beats=1.0) # Highest
         
         with pytest.raises(ValidationError):
             MidiNote(pitch=128, start_beat=0, duration_beats=1.0)

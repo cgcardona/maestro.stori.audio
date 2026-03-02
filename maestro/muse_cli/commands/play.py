@@ -5,10 +5,10 @@ Behaviour by file type:
 - ``.mp3`` / ``.aiff`` / ``.wav`` / ``.m4a`` → played via ``afplay`` (no UI,
   process exits when playback finishes).
 - ``.mid`` → falls back to ``open`` (hands off to the system default MIDI
-  app).  ``afplay`` does not support MIDI; this limitation is surfaced
+  app). ``afplay`` does not support MIDI; this limitation is surfaced
   clearly in the terminal output.
 
-macOS-only.  Exits 1 with a clear error on other platforms.
+macOS-only. Exits 1 with a clear error on other platforms.
 """
 from __future__ import annotations
 
@@ -51,23 +51,23 @@ def _play_path(path: pathlib.Path) -> None:
     suffix = path.suffix.lower()
 
     if suffix in _AFPLAY_EXTENSIONS:
-        typer.echo(f"▶  Playing {path.name} …")
+        typer.echo(f"▶ Playing {path.name} …")
         subprocess.run(["afplay", str(path)], check=True)
-        typer.echo("⏹  Playback finished.")
+        typer.echo("⏹ Playback finished.")
         logger.info("✅ muse play (afplay): %s", path)
 
     elif suffix in _OPEN_FALLBACK_EXTENSIONS:
         typer.echo(
-            f"⚠️  MIDI playback via afplay is not supported.\n"
-            f"   Opening {path.name} in the system default MIDI app instead."
+            f"⚠️ MIDI playback via afplay is not supported.\n"
+            f" Opening {path.name} in the system default MIDI app instead."
         )
         subprocess.run(["open", str(path)], check=True)
         logger.info("✅ muse play (open fallback): %s", path)
 
     else:
         typer.echo(
-            f"⚠️  Unsupported file type '{suffix}'.\n"
-            f"   Attempting to open with system default app."
+            f"⚠️ Unsupported file type '{suffix}'.\n"
+            f" Attempting to open with system default app."
         )
         subprocess.run(["open", str(path)], check=True)
         logger.warning("⚠️ muse play: unknown extension '%s' for %s", suffix, path)

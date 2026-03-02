@@ -87,9 +87,9 @@ class TestSanitizeReasoning:
     def test_collapses_whitespace(self) -> None:
 
         """Multiple interior spaces should become single space."""
-        text = "one   two   three"
+        text = "one two three"
         out = sanitize_reasoning(text)
-        assert "   " not in out
+        assert " " not in out
         assert "one two three" in out
 
     def test_preserves_musical_reasoning(self) -> None:
@@ -110,7 +110,7 @@ class TestSanitizeReasoning:
         # Concatenation of BPE tokens should produce correct spacing
         chunks = ["The", " user", " has asked me to create", " a song"]
         result = "".join(sanitize_reasoning(c) for c in chunks)
-        assert "Theuser" not in result  # No missing space
+        assert "Theuser" not in result # No missing space
         assert "The user" in result
 
     def test_preserves_newlines_in_structured_reasoning(self) -> None:
@@ -160,7 +160,7 @@ class TestSanitizeReasoning:
 
         """Empty or whitespace-only (spaces/tabs) returns empty."""
         assert sanitize_reasoning("") == ""
-        assert sanitize_reasoning("   ") == ""
+        assert sanitize_reasoning(" ") == ""
         assert sanitize_reasoning("\t\t") == ""
 
 
@@ -171,8 +171,8 @@ class TestReasoningBuffer:
 
         """Sub-word BPE pieces should be merged before emission."""
         buf = ReasoningBuffer()
-        assert buf.add("T") is None  # buffered
-        assert buf.add("rey") is None  # still buffering (no word boundary)
+        assert buf.add("T") is None # buffered
+        assert buf.add("rey") is None # still buffering (no word boundary)
         # Next token starts with space → flush previous buffer
         result = buf.add(" Anast")
         assert result is not None
@@ -248,7 +248,7 @@ class TestReasoningBuffer:
         full = "".join(emitted)
         assert "(Trey" in full
         assert "Anastasio)" in full
-        assert "T rey" not in full  # No spurious space inside "Trey"
+        assert "T rey" not in full # No spurious space inside "Trey"
 
     def test_split_word_around_reconstructs(self) -> None:
 
@@ -421,5 +421,5 @@ class TestStripToolEchoes:
     def test_none_like_empty(self) -> None:
 
         """None-ish empty whitespace returns empty."""
-        assert strip_tool_echoes("   ") == ""
+        assert strip_tool_echoes(" ") == ""
         assert strip_tool_echoes("\n\n\n") == ""

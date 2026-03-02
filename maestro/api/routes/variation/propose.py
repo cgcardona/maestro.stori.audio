@@ -173,7 +173,7 @@ async def _run_generation(
                 raise ValueError("Could not generate a plan — be more specific")
 
             if record.status != VariationStatus.STREAMING:
-                return  # defensive: cancellation may transition record
+                return # defensive: cancellation may transition record
 
             variation = await execute_plan_variation(
                 tool_calls=output.plan.tool_calls,

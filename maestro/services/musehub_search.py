@@ -4,10 +4,10 @@ Provides four search modes over a repo's commit history, all operating on the
 shared ``muse_cli_commits`` table and scoped to a single ``repo_id``.
 
 Modes and their underlying algorithms:
-- ``property``  — musical property filter (delegates to :mod:`maestro.services.muse_find`)
-- ``ask``       — natural-language query; keyword extraction + overlap scoring
-- ``keyword``   — raw keyword/phrase overlap (normalised overlap coefficient)
-- ``pattern``   — substring pattern match against message and branch name
+- ``property`` — musical property filter (delegates to :mod:`maestro.services.muse_find`)
+- ``ask`` — natural-language query; keyword extraction + overlap scoring
+- ``keyword`` — raw keyword/phrase overlap (normalised overlap coefficient)
+- ``pattern`` — substring pattern match against message and branch name
 
 All four modes return :class:`~maestro.models.musehub.SearchResponse` so the
 UI can render results with a single shared commit-row template regardless of mode.
@@ -61,7 +61,7 @@ def _overlap_score(query_tokens: set[str], message: str) -> float:
     """Normalised overlap coefficient: |Q ∩ M| / |Q|.
 
     Returns 1.0 when every query token appears in the message, 0.0 when
-    none do.  Returns 0.0 for an empty query set to avoid division by zero.
+    none do. Returns 0.0 for an empty query set to avoid division by zero.
     """
     if not query_tokens:
         return 0.0
@@ -80,7 +80,7 @@ async def _fetch_candidates(
     """Fetch candidate commits from DB with optional date range filter.
 
     Returns ``(rows, total_scanned)`` where ``total_scanned`` is the raw DB count
-    before any Python-level filtering.  We over-fetch (up to ``cap``) and let
+    before any Python-level filtering. We over-fetch (up to ``cap``) and let
     callers apply their own ranking/limit so the SQL stays simple and fast.
     """
     stmt = select(MuseCliCommit).where(MuseCliCommit.repo_id == repo_id)
@@ -219,8 +219,8 @@ async def search_by_ask(
     """Natural-language query — keyword extraction + overlap scoring.
 
     Strips stop-words from the question to produce a focused keyword set,
-    then ranks commits by overlap coefficient.  Commits with zero overlap
-    are excluded.  Returns at most ``limit`` results ordered by score desc.
+    then ranks commits by overlap coefficient. Commits with zero overlap
+    are excluded. Returns at most ``limit`` results ordered by score desc.
 
     This is a stub implementation; LLM-powered answer generation is a planned
     enhancement that will replace the keyword scoring step.
@@ -282,7 +282,7 @@ async def search_by_keyword(
     """Keyword search — overlap coefficient over commit messages.
 
     Tokenises both *keyword* and each commit message, then scores using the
-    overlap coefficient.  Commits below *threshold* are excluded.
+    overlap coefficient. Commits below *threshold* are excluded.
 
     Args:
         session: Async SQLAlchemy session.
@@ -334,7 +334,7 @@ async def search_by_pattern(
     """Pattern search — case-insensitive substring match against message and branch.
 
     Matches commits where *pattern* appears anywhere in the commit message or
-    the branch name.  Prioritises message matches over branch-name matches in
+    the branch name. Prioritises message matches over branch-name matches in
     the result ordering.
 
     Args:

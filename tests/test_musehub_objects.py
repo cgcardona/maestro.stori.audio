@@ -1,13 +1,13 @@
-"""Tests for Muse Hub object endpoints — issue #209 (piano roll / MIDI parsing).
+"""Tests for Muse Hub object endpoints — (piano roll / MIDI parsing).
 
 Covers:
-- test_parse_midi_bytes_basic              — parser returns MidiParseResult shape
-- test_parse_midi_bytes_note_data          — notes have correct fields
-- test_parse_midi_bytes_empty_track        — empty MIDI file returns zero beats
-- test_parse_midi_bytes_invalid_data       — bad bytes raise ValueError
-- test_parse_midi_object_endpoint_404      — unknown object returns 404
-- test_parse_midi_object_non_midi_404      — non-MIDI object returns 404
-- test_piano_roll_pitch_to_name            — pitch_to_name helper correctness
+- test_parse_midi_bytes_basic — parser returns MidiParseResult shape
+- test_parse_midi_bytes_note_data — notes have correct fields
+- test_parse_midi_bytes_empty_track — empty MIDI file returns zero beats
+- test_parse_midi_bytes_invalid_data — bad bytes raise ValueError
+- test_parse_midi_object_endpoint_404 — unknown object returns 404
+- test_parse_midi_object_non_midi_404 — non-MIDI object returns 404
+- test_piano_roll_pitch_to_name — pitch_to_name helper correctness
 """
 from __future__ import annotations
 

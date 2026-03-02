@@ -49,7 +49,7 @@ def render_ascii_graph(graph: MuseLogGraph) -> str:
         # Draw the commit line
         parts = _col_chars(columns, n_cols, active=col)
         if is_merge:
-            lines.append(" ".join(parts) + f"   {label}")
+            lines.append(" ".join(parts) + f" {label}")
         else:
             lines.append(" ".join(parts) + f" {label}")
 

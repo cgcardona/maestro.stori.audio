@@ -2,7 +2,7 @@
 
 Every tool in this module sets ``server_side: True`` — these tools are
 executed on the Maestro backend (via Orpheus) and never forwarded to
-the DAW.  The registry uses this flag to build ``SERVER_SIDE_TOOLS``
+the DAW. The registry uses this flag to build ``SERVER_SIDE_TOOLS``
 dynamically instead of maintaining a hardcoded set.
 """
 from __future__ import annotations

@@ -1,12 +1,12 @@
 """Muse Hub session persistence service.
 
 Handles storage and retrieval of recording session records in the musehub_sessions
-table.  Sessions are pushed from the CLI (``muse session end``) and displayed in
+table. Sessions are pushed from the CLI (``muse session end``) and displayed in
 the MuseHub web UI at ``/musehub/ui/{repo_id}/sessions/{session_id}``.
 
 Design notes:
 - Upsert semantics: pushing the same session_id again is idempotent (updates
-  the existing record).  This allows re-pushing sessions after editing notes.
+  the existing record). This allows re-pushing sessions after editing notes.
 - Sessions are returned newest-first (started_at DESC) to match the local
   ``muse session log`` display order.
 - ``commits`` cross-references musehub_commits by commit_id for UI deep-links,

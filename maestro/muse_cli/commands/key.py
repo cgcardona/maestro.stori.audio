@@ -40,7 +40,7 @@ Key Format Convention
 ---------------------
 
 Keys are expressed as ``<tonic> <mode>`` where mode is one of ``major`` or
-``minor``.  Tonic uses standard Western note names with ``#`` for sharp and
+``minor``. Tonic uses standard Western note names with ``#`` for sharp and
 ``b`` for flat:
 
     C major, D minor, Eb major, F# minor, Bb major, C# minor
@@ -112,14 +112,14 @@ class KeyDetectResult(TypedDict):
 
     Fields
     ------
-    key:      Full key string, e.g. ``"F# minor"``.
-    tonic:    Root note, e.g. ``"F#"``.
-    mode:     ``"major"`` or ``"minor"``.
+    key: Full key string, e.g. ``"F# minor"``.
+    tonic: Root note, e.g. ``"F#"``.
+    mode: ``"major"`` or ``"minor"``.
     relative: Relative key string, e.g. ``"A major"`` (empty when not requested).
-    commit:   Short commit SHA.
-    branch:   Current branch name.
-    track:    Track the key was analysed from (``"all"`` if no filter applied).
-    source:   ``"stub"`` | ``"annotation"`` | ``"detected"``.
+    commit: Short commit SHA.
+    branch: Current branch name.
+    track: Track the key was analysed from (``"all"`` if no filter applied).
+    source: ``"stub"`` | ``"annotation"`` | ``"detected"``.
     """
 
     key: str
@@ -188,7 +188,7 @@ def relative_key(tonic: str, mode: str) -> str:
 
     Args:
         tonic: Root note, e.g. ``"A"``.
-        mode:  ``"major"`` or ``"minor"``.
+        mode: ``"major"`` or ``"minor"``.
 
     Returns:
         Relative key string, e.g. ``"C major"`` for ``"A minor"``.
@@ -229,10 +229,10 @@ async def _key_detect_async(
     endpoint exposes a key detection route.
 
     Args:
-        root:          Repository root (directory containing ``.muse/``).
-        session:       Open async DB session (reserved for full implementation).
-        commit:        Commit SHA to analyse, or ``None`` for HEAD.
-        track:         Restrict analysis to a named MIDI track, or ``None`` for all.
+        root: Repository root (directory containing ``.muse/``).
+        session: Open async DB session (reserved for full implementation).
+        commit: Commit SHA to analyse, or ``None`` for HEAD.
+        track: Restrict analysis to a named MIDI track, or ``None`` for all.
         show_relative: If True, populate the ``relative`` field.
 
     Returns:
@@ -270,14 +270,14 @@ async def _key_history_async(
 ) -> list[KeyHistoryEntry]:
     """Return the key history for the current branch.
 
-    Stub implementation returning a single placeholder entry.  Full
+    Stub implementation returning a single placeholder entry. Full
     implementation will walk the commit chain and aggregate key annotations
     stored per-commit.
 
     Args:
-        root:    Repository root.
+        root: Repository root.
         session: Open async DB session.
-        track:   Restrict to a named MIDI track, or ``None`` for all.
+        track: Restrict to a named MIDI track, or ``None`` for all.
 
     Returns:
         List of :class:`KeyHistoryEntry` entries, newest first.
@@ -311,7 +311,7 @@ def _format_detect(result: KeyDetectResult, *, as_json: bool) -> str:
         return json.dumps(dict(result), indent=2)
     lines = [
         f"Key: {result['key']}",
-        f"Commit: {result['commit']}  Branch: {result['branch']}",
+        f"Commit: {result['commit']} Branch: {result['branch']}",
         f"Track: {result['track']}",
     ]
     if result.get("relative"):
@@ -331,8 +331,8 @@ def _format_history(
         return json.dumps([dict(e) for e in entries], indent=2)
     lines: list[str] = []
     for entry in entries:
-        src = f"  [{entry['source']}]" if entry.get("source") != "stub" else ""
-        lines.append(f"{entry['commit']}  {entry['key']}{src}")
+        src = f" [{entry['source']}]" if entry.get("source") != "stub" else ""
+        lines.append(f"{entry['commit']} {entry['key']}{src}")
     return "\n".join(lines) if lines else "(no key history found)"
 
 
@@ -431,7 +431,7 @@ def key(
             rel_part = f" (relative: {rel})" if rel else ""
             typer.echo(
                 f"✅ Key annotated: {set_tonic} {set_mode}{rel_part}"
-                + (f"  track={track}" if track else "")
+                + (f" track={track}" if track else "")
             )
         return
 

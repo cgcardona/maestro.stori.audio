@@ -35,15 +35,15 @@ Examples: ``4/4``, ``3/4``, ``7/8``, ``5/4``, ``12/8``, ``6/8``.
 Storage
 -------
 The time signature is stored as the ``meter`` key inside the
-``metadata`` JSON blob on the ``muse_cli_commits`` row.  No new
+``metadata`` JSON blob on the ``muse_cli_commits`` row. No new
 columns are added; the blob is extensible for future annotations (tempo,
 key, etc.).
 
 MIDI Detection
 --------------
 ``--detect`` scans ``.mid`` / ``.midi`` files in ``muse-work/`` for MIDI
-time-signature meta events (``0xFF 0x58``).  The first event found across
-all files wins.  If no event is present the time signature is reported as
+time-signature meta events (``0xFF 0x58``). The first event found across
+all files wins. If no event is present the time signature is reported as
 unknown (``?``).
 """
 from __future__ import annotations
@@ -72,7 +72,7 @@ logger = logging.getLogger(__name__)
 app = typer.Typer()
 
 # ──────────────────────────────────────────────────────────────────────────────
-# Domain types  (registered in docs/reference/type_contracts.md)
+# Domain types (registered in docs/reference/type_contracts.md)
 # ──────────────────────────────────────────────────────────────────────────────
 
 _METADATA_KEY = "meter"
@@ -85,7 +85,7 @@ class MuseMeterReadResult:
     """Result of reading a time-signature annotation from a single commit.
 
     Attributes:
-        commit_id:      Full 64-char sha256 commit identifier.
+        commit_id: Full 64-char sha256 commit identifier.
         time_signature: Time signature string (e.g. ``"4/4"``), or
                         ``None`` when no annotation is stored.
     """
@@ -99,9 +99,9 @@ class MuseMeterHistoryEntry:
     """A single entry in the per-commit meter history.
 
     Attributes:
-        commit_id:      Full 64-char sha256 commit identifier.
+        commit_id: Full 64-char sha256 commit identifier.
         time_signature: Stored time signature, or ``None`` if not annotated.
-        message:        Commit message.
+        message: Commit message.
     """
 
     commit_id: str
@@ -114,10 +114,10 @@ class MusePolyrhythmResult:
     """Result of polyrhythm detection across MIDI files in the working tree.
 
     Attributes:
-        commit_id:        Commit that was inspected (HEAD by default).
+        commit_id: Commit that was inspected (HEAD by default).
         signatures_by_file: Mapping of relative file path to detected time
                             signature string (``"?"`` if undetectable).
-        is_polyrhythmic:  ``True`` when two or more distinct, known time
+        is_polyrhythmic: ``True`` when two or more distinct, known time
                           signatures are present simultaneously.
     """
 
@@ -134,7 +134,7 @@ class MusePolyrhythmResult:
 def validate_time_signature(raw: str) -> str:
     """Parse and validate a time signature string like ``"4/4"`` or ``"7/8"``.
 
-    The denominator must be a power of two (1 through 128).  Returns the
+    The denominator must be a power of two (1 through 128). Returns the
     canonical string (stripped) on success; raises ``ValueError`` on failure.
     """
     raw = raw.strip()
@@ -167,19 +167,19 @@ def detect_midi_time_signature(midi_bytes: bytes) -> str | None:
     is found.
 
     MIDI time-signature meta event layout (after the variable-length delta):
-        0xFF  — meta event marker
-        0x58  — time signature type
-        0x04  — data length (always 4)
-        nn    — numerator
-        dd    — denominator exponent (denominator = 2^dd)
-        cc    — MIDI clocks per metronome tick
-        bb    — number of 32nd notes per 24 MIDI clocks
+        0xFF — meta event marker
+        0x58 — time signature type
+        0x04 — data length (always 4)
+        nn — numerator
+        dd — denominator exponent (denominator = 2^dd)
+        cc — MIDI clocks per metronome tick
+        bb — number of 32nd notes per 24 MIDI clocks
     """
     i = 0
     n = len(midi_bytes)
     # Skip the 14-byte MIDI file header (MThd chunk) if present.
     if midi_bytes[:4] == b"MThd":
-        i = 14  # MThd + 4 (length) + 6 (header data) + first MTrk lead
+        i = 14 # MThd + 4 (length) + 6 (header data) + first MTrk lead
 
     while i < n - 5:
         if midi_bytes[i] == 0xFF and midi_bytes[i + 1] == 0x58:
@@ -294,7 +294,7 @@ async def _meter_read_async(
 ) -> MuseMeterReadResult:
     """Read the stored time signature for a commit.
 
-    Returns a :class:`MuseMeterReadResult`.  Does not write to the DB.
+    Returns a :class:`MuseMeterReadResult`. Does not write to the DB.
     """
     commit_id = await _resolve_commit_id(session, root, commit_ref)
     metadata = await get_commit_extra_metadata(session, commit_id)
@@ -315,7 +315,7 @@ async def _meter_set_async(
 ) -> str:
     """Store *time_signature* as the meter annotation on *commit_ref*.
 
-    Returns the full commit ID on success.  Raises ``typer.Exit`` on error.
+    Returns the full commit ID on success. Raises ``typer.Exit`` on error.
     """
     commit_id = await _resolve_commit_id(session, root, commit_ref)
     ok = await set_commit_extra_metadata_key(
@@ -393,7 +393,7 @@ def _render_read(result: MuseMeterReadResult) -> None:
     """Print time signature for a single commit."""
     sig = result.time_signature or "(not set)"
     typer.echo(f"commit {result.commit_id[:8]}")
-    typer.echo(f"meter  {sig}")
+    typer.echo(f"meter {sig}")
 
 
 class _UnsetType:
@@ -413,7 +413,7 @@ def _render_history(entries: list[MuseMeterHistoryEntry]) -> None:
         sig = entry.time_signature or "(not set)"
         changed = sig != prev_sig
         marker = " ← changed" if changed and prev_sig is not _UNSET else ""
-        typer.echo(f"{entry.commit_id[:8]}  {sig:<12}  {entry.message[:50]}{marker}")
+        typer.echo(f"{entry.commit_id[:8]} {sig:<12} {entry.message[:50]}{marker}")
         prev_sig = sig
 
 
@@ -424,13 +424,13 @@ def _render_polyrhythm(result: MusePolyrhythmResult) -> None:
         return
     if result.is_polyrhythmic:
         typer.echo(
-            "⚠️  Polyrhythm detected — multiple time signatures in this commit:"
+            "⚠️ Polyrhythm detected — multiple time signatures in this commit:"
         )
     else:
         typer.echo("✅ No polyrhythm — all MIDI files share the same time signature.")
     typer.echo("")
     for path, sig in sorted(result.signatures_by_file.items()):
-        typer.echo(f"  {sig:<12}  {path}")
+        typer.echo(f" {sig:<12} {path}")
 
 
 # ──────────────────────────────────────────────────────────────────────────────

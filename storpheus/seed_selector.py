@@ -1,7 +1,7 @@
 """Runtime seed selector for Orpheus Music Transformer.
 
 Picks the best seed MIDI file from the pre-built seed library based on
-genre and (optionally) target key.  When a target key is specified, the
+genre and (optionally) target key. When a target key is specified, the
 selector prefers seeds whose detected key is closest, and returns the
 transposition delta so the caller can shift the seed into the exact
 requested key.

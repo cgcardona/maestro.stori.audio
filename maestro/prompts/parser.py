@@ -6,7 +6,7 @@ Format: a sentinel header line followed by a YAML document.
     <YAML body>
 
 The sentinel ``MAESTRO PROMPT`` (exact, case-sensitive) is the trigger.
-Everything after it must be valid YAML.  If YAML parsing fails the prompt
+Everything after it must be valid YAML. If YAML parsing fails the prompt
 is treated as natural language and the NL pipeline handles it.
 
 Routing fields (parsed deterministically by Python):
@@ -18,7 +18,7 @@ Maestro dimensions (all other top-level keys):
     Texture, Form, Automation, … and any future fields.
 
     These land in MaestroPrompt.extensions and are injected verbatim into
-    the Maestro LLM system prompt as YAML.  The vocabulary is open — invent
+    the Maestro LLM system prompt as YAML. The vocabulary is open — invent
     new dimensions and they work immediately.
 
 See docs/protocol/maestro_prompt_spec.md for the full specification.
@@ -40,7 +40,7 @@ from maestro.prompts.base import (
 from maestro.prompts.errors import InvalidMaestroPrompt, UnsupportedPromptHeader
 from maestro.prompts.maestro import MaestroPrompt
 
-import yaml  # PyYAML ships no py.typed marker
+import yaml # PyYAML ships no py.typed marker
 
 logger = logging.getLogger(__name__)
 
@@ -259,9 +259,9 @@ def _parse_vibes(v: JSONValue) -> list[VibeWeight]:
     """Vibe: string | list[str | {name: weight}].
 
     Weight syntax (in string items):
-      "dusty x3"    → VibeWeight("dusty", 3)    — readable shorthand
-      "dusty:3"     → VibeWeight("dusty", 3)    — colon, no space
-      {"dusty": 3}  → VibeWeight("dusty", 3)    — YAML dict
+      "dusty x3" → VibeWeight("dusty", 3) — readable shorthand
+      "dusty:3" → VibeWeight("dusty", 3) — colon, no space
+      {"dusty": 3} → VibeWeight("dusty", 3) — YAML dict
     """
     if v is None:
         return []

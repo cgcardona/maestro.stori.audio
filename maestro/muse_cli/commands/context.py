@@ -1,7 +1,7 @@
 """muse context [<commit>] — output structured musical context for AI agent consumption.
 
 Produces a self-contained JSON (or YAML) document describing the full musical
-state of the project at a given commit (or HEAD).  This is the primary entry
+state of the project at a given commit (or HEAD). This is the primary entry
 point for AI agents that need to generate music coherently with an existing
 composition — agents run ``muse context --format json`` before generation to
 understand the current key, tempo, active tracks, form, and evolutionary history.
@@ -20,13 +20,13 @@ YAML::
 
 Flags
 -----
-[<commit>]           Optional commit ID (default: HEAD).
---depth N            Include N ancestor commits in the ``history`` array (default: 5).
---sections           Expand section-level detail in ``musical_state.sections``.
---tracks             Add per-track harmonic/dynamic breakdowns.
---include-history    Annotate history entries with dimensional deltas (reserved for
+[<commit>] Optional commit ID (default: HEAD).
+--depth N Include N ancestor commits in the ``history`` array (default: 5).
+--sections Expand section-level detail in ``musical_state.sections``.
+--tracks Add per-track harmonic/dynamic breakdowns.
+--include-history Annotate history entries with dimensional deltas (reserved for
                      future Storpheus integration).
---format json|yaml   Output format (default: json).
+--format json|yaml Output format (default: json).
 """
 from __future__ import annotations
 
@@ -79,14 +79,14 @@ async def _context_async(
     requested format via ``typer.echo``.
 
     Args:
-        root:            Repository root path.
-        session:         Open async DB session.
-        commit_id:       Target commit (None = HEAD).
-        depth:           Ancestor history depth.
-        sections:        Whether to expand section detail.
-        tracks:          Whether to include per-track breakdown.
+        root: Repository root path.
+        session: Open async DB session.
+        commit_id: Target commit (None = HEAD).
+        depth: Ancestor history depth.
+        sections: Whether to expand section detail.
+        tracks: Whether to include per-track breakdown.
         include_history: Whether to annotate history with dimension deltas.
-        fmt:             Output format (json or yaml).
+        fmt: Output format (json or yaml).
     """
     result = await build_muse_context(
         session,
@@ -102,7 +102,7 @@ async def _context_async(
 
     if fmt == OutputFormat.yaml:
         try:
-            import yaml  # PyYAML ships no py.typed marker
+            import yaml # PyYAML ships no py.typed marker
 
             typer.echo(yaml.dump(data, sort_keys=False, allow_unicode=True))
         except ImportError:
@@ -158,7 +158,7 @@ def context(
     """Output structured musical context for AI agent consumption.
 
     Produces a self-contained document describing the musical state at the
-    given commit (or HEAD).  Pipe it to the LLM before generating new music
+    given commit (or HEAD). Pipe it to the LLM before generating new music
     to ensure harmonic, rhythmic, and structural coherence.
     """
     root = require_repo()

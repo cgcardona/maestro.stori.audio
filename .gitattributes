@@ -7,10 +7,16 @@
 maestro/muse_cli/app.py merge=union
 
 # Muse VCS architecture doc — every new command adds a ## section.
-docs/architecture/muse_vcs.md merge=union
+docs/architecture/muse-vcs.md merge=union
 
 # Type contracts registry — every new result type adds an entry.
-docs/reference/type_contracts.md merge=union
+docs/reference/type-contracts.md merge=union
 
 # API reference — every new endpoint adds a section.
 docs/reference/api.md merge=union
+
+# AgentCeption API routes — every new feature adds endpoint functions.
+agentception/routes/api.py merge=union
+
+# AgentCeption GitHub reader — every new feature adds reader functions.
+agentception/readers/github.py merge=union
