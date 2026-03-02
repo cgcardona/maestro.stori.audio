@@ -1357,3 +1357,33 @@ main {
 .badge--red    { background: rgba(248,81,73,0.15);  color: var(--danger); }
 .badge--grey   { background: rgba(139,148,158,0.15);color: var(--text-muted); }
 .badge--purple { background: rgba(124,58,237,0.15); color: var(--accent); }
+
+/* ── Brand link — nav logo that routes back to overview ── */
+a.brand {
+  text-decoration: none;
+  color: var(--accent);
+}
+a.brand:hover { color: var(--accent-hover); }
+
+/* ── Board loading spinner — shown while a phase switch is in flight ── */
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+.board-spinner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  padding: 2rem 1rem;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+.board-spinner__ring {
+  width: 2rem;
+  height: 2rem;
+  border: 3px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}

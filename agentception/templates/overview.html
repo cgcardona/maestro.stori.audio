@@ -11,6 +11,7 @@
 <div
   x-data='pipelineDashboard({{ state.model_dump() | tojson }})'
   x-init="connect()"
+  @phase-switching.window="boardLoading = true"
 >
 
   {# ── Pipeline summary bar ──────────────────────────────────────────────── #}
@@ -504,7 +505,13 @@
         "Analyze" uses Alpine fetch so the button works inside x-for without
         HTMX needing to re-process dynamically generated DOM nodes.
       #}
-      <div x-show="state.board_issues && state.board_issues.length > 0" class="mt-2">
+      {# Spinner — visible while a phase switch is in flight (before page reloads) #}
+      <div x-show="boardLoading" class="board-spinner mt-2">
+        <div class="board-spinner__ring"></div>
+        <span>Switching phase…</span>
+      </div>
+
+      <div x-show="!boardLoading && state.board_issues && state.board_issues.length > 0" class="mt-2">
         <h3 class="section-subtitle">
           Open Issues
           <span class="badge badge-count" x-text="state.board_issues ? state.board_issues.length : 0"></span>
@@ -551,7 +558,7 @@
 
       {# Empty board state — only visible while ac_issues is warming up #}
       <div
-        x-show="!state.board_issues || state.board_issues.length === 0"
+        x-show="!boardLoading && (!state.board_issues || state.board_issues.length === 0)"
         class="mt-2 text-muted empty-state"
       >
         <p>No open unclaimed issues in the active phase.</p>
@@ -632,6 +639,7 @@ function pipelineDashboard(initial) {
   return {
     state: initial,
     connected: false,
+    boardLoading: false,
     _es: null,
 
     connect() {
@@ -849,6 +857,8 @@ function phaseSwitcher(initialLabel, allLabels, initialPinned) {
 
     async selectLabel(label) {
       this.open = false;
+      // Signal the board to show a spinner immediately — before the fetch + reload.
+      this.$dispatch('phase-switching');
       try {
         const res = await fetch('/api/control/active-label', {
           method: 'PUT',
@@ -859,7 +869,6 @@ function phaseSwitcher(initialLabel, allLabels, initialPinned) {
           const data = await res.json();
           this.current = data.label;
           this.pinned = data.pinned;
-          // Reload the page so the board sidebar reflects the new phase.
           window.location.reload();
         }
       } catch (_) {}
@@ -867,6 +876,8 @@ function phaseSwitcher(initialLabel, allLabels, initialPinned) {
 
     async selectAuto() {
       this.open = false;
+      // Signal the board to show a spinner immediately — before the fetch + reload.
+      this.$dispatch('phase-switching');
       try {
         const res = await fetch('/api/control/active-label', { method: 'DELETE' });
         if (res.ok) {
