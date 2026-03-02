@@ -55,19 +55,28 @@ LOOP:
 
   0. Preflight stale sweep — run this before EVERY wave (not just the first):
        # Clear agent:wip from issues whose worktree is missing OR has 0 commits ahead of dev.
-       # This prevents a stale claim from blocking the Eng VP's unclaimed-issue query.
+       # EXCEPTION: never clear agent:wip when an open PR already exists for the issue —
+       # the implementer worktree is intentionally pruned after PR creation, so a missing
+       # worktree + open PR = active claim, not a stale one.
        MAIN_REPO="$HOME/dev/tellurstori/{{ repo_name }}"
        for NUM in $(gh issue list --state open --label "{{ claim_label }}" \
            --repo {{ gh_repo }} --json number --jq '.[].number' 2>/dev/null); do
+         # Open PR guard — branch name is the canonical link between issue and PR.
+         OPEN_PR=$(gh pr list --state open --repo {{ gh_repo }} \
+           --head "feat/issue-${NUM}" --json number --jq '.[0].number // empty' 2>/dev/null || echo "")
+         if [ -n "$OPEN_PR" ]; then
+           echo "CTO preflight: keeping {{ claim_label }} on #$NUM (open PR #$OPEN_PR — worktree pruning expected)"
+           continue
+         fi
          WORKTREE="$HOME/.cursor/worktrees/{{ repo_name }}/issue-$NUM"
          if [ ! -d "$WORKTREE" ]; then
-           echo "CTO preflight: clearing stale {{ claim_label }} from #$NUM (no worktree)"
+           echo "CTO preflight: clearing stale {{ claim_label }} from #$NUM (no worktree, no open PR)"
            gh issue edit "$NUM" --repo {{ gh_repo }} --remove-label "{{ claim_label }}" 2>/dev/null || true
          else
            BRANCH=$(git -C "$WORKTREE" branch --show-current 2>/dev/null || echo "")
            AHEAD=$(git -C "$MAIN_REPO" rev-list --count "dev..${BRANCH}" 2>/dev/null || echo "0")
            if [ "${AHEAD:-0}" -eq 0 ]; then
-             echo "CTO preflight: clearing stale {{ claim_label }} from #$NUM (0 commits ahead)"
+             echo "CTO preflight: clearing stale {{ claim_label }} from #$NUM (0 commits ahead, no open PR)"
              gh issue edit "$NUM" --repo {{ gh_repo }} --remove-label "{{ claim_label }}" 2>/dev/null || true
            fi
          fi
