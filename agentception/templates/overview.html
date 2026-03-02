@@ -1,0 +1,213 @@
+{% extends "base.html" %}
+
+{% block title %}AgentCeption — Overview{% endblock %}
+
+{% block content %}
+{#
+  Alpine.js reactive component wrapping the entire overview page.
+  Initial state is injected via Jinja2 (server-side); live updates are
+  received from GET /events (SSE) and applied reactively without page reload.
+#}
+<div
+  x-data="pipelineDashboard({{ state.model_dump() | tojson }})"
+  x-init="connect()"
+>
+
+  {# ── Pipeline summary bar ──────────────────────────────────────────────── #}
+  <div class="pipeline-summary-bar" role="status" aria-label="Pipeline summary">
+    <div class="summary-item">
+      <span class="summary-label">Active label</span>
+      <span class="summary-value" x-text="state.active_label ?? '—'"></span>
+    </div>
+    <div class="summary-item">
+      <span class="summary-label">Issues open</span>
+      <span class="summary-value" x-text="state.issues_open"></span>
+    </div>
+    <div class="summary-item">
+      <span class="summary-label">PRs open</span>
+      <span class="summary-value" x-text="state.prs_open"></span>
+    </div>
+    <div class="summary-item">
+      <span class="summary-label">Agents active</span>
+      <span class="summary-value" x-text="state.agents.length"></span>
+    </div>
+    <div class="summary-item">
+      <span class="summary-label">Last polled</span>
+      <span class="summary-value" x-text="relativeTime(state.polled_at)"></span>
+    </div>
+    <div class="summary-item summary-item--status">
+      <span
+        class="summary-label"
+        :class="connected ? 'text-success' : 'text-danger'"
+        x-text="connected ? '● Live' : '○ Reconnecting…'"
+      ></span>
+    </div>
+  </div>
+
+  {# ── Alert banners ─────────────────────────────────────────────────────── #}
+  <template x-for="alert in state.alerts" :key="alert">
+    <div class="alert-banner" role="alert">
+      <span>⚠️</span>
+      <span x-text="alert"></span>
+    </div>
+  </template>
+
+  {# ── Two-column overview layout ────────────────────────────────────────── #}
+  <div class="overview-columns">
+
+    {# ── Agent tree — left 65% ─────────────────────────────────────────── #}
+    <section class="agent-tree-container" aria-label="Agent tree">
+      <h2 class="section-title">Agent Tree</h2>
+
+      <div id="tree">
+        <div x-show="state.agents.length === 0" class="empty-state text-muted">
+          No active agents.
+        </div>
+
+        <template x-for="agent in state.agents" :key="agent.id">
+          <div class="agent-row">
+            <div class="agent-row-header">
+              <span
+                class="status-badge"
+                :class="'status-badge--' + agent.status"
+                x-text="agent.status"
+              ></span>
+              <a
+                :href="'/agents/' + encodeURIComponent(agent.id)"
+                class="agent-role"
+                x-text="agent.role"
+              ></a>
+              <span class="agent-meta" x-show="agent.issue_number != null">
+                #<span x-text="agent.issue_number"></span>
+              </span>
+              <span class="agent-meta" x-show="agent.pr_number != null">
+                PR&nbsp;<span x-text="agent.pr_number"></span>
+              </span>
+              <span
+                class="agent-meta text-muted"
+                x-show="agent.batch_id != null"
+                x-text="agent.batch_id"
+              ></span>
+              <span
+                class="agent-meta text-muted"
+                x-show="agent.last_activity_mtime > 0"
+                x-text="relativeTime(agent.last_activity_mtime)"
+              ></span>
+            </div>
+
+            {# Nested children (one level — recursive nesting deferred to AC-007) #}
+            <template x-if="agent.children && agent.children.length > 0">
+              <div class="agent-children">
+                <template x-for="child in agent.children" :key="child.id">
+                  <div class="agent-row agent-row--child">
+                    <div class="agent-row-header">
+                      <span
+                        class="status-badge"
+                        :class="'status-badge--' + child.status"
+                        x-text="child.status"
+                      ></span>
+                      <a
+                        :href="'/agents/' + encodeURIComponent(child.id)"
+                        class="agent-role"
+                        x-text="child.role"
+                      ></a>
+                      <span class="agent-meta" x-show="child.issue_number != null">
+                        #<span x-text="child.issue_number"></span>
+                      </span>
+                    </div>
+                  </div>
+                </template>
+              </div>
+            </template>
+          </div>
+        </template>
+      </div>
+    </section>
+
+    {# ── GitHub board — right 35% ──────────────────────────────────────── #}
+    <aside class="github-board" aria-label="GitHub board">
+      <h2 class="section-title">GitHub Board</h2>
+
+      <div class="card">
+        <div class="board-label-row">
+          <span
+            class="label-chip"
+            x-text="state.active_label ?? 'No active label'"
+          ></span>
+        </div>
+
+        <div class="board-stats mt-1">
+          <span class="text-muted">
+            <span x-text="state.issues_open"></span> open issue<span x-show="state.issues_open !== 1">s</span>
+          </span>
+          <span class="board-stats-sep">·</span>
+          <span class="text-muted">
+            <span x-text="state.prs_open"></span> open PR<span x-show="state.prs_open !== 1">s</span>
+          </span>
+        </div>
+      </div>
+
+      <div x-show="state.alerts.length > 0" class="mt-2">
+        <h3 class="section-subtitle">Alerts</h3>
+        <template x-for="alert in state.alerts" :key="alert">
+          <div class="alert-item" x-text="alert"></div>
+        </template>
+      </div>
+    </aside>
+
+  </div>{# .overview-columns #}
+</div>{# Alpine root #}
+
+<script>
+/**
+ * Alpine.js component for the pipeline overview dashboard.
+ *
+ * Receives a PipelineState snapshot from the server as the initial value,
+ * then subscribes to GET /events (SSE) for live 5-second updates.
+ * Never polls — it is fully event-driven once connected.
+ */
+function pipelineDashboard(initial) {
+  return {
+    state: initial,
+    connected: false,
+    _es: null,
+
+    connect() {
+      this._es = new EventSource('/events');
+
+      this._es.onopen = () => {
+        this.connected = true;
+      };
+
+      this._es.onmessage = (e) => {
+        try {
+          this.state = JSON.parse(e.data);
+          this.connected = true;
+        } catch (_) {
+          // Malformed JSON from server — keep stale state.
+        }
+      };
+
+      this._es.onerror = () => {
+        this.connected = false;
+        // EventSource auto-reconnects; we just update the indicator.
+      };
+    },
+
+    /**
+     * Format a UNIX timestamp as a human-readable relative time string.
+     * Returns '—' for falsy values (pre-first-tick state).
+     */
+    relativeTime(ts) {
+      if (!ts) return '—';
+      const secs = Math.floor(Date.now() / 1000 - ts);
+      if (secs < 5)  return 'just now';
+      if (secs < 60) return secs + 's ago';
+      if (secs < 3600) return Math.floor(secs / 60) + 'm ago';
+      return Math.floor(secs / 3600) + 'h ago';
+    },
+  };
+}
+</script>
+
+{% endblock %}
