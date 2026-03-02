@@ -1,0 +1,28 @@
+{#
+  label_chip — renders a coloured label chip.
+
+  Parameters
+  ----------
+  name : str
+    Display name of the label.
+  color : str
+    Hex colour string (with or without leading #), e.g. "#3fb950".
+  active : bool
+    Whether the chip has the "active" CSS class (e.g. when filtering
+    by this label).  Defaults to False.
+  href : str
+    If provided, wraps the label text in an <a> tag linking to href.
+    Defaults to '' (plain text, no anchor).
+
+  Usage
+  -----
+  {% from "musehub/macros/label.html" import label_chip %}
+  {{ label_chip(label.name, label.color, active=True, href=filter_url) }}
+#}
+{% macro label_chip(name, color, active=False, href='') %}
+<span class="label-chip{% if active %} active{% endif %}"
+      style="background:{{ color }}22;color:{{ color }};border-color:{{ color }}">
+  <span class="label-dot" style="background:{{ color }}"></span>
+  {% if href %}<a href="{{ href }}" style="color:inherit">{{ name }}</a>{% else %}{{ name }}{% endif %}
+</span>
+{% endmacro %}

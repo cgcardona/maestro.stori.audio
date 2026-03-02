@@ -106,6 +106,8 @@ fixed_router = APIRouter(prefix="/musehub/ui", tags=["musehub-ui"])
 
 _TEMPLATE_DIR = Path(__file__).parent.parent.parent.parent / "templates"
 templates = Jinja2Templates(directory=str(_TEMPLATE_DIR))
+from maestro.api.routes.musehub.jinja2_filters import register_musehub_filters  # noqa: E402
+register_musehub_filters(templates.env)
 
 
 # ---------------------------------------------------------------------------

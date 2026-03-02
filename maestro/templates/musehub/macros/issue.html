@@ -1,0 +1,46 @@
+{#
+  issue_row — renders one issue row.
+
+  Parameters
+  ----------
+  issue : object
+    Must have: issueId, number, title, state, labels (list[str]),
+    createdAt (ISO string or datetime), author (str|None).
+  base_url : str
+    Canonical repo UI prefix, e.g. "/musehub/ui/owner/repo".
+  labels : list[object]
+    Full label objects (with .name and .color) for the repo, used to
+    look up badge colours.  Defaults to [].
+  active_labels : list[str]
+    Label names currently filtered on; matching labels get the
+    "label-active" CSS class.  Defaults to [].
+  show_checkbox : bool
+    Render a selection checkbox before the issue number.  Defaults to False.
+
+  Usage
+  -----
+  {% from "musehub/macros/issue.html" import issue_row %}
+  {{ issue_row(issue, base_url=base_url) }}
+#}
+{% macro issue_row(issue, base_url, labels=[], active_labels=[], show_checkbox=False) %}
+<div class="issue-row" data-issue-id="{{ issue.issueId }}">
+  {% if show_checkbox %}
+    <input type="checkbox" class="issue-row-check" name="selected" value="{{ issue.issueId }}"/>
+  {% endif %}
+  <span class="badge badge-{{ issue.state }}">#{{ issue.number }}</span>
+  <div style="flex:1;min-width:0">
+    <a href="{{ base_url }}/issues/{{ issue.number }}">{{ issue.title }}</a>
+    <div class="issue-meta">
+      {% for label_name in issue.labels %}
+        {% set label_obj = labels | selectattr('name', 'equalto', label_name) | first | default(None) %}
+        {% set color = label_obj.color if label_obj else '#8b949e' %}
+        <span class="label label-pill{% if label_name in active_labels %} label-active{% endif %}"
+              style="border-color:{{ color }};color:{{ color }}">{{ label_name }}</span>
+      {% endfor %}
+      <span class="issue-date">Opened {{ issue.createdAt | fmtdate }}</span>
+      {% if issue.author %}<span class="issue-author">by {{ issue.author }}</span>{% endif %}
+    </div>
+  </div>
+  <span class="badge badge-{{ issue.state }}">{{ issue.state }}</span>
+</div>
+{% endmacro %}
