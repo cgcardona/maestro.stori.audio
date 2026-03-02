@@ -17,11 +17,37 @@ import logging
 
 from fastapi import APIRouter, HTTPException
 
+from agentception.intelligence.dag import DependencyDAG, build_dag
 from agentception.readers.github import clear_wip_label
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/intelligence", tags=["intelligence"])
+
+
+@router.get("/dag")
+async def dag_api() -> DependencyDAG:
+    """Return the full dependency DAG for all open issues.
+
+    Fetches every open issue via the GitHub CLI, parses ``Depends on #N``
+    declarations from each body, and returns a directed graph of dependencies.
+
+    The response is consumed by the AC-402 DAG visualisation and by the
+    intelligence layer's scheduling logic to prevent early assignment.
+
+    Raises
+    ------
+    HTTP 500
+        When the GitHub CLI subprocess fails (e.g. auth error, rate-limit).
+    """
+    try:
+        return await build_dag()
+    except RuntimeError as exc:
+        logger.error("❌ Failed to build dependency DAG: %s", exc)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to build dependency DAG: {exc}",
+        ) from exc
 
 
 @router.post("/stale-claims/{issue_number}/clear")
