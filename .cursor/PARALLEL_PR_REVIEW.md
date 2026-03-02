@@ -1018,17 +1018,15 @@ $CLOSE_FINGERPRINT
 
        CLOSES_ISSUES=$(grep "^CLOSES_ISSUES=" .agent-task | cut -d= -f2)
        if [ -n "$CLOSES_ISSUES" ]; then
-         echo "$CLOSES_ISSUES" | tr ',' '\n' | xargs -I{} gh issue close {} \
-           --comment "$CLOSE_COMMENT" \
-           --repo "$GH_REPO"
+         echo "$CLOSES_ISSUES" | tr ',' '\n' | xargs -I{} sh -c \
+           'gh issue close {} --comment "$CLOSE_COMMENT" --repo "$GH_REPO"; gh issue edit {} --remove-label "agent:wip" --repo "$GH_REPO" 2>/dev/null || true'
        else
          # Fallback: re-parse the PR body if CLOSES_ISSUES was empty in task file
          gh pr view "$N" --json body --jq '.body' \
            | grep -oE '[Cc]loses?\s+#[0-9]+' \
            | grep -oE '[0-9]+' \
-           | xargs -I{} gh issue close {} \
-               --comment "$CLOSE_COMMENT" \
-               --repo "$GH_REPO"
+           | xargs -I{} sh -c \
+               'gh issue close {} --comment "$CLOSE_COMMENT" --repo "$GH_REPO"; gh issue edit {} --remove-label "agent:wip" --repo "$GH_REPO" 2>/dev/null || true'
        fi
 
   ⚠️  Never use --delete-branch with gh pr merge in a multi-worktree setup.
