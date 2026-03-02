@@ -1,0 +1,49 @@
+{#  fragments/notification_rows.html — bare HTMX fragment: notification inbox rows.
+
+    Rendered in two contexts:
+
+    1. Full-page load: included inline by musehub/pages/notifications.html inside
+       the ``<div id="notification-rows">`` target container.
+
+    2. HTMX partial swap: returned directly when the handler detects
+       ``HX-Request: true``, replacing only the ``#notification-rows`` container.
+
+    Required context variables
+    --------------------------
+    notifications : list[dict]   — camelCase dicts (notifId, eventType, actor,
+                                   payload, isRead, repoId, createdAt)
+    type_filter   : str | None   — active event-type filter
+    unread_only   : bool         — whether unread-only filter is active
+#}
+{% from "musehub/macros/empty_state.html" import empty_state %}
+
+{% if notifications %}
+  {% for notif in notifications %}
+  <div class="notification-row{% if not notif.isRead %} notification-unread{% endif %}"
+       id="notif-{{ notif.notifId }}"
+       style="{% if not notif.isRead %}border-left:3px solid var(--color-accent);{% else %}border-left:3px solid transparent;opacity:0.75;{% endif %}padding:var(--space-3);display:flex;align-items:flex-start;gap:var(--space-2);border-bottom:1px solid var(--border-color)">
+    <span class="notif-type-badge"
+          style="flex-shrink:0;font-size:12px;font-weight:600;padding:2px 6px;border-radius:4px;background:var(--bg-secondary);border:1px solid var(--border-color);color:var(--text-muted)">
+      {{ notif.eventType }}
+    </span>
+    <div class="notif-body" style="flex:1;min-width:0">
+      <span style="font-weight:600;color:var(--text-primary)">{{ notif.actor | e }}</span>
+      —
+      {{ notif.payload.description | default(notif.eventType) | e }}
+      {% if notif.repoId %}
+        in <a href="/musehub/ui/{{ notif.payload.owner | default('') | e }}/{{ notif.payload.slug | default('') | e }}"
+              style="color:var(--color-accent)">
+             {{ notif.payload.repoName | default(notif.repoId) | e }}
+           </a>
+      {% endif %}
+    </div>
+    <span class="notif-date" style="flex-shrink:0;font-size:12px;color:var(--text-muted);white-space:nowrap">
+      {{ notif.createdAt | fmtrelative }}
+    </span>
+  </div>
+  {% endfor %}
+{% else %}
+  {{ empty_state("🔔", "No notifications",
+      "You're all caught up!" if not (type_filter or unread_only) else
+      "No notifications match the current filters. Try adjusting or clearing them.") }}
+{% endif %}
