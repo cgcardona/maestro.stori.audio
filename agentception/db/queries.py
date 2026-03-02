@@ -195,19 +195,36 @@ async def get_agent_run_history(
 async def get_agent_run_detail(
     run_id: str,
 ) -> dict[str, Any] | None:
-    """Return a single agent run with its transcript messages."""
+    """Return a single agent run with its transcript messages.
+
+    Accepts either the bare basename (e.g. ``issue-732``) or the legacy full
+    worktree path (e.g. ``/worktrees/issue-732``) so that old DB records
+    written before the basename normalisation are still resolvable.
+    """
     try:
         async with get_session() as session:
             run_result = await session.execute(
                 select(ACAgentRun).where(ACAgentRun.id == run_id)
             )
             run = run_result.scalar_one_or_none()
+
+            # Fall back: old records stored the full worktree path as the PK.
+            # Try to find a row whose path ends with the given basename.
+            if run is None and "/" not in run_id:
+                run_result2 = await session.execute(
+                    select(ACAgentRun).where(
+                        ACAgentRun.worktree_path.like(f"%/{run_id}")
+                    )
+                )
+                run = run_result2.scalar_one_or_none()
+
             if run is None:
                 return None
 
+            actual_run_id = run.id
             msg_result = await session.execute(
                 select(ACAgentMessage)
-                .where(ACAgentMessage.agent_run_id == run_id)
+                .where(ACAgentMessage.agent_run_id == actual_run_id)
                 .order_by(ACAgentMessage.sequence_index)
             )
             messages = msg_result.scalars().all()
