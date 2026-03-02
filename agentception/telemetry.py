@@ -9,6 +9,7 @@ Consumed by ``GET /api/telemetry/waves`` and future timeline UI components.
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 from pathlib import Path
@@ -202,8 +203,6 @@ def _stat_mtime(path: Path) -> float | None:
 
 async def _get_mtime(path: Path) -> float:
     """Async wrapper around ``os.stat`` for mtime — raises OSError on failure."""
-    import asyncio
-
     loop = asyncio.get_running_loop()
     stat_result = await loop.run_in_executor(None, os.stat, path)
     return stat_result.st_mtime
