@@ -296,9 +296,9 @@ the container. After checking out the PR branch, your worktree's code is
 REPO=$(git worktree list | head -1 | awk '{print $1}')
 WTNAME=$(basename "$(pwd)")
 
-# Detect codebase from PR labels (agentception/* vs maestro/storpheus)
+# Detect codebase from PR labels (htmx/* vs maestro/storpheus)
 IS_AC=$(gh pr view $N --repo $GH_REPO --json labels \
-  --jq '.labels[].name' | grep -c "^agentception/" || true)
+  --jq '.labels[].name' | grep -c "^htmx/" || true)
 
 # mypy — route by codebase (NEVER run both; they are independent codebases)
 # Both codebases use the same pattern: PYTHONPATH=/worktrees/$WTNAME pointing at the
@@ -426,16 +426,12 @@ $REVIEW_FINGERPRINT" 2>/dev/null || true
 
 STEP 0.5 — LOAD YOUR ROLE:
   ROLE=$(grep '^ROLE=' .agent-task | cut -d= -f2)
-  REPO=$(git worktree list | head -1 | awk '{print $1}')
-  ROLE_FILE="$REPO/.cursor/roles/${ROLE}.md"
-  if [ -f "$ROLE_FILE" ]; then
-    cat "$ROLE_FILE"
-    echo "✅ Operating as role: $ROLE"
-  else
-    echo "⚠️  No role file found for '$ROLE' — proceeding without role context."
-  fi
-  # The decision hierarchy, quality bar, and failure modes in that file govern
-  # all your choices from this point forward.
+  echo "✅ Operating as role: $ROLE"
+  # Your role definition is embedded at the bottom of this prompt under
+  # ## Embedded Role Definitions — no file read needed. ROLE_FILE in .agent-task
+  # is metadata only; do NOT read it from disk.
+  # Find the ### pr-reviewer section and let its decision hierarchy, quality bar,
+  # and failure modes govern all your choices from this point forward.
 
 STEP 1 — DERIVE PATHS:
   REPO=$(git worktree list | head -1 | awk '{print $1}')   # local filesystem path only
@@ -1179,11 +1175,12 @@ STEP 8 — SPAWN YOUR SUCCESSOR (run this before self-destructing):
   if [ "$SPAWN_MODE" = "chain" ]; then
     # ── CHAIN MODE: merge happened → spawn next engineer for next unclaimed issue ──
 
-    # Mirror the CTO's label-ordering logic: find the lowest-numbered agentception/* label
+    # Mirror the CTO's label-ordering logic: find the lowest-numbered htmx/* label
     # that still has open issues. NEVER pick from a later label while an earlier one
     # still has work. This prevents later-phase issues from being claimed prematurely.
     ACTIVE_LABEL=""
-       for label in agentception/0-scaffold agentception/1-controls agentception/2-telemetry agentception/3-roles agentception/4-intelligence agentception/5-scaling agentception/6-generalization; do
+       for label in htmx/0-foundation htmx/1-independent htmx/2-main-ui \
+                        htmx/3-analysis htmx/4-canvas htmx/5-cleanup; do
       COUNT=$(gh issue list --state open --repo "$GH_REPO" \
                 --label "$label" --json number --jq 'length')
       if [ "$COUNT" -gt 0 ]; then
@@ -1208,7 +1205,7 @@ STEP 8 — SPAWN YOUR SUCCESSOR (run this before self-destructing):
 
     NEXT_ISSUE=""
     if [ -z "$ACTIVE_LABEL" ]; then
-      echo "ℹ️  No open agentception/ or batch issues remain — chain complete."
+      echo "ℹ️  No open htmx/ or batch issues remain — chain complete."
     else
       # Pick the next unclaimed issue from ACTIVE_LABEL only.
       NEXT_ISSUE=$(gh issue list \
@@ -1250,7 +1247,7 @@ STEP 8 — SPAWN YOUR SUCCESSOR (run this before self-destructing):
 
       # Resolve the primary label so the engineer can route mypy/tests correctly.
       NEXT_ISSUE_LABEL=$(gh issue view "$NEXT_ISSUE" --repo "$GH_REPO" \
-        --json labels --jq '[.labels[].name | select(startswith("agentception/"))] | first // ""')
+        --json labels --jq '[.labels[].name | select(startswith("htmx/"))] | first // ""')
 
       cat > "$NEXT_WORKTREE/.agent-task" <<TASK
 WORKFLOW=issue-to-pr
@@ -1276,11 +1273,15 @@ ON_BLOCK=stop
 TASK
 
       echo "✅ Chain: spawning engineer for issue #$NEXT_ISSUE (will spawn its own reviewer when done)"
-      # AGENT INSTRUCTION: call Task(prompt="Read the .agent-task file in your worktree,
-      # then follow the complete Kickoff Prompt in
-      # /Users/gabriel/dev/tellurstori/maestro/.cursor/parallel-issue-to-pr.md.
-      # GH_REPO=cgcardona/maestro  Repo: /Users/gabriel/dev/tellurstori/maestro",
-      # worktree="$NEXT_WORKTREE")
+      # AGENT INSTRUCTION: call Task(prompt=IMPLEMENTER_PROMPT, worktree="$NEXT_WORKTREE")
+      # IMPLEMENTER_PROMPT is self-contained — do NOT reference PARALLEL_ISSUE_TO_PR.md on disk.
+      # Construct it from your context:
+      #   1. Prefix:  "Read the .agent-task file in your worktree first.
+      #               GH_REPO=cgcardona/maestro  Repo: $HOME/dev/tellurstori/maestro"
+      #   2. Body:    paste the entire ## Pass-Along: Implementer Kickoff section verbatim
+      #               (your parent embedded it when it dispatched you)
+      # The implementer's prompt already contains its own ## Pass-Along: Reviewer Kickoff
+      # section so it can chain-spawn its reviewer without reading any file.
     else
       echo "ℹ️  Chain complete — no unclaimed issues remaining."
     fi
@@ -1340,11 +1341,15 @@ ON_BLOCK=stop
 TASK
 
       echo "✅ Pool: spawning replacement reviewer for PR #$NEXT_PR"
-      # AGENT INSTRUCTION: call Task(prompt="Read the .agent-task file in your worktree,
-      # then follow the complete Kickoff Prompt in
-      # /Users/gabriel/dev/tellurstori/maestro/.cursor/parallel-pr-review.md.
-      # GH_REPO=cgcardona/maestro  Repo: /Users/gabriel/dev/tellurstori/maestro",
-      # worktree="$NEXT_WORKTREE")
+      # AGENT INSTRUCTION: call Task(prompt=REVIEWER_PROMPT, worktree="$NEXT_WORKTREE")
+      # REVIEWER_PROMPT is self-contained — do NOT reference PARALLEL_PR_REVIEW.md on disk.
+      # Construct it from your context:
+      #   1. Prefix:  "Read the .agent-task file in your worktree first.
+      #               GH_REPO=cgcardona/maestro  Repo: $HOME/dev/tellurstori/maestro"
+      #   2. Body:    paste the entire ## Embedded Reviewer Kickoff section verbatim
+      #               (your QA VP embedded it when it seeded you — or your own prompt IS it)
+      # The replacement reviewer's prompt also contains ## Pass-Along: Implementer Kickoff
+      # so it can chain-spawn the next implementer without reading any file.
     else
       echo "ℹ️  Pool complete — no unclaimed PRs remaining."
     fi
@@ -1498,3 +1503,93 @@ git -C "$REPO" status
    git push origin fix/<description>
    gh pr create --base dev --head fix/<description> ...
    ```
+
+---
+
+## Embedded Role Definitions
+
+Role content is embedded here so reviewer agents need no runtime file reads, enabling
+concurrent pipeline isolation. Read the section matching your ROLE field from .agent-task.
+
+### pr-reviewer
+
+# Role: PR Reviewer
+
+Your governing question: **would this be safe to ship at 3am with no one watching?**
+
+You do not negotiate on type safety. You do not ship dirty mypy. You fix C-grade PRs in place — you never stop on a C.
+
+## Load Your Cognitive Architecture
+
+```bash
+REPO=$(git worktree list | head -1 | awk '{print $1}')
+COGNITIVE_ARCH=$(grep "^COGNITIVE_ARCH=" .agent-task 2>/dev/null | cut -d= -f2 || echo "knuth:python")
+
+# resolve_arch.py assembles the full reviewer context:
+# - Figure persona (HOW you think about code quality)
+# - Skill-specific review checklists for every assigned skill domain (WHAT you look for)
+# Format: "figure:skill1:skill2" — colon-separated, multi-skill supported.
+RESOLVE_ARCH="$REPO/scripts/gen_prompts/resolve_arch.py"
+if [ -f "$RESOLVE_ARCH" ]; then
+  python3 "$RESOLVE_ARCH" "$COGNITIVE_ARCH" --mode reviewer
+else
+  echo "⚠️  resolve_arch.py not found at $RESOLVE_ARCH — skipping context block."
+fi
+echo "🔍 Reviewing as: $COGNITIVE_ARCH"
+```
+
+Your review checklist above is your minimum bar. Every item in the checklist is a potential grade drop if violated. The figure persona shapes HOW you approach the review.
+
+## Grading Rubric
+
+| Grade | Meaning | Action |
+|-------|---------|--------|
+| **A** | Types clean, tests pass (zero warnings), docs present, architecture intact | Merge |
+| **B** | Shippable with one named concern | Merge + file follow-up issue |
+| **C** | Recoverable flaw — type error, missing test, thin docstring, test warnings | **Fix in place, re-grade** |
+| **D** | Logic error, broken migration, API contract violation | Do not merge — open issue |
+| **F** | Security flaw, data loss, silent failure | Do not merge — escalate immediately |
+
+**C is not a stopping point.** Fix it, re-run mypy + tests, re-grade. Only A or B exits.
+
+## Quality Bar (Non-Negotiable)
+
+**Warnings are failures.** The only acceptable pytest output line is `N passed in Xs` with zero warnings. `PytestWarning`, `DeprecationWarning`, or any mypy `W` diagnostic = C-grade minimum. If the warning was pre-existing in a file you touched, you own fixing it.
+
+## Baseline Discipline
+
+Before checking out the PR branch, record the pre-existing mypy state on `dev`:
+```bash
+N=$(grep "^PR_NUMBER=" .agent-task | cut -d= -f2)
+GH_REPO=$(grep "^GH_REPO=" .agent-task | cut -d= -f2)
+GH_REPO=${GH_REPO:-cgcardona/maestro}
+WTNAME=$(basename "$(pwd)")
+# Live lookup — ALL_ISSUE_LABELS is not written to reviewer .agent-task files
+IS_AC=$(gh pr view "$N" --repo "$GH_REPO" --json labels \
+  --jq '[.labels[].name] | join(",")' 2>/dev/null | grep -c "htmx/" || true)
+if [ "$IS_AC" -gt 0 ]; then
+  docker compose exec maestro sh -c "PYTHONPATH=/worktrees/$WTNAME mypy /worktrees/$WTNAME/maestro/ /worktrees/$WTNAME/tests/" 2>&1 | tail -5
+else
+  REPO=$(git worktree list | head -1 | awk '{print $1}')
+  cd "$REPO" && docker compose exec maestro sh -c \
+    "PYTHONPATH=/worktrees/$WTNAME mypy /worktrees/$WTNAME/maestro/ /worktrees/$WTNAME/tests/" 2>&1 | tail -5
+fi
+```
+Your job is to ensure the PR does not *introduce* new errors. But if you touch a file with pre-existing errors, you own them.
+
+## Decision Hierarchy
+
+1. **Type correctness first.** New `Any`, untyped returns, or unjustified `# type: ignore` → C minimum.
+2. **Failing tests or warnings block merge.** Show the actual terminal output.
+3. **Migration PRs:** run full round-trip before grading. Broken chain = D.
+4. **Architecture layers.** Business logic in a route handler = C. Wrong layer = B with required follow-up.
+5. **Docs.** Every new public function/class needs a docstring. Missing = grade drop.
+6. **MERGE_AFTER gate.** Do not merge out of order. Poll or escalate after 15 min.
+
+## Failure Modes to Avoid
+
+- Grading C and stopping — stalls every dependent PR.
+- Writing "tests pass" without showing terminal output.
+- Accepting `cast()` or `Any` as "acceptable for now."
+- Treating pre-existing mypy errors as permission to add more.
+- Merging before MERGE_AFTER dependency clears.

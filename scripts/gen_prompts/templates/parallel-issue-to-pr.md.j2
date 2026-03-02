@@ -484,14 +484,11 @@ STEP 0 — READ YOUR TASK FILE:
 
 STEP 0.5 — LOAD YOUR ROLE AND COGNITIVE ARCHITECTURE:
   ROLE=$(grep '^ROLE=' .agent-task | cut -d= -f2)
-  REPO=$(git worktree list | head -1 | awk '{print $1}')
-  ROLE_FILE="$REPO/.cursor/roles/${ROLE}.md"
-  if [ -f "$ROLE_FILE" ]; then
-    cat "$ROLE_FILE"
-    echo "✅ Operating as role: $ROLE"
-  else
-    echo "⚠️  No role file found for '$ROLE' — proceeding without role context."
-  fi
+  echo "✅ Operating as role: $ROLE"
+  # Your role definition is embedded at the bottom of this prompt under
+  # ## Embedded Role Definitions — no file read needed. ROLE_FILE in .agent-task
+  # is metadata only; do NOT read it from disk.
+  # Locate the ### <your-role> section and apply those instructions now.
 
   # Load cognitive architecture — assembles figure persona + all skill domain fragments
   # Format: "figure:skill1:skill2" (new multi-skill format, colon-separated)
@@ -1087,11 +1084,15 @@ ON_BLOCK=stop
 TASK
 
     echo "✅ Spawning QA reviewer for PR #$MY_PR (chain mode — reviewer will spawn next engineer)"
-    # AGENT INSTRUCTION: call Task(prompt="Read the .agent-task file in your worktree,
-    # then follow the complete Kickoff Prompt in
-    # $HOME/dev/tellurstori/maestro/.cursor/parallel-pr-review.md.
-    # GH_REPO={{ gh_repo }}  Repo: $HOME/dev/tellurstori/maestro",
-    # worktree="$REVIEW_WORKTREE")
+    # AGENT INSTRUCTION: call Task(prompt=REVIEWER_PROMPT, worktree="$REVIEW_WORKTREE")
+    # REVIEWER_PROMPT is self-contained — do NOT reference parallel-pr-review.md on disk.
+    # Construct it from your context:
+    #   1. Prefix:  "Read the .agent-task file in your worktree first.
+    #               GH_REPO={{ gh_repo }}  Repo: $HOME/dev/tellurstori/{{ repo_name }}"
+    #   2. Body:    paste the entire ## Pass-Along: Reviewer Kickoff section verbatim
+    #               (your Engineering VP embedded it when it dispatched you)
+    # The reviewer's prompt already contains its own ## Pass-Along: Implementer Kickoff
+    # section so it can chain-spawn the next implementer without reading any file.
   else
     echo "⚠️  Could not find open PR for branch $MY_BRANCH — skipping reviewer spawn."
   fi
@@ -1315,3 +1316,26 @@ git -C "$REPO" status
 ### 5 — Hand off to PR review
 
 PRs from this batch are immediately available for the **parallel-pr-review.md** workflow. Run that now — issues only close automatically when PRs are **merged**, not just opened.
+
+---
+
+## Embedded Role Definitions
+
+Role content is embedded here so leaf agents need no runtime file reads, enabling
+concurrent pipeline isolation. Read the section matching your ROLE field from .agent-task.
+
+### python-developer
+
+{% include 'roles/python-developer.md.j2' %}
+
+---
+
+### muse-specialist
+
+{% include 'roles/muse-specialist.md.j2' %}
+
+---
+
+### database-architect
+
+{% include 'roles/database-architect.md.j2' %}
