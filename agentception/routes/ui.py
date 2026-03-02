@@ -114,8 +114,18 @@ async def overview(request: Request) -> HTMLResponse:
     board_issues: list[dict[str, object]] = []
     active_phase_label: str | None = None
     total_phase_issues: int = 0
+    all_phase_labels: list[str] = []
+    label_is_pinned: bool = False
 
     try:
+        pipeline_cfg = await read_pipeline_config()
+        all_phase_labels = pipeline_cfg.active_labels_order
+    except Exception as exc:  # pragma: no cover
+        logger.warning("⚠️ Could not read pipeline config: %s", exc)
+
+    try:
+        from agentception.readers.active_label_override import get_pin
+        label_is_pinned = get_pin() is not None
         active_phase_label = await get_active_label()
         if active_phase_label:
             # Fetch only issues in the current active phase.
@@ -136,6 +146,8 @@ async def overview(request: Request) -> HTMLResponse:
             "state": state,
             "board_issues": board_issues,
             "active_phase_label": active_phase_label,
+            "all_phase_labels": all_phase_labels,
+            "label_is_pinned": label_is_pinned,
             "total_phase_issues": total_phase_issues,
             "unclaimed_count": len(board_issues),
         },

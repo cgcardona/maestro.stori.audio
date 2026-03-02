@@ -20,6 +20,7 @@ from agentception.intelligence.dag import DependencyDAG, build_dag
 from agentception.intelligence.guards import PRViolation, detect_out_of_order_prs
 from agentception.models import AgentNode, PipelineConfig, PipelineState, SpawnRequest, SpawnResult, SwitchProjectRequest  # noqa: E501
 from agentception.poller import get_state
+from agentception.readers.active_label_override import clear_pin, get_pin, set_pin
 from agentception.readers.github import add_wip_label, close_pr, get_active_label, get_issue, get_open_issues
 from agentception.readers.pipeline_config import read_pipeline_config, switch_project, write_pipeline_config
 from agentception.readers.transcripts import read_transcript_messages
@@ -65,6 +66,56 @@ async def control_status() -> dict[str, bool]:
     ``{"paused": false}`` otherwise.
     """
     return {"paused": _SENTINEL.exists()}
+
+
+class ActiveLabelRequest(BaseModel):
+    label: str
+
+
+class ActiveLabelStatus(BaseModel):
+    label: str | None
+    pinned: bool
+    pin: str | None
+
+
+@router.get("/control/active-label", tags=["control"])
+async def get_active_label_status() -> ActiveLabelStatus:
+    """Return the current active label and whether it is manually pinned.
+
+    ``pinned`` is ``true`` when an operator override is in effect; ``false``
+    means the label was determined automatically by scanning open issues.
+    """
+    pin = get_pin()
+    resolved = await get_active_label()
+    return ActiveLabelStatus(label=resolved, pinned=pin is not None, pin=pin)
+
+
+@router.put("/control/active-label", tags=["control"])
+async def pin_active_label(body: ActiveLabelRequest) -> ActiveLabelStatus:
+    """Manually pin the active phase label, overriding automatic selection.
+
+    The pin is held in memory for the lifetime of the AgentCeption process.
+    Restart clears it and returns to auto mode.
+    """
+    config = await read_pipeline_config()
+    if body.label not in config.active_labels_order:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Label '{body.label}' not in active_labels_order. "
+                   f"Valid: {config.active_labels_order}",
+        )
+    set_pin(body.label)
+    logger.info("📌 Active label pinned to '%s'", body.label)
+    return ActiveLabelStatus(label=body.label, pinned=True, pin=body.label)
+
+
+@router.delete("/control/active-label", tags=["control"])
+async def unpin_active_label() -> ActiveLabelStatus:
+    """Clear the manual pin and return to automatic phase selection."""
+    clear_pin()
+    resolved = await get_active_label()
+    logger.info("🔓 Active label pin cleared, auto-resolved to '%s'", resolved)
+    return ActiveLabelStatus(label=resolved, pinned=False, pin=None)
 
 
 @router.get("/telemetry/waves", tags=["telemetry"])
