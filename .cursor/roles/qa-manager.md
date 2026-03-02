@@ -56,7 +56,8 @@ SEED:
 
   4. Generate a batch fingerprint (stable for all reviewers seeded in this VP run):
        BATCH_ID="qa-$(date -u +%Y%m%dT%H%M%SZ)-$(printf '%04x' $RANDOM)"
-       echo "Batch ID: $BATCH_ID"
+       VP_FINGERPRINT="QA VP · ${BATCH_ID}"
+       echo "Batch ID: $BATCH_ID  VP: $VP_FINGERPRINT"
 
   5. Take the first 4 unclaimed PRs. For each:
        a. Claim:  gh pr edit <N> --add-label "agent:wip"
@@ -139,6 +140,7 @@ COGNITIVE_ARCH=$COGNITIVE_ARCH
 BATCH_ID=$BATCH_ID
 WAVE=$CTO_WAVE
 CREATED_AT=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
+VP_FINGERPRINT=$VP_FINGERPRINT
 SPAWN_MODE=pool
 SPAWN_SUB_AGENTS=false
 ATTEMPT_N=0

@@ -83,7 +83,8 @@ SEED:
 
   4. Generate a batch fingerprint (stable for all agents seeded in this VP run):
        BATCH_ID="eng-$(date -u +%Y%m%dT%H%M%SZ)-$(printf '%04x' $RANDOM)"
-       echo "Batch ID: $BATCH_ID"
+       VP_FINGERPRINT="Engineering VP · ${BATCH_ID}"
+       echo "Batch ID: $BATCH_ID  VP: $VP_FINGERPRINT"
 
   5. Take the first 4 unclaimed issues. For each:
        a. Claim:  gh issue edit <N> --add-label "{{ claim_label }}"
@@ -219,6 +220,8 @@ BASE=dev
 GH_REPO={{ gh_repo }}
 CLOSES_ISSUES=<N>
 BATCH_ID=<BATCH_ID>
+VP_FINGERPRINT=<VP_FINGERPRINT>
+WAVE=<CTO_WAVE>
 COGNITIVE_ARCH=<COGNITIVE_ARCH from step 5c above, e.g. "lovelace:htmx:jinja2:alpine">
 ```
 
