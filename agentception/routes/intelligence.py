@@ -91,7 +91,7 @@ async def clear_stale_claim(issue_number: int) -> dict[str, int]:
     return {"cleared": issue_number}
 
 
-@router.get("/scaling-advice", tags=["intelligence"])
+@router.get("/scaling-advice")
 async def scaling_advice_api() -> ScalingRecommendation:
     """Return a scaling recommendation based on current pipeline state and wave history.
 

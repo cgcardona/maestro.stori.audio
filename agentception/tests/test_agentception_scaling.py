@@ -67,14 +67,20 @@ def _make_wave(duration_minutes: float | None, batch_id: str = "eng-test") -> Wa
     )
 
 
-def _make_default_config() -> dict[str, object]:
-    """Return a pipeline config dict matching the defaults (max_qa_vps=1, pool_size=4)."""
-    return {
-        "max_eng_vps": 1,
-        "max_qa_vps": 1,
-        "pool_size_per_vp": 4,
-        "active_labels_order": ["agentception/5-scaling"],
-    }
+def _make_pipeline_config(
+    max_eng_vps: int = 1,
+    max_qa_vps: int = 1,
+    pool_size_per_vp: int = 4,
+) -> object:
+    """Return a PipelineConfig instance with controllable allocation fields."""
+    from agentception.models import PipelineConfig
+
+    return PipelineConfig(
+        max_eng_vps=max_eng_vps,
+        max_qa_vps=max_qa_vps,
+        pool_size_per_vp=pool_size_per_vp,
+        active_labels_order=["agentception/5-scaling"],
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -299,22 +305,3 @@ async def test_scaling_advice_api_returns_200() -> None:
     assert body["confidence"] == "high"
 
 
-# ---------------------------------------------------------------------------
-# Private helper
-# ---------------------------------------------------------------------------
-
-
-def _make_pipeline_config(
-    max_eng_vps: int = 1,
-    max_qa_vps: int = 1,
-    pool_size_per_vp: int = 4,
-) -> object:
-    """Return a PipelineConfig instance with controllable allocation fields."""
-    from agentception.models import PipelineConfig
-
-    return PipelineConfig(
-        max_eng_vps=max_eng_vps,
-        max_qa_vps=max_qa_vps,
-        pool_size_per_vp=pool_size_per_vp,
-        active_labels_order=["agentception/5-scaling"],
-    )
