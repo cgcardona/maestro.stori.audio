@@ -1,0 +1,82 @@
+{# Form analysis content fragment — server-side rendered, reused for full page and HTMX swaps. #}
+{% set section_colors = {
+  'intro': '#58a6ff', 'verse': '#3fb950', 'chorus': '#ffa657',
+  'bridge': '#bc8cff', 'outro': '#8b949e', 'break': '#f0883e',
+} %}
+{% set total_beats = form_data.total_beats or 1 %}
+
+<div style="margin-bottom:12px">
+  <a href="{{ base_url }}/analysis/{{ ref }}">&larr; Back to analysis</a>
+</div>
+
+<div class="card">
+  <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:20px">
+    <h1 style="margin:0">📋 Form Analysis</h1>
+    <code style="font-size:13px;background:#0d1117;padding:2px 8px;border-radius:4px;color:#8b949e">
+      ref: {{ ref[:8] }}
+    </code>
+  </div>
+
+  <div class="meta-row" style="margin-bottom:20px">
+    <div class="meta-item">
+      <span class="meta-label">Form</span>
+      <span class="meta-value" style="font-size:20px;font-weight:700;font-family:monospace;color:#58a6ff">
+        {{ form_data.form_label }}
+      </span>
+    </div>
+    <div class="meta-item">
+      <span class="meta-label">Total Beats</span>
+      <span class="meta-value">{{ form_data.total_beats }}</span>
+    </div>
+    <div class="meta-item">
+      <span class="meta-label">Sections</span>
+      <span class="meta-value">{{ form_data.sections | length }}</span>
+    </div>
+  </div>
+
+  {# Section timeline #}
+  {% if form_data.sections %}
+  <div style="background:#0d1117;border:1px solid #30363d;border-radius:6px;padding:14px;margin-bottom:16px">
+    <span class="meta-label" style="display:block;margin-bottom:10px">Form Timeline</span>
+    <div style="position:relative;height:32px;background:#161b22;border-radius:4px;overflow:hidden">
+      {% for section in form_data.sections %}
+      {% set sec_key = section.label.split('_')[0].lower() %}
+      {% set sec_color = section_colors.get(sec_key, '#8b949e') %}
+      {% set start_pct = ((section.start_beat / total_beats) * 100) | round(2) %}
+      {% set width_pct = [((section.length_beats / total_beats) * 100) | round(2), 2] | max %}
+      <div style="
+        position:absolute;left:{{ start_pct }}%;width:{{ width_pct }}%;
+        height:100%;background:{{ sec_color }};border-radius:3px;overflow:hidden"
+        title="{{ section.label }} ({{ section.length_beats | round | int }} beats)">
+        <span style="font-size:10px;color:#fff;padding:2px 4px;white-space:nowrap;
+          overflow:hidden;display:inline-block;max-width:100%">
+          {{ section.label }}
+        </span>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
+  {# Section table #}
+  <div style="background:#0d1117;border:1px solid #30363d;border-radius:6px;padding:14px">
+    <span class="meta-label" style="display:block;margin-bottom:4px">Sections</span>
+    {% if form_data.sections %}
+      {% for section in form_data.sections %}
+      {% set sec_key = section.label.split('_')[0].lower() %}
+      {% set sec_color = section_colors.get(sec_key, '#8b949e') %}
+      <div style="display:flex;align-items:center;gap:12px;padding:8px 0;border-top:1px solid #21262d;font-size:13px">
+        <span style="display:inline-block;width:12px;height:12px;border-radius:3px;background:{{ sec_color }};flex-shrink:0"></span>
+        <span style="min-width:80px;font-weight:600;color:#e6edf3">{{ section.label }}</span>
+        <span style="color:#8b949e;min-width:80px">{{ section.function }}</span>
+        <span style="color:#8b949e;font-family:monospace;font-size:12px">
+          b{{ section.start_beat | round | int }} &ndash; {{ section.end_beat | round | int }}
+          ({{ section.length_beats | round | int }} beats)
+        </span>
+      </div>
+      {% endfor %}
+    {% else %}
+      <p style="color:#8b949e;font-size:13px;margin:8px 0 0">No section data available.</p>
+    {% endif %}
+  </div>
+</div>

@@ -1,0 +1,67 @@
+{#  fragments/analysis/chord_map_content.html — bare HTMX fragment for chord map page.
+
+    This template is intentionally minimal — no <html>, <head>, or nav.
+    Rendered when ``HX-Request: true`` is present in the request.
+
+    Required context variables
+    --------------------------
+    chord_map_data : ChordMapData — from compute_dimension('chord-map', ref)
+    ref            : str          — muse commit ref
+    base_url       : str          — repo base URL
+#}
+{% if chord_map_data.progression %}
+  {% set total_beats = chord_map_data.total_beats or 1 %}
+  <div class="card" style="margin-bottom:var(--space-4)">
+    <h2 style="font-size:14px;margin:0 0 var(--space-3) 0;color:#8b949e">PROGRESSION TIMELINE</h2>
+    <div style="display:flex;gap:1px;border-radius:4px;overflow:hidden;height:48px;background:#21262d">
+      {% for chord in chord_map_data.progression %}
+        {% if not loop.last %}
+          {% set next_chord = chord_map_data.progression[loop.index] %}
+          {% set dur = next_chord.beat - chord.beat %}
+        {% else %}
+          {% set dur = total_beats - chord.beat %}
+        {% endif %}
+        {% set dur = [dur, 0.5] | max %}
+        {% set width_pct = ((dur / total_beats) * 100) | round(1) %}
+        {% set tension_r = (chord.tension * 200 + 55) | int %}
+        {% set tension_g = ((1 - chord.tension) * 150 + 50) | int %}
+        <div style="width:{{ width_pct }}%;background:rgba({{ tension_r }},{{ tension_g }},100,0.3);
+                    display:flex;flex-direction:column;align-items:center;justify-content:center;
+                    border-right:1px solid #21262d;overflow:hidden"
+             title="{{ chord.chord }} ({{ dur | round(1) }} beats)">
+          <span style="font-size:12px;font-weight:700;white-space:nowrap;overflow:hidden;
+                       text-overflow:ellipsis;max-width:100%;padding:0 4px">{{ chord.chord }}</span>
+          <span style="font-size:10px;color:#8b949e">{{ chord.function }}</span>
+        </div>
+      {% endfor %}
+    </div>
+  </div>
+
+  <div class="card">
+    <h2 style="font-size:14px;margin:0 0 var(--space-3) 0;color:#8b949e">CHORD TABLE</h2>
+    <table style="width:100%;border-collapse:collapse;font-size:13px">
+      <thead>
+        <tr style="color:#8b949e;text-align:left;border-bottom:1px solid var(--color-border)">
+          <th style="padding:4px 8px">Beat</th>
+          <th style="padding:4px 8px">Chord</th>
+          <th style="padding:4px 8px">Function</th>
+          <th style="padding:4px 8px">Tension</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for chord in chord_map_data.progression %}
+        <tr style="border-bottom:1px solid #21262d">
+          <td style="padding:6px 8px;color:#8b949e">{{ chord.beat | round(1) }}</td>
+          <td style="padding:6px 8px;font-weight:600">{{ chord.chord }}</td>
+          <td style="padding:6px 8px;font-family:monospace;color:#bc8cff">{{ chord.function }}</td>
+          <td style="padding:6px 8px">
+            <span style="color:#8b949e">{{ chord.tension | round(2) }}</span>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+{% else %}
+  <p style="color:#8b949e">No chord data available.</p>
+{% endif %}
