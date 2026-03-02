@@ -34,6 +34,8 @@
     </div>
   </div>
   <audio id="audio-el" preload="metadata"></audio>
+  {# SSR track URL exposed as a global so external scripts can read it #}
+  {% if track_url %}<script>window.__embedTrackUrl = {{ track_url | tojson }};</script>{% endif %}
   <script>
     (function() {
       const repoId = {{ repo_id | tojson }};
@@ -48,6 +50,9 @@
       const timeDur    = document.getElementById('time-dur');
       const trackTitle = document.getElementById('track-title');
       const trackSub   = document.getElementById('track-sub');
+      // SSR seed: if the server resolved a track, pre-populate before JS fetch
+      const ssrTrackUrl  = {{ track_url | tojson }};
+      const ssrTrackName = {{ track_name | tojson }};
 
       function fmtTime(s) {
         if (!isFinite(s)) return '0:00';
@@ -103,6 +108,15 @@
       });
 
       async function loadTrack() {
+        // Fast path: use SSR-resolved track URL if the server provided it
+        if (ssrTrackUrl && ssrTrackName) {
+          trackTitle.textContent = ssrTrackName;
+          trackSub.textContent = 'ref: ' + ref.substring(0, 8);
+          audio.src = ssrTrackUrl;
+          audio.load();
+          return;
+        }
+        // Fallback: fetch objects list when SSR data is unavailable
         try {
           const objRes = await fetch(API + '/repos/' + repoId + '/objects');
           if (!objRes.ok) throw new Error('objects ' + objRes.status);
