@@ -109,17 +109,14 @@ async def record_version_bump(slug: str, new_sha: str) -> None:
     change is permanently linked to a version label and timestamp.
     """
     data = await read_role_versions()
-    versions: dict[str, object] = data.get("versions", {})  # type: ignore[assignment]
-    if not isinstance(versions, dict):
-        versions = {}
+    versions_raw: object = data.get("versions", {})
+    versions: dict[str, object] = versions_raw if isinstance(versions_raw, dict) else {}
 
-    slug_entry: dict[str, object] = versions.get(slug, {})  # type: ignore[assignment]
-    if not isinstance(slug_entry, dict):
-        slug_entry = {}
+    slug_entry_raw: object = versions.get(slug, {})
+    slug_entry: dict[str, object] = slug_entry_raw if isinstance(slug_entry_raw, dict) else {}
 
-    history: list[dict[str, object]] = slug_entry.get("history", [])  # type: ignore[assignment]
-    if not isinstance(history, list):
-        history = []
+    history_raw: object = slug_entry.get("history", [])
+    history: list[object] = history_raw if isinstance(history_raw, list) else []
 
     # Idempotency guard: skip if the SHA is already the latest.
     if history and isinstance(history[-1], dict) and history[-1].get("sha") == new_sha:
@@ -154,17 +151,19 @@ async def get_version_for_batch(slug: str, batch_id: str) -> str | None:
     Callers should treat ``None`` as "version unknown at that time."
     """
     data = await read_role_versions()
-    versions: dict[str, object] = data.get("versions", {})  # type: ignore[assignment]
-    if not isinstance(versions, dict):
+    versions_raw2: object = data.get("versions", {})
+    if not isinstance(versions_raw2, dict):
         return None
+    versions2: dict[str, object] = versions_raw2
 
-    slug_entry = versions.get(slug)
+    slug_entry = versions2.get(slug)
     if not isinstance(slug_entry, dict):
         return None
 
-    history: list[dict[str, object]] = slug_entry.get("history", [])  # type: ignore[assignment]
-    if not isinstance(history, list) or not history:
+    history2_raw: object = slug_entry.get("history", [])
+    if not isinstance(history2_raw, list) or not history2_raw:
         return None
+    history2: list[object] = history2_raw
 
     batch_ts = _parse_batch_timestamp(batch_id)
     if batch_ts is None:
@@ -174,7 +173,7 @@ async def get_version_for_batch(slug: str, batch_id: str) -> str | None:
     # Walk history forward (oldest first): keep updating active_version each time an entry
     # precedes batch_ts, then break on the first entry that post-dates the batch.
     active_version: str | None = None
-    for entry in history:
+    for entry in history2:
         if not isinstance(entry, dict):
             continue
         entry_ts = entry.get("timestamp")

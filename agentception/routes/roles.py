@@ -7,6 +7,11 @@ diff, commit, and inspect git history for each file without direct filesystem ac
 Managed files are defined in ``_MANAGED_FILES`` — a hardcoded allowlist that
 prevents arbitrary writes to the repository. Slugs are the dict keys; paths
 are relative to ``settings.repo_dir``.
+
+Also exposes the cognitive architecture meta-API:
+- ``GET /api/roles/taxonomy`` — full three-tier org hierarchy from role-taxonomy.yaml
+- ``GET /api/roles/personas`` — all figure YAMLs as structured JSON for the GUI
+- ``GET /api/roles/atoms`` — all atom dimension YAMLs for the primitive composer
 """
 from __future__ import annotations
 
@@ -15,6 +20,7 @@ import logging
 import tempfile
 from pathlib import Path
 
+import yaml
 from fastapi import APIRouter, HTTPException
 
 from agentception.config import settings
@@ -23,6 +29,11 @@ from agentception.intelligence.role_versions import (
     record_version_bump,
 )
 from agentception.models import (
+    AtomDimension,
+    AtomValue,
+    AtomsResponse,
+    PersonaEntry,
+    PersonasResponse,
     RoleCommitRequest,
     RoleCommitResponse,
     RoleContent,
@@ -34,6 +45,9 @@ from agentception.models import (
     RoleVersionEntry,
     RoleVersionInfo,
     RoleVersionsResponse,
+    TaxonomyLevel,
+    TaxonomyResponse,
+    TaxonomyRole,
 )
 
 logger = logging.getLogger(__name__)
@@ -43,12 +57,43 @@ router = APIRouter(prefix="/api/roles", tags=["roles"])
 # Allowlist of managed files. Slug → relative path from repo root.
 # Only files in this dict can be read or written through the API.
 _MANAGED_FILES: dict[str, str] = {
+    # ── C-Suite ───────────────────────────────────────────────────────────
+    "ceo": ".cursor/roles/ceo.md",
     "cto": ".cursor/roles/cto.md",
+    "cpo": ".cursor/roles/cpo.md",
+    "cfo": ".cursor/roles/cfo.md",
+    "ciso": ".cursor/roles/ciso.md",
+    "cdo": ".cursor/roles/cdo.md",
+    "cmo": ".cursor/roles/cmo.md",
+    "coo": ".cursor/roles/coo.md",
+    # ── VP Level ──────────────────────────────────────────────────────────
     "engineering-manager": ".cursor/roles/engineering-manager.md",
     "qa-manager": ".cursor/roles/qa-manager.md",
+    "vp-product": ".cursor/roles/vp-product.md",
+    "vp-design": ".cursor/roles/vp-design.md",
+    "vp-data": ".cursor/roles/vp-data.md",
+    "vp-security": ".cursor/roles/vp-security.md",
+    "vp-infrastructure": ".cursor/roles/vp-infrastructure.md",
+    "vp-mobile": ".cursor/roles/vp-mobile.md",
+    "vp-platform": ".cursor/roles/vp-platform.md",
+    "vp-ml": ".cursor/roles/vp-ml.md",
+    # ── Workers / leaf agents ─────────────────────────────────────────────
     "python-developer": ".cursor/roles/python-developer.md",
     "database-architect": ".cursor/roles/database-architect.md",
     "pr-reviewer": ".cursor/roles/pr-reviewer.md",
+    "frontend-developer": ".cursor/roles/frontend-developer.md",
+    "full-stack-developer": ".cursor/roles/full-stack-developer.md",
+    "mobile-developer": ".cursor/roles/mobile-developer.md",
+    "systems-programmer": ".cursor/roles/systems-programmer.md",
+    "ml-engineer": ".cursor/roles/ml-engineer.md",
+    "data-engineer": ".cursor/roles/data-engineer.md",
+    "devops-engineer": ".cursor/roles/devops-engineer.md",
+    "security-engineer": ".cursor/roles/security-engineer.md",
+    "test-engineer": ".cursor/roles/test-engineer.md",
+    "architect": ".cursor/roles/architect.md",
+    "api-developer": ".cursor/roles/api-developer.md",
+    "technical-writer": ".cursor/roles/technical-writer.md",
+    # ── Pipeline templates ────────────────────────────────────────────────
     "PARALLEL_ISSUE_TO_PR": ".cursor/PARALLEL_ISSUE_TO_PR.md",
     "PARALLEL_PR_REVIEW": ".cursor/PARALLEL_PR_REVIEW.md",
     "AGENT_COMMAND_POLICY": ".cursor/AGENT_COMMAND_POLICY.md",
@@ -158,6 +203,142 @@ async def list_roles() -> list[RoleMeta]:
         except HTTPException:
             pass
     return results
+
+
+_ARCHETYPES_DIR = settings.repo_dir / "scripts" / "gen_prompts" / "cognitive_archetypes"
+_TAXONOMY_FILE = settings.repo_dir / "scripts" / "gen_prompts" / "role-taxonomy.yaml"
+
+
+@router.get("/taxonomy", summary="Full three-tier org hierarchy")
+async def get_taxonomy() -> TaxonomyResponse:
+    """Return the complete role hierarchy from ``role-taxonomy.yaml``.
+
+    The GUI uses this to render the hierarchy browser (C-Suite → VP → Workers)
+    and to filter compatible figures/skills when composing a cognitive architecture.
+    Each role includes a live ``file_exists`` flag indicating whether the
+    corresponding ``.cursor/roles/<slug>.md`` file has been authored.
+    """
+    if not _TAXONOMY_FILE.exists():
+        raise HTTPException(status_code=503, detail="role-taxonomy.yaml not found")
+
+    raw = yaml.safe_load(_TAXONOMY_FILE.read_text(encoding="utf-8"))
+    levels: list[TaxonomyLevel] = []
+
+    for raw_level in raw.get("levels", []):
+        roles: list[TaxonomyRole] = []
+        for raw_role in raw_level.get("roles", []):
+            slug = str(raw_role.get("slug", ""))
+            rel_path = _MANAGED_FILES.get(slug, f".cursor/roles/{slug}.md")
+            file_exists = (settings.repo_dir / rel_path).exists()
+            roles.append(
+                TaxonomyRole(
+                    slug=slug,
+                    label=str(raw_role.get("label", slug)),
+                    title=str(raw_role.get("title", slug)),
+                    category=str(raw_role.get("category", "")),
+                    description=str(raw_role.get("description", "")),
+                    spawnable=bool(raw_role.get("spawnable", False)),
+                    compatible_figures=[str(f) for f in raw_role.get("compatible_figures", [])],
+                    compatible_skill_domains=[str(s) for s in raw_role.get("compatible_skill_domains", [])],
+                    file_exists=file_exists,
+                )
+            )
+        levels.append(
+            TaxonomyLevel(
+                id=str(raw_level.get("id", "")),
+                label=str(raw_level.get("label", "")),
+                description=str(raw_level.get("description", "")),
+                roles=roles,
+            )
+        )
+
+    return TaxonomyResponse(levels=levels)
+
+
+@router.get("/personas", summary="All cognitive architecture personas / figures")
+async def get_personas() -> PersonasResponse:
+    """Return all figure YAMLs from the cognitive architecture library.
+
+    Each entry corresponds to one ``.yaml`` file in
+    ``scripts/gen_prompts/cognitive_archetypes/figures/``.  The GUI uses
+    this list to populate persona cards in the hierarchy browser and the
+    primitive composer's figure dropdown.
+    """
+    figures_dir = _ARCHETYPES_DIR / "figures"
+    if not figures_dir.exists():
+        raise HTTPException(status_code=503, detail="figures directory not found")
+
+    personas: list[PersonaEntry] = []
+    for yaml_file in sorted(figures_dir.glob("*.yaml")):
+        try:
+            raw = yaml.safe_load(yaml_file.read_text(encoding="utf-8"))
+            if not isinstance(raw, dict):
+                continue
+            overrides_raw = raw.get("overrides", {})
+            overrides = {str(k): str(v) for k, v in overrides_raw.items()} if isinstance(overrides_raw, dict) else {}
+            injection = raw.get("prompt_injection", {})
+            prefix = str(injection.get("prefix", "")) if isinstance(injection, dict) else ""
+            personas.append(
+                PersonaEntry(
+                    id=str(raw.get("id", yaml_file.stem)),
+                    display_name=str(raw.get("display_name", yaml_file.stem)),
+                    layer=str(raw.get("layer", "figure")),
+                    extends=str(raw.get("extends", "")),
+                    description=str(raw.get("description", "")).strip(),
+                    prompt_prefix=prefix.strip(),
+                    overrides=overrides,
+                )
+            )
+        except Exception:
+            logger.warning("⚠️ Failed to parse figure YAML: %s", yaml_file)
+            continue
+
+    return PersonasResponse(personas=personas)
+
+
+@router.get("/atoms", summary="Cognitive atom dimensions for the primitive composer")
+async def get_atoms() -> AtomsResponse:
+    """Return all atom dimension YAMLs from the cognitive architecture library.
+
+    Each entry corresponds to one ``.yaml`` file in
+    ``scripts/gen_prompts/cognitive_archetypes/atoms/``.  The GUI uses this
+    to render atom dropdowns in the primitive composer, allowing users to
+    override individual cognitive dimensions when designing a custom role.
+    """
+    atoms_dir = _ARCHETYPES_DIR / "atoms"
+    if not atoms_dir.exists():
+        raise HTTPException(status_code=503, detail="atoms directory not found")
+
+    atoms: list[AtomDimension] = []
+    for yaml_file in sorted(atoms_dir.glob("*.yaml")):
+        try:
+            raw = yaml.safe_load(yaml_file.read_text(encoding="utf-8"))
+            if not isinstance(raw, dict):
+                continue
+            raw_values = raw.get("values", {})
+            values: list[AtomValue] = []
+            if isinstance(raw_values, dict):
+                for val_id, val_data in raw_values.items():
+                    if isinstance(val_data, dict):
+                        values.append(
+                            AtomValue(
+                                id=str(val_id),
+                                label=str(val_data.get("label", val_id)),
+                                description=str(val_data.get("description", "")),
+                            )
+                        )
+            atoms.append(
+                AtomDimension(
+                    dimension=str(raw.get("dimension", yaml_file.stem)),
+                    description=str(raw.get("description", "")).strip(),
+                    values=values,
+                )
+            )
+        except Exception:
+            logger.warning("⚠️ Failed to parse atom YAML: %s", yaml_file)
+            continue
+
+    return AtomsResponse(atoms=atoms)
 
 
 @router.get("/{slug}", summary="Get content and metadata for a single role file")
@@ -333,16 +514,14 @@ async def role_versions_api(slug: str) -> RoleVersionsResponse:
     _resolve_slug(slug)  # raises 404 for unknown slugs
 
     data = await read_role_versions()
-    versions_map: dict[str, object] = data.get("versions", {})  # type: ignore[assignment]
-    if not isinstance(versions_map, dict):
-        versions_map = {}
+    versions_map_raw: object = data.get("versions", {})
+    versions_map: dict[str, object] = versions_map_raw if isinstance(versions_map_raw, dict) else {}
 
     raw_entry = versions_map.get(slug)
     if isinstance(raw_entry, dict):
         current = str(raw_entry.get("current", "v1"))
-        raw_history: list[dict[str, object]] = raw_entry.get("history", [])  # type: ignore[assignment]
-        if not isinstance(raw_history, list):
-            raw_history = []
+        raw_history_raw: object = raw_entry.get("history", [])
+        raw_history: list[object] = raw_history_raw if isinstance(raw_history_raw, list) else []
         history = []
         for h in raw_history:
             if not isinstance(h, dict):

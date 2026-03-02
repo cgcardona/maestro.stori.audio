@@ -10,10 +10,28 @@ from enum import Enum
 
 from pydantic import BaseModel, field_validator
 
-#: Roles that can be assigned to a spawned agent.
-VALID_ROLES: frozenset[str] = frozenset(
-    {"python-developer", "database-architect", "pr-reviewer"}
-)
+#: Roles that can be assigned to a spawned leaf agent via POST /api/control/spawn.
+#: Orchestration roles (cto, engineering-manager, qa-manager, coordinator) are
+#: spawnable only through the CTO pipeline, not directly via the control plane.
+VALID_ROLES: frozenset[str] = frozenset({
+    # Original leaf roles
+    "python-developer",
+    "database-architect",
+    "pr-reviewer",
+    # New worker / leaf roles
+    "frontend-developer",
+    "full-stack-developer",
+    "mobile-developer",
+    "systems-programmer",
+    "ml-engineer",
+    "data-engineer",
+    "devops-engineer",
+    "security-engineer",
+    "test-engineer",
+    "architect",
+    "api-developer",
+    "technical-writer",
+})
 
 
 class AgentStatus(str, Enum):
@@ -388,6 +406,101 @@ class RoleVersionsResponse(BaseModel):
 
     slug: str
     versions: RoleVersionInfo
+
+
+# ---------------------------------------------------------------------------
+# Cognitive Architecture API — taxonomy, personas, atoms
+# ---------------------------------------------------------------------------
+
+
+class TaxonomyRole(BaseModel):
+    """A single role entry in the org hierarchy taxonomy.
+
+    Returned by ``GET /api/roles/taxonomy`` as part of a level's role list.
+    Combines metadata from ``role-taxonomy.yaml`` with a live ``file_exists``
+    flag so the GUI can show which roles have been authored.
+    """
+
+    slug: str
+    label: str
+    title: str
+    category: str
+    description: str
+    spawnable: bool
+    compatible_figures: list[str]
+    compatible_skill_domains: list[str]
+    file_exists: bool
+
+
+class TaxonomyLevel(BaseModel):
+    """One tier of the org hierarchy (C-Suite, VP Level, Workers).
+
+    Contains the full ordered list of ``TaxonomyRole`` entries for that tier.
+    """
+
+    id: str
+    label: str
+    description: str
+    roles: list[TaxonomyRole]
+
+
+class TaxonomyResponse(BaseModel):
+    """Response for ``GET /api/roles/taxonomy``.
+
+    Returns the complete three-tier org hierarchy so the GUI can render the
+    hierarchy browser and the primitive composer's compatible-figures dropdowns.
+    """
+
+    levels: list[TaxonomyLevel]
+
+
+class PersonaEntry(BaseModel):
+    """A single persona/figure from the cognitive architecture library.
+
+    Returned by ``GET /api/roles/personas``.  Each entry corresponds to one
+    YAML file in ``scripts/gen_prompts/cognitive_archetypes/figures/``.
+    The ``prompt_prefix`` is the injected context block used at spawn time.
+    """
+
+    id: str
+    display_name: str
+    layer: str
+    extends: str
+    description: str
+    prompt_prefix: str
+    overrides: dict[str, str]
+
+
+class PersonasResponse(BaseModel):
+    """Response for ``GET /api/roles/personas``."""
+
+    personas: list[PersonaEntry]
+
+
+class AtomValue(BaseModel):
+    """A single named value within an atom dimension."""
+
+    id: str
+    label: str
+    description: str
+
+
+class AtomDimension(BaseModel):
+    """One cognitive atom dimension (e.g. epistemic_style, quality_bar).
+
+    Returned by ``GET /api/roles/atoms`` so the primitive composer can render
+    dropdowns for each atom and its valid values.
+    """
+
+    dimension: str
+    description: str
+    values: list[AtomValue]
+
+
+class AtomsResponse(BaseModel):
+    """Response for ``GET /api/roles/atoms``."""
+
+    atoms: list[AtomDimension]
 
 
 # ---------------------------------------------------------------------------
