@@ -464,6 +464,11 @@ async def stream_maestro(
                 f"❌ SSE stream error after {_elapsed:.1f}s, {sequencer.count} events: {e}"
             )
             yield sequencer(emit(ErrorEvent(message=str(e))))
+            yield sequencer(emit(CompleteEvent(
+                success=False,
+                error=str(e),
+                trace_id="unhandled-error",
+            )))
 
     headers = {
         "Cache-Control": "no-cache",

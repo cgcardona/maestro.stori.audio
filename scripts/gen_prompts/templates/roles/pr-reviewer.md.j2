@@ -45,11 +45,19 @@ Your review checklist above is your minimum bar. Every item in the checklist is 
 
 Before checking out the PR branch, record the pre-existing mypy state on `dev`:
 ```bash
-IS_AC=$(grep "^ALL_ISSUE_LABELS=" .agent-task 2>/dev/null | grep -c "agentception/" || true)
+N=$(grep "^PR_NUMBER=" .agent-task | cut -d= -f2)
+GH_REPO=$(grep "^GH_REPO=" .agent-task | cut -d= -f2)
+GH_REPO=${GH_REPO:-{{ gh_repo }}}
+WTNAME=$(basename "$(pwd)")
+# Live lookup — ALL_ISSUE_LABELS is not written to reviewer .agent-task files
+IS_AC=$(gh pr view "$N" --repo "$GH_REPO" --json labels \
+  --jq '[.labels[].name] | join(",")' 2>/dev/null | grep -c "{{ active_label_prefix }}" || true)
 if [ "$IS_AC" -gt 0 ]; then
   {{ active_mypy }} 2>&1 | tail -5
 else
-  docker compose exec maestro mypy maestro/ tests/ 2>&1 | tail -5
+  REPO=$(git worktree list | head -1 | awk '{print $1}')
+  cd "$REPO" && docker compose exec maestro sh -c \
+    "PYTHONPATH=/worktrees/$WTNAME mypy /worktrees/$WTNAME/maestro/ /worktrees/$WTNAME/tests/" 2>&1 | tail -5
 fi
 ```
 Your job is to ensure the PR does not *introduce* new errors. But if you touch a file with pre-existing errors, you own them.

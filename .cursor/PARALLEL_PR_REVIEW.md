@@ -102,6 +102,7 @@ Run from anywhere inside the main repo. Paths are derived automatically.
 
 ```bash
 REPO=$(git rev-parse --show-toplevel)
+GH_REPO=cgcardona/maestro
 PRTREES="$HOME/.cursor/worktrees/$(basename "$REPO")"
 mkdir -p "$PRTREES"
 cd "$REPO"
@@ -296,7 +297,7 @@ REPO=$(git worktree list | head -1 | awk '{print $1}')
 WTNAME=$(basename "$(pwd)")
 
 # Detect codebase from PR labels (agentception/* vs maestro/storpheus)
-IS_AC=$(gh pr view $PR --repo $GH_REPO --json labels \
+IS_AC=$(gh pr view $N --repo $GH_REPO --json labels \
   --jq '.labels[].name' | grep -c "^agentception/" || true)
 
 # mypy — route by codebase (NEVER run both; they are independent codebases)
@@ -378,6 +379,7 @@ STEP 0 — READ YOUR TASK FILE:
     echo "🤖 Reviewer session: $AGENT_SESSION  Batch: ${BATCH_ID:-unset}  Arch: ${COGNITIVE_ARCH:-unset}"
 
   Post an identity comment on the PR immediately so the audit trail is visible from the start:
+    REPO=$(git worktree list | head -1 | awk '{print $1}')
     VP_FINGERPRINT=$(grep "^VP_FINGERPRINT=" .agent-task | cut -d= -f2)
     REVIEW_FINGERPRINT=$(python3 "$REPO/scripts/gen_prompts/resolve_arch.py" "${COGNITIVE_ARCH:-unset}" \
       --fingerprint \
@@ -454,6 +456,7 @@ STEP 2 — CHECK CANONICAL STATE BEFORE DOING ANY WORK:
   └────────────────────────────────────────────────────────────────────────┘
 
   Self-destruct when stopping early:
+    gh pr edit "$N" --repo "$GH_REPO" --remove-label "agent:wip" 2>/dev/null || true
     WORKTREE=$(pwd)
     cd "$REPO"
     git worktree remove --force "$WORKTREE"
@@ -908,6 +911,7 @@ STEP 5.5 — MERGE ORDER GATE (sequential chain safety):
         echo "   This PR (#$N) will NOT be merged — merging out of order would break"
         echo "   the dependency chain."
         echo "   Action: fix PR #$MERGE_AFTER manually, then re-run this review agent."
+        gh pr edit "$N" --repo "$GH_REPO" --remove-label "agent:wip" 2>/dev/null || true
         WORKTREE=$(pwd)
         cd "$REPO"
         git worktree remove --force "$WORKTREE"
@@ -1017,6 +1021,9 @@ $CLOSE_FINGERPRINT
 📅 **Merged at:** $(date -u '+%Y-%m-%dT%H:%M:%SZ')"
 
        CLOSES_ISSUES=$(grep "^CLOSES_ISSUES=" .agent-task | cut -d= -f2)
+       # Export so the xargs subshell can see both variables (single-quoted sh -c)
+       export CLOSE_COMMENT
+       export GH_REPO
        if [ -n "$CLOSES_ISSUES" ]; then
          echo "$CLOSES_ISSUES" | tr ',' '\n' | xargs -I{} sh -c \
            'gh issue close {} --comment "$CLOSE_COMMENT" --repo "$GH_REPO"; gh issue edit {} --remove-label "agent:wip" --repo "$GH_REPO" 2>/dev/null || true'
@@ -1103,9 +1110,11 @@ STEP 7 — REGRESSION FEEDBACK LOOP (only if merge succeeded — skip if D/F gra
       TEST_OUTPUT="$AC_OUTPUT"
     fi
     if [ "$HAS_MAESTRO" -gt 0 ]; then
-      M_TESTS=$(echo "$TEST_FILES" | tr ' ' '\n' | grep -v "test_agentception" | tr '\n' ' ')
+      # Convert host-absolute paths to container-relative (strip $REPO/ prefix)
+      M_TESTS_CONTAINER=$(echo "$TEST_FILES" | tr ' ' '\n' | grep -v "test_agentception" | \
+        sed "s|$REPO/||" | tr '\n' ' ')
       M_OUTPUT=$(cd "$REPO" && docker compose exec maestro sh -c \
-        "PYTHONPATH=/app pytest $M_TESTS -v --tb=short -q 2>&1")
+        "PYTHONPATH=/worktrees/$WTNAME pytest $M_TESTS_CONTAINER -v --tb=short -q 2>&1")
       echo "$M_OUTPUT"
       TEST_OUTPUT="${TEST_OUTPUT}${M_OUTPUT}"
     fi
@@ -1124,7 +1133,7 @@ STEP 7 — REGRESSION FEEDBACK LOOP (only if merge succeeded — skip if D/F gra
         --body "## Regression Report
 
 **Failing test:** \`$test_line\`
-**Detected after merging:** PR #$N (batch: $(grep '^BATCH_LABEL=' .agent-task | cut -d= -f2))
+**Detected after merging:** PR #$N (batch: ${BATCH_ID:-unknown})
 **Detection method:** post-merge targeted test run in PR_REVIEW STEP 7
 
 ## Reproduction
@@ -1160,7 +1169,7 @@ STEP 8 — SPAWN YOUR SUCCESSOR (run this before self-destructing):
   # SPAWN_MODE=chain  → spawned by an engineer; spawn the next ENGINEER for the next issue
   # SPAWN_MODE=pool   → spawned by a QA VP; spawn the next REVIEWER for the next PR (legacy pool behavior)
   # (absent/empty)    → default to pool behavior
-  SPAWN_MODE=$(grep "^SPAWN_MODE=" "$WORKTREE/.agent-task" 2>/dev/null | cut -d= -f2)
+  SPAWN_MODE=$(grep "^SPAWN_MODE=" .agent-task 2>/dev/null | cut -d= -f2)
 
   if [ "$SPAWN_MODE" = "chain" ]; then
     # ── CHAIN MODE: merge happened → spawn next engineer for next unclaimed issue ──
@@ -1178,9 +1187,23 @@ STEP 8 — SPAWN YOUR SUCCESSOR (run this before self-destructing):
       fi
     done
 
+    # Fallback: if no agentception/* label has open issues, try the batch label from the task file.
+    # This supports non-agentception chain workflows (e.g. batch-01, batch-02).
+    if [ -z "$ACTIVE_LABEL" ]; then
+      TASK_BATCH_ID=$(grep "^BATCH_ID=" .agent-task 2>/dev/null | cut -d= -f2 || echo "")
+      BATCH_LABEL_PREFIX=$(echo "$TASK_BATCH_ID" | grep -oE 'batch-[0-9]+' | head -1)
+      if [ -n "$BATCH_LABEL_PREFIX" ]; then
+        BATCH_COUNT=$(gh issue list --state open --repo "$GH_REPO" \
+          --label "$BATCH_LABEL_PREFIX" --json number --jq 'length' 2>/dev/null || echo 0)
+        if [ "$BATCH_COUNT" -gt 0 ]; then
+          ACTIVE_LABEL="$BATCH_LABEL_PREFIX"
+        fi
+      fi
+    fi
+
     NEXT_ISSUE=""
     if [ -z "$ACTIVE_LABEL" ]; then
-      echo "ℹ️  No open agentception/ issues remain — chain complete."
+      echo "ℹ️  No open agentception/ or batch issues remain — chain complete."
     else
       # Pick the next unclaimed issue from ACTIVE_LABEL only.
       NEXT_ISSUE=$(gh issue list \
@@ -1195,11 +1218,12 @@ STEP 8 — SPAWN YOUR SUCCESSOR (run this before self-destructing):
     # Dependency gate: only proceed if all "Depends on #NNN" references are CLOSED.
     if [ -n "$NEXT_ISSUE" ]; then
       BODY=$(gh issue view "$NEXT_ISSUE" --repo "$GH_REPO" --json body --jq '.body' 2>/dev/null || echo "")
-      DEPS=$(echo "$BODY" | grep -oE 'Depends on[^#]*#[0-9]+' | grep -oE '[0-9]+')
+      DEPS=$(echo "$BODY" | grep -oE 'Depends on[^.]+' | grep -oE '[0-9]+')
       for dep in $DEPS; do
         DEP_STATE=$(gh issue view "$dep" --repo "$GH_REPO" --json state --jq '.state' 2>/dev/null || echo "OPEN")
-        if [ "$DEP_STATE" != "CLOSED" ]; then
-          echo "ℹ️  Issue #$NEXT_ISSUE blocked by open dependency #$dep — chain complete for now."
+        DEP_REASON=$(gh issue view "$dep" --repo "$GH_REPO" --json stateReason --jq '.stateReason' 2>/dev/null || echo "UNKNOWN")
+        if [ "$DEP_STATE" != "CLOSED" ] || [ "$DEP_REASON" != "COMPLETED" ]; then
+          echo "ℹ️  Issue #$NEXT_ISSUE blocked by dependency #$dep (state=$DEP_STATE reason=$DEP_REASON) — chain complete for now."
           NEXT_ISSUE=""
           break
         fi
@@ -1214,10 +1238,10 @@ STEP 8 — SPAWN YOUR SUCCESSOR (run this before self-destructing):
     fi
 
     if [ -n "$NEXT_ISSUE" ]; then
-      gh issue edit "$NEXT_ISSUE" --repo "$GH_REPO" --add-label "agent:wip" 2>/dev/null || true
-
       NEXT_WORKTREE="$HOME/.cursor/worktrees/maestro/issue-$NEXT_ISSUE"
       git -C "$REPO" worktree add -b "feat/issue-$NEXT_ISSUE" "$NEXT_WORKTREE" origin/dev
+      # Add label only after worktree is confirmed created — prevents permanent lock on creation failure
+      gh issue edit "$NEXT_ISSUE" --repo "$GH_REPO" --add-label "agent:wip" 2>/dev/null || true
 
       # Resolve the primary label so the engineer can route mypy/tests correctly.
       NEXT_ISSUE_LABEL=$(gh issue view "$NEXT_ISSUE" --repo "$GH_REPO" \
@@ -1267,11 +1291,11 @@ TASK
       --jq '[.[] | select(.labels | map(.name) | index("agent:wip") | not)] | first | .number // empty')
 
     if [ -n "$NEXT_PR" ]; then
-      gh pr edit "$NEXT_PR" --repo "$GH_REPO" --add-label "agent:wip" 2>/dev/null || true
-
       NEXT_BRANCH=$(gh pr view "$NEXT_PR" --repo "$GH_REPO" --json headRefName --jq .headRefName)
       NEXT_WORKTREE="$HOME/.cursor/worktrees/maestro/pr-$NEXT_PR"
       git -C "$REPO" worktree add "$NEXT_WORKTREE" "origin/$NEXT_BRANCH"
+      # Add label only after worktree is confirmed created — prevents permanent lock on creation failure
+      gh pr edit "$NEXT_PR" --repo "$GH_REPO" --add-label "agent:wip" 2>/dev/null || true
 
       NEXT_PR_TITLE=$(gh pr view "$NEXT_PR" --repo "$GH_REPO" --json title --jq '.title' 2>/dev/null || echo "")
       NEXT_PR_BODY=$(gh pr view "$NEXT_PR" --repo "$GH_REPO" --json body --jq '.body' 2>/dev/null || echo "")
@@ -1321,6 +1345,9 @@ TASK
   fi
 
 STEP 9 — SELF-DESTRUCT (always run this after STEP 8, merge or not, early stop or not):
+  # Unconditionally clear agent:wip — covers D/F grade, merge failure, and timeout paths
+  # where STEP 6 was never reached. Removing a non-existent label is a no-op.
+  gh pr edit "$N" --repo "$GH_REPO" --remove-label "agent:wip" 2>/dev/null || true
   WORKTREE=$(pwd)
   BRANCH_TO_DELETE=$(git rev-parse --abbrev-ref HEAD)
   cd "$REPO"

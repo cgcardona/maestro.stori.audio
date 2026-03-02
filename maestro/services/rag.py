@@ -213,7 +213,7 @@ class RAGService:
     async def answer(
         self,
         question: str,
-        model: str = "anthropic/claude-3.5-sonnet",
+        model: str = "anthropic/claude-sonnet-4.6",
     ) -> AsyncGenerator[str, None]:
         """
         Generate an answer using RAG.
@@ -267,7 +267,7 @@ Please provide a clear, helpful answer. Use the documentation context when it's 
     async def answer_simple(
         self,
         question: str,
-        model: str = "anthropic/claude-3.5-sonnet",
+        model: str = "anthropic/claude-sonnet-4.6",
     ) -> str:
         """
         Generate a complete answer (non-streaming).

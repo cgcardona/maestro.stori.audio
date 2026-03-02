@@ -77,5 +77,5 @@ docker compose exec maestro alembic heads           # must be exactly one
 docker compose exec maestro alembic upgrade head    # must complete cleanly
 docker compose exec maestro alembic downgrade -1    # must reverse cleanly
 docker compose exec maestro alembic upgrade head    # re-apply, confirm idempotent
-docker compose exec maestro mypy maestro/ tests/    # ORM models type-clean
+docker compose exec maestro sh -c "PYTHONPATH=/worktrees/$WTNAME mypy /worktrees/$WTNAME/maestro/ /worktrees/$WTNAME/tests/"    # ORM models type-clean
 ```

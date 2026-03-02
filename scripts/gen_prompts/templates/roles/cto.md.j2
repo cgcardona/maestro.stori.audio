@@ -47,6 +47,12 @@ The pool stays at 4 concurrent workers continuously until the queue drains.
 
 ```
 LOOP:
+  -1. Pipeline-pause sentinel — check BEFORE every wave, every iteration:
+       # The AgentCeption dashboard writes .cursor/.pipeline-pause to request a pause.
+       # When the file exists, wait 30 s and restart the loop without dispatching agents.
+       [ -f /Users/gabriel/dev/tellurstori/maestro/.cursor/.pipeline-pause ] && \
+         echo "⏸ Pipeline paused by AgentCeption dashboard." && sleep 30 && continue
+
   0. Preflight stale sweep — run this before EVERY wave (not just the first):
        # Clear agent:wip from issues whose worktree is missing OR has 0 commits ahead of dev.
        # This prevents a stale claim from blocking the Eng VP's unclaimed-issue query.

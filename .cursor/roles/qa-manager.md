@@ -43,11 +43,11 @@ SEED:
        MAIN_REPO="$HOME/dev/tellurstori/maestro"
        git -C "$MAIN_REPO" worktree list --porcelain | grep "^worktree" | awk '{print $2}' \
          > /tmp/active_worktrees
-       gh pr list --base dev --state open --label "agent:wip" \
-         --repo cgcardona/maestro --json number --jq '.[].number' | while read pr; do
-           grep -q "pr-$pr" /tmp/active_worktrees || \
-             gh pr edit "$pr" --repo cgcardona/maestro --remove-label "agent:wip" 2>/dev/null || true
-         done
+       for pr in $(gh pr list --base dev --state open --label "agent:wip" \
+           --repo cgcardona/maestro --json number --jq '.[].number' 2>/dev/null); do
+         grep -q "pr-$pr" /tmp/active_worktrees || \
+           gh pr edit "$pr" --repo cgcardona/maestro --remove-label "agent:wip" 2>/dev/null || true
+       done
 
   3. Query open unclaimed PRs:
        gh pr list --base dev --state open --json number,title,labels \
