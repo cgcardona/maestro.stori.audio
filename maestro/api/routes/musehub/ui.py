@@ -4,59 +4,59 @@ Serves browser-readable HTML pages for navigating a Muse Hub repo --
 analogous to GitHub's repository browser but for music projects.
 
 All pages are rendered via Jinja2 templates stored in
-``maestro/templates/musehub/``. Route handlers resolve server-side data
+``maestro/templates/musehub/``.  Route handlers resolve server-side data
 (repo_id, owner, slug) and pass a minimal context dict to the template
 engine; all HTML, CSS, and JavaScript lives in the template files, not here.
 
 Endpoint summary (fixed-path):
-  GET /musehub/ui/search -- global cross-repo search page
-  GET /musehub/ui/explore -- public repo discovery grid
-  GET /musehub/ui/trending -- repos sorted by stars
-  GET /musehub/ui/users/{username} -- public user profile
+  GET /musehub/ui/search                                  -- global cross-repo search page
+  GET /musehub/ui/explore                                 -- public repo discovery grid
+  GET /musehub/ui/trending                                -- repos sorted by stars
+  GET /musehub/ui/users/{username}                        -- public user profile
 
 Endpoint summary (repo-scoped):
-  GET /musehub/ui/{owner}/{repo_slug} -- repo landing page
-  GET /musehub/ui/{owner}/{repo_slug}/commits -- paginated commit list with branch filter
-  GET /musehub/ui/{owner}/{repo_slug}/commits/{commit_id} -- commit detail + artifacts
-  GET /musehub/ui/{owner}/{repo_slug}/commits/{commit_id}/diff -- musical diff view
-  GET /musehub/ui/{owner}/{repo_slug}/graph -- interactive DAG commit graph
-  GET /musehub/ui/{owner}/{repo_slug}/pulls -- pull request list
-  GET /musehub/ui/{owner}/{repo_slug}/pulls/{pr_id} -- PR detail with musical diff (radar, piano roll, audio A/B)
-  GET /musehub/ui/{owner}/{repo_slug}/issues -- issue list
-  GET /musehub/ui/{owner}/{repo_slug}/issues/{number} -- issue detail + close button
-  GET /musehub/ui/{owner}/{repo_slug}/context/{ref} -- AI context viewer
-  GET /musehub/ui/{owner}/{repo_slug}/credits -- dynamic credits (liner notes)
-  GET /musehub/ui/{owner}/{repo_slug}/embed/{ref} -- iframe-safe audio player
-  GET /musehub/ui/{owner}/{repo_slug}/search -- in-repo search (4 modes)
-  GET /musehub/ui/{owner}/{repo_slug}/compare/{base}...{head} -- multi-dimensional musical diff between two refs
-  GET /musehub/ui/{owner}/{repo_slug}/divergence -- branch divergence radar chart
-  GET /musehub/ui/{owner}/{repo_slug}/timeline -- chronological SVG timeline
-  GET /musehub/ui/{owner}/{repo_slug}/releases -- release list
-  GET /musehub/ui/{owner}/{repo_slug}/releases/{tag} -- release detail + downloads
-  GET /musehub/ui/{owner}/{repo_slug}/sessions -- recording session log
-  GET /musehub/ui/{owner}/{repo_slug}/sessions/{id} -- session detail
-  GET /musehub/ui/{owner}/{repo_slug}/insights -- repo insights dashboard
-  GET /musehub/ui/{owner}/{repo_slug}/tree/{ref} -- file tree browser (repo root)
-  GET /musehub/ui/{owner}/{repo_slug}/tree/{ref}/{path} -- file tree browser (subdirectory)
-  GET /musehub/ui/{owner}/{repo_slug}/analysis/{ref} -- analysis dashboard (all 10 dimensions at a glance)
-  GET /musehub/ui/{owner}/{repo_slug}/analysis/{ref}/contour -- melodic contour analysis
-  GET /musehub/ui/{owner}/{repo_slug}/analysis/{ref}/tempo -- tempo analysis
-  GET /musehub/ui/{owner}/{repo_slug}/analysis/{ref}/dynamics -- dynamics analysis
-  GET /musehub/ui/{owner}/{repo_slug}/analysis/{ref}/key -- key detection analysis
-  GET /musehub/ui/{owner}/{repo_slug}/analysis/{ref}/meter -- metric analysis
-  GET /musehub/ui/{owner}/{repo_slug}/analysis/{ref}/chord-map -- chord map analysis
-  GET /musehub/ui/{owner}/{repo_slug}/analysis/{ref}/groove -- rhythmic groove analysis
-  GET /musehub/ui/{owner}/{repo_slug}/analysis/{ref}/emotion -- emotion analysis
-  GET /musehub/ui/{owner}/{repo_slug}/analysis/{ref}/form -- formal structure analysis
-  GET /musehub/ui/{owner}/{repo_slug}/analysis/{ref}/motifs -- motif browser (recurring patterns, transformations)
-  GET /musehub/ui/{owner}/{repo_slug}/listen/{ref} -- full-mix and per-track audio playback with track listing
-  GET /musehub/ui/{owner}/{repo_slug}/listen/{ref}/{path} -- single-stem playback page
-  GET /musehub/ui/{owner}/{repo_slug}/listen/{ref} -- Wavesurfer.js audio player (full mix)
-  GET /musehub/ui/{owner}/{repo_slug}/listen/{ref}/{path} -- Wavesurfer.js audio player (single track)
-  GET /musehub/ui/{owner}/{repo_slug}/arrange/{ref} -- arrangement matrix (instrument × section density grid)
-  GET /musehub/ui/{owner}/{repo_slug}/piano-roll/{ref} -- interactive piano roll (all tracks)
-  GET /musehub/ui/{owner}/{repo_slug}/piano-roll/{ref}/{path} -- interactive piano roll (single MIDI file)
-  GET /musehub/ui/{owner}/{repo_slug}/activity -- repo-level event stream (commits, PRs, issues, branches, tags, sessions)
+  GET /musehub/ui/{owner}/{repo_slug}                           -- repo landing page
+  GET /musehub/ui/{owner}/{repo_slug}/commits                   -- paginated commit list with branch filter
+  GET /musehub/ui/{owner}/{repo_slug}/commits/{commit_id}       -- commit detail + artifacts
+  GET /musehub/ui/{owner}/{repo_slug}/commits/{commit_id}/diff  -- musical diff view
+  GET /musehub/ui/{owner}/{repo_slug}/graph                     -- interactive DAG commit graph
+  GET /musehub/ui/{owner}/{repo_slug}/pulls                     -- pull request list
+  GET /musehub/ui/{owner}/{repo_slug}/pulls/{pr_id}             -- PR detail with musical diff (radar, piano roll, audio A/B)
+  GET /musehub/ui/{owner}/{repo_slug}/issues                    -- issue list
+  GET /musehub/ui/{owner}/{repo_slug}/issues/{number}           -- issue detail + close button
+  GET /musehub/ui/{owner}/{repo_slug}/context/{ref}             -- AI context viewer
+  GET /musehub/ui/{owner}/{repo_slug}/credits                   -- dynamic credits (liner notes)
+  GET /musehub/ui/{owner}/{repo_slug}/embed/{ref}               -- iframe-safe audio player
+  GET /musehub/ui/{owner}/{repo_slug}/search                    -- in-repo search (4 modes)
+  GET /musehub/ui/{owner}/{repo_slug}/compare/{base}...{head}   -- multi-dimensional musical diff between two refs
+  GET /musehub/ui/{owner}/{repo_slug}/divergence                -- branch divergence radar chart
+  GET /musehub/ui/{owner}/{repo_slug}/timeline                  -- chronological SVG timeline
+  GET /musehub/ui/{owner}/{repo_slug}/releases                  -- release list
+  GET /musehub/ui/{owner}/{repo_slug}/releases/{tag}            -- release detail + downloads
+  GET /musehub/ui/{owner}/{repo_slug}/sessions                  -- recording session log
+  GET /musehub/ui/{owner}/{repo_slug}/sessions/{id}             -- session detail
+  GET /musehub/ui/{owner}/{repo_slug}/insights                  -- repo insights dashboard
+  GET /musehub/ui/{owner}/{repo_slug}/tree/{ref}                -- file tree browser (repo root)
+  GET /musehub/ui/{owner}/{repo_slug}/tree/{ref}/{path}         -- file tree browser (subdirectory)
+  GET /musehub/ui/{owner}/{repo_slug}/analysis/{ref}            -- analysis dashboard (all 10 dimensions at a glance)
+  GET /musehub/ui/{owner}/{repo_slug}/analysis/{ref}/contour    -- melodic contour analysis
+  GET /musehub/ui/{owner}/{repo_slug}/analysis/{ref}/tempo      -- tempo analysis
+  GET /musehub/ui/{owner}/{repo_slug}/analysis/{ref}/dynamics   -- dynamics analysis
+  GET /musehub/ui/{owner}/{repo_slug}/analysis/{ref}/key        -- key detection analysis
+  GET /musehub/ui/{owner}/{repo_slug}/analysis/{ref}/meter      -- metric analysis
+  GET /musehub/ui/{owner}/{repo_slug}/analysis/{ref}/chord-map  -- chord map analysis
+  GET /musehub/ui/{owner}/{repo_slug}/analysis/{ref}/groove     -- rhythmic groove analysis
+  GET /musehub/ui/{owner}/{repo_slug}/analysis/{ref}/emotion    -- emotion analysis
+  GET /musehub/ui/{owner}/{repo_slug}/analysis/{ref}/form       -- formal structure analysis
+  GET /musehub/ui/{owner}/{repo_slug}/analysis/{ref}/motifs     -- motif browser (recurring patterns, transformations)
+  GET /musehub/ui/{owner}/{repo_slug}/listen/{ref}              -- full-mix and per-track audio playback with track listing
+  GET /musehub/ui/{owner}/{repo_slug}/listen/{ref}/{path}       -- single-stem playback page
+  GET /musehub/ui/{owner}/{repo_slug}/listen/{ref}             -- Wavesurfer.js audio player (full mix)
+  GET /musehub/ui/{owner}/{repo_slug}/listen/{ref}/{path}      -- Wavesurfer.js audio player (single track)
+  GET /musehub/ui/{owner}/{repo_slug}/arrange/{ref}             -- arrangement matrix (instrument × section density grid)
+  GET /musehub/ui/{owner}/{repo_slug}/piano-roll/{ref}          -- interactive piano roll (all tracks)
+  GET /musehub/ui/{owner}/{repo_slug}/piano-roll/{ref}/{path}   -- interactive piano roll (single MIDI file)
+  GET /musehub/ui/{owner}/{repo_slug}/activity                  -- repo-level event stream (commits, PRs, issues, branches, tags, sessions)
 
 These routes require NO JWT auth -- they return HTML shells whose embedded
 JavaScript fetches data from the authed JSON API (``/api/v1/musehub/...``)
@@ -73,11 +73,12 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi import status as http_status
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
-from sqlalchemy import func, select as sa_select
+from sqlalchemy import func, select as sa_select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.responses import Response as StarletteResponse
 
 from maestro.api.routes.musehub.htmx_helpers import htmx_fragment_or_full, htmx_trigger, is_htmx
+from maestro.api.routes.musehub.jinja2_filters import register_musehub_filters
 from maestro.api.routes.musehub.json_alternate import json_or_html
 from maestro.api.routes.musehub.negotiate import negotiate_response
 from maestro.api.routes.musehub.ui_jsonld import jsonld_release, jsonld_repo, render_jsonld_script
@@ -94,7 +95,8 @@ from maestro.models.musehub import (
 )
 from maestro.db import musehub_models as musehub_db
 from maestro.muse_cli.models import MuseCliTag
-from maestro.services import musehub_divergence, musehub_listen, musehub_pull_requests, musehub_releases
+from maestro.db import musehub_label_models as label_db
+from maestro.services import musehub_divergence, musehub_issues, musehub_listen, musehub_pull_requests, musehub_releases
 from maestro.services import musehub_repository
 
 logger = logging.getLogger(__name__)
@@ -107,7 +109,6 @@ fixed_router = APIRouter(prefix="/musehub/ui", tags=["musehub-ui"])
 
 _TEMPLATE_DIR = Path(__file__).parent.parent.parent.parent / "templates"
 templates = Jinja2Templates(directory=str(_TEMPLATE_DIR))
-from maestro.api.routes.musehub.jinja2_filters import register_musehub_filters  # noqa: E402
 register_musehub_filters(templates.env)
 
 
@@ -153,7 +154,7 @@ async def _resolve_repo_full(
 ) -> tuple[RepoResponse, str]:
     """Resolve owner+slug to a full RepoResponse; raise 404 if not found.
 
-    Returns (repo_response, base_url). Use this when the handler needs
+    Returns (repo_response, base_url).  Use this when the handler needs
     structured repo data (e.g. to return JSON via negotiate_response).
     """
     repo = await musehub_repository.get_repo_by_owner_slug(db, owner, repo_slug)
@@ -175,18 +176,18 @@ def _og_tags(
 ) -> dict[str, str]:
     """Build Open Graph and Twitter Card meta tag dict for a page template.
 
-    Returns a flat mapping of meta property name → content string. Template
+    Returns a flat mapping of meta property name → content string.  Template
     authors receive this as ``og_meta`` in the template context and iterate
     over it to emit ``<meta property="..." content="...">`` tags in the
     document ``<head>``.
 
     Why a helper: OG tags are structurally repetitive (title, description, and
-    image appear once for OG and once for Twitter). Centralising the mapping
+    image appear once for OG and once for Twitter).  Centralising the mapping
     ensures both protocol families stay in sync and reduces copy-paste errors
     in handlers.
 
     Call this for any page that should expose rich-preview metadata to social
-    crawlers and link-unfurling bots. Omit ``image`` when no canonical preview
+    crawlers and link-unfurling bots.  Omit ``image`` when no canonical preview
     image exists — crawlers fall back to the site default.
     """
     tags: dict[str, str] = {
@@ -225,7 +226,7 @@ async def global_search_page(request: Request, q: str = "", mode: str = "keyword
     """Render the global cross-repo search page.
 
     Query params ``q`` and ``mode`` are pre-filled into the search form so
-    that shared URLs land with the last query already populated. Values are
+    that shared URLs land with the last query already populated.  Values are
     sanitised client-side before being injected into the DOM (XSS safe).
     """
     safe_q = q.replace("'", "\\'").replace('"', '\\"').replace("\n", "").replace("\r", "")
@@ -249,8 +250,8 @@ async def explore_page(
 ) -> Response:
     """Render the explore/discover page — a filterable grid of all public repos.
 
-    No JWT required. Filter sidebar uses GET params so all filter states are
-    bookmarkable and shareable. Sidebar data (muse_tag chips, topic chips) is
+    No JWT required.  Filter sidebar uses GET params so all filter states are
+    bookmarkable and shareable.  Sidebar data (muse_tag chips, topic chips) is
     pre-loaded server-side to avoid an extra round-trip on first paint.
 
     Filter sources:
@@ -466,7 +467,7 @@ async def commits_list_page(
     ``CommitListResponse`` with the newest commits first for the requested page.
 
     Filter params (``author``, ``q``, ``dateFrom``, ``dateTo``, ``tag``) are
-    applied server-side so pagination counts stay accurate. They are forwarded
+    applied server-side so pagination counts stay accurate.  They are forwarded
     through pagination links so the filter state persists across pages.
     """
     from datetime import date as _date, timedelta as _td
@@ -492,11 +493,11 @@ async def commits_list_page(
             df = _date.fromisoformat(date_from)
             base_stmt = base_stmt.where(musehub_db.MusehubCommit.timestamp >= df.isoformat())
         except ValueError:
-            pass # ignore malformed date — show all results
+            pass  # ignore malformed date — show all results
     if date_to:
         try:
             dt = _date.fromisoformat(date_to)
-            dt_end = (dt + _td(days=1)).isoformat() # inclusive upper bound
+            dt_end = (dt + _td(days=1)).isoformat()  # inclusive upper bound
             base_stmt = base_stmt.where(musehub_db.MusehubCommit.timestamp < dt_end)
         except ValueError:
             pass
@@ -613,9 +614,9 @@ async def commit_page(
 
     HTML (default): rich commit detail page via Jinja2 with:
     - Inline WaveSurfer.js audio player (full mix + per-stem track selector +
-      volume control). Falls back to ``<audio>`` when WaveSurfer is unavailable.
+      volume control).  Falls back to ``<audio>`` when WaveSurfer is unavailable.
     - Full metadata panel sourced from analysis APIs (tempo_bpm, key,
-      time_signature; emotion/stage tags rendered as colored pills). DB-stored
+      time_signature; emotion/stage tags rendered as colored pills).  DB-stored
       ``muse_tags`` are also rendered via the namespace-aware ``tagPill()``
       helper; ``ref:`` tags whose value is a URL open that source directly.
     - Reactions row (8 emoji types) backed by the existing reactions API.
@@ -631,10 +632,10 @@ async def commit_page(
 
     Artifacts are displayed by extension:
     - ``.webp/.png/.jpg`` → inline ``<img>``
-    - ``.mp3/.ogg/.wav`` → ``<audio controls>`` player / WaveSurfer stem
-    - ``.mid/.midi`` → piano-roll preview card
-    - ``.abc/.musicxml`` → score preview via abcjs
-    - other → download link
+    - ``.mp3/.ogg/.wav``  → ``<audio controls>`` player / WaveSurfer stem
+    - ``.mid/.midi``      → piano-roll preview card
+    - ``.abc/.musicxml``  → score preview via abcjs
+    - other              → download link
     """
     repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
     commit = await musehub_repository.get_commit(db, repo_id, commit_id)
@@ -785,7 +786,7 @@ async def pr_detail_page(
        authenticated maintainers.
 
     2. **Merge options** — three strategy buttons (merge commit / squash / rebase)
-       with a "Delete branch after merge" checkbox. All controls are disabled when
+       with a "Delete branch after merge" checkbox.  All controls are disabled when
        the PR is not mergeable (``pr.mergeable == false``).
 
     3. **Collapsible commit diff panels** — one ``<details>`` element per head-branch
@@ -863,21 +864,110 @@ async def issue_list_page(
     request: Request,
     owner: str,
     repo_slug: str,
+    state: str = Query("open", pattern="^(open|closed)$"),
+    label: str | None = Query(None),
+    milestone_id: str | None = Query(None),
+    assignee: str | None = Query(None),
+    author: str | None = Query(None),
+    sort: str = Query("newest", pattern="^(newest|oldest|most-commented)$"),
+    page: int = Query(1, ge=1),
+    per_page: int = Query(25, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
 ) -> Response:
-    """Render the issue list page with open/closed/all state filter."""
+    """Render the issue list page with full server-side data and HTMX fragment support.
+
+    Fetches open/closed counts, applies label/milestone/assignee/author filters
+    server-side, paginates the result, and renders either a full page or a bare
+    HTMX fragment depending on the ``HX-Request`` header.
+
+    No JWT required — issue data is publicly readable.
+    """
     repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
+
+    # Fetch all open and closed issues for counts and assignee collection.
+    all_open = await musehub_issues.list_issues(db, repo_id, state="open")
+    all_closed = await musehub_issues.list_issues(db, repo_id, state="closed")
+    open_count = len(all_open)
+    closed_count = len(all_closed)
+
+    # Fetch filtered issues for the active state (label + milestone applied in service).
+    filtered = await musehub_issues.list_issues(
+        db, repo_id, state=state, label=label, milestone_id=milestone_id
+    )
+
+    # Apply remaining Python-side filters (assignee, author).
+    if assignee:
+        filtered = [i for i in filtered if i.assignee == assignee]
+    if author:
+        q = author.lower()
+        filtered = [i for i in filtered if q in (i.author or "").lower()]
+
+    # Server-side sort.
+    if sort == "oldest":
+        filtered.sort(key=lambda i: i.created_at)
+    elif sort == "most-commented":
+        filtered.sort(key=lambda i: i.comment_count, reverse=True)
+    else:
+        filtered.sort(key=lambda i: i.created_at, reverse=True)
+
+    # Pagination.
+    total = len(filtered)
+    offset = (page - 1) * per_page
+    page_issues = filtered[offset : offset + per_page]
+    total_pages = max(1, (total + per_page - 1) // per_page)
+
+    # Labels for the filter sidebar (all labels in the repo).
+    label_rows = (
+        await db.execute(
+            sa_select(label_db.MusehubLabel)
+            .where(label_db.MusehubLabel.repo_id == repo_id)
+            .order_by(label_db.MusehubLabel.name)
+        )
+    ).scalars().all()
+    labels_data = [{"name": r.name, "color": r.color} for r in label_rows]
+
+    # Open milestones for the filter sidebar and right sidebar.
+    milestone_data = await musehub_issues.list_milestones(db, repo_id, state="open")
+    milestones_data = milestone_data.milestones
+
+    # Collect unique assignees from all issues (both states) for the filter dropdown.
+    all_issues_combined = all_open + all_closed
+    assignees = sorted({i.assignee for i in all_issues_combined if i.assignee})
+
     ctx: dict[str, object] = {
         "owner": owner,
         "repo_slug": repo_slug,
         "repo_id": repo_id,
         "base_url": base_url,
         "current_page": "issues",
+        "issues": [i.model_dump() for i in page_issues],
+        "open_count": open_count,
+        "closed_count": closed_count,
+        "total": total,
+        "page": page,
+        "per_page": per_page,
+        "total_pages": total_pages,
+        "state": state,
+        "active_label": label or "",
+        "active_milestone_id": milestone_id or "",
+        "active_assignee": assignee or "",
+        "active_author": author or "",
+        "active_sort": sort,
+        "labels_data": labels_data,
+        "milestones_data": milestones_data,
+        "assignees": assignees,
+        "breadcrumb_data": _breadcrumbs(
+            (owner, f"/musehub/ui/{owner}"),
+            (repo_slug, base_url),
+            ("Issues", f"{base_url}/issues"),
+        ),
     }
-    return json_or_html(
+    return await htmx_fragment_or_full(
         request,
-        lambda: templates.TemplateResponse(request, "musehub/pages/issue_list.html", ctx),
+        templates,
         ctx,
+        full_template="musehub/pages/issue_list.html",
+        fragment_template="musehub/fragments/issue_rows.html",
     )
 
 
@@ -1003,7 +1093,7 @@ async def listen_page(
 
     Why this route exists: musicians need a dedicated listening experience to
     evaluate each stem's contribution to the mix without exporting files to a
-    DAW. The page surfaces the full-mix audio at the top, then lists each
+    DAW.  The page surfaces the full-mix audio at the top, then lists each
     audio artifact with its own player, mute/solo controls, a mini waveform
     visualisation, a download button, and a link to the piano-roll view.
 
@@ -1052,7 +1142,7 @@ async def listen_track_page(
     """Render the per-track listen page for a single stem artifact.
 
     Why this route exists: ``path`` identifies a specific stem (e.g.
-    ``tracks/bass.mp3``). This page focuses the player on that one file
+    ``tracks/bass.mp3``).  This page focuses the player on that one file
     and provides a "Back to full mix" link, a download button, and the
     piano-roll viewer if a matching image artifact exists.
 
@@ -1136,7 +1226,7 @@ async def credits_page(
     """Render the dynamic credits page -- album liner notes for the repo.
 
     Displays every contributor with session count, inferred roles, and activity
-    timeline. Embeds ``<script type="application/ld+json">`` for machine-readable
+    timeline.  Embeds ``<script type="application/ld+json">`` for machine-readable
     attribution using schema.org ``MusicComposition`` vocabulary.
     """
     repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
@@ -1251,7 +1341,7 @@ async def motifs_page(
     - Track and section filters
 
     Auth is handled client-side via localStorage JWT, matching all other UI
-    pages. No JWT is required to render the HTML shell.
+    pages.  No JWT is required to render the HTML shell.
     """
     repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
     ctx: dict[str, object] = {
@@ -1294,7 +1384,7 @@ async def arrange_page(
     - Column summaries show per-section note totals and active instrument counts
 
     Auth is handled client-side via localStorage JWT, matching all other UI
-    pages. No JWT is required to render the HTML shell.
+    pages.  No JWT is required to render the HTML shell.
     """
     repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
     ctx: dict[str, object] = {
@@ -1423,7 +1513,7 @@ async def timeline_page(
     """Render the layered chronological timeline visualisation.
 
     Four independently toggleable layers: commits, emotion line chart,
-    section markers, and track add/remove markers. Includes a time
+    section markers, and track add/remove markers.  Includes a time
     scrubber and zoom controls (day/week/month/all-time).
     """
     repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
@@ -1550,7 +1640,7 @@ async def session_detail_page(
     """Render the full session detail page.
 
     Shows metadata, participants with session-count badges, commits made during
-    the session, and closing notes. Renders a 404 message inline if the API
+    the session, and closing notes.  Renders a 404 message inline if the API
     returns 404, so agents can distinguish missing sessions from server errors.
     """
     repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
@@ -1709,7 +1799,7 @@ async def key_analysis_page(
     """Render the key detection analysis page for a Muse commit ref.
 
     Displays the detected tonic, mode, relative key, confidence bar, and a
-    ranked list of alternate key candidates. Agents use this to confirm the
+    ranked list of alternate key candidates.  Agents use this to confirm the
     tonal centre before generating harmonically compatible material.
     """
     repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
@@ -1808,7 +1898,7 @@ async def groove_analysis_page(
     """Render the rhythmic groove analysis page for a Muse commit ref.
 
     Displays groove style, BPM, grid resolution, onset deviation, groove
-    score gauge, and a swing-factor bar. Agents use this to match rhythmic
+    score gauge, and a swing-factor bar.  Agents use this to match rhythmic
     feel when generating continuation material.
     """
     repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
@@ -1841,7 +1931,7 @@ async def emotion_analysis_page(
     """Render the emotion analysis page for a Muse commit ref.
 
     Displays primary emotion label, valence-arousal plot, tension bar, and
-    confidence score. Agents use this to maintain emotional continuity or
+    confidence score.  Agents use this to maintain emotional continuity or
     introduce deliberate contrast in the next section.
     """
     repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
@@ -1947,7 +2037,7 @@ async def tree_subdir_page(
     """Render the file tree browser for a subdirectory at a given ref.
 
     Behaves identically to ``tree_page`` but scoped to the subdirectory
-    identified by ``path`` (e.g. "tracks", "tracks/stems"). The breadcrumb
+    identified by ``path`` (e.g. "tracks", "tracks/stems").  The breadcrumb
     expands to show each path segment as a clickable link.
 
     Files are clickable and navigate to the blob viewer:
@@ -1986,7 +2076,7 @@ async def groove_check_page(
     over the commit window, and a per-commit table with status badges.
 
     The chart encodes status as bar colour: green = OK, orange = WARN,
-    red = FAIL. Threshold and limit can be adjusted via controls that
+    red = FAIL.  Threshold and limit can be adjusted via controls that
     re-fetch the underlying ``GET /api/v1/musehub/repos/{repo_id}/groove-check``
     endpoint client-side.
 
@@ -2063,7 +2153,7 @@ async def tags_page(
 ) -> StarletteResponse:
     """Render the tag browser page or return structured tag data as JSON.
 
-    Tags are sourced from repo releases. The tag browser groups tags by their
+    Tags are sourced from repo releases.  The tag browser groups tags by their
     namespace prefix (the text before ``:``, e.g. ``emotion``, ``genre``,
     ``instrument``) — tags without a colon fall into the ``version`` namespace.
 
@@ -2141,7 +2231,7 @@ async def form_structure_page(
       every pair of formal sections.
 
     Auth is handled client-side via localStorage JWT, matching all other UI
-    pages. No JWT is required to load the HTML shell.
+    pages.  No JWT is required to load the HTML shell.
     """
     short_ref = ref[:8] if len(ref) >= 8 else ref
     ctx: dict[str, object] = {"repo_id": repo_id, "ref": ref, "short_ref": short_ref}
@@ -2173,22 +2263,22 @@ async def harmony_analysis_page(request: Request, repo_id: str, ref: str) -> Res
     - Key history across commits (if history data available)
 
     Auth is handled client-side via localStorage JWT — no JWT required to
-    receive the HTML shell. JSON content negotiation is handled by the
+    receive the HTML shell.  JSON content negotiation is handled by the
     existing analysis API endpoints.
     """
     script = f"""
       const repoId = {repr(repo_id)};
-      const ref = {repr(ref)};
-      const base = '/musehub/ui/' + repoId;
+      const ref    = {repr(ref)};
+      const base   = '/musehub/ui/' + repoId;
       const apiBase = '/api/v1/musehub/repos/' + encodeURIComponent(repoId);
 
       function escHtml(s) {{
-        if (s === null || s === undefined) return '';
+        if (s === null || s === undefined) return '—';
         return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
       }}
 
       // ── Filter state ───────────────────────────────────────────────────────
-      let currentTrack = '';
+      let currentTrack   = '';
       let currentSection = '';
 
       // ── Tension curve SVG renderer ─────────────────────────────────────────
@@ -2236,7 +2326,7 @@ async def harmony_analysis_page(request: Request, repo_id: str, ref: str) -> Res
         const beats = totalBeats || 32;
         const rows = chords.map(c => {{
           const widthPct = ((1 / beats) * 100).toFixed(2);
-          const leftPct = ((c.beat / beats) * 100).toFixed(2);
+          const leftPct  = ((c.beat / beats) * 100).toFixed(2);
           const tensionColor = c.tension > 0.75
             ? '#f85149'
             : c.tension > 0.5
@@ -2349,7 +2439,7 @@ async def harmony_analysis_page(request: Request, repo_id: str, ref: str) -> Res
       async function load() {{
         document.getElementById('content').innerHTML = '<p class="loading">Loading harmony analysis&#8230;</p>';
         try {{
-          const trackQ = currentTrack ? '?track=' + encodeURIComponent(currentTrack) : '';
+          const trackQ   = currentTrack   ? '?track='   + encodeURIComponent(currentTrack)   : '';
           const sectionQ = currentSection ? (trackQ ? '&' : '?') + 'section=' + encodeURIComponent(currentSection) : '';
           const qs = trackQ + sectionQ;
 
@@ -2359,14 +2449,14 @@ async def harmony_analysis_page(request: Request, repo_id: str, ref: str) -> Res
           ]);
 
           const harmony = harmonyResp.data;
-          const key = keyResp.data;
+          const key     = keyResp.data;
 
           // Relative key label
           const keyLabel = harmony.tonic + ' ' + harmony.mode;
-          const relKeyLabel = key.relativeKey || '';
+          const relKeyLabel = key.relativeKey || '—';
           const altKeys = (key.alternateKeys || [])
             .map(ak => escHtml(ak.tonic + ' ' + ak.mode) + ' (' + (ak.confidence * 100).toFixed(0) + '%)')
-            .join(' &bull; ') || '';
+            .join(' &bull; ') || '—';
 
           const filterTrackOpts = ['', 'bass', 'keys', 'guitar', 'drums', 'lead', 'pads']
             .map(t => '<option value="' + t + '"' + (t === currentTrack ? ' selected' : '') + '>'
@@ -2394,7 +2484,7 @@ async def harmony_analysis_page(request: Request, repo_id: str, ref: str) -> Res
                     Relative key: <strong style="color:#58a6ff">${{escHtml(relKeyLabel)}}</strong>
                     &bull; Confidence: <strong>${{(harmony.keyConfidence * 100).toFixed(0)}}%</strong>
                   </div>
-                  ${{altKeys !== '' ? '<div style="font-size:12px;color:#8b949e;margin-top:4px">Alternates: ' + altKeys + '</div>' : ''}}
+                  ${{altKeys !== '—' ? '<div style="font-size:12px;color:#8b949e;margin-top:4px">Alternates: ' + altKeys + '</div>' : ''}}
                 </div>
                 <div style="display:flex;gap:8px;align-items:flex-start;flex-wrap:wrap">
                   <label style="font-size:13px;color:#8b949e;display:flex;align-items:center;gap:6px">
@@ -2527,9 +2617,9 @@ async def harmony_analysis_page(request: Request, repo_id: str, ref: str) -> Res
 
       // ── Filter handler ────────────────────────────────────────────────────
       function setFilter() {{
-        const trackSel = document.getElementById('track-sel');
+        const trackSel   = document.getElementById('track-sel');
         const sectionSel = document.getElementById('section-sel');
-        currentTrack = trackSel ? trackSel.value : '';
+        currentTrack   = trackSel   ? trackSel.value   : '';
         currentSection = sectionSel ? sectionSel.value : '';
         load();
       }}
@@ -2606,7 +2696,7 @@ async def piano_roll_page(
     The page shell fetches a list of MIDI artifacts at the given ref from the
     ``GET /api/v1/musehub/repos/{repo_id}/objects`` endpoint, then calls
     ``GET /api/v1/musehub/repos/{repo_id}/objects/{id}/parse-midi`` for each
-    selected file. The parsed note data is rendered into a Canvas element via
+    selected file.  The parsed note data is rendered into a Canvas element via
     ``piano-roll.js``.
 
     Features:
@@ -2655,7 +2745,7 @@ async def piano_roll_track_page(
 
     Identical to :func:`piano_roll_page` but restricts the view to one specific
     MIDI artifact identified by its repo-relative path
-    (e.g. ``tracks/bass.mid``). The ``path`` segment is forwarded to the
+    (e.g. ``tracks/bass.mid``).  The ``path`` segment is forwarded to the
     template as a JavaScript string; the client-side code resolves the
     matching object ID via the objects list API.
 
@@ -2706,7 +2796,7 @@ async def blob_page(
     Metadata shown: filename, size, SHA, commit date.
     Raw download button links to /{owner}/{repo_slug}/raw/{ref}/{path}.
 
-    Auth: no JWT required for public repos. Private-repo auth is
+    Auth: no JWT required for public repos.  Private-repo auth is
     handled client-side via localStorage JWT (consistent with other
     MuseHub UI pages).
     """
@@ -2743,7 +2833,7 @@ async def score_page(
     """Render the sheet music score page for a given commit ref (all tracks).
 
     Displays all instrument parts as standard music notation rendered via a
-    lightweight SVG renderer. The page fetches quantized notation JSON from
+    lightweight SVG renderer.  The page fetches quantized notation JSON from
     ``GET /api/v1/musehub/repos/{repo_id}/notation/{ref}`` and draws:
 
     - Staff lines (treble and bass clefs as appropriate)
@@ -2752,7 +2842,7 @@ async def score_page(
     - Accidental markers (sharps and flats)
     - Track/part selector dropdown
 
-    No JWT is required to render the HTML shell. Auth is handled client-side
+    No JWT is required to render the HTML shell.  Auth is handled client-side
     via localStorage JWT, matching all other UI pages.
 
     For a single-part view use the ``score/{ref}/{path}`` variant which filters
@@ -2789,9 +2879,9 @@ async def activity_page(
 
     Shows a chronological, paginated event stream for the repo covering:
     commit pushes, PR opens/merges/closes, issue opens/closes, branch and tag
-    operations, and recording sessions. A dropdown filters by event type.
+    operations, and recording sessions.  A dropdown filters by event type.
 
-    No JWT is required to render the HTML shell. Auth is handled client-side
+    No JWT is required to render the HTML shell.  Auth is handled client-side
     via localStorage JWT, matching all other UI pages.
     """
     repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
@@ -2824,7 +2914,7 @@ async def score_part_page(
     """Render the sheet music score page filtered to a single instrument part.
 
     Identical to ``score/{ref}`` but the ``path`` segment identifies a specific
-    instrument track (e.g. ``piano``, ``bass``, ``guitar``). The client-side
+    instrument track (e.g. ``piano``, ``bass``, ``guitar``).  The client-side
     renderer pre-selects that track in the part selector on load.
 
     No JWT is required to render the HTML shell.
