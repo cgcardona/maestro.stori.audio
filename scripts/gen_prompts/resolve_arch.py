@@ -266,26 +266,21 @@ def render_fingerprint(
     batch: str,
     wave: str,
     vp: str,
+    started_at: str = "",
 ) -> str:
     """Render the canonical agent fingerprint as a collapsible GitHub markdown block.
 
     This is the single source of truth for fingerprint format. All agents call
     this and embed the output verbatim — same block, same format, everywhere.
+    Pass started_at (ISO-8601 string) to include a Started at row (reviewer context).
     """
     try:
         figure_ids, skill_ids = parse_cognitive_arch(arch)
-        figures_str, skills_str = _resolve_display_names(figure_ids, skill_ids)
+        _figures_str, skills_str = _resolve_display_names(figure_ids, skill_ids)
     except (ValueError, FileNotFoundError):
-        figures_str = arch
         skills_str = "unknown"
 
-    lines = [
-        "<details>",
-        "<summary>🤖 Agent Fingerprint</summary>",
-        "",
-        "| | |",
-        "|---|---|",
-        f"| **Name** | {figures_str} |",
+    rows = [
         f"| **Architecture** | `{arch}` |",
         f"| **Skills** | {skills_str} |",
         f"| **Role** | `{role}` |",
@@ -293,6 +288,17 @@ def render_fingerprint(
         f"| **Batch (VP)** | `{batch}` |",
         f"| **Wave (CTO)** | `{wave}` |",
         f"| **VP** | `{vp}` |",
+    ]
+    if started_at:
+        rows.append(f"| **Started at** | `{started_at}` |")
+
+    lines = [
+        "<details>",
+        "<summary>🤖 Agent Fingerprint</summary>",
+        "",
+        "| | |",
+        "|---|---|",
+        *rows,
         "",
         "</details>",
     ]
@@ -325,6 +331,7 @@ def main() -> None:
     parser.add_argument("--batch", default="none", help="VP batch ID for fingerprint.")
     parser.add_argument("--wave", default="unset", help="CTO wave ID for fingerprint.")
     parser.add_argument("--vp", default="unset", help="VP fingerprint string.")
+    parser.add_argument("--started-at", default="", help="ISO-8601 start timestamp (reviewer context).")
     args = parser.parse_args()
 
     if args.fingerprint:
@@ -335,6 +342,7 @@ def main() -> None:
             batch=args.batch,
             wave=args.wave,
             vp=args.vp,
+            started_at=args.started_at,
         ))
         return
 
