@@ -455,7 +455,12 @@ document.addEventListener('DOMContentLoaded', function () {
   </div>
 
   <!-- ── Filter bar ── -->
-  <form id="filter-form" class="filter-bar" onsubmit="submitFilters(event)">
+  <form id="filter-form" class="filter-bar" onsubmit="submitFilters(event)"
+        hx-get="{{ base_url }}/commits"
+        hx-target="#commit-rows"
+        hx-swap="innerHTML"
+        hx-push-url="true"
+        hx-indicator="#htmx-loading">
     <!-- Author dropdown -->
     <div class="filter-group">
       <label for="f-author">Author</label>
@@ -528,146 +533,9 @@ document.addEventListener('DOMContentLoaded', function () {
     <button onclick="toggleCompareMode()" class="btn btn-ghost btn-sm">Cancel</button>
   </div>
 
-  <!-- ── Commit list ── -->
-  <div class="card" style="padding:0;overflow:hidden">
-    {% if commits %}
-    <div class="commit-list-table">
-      {% for commit in commits %}
-      {% set is_merge = commit.parent_ids | length > 1 %}
-      {% set is_root  = commit.parent_ids | length == 0 %}
-      {% set is_first = loop.first %}
-      {% set is_last  = loop.last %}
-      {% set sha8 = commit.commit_id[:8] %}
-
-      <div class="commit-list-row"
-           data-commit-id="{{ commit.commit_id | e }}"
-           data-message="{{ commit.message | e }}">
-
-        <!-- Mini-lane: DAG column -->
-        <div class="dag-col" title="{% if is_merge %}Merge commit ({{ commit.parent_ids | length }} parents){% elif is_root %}Root commit{% else %}Commit{% endif %}">
-          <div class="dag-line dag-line-top" {% if is_first %}style="background:transparent"{% endif %}></div>
-          <div class="dag-node{% if is_merge %} dag-node-merge{% elif is_root %} dag-node-root{% endif %}" style="position:relative">
-            {% if is_merge %}
-            <span class="dag-merge-arm"></span>
-            {% endif %}
-          </div>
-          <div class="dag-line dag-line-bottom" {% if is_last %}style="background:transparent"{% endif %}></div>
-        </div>
-
-        <!-- Compare checkbox column -->
-        <div class="compare-col">
-          <input type="checkbox"
-                 class="compare-check"
-                 aria-label="Select commit {{ sha8 }} for compare"
-                 onchange="onCompareCheck(this, {{ commit.commit_id | tojson }})">
-        </div>
-
-        <!-- Commit info -->
-        <div class="commit-cell">
-          <div class="commit-cell-top">
-            <!-- Commit message -->
-            <a href="{{ base_url }}/commits/{{ commit.commit_id }}"
-               class="commit-subject-link"
-               title="{{ commit.message | e }}">{{ commit.message | truncate(80, True, '…') | e }}</a>
-
-            <!-- Merge indicator badge -->
-            {% if is_merge %}
-            <span class="merge-indicator">⊕ merge</span>
-            {% endif %}
-
-            <!-- Music metadata chips (populated by JS from commit message) -->
-            <span class="meta-badges"></span>
-          </div>
-
-          <div class="commit-cell-bottom">
-            <!-- Short SHA -->
-            <a href="{{ base_url }}/commits/{{ commit.commit_id }}"
-               class="commit-sha-link" title="{{ commit.commit_id }}">{{ sha8 }}</a>
-
-            <!-- Author -->
-            <span class="commit-meta-item">
-              <svg width="10" height="10" viewBox="0 0 16 16" fill="currentColor" style="opacity:.6"><path d="M8 8a3 3 0 1 0 0-6 3 3 0 0 0 0 6zm5 8a5 5 0 0 0-10 0h10z"/></svg>
-              {% if filter_author == commit.author %}
-              <strong>{{ commit.author | e }}</strong>
-              {% else %}
-              <a href="?author={{ commit.author | urlencode }}&page=1" style="color:inherit;text-decoration:none" title="Filter by this author">{{ commit.author | e }}</a>
-              {% endif %}
-            </span>
-
-            <!-- Timestamp -->
-            <span class="commit-meta-item" title="{{ commit.timestamp.isoformat() }}">
-              <svg width="10" height="10" viewBox="0 0 16 16" fill="currentColor" style="opacity:.6"><path d="M8 3.5a.5.5 0 0 0-1 0V9a.5.5 0 0 0 .252.434l3.5 2a.5.5 0 0 0 .496-.868L8 8.71V3.5z"/><path d="M8 16A8 8 0 1 0 8 0a8 8 0 0 0 0 16zm7-8A7 7 0 1 1 1 8a7 7 0 0 1 14 0z"/></svg>
-              <span class="js-rel-time" data-ts="{{ commit.timestamp.isoformat() }}">{{ commit.timestamp.strftime('%Y-%m-%d') }}</span>
-            </span>
-
-            <!-- Branch (shown only in all-branches view) -->
-            {% if not branch and commit.branch %}
-            <span class="commit-meta-item">
-              <svg width="10" height="10" viewBox="0 0 16 16" fill="currentColor" style="opacity:.6"><path d="M11.75 2.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5zm-2.25.75a2.25 2.25 0 1 1 3 2.122V6A2.5 2.5 0 0 1 10 8.5H6a1 1 0 0 0-1 1v1.128a2.251 2.251 0 1 1-1.5 0V5.372a2.25 2.25 0 1 1 1.5 0v1.836A2.492 2.492 0 0 1 6 7h4a1 1 0 0 0 1-1v-.628A2.25 2.25 0 0 1 9.5 3.25z"/></svg>
-              {{ commit.branch | e }}
-            </span>
-            {% endif %}
-
-            <!-- Diff link -->
-            <a href="{{ base_url }}/commits/{{ commit.commit_id }}/diff"
-               class="commit-meta-item" style="color:var(--color-accent);text-decoration:none" title="View musical diff">
-              ⊕ diff
-            </a>
-          </div>
-        </div>
-      </div>
-      {% endfor %}
-    </div>
-
-    <!-- Pagination -->
-    {% set offset_start = (page - 1) * per_page + 1 %}
-    {% set offset_end   = [page * per_page, total] | min %}
-    {% macro page_link(p) %}?{% for k, v in active_filters.items() %}{{ k }}={{ v | urlencode }}&{% endfor %}page={{ p }}&per_page={{ per_page }}{% endmacro %}
-    <div class="pagination-bar" style="padding:var(--space-3) var(--space-4)">
-      <span class="pagination-info">
-        Showing {{ offset_start }}–{{ offset_end }} of {{ total }} commit{% if total != 1 %}s{% endif %}
-      </span>
-      <div class="pagination-nav">
-        {% if page > 1 %}
-        <a href="{{ page_link(page - 1) }}" class="btn btn-secondary btn-sm">&#8592; Newer</a>
-        {% else %}
-        <span class="btn btn-secondary btn-sm" style="opacity:.4;cursor:default">&#8592; Newer</span>
-        {% endif %}
-
-        <span class="pagination-info" style="min-width:80px;text-align:center">
-          Page {{ page }} / {{ total_pages }}
-        </span>
-
-        {% if page < total_pages %}
-        <a href="{{ page_link(page + 1) }}" class="btn btn-secondary btn-sm">Older &#8594;</a>
-        {% else %}
-        <span class="btn btn-secondary btn-sm" style="opacity:.4;cursor:default">Older &#8594;</span>
-        {% endif %}
-      </div>
-    </div>
-
-    {% else %}
-    <!-- Empty state -->
-    <div class="commits-empty">
-      <div class="empty-icon">&#128196;</div>
-      {% if n_active %}
-      <p class="empty-title">No commits match your filters</p>
-      <p class="empty-desc">
-        Try broadening the filter criteria or
-        <a href="javascript:clearFilters()">clear all filters</a>.
-      </p>
-      {% elif branch %}
-      <p class="empty-title">No commits on this branch</p>
-      <p class="empty-desc">
-        No commits on branch <strong>{{ branch | e }}</strong>.
-        <a href="{{ base_url }}/commits">View all branches</a>
-      </p>
-      {% else %}
-      <p class="empty-title">No commits yet</p>
-      <p class="empty-desc">Push your first musical commit with <code>muse push</code> to see history here.</p>
-      {% endif %}
-    </div>
-    {% endif %}
+  <!-- ── Commit list — HTMX swap target for filter updates ── -->
+  <div id="commit-rows" class="card" style="padding:0;overflow:hidden">
+    {% include "musehub/fragments/commit_rows.html" %}
   </div>
 </div>
 {% endblock %}
