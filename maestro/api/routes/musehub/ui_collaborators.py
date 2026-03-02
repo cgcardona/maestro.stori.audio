@@ -42,6 +42,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.responses import Response as StarletteResponse
 
 from maestro.api.routes.musehub.collaborators import CollaboratorListResponse, _orm_to_response
+from maestro.api.routes.musehub.jinja2_filters import register_musehub_filters
 from maestro.api.routes.musehub.negotiate import negotiate_response
 from maestro.db import get_db
 from maestro.db.musehub_collaborator_models import MusehubCollaborator
@@ -55,6 +56,7 @@ _TEMPLATE_DIR = Path(__file__).parent.parent.parent.parent / "templates"
 
 # Instantiate locally rather than importing from ui.py to avoid a circular dep.
 templates = Jinja2Templates(directory=str(_TEMPLATE_DIR))
+register_musehub_filters(templates.env)
 
 
 def _base_url(owner: str, repo_slug: str) -> str:
@@ -126,9 +128,8 @@ async def collaborators_settings_page(
         "base_url": base_url,
         "current_page": "settings",
         "settings_tab": "collaborators",
-        "collaborators": [
-            c.model_dump(by_alias=False, mode="json") for c in collaborator_responses
-        ],
+        # Pass ORM rows directly so templates can access invited_at (not in CollaboratorResponse).
+        "collaborators": rows,
         "breadcrumb_data": [
             {"label": owner, "url": f"/musehub/ui/{owner}"},
             {"label": repo_slug, "url": base_url},
