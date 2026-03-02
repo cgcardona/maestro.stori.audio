@@ -1,0 +1,94 @@
+{#  pages/analysis/dynamics.html — SSR dynamics analysis page.
+
+    Renders per-track velocity profiles and arc badges server-side.
+    No client-side fetch required — all data is passed via ctx.
+
+    Required context variables
+    --------------------------
+    dynamics_data : DynamicsPageData  — per-track profiles from compute_dynamics_page_data()
+    ref           : str               — muse commit ref
+    owner         : str               — repo owner handle
+    repo_slug     : str               — repo slug
+    base_url      : str               — repo base URL, e.g. /musehub/ui/owner/slug
+#}
+{% extends "musehub/base.html" %}
+
+{% block title %}Dynamics — {{ owner }}/{{ repo_slug }} @ {{ ref[:8] }}{% endblock %}
+
+{% block breadcrumb %}
+  <a href="/musehub/ui/{{ owner }}">{{ owner }}</a> /
+  <a href="{{ base_url }}">{{ repo_slug }}</a> /
+  <a href="{{ base_url }}/analysis/{{ ref }}">analysis</a> /
+  dynamics
+{% endblock %}
+
+{% block repo_nav %}{% include "musehub/partials/repo_nav.html" %}{% endblock %}
+
+{% block page_data %}
+const repoId = {{ repo_id | tojson }};
+const ref    = {{ ref | tojson }};
+const base   = {{ base_url | tojson }};
+{% endblock %}
+
+{% block content %}
+<div class="card" style="margin-bottom:var(--space-4)">
+  <h1 style="margin:0 0 var(--space-3) 0">📈 Dynamics Analysis</h1>
+  <p style="color:#8b949e;margin:0">Velocity profiles and arc classifications for
+    <strong>{{ ref[:8] }}</strong> — {{ dynamics_data.tracks | length }} track(s)</p>
+</div>
+
+{% if dynamics_data.tracks %}
+  {% for track in dynamics_data.tracks %}
+  <div class="card" style="margin-bottom:var(--space-3)" id="dynamics-content">
+    <div style="display:flex;align-items:center;gap:var(--space-3);margin-bottom:var(--space-3)">
+      <strong style="font-size:15px;text-transform:capitalize">{{ track.track }}</strong>
+      {# Arc badge #}
+      {% set arc_colors = {
+        "flat": "#8b949e",
+        "terraced": "#bc8cff",
+        "crescendo": "#3fb950",
+        "decrescendo": "#f0883e",
+        "swell": "#58a6ff",
+        "hairpin": "#ff7b72"
+      } %}
+      {% set arc_color = arc_colors.get(track.arc, "#8b949e") %}
+      <span style="display:inline-block;padding:2px 10px;border-radius:12px;font-size:12px;
+                   font-weight:600;background:{{ arc_color }}22;border:1px solid {{ arc_color }};
+                   color:{{ arc_color }}">{{ track.arc }}</span>
+      <span class="meta-label">peak {{ track.peak_velocity }}</span>
+      <span class="meta-label">min {{ track.min_velocity }}</span>
+      <span class="meta-label">range {{ track.velocity_range }}</span>
+    </div>
+
+    {# Velocity curve as SVG bar chart #}
+    {% if track.velocity_curve %}
+      {% set curve = track.velocity_curve %}
+      {% set max_vel = curve | map(attribute='velocity') | max | default(127) %}
+      {% set bar_w = (100.0 / (curve | length)) | round(2) %}
+      <svg width="100%" height="60" style="display:block;border-radius:4px;background:#0d1117;overflow:visible">
+        {% for event in curve %}
+          {% set pct = (event.velocity / max_vel * 52) | int %}
+          {% set x_pct = (loop.index0 * bar_w) | round(2) %}
+          <rect x="{{ x_pct }}%"
+                y="{{ 56 - pct }}"
+                width="{{ (bar_w * 0.85) | round(2) }}%"
+                height="{{ pct }}"
+                fill="#58a6ff"
+                fill-opacity="0.75"
+                rx="1"/>
+        {% endfor %}
+      </svg>
+      <p style="font-size:12px;color:#8b949e;margin:var(--space-2) 0 0 0">
+        mean velocity {{ track.mean_velocity | round(1) }}
+      </p>
+    {% else %}
+      <em style="color:#8b949e;font-size:13px">no velocity data</em>
+    {% endif %}
+  </div>
+  {% endfor %}
+{% else %}
+  <div class="card">
+    <p style="color:#8b949e">No dynamics data available for this ref.</p>
+  </div>
+{% endif %}
+{% endblock %}

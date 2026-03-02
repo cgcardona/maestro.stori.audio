@@ -423,7 +423,11 @@ async def test_ui_issue_list_has_sort_controls(
     client: AsyncClient,
     db_session: AsyncSession,
 ) -> None:
-    """Issue list page HTML includes Newest, Oldest, and Most commented sort buttons."""
+    """Issue list page HTML includes Newest, Oldest, and Most commented sort controls.
+
+    The issue list uses SSR radio buttons with server-side sort parameters
+    (converted from client-side changeSort() as part of the HTMX migration).
+    """
     await _make_repo(db_session)
     response = await client.get("/musehub/ui/testuser/test-beats/issues")
     assert response.status_code == 200
@@ -431,7 +435,7 @@ async def test_ui_issue_list_has_sort_controls(
     assert "Newest" in body
     assert "Oldest" in body
     assert "Most commented" in body
-    assert "changeSort" in body
+    assert "sort-radio-group" in body
 
 
 @pytest.mark.anyio
