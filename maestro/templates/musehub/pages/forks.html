@@ -139,6 +139,8 @@ const repoId   = {{ repo_id | tojson }};
 const owner    = {{ owner | tojson }};
 const repoSlug = {{ repo_slug | tojson }};
 const base     = {{ base_url | tojson }};
+{# Embed full fork network for the SVG DAG renderer — no API fetch needed. #}
+window.__forkNetwork = {{ fork_network_json | tojson }};
 {% endblock %}
 
 {% block page_script %}
@@ -300,109 +302,94 @@ function showDetail(node, isRoot) {
     </div>`;
 }
 
-// ── Fork table ─────────────────────────────────────────────────────────────
-function renderTable(forks) {
-  if (!forks.length) {
-    return '<p style="color:var(--text-muted,#8b949e);margin-top:12px">No forks yet — be the first!</p>';
-  }
-  const rows = forks.map(f => {
-    const ahead    = f.divergenceCommits || 0;
-    const col      = divColour(ahead);
-    const initial  = (f.owner || '?').charAt(0).toUpperCase();
-    const repoHref = `/musehub/ui/${escHtml(f.owner)}/${escHtml(f.repoSlug)}`;
-    const cmpHref  = `${base}/compare/${encodeURIComponent(f.repoSlug)}`;
-    const prHref   = `${base}/pulls/new?head=${encodeURIComponent(f.owner + ':main')}`;
-    return `
-      <tr>
-        <td>
-          <span class="avatar-badge">${escHtml(initial)}</span>
-          <a href="${repoHref}" style="color:var(--accent,#58a6ff);font-weight:500">
-            ${escHtml(f.owner)}/${escHtml(f.repoSlug)}
-          </a>
-        </td>
-        <td style="color:${col}">${ahead === 0 ? '≡ in sync' : `+${ahead} ahead`}</td>
-        <td>
-          <a class="btn btn-secondary" href="${cmpHref}" style="font-size:12px">Compare</a>
-          <a class="btn btn-secondary" href="${prHref}"  style="font-size:12px;margin-left:4px">Contribute upstream</a>
-        </td>
-      </tr>`;
-  }).join('');
-  return `
-    <table class="fork-table">
-      <thead><tr><th>Fork</th><th>Divergence</th><th>Actions</th></tr></thead>
-      <tbody>${rows}</tbody>
-    </table>`;
-}
-
-// ── Main ──────────────────────────────────────────────────────────────────
-async function load() {
+// ── Bootstrap: render DAG from SSR-embedded JSON; table is server-rendered ──
+function load() {
   initRepoNav(repoId);
-  document.getElementById('content').innerHTML = '<p class="loading">Loading fork network…</p>';
-  try {
-    // Public endpoint — no auth needed; use plain fetch to bypass apiFetch's auth guard.
-    const res = await fetch(`/musehub/ui/${owner}/${repoSlug}/forks?format=json`, {
-      headers: { Accept: 'application/json' }
-    });
-    if (!res.ok) throw new Error(res.status + ': ' + res.statusText);
-    const data  = await res.json();
-
-    const root  = data.root || {};
-    const forks = (root.children) || [];
-    const total = data.totalForks || 0;
-
-    const inSync = forks.filter(f => (f.divergenceCommits || 0) === 0).length;
-    const high   = forks.filter(f => (f.divergenceCommits || 0) > 20).length;
-
-    document.getElementById('content').innerHTML = `
-      <div style="margin-bottom:12px"><a href="${base}">&larr; Back to repo</a></div>
-      <div class="card">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:8px">
-          <h1 style="margin:0">🍴 Fork Network</h1>
-          <span style="font-size:13px;color:var(--text-muted,#8b949e)">${total} fork${total !== 1 ? 's' : ''}</span>
-        </div>
-
-        <!-- Divergence legend -->
-        <div class="legend">
-          <span><span class="legend-swatch" style="background:#3fb950"></span>In sync / upstream</span>
-          <span><span class="legend-swatch" style="background:#d29922"></span>1–5 commits ahead</span>
-          <span><span class="legend-swatch" style="background:#e3964e"></span>6–20 ahead</span>
-          <span><span class="legend-swatch" style="background:#f85149"></span>&gt;20 ahead</span>
-        </div>
-
-        <!-- Stats -->
-        <div class="stats-bar">
-          <div class="stat">🍴 <span class="stat-count">${total}</span> fork${total !== 1 ? 's' : ''}</div>
-          ${inSync > 0 ? `<div class="stat">✅ <span class="stat-count">${inSync}</span> in sync</div>` : ''}
-          ${high > 0   ? `<div class="stat">⚠️ <span class="stat-count">${high}</span> highly diverged</div>` : ''}
-        </div>
-
-        <!-- SVG DAG — click nodes to inspect -->
-        <div id="fork-canvas">
-          <svg id="fork-svg" class="fork-svg"
-               role="img"
-               aria-label="Fork network DAG — ${total} fork${total !== 1 ? 's' : ''}"></svg>
-        </div>
-        <p style="font-size:12px;color:var(--text-muted,#8b949e);margin-top:6px">
-          Click a node to view fork details and action buttons.
-        </p>
-
-        <!-- Click-selected detail panel -->
-        <div id="fork-detail"></div>
-
-        <!-- Tabular fallback list -->
-        <div id="fork-table-wrap">
-          ${renderTable(forks)}
-        </div>
-      </div>`;
-
-    renderDAG(root, forks);
-
-  } catch(e) {
-    document.getElementById('content').innerHTML =
-      '<p class="error">✕ ' + escHtml(e.message) + '</p>';
-  }
+  const data  = window.__forkNetwork || {};
+  const root  = data.root || {};
+  const forks = root.children || [];
+  renderDAG(root, forks);
 }
 
 load();
 {% endraw %}
+{% endblock %}
+
+{% block content %}
+<div style="margin-bottom:12px"><a href="{{ base_url }}">&larr; Back to repo</a></div>
+<div class="card">
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:8px">
+    <h1 style="margin:0">🍴 Fork Network</h1>
+    <span style="font-size:13px;color:var(--text-muted,#8b949e)">
+      {{ total_forks }} fork{{ "s" if total_forks != 1 else "" }}
+    </span>
+  </div>
+
+  <!-- Divergence legend — static, no JS needed -->
+  <div class="legend">
+    <span><span class="legend-swatch" style="background:#3fb950"></span>In sync / upstream</span>
+    <span><span class="legend-swatch" style="background:#d29922"></span>1–5 commits ahead</span>
+    <span><span class="legend-swatch" style="background:#e3964e"></span>6–20 ahead</span>
+    <span><span class="legend-swatch" style="background:#f85149"></span>&gt;20 ahead</span>
+  </div>
+
+  <!-- Stats bar — server-rendered so visible immediately without JS -->
+  <div class="stats-bar">
+    <div class="stat">🍴 <span class="stat-count">{{ total_forks }}</span>
+      fork{{ "s" if total_forks != 1 else "" }}</div>
+  </div>
+
+  <!-- SVG DAG — complex layout algorithm stays as JS; reads window.__forkNetwork -->
+  <div id="fork-dag-container" style="margin-top:var(--space-2,8px)">
+    <div id="fork-canvas">
+      <svg id="fork-svg" class="fork-svg"
+           role="img"
+           aria-label="Fork network DAG — {{ total_forks }} fork{{ 's' if total_forks != 1 else '' }}"></svg>
+    </div>
+  </div>
+  <p style="font-size:12px;color:var(--text-muted,#8b949e);margin-top:6px">
+    Click a node to view fork details and action buttons.
+  </p>
+
+  <!-- Click-selected detail panel — populated by DAG JS on node click -->
+  <div id="fork-detail"></div>
+
+  <!-- Fork table — server-rendered; no JS required to display fork list -->
+  {% if forks %}
+  <table class="fork-table" id="fork-table">
+    <thead>
+      <tr><th>Fork</th><th>Divergence</th><th>Actions</th></tr>
+    </thead>
+    <tbody>
+      {% for fork in forks %}
+      {% set ahead = fork.divergence_commits | default(0) %}
+      {% set repo_href = "/musehub/ui/" ~ fork.owner ~ "/" ~ fork.repo_slug %}
+      {% set cmp_href = base_url ~ "/compare/" ~ fork.repo_slug %}
+      {% set pr_href = base_url ~ "/pulls/new?head=" ~ fork.owner ~ ":main" %}
+      <tr>
+        <td>
+          <span class="avatar-badge">{{ fork.owner[0] | upper }}</span>
+          <a href="{{ repo_href }}" style="color:var(--accent,#58a6ff);font-weight:500">
+            {{ fork.owner }}/{{ fork.repo_slug }}
+          </a>
+        </td>
+        <td>
+          {% if ahead == 0 %}<span style="color:#3fb950">≡ in sync</span>
+          {% elif ahead <= 5 %}<span style="color:#d29922">+{{ ahead }} ahead</span>
+          {% elif ahead <= 20 %}<span style="color:#e3964e">+{{ ahead }} ahead</span>
+          {% else %}<span style="color:#f85149">+{{ ahead }} ahead</span>
+          {% endif %}
+        </td>
+        <td>
+          <a class="btn btn-secondary" href="{{ cmp_href }}" style="font-size:12px">Compare</a>
+          <a class="btn btn-secondary" href="{{ pr_href }}" style="font-size:12px;margin-left:4px">Contribute upstream</a>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p id="no-forks-msg" style="color:var(--text-muted,#8b949e);margin-top:12px">No forks yet — be the first!</p>
+  {% endif %}
+</div>
 {% endblock %}
