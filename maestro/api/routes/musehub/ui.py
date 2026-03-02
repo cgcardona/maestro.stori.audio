@@ -1014,25 +1014,59 @@ async def issue_detail_page(
     number: int,
     db: AsyncSession = Depends(get_db),
 ) -> Response:
-    """Render the issue detail page with close button.
+    """Render the issue detail page with SSR body and HTMX comment threading.
 
-    The close button calls
-    ``POST /api/v1/musehub/repos/{repo_id}/issues/{number}/close``
-    and reloads the page on success.
+    Fetches the issue, comments, labels, milestones, and linked PRs server-side.
+    HTMX requests receive only the comment fragment; direct navigation receives
+    the full page that extends base.html.
     """
     repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
+
+    issue = await musehub_issues.get_issue(db, repo_id, number)
+    if not issue:
+        raise HTTPException(
+            status_code=http_status.HTTP_404_NOT_FOUND,
+            detail=f"Issue #{number} not found",
+        )
+
+    comment_list = await musehub_issues.list_comments(db, issue.issue_id)
+    comments = [c.model_dump() for c in comment_list.comments]
+
+    milestone_list = await musehub_issues.list_milestones(db, repo_id, state="open")
+    milestones_data = [m.model_dump() for m in milestone_list.milestones]
+
+    label_rows = (
+        await db.execute(
+            sa_select(label_db.MusehubLabel)
+            .where(label_db.MusehubLabel.repo_id == repo_id)
+            .order_by(label_db.MusehubLabel.name)
+        )
+    ).scalars().all()
+    labels_data = [{"name": r.name, "color": r.color} for r in label_rows]
+
     ctx: dict[str, object] = {
         "owner": owner,
         "repo_slug": repo_slug,
         "repo_id": repo_id,
-        "issue_number": number,
         "base_url": base_url,
         "current_page": "issues",
+        "issue": issue.model_dump(),
+        "comments": comments,
+        "labels_data": labels_data,
+        "milestones_data": milestones_data,
+        "breadcrumb_data": _breadcrumbs(
+            (owner, f"/musehub/ui/{owner}"),
+            (repo_slug, base_url),
+            ("Issues", f"{base_url}/issues"),
+            (f"#{number}", ""),
+        ),
     }
-    return json_or_html(
+    return await htmx_fragment_or_full(
         request,
-        lambda: templates.TemplateResponse(request, "musehub/pages/issue_detail.html", ctx),
+        templates,
         ctx,
+        full_template="musehub/pages/issue_detail.html",
+        fragment_template="musehub/fragments/issue_comments.html",
     )
 
 
