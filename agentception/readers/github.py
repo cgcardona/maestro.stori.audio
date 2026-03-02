@@ -201,6 +201,52 @@ async def get_open_prs_with_body() -> list[dict[str, object]]:
     return [item for item in result if isinstance(item, dict)]
 
 
+async def get_merged_prs() -> list[dict[str, object]]:
+    """List merged pull requests targeting the ``dev`` branch.
+
+    Returns each PR as a dict with at minimum: ``number``, ``headRefName``,
+    ``body``, and ``mergedAt``.  Used by the A/B results dashboard to
+    correlate PR outcomes (merge status, reviewer grade) with agent batches.
+    """
+    repo = settings.gh_repo
+    args = [
+        "pr", "list",
+        "--repo", repo,
+        "--base", "dev",
+        "--state", "merged",
+        "--json", "number,headRefName,body,mergedAt",
+    ]
+    result = await gh_json(args, ".", "get_merged_prs")
+    if not isinstance(result, list):
+        raise RuntimeError(f"get_merged_prs: expected list from gh, got {type(result).__name__}")
+    return [item for item in result if isinstance(item, dict)]
+
+
+async def get_pr_comments(pr_number: int) -> list[str]:
+    """Return the body text of all comments posted on a pull request.
+
+    Fetches issue-timeline comments (which includes entries created via
+    ``gh pr comment``) using the GitHub REST API.  Returns an empty list
+    when the PR has no comments or when the API call fails so callers can
+    treat a missing grade as ``None`` without special-casing.
+
+    Parameters
+    ----------
+    pr_number:
+        GitHub pull request number.
+    """
+    repo = settings.gh_repo
+    cache_key = f"get_pr_comments:{pr_number}"
+    result = await gh_json(
+        ["api", f"repos/{repo}/issues/{pr_number}/comments"],
+        "[.[].body]",
+        cache_key,
+    )
+    if not isinstance(result, list):
+        return []
+    return [str(c) for c in result if isinstance(c, str)]
+
+
 async def get_wip_issues() -> list[dict[str, object]]:
     """Return issues currently labelled ``agent:wip``.
 
