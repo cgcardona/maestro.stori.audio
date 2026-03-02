@@ -94,11 +94,8 @@
     </div>
     {% endif %}
 
-    <div class="chat-thread" x-data="{search: '', highlight(text) {
-      if (!this.search) return text;
-      const s = this.search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      return text.replace(new RegExp(s, 'gi'), m => '<mark class=\'hl\'>' + m + '</mark>');
-    }}">
+    {# transcriptDetail() lives in /static/app.js #}
+    <div class="chat-thread" x-data="transcriptDetail()">
 
       {# In-thread search #}
       <div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:1rem;">

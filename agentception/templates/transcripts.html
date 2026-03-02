@@ -22,44 +22,10 @@
 {% endif %}
 
 {# ── Filter bar (Alpine-powered) ──────────────────────────────────── #}
+{# transcriptBrowser() lives in /static/app.js #}
 <div
   class="filter-group"
-  x-data="{
-    q: {{ filter_q | tojson }},
-    sort: 'mtime',
-    filterRole: {{ filter_role | tojson }},
-    filterStatus: {{ filter_status | tojson }},
-    get rows() {
-      let r = Array.from(document.querySelectorAll('[data-transcript-row]'));
-      return r;
-    },
-    applyFilters() {
-      const qLow = this.q.toLowerCase();
-      document.querySelectorAll('[data-transcript-row]').forEach(el => {
-        const preview = (el.dataset.preview || '').toLowerCase();
-        const role    = el.dataset.role || '';
-        const status  = el.dataset.status || '';
-        const matchQ  = !qLow || preview.includes(qLow);
-        const matchR  = !this.filterRole || role === this.filterRole;
-        const matchS  = !this.filterStatus || status === this.filterStatus;
-        el.style.display = (matchQ && matchR && matchS) ? '' : 'none';
-      });
-      this.applySortDom();
-    },
-    applySortDom() {
-      const tbody = document.getElementById('transcript-tbody');
-      if (!tbody) return;
-      const rows = Array.from(tbody.querySelectorAll('[data-transcript-row]'));
-      rows.sort((a, b) => {
-        if (this.sort === 'mtime')    return parseFloat(b.dataset.mtime) - parseFloat(a.dataset.mtime);
-        if (this.sort === 'messages') return parseInt(b.dataset.messages) - parseInt(a.dataset.messages);
-        if (this.sort === 'words')    return parseInt(b.dataset.words) - parseInt(a.dataset.words);
-        if (this.sort === 'subagents')return parseInt(b.dataset.subagents) - parseInt(a.dataset.subagents);
-        return 0;
-      });
-      rows.forEach(r => tbody.appendChild(r));
-    },
-  }"
+  x-data='transcriptBrowser({{ filter_q | tojson }}, {{ filter_role | tojson }}, {{ filter_status | tojson }})'
   x-init="applyFilters()"
 >
   <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;margin-bottom:1rem;">

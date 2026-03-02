@@ -569,10 +569,18 @@
 </div>{# Alpine root #}
 
 <script>
-// Injected once by the server so Alpine x-for loops can build GitHub URLs
-// without accessing Jinja2 globals (which aren't available inside JS scope).
+// Server-injected constant — used by Alpine x-for loops to build GitHub URLs.
 const GH_BASE_URL = {{ gh_base_url | tojson }};
+</script>
 
+{% endblock %}
+
+{# All Alpine component functions live in /static/app.js (loaded by base.html). #}
+
+{# REMOVING OLD INLINE FUNCTIONS — DO NOT RESTORE #}
+{# The following was the old inline script block. It is kept as a Jinja comment
+   only to make the diff readable. The actual JS has moved to /static/app.js. #}
+{#
 /**
  * Alpine.js component for the Wave Control panel.
  *
@@ -812,48 +820,5 @@ function pipelineControl(initialPaused) {
   };
 }
 
-function phaseSwitcher(initialLabel, allLabels, initialPinned) {
-  return {
-    current: initialLabel,
-    labels: allLabels,
-    pinned: initialPinned,
-    open: false,
-
-    async selectLabel(label) {
-      this.open = false;
-      // Signal the board to show a spinner immediately — before the fetch + reload.
-      this.$dispatch('phase-switching');
-      try {
-        const res = await fetch('/api/control/active-label', {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ label }),
-        });
-        if (res.ok) {
-          const data = await res.json();
-          this.current = data.label;
-          this.pinned = data.pinned;
-          window.location.reload();
-        }
-      } catch (_) {}
-    },
-
-    async selectAuto() {
-      this.open = false;
-      // Signal the board to show a spinner immediately — before the fetch + reload.
-      this.$dispatch('phase-switching');
-      try {
-        const res = await fetch('/api/control/active-label', { method: 'DELETE' });
-        if (res.ok) {
-          const data = await res.json();
-          this.current = data.label;
-          this.pinned = false;
-          window.location.reload();
-        }
-      } catch (_) {}
-    },
-  };
-}
-</script>
-
-{% endblock %}
+phaseSwitcher — see /static/app.js
+#}
