@@ -313,6 +313,7 @@ WORKTREE=$WT
 BASE=dev
 CLOSES_ISSUES=$NUM
 BATCH_ID=$BATCH_ID
+VP_FINGERPRINT=${VP_FINGERPRINT:-unset}
 COGNITIVE_ARCH=$COGNITIVE_ARCH_VAL
 WAVE=${CTO_WAVE:-unset}
 CREATED_AT=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
@@ -541,11 +542,20 @@ STEP 2 — CHECK CANONICAL STATE BEFORE DOING ANY WORK:
   gh issue edit <N> --repo "$GH_REPO" --add-label "status/in-progress" 2>/dev/null || true
 
   # Leave an audit trail: which cognitive identity claimed this issue.
-  AGENT_IDENTITY=$(python3 "$REPO/scripts/gen_prompts/resolve_arch.py" "$COGNITIVE_ARCH" 2>&1 1>/dev/null)
+  AGENT_SESSION="eng-$(date -u +%Y%m%dT%H%M%SZ)-$(printf '%04x' $RANDOM)"
+  CLAIM_FINGERPRINT=$(python3 "$REPO/scripts/gen_prompts/resolve_arch.py" "${COGNITIVE_ARCH:-unset}" \
+    --fingerprint \
+    --role "${ROLE:-python-developer}" \
+    --session "$AGENT_SESSION" \
+    --batch "${BATCH_ID:-none}" \
+    --wave "${WAVE:-unset}" \
+    --vp "${VP_FINGERPRINT:-unset}" 2>/dev/null)
   gh issue comment <N> --repo "$GH_REPO" \
-    --body "🤖 **Claimed by agent**
-- **Identity:** \`$COGNITIVE_ARCH\` (${AGENT_IDENTITY#🎭 })
-- **Claimed at:** $(date -u '+%Y-%m-%dT%H:%M:%SZ')" 2>/dev/null || true
+    --body "🔖 **Claimed by agent**
+
+$CLAIM_FINGERPRINT
+
+**Claimed at:** $(date -u '+%Y-%m-%dT%H:%M:%SZ')" 2>/dev/null || true
 
   # 0. Is the issue itself already closed? (fastest exit — check this FIRST)
   ISSUE_STATE=$(gh issue view <N> --json state --jq '.state')
@@ -918,17 +928,14 @@ STEP 5 — PUSH & CREATE PR:
   - [ ] Docs updated
 
   ---
-  <!-- maestro-fingerprint
-  role: python-developer
-  cognitive_arch: ${COGNITIVE_ARCH:-unset}
-  batch: ${BATCH_ID:-none}
-  wave: ${WAVE:-unset}
-  session: ${AGENT_SESSION}
-  issue: ${N}
-  timestamp: $(date -u +%Y-%m-%dT%H:%M:%SZ)
-  -->
   ---
-  🤖 **Implementer:** \`${COGNITIVE_ARCH:-unset}\` · batch \`${BATCH_ID:-none}\` · wave \`${WAVE:-unset}\`
+  $(python3 "$REPO/scripts/gen_prompts/resolve_arch.py" "${COGNITIVE_ARCH:-unset}" \
+    --fingerprint \
+    --role "${ROLE:-python-developer}" \
+    --session "${AGENT_SESSION:-unset}" \
+    --batch "${BATCH_ID:-none}" \
+    --wave "${WAVE:-unset}" \
+    --vp "${VP_FINGERPRINT:-unset}")
   EOF
   )"
 

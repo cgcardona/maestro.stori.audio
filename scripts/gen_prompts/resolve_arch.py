@@ -236,37 +236,10 @@ def assemble(  # noqa: C901  (acceptable complexity for an assembler)
 # ---------------------------------------------------------------------------
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser(
-        description=__doc__,
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-    )
-    parser.add_argument(
-        "cognitive_arch",
-        metavar="COGNITIVE_ARCH",
-        help='Cognitive architecture string, e.g. "lovelace:htmx:jinja2:alpine"',
-    )
-    parser.add_argument(
-        "--mode",
-        choices=["implementer", "reviewer"],
-        default="implementer",
-        help="implementer: shows prompt_fragment (default). reviewer: shows review_checklist.",
-    )
-    args = parser.parse_args()
-
-    try:
-        figure_ids, skill_ids = parse_cognitive_arch(args.cognitive_arch)
-    except ValueError as exc:
-        print(f"❌ {exc}", file=sys.stderr)
-        sys.exit(1)
-
-    try:
-        output = assemble(figure_ids, skill_ids, mode=args.mode)
-    except FileNotFoundError as exc:
-        print(f"❌ {exc}", file=sys.stderr)
-        sys.exit(2)
-
-    # Identity banner → stderr only (never pollutes $CONTEXT variable)
+def _resolve_display_names(
+    figure_ids: list[str], skill_ids: list[str]
+) -> tuple[str, str]:
+    """Return (figures_display, skills_display) human-readable strings."""
     figure_labels: list[str] = []
     for fid in figure_ids:
         try:
@@ -283,10 +256,103 @@ def main() -> None:
             skill_labels.append(sid)
     figures_str = " × ".join(figure_labels)
     skills_str = " · ".join(skill_labels) if skill_labels else "none"
-    print(
-        f"🎭 [{args.mode}] {figures_str} | {skills_str}",
-        file=sys.stderr,
+    return figures_str, skills_str
+
+
+def render_fingerprint(
+    arch: str,
+    role: str,
+    session: str,
+    batch: str,
+    wave: str,
+    vp: str,
+) -> str:
+    """Render the canonical agent fingerprint as a collapsible GitHub markdown block.
+
+    This is the single source of truth for fingerprint format. All agents call
+    this and embed the output verbatim — same block, same format, everywhere.
+    """
+    try:
+        figure_ids, skill_ids = parse_cognitive_arch(arch)
+        figures_str, skills_str = _resolve_display_names(figure_ids, skill_ids)
+    except (ValueError, FileNotFoundError):
+        figures_str = arch
+        skills_str = "unknown"
+
+    lines = [
+        "<details>",
+        "<summary>🤖 Agent Fingerprint</summary>",
+        "",
+        "| | |",
+        "|---|---|",
+        f"| **Name** | {figures_str} |",
+        f"| **Architecture** | `{arch}` |",
+        f"| **Skills** | {skills_str} |",
+        f"| **Role** | `{role}` |",
+        f"| **Session** | `{session}` |",
+        f"| **Batch (VP)** | `{batch}` |",
+        f"| **Wave (CTO)** | `{wave}` |",
+        f"| **VP** | `{vp}` |",
+        "",
+        "</details>",
+    ]
+    return "\n".join(lines)
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(
+        description=__doc__,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
+    parser.add_argument(
+        "cognitive_arch",
+        metavar="COGNITIVE_ARCH",
+        help='Cognitive architecture string, e.g. "lovelace:htmx:jinja2:alpine"',
+    )
+    parser.add_argument(
+        "--mode",
+        choices=["implementer", "reviewer"],
+        default="implementer",
+        help="implementer: shows prompt_fragment (default). reviewer: shows review_checklist.",
+    )
+    parser.add_argument(
+        "--fingerprint",
+        action="store_true",
+        help="Output a canonical GitHub fingerprint block instead of the prompt context.",
+    )
+    parser.add_argument("--role", default="unset", help="Agent role for fingerprint.")
+    parser.add_argument("--session", default="unset", help="Agent session ID for fingerprint.")
+    parser.add_argument("--batch", default="none", help="VP batch ID for fingerprint.")
+    parser.add_argument("--wave", default="unset", help="CTO wave ID for fingerprint.")
+    parser.add_argument("--vp", default="unset", help="VP fingerprint string.")
+    args = parser.parse_args()
+
+    if args.fingerprint:
+        print(render_fingerprint(
+            arch=args.cognitive_arch,
+            role=args.role,
+            session=args.session,
+            batch=args.batch,
+            wave=args.wave,
+            vp=args.vp,
+        ))
+        return
+
+    try:
+        figure_ids, skill_ids = parse_cognitive_arch(args.cognitive_arch)
+    except ValueError as exc:
+        print(f"❌ {exc}", file=sys.stderr)
+        sys.exit(1)
+
+    try:
+        output = assemble(figure_ids, skill_ids, mode=args.mode)
+    except FileNotFoundError as exc:
+        print(f"❌ {exc}", file=sys.stderr)
+        sys.exit(2)
+
+    # Identity banner → stderr only (never pollutes $CONTEXT variable)
+    figures_str, skills_str = _resolve_display_names(figure_ids, skill_ids)
+    print(f"🎭 [{args.mode}] {figures_str} | {skills_str}", file=sys.stderr)
 
     print(output, end="")
 
