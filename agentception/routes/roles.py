@@ -18,6 +18,10 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException
 
 from agentception.config import settings
+from agentception.intelligence.role_versions import (
+    read_role_versions,
+    record_version_bump,
+)
 from agentception.models import (
     RoleCommitRequest,
     RoleCommitResponse,
@@ -27,6 +31,9 @@ from agentception.models import (
     RoleMeta,
     RoleUpdateRequest,
     RoleUpdateResponse,
+    RoleVersionEntry,
+    RoleVersionInfo,
+    RoleVersionsResponse,
 )
 
 logger = logging.getLogger(__name__)
@@ -303,4 +310,57 @@ async def commit_role(slug: str, body: RoleCommitRequest) -> RoleCommitResponse:
     commit_sha = sha_out.decode().strip()
 
     logger.info("✅ Committed %s → %s", rel_path, commit_sha[:8])
+
+    # Record the new commit SHA in role-versions.json so callers can correlate
+    # which role version governed agents in any given batch (AC-503).
+    await record_version_bump(slug, commit_sha)
+
     return RoleCommitResponse(slug=slug, commit_sha=commit_sha, message=commit_message)
+
+
+@router.get("/{slug}/versions", summary="Return role version history for a managed slug (AC-503)")
+async def role_versions_api(slug: str) -> RoleVersionsResponse:
+    """Return structured version history for ``slug`` from role-versions.json.
+
+    The history is chronologically ordered (oldest first).  Each entry records
+    the git SHA, version label (v1, v2, …), and UNIX timestamp of the commit.
+    Returns an empty history list when no commits have been recorded yet —
+    this is not an error; it simply means the role has not been committed via
+    the Role Studio commit endpoint.
+
+    Raises HTTP 404 when ``slug`` is not in the managed allowlist.
+    """
+    _resolve_slug(slug)  # raises 404 for unknown slugs
+
+    data = await read_role_versions()
+    versions_map: dict[str, object] = data.get("versions", {})  # type: ignore[assignment]
+    if not isinstance(versions_map, dict):
+        versions_map = {}
+
+    raw_entry = versions_map.get(slug)
+    if isinstance(raw_entry, dict):
+        current = str(raw_entry.get("current", "v1"))
+        raw_history: list[dict[str, object]] = raw_entry.get("history", [])  # type: ignore[assignment]
+        if not isinstance(raw_history, list):
+            raw_history = []
+        history = []
+        for h in raw_history:
+            if not isinstance(h, dict):
+                continue
+            ts_raw = h.get("timestamp")
+            ts = int(ts_raw) if isinstance(ts_raw, (int, float)) else 0
+            history.append(
+                RoleVersionEntry(
+                    sha=str(h.get("sha", "")),
+                    label=str(h.get("label", "")),
+                    timestamp=ts,
+                )
+            )
+    else:
+        current = "v1"
+        history = []
+
+    return RoleVersionsResponse(
+        slug=slug,
+        versions=RoleVersionInfo(current=current, history=history),
+    )

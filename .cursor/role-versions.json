@@ -1,0 +1,16 @@
+{
+  "versions": {
+    "cto": {"current": "v1", "history": []},
+    "engineering-manager": {"current": "v1", "history": []},
+    "qa-manager": {"current": "v1", "history": []},
+    "python-developer": {"current": "v1", "history": []},
+    "database-architect": {"current": "v1", "history": []},
+    "pr-reviewer": {"current": "v1", "history": []}
+  },
+  "ab_mode": {
+    "enabled": false,
+    "target_role": null,
+    "variant_a_sha": null,
+    "variant_b_sha": null
+  }
+}
