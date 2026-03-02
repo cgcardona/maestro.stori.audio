@@ -131,51 +131,6 @@
 
 </div>
 
-<script>
-/**
- * Alpine.js component for the manual spawn form.
- *
- * Posts to POST /api/control/spawn and displays either a success card with
- * the worktree path + .agent-task contents, or an error banner.
- */
-function spawnForm() {
-  return {
-    issueNumber: '',
-    role: 'python-developer',
-    loading: false,
-    result: null,
-    formError: null,
-
-    async submit() {
-      this.result = null;
-      this.formError = null;
-      this.loading = true;
-
-      try {
-        const resp = await fetch('/api/control/spawn', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            issue_number: parseInt(this.issueNumber, 10),
-            role: this.role,
-          }),
-        });
-
-        const data = await resp.json();
-
-        if (!resp.ok) {
-          this.formError = data.detail ?? `HTTP ${resp.status}`;
-        } else {
-          this.result = data;
-        }
-      } catch (err) {
-        this.formError = `Network error: ${err.message}`;
-      } finally {
-        this.loading = false;
-      }
-    },
-  };
-}
-</script>
+{# spawnForm() lives in /static/app.js #}
 
 {% endblock %}

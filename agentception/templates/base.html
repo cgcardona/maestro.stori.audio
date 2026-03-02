@@ -14,7 +14,10 @@
   <!-- HTMX 2.x — server-driven hypermedia -->
   <script src="https://cdn.jsdelivr.net/npm/htmx.org@2.0.4/dist/htmx.min.js" defer></script>
 
-  <!-- Alpine.js 3.x — lightweight reactivity -->
+  <!-- Alpine.js component library — must load before Alpine initialises -->
+  <script src="/static/app.js" defer></script>
+
+  <!-- Alpine.js 3.x — lightweight reactivity (loads after app.js) -->
   <script src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.3/dist/cdn.min.js" defer></script>
 
   {% block head %}{% endblock %}
@@ -64,39 +67,6 @@
       </select>
     </div>
   </nav>
-
-  <script>
-    function projectSwitcher() {
-      return {
-        projects: [],
-        activeProject: null,
-
-        async load() {
-          try {
-            const res = await fetch('/api/config');
-            if (!res.ok) return;
-            const cfg = await res.json();
-            this.projects = cfg.projects || [];
-            this.activeProject = cfg.active_project || null;
-          } catch (_) { /* network error — silently suppress */ }
-        },
-
-        async switchProject(name) {
-          if (!name || name === this.activeProject) return;
-          try {
-            const res = await fetch('/api/config/switch-project', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ project_name: name }),
-            });
-            if (res.ok) {
-              window.location.reload();
-            }
-          } catch (_) { /* silently suppress */ }
-        },
-      };
-    }
-  </script>
 
   <main role="main">
     {% block content %}
