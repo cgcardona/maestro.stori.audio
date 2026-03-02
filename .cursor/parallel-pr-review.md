@@ -296,9 +296,9 @@ the container. After checking out the PR branch, your worktree's code is
 REPO=$(git worktree list | head -1 | awk '{print $1}')
 WTNAME=$(basename "$(pwd)")
 
-# Detect codebase from PR labels (htmx/* vs maestro/storpheus)
+# Detect codebase from PR labels (agentception/* vs maestro/storpheus)
 IS_AC=$(gh pr view $N --repo $GH_REPO --json labels \
-  --jq '.labels[].name' | grep -c "^htmx/" || true)
+  --jq '.labels[].name' | grep -c "^agentception/" || true)
 
 # mypy — route by codebase (NEVER run both; they are independent codebases)
 # Both codebases use the same pattern: PYTHONPATH=/worktrees/$WTNAME pointing at the
@@ -1175,12 +1175,14 @@ STEP 8 — SPAWN YOUR SUCCESSOR (run this before self-destructing):
   if [ "$SPAWN_MODE" = "chain" ]; then
     # ── CHAIN MODE: merge happened → spawn next engineer for next unclaimed issue ──
 
-    # Mirror the CTO's label-ordering logic: find the lowest-numbered htmx/* label
+    # Mirror the CTO's label-ordering logic: find the lowest-numbered agentception/* label
     # that still has open issues. NEVER pick from a later label while an earlier one
     # still has work. This prevents later-phase issues from being claimed prematurely.
     ACTIVE_LABEL=""
-       for label in htmx/0-foundation htmx/1-independent htmx/2-main-ui \
-                        htmx/3-analysis htmx/4-canvas htmx/5-cleanup; do
+       for label in agentception/0-scaffold agentception/1-controls \
+                        agentception/2-telemetry agentception/3-roles \
+                        agentception/4-intelligence agentception/5-scaling \
+                        agentception/6-generalization; do
       COUNT=$(gh issue list --state open --repo "$GH_REPO" \
                 --label "$label" --json number --jq 'length')
       if [ "$COUNT" -gt 0 ]; then
@@ -1205,7 +1207,7 @@ STEP 8 — SPAWN YOUR SUCCESSOR (run this before self-destructing):
 
     NEXT_ISSUE=""
     if [ -z "$ACTIVE_LABEL" ]; then
-      echo "ℹ️  No open htmx/ or batch issues remain — chain complete."
+      echo "ℹ️  No open agentception/ or batch issues remain — chain complete."
     else
       # Pick the next unclaimed issue from ACTIVE_LABEL only.
       NEXT_ISSUE=$(gh issue list \
@@ -1247,7 +1249,7 @@ STEP 8 — SPAWN YOUR SUCCESSOR (run this before self-destructing):
 
       # Resolve the primary label so the engineer can route mypy/tests correctly.
       NEXT_ISSUE_LABEL=$(gh issue view "$NEXT_ISSUE" --repo "$GH_REPO" \
-        --json labels --jq '[.labels[].name | select(startswith("htmx/"))] | first // ""')
+        --json labels --jq '[.labels[].name | select(startswith("agentception/"))] | first // ""')
 
       cat > "$NEXT_WORKTREE/.agent-task" <<TASK
 WORKFLOW=issue-to-pr
@@ -1566,9 +1568,9 @@ GH_REPO=${GH_REPO:-cgcardona/maestro}
 WTNAME=$(basename "$(pwd)")
 # Live lookup — ALL_ISSUE_LABELS is not written to reviewer .agent-task files
 IS_AC=$(gh pr view "$N" --repo "$GH_REPO" --json labels \
-  --jq '[.labels[].name] | join(",")' 2>/dev/null | grep -c "htmx/" || true)
+  --jq '[.labels[].name] | join(",")' 2>/dev/null | grep -c "agentception/" || true)
 if [ "$IS_AC" -gt 0 ]; then
-  docker compose exec maestro sh -c "PYTHONPATH=/worktrees/$WTNAME mypy /worktrees/$WTNAME/maestro/ /worktrees/$WTNAME/tests/" 2>&1 | tail -5
+  docker compose exec agentception sh -c "PYTHONPATH=/worktrees/$WTNAME mypy /worktrees/$WTNAME/agentception/" 2>&1 | tail -5
 else
   REPO=$(git worktree list | head -1 | awk '{print $1}')
   cd "$REPO" && docker compose exec maestro sh -c \
