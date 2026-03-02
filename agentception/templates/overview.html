@@ -35,39 +35,29 @@
       <span class="summary-label">Last polled</span>
       <span class="summary-value" x-text="relativeTime(state.polled_at)"></span>
     </div>
-    <div class="summary-item summary-item--status">
-      <span
-        class="summary-label"
-        :class="connected ? 'text-success' : 'text-danger'"
-        x-text="connected ? '● Live' : '○ Reconnecting…'"
-      ></span>
-    </div>
-
     {#
-      Pause/resume toggle — issues a POST via HTMX and swaps only this element
-      so the rest of the dashboard stays live.  The paused flag is polled from
-      /api/control/status on page load and updated optimistically on click.
+      Poller status + pause/resume — grouped at the far right of the summary bar.
+      Shows a labelled live/reconnecting dot and a clearly-labelled toggle button
+      so it's obvious this controls the AgentCeption background poller, not a wave.
     #}
     <div
-      class="summary-item summary-item--control"
+      class="poller-control"
       id="pipeline-control"
       x-data="pipelineControl()"
       x-init="fetchStatus()"
     >
-      <span
-        class="pipeline-status-badge"
-        :class="paused ? 'pipeline-status-badge--paused' : 'pipeline-status-badge--running'"
-        x-text="paused ? 'PAUSED' : 'RUNNING'"
-        role="status"
-        :aria-label="paused ? 'Pipeline paused' : 'Pipeline running'"
-      ></span>
+      <div class="poller-status" :class="paused ? 'poller-status--paused' : (connected ? 'poller-status--live' : 'poller-status--reconnecting')">
+        <span class="poller-status__dot"></span>
+        <span class="poller-status__label" x-text="paused ? 'Poller paused' : (connected ? 'Poller live' : 'Reconnecting…')"></span>
+      </div>
       <button
-        class="control-btn"
-        :class="paused ? 'control-btn--resume' : 'control-btn--pause'"
-        x-text="paused ? 'Resume' : 'Pause'"
+        class="poller-toggle-btn"
+        :class="paused ? 'poller-toggle-btn--resume' : 'poller-toggle-btn--pause'"
         @click="toggle()"
-        :aria-label="paused ? 'Resume pipeline' : 'Pause pipeline'"
-      ></button>
+        :title="paused ? 'Resume AgentCeption poller' : 'Pause AgentCeption poller'"
+      >
+        <span x-text="paused ? '▶ Resume' : '⏸ Pause'"></span>
+      </button>
     </div>
   </div>
 
