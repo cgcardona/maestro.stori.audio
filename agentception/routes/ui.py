@@ -152,6 +152,34 @@ async def analyze_partial(request: Request, number: int) -> HTMLResponse:
     )
 
 
+@router.get("/agents", response_class=HTMLResponse)
+async def agents_list(request: Request) -> HTMLResponse:
+    """Agent listing page — all live agents in the current pipeline wave.
+
+    Renders a card for every AgentNode known to the poller, grouped by status
+    (running → blocked → done). Clicking a card navigates to the agent detail
+    page at ``/agents/{agent_id}``.
+    """
+    state = get_state() or PipelineState.empty()
+    # Flatten root + children into one list for the listing view.
+    all_agents: list[AgentNode] = []
+    for agent in state.agents:
+        all_agents.append(agent)
+        all_agents.extend(agent.children)
+    return _TEMPLATES.TemplateResponse(
+        request,
+        "agents.html",
+        {"agents": all_agents, "state": state},
+    )
+
+
+@router.get("/controls", response_class=HTMLResponse)
+async def controls_hub(request: Request) -> HTMLResponse:
+    """Controls hub — redirects to the spawn form (the primary control action)."""
+    from starlette.responses import RedirectResponse
+    return RedirectResponse(url="/control/spawn", status_code=302)
+
+
 @router.get("/agents/{agent_id}", response_class=HTMLResponse)
 async def agent_detail(request: Request, agent_id: str) -> Response:
     """Agent detail page — transcript viewer and .agent-task fields.

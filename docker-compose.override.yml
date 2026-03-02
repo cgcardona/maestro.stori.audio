@@ -50,6 +50,11 @@ services:
       - ${HOME}/.cursor/worktrees/maestro:/worktrees
 
   agentception:
+    environment:
+      # Host keychain token passed in so gh CLI works inside the container.
+      # The hosts.yml mount is read-only and contains no token when the host
+      # uses the macOS Keychain — so we pass the token explicitly here.
+      GH_TOKEN: ${GH_TOKEN}
     volumes:
       # Live code — host edits are instantly visible; no rebuild needed
       - ./agentception:/app/agentception
