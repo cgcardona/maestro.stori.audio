@@ -15,9 +15,10 @@ from fastapi.templating import Jinja2Templates
 from starlette.requests import Request
 from starlette.responses import Response
 
-from agentception.models import AgentNode, PipelineState, RoleMeta, VALID_ROLES
+from agentception.models import AgentNode, PipelineConfig, PipelineState, RoleMeta, VALID_ROLES
 from agentception.poller import get_state
 from agentception.readers.github import get_open_issues
+from agentception.readers.pipeline_config import read_pipeline_config
 from agentception.readers.transcripts import read_transcript_messages
 from agentception.routes.roles import list_roles
 from agentception.telemetry import WaveSummary, aggregate_waves
@@ -186,6 +187,32 @@ async def roles_page(request: Request) -> HTMLResponse:
         request,
         "roles.html",
         {"roles": roles, "error": error},
+    )
+
+
+@router.get("/config", response_class=HTMLResponse)
+async def config_page(request: Request) -> HTMLResponse:
+    """Pipeline configuration panel — sliders for VP count and pool size.
+
+    Renders the pipeline config UI (AC-305): allocation sliders for max_eng_vps,
+    max_qa_vps, pool_size_per_vp, and a drag-and-drop label order editor.
+    The page loads current values from ``GET /api/config`` on mount via Alpine.js
+    and persists changes via ``PUT /api/config`` on save.
+
+    Pre-populates the ``config`` template variable from the config file so the
+    initial render reflects current values even before Alpine.js hydrates.
+    On any read error the page still renders with hardcoded defaults — the save
+    button is always accessible.
+    """
+    config: PipelineConfig | None = None
+    try:
+        config = await read_pipeline_config()
+    except Exception:  # pragma: no cover — filesystem error path
+        pass
+    return _TEMPLATES.TemplateResponse(
+        request,
+        "config.html",
+        {"config": config},
     )
 
 
