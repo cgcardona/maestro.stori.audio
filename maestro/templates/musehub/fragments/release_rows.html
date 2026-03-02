@@ -1,0 +1,77 @@
+{#  fragments/release_rows.html — bare HTMX fragment: release list rows.
+
+    This template is intentionally minimal — no <html>, no <head>, no nav.
+    It is rendered in two contexts:
+
+    1. Full-page load: included inline by musehub/pages/releases.html inside
+       the ``<div id="release-rows">`` target container.
+
+    2. HTMX partial swap: returned directly when the handler detects
+       ``HX-Request: true``, replacing only the ``#release-rows`` container.
+
+    Required context variables
+    --------------------------
+    releases      : list[ReleaseResponse] — current page of releases
+    page          : int                   — current page number (1-based)
+    total_pages   : int                   — total number of pages
+    base_url      : str                   — repo base URL, e.g. /musehub/ui/owner/slug
+#}
+{% from "musehub/macros/pagination.html" import pagination %}
+{% from "musehub/macros/empty_state.html" import empty_state %}
+
+{% if releases %}
+  {% for rel in releases %}
+  <div class="release-row" id="release-{{ rel.release_id }}">
+    <div style="padding-top:2px">
+      {% if rel.is_prerelease %}
+        <span class="badge badge-release tag-prerelease">{{ rel.tag }}</span>
+      {% else %}
+        <span class="badge badge-release tag-stable">{{ rel.tag }}</span>
+      {% endif %}
+    </div>
+    <div style="flex:1;min-width:0">
+      <a href="{{ base_url }}/releases/{{ rel.tag | urlencode }}" style="font-weight:600">{{ rel.title or rel.tag }}</a>
+      {% if rel.is_draft %}<span class="badge" style="margin-left:6px">Draft</span>{% endif %}
+      <div class="release-meta">
+        Released {{ rel.created_at | fmtdate }}
+        {% if rel.author %} &bull; by {{ rel.author }}{% endif %}
+        {% if rel.commit_id %} &bull; commit <a href="{{ base_url }}/commits/{{ rel.commit_id }}" style="font-family:monospace">{{ rel.commit_id | shortsha }}</a>{% endif %}
+      </div>
+      {% if rel.body %}
+      <div class="release-body-preview">{{ rel.body | truncate(150) }}</div>
+      {% endif %}
+      <div class="release-downloads">
+        {% if rel.download_urls.midi_bundle %}
+          <a class="dl-btn" href="{{ rel.download_urls.midi_bundle }}" download>🎹 MIDI</a>
+        {% else %}
+          <span class="dl-btn disabled">🎹 MIDI</span>
+        {% endif %}
+        {% if rel.download_urls.stems %}
+          <a class="dl-btn" href="{{ rel.download_urls.stems }}" download>🎛️ Stems</a>
+        {% else %}
+          <span class="dl-btn disabled">🎛️ Stems</span>
+        {% endif %}
+        {% if rel.download_urls.mp3 %}
+          <a class="dl-btn" href="{{ rel.download_urls.mp3 }}" download>🎵 MP3</a>
+        {% else %}
+          <span class="dl-btn disabled">🎵 MP3</span>
+        {% endif %}
+        {% if rel.download_urls.musicxml %}
+          <a class="dl-btn" href="{{ rel.download_urls.musicxml }}" download>📄 MusicXML</a>
+        {% else %}
+          <span class="dl-btn disabled">📄 MusicXML</span>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+  {{ pagination(page, total_pages, base_url ~ '/releases') }}
+{% else %}
+  {{ empty_state(
+      "🎵",
+      "No releases yet",
+      "Package your music for sharing by creating a release.",
+      base_url ~ '/releases/new',
+      'Create release'
+  ) }}
+{% endif %}

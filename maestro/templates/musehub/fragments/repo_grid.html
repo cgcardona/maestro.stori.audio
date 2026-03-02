@@ -1,0 +1,65 @@
+{#
+  repo_grid — SSR repo card grid with pagination.
+
+  Used as:
+  - An HTMX fragment (HX-Request: true) swapped into #repo-grid.
+  - An {% include %} inside full-page templates (explore.html, trending.html).
+
+  Required context
+  ----------------
+  repos : list[ExploreRepoResult]
+    Pydantic models with .name, .owner, .slug, .description, .tags,
+    .key_signature, .tempo_bpm, .star_count, .commit_count.
+  page : int
+    Current page (1-based).
+  total_pages : int
+    Total pages (pre-computed by the handler).
+  total : int
+    Total repo count across all pages.
+  sort : str
+    Active sort key (stars | updated | forks | trending).
+  base_explore_url : str
+    Base URL for pagination links (e.g. "/musehub/ui/explore").
+#}
+{% from "musehub/macros/pagination.html" import pagination %}
+{% from "musehub/macros/empty_state.html" import empty_state %}
+
+{% if repos %}
+<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:var(--space-3)">
+  {% for repo in repos %}
+  <a href="/musehub/ui/{{ repo.owner | urlencode }}/{{ repo.slug | urlencode }}"
+     class="repo-card"
+     style="text-decoration:none;display:block">
+    <div class="repo-card-header">
+      <span class="repo-card-name">{{ repo.owner }}/{{ repo.slug }}</span>
+    </div>
+    {% if repo.description %}
+    <p class="repo-card-desc-trunc">{{ repo.description | truncate(100) }}</p>
+    {% endif %}
+    <div class="repo-card-meta-pills">
+      {% if repo.key_signature %}
+      <span class="repo-meta-pill">&#9837; {{ repo.key_signature }}</span>
+      {% endif %}
+      {% if repo.tempo_bpm %}
+      <span class="repo-meta-pill">&#9833; {{ repo.tempo_bpm }} BPM</span>
+      {% endif %}
+      {% for tag in repo.tags[:3] %}
+      <span class="tag-pill">{{ tag }}</span>
+      {% endfor %}
+      {% if repo.tags | length > 3 %}
+      <span class="tag-pill" style="opacity:.6">+{{ repo.tags | length - 3 }}</span>
+      {% endif %}
+    </div>
+    <div class="repo-card-meta">
+      <span>&#9733; {{ repo.star_count }}</span>
+      <span>&#128190; {{ repo.commit_count }} commits</span>
+    </div>
+  </a>
+  {% endfor %}
+</div>
+
+{{ pagination(page, total_pages, base_explore_url,
+              extra_params={"sort": sort}) }}
+{% else %}
+  {{ empty_state("🎵", "No repositories found", "Try a different sort order or check back as more composers push their work.") }}
+{% endif %}

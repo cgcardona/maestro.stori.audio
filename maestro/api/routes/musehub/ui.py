@@ -71,7 +71,7 @@ from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi import status as http_status
-from fastapi.responses import HTMLResponse, RedirectResponse, Response
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import func, select as sa_select, text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -96,8 +96,8 @@ from maestro.models.musehub import (
 from maestro.db import musehub_models as musehub_db
 from maestro.muse_cli.models import MuseCliTag
 from maestro.db import musehub_label_models as label_db
-from maestro.services import musehub_analysis, musehub_divergence, musehub_issues, musehub_listen, musehub_pull_requests, musehub_releases
-from maestro.services import musehub_repository
+from maestro.services import musehub_analysis, musehub_credits, musehub_divergence, musehub_events, musehub_issues, musehub_listen, musehub_pull_requests, musehub_releases
+from maestro.services import musehub_discover, musehub_repository, musehub_search
 
 logger = logging.getLogger(__name__)
 
@@ -222,20 +222,52 @@ async def feed_page(request: Request) -> Response:
 
 
 @fixed_router.get("/search", summary="Muse Hub global search page")
-async def global_search_page(request: Request, q: str = "", mode: str = "keyword") -> Response:
-    """Render the global cross-repo search page.
+async def global_search_page(
+    request: Request,
+    q: str = "",
+    mode: str = "keyword",
+    page: int = Query(1, ge=1),
+    page_size: int = Query(10, ge=1, le=50),
+    db: AsyncSession = Depends(get_db),
+) -> Response:
+    """Render the global cross-repo search page with SSR results.
 
-    Query params ``q`` and ``mode`` are pre-filled into the search form so
-    that shared URLs land with the last query already populated.  Values are
-    sanitised client-side before being injected into the DOM (XSS safe).
+    Results are fetched server-side and rendered into Jinja2 templates so the
+    page is fully readable without JavaScript.  HTMX live-search (debounced
+    input trigger) swaps only the ``#search-results`` fragment on subsequent
+    queries, avoiding a full-page reload.
     """
-    safe_q = q.replace("'", "\\'").replace('"', '\\"').replace("\n", "").replace("\r", "")
     safe_mode = mode if mode in ("keyword", "pattern") else "keyword"
-    ctx: dict[str, object] = {"initial_q": safe_q, "initial_mode": safe_mode}
-    return json_or_html(
+    result = None
+    if q and len(q.strip()) >= 2:
+        result = await musehub_repository.global_search(
+            db,
+            query=q,
+            mode=safe_mode,
+            page=page,
+            page_size=page_size,
+        )
+        logger.info(
+            "✅ Global search SSR q=%r mode=%s page=%d → %d groups",
+            q,
+            safe_mode,
+            page,
+            len(result.groups) if result else 0,
+        )
+    ctx: dict[str, object] = {
+        "query": q,
+        "mode": safe_mode,
+        "page": page,
+        "page_size": page_size,
+        "result": result,
+        "modes": ["keyword", "pattern"],
+    }
+    return await htmx_fragment_or_full(
         request,
-        lambda: templates.TemplateResponse(request, "musehub/pages/global_search.html", ctx),
+        templates,
         ctx,
+        full_template="musehub/pages/global_search.html",
+        fragment_template="musehub/fragments/global_search_results.html",
     )
 
 
@@ -246,13 +278,18 @@ async def explore_page(
     license_filter: str = Query(default="", alias="license", description="License filter (e.g. CC0, CC BY)"),
     sort: str = Query(default="stars", description="Sort order: stars | updated | forks | trending"),
     topic: list[str] = Query(default=[], alias="topic", description="Topic filter chips (multi-select)"),
+    page: int = Query(default=1, ge=1, description="Page number (1-based)"),
+    per_page: int = Query(default=24, ge=1, le=100, description="Results per page"),
     db: AsyncSession = Depends(get_db),
 ) -> Response:
-    """Render the explore/discover page — a filterable grid of all public repos.
+    """Render the explore/discover page — an SSR filterable grid of all public repos.
 
     No JWT required.  Filter sidebar uses GET params so all filter states are
     bookmarkable and shareable.  Sidebar data (muse_tag chips, topic chips) is
     pre-loaded server-side to avoid an extra round-trip on first paint.
+
+    HTMX fragment requests (HX-Request: true) return only the repo grid fragment
+    so filter changes can swap the grid without a full page reload.
 
     Filter sources:
     - ``lang`` chips: top 30 distinct values from the ``muse_tags`` table.
@@ -285,13 +322,34 @@ async def explore_page(
         for name, _ in sorted(topic_counts.items(), key=lambda kv: (-kv[1], kv[0]))[:40]
     ]
 
-    _valid_sorts = {"stars", "updated", "forks", "trending"}
-    effective_sort = sort if sort in _valid_sorts else "stars"
+    # Map UI sort labels to discover service sort fields.
+    _sort_map: dict[str, musehub_discover.SortField] = {
+        "stars": "stars",
+        "updated": "activity",
+        "forks": "commits",
+        "trending": "stars",
+    }
+    effective_sort: musehub_discover.SortField = _sort_map.get(sort, "stars")
+
+    # Fetch repos server-side for SSR grid.
+    genre_filter = topic[0] if topic else None
+    explore = await musehub_discover.list_public_repos(
+        db,
+        sort=effective_sort,
+        page=page,
+        page_size=per_page,
+        genre=genre_filter,
+    )
+    total_pages = max(1, (explore.total + per_page - 1) // per_page)
 
     ctx: dict[str, object] = {
         "title": "Explore",
         "breadcrumb": "Explore",
-        "default_sort": effective_sort,
+        "repos": explore.repos,
+        "total": explore.total,
+        "page": page,
+        "total_pages": total_pages,
+        "sort": sort,
         "muse_tag_chips": muse_tag_chips,
         "topic_chips": topic_chips,
         "selected_langs": lang,
@@ -304,26 +362,53 @@ async def explore_page(
             ("forks", "Most forked"),
             ("trending", "Trending"),
         ],
+        "base_explore_url": "/musehub/ui/explore",
     }
-    return json_or_html(
+    return await htmx_fragment_or_full(
         request,
-        lambda: templates.TemplateResponse(request, "musehub/pages/explore.html", ctx),
+        templates,
         ctx,
+        full_template="musehub/pages/explore.html",
+        fragment_template="musehub/fragments/repo_grid.html",
     )
 
 
 @fixed_router.get("/trending", summary="Muse Hub trending page")
-async def trending_page(request: Request) -> Response:
-    """Render the trending page -- public repos sorted by star count.
+async def trending_page(
+    request: Request,
+    page: int = Query(default=1, ge=1, description="Page number (1-based)"),
+    per_page: int = Query(default=24, ge=1, le=100, description="Results per page"),
+    db: AsyncSession = Depends(get_db),
+) -> Response:
+    """Render the trending page — public repos sorted by star count, SSR.
 
-    Identical shell to the explore page but pre-selects sort=stars so the
-    most-starred compositions appear first.
+    HTMX fragment requests (HX-Request: true) return only the repo grid
+    fragment for seamless pagination without a full page reload.
     """
-    ctx: dict[str, object] = {"title": "Trending", "breadcrumb": "Trending", "default_sort": "stars"}
-    return json_or_html(
+    explore = await musehub_discover.list_public_repos(
+        db,
+        sort="stars",
+        page=page,
+        page_size=per_page,
+    )
+    total_pages = max(1, (explore.total + per_page - 1) // per_page)
+
+    ctx: dict[str, object] = {
+        "title": "Trending",
+        "breadcrumb": "Trending",
+        "repos": explore.repos,
+        "total": explore.total,
+        "page": page,
+        "total_pages": total_pages,
+        "sort": "stars",
+        "base_explore_url": "/musehub/ui/trending",
+    }
+    return await htmx_fragment_or_full(
         request,
-        lambda: templates.TemplateResponse(request, "musehub/explore_base.html", ctx),
+        templates,
         ctx,
+        full_template="musehub/pages/trending.html",
+        fragment_template="musehub/fragments/repo_grid.html",
     )
 
 
@@ -384,22 +469,20 @@ async def repo_page(
     request: Request,
     owner: str,
     repo_slug: str,
+    ref: str = Query("HEAD", description="Branch name or commit SHA to view"),
     format: str | None = Query(None, description="Force response format: 'json' or omit for HTML"),
     db: AsyncSession = Depends(get_db),
 ) -> StarletteResponse:
-    """Render the repo home page with arrangement matrix, audio player, stats, and recent commits.
+    """Render the repo home page with SSR file tree, recent commits, and branch picker.
 
-    Also renders four enrichment panels:
-    - Contributors: top-10 avatar grid derived from the credits endpoint.
-    - Activity heatmap: 52-week GitHub-style heatmap from commit timestamps.
-    - Instrument bar: stacked distribution of instrument tracks from commit objects.
-    - Clone widget: musehub://, SSH, and HTTPS clone URLs with copy-to-clipboard.
+    All data is fetched server-side and rendered via Jinja2.  HTMX handles
+    branch-switching: selecting a branch submits the form via ``hx-get`` and
+    swaps only the ``#file-tree`` container with the file_tree fragment.
 
     Content negotiation:
     - ``?format=json`` or ``Accept: application/json`` → full ``RepoResponse`` with camelCase keys.
-    - Everything else → HTML home page via ``repo_home.html`` template.
-
-    One URL, two audiences — agents get structured data, humans get rich HTML.
+    - ``HX-Request: true`` → bare ``file_tree.html`` fragment (branch-switch target).
+    - Default → full SSR page via ``repo_home.html``.
 
     Clone URL variants passed to the template:
     - ``clone_url_musehub``: native DAW protocol (``musehub://{owner}/{slug}``)
@@ -407,31 +490,49 @@ async def repo_page(
     - ``clone_url_https``: HTTPS git remote (``https://musehub.stori.app/{owner}/{slug}.git``)
     """
     repo, base_url = await _resolve_repo_full(owner, repo_slug, db)
+    repo_id = repo.repo_id
+
+    # JSON shortcut for API consumers — return structured data without SSR overhead.
+    if format == "json" or "application/json" in request.headers.get("accept", ""):
+        return JSONResponse(repo.model_dump(by_alias=True, mode="json"))
+
+    # Fetch all SSR data in parallel.
+    tree_response = await musehub_repository.list_tree(db, repo_id, owner, repo_slug, ref, "")
+    (commits, _) = await musehub_repository.list_commits(db, repo_id, limit=5)
+    branches = await musehub_repository.list_branches(db, repo_id)
+    releases = await musehub_releases.list_releases(db, repo_id)
+    tags_count = len(releases)
+
     page_url = str(request.url)
-    return await negotiate_response(
-        request=request,
-        template_name="musehub/pages/repo_home.html",
-        context={
-            "owner": owner,
-            "repo_slug": repo_slug,
-            "repo_id": str(repo.repo_id),
-            "base_url": base_url,
-            "current_page": "home",
-            "jsonld_script": render_jsonld_script(jsonld_repo(repo, page_url)),
-            "og_meta": _og_tags(
-                title=f"{owner}/{repo_slug} — Muse Hub",
-                description=repo.description or f"Music composition repository by {owner}",
-                og_type="website",
-            ),
-            # Clone URL variants for the clone widget panel — derived server-side
-            # so the template never has to reconstruct them from owner/slug.
-            "clone_url_musehub": f"musehub://{owner}/{repo_slug}",
-            "clone_url_ssh": f"ssh://git@musehub.stori.app/{owner}/{repo_slug}.git",
-            "clone_url_https": f"https://musehub.stori.app/{owner}/{repo_slug}.git",
-        },
-        templates=templates,
-        json_data=repo,
-        format_param=format,
+    ctx: dict[str, object] = {
+        "owner": owner,
+        "repo_slug": repo_slug,
+        "repo_id": repo_id,
+        "base_url": base_url,
+        "current_page": "home",
+        "repo": repo,
+        "ref": ref,
+        "tree": tree_response.entries,
+        # commit_row macro expects camelCase keys (commitId, etc.)
+        "commits": [c.model_dump(by_alias=True) for c in commits],
+        "branches": branches,
+        "tags_count": tags_count,
+        "jsonld_script": render_jsonld_script(jsonld_repo(repo, page_url)),
+        "og_meta": _og_tags(
+            title=f"{owner}/{repo_slug} — Muse Hub",
+            description=repo.description or f"Music composition repository by {owner}",
+            og_type="website",
+        ),
+        "clone_url_musehub": f"musehub://{owner}/{repo_slug}",
+        "clone_url_ssh": f"ssh://git@musehub.stori.app/{owner}/{repo_slug}.git",
+        "clone_url_https": f"https://musehub.stori.app/{owner}/{repo_slug}.git",
+    }
+    return await htmx_fragment_or_full(
+        request,
+        templates,
+        ctx,
+        full_template="musehub/pages/repo_home.html",
+        fragment_template="musehub/fragments/file_tree.html",
     )
 
 
@@ -1029,25 +1130,59 @@ async def issue_detail_page(
     number: int,
     db: AsyncSession = Depends(get_db),
 ) -> Response:
-    """Render the issue detail page with close button.
+    """Render the issue detail page with SSR body and HTMX comment threading.
 
-    The close button calls
-    ``POST /api/v1/musehub/repos/{repo_id}/issues/{number}/close``
-    and reloads the page on success.
+    Fetches the issue, comments, labels, milestones, and linked PRs server-side.
+    HTMX requests receive only the comment fragment; direct navigation receives
+    the full page that extends base.html.
     """
     repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
+
+    issue = await musehub_issues.get_issue(db, repo_id, number)
+    if not issue:
+        raise HTTPException(
+            status_code=http_status.HTTP_404_NOT_FOUND,
+            detail=f"Issue #{number} not found",
+        )
+
+    comment_list = await musehub_issues.list_comments(db, issue.issue_id)
+    comments = [c.model_dump() for c in comment_list.comments]
+
+    milestone_list = await musehub_issues.list_milestones(db, repo_id, state="open")
+    milestones_data = [m.model_dump() for m in milestone_list.milestones]
+
+    label_rows = (
+        await db.execute(
+            sa_select(label_db.MusehubLabel)
+            .where(label_db.MusehubLabel.repo_id == repo_id)
+            .order_by(label_db.MusehubLabel.name)
+        )
+    ).scalars().all()
+    labels_data = [{"name": r.name, "color": r.color} for r in label_rows]
+
     ctx: dict[str, object] = {
         "owner": owner,
         "repo_slug": repo_slug,
         "repo_id": repo_id,
-        "issue_number": number,
         "base_url": base_url,
         "current_page": "issues",
+        "issue": issue.model_dump(),
+        "comments": comments,
+        "labels_data": labels_data,
+        "milestones_data": milestones_data,
+        "breadcrumb_data": _breadcrumbs(
+            (owner, f"/musehub/ui/{owner}"),
+            (repo_slug, base_url),
+            ("Issues", f"{base_url}/issues"),
+            (f"#{number}", ""),
+        ),
     }
-    return json_or_html(
+    return await htmx_fragment_or_full(
         request,
-        lambda: templates.TemplateResponse(request, "musehub/pages/issue_detail.html", ctx),
+        templates,
         ctx,
+        full_template="musehub/pages/issue_detail.html",
+        fragment_template="musehub/fragments/issue_comments.html",
     )
 
 
@@ -1236,27 +1371,31 @@ async def credits_page(
     request: Request,
     owner: str,
     repo_slug: str,
+    sort: str = Query("count", pattern="^(count|recency|alpha)$"),
     db: AsyncSession = Depends(get_db),
 ) -> Response:
-    """Render the dynamic credits page -- album liner notes for the repo.
+    """Render the dynamic credits page — album liner notes for the repo.
 
-    Displays every contributor with session count, inferred roles, and activity
-    timeline.  Embeds ``<script type="application/ld+json">`` for machine-readable
-    attribution using schema.org ``MusicComposition`` vocabulary.
+    Fetches contributor credits server-side and renders them directly into the
+    template, eliminating the client-side JS fetch.  All formatting (dates,
+    roles, contribution window) is handled in the Jinja2 template using the
+    ``fmtdate`` and ``fmtrelative`` filters.
+
+    No JWT required — credits data is publicly readable.
     """
     repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
+    credits_data = await musehub_credits.aggregate_credits(db, repo_id, sort=sort)
     ctx: dict[str, object] = {
         "owner": owner,
         "repo_slug": repo_slug,
         "repo_id": repo_id,
         "base_url": base_url,
         "current_page": "credits",
+        "contributors": credits_data.contributors,
+        "total_contributors": credits_data.total_contributors,
+        "sort": sort,
     }
-    return json_or_html(
-        request,
-        lambda: templates.TemplateResponse(request, "musehub/pages/credits.html", ctx),
-        ctx,
-    )
+    return templates.TemplateResponse(request, "musehub/pages/credits.html", ctx)
 
 @router.get(
     "/{owner}/{repo_slug}/analysis/{ref}",
@@ -1306,28 +1445,56 @@ async def search_page(
     request: Request,
     owner: str,
     repo_slug: str,
+    q: str = Query("", description="Search query"),
+    mode: str = Query("keyword", description="Search mode: keyword | pattern | ask"),
+    limit: int = Query(20, ge=1, le=200),
     db: AsyncSession = Depends(get_db),
 ) -> Response:
-    """Render the in-repo search page with four mode tabs.
+    """Render the in-repo search page with SSR results.
 
-    Modes:
-    - Musical Properties (``mode=property``) -- filter by harmony/rhythm/etc.
-    - Natural Language (``mode=ask``) -- free-text question over commit history.
-    - Keyword (``mode=keyword``) -- keyword overlap scored search.
-    - Pattern (``mode=pattern``) -- substring match against messages and branches.
+    Simple keyword / pattern / ask modes are run server-side when ``q`` is
+    provided and at least 2 characters long.  The Musical Properties mode
+    (``mode=property``) keeps its JS-driven form because its multi-field
+    filter UI is not expressible as a single query param — that panel degrades
+    gracefully to a submit-button form when JS is unavailable.
+
+    HTMX live-search swaps only the ``#repo-search-results`` fragment on
+    debounced input, avoiding a full-page reload for subsequent queries.
     """
     repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
+    safe_mode = mode if mode in ("keyword", "pattern", "ask") else "keyword"
+    search_result = None
+    if q and len(q.strip()) >= 2 and safe_mode != "property":
+        if safe_mode == "keyword":
+            search_result = await musehub_search.search_by_keyword(
+                db, repo_id=repo_id, keyword=q, limit=limit
+            )
+        elif safe_mode == "ask":
+            search_result = await musehub_search.search_by_ask(
+                db, repo_id=repo_id, question=q, limit=limit
+            )
+        elif safe_mode == "pattern":
+            search_result = await musehub_search.search_by_pattern(
+                db, repo_id=repo_id, pattern=q, limit=limit
+            )
     ctx: dict[str, object] = {
         "owner": owner,
         "repo_slug": repo_slug,
         "repo_id": repo_id,
         "base_url": base_url,
         "current_page": "search",
+        "query": q,
+        "mode": safe_mode,
+        "limit": limit,
+        "search_result": search_result,
+        "modes": ["keyword", "pattern", "ask"],
     }
-    return json_or_html(
+    return await htmx_fragment_or_full(
         request,
-        lambda: templates.TemplateResponse(request, "musehub/pages/search.html", ctx),
+        templates,
         ctx,
+        full_template="musehub/pages/search.html",
+        fragment_template="musehub/fragments/search_results.html",
     )
 
 
@@ -1553,21 +1720,40 @@ async def release_list_page(
     request: Request,
     owner: str,
     repo_slug: str,
+    page: int = Query(1, ge=1),
+    per_page: int = Query(20, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
 ) -> Response:
-    """Render the release list page: all published versions newest first."""
+    """Render the release list page: all published versions newest first.
+
+    Data is resolved server-side and passed to the Jinja2 template so the page
+    is immediately readable without JavaScript execution.  HTMX partial requests
+    (HX-Request: true) receive only the ``release_rows.html`` fragment so HTMX
+    can swap just the row container without re-rendering the full shell.
+    """
     repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
+    all_releases = await musehub_releases.list_releases(db, repo_id)
+    total = len(all_releases)
+    total_pages = max(1, (total + per_page - 1) // per_page)
+    start = (page - 1) * per_page
+    releases = all_releases[start : start + per_page]
     ctx: dict[str, object] = {
         "owner": owner,
         "repo_slug": repo_slug,
         "repo_id": repo_id,
         "base_url": base_url,
         "current_page": "releases",
+        "releases": releases,
+        "total": total,
+        "page": page,
+        "total_pages": total_pages,
     }
-    return json_or_html(
+    return await htmx_fragment_or_full(
         request,
-        lambda: templates.TemplateResponse(request, "musehub/pages/release_list.html", ctx),
+        templates,
         ctx,
+        full_template="musehub/pages/releases.html",
+        fragment_template="musehub/fragments/release_rows.html",
     )
 
 
@@ -1584,17 +1770,24 @@ async def release_detail_page(
 ) -> Response:
     """Render the release detail page: title, release notes, download packages.
 
-    Download packages (MIDI bundle, stems, MP3, MusicXML, metadata) are
-    rendered as download cards; unavailable packages show a "not available"
-    indicator.
+    Release metadata, changelog (body), download package cards, and asset list
+    are all resolved server-side and injected into the Jinja2 template.  The
+    audio player div is rendered as an SSR container that WaveSurfer JS (issue
+    #583) initialises client-side once the page loads.
+
+    Returns 404 when the tag does not exist in the repository.
     """
     repo, base_url = await _resolve_repo_full(owner, repo_slug, db)
     repo_id = str(repo.repo_id)
     release = await musehub_releases.get_release_by_tag(db, repo_id, tag)
+    if release is None:
+        raise HTTPException(
+            status_code=http_status.HTTP_404_NOT_FOUND,
+            detail=f"Release '{tag}' not found in '{owner}/{repo_slug}'",
+        )
+    assets_resp = await musehub_releases.list_release_assets(db, release.release_id, tag)
     page_url = str(request.url)
-    jsonld_script: str | None = None
-    if release is not None:
-        jsonld_script = render_jsonld_script(jsonld_release(release, repo, page_url))
+    jsonld_script = render_jsonld_script(jsonld_release(release, repo, page_url))
     ctx: dict[str, object] = {
         "owner": owner,
         "repo_slug": repo_slug,
@@ -1602,13 +1795,11 @@ async def release_detail_page(
         "tag": tag,
         "base_url": base_url,
         "current_page": "releases",
+        "release": release,
+        "assets": assets_resp.assets,
         "jsonld_script": jsonld_script,
     }
-    return json_or_html(
-        request,
-        lambda: templates.TemplateResponse(request, "musehub/pages/release_detail.html", ctx),
-        ctx,
-    )
+    return templates.TemplateResponse(request, "musehub/pages/release_detail.html", ctx)
 
 
 @router.get(
@@ -1619,24 +1810,42 @@ async def sessions_page(
     request: Request,
     owner: str,
     repo_slug: str,
+    page: int = Query(1, ge=1, description="1-based page number"),
+    per_page: int = Query(25, ge=1, le=100, description="Items per page"),
     db: AsyncSession = Depends(get_db),
 ) -> Response:
     """Render the session log page -- all recording sessions newest first.
 
-    Active sessions are highlighted with a live indicator at the top of the list.
+    Fetches session data server-side and renders via Jinja2.  Active sessions
+    appear at the top of the list.  Supports HTMX partial swap via
+    ``htmx_fragment_or_full()``: a full HTML page is returned on initial load
+    and only the ``#session-rows`` fragment is returned when ``HX-Request``
+    is present.
     """
     repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
+    offset = (page - 1) * per_page
+    sessions, total = await musehub_repository.list_sessions(
+        db, repo_id, limit=per_page, offset=offset
+    )
+    total_pages = max(1, (total + per_page - 1) // per_page)
     ctx: dict[str, object] = {
         "owner": owner,
         "repo_slug": repo_slug,
         "repo_id": repo_id,
         "base_url": base_url,
         "current_page": "sessions",
+        "sessions": [s.model_dump(by_alias=True, mode="json") for s in sessions],
+        "total": total,
+        "page": page,
+        "per_page": per_page,
+        "total_pages": total_pages,
     }
-    return json_or_html(
+    return await htmx_fragment_or_full(
         request,
-        lambda: templates.TemplateResponse(request, "musehub/pages/sessions.html", ctx),
+        templates,
         ctx,
+        full_template="musehub/pages/sessions.html",
+        fragment_template="musehub/fragments/session_rows.html",
     )
 
 
@@ -1651,13 +1860,16 @@ async def session_detail_page(
     session_id: str,
     db: AsyncSession = Depends(get_db),
 ) -> Response:
-    """Render the full session detail page.
+    """Render the full session detail page with server-side data.
 
-    Shows metadata, participants with session-count badges, commits made during
-    the session, and closing notes.  Renders a 404 message inline if the API
-    returns 404, so agents can distinguish missing sessions from server errors.
+    Fetches the session and its participant list from the database and renders
+    via Jinja2.  Returns HTTP 404 when the session does not exist so callers
+    receive a proper status code rather than an empty JS shell.
     """
     repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
+    session = await musehub_repository.get_session(db, repo_id, session_id)
+    if session is None:
+        raise HTTPException(status_code=404, detail="Session not found")
     ctx: dict[str, object] = {
         "owner": owner,
         "repo_slug": repo_slug,
@@ -1665,12 +1877,10 @@ async def session_detail_page(
         "session_id": session_id,
         "base_url": base_url,
         "current_page": "sessions",
+        "session": session.model_dump(by_alias=True, mode="json"),
+        "participants": session.participants,
     }
-    return json_or_html(
-        request,
-        lambda: templates.TemplateResponse(request, "musehub/pages/session_detail.html", ctx),
-        ctx,
-    )
+    return templates.TemplateResponse(request, "musehub/pages/session_detail.html", ctx)
 
 
 @router.get(
@@ -2914,29 +3124,49 @@ async def activity_page(
     request: Request,
     owner: str,
     repo_slug: str,
+    event_type: str | None = Query(None),
+    page: int = Query(1, ge=1),
+    per_page: int = Query(30, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
 ) -> Response:
-    """Render the repo-level activity feed page.
+    """Render the repo-level activity feed page with full SSR and HTMX fragment support.
 
-    Shows a chronological, paginated event stream for the repo covering:
-    commit pushes, PR opens/merges/closes, issue opens/closes, branch and tag
-    operations, and recording sessions.  A dropdown filters by event type.
+    Fetches events server-side and renders them directly, eliminating the
+    client-side JS fetch loop.  HTMX filter and pagination requests receive
+    only the ``activity_rows.html`` fragment; direct browser navigation receives
+    the full page extending ``base.html``.
 
-    No JWT is required to render the HTML shell.  Auth is handled client-side
-    via localStorage JWT, matching all other UI pages.
+    No JWT required — activity data is publicly readable.
     """
     repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
+    feed = await musehub_events.list_events(
+        db,
+        repo_id,
+        event_type=event_type or None,
+        page=page,
+        page_size=per_page,
+    )
+    total_pages = max(1, (feed.total + per_page - 1) // per_page)
     ctx: dict[str, object] = {
         "owner": owner,
         "repo_slug": repo_slug,
         "repo_id": repo_id,
         "base_url": base_url,
         "current_page": "activity",
+        "events": feed.events,
+        "total": feed.total,
+        "page": page,
+        "per_page": per_page,
+        "total_pages": total_pages,
+        "event_type": event_type or "",
+        "event_types": sorted(musehub_events.KNOWN_EVENT_TYPES),
     }
-    return json_or_html(
+    return await htmx_fragment_or_full(
         request,
-        lambda: templates.TemplateResponse(request, "musehub/pages/activity.html", ctx),
+        templates,
         ctx,
+        full_template="musehub/pages/activity.html",
+        fragment_template="musehub/fragments/activity_rows.html",
     )
 
 

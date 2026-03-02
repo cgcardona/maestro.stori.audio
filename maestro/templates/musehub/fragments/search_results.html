@@ -1,0 +1,50 @@
+{#  fragments/search_results.html — bare HTMX fragment: in-repo search results.
+
+    Rendered in two contexts:
+    1. Full-page load: included inline by musehub/pages/search.html inside
+       the ``<div id="repo-search-results">`` target container.
+    2. HTMX partial swap: returned directly when the handler detects
+       ``HX-Request: true``, replacing only the ``#repo-search-results`` container.
+
+    Required context variables
+    --------------------------
+    query         : str                   — current search query (may be empty)
+    mode          : str                   — active search mode (keyword | pattern | ask)
+    search_result : SearchResponse | None — result or None when q < 2 chars or mode=property
+    base_url      : str                   — repo base URL, e.g. /musehub/ui/owner/slug
+#}
+{% from "musehub/macros/empty_state.html" import empty_state %}
+
+{% if not query or query | length < 2 %}
+  <p style="color:#8b949e;text-align:center;padding:var(--space-4) 0">
+    Enter at least 2 characters to search.
+  </p>
+{% elif search_result and search_result.matches %}
+  <p style="color:#8b949e;margin-bottom:var(--space-2)">
+    Mode: <strong>{{ search_result.mode }}</strong> &bull;
+    Query: <em>{{ search_result.query }}</em> &bull;
+    {{ search_result.matches | length }} result{{ 's' if search_result.matches | length != 1 else '' }} &bull;
+    {{ search_result.total_scanned }} commits scanned
+  </p>
+  <div class="card" style="padding:var(--space-2)">
+    {% for match in search_result.matches %}
+    <div class="commit-row">
+      <a class="commit-sha" href="{{ base_url }}/commits/{{ match.commit_id }}">
+        {{ match.commit_id[:7] }}
+      </a>
+      <div class="commit-msg" style="flex:1">
+        <a href="{{ base_url }}/commits/{{ match.commit_id }}">{{ match.message }}</a>
+        <div style="font-size:12px;color:#8b949e;margin-top:2px">
+          {{ match.author }} &bull; {{ match.timestamp | fmtdate }}
+          &bull; {{ match.branch }}
+          {% if match.score is defined and match.score < 1.0 %}
+          &bull; score: {{ "%.3f" | format(match.score) }}
+          {% endif %}
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+{% else %}
+  {{ empty_state("🔍", "No results", "No commits matched your query. Try different terms or another mode.") }}
+{% endif %}
