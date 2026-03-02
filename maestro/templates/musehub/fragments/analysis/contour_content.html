@@ -1,0 +1,62 @@
+{#  fragments/analysis/contour_content.html — bare HTMX fragment for contour page.
+
+    This template is intentionally minimal — no <html>, <head>, or nav.
+    Rendered when ``HX-Request: true`` is present in the request.
+
+    Required context variables
+    --------------------------
+    contour_data : ContourData — from compute_dimension('contour', ref)
+    ref          : str         — muse commit ref
+    base_url     : str         — repo base URL
+#}
+{% if contour_data.pitch_curve %}
+  {% set curve = contour_data.pitch_curve %}
+  {% set n = curve | length %}
+  {% set min_pitch = curve | min | default(0) %}
+  {% set max_pitch = curve | max | default(127) %}
+  {% set pitch_range = [(max_pitch - min_pitch), 1] | max %}
+
+  <div class="card" style="margin-bottom:var(--space-4)">
+    <h2 style="font-size:14px;margin:0 0 var(--space-3) 0;color:#8b949e">PITCH CURVE</h2>
+    <svg width="100%" height="120" viewBox="0 0 {{ n }} 100" preserveAspectRatio="none"
+         style="display:block;background:#0d1117;border-radius:4px"
+         role="img" aria-label="Melodic contour polyline">
+      <polygon
+        points="0,100 {% for pitch in curve %}{{ loop.index0 }},{{ (100 - ((pitch - min_pitch) / pitch_range * 90)) | int }} {% endfor %}{{ n - 1 }},100"
+        fill="#58a6ff"
+        fill-opacity="0.15"/>
+      <polyline
+        points="{% for pitch in curve %}{{ loop.index0 }},{{ (100 - ((pitch - min_pitch) / pitch_range * 90)) | int }} {% endfor %}"
+        fill="none"
+        stroke="#58a6ff"
+        stroke-width="1.5"
+        stroke-linejoin="round"
+        stroke-linecap="round"/>
+    </svg>
+  </div>
+{% endif %}
+
+<div class="card">
+  <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:var(--space-3)">
+    <div>
+      <div class="meta-label">Shape</div>
+      <div style="font-size:18px;font-weight:700">{{ contour_data.shape }}</div>
+    </div>
+    <div>
+      <div class="meta-label">Overall Direction</div>
+      <div style="font-size:18px;font-weight:700">{{ contour_data.overall_direction }}</div>
+    </div>
+    <div>
+      <div class="meta-label">Direction Changes</div>
+      <div style="font-size:18px;font-weight:700">{{ contour_data.direction_changes }}</div>
+    </div>
+    <div>
+      <div class="meta-label">Peak Beat</div>
+      <div style="font-size:18px;font-weight:700">{{ contour_data.peak_beat | round(1) }}</div>
+    </div>
+    <div>
+      <div class="meta-label">Valley Beat</div>
+      <div style="font-size:18px;font-weight:700">{{ contour_data.valley_beat | round(1) }}</div>
+    </div>
+  </div>
+</div>
