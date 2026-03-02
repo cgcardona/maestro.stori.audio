@@ -14,6 +14,7 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException
 
 from agentception.config import settings
+from agentception.intelligence.analyzer import IssueAnalysis, analyze_issue
 from agentception.models import AgentNode, PipelineConfig, PipelineState, SpawnRequest, SpawnResult
 from agentception.poller import get_state
 from agentception.readers.github import add_wip_label, get_issue
@@ -334,3 +335,37 @@ async def spawn_agent(body: SpawnRequest) -> SpawnResult:
         branch=branch,
         agent_task=agent_task_content,
     )
+
+
+@router.post("/analyze/issue/{number}", tags=["intelligence"])
+async def analyze_issue_api(number: int) -> IssueAnalysis:
+    """Parse an issue body and return structured parallelism / role recommendations.
+
+    Fetches the issue body from GitHub via the ``gh`` CLI and applies
+    local heuristics to infer dependencies, conflict risk, and the
+    recommended engineer role.  No model calls are made — results are
+    deterministic for a given issue body.
+
+    This endpoint feeds into the Eng VP ``.agent-task`` generation pipeline:
+    the caller can use ``recommended_role``, ``parallelism``, and
+    ``recommended_merge_after`` to decide whether and how to schedule an agent.
+
+    Parameters
+    ----------
+    number:
+        GitHub issue number to analyse.
+
+    Raises
+    ------
+    HTTP 404
+        When the GitHub CLI cannot find the issue (non-existent or no access).
+    HTTP 500
+        When the ``gh`` subprocess exits with a non-zero status for any other
+        reason.
+    """
+    try:
+        return await analyze_issue(number)
+    except RuntimeError as exc:
+        detail = str(exc)
+        status = 404 if "not found" in detail.lower() else 500
+        raise HTTPException(status_code=status, detail=detail) from exc
