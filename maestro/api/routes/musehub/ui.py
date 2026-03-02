@@ -84,6 +84,7 @@ from maestro.api.routes.musehub.negotiate import negotiate_response
 from maestro.api.routes.musehub.ui_jsonld import jsonld_release, jsonld_repo, render_jsonld_script
 from maestro.db import get_db
 from maestro.models.musehub import CommitListResponse, CommitResponse, RepoResponse, TrackListingResponse
+from maestro.models.musehub_analysis import DimensionData
 from maestro.models.musehub import (
     BranchDetailListResponse,
     CommitListResponse,
@@ -96,7 +97,7 @@ from maestro.models.musehub import (
 from maestro.db import musehub_models as musehub_db
 from maestro.muse_cli.models import MuseCliTag
 from maestro.db import musehub_label_models as label_db
-from maestro.services import musehub_credits, musehub_divergence, musehub_events, musehub_issues, musehub_listen, musehub_pull_requests, musehub_releases
+from maestro.services import musehub_analysis, musehub_credits, musehub_divergence, musehub_events, musehub_issues, musehub_listen, musehub_pull_requests, musehub_releases
 from maestro.services import musehub_discover, musehub_repository, musehub_search
 
 logger = logging.getLogger(__name__)
@@ -1098,12 +1099,14 @@ async def context_page(
     ref: str,
     db: AsyncSession = Depends(get_db),
 ) -> Response:
-    """Render the AI context viewer for a given commit ref.
+    """Render the AI context viewer for a given commit ref — fully SSR.
 
-    Shows the MuseHubContextResponse as a structured human-readable document:
-    musical state, history summary, missing elements, suggestions, and raw JSON.
+    Calls :func:`musehub_analysis.get_context` to fetch musical summary,
+    missing elements, and Maestro suggestions server-side so the template
+    receives a populated ``context_data`` object with no client fetch required.
     """
     repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
+    context_data = await musehub_analysis.get_context(db, repo_id, ref=ref)
     ctx: dict[str, object] = {
         "owner": owner,
         "repo_slug": repo_slug,
@@ -1111,12 +1114,9 @@ async def context_page(
         "ref": ref,
         "base_url": base_url,
         "current_page": "analysis",
+        "context_data": context_data,
     }
-    return json_or_html(
-        request,
-        lambda: templates.TemplateResponse(request, "musehub/pages/context.html", ctx),
-        ctx,
-    )
+    return templates.TemplateResponse(request, "musehub/pages/analysis/context.html", ctx)
 
 
 @router.get(
@@ -1408,21 +1408,16 @@ async def analysis_dashboard_page(
     ref: str,
     db: AsyncSession = Depends(get_db),
 ) -> Response:
-    """Render the analysis dashboard: summary cards for all 10 musical dimensions.
+    """Render the analysis dashboard: summary cards for all musical dimensions.
 
-    Why this exists: musicians and AI agents need a single entry point that
-    shows the full musical character of a composition at a glance -- key,
-    tempo, meter, dynamics, groove, emotion, form, motifs, chord map, and
-    contour -- without issuing 13 separate analysis commands.
-
-    Contract:
-    - No JWT required -- HTML shell; JS fetches authed data via localStorage token.
-    - Fetches ``GET /api/v1/musehub/repos/{repo_id}/analysis/{ref}`` (aggregate).
-    - Branch selector fetches ``GET /api/v1/musehub/repos/{repo_id}/branches``.
-    - Each card links to the dedicated per-dimension analysis page.
-    - Graceful empty state when analysis data is not yet available.
+    All dimension data is computed server-side so agents and browsers receive
+    a fully-rendered page without issuing additional API calls.  The aggregate
+    response covers key, tempo, meter, dynamics, groove, emotion, form, motifs,
+    chord map, and contour.
     """
     repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
+    aggregate = musehub_analysis.compute_aggregate_analysis(repo_id=repo_id, ref=ref)
+    dim_map: dict[str, object] = {d.dimension: d.data for d in aggregate.dimensions}
     ctx: dict[str, object] = {
         "owner": owner,
         "repo_slug": repo_slug,
@@ -1430,11 +1425,15 @@ async def analysis_dashboard_page(
         "ref": ref,
         "base_url": base_url,
         "current_page": "analysis",
+        "analysis_dimension": "dashboard",
+        "dim_map": dim_map,
     }
-    return json_or_html(
+    return await htmx_fragment_or_full(
         request,
-        lambda: templates.TemplateResponse(request, "musehub/pages/analysis.html", ctx),
+        templates,
         ctx,
+        full_template="musehub/pages/analysis/dashboard.html",
+        fragment_template="musehub/fragments/analysis/dashboard_content.html",
     )
 
 
@@ -1510,22 +1509,18 @@ async def motifs_page(
     ref: str,
     db: AsyncSession = Depends(get_db),
 ) -> Response:
-    """Render the motif browser for a given commit ref.
+    """Render the motif browser for a given commit ref — SSR.
 
-    Fetches ``GET /api/v1/musehub/repos/{repo_id}/analysis/{ref}/motifs``
-    and renders:
-    - All detected motifs with interval pattern and occurrence count
-    - Mini piano roll visualising the note pattern for each motif
-    - Contour label (arch, valley, oscillating, etc.)
-    - Transformation badges (inversion, retrograde, transposition)
-    - Motif recurrence grid (tracks x sections heatmap)
-    - Cross-track sharing indicators
-    - Track and section filters
+    Fetches motif data server-side via :func:`~maestro.services.musehub_analysis.compute_dimension`
+    and passes it directly to the Jinja2 template so all motif patterns,
+    occurrences, and recurrence grids are rendered server-side without
+    a client-side fetch.
 
     Auth is handled client-side via localStorage JWT, matching all other UI
     pages.  No JWT is required to render the HTML shell.
     """
     repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
+    motifs_data = musehub_analysis.compute_dimension("motifs", ref)
     ctx: dict[str, object] = {
         "owner": owner,
         "repo_slug": repo_slug,
@@ -1533,11 +1528,15 @@ async def motifs_page(
         "ref": ref,
         "base_url": base_url,
         "current_page": "analysis",
+        "analysis_dimension": "motifs",
+        "motifs_data": motifs_data,
     }
-    return json_or_html(
+    return await htmx_fragment_or_full(
         request,
-        lambda: templates.TemplateResponse(request, "musehub/pages/motifs.html", ctx),
+        templates,
         ctx,
+        full_template="musehub/pages/analysis/motifs.html",
+        fragment_template="musehub/fragments/analysis/motifs_content.html",
     )
 
 
@@ -1594,19 +1593,16 @@ async def compare_page(
     owner: str,
     repo_slug: str,
     refs: str,
-    format: str | None = Query(None, description="Force response format: 'json' or omit for HTML"),
     db: AsyncSession = Depends(get_db),
-) -> StarletteResponse:
-    """Render the compare view for two refs (branches, tags, or commit SHAs).
+) -> Response:
+    """Render the compare view for two refs — fully SSR.
 
     The ``refs`` path segment encodes both refs separated by ``...``:
     ``main...feature-branch`` compares ``main`` (base) against
     ``feature-branch`` (head).
 
-    HTML (default): renders the compare page with radar chart, dimension
-    panels, piano roll, emotion diff, and commit list.
-    JSON (``Accept: application/json`` or ``?format=json``): returns the
-    full ``CompareResponse`` from the API endpoint.
+    Calls :func:`musehub_analysis.compare_refs` server-side so the template
+    receives a populated ``compare_data`` object with no client fetch required.
 
     Returns 404 when:
     - The repo owner/slug is unknown.
@@ -1625,8 +1621,9 @@ async def compare_page(
             detail="Both base and head refs must be non-empty",
         )
     repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
+    compare_data = await musehub_analysis.compare_refs(db, repo_id, base=base_ref, head=head_ref)
 
-    context = {
+    context: dict[str, object] = {
         "owner": owner,
         "repo_slug": repo_slug,
         "repo_id": repo_id,
@@ -1635,6 +1632,7 @@ async def compare_page(
         "refs": refs,
         "base_url": base_url,
         "current_page": "compare",
+        "compare_data": compare_data,
         "breadcrumb_data": _breadcrumbs(
             (owner, f"/musehub/ui/{owner}"),
             (repo_slug, base_url),
@@ -1642,14 +1640,7 @@ async def compare_page(
             (f"{base_ref}...{head_ref}", ""),
         ),
     }
-    return await negotiate_response(
-        request=request,
-        template_name="musehub/pages/compare.html",
-        context=context,
-        templates=templates,
-        json_data=None,
-        format_param=format,
-    )
+    return templates.TemplateResponse(request, "musehub/pages/analysis/compare.html", context)
 
 
 @router.get(
@@ -1660,26 +1651,30 @@ async def divergence_page(
     request: Request,
     owner: str,
     repo_slug: str,
+    fork_repo_id: str | None = Query(None, description="Fork repo UUID to compare against; omit for self-comparison"),
     db: AsyncSession = Depends(get_db),
 ) -> Response:
-    """Render the divergence visualization: radar chart + dimension detail panels.
+    """Render the divergence visualization — fully SSR.
 
-    Compares two branches across five musical dimensions
-    (melodic/harmonic/rhythmic/structural/dynamic).
+    Calls :func:`musehub_analysis.compute_divergence` server-side so the
+    template receives a populated ``divergence_data`` object containing the
+    overall score and per-dimension breakdown with no client fetch required.
+
+    Optional ``?fork_repo_id=<uuid>`` compares against a specific fork.
+    When omitted the comparison is relative to the repo itself (score=0).
     """
     repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
+    divergence_data = await musehub_analysis.compute_divergence(db, repo_id, fork_repo_id=fork_repo_id)
     ctx: dict[str, object] = {
         "owner": owner,
         "repo_slug": repo_slug,
         "repo_id": repo_id,
         "base_url": base_url,
         "current_page": "analysis",
+        "fork_repo_id": fork_repo_id or "",
+        "divergence_data": divergence_data,
     }
-    return json_or_html(
-        request,
-        lambda: templates.TemplateResponse(request, "musehub/pages/divergence.html", ctx),
-        ctx,
-    )
+    return templates.TemplateResponse(request, "musehub/pages/analysis/divergence.html", ctx)
 
 
 @router.get(
@@ -1926,12 +1921,14 @@ async def contour_page(
     ref: str,
     db: AsyncSession = Depends(get_db),
 ) -> Response:
-    """Render the melodic contour analysis page for a Muse commit ref.
+    """Render the melodic contour analysis page for a Muse commit ref — SSR.
 
-    Visualises per-track melodic shapes, tessitura, and cross-commit contour
-    comparison via a pitch-curve line graph in SVG.
+    Fetches contour data server-side via :func:`~maestro.services.musehub_analysis.compute_dimension`
+    and passes the pitch curve directly to the Jinja2 template so the SVG
+    polyline is rendered server-side without a client-side fetch.
     """
     repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
+    contour_data = musehub_analysis.compute_dimension("contour", ref)
     ctx: dict[str, object] = {
         "owner": owner,
         "repo_slug": repo_slug,
@@ -1939,11 +1936,15 @@ async def contour_page(
         "ref": ref,
         "base_url": base_url,
         "current_page": "analysis",
+        "analysis_dimension": "contour",
+        "contour_data": contour_data,
     }
-    return json_or_html(
+    return await htmx_fragment_or_full(
         request,
-        lambda: templates.TemplateResponse(request, "musehub/pages/contour.html", ctx),
+        templates,
         ctx,
+        full_template="musehub/pages/analysis/contour.html",
+        fragment_template="musehub/fragments/analysis/contour_content.html",
     )
 
 
@@ -1960,9 +1961,11 @@ async def tempo_page(
 ) -> Response:
     """Render the tempo analysis page for a Muse commit ref.
 
-    Displays BPM, time feel, stability, and a timeline of tempo change events.
+    BPM, time feel, stability bar, and tempo-change timeline are all computed
+    server-side and passed to the Jinja2 template — no client-side API fetch required.
     """
     repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
+    tempo_data: DimensionData = musehub_analysis.compute_dimension("tempo", ref)
     ctx: dict[str, object] = {
         "owner": owner,
         "repo_slug": repo_slug,
@@ -1970,11 +1973,15 @@ async def tempo_page(
         "ref": ref,
         "base_url": base_url,
         "current_page": "analysis",
+        "analysis_dimension": "tempo",
+        "tempo_data": tempo_data,
     }
-    return json_or_html(
+    return await htmx_fragment_or_full(
         request,
-        lambda: templates.TemplateResponse(request, "musehub/pages/tempo.html", ctx),
+        templates,
         ctx,
+        full_template="musehub/pages/analysis/tempo.html",
+        fragment_template="musehub/fragments/analysis/tempo_content.html",
     )
 
 
@@ -1989,12 +1996,15 @@ async def dynamics_analysis_page(
     ref: str,
     db: AsyncSession = Depends(get_db),
 ) -> Response:
-    """Render the dynamics analysis page for a Muse commit ref.
+    """Render the dynamics analysis page for a Muse commit ref — SSR.
 
-    Visualises velocity profiles, arc classifications, and per-track loudness
-    so a mixing engineer can spot dynamic imbalances without running the CLI.
+    Fetches per-track dynamics data server-side via
+    :func:`~maestro.services.musehub_analysis.compute_dynamics_page_data`
+    and passes it directly to the Jinja2 template so velocity bars and arc
+    badges are rendered server-side without a client-side fetch.
     """
     repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
+    dynamics_data = musehub_analysis.compute_dynamics_page_data(repo_id=repo_id, ref=ref)
     ctx: dict[str, object] = {
         "owner": owner,
         "repo_slug": repo_slug,
@@ -2002,11 +2012,15 @@ async def dynamics_analysis_page(
         "ref": ref,
         "base_url": base_url,
         "current_page": "analysis",
+        "analysis_dimension": "dynamics",
+        "dynamics_data": dynamics_data,
     }
-    return json_or_html(
+    return await htmx_fragment_or_full(
         request,
-        lambda: templates.TemplateResponse(request, "musehub/pages/dynamics.html", ctx),
+        templates,
         ctx,
+        full_template="musehub/pages/analysis/dynamics.html",
+        fragment_template="musehub/fragments/analysis/dynamics_content.html",
     )
 
 
@@ -2023,11 +2037,13 @@ async def key_analysis_page(
 ) -> Response:
     """Render the key detection analysis page for a Muse commit ref.
 
-    Displays the detected tonic, mode, relative key, confidence bar, and a
-    ranked list of alternate key candidates.  Agents use this to confirm the
-    tonal centre before generating harmonically compatible material.
+    Tonic, mode, confidence bar, relative key, and alternate key candidates are
+    all computed server-side and injected into the Jinja2 template.  Agents use
+    this to confirm the tonal centre before generating harmonically compatible
+    material without needing an authenticated client-side API call.
     """
     repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
+    key_data: DimensionData = musehub_analysis.compute_dimension("key", ref)
     ctx: dict[str, object] = {
         "owner": owner,
         "repo_slug": repo_slug,
@@ -2035,11 +2051,15 @@ async def key_analysis_page(
         "ref": ref,
         "base_url": base_url,
         "current_page": "analysis",
+        "analysis_dimension": "key",
+        "key_data": key_data,
     }
-    return json_or_html(
+    return await htmx_fragment_or_full(
         request,
-        lambda: templates.TemplateResponse(request, "musehub/pages/key.html", ctx),
+        templates,
         ctx,
+        full_template="musehub/pages/analysis/key.html",
+        fragment_template="musehub/fragments/analysis/key_content.html",
     )
 
 
@@ -2056,11 +2076,12 @@ async def meter_analysis_page(
 ) -> Response:
     """Render the metric analysis page for a Muse commit ref.
 
-    Shows the primary time signature, compound/simple classification, a
-    beat-strength profile bar chart, and any irregular-meter sections.
-    Agents use this to generate rhythmically coherent material.
+    Time signature, compound/simple classification, beat-strength profile, and
+    irregular-meter sections are all computed server-side.  Agents use this to
+    generate rhythmically coherent material without an authenticated client call.
     """
     repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
+    meter_data: DimensionData = musehub_analysis.compute_dimension("meter", ref)
     ctx: dict[str, object] = {
         "owner": owner,
         "repo_slug": repo_slug,
@@ -2068,11 +2089,15 @@ async def meter_analysis_page(
         "ref": ref,
         "base_url": base_url,
         "current_page": "analysis",
+        "analysis_dimension": "meter",
+        "meter_data": meter_data,
     }
-    return json_or_html(
+    return await htmx_fragment_or_full(
         request,
-        lambda: templates.TemplateResponse(request, "musehub/pages/meter.html", ctx),
+        templates,
         ctx,
+        full_template="musehub/pages/analysis/meter.html",
+        fragment_template="musehub/fragments/analysis/meter_content.html",
     )
 
 
@@ -2087,13 +2112,15 @@ async def chord_map_analysis_page(
     ref: str,
     db: AsyncSession = Depends(get_db),
 ) -> Response:
-    """Render the chord map analysis page for a Muse commit ref.
+    """Render the chord map analysis page for a Muse commit ref — SSR.
 
-    Lists the full chord progression with beat positions, Roman-numeral
-    harmonic functions, tension scores, and a tension-curve SVG graph.
-    Agents use this to generate harmonically idiomatic accompaniment.
+    Fetches chord progression data server-side via
+    :func:`~maestro.services.musehub_analysis.compute_dimension` and passes it
+    directly to the Jinja2 template so the chord timeline bars are rendered
+    server-side without a client-side fetch.
     """
     repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
+    chord_map_data = musehub_analysis.compute_dimension("chord-map", ref)
     ctx: dict[str, object] = {
         "owner": owner,
         "repo_slug": repo_slug,
@@ -2101,11 +2128,15 @@ async def chord_map_analysis_page(
         "ref": ref,
         "base_url": base_url,
         "current_page": "analysis",
+        "analysis_dimension": "chord-map",
+        "chord_map_data": chord_map_data,
     }
-    return json_or_html(
+    return await htmx_fragment_or_full(
         request,
-        lambda: templates.TemplateResponse(request, "musehub/pages/chord_map.html", ctx),
+        templates,
         ctx,
+        full_template="musehub/pages/analysis/chord_map.html",
+        fragment_template="musehub/fragments/analysis/chord_map_content.html",
     )
 
 
@@ -2122,11 +2153,12 @@ async def groove_analysis_page(
 ) -> Response:
     """Render the rhythmic groove analysis page for a Muse commit ref.
 
-    Displays groove style, BPM, grid resolution, onset deviation, groove
-    score gauge, and a swing-factor bar.  Agents use this to match rhythmic
+    Style, BPM, grid resolution, onset deviation, groove score, and swing
+    factor are all computed server-side.  Agents use this to match rhythmic
     feel when generating continuation material.
     """
     repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
+    groove_data: DimensionData = musehub_analysis.compute_dimension("groove", ref)
     ctx: dict[str, object] = {
         "owner": owner,
         "repo_slug": repo_slug,
@@ -2134,11 +2166,15 @@ async def groove_analysis_page(
         "ref": ref,
         "base_url": base_url,
         "current_page": "analysis",
+        "analysis_dimension": "groove",
+        "groove_data": groove_data,
     }
-    return json_or_html(
+    return await htmx_fragment_or_full(
         request,
-        lambda: templates.TemplateResponse(request, "musehub/pages/groove.html", ctx),
+        templates,
         ctx,
+        full_template="musehub/pages/analysis/groove.html",
+        fragment_template="musehub/fragments/analysis/groove_content.html",
     )
 
 
@@ -2153,13 +2189,15 @@ async def emotion_analysis_page(
     ref: str,
     db: AsyncSession = Depends(get_db),
 ) -> Response:
-    """Render the emotion analysis page for a Muse commit ref.
+    """Render the emotion analysis page for a Muse commit ref — SSR.
 
-    Displays primary emotion label, valence-arousal plot, tension bar, and
-    confidence score.  Agents use this to maintain emotional continuity or
-    introduce deliberate contrast in the next section.
+    Fetches emotion map data server-side via
+    :func:`~maestro.services.musehub_analysis.compute_emotion_map` and passes it
+    directly to the Jinja2 template so the valence/arousal scatter plot and
+    trajectory are rendered server-side without a client-side fetch.
     """
     repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
+    emotion_data = musehub_analysis.compute_emotion_map(repo_id=repo_id, ref=ref)
     ctx: dict[str, object] = {
         "owner": owner,
         "repo_slug": repo_slug,
@@ -2167,11 +2205,15 @@ async def emotion_analysis_page(
         "ref": ref,
         "base_url": base_url,
         "current_page": "analysis",
+        "analysis_dimension": "emotion",
+        "emotion_data": emotion_data,
     }
-    return json_or_html(
+    return await htmx_fragment_or_full(
         request,
-        lambda: templates.TemplateResponse(request, "musehub/pages/emotion.html", ctx),
+        templates,
         ctx,
+        full_template="musehub/pages/analysis/emotion.html",
+        fragment_template="musehub/fragments/analysis/emotion_content.html",
     )
 
 
@@ -2188,11 +2230,12 @@ async def form_analysis_page(
 ) -> Response:
     """Render the formal structure analysis page for a Muse commit ref.
 
-    Shows the detected macro form label (e.g. AABA, verse-chorus), a colour-coded
-    section timeline, and a per-section table with beat ranges and function labels.
-    Agents use this to understand where they are in the compositional arc.
+    Macro form label, colour-coded section timeline, and per-section beat/function
+    table are all computed server-side.  Agents use this to understand where they
+    are in the compositional arc without needing an authenticated client API call.
     """
     repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
+    form_data: DimensionData = musehub_analysis.compute_dimension("form", ref)
     ctx: dict[str, object] = {
         "owner": owner,
         "repo_slug": repo_slug,
@@ -2200,11 +2243,15 @@ async def form_analysis_page(
         "ref": ref,
         "base_url": base_url,
         "current_page": "analysis",
+        "analysis_dimension": "form",
+        "form_data": form_data,
     }
-    return json_or_html(
+    return await htmx_fragment_or_full(
         request,
-        lambda: templates.TemplateResponse(request, "musehub/pages/form.html", ctx),
+        templates,
         ctx,
+        full_template="musehub/pages/analysis/form.html",
+        fragment_template="musehub/fragments/analysis/form_content.html",
     )
 
 

@@ -157,6 +157,22 @@ class TestMusehubExecutors:
     """Unit tests for each executor function using the in-memory test DB."""
 
     @pytest.mark.anyio
+    async def test_browse_repo_returns_db_unavailable_when_not_initialised(self) -> None:
+        """_check_db_available returns db_unavailable when session factory is None."""
+        from maestro.db import database
+        from maestro.services.musehub_mcp_executor import _check_db_available
+
+        original = database._async_session_factory
+        database._async_session_factory = None
+        try:
+            result = _check_db_available()
+            assert result is not None
+            assert result.ok is False
+            assert result.error_code == "db_unavailable"
+        finally:
+            database._async_session_factory = original
+
+    @pytest.mark.anyio
     async def test_mcp_browse_repo_returns_repo_data(
         self, db_session: AsyncSession
     ) -> None:
@@ -562,6 +578,29 @@ class TestMusehubMcpServerRouting:
             )
 
         assert result.bad_request is True
+
+    @pytest.mark.anyio
+    async def test_musehub_browse_repo_db_unavailable_returns_error(
+        self, server: MaestroMCPServer
+    ) -> None:
+        """musehub tools return db_unavailable when session factory is not initialised."""
+        mock_result = MusehubToolResult(
+            ok=False,
+            error_code="db_unavailable",
+            error_message="Database session factory is not initialised.",
+        )
+        with patch(
+            "maestro.services.musehub_mcp_executor.execute_browse_repo",
+            new_callable=AsyncMock,
+            return_value=mock_result,
+        ):
+            result = await server.call_tool(
+                "musehub_browse_repo", {"repo_id": "any-id"}
+            )
+
+        assert result.success is False
+        assert result.is_error is True
+        assert "not initialised" in result.content[0]["text"]
 
     @pytest.mark.anyio
     async def test_musehub_get_context_response_is_json(

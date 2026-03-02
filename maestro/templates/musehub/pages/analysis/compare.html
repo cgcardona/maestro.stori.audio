@@ -1,0 +1,98 @@
+{% extends "musehub/base.html" %}
+
+{% block title %}Compare {{ base_ref }}...{{ head_ref }} · {{ owner }}/{{ repo_slug }}{% endblock %}
+
+{% block breadcrumb %}
+  <a href="/musehub/ui/{{ owner }}">{{ owner }}</a> /
+  <a href="{{ base_url }}">{{ repo_slug }}</a> /
+  compare /
+  <span class="text-mono">{{ base_ref }}...{{ head_ref }}</span>
+{% endblock %}
+
+{% block repo_nav %}{% include "musehub/partials/repo_nav.html" %}{% endblock %}
+
+{% block page_data %}
+const repoId  = {{ repo_id | tojson }};
+const baseRef = {{ base_ref | tojson }};
+const headRef = {{ head_ref | tojson }};
+const uiBase  = {{ base_url | tojson }};
+const apiBase = '/api/v1/musehub/repos/' + repoId;
+{% endblock %}
+
+{% block content %}
+<div style="max-width:900px;margin:0 auto;padding:var(--space-4)">
+
+  {# ── Header ────────────────────────────────────────────────────────────── #}
+  <div class="card" style="margin-bottom:var(--space-4)">
+    <h1 style="margin:0 0 var(--space-2);font-size:1.25rem;display:flex;align-items:center;gap:var(--space-2)">
+      Compare
+      <code style="background:var(--color-surface-2);padding:2px 8px;border-radius:6px">{{ base_ref }}</code>
+      <span style="color:#8b949e">↔</span>
+      <code style="background:var(--color-surface-2);padding:2px 8px;border-radius:6px">{{ head_ref }}</code>
+    </h1>
+    <p style="margin:0;color:#8b949e;font-size:0.875rem">
+      Musical dimension comparison across melodic, harmonic, rhythmic, structural, and dynamic axes.
+    </p>
+  </div>
+
+  {# ── Dimension table ────────────────────────────────────────────────────── #}
+  <div class="card">
+    <table class="data-table" style="width:100%;border-collapse:collapse">
+      <thead>
+        <tr style="border-bottom:1px solid var(--color-border)">
+          <th style="text-align:left;padding:var(--space-2) var(--space-3);color:#8b949e;font-weight:600;font-size:0.75rem;text-transform:uppercase;letter-spacing:.05em">Dimension</th>
+          <th style="text-align:right;padding:var(--space-2) var(--space-3);color:#8b949e;font-weight:600;font-size:0.75rem;text-transform:uppercase;letter-spacing:.05em">{{ base_ref }}</th>
+          <th style="text-align:right;padding:var(--space-2) var(--space-3);color:#8b949e;font-weight:600;font-size:0.75rem;text-transform:uppercase;letter-spacing:.05em">{{ head_ref }}</th>
+          <th style="text-align:right;padding:var(--space-2) var(--space-3);color:#8b949e;font-weight:600;font-size:0.75rem;text-transform:uppercase;letter-spacing:.05em">Change</th>
+          <th style="text-align:left;padding:var(--space-2) var(--space-3);color:#8b949e;font-weight:600;font-size:0.75rem;text-transform:uppercase;letter-spacing:.05em">Bar</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for dim in compare_data.dimensions %}
+        {% set base_pct = (dim.base_value * 100) | round | int %}
+        {% set head_pct = (dim.head_value * 100) | round | int %}
+        {% if dim.delta > 0 %}
+          {% set delta_color = "var(--color-success)" %}
+          {% set delta_prefix = "+" %}
+        {% elif dim.delta < 0 %}
+          {% set delta_color = "var(--color-danger)" %}
+          {% set delta_prefix = "" %}
+        {% else %}
+          {% set delta_color = "#8b949e" %}
+          {% set delta_prefix = "" %}
+        {% endif %}
+        <tr style="border-bottom:1px solid var(--color-border)">
+          <td style="padding:var(--space-2) var(--space-3);font-weight:500">{{ dim.name }}</td>
+          <td style="padding:var(--space-2) var(--space-3);text-align:right;font-family:monospace;color:#8b949e">{{ base_pct }}%</td>
+          <td style="padding:var(--space-2) var(--space-3);text-align:right;font-family:monospace;color:#8b949e">{{ head_pct }}%</td>
+          <td style="padding:var(--space-2) var(--space-3);text-align:right;font-family:monospace;font-weight:600;color:{{ delta_color }}">
+            {{ delta_prefix }}{{ (dim.delta * 100) | round(1) }}%
+          </td>
+          <td style="padding:var(--space-2) var(--space-3)">
+            <div style="display:flex;align-items:center;gap:4px;min-width:120px">
+              <div style="flex:1;height:8px;background:var(--color-surface-2);border-radius:4px;overflow:hidden;position:relative">
+                <div style="position:absolute;left:0;top:0;height:100%;width:{{ base_pct }}%;background:#388bfd;border-radius:4px;opacity:0.5"></div>
+                <div style="position:absolute;left:0;top:0;height:100%;width:{{ head_pct }}%;background:{{ delta_color }};border-radius:4px;opacity:0.8"></div>
+              </div>
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  {# ── Legend ─────────────────────────────────────────────────────────────── #}
+  <div style="margin-top:var(--space-3);display:flex;gap:var(--space-4);font-size:0.75rem;color:#8b949e">
+    <span style="display:flex;align-items:center;gap:4px">
+      <span style="display:inline-block;width:12px;height:8px;background:#388bfd;border-radius:2px;opacity:0.5"></span>
+      {{ base_ref }}
+    </span>
+    <span style="display:flex;align-items:center;gap:4px">
+      <span style="display:inline-block;width:12px;height:8px;background:var(--color-accent);border-radius:2px;opacity:0.8"></span>
+      {{ head_ref }}
+    </span>
+  </div>
+
+</div>
+{% endblock %}

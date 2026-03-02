@@ -230,6 +230,20 @@ class StdioMCPServer:
 
 
 async def main() -> None:
+    from maestro.config import settings
+    from maestro.db.database import init_db
+
+    if settings.database_url:
+        try:
+            await init_db()
+            logger.info("✅ Database initialised for MCP server")
+        except Exception as e:
+            logger.warning(
+                "⚠️ Could not initialise database — MuseHub tools will return "
+                "'db_unavailable' until the DB is reachable: %s",
+                e,
+            )
+
     server = StdioMCPServer()
     await server.run()
 
