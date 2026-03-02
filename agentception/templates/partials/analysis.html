@@ -17,7 +17,7 @@
         {% for dep in a.dependencies %}
           <a
             class="dep-chip"
-            href="https://github.com/cgcardona/maestro/issues/{{ dep }}"
+            href="{{ gh_base_url }}/issues/{{ dep }}"
             target="_blank"
             rel="noopener noreferrer"
           >#{{ dep }}</a>
@@ -64,7 +64,7 @@
     <span class="analysis-label">Merge after</span>
     <a
       class="dep-chip"
-      href="https://github.com/cgcardona/maestro/issues/{{ a.recommended_merge_after }}"
+      href="{{ gh_base_url }}/issues/{{ a.recommended_merge_after }}"
       target="_blank"
       rel="noopener noreferrer"
     >#{{ a.recommended_merge_after }}</a>

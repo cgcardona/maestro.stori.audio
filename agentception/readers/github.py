@@ -130,11 +130,39 @@ async def gh_json(args: list[str], jq: str, cache_key: str) -> JsonValue:
 # Public read API
 # ---------------------------------------------------------------------------
 
+async def get_closed_issues(limit: int = 100) -> list[dict[str, object]]:
+    """List recently closed issues (most recent first, capped at *limit*).
+
+    Used by the poller to sync closed issues into ``ac_issues`` so the DB
+    retains a complete history rather than only tracking open work.
+
+    Parameters
+    ----------
+    limit:
+        Maximum number of closed issues to fetch per tick.  Keeps the GitHub
+        API cost proportional — closed issues change rarely so a small window
+        captures all recent transitions.
+    """
+    repo = settings.gh_repo
+    args = [
+        "issue", "list",
+        "--repo", repo,
+        "--state", "closed",
+        "--json", "number,title,labels,body,state,closedAt",
+        "--limit", str(limit),
+    ]
+    cache_key = f"get_closed_issues:limit={limit}"
+    result = await gh_json(args, ".", cache_key)
+    if not isinstance(result, list):
+        raise RuntimeError(f"get_closed_issues: expected list from gh, got {type(result).__name__}")
+    return [item for item in result if isinstance(item, dict)]
+
+
 async def get_open_issues(label: str | None = None) -> list[dict[str, object]]:
     """List open issues, optionally filtered by a single label.
 
     Returns each issue as a dict with at minimum: ``number``, ``title``,
-    ``labels`` (list of label objects), and ``body``.
+    ``labels`` (list of label objects), ``body``, and ``state``.
 
     Parameters
     ----------
@@ -146,7 +174,7 @@ async def get_open_issues(label: str | None = None) -> list[dict[str, object]]:
         "issue", "list",
         "--repo", repo,
         "--state", "open",
-        "--json", "number,title,labels,body",
+        "--json", "number,title,labels,body,state",
     ]
     if label:
         args += ["--label", label]
@@ -162,7 +190,7 @@ async def get_open_prs() -> list[dict[str, object]]:
     """List open pull requests targeting the ``dev`` branch.
 
     Returns each PR as a dict with at minimum: ``number``, ``title``,
-    ``headRefName``, and ``labels``.
+    ``headRefName``, ``labels``, and ``state``.
     """
     repo = settings.gh_repo
     args = [
@@ -170,7 +198,7 @@ async def get_open_prs() -> list[dict[str, object]]:
         "--repo", repo,
         "--base", "dev",
         "--state", "open",
-        "--json", "number,title,headRefName,labels",
+        "--json", "number,title,headRefName,labels,state",
     ]
     result = await gh_json(args, ".", "get_open_prs")
     if not isinstance(result, list):
@@ -222,6 +250,37 @@ async def get_merged_prs() -> list[dict[str, object]]:
     return [item for item in result if isinstance(item, dict)]
 
 
+async def get_merged_prs_full(limit: int = 100) -> list[dict[str, object]]:
+    """List recently merged PRs with full metadata including labels and title.
+
+    Like ``get_merged_prs`` but adds ``title`` and ``labels`` so the results
+    can be persisted into ``ac_pull_requests`` with complete information.
+    The ``limit`` cap keeps the per-tick API cost bounded — merged PRs are
+    immutable so a small recent window is sufficient for the DB to stay current.
+
+    Parameters
+    ----------
+    limit:
+        Maximum number of merged PRs to fetch per tick.
+    """
+    repo = settings.gh_repo
+    args = [
+        "pr", "list",
+        "--repo", repo,
+        "--base", "dev",
+        "--state", "merged",
+        "--json", "number,title,headRefName,labels,mergedAt,state",
+        "--limit", str(limit),
+    ]
+    cache_key = f"get_merged_prs_full:limit={limit}"
+    result = await gh_json(args, ".", cache_key)
+    if not isinstance(result, list):
+        raise RuntimeError(
+            f"get_merged_prs_full: expected list from gh, got {type(result).__name__}"
+        )
+    return [item for item in result if isinstance(item, dict)]
+
+
 async def get_pr_comments(pr_number: int) -> list[str]:
     """Return the body text of all comments posted on a pull request.
 
@@ -245,6 +304,80 @@ async def get_pr_comments(pr_number: int) -> list[str]:
     if not isinstance(result, list):
         return []
     return [str(c) for c in result if isinstance(c, str)]
+
+
+async def get_issue_comments(issue_number: int) -> list[dict[str, object]]:
+    """Return comments posted on a GitHub issue.
+
+    Fetches via the GitHub REST API.  Each comment dict has: ``id``,
+    ``author`` (login), ``body``, ``created_at``.
+
+    Parameters
+    ----------
+    issue_number:
+        GitHub issue number.
+    """
+    repo = settings.gh_repo
+    cache_key = f"get_issue_comments:{issue_number}"
+    result = await gh_json(
+        ["api", f"repos/{repo}/issues/{issue_number}/comments"],
+        '[.[] | {id: .id, author: .user.login, body: .body, created_at: .created_at}]',
+        cache_key,
+    )
+    if not isinstance(result, list):
+        return []
+    return [item for item in result if isinstance(item, dict)]
+
+
+async def get_pr_checks(pr_number: int) -> list[dict[str, object]]:
+    """Return CI check statuses for a pull request.
+
+    Uses ``gh pr checks`` which surfaces GitHub Actions, required status
+    checks, and third-party CI integrations.  Each check dict has:
+    ``name``, ``state``, ``conclusion``, ``url``.
+
+    Returns an empty list on any error (e.g. no checks configured).
+
+    Parameters
+    ----------
+    pr_number:
+        GitHub pull request number.
+    """
+    repo = settings.gh_repo
+    cache_key = f"get_pr_checks:{pr_number}"
+    # gh pr checks returns tab-delimited output — use gh api instead for JSON
+    result = await gh_json(
+        ["api", f"repos/{repo}/commits/refs/pull/{pr_number}/head/check-runs"],
+        "[.check_runs[] | {name: .name, state: .status, conclusion: .conclusion, url: .html_url}]",
+        cache_key,
+    )
+    if not isinstance(result, list):
+        return []
+    return [item for item in result if isinstance(item, dict)]
+
+
+async def get_pr_reviews(pr_number: int) -> list[dict[str, object]]:
+    """Return review decisions for a pull request.
+
+    Each review dict has: ``author``, ``state``, ``body``, ``submitted_at``.
+    States are GitHub values: ``APPROVED``, ``CHANGES_REQUESTED``,
+    ``COMMENTED``, ``DISMISSED``.
+
+    Parameters
+    ----------
+    pr_number:
+        GitHub pull request number.
+    """
+    repo = settings.gh_repo
+    cache_key = f"get_pr_reviews:{pr_number}"
+    result = await gh_json(
+        ["api", f"repos/{repo}/pulls/{pr_number}/reviews"],
+        "[.[] | {author: .user.login, state: .state, body: .body, submitted_at: .submitted_at}]",
+        cache_key,
+    )
+    if not isinstance(result, list):
+        return []
+    return [item for item in result if isinstance(item, dict)]
 
 
 async def get_wip_issues() -> list[dict[str, object]]:

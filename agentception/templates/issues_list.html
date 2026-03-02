@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+
+{% block title %}AgentCeption — Issues{% endblock %}
+
+{% block content %}
+<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem;">
+  <div>
+    <h1 class="section-title" style="margin-bottom:0.25rem;">Issues</h1>
+    {% if issues %}
+    <p style="color:var(--text-muted);font-size:0.85rem;margin:0;">{{ issues|length }} issue{{ 's' if issues|length != 1 }} — sourced from Postgres (<a href="https://github.com/{{ gh_repo }}/issues" target="_blank" style="color:var(--accent);">view on GitHub ↗</a>)</p>
+    {% endif %}
+  </div>
+  <div style="display:flex;gap:0.5rem;">
+    <a href="/issues?state=open" class="btn {% if state == 'open' %}btn-primary{% else %}btn-secondary{% endif %}">Open</a>
+    <a href="/issues?state=closed" class="btn {% if state == 'closed' %}btn-primary{% else %}btn-secondary{% endif %}">Closed</a>
+    <a href="/issues" class="btn {% if not state %}btn-primary{% else %}btn-secondary{% endif %}">All</a>
+  </div>
+</div>
+
+{% if issues %}
+<div class="card" style="padding:0;overflow:hidden;">
+  <table class="telemetry-table" style="width:100%;margin:0;">
+    <thead>
+      <tr>
+        <th style="width:3.5rem;">#</th>
+        <th>Title</th>
+        <th style="width:6rem;">State</th>
+        <th>Phase</th>
+        <th style="width:8rem;">Labels</th>
+        <th style="width:7rem;">{{ 'Closed' if state == 'closed' else 'Synced' }}</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for issue in issues %}
+      <tr>
+        <td>
+          <a href="/issues/{{ issue.number }}" style="font-weight:600;font-family:monospace;">#{{ issue.number }}</a>
+        </td>
+        <td style="max-width:320px;">
+          <a href="/issues/{{ issue.number }}" style="color:var(--text-primary);">{{ issue.title }}</a>
+        </td>
+        <td>
+          <span class="badge {% if issue.state == 'open' %}badge--green{% else %}badge--grey{% endif %}">
+            {{ issue.state }}
+          </span>
+        </td>
+        <td style="font-size:0.8rem;color:var(--text-muted);">
+          {{ issue.phase_label or '—' }}
+        </td>
+        <td style="max-width:120px;">
+          {% for lbl in issue.labels[:3] %}
+            {% if lbl != issue.phase_label %}
+            <span class="badge badge--blue" style="font-size:0.6rem;margin:0.1rem 0.1rem 0 0;">{{ lbl }}</span>
+            {% endif %}
+          {% endfor %}
+        </td>
+        <td style="font-size:0.75rem;color:var(--text-muted);">
+          {% if issue.closed_at %}
+            {{ issue.closed_at[:10] }}
+          {% else %}
+            {{ issue.last_synced_at[:10] }}
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<div class="card">
+  <p class="text-muted empty-state">No issues found{% if state %} with state "{{ state }}"{% endif %}. The poller syncs every few seconds.</p>
+</div>
+{% endif %}
+
+{% endblock %}

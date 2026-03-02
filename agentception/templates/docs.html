@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+
+{% block title %}AgentCeption — Docs: {{ slug }}{% endblock %}
+
+{% block content %}
+{# ── Breadcrumb ──────────────────────────────────────────────────────────── #}
+<nav class="breadcrumb" aria-label="Breadcrumb">
+  <a href="/">← Overview</a>
+  <span class="breadcrumb-sep">/</span>
+  <a href="/docs">Docs</a>
+  <span class="breadcrumb-sep">/</span>
+  <span class="breadcrumb-current">{{ slug }}</span>
+</nav>
+
+<div style="display:grid;grid-template-columns:200px 1fr;gap:1.5rem;margin-top:1rem;" class="docs-layout">
+
+  {# ── Sidebar: doc index ─────────────────────────────────────────────────── #}
+  <nav class="card" style="align-self:start;padding:0.75rem;">
+    <h2 style="font-size:0.78rem;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-muted);margin-bottom:0.5rem;">
+      Documents
+    </h2>
+    <ul style="list-style:none;padding:0;margin:0;display:flex;flex-direction:column;gap:0.25rem;">
+      {% for doc in available_docs %}
+      <li>
+        <a href="/docs/{{ doc.slug }}"
+           style="display:block;padding:0.3rem 0.5rem;border-radius:4px;font-size:0.85rem;
+                  {% if doc.slug == slug %}background:rgba(124,58,237,0.12);color:var(--accent);font-weight:600;
+                  {% else %}color:var(--text-primary);{% endif %}">
+          {{ doc.label }}
+        </a>
+      </li>
+      {% endfor %}
+    </ul>
+  </nav>
+
+  {# ── Main: rendered content ─────────────────────────────────────────────── #}
+  <section>
+    <div class="card">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem;">
+        <h1 style="font-size:1.1rem;font-weight:700;margin:0;">{{ slug }}</h1>
+        <span style="font-size:0.78rem;color:var(--text-muted);">
+          {{ file_path }}
+        </span>
+      </div>
+      {% if content %}
+      <pre style="white-space:pre-wrap;word-break:break-word;font-family:monospace;font-size:0.82rem;line-height:1.65;color:var(--text-primary);">{{ content }}</pre>
+      {% elif error %}
+      <p class="text-muted" style="color:var(--danger);">⚠️ {{ error }}</p>
+      {% else %}
+      <p class="text-muted empty-state">File is empty.</p>
+      {% endif %}
+    </div>
+  </section>
+
+</div>
+{% endblock %}

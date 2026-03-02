@@ -1349,3 +1349,11 @@ main {
 .run-status-badge--failed     { background: rgba(239,68,68,0.15);  color: #ef4444; }
 .run-status-badge--spawned    { background: rgba(234,179,8,0.15);  color: #eab308; }
 .run-status-badge--unknown    { background: rgba(107,114,128,0.15);color: #6b7280; }
+
+/* ── Semantic badge modifiers (used by A/B testing page, analysis partials) ── */
+.badge--green  { background: rgba(63,185,80,0.15);  color: var(--success); }
+.badge--blue   { background: rgba(88,166,255,0.15); color: #58a6ff; }
+.badge--yellow { background: rgba(210,153,34,0.15); color: var(--warning); }
+.badge--red    { background: rgba(248,81,73,0.15);  color: var(--danger); }
+.badge--grey   { background: rgba(139,148,158,0.15);color: var(--text-muted); }
+.badge--purple { background: rgba(124,58,237,0.15); color: var(--accent); }

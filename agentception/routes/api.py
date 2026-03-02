@@ -12,6 +12,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException
+from starlette.requests import Request
 from pydantic import BaseModel
 
 from agentception.config import settings
@@ -424,6 +425,17 @@ async def spawn_agent(body: SpawnRequest) -> SpawnResult:
     await add_wip_label(issue_number)
 
     repo_dir = str(settings.repo_dir)
+
+    # Delete the local branch first if it already exists but has no live worktree.
+    # This happens when a worktree was manually deleted without pruning the branch,
+    # leaving `git worktree add -b` unable to create it again (exit 255).
+    del_proc = await asyncio.create_subprocess_exec(
+        "git", "-C", repo_dir, "branch", "-D", branch,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    await del_proc.communicate()  # ignore errors — branch may not exist, that's fine
+
     proc = await asyncio.create_subprocess_exec(
         "git", "-C", repo_dir,
         "worktree", "add", "-b", branch,
@@ -610,3 +622,75 @@ async def analyze_issue_api(number: int) -> IssueAnalysis:
         detail = str(exc)
         status = 404 if "not found" in detail.lower() else 500
         raise HTTPException(status_code=status, detail=detail) from exc
+
+
+# ---------------------------------------------------------------------------
+# HTMX partials — issue comments, PR CI checks, PR reviews
+# ---------------------------------------------------------------------------
+
+
+@router.get("/issues/{number}/comments")
+async def issue_comments_partial(request: Request, number: int) -> object:
+    """HTMX partial: render comments for issue #{number}.
+
+    Lazily fetches from GitHub so the issue detail page loads without blocking.
+    """
+    from fastapi.responses import HTMLResponse
+    from fastapi.templating import Jinja2Templates
+    from pathlib import Path
+    from agentception.readers.github import get_issue_comments
+    from agentception.routes.ui import _TEMPLATES
+
+    comments: list[dict[str, object]] = []
+    try:
+        comments = await get_issue_comments(number)
+    except Exception as exc:
+        logger.warning("⚠️  get_issue_comments(%d) failed: %s", number, exc)
+
+    return _TEMPLATES.TemplateResponse(
+        request,
+        "partials/issue_comments.html",
+        {"comments": comments},
+    )
+
+
+@router.get("/prs/{number}/checks")
+async def pr_checks_partial(request: Request, number: int) -> object:
+    """HTMX partial: render CI check statuses for PR #{number}."""
+    from agentception.readers.github import get_pr_checks
+    from agentception.routes.ui import _TEMPLATES
+
+    checks: list[dict[str, object]] = []
+    error: str | None = None
+    try:
+        checks = await get_pr_checks(number)
+    except Exception as exc:
+        error = str(exc)
+        logger.warning("⚠️  get_pr_checks(%d) failed: %s", number, exc)
+
+    return _TEMPLATES.TemplateResponse(
+        request,
+        "partials/pr_checks.html",
+        {"checks": checks, "error": error},
+    )
+
+
+@router.get("/prs/{number}/reviews")
+async def pr_reviews_partial(request: Request, number: int) -> object:
+    """HTMX partial: render review decisions for PR #{number}."""
+    from agentception.readers.github import get_pr_reviews
+    from agentception.routes.ui import _TEMPLATES
+
+    reviews: list[dict[str, object]] = []
+    error: str | None = None
+    try:
+        reviews = await get_pr_reviews(number)
+    except Exception as exc:
+        error = str(exc)
+        logger.warning("⚠️  get_pr_reviews(%d) failed: %s", number, exc)
+
+    return _TEMPLATES.TemplateResponse(
+        request,
+        "partials/pr_reviews.html",
+        {"reviews": reviews, "error": error},
+    )

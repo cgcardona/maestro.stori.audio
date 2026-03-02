@@ -136,13 +136,9 @@
       <label for="dag-filter" style="font-size:0.85rem;color:var(--text-muted);">Filter:</label>
       <select id="dag-filter">
         <option value="all">All phases</option>
-        <option value="agentception/0-scaffold">0 · Scaffold</option>
-        <option value="agentception/1-controls">1 · Controls</option>
-        <option value="agentception/2-telemetry">2 · Telemetry</option>
-        <option value="agentception/3-roles">3 · Roles</option>
-        <option value="agentception/4-intelligence">4 · Intelligence</option>
-        <option value="agentception/5-scaling">5 · Scaling</option>
-        <option value="agentception/6-generalization">6 · Generalization</option>
+        {% for label in phase_labels %}
+        <option value="{{ label }}">{{ label }}</option>
+        {% endfor %}
       </select>
       <button id="dag-zoom-in" title="Zoom in">+</button>
       <button id="dag-zoom-out" title="Zoom out">−</button>
@@ -150,37 +146,8 @@
     </div>
   </div>
 
-  {# ── Legend ─────────────────────────────────────────────────────────────── #}
-  <div class="dag-legend">
-    <div class="dag-legend-item">
-      <div class="dag-legend-swatch" style="background:#3b82f6;"></div>
-      <span>0 · Scaffold</span>
-    </div>
-    <div class="dag-legend-item">
-      <div class="dag-legend-swatch" style="background:#6366f1;"></div>
-      <span>1 · Controls</span>
-    </div>
-    <div class="dag-legend-item">
-      <div class="dag-legend-swatch" style="background:#14b8a6;"></div>
-      <span>2 · Telemetry</span>
-    </div>
-    <div class="dag-legend-item">
-      <div class="dag-legend-swatch" style="background:#22c55e;"></div>
-      <span>3 · Roles</span>
-    </div>
-    <div class="dag-legend-item">
-      <div class="dag-legend-swatch" style="background:#f97316;"></div>
-      <span>4 · Intelligence</span>
-    </div>
-    <div class="dag-legend-item">
-      <div class="dag-legend-swatch" style="background:#ef4444;"></div>
-      <span>5 · Scaling</span>
-    </div>
-    <div class="dag-legend-item">
-      <div class="dag-legend-swatch" style="background:#a855f7;"></div>
-      <span>6 · Generalization</span>
-    </div>
-    <div class="dag-legend-sep"></div>
+  {# ── Legend (built from phase_colors JS map) ────────────────────────────── #}
+  <div class="dag-legend" id="dag-legend">
     <div class="dag-legend-item">
       <div class="dag-legend-swatch" style="background:transparent;border:2px solid #22c55e;"></div>
       <span>agent:wip</span>
@@ -210,17 +177,34 @@
 (function () {
   "use strict";
 
-  // ── Phase → colour map ───────────────────────────────────────────────────
-  const PHASE_COLORS = {
-    "agentception/0-scaffold":      "#3b82f6",
-    "agentception/1-controls":      "#6366f1",
-    "agentception/2-telemetry":     "#14b8a6",
-    "agentception/3-roles":         "#22c55e",
-    "agentception/4-intelligence":  "#f97316",
-    "agentception/5-scaling":       "#ef4444",
-    "agentception/6-generalization":"#a855f7",
-  };
+  // ── Phase → colour map (built dynamically from pipeline-config labels) ───
+  const PALETTE = [
+    "#3b82f6","#6366f1","#14b8a6","#22c55e",
+    "#f97316","#ef4444","#a855f7","#06b6d4","#eab308","#ec4899",
+  ];
+  const GH_BASE_URL = {{ gh_base_url | tojson }};
+  const PHASE_LABELS = {{ phase_labels | tojson }};
+  const PHASE_COLORS = Object.fromEntries(
+    PHASE_LABELS.map((lbl, i) => [lbl, PALETTE[i % PALETTE.length]])
+  );
   const DEFAULT_COLOR = "#6b7280";
+
+  // ── Build legend from phase labels ───────────────────────────────────────
+  (function buildLegend() {
+    const legend = document.getElementById("dag-legend");
+    PHASE_LABELS.forEach(function(lbl) {
+      const item = document.createElement("div");
+      item.className = "dag-legend-item";
+      const swatch = document.createElement("div");
+      swatch.className = "dag-legend-swatch";
+      swatch.style.background = PHASE_COLORS[lbl] || DEFAULT_COLOR;
+      const text = document.createElement("span");
+      text.textContent = lbl.split("/").pop() || lbl;
+      item.appendChild(swatch);
+      item.appendChild(text);
+      legend.insertBefore(item, legend.firstChild);
+    });
+  })();
   const NODE_RADIUS   = 20;
 
   // ── Raw DAG data injected by Jinja2 ─────────────────────────────────────
@@ -379,7 +363,7 @@
     nodeGroup.selectAll("g.node")
       .on("click", (_event, d) => {
         window.open(
-          `https://github.com/cgcardona/maestro/issues/${d.number}`,
+          `${GH_BASE_URL}/issues/${d.number}`,
           "_blank",
           "noopener",
         );
