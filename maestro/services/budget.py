@@ -247,14 +247,11 @@ def get_model_or_default(model: str | None) -> str:
 # Optimistic Budget Reservation
 # =============================================================================
 
-# Estimated costs per model (in cents) - conservative estimates
+# Estimated costs per model (in cents) — only approved models are listed.
+# All other models fall through to DEFAULT_ESTIMATED_COST.
 ESTIMATED_COSTS = {
-    "anthropic/claude-3.5-sonnet": 25,  # ~$0.25 per typical request
-    "anthropic/claude-3-5-sonnet-20241022": 25,
-    "openai/gpt-4o": 20,
-    "openai/gpt-4o-mini": 5,
-    "openai/o1-preview": 50,
-    "openai/o1-mini": 10,
+    "anthropic/claude-sonnet-4.6": 25,   # ~$0.25 per typical request
+    "anthropic/claude-opus-4.6": 75,     # ~$0.75 per typical request (3× sonnet)
 }
 
 DEFAULT_ESTIMATED_COST = 25  # Default estimate in cents

@@ -42,11 +42,11 @@ SEED:
        MAIN_REPO="$HOME/dev/tellurstori/{{ repo_name }}"
        git -C "$MAIN_REPO" worktree list --porcelain | grep "^worktree" | awk '{print $2}' \
          > /tmp/active_worktrees
-       gh pr list --base dev --state open --label "{{ claim_label }}" \
-         --repo {{ gh_repo }} --json number --jq '.[].number' | while read pr; do
-           grep -q "pr-$pr" /tmp/active_worktrees || \
-             gh pr edit "$pr" --repo {{ gh_repo }} --remove-label "{{ claim_label }}" 2>/dev/null || true
-         done
+       for pr in $(gh pr list --base dev --state open --label "{{ claim_label }}" \
+           --repo {{ gh_repo }} --json number --jq '.[].number' 2>/dev/null); do
+         grep -q "pr-$pr" /tmp/active_worktrees || \
+           gh pr edit "$pr" --repo {{ gh_repo }} --remove-label "{{ claim_label }}" 2>/dev/null || true
+       done
 
   3. Query open unclaimed PRs:
        gh pr list --base dev --state open --json number,title,labels \
