@@ -1,5 +1,5 @@
 # Skill Domain: D3.js Visualization
-id: d3_js
+id: d3
 display_name: "D3.js / SVG Visualization"
 description: |
   Data-driven SVG visualizations using D3.js loaded from CDN. Used for the
@@ -97,6 +97,16 @@ prompt_fragment: |
   - Accessible: nodes have `title` elements with full issue title.
   - Click target is the whole node `<g>`, not just the circle.
   - Zoom reset button always present.
+
+review_checklist: |
+  - .data() joins are keyed — no anonymous join causing O(n²) DOM thrash
+  - enter/exit/merge pattern is complete — no orphaned DOM nodes
+  - Force simulation is stopped (simulation.stop()) on component unmount
+  - SVG has viewBox — no hardcoded width/height that breaks on resize
+  - D3 CDN version matches d3@7.x reference; not mixed with older pinned version
+  - Nodes have <title> elements for accessibility
+  - Zoom reset button present; click target is the full <g> node not just the circle
+  - Graph data is inlined via Jinja2 | tojson — no extra fetch on load
 
 quality_gates:
   linter: "docker compose exec agentception mypy /app/agentception/"

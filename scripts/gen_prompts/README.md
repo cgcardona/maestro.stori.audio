@@ -54,9 +54,9 @@ scripts/gen_prompts/
       mental_model.yaml            #   systems / objects / functions / flows
     skill_domains/                 ← Layer 1: technical expertise (orthogonal to personality)
       python.yaml                  #   FastAPI, Pydantic v2, async, mypy strict
-      audio_midi.yaml              #   MIDI pipeline, GM, Storpheus, Orpheus
+      midi.yaml              #   MIDI pipeline, GM, Storpheus, Orpheus
       devops.yaml                  #   Docker Compose, containers, service reliability
-      ml_ai.yaml                   #   LLM APIs, RAG, embedding, OpenRouter
+      llm.yaml                     #   LLM APIs, RAG, embedding, OpenRouter
     archetypes/                    ← Layer 2: named bundles of atoms (inheritable)
       the_architect.yaml           #   deductive + deep_focus + systems + craftsman
       the_guardian.yaml            #   deductive + fail_loud + perfectionist + minimal
@@ -179,7 +179,7 @@ Layer 3: FIGURES        Einstein, Turing, von Neumann, Dijkstra, Feynman ...
               ↑ extends
 Layer 2: ARCHETYPES     the_architect, the_scholar, the_visionary, the_guardian ...
               ↑ composed from
-Layer 1: SKILL DOMAINS  python, audio_midi, devops, ml_ai ...
+Layer 1: SKILL DOMAINS  python, midi, devops, llm ...
               ↑ orthogonal
 Layer 0: ATOMS          epistemic_style, cognitive_rhythm, creativity_level ...
 ```

@@ -1,5 +1,5 @@
 # Skill Domain: Monaco Editor
-id: monaco_editor
+id: monaco
 display_name: "Monaco Editor (CDN)"
 description: |
   In-browser code editor (the same engine as VS Code) loaded from CDN.
@@ -128,6 +128,16 @@ prompt_fragment: |
   - Never expose `resolve_role_path` to arbitrary paths. Allowlist only.
   - Save button is disabled (greyed) when no file is loaded.
   - Test the PUT endpoint to ensure it round-trips content correctly.
+
+review_checklist: |
+  - automaticLayout: true is set — Monaco must resize with its container
+  - editor.dispose() called on component unmount; model disposed alongside editor
+  - require.config paths match the CDN URL used (monaco-editor@0.52.0)
+  - resolve_role_path validates against an allowlist — no path traversal possible
+  - Save button is disabled when no file is loaded
+  - PUT endpoint round-trips content correctly (test exists)
+  - Monaco loaded in page template only, not in base.html (it's heavy)
+  - Cmd+S / Ctrl+S keyboard shortcut wired to save
 
 quality_gates:
   linter: "docker compose exec agentception mypy /app/agentception/"

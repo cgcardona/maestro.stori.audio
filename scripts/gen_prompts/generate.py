@@ -17,7 +17,6 @@ Workflow:
 from __future__ import annotations
 
 import argparse
-import os
 import sys
 from pathlib import Path
 
@@ -26,6 +25,7 @@ from jinja2 import Environment, FileSystemLoader, StrictUndefined
 
 SCRIPT_DIR = Path(__file__).parent
 TEMPLATES_DIR = SCRIPT_DIR / "templates"
+ARCHETYPES_DIR = SCRIPT_DIR / "cognitive_archetypes"
 
 # Detect whether we're running inside Docker (/app) or on the host.
 # The maestro container bind-mounts the repo root to /app; the generator
@@ -221,6 +221,91 @@ def _sh_quote(s: str) -> str:
     return "'" + s.replace("'", "'\\''") + "'"
 
 
+def _validate_team_yaml() -> list[str]:
+    """Validate team.yaml references against actual cognitive archetype files.
+
+    Returns a list of warning/error strings. Empty list = all good.
+    """
+    team_path = SCRIPT_DIR / "team.yaml"
+    if not team_path.exists():
+        return [f"⚠️  team.yaml not found at {team_path} — skipping validation"]
+
+    team: object = yaml.safe_load(team_path.read_text())
+    if not isinstance(team, dict):
+        return ["❌ team.yaml is not a valid YAML mapping"]
+
+    figures_dir = ARCHETYPES_DIR / "figures"
+    arch_dir = ARCHETYPES_DIR / "archetypes"
+    skills_dir = ARCHETYPES_DIR / "skill_domains"
+
+    issues: list[str] = []
+
+    def _check_figure(fid: str, context: str) -> None:
+        if not (figures_dir / f"{fid}.yaml").exists() and not (arch_dir / f"{fid}.yaml").exists():
+            issues.append(f"❌ [{context}] figure/archetype '{fid}' not found in figures/ or archetypes/")
+
+    def _check_skill(sid: str, context: str) -> None:
+        path = skills_dir / f"{sid}.yaml"
+        if not path.exists():
+            issues.append(f"❌ [{context}] skill '{sid}' not found in skill_domains/")
+        else:
+            raw: object = yaml.safe_load(path.read_text())
+            if isinstance(raw, dict) and raw.get("deprecated"):
+                issues.append(f"⚠️  [{context}] skill '{sid}' is deprecated — use atomic replacements")
+
+    org = team.get("org", {})
+    if not isinstance(org, dict):
+        return ["❌ team.yaml missing 'org' key"]
+
+    # Validate c_suite
+    c_suite = org.get("c_suite", {})
+    if isinstance(c_suite, dict):
+        for role_name, role_cfg in c_suite.items():
+            if not isinstance(role_cfg, dict):
+                continue
+            for fid in role_cfg.get("figures", []):
+                _check_figure(str(fid), f"c_suite.{role_name}")
+            arch = role_cfg.get("archetype")
+            if arch:
+                _check_figure(str(arch), f"c_suite.{role_name}.archetype")
+            for sid in role_cfg.get("skills", []):
+                _check_skill(str(sid), f"c_suite.{role_name}")
+
+    # Validate vp
+    vp = org.get("vp", {})
+    if isinstance(vp, dict):
+        for role_name, role_cfg in vp.items():
+            if not isinstance(role_cfg, dict):
+                continue
+            for fid in role_cfg.get("figures", []):
+                _check_figure(str(fid), f"vp.{role_name}")
+            arch = role_cfg.get("archetype")
+            if arch:
+                _check_figure(str(arch), f"vp.{role_name}.archetype")
+            for sid in role_cfg.get("skills", []):
+                _check_skill(str(sid), f"vp.{role_name}")
+
+    # Validate leaf pools
+    for section_name in ("leaf", "reviewers"):
+        section = org.get(section_name, {})
+        if not isinstance(section, dict):
+            continue
+        for fid in section.get("figure_pool", []):
+            _check_figure(str(fid), f"{section_name}.figure_pool")
+        for arch in section.get("archetype_pool", []):
+            _check_figure(str(arch), f"{section_name}.archetype_pool")
+        for sid in section.get("skill_pool", []):
+            _check_skill(str(sid), f"{section_name}.skill_pool")
+
+        max_skills = section.get("max_skills", 3)
+        if isinstance(max_skills, int) and max_skills > 5:
+            issues.append(
+                f"⚠️  {section_name}.max_skills={max_skills} is high — consider ≤3 to avoid context bloat"
+            )
+
+    return issues
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -233,6 +318,21 @@ def main() -> None:
     config_path = SCRIPT_DIR / "config.yaml"
     if not config_path.exists():
         print(f"❌ Config not found: {config_path}", file=sys.stderr)
+        sys.exit(1)
+
+    # Validate team.yaml before rendering
+    print("── Validating team.yaml ──────────────────────────────────────────────")
+    team_issues = _validate_team_yaml()
+    has_errors = False
+    for msg in team_issues:
+        print(f"  {msg}")
+        if msg.startswith("❌"):
+            has_errors = True
+    if not team_issues:
+        print("  ✅ team.yaml valid — all referenced components exist")
+    print()
+    if has_errors:
+        print("❌ team.yaml validation failed. Fix errors before generating prompts.")
         sys.exit(1)
 
     config = yaml.safe_load(config_path.read_text())
