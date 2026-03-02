@@ -1,0 +1,49 @@
+{#  fragments/collaborator_rows.html — bare HTMX fragment: collaborator list rows.
+
+    Rendered in two contexts:
+
+    1. Full-page load: included inline by
+       musehub/pages/collaborators_settings.html inside ``#collaborator-rows``.
+
+    2. HTMX partial swap: returned directly when the handler detects
+       ``HX-Request: true``, replacing only the ``#collaborator-rows`` div.
+
+    Required context variables
+    --------------------------
+    collaborators : list[MusehubCollaborator]  — ORM rows for this repo
+    repo_id       : str                        — repo UUID (used in hx-delete URLs)
+#}
+{% from "musehub/macros/empty_state.html" import empty_state %}
+
+{% if collaborators %}
+  {% for collab in collaborators %}
+  <div class="collab-row" id="collab-{{ collab.user_id }}">
+    <div class="collab-avatar">👤</div>
+    <div class="collab-info">
+      <div class="collab-user-id">{{ collab.user_id }}</div>
+      {% if collab.invited_by %}
+      <div class="collab-meta">Invited by {{ collab.invited_by }}{% if collab.invited_at %} · {{ collab.invited_at | fmtdate }}{% endif %}</div>
+      {% elif collab.invited_at %}
+      <div class="collab-meta">Since {{ collab.invited_at | fmtdate }}</div>
+      {% endif %}
+    </div>
+    <span class="perm-badge badge-perm-{{ collab.permission }}">
+      {{ collab.permission }}{% if collab.permission == 'owner' %} 👑{% endif %}
+    </span>
+    {% if collab.permission != 'owner' %}
+    <form hx-delete="/api/v1/musehub/repos/{{ repo_id }}/collaborators/{{ collab.user_id }}"
+          hx-target="#collaborator-rows"
+          hx-swap="innerHTML"
+          hx-confirm="Remove {{ collab.user_id }} from collaborators?">
+      <button type="submit"
+              class="btn btn-ghost btn-sm"
+              style="color: var(--color-danger, #f85149); font-size: 12px; padding: 3px 10px;">
+        Remove
+      </button>
+    </form>
+    {% endif %}
+  </div>
+  {% endfor %}
+{% else %}
+  {{ empty_state("👥", "No collaborators yet", "Invite collaborators to give them access to this repository.") }}
+{% endif %}

@@ -1,0 +1,33 @@
+{# milestone_issue_rows.html — HTMX fragment: issues linked to a milestone.
+   Included by milestone_detail.html for initial SSR and returned bare for
+   HTMX issue-state tab switches (HX-Request: true).
+   Context vars: linked_issues, milestone, base_url, issue_state #}
+{% if linked_issues %}
+  {% for issue in linked_issues %}
+  <div class="issue-row">
+    <span class="issue-state-icon">{% if issue.state == 'open' %}🟢{% else %}✅{% endif %}</span>
+    <div class="issue-row-body">
+      <a href="{{ base_url }}/issues/{{ issue.number }}" class="issue-title-link">{{ issue.title }}</a>
+      <div class="issue-meta">
+        #{{ issue.number }}
+        &bull; opened {{ issue.created_at.strftime('%b %-d, %Y') }}
+        {% if issue.author %}&bull; by {{ issue.author }}{% endif %}
+        {% if issue.comment_count %}&bull; 💬 {{ issue.comment_count }}{% endif %}
+      </div>
+      {% if issue.labels %}
+      <div class="issue-labels">
+        {% for label in issue.labels %}
+        <span class="issue-label-badge">{{ label }}</span>
+        {% endfor %}
+      </div>
+      {% endif %}
+    </div>
+    <span class="badge badge-{{ issue.state }}">{{ issue.state }}</span>
+  </div>
+  {% endfor %}
+{% else %}
+  <div class="milestone-empty">
+    <p>📋 No linked issues</p>
+    <p style="font-size:13px">Issues assigned to this milestone will appear here.</p>
+  </div>
+{% endif %}
