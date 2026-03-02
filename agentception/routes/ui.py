@@ -95,17 +95,31 @@ def _issue_is_claimed(iss: dict[str, object]) -> bool:
 def _find_agent(state: PipelineState | None, agent_id: str) -> AgentNode | None:
     """Search the agent tree for an AgentNode matching ``agent_id``.
 
-    Searches root agents first, then their children (one level deep, matching
-    the current tree depth supported by the poller). Returns ``None`` when the
-    state is empty or the ID is not found.
+    Matches on ``node.id`` (the worktree basename, e.g. ``issue-732``) or on
+    the basename of ``node.worktree_path`` so that URLs generated before the
+    basename normalisation are still resolved correctly.
+
+    Searches root agents first, then their children (one level deep).
+    Returns ``None`` when the state is empty or no match is found.
     """
     if state is None:
         return None
+
+    def _matches(node: AgentNode) -> bool:
+        if node.id == agent_id:
+            return True
+        # Also match by worktree_path basename for backwards compatibility.
+        if node.worktree_path:
+            from pathlib import Path as _Path
+            if _Path(node.worktree_path).name == agent_id:
+                return True
+        return False
+
     for agent in state.agents:
-        if agent.id == agent_id:
+        if _matches(agent):
             return agent
         for child in agent.children:
-            if child.id == agent_id:
+            if _matches(child):
                 return child
     return None
 
