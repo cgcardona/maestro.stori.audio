@@ -15,10 +15,11 @@ from fastapi.templating import Jinja2Templates
 from starlette.requests import Request
 from starlette.responses import Response
 
-from agentception.models import AgentNode, PipelineState, VALID_ROLES
+from agentception.models import AgentNode, PipelineState, RoleMeta, VALID_ROLES
 from agentception.poller import get_state
 from agentception.readers.github import get_open_issues
 from agentception.readers.transcripts import read_transcript_messages
+from agentception.routes.roles import list_roles
 from agentception.telemetry import WaveSummary, aggregate_waves
 
 _HERE = Path(__file__).parent
@@ -158,6 +159,33 @@ async def telemetry_page(request: Request) -> HTMLResponse:
             "total_cost_usd": total_cost_usd,
             "total_agents": total_agents,
         },
+    )
+
+
+@router.get("/roles", response_class=HTMLResponse)
+async def roles_page(request: Request) -> HTMLResponse:
+    """Role Studio — Monaco editor for live editing of managed role and cursor files.
+
+    Renders the Role Studio UI (AC-302): a two-panel layout with a file list
+    on the left and a Monaco editor on the right. File content is loaded into
+    the editor via ``GET /api/roles/{slug}`` when a file row is clicked.
+    Save triggers ``PUT /api/roles/{slug}`` with the editor content.
+
+    On any API read error the page renders with an empty roles list and a
+    visible error banner — the editor chrome always mounts so Monaco can
+    load and the UI stays accessible.
+    """
+    roles: list[RoleMeta] = []
+    error: str | None = None
+    try:
+        roles = await list_roles()
+    except Exception as exc:  # pragma: no cover — filesystem error path
+        error = f"Could not load role file list: {exc}"
+
+    return _TEMPLATES.TemplateResponse(
+        request,
+        "roles.html",
+        {"roles": roles, "error": error},
     )
 
 
