@@ -54,8 +54,8 @@ async def find_transcript_root() -> Path | None:
         logger.warning("⚠️  cursor_projects_dir does not exist: %s", base)
         return None
 
-    # Derive expected project dir name: /Users/gabriel/dev/…/maestro
-    #   → Users-gabriel-dev-…-maestro
+    # Derive expected project dir name from repo_dir (e.g. /home/user/dev/maestro)
+    # by stripping the leading "/" and replacing "/" with "-" → home-user-dev-maestro
     repo_slug = str(settings.repo_dir).lstrip("/").replace("/", "-")
     exact = base / repo_slug / "agent-transcripts"
     if exact.exists():

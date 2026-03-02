@@ -79,6 +79,23 @@ async def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
+def main() -> None:
+    """CLI entrypoint: ``agentception`` (installed via pyproject.toml scripts).
+
+    Launches the AgentCeption dashboard with uvicorn.  Configure the host and
+    port via environment variables ``AC_HOST`` (default ``0.0.0.0``) and
+    ``AC_PORT`` (default ``7777``), or override ``agentception.app:app`` directly
+    when running under a production ASGI server.
+    """
+    import os
+
+    import uvicorn
+
+    host = os.environ.get("AC_HOST", "0.0.0.0")
+    port = int(os.environ.get("AC_PORT", "7777"))
+    uvicorn.run("agentception.app:app", host=host, port=port, reload=False)
+
+
 @app.get("/events", tags=["sse"])
 async def sse_stream(request: Request) -> EventSourceResponse:
     """Stream live ``PipelineState`` snapshots as Server-Sent Events.
