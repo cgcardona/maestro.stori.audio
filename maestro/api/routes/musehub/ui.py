@@ -2106,36 +2106,35 @@ async def branches_page(
     request: Request,
     owner: str,
     repo_slug: str,
-    format: str | None = Query(None, description="Force response format: 'json' or omit for HTML"),
     db: AsyncSession = Depends(get_db),
 ) -> StarletteResponse:
-    """Render the branch list page or return structured branch data as JSON.
+    """Render the branch list page (SSR).
 
-    HTML (default): lists all branches with HEAD commit info, ahead/behind counts,
-    musical divergence scores (placeholder), compare links, and New Pull Request buttons.
-    JSON (``Accept: application/json`` or ``?format=json``): returns
-    ``BranchDetailListResponse`` with per-branch ahead/behind counts.
-
-    Content negotiation — one URL, two audiences: musicians get rich HTML,
-    agents get structured JSON to programmatically inspect branch state.
+    Lists all branches with HEAD commit info, ahead/behind counts,
+    musical divergence scores (placeholder), and compare links rendered
+    server-side.  HTMX partial requests (``HX-Request: true``) return only
+    the ``fragments/branch_rows.html`` fragment for in-place swap.
     """
     repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
     branch_data: BranchDetailListResponse = (
         await musehub_repository.list_branches_with_detail(db, repo_id)
     )
-    return await negotiate_response(
-        request=request,
-        template_name="musehub/pages/branches.html",
-        context={
-            "owner": owner,
-            "repo_slug": repo_slug,
-            "repo_id": repo_id,
-            "base_url": base_url,
-            "current_page": "branches",
-        },
-        templates=templates,
-        json_data=branch_data,
-        format_param=format,
+    default_branch = next((b for b in branch_data.branches if b.is_default), None)
+    ctx: dict[str, object] = {
+        "owner": owner,
+        "repo_slug": repo_slug,
+        "repo_id": repo_id,
+        "base_url": base_url,
+        "current_page": "code",
+        "branches": branch_data.branches,
+        "default_branch": default_branch,
+    }
+    return await htmx_fragment_or_full(
+        request,
+        templates,
+        ctx,
+        full_template="musehub/pages/branches.html",
+        fragment_template="musehub/fragments/branch_rows.html",
     )
 
 
@@ -2148,20 +2147,16 @@ async def tags_page(
     owner: str,
     repo_slug: str,
     namespace: str | None = Query(None, description="Filter tags by namespace prefix"),
-    format: str | None = Query(None, description="Force response format: 'json' or omit for HTML"),
     db: AsyncSession = Depends(get_db),
 ) -> StarletteResponse:
-    """Render the tag browser page or return structured tag data as JSON.
+    """Render the tag browser page (SSR).
 
     Tags are sourced from repo releases.  The tag browser groups tags by their
     namespace prefix (the text before ``:``, e.g. ``emotion``, ``genre``,
     ``instrument``) — tags without a colon fall into the ``version`` namespace.
 
-    HTML (default): filterable list of tags grouped by namespace with commit info.
-    JSON (``Accept: application/json`` or ``?format=json``): returns
-    ``TagListResponse`` with namespace grouping and optional ``?namespace`` filtering.
-
-    Click a tag to navigate to the commit detail page for that release's commit.
+    All tag data is rendered server-side; no client-side API fetch is required.
+    The optional ``?namespace`` query parameter filters to a single namespace.
     """
     repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
     releases = await musehub_releases.list_releases(db, repo_id)
@@ -2189,22 +2184,22 @@ async def tags_page(
         filtered_tags = all_tags
 
     namespaces: list[str] = sorted({t.namespace for t in all_tags})
-    tag_data = TagListResponse(tags=filtered_tags, namespaces=namespaces)
-
-    return await negotiate_response(
-        request=request,
-        template_name="musehub/pages/tags.html",
-        context={
-            "owner": owner,
-            "repo_slug": repo_slug,
-            "repo_id": repo_id,
-            "base_url": base_url,
-            "current_page": "tags",
-            "active_namespace": namespace or "",
-        },
-        templates=templates,
-        json_data=tag_data,
-        format_param=format,
+    ctx: dict[str, object] = {
+        "owner": owner,
+        "repo_slug": repo_slug,
+        "repo_id": repo_id,
+        "base_url": base_url,
+        "current_page": "releases",
+        "tags": filtered_tags,
+        "all_tags": all_tags,
+        "namespaces": namespaces,
+        "active_namespace": namespace or "",
+    }
+    return await htmx_fragment_or_full(
+        request,
+        templates,
+        ctx,
+        full_template="musehub/pages/tags.html",
     )
 
 
