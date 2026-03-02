@@ -22,7 +22,7 @@ from agentception.intelligence.guards import PRViolation, detect_out_of_order_pr
 from agentception.models import AgentNode, PipelineConfig, PipelineState, SpawnRequest, SpawnResult, SwitchProjectRequest  # noqa: E501
 from agentception.poller import get_state
 from agentception.readers.active_label_override import clear_pin, get_pin, set_pin
-from agentception.readers.github import add_wip_label, close_pr, get_active_label, get_issue, get_open_issues
+from agentception.readers.github import add_wip_label, close_pr, get_active_label, get_issue, get_issue_body, get_open_issues
 from agentception.readers.pipeline_config import read_pipeline_config, switch_project, write_pipeline_config
 from agentception.readers.transcripts import read_transcript_messages
 from agentception.routes.ui import _find_agent
@@ -264,36 +264,107 @@ async def switch_project_endpoint(body: SwitchProjectRequest) -> PipelineConfig:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
+def _resolve_cognitive_arch(issue_body: str, role: str) -> str:
+    """Derive COGNITIVE_ARCH string from issue body and role.
+
+    Format: ``figure:skill1:skill2``.  Mirrors the logic in
+    ``parallel-issue-to-pr.md`` so agents spawned via the control plane
+    receive the same architectural context as batch-spawned agents.
+    """
+    body = issue_body.lower()
+
+    if any(k in body for k in ("d3.js", "force-directed", "d3.force", "d3.select")):
+        skills = "d3:javascript"
+    elif any(k in body for k in ("monaco", "vs/loader", "editor.*cdn")):
+        skills = "monaco"
+    elif any(k in body for k in ("htmx", "hx-", "sse-connect", "hx-ext")):
+        skills = "htmx"
+        if any(k in body for k in ("jinja2", ".html", "templateresponse", "extends.*html")):
+            skills += ":jinja2"
+        if any(k in body for k in ("alpine", "x-data", "x-show")):
+            skills += ":alpine"
+    elif any(k in body for k in ("jinja2", "templateresponse", "extends.*html")):
+        skills = "jinja2"
+    elif any(k in body for k in ("postgres", "alembic", "migration", "sqlalchemy")):
+        skills = "postgresql:python"
+    elif any(k in body for k in ("dockerfile", "from python", "compose.*service")):
+        skills = "devops"
+    elif any(k in body for k in ("midi", "storpheus", "gm.program", "tmidix")):
+        skills = "midi:python"
+    elif any(k in body for k in ("llm", "embedding", "rag", "openrouter", "claude")):
+        skills = "llm:python"
+    elif any(k in body for k in ("apirouter", "fastapi", "depends", "response_model")):
+        skills = "fastapi:python"
+    else:
+        skills = "python"
+
+    if any(k in body for k in ("migration", "alembic", "schema", "db.model", "postgres")):
+        figure = "dijkstra"
+    elif any(k in body for k in ("sse", "broadcast", "async", "asyncio", "fanout")):
+        figure = "shannon"
+    elif any(k in body for k in ("overview", "dashboard", "pipeline", "tree")):
+        figure = "lovelace"
+    elif any(k in body for k in ("api", "endpoint", "route", "contract")):
+        figure = "turing"
+    else:
+        figure = "hopper"
+
+    return f"{figure}:{skills}"
+
+
 def _build_agent_task(
     issue_number: int,
     title: str,
     role: str,
     worktree: Path,
+    host_worktree: Path,
     branch: str,
+    phase_label: str = "",
+    depends_on: str = "none",
+    cognitive_arch: str = "hopper:python",
+    wave_id: str = "manual",
 ) -> str:
     """Build the raw text content of a ``.agent-task`` file.
 
-    The format mirrors what the parallel-batch coordinator writes so that
-    agents spawned via the control plane behave identically to batch-spawned
-    agents.  ``BRANCH`` is included so the engineer kickoff prompt can derive
-    the feature branch name without re-computing it.
+    The format mirrors what the ``parallel-issue-to-pr.md`` coordinator
+    script generates so that agents spawned via the control plane receive
+    the same context as batch-spawned agents.
+
+    ``worktree`` is the container-side path (written to the file for Docker
+    commands).  ``host_worktree`` is the host-side path embedded as
+    ``HOST_WORKTREE`` so the Cursor Task launcher can use the correct path
+    when opening the worktree as a project root.
     """
     now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     repo = settings.gh_repo
-    role_file = settings.repo_dir / ".cursor" / "roles" / f"{role}.md"
+    # ROLE_FILE is metadata only — the kickoff prompt embeds all role content
+    # inline.  The path uses the host repo dir so it is human-readable even
+    # though agents are instructed not to read it from disk.
+    role_file = settings.host_worktrees_dir.parent.parent / "dev" / "tellurstori" / "maestro" / ".cursor" / "roles" / f"{role}.md"
+    # Simpler: derive from host_worktree's ancestor (host repo root).
+    # host_worktrees_dir is e.g. ~/.cursor/worktrees/maestro
+    # host repo is ~/dev/tellurstori/maestro — but that's not in settings.
+    # Use a known-good path from settings.repo_dir (container: /repo → host unknown here).
+    # The agent is told to ignore ROLE_FILE; use a placeholder that's self-documenting.
+    role_file_display = f"<host-repo>/.cursor/roles/{role}.md"
     return (
         f"WORKFLOW=issue-to-pr\n"
         f"GH_REPO={repo}\n"
         f"ISSUE_NUMBER={issue_number}\n"
         f"ISSUE_TITLE={title}\n"
         f"ISSUE_URL=https://github.com/{repo}/issues/{issue_number}\n"
+        f"PHASE_LABEL={phase_label}\n"
+        f"DEPENDS_ON={depends_on}\n"
         f"BRANCH={branch}\n"
         f"ROLE={role}\n"
-        f"ROLE_FILE={role_file}\n"
+        f"ROLE_FILE={role_file_display}\n"
         f"WORKTREE={worktree}\n"
+        f"HOST_WORKTREE={host_worktree}\n"
         f"BASE=dev\n"
         f"CLOSES_ISSUES={issue_number}\n"
-        f"BATCH_ID=manual\n"
+        f"BATCH_ID={wave_id}\n"
+        f"WAVE={wave_id}\n"
+        f"COGNITIVE_ARCH={cognitive_arch}\n"
         f"CREATED_AT={now}\n"
         f"SPAWN_MODE=chain\n"
         f"LINKED_PR=none\n"
@@ -469,12 +540,41 @@ async def spawn_agent(body: SpawnRequest) -> SpawnResult:
     # ── 5. Write .agent-task ──────────────────────────────────────────────────
     title_raw = issue.get("title", "")
     title: str = title_raw if isinstance(title_raw, str) else str(title_raw)
+
+    # Fetch issue body for DEPENDS_ON extraction and COGNITIVE_ARCH derivation.
+    try:
+        issue_body = await get_issue_body(issue_number)
+    except Exception:
+        issue_body = ""
+
+    # Extract "Depends on #NNN" patterns — comma-separated, or "none" if absent.
+    import re as _re
+    dep_matches = _re.findall(r"[Dd]epends\s+on\s+#(\d+)", issue_body)
+    depends_on = ",".join(dep_matches) if dep_matches else "none"
+
+    # Derive COGNITIVE_ARCH from issue body so the agent gets the right persona.
+    cognitive_arch = _resolve_cognitive_arch(issue_body, body.role)
+
+    # Get active phase label for provenance — best-effort; not fatal if absent.
+    try:
+        phase_label = await get_active_label() or ""
+    except Exception:
+        phase_label = ""
+
+    # Compute the host-side worktree path for display to the user.
+    # host_worktrees_dir is ~/.cursor/worktrees/maestro (set via AC_HOST_WORKTREES_DIR).
+    host_worktree_path = settings.host_worktrees_dir / f"issue-{issue_number}"
+
     agent_task_content = _build_agent_task(
         issue_number=issue_number,
         title=title,
         role=body.role,
         worktree=worktree_path,
+        host_worktree=host_worktree_path,
         branch=branch,
+        phase_label=phase_label,
+        depends_on=depends_on,
+        cognitive_arch=cognitive_arch,
     )
     task_file = worktree_path / ".agent-task"
     task_file.write_text(agent_task_content, encoding="utf-8")
@@ -484,6 +584,7 @@ async def spawn_agent(body: SpawnRequest) -> SpawnResult:
     return SpawnResult(
         spawned=issue_number,
         worktree=str(worktree_path),
+        host_worktree=str(host_worktree_path),
         branch=branch,
         agent_task=agent_task_content,
     )

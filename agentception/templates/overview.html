@@ -418,7 +418,7 @@
             <template x-for="s in waveResult.spawned" :key="s.spawned">
               <div class="wave-worktree-row">
                 <span class="wave-issue-num">#<span x-text="s.spawned"></span></span>
-                <code class="wave-worktree-path" x-text="s.worktree"></code>
+                <code class="wave-worktree-path" x-text="s.host_worktree"></code>
               </div>
             </template>
             <template x-if="waveResult.skipped.length > 0">
