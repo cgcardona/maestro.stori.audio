@@ -236,8 +236,16 @@ async def agents_list(request: Request) -> HTMLResponse:
     Live agents come from the in-memory poller state (real-time, filesystem
     backed).  Postgres ``ac_agent_runs`` provides the historical run list so
     completed agents are visible even after their worktrees are removed.
+
+    Data enrichments served to the template:
+    - ``stats``         — KPI counts (total, active, done, success_rate, avg_duration_s).
+    - ``batches``       — run history grouped by batch_id, newest batch first.
+    - ``all_roles``     — unique roles seen in history (for filter dropdown).
+    - ``all_statuses``  — unique statuses seen (for filter chips).
     """
+    import datetime
     from agentception.db.queries import get_agent_run_history
+    from agentception.routes.roles import resolve_cognitive_arch
 
     state = get_state() or PipelineState.empty()
 
@@ -247,17 +255,110 @@ async def agents_list(request: Request) -> HTMLResponse:
         all_agents.append(agent)
         all_agents.extend(agent.children)
 
-    # Enrich with DB run history — recent completed runs, newest first.
+    # Enrich each live agent with persona data for the card display.
+    agents_enriched: list[dict[str, object]] = []
+    for ag in all_agents:
+        persona = resolve_cognitive_arch(ag.cognitive_arch)
+        agents_enriched.append({
+            "node": ag,
+            "persona": persona,
+        })
+
+    # Fetch full history from Postgres.
     run_history: list[dict[str, object]] = []
     try:
-        run_history = await get_agent_run_history(limit=50)
+        run_history = await get_agent_run_history(limit=200)
     except Exception as exc:
         logger.debug("DB agent run history fetch skipped: %s", exc)
+
+    # ── Compute duration + enrich each history row ────────────────────────
+    def _parse_iso(s: object) -> datetime.datetime | None:
+        if not isinstance(s, str):
+            return None
+        try:
+            return datetime.datetime.fromisoformat(s.rstrip("Z"))
+        except ValueError:
+            return None
+
+    def _fmt_duration(seconds: float) -> str:
+        if seconds < 60:
+            return f"{int(seconds)}s"
+        if seconds < 3600:
+            return f"{int(seconds // 60)}m {int(seconds % 60)}s"
+        h = int(seconds // 3600)
+        m = int((seconds % 3600) // 60)
+        return f"{h}h {m}m"
+
+    enriched_history: list[dict[str, object]] = []
+    total_duration_s = 0.0
+    completed_count = 0
+    for run in run_history:
+        spawned = _parse_iso(run.get("spawned_at"))
+        completed = _parse_iso(run.get("completed_at")) or _parse_iso(run.get("last_activity_at"))
+        duration_s: float | None = None
+        duration_str = "—"
+        if spawned and completed and completed > spawned:
+            duration_s = (completed - spawned).total_seconds()
+            duration_str = _fmt_duration(duration_s)
+            if run.get("status") == "done":
+                total_duration_s += duration_s
+                completed_count += 1
+
+        enriched_history.append({
+            **run,  # type: ignore[arg-type]
+            "duration_s": duration_s,
+            "duration_str": duration_str,
+            "spawned_fmt": str(run.get("spawned_at", ""))[:16].replace("T", " "),
+            "completed_fmt": str(run.get("completed_at", ""))[:16].replace("T", " ") if run.get("completed_at") else "—",
+        })
+
+    # ── Group history by batch_id, newest batch first ─────────────────────
+    batches: list[dict[str, object]] = []
+    seen_batches: dict[str, dict[str, object]] = {}
+    for run in enriched_history:
+        bid = str(run.get("batch_id") or "ungrouped")
+        if bid not in seen_batches:
+            batch_entry: dict[str, object] = {
+                "batch_id": bid,
+                "runs": [],
+                "spawned_at": run.get("spawned_at"),
+                "spawned_fmt": run.get("spawned_fmt"),
+            }
+            seen_batches[bid] = batch_entry
+            batches.append(batch_entry)
+        batch_runs = seen_batches[bid]["runs"]
+        assert isinstance(batch_runs, list)
+        batch_runs.append(run)
+
+    # ── Aggregate KPI stats ───────────────────────────────────────────────
+    total = len(enriched_history)
+    done_count = sum(1 for r in enriched_history if r.get("status") == "done")
+    success_rate = round(done_count / total * 100) if total else 0
+    avg_duration_str = _fmt_duration(total_duration_s / completed_count) if completed_count else "—"
+
+    stats = {
+        "total": total,
+        "active": len(all_agents),
+        "done": done_count,
+        "success_rate": success_rate,
+        "avg_duration": avg_duration_str,
+    }
+
+    all_roles = sorted({str(r.get("role") or "") for r in enriched_history if r.get("role")})
+    all_statuses = sorted({str(r.get("status") or "") for r in enriched_history if r.get("status")})
 
     return _TEMPLATES.TemplateResponse(
         request,
         "agents.html",
-        {"agents": all_agents, "state": state, "run_history": run_history},
+        {
+            "agents": agents_enriched,
+            "state": state,
+            "batches": batches,
+            "stats": stats,
+            "all_roles": all_roles,
+            "all_statuses": all_statuses,
+            "run_count": total,
+        },
     )
 
 
