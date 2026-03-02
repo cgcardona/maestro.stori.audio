@@ -19,6 +19,7 @@ from agentception.poller import get_state
 from agentception.readers.github import add_wip_label, get_issue
 from agentception.readers.transcripts import read_transcript_messages
 from agentception.routes.ui import _find_agent
+from agentception.telemetry import WaveSummary, aggregate_waves
 
 logger = logging.getLogger(__name__)
 
@@ -59,6 +60,18 @@ async def control_status() -> dict[str, bool]:
     ``{"paused": false}`` otherwise.
     """
     return {"paused": _SENTINEL.exists()}
+
+
+@router.get("/telemetry/waves", tags=["telemetry"])
+async def waves_api() -> list[WaveSummary]:
+    """Return a list of WaveSummary objects, one per unique BATCH_ID.
+
+    Scans all active ``.agent-task`` files in the worktrees directory, groups
+    them by their ``BATCH_ID`` field, and computes timing from file mtimes.
+    Returns an empty list when no worktrees are present or none carry a
+    ``BATCH_ID``.  Results are sorted most-recent-first by ``started_at``.
+    """
+    return await aggregate_waves()
 
 
 @router.get("/pipeline")
