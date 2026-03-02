@@ -271,3 +271,41 @@ class RoleCommitResponse(BaseModel):
     slug: str
     commit_sha: str
     message: str
+
+
+class RoleVersionEntry(BaseModel):
+    """A single entry in a role's version history (AC-503).
+
+    Records the git SHA, human-readable version label, and UNIX timestamp of
+    one committed change to the role file.  Entries are ordered chronologically
+    (oldest first) inside ``RoleVersionInfo.history``.
+    """
+
+    sha: str
+    label: str
+    timestamp: int
+
+
+class RoleVersionInfo(BaseModel):
+    """Version tracking data for a single role slug (AC-503).
+
+    ``current`` is the label of the most recently recorded version.  ``history``
+    is the chronologically ordered list of all version entries (oldest first).
+    An empty ``history`` means the slug has never been committed through the
+    Role Studio commit endpoint.
+    """
+
+    current: str
+    history: list[RoleVersionEntry]
+
+
+class RoleVersionsResponse(BaseModel):
+    """Response for ``GET /api/roles/{slug}/versions`` (AC-503).
+
+    Returns structured version history for a single role slug so the Role
+    Studio UI can display a timeline of changes and link each version to its
+    git commit SHA.
+    """
+
+    slug: str
+    versions: RoleVersionInfo
