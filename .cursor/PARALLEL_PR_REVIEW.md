@@ -381,6 +381,7 @@ STEP 0 — READ YOUR TASK FILE:
   Post an identity comment on the PR immediately so the audit trail is visible from the start:
     REPO=$(git worktree list | head -1 | awk '{print $1}')
     VP_FINGERPRINT=$(grep "^VP_FINGERPRINT=" .agent-task | cut -d= -f2)
+    REVIEW_START=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
     REVIEW_FINGERPRINT=$(python3 "$REPO/scripts/gen_prompts/resolve_arch.py" "${COGNITIVE_ARCH:-unset}" \
       --fingerprint \
       --role "${ROLE:-pr-reviewer}" \
@@ -388,7 +389,25 @@ STEP 0 — READ YOUR TASK FILE:
       --batch "${BATCH_ID:-none}" \
       --wave "${WAVE:-unset}" \
       --vp "${VP_FINGERPRINT:-unset}" \
-      --started-at "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" 2>/dev/null)
+      --started-at "$REVIEW_START" 2>/dev/null)
+    # Fallback: if resolve_arch.py is unavailable or returned nothing, build the table in shell.
+    if [ -z "$REVIEW_FINGERPRINT" ]; then
+      REVIEW_FINGERPRINT="<details>
+<summary>🤖 Agent Fingerprint</summary>
+
+| | |
+|---|---|
+| **Architecture** | \`${COGNITIVE_ARCH:-unset}\` |
+| **Skills** | unknown |
+| **Role** | \`${ROLE:-pr-reviewer}\` |
+| **Session** | \`$AGENT_SESSION\` |
+| **Batch (VP)** | \`${BATCH_ID:-none}\` |
+| **Wave (CTO)** | \`${WAVE:-unset}\` |
+| **VP** | \`${VP_FINGERPRINT:-unset}\` |
+| **Started at** | \`$REVIEW_START\` |
+
+</details>"
+    fi
     gh pr comment "$N" --repo "$GH_REPO" --body "🔍 **Review started**
 
 $REVIEW_FINGERPRINT" 2>/dev/null || true

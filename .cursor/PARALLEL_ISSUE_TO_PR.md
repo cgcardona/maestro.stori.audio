@@ -555,6 +555,24 @@ STEP 2 — CHECK CANONICAL STATE BEFORE DOING ANY WORK:
     --batch "${BATCH_ID:-none}" \
     --wave "${WAVE:-unset}" \
     --vp "${VP_FINGERPRINT:-unset}" 2>/dev/null)
+  # Fallback: if resolve_arch.py is unavailable or returned nothing, build the table in shell.
+  # This ensures a consistent <details> table appears even when Python/PyYAML is absent.
+  if [ -z "$CLAIM_FINGERPRINT" ]; then
+    CLAIM_FINGERPRINT="<details>
+<summary>🤖 Agent Fingerprint</summary>
+
+| | |
+|---|---|
+| **Architecture** | \`${COGNITIVE_ARCH:-unset}\` |
+| **Skills** | unknown |
+| **Role** | \`${ROLE:-python-developer}\` |
+| **Session** | \`$AGENT_SESSION\` |
+| **Batch (VP)** | \`${BATCH_ID:-none}\` |
+| **Wave (CTO)** | \`${WAVE:-unset}\` |
+| **VP** | \`${VP_FINGERPRINT:-unset}\` |
+
+</details>"
+  fi
   gh issue comment <N> --repo "$GH_REPO" \
     --body "🔖 **Claimed by agent**
 
