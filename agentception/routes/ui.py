@@ -14,8 +14,9 @@ from fastapi.templating import Jinja2Templates
 from starlette.requests import Request
 from starlette.responses import Response
 
-from agentception.models import AgentNode, PipelineState
+from agentception.models import AgentNode, PipelineState, VALID_ROLES
 from agentception.poller import get_state
+from agentception.readers.github import get_open_issues
 from agentception.readers.transcripts import read_transcript_messages
 
 _HERE = Path(__file__).parent
@@ -25,6 +26,25 @@ _TEMPLATES.env.filters["basename"] = os.path.basename
 _TEMPLATES.env.filters["dirname"] = os.path.dirname
 
 router = APIRouter(tags=["ui"])
+
+
+def _issue_is_claimed(iss: dict[str, object]) -> bool:
+    """Return True when an issue carries the ``agent:wip`` label.
+
+    Handles both list-of-strings and list-of-label-objects shapes so the
+    helper works correctly regardless of which GitHub reader format is used.
+    """
+    raw = iss.get("labels")
+    if not isinstance(raw, list):
+        return False
+    for lbl in raw:
+        if isinstance(lbl, str) and lbl == "agent:wip":
+            return True
+        if isinstance(lbl, dict):
+            name = lbl.get("name")
+            if name == "agent:wip":
+                return True
+    return False
 
 
 def _find_agent(state: PipelineState | None, agent_id: str) -> AgentNode | None:
@@ -80,4 +100,36 @@ async def agent_detail(request: Request, agent_id: str) -> Response:
         request,
         "agent.html",
         {"node": node, "agent_id": agent_id, "messages": messages},
+    )
+
+
+@router.get("/control/spawn", response_class=HTMLResponse)
+async def spawn_form(request: Request) -> HTMLResponse:
+    """Issue picker form for manually spawning a new engineer agent.
+
+    Fetches all open, unclaimed issues (those without ``agent:wip``) from
+    GitHub and renders a form that posts to ``POST /api/control/spawn``.
+    On any GitHub read error the page renders with an empty issue list and
+    an error banner — it never raises HTTP 500 so the controls page stays
+    accessible even when GitHub is unreachable.
+    """
+    error: str | None = None
+    issues: list[dict[str, object]] = []
+    try:
+        all_open = await get_open_issues()
+        issues = [
+            iss for iss in all_open
+            if not _issue_is_claimed(iss)
+        ]
+    except Exception as exc:  # pragma: no cover — network failure path
+        error = f"Could not load issues from GitHub: {exc}"
+
+    return _TEMPLATES.TemplateResponse(
+        request,
+        "spawn.html",
+        {
+            "issues": issues,
+            "roles": sorted(VALID_ROLES),
+            "error": error,
+        },
     )
