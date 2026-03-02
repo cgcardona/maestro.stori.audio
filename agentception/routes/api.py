@@ -19,7 +19,7 @@ from agentception.poller import get_state
 from agentception.readers.github import add_wip_label, get_issue
 from agentception.readers.transcripts import read_transcript_messages
 from agentception.routes.ui import _find_agent
-from agentception.telemetry import WaveSummary, aggregate_waves
+from agentception.telemetry import WaveSummary, aggregate_waves, estimate_cost
 
 logger = logging.getLogger(__name__)
 
@@ -72,6 +72,27 @@ async def waves_api() -> list[WaveSummary]:
     ``BATCH_ID``.  Results are sorted most-recent-first by ``started_at``.
     """
     return await aggregate_waves()
+
+
+@router.get("/telemetry/cost", tags=["telemetry"])
+async def total_cost_api() -> dict[str, float | int]:
+    """Return the aggregate token and cost estimate across all historical waves.
+
+    Sums ``estimated_tokens`` and ``estimated_cost_usd`` from every wave
+    returned by ``aggregate_waves()``.  The result is a stable summary
+    useful for dashboards and budget tracking without iterating wave data
+    on the client side.
+
+    Returns ``{"total_tokens": int, "total_cost_usd": float, "wave_count": int}``.
+    """
+    waves = await aggregate_waves()
+    total_tokens = sum(w.estimated_tokens for w in waves)
+    total_cost_usd = round(sum(w.estimated_cost_usd for w in waves), 4)
+    return {
+        "total_tokens": total_tokens,
+        "total_cost_usd": total_cost_usd,
+        "wave_count": len(waves),
+    }
 
 
 @router.get("/pipeline")

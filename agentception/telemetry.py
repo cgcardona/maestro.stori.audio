@@ -22,10 +22,35 @@ from agentception.readers.worktrees import list_active_worktrees
 
 logger = logging.getLogger(__name__)
 
-# Placeholder token / cost constants — refined once real usage data is available.
-# These are intentionally conservative estimates based on typical Sonnet runs.
-_TOKENS_PER_AGENT = 80_000
-_COST_PER_TOKEN_USD = 0.000_003  # ~$3 per 1M input tokens (Sonnet 3.5 blended rate)
+# Claude Sonnet 4.6 pricing (per million tokens, as of 2026).
+# Exported so tests and the API layer can reference them without duplication.
+SONNET_INPUT_PER_M: float = 3.0
+SONNET_OUTPUT_PER_M: float = 15.0
+
+# Conservative proxy: transcripts carry no real token counts, so we estimate
+# from message volume.  40 % of traffic is treated as input (prompts/context),
+# 60 % as output (model completions).
+AVG_TOKENS_PER_MSG: int = 800
+AVG_INPUT_RATIO: float = 0.4
+
+
+def estimate_cost(message_count: int) -> tuple[int, float]:
+    """Return ``(estimated_tokens, estimated_cost_usd)`` for a given message count.
+
+    Uses ``AVG_TOKENS_PER_MSG`` as a per-message proxy and Claude Sonnet 4.6
+    pricing constants.  The input/output split follows ``AVG_INPUT_RATIO``.
+
+    Returns ``(0, 0.0)`` when ``message_count`` is zero so callers can treat
+    the zero case uniformly without special-casing.
+    """
+    tokens = message_count * AVG_TOKENS_PER_MSG
+    input_tokens = int(tokens * AVG_INPUT_RATIO)
+    output_tokens = tokens - input_tokens
+    cost = (
+        input_tokens / 1_000_000 * SONNET_INPUT_PER_M
+        + output_tokens / 1_000_000 * SONNET_OUTPUT_PER_M
+    )
+    return tokens, round(cost, 4)
 
 
 class WaveSummary(BaseModel):
@@ -167,12 +192,14 @@ def _build_wave_summaries(
         started_at = min(mtimes) if mtimes else 0.0
         ended_at = None if any_still_active else (max(mtimes) if mtimes else None)
 
-        agent_count = len(members)
-        estimated_tokens = agent_count * _TOKENS_PER_AGENT
-        estimated_cost_usd = estimated_tokens * _COST_PER_TOKEN_USD
-
         # Build minimal AgentNode stubs from TaskFile data.
         agents = [_task_file_to_agent_node(tf) for tf in members]
+
+        # Derive cost from total message count across all agents in this wave.
+        # message_count defaults to 0 until the poller enriches agents from
+        # transcript data; the estimate grows as transcripts are read.
+        total_message_count = sum(a.message_count for a in agents)
+        estimated_tokens, estimated_cost_usd = estimate_cost(total_message_count)
 
         summaries.append(
             WaveSummary(
