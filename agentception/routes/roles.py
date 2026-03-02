@@ -341,6 +341,124 @@ async def get_atoms() -> AtomsResponse:
     return AtomsResponse(atoms=atoms)
 
 
+# ---------------------------------------------------------------------------
+# Cognitive architecture resolver — used by agent detail pages
+# ---------------------------------------------------------------------------
+
+# Archetype-to-emoji mapping for visual personality display.
+_ARCHETYPE_EMOJI: dict[str, str] = {
+    "the_visionary": "🔮",
+    "the_architect": "🏛️",
+    "the_hacker": "⚡",
+    "the_guardian": "🛡️",
+    "the_scholar": "📚",
+    "the_mentor": "🧑‍🏫",
+    "the_operator": "⚙️",
+    "the_pragmatist": "🔧",
+}
+
+# Atom dimension labels for display.
+_ATOM_LABELS: dict[str, str] = {
+    "epistemic_style": "Epistemic Style",
+    "creativity_level": "Creativity",
+    "quality_bar": "Quality Bar",
+    "scope_instinct": "Scope Instinct",
+    "collaboration_posture": "Collaboration",
+    "communication_style": "Communication",
+    "cognitive_rhythm": "Cognitive Rhythm",
+    "mental_model": "Mental Model",
+    "uncertainty_handling": "Uncertainty",
+    "error_posture": "Error Posture",
+}
+
+
+def resolve_cognitive_arch(cognitive_arch_str: str | None) -> dict[str, object]:
+    """Parse a COGNITIVE_ARCH string and return a rich display dict.
+
+    The string format is ``figure_id:skill1:skill2`` where the first token
+    is an optional figure ID and subsequent tokens are skill domain IDs.
+
+    Returns a dict with:
+    - ``raw``: the original string
+    - ``figure_id``: first token (or None if only skills)
+    - ``skill_domains``: list of skill domain IDs
+    - ``display_name``: human-readable name from the figure YAML (or figure_id)
+    - ``archetype``: the archetype the figure extends (or None)
+    - ``archetype_emoji``: emoji for the archetype
+    - ``description``: full description from the figure YAML (or "")
+    - ``overrides``: dict of atom dimension overrides
+    - ``atom_labels``: dict mapping dimension key → human label
+    - ``prompt_prefix``: first 300 chars of the prompt injection prefix
+    - ``is_named_figure``: True when a figure YAML was resolved
+    """
+    if not cognitive_arch_str:
+        return _empty_arch()
+
+    parts = [p.strip() for p in cognitive_arch_str.split(":") if p.strip()]
+    if not parts:
+        return _empty_arch()
+
+    # First part might be a figure ID or a skill domain.  We disambiguate by
+    # checking whether a figure YAML exists for it.
+    figures_dir = _ARCHETYPES_DIR / "figures"
+    first = parts[0]
+    figure_yaml = figures_dir / f"{first}.yaml"
+    skill_parts = parts[1:] if figure_yaml.exists() else parts
+    figure_id = first if figure_yaml.exists() else None
+
+    result: dict[str, object] = {
+        "raw": cognitive_arch_str,
+        "figure_id": figure_id,
+        "skill_domains": skill_parts,
+        "display_name": figure_id or "Custom",
+        "archetype": None,
+        "archetype_emoji": "🤖",
+        "description": "",
+        "overrides": {},
+        "atom_labels": _ATOM_LABELS,
+        "prompt_prefix": "",
+        "is_named_figure": False,
+    }
+
+    if figure_id and figure_yaml.exists():
+        try:
+            raw = yaml.safe_load(figure_yaml.read_text(encoding="utf-8"))
+            if isinstance(raw, dict):
+                archetype = str(raw.get("extends", ""))
+                injection = raw.get("prompt_injection", {})
+                prefix = str(injection.get("prefix", "")) if isinstance(injection, dict) else ""
+                overrides_raw = raw.get("overrides", {})
+                overrides = {str(k): str(v) for k, v in overrides_raw.items()} if isinstance(overrides_raw, dict) else {}
+
+                result["display_name"] = str(raw.get("display_name", figure_id))
+                result["archetype"] = archetype
+                result["archetype_emoji"] = _ARCHETYPE_EMOJI.get(archetype, "🤖")
+                result["description"] = str(raw.get("description", "")).strip()
+                result["overrides"] = overrides
+                result["prompt_prefix"] = prefix.strip()[:600]
+                result["is_named_figure"] = True
+        except Exception:
+            logger.warning("⚠️ Failed to load figure YAML for: %s", figure_id)
+
+    return result
+
+
+def _empty_arch() -> dict[str, object]:
+    return {
+        "raw": None,
+        "figure_id": None,
+        "skill_domains": [],
+        "display_name": "Unknown",
+        "archetype": None,
+        "archetype_emoji": "🤖",
+        "description": "",
+        "overrides": {},
+        "atom_labels": _ATOM_LABELS,
+        "prompt_prefix": "",
+        "is_named_figure": False,
+    }
+
+
 @router.get("/{slug}", summary="Get content and metadata for a single role file")
 async def get_role(slug: str) -> RoleContent:
     """Return the full file content and metadata for a managed slug.

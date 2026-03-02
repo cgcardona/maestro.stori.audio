@@ -1,0 +1,123 @@
+{% extends "base.html" %}
+
+{% block title %}
+  AgentCeption — Cognitive Architecture: {{ persona.display_name }}
+{% endblock %}
+
+{% block content %}
+
+{# ── Breadcrumb ─────────────────────────────────────────────────────────── #}
+<nav class="breadcrumb" aria-label="Breadcrumb">
+  <a href="/">← Overview</a>
+  <span class="breadcrumb-sep">/</span>
+  <a href="/roles">Cognitive Architecture</a>
+  <span class="breadcrumb-sep">/</span>
+  <span class="breadcrumb-current">{{ persona.display_name }}</span>
+</nav>
+
+{# ── Hero ────────────────────────────────────────────────────────────────── #}
+<div class="cog-hero card mt-2">
+  <div class="cog-hero__avatar-wrap">
+    <div class="cog-hero__avatar cog-hero__avatar--{{ persona.archetype | replace('the_','') if persona.archetype else 'default' }}">
+      <span class="cog-hero__emoji">{{ persona.archetype_emoji }}</span>
+      {% if persona.display_name %}
+        <span class="cog-hero__initials">
+          {{ persona.display_name.split()[0][0] }}{% if persona.display_name.split() | length > 1 %}{{ persona.display_name.split()[-1][0] }}{% endif %}
+        </span>
+      {% endif %}
+    </div>
+    {% if persona.is_named_figure %}
+      <span class="cog-hero__named-badge">Named Figure</span>
+    {% else %}
+      <span class="cog-hero__named-badge cog-hero__named-badge--custom">Composed</span>
+    {% endif %}
+  </div>
+
+  <div class="cog-hero__info">
+    <div class="cog-hero__name-row">
+      <h1 class="cog-hero__name">{{ persona.display_name }}</h1>
+      {% if persona.archetype %}
+        <span class="cog-hero__archetype-chip">{{ persona.archetype | replace('_', ' ') | title }}</span>
+      {% endif %}
+    </div>
+
+    {% if persona.description %}
+      <p class="cog-hero__desc">{{ persona.description }}</p>
+    {% endif %}
+
+    {% if persona.raw %}
+      <div class="cog-hero__raw-row">
+        <span class="cog-hero__raw-label">COGNITIVE_ARCH</span>
+        <code class="cog-hero__raw-value">{{ persona.raw }}</code>
+      </div>
+    {% endif %}
+  </div>
+</div>
+
+{# ── Two-column body ─────────────────────────────────────────────────────── #}
+<div class="cog-columns mt-2">
+
+  {# ── Left: atom overrides ─────────────────────────────────────────────── #}
+  <section class="cog-atoms-panel" aria-label="Cognitive atom overrides">
+    <h2 class="section-title">Cognitive Atoms</h2>
+
+    {% if persona.overrides %}
+    <div class="card cog-atoms-grid">
+      {% for dim, val in persona.overrides.items() %}
+      <div class="cog-atom">
+        <div class="cog-atom__label">
+          {{ persona.atom_labels.get(dim, dim | replace('_', ' ') | title) }}
+        </div>
+        <div class="cog-atom__value">{{ val | replace('_', ' ') | title }}</div>
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}
+    <div class="card">
+      <p class="text-muted">No atom overrides — using archetype defaults.</p>
+    </div>
+    {% endif %}
+
+    {% if persona.skill_domains %}
+    <h2 class="section-title mt-2">Skill Domains</h2>
+    <div class="card">
+      <div class="cog-skills">
+        {% for skill in persona.skill_domains %}
+        <span class="cog-skill-tag">{{ skill | replace('_', ' ') | title }}</span>
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
+  </section>
+
+  {# ── Right: prompt prefix ─────────────────────────────────────────────── #}
+  <section class="cog-prompt-panel" aria-label="Prompt injection prefix">
+    <h2 class="section-title">Prompt Injection</h2>
+
+    {% if persona.prompt_prefix %}
+    <div class="card" x-data="{ expanded: false }">
+      <div class="cog-prompt__preview" :class="expanded ? 'cog-prompt__preview--expanded' : ''">
+        <pre class="cog-prompt__text">{{ persona.prompt_prefix }}</pre>
+      </div>
+      <button
+        class="cog-prompt__toggle"
+        @click="expanded = !expanded"
+        x-text="expanded ? '▲ Collapse' : '▼ Show full prompt'"
+      ></button>
+    </div>
+    {% else %}
+    <div class="card">
+      <p class="text-muted">No prompt injection configured for this architecture.</p>
+    </div>
+    {% endif %}
+  </section>
+
+</div>{# .cog-columns #}
+
+{# ── Footer actions ──────────────────────────────────────────────────────── #}
+<div class="cog-footer mt-2">
+  <a href="/roles" class="btn btn-secondary">← Explore All Architectures</a>
+  <a href="/" class="btn btn-secondary">View Live Agents</a>
+</div>
+
+{% endblock %}

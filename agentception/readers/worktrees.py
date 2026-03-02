@@ -144,6 +144,7 @@ def _build_task_file(fields: dict[str, str], worktree_path: Path) -> TaskFile:
         "attempt_n": _parse_int(fields.get("ATTEMPT_N")) or 0,
         "required_output": fields.get("REQUIRED_OUTPUT"),
         "on_block": fields.get("ON_BLOCK"),
+        "cognitive_arch": fields.get("COGNITIVE_ARCH"),
     }
     cleaned = {k: v for k, v in raw.items() if v is not None}
     return TaskFile.model_validate(cleaned)

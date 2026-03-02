@@ -219,6 +219,92 @@ function agentCard() {
       if (!text) return '';
       return text.length > maxLen ? text.slice(0, maxLen) + '…' : text;
     },
+
+    /**
+     * Parse a COGNITIVE_ARCH string into display-ready fields.
+     * Format: "figure_id:skill1:skill2"
+     * Returns an object with emoji, displayName, archetype, archetypeKey, skillDomains.
+     */
+    parseArch(archStr) {
+      if (!archStr) return { emoji: '🤖', displayName: '', archetype: '', archetypeKey: 'default', skillDomains: [], figureId: null };
+
+      const FIGURE_MAP = {
+        steve_jobs:         { name: 'Steve Jobs',          emoji: '🔮', archetype: 'The Visionary',   key: 'visionary' },
+        satya_nadella:      { name: 'Satya Nadella',       emoji: '🏛️', archetype: 'The Architect',   key: 'architect' },
+        jeff_bezos:         { name: 'Jeff Bezos',          emoji: '⚙️', archetype: 'The Operator',    key: 'operator' },
+        werner_vogels:      { name: 'Werner Vogels',       emoji: '🏛️', archetype: 'The Architect',   key: 'architect' },
+        linus_torvalds:     { name: 'Linus Torvalds',      emoji: '⚡', archetype: 'The Hacker',      key: 'hacker' },
+        margaret_hamilton:  { name: 'Margaret Hamilton',   emoji: '🛡️', archetype: 'The Guardian',    key: 'guardian' },
+        bjarne_stroustrup:  { name: 'Bjarne Stroustrup',   emoji: '⚡', archetype: 'The Hacker',      key: 'hacker' },
+        martin_fowler:      { name: 'Martin Fowler',       emoji: '📚', archetype: 'The Scholar',     key: 'scholar' },
+        kent_beck:          { name: 'Kent Beck',           emoji: '🔧', archetype: 'The Pragmatist',  key: 'pragmatist' },
+        yann_lecun:         { name: 'Yann LeCun',          emoji: '📚', archetype: 'The Scholar',     key: 'scholar' },
+        andrej_karpathy:    { name: 'Andrej Karpathy',     emoji: '📚', archetype: 'The Scholar',     key: 'scholar' },
+        turing:             { name: 'Alan Turing',         emoji: '📚', archetype: 'The Scholar',     key: 'scholar' },
+        hopper:             { name: 'Grace Hopper',        emoji: '🧑‍🏫', archetype: 'The Mentor',   key: 'mentor' },
+        dijkstra:           { name: 'Edsger Dijkstra',     emoji: '📚', archetype: 'The Scholar',     key: 'scholar' },
+        knuth:              { name: 'Donald Knuth',        emoji: '📚', archetype: 'The Scholar',     key: 'scholar' },
+        ritchie:            { name: 'Dennis Ritchie',      emoji: '⚡', archetype: 'The Hacker',      key: 'hacker' },
+        guido_van_rossum:   { name: 'Guido van Rossum',   emoji: '🔧', archetype: 'The Pragmatist',  key: 'pragmatist' },
+        mccarthy:           { name: 'John McCarthy',       emoji: '📚', archetype: 'The Scholar',     key: 'scholar' },
+        lovelace:           { name: 'Ada Lovelace',        emoji: '🔮', archetype: 'The Visionary',   key: 'visionary' },
+        von_neumann:        { name: 'John von Neumann',    emoji: '📚', archetype: 'The Scholar',     key: 'scholar' },
+        shannon:            { name: 'Claude Shannon',      emoji: '📚', archetype: 'The Scholar',     key: 'scholar' },
+        feynman:            { name: 'Richard Feynman',     emoji: '📚', archetype: 'The Scholar',     key: 'scholar' },
+        einstein:           { name: 'Albert Einstein',     emoji: '🔮', archetype: 'The Visionary',   key: 'visionary' },
+        hamming:            { name: 'Richard Hamming',     emoji: '📚', archetype: 'The Scholar',     key: 'scholar' },
+        bruce_schneier:     { name: 'Bruce Schneier',      emoji: '🛡️', archetype: 'The Guardian',    key: 'guardian' },
+      };
+
+      const ARCHETYPE_MAP = {
+        the_visionary:  { emoji: '🔮', name: 'The Visionary',  key: 'visionary' },
+        the_architect:  { emoji: '🏛️', name: 'The Architect',  key: 'architect' },
+        the_hacker:     { emoji: '⚡', name: 'The Hacker',     key: 'hacker' },
+        the_guardian:   { emoji: '🛡️', name: 'The Guardian',   key: 'guardian' },
+        the_scholar:    { emoji: '📚', name: 'The Scholar',    key: 'scholar' },
+        the_mentor:     { emoji: '🧑‍🏫', name: 'The Mentor',  key: 'mentor' },
+        the_operator:   { emoji: '⚙️', name: 'The Operator',   key: 'operator' },
+        the_pragmatist: { emoji: '🔧', name: 'The Pragmatist', key: 'pragmatist' },
+      };
+
+      const parts = archStr.split(':').map(p => p.trim()).filter(Boolean);
+      const first = parts[0];
+      const figData = FIGURE_MAP[first];
+
+      if (figData) {
+        return {
+          figureId: first,
+          displayName: figData.name,
+          emoji: figData.emoji,
+          archetype: figData.archetype,
+          archetypeKey: figData.key,
+          skillDomains: parts.slice(1),
+        };
+      }
+
+      // Check if first part is an archetype
+      const archData = ARCHETYPE_MAP[first];
+      if (archData) {
+        return {
+          figureId: null,
+          displayName: archData.name,
+          emoji: archData.emoji,
+          archetype: archData.name,
+          archetypeKey: archData.key,
+          skillDomains: parts.slice(1),
+        };
+      }
+
+      // Unknown — treat all parts as skill domains
+      return {
+        figureId: null,
+        displayName: parts.join(' · '),
+        emoji: '🤖',
+        archetype: '',
+        archetypeKey: 'default',
+        skillDomains: parts,
+      };
+    },
   };
 }
 
