@@ -1,288 +1,30 @@
 {% extends "musehub/base.html" %}
 
-{% block title %}Issue #{{ issue_number }}{% endblock %}
+{% block title %}Issue #{{ issue.number }} · {{ issue.title }}{% endblock %}
+
 {% block breadcrumb %}
-  <a href="/musehub/ui/{{ owner }}/{{ repo_slug }}">{{ owner }}/{{ repo_slug }}</a> /
-  <a href="/musehub/ui/{{ owner }}/{{ repo_slug }}/issues">issues</a> / #{{ issue_number }}
+  {% for crumb in breadcrumb_data %}
+    {% if crumb.url %}
+      <a href="{{ crumb.url }}">{{ crumb.label }}</a> /
+    {% else %}
+      {{ crumb.label }}
+    {% endif %}
+  {% endfor %}
 {% endblock %}
+
 {% block repo_nav %}{% include "musehub/partials/repo_nav.html" %}{% endblock %}
-
-{% block page_data %}
-const repoId = {{ repo_id | tojson }};
-const number = {{ issue_number }};
-const base   = {{ base_url | tojson }};
-{% endblock %}
-
-{% block page_script %}
-{% raw %}
-// ── State ──────────────────────────────────────────────────────────────────
-let currentIssue = null;
-let replyingToId = null;
-
-// ── Musical context ref rendering ──────────────────────────────────────────
-function renderMusicalRefs(refs) {
-  if (!refs || refs.length === 0) return '';
-  return '<div class="musical-refs">' +
-    refs.map(r => {
-      const icons = { track: '🎵', section: '🎼', beats: '🥁' };
-      const icon = icons[r.type] || '🎵';
-      return `<span class="musical-ref musical-ref-${escHtml(r.type)}">${icon} ${escHtml(r.raw)}</span>`;
-    }).join('') +
-  '</div>';
-}
-
-// ── Cross-reference auto-linking in body text ──────────────────────────────
-function linkifyBody(text) {
-  // Escape first, then add links for #NNN and @sha
-  let escaped = escHtml(text);
-  // Issue cross-refs: #123
-  escaped = escaped.replace(/#(\d+)/g, `<a href="${base.replace(/\/issues.*$/, '')}/issues/$1">#$1</a>`);
-  // Musical context refs: track:X, section:X, beats:X-Y
-  escaped = escaped.replace(/(track|section|beats):([A-Za-z0-9_\-]+(?:-[A-Za-z0-9_\-]+)*)/g,
-    '<span class="musical-ref musical-ref-$1">$1:$2</span>');
-  return escaped;
-}
-
-// ── Current user from JWT ──────────────────────────────────────────────────
-function getCurrentUser() {
-  try {
-    const token = localStorage.getItem('musehub_token');
-    if (!token) return null;
-    const payload = JSON.parse(atob(token.split('.')[1]));
-    return payload.sub || null;
-  } catch(_) { return null; }
-}
-
-// ── Comment thread builder ─────────────────────────────────────────────────
-function buildCommentThread(comments) {
-  const topLevel = comments.filter(c => !c.parentId);
-  const byParent = {};
-  for (const c of comments) {
-    if (c.parentId) {
-      (byParent[c.parentId] = byParent[c.parentId] || []).push(c);
-    }
-  }
-
-  const me = getCurrentUser();
-
-  function renderComment(c, isReply = false) {
-    const replies = byParent[c.commentId] || [];
-    const replyClass = isReply ? ' comment-reply' : '';
-    const deleteBtn = me && me === c.author
-      ? `<button class="btn-link" style="color:var(--color-danger,#f87171);margin-left:8px" onclick="deleteComment('${escHtml(c.commentId)}')">✕ Delete</button>`
-      : '';
-    return `
-      <div class="comment${replyClass}" id="comment-${escHtml(c.commentId)}">
-        <div class="comment-header">
-          <span class="comment-avatar">${escHtml((c.author || '?').charAt(0).toUpperCase())}</span>
-          <span class="comment-author">${escHtml(c.author || 'unknown')}</span>
-          <span class="comment-date">${fmtDate(c.createdAt)}</span>
-          <button class="btn-link" onclick="startReply('${escHtml(c.commentId)}', '${escHtml(c.author || '')}')">↩ Reply</button>
-          ${deleteBtn}
-        </div>
-        <div class="comment-body">${linkifyBody(c.body)}</div>
-        ${renderMusicalRefs(c.musicalRefs)}
-        ${replies.length > 0 ? '<div class="comment-replies">' + replies.map(r => renderComment(r, true)).join('') + '</div>' : ''}
-      </div>`;
-  }
-
-  return topLevel.map(c => renderComment(c)).join('');
-}
-
-// ── Load issue + comments ──────────────────────────────────────────────────
-async function load() {
-  initRepoNav(repoId);
-  try {
-    const [issue, commentData] = await Promise.all([
-      apiFetch('/repos/' + repoId + '/issues/' + number),
-      apiFetch('/repos/' + repoId + '/issues/' + number + '/comments').catch(() => ({ comments: [] })),
-    ]);
-    currentIssue = issue;
-    renderIssue(issue, commentData.comments || []);
-    loadReactions('issue', String(issue.number), 'issue-reactions');
-  } catch(e) {
-    if (e.message !== 'auth')
-      document.getElementById('content').innerHTML = '<p class="error">&#10005; ' + escHtml(e.message) + '</p>';
-  }
-}
-
-function renderIssue(issue, comments) {
-  const stateBtn = issue.state === 'open'
-    ? `<button class="btn btn-danger" onclick="closeIssue()">&#10005; Close issue</button>`
-    : `<button class="btn btn-secondary" onclick="reopenIssue()">&#8635; Reopen issue</button>`;
-
-  const milestoneHtml = issue.milestoneTitle
-    ? `<div class="meta-item">
-         <span class="meta-label">Milestone</span>
-         <span class="meta-value">&#127937; ${escHtml(issue.milestoneTitle)}</span>
-       </div>`
-    : '';
-
-  const assigneeHtml = issue.assignee
-    ? `<div class="meta-item">
-         <span class="meta-label">Assignee</span>
-         <span class="meta-value" style="display:flex;align-items:center;gap:6px">
-           <span style="display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:50%;background:var(--accent,#58a6ff);color:#0d1117;font-size:11px;font-weight:700;flex-shrink:0">${escHtml(issue.assignee.charAt(0).toUpperCase())}</span>
-           ${escHtml(issue.assignee)}
-         </span>
-       </div>`
-    : '<div class="meta-item"><span class="meta-label">Assignee</span><span class="meta-value muted">Unassigned</span></div>';
-
-  const commentCount = issue.commentCount || 0;
-
-  document.getElementById('content').innerHTML = `
-    <div style="margin-bottom:12px">
-      <a href="${base}/issues">&larr; Back to issues</a>
-    </div>
-
-    <div class="card">
-      <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:12px;flex-wrap:wrap">
-        <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
-          <h1 style="margin:0">${escHtml(issue.title)}</h1>
-          <span class="badge badge-${issue.state}">#${issue.number}</span>
-          <span class="badge badge-${issue.state}">${issue.state}</span>
-        </div>
-        <div style="display:flex;gap:8px;flex-shrink:0">
-          ${stateBtn}
-        </div>
-      </div>
-
-      <div class="meta-row">
-        ${issue.author ? `
-        <div class="meta-item">
-          <span class="meta-label">Author</span>
-          <span class="meta-value" style="display:flex;align-items:center;gap:6px">
-            <span style="display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:50%;background:var(--accent,#58a6ff);color:#0d1117;font-size:11px;font-weight:700;flex-shrink:0">${escHtml(issue.author.charAt(0).toUpperCase())}</span>
-            <a href="${base.replace(/\/[^/]+\/[^/]+$/, '')}/users/${encodeURIComponent(escHtml(issue.author))}">${escHtml(issue.author)}</a>
-          </span>
-        </div>` : ''}
-        <div class="meta-item">
-          <span class="meta-label">Opened</span>
-          <span class="meta-value">${fmtDate(issue.createdAt)}</span>
-        </div>
-        ${assigneeHtml}
-        ${milestoneHtml}
-      </div>
-
-      <div style="margin:8px 0">
-        ${(issue.labels||[]).map(l => '<span class="label">' + escHtml(l) + '</span>').join('')}
-      </div>
-
-      ${issue.body ? '<div class="issue-body">' + linkifyBody(issue.body) + '</div>' : ''}
-    </div>
-
-    <div class="card" style="padding:var(--space-3) var(--space-4)">
-      <div id="issue-reactions"><p class="text-muted text-sm">Loading reactions…</p></div>
-    </div>
-
-    <div class="section-header" style="margin-top:24px;margin-bottom:12px">
-      <h2 style="margin:0;font-size:1rem">&#128172; Discussion (${commentCount})</h2>
-    </div>
-
-    <div id="comments-container">
-      ${comments.length > 0 ? buildCommentThread(comments) : '<p class="muted" style="margin:0 0 16px">No comments yet. Be the first to start the discussion.</p>'}
-    </div>
-
-    <div class="card" id="comment-form" style="margin-top:16px">
-      <div id="reply-indicator" style="display:none;margin-bottom:8px;padding:6px 10px;background:var(--bg-tertiary,#161b22);border-radius:4px;font-size:0.85rem;color:var(--text-secondary,#8b949e)">
-        Replying to <span id="reply-author"></span> &mdash; <button class="btn-link" onclick="cancelReply()">cancel</button>
-      </div>
-      <textarea id="comment-input" placeholder="Leave a comment... Use track:bass, section:chorus, beats:16-24 for musical refs. Use #123 to reference issues." rows="4" style="width:100%;box-sizing:border-box;background:var(--bg-secondary,#0d1117);color:var(--text-primary,#e6edf3);border:1px solid var(--border,#30363d);border-radius:6px;padding:8px;font-family:inherit;font-size:0.9rem;resize:vertical"></textarea>
-      <div style="margin-top:8px;display:flex;gap:8px;justify-content:flex-end">
-        <button class="btn btn-primary" onclick="submitComment()">Comment</button>
-      </div>
-    </div>`;
-}
-
-// ── Comment actions ────────────────────────────────────────────────────────
-function startReply(commentId, author) {
-  replyingToId = commentId;
-  document.getElementById('reply-indicator').style.display = 'block';
-  document.getElementById('reply-author').textContent = author;
-  document.getElementById('comment-input').focus();
-  document.getElementById('comment-form').scrollIntoView({ behavior: 'smooth' });
-}
-
-function cancelReply() {
-  replyingToId = null;
-  document.getElementById('reply-indicator').style.display = 'none';
-}
-
-async function submitComment() {
-  const input = document.getElementById('comment-input');
-  const body = input.value.trim();
-  if (!body) return;
-  const btn = document.querySelector('#comment-form button.btn-primary');
-  btn.disabled = true;
-  try {
-    const commentData = await apiFetch(
-      '/repos/' + repoId + '/issues/' + number + '/comments',
-      {
-        method: 'POST',
-        body: JSON.stringify({ body, parentId: replyingToId }),
-      }
-    );
-    input.value = '';
-    cancelReply();
-    document.getElementById('comments-container').innerHTML =
-      commentData.comments && commentData.comments.length > 0
-        ? buildCommentThread(commentData.comments)
-        : '<p class="muted" style="margin:0 0 16px">No comments yet.</p>';
-    if (currentIssue) {
-      currentIssue.commentCount = (commentData.total || 0);
-      document.querySelector('h2[style]').textContent = `💬 Discussion (${currentIssue.commentCount})`;
-    }
-  } catch(e) {
-    if (e.message !== 'auth') alert('Comment failed: ' + e.message);
-  } finally {
-    btn.disabled = false;
-  }
-}
-
-async function deleteComment(commentId) {
-  if (!confirm('Delete this comment?')) return;
-  try {
-    await apiFetch('/repos/' + repoId + '/comments/' + commentId, { method: 'DELETE' });
-    const [issue, commentData] = await Promise.all([
-      Promise.resolve(currentIssue),
-      apiFetch('/repos/' + repoId + '/issues/' + number + '/comments').catch(() => ({ comments: [] })),
-    ]);
-    document.getElementById('comments-container').innerHTML =
-      commentData.comments && commentData.comments.length > 0
-        ? buildCommentThread(commentData.comments)
-        : '<p class="muted" style="margin:0 0 16px">No comments yet.</p>';
-  } catch(e) {
-    if (e.message !== 'auth') alert('Failed to delete comment: ' + e.message);
-  }
-}
-
-// ── Issue state transitions ────────────────────────────────────────────────
-async function closeIssue() {
-  if (!confirm('Close issue #' + number + '?')) return;
-  try {
-    await apiFetch('/repos/' + repoId + '/issues/' + number + '/close', { method: 'POST' });
-    location.reload();
-  } catch(e) {
-    if (e.message !== 'auth') alert('Close failed: ' + e.message);
-  }
-}
-
-async function reopenIssue() {
-  if (!confirm('Reopen issue #' + number + '?')) return;
-  try {
-    await apiFetch('/repos/' + repoId + '/issues/' + number + '/reopen', { method: 'POST' });
-    location.reload();
-  } catch(e) {
-    if (e.message !== 'auth') alert('Reopen failed: ' + e.message);
-  }
-}
-
-load();
-{% endraw %}
-{% endblock %}
 
 {% block extra_css %}
 <style>
+.issue-detail-grid {
+  display: grid;
+  grid-template-columns: 1fr 220px;
+  gap: var(--space-4, 24px);
+  align-items: start;
+}
+@media (max-width: 768px) {
+  .issue-detail-grid { grid-template-columns: 1fr; }
+}
 .issue-body {
   background: var(--bg-secondary, #0d1117);
   border: 1px solid var(--border, #30363d);
@@ -349,16 +91,142 @@ load();
 .musical-ref-track { border-color: #3fb950; color: #3fb950; }
 .musical-ref-section { border-color: #58a6ff; color: #58a6ff; }
 .musical-ref-beats { border-color: #d2a8ff; color: #d2a8ff; }
-.btn-link {
-  background: none;
-  border: none;
-  padding: 0;
-  color: var(--accent, #58a6ff);
-  cursor: pointer;
-  font-size: 0.8rem;
-  text-decoration: underline;
-}
 .muted { color: var(--text-secondary, #8b949e); }
-.section-header { border-bottom: 1px solid var(--border, #30363d); padding-bottom: 8px; }
+.sidebar-section {
+  margin-bottom: var(--space-3, 16px);
+  padding-bottom: var(--space-3, 16px);
+  border-bottom: 1px solid var(--border, #30363d);
+}
+.sidebar-section:last-child { border-bottom: none; }
+.sidebar-section-title {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-secondary, #8b949e);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin: 0 0 8px;
+}
 </style>
+{% endblock %}
+
+{% block content %}
+<div style="margin-bottom:12px">
+  <a href="{{ base_url }}/issues">&larr; Back to issues</a>
+</div>
+
+<div class="issue-detail-grid">
+  <main>
+    {# Issue header #}
+    <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:12px;flex-wrap:wrap">
+      <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+        <h1 style="margin:0">{{ issue.title }}</h1>
+        <span class="badge badge-{{ issue.state }}">#{{ issue.number }}</span>
+        <span class="badge badge-{{ issue.state }}">{{ issue.state }}</span>
+      </div>
+      <div style="display:flex;gap:8px;flex-shrink:0">
+        {% if issue.state == 'open' %}
+        <form hx-post="{{ base_url }}/issues/{{ issue.number }}/close"
+              hx-push-url="true"
+              style="display:inline">
+          <button type="submit" class="btn btn-secondary">Close issue</button>
+        </form>
+        {% else %}
+        <form hx-post="{{ base_url }}/issues/{{ issue.number }}/reopen"
+              hx-push-url="true"
+              style="display:inline">
+          <button type="submit" class="btn btn-secondary">Reopen issue</button>
+        </form>
+        {% endif %}
+      </div>
+    </div>
+
+    {# Meta line #}
+    <p style="color:#8b949e;font-size:12px;margin-bottom:var(--space-3,16px)">
+      Opened {{ issue.created_at | fmtdate }}
+      {% if issue.author %} by <strong>{{ issue.author }}</strong>{% endif %}
+      {% if issue.closed_at %} · Closed {{ issue.closed_at | fmtdate }}{% endif %}
+      · {{ issue.comment_count }} comment{{ 's' if issue.comment_count != 1 else '' }}
+    </p>
+
+    {# Labels #}
+    {% if issue.labels %}
+    <div style="margin-bottom:var(--space-3,16px);display:flex;flex-wrap:wrap;gap:6px">
+      {% from "musehub/macros/label.html" import label_chip %}
+      {% for lbl in issue.labels %}
+        {% set lbl_obj = labels_data | selectattr('name', 'equalto', lbl) | first | default({'color': '#8b949e'}) %}
+        {{ label_chip(lbl, lbl_obj.color) }}
+      {% endfor %}
+    </div>
+    {% endif %}
+
+    {# Issue body — rendered Markdown #}
+    <div class="card issue-body" style="margin-bottom:var(--space-4,24px)">
+      {% if issue.body %}
+        {{ issue.body | markdown | safe }}
+      {% else %}
+        <em style="color:#8b949e">No description provided.</em>
+      {% endif %}
+    </div>
+
+    {# Comment thread — HTMX target for new comments #}
+    <h2 style="font-size:1rem;border-bottom:1px solid var(--border,#30363d);padding-bottom:8px;margin-bottom:12px">
+      &#128172; Discussion ({{ comments | length }})
+    </h2>
+    <div id="issue-comments">
+      {% include "musehub/fragments/issue_comments.html" %}
+    </div>
+
+    {# New comment form — hx-post → refreshes comment thread #}
+    <div class="card" style="margin-top:var(--space-3,16px)">
+      <form hx-post="{{ base_url }}/issues/{{ issue.number }}/comments"
+            hx-target="#issue-comments"
+            hx-swap="innerHTML"
+            hx-on::after-request="this.reset()">
+        <textarea name="body" class="form-input" rows="4"
+                  placeholder="Leave a comment… Use track:bass, section:chorus, beats:16-24 for musical refs."
+                  style="width:100%;box-sizing:border-box;resize:vertical;font-family:inherit"></textarea>
+        <div style="display:flex;gap:8px;margin-top:8px;justify-content:flex-end">
+          <button type="submit" class="btn btn-primary">Comment</button>
+        </div>
+      </form>
+    </div>
+  </main>
+
+  {# Right sidebar — SSR labels / milestone / linked info #}
+  <aside>
+    <div class="sidebar-section">
+      <p class="sidebar-section-title">Labels</p>
+      {% from "musehub/macros/label.html" import label_chip %}
+      {% if issue.labels %}
+        {% for lbl in issue.labels %}
+          {% set lbl_obj = labels_data | selectattr('name', 'equalto', lbl) | first | default({'color': '#8b949e'}) %}
+          {{ label_chip(lbl, lbl_obj.color) }}
+        {% endfor %}
+      {% else %}
+        <span style="font-size:11px;color:#8b949e">None yet</span>
+      {% endif %}
+    </div>
+
+    {% if issue.milestone_id %}
+    {% set ms = milestones_data | selectattr('milestone_id', 'equalto', issue.milestone_id) | first | default(None) %}
+    {% if ms %}
+    {% from "musehub/macros/milestone.html" import milestone_progress %}
+    <div class="sidebar-section">
+      <p class="sidebar-section-title">Milestone</p>
+      {{ milestone_progress(ms) }}
+    </div>
+    {% endif %}
+    {% endif %}
+
+    {% if issue.assignee %}
+    <div class="sidebar-section">
+      <p class="sidebar-section-title">Assignee</p>
+      <div style="display:flex;align-items:center;gap:6px">
+        <span style="display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:50%;background:var(--accent,#58a6ff);color:#0d1117;font-size:11px;font-weight:700;flex-shrink:0">{{ issue.assignee[0] | upper }}</span>
+        <span>{{ issue.assignee }}</span>
+      </div>
+    </div>
+    {% endif %}
+  </aside>
+</div>
 {% endblock %}

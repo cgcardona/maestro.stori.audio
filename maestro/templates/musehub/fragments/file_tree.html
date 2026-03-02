@@ -1,0 +1,48 @@
+{#  fragments/file_tree.html — bare HTMX fragment: repo root file tree.
+
+    This template is intentionally minimal — no <html>, no <head>, no nav.
+    It is rendered in two contexts:
+
+    1. Full-page load: included inline by musehub/pages/repo_home.html inside
+       the ``<div id="file-tree">`` target container.
+
+    2. HTMX partial swap: returned directly when the handler detects
+       ``HX-Request: true`` (e.g. branch-picker selection), replacing only
+       the ``#file-tree`` container.
+
+    Required context variables
+    --------------------------
+    tree      : list[TreeEntryResponse]  — root-level entries (dirs first, then files)
+    ref       : str                      — current branch name or commit SHA
+    base_url  : str                      — repo base URL, e.g. /musehub/ui/owner/slug
+#}
+{% from "musehub/macros/empty_state.html" import empty_state %}
+{% if tree %}
+<table class="file-tree-table" style="width:100%">
+  <tbody>
+  {% for entry in tree %}
+  <tr class="file-tree-row">
+    <td style="padding:6px 8px">
+      {% if entry.type == 'dir' %}
+      <a href="{{ base_url }}/tree/{{ ref }}/{{ entry.name }}" style="display:flex;align-items:center;gap:6px">
+        <span>📁</span> <strong>{{ entry.name }}</strong>
+      </a>
+      {% else %}
+      <a href="{{ base_url }}/blob/{{ ref }}/{{ entry.name }}" style="display:flex;align-items:center;gap:6px">
+        <span>{% if entry.name.endswith('.mid') or entry.name.endswith('.midi') %}🎵
+              {% elif entry.name.endswith('.mp3') or entry.name.endswith('.wav') %}🔊
+              {% else %}📄{% endif %}</span>
+        {{ entry.name }}
+      </a>
+      {% endif %}
+    </td>
+    <td style="padding:6px 8px;text-align:right;color:#8b949e;font-size:11px">
+      {% if entry.type != 'dir' and entry.size_bytes %}{{ entry.size_bytes | filesizeformat }}{% endif %}
+    </td>
+  </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% else %}
+  {{ empty_state("📦", "Empty repository", "Push your first commit to see files here.") }}
+{% endif %}

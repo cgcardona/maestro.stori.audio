@@ -1,0 +1,75 @@
+{#  fragments/global_search_results.html — bare HTMX fragment: global search results.
+
+    Rendered in two contexts:
+    1. Full-page load: included inline by musehub/pages/global_search.html inside
+       the ``<div id="search-results">`` target container.
+    2. HTMX partial swap: returned directly when the handler detects
+       ``HX-Request: true``, replacing only the ``#search-results`` container.
+
+    Required context variables
+    --------------------------
+    query   : str                          — current search query (may be empty)
+    result  : GlobalSearchResult | None    — search result or None when q < 2 chars
+#}
+{% from "musehub/macros/empty_state.html" import empty_state %}
+
+{% if not query or query | length < 2 %}
+  <p style="color:#8b949e;text-align:center;padding:var(--space-4) 0">
+    Enter at least 2 characters to search.
+  </p>
+{% elif result and result.groups %}
+  <p style="color:#8b949e;margin-bottom:var(--space-2)">
+    {{ result.groups | length }} repo{{ 's' if result.groups | length != 1 else '' }} with matches
+    &mdash; {{ result.total_repos_searched }} public repo{{ 's' if result.total_repos_searched != 1 else '' }} searched
+    (page {{ result.page }})
+    for "<strong>{{ query }}</strong>"
+  </p>
+
+  {% for group in result.groups %}
+  <div class="search-result-repo">
+    <h3>
+      <a href="/musehub/ui/{{ group.repo_owner }}/{{ group.repo_slug }}">
+        {{ group.repo_owner }}/{{ group.repo_name }}
+      </a>
+      <span class="badge badge-open" style="font-size:11px;margin-left:var(--space-1)">
+        {{ group.repo_visibility }}
+      </span>
+    </h3>
+
+    {% for match in group.matches %}
+    <div class="commit-row">
+      <a class="commit-sha"
+         href="/musehub/ui/{{ group.repo_owner }}/{{ group.repo_slug }}/commits/{{ match.commit_id }}">
+        {{ match.commit_id[:7] }}
+      </a>
+      <span class="commit-msg">{{ match.message }}</span>
+      <span class="commit-meta">{{ match.author }} &bull; {{ match.timestamp | fmtdate }}</span>
+    </div>
+    {% endfor %}
+
+    {% if group.total_matches > group.matches | length %}
+    <p class="more-note">
+      Showing {{ group.matches | length }} of {{ group.total_matches }} matches in this repo.
+    </p>
+    {% endif %}
+  </div>
+  {% endfor %}
+
+  {# Pagination controls #}
+  {% if result.page > 1 or result.groups | length == result.page_size %}
+  <div style="display:flex;gap:var(--space-2);margin-top:var(--space-3)">
+    {% if result.page > 1 %}
+    <a class="btn btn-secondary" href="?q={{ query | urlencode }}&mode={{ result.mode }}&page={{ result.page - 1 }}">
+      &larr; Prev
+    </a>
+    {% endif %}
+    {% if result.groups | length == result.page_size %}
+    <a class="btn btn-secondary" href="?q={{ query | urlencode }}&mode={{ result.mode }}&page={{ result.page + 1 }}">
+      Next &rarr;
+    </a>
+    {% endif %}
+  </div>
+  {% endif %}
+{% else %}
+  {{ empty_state("🔍", "No results", "Try different search terms or check your spelling.") }}
+{% endif %}
