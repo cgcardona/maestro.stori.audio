@@ -1,0 +1,59 @@
+{% extends "musehub/base.html" %}
+{% from "musehub/macros/pagination.html" import pagination %}
+{% from "musehub/macros/empty_state.html" import empty_state %}
+
+{% block title %}Trending{% endblock %}
+{% block breadcrumb %}Trending{% endblock %}
+
+{% block container_extra_class %}-wide{% endblock %}
+
+{% block extra_css %}
+<style>
+  .repo-card {
+    position: relative;
+    background: var(--surface-raised, #2a2a3e);
+    border: 1px solid var(--border, #333);
+    border-radius: 10px;
+    padding: var(--space-3);
+    cursor: pointer;
+    transition: border-color 0.15s, box-shadow 0.15s;
+    overflow: hidden;
+    text-decoration: none;
+    display: block;
+    color: inherit;
+  }
+  .repo-card:hover { border-color: var(--accent, #7b93ff); box-shadow: 0 2px 12px rgba(100,120,255,0.1); }
+  .repo-card-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 2px; }
+  .repo-card-name { font-weight: 600; font-size: 14px; }
+  .repo-card-meta { display: flex; gap: var(--space-3); font-size: 12px; color: var(--text-muted, #8b949e); margin-top: var(--space-2); flex-wrap: wrap; }
+  .repo-card-meta-pills { display: flex; gap: 6px; flex-wrap: wrap; margin: 6px 0 2px; }
+  .repo-meta-pill {
+    font-size: 11px; padding: 2px 8px; border-radius: 10px;
+    background: var(--surface-raised, #2a2a3e); color: var(--text-secondary, #aaa); border: 1px solid var(--border, #333);
+  }
+  .tag-pill {
+    font-size: 11px; padding: 2px 8px; border-radius: 10px;
+    background: rgba(100, 120, 255, 0.12); color: var(--accent, #7b93ff); border: 1px solid rgba(100, 120, 255, 0.2);
+  }
+  .repo-card-desc-trunc {
+    font-size: 13px; color: var(--text-muted, #8b949e); margin: 4px 0 0; line-height: 1.4;
+  }
+  .rank-badge {
+    position: absolute; top: 10px; left: 10px;
+    background: var(--accent, #7b93ff); color: #fff; font-weight: 700; font-size: 13px;
+    width: 28px; height: 28px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center; z-index: 1; pointer-events: none;
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:var(--space-4)">
+  <h1 style="margin:0">Trending Music</h1>
+  <span style="color:#8b949e">{{ total }} repositories</span>
+</div>
+
+<div id="repo-grid">
+  {% include "musehub/fragments/repo_grid.html" %}
+</div>
+{% endblock %}
