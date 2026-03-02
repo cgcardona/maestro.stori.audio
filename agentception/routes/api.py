@@ -17,10 +17,10 @@ from agentception.config import settings
 from agentception.intelligence.analyzer import IssueAnalysis, analyze_issue
 from agentception.intelligence.dag import DependencyDAG, build_dag
 from agentception.intelligence.guards import PRViolation, detect_out_of_order_prs
-from agentception.models import AgentNode, PipelineConfig, PipelineState, SpawnRequest, SpawnResult
+from agentception.models import AgentNode, PipelineConfig, PipelineState, SpawnRequest, SpawnResult, SwitchProjectRequest
 from agentception.poller import get_state
 from agentception.readers.github import add_wip_label, close_pr, get_issue
-from agentception.readers.pipeline_config import read_pipeline_config, write_pipeline_config
+from agentception.readers.pipeline_config import read_pipeline_config, switch_project, write_pipeline_config
 from agentception.readers.transcripts import read_transcript_messages
 from agentception.routes.ui import _find_agent
 from agentception.telemetry import WaveSummary, aggregate_waves
@@ -174,6 +174,36 @@ async def update_config(body: PipelineConfig) -> PipelineConfig:
     Returns the saved config so callers can confirm what was written.
     """
     return await write_pipeline_config(body)
+
+
+@router.post("/config/switch-project", tags=["config"])
+async def switch_project_endpoint(body: SwitchProjectRequest) -> PipelineConfig:
+    """Switch the active project in ``pipeline-config.json``.
+
+    Sets ``active_project`` to *body.project_name* and persists the updated
+    config.  The dashboard reloads paths (``gh_repo``, ``repo_dir``,
+    ``worktrees_dir``) for the new project on the next service restart.
+
+    Parameters
+    ----------
+    body.project_name:
+        The ``name`` of the project to activate.  Must match an entry in
+        ``PipelineConfig.projects``.
+
+    Returns
+    -------
+    PipelineConfig
+        The updated config with ``active_project`` set.
+
+    Raises
+    ------
+    HTTP 404
+        When *project_name* does not match any configured project.
+    """
+    try:
+        return await switch_project(body.project_name)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
 def _build_agent_task(

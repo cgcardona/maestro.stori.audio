@@ -20,6 +20,7 @@ from agentception.models import PipelineConfig
 from agentception.readers.pipeline_config import (
     _DEFAULTS,
     read_pipeline_config,
+    switch_project,
     write_pipeline_config,
 )
 
@@ -205,3 +206,168 @@ def test_config_api_put_rejects_wrong_types() -> None:
     }
     response = client.put("/api/config", json=bad)
     assert response.status_code == 422
+
+
+# ---------------------------------------------------------------------------
+# AC-601: Multi-repo config schema + project switcher — unit tests
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.anyio
+async def test_settings_reads_active_project(tmp_path: Path) -> None:
+    """AgentCeptionSettings applies the active project's paths over env-var defaults.
+
+    Writes a pipeline-config.json with two projects and verifies that
+    instantiating AgentCeptionSettings with ``repo_dir`` pointing at the
+    tmp directory causes the model validator to override ``gh_repo`` and
+    ``worktrees_dir`` from the active project entry.
+    """
+    from agentception.config import AgentCeptionSettings
+
+    cursor_dir = tmp_path / ".cursor"
+    cursor_dir.mkdir(parents=True)
+    config_data = {
+        "max_eng_vps": 1,
+        "max_qa_vps": 1,
+        "pool_size_per_vp": 4,
+        "active_labels_order": [],
+        "active_project": "Other Repo",
+        "projects": [
+            {
+                "name": "Maestro AgentCeption",
+                "gh_repo": "cgcardona/maestro",
+                "repo_dir": str(tmp_path),
+                "worktrees_dir": "~/.cursor/worktrees/maestro",
+                "cursor_project_id": "Users-gabriel-dev-tellurstori-maestro",
+                "active_labels_order": [],
+            },
+            {
+                "name": "Other Repo",
+                "gh_repo": "acme/other",
+                "repo_dir": str(tmp_path / "other"),
+                "worktrees_dir": str(tmp_path / "other-worktrees"),
+                "cursor_project_id": "other-project-id",
+                "active_labels_order": [],
+            },
+        ],
+    }
+    (cursor_dir / "pipeline-config.json").write_text(
+        json.dumps(config_data), encoding="utf-8"
+    )
+
+    # Instantiate settings pointing at our tmp repo_dir — the validator
+    # reads the config file and switches to the "Other Repo" project.
+    s = AgentCeptionSettings(repo_dir=tmp_path)
+    assert s.gh_repo == "acme/other"
+    assert s.worktrees_dir == tmp_path / "other-worktrees"
+
+
+@pytest.mark.anyio
+async def test_switch_project_updates_config(tmp_path: Path) -> None:
+    """switch_project() sets active_project and persists the updated config.
+
+    Starts with a config that has two projects and ``active_project`` set to
+    the first one, then calls ``switch_project`` for the second and verifies
+    the returned config and on-disk state both reflect the change.
+    """
+    config_file = tmp_path / "pipeline-config.json"
+    initial = {
+        "max_eng_vps": 1,
+        "max_qa_vps": 1,
+        "pool_size_per_vp": 4,
+        "active_labels_order": [],
+        "active_project": "Maestro AgentCeption",
+        "projects": [
+            {
+                "name": "Maestro AgentCeption",
+                "gh_repo": "cgcardona/maestro",
+                "repo_dir": "/dev/maestro",
+                "worktrees_dir": "~/.cursor/worktrees/maestro",
+                "cursor_project_id": "maestro-id",
+                "active_labels_order": [],
+            },
+            {
+                "name": "Other Repo",
+                "gh_repo": "acme/other",
+                "repo_dir": "/dev/other",
+                "worktrees_dir": "~/.cursor/worktrees/other",
+                "cursor_project_id": "other-id",
+                "active_labels_order": [],
+            },
+        ],
+    }
+    config_file.write_text(json.dumps(initial), encoding="utf-8")
+
+    with patch("agentception.readers.pipeline_config._config_path", return_value=config_file):
+        result = await switch_project("Other Repo")
+
+    assert result.active_project == "Other Repo"
+    on_disk = json.loads(config_file.read_text(encoding="utf-8"))
+    assert on_disk["active_project"] == "Other Repo"
+
+
+@pytest.mark.anyio
+async def test_switch_project_rejects_unknown_name(tmp_path: Path) -> None:
+    """switch_project() raises ValueError for a project name not in projects list."""
+    config_file = tmp_path / "pipeline-config.json"
+    config = {
+        "max_eng_vps": 1,
+        "max_qa_vps": 1,
+        "pool_size_per_vp": 4,
+        "active_labels_order": [],
+        "active_project": "Maestro AgentCeption",
+        "projects": [
+            {
+                "name": "Maestro AgentCeption",
+                "gh_repo": "cgcardona/maestro",
+                "repo_dir": "/dev/maestro",
+                "worktrees_dir": "~/.cursor/worktrees/maestro",
+                "cursor_project_id": "maestro-id",
+                "active_labels_order": [],
+            },
+        ],
+    }
+    config_file.write_text(json.dumps(config), encoding="utf-8")
+
+    with patch("agentception.readers.pipeline_config._config_path", return_value=config_file):
+        with pytest.raises(ValueError, match="Unknown project"):
+            await switch_project("Nonexistent Project")
+
+
+def test_switch_project_api_returns_404_for_unknown_project() -> None:
+    """POST /api/config/switch-project returns 404 when project_name is not in projects."""
+    with patch(
+        "agentception.routes.api.switch_project",
+        new_callable=AsyncMock,
+        side_effect=ValueError("Unknown project 'Nonexistent'. Available: []"),
+    ):
+        response = client.post(
+            "/api/config/switch-project", json={"project_name": "Nonexistent"}
+        )
+
+    assert response.status_code == 404
+    assert "Unknown project" in response.json()["detail"]
+
+
+def test_switch_project_api_returns_updated_config() -> None:
+    """POST /api/config/switch-project returns the updated PipelineConfig on success."""
+    updated_config = PipelineConfig(
+        max_eng_vps=1,
+        max_qa_vps=1,
+        pool_size_per_vp=4,
+        active_labels_order=[],
+        active_project="Other Repo",
+        projects=[],
+    )
+    with patch(
+        "agentception.routes.api.switch_project",
+        new_callable=AsyncMock,
+        return_value=updated_config,
+    ):
+        response = client.post(
+            "/api/config/switch-project", json={"project_name": "Other Repo"}
+        )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["active_project"] == "Other Repo"

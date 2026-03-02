@@ -189,3 +189,32 @@ def test_config_save_calls_put_api_slider_ranges(client: TestClient) -> None:
     assert response.status_code == 200
     assert response.json()["max_eng_vps"] == 4
     assert response.json()["pool_size_per_vp"] == 8
+
+
+# ---------------------------------------------------------------------------
+# AC-601: Project switcher in nav bar
+# ---------------------------------------------------------------------------
+
+
+def test_nav_shows_project_dropdown(client: TestClient) -> None:
+    """Every HTML page contains the project-switcher nav element.
+
+    The project switcher is rendered in the base template and is controlled
+    by an Alpine.js component.  It is hidden via ``x-show`` when there are
+    no configured projects, but the DOM element and the ``projectSwitcher``
+    function must always be present so Alpine can initialise correctly.
+    """
+    with patch(
+        "agentception.routes.ui.read_pipeline_config",
+        new_callable=AsyncMock,
+        return_value=_DEFAULT_CONFIG,
+    ):
+        response = client.get("/config")
+
+    body = response.text
+    # The DOM element with the id used by tests and the Alpine.js component.
+    assert 'id="project-switcher"' in body
+    # The Alpine.js data binding for the switcher.
+    assert "projectSwitcher()" in body
+    # The <select> that lists available projects.
+    assert 'id="project-select"' in body
