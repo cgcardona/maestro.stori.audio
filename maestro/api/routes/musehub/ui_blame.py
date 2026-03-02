@@ -26,13 +26,16 @@ from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.responses import Response
 
+from pathlib import Path
+
+from fastapi.templating import Jinja2Templates
+
 from maestro.api.routes.musehub.blame import _build_blame_entries
+from maestro.api.routes.musehub.jinja2_filters import register_musehub_filters
 from maestro.api.routes.musehub.negotiate import negotiate_response
 from maestro.db import get_db
 from maestro.models.musehub import BlameResponse
 from maestro.services import musehub_repository
-from pathlib import Path
-from fastapi.templating import Jinja2Templates
 
 logger = logging.getLogger(__name__)
 
@@ -40,6 +43,7 @@ router = APIRouter(prefix="/musehub/ui", tags=["musehub-ui"])
 
 _TEMPLATE_DIR = Path(__file__).parent.parent.parent.parent / "templates"
 templates = Jinja2Templates(directory=str(_TEMPLATE_DIR))
+register_musehub_filters(templates.env)
 
 
 async def _resolve_repo(owner: str, repo_slug: str, db: AsyncSession) -> tuple[str, str]:
@@ -161,6 +165,10 @@ async def blame_page(
             "track": track or "",
             "beat_start": beat_start,
             "beat_end": beat_end,
+            # SSR data — passed into template context so the blame table is
+            # rendered server-side instead of fetched client-side.
+            "blame_entries": blame_data.entries,
+            "total_entries": blame_data.total_entries,
         },
         templates=templates,
         json_data=blame_data,

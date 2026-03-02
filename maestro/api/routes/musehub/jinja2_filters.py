@@ -70,6 +70,21 @@ def _shortsha(value: str | None) -> str:
     return value[:8]
 
 
+_NOTE_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
+
+
+def _note_name(midi: int | None) -> str:
+    """Convert a MIDI pitch value (0–127) to a note name string, e.g. 60 → 'C4'.
+
+    Returns '—' for None so templates never render 'None' in place of a note name.
+    """
+    if midi is None:
+        return "—"
+    octave = midi // 12 - 1
+    name = _NOTE_NAMES[midi % 12]
+    return f"{name}{octave}"
+
+
 def _label_text_color(hex_bg: str) -> str:
     """Return '#000' or '#fff' for readable contrast against a hex background.
 
@@ -100,3 +115,4 @@ def register_musehub_filters(env: Environment) -> None:
     env.filters["fmtrelative"] = _fmtrelative
     env.filters["shortsha"] = _shortsha
     env.filters["label_text_color"] = _label_text_color
+    env.filters["note_name"] = _note_name
