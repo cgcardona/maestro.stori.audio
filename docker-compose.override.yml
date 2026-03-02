@@ -55,11 +55,21 @@ services:
       # The hosts.yml mount is read-only and contains no token when the host
       # uses the macOS Keychain — so we pass the token explicitly here.
       GH_TOKEN: ${GH_TOKEN}
+      # Tell AgentCeption where the git repo root and worktrees live inside the
+      # container. AC_REPO_DIR must point at a real git checkout so that
+      # `git worktree add` works. AC_WORKTREES_DIR must match the bind-mount
+      # below so spawned worktrees land on the host at the expected path.
+      AC_REPO_DIR: /repo
+      AC_WORKTREES_DIR: /worktrees
     volumes:
       # Live code — host edits are instantly visible; no rebuild needed
       - ./agentception:/app/agentception
       # .cursor/ — mounted so pipeline-config.json and role files are readable
       # by get_active_label(), read_pipeline_config(), and the spawn endpoint.
       - ./.cursor:/app/.cursor:ro
-      # agentception tests live under agentception/tests/ (isolated from maestro conftest)
+      # Full git repo — required so `git worktree add` can run inside the container.
+      # Mounted at /repo so AC_REPO_DIR=/repo resolves to a real .git directory.
+      - .:/repo
+      # Worktrees — spawned worktrees are created here; shared with the host so
+      # Cursor Tasks launched on the host can see the worktree paths immediately.
       - ${HOME}/.cursor/worktrees/maestro:/worktrees
