@@ -6,20 +6,46 @@
 > If you are an AI agent reading this document, your role is **coordinator only**.
 >
 > **Your job — the full list, nothing more:**
-> 1. Run the **Label Pre-flight** script to create required labels and delete stale ones.
-> 2. Fill in the bug descriptions in each `.agent-task` file (or confirm the user has done so), including the label fields.
-> 3. Run the **Setup** script to create one worktree per batch.
-> 4. Launch one sub-agent per worktree using the Task tool (or Cursor composer window). Each sub-agent reads its own `.agent-task` — you do not need to pass context manually.
-> 5. Report back once all sub-agents have been launched.
+> 1. Run **Step -1 — Phase Planner** to analyze the bug report and produce a phased dependency plan.
+> 2. Run the **Label Pre-flight** script to create required labels and delete stale ones.
+> 3. Run the **Setup** script to create one worktree per phase-batch.
+> 4. Write `.agent-task` files with full phase, dependency, and issue content pre-filled.
+> 5. Launch one sub-agent per worktree using the Task tool. Each sub-agent reads its own `.agent-task` — you do not pass context manually.
+> 6. Report back once all sub-agents have been launched.
 >
 > **You do NOT:**
-> - Draft or create any GitHub issues yourself.
-> - Read bug reports and analyze them yourself.
+> - Create any GitHub issues yourself.
 > - Run `gh issue create` yourself.
 > - Apply labels yourself.
+> - Skip the Phase Planner — it is mandatory even if issues seem obvious.
 >
 > The **Kickoff Prompt** at the bottom of this document is for the sub-agents, not for you.
 > Do not follow it yourself.
+
+---
+
+## Why Phases Matter — Load-Bearing Order
+
+Issues must be grouped into phases where **every issue in phase N+1 depends on at least one
+output from phase N**. This is not optional grouping — it is the structural rule that lets
+the pipeline run continuously without blocking:
+
+```
+Phase 0 (Critical bugs / foundation)
+  └─ must be merged before anyone writes new UI code that depends on correct CSS/data
+Phase 1 (Design system / tokens)
+  └─ must be merged before per-page styling improvements (phases 2+)
+Phase 2 (Data model correctness)
+  └─ must be merged before UX improvements that display that data correctly
+Phase 3 (Core page UX)
+  └─ depends on Phase 0 (no broken CSS) + Phase 2 (correct data)
+Phase N (Polish / non-blocking improvements)
+  └─ depends on Phase N-1 being stable
+```
+
+Each issue body must contain **`Depends on #N`** for every upstream issue it gates on.
+The DAG builder in AgentCeption parses this text to render the dependency graph — if it is
+missing from the body, the issue appears unconnected and the pipeline cannot sequence it correctly.
 
 ---
 
@@ -41,25 +67,19 @@ launch its own leaf agents — creating a tree of unlimited depth.
 
 ```
 Coordinator
-  ├── writes batch-1/.agent-task  (SPAWN_SUB_AGENTS=true, 4 issues)
-  ├── writes batch-2/.agent-task  (SPAWN_SUB_AGENTS=true, 4 issues)
-  ├── writes batch-3/.agent-task  (SPAWN_SUB_AGENTS=true, 4 issues)
-  └── launches 3 sub-coordinators simultaneously
+  ├── Phase Planner (sequential — produces the dependency DAG)
+  ├── Label Pre-flight (sequential — creates labels on GitHub)
+  ├── writes phase-0/.agent-task  (SPAWN_SUB_AGENTS=false, N issues)
+  ├── writes phase-1/.agent-task  (SPAWN_SUB_AGENTS=false, M issues)
+  ├── writes phase-2/.agent-task  (SPAWN_SUB_AGENTS=false, K issues)
+  └── launches phase agents simultaneously (phases that have no deps run in parallel)
 
-Sub-coordinator (batch-1)
-  ├── reads batch-1/.agent-task
-  ├── writes issue-A/.agent-task
-  ├── writes issue-B/.agent-task
-  ├── writes issue-C/.agent-task
-  ├── writes issue-D/.agent-task
-  └── launches 4 leaf agents
-
-Leaf agent (issue-A)
-  └── reads issue-A/.agent-task → creates issue → self-destructs
+Phase agent
+  └── reads .agent-task → creates issues with Depends-on links → self-destructs
 ```
 
-With 3 sub-coordinators × 4 leaf agents = **12 agents from a single coordinator call**.
-Scale by adding more batches, not by holding more context.
+Issues in the same phase that don't depend on each other are created in parallel.
+Issues in later phases include `Depends on #N` in their body, linking to earlier ones.
 
 ---
 
@@ -79,95 +99,141 @@ BATCH_NUM=3                      # batch number (used in worktree name)
 # ── GitHub Labels ─────────────────────────────────────────────────────────────
 # Labels MUST exist on GitHub before agents try to apply them.
 # Run the Label Pre-flight script (below) before creating worktrees.
-PHASE_LABEL=phase-2/core-api           # phase label (parent category)
-BATCH_LABEL=batch-03                   # batch label (child category)
-LABELS_TO_APPLY=enhancement,muse-hub,phase-2/core-api,batch-03
+PHASE_LABEL=ac-ui/0-foundation   # phase label — drives issue-to-pr ordering
+BATCH_LABEL=batch-01             # batch label (child category)
+LABELS_TO_APPLY=enhancement,ac-ui/0-foundation,batch-01
 # ↑ Comma-separated. Each applied individually (|| true) so one failure
-#   never blocks the others. Add domain labels here too (muse-cli, etc.).
+#   never blocks the others. Add domain labels here too.
+
+# ── Dependency Chain ──────────────────────────────────────────────────────────
+# GitHub issue numbers that EVERY issue in this batch depends on.
+# These are written into each issue body as "Depends on #N" so the DAG
+# builder in AgentCeption can parse and visualise the dependency graph.
+PHASE_DEPENDS_ON_ISSUES=         # comma-separated GitHub issue numbers (empty = no deps)
 
 # ── File Ownership (conflict avoidance) ───────────────────────────────────────
 # Declare which files/dirs this batch exclusively owns.
 # Used by the coordinator to verify no two batches share a file.
-FILE_OWNERSHIP=maestro/api/routes/musehub/milestones.py,maestro/db/musehub_milestone_models.py
-
-# ── Dependencies ──────────────────────────────────────────────────────────────
-# Do not implement until these batch numbers or issue numbers are merged.
-DEPENDS_ON=batch-01,batch-02
+FILE_OWNERSHIP=agentception/static/app.css
 
 # ── Sub-agent Orchestration ───────────────────────────────────────────────────
-# Set to true to make this agent act as a sub-coordinator that spawns
-# its own leaf agents rather than doing the work directly.
 SPAWN_SUB_AGENTS=false
-# If SPAWN_SUB_AGENTS=true, list the sub-task worktree paths to create:
-# SUB_TASK_PATHS=/path/to/sub1,/path/to/sub2
 
 # ── Output Contract ───────────────────────────────────────────────────────────
-# What the agent must produce and report back.
-# For bugs-to-issues: a list of created issue URLs.
 REQUIRED_OUTPUT=issue_urls
-
-# ── Escalation ────────────────────────────────────────────────────────────────
-# If the agent is blocked (e.g. gh auth fails, API errors), what to do.
-# stop = self-destruct and report. retry = try once more. escalate = notify coordinator.
 ON_BLOCK=stop
 
-# ── Environment hints ─────────────────────────────────────────────────────────
-GH_REPO=cgcardona/maestro        # always hardcoded, never derived from local path
+# ── Environment ───────────────────────────────────────────────────────────────
+GH_REPO=cgcardona/maestro
 ```
 
 ### Free-form content (after the key=value header)
 
 Below the key=value block, the file contains the actual task content.
-For `bugs-to-issues`, this is the list of bug descriptions — one `## Issue N` section per issue.
-
-### Nested sub-coordinator example
-
-If `SPAWN_SUB_AGENTS=true`, the agent's task file looks like this:
+Each `## Issue N` section becomes one GitHub issue.
 
 ```
-WORKFLOW=bugs-to-issues
-BATCH_NUM=1
-SPAWN_SUB_AGENTS=true
-PHASE_LABEL=phase-1/db-schema
-BATCH_LABEL=batch-01
-LABELS_TO_APPLY=enhancement,muse-hub,phase-1/db-schema,batch-01
+BUGS:
 
-SUB_TASKS:
-## Sub-task A
-ISSUE_TITLE=[DB] Add musehub_milestones table
-ISSUE_BODY=...full description...
+## Issue 1
+TITLE: [ac-ui/0] fix(css): unclosed brace in app.css breaks kill button and modal styles
+BODY:
+The `.agent-task-pre` rule in `agentception/static/app.css` is missing its closing `}`.
+Every CSS rule that follows it (`.btn-kill-inline`, `.modal-backdrop`, `.modal-box`,
+all telemetry chart styles) is parsed as part of `.agent-task-pre` and silently ignored.
 
-## Sub-task B
-ISSUE_TITLE=[DB] Add musehub_labels table
-ISSUE_BODY=...full description...
+**Symptoms:**
+- Kill button on overview + agent detail pages renders unstyled
+- Modal backdrop/box has transparent background (modal floats over nothing)
+- Telemetry CSS bar chart and table styles broken
+
+**Fix:** Add the missing `}` at the correct position in `app.css`.
+
+**Acceptance criteria:**
+- `docker compose exec maestro mypy agentception/` clean
+- Kill button and modal render correctly in the browser
+- Telemetry chart bars are styled (coloured, proportional)
+
+LABELS: bug,ac-ui/0-critical-bugs
+DEPENDS_ON_ISSUES:
 ```
-
-The sub-coordinator agent:
-1. Reads the task file and discovers `SPAWN_SUB_AGENTS=true`
-2. Creates sub-worktrees (e.g. `batch-1a`, `batch-1b`)
-3. Writes a `.agent-task` file into each with `SPAWN_SUB_AGENTS=false`
-4. Launches one leaf agent per sub-worktree
-5. Collects leaf agent reports and self-destructs
 
 ---
 
-## Architecture
+## Step -1 — Phase Planner (MANDATORY — run before everything else)
 
-```
-Coordinator
-  └─ Label Pre-flight (create/delete labels on GitHub)
-  └─ for each batch:
-       DEV_SHA=$(git rev-parse dev)
-       git worktree add --detach .../batch-<N> "$DEV_SHA"
-       write .agent-task into it   ← ALL context the agent needs, incl. labels
-       launch agent in that directory
+> This step is sequential. Run it before creating any worktrees or labels.
+> It produces the dependency DAG that drives everything downstream.
 
-Agent (per worktree)
-  └─ cat .agent-task               ← reads LABELS_TO_APPLY and all other fields
-  └─ for each bug: draft → gh issue create (no --label)
-  └─ for each label in LABELS_TO_APPLY: gh issue edit --add-label || true
-  └─ git worktree remove --force   ← self-destructs when done
-  └─ git worktree prune
+The Phase Planner reads the raw bug/improvement report and outputs a structured
+phase plan. A "phase plan" is a JSON document written to a temp file that the
+coordinator uses to fill in `.agent-task` files and determine label names.
+
+```bash
+# ── Phase Planner script ──────────────────────────────────────────────────────
+REPO=$(git rev-parse --show-toplevel)
+PLAN_FILE="$REPO/.cursor/phase-plan-$(date +%Y%m%d%H%M%S).json"
+
+echo "🗺️  Phase Planner: analyzing bug report..."
+echo "   Output → $PLAN_FILE"
+
+# The Phase Planner produces a JSON document of this shape:
+# {
+#   "label_prefix": "ac-ui",       # prefix for all phase labels
+#   "gh_repo": "cgcardona/maestro",
+#   "phases": [
+#     {
+#       "id": 0,
+#       "label": "ac-ui/0-critical-bugs",
+#       "description": "Critical CSS bugs and crashes — must be fixed before any styling work",
+#       "issues": [
+#         {
+#           "title": "[ac-ui/0] fix(css): unclosed brace in app.css breaks kill button",
+#           "body": "...",
+#           "labels": ["bug", "ac-ui/0-critical-bugs"],
+#           "depends_on_phase_ids": [],     # phases whose issues must be merged first
+#           "depends_on_issue_titles": []   # issue titles within this same phase that must go first
+#         }
+#       ]
+#     },
+#     {
+#       "id": 1,
+#       "label": "ac-ui/1-design-tokens",
+#       "description": "Unify CSS token vocabulary — unlocks all per-page styling work",
+#       "issues": [...]
+#     }
+#   ]
+# }
+#
+# Rules the Planner MUST follow:
+# 1. Phase 0 has no dependencies (DEPENDS_ON_PHASE_IDS must be empty).
+# 2. Phase N > 0: every issue must declare which earlier phases it depends on.
+# 3. "Load-bearing order" means: if merging phase N changes the API, data model,
+#    or file structure that phase N+1 reads — phase N must come first.
+# 4. Issues within the same phase that are truly independent can run in parallel.
+#    Issues within the same phase that depend on each other must note it in
+#    depends_on_issue_titles so the agent writes them in correct order.
+# 5. Every issue body must contain the literal text "Depends on #N" (where N is
+#    the GitHub issue number) for each upstream issue it gates on. Since issue
+#    numbers aren't known at planning time, use a placeholder:
+#    "Depends on: <issues from phase X that must be merged first>"
+#    The issue-creation agent will resolve these to real #N after phase X lands.
+
+# After running the Planner, validate the output:
+echo "=== Phase plan summary ==="
+python3 -c "
+import json, sys
+plan = json.load(open('$PLAN_FILE'))
+print(f'Label prefix: {plan[\"label_prefix\"]}')
+print(f'Total phases: {len(plan[\"phases\"])}')
+for ph in plan['phases']:
+    print(f'  Phase {ph[\"id\"]} ({ph[\"label\"]}): {len(ph[\"issues\"])} issues')
+print()
+# Verify load-bearing rule: phase 0 has no deps
+assert not any(dep for issue in plan['phases'][0]['issues'] for dep in issue.get('depends_on_phase_ids', [])), \
+    'Phase 0 issues must not have phase dependencies'
+print('✅ Load-bearing order validated')
+"
 ```
 
 ---
@@ -180,149 +246,143 @@ previous naming schemes that would pollute autocomplete.
 
 ```bash
 export GH_REPO=cgcardona/maestro
+PLAN_FILE="<path from Phase Planner output>"
 
-# ── 1. Identify stale labels to delete ────────────────────────────────────────
-# List all phase/batch labels currently on GitHub so you can spot obsolete ones.
-echo "=== Current phase/batch labels ==="
-gh label list --repo "$GH_REPO" --limit 100 | grep -E "^(phase|batch)" | sort
-
-# Delete stale labels (edit this list to match what's actually stale):
-# for label in phase-1 phase-2 batch-1 batch-2; do
-#   gh label delete "$label" --repo "$GH_REPO" --yes 2>/dev/null || true
-# done
-
-# ── 2. Create/update phase labels ─────────────────────────────────────────────
-# Add any phase labels needed for this run. gh label create fails silently if
-# the label already exists with the correct colour — use --force to update colour/desc.
-declare -A PHASE_LABELS=(
-  ["phase-1/db-schema"]="0052cc|Phase 1 · DB Schema: new Alembic migrations + ORM models"
-  ["phase-2/core-api"]="0075ca|Phase 2 · Core API: brand-new FastAPI route files"
-  ["phase-3/api-extensions"]="0e8a16|Phase 3 · API Extensions: new endpoints on existing route files"
-  ["phase-4/new-ui-pages"]="006b75|Phase 4 · New UI Pages: brand-new page route files"
-  ["phase-5/ui-enhancements"]="5319e7|Phase 5 · UI Enhancements: improvements to existing pages"
-  ["phase-6/seed-data"]="b60205|Phase 6 · Seed Data: 10x seed script, CC MIDI, narratives"
-  ["phase-7/machine-access"]="e4e669|Phase 7 · Machine Access: JSON alternates, oEmbed, JSON-LD, RSS"
-)
-for label in "${!PHASE_LABELS[@]}"; do
-  IFS='|' read -r color desc <<< "${PHASE_LABELS[$label]}"
-  gh label create "$label" --repo "$GH_REPO" --color "$color" --description "$desc" 2>/dev/null \
-    || gh label edit "$label" --repo "$GH_REPO" --color "$color" --description "$desc" 2>/dev/null \
+# ── 1. Create phase labels from the plan ──────────────────────────────────────
+PHASE_COLORS=("6741d9" "1098ad" "0d6efd" "198754" "f59f00" "d63939" "e65100" "0075ca")
+python3 -c "
+import json
+plan = json.load(open('$PLAN_FILE'))
+for ph in plan['phases']:
+    color = '${PHASE_COLORS[' + str(ph['id'] % 8) + ']}'
+    print(f'{ph[\"label\"]}|{color}|{ph[\"description\"]}')
+" | while IFS='|' read -r label color desc; do
+  gh label create "$label" --repo "$GH_REPO" \
+    --color "$color" --description "$desc" 2>/dev/null \
+    || gh label edit "$label" --repo "$GH_REPO" \
+       --color "$color" --description "$desc" 2>/dev/null \
     || true
-  echo "✅ phase label: $label"
+  echo "✅ $label"
 done
 
-# ── 3. Create/update status labels (pipeline state — used by conductor) ───────
-declare -A STATUS_LABELS=(
-  ["status/ready"]="0e8a16|Issue is open and ready for an ISSUE_TO_PR agent"
-  ["status/in-progress"]="e4e669|ISSUE_TO_PR agent currently working on this issue"
-  ["status/pr-open"]="d93f0b|PR created, awaiting PR_REVIEW agent"
-  ["status/merged"]="6f42c1|PR merged and issue closed"
-  ["conductor-reminder"]="e4e669|Open: pipeline incomplete — re-run PARALLEL_CONDUCTOR.md"
-)
-for label in "${!STATUS_LABELS[@]}"; do
-  IFS='|' read -r color desc <<< "${STATUS_LABELS[$label]}"
-  gh label create "$label" --repo "$GH_REPO" --color "$color" --description "$desc" 2>/dev/null \
-    || gh label edit "$label" --repo "$GH_REPO" --color "$color" --description "$desc" 2>/dev/null \
-    || true
-  echo "✅ status label: $label"
-done
-
-# ── 4. Create/update batch labels ─────────────────────────────────────────────
-for i in $(seq 1 15); do
+# ── 2. Create/update batch labels ─────────────────────────────────────────────
+for i in $(seq 1 20); do
   N=$(printf "%02d" $i)
   gh label create "batch-$N" --repo "$GH_REPO" \
     --color "f4a261" \
-    --description "Batch $N · 4 parallel issues guaranteed no file conflicts" \
+    --description "Batch $N · parallel issues with no file conflicts" \
     2>/dev/null || true
 done
-echo "✅ batch labels 01-15 ready"
+echo "✅ batch labels 01-20 ready"
 
-# ── 4. Verify all required labels exist ───────────────────────────────────────
-echo "=== All phase/batch labels after pre-flight ==="
-gh label list --repo "$GH_REPO" --limit 100 | grep -E "^(phase|batch)" | sort
+# ── 3. Verify ─────────────────────────────────────────────────────────────────
+echo "=== Phase labels on GitHub ==="
+gh label list --repo "$GH_REPO" --limit 100 \
+  | grep -E "$(python3 -c "import json; plan=json.load(open('$PLAN_FILE')); print(plan['label_prefix'])")" \
+  | sort
 ```
 
 ---
 
-## Setup — run this after the Label Pre-flight
+## Setup — create one worktree per phase-batch
 
 Run from anywhere inside the main repo. Paths are derived automatically.
-**Fill in the bug descriptions in each `.agent-task` before launching agents.**
+**The `.agent-task` files must be fully pre-filled before launching agents.**
 
-> **GitHub repo slug:** Always `cgcardona/maestro`. The local path
-> (`/Users/gabriel/dev/tellurstori/maestro`) is misleading — `tellurstori` is
-> NOT the GitHub org. Never derive the slug from `basename` or `pwd`.
+> **GitHub repo slug:** Always `cgcardona/maestro`. Never derive from local path.
 
 ```bash
 REPO=$(git rev-parse --show-toplevel)
 PRTREES="$HOME/.cursor/worktrees/$(basename "$REPO")"
 mkdir -p "$PRTREES"
 cd "$REPO"
-
 GH_REPO=cgcardona/maestro
-NUM_BATCHES=3   # one worktree per batch
-
 DEV_SHA=$(git rev-parse dev)
+PLAN_FILE="<path from Phase Planner output>"
 
-for i in $(seq 1 $NUM_BATCHES); do
-  WT="$PRTREES/batch-$i"
-  if [ -d "$WT" ]; then
-    echo "⚠️  worktree batch-$i already exists, skipping"
-    continue
-  fi
-  git worktree add --detach "$WT" "$DEV_SHA"
+# Create one worktree per phase, write the task file from the plan
+python3 << 'PYEOF'
+import json, os, subprocess, textwrap
+from pathlib import Path
 
-  # ── Write the task file ───────────────────────────────────────────────────
-  # Edit: PHASE_LABEL, BATCH_LABEL, LABELS_TO_APPLY, FILE_OWNERSHIP per batch.
-  # Then add the bug descriptions under BUGS:.
-  cat > "$WT/.agent-task" << TASKEOF
-WORKFLOW=bugs-to-issues
-BATCH_NUM=$i
-ROLE=coordinator
-GH_REPO=$GH_REPO
+plan = json.load(open(os.environ['PLAN_FILE']))
+repo = subprocess.check_output(['git', 'rev-parse', '--show-toplevel']).decode().strip()
+prtrees = Path.home() / '.cursor' / 'worktrees' / Path(repo).name
+dev_sha = subprocess.check_output(['git', 'rev-parse', 'dev']).decode().strip()
+gh_repo = plan['gh_repo']
 
-PHASE_LABEL=phase-X/name-here
-BATCH_LABEL=batch-$(printf "%02d" $i)
-LABELS_TO_APPLY=enhancement,muse-hub,phase-X/name-here,batch-$(printf "%02d" $i)
+for ph in plan['phases']:
+    wt = prtrees / f"bugs-phase-{ph['id']}"
+    if wt.exists():
+        print(f"⚠️  {wt} already exists, skipping")
+        continue
+    subprocess.run(['git', 'worktree', 'add', '--detach', str(wt), dev_sha], check=True)
 
-FILE_OWNERSHIP=
-DEPENDS_ON=
-SPAWN_SUB_AGENTS=false
-ATTEMPT_N=0
-REQUIRED_OUTPUT=issue_urls
-ON_BLOCK=stop
+    # Build PHASE_DEPENDS_ON_ISSUES from phase deps (empty for phase 0)
+    dep_phases = set()
+    for issue in ph['issues']:
+        dep_phases.update(issue.get('depends_on_phase_ids', []))
 
-BUGS:
-# Paste bug descriptions for batch $i below, one per section.
-# Each ## Issue N block becomes one GitHub issue.
+    # Gather all issues from dependency phases
+    dep_issues_note = ""
+    if dep_phases:
+        dep_phases_str = ", ".join(f"phase-{d}" for d in sorted(dep_phases))
+        dep_issues_note = f"(issues from {dep_phases_str} must be merged first — add real #N after they land)"
 
-## Issue 1
-<title>
-<description>
+    # Build labels list
+    labels = f"enhancement,{ph['label']}"
 
-## Issue 2
-<title>
-<description>
-TASKEOF
+    # Serialize issues for the BUGS: block
+    bugs_block = "\nBUGS:\n"
+    for i, issue in enumerate(ph['issues'], 1):
+        bugs_block += f"\n## Issue {i}\n"
+        bugs_block += f"TITLE: {issue['title']}\n"
+        bugs_block += f"LABELS: {','.join(issue.get('labels', [ph['label']]))}\n"
+        dep_phases_for_issue = issue.get('depends_on_phase_ids', [])
+        bugs_block += f"DEPENDS_ON_PHASES: {','.join(str(d) for d in dep_phases_for_issue)}\n"
+        bugs_block += f"BODY:\n{issue['body'].strip()}\n"
 
-  echo "✅ worktree batch-$i ready — fill in PHASE_LABEL, BATCH_LABEL, LABELS_TO_APPLY, and BUGS"
-done
+    task = textwrap.dedent(f"""\
+        WORKFLOW=bugs-to-issues
+        BATCH_NUM={ph['id']}
+        ROLE=coordinator
+        GH_REPO={gh_repo}
+
+        PHASE_LABEL={ph['label']}
+        LABELS_TO_APPLY={labels}
+        PHASE_DEPENDS_ON_ISSUES={dep_issues_note}
+
+        FILE_OWNERSHIP={','.join(set(
+            f for issue in ph['issues']
+            for f in issue.get('file_ownership', [])
+        ))}
+        SPAWN_SUB_AGENTS=false
+        ATTEMPT_N=0
+        REQUIRED_OUTPUT=issue_urls
+        ON_BLOCK=stop
+    """) + bugs_block
+
+    (wt / '.agent-task').write_text(task)
+    print(f"✅ phase-{ph['id']} worktree ready → {wt}")
+
+PYEOF
 
 git worktree list
 ```
 
-After filling in each `.agent-task`, launch one agent per worktree using the
-Task tool (recommended — allows more than 4 simultaneous agents) or by pasting
-the Kickoff Prompt into a Cursor composer window rooted in that worktree.
-
-**Using the Task tool (preferred):** you can launch all batches simultaneously
-in a single message because each agent reads its own task file independently:
+After verifying task files, launch phase agents. **Phases with no dependency on earlier
+phases can launch simultaneously. Phases that depend on earlier ones must wait for those
+earlier phases to create their issues (so real #N numbers are known).**
 
 ```python
-# Launch all 3 batch agents in one message — they run fully in parallel
-Task(worktree="/path/to/batch-1", prompt=KICKOFF_PROMPT)
-Task(worktree="/path/to/batch-2", prompt=KICKOFF_PROMPT)
-Task(worktree="/path/to/batch-3", prompt=KICKOFF_PROMPT)
+# Phase 0 and any other dep-free phases launch immediately in parallel:
+Task(worktree="~/.cursor/worktrees/maestro/bugs-phase-0", prompt=KICKOFF_PROMPT)
+Task(worktree="~/.cursor/worktrees/maestro/bugs-phase-1", prompt=KICKOFF_PROMPT)
+
+# After phase 0 and 1 issues are created, update phase 2+ task files with real #N,
+# then launch phase 2+ agents:
+Task(worktree="~/.cursor/worktrees/maestro/bugs-phase-2", prompt=KICKOFF_PROMPT)
+# ... and so on
 ```
 
 ---
@@ -332,13 +392,9 @@ Task(worktree="/path/to/batch-3", prompt=KICKOFF_PROMPT)
 **You are running inside a Cursor worktree.** Your working directory is NOT the main repo.
 
 ```bash
-# Derive main repo path if needed
-REPO=$(git worktree list | head -1 | awk '{print $1}')   # local filesystem path only
-
-# GitHub repo slug — read from .agent-task GH_REPO field, or use hardcoded default.
-# NEVER derive from local path or directory name.
+REPO=$(git worktree list | head -1 | awk '{print $1}')
 export GH_REPO=$(grep "^GH_REPO=" .agent-task | cut -d= -f2)
-export GH_REPO=${GH_REPO:-cgcardona/maestro}   # fallback
+export GH_REPO=${GH_REPO:-cgcardona/maestro}
 ```
 
 | Item | Value |
@@ -362,159 +418,175 @@ STEP 0 — READ YOUR TASK FILE:
   cat .agent-task
 
   Parse these fields from the header (KEY=value lines):
-    WORKFLOW        — must be "bugs-to-issues"
-    BATCH_NUM       — your batch number
-    GH_REPO         — GitHub repo slug (hardcoded: cgcardona/maestro)
-    PHASE_LABEL     — the phase label to apply to every issue (e.g. phase-2/core-api)
-    BATCH_LABEL     — the batch label (e.g. batch-03)
-    LABELS_TO_APPLY — comma-separated list of ALL labels to apply to every issue
-    FILE_OWNERSHIP  — which files this batch owns (for your awareness, not action needed)
-    DEPENDS_ON      — batch/issue numbers that must be merged before you run
-    SPAWN_SUB_AGENTS — if true, follow the sub-coordinator path instead of this path
+    WORKFLOW                — must be "bugs-to-issues"
+    BATCH_NUM               — your phase number
+    GH_REPO                 — GitHub repo slug (cgcardona/maestro)
+    PHASE_LABEL             — the phase label to apply to every issue
+    LABELS_TO_APPLY         — comma-separated list of ALL labels for every issue
+    PHASE_DEPENDS_ON_ISSUES — upstream issue numbers (already resolved to #N)
+    FILE_OWNERSHIP          — files this phase owns (awareness, not action)
+    SPAWN_SUB_AGENTS        — if true, follow sub-coordinator path
 
 STEP 0.5 — LOAD YOUR ROLE:
   ROLE=$(grep '^ROLE=' .agent-task | cut -d= -f2)
   REPO=$(git worktree list | head -1 | awk '{print $1}')
   ROLE_FILE="$REPO/.cursor/roles/${ROLE}.md"
-  if [ -f "$ROLE_FILE" ]; then
-    cat "$ROLE_FILE"
-    echo "✅ Operating as role: $ROLE"
-  else
-    echo "⚠️  No role file found for '$ROLE' — proceeding without role context."
-  fi
-  # The decision hierarchy, quality bar, and failure modes in that file govern
-  # all your choices from this point forward.
+  [ -f "$ROLE_FILE" ] && cat "$ROLE_FILE" && echo "✅ Operating as: $ROLE"
 
-  Export for use in all subsequent commands:
+  Export for all subsequent commands:
     export GH_REPO=$(grep "^GH_REPO=" .agent-task | cut -d= -f2)
-    export GH_REPO=${GH_REPO:-cgcardona/maestro}
-
     PHASE_LABEL=$(grep "^PHASE_LABEL=" .agent-task | cut -d= -f2)
-    BATCH_LABEL=$(grep "^BATCH_LABEL=" .agent-task | cut -d= -f2)
     LABELS_TO_APPLY=$(grep "^LABELS_TO_APPLY=" .agent-task | cut -d= -f2)
+    PHASE_DEPENDS_ON_ISSUES=$(grep "^PHASE_DEPENDS_ON_ISSUES=" .agent-task | cut -d= -f2)
     ATTEMPT_N=$(grep "^ATTEMPT_N=" .agent-task | cut -d= -f2)
 
-  ⚠️  ANTI-LOOP GUARD: if ATTEMPT_N > 2 → STOP immediately.
-    You have retried this task 3+ times. Continuing is almost certainly wrong.
-    Self-destruct and escalate: report the exact failure from your last attempt
-    so a human can diagnose the root cause. Never loop blindly.
+  ⚠️  ANTI-LOOP GUARD: if ATTEMPT_N > 2 → STOP immediately. Report exact failure.
 
-  ⚠️  RETRY-WITHOUT-STRATEGY-MUTATION: if a command fails twice in a row with
-    the same error, you MUST change strategy — not retry with minor parameter tweaks.
-    Two identical failures = the approach is wrong. Stop. Redesign. Or escalate.
+  If SPAWN_SUB_AGENTS=true → follow sub-coordinator path (create sub-worktrees).
 
-  If SPAWN_SUB_AGENTS=true → follow the sub-coordinator path:
-    1. For each sub-task in the file, create a sub-worktree with its own .agent-task
-    2. Launch one leaf agent per sub-worktree (Task tool or Cursor composer)
-    3. Collect leaf reports and self-destruct
-    (This enables nested orchestration — see Agent Task File Reference in the main doc)
-
-STEP 1 — VERIFY AUTH AND LABELS EXIST:
+STEP 1 — VERIFY AUTH AND LABELS:
   gh auth status
-  # Verify every label in LABELS_TO_APPLY exists on GitHub:
   IFS=',' read -ra LABELS <<< "$LABELS_TO_APPLY"
   for label in "${LABELS[@]}"; do
     FOUND=$(gh label list --repo "$GH_REPO" --search "$label" --json name --jq '.[].name' 2>/dev/null)
-    if [ -z "$FOUND" ]; then
-      echo "❌ Label '$label' does not exist on GitHub. Run the Label Pre-flight script."
-      echo "   Continuing — label application will use || true so this is non-fatal."
-    fi
+    [ -z "$FOUND" ] && echo "⚠️  Label '$label' missing — run Label Pre-flight"
   done
 
-STEP 2 — CREATE ISSUES:
+STEP 2 — RESOLVE UPSTREAM ISSUE NUMBERS:
+  # If PHASE_DEPENDS_ON_ISSUES is non-empty, those upstream issues already
+  # exist on GitHub. Fetch their numbers now so you can write "Depends on #N"
+  # into downstream issue bodies.
+
+  # The upstream issue titles are listed in the BUGS: block under
+  # DEPENDS_ON_PHASES. Look them up by title:
+  UPSTREAM_MAP=()  # will hold "title → #N" pairs
+  IFS=',' read -ra UPSTREAM <<< "$PHASE_DEPENDS_ON_ISSUES"
+  for issue_title in "${UPSTREAM[@]}"; do
+    [ -z "$issue_title" ] && continue
+    NUM=$(gh issue list --repo "$GH_REPO" \
+      --search "\"$issue_title\" in:title" --state open \
+      --json number --jq '.[0].number // empty' 2>/dev/null)
+    [ -n "$NUM" ] && UPSTREAM_MAP+=("$issue_title → #$NUM")
+    echo "  Upstream: $issue_title → #${NUM:-NOT FOUND}"
+  done
+
+STEP 3 — CREATE ISSUES:
   For each ## Issue N section in the BUGS: block of .agent-task:
 
-  1. Check for an existing issue first (idempotency gate):
-       gh issue list --repo "$GH_REPO" --search "<title>" --state all --json number,title,url | head -3
-     If a matching issue already exists → skip creation, record the existing URL.
+  Parse:
+    TITLE      — from "TITLE: ..." line
+    BODY       — from "BODY:" to next "## Issue" or EOF
+    LABELS     — from "LABELS: ..." line (overrides LABELS_TO_APPLY for this issue)
+    DEPENDS_ON_PHASES — from "DEPENDS_ON_PHASES: ..." line
 
-  2. Create the issue WITHOUT --label (the two-step pattern prevents label failures
-     from blocking issue creation):
+  Build the issue body:
+    1. Start with the description text from BODY.
+    2. If DEPENDS_ON_PHASES is non-empty, append a "## Dependencies" section:
+       ---
+       ## Dependencies
+       This issue depends on the following issues being merged first:
+       <for each upstream issue from PHASE_DEPENDS_ON_ISSUES matching the phase IDs>
+         - Depends on #N — <upstream issue title>
+       3. Append a "## Phase" section:
+       ---
+       ## Phase
+       `<PHASE_LABEL>` — <phase description from task file>
 
-     ISSUE_URL=$(gh issue create \
-       --repo "$GH_REPO" \
-       --title "<title from task file>" \
-       --body "$(cat <<'EOF'
-<full body from task file — include Phase, Batch, File Ownership, Depends On,
- and all technical spec details>
+  Idempotency check first:
+    gh issue list --repo "$GH_REPO" --search "<title>" --state all \
+      --json number,title,url | head -3
+    If matching issue exists → skip, record URL.
+
+  Create WITHOUT --label (two-step pattern):
+    ISSUE_URL=$(gh issue create \
+      --repo "$GH_REPO" \
+      --title "<TITLE>" \
+      --body "$(cat <<'EOF'
+<full constructed body with Dependencies + Phase sections>
 EOF
 )")
 
-  3. Apply EVERY label from LABELS_TO_APPLY individually (|| true = non-fatal):
-     IFS=',' read -ra LABELS <<< "$LABELS_TO_APPLY"
-     for label in "${LABELS[@]}"; do
-       gh issue edit "$ISSUE_URL" --repo "$GH_REPO" --add-label "$label" 2>/dev/null || true
-     done
+  Apply labels individually (|| true = non-fatal):
+    IFS=',' read -ra ISSUE_LABELS <<< "<LABELS field>"
+    for label in "${ISSUE_LABELS[@]}"; do
+      gh issue edit "$ISSUE_URL" --repo "$GH_REPO" --add-label "$label" 2>/dev/null || true
+    done
 
-     # Also apply any domain-specific labels listed in the issue section itself:
-     # (e.g. muse-cli for commands that map to CLI commands)
-     # gh issue edit "$ISSUE_URL" --repo "$GH_REPO" --add-label "muse-cli" 2>/dev/null || true
+  Record the created URL.
+  ⚠️  If gh issue create fails twice for the same issue, skip and report — no loops.
 
-  4. Record the created issue URL.
-     ⚠️  If gh issue create fails twice for the same issue, skip it and report
-     the failure — do NOT loop endlessly.
-
-  ── VALID LABEL REFERENCE ────────────────────────────────────────────────────
-  │ Standard labels (always exist):                                            │
-  │   bug             documentation   duplicate        enhancement             │
-  │   good first issue  help wanted   invalid          question                │
-  │   wontfix         multimodal      performance      ai-pipeline             │
-  │   muse            muse-cli        muse-hub         storpheus               │
-  │   maestro-integration  mypy       cli              testing                 │
-  │   weekend-mvp     muse-music-extensions                                    │
-  │                                                                            │
-  │ Phase labels (created by Label Pre-flight):                                │
-  │   phase-1/db-schema      phase-2/core-api      phase-3/api-extensions     │
-  │   phase-4/new-ui-pages   phase-5/ui-enhancements  phase-6/seed-data       │
-  │   phase-7/machine-access                                                   │
-  │                                                                            │
-  │ Batch labels (created by Label Pre-flight):                                │
-  │   batch-01  batch-02  batch-03  batch-04  batch-05  batch-06  batch-07    │
-  │   batch-08  batch-09  batch-10  batch-11  batch-12  batch-13  batch-14    │
-  │   batch-15                                                                 │
-  │                                                                            │
-  │ ⚠️  Never invent labels. A missing label causes gh issue edit to fail     │
-  │    (non-fatal with || true), but leaves the issue mislabeled.             │
+  ── LABEL REFERENCE ──────────────────────────────────────────────────────────
+  │ Standard: bug  enhancement  documentation  muse-hub  testing  mypy        │
+  │ Phase labels: read from PHASE_LABEL field — must exist via Pre-flight      │
+  │ Batch labels: batch-01 through batch-20 — created by Pre-flight            │
+  │ ⚠️  Never invent labels. A missing label is non-fatal (|| true) but leaves │
+  │    the issue mislabeled.                                                   │
   └────────────────────────────────────────────────────────────────────────────
 
-STEP 3 — SELF-DESTRUCT (always run this when done):
+STEP 4 — CROSS-LINK DOWNSTREAM ISSUES:
+  After creating ALL issues in this phase, update each issue that has
+  upstream dependencies to add the real "Depends on #N" text:
+
+  For each created issue that had DEPENDS_ON_PHASES set:
+    # Find the upstream issue numbers (already resolved in STEP 2)
+    # Append to the body:
+    CURRENT_BODY=$(gh issue view "$ISSUE_NUM" --repo "$GH_REPO" --json body --jq '.body')
+    UPDATED_BODY="$CURRENT_BODY
+
+---
+**Depends on:** $(join the real "#N — title" strings for upstream issues)"
+    gh issue edit "$ISSUE_NUM" --repo "$GH_REPO" --body "$UPDATED_BODY" 2>/dev/null || true
+    echo "✅ Cross-linked #$ISSUE_NUM"
+
+STEP 5 — SELF-DESTRUCT:
   REPO=$(git worktree list | head -1 | awk '{print $1}')
   WORKTREE=$(pwd)
   cd "$REPO"
   git worktree remove --force "$WORKTREE"
   git worktree prune
 
-Report: batch number, PHASE_LABEL, BATCH_LABEL, and the explicit list of
-created issue URLs with titles. ⚠️  An empty URL list is a failure — "Done"
-without artifact proof is not acceptable.
+Report: phase number, PHASE_LABEL, list of created issue URLs with titles,
+and the resolved upstream #N cross-links written. An empty URL list is a failure.
 ```
 
 ---
 
-## Before launching
+## After all phases complete
 
-1. Run the **Label Pre-flight** script above.
-2. Run the **Setup** script and fill in `.agent-task` files (PHASE_LABEL, BATCH_LABEL, LABELS_TO_APPLY, BUGS).
-3. Confirm `gh` is authenticated: `gh auth status`
-4. Confirm issues will land in the right repo: `gh repo view cgcardona/maestro`
+```bash
+# 1. Verify every issue has correct labels
+gh issue list --repo cgcardona/maestro --label "ac-ui/0-foundation" \
+  --json number,title,labels --jq '.[] | "#\(.number) \(.title)"'
+
+# 2. Verify dependency text in issue bodies
+gh issue list --repo cgcardona/maestro --state open \
+  --json number,title,body \
+  --jq '.[] | select(.body | contains("Depends on")) | "#\(.number) \(.title)"'
+
+# 3. Clean up worktrees
+git worktree prune
+git worktree list  # should show only main repo
+
+# 4. Issues are immediately available for parallel-issue-to-pr.md
+# Dispatch by phase label (foundational phases first):
+gh issue list --repo cgcardona/maestro --label "ac-ui/0-foundation" \
+  --state open --json number,title,url
+```
 
 ---
 
-## After agents complete
+## Phase Planner — Quality Bar
 
-- Review created issues on GitHub for accuracy and label correctness.
-- Verify every issue has: phase label + batch label + domain labels.
-  ```bash
-  gh issue list --repo cgcardona/maestro --label "batch-01" --json number,title,labels
-  ```
-- Add `blocks #N` / `related to #N` cross-references if needed.
-- Verify no stale worktrees remain: `git worktree list` — should show only the main repo.
-  If any linger (agent crashed before cleanup):
-  ```bash
-  git -C "$(git rev-parse --show-toplevel)" worktree prune
-  ```
-- Issues are immediately available for the **PARALLEL_ISSUE_TO_PR.md** workflow.
-  To dispatch the next wave, select issues by batch label:
-  ```bash
-  gh issue list --repo cgcardona/maestro --label "batch-01" --state open --json number,title,url
-  ```
+The Phase Planner output is valid if and only if:
+
+1. **Phase 0 has zero dependencies** — it is the unconditional foundation.
+2. **Every phase N > 0** declares which phase IDs it depends on in every issue.
+3. **No circular dependencies** — a DAG, not a cycle.
+4. **"Depends on #N" text is resolvable** — either as a real issue number (if phases
+   are created sequentially) or as a placeholder `<issues from phase X>` that the
+   issue-creation agent resolves before writing the body.
+5. **Phase descriptions are load-bearing**, not cosmetic — each description must
+   name the concrete artifact (file, API, data model, CSS token) that downstream
+   phases consume.
+6. **File ownership is declared** per issue so no two phases modify the same file
+   in the same parallel wave.

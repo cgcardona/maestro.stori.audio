@@ -24,15 +24,15 @@ echo '── Claim label ──────────────────�
 sync_label 'agent:wip' '0075ca' 'Claimed by a pipeline agent — do not assign manually'
 
 echo '── Project label ────────────────────────────────────────────'
-sync_label 'htmx-migration' 'e65100' 'HTMX migration — server-side rendering rollout for Muse Hub'
+sync_label 'ac-ui' '7c3aed' 'AgentCeption UI — bug fixes, design system, and UX improvements'
 
 echo '── Phase labels ─────────────────────────────────────────────'
-sync_label 'htmx/0-foundation' '6741d9' 'HTMX Phase 0 · Foundation — infra helpers, base template, filters'
-sync_label 'htmx/1-pages' '1098ad' 'HTMX Phase 1 · Core pages SSR'
-sync_label 'htmx/2-main-ui' '0d6efd' 'HTMX Phase 2 · Main UI pages SSR + HTMX filters'
-sync_label 'htmx/3-analysis' '198754' 'HTMX Phase 3 · Analysis pages SSR'
-sync_label 'htmx/4-canvas' 'f59f00' 'HTMX Phase 4 · Canvas / partial SSR pages'
-sync_label 'htmx/5-cleanup' 'd63939' 'HTMX Phase 5 · Cleanup — remove dead JS, audit coverage'
+sync_label 'ac-ui/0-critical-bugs' 'd63939' 'AC-UI Phase 0 · Critical bugs — CSS crashes, undefined vars, broken Jinja filters'
+sync_label 'ac-ui/1-design-tokens' '6741d9' 'AC-UI Phase 1 · Design tokens — unify CSS vocabulary, remove hardcoded URLs'
+sync_label 'ac-ui/2-data-model' '1098ad' 'AC-UI Phase 2 · Data model — fix status mismatch, staleness, live data contracts'
+sync_label 'ac-ui/3-core-pages' '0d6efd' 'AC-UI Phase 3 · Core pages — overview, agents list, agent detail UX'
+sync_label 'ac-ui/4-controls-intelligence' 'f59f00' 'AC-UI Phase 4 · Controls & Intelligence — controls hub, DAG, A/B, telemetry'
+sync_label 'ac-ui/5-polish' '198754' 'AC-UI Phase 5 · Polish — toast system, keyboard a11y, responsive, settings'
 
 echo '── Utility labels ───────────────────────────────────────────'
 sync_label 'bug' 'd73a4a' 'Something isn'\''t working'
