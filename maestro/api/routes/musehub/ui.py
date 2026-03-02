@@ -594,6 +594,7 @@ async def commits_list_page(
         templates=templates,
         json_data=CommitListResponse(commits=commits, total=total),
         format_param=format,
+        fragment_template="musehub/fragments/commit_rows.html",
     )
 
 
