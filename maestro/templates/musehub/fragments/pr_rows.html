@@ -1,0 +1,56 @@
+{#  fragments/pr_rows.html — bare HTMX fragment: pull request list rows.
+
+    Rendered in two contexts:
+
+    1. Full-page load: included inline by musehub/pages/pr_list.html inside
+       the ``<div id="pr-rows">`` target container.
+
+    2. HTMX partial swap: returned directly when the handler detects
+       ``HX-Request: true``, replacing only the ``#pr-rows`` container on
+       tab/sort switches.
+
+    Required context variables
+    --------------------------
+    prs         : list[dict]  — PRResponse.model_dump() for active state/sort
+    base_url    : str         — repo UI prefix, e.g. /musehub/ui/owner/slug
+    state       : str         — active state tab: 'open' | 'merged' | 'closed' | 'all'
+#}
+{% from "musehub/macros/empty_state.html" import empty_state %}
+
+{% if prs %}
+  {% for pr in prs %}
+    <div class="pr-row">
+      {# State badge #}
+      {% if pr.state == 'merged' %}
+        <span class="badge badge-merged">Merged</span>
+      {% elif pr.state == 'closed' %}
+        <span class="badge badge-closed">Closed</span>
+      {% else %}
+        <span class="badge badge-open">Open</span>
+      {% endif %}
+
+      <div style="flex:1;min-width:0">
+        <a href="{{ base_url }}/pulls/{{ pr.pr_id }}">{{ pr.title }}</a>
+        <div class="pr-meta">
+          <span class="branch-pill">{{ pr.from_branch }}</span>
+          <span>→</span>
+          <span class="branch-pill">{{ pr.to_branch }}</span>
+          <span>{{ pr.created_at | fmtdate }}</span>
+          {% if pr.author %}<span>by {{ pr.author }}</span>{% endif %}
+          {% if pr.state == 'merged' and pr.merge_commit_id %}
+            <a href="{{ base_url }}/commits/{{ pr.merge_commit_id }}"
+               style="font-family:monospace;font-size:11px;color:#8b49da">
+              {{ pr.merge_commit_id[:8] }}
+            </a>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  {% endfor %}
+{% else %}
+  {{ empty_state(
+      "🔀",
+      "No pull requests",
+      "No pull requests match the current filter. Try switching tabs.",
+  ) }}
+{% endif %}
