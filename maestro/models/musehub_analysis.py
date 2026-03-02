@@ -1078,3 +1078,77 @@ class RecallResponse(CamelModel):
     embedding_dimensions: int = Field(
         ..., description="Dimensionality of the musical feature space used for search"
     )
+
+
+# ---------------------------------------------------------------------------
+# SSR result types — compare / divergence / context pages
+# ---------------------------------------------------------------------------
+
+
+class CompareDimension(CamelModel):
+    """One row in the compare table — a single musical dimension compared between two refs.
+
+    ``delta`` is ``head_value - base_value``; positive means the head ref scored
+    higher on this dimension.  Values are bounded to [-1.0, 1.0].
+    """
+
+    name: str = Field(..., description="Musical dimension label (e.g. 'Melodic')")
+    base_value: float = Field(..., ge=0.0, le=1.0, description="Normalised score for the base ref")
+    head_value: float = Field(..., ge=0.0, le=1.0, description="Normalised score for the head ref")
+    delta: float = Field(..., ge=-1.0, le=1.0, description="head_value - base_value")
+
+
+class CompareResult(CamelModel):
+    """Server-side payload for the compare page.
+
+    Consumed by ``pages/analysis/compare.html`` which renders the dimension
+    table entirely server-side.  No client-side fetch required.
+    """
+
+    base: str = Field(..., description="Base ref (branch name, tag, or commit SHA)")
+    head: str = Field(..., description="Head ref (branch name, tag, or commit SHA)")
+    dimensions: list[CompareDimension] = Field(
+        ..., description="Per-dimension comparison rows, one per musical dimension"
+    )
+
+
+class DivergenceDimension(CamelModel):
+    """Per-dimension divergence score between a fork and its source repo.
+
+    ``divergence`` is in [0.0, 1.0]: 0 = identical, 1 = maximally diverged.
+    """
+
+    name: str = Field(..., description="Musical dimension label")
+    divergence: float = Field(..., ge=0.0, le=1.0, description="Normalised divergence score (0=identical)")
+
+
+class DivergenceResult(CamelModel):
+    """Server-side payload for the divergence page.
+
+    ``score`` is the weighted average divergence across all dimensions.
+    Consumed by ``pages/analysis/divergence.html``.
+    """
+
+    score: float = Field(..., ge=0.0, le=1.0, description="Overall divergence score (0=identical, 1=fully diverged)")
+    dimensions: list[DivergenceDimension] = Field(
+        ..., description="Per-dimension divergence breakdown"
+    )
+
+
+class ContextResult(CamelModel):
+    """Server-side payload for the context page.
+
+    Aggregates summary text, Maestro suggestions, and a list of musically
+    absent elements for the given commit ref.  Consumed by
+    ``pages/analysis/context.html``.
+    """
+
+    summary: str = Field(default="", description="AI-generated one-paragraph musical context summary")
+    missing_elements: list[str] = Field(
+        default_factory=list,
+        description="Musical elements absent from the current state (e.g. 'bass line', 'reverb tail')",
+    )
+    suggestions: dict[str, str] = Field(
+        default_factory=dict,
+        description="Keyed Maestro composition suggestions (key=short label, value=instruction text)",
+    )

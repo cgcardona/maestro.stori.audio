@@ -52,9 +52,9 @@ GH_REPO=${GH_REPO:-cgcardona/maestro}
 WTNAME=$(basename "$(pwd)")
 # Live lookup — ALL_ISSUE_LABELS is not written to reviewer .agent-task files
 IS_AC=$(gh pr view "$N" --repo "$GH_REPO" --json labels \
-  --jq '[.labels[].name] | join(",")' 2>/dev/null | grep -c "agentception/" || true)
+  --jq '[.labels[].name] | join(",")' 2>/dev/null | grep -c "htmx/" || true)
 if [ "$IS_AC" -gt 0 ]; then
-  docker compose exec agentception sh -c "PYTHONPATH=/worktrees/$WTNAME mypy /worktrees/$WTNAME/agentception/" 2>&1 | tail -5
+  docker compose exec maestro sh -c "PYTHONPATH=/worktrees/$WTNAME mypy /worktrees/$WTNAME/maestro/ /worktrees/$WTNAME/tests/" 2>&1 | tail -5
 else
   REPO=$(git worktree list | head -1 | awk '{print $1}')
   cd "$REPO" && docker compose exec maestro sh -c \

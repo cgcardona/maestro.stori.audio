@@ -1,0 +1,18 @@
+{% extends "musehub/base.html" %}
+
+{% block title %}Analysis {{ ref[:8] }} · {{ owner }}/{{ repo_slug }}{% endblock %}
+{% block breadcrumb %}
+  <a href="/musehub/ui/{{ owner }}">{{ owner }}</a> /
+  <a href="{{ base_url }}">{{ repo_slug }}</a> /
+  analysis / <span class="text-mono">{{ ref[:8] }}</span>
+{% endblock %}
+{% block repo_nav %}{% include "musehub/partials/repo_nav.html" %}{% endblock %}
+
+{% block page_data %}
+const repoId = {{ repo_id | tojson }};
+const base   = {{ base_url | tojson }};
+{% endblock %}
+
+{% block content %}
+{% include "musehub/fragments/analysis/dashboard_content.html" %}
+{% endblock %}
