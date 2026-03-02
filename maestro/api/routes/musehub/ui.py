@@ -84,6 +84,7 @@ from maestro.api.routes.musehub.negotiate import negotiate_response
 from maestro.api.routes.musehub.ui_jsonld import jsonld_release, jsonld_repo, render_jsonld_script
 from maestro.db import get_db
 from maestro.models.musehub import CommitListResponse, CommitResponse, RepoResponse, TrackListingResponse
+from maestro.models.musehub_analysis import DimensionData
 from maestro.models.musehub import (
     BranchDetailListResponse,
     CommitListResponse,
@@ -1963,8 +1964,7 @@ async def tempo_page(
     server-side and passed to the Jinja2 template — no client-side API fetch required.
     """
     repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
-    from maestro.models.musehub_analysis import TempoData
-    tempo_data: TempoData = musehub_analysis.compute_dimension("tempo", ref)  # type: ignore[assignment]
+    tempo_data: DimensionData = musehub_analysis.compute_dimension("tempo", ref)
     ctx: dict[str, object] = {
         "owner": owner,
         "repo_slug": repo_slug,
@@ -2035,8 +2035,7 @@ async def key_analysis_page(
     material without needing an authenticated client-side API call.
     """
     repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
-    from maestro.models.musehub_analysis import KeyData
-    key_data: KeyData = musehub_analysis.compute_dimension("key", ref)  # type: ignore[assignment]
+    key_data: DimensionData = musehub_analysis.compute_dimension("key", ref)
     ctx: dict[str, object] = {
         "owner": owner,
         "repo_slug": repo_slug,
@@ -2074,8 +2073,7 @@ async def meter_analysis_page(
     generate rhythmically coherent material without an authenticated client call.
     """
     repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
-    from maestro.models.musehub_analysis import MeterData
-    meter_data: MeterData = musehub_analysis.compute_dimension("meter", ref)  # type: ignore[assignment]
+    meter_data: DimensionData = musehub_analysis.compute_dimension("meter", ref)
     ctx: dict[str, object] = {
         "owner": owner,
         "repo_slug": repo_slug,
@@ -2146,8 +2144,7 @@ async def groove_analysis_page(
     feel when generating continuation material.
     """
     repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
-    from maestro.models.musehub_analysis import GrooveData
-    groove_data: GrooveData = musehub_analysis.compute_dimension("groove", ref)  # type: ignore[assignment]
+    groove_data: DimensionData = musehub_analysis.compute_dimension("groove", ref)
     ctx: dict[str, object] = {
         "owner": owner,
         "repo_slug": repo_slug,
@@ -2218,8 +2215,7 @@ async def form_analysis_page(
     are in the compositional arc without needing an authenticated client API call.
     """
     repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
-    from maestro.models.musehub_analysis import FormData
-    form_data: FormData = musehub_analysis.compute_dimension("form", ref)  # type: ignore[assignment]
+    form_data: DimensionData = musehub_analysis.compute_dimension("form", ref)
     ctx: dict[str, object] = {
         "owner": owner,
         "repo_slug": repo_slug,
