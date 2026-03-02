@@ -1158,59 +1158,92 @@ async def worktrees_page(request: Request) -> HTMLResponse:
 # .cursor/ docs viewer
 # ---------------------------------------------------------------------------
 
-_CURSOR_DOCS: list[dict[str, str]] = [
-    {"slug": "agent-command-policy",       "label": "Agent Command Policy",    "file": "agent-command-policy.md"},
-    {"slug": "conflict-rules",             "label": "Conflict Rules",           "file": "conflict-rules.md"},
-    {"slug": "multi-tier-agent-architecture", "label": "Multi-tier Architecture", "file": "multi-tier-agent-architecture.md"},
-    {"slug": "parallel-issue-to-pr",       "label": "Parallel Issue → PR",     "file": "parallel-issue-to-pr.md"},
-    {"slug": "parallel-pr-review",         "label": "Parallel PR Review",      "file": "parallel-pr-review.md"},
-    {"slug": "pipeline-howto",             "label": "Pipeline How-to",         "file": "pipeline-howto.md"},
-    {"slug": "parallel-bugs-to-issues",    "label": "Parallel Bugs → Issues",  "file": "parallel-bugs-to-issues.md"},
-]
-
 _CURSOR_DIR = Path(_settings.repo_dir) / ".cursor"
+
+
+def _scan_cursor_docs() -> list[dict[str, str]]:
+    """Auto-discover all markdown files in .cursor/ sorted alphabetically.
+
+    Returns a list of {slug, label, file} dicts. Label is derived from the
+    filename by replacing hyphens and underscores with spaces and title-casing.
+    """
+    if not _CURSOR_DIR.exists():
+        return []
+    docs: list[dict[str, str]] = []
+    for f in sorted(_CURSOR_DIR.glob("*.md")):
+        slug = f.stem
+        label = slug.replace("-", " ").replace("_", " ").title()
+        docs.append({"slug": slug, "label": label, "file": f.name})
+    return docs
+
+
+def _render_doc(slug: str) -> tuple[str | None, str | None, str | None]:
+    """Read and render a doc file.
+
+    Returns (label, content_html, error). ``content_html`` is Markdown
+    rendered to safe HTML; ``error`` is set on read failure.
+    """
+    docs = _scan_cursor_docs()
+    doc_meta = next((d for d in docs if d["slug"] == slug), None)
+    if doc_meta is None:
+        return None, None, f"Unknown doc: {slug}"
+    file_path = _CURSOR_DIR / doc_meta["file"]
+    try:
+        raw = file_path.read_text(encoding="utf-8")
+        return doc_meta["label"], _md_to_html(raw), None
+    except FileNotFoundError:
+        return doc_meta["label"], None, f"File not found: {file_path}"
+    except OSError as exc:
+        return doc_meta["label"], None, str(exc)
 
 
 @router.get("/docs", response_class=HTMLResponse)
 async def docs_index(request: Request) -> HTMLResponse:
     """Redirect to the first available doc."""
-    first = next((d for d in _CURSOR_DOCS if (_CURSOR_DIR / d["file"]).exists()), None)
-    if first:
-        from fastapi.responses import RedirectResponse
-        return RedirectResponse(url=f"/docs/{first['slug']}", status_code=302)  # type: ignore[return-value]
+    from fastapi.responses import RedirectResponse
+
+    docs = _scan_cursor_docs()
+    if docs:
+        return RedirectResponse(url=f"/docs/{docs[0]['slug']}", status_code=302)  # type: ignore[return-value]
     raise HTTPException(status_code=404, detail="No .cursor/ docs found")
 
 
 @router.get("/docs/{slug}", response_class=HTMLResponse)
 async def docs_viewer(request: Request, slug: str) -> HTMLResponse:
-    """Render a .cursor/ markdown doc as plain text with syntax highlighting."""
-    doc_meta = next((d for d in _CURSOR_DOCS if d["slug"] == slug), None)
-    if doc_meta is None:
+    """Full page: sidebar + rendered Markdown content."""
+    label, content_html, error = _render_doc(slug)
+    if label is None:
         raise HTTPException(status_code=404, detail=f"Unknown doc slug: {slug}")
-
-    file_path = _CURSOR_DIR / doc_meta["file"]
-    content: str | None = None
-    error: str | None = None
-
-    try:
-        content = file_path.read_text(encoding="utf-8")
-    except FileNotFoundError:
-        error = f"File not found: {file_path}"
-    except OSError as exc:
-        error = str(exc)
-
     return _TEMPLATES.TemplateResponse(
         request,
         "docs.html",
         {
             "slug": slug,
-            "file_path": str(file_path),
-            "content": content,
+            "label": label,
+            "content_html": content_html,
             "error": error,
             "available_docs": [
                 {"slug": d["slug"], "label": d["label"]}
-                for d in _CURSOR_DOCS
+                for d in _scan_cursor_docs()
             ],
+        },
+    )
+
+
+@router.get("/docs/{slug}/content", response_class=HTMLResponse)
+async def docs_content_partial(request: Request, slug: str) -> HTMLResponse:
+    """HTMX partial: just the main content panel (no sidebar, no chrome)."""
+    label, content_html, error = _render_doc(slug)
+    if label is None:
+        raise HTTPException(status_code=404, detail=f"Unknown doc slug: {slug}")
+    return _TEMPLATES.TemplateResponse(
+        request,
+        "_doc_content.html",
+        {
+            "slug": slug,
+            "label": label,
+            "content_html": content_html,
+            "error": error,
         },
     )
 
