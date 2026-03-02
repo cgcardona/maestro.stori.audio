@@ -1273,6 +1273,11 @@ async def embed_page(
     repo_id, _ = await _resolve_repo(owner, repo_slug, db)
     short_ref = ref[:8] if len(ref) >= 8 else ref
     listen_url = _base_url(owner, repo_slug)
+
+    # Resolve first audio track for SSR — no auth check needed (public embed)
+    listing = await musehub_listen.build_track_listing(db, repo_id, ref)
+    first_track = listing.tracks[0] if listing.tracks else None
+
     content = templates.TemplateResponse(
         request,
         "musehub/pages/embed.html",
@@ -1281,6 +1286,10 @@ async def embed_page(
             "repo_id": repo_id,
             "ref": ref,
             "listen_url": listen_url,
+            "owner": owner,
+            "repo_slug": repo_slug,
+            "track_url": first_track.audio_url if first_track else None,
+            "track_name": first_track.name if first_track else short_ref,
         },
     )
     return Response(
@@ -1322,6 +1331,17 @@ async def listen_page(
     repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
     json_data = await musehub_listen.build_track_listing(db, repo_id, ref)
 
+    # Build playlist payload for WaveSurfer — passed as window.__playlist
+    playlist_data = [
+        {
+            "name": t.name,
+            "url": t.audio_url,
+            "size": t.size_bytes,
+        }
+        for t in json_data.tracks
+    ]
+    first_track = json_data.tracks[0] if json_data.tracks else None
+
     return await negotiate_response(
         request=request,
         template_name="musehub/pages/listen.html",
@@ -1332,6 +1352,10 @@ async def listen_page(
             "ref": ref,
             "base_url": base_url,
             "current_page": "listen",
+            "tracks": json_data.tracks,
+            "playlist_json": playlist_data,
+            "first_track_url": first_track.audio_url if first_track else None,
+            "first_track_name": first_track.name if first_track else None,
         },
         templates=templates,
         json_data=json_data,
