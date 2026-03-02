@@ -274,6 +274,25 @@ def _resolve_display_names(
     return figures_str, skills_str
 
 
+def _normalize_arch_display(arch: str) -> str:
+    """Normalize a COGNITIVE_ARCH string for display.
+
+    Strips the 'the_' prefix from archetype names and removes underscores so
+    figure IDs read as single clean tokens: the_guardian → guardian,
+    von_neumann → vonneumann.  Skill tokens (after the first colon) are left
+    unchanged — they have no underscores and are already idiomatic.
+    """
+    def norm(token: str) -> str:
+        t = token.strip()
+        if t.startswith("the_"):
+            t = t[4:]
+        return t.replace("_", "")
+
+    parts = arch.split(":")
+    parts[0] = ",".join(norm(f) for f in parts[0].split(","))
+    return ":".join(parts)
+
+
 def render_fingerprint(
     arch: str,
     role: str,
@@ -288,23 +307,19 @@ def render_fingerprint(
     This is the single source of truth for fingerprint format. All agents call
     this and embed the output verbatim — same block, same format, everywhere.
     Pass started_at (ISO-8601 string) to include a Started at row (reviewer context).
+
+    Rows: Architecture (normalized) · Role · Session · VP · Wave (CTO).
+    Skills and Batch (VP) are omitted — Skills is redundant with Architecture,
+    and Batch is already embedded in the VP string.
     """
-    _figures_str = arch  # fallback if parse fails
-    skills_str = "unknown"  # fallback if parse fails
-    try:
-        figure_ids, skill_ids = parse_cognitive_arch(arch)
-        _figures_str, skills_str = _resolve_display_names(figure_ids, skill_ids)
-    except (ValueError, FileNotFoundError, ImportError):
-        pass
+    arch_display = _normalize_arch_display(arch)
 
     rows = [
-        f"| **Architecture** | `{arch}` |",
-        f"| **Skills** | {skills_str} |",
+        f"| **Architecture** | `{arch_display}` |",
         f"| **Role** | `{role}` |",
         f"| **Session** | `{session}` |",
-        f"| **Batch (VP)** | `{batch}` |",
-        f"| **Wave (CTO)** | `{wave}` |",
         f"| **VP** | `{vp}` |",
+        f"| **Wave (CTO)** | `{wave}` |",
     ]
     if started_at:
         rows.append(f"| **Started at** | `{started_at}` |")
