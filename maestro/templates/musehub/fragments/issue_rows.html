@@ -1,0 +1,41 @@
+{#  fragments/issue_rows.html — bare HTMX fragment: issue list rows.
+
+    This template is intentionally minimal — no <html>, no <head>, no nav.
+    It is rendered in two contexts:
+
+    1. Full-page load: included inline by musehub/pages/issue_list.html inside
+       the ``<div id="issue-rows">`` target container.
+
+    2. HTMX partial swap: returned directly when the handler detects
+       ``HX-Request: true``, replacing only the ``#issue-rows`` container.
+
+    Required context variables
+    --------------------------
+    issues        : list[IssueResponse]  — current page of filtered issues
+    labels_data   : list[dict]           — all repo labels ({name, color}) for colour lookup
+    active_label  : str                  — currently active label filter ('' if none)
+    base_url      : str                  — repo base URL, e.g. /musehub/ui/owner/slug
+
+    Pattern: copy this file for every other list-page fragment.  All context
+    variables are prepared server-side by the route handler — no JS fetches.
+#}
+{% from "musehub/macros/issue.html" import issue_row %}
+{% from "musehub/macros/empty_state.html" import empty_state %}
+
+{% if issues %}
+  {% for issue in issues %}
+    {{ issue_row(
+        issue,
+        base_url=base_url,
+        labels=labels_data,
+        active_labels=[active_label] if active_label else [],
+        show_checkbox=True,
+    ) }}
+  {% endfor %}
+{% else %}
+  {{ empty_state(
+      "📭",
+      "No issues",
+      "No issues match the current filters. Try adjusting the state, label, or milestone.",
+  ) }}
+{% endif %}
