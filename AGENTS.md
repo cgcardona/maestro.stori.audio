@@ -117,11 +117,30 @@ The backend serves the frontend via SSE streaming and tool calls. The SSE event 
 ## Code Generation Rules
 
 - **Every Python file** must start with `from __future__ import annotations` as the first import. No exceptions.
-- **Mypy before tests:** Run mypy on every Python file you create or modify. Fix all type errors before running tests — this avoids needing to re-run the test suite after type fixes.
+- **Type everything, 100%.** No untyped function parameters, no untyped return values, no bare `object` where a precise type is known. Use `list[X]`, `dict[K, V]`, `tuple[A, B]`, `X | None` — never the `Optional[X]` form.
+- **Mypy before tests — always, without exception.** Run mypy on every Python file you create or modify before running the test suite. Fix all type errors first. If you run tests and then discover type errors, you must re-run tests after fixing them. One pass is cheaper.
+- **`Any` is a last resort, not a default.** Use `dict[str, object]` for truly heterogeneous data. Use `TypedDict` or a `BaseModel` subclass for structured data. `Any` is only acceptable in the DB query layer (`db/queries.py`) where the shape varies per caller, and must stay within the typing ratchet ceiling (`--max-any 10` for agentception, `--max-any 28` for maestro).
+- **No `# type: ignore` without a reason comment.** Every suppression must explain why: `# type: ignore[attr-defined]  # SQLAlchemy dynamic attr`.
 - **Editing existing files:** Only modify necessary sections. Preserve formatting, structure, and surrounding code.
 - **Creating new files:** Write complete, self-contained modules. Include imports, type hints, and docstrings.
 - **Before finishing any task:** Confirm types pass (mypy), tests pass, imports resolve, no orphaned code.
 - **No rebuild needed for code changes.** Dev bind mounts (`docker-compose.override.yml`) ensure host file edits are live inside the container immediately. Only rebuild (`docker compose build <service> && docker compose up -d`) when `requirements.txt`, `Dockerfile`, or `entrypoint.sh` change.
+
+### Mypy enforcement chain
+
+| Layer | Command | Threshold |
+|-------|---------|-----------|
+| Local (Maestro) | `docker compose exec maestro mypy maestro/ tests/` | strict, 0 errors |
+| Local (AgentCeption) | `docker compose exec agentception mypy agentception/` | strict, 0 errors |
+| Local (Storpheus) | `docker compose exec storpheus mypy .` | strict, 0 errors |
+| Pre-commit hook | Runs the above automatically on `git commit` | blocks commit |
+| CI — Maestro | `python -m mypy -p maestro && python -m mypy -p tests` | blocks PR merge |
+| CI — AgentCeption | `python -m mypy agentception/ --config-file agentception/pyproject.toml` | blocks PR merge |
+| CI — Storpheus | `python -m mypy storpheus/` | blocks PR merge |
+| Typing ratchet — Maestro | `python tools/typing_audit.py --dirs maestro/ tests/ --max-any 28` | blocks PR merge |
+| Typing ratchet — AgentCeption | `python tools/typing_audit.py --dirs agentception/ --max-any 10` | blocks PR merge |
+
+All three services run `mypy` with `strict = true`. The ratchets prevent `Any` count from growing even if individual occurrences are "valid".
 
 ### Jinja2 + Alpine.js / HTMX: always single-quote attributes containing `tojson`
 

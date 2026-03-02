@@ -1,0 +1,82 @@
+# Pre-commit hooks for Maestro monorepo.
+#
+# Hooks run against staged files before each commit.  The mypy hooks delegate
+# to running containers via `docker compose exec` so Python never runs on the
+# host (matching our Docker-first policy).
+#
+# Setup (one-time):
+#   pip install pre-commit
+#   pre-commit install
+#
+# Run manually against all files:
+#   pre-commit run --all-files
+#
+# NOTE: mypy hooks require the service containers to be running:
+#   docker compose up -d maestro agentception storpheus
+#
+# Each hook is scoped to its service's file tree so unchanged services are
+# skipped entirely — a change in agentception/ never triggers maestro mypy.
+
+repos:
+  # ── Standard file hygiene ────────────────────────────────────────────────
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.6.0
+    hooks:
+      - id: trailing-whitespace
+        exclude: "\\.(md|txt)$"
+      - id: end-of-file-fixer
+        exclude: "\\.(md)$"
+      - id: check-yaml
+      - id: check-toml
+      - id: check-merge-conflict
+      - id: check-added-large-files
+        args: ["--maxkb=500"]
+      - id: detect-private-key
+
+  # ── Mypy — Maestro service ───────────────────────────────────────────────
+  - repo: local
+    hooks:
+      - id: mypy-maestro
+        name: "mypy · maestro/ + tests/"
+        language: system
+        entry: docker compose exec -T maestro mypy maestro/ tests/
+        pass_filenames: false
+        files: ^(maestro|tests)/
+        types: [python]
+
+  # ── Mypy — AgentCeption service ──────────────────────────────────────────
+  - repo: local
+    hooks:
+      - id: mypy-agentception
+        name: "mypy · agentception/"
+        language: system
+        entry: docker compose exec -T agentception mypy agentception/
+        pass_filenames: false
+        files: ^agentception/
+        types: [python]
+
+  # ── Mypy — Storpheus service ─────────────────────────────────────────────
+  - repo: local
+    hooks:
+      - id: mypy-storpheus
+        name: "mypy · storpheus/"
+        language: system
+        entry: docker compose exec -T storpheus mypy .
+        pass_filenames: false
+        files: ^storpheus/
+        types: [python]
+
+  # ── future __annotations__ guard ────────────────────────────────────────
+  # Every Python file in all services must start with
+  # `from __future__ import annotations` per the workspace rules.
+  - repo: local
+    hooks:
+      - id: future-annotations
+        name: "from __future__ import annotations required"
+        language: pygrep
+        entry: "^from __future__ import annotations"
+        args: ["--negate"]
+        files: ^(maestro|tests|storpheus|agentception)/.*\\.py$
+        # Exclude generated files that we don't control (alembic templates).
+        exclude: "(alembic/script\\.py\\.mako|alembic/versions/)"
+        types: [python]

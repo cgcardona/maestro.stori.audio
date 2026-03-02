@@ -3,7 +3,8 @@
 # Runs only on PRs and direct pushes targeting main (i.e. dev → main).
 # Feature branch → dev PRs are intentionally excluded to avoid CI noise
 # during the parallel-agent development cycle.
-# Two jobs: maestro (app/ + tests/) and storpheus (storpheus/).
+# Three service jobs: maestro, storpheus, agentception.
+# All run mypy BEFORE tests — type errors block the test run.
 name: Test & Coverage
 
 on:
@@ -29,7 +30,7 @@ jobs:
 
 
   maestro:
-    name: Maestro (app/ + tests/)
+    name: Maestro (maestro/ + tests/)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -50,9 +51,9 @@ jobs:
           python -m mypy -p maestro
           python -m mypy -p tests
 
-      - name: Typing ratchet (Any regression guard)
+      - name: Typing ratchet — maestro (Any regression guard)
         run: |
-          python tools/typing_audit.py --max-any 28
+          python tools/typing_audit.py --dirs maestro/ tests/ --max-any 28
 
       - name: Run tests with coverage
         env:
@@ -85,3 +86,47 @@ jobs:
       - name: Run tests
         run: |
           pytest storpheus/test_*.py -v --tb=short
+
+  agentception:
+    name: AgentCeption (agentception/)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install system dependencies
+        # asyncpg needs libpq for its C extension on Linux.
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends libpq-dev
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r agentception/requirements.txt
+          pip install coverage
+
+      - name: Type check (mypy)
+        # Run from repo root with explicit config so we use agentception/pyproject.toml,
+        # not the root pyproject.toml (which has maestro-specific overrides).
+        run: |
+          python -m mypy agentception/ --config-file agentception/pyproject.toml
+
+      - name: Typing ratchet — agentception (Any regression guard)
+        # Threshold matches the current legitimate Any usage in db/queries.py.
+        # Raise the ceiling only when genuinely unavoidable; never suppress blindly.
+        run: |
+          python tools/typing_audit.py --dirs agentception/ --max-any 10
+
+      - name: Run tests with coverage
+        env:
+          GH_REPO: "test-org/test-repo"
+          GH_TOKEN: "test-token-for-ci"
+          AC_DATABASE_URL: ""
+        run: |
+          coverage run -m pytest agentception/tests/ -v --tb=short
+          coverage report --fail-under=80 --show-missing
