@@ -19,7 +19,7 @@ from agentception.poller import get_state
 from agentception.readers.github import add_wip_label, get_issue
 from agentception.readers.transcripts import read_transcript_messages
 from agentception.routes.ui import _find_agent
-from agentception.telemetry import WaveSummary, aggregate_waves, estimate_cost
+from agentception.telemetry import WaveSummary, aggregate_waves
 
 logger = logging.getLogger(__name__)
 
