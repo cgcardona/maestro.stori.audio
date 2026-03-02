@@ -747,71 +747,99 @@ async def commit_page(
     owner: str,
     repo_slug: str,
     commit_id: str,
-    format: str | None = Query(None, description="Force response format: 'json' or omit for HTML"),
     db: AsyncSession = Depends(get_db),
-) -> StarletteResponse:
-    """Render the commit detail page with inline audio player, muse_tags metadata,
-    reactions, comment thread, and cross-reference panel.
+) -> Response:
+    """Render the commit detail page — SSR metadata + comments, JS audio/score cores.
 
-    HTML (default): rich commit detail page via Jinja2 with:
-    - Inline WaveSurfer.js audio player (full mix + per-stem track selector +
-      volume control).  Falls back to ``<audio>`` when WaveSurfer is unavailable.
-    - Full metadata panel sourced from analysis APIs (tempo_bpm, key,
-      time_signature; emotion/stage tags rendered as colored pills).  DB-stored
-      ``muse_tags`` are also rendered via the namespace-aware ``tagPill()``
-      helper; ``ref:`` tags whose value is a URL open that source directly.
-    - Reactions row (8 emoji types) backed by the existing reactions API.
-    - Threaded comment section with add/edit/delete and nested reply support.
-    - Cross-references panel showing PRs, issues, and sessions that mention
-      this commit hash.
-    - A 2-sentence prose summary (``buildProseSummary``) synthesised from key,
-      tempo, emotion, and diff-dimension data.
+    Partial SSR strategy (HTMX phase 4):
+    - Commit header (message, author, timestamp, SHA, parent SHAs) → server-rendered.
+    - Comment thread → server-rendered; HTMX refreshes it after new comment POST.
+    - WaveSurfer.js audio player → JS-initialized from ``data-url`` attribute when
+      ``audio_url`` is resolved server-side (``commit.snapshot_id`` present).
+    - abcjs score renderer → JS-initialized from ``data-abc-url`` attribute when
+      ``has_score`` is True.
 
-    JSON (``Accept: application/json`` or ``?format=json``): returns the full
-    ``CommitResponse`` Pydantic model with camelCase keys, or a minimal context
-    dict if the commit is not yet in the DB (not yet synced).
+    HTMX requests (``HX-Request: true``) receive only the comment fragment so the
+    comment form can re-render the thread without a full page reload.
 
-    Artifacts are displayed by extension:
-    - ``.webp/.png/.jpg`` → inline ``<img>``
-    - ``.mp3/.ogg/.wav``  → ``<audio controls>`` player / WaveSurfer stem
-    - ``.mid/.midi``      → piano-roll preview card
-    - ``.abc/.musicxml``  → score preview via abcjs
-    - other              → download link
+    Returns 404 when ``commit_id`` is not found in this repo.
     """
     repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
     commit = await musehub_repository.get_commit(db, repo_id, commit_id)
-    commit_description = commit.message if commit is not None else ""
+    if commit is None:
+        raise HTTPException(status_code=http_status.HTTP_404_NOT_FOUND, detail="Commit not found")
+
     short_id = commit_id[:8]
-    listen_url = f"{base_url}/listen/{commit_id}"
-    embed_url = f"{base_url}/embed/{commit_id}"
-    return await negotiate_response(
-        request=request,
-        template_name="musehub/pages/commit.html",
-        context={
-            "owner": owner,
-            "repo_slug": repo_slug,
-            "repo_id": repo_id,
-            "commit_id": commit_id,
-            "short_id": short_id,
-            "base_url": base_url,
-            "listen_url": listen_url,
-            "embed_url": embed_url,
-            "current_page": "commits",
-            "breadcrumb_data": _breadcrumbs(
-                (owner, f"/musehub/ui/{owner}"),
-                (repo_slug, base_url),
-                ("commits", base_url),
-                (short_id, ""),
-            ),
-            "og_meta": _og_tags(
-                title=f"Commit {short_id} · {owner}/{repo_slug} — Muse Hub",
-                description=commit_description,
-                og_type="music.song",
-            ),
-        },
-        templates=templates,
-        json_data=commit,
-        format_param=format,
+
+    # Fetch commit comments server-side (target_type="commit" in musehub_comments).
+    comment_rows = (
+        await db.execute(
+            sa_select(musehub_db.MusehubComment)
+            .where(
+                musehub_db.MusehubComment.repo_id == repo_id,
+                musehub_db.MusehubComment.target_type == "commit",
+                musehub_db.MusehubComment.target_id == commit_id,
+                musehub_db.MusehubComment.is_deleted.is_(False),
+            )
+            .order_by(musehub_db.MusehubComment.created_at)
+        )
+    ).scalars().all()
+    comments = [
+        {
+            "comment_id": r.comment_id,
+            "author": r.author,
+            "body": r.body,
+            "parent_id": r.parent_id,
+            "created_at": r.created_at,
+        }
+        for r in comment_rows
+    ]
+
+    # Derive audio URL from snapshot_id when available.  WaveSurfer picks this
+    # up from the data-url attribute; no JS API call needed when present.
+    api_base = f"/api/v1/musehub/repos/{repo_id}"
+    audio_url: str | None = (
+        f"{api_base}/objects/{commit.snapshot_id}/content"
+        if commit.snapshot_id is not None
+        else None
+    )
+    # Score (abcjs) support is reserved for future data-model enrichment.
+    has_score = False
+    abc_url: str | None = None
+
+    ctx: dict[str, object] = {
+        "owner": owner,
+        "repo_slug": repo_slug,
+        "repo_id": repo_id,
+        "commit_id": commit_id,
+        "short_id": short_id,
+        "base_url": base_url,
+        "listen_url": f"{base_url}/listen/{commit_id}",
+        "embed_url": f"{base_url}/embed/{commit_id}",
+        "current_page": "commits",
+        "commit": commit.model_dump(),
+        "comments": comments,
+        "audio_url": audio_url,
+        "has_score": has_score,
+        "abc_url": abc_url,
+        "breadcrumb_data": _breadcrumbs(
+            (owner, f"/musehub/ui/{owner}"),
+            (repo_slug, base_url),
+            ("commits", f"{base_url}/commits"),
+            (short_id, ""),
+        ),
+        "og_meta": _og_tags(
+            title=f"Commit {short_id} · {owner}/{repo_slug} — Muse Hub",
+            description=commit.message,
+            og_type="music.song",
+        ),
+    }
+    return await htmx_fragment_or_full(
+        request,
+        templates,
+        ctx,
+        full_template="musehub/pages/commit_detail.html",
+        fragment_template="musehub/fragments/commit_comments.html",
     )
 
 

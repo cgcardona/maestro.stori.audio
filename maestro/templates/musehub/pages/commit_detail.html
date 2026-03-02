@@ -1,0 +1,275 @@
+{% extends "musehub/base.html" %}
+
+{% block title %}{{ short_id }} · {{ owner }}/{{ repo_slug }}{% endblock %}
+
+{% block breadcrumb %}
+  <a href="/musehub/ui/{{ owner }}">{{ owner }}</a> /
+  <a href="{{ base_url }}">{{ repo_slug }}</a> /
+  <a href="{{ base_url }}/commits">commits</a> /
+  {{ short_id }}
+{% endblock %}
+
+{% block repo_nav %}
+{% include "musehub/partials/repo_nav.html" %}
+{% endblock %}
+
+{% block page_data %}
+const repoId   = {{ repo_id | tojson }};
+const commitId = {{ commit_id | tojson }};
+const base     = {{ base_url | tojson }};
+const apiBase  = '/api/v1/musehub/repos/' + repoId;
+const listenUrl = {{ listen_url | tojson }};
+const embedUrl  = {{ embed_url | tojson }};
+const shortId   = {{ short_id | tojson }};
+{% endblock %}
+
+{% block content %}
+<div class="commit-liner-notes">
+
+  {# Commit header — fully server-rendered #}
+  <div class="card commit-message-card">
+    <div class="commit-header-row">
+      <div class="commit-header-left">
+        <span class="badge">commit</span>
+      </div>
+      <div class="commit-header-right">
+        <a href="{{ base_url }}/commits/{{ commit.commit_id }}/diff"
+           class="btn btn-secondary btn-sm">⊕ Musical Diff</a>
+        <a href="{{ listen_url }}" class="btn btn-secondary btn-sm" target="_blank">
+          🎧 Listen ↗
+        </a>
+      </div>
+    </div>
+    <h1 class="commit-subject">{{ commit.message }}</h1>
+    <div class="meta-row" style="grid-template-columns:repeat(auto-fill,minmax(160px,1fr));margin-top:var(--space-3)">
+      <div class="meta-item">
+        <span class="meta-label">Author</span>
+        <span class="meta-value">
+          <a href="/musehub/ui/users/{{ commit.author }}" class="text-sm">{{ commit.author }}</a>
+        </span>
+      </div>
+      <div class="meta-item">
+        <span class="meta-label">Date</span>
+        <span class="meta-value text-sm">{{ commit.timestamp | fmtdate }}</span>
+      </div>
+      <div class="meta-item">
+        <span class="meta-label">Branch</span>
+        <span class="meta-value text-mono text-sm">{{ commit.branch or '—' }}</span>
+      </div>
+      <div class="meta-item">
+        <span class="meta-label">SHA</span>
+        <span class="meta-value text-mono text-sm" title="{{ commit.commit_id }}">{{ short_id }}</span>
+      </div>
+      {% if commit.parent_ids %}
+      <div class="meta-item">
+        <span class="meta-label">Parent</span>
+        <span class="meta-value">
+          {% for p in commit.parent_ids %}
+          <a href="{{ base_url }}/commits/{{ p }}"
+             class="text-mono text-sm">{{ p[:8] }}</a>{% if not loop.last %}, {% endif %}
+          {% endfor %}
+        </span>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+
+  {# Audio player — SSR shell, WaveSurfer attaches when audio_url is provided #}
+  {% if audio_url %}
+  <div class="card iap-card" style="margin-top:var(--space-3)">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:var(--space-3)">
+      <h2 style="margin:0">🎵 Audio Preview</h2>
+    </div>
+    <div id="commit-waveform" data-url="{{ audio_url }}"
+         style="min-height:64px;background:#0d1117;border-radius:var(--radius-sm);border:1px solid var(--border-subtle);display:flex;align-items:center;justify-content:center">
+      <span style="color:var(--text-muted);font-size:var(--font-size-sm)">🎵 Loading waveform…</span>
+    </div>
+    <div class="iap-controls" style="margin-top:var(--space-3)">
+      <button id="play-btn" class="iap-play-btn" type="button" title="Play / Pause">▶</button>
+      <span id="play-time" style="font-size:var(--font-size-xs);color:var(--text-muted);font-variant-numeric:tabular-nums">0:00</span>
+    </div>
+  </div>
+  {% endif %}
+
+  {# Score preview — SSR shell, abcjs renders when has_score is True #}
+  {% if has_score %}
+  <div class="card" style="margin-top:var(--space-3)">
+    <h2 style="font-size:14px;margin-bottom:var(--space-2)">🎼 Score</h2>
+    <div id="commit-score" data-abc-url="{{ abc_url }}"
+         style="background:white;border-radius:4px;padding:var(--space-2)">
+      <p style="color:#8b949e">Loading score…</p>
+    </div>
+  </div>
+  {% endif %}
+
+  {# Comments — HTMX target refreshed after comment POST #}
+  <div class="card" style="margin-top:var(--space-3)">
+    <h2 style="margin:0 0 var(--space-3) 0">
+      💬 {{ comments | length }} comment{{ 's' if comments | length != 1 else '' }}
+    </h2>
+    <div id="commit-comments">
+      {% include "musehub/fragments/commit_comments.html" %}
+    </div>
+    <form hx-post="{{ base_url }}/commits/{{ commit.commit_id }}/comments"
+          hx-target="#commit-comments"
+          hx-swap="innerHTML"
+          hx-on::after-request="this.reset()"
+          style="margin-top:var(--space-3)">
+      <textarea name="body" class="form-input" rows="4"
+                placeholder="Leave a comment…"
+                style="width:100%;resize:vertical;font-family:var(--font-sans)"></textarea>
+      <button type="submit" class="btn btn-primary"
+              style="margin-top:var(--space-2)">Comment</button>
+    </form>
+  </div>
+
+  {# Navigation #}
+  <div style="display:flex;gap:var(--space-3);margin-top:var(--space-2);flex-wrap:wrap">
+    {% if commit.parent_ids %}
+    <a href="{{ base_url }}/commits/{{ commit.parent_ids[0] }}"
+       class="btn btn-secondary btn-sm">← Parent Commit</a>
+    {% endif %}
+    <a href="{{ base_url }}/commits" class="btn btn-ghost btn-sm">← Back to commits</a>
+    <a href="{{ listen_url }}" class="btn btn-ghost btn-sm" target="_blank">🎧 Listen ↗</a>
+    <a href="{{ embed_url }}" class="btn btn-ghost btn-sm" target="_blank">⊞ Embed ↗</a>
+  </div>
+
+</div>
+{% endblock %}
+
+{% block body_extra %}
+{# WaveSurfer — JS core kept, initialized from data-url attribute #}
+{% if audio_url %}
+<script src="/musehub/static/vendor/wavesurfer.min.js"></script>
+<script>
+(function () {
+  const wrapEl = document.getElementById('commit-waveform');
+  const playBtn = document.getElementById('play-btn');
+  const timeEl  = document.getElementById('play-time');
+  if (!wrapEl) return;
+  const url = wrapEl.dataset.url;
+  if (!url) return;
+
+  function fmtTime(s) {
+    if (!isFinite(s)) return '—';
+    return Math.floor(s / 60) + ':' + String(Math.floor(s % 60)).padStart(2, '0');
+  }
+
+  if (window.WaveSurfer) {
+    wrapEl.innerHTML = '<div id="ws-inner" style="height:64px;width:100%"></div>';
+    const ws = WaveSurfer.create({
+      container: '#ws-inner',
+      waveColor: '#1f6feb',
+      progressColor: '#388bfd',
+      height: 64,
+      normalize: true,
+      backend: 'MediaElement',
+    });
+    ws.load(url);
+    ws.on('audioprocess', function () {
+      if (timeEl) timeEl.textContent = fmtTime(ws.getCurrentTime());
+    });
+    ws.on('finish', function () { if (playBtn) playBtn.textContent = '▶'; });
+    ws.on('error', function () {
+      wrapEl.innerHTML = '<span style="color:var(--color-danger);font-size:var(--font-size-sm)">⚠ Could not load audio.</span>';
+    });
+    if (playBtn) {
+      playBtn.addEventListener('click', function () {
+        ws.playPause();
+        playBtn.textContent = ws.isPlaying() ? '⏸' : '▶';
+      });
+    }
+  } else {
+    wrapEl.innerHTML = '<audio controls preload="none" style="width:100%"><source src="' + url + '" /></audio>';
+    if (playBtn) playBtn.style.display = 'none';
+  }
+}());
+</script>
+{% endif %}
+
+{# abcjs — JS core kept, initialized from data-abc-url attribute #}
+{% if has_score %}
+<script src="https://cdn.jsdelivr.net/npm/abcjs@6.4.4/dist/abcjs-basic-min.js"></script>
+<script>
+(function () {
+  const sc = document.getElementById('commit-score');
+  if (!sc || !sc.dataset.abcUrl) return;
+  fetch(sc.dataset.abcUrl)
+    .then(function (r) { return r.text(); })
+    .then(function (abc) {
+      sc.innerHTML = '';
+      if (window.ABCJS) {
+        ABCJS.renderAbc('commit-score', abc, { responsive: 'resize' });
+      } else {
+        sc.innerHTML = '<pre style="font-size:11px;overflow-x:auto">' + abc + '</pre>';
+      }
+    })
+    .catch(function () {
+      sc.innerHTML = '<p style="color:var(--color-danger)">⚠ Could not load score.</p>';
+    });
+}());
+</script>
+{% endif %}
+{% endblock %}
+
+{% block extra_css %}
+<style>
+.commit-liner-notes { max-width: 860px; margin: 0 auto; }
+.commit-message-card { border-left: 3px solid var(--color-accent); }
+.commit-subject {
+  font-size: var(--font-size-xl);
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-primary);
+  margin: var(--space-2) 0 0;
+  line-height: var(--line-height-tight);
+}
+.commit-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-bottom: var(--space-1);
+}
+.commit-header-left { display: flex; gap: var(--space-2); flex-wrap: wrap; align-items: center; }
+.commit-header-right { display: flex; gap: var(--space-2); flex-wrap: wrap; }
+.iap-card { border-color: #1f6feb; background: linear-gradient(135deg,#0d1117 0%,#161b22 100%); }
+.iap-controls { display: flex; align-items: center; gap: var(--space-3); }
+.iap-play-btn {
+  width: 36px; height: 36px; border-radius: 50%;
+  background: #1f6feb; border: none; color: #fff;
+  font-size: 14px; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0; transition: background 0.15s;
+}
+.iap-play-btn:hover { background: #388bfd; }
+.comment { margin-bottom: var(--space-4); }
+.comment:last-child { margin-bottom: 0; }
+.comment-header {
+  display: flex; align-items: center; gap: var(--space-2);
+  margin-bottom: var(--space-1);
+}
+.comment-avatar {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 28px; height: 28px; border-radius: 50%;
+  background: var(--bg-overlay); color: var(--text-muted);
+  font-size: 12px; font-weight: var(--font-weight-semibold);
+  flex-shrink: 0;
+}
+.comment-author {
+  font-size: var(--font-size-sm); font-weight: var(--font-weight-medium);
+  color: var(--text-primary);
+}
+.comment-date { font-size: var(--font-size-xs); color: var(--text-muted); }
+.comment-body {
+  font-size: var(--font-size-sm); color: var(--text-secondary);
+  white-space: pre-wrap; word-break: break-word; line-height: 1.55;
+}
+.comment-replies {
+  margin-top: var(--space-3); padding-left: var(--space-4);
+  border-left: 2px solid var(--border-subtle);
+  display: flex; flex-direction: column; gap: var(--space-3);
+}
+.comment-reply { margin-bottom: 0 !important; }
+</style>
+{% endblock %}
