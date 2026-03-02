@@ -1721,21 +1721,40 @@ async def release_list_page(
     request: Request,
     owner: str,
     repo_slug: str,
+    page: int = Query(1, ge=1),
+    per_page: int = Query(20, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
 ) -> Response:
-    """Render the release list page: all published versions newest first."""
+    """Render the release list page: all published versions newest first.
+
+    Data is resolved server-side and passed to the Jinja2 template so the page
+    is immediately readable without JavaScript execution.  HTMX partial requests
+    (HX-Request: true) receive only the ``release_rows.html`` fragment so HTMX
+    can swap just the row container without re-rendering the full shell.
+    """
     repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
+    all_releases = await musehub_releases.list_releases(db, repo_id)
+    total = len(all_releases)
+    total_pages = max(1, (total + per_page - 1) // per_page)
+    start = (page - 1) * per_page
+    releases = all_releases[start : start + per_page]
     ctx: dict[str, object] = {
         "owner": owner,
         "repo_slug": repo_slug,
         "repo_id": repo_id,
         "base_url": base_url,
         "current_page": "releases",
+        "releases": releases,
+        "total": total,
+        "page": page,
+        "total_pages": total_pages,
     }
-    return json_or_html(
+    return await htmx_fragment_or_full(
         request,
-        lambda: templates.TemplateResponse(request, "musehub/pages/release_list.html", ctx),
+        templates,
         ctx,
+        full_template="musehub/pages/releases.html",
+        fragment_template="musehub/fragments/release_rows.html",
     )
 
 
@@ -1752,17 +1771,24 @@ async def release_detail_page(
 ) -> Response:
     """Render the release detail page: title, release notes, download packages.
 
-    Download packages (MIDI bundle, stems, MP3, MusicXML, metadata) are
-    rendered as download cards; unavailable packages show a "not available"
-    indicator.
+    Release metadata, changelog (body), download package cards, and asset list
+    are all resolved server-side and injected into the Jinja2 template.  The
+    audio player div is rendered as an SSR container that WaveSurfer JS (issue
+    #583) initialises client-side once the page loads.
+
+    Returns 404 when the tag does not exist in the repository.
     """
     repo, base_url = await _resolve_repo_full(owner, repo_slug, db)
     repo_id = str(repo.repo_id)
     release = await musehub_releases.get_release_by_tag(db, repo_id, tag)
+    if release is None:
+        raise HTTPException(
+            status_code=http_status.HTTP_404_NOT_FOUND,
+            detail=f"Release '{tag}' not found in '{owner}/{repo_slug}'",
+        )
+    assets_resp = await musehub_releases.list_release_assets(db, release.release_id, tag)
     page_url = str(request.url)
-    jsonld_script: str | None = None
-    if release is not None:
-        jsonld_script = render_jsonld_script(jsonld_release(release, repo, page_url))
+    jsonld_script = render_jsonld_script(jsonld_release(release, repo, page_url))
     ctx: dict[str, object] = {
         "owner": owner,
         "repo_slug": repo_slug,
@@ -1770,13 +1796,11 @@ async def release_detail_page(
         "tag": tag,
         "base_url": base_url,
         "current_page": "releases",
+        "release": release,
+        "assets": assets_resp.assets,
         "jsonld_script": jsonld_script,
     }
-    return json_or_html(
-        request,
-        lambda: templates.TemplateResponse(request, "musehub/pages/release_detail.html", ctx),
-        ctx,
-    )
+    return templates.TemplateResponse(request, "musehub/pages/release_detail.html", ctx)
 
 
 @router.get(
