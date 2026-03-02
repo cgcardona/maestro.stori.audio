@@ -1,8 +1,8 @@
-"""Role file reader/writer API for the Role Studio editor (AC-301).
+"""Role file reader/writer API for the Role Studio editor (AC-301/303).
 
 Exposes all managed ``.cursor/roles/*.md`` and ``.cursor/PARALLEL_*.md`` files
 through a REST API so the Role Studio UI (AC-302/303) can list, read, update,
-and inspect git history for each file without direct filesystem access.
+diff, commit, and inspect git history for each file without direct filesystem access.
 
 Managed files are defined in ``_MANAGED_FILES`` — a hardcoded allowlist that
 prevents arbitrary writes to the repository. Slugs are the dict keys; paths
@@ -12,12 +12,21 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import tempfile
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 
 from agentception.config import settings
-from agentception.models import RoleContent, RoleMeta, RoleUpdateRequest, RoleUpdateResponse
+from agentception.models import (
+    RoleCommitRequest,
+    RoleCommitResponse,
+    RoleContent,
+    RoleDiffResponse,
+    RoleMeta,
+    RoleUpdateRequest,
+    RoleUpdateResponse,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -196,3 +205,99 @@ async def role_history(slug: str) -> list[dict[str, str]]:
     """
     rel_path = _resolve_slug(slug)
     return await _git_log_recent(settings.repo_dir, rel_path)
+
+
+@router.get("/{slug}/diff", summary="Preview a unified diff of proposed content vs HEAD")
+async def role_diff(slug: str, proposed: str = Query(...)) -> RoleDiffResponse:
+    """Return a unified diff comparing ``proposed`` content against HEAD without writing the file.
+
+    Writes ``proposed`` to a temp file, then runs ``git diff --no-index``
+    between the committed file and the temp file so the user can review changes
+    before saving.  An empty ``diff`` string means the proposed content is
+    identical to the committed version.  Raises HTTP 404 for unknown slugs.
+    """
+    rel_path = _resolve_slug(slug)
+    abs_path = settings.repo_dir / rel_path
+
+    if not abs_path.exists():
+        raise HTTPException(status_code=404, detail=f"Managed file not found on disk: {rel_path}")
+
+    with tempfile.NamedTemporaryFile(
+        mode="w", suffix=".md", encoding="utf-8", delete=False
+    ) as tmp:
+        tmp.write(proposed)
+        tmp_path = tmp.name
+
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            "git", "-C", str(settings.repo_dir),
+            "diff", "--no-index", "--unified=3",
+            str(abs_path), tmp_path,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.DEVNULL,
+        )
+        stdout, _ = await proc.communicate()
+        diff = stdout.decode()
+    finally:
+        Path(tmp_path).unlink(missing_ok=True)
+
+    return RoleDiffResponse(slug=slug, diff=diff)
+
+
+@router.post("/{slug}/commit", summary="Write content and create a git commit for a managed role file")
+async def commit_role(slug: str, body: RoleCommitRequest) -> RoleCommitResponse:
+    """Write ``body.content`` to the managed file, stage it, and create a git commit.
+
+    The commit message is ``role(agentception): update {slug}``.  Returns the
+    resulting commit SHA so the UI can confirm the commit was created.
+    Raises HTTP 404 for unknown slugs or when the file does not exist on disk.
+    Raises HTTP 500 when ``git commit`` fails (e.g. nothing to commit because
+    the content is identical to HEAD).
+    """
+    rel_path = _resolve_slug(slug)
+    abs_path = settings.repo_dir / rel_path
+
+    if not abs_path.exists():
+        raise HTTPException(status_code=404, detail=f"Managed file not found on disk: {rel_path}")
+
+    abs_path.write_text(body.content, encoding="utf-8")
+    logger.info("✅ Wrote %d bytes to %s for commit", len(body.content), rel_path)
+
+    add_proc = await asyncio.create_subprocess_exec(
+        "git", "-C", str(settings.repo_dir),
+        "add", rel_path,
+        stdout=asyncio.subprocess.DEVNULL,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    _, add_err = await add_proc.communicate()
+    if add_proc.returncode != 0:
+        raise HTTPException(
+            status_code=500,
+            detail=f"git add failed: {add_err.decode().strip()}",
+        )
+
+    commit_message = f"role(agentception): update {slug}"
+    commit_proc = await asyncio.create_subprocess_exec(
+        "git", "-C", str(settings.repo_dir),
+        "commit", "-m", commit_message,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    commit_out, commit_err = await commit_proc.communicate()
+    if commit_proc.returncode != 0:
+        raise HTTPException(
+            status_code=500,
+            detail=f"git commit failed: {commit_err.decode().strip() or commit_out.decode().strip()}",
+        )
+
+    sha_proc = await asyncio.create_subprocess_exec(
+        "git", "-C", str(settings.repo_dir),
+        "rev-parse", "HEAD",
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.DEVNULL,
+    )
+    sha_out, _ = await sha_proc.communicate()
+    commit_sha = sha_out.decode().strip()
+
+    logger.info("✅ Committed %s → %s", rel_path, commit_sha[:8])
+    return RoleCommitResponse(slug=slug, commit_sha=commit_sha, message=commit_message)

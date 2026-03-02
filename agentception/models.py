@@ -208,3 +208,37 @@ class RoleUpdateResponse(BaseModel):
     slug: str
     diff: str
     meta: RoleMeta
+
+
+class RoleDiffResponse(BaseModel):
+    """Response for ``GET /api/roles/{slug}/diff`` — diff of proposed vs HEAD.
+
+    ``diff`` is a unified diff string comparing ``proposed`` content against
+    the HEAD-committed version.  An empty string means the proposed content is
+    identical to the committed file.  No file is written to disk.
+    """
+
+    slug: str
+    diff: str
+
+
+class RoleCommitRequest(BaseModel):
+    """Request body for ``POST /api/roles/{slug}/commit`` (AC-303).
+
+    ``content`` is written to the managed file and then staged + committed in
+    one atomic operation.  The commit message is generated automatically.
+    """
+
+    content: str
+
+
+class RoleCommitResponse(BaseModel):
+    """Response for ``POST /api/roles/{slug}/commit`` — resulting commit SHA.
+
+    ``commit_sha`` is the full 40-character SHA of the newly created commit.
+    ``message`` is the commit subject line that was used.
+    """
+
+    slug: str
+    commit_sha: str
+    message: str
