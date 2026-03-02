@@ -308,17 +308,16 @@ def render_fingerprint(
     this and embed the output verbatim — same block, same format, everywhere.
     Pass started_at (ISO-8601 string) to include a Started at row (reviewer context).
 
-    Rows: Architecture (normalized) · Role · Session · VP · Wave (CTO).
-    Skills and Batch (VP) are omitted — Skills is redundant with Architecture,
-    and Batch is already embedded in the VP string.
+    Rows: Architecture (normalized) · Session · Batch · Wave (CTO).
+    Skills and Role are omitted — both are redundant with the Architecture string.
+    VP label is replaced by Batch showing just the batch ID.
     """
     arch_display = _normalize_arch_display(arch)
 
     rows = [
         f"| **Architecture** | `{arch_display}` |",
-        f"| **Role** | `{role}` |",
         f"| **Session** | `{session}` |",
-        f"| **VP** | `{vp}` |",
+        f"| **Batch** | `{batch}` |",
         f"| **Wave (CTO)** | `{wave}` |",
     ]
     if started_at:
