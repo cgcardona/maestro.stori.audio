@@ -55,6 +55,10 @@
        class="{% if request.url.path.startswith('/ab-testing') %}active{% endif %}">
       A/B
     </a>
+    <a href="/templates"
+       class="{% if request.url.path.startswith('/templates') %}active{% endif %}">
+      Templates
+    </a>
 
     {#
       Project switcher — shown only when pipeline-config.json defines multiple
