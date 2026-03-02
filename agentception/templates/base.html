@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>{% block title %}AgentCeption{% endblock %}</title>
+  <title>{% block title %}AgentCeption — Amplify Yourself{% endblock %}</title>
 
   <!-- Inline SVG favicon — no 404 on /favicon.ico -->
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%238b5cf6'/><text x='50%25' y='56%25' dominant-baseline='middle' text-anchor='middle' font-size='18' font-family='monospace' fill='white'>⚡</text></svg>" />
@@ -25,7 +25,7 @@
 <body class="layout">
 
   <nav class="topnav" role="navigation" aria-label="Main navigation">
-    <a href="/" class="brand">⚡ AgentCeption</a>
+    <a href="/" class="brand" title="Amplify Yourself">⚡ AgentCeption</a>
 
     <a href="/"         class="{% if request.url.path == '/' %}active{% endif %}">Overview</a>
     <a href="/agents"   class="{% if request.url.path.startswith('/agents') %}active{% endif %}">Agents</a>
@@ -71,7 +71,7 @@
   <main role="main">
     {% block content %}
     <div class="card">
-      <p class="text-muted">Welcome to <strong>AgentCeption</strong> — the Maestro pipeline dashboard.</p>
+      <p class="text-muted">Welcome to <strong>AgentCeption</strong> — <em>Amplify Yourself.</em></p>
       <p class="mt-1 text-muted">Select a section from the navigation above to get started.</p>
     </div>
     {% endblock %}
