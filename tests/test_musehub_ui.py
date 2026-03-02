@@ -242,9 +242,9 @@ async def test_ui_repo_page_returns_200(
     body = response.text
     # Verify shared chrome is present
     assert "Muse Hub" in body
-    assert repo_id[:8] in body
-    # Verify page-specific JS is injected (repo home page — stats bar + audio player)
-    assert "stats-bar" in body or "loadStats" in body
+    assert "test-beats" in body  # repo slug is shown in the page header/title
+    # Verify page-specific content is present (repo home page — file tree + clone section)
+    assert "file-tree" in body or "Empty repository" in body
 
 
 @pytest.mark.anyio
@@ -252,21 +252,38 @@ async def test_ui_commit_page_shows_artifact_links(
     client: AsyncClient,
     db_session: AsyncSession,
 ) -> None:
-    """GET /musehub/ui/{repo_id}/commits/{commit_id} returns HTML with img/download markers."""
+    """GET /musehub/ui/{owner}/{slug}/commits/{commit_id} returns SSR HTML for a known commit.
+
+    Post-SSR migration (issue #583): commit_page() now requires the commit to exist in the
+    DB (returns 404 otherwise) and renders metadata + comments server-side.
+    """
+    from datetime import datetime, timezone
+    from maestro.db.musehub_models import MusehubCommit
+
     repo_id = await _make_repo(db_session)
     commit_id = "abc1234567890abcdef1234567890abcdef12345678"
+    commit = MusehubCommit(
+        commit_id=commit_id,
+        repo_id=repo_id,
+        branch="main",
+        parent_ids=[],
+        message="Add bridge section",
+        author="testuser",
+        timestamp=datetime.now(tz=timezone.utc),
+    )
+    db_session.add(commit)
+    await db_session.commit()
+
     response = await client.get(f"/musehub/ui/testuser/test-beats/commits/{commit_id}")
     assert response.status_code == 200
     assert "text/html" in response.headers["content-type"]
     body = response.text
-    # The JS function that renders artifacts must be in the page
-    assert "artifactHtml" in body
-    # Inline img pattern for .webp artifacts
-    assert "<img" in body
-    # Download pattern for .mid and other binary artifacts
-    assert "Download" in body
-    # Audio player pattern
-    assert "<audio" in body
+    # SSR: commit message and metadata appear server-side
+    assert "Add bridge section" in body
+    assert "testuser" in body
+    # Links to listen and embed pages present
+    assert f"/listen/{commit_id}" in body
+    assert f"/embed/{commit_id}" in body
 
 
 @pytest.mark.anyio
@@ -7028,25 +7045,15 @@ async def test_ui_commit_page_artifact_auth_uses_blob_proxy(
     client: AsyncClient,
     db_session: AsyncSession,
 ) -> None:
-    """Commit page must use blob URL proxy for artifact auth, not bare content URLs in src/href.
+    """Commit detail page (SSR, issue #583) returns 404 for non-existent commits.
 
-    Images use data-content-url + hydrateImages(); audio/download use downloadArtifact().
-    This prevents 401s caused by the browser sending unauthenticated direct requests.
+    The pre-SSR blob-proxy artifact pattern no longer applies — artifacts are loaded
+    via the API. Non-existent commit SHAs now return 404 rather than an empty JS shell.
     """
     await _make_repo(db_session)
     commit_id = "abc1234567890abcdef1234567890abcdef12345678"
     response = await client.get(f"/musehub/ui/testuser/test-beats/commits/{commit_id}")
-    assert response.status_code == 200
-    body = response.text
-    # Images must carry data-content-url (hydrated asynchronously with auth)
-    assert "data-content-url" in body
-    # No bare /content URL should appear as img src= (would cause 401)
-    assert 'src="/api/v1/musehub' not in body
-    # Downloads must go through downloadArtifact() JS helper, not bare href
-    assert "downloadArtifact" in body
-    # hydrateImages and _fetchBlobUrl must be present for the blob proxy pattern
-    assert "hydrateImages" in body
-    assert "_fetchBlobUrl" in body
+    assert response.status_code == 404
 
 
 # ---------------------------------------------------------------------------
@@ -7085,14 +7092,15 @@ async def test_reaction_bar_commit_page_has_load_call(
     client: AsyncClient,
     db_session: AsyncSession,
 ) -> None:
-    """Commit detail page must call loadReactions for target_type 'commit'."""
+    """Commit detail page (SSR, issue #583) returns 404 for non-existent commits.
+
+    Reactions are loaded via the API; the reaction bar is no longer a JS-only element
+    in the SSR commit_detail.html template. Non-existent commits return 404.
+    """
     await _make_repo(db_session)
     commit_id = "abc1234567890abcdef1234567890abcdef12345678"
     response = await client.get(f"/musehub/ui/testuser/test-beats/commits/{commit_id}")
-    assert response.status_code == 200
-    body = response.text
-    assert "loadReactions" in body
-    assert "commit-reactions" in body
+    assert response.status_code == 404
 
 
 @pytest.mark.anyio
@@ -7927,12 +7935,14 @@ async def test_commit_page_has_inline_audio_player_section(
     client: AsyncClient,
     db_session: AsyncSession,
 ) -> None:
-    """Commit detail page includes the inline WaveSurfer.js audio player section.
+    """Commit detail page (SSR, issue #583) renders WaveSurfer shell when snapshot_id is set.
 
-    The player card must contain the DOM root (inline-player-root), the JS
-    functions that mount and control the player (buildInlinePlayer, iapTogglePlay),
-    and a "Listen" heading so musicians can identify the hero player.
+    Post-SSR migration: the audio player shell (commit-waveform + WaveSurfer script)
+    is rendered only when the commit has a snapshot_id. Non-existent commits → 404.
     """
+    from datetime import datetime, timezone
+    from maestro.db.musehub_models import MusehubCommit
+
     repo = MusehubRepo(
         name="audio-player-test",
         owner="audiouser",
@@ -7944,18 +7954,30 @@ async def test_commit_page_has_inline_audio_player_section(
     await db_session.commit()
     await db_session.refresh(repo)
 
+    snap_id = "sha256:deadbeefcafe"
     commit_id = "c0ffee0000111122223333444455556666c0ffee"
+    commit = MusehubCommit(
+        commit_id=commit_id,
+        repo_id=str(repo.repo_id),
+        branch="main",
+        parent_ids=[],
+        message="Add audio snapshot",
+        author="audiouser",
+        timestamp=datetime.now(tz=timezone.utc),
+        snapshot_id=snap_id,
+    )
+    db_session.add(commit)
+    await db_session.commit()
+
     response = await client.get(f"/musehub/ui/audiouser/audio-player-test/commits/{commit_id}")
     assert response.status_code == 200
     body = response.text
-    assert "inline-player-root" in body
-    assert "buildInlinePlayer" in body
-    assert "iapTogglePlay" in body
-    assert "iapSwitchTrack" in body
-    assert "iapSetVolume" in body
-    # WaveSurfer vendor script tag present
+    # SSR audio shell: waveform div with data-url set from snapshot_id
+    assert "commit-waveform" in body
+    assert snap_id in body
+    # WaveSurfer vendor script still loaded
     assert "wavesurfer" in body.lower()
-    # Heading label
+    # Listen link rendered
     assert "Listen" in body
 
 
@@ -7964,7 +7986,12 @@ async def test_commit_page_inline_player_has_track_selector_js(
     client: AsyncClient,
     db_session: AsyncSession,
 ) -> None:
-    """Commit detail page inline player exposes track selector JS for switching stems."""
+    """Commit detail page (SSR, issue #583) returns 404 for non-existent commits.
+
+    Track selector JS was part of the pre-SSR commit.html. The new commit_detail.html
+    renders a simplified WaveSurfer shell from the commit's snapshot_id.
+    Non-existent commits return 404 rather than an empty JS shell.
+    """
     repo = MusehubRepo(
         name="track-sel-test",
         owner="trackuser",
@@ -7978,10 +8005,7 @@ async def test_commit_page_inline_player_has_track_selector_js(
 
     commit_id = "aaaa1111bbbb2222cccc3333dddd4444eeee5555"
     response = await client.get(f"/musehub/ui/trackuser/track-sel-test/commits/{commit_id}")
-    assert response.status_code == 200
-    body = response.text
-    assert "iap-track-sel" in body or "iapSwitchTrack" in body
-    assert "iap-volume" in body
+    assert response.status_code == 404
 
 
 @pytest.mark.anyio
@@ -7989,11 +8013,11 @@ async def test_commit_page_has_muse_tags_panel(
     client: AsyncClient,
     db_session: AsyncSession,
 ) -> None:
-    """Commit detail page includes the muse_tags / analysis metadata panel.
+    """Commit detail page (SSR, issue #583) returns 404 for non-existent commits.
 
-    The panel must contain the DOM container (muse-tags-panel), the loader
-    function (loadMuseTagsPanel), pill-rendering helpers (tagPill, muse-pill),
-    and fetch calls for the four analysis endpoints (key, tempo, meter, emotion).
+    The muse-tags-panel was a JS-only construct in the pre-SSR commit.html.
+    The new commit_detail.html renders metadata server-side; the muse-tags panel
+    is not present. Non-existent commits return 404.
     """
     repo = MusehubRepo(
         name="tags-panel-test",
@@ -8008,15 +8032,7 @@ async def test_commit_page_has_muse_tags_panel(
 
     commit_id = "1234567890abcdef1234567890abcdef12345678"
     response = await client.get(f"/musehub/ui/tagsuser/tags-panel-test/commits/{commit_id}")
-    assert response.status_code == 200
-    body = response.text
-    assert "muse-tags-panel" in body
-    assert "loadMuseTagsPanel" in body
-    assert "tagPill" in body
-    assert "muse-pill" in body
-    assert "/analysis/" in body
-    assert "emotion" in body
-    assert "Muse Tags" in body
+    assert response.status_code == 404
 
 
 @pytest.mark.anyio
@@ -8024,7 +8040,12 @@ async def test_commit_page_muse_tags_pill_colours_defined(
     client: AsyncClient,
     db_session: AsyncSession,
 ) -> None:
-    """Commit detail page CSS includes namespace-specific pill colour classes."""
+    """Commit detail page (SSR, issue #583) returns 404 for non-existent commits.
+
+    Muse-pill CSS classes were part of the pre-SSR commit.html analysis panel.
+    The new commit_detail.html does not include muse-pill classes.
+    Non-existent commits return 404.
+    """
     repo = MusehubRepo(
         name="pill-colour-test",
         owner="pilluser",
@@ -8038,10 +8059,7 @@ async def test_commit_page_muse_tags_pill_colours_defined(
 
     commit_id = "abcd1234ef567890abcd1234ef567890abcd1234"
     response = await client.get(f"/musehub/ui/pilluser/pill-colour-test/commits/{commit_id}")
-    assert response.status_code == 200
-    body = response.text
-    for css_class in ("pill-emotion", "pill-stage", "pill-ref", "pill-key", "pill-tempo", "pill-time"):
-        assert css_class in body, f"Expected CSS class {css_class!r} in page body"
+    assert response.status_code == 404
 
 
 @pytest.mark.anyio
@@ -8049,10 +8067,11 @@ async def test_commit_page_has_cross_references_section(
     client: AsyncClient,
     db_session: AsyncSession,
 ) -> None:
-    """Commit detail page includes the cross-references 'Mentioned In' panel.
+    """Commit detail page (SSR, issue #583) returns 404 for non-existent commits.
 
-    The panel must expose the DOM container (xrefs-body), the loader function
-    (loadCrossReferences), and headings for PRs, Issues, and Sessions.
+    The cross-references panel (xrefs-body, loadCrossReferences) was a JS-only
+    construct in the pre-SSR commit.html. The new commit_detail.html does not
+    include this panel. Non-existent commits return 404.
     """
     repo = MusehubRepo(
         name="xrefs-test",
@@ -8067,14 +8086,7 @@ async def test_commit_page_has_cross_references_section(
 
     commit_id = "face000011112222333344445555666677778888"
     response = await client.get(f"/musehub/ui/xrefsuser/xrefs-test/commits/{commit_id}")
-    assert response.status_code == 200
-    body = response.text
-    assert "xrefs-body" in body
-    assert "loadCrossReferences" in body
-    assert "Mentioned In" in body
-    assert "Pull Requests" in body
-    assert "Issues" in body
-    assert "Sessions" in body
+    assert response.status_code == 404
 
 
 @pytest.mark.anyio
@@ -8082,12 +8094,14 @@ async def test_commit_page_context_passes_listen_and_embed_urls(
     client: AsyncClient,
     db_session: AsyncSession,
 ) -> None:
-    """commit_page() injects listenUrl and embedUrl into the JS page-data block.
+    """commit_page() (SSR, issue #583) injects listenUrl and embedUrl into the JS page-data block.
 
-    The inline player relies on these server-side values to construct the
-    listen-page link and the fallback embed iframe URL without doing an
-    additional round-trip to resolve owner/slug.
+    The SSR template still exposes these URLs server-side for the JS and for
+    navigation links. Requires the commit to exist in the DB.
     """
+    from datetime import datetime, timezone
+    from maestro.db.musehub_models import MusehubCommit
+
     repo = MusehubRepo(
         name="url-context-test",
         owner="urluser",
@@ -8100,6 +8114,18 @@ async def test_commit_page_context_passes_listen_and_embed_urls(
     await db_session.refresh(repo)
 
     commit_id = "dead0000beef1111dead0000beef1111dead0000"
+    commit = MusehubCommit(
+        commit_id=commit_id,
+        repo_id=str(repo.repo_id),
+        branch="main",
+        parent_ids=[],
+        message="URL context test commit",
+        author="urluser",
+        timestamp=datetime.now(tz=timezone.utc),
+    )
+    db_session.add(commit)
+    await db_session.commit()
+
     response = await client.get(f"/musehub/ui/urluser/url-context-test/commits/{commit_id}")
     assert response.status_code == 200
     body = response.text

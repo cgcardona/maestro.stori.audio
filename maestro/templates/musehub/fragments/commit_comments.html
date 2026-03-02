@@ -1,0 +1,45 @@
+{#
+  commit_comments — bare comment thread fragment for HTMX partial updates.
+
+  Rendered for both the initial include inside commit_detail.html and for
+  subsequent HTMX requests (HX-Request: true) that refresh the thread after
+  a new comment is submitted.
+
+  Context
+  -------
+  comments : list[dict]
+    Chronologically-ordered comments with keys: comment_id, author, body,
+    parent_id, created_at.
+#}
+{% if comments %}
+{% for comment in comments %}
+{% if not comment.get('parent_id') %}
+<div class="comment" id="comment-{{ comment.comment_id }}">
+  <div class="comment-header">
+    <span class="comment-avatar">{{ (comment.author or '?')[0] | upper }}</span>
+    <span class="comment-author">{{ comment.author or 'unknown' }}</span>
+    <span class="comment-date">{{ comment.created_at | fmtrelative }}</span>
+  </div>
+  <div class="comment-body">{{ comment.body | safe }}</div>
+  {# Nested replies #}
+  {% set replies = comments | selectattr('parent_id', 'equalto', comment.comment_id) | list %}
+  {% if replies %}
+  <div class="comment-replies">
+    {% for reply in replies %}
+    <div class="comment comment-reply" id="comment-{{ reply.comment_id }}">
+      <div class="comment-header">
+        <span class="comment-avatar">{{ (reply.author or '?')[0] | upper }}</span>
+        <span class="comment-author">{{ reply.author or 'unknown' }}</span>
+        <span class="comment-date">{{ reply.created_at | fmtrelative }}</span>
+      </div>
+      <div class="comment-body">{{ reply.body | safe }}</div>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+</div>
+{% endif %}
+{% endfor %}
+{% else %}
+<p class="muted" style="margin:0 0 16px">No comments yet. Be the first to start the discussion.</p>
+{% endif %}
