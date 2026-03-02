@@ -141,3 +141,20 @@ class SpawnResult(BaseModel):
     worktree: str
     branch: str
     agent_task: str
+
+
+class RoleMeta(BaseModel):
+    """Metadata for a managed role or cursor configuration file.
+
+    Used by the Role Studio API (AC-301) to describe each file without
+    returning full content — callers fetch content separately via GET /api/roles/{slug}.
+    ``last_commit_sha`` and ``last_commit_message`` are empty strings when the
+    file has never been committed (e.g. in tests with a temp directory).
+    """
+
+    slug: str
+    path: str
+    line_count: int
+    mtime: float
+    last_commit_sha: str
+    last_commit_message: str
