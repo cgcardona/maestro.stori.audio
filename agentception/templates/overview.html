@@ -288,6 +288,45 @@
           <div class="alert-item" x-text="alert"></div>
         </template>
       </div>
+
+      {#
+        Stale claim cards — one per issue with agent:wip but no live worktree.
+        Each card shows the issue number, title, and expected worktree path,
+        plus a "Clear Label" button that removes agent:wip so the issue re-enters
+        the scheduling pool.
+      #}
+      <div x-show="state.stale_claims && state.stale_claims.length > 0" class="mt-2">
+        <h3 class="section-subtitle">Stale Claims</h3>
+        <template x-for="claim in state.stale_claims" :key="claim.issue_number">
+          <div
+            class="stale-claim-card"
+            x-data="staleClaimCard(claim)"
+          >
+            <div class="stale-claim-header">
+              <span class="stale-claim-number">#<span x-text="claim.issue_number"></span></span>
+              <span class="stale-claim-title" x-text="claim.issue_title"></span>
+            </div>
+            <div class="stale-claim-path text-muted" x-text="claim.worktree_path"></div>
+            <div class="stale-claim-actions">
+              <button
+                class="btn btn-sm btn-warning"
+                x-show="!confirming && !clearing"
+                @click="confirming = true"
+              >Clear Label</button>
+
+              <span x-show="confirming && !clearing" class="stale-claim-confirm">
+                Remove <code>agent:wip</code> from #<span x-text="claim.issue_number"></span>?
+                <button class="btn btn-sm btn-secondary" @click="confirming = false">Cancel</button>
+                <button class="btn btn-sm btn-danger" @click="clear(claim.issue_number)">Confirm</button>
+              </span>
+
+              <span x-show="clearing" class="text-muted">Clearing…</span>
+              <span x-show="cleared" class="text-success">✅ Cleared</span>
+              <span x-show="error" class="text-danger" x-text="error"></span>
+            </div>
+          </div>
+        </template>
+      </div>
     </aside>
 
   </div>{# .overview-columns #}
@@ -382,6 +421,46 @@ function prViolations() {
         // Network error — leave the card visible so the user can retry.
       } finally {
         this.closing = null;
+      }
+    },
+  };
+}
+
+/**
+ * Alpine.js component for a single stale-claim card.
+ *
+ * Manages a two-step confirmation flow ("Clear Label" → confirm → POST) so
+ * accidental clicks do not immediately remove the agent:wip label.  Each card
+ * is independent — clearing one does not affect siblings.
+ *
+ * @param {object} claim - StaleClaim object from PipelineState.stale_claims.
+ */
+function staleClaimCard(claim) {
+  return {
+    confirming: false,
+    clearing: false,
+    cleared: false,
+    error: null,
+
+    async clear(issueNumber) {
+      this.confirming = false;
+      this.clearing = true;
+      this.error = null;
+      try {
+        const res = await fetch(
+          `/api/intelligence/stale-claims/${issueNumber}/clear`,
+          { method: 'POST' },
+        );
+        if (res.ok) {
+          this.cleared = true;
+        } else {
+          const data = await res.json().catch(() => ({}));
+          this.error = data.detail || `HTTP ${res.status}`;
+        }
+      } catch (err) {
+        this.error = err.message || 'Network error';
+      } finally {
+        this.clearing = false;
       }
     },
   };

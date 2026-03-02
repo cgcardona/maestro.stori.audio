@@ -988,10 +988,11 @@ STEP 5 — PUSH & CREATE PR:
   if [ -n "$MY_PR_NUM" ]; then
     sed -i '' "s/^LINKED_PR=.*/LINKED_PR=$MY_PR_NUM/" .agent-task 2>/dev/null || true
     echo "✅ LINKED_PR=$MY_PR_NUM written back to .agent-task"
-    # Label the PR agent:wip so the stale sweep never mistakes the issue for
-    # unclaimed just because the implementer worktree was pruned after PR creation.
-    gh pr edit "$MY_PR_NUM" --add-label "agent:wip" --repo "$GH_REPO" 2>/dev/null || true
-    echo "✅ agent:wip added to PR #$MY_PR_NUM"
+    # ⚠️  Do NOT add agent:wip to the PR here. agent:wip on a PR means
+    # "a reviewer is actively working on this." The reviewer claims it in STEP 3
+    # of parallel-pr-review.md after its idempotency gate passes. The idempotency
+    # gate (reviewDecision = APPROVED check) already prevents double-reviews without
+    # needing the label as a lock during the spawn window.
   fi
 
   # Post fingerprint comment on the issue so it's traceable even if the claim
@@ -1046,9 +1047,9 @@ STEP 6 — SPAWN A QA REVIEWER FOR YOUR OWN PR (run this before self-destructing
     # Create a fresh review worktree at the PR branch tip.
     REVIEW_WORKTREE="$HOME/.cursor/worktrees/maestro/pr-$MY_PR"
     git -C "$REPO" worktree add "$REVIEW_WORKTREE" "origin/$MY_BRANCH"
-    # Add label only after worktree is confirmed created — prevents permanent lock on creation failure.
-    # The coordinator owns label-add in all spawn paths; the reviewer only removes it on exit.
-    gh pr edit "$MY_PR" --repo "$GH_REPO" --add-label "agent:wip" 2>/dev/null || true
+    # ⚠️  Do NOT add agent:wip here. The reviewer claims the label itself in STEP 3
+    # after passing the idempotency gate. Adding it here causes stale labels when the
+    # reviewer is never launched or crashes before claiming.
 
     # Write the reviewer's .agent-task.
     # SPAWN_MODE=chain tells the reviewer to spawn the next ENGINEER (not reviewer) when done.

@@ -1,30 +1,105 @@
-"""Out-of-order PR guard for the AgentCeption intelligence layer.
+"""Pipeline guard functions for the AgentCeption intelligence layer.
 
-Detects open PRs whose linked issue belongs to a phase label that no longer
-matches the currently active pipeline phase. Surfaces violations so operators
-can close stale PRs before they create merge conflicts or pollute the dev
-branch with work from the wrong batch.
+Contains two families of guards:
 
-Depends on: #616 (GitHub reader layer must be present).
+**Stale-claim detection** (AC-404): An issue carrying ``agent:wip`` with no
+corresponding worktree on the local filesystem indicates an agent that was
+killed or crashed before removing its label, leaving the issue permanently
+locked out of the scheduling pool.
+
+**Out-of-order PR detection** (AC-403): Detects open PRs whose linked issue
+belongs to a pipeline phase label that no longer matches the currently active
+phase. Surfaces violations so operators can close stale PRs before they create
+merge conflicts or pollute the dev branch with work from the wrong batch.
 
 Public API:
-- ``PRViolation``               — typed result for a single ordering violation
-- ``detect_out_of_order_prs()`` — main detection coroutine; called by poller
-                                   and the /api/intelligence/pr-violations route
+- ``StaleClaim``               — re-exported from models for convenience
+- ``detect_stale_claims()``    — detects issues claimed with no live worktree
+- ``PRViolation``              — typed result for a single ordering violation
+- ``detect_out_of_order_prs()``— main detection coroutine; called by poller
+                                  and the /api/intelligence/pr-violations route
 """
 from __future__ import annotations
 
 import logging
 import re
+from pathlib import Path
+
+from agentception.models import StaleClaim
+from agentception.readers.github import get_active_label, get_issue, get_open_prs_with_body
 
 from pydantic import BaseModel
-
-from agentception.readers.github import get_active_label, get_issue, get_open_prs_with_body
 
 logger = logging.getLogger(__name__)
 
 # Matches "Closes #NNN", "Close #NNN", "closes #NNN" in PR bodies.
 _CLOSES_PATTERN: re.Pattern[str] = re.compile(r"[Cc]loses?\s+#(\d+)")
+
+
+# ---------------------------------------------------------------------------
+# Stale-claim detection
+# ---------------------------------------------------------------------------
+
+
+async def detect_stale_claims(
+    wip_issues: list[dict[str, object]],
+    worktrees_dir: Path,
+) -> list[StaleClaim]:
+    """Detect issues with ``agent:wip`` label but no corresponding worktree.
+
+    For each open issue labelled ``agent:wip``, computes the expected worktree
+    path ``worktrees_dir / f"issue-{number}"``.  When that path does not exist
+    on the filesystem, the issue is classified as a stale claim.
+
+    Parameters
+    ----------
+    wip_issues:
+        List of issue dicts as returned by
+        :func:`~agentception.readers.github.get_wip_issues`.
+        Each dict must contain at minimum ``number`` (int) and ``title`` (str).
+    worktrees_dir:
+        Root directory where worktrees are created, e.g.
+        ``~/.cursor/worktrees/maestro``.
+
+    Returns
+    -------
+    list[StaleClaim]
+        One entry per stale issue, sorted ascending by issue number.
+        Empty list when all wip issues have live worktrees.
+    """
+    claims: list[StaleClaim] = []
+
+    for issue in wip_issues:
+        num = issue.get("number")
+        title = issue.get("title", "")
+        if not isinstance(num, int):
+            logger.warning("⚠️  Skipping wip issue with non-int number: %r", num)
+            continue
+        if not isinstance(title, str):
+            title = str(title)
+
+        expected_path = worktrees_dir / f"issue-{num}"
+        if not expected_path.exists():
+            logger.debug(
+                "⚠️  Stale claim detected: issue #%d has no worktree at %s",
+                num,
+                expected_path,
+            )
+            claims.append(
+                StaleClaim(
+                    issue_number=num,
+                    issue_title=title,
+                    worktree_path=str(expected_path),
+                )
+            )
+
+    claims.sort(key=lambda c: c.issue_number)
+    return claims
+
+
+# ---------------------------------------------------------------------------
+# Out-of-order PR detection
+# ---------------------------------------------------------------------------
 
 
 class PRViolation(BaseModel):

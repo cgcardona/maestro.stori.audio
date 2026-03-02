@@ -482,6 +482,11 @@ STEP 2 — CHECK CANONICAL STATE BEFORE DOING ANY WORK:
 
 STEP 3 — CHECKOUT & SYNC (only if STEP 2 shows the PR is open and unreviewed):
 
+  # Claim the PR — this is the true "agent is working on it" signal.
+  # Only runs after STEP 2's idempotency gate passes, so it never creates stale labels.
+  # All exit paths (STEP 2 early-stop, merge, D/F grade, timeout) remove this label.
+  gh pr edit "$N" --repo "$GH_REPO" --add-label "{{ claim_label }}" 2>/dev/null || true
+
   ⚠️  COMMIT GUARD — run this first if any files are modified in your worktree:
   Git will abort the merge if any tracked file has uncommitted local changes.
   Commit everything before touching the remote.
@@ -1289,8 +1294,9 @@ TASK
       NEXT_BRANCH=$(gh pr view "$NEXT_PR" --repo "$GH_REPO" --json headRefName --jq .headRefName)
       NEXT_WORKTREE="$HOME/.cursor/worktrees/maestro/pr-$NEXT_PR"
       git -C "$REPO" worktree add "$NEXT_WORKTREE" "origin/$NEXT_BRANCH"
-      # Add label only after worktree is confirmed created — prevents permanent lock on creation failure
-      gh pr edit "$NEXT_PR" --repo "$GH_REPO" --add-label "{{ claim_label }}" 2>/dev/null || true
+      # ⚠️  Do NOT add agent:wip here. The reviewer claims the label itself in STEP 3
+      # after passing the idempotency gate. Adding it here causes stale labels when the
+      # reviewer is never launched or crashes before claiming.
 
       NEXT_PR_TITLE=$(gh pr view "$NEXT_PR" --repo "$GH_REPO" --json title --jq '.title' 2>/dev/null || echo "")
       NEXT_PR_BODY=$(gh pr view "$NEXT_PR" --repo "$GH_REPO" --json body --jq '.body' 2>/dev/null || echo "")
