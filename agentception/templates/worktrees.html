@@ -1,113 +1,201 @@
 {% extends "base.html" %}
 
-{% block title %}AgentCeption — Worktrees & Git{% endblock %}
+{% block title %}Agentception — Worktrees & Git{% endblock %}
 
 {% block content %}
-<h1 class="section-title" style="margin-bottom:1rem;">Worktrees &amp; Git</h1>
+
+{# ── Page header ─────────────────────────────────────────────────────────── #}
+<div class="wt-page-header">
+  <h1 class="wt-page-title">Worktrees &amp; Git</h1>
+  <p class="wt-page-subtitle">
+    Each agent runs in an isolated Git worktree — a lightweight, fully-functional
+    copy of the repo checked out to its own branch.
+  </p>
+</div>
+
+{# ── Summary bar ─────────────────────────────────────────────────────────── #}
+<div class="wt-summary">
+  <div class="wt-summary-stat">
+    <span class="wt-summary-value">{{ worktrees | length }}</span>
+    <span class="wt-summary-label">worktrees</span>
+  </div>
+  <div class="wt-summary-stat">
+    <span class="wt-summary-value">{{ agent_worktrees | length }}</span>
+    <span class="wt-summary-label">agent</span>
+  </div>
+  <div class="wt-summary-stat">
+    <span class="wt-summary-value">{{ stale_count }}</span>
+    <span class="wt-summary-label">stale branches</span>
+  </div>
+  <div class="wt-summary-stat">
+    <span class="wt-summary-value">{{ stash | length }}</span>
+    <span class="wt-summary-label">stash entries</span>
+  </div>
+  {% if stale_count > 0 %}
+  <div class="wt-summary-actions" x-data="branchManager()">
+    <button class="btn btn-sm btn-danger" @click="sweepAll()" :disabled="sweeping">
+      <span x-text="sweeping ? 'Sweeping…' : 'Sweep {{ stale_count }} stale'"></span>
+    </button>
+  </div>
+  {% endif %}
+</div>
 
 {# ── Active Worktrees ─────────────────────────────────────────────────────── #}
-<section>
-  <h2 class="section-title" style="margin-bottom:0.5rem;">Active Worktrees ({{ worktrees | length }})</h2>
+<section class="wt-section">
+  <h2 class="wt-section-title">Active Worktrees</h2>
+
   {% if worktrees %}
-  <div class="card" style="padding:0;overflow:hidden;">
-    <table class="telemetry-table" style="width:100%;margin:0;">
-      <thead>
-        <tr>
-          <th>Path</th>
-          <th>Branch</th>
-          <th>HEAD</th>
-          <th>Commit</th>
-          <th>Type</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for wt in worktrees %}
-        <tr>
-          <td style="font-family:monospace;font-size:0.78rem;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
-            {{ wt.path }}
-          </td>
-          <td>
-            <code style="font-size:0.8rem;">{{ wt.branch or '(detached)' }}</code>
-          </td>
-          <td style="font-family:monospace;font-size:0.75rem;color:var(--text-muted);">
-            {{ (wt.head_sha or '')[:7] or '—' }}
-          </td>
-          <td style="font-size:0.8rem;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text-muted);">
-            {{ wt.head_message or '—' }}
-          </td>
-          <td>
-            {% if wt.is_main %}
-            <span class="badge badge--blue">main</span>
-            {% elif wt.is_agent_branch %}
-            <span class="badge badge--green">agent</span>
-            {% else %}
-            <span class="badge badge--grey">linked</span>
-            {% endif %}
-          </td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
+  <div class="wt-cards">
+
+    {# Main worktree first, then agent worktrees #}
+    {% for wt in worktrees %}
+    <div
+      class="wt-card{% if wt.is_main %} wt-card--main{% elif wt.is_agent_branch %} wt-card--agent{% endif %}"
+      x-data="worktreeCard('{{ wt.slug }}')"
+      :class="open ? 'wt-card--open' : ''"
+    >
+      {# ── Card header ─────────────────────────────────────────────────── #}
+      <div class="wt-card-header" @click="toggle()">
+
+        <div class="wt-card-header-left">
+          {# Type badge #}
+          {% if wt.is_main %}
+          <span class="wt-badge wt-badge--main">main</span>
+          {% elif wt.is_agent_branch and wt.issue_number %}
+          <span class="wt-badge wt-badge--agent">agent · #{{ wt.issue_number }}</span>
+          {% elif wt.is_agent_branch %}
+          <span class="wt-badge wt-badge--agent">agent</span>
+          {% else %}
+          <span class="wt-badge wt-badge--linked">linked</span>
+          {% endif %}
+
+          {# Lock indicator #}
+          {% if wt.locked %}
+          <span class="wt-lock" title="Locked — protected from auto-prune">🔒</span>
+          {% endif %}
+
+          {# Branch name #}
+          <code class="wt-card-branch">{{ wt.branch or '(detached HEAD)' }}</code>
+        </div>
+
+        <div class="wt-card-header-right">
+          {# Activity age #}
+          {% if wt.task_mtime_str %}
+          <span class="wt-card-age">{{ wt.task_mtime_str }}</span>
+          {% endif %}
+
+          {# GitHub issue link #}
+          {% if wt.issue_number %}
+          <a
+            class="wt-card-gh-link"
+            href="https://github.com/{{ gh_repo }}/issues/{{ wt.issue_number }}"
+            target="_blank"
+            rel="noopener"
+            @click.stop
+            title="Open issue #{{ wt.issue_number }} on GitHub"
+          >#{{ wt.issue_number }} ↗</a>
+          {% endif %}
+
+          {# Delete button (not for main) #}
+          {% if not wt.is_main %}
+          <button
+            class="wt-card-delete btn btn-xs btn-danger"
+            @click.stop="deleteWorktree('{{ wt.slug }}')"
+            title="Remove worktree"
+          >✕</button>
+          {% endif %}
+
+          {# Expand chevron #}
+          {% if not wt.is_main %}
+          <span class="wt-card-chevron" :class="open ? 'wt-card-chevron--open' : ''">▾</span>
+          {% endif %}
+        </div>
+      </div>
+
+      {# ── Card meta row ───────────────────────────────────────────────── #}
+      <div class="wt-card-meta">
+        <span class="wt-card-sha" title="{{ wt.head_sha }}">{{ (wt.head_sha or '')[:7] or '—' }}</span>
+        <span class="wt-card-meta-sep">·</span>
+        <span class="wt-card-commit">{{ wt.head_message or '—' }}</span>
+        <span class="wt-card-meta-sep">·</span>
+        <span class="wt-card-path" title="{{ wt.path }}">{{ wt.path }}</span>
+      </div>
+
+      {# ── Expandable detail panel (HTMX, loaded on first open) ────────── #}
+      {% if not wt.is_main %}
+      <div class="wt-card-body" x-show="open" x-transition:enter="wt-card-body--enter" x-transition:leave="wt-card-body--leave">
+        <div
+          id="wt-detail-{{ wt.slug }}"
+          class="wt-detail"
+          hx-get="/worktrees/{{ wt.slug }}/detail"
+          hx-trigger="detail-load once"
+          hx-swap="innerHTML"
+        >
+          <div class="wt-detail-loading">
+            <span class="wt-spinner"></span> Loading worktree detail…
+          </div>
+        </div>
+      </div>
+      {% endif %}
+
+    </div>
+    {% endfor %}
+
   </div>
   {% else %}
-  <div class="card"><p class="text-muted empty-state">No worktrees found.</p></div>
+  <div class="card"><p class="wt-empty">No worktrees found.</p></div>
   {% endif %}
 </section>
 
 {# ── Local Branches ───────────────────────────────────────────────────────── #}
-<section class="mt-2" x-data="branchManager()">
-  <div style="display:flex;align-items:center;gap:1rem;margin-bottom:0.5rem;">
-    <h2 class="section-title" style="margin:0;">Local Branches ({{ branches | length }})</h2>
-    {% set stale_count = branches | selectattr('is_stale') | list | length %}
-    {% if stale_count > 0 %}
+<section class="wt-section" x-data="branchManager()">
+  <div class="wt-section-header">
+    <h2 class="wt-section-title">Local Branches</h2>
+    <span class="wt-section-count">{{ branches | length }}</span>
+    {% set stale_branches = branches | selectattr('is_stale') | list %}
+    {% if stale_branches %}
     <button class="btn btn-sm btn-danger" @click="sweepAll()" :disabled="sweeping">
-      <span x-text="sweeping ? 'Sweeping…' : 'Sweep {{ stale_count }} stale'"></span>
+      <span x-text="sweeping ? 'Sweeping…' : 'Sweep {{ stale_branches | length }} stale'"></span>
     </button>
     {% endif %}
   </div>
+
   {% if branches %}
-  <div class="card" style="padding:0;overflow:hidden;">
-    <table class="telemetry-table" style="width:100%;margin:0;">
+  <div class="card wt-table-card">
+    <table class="wt-table">
       <thead>
         <tr>
           <th>Branch</th>
-          <th>HEAD</th>
-          <th>Commit</th>
-          <th>↑</th>
-          <th>↓</th>
-          <th>Type</th>
+          <th>SHA</th>
+          <th>Latest Commit</th>
+          <th class="wt-col-num" title="Commits ahead of origin">↑</th>
+          <th class="wt-col-num" title="Commits behind origin">↓</th>
+          <th>Status</th>
           <th></th>
         </tr>
       </thead>
       <tbody>
         {% for b in branches %}
-        <tr {% if b.is_current %}style="background:rgba(124,58,237,0.06);"{% endif %}
-            {% if b.is_stale %}style="opacity:0.65;"{% endif %}>
+        <tr class="wt-row{% if b.is_current %} wt-row--current{% endif %}{% if b.is_stale %} wt-row--stale{% endif %}">
           <td>
-            <code style="font-size:0.8rem;">
-              {% if b.is_current %}* {% endif %}{{ b.name }}
+            <code class="wt-branch-name">
+              {% if b.is_current %}<span class="wt-current-marker">*</span> {% endif %}{{ b.name }}
             </code>
           </td>
-          <td style="font-family:monospace;font-size:0.75rem;color:var(--text-muted);">
-            {{ (b.head_sha or '')[:7] or '—' }}
-          </td>
-          <td style="font-size:0.8rem;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text-muted);">
-            {{ b.head_message or '—' }}
-          </td>
-          <td style="text-align:right;color:{% if b.ahead > 0 %}var(--success){% else %}var(--text-muted){% endif %};">
-            {{ b.ahead }}
-          </td>
-          <td style="text-align:right;color:{% if b.behind > 0 %}var(--warning){% else %}var(--text-muted){% endif %};">
-            {{ b.behind }}
-          </td>
+          <td><span class="wt-sha">{{ (b.head_sha or '')[:7] or '—' }}</span></td>
+          <td class="wt-commit-cell">{{ b.head_message or '—' }}</td>
+          <td class="wt-col-num{% if b.ahead > 0 %} wt-ahead{% endif %}">{{ b.ahead }}</td>
+          <td class="wt-col-num{% if b.behind > 0 %} wt-behind{% endif %}">{{ b.behind }}</td>
           <td>
             {% if b.is_stale %}
-            <span class="badge badge--warn" style="font-size:0.65rem;">stale</span>
+            <span class="wt-badge wt-badge--stale">stale</span>
+            {% elif b.is_current %}
+            <span class="wt-badge wt-badge--current">current</span>
             {% elif b.is_agent_branch %}
-            <span class="badge badge--green" style="font-size:0.65rem;">agent</span>
+            <span class="wt-badge wt-badge--agent">agent</span>
             {% endif %}
           </td>
-          <td style="text-align:right;padding-right:0.75rem;">
+          <td class="wt-col-action">
             {% if b.is_stale and not b.is_current %}
             <button
               class="btn btn-xs btn-danger"
@@ -122,54 +210,40 @@
     </table>
   </div>
   {% else %}
-  <div class="card"><p class="text-muted empty-state">No local branches found.</p></div>
+  <div class="card"><p class="wt-empty">No local branches found.</p></div>
   {% endif %}
 </section>
 
-<script>
-function branchManager() {
-  return {
-    sweeping: false,
+{# ── Stash ────────────────────────────────────────────────────────────────── #}
+<section class="wt-section">
+  <div class="wt-section-header">
+    <h2 class="wt-section-title">Stash</h2>
+    <span class="wt-section-count">{{ stash | length }}</span>
+  </div>
 
-    async deleteBranch(name) {
-      if (!confirm(`Delete branch "${name}"?`)) return;
-      const resp = await fetch('/api/control/sweep', { method: 'POST' });
-      if (resp.ok) location.reload();
-      else alert(`Failed: ${(await resp.json()).detail ?? resp.status}`);
-    },
-
-    async sweepAll() {
-      if (!confirm('Delete all stale agent branches and clear orphan labels?')) return;
-      this.sweeping = true;
-      const resp = await fetch('/api/control/sweep', { method: 'POST' });
-      this.sweeping = false;
-      if (resp.ok) location.reload();
-      else alert(`Sweep failed: ${(await resp.json()).detail ?? resp.status}`);
-    },
-  };
-}
-</script>
-
-{# ── Stash entries ────────────────────────────────────────────────────────── #}
-<section class="mt-2">
-  <h2 class="section-title" style="margin-bottom:0.5rem;">Stash ({{ stash | length }})</h2>
   {% if stash %}
-  <div class="card" style="padding:0;overflow:hidden;">
-    <table class="telemetry-table" style="width:100%;margin:0;">
-      <thead><tr><th>Ref</th><th>Branch</th><th>Message</th></tr></thead>
+  <div class="card wt-table-card">
+    <table class="wt-table">
+      <thead>
+        <tr>
+          <th>Ref</th>
+          <th>Branch</th>
+          <th>Message</th>
+        </tr>
+      </thead>
       <tbody>
         {% for entry in stash %}
-        <tr>
-          <td><code style="font-size:0.8rem;">{{ entry.ref }}</code></td>
-          <td><code style="font-size:0.8rem;">{{ entry.branch or '—' }}</code></td>
-          <td style="font-size:0.82rem;color:var(--text-muted);">{{ entry.message }}</td>
+        <tr class="wt-row">
+          <td><code class="wt-stash-ref">{{ entry.ref }}</code></td>
+          <td><code class="wt-branch-name">{{ entry.branch or '—' }}</code></td>
+          <td class="wt-commit-cell">{{ entry.message }}</td>
         </tr>
         {% endfor %}
       </tbody>
     </table>
   </div>
   {% else %}
-  <div class="card"><p class="text-muted empty-state">No stash entries.</p></div>
+  <div class="card"><p class="wt-empty">Stash is empty.</p></div>
   {% endif %}
 </section>
 

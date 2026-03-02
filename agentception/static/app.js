@@ -1508,3 +1508,76 @@ function apiEndpoint() {
     },
   };
 }
+
+// ---------------------------------------------------------------------------
+// Worktrees page — worktree card (expand / collapse + HTMX lazy-load)
+// ---------------------------------------------------------------------------
+
+/**
+ * Per-card state for the worktrees page.
+ *
+ * Handles:
+ *   - toggle open/close with CSS transition
+ *   - lazy HTMX detail load on first open (fires `detail-load` event once)
+ *   - single-worktree delete via DELETE /api/worktrees/{slug}
+ */
+function worktreeCard(slug) {
+  return {
+    slug,
+    open: false,
+    loaded: false,
+
+    toggle() {
+      this.open = !this.open;
+      if (this.open && !this.loaded) {
+        this.loaded = true;
+        const detail = document.getElementById('wt-detail-' + this.slug);
+        if (detail) htmx.trigger(detail, 'detail-load');
+      }
+    },
+
+    async deleteWorktree(s) {
+      if (!confirm(`Remove worktree "${s}"?\n\nThis deletes the working directory. The branch is kept.`)) return;
+      const resp = await fetch(`/api/worktrees/${s}`, { method: 'DELETE' });
+      if (resp.ok) {
+        // Animate the card out before reloading.
+        this.$el.style.opacity = '0';
+        this.$el.style.transform = 'translateY(-4px)';
+        setTimeout(() => location.reload(), 300);
+      } else {
+        const data = await resp.json().catch(() => ({}));
+        alert(`Failed to remove worktree: ${data.detail ?? resp.status}`);
+      }
+    },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Worktrees page — branch manager (sweep + single-branch delete)
+// ---------------------------------------------------------------------------
+
+/**
+ * Manages bulk-sweep and per-branch delete on the worktrees page.
+ * Moved from the inline <script> in worktrees.html.
+ */
+function branchManager() {
+  return {
+    sweeping: false,
+
+    async deleteBranch(name) {
+      if (!confirm(`Delete branch "${name}"?`)) return;
+      const resp = await fetch('/api/control/sweep', { method: 'POST' });
+      if (resp.ok) location.reload();
+      else alert(`Failed: ${(await resp.json().catch(() => ({}))).detail ?? resp.status}`);
+    },
+
+    async sweepAll() {
+      if (!confirm('Delete all stale agent branches and clear orphan labels?')) return;
+      this.sweeping = true;
+      const resp = await fetch('/api/control/sweep', { method: 'POST' });
+      this.sweeping = false;
+      if (resp.ok) location.reload();
+      else alert(`Sweep failed: ${(await resp.json().catch(() => ({}))).detail ?? resp.status}`);
+    },
+  };
+}

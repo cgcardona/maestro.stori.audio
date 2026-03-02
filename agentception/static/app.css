@@ -2202,37 +2202,509 @@ main {
 
 /* ── Worktrees page ───────────────────────────────────────────── */
 
-.worktree-row {
+/* Page header */
+.wt-page-header {
+  margin-bottom: 1.5rem;
+}
+
+.wt-page-title {
+  font-size: 1.35rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin: 0 0 0.375rem;
+}
+
+.wt-page-subtitle {
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+  margin: 0;
+  max-width: 60ch;
+}
+
+/* Summary bar */
+.wt-summary {
   display: flex;
   align-items: center;
-  gap: 0.75rem;
-  padding: 0.625rem 1rem;
+  gap: 2rem;
+  padding: 0.875rem 1.25rem;
   background: var(--bg-surface);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius);
-  font-size: 0.8125rem;
-  transition: border-color 0.15s;
+  margin-bottom: 1.5rem;
 }
 
-.worktree-row:hover {
+.wt-summary-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+}
+
+.wt-summary-value {
+  font-size: 1.375rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  line-height: 1;
+}
+
+.wt-summary-label {
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+}
+
+.wt-summary-actions {
+  margin-left: auto;
+}
+
+/* Section layout */
+.wt-section {
+  margin-bottom: 2rem;
+}
+
+.wt-section-header {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+
+.wt-section-title {
+  font-size: 0.875rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+  margin: 0;
+}
+
+.wt-section-count {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--text-muted);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: 10px;
+  padding: 0.1em 0.55em;
+}
+
+/* Worktree cards */
+.wt-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.wt-card {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius);
+  overflow: hidden;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.wt-card:hover {
   border-color: var(--border-strong);
 }
 
-.worktree-path {
-  font-family: var(--font-mono);
+.wt-card--open {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px rgba(124, 58, 237, 0.15);
+}
+
+.wt-card--main {
+  border-left: 3px solid var(--text-muted);
+}
+
+.wt-card--agent {
+  border-left: 3px solid var(--accent);
+}
+
+/* Card header — always visible, clickable */
+.wt-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.75rem 1rem;
+  cursor: pointer;
+  user-select: none;
+  gap: 1rem;
+}
+
+.wt-card-header-left {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  min-width: 0;
+  flex: 1;
+}
+
+.wt-card-header-right {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  flex-shrink: 0;
+}
+
+/* Type badges */
+.wt-badge {
+  display: inline-flex;
+  align-items: center;
+  font-size: 0.65rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 0.2em 0.55em;
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+
+.wt-badge--main    { background: rgba(100, 116, 139, 0.15); color: var(--text-muted); }
+.wt-badge--agent   { background: rgba(124, 58, 237, 0.15);  color: var(--accent); }
+.wt-badge--linked  { background: rgba(59, 130, 246, 0.15);  color: #60a5fa; }
+.wt-badge--stale   { background: rgba(245, 158, 11, 0.15);  color: #fbbf24; }
+.wt-badge--current { background: rgba(34, 197, 94, 0.15);   color: #4ade80; }
+
+/* Lock icon */
+.wt-lock {
+  font-size: 0.7rem;
+  opacity: 0.6;
+  flex-shrink: 0;
+}
+
+/* Branch name in card header */
+.wt-card-branch {
+  font-family: var(--font-mono, monospace);
+  font-size: 0.8125rem;
+  color: var(--text-primary);
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Age / metadata in header right */
+.wt-card-age {
   font-size: 0.75rem;
-  color: var(--text-secondary);
+  color: var(--text-muted);
+}
+
+/* GitHub link */
+.wt-card-gh-link {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--accent);
+  text-decoration: none;
+  padding: 0.15em 0.5em;
+  border: 1px solid rgba(124, 58, 237, 0.3);
+  border-radius: 4px;
+  transition: background 0.12s;
+}
+
+.wt-card-gh-link:hover {
+  background: rgba(124, 58, 237, 0.12);
+}
+
+/* Delete button */
+.wt-card-delete {
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.wt-card:hover .wt-card-delete {
+  opacity: 1;
+}
+
+/* Expand chevron */
+.wt-card-chevron {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  transition: transform 0.2s;
+  display: inline-block;
+}
+
+.wt-card-chevron--open {
+  transform: rotate(180deg);
+}
+
+/* Meta row — path, SHA, commit message */
+.wt-card-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0 1rem 0.625rem;
+  font-size: 0.775rem;
+  color: var(--text-muted);
+  overflow: hidden;
+}
+
+.wt-card-sha {
+  font-family: var(--font-mono, monospace);
+  font-size: 0.7rem;
+  flex-shrink: 0;
+}
+
+.wt-card-meta-sep {
+  opacity: 0.4;
+  flex-shrink: 0;
+}
+
+.wt-card-commit {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   flex: 1;
 }
 
-.worktree-branch {
-  font-family: var(--font-mono);
-  font-size: 0.6875rem;
-  color: var(--accent-bright);
+.wt-card-path {
+  font-family: var(--font-mono, monospace);
+  font-size: 0.68rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 22ch;
   flex-shrink: 0;
+}
+
+/* Expandable body */
+.wt-card-body {
+  border-top: 1px solid var(--border-subtle);
+  background: var(--bg-base);
+}
+
+/* Detail panel content */
+.wt-detail {
+  padding: 1rem 1.25rem;
+}
+
+.wt-detail-loading {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+  padding: 0.5rem 0;
+}
+
+/* Spinner */
+@keyframes wt-spin {
+  to { transform: rotate(360deg); }
+}
+
+.wt-spinner {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border: 2px solid var(--border-subtle);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: wt-spin 0.7s linear infinite;
+}
+
+/* Detail sections */
+.wt-detail-section {
+  margin-bottom: 1.25rem;
+}
+
+.wt-detail-section:last-child {
+  margin-bottom: 0;
+}
+
+.wt-detail-section-title {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  margin: 0 0 0.5rem;
+}
+
+.wt-detail-count {
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 0.75rem;
+}
+
+.wt-detail-empty {
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+  font-style: italic;
+  margin: 0;
+}
+
+/* Commit list */
+.wt-commits {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.wt-commit {
+  display: flex;
+  align-items: baseline;
+  gap: 0.625rem;
+  font-size: 0.8125rem;
+  padding: 0.25rem 0.5rem;
+  border-radius: 4px;
+  transition: background 0.1s;
+}
+
+.wt-commit:hover {
+  background: var(--bg-surface);
+}
+
+.wt-commit-sha {
+  font-family: var(--font-mono, monospace);
+  font-size: 0.72rem;
+  color: var(--accent);
+  flex-shrink: 0;
+}
+
+.wt-commit-msg {
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Diff stat block */
+.wt-diff-stat {
+  font-family: var(--font-mono, monospace);
+  font-size: 0.78rem;
+  line-height: 1.65;
+  color: var(--text-secondary);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius);
+  padding: 0.75rem 1rem;
+  overflow-x: auto;
+  margin: 0;
+  white-space: pre;
+}
+
+/* Task file */
+.wt-task-file {
+  font-family: var(--font-mono, monospace);
+  font-size: 0.78rem;
+  line-height: 1.65;
+  color: var(--text-secondary);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius);
+  padding: 0.75rem 1rem;
+  overflow-x: auto;
+  max-height: 280px;
+  overflow-y: auto;
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* Branches & stash tables */
+.wt-table-card {
+  padding: 0;
+  overflow: hidden;
+}
+
+.wt-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8125rem;
+}
+
+.wt-table thead th {
+  padding: 0.5rem 0.875rem;
+  text-align: left;
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--bg-surface);
+}
+
+.wt-table tbody td {
+  padding: 0.5rem 0.875rem;
+  border-bottom: 1px solid var(--border-subtle);
+  color: var(--text-secondary);
+  vertical-align: middle;
+}
+
+.wt-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.wt-row--current td {
+  background: rgba(124, 58, 237, 0.04);
+}
+
+.wt-row--stale {
+  opacity: 0.6;
+}
+
+.wt-row--stale td:first-child {
+  text-decoration: line-through;
+  text-decoration-color: var(--text-muted);
+}
+
+.wt-branch-name {
+  font-family: var(--font-mono, monospace);
+  font-size: 0.7875rem;
+  color: var(--text-primary);
+}
+
+.wt-sha {
+  font-family: var(--font-mono, monospace);
+  font-size: 0.72rem;
+  color: var(--text-muted);
+}
+
+.wt-current-marker {
+  color: var(--accent);
+  font-weight: 700;
+}
+
+.wt-stash-ref {
+  font-family: var(--font-mono, monospace);
+  font-size: 0.72rem;
+  color: var(--text-muted);
+}
+
+.wt-col-num {
+  text-align: right;
+  width: 2.5rem;
+}
+
+.wt-ahead { color: var(--success, #4ade80); }
+.wt-behind { color: var(--warning, #fbbf24); }
+
+.wt-commit-cell {
+  max-width: 280px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wt-col-action {
+  text-align: right;
+  padding-right: 0.75rem;
+}
+
+.wt-empty {
+  color: var(--text-muted);
+  font-size: 0.8125rem;
+  font-style: italic;
+  margin: 0;
+  padding: 1rem;
 }
 
 /* ── Docs page ────────────────────────────────────────────────── */
