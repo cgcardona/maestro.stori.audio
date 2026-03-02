@@ -5,6 +5,10 @@ Provides action endpoints for anomalies detected by
 is the primary consumer: the dashboard surfaces a "Clear Label" button for
 each stale claim and POSTs here to remove the ``agent:wip`` label.
 
+The ``POST /api/intelligence/scaling-advice/apply`` endpoint applies the
+current scaling recommendation to ``pipeline-config.json`` in a single click,
+allowing operators to act on advisor output without manual file edits.
+
 Why a dedicated router?
 - Keeps destructive write operations (label removal) separate from read-only
   data routes so they can be rate-limited or gated independently.
@@ -20,8 +24,9 @@ from fastapi import APIRouter, HTTPException
 from agentception.intelligence.dag import DependencyDAG, build_dag
 from agentception.intelligence.scaling import ScalingRecommendation, compute_recommendation
 from agentception.poller import get_state
-from agentception.models import PipelineState
+from agentception.models import PipelineConfig, PipelineState
 from agentception.readers.github import clear_wip_label
+from agentception.readers.pipeline_config import read_pipeline_config, write_pipeline_config
 from agentception.telemetry import aggregate_waves
 
 logger = logging.getLogger(__name__)
@@ -89,6 +94,73 @@ async def clear_stale_claim(issue_number: int) -> dict[str, int]:
 
     logger.info("✅ Cleared stale claim: removed agent:wip from issue #%d", issue_number)
     return {"cleared": issue_number}
+
+
+@router.post("/scaling-advice/apply")
+async def apply_scaling_advice() -> dict[str, object]:
+    """Apply the current scaling recommendation to ``pipeline-config.json``.
+
+    Re-computes the recommendation from live pipeline state, then writes the
+    recommended value to the appropriate ``PipelineConfig`` field.  When the
+    recommendation is ``no_change`` the config is left untouched and the
+    response reflects that.
+
+    This is the backend for the one-click "Apply" button on the overview
+    dashboard banner.  The endpoint is idempotent: calling it twice in a row
+    will produce a second recommendation that may differ (e.g. if the first
+    application already satisfied the threshold) and apply that too.
+
+    Returns
+    -------
+    dict
+        ``{"applied": action, "new_value": recommended_value}`` where
+        ``action`` matches ``ScalingRecommendation.action`` and ``new_value``
+        is the integer written to the config (0 when ``no_change``).
+
+    Raises
+    ------
+    HTTP 500
+        When wave aggregation, config I/O, or the recommendation engine fail.
+    """
+    try:
+        state = get_state() or PipelineState.empty()
+        waves = await aggregate_waves()
+        rec = await compute_recommendation(state, waves)
+
+        if rec.action == "no_change":
+            logger.info("✅ apply_scaling_advice: no_change — config unchanged")
+            return {"applied": rec.action, "new_value": 0}
+
+        config = await read_pipeline_config()
+
+        # Mutate only the field that the recommendation targets.
+        new_config: PipelineConfig
+        if rec.action == "increase_qa_vps":
+            new_config = config.model_copy(update={"max_qa_vps": rec.recommended_value})
+        elif rec.action == "increase_pool":
+            new_config = config.model_copy(update={"pool_size_per_vp": rec.recommended_value})
+        elif rec.action == "increase_eng_vps":
+            new_config = config.model_copy(update={"max_eng_vps": rec.recommended_value})
+        else:
+            # Unreachable given the Literal type constraint, but guarded for safety.
+            logger.warning("⚠️  apply_scaling_advice: unknown action %r — no-op", rec.action)
+            return {"applied": rec.action, "new_value": rec.recommended_value}
+
+        await write_pipeline_config(new_config)
+        logger.info(
+            "✅ apply_scaling_advice: %s → %d (was %d)",
+            rec.action,
+            rec.recommended_value,
+            rec.current_value,
+        )
+        return {"applied": rec.action, "new_value": rec.recommended_value}
+
+    except Exception as exc:
+        logger.error("❌ Failed to apply scaling advice: %s", exc)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to apply scaling advice: {exc}",
+        ) from exc
 
 
 @router.get("/scaling-advice")
