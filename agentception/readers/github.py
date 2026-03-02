@@ -148,7 +148,7 @@ async def get_closed_issues(limit: int = 100) -> list[dict[str, object]]:
         "issue", "list",
         "--repo", repo,
         "--state", "closed",
-        "--json", "number,title,labels,body,closedAt",
+        "--json", "number,title,labels,body,state,closedAt",
         "--limit", str(limit),
     ]
     cache_key = f"get_closed_issues:limit={limit}"
@@ -162,7 +162,7 @@ async def get_open_issues(label: str | None = None) -> list[dict[str, object]]:
     """List open issues, optionally filtered by a single label.
 
     Returns each issue as a dict with at minimum: ``number``, ``title``,
-    ``labels`` (list of label objects), and ``body``.
+    ``labels`` (list of label objects), ``body``, and ``state``.
 
     Parameters
     ----------
@@ -174,7 +174,7 @@ async def get_open_issues(label: str | None = None) -> list[dict[str, object]]:
         "issue", "list",
         "--repo", repo,
         "--state", "open",
-        "--json", "number,title,labels,body",
+        "--json", "number,title,labels,body,state",
     ]
     if label:
         args += ["--label", label]
@@ -190,7 +190,7 @@ async def get_open_prs() -> list[dict[str, object]]:
     """List open pull requests targeting the ``dev`` branch.
 
     Returns each PR as a dict with at minimum: ``number``, ``title``,
-    ``headRefName``, and ``labels``.
+    ``headRefName``, ``labels``, and ``state``.
     """
     repo = settings.gh_repo
     args = [
@@ -198,7 +198,7 @@ async def get_open_prs() -> list[dict[str, object]]:
         "--repo", repo,
         "--base", "dev",
         "--state", "open",
-        "--json", "number,title,headRefName,labels",
+        "--json", "number,title,headRefName,labels,state",
     ]
     result = await gh_json(args, ".", "get_open_prs")
     if not isinstance(result, list):
@@ -269,7 +269,7 @@ async def get_merged_prs_full(limit: int = 100) -> list[dict[str, object]]:
         "--repo", repo,
         "--base", "dev",
         "--state", "merged",
-        "--json", "number,title,headRefName,labels,mergedAt",
+        "--json", "number,title,headRefName,labels,mergedAt,state",
         "--limit", str(limit),
     ]
     cache_key = f"get_merged_prs_full:limit={limit}"

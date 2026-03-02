@@ -377,6 +377,7 @@ async def get_all_issues(
                 "state": row.state,
                 "labels": json.loads(row.labels_json),
                 "phase_label": row.phase_label,
+                "closed_at": row.closed_at.isoformat() if row.closed_at else None,
                 "last_synced_at": row.last_synced_at.isoformat(),
             }
             for row in rows
@@ -506,7 +507,7 @@ async def get_all_prs(
 
 
 async def get_closed_issues_count(repo: str, hours: int = 24) -> int:
-    """Count issues closed within the last *hours* from ``ac_issues``."""
+    """Count issues closed within the last *hours* using the actual ``closed_at`` timestamp."""
     try:
         import datetime
         cutoff = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(hours=hours)
@@ -514,7 +515,7 @@ async def get_closed_issues_count(repo: str, hours: int = 24) -> int:
             result = await session.execute(
                 text(
                     "SELECT COUNT(*) FROM ac_issues "
-                    "WHERE repo = :repo AND state = 'closed' AND last_synced_at >= :cutoff"
+                    "WHERE repo = :repo AND state = 'closed' AND closed_at >= :cutoff"
                 ).bindparams(repo=repo, cutoff=cutoff)
             )
             row = result.one()
@@ -525,7 +526,7 @@ async def get_closed_issues_count(repo: str, hours: int = 24) -> int:
 
 
 async def get_merged_prs_count(repo: str, hours: int = 24) -> int:
-    """Count PRs merged within the last *hours* from ``ac_pull_requests``."""
+    """Count PRs merged within the last *hours* using the actual ``merged_at`` timestamp."""
     try:
         import datetime
         cutoff = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(hours=hours)
@@ -533,7 +534,7 @@ async def get_merged_prs_count(repo: str, hours: int = 24) -> int:
             result = await session.execute(
                 text(
                     "SELECT COUNT(*) FROM ac_pull_requests "
-                    "WHERE repo = :repo AND state = 'merged' AND last_synced_at >= :cutoff"
+                    "WHERE repo = :repo AND state = 'merged' AND merged_at >= :cutoff"
                 ).bindparams(repo=repo, cutoff=cutoff)
             )
             row = result.one()

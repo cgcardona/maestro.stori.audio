@@ -122,7 +122,8 @@ async def _upsert_issues(
         if not isinstance(num, int):
             continue
         title = str(raw.get("title", ""))
-        state_str = str(raw.get("state", "open"))
+        # Normalise GitHub's uppercase GraphQL state values (OPEN/CLOSED) to lowercase.
+        state_str = str(raw.get("state", "open")).lower()
         labels_raw = raw.get("labels", [])
         label_names: list[str] = []
         if isinstance(labels_raw, list):
@@ -135,6 +136,17 @@ async def _upsert_issues(
                         label_names.append(n)
         labels_json = json.dumps(sorted(label_names))
         content_hash = _hash(title, state_str, labels_json)
+
+        # Parse closedAt timestamp when present (closed issues only).
+        closed_at: datetime.datetime | None = None
+        closed_at_raw = raw.get("closedAt")
+        if isinstance(closed_at_raw, str):
+            try:
+                closed_at = datetime.datetime.fromisoformat(
+                    closed_at_raw.replace("Z", "+00:00")
+                )
+            except ValueError:
+                pass
 
         result = await session.execute(
             select(ACIssue).where(ACIssue.github_number == num, ACIssue.repo == repo)
@@ -152,17 +164,24 @@ async def _upsert_issues(
                     phase_label=active_label,
                     labels_json=labels_json,
                     content_hash=content_hash,
+                    closed_at=closed_at,
                     first_seen_at=now,
                     last_synced_at=now,
                 )
             )
-        elif existing.content_hash != content_hash:
+        elif existing.content_hash != content_hash or existing.state != state_str:
+            # Update when content changed OR state transitioned (open → closed).
             existing.title = title
             existing.state = state_str
             existing.phase_label = active_label
             existing.labels_json = labels_json
             existing.content_hash = content_hash
             existing.last_synced_at = now
+            # Preserve existing closed_at if already set; use parsed value on transition.
+            if closed_at is not None and existing.closed_at is None:
+                existing.closed_at = closed_at
+            elif state_str == "closed" and existing.closed_at is None:
+                existing.closed_at = now
 
 
 # ---------------------------------------------------------------------------
@@ -185,7 +204,8 @@ async def _upsert_prs(
         if not isinstance(num, int):
             continue
         title = str(raw.get("title", ""))
-        state_str = str(raw.get("state", "open"))
+        # Normalise GitHub's uppercase GraphQL state values (OPEN/MERGED/CLOSED) to lowercase.
+        state_str = str(raw.get("state", "open")).lower()
         head_ref = raw.get("headRefName")
         labels_raw = raw.get("labels", [])
         label_names: list[str] = []
@@ -230,13 +250,14 @@ async def _upsert_prs(
                     last_synced_at=now,
                 )
             )
-        elif existing.content_hash != content_hash:
+        elif existing.content_hash != content_hash or existing.state != state_str:
+            # Update when content changed OR state transitioned (open → merged/closed).
             existing.title = title
             existing.state = state_str
             existing.head_ref = str(head_ref) if isinstance(head_ref, str) else None
             existing.labels_json = labels_json
             existing.content_hash = content_hash
-            if merged_at is not None:
+            if merged_at is not None and existing.merged_at is None:
                 existing.merged_at = merged_at
             existing.last_synced_at = now
 

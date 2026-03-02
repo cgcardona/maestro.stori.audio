@@ -39,9 +39,9 @@
       {% for t in transcripts %}
       <tr>
         <td>
-          <a href="/agents/{{ t.uuid }}" style="font-family:monospace;font-size:0.8rem;">
+          <span style="font-family:monospace;font-size:0.78rem;color:var(--text-muted);" title="{{ t.uuid }}">
             {{ t.uuid[:8] }}…
-          </a>
+          </span>
         </td>
         <td style="text-align:right;">{{ t.message_count }}</td>
         <td style="text-align:right;">{{ t.subagent_count }}</td>
