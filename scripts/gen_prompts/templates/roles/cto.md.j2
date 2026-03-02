@@ -127,10 +127,11 @@ LOOP:
 
   4. Dispatch all allocated VPs simultaneously in ONE message
      (one Task call per VP, all in the same response):
-       - Each Engineering VP → reads engineering-manager.md, seeds 4 leaf engineers
-         (pass ACTIVE_LABEL so the VP only queries that label)
-       - Each QA VP          → reads qa-manager.md, seeds 4 leaf reviewers
+       - Each Engineering VP → receives the ## Embedded Eng VP Role content, seeds 4 leaf engineers
+         (prefix includes ACTIVE_LABEL so the VP only queries that label)
+       - Each QA VP          → receives the ## Embedded QA VP Role content, seeds 4 leaf reviewers
        - VPs do NOT loop — they seed once and wait for their pool to drain
+       - See "VP dispatch context" below for exact Task prompt construction
 
   5. Wait for all dispatched VPs to report back.
 
@@ -143,14 +144,34 @@ LOOP:
 
 ## VP dispatch context
 
-Pass each VP its role file path, a `CTO_WAVE` identifier, and the **ACTIVE_LABEL**:
+Do NOT tell VPs to read role files from disk. Each VP's Task prompt must be
+self-contained, constructed entirely from the embedded sections at the bottom
+of this file. This is what enables concurrent pipelines — two CTOs with
+different configs can run simultaneously because no shared files are read at
+runtime.
 
-> Engineering VP prompt: "Read $HOME/dev/tellurstori/maestro/.cursor/roles/engineering-manager.md.
-> CTO_WAVE=<wave-N-timestamp>. ACTIVE_LABEL=<{{ active_label_prefix }}X-label>. Seed your pool and wait for it to drain.
-> You MUST only query and claim issues labeled exactly '<{{ active_label_prefix }}X-label>' — no other {{ active_label_prefix }}* labels."
+**Engineering VP Task prompt — construct as follows:**
 
-> QA VP prompt: "Read $HOME/dev/tellurstori/maestro/.cursor/roles/qa-manager.md.
-> CTO_WAVE=<wave-N-timestamp>. Seed your pool and wait for it to drain."
+  Part 1 — prefix:
+    "CTO_WAVE=<wave-N-timestamp>. ACTIVE_LABEL=<{{ active_label_prefix }}X-label>.
+     Seed your pool and wait for it to drain.
+     You MUST only query and claim issues labeled exactly '<{{ active_label_prefix }}X-label>'
+     — no other {{ active_label_prefix }}* labels."
+
+  Part 2 — VP role + full downstream kickoff chain:
+    Paste the entire ## Embedded Eng VP Role section below verbatim.
+
+**QA VP Task prompt — construct as follows:**
+
+  Part 1 — prefix:
+    "CTO_WAVE=<wave-N-timestamp>. Seed your pool and wait for it to drain."
+
+  Part 2 — VP role + full downstream kickoff chain:
+    Paste the entire ## Embedded QA VP Role section below verbatim.
+
+Each embedded VP role section already contains the implementer kickoff, the reviewer
+kickoff, all role definitions, and all pass-along sections — no further file reads
+are needed anywhere in the pipeline.
 
 ## Gating
 
@@ -174,3 +195,26 @@ CTO and VPs do not track dependencies. The canonical prompts handle it.
 - Never stop after one wave — loop until the pipeline is empty
 - Never dispatch a fixed ratio — always re-calculate from live counts each wave
 - Never add phase labels to PRs — PRs inherit scope from their linked issues
+- Never tell a VP to "Read roles/engineering-manager.md" — pass the embedded content below
+
+---
+
+## Embedded Eng VP Role
+
+This section is the complete Engineering VP role, including the full implementer kickoff,
+reviewer kickoff, all role definitions, and all pass-along sections. When dispatching the
+Engineering VP via Task(), use this verbatim as Part 2 of the Task prompt (after the prefix).
+Do NOT reference engineering-manager.md on disk.
+
+{% include 'roles/engineering-manager.md.j2' %}
+
+---
+
+## Embedded QA VP Role
+
+This section is the complete QA VP role, including the full reviewer kickoff, implementer
+kickoff, all role definitions, and all pass-along sections. When dispatching the QA VP via
+Task(), use this verbatim as Part 2 of the Task prompt (after the prefix).
+Do NOT reference qa-manager.md on disk.
+
+{% include 'roles/qa-manager.md.j2' %}
