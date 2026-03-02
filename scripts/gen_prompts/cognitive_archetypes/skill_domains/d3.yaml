@@ -1,5 +1,5 @@
 # Skill Domain: D3.js Visualization
-id: d3_js
+id: d3
 display_name: "D3.js / SVG Visualization"
 description: |
   Data-driven SVG visualizations using D3.js loaded from CDN. Used for the

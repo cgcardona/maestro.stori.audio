@@ -68,37 +68,46 @@ SEED:
               "$HOME/.cursor/worktrees/{{ repo_name }}/pr-<N>" \
               origin/$BRANCH
        d. Select cognitive architecture for the reviewer based on PR content:
-            # Skill domain — what tech is this PR touching?
-            if echo "$PR_BODY $PR_TITLE" | grep -qiE "monaco|vs/loader|editor.*cdn"; then
-              SKILL_DOMAIN="monaco_editor"
-            elif echo "$PR_BODY $PR_TITLE" | grep -qiE "d3\.js|force-directed|d3\.force|d3\.select"; then
-              SKILL_DOMAIN="d3_js"
-            elif echo "$PR_BODY $PR_TITLE" | grep -qiE "htmx|hx-|jinja2|\.html|sse-connect|alpine|hx-ext"; then
-              SKILL_DOMAIN="htmx_jinja2"
-            elif echo "$PR_BODY $PR_TITLE" | grep -qiE "dockerfile|FROM python|compose.*service"; then
-              SKILL_DOMAIN="devops"
-            elif echo "$PR_BODY $PR_TITLE" | grep -qiE "midi|storpheus|gm.program|tmidix"; then
-              SKILL_DOMAIN="audio_midi"
-            elif echo "$PR_BODY $PR_TITLE" | grep -qiE "llm|embedding|rag|openrouter|claude"; then
-              SKILL_DOMAIN="ml_ai"
+            # Skill domains — what tech is this PR touching? (colon-separated, up to 3)
+            CONTENT="$PR_BODY $PR_TITLE"
+            if echo "$CONTENT" | grep -qiE "monaco|vs/loader|editor.*cdn"; then
+              SKILLS="monaco"
+            elif echo "$CONTENT" | grep -qiE "d3\.js|force-directed|d3\.force|d3\.select"; then
+              SKILLS="d3:javascript"
+            elif echo "$CONTENT" | grep -qiE "htmx|hx-|sse-connect|hx-ext"; then
+              SKILLS="htmx"
+              echo "$CONTENT" | grep -qiE "jinja2|\.html|TemplateResponse|extends.*html" && SKILLS="${SKILLS}:jinja2"
+              echo "$CONTENT" | grep -qiE "alpine|x-data|x-show|x-bind" && SKILLS="${SKILLS}:alpine"
+            elif echo "$CONTENT" | grep -qiE "jinja2|TemplateResponse|extends.*html"; then
+              SKILLS="jinja2"
+            elif echo "$CONTENT" | grep -qiE "postgres|alembic|migration|sqlalchemy"; then
+              SKILLS="postgresql:python"
+            elif echo "$CONTENT" | grep -qiE "dockerfile|FROM python|compose.*service"; then
+              SKILLS="devops"
+            elif echo "$CONTENT" | grep -qiE "midi|storpheus|gm.program|tmidix"; then
+              SKILLS="midi:python"
+            elif echo "$CONTENT" | grep -qiE "llm|embedding|rag|openrouter|claude"; then
+              SKILLS="llm:python"
+            elif echo "$CONTENT" | grep -qiE "APIRouter|FastAPI|Depends|response_model"; then
+              SKILLS="fastapi:python"
             else
-              SKILL_DOMAIN="python"
+              SKILLS="python"
             fi
             # Reviewer persona — how should they think about this review?
-            if echo "$PR_BODY $PR_TITLE" | grep -qiE "migration|alembic|schema|db.model"; then
+            if echo "$CONTENT" | grep -qiE "migration|alembic|schema|db.model|postgres"; then
               FIGURE="dijkstra"      # correctness-by-construction, loop invariants
-            elif echo "$PR_BODY $PR_TITLE" | grep -qiE "SSE|broadcast|async|asyncio|fanout"; then
+            elif echo "$CONTENT" | grep -qiE "SSE|broadcast|async|asyncio|fanout"; then
               FIGURE="shannon"       # information flow, edge cases in streaming
-            elif echo "$PR_BODY $PR_TITLE" | grep -qiE "security|auth|jwt|secret|token"; then
+            elif echo "$CONTENT" | grep -qiE "security|auth|jwt|secret|token"; then
               FIGURE="the_guardian"  # fail-loud, invariant enforcement
-            elif echo "$PR_BODY $PR_TITLE" | grep -qiE "overview|dashboard|pipeline|tree"; then
+            elif echo "$CONTENT" | grep -qiE "overview|dashboard|pipeline|tree"; then
               FIGURE="lovelace"      # sees patterns, systemic thinking
-            elif echo "$PR_BODY $PR_TITLE" | grep -qiE "api|endpoint|route|contract"; then
+            elif echo "$CONTENT" | grep -qiE "api|endpoint|route|contract"; then
               FIGURE="turing"        # formal correctness, interface precision
             else
               FIGURE="knuth"         # programs as literature, loop invariants, clean code
             fi
-            COGNITIVE_ARCH="${FIGURE}+${SKILL_DOMAIN}"
+            COGNITIVE_ARCH="${FIGURE}:${SKILLS}"
             echo "PR #<N>: reviewer cognitive arch = $COGNITIVE_ARCH"
 
        e. Write .agent-task — include BATCH_ID and COGNITIVE_ARCH:

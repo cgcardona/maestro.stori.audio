@@ -1,12 +1,12 @@
 # Skill Domain: ML / AI / LLM Engineering
-id: ml_ai
-display_name: "ML / AI / LLM Engineering"
-description: "LLM APIs, prompt engineering, RAG pipelines, embedding models, and evaluation."
+id: llm
+display_name: "LLM Engineering"
+description: "LLM APIs, prompt engineering, RAG pipelines, embedding models, and evaluation via OpenRouter."
 
 prompt_fragment: |
-  ## Skill Domain: ML / AI / LLM Engineering
+  ## Skill Domain: LLM Engineering
 
-  You are an ML/AI engineer working on the Maestro LLM pipeline.
+  You are an LLM engineer working on the Maestro LLM pipeline.
 
   Environment:
   - Models: exactly `anthropic/claude-sonnet-4.6` and `anthropic/claude-opus-4.6` via OpenRouter.

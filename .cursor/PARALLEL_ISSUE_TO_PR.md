@@ -419,35 +419,28 @@ STEP 0.5 — LOAD YOUR ROLE AND COGNITIVE ARCHITECTURE:
     echo "⚠️  No role file found for '$ROLE' — proceeding without role context."
   fi
 
-  # Load cognitive architecture — determines your thinking style AND skill domain
+  # Load cognitive architecture — assembles figure persona + all skill domain fragments
+  # Format: "figure:skill1:skill2" (new multi-skill format, colon-separated)
   COGNITIVE_ARCH=$(grep '^COGNITIVE_ARCH=' .agent-task | cut -d= -f2)
   if [ -n "$COGNITIVE_ARCH" ]; then
     echo "🧠 Cognitive architecture: $COGNITIVE_ARCH"
     echo ""
-    echo "This means:"
-    # Parse figure and skill domain (format: figure+skill_domain or archetype+skill_domain)
-    COGARCH_FIGURE=$(echo "$COGNITIVE_ARCH" | cut -d+ -f1)
-    COGARCH_SKILL=$(echo "$COGNITIVE_ARCH" | cut -d+ -f2)
-    # Load figure/archetype YAML for context (informational — you already have the role file)
-    ARCH_FILE="$REPO/scripts/gen_prompts/cognitive_archetypes/figures/${COGARCH_FIGURE}.yaml"
-    if [ ! -f "$ARCH_FILE" ]; then
-      ARCH_FILE="$REPO/scripts/gen_prompts/cognitive_archetypes/archetypes/${COGARCH_FIGURE}.yaml"
-    fi
-    if [ -f "$ARCH_FILE" ]; then
-      # Print display_name and description for self-awareness
-      grep -A3 "^display_name:" "$ARCH_FILE" | head -4
-      grep -A5 "^description:" "$ARCH_FILE" | head -6
-    fi
-    # Load skill domain context
-    SKILL_FILE="$REPO/scripts/gen_prompts/cognitive_archetypes/skill_domains/${COGARCH_SKILL}.yaml"
-    if [ -f "$SKILL_FILE" ]; then
-      echo "--- Skill domain: $COGARCH_SKILL ---"
-      grep -A3 "^display_name:" "$SKILL_FILE" | head -2
+    # resolve_arch.py assembles the full context block from the COGNITIVE_ARCH string:
+    # figures (comma-separated before first ':') + all skill domains (colon-separated after).
+    # Output is ready-to-read Markdown — no manual YAML parsing needed.
+    RESOLVE_ARCH="$REPO/scripts/gen_prompts/resolve_arch.py"
+    if [ -f "$RESOLVE_ARCH" ]; then
+      ARCH_CONTEXT=$(python3 "$RESOLVE_ARCH" "$COGNITIVE_ARCH" --mode implementer 2>/dev/null)
+      if [ -n "$ARCH_CONTEXT" ]; then
+        echo "$ARCH_CONTEXT"
+      fi
+    else
+      echo "⚠️  resolve_arch.py not found at $RESOLVE_ARCH — skipping context block."
     fi
     echo ""
     echo "Let these govern your approach to this task. See TICKET_TAXONOMY.md for rationale."
   else
-    echo "⚠️  No COGNITIVE_ARCH set — using default pragmatist+python approach."
+    echo "⚠️  No COGNITIVE_ARCH set — using default pragmatist:python approach."
   fi
   # The cognitive architecture, role file, and .agent-task together form
   # your full operating context. Honor all three.
@@ -477,6 +470,13 @@ STEP 2 — CHECK CANONICAL STATE BEFORE DOING ANY WORK:
 
   # Mark issue as in-progress so the conductor and other agents see it's claimed.
   gh issue edit <N> --repo "$GH_REPO" --add-label "status/in-progress" 2>/dev/null || true
+
+  # Leave an audit trail: which cognitive identity claimed this issue.
+  AGENT_IDENTITY=$(python3 "$REPO/scripts/gen_prompts/resolve_arch.py" "$COGNITIVE_ARCH" 2>&1 1>/dev/null)
+  gh issue comment <N> --repo "$GH_REPO" \
+    --body "🤖 **Claimed by agent**
+- **Identity:** \`$COGNITIVE_ARCH\` (${AGENT_IDENTITY#🎭 })
+- **Claimed at:** $(date -u '+%Y-%m-%dT%H:%M:%SZ')" 2>/dev/null || true
 
   # 0. Is the issue itself already closed? (fastest exit — check this FIRST)
   ISSUE_STATE=$(gh issue view <N> --json state --jq '.state')
@@ -905,6 +905,10 @@ STEP 6 — SPAWN A QA REVIEWER FOR YOUR OWN PR (run this before self-destructing
 
     # Write the reviewer's .agent-task.
     # SPAWN_MODE=chain tells the reviewer to spawn the next ENGINEER (not reviewer) when done.
+    # Reviewer inherits the same COGNITIVE_ARCH as the implementer (same issue domain).
+    # resolve_arch.py will switch to --mode reviewer to load the checklist instead of
+    # the implementer fragments.
+    REVIEWER_ARCH="${COGNITIVE_ARCH:-knuth:python}"
     cat > "$REVIEW_WORKTREE/.agent-task" <<TASK
 TASK=pr-review
 PR=$MY_PR
@@ -915,6 +919,7 @@ ROLE_FILE=$HOME/dev/tellurstori/maestro/.cursor/roles/pr-reviewer.md
 BASE=dev
 GH_REPO=cgcardona/maestro
 BATCH_ID=${BATCH_ID:-none}
+COGNITIVE_ARCH=${REVIEWER_ARCH}
 SPAWN_MODE=chain
 TASK
 

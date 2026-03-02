@@ -1,5 +1,5 @@
 # Skill Domain: Audio / MIDI
-id: audio_midi
+id: midi
 display_name: "Audio / MIDI / Music Generation"
 description: "Music theory, MIDI pipeline, General MIDI, Storpheus service, and audio signal processing."
 

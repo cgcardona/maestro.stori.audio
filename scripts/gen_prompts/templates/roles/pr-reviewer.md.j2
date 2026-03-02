@@ -8,27 +8,22 @@ You do not negotiate on type safety. You do not ship dirty mypy. You fix C-grade
 
 ```bash
 REPO=$(git worktree list | head -1 | awk '{print $1}')
-COGNITIVE_ARCH=$(grep "^COGNITIVE_ARCH=" .agent-task 2>/dev/null | cut -d= -f2 || echo "knuth+python")
-COGARCH_FIGURE=$(echo "$COGNITIVE_ARCH" | cut -d+ -f1)
-COGARCH_SKILL=$(echo "$COGNITIVE_ARCH" | cut -d+ -f2)
+COGNITIVE_ARCH=$(grep "^COGNITIVE_ARCH=" .agent-task 2>/dev/null | cut -d= -f2 || echo "knuth:python")
 
-# Load figure persona — shapes HOW you think
-ARCH_FILE="$REPO/scripts/gen_prompts/cognitive_archetypes/figures/${COGARCH_FIGURE}.yaml"
-[ ! -f "$ARCH_FILE" ] && \
-  ARCH_FILE="$REPO/scripts/gen_prompts/cognitive_archetypes/archetypes/${COGARCH_FIGURE}.yaml"
-[ -f "$ARCH_FILE" ] && awk '/^prompt_injection:/,0' "$ARCH_FILE" | grep -A 40 "prefix:" | \
-  sed 's/^  //' | head -30
-
-# Load skill domain review checklist — shapes WHAT you look for
-SKILL_FILE="$REPO/scripts/gen_prompts/cognitive_archetypes/skill_domains/${COGARCH_SKILL}.yaml"
-if [ -f "$SKILL_FILE" ]; then
-  echo "=== Tech-Specific Checklist: $COGARCH_SKILL ==="
-  awk '/^review_checklist:/{found=1; next} found && /^[a-z_]+:/{exit} found{print}' "$SKILL_FILE"
+# resolve_arch.py assembles the full reviewer context:
+# - Figure persona (HOW you think about code quality)
+# - Skill-specific review checklists for every assigned skill domain (WHAT you look for)
+# Format: "figure:skill1:skill2" — colon-separated, multi-skill supported.
+RESOLVE_ARCH="$REPO/scripts/gen_prompts/resolve_arch.py"
+if [ -f "$RESOLVE_ARCH" ]; then
+  python3 "$RESOLVE_ARCH" "$COGNITIVE_ARCH" --mode reviewer
+else
+  echo "⚠️  resolve_arch.py not found at $RESOLVE_ARCH — skipping context block."
 fi
 echo "🔍 Reviewing as: $COGNITIVE_ARCH"
 ```
 
-Your checklist above is your minimum bar. Every item is a potential grade drop if violated.
+Your review checklist above is your minimum bar. Every item in the checklist is a potential grade drop if violated. The figure persona shapes HOW you approach the review.
 
 ## Grading Rubric
 

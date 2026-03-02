@@ -1,5 +1,5 @@
 # Skill Domain: Monaco Editor
-id: monaco_editor
+id: monaco
 display_name: "Monaco Editor (CDN)"
 description: |
   In-browser code editor (the same engine as VS Code) loaded from CDN.
