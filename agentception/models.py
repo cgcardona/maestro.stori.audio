@@ -8,7 +8,12 @@ from __future__ import annotations
 
 from enum import Enum
 
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
+
+#: Roles that can be assigned to a spawned agent.
+VALID_ROLES: frozenset[str] = frozenset(
+    {"python-developer", "database-architect", "pr-reviewer"}
+)
 
 
 class AgentStatus(str, Enum):
@@ -101,3 +106,38 @@ class TaskFile(BaseModel):
     attempt_n: int = 0
     required_output: str | None = None
     on_block: str | None = None
+
+
+class SpawnRequest(BaseModel):
+    """Request body for ``POST /api/control/spawn``.
+
+    Callers provide the issue number they want an agent to tackle and an
+    optional role override. The endpoint verifies the issue is open and
+    unclaimed before creating the worktree.
+    """
+
+    issue_number: int
+    role: str = "python-developer"
+
+    @field_validator("role")
+    @classmethod
+    def validate_role(cls, v: str) -> str:
+        """Reject unknown roles early so errors surface at the boundary, not in git."""
+        if v not in VALID_ROLES:
+            raise ValueError(f"role must be one of {sorted(VALID_ROLES)}, got {v!r}")
+        return v
+
+
+class SpawnResult(BaseModel):
+    """Response for a successful ``POST /api/control/spawn``.
+
+    Contains enough information for the user (or a future automation layer)
+    to launch a Cursor Task pointed at the new worktree.
+    ``agent_task`` is the raw text of the ``.agent-task`` file that was
+    written — callers can display it or pass it directly to the Task tool.
+    """
+
+    spawned: int
+    worktree: str
+    branch: str
+    agent_task: str

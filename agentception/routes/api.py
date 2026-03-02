@@ -6,14 +6,21 @@ can choose their preferred serialisation format.
 """
 from __future__ import annotations
 
+import asyncio
+import logging
+from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException
 
-from agentception.models import AgentNode, PipelineState
+from agentception.config import settings
+from agentception.models import AgentNode, PipelineState, SpawnRequest, SpawnResult
 from agentception.poller import get_state
+from agentception.readers.github import add_wip_label, get_issue
 from agentception.readers.transcripts import read_transcript_messages
 from agentception.routes.ui import _find_agent
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api", tags=["api"])
 
@@ -69,3 +76,161 @@ async def transcript_api(agent_id: str) -> list[dict[str, str]]:
     if not node.transcript_path:
         return []
     return await read_transcript_messages(Path(node.transcript_path))
+
+
+def _build_agent_task(
+    issue_number: int,
+    title: str,
+    role: str,
+    worktree: Path,
+    branch: str,
+) -> str:
+    """Build the raw text content of a ``.agent-task`` file.
+
+    The format mirrors what the parallel-batch coordinator writes so that
+    agents spawned via the control plane behave identically to batch-spawned
+    agents.
+    """
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    repo = settings.gh_repo
+    role_file = settings.repo_dir / ".cursor" / "roles" / f"{role}.md"
+    return (
+        f"WORKFLOW=issue-to-pr\n"
+        f"GH_REPO={repo}\n"
+        f"ISSUE_NUMBER={issue_number}\n"
+        f"ISSUE_TITLE={title}\n"
+        f"ISSUE_URL=https://github.com/{repo}/issues/{issue_number}\n"
+        f"ROLE={role}\n"
+        f"ROLE_FILE={role_file}\n"
+        f"WORKTREE={worktree}\n"
+        f"BASE=dev\n"
+        f"CLOSES_ISSUES={issue_number}\n"
+        f"BATCH_ID=manual\n"
+        f"CREATED_AT={now}\n"
+        f"SPAWN_MODE=chain\n"
+        f"LINKED_PR=none\n"
+        f"SPAWN_SUB_AGENTS=false\n"
+        f"ATTEMPT_N=0\n"
+        f"REQUIRED_OUTPUT=pr_url\n"
+        f"ON_BLOCK=stop\n"
+    )
+
+
+@router.post("/control/spawn")
+async def spawn_agent(body: SpawnRequest) -> SpawnResult:
+    """Manually seed a new engineer agent for an open, unclaimed issue.
+
+    This endpoint bypasses the CTO/VP polling loop for direct human
+    intervention — useful when an issue needs immediate attention or when
+    the automated batch scheduler hasn't picked it up yet.
+
+    The caller is responsible for launching the Cursor Task pointed at the
+    returned ``worktree`` path.  This endpoint only prepares the worktree
+    and ``.agent-task`` file; it does NOT start the agent automatically.
+
+    Raises
+    ------
+    HTTP 404
+        When the issue number does not exist on GitHub or the issue is not
+        open (already closed or merged).
+    HTTP 409
+        When the issue already carries an ``agent:wip`` label, indicating
+        another agent has already claimed it.
+    HTTP 500
+        When the git worktree creation fails (e.g. directory already exists).
+    """
+    issue_number = body.issue_number
+
+    # ── 1. Fetch issue state from GitHub ──────────────────────────────────────
+    try:
+        issue = await get_issue(issue_number)
+    except RuntimeError as exc:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Issue #{issue_number} not found on GitHub: {exc}",
+        ) from exc
+
+    state = issue.get("state", "")
+    if state != "OPEN":
+        raise HTTPException(
+            status_code=404,
+            detail=f"Issue #{issue_number} is not open (state={state!r})",
+        )
+
+    # ── 2. Check whether the issue is already claimed ─────────────────────────
+    raw_labels = issue.get("labels")
+    # narrow from object to list before iterating — get() returns object
+    label_names: list[str] = (
+        [lbl for lbl in raw_labels if isinstance(lbl, str)]
+        if isinstance(raw_labels, list)
+        else []
+    )
+    if "agent:wip" in label_names:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Issue #{issue_number} is already claimed (agent:wip label present)",
+        )
+
+    # ── 3. Add agent:wip label ────────────────────────────────────────────────
+    await add_wip_label(issue_number)
+
+    # ── 4. Create git worktree ────────────────────────────────────────────────
+    branch = f"feat/issue-{issue_number}"
+    worktree_path = settings.worktrees_dir / f"issue-{issue_number}"
+
+    if worktree_path.exists():
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"Worktree directory already exists: {worktree_path}. "
+                "Remove it manually and retry."
+            ),
+        )
+
+    repo_dir = str(settings.repo_dir)
+    proc = await asyncio.create_subprocess_exec(
+        "git", "-C", repo_dir,
+        "worktree", "add", "-b", branch,
+        str(worktree_path), "origin/dev",
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    _stdout, stderr = await proc.communicate()
+
+    if proc.returncode != 0:
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                f"git worktree add failed (exit {proc.returncode}): "
+                f"{stderr.decode().strip()!r}"
+            ),
+        )
+
+    logger.info(
+        "✅ Created worktree %s on branch %s for issue #%d",
+        worktree_path,
+        branch,
+        issue_number,
+    )
+
+    # ── 5. Write .agent-task ──────────────────────────────────────────────────
+    title_raw = issue.get("title", "")
+    title: str = title_raw if isinstance(title_raw, str) else str(title_raw)
+    agent_task_content = _build_agent_task(
+        issue_number=issue_number,
+        title=title,
+        role=body.role,
+        worktree=worktree_path,
+        branch=branch,
+    )
+    task_file = worktree_path / ".agent-task"
+    task_file.write_text(agent_task_content, encoding="utf-8")
+
+    logger.info("✅ Wrote .agent-task to %s", task_file)
+
+    return SpawnResult(
+        spawned=issue_number,
+        worktree=str(worktree_path),
+        branch=branch,
+        agent_task=agent_task_content,
+    )

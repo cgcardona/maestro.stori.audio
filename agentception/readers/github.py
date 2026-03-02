@@ -225,6 +225,38 @@ async def get_active_label() -> str | None:
     return min(agentception_labels, key=_sort_key)
 
 
+async def get_issue(number: int) -> dict[str, object]:
+    """Fetch state, title, and labels for a single issue.
+
+    Returns a dict with at minimum: ``number``, ``state``, ``title``,
+    and ``labels`` (list of label-name strings).
+
+    Parameters
+    ----------
+    number:
+        GitHub issue number.
+
+    Raises
+    ------
+    RuntimeError
+        When ``gh`` exits with a non-zero status (e.g. issue not found).
+    """
+    repo = settings.gh_repo
+    args = [
+        "issue", "view", str(number),
+        "--repo", repo,
+        "--json", "number,state,title,labels",
+    ]
+    result = await gh_json(
+        args,
+        "{number: .number, state: .state, title: .title, labels: [.labels[].name]}",
+        f"get_issue:{number}",
+    )
+    if not isinstance(result, dict):
+        raise RuntimeError(f"get_issue: expected dict from gh, got {type(result).__name__}")
+    return result
+
+
 async def get_issue_body(number: int) -> str:
     """Fetch the markdown body of a single issue.
 
@@ -282,6 +314,43 @@ async def close_pr(number: int, comment: str) -> None:
         )
 
     logger.info("✅ PR #%d closed with comment", number)
+    _cache_invalidate()
+
+
+async def add_wip_label(issue_number: int) -> None:
+    """Add the ``agent:wip`` label to an issue to claim it for a pipeline agent.
+
+    Invalidates the cache so subsequent ``get_wip_issues()`` calls immediately
+    reflect the new label without waiting for TTL expiry.
+
+    Parameters
+    ----------
+    issue_number:
+        GitHub issue number to label.
+
+    Raises
+    ------
+    RuntimeError
+        When ``gh`` exits with a non-zero status.
+    """
+    repo = settings.gh_repo
+
+    proc = await asyncio.create_subprocess_exec(
+        "gh", "issue", "edit", str(issue_number),
+        "--repo", repo,
+        "--add-label", "agent:wip",
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    _stdout, stderr = await proc.communicate()
+
+    if proc.returncode != 0:
+        raise RuntimeError(
+            f"gh issue edit (add label) failed (exit {proc.returncode}): "
+            f"{stderr.decode().strip()!r}"
+        )
+
+    logger.info("✅ Added agent:wip to issue #%d", issue_number)
     _cache_invalidate()
 
 

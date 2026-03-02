@@ -21,9 +21,11 @@ import agentception.readers.github as gh_module
 from agentception.readers.github import (
     _cache,
     _cache_invalidate,
+    add_wip_label,
     clear_wip_label,
     close_pr,
     get_active_label,
+    get_issue,
     get_issue_body,
     get_open_issues,
     get_open_prs,
@@ -320,3 +322,78 @@ async def test_clear_wip_label_invalidates_cache() -> None:
         await clear_wip_label(613)
 
     assert len(_cache) == 0
+
+
+# ---------------------------------------------------------------------------
+# get_issue
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.anyio
+async def test_get_issue_returns_dict() -> None:
+    """get_issue() must return a dict with state, title, and labels for a valid issue."""
+    payload = json.dumps({"number": 42, "state": "OPEN", "title": "Fix it", "labels": ["enhancement"]})
+    with patch(
+        "agentception.readers.github.asyncio.create_subprocess_exec",
+        return_value=_make_process(payload.encode()),
+    ):
+        result = await get_issue(42)
+
+    assert isinstance(result, dict)
+    assert result["state"] == "OPEN"
+    assert result["title"] == "Fix it"
+
+
+@pytest.mark.anyio
+async def test_get_issue_raises_on_failure() -> None:
+    """get_issue() must raise RuntimeError when gh exits with a non-zero status."""
+    with patch(
+        "agentception.readers.github.asyncio.create_subprocess_exec",
+        return_value=_make_process(b"", returncode=1),
+    ):
+        with pytest.raises(RuntimeError, match="gh command failed"):
+            await get_issue(9999)
+
+
+# ---------------------------------------------------------------------------
+# add_wip_label
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.anyio
+async def test_add_wip_label_passes_add_label() -> None:
+    """add_wip_label() must pass --add-label agent:wip to gh."""
+    with patch(
+        "agentception.readers.github.asyncio.create_subprocess_exec",
+        return_value=_make_process(b""),
+    ) as mock_exec:
+        await add_wip_label(42)
+
+    call_args = mock_exec.call_args[0]
+    assert "--add-label" in call_args
+    assert "agent:wip" in call_args
+
+
+@pytest.mark.anyio
+async def test_add_wip_label_invalidates_cache() -> None:
+    """add_wip_label() must empty the cache as a side effect."""
+    _cache["some_key"] = ("value", time.monotonic() + 60)
+
+    with patch(
+        "agentception.readers.github.asyncio.create_subprocess_exec",
+        return_value=_make_process(b""),
+    ):
+        await add_wip_label(42)
+
+    assert len(_cache) == 0
+
+
+@pytest.mark.anyio
+async def test_add_wip_label_raises_on_failure() -> None:
+    """add_wip_label() must raise RuntimeError when gh exits with a non-zero status."""
+    with patch(
+        "agentception.readers.github.asyncio.create_subprocess_exec",
+        return_value=_make_process(b"", returncode=1),
+    ):
+        with pytest.raises(RuntimeError, match="gh issue edit"):
+            await add_wip_label(42)
