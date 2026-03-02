@@ -140,7 +140,11 @@ async def merge_agents(
         else:
             status = AgentStatus.UNKNOWN
 
-        node_id = tf.worktree or f"issue-{tf.issue_number}" or "unknown"
+        # Use worktree basename (e.g. "issue-732") as the ID — the full
+        # absolute path would produce a double-slash in /agents/{id} URLs.
+        node_id = (
+            Path(tf.worktree).name if tf.worktree else None
+        ) or (f"issue-{tf.issue_number}" if tf.issue_number else None) or "unknown"
         nodes.append(
             AgentNode(
                 id=node_id,
