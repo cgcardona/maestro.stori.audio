@@ -48,7 +48,7 @@ Before checking out the PR branch, record the pre-existing mypy state on `dev`:
 ```bash
 IS_AC=$(grep "^ALL_ISSUE_LABELS=" .agent-task 2>/dev/null | grep -c "agentception/" || true)
 if [ "$IS_AC" -gt 0 ]; then
-  docker compose exec agentception mypy /app/agentception/ 2>&1 | tail -5
+  docker compose exec agentception sh -c "PYTHONPATH=/worktrees/$WTNAME mypy /worktrees/$WTNAME/agentception/" 2>&1 | tail -5
 else
   docker compose exec maestro mypy maestro/ tests/ 2>&1 | tail -5
 fi

@@ -717,7 +717,7 @@ STEP 5 — REVIEW:
   # Baseline uses /app/agentception/ (the live dev bind-mount) — correct here because
   # we haven't checked out the PR branch yet. After checkout, switch to /worktrees/$WTNAME/.
   if [ "$IS_AC" -gt 0 ]; then
-    cd "$REPO" && docker compose exec agentception mypy /app/agentception/ 2>&1 | tail -10
+    cd "$REPO" && docker compose exec agentception sh -c "PYTHONPATH=/worktrees/$WTNAME mypy /worktrees/$WTNAME/agentception/" 2>&1 | tail -10
   else
     cd "$REPO" && docker compose exec maestro sh -c \
       "PYTHONPATH=/worktrees/$WTNAME mypy /worktrees/$WTNAME/maestro/ /worktrees/$WTNAME/tests/" \

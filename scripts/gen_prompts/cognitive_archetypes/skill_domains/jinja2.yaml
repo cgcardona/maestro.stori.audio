@@ -76,5 +76,5 @@ review_checklist: |
   - Variables that may be absent use | default("...") to avoid UndefinedError
 
 quality_gates:
-  linter: "docker compose exec agentception mypy /app/agentception/"
+  linter: 'docker compose exec agentception sh -c "PYTHONPATH=/worktrees/$WTNAME mypy /worktrees/$WTNAME/agentception/"'
   test_runner: "docker compose exec agentception pytest agentception/tests/ -v"
