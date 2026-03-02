@@ -15,10 +15,15 @@ import pytest
 
 from agentception.models import TaskFile
 from agentception.telemetry import (
+    AVG_INPUT_RATIO,
+    AVG_TOKENS_PER_MSG,
+    SONNET_INPUT_PER_M,
+    SONNET_OUTPUT_PER_M,
     WaveSummary,
     _build_wave_summaries,
     aggregate_waves,
     compute_wave_timing,
+    estimate_cost,
 )
 
 
@@ -186,6 +191,76 @@ def test_wave_summary_type_is_wave_summary(tmp_path: Path) -> None:
     tf = _make_task_file(tmp_path, "wt-type", "batch-Z", issue_number=5)
     result = _build_wave_summaries([tf], tmp_path)
     assert isinstance(result[0], WaveSummary)
+
+
+# ── Unit tests for estimate_cost ──────────────────────────────────────────────
+
+
+def test_estimate_cost_zero_messages() -> None:
+    """estimate_cost(0) must return (0, 0.0) — zero messages means zero cost."""
+    tokens, cost = estimate_cost(0)
+    assert tokens == 0
+    assert cost == 0.0
+
+
+def test_estimate_cost_known_input() -> None:
+    """estimate_cost(100) must return tokens and cost within the expected range.
+
+    100 messages × 800 tokens/msg = 80 000 tokens.
+    Input: 80 000 × 0.4 = 32 000 tokens → $0.096 at $3/M
+    Output: 80 000 × 0.6 = 48 000 tokens → $0.72 at $15/M
+    Total cost ≈ $0.816 → rounded to 4 dp.
+    """
+    tokens, cost = estimate_cost(100)
+    expected_tokens = 100 * AVG_TOKENS_PER_MSG
+    assert tokens == expected_tokens
+
+    input_tokens = int(expected_tokens * AVG_INPUT_RATIO)
+    output_tokens = expected_tokens - input_tokens
+    expected_cost = round(
+        input_tokens / 1_000_000 * SONNET_INPUT_PER_M
+        + output_tokens / 1_000_000 * SONNET_OUTPUT_PER_M,
+        4,
+    )
+    assert cost == pytest.approx(expected_cost, abs=1e-4)
+    # Sanity-check range: must be between $0.5 and $2.0 for 100 messages.
+    assert 0.5 <= cost <= 2.0
+
+
+def test_wave_summary_includes_cost(tmp_path: Path) -> None:
+    """Each WaveSummary must expose estimated_tokens and estimated_cost_usd.
+
+    Both fields should be non-negative integers / floats computed by estimate_cost.
+    With no transcript enrichment, message_count defaults to 0, so both are 0.
+    """
+    tf = _make_task_file(tmp_path, "wt-cost", "batch-cost", issue_number=42)
+    result = _build_wave_summaries([tf], tmp_path)
+
+    assert len(result) == 1
+    wave = result[0]
+    assert isinstance(wave.estimated_tokens, int)
+    assert isinstance(wave.estimated_cost_usd, float)
+    assert wave.estimated_tokens >= 0
+    assert wave.estimated_cost_usd >= 0.0
+
+
+def test_total_cost_sums_waves(tmp_path: Path) -> None:
+    """Summing estimated_cost_usd across waves must equal the aggregate total.
+
+    Two independent waves, each with zero message_count (defaults), produce
+    zero cost each — their sum is also zero.  The invariant is that the
+    aggregate matches the per-wave sum, not that costs are non-zero.
+    """
+    tf_a = _make_task_file(tmp_path, "wt-sum-a", "batch-sum-A", issue_number=50)
+    tf_b = _make_task_file(tmp_path, "wt-sum-b", "batch-sum-B", issue_number=51)
+    waves = _build_wave_summaries([tf_a, tf_b], tmp_path)
+
+    assert len(waves) == 2
+    total_cost = round(sum(w.estimated_cost_usd for w in waves), 4)
+    total_tokens = sum(w.estimated_tokens for w in waves)
+    expected_cost = round(waves[0].estimated_cost_usd + waves[1].estimated_cost_usd, 4)
+    assert total_cost == pytest.approx(expected_cost, abs=1e-6)
+    assert total_tokens == waves[0].estimated_tokens + waves[1].estimated_tokens
 
 
 # ── Integration smoke: aggregate_waves (live filesystem) ─────────────────────

@@ -74,6 +74,27 @@ async def waves_api() -> list[WaveSummary]:
     return await aggregate_waves()
 
 
+@router.get("/telemetry/cost", tags=["telemetry"])
+async def total_cost_api() -> dict[str, float | int]:
+    """Return the aggregate token and cost estimate across all historical waves.
+
+    Sums ``estimated_tokens`` and ``estimated_cost_usd`` from every wave
+    returned by ``aggregate_waves()``.  The result is a stable summary
+    useful for dashboards and budget tracking without iterating wave data
+    on the client side.
+
+    Returns ``{"total_tokens": int, "total_cost_usd": float, "wave_count": int}``.
+    """
+    waves = await aggregate_waves()
+    total_tokens = sum(w.estimated_tokens for w in waves)
+    total_cost_usd = round(sum(w.estimated_cost_usd for w in waves), 4)
+    return {
+        "total_tokens": total_tokens,
+        "total_cost_usd": total_cost_usd,
+        "wave_count": len(waves),
+    }
+
+
 @router.get("/pipeline")
 async def pipeline_api() -> PipelineState:
     """Return the current PipelineState snapshot as JSON.
