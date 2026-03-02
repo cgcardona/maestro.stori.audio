@@ -85,12 +85,22 @@ async def kill_agent(slug: str) -> dict[str, str]:
     issue_number = _parse_issue_number(worktree)
 
     # Step 1: force-remove the worktree.
+    # git worktree remove only works when the metadata in .git/worktrees/ is
+    # intact. If it fails (e.g. metadata was already cleaned from the host
+    # side), fall back to a direct rm -rf so the directory is always gone.
     repo_dir = str(settings.repo_dir)
     rc, stdout, stderr = await _run(
         ["git", "-C", repo_dir, "worktree", "remove", "--force", str(worktree)]
     )
     if rc != 0:
-        logger.warning("⚠️ git worktree remove exited %d: %s", rc, stderr.strip())
+        logger.warning("⚠️ git worktree remove exited %d: %s — trying rm -rf fallback", rc, stderr.strip())
+        if worktree.exists():
+            import shutil as _shutil
+            try:
+                await asyncio.get_event_loop().run_in_executor(None, _shutil.rmtree, str(worktree))
+                logger.info("✅ rm -rf fallback removed %s", worktree)
+            except OSError as rm_err:
+                logger.warning("⚠️ rm -rf fallback failed for %s: %s", worktree, rm_err)
 
     # Step 2: clear agent:wip on the related issue (best-effort).
     if issue_number is not None:
