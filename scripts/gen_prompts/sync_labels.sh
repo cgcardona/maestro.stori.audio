@@ -24,15 +24,16 @@ echo '── Claim label ──────────────────�
 sync_label 'agent:wip' '0075ca' 'Claimed by a pipeline agent — do not assign manually'
 
 echo '── Project label ────────────────────────────────────────────'
-sync_label 'htmx-migration' '1c7ed6' 'HTMX + SSR migration — replaces JS shell pattern'
+sync_label 'agentception' '8250df' 'AgentCeption — autonomous multi-agent pipeline'
 
 echo '── Phase labels ─────────────────────────────────────────────'
-sync_label 'htmx/0-foundation' '6741d9' 'HTMX migration Phase 0 · Foundation infrastructure (sequential)'
-sync_label 'htmx/1-independent' '1098ad' 'HTMX migration Phase 1 · Independent ui_*.py file pages (parallelizable)'
-sync_label 'htmx/2-main-ui' '0d6efd' 'HTMX migration Phase 2 · ui.py main page batches'
-sync_label 'htmx/3-analysis' '198754' 'HTMX migration Phase 3 · Analysis dimension pages'
-sync_label 'htmx/4-canvas' 'f59f00' 'HTMX migration Phase 4 · Canvas / Audio partial SSR (keep JS core)'
-sync_label 'htmx/5-cleanup' 'd63939' 'HTMX migration Phase 5 · Cleanup — trim JS, final audit'
+sync_label 'agentception/0-scaffold' '6741d9' 'AgentCeption Phase 0 · Foundation scaffold'
+sync_label 'agentception/1-controls' '1098ad' 'AgentCeption Phase 1 · Pipeline controls (kill, pause, spawn)'
+sync_label 'agentception/2-telemetry' '0d6efd' 'AgentCeption Phase 2 · Telemetry and observability'
+sync_label 'agentception/3-roles' '198754' 'AgentCeption Phase 3 · Role file management and editing'
+sync_label 'agentception/4-intelligence' 'f59f00' 'AgentCeption Phase 4 · Pipeline intelligence and DAG'
+sync_label 'agentception/5-scaling' 'd63939' 'AgentCeption Phase 5 · Scaling advisor and A/B testing'
+sync_label 'agentception/6-generalization' '0ca678' 'AgentCeption Phase 6 · Multi-repo generalization and export'
 
 echo '── Utility labels ───────────────────────────────────────────'
 sync_label 'bug' 'd73a4a' 'Something isn'\''t working'

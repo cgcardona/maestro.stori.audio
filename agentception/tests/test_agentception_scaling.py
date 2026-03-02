@@ -1,4 +1,4 @@
-"""Tests for agentception/intelligence/scaling.py (AC-501).
+"""Tests for agentception/intelligence/scaling.py and apply endpoint (AC-501 / AC-502).
 
 Coverage:
 - test_no_recommendation_when_balanced: returns no_change when metrics are within bounds
@@ -7,6 +7,9 @@ Coverage:
 - test_confidence_low_without_wave_history: returns low confidence when < 3 completed waves
 - test_confidence_high_with_sufficient_waves: returns high confidence with >= 3 completed waves
 - test_scaling_advice_api_returns_200: GET /api/intelligence/scaling-advice returns 200
+- test_apply_increases_correct_field: POST apply writes recommended_value to correct config field
+- test_apply_no_change_is_noop: POST apply when no_change leaves config unchanged
+- test_banner_hidden_when_dismissed: overview page renders banner markup; dismissed state is client-only
 
 Run targeted:
     pytest agentception/tests/test_agentception_scaling.py -v
@@ -305,3 +308,165 @@ async def test_scaling_advice_api_returns_200() -> None:
     assert body["confidence"] == "high"
 
 
+# ---------------------------------------------------------------------------
+# API: POST /api/intelligence/scaling-advice/apply  (AC-502)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.anyio
+async def test_apply_increases_correct_field() -> None:
+    """POST apply writes the recommended_value to the correct PipelineConfig field.
+
+    Scenario: recommendation is increase_pool (pool_size_per_vp: 4 → 6).
+    The written config must have pool_size_per_vp == 6; other fields unchanged.
+    """
+    from agentception.models import PipelineConfig
+
+    initial_config = PipelineConfig(
+        max_eng_vps=1,
+        max_qa_vps=1,
+        pool_size_per_vp=4,
+        active_labels_order=["agentception/5-scaling"],
+    )
+    recommendation = ScalingRecommendation(
+        action="increase_pool",
+        reason="Queue depth exceeds threshold.",
+        current_value=4,
+        recommended_value=6,
+        confidence="high",
+    )
+    written: list[PipelineConfig] = []
+
+    async def fake_write(cfg: PipelineConfig) -> PipelineConfig:
+        written.append(cfg)
+        return cfg
+
+    with (
+        patch(
+            "agentception.routes.intelligence.get_state",
+            return_value=_make_state(issues_open=6, prs_open=0),
+        ),
+        patch(
+            "agentception.routes.intelligence.aggregate_waves",
+            new_callable=AsyncMock,
+            return_value=[],
+        ),
+        patch(
+            "agentception.routes.intelligence.compute_recommendation",
+            new_callable=AsyncMock,
+            return_value=recommendation,
+        ),
+        patch(
+            "agentception.routes.intelligence.read_pipeline_config",
+            new_callable=AsyncMock,
+            return_value=initial_config,
+        ),
+        patch(
+            "agentception.routes.intelligence.write_pipeline_config",
+            new_callable=AsyncMock,
+            side_effect=fake_write,
+        ),
+    ):
+        async with AsyncClient(
+            transport=ASGITransport(app=app),
+            base_url="http://test",
+        ) as client:
+            response = await client.post("/api/intelligence/scaling-advice/apply")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["applied"] == "increase_pool"
+    assert body["new_value"] == 6
+
+    assert len(written) == 1, "write_pipeline_config must be called exactly once"
+    assert written[0].pool_size_per_vp == 6
+    # Other fields must remain unchanged
+    assert written[0].max_qa_vps == initial_config.max_qa_vps
+    assert written[0].max_eng_vps == initial_config.max_eng_vps
+
+
+@pytest.mark.anyio
+async def test_apply_no_change_is_noop() -> None:
+    """POST apply when recommendation is no_change leaves pipeline-config.json untouched.
+
+    write_pipeline_config must NOT be called and the response reflects no_change.
+    """
+    recommendation = ScalingRecommendation(
+        action="no_change",
+        reason="Pipeline is balanced.",
+        current_value=0,
+        recommended_value=0,
+        confidence="high",
+    )
+
+    with (
+        patch(
+            "agentception.routes.intelligence.get_state",
+            return_value=_make_state(issues_open=2, prs_open=1),
+        ),
+        patch(
+            "agentception.routes.intelligence.aggregate_waves",
+            new_callable=AsyncMock,
+            return_value=[],
+        ),
+        patch(
+            "agentception.routes.intelligence.compute_recommendation",
+            new_callable=AsyncMock,
+            return_value=recommendation,
+        ),
+        patch(
+            "agentception.routes.intelligence.write_pipeline_config",
+            new_callable=AsyncMock,
+        ) as mock_write,
+    ):
+        async with AsyncClient(
+            transport=ASGITransport(app=app),
+            base_url="http://test",
+        ) as client:
+            response = await client.post("/api/intelligence/scaling-advice/apply")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["applied"] == "no_change"
+    assert body["new_value"] == 0
+    mock_write.assert_not_called()
+
+
+def test_banner_hidden_when_dismissed_markup_present() -> None:
+    """Overview page HTML includes the scaling advisor banner markup with x-cloak.
+
+    The dismissed state is managed client-side by Alpine.js (x-data/x-show).
+    This test verifies the server renders the container element so the browser
+    can initialise the Alpine component — it does not execute JavaScript.
+    """
+    from fastapi.testclient import TestClient
+    import time
+    from agentception.models import PipelineState
+
+    state = PipelineState(
+        active_label="agentception/5-scaling",
+        issues_open=3,
+        prs_open=1,
+        agents=[],
+        alerts=[],
+        stale_claims=[],
+        polled_at=time.time(),
+    )
+
+    with (
+        patch("agentception.routes.ui.get_state", return_value=state),
+        patch(
+            "agentception.routes.ui.get_open_issues",
+            new_callable=AsyncMock,
+            return_value=[],
+        ),
+    ):
+        with TestClient(app) as client:
+            response = client.get("/")
+
+    assert response.status_code == 200
+    html = response.text
+    # Banner container with Alpine dismissed-state guard must be rendered.
+    assert "scalingAdvisor()" in html, "Alpine scalingAdvisor component must be in the page"
+    assert "/api/intelligence/scaling-advice/apply" in html, "Apply endpoint URL must be in the page"
+    assert "Dismiss" in html, "Dismiss button must be rendered"

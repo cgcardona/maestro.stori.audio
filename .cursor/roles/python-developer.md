@@ -46,20 +46,20 @@ Every piece of code you write or touch must satisfy:
 Run in order — types before tests:
 
 ```
-docker compose exec maestro sh -c "PYTHONPATH=/worktrees/$WTNAME mypy /worktrees/$WTNAME/maestro/ /worktrees/$WTNAME/tests/"
+docker compose exec agentception sh -c "PYTHONPATH=/worktrees/$WTNAME mypy /worktrees/$WTNAME/agentception/"
 ```
 
-Then run **only the test files for modules you changed** — never `tests/` as a directory:
+Then run **only the test files for modules you changed** — never `agentception/tests/` as a directory:
 
 ```
 # Module-name convention:
-# agentception/app.py                → tests/test_agentception_scaffold.py
-# agentception/readers/worktrees.py  → tests/test_agentception_worktrees.py
-# agentception/readers/github.py     → tests/test_agentception_github.py
-# agentception/poller.py             → tests/test_agentception_poller.py
-# agentception/routes/ui.py          → tests/test_agentception_ui_overview.py
+# agentception/app.py                → agentception/tests/test_agentception_scaffold.py
+# agentception/readers/worktrees.py  → agentception/tests/test_agentception_worktrees.py
+# agentception/readers/github.py     → agentception/tests/test_agentception_github.py
+# agentception/poller.py             → agentception/tests/test_agentception_poller.py
+# agentception/routes/ui.py          → agentception/tests/test_agentception_ui_overview.py
 
-docker compose exec maestro pytest tests/test_<your_module>.py -v
+docker compose exec agentception pytest agentception/tests/test_<your_module>.py -v
 ```
 
 The full suite is CI's job. Running it in every agent session doesn't scale.

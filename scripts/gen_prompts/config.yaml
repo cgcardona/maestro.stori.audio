@@ -23,17 +23,18 @@ pipeline:
   # Strict phase order — CTO and chain-spawn iterate this list top to bottom.
   # To switch projects, replace the entire phases list and update `codebases.active`.
   phases:
-    - "htmx/0-foundation"
-    - "htmx/1-independent"
-    - "htmx/2-main-ui"
-    - "htmx/3-analysis"
-    - "htmx/4-canvas"
-    - "htmx/5-cleanup"
+    - "agentception/0-scaffold"
+    - "agentception/1-controls"
+    - "agentception/2-telemetry"
+    - "agentception/3-roles"
+    - "agentception/4-intelligence"
+    - "agentception/5-scaling"
+    - "agentception/6-generalization"
 
 codebases:
   # Which codebase agents are currently working on.
   # Determines which mypy/test commands are used in IS_AC routing.
-  active: "muse_hub"
+  active: "agentception"
 
   muse_hub:
     container: "maestro"
@@ -79,33 +80,36 @@ labels:
   # Top-level label that scopes all work for the current active codebase.
   # Update this block when switching projects.
   project:
-    name: "htmx-migration"
-    color: "1c7ed6"
-    description: "HTMX + SSR migration — replaces JS shell pattern"
+    name: "agentception"
+    color: "8250df"
+    description: "AgentCeption — autonomous multi-agent pipeline"
 
   # ── Phase labels ────────────────────────────────────────────────────────────
   # Must stay in sync with pipeline.phases above (same names, same order).
   # The CTO and chain-spawn logic iterate phases strictly top-to-bottom.
   # Adding a new phase: add it to pipeline.phases AND here, then re-run generate.py.
   phases:
-    - name: "htmx/0-foundation"
+    - name: "agentception/0-scaffold"
       color: "6741d9"
-      description: "HTMX migration Phase 0 · Foundation infrastructure (sequential)"
-    - name: "htmx/1-independent"
+      description: "AgentCeption Phase 0 · Foundation scaffold"
+    - name: "agentception/1-controls"
       color: "1098ad"
-      description: "HTMX migration Phase 1 · Independent ui_*.py file pages (parallelizable)"
-    - name: "htmx/2-main-ui"
+      description: "AgentCeption Phase 1 · Pipeline controls (kill, pause, spawn)"
+    - name: "agentception/2-telemetry"
       color: "0d6efd"
-      description: "HTMX migration Phase 2 · ui.py main page batches"
-    - name: "htmx/3-analysis"
+      description: "AgentCeption Phase 2 · Telemetry and observability"
+    - name: "agentception/3-roles"
       color: "198754"
-      description: "HTMX migration Phase 3 · Analysis dimension pages"
-    - name: "htmx/4-canvas"
+      description: "AgentCeption Phase 3 · Role file management and editing"
+    - name: "agentception/4-intelligence"
       color: "f59f00"
-      description: "HTMX migration Phase 4 · Canvas / Audio partial SSR (keep JS core)"
-    - name: "htmx/5-cleanup"
+      description: "AgentCeption Phase 4 · Pipeline intelligence and DAG"
+    - name: "agentception/5-scaling"
       color: "d63939"
-      description: "HTMX migration Phase 5 · Cleanup — trim JS, final audit"
+      description: "AgentCeption Phase 5 · Scaling advisor and A/B testing"
+    - name: "agentception/6-generalization"
+      color: "0ca678"
+      description: "AgentCeption Phase 6 · Multi-repo generalization and export"
 
   # ── Utility / triage labels ────────────────────────────────────────────────
   # Standard labels used across issues and PRs. Kept here for completeness

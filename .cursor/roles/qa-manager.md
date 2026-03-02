@@ -513,9 +513,9 @@ the container. After checking out the PR branch, your worktree's code is
 REPO=$(git worktree list | head -1 | awk '{print $1}')
 WTNAME=$(basename "$(pwd)")
 
-# Detect codebase from PR labels (htmx/* vs maestro/storpheus)
+# Detect codebase from PR labels (agentception/* vs maestro/storpheus)
 IS_AC=$(gh pr view $N --repo $GH_REPO --json labels \
-  --jq '.labels[].name' | grep -c "^htmx/" || true)
+  --jq '.labels[].name' | grep -c "^agentception/" || true)
 
 # mypy — route by codebase (NEVER run both; they are independent codebases)
 # Both codebases use the same pattern: PYTHONPATH=/worktrees/$WTNAME pointing at the
@@ -1392,12 +1392,14 @@ STEP 8 — SPAWN YOUR SUCCESSOR (run this before self-destructing):
   if [ "$SPAWN_MODE" = "chain" ]; then
     # ── CHAIN MODE: merge happened → spawn next engineer for next unclaimed issue ──
 
-    # Mirror the CTO's label-ordering logic: find the lowest-numbered htmx/* label
+    # Mirror the CTO's label-ordering logic: find the lowest-numbered agentception/* label
     # that still has open issues. NEVER pick from a later label while an earlier one
     # still has work. This prevents later-phase issues from being claimed prematurely.
     ACTIVE_LABEL=""
-       for label in htmx/0-foundation htmx/1-independent htmx/2-main-ui \
-                        htmx/3-analysis htmx/4-canvas htmx/5-cleanup; do
+       for label in agentception/0-scaffold agentception/1-controls \
+                        agentception/2-telemetry agentception/3-roles \
+                        agentception/4-intelligence agentception/5-scaling \
+                        agentception/6-generalization; do
       COUNT=$(gh issue list --state open --repo "$GH_REPO" \
                 --label "$label" --json number --jq 'length')
       if [ "$COUNT" -gt 0 ]; then
@@ -1422,7 +1424,7 @@ STEP 8 — SPAWN YOUR SUCCESSOR (run this before self-destructing):
 
     NEXT_ISSUE=""
     if [ -z "$ACTIVE_LABEL" ]; then
-      echo "ℹ️  No open htmx/ or batch issues remain — chain complete."
+      echo "ℹ️  No open agentception/ or batch issues remain — chain complete."
     else
       # Pick the next unclaimed issue from ACTIVE_LABEL only.
       NEXT_ISSUE=$(gh issue list \
@@ -1464,7 +1466,7 @@ STEP 8 — SPAWN YOUR SUCCESSOR (run this before self-destructing):
 
       # Resolve the primary label so the engineer can route mypy/tests correctly.
       NEXT_ISSUE_LABEL=$(gh issue view "$NEXT_ISSUE" --repo "$GH_REPO" \
-        --json labels --jq '[.labels[].name | select(startswith("htmx/"))] | first // ""')
+        --json labels --jq '[.labels[].name | select(startswith("agentception/"))] | first // ""')
 
       cat > "$NEXT_WORKTREE/.agent-task" <<TASK
 WORKFLOW=issue-to-pr
@@ -1783,9 +1785,9 @@ GH_REPO=${GH_REPO:-cgcardona/maestro}
 WTNAME=$(basename "$(pwd)")
 # Live lookup — ALL_ISSUE_LABELS is not written to reviewer .agent-task files
 IS_AC=$(gh pr view "$N" --repo "$GH_REPO" --json labels \
-  --jq '[.labels[].name] | join(",")' 2>/dev/null | grep -c "htmx/" || true)
+  --jq '[.labels[].name] | join(",")' 2>/dev/null | grep -c "agentception/" || true)
 if [ "$IS_AC" -gt 0 ]; then
-  docker compose exec maestro sh -c "PYTHONPATH=/worktrees/$WTNAME mypy /worktrees/$WTNAME/maestro/ /worktrees/$WTNAME/tests/" 2>&1 | tail -5
+  docker compose exec agentception sh -c "PYTHONPATH=/worktrees/$WTNAME mypy /worktrees/$WTNAME/agentception/" 2>&1 | tail -5
 else
   REPO=$(git worktree list | head -1 | awk '{print $1}')
   cd "$REPO" && docker compose exec maestro sh -c \
@@ -2225,7 +2227,7 @@ WTNAME=$(basename "$(pwd)")
 
 # Detect codebase from issue label in .agent-task
 ISSUE_LABEL=$(grep "^ISSUE_LABEL=" .agent-task 2>/dev/null | cut -d= -f2 || echo "")
-IS_AC=$(echo "$ISSUE_LABEL" | grep -c "^htmx/" || true)
+IS_AC=$(echo "$ISSUE_LABEL" | grep -c "^agentception/" || true)
 
 # mypy — route by codebase (agentception and maestro are independent; never cross-run)
 if [ "$IS_AC" -gt 0 ]; then
@@ -2502,7 +2504,7 @@ STEP 3 — IMPLEMENT (only if STEP 2 found nothing):
   # what was already broken. This baseline is your contract with the next agent.
   # Detect codebase from .agent-task label — set once, used throughout this run.
   ISSUE_LABEL=$(grep "^ISSUE_LABEL=" .agent-task 2>/dev/null | cut -d= -f2 || echo "")
-  IS_AC=$(echo "$ISSUE_LABEL" | grep -c "^htmx/" || true)
+  IS_AC=$(echo "$ISSUE_LABEL" | grep -c "^agentception/" || true)
 
   echo "=== PRE-EXISTING MYPY BASELINE (dev, before any changes) ==="
   # Route by codebase — agentception and maestro are independent; never cross-run.
@@ -3197,20 +3199,20 @@ Every piece of code you write or touch must satisfy:
 Run in order — types before tests:
 
 ```
-docker compose exec maestro sh -c "PYTHONPATH=/worktrees/$WTNAME mypy /worktrees/$WTNAME/maestro/ /worktrees/$WTNAME/tests/"
+docker compose exec agentception sh -c "PYTHONPATH=/worktrees/$WTNAME mypy /worktrees/$WTNAME/agentception/"
 ```
 
-Then run **only the test files for modules you changed** — never `tests/` as a directory:
+Then run **only the test files for modules you changed** — never `agentception/tests/` as a directory:
 
 ```
 # Module-name convention:
-# agentception/app.py                → tests/test_agentception_scaffold.py
-# agentception/readers/worktrees.py  → tests/test_agentception_worktrees.py
-# agentception/readers/github.py     → tests/test_agentception_github.py
-# agentception/poller.py             → tests/test_agentception_poller.py
-# agentception/routes/ui.py          → tests/test_agentception_ui_overview.py
+# agentception/app.py                → agentception/tests/test_agentception_scaffold.py
+# agentception/readers/worktrees.py  → agentception/tests/test_agentception_worktrees.py
+# agentception/readers/github.py     → agentception/tests/test_agentception_github.py
+# agentception/poller.py             → agentception/tests/test_agentception_poller.py
+# agentception/routes/ui.py          → agentception/tests/test_agentception_ui_overview.py
 
-docker compose exec maestro pytest tests/test_<your_module>.py -v
+docker compose exec agentception pytest agentception/tests/test_<your_module>.py -v
 ```
 
 The full suite is CI's job. Running it in every agent session doesn't scale.

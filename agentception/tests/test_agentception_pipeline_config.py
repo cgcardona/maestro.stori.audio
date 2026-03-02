@@ -159,7 +159,13 @@ def test_config_api_get_returns_custom_values() -> None:
 
 
 def test_config_api_put_validates_schema_and_persists() -> None:
-    """PUT /api/config validates the body and returns the saved config."""
+    """PUT /api/config validates the body and returns the saved config.
+
+    The response includes all fields of PipelineConfig — including optional ones
+    like ``ab_mode`` which are populated with defaults when omitted from the
+    request body.  We assert against the full model dict rather than the raw
+    payload so the test stays correct as the schema evolves.
+    """
     payload = {
         "max_eng_vps": 1,
         "max_qa_vps": 1,
@@ -178,7 +184,8 @@ def test_config_api_put_validates_schema_and_persists() -> None:
         response = client.put("/api/config", json=payload)
 
     assert response.status_code == 200
-    assert response.json() == payload
+    # Compare against the full model dict — includes default ab_mode fields.
+    assert response.json() == saved_config.model_dump()
 
 
 def test_config_api_put_rejects_missing_fields() -> None:
