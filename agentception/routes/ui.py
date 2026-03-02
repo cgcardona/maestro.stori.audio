@@ -15,6 +15,7 @@ from fastapi.templating import Jinja2Templates
 from starlette.requests import Request
 from starlette.responses import Response
 
+from agentception.intelligence.dag import DependencyDAG, build_dag
 from agentception.models import AgentNode, PipelineConfig, PipelineState, RoleMeta, VALID_ROLES
 from agentception.poller import get_state
 from agentception.readers.github import get_open_issues
@@ -213,6 +214,25 @@ async def config_page(request: Request) -> HTMLResponse:
         request,
         "config.html",
         {"config": config},
+    )
+
+
+@router.get("/dag", response_class=HTMLResponse)
+async def dag_page(request: Request) -> HTMLResponse:
+    """Dependency DAG visualisation — D3.js force-directed graph of issue dependencies.
+
+    Fetches all open issues, parses their dependency declarations, and renders
+    an interactive SVG graph using D3.js (loaded from CDN).  Nodes are coloured
+    by ``agentception/*`` phase label; the ``agent:wip`` issues are highlighted
+    with a green stroke; closed nodes are rendered at 50% opacity.
+
+    Callers who need the raw DAG data should use ``GET /api/dag`` instead.
+    """
+    dag: DependencyDAG = await build_dag()
+    return _TEMPLATES.TemplateResponse(
+        request,
+        "dag.html",
+        {"dag": dag.model_dump()},
     )
 
 

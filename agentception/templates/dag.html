@@ -1,0 +1,450 @@
+{% extends "base.html" %}
+
+{% block title %}AgentCeption — Dependency DAG{% endblock %}
+
+{% block head %}
+  <!-- D3.js v7 — force-directed graph from CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/d3@7.9.0/dist/d3.min.js"
+          integrity="sha256-1rA8rCEWBqUBbBkMcNZKQgMoJJLtVAVVJD4/4CVblsQ="
+          crossorigin="anonymous"></script>
+  <style>
+    /* ── DAG page layout ──────────────────────────────────────────────────── */
+    .dag-layout {
+      display: flex;
+      flex-direction: column;
+      gap: var(--space-3);
+    }
+
+    .dag-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: var(--space-2);
+    }
+
+    .dag-header h1 {
+      font-size: 1.25rem;
+      font-weight: 600;
+      margin: 0;
+    }
+
+    /* ── Controls bar ─────────────────────────────────────────────────────── */
+    .dag-controls {
+      display: flex;
+      align-items: center;
+      gap: var(--space-2);
+      flex-wrap: wrap;
+    }
+
+    .dag-controls select {
+      background: var(--bg-2);
+      color: var(--text-primary);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 4px 8px;
+      font-size: 0.85rem;
+    }
+
+    .dag-controls button {
+      background: var(--bg-2);
+      color: var(--text-primary);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 4px 10px;
+      font-size: 0.85rem;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+
+    .dag-controls button:hover {
+      background: var(--bg-3);
+    }
+
+    /* ── Canvas ───────────────────────────────────────────────────────────── */
+    .dag-canvas-wrapper {
+      position: relative;
+      background: var(--bg-1);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      overflow: hidden;
+    }
+
+    #dag-svg {
+      width: 100%;
+      height: 600px;
+      display: block;
+    }
+
+    /* ── Legend ───────────────────────────────────────────────────────────── */
+    .dag-legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: var(--space-2);
+      align-items: center;
+    }
+
+    .dag-legend-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 0.8rem;
+      color: var(--text-muted);
+    }
+
+    .dag-legend-swatch {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+
+    .dag-legend-sep {
+      width: 1px;
+      height: 16px;
+      background: var(--border);
+      margin: 0 4px;
+    }
+
+    /* ── Node tooltip ─────────────────────────────────────────────────────── */
+    #dag-tooltip {
+      position: absolute;
+      pointer-events: none;
+      background: var(--bg-3);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 6px 10px;
+      font-size: 0.8rem;
+      color: var(--text-primary);
+      max-width: 260px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      display: none;
+      z-index: 100;
+    }
+  </style>
+{% endblock %}
+
+{% block content %}
+<div class="dag-layout">
+
+  {# ── Header ─────────────────────────────────────────────────────────────── #}
+  <div class="dag-header">
+    <h1>Dependency DAG</h1>
+    <div class="dag-controls">
+      <label for="dag-filter" style="font-size:0.85rem;color:var(--text-muted);">Filter:</label>
+      <select id="dag-filter">
+        <option value="all">All phases</option>
+        <option value="agentception/0-scaffold">0 · Scaffold</option>
+        <option value="agentception/1-controls">1 · Controls</option>
+        <option value="agentception/2-telemetry">2 · Telemetry</option>
+        <option value="agentception/3-roles">3 · Roles</option>
+        <option value="agentception/4-intelligence">4 · Intelligence</option>
+        <option value="agentception/5-scaling">5 · Scaling</option>
+        <option value="agentception/6-generalization">6 · Generalization</option>
+      </select>
+      <button id="dag-zoom-in" title="Zoom in">+</button>
+      <button id="dag-zoom-out" title="Zoom out">−</button>
+      <button id="dag-reset" title="Reset layout">Reset</button>
+    </div>
+  </div>
+
+  {# ── Legend ─────────────────────────────────────────────────────────────── #}
+  <div class="dag-legend">
+    <div class="dag-legend-item">
+      <div class="dag-legend-swatch" style="background:#3b82f6;"></div>
+      <span>0 · Scaffold</span>
+    </div>
+    <div class="dag-legend-item">
+      <div class="dag-legend-swatch" style="background:#6366f1;"></div>
+      <span>1 · Controls</span>
+    </div>
+    <div class="dag-legend-item">
+      <div class="dag-legend-swatch" style="background:#14b8a6;"></div>
+      <span>2 · Telemetry</span>
+    </div>
+    <div class="dag-legend-item">
+      <div class="dag-legend-swatch" style="background:#22c55e;"></div>
+      <span>3 · Roles</span>
+    </div>
+    <div class="dag-legend-item">
+      <div class="dag-legend-swatch" style="background:#f97316;"></div>
+      <span>4 · Intelligence</span>
+    </div>
+    <div class="dag-legend-item">
+      <div class="dag-legend-swatch" style="background:#ef4444;"></div>
+      <span>5 · Scaling</span>
+    </div>
+    <div class="dag-legend-item">
+      <div class="dag-legend-swatch" style="background:#a855f7;"></div>
+      <span>6 · Generalization</span>
+    </div>
+    <div class="dag-legend-sep"></div>
+    <div class="dag-legend-item">
+      <div class="dag-legend-swatch" style="background:transparent;border:2px solid #22c55e;"></div>
+      <span>agent:wip</span>
+    </div>
+    <div class="dag-legend-item">
+      <div class="dag-legend-swatch" style="background:#6b7280;opacity:0.5;"></div>
+      <span>Closed</span>
+    </div>
+  </div>
+
+  {# ── Canvas ─────────────────────────────────────────────────────────────── #}
+  <div class="dag-canvas-wrapper">
+    <svg id="dag-svg" aria-label="Dependency DAG force-directed graph">
+      <defs>
+        <marker id="arrow" viewBox="0 0 10 10" refX="25" refY="5"
+                markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+          <path d="M 0 0 L 10 5 L 0 10 z" fill="#6b7280" />
+        </marker>
+      </defs>
+    </svg>
+    <div id="dag-tooltip"></div>
+  </div>
+
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  // ── Phase → colour map ───────────────────────────────────────────────────
+  const PHASE_COLORS = {
+    "agentception/0-scaffold":      "#3b82f6",
+    "agentception/1-controls":      "#6366f1",
+    "agentception/2-telemetry":     "#14b8a6",
+    "agentception/3-roles":         "#22c55e",
+    "agentception/4-intelligence":  "#f97316",
+    "agentception/5-scaling":       "#ef4444",
+    "agentception/6-generalization":"#a855f7",
+  };
+  const DEFAULT_COLOR = "#6b7280";
+  const NODE_RADIUS   = 20;
+
+  // ── Raw DAG data injected by Jinja2 ─────────────────────────────────────
+  const RAW_DAG = {{ dag | tojson }};
+
+  // ── Current filter state ─────────────────────────────────────────────────
+  let activeFilter = "all";
+
+  // ── Tooltip ──────────────────────────────────────────────────────────────
+  const tooltip = document.getElementById("dag-tooltip");
+
+  // ── Build filtered graph data ────────────────────────────────────────────
+  function buildGraph(filter) {
+    const allNodes  = RAW_DAG.nodes || [];
+    const allEdges  = RAW_DAG.edges || [];
+
+    let nodes = allNodes;
+    if (filter !== "all") {
+      nodes = allNodes.filter(n => Array.isArray(n.labels) && n.labels.includes(filter));
+    }
+    const nodeNums = new Set(nodes.map(n => n.number));
+    const edges    = allEdges.filter(([s, t]) => nodeNums.has(s) && nodeNums.has(t));
+
+    return { nodes: nodes.map(n => ({ ...n })), edges };
+  }
+
+  // ── Colour helper ────────────────────────────────────────────────────────
+  function nodeColor(node) {
+    if (!Array.isArray(node.labels)) return DEFAULT_COLOR;
+    for (const label of node.labels) {
+      if (PHASE_COLORS[label]) return PHASE_COLORS[label];
+    }
+    return DEFAULT_COLOR;
+  }
+
+  // ── Main render function ─────────────────────────────────────────────────
+  const svg = d3.select("#dag-svg");
+  let simulation, zoomTransform = d3.zoomIdentity;
+
+  const zoom = d3.zoom()
+    .scaleExtent([0.2, 4])
+    .on("zoom", (event) => {
+      zoomTransform = event.transform;
+      container.attr("transform", event.transform);
+    });
+
+  svg.call(zoom);
+
+  const container = svg.append("g").attr("class", "dag-container");
+
+  // Edge group (below nodes)
+  const linkGroup = container.append("g").attr("class", "links");
+  // Node group
+  const nodeGroup = container.append("g").attr("class", "nodes");
+
+  function render(filter) {
+    const { nodes, edges } = buildGraph(filter);
+
+    // Build lookup for simulation nodes (persist position across re-renders)
+    const edgeData = edges.map(([s, t]) => ({
+      source: String(s),
+      target: String(t),
+    }));
+
+    const nodeData = nodes.map(n => ({
+      id:      String(n.number),
+      number:  n.number,
+      title:   n.title || "",
+      state:   n.state || "open",
+      labels:  n.labels || [],
+      has_wip: n.has_wip || false,
+      color:   nodeColor(n),
+    }));
+
+    // ── Stop old simulation ──────────────────────────────────────────────
+    if (simulation) simulation.stop();
+
+    // ── Compute SVG dimensions ───────────────────────────────────────────
+    const svgEl    = document.getElementById("dag-svg");
+    const width    = svgEl.clientWidth  || 900;
+    const height   = svgEl.clientHeight || 600;
+
+    // ── Force simulation ─────────────────────────────────────────────────
+    simulation = d3.forceSimulation(nodeData)
+      .force("link", d3.forceLink(edgeData)
+        .id(d => d.id)
+        .distance(120)
+        .strength(0.5))
+      .force("charge", d3.forceManyBody().strength(-400))
+      .force("center", d3.forceCenter(width / 2, height / 2))
+      .force("collision", d3.forceCollide(NODE_RADIUS + 8));
+
+    // ── Edges ────────────────────────────────────────────────────────────
+    const link = linkGroup
+      .selectAll("line")
+      .data(edgeData, d => `${d.source}-${d.target}`)
+      .join(
+        enter => enter.append("line")
+          .attr("stroke", "#6b7280")
+          .attr("stroke-width", 1.5)
+          .attr("marker-end", "url(#arrow)")
+          .attr("opacity", 0.7),
+        update => update,
+        exit   => exit.remove(),
+      );
+
+    // ── Nodes ────────────────────────────────────────────────────────────
+    const node = nodeGroup
+      .selectAll("g.node")
+      .data(nodeData, d => d.id)
+      .join(
+        enter => {
+          const g = enter.append("g")
+            .attr("class", "node")
+            .style("cursor", "pointer")
+            .call(d3.drag()
+              .on("start", dragstart)
+              .on("drag",  dragged)
+              .on("end",   dragend));
+
+          g.append("circle")
+            .attr("r", NODE_RADIUS);
+
+          g.append("text")
+            .attr("text-anchor", "middle")
+            .attr("dominant-baseline", "central")
+            .attr("font-size", "10px")
+            .attr("font-family", "monospace")
+            .attr("fill", "#fff")
+            .attr("pointer-events", "none")
+            .text(d => `#${d.number}`);
+
+          return g;
+        },
+        update => update,
+        exit   => exit.remove(),
+      );
+
+    // Apply current data to all (entered + updated) nodes
+    nodeGroup.selectAll("g.node").each(function(d) {
+      const g      = d3.select(this);
+      const circle = g.select("circle");
+      const isClosed = d.state === "closed";
+
+      circle
+        .attr("fill",         d.color)
+        .attr("opacity",      isClosed ? 0.4 : 1.0)
+        .attr("stroke",       d.has_wip ? "#22c55e" : "none")
+        .attr("stroke-width", d.has_wip ? 3 : 0);
+    });
+
+    // Click: navigate to GitHub issue
+    nodeGroup.selectAll("g.node")
+      .on("click", (_event, d) => {
+        window.open(
+          `https://github.com/cgcardona/maestro/issues/${d.number}`,
+          "_blank",
+          "noopener",
+        );
+      })
+      .on("mouseover", (event, d) => {
+        tooltip.style.display = "block";
+        tooltip.textContent = `#${d.number} — ${d.title}`;
+      })
+      .on("mousemove", (event) => {
+        const wrapper = document.querySelector(".dag-canvas-wrapper");
+        const rect    = wrapper.getBoundingClientRect();
+        tooltip.style.left = (event.clientX - rect.left + 12) + "px";
+        tooltip.style.top  = (event.clientY - rect.top  + 12) + "px";
+      })
+      .on("mouseout", () => {
+        tooltip.style.display = "none";
+      });
+
+    // ── Tick ────────────────────────────────────────────────────────────
+    simulation.on("tick", () => {
+      link
+        .attr("x1", d => d.source.x)
+        .attr("y1", d => d.source.y)
+        .attr("x2", d => d.target.x)
+        .attr("y2", d => d.target.y);
+
+      nodeGroup.selectAll("g.node")
+        .attr("transform", d => `translate(${d.x},${d.y})`);
+    });
+  }
+
+  // ── Drag handlers ────────────────────────────────────────────────────────
+  function dragstart(event, d) {
+    if (!event.active) simulation.alphaTarget(0.3).restart();
+    d.fx = d.x;
+    d.fy = d.y;
+  }
+  function dragged(event, d) {
+    d.fx = event.x;
+    d.fy = event.y;
+  }
+  function dragend(event, d) {
+    if (!event.active) simulation.alphaTarget(0);
+    d.fx = null;
+    d.fy = null;
+  }
+
+  // ── Controls ─────────────────────────────────────────────────────────────
+  document.getElementById("dag-filter").addEventListener("change", function () {
+    activeFilter = this.value;
+    render(activeFilter);
+  });
+
+  document.getElementById("dag-zoom-in").addEventListener("click", () => {
+    svg.transition().duration(250).call(zoom.scaleBy, 1.4);
+  });
+
+  document.getElementById("dag-zoom-out").addEventListener("click", () => {
+    svg.transition().duration(250).call(zoom.scaleBy, 1 / 1.4);
+  });
+
+  document.getElementById("dag-reset").addEventListener("click", () => {
+    svg.transition().duration(300).call(zoom.transform, d3.zoomIdentity);
+    render(activeFilter);
+  });
+
+  // ── Initial render ───────────────────────────────────────────────────────
+  render("all");
+})();
+</script>
+{% endblock %}

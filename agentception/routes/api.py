@@ -15,6 +15,7 @@ from fastapi import APIRouter, HTTPException
 
 from agentception.config import settings
 from agentception.intelligence.analyzer import IssueAnalysis, analyze_issue
+from agentception.intelligence.dag import DependencyDAG, build_dag
 from agentception.intelligence.guards import PRViolation, detect_out_of_order_prs
 from agentception.models import AgentNode, PipelineConfig, PipelineState, SpawnRequest, SpawnResult
 from agentception.poller import get_state
@@ -213,6 +214,18 @@ def _build_agent_task(
         f"REQUIRED_OUTPUT=pr_url\n"
         f"ON_BLOCK=stop\n"
     )
+
+
+@router.get("/dag", tags=["intelligence"])
+async def dag_api() -> DependencyDAG:
+    """Return the full dependency DAG as JSON.
+
+    Fetches every open issue, parses ``Depends on #N`` declarations, and
+    returns a :class:`~agentception.intelligence.dag.DependencyDAG` with
+    ``nodes`` (one per open issue) and ``edges`` (one per dependency pair).
+    Callers who want an interactive visualisation should use ``GET /dag`` instead.
+    """
+    return await build_dag()
 
 
 @router.get("/intelligence/pr-violations", tags=["intelligence"])
