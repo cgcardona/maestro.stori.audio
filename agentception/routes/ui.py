@@ -5,6 +5,7 @@ background poller via ``get_state()`` — routes are intentionally thin.
 """
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 from fastapi import APIRouter
@@ -20,6 +21,9 @@ from agentception.readers.transcripts import read_transcript_messages
 
 _HERE = Path(__file__).parent
 _TEMPLATES = Jinja2Templates(directory=str(_HERE.parent / "templates"))
+# Register path filters used by agent.html kill-endpoint modal.
+_TEMPLATES.env.filters["basename"] = os.path.basename
+_TEMPLATES.env.filters["dirname"] = os.path.dirname
 
 router = APIRouter(tags=["ui"])
 

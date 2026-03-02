@@ -92,7 +92,7 @@
         </div>
 
         <template x-for="agent in state.agents" :key="agent.id">
-          <div class="agent-row">
+          <div class="agent-row" x-data="{ showKillModal: false }">
             <div class="agent-row-header">
               <span
                 class="status-badge"
@@ -120,13 +120,52 @@
                 x-show="agent.last_activity_mtime > 0"
                 x-text="relativeTime(agent.last_activity_mtime)"
               ></span>
+
+              {# Kill button — only for IMPLEMENTING / REVIEWING / STALE agents with a worktree #}
+              <button
+                class="btn-kill-inline"
+                x-show="agent.worktree_path != null && ['implementing','reviewing','stale'].includes(agent.status)"
+                @click.prevent="showKillModal = true"
+                title="Kill agent"
+                aria-label="Kill agent"
+              >✕</button>
+            </div>
+
+            {# Inline kill confirmation for this row #}
+            <div
+              class="modal-backdrop"
+              x-show="showKillModal"
+              x-cloak
+              @keydown.escape.window="showKillModal = false"
+              role="dialog"
+              aria-modal="true"
+            >
+              <div class="modal-box">
+                <h2 class="modal-title">Kill agent<span x-show="agent.issue_number != null"> for issue #<span x-text="agent.issue_number"></span></span>?</h2>
+                <p class="modal-body">
+                  Removes the worktree and clears the <code>agent:wip</code> label.
+                  The issue will be available for re-claim.
+                </p>
+                <div class="modal-actions">
+                  <button class="btn btn-secondary" @click="showKillModal = false">Cancel</button>
+                  <button
+                    class="btn btn-danger"
+                    :hx-post="'/api/control/kill/' + agent.worktree_path.split('/').pop()"
+                    hx-target="closest .agent-row"
+                    hx-swap="outerHTML"
+                    @click="showKillModal = false"
+                  >
+                    Confirm Kill
+                  </button>
+                </div>
+              </div>
             </div>
 
             {# Nested children (one level — recursive nesting deferred to AC-007) #}
             <template x-if="agent.children && agent.children.length > 0">
               <div class="agent-children">
                 <template x-for="child in agent.children" :key="child.id">
-                  <div class="agent-row agent-row--child">
+                  <div class="agent-row agent-row--child" x-data="{ showKillModal: false }">
                     <div class="agent-row-header">
                       <span
                         class="status-badge"
@@ -141,6 +180,44 @@
                       <span class="agent-meta" x-show="child.issue_number != null">
                         #<span x-text="child.issue_number"></span>
                       </span>
+
+                      {# Kill button for child agents #}
+                      <button
+                        class="btn-kill-inline"
+                        x-show="child.worktree_path != null && ['implementing','reviewing','stale'].includes(child.status)"
+                        @click.prevent="showKillModal = true"
+                        title="Kill agent"
+                        aria-label="Kill agent"
+                      >✕</button>
+                    </div>
+
+                    {# Inline kill confirmation for child row #}
+                    <div
+                      class="modal-backdrop"
+                      x-show="showKillModal"
+                      x-cloak
+                      @keydown.escape.window="showKillModal = false"
+                      role="dialog"
+                      aria-modal="true"
+                    >
+                      <div class="modal-box">
+                        <h2 class="modal-title">Kill agent<span x-show="child.issue_number != null"> for issue #<span x-text="child.issue_number"></span></span>?</h2>
+                        <p class="modal-body">
+                          Removes the worktree and clears the <code>agent:wip</code> label.
+                        </p>
+                        <div class="modal-actions">
+                          <button class="btn btn-secondary" @click="showKillModal = false">Cancel</button>
+                          <button
+                            class="btn btn-danger"
+                            :hx-post="'/api/control/kill/' + child.worktree_path.split('/').pop()"
+                            hx-target="closest .agent-row"
+                            hx-swap="outerHTML"
+                            @click="showKillModal = false"
+                          >
+                            Confirm Kill
+                          </button>
+                        </div>
+                      </div>
                     </div>
                   </div>
                 </template>

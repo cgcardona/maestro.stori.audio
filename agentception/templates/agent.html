@@ -64,7 +64,7 @@
   </div>
 
   {# ── Quick actions ──────────────────────────────────────────────────────── #}
-  <div class="quick-actions">
+  <div class="quick-actions" x-data="{ showKillModal: false }">
     {% if node.issue_number %}
       <a href="https://github.com/cgcardona/maestro/issues/{{ node.issue_number }}"
          target="_blank" rel="noopener" class="btn btn-secondary">
@@ -77,9 +77,49 @@
         View PR on GitHub ↗
       </a>
     {% endif %}
-    <button class="btn btn-danger" disabled title="Kill is a Phase 1 feature — not yet available">
-      Kill Agent (Phase 1)
+
+    {# Kill button — only shown for active agents that have a worktree slug #}
+    {% if node.worktree_path %}
+    <button class="btn btn-danger" @click="showKillModal = true">
+      Kill Agent
     </button>
+
+    {# Confirmation modal — rendered inline so no extra fetch is needed #}
+    <div
+      class="modal-backdrop"
+      x-show="showKillModal"
+      x-cloak
+      @keydown.escape.window="showKillModal = false"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="kill-modal-title"
+    >
+      <div class="modal-box">
+        <h2 id="kill-modal-title" class="modal-title">Kill agent{% if node.issue_number %} for issue #{{ node.issue_number }}{% endif %}?</h2>
+        <p class="modal-body">
+          This removes the worktree at
+          <code>{{ node.worktree_path | replace(node.worktree_path | dirname, '…') }}</code>
+          and clears the <code>agent:wip</code> label.
+          The issue will be available for re-claim.
+        </p>
+        <div class="modal-actions">
+          <button class="btn btn-secondary" @click="showKillModal = false">Cancel</button>
+          <button
+            class="btn btn-danger"
+            hx-post="/api/control/kill/{{ node.worktree_path | basename }}"
+            hx-target="#result"
+            hx-swap="innerHTML"
+            @click="showKillModal = false"
+          >
+            Confirm Kill
+          </button>
+        </div>
+      </div>
+    </div>
+
+    {# Result area — HTMX writes the server response here after kill #}
+    <div id="result"></div>
+    {% endif %}
   </div>
 </div>
 

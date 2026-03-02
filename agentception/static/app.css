@@ -703,4 +703,66 @@ main {
   white-space: pre;
   overflow-x: auto;
   margin: 0;
+
+/* ── Kill button (inline ✕ in agent rows) ─────────────────────────────────── */
+
+.btn-kill-inline {
+  margin-left: auto;
+  padding: 0.125rem 0.4rem;
+  background: none;
+  border: 1px solid var(--danger, #e53e3e);
+  border-radius: var(--radius);
+  color: var(--danger, #e53e3e);
+  font-size: 0.6875rem;
+  cursor: pointer;
+  line-height: 1;
+  transition: background 0.15s, color 0.15s;
+  flex-shrink: 0;
+}
+
+.btn-kill-inline:hover {
+  background: var(--danger, #e53e3e);
+  color: #fff;
+}
+
+/* ── Confirmation modal ───────────────────────────────────────────────────── */
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 200;
+}
+
+.modal-box {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1.5rem;
+  max-width: 26rem;
+  width: 90%;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+}
+
+.modal-title {
+  font-size: 1rem;
+  font-weight: 600;
+  margin: 0 0 0.75rem;
+  color: var(--text-primary);
+}
+
+.modal-body {
+  font-size: 0.875rem;
+  color: var(--text-muted);
+  margin: 0 0 1.25rem;
+  line-height: 1.55;
+}
+
+.modal-actions {
+  display: flex;
+  gap: 0.5rem;
+  justify-content: flex-end;
 }
