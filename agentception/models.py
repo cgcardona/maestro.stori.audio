@@ -265,10 +265,15 @@ class SpawnResult(BaseModel):
     to launch a Cursor Task pointed at the new worktree.
     ``agent_task`` is the raw text of the ``.agent-task`` file that was
     written — callers can display it or pass it directly to the Task tool.
+
+    ``worktree`` is the container-side path (``/worktrees/issue-N``).
+    ``host_worktree`` is the equivalent host-side path the user can open in
+    Cursor (``~/.cursor/worktrees/maestro/issue-N``).
     """
 
     spawned: int
     worktree: str
+    host_worktree: str
     branch: str
     agent_task: str
 

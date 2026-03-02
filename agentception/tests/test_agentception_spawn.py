@@ -91,9 +91,23 @@ def test_spawn_creates_worktree_and_task_file(
             "agentception.routes.api.get_issue",
             return_value=_open_issue(42, "Fix the thing"),
         ),
+        patch(
+            "agentception.routes.api.get_issue_body",
+            new_callable=AsyncMock,
+            return_value="Refactor the config module to use fastapi settings.",
+        ),
+        patch(
+            "agentception.routes.api.get_active_label",
+            new_callable=AsyncMock,
+            return_value="ac-ui/1-design-tokens",
+        ),
         patch("agentception.routes.api.add_wip_label", new_callable=AsyncMock),
         patch(
             "agentception.routes.api.settings.worktrees_dir",
+            worktree_dir,
+        ),
+        patch(
+            "agentception.routes.api.settings.host_worktrees_dir",
             worktree_dir,
         ),
         patch(
@@ -114,10 +128,12 @@ def test_spawn_creates_worktree_and_task_file(
     data = response.json()
     assert data["spawned"] == 42
     assert "issue-42" in data["worktree"]
+    assert "issue-42" in data["host_worktree"]
     assert data["branch"] == "feat/issue-42"
     assert "ISSUE_NUMBER=42" in data["agent_task"]
     assert "BRANCH=feat/issue-42" in data["agent_task"]
     assert "ROLE=python-developer" in data["agent_task"]
+    assert "COGNITIVE_ARCH=" in data["agent_task"]
     # Verify the .agent-task file was actually written to disk.
     task_file = expected_worktree / ".agent-task"
     assert task_file.exists()
