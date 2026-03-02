@@ -261,7 +261,7 @@ def register_musehub_filters(env: Environment) -> None:
 
     Every template rendered by that instance can then use ``fmtdate``,
     ``fmtrelative``, ``shortsha``, ``label_text_color``, ``filesizeformat``,
-    and ``markdown`` as filters.
+    ``markdown``, and ``e`` as filters.
     """
     env.filters["fmtdate"] = _fmtdate
     env.filters["fmtrelative"] = _fmtrelative

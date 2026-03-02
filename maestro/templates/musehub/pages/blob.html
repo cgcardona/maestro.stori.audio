@@ -122,6 +122,82 @@
 </style>
 {% endblock %}
 
+{# ── SSR content block ─────────────────────────────────────────────────────── #}
+{# Renders file header and content server-side so the page is useful without JS.
+   When blob_found is false the JS fallback still loads and shows an error.
+   When lines/is_midi/is_binary are set the relevant section renders statically.
+   NOTE: The {% if %} must be INSIDE the {% block %} — wrapping a block with {% if %}
+   in Jinja2 has no effect on whether the block overrides the parent template. #}
+{% block content %}
+{% if blob_found %}
+<div id="blob-ssr-content">
+  {# ── File header ──────────────────────────────────────────────────────────── #}
+  <div class="blob-header">
+    <div class="blob-filename">📄&nbsp;<code>{{ filename }}</code></div>
+    <div class="blob-meta">
+      <span title="Size">📄&nbsp;{{ size_bytes | filesizeformat }}</span>
+      {% if line_count %}<span>{{ line_count }} line{{ 's' if line_count != 1 else '' }}</span>{% endif %}
+      {% if lang %}<span>{{ lang }}</span>{% endif %}
+    </div>
+    <div class="blob-actions">
+      <a class="btn-blob btn-blob-secondary"
+         href="/musehub/repos/{{ repo_id }}/raw/{{ ref }}/{{ file_path }}"
+         download>⬇&nbsp;Raw</a>
+      {% if is_midi %}
+      <a class="btn-blob btn-blob-primary"
+         href="{{ base_url }}/piano-roll/{{ ref }}/{{ file_path }}">🎹&nbsp;Piano Roll</a>
+      {% endif %}
+    </div>
+  </div>
+
+  {# ── Body ─────────────────────────────────────────────────────────────────── #}
+  <div class="blob-body" id="blob-ssr-body">
+    {% if is_midi %}
+      {# MIDI — player shell; JS enhances with actual playback if midi-player.js loads #}
+      <div class="blob-midi-banner">
+        <span class="blob-midi-icon">🎹</span>
+        <div class="blob-midi-title">{{ filename }}</div>
+        <div class="blob-midi-sub">MIDI file · {{ size_bytes | filesizeformat }}</div>
+        <div id="midi-player"
+             data-midi-url="/musehub/repos/{{ repo_id }}/raw/{{ ref }}/{{ file_path }}">
+          <a class="btn-blob btn-blob-primary"
+             href="{{ base_url }}/piano-roll/{{ ref }}/{{ file_path }}">🎹&nbsp;View in Piano Roll</a>
+        </div>
+      </div>
+    {% elif is_binary %}
+      {# Binary — download link only, no content to show #}
+      <div class="blob-binary-notice">
+        Binary file · {{ size_bytes | filesizeformat }} —
+        <a href="/musehub/repos/{{ repo_id }}/raw/{{ ref }}/{{ file_path }}" download>Download raw</a>
+      </div>
+    {% elif lines %}
+      {# Text file — server-rendered line-numbered table; JS adds syntax highlighting #}
+      <div class="blob-viewer" style="overflow-x:auto">
+        <table class="blob-line-table"
+               style="width:100%;border-collapse:collapse;font-family:monospace;font-size:12px">
+          <tbody>
+          {% for line in lines %}
+          {% set i = loop.index %}
+          <tr id="L{{ i }}" class="blob-line">
+            <td class="blob-ln"
+                style="width:40px;text-align:right;padding:1px 8px;color:#8b949e;user-select:none">
+              <a href="#L{{ i }}" style="color:inherit">{{ i }}</a>
+            </td>
+            <td class="blob-code"
+                style="padding:1px 8px;white-space:pre">{{ line | e }}</td>
+          </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% else %}
+      <p style="color:#8b949e;padding:24px">Empty file</p>
+    {% endif %}
+  </div>
+</div>
+{% endif %}
+{% endblock %}
+
 {% block page_data %}
 const repoId   = {{ repo_id | tojson }};
 const ref      = {{ ref | tojson }};
@@ -131,6 +207,8 @@ const owner    = {{ owner | tojson }};
 const repoSlug = {{ repo_slug | tojson }};
 const base     = {{ base_url | tojson }};
 const apiBase  = '/api/v1/musehub/repos/' + repoId;
+// SSR guard: JS skips the API fetch if server already rendered the blob.
+const ssrBlobRendered = {{ 'true' if blob_found else 'false' }};
 {% endblock %}
 
 {% block page_script %}
@@ -297,6 +375,11 @@ async function renderBlob(data) {
 
 // ── Load blob metadata from JSON API ─────────────────────────────────────────
 async function loadBlob() {
+  // If the server already rendered the blob (SSR), skip the fetch to avoid
+  // overwriting the immediately-visible content with a loading spinner.
+  if (ssrBlobRendered && document.getElementById('blob-ssr-content')) {
+    return;
+  }
   const contentEl = document.getElementById('content');
   contentEl.innerHTML = '<div class="blob-loading">Loading\u2026</div>';
   try {
