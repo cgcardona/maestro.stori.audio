@@ -985,6 +985,10 @@ STEP 5 — PUSH & CREATE PR:
   if [ -n "$MY_PR_NUM" ]; then
     sed -i '' "s/^LINKED_PR=.*/LINKED_PR=$MY_PR_NUM/" .agent-task 2>/dev/null || true
     echo "✅ LINKED_PR=$MY_PR_NUM written back to .agent-task"
+    # Label the PR agent:wip so the stale sweep never mistakes the issue for
+    # unclaimed just because the implementer worktree was pruned after PR creation.
+    gh pr edit "$MY_PR_NUM" --add-label "agent:wip" --repo "$GH_REPO" 2>/dev/null || true
+    echo "✅ agent:wip added to PR #$MY_PR_NUM"
   fi
 
   # Post fingerprint comment on the issue so it's traceable even if the claim

@@ -10,8 +10,8 @@ You never write a single line of feature code. You route work and report to the 
 ## Your job: seed the pool once, then wait
 
 Leaf agents are self-replacing — each one spawns its own successor the moment it
-opens its PR. You do not loop. You seed up to ``pool_size_per_vp`` initial agents
-(read from ``.cursor/pipeline-config.json``), then wait for the entire chain to drain.
+opens its PR. You do not loop. You seed up to 4 initial agents, then wait for the
+entire chain to drain.
 
 ```
 SEED:
@@ -43,15 +43,23 @@ SEED:
        MAIN_REPO=$(git -C "$HOME/dev/tellurstori/maestro" rev-parse --show-toplevel 2>/dev/null || echo "$HOME/dev/tellurstori/maestro")
        for NUM in $(gh issue list --state open --label "agent:wip" \
            --repo cgcardona/maestro --json number --jq '.[].number'); do
+         # If an open PR already references this issue (via branch name or close keyword),
+         # the claim is ACTIVE even if the implementer worktree was pruned. Never clear it.
+         OPEN_PR=$(gh pr list --state open --repo cgcardona/maestro \
+           --head "feat/issue-${NUM}" --json number --jq '.[0].number // empty' 2>/dev/null || echo "")
+         if [ -n "$OPEN_PR" ]; then
+           echo "Keeping agent:wip on #$NUM (open PR #$OPEN_PR exists — worktree pruning is expected)"
+           continue
+         fi
          WORKTREE="$HOME/.cursor/worktrees/maestro/issue-$NUM"
          if [ ! -d "$WORKTREE" ]; then
-           echo "Clearing stale agent:wip from #$NUM (worktree missing)"
+           echo "Clearing stale agent:wip from #$NUM (worktree missing, no open PR)"
            gh issue edit $NUM --repo cgcardona/maestro --remove-label "agent:wip"
          else
            BRANCH=$(git -C "$WORKTREE" branch --show-current 2>/dev/null || echo "")
            AHEAD=$(git -C "$MAIN_REPO" rev-list --count "dev..${BRANCH}" 2>/dev/null || echo "0")
            if [ "${AHEAD:-0}" -eq 0 ]; then
-             echo "Clearing stale agent:wip from #$NUM (worktree exists but 0 commits ahead of dev)"
+             echo "Clearing stale agent:wip from #$NUM (worktree exists but 0 commits ahead of dev, no open PR)"
              gh issue edit $NUM --repo cgcardona/maestro --remove-label "agent:wip"
            else
              echo "Keeping agent:wip on #$NUM (active: $AHEAD commit(s) ahead of dev)"
@@ -69,7 +77,20 @@ SEED:
          --jq '[.[] | select(.labels | map(.name) | index("agent:wip") | not)]'
      If empty → report to CTO "implementation queue clear for $ACTIVE_LABEL." Stop.
 
-  3.5 Dependency gate — CRITICAL for sequential issues:
+  3.5 Open-PR guard — skip issues that already have an open PR:
+       # An implementer worktree may be pruned after the PR is created, causing
+       # the stale sweep to (incorrectly) clear agent:wip and expose the issue again.
+       # Always re-verify before seeding — branch naming is the canonical signal.
+       for NUM in <candidate numbers from step 3>; do
+         OPEN_PR=$(gh pr list --state open --repo cgcardona/maestro \
+           --head "feat/issue-${NUM}" --json number --jq '.[0].number // empty' 2>/dev/null || echo "")
+         if [ -n "$OPEN_PR" ]; then
+           echo "SKIP #$NUM — open PR #$OPEN_PR already exists for this issue"
+           # Remove from candidate list
+         fi
+       done
+
+  3.6 Dependency gate — CRITICAL for sequential issues:
      For each candidate issue, check if its dependencies are met before seeding.
      Parse "Depends on #NNN" from the issue body. If any dep issue is still OPEN → skip.
      Only seed issues whose dependency issues are all CLOSED (i.e. merged).
@@ -92,12 +113,8 @@ SEED:
        BATCH_ID="eng-$(date -u +%Y%m%dT%H%M%SZ)-$(printf '%04x' $RANDOM)"
        VP_FINGERPRINT="Engineering VP · ${BATCH_ID}"
        echo "Batch ID: $BATCH_ID  VP: $VP_FINGERPRINT"
-       # Read pool size from pipeline-config.json (single source of truth).
-       POOL_SIZE=$(cat /Users/gabriel/dev/tellurstori/maestro/.cursor/pipeline-config.json | \
-         python3 -c "import sys,json; print(json.load(sys.stdin)['pool_size_per_vp'])")
-       echo "Pool size (from config): $POOL_SIZE"
 
-  5. Take the first $POOL_SIZE unclaimed issues. For each:
+  5. Take the first 4 unclaimed issues. For each:
        a. Claim:  gh issue edit <N> --add-label "agent:wip"
        b. Create worktree:
             git -C "$HOME/dev/tellurstori/maestro" worktree add \
@@ -191,7 +208,7 @@ SEED:
 
        d. Write .agent-task — include BATCH_ID and COGNITIVE_ARCH (see Worktree convention below)
 
-  6. Launch all $POOL_SIZE as leaf agents simultaneously — one Task call per issue,
+  6. Launch all 4 as leaf agents simultaneously — one Task call per issue,
      all in a single message:
        Task(prompt=LEAF_PROMPT, worktree="~/.cursor/worktrees/maestro/issue-<N>")
      LEAF_PROMPT = "Read the .agent-task file in your worktree, then follow
@@ -200,7 +217,7 @@ SEED:
        GH_REPO=cgcardona/maestro
        Repo: $HOME/dev/tellurstori/maestro"
 
-  7. Wait for all $POOL_SIZE to complete.
+  7. Wait for all 4 to complete.
      (Each agent self-replaces — the pool stays full until no issues remain.)
 
   8. Report results to CTO including the BATCH_ID so the CTO can log it.

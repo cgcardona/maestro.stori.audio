@@ -42,15 +42,23 @@ SEED:
        MAIN_REPO=$(git -C "$HOME/dev/tellurstori/{{ repo_name }}" rev-parse --show-toplevel 2>/dev/null || echo "$HOME/dev/tellurstori/{{ repo_name }}")
        for NUM in $(gh issue list --state open --label "{{ claim_label }}" \
            --repo {{ gh_repo }} --json number --jq '.[].number'); do
+         # If an open PR already references this issue (via branch name or close keyword),
+         # the claim is ACTIVE even if the implementer worktree was pruned. Never clear it.
+         OPEN_PR=$(gh pr list --state open --repo {{ gh_repo }} \
+           --head "feat/issue-${NUM}" --json number --jq '.[0].number // empty' 2>/dev/null || echo "")
+         if [ -n "$OPEN_PR" ]; then
+           echo "Keeping {{ claim_label }} on #$NUM (open PR #$OPEN_PR exists — worktree pruning is expected)"
+           continue
+         fi
          WORKTREE="$HOME/.cursor/worktrees/{{ repo_name }}/issue-$NUM"
          if [ ! -d "$WORKTREE" ]; then
-           echo "Clearing stale {{ claim_label }} from #$NUM (worktree missing)"
+           echo "Clearing stale {{ claim_label }} from #$NUM (worktree missing, no open PR)"
            gh issue edit $NUM --repo {{ gh_repo }} --remove-label "{{ claim_label }}"
          else
            BRANCH=$(git -C "$WORKTREE" branch --show-current 2>/dev/null || echo "")
            AHEAD=$(git -C "$MAIN_REPO" rev-list --count "dev..${BRANCH}" 2>/dev/null || echo "0")
            if [ "${AHEAD:-0}" -eq 0 ]; then
-             echo "Clearing stale {{ claim_label }} from #$NUM (worktree exists but 0 commits ahead of dev)"
+             echo "Clearing stale {{ claim_label }} from #$NUM (worktree exists but 0 commits ahead of dev, no open PR)"
              gh issue edit $NUM --repo {{ gh_repo }} --remove-label "{{ claim_label }}"
            else
              echo "Keeping {{ claim_label }} on #$NUM (active: $AHEAD commit(s) ahead of dev)"
@@ -68,7 +76,20 @@ SEED:
          --jq '[.[] | select(.labels | map(.name) | index("{{ claim_label }}") | not)]'
      If empty → report to CTO "implementation queue clear for $ACTIVE_LABEL." Stop.
 
-  3.5 Dependency gate — CRITICAL for sequential issues:
+  3.5 Open-PR guard — skip issues that already have an open PR:
+       # An implementer worktree may be pruned after the PR is created, causing
+       # the stale sweep to (incorrectly) clear agent:wip and expose the issue again.
+       # Always re-verify before seeding — branch naming is the canonical signal.
+       for NUM in <candidate numbers from step 3>; do
+         OPEN_PR=$(gh pr list --state open --repo {{ gh_repo }} \
+           --head "feat/issue-${NUM}" --json number --jq '.[0].number // empty' 2>/dev/null || echo "")
+         if [ -n "$OPEN_PR" ]; then
+           echo "SKIP #$NUM — open PR #$OPEN_PR already exists for this issue"
+           # Remove from candidate list
+         fi
+       done
+
+  3.6 Dependency gate — CRITICAL for sequential issues:
      For each candidate issue, check if its dependencies are met before seeding.
      Parse "Depends on #NNN" from the issue body. If any dep issue is still OPEN → skip.
      Only seed issues whose dependency issues are all CLOSED (i.e. merged).
