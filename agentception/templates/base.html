@@ -5,12 +5,15 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>{% block title %}AgentCeption{% endblock %}</title>
 
+  <!-- Inline SVG favicon — no 404 on /favicon.ico -->
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='6' fill='%238b5cf6'/><text x='50%25' y='54%25' dominant-baseline='middle' text-anchor='middle' font-size='20' font-family='monospace' fill='white'>⚡</text></svg>" />
+
   <!-- Dark-mode base styles — no external CSS framework -->
   <link rel="stylesheet" href="/static/app.css" />
 
   <!-- HTMX 2.x — server-driven hypermedia from CDN -->
   <script src="https://cdn.jsdelivr.net/npm/htmx.org@2.0.4/dist/htmx.min.js"
-          integrity="sha256-YADM5XNYL2VfHKqKBCPhwQlEGr8vG3FkFTzlECr/KIM="
+          integrity="sha256-4gndpcgjVHnzFm3vx3UOHbzVpcGAi3eS/C5nM3aPtEc="
           crossorigin="anonymous" defer></script>
 
   <!-- Alpine.js 3.x — lightweight reactivity from CDN -->
