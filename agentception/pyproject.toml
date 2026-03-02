@@ -44,7 +44,20 @@ include = ["agentception*"]
 [tool.mypy]
 python_version = "3.11"
 strict = true
+explicit_package_bases = true
+warn_unreachable = true
+show_error_codes = true
+
+# Third-party stubs are not always available; suppress missing-import noise
+# for libraries that ship without inline types.
+[[tool.mypy.overrides]]
+module = ["sqlalchemy.*", "alembic.*", "asyncpg.*", "aiosqlite.*"]
 ignore_missing_imports = true
+
+# pytest decorators are untyped by design; relaxing this keeps test files clean.
+[[tool.mypy.overrides]]
+module = ["agentception.tests.*"]
+disallow_untyped_decorators = false
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
