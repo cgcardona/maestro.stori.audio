@@ -1,0 +1,95 @@
+{% extends "musehub/base.html" %}
+
+{% block title %}Musical Divergence · {{ owner }}/{{ repo_slug }}{% endblock %}
+
+{% block breadcrumb %}
+  <a href="/musehub/ui/{{ owner }}/{{ repo_slug }}">{{ owner }}/{{ repo_slug }}</a> / divergence
+{% endblock %}
+
+{% block repo_nav %}{% include "musehub/partials/repo_nav.html" %}{% endblock %}
+
+{% block page_data %}
+const repoId  = {{ repo_id | tojson }};
+const apiBase = '/api/v1/musehub/repos/' + repoId;
+const uiBase  = {{ base_url | tojson }};
+{% endblock %}
+
+{% block content %}
+<div style="max-width:900px;margin:0 auto;padding:var(--space-4)">
+
+  {# ── Header ────────────────────────────────────────────────────────────── #}
+  <div class="card" style="margin-bottom:var(--space-4)">
+    <h1 style="margin:0 0 var(--space-1);font-size:1.25rem">Musical Divergence</h1>
+    <p style="margin:0;color:#8b949e;font-size:0.875rem">
+      Per-dimension musical distance between this repo and
+      {% if fork_repo_id %}
+        fork <code>{{ fork_repo_id[:8] }}</code>.
+      {% else %}
+        its own HEAD (self-comparison).
+      {% endif %}
+    </p>
+  </div>
+
+  {# ── Score + dimension bars ─────────────────────────────────────────────── #}
+  {% set score_pct = (divergence_data.score * 100) | round | int %}
+  <div class="card" style="margin-bottom:var(--space-4)">
+    <div style="display:flex;align-items:flex-start;gap:var(--space-6);flex-wrap:wrap">
+
+      {# Circle gauge #}
+      <div style="flex-shrink:0;display:flex;flex-direction:column;align-items:center;gap:var(--space-2)">
+        <div style="
+          width:120px;height:120px;border-radius:50%;
+          background:conic-gradient(var(--color-accent) {{ score_pct }}%, var(--color-surface-2) 0);
+          display:flex;align-items:center;justify-content:center;
+          box-shadow:0 0 0 4px var(--color-surface-1)
+        ">
+          <div style="
+            width:88px;height:88px;border-radius:50%;
+            background:var(--color-surface-1);
+            display:flex;align-items:center;justify-content:center;
+            flex-direction:column
+          ">
+            <span style="font-size:1.375rem;font-weight:700;line-height:1">{{ score_pct }}%</span>
+            <span style="font-size:0.6rem;color:#8b949e;text-transform:uppercase;letter-spacing:.05em">diverged</span>
+          </div>
+        </div>
+        <p style="margin:0;font-size:0.75rem;color:#8b949e;text-align:center;max-width:120px">
+          {% if score_pct < 20 %}Nearly identical
+          {% elif score_pct < 50 %}Mildly diverged
+          {% elif score_pct < 75 %}Significantly diverged
+          {% else %}Heavily diverged
+          {% endif %}
+        </p>
+      </div>
+
+      {# Per-dimension bars #}
+      <div style="flex:1;min-width:220px">
+        {% for dim in divergence_data.dimensions %}
+        {% set dim_pct = (dim.divergence * 100) | round | int %}
+        <div style="margin-bottom:var(--space-3)">
+          <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px">
+            <span style="font-size:0.8125rem;font-weight:500">{{ dim.name }}</span>
+            <span style="font-size:0.75rem;color:#8b949e;font-family:monospace">{{ dim_pct }}%</span>
+          </div>
+          <div style="height:8px;background:var(--color-surface-2);border-radius:4px;overflow:hidden">
+            <div style="
+              width:{{ dim_pct }}%;height:100%;border-radius:4px;
+              background:{% if dim_pct < 30 %}#388bfd{% elif dim_pct < 60 %}#f0883e{% else %}#f85149{% endif %};
+              transition:width .3s ease
+            "></div>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+
+    </div>
+  </div>
+
+  {# ── Interpretation note ─────────────────────────────────────────────────── #}
+  <div style="font-size:0.8125rem;color:#8b949e;padding:var(--space-2) var(--space-3);border-left:3px solid var(--color-border)">
+    Divergence scores are computed per musical dimension (0 = identical, 100% = maximally different).
+    The overall score is the weighted average across all five dimensions.
+  </div>
+
+</div>
+{% endblock %}

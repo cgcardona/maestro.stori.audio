@@ -6,9 +6,27 @@
 {% endblock %}
 {% block repo_nav %}{% include "musehub/partials/repo_nav.html" %}{% endblock %}
 
+{% block content %}
+{# SSR metadata — visible immediately without JS #}
+<div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
+  <h1 style="font-size:1.2rem;margin:0">Commit Graph</h1>
+  {% if commit_count is defined %}
+  <span style="color:#8b949e;font-size:12px" id="graph-ssr-meta">
+    {{ commit_count }} commit{{ 's' if commit_count != 1 else '' }}
+    · {{ branch_count }} branch{{ 'es' if branch_count != 1 else '' }}
+  </span>
+  {% endif %}
+</div>
+{# DAG rendering container — JS populates this once loaded #}
+<div id="content-inner"></div>
+{% endblock %}
+
 {% block page_data %}
 const repoId = {{ repo_id | tojson }};
 const base   = {{ base_url | tojson }};
+{# SSR-provided graph data: JS DAG renderer reads window.__graphData first
+   to avoid an extra API round-trip on initial page load. #}
+window.__graphData = {{ graph_data_json | tojson }};
 {% endblock %}
 
 {% block page_script %}
@@ -87,8 +105,10 @@ async function fetchReactions(repoId, commitIds) {
 
 function renderGraph(data, sessionMap, reactionMap) {
   const { nodes, edges, headCommitId } = data;
+  // Render into #content-inner so the SSR header (commit/branch count) stays visible.
+  const target = document.getElementById('content-inner') || document.getElementById('content');
   if (!nodes.length) {
-    document.getElementById('content').innerHTML =
+    target.innerHTML =
       '<div class="card"><p class="loading">No commits yet -- nothing to graph.</p></div>';
     return;
   }
@@ -184,7 +204,7 @@ function renderGraph(data, sessionMap, reactionMap) {
     </span>`
   ).join('');
 
-  document.getElementById('content').innerHTML = `
+  target.innerHTML = `
     <div style="margin-bottom:12px;display:flex;align-items:center;gap:12px;flex-wrap:wrap">
       <a href="${base}">&larr; Back to repo</a>
       <span style="color:#8b949e;font-size:13px">${nodes.length} commit${nodes.length!==1?'s':''} &bull; scroll to zoom &bull; drag to pan</span>
@@ -326,9 +346,10 @@ async function load() {
 
     renderGraph(dagData, sessionMap, reactionMap);
   } catch(e) {
-    if (e.message !== 'auth')
-      document.getElementById('content').innerHTML =
-        '<p class="error">&#10005; ' + escHtml(e.message) + '</p>';
+    if (e.message !== 'auth') {
+      const errTarget = document.getElementById('content-inner') || document.getElementById('content');
+      errTarget.innerHTML = '<p class="error">&#10005; ' + escHtml(e.message) + '</p>';
+    }
   }
 }
 

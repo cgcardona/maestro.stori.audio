@@ -8,6 +8,9 @@
 {% block repo_nav %}{% include "musehub/partials/repo_nav.html" %}{% endblock %}
 
 {% block body_extra %}
+{# SSR playlist data — WaveSurfer reads these globals on init #}
+<script>window.__playlist = {{ playlist_json | default([]) | tojson }};</script>
+<script>window.__firstTrackUrl = {{ first_track_url | default(none) | tojson }};</script>
 <script src="/musehub/static/vendor/wavesurfer.min.js"></script>
 <script src="/musehub/static/audio-player.js"></script>
 {% endblock %}
@@ -178,6 +181,40 @@ const base     = {{ base_url | tojson }};
 const trackPath = {{ (track_path if track_path is defined else '') | tojson }};
 const apiBase  = '/api/v1/musehub/repos/' + repoId;
 const TRACK_PATH = trackPath;
+{% endblock %}
+
+{% block content %}
+{# SSR track listing — rendered server-side for immediate paint and crawlability.
+   JS player (below) takes over after load(), hydrating the #content div.
+   Both layers coexist: SSR gives the initial state, JS provides full interactivity. #}
+<div id="ssr-track-listing">
+{% if tracks is defined and tracks %}
+  <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+    <h2 style="margin:0;font-size:14px;color:#e6edf3">&#127897; Tracks</h2>
+    <span style="font-size:11px;color:#8b949e">{{ tracks | length }} track{{ 's' if tracks | length != 1 }}</span>
+  </div>
+  <div id="ssr-track-list">
+    {% for track in tracks %}
+    <div class="track-list-item{% if loop.first %} track-active{% endif %}"
+         id="track-item-{{ loop.index0 }}"
+         data-track-url="{{ track.audio_url }}"
+         data-track-name="{{ track.name }}"
+         style="display:flex;align-items:center;gap:8px;padding:8px 12px;cursor:pointer;border-radius:4px;background:#161b22;border:1px solid #30363d;margin-bottom:4px">
+      <span style="width:20px;text-align:right;font-size:11px;color:#8b949e">{{ loop.index }}</span>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#e6edf3">{{ track.name }}</div>
+        <div style="font-size:11px;color:#8b949e;font-family:monospace">{{ track.path }}</div>
+      </div>
+      <a href="{{ track.audio_url }}" download title="Download" style="font-size:11px;color:#8b949e">&#11015;</a>
+    </div>
+    {% endfor %}
+  </div>
+{% elif tracks is defined %}
+  <p style="color:#8b949e;padding:16px 0">No audio tracks in this repository.</p>
+{% else %}
+  <p class="loading">Loading&#8230;</p>
+{% endif %}
+</div>
 {% endblock %}
 
 {% block page_script %}

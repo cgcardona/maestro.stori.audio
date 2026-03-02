@@ -1,0 +1,72 @@
+{# Tempo analysis content fragment — server-side rendered, reused for full page and HTMX swaps. #}
+{% set stability_pct = (tempo_data.stability * 100) | round | int %}
+{% set stab_color = '#3fb950' if tempo_data.stability >= 0.8 else ('#f0883e' if tempo_data.stability >= 0.5 else '#f85149') %}
+{% set stab_label = 'metronomic' if tempo_data.stability >= 0.8 else ('moderate' if tempo_data.stability >= 0.5 else 'free tempo') %}
+
+<div style="margin-bottom:12px">
+  <a href="{{ base_url }}/analysis/{{ ref }}">&larr; Back to analysis</a>
+</div>
+
+<div class="card">
+  <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:16px">
+    <h1 style="margin:0">⏱️ Tempo Analysis</h1>
+    <code style="font-size:13px;background:#0d1117;padding:2px 8px;border-radius:4px;color:#8b949e">
+      ref: {{ ref[:8] }}
+    </code>
+  </div>
+
+  <div class="meta-row" style="margin-bottom:16px">
+    <div class="meta-item">
+      <span class="meta-label">BPM</span>
+      <span class="meta-value" style="font-size:28px;font-weight:700;color:#e6edf3">
+        {{ tempo_data.bpm | round | int }}
+      </span>
+    </div>
+    <div class="meta-item">
+      <span class="meta-label">Time Feel</span>
+      <span class="meta-value">{{ tempo_data.time_feel }}</span>
+    </div>
+    <div class="meta-item">
+      <span class="meta-label">Tempo Changes</span>
+      <span class="meta-value">{{ tempo_data.tempo_changes | length }}</span>
+    </div>
+  </div>
+
+  {# Stability bar #}
+  <div>
+    <span class="meta-label">Stability ({{ stability_pct }}% — {{ stab_label }})</span>
+    <div style="margin-top:4px;height:8px;background:#21262d;border-radius:4px;overflow:hidden">
+      <div style="height:100%;width:{{ stability_pct }}%;background:{{ stab_color }};border-radius:4px"></div>
+    </div>
+  </div>
+
+  {# Tempo changes section #}
+  <div style="background:#0d1117;border:1px solid #30363d;border-radius:6px;padding:12px;margin-top:16px">
+    <span class="meta-label" style="display:block;margin-bottom:8px">Tempo Changes Within Piece</span>
+    {% if tempo_data.tempo_changes %}
+      {# Simple inline SVG bar chart for tempo map #}
+      {% set all_bpms = [tempo_data.bpm] + tempo_data.tempo_changes | map(attribute='bpm') | list %}
+      {% set max_bpm = all_bpms | max %}
+      {% set min_bpm = all_bpms | min %}
+
+      <table style="width:100%;border-collapse:collapse;font-size:13px;margin-top:4px">
+        <thead>
+          <tr style="border-bottom:1px solid #30363d">
+            <th style="text-align:left;padding:4px 8px;color:#8b949e;font-weight:600">Beat</th>
+            <th style="text-align:left;padding:4px 8px;color:#8b949e;font-weight:600">BPM</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for change in tempo_data.tempo_changes %}
+          <tr style="border-bottom:1px solid #21262d">
+            <td style="padding:4px 8px;font-family:monospace">{{ change.beat }}</td>
+            <td style="padding:4px 8px;color:#f0883e;font-family:monospace">{{ change.bpm }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <p style="font-size:13px;color:#8b949e;margin:0">✓ Constant tempo — no tempo changes detected.</p>
+    {% endif %}
+  </div>
+</div>

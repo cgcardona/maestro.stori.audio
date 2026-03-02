@@ -66,7 +66,9 @@ The embed route sets ``X-Frame-Options: ALLOWALL`` for cross-origin iframe use.
 """
 from __future__ import annotations
 
+import asyncio
 import logging
+import os
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
@@ -84,6 +86,7 @@ from maestro.api.routes.musehub.negotiate import negotiate_response
 from maestro.api.routes.musehub.ui_jsonld import jsonld_release, jsonld_repo, render_jsonld_script
 from maestro.db import get_db
 from maestro.models.musehub import CommitListResponse, CommitResponse, RepoResponse, TrackListingResponse
+from maestro.models.musehub_analysis import DimensionData
 from maestro.models.musehub import (
     BranchDetailListResponse,
     CommitListResponse,
@@ -96,7 +99,7 @@ from maestro.models.musehub import (
 from maestro.db import musehub_models as musehub_db
 from maestro.muse_cli.models import MuseCliTag
 from maestro.db import musehub_label_models as label_db
-from maestro.services import musehub_credits, musehub_divergence, musehub_events, musehub_issues, musehub_listen, musehub_pull_requests, musehub_releases
+from maestro.services import musehub_analysis, musehub_credits, musehub_divergence, musehub_events, musehub_issues, musehub_listen, musehub_pull_requests, musehub_releases
 from maestro.services import musehub_discover, musehub_repository, musehub_search
 
 logger = logging.getLogger(__name__)
@@ -120,6 +123,42 @@ register_musehub_filters(templates.env)
 def _base_url(owner: str, repo_slug: str) -> str:
     """Return the canonical UI base URL for a repo."""
     return f"/musehub/ui/{owner}/{repo_slug}"
+
+
+# Maps file extensions to display-friendly language names for the blob viewer.
+# Used by _detect_language() to annotate server-rendered file content.
+_LANG_MAP: dict[str, str] = {
+    ".py": "python",
+    ".js": "javascript",
+    ".ts": "typescript",
+    ".json": "json",
+    ".yaml": "yaml",
+    ".yml": "yaml",
+    ".md": "markdown",
+    ".txt": "text",
+    ".xml": "xml",
+    ".html": "html",
+    ".css": "css",
+    ".sh": "bash",
+    ".mid": "midi",
+    ".midi": "midi",
+}
+
+# File types (from extension) that should not be rendered as text lines.
+_BLOB_BINARY_TYPES: frozenset[str] = frozenset(
+    [".mid", ".midi", ".mp3", ".wav", ".flac", ".ogg", ".webp", ".png", ".jpg", ".jpeg"]
+)
+
+
+def _detect_language(path: str) -> str:
+    """Return a display-friendly language name for a file path based on its extension.
+
+    Used by blob_page() to annotate server-rendered file content and choose
+    the correct syntax-highlighting hint for the client-side enhancer.
+    Returns an empty string for unrecognised extensions.
+    """
+    ext = os.path.splitext(path)[1].lower()
+    return _LANG_MAP.get(ext, "")
 
 
 def _breadcrumbs(*segments: tuple[str, str]) -> list[dict[str, str]]:
@@ -708,71 +747,99 @@ async def commit_page(
     owner: str,
     repo_slug: str,
     commit_id: str,
-    format: str | None = Query(None, description="Force response format: 'json' or omit for HTML"),
     db: AsyncSession = Depends(get_db),
-) -> StarletteResponse:
-    """Render the commit detail page with inline audio player, muse_tags metadata,
-    reactions, comment thread, and cross-reference panel.
+) -> Response:
+    """Render the commit detail page — SSR metadata + comments, JS audio/score cores.
 
-    HTML (default): rich commit detail page via Jinja2 with:
-    - Inline WaveSurfer.js audio player (full mix + per-stem track selector +
-      volume control).  Falls back to ``<audio>`` when WaveSurfer is unavailable.
-    - Full metadata panel sourced from analysis APIs (tempo_bpm, key,
-      time_signature; emotion/stage tags rendered as colored pills).  DB-stored
-      ``muse_tags`` are also rendered via the namespace-aware ``tagPill()``
-      helper; ``ref:`` tags whose value is a URL open that source directly.
-    - Reactions row (8 emoji types) backed by the existing reactions API.
-    - Threaded comment section with add/edit/delete and nested reply support.
-    - Cross-references panel showing PRs, issues, and sessions that mention
-      this commit hash.
-    - A 2-sentence prose summary (``buildProseSummary``) synthesised from key,
-      tempo, emotion, and diff-dimension data.
+    Partial SSR strategy (HTMX phase 4):
+    - Commit header (message, author, timestamp, SHA, parent SHAs) → server-rendered.
+    - Comment thread → server-rendered; HTMX refreshes it after new comment POST.
+    - WaveSurfer.js audio player → JS-initialized from ``data-url`` attribute when
+      ``audio_url`` is resolved server-side (``commit.snapshot_id`` present).
+    - abcjs score renderer → JS-initialized from ``data-abc-url`` attribute when
+      ``has_score`` is True.
 
-    JSON (``Accept: application/json`` or ``?format=json``): returns the full
-    ``CommitResponse`` Pydantic model with camelCase keys, or a minimal context
-    dict if the commit is not yet in the DB (not yet synced).
+    HTMX requests (``HX-Request: true``) receive only the comment fragment so the
+    comment form can re-render the thread without a full page reload.
 
-    Artifacts are displayed by extension:
-    - ``.webp/.png/.jpg`` → inline ``<img>``
-    - ``.mp3/.ogg/.wav``  → ``<audio controls>`` player / WaveSurfer stem
-    - ``.mid/.midi``      → piano-roll preview card
-    - ``.abc/.musicxml``  → score preview via abcjs
-    - other              → download link
+    Returns 404 when ``commit_id`` is not found in this repo.
     """
     repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
     commit = await musehub_repository.get_commit(db, repo_id, commit_id)
-    commit_description = commit.message if commit is not None else ""
+    if commit is None:
+        raise HTTPException(status_code=http_status.HTTP_404_NOT_FOUND, detail="Commit not found")
+
     short_id = commit_id[:8]
-    listen_url = f"{base_url}/listen/{commit_id}"
-    embed_url = f"{base_url}/embed/{commit_id}"
-    return await negotiate_response(
-        request=request,
-        template_name="musehub/pages/commit.html",
-        context={
-            "owner": owner,
-            "repo_slug": repo_slug,
-            "repo_id": repo_id,
-            "commit_id": commit_id,
-            "short_id": short_id,
-            "base_url": base_url,
-            "listen_url": listen_url,
-            "embed_url": embed_url,
-            "current_page": "commits",
-            "breadcrumb_data": _breadcrumbs(
-                (owner, f"/musehub/ui/{owner}"),
-                (repo_slug, base_url),
-                ("commits", base_url),
-                (short_id, ""),
-            ),
-            "og_meta": _og_tags(
-                title=f"Commit {short_id} · {owner}/{repo_slug} — Muse Hub",
-                description=commit_description,
-                og_type="music.song",
-            ),
-        },
-        templates=templates,
-        json_data=commit,
-        format_param=format,
+
+    # Fetch commit comments server-side (target_type="commit" in musehub_comments).
+    comment_rows = (
+        await db.execute(
+            sa_select(musehub_db.MusehubComment)
+            .where(
+                musehub_db.MusehubComment.repo_id == repo_id,
+                musehub_db.MusehubComment.target_type == "commit",
+                musehub_db.MusehubComment.target_id == commit_id,
+                musehub_db.MusehubComment.is_deleted.is_(False),
+            )
+            .order_by(musehub_db.MusehubComment.created_at)
+        )
+    ).scalars().all()
+    comments = [
+        {
+            "comment_id": r.comment_id,
+            "author": r.author,
+            "body": r.body,
+            "parent_id": r.parent_id,
+            "created_at": r.created_at,
+        }
+        for r in comment_rows
+    ]
+
+    # Derive audio URL from snapshot_id when available.  WaveSurfer picks this
+    # up from the data-url attribute; no JS API call needed when present.
+    api_base = f"/api/v1/musehub/repos/{repo_id}"
+    audio_url: str | None = (
+        f"{api_base}/objects/{commit.snapshot_id}/content"
+        if commit.snapshot_id is not None
+        else None
+    )
+    # Score (abcjs) support is reserved for future data-model enrichment.
+    has_score = False
+    abc_url: str | None = None
+
+    ctx: dict[str, object] = {
+        "owner": owner,
+        "repo_slug": repo_slug,
+        "repo_id": repo_id,
+        "commit_id": commit_id,
+        "short_id": short_id,
+        "base_url": base_url,
+        "listen_url": f"{base_url}/listen/{commit_id}",
+        "embed_url": f"{base_url}/embed/{commit_id}",
+        "current_page": "commits",
+        "commit": commit.model_dump(),
+        "comments": comments,
+        "audio_url": audio_url,
+        "has_score": has_score,
+        "abc_url": abc_url,
+        "breadcrumb_data": _breadcrumbs(
+            (owner, f"/musehub/ui/{owner}"),
+            (repo_slug, base_url),
+            ("commits", f"{base_url}/commits"),
+            (short_id, ""),
+        ),
+        "og_meta": _og_tags(
+            title=f"Commit {short_id} · {owner}/{repo_slug} — Muse Hub",
+            description=commit.message,
+            og_type="music.song",
+        ),
+    }
+    return await htmx_fragment_or_full(
+        request,
+        templates,
+        ctx,
+        full_template="musehub/pages/commit_detail.html",
+        fragment_template="musehub/fragments/commit_comments.html",
     )
 
 
@@ -819,18 +886,43 @@ async def graph_page(
     repo_slug: str,
     db: AsyncSession = Depends(get_db),
 ) -> Response:
-    """Render the interactive DAG commit graph.
+    """Render the interactive DAG commit graph with SSR metadata scaffolding.
 
-    Client-side SVG renderer with branch colour-coding, merge-commit diamonds,
-    zoom/pan, hover popovers, and click-to-navigate.
+    Fetches commit and branch counts server-side and injects them into the
+    template so the page header renders without JS.  Commit graph data is
+    also pre-serialised into ``window.__graphData`` so the client-side DAG
+    renderer can skip the initial API round-trip and render immediately.
+
+    The complex SVG layout computation (force-directed positioning, zoom/pan,
+    popover hover) remains client-side — this is inherently visual and cannot
+    be SSR'd in a meaningful way.
     """
     repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
+
+    commits, _total = await musehub_repository.list_commits(db, repo_id, limit=100)
+    branches = await musehub_repository.list_branches(db, repo_id)
+
+    graph_data = [
+        {
+            "sha": c.commit_id,
+            "shortSha": c.commit_id[:8],
+            "message": c.message,
+            "author": c.author,
+            "timestamp": c.timestamp.isoformat(),
+            "parents": c.parent_ids,
+        }
+        for c in commits
+    ]
+
     ctx: dict[str, object] = {
         "owner": owner,
         "repo_slug": repo_slug,
         "repo_id": repo_id,
         "base_url": base_url,
         "current_page": "graph",
+        "graph_data_json": graph_data,
+        "commit_count": len(commits),
+        "branch_count": len(branches),
     }
     return json_or_html(
         request,
@@ -1098,12 +1190,14 @@ async def context_page(
     ref: str,
     db: AsyncSession = Depends(get_db),
 ) -> Response:
-    """Render the AI context viewer for a given commit ref.
+    """Render the AI context viewer for a given commit ref — fully SSR.
 
-    Shows the MuseHubContextResponse as a structured human-readable document:
-    musical state, history summary, missing elements, suggestions, and raw JSON.
+    Calls :func:`musehub_analysis.get_context` to fetch musical summary,
+    missing elements, and Maestro suggestions server-side so the template
+    receives a populated ``context_data`` object with no client fetch required.
     """
     repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
+    context_data = await musehub_analysis.get_context(db, repo_id, ref=ref)
     ctx: dict[str, object] = {
         "owner": owner,
         "repo_slug": repo_slug,
@@ -1111,12 +1205,9 @@ async def context_page(
         "ref": ref,
         "base_url": base_url,
         "current_page": "analysis",
+        "context_data": context_data,
     }
-    return json_or_html(
-        request,
-        lambda: templates.TemplateResponse(request, "musehub/pages/context.html", ctx),
-        ctx,
-    )
+    return templates.TemplateResponse(request, "musehub/pages/analysis/context.html", ctx)
 
 
 @router.get(
@@ -1210,6 +1301,11 @@ async def embed_page(
     repo_id, _ = await _resolve_repo(owner, repo_slug, db)
     short_ref = ref[:8] if len(ref) >= 8 else ref
     listen_url = _base_url(owner, repo_slug)
+
+    # Resolve first audio track for SSR — no auth check needed (public embed)
+    listing = await musehub_listen.build_track_listing(db, repo_id, ref)
+    first_track = listing.tracks[0] if listing.tracks else None
+
     content = templates.TemplateResponse(
         request,
         "musehub/pages/embed.html",
@@ -1218,6 +1314,10 @@ async def embed_page(
             "repo_id": repo_id,
             "ref": ref,
             "listen_url": listen_url,
+            "owner": owner,
+            "repo_slug": repo_slug,
+            "track_url": first_track.audio_url if first_track else None,
+            "track_name": first_track.name if first_track else short_ref,
         },
     )
     return Response(
@@ -1259,6 +1359,17 @@ async def listen_page(
     repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
     json_data = await musehub_listen.build_track_listing(db, repo_id, ref)
 
+    # Build playlist payload for WaveSurfer — passed as window.__playlist
+    playlist_data = [
+        {
+            "name": t.name,
+            "url": t.audio_url,
+            "size": t.size_bytes,
+        }
+        for t in json_data.tracks
+    ]
+    first_track = json_data.tracks[0] if json_data.tracks else None
+
     return await negotiate_response(
         request=request,
         template_name="musehub/pages/listen.html",
@@ -1269,6 +1380,10 @@ async def listen_page(
             "ref": ref,
             "base_url": base_url,
             "current_page": "listen",
+            "tracks": json_data.tracks,
+            "playlist_json": playlist_data,
+            "first_track_url": first_track.audio_url if first_track else None,
+            "first_track_name": first_track.name if first_track else None,
         },
         templates=templates,
         json_data=json_data,
@@ -1408,21 +1523,16 @@ async def analysis_dashboard_page(
     ref: str,
     db: AsyncSession = Depends(get_db),
 ) -> Response:
-    """Render the analysis dashboard: summary cards for all 10 musical dimensions.
+    """Render the analysis dashboard: summary cards for all musical dimensions.
 
-    Why this exists: musicians and AI agents need a single entry point that
-    shows the full musical character of a composition at a glance -- key,
-    tempo, meter, dynamics, groove, emotion, form, motifs, chord map, and
-    contour -- without issuing 13 separate analysis commands.
-
-    Contract:
-    - No JWT required -- HTML shell; JS fetches authed data via localStorage token.
-    - Fetches ``GET /api/v1/musehub/repos/{repo_id}/analysis/{ref}`` (aggregate).
-    - Branch selector fetches ``GET /api/v1/musehub/repos/{repo_id}/branches``.
-    - Each card links to the dedicated per-dimension analysis page.
-    - Graceful empty state when analysis data is not yet available.
+    All dimension data is computed server-side so agents and browsers receive
+    a fully-rendered page without issuing additional API calls.  The aggregate
+    response covers key, tempo, meter, dynamics, groove, emotion, form, motifs,
+    chord map, and contour.
     """
     repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
+    aggregate = musehub_analysis.compute_aggregate_analysis(repo_id=repo_id, ref=ref)
+    dim_map: dict[str, object] = {d.dimension: d.data for d in aggregate.dimensions}
     ctx: dict[str, object] = {
         "owner": owner,
         "repo_slug": repo_slug,
@@ -1430,11 +1540,15 @@ async def analysis_dashboard_page(
         "ref": ref,
         "base_url": base_url,
         "current_page": "analysis",
+        "analysis_dimension": "dashboard",
+        "dim_map": dim_map,
     }
-    return json_or_html(
+    return await htmx_fragment_or_full(
         request,
-        lambda: templates.TemplateResponse(request, "musehub/pages/analysis.html", ctx),
+        templates,
         ctx,
+        full_template="musehub/pages/analysis/dashboard.html",
+        fragment_template="musehub/fragments/analysis/dashboard_content.html",
     )
 
 
@@ -1510,22 +1624,18 @@ async def motifs_page(
     ref: str,
     db: AsyncSession = Depends(get_db),
 ) -> Response:
-    """Render the motif browser for a given commit ref.
+    """Render the motif browser for a given commit ref — SSR.
 
-    Fetches ``GET /api/v1/musehub/repos/{repo_id}/analysis/{ref}/motifs``
-    and renders:
-    - All detected motifs with interval pattern and occurrence count
-    - Mini piano roll visualising the note pattern for each motif
-    - Contour label (arch, valley, oscillating, etc.)
-    - Transformation badges (inversion, retrograde, transposition)
-    - Motif recurrence grid (tracks x sections heatmap)
-    - Cross-track sharing indicators
-    - Track and section filters
+    Fetches motif data server-side via :func:`~maestro.services.musehub_analysis.compute_dimension`
+    and passes it directly to the Jinja2 template so all motif patterns,
+    occurrences, and recurrence grids are rendered server-side without
+    a client-side fetch.
 
     Auth is handled client-side via localStorage JWT, matching all other UI
     pages.  No JWT is required to render the HTML shell.
     """
     repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
+    motifs_data = musehub_analysis.compute_dimension("motifs", ref)
     ctx: dict[str, object] = {
         "owner": owner,
         "repo_slug": repo_slug,
@@ -1533,11 +1643,15 @@ async def motifs_page(
         "ref": ref,
         "base_url": base_url,
         "current_page": "analysis",
+        "analysis_dimension": "motifs",
+        "motifs_data": motifs_data,
     }
-    return json_or_html(
+    return await htmx_fragment_or_full(
         request,
-        lambda: templates.TemplateResponse(request, "musehub/pages/motifs.html", ctx),
+        templates,
         ctx,
+        full_template="musehub/pages/analysis/motifs.html",
+        fragment_template="musehub/fragments/analysis/motifs_content.html",
     )
 
 
@@ -1594,19 +1708,16 @@ async def compare_page(
     owner: str,
     repo_slug: str,
     refs: str,
-    format: str | None = Query(None, description="Force response format: 'json' or omit for HTML"),
     db: AsyncSession = Depends(get_db),
-) -> StarletteResponse:
-    """Render the compare view for two refs (branches, tags, or commit SHAs).
+) -> Response:
+    """Render the compare view for two refs — fully SSR.
 
     The ``refs`` path segment encodes both refs separated by ``...``:
     ``main...feature-branch`` compares ``main`` (base) against
     ``feature-branch`` (head).
 
-    HTML (default): renders the compare page with radar chart, dimension
-    panels, piano roll, emotion diff, and commit list.
-    JSON (``Accept: application/json`` or ``?format=json``): returns the
-    full ``CompareResponse`` from the API endpoint.
+    Calls :func:`musehub_analysis.compare_refs` server-side so the template
+    receives a populated ``compare_data`` object with no client fetch required.
 
     Returns 404 when:
     - The repo owner/slug is unknown.
@@ -1625,8 +1736,9 @@ async def compare_page(
             detail="Both base and head refs must be non-empty",
         )
     repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
+    compare_data = await musehub_analysis.compare_refs(db, repo_id, base=base_ref, head=head_ref)
 
-    context = {
+    context: dict[str, object] = {
         "owner": owner,
         "repo_slug": repo_slug,
         "repo_id": repo_id,
@@ -1635,6 +1747,7 @@ async def compare_page(
         "refs": refs,
         "base_url": base_url,
         "current_page": "compare",
+        "compare_data": compare_data,
         "breadcrumb_data": _breadcrumbs(
             (owner, f"/musehub/ui/{owner}"),
             (repo_slug, base_url),
@@ -1642,14 +1755,7 @@ async def compare_page(
             (f"{base_ref}...{head_ref}", ""),
         ),
     }
-    return await negotiate_response(
-        request=request,
-        template_name="musehub/pages/compare.html",
-        context=context,
-        templates=templates,
-        json_data=None,
-        format_param=format,
-    )
+    return templates.TemplateResponse(request, "musehub/pages/analysis/compare.html", context)
 
 
 @router.get(
@@ -1660,26 +1766,30 @@ async def divergence_page(
     request: Request,
     owner: str,
     repo_slug: str,
+    fork_repo_id: str | None = Query(None, description="Fork repo UUID to compare against; omit for self-comparison"),
     db: AsyncSession = Depends(get_db),
 ) -> Response:
-    """Render the divergence visualization: radar chart + dimension detail panels.
+    """Render the divergence visualization — fully SSR.
 
-    Compares two branches across five musical dimensions
-    (melodic/harmonic/rhythmic/structural/dynamic).
+    Calls :func:`musehub_analysis.compute_divergence` server-side so the
+    template receives a populated ``divergence_data`` object containing the
+    overall score and per-dimension breakdown with no client fetch required.
+
+    Optional ``?fork_repo_id=<uuid>`` compares against a specific fork.
+    When omitted the comparison is relative to the repo itself (score=0).
     """
     repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
+    divergence_data = await musehub_analysis.compute_divergence(db, repo_id, fork_repo_id=fork_repo_id)
     ctx: dict[str, object] = {
         "owner": owner,
         "repo_slug": repo_slug,
         "repo_id": repo_id,
         "base_url": base_url,
         "current_page": "analysis",
+        "fork_repo_id": fork_repo_id or "",
+        "divergence_data": divergence_data,
     }
-    return json_or_html(
-        request,
-        lambda: templates.TemplateResponse(request, "musehub/pages/divergence.html", ctx),
-        ctx,
-    )
+    return templates.TemplateResponse(request, "musehub/pages/analysis/divergence.html", ctx)
 
 
 @router.get(
@@ -1926,12 +2036,14 @@ async def contour_page(
     ref: str,
     db: AsyncSession = Depends(get_db),
 ) -> Response:
-    """Render the melodic contour analysis page for a Muse commit ref.
+    """Render the melodic contour analysis page for a Muse commit ref — SSR.
 
-    Visualises per-track melodic shapes, tessitura, and cross-commit contour
-    comparison via a pitch-curve line graph in SVG.
+    Fetches contour data server-side via :func:`~maestro.services.musehub_analysis.compute_dimension`
+    and passes the pitch curve directly to the Jinja2 template so the SVG
+    polyline is rendered server-side without a client-side fetch.
     """
     repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
+    contour_data = musehub_analysis.compute_dimension("contour", ref)
     ctx: dict[str, object] = {
         "owner": owner,
         "repo_slug": repo_slug,
@@ -1939,11 +2051,15 @@ async def contour_page(
         "ref": ref,
         "base_url": base_url,
         "current_page": "analysis",
+        "analysis_dimension": "contour",
+        "contour_data": contour_data,
     }
-    return json_or_html(
+    return await htmx_fragment_or_full(
         request,
-        lambda: templates.TemplateResponse(request, "musehub/pages/contour.html", ctx),
+        templates,
         ctx,
+        full_template="musehub/pages/analysis/contour.html",
+        fragment_template="musehub/fragments/analysis/contour_content.html",
     )
 
 
@@ -1960,9 +2076,11 @@ async def tempo_page(
 ) -> Response:
     """Render the tempo analysis page for a Muse commit ref.
 
-    Displays BPM, time feel, stability, and a timeline of tempo change events.
+    BPM, time feel, stability bar, and tempo-change timeline are all computed
+    server-side and passed to the Jinja2 template — no client-side API fetch required.
     """
     repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
+    tempo_data: DimensionData = musehub_analysis.compute_dimension("tempo", ref)
     ctx: dict[str, object] = {
         "owner": owner,
         "repo_slug": repo_slug,
@@ -1970,11 +2088,15 @@ async def tempo_page(
         "ref": ref,
         "base_url": base_url,
         "current_page": "analysis",
+        "analysis_dimension": "tempo",
+        "tempo_data": tempo_data,
     }
-    return json_or_html(
+    return await htmx_fragment_or_full(
         request,
-        lambda: templates.TemplateResponse(request, "musehub/pages/tempo.html", ctx),
+        templates,
         ctx,
+        full_template="musehub/pages/analysis/tempo.html",
+        fragment_template="musehub/fragments/analysis/tempo_content.html",
     )
 
 
@@ -1989,12 +2111,15 @@ async def dynamics_analysis_page(
     ref: str,
     db: AsyncSession = Depends(get_db),
 ) -> Response:
-    """Render the dynamics analysis page for a Muse commit ref.
+    """Render the dynamics analysis page for a Muse commit ref — SSR.
 
-    Visualises velocity profiles, arc classifications, and per-track loudness
-    so a mixing engineer can spot dynamic imbalances without running the CLI.
+    Fetches per-track dynamics data server-side via
+    :func:`~maestro.services.musehub_analysis.compute_dynamics_page_data`
+    and passes it directly to the Jinja2 template so velocity bars and arc
+    badges are rendered server-side without a client-side fetch.
     """
     repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
+    dynamics_data = musehub_analysis.compute_dynamics_page_data(repo_id=repo_id, ref=ref)
     ctx: dict[str, object] = {
         "owner": owner,
         "repo_slug": repo_slug,
@@ -2002,11 +2127,15 @@ async def dynamics_analysis_page(
         "ref": ref,
         "base_url": base_url,
         "current_page": "analysis",
+        "analysis_dimension": "dynamics",
+        "dynamics_data": dynamics_data,
     }
-    return json_or_html(
+    return await htmx_fragment_or_full(
         request,
-        lambda: templates.TemplateResponse(request, "musehub/pages/dynamics.html", ctx),
+        templates,
         ctx,
+        full_template="musehub/pages/analysis/dynamics.html",
+        fragment_template="musehub/fragments/analysis/dynamics_content.html",
     )
 
 
@@ -2023,11 +2152,13 @@ async def key_analysis_page(
 ) -> Response:
     """Render the key detection analysis page for a Muse commit ref.
 
-    Displays the detected tonic, mode, relative key, confidence bar, and a
-    ranked list of alternate key candidates.  Agents use this to confirm the
-    tonal centre before generating harmonically compatible material.
+    Tonic, mode, confidence bar, relative key, and alternate key candidates are
+    all computed server-side and injected into the Jinja2 template.  Agents use
+    this to confirm the tonal centre before generating harmonically compatible
+    material without needing an authenticated client-side API call.
     """
     repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
+    key_data: DimensionData = musehub_analysis.compute_dimension("key", ref)
     ctx: dict[str, object] = {
         "owner": owner,
         "repo_slug": repo_slug,
@@ -2035,11 +2166,15 @@ async def key_analysis_page(
         "ref": ref,
         "base_url": base_url,
         "current_page": "analysis",
+        "analysis_dimension": "key",
+        "key_data": key_data,
     }
-    return json_or_html(
+    return await htmx_fragment_or_full(
         request,
-        lambda: templates.TemplateResponse(request, "musehub/pages/key.html", ctx),
+        templates,
         ctx,
+        full_template="musehub/pages/analysis/key.html",
+        fragment_template="musehub/fragments/analysis/key_content.html",
     )
 
 
@@ -2056,11 +2191,12 @@ async def meter_analysis_page(
 ) -> Response:
     """Render the metric analysis page for a Muse commit ref.
 
-    Shows the primary time signature, compound/simple classification, a
-    beat-strength profile bar chart, and any irregular-meter sections.
-    Agents use this to generate rhythmically coherent material.
+    Time signature, compound/simple classification, beat-strength profile, and
+    irregular-meter sections are all computed server-side.  Agents use this to
+    generate rhythmically coherent material without an authenticated client call.
     """
     repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
+    meter_data: DimensionData = musehub_analysis.compute_dimension("meter", ref)
     ctx: dict[str, object] = {
         "owner": owner,
         "repo_slug": repo_slug,
@@ -2068,11 +2204,15 @@ async def meter_analysis_page(
         "ref": ref,
         "base_url": base_url,
         "current_page": "analysis",
+        "analysis_dimension": "meter",
+        "meter_data": meter_data,
     }
-    return json_or_html(
+    return await htmx_fragment_or_full(
         request,
-        lambda: templates.TemplateResponse(request, "musehub/pages/meter.html", ctx),
+        templates,
         ctx,
+        full_template="musehub/pages/analysis/meter.html",
+        fragment_template="musehub/fragments/analysis/meter_content.html",
     )
 
 
@@ -2087,13 +2227,15 @@ async def chord_map_analysis_page(
     ref: str,
     db: AsyncSession = Depends(get_db),
 ) -> Response:
-    """Render the chord map analysis page for a Muse commit ref.
+    """Render the chord map analysis page for a Muse commit ref — SSR.
 
-    Lists the full chord progression with beat positions, Roman-numeral
-    harmonic functions, tension scores, and a tension-curve SVG graph.
-    Agents use this to generate harmonically idiomatic accompaniment.
+    Fetches chord progression data server-side via
+    :func:`~maestro.services.musehub_analysis.compute_dimension` and passes it
+    directly to the Jinja2 template so the chord timeline bars are rendered
+    server-side without a client-side fetch.
     """
     repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
+    chord_map_data = musehub_analysis.compute_dimension("chord-map", ref)
     ctx: dict[str, object] = {
         "owner": owner,
         "repo_slug": repo_slug,
@@ -2101,11 +2243,15 @@ async def chord_map_analysis_page(
         "ref": ref,
         "base_url": base_url,
         "current_page": "analysis",
+        "analysis_dimension": "chord-map",
+        "chord_map_data": chord_map_data,
     }
-    return json_or_html(
+    return await htmx_fragment_or_full(
         request,
-        lambda: templates.TemplateResponse(request, "musehub/pages/chord_map.html", ctx),
+        templates,
         ctx,
+        full_template="musehub/pages/analysis/chord_map.html",
+        fragment_template="musehub/fragments/analysis/chord_map_content.html",
     )
 
 
@@ -2122,11 +2268,12 @@ async def groove_analysis_page(
 ) -> Response:
     """Render the rhythmic groove analysis page for a Muse commit ref.
 
-    Displays groove style, BPM, grid resolution, onset deviation, groove
-    score gauge, and a swing-factor bar.  Agents use this to match rhythmic
+    Style, BPM, grid resolution, onset deviation, groove score, and swing
+    factor are all computed server-side.  Agents use this to match rhythmic
     feel when generating continuation material.
     """
     repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
+    groove_data: DimensionData = musehub_analysis.compute_dimension("groove", ref)
     ctx: dict[str, object] = {
         "owner": owner,
         "repo_slug": repo_slug,
@@ -2134,11 +2281,15 @@ async def groove_analysis_page(
         "ref": ref,
         "base_url": base_url,
         "current_page": "analysis",
+        "analysis_dimension": "groove",
+        "groove_data": groove_data,
     }
-    return json_or_html(
+    return await htmx_fragment_or_full(
         request,
-        lambda: templates.TemplateResponse(request, "musehub/pages/groove.html", ctx),
+        templates,
         ctx,
+        full_template="musehub/pages/analysis/groove.html",
+        fragment_template="musehub/fragments/analysis/groove_content.html",
     )
 
 
@@ -2153,13 +2304,15 @@ async def emotion_analysis_page(
     ref: str,
     db: AsyncSession = Depends(get_db),
 ) -> Response:
-    """Render the emotion analysis page for a Muse commit ref.
+    """Render the emotion analysis page for a Muse commit ref — SSR.
 
-    Displays primary emotion label, valence-arousal plot, tension bar, and
-    confidence score.  Agents use this to maintain emotional continuity or
-    introduce deliberate contrast in the next section.
+    Fetches emotion map data server-side via
+    :func:`~maestro.services.musehub_analysis.compute_emotion_map` and passes it
+    directly to the Jinja2 template so the valence/arousal scatter plot and
+    trajectory are rendered server-side without a client-side fetch.
     """
     repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
+    emotion_data = musehub_analysis.compute_emotion_map(repo_id=repo_id, ref=ref)
     ctx: dict[str, object] = {
         "owner": owner,
         "repo_slug": repo_slug,
@@ -2167,11 +2320,15 @@ async def emotion_analysis_page(
         "ref": ref,
         "base_url": base_url,
         "current_page": "analysis",
+        "analysis_dimension": "emotion",
+        "emotion_data": emotion_data,
     }
-    return json_or_html(
+    return await htmx_fragment_or_full(
         request,
-        lambda: templates.TemplateResponse(request, "musehub/pages/emotion.html", ctx),
+        templates,
         ctx,
+        full_template="musehub/pages/analysis/emotion.html",
+        fragment_template="musehub/fragments/analysis/emotion_content.html",
     )
 
 
@@ -2188,11 +2345,12 @@ async def form_analysis_page(
 ) -> Response:
     """Render the formal structure analysis page for a Muse commit ref.
 
-    Shows the detected macro form label (e.g. AABA, verse-chorus), a colour-coded
-    section timeline, and a per-section table with beat ranges and function labels.
-    Agents use this to understand where they are in the compositional arc.
+    Macro form label, colour-coded section timeline, and per-section beat/function
+    table are all computed server-side.  Agents use this to understand where they
+    are in the compositional arc without needing an authenticated client API call.
     """
     repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
+    form_data: DimensionData = musehub_analysis.compute_dimension("form", ref)
     ctx: dict[str, object] = {
         "owner": owner,
         "repo_slug": repo_slug,
@@ -2200,11 +2358,15 @@ async def form_analysis_page(
         "ref": ref,
         "base_url": base_url,
         "current_page": "analysis",
+        "analysis_dimension": "form",
+        "form_data": form_data,
     }
-    return json_or_html(
+    return await htmx_fragment_or_full(
         request,
-        lambda: templates.TemplateResponse(request, "musehub/pages/form.html", ctx),
+        templates,
         ctx,
+        full_template="musehub/pages/analysis/form.html",
+        fragment_template="musehub/fragments/analysis/form_content.html",
     )
 
 
@@ -2913,25 +3075,18 @@ async def piano_roll_page(
 ) -> Response:
     """Render the Canvas-based interactive piano roll for all MIDI tracks at ``ref``.
 
-    The page shell fetches a list of MIDI artifacts at the given ref from the
-    ``GET /api/v1/musehub/repos/{repo_id}/objects`` endpoint, then calls
-    ``GET /api/v1/musehub/repos/{repo_id}/objects/{id}/parse-midi`` for each
-    selected file.  The parsed note data is rendered into a Canvas element via
-    ``piano-roll.js``.
-
-    Features:
-    - Pitch on Y-axis with a piano keyboard strip
-    - Beat grid on X-axis with measure markers
-    - Per-track colour coding (design system palette)
-    - Velocity mapped to rectangle opacity
-    - Zoom controls (horizontal and vertical sliders)
-    - Pan via click-drag
-    - Hover tooltip: pitch name, velocity, beat position, duration
+    Fetches instrument lane metadata server-side so the sidebar is rendered in
+    SSR without requiring a client round-trip.  The Canvas itself and
+    ``piano-roll.js`` remain client-side — MIDI rendering to a canvas is
+    inherently a browser operation.
 
     No JWT required — HTML shell; JS fetches authed data via localStorage token.
     """
     repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
     short_ref = ref[:8] if len(ref) >= 8 else ref
+    instruments = await musehub_repository.get_instruments_for_repo(db, repo_id)
+    piano_roll_data_url = f"/api/v1/musehub/repos/{repo_id}/midi?ref={ref}"
+    instruments_data = [i.model_dump(by_alias=True, mode="json") for i in instruments]
     ctx: dict[str, object] = {
         "owner": owner,
         "repo_slug": repo_slug,
@@ -2941,6 +3096,10 @@ async def piano_roll_page(
         "path": None,
         "base_url": base_url,
         "current_page": "piano-roll",
+        "track": None,
+        "instruments": instruments_data,
+        "track_path": None,
+        "piano_roll_data_url": piano_roll_data_url,
     }
     return json_or_html(
         request,
@@ -2963,17 +3122,22 @@ async def piano_roll_track_page(
 ) -> Response:
     """Render the Canvas-based piano roll scoped to a single MIDI file ``path``.
 
-    Identical to :func:`piano_roll_page` but restricts the view to one specific
-    MIDI artifact identified by its repo-relative path
-    (e.g. ``tracks/bass.mid``).  The ``path`` segment is forwarded to the
-    template as a JavaScript string; the client-side code resolves the
-    matching object ID via the objects list API.
+    Fetches track metadata and instrument lane descriptors server-side so the
+    header and sidebar render without a client round-trip.  The Canvas and
+    ``piano-roll.js`` remain client-side.
 
     Useful for per-track deep-dive links from the tree browser or commit
     detail page.
     """
     repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
     short_ref = ref[:8] if len(ref) >= 8 else ref
+    track = await musehub_repository.get_track_info(db, repo_id, path)
+    instruments = await musehub_repository.get_instruments_for_repo(db, repo_id)
+    piano_roll_data_url = (
+        f"/api/v1/musehub/repos/{repo_id}/midi?ref={ref}&path={path}"
+    )
+    track_data = track.model_dump(by_alias=True, mode="json") if track else None
+    instruments_data = [i.model_dump(by_alias=True, mode="json") for i in instruments]
     ctx: dict[str, object] = {
         "owner": owner,
         "repo_slug": repo_slug,
@@ -2983,6 +3147,10 @@ async def piano_roll_track_page(
         "path": path,
         "base_url": base_url,
         "current_page": "piano-roll",
+        "track": track_data,
+        "instruments": instruments_data,
+        "track_path": path,
+        "piano_roll_data_url": piano_roll_data_url,
     }
     return json_or_html(
         request,
@@ -3003,18 +3171,22 @@ async def blob_page(
     path: str,
     db: AsyncSession = Depends(get_db),
 ) -> Response:
-    """Render the music-aware blob viewer for a single file at a given ref.
+    """Render the music-aware blob viewer with SSR scaffolding.
 
-    Dispatches to the appropriate rendering mode based on file extension:
-    - .mid/.midi → piano roll preview with "View in Piano Roll" quick link
-    - .mp3/.wav/.flac → <audio> player with "Listen" quick link
-    - .json → syntax-highlighted, formatted JSON with collapsible sections
-    - .webp/.png/.jpg → inline <img> display
-    - .xml → syntax-highlighted XML (MusicXML support)
-    - Other → hex dump preview with raw download link
+    Fetches the file object from the database server-side and populates the
+    template with enough context to render the page header, file metadata,
+    and (for text files) the full line-numbered content without JavaScript.
 
-    Metadata shown: filename, size, SHA, commit date.
-    Raw download button links to /{owner}/{repo_slug}/raw/{ref}/{path}.
+    Rendering modes by extension:
+    - .mid/.midi → MIDI player shell with data-midi-url attribute
+    - .mp3/.wav/.flac → client-side audio player (JS required for <audio>)
+    - Text/code files → server-rendered line-numbered table; JS enhances with
+      syntax highlighting progressively
+    - Binary / oversized (>1 MB) → download link only
+
+    If no object exists at ``path`` in the repo a 404 is raised immediately,
+    avoiding the JS "File not found" flash that the previous implementation
+    produced.
 
     Auth: no JWT required for public repos.  Private-repo auth is
     handled client-side via localStorage JWT (consistent with other
@@ -3022,6 +3194,37 @@ async def blob_page(
     """
     repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
     filename = path.split("/")[-1] if path else ""
+
+    obj = await musehub_repository.get_object_by_path(db, repo_id, path)
+
+    lang = _detect_language(path)
+    ext = os.path.splitext(path)[1].lower()
+    is_binary = ext in _BLOB_BINARY_TYPES
+    is_midi = ext in (".mid", ".midi")
+    size_bytes: int = obj.size_bytes if obj is not None else 0
+
+    # Treat files over 1 MB as binary regardless of extension.
+    if size_bytes > 1_000_000:
+        is_binary = True
+
+    # Read text content for small non-binary files so we can SSR line numbers.
+    # Use asyncio.to_thread so the blocking file read does not stall the event loop.
+    content: str | None = None
+    if obj is not None and not is_binary and os.path.exists(obj.disk_path):
+        _disk_path = obj.disk_path
+
+        def _read_file() -> str:
+            with open(_disk_path, encoding="utf-8", errors="replace") as fh:
+                return fh.read()
+
+        try:
+            content = await asyncio.to_thread(_read_file)
+        except OSError:
+            logger.warning("⚠️ blob_page: could not read %s", obj.disk_path)
+
+    lines: list[str] = content.splitlines() if content is not None else []
+    line_count = len(lines)
+
     ctx: dict[str, object] = {
         "owner": owner,
         "repo_slug": repo_slug,
@@ -3031,6 +3234,13 @@ async def blob_page(
         "filename": filename,
         "base_url": base_url,
         "current_page": "tree",
+        "lang": lang,
+        "is_binary": is_binary,
+        "is_midi": is_midi,
+        "size_bytes": size_bytes,
+        "lines": lines,
+        "line_count": line_count,
+        "blob_found": obj is not None,
     }
     return json_or_html(
         request,
@@ -3052,15 +3262,9 @@ async def score_page(
 ) -> Response:
     """Render the sheet music score page for a given commit ref (all tracks).
 
-    Displays all instrument parts as standard music notation rendered via a
-    lightweight SVG renderer.  The page fetches quantized notation JSON from
-    ``GET /api/v1/musehub/repos/{repo_id}/notation/{ref}`` and draws:
-
-    - Staff lines (treble and bass clefs as appropriate)
-    - Key signature and time signature
-    - Note heads, stems, flags, ledger lines
-    - Accidental markers (sharps and flats)
-    - Track/part selector dropdown
+    Fetches score metadata server-side so the header (title, key, meter,
+    instrument count) renders without a client round-trip.  The SVG notation
+    renderer remains client-side — music layout requires DOM measurement.
 
     No JWT is required to render the HTML shell.  Auth is handled client-side
     via localStorage JWT, matching all other UI pages.
@@ -3069,6 +3273,8 @@ async def score_page(
     to one instrument track.
     """
     repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
+    score_meta = await musehub_repository.get_score_meta_for_repo(db, repo_id, "")
+    abc_url = f"/api/v1/musehub/repos/{repo_id}/abc?ref={ref}"
     ctx: dict[str, object] = {
         "owner": owner,
         "repo_slug": repo_slug,
@@ -3077,6 +3283,8 @@ async def score_page(
         "base_url": base_url,
         "path": "",
         "current_page": "score",
+        "score_meta": score_meta.model_dump(by_alias=True, mode="json"),
+        "abc_url": abc_url,
     }
     return json_or_html(
         request,
@@ -3153,13 +3361,15 @@ async def score_part_page(
 ) -> Response:
     """Render the sheet music score page filtered to a single instrument part.
 
-    Identical to ``score/{ref}`` but the ``path`` segment identifies a specific
-    instrument track (e.g. ``piano``, ``bass``, ``guitar``).  The client-side
-    renderer pre-selects that track in the part selector on load.
+    Fetches score metadata server-side using the ``path`` segment as the
+    track title source.  The client-side renderer pre-selects that track
+    in the part selector on load.
 
     No JWT is required to render the HTML shell.
     """
     repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
+    score_meta = await musehub_repository.get_score_meta_for_repo(db, repo_id, path)
+    abc_url = f"/api/v1/musehub/repos/{repo_id}/abc?ref={ref}&path={path}"
     ctx: dict[str, object] = {
         "owner": owner,
         "repo_slug": repo_slug,
@@ -3168,6 +3378,8 @@ async def score_part_page(
         "base_url": base_url,
         "path": path,
         "current_page": "score",
+        "score_meta": score_meta.model_dump(by_alias=True, mode="json"),
+        "abc_url": abc_url,
     }
     return json_or_html(
         request,

@@ -1,0 +1,123 @@
+{#  pages/analysis/emotion.html — SSR emotion analysis page.
+
+    Renders valence/arousal scatter plot and trajectory server-side.
+    No client-side fetch required — all data is passed via ctx.
+
+    Required context variables
+    --------------------------
+    emotion_data : EmotionMapResponse — from compute_emotion_map()
+    ref          : str                — muse commit ref
+    owner        : str                — repo owner handle
+    repo_slug    : str                — repo slug
+    base_url     : str                — repo base URL
+#}
+{% extends "musehub/base.html" %}
+
+{% block title %}Emotion — {{ owner }}/{{ repo_slug }} @ {{ ref[:8] }}{% endblock %}
+
+{% block breadcrumb %}
+  <a href="/musehub/ui/{{ owner }}">{{ owner }}</a> /
+  <a href="{{ base_url }}">{{ repo_slug }}</a> /
+  <a href="{{ base_url }}/analysis/{{ ref }}">analysis</a> /
+  emotion
+{% endblock %}
+
+{% block repo_nav %}{% include "musehub/partials/repo_nav.html" %}{% endblock %}
+
+{% block page_data %}
+const repoId = {{ repo_id | tojson }};
+const ref    = {{ ref | tojson }};
+const base   = {{ base_url | tojson }};
+{% endblock %}
+
+{% block content %}
+<div class="card" style="margin-bottom:var(--space-4)">
+  <h1 style="margin:0 0 var(--space-2) 0">💫 Emotion Analysis</h1>
+  <p style="color:#8b949e;margin:0">Valence · Arousal · Tension · Darkness for
+    <strong>{{ ref[:8] }}</strong></p>
+</div>
+
+<div style="display:grid;grid-template-columns:auto 1fr;gap:var(--space-4);align-items:start" id="emotion-content">
+  {# Valence/Arousal 2D scatter — rendered server-side as SVG #}
+  <div class="card">
+    <h2 style="font-size:14px;margin:0 0 var(--space-3) 0;color:#8b949e">VALENCE · AROUSAL MAP</h2>
+    <svg width="300" height="300"
+         style="display:block;border:1px solid var(--color-border);border-radius:4px;background:#0d1117"
+         role="img" aria-label="Valence-arousal scatter plot">
+      {# Axis lines #}
+      <line x1="150" y1="0" x2="150" y2="300" stroke="var(--color-border)" stroke-width="1"/>
+      <line x1="0" y1="150" x2="300" y2="150" stroke="var(--color-border)" stroke-width="1"/>
+      {# Quadrant labels #}
+      <text x="8"   y="18"  font-size="9" fill="#8b949e" font-family="monospace">Tense/Angry</text>
+      <text x="160" y="18"  font-size="9" fill="#8b949e" font-family="monospace">Happy/Excited</text>
+      <text x="8"   y="296" font-size="9" fill="#8b949e" font-family="monospace">Sad/Bored</text>
+      <text x="160" y="296" font-size="9" fill="#8b949e" font-family="monospace">Calm/Relaxed</text>
+      {# Plot per-beat evolution points #}
+      {% for point in emotion_data.evolution %}
+        {# valence is [0,1] in EmotionVector; map to [10, 290] on x-axis #}
+        {% set cx = (point.vector.valence * 280 + 10) | int %}
+        {# arousal [0,1]: high arousal = top of chart, low = bottom #}
+        {% set cy = ((1 - point.vector.energy) * 280 + 10) | int %}
+        <circle cx="{{ cx }}" cy="{{ cy }}" r="3"
+                fill="var(--color-accent,#1f6feb)"
+                fill-opacity="0.6"/>
+      {% endfor %}
+      {# Summary vector as larger highlighted dot #}
+      {% set sx = (emotion_data.summary_vector.valence * 280 + 10) | int %}
+      {% set sy = ((1 - emotion_data.summary_vector.energy) * 280 + 10) | int %}
+      <circle cx="{{ sx }}" cy="{{ sy }}" r="7"
+              fill="#f85149" fill-opacity="0.9"
+              title="Summary: v={{ emotion_data.summary_vector.valence | round(2) }}, e={{ emotion_data.summary_vector.energy | round(2) }}"/>
+      <circle cx="{{ sx }}" cy="{{ sy }}" r="12"
+              fill="none" stroke="#f85149" stroke-width="1" opacity="0.4"/>
+    </svg>
+    <p style="font-size:11px;color:#8b949e;margin:var(--space-2) 0 0 0">
+      Red dot = summary · Blue = per-beat evolution
+    </p>
+  </div>
+
+  {# Summary vector bars + narrative #}
+  <div>
+    <div class="card" style="margin-bottom:var(--space-3)">
+      <h2 style="font-size:14px;margin:0 0 var(--space-3) 0;color:#8b949e">SUMMARY VECTOR</h2>
+      {% set axes = [
+        ("Energy",   emotion_data.summary_vector.energy,   "#3fb950"),
+        ("Valence",  emotion_data.summary_vector.valence,  "#58a6ff"),
+        ("Tension",  emotion_data.summary_vector.tension,  "#f85149"),
+        ("Darkness", emotion_data.summary_vector.darkness, "#bc8cff"),
+      ] %}
+      {% for label, val, color in axes %}
+        {% set pct = (val * 100) | round | int %}
+        <div style="margin-bottom:var(--space-3)">
+          <div style="display:flex;justify-content:space-between;margin-bottom:4px">
+            <span class="meta-label">{{ label }}</span>
+            <span style="font-size:13px;color:{{ color }};font-weight:600">{{ pct }}%</span>
+          </div>
+          <div style="height:8px;background:#21262d;border-radius:4px;overflow:hidden">
+            <div style="height:100%;width:{{ pct }}%;background:{{ color }};border-radius:4px"></div>
+          </div>
+        </div>
+      {% endfor %}
+    </div>
+
+    <div class="card" style="margin-bottom:var(--space-3)">
+      <h2 style="font-size:14px;margin:0 0 var(--space-2) 0;color:#8b949e">NARRATIVE</h2>
+      <p style="font-size:14px;line-height:1.6;margin:0">{{ emotion_data.narrative }}</p>
+    </div>
+
+    <div class="card">
+      <h2 style="font-size:14px;margin:0 0 var(--space-3) 0;color:#8b949e">TRAJECTORY</h2>
+      {% for snap in emotion_data.trajectory %}
+        <div style="display:flex;align-items:center;gap:var(--space-2);margin-bottom:var(--space-2)">
+          <code style="font-size:11px;color:#8b949e">{{ snap.commit_id[:8] }}</code>
+          <span style="font-size:13px">{{ snap.primary_emotion }}</span>
+          {% set e_pct = (snap.vector.energy * 100) | round | int %}
+          <div style="flex:1;height:4px;background:#21262d;border-radius:2px">
+            <div style="height:100%;width:{{ e_pct }}%;background:#3fb950;border-radius:2px"></div>
+          </div>
+        </div>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,77 @@
+{# Meter analysis content fragment — server-side rendered, reused for full page and HTMX swaps. #}
+{% set meter_color = '#bc8cff' if meter_data.is_compound else '#3fb950' %}
+
+<div style="margin-bottom:12px">
+  <a href="{{ base_url }}/analysis/{{ ref }}">&larr; Back to analysis</a>
+</div>
+
+<div class="card">
+  <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:20px">
+    <h1 style="margin:0">🥁 Meter Analysis</h1>
+    <code style="font-size:13px;background:#0d1117;padding:2px 8px;border-radius:4px;color:#8b949e">
+      ref: {{ ref[:8] }}
+    </code>
+  </div>
+
+  <div class="meta-row" style="margin-bottom:20px">
+    <div class="meta-item">
+      <span class="meta-label">Time Signature</span>
+      <span class="meta-value" style="font-size:28px;font-weight:700;font-family:monospace;color:#58a6ff">
+        {{ meter_data.time_signature }}
+      </span>
+    </div>
+    <div class="meta-item">
+      <span class="meta-label">Meter Type</span>
+      <span class="meta-value">
+        <span class="badge" style="
+          background:{{ meter_color }}22;
+          color:{{ meter_color }};
+          border:1px solid {{ meter_color }}44;
+          font-size:13px;
+          padding:3px 8px;border-radius:4px">
+          {{ 'compound' if meter_data.is_compound else 'simple' }}
+        </span>
+      </span>
+    </div>
+  </div>
+
+  {# Beat strength profile as inline SVG #}
+  <div style="background:#0d1117;border:1px solid #30363d;border-radius:6px;padding:12px;margin-bottom:16px">
+    <span class="meta-label" style="display:block;margin-bottom:8px">Beat Strength Profile</span>
+    {% if meter_data.beat_strength_profile %}
+      {% set max_strength = meter_data.beat_strength_profile | max %}
+      <div style="display:flex;gap:4px;align-items:flex-end;height:64px">
+        {% for strength in meter_data.beat_strength_profile %}
+        {% set height_pct = ((strength / max_strength) * 100) | round | int if max_strength > 0 else 0 %}
+        {% set bar_color = '#58a6ff' if loop.first else '#30363d' %}
+        <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:2px">
+          <div style="width:100%;height:{{ height_pct }}%;background:{{ bar_color }};border-radius:2px 2px 0 0;min-height:4px"></div>
+          <span style="font-size:9px;color:#8b949e">{{ loop.index }}</span>
+        </div>
+        {% endfor %}
+      </div>
+      <p style="font-size:11px;color:#8b949e;margin:6px 0 0">
+        Beat 1 (blue) is always the strongest downbeat.
+      </p>
+    {% else %}
+      <p style="font-size:13px;color:#8b949e;margin:0">No beat profile data available.</p>
+    {% endif %}
+  </div>
+
+  {# Irregular sections #}
+  {% if meter_data.irregular_sections %}
+  <div style="background:#0d1117;border:1px solid #30363d;border-radius:6px;padding:14px">
+    <span class="meta-label" style="display:block;margin-bottom:4px">Irregular Sections</span>
+    {% for sec in meter_data.irregular_sections %}
+    <div style="display:flex;align-items:center;gap:12px;padding:6px 0;border-top:1px solid #21262d;font-size:13px">
+      <span style="font-family:monospace;color:#ffa657;min-width:48px">{{ sec.time_signature }}</span>
+      <span style="color:#8b949e">beats {{ sec.start_beat }} &ndash; {{ sec.end_beat }}</span>
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div style="background:#0d1117;border:1px solid #30363d;border-radius:6px;padding:12px;color:#8b949e;font-size:13px">
+    No irregular meter sections detected.
+  </div>
+  {% endif %}
+</div>

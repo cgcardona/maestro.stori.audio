@@ -37,6 +37,7 @@ from maestro.models.musehub import (
     DagEdge,
     DagGraphResponse,
     DagNode,
+    InstrumentInfo,
     MuseHubContextCommitInfo,
     MuseHubContextHistoryEntry,
     MuseHubContextMusicalState,
@@ -46,11 +47,13 @@ from maestro.models.musehub import (
     RepoResponse,
     RepoSettingsPatch,
     RepoSettingsResponse,
+    ScoreMetaInfo,
     TimelineCommitEvent,
     TimelineEmotionEvent,
     TimelineResponse,
     TimelineSectionEvent,
     TimelineTrackEvent,
+    TrackInfo,
     TreeEntryResponse,
     TreeListResponse,
     ForkNetworkNode,
@@ -526,6 +529,114 @@ async def get_object_by_path(
         .limit(1)
     )
     return (await session.execute(stmt)).scalars().first()
+
+
+def _instrument_name_from_path(path: str) -> str:
+    """Derive a human-readable instrument name from a MIDI object path.
+
+    Strips directory components and the file extension, then title-cases
+    the result.  ``tracks/bass.mid`` → ``"Bass"``.  Falls back to the
+    bare filename when the stem is empty.
+    """
+    stem = path.split("/")[-1].rsplit(".", 1)[0]
+    return stem.title() or path
+
+
+async def get_track_info(
+    session: AsyncSession,
+    repo_id: str,
+    path: str,
+) -> TrackInfo | None:
+    """Return SSR metadata for a single MIDI track identified by path.
+
+    Fetches the most-recently-created object matching ``path`` and converts
+    its DB metadata to a :class:`TrackInfo` suitable for template rendering.
+    ``duration_sec`` and ``track_count`` are left as ``None`` because MIDI
+    parsing is client-side only in the current architecture.
+
+    Returns ``None`` when no object with that path exists.
+    """
+    obj = await get_object_by_path(session, repo_id, path)
+    if obj is None:
+        return None
+    return TrackInfo(
+        name=_instrument_name_from_path(obj.path),
+        size_bytes=obj.size_bytes,
+        duration_sec=None,
+        track_count=None,
+    )
+
+
+async def get_instruments_for_repo(
+    session: AsyncSession,
+    repo_id: str,
+) -> list[InstrumentInfo]:
+    """Return a list of instrument lane descriptors for a repo.
+
+    Scans all MIDI objects (``*.mid`` / ``*.midi``) in the repo and derives
+    :class:`InstrumentInfo` from their stored path.  The ``channel`` field
+    is the zero-based render order (objects sorted by path for consistency).
+    ``gm_program`` is ``None`` because GM resolution requires MIDI parsing
+    which is handled client-side.
+
+    Returns an empty list when the repo has no MIDI objects.
+    """
+    stmt = (
+        select(db.MusehubObject)
+        .where(
+            db.MusehubObject.repo_id == repo_id,
+            or_(
+                db.MusehubObject.path.like("%.mid"),
+                db.MusehubObject.path.like("%.midi"),
+            ),
+        )
+        .order_by(db.MusehubObject.path)
+    )
+    rows = (await session.execute(stmt)).scalars().all()
+    return [
+        InstrumentInfo(
+            name=_instrument_name_from_path(row.path),
+            channel=idx,
+            gm_program=None,
+        )
+        for idx, row in enumerate(rows)
+    ]
+
+
+async def get_score_meta_for_repo(
+    session: AsyncSession,
+    repo_id: str,
+    path: str,
+) -> ScoreMetaInfo:
+    """Return SSR metadata for the score page header.
+
+    Derives the score title from the requested path; all musical fields
+    (``key``, ``meter``, ``composer``, ``instrument_count``) are ``None``
+    until server-side MIDI/ABC parsing is implemented.  The score page
+    template renders these fields conditionally.
+
+    Always returns a :class:`ScoreMetaInfo` — even for unknown paths — so
+    the template can render a valid (if sparse) header.
+    """
+    title = _instrument_name_from_path(path) if path else "Score"
+    stmt = (
+        select(func.count())
+        .where(
+            db.MusehubObject.repo_id == repo_id,
+            or_(
+                db.MusehubObject.path.like("%.mid"),
+                db.MusehubObject.path.like("%.midi"),
+            ),
+        )
+    )
+    midi_count: int = (await session.execute(stmt)).scalar_one()
+    return ScoreMetaInfo(
+        title=title,
+        composer=None,
+        key=None,
+        meter=None,
+        instrument_count=midi_count if midi_count > 0 else None,
+    )
 
 
 async def list_commits(
