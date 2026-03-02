@@ -1,0 +1,48 @@
+{#  fragments/activity_rows.html — bare HTMX fragment: activity event rows + pagination.
+
+    This template is intentionally minimal — no <html>, <head>, or nav.
+    It is rendered in two contexts:
+
+    1. Full-page load: included inline by musehub/pages/activity.html inside
+       the ``<div id="activity-rows">`` target container.
+
+    2. HTMX partial swap: returned directly when the handler detects
+       ``HX-Request: true``, replacing only the ``#activity-rows`` container.
+
+    Required context variables
+    --------------------------
+    events       : list[ActivityEventResponse]  — current page of activity events
+    page         : int                          — current 1-based page number
+    total_pages  : int                          — total number of pages
+    base_url     : str                          — repo base URL, e.g. /musehub/ui/owner/slug
+    event_type   : str                          — active event_type filter ('' if none)
+#}
+{% from "musehub/macros/pagination.html" import pagination %}
+{% from "musehub/macros/empty_state.html" import empty_state %}
+
+{% if events %}
+  {% for event in events %}
+  <div class="activity-row" id="event-{{ event.event_id }}">
+    <div class="activity-body">
+      <div class="activity-description">{{ event.description }}</div>
+      <div class="activity-meta">
+        <a href="/musehub/ui/users/{{ event.actor | urlencode }}"
+           class="activity-actor">{{ event.actor }}</a>
+        &bull;
+        <span class="activity-type-badge">{{ event.event_type | replace('_', ' ') | title }}</span>
+        &bull;
+        <span class="text-muted" title="{{ event.created_at }}">{{ event.created_at | fmtrelative }}</span>
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+
+  {{ pagination(page, total_pages, base_url ~ '/activity',
+               extra_params={'event_type': event_type}) }}
+{% else %}
+  {{ empty_state(
+      "📅",
+      "No activity",
+      "Repository events will appear here when commits are pushed, PRs opened, issues created, and more.",
+  ) }}
+{% endif %}
