@@ -31,10 +31,10 @@
   --border: var(--border-default);
 
   /* Text */
-  --text-primary:   #e0ecff;
-  --text-secondary: #8ca8cc;
-  --text-muted:     #4a6482;
-  --text-faint:     #283d55;
+  --text-primary:   #eef5ff;
+  --text-secondary: #a8c4e0;
+  --text-muted:     #6a8aaa;
+  --text-faint:     #3a5570;
 
   /* Accent — Electric Violet */
   --accent:              #8b5cf6;
@@ -108,7 +108,7 @@ html, body {
   background: var(--bg-void);
   color: var(--text-primary);
   font-family: var(--font-sans);
-  font-size: 14px;
+  font-size: 15px;
   line-height: 1.55;
   min-height: 100vh;
   -webkit-font-smoothing: antialiased;
