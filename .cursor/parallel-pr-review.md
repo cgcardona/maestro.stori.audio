@@ -956,6 +956,10 @@ STEP 6 — PRE-MERGE SYNC (only if grade is A or B):
 
   Output "Approved for merge" and then run these in order:
 
+  # ⚠️  NEVER run `gh pr review --approve`. GitHub forbids approving your own PR
+  #    (the agent authenticates as the repo owner who also authored the PR).
+  #    The merge itself IS the approval signal — skip the review step entirely.
+
   # 5. Squash merge — this is the ONLY valid merge strategy here.
   #    NEVER use --auto (requires branch protection rules we don't have).
   #    NEVER use --merge (wrong strategy, creates a merge commit on dev).
