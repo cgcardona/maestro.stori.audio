@@ -18,7 +18,11 @@ import logging
 from fastapi import APIRouter, HTTPException
 
 from agentception.intelligence.dag import DependencyDAG, build_dag
+from agentception.intelligence.scaling import ScalingRecommendation, compute_recommendation
+from agentception.poller import get_state
+from agentception.models import PipelineState
 from agentception.readers.github import clear_wip_label
+from agentception.telemetry import aggregate_waves
 
 logger = logging.getLogger(__name__)
 
@@ -85,3 +89,35 @@ async def clear_stale_claim(issue_number: int) -> dict[str, int]:
 
     logger.info("✅ Cleared stale claim: removed agent:wip from issue #%d", issue_number)
     return {"cleared": issue_number}
+
+
+@router.get("/scaling-advice", tags=["intelligence"])
+async def scaling_advice_api() -> ScalingRecommendation:
+    """Return a scaling recommendation based on current pipeline state and wave history.
+
+    Evaluates queue depth (open issues), PR backlog (open PRs), and mean wave
+    duration to produce an actionable recommendation.  Uses the current
+    ``PipelineState`` snapshot from the poller and historical wave data from
+    the telemetry layer — no GitHub API calls are made during this request.
+
+    Returns
+    -------
+    ScalingRecommendation
+        The recommended action (``increase_qa_vps``, ``increase_pool``, or
+        ``no_change``) along with rationale and confidence level.
+
+    Raises
+    ------
+    HTTP 500
+        When wave aggregation or config reads fail unexpectedly.
+    """
+    try:
+        state = get_state() or PipelineState.empty()
+        waves = await aggregate_waves()
+        return await compute_recommendation(state, waves)
+    except Exception as exc:
+        logger.error("❌ Failed to compute scaling recommendation: %s", exc)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to compute scaling recommendation: {exc}",
+        ) from exc
