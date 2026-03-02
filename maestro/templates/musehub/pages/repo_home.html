@@ -1,4 +1,7 @@
 {% extends "musehub/base.html" %}
+{% from "musehub/macros/commit.html" import commit_row %}
+{% from "musehub/macros/empty_state.html" import empty_state %}
+
 {% block jsonld %}{% if jsonld_script %}{{ jsonld_script | safe }}{% endif %}{% endblock %}
 {% block title %}{{ owner }}/{{ repo_slug }}{% endblock %}
 {% block breadcrumb %}<a href="/musehub/ui/{{ owner }}">{{ owner }}</a> / <a href="{{ base_url }}">{{ repo_slug }}</a>{% endblock %}
@@ -9,910 +12,233 @@
 
 {% block container_extra_class %}-wide{% endblock %}
 
-{% block page_data %}
-const repoId   = {{ repo_id | tojson }};
-const owner    = {{ owner | tojson }};
-const repoSlug = {{ repo_slug | tojson }};
-const base     = {{ base_url | tojson }};
-const apiBase  = '/api/v1/musehub/repos/' + repoId;
-const CLONE_MUSEHUB = {{ clone_url_musehub | tojson }};
-const CLONE_SSH     = {{ clone_url_ssh | tojson }};
-const CLONE_HTTPS   = {{ clone_url_https | tojson }};
-{% endblock %}
+{% block content %}
+<div style="display:grid;grid-template-columns:1fr 260px;gap:var(--space-4);align-items:start">
 
-{% block page_script %}
-{% raw %}
+  {# ── Main column ── #}
+  <main>
 
-/* ═══════════════════════════════════════════════════════
- * Helpers
- * ═══════════════════════════════════════════════════════ */
+    {# Hero: repo name, visibility, description #}
+    <div class="hero-header" style="margin-bottom:var(--space-3)">
+      <div>
+        <h1 class="hero-title">
+          <a href="/musehub/ui/{{ owner }}" class="text-muted" style="font-weight:400">{{ owner }}</a>
+          <span style="color:var(--color-text-muted)"> / </span>
+          {{ repo_slug }}
+          {% if repo.visibility == 'public' %}
+            <span class="badge badge-active" style="font-size:11px">&#127758; Public</span>
+          {% else %}
+            <span class="badge badge-inactive" style="font-size:11px">&#128274; Private</span>
+          {% endif %}
+        </h1>
+        {% if repo.description %}
+        <p class="hero-description">{{ repo.description }}</p>
+        {% else %}
+        <p class="hero-description text-muted" style="font-style:italic">No description yet.</p>
+        {% endif %}
+        <div style="display:flex;flex-wrap:wrap;gap:var(--space-1);margin-top:var(--space-2)">
+          {% if repo.key_signature %}
+          <span class="nav-meta-pill">&#9837; {{ repo.key_signature }}</span>
+          {% endif %}
+          {% if repo.tempo_bpm %}
+          <span class="nav-meta-pill">&#9834; {{ repo.tempo_bpm }} BPM</span>
+          {% endif %}
+          {% for tag in repo.tags %}
+          <a href="/musehub/ui/topics/{{ tag }}" class="nav-meta-tag">{{ tag }}</a>
+          {% endfor %}
+        </div>
+      </div>
+      <div class="hero-actions">
+        <a href="{{ base_url }}/sessions" class="btn btn-secondary btn-sm">&#128308; Sessions</a>
+        <a href="{{ base_url }}/insights" class="btn btn-secondary btn-sm">&#128200; Insights</a>
+      </div>
+    </div>
 
-function visibilityBadge(v) {
-  const label = v === 'public' ? '&#127758; Public' : '&#128274; Private';
-  const cls   = v === 'public' ? 'badge-active' : 'badge-inactive';
-  return `<span class="badge ${cls}" style="font-size:11px">${label}</span>`;
-}
+    {# Branch picker + quick stats bar #}
+    <div style="display:flex;align-items:center;gap:var(--space-2);margin-bottom:var(--space-3);flex-wrap:wrap">
+      <form method="get"
+            hx-get="{{ base_url }}"
+            hx-target="#file-tree"
+            hx-push-url="true"
+            style="display:inline">
+        <select name="ref" class="filter-select" onchange="this.form.requestSubmit()">
+          {% for branch in branches %}
+          <option value="{{ branch.name }}"
+                  {% if branch.name == ref %}selected{% endif %}>
+            &#127807; {{ branch.name }}
+          </option>
+          {% endfor %}
+          {% if not branches %}
+          <option value="HEAD" selected>HEAD</option>
+          {% endif %}
+        </select>
+      </form>
+      <a href="{{ base_url }}/commits" style="font-size:12px;color:#8b949e">
+        {{ commits | length }} recent commit{{ 's' if commits | length != 1 else '' }}
+      </a>
+      <span style="font-size:12px;color:#8b949e">
+        {{ branches | length }} branch{{ 'es' if branches | length != 1 else '' }}
+      </span>
+      <span style="font-size:12px;color:#8b949e">
+        {{ tags_count }} tag{{ 's' if tags_count != 1 else '' }}
+      </span>
+    </div>
 
-/* ═══════════════════════════════════════════════════════
- * Hero section — name, owner, visibility, description
- * ═══════════════════════════════════════════════════════ */
-async function loadHero() {
-  try {
-    const repo = await apiFetch('/repos/' + repoId);
-    const el   = document.getElementById('repo-hero');
-    if (!el) return;
+    {# File tree — HTMX target for branch switching #}
+    <div class="card" style="margin-bottom:var(--space-3)">
+      <div id="file-tree">
+        {% include "musehub/fragments/file_tree.html" %}
+      </div>
+    </div>
 
-    const keyPill = repo.keySignature
-      ? `<span class="nav-meta-pill">&#9837; ${escHtml(repo.keySignature)}</span>` : '';
-    const bpmPill = repo.tempoBpm
-      ? `<span class="nav-meta-pill">&#9834; ${repo.tempoBpm} BPM</span>` : '';
-    const tagHtml = (repo.tags || [])
-      .map(t => `<span class="nav-meta-tag">${escHtml(t)}</span>`).join('');
-
-    const descHtml = repo.description
-      ? `<p class="hero-description">${escHtml(repo.description)}</p>`
-      : `<p class="hero-description text-muted" style="font-style:italic">No description yet.</p>`;
-
-    el.innerHTML = `
-      <div class="hero-header">
+    {# Clone widget #}
+    <div class="card" style="margin-bottom:var(--space-3)">
+      <p class="sidebar-section-title" style="margin-bottom:var(--space-2)">Clone</p>
+      <div class="clone-row">
         <div>
-          <h1 class="hero-title">
-            <a href="/musehub/ui/${escHtml(repo.owner)}" class="text-muted" style="font-weight:400">${escHtml(repo.owner)}</a>
-            <span style="color:var(--color-text-muted)"> / </span>
-            ${escHtml(repo.name)}
-            ${visibilityBadge(repo.visibility)}
-          </h1>
-          ${descHtml}
-          <div style="display:flex;flex-wrap:wrap;gap:var(--space-1);margin-top:var(--space-2)">
-            ${keyPill}${bpmPill}${tagHtml}
+          <p class="clone-label">MuseHub</p>
+          <div class="clone-input-wrap">
+            <input type="text" class="clone-input" readonly value="{{ clone_url_musehub }}">
+            <button class="btn btn-secondary btn-sm clone-copy-btn"
+                    onclick="navigator.clipboard.writeText('{{ clone_url_musehub }}')">Copy</button>
           </div>
         </div>
-        <div class="hero-actions">
-          <a href="${base}/sessions" class="btn btn-secondary btn-sm">&#128308; Sessions</a>
-          <a href="${base}/insights" class="btn btn-secondary btn-sm">&#128200; Insights</a>
-        </div>
-      </div>
-    `;
-  } catch(e) { /* non-critical */ }
-}
-
-/* ═══════════════════════════════════════════════════════
- * Star / Fork — social interaction buttons
- * ═══════════════════════════════════════════════════════ */
-async function loadStarFork() {
-  const el = document.getElementById('star-fork-bar');
-  if (!el) return;
-  try {
-    const [gazers, forks] = await Promise.all([
-      apiFetch('/repos/' + repoId + '/stargazers').catch(() => ({ total: 0 })),
-      apiFetch('/repos/' + repoId + '/forks').catch(() => []),
-    ]);
-    const starCount = gazers.total ?? 0;
-    const forkCount = Array.isArray(forks) ? forks.length : (forks.total ?? 0);
-
-    el.innerHTML = `
-      <div style="display:flex;gap:var(--space-2);align-items:center;flex-wrap:wrap">
-        <button id="star-btn" class="btn btn-secondary btn-sm" onclick="handleStar()">
-          &#11088; Star <span id="star-count" class="badge badge-neutral" style="margin-left:4px">${starCount}</span>
-        </button>
-        <button class="btn btn-secondary btn-sm" onclick="handleFork()">
-          &#x1F374; Fork <span class="badge badge-neutral" style="margin-left:4px">${forkCount}</span>
-        </button>
-        <a href="${base}/forks" class="text-sm text-muted" style="margin-left:var(--space-1)">${forkCount} fork${forkCount !== 1 ? 's' : ''}</a>
-      </div>`;
-  } catch(e) { /* non-critical */ }
-}
-
-async function handleStar() {
-  try {
-    const data = await apiFetch('/repos/' + repoId + '/star', { method: 'POST' });
-    const btn   = document.getElementById('star-btn');
-    const count = document.getElementById('star-count');
-    if (btn)   btn.innerHTML = (data.starred ? '&#11088; Unstar' : '&#11088; Star') + ` <span id="star-count" class="badge badge-neutral" style="margin-left:4px">${data.starCount}</span>`;
-    if (count) count.textContent = data.starCount;
-  } catch(e) { alert('Sign in to star repos'); }
-}
-
-async function handleFork() {
-  if (!confirm('Fork this repo into your namespace?')) return;
-  try {
-    const data = await apiFetch('/repos/' + repoId + '/fork', { method: 'POST' });
-    const newUrl = `/musehub/ui/${encodeURIComponent(data.fork_owner)}/${encodeURIComponent(data.fork_slug)}`;
-    window.location.href = newUrl;
-  } catch(e) { alert('Failed to fork: ' + (e.message || 'unknown error')); }
-}
-
-
-/* ═══════════════════════════════════════════════════════
- * Stats bar — commit count, branch count, release count
- * ═══════════════════════════════════════════════════════ */
-async function loadStats() {
-  try {
-    const data = await apiFetch('/repos/' + repoId + '/stats');
-    const el   = document.getElementById('stats-bar');
-    if (!el) return;
-
-    el.innerHTML = `
-      <div class="stats-bar">
-        <a href="${base}/commits" class="stats-pill">
-          <span class="stats-icon">&#128260;</span>
-          <strong id="stat-commits">${data.commitCount ?? 0}</strong>
-          <span class="text-muted">commit${data.commitCount !== 1 ? 's' : ''}</span>
-        </a>
-        <a href="${base}/graph" class="stats-pill">
-          <span class="stats-icon">&#127760;</span>
-          <strong id="stat-branches">${data.branchCount ?? 0}</strong>
-          <span class="text-muted">branch${data.branchCount !== 1 ? 'es' : ''}</span>
-        </a>
-        <a href="${base}/releases" class="stats-pill">
-          <span class="stats-icon">&#127991;</span>
-          <strong id="stat-releases">${data.releaseCount ?? 0}</strong>
-          <span class="text-muted">release${data.releaseCount !== 1 ? 's' : ''}</span>
-        </a>
-      </div>
-    `;
-  } catch(e) {
-    const el = document.getElementById('stats-bar');
-    if (el) el.innerHTML = '';
-  }
-}
-
-/* ═══════════════════════════════════════════════════════
- * Audio player — latest render from the most recent commit
- * ═══════════════════════════════════════════════════════ */
-async function loadAudioPlayer() {
-  try {
-    const commitData = await apiFetch('/repos/' + repoId + '/commits?limit=1');
-    const commits    = commitData.commits || [];
-    if (!commits.length) return;
-
-    const latest  = commits[0];
-    const objData = await apiFetch(
-      '/repos/' + repoId + '/objects?ref=' + encodeURIComponent(latest.commitId)
-    );
-    const objects = objData.objects || [];
-    const audio   = objects.find(o => {
-      const p = (o.path || '').toLowerCase();
-      return p.endsWith('.mp3') || p.endsWith('.ogg') || p.endsWith('.wav');
-    });
-
-    const el = document.getElementById('audio-player-section');
-    if (!el) return;
-
-    if (!audio) {
-      el.innerHTML = `
-        <div class="card" style="padding:var(--space-4);text-align:center;color:var(--color-text-muted)">
-          &#127925; No audio render found in the latest commit.
-          <a href="${base}/sessions" style="margin-left:var(--space-2)">Start a session &rarr;</a>
-        </div>`;
-      return;
-    }
-
-    const audioUrl = '/api/v1/musehub/repos/' + repoId + '/objects/' + encodeURIComponent(audio.objectId);
-    const shortRef = (latest.commitId || '').substring(0, 8);
-
-    el.innerHTML = `
-      <div class="card" id="audio-player-card">
-        <div style="display:flex;align-items:center;gap:var(--space-3);margin-bottom:var(--space-3)">
-          <span style="font-size:24px">&#127911;</span>
-          <div>
-            <div class="text-sm text-muted">Latest render</div>
-            <div style="font-weight:600">${escHtml(owner)}/${escHtml(repoSlug)}</div>
-            <div class="text-xs text-muted">
-              commit <a href="${base}/commits/${latest.commitId}" class="text-mono">${shortRef}</a>
-              &middot; ${fmtRelative(latest.timestamp)}
-            </div>
+        <div>
+          <p class="clone-label">HTTPS</p>
+          <div class="clone-input-wrap">
+            <input type="text" class="clone-input" readonly value="{{ clone_url_https }}">
+            <button class="btn btn-secondary btn-sm clone-copy-btn"
+                    onclick="navigator.clipboard.writeText('{{ clone_url_https }}')">Copy</button>
           </div>
         </div>
-        <audio controls style="width:100%;border-radius:var(--radius-base)" preload="metadata">
-          <source src="${audioUrl}" type="audio/mpeg">
-          Your browser does not support the audio element.
-        </audio>
-      </div>
-    `;
-  } catch(e) { /* non-critical — audio player is optional */ }
-}
-
-/* ═══════════════════════════════════════════════════════
- * Arrangement matrix — grid of tracks × sections
- * ═══════════════════════════════════════════════════════ */
-async function loadArrangementMatrix() {
-  const el = document.getElementById('arrangement-matrix');
-  if (!el) return;
-
-  try {
-    const commitData = await apiFetch('/repos/' + repoId + '/commits?limit=1');
-    const commits    = commitData.commits || [];
-    if (!commits.length) {
-      el.innerHTML = `<div class="matrix-placeholder">&#9781; No commits yet — push a session to see the arrangement.</div>`;
-      return;
-    }
-
-    const latest  = commits[0];
-    const objData = await apiFetch(
-      '/repos/' + repoId + '/objects?ref=' + encodeURIComponent(latest.commitId)
-    );
-    const objects = objData.objects || [];
-
-    /* Group by role (track) — each object is a section within a track */
-    const trackMap = {};
-    objects.forEach(o => {
-      const role = o.role || o.track || 'other';
-      if (!trackMap[role]) trackMap[role] = [];
-      trackMap[role].push(o);
-    });
-
-    const tracks  = Object.keys(trackMap).sort();
-    if (!tracks.length) {
-      el.innerHTML = `<div class="matrix-placeholder">&#9781; Arrangement data will appear here after your first commit.</div>`;
-      return;
-    }
-
-    const PALETTE = ['#f778ba','#a97bff','#e8d44d','#58a6ff','#3fb950','#f0883e','#ff7b72','#79c0ff'];
-    const colorFor = (name, i) => PALETTE[i % PALETTE.length];
-
-    const headerCells = tracks.map((t, i) => {
-      const color = colorFor(t, i);
-      return `<th class="matrix-th" style="color:${color}" title="${escHtml(t)}">${escHtml(t.substring(0, 8))}</th>`;
-    }).join('');
-
-    const row = '<tr>' + tracks.map((t, i) => {
-      const count = trackMap[t].length;
-      const color = colorFor(t, i);
-      const cells = Array.from({ length: count }, () =>
-        `<td class="matrix-cell" style="background:${color}22;border-color:${color}44" title="${escHtml(t)}"></td>`
-      ).join('');
-      return cells;
-    }).join('') + '</tr>';
-
-    el.innerHTML = `
-      <div class="card" style="overflow-x:auto">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:var(--space-3)">
-          <h3 style="margin:0">&#9781; Arrangement</h3>
-          <a href="${base}/analysis/HEAD" class="text-xs text-muted">Full analysis &rarr;</a>
-        </div>
-        <table class="matrix-table">
-          <thead><tr>${headerCells}</tr></thead>
-          <tbody>${row}</tbody>
-        </table>
-        <div class="text-xs text-muted" style="margin-top:var(--space-2)">
-          ${tracks.length} track${tracks.length !== 1 ? 's' : ''} &middot;
-          commit <a href="${base}/commits/${latest.commitId}" class="text-mono">${(latest.commitId || '').substring(0, 8)}</a>
+        <div>
+          <p class="clone-label">SSH</p>
+          <div class="clone-input-wrap">
+            <input type="text" class="clone-input" readonly value="{{ clone_url_ssh }}">
+            <button class="btn btn-secondary btn-sm clone-copy-btn"
+                    onclick="navigator.clipboard.writeText('{{ clone_url_ssh }}')">Copy</button>
+          </div>
         </div>
       </div>
-    `;
-  } catch(e) {
-    el.innerHTML = `<div class="matrix-placeholder">&#9781; Arrangement data will appear here after your first commit.</div>`;
-  }
-}
-
-/* ═══════════════════════════════════════════════════════
- * Recent commits — last 5
- * ═══════════════════════════════════════════════════════ */
-async function loadRecentCommits() {
-  try {
-    const data    = await apiFetch('/repos/' + repoId + '/commits?limit=5');
-    const commits = data.commits || [];
-    const el      = document.getElementById('recent-commits');
-    if (!el) return;
-
-    if (!commits.length) {
-      el.innerHTML = `
-        <div class="empty-state">
-          <div class="empty-icon">&#127925;</div>
-          <p class="empty-title">No commits yet</p>
-          <p class="empty-desc">Push your first session to get started.</p>
-        </div>`;
-      return;
-    }
-
-    const rows = commits.map(c => {
-      const parsed = parseCommitMessage(c.message);
-      const typeBadge  = commitTypeBadge(parsed.type);
-      const scopeBadge = commitScopeBadge(parsed.scope);
-      const shortSha_  = (c.commitId || '').substring(0, 7);
-      const hue = [...(c.author || '')].reduce((h, ch) => (h * 31 + ch.charCodeAt(0)) % 360, 0);
-      const color = `hsl(${hue}, 50%, 38%)`;
-      const initials = (c.author || '?').slice(0, 2).toUpperCase();
-      return `
-        <div class="commit-row">
-          <a class="commit-sha text-mono" href="${base}/commits/${c.commitId}">${shortSha_}</a>
-          <span class="commit-msg">
-            <a href="${base}/commits/${c.commitId}">
-              ${typeBadge}${scopeBadge}${escHtml(parsed.subject || c.message)}
-            </a>
-          </span>
-          <span class="commit-meta">
-            <span class="commit-avatar" style="background:${color};width:16px;height:16px;font-size:8px">${escHtml(initials)}</span>
-            ${escHtml(c.author)} &middot; ${fmtRelative(c.timestamp)}
-          </span>
-        </div>`;
-    }).join('');
-
-    const total = data.total || commits.length;
-    el.innerHTML = `
-      <div class="card">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:var(--space-3)">
-          <h3 style="margin:0">&#128260; Recent Commits</h3>
-          <a href="${base}/commits" class="text-xs text-muted">All ${total} commits &rarr;</a>
-        </div>
-        <div class="commit-list">${rows}</div>
-      </div>`;
-  } catch(e) {
-    const el = document.getElementById('recent-commits');
-    if (el && e.message !== 'auth')
-      el.innerHTML = `<p class="error">&#10005; ${escHtml(e.message)}</p>`;
-  }
-}
-
-/* ═══════════════════════════════════════════════════════
- * README — fetch and render if present in HEAD
- * ═══════════════════════════════════════════════════════ */
-async function loadReadme() {
-  const el = document.getElementById('readme-section');
-  if (!el) return;
-
-  try {
-    const objData = await apiFetch('/repos/' + repoId + '/objects?path=README.md');
-    const objects = objData.objects || [];
-    const readme  = objects.find(o => (o.path || '').toLowerCase().includes('readme'));
-    if (!readme) { el.style.display = 'none'; return; }
-
-    const bytes   = atob(readme.contentB64 || '');
-    const rawText = bytes;
-
-    el.innerHTML = `
-      <div class="card">
-        <h3 style="margin-top:0">&#128220; README</h3>
-        <pre style="white-space:pre-wrap;word-break:break-word;font-size:13px;line-height:1.6;color:var(--color-text)">${escHtml(rawText)}</pre>
-      </div>`;
-  } catch(e) { el.style.display = 'none'; }
-}
-
-/* ═══════════════════════════════════════════════════════
- * Contributors panel — top-10 by commit count (credits API)
- * ═══════════════════════════════════════════════════════ */
-async function loadContributors() {
-  const el = document.getElementById('contributors-panel');
-  if (!el) return;
-  try {
-    const data = await apiFetch('/repos/' + repoId + '/credits?sort=count');
-    const contribs = (data.contributors || []).slice(0, 10);
-    if (!contribs.length) {
-      el.innerHTML = `<div class="card">
-        <h3 style="margin:0 0 var(--space-3)">&#128100; Contributors</h3>
-        <p class="text-muted text-sm">No contributors yet — push your first commit.</p>
-      </div>`;
-      return;
-    }
-    const avatars = contribs.map(c => {
-      const hue = [...(c.author || '')].reduce((h, ch) => (h * 31 + ch.charCodeAt(0)) % 360, 0);
-      const color = `hsl(${hue}, 50%, 38%)`;
-      const initials = (c.author || '?').slice(0, 2).toUpperCase();
-      const username = encodeURIComponent(c.author || '');
-      const count = c.sessionCount ?? 0;
-      return `<a href="/musehub/ui/users/${username}" class="contrib-avatar" style="background:${color}" title="${escHtml(c.author)} · ${count} commit${count !== 1 ? 's' : ''}">
-        ${escHtml(initials)}
-        <span class="contrib-badge">${count}</span>
-      </a>`;
-    }).join('');
-    el.innerHTML = `<div class="card">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:var(--space-3)">
-        <h3 style="margin:0">&#128100; Contributors</h3>
-        <a href="${base}/credits" class="text-xs text-muted">View all &rarr;</a>
-      </div>
-      <div class="contrib-grid">${avatars}</div>
-    </div>`;
-  } catch(e) { /* non-critical */ }
-}
-
-/* ═══════════════════════════════════════════════════════
- * Activity heatmap — 52-week GitHub-style grid
- * ═══════════════════════════════════════════════════════ */
-async function loadActivityHeatmap() {
-  const el = document.getElementById('activity-heatmap');
-  if (!el) return;
-  try {
-    /* Fetch up to 365 commits to cover one full year */
-    const data    = await apiFetch('/repos/' + repoId + '/commits?limit=365');
-    const commits = data.commits || [];
-
-    /* Build a day-keyed frequency map: "YYYY-MM-DD" → count */
-    const freq = {};
-    commits.forEach(c => {
-      if (!c.timestamp) return;
-      const d = new Date(c.timestamp);
-      const key = d.toISOString().slice(0, 10);
-      freq[key] = (freq[key] || 0) + 1;
-    });
-
-    const maxCount = Math.max(1, ...Object.values(freq));
-
-    /* Build a 52-week grid anchored at today, columns = weeks (left=oldest), rows = days */
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const DAY_MS = 86400000;
-    /* Start on the Sunday 52 weeks ago */
-    const startOffset = today.getDay(); /* days since last Sunday */
-    const gridStart   = new Date(today.getTime() - (51 * 7 + startOffset) * DAY_MS);
-
-    const DAYS      = 52 * 7;
-    const DAY_NAMES = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
-    const MONTH_ABB = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-
-    let cols = '';
-    let prevMonth = -1;
-    let monthLabels = '';
-    let monthColIdx = 0;
-
-    for (let week = 0; week < 52; week++) {
-      let cells = '';
-      for (let dow = 0; dow < 7; dow++) {
-        const idx  = week * 7 + dow;
-        const date = new Date(gridStart.getTime() + idx * DAY_MS);
-        const key  = date.toISOString().slice(0, 10);
-        const cnt  = freq[key] || 0;
-        const pct  = cnt / maxCount;
-        /* Four-level colour intensity matching GitHub's palette */
-        const bg = cnt === 0 ? 'var(--hm-0)'
-          : pct < 0.25 ? 'var(--hm-1)'
-          : pct < 0.50 ? 'var(--hm-2)'
-          : pct < 0.75 ? 'var(--hm-3)'
-          : 'var(--hm-4)';
-        const label = `${DAY_NAMES[dow]} ${key}: ${cnt} commit${cnt !== 1 ? 's' : ''}`;
-        cells += `<div class="hm-cell" style="background:${bg}" title="${label}"></div>`;
-
-        /* Track month label positions */
-        if (dow === 0) {
-          const mo = date.getMonth();
-          if (mo !== prevMonth) {
-            monthLabels += `<span class="hm-month" style="grid-column:${week + 1}">${MONTH_ABB[mo]}</span>`;
-            prevMonth = mo;
-          }
-        }
-      }
-      cols += `<div class="hm-col">${cells}</div>`;
-    }
-
-    el.innerHTML = `<div class="card">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:var(--space-3)">
-        <h3 style="margin:0">&#128200; Activity</h3>
-        <span class="text-xs text-muted">${commits.length} commit${commits.length !== 1 ? 's' : ''} in the last 52 weeks</span>
-      </div>
-      <div class="hm-wrapper">
-        <div class="hm-months">${monthLabels}</div>
-        <div class="hm-grid">${cols}</div>
-      </div>
-      <div class="hm-legend">
-        <span class="text-xs text-muted">Less</span>
-        <div class="hm-cell" style="background:var(--hm-0)"></div>
-        <div class="hm-cell" style="background:var(--hm-1)"></div>
-        <div class="hm-cell" style="background:var(--hm-2)"></div>
-        <div class="hm-cell" style="background:var(--hm-3)"></div>
-        <div class="hm-cell" style="background:var(--hm-4)"></div>
-        <span class="text-xs text-muted">More</span>
-      </div>
-    </div>`;
-  } catch(e) { /* non-critical */ }
-}
-
-/* ═══════════════════════════════════════════════════════
- * Instrument bar — stacked distribution across latest commit
- * ═══════════════════════════════════════════════════════ */
-async function loadInstrumentBar() {
-  const el = document.getElementById('instrument-bar');
-  if (!el) return;
-  try {
-    const commitData = await apiFetch('/repos/' + repoId + '/commits?limit=1');
-    const commits    = commitData.commits || [];
-    if (!commits.length) { el.style.display = 'none'; return; }
-
-    const objData = await apiFetch(
-      '/repos/' + repoId + '/objects?ref=' + encodeURIComponent(commits[0].commitId)
-    );
-    const objects = objData.objects || [];
-
-    /* Derive instrument name from object path — strip directory and extension */
-    const instrCount = {};
-    objects.forEach(o => {
-      if (!o.path) return;
-      /* Skip non-MIDI/audio files (README, images, etc.) */
-      const lower = o.path.toLowerCase();
-      if (!lower.endsWith('.mid') && !lower.endsWith('.midi') &&
-          !lower.endsWith('.mp3') && !lower.endsWith('.wav') &&
-          !lower.endsWith('.ogg') && !lower.endsWith('.flac')) return;
-      const filename = (o.path.split('/').pop() || o.path).replace(/\.[^.]+$/, '');
-      /* Use role field if present, fall back to filename stem */
-      const role = o.role || filename || 'unknown';
-      instrCount[role] = (instrCount[role] || 0) + 1;
-    });
-
-    const entries = Object.entries(instrCount).sort((a, b) => b[1] - a[1]);
-    if (!entries.length) { el.style.display = 'none'; return; }
-
-    const total = entries.reduce((s, [, n]) => s + n, 0);
-    const PALETTE = ['#f778ba','#a97bff','#e8d44d','#58a6ff','#3fb950','#f0883e','#ff7b72','#79c0ff'];
-    const segments = entries.map(([name, count], i) => {
-      const pct  = ((count / total) * 100).toFixed(1);
-      const color = PALETTE[i % PALETTE.length];
-      return `<div class="instr-seg" style="width:${pct}%;background:${color}" title="${escHtml(name)}: ${pct}%">
-        <span class="instr-label">${escHtml(name)} ${pct}%</span>
-      </div>`;
-    }).join('');
-
-    const legend = entries.slice(0, 8).map(([name, count], i) => {
-      const pct   = ((count / total) * 100).toFixed(1);
-      const color = PALETTE[i % PALETTE.length];
-      return `<span class="instr-legend-item">
-        <span class="instr-dot" style="background:${color}"></span>
-        ${escHtml(name)} <span class="text-muted">${pct}%</span>
-      </span>`;
-    }).join('');
-
-    el.innerHTML = `<div class="card">
-      <h3 style="margin:0 0 var(--space-3)">&#127925; Instrument Distribution</h3>
-      <div class="instr-bar">${segments}</div>
-      <div class="instr-legend">${legend}</div>
-      <div class="text-xs text-muted" style="margin-top:var(--space-2)">
-        Based on ${objects.length} file${objects.length !== 1 ? 's' : ''} in the latest commit.
-      </div>
-    </div>`;
-  } catch(e) { el.style.display = 'none'; }
-}
-
-/* ═══════════════════════════════════════════════════════
- * Clone widget — copy-to-clipboard with protocol variants
- * ═══════════════════════════════════════════════════════ */
-function renderCloneWidget() {
-  const el = document.getElementById('clone-widget');
-  if (!el) return;
-
-  function copyInput(id) {
-    const inp = document.getElementById(id);
-    if (!inp) return;
-    navigator.clipboard.writeText(inp.value).then(() => {
-      const btn = inp.nextElementSibling;
-      if (btn) { btn.textContent = '✓ Copied'; setTimeout(() => { btn.textContent = 'Copy'; }, 2000); }
-    }).catch(() => { inp.select(); document.execCommand('copy'); });
-  }
-
-  function cloneRow(label, icon, url, inputId) {
-    return `<div class="clone-row">
-      <span class="clone-label">${icon} ${label}</span>
-      <div class="clone-input-wrap">
-        <input id="${inputId}" class="clone-input" type="text" value="${escHtml(url)}" readonly>
-        <button class="btn btn-secondary btn-sm clone-copy-btn" onclick="copyClone('${inputId}')">Copy</button>
-      </div>
-    </div>`;
-  }
-
-  const zipUrl = '/api/v1/musehub/repos/' + repoId + '/archive.zip';
-
-  el.innerHTML = `<div class="card">
-    <h3 style="margin:0 0 var(--space-3)">&#128190; Clone</h3>
-    ${cloneRow('Stori DAW', '&#127925;', CLONE_MUSEHUB, 'clone-musehub')}
-    ${cloneRow('SSH', '&#128274;', CLONE_SSH, 'clone-ssh')}
-    ${cloneRow('HTTPS', '&#127760;', CLONE_HTTPS, 'clone-https')}
-    <div style="margin-top:var(--space-3)">
-      <a href="${zipUrl}" class="btn btn-secondary btn-sm" download>&#8681; Download ZIP</a>
-    </div>
-  </div>`;
-}
-
-function copyClone(id) {
-  const inp = document.getElementById(id);
-  if (!inp) return;
-  navigator.clipboard.writeText(inp.value).then(() => {
-    const btn = inp.nextElementSibling;
-    if (btn) { btn.textContent = '✓ Copied'; setTimeout(() => { btn.textContent = 'Copy'; }, 2000); }
-  }).catch(() => { inp.select(); document.execCommand('copy'); });
-}
-
-/* ═══════════════════════════════════════════════════════
- * Quick-link tab strip
- * ═══════════════════════════════════════════════════════ */
-function renderQuickLinks() {
-  const el = document.getElementById('quick-links');
-  if (!el) return;
-  const links = [
-    { label: '&#128196; Code',    href: base },
-    { label: '&#128260; Commits', href: base + '/commits/HEAD' },
-    { label: '&#128260; Graph',   href: base + '/graph' },
-    { label: '&#8635; PRs',       href: base + '/pulls' },
-    { label: '&#128027; Issues',  href: base + '/issues' },
-    { label: '&#128202; Analysis',href: base + '/analysis/HEAD' },
-    { label: '&#128308; Sessions',href: base + '/sessions' },
-  ];
-  el.innerHTML = links.map(l =>
-    `<a href="${l.href}" class="btn btn-secondary btn-sm">${l.label}</a>`
-  ).join('');
-}
-
-/* ═══════════════════════════════════════════════════════
- * Build page shell and bootstrap all loaders
- * ═══════════════════════════════════════════════════════ */
-function load() {
-  initRepoNav(repoId);
-
-  document.getElementById('content').innerHTML = `
-    <div id="repo-hero" class="card" style="margin-bottom:var(--space-4)">
-      <p class="loading">Loading&hellip;</p>
     </div>
 
-    <div id="star-fork-bar" style="margin-bottom:var(--space-3)"></div>
+  </main>
 
-    <div id="stats-bar" style="margin-bottom:var(--space-4)"></div>
+  {# ── Right sidebar ── #}
+  <aside>
 
-    <div id="quick-links" style="display:flex;gap:var(--space-2);flex-wrap:wrap;margin-bottom:var(--space-4)"></div>
-
-    <div class="repo-layout">
-      <!-- Main column -->
-      <main class="repo-main">
-        <div id="audio-player-section" style="margin-bottom:var(--space-4)">
-          <p class="loading">Loading audio&hellip;</p>
-        </div>
-        <div id="arrangement-matrix" style="margin-bottom:var(--space-4)">
-          <p class="loading">Loading arrangement&hellip;</p>
-        </div>
-        <div id="activity-heatmap" style="margin-bottom:var(--space-4)">
-          <p class="loading">Loading activity&hellip;</p>
-        </div>
-        <div id="instrument-bar" style="margin-bottom:var(--space-4)"></div>
-        <div id="recent-commits" style="margin-bottom:var(--space-4)">
-          <p class="loading">Loading commits&hellip;</p>
-        </div>
-        <div id="readme-section"></div>
-      </main>
-
-      <!-- Sidebar -->
-      <aside class="repo-sidebar">
-        <div id="clone-widget" style="margin-bottom:var(--space-4)"></div>
-        <div id="contributors-panel" style="margin-bottom:var(--space-4)"></div>
-      </aside>
+    {# About #}
+    <div class="sidebar-section">
+      <p class="sidebar-section-title">About</p>
+      {% if repo.description %}
+      <p style="font-size:13px;margin-bottom:var(--space-2)">{{ repo.description }}</p>
+      {% endif %}
+      {% if repo.key_signature %}
+      <p style="font-size:12px;color:#8b949e">&#9837; {{ repo.key_signature }}</p>
+      {% endif %}
+      {% if repo.tempo_bpm %}
+      <p style="font-size:12px;color:#8b949e">&#9834; {{ repo.tempo_bpm }} BPM</p>
+      {% endif %}
+      {% if repo.tags %}
+      <div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:var(--space-2)">
+        {% for tag in repo.tags %}
+        <a href="/musehub/ui/topics/{{ tag }}" class="badge">{{ tag }}</a>
+        {% endfor %}
+      </div>
+      {% endif %}
     </div>
-  `;
 
-  renderQuickLinks();
-  loadHero();
-  loadStarFork();
-  loadStats();
-  loadAudioPlayer();
-  loadArrangementMatrix();
-  loadActivityHeatmap();
-  loadInstrumentBar();
-  loadRecentCommits();
-  loadReadme();
-  renderCloneWidget();
-  loadContributors();
-}
+    {# Recent commits #}
+    <div class="sidebar-section">
+      <p class="sidebar-section-title">Recent Commits</p>
+      {% if commits %}
+        {% for commit in commits %}
+          {{ commit_row(commit, base_url=base_url) }}
+        {% endfor %}
+        <a href="{{ base_url }}/commits" style="font-size:11px;color:var(--color-accent)">View all commits →</a>
+      {% else %}
+        <p style="font-size:12px;color:#8b949e">No commits yet.</p>
+      {% endif %}
+    </div>
 
-load();
-{% endraw %}
+    {# Quick links #}
+    <div class="sidebar-section">
+      <p class="sidebar-section-title">Explore</p>
+      <ul style="list-style:none;padding:0;margin:0;display:flex;flex-direction:column;gap:4px">
+        <li><a href="{{ base_url }}/commits" style="font-size:12px">&#128218; Commits</a></li>
+        <li><a href="{{ base_url }}/issues" style="font-size:12px">&#128203; Issues</a></li>
+        <li><a href="{{ base_url }}/pulls" style="font-size:12px">&#10145; Pull Requests</a></li>
+        <li><a href="{{ base_url }}/releases" style="font-size:12px">&#127381; Releases</a></li>
+        <li><a href="{{ base_url }}/insights" style="font-size:12px">&#128200; Insights</a></li>
+        <li><a href="{{ base_url }}/analysis/HEAD" style="font-size:12px">&#127926; Analysis</a></li>
+        <li><a href="{{ base_url }}/listen/HEAD" style="font-size:12px">&#127925; Listen</a></li>
+      </ul>
+    </div>
+
+  </aside>
+</div>
 {% endblock %}
 
 {% block extra_css %}
 <style>
-  /* ── Hero ── */
   .hero-header {
     display: flex;
-    align-items: flex-start;
     justify-content: space-between;
-    gap: var(--space-4);
-    flex-wrap: wrap;
+    align-items: flex-start;
+    gap: var(--space-3);
   }
   .hero-title {
-    font-size: 22px;
-    font-weight: 700;
-    margin: 0 0 var(--space-2);
-    display: flex;
-    align-items: center;
-    gap: var(--space-2);
-    flex-wrap: wrap;
-  }
-  .hero-description { margin: 0 0 var(--space-2); }
-  .hero-actions {
-    display: flex;
-    gap: var(--space-2);
-    flex-shrink: 0;
-  }
-
-  /* ── Stats bar ── */
-  .stats-bar {
-    display: flex;
-    gap: var(--space-3);
-    flex-wrap: wrap;
-  }
-  .stats-pill {
-    display: flex;
-    align-items: center;
-    gap: var(--space-2);
-    padding: var(--space-2) var(--space-3);
-    background: var(--bg-subtle, rgba(255,255,255,0.04));
-    border: 1px solid var(--border-subtle, rgba(255,255,255,0.1));
-    border-radius: var(--radius-base);
-    text-decoration: none;
-    color: inherit;
-    font-size: 14px;
-    transition: background 0.15s;
-  }
-  .stats-pill:hover { background: rgba(255,255,255,0.08); }
-  .stats-icon { font-size: 16px; }
-
-  /* ── Arrangement matrix ── */
-  .matrix-table {
-    border-collapse: collapse;
-    width: 100%;
-  }
-  .matrix-th {
-    text-align: left;
-    font-size: 11px;
+    font-size: 20px;
     font-weight: 600;
-    padding: 4px 6px;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    max-width: 80px;
-  }
-  .matrix-cell {
-    width: 24px;
-    height: 24px;
-    border: 1px solid;
-    border-radius: 3px;
-  }
-  .matrix-placeholder {
-    padding: var(--space-6);
-    text-align: center;
-    color: var(--color-text-muted);
-    background: var(--bg-subtle, rgba(255,255,255,0.02));
-    border: 1px dashed var(--border-subtle, rgba(255,255,255,0.1));
-    border-radius: var(--radius-base);
-    font-size: 14px;
-  }
-
-  /* ── Repo layout with sidebar ── */
-  .repo-layout {
-    display: grid;
-    grid-template-columns: 1fr;
-    gap: var(--space-4);
-  }
-  @media (min-width: 900px) {
-    .repo-layout {
-      grid-template-columns: 1fr 280px;
-      align-items: start;
-    }
-    .repo-sidebar { position: sticky; top: var(--space-4); }
-  }
-
-  /* ── Contributors panel ── */
-  .contrib-grid {
-    display: flex;
-    flex-wrap: wrap;
-    gap: var(--space-2);
-  }
-  .contrib-avatar {
-    position: relative;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 40px;
-    height: 40px;
-    border-radius: 50%;
-    font-size: 13px;
-    font-weight: 700;
-    color: #fff;
-    text-decoration: none;
-    transition: transform 0.15s, box-shadow 0.15s;
-  }
-  .contrib-avatar:hover { transform: scale(1.1); box-shadow: 0 2px 8px rgba(0,0,0,0.4); }
-  .contrib-badge {
-    position: absolute;
-    bottom: -4px;
-    right: -4px;
-    background: var(--color-bg, #0d1117);
-    border: 1px solid var(--border-subtle, rgba(255,255,255,0.12));
-    border-radius: 8px;
-    font-size: 9px;
-    font-weight: 700;
-    padding: 1px 3px;
-    line-height: 1;
-    color: var(--color-text-muted);
-    min-width: 14px;
-    text-align: center;
-  }
-
-  /* ── Activity heatmap ── */
-  :root {
-    --hm-0: rgba(255,255,255,0.05);
-    --hm-1: #0e4429;
-    --hm-2: #006d32;
-    --hm-3: #26a641;
-    --hm-4: #39d353;
-  }
-  .hm-wrapper { overflow-x: auto; }
-  .hm-months {
-    display: grid;
-    grid-template-columns: repeat(52, 12px);
-    gap: 2px;
-    margin-bottom: 2px;
-    padding-left: 0;
-  }
-  .hm-month {
-    font-size: 9px;
-    color: var(--color-text-muted);
-    white-space: nowrap;
-  }
-  .hm-grid {
-    display: flex;
-    gap: 2px;
-  }
-  .hm-col {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-  }
-  .hm-cell {
-    width: 11px;
-    height: 11px;
-    border-radius: 2px;
-  }
-  .hm-legend {
+    margin: 0 0 var(--space-1);
     display: flex;
     align-items: center;
     gap: var(--space-1);
-    margin-top: var(--space-2);
-    justify-content: flex-end;
-  }
-
-  /* ── Instrument bar ── */
-  .instr-bar {
-    display: flex;
-    height: 20px;
-    border-radius: var(--radius-base);
-    overflow: hidden;
-    margin-bottom: var(--space-3);
-  }
-  .instr-seg {
-    position: relative;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    min-width: 24px;
-    overflow: hidden;
-    transition: flex 0.3s;
-  }
-  .instr-label {
-    font-size: 9px;
-    font-weight: 600;
-    color: rgba(0,0,0,0.75);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    padding: 0 3px;
-  }
-  .instr-legend {
-    display: flex;
     flex-wrap: wrap;
-    gap: var(--space-2);
   }
-  .instr-legend-item {
+  .hero-description {
+    font-size: 14px;
+    color: var(--color-text-muted);
+    margin: 0;
+  }
+  .hero-actions {
     display: flex;
-    align-items: center;
-    gap: 4px;
-    font-size: 11px;
-  }
-  .instr-dot {
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
+    gap: var(--space-1);
     flex-shrink: 0;
   }
-
-  /* ── Clone widget ── */
+  .sidebar-section {
+    margin-bottom: var(--space-3);
+  }
+  .sidebar-section-title {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--color-text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    margin: 0 0 var(--space-2);
+  }
+  .file-tree-table {
+    border-collapse: collapse;
+  }
+  .file-tree-row:hover {
+    background: var(--bg-subtle, rgba(255,255,255,0.04));
+  }
+  .file-tree-row + .file-tree-row {
+    border-top: 1px solid var(--border-subtle, rgba(255,255,255,0.08));
+  }
+  .filter-select {
+    background: var(--bg-subtle, rgba(255,255,255,0.06));
+    border: 1px solid var(--border-subtle, rgba(255,255,255,0.12));
+    border-radius: var(--radius-base);
+    color: var(--color-text);
+    padding: 4px 8px;
+    font-size: 13px;
+    cursor: pointer;
+  }
   .clone-row {
     display: flex;
     flex-direction: column;
-    gap: var(--space-1);
-    margin-bottom: var(--space-3);
+    gap: var(--space-2);
   }
   .clone-label {
     font-size: 11px;
@@ -920,6 +246,7 @@ load();
     color: var(--color-text-muted);
     text-transform: uppercase;
     letter-spacing: 0.04em;
+    margin: 0 0 4px;
   }
   .clone-input-wrap {
     display: flex;

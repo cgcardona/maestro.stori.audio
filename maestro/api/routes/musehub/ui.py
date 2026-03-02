@@ -71,7 +71,7 @@ from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi import status as http_status
-from fastapi.responses import HTMLResponse, RedirectResponse, Response
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import func, select as sa_select, text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -384,22 +384,20 @@ async def repo_page(
     request: Request,
     owner: str,
     repo_slug: str,
+    ref: str = Query("HEAD", description="Branch name or commit SHA to view"),
     format: str | None = Query(None, description="Force response format: 'json' or omit for HTML"),
     db: AsyncSession = Depends(get_db),
 ) -> StarletteResponse:
-    """Render the repo home page with arrangement matrix, audio player, stats, and recent commits.
+    """Render the repo home page with SSR file tree, recent commits, and branch picker.
 
-    Also renders four enrichment panels:
-    - Contributors: top-10 avatar grid derived from the credits endpoint.
-    - Activity heatmap: 52-week GitHub-style heatmap from commit timestamps.
-    - Instrument bar: stacked distribution of instrument tracks from commit objects.
-    - Clone widget: musehub://, SSH, and HTTPS clone URLs with copy-to-clipboard.
+    All data is fetched server-side and rendered via Jinja2.  HTMX handles
+    branch-switching: selecting a branch submits the form via ``hx-get`` and
+    swaps only the ``#file-tree`` container with the file_tree fragment.
 
     Content negotiation:
     - ``?format=json`` or ``Accept: application/json`` → full ``RepoResponse`` with camelCase keys.
-    - Everything else → HTML home page via ``repo_home.html`` template.
-
-    One URL, two audiences — agents get structured data, humans get rich HTML.
+    - ``HX-Request: true`` → bare ``file_tree.html`` fragment (branch-switch target).
+    - Default → full SSR page via ``repo_home.html``.
 
     Clone URL variants passed to the template:
     - ``clone_url_musehub``: native DAW protocol (``musehub://{owner}/{slug}``)
@@ -407,31 +405,49 @@ async def repo_page(
     - ``clone_url_https``: HTTPS git remote (``https://musehub.stori.app/{owner}/{slug}.git``)
     """
     repo, base_url = await _resolve_repo_full(owner, repo_slug, db)
+    repo_id = repo.repo_id
+
+    # JSON shortcut for API consumers — return structured data without SSR overhead.
+    if format == "json" or "application/json" in request.headers.get("accept", ""):
+        return JSONResponse(repo.model_dump(by_alias=True, mode="json"))
+
+    # Fetch all SSR data in parallel.
+    tree_response = await musehub_repository.list_tree(db, repo_id, owner, repo_slug, ref, "")
+    (commits, _) = await musehub_repository.list_commits(db, repo_id, limit=5)
+    branches = await musehub_repository.list_branches(db, repo_id)
+    releases = await musehub_releases.list_releases(db, repo_id)
+    tags_count = len(releases)
+
     page_url = str(request.url)
-    return await negotiate_response(
-        request=request,
-        template_name="musehub/pages/repo_home.html",
-        context={
-            "owner": owner,
-            "repo_slug": repo_slug,
-            "repo_id": str(repo.repo_id),
-            "base_url": base_url,
-            "current_page": "home",
-            "jsonld_script": render_jsonld_script(jsonld_repo(repo, page_url)),
-            "og_meta": _og_tags(
-                title=f"{owner}/{repo_slug} — Muse Hub",
-                description=repo.description or f"Music composition repository by {owner}",
-                og_type="website",
-            ),
-            # Clone URL variants for the clone widget panel — derived server-side
-            # so the template never has to reconstruct them from owner/slug.
-            "clone_url_musehub": f"musehub://{owner}/{repo_slug}",
-            "clone_url_ssh": f"ssh://git@musehub.stori.app/{owner}/{repo_slug}.git",
-            "clone_url_https": f"https://musehub.stori.app/{owner}/{repo_slug}.git",
-        },
-        templates=templates,
-        json_data=repo,
-        format_param=format,
+    ctx: dict[str, object] = {
+        "owner": owner,
+        "repo_slug": repo_slug,
+        "repo_id": repo_id,
+        "base_url": base_url,
+        "current_page": "home",
+        "repo": repo,
+        "ref": ref,
+        "tree": tree_response.entries,
+        # commit_row macro expects camelCase keys (commitId, etc.)
+        "commits": [c.model_dump(by_alias=True) for c in commits],
+        "branches": branches,
+        "tags_count": tags_count,
+        "jsonld_script": render_jsonld_script(jsonld_repo(repo, page_url)),
+        "og_meta": _og_tags(
+            title=f"{owner}/{repo_slug} — Muse Hub",
+            description=repo.description or f"Music composition repository by {owner}",
+            og_type="website",
+        ),
+        "clone_url_musehub": f"musehub://{owner}/{repo_slug}",
+        "clone_url_ssh": f"ssh://git@musehub.stori.app/{owner}/{repo_slug}.git",
+        "clone_url_https": f"https://musehub.stori.app/{owner}/{repo_slug}.git",
+    }
+    return await htmx_fragment_or_full(
+        request,
+        templates,
+        ctx,
+        full_template="musehub/pages/repo_home.html",
+        fragment_template="musehub/fragments/file_tree.html",
     )
 
 
