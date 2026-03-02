@@ -71,6 +71,7 @@ async def test_tick_returns_pipeline_state() -> None:
     with (
         patch("agentception.poller.list_active_worktrees", new_callable=AsyncMock, return_value=[]),
         patch("agentception.poller.build_github_board", new_callable=AsyncMock, return_value=board),
+        patch("agentception.poller.detect_out_of_order_prs", new_callable=AsyncMock, return_value=[]),
     ):
         before = time.time()
         state = await tick()
@@ -93,6 +94,7 @@ async def test_tick_updates_global_state() -> None:
     with (
         patch("agentception.poller.list_active_worktrees", new_callable=AsyncMock, return_value=[]),
         patch("agentception.poller.build_github_board", new_callable=AsyncMock, return_value=board),
+        patch("agentception.poller.detect_out_of_order_prs", new_callable=AsyncMock, return_value=[]),
     ):
         state = await tick()
 
@@ -188,7 +190,14 @@ async def test_stale_claim_alert_detected(tmp_path: Path) -> None:
         wip_issues=[{"number": 42, "title": "Test issue", "labels": [{"name": "agent:wip"}]}],
     )
     # No worktrees — issue 42 has no live worktree.
-    with patch("agentception.poller.settings") as mock_settings:
+    with (
+        patch("agentception.poller.settings") as mock_settings,
+        patch(
+            "agentception.poller.detect_out_of_order_prs",
+            new_callable=AsyncMock,
+            return_value=[],
+        ),
+    ):
         mock_settings.worktrees_dir = tmp_path
         alerts, stale_claims = await detect_alerts([], board)
 
@@ -209,8 +218,14 @@ async def test_no_stale_claim_when_worktree_exists(tmp_path: Path) -> None:
     # Create the expected worktree directory so the issue is considered live.
     (tmp_path / "issue-99").mkdir()
     worktrees = [_make_worktree(issue_number=99, branch="feat/issue-99")]
-
-    with patch("agentception.poller.settings") as mock_settings:
+    with (
+        patch("agentception.poller.settings") as mock_settings,
+        patch(
+            "agentception.poller.detect_out_of_order_prs",
+            new_callable=AsyncMock,
+            return_value=[],
+        ),
+    ):
         mock_settings.worktrees_dir = tmp_path
         alerts, _stale_claims = await detect_alerts(worktrees, board)
 
@@ -232,7 +247,14 @@ async def test_out_of_order_pr_alert(tmp_path: Path) -> None:
         ],
         wip_issues=[],
     )
-    with patch("agentception.poller.settings") as mock_settings:
+    with (
+        patch("agentception.poller.settings") as mock_settings,
+        patch(
+            "agentception.poller.detect_out_of_order_prs",
+            new_callable=AsyncMock,
+            return_value=[],
+        ),
+    ):
         mock_settings.worktrees_dir = tmp_path
         alerts, _stale_claims = await detect_alerts([], board)
 
@@ -261,6 +283,11 @@ async def test_stuck_agent_alert_detected(tmp_path: Path) -> None:
             "agentception.poller.worktree_last_commit_time",
             new_callable=AsyncMock,
             return_value=old_timestamp,
+        ),
+        patch(
+            "agentception.poller.detect_out_of_order_prs",
+            new_callable=AsyncMock,
+            return_value=[],
         ),
     ):
         mock_settings.worktrees_dir = tmp_path / "worktrees"
