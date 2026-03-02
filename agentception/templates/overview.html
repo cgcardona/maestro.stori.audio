@@ -12,6 +12,7 @@
   x-data='pipelineDashboard({{ state.model_dump() | tojson }})'
   x-init="connect()"
   @phase-switching.window="boardLoading = true"
+  x-cloak
 >
 
   {# ── Pipeline summary bar ──────────────────────────────────────────────── #}
@@ -41,7 +42,7 @@
         <span class="phase-switcher__caret">▾</span>
       </button>
 
-      <div class="phase-switcher__dropdown" x-show="open" x-transition>
+      <div class="phase-switcher__dropdown" x-show="open" x-transition x-cloak>
         <div class="phase-switcher__header">Switch phase</div>
 
         {# Auto option — clears the manual pin #}
@@ -105,8 +106,7 @@
     <div
       class="poller-control"
       id="pipeline-control"
-      x-data="pipelineControl()"
-      x-init="fetchStatus()"
+      x-data="pipelineControl({{ poller_paused | tojson }})"
     >
       <div class="poller-status" :class="paused ? 'poller-status--paused' : (connected ? 'poller-status--live' : 'poller-status--reconnecting')">
         <span class="poller-status__dot"></span>
@@ -132,8 +132,7 @@
     dismisses the banner on success.  "Dismiss" hides without applying.
   #}
   <div
-    x-data="scalingAdvisor()"
-    x-init="load()"
+    x-data="scalingAdvisor({{ scaling_advice | tojson }})"
     x-show="!dismissed && recommendation !== null && recommendation.action !== 'no_change'"
     x-cloak
     class="alert-banner alert-banner--info"
@@ -172,8 +171,7 @@
     page reload.  Alpine.js manages the fetch lifecycle.
   #}
   <div
-    x-data="prViolations()"
-    x-init="load()"
+    x-data="prViolations({{ pr_violations | tojson }})"
   >
     <template x-for="v in violations" :key="v.pr_number">
       <div class="alert-banner alert-banner--violation" role="alert">
@@ -687,21 +685,10 @@ function pipelineDashboard(initial) {
  * Closing a PR posts to POST /api/intelligence/pr-violations/{n}/close and
  * removes the entry from the local list on success.
  */
-function prViolations() {
+function prViolations(initial) {
   return {
-    violations: [],
+    violations: initial ?? [],
     closing: null,
-
-    async load() {
-      try {
-        const res = await fetch('/api/intelligence/pr-violations');
-        if (res.ok) {
-          this.violations = await res.json();
-        }
-      } catch (_) {
-        // Network error — keep empty list; next poll will retry.
-      }
-    },
 
     async closeViolation(prNumber) {
       this.closing = prNumber;
@@ -772,23 +759,12 @@ function staleClaimCard(claim) {
  * Both actions are session-scoped — the banner reappears on next page load
  * if the recommendation still applies.
  */
-function scalingAdvisor() {
+function scalingAdvisor(initial) {
   return {
-    recommendation: null,
+    recommendation: initial ?? null,
     dismissed: false,
     applying: false,
     applyError: null,
-
-    async load() {
-      try {
-        const res = await fetch('/api/intelligence/scaling-advice');
-        if (res.ok) {
-          this.recommendation = await res.json();
-        }
-      } catch (_) {
-        // Network error — keep banner hidden; no stale data shown.
-      }
-    },
 
     async apply() {
       this.applying = true;
@@ -817,21 +793,9 @@ function scalingAdvisor() {
  * Toggle sends a POST to /api/control/pause or /api/control/resume and
  * updates the badge optimistically — no page reload needed.
  */
-function pipelineControl() {
+function pipelineControl(initialPaused) {
   return {
-    paused: false,
-
-    async fetchStatus() {
-      try {
-        const res = await fetch('/api/control/status');
-        if (res.ok) {
-          const data = await res.json();
-          this.paused = data.paused;
-        }
-      } catch (_) {
-        // Network error — keep current state, will retry on next toggle.
-      }
-    },
+    paused: initialPaused ?? false,
 
     async toggle() {
       const endpoint = this.paused ? '/api/control/resume' : '/api/control/pause';
