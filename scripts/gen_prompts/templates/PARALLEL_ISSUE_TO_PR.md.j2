@@ -919,12 +919,15 @@ STEP 5 — PUSH & CREATE PR:
   ---
   <!-- maestro-fingerprint
   role: python-developer
+  cognitive_arch: ${COGNITIVE_ARCH:-unset}
   batch: ${BATCH_ID:-none}
+  wave: ${WAVE:-unset}
   session: ${AGENT_SESSION}
   issue: ${N}
   timestamp: $(date -u +%Y-%m-%dT%H:%M:%SZ)
   -->
-  > 🤖 *Opened by Maestro pipeline — batch \`${BATCH_ID:-none}\`, session \`${AGENT_SESSION}\`*
+  ---
+  🤖 **Implementer:** \`${COGNITIVE_ARCH:-unset}\` · batch \`${BATCH_ID:-none}\` · wave \`${WAVE:-unset}\`
   EOF
   )"
 
