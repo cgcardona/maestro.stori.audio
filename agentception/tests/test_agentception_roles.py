@@ -1,4 +1,4 @@
-"""Tests for the Role file reader/writer API (AC-301) and Role Studio UI (AC-302).
+"""Tests for the Role file reader/writer API (AC-301/303) and Role Studio UI (AC-302/303).
 
 Covers:
 - list_roles returns all managed files that exist on disk
@@ -7,6 +7,10 @@ Covers:
 - update_role writes new content to disk
 - role_history returns a list of commit dicts
 - GET /roles page returns 200 with file list and Monaco CDN script
+- role_diff returns unified diff of proposed content vs HEAD (AC-303)
+- role_diff returns empty diff when proposed content is identical to HEAD (AC-303)
+- commit_role writes file and creates git commit (AC-303)
+- commit_role returns correct commit message format (AC-303)
 
 Run targeted:
     pytest agentception/tests/test_agentception_roles.py -v
@@ -250,3 +254,141 @@ def test_roles_page_includes_monaco_cdn(
 
     assert response.status_code == 200
     assert "cdn.jsdelivr.net/npm/monaco-editor@0.52.0/min/vs/loader.js" in response.text
+
+
+# ── role_diff (AC-303) ────────────────────────────────────────────────────────
+
+
+def test_diff_endpoint_returns_unified_diff(
+    client: TestClient,
+    tmp_repo: Path,
+) -> None:
+    """POST /api/roles/{slug}/diff must return a non-empty unified diff for changed content."""
+    proposed = "# CTO (Changed)\nDifferent content.\n"
+
+    with patch("agentception.routes.roles.settings") as mock_settings:
+        mock_settings.repo_dir = tmp_repo
+
+        async def fake_diff(*args: object, **kwargs: object) -> object:
+            class FakeProc:
+                returncode = 1  # git diff --no-index exits 1 when files differ
+
+                async def communicate(self) -> tuple[bytes, bytes]:
+                    return b"--- a/cto.md\n+++ b/cto.md\n@@ -1,2 +1,2 @@\n-# CTO\n+# CTO (Changed)\n", b""
+
+            return FakeProc()
+
+        with patch("asyncio.create_subprocess_exec", side_effect=fake_diff):
+            response = client.post(
+                "/api/roles/cto/diff",
+                json={"content": proposed},
+            )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["slug"] == "cto"
+    assert "diff" in data
+    assert "@@" in data["diff"]
+
+
+def test_diff_identical_content_returns_empty(
+    client: TestClient,
+    tmp_repo: Path,
+) -> None:
+    """POST /api/roles/{slug}/diff must return an empty diff when proposed matches HEAD."""
+    with patch("agentception.routes.roles.settings") as mock_settings:
+        mock_settings.repo_dir = tmp_repo
+
+        async def fake_no_diff(*args: object, **kwargs: object) -> object:
+            class FakeProc:
+                returncode = 0  # exit 0 means no differences
+
+                async def communicate(self) -> tuple[bytes, bytes]:
+                    return b"", b""
+
+            return FakeProc()
+
+        with patch("asyncio.create_subprocess_exec", side_effect=fake_no_diff):
+            response = client.post(
+                "/api/roles/cto/diff",
+                json={"content": "# CTO\nLeads engineering."},
+            )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["slug"] == "cto"
+    assert data["diff"] == ""
+
+
+# ── commit_role (AC-303) ──────────────────────────────────────────────────────
+
+
+def test_commit_writes_file_and_creates_commit(
+    client: TestClient,
+    tmp_repo: Path,
+) -> None:
+    """POST /api/roles/{slug}/commit must write content to disk and return a commit SHA."""
+    new_content = "# CTO (Committed)\nUpdated responsibilities.\n"
+
+    with patch("agentception.routes.roles.settings") as mock_settings:
+        mock_settings.repo_dir = tmp_repo
+
+        call_count = 0
+
+        async def fake_git(*args: object, **kwargs: object) -> object:
+            nonlocal call_count
+            call_count += 1
+
+            class FakeProc:
+                returncode = 0
+
+                async def communicate(self) -> tuple[bytes, bytes]:
+                    if call_count == 3:
+                        return b"abcdef1234567890abcdef1234567890abcdef12\n", b""
+                    return b"", b""
+
+            return FakeProc()
+
+        with patch("asyncio.create_subprocess_exec", side_effect=fake_git):
+            response = client.post(
+                "/api/roles/cto/commit",
+                json={"content": new_content},
+            )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["slug"] == "cto"
+    assert "commit_sha" in data
+    assert len(data["commit_sha"]) > 0
+    assert "message" in data
+    # File must have been written to disk
+    written = (tmp_repo / ".cursor" / "roles" / "cto.md").read_text(encoding="utf-8")
+    assert written == new_content
+
+
+def test_commit_creates_correct_message(
+    client: TestClient,
+    tmp_repo: Path,
+) -> None:
+    """POST /api/roles/{slug}/commit must use the expected commit message format."""
+    with patch("agentception.routes.roles.settings") as mock_settings:
+        mock_settings.repo_dir = tmp_repo
+
+        async def fake_git(*args: object, **kwargs: object) -> object:
+            class FakeProc:
+                returncode = 0
+
+                async def communicate(self) -> tuple[bytes, bytes]:
+                    return b"deadbeefdeadbeefdeadbeefdeadbeefdeadbeef\n", b""
+
+            return FakeProc()
+
+        with patch("asyncio.create_subprocess_exec", side_effect=fake_git):
+            response = client.post(
+                "/api/roles/cto/commit",
+                json={"content": "# CTO\nLeads engineering.\n"},
+            )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["message"] == "role(agentception): update cto"

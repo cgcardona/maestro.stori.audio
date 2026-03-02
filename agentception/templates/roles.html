@@ -157,6 +157,121 @@
     color: var(--color-muted, #888);
     font-size: 0.9rem;
   }
+
+  /* ── Diff modal ─────────────────────────────────────────────────────────── */
+  .diff-modal-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.65);
+    z-index: 200;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .diff-modal-overlay.visible {
+    display: flex;
+  }
+
+  .diff-modal {
+    background: var(--color-card, #1e1e2e);
+    border: 1px solid var(--color-border, #444);
+    border-radius: 6px;
+    width: min(860px, 90vw);
+    max-height: 80vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .diff-modal__header {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.75rem 1rem;
+    border-bottom: 1px solid var(--color-border, #333);
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: var(--color-text, #e0e0e0);
+  }
+
+  .diff-modal__header span {
+    flex: 1;
+  }
+
+  .diff-modal__body {
+    flex: 1;
+    overflow-y: auto;
+    padding: 0.75rem 1rem;
+    font-family: var(--font-mono, monospace);
+    font-size: 0.78rem;
+    line-height: 1.5;
+  }
+
+  .diff-empty {
+    color: var(--color-muted, #888);
+    font-style: italic;
+  }
+
+  .diff-line {
+    white-space: pre-wrap;
+    word-break: break-all;
+    padding: 0 0.25rem;
+    border-radius: 2px;
+  }
+
+  .diff-line.added {
+    background: rgba(76, 175, 80, 0.18);
+    color: #81c784;
+  }
+
+  .diff-line.removed {
+    background: rgba(244, 67, 54, 0.18);
+    color: #e57373;
+  }
+
+  .diff-line.hunk {
+    color: #90caf9;
+    margin-top: 0.5rem;
+  }
+
+  .diff-modal__footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.5rem;
+    padding: 0.6rem 1rem;
+    border-top: 1px solid var(--color-border, #333);
+  }
+
+  .diff-modal__footer button {
+    font-size: 0.82rem;
+    padding: 0.35rem 0.85rem;
+    border-radius: 4px;
+    border: 1px solid var(--color-border, #444);
+    cursor: pointer;
+    background: var(--color-card, #1e1e2e);
+    color: var(--color-text, #e0e0e0);
+    transition: background 0.1s;
+  }
+
+  .diff-modal__footer button:hover {
+    background: var(--color-card-hover, #2a2a3e);
+  }
+
+  .diff-modal__footer button.btn-commit {
+    background: var(--color-accent, #7c6af7);
+    border-color: var(--color-accent, #7c6af7);
+    color: #fff;
+  }
+
+  .diff-modal__footer button.btn-commit:hover {
+    opacity: 0.85;
+  }
+
+  .diff-modal__footer button:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
 </style>
 {% endblock %}
 
@@ -200,7 +315,7 @@
       <span class="editor-breadcrumb" id="editor-breadcrumb">
         ← select a file to edit
       </span>
-      <button id="btn-diff" disabled title="Preview Diff (AC-303)">Preview Diff</button>
+      <button id="btn-diff" disabled onclick="previewDiff()">Preview Diff</button>
       <button id="btn-save" class="btn-save" disabled onclick="saveRole()">Save</button>
     </div>
 
@@ -213,6 +328,22 @@
     <div class="editor-status" id="editor-status" aria-live="polite"></div>
   </section>
 
+</div>
+
+<!-- ── Diff preview modal (AC-303) ──────────────────────────────────────── -->
+<div class="diff-modal-overlay" id="diff-modal-overlay" role="dialog" aria-modal="true" aria-label="Diff preview">
+  <div class="diff-modal">
+    <div class="diff-modal__header">
+      <span id="diff-modal-title">Diff preview</span>
+    </div>
+    <div class="diff-modal__body" id="diff-modal-body">
+      <span class="diff-empty">Loading diff…</span>
+    </div>
+    <div class="diff-modal__footer">
+      <button id="btn-diff-cancel" onclick="closeDiffModal()">Cancel</button>
+      <button id="btn-diff-commit" class="btn-commit" onclick="saveAndCommit()" disabled>Save &amp; Commit</button>
+    </div>
+  </div>
 </div>
 
 <script>
@@ -275,6 +406,7 @@
         _currentPath = path;
         document.getElementById('editor-breadcrumb').textContent = path;
         document.getElementById('btn-save').disabled = false;
+        document.getElementById('btn-diff').disabled = false;
         _setStatus('Loaded ' + data.meta.line_count + ' lines · last commit: ' +
           (data.meta.last_commit_message || '(none)'), 'ok');
       })
@@ -309,6 +441,101 @@
       .catch(function (err) {
         btn.disabled = false;
         _setStatus('Save failed: ' + err.message, 'err');
+      });
+  }
+
+  // ── Diff preview (AC-303) ─────────────────────────────────────────────────
+
+  function _renderDiff(diff) {
+    var body = document.getElementById('diff-modal-body');
+    if (!diff || diff.trim() === '') {
+      body.innerHTML = '<span class="diff-empty">No changes — content is identical to HEAD.</span>';
+      return;
+    }
+    var lines = diff.split('\n');
+    var html = lines.map(function (line) {
+      var cls = 'diff-line';
+      if (line.startsWith('+') && !line.startsWith('+++')) cls += ' added';
+      else if (line.startsWith('-') && !line.startsWith('---')) cls += ' removed';
+      else if (line.startsWith('@@')) cls += ' hunk';
+      var escaped = line
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+      return '<div class="' + cls + '">' + escaped + '</div>';
+    }).join('');
+    body.innerHTML = html;
+  }
+
+  function previewDiff() {
+    if (!_editor || !_currentSlug) return;
+    var content = _editor.getValue();
+
+    document.getElementById('diff-modal-title').textContent = 'Diff preview — ' + _currentPath;
+    document.getElementById('diff-modal-body').innerHTML =
+      '<span class="diff-empty">Loading diff…</span>';
+    document.getElementById('btn-diff-commit').disabled = true;
+    document.getElementById('diff-modal-overlay').classList.add('visible');
+
+    var url = '/api/roles/' + encodeURIComponent(_currentSlug) + '/diff';
+
+    fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ content: content }),
+    })
+      .then(function (r) {
+        if (!r.ok) throw new Error('HTTP ' + r.status + ' — ' + r.statusText);
+        return r.json();
+      })
+      .then(function (data) {
+        _renderDiff(data.diff);
+        document.getElementById('btn-diff-commit').disabled = false;
+      })
+      .catch(function (err) {
+        document.getElementById('diff-modal-body').innerHTML =
+          '<span class="diff-empty" style="color:#e57373">Failed to load diff: ' +
+          err.message + '</span>';
+      });
+  }
+
+  function closeDiffModal() {
+    document.getElementById('diff-modal-overlay').classList.remove('visible');
+  }
+
+  // Close modal on overlay background click
+  document.getElementById('diff-modal-overlay').addEventListener('click', function (e) {
+    if (e.target === this) closeDiffModal();
+  });
+
+  // ── Save & Commit (AC-303) ────────────────────────────────────────────────
+
+  function saveAndCommit() {
+    if (!_editor || !_currentSlug) return;
+    var content = _editor.getValue();
+    var btn = document.getElementById('btn-diff-commit');
+    btn.disabled = true;
+    btn.textContent = 'Committing…';
+
+    fetch('/api/roles/' + encodeURIComponent(_currentSlug) + '/commit', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ content: content }),
+    })
+      .then(function (r) {
+        if (!r.ok) throw new Error('HTTP ' + r.status + ' — ' + r.statusText);
+        return r.json();
+      })
+      .then(function (data) {
+        closeDiffModal();
+        btn.disabled = false;
+        btn.textContent = 'Save & Commit';
+        _setStatus('✅ Committed — SHA ' + data.commit_sha.slice(0, 8) + ' · ' + data.message, 'ok');
+      })
+      .catch(function (err) {
+        btn.disabled = false;
+        btn.textContent = 'Save & Commit';
+        _setStatus('Commit failed: ' + err.message, 'err');
       });
   }
 </script>
