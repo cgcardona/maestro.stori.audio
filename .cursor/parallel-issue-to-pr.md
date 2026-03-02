@@ -402,7 +402,7 @@ WTNAME=$(basename "$(pwd)")
 
 # Detect codebase from issue label in .agent-task
 ISSUE_LABEL=$(grep "^ISSUE_LABEL=" .agent-task 2>/dev/null | cut -d= -f2 || echo "")
-IS_AC=$(echo "$ISSUE_LABEL" | grep -c "^htmx/" || true)
+IS_AC=$(echo "$ISSUE_LABEL" | grep -c "^agentception/" || true)
 
 # mypy — route by codebase (agentception and maestro are independent; never cross-run)
 if [ "$IS_AC" -gt 0 ]; then
@@ -679,7 +679,7 @@ STEP 3 — IMPLEMENT (only if STEP 2 found nothing):
   # what was already broken. This baseline is your contract with the next agent.
   # Detect codebase from .agent-task label — set once, used throughout this run.
   ISSUE_LABEL=$(grep "^ISSUE_LABEL=" .agent-task 2>/dev/null | cut -d= -f2 || echo "")
-  IS_AC=$(echo "$ISSUE_LABEL" | grep -c "^htmx/" || true)
+  IS_AC=$(echo "$ISSUE_LABEL" | grep -c "^agentception/" || true)
 
   echo "=== PRE-EXISTING MYPY BASELINE (dev, before any changes) ==="
   # Route by codebase — agentception and maestro are independent; never cross-run.
@@ -1374,20 +1374,20 @@ Every piece of code you write or touch must satisfy:
 Run in order — types before tests:
 
 ```
-docker compose exec maestro sh -c "PYTHONPATH=/worktrees/$WTNAME mypy /worktrees/$WTNAME/maestro/ /worktrees/$WTNAME/tests/"
+docker compose exec agentception sh -c "PYTHONPATH=/worktrees/$WTNAME mypy /worktrees/$WTNAME/agentception/"
 ```
 
-Then run **only the test files for modules you changed** — never `tests/` as a directory:
+Then run **only the test files for modules you changed** — never `agentception/tests/` as a directory:
 
 ```
 # Module-name convention:
-# agentception/app.py                → tests/test_agentception_scaffold.py
-# agentception/readers/worktrees.py  → tests/test_agentception_worktrees.py
-# agentception/readers/github.py     → tests/test_agentception_github.py
-# agentception/poller.py             → tests/test_agentception_poller.py
-# agentception/routes/ui.py          → tests/test_agentception_ui_overview.py
+# agentception/app.py                → agentception/tests/test_agentception_scaffold.py
+# agentception/readers/worktrees.py  → agentception/tests/test_agentception_worktrees.py
+# agentception/readers/github.py     → agentception/tests/test_agentception_github.py
+# agentception/poller.py             → agentception/tests/test_agentception_poller.py
+# agentception/routes/ui.py          → agentception/tests/test_agentception_ui_overview.py
 
-docker compose exec maestro pytest tests/test_<your_module>.py -v
+docker compose exec agentception pytest agentception/tests/test_<your_module>.py -v
 ```
 
 The full suite is CI's job. Running it in every agent session doesn't scale.
