@@ -92,7 +92,7 @@ class IssueAnalysis(BaseModel):
     parallelism: Literal["safe", "risky", "serial"]
     conflict_risk: Literal["none", "low", "high"]
     modifies_files: list[str]
-    recommended_role: str
+    recommended_role: Literal["python-developer", "database-architect"]
     recommended_merge_after: int | None
 
 
@@ -237,7 +237,7 @@ def extract_modified_files(body: str) -> list[str]:
     return files
 
 
-def infer_role(body: str, files: list[str]) -> str:
+def infer_role(body: str, files: list[str]) -> Literal["python-developer", "database-architect"]:
     """Recommend an engineer role based on the issue body and file list.
 
     Heuristics (applied in order, first match wins):
@@ -254,7 +254,7 @@ def infer_role(body: str, files: list[str]) -> str:
 
     Returns
     -------
-    str
+    Literal["python-developer", "database-architect"]
         One of ``"python-developer"`` or ``"database-architect"``.
     """
     for path in files:
@@ -277,10 +277,9 @@ def infer_parallelism(body: str, files: list[str]) -> Literal["safe", "risky", "
     Rules (applied in order, first match wins):
     1. Body contains an explicit serial marker (``must run alone``, ``serial``,
        ``do not parallelize``) → ``"serial"``.
-    2. Any file in *files* matches a known high-conflict path → ``"risky"``.
-    3. All files are new-file-only (body says ``(new)`` next to them, or
-       no shared-config files appear) → ``"safe"``.
-    4. Otherwise → ``"risky"``.
+    2. Any file in *files* matches a known high-conflict or shared-config path → ``"risky"``.
+    3. All files are new-file-only (body says ``(new)`` next to every listed path) → ``"safe"``.
+    4. Otherwise → ``"safe"`` (files not in the known-conflict set are assumed safe).
 
     Parameters
     ----------
@@ -324,8 +323,8 @@ def infer_parallelism(body: str, files: list[str]) -> Literal["safe", "risky", "
     if new_file_mentions == len(files):
         return "safe"
 
-    # Fallback: presence of a file list without explicit "(new)" markers
-    # means we can't guarantee no conflict.
+    # Files are present but not all marked "(new)" — still safe because they
+    # cleared the high-conflict and shared-config checks above.
     return "safe"
 
 
