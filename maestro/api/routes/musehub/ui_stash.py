@@ -33,7 +33,7 @@ exposes a ``router`` attribute. No changes to ``__init__.py`` are needed.
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -47,8 +47,8 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.responses import Response as StarletteResponse
 
-from maestro.api.routes.musehub._templates import templates
-from maestro.api.routes.musehub.negotiate import htmx_fragment_or_full
+from maestro.api.routes.musehub.jinja2_filters import register_musehub_filters
+from maestro.api.routes.musehub.negotiate import negotiate_response
 from maestro.auth.dependencies import TokenClaims, require_valid_token
 from maestro.db import get_db
 from maestro.services import musehub_repository
@@ -59,6 +59,7 @@ router = APIRouter(prefix="/musehub/ui", tags=["musehub-ui-stash"])
 
 _TEMPLATE_DIR = Path(__file__).parent.parent.parent.parent / "templates"
 templates = Jinja2Templates(directory=str(_TEMPLATE_DIR))
+register_musehub_filters(templates.env)
 
 
 # ---------------------------------------------------------------------------
@@ -292,11 +293,11 @@ async def stash_list_page(
         ],
     }
 
-    return await htmx_fragment_or_full(
-        request,
-        templates,
-        ctx,
-        full_template="musehub/pages/stash.html",
+    return await negotiate_response(
+        request=request,
+        templates=templates,
+        context=ctx,
+        template_name="musehub/pages/stash.html",
         fragment_template="musehub/fragments/stash_rows.html",
         json_data=page_data,
         format_param=format,
