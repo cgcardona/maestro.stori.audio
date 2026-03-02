@@ -1,7 +1,7 @@
 """Structured prompt base types.
 
 ``StructuredPrompt`` is the generic base for any structured prompt dialect
-recognised by Maestro.  ``MaestroPrompt`` (in ``app.prompts.maestro``) is
+recognised by Maestro. ``MaestroPrompt`` (in ``app.prompts.maestro``) is
 the canonical — and currently only — subclass.
 
 Data-class types shared across prompt parsing and downstream routing
@@ -21,14 +21,14 @@ MaestroDimensions = dict[str, JSONValue]
 """Open-vocabulary Maestro dimension block (Harmony, Melody, Rhythm, …).
 
 Unknown top-level YAML keys in a MAESTRO PROMPT land here and are injected
-verbatim into the LLM system prompt.  The vocabulary is open — invent new
+verbatim into the LLM system prompt. The vocabulary is open — invent new
 dimensions and they work immediately.
 """
 
 PromptConstraints = dict[str, JSONValue]
 """Generation constraint block parsed from the ``Constraints:`` YAML key.
 
-Keys are lowercased at parse time.  Values are scalars or simple structures
+Keys are lowercased at parse time. Values are scalars or simple structures
 that downstream generation code interprets (e.g. ``bars``, ``density``,
 ``no_effects``).
 """
@@ -38,7 +38,7 @@ that downstream generation code interprets (e.g. ``bars``, ``density``,
 class TargetSpec:
     """Scope anchor for a structured prompt editing operation.
 
-    Identifies which DAW entity the operation targets.  When ``kind`` is
+    Identifies which DAW entity the operation targets. When ``kind`` is
     ``"track"`` or ``"region"``, ``name`` holds the human-readable label
     (e.g. ``"Drums"``); the server resolves it to a UUID via EntityRegistry.
     """
@@ -51,15 +51,15 @@ class TargetSpec:
 class PositionSpec:
     """Arrangement placement.
 
-    kind        description
-    ──────────  ────────────────────────────────────────────────────────────
-    after       sequential — start after ref section ends
-    before      insert / pickup — start before ref section begins
-    alongside   parallel layer — same start beat as ref
-    between     transition bridge — fills gap between ref and ref2
-    within      nested — relative offset inside ref
-    absolute    explicit beat number
-    last        after all existing content in the project
+    kind description
+    ────────── ────────────────────────────────────────────────────────────
+    after sequential — start after ref section ends
+    before insert / pickup — start before ref section begins
+    alongside parallel layer — same start beat as ref
+    between transition bridge — fills gap between ref and ref2
+    within nested — relative offset inside ref
+    absolute explicit beat number
+    last after all existing content in the project
     """
     kind: Literal["after", "before", "alongside", "between", "within", "absolute", "last"]
     ref: str | None = None
@@ -88,7 +88,7 @@ class VibeWeight:
 class StructuredPrompt:
     """Base class for all structured prompt dialects.
 
-    Routing fields are typed attributes.  All other top-level YAML keys land
+    Routing fields are typed attributes. All other top-level YAML keys land
     in ``extensions`` and are injected verbatim into the Maestro LLM system
     prompt.
 

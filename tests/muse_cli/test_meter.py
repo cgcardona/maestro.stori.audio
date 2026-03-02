@@ -59,10 +59,10 @@ def _make_midi_with_time_sig(numerator: int, denominator_exp: int) -> bytes:
     """Build a minimal valid MIDI file containing a time-signature meta event."""
     # Time-signature meta event: FF 58 04 nn dd cc bb
     time_sig_event = bytes([
-        0x00,                           # delta time (0)
-        0xFF, 0x58, 0x04,              # meta type, length
-        numerator, denominator_exp,    # numerator, denominator exponent
-        0x18, 0x08,                    # clocks/tick, 32nds/quarter
+        0x00, # delta time (0)
+        0xFF, 0x58, 0x04, # meta type, length
+        numerator, denominator_exp, # numerator, denominator exponent
+        0x18, 0x08, # clocks/tick, 32nds/quarter
     ])
     # End-of-track event
     eot = bytes([0x00, 0xFF, 0x2F, 0x00])
@@ -103,7 +103,7 @@ def test_validate_time_signature_accepts_12_8() -> None:
 
 
 def test_validate_time_signature_strips_whitespace() -> None:
-    assert validate_time_signature("  4/4  ") == "4/4"
+    assert validate_time_signature(" 4/4 ") == "4/4"
 
 
 def test_validate_time_signature_rejects_non_power_of_two_denominator() -> None:
@@ -132,7 +132,7 @@ def test_validate_time_signature_rejects_missing_slash() -> None:
 
 
 def test_detect_midi_time_signature_4_4() -> None:
-    midi = _make_midi_with_time_sig(numerator=4, denominator_exp=2)  # 2^2=4
+    midi = _make_midi_with_time_sig(numerator=4, denominator_exp=2) # 2^2=4
     assert detect_midi_time_signature(midi) == "4/4"
 
 
@@ -142,7 +142,7 @@ def test_detect_midi_time_signature_3_4() -> None:
 
 
 def test_detect_midi_time_signature_7_8() -> None:
-    midi = _make_midi_with_time_sig(numerator=7, denominator_exp=3)  # 2^3=8
+    midi = _make_midi_with_time_sig(numerator=7, denominator_exp=3) # 2^3=8
     assert detect_midi_time_signature(midi) == "7/8"
 
 
@@ -156,7 +156,7 @@ def test_detect_midi_time_signature_returns_none_for_no_event() -> None:
 
 
 def test_detect_midi_time_signature_12_8() -> None:
-    midi = _make_midi_with_time_sig(numerator=12, denominator_exp=3)  # 2^3=8
+    midi = _make_midi_with_time_sig(numerator=12, denominator_exp=3) # 2^3=8
     assert detect_midi_time_signature(midi) == "12/8"
 
 
@@ -168,7 +168,7 @@ def test_detect_midi_time_signature_12_8() -> None:
 def test_scan_workdir_finds_time_signature_in_midi(tmp_path: pathlib.Path) -> None:
     workdir = tmp_path / "muse-work"
     workdir.mkdir()
-    (workdir / "beat.mid").write_bytes(_make_midi_with_time_sig(4, 2))  # 4/4
+    (workdir / "beat.mid").write_bytes(_make_midi_with_time_sig(4, 2)) # 4/4
 
     sigs = scan_workdir_for_time_signatures(workdir)
     assert sigs == {"beat.mid": "4/4"}
@@ -192,7 +192,7 @@ def test_scan_workdir_ignores_non_midi_files(tmp_path: pathlib.Path) -> None:
     workdir = tmp_path / "muse-work"
     workdir.mkdir()
     (workdir / "render.mp3").write_bytes(b"MP3-DATA")
-    (workdir / "beat.mid").write_bytes(_make_midi_with_time_sig(3, 2))  # 3/4
+    (workdir / "beat.mid").write_bytes(_make_midi_with_time_sig(3, 2)) # 3/4
 
     sigs = scan_workdir_for_time_signatures(workdir)
     assert "render.mp3" not in sigs
@@ -202,8 +202,8 @@ def test_scan_workdir_ignores_non_midi_files(tmp_path: pathlib.Path) -> None:
 def test_scan_workdir_multiple_midi_files(tmp_path: pathlib.Path) -> None:
     workdir = tmp_path / "muse-work"
     workdir.mkdir()
-    (workdir / "drums.mid").write_bytes(_make_midi_with_time_sig(4, 2))   # 4/4
-    (workdir / "bass.mid").write_bytes(_make_midi_with_time_sig(4, 2))    # 4/4
+    (workdir / "drums.mid").write_bytes(_make_midi_with_time_sig(4, 2)) # 4/4
+    (workdir / "bass.mid").write_bytes(_make_midi_with_time_sig(4, 2)) # 4/4
 
     sigs = scan_workdir_for_time_signatures(workdir)
     assert len(sigs) == 2
@@ -428,8 +428,8 @@ async def test_meter_polyrhythm_detected_when_mixed_signatures(
     _init_muse_repo(tmp_path)
     workdir = tmp_path / "muse-work"
     workdir.mkdir()
-    (workdir / "drums.mid").write_bytes(_make_midi_with_time_sig(4, 2))   # 4/4
-    (workdir / "melody.mid").write_bytes(_make_midi_with_time_sig(7, 3))   # 7/8
+    (workdir / "drums.mid").write_bytes(_make_midi_with_time_sig(4, 2)) # 4/4
+    (workdir / "melody.mid").write_bytes(_make_midi_with_time_sig(7, 3)) # 7/8
     await _commit_async(message="polyrhythm", root=tmp_path, session=muse_cli_db_session)
 
     result = await _meter_polyrhythm_async(

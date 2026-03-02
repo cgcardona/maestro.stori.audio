@@ -4,7 +4,7 @@ Endpoint summary:
   POST /musehub/repos/{repo_id}/push — batch-commit and object upload
   POST /musehub/repos/{repo_id}/pull — fetch missing commits and objects
 
-Both endpoints require a valid JWT Bearer token.  No business logic lives
+Both endpoints require a valid JWT Bearer token. No business logic lives
 here — all persistence is delegated to maestro.services.musehub_sync.
 
 After a successful push, embeddings are computed for the new commits and
@@ -57,7 +57,7 @@ async def push(
     backwards (non-fast-forward) is rejected with ``409 non_fast_forward``
     unless ``force: true`` is set in the request body.
 
-    Objects are base64-encoded in ``content_b64``.  For MVP, objects up to
+    Objects are base64-encoded in ``content_b64``. For MVP, objects up to
     ~1 MB are fine; larger files will require pre-signed URL upload in a
     future release.
 
@@ -104,7 +104,7 @@ async def push(
     )
 
     # Schedule render pipeline — auto-generate MP3 stubs and piano-roll images
-    # for any MIDI objects in this push.  Idempotent: re-pushing the same
+    # for any MIDI objects in this push. Idempotent: re-pushing the same
     # commit SHA skips a duplicate render.
     background_tasks.add_task(
         trigger_render_background,
@@ -149,7 +149,7 @@ async def pull(
 
     MVP simplification: no ancestry traversal is performed — the client
     receives all stored commits/objects for the branch minus the ones it
-    already has.  Streaming / pre-signed URL optimization is tracked in a
+    already has. Streaming / pre-signed URL optimization is tracked in a
     follow-up issue.
     """
     repo = await musehub_repository.get_repo(db, repo_id)

@@ -1,6 +1,6 @@
 """Muse Inspect — serialize the full Muse commit graph to structured output.
 
-This module is the read-only introspection engine for ``muse inspect``.  It
+This module is the read-only introspection engine for ``muse inspect``. It
 traverses the commit graph reachable from one or more branch heads and returns
 a typed :class:`MuseInspectResult` that CLI formatters render as JSON, DOT, or
 Mermaid.
@@ -9,7 +9,7 @@ Why this exists
 ---------------
 Machine-readable graph export is a prerequisite for tooling (IDEs, CI, AI
 agents) that need to reason about the shape of a project's musical history
-without parsing human-readable ``muse log`` output.  The three format options
+without parsing human-readable ``muse log`` output. The three format options
 target different consumers:
 
 - **json** — primary format for agents and programmatic clients.
@@ -18,8 +18,8 @@ target different consumers:
 
 Result types
 ------------
-:class:`MuseInspectCommit`  — one node in the graph.
-:class:`MuseInspectResult`  — the full serialized graph.
+:class:`MuseInspectCommit` — one node in the graph.
+:class:`MuseInspectResult` — the full serialized graph.
 
 Both are frozen dataclasses; callers treat them as immutable value objects.
 """
@@ -68,7 +68,7 @@ class MuseInspectCommit:
     - ``commit_id`` / ``short_id``: full and 8-char abbreviated hash.
     - ``branch``: the branch this commit was recorded on.
     - ``parent_commit_id`` / ``parent2_commit_id``: DAG parent links (second
-      parent is reserved for merge commits, issue #35).
+      parent is reserved for merge commits, ).
     - ``message``: human-readable commit message.
     - ``author``: committer identity string.
     - ``committed_at``: ISO-8601 UTC timestamp string.
@@ -162,7 +162,7 @@ async def _load_commit_tags(
     """Bulk-load tag strings for a set of commit IDs.
 
     Returns a ``{commit_id: [tag, ...]}`` mapping; commits without tags map
-    to an empty list.  A single query is issued regardless of graph size.
+    to an empty list. A single query is issued regardless of graph size.
     """
     if not commit_ids:
         return {}
@@ -188,10 +188,10 @@ async def _walk_from(
     ``--branches`` combines multiple heads).
 
     Args:
-        session:         Async SQLAlchemy session.
+        session: Async SQLAlchemy session.
         start_commit_id: SHA of the first commit to visit.
-        depth:           Maximum number of commits to return (``None`` = unlimited).
-        visited:         Mutable set of already-visited commit IDs.  Updated
+        depth: Maximum number of commits to return (``None`` = unlimited).
+        visited: Mutable set of already-visited commit IDs. Updated
                          in-place so sibling traversals share state.
 
     Returns:
@@ -222,20 +222,20 @@ async def build_inspect_result(
 ) -> MuseInspectResult:
     """Build the full :class:`MuseInspectResult` for a Muse repository.
 
-    This is the primary entry point for ``muse inspect``.  It reads the
+    This is the primary entry point for ``muse inspect``. It reads the
     repository state from the ``.muse/`` directory, resolves starting commit
     IDs, walks the graph, and returns a fully typed result.
 
     Args:
-        session:          Async SQLAlchemy session (read-only operations only).
-        root:             Repository root path (contains ``.muse/``).
-        ref:              Optional starting commit reference.  Accepts a full
+        session: Async SQLAlchemy session (read-only operations only).
+        root: Repository root path (contains ``.muse/``).
+        ref: Optional starting commit reference. Accepts a full
                           or abbreviated SHA, a branch name, or ``None``/
                           ``"HEAD"`` (default: HEAD of current branch).
-        depth:            Maximum commits per branch traversal (``None`` =
+        depth: Maximum commits per branch traversal (``None`` =
                           unlimited).
         include_branches: When ``True``, traverse all branches and merge
-                          their reachable commits into the output.  When
+                          their reachable commits into the output. When
                           ``False``, only the current branch (or *ref*) is
                           traversed.
 
@@ -250,8 +250,8 @@ async def build_inspect_result(
     repo_data: dict[str, str] = json.loads((muse_dir / "repo.json").read_text())
     repo_id = repo_data["repo_id"]
 
-    head_ref = (muse_dir / "HEAD").read_text().strip()   # "refs/heads/main"
-    current_branch = head_ref.rsplit("/", 1)[-1]          # "main"
+    head_ref = (muse_dir / "HEAD").read_text().strip() # "refs/heads/main"
+    current_branch = head_ref.rsplit("/", 1)[-1] # "main"
 
     all_branches = _read_branches(muse_dir)
 
@@ -341,7 +341,7 @@ async def build_inspect_result(
 def render_json(result: MuseInspectResult, indent: int = 2) -> str:
     """Serialize *result* to a JSON string.
 
-    The JSON shape matches the format specified in issue #98:
+    The JSON shape matches the format specified:
     ``repo_id``, ``current_branch``, ``branches``, and ``commits`` array.
 
     Args:
@@ -357,8 +357,8 @@ def render_json(result: MuseInspectResult, indent: int = 2) -> str:
 def render_dot(result: MuseInspectResult) -> str:
     """Serialize *result* to a Graphviz DOT directed graph.
 
-    Each commit becomes a labelled node.  Parent edges point from child
-    to parent (matching git's convention).  Branch refs appear as bold
+    Each commit becomes a labelled node. Parent edges point from child
+    to parent (matching git's convention). Branch refs appear as bold
     rectangular nodes pointing to their HEAD commit.
 
     Args:
@@ -367,33 +367,33 @@ def render_dot(result: MuseInspectResult) -> str:
     Returns:
         DOT source string, suitable for piping to ``dot -Tsvg``.
     """
-    lines: list[str] = ["digraph muse_graph {", '  rankdir="LR";', '  node [shape=ellipse];', ""]
+    lines: list[str] = ["digraph muse_graph {", ' rankdir="LR";', ' node [shape=ellipse];', ""]
 
     for commit in result.commits:
         label = f"{commit.short_id}\\n{commit.message[:40]}"
         if commit.message and len(commit.message) > 40:
             label += "…"
-        lines.append(f'  "{commit.commit_id}" [label="{label}"];')
+        lines.append(f' "{commit.commit_id}" [label="{label}"];')
 
     lines.append("")
 
     for commit in result.commits:
         if commit.parent_commit_id:
-            lines.append(f'  "{commit.commit_id}" -> "{commit.parent_commit_id}";')
+            lines.append(f' "{commit.commit_id}" -> "{commit.parent_commit_id}";')
         if commit.parent2_commit_id:
             lines.append(
-                f'  "{commit.commit_id}" -> "{commit.parent2_commit_id}" [style=dashed];'
+                f' "{commit.commit_id}" -> "{commit.parent2_commit_id}" [style=dashed];'
             )
 
     lines.append("")
-    lines.append("  // Branch pointers")
-    lines.append('  node [shape=rectangle style=bold];')
+    lines.append(" // Branch pointers")
+    lines.append(' node [shape=rectangle style=bold];')
     for branch, head_id in result.branches.items():
         safe_branch = branch.replace("/", "_").replace("-", "_")
         arrow = " -> " if head_id else ""
         if head_id:
-            lines.append(f'  "branch_{safe_branch}" [label="{branch}"];')
-            lines.append(f'  "branch_{safe_branch}" -> "{head_id}";')
+            lines.append(f' "branch_{safe_branch}" [label="{branch}"];')
+            lines.append(f' "branch_{safe_branch}" -> "{head_id}";')
 
     lines.append("}")
     return "\n".join(lines)
@@ -402,8 +402,8 @@ def render_dot(result: MuseInspectResult) -> str:
 def render_mermaid(result: MuseInspectResult) -> str:
     """Serialize *result* to a Mermaid.js graph definition.
 
-    Produces a left-to-right ``graph LR`` block.  Commit nodes are labelled
-    with their short ID and truncated message.  Branch refs appear as
+    Produces a left-to-right ``graph LR`` block. Commit nodes are labelled
+    with their short ID and truncated message. Branch refs appear as
     rectangular nodes pointing to their HEAD commit.
 
     Args:
@@ -420,20 +420,20 @@ def render_mermaid(result: MuseInspectResult) -> str:
         if len(commit.message) > 35:
             msg += "…"
         safe_msg = msg.replace('"', "'")
-        lines.append(f'  {commit.commit_id[:8]}["{commit.short_id}: {safe_msg}"]')
+        lines.append(f' {commit.commit_id[:8]}["{commit.short_id}: {safe_msg}"]')
 
     for commit in result.commits:
         if commit.parent_commit_id:
-            lines.append(f"  {commit.commit_id[:8]} --> {commit.parent_commit_id[:8]}")
+            lines.append(f" {commit.commit_id[:8]} --> {commit.parent_commit_id[:8]}")
         if commit.parent2_commit_id:
             lines.append(
-                f"  {commit.commit_id[:8]} -.-> {commit.parent2_commit_id[:8]}"
+                f" {commit.commit_id[:8]} -.-> {commit.parent2_commit_id[:8]}"
             )
 
     for branch, head_id in result.branches.items():
         if head_id:
             safe_branch = branch.replace("/", "_").replace("-", "_")
-            lines.append(f'  {safe_branch}["{branch}"]')
-            lines.append(f"  {safe_branch} --> {head_id[:8]}")
+            lines.append(f' {safe_branch}["{branch}"]')
+            lines.append(f" {safe_branch} --> {head_id[:8]}")
 
     return "\n".join(lines)

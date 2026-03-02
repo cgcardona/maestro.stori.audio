@@ -154,7 +154,7 @@ class TestExecutionContext:
         ctx = ExecutionContext(store=store, transaction=tx, trace=trace)
         ctx.add_result("stori_add_midi_track", success=True, output={"trackId": "track-uuid-1"}, entity_created="track-uuid-1")
         ctx.add_result("stori_add_midi_region", success=True, output={"regionId": "region-uuid-1"}, entity_created="region-uuid-1")
-        ctx.add_result("stori_set_tempo", success=True, output={})  # no entity
+        ctx.add_result("stori_set_tempo", success=True, output={}) # no entity
         assert ctx.created_entities["stori_add_midi_track"] == "track-uuid-1"
         assert ctx.created_entities["stori_add_midi_region"] == "region-uuid-1"
         assert len(ctx.created_entities) == 2

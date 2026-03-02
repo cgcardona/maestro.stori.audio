@@ -2,7 +2,7 @@
 
 This is a low-level plumbing command (analogous to ``git read-tree``) that
 hydrates ``muse-work/`` from a stored snapshot manifest WITHOUT touching any
-branch or HEAD references.  It is intentionally destructive by default: any
+branch or HEAD references. It is intentionally destructive by default: any
 file in ``muse-work/`` whose path appears in the snapshot is overwritten.
 
 Use cases
@@ -73,10 +73,10 @@ class ReadTreeResult:
     the filesystem.
 
     Attributes:
-        snapshot_id:   Full 64-char snapshot ID that was resolved.
+        snapshot_id: Full 64-char snapshot ID that was resolved.
         files_written: Relative paths of files written to muse-work/.
-        dry_run:       True when ``--dry-run`` was requested (no writes made).
-        reset:         True when ``--reset`` cleared muse-work/ first.
+        dry_run: True when ``--dry-run`` was requested (no writes made).
+        reset: True when ``--reset`` cleared muse-work/ first.
     """
 
     def __init__(
@@ -141,15 +141,15 @@ async def _read_tree_async(
     """Core read-tree logic — fully injectable for tests.
 
     Resolves the snapshot from the DB, then hydrates ``muse-work/`` from the
-    local object store.  Raises ``typer.Exit`` with a clean exit code on any
+    local object store. Raises ``typer.Exit`` with a clean exit code on any
     user-facing error so the Typer callback can surface it without a traceback.
 
     Args:
         snapshot_id: Full or abbreviated snapshot ID to restore.
-        root:        Muse repository root (directory containing ``.muse/``).
-        session:     Open async DB session used for snapshot lookup.
-        dry_run:     When True, report what would be written but do nothing.
-        reset:       When True, clear muse-work/ before populating.
+        root: Muse repository root (directory containing ``.muse/``).
+        session: Open async DB session used for snapshot lookup.
+        dry_run: When True, report what would be written but do nothing.
+        reset: When True, clear muse-work/ before populating.
 
     Returns:
         :class:`ReadTreeResult` describing what was (or would have been) done.
@@ -172,7 +172,7 @@ async def _read_tree_async(
 
     manifest: dict[str, str] = dict(snapshot.manifest)
     if not manifest:
-        typer.echo(f"⚠️  Snapshot {snapshot.snapshot_id[:8]} has an empty manifest.")
+        typer.echo(f"⚠️ Snapshot {snapshot.snapshot_id[:8]} has an empty manifest.")
         raise typer.Exit(code=ExitCode.USER_ERROR)
 
     workdir = root / "muse-work"
@@ -183,7 +183,7 @@ async def _read_tree_async(
         typer.echo(f"Snapshot {snapshot.snapshot_id[:8]} — {len(manifest)} file(s):")
         for rel_path in sorted_paths:
             obj_id = manifest[rel_path]
-            typer.echo(f"  {rel_path}  ({obj_id[:8]})")
+            typer.echo(f" {rel_path} ({obj_id[:8]})")
         return ReadTreeResult(
             snapshot_id=snapshot.snapshot_id,
             files_written=sorted_paths,
@@ -204,9 +204,9 @@ async def _read_tree_async(
             f"(snapshot {snapshot.snapshot_id[:8]}):"
         )
         for p in sorted(missing):
-            typer.echo(f"   {p}  ({manifest[p][:8]})")
+            typer.echo(f" {p} ({manifest[p][:8]})")
         typer.echo(
-            "   Objects are written by 'muse commit'. "
+            " Objects are written by 'muse commit'. "
             "Re-commit this snapshot or fetch it via 'muse pull'."
         )
         raise typer.Exit(code=ExitCode.USER_ERROR)
@@ -218,14 +218,14 @@ async def _read_tree_async(
             if existing_file.is_file():
                 existing_file.unlink()
                 removed += 1
-        logger.info("⚠️  --reset: removed %d file(s) from muse-work/", removed)
+        logger.info("⚠️ --reset: removed %d file(s) from muse-work/", removed)
         # Clean up empty directories left behind.
         for d in sorted(workdir.rglob("*"), reverse=True):
             if d.is_dir():
                 try:
                     d.rmdir()
                 except OSError:
-                    pass  # Not empty — leave it.
+                    pass # Not empty — leave it.
 
     # ── 5. Write objects to muse-work/ ──────────────────────────────────
     workdir.mkdir(parents=True, exist_ok=True)
@@ -281,7 +281,7 @@ def read_tree(
 
     Populates muse-work/ with the exact file set recorded in SNAPSHOT_ID.
     Files not referenced by the snapshot are left untouched unless --reset
-    is specified.  HEAD and branch refs are never modified.
+    is specified. HEAD and branch refs are never modified.
     """
     root = require_repo()
 

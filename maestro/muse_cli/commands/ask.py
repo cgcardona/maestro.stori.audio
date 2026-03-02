@@ -1,8 +1,8 @@
 """muse ask — natural language query over Muse musical history.
 
 Searches commit messages for keywords extracted from the user's question
-and returns matching commits in a structured answer.  This is a stub
-implementation: keyword matching over commit messages.  Full LLM-powered
+and returns matching commits in a structured answer. This is a stub
+implementation: keyword matching over commit messages. Full LLM-powered
 answer generation is a planned enhancement.
 
 Usage::
@@ -71,11 +71,11 @@ class AnswerResult:
             for commit in self.matches:
                 ts = commit.committed_at.strftime("%Y-%m-%d %H:%M")
                 if self.cite:
-                    lines.append(f"  [{commit.commit_id}] {ts}  {commit.message}")
+                    lines.append(f" [{commit.commit_id}] {ts} {commit.message}")
                 else:
-                    lines.append(f"  [{commit.commit_id[:8]}] {ts}  {commit.message}")
+                    lines.append(f" [{commit.commit_id[:8]}] {ts} {commit.message}")
         else:
-            lines.append("  (no matching commits)")
+            lines.append(" (no matching commits)")
         lines.append("")
         lines.append(
             "Note: Full LLM-powered answer generation is a planned enhancement."
@@ -139,7 +139,7 @@ async def _ask_async(
     """Core ask logic — fully injectable for tests.
 
     Loads commits from the DB, applies optional filters (branch, date
-    range), and performs keyword search over commit messages.  Returns
+    range), and performs keyword search over commit messages. Returns
     an :class:`AnswerResult` that can be rendered as plain text or JSON.
     """
     muse_dir = root / ".muse"

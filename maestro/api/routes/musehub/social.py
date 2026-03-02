@@ -1,29 +1,29 @@
 """Muse Hub social layer — comments, reactions, follows, watches, notifications, forks.
 
 Endpoint summary:
-  GET  /musehub/repos/{repo_id}/comments?target_type=&target_id=  — list comments on an object
-  POST /musehub/repos/{repo_id}/comments                          — add a comment (auth required)
-  DELETE /musehub/repos/{repo_id}/comments/{comment_id}           — soft-delete (auth, owner only)
+  GET /musehub/repos/{repo_id}/comments?target_type=&target_id= — list comments on an object
+  POST /musehub/repos/{repo_id}/comments — add a comment (auth required)
+  DELETE /musehub/repos/{repo_id}/comments/{comment_id} — soft-delete (auth, owner only)
 
-  GET  /musehub/repos/{repo_id}/reactions?target_type=&target_id= — reaction counts
-  POST /musehub/repos/{repo_id}/reactions                         — toggle reaction (auth required)
+  GET /musehub/repos/{repo_id}/reactions?target_type=&target_id= — reaction counts
+  POST /musehub/repos/{repo_id}/reactions — toggle reaction (auth required)
 
-  GET  /musehub/users/{username}/followers                        — list followers
-  POST /musehub/users/{username}/follow                           — follow user (auth required)
-  DELETE /musehub/users/{username}/follow                         — unfollow (auth required)
+  GET /musehub/users/{username}/followers — list followers
+  POST /musehub/users/{username}/follow — follow user (auth required)
+  DELETE /musehub/users/{username}/follow — unfollow (auth required)
 
-  GET  /musehub/repos/{repo_id}/watches                           — watch count
-  POST /musehub/repos/{repo_id}/watch                             — watch repo (auth required)
-  DELETE /musehub/repos/{repo_id}/watch                           — unwatch (auth required)
+  GET /musehub/repos/{repo_id}/watches — watch count
+  POST /musehub/repos/{repo_id}/watch — watch repo (auth required)
+  DELETE /musehub/repos/{repo_id}/watch — unwatch (auth required)
 
-  GET  /musehub/notifications                                     — inbox (auth required)
-  POST /musehub/notifications/{notif_id}/read                     — mark read (auth required)
-  POST /musehub/notifications/read-all                            — mark all read (auth required)
+  GET /musehub/notifications — inbox (auth required)
+  POST /musehub/notifications/{notif_id}/read — mark read (auth required)
+  POST /musehub/notifications/read-all — mark all read (auth required)
 
-  POST /musehub/repos/{repo_id}/fork                              — fork repo (auth required)
-  GET  /musehub/repos/{repo_id}/forks                             — list forks
+  POST /musehub/repos/{repo_id}/fork — fork repo (auth required)
+  GET /musehub/repos/{repo_id}/forks — list forks
 
-  GET  /musehub/feed                                              — activity feed (auth required)
+  GET /musehub/feed — activity feed (auth required)
 
 All read endpoints that expose public repo data use optional_token + visibility guard.
 Write endpoints always require require_valid_token.
@@ -732,7 +732,7 @@ async def record_view(
     try:
         await db.commit()
     except IntegrityError:
-        await db.rollback()  # already viewed today — no-op
+        await db.rollback() # already viewed today — no-op
 
 
 @router.get("/repos/{repo_id}/analytics", operation_id="getRepoAnalytics", summary="Repo analytics summary")

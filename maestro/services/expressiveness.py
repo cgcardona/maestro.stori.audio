@@ -41,12 +41,12 @@ class ExpressivenessProfile:
     """
     Style-specific parameters controlling the post-processor.
 
-    Each genre gets a tuned profile.  Profiles are composable —
+    Each genre gets a tuned profile. Profiles are composable
     start from a base and override selectively.
     """
     # Velocity shaping
     velocity_arc: bool = True
-    velocity_arc_shape: str = "phrase"  # "phrase" | "bar" | "crescendo" | "none"
+    velocity_arc_shape: str = "phrase" # "phrase" | "bar" | "crescendo" | "none"
     velocity_stdev_target: float = 17.0
     accent_beats: list[float] = field(default_factory=lambda: [0.0, 2.0])
     accent_strength: int = 12
@@ -55,7 +55,7 @@ class ExpressivenessProfile:
 
     # CC automation
     cc_expression_enabled: bool = False
-    cc_expression_density: int = 8      # events per bar
+    cc_expression_density: int = 8 # events per bar
     cc_expression_range: tuple[int, int] = (70, 120)
     cc_sustain_enabled: bool = False
     cc_sustain_changes_per_bar: float = 2.0
@@ -65,12 +65,12 @@ class ExpressivenessProfile:
     # Pitch bend
     pitch_bend_enabled: bool = False
     pitch_bend_probability: float = 0.0
-    pitch_bend_range: int = 4096        # ±1 semitone
+    pitch_bend_range: int = 4096 # ±1 semitone
 
     # Timing humanization
     humanize_timing: bool = True
-    timing_jitter_beats: float = 0.02   # random ± offset
-    timing_late_bias: float = 0.005     # slight laid-back feel
+    timing_jitter_beats: float = 0.02 # random ± offset
+    timing_late_bias: float = 0.005 # slight laid-back feel
 
 
 # ---------------------------------------------------------------------------
@@ -276,7 +276,7 @@ def get_profile(style: str, role: str = "melody") -> ExpressivenessProfile:
     """Look up profile by style and instrument role.
 
     The base genre profile is modulated by role-specific heuristics
-    from 222K professional compositions.  For example a jazz *lead*
+    from 222K professional compositions. For example a jazz *lead*
     gets more pitch bend probability than jazz *chords*, and pads
     get expression CC while bass gets higher timing late-bias.
     """
@@ -558,7 +558,7 @@ def _note_to_snake(n: NoteDict) -> NoteDict:
     """Return a new NoteDict with camelCase timing keys normalised to snake_case.
 
     ``startBeat`` → ``start_beat``, ``durationBeats`` → ``duration_beats``.
-    All other fields are copied as-is.  Explicit per-field access avoids
+    All other fields are copied as-is. Explicit per-field access avoids
     dynamic key mutation and keeps the type checker satisfied.
     """
     result: NoteDict = {}
@@ -687,7 +687,7 @@ def _notes_to_snake(notes: list[NoteDict]) -> list[NoteDict]:
     """Return a new list of notes with all camelCase timing keys converted to snake_case.
 
     This is the batch entry-point used at the top of ``apply_expressiveness``
-    to normalise DAW wire payloads before internal processing.  Each note is
+    to normalise DAW wire payloads before internal processing. Each note is
     treated immutably — the originals are never modified.
     """
     return [_note_to_snake(n) for n in notes]
@@ -697,7 +697,7 @@ def _notes_to_camel(notes: list[NoteDict]) -> list[NoteDict]:
     """Return a new list of notes with all snake_case timing keys converted to camelCase.
 
     This is the batch exit-point used at the bottom of ``apply_expressiveness``
-    to restore the wire format expected by the DAW.  Each note is treated
+    to restore the wire format expected by the DAW. Each note is treated
     immutably — the post-processed copies are returned as a new list.
     """
     return [_note_to_camel(n) for n in notes]

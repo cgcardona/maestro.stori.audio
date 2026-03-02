@@ -1,14 +1,14 @@
 """Muse Hub user-profile route handlers (JSON API).
 
 Endpoint summary:
-  GET  /musehub/users/{username}                — fetch full profile (public, no JWT required)
-  GET  /musehub/users/{username}/forks          — list repos forked by this user (public)
-  POST /musehub/users                           — create a profile for the authenticated user
-  PUT  /musehub/users/{username}                — update bio/avatar/pinned repos (owner only)
-  GET  /musehub/users/{username}/followers-list — list followers as user cards (public)
-  GET  /musehub/users/{username}/following-list — list following as user cards (public)
+  GET /musehub/users/{username} — fetch full profile (public, no JWT required)
+  GET /musehub/users/{username}/forks — list repos forked by this user (public)
+  POST /musehub/users — create a profile for the authenticated user
+  PUT /musehub/users/{username} — update bio/avatar/pinned repos (owner only)
+  GET /musehub/users/{username}/followers-list — list followers as user cards (public)
+  GET /musehub/users/{username}/following-list — list following as user cards (public)
 
-Content negotiation: all endpoints return JSON.  The browser UI fetches from
+Content negotiation: all endpoints return JSON. The browser UI fetches from
 these endpoints using the client-side JWT stored in localStorage.
 
 The GET endpoints are intentionally unauthenticated so that profile pages are
@@ -82,7 +82,7 @@ async def get_user_profile(
     """Return the full profile for a user: bio, avatar, pinned repos, public repos,
     contribution graph, and session credits.
 
-    No JWT required — profiles are publicly accessible.  Returns 404 when the
+    No JWT required — profiles are publicly accessible. Returns 404 when the
     username does not match any registered profile.
     """
     profile = await profile_svc.get_full_profile(db, username)
@@ -201,7 +201,7 @@ async def create_user_profile(
 ) -> ProfileResponse:
     """Create a public profile for the authenticated user.
 
-    The ``username`` must be globally unique and URL-safe.  Returns 409 if the
+    The ``username`` must be globally unique and URL-safe. Returns 409 if the
     username is already taken, or if the caller already has a profile.
     """
     user_id: str = claims.get("sub") or ""
@@ -285,8 +285,8 @@ async def _resolve_user_id(db: AsyncSession, username: str) -> str:
     """Return the user_id for a given username, falling back to the username itself.
 
     MusehubFollow rows created via the API store a user_id (JWT sub) as
-    follower_id and a username string as followee_id.  Rows created by the
-    seed script store user_ids in both columns.  This helper resolves the
+    follower_id and a username string as followee_id. Rows created by the
+    seed script store user_ids in both columns. This helper resolves the
     profile's canonical user_id so list queries can match both conventions.
     """
     row = (await db.execute(
@@ -414,13 +414,13 @@ async def get_user_activity(
 
     Events are sourced from public repos only, unless the authenticated caller
     is the profile owner — in which case events from private repos are also
-    included.  Events are returned newest-first.
+    included. Events are returned newest-first.
 
     Cursor pagination: the ``next_cursor`` field in the response contains the
-    event UUID to pass as ``before_id`` on the next request.  When
+    event UUID to pass as ``before_id`` on the next request. When
     ``next_cursor`` is null the caller has reached the end of the feed.
 
-    No JWT required — the activity feed is publicly discoverable.  Returns 404
+    No JWT required — the activity feed is publicly discoverable. Returns 404
     when the username does not match any registered profile.
     """
     profile = await profile_svc.get_profile_by_username(db, username)

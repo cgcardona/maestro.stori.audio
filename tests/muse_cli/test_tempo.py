@@ -2,7 +2,7 @@
 
 All async tests call the async core functions directly with an in-memory
 SQLite session and a ``tmp_path`` repo root — no real Postgres or running
-process required.  Commits are seeded via ``_commit_async`` so tempo and
+process required. Commits are seeded via ``_commit_async`` so tempo and
 commit commands are tested as an integrated pair.
 """
 from __future__ import annotations
@@ -76,7 +76,7 @@ def _build_midi_with_tempo(uspb: int) -> bytes:
     """
     # Set Tempo event: delta_time(0) + FF 51 03 + 3-byte big-endian uspb
     tempo_bytes = bytes([(uspb >> 16) & 0xFF, (uspb >> 8) & 0xFF, uspb & 0xFF])
-    track_event = b"\x00\xFF\x51\x03" + tempo_bytes + b"\x00\xFF\x2F\x00"  # + end-of-track
+    track_event = b"\x00\xFF\x51\x03" + tempo_bytes + b"\x00\xFF\x2F\x00" # + end-of-track
 
     # MThd header: type=0, ntrks=1, division=480
     header = b"MThd" + struct.pack(">IHHH", 6, 0, 1, 480)
@@ -201,7 +201,7 @@ async def test_tempo_read_midi_detection(
 ) -> None:
     """A MIDI file with a Set Tempo event in muse-work/ is auto-detected."""
     _init_muse_repo(tmp_path)
-    midi_data = _build_midi_with_tempo(500_000)  # 120 BPM
+    midi_data = _build_midi_with_tempo(500_000) # 120 BPM
     _write_workdir(tmp_path, {"groove.mid": midi_data})
     await _commit_async(message="groove", root=tmp_path, session=muse_cli_db_session)
 
@@ -408,7 +408,7 @@ async def test_tempo_history_delta_computed_correctly(
 
     assert history[1].commit_id == c1
     assert history[1].effective_bpm == 80.0
-    assert history[1].delta_bpm is None  # oldest — no ancestor
+    assert history[1].delta_bpm is None # oldest — no ancestor
 
 
 @pytest.mark.anyio

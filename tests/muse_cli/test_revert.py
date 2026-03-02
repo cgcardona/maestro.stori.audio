@@ -192,7 +192,7 @@ async def test_muse_revert_creates_undo_commit(
     commit_a_row = await muse_cli_db_session.get(MuseCliCommit, commit_a_id)
     commit_c_row = await muse_cli_db_session.get(MuseCliCommit, result.commit_id)
     assert commit_c_row is not None
-    assert commit_c_row.snapshot_id == commit_a_row.snapshot_id  # type: ignore[union-attr]
+    assert commit_c_row.snapshot_id == commit_a_row.snapshot_id # type: ignore[union-attr]
     assert commit_c_row.parent_commit_id == commit_b_id
 
     # HEAD ref file updated to new commit
@@ -233,7 +233,7 @@ async def test_muse_revert_no_commit_stages_only(
     )
 
     assert result.no_commit is True
-    assert result.commit_id == ""  # no commit created
+    assert result.commit_id == "" # no commit created
     # extra.mid should have been deleted from muse-work/
     assert "extra.mid" in result.paths_deleted
     assert not (tmp_path / "muse-work" / "extra.mid").exists()
@@ -244,7 +244,7 @@ async def test_muse_revert_no_commit_stages_only(
     commit_count = (
         await muse_cli_db_session.execute(select(MuseCliCommit))
     ).scalars().all()
-    assert len(commit_count) == 2  # only A and B, not a C
+    assert len(commit_count) == 2 # only A and B, not a C
 
 
 @pytest.mark.anyio
@@ -305,7 +305,7 @@ async def test_muse_revert_scoped_by_track(
     # Drums path should come from A's snapshot (v1)
     commit_a_snap_row = await muse_cli_db_session.get(MuseCliCommit, commit_a_id)
     a_snap = await muse_cli_db_session.get(
-        MuseCliSnapshot, commit_a_snap_row.snapshot_id  # type: ignore[union-attr]
+        MuseCliSnapshot, commit_a_snap_row.snapshot_id # type: ignore[union-attr]
     )
     assert a_snap is not None
     a_manifest: dict[str, str] = dict(a_snap.manifest)
@@ -372,7 +372,7 @@ async def test_muse_revert_root_commit_produces_empty_snapshot(
 
     assert not result.noop
     assert result.commit_id != ""
-    assert result.parent_commit_id == ""  # root has no parent
+    assert result.parent_commit_id == "" # root has no parent
 
     snap_row = await muse_cli_db_session.get(MuseCliSnapshot, result.revert_snapshot_id)
     assert snap_row is not None

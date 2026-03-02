@@ -2,27 +2,27 @@
 
 Stash is a per-producer scratch pad: changes in muse-work/ are saved to
 ``.muse/stash/`` (filesystem, no DB table) and HEAD is restored so you can
-start clean.  Later, ``muse stash pop`` brings back the shelved state.
+start clean. Later, ``muse stash pop`` brings back the shelved state.
 
 Subcommands
 -----------
-push   (default) — save muse-work/ state; restore HEAD snapshot
-pop             — apply most recent stash, remove it from the stack
-apply           — apply a stash without removing it
-list            — list all stash entries
-drop            — remove a specific entry
-clear           — remove all entries
+push (default) — save muse-work/ state; restore HEAD snapshot
+pop — apply most recent stash, remove it from the stack
+apply — apply a stash without removing it
+list — list all stash entries
+drop — remove a specific entry
+clear — remove all entries
 
 Usage examples::
 
-    muse stash                        # push (save + restore HEAD)
-    muse stash push -m "chorus WIP"   # push with a label
-    muse stash push --track drums     # scope to drums/ files only
-    muse stash pop                    # apply most recent, drop it
-    muse stash apply stash@{2}        # apply index 2 without dropping
-    muse stash list                   # show all stash entries
-    muse stash drop stash@{1}         # remove index 1
-    muse stash clear                  # remove all (with confirmation)
+    muse stash # push (save + restore HEAD)
+    muse stash push -m "chorus WIP" # push with a label
+    muse stash push --track drums # scope to drums/ files only
+    muse stash pop # apply most recent, drop it
+    muse stash apply stash@{2} # apply index 2 without dropping
+    muse stash list # show all stash entries
+    muse stash drop stash@{1} # remove index 1
+    muse stash clear # remove all (with confirmation)
 """
 from __future__ import annotations
 
@@ -174,7 +174,7 @@ def stash_default(
         raise typer.Exit(code=ExitCode.INTERNAL_ERROR)
 
     if result.files_stashed == 0:
-        typer.echo("⚠️  No local changes to stash.")
+        typer.echo("⚠️ No local changes to stash.")
         return
 
     typer.echo(f"Saved working directory and index state {result.stash_ref}")
@@ -182,8 +182,8 @@ def stash_default(
 
     if result.missing_head:
         typer.echo(
-            "⚠️  Some HEAD files could not be restored (object store incomplete):\n"
-            + "\n".join(f"   {p}" for p in result.missing_head)
+            "⚠️ Some HEAD files could not be restored (object store incomplete):\n"
+            + "\n".join(f" {p}" for p in result.missing_head)
         )
 
 
@@ -230,7 +230,7 @@ def stash_push(
         raise typer.Exit(code=ExitCode.INTERNAL_ERROR)
 
     if result.files_stashed == 0:
-        typer.echo("⚠️  No local changes to stash.")
+        typer.echo("⚠️ No local changes to stash.")
         return
 
     typer.echo(f"Saved working directory and index state {result.stash_ref}")
@@ -238,8 +238,8 @@ def stash_push(
 
     if result.missing_head:
         typer.echo(
-            "⚠️  Some HEAD files could not be restored (object store incomplete):\n"
-            + "\n".join(f"   {p}" for p in result.missing_head)
+            "⚠️ Some HEAD files could not be restored (object store incomplete):\n"
+            + "\n".join(f" {p}" for p in result.missing_head)
         )
 
 
@@ -270,12 +270,12 @@ def stash_pop(
         raise typer.Exit(code=ExitCode.INTERNAL_ERROR)
 
     typer.echo(f"✅ Applied {result.stash_ref}: {result.message}")
-    typer.echo(f"   {result.files_applied} file(s) restored.")
+    typer.echo(f" {result.files_applied} file(s) restored.")
 
     if result.missing:
         typer.echo(
-            "⚠️  Some files could not be restored (object store incomplete):\n"
-            + "\n".join(f"   missing: {p}" for p in result.missing)
+            "⚠️ Some files could not be restored (object store incomplete):\n"
+            + "\n".join(f" missing: {p}" for p in result.missing)
         )
 
     typer.echo(f"Dropped {result.stash_ref}")
@@ -308,12 +308,12 @@ def stash_apply(
         raise typer.Exit(code=ExitCode.INTERNAL_ERROR)
 
     typer.echo(f"✅ Applied {result.stash_ref}: {result.message}")
-    typer.echo(f"   {result.files_applied} file(s) restored.")
+    typer.echo(f" {result.files_applied} file(s) restored.")
 
     if result.missing:
         typer.echo(
-            "⚠️  Some files could not be restored (object store incomplete):\n"
-            + "\n".join(f"   missing: {p}" for p in result.missing)
+            "⚠️ Some files could not be restored (object store incomplete):\n"
+            + "\n".join(f" missing: {p}" for p in result.missing)
         )
 
 
@@ -390,7 +390,7 @@ def stash_clear(
 
     if not yes:
         confirmed = typer.confirm(
-            "⚠️  This will permanently remove ALL stash entries. Proceed?",
+            "⚠️ This will permanently remove ALL stash entries. Proceed?",
             default=False,
         )
         if not confirmed:

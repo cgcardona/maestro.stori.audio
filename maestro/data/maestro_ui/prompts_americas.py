@@ -279,7 +279,7 @@ Harmony:
   reharmonize: |
     Head: Bbmaj7 \u2192 Ebm7-Ab7 (bII7 sub). Target Dmaj instead of IV.
     Solo: free reharmonization, chromatic ii-V chains.
-    Head return: Dmaj7#11 adds Lydian brightness. Fm7 slips to E7 —
+    Head return: Dmaj7#11 adds Lydian brightness. Fm7 slips to E7
     chromatic approach to Ebmaj7. Am7-D7-Gmaj7 ending refuses Bb resolution.
   tension:
     point: bar 22
@@ -1476,7 +1476,7 @@ Request: |
   pattern alone with a filtered bass slide, building tension. 12-bar
   verse — full dembow rhythm, hi-hat on every 16th, kick on 1 and the
   and of 2, snare clap on 3, bass slides on Bbm. Synth stabs on
-  Bbm-Ebm-Gb-F. Congas and shaker add Afro-Latin flavor. 8-bar chorus —
+  Bbm-Ebm-Gb-F. Congas and shaker add Afro-Latin flavor. 8-bar chorus
   a vocal-style lead enters with the hook, the synth stabs double, the
   bass pattern gets more aggressive, and the energy peaks for the main
   stage. Daddy Yankee's precision meets Bad Bunny's darkness.
@@ -1563,7 +1563,7 @@ Expression:
   arc: tension to groove to eruption
   narrative: |
     The intro is a fuse. The dembow kicks alone, the bass slides through
-    darkness. When the full beat drops at bar 5, there is no choice —
+    darkness. When the full beat drops at bar 5, there is no choice
     you move. The verse is a spell, the dembow is ancient and modern at
     once. When the chorus hits at bar 17, the vocal hook turns the groove
     into a weapon. Full stadium. Full moon. Nobody is standing still.
@@ -2004,9 +2004,9 @@ Effects:
 Expression:
   arc: call to celebration to communion
   narrative: |
-    The drums at bar 1 are a call — "come, gather, we are going to
+    The drums at bar 1 are a call"come, gather, we are going to
     celebrate." When the tuba and trumpet enter at bar 5, the parade
-    has begun. Every 2 bars the trumpet calls and the sax answers —
+    has begun. Every 2 bars the trumpet calls and the sax answers
     this is a conversation between joy and more joy. By the chorus at
     bar 17, every horn plays the same melody. No more conversation.
     Just communion. Everyone on the street is family right now. The
@@ -2137,7 +2137,7 @@ Constraints:
 Vibe: [tropical x3, joyful x2, groovy, earthy, celebratory, carnival, ancestral]
 
 Request: |
-  A full Colombian cumbia piece in three sections. 8-bar llamada —
+  A full Colombian cumbia piece in three sections. 8-bar llamada
   the gaita (GM 73 flute, representing the indigenous flute) plays a
   simple pentatonic melody alone over the guacharaca (GM 0 drums,
   channel 10, scraping shaker) establishing the cumbia shuffle rhythm.
@@ -2382,7 +2382,7 @@ Request: |
   (GM 32) drives with the milonga rhythm (habanera-derived: dotted
   8th + 16th + quarter + quarter), the piano shifts to the marcato
   staccato pattern, and the bandoneon plays rhythmic stabs between
-  melodic phrases. Full tango orquesta energy. 8-bar variación —
+  melodic phrases. Full tango orquesta energy. 8-bar variación
   the violin takes the lead with a virtuosic solo, the bandoneon
   sustains dramatic chords, the piano plays a fugato bass line, and
   at bar 23 all four instruments converge on a unison D4 with a
@@ -3208,7 +3208,7 @@ Expression:
     room kicks in at bar 9, the road march begins: bass driving 8th
     notes like a heartbeat that refuses to slow down, brass stabs that
     are both funky and triumphant, drums that make standing still
-    impossible. The chorus at bar 17 is the road march at its peak —
+    impossible. The chorus at bar 17 is the road march at its peak
     brass fanfare, steel drum runs, the sound of 100,000 people
     wining and waving through the streets of Port of Spain. The
     Greatest Show on Earth.
@@ -3561,7 +3561,7 @@ Request: |
   A full gospel piece in four sections. 8-bar invocation — the church
   organ (GM 19) alone, playing sustained Ab major chords with the
   Leslie speaker effect, a slow hymn-like progression (Ab-Db-Eb-Ab),
-  the sound of Sunday morning before the choir arrives. 8-bar verse —
+  the sound of Sunday morning before the choir arrives. 8-bar verse
   the choir (GM 52 choir aahs) enters softly with a simple melody,
   the piano (GM 0) adds gospel fills (grace notes, rolled chords),
   and the bass (GM 32) walks in half notes. The choir builds from
@@ -3689,11 +3689,11 @@ Expression:
   arc: silence to prayer to praise to glory to silence
   narrative: |
     The organ at bar 1 is the church before the people arrive. The
-    Leslie speaker rotates slowly. The chords are simple — Ab, Db, Eb —
+    Leslie speaker rotates slowly. The chords are simple — Ab, Db, Eb
     because the truth is simple. When the choir enters at bar 9, it is
     one voice, then two, then four — the congregation gathering. The
     piano adds gospel fills: grace notes that are not decoration but
-    testimony. The chorus at bar 17 is the moment the Spirit arrives —
+    testimony. The chorus at bar 17 is the moment the Spirit arrives
     the drums establish the shuffle, the choir sings in full harmony,
     and the music lifts off the ground. The altar call at bar 25 is
     everything: the lead soprano on Ab5 is not singing — she is
@@ -3970,7 +3970,7 @@ Expression:
     is the moment before the story begins. When the boom bap drops at
     bar 9, the story starts: the kick and snare are the footsteps, the
     hi-hat is the city, the bass is the ground. The vocal hook at the
-    chorus (bar 17) is the truth the story was building toward —
+    chorus (bar 17) is the truth the story was building toward
     ascending, soulful, something you remember. The bridge at bar 25
     strips everything away: Rhodes, a single string note, the most
     emotional vocal phrase. Vulnerability. Then bar 29: the drums

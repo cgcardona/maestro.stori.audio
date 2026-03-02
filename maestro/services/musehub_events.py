@@ -13,17 +13,17 @@ Boundary rules:
 
 Event type vocabulary
 ---------------------
-commit_pushed   — a commit was pushed to the repo
-pr_opened       — a pull request was opened
-pr_merged       — a pull request was merged
-pr_closed       — a pull request was closed without merge
-issue_opened    — an issue was opened
-issue_closed    — an issue was closed
-branch_created  — a new branch was created
-branch_deleted  — a branch was deleted
-tag_pushed      — a tag was pushed
+commit_pushed — a commit was pushed to the repo
+pr_opened — a pull request was opened
+pr_merged — a pull request was merged
+pr_closed — a pull request was closed without merge
+issue_opened — an issue was opened
+issue_closed — an issue was closed
+branch_created — a new branch was created
+branch_deleted — a branch was deleted
+tag_pushed — a tag was pushed
 session_started — a recording session was started
-session_ended   — a recording session was ended
+session_ended — a recording session was ended
 """
 from __future__ import annotations
 
@@ -84,7 +84,7 @@ async def record_event(
     """Append a new event row to the activity stream for ``repo_id``.
 
     Call this inside the same DB transaction as the primary action so the event
-    is committed atomically with the action it describes.  The caller is
+    is committed atomically with the action it describes. The caller is
     responsible for calling ``await session.commit()`` after the transaction.
 
     ``event_type`` must be one of ``KNOWN_EVENT_TYPES``; an unknown type is
@@ -92,7 +92,7 @@ async def record_event(
     beats strict validation at the DB layer).
     """
     if event_type not in KNOWN_EVENT_TYPES:
-        logger.warning("⚠️  Unknown event_type %r recorded for repo %s", event_type, repo_id)
+        logger.warning("⚠️ Unknown event_type %r recorded for repo %s", event_type, repo_id)
 
     row = db.MusehubEvent(
         repo_id=repo_id,
@@ -102,7 +102,7 @@ async def record_event(
         event_metadata=metadata or {},
     )
     session.add(row)
-    await session.flush()  # populate event_id without committing
+    await session.flush() # populate event_id without committing
     logger.debug("✅ Queued event %s (%s) for repo %s", row.event_id, event_type, repo_id)
     return _to_response(row)
 
@@ -118,7 +118,7 @@ async def list_events(
     """Return a paginated, newest-first slice of the activity feed for ``repo_id``.
 
     ``event_type`` filters to a single event type when provided; pass ``None``
-    to include all event types.  ``page`` is 1-indexed.
+    to include all event types. ``page`` is 1-indexed.
     """
     page = max(1, page)
     page_size = max(1, min(page_size, 100))
@@ -223,11 +223,11 @@ async def list_user_activity(
 
     ``type_filter`` accepts the public API vocabulary (push, pull_request, issue,
     release, star, fork, comment) and maps it to the DB's internal event_type
-    values.  Types without DB equivalents (star, fork, comment) always return
+    values. Types without DB equivalents (star, fork, comment) always return
     an empty feed.
 
     Cursor pagination: pass the ``next_cursor`` value from a previous response
-    as ``before_id`` to fetch the next page.  Events are returned newest-first;
+    as ``before_id`` to fetch the next page. Events are returned newest-first;
     ``before_id`` is the event UUID of the *oldest* event on the last page, and
     this function returns events created *before* that event's timestamp.
     """
@@ -276,7 +276,7 @@ async def list_user_activity(
             )
         )
         .order_by(db.MusehubEvent.created_at.desc(), db.MusehubEvent.event_id.desc())
-        .limit(limit + 1)  # fetch one extra to detect if there is a next page
+        .limit(limit + 1) # fetch one extra to detect if there is a next page
     )
 
     if db_types is not None:

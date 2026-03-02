@@ -51,7 +51,7 @@ class TestNameLengthValidation:
         # Whitespace only
         result = validate_tool_call(
             "stori_add_midi_track",
-            {"name": "   "},
+            {"name": " "},
             allowed
         )
         assert not result.valid

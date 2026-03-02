@@ -5,7 +5,7 @@ These TypedDicts describe the exact shape so callers can access
 fields without ``dict[str, Any]``.
 
 All fields are optional (``total=False``) because the DAW may omit
-any field.  Wire format is camelCase.
+any field. Wire format is camelCase.
 """
 from __future__ import annotations
 
@@ -45,7 +45,7 @@ class AutomationLaneDict(TypedDict, total=False):
 class ProjectTrack(TypedDict, total=False):
     """A track in the DAW project.
 
-    The track's own identifier is ``id``.  ``trackId`` is reserved for
+    The track's own identifier is ``id``. ``trackId`` is reserved for
     foreign-key references in tool-call params and event payloads
     (e.g. ``stori_add_midi_region(trackId=…)``).
 
@@ -88,7 +88,7 @@ class ProjectContext(TypedDict, total=False):
     """Full project snapshot from the Stori macOS app.
 
     This is the canonical type for every ``project_context`` parameter
-    in the codebase.  ``timeSignature`` may arrive as ``"4/4"`` (string)
+    in the codebase. ``timeSignature`` may arrive as ``"4/4"`` (string)
     or ``{"numerator": 4, "denominator": 4}`` (dict).
     """
 

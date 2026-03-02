@@ -33,7 +33,7 @@ class Macro:
     """A named recipe that expands into a list of primitive ``ToolCall``s.
 
     Macros are never sent to the LLM directly — the planner emits them by ID
-    and the macro engine expands them into primitives before execution.  This
+    and the macro engine expands them into primitives before execution. This
     keeps the LLM's tool surface small while enabling multi-step operations.
 
     Attributes:
@@ -53,7 +53,7 @@ def macro_make_darker(ctx: MacroContext) -> list[ToolCall]:
     """Expand the ``mix.darker`` macro into EQ + distortion inserts.
 
     Conservative recipe: high-shelf EQ cut followed by subtle tube distortion
-    for warmth.  Returns an empty list when ``trackId`` is absent from context.
+    for warmth. Returns an empty list when ``trackId`` is absent from context.
     """
     track_id = ctx.get("trackId")
     if not track_id:

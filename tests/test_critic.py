@@ -74,8 +74,8 @@ def make_drum_notes(
         # Hats on 8ths
         if include_hats:
             for i in range(8):
-                pitch = 42 if i % 4 != 3 else 46  # Open hat on 4th 8th
-                vel = 80 - (i % 2) * 10  # Accent pattern
+                pitch = 42 if i % 4 != 3 else 46 # Open hat on 4th 8th
+                vel = 80 - (i % 2) * 10 # Accent pattern
                 notes.append({
                     "pitch": pitch, "start_beat": bar_start + i * 0.5, "duration_beats": 0.25,
                     "velocity": vel, "layer": "timekeepers"
@@ -146,10 +146,10 @@ class TestHatArticulationScoring:
         """All closed hats should score lower."""
         notes: list[NoteDict] = [
             {"pitch": 42, "start_beat": i * 0.5, "duration_beats": 0.25, "velocity": 80, "layer": "timekeepers"}
-            for i in range(32)  # 4 bars of closed hats only
+            for i in range(32) # 4 bars of closed hats only
         ]
         score, repairs = _score_hat_articulation(notes, bars=4)
-        assert score < 0.9  # Should be penalized for no variety
+        assert score < 0.9 # Should be penalized for no variety
         # Should suggest adding open hats
         assert any("open" in r.lower() for r in repairs) or score >= 0.6
     
@@ -225,7 +225,7 @@ class TestGhostPlausibilityScoring:
         """No ghosts should return neutral score (ghosts are optional)."""
         notes = make_drum_notes(bars=4, include_ghosts=False)
         score, repairs = _score_ghost_plausibility(notes)
-        assert score == 0.7  # Neutral
+        assert score == 0.7 # Neutral
 
 
 class TestLayerBalanceScoring:
@@ -394,7 +394,7 @@ class TestRejectionSampling:
             return {"notes": notes}, notes
 
         def scorer_fn(notes: list[NoteDict]) -> tuple[float, list[str]]:
-            return 0.9, []  # Always excellent
+            return 0.9, [] # Always excellent
         
         result = rejection_sample(
             generate_fn, scorer_fn,
@@ -403,7 +403,7 @@ class TestRejectionSampling:
         )
         
         assert result.accepted
-        assert result.attempts == 1  # Should stop after first
+        assert result.attempts == 1 # Should stop after first
         assert result.best_score == 0.9
     
     def test_tries_all_candidates_when_needed(self) -> None:
@@ -418,7 +418,7 @@ class TestRejectionSampling:
             return {"notes": notes}, notes
 
         def scorer_fn(notes: list[NoteDict]) -> tuple[float, list[str]]:
-            return 0.5, []  # Always mediocre
+            return 0.5, [] # Always mediocre
         
         result = rejection_sample(
             generate_fn, scorer_fn,
@@ -427,8 +427,8 @@ class TestRejectionSampling:
             early_stop_threshold=0.85,
         )
         
-        assert result.attempts == 4  # Should try all
-        assert not result.accepted  # 0.5 < 0.75
+        assert result.attempts == 4 # Should try all
+        assert not result.accepted # 0.5 < 0.75
     
     def test_keeps_best_result(self) -> None:
 

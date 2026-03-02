@@ -1,7 +1,7 @@
 """Protocol Lockdown Phase II — Verification Proofs.
 
 Each test produces concrete artifacts proving the contract lineage
-system is correct.  No mocks on the contract layer itself — only
+system is correct. No mocks on the contract layer itself — only
 on I/O boundaries (tool execution, LLM).
 """
 
@@ -129,12 +129,12 @@ class TestHashCanonicalization:
         sc_advisory = _section_contract(spec, l2_prompt="COMPLETELY DIFFERENT PROMPT", region_name="DIFFERENT REGION")
 
         print("\n## HASH_CANONICALIZATION_PROOF — Advisory Independence")
-        print(f"Original  l2_generate_prompt = ''")
-        print(f"Modified  l2_generate_prompt = 'COMPLETELY DIFFERENT PROMPT'")
-        print(f"Original  region_name = 'Original'")
-        print(f"Modified  region_name = 'DIFFERENT REGION'")
-        print(f"Original  hash = {sc_original.contract_hash}")
-        print(f"Modified  hash = {sc_advisory.contract_hash}")
+        print(f"Original l2_generate_prompt = ''")
+        print(f"Modified l2_generate_prompt = 'COMPLETELY DIFFERENT PROMPT'")
+        print(f"Original region_name = 'Original'")
+        print(f"Modified region_name = 'DIFFERENT REGION'")
+        print(f"Original hash = {sc_original.contract_hash}")
+        print(f"Modified hash = {sc_advisory.contract_hash}")
 
         assert sc_original.contract_hash == sc_advisory.contract_hash
 
@@ -182,10 +182,10 @@ class TestLineageChain:
 
         print("\n## LINEAGE_CHAIN_PROOF")
         print(f"CompositionContract.contract_hash = {cc.contract_hash}")
-        print(f"SectionSpec[intro].contract_hash  = {spec_intro.contract_hash}")
-        print(f"SectionSpec[verse].contract_hash  = {spec_verse.contract_hash}")
-        print(f"InstrumentContract.parent_hash    = {ic.parent_contract_hash}")
-        print(f"InstrumentContract.contract_hash  = {ic.contract_hash}")
+        print(f"SectionSpec[intro].contract_hash = {spec_intro.contract_hash}")
+        print(f"SectionSpec[verse].contract_hash = {spec_verse.contract_hash}")
+        print(f"InstrumentContract.parent_hash = {ic.parent_contract_hash}")
+        print(f"InstrumentContract.contract_hash = {ic.contract_hash}")
         print(f"SectionContract[intro].parent_hash = {sc_intro.parent_contract_hash}")
         print(f"SectionContract[intro].contract_hash = {sc_intro.contract_hash}")
         print(f"SectionContract[verse].parent_hash = {sc_verse.parent_contract_hash}")

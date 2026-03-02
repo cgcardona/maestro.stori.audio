@@ -732,7 +732,7 @@ class TestProtocolGuardEnforcedGlobally:
     """Prove ProtocolGuard is wired into ALL streaming endpoints.
 
     Routes use either a direct ``ProtocolGuard()`` or ``SSESequencer()``
-    (which creates a ``ProtocolGuard`` internally).  Both are accepted.
+    (which creates a ``ProtocolGuard`` internally). Both are accepted.
     """
 
     @staticmethod
@@ -890,7 +890,7 @@ def _make_minimal(model_class: type[MaestroEvent]) -> MaestroEvent:
         "mcp.message": {"payload": {"tool": "test"}},
         "mcp.ping": {},
     }
-    event_type_field = model_class.model_fields.get("type")  # all SSE event models have model_fields
+    event_type_field = model_class.model_fields.get("type") # all SSE event models have model_fields
     if event_type_field and event_type_field.default:
         et = event_type_field.default
     else:

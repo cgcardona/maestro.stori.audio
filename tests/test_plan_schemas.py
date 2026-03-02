@@ -43,7 +43,7 @@ class TestGenerationStep:
     def test_style_normalized(self) -> None:
 
         step = GenerationStep(
-            role="drums", style="  Boom Bap  ", tempo=90, bars=8
+            role="drums", style=" Boom Bap ", tempo=90, bars=8
         )
         assert step.style == "boom_bap"
 
@@ -250,7 +250,7 @@ class TestInferEdits:
             GenerationStep(role="drums", style="trap", tempo=120, bars=4),
         ]
         edits = infer_edits_from_generations(gens)
-        assert len(edits) >= 1  # Should create at least a track edit
+        assert len(edits) >= 1 # Should create at least a track edit
 
     def test_multiple_roles(self) -> None:
 

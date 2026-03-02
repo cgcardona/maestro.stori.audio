@@ -1,6 +1,6 @@
 """Muse Hub blame view page — per-note commit attribution browser.
 
-Serves the blame UI page for a given MIDI file path at a commit ref.  Each note
+Serves the blame UI page for a given MIDI file path at a commit ref. Each note
 event is annotated with the commit that last introduced or modified it, giving
 musicians and AI agents a per-measure provenance view of the composition.
 
@@ -14,7 +14,7 @@ Content negotiation (one URL, two audiences):
   mirroring the ``/api/v1/musehub/repos/{repo_id}/blame/{ref}`` API contract.
 
 Auth:
-  No JWT required to receive the HTML shell.  The client-side JavaScript reads
+  No JWT required to receive the HTML shell. The client-side JavaScript reads
   a token from ``localStorage`` and passes it as a Bearer header when calling the
   JSON API, matching all other Muse Hub UI pages.
 """
@@ -26,8 +26,12 @@ from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.responses import Response
 
+from pathlib import Path
+
+from fastapi.templating import Jinja2Templates
+
 from maestro.api.routes.musehub.blame import _build_blame_entries
-from maestro.api.routes.musehub._templates import templates
+from maestro.api.routes.musehub.jinja2_filters import register_musehub_filters
 from maestro.api.routes.musehub.negotiate import negotiate_response
 from maestro.db import get_db
 from maestro.models.musehub import BlameResponse
@@ -36,6 +40,10 @@ from maestro.services import musehub_repository
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/musehub/ui", tags=["musehub-ui"])
+
+_TEMPLATE_DIR = Path(__file__).parent.parent.parent.parent / "templates"
+templates = Jinja2Templates(directory=str(_TEMPLATE_DIR))
+register_musehub_filters(templates.env)
 
 
 async def _resolve_repo(owner: str, repo_slug: str, db: AsyncSession) -> tuple[str, str]:
@@ -90,17 +98,17 @@ async def blame_page(
 
     Why this exists: musicians and AI agents need to know *which commit* last
     changed each note or measure in a composition — the musical equivalent of
-    ``git blame``.  This page renders each note event coloured by its originating
+    ``git blame``. This page renders each note event coloured by its originating
     commit, with inline author and timestamp labels, so a reviewer can trace
     the evolution of any musical idea across the project's history.
 
-    HTML (default): interactive piano-roll-style blame view via Jinja2.  The
+    HTML (default): interactive piano-roll-style blame view via Jinja2. The
     page shell fetches blame data from the JSON API client-side using the token
-    stored in ``localStorage``.  The optional ``track``, ``beatStart``, and
+    stored in ``localStorage``. The optional ``track``, ``beatStart``, and
     ``beatEnd`` query params are forwarded to the client for pre-filtering.
 
     JSON (``Accept: application/json`` or ``?format=json``): returns
-    ``BlameResponse`` with camelCase keys.  Blame entries are built
+    ``BlameResponse`` with camelCase keys. Blame entries are built
     deterministically from the repo's commit history so agents can reason about
     provenance without navigating the HTML page.
 
@@ -157,6 +165,10 @@ async def blame_page(
             "track": track or "",
             "beat_start": beat_start,
             "beat_end": beat_end,
+            # SSR data — passed into template context so the blame table is
+            # rendered server-side instead of fetched client-side.
+            "blame_entries": blame_data.entries,
+            "total_entries": blame_data.total_entries,
         },
         templates=templates,
         json_data=blame_data,

@@ -1,30 +1,30 @@
-"""Tests for the MuseHub collaborators/team management UI page.
+"""Tests for the MuseHub collaborators/team management UI page (SSR).
 
-Covers issue #436 — GET /musehub/ui/{owner}/{repo_slug}/settings/collaborators
+Covers — GET /musehub/ui/{owner}/{repo_slug}/settings/collaborators
 
 Test index:
 - test_collaborators_settings_page_returns_200
     GET the settings/collaborators page returns 200 HTML without a JWT.
 - test_collaborators_settings_page_no_auth_required
-    The HTML shell is accessible without a Bearer token.
+    The page is accessible without a Bearer token.
 - test_collaborators_settings_page_unknown_repo_404
     Unknown owner/slug combination returns 404.
-- test_collaborators_settings_page_has_invite_form_js
-    The page embeds the invite-form JavaScript (inviteCollab function).
-- test_collaborators_settings_page_has_permission_badges_js
-    The page embeds permission badge rendering logic with colour coding.
+- test_collaborators_settings_page_has_invite_form_htmx
+    The page embeds the invite form with hx-post attribute.
+- test_collaborators_settings_page_has_permission_badges
+    The page renders colour-coded permission badge CSS classes.
 - test_collaborators_settings_page_has_owner_crown_badge
     The page marks owner permission with a crown emoji (👑).
-- test_collaborators_settings_page_has_remove_button_js
-    The page embeds removeCollab() JavaScript for removing collaborators.
+- test_collaborators_settings_page_has_remove_button_htmx
+    Each non-owner row has an hx-delete remove form.
 - test_collaborators_settings_json_response_empty
     ?format=json returns CollaboratorListResponse with empty list for new repo.
 - test_collaborators_settings_json_response_with_collaborators
     ?format=json returns collaborators seeded in the DB.
 - test_collaborators_settings_page_has_settings_tabs
     The page includes the settings tab navigation bar.
-- test_collaborators_settings_page_has_pending_invites_section_js
-    The page renders the pending invites section via JS.
+- test_collaborators_settings_page_has_invite_form_fields
+    The invite form contains user_id and permission input fields.
 """
 from __future__ import annotations
 
@@ -113,7 +113,7 @@ async def test_collaborators_settings_page_no_auth_required(
     await _make_repo(db_session)
     resp = await client.get(
         f"/musehub/ui/{_OWNER}/{_SLUG}/settings/collaborators",
-        headers={},  # explicit: no Authorization header
+        headers={}, # explicit: no Authorization header
     )
     assert resp.status_code == 200
 
@@ -127,27 +127,26 @@ async def test_collaborators_settings_page_unknown_repo_404(
     assert resp.status_code == 404
 
 
-async def test_collaborators_settings_page_has_invite_form_js(
+async def test_collaborators_settings_page_has_invite_form_htmx(
     client: AsyncClient,
     db_session: AsyncSession,
 ) -> None:
-    """The page embeds inviteCollab() JavaScript for the invite form."""
+    """The page embeds the invite form with hx-post for HTMX submission."""
     await _make_repo(db_session)
     resp = await client.get(f"/musehub/ui/{_OWNER}/{_SLUG}/settings/collaborators")
     assert resp.status_code == 200
-    assert "inviteCollab" in resp.text
+    assert "hx-post" in resp.text
 
 
-async def test_collaborators_settings_page_has_permission_badges_js(
+async def test_collaborators_settings_page_has_permission_badges(
     client: AsyncClient,
     db_session: AsyncSession,
 ) -> None:
-    """The page embeds colour-coded permission badge logic."""
+    """The page renders colour-coded permission badge CSS classes server-side."""
     await _make_repo(db_session)
     resp = await client.get(f"/musehub/ui/{_OWNER}/{_SLUG}/settings/collaborators")
     assert resp.status_code == 200
     body = resp.text
-    # Colour-coding for each permission level must be present.
     assert "badge-perm-read" in body
     assert "badge-perm-write" in body
     assert "badge-perm-admin" in body
@@ -165,15 +164,16 @@ async def test_collaborators_settings_page_has_owner_crown_badge(
     assert "👑" in resp.text
 
 
-async def test_collaborators_settings_page_has_remove_button_js(
+async def test_collaborators_settings_page_has_remove_button_htmx(
     client: AsyncClient,
     db_session: AsyncSession,
 ) -> None:
-    """The page embeds removeCollab() JavaScript for removing collaborators."""
-    await _make_repo(db_session)
+    """Non-owner collaborator rows carry hx-delete on the remove form."""
+    repo_id = await _make_repo(db_session)
+    await _add_collaborator(db_session, repo_id, user_id=str(uuid.uuid4()), permission="write")
     resp = await client.get(f"/musehub/ui/{_OWNER}/{_SLUG}/settings/collaborators")
     assert resp.status_code == 200
-    assert "removeCollab" in resp.text
+    assert "hx-delete" in resp.text
 
 
 async def test_collaborators_settings_json_response_empty(
@@ -230,15 +230,14 @@ async def test_collaborators_settings_page_has_settings_tabs(
     assert "Collaborators" in body
 
 
-async def test_collaborators_settings_page_has_pending_invites_section_js(
+async def test_collaborators_settings_page_has_invite_form_fields(
     client: AsyncClient,
     db_session: AsyncSession,
 ) -> None:
-    """The page renders the pending invites / invite section via JavaScript."""
+    """The invite form has user_id and permission input fields rendered server-side."""
     await _make_repo(db_session)
     resp = await client.get(f"/musehub/ui/{_OWNER}/{_SLUG}/settings/collaborators")
     assert resp.status_code == 200
     body = resp.text
-    # The invite form JavaScript key elements must be present.
-    assert "invite-user-id" in body
-    assert "invite-perm" in body
+    assert 'name="user_id"' in body
+    assert 'name="permission"' in body

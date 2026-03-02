@@ -145,8 +145,8 @@ class TestCompositionRootLineage:
         seal_contract(ic, parent_hash=cc.contract_hash)
 
         print("\n## COMPOSITION_ROOT_PROOF")
-        print(f"CompositionContract.contract_hash  = {cc.contract_hash}")
-        print(f"InstrumentContract.parent_hash     = {ic.parent_contract_hash}")
+        print(f"CompositionContract.contract_hash = {cc.contract_hash}")
+        print(f"InstrumentContract.parent_hash = {ic.parent_contract_hash}")
 
         assert ic.parent_contract_hash == cc.contract_hash
 
@@ -184,11 +184,11 @@ class TestCompositionRootLineage:
                                parent_hash=ic.contract_hash)
 
         print("\n## FULL_ROOT_LINEAGE_CHAIN")
-        print(f"Composition.hash  = {cc.contract_hash}")
-        print(f"  → Instrument.parent  = {ic.parent_contract_hash}")
-        print(f"  → Instrument.hash    = {ic.contract_hash}")
-        print(f"    → Section.parent   = {sc.parent_contract_hash}")
-        print(f"    → Section.hash     = {sc.contract_hash}")
+        print(f"Composition.hash = {cc.contract_hash}")
+        print(f" → Instrument.parent = {ic.parent_contract_hash}")
+        print(f" → Instrument.hash = {ic.contract_hash}")
+        print(f" → Section.parent = {sc.parent_contract_hash}")
+        print(f" → Section.hash = {sc.contract_hash}")
 
         assert ic.parent_contract_hash == cc.contract_hash
         assert sc.parent_contract_hash == ic.contract_hash
@@ -366,7 +366,7 @@ class TestExecutionAttestation:
         print("\n## EXECUTION_ATTESTATION_PROOF — Result binding")
         print(f"result.execution_hash = {result.execution_hash}")
         print(f"expected (recomputed) = {expected_exec}")
-        print(f"result.contract_hash  = {result.contract_hash}")
+        print(f"result.contract_hash = {result.contract_hash}")
 
         assert result.execution_hash != ""
         assert result.execution_hash == expected_exec
@@ -564,7 +564,7 @@ class TestReplayAttackPrevention:
         print("\n## REPLAY_ATTACK_PROOF")
         print(f"Composition A execution_hash = {result_1.execution_hash}")
         print(f"Composition B execution_hash = {result_2.execution_hash}")
-        print(f"Same contract_hash           = {result_1.contract_hash == result_2.contract_hash}")
+        print(f"Same contract_hash = {result_1.contract_hash == result_2.contract_hash}")
 
         assert result_1.contract_hash == result_2.contract_hash
         assert result_1.execution_hash != result_2.execution_hash

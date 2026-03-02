@@ -44,7 +44,7 @@ def _note(pitch: int, start_beat: float, duration_beats: float, velocity: int) -
 
 
 def _controls(**kwargs: float) -> GenerationControlVector:
-    return GenerationControlVector(**kwargs)  # type: ignore[arg-type]
+    return GenerationControlVector(**kwargs) # type: ignore[arg-type]
 
 
 # =============================================================================
@@ -147,7 +147,7 @@ class TestApplyControlsWithPrior:
 
     def test_prior_overrides_temperature(self) -> None:
         """A prior with fixed temperature replaces the CV-derived value."""
-        controls = _controls(creativity=1.0, groove=1.0)  # would produce high temp
+        controls = _controls(creativity=1.0, groove=1.0) # would produce high temp
         prior = GenreParameterPrior(temperature=0.78, top_p=0.92)
         params = apply_controls_to_params(controls, bars=4, genre_prior=prior)
         assert params["temperature"] == 0.78

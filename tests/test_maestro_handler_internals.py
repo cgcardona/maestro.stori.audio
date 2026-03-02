@@ -32,7 +32,7 @@ class _ParsedSSEEvent(TypedDict, total=False):
     """Wire shape of a parsed SSE event from the Maestro protocol.
 
     Used as the return type of ``_parse_events`` so every field access on
-    a parsed event is statically known.  All fields are optional (``total=False``)
+    a parsed event is statically known. All fields are optional (``total=False``)
     except ``type`` which every SSE event carries.
     """
 
@@ -286,7 +286,7 @@ class TestHandleReasoning:
         messages = call_args.kwargs.get("messages") or call_args[1].get("messages") or call_args[0][0]
         # History should be in messages
         roles = [m["role"] for m in messages]
-        assert "user" in roles  # from history + actual prompt
+        assert "user" in roles # from history + actual prompt
 
 
 # ---------------------------------------------------------------------------
@@ -812,7 +812,7 @@ class TestHandleEditing:
         import uuid
         track_id = tc_events[0]["params"]["trackId"]
         assert isinstance(track_id, str)
-        uuid.UUID(track_id)  # should not raise
+        uuid.UUID(track_id) # should not raise
 
     @pytest.mark.anyio
     async def test_synthetic_set_track_icon_emitted_after_add_track_with_gm_program(self) -> None:
@@ -1347,7 +1347,7 @@ class TestPlanEventsInEditing:
         assert len(plan_evt["steps"]) >= 2
 
         step_updates = [p for p in payloads if p["type"] == "planStepUpdate"]
-        assert len(step_updates) >= 2  # at least active+completed for step 1
+        assert len(step_updates) >= 2 # at least active+completed for step 1
 
         statuses = [su["status"] for su in step_updates]
         assert "active" in statuses
@@ -2962,7 +2962,7 @@ class TestApplySingleToolCall:
             tc_id="tc-2",
             tc_name="stori_set_tempo",
             resolved_args={"tempo": 120},
-            allowed_tool_names={"stori_add_midi_track"},  # disallowed
+            allowed_tool_names={"stori_add_midi_track"}, # disallowed
             store=store,
             trace=trace,
             add_notes_failures={},
@@ -3007,7 +3007,7 @@ class TestApplySingleToolCall:
         region_id = store.create_region("Region", track_id)
 
         trace = _make_trace()
-        failures = {region_id: 3}  # already at limit
+        failures = {region_id: 3} # already at limit
         outcome = await _apply_single_tool_call(
             tc_id="tc-4",
             tc_name="stori_add_notes",
@@ -3328,7 +3328,7 @@ class TestRunInstrumentAgent:
         async def _failing_stream(*args: object, **kwargs: object) -> AsyncGenerator[StreamEvent, None]:
             _no_events: list[StreamEvent] = []
             for _e in _no_events:
-                yield _e  # loop body never executes; required to make this an async generator
+                yield _e # loop body never executes; required to make this an async generator
             raise RuntimeError("LLM down")
         llm.chat_completion_stream = MagicMock(side_effect=_failing_stream)
         trace = _make_trace()
@@ -3602,7 +3602,7 @@ class TestAgentTeamFailureIsolation:
             async def _fail() -> AsyncGenerator[StreamEvent, None]:
                 _no_events: list[StreamEvent] = []
                 for _e in _no_events:
-                    yield _e  # loop body never executes; required to make this an async generator
+                    yield _e # loop body never executes; required to make this an async generator
                 raise RuntimeError("all down")
             return _fail()
 
@@ -3858,10 +3858,10 @@ class TestAgentTeamExistingTrackReuse:
         route = self._make_route_for_team()
         project_context: ProjectContext = {
             "tracks": [
-                {"name": "Drums",  "id": "id-drums",  "regions": [{"startBeat": 0, "durationBeats": 16}]},
-                {"name": "Bass",   "id": "id-bass",   "regions": [{"startBeat": 0, "durationBeats": 16}]},
+                {"name": "Drums", "id": "id-drums", "regions": [{"startBeat": 0, "durationBeats": 16}]},
+                {"name": "Bass", "id": "id-bass", "regions": [{"startBeat": 0, "durationBeats": 16}]},
                 {"name": "Guitar", "id": "id-guitar", "regions": [{"startBeat": 0, "durationBeats": 16}]},
-                {"name": "Horns",  "id": "id-horns",  "regions": [{"startBeat": 0, "durationBeats": 16}]},
+                {"name": "Horns", "id": "id-horns", "regions": [{"startBeat": 0, "durationBeats": 16}]},
             ]
         }
         store = StateStore(conversation_id="test-distinct-ids")
@@ -3915,7 +3915,7 @@ class TestAgentTeamExistingTrackReuse:
         project_context: ProjectContext = {
             "tracks": [
                 {"name": "Drums", "id": "daw-drums-id", "regions": []},
-                {"name": "Bass",  "id": "daw-bass-id",  "regions": []},
+                {"name": "Bass", "id": "daw-bass-id", "regions": []},
             ]
         }
         store = StateStore(conversation_id="test-id-key")

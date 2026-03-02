@@ -126,9 +126,9 @@ async def _handle_composition_agent_team(
     - **Phase 1** (sequential): tempo and key applied deterministically from
       the parsed prompt — no LLM call needed.
     - **Phase 2** (parallel, all instruments launched simultaneously):
-      All instrument parents (including bass) start in one wave.  Drum-to-bass
+      All instrument parents (including bass) start in one wave. Drum-to-bass
       coupling is handled at the section level: each bass section child waits
-      on its corresponding drum section child via ``SectionSignals``.  This
+      on its corresponding drum section child via ``SectionSignals``. This
       means bass LLM planning happens immediately (parallel with drums); only
       bass section execution waits per-section.
     - **Phase 3** (sequential): optional mixing coordinator LLM call for
@@ -297,7 +297,7 @@ async def _handle_composition_agent_team(
 
     # ── GPU warm-up: fire a lightweight health probe before spawning agents ──
     # This primes the Gradio Space GPU pod so the first real generation call
-    # does not hit the 60-second cold-start timeout.  When storpheus_required is
+    # does not hit the 60-second cold-start timeout. When storpheus_required is
     # true (default), an unhealthy probe aborts the composition immediately
     # instead of wasting 45+ seconds of LLM reasoning that will inevitably
     # fail at generation time.
@@ -319,7 +319,7 @@ async def _handle_composition_agent_team(
     if not _storpheus_healthy:
         if settings.storpheus_required:
             logger.error(
-                f"❌ [{trace.trace_id[:8]}] Storpheus required but unavailable — "
+                f"❌ [{trace.trace_id[:8]}] Storpheus required but unavailable"
                 "aborting composition (set STORPHEUS_REQUIRED=false to override)"
             )
             yield emit(ErrorEvent(
@@ -351,7 +351,7 @@ async def _handle_composition_agent_team(
     )
     _multi_section = len(_sections) > 1
     logger.info(
-        f"[{trace.trace_id[:8]}] 📋 Section parsing: {len(_sections)} section(s) — "
+        f"[{trace.trace_id[:8]}] 📋 Section parsing: {len(_sections)} section(s)"
         + ", ".join(
             f"{s['name']}(start={s.get('start_beat', '?')}, len={s.get('length_beats', '?')})"
             for s in _sections
@@ -557,9 +557,9 @@ async def _handle_composition_agent_team(
     # ── Phase 2: All instrument parents launched simultaneously ──
     #
     # Three-level architecture: drum-to-bass coupling is handled at the
-    # section child level via SectionSignals.  Bass section children wait
+    # section child level via SectionSignals. Bass section children wait
     # on their corresponding drum section child — the coordinator no
-    # longer needs two-wave sequencing.  All instrument parents (including
+    # longer needs two-wave sequencing. All instrument parents (including
     # bass) start at the same time so bass LLM planning runs in parallel
     # with drums.
 
@@ -589,11 +589,11 @@ async def _handle_composition_agent_team(
     for role in parsed.roles:
         all_tasks.append(_spawn_agent(role))
 
-    _heartbeat_interval = 8.0   # seconds between keepalive pings
-    _stall_warn_interval = 30.0  # warn if no real events for this long
+    _heartbeat_interval = 8.0 # seconds between keepalive pings
+    _stall_warn_interval = 30.0 # warn if no real events for this long
     _now_init = asyncio.get_event_loop().time()
     _last_heartbeat_time = _now_init
-    _last_progress_time = _now_init   # only reset by real events, not heartbeats
+    _last_progress_time = _now_init # only reset by real events, not heartbeats
     _last_warn_time = _now_init
     _total_events_emitted = 0
     _stall_warnings = 0
@@ -636,7 +636,7 @@ async def _handle_composition_agent_team(
             try:
                 if await is_cancelled():
                     logger.warning(
-                        f"⚠️ [{trace.trace_id[:8]}] Client disconnected — "
+                        f"⚠️ [{trace.trace_id[:8]}] Client disconnected"
                         f"cancelling {len(pending)} pending agent tasks "
                         f"(events={_total_events_emitted})"
                     )
@@ -711,7 +711,7 @@ async def _handle_composition_agent_team(
     )
 
     # ── Phase 3: Mixing coordinator (optional, one LLM call) ──
-    logger.info(f"[{trace.trace_id[:8]}] 🎛️  Entering Phase 3 (mixing)")
+    logger.info(f"[{trace.trace_id[:8]}] 🎛️ Entering Phase 3 (mixing)")
     phase3_steps = [
         s for s in plan_tracker.steps
         if s.status == "pending" and s.parallel_group is None
@@ -815,13 +815,13 @@ async def _handle_composition_agent_team(
             )
         if _notes_generated == 0 and _regions_created > 0:
             _complete_warnings.append(
-                f"MIDI generation failed for all {_regions_created} region(s) — "
+                f"MIDI generation failed for all {_regions_created} region(s)"
                 "Storpheus returned no notes. Check that the Storpheus service is "
                 "reachable and returning valid responses."
             )
         logger.warning(
             f"⚠️ [{trace.trace_id[:8]}] Composition complete but notesGenerated=0 "
-            f"with {_regions_created} region(s), {_tool_error_count} toolError(s) — "
+            f"with {_regions_created} region(s), {_tool_error_count} toolError(s)"
             f"marking success=false"
         )
 

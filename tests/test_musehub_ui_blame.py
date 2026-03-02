@@ -1,25 +1,24 @@
-"""Tests for the Muse Hub blame UI page (issue #423).
+"""Tests for the Muse Hub blame UI page (SSR).
 
 Covers:
-- test_blame_page_renders                  — GET /musehub/ui/{owner}/{slug}/blame/{ref}/{path} returns 200 HTML
-- test_blame_page_no_auth_required         — page accessible without a JWT
-- test_blame_page_unknown_repo_404         — bad owner/slug returns 404
-- test_blame_page_contains_table_headers   — HTML contains blame table column headers
-- test_blame_page_contains_filter_bar      — HTML includes track/beat filter controls
-- test_blame_page_contains_breadcrumb      — breadcrumb links owner, repo_slug, ref, and filename
+- test_blame_page_renders — GET /musehub/ui/{owner}/{slug}/blame/{ref}/{path} returns 200 HTML
+- test_blame_page_no_auth_required — page accessible without a JWT
+- test_blame_page_unknown_repo_404 — bad owner/slug returns 404
+- test_blame_page_contains_table_headers — HTML contains blame table column headers
+- test_blame_page_contains_filter_bar — HTML includes track/beat filter controls
+- test_blame_page_contains_breadcrumb — breadcrumb links owner, repo_slug, ref, and filename
 - test_blame_page_contains_piano_roll_link — quick-link to the piano-roll page present
-- test_blame_page_contains_commits_link    — quick-link to the commit list present
-- test_blame_json_response                 — Accept: application/json returns BlameResponse JSON
-- test_blame_json_has_entries_key          — JSON body contains 'entries' and 'totalEntries' keys
-- test_blame_json_format_param             — ?format=json returns JSON without Accept header
-- test_blame_page_path_injected_in_js      — file path passed as JS context variable
-- test_blame_page_ref_injected_in_js       — commit ref passed as JS context variable
-- test_blame_page_api_fetch_call           — page JS calls blame API endpoint
+- test_blame_page_contains_commits_link — quick-link to the commit list present
+- test_blame_json_response — Accept: application/json returns BlameResponse JSON
+- test_blame_json_has_entries_key — JSON body contains 'entries' and 'totalEntries' keys
+- test_blame_json_format_param — ?format=json returns JSON without Accept header
+- test_blame_page_path_in_server_context — file path present in server-rendered HTML
+- test_blame_page_ref_in_server_context — commit ref present in server-rendered HTML
+- test_blame_page_server_side_render_present — page renders blame table server-side (no apiFetch for data)
 - test_blame_page_filter_bar_track_options — track <select> lists standard instrument names
-- test_blame_page_pitch_name_helper        — pitchName helper renders note names in JS
-- test_blame_page_commit_sha_link          — commit SHA links to commit detail page in JS template
-- test_blame_page_velocity_bar_present     — velocity bar element present in JS template
-- test_blame_page_beat_range_column        — beat range column rendered in JS template
+- test_blame_page_commit_sha_link — commit-sha class present in SSR template
+- test_blame_page_velocity_bar_present — velocity bar element present in SSR template
+- test_blame_page_beat_range_column — beat range column rendered server-side
 """
 from __future__ import annotations
 
@@ -58,12 +57,15 @@ async def _make_repo(
 
 async def _add_commit(db_session: AsyncSession, repo_id: str) -> None:
     """Seed a single commit so blame entries are non-empty."""
+    from datetime import datetime, timezone
+
     commit = MusehubCommit(
         repo_id=repo_id,
         commit_id="abc1234567890abcdef",
         message="Add jazz piano chords",
         author="testuser",
         branch="main",
+        timestamp=datetime(2024, 6, 1, 12, 0, 0, tzinfo=timezone.utc),
     )
     db_session.add(commit)
     await db_session.commit()
@@ -122,8 +124,9 @@ async def test_blame_page_contains_table_headers(
     client: AsyncClient,
     db_session: AsyncSession,
 ) -> None:
-    """Rendered HTML must contain the blame table column headers."""
-    await _make_repo(db_session)
+    """Rendered HTML must contain the blame table column headers when entries exist."""
+    repo_id = await _make_repo(db_session)
+    await _add_commit(db_session, repo_id)
     url = f"/musehub/ui/{_OWNER}/{_SLUG}/blame/{_REF}/{_PATH}"
     response = await client.get(url)
     assert response.status_code == 200
@@ -252,48 +255,50 @@ async def test_blame_json_format_param(
 
 
 @pytest.mark.anyio
-async def test_blame_page_path_injected_in_js(
+async def test_blame_page_path_in_server_context(
     client: AsyncClient,
     db_session: AsyncSession,
 ) -> None:
-    """The MIDI file path must be passed as a JS variable (filePath)."""
+    """The MIDI file path must appear in the server-rendered HTML."""
     await _make_repo(db_session)
     url = f"/musehub/ui/{_OWNER}/{_SLUG}/blame/{_REF}/{_PATH}"
     response = await client.get(url)
     assert response.status_code == 200
     body = response.text
-    assert "filePath" in body
     assert _PATH in body
 
 
 @pytest.mark.anyio
-async def test_blame_page_ref_injected_in_js(
+async def test_blame_page_ref_in_server_context(
     client: AsyncClient,
     db_session: AsyncSession,
 ) -> None:
-    """The commit ref must be passed as a JS variable (ref)."""
+    """The commit ref (short form) must appear in the server-rendered HTML."""
     await _make_repo(db_session)
     url = f"/musehub/ui/{_OWNER}/{_SLUG}/blame/{_REF}/{_PATH}"
     response = await client.get(url)
     assert response.status_code == 200
     body = response.text
-    assert "const ref" in body
-    assert _REF in body
+    # short_ref is the first 8 chars; full ref also appears in breadcrumb links
+    assert _REF[:8] in body
 
 
 @pytest.mark.anyio
-async def test_blame_page_api_fetch_call(
+async def test_blame_page_server_side_render_present(
     client: AsyncClient,
     db_session: AsyncSession,
 ) -> None:
-    """Page JS must call the blame API endpoint to load data."""
+    """Blame content must be rendered server-side — filter form and blame div in HTML."""
     await _make_repo(db_session)
     url = f"/musehub/ui/{_OWNER}/{_SLUG}/blame/{_REF}/{_PATH}"
     response = await client.get(url)
     assert response.status_code == 200
     body = response.text
-    assert "/blame/" in body
-    assert "apiFetch" in body
+    # Filter form is present (server-rendered)
+    assert "blame-filter-bar" in body
+    # Table structure or empty state always rendered server-side (no loading placeholder)
+    assert "blame-header" in body
+    assert "Loading" not in body
 
 
 # ---------------------------------------------------------------------------
@@ -317,18 +322,17 @@ async def test_blame_page_filter_bar_track_options(
 
 
 @pytest.mark.anyio
-async def test_blame_page_pitch_name_helper(
+async def test_blame_page_pitch_badge_present(
     client: AsyncClient,
     db_session: AsyncSession,
 ) -> None:
-    """Page JS must define the pitchName helper for MIDI-to-note-name conversion."""
+    """pitch-badge CSS class must appear in the SSR blame table."""
     await _make_repo(db_session)
     url = f"/musehub/ui/{_OWNER}/{_SLUG}/blame/{_REF}/{_PATH}"
     response = await client.get(url)
     assert response.status_code == 200
     body = response.text
-    assert "pitchName" in body
-    assert "NOTE_NAMES" in body
+    assert "pitch-badge" in body
 
 
 @pytest.mark.anyio
@@ -336,14 +340,13 @@ async def test_blame_page_commit_sha_link(
     client: AsyncClient,
     db_session: AsyncSession,
 ) -> None:
-    """Rendered JS template must generate commit SHA anchor links."""
+    """commit-sha CSS class must appear in the server-rendered blame table."""
     await _make_repo(db_session)
     url = f"/musehub/ui/{_OWNER}/{_SLUG}/blame/{_REF}/{_PATH}"
     response = await client.get(url)
     assert response.status_code == 200
     body = response.text
     assert "commit-sha" in body
-    assert "commitId" in body
 
 
 @pytest.mark.anyio
@@ -366,12 +369,13 @@ async def test_blame_page_beat_range_column(
     client: AsyncClient,
     db_session: AsyncSession,
 ) -> None:
-    """Beat range column must appear in the JS table template."""
+    """Beat range column must appear in the server-rendered blame table."""
     await _make_repo(db_session)
     url = f"/musehub/ui/{_OWNER}/{_SLUG}/blame/{_REF}/{_PATH}"
     response = await client.get(url)
     assert response.status_code == 200
     body = response.text
     assert "beat-range" in body
-    assert "beatStart" in body
-    assert "beatEnd" in body
+    # Filter form uses HTML name attributes for beat range inputs
+    assert "blame-beat-start" in body
+    assert "blame-beat-end" in body

@@ -45,7 +45,7 @@ class TestChordRootPitchClass:
 
     def test_strips_whitespace(self) -> None:
 
-        assert chord_root_pitch_class("  G  ") == 7
+        assert chord_root_pitch_class(" G ") == 7
 
     def test_minor_chord_name_still_returns_root(self) -> None:
 
@@ -60,13 +60,13 @@ class TestChordToRootAndFifthMidi:
     def test_c_octave_4(self) -> None:
 
         root, fifth = chord_to_root_and_fifth_midi("C", 4)
-        assert root == 4 * 12 + 0  # 48
-        assert fifth == root + 7  # 55
+        assert root == 4 * 12 + 0 # 48
+        assert fifth == root + 7 # 55
 
     def test_a_minor_octave_3(self) -> None:
 
         root, fifth = chord_to_root_and_fifth_midi("Am", 3)
-        assert root == 3 * 12 + 9  # 45
+        assert root == 3 * 12 + 9 # 45
         assert fifth == 52
 
     def test_fifth_is_perfect_fifth_above_root(self) -> None:
@@ -111,7 +111,7 @@ class TestChordToMidiVoicing:
 
         midi = chord_to_midi_voicing("C", octave=4, num_voices=4)
         assert len(midi) == 4
-        base = 4 * 12  # 48
+        base = 4 * 12 # 48
         assert midi[0] == base + 0
         assert midi[1] == base + 4
         assert midi[2] == base + 7
@@ -121,7 +121,7 @@ class TestChordToMidiVoicing:
 
         midi = chord_to_midi_voicing("Am", octave=4, num_voices=3)
         assert len(midi) == 3
-        base = 4 * 12 + 9  # A = 57
+        base = 4 * 12 + 9 # A = 57
         assert midi == [base + 0, base + 3, base + 7]
 
     def test_default_four_voices(self) -> None:

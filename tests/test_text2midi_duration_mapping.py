@@ -25,7 +25,7 @@ def run_max_length_to_beats_mapping(hf_token: str) -> list[JSONObject]:
     
     Tests:
     - Small songs (2-8 bars): 8, 16, 32 beats
-    - Medium songs (8-16 bars): 32, 48, 64 beats  
+    - Medium songs (8-16 bars): 32, 48, 64 beats 
     - Large songs (16-32 bars): 64, 96, 128 beats
     - Very large songs (32-64 bars): 128, 192, 256 beats
     """
@@ -60,7 +60,7 @@ def run_max_length_to_beats_mapping(hf_token: str) -> list[JSONObject]:
         try:
             result = client.predict(
                 prompt,
-                0.9,  # temperature
+                0.9, # temperature
                 max_len,
                 api_name="/predict"
             )
@@ -116,31 +116,31 @@ def run_max_length_to_beats_mapping(hf_token: str) -> list[JSONObject]:
     logger.info("=" * 80)
 
     print("\ndef beats_to_max_length(beats: float) -> int:")
-    print('    """Map beat count to text2midi max_length parameter."""')
-    print("    # Empirically derived mapping")
+    print(' """Map beat count to text2midi max_length parameter."""')
+    print(" # Empirically derived mapping")
 
     if results:
         sorted_results = sorted(results, key=lambda x: x["beats"])
-        print("    mapping = [")
+        print(" mapping = [")
         for r in sorted_results[::3]:
-            print(f"        ({r['beats']:.1f}, {r['max_length']}),  # {r['bars']:.1f} bars")
-        print("    ]")
-        print("    ")
-        print("    # Find closest match or interpolate")
-        print("    if beats <= mapping[0][0]:")
-        print("        return mapping[0][1]")
-        print("    if beats >= mapping[-1][0]:")
-        print("        return mapping[-1][1]")
-        print("    ")
-        print("    for i in range(len(mapping) - 1):")
-        print("        b1, ml1 = mapping[i]")
-        print("        b2, ml2 = mapping[i + 1]")
-        print("        if b1 <= beats <= b2:")
-        print("            # Linear interpolation")
-        print("            ratio = (beats - b1) / (b2 - b1)")
-        print("            return int(ml1 + ratio * (ml2 - ml1))")
-        print("    ")
-        print("    return 500  # fallback")
+            print(f" ({r['beats']:.1f}, {r['max_length']}), # {r['bars']:.1f} bars")
+        print(" ]")
+        print(" ")
+        print(" # Find closest match or interpolate")
+        print(" if beats <= mapping[0][0]:")
+        print(" return mapping[0][1]")
+        print(" if beats >= mapping[-1][0]:")
+        print(" return mapping[-1][1]")
+        print(" ")
+        print(" for i in range(len(mapping) - 1):")
+        print(" b1, ml1 = mapping[i]")
+        print(" b2, ml2 = mapping[i + 1]")
+        print(" if b1 <= beats <= b2:")
+        print(" # Linear interpolation")
+        print(" ratio = (beats - b1) / (b2 - b1)")
+        print(" return int(ml1 + ratio * (ml2 - ml1))")
+        print(" ")
+        print(" return 500 # fallback")
 
     logger.info("\n" + "=" * 80)
     return results

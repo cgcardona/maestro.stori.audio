@@ -18,7 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 
 from maestro.contracts.json_types import RegionMetadataWire
 from maestro.db.database import Base
-from maestro.db import muse_models  # noqa: F401 — register tables
+from maestro.db import muse_models # noqa: F401 — register tables
 from maestro.models.variation import (
     MidiNoteSnapshot,
     NoteChange,

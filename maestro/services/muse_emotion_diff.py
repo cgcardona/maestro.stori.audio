@@ -43,26 +43,26 @@ logger = logging.getLogger(__name__)
 #: Canonical 4-D emotion vectors keyed by ``emotion:<label>`` suffix.
 #:
 #: Dimensions:
-#:   energy   — activity / rhythmic intensity (0.0 = still, 1.0 = frenetic)
-#:   valence  — positivity / happiness (0.0 = dark/sad, 1.0 = bright/joyful)
-#:   tension  — harmonic / rhythmic tension (0.0 = resolved, 1.0 = highly tense)
-#:   darkness — heaviness / weight (0.0 = light, 1.0 = heavy/dark)
+#: energy — activity / rhythmic intensity (0.0 = still, 1.0 = frenetic)
+#: valence — positivity / happiness (0.0 = dark/sad, 1.0 = bright/joyful)
+#: tension — harmonic / rhythmic tension (0.0 = resolved, 1.0 = highly tense)
+#: darkness — heaviness / weight (0.0 = light, 1.0 = heavy/dark)
 EMOTION_VECTORS: dict[str, tuple[float, float, float, float]] = {
-    "joyful":      (0.80, 0.90, 0.20, 0.10),
+    "joyful": (0.80, 0.90, 0.20, 0.10),
     "melancholic": (0.30, 0.30, 0.40, 0.60),
-    "anxious":     (0.60, 0.20, 0.80, 0.50),
-    "cinematic":   (0.55, 0.50, 0.50, 0.40),
-    "peaceful":    (0.20, 0.70, 0.10, 0.20),
-    "dramatic":    (0.80, 0.30, 0.70, 0.60),
-    "hopeful":     (0.60, 0.70, 0.30, 0.20),
-    "tense":       (0.70, 0.20, 0.90, 0.50),
-    "dark":        (0.40, 0.20, 0.50, 0.80),
-    "euphoric":    (0.90, 0.90, 0.30, 0.10),
-    "serene":      (0.25, 0.65, 0.15, 0.25),
-    "epic":        (0.85, 0.55, 0.65, 0.45),
-    "mysterious":  (0.35, 0.40, 0.60, 0.55),
-    "aggressive":  (0.90, 0.25, 0.85, 0.70),
-    "nostalgic":   (0.35, 0.50, 0.35, 0.50),
+    "anxious": (0.60, 0.20, 0.80, 0.50),
+    "cinematic": (0.55, 0.50, 0.50, 0.40),
+    "peaceful": (0.20, 0.70, 0.10, 0.20),
+    "dramatic": (0.80, 0.30, 0.70, 0.60),
+    "hopeful": (0.60, 0.70, 0.30, 0.20),
+    "tense": (0.70, 0.20, 0.90, 0.50),
+    "dark": (0.40, 0.20, 0.50, 0.80),
+    "euphoric": (0.90, 0.90, 0.30, 0.10),
+    "serene": (0.25, 0.65, 0.15, 0.25),
+    "epic": (0.85, 0.55, 0.65, 0.45),
+    "mysterious": (0.35, 0.40, 0.60, 0.55),
+    "aggressive": (0.90, 0.25, 0.85, 0.70),
+    "nostalgic": (0.35, 0.50, 0.35, 0.50),
 }
 
 #: Ordered tuple of dimension names (index-stable for vector arithmetic).
@@ -79,9 +79,9 @@ class EmotionVector:
     """4-dimensional emotion representation in [0.0, 1.0] per dimension.
 
     Attributes:
-        energy:   Activity / rhythmic intensity.
-        valence:  Positivity / happiness.
-        tension:  Harmonic / rhythmic tension.
+        energy: Activity / rhythmic intensity.
+        valence: Positivity / happiness.
+        tension: Harmonic / rhythmic tension.
         darkness: Heaviness / weight.
     """
 
@@ -118,9 +118,9 @@ class EmotionDimDelta:
 
     Attributes:
         dimension: Dimension name (one of :data:`EMOTION_DIMENSIONS`).
-        value_a:   Value at commit A.
-        value_b:   Value at commit B.
-        delta:     ``value_b - value_a``; positive = increased, negative = decreased.
+        value_a: Value at commit A.
+        value_b: Value at commit B.
+        delta: ``value_b - value_a``; positive = increased, negative = decreased.
     """
 
     dimension: str
@@ -134,20 +134,20 @@ class EmotionDiffResult:
     """Full emotion-diff report between two Muse commits.
 
     Attributes:
-        commit_a:       Short (8-char) ref of the first commit.
-        commit_b:       Short (8-char) ref of the second commit.
-        source:         ``"explicit_tags"`` | ``"inferred"`` | ``"mixed"`` —
+        commit_a: Short (8-char) ref of the first commit.
+        commit_b: Short (8-char) ref of the second commit.
+        source: ``"explicit_tags"`` | ``"inferred"`` | ``"mixed"``
                         how the emotion vectors were obtained.
-        label_a:        Emotion label for commit A (e.g. ``"melancholic"``),
+        label_a: Emotion label for commit A (e.g. ``"melancholic"``),
                         or ``None`` when inferred without a known label.
-        label_b:        Emotion label for commit B, or ``None``.
-        vector_a:       Emotion vector at commit A, or ``None`` if unavailable.
-        vector_b:       Emotion vector at commit B, or ``None`` if unavailable.
-        dimensions:     Per-dimension deltas between the two vectors.
-        drift:          Euclidean distance in emotion space.
-        narrative:      Human-readable summary of the emotional shift.
-        track:          Track filter applied (or ``None``).
-        section:        Section filter applied (or ``None``).
+        label_b: Emotion label for commit B, or ``None``.
+        vector_a: Emotion vector at commit A, or ``None`` if unavailable.
+        vector_b: Emotion vector at commit B, or ``None`` if unavailable.
+        dimensions: Per-dimension deltas between the two vectors.
+        drift: Euclidean distance in emotion space.
+        narrative: Human-readable summary of the emotional shift.
+        track: Track filter applied (or ``None``).
+        section: Section filter applied (or ``None``).
     """
 
     commit_a: str
@@ -267,15 +267,15 @@ def build_narrative(
     """Produce a human-readable narrative of the emotional shift.
 
     The narrative describes the direction and magnitude of change using
-    production-vocabulary language.  Agents use this to decide whether a
+    production-vocabulary language. Agents use this to decide whether a
     compositional decision is reinforcing or subverting the intended arc.
 
     Args:
-        label_a:    Emotion label at commit A (or ``None``).
-        label_b:    Emotion label at commit B (or ``None``).
+        label_a: Emotion label at commit A (or ``None``).
+        label_b: Emotion label at commit B (or ``None``).
         dimensions: Per-dimension deltas from :func:`compute_dimension_deltas`.
-        drift:      Euclidean drift distance.
-        source:     Sourcing strategy (``"explicit_tags"`` | ``"inferred"`` | ``"mixed"``).
+        drift: Euclidean drift distance.
+        source: Sourcing strategy (``"explicit_tags"`` | ``"inferred"`` | ``"mixed"``).
 
     Returns:
         Human-readable narrative string.
@@ -334,8 +334,8 @@ async def get_emotion_tag(
     """Return the first ``emotion:*`` tag for *commit_id*, or ``None``.
 
     Args:
-        session:   Open async DB session.
-        repo_id:   Repository identifier.
+        session: Open async DB session.
+        repo_id: Repository identifier.
         commit_id: Full 64-char commit hash.
 
     Returns:
@@ -373,10 +373,10 @@ async def resolve_commit_id(
     - 8-char abbreviated hash — matches any commit ID with that prefix.
 
     Args:
-        session:  Open async DB session.
-        repo_id:  Repository identifier.
-        ref:      Commit reference string.
-        branch:   Current branch name (used for HEAD resolution).
+        session: Open async DB session.
+        repo_id: Repository identifier.
+        ref: Commit reference string.
+        branch: Current branch name (used for HEAD resolution).
 
     Returns:
         Full 64-char commit ID, or ``None`` if the ref cannot be resolved.
@@ -389,7 +389,7 @@ async def resolve_commit_id(
             head_tilde_n = 0
         else:
             try:
-                head_tilde_n = int(ref[5:])  # strip "HEAD~"
+                head_tilde_n = int(ref[5:]) # strip "HEAD~"
             except ValueError:
                 return None
         lookup_ref = "HEAD"
@@ -432,7 +432,7 @@ async def resolve_commit_id(
         )
         .limit(1)
     )
-    return result.scalar_one_or_none()  # type: ignore[return-value]  # SQLAlchemy scalar() -> Any
+    return result.scalar_one_or_none() # type: ignore[return-value] # SQLAlchemy scalar() -> Any
 
 
 # ---------------------------------------------------------------------------
@@ -458,14 +458,14 @@ async def compute_emotion_diff(
     3. Neither has a tag → ``"inferred"`` from commit metadata.
 
     Args:
-        session:  Open async DB session.
-        repo_id:  Repository identifier (from ``.muse/repo.json``).
+        session: Open async DB session.
+        repo_id: Repository identifier (from ``.muse/repo.json``).
         commit_a: Commit reference for the baseline (e.g. ``"HEAD~1"``).
         commit_b: Commit reference for the target (e.g. ``"HEAD"``).
-        branch:   Current branch name (used for HEAD resolution).
-        track:    Optional track name filter (noted in result; full filtering
+        branch: Current branch name (used for HEAD resolution).
+        track: Optional track name filter (noted in result; full filtering
                   requires MIDI content access — tracked as follow-up).
-        section:  Optional section name filter (same stub note as *track*).
+        section: Optional section name filter (same stub note as *track*).
 
     Returns:
         :class:`EmotionDiffResult` with vectors, per-dimension deltas,
@@ -534,10 +534,10 @@ async def compute_emotion_diff(
     narrative = build_narrative(label_a, label_b, dimensions, drift, source)
 
     if track:
-        logger.info("⚠️  --track %r: per-track emotion scoping not yet implemented", track)
+        logger.info("⚠️ --track %r: per-track emotion scoping not yet implemented", track)
     if section:
         logger.info(
-            "⚠️  --section %r: section-scoped emotion analysis not yet implemented", section
+            "⚠️ --section %r: section-scoped emotion analysis not yet implemented", section
         )
 
     logger.info(

@@ -37,7 +37,7 @@ class GrooveProfile:
     name: str
     role_offset_ms: dict[str, tuple[int, int]] = field(default_factory=dict)
     swing_amount: float = 0.0
-    swing_grid: str = "8th"  # "8th" or "16th"
+    swing_grid: str = "8th" # "8th" or "16th"
     accent_map: dict[float, float] = field(default_factory=dict)
     hat_arc: tuple[float, float] = (0.95, 1.05)
     ghost_timing_late_ms: int = 15
@@ -52,22 +52,22 @@ class GrooveProfile:
 BOOM_BAP = GrooveProfile(
     name="boom_bap",
     role_offset_ms={
-        "kick": (-8, -2),      # Kick slightly early (punchy)
-        "snare": (8, 16),      # Snare laid back (pocket)
-        "hat": (4, 12),        # Hats slightly late (lazy feel)
-        "ghost": (10, 20),     # Ghosts very late (behind the beat)
-        "fill": (0, 8),        # Fills slightly late
-        "cymbal": (0, 5),      # Cymbals on/slightly late
+        "kick": (-8, -2), # Kick slightly early (punchy)
+        "snare": (8, 16), # Snare laid back (pocket)
+        "hat": (4, 12), # Hats slightly late (lazy feel)
+        "ghost": (10, 20), # Ghosts very late (behind the beat)
+        "fill": (0, 8), # Fills slightly late
+        "cymbal": (0, 5), # Cymbals on/slightly late
     },
-    swing_amount=0.55,         # Medium swing (8th note shuffle)
+    swing_amount=0.55, # Medium swing (8th note shuffle)
     swing_grid="8th",
     accent_map={
-        0.0: 1.10,  # Beat 1 (downbeat) - accented
-        1.0: 1.25,  # Beat 2 (backbeat) - strong accent
-        2.0: 1.05,  # Beat 3 - light accent
-        3.0: 1.25,  # Beat 4 (backbeat) - strong accent
+        0.0: 1.10, # Beat 1 (downbeat) - accented
+        1.0: 1.25, # Beat 2 (backbeat) - strong accent
+        2.0: 1.05, # Beat 3 - light accent
+        3.0: 1.25, # Beat 4 (backbeat) - strong accent
     },
-    hat_arc=(0.90, 1.05),      # Hats get quieter mid-bar, louder at ends
+    hat_arc=(0.90, 1.05), # Hats get quieter mid-bar, louder at ends
     ghost_timing_late_ms=18,
     fill_timing_variance_ms=(0, 12),
     velocity_humanize_range=(-5, 5),
@@ -76,22 +76,22 @@ BOOM_BAP = GrooveProfile(
 TRAP_STRAIGHT = GrooveProfile(
     name="trap_straight",
     role_offset_ms={
-        "kick": (-5, 2),       # Kick slightly early to on-beat
-        "snare": (0, 8),       # Snare on/slightly late
-        "hat": (-3, 6),        # Hats tight with slight variance
-        "ghost": (5, 15),      # Ghosts late
-        "fill": (-2, 5),       # Fills tight
-        "cymbal": (-2, 3),     # Cymbals tight
+        "kick": (-5, 2), # Kick slightly early to on-beat
+        "snare": (0, 8), # Snare on/slightly late
+        "hat": (-3, 6), # Hats tight with slight variance
+        "ghost": (5, 15), # Ghosts late
+        "fill": (-2, 5), # Fills tight
+        "cymbal": (-2, 3), # Cymbals tight
     },
-    swing_amount=0.0,          # Straight 16ths
+    swing_amount=0.0, # Straight 16ths
     swing_grid="16th",
     accent_map={
-        0.0: 1.15,  # Beat 1 - strong
-        1.0: 1.20,  # Beat 2 - backbeat
-        2.0: 1.08,  # Beat 3
-        3.0: 1.20,  # Beat 4 - backbeat
+        0.0: 1.15, # Beat 1 - strong
+        1.0: 1.20, # Beat 2 - backbeat
+        2.0: 1.08, # Beat 3
+        3.0: 1.20, # Beat 4 - backbeat
     },
-    hat_arc=(0.92, 1.08),      # Subtle arc
+    hat_arc=(0.92, 1.08), # Subtle arc
     ghost_timing_late_ms=10,
     fill_timing_variance_ms=(-3, 8),
     velocity_humanize_range=(-4, 4),
@@ -100,14 +100,14 @@ TRAP_STRAIGHT = GrooveProfile(
 TRAP_TRIPLET = GrooveProfile(
     name="trap_triplet",
     role_offset_ms={
-        "kick": (-6, 0),       # Kick early/on-beat
-        "snare": (2, 10),      # Snare slightly late
-        "hat": (-2, 8),        # Hats with triplet feel variance
-        "ghost": (8, 18),      # Ghosts late
+        "kick": (-6, 0), # Kick early/on-beat
+        "snare": (2, 10), # Snare slightly late
+        "hat": (-2, 8), # Hats with triplet feel variance
+        "ghost": (8, 18), # Ghosts late
         "fill": (-2, 6),
         "cymbal": (-2, 4),
     },
-    swing_amount=0.33,         # Triplet feel (not quite swing)
+    swing_amount=0.33, # Triplet feel (not quite swing)
     swing_grid="16th",
     accent_map={
         0.0: 1.12,
@@ -124,22 +124,22 @@ TRAP_TRIPLET = GrooveProfile(
 HOUSE_FOUR_ON_FLOOR = GrooveProfile(
     name="house",
     role_offset_ms={
-        "kick": (-3, 3),       # Kick tight (machine-like with slight humanization)
-        "snare": (2, 8),       # Clap/snare slightly late (groove)
-        "hat": (0, 6),         # Hats tight to slightly late
-        "ghost": (5, 12),      # Ghosts late
+        "kick": (-3, 3), # Kick tight (machine-like with slight humanization)
+        "snare": (2, 8), # Clap/snare slightly late (groove)
+        "hat": (0, 6), # Hats tight to slightly late
+        "ghost": (5, 12), # Ghosts late
         "fill": (0, 5),
         "cymbal": (0, 4),
     },
-    swing_amount=0.15,         # Light shuffle (house groove)
+    swing_amount=0.15, # Light shuffle (house groove)
     swing_grid="16th",
     accent_map={
-        0.0: 1.20,  # All 4 kicks accented
-        1.0: 1.15,  # Clap on 2
-        2.0: 1.20,  # Kick
-        3.0: 1.15,  # Clap on 4
+        0.0: 1.20, # All 4 kicks accented
+        1.0: 1.15, # Clap on 2
+        2.0: 1.20, # Kick
+        3.0: 1.15, # Clap on 4
     },
-    hat_arc=(0.93, 1.03),      # Subtle arc (more mechanical)
+    hat_arc=(0.93, 1.03), # Subtle arc (more mechanical)
     ghost_timing_late_ms=8,
     fill_timing_variance_ms=(-2, 5),
     velocity_humanize_range=(-3, 3),
@@ -174,10 +174,10 @@ TIGHT = GrooveProfile(
 PUSHED = GrooveProfile(
     name="pushed",
     role_offset_ms={
-        "kick": (-10, -3),     # Kick very early (aggressive)
-        "snare": (-5, 2),      # Snare early/on-beat
-        "hat": (-6, 0),        # Hats early (driving)
-        "ghost": (0, 8),       # Ghosts still slightly late
+        "kick": (-10, -3), # Kick very early (aggressive)
+        "snare": (-5, 2), # Snare early/on-beat
+        "hat": (-6, 0), # Hats early (driving)
+        "ghost": (0, 8), # Ghosts still slightly late
         "fill": (-5, 2),
         "cymbal": (-5, 0),
     },
@@ -199,10 +199,10 @@ PUSHED = GrooveProfile(
 LAID_BACK = GrooveProfile(
     name="laid_back",
     role_offset_ms={
-        "kick": (0, 5),        # Kick on/slightly late
-        "snare": (12, 22),     # Snare very late (deep pocket)
-        "hat": (8, 16),        # Hats lazy
-        "ghost": (15, 25),     # Ghosts very late
+        "kick": (0, 5), # Kick on/slightly late
+        "snare": (12, 22), # Snare very late (deep pocket)
+        "hat": (8, 16), # Hats lazy
+        "ghost": (15, 25), # Ghosts very late
         "fill": (5, 15),
         "cymbal": (3, 10),
     },
@@ -210,7 +210,7 @@ LAID_BACK = GrooveProfile(
     swing_grid="8th",
     accent_map={
         0.0: 1.08,
-        1.0: 1.20,  # Strong backbeat
+        1.0: 1.20, # Strong backbeat
         2.0: 1.02,
         3.0: 1.20,
     },
@@ -333,7 +333,7 @@ def is_offbeat_for_grid(beat_position: float, swing_grid: str) -> bool:
         # Offbeats for 8ths: 0.5, 1.5, 2.5, 3.5
         frac = beat_in_bar % 1.0
         return abs(frac - 0.5) < 0.05
-    else:  # 16th
+    else: # 16th
         # Offbeats for 16ths: 0.25, 0.75, 1.25, etc.
         frac = (beat_in_bar * 4) % 2
         return abs(frac - 1) < 0.2
@@ -361,9 +361,9 @@ def calculate_swing_offset(
     # 8th swing: up to 1/3 of an 8th note (makes triplet feel)
     # 16th swing: up to 1/3 of a 16th note
     if profile.swing_grid == "8th":
-        max_swing_beats = 0.5 * 0.33 * profile.swing_amount  # Up to ~0.08 beats
+        max_swing_beats = 0.5 * 0.33 * profile.swing_amount # Up to ~0.08 beats
     else:
-        max_swing_beats = 0.25 * 0.33 * profile.swing_amount  # Up to ~0.04 beats
+        max_swing_beats = 0.25 * 0.33 * profile.swing_amount # Up to ~0.04 beats
     
     return max_swing_beats
 
@@ -448,7 +448,7 @@ def apply_groove_map(
         if role == "hat":
             # Arc: quieter in middle of bar, louder at start/end
             t = beat_in_bar / 4.0
-            arc_pos = 1 - abs(2 * t - 1)  # 0 at ends, 1 in middle
+            arc_pos = 1 - abs(2 * t - 1) # 0 at ends, 1 in middle
             arc_mul = profile.hat_arc[0] + (profile.hat_arc[1] - profile.hat_arc[0]) * arc_pos
         else:
             arc_mul = 1.0

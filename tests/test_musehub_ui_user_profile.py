@@ -1,22 +1,22 @@
-"""Tests for the enhanced Muse Hub user profile page (issue #459).
+"""Tests for the enhanced Muse Hub user profile page.
 
 Covers:
-- test_profile_page_html_returns_200              — GET /musehub/ui/users/{username} returns 200 HTML
-- test_profile_page_no_auth_required              — accessible without JWT
-- test_profile_page_unknown_user_still_renders    — unknown username still returns 200 HTML shell
-- test_profile_page_html_contains_heatmap_js      — page includes heatmap rendering JavaScript
-- test_profile_page_html_contains_badge_js        — page includes badge rendering JavaScript
-- test_profile_page_html_contains_pinned_js       — page includes pinned repos JavaScript
-- test_profile_page_html_contains_activity_tab    — page includes Activity tab
-- test_profile_page_json_returns_200              — ?format=json returns 200 JSON
-- test_profile_page_json_unknown_user_404         — ?format=json returns 404 for unknown user
-- test_profile_page_json_heatmap_structure        — JSON response has heatmap with days/stats
-- test_profile_page_json_badges_structure         — JSON response has 8 badges with expected fields
-- test_profile_page_json_pinned_repos             — JSON response includes pinned repo cards
-- test_profile_page_json_activity_empty           — JSON response returns empty activity for new user
-- test_profile_page_json_activity_filter          — ?tab=commits filters activity to commits only
+- test_profile_page_html_returns_200 — GET /musehub/ui/users/{username} returns 200 HTML
+- test_profile_page_no_auth_required — accessible without JWT
+- test_profile_page_unknown_user_still_renders — unknown username still returns 200 HTML shell
+- test_profile_page_html_contains_heatmap_js — page includes heatmap rendering JavaScript
+- test_profile_page_html_contains_badge_js — page includes badge rendering JavaScript
+- test_profile_page_html_contains_pinned_js — page includes pinned repos JavaScript
+- test_profile_page_html_contains_activity_tab — page includes Activity tab
+- test_profile_page_json_returns_200 — ?format=json returns 200 JSON
+- test_profile_page_json_unknown_user_404 — ?format=json returns 404 for unknown user
+- test_profile_page_json_heatmap_structure — JSON response has heatmap with days/stats
+- test_profile_page_json_badges_structure — JSON response has 8 badges with expected fields
+- test_profile_page_json_pinned_repos — JSON response includes pinned repo cards
+- test_profile_page_json_activity_empty — JSON response returns empty activity for new user
+- test_profile_page_json_activity_filter — ?tab=commits filters activity to commits only
 - test_profile_page_json_badge_first_commit_earned — first_commit badge earned after seeding a commit
-- test_profile_page_json_camel_case_keys          — JSON keys are camelCase
+- test_profile_page_json_camel_case_keys — JSON keys are camelCase
 """
 from __future__ import annotations
 
@@ -373,7 +373,7 @@ async def test_profile_page_json_camel_case_keys(
 async def test_profile_model_rich_fields_stored_and_retrieved(
     db_session: AsyncSession,
 ) -> None:
-    """MusehubProfile stores and retrieves all CC-attribution fields added in #448.
+    """MusehubProfile stores and retrieves all CC-attribution fields added.
 
     Regression: before this fix, display_name / location / website_url /
     twitter_handle / is_verified / cc_license did not exist on the model or

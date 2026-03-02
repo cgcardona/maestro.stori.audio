@@ -4,12 +4,12 @@ from __future__ import annotations
 
 # ── Phase sets (mirror a professional DAW session) ───────────────────────────
 #
-#   setup       → project scaffolding, track creation, transport, UI
-#   composition → writing notes, MIDI generation
-#   arrangement → structural edits after initial writing
-#   soundDesign → tone shaping via insert effects
-#   expression  → performance data: CC, pitch bend, aftertouch
-#   mixing      → balance, routing, & automation
+# setup → project scaffolding, track creation, transport, UI
+# composition → writing notes, MIDI generation
+# arrangement → structural edits after initial writing
+# soundDesign → tone shaping via insert effects
+# expression → performance data: CC, pitch bend, aftertouch
+# mixing → balance, routing, & automation
 
 _SETUP_TOOL_NAMES: set[str] = {
     "stori_create_project",
@@ -22,7 +22,7 @@ _SETUP_TOOL_NAMES: set[str] = {
 }
 
 # Narrow subset for the tracker's initial grouping loop — only project-level
-# setup that happens once before any track work begins.  Track creation and
+# setup that happens once before any track work begins. Track creation and
 # regions have dedicated grouping logic and must NOT be consumed here.
 _PROJECT_SETUP_TOOL_NAMES: set[str] = {
     "stori_create_project",

@@ -144,8 +144,8 @@ class TestGenerationConstraintsTransmission:
             "velocity_ceiling": gc.velocity_ceiling,
         }
         assert set(gc_dict.keys()) == self.EXPECTED_FIELDS
-        assert gc_dict["subdivision"] == 16  # motion 0.9 > 0.6
-        assert gc_dict["chord_extensions"] is True  # tension 0.7 > 0.5
+        assert gc_dict["subdivision"] == 16 # motion 0.9 > 0.6
+        assert gc_dict["chord_extensions"] is True # tension 0.7 > 0.5
 
     def test_constraints_deterministic(self) -> None:
 

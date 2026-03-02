@@ -1,6 +1,6 @@
 """Tests for MuseHub musical feature vector extraction.
 
-Covers acceptance criteria from issue #237:
+Covers acceptance criteria:
 - Musical feature extraction from commit messages
 - Deterministic, reproducible embeddings for the same input
 - Correct feature parsing (key, tempo, mode, chord complexity)
@@ -33,13 +33,13 @@ from maestro.services.musehub_embeddings import (
 def test_embedding_computed_on_push_extracts_key() -> None:
     """Push commit with key info in message extracts the correct key index."""
     features = extract_features_from_message("Jazz ballad in Db major at 72 BPM")
-    assert features.key_index == 1  # Db is index 1 in _CHROMATIC
+    assert features.key_index == 1 # Db is index 1 in _CHROMATIC
 
 
 def test_extract_features_major_mode_score() -> None:
     """Major key commit yields mode_score ≥ 0.5."""
     features = extract_features_from_message("Composition in G major 120 BPM")
-    assert features.key_index == 7  # G
+    assert features.key_index == 7 # G
     assert features.mode_score >= 0.5
 
 
@@ -73,8 +73,8 @@ def test_extract_features_chord_complexity_extended() -> None:
 def test_extract_features_chroma_populated_for_known_key() -> None:
     """Chroma histogram is non-zero for commits with a known key."""
     features = extract_features_from_message("Piece in C major 120 BPM")
-    assert features.chroma[0] > 0  # C is tonic
-    assert features.chroma[7] > 0  # G is perfect fifth
+    assert features.chroma[0] > 0 # C is tonic
+    assert features.chroma[7] > 0 # G is perfect fifth
 
 
 def test_extract_features_unknown_message() -> None:

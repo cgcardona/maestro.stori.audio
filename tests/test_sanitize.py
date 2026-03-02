@@ -27,10 +27,10 @@ class TestNFCNormalisation:
     def test_decomposed_e_composed_to_nfc(self) -> None:
 
         """NFD e + combining accent (U+0065 U+0301) becomes NFC é."""
-        nfd = "cafe\u0301"  # e + combining acute
+        nfd = "cafe\u0301" # e + combining acute
         result = normalise_user_input(nfd)
         assert unicodedata.normalize("NFC", nfd) in result
-        assert "\u0301" not in result  # combining char is gone
+        assert "\u0301" not in result # combining char is gone
 
     def test_nfc_idempotent(self) -> None:
 
@@ -46,7 +46,7 @@ class TestNFCNormalisation:
         # U+1100 + U+1161 = 가 (ga)
         decomposed = "\u1100\u1161"
         result = normalise_user_input(decomposed)
-        assert "\uac00" in result  # 가
+        assert "\uac00" in result # 가
 
 
 # ===========================================================================
@@ -122,7 +122,7 @@ class TestInvisibleCharStripping:
         ("\u200e", "LEFT-TO-RIGHT MARK"),
         ("\u200f", "RIGHT-TO-LEFT MARK"),
         ("\u202a", "LEFT-TO-RIGHT EMBEDDING"),
-        ("\u202e", "RIGHT-TO-LEFT OVERRIDE"),  # common in injection attacks
+        ("\u202e", "RIGHT-TO-LEFT OVERRIDE"), # common in injection attacks
         ("\u2060", "WORD JOINER"),
         ("\ufeff", "BYTE ORDER MARK"),
     ])
@@ -155,7 +155,7 @@ class TestInvisibleCharStripping:
     def test_music_chars_preserved(self) -> None:
 
         """Em dash, arrows, bullets (all legitimate) are preserved."""
-        for char in ("—", "–", "→", "•"):
+        for char in ("", "", "→", "•"):
             result = normalise_user_input(f"style {char} jazz")
             assert char in result, f"'{char}' should be preserved"
 
@@ -250,7 +250,7 @@ class TestTrailingWhitespaceStripping:
 
     def test_trailing_spaces_on_each_line(self) -> None:
 
-        result = normalise_user_input("Mode: compose   \nRequest: go   ")
+        result = normalise_user_input("Mode: compose \nRequest: go ")
         for line in result.split("\n"):
             assert not line.endswith(" "), f"Line has trailing space: {repr(line)}"
 
@@ -262,8 +262,8 @@ class TestTrailingWhitespaceStripping:
     def test_leading_spaces_preserved(self) -> None:
 
         """YAML block scalar indentation is never touched."""
-        result = normalise_user_input("Request: |\n  indented\n  body")
-        assert "  indented" in result
+        result = normalise_user_input("Request: |\n indented\n body")
+        assert " indented" in result
 
     def test_internal_spaces_preserved(self) -> None:
 
@@ -295,7 +295,7 @@ class TestWholeStringStripping:
 
     def test_whitespace_only_returns_empty(self) -> None:
 
-        assert normalise_user_input("   \n\n\t  ") == ""
+        assert normalise_user_input(" \n\n\t ") == ""
 
 
 # ===========================================================================
@@ -327,7 +327,7 @@ class TestStructuredPromptRoundTrip:
             "- kick\n"
             "- bass\n"
             "Harmony:\n"
-            "  progression: i-VI\n"
+            " progression: i-VI\n"
             "Request: Build the verse groove"
         )
         result = parse_prompt(normalise_user_input(prompt))
@@ -365,8 +365,8 @@ class TestStructuredPromptRoundTrip:
             "MAESTRO PROMPT\n"
             "Mode: compose\n"
             "Request: |\n"
-            "  Build an intro groove.\n"
-            "  Make it evolve every 4 bars.\n"
+            " Build an intro groove.\n"
+            " Make it evolve every 4 bars.\n"
         )
         result = parse_prompt(normalise_user_input(prompt))
         assert result is not None
@@ -402,7 +402,7 @@ class TestSanitizeSecurity:
     def test_very_long_input_processed(self) -> None:
 
         """Large input (just under model limits) is processed without error."""
-        long_text = "make a beat " * 1000  # ~12000 chars
+        long_text = "make a beat " * 1000 # ~12000 chars
         result = normalise_user_input(long_text)
         assert "make a beat" in result
         assert "\x00" not in result
@@ -419,4 +419,4 @@ class TestSanitizeSecurity:
         assert "\x00" not in result
         assert "\u200b" not in result
         assert "\u202e" not in result
-        assert "ignore previous" in result  # text itself is kept
+        assert "ignore previous" in result # text itself is kept

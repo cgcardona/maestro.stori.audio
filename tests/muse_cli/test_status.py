@@ -36,7 +36,7 @@ def _init_muse_repo(root: pathlib.Path, repo_id: str | None = None) -> str:
         json.dumps({"repo_id": rid, "schema_version": "1"})
     )
     (muse / "HEAD").write_text("refs/heads/main")
-    (muse / "refs" / "heads" / "main").write_text("")  # no commits yet
+    (muse / "refs" / "heads" / "main").write_text("") # no commits yet
     return rid
 
 
@@ -292,7 +292,7 @@ async def test_status_short_shows_modified_code(
 
     out = capsys.readouterr().out
     assert "M beat.mid" in out
-    assert "modified:" not in out  # verbose label must not appear
+    assert "modified:" not in out # verbose label must not appear
 
 
 @pytest.mark.anyio
@@ -377,7 +377,7 @@ async def test_status_branch_only_shows_branch_line(
 
     out = capsys.readouterr().out
     assert "On branch main" in out
-    assert "beat.mid" not in out  # no file listing
+    assert "beat.mid" not in out # no file listing
     assert "modified" not in out
 
 
@@ -394,7 +394,7 @@ async def test_status_branch_only_no_commits(
 
     out = capsys.readouterr().out
     assert "On branch main" in out
-    assert "no commits" not in out  # branch_only suppresses extra info
+    assert "no commits" not in out # branch_only suppresses extra info
 
 
 # ---------------------------------------------------------------------------
@@ -414,7 +414,7 @@ async def test_status_porcelain_header_emitted(
 
     await _commit_async(message="initial", root=tmp_path, session=muse_cli_db_session)
     await muse_cli_db_session.flush()
-    capsys.readouterr()  # discard commit's success line
+    capsys.readouterr() # discard commit's success line
 
     await _status_async(root=tmp_path, session=muse_cli_db_session, porcelain=True)
 
@@ -434,7 +434,7 @@ async def test_status_porcelain_clean_tree(
 
     await _commit_async(message="initial", root=tmp_path, session=muse_cli_db_session)
     await muse_cli_db_session.flush()
-    capsys.readouterr()  # discard commit's success line
+    capsys.readouterr() # discard commit's success line
 
     await _status_async(root=tmp_path, session=muse_cli_db_session, porcelain=True)
 
@@ -678,6 +678,6 @@ async def test_status_porcelain_and_tracks_combined(
     await _status_async(root=tmp_path, session=muse_cli_db_session, porcelain=True, tracks=True)
 
     out = capsys.readouterr().out
-    assert "## main" in out  # porcelain header
+    assert "## main" in out # porcelain header
     assert "## bass" in out
-    assert " M bass/line.mid" in out  # two-char porcelain code
+    assert " M bass/line.mid" in out # two-char porcelain code

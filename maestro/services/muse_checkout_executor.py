@@ -75,7 +75,7 @@ def execute_checkout_plan(
 
     The ``store`` parameter is typed as ``Any`` to avoid importing
     ``StateStore`` directly — the caller passes a concrete store
-    instance.  The executor calls its public methods only.
+    instance. The executor calls its public methods only.
 
     Args:
         checkout_plan: The plan to execute (pure data).

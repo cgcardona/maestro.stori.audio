@@ -105,7 +105,7 @@ class TestMaestroMCPServer:
 
     def test_unregister_nonexistent(self, mcp_server: MaestroMCPServer) -> None:
 
-        mcp_server.unregister_daw("ghost")  # Should not raise
+        mcp_server.unregister_daw("ghost") # Should not raise
 
     def test_update_project_state(self, mcp_server: MaestroMCPServer) -> None:
 
@@ -116,7 +116,7 @@ class TestMaestroMCPServer:
 
     def test_update_state_nonexistent(self, mcp_server: MaestroMCPServer) -> None:
 
-        mcp_server.update_project_state("ghost", {"tempo": 100})  # Should not raise
+        mcp_server.update_project_state("ghost", {"tempo": 100}) # Should not raise
 
     @pytest.mark.anyio
     async def test_receive_tool_response_success(self, mcp_server: MaestroMCPServer) -> None:

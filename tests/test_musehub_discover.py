@@ -1,23 +1,23 @@
 """Tests for the Muse Hub explore/discover API endpoints.
 
-Covers acceptance criteria from issue #234:
-- test_explore_page_renders             — GET /musehub/ui/explore returns 200 HTML
-- test_trending_page_renders            — GET /musehub/ui/trending returns 200 HTML
-- test_list_public_repos_empty          — no public repos → empty list
-- test_explore_only_public_repos        — private repos are excluded from results
-- test_explore_filters_by_genre         — genre tag filter works
-- test_explore_filters_by_key           — key_signature exact filter works
-- test_explore_filters_by_tempo         — tempo_min/tempo_max range filter works
+Covers acceptance criteria:
+- test_explore_page_renders — GET /musehub/ui/explore returns 200 HTML
+- test_trending_page_renders — GET /musehub/ui/trending returns 200 HTML
+- test_list_public_repos_empty — no public repos → empty list
+- test_explore_only_public_repos — private repos are excluded from results
+- test_explore_filters_by_genre — genre tag filter works
+- test_explore_filters_by_key — key_signature exact filter works
+- test_explore_filters_by_tempo — tempo_min/tempo_max range filter works
 - test_explore_filters_by_instrumentation — instrumentation tag filter works
-- test_explore_sorts_by_stars           — star-count sort returns highest-starred first
-- test_explore_sorts_by_created         — created sort returns newest first
-- test_explore_pagination               — page 2 returns different repos
-- test_star_repo_requires_auth          — POST /star returns 401 without JWT
-- test_star_repo_adds_star              — star increments star_count
-- test_star_repo_idempotent             — duplicate star is silent
-- test_unstar_repo_removes_star         — unstar decrements star_count
-- test_unstar_repo_idempotent           — unstarring twice is a no-op
-- test_star_private_repo_returns_404    — cannot star a private repo
+- test_explore_sorts_by_stars — star-count sort returns highest-starred first
+- test_explore_sorts_by_created — created sort returns newest first
+- test_explore_pagination — page 2 returns different repos
+- test_star_repo_requires_auth — POST /star returns 401 without JWT
+- test_star_repo_adds_star — star increments star_count
+- test_star_repo_idempotent — duplicate star is silent
+- test_unstar_repo_removes_star — unstar decrements star_count
+- test_unstar_repo_idempotent — unstarring twice is a no-op
+- test_star_private_repo_returns_404 — cannot star a private repo
 """
 from __future__ import annotations
 

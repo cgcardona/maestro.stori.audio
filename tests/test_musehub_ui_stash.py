@@ -1,11 +1,11 @@
-"""Tests for Muse Hub stash UI endpoints (issue #433).
+"""Tests for Muse Hub stash UI endpoints.
 
 Covers GET /musehub/ui/{owner}/{repo_slug}/stash:
 - test_stash_list_page_auth_required                 — unauthenticated GET → 401
 - test_stash_list_page_returns_200_with_token        — authenticated GET → 200 HTML
 - test_stash_list_page_shows_ref_labels              — HTML includes stash@{0} refs
 - test_stash_list_page_action_buttons_present        — Apply / Pop / Drop buttons present
-- test_stash_list_page_drop_confirm_present          — Drop form has confirmation dialog
+- test_stash_list_page_drop_confirm_present          — Drop form has hx-confirm attribute
 - test_stash_list_page_json_response                 — ?format=json returns JSON with stashes key
 - test_stash_list_page_json_fields                   — JSON stash items have required fields
 - test_stash_list_page_empty_stash                   — empty stash returns 200 with 0 total
@@ -14,20 +14,20 @@ Covers GET /musehub/ui/{owner}/{repo_slug}/stash:
 - test_stash_list_pagination_query_params            — page/page_size accepted without error
 
 Covers POST /musehub/ui/{owner}/{repo_slug}/stash/{stash_ref}/apply:
-- test_stash_apply_auth_required                     — unauthenticated POST → 401
-- test_stash_apply_redirects_to_stash_list           — authenticated POST → 303 redirect
-- test_stash_apply_preserves_stash_entry             — stash entry still exists after apply
+- test_stash_apply_auth_required — unauthenticated POST → 401
+- test_stash_apply_redirects_to_stash_list — authenticated POST → 303 redirect
+- test_stash_apply_preserves_stash_entry — stash entry still exists after apply
 
 Covers POST /musehub/ui/{owner}/{repo_slug}/stash/{stash_ref}/pop:
-- test_stash_pop_auth_required                       — unauthenticated POST → 401
-- test_stash_pop_redirects_to_stash_list             — authenticated POST → 303 redirect
-- test_stash_pop_deletes_stash_entry                 — stash entry removed after pop
+- test_stash_pop_auth_required — unauthenticated POST → 401
+- test_stash_pop_redirects_to_stash_list — authenticated POST → 303 redirect
+- test_stash_pop_deletes_stash_entry — stash entry removed after pop
 
 Covers POST /musehub/ui/{owner}/{repo_slug}/stash/{stash_ref}/drop:
-- test_stash_drop_auth_required                      — unauthenticated POST → 401
-- test_stash_drop_redirects_to_stash_list            — authenticated POST → 303 redirect
-- test_stash_drop_deletes_stash_entry                — stash entry removed after drop
-- test_stash_drop_wrong_user_404                     — another user's stash → 404
+- test_stash_drop_auth_required — unauthenticated POST → 401
+- test_stash_drop_redirects_to_stash_list — authenticated POST → 303 redirect
+- test_stash_drop_deletes_stash_entry — stash entry removed after drop
+- test_stash_drop_wrong_user_404 — another user's stash → 404
 """
 from __future__ import annotations
 
@@ -43,7 +43,7 @@ from maestro.db.musehub_stash_models import MusehubStash, MusehubStashEntry
 
 _OWNER = "artist"
 _SLUG = "album-one"
-_USER_ID = "550e8400-e29b-41d4-a716-446655440000"  # matches test_user fixture
+_USER_ID = "550e8400-e29b-41d4-a716-446655440000" # matches test_user fixture
 
 
 # ---------------------------------------------------------------------------
@@ -178,7 +178,7 @@ async def test_stash_list_page_drop_confirm_present(
     auth_headers: dict[str, str],
     test_user: object,
 ) -> None:
-    """Drop button form has a JavaScript confirm() dialog to prevent accidents."""
+    """Drop form uses hx-confirm attribute for HTMX-native confirmation dialog."""
     repo_id = await _make_repo(db_session)
     await _make_stash(db_session, repo_id)
     response = await client.get(
@@ -186,7 +186,7 @@ async def test_stash_list_page_drop_confirm_present(
         headers=auth_headers,
     )
     assert response.status_code == 200
-    assert "confirm(" in response.text
+    assert "hx-confirm" in response.text
 
 
 @pytest.mark.anyio

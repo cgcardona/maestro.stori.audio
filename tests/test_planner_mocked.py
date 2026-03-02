@@ -291,13 +291,13 @@ class TestSchemaToToolCalls:
         return ExecutionPlanSchema(
             generations=[
                 GenerationStep(role="drums", style="house", tempo=tempo, bars=bars),
-                GenerationStep(role="bass",  style="house", tempo=tempo, bars=bars),
+                GenerationStep(role="bass", style="house", tempo=tempo, bars=bars),
             ],
             edits=[
                 EditStep(action="add_track", name="Drums"),
                 EditStep(action="add_track", name="Bass"),
                 EditStep(action="add_region", track="Drums", barStart=0, bars=bars),
-                EditStep(action="add_region", track="Bass",  barStart=0, bars=bars),
+                EditStep(action="add_region", track="Bass", barStart=0, bars=bars),
             ],
             mix=[],
         )
@@ -600,7 +600,7 @@ class TestBuildExecutionPlanMocked:
 
         """A structured prompt missing bars falls back to the LLM."""
         parsed = _minimal_parsed()
-        parsed.constraints = {}  # missing bars → deterministic path impossible
+        parsed.constraints = {} # missing bars → deterministic path impossible
         llm = _llm_with_response(_valid_plan_json())
         plan = await build_execution_plan(
             user_prompt="MAESTRO PROMPT\nMode: compose\n...",
@@ -618,7 +618,7 @@ class TestBuildExecutionPlanMocked:
         """Position: after intro is resolved to a beat and injected into system prompt."""
         parsed = _minimal_parsed()
         parsed.position = PositionSpec(kind="after", ref="intro")
-        parsed.constraints = {}  # force LLM path
+        parsed.constraints = {} # force LLM path
         project_with_intro: ProjectContext = {
             "tracks": [
                 {"name": "intro", "regions": [
@@ -669,7 +669,7 @@ class TestBuildExecutionPlanMocked:
         )
         assert plan.is_valid
         track_calls = [tc for tc in plan.tool_calls if tc.name == "stori_add_midi_track"]
-        assert len(track_calls) >= 1  # complete_plan inferred a track
+        assert len(track_calls) >= 1 # complete_plan inferred a track
 
 
 # ===========================================================================
@@ -690,7 +690,7 @@ class TestBuildPlanFromDict:
         """build_plan_from_dict handles runtime-invalid dicts gracefully.
 
         Passes a dict that does not conform to PlanJsonDict to verify Pydantic
-        validation rejects it at runtime without crashing.  The @no_type_check
+        validation rejects it at runtime without crashing. The @no_type_check
         decorator acknowledges this is a deliberate type violation.
         """
         plan = build_plan_from_dict({"not_a_real_field": True})
@@ -797,7 +797,7 @@ class TestPositionToBeatRegressionFull:
             "- kick\n"
             "- bass\n"
             "Constraints:\n"
-            "  bars: 8\n"
+            " bars: 8\n"
             "Request: lay down the verse groove"
         )
         parsed = parse_prompt(prompt)
@@ -836,7 +836,7 @@ class TestPositionToBeatRegressionFull:
             "Role:\n"
             "- kick\n"
             "Constraints:\n"
-            "  bars: 4\n"
+            " bars: 4\n"
             "Request: basic kick"
         )
         parsed = parse_prompt(prompt)

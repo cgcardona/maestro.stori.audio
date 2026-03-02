@@ -1,11 +1,11 @@
 """Muse Hub object (artifact) route handlers.
 
 Endpoint summary:
-  GET /musehub/repos/{repo_id}/objects                             — list artifact metadata
-  GET /musehub/repos/{repo_id}/objects/{object_id}/content         — serve raw artifact bytes
-  GET /musehub/repos/{repo_id}/blob/{ref}/{path}                   — blob metadata + text content for UI
-  GET /musehub/repos/{repo_id}/objects/{object_id}/parse-midi      — MIDI-to-JSON parsing endpoint
-  GET /musehub/repos/{repo_id}/export/{ref}?format=midi&...        — download export package
+  GET /musehub/repos/{repo_id}/objects — list artifact metadata
+  GET /musehub/repos/{repo_id}/objects/{object_id}/content — serve raw artifact bytes
+  GET /musehub/repos/{repo_id}/blob/{ref}/{path} — blob metadata + text content for UI
+  GET /musehub/repos/{repo_id}/objects/{object_id}/parse-midi — MIDI-to-JSON parsing endpoint
+  GET /musehub/repos/{repo_id}/export/{ref}?format=midi&... — download export package
 
 Objects are binary artifacts (MIDI, MP3, WebP piano rolls) pushed via the
 sync protocol. They are stored on disk; only metadata lives in Postgres.
@@ -107,13 +107,13 @@ async def get_blob_meta(
     """Return metadata for a single file in the blob viewer.
 
     The response includes the file's size, SHA, creation timestamp, and
-    rendering hint (``file_type``).  For text-based files (JSON, XML) up to
+    rendering hint (``file_type``). For text-based files (JSON, XML) up to
     256 KB, ``content_text`` is populated so the viewer can render them
-    inline without a second request.  Binary and oversized files omit
+    inline without a second request. Binary and oversized files omit
     ``content_text``; consumers should stream bytes from ``raw_url`` instead.
 
     The ``ref`` parameter accepts branch names or commit SHAs and is used
-    for URL construction (raw_url).  Object resolution always returns the
+    for URL construction (raw_url). Object resolution always returns the
     most-recently-pushed object at ``path``, consistent with the raw and
     tree endpoints at MVP scope.
 
@@ -257,7 +257,7 @@ async def parse_midi_object(
 
     Reads the binary MIDI file from disk, delegates to
     :func:`maestro.services.musehub_midi_parser.parse_midi_bytes`, and returns
-    the result as JSON.  The response shape is:
+    the result as JSON. The response shape is:
 
     .. code-block:: json
 
@@ -278,7 +278,7 @@ async def parse_midi_object(
           "total_beats": 32.0
         }
 
-    The ``notes`` array is sorted by ``start_beat``.  All timing is expressed
+    The ``notes`` array is sorted by ``start_beat``. All timing is expressed
     in quarter-note beats, independent of playback tempo, so the client piano
     roll renderer can display musical time without needing to convert ticks.
 
@@ -353,7 +353,7 @@ async def parse_midi_object(
 async def export_artifacts(
     repo_id: str,
     ref: str,
-    format: Annotated[  # noqa: A002
+    format: Annotated[ # noqa: A002
         ExportFormat,
         Query(description="Export format: midi, json, musicxml, abc, wav, mp3"),
     ] = ExportFormat.midi,
@@ -434,7 +434,7 @@ async def export_artifacts(
     try:
         await db.commit()
     except Exception:
-        await db.rollback()  # analytics failure must not block the download
+        await db.rollback() # analytics failure must not block the download
 
     return Response(
         content=result.content,
@@ -459,7 +459,7 @@ async def list_tree_root(
     """Return a directory listing of the repo root at the given ref.
 
     Reconstructs the tree from all stored musehub_objects for the repo.
-    The ``ref`` parameter is validated against known branches and commit IDs —
+    The ``ref`` parameter is validated against known branches and commit IDs
     an unknown ref returns 404 so clients get meaningful feedback.
 
     Query params ``owner`` and ``repo_slug`` are passed through verbatim for
@@ -503,7 +503,7 @@ async def list_tree_subdir(
     """Return a directory listing of ``path`` inside the repo at the given ref.
 
     Behaves identically to ``list_tree_root`` but scoped to the subdirectory
-    identified by ``path`` (e.g. "tracks", "tracks/stems").  Returns 404 when
+    identified by ``path`` (e.g. "tracks", "tracks/stems"). Returns 404 when
     the ref is unknown or the path has no objects underneath it.
     """
     repo = await musehub_repository.get_repo(db, repo_id)

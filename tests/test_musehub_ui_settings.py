@@ -1,26 +1,26 @@
-"""Tests for Muse Hub repo settings page (issue #429).
+"""Tests for Muse Hub repo settings page.
 
 Covers the new ``GET /musehub/ui/{owner}/{repo_slug}/settings`` endpoint
 implemented in ``maestro/api/routes/musehub/ui_settings.py``.
 
 Test matrix:
-- test_settings_page_returns_200                 — happy-path HTML response
-- test_settings_page_no_auth_required            — HTML shell needs no JWT
-- test_settings_page_unknown_repo_404            — unknown owner/slug → 404
-- test_settings_page_contains_general_section    — General settings form present
-- test_settings_page_contains_danger_zone        — Danger Zone section present
-- test_settings_page_contains_merge_section      — Merge settings section present
-- test_settings_page_contains_collaboration      — Collaboration section present
-- test_settings_page_sidebar_navigation          — Sidebar nav links present
-- test_settings_page_section_param               — ?section= pre-selects sidebar section
-- test_settings_json_response                    — ?format=json returns RepoSettingsResponse fields
-- test_settings_json_has_visibility              — JSON includes visibility field
-- test_settings_json_has_merge_flags             — JSON includes merge strategy flags
-- test_settings_page_topic_tag_input             — tag input container present in template
-- test_settings_page_danger_zone_delete_confirm  — delete confirmation pattern present
-- test_settings_page_danger_zone_transfer        — transfer ownership action present
-- test_settings_page_danger_zone_archive         — archive action present
-- test_settings_page_uses_owner_slug_base_url    — base URL uses owner/slug not UUID
+- test_settings_page_returns_200 — happy-path HTML response
+- test_settings_page_no_auth_required — HTML shell needs no JWT
+- test_settings_page_unknown_repo_404 — unknown owner/slug → 404
+- test_settings_page_contains_general_section — General settings form present
+- test_settings_page_contains_danger_zone — Danger Zone section present
+- test_settings_page_contains_merge_section — Merge settings section present
+- test_settings_page_contains_collaboration — Collaboration section present
+- test_settings_page_sidebar_navigation — Sidebar nav links present
+- test_settings_page_section_param — ?section= pre-selects sidebar section
+- test_settings_json_response — ?format=json returns RepoSettingsResponse fields
+- test_settings_json_has_visibility — JSON includes visibility field
+- test_settings_json_has_merge_flags — JSON includes merge strategy flags
+- test_settings_page_topic_tag_input — tag input container present in template
+- test_settings_page_danger_zone_delete_confirm — delete confirmation pattern present
+- test_settings_page_danger_zone_transfer — transfer ownership action present
+- test_settings_page_danger_zone_archive — archive action present
+- test_settings_page_uses_owner_slug_base_url — base URL uses owner/slug not UUID
 """
 from __future__ import annotations
 
@@ -156,13 +156,13 @@ async def test_settings_page_sidebar_navigation(
     client: AsyncClient,
     db_session: AsyncSession,
 ) -> None:
-    """Settings page HTML contains sidebar navigation buttons."""
+    """Settings page HTML contains Alpine.js-powered sidebar navigation links."""
     repo = await _make_repo(db_session, owner="navowner", slug="nav-repo")
     resp = await client.get(f"/musehub/ui/{repo.owner}/{repo.slug}/settings")
     assert resp.status_code == 200
     html = resp.text
-    assert "activateSection" in html
-    assert "data-section=" in html
+    assert "settings-nav-link" in html
+    assert "x-on:click" in html or "x-data" in html
 
 
 @pytest.mark.anyio
@@ -250,8 +250,7 @@ async def test_settings_page_danger_zone_delete_confirm(
     repo = await _make_repo(db_session, owner="delowner", slug="del-repo")
     resp = await client.get(f"/musehub/ui/{repo.owner}/{repo.slug}/settings")
     assert resp.status_code == 200
-    # Confirmation input pattern for repo name
-    assert "confirm-delete-name" in resp.text or "deleteRepo" in resp.text
+    assert "confirm-delete-name" in resp.text
 
 
 @pytest.mark.anyio
@@ -264,7 +263,7 @@ async def test_settings_page_danger_zone_transfer(
     resp = await client.get(f"/musehub/ui/{repo.owner}/{repo.slug}/settings")
     assert resp.status_code == 200
     assert "transfer" in resp.text.lower()
-    assert "transferOwnership" in resp.text or "modal-transfer" in resp.text
+    assert "modal-transfer" in resp.text
 
 
 @pytest.mark.anyio
@@ -277,7 +276,7 @@ async def test_settings_page_danger_zone_archive(
     resp = await client.get(f"/musehub/ui/{repo.owner}/{repo.slug}/settings")
     assert resp.status_code == 200
     assert "archive" in resp.text.lower()
-    assert "archiveRepo" in resp.text or "modal-archive" in resp.text
+    assert "modal-archive" in resp.text
 
 
 @pytest.mark.anyio

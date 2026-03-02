@@ -1,22 +1,22 @@
 """Tests for ``muse stash`` — full lifecycle and edge cases.
 
 Exercises:
-- ``test_stash_push_pop_roundtrip``     — regression: push saves state, pop restores it
-- ``test_stash_push_clears_workdir``    — full push restores HEAD (empty branch → clear)
-- ``test_stash_list_shows_entries``     — list returns entries newest-first
-- ``test_stash_apply_keeps_entry``      — apply does not remove the entry
-- ``test_stash_drop_removes_entry``     — drop removes exactly the target entry
-- ``test_stash_clear_removes_all``      — clear empties the entire stack
-- ``test_stash_track_scoping``         — --track scopes files saved and restored
-- ``test_stash_section_scoping``       — --section scopes files saved and restored
-- ``test_stash_pop_index_oob``         — pop on empty stack exits with USER_ERROR
-- ``test_stash_apply_index_oob``       — apply on missing index raises IndexError
-- ``test_stash_drop_index_oob``        — drop on missing index raises IndexError
-- ``test_stash_multiple_entries``      — multiple pushes produce a stack
-- ``test_stash_push_empty_workdir``    — push on empty workdir is a noop
-- ``test_stash_missing_objects``       — apply when object store empty reports missing
+- ``test_stash_push_pop_roundtrip`` — regression: push saves state, pop restores it
+- ``test_stash_push_clears_workdir`` — full push restores HEAD (empty branch → clear)
+- ``test_stash_list_shows_entries`` — list returns entries newest-first
+- ``test_stash_apply_keeps_entry`` — apply does not remove the entry
+- ``test_stash_drop_removes_entry`` — drop removes exactly the target entry
+- ``test_stash_clear_removes_all`` — clear empties the entire stack
+- ``test_stash_track_scoping`` — --track scopes files saved and restored
+- ``test_stash_section_scoping`` — --section scopes files saved and restored
+- ``test_stash_pop_index_oob`` — pop on empty stack exits with USER_ERROR
+- ``test_stash_apply_index_oob`` — apply on missing index raises IndexError
+- ``test_stash_drop_index_oob`` — drop on missing index raises IndexError
+- ``test_stash_multiple_entries`` — multiple pushes produce a stack
+- ``test_stash_push_empty_workdir`` — push on empty workdir is a noop
+- ``test_stash_missing_objects`` — apply when object store empty reports missing
 - ``test_stash_push_with_head_manifest`` — push restores HEAD snapshot to workdir
-- ``test_stash_message_stored``        — custom --message is preserved
+- ``test_stash_message_stored`` — custom --message is preserved
 """
 from __future__ import annotations
 

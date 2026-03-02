@@ -789,4 +789,4 @@ def test_render_preview_cli_custom_format_and_output(tmp_path: pathlib.Path) -> 
 # Additional imports needed for tests
 # ---------------------------------------------------------------------------
 
-import typer  # noqa: E402 (imported here for use in test bodies above)
+import typer # noqa: E402 (imported here for use in test bodies above)

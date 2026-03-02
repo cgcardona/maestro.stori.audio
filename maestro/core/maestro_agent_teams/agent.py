@@ -197,7 +197,7 @@ async def _run_instrument_agent_inner(
     from maestro.data.role_profiles import get_role_profile
     from maestro.core.gm_instruments import get_genre_gm_guidance
 
-    _ic = instrument_contract  # shorthand
+    _ic = instrument_contract # shorthand
     beat_count = bars * 4
 
     _role_profile = get_role_profile(role)
@@ -228,7 +228,7 @@ async def _run_instrument_agent_inner(
         "section-specific decisions.\n"
         "- Do NOT list pipeline steps, tool names, or execution order.\n"
         "- Do NOT mention regions, trackIds, regionIds, beats, or bar counts.\n"
-        "- Do NOT deliberate about regionId values or how to find them — "
+        "- Do NOT deliberate about regionId values or how to find them"
         "the server resolves ALL entity references automatically.\n"
         "- No phrases like 'Let me...', 'I will...', 'Step 1...', "
         "'For the verse...', 'For the chorus...', 'I need the regionId...'.\n"
@@ -237,7 +237,7 @@ async def _run_instrument_agent_inner(
     )
 
     _generate_midi_guidance = (
-        "The `prompt` field in stori_generate_midi is for logging only — "
+        "The `prompt` field in stori_generate_midi is for logging only"
         "the generator selects musical content via seeds and parameters. "
         "Keep it short (a few words describing the section).\n"
     )
@@ -267,7 +267,7 @@ async def _run_instrument_agent_inner(
                 sec_bars = max(1, sec_beats // 4)
                 per_track = sec.get("per_track_description", {})
                 sec_hint = per_track.get(role.lower(), per_track.get(instrument_name.lower(), ""))
-                sec_hint_str = f"  Musical hint: {sec_hint}" if sec_hint else ""
+                sec_hint_str = f" Musical hint: {sec_hint}" if sec_hint else ""
 
                 # Region step
                 step_num += 1
@@ -422,13 +422,13 @@ async def _run_instrument_agent_inner(
     all_tool_results: list[dict[str, JSONValue]] = []
 
     # Server-owned retries handle *failed* section children inside
-    # _dispatch_section_children.  However the LLM must actually emit the
+    # _dispatch_section_children. However the LLM must actually emit the
     # region+generate tool calls in the first place — _missing_stages()
     # detects when it didn't and prompts on the next turn.
     _section_count = len(_sections) if _multi_section else 1
     # Scale max_turns with section count — the LLM often drip-feeds
     # tool calls (1-2 per turn) instead of batching all region+generate
-    # pairs.  Minimum 3 (track + content + effect), +1 per extra section.
+    # pairs. Minimum 3 (track + content + effect), +1 per extra section.
     max_turns = max(3, _section_count + 2)
 
     # ── Stage tracking ──
@@ -436,17 +436,17 @@ async def _run_instrument_agent_inner(
     # duplicate regeneration when the LLM re-emits the same section.
     _stage_track = reusing
     _stage_effect = False
-    _sections_with_region: set[str] = set()   # section names with region created
+    _sections_with_region: set[str] = set() # section names with region created
     _sections_with_generate: set[str] = set() # section names with generate completed
-    _regions_completed: int = 0       # total region calls dispatched
-    _regions_ok: int = 0              # how many returned a valid regionId
-    _generates_completed: int = 0     # total generate calls dispatched
+    _regions_completed: int = 0 # total region calls dispatched
+    _regions_ok: int = 0 # how many returned a valid regionId
+    _generates_completed: int = 0 # total generate calls dispatched
     _expected_sections = _section_count
 
     def _missing_stages() -> list[str]:
         """Detect stages the LLM hasn't produced yet.
 
-        Track/effect are checked individually.  Region+generate are checked
+        Track/effect are checked individually. Region+generate are checked
         per-section by name — prevents duplicate regeneration when the LLM
         re-emits tool calls for an already-completed section.
         """
@@ -512,8 +512,8 @@ async def _run_instrument_agent_inner(
                 break
 
             logger.info(
-                f"{agent_log} 🔄 Turn {turn}/{max_turns}: {len(missing)} stages remaining — "
-                + ", ".join(m.split(" — ")[0] for m in missing)
+                f"{agent_log} 🔄 Turn {turn}/{max_turns}: {len(missing)} stages remaining"
+                + ", ".join(m.split("")[0] for m in missing)
             )
             _done_summary_parts: list[str] = []
             if _stage_track or reusing:
@@ -532,7 +532,7 @@ async def _run_instrument_agent_inner(
             reminder = (
                 f"{_done_line}"
                 "You MUST still call:\n"
-                + "\n".join(f"  • {m}" for m in missing)
+                + "\n".join(f" • {m}" for m in missing)
                 + f"\nMake these {len(missing)} tool call(s) now."
             )
             messages.append({"role": "user", "content": reminder})
@@ -696,9 +696,9 @@ async def _run_instrument_agent_inner(
         }
 
         # ── Unified dispatch: both single- and multi-section use contract
-        #    enforcement via _dispatch_section_children.  Single-section
-        #    previously bypassed contract construction — PART 5 lockdown
-        #    eliminates that semantic telephone risk zone.
+        # enforcement via _dispatch_section_children. Single-section
+        # previously bypassed contract construction — PART 5 lockdown
+        # eliminates that semantic telephone risk zone.
         _tool_summary = ", ".join(tc.name for tc in response.tool_calls)
         logger.info(
             f"{agent_log} 🔧 Executing {len(response.tool_calls)} tool calls "
@@ -865,7 +865,7 @@ async def _run_instrument_agent_inner(
             _oc = get_storpheus_client()
             if _oc.circuit_breaker_open:
                 logger.warning(
-                    f"{agent_log} ⚠️ Storpheus circuit breaker is open — "
+                    f"{agent_log} ⚠️ Storpheus circuit breaker is open"
                     f"stopping retries (would waste tokens)"
                 )
                 await sse_queue.put(ToolErrorEvent(
@@ -884,7 +884,7 @@ async def _run_instrument_agent_inner(
             await sse_queue.put(_step_evt.model_copy(update={"agent_id": _agent_id}))
 
     # Return whether any MIDI was actually generated — not just whether
-    # the agent loop completed without crashing.  The outer function uses
+    # the agent loop completed without crashing. The outer function uses
     # this to set agentComplete.success accurately.
     return _generates_completed >= _expected_sections and _expected_sections > 0
 
@@ -1098,7 +1098,7 @@ async def _dispatch_section_children(
 
     # ── Execute orphaned generates individually ──
     # When the LLM sends generates without same-turn regions (common when
-    # regions were created on a prior turn), execute them directly.  The
+    # regions were created on a prior turn), execute them directly. The
     # regionId and trackId are resolved from all_tool_results via $refs.
     # Unified generation: attach section_key + all_instruments so the
     # tool execution path routes through generate_for_section, producing
@@ -1172,8 +1172,8 @@ async def _dispatch_section_children(
 
     # ── Validate L2 tool calls against section plan ──
     # Reject region calls whose startBeat/durationBeats disagree with the
-    # canonical section layout.  Log drift but DO NOT fail — the contract
-    # at L3 overrides the bad params anyway.  This surfaces the problem.
+    # canonical section layout. Log drift but DO NOT fail — the contract
+    # at L3 overrides the bad params anyway. This surfaces the problem.
     for i, (region_tc, _) in enumerate(pairs):
         sec = sections[i] if i < len(sections) else sections[-1]
         planned_start = int(sec.get("start_beat", 0))

@@ -12,10 +12,10 @@ StateStore MAY:
     - Provide immutable snapshots via ``get_region_notes()`` (returns deepcopy).
 
 StateStore MUST NOT:
-    - Be accessed directly by Muse commit logic.  Muse receives snapshots
+    - Be accessed directly by Muse commit logic. Muse receives snapshots
       via ``capture_base_snapshot`` / ``capture_proposed_snapshot`` from
       ``app.core.executor.snapshots``, never live store references.
-    - Be treated as an immutable base state.  It is mutable — callers must
+    - Be treated as an immutable base state. It is mutable — callers must
       snapshot before mutation.
     - Store variation or phrase data (that belongs to VariationStore).
     - Be shared across requests via conversation_id for Muse's benefit.
@@ -136,7 +136,7 @@ class _ProjectMetadataSnapshot(TypedDict, total=False):
     """Versioned musical-metadata slice stored inside ``StateSnapshot.project_metadata``.
 
     All fields are optional (``total=False``) — a snapshot only captures
-    what has been set on the ``StateStore`` at that version.  Absent fields
+    what has been set on the ``StateStore`` at that version. Absent fields
     should be treated as "unchanged from the previous snapshot".
 
     Attributes:
@@ -178,7 +178,7 @@ def _normalize_note(note: NoteDict | InternalNoteDict) -> InternalNoteDict:
     """Normalize a note dict to internal snake_case keys.
 
     Tool calls from the LLM use camelCase (startBeat, durationBeats).
-    Internal storage always uses snake_case.  Explicit per-field extraction
+    Internal storage always uses snake_case. Explicit per-field extraction
     keeps mypy satisfied without a cast or type: ignore.
     """
     result: InternalNoteDict = {}
@@ -361,8 +361,8 @@ class StateStore:
     def time_signature(self) -> tuple[int, int]:
         """Current project time signature as ``(numerator, denominator)``.
 
-        Starts at ``(4, 4)``.  The denominator is always a power of two
-        (2, 4, 8, 16).  Updated only when the DAW explicitly sends a
+        Starts at ``(4, 4)``. The denominator is always a power of two
+        (2, 4, 8, 16). Updated only when the DAW explicitly sends a
         ``timeSignature`` in the project context snapshot.
         """
         return self._time_signature
@@ -565,7 +565,7 @@ class StateStore:
 
         Args:
             tempo: New tempo in BPM (whole integer; see Tempo Convention).
-            transaction: Optional active transaction.  When provided, the event
+            transaction: Optional active transaction. When provided, the event
                 is tagged with the transaction so it can be rolled back atomically.
         """
         old_tempo = self._tempo

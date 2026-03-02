@@ -146,7 +146,7 @@ initRepoNav(repoId);
     </span>
   </div>
 
-  {# State tabs #}
+  {# State tabs — HTMX switching #}
   <div class="milestone-state-tabs">
     {% for s, label in [('open', 'Open'), ('closed', 'Closed'), ('all', 'All')] %}
     <a href="{{ base_url }}/milestones?state={{ s }}&sort={{ sort }}"

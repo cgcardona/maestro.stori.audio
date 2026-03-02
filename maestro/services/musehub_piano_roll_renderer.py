@@ -37,11 +37,11 @@ logger = logging.getLogger(__name__)
 # Constants
 # ---------------------------------------------------------------------------
 
-NOTE_ROWS: int = 128          # MIDI pitch range: 0–127
-MAX_WIDTH_PX: int = 1920      # maximum render width in pixels
-MIN_WIDTH_PX: int = 64        # minimum render width (very short clips)
-NOTE_ROW_HEIGHT: int = 2      # height in px of each pitch row
-IMAGE_HEIGHT: int = NOTE_ROWS * NOTE_ROW_HEIGHT   # total image height in pixels
+NOTE_ROWS: int = 128 # MIDI pitch range: 0–127
+MAX_WIDTH_PX: int = 1920 # maximum render width in pixels
+MIN_WIDTH_PX: int = 64 # minimum render width (very short clips)
+NOTE_ROW_HEIGHT: int = 2 # height in px of each pitch row
+IMAGE_HEIGHT: int = NOTE_ROWS * NOTE_ROW_HEIGHT # total image height in pixels
 
 # Background colour (dark charcoal)
 BG_COLOR: tuple[int, int, int] = (28, 28, 34)
@@ -49,22 +49,22 @@ BG_COLOR: tuple[int, int, int] = (28, 28, 34)
 BOUNDARY_COLOR: tuple[int, int, int] = (60, 60, 72)
 # Per-channel note colours (MIDI channels 0–15); cycles if channel > 15.
 _CHANNEL_COLORS: list[tuple[int, int, int]] = [
-    (100, 220, 130),   # ch 0  — green (bass)
-    (100, 160, 220),   # ch 1  — blue (keys)
-    (220, 140, 100),   # ch 2  — orange (lead)
-    (200, 100, 220),   # ch 3  — purple
-    (220, 220, 100),   # ch 4  — yellow
-    (100, 220, 220),   # ch 5  — cyan
-    (220, 100, 100),   # ch 6  — red
-    (140, 220, 100),   # ch 7  — lime
-    (180, 120, 220),   # ch 8  — lavender
-    (220, 180, 100),   # ch 9  — gold (often drums — colour differently)
-    (100, 200, 180),   # ch 10 — teal
-    (220, 120, 180),   # ch 11 — rose
-    (180, 200, 100),   # ch 12 — olive
-    (120, 180, 220),   # ch 13 — sky
-    (220, 160, 120),   # ch 14 — peach
-    (160, 120, 200),   # ch 15 — indigo
+    (100, 220, 130), # ch 0 — green (bass)
+    (100, 160, 220), # ch 1 — blue (keys)
+    (220, 140, 100), # ch 2 — orange (lead)
+    (200, 100, 220), # ch 3 — purple
+    (220, 220, 100), # ch 4 — yellow
+    (100, 220, 220), # ch 5 — cyan
+    (220, 100, 100), # ch 6 — red
+    (140, 220, 100), # ch 7 — lime
+    (180, 120, 220), # ch 8 — lavender
+    (220, 180, 100), # ch 9 — gold (often drums — colour differently)
+    (100, 200, 180), # ch 10 — teal
+    (220, 120, 180), # ch 11 — rose
+    (180, 200, 100), # ch 12 — olive
+    (120, 180, 220), # ch 13 — sky
+    (220, 160, 120), # ch 14 — peach
+    (160, 120, 200), # ch 15 — indigo
 ]
 
 # Minimum note-render width so very short notes are always visible
@@ -128,7 +128,7 @@ def _parse_note_events(midi: mido.MidiFile) -> list[_NoteEvent]:
 
     for track in midi.tracks:
         # Track absolute tick alongside each message
-        pending: dict[tuple[int, int], int] = {}  # (pitch, channel) → start_tick
+        pending: dict[tuple[int, int], int] = {} # (pitch, channel) → start_tick
         abs_tick = 0
         last_tick = 0
 

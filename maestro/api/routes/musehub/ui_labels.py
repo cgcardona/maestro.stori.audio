@@ -1,10 +1,10 @@
-"""Muse Hub label management UI route handlers.
+"""Muse Hub label management UI route handlers — SSR with HTMX fragments.
 
-Serves the labels management page at ``/{owner}/{repo}/labels`` and
-provides POST handlers for label mutations (create, edit, delete, reset).
+Serves server-rendered HTML for the labels management page and handles label
+mutations (create, edit, delete, reset) via HTMX form submissions.
 
 Endpoint summary:
-  GET  /musehub/ui/{owner}/{repo_slug}/labels                          — label list page (public)
+  GET  /musehub/ui/{owner}/{repo_slug}/labels                          — SSR label list page (public)
   POST /musehub/ui/{owner}/{repo_slug}/labels                          — create label (auth required)
   POST /musehub/ui/{owner}/{repo_slug}/labels/{label_id}/edit          — update label (auth required)
   POST /musehub/ui/{owner}/{repo_slug}/labels/{label_id}/delete        — delete label (auth required)
@@ -13,17 +13,22 @@ Endpoint summary:
 Auth policy:
   GET: no authentication required — public repos are readable without a token.
   POST mutations: require a valid Bearer JWT (``require_valid_token``).
-  The JS on the labels page reads a token from ``localStorage`` and sends it as
-  ``Authorization: Bearer <token>`` on every mutation call.
 
 Design rationale:
-  POST routes return JSON so the in-page JS can handle success/error inline
-  without a full page reload.  This keeps the UX snappy while keeping the
-  server-side contract simple and testable.
+  GET returns full SSR HTML; HTMX partial requests (``HX-Request: true``) receive
+  only the ``musehub/fragments/label_list.html`` fragment so HTMX can swap the
+  list in place without a full page reload.
 
-  The ``reset`` route is UI-only (not in the JSON API): it wipes all repo
-  labels and re-seeds the canonical 10 defaults.  It is useful after
-  accidental bulk deletions or when onboarding a repo from an external source.
+  POST routes detect ``HX-Request`` and return either:
+  - An updated ``label_list.html`` fragment (HTMX clients, e.g. the in-page form)
+  - JSON (API clients, ``?format=json``, or direct fetch calls)
+
+  Both form-encoded (HTMX ``<form>``) and JSON bodies are accepted; content-type
+  is inspected at runtime to select the parser.
+
+  The ``reset`` route is UI-only: it wipes all repo labels and re-seeds the
+  canonical 10 defaults.  Useful after accidental bulk deletions or when
+  onboarding from an external source.
 """
 from __future__ import annotations
 
@@ -33,12 +38,13 @@ import uuid
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi import status as http_status
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.responses import Response as StarletteResponse
 
 from maestro.api.routes.musehub._templates import templates
+from maestro.api.routes.musehub.htmx_helpers import htmx_trigger, is_htmx
 from maestro.api.routes.musehub.labels import DEFAULT_LABELS
 from maestro.api.routes.musehub.negotiate import negotiate_response
 from maestro.auth.dependencies import TokenClaims, optional_token, require_valid_token
@@ -151,6 +157,104 @@ async def _fetch_labels(db: AsyncSession, repo_id: str) -> list[_LabelRow]:
     return [_LabelRow(**dict(r)) for r in rows]
 
 
+async def _parse_label_create_body(request: Request) -> _LabelCreateBody:
+    """Parse label create payload from JSON body or URL-encoded form data.
+
+    HTMX ``<form hx-post>`` submissions arrive as ``application/x-www-form-urlencoded``.
+    Direct API calls (agents, curl) arrive as ``application/json``.  We inspect
+    ``Content-Type`` and parse accordingly so both paths share the same handler.
+
+    Raises ``HTTPException(422)`` for invalid payloads regardless of the input format,
+    mirroring FastAPI's default validation behaviour for ``body: Model`` parameters.
+    """
+    content_type = request.headers.get("content-type", "")
+    try:
+        if "application/json" in content_type:
+            raw = await request.json()
+            return _LabelCreateBody.model_validate(raw)
+        form = await request.form()
+        description_raw = form.get("description")
+        description = str(description_raw) if description_raw else None
+        return _LabelCreateBody(
+            name=str(form.get("name", "")),
+            color=str(form.get("color", "#000000")),
+            description=description,
+        )
+    except ValidationError as exc:
+        raise HTTPException(
+            status_code=http_status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        ) from exc
+
+
+async def _parse_label_edit_body(request: Request) -> _LabelEditBody:
+    """Parse label edit payload from JSON body or URL-encoded form data.
+
+    Mirrors ``_parse_label_create_body`` for partial-update semantics: omitted
+    form fields are treated as ``None`` (i.e., no change to that field).
+
+    Raises ``HTTPException(422)`` for invalid payloads.
+    """
+    content_type = request.headers.get("content-type", "")
+    try:
+        if "application/json" in content_type:
+            raw = await request.json()
+            return _LabelEditBody.model_validate(raw)
+        form = await request.form()
+        name_raw = form.get("name")
+        color_raw = form.get("color")
+        description_raw = form.get("description")
+        return _LabelEditBody(
+            name=str(name_raw) if name_raw else None,
+            color=str(color_raw) if color_raw else None,
+            description=str(description_raw) if description_raw else None,
+        )
+    except ValidationError as exc:
+        raise HTTPException(
+            status_code=http_status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        ) from exc
+
+
+async def _label_list_fragment(
+    request: Request,
+    db: AsyncSession,
+    repo_id: str,
+    base_url: str,
+    owner: str,
+    repo_slug: str,
+    toast_message: str,
+    status_code: int = 200,
+) -> StarletteResponse:
+    """Re-fetch all labels and return the updated ``label_list.html`` fragment.
+
+    Called by all HTMX mutation handlers (create, edit, delete, reset) after the
+    DB write succeeds.  The fragment is the canonical way to refresh the list in
+    place without a full page reload.
+
+    Also sets ``HX-Trigger`` with a toast event so the client can display
+    feedback without polling.
+
+    Args:
+        status_code: HTTP status to attach (default 200; pass 201 for create).
+    """
+    labels = await _fetch_labels(db, repo_id)
+    ctx: dict[str, object] = {
+        "labels": labels,
+        "total": len(labels),
+        "base_url": base_url,
+        "owner": owner,
+        "repo_slug": repo_slug,
+        "repo_id": repo_id,
+        "current_page": "labels",
+    }
+    response = templates.TemplateResponse(
+        request, "musehub/fragments/label_list.html", ctx, status_code=status_code
+    )
+    htmx_trigger(response, "toast", {"message": toast_message, "type": "success"})
+    return response
+
+
 async def _assert_label_exists(
     db: AsyncSession, repo_id: str, label_id: str
 ) -> None:
@@ -198,36 +302,43 @@ async def labels_page(
     JSON (``Accept: application/json`` or ``?format=json``): returns
     :class:`_LabelListPayload` with all labels and their issue counts.
 
+    HTMX (``HX-Request: true``): returns only the ``label_list.html`` fragment
+    so the list refreshes in place without a full page reload.
+
     Why this route exists: the labels page is the canonical place to define
     the taxonomy used across issues and PRs in a music project repo.
     Pre-seeded defaults (bug, enhancement, needs-arrangement, etc.) cover the
     most common categories; this page lets project owners customise them.
 
     No JWT required — the HTML shell loads public data. Mutations below
-    require a valid token injected via the in-page JS from localStorage.
+    require a valid token injected via the in-page HTMX forms.
     """
     repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
     labels = await _fetch_labels(db, repo_id)
     json_data = _LabelListPayload(labels=labels, total=len(labels))
+    ctx: dict[str, object] = {
+        "owner": owner,
+        "repo_slug": repo_slug,
+        "repo_id": repo_id,
+        "base_url": base_url,
+        "current_page": "labels",
+        "labels": labels,
+        "total": len(labels),
+        "breadcrumb_data": [
+            {"label": owner, "url": f"/musehub/ui/{owner}"},
+            {"label": repo_slug, "url": base_url},
+            {"label": "Labels", "url": ""},
+        ],
+    }
 
     return await negotiate_response(
         request=request,
         template_name="musehub/pages/labels.html",
-        context={
-            "owner": owner,
-            "repo_slug": repo_slug,
-            "repo_id": repo_id,
-            "base_url": base_url,
-            "current_page": "labels",
-            "breadcrumb_data": [
-                {"label": owner, "url": f"/musehub/ui/{owner}"},
-                {"label": repo_slug, "url": base_url},
-                {"label": "Labels", "url": ""},
-            ],
-        },
+        context=ctx,
         templates=templates,
         json_data=json_data,
         format_param=format,
+        fragment_template="musehub/fragments/label_list.html",
     )
 
 
@@ -242,21 +353,23 @@ async def labels_page(
     status_code=http_status.HTTP_201_CREATED,
 )
 async def create_label(
+    request: Request,
     owner: str,
     repo_slug: str,
-    body: _LabelCreateBody,
     db: AsyncSession = Depends(get_db),
     _token: TokenClaims = Depends(require_valid_token),
-) -> JSONResponse:
+) -> StarletteResponse:
     """Create a label with the given name, hex colour, and optional description.
 
-    Names must be unique within the repo.  Returns the new label's UUID and a
-    confirmation message so the in-page JS can optimistically add the row.
+    Names must be unique within the repo.  Accepts both JSON (API clients) and
+    URL-encoded form data (HTMX ``<form hx-post>``).
 
-    Called via ``fetch()`` from the in-page JavaScript with the Bearer token
-    read from ``localStorage``.
+    When called by HTMX (``HX-Request: true``), returns the updated
+    ``label_list.html`` fragment so the list refreshes in place.  Otherwise
+    returns a JSON confirmation with the new label's UUID.
     """
-    repo_id, _ = await _resolve_repo(owner, repo_slug, db)
+    body = await _parse_label_create_body(request)
+    repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
 
     existing = await db.execute(
         text(
@@ -289,12 +402,19 @@ async def create_label(
     await db.commit()
     logger.info("✅ Created label '%s' (%s) in repo %s", body.name, label_id, repo_id)
 
-    response = _LabelActionResponse(
+    if is_htmx(request):
+        return await _label_list_fragment(
+            request, db, repo_id, base_url, owner, repo_slug,
+            toast_message=f"Label '{body.name}' created",
+            status_code=http_status.HTTP_201_CREATED,
+        )
+
+    action = _LabelActionResponse(
         ok=True,
         message=f"Label '{body.name}' created",
         label_id=label_id,
     )
-    return JSONResponse(content=response.model_dump(), status_code=http_status.HTTP_201_CREATED)
+    return JSONResponse(content=action.model_dump(), status_code=http_status.HTTP_201_CREATED)
 
 
 # ---------------------------------------------------------------------------
@@ -307,25 +427,28 @@ async def create_label(
     summary="Update a label's name, colour, or description",
 )
 async def edit_label(
+    request: Request,
     owner: str,
     repo_slug: str,
     label_id: str,
-    body: _LabelEditBody,
     db: AsyncSession = Depends(get_db),
     _token: TokenClaims = Depends(require_valid_token),
-) -> JSONResponse:
+) -> StarletteResponse:
     """Partially update an existing label.
 
-    Only fields present (non-null) in the request body are modified.
-    Returns an ``ok`` confirmation so the JS can update the DOM in place.
+    Only fields present (non-null) in the payload are modified.  Accepts both
+    JSON (API clients) and URL-encoded form data (HTMX ``<form hx-post>``).
+
+    Returns the updated ``label_list.html`` fragment for HTMX requests, or a
+    JSON confirmation for direct API calls.
 
     Path uses ``/edit`` suffix to distinguish from the delete action, matching
     the HTML form-action convention used across the Muse Hub UI.
     """
-    repo_id, _ = await _resolve_repo(owner, repo_slug, db)
+    body = await _parse_label_edit_body(request)
+    repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
     await _assert_label_exists(db, repo_id, label_id)
 
-    # Fetch current values so we can apply partial updates.
     current_result = await db.execute(
         text(
             "SELECT name, color, description "
@@ -370,12 +493,18 @@ async def edit_label(
     await db.commit()
     logger.info("✅ Updated label %s in repo %s", label_id, repo_id)
 
-    response = _LabelActionResponse(
+    if is_htmx(request):
+        return await _label_list_fragment(
+            request, db, repo_id, base_url, owner, repo_slug,
+            toast_message=f"Label '{new_name}' updated",
+        )
+
+    action = _LabelActionResponse(
         ok=True,
         message=f"Label '{new_name}' updated",
         label_id=label_id,
     )
-    return JSONResponse(content=response.model_dump())
+    return JSONResponse(content=action.model_dump())
 
 
 # ---------------------------------------------------------------------------
@@ -388,21 +517,24 @@ async def edit_label(
     summary="Delete a label from a Muse Hub repo",
 )
 async def delete_label(
+    request: Request,
     owner: str,
     repo_slug: str,
     label_id: str,
     db: AsyncSession = Depends(get_db),
     _token: TokenClaims = Depends(require_valid_token),
-) -> JSONResponse:
+) -> StarletteResponse:
     """Permanently delete a label and remove it from all issues and PRs.
 
     Uses ``/delete`` suffix (not ``DELETE`` method) so the action can be
-    triggered from a standard HTML form via JavaScript fetch.
+    triggered from an HTMX ``<form hx-post>``.
 
     Associations are cleaned up before the label row is removed to satisfy
     foreign-key constraints on ``musehub_issue_labels`` and ``musehub_pr_labels``.
+
+    Returns the updated ``label_list.html`` fragment for HTMX, or JSON for API clients.
     """
-    repo_id, _ = await _resolve_repo(owner, repo_slug, db)
+    repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
     await _assert_label_exists(db, repo_id, label_id)
 
     await db.execute(
@@ -423,12 +555,18 @@ async def delete_label(
     await db.commit()
     logger.info("✅ Deleted label %s from repo %s", label_id, repo_id)
 
-    response = _LabelActionResponse(
+    if is_htmx(request):
+        return await _label_list_fragment(
+            request, db, repo_id, base_url, owner, repo_slug,
+            toast_message="Label deleted",
+        )
+
+    action = _LabelActionResponse(
         ok=True,
         message="Label deleted",
         label_id=label_id,
     )
-    return JSONResponse(content=response.model_dump())
+    return JSONResponse(content=action.model_dump())
 
 
 # ---------------------------------------------------------------------------
@@ -441,11 +579,12 @@ async def delete_label(
     summary="Reset repo labels to the 10 canonical defaults",
 )
 async def reset_labels(
+    request: Request,
     owner: str,
     repo_slug: str,
     db: AsyncSession = Depends(get_db),
     _token: TokenClaims = Depends(require_valid_token),
-) -> JSONResponse:
+) -> StarletteResponse:
     """Delete all existing labels and re-seed the 10 canonical defaults.
 
     Why this route exists: useful after accidental bulk deletion or when
@@ -453,13 +592,12 @@ async def reset_labels(
     The reset is destructive — all custom labels and their issue/PR associations
     are removed before the defaults are inserted.
 
-    This endpoint is UI-only (not exposed via the JSON API) because it is a
-    high-impact destructive action best surfaced through the labelled
-    «Reset to defaults» button with a confirmation dialog.
+    This endpoint is UI-only: it is best surfaced through the «Reset to defaults»
+    button with an ``hx-confirm`` dialog.  Returns the updated ``label_list.html``
+    fragment for HTMX, or JSON for API clients.
     """
-    repo_id, _ = await _resolve_repo(owner, repo_slug, db)
+    repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
 
-    # Remove all associations first, then all labels for this repo.
     await db.execute(
         text(
             "DELETE FROM musehub_issue_labels "
@@ -483,7 +621,6 @@ async def reset_labels(
         {"repo_id": repo_id},
     )
 
-    # Re-seed defaults.
     for label_def in DEFAULT_LABELS:
         await db.execute(
             text(
@@ -505,9 +642,15 @@ async def reset_labels(
         "✅ Reset labels to %d defaults for repo %s", len(DEFAULT_LABELS), repo_id
     )
 
-    response = _LabelActionResponse(
+    if is_htmx(request):
+        return await _label_list_fragment(
+            request, db, repo_id, base_url, owner, repo_slug,
+            toast_message=f"Labels reset to {len(DEFAULT_LABELS)} defaults",
+        )
+
+    action = _LabelActionResponse(
         ok=True,
         message=f"Labels reset to {len(DEFAULT_LABELS)} defaults",
         label_id=None,
     )
-    return JSONResponse(content=response.model_dump())
+    return JSONResponse(content=action.model_dump())

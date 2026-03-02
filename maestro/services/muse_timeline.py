@@ -2,27 +2,27 @@
 
 Builds a commit-by-commit timeline from oldest to newest, enriching each
 commit with music-semantic metadata extracted from associated tags
-(emotion:*, section:*, track:*).  This is the "album liner notes" view of
+(emotion:*, section:*, track:*). This is the "album liner notes" view of
 a project's creative arc.
 
 The service queries:
 1. ``muse_cli_commits`` — ordered chronologically (oldest-first).
-2. ``muse_cli_tags``    — joined to extract emotion, section, and track tags
+2. ``muse_cli_tags`` — joined to extract emotion, section, and track tags
    per commit.
 
 Emotion tags (``emotion:melancholic``), section tags (``section:chorus``),
-and track tags (``track:bass``) are extracted by namespace prefix.  When no
+and track tags (``track:bass``) are extracted by namespace prefix. When no
 tags exist the corresponding fields default to ``None`` / empty lists.
 
 Result types
 ------------
-- :class:`MuseTimelineEntry`  — a single commit in the timeline.
+- :class:`MuseTimelineEntry` — a single commit in the timeline.
 - :class:`MuseTimelineResult` — the full ordered collection + section/emotion
   summary computed across all entries.
 
 Callers
 -------
-``maestro.muse_cli.commands.timeline`` is the primary consumer.  Future
+``maestro.muse_cli.commands.timeline`` is the primary consumer. Future
 agents may call :func:`build_timeline` directly to derive emotion arcs or
 section progress maps for generative decisions.
 """
@@ -58,14 +58,14 @@ class MuseTimelineEntry:
 
     Fields
     ------
-    commit_id:      Full SHA-256 commit ID.
-    short_id:       First 7 characters for display purposes.
-    committed_at:   Commit timestamp (UTC).
-    message:        Commit message (the human-authored intent label).
-    emotion:        First ``emotion:*`` tag value, stripped of the prefix.
-    sections:       All ``section:*`` tag values, stripped of the prefix.
-    tracks:         All ``track:*`` tag values, stripped of the prefix.
-    activity:       Number of tracks modified — used to compute block width.
+    commit_id: Full SHA-256 commit ID.
+    short_id: First 7 characters for display purposes.
+    committed_at: Commit timestamp (UTC).
+    message: Commit message (the human-authored intent label).
+    emotion: First ``emotion:*`` tag value, stripped of the prefix.
+    sections: All ``section:*`` tag values, stripped of the prefix.
+    tracks: All ``track:*`` tag values, stripped of the prefix.
+    activity: Number of tracks modified — used to compute block width.
     """
 
     commit_id: str
@@ -82,15 +82,15 @@ class MuseTimelineEntry:
 class MuseTimelineResult:
     """Full chronological timeline for a single repository branch.
 
-    ``entries`` is oldest-first.  ``emotion_arc`` lists the unique
+    ``entries`` is oldest-first. ``emotion_arc`` lists the unique
     emotion values in chronological order of first appearance.
     ``section_order`` lists section names in order of first commit.
 
     Fields
     ------
-    entries:       Ordered timeline entries (oldest → newest).
-    branch:        Branch name this timeline was built from.
-    emotion_arc:   Ordered sequence of unique emotion labels (oldest first).
+    entries: Ordered timeline entries (oldest → newest).
+    branch: Branch name this timeline was built from.
+    emotion_arc: Ordered sequence of unique emotion labels (oldest first).
     section_order: Ordered sequence of unique section names (oldest first).
     total_commits: Total number of commits in the timeline.
     """
@@ -177,11 +177,11 @@ async def build_timeline(
     round-trips.
 
     Args:
-        session:        Open async SQLAlchemy session.
-        repo_id:        Repository scope.
-        branch:         Branch name for display in the result.
+        session: Open async SQLAlchemy session.
+        repo_id: Repository scope.
+        branch: Branch name for display in the result.
         head_commit_id: SHA-256 of the branch HEAD commit.
-        limit:          Maximum commits to walk (default 1000).
+        limit: Maximum commits to walk (default 1000).
 
     Returns:
         :class:`MuseTimelineResult` sorted oldest-first.

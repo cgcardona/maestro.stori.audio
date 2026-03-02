@@ -4,7 +4,7 @@ All CLI-level tests use ``typer.testing.CliRunner`` against the full ``muse``
 app so argument parsing, flag handling, and exit codes are exercised end-to-end.
 
 Async core tests call ``_similarity_async`` directly with an in-memory SQLite
-session.  The stub does not query the DB, so the session is injected only to
+session. The stub does not query the DB, so the session is injected only to
 satisfy the signature contract.
 """
 from __future__ import annotations
@@ -22,7 +22,7 @@ from sqlalchemy.pool import StaticPool
 from typer.testing import CliRunner
 
 from maestro.db.database import Base
-import maestro.muse_cli.models  # noqa: F401  — registers MuseCli* with Base.metadata
+import maestro.muse_cli.models # noqa: F401 — registers MuseCli* with Base.metadata
 from maestro.muse_cli.app import cli
 from maestro.muse_cli.commands.similarity import (
     DIMENSION_NAMES,

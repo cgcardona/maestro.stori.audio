@@ -49,13 +49,13 @@ def resolve_position(pos: "PositionSpec", project_context: "ProjectContext") -> 
     """Resolve a PositionSpec to a concrete start beat using the project state.
 
     Relationship semantics:
-      absolute  → beat value, apply offset
-      last      → max end beat across all regions, apply offset
-      after X   → max end beat of X's tracks/regions, apply offset
-      before X  → min start beat of X's tracks/regions, apply offset
+      absolute → beat value, apply offset
+      last → max end beat across all regions, apply offset
+      after X → max end beat of X's tracks/regions, apply offset
+      before X → min start beat of X's tracks/regions, apply offset
       alongside X → min start beat of X (parallel entry), apply offset
       between X Y → max end beat of X (gap start), apply offset
-      within X  → min start beat of X, apply offset
+      within X → min start beat of X, apply offset
     """
     tracks = project_context.get("tracks", [])
 

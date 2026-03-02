@@ -4,7 +4,7 @@ These tools allow Cursor/Claude and other MCP clients to explore MuseHub
 repositories, inspect commit history, read artifact metadata, query musical
 analysis, and search — all without requiring a connected DAW.
 
-Every tool in this module is ``server_side: True``.  The MCP server routes
+Every tool in this module is ``server_side: True``. The MCP server routes
 them to ``musehub_mcp_executor`` rather than forwarding them to the DAW.
 
 Naming convention: ``musehub_<verb>_<noun>`` — distinct from DAW tools
@@ -116,7 +116,7 @@ MUSEHUB_TOOLS: list[MCPToolDef] = [
             "Dimensions: 'overview' returns repo stats + branch/commit/object counts; "
             "'commits' returns commit activity summary (authors, message samples); "
             "'objects' returns artifact inventory grouped by MIME type. "
-            "MIDI audio analysis requires Storpheus integration (not yet available — "
+            "MIDI audio analysis requires Storpheus integration (not yet available"
             "dimension fields for key/tempo will be None until integrated). "
             "Example: musehub_get_analysis(repo_id='a3f2-...', dimension='overview')."
         ),

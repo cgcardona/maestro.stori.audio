@@ -3,9 +3,9 @@
 Public API:
 
     from maestro.prompts import (
-        MaestroPrompt,          # canonical structured prompt type
-        StructuredPrompt,       # base class for prompt dialects
-        parse_prompt,           # text → MaestroPrompt | None
+        MaestroPrompt, # canonical structured prompt type
+        StructuredPrompt, # base class for prompt dialects
+        parse_prompt, # text → MaestroPrompt | None
         TargetSpec,
         PositionSpec,
         AfterSpec,

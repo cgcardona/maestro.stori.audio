@@ -193,7 +193,7 @@ class MaestroMCPServer:
         """Execute a MuseHub browsing tool server-side.
 
         Routes ``musehub_*`` tool calls to the appropriate executor function
-        in ``maestro.services.musehub_mcp_executor``.  The executor handles
+        in ``maestro.services.musehub_mcp_executor``. The executor handles
         its own DB session and returns a ``MusehubToolResult`` that is
         serialised into an MCP content block here.
         """

@@ -2,23 +2,23 @@
 
 Renders a commit-by-commit chronological view of a composition's creative
 arc with music-semantic metadata: emotion tags, section grouping, and
-per-track activity.  This is the "album liner notes" view of a project's
+per-track activity. This is the "album liner notes" view of a project's
 evolution — no Git equivalent exists.
 
 Default output (text)::
 
-    2026-02-01  abc1234  Initial drum arrangement    [drums]        [melancholic]  ████
-    2026-02-02  def5678  Add bass line               [bass]         [melancholic]  ██████
-    2026-02-03  ghi9012  Chorus melody               [keys,vocals]  [joyful]       █████████
+    2026-02-01 abc1234 Initial drum arrangement [drums] [melancholic] ████
+    2026-02-02 def5678 Add bass line [bass] [melancholic] ██████
+    2026-02-03 ghi9012 Chorus melody [keys,vocals] [joyful] █████████
 
 Flags
 -----
---emotion     Add emotion indicator column (shown by default when tags exist).
---sections    Group commits under section headers (e.g. ── chorus ──).
---tracks      Show per-track activity column.
---json        Machine-readable JSON for UI rendering or agent consumption.
---limit N     Cap the commit walk (default: 1000).
-[<range>]     Optional commit range for future ``HEAD~10..HEAD`` syntax.
+--emotion Add emotion indicator column (shown by default when tags exist).
+--sections Group commits under section headers (e.g. ── chorus ──).
+--tracks Show per-track activity column.
+--json Machine-readable JSON for UI rendering or agent consumption.
+--limit N Cap the commit walk (default: 1000).
+[<range>] Optional commit range for future ``HEAD~10..HEAD`` syntax.
               Currently accepted but reserved (full history is always shown).
 """
 from __future__ import annotations
@@ -85,7 +85,7 @@ def _activity_bar(activity: int, max_activity: int) -> str:
     """Render a Unicode block bar proportional to *activity*.
 
     Width is scaled so the most-active commit gets ``_MAX_BLOCKS`` blocks
-    and the least-active gets at least ``_MIN_BLOCKS``.  Returns a blank
+    and the least-active gets at least ``_MIN_BLOCKS``. Returns a blank
     string when ``max_activity`` is 0.
     """
     if max_activity == 0:
@@ -100,7 +100,7 @@ def _activity_bar(activity: int, max_activity: int) -> str:
 def _load_muse_state(root: pathlib.Path) -> tuple[str, str, str]:
     """Read branch name, HEAD ref, and head_commit_id from ``.muse/``.
 
-    Returns ``(branch, head_ref, head_commit_id)``.  ``head_commit_id``
+    Returns ``(branch, head_ref, head_commit_id)``. ``head_commit_id``
     is an empty string when the branch has no commits yet.
     """
     import json as _json
@@ -145,7 +145,7 @@ def _render_text(
         typer.echo("No commits in timeline.")
         return
 
-    typer.echo(f"Timeline — branch: {result.branch}  ({result.total_commits} commit(s))")
+    typer.echo(f"Timeline — branch: {result.branch} ({result.total_commits} commit(s))")
     typer.echo("")
 
     max_activity = max(e.activity for e in entries) if entries else 1
@@ -154,8 +154,8 @@ def _render_text(
 
     for entry in entries:
         if show_sections and entry.sections != prev_sections:
-            sections_label = ", ".join(entry.sections) if entry.sections else "—"
-            typer.echo(f"  ── {sections_label} ──")
+            sections_label = ", ".join(entry.sections) if entry.sections else ""
+            typer.echo(f" ── {sections_label} ──")
             prev_sections = entry.sections
 
         date_str = entry.committed_at.strftime("%Y-%m-%d")
@@ -165,23 +165,23 @@ def _render_text(
 
         tracks_col = ""
         if show_tracks:
-            tracks_label = ",".join(entry.tracks) if entry.tracks else "—"
-            tracks_col = f"  [{tracks_label:<20}]"
+            tracks_label = ",".join(entry.tracks) if entry.tracks else ""
+            tracks_col = f" [{tracks_label:<20}]"
 
         emotion_col = ""
         if show_emotion:
-            emotion_label = entry.emotion or "—"
-            emotion_col = f"  [{emotion_label:<15}]"
+            emotion_label = entry.emotion or ""
+            emotion_col = f" [{emotion_label:<15}]"
 
         typer.echo(
-            f"{date_str}  {short_id}  {message}{tracks_col}{emotion_col}  {bar}"
+            f"{date_str} {short_id} {message}{tracks_col}{emotion_col} {bar}"
         )
 
     typer.echo("")
     if result.emotion_arc:
         typer.echo(f"Emotion arc: {' → '.join(result.emotion_arc)}")
     if result.section_order:
-        typer.echo(f"Sections:    {' → '.join(result.section_order)}")
+        typer.echo(f"Sections: {' → '.join(result.section_order)}")
 
 
 def _entry_to_dict(entry: MuseTimelineEntry) -> _TimelineEntryDict:
@@ -229,18 +229,18 @@ async def _timeline_async(
     """Core timeline logic — fully injectable for tests.
 
     Reads repo state from ``.muse/``, loads commits + tags from the DB
-    session, then renders the result.  Returns the :class:`MuseTimelineResult`
+    session, then renders the result. Returns the :class:`MuseTimelineResult`
     so callers can inspect it without parsing printed output.
 
     Args:
-        root:          Repository root (contains ``.muse/``).
-        session:       Open async DB session.
-        commit_range:  Optional range string (reserved for future use).
-        show_emotion:  Include emotion column in text output.
+        root: Repository root (contains ``.muse/``).
+        session: Open async DB session.
+        commit_range: Optional range string (reserved for future use).
+        show_emotion: Include emotion column in text output.
         show_sections: Group commits by section in text output.
-        show_tracks:   Include tracks column in text output.
-        as_json:       Emit JSON instead of the text table.
-        limit:         Maximum commits to include.
+        show_tracks: Include tracks column in text output.
+        as_json: Emit JSON instead of the text table.
+        limit: Maximum commits to include.
 
     Returns:
         :class:`MuseTimelineResult` (oldest-first).
@@ -253,7 +253,7 @@ async def _timeline_async(
 
     if commit_range is not None:
         typer.echo(
-            f"⚠️  Commit range '{commit_range}' is reserved for a future iteration. "
+            f"⚠️ Commit range '{commit_range}' is reserved for a future iteration. "
             "Showing full history."
         )
 

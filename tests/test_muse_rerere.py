@@ -1,4 +1,4 @@
-"""Tests for Muse Rerere — reuse recorded resolutions (issue #484).
+"""Tests for Muse Rerere — reuse recorded resolutions.
 
 Verifies:
 - record_conflict stores the conflict fingerprint hash correctly.
@@ -64,7 +64,7 @@ def test_record_conflict_stores_hash_correctly(repo_root: Path) -> None:
     h = record_conflict(repo_root, conflicts)
 
     assert isinstance(h, str)
-    assert len(h) == 64  # SHA-256 hex digest
+    assert len(h) == 64 # SHA-256 hex digest
     assert (repo_root / ".muse" / "rr-cache" / h / "conflict").exists()
 
 

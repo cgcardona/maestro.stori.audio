@@ -173,7 +173,7 @@ async def test_muse_e2e_full_lifecycle(client: AsyncClient, auth_headers: dict[s
     log = await get_log(client, headers)
     assert len(_nodes(log)) == 1
     assert _s(log, "head") == C0
-    print(f"  ✅ Root C0 committed, HEAD={C0[:8]}")
+    print(f" ✅ Root C0 committed, HEAD={C0[:8]}")
 
     # ── Step 1: Mainline commit C1 (keys v1) ──────────────────────────
     print("\n═══ Step 1: Mainline commit C1 (keys v1) ═══")
@@ -185,7 +185,7 @@ async def test_muse_e2e_full_lifecycle(client: AsyncClient, auth_headers: dict[s
 
     co = await do_checkout(client, C1, headers, force=True)
     assert co["head_moved"]
-    print(f"  ✅ C1 committed + checked out, executed={_d(co, 'execution')['executed']} tool calls")
+    print(f" ✅ C1 committed + checked out, executed={_d(co, 'execution')['executed']} tool calls")
 
     # ── Step 2: Branch A — bass (C2) ─────────────────────────────────
     print("\n═══ Step 2: Branch A — bass v1 (C2) ═══")
@@ -202,7 +202,7 @@ async def test_muse_e2e_full_lifecycle(client: AsyncClient, auth_headers: dict[s
     node_ids = [_s(n, "id") for n in nodes]
     assert C1 in node_ids and C2 in node_ids
     assert _s(log, "head") == C2
-    print(f"  ✅ C2 committed, HEAD={C2[:8]}, graph has {len(nodes)} nodes")
+    print(f" ✅ C2 committed, HEAD={C2[:8]}, graph has {len(nodes)} nodes")
 
     # ── Step 3: Branch B — drums (C3) ────────────────────────────────
     print("\n═══ Step 3: Branch B — drums v1 (C3) ═══")
@@ -217,7 +217,7 @@ async def test_muse_e2e_full_lifecycle(client: AsyncClient, auth_headers: dict[s
     await set_head(client, C3, headers)
     co = await do_checkout(client, C3, headers, force=True)
     assert co["head_moved"]
-    print(f"  ✅ C3 committed, HEAD={C3[:8]}")
+    print(f" ✅ C3 committed, HEAD={C3[:8]}")
 
     # ── Step 4: Merge branches (C4 = merge commit) ───────────────────
     print("\n═══ Step 4: Merge C2 + C3 ═══")
@@ -225,13 +225,13 @@ async def test_muse_e2e_full_lifecycle(client: AsyncClient, auth_headers: dict[s
     assert status == 200, f"Merge failed: {merge_resp}"
     assert merge_resp["head_moved"]
     c4_id = _s(merge_resp, "merge_variation_id")
-    print(f"  ✅ Merge commit C4={c4_id[:8]}, executed={_d(merge_resp, 'execution')['executed']} tool calls")
+    print(f" ✅ Merge commit C4={c4_id[:8]}, executed={_d(merge_resp, 'execution')['executed']} tool calls")
 
     log = await get_log(client, headers)
     assert _s(log, "head") == c4_id
     c4_node = next(n for n in _nodes(log) if _s(n, "id") == c4_id)
     assert c4_node["parent2"] is not None, "Merge commit must have two parents"
-    print(f"  ✅ Merge commit has parent={_s(c4_node, 'parent')[:8]}, parent2={_s(c4_node, 'parent2')[:8]}")
+    print(f" ✅ Merge commit has parent={_s(c4_node, 'parent')[:8]}, parent2={_s(c4_node, 'parent2')[:8]}")
 
     # ── Step 5: Conflict merge demo ──────────────────────────────────
     print("\n═══ Step 5: Conflict merge demo (C5 vs C6) ═══")
@@ -257,9 +257,9 @@ async def test_muse_e2e_full_lifecycle(client: AsyncClient, auth_headers: dict[s
     assert isinstance(_conflicts_raw, list)
     conflicts: list[dict[str, object]] = [c for c in _conflicts_raw if isinstance(c, dict)]
     assert len(conflicts) >= 1, "Expected at least one conflict"
-    print(f"  ✅ Conflict detected: {len(conflicts)} conflict(s)")
+    print(f" ✅ Conflict detected: {len(conflicts)} conflict(s)")
     for c in conflicts:
-        print(f"     {_s(c, 'type')}: {_s(c, 'description')}")
+        print(f" {_s(c, 'type')}: {_s(c, 'description')}")
 
     # ── Step 6: (Skipped — cherry-pick not yet implemented) ──────────
     print("\n═══ Step 6: Cherry-pick — skipped (future phase) ═══")
@@ -271,23 +271,23 @@ async def test_muse_e2e_full_lifecycle(client: AsyncClient, auth_headers: dict[s
     co = await do_checkout(client, C1, headers, force=True)
     assert co["head_moved"]
     plan_hashes.append(_s(_d(co, "execution"), "plan_hash"))
-    print(f"  → Checked out C1: executed={_d(co, 'execution')['executed']}, hash={_s(_d(co, 'execution'), 'plan_hash')[:12]}")
+    print(f" → Checked out C1: executed={_d(co, 'execution')['executed']}, hash={_s(_d(co, 'execution'), 'plan_hash')[:12]}")
 
     co = await do_checkout(client, C2, headers, force=True)
     assert co["head_moved"]
     plan_hashes.append(_s(_d(co, "execution"), "plan_hash"))
-    print(f"  → Checked out C2: executed={_d(co, 'execution')['executed']}, hash={_s(_d(co, 'execution'), 'plan_hash')[:12]}")
+    print(f" → Checked out C2: executed={_d(co, 'execution')['executed']}, hash={_s(_d(co, 'execution'), 'plan_hash')[:12]}")
 
     co = await do_checkout(client, c4_id, headers, force=True)
     assert co["head_moved"]
     plan_hashes.append(_s(_d(co, "execution"), "plan_hash"))
-    print(f"  → Checked out C4 (merge): executed={_d(co, 'execution')['executed']}, hash={_s(_d(co, 'execution'), 'plan_hash')[:12]}")
+    print(f" → Checked out C4 (merge): executed={_d(co, 'execution')['executed']}, hash={_s(_d(co, 'execution'), 'plan_hash')[:12]}")
 
     # Checkout to same target again — should be no-op or same hash
     co2 = await do_checkout(client, c4_id, headers, force=True)
     assert co2["head_moved"]
-    print(f"  → Re-checkout C4: executed={_d(co2, 'execution')['executed']}, hash={_s(_d(co2, 'execution'), 'plan_hash')[:12]}")
-    print(f"  ✅ All checkouts transactional, plan hashes: {[h[:12] for h in plan_hashes]}")
+    print(f" → Re-checkout C4: executed={_d(co2, 'execution')['executed']}, hash={_s(_d(co2, 'execution'), 'plan_hash')[:12]}")
+    print(f" ✅ All checkouts transactional, plan hashes: {[h[:12] for h in plan_hashes]}")
 
     # ── Final assertions ─────────────────────────────────────────────
     print("\n═══ Final Assertions ═══")
@@ -303,17 +303,17 @@ async def test_muse_e2e_full_lifecycle(client: AsyncClient, auth_headers: dict[s
     assert node_map[C3]["parent"] == C1
     assert node_map[C5]["parent"] == C1
     assert node_map[C6]["parent"] == C1
-    print("  ✅ DAG parent relationships correct")
+    print(" ✅ DAG parent relationships correct")
 
     # Merge commit has two parents
     assert c4_id in node_map
     assert node_map[c4_id]["parent"] is not None
     assert node_map[c4_id]["parent2"] is not None
-    print("  ✅ Merge commit has 2 parents")
+    print(" ✅ Merge commit has 2 parents")
 
     # HEAD correctness
     assert _s(log, "head") == c4_id
-    print(f"  ✅ HEAD = {c4_id[:8]}")
+    print(f" ✅ HEAD = {c4_id[:8]}")
 
     # Topological order: parents before children
     id_order = [_s(n, "id") for n in log_nodes]
@@ -327,23 +327,23 @@ async def test_muse_e2e_full_lifecycle(client: AsyncClient, auth_headers: dict[s
         if n_parent2 and n_parent2 in node_map:
             assert id_order.index(n_parent2) < id_order.index(n_id), \
                 f"Parent2 {n_parent2[:8]} must appear before child {n_id[:8]}"
-    print("  ✅ Topological ordering: parents before children")
+    print(" ✅ Topological ordering: parents before children")
 
     # camelCase serialization
     for n in log_nodes:
         assert "isHead" in n
         assert "parent2" in n
     assert "projectId" in log
-    print("  ✅ Serialization is camelCase and stable")
+    print(" ✅ Serialization is camelCase and stable")
 
     # Conflict merge returned conflicts deterministically
     assert len(conflicts) >= 1
     assert all("region_id" in c and "type" in c and "description" in c for c in conflicts)
-    print("  ✅ Conflict payloads deterministic")
+    print(" ✅ Conflict payloads deterministic")
 
     # ── Render output ────────────────────────────────────────────────
     print("\n" + "═" * 60)
-    print("  MUSE LOG GRAPH — ASCII")
+    print(" MUSE LOG GRAPH — ASCII")
     print("═" * 60)
 
     from maestro.services.muse_log_render import render_ascii_graph, render_json, render_summary_table
@@ -393,12 +393,12 @@ async def test_muse_e2e_full_lifecycle(client: AsyncClient, auth_headers: dict[s
     print(render_ascii_graph(graph))
 
     print("\n" + "═" * 60)
-    print("  MUSE LOG GRAPH — JSON")
+    print(" MUSE LOG GRAPH — JSON")
     print("═" * 60)
     print(render_json(graph))
 
     print("\n" + "═" * 60)
-    print("  SUMMARY")
+    print(" SUMMARY")
     print("═" * 60)
     print(render_summary_table(
         graph,

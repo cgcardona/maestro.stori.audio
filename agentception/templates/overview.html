@@ -1,0 +1,627 @@
+{% extends "base.html" %}
+
+{% block title %}AgentCeption — Overview{% endblock %}
+
+{% block content %}
+{#
+  Alpine.js reactive component wrapping the entire overview page.
+  Initial state is injected via Jinja2 (server-side); live updates are
+  received from GET /events (SSE) and applied reactively without page reload.
+#}
+<div
+  x-data="pipelineDashboard({{ state.model_dump() | tojson }})"
+  x-init="connect()"
+>
+
+  {# ── Pipeline summary bar ──────────────────────────────────────────────── #}
+  <div class="pipeline-summary-bar" role="status" aria-label="Pipeline summary">
+    <div class="summary-item">
+      <span class="summary-label">Active label</span>
+      <span class="summary-value" x-text="state.active_label ?? '—'"></span>
+    </div>
+    <div class="summary-item">
+      <span class="summary-label">Issues open</span>
+      <span class="summary-value" x-text="state.issues_open"></span>
+    </div>
+    <div class="summary-item">
+      <span class="summary-label">PRs open</span>
+      <span class="summary-value" x-text="state.prs_open"></span>
+    </div>
+    <div class="summary-item">
+      <span class="summary-label">Agents active</span>
+      <span class="summary-value" x-text="state.agents.length"></span>
+    </div>
+    <div class="summary-item">
+      <span class="summary-label">Last polled</span>
+      <span class="summary-value" x-text="relativeTime(state.polled_at)"></span>
+    </div>
+    <div class="summary-item summary-item--status">
+      <span
+        class="summary-label"
+        :class="connected ? 'text-success' : 'text-danger'"
+        x-text="connected ? '● Live' : '○ Reconnecting…'"
+      ></span>
+    </div>
+
+    {#
+      Pause/resume toggle — issues a POST via HTMX and swaps only this element
+      so the rest of the dashboard stays live.  The paused flag is polled from
+      /api/control/status on page load and updated optimistically on click.
+    #}
+    <div
+      class="summary-item summary-item--control"
+      id="pipeline-control"
+      x-data="pipelineControl()"
+      x-init="fetchStatus()"
+    >
+      <span
+        class="pipeline-status-badge"
+        :class="paused ? 'pipeline-status-badge--paused' : 'pipeline-status-badge--running'"
+        x-text="paused ? 'PAUSED' : 'RUNNING'"
+        role="status"
+        :aria-label="paused ? 'Pipeline paused' : 'Pipeline running'"
+      ></span>
+      <button
+        class="control-btn"
+        :class="paused ? 'control-btn--resume' : 'control-btn--pause'"
+        x-text="paused ? 'Resume' : 'Pause'"
+        @click="toggle()"
+        :aria-label="paused ? 'Resume pipeline' : 'Pause pipeline'"
+      ></button>
+    </div>
+  </div>
+
+  {#
+    Scaling advisor banner — appears below the pipeline summary bar.
+    Fetches GET /api/intelligence/scaling-advice on mount. Hidden when:
+      - recommendation.action === "no_change" (nothing to suggest), OR
+      - the operator has dismissed it for this page session.
+    "Apply" POSTs to /api/intelligence/scaling-advice/apply via fetch and
+    dismisses the banner on success.  "Dismiss" hides without applying.
+  #}
+  <div
+    x-data="scalingAdvisor()"
+    x-init="load()"
+    x-show="!dismissed && recommendation !== null && recommendation.action !== 'no_change'"
+    x-cloak
+    class="alert-banner alert-banner--info"
+    role="status"
+    aria-label="Scaling recommendation"
+  >
+    <span>💡</span>
+    <span x-text="recommendation ? recommendation.reason : ''"></span>
+    <button
+      class="btn btn-sm btn-primary"
+      @click="apply()"
+      :disabled="applying"
+      x-text="applying ? 'Applying…' : 'Apply'"
+      aria-label="Apply scaling recommendation"
+    ></button>
+    <button
+      class="btn btn-sm btn-secondary"
+      @click="dismissed = true"
+      aria-label="Dismiss scaling recommendation"
+    >Dismiss</button>
+    <span x-show="applyError" class="text-danger" x-text="applyError"></span>
+  </div>
+
+  {# ── Generic alert banners ─────────────────────────────────────────────── #}
+  <template x-for="alert in state.alerts" :key="alert">
+    <div class="alert-banner" role="alert">
+      <span>⚠️</span>
+      <span x-text="alert"></span>
+    </div>
+  </template>
+
+  {#
+    PR violation banners — one per out-of-order PR, with a one-click Close PR
+    action.  Data is fetched from GET /api/intelligence/pr-violations on load
+    and after each Close action so the list stays current without a full
+    page reload.  Alpine.js manages the fetch lifecycle.
+  #}
+  <div
+    x-data="prViolations()"
+    x-init="load()"
+  >
+    <template x-for="v in violations" :key="v.pr_number">
+      <div class="alert-banner alert-banner--violation" role="alert">
+        <span>🚫</span>
+        <span>
+          Out-of-order PR
+          <strong x-text="'#' + v.pr_number"></strong>
+          <em x-text="v.pr_title"></em>
+          — expected <code x-text="v.expected_label"></code>,
+          got <code x-text="v.actual_label"></code>
+        </span>
+        <button
+          class="btn btn-danger btn-sm"
+          @click="closeViolation(v.pr_number)"
+          :disabled="closing === v.pr_number"
+          x-text="closing === v.pr_number ? 'Closing…' : 'Close PR'"
+          aria-label="Close out-of-order PR"
+        ></button>
+      </div>
+    </template>
+  </div>
+
+  {# ── Two-column overview layout ────────────────────────────────────────── #}
+  <div class="overview-columns">
+
+    {# ── Agent tree — left 65% ─────────────────────────────────────────── #}
+    <section class="agent-tree-container" aria-label="Agent tree">
+      <h2 class="section-title">Agent Tree</h2>
+
+      <div id="tree">
+        <div x-show="state.agents.length === 0" class="empty-state text-muted">
+          No active agents.
+        </div>
+
+        <template x-for="agent in state.agents" :key="agent.id">
+          <div class="agent-row" x-data="{ showKillModal: false }">
+            <div class="agent-row-header">
+              <span
+                class="status-badge"
+                :class="'status-badge--' + agent.status"
+                x-text="agent.status"
+              ></span>
+              <a
+                :href="'/agents/' + encodeURIComponent(agent.id)"
+                class="agent-role"
+                x-text="agent.role"
+              ></a>
+              <span class="agent-meta" x-show="agent.issue_number != null">
+                #<span x-text="agent.issue_number"></span>
+              </span>
+              <span class="agent-meta" x-show="agent.pr_number != null">
+                PR&nbsp;<span x-text="agent.pr_number"></span>
+              </span>
+              <span
+                class="agent-meta text-muted"
+                x-show="agent.batch_id != null"
+                x-text="agent.batch_id"
+              ></span>
+              <span
+                class="agent-meta text-muted"
+                x-show="agent.last_activity_mtime > 0"
+                x-text="relativeTime(agent.last_activity_mtime)"
+              ></span>
+
+              {# Kill button — only for IMPLEMENTING / REVIEWING / STALE agents with a worktree #}
+              <button
+                class="btn-kill-inline"
+                x-show="agent.worktree_path != null && ['implementing','reviewing','stale'].includes(agent.status)"
+                @click.prevent="showKillModal = true"
+                title="Kill agent"
+                aria-label="Kill agent"
+              >✕</button>
+            </div>
+
+            {# Inline kill confirmation for this row #}
+            <div
+              class="modal-backdrop"
+              x-show="showKillModal"
+              x-cloak
+              @keydown.escape.window="showKillModal = false"
+              role="dialog"
+              aria-modal="true"
+            >
+              <div class="modal-box">
+                <h2 class="modal-title">Kill agent<span x-show="agent.issue_number != null"> for issue #<span x-text="agent.issue_number"></span></span>?</h2>
+                <p class="modal-body">
+                  Removes the worktree and clears the <code>agent:wip</code> label.
+                  The issue will be available for re-claim.
+                </p>
+                <div class="modal-actions">
+                  <button class="btn btn-secondary" @click="showKillModal = false">Cancel</button>
+                  <button
+                    class="btn btn-danger"
+                    :hx-post="'/api/control/kill/' + agent.worktree_path.split('/').pop()"
+                    hx-target="closest .agent-row"
+                    hx-swap="outerHTML"
+                    @click="showKillModal = false"
+                  >
+                    Confirm Kill
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {# Nested children (one level — recursive nesting deferred to AC-007) #}
+            <template x-if="agent.children && agent.children.length > 0">
+              <div class="agent-children">
+                <template x-for="child in agent.children" :key="child.id">
+                  <div class="agent-row agent-row--child" x-data="{ showKillModal: false }">
+                    <div class="agent-row-header">
+                      <span
+                        class="status-badge"
+                        :class="'status-badge--' + child.status"
+                        x-text="child.status"
+                      ></span>
+                      <a
+                        :href="'/agents/' + encodeURIComponent(child.id)"
+                        class="agent-role"
+                        x-text="child.role"
+                      ></a>
+                      <span class="agent-meta" x-show="child.issue_number != null">
+                        #<span x-text="child.issue_number"></span>
+                      </span>
+
+                      {# Kill button for child agents #}
+                      <button
+                        class="btn-kill-inline"
+                        x-show="child.worktree_path != null && ['implementing','reviewing','stale'].includes(child.status)"
+                        @click.prevent="showKillModal = true"
+                        title="Kill agent"
+                        aria-label="Kill agent"
+                      >✕</button>
+                    </div>
+
+                    {# Inline kill confirmation for child row #}
+                    <div
+                      class="modal-backdrop"
+                      x-show="showKillModal"
+                      x-cloak
+                      @keydown.escape.window="showKillModal = false"
+                      role="dialog"
+                      aria-modal="true"
+                    >
+                      <div class="modal-box">
+                        <h2 class="modal-title">Kill agent<span x-show="child.issue_number != null"> for issue #<span x-text="child.issue_number"></span></span>?</h2>
+                        <p class="modal-body">
+                          Removes the worktree and clears the <code>agent:wip</code> label.
+                        </p>
+                        <div class="modal-actions">
+                          <button class="btn btn-secondary" @click="showKillModal = false">Cancel</button>
+                          <button
+                            class="btn btn-danger"
+                            :hx-post="'/api/control/kill/' + child.worktree_path.split('/').pop()"
+                            hx-target="closest .agent-row"
+                            hx-swap="outerHTML"
+                            @click="showKillModal = false"
+                          >
+                            Confirm Kill
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </template>
+              </div>
+            </template>
+          </div>
+        </template>
+      </div>
+    </section>
+
+    {# ── GitHub board — right 35% ──────────────────────────────────────── #}
+    <aside class="github-board" aria-label="GitHub board">
+      <h2 class="section-title">GitHub Board</h2>
+
+      <div class="card">
+        <div class="board-label-row">
+          <span
+            class="label-chip"
+            x-text="state.active_label ?? 'No active label'"
+          ></span>
+        </div>
+
+        <div class="board-stats mt-1">
+          <span class="text-muted">
+            <span x-text="state.issues_open"></span> open issue<span x-show="state.issues_open !== 1">s</span>
+          </span>
+          <span class="board-stats-sep">·</span>
+          <span class="text-muted">
+            <span x-text="state.prs_open"></span> open PR<span x-show="state.prs_open !== 1">s</span>
+          </span>
+        </div>
+      </div>
+
+      <div x-show="state.alerts.length > 0" class="mt-2">
+        <h3 class="section-subtitle">Alerts</h3>
+        <template x-for="alert in state.alerts" :key="alert">
+          <div class="alert-item" x-text="alert"></div>
+        </template>
+      </div>
+
+      {#
+        Stale claim cards — one per issue with agent:wip but no live worktree.
+        Each card shows the issue number, title, and expected worktree path,
+        plus a "Clear Label" button that removes agent:wip so the issue re-enters
+        the scheduling pool.
+      #}
+      <div x-show="state.stale_claims && state.stale_claims.length > 0" class="mt-2">
+        <h3 class="section-subtitle">Stale Claims</h3>
+        <template x-for="claim in state.stale_claims" :key="claim.issue_number">
+          <div
+            class="stale-claim-card"
+            x-data="staleClaimCard(claim)"
+          >
+            <div class="stale-claim-header">
+              <span class="stale-claim-number">#<span x-text="claim.issue_number"></span></span>
+              <span class="stale-claim-title" x-text="claim.issue_title"></span>
+            </div>
+            <div class="stale-claim-path text-muted" x-text="claim.worktree_path"></div>
+            <div class="stale-claim-actions">
+              <button
+                class="btn btn-sm btn-warning"
+                x-show="!confirming && !clearing"
+                @click="confirming = true"
+              >Clear Label</button>
+
+              <span x-show="confirming && !clearing" class="stale-claim-confirm">
+                Remove <code>agent:wip</code> from #<span x-text="claim.issue_number"></span>?
+                <button class="btn btn-sm btn-secondary" @click="confirming = false">Cancel</button>
+                <button class="btn btn-sm btn-danger" @click="clear(claim.issue_number)">Confirm</button>
+              </span>
+
+              <span x-show="clearing" class="text-muted">Clearing…</span>
+              <span x-show="cleared" class="text-success">✅ Cleared</span>
+              <span x-show="error" class="text-danger" x-text="error"></span>
+            </div>
+          </div>
+        </template>
+      </div>
+
+      {#
+        Open unclaimed issue cards — one per GitHub issue without agent:wip.
+        Each card has an "Analyze" button that POSTs to the partial endpoint
+        via HTMX and swaps the result inline without a full page reload.
+        The analysis result div starts empty and is populated on click.
+      #}
+      {% if board_issues %}
+      <div class="mt-2">
+        <h3 class="section-subtitle">Open Issues</h3>
+        {% for issue in board_issues %}
+        <div class="issue-card" id="issue-card-{{ issue.number }}">
+          <div class="issue-card-header">
+            <a
+              class="issue-card-number"
+              href="https://github.com/cgcardona/maestro/issues/{{ issue.number }}"
+              target="_blank"
+              rel="noopener noreferrer"
+            >#{{ issue.number }}</a>
+            <span class="issue-card-title">{{ issue.title }}</span>
+          </div>
+          <div class="issue-card-actions">
+            <button
+              class="btn btn-sm btn-secondary"
+              hx-post="/api/analyze/issue/{{ issue.number }}/partial"
+              hx-target="#analysis-{{ issue.number }}"
+              hx-swap="innerHTML"
+              hx-indicator="#analysis-{{ issue.number }}"
+              aria-label="Analyze issue #{{ issue.number }}"
+            >Analyze</button>
+          </div>
+          <div id="analysis-{{ issue.number }}" class="issue-analysis-result"></div>
+        </div>
+        {% endfor %}
+      </div>
+      {% endif %}
+
+    </aside>
+
+  </div>{# .overview-columns #}
+</div>{# Alpine root #}
+
+<script>
+/**
+ * Alpine.js component for the pipeline overview dashboard.
+ *
+ * Receives a PipelineState snapshot from the server as the initial value,
+ * then subscribes to GET /events (SSE) for live 5-second updates.
+ * Never polls — it is fully event-driven once connected.
+ */
+function pipelineDashboard(initial) {
+  return {
+    state: initial,
+    connected: false,
+    _es: null,
+
+    connect() {
+      this._es = new EventSource('/events');
+
+      this._es.onopen = () => {
+        this.connected = true;
+      };
+
+      this._es.onmessage = (e) => {
+        try {
+          this.state = JSON.parse(e.data);
+          this.connected = true;
+        } catch (_) {
+          // Malformed JSON from server — keep stale state.
+        }
+      };
+
+      this._es.onerror = () => {
+        this.connected = false;
+        // EventSource auto-reconnects; we just update the indicator.
+      };
+    },
+
+    /**
+     * Format a UNIX timestamp as a human-readable relative time string.
+     * Returns '—' for falsy values (pre-first-tick state).
+     */
+    relativeTime(ts) {
+      if (!ts) return '—';
+      const secs = Math.floor(Date.now() / 1000 - ts);
+      if (secs < 5)  return 'just now';
+      if (secs < 60) return secs + 's ago';
+      if (secs < 3600) return Math.floor(secs / 60) + 'm ago';
+      return Math.floor(secs / 3600) + 'h ago';
+    },
+  };
+}
+
+/**
+ * Alpine.js component for PR violation banners.
+ *
+ * Fetches GET /api/intelligence/pr-violations on mount and after each
+ * successful Close action so the list stays current without a page reload.
+ * Closing a PR posts to POST /api/intelligence/pr-violations/{n}/close and
+ * removes the entry from the local list on success.
+ */
+function prViolations() {
+  return {
+    violations: [],
+    closing: null,
+
+    async load() {
+      try {
+        const res = await fetch('/api/intelligence/pr-violations');
+        if (res.ok) {
+          this.violations = await res.json();
+        }
+      } catch (_) {
+        // Network error — keep empty list; next poll will retry.
+      }
+    },
+
+    async closeViolation(prNumber) {
+      this.closing = prNumber;
+      try {
+        const res = await fetch(
+          `/api/intelligence/pr-violations/${prNumber}/close`,
+          { method: 'POST' },
+        );
+        if (res.ok) {
+          this.violations = this.violations.filter(v => v.pr_number !== prNumber);
+        }
+      } catch (_) {
+        // Network error — leave the card visible so the user can retry.
+      } finally {
+        this.closing = null;
+      }
+    },
+  };
+}
+
+/**
+ * Alpine.js component for a single stale-claim card.
+ *
+ * Manages a two-step confirmation flow ("Clear Label" → confirm → POST) so
+ * accidental clicks do not immediately remove the agent:wip label.  Each card
+ * is independent — clearing one does not affect siblings.
+ *
+ * @param {object} claim - StaleClaim object from PipelineState.stale_claims.
+ */
+function staleClaimCard(claim) {
+  return {
+    confirming: false,
+    clearing: false,
+    cleared: false,
+    error: null,
+
+    async clear(issueNumber) {
+      this.confirming = false;
+      this.clearing = true;
+      this.error = null;
+      try {
+        const res = await fetch(
+          `/api/intelligence/stale-claims/${issueNumber}/clear`,
+          { method: 'POST' },
+        );
+        if (res.ok) {
+          this.cleared = true;
+        } else {
+          const data = await res.json().catch(() => ({}));
+          this.error = data.detail || `HTTP ${res.status}`;
+        }
+      } catch (err) {
+        this.error = err.message || 'Network error';
+      } finally {
+        this.clearing = false;
+      }
+    },
+  };
+}
+
+/**
+ * Alpine.js component for the scaling advisor banner.
+ *
+ * Fetches GET /api/intelligence/scaling-advice on mount.  When the
+ * recommendation action is not "no_change" the banner becomes visible.
+ * "Apply" posts to POST /api/intelligence/scaling-advice/apply and hides
+ * the banner on success.  "Dismiss" hides without writing to config.
+ * Both actions are session-scoped — the banner reappears on next page load
+ * if the recommendation still applies.
+ */
+function scalingAdvisor() {
+  return {
+    recommendation: null,
+    dismissed: false,
+    applying: false,
+    applyError: null,
+
+    async load() {
+      try {
+        const res = await fetch('/api/intelligence/scaling-advice');
+        if (res.ok) {
+          this.recommendation = await res.json();
+        }
+      } catch (_) {
+        // Network error — keep banner hidden; no stale data shown.
+      }
+    },
+
+    async apply() {
+      this.applying = true;
+      this.applyError = null;
+      try {
+        const res = await fetch('/api/intelligence/scaling-advice/apply', { method: 'POST' });
+        if (res.ok) {
+          this.dismissed = true;
+        } else {
+          const data = await res.json().catch(() => ({}));
+          this.applyError = data.detail || `HTTP ${res.status}`;
+        }
+      } catch (err) {
+        this.applyError = err.message || 'Network error';
+      } finally {
+        this.applying = false;
+      }
+    },
+  };
+}
+
+/**
+ * Alpine.js component for the pipeline pause/resume control.
+ *
+ * Fetches current pause state from GET /api/control/status on init.
+ * Toggle sends a POST to /api/control/pause or /api/control/resume and
+ * updates the badge optimistically — no page reload needed.
+ */
+function pipelineControl() {
+  return {
+    paused: false,
+
+    async fetchStatus() {
+      try {
+        const res = await fetch('/api/control/status');
+        if (res.ok) {
+          const data = await res.json();
+          this.paused = data.paused;
+        }
+      } catch (_) {
+        // Network error — keep current state, will retry on next toggle.
+      }
+    },
+
+    async toggle() {
+      const endpoint = this.paused ? '/api/control/resume' : '/api/control/pause';
+      try {
+        const res = await fetch(endpoint, { method: 'POST' });
+        if (res.ok) {
+          const data = await res.json();
+          this.paused = data.paused;
+        }
+      } catch (_) {
+        // Network error — leave state unchanged so the badge stays accurate.
+      }
+    },
+  };
+}
+</script>
+
+{% endblock %}

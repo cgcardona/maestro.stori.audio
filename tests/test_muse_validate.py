@@ -49,14 +49,14 @@ def _make_valid_midi(path: pathlib.Path) -> None:
     with path.open("wb") as fh:
         # MThd header: magic + chunk length (always 6) + format (1) + ntracks (1) + division (96)
         fh.write(b"MThd")
-        fh.write(struct.pack(">I", 6))   # chunk length
-        fh.write(struct.pack(">H", 1))   # format 1
-        fh.write(struct.pack(">H", 1))   # 1 track
-        fh.write(struct.pack(">H", 96))  # 96 ticks/beat
+        fh.write(struct.pack(">I", 6)) # chunk length
+        fh.write(struct.pack(">H", 1)) # format 1
+        fh.write(struct.pack(">H", 1)) # 1 track
+        fh.write(struct.pack(">H", 96)) # 96 ticks/beat
         # MTrk header with end-of-track event
         fh.write(b"MTrk")
-        fh.write(struct.pack(">I", 4))   # chunk length
-        fh.write(b"\x00\xff\x2f\x00")    # delta=0, Meta=EOT
+        fh.write(struct.pack(">I", 4)) # chunk length
+        fh.write(b"\x00\xff\x2f\x00") # delta=0, Meta=EOT
 
 
 def _make_invalid_midi(path: pathlib.Path) -> None:
@@ -90,7 +90,7 @@ def _commit_ref(root: pathlib.Path, branch: str = "main") -> None:
 def test_validate_exits_nonzero_on_errors(tmp_path: pathlib.Path) -> None:
     """muse validate must exit non-zero when MIDI integrity errors are found.
 
-    This is the regression test for issue #99: if ``muse validate`` does not
+    This is the regression test: if ``muse validate`` does not
     exist or silently exits 0 on errors, this test fails.
     """
     _init_muse_repo(tmp_path)
@@ -165,7 +165,7 @@ class TestCheckMidiIntegrity:
         workdir = tmp_path / "muse-work"
         path = workdir / "short.mid"
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_bytes(b"MThd\x00")  # truncated after magic
+        path.write_bytes(b"MThd\x00") # truncated after magic
         result = check_midi_integrity(workdir)
         assert not result.passed
 
@@ -175,7 +175,7 @@ class TestCheckMidiIntegrity:
         path.parent.mkdir(parents=True, exist_ok=True)
         with path.open("wb") as fh:
             fh.write(b"MThd")
-            fh.write(struct.pack(">I", 10))  # wrong: must be 6
+            fh.write(struct.pack(">I", 10)) # wrong: must be 6
             fh.write(b"\x00" * 10)
         result = check_midi_integrity(workdir)
         assert not result.passed
@@ -197,7 +197,7 @@ class TestCheckNoDuplicateTracks:
     def test_duplicate_role_produces_warning(self, tmp_path: pathlib.Path) -> None:
         workdir = tmp_path / "muse-work"
         _make_valid_midi(workdir / "bass.mid")
-        _make_valid_midi(workdir / "bass2.mid")  # same role "bass" after stripping trailing digit
+        _make_valid_midi(workdir / "bass2.mid") # same role "bass" after stripping trailing digit
         result = check_no_duplicate_tracks(workdir)
         assert not result.passed
         assert len(result.issues) == 1
@@ -314,7 +314,7 @@ class TestCheckEmotionTags:
     def test_non_list_tag_cache_is_skipped(self, tmp_path: pathlib.Path) -> None:
         _init_muse_repo(tmp_path)
         muse = tmp_path / ".muse"
-        (muse / "tags.json").write_text(json.dumps({"tag": "happy"}))  # dict, not list
+        (muse / "tags.json").write_text(json.dumps({"tag": "happy"})) # dict, not list
         result = check_emotion_tags(tmp_path)
         assert result.passed
 

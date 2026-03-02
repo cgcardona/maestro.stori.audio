@@ -2,7 +2,7 @@
 
 All async tests call ``_context_async`` directly with an in-memory SQLite
 session and a ``tmp_path`` repo root — no real Postgres or running process
-required.  Commits are seeded via ``_commit_async`` so the full pipeline
+required. Commits are seeded via ``_commit_async`` so the full pipeline
 (commit → context) is exercised as an integrated pair.
 """
 from __future__ import annotations
@@ -426,8 +426,8 @@ async def test_muse_context_history_entries_are_newest_first(
     )
 
     assert len(result.history) == 2
-    assert result.history[0].commit_id == cids[1]  # middle
-    assert result.history[1].commit_id == cids[0]  # oldest
+    assert result.history[0].commit_id == cids[1] # middle
+    assert result.history[1].commit_id == cids[0] # oldest
 
 
 # ---------------------------------------------------------------------------

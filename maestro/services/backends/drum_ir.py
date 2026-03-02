@@ -41,7 +41,7 @@ class DrumSpecBackend(MusicGeneratorBackend):
         return GeneratorBackend.DRUM_IR
 
     async def is_available(self) -> bool:
-        return True  # Always available (pure Python renderer)
+        return True # Always available (pure Python renderer)
 
     async def generate(
         self,

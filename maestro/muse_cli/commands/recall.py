@@ -17,11 +17,11 @@ Scoring algorithm (stub — vector search planned):
         score = |query_tokens ∩ message_tokens| / |query_tokens|
 
     This gives 1.0 when every query word appears in the message, and 0.0 when
-    none do.  Commits with score < ``--threshold`` are excluded.
+    none do. Commits with score < ``--threshold`` are excluded.
 
 Note:
     Full vector embedding search via Qdrant is a planned enhancement (see muse
-    context / issue backlog).  When implemented, the scoring function will be
+    context / issue backlog). When implemented, the scoring function will be
     replaced by cosine similarity over pre-computed embeddings, with no change
     to the CLI interface.
 """
@@ -101,7 +101,7 @@ async def _fetch_commits(
 ) -> list[MuseCliCommit]:
     """Fetch all candidate commits from the DB, optionally filtered.
 
-    Filters are applied at the SQL level to minimise in-memory work.  The
+    Filters are applied at the SQL level to minimise in-memory work. The
     caller ranks and limits the result set.
     """
     stmt = select(MuseCliCommit).where(MuseCliCommit.repo_id == repo_id)
@@ -193,7 +193,7 @@ def _render_results(
     """Print ranked recall results in human-readable format.
 
     Note: similarity scores are keyword-overlap estimates, not semantic
-    embeddings.  Vector search via Qdrant is a planned enhancement.
+    embeddings. Vector search via Qdrant is a planned enhancement.
     """
     typer.echo(f'Recall: "{query}"')
     typer.echo(f"(keyword match · threshold {threshold:.2f} · "
@@ -201,15 +201,15 @@ def _render_results(
     typer.echo("")
 
     if not results:
-        typer.echo("  No matching commits found.")
+        typer.echo(" No matching commits found.")
         return
 
     for entry in results:
         typer.echo(
-            f"  #{entry['rank']}  score={entry['score']:.4f}  "
-            f"commit {entry['commit_id']}  [{entry['date']}]"
+            f" #{entry['rank']} score={entry['score']:.4f} "
+            f"commit {entry['commit_id']} [{entry['date']}]"
         )
-        typer.echo(f"       {entry['message']}")
+        typer.echo(f" {entry['message']}")
         typer.echo("")
 
 
@@ -260,12 +260,12 @@ def recall(
     """Search commit history by description (keyword match over messages).
 
     Returns the top ``--limit`` commits whose messages best match the query,
-    sorted by keyword overlap score.  Commits below ``--threshold`` are
+    sorted by keyword overlap score. Commits below ``--threshold`` are
     excluded.
 
     Note:
         Full semantic vector search via Qdrant is a planned enhancement
-        (see muse context).  Until then, scoring is based on keyword overlap
+        (see muse context). Until then, scoring is based on keyword overlap
         between the query and commit messages.
     """
     # Validate date args first — fail fast before touching the filesystem.

@@ -196,7 +196,7 @@ class TestCandidatesForRole:
         """Drums keeps the full quality-preset candidate count."""
         from maestro.services.backends.base import GeneratorBackend
         mg = self._mg()
-        config = QUALITY_PRESETS["quality"]  # num_candidates=4
+        config = QUALITY_PRESETS["quality"] # num_candidates=4
         assert mg._candidates_for_role("drums", config, GeneratorBackend.STORPHEUS) == 4
 
     def test_bass_keeps_full_candidates(self) -> None:
@@ -211,7 +211,7 @@ class TestCandidatesForRole:
         """Melodic instruments are capped at 2 candidates for quality preset."""
         from maestro.services.backends.base import GeneratorBackend
         mg = self._mg()
-        config = QUALITY_PRESETS["quality"]  # num_candidates=6
+        config = QUALITY_PRESETS["quality"] # num_candidates=6
         assert mg._candidates_for_role("organ", config, GeneratorBackend.STORPHEUS) == 2
 
     def test_guitar_capped_at_two_for_quality(self) -> None:
@@ -234,7 +234,7 @@ class TestCandidatesForRole:
         """Balanced preset (2 candidates) is not further reduced for melodic tracks."""
         from maestro.services.backends.base import GeneratorBackend
         mg = self._mg()
-        config = QUALITY_PRESETS["balanced"]  # num_candidates=2
+        config = QUALITY_PRESETS["balanced"] # num_candidates=2
         assert mg._candidates_for_role("organ", config, GeneratorBackend.STORPHEUS) == 2
 
 
@@ -253,7 +253,7 @@ class TestParallelCandidateGeneration:
         from maestro.services.backends.base import GeneratorBackend, GenerationResult
 
         mg = MusicGenerator()
-        config = QUALITY_PRESETS["quality"]  # 6 candidates
+        config = QUALITY_PRESETS["quality"] # 6 candidates
 
         call_count = [0]
         call_times: list[float] = []
@@ -299,9 +299,9 @@ class TestParallelCandidateGeneration:
         from maestro.services.backends.base import GeneratorBackend, GenerationResult
 
         mg = MusicGenerator()
-        config = QUALITY_PRESETS["balanced"]  # 2 candidates
+        config = QUALITY_PRESETS["balanced"] # 2 candidates
 
-        scores_assigned = [0.3, 0.8]  # second candidate is better
+        scores_assigned = [0.3, 0.8] # second candidate is better
         call_idx = [0]
 
         async def fake_generate(*args: object, **kwargs: object) -> GenerationResult:

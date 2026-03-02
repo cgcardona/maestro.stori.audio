@@ -263,7 +263,7 @@ class TestStoriDAWAdapter:
 
         adapter = StoriDAWAdapter()
         with pytest.raises(AttributeError):
-            adapter.registry.mcp_tools = []  # type: ignore[misc]
+            adapter.registry.mcp_tools = [] # type: ignore[misc]
 
     def test_registry_has_mcp_and_llm_tools(self) -> None:
         """Registry exposes both MCP wire defs and LLM schemas."""

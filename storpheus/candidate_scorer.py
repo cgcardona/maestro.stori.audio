@@ -1,6 +1,6 @@
 """Multi-dimensional candidate scoring for rejection sampling.
 
-Orpheus generates 10 parallel batches per call.  This module scores each
+Orpheus generates 10 parallel batches per call. This module scores each
 candidate against the requested intent and returns the best one.
 
 Scoring dimensions:
@@ -11,7 +11,7 @@ Scoring dimensions:
     - Pattern diversity (entropy-based, penalizes monotonous output)
     - Instrument coverage (did we get notes on expected channels?)
 
-Each dimension returns a 0..1 score.  The final score is a weighted sum.
+Each dimension returns a 0..1 score. The final score is a weighted sum.
 """
 
 from __future__ import annotations
@@ -104,7 +104,7 @@ def _density_match(
 ) -> float:
     """Score how well note density matches the target.
 
-    target_density is notes_per_bar.  Orpheus generates polyphonic MIDI
+    target_density is notes_per_bar. Orpheus generates polyphonic MIDI
     with many simultaneous voices, so typical output is 30-150 notes/bar.
     The default (when no target is provided) is 50 notes/bar — the
     empirical midpoint of healthy Orpheus output.
@@ -169,7 +169,7 @@ def _velocity_compliance(
 def _pattern_diversity(notes: list[StorpheusNoteDict]) -> float:
     """Score melodic diversity using 2-note pattern entropy.
 
-    Higher diversity → higher score.  Penalizes both total randomness
+    Higher diversity → higher score. Penalizes both total randomness
     (too many unique patterns) and total repetition (single pattern).
     """
     if len(notes) < 4:
@@ -281,7 +281,7 @@ def select_best_candidate(
 ) -> CandidateScore:
     """Pick the highest-scoring candidate from a list.
 
-    Returns the best ``CandidateScore``.  In case of ties, prefers
+    Returns the best ``CandidateScore``. In case of ties, prefers
     the candidate with more notes (less likely to be degenerate).
     """
     if not candidates:

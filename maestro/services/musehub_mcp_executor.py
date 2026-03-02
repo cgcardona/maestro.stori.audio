@@ -1,7 +1,7 @@
 """MuseHub MCP tool executor — server-side logic for all musehub_* MCP tools.
 
 This module is the execution backend for MuseHub browsing tools exposed via
-MCP.  Each public function opens its own DB session via ``AsyncSessionLocal``,
+MCP. Each public function opens its own DB session via ``AsyncSessionLocal``,
 delegates to ``musehub_repository`` for persistence access, and returns a
 typed ``MusehubToolResult``.
 
@@ -46,10 +46,10 @@ MusehubErrorCode = Literal[
 """Enumeration of error codes returned by MuseHub MCP executors.
 
 Callers pattern-match on these to build appropriate error messages:
-  - ``not_found``         — repo or object does not exist
+  - ``not_found`` — repo or object does not exist
   - ``invalid_dimension`` — unrecognised analysis dimension
-  - ``invalid_mode``      — unrecognised search mode
-  - ``db_unavailable``    — DB session factory not initialised (startup race)
+  - ``invalid_mode`` — unrecognised search mode
+  - ``db_unavailable`` — DB session factory not initialised (startup race)
 """
 
 
@@ -57,8 +57,8 @@ Callers pattern-match on these to build appropriate error messages:
 class MusehubToolResult:
     """Result of executing a single musehub_* MCP tool.
 
-    ``ok`` is the primary success/failure signal.  On success, ``data``
-    holds the JSON-serialisable payload for the MCP content block.  On
+    ``ok`` is the primary success/failure signal. On success, ``data``
+    holds the JSON-serialisable payload for the MCP content block. On
     failure, ``error_code`` and ``error_message`` describe what went wrong.
 
     This type is the contract between the executor functions and the MCP
@@ -101,7 +101,7 @@ async def execute_browse_repo(repo_id: str) -> MusehubToolResult:
     """Return repo metadata, branch list, and the 10 most recent commits.
 
     This is the entry-point tool for orienting an agent before it calls more
-    specific tools.  It aggregates three repository queries into one response
+    specific tools. It aggregates three repository queries into one response
     to minimise round-trips for the common "explore a new repo" case.
 
     Args:
@@ -206,8 +206,8 @@ async def execute_list_commits(
 
     Args:
         repo_id: UUID of the target MuseHub repository.
-        branch:  Optional branch name filter; None returns across all branches.
-        limit:   Maximum commits to return (clamped to 1–100).
+        branch: Optional branch name filter; None returns across all branches.
+        limit: Maximum commits to return (clamped to 1–100).
 
     Returns:
         ``MusehubToolResult`` with ``data.commits`` and ``data.total``,
@@ -257,12 +257,12 @@ async def execute_list_commits(
 async def execute_read_file(repo_id: str, object_id: str) -> MusehubToolResult:
     """Return metadata for a stored artifact in a MuseHub repo.
 
-    Returns path, size_bytes, mime_type, and object_id.  Binary content is
+    Returns path, size_bytes, mime_type, and object_id. Binary content is
     intentionally excluded — MCP tool responses must be text-safe JSON.
     Agents that need the raw bytes should use the HTTP objects endpoint.
 
     Args:
-        repo_id:   UUID of the target MuseHub repository.
+        repo_id: UUID of the target MuseHub repository.
         object_id: Content-addressed ID (e.g. ``sha256:abc...``).
 
     Returns:
@@ -304,18 +304,18 @@ async def execute_get_analysis(
     """Return structured analysis for a MuseHub repository.
 
     Supported dimensions:
-    - ``overview``  — repo stats: branch count, commit count, object count,
+    - ``overview`` — repo stats: branch count, commit count, object count,
                       most active author, most recent commit timestamp.
-    - ``commits``   — commit activity: total, per-branch breakdown, author
+    - ``commits`` — commit activity: total, per-branch breakdown, author
                       distribution, and a sample of the most recent messages.
-    - ``objects``   — artifact inventory: total size, per-MIME-type counts
+    - ``objects`` — artifact inventory: total size, per-MIME-type counts
                       and sizes, and a sample of object paths.
 
     MIDI audio analysis (key, tempo, harmonic content) requires Storpheus
     integration and is not yet available; those fields will be ``null``.
 
     Args:
-        repo_id:   UUID of the target MuseHub repository.
+        repo_id: UUID of the target MuseHub repository.
         dimension: Analysis dimension — one of ``overview``, ``commits``,
                    ``objects``.
 
@@ -422,19 +422,19 @@ async def execute_search(
 ) -> MusehubToolResult:
     """Search within a MuseHub repository by substring match.
 
-    Search is case-insensitive substring matching.  Two modes are supported:
-    - ``path``   — matches object file paths (e.g. ``tracks/jazz_4b.mid``).
+    Search is case-insensitive substring matching. Two modes are supported:
+    - ``path`` — matches object file paths (e.g. ``tracks/jazz_4b.mid``).
     - ``commit`` — matches commit messages (e.g. ``add bass intro``).
 
     The search operates on the full in-memory dataset (no DB-level LIKE query)
-    so results are consistent across database backends.  For very large repos
+    so results are consistent across database backends. For very large repos
     (>10 k objects/commits) this may be slow — index-backed search is a
     planned future enhancement.
 
     Args:
         repo_id: UUID of the target MuseHub repository.
-        query:   Case-insensitive substring to search for.
-        mode:    ``"path"`` or ``"commit"``.
+        query: Case-insensitive substring to search for.
+        mode: ``"path"`` or ``"commit"``.
 
     Returns:
         ``MusehubToolResult`` with ``data.results`` list, or an error on failure.
@@ -473,7 +473,7 @@ async def execute_search(
                 for obj in objects
                 if q in obj.path.lower()
             ]
-        else:  # mode == "commit"
+        else: # mode == "commit"
             commits, _ = await musehub_repository.list_commits(
                 session, repo_id, limit=100
             )

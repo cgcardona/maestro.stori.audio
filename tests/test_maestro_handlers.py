@@ -78,7 +78,7 @@ class TestUsageTracker:
         # Second call (larger context) overwrites the first
         t.add(250, 80)
         assert t.last_input_tokens == 250
-        assert t.prompt_tokens == 350  # accumulated, unchanged
+        assert t.prompt_tokens == 350 # accumulated, unchanged
 
     def test_last_input_tokens_reflects_growing_context(self) -> None:
 
@@ -277,7 +277,7 @@ class TestCreateEditingCompositionRoute:
         )
         out = _create_editing_composition_route(route)
         assert out.sse_state == SSEState.EDITING
-        assert out.intent == Intent.GENERATE_MUSIC  # preserves original intent
+        assert out.intent == Intent.GENERATE_MUSIC # preserves original intent
         assert out.force_stop_after is False
         assert out.requires_planner is False
         assert out.tool_choice == "auto"

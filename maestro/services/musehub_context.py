@@ -1,6 +1,6 @@
 """Muse Hub agent context aggregation service.
 
-This is the canonical read-path for AI composition agents.  ``build_agent_context``
+This is the canonical read-path for AI composition agents. ``build_agent_context``
 aggregates musical state, commit history, analysis highlights, open PRs, and open
 issues for a given repo ref into a single ``AgentContextResponse``.
 
@@ -80,7 +80,7 @@ def _extract_tracks_from_snapshot(snapshot: db_models.MusehubObject | None) -> l
     """Not applicable in MuseHub context — snapshots are binary objects.
 
     Track names in the MuseHub context come from commit message heuristics and
-    branch-level metadata.  This stub returns an empty list until commit-level
+    branch-level metadata. This stub returns an empty list until commit-level
     manifest tracking is added to MusehubCommit.
     """
     return []
@@ -141,7 +141,7 @@ async def _build_history(
     The head commit itself is excluded — it is surfaced as the current ref.
     We query by repo and timestamp rather than walking parent links, because
     MusehubCommit parent_ids are a JSONB list and graph traversal would
-    require N+1 queries.  Timestamp ordering is an approximation; in practice
+    require N+1 queries. Timestamp ordering is an approximation; in practice
     it matches the commit graph order for sequential workflows.
     """
     stmt = (
@@ -288,13 +288,13 @@ async def build_agent_context(
     Returns None if the repo does not exist or has no commits.
 
     Args:
-        session:  Open async DB session. Read-only — no writes performed.
-        repo_id:  The MuseHub repo UUID.
-        ref:      Branch name or commit ID. Defaults to HEAD (latest commit).
-        depth:    Controls how much data is returned:
-                  - ``brief``    — minimal context (~2 K tokens)
+        session: Open async DB session. Read-only — no writes performed.
+        repo_id: The MuseHub repo UUID.
+        ref: Branch name or commit ID. Defaults to HEAD (latest commit).
+        depth: Controls how much data is returned:
+                  - ``brief`` — minimal context (~2 K tokens)
                   - ``standard`` — full briefing (~8 K tokens)
-                  - ``verbose``  — uncapped (all history, full bodies)
+                  - ``verbose`` — uncapped (all history, full bodies)
 
     Returns:
         ``AgentContextResponse`` if repo + ref are valid, ``None`` if repo

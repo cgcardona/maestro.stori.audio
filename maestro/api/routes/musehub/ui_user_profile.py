@@ -1,4 +1,4 @@
-"""Enhanced Muse Hub user profile page — issue #459.
+"""Enhanced Muse Hub user profile page — .
 
 Replaces the stub profile handler in ui.py with a full-featured profile page:
   - 52×7 GitHub-style contribution heatmap (green intensity by commit count)
@@ -8,9 +8,9 @@ Replaces the stub profile handler in ui.py with a full-featured profile page:
 
 Endpoint summary:
   GET /musehub/ui/users/{username}
-    HTML (default)  → rich profile shell; JavaScript hydrates from ?format=json.
-    JSON            → EnhancedProfileResponse (badges, heatmap stats, pinned repos,
-                      paginated activity feed).  Agents use this for machine-readable
+    HTML (default) → rich profile shell; JavaScript hydrates from ?format=json.
+    JSON → EnhancedProfileResponse (badges, heatmap stats, pinned repos,
+                      paginated activity feed). Agents use this for machine-readable
                       profile data without navigating a separate /api/v1/... URL.
 
 Why a separate module:
@@ -105,8 +105,7 @@ class EnhancedProfileResponse(CamelModel):
     Agents consume this to inspect a user's contribution history, badges, and
     recent activity without navigating the HTML profile page.
 
-    CC attribution fields (``is_verified``, ``cc_license``) were added in
-    issue #448 to surface Public Domain / Creative Commons status inline so
+    CC attribution fields (``is_verified``, ``cc_license``) were added to surface Public Domain / Creative Commons status inline so
     the frontend can render the CC badge without a secondary API call.
     """
 
@@ -435,7 +434,7 @@ _FILTER_MAP: dict[str, frozenset[str]] = {
     "commits": frozenset({"commit_pushed"}),
     "prs": frozenset({"pr_opened", "pr_merged", "pr_closed"}),
     "issues": frozenset({"issue_opened", "issue_closed"}),
-    "stars": frozenset({"tag_pushed"}),  # re-using tag_pushed; stars are tracked separately
+    "stars": frozenset({"tag_pushed"}), # re-using tag_pushed; stars are tracked separately
 }
 
 
@@ -520,7 +519,7 @@ async def _build_enhanced_profile(
 
     Raises HTTP 404 when the username has no registered profile.
     """
-    from maestro.services import musehub_profile as profile_svc  # local import avoids circular
+    from maestro.services import musehub_profile as profile_svc # local import avoids circular
 
     profile = await profile_svc.get_profile_by_username(session, username)
     if profile is None:
@@ -674,7 +673,7 @@ def _render_profile_html(username: str) -> str:
     const username = '{safe_username}';
     const API_PROFILE = '/api/v1/musehub/users/' + username;
     const API_ENHANCED = '/musehub/ui/users/' + username + '?format=json';
-    const API_STARRED  = '/api/v1/musehub/users/' + username + '/starred';
+    const API_STARRED = '/api/v1/musehub/users/' + username + '/starred';
     const API_FOLLOWERS = '/api/v1/musehub/users/' + username + '/followers-list';
     const API_FOLLOWING = '/api/v1/musehub/users/' + username + '/following-list';
 
@@ -762,7 +761,7 @@ def _render_profile_html(username: str) -> str:
       if (!pinnedRepos || pinnedRepos.length === 0) return;
       const cards = pinnedRepos.map(r => {{
         const genre = r.primaryGenre ? `<span>🎵 ${{esc(r.primaryGenre)}}</span>` : '';
-        const lang  = r.language     ? `<span>🔤 ${{esc(r.language)}}</span>`     : '';
+        const lang = r.language ? `<span>🔤 ${{esc(r.language)}}</span>` : '';
         return `<div class="pinned-card">
           <h3><a href="/musehub/ui/${{esc(r.owner)}}/${{esc(r.slug)}}">${{esc(r.name)}}</a></h3>
           ${{r.description ? `<p class="pinned-desc">${{esc(r.description)}}</p>` : ''}}
@@ -923,7 +922,7 @@ def _render_profile_html(username: str) -> str:
 
     async function loadActivityTab(filter, page) {{
       activityFilter = filter || activityFilter;
-      activityPage   = page   || 1;
+      activityPage = page || 1;
 
       const filterBtns = Object.keys(FILTER_LABELS).map(f => {{
         const active = f === activityFilter ? 'btn-primary' : 'btn-secondary';
@@ -980,10 +979,10 @@ def _render_profile_html(username: str) -> str:
         b.classList.toggle('active', b.dataset.tab === tab);
       }});
       switch (tab) {{
-        case 'repos':     renderReposTab(cachedRepos); break;
-        case 'stars':     loadStarsTab(); break;
+        case 'repos': renderReposTab(cachedRepos); break;
+        case 'stars': loadStarsTab(); break;
         case 'followers': loadSocialTab('followers'); break;
-        case 'activity':  loadActivityTab('all', 1); break;
+        case 'activity': loadActivityTab('all', 1); break;
       }}
     }}
 
@@ -1047,7 +1046,7 @@ async def profile_page(
     """Render the enhanced Muse Hub user profile page or return structured JSON.
 
     HTML (default):
-        Returns a self-contained HTML shell.  Client-side JavaScript fetches
+        Returns a self-contained HTML shell. Client-side JavaScript fetches
         profile data, contribution heatmap, badges, pinned repos, and activity
         from ``/api/v1/musehub/users/{username}`` and from the ``?format=json``
         alternate of this same URL.

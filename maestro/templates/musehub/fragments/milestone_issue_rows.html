@@ -1,26 +1,18 @@
-{#
-  milestone_issue_rows.html — HTMX fragment: linked issue rows for a milestone.
-
-  Returned by milestone_detail_page() when HX-Request header is present.
-  Also included by milestone_detail.html on full-page load.
-
-  Required context variables:
-    linked_issues  list[IssueResponse]  — issues linked to the milestone
-    issue_state    str                   — active state filter (open|closed|all)
-    base_url       str                   — canonical UI base URL for this repo
-#}
+{# milestone_issue_rows.html — HTMX fragment: issues linked to a milestone.
+   Included by milestone_detail.html for initial SSR and returned bare for
+   HTMX issue-state tab switches (HX-Request: true).
+   Context vars: linked_issues, milestone, base_url, issue_state #}
 {% if linked_issues %}
   {% for issue in linked_issues %}
   <div class="issue-row">
-    <span class="issue-state-icon">{% if issue.state == 'open' %}🟢{% else %}🟣{% endif %}</span>
+    <span class="issue-state-icon">{% if issue.state == 'open' %}🟢{% else %}✅{% endif %}</span>
     <div class="issue-row-body">
-      <a href="{{ base_url }}/issues/{{ issue.number }}" class="issue-title-link">
-        {{ issue.title }}
-      </a>
+      <a href="{{ base_url }}/issues/{{ issue.number }}" class="issue-title-link">{{ issue.title }}</a>
       <div class="issue-meta">
         #{{ issue.number }}
-        {% if issue.assignee %} &bull; assigned to {{ issue.assignee }}{% endif %}
-        {% if issue.comment_count > 0 %} &bull; 💬 {{ issue.comment_count }}{% endif %}
+        &bull; opened {{ issue.created_at.strftime('%b %-d, %Y') }}
+        {% if issue.author %}&bull; by {{ issue.author }}{% endif %}
+        {% if issue.comment_count %}&bull; 💬 {{ issue.comment_count }}{% endif %}
       </div>
       {% if issue.labels %}
       <div class="issue-labels">
@@ -30,11 +22,12 @@
       </div>
       {% endif %}
     </div>
-    <span class="badge {% if issue.state == 'open' %}badge-open{% else %}badge-closed{% endif %}">
-      {{ issue.state }}
-    </span>
+    <span class="badge badge-{{ issue.state }}">{{ issue.state }}</span>
   </div>
   {% endfor %}
 {% else %}
-  <p class="milestone-empty">No {{ issue_state }} issues in this milestone.</p>
+  <div class="milestone-empty">
+    <p>📋 No linked issues</p>
+    <p style="font-size:13px">Issues assigned to this milestone will appear here.</p>
+  </div>
 {% endif %}

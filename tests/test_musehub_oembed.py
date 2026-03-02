@@ -1,14 +1,14 @@
 """Tests for the MuseHub oEmbed discovery endpoint.
 
-Covers acceptance criteria from issue #244 (original) and issue #440 (rich metadata):
-- test_oembed_endpoint              — GET /oembed returns valid JSON with HTML embed code
-- test_oembed_unknown_url_404       — Invalid / unrecognised URL returns 404
-- test_oembed_iframe_content        — Returned HTML is an <iframe> pointing to embed route
-- test_oembed_respects_maxwidth     — maxwidth parameter is reflected in returned iframe width
-- test_oembed_xml_format_501        — Non-JSON format returns 501
+Covers acceptance criteria (original) and (rich metadata):
+- test_oembed_endpoint — GET /oembed returns valid JSON with HTML embed code
+- test_oembed_unknown_url_404 — Invalid / unrecognised URL returns 404
+- test_oembed_iframe_content — Returned HTML is an <iframe> pointing to embed route
+- test_oembed_respects_maxwidth — maxwidth parameter is reflected in returned iframe width
+- test_oembed_xml_format_501 — Non-JSON format returns 501
 - test_oembed_musehub_extension_fields — Response includes all musehub:* extension fields
 - test_oembed_standard_fields_complete — Response has all required standard oEmbed fields
-- test_oembed_commit_endpoint       — GET /oembed/commit returns 200 for commit URLs
+- test_oembed_commit_endpoint — GET /oembed/commit returns 200 for commit URLs
 - test_oembed_commit_unknown_url_404 — /oembed/commit returns 404 for non-commit URLs
 - test_oembed_commit_iframe_uses_sha — /oembed/commit iframe src contains the commit SHA
 - test_oembed_commit_xml_format_501 — /oembed/commit returns 501 for XML format
@@ -120,7 +120,7 @@ async def test_oembed_title_contains_short_ref(client: AsyncClient) -> None:
 
 @pytest.mark.anyio
 async def test_oembed_musehub_extension_fields(client: AsyncClient) -> None:
-    """Response includes all musehub:* extension fields defined in issue #440."""
+    """Response includes all musehub:* extension fields defined."""
     repo_id = "ddddeeee-ffff-0000-1111-222233334444"
     ref = "beefcafe1234"
     embed_url = f"/musehub/ui/{repo_id}/embed/{ref}"

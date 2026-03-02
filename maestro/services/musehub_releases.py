@@ -435,5 +435,5 @@ async def increment_asset_download_count(
         .where(db.MusehubReleaseAsset.asset_id == asset_id)
         .values(download_count=db.MusehubReleaseAsset.download_count + 1)
     )
-    cursor: CursorResult[tuple[()]] = raw  # type: ignore[assignment]  # SQLAlchemy UPDATE always returns CursorResult
+    cursor: CursorResult[tuple[()]] = raw # type: ignore[assignment] # SQLAlchemy UPDATE always returns CursorResult
     return cursor.rowcount > 0

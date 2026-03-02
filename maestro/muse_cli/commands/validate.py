@@ -1,7 +1,7 @@
 """muse validate — check musical integrity of the working tree.
 
 Runs a suite of integrity checks against the Muse working tree and reports
-issues in a structured format.  Designed as the pre-commit quality gate so
+issues in a structured format. Designed as the pre-commit quality gate so
 agents and producers can catch problems before ``muse commit`` records bad
 state into history.
 
@@ -24,23 +24,23 @@ Output (default human-readable)::
 
     Validating working tree …
 
-    ✅ midi_integrity        PASS
-    ❌ manifest_consistency  FAIL
-       ERROR  beat.mid  File in committed manifest is missing from working tree.
-    ✅ no_duplicate_tracks   PASS
-    ⚠️  section_naming       WARN
-       WARN   Verse  Section directory 'Verse' does not follow naming convention.
-    ✅ emotion_tags           PASS
+    ✅ midi_integrity PASS
+    ❌ manifest_consistency FAIL
+       ERROR beat.mid File in committed manifest is missing from working tree.
+    ✅ no_duplicate_tracks PASS
+    ⚠️ section_naming WARN
+       WARN Verse Section directory 'Verse' does not follow naming convention.
+    ✅ emotion_tags PASS
 
     1 error, 1 warning — working tree has integrity issues.
 
 Flags
 -----
---strict          Fail (exit 2) on warnings as well as errors.
---track TEXT      Restrict checks to files/paths containing TEXT.
---section TEXT    Restrict section-naming check to directories containing TEXT.
---fix             Auto-fix correctable issues (quantisation, manifest).
---json            Emit full results as JSON for agent consumption.
+--strict Fail (exit 2) on warnings as well as errors.
+--track TEXT Restrict checks to files/paths containing TEXT.
+--section TEXT Restrict section-naming check to directories containing TEXT.
+--fix Auto-fix correctable issues (quantisation, manifest).
+--json Emit full results as JSON for agent consumption.
 """
 from __future__ import annotations
 
@@ -89,18 +89,18 @@ def _render_human(result: MuseValidateResult) -> None:
             icon = "⚠️ "
             label = "WARN"
 
-        typer.echo(f"  {icon} {check.name:<28} {label}")
+        typer.echo(f" {icon} {check.name:<28} {label}")
         for issue in check.issues:
-            sev_icon = _SEVERITY_ICON.get(issue.severity, "  ")
-            typer.echo(f"       {sev_icon} {issue.severity.upper():<6}  {issue.path}")
-            typer.echo(f"              {issue.message}")
+            sev_icon = _SEVERITY_ICON.get(issue.severity, " ")
+            typer.echo(f" {sev_icon} {issue.severity.upper():<6} {issue.path}")
+            typer.echo(f" {issue.message}")
 
     typer.echo("")
 
     if result.fixes_applied:
         typer.echo("Fixes applied:")
         for fix in result.fixes_applied:
-            typer.echo(f"  ✅ {fix}")
+            typer.echo(f" ✅ {fix}")
         typer.echo("")
 
     if result.clean:

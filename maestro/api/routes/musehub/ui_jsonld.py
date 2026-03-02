@@ -1,7 +1,7 @@
 """JSON-LD structured data helpers for Muse Hub UI pages.
 
 Produces machine-readable schema.org metadata for repo landing pages
-(MusicComposition) and release detail pages (MusicRecording).  Injecting
+(MusicComposition) and release detail pages (MusicRecording). Injecting
 JSON-LD makes these pages visible to search engines and music discovery
 services that consume schema.org data without requiring any API keys or
 crawl-budget negotiation.
@@ -29,7 +29,7 @@ def jsonld_repo(repo: RepoResponse, page_url: str) -> dict[str, object]:
 
     MusicComposition maps well to a Muse Hub repo because a repo represents
     a versioned musical work — it has a name, creator, genre tags, and a
-    creation date.  Search engines and music discovery bots index this data
+    creation date. Search engines and music discovery bots index this data
     to surface repos in relevant queries.
 
     Args:
@@ -73,7 +73,7 @@ def jsonld_release(
 ) -> dict[str, object]:
     """Return a schema.org/MusicRecording JSON-LD dict for a release.
 
-    MusicRecording represents a specific recorded version of a composition —
+    MusicRecording represents a specific recorded version of a composition
     analogous to a Muse Hub release (a tagged snapshot with download packages).
     Linking MusicRecording back to its parent MusicComposition (the repo) lets
     indexers understand the work hierarchy.

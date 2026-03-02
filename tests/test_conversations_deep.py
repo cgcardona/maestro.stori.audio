@@ -321,7 +321,7 @@ class TestGenerateTitleEdgeCases:
 
         long_prompt = "Create a " + "very " * 100 + "complex beat"
         title = generate_title_from_prompt(long_prompt, max_length=50)
-        assert len(title) <= 60  # Some buffer
+        assert len(title) <= 60 # Some buffer
 
     def test_special_characters(self) -> None:
 

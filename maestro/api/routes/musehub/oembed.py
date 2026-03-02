@@ -1,14 +1,14 @@
 """oEmbed discovery endpoint for MuseHub embeddable player widgets.
 
 oEmbed is a standard protocol (https://oembed.com/) that lets CMSes and
-blogging platforms auto-embed rich content when a user pastes a URL.  By
+blogging platforms auto-embed rich content when a user pastes a URL. By
 exposing ``GET /oembed?url={embed_url}`` we enable Wordpress, Ghost, and
 any oEmbed-aware platform to automatically convert a MuseHub embed URL
 into an ``<iframe>`` snippet.
 
 Endpoint summary:
-  GET  /musehub/oembed?url={url}&maxwidth={w}&maxheight={h}
-  GET  /musehub/oembed/commit?url={url}&maxwidth={w}&maxheight={h}
+  GET /musehub/oembed?url={url}&maxwidth={w}&maxheight={h}
+  GET /musehub/oembed/commit?url={url}&maxwidth={w}&maxheight={h}
 
 Both endpoints return JSON conforming to the oEmbed rich response type
 (https://oembed.com/#section2.3.4) extended with ``musehub:*`` fields that
@@ -21,18 +21,18 @@ Standard response fields (https://oembed.com/#section2.3):
   html, width, height
 
 MuseHub extension fields (prefixed ``musehub:`` per oEmbed convention):
-  musehub:key            — tonal centre, e.g. "G major"
-  musehub:tempo_bpm      — integer BPM
+  musehub:key — tonal centre, e.g. "G major"
+  musehub:tempo_bpm — integer BPM
   musehub:time_signature — e.g. "4/4"
   musehub:duration_beats — total beat count as integer
-  musehub:instruments    — list of instrument role names
-  musehub:license        — SPDX or free-text licence
-  musehub:genre          — list of genre tags
-  musehub:commit_id      — short commit SHA (8 chars)
-  musehub:audio_url      — render URL for audio preview
+  musehub:instruments — list of instrument role names
+  musehub:license — SPDX or free-text licence
+  musehub:genre — list of genre tags
+  musehub:commit_id — short commit SHA (8 chars)
+  musehub:audio_url — render URL for audio preview
 
 URL patterns accepted:
-  /musehub/ui/{repo_id}/embed/{ref}         → /oembed
+  /musehub/ui/{repo_id}/embed/{ref} → /oembed
   /musehub/ui/{repo_id}/commit/{commit_sha} → /oembed/commit
 
 Returns 404 for non-matching URLs so oEmbed consumers distinguish
@@ -112,19 +112,19 @@ def _build_oembed_payload(
 
     All ``musehub:*`` extension fields default to ``None`` because the embed
     URL alone carries no musical metadata — the consumer is expected to treat
-    missing fields as unknown/not-yet-rendered rather than as errors.  A future
+    missing fields as unknown/not-yet-rendered rather than as errors. A future
     PR will wire these to the Muse VCS read path so live commit metadata populates
     them automatically.
 
     Args:
-        repo_id:    Repository UUID string.
-        ref:        Full commit ref / branch name / tag.
-        short_ref:  First 8 characters of ``ref`` for display purposes.
-        width:      Iframe pixel width (already clamped to allowed range).
-        height:     Iframe pixel height (already clamped to allowed range).
+        repo_id: Repository UUID string.
+        ref: Full commit ref / branch name / tag.
+        short_ref: First 8 characters of ``ref`` for display purposes.
+        width: Iframe pixel width (already clamped to allowed range).
+        height: Iframe pixel height (already clamped to allowed range).
         embed_path: URL path for the iframe ``src`` attribute.
-        title:      Human-readable composition title.
-        owner:      Repository owner username (empty string if unknown).
+        title: Human-readable composition title.
+        owner: Repository owner username (empty string if unknown).
 
     Returns:
         dict ready to serialise as JSON for the oEmbed response body.
@@ -201,10 +201,10 @@ async def oembed_endpoint(
     - ``musehub:*`` fields are present but may be ``null`` when metadata is unavailable.
 
     Args:
-        url:       Full or path-only MuseHub embed URL to resolve.
-        maxwidth:  Desired maximum iframe width (default 560px).
+        url: Full or path-only MuseHub embed URL to resolve.
+        maxwidth: Desired maximum iframe width (default 560px).
         maxheight: Desired maximum iframe height (default 152px).
-        format:    oEmbed response format — only ``json`` is supported.
+        format: oEmbed response format — only ``json`` is supported.
 
     Returns:
         JSONResponse with oEmbed rich type payload including ``musehub:*`` extensions.
@@ -275,10 +275,10 @@ async def oembed_commit_endpoint(
     - ``musehub:*`` fields follow the same convention as ``/oembed``.
 
     Args:
-        url:       Full or path-only MuseHub commit URL to resolve.
-        maxwidth:  Desired maximum iframe width (default 560px).
+        url: Full or path-only MuseHub commit URL to resolve.
+        maxwidth: Desired maximum iframe width (default 560px).
         maxheight: Desired maximum iframe height (default 152px).
-        format:    oEmbed response format — only ``json`` is supported.
+        format: oEmbed response format — only ``json`` is supported.
 
     Returns:
         JSONResponse with oEmbed rich type payload anchored to the given commit SHA.

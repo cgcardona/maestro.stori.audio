@@ -22,7 +22,7 @@ class TestCheckoutResult:
         assert r.head_moved is True
         d = r.to_dict()
         assert d["success"] is True
-        assert d["plan_hash"] == "deadbeefcafe"  # truncated to 12
+        assert d["plan_hash"] == "deadbeefcafe" # truncated to 12
 
     def test_blocked_checkout(self) -> None:
 

@@ -6,20 +6,20 @@ writes all identity/configuration files that subsequent commands depend on.
 Normal (non-bare) layout::
 
     .muse/
-        repo.json        repo_id (UUID), schema_version, created_at, bare flag
-        HEAD             text pointer → refs/heads/<branch>
-        refs/heads/<branch>  empty (no commits yet)
-        config.toml      [user] [auth] [remotes] stubs
-    muse-work/           working-tree root (absent for --bare repos)
+        repo.json repo_id (UUID), schema_version, created_at, bare flag
+        HEAD text pointer → refs/heads/<branch>
+        refs/heads/<branch> empty (no commits yet)
+        config.toml [user] [auth] [remotes] stubs
+    muse-work/ working-tree root (absent for --bare repos)
 
 Bare layout (``--bare``)::
 
     .muse/
-        repo.json        … bare = true …
-        HEAD             refs/heads/<branch>
+        repo.json … bare = true …
+        HEAD refs/heads/<branch>
         refs/heads/<branch>
 
-Bare repositories have no ``muse-work/`` directory.  They are used as
+Bare repositories have no ``muse-work/`` directory. They are used as
 Muse Hub remotes — objects and refs only, no live working copy.
 
 Flags
@@ -29,7 +29,7 @@ Flags
     Writes ``bare = true`` into ``.muse/config.toml``.
 ``--template <path>``
     Copy the contents of *path* into ``muse-work/`` after creating the
-    directory structure.  Useful for studio project templates.
+    directory structure. Useful for studio project templates.
 ``--default-branch TEXT``
     Name of the initial branch (default: ``main``).
 ``--force``
@@ -153,7 +153,7 @@ def init(
             try:
                 existing_repo_id = json.loads(repo_json_path.read_text()).get("repo_id")
             except (json.JSONDecodeError, OSError):
-                pass  # Corrupt file — generate a fresh ID.
+                pass # Corrupt file — generate a fresh ID.
 
     # --- Create directory structure ---
     # Wrap all filesystem writes in a single OSError handler so that
@@ -207,7 +207,7 @@ def init(
             f"❌ Permission denied: cannot write to {cwd}.\n"
             "Run `muse init` from a directory you have write access to.\n"
             "Tip: if running inside Docker, create a writable directory first:\n"
-            "  docker compose exec maestro sh -c "
+            " docker compose exec maestro sh -c "
             '"mkdir -p /tmp/my-project && cd /tmp/my-project && python -m maestro.muse_cli.app init"'
         )
         logger.error("❌ Permission denied creating .muse/ in %s", cwd)

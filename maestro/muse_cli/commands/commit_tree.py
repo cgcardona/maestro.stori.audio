@@ -1,7 +1,7 @@
 """muse commit-tree — create a raw commit object from an existing snapshot.
 
 This is a git-plumbing-style command that creates a commit row in the database
-directly from a known ``snapshot_id`` plus explicit metadata.  Unlike
+directly from a known ``snapshot_id`` plus explicit metadata. Unlike
 ``muse commit``, it does NOT walk the filesystem, does NOT update any branch
 ref, and does NOT touch ``.muse/HEAD``.
 
@@ -10,7 +10,7 @@ Why this exists
 Scripting and advanced history manipulation require the ability to construct
 commits programmatically — for example when replaying a merge, synthesising
 history from an external source, or building tooling on top of Muse's commit
-graph.  Separating "create commit object" from "advance branch pointer" mirrors
+graph. Separating "create commit object" from "advance branch pointer" mirrors
 the design of ``git commit-tree`` + ``git update-ref``.
 
 Idempotency contract
@@ -92,10 +92,10 @@ async def _commit_tree_async(
     Args:
         snapshot_id: Must reference an existing ``muse_cli_snapshots`` row.
         message: Human-readable commit message (required, non-empty).
-        parent_ids: Zero, one, or two parent commit IDs.  Order is irrelevant
+        parent_ids: Zero, one, or two parent commit IDs. Order is irrelevant
             for hashing (sorted internally) but at most two are stored in
             ``parent_commit_id`` / ``parent2_commit_id``.
-        author: Author name string.  Empty string is valid.
+        author: Author name string. Empty string is valid.
         session: An open async DB session (committed by the caller).
 
     Returns:
@@ -118,7 +118,7 @@ async def _commit_tree_async(
     if snapshot is None:
         typer.echo(
             f"❌ Snapshot {snapshot_id[:12]!r} not found in the database.\n"
-            "   Run 'muse commit' first to create a snapshot, or check the ID."
+            " Run 'muse commit' first to create a snapshot, or check the ID."
         )
         raise typer.Exit(code=ExitCode.USER_ERROR)
 
@@ -145,8 +145,8 @@ async def _commit_tree_async(
     # Association is deferred to `muse update-ref` (a separate plumbing command).
     new_commit = MuseCliCommit(
         commit_id=commit_id,
-        repo_id="",  # plumbing commits carry no repo_id until linked via update-ref
-        branch="",  # not associated with any branch ref
+        repo_id="", # plumbing commits carry no repo_id until linked via update-ref
+        branch="", # not associated with any branch ref
         parent_commit_id=parent1,
         parent2_commit_id=parent2,
         snapshot_id=snapshot_id,
@@ -180,19 +180,19 @@ def commit_tree(
         "-p",
         "--parent",
         help=(
-            "Parent commit ID.  Specify once for a regular commit, "
+            "Parent commit ID. Specify once for a regular commit, "
             "twice for a merge commit."
         ),
     ),
     author: Optional[str] = typer.Option(
         None,
         "--author",
-        help="Author name.  Defaults to [user] name from .muse/config.toml.",
+        help="Author name. Defaults to [user] name from .muse/config.toml.",
     ),
 ) -> None:
     """Create a raw commit object from an existing snapshot_id.
 
-    Prints the new (or pre-existing) commit_id to stdout.  Does NOT
+    Prints the new (or pre-existing) commit_id to stdout. Does NOT
     update .muse/HEAD or any branch ref.
     """
     root = require_repo()

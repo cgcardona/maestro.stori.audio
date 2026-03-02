@@ -3,14 +3,14 @@
 Every SSE event the backend emits passes through ``emit()``.
 Two entry points:
 
-  ``emit(MaestroEvent)``  — serialize a typed event object to SSE wire format.
-  ``parse_event(dict)``   — deserialize a wire-format dict back into the
+  ``emit(MaestroEvent)`` — serialize a typed event object to SSE wire format.
+  ``parse_event(dict)`` — deserialize a wire-format dict back into the
                             correct MaestroEvent subclass (inverse of ``emit``).
                             Use in tests and any consumer that needs typed
                             access to received events.
 
 Handlers construct typed MaestroEvent subclasses directly — raw-dict emission
-is forbidden.  The type safety is enforced at construction time by Pydantic
+is forbidden. The type safety is enforced at construction time by Pydantic
 model validation, not at serialization time.
 
 The ``seq`` field defaults to -1 (sentinel); the route-layer ``_with_seq()``
@@ -68,7 +68,7 @@ def parse_event(data: Mapping[str, object]) -> MaestroEvent:
     returning the concrete subclass (e.g. ``ErrorEvent``, ``StateEvent``)
     rather than the base ``MaestroEvent``.
 
-    The wire format uses camelCase keys (``by_alias=True``).  ``CamelModel``
+    The wire format uses camelCase keys (``by_alias=True``). ``CamelModel``
     has ``populate_by_name=True`` so both snake_case and camelCase keys are
     accepted during validation.
 
