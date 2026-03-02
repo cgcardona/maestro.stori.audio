@@ -374,12 +374,13 @@ ps -ef
 pgrep <name>
 ```
 
-### Python — Host-side one-liners (read-only data processing only)
+### Python — Host-side scripts and one-liners
 ```
-python3                        ← running scripts directly (e.g. python3 script.py)
+python3                        ← allowed for: agentception scripts, resolve_arch.py --fingerprint,
+                               ← and any other scripts in scripts/gen_prompts/ or agentception/
+                               ← NOT for arbitrary business logic — use docker compose exec for that
 python3 -c "<one-liner>"      ← JSON parsing, string manipulation of gh/git output ONLY
                                ← No file writes, no imports beyond stdlib, no network calls
-                               ← Longer scripts or any I/O must use docker compose exec
 python3 -m json.tool           ← pretty-printing JSON output from curl or gh commands
 python3 -m <stdlib-module>     ← stdlib modules only (json, base64, hashlib, etc.)
 pip3 install                   ← agentception host-side dependency installs ONLY
@@ -413,7 +414,7 @@ needed and confirm scope is correct before running.
 | `docker compose exec maestro alembic downgrade` | Explicitly requested DB rollback | Routine use — destructive, should always be questioned |
 | `docker compose exec postgres psql` with mutations | Explicitly requested data fix | Any ad-hoc data modification without explicit user request |
 | `sed -i` (in-place file edit via shell) | Never — use the StrReplace tool instead | Always |
-| `python3 <script.py>` on the host | Never — use `docker compose exec` | Always |
+| `python3 <script.py>` on the host | Allowed for `scripts/gen_prompts/` and `agentception/` scripts | Any other business logic — use `docker compose exec` instead |
 | `python3 -c "..."` with file I/O or non-stdlib | Use `docker compose exec` instead | When the one-liner writes files, imports non-stdlib, or makes network calls |
 
 ---
@@ -517,9 +518,11 @@ gh pr merge <N>   ← without having first output "Grade: X" and "Approved for m
 1. **Never pipe `mypy` or `pytest` output through `grep`, `head`, or `tail`.**
    The exit code is the authoritative signal. Filtering hides failures.
 
-2. **Never run Python scripts on the host.** `python3 -c "..."` one-liners are allowed for
-   read-only stdlib-only data processing (e.g. JSON parsing of `gh` output). Any script file,
-   file writes, non-stdlib imports, or network calls must use `docker compose exec <service> ...`.
+2. **Limit host-side Python to pipeline tooling.** `python3` on the host is allowed for
+   `scripts/gen_prompts/` scripts (e.g. `resolve_arch.py --fingerprint`) and `agentception/`
+   scripts. All other Python — business logic, tests, migrations — must use
+   `docker compose exec <service> ...`. `python3 -c "..."` one-liners are allowed for
+   read-only stdlib-only data processing (JSON parsing of `gh` output, etc.).
 
 3. **Never `sed -i` to edit files.** Use the StrReplace tool — it's safer, tracked, and shows a diff.
 

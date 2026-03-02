@@ -140,6 +140,8 @@ Lets you answer: *"Which specific agent opened this PR / merged this PR?"*
 |----------|----------------|
 | Every git commit | `Maestro-Batch:` and `Maestro-Session:` trailers in the commit message |
 | PR description | `<!-- maestro-fingerprint … -->` metadata block + human-readable footer line |
+| Issue comment (claim) | `🔖 Claimed by agent` comment with fingerprint block — posted when agent claims the issue |
+| Issue comment (PR opened) | `🤖 Implemented by agent` comment with fingerprint block + PR number — posted regardless of whether the issue was claimed from the pool or opened manually |
 | Post-merge PR comment (reviews) | `🤖 Maestro Review Fingerprint` table with grade, timestamp, batch, session |
 
 ### How to trace back
