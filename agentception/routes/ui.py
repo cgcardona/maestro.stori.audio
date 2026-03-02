@@ -23,7 +23,7 @@ from agentception.intelligence.dag import DependencyDAG, build_dag
 from agentception.intelligence.guards import PRViolation, detect_out_of_order_prs
 from agentception.intelligence.scaling import ScalingRecommendation, compute_recommendation
 from agentception.models import AgentNode, PipelineConfig, PipelineState, RoleMeta, VALID_ROLES
-from agentception.poller import get_state
+from agentception.poller import get_state, tick as _poller_tick
 from agentception.readers.pipeline_config import read_pipeline_config
 from agentception.readers.transcripts import read_transcript_messages
 from agentception.routes.roles import list_roles
@@ -127,6 +127,11 @@ async def overview(request: Request) -> HTMLResponse:
     - ``poller_paused`` — sentinel file presence check (no network call).
     - Phase labels and pin — from ``pipeline-config.json`` + memory store.
     """
+    # Fire an immediate tick in the background so the SSE stream delivers
+    # fresh data within seconds of the page loading — eliminates up-to-5s
+    # staleness on hard refresh without adding latency to the initial render.
+    asyncio.get_event_loop().create_task(_poller_tick())
+
     state = get_state() or PipelineState.empty()
     all_phase_labels: list[str] = []
     label_is_pinned: bool = False
