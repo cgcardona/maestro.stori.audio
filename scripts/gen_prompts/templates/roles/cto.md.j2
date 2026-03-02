@@ -127,10 +127,11 @@ LOOP:
 
   4. Dispatch all allocated VPs simultaneously in ONE message
      (one Task call per VP, all in the same response):
-       - Each Engineering VP → reads engineering-manager.md, seeds 4 leaf engineers
-         (pass ACTIVE_LABEL so the VP only queries that label)
-       - Each QA VP          → reads qa-manager.md, seeds 4 leaf reviewers
+       - Each Engineering VP → receives the ## Embedded Eng VP Role content, seeds 4 leaf engineers
+         (prefix includes ACTIVE_LABEL so the VP only queries that label)
+       - Each QA VP          → receives the ## Embedded QA VP Role content, seeds 4 leaf reviewers
        - VPs do NOT loop — they seed once and wait for their pool to drain
+       - See "VP dispatch context" below for exact Task prompt construction
 
   5. Wait for all dispatched VPs to report back.
 
