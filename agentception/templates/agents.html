@@ -1,114 +1,288 @@
 {% extends "base.html" %}
-
 {% block title %}AgentCeption — Agents{% endblock %}
 
 {% block content %}
-<div class="agents-page">
 
-  {# ── Page header ──────────────────────────────────────────────────────────── #}
-  <div class="page-header">
-    <h1 class="page-title">Agents
-      <span class="badge badge-count">{{ agents | length }}</span>
-    </h1>
-    <p class="text-muted">
-      All active agents in the current pipeline wave.
-      Click any card to view transcript and task details.
-    </p>
+{# ═══════════════════════════════════════════════════════════
+   Agents Command Centre
+   Data flow:
+   · state.agents  — live in-memory (SSE-updated on overview; static snapshot here)
+   · batches       — run history grouped by batch_id (Postgres)
+   · stats         — KPI aggregates (Python-computed)
+   Alpine component: agentsPage() — filter, search, sort, view toggle
+   ═══════════════════════════════════════════════════════════ #}
+
+<div
+  class="agents-page"
+  x-data="agentsPage()"
+  x-init="init()"
+>
+
+  {# ── Page header ─────────────────────────────────────────────────────────── #}
+  <div class="agents-page-header">
+    <div>
+      <h1 class="page-title">
+        Agents
+        <span class="badge badge-count">{{ run_count }}</span>
+      </h1>
+      <p class="text-muted agents-page-subtitle">
+        Live pipeline agents and full run history — grouped by wave, filterable, searchable.
+      </p>
+    </div>
+    <a href="/control/spawn" class="btn btn-primary">+ Spawn Agent</a>
   </div>
 
-  {% if not agents %}
-  {# ── Empty state ─────────────────────────────────────────────────────────── #}
-  <div class="card empty-state">
-    <div class="empty-icon">🤖</div>
-    <p class="empty-title">No agents running</p>
-    <p class="text-muted mt-1">
-      The pipeline is idle. Agents appear here when worktrees with
-      <code>.agent-task</code> files are active.
-    </p>
-    <a href="/control/spawn" class="btn btn-primary mt-2">Spawn an agent</a>
+  {# ── KPI stats bar ───────────────────────────────────────────────────────── #}
+  <div class="agents-stats-bar">
+    <div class="agents-stat">
+      <div class="agents-stat__value">{{ stats.total }}</div>
+      <div class="agents-stat__label">Total Runs</div>
+    </div>
+    <div class="agents-stat">
+      <div class="agents-stat__value agents-stat__value--live">{{ stats.active }}</div>
+      <div class="agents-stat__label">Live Now</div>
+    </div>
+    <div class="agents-stat">
+      <div class="agents-stat__value agents-stat__value--done">{{ stats.done }}</div>
+      <div class="agents-stat__label">Completed</div>
+    </div>
+    <div class="agents-stat">
+      <div class="agents-stat__value">{{ stats.success_rate }}%</div>
+      <div class="agents-stat__label">Success Rate</div>
+    </div>
+    <div class="agents-stat">
+      <div class="agents-stat__value">{{ stats.avg_duration }}</div>
+      <div class="agents-stat__label">Avg Duration</div>
+    </div>
+    <div class="agents-stat">
+      <div class="agents-stat__value">{{ batches | length }}</div>
+      <div class="agents-stat__label">Waves</div>
+    </div>
   </div>
 
-  {% else %}
+  {# ── Filter / search / view toolbar ─────────────────────────────────────── #}
+  <div class="agents-toolbar">
+    {# Status filter chips — All + each unique status from history #}
+    <div class="agents-filter-chips" role="group" aria-label="Filter by status">
+      <button
+        class="filter-chip"
+        :class="{ 'filter-chip--active': activeStatus === '' }"
+        @click="activeStatus = ''"
+      >All <span class="filter-chip__count">{{ run_count }}</span></button>
+      {% for s in all_statuses %}
+      <button
+        class="filter-chip filter-chip--{{ s }}"
+        :class="{ 'filter-chip--active': activeStatus === '{{ s }}' }"
+        @click="activeStatus = activeStatus === '{{ s }}' ? '' : '{{ s }}'"
+      >{{ s | title }}</button>
+      {% endfor %}
+    </div>
 
-  {# ── Status sections ──────────────────────────────────────────────────────── #}
-  {% set statuses = [
-    ("implementing", "🔵 Implementing"),
-    ("reviewing",    "🟡 Reviewing"),
-    ("done",         "✅ Done"),
-    ("stale",        "🔴 Stale"),
-    ("unknown",      "⬜ Unknown"),
-  ] %}
+    <div class="agents-toolbar-right">
+      {# Role filter #}
+      {% if all_roles | length > 1 %}
+      <select class="agents-select" x-model="activeRole" aria-label="Filter by role">
+        <option value="">All roles</option>
+        {% for r in all_roles %}
+        <option value="{{ r }}">{{ r | replace('-', ' ') | title }}</option>
+        {% endfor %}
+      </select>
+      {% endif %}
 
-  {% for status_val, status_label in statuses %}
-    {% set section_agents = agents | selectattr("status.value", "equalto", status_val) | list %}
-    {% if section_agents %}
-    <section class="agents-section">
-      <h2 class="agents-section-title">{{ status_label }}
-        <span class="badge badge-count">{{ section_agents | length }}</span>
-      </h2>
-      <div class="agents-grid">
-        {% for node in section_agents %}
-        <a href="/agents/{{ node.id }}" class="agent-card agent-card--{{ node.status.value }}">
-          <div class="agent-card-header">
-            <span class="status-badge status-badge--{{ node.status.value }}">
-              {{ node.status.value }}
-            </span>
-            <code class="agent-card-id">{{ node.id[:8] }}</code>
+      {# Search #}
+      <div class="agents-search-wrap">
+        <span class="agents-search-icon">🔍</span>
+        <input
+          type="search"
+          class="agents-search"
+          placeholder="Search issue, branch, batch…"
+          x-model.debounce.200ms="searchQ"
+          aria-label="Search agents"
+        />
+      </div>
+
+      {# Sort #}
+      <select class="agents-select" x-model="sortBy" aria-label="Sort order">
+        <option value="newest">Newest first</option>
+        <option value="oldest">Oldest first</option>
+        <option value="issue">By issue #</option>
+        <option value="duration">By duration</option>
+      </select>
+
+      {# View toggle #}
+      <div class="view-toggle" role="group" aria-label="View mode">
+        <button
+          class="view-toggle__btn"
+          :class="{ 'view-toggle__btn--active': view === 'cards' }"
+          @click="view = 'cards'"
+          title="Card view"
+        >⊞</button>
+        <button
+          class="view-toggle__btn"
+          :class="{ 'view-toggle__btn--active': view === 'table' }"
+          @click="view = 'table'"
+          title="Table view"
+        >☰</button>
+      </div>
+    </div>
+  </div>
+
+  {# ── Live agents section ─────────────────────────────────────────────────── #}
+  <section class="agents-section">
+    <h2 class="agents-section-title">
+      <span class="section-title-icon">⚡</span>
+      Live
+      <span class="badge badge-count {% if agents %}badge-count--live{% endif %}">{{ agents | length }}</span>
+    </h2>
+
+    {% if not agents %}
+    <div class="agents-empty card">
+      <div class="agents-empty__icon">🤖</div>
+      <div class="agents-empty__title">No agents running</div>
+      <p class="agents-empty__body">
+        The pipeline is idle. Agents appear here when worktrees with
+        <code>.agent-task</code> files are active.
+      </p>
+      <a href="/control/spawn" class="btn btn-primary mt-1">Spawn an agent</a>
+    </div>
+    {% else %}
+    <div class="agents-live-grid">
+      {% for item in agents %}
+      {% set node = item.node %}
+      {% set persona = item.persona %}
+      <a
+        href="/agents/{{ node.id }}"
+        class="agent-live-card agent-live-card--{{ node.status.value }}"
+        title="{{ node.role }}"
+      >
+        {# Persona avatar #}
+        <div class="agent-live-avatar agent-live-avatar--{{ persona.archetype | replace('the_','') if persona.archetype else 'default' }}">
+          <span>{{ persona.archetype_emoji }}</span>
+        </div>
+
+        <div class="agent-live-body">
+          {# Status + role #}
+          <div class="agent-live-top">
+            <span class="status-badge status-badge--{{ node.status.value }}">{{ node.status.value }}</span>
+            {% if node.status.value in ['implementing', 'reviewing'] %}
+            <span class="agent-pulse agent-pulse--{{ node.status.value }}"></span>
+            {% endif %}
           </div>
+          <div class="agent-live-role">{{ node.role | replace('-', ' ') | title }}</div>
+          <div class="agent-live-persona">{{ persona.display_name }}</div>
 
-          <div class="agent-card-role">{{ node.role }}</div>
-
-          <div class="agent-card-meta">
+          {# Chips #}
+          <div class="agent-live-chips">
             {% if node.issue_number %}
-            <span class="meta-chip meta-chip--sm">
-              <span class="meta-label">Issue</span>
-              <span class="meta-value">#{{ node.issue_number }}</span>
-            </span>
+            <span class="agent-meta-chip agent-meta-chip--issue">#{{ node.issue_number }}</span>
             {% endif %}
             {% if node.pr_number %}
-            <span class="meta-chip meta-chip--sm">
-              <span class="meta-label">PR</span>
-              <span class="meta-value">#{{ node.pr_number }}</span>
-            </span>
+            <span class="agent-meta-chip agent-meta-chip--pr">PR #{{ node.pr_number }}</span>
             {% endif %}
             {% if node.branch %}
-            <span class="meta-chip meta-chip--sm">
-              <span class="meta-label">Branch</span>
-              <code class="meta-value">{{ node.branch | truncate(28, True, '…') }}</code>
-            </span>
-            {% endif %}
-            {% if node.batch_id %}
-            <span class="meta-chip meta-chip--sm">
-              <span class="meta-label">Batch</span>
-              <code class="meta-value">{{ node.batch_id | truncate(20, True, '…') }}</code>
-            </span>
+            <code class="agent-live-branch">{{ node.branch | truncate(26, True, '…') }}</code>
             {% endif %}
           </div>
 
-          {% if node.children %}
-          <div class="agent-card-children">
-            <span class="text-muted" style="font-size:0.75rem">
-              {{ node.children | length }} sub-agent{{ 's' if node.children | length != 1 }}
-            </span>
+          {# Message count / activity #}
+          <div class="agent-live-footer">
+            {% if node.message_count %}
+            <span class="text-muted" style="font-size:0.7rem">{{ node.message_count }} msgs</span>
+            {% endif %}
+            {% if node.children %}
+            <span class="text-muted" style="font-size:0.7rem">{{ node.children | length }} child{{ 'ren' if node.children | length != 1 }}</span>
+            {% endif %}
+            {% if persona.raw %}
+            <a
+              href="/cognitive-arch/{{ persona.raw | urlencode }}"
+              class="agent-arch-link"
+              @click.prevent.stop="window.location='/cognitive-arch/{{ persona.raw }}'"
+              title="View cognitive architecture"
+            >{{ persona.archetype_emoji }}</a>
+            {% endif %}
           </div>
-          {% endif %}
-        </a>
-        {% endfor %}
-      </div>
-    </section>
+        </div>
+      </a>
+      {% endfor %}
+    </div>
     {% endif %}
-  {% endfor %}
+  </section>
 
-  {% endif %}
-
-  {# ── Run History (Postgres) ─────────────────────────────────────────────── #}
-  {% if run_history %}
-  <section class="agents-run-history">
+  {# ── Run History section ──────────────────────────────────────────────────── #}
+  <section class="agents-section" x-show="filteredBatches().length > 0">
     <h2 class="agents-section-title">
+      <span class="section-title-icon">📋</span>
       Run History
-      <span class="badge badge-count">{{ run_history | length }}</span>
+      <span class="badge badge-count" x-text="filteredTotal()"></span>
+      <span class="agents-section-subtitle" x-show="searchQ || activeStatus || activeRole">
+        — filtered
+      </span>
     </h2>
-    <div class="card">
+
+    {# ── Card view ────────────────────────────────────────────────────────── #}
+    <div x-show="view === 'cards'" class="agents-batches">
+      <template x-for="batch in filteredBatches()" :key="batch.batch_id">
+        <div class="batch-group" :data-batch="batch.batch_id">
+
+          {# Batch header — click to collapse #}
+          <div class="batch-header" @click="toggleBatch(batch.batch_id)">
+            <span class="batch-chevron" :class="{ 'batch-chevron--open': openBatches[batch.batch_id] !== false }">›</span>
+            <span class="batch-icon">🌊</span>
+            <strong class="batch-id" x-text="batch.batch_id"></strong>
+            <span class="batch-meta text-muted" x-text="batch.spawned_fmt"></span>
+            <span class="batch-count badge badge-count" x-text="batch.runs.length + ' agent' + (batch.runs.length !== 1 ? 's' : '')"></span>
+            <div class="batch-status-pills">
+              <template x-for="s in batchStatusSummary(batch.runs)" :key="s.status">
+                <span
+                  class="status-badge"
+                  :class="'status-badge--' + s.status"
+                  x-text="s.count + ' ' + s.status"
+                ></span>
+              </template>
+            </div>
+          </div>
+
+          {# Batch body — agent cards grid #}
+          <div
+            class="batch-body"
+            x-show="openBatches[batch.batch_id] !== false"
+            x-transition
+          >
+            <div class="agents-history-grid">
+              <template x-for="run in batch.runs" :key="run.id">
+                <a
+                  :href="'/agents/' + run.id"
+                  class="history-card"
+                  :class="'history-card--' + run.status"
+                >
+                  <div class="history-card__top">
+                    <span class="status-badge" :class="'status-badge--' + run.status" x-text="run.status"></span>
+                    <span class="history-card__duration text-muted" x-text="run.duration_str"></span>
+                  </div>
+
+                  <div class="history-card__role" x-text="formatRole(run.role)"></div>
+
+                  <div class="history-card__chips">
+                    <template x-if="run.issue_number">
+                      <span class="agent-meta-chip agent-meta-chip--issue">#<span x-text="run.issue_number"></span></span>
+                    </template>
+                    <template x-if="run.pr_number">
+                      <span class="agent-meta-chip agent-meta-chip--pr">PR #<span x-text="run.pr_number"></span></span>
+                    </template>
+                  </div>
+
+                  <code class="history-card__branch text-muted" x-show="run.branch" x-text="run.branch"></code>
+                  <div class="history-card__date text-muted" x-text="run.spawned_fmt"></div>
+                </a>
+              </template>
+            </div>
+          </div>
+        </div>
+      </template>
+    </div>
+
+    {# ── Table view ───────────────────────────────────────────────────────── #}
+    <div x-show="view === 'table'" class="card">
       <table class="run-history-table">
         <thead>
           <tr>
@@ -117,101 +291,521 @@
             <th>Issue</th>
             <th>PR</th>
             <th>Branch</th>
+            <th>Wave</th>
             <th>Spawned</th>
-            <th>Completed</th>
+            <th>Duration</th>
           </tr>
         </thead>
         <tbody>
-          {% for run in run_history %}
-          <tr>
-            <td>
-              <span class="run-status-badge run-status-badge--{{ run.status }}">{{ run.status }}</span>
-            </td>
-            <td>
-              {% if run.id %}
-              <a href="/agents/{{ run.id }}" class="text-accent">{{ run.role or '—' }}</a>
-              {% else %}
-              {{ run.role or '—' }}
-              {% endif %}
-            </td>
-            <td>
-              {% if run.issue_number %}
-              <a href="{{ gh_base_url }}/issues/{{ run.issue_number }}" target="_blank" rel="noopener" class="text-accent">#{{ run.issue_number }}</a>
-              {% else %}—{% endif %}
-            </td>
-            <td>
-              {% if run.pr_number %}
-              <a href="{{ gh_base_url }}/pull/{{ run.pr_number }}" target="_blank" rel="noopener" class="text-accent">{{ run.pr_number }}</a>
-              {% else %}—{% endif %}
-            </td>
-            <td>
-              <code class="text-muted" style="font-size: 0.7rem;">{{ run.branch or '—' }}</code>
-            </td>
-            <td class="text-muted">{{ (run.spawned_at or '')[:16] | replace('T', ' ') }}</td>
-            <td class="text-muted">
-              {% if run.completed_at %}{{ run.completed_at[:16] | replace('T', ' ') }}{% else %}—{% endif %}
-            </td>
-          </tr>
-          {% endfor %}
+          <template x-for="batch in filteredBatches()" :key="batch.batch_id">
+            <template x-for="run in batch.runs" :key="run.id">
+              <tr class="run-row" :class="'run-row--' + run.status">
+                <td>
+                  <span class="run-status-badge" :class="'status-badge--' + run.status" x-text="run.status"></span>
+                </td>
+                <td>
+                  <a :href="'/agents/' + run.id" class="text-accent" x-text="formatRole(run.role)"></a>
+                </td>
+                <td>
+                  <a
+                    x-show="run.issue_number"
+                    :href="GH_BASE_URL + '/issues/' + run.issue_number"
+                    target="_blank" rel="noopener"
+                    class="text-accent"
+                  >#<span x-text="run.issue_number"></span></a>
+                  <span x-show="!run.issue_number" class="text-muted">—</span>
+                </td>
+                <td>
+                  <a
+                    x-show="run.pr_number"
+                    :href="GH_BASE_URL + '/pull/' + run.pr_number"
+                    target="_blank" rel="noopener"
+                    class="text-accent"
+                  >#<span x-text="run.pr_number"></span></a>
+                  <span x-show="!run.pr_number" class="text-muted">—</span>
+                </td>
+                <td><code class="text-muted run-branch" x-text="run.branch || '—'"></code></td>
+                <td><code class="text-muted" style="font-size:0.68rem" x-text="run.batch_id || '—'"></code></td>
+                <td class="text-muted run-date" x-text="run.spawned_fmt"></td>
+                <td class="text-muted run-duration" x-text="run.duration_str"></td>
+              </tr>
+            </template>
+          </template>
         </tbody>
       </table>
     </div>
   </section>
+
+  {# ── History empty state (when filter returns nothing) ──────────────────── #}
+  <div
+    class="agents-empty card"
+    x-show="filteredBatches().length === 0 && {{ 'true' if batches else 'false' }}"
+  >
+    <div class="agents-empty__icon">🔍</div>
+    <div class="agents-empty__title">No matches</div>
+    <p class="agents-empty__body">Try adjusting the status filter or search query.</p>
+    <button class="btn btn-secondary mt-1" @click="clearFilters()">Clear filters</button>
+  </div>
+
+  {# ── No history at all ──────────────────────────────────────────────────── #}
+  {% if not batches %}
+  <div class="agents-empty card">
+    <div class="agents-empty__icon">📋</div>
+    <div class="agents-empty__title">No run history yet</div>
+    <p class="agents-empty__body">Agent runs appear here once waves are launched.</p>
+  </div>
   {% endif %}
 
-</div>
+</div>{# .agents-page #}
+
+{# ── Inline data + Alpine component ─────────────────────────────────────── #}
+<script>
+const GH_BASE_URL = {{ gh_base_url | tojson }};
+
+// Serialise batches from server for Alpine to consume.
+const AGENTS_BATCHES = {{ batches | tojson }};
+
+function agentsPage() {
+  return {
+    // Filter / sort / view state
+    activeStatus: '',
+    activeRole:   '',
+    searchQ:      '',
+    sortBy:       'newest',
+    view:         'cards',
+    openBatches:  {},   // batch_id → bool; undefined = open by default
+
+    init() {
+      // Open all batches by default.
+      AGENTS_BATCHES.forEach(b => { this.openBatches[b.batch_id] = true; });
+    },
+
+    clearFilters() {
+      this.activeStatus = '';
+      this.activeRole   = '';
+      this.searchQ      = '';
+    },
+
+    toggleBatch(id) {
+      this.openBatches[id] = !(this.openBatches[id] !== false);
+    },
+
+    /** Format a kebab-case role as Title Case words. */
+    formatRole(role) {
+      return (role || '').split('-').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+    },
+
+    /** Match a single run against current filters. */
+    matchRun(run) {
+      if (this.activeStatus && run.status !== this.activeStatus) return false;
+      if (this.activeRole   && run.role   !== this.activeRole)   return false;
+      if (this.searchQ) {
+        const q = this.searchQ.toLowerCase();
+        const hay = [
+          run.id, run.role, run.branch, run.batch_id,
+          run.issue_number ? '#' + run.issue_number : '',
+          run.pr_number    ? '#' + run.pr_number    : '',
+        ].join(' ').toLowerCase();
+        if (!hay.includes(q)) return false;
+      }
+      return true;
+    },
+
+    /** Return filtered + sorted batches (only batches with ≥1 matching run). */
+    filteredBatches() {
+      let result = AGENTS_BATCHES.map(batch => {
+        let runs = batch.runs.filter(r => this.matchRun(r));
+        if (this.sortBy === 'oldest')   runs = [...runs].reverse();
+        if (this.sortBy === 'issue')    runs = [...runs].sort((a,b) => (a.issue_number||0) - (b.issue_number||0));
+        if (this.sortBy === 'duration') runs = [...runs].sort((a,b) => (b.duration_s||0)  - (a.duration_s||0));
+        return { ...batch, runs };
+      }).filter(b => b.runs.length > 0);
+
+      if (this.sortBy === 'oldest') result = [...result].reverse();
+      return result;
+    },
+
+    /** Total matching runs across all filtered batches. */
+    filteredTotal() {
+      return this.filteredBatches().reduce((n, b) => n + b.runs.length, 0);
+    },
+
+    /** Produce a status summary for a batch's runs [{status, count}, …]. */
+    batchStatusSummary(runs) {
+      const counts = {};
+      runs.forEach(r => { counts[r.status] = (counts[r.status] || 0) + 1; });
+      return Object.entries(counts).map(([status, count]) => ({ status, count }));
+    },
+  };
+}
+</script>
 
 <style>
+/* ── Agents page layout ────────────────────────────────────── */
 .agents-page { display: flex; flex-direction: column; gap: 1.5rem; }
 
+.agents-page-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.agents-page-subtitle { margin-top: 0.25rem; font-size: 0.82rem; }
+
+/* ── KPI stats bar ─────────────────────────────────────────── */
+.agents-stats-bar {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 0.5rem;
+}
+@media (max-width: 700px) { .agents-stats-bar { grid-template-columns: repeat(3, 1fr); } }
+
+.agents-stat {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius);
+  padding: 0.75rem 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  text-align: center;
+}
+
+.agents-stat__value {
+  font-size: 1.5rem;
+  font-weight: 800;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+.agents-stat__value--live { color: var(--accent-bright); }
+.agents-stat__value--done { color: var(--success); }
+
+.agents-stat__label {
+  font-size: 0.68rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+}
+
+/* ── Toolbar ───────────────────────────────────────────────── */
+.agents-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius);
+  padding: 0.6rem 0.875rem;
+}
+
+.agents-filter-chips {
+  display: flex;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+  flex: 1;
+}
+
+.filter-chip {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-default);
+  border-radius: 20px;
+  padding: 0.2rem 0.65rem;
+  font-size: 0.72rem;
+  font-weight: 500;
+  color: var(--text-secondary);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  transition: background 0.12s, border-color 0.12s, color 0.12s;
+}
+.filter-chip:hover { border-color: var(--accent); color: var(--text-primary); }
+.filter-chip--active {
+  background: rgba(124,106,247,.18);
+  border-color: var(--accent);
+  color: var(--accent-bright);
+}
+.filter-chip--implementing { --chip-c: #3b82f6; }
+.filter-chip--reviewing    { --chip-c: var(--warning); }
+.filter-chip--done         { --chip-c: var(--success); }
+.filter-chip--stale        { --chip-c: var(--danger); }
+.filter-chip--unknown      { --chip-c: var(--text-muted); }
+.filter-chip.filter-chip--active.filter-chip--implementing { border-color: #3b82f6; color: #3b82f6; background: rgba(59,130,246,.12); }
+.filter-chip.filter-chip--active.filter-chip--reviewing    { border-color: var(--warning); color: var(--warning); background: rgba(234,179,8,.1); }
+.filter-chip.filter-chip--active.filter-chip--done         { border-color: var(--success); color: var(--success); background: rgba(34,197,94,.1); }
+.filter-chip.filter-chip--active.filter-chip--stale        { border-color: var(--danger);  color: var(--danger);  background: rgba(239,68,68,.1); }
+
+.filter-chip__count {
+  background: var(--bg-overlay);
+  border-radius: 8px;
+  padding: 0.05rem 0.35rem;
+  font-size: 0.65rem;
+}
+
+.agents-toolbar-right {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-shrink: 0;
+}
+
+.agents-select {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-default);
+  border-radius: 5px;
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+  padding: 0.25rem 0.5rem;
+  cursor: pointer;
+}
+.agents-select:focus { border-color: var(--accent); outline: none; }
+
+.agents-search-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.agents-search-icon {
+  position: absolute;
+  left: 0.5rem;
+  font-size: 0.75rem;
+  pointer-events: none;
+}
+
+.agents-search {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-default);
+  border-radius: 5px;
+  color: var(--text-primary);
+  font-size: 0.75rem;
+  padding: 0.25rem 0.5rem 0.25rem 1.75rem;
+  width: 180px;
+  transition: border-color 0.12s, width 0.2s;
+}
+.agents-search:focus { border-color: var(--accent); outline: none; width: 220px; }
+
+.view-toggle {
+  display: flex;
+  border: 1px solid var(--border-default);
+  border-radius: 5px;
+  overflow: hidden;
+}
+
+.view-toggle__btn {
+  background: var(--bg-elevated);
+  border: none;
+  padding: 0.25rem 0.55rem;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+.view-toggle__btn:hover { background: var(--bg-overlay); color: var(--text-primary); }
+.view-toggle__btn--active { background: rgba(124,106,247,.2); color: var(--accent-bright); }
+
+/* ── Section headers ───────────────────────────────────────── */
 .agents-section { display: flex; flex-direction: column; gap: 0.75rem; }
 .agents-section-title {
-  font-size: 0.875rem; font-weight: 600;
-  display: flex; align-items: center; gap: 0.5rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
   border-bottom: 1px solid var(--border-subtle);
   padding-bottom: 0.4rem;
   color: var(--text-secondary);
 }
+.section-title-icon { font-size: 1rem; }
+.agents-section-subtitle { color: var(--text-muted); font-weight: 400; font-size: 0.75rem; }
+.badge-count--live { background: rgba(22,153,255,.2); color: var(--accent-bright); }
 
-.agents-grid {
+/* ── Empty states ──────────────────────────────────────────── */
+.agents-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 2.5rem 2rem;
+  text-align: center;
+}
+.agents-empty__icon { font-size: 2.5rem; }
+.agents-empty__title { font-size: 1rem; font-weight: 700; color: var(--text-primary); }
+.agents-empty__body  { font-size: 0.82rem; color: var(--text-muted); max-width: 36ch; }
+
+/* ── Live agents grid ──────────────────────────────────────── */
+.agents-live-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
   gap: 0.75rem;
 }
 
-.agent-card {
-  display: flex; flex-direction: column; gap: 0.5rem;
+.agent-live-card {
+  display: flex;
+  gap: 0.75rem;
   background: var(--bg-surface);
   border: 1px solid var(--border-default);
   border-left: 3px solid var(--border-strong);
   border-radius: var(--radius);
-  padding: 0.875rem 1rem;
+  padding: 0.875rem;
   text-decoration: none;
   color: inherit;
   transition: border-color 0.15s, box-shadow 0.15s, transform 0.12s;
 }
-.agent-card:hover {
-  border-color: var(--border-strong);
+.agent-live-card:hover {
+  border-color: var(--accent);
   box-shadow: var(--shadow-md);
   transform: translateY(-1px);
   text-decoration: none;
   color: inherit;
 }
-.agent-card--implementing { border-left-color: #3b82f6; }
-.agent-card--reviewing    { border-left-color: var(--warning); }
-.agent-card--done         { border-left-color: var(--success); }
-.agent-card--stale        { border-left-color: var(--danger); }
-.agent-card--unknown      { border-left-color: var(--border-strong); }
+.agent-live-card--implementing { border-left-color: #3b82f6; }
+.agent-live-card--reviewing    { border-left-color: var(--warning); }
+.agent-live-card--done         { border-left-color: var(--success); }
+.agent-live-card--stale        { border-left-color: var(--danger); }
+.agent-live-card--unknown      { border-left-color: var(--border-strong); }
 
-.agent-card-header {
-  display: flex; align-items: center; justify-content: space-between;
+.agent-live-avatar {
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.2rem;
+  flex-shrink: 0;
+  background: var(--bg-elevated);
+  border: 1.5px solid var(--border-default);
 }
-.agent-card-id { font-size: 0.6875rem; font-family: var(--font-mono); color: var(--text-muted); }
-.agent-card-role { font-size: 0.9rem; font-weight: 600; color: var(--text-primary); }
-.agent-card-meta { display: flex; flex-wrap: wrap; gap: 0.35rem; margin-top: 0.125rem; }
-.meta-chip--sm { font-size: 0.6875rem; padding: 0.1rem 0.4rem; }
-.agent-card-children { margin-top: 0.25rem; }
+.agent-live-avatar--visionary  { border-color: var(--arch-visionary);  background: rgba(155,89,182,.18); }
+.agent-live-avatar--architect  { border-color: var(--arch-architect);  background: rgba(52,152,219,.18); }
+.agent-live-avatar--hacker     { border-color: var(--arch-hacker);     background: rgba(243,156,18,.18); }
+.agent-live-avatar--guardian   { border-color: var(--arch-guardian);   background: rgba(39,174,96,.18); }
+.agent-live-avatar--scholar    { border-color: var(--arch-scholar);    background: rgba(26,188,156,.18); }
+.agent-live-avatar--mentor     { border-color: var(--arch-mentor);     background: rgba(230,126,34,.18); }
+.agent-live-avatar--operator   { border-color: var(--arch-operator);   background: rgba(149,165,166,.15); }
+.agent-live-avatar--pragmatist { border-color: var(--arch-pragmatist); background: rgba(231,76,60,.18); }
+.agent-live-avatar--default    { border-color: var(--border-default);  background: var(--bg-elevated); }
 
-.agents-run-history { display: flex; flex-direction: column; gap: 0.75rem; }
+.agent-live-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 0.2rem; }
+
+.agent-live-top { display: flex; align-items: center; gap: 0.4rem; }
+.agent-live-role   { font-size: 0.85rem; font-weight: 700; color: var(--text-primary); }
+.agent-live-persona { font-size: 0.72rem; color: var(--text-muted); }
+
+.agent-live-chips { display: flex; flex-wrap: wrap; gap: 0.25rem; margin-top: 0.2rem; }
+.agent-live-branch {
+  font-size: 0.65rem;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  background: var(--bg-elevated);
+  border-radius: 3px;
+  padding: 0.05rem 0.3rem;
+}
+
+.agent-live-footer {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.3rem;
+}
+
+.agent-arch-link {
+  margin-left: auto;
+  text-decoration: none;
+  opacity: 0.6;
+  transition: opacity 0.15s;
+}
+.agent-arch-link:hover { opacity: 1; }
+
+/* ── History — batch groups ────────────────────────────────── */
+.agents-batches { display: flex; flex-direction: column; gap: 0.75rem; }
+
+.batch-group {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.batch-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.6rem 0.875rem;
+  cursor: pointer;
+  background: var(--bg-surface);
+  border-bottom: 1px solid transparent;
+  transition: background 0.12s;
+  flex-wrap: wrap;
+}
+.batch-header:hover { background: var(--bg-elevated); }
+
+.batch-chevron {
+  font-size: 1.2rem;
+  color: var(--text-muted);
+  transition: transform 0.18s;
+  flex-shrink: 0;
+}
+.batch-chevron--open { transform: rotate(90deg); }
+
+.batch-icon { font-size: 0.9rem; }
+.batch-id { font-size: 0.8rem; color: var(--text-primary); font-family: var(--font-mono); }
+.batch-meta { font-size: 0.7rem; }
+.batch-count { font-size: 0.65rem; }
+.batch-status-pills { display: flex; gap: 0.25rem; margin-left: auto; flex-wrap: wrap; }
+
+.batch-body { padding: 0.75rem; border-top: 1px solid var(--border-subtle); }
+
+/* ── History cards grid ────────────────────────────────────── */
+.agents-history-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 0.5rem;
+}
+
+.history-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-subtle);
+  border-left: 3px solid var(--border-strong);
+  border-radius: 5px;
+  padding: 0.6rem 0.75rem;
+  text-decoration: none;
+  color: inherit;
+  transition: border-color 0.12s, background 0.12s;
+}
+.history-card:hover { border-color: var(--accent); background: var(--bg-overlay); text-decoration: none; color: inherit; }
+.history-card--implementing { border-left-color: #3b82f6; }
+.history-card--reviewing    { border-left-color: var(--warning); }
+.history-card--done         { border-left-color: var(--success); }
+.history-card--stale        { border-left-color: var(--danger); }
+.history-card--unknown      { border-left-color: var(--border-strong); }
+
+.history-card__top { display: flex; align-items: center; justify-content: space-between; gap: 0.3rem; }
+.history-card__duration { font-size: 0.65rem; font-variant-numeric: tabular-nums; }
+.history-card__role { font-size: 0.8rem; font-weight: 600; color: var(--text-primary); }
+.history-card__chips { display: flex; flex-wrap: wrap; gap: 0.2rem; }
+.history-card__branch { font-size: 0.62rem; font-family: var(--font-mono); color: var(--text-muted); }
+.history-card__date { font-size: 0.62rem; }
+
+/* ── History table ─────────────────────────────────────────── */
+.run-row:hover td { background: var(--bg-elevated); }
+.run-row--implementing td:first-child { border-left: 2px solid #3b82f6; }
+.run-row--reviewing    td:first-child { border-left: 2px solid var(--warning); }
+.run-row--done         td:first-child { border-left: 2px solid var(--success); }
+.run-row--stale        td:first-child { border-left: 2px solid var(--danger); }
+.run-row--unknown      td:first-child { border-left: 2px solid var(--border-strong); }
+.run-status-badge { font-size: 0.65rem; }
+.run-branch { font-size: 0.68rem; }
+.run-date   { font-size: 0.7rem; white-space: nowrap; }
+.run-duration { font-size: 0.7rem; white-space: nowrap; font-variant-numeric: tabular-nums; }
 </style>
+
 {% endblock %}
