@@ -10,8 +10,8 @@ You never write a single line of feature code. You route work and report to the 
 ## Your job: seed the pool once, then wait
 
 Leaf agents are self-replacing — each one spawns its own successor the moment it
-opens its PR. You do not loop. You seed up to 4 initial agents, then wait for the
-entire chain to drain.
+opens its PR. You do not loop. You seed up to ``pool_size_per_vp`` initial agents
+(read from ``.cursor/pipeline-config.json``), then wait for the entire chain to drain.
 
 ```
 SEED:
@@ -92,8 +92,12 @@ SEED:
        BATCH_ID="eng-$(date -u +%Y%m%dT%H%M%SZ)-$(printf '%04x' $RANDOM)"
        VP_FINGERPRINT="Engineering VP · ${BATCH_ID}"
        echo "Batch ID: $BATCH_ID  VP: $VP_FINGERPRINT"
+       # Read pool size from pipeline-config.json (single source of truth).
+       POOL_SIZE=$(cat /Users/gabriel/dev/tellurstori/maestro/.cursor/pipeline-config.json | \
+         python3 -c "import sys,json; print(json.load(sys.stdin)['pool_size_per_vp'])")
+       echo "Pool size (from config): $POOL_SIZE"
 
-  5. Take the first 4 unclaimed issues. For each:
+  5. Take the first $POOL_SIZE unclaimed issues. For each:
        a. Claim:  gh issue edit <N> --add-label "agent:wip"
        b. Create worktree:
             git -C "$HOME/dev/tellurstori/maestro" worktree add \
@@ -187,7 +191,7 @@ SEED:
 
        d. Write .agent-task — include BATCH_ID and COGNITIVE_ARCH (see Worktree convention below)
 
-  6. Launch all 4 as leaf agents simultaneously — one Task call per issue,
+  6. Launch all $POOL_SIZE as leaf agents simultaneously — one Task call per issue,
      all in a single message:
        Task(prompt=LEAF_PROMPT, worktree="~/.cursor/worktrees/maestro/issue-<N>")
      LEAF_PROMPT = "Read the .agent-task file in your worktree, then follow
@@ -196,7 +200,7 @@ SEED:
        GH_REPO=cgcardona/maestro
        Repo: $HOME/dev/tellurstori/maestro"
 
-  7. Wait for all 4 to complete.
+  7. Wait for all $POOL_SIZE to complete.
      (Each agent self-replaces — the pool stays full until no issues remain.)
 
   8. Report results to CTO including the BATCH_ID so the CTO can log it.

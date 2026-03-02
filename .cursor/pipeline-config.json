@@ -1,0 +1,14 @@
+{
+  "max_eng_vps": 1,
+  "max_qa_vps": 1,
+  "pool_size_per_vp": 4,
+  "active_labels_order": [
+    "agentception/0-scaffold",
+    "agentception/1-controls",
+    "agentception/2-telemetry",
+    "agentception/3-roles",
+    "agentception/4-intelligence",
+    "agentception/5-scaling",
+    "agentception/6-generalization"
+  ]
+}

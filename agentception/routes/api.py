@@ -14,9 +14,10 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException
 
 from agentception.config import settings
-from agentception.models import AgentNode, PipelineState, SpawnRequest, SpawnResult
+from agentception.models import AgentNode, PipelineConfig, PipelineState, SpawnRequest, SpawnResult
 from agentception.poller import get_state
 from agentception.readers.github import add_wip_label, get_issue
+from agentception.readers.pipeline_config import read_pipeline_config, write_pipeline_config
 from agentception.readers.transcripts import read_transcript_messages
 from agentception.routes.ui import _find_agent
 from agentception.telemetry import WaveSummary, aggregate_waves
@@ -146,6 +147,30 @@ async def transcript_api(agent_id: str) -> list[dict[str, str]]:
     if not node.transcript_path:
         return []
     return await read_transcript_messages(Path(node.transcript_path))
+
+
+@router.get("/config", tags=["config"])
+async def get_config() -> PipelineConfig:
+    """Return the current pipeline allocation configuration.
+
+    Reads ``.cursor/pipeline-config.json`` from disk on every call so that
+    manual edits to the file are reflected immediately without a service restart.
+    Falls back to compiled-in defaults when the file does not exist.
+    """
+    return await read_pipeline_config()
+
+
+@router.put("/config", tags=["config"])
+async def update_config(body: PipelineConfig) -> PipelineConfig:
+    """Persist updated pipeline allocation settings to disk.
+
+    Validates the incoming body against :class:`~agentception.models.PipelineConfig`
+    before writing, so callers receive a 422 on schema violations rather than
+    silently corrupting the config file.
+
+    Returns the saved config so callers can confirm what was written.
+    """
+    return await write_pipeline_config(body)
 
 
 def _build_agent_task(
