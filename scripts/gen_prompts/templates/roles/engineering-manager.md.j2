@@ -210,11 +210,25 @@ SEED:
   6. Launch all 4 as leaf agents simultaneously — one Task call per issue,
      all in a single message:
        Task(prompt=LEAF_PROMPT, worktree="~/.cursor/worktrees/{{ repo_name }}/issue-<N>")
-     LEAF_PROMPT = "Read the .agent-task file in your worktree, then follow
-       the complete Kickoff Prompt in
-       $HOME/dev/tellurstori/{{ repo_name }}/.cursor/PARALLEL_ISSUE_TO_PR.md.
-       GH_REPO={{ gh_repo }}
-       Repo: $HOME/dev/tellurstori/{{ repo_name }}"
+
+     LEAF_PROMPT is self-contained — do NOT reference PARALLEL_ISSUE_TO_PR.md on disk.
+     Construct it as follows:
+
+       Part 1 — prefix (paste verbatim):
+         "Read the .agent-task file in your worktree first.
+          GH_REPO={{ gh_repo }}  Repo: $HOME/dev/tellurstori/{{ repo_name }}"
+
+       Part 2 — implementer kickoff:
+         Paste the entire ## Embedded Implementer Kickoff section below verbatim.
+
+       Part 3 — pass-along for chain spawns (mandatory — the leaf needs this to
+         chain-spawn its reviewer without reading any file):
+         Paste a header "## Pass-Along: Reviewer Kickoff" followed by the entire
+         ## Embedded Reviewer Kickoff section below verbatim.
+
+     The resulting Task prompt is fully self-contained. The leaf agent's reviewer
+     chain-spawn will use the ## Pass-Along: Reviewer Kickoff section it received,
+     which itself contains ## Pass-Along: Implementer Kickoff so the chain continues.
 
   7. Wait for all 4 to complete.
      (Each agent self-replaces — the pool stays full until no issues remain.)
@@ -265,3 +279,25 @@ If a worktree is missing: `git -C "$HOME/dev/tellurstori/{{ repo_name }}" worktr
 - Never create PRs yourself
 - Never merge anything
 - Never touch `maestro/api/routes/musehub/__init__.py`
+
+---
+
+## Embedded Implementer Kickoff
+
+This section is the complete kickoff for leaf implementation agents.
+When dispatching leaf agents via Task(), embed this as Part 2 of LEAF_PROMPT
+(see step 6 above). Do NOT tell the agent to read PARALLEL_ISSUE_TO_PR.md — pass
+this content directly.
+
+{% include 'parallel-issue-to-pr.md.j2' %}
+
+---
+
+## Embedded Reviewer Kickoff
+
+This section is the complete kickoff for QA reviewer agents.
+When dispatching leaf agents via Task(), embed this as the "## Pass-Along: Reviewer Kickoff"
+section (Part 3 of LEAF_PROMPT — see step 6 above). The leaf implementer will copy it
+verbatim into its chain-spawn Task prompt for the reviewer.
+
+{% include 'parallel-pr-review.md.j2' %}
