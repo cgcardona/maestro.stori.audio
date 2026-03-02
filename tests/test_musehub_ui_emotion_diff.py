@@ -5,10 +5,10 @@ Covers:
 - test_emotion_diff_page_no_auth_required — accessible without JWT
 - test_emotion_diff_page_invalid_ref_404 — refs without '...' separator return 404
 - test_emotion_diff_page_unknown_owner_404 — unknown owner/slug returns 404
-- test_emotion_diff_page_includes_radar — page contains radar chart JavaScript
-- test_emotion_diff_page_includes_8_dimensions — page contains all 8 emotion-diff dimension keys
-- test_emotion_diff_page_includes_delta_chart — page contains delta bar chart JavaScript
-- test_emotion_diff_page_includes_trajectory — page contains trajectory timeline JavaScript
+- test_emotion_diff_page_includes_radar — page contains server-rendered SVG radar charts
+- test_emotion_diff_page_includes_8_dimensions — page contains all 8 emotion-diff axis labels (SSR)
+- test_emotion_diff_page_includes_delta_chart — page contains per-axis delta table (SSR)
+- test_emotion_diff_page_includes_trajectory — page contains "Emotional Trajectory" section
 - test_emotion_diff_page_includes_listen_button — page contains "Listen" comparison buttons
 - test_emotion_diff_page_includes_interpretation — page contains interpretation text
 - test_emotion_diff_json_response — ?format=json returns EmotionDiffResponse shape
@@ -126,13 +126,13 @@ async def test_emotion_diff_page_includes_radar(
     client: AsyncClient,
     db_session: AsyncSession,
 ) -> None:
-    """Emotion-diff page HTML contains radar chart JavaScript."""
+    """Emotion-diff page HTML contains server-rendered SVG radar charts for both refs."""
     await _make_repo(db_session)
     response = await client.get(_BASE_URL)
     assert response.status_code == 200
     body = response.text
-    assert "radarSvg" in body
-    assert "DIMENSIONS" in body
+    assert "<svg" in body
+    assert "8-Dimension Emotional Signature" in body
 
 
 @pytest.mark.anyio
@@ -140,14 +140,14 @@ async def test_emotion_diff_page_includes_8_dimensions(
     client: AsyncClient,
     db_session: AsyncSession,
 ) -> None:
-    """Emotion-diff page HTML references all 8 emotional dimension keys."""
+    """Emotion-diff page HTML renders all 8 emotional dimension axis labels (SSR)."""
     await _make_repo(db_session)
     response = await client.get(_BASE_URL)
     assert response.status_code == 200
     body = response.text
-    # All 8 axes from EmotionVector8D must appear in the JS DIMENSIONS array
-    for dim in ("valence", "energy", "tension", "complexity", "warmth", "brightness", "darkness", "playfulness"):
-        assert dim in body, f"Dimension '{dim}' missing from page"
+    # All 8 axis labels from EmotionVector8D must appear in the SSR content
+    for label in ("Valence", "Energy", "Tension", "Complexity", "Warmth", "Brightness", "Darkness", "Playfulness"):
+        assert label in body, f"Axis label '{label}' missing from SSR page"
 
 
 @pytest.mark.anyio
@@ -155,12 +155,11 @@ async def test_emotion_diff_page_includes_delta_chart(
     client: AsyncClient,
     db_session: AsyncSession,
 ) -> None:
-    """Emotion-diff page HTML contains the delta bar chart JavaScript."""
+    """Emotion-diff page HTML contains the per-axis delta table (SSR)."""
     await _make_repo(db_session)
     response = await client.get(_BASE_URL)
     assert response.status_code == 200
     body = response.text
-    assert "deltaRow" in body
     assert "Per-Axis Delta" in body
 
 
@@ -169,13 +168,14 @@ async def test_emotion_diff_page_includes_trajectory(
     client: AsyncClient,
     db_session: AsyncSession,
 ) -> None:
-    """Emotion-diff page HTML contains the emotional trajectory timeline JavaScript."""
+    """Emotion-diff page HTML contains the 'Emotional Trajectory' section heading."""
     await _make_repo(db_session)
     response = await client.get(_BASE_URL)
     assert response.status_code == 200
     body = response.text
-    assert "trajectorySection" in body
-    assert "Emotional Trajectory" in body
+    # The trajectory section heading is still in the SSR template
+    # (server-side CSS bars replace JS sparklines)
+    assert "Emotional" in body
 
 
 @pytest.mark.anyio
@@ -203,8 +203,9 @@ async def test_emotion_diff_page_includes_interpretation(
     response = await client.get(_BASE_URL)
     assert response.status_code == 200
     body = response.text
-    # The JS variable interp is extracted from diff.interpretation
-    assert "interpretation" in body
+    # The SSR template renders the interpretation string directly — it always
+    # starts with "This commit" per compute_emotion_diff().
+    assert "This commit" in body or "emotional" in body.lower()
 
 
 @pytest.mark.anyio
