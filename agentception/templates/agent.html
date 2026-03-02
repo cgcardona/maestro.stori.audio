@@ -106,7 +106,7 @@
           <button class="btn btn-secondary" @click="showKillModal = false">Cancel</button>
           <button
             class="btn btn-danger"
-            hx-post="/api/control/kill/{{ node.worktree_path | basename }}"
+            hx-post="/api/control/kill/{{ node.id }}"
             hx-target="#result"
             hx-swap="innerHTML"
             @click="showKillModal = false"

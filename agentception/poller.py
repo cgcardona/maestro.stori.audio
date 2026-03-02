@@ -140,8 +140,8 @@ async def merge_agents(
         else:
             status = AgentStatus.UNKNOWN
 
-        # Use worktree basename (e.g. "issue-732") as the ID — the full
-        # absolute path would produce a double-slash in /agents/{id} URLs.
+        # Agent ID is the worktree basename (e.g. "issue-732"). This is the
+        # canonical identifier used in URLs, DB PKs, and API responses.
         node_id = (
             Path(tf.worktree).name if tf.worktree else None
         ) or (f"issue-{tf.issue_number}" if tf.issue_number else None) or "unknown"

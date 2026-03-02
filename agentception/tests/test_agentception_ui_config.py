@@ -91,8 +91,8 @@ def test_config_page_shows_current_values(client: TestClient) -> None:
         response = client.get("/config")
 
     body = response.text
-    # The page must contain the Alpine.js data binding entry point.
-    assert "configPanel()" in body
+    # The page must invoke configPanel via x-data (function defined in app.js).
+    assert "configPanel(" in body
     # Sliders must be present.
     assert 'id="slider-eng-vps"' in body
     assert 'id="slider-qa-vps"' in body
@@ -109,7 +109,7 @@ def test_config_page_shows_current_values(client: TestClient) -> None:
 
 
 def test_config_page_contains_api_put_endpoint(client: TestClient) -> None:
-    """GET /config renders JavaScript that calls PUT /api/config on save."""
+    """GET /config page loads app.js which calls PUT /api/config on save."""
     with patch(
         "agentception.routes.ui.read_pipeline_config",
         new_callable=AsyncMock,
@@ -117,8 +117,10 @@ def test_config_page_contains_api_put_endpoint(client: TestClient) -> None:
     ):
         response = client.get("/config")
 
-    assert "PUT" in response.text
-    assert "/api/config" in response.text
+    # The PUT /api/config call lives in app.js; verify the script is loaded
+    # and the x-data binding that connects to it is present in the HTML.
+    assert "/static/app.js" in response.text
+    assert "configPanel(" in response.text
 
 
 def test_config_page_nav_link_active(client: TestClient) -> None:

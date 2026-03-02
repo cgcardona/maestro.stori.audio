@@ -279,7 +279,7 @@ async def test_get_issue_body_returns_string() -> None:
 
     with patch(
         "agentception.readers.github.asyncio.create_subprocess_exec",
-        return_value=_make_process(json.dumps(expected_body).encode()),
+        return_value=_make_process(json.dumps({"body": expected_body}).encode()),
     ):
         result = await get_issue_body(42)
 

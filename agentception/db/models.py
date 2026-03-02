@@ -94,7 +94,7 @@ class ACAgentRun(Base):
     __tablename__ = "ac_agent_runs"
 
     id: Mapped[str] = mapped_column(String(512), primary_key=True)
-    """Worktree path (unique per run) or generated UUID for manual spawns."""
+    """Worktree basename (e.g. ``issue-732``) or generated UUID for manual spawns."""
 
     wave_id: Mapped[str | None] = mapped_column(
         String(128), ForeignKey("ac_waves.id"), nullable=True, index=True

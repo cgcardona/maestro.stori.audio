@@ -8,7 +8,6 @@ from __future__ import annotations
 import asyncio
 import datetime
 import logging
-import os
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException
@@ -33,9 +32,6 @@ logger = logging.getLogger(__name__)
 
 _HERE = Path(__file__).parent
 _TEMPLATES = Jinja2Templates(directory=str(_HERE.parent / "templates"))
-# Register path filters used by agent.html kill-endpoint modal.
-_TEMPLATES.env.filters["basename"] = os.path.basename
-_TEMPLATES.env.filters["dirname"] = os.path.dirname
 
 
 def _timestamp_to_date(ts: float) -> str:
@@ -93,33 +89,19 @@ def _issue_is_claimed(iss: dict[str, object]) -> bool:
 
 
 def _find_agent(state: PipelineState | None, agent_id: str) -> AgentNode | None:
-    """Search the agent tree for an AgentNode matching ``agent_id``.
+    """Search the live agent tree for an AgentNode by its ID.
 
-    Matches on ``node.id`` (the worktree basename, e.g. ``issue-732``) or on
-    the basename of ``node.worktree_path`` so that URLs generated before the
-    basename normalisation are still resolved correctly.
-
-    Searches root agents first, then their children (one level deep).
+    ``agent_id`` is the worktree basename (e.g. ``issue-732``), which is the
+    canonical ID assigned by the poller.  Searches root agents then children.
     Returns ``None`` when the state is empty or no match is found.
     """
     if state is None:
         return None
-
-    def _matches(node: AgentNode) -> bool:
-        if node.id == agent_id:
-            return True
-        # Also match by worktree_path basename for backwards compatibility.
-        if node.worktree_path:
-            from pathlib import Path as _Path
-            if _Path(node.worktree_path).name == agent_id:
-                return True
-        return False
-
     for agent in state.agents:
-        if _matches(agent):
+        if agent.id == agent_id:
             return agent
         for child in agent.children:
-            if _matches(child):
+            if child.id == agent_id:
                 return child
     return None
 
@@ -314,9 +296,9 @@ async def agent_detail(request: Request, agent_id: str) -> Response:
             status_code=404,
         )
 
-    # If the agent left the live poller state but exists in the DB (historical
-    # run), synthesize a lightweight AgentNode so the template can render its
-    # normal detail view without needing two code paths.
+    # Agent has left the live poller state (worktree gone) but exists in the
+    # DB.  Synthesise a lightweight AgentNode so the template renders its full
+    # detail view without a separate code path.
     if node is None and db_run is not None:
         from agentception.models import AgentStatus as _AgentStatus
         raw_status = str(db_run.get("status", "unknown")).lower()
@@ -324,9 +306,8 @@ async def agent_detail(request: Request, agent_id: str) -> Response:
             synth_status = _AgentStatus(raw_status)
         except ValueError:
             synth_status = _AgentStatus.UNKNOWN
-        raw_id = str(db_run.get("id", agent_id))
         node = AgentNode(
-            id=Path(raw_id).name if "/" in raw_id else raw_id,
+            id=str(db_run.get("id", agent_id)),
             role=str(db_run.get("role", "unknown")),
             status=synth_status,
             issue_number=db_run.get("issue_number"),  # type: ignore[arg-type]

@@ -19,11 +19,6 @@
   --bg-overlay:   #172038;
   --bg-glass:     rgba(10, 16, 32, 0.72);
 
-  /* Legacy aliases — keep templates working unchanged */
-  --bg-primary:   var(--bg-base);
-  --bg-secondary: var(--bg-surface);
-  --bg-tertiary:  var(--bg-elevated);
-
   /* Borders */
   --border-subtle:  #15223a;
   --border-default: #1f3050;
@@ -1121,7 +1116,7 @@ main {
   color: #fff;
 }
 
-/* ── Status badges (legacy .badge-* — keep for templates) ─────── */
+/* ── Badges ──────────────────────────────────────────────────────── */
 
 .badge {
   display: inline-flex;
@@ -1134,12 +1129,7 @@ main {
   letter-spacing: 0.06em;
 }
 
-.badge-implementing { background: rgba(59,130,246,0.15); color: #60a5fa; border: 1px solid rgba(59,130,246,0.25); }
-.badge-reviewing    { background: var(--warning-dim); color: var(--warning); border: 1px solid var(--warning-border); }
-.badge-done         { background: var(--success-dim); color: var(--success); border: 1px solid var(--success-border); }
-.badge-stale        { background: var(--danger-dim);  color: var(--danger);  border: 1px solid var(--danger-border); }
-.badge-unknown      { background: var(--bg-elevated);  color: var(--text-muted); border: 1px solid var(--border-subtle); }
-.badge-count        { background: var(--bg-overlay); color: var(--text-secondary); border: 1px solid var(--border-default); }
+.badge-count { background: var(--bg-overlay); color: var(--text-secondary); border: 1px solid var(--border-default); }
 
 /* Semantic variants */
 .badge--green  { background: var(--success-dim);   color: var(--success);  border: 1px solid var(--success-border); }

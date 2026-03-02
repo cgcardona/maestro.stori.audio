@@ -48,12 +48,12 @@
       </h2>
       <div class="agents-grid">
         {% for node in section_agents %}
-        <a href="/agents/{{ node.id | basename }}" class="agent-card agent-card--{{ node.status.value }}">
+        <a href="/agents/{{ node.id }}" class="agent-card agent-card--{{ node.status.value }}">
           <div class="agent-card-header">
             <span class="status-badge status-badge--{{ node.status.value }}">
               {{ node.status.value }}
             </span>
-            <code class="agent-card-id">{{ (node.id | basename)[:8] }}</code>
+            <code class="agent-card-id">{{ node.id[:8] }}</code>
           </div>
 
           <div class="agent-card-role">{{ node.role }}</div>
@@ -129,7 +129,7 @@
             </td>
             <td>
               {% if run.id %}
-              <a href="/agents/{{ run.id | basename }}" class="text-accent">{{ run.role or '—' }}</a>
+              <a href="/agents/{{ run.id }}" class="text-accent">{{ run.role or '—' }}</a>
               {% else %}
               {{ run.role or '—' }}
               {% endif %}

@@ -215,7 +215,7 @@
                 x-text="agent.status"
               ></span>
               <a
-                :href="'/agents/' + encodeURIComponent(agent.id.split('/').pop())"
+                :href="'/agents/' + agent.id"
                 class="agent-role"
                 x-text="agent.role"
               ></a>
@@ -265,7 +265,7 @@
                   <button class="btn btn-secondary" @click="showKillModal = false">Cancel</button>
                   <button
                     class="btn btn-danger"
-                    :hx-post="'/api/control/kill/' + agent.worktree_path.split('/').pop()"
+                    :hx-post="'/api/control/kill/' + agent.id"
                     hx-target="closest .agent-row"
                     hx-swap="outerHTML"
                     @click="showKillModal = false"
@@ -288,7 +288,7 @@
                         x-text="child.status"
                       ></span>
                       <a
-                        :href="'/agents/' + encodeURIComponent(child.id.split('/').pop())"
+                        :href="'/agents/' + child.id"
                         class="agent-role"
                         x-text="child.role"
                       ></a>
@@ -324,7 +324,7 @@
                           <button class="btn btn-secondary" @click="showKillModal = false">Cancel</button>
                           <button
                             class="btn btn-danger"
-                            :hx-post="'/api/control/kill/' + child.worktree_path.split('/').pop()"
+                            :hx-post="'/api/control/kill/' + child.id"
                             hx-target="closest .agent-row"
                             hx-swap="outerHTML"
                             @click="showKillModal = false"
