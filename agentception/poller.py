@@ -22,7 +22,7 @@ from pathlib import Path
 
 from agentception.config import settings
 from agentception.intelligence.guards import detect_out_of_order_prs, detect_stale_claims
-from agentception.models import AgentNode, AgentStatus, PipelineState, StaleClaim, TaskFile
+from agentception.models import AgentNode, AgentStatus, BoardIssue, PipelineState, StaleClaim, TaskFile
 from agentception.readers.github import (
     get_active_label,
     get_open_issues,
@@ -272,15 +272,53 @@ async def broadcast(state: PipelineState) -> None:
 # ---------------------------------------------------------------------------
 
 
+async def _build_board_issues(
+    active_label: str | None,
+    gh_repo: str,
+) -> list[BoardIssue]:
+    """Query ``ac_issues`` for unclaimed issues in the active phase.
+
+    Called after ``persist_tick`` so the DB already has the freshest data.
+    Returns ``[]`` on any error — poller continues without board data.
+    """
+    try:
+        from agentception.db.queries import get_board_issues
+        rows = await get_board_issues(
+            repo=gh_repo,
+            label=active_label,
+            include_claimed=False,
+        )
+        return [
+            BoardIssue(
+                number=int(r["number"]),
+                title=str(r["title"]),
+                state=str(r.get("state", "open")),
+                labels=[lbl["name"] for lbl in r.get("labels", []) if isinstance(lbl, dict)],
+                claimed=bool(r.get("claimed", False)),
+                phase_label=r.get("phase_label") if isinstance(r.get("phase_label"), str) else None,
+                last_synced_at=r.get("last_synced_at") if isinstance(r.get("last_synced_at"), str) else None,
+            )
+            for r in rows
+        ]
+    except Exception as exc:
+        logger.warning("⚠️  Board issues query failed (non-fatal): %s", exc)
+        return []
+
+
 async def tick() -> PipelineState:
-    """Execute a single polling cycle: collect → merge → detect → persist → broadcast.
+    """Execute a single polling cycle: collect → merge → detect → persist → enrich → broadcast.
 
-    This is the unit of work for the background loop.  It is also the
-    function to call directly in tests to exercise the full data pipeline
-    without actually sleeping.
+    Pipeline:
+    1. Read filesystem (worktrees) + GitHub (issues, PRs, WIP labels) in parallel.
+    2. Merge into AgentNode tree.
+    3. Detect stale claims / stuck agents / out-of-order PRs.
+    4. Persist raw data to Postgres via ``persist_tick``.
+    5. Read board_issues back from Postgres (freshest data, owned by us).
+    6. Build final ``PipelineState`` with board_issues embedded.
+    7. Broadcast to all SSE subscribers.
 
-    Returns the newly computed ``PipelineState`` (also stored in ``_state``
-    and broadcast to all subscribers).
+    Steps 4-5 decouple the write path (GitHub → Postgres) from the read
+    path (Postgres → SSE stream), so the UI never reads directly from GitHub.
     """
     global _state
 
@@ -289,6 +327,31 @@ async def tick() -> PipelineState:
     agents = await merge_agents(worktrees, github)
     alerts, stale_claims = await detect_alerts(worktrees, github)
 
+    # ── Persist raw tick data to Postgres ────────────────────────────────────
+    # Non-blocking: a DB outage cannot crash the poller or stall the SSE stream.
+    try:
+        from agentception.db.persist import persist_tick
+        await persist_tick(
+            state=PipelineState(
+                active_label=github.active_label,
+                issues_open=len(github.open_issues),
+                prs_open=len(github.open_prs),
+                agents=agents,
+                alerts=alerts,
+                stale_claims=stale_claims,
+                board_issues=[],
+                polled_at=time.time(),
+            ),
+            open_issues=github.open_issues,
+            open_prs=github.open_prs,
+            gh_repo=settings.gh_repo,
+        )
+    except Exception as exc:
+        logger.warning("⚠️  DB persist skipped (non-fatal): %s", exc)
+
+    # ── Read board_issues back from Postgres (Postgres is the source of truth) ─
+    board_issues = await _build_board_issues(github.active_label, settings.gh_repo)
+
     state = PipelineState(
         active_label=github.active_label,
         issues_open=len(github.open_issues),
@@ -296,23 +359,10 @@ async def tick() -> PipelineState:
         agents=agents,
         alerts=alerts,
         stale_claims=stale_claims,
+        board_issues=board_issues,
         polled_at=time.time(),
     )
-
     _state = state
-
-    # Persist tick data to Postgres (non-blocking — swallows DB errors so
-    # a database outage cannot crash the poller or stall the SSE stream).
-    try:
-        from agentception.db.persist import persist_tick
-        await persist_tick(
-            state=state,
-            open_issues=github.open_issues,
-            open_prs=github.open_prs,
-            gh_repo=settings.gh_repo,
-        )
-    except Exception as exc:
-        logger.warning("⚠️  DB persist skipped (non-fatal): %s", exc)
 
     await broadcast(state)
     return state

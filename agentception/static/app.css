@@ -1244,3 +1244,108 @@ main {
   font-weight: 700;
   color: var(--accent);
 }
+
+/* ── Issue card label chips ─────────────────────────────────────────────── */
+.issue-card-labels {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  margin: 0.25rem 0;
+}
+
+.label-chip--small {
+  font-size: 0.65rem;
+  padding: 0.1rem 0.4rem;
+  background: rgba(139, 92, 246, 0.12);
+  border: 1px solid rgba(139, 92, 246, 0.25);
+  border-radius: 999px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+/* ── Telemetry trend chart ─────────────────────────────────────────────── */
+.telemetry-trend-section { }
+
+.trend-card {
+  padding: 1rem;
+}
+
+.trend-canvas {
+  display: block;
+  width: 100%;
+  height: auto;
+  max-height: 200px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.trend-legend {
+  display: flex;
+  gap: 1.25rem;
+  margin-bottom: 0.75rem;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+.trend-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.trend-dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+}
+
+.trend-dot--issues { background: #8b5cf6; }
+.trend-dot--prs    { background: #06b6d4; }
+.trend-dot--agents { background: #22c55e; }
+
+.trend-foot {
+  text-align: right;
+}
+
+/* ── Agents page run history table ────────────────────────────────────── */
+.run-history-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8rem;
+}
+
+.run-history-table th {
+  text-align: left;
+  padding: 0.4rem 0.6rem;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--border);
+  font-weight: 600;
+}
+
+.run-history-table td {
+  padding: 0.4rem 0.6rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  color: var(--text-secondary);
+  vertical-align: top;
+}
+
+.run-history-table tr:hover td {
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.run-status-badge {
+  display: inline-block;
+  padding: 0.1rem 0.45rem;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.run-status-badge--running    { background: rgba(34,197,94,0.15);  color: #22c55e; }
+.run-status-badge--done       { background: rgba(139,92,246,0.15); color: #8b5cf6; }
+.run-status-badge--failed     { background: rgba(239,68,68,0.15);  color: #ef4444; }
+.run-status-badge--spawned    { background: rgba(234,179,8,0.15);  color: #eab308; }
+.run-status-badge--unknown    { background: rgba(107,114,128,0.15);color: #6b7280; }

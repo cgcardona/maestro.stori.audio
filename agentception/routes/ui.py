@@ -5,6 +5,7 @@ background poller via ``get_state()`` — routes are intentionally thin.
 """
 from __future__ import annotations
 
+import asyncio
 import datetime
 import logging
 import os
@@ -21,7 +22,6 @@ from agentception.intelligence.analyzer import IssueAnalysis, analyze_issue
 from agentception.intelligence.dag import DependencyDAG, build_dag
 from agentception.models import AgentNode, PipelineConfig, PipelineState, RoleMeta, VALID_ROLES
 from agentception.poller import get_state
-from agentception.readers.github import get_active_label, get_open_issues
 from agentception.readers.pipeline_config import read_pipeline_config
 from agentception.readers.transcripts import read_transcript_messages
 from agentception.routes.roles import list_roles
@@ -102,18 +102,20 @@ def _find_agent(state: PipelineState | None, agent_id: str) -> AgentNode | None:
 async def overview(request: Request) -> HTMLResponse:
     """Dashboard overview — live agent hierarchy tree and GitHub board sidebar.
 
-    Renders on every request with the latest polled state. The page connects
-    to ``GET /events`` via SSE to receive live updates without reloading.
+    Renders with in-memory state on first load; the page connects to
+    ``GET /events`` (SSE) and updates reactively in the browser without
+    page reloads.
 
-    Board sidebar shows only issues carrying the active phase label (from
-    ``pipeline-config.json`` active_labels_order), filtered to unclaimed ones.
-    This keeps the board focused on the current phase rather than showing all
-    open issues across every label.
+    Data sources:
+    - ``state.board_issues`` — populated by the poller from ``ac_issues``
+      (Postgres) on every tick, so the sidebar always reads from our own
+      store rather than directly from the GitHub CLI.
+    - ``state.active_label / issues_open / prs_open / agents`` — carried
+      in every SSE broadcast so the summary bar and agent tree are live.
+    - Phase switcher dropdown — reads ``pipeline-config.json`` once on
+      load; pin state comes from in-memory ``active_label_override``.
     """
     state = get_state() or PipelineState.empty()
-    board_issues: list[dict[str, object]] = []
-    active_phase_label: str | None = None
-    total_phase_issues: int = 0
     all_phase_labels: list[str] = []
     label_is_pinned: bool = False
 
@@ -126,30 +128,26 @@ async def overview(request: Request) -> HTMLResponse:
     try:
         from agentception.readers.active_label_override import get_pin
         label_is_pinned = get_pin() is not None
-        active_phase_label = await get_active_label()
-        if active_phase_label:
-            # Fetch only issues in the current active phase.
-            phase_issues = await get_open_issues(label=active_phase_label)
-            total_phase_issues = len(phase_issues)
-            board_issues = [iss for iss in phase_issues if not _issue_is_claimed(iss)]
-        else:
-            # Fallback: show all unclaimed open issues when no phase is configured.
-            all_open = await get_open_issues()
-            board_issues = [iss for iss in all_open if not _issue_is_claimed(iss)]
-    except Exception as exc:  # pragma: no cover — network failure path
-        logger.warning("⚠️ Could not fetch open issues for board sidebar: %s", exc)
+    except Exception as exc:  # pragma: no cover
+        logger.warning("⚠️ Could not read active label pin: %s", exc)
+
+    # board_issues comes from state (Postgres-backed via poller); no GitHub
+    # CLI call needed here.  The template renders them on first load; SSE
+    # keeps them live via Alpine.js reactive updates.
+    board_issues = state.board_issues
+    unclaimed = [i for i in board_issues if not i.claimed]
 
     return _TEMPLATES.TemplateResponse(
         request,
         "overview.html",
         {
             "state": state,
-            "board_issues": board_issues,
-            "active_phase_label": active_phase_label,
+            "board_issues": [i.model_dump() for i in board_issues],
+            "active_phase_label": state.active_label,
             "all_phase_labels": all_phase_labels,
             "label_is_pinned": label_is_pinned,
-            "total_phase_issues": total_phase_issues,
-            "unclaimed_count": len(board_issues),
+            "total_phase_issues": len(board_issues),
+            "unclaimed_count": len(unclaimed),
         },
     )
 
@@ -193,22 +191,33 @@ async def analyze_partial(request: Request, number: int) -> HTMLResponse:
 
 @router.get("/agents", response_class=HTMLResponse)
 async def agents_list(request: Request) -> HTMLResponse:
-    """Agent listing page — all live agents in the current pipeline wave.
+    """Agent listing page — live agents (in-memory) plus historical runs (Postgres).
 
-    Renders a card for every AgentNode known to the poller, grouped by status
-    (running → blocked → done). Clicking a card navigates to the agent detail
-    page at ``/agents/{agent_id}``.
+    Live agents come from the in-memory poller state (real-time, filesystem
+    backed).  Postgres ``ac_agent_runs`` provides the historical run list so
+    completed agents are visible even after their worktrees are removed.
     """
+    from agentception.db.queries import get_agent_run_history
+
     state = get_state() or PipelineState.empty()
+
     # Flatten root + children into one list for the listing view.
     all_agents: list[AgentNode] = []
     for agent in state.agents:
         all_agents.append(agent)
         all_agents.extend(agent.children)
+
+    # Enrich with DB run history — recent completed runs, newest first.
+    run_history: list[dict[str, object]] = []
+    try:
+        run_history = await get_agent_run_history(limit=50)  # type: ignore[assignment]
+    except Exception as exc:
+        logger.debug("DB agent run history fetch skipped: %s", exc)
+
     return _TEMPLATES.TemplateResponse(
         request,
         "agents.html",
-        {"agents": all_agents, "state": state},
+        {"agents": all_agents, "state": state, "run_history": run_history},
     )
 
 
@@ -223,54 +232,101 @@ async def controls_hub(request: Request) -> Response:
 async def agent_detail(request: Request, agent_id: str) -> Response:
     """Agent detail page — transcript viewer and .agent-task fields.
 
-    Renders the full conversation transcript (user/assistant messages),
-    parsed .agent-task key/value table, and quick-action buttons.
-    Returns HTTP 404 when the agent ID is not in the current pipeline state.
+    Data sources (in priority order):
+    1. In-memory state — live status, branch, issue number from the poller.
+    2. Filesystem transcript — Cursor JSONL file for the full message log.
+    3. Postgres ``ac_agent_runs`` — historical run metadata and status.
+    4. Postgres ``ac_agent_messages`` — stored messages when no transcript
+       file is accessible (e.g. after the worktree is removed).
+
+    Returns HTTP 404 only when the agent is absent from both in-memory state
+    and the Postgres history.
     """
+    from agentception.db.queries import get_agent_run_detail
+
     state = get_state()
     node = _find_agent(state, agent_id)
-    if node is None:
+
+    # Try DB run detail as a fallback enrichment (or if node is not in memory).
+    db_run: dict[str, object] | None = None
+    db_messages: list[dict[str, object]] = []
+    try:
+        db_run = await get_agent_run_detail(agent_id)
+        if db_run:
+            db_messages = db_run.get("messages", [])  # type: ignore[assignment]
+    except Exception as exc:
+        logger.debug("DB agent run lookup skipped: %s", exc)
+
+    if node is None and db_run is None:
         return _TEMPLATES.TemplateResponse(
             request,
             "agent.html",
-            {"node": None, "agent_id": agent_id, "messages": []},
+            {"node": None, "agent_id": agent_id, "messages": [], "db_run": None},
             status_code=404,
         )
+
+    # Filesystem transcript takes priority — it's the live Cursor session.
     messages: list[dict[str, str]] = []
-    if node.transcript_path:
+    if node and node.transcript_path:
         messages = await read_transcript_messages(Path(node.transcript_path))
+
+    # Fall back to DB messages when the filesystem transcript is absent or empty.
+    if not messages and db_messages:
+        messages = [
+            {"role": str(m.get("role", "")), "content": str(m.get("content", ""))}
+            for m in db_messages
+        ]
+
     return _TEMPLATES.TemplateResponse(
         request,
         "agent.html",
-        {"node": node, "agent_id": agent_id, "messages": messages},
+        {
+            "node": node,
+            "agent_id": agent_id,
+            "messages": messages,
+            "db_run": db_run,
+        },
     )
 
 
 @router.get("/telemetry", response_class=HTMLResponse)
 async def telemetry_page(request: Request) -> HTMLResponse:
-    """Telemetry dashboard — wave history as a CSS bar chart and summary table.
+    """Telemetry dashboard — wave history (filesystem) + pipeline trend (Postgres).
 
-    Aggregates all ``.agent-task`` files grouped by BATCH_ID into WaveSummary
-    objects. The chart is CSS-only (no JS charting library): bar widths are
-    computed server-side as percentages of the longest wave duration.
-    Returns an empty-wave view when no wave data is present.
+    Two data sources:
+    - ``aggregate_waves()`` — reads ``.agent-task`` files grouped by BATCH_ID
+      into WaveSummary objects for the history table / CSS bar chart.
+    - ``get_pipeline_trend()`` — reads ``ac_pipeline_snapshots`` from Postgres
+      for the time-series chart (issues open, agents active over time).
+
+    Both sources degrade gracefully to empty lists on failure.
     """
-    waves: list[WaveSummary] = await aggregate_waves()
+    from agentception.db.queries import get_pipeline_trend
 
-    # Compute bar widths as percentages of the longest wave duration so all
-    # bars are proportional and the chart fills its container.
+    waves, trend = await asyncio.gather(
+        aggregate_waves(),
+        get_pipeline_trend(hours=24, limit=500),
+    )
+
+    # Bar chart widths are percentages of the longest wave duration.
     max_duration_s: float = 0.0
     for wave in waves:
         if wave.ended_at is not None:
             max_duration_s = max(max_duration_s, wave.ended_at - wave.started_at)
 
-    # Pre-compute summary totals in Python so the template stays logic-free.
     all_issues: set[int] = set()
     for wave in waves:
         all_issues.update(wave.issues_worked)
     total_issues = len(all_issues)
     total_cost_usd = round(sum(w.estimated_cost_usd for w in waves), 4)
     total_agents = sum(len(w.agents) for w in waves)
+
+    # Derive per-snapshot agent counts from trend for sparklines.
+    # Normalise to simple primitives so Jinja2 tojson stays quote-safe.
+    trend_labels: list[str] = [t["polled_at"][-8:-3] for t in trend]  # HH:MM
+    trend_issues: list[int] = [int(t["issues_open"]) for t in trend]
+    trend_prs: list[int] = [int(t["prs_open"]) for t in trend]
+    trend_agents: list[int] = [int(t["agents_active"]) for t in trend]
 
     return _TEMPLATES.TemplateResponse(
         request,
@@ -281,6 +337,12 @@ async def telemetry_page(request: Request) -> HTMLResponse:
             "total_issues": total_issues,
             "total_cost_usd": total_cost_usd,
             "total_agents": total_agents,
+            # Postgres trend (for sparklines / time-series chart).
+            "trend_labels": trend_labels,
+            "trend_issues": trend_issues,
+            "trend_prs": trend_prs,
+            "trend_agents": trend_agents,
+            "trend_count": len(trend),
         },
     )
 
@@ -403,22 +465,19 @@ async def ab_testing_page(request: Request) -> HTMLResponse:
 async def spawn_form(request: Request) -> HTMLResponse:
     """Issue picker form for manually spawning a new engineer agent.
 
-    Fetches all open, unclaimed issues (those without ``agent:wip``) from
-    GitHub and renders a form that posts to ``POST /api/control/spawn``.
-    On any GitHub read error the page renders with an empty issue list and
-    an error banner — it never raises HTTP 500 so the controls page stays
-    accessible even when GitHub is unreachable.
+    Reads unclaimed open issues from ``ac_issues`` (Postgres) so the picker
+    stays fast and consistent with the board sidebar.  Falls back to an empty
+    list with an error banner when the DB is unavailable.
     """
+    from agentception.db.queries import get_board_issues as _get_board_issues
+    from agentception.config import settings as _cfg
+
     error: str | None = None
     issues: list[dict[str, object]] = []
     try:
-        all_open = await get_open_issues()
-        issues = [
-            iss for iss in all_open
-            if not _issue_is_claimed(iss)
-        ]
-    except Exception as exc:  # pragma: no cover — network failure path
-        error = f"Could not load issues from GitHub: {exc}"
+        issues = await _get_board_issues(repo=_cfg.gh_repo, include_claimed=False)
+    except Exception as exc:  # pragma: no cover — DB failure path
+        error = f"Could not load issues: {exc}"
 
     return _TEMPLATES.TemplateResponse(
         request,

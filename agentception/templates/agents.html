@@ -100,6 +100,64 @@
 
   {% endif %}
 
+  {# ── Run History (Postgres) ─────────────────────────────────────────────── #}
+  {% if run_history %}
+  <section class="agents-run-history">
+    <h2 class="agents-section-title">
+      Run History
+      <span class="badge badge-count">{{ run_history | length }}</span>
+    </h2>
+    <div class="card">
+      <table class="run-history-table">
+        <thead>
+          <tr>
+            <th>Status</th>
+            <th>Role</th>
+            <th>Issue</th>
+            <th>PR</th>
+            <th>Branch</th>
+            <th>Spawned</th>
+            <th>Completed</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for run in run_history %}
+          <tr>
+            <td>
+              <span class="run-status-badge run-status-badge--{{ run.status }}">{{ run.status }}</span>
+            </td>
+            <td>
+              {% if run.id %}
+              <a href="/agents/{{ run.id }}" class="text-accent">{{ run.role or '—' }}</a>
+              {% else %}
+              {{ run.role or '—' }}
+              {% endif %}
+            </td>
+            <td>
+              {% if run.issue_number %}
+              <a href="{{ gh_base_url }}/issues/{{ run.issue_number }}" target="_blank" rel="noopener" class="text-accent">#{{ run.issue_number }}</a>
+              {% else %}—{% endif %}
+            </td>
+            <td>
+              {% if run.pr_number %}
+              <a href="{{ gh_base_url }}/pull/{{ run.pr_number }}" target="_blank" rel="noopener" class="text-accent">{{ run.pr_number }}</a>
+              {% else %}—{% endif %}
+            </td>
+            <td>
+              <code class="text-muted" style="font-size: 0.7rem;">{{ run.branch or '—' }}</code>
+            </td>
+            <td class="text-muted">{{ (run.spawned_at or '')[:16] | replace('T', ' ') }}</td>
+            <td class="text-muted">
+              {% if run.completed_at %}{{ run.completed_at[:16] | replace('T', ' ') }}{% else %}—{% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+  {% endif %}
+
 </div>
 
 <style>

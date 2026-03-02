@@ -60,6 +60,24 @@ class StaleClaim(BaseModel):
     worktree_path: str  # expected path that does not exist
 
 
+class BoardIssue(BaseModel):
+    """Lightweight issue summary for the overview board sidebar.
+
+    Populated from ``ac_issues`` (Postgres) by the poller and carried in every
+    SSE broadcast so the sidebar updates live without page reloads or HTMX
+    polling.  Only fields needed for the board card are included; full issue
+    detail is always available on GitHub.
+    """
+
+    number: int
+    title: str
+    state: str = "open"
+    labels: list[str] = []
+    claimed: bool = False
+    phase_label: str | None = None
+    last_synced_at: str | None = None
+
+
 class PipelineState(BaseModel):
     """Snapshot of the entire Maestro pipeline at a point in time.
 
@@ -68,6 +86,8 @@ class PipelineState(BaseModel):
     how stale the data is.
     ``stale_claims`` provides structured data for the "Clear Label" UI action;
     the same claims also appear as human-readable strings in ``alerts``.
+    ``board_issues`` carries the unclaimed issues for the active phase so the
+    sidebar updates via SSE without any extra requests.
     """
 
     active_label: str | None
@@ -76,6 +96,7 @@ class PipelineState(BaseModel):
     agents: list[AgentNode]
     alerts: list[str] = []
     stale_claims: list[StaleClaim] = []
+    board_issues: list[BoardIssue] = []
     polled_at: float
 
     @classmethod
@@ -95,6 +116,7 @@ class PipelineState(BaseModel):
             agents=[],
             alerts=[],
             stale_claims=[],
+            board_issues=[],
             polled_at=time.time(),
         )
 
