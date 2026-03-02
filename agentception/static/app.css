@@ -129,3 +129,214 @@ main {
 .mt-1 { margin-top: 0.5rem; }
 .mt-2 { margin-top: 1rem; }
 .mt-3 { margin-top: 1.5rem; }
+
+/* ── Overview layout ── */
+
+.overview-columns {
+  display: grid;
+  grid-template-columns: 65fr 35fr;
+  gap: 1.5rem;
+  margin-top: 1rem;
+  align-items: start;
+}
+
+@media (max-width: 900px) {
+  .overview-columns {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ── Pipeline summary bar ── */
+
+.pipeline-summary-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem 2rem;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.625rem 1.25rem;
+  margin-bottom: 0.75rem;
+  align-items: center;
+}
+
+.summary-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+}
+
+.summary-item--status {
+  margin-left: auto;
+}
+
+.summary-label {
+  font-size: 0.6875rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+}
+
+.summary-value {
+  font-size: 0.9375rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+/* ── Alert banner ── */
+
+.alert-banner {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: rgba(248, 81, 73, 0.12);
+  border: 1px solid var(--danger);
+  border-radius: 4px;
+  color: var(--danger);
+  font-size: 0.8125rem;
+  font-weight: 500;
+  padding: 0.4rem 0.875rem;
+  margin-bottom: 0.5rem;
+}
+
+/* ── Section headings ── */
+
+.section-title {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--text-muted);
+  margin-bottom: 0.625rem;
+}
+
+.section-subtitle {
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  margin-bottom: 0.375rem;
+}
+
+/* ── Agent tree ── */
+
+.agent-tree-container {
+  /* container — children are agent rows */
+}
+
+#tree {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+}
+
+.agent-row {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.agent-row--child {
+  margin-top: 0.25rem;
+  margin-left: 1.5rem;
+  background: var(--bg-tertiary);
+  border-left: 2px solid var(--border);
+}
+
+.agent-row-header {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  padding: 0.5rem 0.875rem;
+}
+
+.agent-children {
+  padding: 0 0.875rem 0.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.agent-role {
+  font-weight: 500;
+  font-size: 0.875rem;
+  color: var(--text-primary);
+}
+
+.agent-meta {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.empty-state {
+  padding: 2rem 1rem;
+  text-align: center;
+  font-size: 0.875rem;
+}
+
+/* ── Status badge (pill) ── */
+
+.status-badge {
+  display: inline-flex;
+  align-items: center;
+  font-size: 0.625rem;
+  font-weight: 700;
+  padding: 0.1875rem 0.5rem;
+  border-radius: 2em;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  white-space: nowrap;
+}
+
+.status-badge--implementing { background: #1e3a8a; color: #93c5fd; }
+.status-badge--reviewing    { background: #78350f; color: #fde68a; }
+.status-badge--done         { background: #14532d; color: #86efac; }
+.status-badge--stale        { background: #7c2d12; color: #fdba74; }
+.status-badge--unknown      { background: var(--bg-tertiary); color: var(--text-muted); }
+
+/* ── GitHub board (sidebar) ── */
+
+.github-board {
+  /* sticky sidebar so it stays visible while scrolling the tree */
+  position: sticky;
+  top: 1rem;
+}
+
+.board-label-row {
+  margin-bottom: 0.375rem;
+}
+
+.label-chip {
+  display: inline-block;
+  background: rgba(124, 58, 237, 0.2);
+  border: 1px solid var(--accent);
+  color: var(--accent-hover);
+  border-radius: 2em;
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 0.1875rem 0.625rem;
+}
+
+.board-stats {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  font-size: 0.8125rem;
+}
+
+.board-stats-sep {
+  color: var(--border);
+}
+
+.alert-item {
+  background: rgba(248, 81, 73, 0.08);
+  border-left: 3px solid var(--danger);
+  color: var(--danger);
+  font-size: 0.8125rem;
+  padding: 0.3125rem 0.625rem;
+  border-radius: 0 4px 4px 0;
+  margin-bottom: 0.25rem;
+}
