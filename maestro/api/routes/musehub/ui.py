@@ -71,7 +71,7 @@ from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi import status as http_status
-from fastapi.responses import HTMLResponse, RedirectResponse, Response
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import func, select as sa_select, text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -384,22 +384,20 @@ async def repo_page(
     request: Request,
     owner: str,
     repo_slug: str,
+    ref: str = Query("HEAD", description="Branch name or commit SHA to view"),
     format: str | None = Query(None, description="Force response format: 'json' or omit for HTML"),
     db: AsyncSession = Depends(get_db),
 ) -> StarletteResponse:
-    """Render the repo home page with arrangement matrix, audio player, stats, and recent commits.
+    """Render the repo home page with SSR file tree, recent commits, and branch picker.
 
-    Also renders four enrichment panels:
-    - Contributors: top-10 avatar grid derived from the credits endpoint.
-    - Activity heatmap: 52-week GitHub-style heatmap from commit timestamps.
-    - Instrument bar: stacked distribution of instrument tracks from commit objects.
-    - Clone widget: musehub://, SSH, and HTTPS clone URLs with copy-to-clipboard.
+    All data is fetched server-side and rendered via Jinja2.  HTMX handles
+    branch-switching: selecting a branch submits the form via ``hx-get`` and
+    swaps only the ``#file-tree`` container with the file_tree fragment.
 
     Content negotiation:
     - ``?format=json`` or ``Accept: application/json`` → full ``RepoResponse`` with camelCase keys.
-    - Everything else → HTML home page via ``repo_home.html`` template.
-
-    One URL, two audiences — agents get structured data, humans get rich HTML.
+    - ``HX-Request: true`` → bare ``file_tree.html`` fragment (branch-switch target).
+    - Default → full SSR page via ``repo_home.html``.
 
     Clone URL variants passed to the template:
     - ``clone_url_musehub``: native DAW protocol (``musehub://{owner}/{slug}``)
@@ -407,31 +405,49 @@ async def repo_page(
     - ``clone_url_https``: HTTPS git remote (``https://musehub.stori.app/{owner}/{slug}.git``)
     """
     repo, base_url = await _resolve_repo_full(owner, repo_slug, db)
+    repo_id = repo.repo_id
+
+    # JSON shortcut for API consumers — return structured data without SSR overhead.
+    if format == "json" or "application/json" in request.headers.get("accept", ""):
+        return JSONResponse(repo.model_dump(by_alias=True, mode="json"))
+
+    # Fetch all SSR data in parallel.
+    tree_response = await musehub_repository.list_tree(db, repo_id, owner, repo_slug, ref, "")
+    (commits, _) = await musehub_repository.list_commits(db, repo_id, limit=5)
+    branches = await musehub_repository.list_branches(db, repo_id)
+    releases = await musehub_releases.list_releases(db, repo_id)
+    tags_count = len(releases)
+
     page_url = str(request.url)
-    return await negotiate_response(
-        request=request,
-        template_name="musehub/pages/repo_home.html",
-        context={
-            "owner": owner,
-            "repo_slug": repo_slug,
-            "repo_id": str(repo.repo_id),
-            "base_url": base_url,
-            "current_page": "home",
-            "jsonld_script": render_jsonld_script(jsonld_repo(repo, page_url)),
-            "og_meta": _og_tags(
-                title=f"{owner}/{repo_slug} — Muse Hub",
-                description=repo.description or f"Music composition repository by {owner}",
-                og_type="website",
-            ),
-            # Clone URL variants for the clone widget panel — derived server-side
-            # so the template never has to reconstruct them from owner/slug.
-            "clone_url_musehub": f"musehub://{owner}/{repo_slug}",
-            "clone_url_ssh": f"ssh://git@musehub.stori.app/{owner}/{repo_slug}.git",
-            "clone_url_https": f"https://musehub.stori.app/{owner}/{repo_slug}.git",
-        },
-        templates=templates,
-        json_data=repo,
-        format_param=format,
+    ctx: dict[str, object] = {
+        "owner": owner,
+        "repo_slug": repo_slug,
+        "repo_id": repo_id,
+        "base_url": base_url,
+        "current_page": "home",
+        "repo": repo,
+        "ref": ref,
+        "tree": tree_response.entries,
+        # commit_row macro expects camelCase keys (commitId, etc.)
+        "commits": [c.model_dump(by_alias=True) for c in commits],
+        "branches": branches,
+        "tags_count": tags_count,
+        "jsonld_script": render_jsonld_script(jsonld_repo(repo, page_url)),
+        "og_meta": _og_tags(
+            title=f"{owner}/{repo_slug} — Muse Hub",
+            description=repo.description or f"Music composition repository by {owner}",
+            og_type="website",
+        ),
+        "clone_url_musehub": f"musehub://{owner}/{repo_slug}",
+        "clone_url_ssh": f"ssh://git@musehub.stori.app/{owner}/{repo_slug}.git",
+        "clone_url_https": f"https://musehub.stori.app/{owner}/{repo_slug}.git",
+    }
+    return await htmx_fragment_or_full(
+        request,
+        templates,
+        ctx,
+        full_template="musehub/pages/repo_home.html",
+        fragment_template="musehub/fragments/file_tree.html",
     )
 
 
@@ -594,6 +610,7 @@ async def commits_list_page(
         templates=templates,
         json_data=CommitListResponse(commits=commits, total=total),
         format_param=format,
+        fragment_template="musehub/fragments/commit_rows.html",
     )
 
 
@@ -745,114 +762,128 @@ async def pr_list_page(
     request: Request,
     owner: str,
     repo_slug: str,
+    state: str = Query("open", pattern="^(open|merged|closed|all)$"),
+    sort: str = Query("newest", pattern="^(newest|oldest)$"),
     db: AsyncSession = Depends(get_db),
 ) -> Response:
-    """Render the PR list page with open/all state filter."""
+    """Render the PR list page with SSR data and HTMX fragment support.
+
+    Fetches open, merged, and closed PR counts server-side and renders the
+    active tab's rows. Returns a bare fragment when ``HX-Request: true`` so
+    HTMX tab switches only swap the ``#pr-rows`` container.
+    """
     repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
+
+    open_prs = await musehub_pull_requests.list_prs(db, repo_id, state="open")
+    merged_prs = await musehub_pull_requests.list_prs(db, repo_id, state="merged")
+    closed_prs = await musehub_pull_requests.list_prs(db, repo_id, state="closed")
+
+    if state == "merged":
+        active_prs = merged_prs
+    elif state == "closed":
+        active_prs = closed_prs
+    elif state == "all":
+        active_prs = open_prs + merged_prs + closed_prs
+    else:
+        active_prs = open_prs
+
+    if sort == "oldest":
+        active_prs = sorted(active_prs, key=lambda p: p.created_at)
+    else:
+        active_prs = sorted(active_prs, key=lambda p: p.created_at, reverse=True)
+
     ctx: dict[str, object] = {
         "owner": owner,
         "repo_slug": repo_slug,
         "repo_id": repo_id,
         "base_url": base_url,
         "current_page": "pulls",
+        "prs": [p.model_dump() for p in active_prs],
+        "open_count": len(open_prs),
+        "merged_count": len(merged_prs),
+        "closed_count": len(closed_prs),
+        "state": state,
+        "active_sort": sort,
+        "breadcrumb_data": _breadcrumbs(
+            (owner, f"/musehub/ui/{owner}"),
+            (repo_slug, base_url),
+            ("Pull Requests", f"{base_url}/pulls"),
+        ),
     }
-    return json_or_html(
+    return await htmx_fragment_or_full(
         request,
-        lambda: templates.TemplateResponse(request, "musehub/pages/pr_list.html", ctx),
+        templates,
         ctx,
+        full_template="musehub/pages/pr_list.html",
+        fragment_template="musehub/fragments/pr_rows.html",
     )
 
 
 @router.get(
     "/{owner}/{repo_slug}/pulls/{pr_id}",
     response_class=HTMLResponse,
-    summary="Muse Hub PR detail page with musical diff",
+    summary="Muse Hub PR detail page — SSR with HTMX review/merge actions",
 )
 async def pr_detail_page(
     request: Request,
     owner: str,
     repo_slug: str,
     pr_id: str,
-    format: str | None = Query(None, pattern="^json$", description="Set to 'json' to receive structured data"),
     db: AsyncSession = Depends(get_db),
 ) -> Response:
-    """Render the PR detail page with musical diff, reviewer panel, and sidebar.
+    """Render the PR detail page with full SSR data and HTMX fragment support.
 
-    HTML response includes the full musical diff UI enhanced with five additions:
+    Fetches the PR record, reviews, and comment thread server-side so the
+    initial HTML render is complete without any client-side API calls.
+    Returns a bare comment fragment when ``HX-Request: true`` so HTMX can
+    swap only ``#pr-comments`` on partial refreshes.
 
-    1. **Reviewer status panel** — avatar chips for each requested reviewer with
-       pending / approved / changes_requested / dismissed badges, plus a
-       "Submit your review" form (approve / request changes / comment) for
-       authenticated maintainers.
-
-    2. **Merge options** — three strategy buttons (merge commit / squash / rebase)
-       with a "Delete branch after merge" checkbox.  All controls are disabled when
-       the PR is not mergeable (``pr.mergeable == false``).
-
-    3. **Collapsible commit diff panels** — one ``<details>`` element per head-branch
-       commit showing similarity % to the base branch and an inline 8-axis
-       emotion-diff mini radar chart (via the ``/analysis/{ref}/similarity`` and
-       ``/analysis/{ref}/emotion-diff`` APIs).
-
-    4. **Markdown description** — ``pr.body`` is rendered as formatted HTML rather
-       than a raw ``<pre>`` block, using the inline ``renderMarkdown()`` helper.
-
-    5. **Labels and milestone sidebar** — labels assigned to the PR are shown as
-       colour-coded chips with add / remove controls for maintainers; the milestone
-       title (if set) is displayed below.
-
-    JSON response (``?format=json`` or ``Accept: application/json``) returns the
-    PR metadata merged with per-dimension diff scores — suitable for AI agent
-    consumption to reason about musical impact before approving a merge.
-
-    The merge action calls
-    ``POST /api/v1/musehub/repos/{repo_id}/pull-requests/{pr_id}/merge``
-    with the selected ``mergeStrategy`` and optional ``deleteBranch`` flag.
+    Raises HTTP 404 when the PR does not exist in the given repository.
     """
     repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
 
-    context: dict[str, object] = {
+    pr = await musehub_pull_requests.get_pr(db, repo_id, pr_id)
+    if pr is None:
+        raise HTTPException(status_code=404, detail=f"Pull request {pr_id} not found")
+
+    reviews_resp = await musehub_pull_requests.list_reviews(
+        db, repo_id=repo_id, pr_id=pr_id
+    )
+    comments_resp = await musehub_pull_requests.list_pr_comments(
+        db, pr_id=pr_id, repo_id=repo_id
+    )
+
+    approved_count = sum(1 for r in reviews_resp.reviews if r.state == "approved")
+    changes_count = sum(
+        1 for r in reviews_resp.reviews if r.state == "changes_requested"
+    )
+
+    ctx: dict[str, object] = {
         "owner": owner,
         "repo_slug": repo_slug,
         "repo_id": repo_id,
         "pr_id": pr_id,
         "base_url": base_url,
         "current_page": "pulls",
+        "pr": pr.model_dump(),
+        "reviews": [r.model_dump() for r in reviews_resp.reviews],
+        "comments": [c.model_dump() for c in comments_resp.comments],
+        "comment_count": comments_resp.total,
+        "approved_count": approved_count,
+        "changes_count": changes_count,
+        "breadcrumb_data": _breadcrumbs(
+            (owner, f"/musehub/ui/{owner}"),
+            (repo_slug, base_url),
+            ("Pull Requests", f"{base_url}/pulls"),
+            (pr_id[:8], f"{base_url}/pulls/{pr_id}"),
+        ),
     }
-
-    # For JSON responses, eagerly compute the diff so agents get full data.
-    json_data: PRDiffResponse | None = None
-    if format == "json":
-        pr = await musehub_pull_requests.get_pr(db, repo_id, pr_id)
-        if pr is not None:
-            try:
-                result = await musehub_divergence.compute_hub_divergence(
-                    db,
-                    repo_id=repo_id,
-                    branch_a=pr.to_branch,
-                    branch_b=pr.from_branch,
-                )
-                json_data = musehub_divergence.build_pr_diff_response(
-                    pr_id=pr_id,
-                    from_branch=pr.from_branch,
-                    to_branch=pr.to_branch,
-                    result=result,
-                )
-            except ValueError:
-                json_data = musehub_divergence.build_zero_diff_response(
-                    pr_id=pr_id,
-                    repo_id=repo_id,
-                    from_branch=pr.from_branch,
-                    to_branch=pr.to_branch,
-                )
-
-    return await negotiate_response(
-        request=request,
-        template_name="musehub/pages/pr_detail.html",
-        context=context,
-        templates=templates,
-        json_data=json_data,
-        format_param=format,
+    return await htmx_fragment_or_full(
+        request,
+        templates,
+        ctx,
+        full_template="musehub/pages/pr_detail.html",
+        fragment_template="musehub/fragments/pr_comments.html",
     )
 
 
@@ -1014,25 +1045,59 @@ async def issue_detail_page(
     number: int,
     db: AsyncSession = Depends(get_db),
 ) -> Response:
-    """Render the issue detail page with close button.
+    """Render the issue detail page with SSR body and HTMX comment threading.
 
-    The close button calls
-    ``POST /api/v1/musehub/repos/{repo_id}/issues/{number}/close``
-    and reloads the page on success.
+    Fetches the issue, comments, labels, milestones, and linked PRs server-side.
+    HTMX requests receive only the comment fragment; direct navigation receives
+    the full page that extends base.html.
     """
     repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
+
+    issue = await musehub_issues.get_issue(db, repo_id, number)
+    if not issue:
+        raise HTTPException(
+            status_code=http_status.HTTP_404_NOT_FOUND,
+            detail=f"Issue #{number} not found",
+        )
+
+    comment_list = await musehub_issues.list_comments(db, issue.issue_id)
+    comments = [c.model_dump() for c in comment_list.comments]
+
+    milestone_list = await musehub_issues.list_milestones(db, repo_id, state="open")
+    milestones_data = [m.model_dump() for m in milestone_list.milestones]
+
+    label_rows = (
+        await db.execute(
+            sa_select(label_db.MusehubLabel)
+            .where(label_db.MusehubLabel.repo_id == repo_id)
+            .order_by(label_db.MusehubLabel.name)
+        )
+    ).scalars().all()
+    labels_data = [{"name": r.name, "color": r.color} for r in label_rows]
+
     ctx: dict[str, object] = {
         "owner": owner,
         "repo_slug": repo_slug,
         "repo_id": repo_id,
-        "issue_number": number,
         "base_url": base_url,
         "current_page": "issues",
+        "issue": issue.model_dump(),
+        "comments": comments,
+        "labels_data": labels_data,
+        "milestones_data": milestones_data,
+        "breadcrumb_data": _breadcrumbs(
+            (owner, f"/musehub/ui/{owner}"),
+            (repo_slug, base_url),
+            ("Issues", f"{base_url}/issues"),
+            (f"#{number}", ""),
+        ),
     }
-    return json_or_html(
+    return await htmx_fragment_or_full(
         request,
-        lambda: templates.TemplateResponse(request, "musehub/pages/issue_detail.html", ctx),
+        templates,
         ctx,
+        full_template="musehub/pages/issue_detail.html",
+        fragment_template="musehub/fragments/issue_comments.html",
     )
 
 
@@ -1609,24 +1674,42 @@ async def sessions_page(
     request: Request,
     owner: str,
     repo_slug: str,
+    page: int = Query(1, ge=1, description="1-based page number"),
+    per_page: int = Query(25, ge=1, le=100, description="Items per page"),
     db: AsyncSession = Depends(get_db),
 ) -> Response:
     """Render the session log page -- all recording sessions newest first.
 
-    Active sessions are highlighted with a live indicator at the top of the list.
+    Fetches session data server-side and renders via Jinja2.  Active sessions
+    appear at the top of the list.  Supports HTMX partial swap via
+    ``htmx_fragment_or_full()``: a full HTML page is returned on initial load
+    and only the ``#session-rows`` fragment is returned when ``HX-Request``
+    is present.
     """
     repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
+    offset = (page - 1) * per_page
+    sessions, total = await musehub_repository.list_sessions(
+        db, repo_id, limit=per_page, offset=offset
+    )
+    total_pages = max(1, (total + per_page - 1) // per_page)
     ctx: dict[str, object] = {
         "owner": owner,
         "repo_slug": repo_slug,
         "repo_id": repo_id,
         "base_url": base_url,
         "current_page": "sessions",
+        "sessions": [s.model_dump(by_alias=True, mode="json") for s in sessions],
+        "total": total,
+        "page": page,
+        "per_page": per_page,
+        "total_pages": total_pages,
     }
-    return json_or_html(
+    return await htmx_fragment_or_full(
         request,
-        lambda: templates.TemplateResponse(request, "musehub/pages/sessions.html", ctx),
+        templates,
         ctx,
+        full_template="musehub/pages/sessions.html",
+        fragment_template="musehub/fragments/session_rows.html",
     )
 
 
@@ -1641,13 +1724,16 @@ async def session_detail_page(
     session_id: str,
     db: AsyncSession = Depends(get_db),
 ) -> Response:
-    """Render the full session detail page.
+    """Render the full session detail page with server-side data.
 
-    Shows metadata, participants with session-count badges, commits made during
-    the session, and closing notes.  Renders a 404 message inline if the API
-    returns 404, so agents can distinguish missing sessions from server errors.
+    Fetches the session and its participant list from the database and renders
+    via Jinja2.  Returns HTTP 404 when the session does not exist so callers
+    receive a proper status code rather than an empty JS shell.
     """
     repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
+    session = await musehub_repository.get_session(db, repo_id, session_id)
+    if session is None:
+        raise HTTPException(status_code=404, detail="Session not found")
     ctx: dict[str, object] = {
         "owner": owner,
         "repo_slug": repo_slug,
@@ -1655,12 +1741,10 @@ async def session_detail_page(
         "session_id": session_id,
         "base_url": base_url,
         "current_page": "sessions",
+        "session": session.model_dump(by_alias=True, mode="json"),
+        "participants": session.participants,
     }
-    return json_or_html(
-        request,
-        lambda: templates.TemplateResponse(request, "musehub/pages/session_detail.html", ctx),
-        ctx,
-    )
+    return templates.TemplateResponse(request, "musehub/pages/session_detail.html", ctx)
 
 
 @router.get(
@@ -2110,36 +2194,35 @@ async def branches_page(
     request: Request,
     owner: str,
     repo_slug: str,
-    format: str | None = Query(None, description="Force response format: 'json' or omit for HTML"),
     db: AsyncSession = Depends(get_db),
 ) -> StarletteResponse:
-    """Render the branch list page or return structured branch data as JSON.
+    """Render the branch list page (SSR).
 
-    HTML (default): lists all branches with HEAD commit info, ahead/behind counts,
-    musical divergence scores (placeholder), compare links, and New Pull Request buttons.
-    JSON (``Accept: application/json`` or ``?format=json``): returns
-    ``BranchDetailListResponse`` with per-branch ahead/behind counts.
-
-    Content negotiation — one URL, two audiences: musicians get rich HTML,
-    agents get structured JSON to programmatically inspect branch state.
+    Lists all branches with HEAD commit info, ahead/behind counts,
+    musical divergence scores (placeholder), and compare links rendered
+    server-side.  HTMX partial requests (``HX-Request: true``) return only
+    the ``fragments/branch_rows.html`` fragment for in-place swap.
     """
     repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
     branch_data: BranchDetailListResponse = (
         await musehub_repository.list_branches_with_detail(db, repo_id)
     )
-    return await negotiate_response(
-        request=request,
-        template_name="musehub/pages/branches.html",
-        context={
-            "owner": owner,
-            "repo_slug": repo_slug,
-            "repo_id": repo_id,
-            "base_url": base_url,
-            "current_page": "branches",
-        },
-        templates=templates,
-        json_data=branch_data,
-        format_param=format,
+    default_branch = next((b for b in branch_data.branches if b.is_default), None)
+    ctx: dict[str, object] = {
+        "owner": owner,
+        "repo_slug": repo_slug,
+        "repo_id": repo_id,
+        "base_url": base_url,
+        "current_page": "code",
+        "branches": branch_data.branches,
+        "default_branch": default_branch,
+    }
+    return await htmx_fragment_or_full(
+        request,
+        templates,
+        ctx,
+        full_template="musehub/pages/branches.html",
+        fragment_template="musehub/fragments/branch_rows.html",
     )
 
 
@@ -2152,20 +2235,16 @@ async def tags_page(
     owner: str,
     repo_slug: str,
     namespace: str | None = Query(None, description="Filter tags by namespace prefix"),
-    format: str | None = Query(None, description="Force response format: 'json' or omit for HTML"),
     db: AsyncSession = Depends(get_db),
 ) -> StarletteResponse:
-    """Render the tag browser page or return structured tag data as JSON.
+    """Render the tag browser page (SSR).
 
     Tags are sourced from repo releases.  The tag browser groups tags by their
     namespace prefix (the text before ``:``, e.g. ``emotion``, ``genre``,
     ``instrument``) — tags without a colon fall into the ``version`` namespace.
 
-    HTML (default): filterable list of tags grouped by namespace with commit info.
-    JSON (``Accept: application/json`` or ``?format=json``): returns
-    ``TagListResponse`` with namespace grouping and optional ``?namespace`` filtering.
-
-    Click a tag to navigate to the commit detail page for that release's commit.
+    All tag data is rendered server-side; no client-side API fetch is required.
+    The optional ``?namespace`` query parameter filters to a single namespace.
     """
     repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
     releases = await musehub_releases.list_releases(db, repo_id)
@@ -2193,22 +2272,22 @@ async def tags_page(
         filtered_tags = all_tags
 
     namespaces: list[str] = sorted({t.namespace for t in all_tags})
-    tag_data = TagListResponse(tags=filtered_tags, namespaces=namespaces)
-
-    return await negotiate_response(
-        request=request,
-        template_name="musehub/pages/tags.html",
-        context={
-            "owner": owner,
-            "repo_slug": repo_slug,
-            "repo_id": repo_id,
-            "base_url": base_url,
-            "current_page": "tags",
-            "active_namespace": namespace or "",
-        },
-        templates=templates,
-        json_data=tag_data,
-        format_param=format,
+    ctx: dict[str, object] = {
+        "owner": owner,
+        "repo_slug": repo_slug,
+        "repo_id": repo_id,
+        "base_url": base_url,
+        "current_page": "releases",
+        "tags": filtered_tags,
+        "all_tags": all_tags,
+        "namespaces": namespaces,
+        "active_namespace": namespace or "",
+    }
+    return await htmx_fragment_or_full(
+        request,
+        templates,
+        ctx,
+        full_template="musehub/pages/tags.html",
     )
 
 
