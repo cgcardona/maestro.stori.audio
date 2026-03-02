@@ -3047,25 +3047,18 @@ async def piano_roll_page(
 ) -> Response:
     """Render the Canvas-based interactive piano roll for all MIDI tracks at ``ref``.
 
-    The page shell fetches a list of MIDI artifacts at the given ref from the
-    ``GET /api/v1/musehub/repos/{repo_id}/objects`` endpoint, then calls
-    ``GET /api/v1/musehub/repos/{repo_id}/objects/{id}/parse-midi`` for each
-    selected file.  The parsed note data is rendered into a Canvas element via
-    ``piano-roll.js``.
-
-    Features:
-    - Pitch on Y-axis with a piano keyboard strip
-    - Beat grid on X-axis with measure markers
-    - Per-track colour coding (design system palette)
-    - Velocity mapped to rectangle opacity
-    - Zoom controls (horizontal and vertical sliders)
-    - Pan via click-drag
-    - Hover tooltip: pitch name, velocity, beat position, duration
+    Fetches instrument lane metadata server-side so the sidebar is rendered in
+    SSR without requiring a client round-trip.  The Canvas itself and
+    ``piano-roll.js`` remain client-side — MIDI rendering to a canvas is
+    inherently a browser operation.
 
     No JWT required — HTML shell; JS fetches authed data via localStorage token.
     """
     repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
     short_ref = ref[:8] if len(ref) >= 8 else ref
+    instruments = await musehub_repository.get_instruments_for_repo(db, repo_id)
+    piano_roll_data_url = f"/api/v1/musehub/repos/{repo_id}/midi?ref={ref}"
+    instruments_data = [i.model_dump(by_alias=True, mode="json") for i in instruments]
     ctx: dict[str, object] = {
         "owner": owner,
         "repo_slug": repo_slug,
@@ -3075,6 +3068,10 @@ async def piano_roll_page(
         "path": None,
         "base_url": base_url,
         "current_page": "piano-roll",
+        "track": None,
+        "instruments": instruments_data,
+        "track_path": None,
+        "piano_roll_data_url": piano_roll_data_url,
     }
     return json_or_html(
         request,
@@ -3097,17 +3094,22 @@ async def piano_roll_track_page(
 ) -> Response:
     """Render the Canvas-based piano roll scoped to a single MIDI file ``path``.
 
-    Identical to :func:`piano_roll_page` but restricts the view to one specific
-    MIDI artifact identified by its repo-relative path
-    (e.g. ``tracks/bass.mid``).  The ``path`` segment is forwarded to the
-    template as a JavaScript string; the client-side code resolves the
-    matching object ID via the objects list API.
+    Fetches track metadata and instrument lane descriptors server-side so the
+    header and sidebar render without a client round-trip.  The Canvas and
+    ``piano-roll.js`` remain client-side.
 
     Useful for per-track deep-dive links from the tree browser or commit
     detail page.
     """
     repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
     short_ref = ref[:8] if len(ref) >= 8 else ref
+    track = await musehub_repository.get_track_info(db, repo_id, path)
+    instruments = await musehub_repository.get_instruments_for_repo(db, repo_id)
+    piano_roll_data_url = (
+        f"/api/v1/musehub/repos/{repo_id}/midi?ref={ref}&path={path}"
+    )
+    track_data = track.model_dump(by_alias=True, mode="json") if track else None
+    instruments_data = [i.model_dump(by_alias=True, mode="json") for i in instruments]
     ctx: dict[str, object] = {
         "owner": owner,
         "repo_slug": repo_slug,
@@ -3117,6 +3119,10 @@ async def piano_roll_track_page(
         "path": path,
         "base_url": base_url,
         "current_page": "piano-roll",
+        "track": track_data,
+        "instruments": instruments_data,
+        "track_path": path,
+        "piano_roll_data_url": piano_roll_data_url,
     }
     return json_or_html(
         request,
@@ -3228,15 +3234,9 @@ async def score_page(
 ) -> Response:
     """Render the sheet music score page for a given commit ref (all tracks).
 
-    Displays all instrument parts as standard music notation rendered via a
-    lightweight SVG renderer.  The page fetches quantized notation JSON from
-    ``GET /api/v1/musehub/repos/{repo_id}/notation/{ref}`` and draws:
-
-    - Staff lines (treble and bass clefs as appropriate)
-    - Key signature and time signature
-    - Note heads, stems, flags, ledger lines
-    - Accidental markers (sharps and flats)
-    - Track/part selector dropdown
+    Fetches score metadata server-side so the header (title, key, meter,
+    instrument count) renders without a client round-trip.  The SVG notation
+    renderer remains client-side — music layout requires DOM measurement.
 
     No JWT is required to render the HTML shell.  Auth is handled client-side
     via localStorage JWT, matching all other UI pages.
@@ -3245,6 +3245,8 @@ async def score_page(
     to one instrument track.
     """
     repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
+    score_meta = await musehub_repository.get_score_meta_for_repo(db, repo_id, "")
+    abc_url = f"/api/v1/musehub/repos/{repo_id}/abc?ref={ref}"
     ctx: dict[str, object] = {
         "owner": owner,
         "repo_slug": repo_slug,
@@ -3253,6 +3255,8 @@ async def score_page(
         "base_url": base_url,
         "path": "",
         "current_page": "score",
+        "score_meta": score_meta.model_dump(by_alias=True, mode="json"),
+        "abc_url": abc_url,
     }
     return json_or_html(
         request,
@@ -3329,13 +3333,15 @@ async def score_part_page(
 ) -> Response:
     """Render the sheet music score page filtered to a single instrument part.
 
-    Identical to ``score/{ref}`` but the ``path`` segment identifies a specific
-    instrument track (e.g. ``piano``, ``bass``, ``guitar``).  The client-side
-    renderer pre-selects that track in the part selector on load.
+    Fetches score metadata server-side using the ``path`` segment as the
+    track title source.  The client-side renderer pre-selects that track
+    in the part selector on load.
 
     No JWT is required to render the HTML shell.
     """
     repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
+    score_meta = await musehub_repository.get_score_meta_for_repo(db, repo_id, path)
+    abc_url = f"/api/v1/musehub/repos/{repo_id}/abc?ref={ref}&path={path}"
     ctx: dict[str, object] = {
         "owner": owner,
         "repo_slug": repo_slug,
@@ -3344,6 +3350,8 @@ async def score_part_page(
         "base_url": base_url,
         "path": path,
         "current_page": "score",
+        "score_meta": score_meta.model_dump(by_alias=True, mode="json"),
+        "abc_url": abc_url,
     }
     return json_or_html(
         request,

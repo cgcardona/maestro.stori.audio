@@ -386,18 +386,61 @@ load();
   </div>
   <div class="card" style="margin-bottom:16px">
     <div class="score-header">
-      <h1 style="margin:0">&#127926; Score</h1>
+      <h1 style="margin:0">&#127926;
+        {%- if score_meta and score_meta.title -%}
+          {{ score_meta.title }}
+        {%- elif path -%}
+          {{ path }}
+        {%- else -%}
+          Score
+        {%- endif -%}
+      </h1>
       <code class="ref-badge">{{ ref[:16] }}{% if ref|length > 16 %}&hellip;{% endif %}</code>
-      {% if path %}
-      <span style="color:#8b949e;font-size:13px">{{ path }}</span>
-      {% endif %}
     </div>
+    {# Server-rendered metadata — shown immediately without JS fetch #}
+    {% if score_meta %}
+    <div class="score-meta" id="score-meta">
+      {% if score_meta.key %}
+      <div class="score-meta-item">
+        <span class="score-meta-label">Key</span>
+        <span class="score-meta-value">{{ score_meta.key }}</span>
+      </div>
+      {% endif %}
+      {% if score_meta.meter %}
+      <div class="score-meta-item">
+        <span class="score-meta-label">Time</span>
+        <span class="score-meta-value">{{ score_meta.meter }}</span>
+      </div>
+      {% endif %}
+      {% if score_meta.composer %}
+      <div class="score-meta-item">
+        <span class="score-meta-label">Composer</span>
+        <span class="score-meta-value">{{ score_meta.composer }}</span>
+      </div>
+      {% endif %}
+      {% if score_meta.instrumentCount %}
+      <div class="score-meta-item">
+        <span class="score-meta-label">Parts</span>
+        <span class="score-meta-value">{{ score_meta.instrumentCount }}</span>
+      </div>
+      {% endif %}
+      {# JS enriches with tempo/key once notation loads #}
+      <div id="score-meta-js-extra" style="display:contents"></div>
+    </div>
+    {% else %}
     <div class="score-meta" id="score-meta">
       <p class="loading">Loading metadata&hellip;</p>
     </div>
+    {% endif %}
+  </div>
+  {# score-container: JS renders notation into here after fetching abc_url #}
+  <div id="score-container"
+       data-abc-url="{{ abc_url }}"
+       style="background:white;border-radius:4px;padding:var(--space-3,16px);margin-bottom:16px">
+    <p style="color:#8b949e;text-align:center">Loading score&hellip;</p>
   </div>
   <div class="track-selector" id="track-selector"></div>
-  <div id="staves"><p class="loading">Loading score&hellip;</p></div>
+  <div id="staves"><p class="loading">Loading notation&hellip;</p></div>
   <div class="legend-row">
     <div class="legend-item">
       <div class="legend-dot" style="background:#58a6ff"></div>
