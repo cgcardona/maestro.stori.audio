@@ -195,7 +195,7 @@ for entry in "${PRS[@]}"; do
   fi
   R_COGNITIVE_ARCH="${R_FIGURE}:${R_SKILLS}"
   R_BATCH_ID="qa-$(date -u +%Y%m%dT%H%M%SZ)-$(printf '%04x' $RANDOM)"
-  VP_FINGERPRINT="QA VP · ${R_BATCH_ID}"
+  VP_FINGERPRINT="QA-VP-${R_BATCH_ID}"
 
   cat > "$WT/.agent-task" << TASKEOF
 WORKFLOW=pr-review
