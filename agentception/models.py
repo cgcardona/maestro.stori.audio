@@ -47,12 +47,27 @@ class AgentNode(BaseModel):
     children: list[AgentNode] = []
 
 
+class StaleClaim(BaseModel):
+    """A GitHub issue with ``agent:wip`` label but no corresponding local worktree.
+
+    Produced by :func:`~agentception.intelligence.guards.detect_stale_claims`
+    and included in :class:`PipelineState` so the dashboard can surface a
+    one-click "Clear Label" fix button for each stale claim.
+    """
+
+    issue_number: int
+    issue_title: str
+    worktree_path: str  # expected path that does not exist
+
+
 class PipelineState(BaseModel):
     """Snapshot of the entire Maestro pipeline at a point in time.
 
     Aggregated by the background poller and served to the dashboard UI.
     ``polled_at`` is a UNIX timestamp — compare with ``time.time()`` to know
     how stale the data is.
+    ``stale_claims`` provides structured data for the "Clear Label" UI action;
+    the same claims also appear as human-readable strings in ``alerts``.
     """
 
     active_label: str | None
@@ -60,6 +75,7 @@ class PipelineState(BaseModel):
     prs_open: int
     agents: list[AgentNode]
     alerts: list[str] = []
+    stale_claims: list[StaleClaim] = []
     polled_at: float
 
     @classmethod
@@ -78,6 +94,7 @@ class PipelineState(BaseModel):
             prs_open=0,
             agents=[],
             alerts=[],
+            stale_claims=[],
             polled_at=time.time(),
         )
 
