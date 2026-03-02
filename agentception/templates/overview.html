@@ -215,7 +215,7 @@
                 x-text="agent.status"
               ></span>
               <a
-                :href="'/agents/' + encodeURIComponent(agent.id)"
+                :href="'/agents/' + encodeURIComponent(agent.id.split('/').pop())"
                 class="agent-role"
                 x-text="agent.role"
               ></a>
@@ -288,7 +288,7 @@
                         x-text="child.status"
                       ></span>
                       <a
-                        :href="'/agents/' + encodeURIComponent(child.id)"
+                        :href="'/agents/' + encodeURIComponent(child.id.split('/').pop())"
                         class="agent-role"
                         x-text="child.role"
                       ></a>
