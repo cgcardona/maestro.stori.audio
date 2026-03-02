@@ -327,6 +327,43 @@
           </div>
         </template>
       </div>
+
+      {#
+        Open unclaimed issue cards — one per GitHub issue without agent:wip.
+        Each card has an "Analyze" button that POSTs to the partial endpoint
+        via HTMX and swaps the result inline without a full page reload.
+        The analysis result div starts empty and is populated on click.
+      #}
+      {% if board_issues %}
+      <div class="mt-2">
+        <h3 class="section-subtitle">Open Issues</h3>
+        {% for issue in board_issues %}
+        <div class="issue-card" id="issue-card-{{ issue.number }}">
+          <div class="issue-card-header">
+            <a
+              class="issue-card-number"
+              href="https://github.com/cgcardona/maestro/issues/{{ issue.number }}"
+              target="_blank"
+              rel="noopener noreferrer"
+            >#{{ issue.number }}</a>
+            <span class="issue-card-title">{{ issue.title }}</span>
+          </div>
+          <div class="issue-card-actions">
+            <button
+              class="btn btn-sm btn-secondary"
+              hx-post="/api/analyze/issue/{{ issue.number }}/partial"
+              hx-target="#analysis-{{ issue.number }}"
+              hx-swap="innerHTML"
+              hx-indicator="#analysis-{{ issue.number }}"
+              aria-label="Analyze issue #{{ issue.number }}"
+            >Analyze</button>
+          </div>
+          <div id="analysis-{{ issue.number }}" class="issue-analysis-result"></div>
+        </div>
+        {% endfor %}
+      </div>
+      {% endif %}
+
     </aside>
 
   </div>{# .overview-columns #}
