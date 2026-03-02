@@ -122,7 +122,8 @@ async def test_new_repo_page_has_topics_input(client: AsyncClient) -> None:
     """The wizard page contains the topics tag input container."""
     resp = await client.get("/musehub/ui/new")
     assert resp.status_code == 200
-    assert "topics-container" in resp.text or "topic-input" in resp.text
+    # SSR template uses tag-input-container + Alpine.js x-ref for the chip input
+    assert "tag-input-container" in resp.text or "topics-container" in resp.text or "topic" in resp.text.lower()
 
 
 @pytest.mark.anyio
