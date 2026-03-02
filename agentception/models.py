@@ -108,6 +108,21 @@ class TaskFile(BaseModel):
     on_block: str | None = None
 
 
+class PipelineConfig(BaseModel):
+    """Validated shape of ``.cursor/pipeline-config.json``.
+
+    This is the single source of truth for pipeline allocation.  The CTO and
+    Engineering VP role files read this model at the start of every loop/seed
+    cycle.  The ``PUT /api/config`` route validates incoming bodies against
+    this schema before persisting them to disk.
+    """
+
+    max_eng_vps: int
+    max_qa_vps: int
+    pool_size_per_vp: int
+    active_labels_order: list[str]
+
+
 class SpawnRequest(BaseModel):
     """Request body for ``POST /api/control/spawn``.
 
