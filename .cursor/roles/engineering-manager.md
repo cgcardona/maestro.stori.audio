@@ -15,7 +15,40 @@ entire chain to drain.
 
 ```
 SEED:
-  0. Pipeline-pause sentinel — check BEFORE seeding any agents:
+  0. A/B mode — resolve ROLE_FILE before seeding any agents:
+       # When ab_mode.enabled is true in pipeline-config.json the VP alternates
+       # between variant_a_file (even BATCH_ID second) and variant_b_file (odd).
+       # Must run BEFORE generating BATCH_ID so the resolved file is available
+       # for the .agent-task written in step 5d.
+       ROLE_FILE=".cursor/roles/python-developer.md"
+       AB_MODE=$(python3 -c "
+import json, sys
+try:
+    c = json.load(open('/Users/gabriel/dev/tellurstori/maestro/.cursor/pipeline-config.json'))
+    print(c.get('ab_mode', {}).get('enabled', False))
+except Exception:
+    print(False)
+")
+       if [ "$AB_MODE" = "True" ]; then
+         SECONDS_PART=$(echo "$BATCH_ID" | grep -oE 'T[0-9]{6}Z' | grep -oE '[0-9]{6}' | cut -c5-6)
+         if [ $((SECONDS_PART % 2)) -eq 0 ]; then
+           ROLE_FILE=$(python3 -c "
+import json
+c = json.load(open('/Users/gabriel/dev/tellurstori/maestro/.cursor/pipeline-config.json'))
+print(c['ab_mode']['variant_a_file'])
+")
+           echo "🔀 A/B mode: even second → variant A → $ROLE_FILE"
+         else
+           ROLE_FILE=$(python3 -c "
+import json
+c = json.load(open('/Users/gabriel/dev/tellurstori/maestro/.cursor/pipeline-config.json'))
+print(c['ab_mode']['variant_b_file'])
+")
+           echo "🔀 A/B mode: odd second → variant B → $ROLE_FILE"
+         fi
+       fi
+
+  0.5 Pipeline-pause sentinel — check BEFORE seeding any agents:
        # The AgentCeption dashboard writes .cursor/.pipeline-pause to request a pause.
        # When the file exists, wait 30 s and restart the SEED block without spawning.
        [ -f /Users/gabriel/dev/tellurstori/maestro/.cursor/.pipeline-pause ] && \
