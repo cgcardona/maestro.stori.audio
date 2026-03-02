@@ -1,14 +1,20 @@
-"""Tests for the AgentCeption dependency DAG builder.
+"""Tests for the AgentCeption dependency DAG builder and UI/API routes.
 
-Covers parse_deps_from_body (all known variants) and build_dag (with
-mocked GitHub data) to keep tests hermetic — no live API calls.
+Covers:
+- parse_deps_from_body (all known variants)
+- build_dag (with mocked GitHub data) — hermetic, no live API calls
+- GET /dag  — HTML page (dag_page_returns_200, d3_cdn)
+- GET /api/dag — JSON endpoint (returns nodes and edges)
 """
 from __future__ import annotations
 
+from collections.abc import Generator
 from unittest.mock import AsyncMock, patch
 
 import pytest
+from fastapi.testclient import TestClient
 
+from agentception.app import app
 from agentception.intelligence.dag import (
     DependencyDAG,
     IssueNode,
@@ -281,3 +287,70 @@ def test_dependency_dag_model() -> None:
     assert dag.nodes[0].number == 1
     dumped = dag.model_dump()
     assert dumped["edges"] == [(1, 2)]
+
+
+# ---------------------------------------------------------------------------
+# UI / API routes — GET /dag and GET /api/dag
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture()
+def client() -> Generator[TestClient, None, None]:
+    """Synchronous test client with full lifespan."""
+    with TestClient(app) as c:
+        yield c
+
+
+@pytest.fixture()
+def _empty_dag() -> DependencyDAG:
+    """An empty DAG for use in route tests that do not need real GitHub data."""
+    return DependencyDAG(nodes=[], edges=[])
+
+
+def test_dag_page_returns_200(
+    client: TestClient, _empty_dag: DependencyDAG
+) -> None:
+    """GET /dag must return HTTP 200 with a mocked empty DAG."""
+    with patch(
+        "agentception.routes.ui.build_dag",
+        new_callable=AsyncMock,
+        return_value=_empty_dag,
+    ):
+        response = client.get("/dag")
+    assert response.status_code == 200
+
+
+def test_dag_page_includes_d3_cdn(
+    client: TestClient, _empty_dag: DependencyDAG
+) -> None:
+    """GET /dag HTML must load D3.js from the CDN (cdn.jsdelivr.net/npm/d3)."""
+    with patch(
+        "agentception.routes.ui.build_dag",
+        new_callable=AsyncMock,
+        return_value=_empty_dag,
+    ):
+        response = client.get("/dag")
+    assert "cdn.jsdelivr.net/npm/d3" in response.text
+
+
+def test_dag_api_returns_nodes_and_edges(client: TestClient) -> None:
+    """GET /api/dag must return JSON with 'nodes' and 'edges' keys."""
+    fake_issue = {
+        "number": 42,
+        "title": "A test issue",
+        "state": "open",
+        "labels": [{"name": "enhancement"}],
+        "body": "",
+    }
+    with patch(
+        "agentception.intelligence.dag.get_open_issues",
+        new_callable=AsyncMock,
+        return_value=[fake_issue],
+    ):
+        response = client.get("/api/dag")
+    assert response.status_code == 200
+    data = response.json()
+    assert "nodes" in data
+    assert "edges" in data
+    assert len(data["nodes"]) == 1
+    assert data["nodes"][0]["number"] == 42
