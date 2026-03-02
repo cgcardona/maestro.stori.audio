@@ -97,7 +97,7 @@ from maestro.db import musehub_models as musehub_db
 from maestro.muse_cli.models import MuseCliTag
 from maestro.db import musehub_label_models as label_db
 from maestro.services import musehub_credits, musehub_divergence, musehub_events, musehub_issues, musehub_listen, musehub_pull_requests, musehub_releases
-from maestro.services import musehub_repository
+from maestro.services import musehub_discover, musehub_repository, musehub_search
 
 logger = logging.getLogger(__name__)
 
@@ -222,20 +222,52 @@ async def feed_page(request: Request) -> Response:
 
 
 @fixed_router.get("/search", summary="Muse Hub global search page")
-async def global_search_page(request: Request, q: str = "", mode: str = "keyword") -> Response:
-    """Render the global cross-repo search page.
+async def global_search_page(
+    request: Request,
+    q: str = "",
+    mode: str = "keyword",
+    page: int = Query(1, ge=1),
+    page_size: int = Query(10, ge=1, le=50),
+    db: AsyncSession = Depends(get_db),
+) -> Response:
+    """Render the global cross-repo search page with SSR results.
 
-    Query params ``q`` and ``mode`` are pre-filled into the search form so
-    that shared URLs land with the last query already populated.  Values are
-    sanitised client-side before being injected into the DOM (XSS safe).
+    Results are fetched server-side and rendered into Jinja2 templates so the
+    page is fully readable without JavaScript.  HTMX live-search (debounced
+    input trigger) swaps only the ``#search-results`` fragment on subsequent
+    queries, avoiding a full-page reload.
     """
-    safe_q = q.replace("'", "\\'").replace('"', '\\"').replace("\n", "").replace("\r", "")
     safe_mode = mode if mode in ("keyword", "pattern") else "keyword"
-    ctx: dict[str, object] = {"initial_q": safe_q, "initial_mode": safe_mode}
-    return json_or_html(
+    result = None
+    if q and len(q.strip()) >= 2:
+        result = await musehub_repository.global_search(
+            db,
+            query=q,
+            mode=safe_mode,
+            page=page,
+            page_size=page_size,
+        )
+        logger.info(
+            "✅ Global search SSR q=%r mode=%s page=%d → %d groups",
+            q,
+            safe_mode,
+            page,
+            len(result.groups) if result else 0,
+        )
+    ctx: dict[str, object] = {
+        "query": q,
+        "mode": safe_mode,
+        "page": page,
+        "page_size": page_size,
+        "result": result,
+        "modes": ["keyword", "pattern"],
+    }
+    return await htmx_fragment_or_full(
         request,
-        lambda: templates.TemplateResponse(request, "musehub/pages/global_search.html", ctx),
+        templates,
         ctx,
+        full_template="musehub/pages/global_search.html",
+        fragment_template="musehub/fragments/global_search_results.html",
     )
 
 
@@ -246,13 +278,18 @@ async def explore_page(
     license_filter: str = Query(default="", alias="license", description="License filter (e.g. CC0, CC BY)"),
     sort: str = Query(default="stars", description="Sort order: stars | updated | forks | trending"),
     topic: list[str] = Query(default=[], alias="topic", description="Topic filter chips (multi-select)"),
+    page: int = Query(default=1, ge=1, description="Page number (1-based)"),
+    per_page: int = Query(default=24, ge=1, le=100, description="Results per page"),
     db: AsyncSession = Depends(get_db),
 ) -> Response:
-    """Render the explore/discover page — a filterable grid of all public repos.
+    """Render the explore/discover page — an SSR filterable grid of all public repos.
 
     No JWT required.  Filter sidebar uses GET params so all filter states are
     bookmarkable and shareable.  Sidebar data (muse_tag chips, topic chips) is
     pre-loaded server-side to avoid an extra round-trip on first paint.
+
+    HTMX fragment requests (HX-Request: true) return only the repo grid fragment
+    so filter changes can swap the grid without a full page reload.
 
     Filter sources:
     - ``lang`` chips: top 30 distinct values from the ``muse_tags`` table.
@@ -285,13 +322,34 @@ async def explore_page(
         for name, _ in sorted(topic_counts.items(), key=lambda kv: (-kv[1], kv[0]))[:40]
     ]
 
-    _valid_sorts = {"stars", "updated", "forks", "trending"}
-    effective_sort = sort if sort in _valid_sorts else "stars"
+    # Map UI sort labels to discover service sort fields.
+    _sort_map: dict[str, musehub_discover.SortField] = {
+        "stars": "stars",
+        "updated": "activity",
+        "forks": "commits",
+        "trending": "stars",
+    }
+    effective_sort: musehub_discover.SortField = _sort_map.get(sort, "stars")
+
+    # Fetch repos server-side for SSR grid.
+    genre_filter = topic[0] if topic else None
+    explore = await musehub_discover.list_public_repos(
+        db,
+        sort=effective_sort,
+        page=page,
+        page_size=per_page,
+        genre=genre_filter,
+    )
+    total_pages = max(1, (explore.total + per_page - 1) // per_page)
 
     ctx: dict[str, object] = {
         "title": "Explore",
         "breadcrumb": "Explore",
-        "default_sort": effective_sort,
+        "repos": explore.repos,
+        "total": explore.total,
+        "page": page,
+        "total_pages": total_pages,
+        "sort": sort,
         "muse_tag_chips": muse_tag_chips,
         "topic_chips": topic_chips,
         "selected_langs": lang,
@@ -304,26 +362,53 @@ async def explore_page(
             ("forks", "Most forked"),
             ("trending", "Trending"),
         ],
+        "base_explore_url": "/musehub/ui/explore",
     }
-    return json_or_html(
+    return await htmx_fragment_or_full(
         request,
-        lambda: templates.TemplateResponse(request, "musehub/pages/explore.html", ctx),
+        templates,
         ctx,
+        full_template="musehub/pages/explore.html",
+        fragment_template="musehub/fragments/repo_grid.html",
     )
 
 
 @fixed_router.get("/trending", summary="Muse Hub trending page")
-async def trending_page(request: Request) -> Response:
-    """Render the trending page -- public repos sorted by star count.
+async def trending_page(
+    request: Request,
+    page: int = Query(default=1, ge=1, description="Page number (1-based)"),
+    per_page: int = Query(default=24, ge=1, le=100, description="Results per page"),
+    db: AsyncSession = Depends(get_db),
+) -> Response:
+    """Render the trending page — public repos sorted by star count, SSR.
 
-    Identical shell to the explore page but pre-selects sort=stars so the
-    most-starred compositions appear first.
+    HTMX fragment requests (HX-Request: true) return only the repo grid
+    fragment for seamless pagination without a full page reload.
     """
-    ctx: dict[str, object] = {"title": "Trending", "breadcrumb": "Trending", "default_sort": "stars"}
-    return json_or_html(
+    explore = await musehub_discover.list_public_repos(
+        db,
+        sort="stars",
+        page=page,
+        page_size=per_page,
+    )
+    total_pages = max(1, (explore.total + per_page - 1) // per_page)
+
+    ctx: dict[str, object] = {
+        "title": "Trending",
+        "breadcrumb": "Trending",
+        "repos": explore.repos,
+        "total": explore.total,
+        "page": page,
+        "total_pages": total_pages,
+        "sort": "stars",
+        "base_explore_url": "/musehub/ui/trending",
+    }
+    return await htmx_fragment_or_full(
         request,
-        lambda: templates.TemplateResponse(request, "musehub/explore_base.html", ctx),
+        templates,
         ctx,
+        full_template="musehub/pages/trending.html",
+        fragment_template="musehub/fragments/repo_grid.html",
     )
 
 
@@ -1361,28 +1446,56 @@ async def search_page(
     request: Request,
     owner: str,
     repo_slug: str,
+    q: str = Query("", description="Search query"),
+    mode: str = Query("keyword", description="Search mode: keyword | pattern | ask"),
+    limit: int = Query(20, ge=1, le=200),
     db: AsyncSession = Depends(get_db),
 ) -> Response:
-    """Render the in-repo search page with four mode tabs.
+    """Render the in-repo search page with SSR results.
 
-    Modes:
-    - Musical Properties (``mode=property``) -- filter by harmony/rhythm/etc.
-    - Natural Language (``mode=ask``) -- free-text question over commit history.
-    - Keyword (``mode=keyword``) -- keyword overlap scored search.
-    - Pattern (``mode=pattern``) -- substring match against messages and branches.
+    Simple keyword / pattern / ask modes are run server-side when ``q`` is
+    provided and at least 2 characters long.  The Musical Properties mode
+    (``mode=property``) keeps its JS-driven form because its multi-field
+    filter UI is not expressible as a single query param — that panel degrades
+    gracefully to a submit-button form when JS is unavailable.
+
+    HTMX live-search swaps only the ``#repo-search-results`` fragment on
+    debounced input, avoiding a full-page reload for subsequent queries.
     """
     repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
+    safe_mode = mode if mode in ("keyword", "pattern", "ask") else "keyword"
+    search_result = None
+    if q and len(q.strip()) >= 2 and safe_mode != "property":
+        if safe_mode == "keyword":
+            search_result = await musehub_search.search_by_keyword(
+                db, repo_id=repo_id, keyword=q, limit=limit
+            )
+        elif safe_mode == "ask":
+            search_result = await musehub_search.search_by_ask(
+                db, repo_id=repo_id, question=q, limit=limit
+            )
+        elif safe_mode == "pattern":
+            search_result = await musehub_search.search_by_pattern(
+                db, repo_id=repo_id, pattern=q, limit=limit
+            )
     ctx: dict[str, object] = {
         "owner": owner,
         "repo_slug": repo_slug,
         "repo_id": repo_id,
         "base_url": base_url,
         "current_page": "search",
+        "query": q,
+        "mode": safe_mode,
+        "limit": limit,
+        "search_result": search_result,
+        "modes": ["keyword", "pattern", "ask"],
     }
-    return json_or_html(
+    return await htmx_fragment_or_full(
         request,
-        lambda: templates.TemplateResponse(request, "musehub/pages/search.html", ctx),
+        templates,
         ctx,
+        full_template="musehub/pages/search.html",
+        fragment_template="musehub/fragments/search_results.html",
     )
 
 
