@@ -897,3 +897,80 @@ External (DAW, LLM, Storpheus)
 ```
 
 Implementation: `app/contracts/json_types.py` (TypedDicts + helpers), `app/contracts/pydantic_types.py` (PydanticJson + converters), `app/contracts/mcp_types.py` (MCP TypedDicts + wire models), `maestro/protocol/events.py` (ToolCallWire).
+
+---
+
+## UI Architecture
+
+MuseHub uses **HTMX + Jinja2 SSR + Alpine.js** for all listing and CRUD pages.
+The SSR migration (issues #555–#587) replaced the original client-side JS / `apiFetch`
+pattern with a server-first approach.
+
+### Pattern summary
+
+- **Route handlers** (`maestro/api/routes/musehub/`) fetch data from the service layer
+  and pass a typed `ctx` dict to Jinja2 templates.  No business logic in routes — three
+  lines is the ideal handler body.
+- **Jinja2 templates** (`maestro/templates/musehub/`) render HTML server-side using
+  shared macros from `templates/musehub/macros/`.  All data arrives via `ctx`, not via
+  client-side `fetch()`.
+- **Fragment templates** (`templates/musehub/fragments/`) are returned for HTMX partial
+  updates (tab switches, filter reloads, pagination).
+- **HTMX** handles filter forms, tab switching, pagination, and CRUD mutations via
+  `hx-get` / `hx-post` attributes.  `hx-boost="true"` on the base container gives
+  SPA-feel navigation without a JS router.
+- **Alpine.js** handles stateful micro-interactions: dropdowns, modals, and optimistic
+  UI updates that require local state without a full round-trip.
+- **JavaScript is preserved only for:** canvas piano roll (`arrange.html`), abcjs score
+  renderer (`score.html`), WaveSurfer audio player (`listen.html`), and DAG graph layout
+  (`graph.html`).  These pages fetch binary data or render interactive canvases that
+  cannot be expressed as static Jinja2 HTML.
+
+### Fragment Response Pattern
+
+All migrated routes use `htmx_fragment_or_full()`:
+
+```python
+return await htmx_fragment_or_full(
+    request,
+    templates,
+    ctx,
+    full_template="musehub/pages/releases.html",
+    fragment_template="musehub/fragments/release_rows.html",
+)
+```
+
+- **Direct browser navigation** → full page extending `base.html` (with nav, `<html>`, etc.)
+- **HTMX request** (`HX-Request: true`) → bare fragment only (no nav, no `<html>`) so
+  HTMX can swap just the target container.
+
+### Auth in HTMX
+
+The `htmx:configRequest` event listener in `musehub.js` injects
+`Authorization: Bearer <token>` on every HTMX request automatically.  No per-page
+auth setup is required — the bridge runs once at load time in the base template.
+
+### Template ownership rules
+
+| Template type | Location | Rule |
+|---|---|---|
+| Full pages | `templates/musehub/pages/` | One file per route; extends `base.html` or `explore_base.html` |
+| Fragments | `templates/musehub/fragments/` | Returned by HTMX requests; must NOT extend any base |
+| Macros | `templates/musehub/macros/` | Shared rendering helpers; no business logic |
+| Static JS/CSS | `templates/musehub/static/` | `musehub.js`, `htmx.min.js`, `alpinejs.min.js` |
+
+### Non-migrated pages
+
+The following pages intentionally remain JS-driven and are **not** expected to be
+free of `apiFetch` calls:
+
+| Page | Reason |
+|---|---|
+| `arrange.html`, `piano_roll.html` | Canvas piano roll — interactive MIDI editor |
+| `listen.html`, `embed.html` | WaveSurfer.js audio player |
+| `score.html` | abcjs notation canvas |
+| `graph.html` | Interactive commit DAG (D3 / force-directed layout) |
+| `analysis.html`, `tempo.html`, `emotion.html`, `chord_map.html`, etc. | Music analysis charts (client-side JSON → chart.js) |
+| `timeline.html`, `divergence.html`, `compare.html` | Complex data-vis with interactive overlays |
+| `commit.html` | Per-commit audio analysis, inline comments, reaction widgets |
+| `feed.html` | Real-time notification feed |
