@@ -1,17 +1,17 @@
 """Tests for Muse Hub stash UI endpoints.
 
 Covers GET /musehub/ui/{owner}/{repo_slug}/stash:
-- test_stash_list_page_auth_required — unauthenticated GET → 401
-- test_stash_list_page_returns_200_with_token — authenticated GET → 200 HTML
-- test_stash_list_page_shows_ref_labels — HTML includes stash@{0} refs
-- test_stash_list_page_action_buttons_present — Apply / Pop / Drop buttons present
-- test_stash_list_page_drop_confirm_present — Drop form has confirmation dialog
-- test_stash_list_page_json_response — ?format=json returns JSON with stashes key
-- test_stash_list_page_json_fields — JSON stash items have required fields
-- test_stash_list_page_empty_stash — empty stash returns 200 with 0 total
-- test_stash_list_unknown_repo_404 — unknown owner/slug → 404
-- test_stash_list_isolates_by_user — only caller's stash is shown
-- test_stash_list_pagination_query_params — page/page_size accepted without error
+- test_stash_list_page_auth_required                 — unauthenticated GET → 401
+- test_stash_list_page_returns_200_with_token        — authenticated GET → 200 HTML
+- test_stash_list_page_shows_ref_labels              — HTML includes stash@{0} refs
+- test_stash_list_page_action_buttons_present        — Apply / Pop / Drop buttons present
+- test_stash_list_page_drop_confirm_present          — Drop form has hx-confirm attribute
+- test_stash_list_page_json_response                 — ?format=json returns JSON with stashes key
+- test_stash_list_page_json_fields                   — JSON stash items have required fields
+- test_stash_list_page_empty_stash                   — empty stash returns 200 with 0 total
+- test_stash_list_unknown_repo_404                   — unknown owner/slug → 404
+- test_stash_list_isolates_by_user                   — only caller's stash is shown
+- test_stash_list_pagination_query_params            — page/page_size accepted without error
 
 Covers POST /musehub/ui/{owner}/{repo_slug}/stash/{stash_ref}/apply:
 - test_stash_apply_auth_required — unauthenticated POST → 401
@@ -178,7 +178,7 @@ async def test_stash_list_page_drop_confirm_present(
     auth_headers: dict[str, str],
     test_user: object,
 ) -> None:
-    """Drop button form has a JavaScript confirm() dialog to prevent accidents."""
+    """Drop form uses hx-confirm attribute for HTMX-native confirmation dialog."""
     repo_id = await _make_repo(db_session)
     await _make_stash(db_session, repo_id)
     response = await client.get(
@@ -186,7 +186,7 @@ async def test_stash_list_page_drop_confirm_present(
         headers=auth_headers,
     )
     assert response.status_code == 200
-    assert "confirm(" in response.text
+    assert "hx-confirm" in response.text
 
 
 @pytest.mark.anyio
