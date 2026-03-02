@@ -3523,17 +3523,16 @@ async def test_contour_page_contains_graph_ui(
     client: AsyncClient,
     db_session: AsyncSession,
 ) -> None:
-    """Contour page must contain pitch-curve graph, shape badge, and tessitura elements."""
+    """Contour page SSR: must contain pitch-curve polyline, shape summary, and direction data."""
     repo_id = await _make_repo(db_session)
     ref = "cafebabe12345678"
     response = await client.get(f"/musehub/ui/testuser/test-beats/analysis/{ref}/contour")
     assert response.status_code == 200
     body = response.text
     assert "Melodic Contour" in body
-    assert "pitchCurveSvg" in body or "pitchCurve" in body
-    assert "Tessitura" in body
+    assert "<polyline" in body or "PITCH CURVE" in body
     assert "Shape" in body
-    assert "track-inp" in body
+    assert "Overall Direction" in body
     assert repo_id in body
 
 
@@ -3901,15 +3900,15 @@ async def test_emotion_page_includes_charts(
     client: AsyncClient,
     db_session: AsyncSession,
 ) -> None:
-    """Emotion page embeds valence-arousal plot helper and axis labels."""
+    """Emotion page SSR: must contain SVG scatter plot and axis dimension labels."""
     await _make_repo(db_session)
     response = await client.get(f"/musehub/ui/testuser/test-beats/analysis/{_EMOTION_REF}/emotion")
     assert response.status_code == 200
     body = response.text
-    assert "valenceArousalPlot" in body
+    assert "<circle" in body or "<svg" in body
     assert "Valence" in body
-    assert "Arousal" in body
     assert "Tension" in body
+    assert "Energy" in body
 
 
 @pytest.mark.anyio
@@ -3917,13 +3916,13 @@ async def test_emotion_page_includes_filters(
     client: AsyncClient,
     db_session: AsyncSession,
 ) -> None:
-    """Emotion page embeds the primary emotion label and confidence display."""
+    """Emotion page SSR: must contain summary vector bars and trajectory section."""
     await _make_repo(db_session)
     response = await client.get(f"/musehub/ui/testuser/test-beats/analysis/{_EMOTION_REF}/emotion")
     assert response.status_code == 200
     body = response.text
-    assert "primaryEmotion" in body
-    assert "confidence" in body
+    assert "SUMMARY VECTOR" in body
+    assert "TRAJECTORY" in body
 
 
 @pytest.mark.anyio
@@ -4416,13 +4415,13 @@ async def test_motifs_page_contains_filter_ui(
     client: AsyncClient,
     db_session: AsyncSession,
 ) -> None:
-    """Motifs page embeds client-side track and section filter controls."""
+    """Motifs page SSR: must contain interval pattern section and occurrence markers."""
     repo_id = await _make_repo(db_session)
     response = await client.get("/musehub/ui/testuser/test-beats/analysis/main/motifs")
     assert response.status_code == 200
     body = response.text
-    assert "track-filter" in body
-    assert "section-filter" in body
+    assert "INTERVAL PATTERN" in body
+    assert "OCCURRENCES" in body
 
 
 @pytest.mark.anyio
@@ -4430,12 +4429,13 @@ async def test_motifs_page_contains_piano_roll_renderer(
     client: AsyncClient,
     db_session: AsyncSession,
 ) -> None:
-    """Motifs page embeds the piano roll renderer JavaScript function."""
+    """Motifs page SSR: must contain motif browser heading and interval data."""
     repo_id = await _make_repo(db_session)
     response = await client.get("/musehub/ui/testuser/test-beats/analysis/main/motifs")
     assert response.status_code == 200
     body = response.text
-    assert "pianoRollHtml" in body
+    assert "Motif Browser" in body
+    assert "INTERVAL PATTERN" in body
 
 
 @pytest.mark.anyio
@@ -4443,12 +4443,12 @@ async def test_motifs_page_contains_recurrence_grid(
     client: AsyncClient,
     db_session: AsyncSession,
 ) -> None:
-    """Motifs page embeds the recurrence grid (heatmap) renderer."""
+    """Motifs page SSR: must contain recurrence grid section rendered server-side."""
     repo_id = await _make_repo(db_session)
     response = await client.get("/musehub/ui/testuser/test-beats/analysis/main/motifs")
     assert response.status_code == 200
     body = response.text
-    assert "recurrenceGridHtml" in body
+    assert "RECURRENCE GRID" in body or "occurrence" in body.lower()
 
 
 @pytest.mark.anyio
@@ -4456,12 +4456,12 @@ async def test_motifs_page_shows_transformation_badges(
     client: AsyncClient,
     db_session: AsyncSession,
 ) -> None:
-    """Motifs page includes transformation badge renderer for inversion/retrograde labels."""
+    """Motifs page SSR: must contain TRANSFORMATIONS section with inversion type labels."""
     repo_id = await _make_repo(db_session)
     response = await client.get("/musehub/ui/testuser/test-beats/analysis/main/motifs")
     assert response.status_code == 200
     body = response.text
-    assert "transformationsHtml" in body
+    assert "TRANSFORMATIONS" in body
     assert "inversion" in body
 
 
@@ -7575,15 +7575,15 @@ async def test_chord_map_analysis_page_contains_chord_data_labels(
     client: AsyncClient,
     db_session: AsyncSession,
 ) -> None:
-    """Chord-map page must contain progression, tension, and beat position UI elements."""
+    """Chord-map page SSR: must contain progression timeline, chord table, and tension data."""
     await _make_repo(db_session)
     ref = "beefdead1234"
     response = await client.get(f"/musehub/ui/testuser/test-beats/analysis/{ref}/chord-map")
     assert response.status_code == 200
     body = response.text
     assert "Chord Map" in body
-    assert "Total Chords" in body
-    assert "Chord Progression" in body
+    assert "PROGRESSION TIMELINE" in body
+    assert "CHORD TABLE" in body
     assert "tension" in body.lower()
 
 
@@ -7662,17 +7662,17 @@ async def test_emotion_analysis_page_contains_emotion_data_labels(
     client: AsyncClient,
     db_session: AsyncSession,
 ) -> None:
-    """Emotion page must contain primary emotion, valence-arousal plot, and tension bar."""
+    """Emotion page SSR: must contain SVG scatter plot and summary vector dimension bars."""
     await _make_repo(db_session)
     ref = "aabbccdd5678"
     response = await client.get(f"/musehub/ui/testuser/test-beats/analysis/{ref}/emotion")
     assert response.status_code == 200
     body = response.text
     assert "Emotion Analysis" in body
-    assert "Primary Emotion" in body
+    assert "SUMMARY VECTOR" in body
     assert "Valence" in body or "valence" in body
-    assert "Arousal" in body or "arousal" in body
     assert "Tension" in body or "tension" in body
+    assert "<circle" in body or "<svg" in body
 
 
 @pytest.mark.anyio
