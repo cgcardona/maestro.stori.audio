@@ -88,8 +88,9 @@ LOOP:
        # Labels are processed in strict order — NEVER skip ahead.
        # Find the lowest-numbered label that still has open issues.
        ACTIVE_LABEL=""
-       for label in htmx/0-foundation htmx/1-pages htmx/2-main-ui \
-                        htmx/3-analysis htmx/4-canvas htmx/5-cleanup; do
+       for label in ac-ui/0-critical-bugs ac-ui/1-design-tokens \
+                        ac-ui/2-data-model ac-ui/3-core-pages \
+                        ac-ui/4-controls-intelligence ac-ui/5-polish; do
          COUNT=$(gh issue list --state open --repo cgcardona/maestro \
                    --label "$label" --json number --jq 'length')
          if [ "$COUNT" -gt 0 ]; then
@@ -125,7 +126,7 @@ LOOP:
      this to more than 1 Eng VP regardless of queue depth.
 
      ⚠️  ACTIVE_LABEL GATE: The single Eng VP ONLY works on ACTIVE_LABEL issues.
-     It MUST NOT claim issues from any other htmx/* label.
+     It MUST NOT claim issues from any other ac-ui/* label.
 
   4. Dispatch all allocated VPs simultaneously in ONE message
      (one Task call per VP, all in the same response):
@@ -155,10 +156,10 @@ runtime.
 **Engineering VP Task prompt — construct as follows:**
 
   Part 1 — prefix:
-    "CTO_WAVE=<wave-N-timestamp>. ACTIVE_LABEL=<htmx/X-label>.
+    "CTO_WAVE=<wave-N-timestamp>. ACTIVE_LABEL=<ac-ui/X-label>.
      Seed your pool and wait for it to drain.
-     You MUST only query and claim issues labeled exactly '<htmx/X-label>'
-     — no other htmx/* labels."
+     You MUST only query and claim issues labeled exactly '<ac-ui/X-label>'
+     — no other ac-ui/* labels."
 
   Part 2 — VP role + full downstream kickoff chain:
     Paste the entire ## Embedded Eng VP Role section below verbatim.
@@ -182,11 +183,11 @@ CTO and VPs do not track dependencies. The canonical prompts handle it.
 
 ## Label scoping rules (critical)
 
-- **Issues:** only htmx/-tagged issues are in scope. Filter every query:
-  `--jq '[.[] | select(.labels | map(.name) | any(startswith("htmx/")))]'`
-- **PRs:** ALL open PRs against `dev` are in scope — PRs never carry `htmx/*` labels.
-  Never add a htmx/ label to a PR. Never filter PRs by label.
-- The QA VP must NOT require htmx/ labels on PRs — it reviews every open PR, full stop.
+- **Issues:** only ac-ui/-tagged issues are in scope. Filter every query:
+  `--jq '[.[] | select(.labels | map(.name) | any(startswith("ac-ui/")))]'`
+- **PRs:** ALL open PRs against `dev` are in scope — PRs never carry `ac-ui/*` labels.
+  Never add a ac-ui/ label to a PR. Never filter PRs by label.
+- The QA VP must NOT require ac-ui/ labels on PRs — it reviews every open PR, full stop.
 
 ## What you never do
 
@@ -277,8 +278,8 @@ SEED:
        done
 
   3. Query open unclaimed issues — ACTIVE_LABEL only (passed by CTO in your dispatch prompt):
-       # ACTIVE_LABEL is the single htmx/* label the CTO assigned to you.
-       # NEVER query all htmx/* labels — you are scoped to exactly one label per VP run.
+       # ACTIVE_LABEL is the single ac-ui/* label the CTO assigned to you.
+       # NEVER query all ac-ui/* labels — you are scoped to exactly one label per VP run.
        # This prevents you from accidentally claiming issues from a later phase.
        ACTIVE_LABEL="<from CTO dispatch prompt>"
        gh issue list --state open --repo cgcardona/maestro --label "$ACTIVE_LABEL" \
@@ -462,7 +463,7 @@ Worktrees live at: `$HOME/.cursor/worktrees/maestro/issue-{N}/`
 ```
 TASK=issue-to-pr
 ISSUE_NUMBER=<N>
-ISSUE_LABEL=<primary htmx/* label from: gh issue view <N> --json labels --jq '[.labels[].name | select(startswith("htmx/"))] | first'>
+ISSUE_LABEL=<primary ac-ui/* label from: gh issue view <N> --json labels --jq '[.labels[].name | select(startswith("ac-ui/"))] | first'>
 BRANCH=feat/issue-<N>
 WORKTREE=$HOME/.cursor/worktrees/maestro/issue-<N>
 ROLE=python-developer
@@ -476,7 +477,7 @@ WAVE=<CTO_WAVE>
 COGNITIVE_ARCH=<COGNITIVE_ARCH from step 5c above, e.g. "lovelace:htmx:jinja2:alpine">
 ```
 
-`ISSUE_LABEL` is the primary scoping label (e.g. `htmx/0-scaffold`). Leaf agents use it to route mypy and tests to the correct codebase container — never cross-run muse_hub checks on maestro or vice versa.
+`ISSUE_LABEL` is the primary scoping label (e.g. `ac-ui/0-scaffold`). Leaf agents use it to route mypy and tests to the correct codebase container — never cross-run agentception_ui checks on maestro or vice versa.
 
 `COGNITIVE_ARCH` is the selected cognitive architecture for this specific issue. Format: `figure:skill1:skill2` (up to 3 skills). Leaf agents pass it to `python3 /app/scripts/gen_prompts/resolve_arch.py "$COGNITIVE_ARCH"` to assemble their context block. See `scripts/gen_prompts/TICKET_TAXONOMY.md` for the full taxonomy and rationale.
 
@@ -902,7 +903,7 @@ WTNAME=$(basename "$(pwd)")
 
 # Detect codebase from issue label in .agent-task
 ISSUE_LABEL=$(grep "^ISSUE_LABEL=" .agent-task 2>/dev/null | cut -d= -f2 || echo "")
-IS_AC=$(echo "$ISSUE_LABEL" | grep -c "^htmx/" || true)
+IS_AC=$(echo "$ISSUE_LABEL" | grep -c "^ac-ui/" || true)
 
 # mypy — route by codebase (agentception and maestro are independent; never cross-run)
 if [ "$IS_AC" -gt 0 ]; then
@@ -1179,7 +1180,7 @@ STEP 3 — IMPLEMENT (only if STEP 2 found nothing):
   # what was already broken. This baseline is your contract with the next agent.
   # Detect codebase from .agent-task label — set once, used throughout this run.
   ISSUE_LABEL=$(grep "^ISSUE_LABEL=" .agent-task 2>/dev/null | cut -d= -f2 || echo "")
-  IS_AC=$(echo "$ISSUE_LABEL" | grep -c "^htmx/" || true)
+  IS_AC=$(echo "$ISSUE_LABEL" | grep -c "^ac-ui/" || true)
 
   echo "=== PRE-EXISTING MYPY BASELINE (dev, before any changes) ==="
   # Route by codebase — agentception and maestro are independent; never cross-run.
@@ -1874,20 +1875,20 @@ Every piece of code you write or touch must satisfy:
 Run in order — types before tests:
 
 ```
-docker compose exec maestro sh -c "PYTHONPATH=/worktrees/$WTNAME mypy /worktrees/$WTNAME/maestro/ /worktrees/$WTNAME/tests/"
+docker compose exec agentception sh -c "PYTHONPATH=/worktrees/$WTNAME mypy /worktrees/$WTNAME/agentception/"
 ```
 
-Then run **only the test files for modules you changed** — never `tests/` as a directory:
+Then run **only the test files for modules you changed** — never `agentception/tests/` as a directory:
 
 ```
 # Module-name convention:
-# agentception/app.py                → tests/test_agentception_scaffold.py
-# agentception/readers/worktrees.py  → tests/test_agentception_worktrees.py
-# agentception/readers/github.py     → tests/test_agentception_github.py
-# agentception/poller.py             → tests/test_agentception_poller.py
-# agentception/routes/ui.py          → tests/test_agentception_ui_overview.py
+# agentception/app.py                → agentception/tests/test_agentception_scaffold.py
+# agentception/readers/worktrees.py  → agentception/tests/test_agentception_worktrees.py
+# agentception/readers/github.py     → agentception/tests/test_agentception_github.py
+# agentception/poller.py             → agentception/tests/test_agentception_poller.py
+# agentception/routes/ui.py          → agentception/tests/test_agentception_ui_overview.py
 
-docker compose exec maestro pytest tests/test_<your_module>.py -v
+docker compose exec agentception pytest agentception/tests/test_<your_module>.py -v
 ```
 
 The full suite is CI's job. Running it in every agent session doesn't scale.
@@ -2384,9 +2385,9 @@ the container. After checking out the PR branch, your worktree's code is
 REPO=$(git worktree list | head -1 | awk '{print $1}')
 WTNAME=$(basename "$(pwd)")
 
-# Detect codebase from PR labels (htmx/* vs maestro/storpheus)
+# Detect codebase from PR labels (ac-ui/* vs maestro/storpheus)
 IS_AC=$(gh pr view $N --repo $GH_REPO --json labels \
-  --jq '.labels[].name' | grep -c "^htmx/" || true)
+  --jq '.labels[].name' | grep -c "^ac-ui/" || true)
 
 # mypy — route by codebase (NEVER run both; they are independent codebases)
 # Both codebases use the same pattern: PYTHONPATH=/worktrees/$WTNAME pointing at the
@@ -3263,12 +3264,13 @@ STEP 8 — SPAWN YOUR SUCCESSOR (run this before self-destructing):
   if [ "$SPAWN_MODE" = "chain" ]; then
     # ── CHAIN MODE: merge happened → spawn next engineer for next unclaimed issue ──
 
-    # Mirror the CTO's label-ordering logic: find the lowest-numbered htmx/* label
+    # Mirror the CTO's label-ordering logic: find the lowest-numbered ac-ui/* label
     # that still has open issues. NEVER pick from a later label while an earlier one
     # still has work. This prevents later-phase issues from being claimed prematurely.
     ACTIVE_LABEL=""
-       for label in htmx/0-foundation htmx/1-pages htmx/2-main-ui \
-                        htmx/3-analysis htmx/4-canvas htmx/5-cleanup; do
+       for label in ac-ui/0-critical-bugs ac-ui/1-design-tokens \
+                        ac-ui/2-data-model ac-ui/3-core-pages \
+                        ac-ui/4-controls-intelligence ac-ui/5-polish; do
       COUNT=$(gh issue list --state open --repo "$GH_REPO" \
                 --label "$label" --json number --jq 'length')
       if [ "$COUNT" -gt 0 ]; then
@@ -3293,7 +3295,7 @@ STEP 8 — SPAWN YOUR SUCCESSOR (run this before self-destructing):
 
     NEXT_ISSUE=""
     if [ -z "$ACTIVE_LABEL" ]; then
-      echo "ℹ️  No open htmx/ or batch issues remain — chain complete."
+      echo "ℹ️  No open ac-ui/ or batch issues remain — chain complete."
     else
       # Pick the next unclaimed issue from ACTIVE_LABEL only.
       NEXT_ISSUE=$(gh issue list \
@@ -3335,7 +3337,7 @@ STEP 8 — SPAWN YOUR SUCCESSOR (run this before self-destructing):
 
       # Resolve the primary label so the engineer can route mypy/tests correctly.
       NEXT_ISSUE_LABEL=$(gh issue view "$NEXT_ISSUE" --repo "$GH_REPO" \
-        --json labels --jq '[.labels[].name | select(startswith("htmx/"))] | first // ""')
+        --json labels --jq '[.labels[].name | select(startswith("ac-ui/"))] | first // ""')
 
       cat > "$NEXT_WORKTREE/.agent-task" <<TASK
 WORKFLOW=issue-to-pr
@@ -3654,9 +3656,9 @@ GH_REPO=${GH_REPO:-cgcardona/maestro}
 WTNAME=$(basename "$(pwd)")
 # Live lookup — ALL_ISSUE_LABELS is not written to reviewer .agent-task files
 IS_AC=$(gh pr view "$N" --repo "$GH_REPO" --json labels \
-  --jq '[.labels[].name] | join(",")' 2>/dev/null | grep -c "htmx/" || true)
+  --jq '[.labels[].name] | join(",")' 2>/dev/null | grep -c "ac-ui/" || true)
 if [ "$IS_AC" -gt 0 ]; then
-  docker compose exec maestro sh -c "PYTHONPATH=/worktrees/$WTNAME mypy /worktrees/$WTNAME/maestro/ /worktrees/$WTNAME/tests/" 2>&1 | tail -5
+  docker compose exec agentception sh -c "PYTHONPATH=/worktrees/$WTNAME mypy /worktrees/$WTNAME/agentception/" 2>&1 | tail -5
 else
   REPO=$(git worktree list | head -1 | awk '{print $1}')
   cd "$REPO" && docker compose exec maestro sh -c \
@@ -4208,9 +4210,9 @@ the container. After checking out the PR branch, your worktree's code is
 REPO=$(git worktree list | head -1 | awk '{print $1}')
 WTNAME=$(basename "$(pwd)")
 
-# Detect codebase from PR labels (htmx/* vs maestro/storpheus)
+# Detect codebase from PR labels (ac-ui/* vs maestro/storpheus)
 IS_AC=$(gh pr view $N --repo $GH_REPO --json labels \
-  --jq '.labels[].name' | grep -c "^htmx/" || true)
+  --jq '.labels[].name' | grep -c "^ac-ui/" || true)
 
 # mypy — route by codebase (NEVER run both; they are independent codebases)
 # Both codebases use the same pattern: PYTHONPATH=/worktrees/$WTNAME pointing at the
@@ -5087,12 +5089,13 @@ STEP 8 — SPAWN YOUR SUCCESSOR (run this before self-destructing):
   if [ "$SPAWN_MODE" = "chain" ]; then
     # ── CHAIN MODE: merge happened → spawn next engineer for next unclaimed issue ──
 
-    # Mirror the CTO's label-ordering logic: find the lowest-numbered htmx/* label
+    # Mirror the CTO's label-ordering logic: find the lowest-numbered ac-ui/* label
     # that still has open issues. NEVER pick from a later label while an earlier one
     # still has work. This prevents later-phase issues from being claimed prematurely.
     ACTIVE_LABEL=""
-       for label in htmx/0-foundation htmx/1-pages htmx/2-main-ui \
-                        htmx/3-analysis htmx/4-canvas htmx/5-cleanup; do
+       for label in ac-ui/0-critical-bugs ac-ui/1-design-tokens \
+                        ac-ui/2-data-model ac-ui/3-core-pages \
+                        ac-ui/4-controls-intelligence ac-ui/5-polish; do
       COUNT=$(gh issue list --state open --repo "$GH_REPO" \
                 --label "$label" --json number --jq 'length')
       if [ "$COUNT" -gt 0 ]; then
@@ -5117,7 +5120,7 @@ STEP 8 — SPAWN YOUR SUCCESSOR (run this before self-destructing):
 
     NEXT_ISSUE=""
     if [ -z "$ACTIVE_LABEL" ]; then
-      echo "ℹ️  No open htmx/ or batch issues remain — chain complete."
+      echo "ℹ️  No open ac-ui/ or batch issues remain — chain complete."
     else
       # Pick the next unclaimed issue from ACTIVE_LABEL only.
       NEXT_ISSUE=$(gh issue list \
@@ -5159,7 +5162,7 @@ STEP 8 — SPAWN YOUR SUCCESSOR (run this before self-destructing):
 
       # Resolve the primary label so the engineer can route mypy/tests correctly.
       NEXT_ISSUE_LABEL=$(gh issue view "$NEXT_ISSUE" --repo "$GH_REPO" \
-        --json labels --jq '[.labels[].name | select(startswith("htmx/"))] | first // ""')
+        --json labels --jq '[.labels[].name | select(startswith("ac-ui/"))] | first // ""')
 
       cat > "$NEXT_WORKTREE/.agent-task" <<TASK
 WORKFLOW=issue-to-pr
@@ -5478,9 +5481,9 @@ GH_REPO=${GH_REPO:-cgcardona/maestro}
 WTNAME=$(basename "$(pwd)")
 # Live lookup — ALL_ISSUE_LABELS is not written to reviewer .agent-task files
 IS_AC=$(gh pr view "$N" --repo "$GH_REPO" --json labels \
-  --jq '[.labels[].name] | join(",")' 2>/dev/null | grep -c "htmx/" || true)
+  --jq '[.labels[].name] | join(",")' 2>/dev/null | grep -c "ac-ui/" || true)
 if [ "$IS_AC" -gt 0 ]; then
-  docker compose exec maestro sh -c "PYTHONPATH=/worktrees/$WTNAME mypy /worktrees/$WTNAME/maestro/ /worktrees/$WTNAME/tests/" 2>&1 | tail -5
+  docker compose exec agentception sh -c "PYTHONPATH=/worktrees/$WTNAME mypy /worktrees/$WTNAME/agentception/" 2>&1 | tail -5
 else
   REPO=$(git worktree list | head -1 | awk '{print $1}')
   cd "$REPO" && docker compose exec maestro sh -c \
@@ -5920,7 +5923,7 @@ WTNAME=$(basename "$(pwd)")
 
 # Detect codebase from issue label in .agent-task
 ISSUE_LABEL=$(grep "^ISSUE_LABEL=" .agent-task 2>/dev/null | cut -d= -f2 || echo "")
-IS_AC=$(echo "$ISSUE_LABEL" | grep -c "^htmx/" || true)
+IS_AC=$(echo "$ISSUE_LABEL" | grep -c "^ac-ui/" || true)
 
 # mypy — route by codebase (agentception and maestro are independent; never cross-run)
 if [ "$IS_AC" -gt 0 ]; then
@@ -6197,7 +6200,7 @@ STEP 3 — IMPLEMENT (only if STEP 2 found nothing):
   # what was already broken. This baseline is your contract with the next agent.
   # Detect codebase from .agent-task label — set once, used throughout this run.
   ISSUE_LABEL=$(grep "^ISSUE_LABEL=" .agent-task 2>/dev/null | cut -d= -f2 || echo "")
-  IS_AC=$(echo "$ISSUE_LABEL" | grep -c "^htmx/" || true)
+  IS_AC=$(echo "$ISSUE_LABEL" | grep -c "^ac-ui/" || true)
 
   echo "=== PRE-EXISTING MYPY BASELINE (dev, before any changes) ==="
   # Route by codebase — agentception and maestro are independent; never cross-run.
@@ -6892,20 +6895,20 @@ Every piece of code you write or touch must satisfy:
 Run in order — types before tests:
 
 ```
-docker compose exec maestro sh -c "PYTHONPATH=/worktrees/$WTNAME mypy /worktrees/$WTNAME/maestro/ /worktrees/$WTNAME/tests/"
+docker compose exec agentception sh -c "PYTHONPATH=/worktrees/$WTNAME mypy /worktrees/$WTNAME/agentception/"
 ```
 
-Then run **only the test files for modules you changed** — never `tests/` as a directory:
+Then run **only the test files for modules you changed** — never `agentception/tests/` as a directory:
 
 ```
 # Module-name convention:
-# agentception/app.py                → tests/test_agentception_scaffold.py
-# agentception/readers/worktrees.py  → tests/test_agentception_worktrees.py
-# agentception/readers/github.py     → tests/test_agentception_github.py
-# agentception/poller.py             → tests/test_agentception_poller.py
-# agentception/routes/ui.py          → tests/test_agentception_ui_overview.py
+# agentception/app.py                → agentception/tests/test_agentception_scaffold.py
+# agentception/readers/worktrees.py  → agentception/tests/test_agentception_worktrees.py
+# agentception/readers/github.py     → agentception/tests/test_agentception_github.py
+# agentception/poller.py             → agentception/tests/test_agentception_poller.py
+# agentception/routes/ui.py          → agentception/tests/test_agentception_ui_overview.py
 
-docker compose exec maestro pytest tests/test_<your_module>.py -v
+docker compose exec agentception pytest agentception/tests/test_<your_module>.py -v
 ```
 
 The full suite is CI's job. Running it in every agent session doesn't scale.

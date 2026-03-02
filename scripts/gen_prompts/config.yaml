@@ -23,17 +23,17 @@ pipeline:
   # Strict phase order — CTO and chain-spawn iterate this list top to bottom.
   # To switch projects, replace the entire phases list and update `codebases.active`.
   phases:
-    - "htmx/0-foundation"
-    - "htmx/1-pages"
-    - "htmx/2-main-ui"
-    - "htmx/3-analysis"
-    - "htmx/4-canvas"
-    - "htmx/5-cleanup"
+    - "ac-ui/0-critical-bugs"
+    - "ac-ui/1-design-tokens"
+    - "ac-ui/2-data-model"
+    - "ac-ui/3-core-pages"
+    - "ac-ui/4-controls-intelligence"
+    - "ac-ui/5-polish"
 
 codebases:
   # Which codebase agents are currently working on.
   # Determines which mypy/test commands are used in IS_AC routing.
-  active: "muse_hub"
+  active: "agentception_ui"
 
   muse_hub:
     container: "maestro"
@@ -41,6 +41,13 @@ codebases:
     test_dir: "tests"
     test_glob: "tests/test_*.py"
     label_prefix: "htmx/"
+
+  agentception_ui:
+    container: "agentception"
+    mypy: 'docker compose exec agentception sh -c "PYTHONPATH=/worktrees/$WTNAME mypy /worktrees/$WTNAME/agentception/"'
+    test_dir: "agentception/tests"
+    test_glob: "agentception/tests/test_*.py"
+    label_prefix: "ac-ui/"
 
   agentception:
     container: "agentception"
@@ -79,33 +86,33 @@ labels:
   # Top-level label that scopes all work for the current active codebase.
   # Update this block when switching projects.
   project:
-    name: "htmx-migration"
-    color: "e65100"
-    description: "HTMX migration — server-side rendering rollout for Muse Hub"
+    name: "ac-ui"
+    color: "7c3aed"
+    description: "AgentCeption UI — bug fixes, design system, and UX improvements"
 
   # ── Phase labels ────────────────────────────────────────────────────────────
   # Must stay in sync with pipeline.phases above (same names, same order).
   # The CTO and chain-spawn logic iterate phases strictly top-to-bottom.
   # Adding a new phase: add it to pipeline.phases AND here, then re-run generate.py.
   phases:
-    - name: "htmx/0-foundation"
-      color: "6741d9"
-      description: "HTMX Phase 0 · Foundation — infra helpers, base template, filters"
-    - name: "htmx/1-pages"
-      color: "1098ad"
-      description: "HTMX Phase 1 · Core pages SSR"
-    - name: "htmx/2-main-ui"
-      color: "0d6efd"
-      description: "HTMX Phase 2 · Main UI pages SSR + HTMX filters"
-    - name: "htmx/3-analysis"
-      color: "198754"
-      description: "HTMX Phase 3 · Analysis pages SSR"
-    - name: "htmx/4-canvas"
-      color: "f59f00"
-      description: "HTMX Phase 4 · Canvas / partial SSR pages"
-    - name: "htmx/5-cleanup"
+    - name: "ac-ui/0-critical-bugs"
       color: "d63939"
-      description: "HTMX Phase 5 · Cleanup — remove dead JS, audit coverage"
+      description: "AC-UI Phase 0 · Critical bugs — CSS crashes, undefined vars, broken Jinja filters"
+    - name: "ac-ui/1-design-tokens"
+      color: "6741d9"
+      description: "AC-UI Phase 1 · Design tokens — unify CSS vocabulary, remove hardcoded URLs"
+    - name: "ac-ui/2-data-model"
+      color: "1098ad"
+      description: "AC-UI Phase 2 · Data model — fix status mismatch, staleness, live data contracts"
+    - name: "ac-ui/3-core-pages"
+      color: "0d6efd"
+      description: "AC-UI Phase 3 · Core pages — overview, agents list, agent detail UX"
+    - name: "ac-ui/4-controls-intelligence"
+      color: "f59f00"
+      description: "AC-UI Phase 4 · Controls & Intelligence — controls hub, DAG, A/B, telemetry"
+    - name: "ac-ui/5-polish"
+      color: "198754"
+      description: "AC-UI Phase 5 · Polish — toast system, keyboard a11y, responsive, settings"
 
   # ── Utility / triage labels ────────────────────────────────────────────────
   # Standard labels used across issues and PRs. Kept here for completeness
