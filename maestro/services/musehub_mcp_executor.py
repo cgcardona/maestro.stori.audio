@@ -75,6 +75,29 @@ class MusehubToolResult:
 # Internal helpers
 # ---------------------------------------------------------------------------
 
+
+def _check_db_available() -> MusehubToolResult | None:
+    """Return a ``db_unavailable`` error if the session factory is not ready.
+
+    The MCP stdio server runs outside the FastAPI lifespan, so ``init_db()``
+    may not have been called yet. Call this at the top of every executor that
+    opens a DB session so the caller receives a structured error instead of an
+    unhandled ``RuntimeError``.
+    """
+    from maestro.db import database  # local import to avoid circular reference
+
+    if database._async_session_factory is None:
+        return MusehubToolResult(
+            ok=False,
+            error_code="db_unavailable",
+            error_message=(
+                "Database session factory is not initialised. "
+                "Ensure DATABASE_URL is set and the service has started up."
+            ),
+        )
+    return None
+
+
 _EXTRA_MIME: dict[str, str] = {
     ".mid": "audio/midi",
     ".midi": "audio/midi",
@@ -112,6 +135,9 @@ async def execute_browse_repo(repo_id: str) -> MusehubToolResult:
         and ``recent_commits`` keys, or ``error_code="not_found"`` if the
         repo does not exist.
     """
+    if (err := _check_db_available()) is not None:
+        return err
+
     async with AsyncSessionLocal() as session:
         repo = await musehub_repository.get_repo(session, repo_id)
         if repo is None:
@@ -172,6 +198,9 @@ async def execute_list_branches(repo_id: str) -> MusehubToolResult:
         ``MusehubToolResult`` with ``data.branches`` as a list of branch
         dicts, or ``error_code="not_found"`` if the repo does not exist.
     """
+    if (err := _check_db_available()) is not None:
+        return err
+
     async with AsyncSessionLocal() as session:
         repo = await musehub_repository.get_repo(session, repo_id)
         if repo is None:
@@ -214,6 +243,9 @@ async def execute_list_commits(
         or ``error_code="not_found"`` if the repo does not exist.
     """
     limit = max(1, min(limit, 100))
+
+    if (err := _check_db_available()) is not None:
+        return err
 
     async with AsyncSessionLocal() as session:
         repo = await musehub_repository.get_repo(session, repo_id)
@@ -269,6 +301,9 @@ async def execute_read_file(repo_id: str, object_id: str) -> MusehubToolResult:
         ``MusehubToolResult`` with file metadata, or ``error_code="not_found"``
         if the repo or object does not exist.
     """
+    if (err := _check_db_available()) is not None:
+        return err
+
     async with AsyncSessionLocal() as session:
         repo = await musehub_repository.get_repo(session, repo_id)
         if repo is None:
@@ -332,6 +367,9 @@ async def execute_get_analysis(
                 f"Valid values: {', '.join(sorted(valid_dimensions))}."
             ),
         )
+
+    if (err := _check_db_available()) is not None:
+        return err
 
     async with AsyncSessionLocal() as session:
         repo = await musehub_repository.get_repo(session, repo_id)
@@ -450,6 +488,9 @@ async def execute_search(
             ),
         )
 
+    if (err := _check_db_available()) is not None:
+        return err
+
     q = query.lower()
 
     async with AsyncSessionLocal() as session:
@@ -520,6 +561,9 @@ async def execute_get_context(repo_id: str) -> MusehubToolResult:
         ``MusehubToolResult`` with ``data.context`` (the full context doc),
         or ``error_code="not_found"`` if the repo does not exist.
     """
+    if (err := _check_db_available()) is not None:
+        return err
+
     async with AsyncSessionLocal() as session:
         repo = await musehub_repository.get_repo(session, repo_id)
         if repo is None:

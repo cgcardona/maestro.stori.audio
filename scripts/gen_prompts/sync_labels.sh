@@ -24,16 +24,15 @@ echo '── Claim label ──────────────────�
 sync_label 'agent:wip' '0075ca' 'Claimed by a pipeline agent — do not assign manually'
 
 echo '── Project label ────────────────────────────────────────────'
-sync_label 'agentception' '8250df' 'AgentCeption — autonomous multi-agent pipeline'
+sync_label 'htmx-migration' 'e65100' 'HTMX migration — server-side rendering rollout for Muse Hub'
 
 echo '── Phase labels ─────────────────────────────────────────────'
-sync_label 'agentception/0-scaffold' '6741d9' 'AgentCeption Phase 0 · Foundation scaffold'
-sync_label 'agentception/1-controls' '1098ad' 'AgentCeption Phase 1 · Pipeline controls (kill, pause, spawn)'
-sync_label 'agentception/2-telemetry' '0d6efd' 'AgentCeption Phase 2 · Telemetry and observability'
-sync_label 'agentception/3-roles' '198754' 'AgentCeption Phase 3 · Role file management and editing'
-sync_label 'agentception/4-intelligence' 'f59f00' 'AgentCeption Phase 4 · Pipeline intelligence and DAG'
-sync_label 'agentception/5-scaling' 'd63939' 'AgentCeption Phase 5 · Scaling advisor and A/B testing'
-sync_label 'agentception/6-generalization' '0ca678' 'AgentCeption Phase 6 · Multi-repo generalization and export'
+sync_label 'htmx/0-foundation' '6741d9' 'HTMX Phase 0 · Foundation — infra helpers, base template, filters'
+sync_label 'htmx/1-pages' '1098ad' 'HTMX Phase 1 · Core pages SSR'
+sync_label 'htmx/2-main-ui' '0d6efd' 'HTMX Phase 2 · Main UI pages SSR + HTMX filters'
+sync_label 'htmx/3-analysis' '198754' 'HTMX Phase 3 · Analysis pages SSR'
+sync_label 'htmx/4-canvas' 'f59f00' 'HTMX Phase 4 · Canvas / partial SSR pages'
+sync_label 'htmx/5-cleanup' 'd63939' 'HTMX Phase 5 · Cleanup — remove dead JS, audit coverage'
 
 echo '── Utility labels ───────────────────────────────────────────'
 sync_label 'bug' 'd73a4a' 'Something isn'\''t working'

@@ -1,0 +1,164 @@
+{#  pages/analysis/motifs.html — SSR motif browser page.
+
+    Renders the motif occurrence grid and transformation badges server-side.
+    No client-side fetch required — all data is passed via ctx.
+
+    Required context variables
+    --------------------------
+    motifs_data : MotifsData — from compute_dimension('motifs', ref)
+    ref         : str        — muse commit ref
+    owner       : str        — repo owner handle
+    repo_slug   : str        — repo slug
+    base_url    : str        — repo base URL
+#}
+{% extends "musehub/base.html" %}
+
+{% block title %}Motifs — {{ owner }}/{{ repo_slug }} @ {{ ref[:8] }}{% endblock %}
+
+{% block breadcrumb %}
+  <a href="/musehub/ui/{{ owner }}">{{ owner }}</a> /
+  <a href="{{ base_url }}">{{ repo_slug }}</a> /
+  <a href="{{ base_url }}/analysis/{{ ref }}">analysis</a> /
+  motifs
+{% endblock %}
+
+{% block repo_nav %}{% include "musehub/partials/repo_nav.html" %}{% endblock %}
+
+{% block page_data %}
+const repoId = {{ repo_id | tojson }};
+const ref    = {{ ref | tojson }};
+const base   = {{ base_url | tojson }};
+{% endblock %}
+
+{% block content %}
+<div class="card" style="margin-bottom:var(--space-4)">
+  <h1 style="margin:0 0 var(--space-2) 0">🔁 Motif Browser</h1>
+  <p style="color:#8b949e;margin:0">
+    {{ motifs_data.total_motifs }} recurring motif(s) detected in
+    <strong>{{ ref[:8] }}</strong>
+  </p>
+</div>
+
+{% if motifs_data.motifs %}
+  <div id="motifs-content">
+    {% for motif in motifs_data.motifs %}
+    <div class="card" style="margin-bottom:var(--space-3)">
+      <div style="display:flex;align-items:flex-start;gap:var(--space-3);flex-wrap:wrap">
+
+        {# Interval pattern #}
+        <div style="flex:1;min-width:200px">
+          <div class="meta-label" style="margin-bottom:4px">INTERVAL PATTERN</div>
+          <code style="font-size:12px;word-break:break-all">
+            {% for interval in motif.intervals %}
+              {% if interval > 0 %}+{{ interval }}{% else %}{{ interval }}{% endif %}{% if not loop.last %}, {% endif %}
+            {% endfor %}
+          </code>
+          <div style="margin-top:var(--space-2);display:flex;gap:var(--space-2);flex-wrap:wrap">
+            <span class="meta-label">{{ motif.contour_label }}</span>
+            <span class="meta-label">{{ motif.length_beats | round(1) }} beats</span>
+            <span class="meta-label">{{ motif.occurrence_count }}× occurrences</span>
+            <span class="meta-label">track: {{ motif.track }}</span>
+          </div>
+        </div>
+
+        {# Occurrence beat grid — one bar per occurrence #}
+        <div style="min-width:180px">
+          <div class="meta-label" style="margin-bottom:4px">OCCURRENCES</div>
+          <div style="display:flex;gap:3px;flex-wrap:wrap">
+            {% for beat in motif.occurrences %}
+            <div style="width:8px;height:24px;background:var(--color-accent,#1f6feb);
+                        border-radius:2px;opacity:0.85"
+                 title="Beat {{ beat | round(1) }}"></div>
+            {% endfor %}
+          </div>
+          <div style="font-size:11px;color:#8b949e;margin-top:4px">
+            {{ motif.occurrences | length }}× original
+          </div>
+        </div>
+
+        {# Transformation badges #}
+        {% if motif.transformations %}
+        <div style="min-width:140px">
+          <div class="meta-label" style="margin-bottom:4px">TRANSFORMATIONS</div>
+          {% set transform_colors = {
+            "inversion": "#bc8cff",
+            "retrograde": "#58a6ff",
+            "retrograde-inversion": "#f0883e",
+            "transposition": "#3fb950"
+          } %}
+          {% for t in motif.transformations %}
+            {% set t_color = transform_colors.get(t.transformation_type, "#8b949e") %}
+            <span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;
+                         font-weight:600;margin:2px;background:{{ t_color }}22;
+                         border:1px solid {{ t_color }};color:{{ t_color }}">
+              {{ t.transformation_type }}
+              {% if t.transposition_semitones != 0 %}({{ t.transposition_semitones }}st){% endif %}
+            </span>
+          {% endfor %}
+        </div>
+        {% endif %}
+
+        {# Cross-track sharing #}
+        {% if motif.tracks | length > 1 %}
+        <div>
+          <div class="meta-label" style="margin-bottom:4px">TRACKS</div>
+          {% for track in motif.tracks %}
+            <span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;
+                         background:#21262d;margin:2px">{{ track }}</span>
+          {% endfor %}
+        </div>
+        {% endif %}
+      </div>
+
+      {# Recurrence grid (track × section heatmap) #}
+      {% if motif.recurrence_grid %}
+      <div style="margin-top:var(--space-3);overflow-x:auto">
+        <div class="meta-label" style="margin-bottom:var(--space-2)">RECURRENCE GRID</div>
+        {% set sections = motifs_data.sections %}
+        {% set all_tracks = motifs_data.all_tracks %}
+        <table style="border-collapse:collapse;font-size:11px">
+          <thead>
+            <tr>
+              <th style="padding:4px 8px;color:#8b949e;font-weight:normal;text-align:left"></th>
+              {% for sec in sections %}
+              <th style="padding:4px 8px;color:#8b949e;font-weight:normal">{{ sec }}</th>
+              {% endfor %}
+            </tr>
+          </thead>
+          <tbody>
+            {% for trk in all_tracks %}
+            <tr>
+              <td style="padding:4px 8px;color:#8b949e;white-space:nowrap">{{ trk }}</td>
+              {% for sec in sections %}
+                {# Find the cell for this track+section combination #}
+                {% set cell = None %}
+                {% for c in motif.recurrence_grid %}
+                  {% if c.track == trk and c.section == sec %}
+                    {% set cell = c %}
+                  {% endif %}
+                {% endfor %}
+                <td style="padding:4px 8px;text-align:center">
+                  {% if cell and cell.present %}
+                    <div style="width:20px;height:20px;background:var(--color-accent,#1f6feb);
+                                border-radius:3px;margin:auto;opacity:{{ [0.3 + cell.occurrence_count * 0.15, 1.0] | min | round(2) }}"
+                         title="{{ cell.occurrence_count }}× in {{ sec }} on {{ trk }}"></div>
+                  {% else %}
+                    <div style="width:20px;height:20px;background:#21262d;border-radius:3px;margin:auto;opacity:0.4"></div>
+                  {% endif %}
+                </td>
+              {% endfor %}
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+{% else %}
+  <div class="card">
+    <p style="color:#8b949e">No recurring motifs detected in this ref.</p>
+  </div>
+{% endif %}
+{% endblock %}
