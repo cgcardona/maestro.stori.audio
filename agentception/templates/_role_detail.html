@@ -1,0 +1,121 @@
+{#
+  HTMX partial — rendered by GET /roles/{slug}/detail
+  Swapped into #role-detail-panel when a role is selected in the org tree.
+
+  Alpine receives the compatible personas as JSON so "Apply to Composer"
+  can fill the composer form without a second round-trip.
+#}
+<div
+  x-data='roleDetail({{ slug | tojson }}, {{ role.file_exists | tojson }}, {{ personas_json | tojson }})'
+  x-init="init()"
+  style="display:flex;flex-direction:column;flex:1;overflow:hidden;"
+>
+
+  {# Role header #}
+  <div class="center-role-title">
+    <h3>{{ role.title }}</h3>
+    <p>{{ role.description }}</p>
+  </div>
+
+  {# Tab bar #}
+  <div class="center-tabs">
+    <div
+      class="center-tab"
+      :class="activeTab === 'personas' ? 'active' : ''"
+      @click="activeTab = 'personas'"
+    >Personas</div>
+    <div
+      class="center-tab"
+      :class="activeTab === 'composer' ? 'active' : ''"
+      @click="activeTab = 'composer'"
+    >Primitive Composer</div>
+  </div>
+
+  {# ── Personas tab ────────────────────────────────────────────────────────── #}
+  <div class="center-tab-content" :class="activeTab === 'personas' ? 'active' : ''">
+    {% if personas %}
+    <div class="persona-grid">
+      {% for p in personas %}
+      <div
+        class="persona-card"
+        :class="selectedPersonaId === '{{ p.id }}' ? 'selected' : ''"
+        @click="selectPersona('{{ p.id }}')"
+      >
+        <div class="persona-card__name">{{ p.display_name }}</div>
+        <div class="persona-card__archetype">{{ p.extends | replace("_", " ") }}</div>
+        <div class="persona-card__desc">{{ p.description }}</div>
+        <button class="persona-card__apply" @click.stop="applyPersona('{{ p.id }}')">
+          Apply to Composer →
+        </button>
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}
+    <p class="persona-empty">No compatible personas for this role.</p>
+    {% endif %}
+  </div>
+
+  {# ── Composer tab ────────────────────────────────────────────────────────── #}
+  <div class="center-tab-content" :class="activeTab === 'composer' ? 'active' : ''">
+
+    {# Base persona / figure #}
+    <div class="composer-section">
+      <div class="composer-section__title">Base Persona (Figure)</div>
+      <div class="composer-row">
+        <label>Figure</label>
+        <select x-model="figure">
+          <option value="">— none (archetype only) —</option>
+          {% for p in all_personas %}
+          <option value="{{ p.id }}">{{ p.display_name }} ({{ p.extends | replace("_", " ") }})</option>
+          {% endfor %}
+        </select>
+      </div>
+    </div>
+
+    {# Atom overrides #}
+    <div class="composer-section">
+      <div class="composer-section__title">Atom Overrides</div>
+      {% for atom in atoms %}
+      <div class="composer-row">
+        <label title="{{ atom.description }}">{{ atom.dimension | replace("_", " ") }}</label>
+        <select x-model="atomOverrides['{{ atom.dimension }}']">
+          <option value="">— inherit from figure —</option>
+          {% for v in atom.values %}
+          <option value="{{ v.id }}" title="{{ v.description }}">{{ v.label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      {% endfor %}
+    </div>
+
+    {# Skill domains #}
+    <div class="composer-section">
+      <div class="composer-section__title">Skill Domains (up to 3)</div>
+      <div class="skill-grid">
+        {% for s in skill_domains %}
+        <label class="skill-chip">
+          <input
+            type="checkbox"
+            value="{{ s }}"
+            x-model="skills"
+            :disabled="skills.length >= 3 && !skills.includes('{{ s }}')"
+          >
+          {{ s }}
+        </label>
+        {% endfor %}
+      </div>
+    </div>
+
+    {# COGNITIVE_ARCH preview #}
+    <div class="composer-section">
+      <div class="composer-section__title">COGNITIVE_ARCH string</div>
+      <div class="composer-arch-preview" x-text="copied ? '✅ Copied!' : archPreview"></div>
+      <div class="composer-btn-row">
+        <button class="btn-primary" @click="copyArchString()">Copy</button>
+        <button @click="resetComposer()">Reset</button>
+      </div>
+    </div>
+
+  </div>{# /.composer tab #}
+
+</div>{# /.roleDetail #}

@@ -58,10 +58,14 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
 
 app = FastAPI(
-    title="AgentCeption",
+    title="Agentception",
     description="Maestro pipeline agent dashboard",
     version="0.1.0",
     lifespan=lifespan,
+    # Disable the built-in Swagger/ReDoc UIs — we serve a native branded
+    # version at /api-reference instead.
+    docs_url=None,
+    redoc_url=None,
 )
 
 # Mount static assets — CSS, future JS bundles.

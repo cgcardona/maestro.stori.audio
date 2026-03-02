@@ -19,7 +19,7 @@ from agentception.config import settings
 from agentception.intelligence.analyzer import IssueAnalysis, analyze_issue
 from agentception.intelligence.dag import DependencyDAG, build_dag
 from agentception.intelligence.guards import PRViolation, detect_out_of_order_prs
-from agentception.models import AgentNode, PipelineConfig, PipelineState, SpawnRequest, SpawnResult, SwitchProjectRequest  # noqa: E501
+from agentception.models import AgentNode, PipelineConfig, PipelineState, SpawnCoordinatorRequest, SpawnCoordinatorResult, SpawnRequest, SpawnResult, SwitchProjectRequest  # noqa: E501
 from agentception.poller import get_state
 from agentception.readers.active_label_override import clear_pin, get_pin, set_pin
 from agentception.readers.github import add_wip_label, close_pr, get_active_label, get_issue, get_issue_body, get_open_issues
@@ -530,6 +530,18 @@ async def spawn_agent(body: SpawnRequest) -> SpawnResult:
             ),
         )
 
+    # Lock the worktree immediately so git doesn't auto-prune it when git
+    # is run from a context where the container-internal path is not resolvable
+    # (e.g. running `git worktree list` from the host sees /worktrees/issue-N
+    # as missing since it's bind-mounted from ~/.cursor/worktrees/maestro/).
+    lock_proc = await asyncio.create_subprocess_exec(
+        "git", "-C", repo_dir,
+        "worktree", "lock", str(worktree_path),
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    await lock_proc.communicate()  # best-effort — non-fatal if it fails
+
     logger.info(
         "✅ Created worktree %s on branch %s for issue #%d",
         worktree_path,
@@ -696,6 +708,105 @@ async def spawn_wave(role: str = "python-developer") -> WaveSpawnResult:
     return WaveSpawnResult(active_label=active_label, spawned=spawned, skipped=skipped)
 
 
+class SweepResult(BaseModel):
+    """Result of a stale-state sweep operation."""
+
+    deleted_branches: list[str]
+    removed_worktrees: list[str]
+    cleared_wip_labels: list[int]
+    errors: list[str]
+
+
+@router.post("/control/sweep", tags=["control"])
+async def sweep_stale(dry_run: bool = False) -> SweepResult:
+    """Delete all stale agent branches, remove orphan worktrees, and clear stale agent:wip labels.
+
+    A branch is stale when it is an agent branch (``feat/issue-N`` or
+    ``feat/brain-dump-*``) with no live git worktree checked out on it.
+    A claim is stale when an issue carries ``agent:wip`` but has no matching
+    worktree directory.
+
+    Parameters
+    ----------
+    dry_run:
+        When ``True``, return what *would* be deleted without making any changes.
+    """
+    from agentception.readers.git import list_git_branches, list_git_worktrees
+    from agentception.readers.github import clear_wip_label, get_wip_issues
+    from agentception.intelligence.guards import detect_stale_claims
+
+    deleted_branches: list[str] = []
+    removed_worktrees: list[str] = []
+    cleared_wip_labels: list[int] = []
+    errors: list[str] = []
+
+    repo_dir = str(settings.repo_dir)
+
+    # ── 1. Stale branches (agent branch with no live worktree) ───────────────
+    live_branches: set[str] = {
+        str(wt.get("branch", ""))
+        for wt in await list_git_worktrees()
+        if wt.get("branch") and not wt.get("is_main")
+    }
+
+    for branch in await list_git_branches():
+        name = str(branch.get("name", "")).strip()
+        if not branch.get("is_agent_branch"):
+            continue
+        if name in live_branches:
+            continue  # has a live worktree — not stale
+        deleted_branches.append(name)
+        if not dry_run:
+            proc = await asyncio.create_subprocess_exec(
+                "git", "-C", repo_dir, "branch", "-D", name,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            _, stderr = await proc.communicate()
+            if proc.returncode != 0:
+                errors.append(f"branch -D {name}: {stderr.decode().strip()}")
+                deleted_branches.pop()
+
+    # ── 2. Prune git's internal worktree references (unlocked stale entries) ─
+    if not dry_run:
+        prune_proc = await asyncio.create_subprocess_exec(
+            "git", "-C", repo_dir, "worktree", "prune",
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        prune_out, prune_err = await prune_proc.communicate()
+        pruned = (prune_out + prune_err).decode().strip()
+        if pruned:
+            removed_worktrees.append(f"pruned: {pruned}")
+
+    # ── 3. Stale agent:wip labels (issue claimed but no worktree on disk) ────
+    try:
+        wip_issues = await get_wip_issues()
+        stale_claims = await detect_stale_claims(wip_issues, settings.worktrees_dir)
+        for claim in stale_claims:
+            cleared_wip_labels.append(claim.issue_number)
+            if not dry_run:
+                try:
+                    await clear_wip_label(claim.issue_number)
+                except Exception as exc:
+                    errors.append(f"clear wip #{claim.issue_number}: {exc}")
+                    cleared_wip_labels.pop()
+    except Exception as exc:
+        errors.append(f"stale claims check: {exc}")
+
+    action = "Would delete" if dry_run else "Swept"
+    logger.info(
+        "✅ %s: branches=%s wip_labels=%s errors=%d",
+        action, deleted_branches, cleared_wip_labels, len(errors),
+    )
+    return SweepResult(
+        deleted_branches=deleted_branches,
+        removed_worktrees=removed_worktrees,
+        cleared_wip_labels=cleared_wip_labels,
+        errors=errors,
+    )
+
+
 @router.post("/analyze/issue/{number}", tags=["intelligence"])
 async def analyze_issue_api(number: int) -> IssueAnalysis:
     """Parse an issue body and return structured parallelism / role recommendations.
@@ -757,6 +868,137 @@ async def issue_comments_partial(request: Request, number: int) -> object:
         request,
         "partials/issue_comments.html",
         {"comments": comments},
+    )
+
+
+def _build_coordinator_task(
+    slug: str,
+    brain_dump: str,
+    label_prefix: str,
+    worktree: Path,
+    host_worktree: Path,
+    branch: str,
+) -> str:
+    """Build the ``.agent-task`` content for a brain-dump coordinator worktree.
+
+    The coordinator agent reads ``WORKFLOW=bugs-to-issues`` and follows
+    ``parallel-bugs-to-issues.md``: it runs the Phase Planner, creates GitHub
+    labels, creates worktrees for each batch, writes sub-agent task files, and
+    launches sub-agents.  AgentCeption's only job is to prepare the worktree
+    and this file — the Cursor background agent does all LLM work.
+
+    The ``BRAIN_DUMP`` section is appended as a freeform block after the
+    structured key=value header so the coordinator can read it verbatim.
+    """
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    repo = settings.gh_repo
+    prefix_line = f"LABEL_PREFIX={label_prefix}\n" if label_prefix else ""
+    return (
+        f"WORKFLOW=bugs-to-issues\n"
+        f"GH_REPO={repo}\n"
+        f"ROLE=coordinator\n"
+        f"ROLE_FILE=<host-repo>/.cursor/roles/coordinator.md\n"
+        f"WORKTREE={worktree}\n"
+        f"HOST_WORKTREE={host_worktree}\n"
+        f"BASE=dev\n"
+        f"BATCH_ID={slug}\n"
+        f"WAVE={slug}\n"
+        f"COGNITIVE_ARCH=coordinator\n"
+        f"{prefix_line}"
+        f"CREATED_AT={now}\n"
+        f"SPAWN_MODE=chain\n"
+        f"SPAWN_SUB_AGENTS=true\n"
+        f"ATTEMPT_N=0\n"
+        f"REQUIRED_OUTPUT=phase_plan\n"
+        f"ON_BLOCK=stop\n"
+        f"\nBRAIN_DUMP:\n{brain_dump}\n"
+    )
+
+
+@router.post("/control/spawn-coordinator", tags=["control"])
+async def spawn_coordinator(body: SpawnCoordinatorRequest) -> SpawnCoordinatorResult:
+    """Seed a coordinator worktree from a free-form brain dump.
+
+    Creates a git worktree and writes an ``.agent-task`` file that tells a
+    Cursor background agent to run as coordinator using
+    ``parallel-bugs-to-issues.md``.  The agent will:
+
+    1. Run the Phase Planner against the ``BRAIN_DUMP`` field.
+    2. Create required GitHub labels (phase-N/*, status/*, priority/*).
+    3. Create one sub-worktree per phase-batch.
+    4. Write ``.agent-task`` files for each sub-agent.
+    5. Launch sub-agents via the Cursor Task tool.
+
+    This endpoint only creates the worktree and task file.  The caller
+    (AgentCeption UI) instructs the user to open the returned
+    ``host_worktree`` path in Cursor to start the coordinator agent.
+
+    Raises
+    ------
+    HTTP 409
+        When a worktree with the same slug already exists.
+    HTTP 422
+        When ``brain_dump`` is empty.
+    HTTP 500
+        When ``git worktree add`` fails.
+    """
+    brain_dump = body.brain_dump.strip()
+    if not brain_dump:
+        raise HTTPException(status_code=422, detail="brain_dump must not be empty")
+
+    now_slug = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+    slug = f"brain-dump-{now_slug}"
+    branch = f"feat/{slug}"
+    worktree_path = settings.worktrees_dir / slug
+    host_worktree_path = settings.host_worktrees_dir / slug
+
+    if worktree_path.exists():
+        raise HTTPException(
+            status_code=409,
+            detail=f"Worktree '{slug}' already exists — wait a second and retry.",
+        )
+
+    repo_dir = str(settings.repo_dir)
+
+    # Create the worktree on a fresh branch off origin/dev.
+    proc = await asyncio.create_subprocess_exec(
+        "git", "-C", repo_dir,
+        "worktree", "add", "-b", branch,
+        str(worktree_path), "origin/dev",
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    _stdout, stderr = await proc.communicate()
+
+    if proc.returncode != 0:
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                f"git worktree add failed (exit {proc.returncode}): "
+                f"{stderr.decode().strip()!r}"
+            ),
+        )
+
+    logger.info("✅ Created coordinator worktree %s on branch %s", worktree_path, branch)
+
+    agent_task_content = _build_coordinator_task(
+        slug=slug,
+        brain_dump=brain_dump,
+        label_prefix=body.label_prefix,
+        worktree=worktree_path,
+        host_worktree=host_worktree_path,
+        branch=branch,
+    )
+    task_file = worktree_path / ".agent-task"
+    task_file.write_text(agent_task_content, encoding="utf-8")
+    logger.info("✅ Wrote coordinator .agent-task to %s", task_file)
+
+    return SpawnCoordinatorResult(
+        slug=slug,
+        worktree=str(worktree_path),
+        host_worktree=str(host_worktree_path),
+        branch=branch,
+        agent_task=agent_task_content,
     )
 
 

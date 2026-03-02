@@ -114,7 +114,9 @@ async def merge_agents(
     Status derivation rules (applied in priority order):
     1. Worktree branch matches an open PR ``headRefName`` → REVIEWING
     2. Worktree issue number appears in ``agent:wip`` issues → IMPLEMENTING
-    3. Otherwise → UNKNOWN
+    3. ``WORKFLOW=bugs-to-issues`` (coordinator/brain-dump) → IMPLEMENTING
+       These agents have no issue number or PR; they are actively planning.
+    4. Otherwise → UNKNOWN
     """
     # Index open PRs by branch name for O(1) lookup.
     pr_branches: set[str] = {
@@ -136,6 +138,11 @@ async def merge_agents(
         if branch and branch in pr_branches:
             status = AgentStatus.REVIEWING
         elif tf.issue_number is not None and tf.issue_number in wip_issue_numbers:
+            status = AgentStatus.IMPLEMENTING
+        elif tf.task == "bugs-to-issues":
+            # Coordinator (brain-dump) agents have no GitHub issue or PR until
+            # sub-agents start filing them.  Treat them as IMPLEMENTING so they
+            # show as active rather than confusingly UNKNOWN.
             status = AgentStatus.IMPLEMENTING
         else:
             status = AgentStatus.UNKNOWN
@@ -186,9 +193,19 @@ async def detect_alerts(
     now = time.time()
 
     # ── Alert 1: agent:wip issue with no matching worktree ─────────────────
+    # Self-heal: automatically clear the agent:wip label when there is no live
+    # worktree for the issue.  The worktree is the source of truth — if it is
+    # gone, the claim is orphaned and can be safely released so the issue
+    # becomes available for re-spawn.
+    from agentception.readers.github import clear_wip_label
     stale_claims = await detect_stale_claims(github.wip_issues, settings.worktrees_dir)
     for claim in stale_claims:
-        alerts.append(f"Stale claim on #{claim.issue_number}")
+        try:
+            await clear_wip_label(claim.issue_number)
+            logger.info("✅ Auto-healed stale claim: removed agent:wip from #%d", claim.issue_number)
+        except Exception as exc:
+            logger.warning("⚠️  Auto-heal failed for #%d: %s", claim.issue_number, exc)
+            alerts.append(f"Stale claim on #{claim.issue_number}")
 
     # ── Alert 2: open PR labelled with a non-active agentception phase ──────
     active = github.active_label
@@ -211,12 +228,26 @@ async def detect_alerts(
                 break  # one alert per PR is enough
 
     # ── Alert 3: worktree last commit > 30 min ago (async path) ────────────
+    # Skip coordinator (brain-dump) worktrees — they have no commits of their
+    # own; all work happens in sub-agent worktrees they spawn.  Applying the
+    # stuck check to them would always fire immediately.
+    #
+    # Also skip worktrees whose .agent-task file is newer than the threshold —
+    # a freshly spawned worktree has no agent activity yet and is not stuck.
     for tf in worktrees:
         if tf.worktree is None:
+            continue
+        if tf.task == "bugs-to-issues":
             continue
         path = Path(tf.worktree)
         if not path.exists():
             continue
+        # Skip if the worktree was created (task file written) within the threshold.
+        task_file = path / ".agent-task"
+        if task_file.exists():
+            task_mtime = task_file.stat().st_mtime
+            if (now - task_mtime) < _STUCK_THRESHOLD_SECONDS:
+                continue
         last_commit = await worktree_last_commit_time(path)
         if last_commit > 0.0 and (now - last_commit) > _STUCK_THRESHOLD_SECONDS:
             label = f"issue #{tf.issue_number}" if tf.issue_number else path.name

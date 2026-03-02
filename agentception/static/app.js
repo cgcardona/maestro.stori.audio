@@ -83,8 +83,15 @@ function pipelineDashboard(initial) {
     connected: false,
     boardLoading: false,
     _es: null,
+    // GH_BASE_URL is provided via data-gh-base-url on the root element so no
+    // inline <script> tag is needed.  Set in connect() once $el is available.
+    GH_BASE_URL: '',
+
+    // Global kill modal — lives here so SSE re-renders never reset it.
+    killModal: { show: false, agentId: null, issueNumber: null, killing: false },
 
     connect() {
+      this.GH_BASE_URL = this.$el.dataset.ghBaseUrl ?? '';
       this._es = new EventSource('/events');
 
       this._es.onopen = () => { this.connected = true; };
@@ -102,6 +109,30 @@ function pipelineDashboard(initial) {
         this.connected = false;
         // EventSource auto-reconnects; just update the indicator.
       };
+    },
+
+    /** Open the kill confirmation modal for a specific agent. */
+    openKillModal(agentId, issueNumber) {
+      this.killModal = { show: true, agentId, issueNumber: issueNumber ?? null, killing: false };
+    },
+
+    /** Close the kill modal without acting. */
+    closeKillModal() {
+      this.killModal.show = false;
+    },
+
+    /** Perform the kill: DELETE worktree via API, then close modal. */
+    async confirmKill() {
+      const id = this.killModal.agentId;
+      if (!id) return;
+      this.killModal.killing = true;
+      try {
+        await fetch(`/api/control/kill/${encodeURIComponent(id)}`, { method: 'POST' });
+      } catch (e) {
+        console.error('Kill failed', e);
+      } finally {
+        this.killModal = { show: false, agentId: null, issueNumber: null, killing: false };
+      }
     },
 
     /** Format a UNIX timestamp as a human-readable relative time string. */
@@ -149,7 +180,6 @@ function agentCard() {
     transcript:       [],
     transcriptLoading: false,
     transcriptError:  null,
-    showKillModal:    false,
     _prevMsgCount:    0,
 
     /** Toggle expand/collapse; fetch transcript on first open. */
@@ -391,6 +421,43 @@ function pipelineControl(initialPaused) {
 }
 
 // ---------------------------------------------------------------------------
+// Overview — sweep stale branches / claims
+// ---------------------------------------------------------------------------
+
+/**
+ * Calls POST /api/control/sweep to delete stale branches and clear orphan
+ * agent:wip labels in one shot.  Lives inside the "Stale" summary-item so
+ * it shares the same Alpine scope as the count badge.
+ */
+function sweepControl() {
+  return {
+    sweeping: false,
+
+    async sweep() {
+      if (!confirm('Delete all stale agent branches and clear orphan agent:wip labels?')) return;
+      this.sweeping = true;
+      try {
+        const resp = await fetch('/api/control/sweep', { method: 'POST' });
+        const data = await resp.json();
+        if (!resp.ok) {
+          alert(`Sweep failed: ${data.detail ?? resp.status}`);
+          return;
+        }
+        const b = data.deleted_branches?.length ?? 0;
+        const w = data.cleared_wip_labels?.length ?? 0;
+        const e = data.errors?.length ?? 0;
+        const msg = [`Swept: ${b} branch${b !== 1 ? 'es' : ''} deleted, ${w} label${w !== 1 ? 's' : ''} cleared`];
+        if (e > 0) msg.push(`(${e} error${e !== 1 ? 's' : ''} — check logs)`);
+        alert(msg.join(' '));
+      } catch (err) {
+        alert(`Network error: ${err.message}`);
+      } finally {
+        this.sweeping = false;
+      }
+    },
+  };
+}
+
 // Overview — wave control (start-wave button)
 // ---------------------------------------------------------------------------
 
@@ -546,6 +613,39 @@ function staleClaimCard(claim) {
         this.error = err.message || 'Network error';
       } finally {
         this.clearing = false;
+      }
+    },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Overview — issue card (Analyze button)
+// ---------------------------------------------------------------------------
+
+/**
+ * Powers each issue card in the GitHub Board's open issues list.
+ *
+ * Keeps the inline fetch out of the template.  The analysisHtml is injected
+ * via x-html after the POST returns so no HTMX processing is needed.
+ *
+ * @param {number} issueNumber - GitHub issue number for the API call.
+ */
+function issueCard(issueNumber) {
+  return {
+    analysisHtml: '',
+    analyzing: false,
+    analyzeError: null,
+
+    async analyze() {
+      this.analyzing = true;
+      this.analyzeError = null;
+      try {
+        const r = await fetch(`/api/analyze/issue/${issueNumber}/partial`, { method: 'POST' });
+        this.analysisHtml = await r.text();
+      } catch (err) {
+        this.analyzeError = err.message;
+      } finally {
+        this.analyzing = false;
       }
     },
   };
@@ -932,6 +1032,479 @@ function transcriptDetail() {
         .replace(/</g, '&lt;')
         .replace(/>/g, '&gt;')
         .replace(/"/g, '&quot;');
+    },
+  };
+}
+
+// ── Cognitive Architecture Studio ────────────────────────────────────────────
+//
+// roleDetail(slug, fileExists, personas)
+//   Alpine component for the center panel (loaded via HTMX partial).
+//   Manages tab state, persona selection, composer form, and dispatches
+//   the `role:selected` window event so rolesEditor() loads the file.
+//
+// rolesEditor()
+//   Alpine component for the right panel (Monaco editor).
+//   Initialises Monaco once, listens for `role:selected`, handles
+//   save / diff / commit.
+// ----------------------------------------------------------------------------
+
+function roleDetail(slug, fileExists, personas) {
+  return {
+    slug,
+    fileExists,
+    personas,
+    activeTab: 'personas',
+    selectedPersonaId: null,
+    figure: '',
+    atomOverrides: {},
+    skills: [],
+    copied: false,
+
+    init() {
+      if (this.fileExists) {
+        window.dispatchEvent(new CustomEvent('role:selected', { detail: { slug: this.slug } }));
+      }
+    },
+
+    get archPreview() {
+      const parts = [];
+      if (this.figure) parts.push(this.figure);
+      for (const s of this.skills) parts.push(s);
+      return parts.length ? `COGNITIVE_ARCH=${parts.join(':')}` : '(select a figure or skill)';
+    },
+
+    selectPersona(id) {
+      this.selectedPersonaId = id;
+    },
+
+    applyPersona(id) {
+      const persona = this.personas.find(p => p.id === id);
+      if (!persona) return;
+      this.figure = id;
+      this.atomOverrides = persona.overrides ? { ...persona.overrides } : {};
+      this.skills = [];
+      this.activeTab = 'composer';
+    },
+
+    async copyArchString() {
+      await navigator.clipboard.writeText(this.archPreview);
+      this.copied = true;
+      setTimeout(() => { this.copied = false; }, 1500);
+    },
+
+    resetComposer() {
+      this.figure = '';
+      this.atomOverrides = {};
+      this.skills = [];
+    },
+  };
+}
+
+function rolesEditor() {
+  return {
+    editor: null,
+    currentSlug: null,
+    currentPath: null,
+    status: '',
+    statusClass: '',
+    breadcrumb: '← select a role to edit',
+    canSave: false,
+    canDiff: false,
+    diffVisible: false,
+    diffTitle: '',
+    diffLines: [],
+    diffCommitReady: false,
+    diffCommitting: false,
+
+    init() {
+      // Guard against Alpine re-running x-init (e.g. after HTMX swaps nearby DOM).
+      // Monaco throws "Element already has context attribute" if create() is called
+      // on a container that already owns an editor instance.
+      if (this.editor) return;
+
+      // Monaco AMD loader is added to this page only — configure CDN path and boot
+      require.config({ paths: { vs: 'https://cdn.jsdelivr.net/npm/monaco-editor@0.52.0/min/vs' } });
+      require(['vs/editor/editor.main'], () => {
+        // Second guard: the AMD callback can fire more than once if the module
+        // was already cached by a previous require() call.
+        if (this.editor) return;
+        if (this.$refs.editorPlaceholder) this.$refs.editorPlaceholder.style.display = 'none';
+        this.editor = monaco.editor.create(this.$refs.editorContainer, {
+          value: '',
+          language: 'markdown',
+          theme: 'vs-dark',
+          automaticLayout: true,
+          minimap: { enabled: false },
+          wordWrap: 'on',
+          scrollBeyondLastLine: false,
+          readOnly: true,
+        });
+      });
+    },
+
+    async loadRole(slug) {
+      if (!this.editor) {
+        this.setStatus('Monaco loading — try again in a moment.', 'err');
+        return;
+      }
+      const path = `.cursor/roles/${slug}.md`;
+      this.setStatus(`Loading ${path}…`);
+      try {
+        const r = await fetch(`/api/roles/${encodeURIComponent(slug)}`);
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        const data = await r.json();
+        this.editor.setValue(data.content);
+        this.editor.updateOptions({ readOnly: false });
+        this.currentSlug = slug;
+        this.currentPath = path;
+        this.breadcrumb = path;
+        this.canSave = true;
+        this.canDiff = true;
+        this.setStatus(`Loaded ${data.meta.line_count} lines · ${data.meta.last_commit_message || '(uncommitted)'}`, 'ok');
+      } catch (err) {
+        this.setStatus(`Failed to load: ${err.message}`, 'err');
+      }
+    },
+
+    async saveRole() {
+      if (!this.editor || !this.currentSlug) return;
+      this.canSave = false;
+      this.setStatus('Saving…');
+      try {
+        const r = await fetch(`/api/roles/${encodeURIComponent(this.currentSlug)}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ content: this.editor.getValue() }),
+        });
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        const data = await r.json();
+        this.canSave = true;
+        this.setStatus(`✅ Saved — diff: ${data.diff ? data.diff.split('\n').length : 0} line(s).`, 'ok');
+      } catch (err) {
+        this.canSave = true;
+        this.setStatus(`Save failed: ${err.message}`, 'err');
+      }
+    },
+
+    async previewDiff() {
+      if (!this.editor || !this.currentSlug) return;
+      this.diffTitle = `Diff — ${this.currentPath}`;
+      this.diffLines = [];
+      this.diffCommitReady = false;
+      this.diffVisible = true;
+      try {
+        const r = await fetch(`/api/roles/${encodeURIComponent(this.currentSlug)}/diff`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ content: this.editor.getValue() }),
+        });
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        const data = await r.json();
+        this.diffLines = this._parseDiff(data.diff);
+        this.diffCommitReady = true;
+      } catch (err) {
+        this.diffLines = [{ cls: 'diff-empty', text: `Failed: ${err.message}` }];
+      }
+    },
+
+    _parseDiff(diff) {
+      if (!diff || !diff.trim()) {
+        return [{ cls: 'diff-empty', text: 'No changes — content is identical to HEAD.' }];
+      }
+      return diff.split('\n').map(line => {
+        let cls = 'diff-line';
+        if (line.startsWith('+') && !line.startsWith('+++')) cls += ' added';
+        else if (line.startsWith('-') && !line.startsWith('---')) cls += ' removed';
+        else if (line.startsWith('@@')) cls += ' hunk';
+        return { cls, text: line };
+      });
+    },
+
+    async saveAndCommit() {
+      if (!this.editor || !this.currentSlug) return;
+      this.diffCommitting = true;
+      try {
+        const r = await fetch(`/api/roles/${encodeURIComponent(this.currentSlug)}/commit`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ content: this.editor.getValue() }),
+        });
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        const data = await r.json();
+        this.diffVisible = false;
+        this.setStatus(`✅ Committed — SHA ${data.commit_sha.slice(0, 8)} · ${data.message}`, 'ok');
+      } catch (err) {
+        this.setStatus(`Commit failed: ${err.message}`, 'err');
+      } finally {
+        this.diffCommitting = false;
+      }
+    },
+
+    setStatus(msg, cls = '') {
+      this.status = msg;
+      this.statusClass = cls;
+    },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Brain Dump page
+// ---------------------------------------------------------------------------
+
+/**
+ * Powers the Brain Dump form — text input → loading animation → done panel.
+ *
+ * Static data (loading messages) is read from data attributes on the root
+ * element so they live in Python/Jinja, not in this file.
+ * Seeds are rendered server-side by Jinja; each button passes its text via
+ * $el.dataset.text so no seed array is needed here.
+ *
+ * HTMX refreshes the recent-runs sidebar after a successful submit:
+ *   htmx.trigger('#bd-recent-runs', 'refresh')
+ */
+function brainDump() {
+  return {
+    step: 'input',
+    funnelStage: 0,
+    text: '',
+    labelPrefix: '',
+    showOptions: false,
+    focused: false,
+    submitting: false,
+    errorMsg: '',
+    result: {},
+    loadingMsg: '',
+    _loadingMsgs: [],
+    _loadingTimer: null,
+
+    init() {
+      // Loading messages are defined in Python, injected via data attribute.
+      this._loadingMsgs = JSON.parse(this.$el.dataset.loadingMsgs || '[]');
+      this.loadingMsg = this._loadingMsgs[0] ?? '';
+    },
+
+    get lineCount() {
+      return this.text.split('\n').filter(l => l.trim()).length;
+    },
+
+    stageClass(n) {
+      if (this.funnelStage > n) return 'bd-funnel-stage--done';
+      if (this.funnelStage === n && this.step !== 'input') return 'bd-funnel-stage--active bd-funnel-stage--pulse';
+      if (n === 0 && this.step === 'input') return 'bd-funnel-stage--active';
+      return '';
+    },
+
+    autoGrow(el) {
+      el.style.height = 'auto';
+      el.style.height = Math.min(el.scrollHeight, 600) + 'px';
+    },
+
+    async pasteClipboard() {
+      try {
+        const t = await navigator.clipboard.readText();
+        this.text = (this.text ? this.text + '\n' : '') + t;
+        await this.$nextTick();
+        this.autoGrow(this.$refs.textarea);
+      } catch (_) {}
+    },
+
+    // Called from Jinja-rendered seed buttons: @click="appendSeed($el.dataset.text)"
+    appendSeed(txt) {
+      this.text = (this.text.trim() ? this.text.trim() + '\n' : '') + txt;
+      this.$nextTick(() => this.autoGrow(this.$refs.textarea));
+    },
+
+    _startLoadingAnimation() {
+      let i = 0;
+      this.funnelStage = 1;
+      this.loadingMsg = this._loadingMsgs[0] ?? '';
+      this._loadingTimer = setInterval(() => {
+        i = (i + 1) % this._loadingMsgs.length;
+        this.loadingMsg = this._loadingMsgs[i] ?? '';
+        this.funnelStage = Math.min(i + 1, 5);
+      }, 700);
+    },
+
+    _stopLoadingAnimation(finalStage) {
+      if (this._loadingTimer) { clearInterval(this._loadingTimer); this._loadingTimer = null; }
+      this.funnelStage = finalStage;
+    },
+
+    async submit() {
+      const trimmed = this.text.trim();
+      if (!trimmed) return;
+      this.submitting = true;
+      this.errorMsg = '';
+      this.step = 'loading';
+      this._startLoadingAnimation();
+      try {
+        const resp = await fetch('/api/control/spawn-coordinator', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ brain_dump: trimmed, label_prefix: this.labelPrefix.trim() }),
+        });
+        if (!resp.ok) {
+          const body = await resp.json().catch(() => ({}));
+          throw new Error(body.detail || `HTTP ${resp.status}`);
+        }
+        this.result = await resp.json();
+        this._stopLoadingAnimation(5);
+        this.step = 'done';
+        // Refresh the recent-runs sidebar via HTMX so the new run appears.
+        const sidebar = document.getElementById('bd-recent-runs');
+        if (sidebar && typeof htmx !== 'undefined') htmx.trigger(sidebar, 'refresh');
+      } catch (err) {
+        this._stopLoadingAnimation(0);
+        this.errorMsg = err.message;
+        this.step = 'input';
+      } finally {
+        this.submitting = false;
+      }
+    },
+
+    reset() {
+      this._stopLoadingAnimation(0);
+      this.step = 'input';
+      this.funnelStage = 0;
+      this.text = '';
+      this.labelPrefix = '';
+      this.showOptions = false;
+      this.errorMsg = '';
+      this.result = {};
+    },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// API Reference — per-endpoint execution
+// ---------------------------------------------------------------------------
+
+/**
+ * Powers each endpoint card on /api.
+ *
+ * Data is read from data-* attributes on the root element so all static
+ * values (method, path template, param specs, body field definitions) live
+ * in Python/Jinja rather than in this file.
+ *
+ * data-method        — HTTP verb (GET, POST, …)
+ * data-path          — path template, e.g. /agents/{agent_id}
+ * data-query-params  — JSON array of {name, required, description} objects
+ * data-body-fields   — JSON array of {name, type, required, default} objects
+ */
+function apiEndpoint() {
+  return {
+    open: false,
+    tryOpen: false,
+    method: 'GET',
+    pathTemplate: '/',
+    pathParamNames: [],   // e.g. ['agent_id']
+    pathParamValues: {},  // {agent_id: ''}
+    queryParams: [],      // [{name, required, description}]
+    queryValues: {},      // {name: ''}
+    bodyFields: [],
+    bodyJson: '',
+    response: null,
+    sending: false,
+
+    init() {
+      this.method       = this.$el.dataset.method || 'GET';
+      this.pathTemplate = this.$el.dataset.path   || '/';
+
+      // Query params
+      try { this.queryParams = JSON.parse(this.$el.dataset.queryParams || '[]'); }
+      catch { this.queryParams = []; }
+      for (const p of this.queryParams) this.queryValues[p.name] = '';
+
+      // Body fields → JSON skeleton
+      try { this.bodyFields = JSON.parse(this.$el.dataset.bodyFields || '[]'); }
+      catch { this.bodyFields = []; }
+      if (this.bodyFields.length) {
+        const skeleton = {};
+        for (const f of this.bodyFields) {
+          if (f.default !== null && f.default !== undefined && f.default !== '') {
+            skeleton[f.name] = f.default;
+          } else if (f.type === 'integer' || f.type === 'number') {
+            skeleton[f.name] = 0;
+          } else if (f.type === 'boolean') {
+            skeleton[f.name] = false;
+          } else if (f.type && f.type.startsWith('array')) {
+            skeleton[f.name] = [];
+          } else {
+            skeleton[f.name] = '';
+          }
+        }
+        this.bodyJson = JSON.stringify(skeleton, null, 2);
+      }
+
+      // Path params — extract {name} tokens from template
+      const matches = this.pathTemplate.match(/\{(\w+)\}/g) || [];
+      this.pathParamNames = matches.map(m => m.slice(1, -1));
+      for (const n of this.pathParamNames) this.pathParamValues[n] = '';
+    },
+
+    get resolvedPath() {
+      let url = this.pathTemplate;
+      for (const [k, v] of Object.entries(this.pathParamValues)) {
+        url = url.replace(`{${k}}`, v ? encodeURIComponent(v) : `{${k}}`);
+      }
+      const qs = Object.entries(this.queryValues)
+        .filter(([, v]) => v !== '')
+        .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`);
+      if (qs.length) url += '?' + qs.join('&');
+      return url;
+    },
+
+    // Build a curl command that mirrors the current form state.
+    get curlCommand() {
+      const base = window.location.origin;
+      let cmd = `curl -X ${this.method} '${base}${this.resolvedPath}'`;
+      const hasBody = !['GET', 'HEAD'].includes(this.method) && this.bodyJson.trim();
+      if (hasBody) {
+        // Escape single quotes inside the JSON for a POSIX shell literal.
+        const escaped = this.bodyJson.replace(/'/g, "'\\''");
+        cmd += ` \\\n  -H 'Content-Type: application/json' \\\n  -d '${escaped}'`;
+      }
+      return cmd;
+    },
+
+    formatSize(bytes) {
+      if (bytes < 1024) return `${bytes} B`;
+      if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+      return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+    },
+
+    async send() {
+      this.sending = true;
+      this.response = null;
+      const t0 = performance.now();
+      try {
+        const opts = { method: this.method, headers: {} };
+        if (!['GET', 'HEAD', 'DELETE'].includes(this.method) && this.bodyJson.trim()) {
+          opts.headers['Content-Type'] = 'application/json';
+          opts.body = this.bodyJson;
+        }
+        const resp = await fetch(this.resolvedPath, opts);
+        const elapsed = Math.round(performance.now() - t0);
+        const text = await resp.text();
+
+        // Collect all response headers.
+        const headers = [];
+        resp.headers.forEach((value, name) => headers.push({ name, value }));
+        const contentType = resp.headers.get('content-type') || '';
+        const size = new TextEncoder().encode(text).length;
+
+        // Pretty-print JSON bodies; leave everything else as-is.
+        let body = text;
+        try { body = JSON.stringify(JSON.parse(text), null, 2); } catch { /* not JSON */ }
+
+        this.response = { status: resp.status, ok: resp.ok, body, elapsed, size, contentType, headers, curl: this.curlCommand };
+      } catch (err) {
+        const elapsed = Math.round(performance.now() - t0);
+        this.response = { status: 0, ok: false, body: String(err), elapsed, size: 0, contentType: '', headers: [], curl: this.curlCommand };
+      } finally {
+        this.sending = false;
+      }
     },
   };
 }
