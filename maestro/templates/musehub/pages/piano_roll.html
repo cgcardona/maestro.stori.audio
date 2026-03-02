@@ -1,230 +1,299 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <link rel="stylesheet" href="/musehub/static/tokens.css">
-  <link rel="stylesheet" href="/musehub/static/components.css">
-  <link rel="stylesheet" href="/musehub/static/layout.css">
-  <link rel="stylesheet" href="/musehub/static/icons.css">
-  <link rel="stylesheet" href="/musehub/static/music.css">
-  <title>Piano Roll — {% if path %}{{ path }} @ {% endif %}{{ short_ref }} — Muse Hub</title>
-  <style>
-    /* Piano roll specific layout */
-    .piano-roll-wrapper {
-      display: flex;
-      flex-direction: column;
-      gap: 12px;
-    }
+{% extends "musehub/base.html" %}
 
-    .piano-roll-controls {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      flex-wrap: wrap;
-      padding: 10px 14px;
-      background: var(--color-surface, #161b22);
-      border: 1px solid var(--color-border, #30363d);
-      border-radius: 6px;
-    }
+{% block title %}Piano Roll{% if track_path %} — {{ track_path }}{% endif %} @ {{ short_ref }}{% endblock %}
 
-    .piano-roll-controls label {
-      font-size: 12px;
-      color: var(--color-text-muted, #8b949e);
-      display: flex;
-      align-items: center;
-      gap: 6px;
-    }
+{% block breadcrumb %}
+  <a href="{{ base_url }}">{{ owner }}/{{ repo_slug }}</a> /
+  piano-roll /
+  <span>{{ short_ref }}</span>
+  {% if path %} / <span>{{ path }}</span>{% endif %}
+{% endblock %}
 
-    .piano-roll-controls select,
-    .piano-roll-controls input[type=range] {
-      font-size: 12px;
-      background: var(--color-canvas, #0d1117);
-      border: 1px solid var(--color-border, #30363d);
-      color: var(--color-text, #e6edf3);
-      border-radius: 4px;
-      padding: 3px 6px;
-    }
+{% block repo_nav %}{% include "musehub/partials/repo_nav.html" %}{% endblock %}
 
-    #piano-roll-outer {
-      position: relative;
-      overflow: hidden;
-      border: 1px solid var(--color-border, #30363d);
-      border-radius: 6px;
-      background: #0d1117;
-      cursor: grab;
-      user-select: none;
-    }
+{% block extra_css %}
+<style>
+.piano-roll-wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
 
-    #piano-roll-outer.panning {
-      cursor: grabbing;
-    }
+.piano-roll-meta {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3, 12px);
+  flex-wrap: wrap;
+  margin-bottom: var(--space-2, 8px);
+}
 
-    #piano-canvas {
-      display: block;
-    }
+.piano-roll-controls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 10px 14px;
+  background: var(--color-surface, #161b22);
+  border: 1px solid var(--color-border, #30363d);
+  border-radius: 6px;
+}
 
-    #tooltip {
-      position: fixed;
-      display: none;
-      background: rgba(13, 17, 23, 0.95);
-      border: 1px solid #30363d;
-      border-radius: 4px;
-      padding: 6px 10px;
-      font-size: 12px;
-      color: #e6edf3;
-      pointer-events: none;
-      z-index: 9999;
-      max-width: 220px;
-    }
+.piano-roll-controls label {
+  font-size: 12px;
+  color: var(--color-text-muted, #8b949e);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
 
-    .track-legend {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 8px;
-      padding: 8px 0;
-    }
+.piano-roll-controls select,
+.piano-roll-controls input[type=range] {
+  font-size: 12px;
+  background: var(--color-canvas, #0d1117);
+  border: 1px solid var(--color-border, #30363d);
+  color: var(--color-text, #e6edf3);
+  border-radius: 4px;
+  padding: 3px 6px;
+}
 
-    .track-legend-item {
-      display: flex;
-      align-items: center;
-      gap: 5px;
-      font-size: 12px;
-      color: var(--color-text-muted, #8b949e);
-    }
+.instrument-sidebar {
+  width: 140px;
+  flex-shrink: 0;
+  border-right: 1px solid var(--color-border, #30363d);
+}
 
-    .track-legend-swatch {
-      width: 12px;
-      height: 12px;
-      border-radius: 2px;
-      flex-shrink: 0;
-    }
-  </style>
-</head>
-<body>
-  <header>
-    <span class="logo">&#127925; Muse Hub</span>
-    <span class="breadcrumb">
-      <a href="{{ base_url }}">{{ owner }}/{{ repo_slug }}</a> /
-      piano-roll /
-      <span>{{ short_ref }}</span>
-      {% if path %} / <span>{{ path }}</span>{% endif %}
-    </span>
-  </header>
-  <div class="container">
-    <div class="token-form" id="token-form" style="display:none">
-      <p id="token-msg">Enter your Maestro JWT to browse this repo.</p>
-      <input type="password" id="token-input" placeholder="eyJ..." />
-      <button class="btn btn-primary" onclick="saveToken()">Save &amp; Load</button>
-      &nbsp;
-      <button class="btn btn-secondary" onclick="clearToken();location.reload()">Clear</button>
-    </div>
+.instrument-lane {
+  height: 40px;
+  padding: 4px 8px;
+  display: flex;
+  align-items: center;
+  border-bottom: 1px solid var(--color-border, #30363d);
+}
 
-    <div id="content">
-      <p class="loading">Loading piano roll&#8230;</p>
-    </div>
+.instrument-lane-name {
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--color-text, #e6edf3);
+}
 
-    <div id="tooltip"></div>
+#piano-roll-outer {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid var(--color-border, #30363d);
+  border-radius: 6px;
+  background: #0d1117;
+  cursor: grab;
+  user-select: none;
+  flex: 1;
+}
+
+#piano-roll-outer.panning {
+  cursor: grabbing;
+}
+
+#piano-canvas {
+  display: block;
+}
+
+#tooltip {
+  position: fixed;
+  display: none;
+  background: rgba(13, 17, 23, 0.95);
+  border: 1px solid #30363d;
+  border-radius: 4px;
+  padding: 6px 10px;
+  font-size: 12px;
+  color: #e6edf3;
+  pointer-events: none;
+  z-index: 9999;
+  max-width: 220px;
+}
+
+.track-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 8px 0;
+}
+
+.track-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  color: var(--color-text-muted, #8b949e);
+}
+
+.track-legend-swatch {
+  width: 12px;
+  height: 12px;
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="piano-roll-wrapper">
+  {# Server-rendered header with track metadata #}
+  <div class="piano-roll-meta">
+    <h1 style="margin:0;font-size:16px">
+      &#127929;
+      {% if track %}{{ track.name }}{% elif path %}{{ path }}{% else %}Piano Roll{% endif %}
+    </h1>
+    <code class="ref-badge">{{ short_ref }}</code>
+    {% if track %}
+      <span style="color:#8b949e;font-size:12px">
+        {% if track.sizeBytes %}{{ track.sizeBytes | filesizeformat }}{% endif %}
+        {% if track.durationSec %} &bull; {{ "%.1f"|format(track.durationSec) }}s{% endif %}
+        {% if track.trackCount %} &bull; {{ track.trackCount }} track{{ 's' if track.trackCount != 1 else '' }}{% endif %}
+      </span>
+    {% endif %}
   </div>
 
-  <script src="/musehub/static/musehub.js"></script>
-  <script src="/musehub/static/piano-roll.js"></script>
-  <script>
-    window.addEventListener('DOMContentLoaded', function() {
-      const repoId   = {{ repo_id | tojson }};
-      const ref      = {{ ref | tojson }};
-      const path     = {{ path | tojson }};
-      const base     = {{ base_url | tojson }};
-      const apiBase  = '/api/v1/musehub/repos/' + encodeURIComponent(repoId);
+  {# Server-rendered transport bar — JS attaches event listeners on load #}
+  <div class="piano-roll-controls" id="transport-bar">
+    <button id="play-btn" class="btn btn-primary" type="button">&#9654; Play</button>
+    <button id="stop-btn" class="btn btn-secondary" type="button">&#9632; Stop</button>
+    <label>
+      Tempo
+      <input id="tempo-slider" type="range" min="50" max="200" value="120" title="Tempo (BPM)"/>
+    </label>
+    <span id="current-time" style="font-size:12px;font-family:monospace">0:00</span>
+    <span style="color:#8b949e;font-size:12px">/</span>
+    <span id="total-time" style="font-size:12px;font-family:monospace">
+      {%- if track and track.durationSec -%}
+        {{ "%d:%02d"|format(track.durationSec|int // 60, track.durationSec|int % 60) }}
+      {%- else -%}
+        --:--
+      {%- endif -%}
+    </span>
+  </div>
 
-      // Track filter state
-      let selectedTrack = -1;  // -1 = all tracks
+  {# Layout: instrument sidebar (SSR) + canvas (JS) #}
+  <div style="display:flex;gap:0;border:1px solid var(--color-border,#30363d);border-radius:6px;overflow:hidden">
+    {# Server-rendered instrument sidebar #}
+    {% if instruments %}
+    <aside class="instrument-sidebar">
+      {% for inst in instruments %}
+      <div class="instrument-lane" data-channel="{{ inst.channel }}">
+        <span class="instrument-lane-name" title="{{ inst.name }}">{{ inst.name }}</span>
+      </div>
+      {% endfor %}
+    </aside>
+    {% endif %}
 
-      async function load() {
-        const el = document.getElementById('content');
-        try {
-          // Discover MIDI objects at this ref
-          const treeData = await apiFetch(
-            '/repos/' + encodeURIComponent(repoId) + '/tree/' + encodeURIComponent(ref)
-          );
+    {# Canvas — piano-roll.js renders MIDI note data here #}
+    <div id="piano-roll-outer" style="{% if not instruments %}width:100%{% endif %}">
+      <canvas id="piano-canvas"
+              data-midi-url="{{ piano_roll_data_url }}"
+              data-repo-id="{{ repo_id }}"
+              data-ref="{{ ref }}"
+              data-path="{{ path or '' }}"
+              data-instruments="{{ instruments | tojson if instruments else '[]' }}"
+              style="display:block;width:100%;height:{{ [instruments|length * 40, 200]|max if instruments else 200 }}px">
+      </canvas>
+      <div id="tooltip"></div>
+    </div>
+  </div>
 
-          // Find MIDI files in the tree
-          const entries = (treeData.entries || []).filter(function(e) {
-            return e.name && (e.name.endsWith('.mid') || e.name.endsWith('.midi'));
-          });
+  {# Loading state shown until JS replaces #piano-canvas content #}
+  <div id="piano-roll-status" style="display:none;color:#8b949e;font-size:13px">
+    <p class="loading">Loading piano roll&hellip;</p>
+  </div>
+</div>
+{% endblock %}
 
-          if (path) {
-            // Single-track view: load the specific MIDI object
-            const objData = await apiFetch(
-              '/repos/' + encodeURIComponent(repoId) + '/objects?limit=500'
-            );
-            const objects = (objData.objects || []);
-            const obj = objects.find(function(o) { return o.path === path; });
-            if (!obj) {
-              el.innerHTML = '<p class="error">&#10005; MIDI file not found: ' + escHtml(path) + '</p>';
-              return;
-            }
-            renderFromObjectId(repoId, obj.objectId, el);
-          } else {
-            // All-tracks view: pick first MIDI or show selector
-            if (entries.length === 0) {
-              // Try listing all objects with .mid extension
-              const objData = await apiFetch(
-                '/repos/' + encodeURIComponent(repoId) + '/objects?limit=500'
-              );
-              const midObjects = (objData.objects || []).filter(function(o) {
-                return o.path && (o.path.endsWith('.mid') || o.path.endsWith('.midi'));
-              });
-              if (midObjects.length === 0) {
-                el.innerHTML = '<div class="card"><p style="color:#8b949e">No MIDI files found at ref <strong>' + escHtml(ref) + '</strong>.</p></div>';
-                return;
-              }
-              renderObjectPicker(repoId, midObjects, el);
-            } else {
-              renderObjectPicker(repoId, entries.map(function(e) {
-                return { path: e.path || e.name, objectId: e.objectId };
-              }), el);
-            }
-          }
-        } catch(e) {
-          if (e.message !== 'auth') {
-            el.innerHTML = '<p class="error">&#10005; ' + escHtml(e.message) + '</p>';
-          }
-        }
-      }
+{% block page_data %}
+const repoId  = {{ repo_id | tojson }};
+const ref     = {{ ref | tojson }};
+const path    = {{ (path or '') | tojson }};
+const base    = {{ base_url | tojson }};
+const apiBase = '/api/v1/musehub/repos/' + encodeURIComponent(repoId);
+{% endblock %}
 
-      function renderObjectPicker(repoId, objects, el) {
-        if (objects.length === 1) {
-          renderFromObjectId(repoId, objects[0].objectId, el);
-          return;
-        }
-        // Multiple MIDI files — show a selector then render first
-        const opts = objects.map(function(o, i) {
-          return '<option value="' + escHtml(o.objectId) + '">' + escHtml(o.path || ('Track ' + i)) + '</option>';
-        }).join('');
-        el.innerHTML = '<div class="card" style="margin-bottom:12px"><label style="font-size:13px;color:#8b949e">MIDI file: <select id="midi-selector" style="margin-left:8px">' + opts + '</select></label></div><div id="roll-container"><p class="loading">Loading&#8230;</p></div>';
-        document.getElementById('midi-selector').addEventListener('change', function() {
-          renderFromObjectId(repoId, this.value, document.getElementById('roll-container'));
+{% block page_script %}
+{% raw %}
+// piano-roll.js is loaded below and initialises from data-* attributes on
+// #piano-canvas.  This block attaches transport controls once the DOM is ready.
+
+(function attachTransport() {
+  const playBtn  = document.getElementById('play-btn');
+  const stopBtn  = document.getElementById('stop-btn');
+  const timeEl   = document.getElementById('current-time');
+
+  if (playBtn)  playBtn.addEventListener('click',  function() { if (typeof PianoRoll !== 'undefined' && PianoRoll.play)  PianoRoll.play(); });
+  if (stopBtn)  stopBtn.addEventListener('click',  function() { if (typeof PianoRoll !== 'undefined' && PianoRoll.stop)  PianoRoll.stop(); });
+})();
+
+// Legacy loader — used when piano-roll.js does not self-initialise from data-*
+(function legacyLoad() {
+  const canvas = document.getElementById('piano-canvas');
+  if (!canvas) return;
+
+  const midiUrl = canvas.dataset.midiUrl;
+  const rollRepoId = canvas.dataset.repoId;
+  const rollRef    = canvas.dataset.ref;
+  const rollPath   = canvas.dataset.path || null;
+
+  if (typeof PianoRoll !== 'undefined' && PianoRoll.init) {
+    // New-style initialisation: PianoRoll reads data-* directly
+    return;
+  }
+
+  // Fall back to original all-JS load pattern
+  async function load() {
+    try {
+      if (rollPath) {
+        const objData = await apiFetch('/repos/' + encodeURIComponent(rollRepoId) + '/objects?limit=500');
+        const obj = (objData.objects || []).find(function(o) { return o.path === rollPath; });
+        if (!obj) return;
+        renderFromObjectId(rollRepoId, obj.objectId, document.getElementById('piano-roll-outer'));
+      } else {
+        const objData = await apiFetch('/repos/' + encodeURIComponent(rollRepoId) + '/objects?limit=500');
+        const midObjects = (objData.objects || []).filter(function(o) {
+          return o.path && (o.path.endsWith('.mid') || o.path.endsWith('.midi'));
         });
-        renderFromObjectId(repoId, objects[0].objectId, document.getElementById('roll-container'));
+        if (midObjects.length === 0) return;
+        renderObjectPicker(rollRepoId, midObjects, document.getElementById('piano-roll-outer'));
       }
-
-      async function renderFromObjectId(repoId, objectId, el) {
-        try {
-          el.innerHTML = '<p class="loading">Parsing MIDI&#8230;</p>';
-          const midi = await apiFetch(
-            '/repos/' + encodeURIComponent(repoId) + '/objects/' + encodeURIComponent(objectId) + '/parse-midi'
-          );
-          PianoRoll.render(midi, el, { selectedTrack: selectedTrack });
-        } catch(e) {
-          if (e.message !== 'auth') {
-            el.innerHTML = '<p class="error">&#10005; ' + escHtml(e.message) + '</p>';
-          }
-        }
+    } catch(e) {
+      if (e.message !== 'auth') {
+        const el = document.getElementById('piano-roll-outer');
+        if (el) el.innerHTML = '<p class="error">&#10005; ' + escHtml(e.message) + '</p>';
       }
+    }
+  }
 
-      load();
+  function renderObjectPicker(rId, objects, el) {
+    if (objects.length === 1) { renderFromObjectId(rId, objects[0].objectId, el); return; }
+    const opts = objects.map(function(o, i) {
+      return '<option value="' + escHtml(o.objectId) + '">' + escHtml(o.path || ('Track ' + i)) + '</option>';
+    }).join('');
+    el.innerHTML = '<div class="card" style="margin-bottom:12px"><label style="font-size:13px;color:#8b949e">MIDI file: <select id="midi-selector" style="margin-left:8px">' + opts + '</select></label></div><div id="roll-container"><p class="loading">Loading&#8230;</p></div>';
+    document.getElementById('midi-selector').addEventListener('change', function() {
+      renderFromObjectId(rId, this.value, document.getElementById('roll-container'));
     });
-  </script>
-</body>
-</html>
+    renderFromObjectId(rId, objects[0].objectId, document.getElementById('roll-container'));
+  }
+
+  async function renderFromObjectId(rId, objectId, el) {
+    try {
+      el.innerHTML = '<p class="loading">Parsing MIDI&#8230;</p>';
+      const midi = await apiFetch('/repos/' + encodeURIComponent(rId) + '/objects/' + encodeURIComponent(objectId) + '/parse-midi');
+      if (typeof PianoRoll !== 'undefined') PianoRoll.render(midi, el, {});
+    } catch(e) {
+      if (e.message !== 'auth') el.innerHTML = '<p class="error">&#10005; ' + escHtml(e.message) + '</p>';
+    }
+  }
+
+  load();
+}());
+{% endraw %}
+{% endblock %}
+
+{% block body_extra %}
+<script src="/musehub/static/piano-roll.js"></script>
+{% endblock %}
