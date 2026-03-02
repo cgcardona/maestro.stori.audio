@@ -156,13 +156,13 @@ async def test_settings_page_sidebar_navigation(
     client: AsyncClient,
     db_session: AsyncSession,
 ) -> None:
-    """Settings page HTML contains sidebar navigation buttons."""
+    """Settings page HTML contains Alpine.js-powered sidebar navigation links."""
     repo = await _make_repo(db_session, owner="navowner", slug="nav-repo")
     resp = await client.get(f"/musehub/ui/{repo.owner}/{repo.slug}/settings")
     assert resp.status_code == 200
     html = resp.text
-    assert "activateSection" in html
-    assert "data-section=" in html
+    assert "settings-nav-link" in html
+    assert "x-on:click" in html or "x-data" in html
 
 
 @pytest.mark.anyio
@@ -250,8 +250,7 @@ async def test_settings_page_danger_zone_delete_confirm(
     repo = await _make_repo(db_session, owner="delowner", slug="del-repo")
     resp = await client.get(f"/musehub/ui/{repo.owner}/{repo.slug}/settings")
     assert resp.status_code == 200
-    # Confirmation input pattern for repo name
-    assert "confirm-delete-name" in resp.text or "deleteRepo" in resp.text
+    assert "confirm-delete-name" in resp.text
 
 
 @pytest.mark.anyio
@@ -264,7 +263,7 @@ async def test_settings_page_danger_zone_transfer(
     resp = await client.get(f"/musehub/ui/{repo.owner}/{repo.slug}/settings")
     assert resp.status_code == 200
     assert "transfer" in resp.text.lower()
-    assert "transferOwnership" in resp.text or "modal-transfer" in resp.text
+    assert "modal-transfer" in resp.text
 
 
 @pytest.mark.anyio
@@ -277,7 +276,7 @@ async def test_settings_page_danger_zone_archive(
     resp = await client.get(f"/musehub/ui/{repo.owner}/{repo.slug}/settings")
     assert resp.status_code == 200
     assert "archive" in resp.text.lower()
-    assert "archiveRepo" in resp.text or "modal-archive" in resp.text
+    assert "modal-archive" in resp.text
 
 
 @pytest.mark.anyio
