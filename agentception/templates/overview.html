@@ -9,7 +9,7 @@
   received from GET /events (SSE) and applied reactively without page reload.
 #}
 <div
-  x-data="pipelineDashboard({{ state.model_dump() | tojson }})"
+  x-data='pipelineDashboard({{ state.model_dump() | tojson }})'
   x-init="connect()"
 >
 
