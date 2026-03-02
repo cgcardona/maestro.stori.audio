@@ -1,9 +1,11 @@
 {% extends "musehub/base.html" %}
 
-{% block title %}Session {{ session_id[:8] }}{% endblock %}
+{% block title %}Session {{ session.sessionId[:8] }} — {{ owner }}/{{ repo_slug }}{% endblock %}
 {% block breadcrumb %}
-  <a href="/musehub/ui/{{ owner }}/{{ repo_slug }}">{{ owner }}/{{ repo_slug }}</a> /
-  <a href="/musehub/ui/{{ owner }}/{{ repo_slug }}/sessions">sessions</a> / {{ session_id[:8] }}
+  <a href="/musehub/ui/{{ owner }}">{{ owner }}</a> /
+  <a href="/musehub/ui/{{ owner }}/{{ repo_slug }}">{{ repo_slug }}</a> /
+  <a href="{{ base_url }}/sessions">sessions</a> /
+  {{ session.sessionId[:8] }}
 {% endblock %}
 {% block repo_nav %}{% include "musehub/partials/repo_nav.html" %}{% endblock %}
 
@@ -17,518 +19,153 @@ const repoSlug  = {{ repo_slug | tojson }};
 
 {% block extra_css %}
 <style>
-.participant-cards-grid { display: flex; flex-wrap: wrap; gap: 12px; margin: 16px 0; }
-.participant-card {
-  display: flex; align-items: center; gap: 10px;
-  background: var(--surface); border: 1px solid var(--border);
-  border-radius: 8px; padding: 10px 14px;
-  text-decoration: none; color: inherit;
-  min-width: 180px; max-width: 260px;
-  transition: border-color 0.15s;
+.session-detail-grid {
+  display: grid;
+  grid-template-columns: 1fr 240px;
+  gap: var(--space-4);
+  align-items: start;
 }
-.participant-card:hover { border-color: var(--accent); }
-.participant-avatar-img { width: 40px; height: 40px; border-radius: 50%; object-fit: cover; flex-shrink: 0; }
-.participant-avatar-init {
-  width: 40px; height: 40px; border-radius: 50%;
-  display: flex; align-items: center; justify-content: center;
-  color: white; font-weight: 600; font-size: 14px; flex-shrink: 0;
+@media (max-width: 768px) {
+  .session-detail-grid { grid-template-columns: 1fr; }
 }
-.participant-info { display: flex; flex-direction: column; min-width: 0; }
-.participant-name { font-weight: 600; font-size: 14px; color: var(--text-primary); }
-.participant-bio { font-size: 12px; color: var(--text-muted); margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-
-.session-commits-list { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
-.session-commit-card {
-  display: grid; grid-template-columns: 80px 1fr auto;
-  align-items: center; gap: 8px;
-  padding: 8px 12px; background: var(--surface);
-  border: 1px solid var(--border); border-radius: 6px;
-  text-decoration: none; color: inherit; font-size: 13px;
-}
-.session-commit-card:hover { border-color: var(--accent); }
-.commit-sha { font-family: monospace; color: var(--accent); font-size: 12px; }
-.commit-msg { color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.commit-meta { font-size: 11px; color: var(--text-muted); white-space: nowrap; }
-
-.session-notes-block {
-  margin-top: 8px; font-size: 14px; line-height: 1.6;
-  color: var(--text-secondary);
-}
-
-/* ── Comment threads ──────────────────────────────────────────────────────── */
-.comment-thread { margin-bottom: var(--space-4); }
-.comment-thread:last-child { margin-bottom: 0; }
-.comment-row {
+.participant-row {
   display: flex;
-  gap: var(--space-3);
-  align-items: flex-start;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) 0;
+  border-bottom: 1px solid var(--color-border);
+  font-size: 13px;
 }
-.comment-reply-row { margin-top: var(--space-3); }
-.comment-avatar {
+.participant-row:last-child { border-bottom: none; }
+.participant-avatar {
+  width: 28px; height: 28px;
+  border-radius: 50%;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 32px;
-  height: 32px;
-  border-radius: 50%;
-  font-size: 13px;
-  font-weight: var(--font-weight-semibold);
   color: #fff;
+  font-weight: 600;
+  font-size: 12px;
   flex-shrink: 0;
 }
-.comment-body-col { flex: 1; min-width: 0; }
-.comment-meta {
-  display: flex;
-  align-items: baseline;
-  gap: var(--space-2);
-  margin-bottom: var(--space-1);
+.commit-pill {
+  display: inline-block;
+  font-family: monospace;
+  font-size: 11px;
+  background: var(--color-surface-2, #161b22);
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  padding: 1px 6px;
+  color: var(--color-accent);
+  text-decoration: none;
 }
-.comment-author {
-  font-size: var(--font-size-sm);
-  font-weight: var(--font-weight-medium);
-  color: var(--text-primary);
+.commit-pill:hover { border-color: var(--color-accent); }
+.meta-row { display: flex; gap: var(--space-2); align-items: baseline; margin-bottom: var(--space-2); font-size: 13px; }
+.meta-label { color: var(--text-muted); min-width: 100px; }
+.meta-value { color: var(--text-primary); }
+.session-live-dot {
+  display: inline-block;
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: var(--color-success, #3fb950);
+  animation: pulse 1.5s ease-in-out infinite;
 }
-.comment-ts {
-  font-size: var(--font-size-xs);
-  color: var(--text-muted);
-}
-.comment-text {
-  font-size: var(--font-size-sm);
-  color: var(--text-secondary);
-  white-space: pre-wrap;
-  word-break: break-word;
-  line-height: 1.55;
-}
-.comment-actions {
-  display: flex;
-  gap: var(--space-1);
-  margin-top: var(--space-1);
-}
-.comment-delete-btn { color: var(--color-danger, #f87171); }
-.comment-replies {
-  margin-top: var(--space-3);
-  padding-left: var(--space-4);
-  border-left: 2px solid var(--border-subtle);
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
-}
-.reply-form { margin-top: var(--space-2); }
-.comment-textarea {
-  width: 100%;
-  font-family: var(--font-sans);
-  font-size: var(--font-size-sm);
-}
-.comment-form-actions {
-  display: flex;
-  gap: var(--space-2);
-  margin-top: var(--space-1);
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
 }
 </style>
 {% endblock %}
 
-{% block page_script %}
-{% raw %}
-function fmtDuration(startIso, endIso) {
-  if (!startIso || !endIso) return '--';
-  const ms = new Date(endIso) - new Date(startIso);
-  if (ms < 0) return '--';
-  const h = Math.floor(ms / 3600000);
-  const m = Math.floor((ms % 3600000) / 60000);
-  return h > 0 ? h + 'h ' + m + 'm' : m + 'm';
-}
-
-async function loadSessionCounts() {
-  try {
-    const data = await apiFetch('/repos/' + repoId + '/sessions?limit=200');
-    const sessions = data.sessions || [];
-    const counts = {};
-    sessions.forEach(s => {
-      (s.participants || []).forEach(p => {
-        counts[p] = (counts[p] || 0) + 1;
-      });
-    });
-    return counts;
-  } catch(e) {
-    return {};
-  }
-}
-
-async function loadParticipantCards(participants) {
-  const container = document.getElementById('participant-cards');
-  if (!container || !participants.length) {
-    if (container) container.innerHTML = '<p style="color:#8b949e;font-size:14px">No participants recorded.</p>';
-    return;
-  }
-  const profiles = await Promise.all(
-    participants.map(name =>
-      apiFetch('/users/' + name).catch(() => ({ username: name, bio: '', avatar_url: '' }))
-    )
-  );
-  container.innerHTML = profiles.map(p => {
-    const username = p.username || '?';
-    const initials = username.slice(0, 2).toUpperCase();
-    const hue = [...username].reduce((h, c) => h + c.charCodeAt(0), 0) % 360;
-    const avatar = p.avatar_url
-      ? `<img src="${p.avatar_url}" class="participant-avatar-img" alt="${escHtml(username)}">`
-      : `<div class="participant-avatar-init" style="background:hsl(${hue},60%,45%)">${initials}</div>`;
-    const bio = p.bio || '';
-    const bioPreview = bio.length > 60 ? bio.slice(0, 60) + '…' : bio;
-    return `<a href="/musehub/ui/users/${encodeURIComponent(username)}" class="participant-card">
-      ${avatar}
-      <div class="participant-info">
-        <span class="participant-name">${escHtml(username)}</span>
-        ${bioPreview ? `<span class="participant-bio" title="${escHtml(bio)}">${escHtml(bioPreview)}</span>` : ''}
+{% block content %}
+<div class="session-detail-grid">
+  <main>
+    <div class="card">
+      <div style="display:flex;align-items:center;gap:var(--space-3);margin-bottom:var(--space-4)">
+        <h1 style="margin:0">Session <code>{{ session.sessionId[:8] }}</code></h1>
+        {% if session.isActive %}
+          <span class="badge badge-active"><span class="session-live-dot"></span> live</span>
+        {% else %}
+          <span class="badge badge-closed">ended</span>
+        {% endif %}
       </div>
-    </a>`;
-  }).join('');
-}
 
-async function loadSessionCommits(commitIds) {
-  const container = document.getElementById('session-commits');
-  if (!container || !commitIds.length) {
-    if (container) container.innerHTML = '<p style="color:#8b949e;font-size:14px">No commits associated with this session.</p>';
-    return;
-  }
-  const commits = await Promise.all(
-    commitIds.map(cid =>
-      apiFetch('/repos/' + repoId + '/commits/' + cid).catch(() => null)
-    )
-  );
-  const cards = commits.filter(Boolean).map(c => {
-    const msg = c.message || '';
-    const firstLine = escHtml(msg.split('\n')[0]);
-    const short = c.commit_id ? c.commit_id.slice(0, 8) : (c.commitId ? c.commitId.slice(0, 8) : '');
-    const ts = c.timestamp ? new Date(c.timestamp).toLocaleDateString() : '';
-    const author = escHtml(c.author || '');
-    const meta = [author, ts].filter(Boolean).join(' · ');
-    return `<a href="${base}/commits/${encodeURIComponent(short)}" class="session-commit-card">
-      <code class="commit-sha">${short}</code>
-      <span class="commit-msg">${firstLine || '<em style="color:#8b949e">no message</em>'}</span>
-      <span class="commit-meta">${meta}</span>
-    </a>`;
-  });
-
-  if (cards.length === 0) {
-    container.innerHTML = '<p style="color:#8b949e;font-size:14px">No commits associated with this session.</p>';
-  } else {
-    container.innerHTML = cards.join('');
-  }
-}
-
-async function load() {
-  initRepoNav(repoId);
-  try {
-    const [session, counts] = await Promise.all([
-      apiFetch('/repos/' + repoId + '/sessions/' + sessionId),
-      loadSessionCounts(),
-    ]);
-
-    const duration = fmtDuration(session.startedAt, session.endedAt);
-
-    const notes = session.notes || '';
-    const notesHtml = notes
-      ? `<div class="session-notes-block">${escHtml(notes).replace(/\n/g, '<br>')}</div>`
-      : '<p style="color:#8b949e;font-size:14px">No closing notes.</p>';
-
-    const allSessions = await apiFetch('/repos/' + repoId + '/sessions?limit=200')
-      .then(d => d.sessions || []).catch(() => []);
-    const idx = allSessions.findIndex(s => s.sessionId === sessionId);
-    const prevSession = idx >= 0 && idx + 1 < allSessions.length ? allSessions[idx + 1] : null;
-    const nextSession = idx > 0 ? allSessions[idx - 1] : null;
-
-    const navHtml = `
-      <div style="display:flex;justify-content:space-between;margin-top:12px;font-size:13px">
-        <span>
-          ${prevSession
-            ? '<a href="' + base + '/sessions/' + prevSession.sessionId + '">&larr; Previous session</a>'
-            : '<span style="color:#8b949e">No previous session</span>'}
+      <div class="meta-row">
+        <span class="meta-label">Started</span>
+        <span class="meta-value">{{ session.startedAt | fmtrelative }}</span>
+      </div>
+      {% if session.endedAt %}
+      <div class="meta-row">
+        <span class="meta-label">Ended</span>
+        <span class="meta-value">{{ session.endedAt | fmtrelative }}</span>
+      </div>
+      {% endif %}
+      {% if session.durationSeconds is not none %}
+      <div class="meta-row">
+        <span class="meta-label">Duration</span>
+        <span class="meta-value">
+          {% set secs = session.durationSeconds | int %}
+          {% set h = secs // 3600 %}
+          {% set m = (secs % 3600) // 60 %}
+          {% set s = secs % 60 %}
+          {% if h > 0 %}{{ h }}h {{ m }}m{% elif m > 0 %}{{ m }}m {{ s }}s{% else %}{{ s }}s{% endif %}
         </span>
-        <span>
-          ${nextSession
-            ? '<a href="' + base + '/sessions/' + nextSession.sessionId + '">Next session &rarr;</a>'
-            : '<span style="color:#8b949e">No next session</span>'}
+      </div>
+      {% endif %}
+      {% if session.intent %}
+      <div class="meta-row">
+        <span class="meta-label">Intent</span>
+        <span class="meta-value">{{ session.intent }}</span>
+      </div>
+      {% endif %}
+      {% if session.location %}
+      <div class="meta-row">
+        <span class="meta-label">Location</span>
+        <span class="meta-value">📍 {{ session.location }}</span>
+      </div>
+      {% endif %}
+      {% if session.commits %}
+      <div class="meta-row" style="align-items:flex-start">
+        <span class="meta-label">Commits</span>
+        <span class="meta-value" style="display:flex;flex-wrap:wrap;gap:4px">
+          {% for commit_id in session.commits %}
+          <a href="{{ base_url }}/commits/{{ commit_id | shortsha }}" class="commit-pill">{{ commit_id | shortsha }}</a>
+          {% endfor %}
         </span>
-      </div>`;
-
-    const isLive = !session.endedAt;
-    const participants = session.participants || [];
-    const commitIds = session.commits || [];
-
-    document.getElementById('content').innerHTML = `
-      <div class="card">
-        <div style="display:flex;align-items:center;gap:var(--space-3);margin-bottom:var(--space-4);flex-wrap:wrap">
-          <h1 style="margin:0">Recording Session</h1>
-          ${isLive ? '<span class="badge badge-active" style="font-size:13px;animation:pulse 1.5s ease-in-out infinite">🔴 Live</span>' : ''}
-          <a href="${base}/sessions" class="btn btn-ghost btn-sm" style="margin-left:auto">&larr; All sessions</a>
-        </div>
-        <div class="meta-row">
-          <div class="meta-item">
-            <span class="meta-label">Started</span>
-            <span class="meta-value">${fmtDate(session.startedAt)}</span>
-          </div>
-          <div class="meta-item">
-            <span class="meta-label">Ended</span>
-            <span class="meta-value">${session.endedAt ? fmtDate(session.endedAt) : '<em class="text-muted">in progress</em>'}</span>
-          </div>
-          <div class="meta-item">
-            <span class="meta-label">Duration</span>
-            <span class="meta-value">${session.endedAt ? duration : fmtRelative(session.startedAt)}</span>
-          </div>
-          ${session.location ? `
-          <div class="meta-item">
-            <span class="meta-label">Location</span>
-            <span class="meta-value">${escHtml(session.location)}</span>
-          </div>` : ''}
-          <div class="meta-item">
-            <span class="meta-label">Session ID</span>
-            <span class="meta-value text-mono text-sm">${shortSha(session.sessionId)}</span>
-          </div>
-        </div>
-        ${session.intent ? `
-        <div style="margin-top:var(--space-3)">
-          <span class="meta-label">&#127358; Intent</span>
-          <p style="margin-top:4px;font-size:var(--font-size-sm);color:var(--text-secondary)">${escHtml(session.intent)}</p>
-        </div>` : ''}
-        ${navHtml}
       </div>
-      <div class="card">
-        <h2>Participants (${participants.length})</h2>
-        <div id="participant-cards" class="participant-cards-grid">Loading participants…</div>
+      {% endif %}
+      {% if session.notes %}
+      <div style="margin-top:var(--space-3)">
+        <p style="font-size:12px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;margin:0 0 var(--space-2) 0">Closing Notes</p>
+        <p style="font-size:14px;line-height:1.6;color:var(--text-secondary);white-space:pre-wrap">{{ session.notes }}</p>
       </div>
-      <div class="card">
-        <h2>Commits (${commitIds.length})</h2>
-        <div id="session-commits" class="session-commits-list">Loading commits…</div>
-      </div>
-      <div class="card">
-        <h2>Closing Notes</h2>
-        <div style="margin-top:8px">${notesHtml}</div>
-      </div>
-      <div class="card" style="padding:var(--space-3) var(--space-4)">
-        <div id="session-reactions"><p class="text-muted text-sm">Loading reactions…</p></div>
-      </div>
-      <div class="card" id="comments-section">
-        <h2 style="margin:0 0 var(--space-3) 0">💬 Discussion</h2>
-        <div id="comments-list"><p class="loading text-sm">Loading comments…</p></div>
-        <div id="new-comment-form" style="display:none;margin-top:var(--space-4)">
-          <div class="comment-row" style="align-items:flex-start">
-            <span class="comment-avatar" id="new-comment-avatar" style="background:var(--bg-overlay);color:var(--text-muted)">?</span>
-            <div style="flex:1">
-              <textarea id="new-comment-body" class="form-input comment-textarea" rows="3"
-                        placeholder="Leave a comment…" style="resize:vertical"></textarea>
-              <div class="comment-form-actions" style="margin-top:var(--space-2)">
-                <button id="comment-submit-btn" class="btn btn-primary btn-sm"
-                        onclick="submitComment(null)">Comment</button>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>`;
-
-    // Load rich cards after DOM is set
-    await Promise.all([
-      loadParticipantCards(participants),
-      loadSessionCommits(commitIds),
-      loadReactions('session', sessionId, 'session-reactions'),
-    ]);
-
-  } catch(e) {
-    if (e.message !== 'auth') {
-      const msg = e.message.startsWith('404') ? 'Session not found.' : escHtml(e.message);
-      document.getElementById('content').innerHTML =
-        '<div style="margin-bottom:12px"><a href="' + base + '/sessions">&larr; Back to sessions</a></div>' +
-        '<p class="error">&#10005; ' + msg + '</p>';
-    }
-  }
-}
-
-let _liveTimer = null;
-
-async function startLivePolling() {
-  // Poll every 10 seconds for live sessions; stop when session ends
-  _liveTimer = setInterval(async () => {
-    try {
-      const session = await apiFetch('/repos/' + repoId + '/sessions/' + sessionId);
-      if (session.endedAt) {
-        clearInterval(_liveTimer);
-        // Reload to show final state
-        load();
-        return;
-      }
-      // Update participant list and commit count live
-      const liveEl = document.getElementById('live-commit-count');
-      if (liveEl) liveEl.textContent = (session.commits || []).length + ' commits so far';
-    } catch(e) { /* non-fatal */ }
-  }, 10000);
-}
-
-async function loadAndMaybePoll() {
-  await load();
-  // Check if session is live after load completes
-  try {
-    const session = await apiFetch('/repos/' + repoId + '/sessions/' + sessionId);
-    if (!session.endedAt) startLivePolling();
-  } catch(e) { /* non-fatal */ }
-}
-
-// ── Comment threads ──────────────────────────────────────────────────────────
-
-function currentUsername() {
-  const tok = getToken();
-  if (!tok) return null;
-  try {
-    const payload = JSON.parse(atob(tok.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')));
-    return payload.sub || null;
-  } catch { return null; }
-}
-
-function avatarColor(username) {
-  let hash = 0;
-  for (let i = 0; i < username.length; i++) hash = username.charCodeAt(i) + ((hash << 5) - hash);
-  return `hsl(${Math.abs(hash) % 360},55%,45%)`;
-}
-
-function avatarHtml(username) {
-  const initial = escHtml((username || '?').charAt(0).toUpperCase());
-  const color   = avatarColor(username || '');
-  return `<span class="comment-avatar" style="background:${color}">${initial}</span>`;
-}
-
-function renderComments(comments, me) {
-  const topLevel = comments.filter(c => !c.parent_id);
-  const replies  = comments.filter(c =>  c.parent_id);
-
-  if (topLevel.length === 0 && !me) {
-    return '<p class="text-sm text-muted" style="margin:0">No comments yet.</p>';
-  }
-  if (topLevel.length === 0) {
-    return '<p class="text-sm text-muted" style="margin:0">Be the first to comment.</p>';
-  }
-
-  return topLevel.map(c => commentHtml(c, replies, me)).join('');
-}
-
-function commentHtml(c, allReplies, me) {
-  const isOwn         = me && c.author === me;
-  const threadReplies = allReplies.filter(r => r.parent_id === c.comment_id);
-
-  return `
-<div class="comment-thread" id="comment-${escHtml(c.comment_id)}">
-  <div class="comment-row">
-    ${avatarHtml(c.author)}
-    <div class="comment-body-col">
-      <div class="comment-meta">
-        <a href="/musehub/ui/users/${encodeURIComponent(c.author)}" class="comment-author">${escHtml(c.author)}</a>
-        <span class="comment-ts" title="${escHtml(c.created_at)}">${fmtRelative(c.created_at)}</span>
-      </div>
-      <div class="comment-text">${escHtml(c.body)}</div>
-      <div class="comment-actions">
-        ${me ? `<button class="btn btn-ghost btn-xs" onclick="showReplyForm('${escHtml(c.comment_id)}')">↩ Reply</button>` : ''}
-        ${isOwn ? `<button class="btn btn-ghost btn-xs comment-delete-btn" onclick="deleteComment('${escHtml(c.comment_id)}')">🗑</button>` : ''}
-      </div>
-      <div class="reply-form-slot" id="reply-slot-${escHtml(c.comment_id)}"></div>
-      ${threadReplies.length > 0 ? `<div class="comment-replies">${threadReplies.map(r => replyHtml(r, me)).join('')}</div>` : ''}
+      {% endif %}
     </div>
-  </div>
-</div>`;
-}
+  </main>
 
-function replyHtml(c, me) {
-  const isOwn = me && c.author === me;
-  return `
-<div class="comment-row comment-reply-row" id="comment-${escHtml(c.comment_id)}">
-  ${avatarHtml(c.author)}
-  <div class="comment-body-col">
-    <div class="comment-meta">
-      <a href="/musehub/ui/users/${encodeURIComponent(c.author)}" class="comment-author">${escHtml(c.author)}</a>
-      <span class="comment-ts" title="${escHtml(c.created_at)}">${fmtRelative(c.created_at)}</span>
+  <aside>
+    <div class="card sidebar-section">
+      <p class="sidebar-section-title" style="font-size:12px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;margin:0 0 var(--space-2) 0">
+        Participants ({{ participants | length }})
+      </p>
+      {% if participants %}
+        {% for user_id in participants %}
+        <div class="participant-row">
+          <a href="/musehub/ui/users/{{ user_id | urlencode }}"
+             class="participant-avatar"
+             style="background:hsl({{ (loop.index0 * 137) % 360 }},55%,38%)"
+             title="{{ user_id }}">
+            {{ user_id[0] | upper }}
+          </a>
+          <a href="/musehub/ui/users/{{ user_id | urlencode }}" style="color:var(--text-primary);text-decoration:none;font-weight:500">
+            {{ user_id }}
+          </a>
+        </div>
+        {% endfor %}
+      {% else %}
+        <p style="font-size:13px;color:var(--text-muted)">No participants recorded.</p>
+      {% endif %}
     </div>
-    <div class="comment-text">${escHtml(c.body)}</div>
-    ${isOwn ? `<div class="comment-actions"><button class="btn btn-ghost btn-xs comment-delete-btn" onclick="deleteComment('${escHtml(c.comment_id)}')">🗑</button></div>` : ''}
-  </div>
-</div>`;
-}
-
-async function loadComments() {
-  const el = document.getElementById('comments-section');
-  if (!el) return;
-  try {
-    const comments = await apiFetch(`/repos/${repoId}/comments?target_type=session&target_id=${encodeURIComponent(sessionId)}`);
-    const me = currentUsername();
-    document.getElementById('comments-list').innerHTML = renderComments(comments, me);
-    if (me) {
-      const form   = document.getElementById('new-comment-form');
-      const avatar = document.getElementById('new-comment-avatar');
-      form.style.display = '';
-      if (avatar) {
-        avatar.textContent = me.charAt(0).toUpperCase();
-        avatar.style.background = avatarColor(me);
-        avatar.style.color = '#fff';
-      }
-    }
-  } catch(e) {
-    if (e.message !== 'auth')
-      document.getElementById('comments-list').innerHTML = `<p class="error text-sm">✕ ${escHtml(e.message)}</p>`;
-  }
-}
-
-async function submitComment(parentId) {
-  const textareaId = parentId ? `reply-body-${parentId}` : 'new-comment-body';
-  const textarea   = document.getElementById(textareaId);
-  if (!textarea) return;
-  const body = textarea.value.trim();
-  if (!body) return;
-
-  const btn = parentId
-    ? document.querySelector(`#reply-slot-${parentId} .comment-submit-btn`)
-    : document.getElementById('comment-submit-btn');
-  if (btn) { btn.disabled = true; btn.textContent = 'Posting…'; }
-
-  try {
-    await apiFetch(`/repos/${repoId}/comments`, {
-      method: 'POST',
-      body: JSON.stringify({ target_type: 'session', target_id: sessionId, body, parent_id: parentId || null }),
-    });
-    textarea.value = '';
-    if (parentId) {
-      document.getElementById(`reply-slot-${parentId}`).innerHTML = '';
-    }
-    await loadComments();
-  } catch(e) {
-    if (e.message !== 'auth') alert('Failed to post comment: ' + e.message);
-  } finally {
-    if (btn) { btn.disabled = false; btn.textContent = 'Comment'; }
-  }
-}
-
-async function deleteComment(commentId) {
-  if (!confirm('Delete this comment?')) return;
-  try {
-    await apiFetch(`/repos/${repoId}/comments/${commentId}`, { method: 'DELETE' });
-    await loadComments();
-  } catch(e) {
-    if (e.message !== 'auth') alert('Failed to delete: ' + e.message);
-  }
-}
-
-function showReplyForm(parentId) {
-  const slot = document.getElementById(`reply-slot-${parentId}`);
-  if (!slot) return;
-  if (slot.innerHTML.trim()) { slot.innerHTML = ''; return; }
-  slot.innerHTML = `
-<div class="reply-form">
-  <textarea id="reply-body-${escHtml(parentId)}" class="form-input comment-textarea" rows="2"
-            placeholder="Write a reply…" style="resize:vertical"></textarea>
-  <div class="comment-form-actions">
-    <button class="btn btn-primary btn-sm comment-submit-btn" onclick="submitComment('${escHtml(parentId)}')">Comment</button>
-    <button class="btn btn-ghost btn-sm" onclick="document.getElementById('reply-slot-${escHtml(parentId)}').innerHTML=''">Cancel</button>
-  </div>
-</div>`;
-  const ta = document.getElementById(`reply-body-${parentId}`);
-  if (ta) ta.focus();
-}
-
-loadAndMaybePoll();
-loadComments();
-{% endraw %}
+  </aside>
+</div>
 {% endblock %}

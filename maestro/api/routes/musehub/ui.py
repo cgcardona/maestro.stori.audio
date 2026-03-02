@@ -1605,24 +1605,42 @@ async def sessions_page(
     request: Request,
     owner: str,
     repo_slug: str,
+    page: int = Query(1, ge=1, description="1-based page number"),
+    per_page: int = Query(25, ge=1, le=100, description="Items per page"),
     db: AsyncSession = Depends(get_db),
 ) -> Response:
     """Render the session log page -- all recording sessions newest first.
 
-    Active sessions are highlighted with a live indicator at the top of the list.
+    Fetches session data server-side and renders via Jinja2.  Active sessions
+    appear at the top of the list.  Supports HTMX partial swap via
+    ``htmx_fragment_or_full()``: a full HTML page is returned on initial load
+    and only the ``#session-rows`` fragment is returned when ``HX-Request``
+    is present.
     """
     repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
+    offset = (page - 1) * per_page
+    sessions, total = await musehub_repository.list_sessions(
+        db, repo_id, limit=per_page, offset=offset
+    )
+    total_pages = max(1, (total + per_page - 1) // per_page)
     ctx: dict[str, object] = {
         "owner": owner,
         "repo_slug": repo_slug,
         "repo_id": repo_id,
         "base_url": base_url,
         "current_page": "sessions",
+        "sessions": [s.model_dump(by_alias=True, mode="json") for s in sessions],
+        "total": total,
+        "page": page,
+        "per_page": per_page,
+        "total_pages": total_pages,
     }
-    return json_or_html(
+    return await htmx_fragment_or_full(
         request,
-        lambda: templates.TemplateResponse(request, "musehub/pages/sessions.html", ctx),
+        templates,
         ctx,
+        full_template="musehub/pages/sessions.html",
+        fragment_template="musehub/fragments/session_rows.html",
     )
 
 
@@ -1637,13 +1655,16 @@ async def session_detail_page(
     session_id: str,
     db: AsyncSession = Depends(get_db),
 ) -> Response:
-    """Render the full session detail page.
+    """Render the full session detail page with server-side data.
 
-    Shows metadata, participants with session-count badges, commits made during
-    the session, and closing notes.  Renders a 404 message inline if the API
-    returns 404, so agents can distinguish missing sessions from server errors.
+    Fetches the session and its participant list from the database and renders
+    via Jinja2.  Returns HTTP 404 when the session does not exist so callers
+    receive a proper status code rather than an empty JS shell.
     """
     repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
+    session = await musehub_repository.get_session(db, repo_id, session_id)
+    if session is None:
+        raise HTTPException(status_code=404, detail="Session not found")
     ctx: dict[str, object] = {
         "owner": owner,
         "repo_slug": repo_slug,
@@ -1651,12 +1672,10 @@ async def session_detail_page(
         "session_id": session_id,
         "base_url": base_url,
         "current_page": "sessions",
+        "session": session.model_dump(by_alias=True, mode="json"),
+        "participants": session.participants,
     }
-    return json_or_html(
-        request,
-        lambda: templates.TemplateResponse(request, "musehub/pages/session_detail.html", ctx),
-        ctx,
-    )
+    return templates.TemplateResponse(request, "musehub/pages/session_detail.html", ctx)
 
 
 @router.get(
