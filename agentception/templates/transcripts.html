@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+
+{% block title %}AgentCeption — Transcripts{% endblock %}
+
+{% block content %}
+<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem;">
+  <div>
+    <h1 class="section-title">Transcript Browser</h1>
+    <p class="text-muted" style="margin-top:0.25rem;font-size:0.85rem;">
+      {{ transcripts | length }} conversations found
+      {% if transcripts_dir %} in <code style="font-size:0.8rem;">{{ transcripts_dir }}</code>{% endif %}
+    </p>
+  </div>
+  {% if filter_issue %}
+  <a href="/transcripts" class="btn btn-secondary">Clear filter</a>
+  {% endif %}
+</div>
+
+{% if error %}
+<div class="card" style="border-left:3px solid var(--danger);">
+  <p class="text-muted">⚠️ {{ error }}</p>
+</div>
+{% endif %}
+
+{% if transcripts %}
+<div class="card" style="padding:0;overflow:hidden;">
+  <table class="telemetry-table" style="width:100%;margin:0;">
+    <thead>
+      <tr>
+        <th>UUID</th>
+        <th>Messages</th>
+        <th>Sub-agents</th>
+        <th>First user message</th>
+        <th>Issues</th>
+        <th>Modified</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for t in transcripts %}
+      <tr>
+        <td>
+          <a href="/agents/{{ t.uuid }}" style="font-family:monospace;font-size:0.8rem;">
+            {{ t.uuid[:8] }}…
+          </a>
+        </td>
+        <td style="text-align:right;">{{ t.message_count }}</td>
+        <td style="text-align:right;">{{ t.subagent_count }}</td>
+        <td style="max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:0.82rem;color:var(--text-muted);">
+          {{ t.preview or '—' }}
+        </td>
+        <td>
+          {% for n in t.linked_issues %}
+          <a href="/issues/{{ n }}">#{{ n }}</a>
+          {% endfor %}
+          {% if not t.linked_issues %}—{% endif %}
+        </td>
+        <td style="font-size:0.75rem;color:var(--text-muted);">
+          {{ t.mtime | int | timestamp_to_date }}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% elif not error %}
+<div class="card">
+  <p class="text-muted empty-state">
+    No transcripts found. Make sure the Cursor projects directory is mounted correctly.
+  </p>
+</div>
+{% endif %}
+
+{% endblock %}

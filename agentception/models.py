@@ -106,6 +106,12 @@ class PipelineState(BaseModel):
     the same claims also appear as human-readable strings in ``alerts``.
     ``board_issues`` carries the unclaimed issues for the active phase so the
     sidebar updates via SSE without any extra requests.
+
+    SSE-expanded fields (updated every tick from Postgres):
+    ``closed_issues_count`` — issues closed in the last 24 hours.
+    ``merged_prs_count`` — PRs merged in the last 24 hours.
+    ``stale_branches`` — local git branch names that match feat/issue-N but
+    have no corresponding live worktree (leftover from failed/manual runs).
     """
 
     active_label: str | None
@@ -116,6 +122,9 @@ class PipelineState(BaseModel):
     stale_claims: list[StaleClaim] = []
     board_issues: list[BoardIssue] = []
     polled_at: float
+    closed_issues_count: int = 0
+    merged_prs_count: int = 0
+    stale_branches: list[str] = []
 
     @classmethod
     def empty(cls) -> PipelineState:
@@ -136,6 +145,9 @@ class PipelineState(BaseModel):
             stale_claims=[],
             board_issues=[],
             polled_at=time.time(),
+            closed_issues_count=0,
+            merged_prs_count=0,
+            stale_branches=[],
         )
 
 

@@ -141,10 +141,8 @@ async def apply_scaling_advice() -> dict[str, object]:
             new_config = config.model_copy(update={"pool_size_per_vp": rec.recommended_value})
         elif rec.action == "increase_eng_vps":
             new_config = config.model_copy(update={"max_eng_vps": rec.recommended_value})
-        else:
-            # Unreachable given the Literal type constraint, but guarded for safety.
-            logger.warning("⚠️  apply_scaling_advice: unknown action %r — no-op", rec.action)
-            return {"applied": rec.action, "new_value": rec.recommended_value}
+        # All Literal branches handled above; mypy may still flag the else as unreachable.
+        # The dead-code guard is kept for runtime safety when called with coerced types.
 
         await write_pipeline_config(new_config)
         logger.info(

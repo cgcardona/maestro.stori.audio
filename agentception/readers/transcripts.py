@@ -158,6 +158,84 @@ def infer_status_from_messages(messages: list[dict[str, str]]) -> AgentStatus:
     return AgentStatus.UNKNOWN
 
 
+_ISSUE_RE = re.compile(r"#(\d+)")
+
+
+async def index_transcripts(
+    transcripts_dir: Path,
+    limit: int = 400,
+) -> list[dict[str, object]]:
+    """Scan ``transcripts_dir`` and return a metadata list for all parent conversations.
+
+    Each entry has:
+    - ``uuid``           — top-level conversation UUID (directory name)
+    - ``message_count`` — number of JSONL lines in the parent .jsonl file
+    - ``subagent_count``— number of files in subagents/ subdirectory
+    - ``mtime``         — last-modified time (Unix seconds) of the JSONL file
+    - ``preview``       — first 80 chars of first user message
+    - ``linked_issues`` — list of issue numbers found in the first 500 chars
+
+    Results are sorted by mtime descending (most recently active first).
+    Only parent UUIDs (directories directly under transcripts_dir) are included.
+    """
+    entries: list[dict[str, object]] = []
+
+    for uuid_dir in transcripts_dir.iterdir():
+        if not uuid_dir.is_dir():
+            continue
+        uuid = uuid_dir.name
+        parent_jsonl = uuid_dir / f"{uuid}.jsonl"
+        if not parent_jsonl.exists():
+            continue
+
+        mtime = parent_jsonl.stat().st_mtime
+        message_count = 0
+        preview = ""
+        linked_issues: list[int] = []
+
+        try:
+            raw = parent_jsonl.read_text(encoding="utf-8", errors="replace")
+            lines = [l for l in raw.splitlines() if l.strip()]
+            message_count = len(lines)
+
+            # Extract preview and linked issues from first 500 chars of user messages.
+            first_500 = raw[:500]
+            linked_issues = [int(m) for m in _ISSUE_RE.findall(first_500)]
+
+            for line in lines:
+                try:
+                    entry = json.loads(line)
+                    if entry.get("role") == "user":
+                        parts = entry.get("message", {}).get("content", [])
+                        for p in parts:
+                            if isinstance(p, dict) and p.get("type") == "text":
+                                preview = (p.get("text") or "")[:80]
+                                break
+                    if preview:
+                        break
+                except (json.JSONDecodeError, AttributeError):
+                    continue
+        except OSError:
+            pass
+
+        subagent_count = 0
+        subagents_dir = uuid_dir / "subagents"
+        if subagents_dir.is_dir():
+            subagent_count = sum(1 for _ in subagents_dir.glob("*.jsonl"))
+
+        entries.append({
+            "uuid": uuid,
+            "message_count": message_count,
+            "subagent_count": subagent_count,
+            "mtime": mtime,
+            "preview": preview,
+            "linked_issues": linked_issues,
+        })
+
+    entries.sort(key=lambda e: float(str(e["mtime"])), reverse=True)
+    return entries[:limit]
+
+
 async def build_agent_tree(
     root_uuid: str,
     transcripts_dir: Path,

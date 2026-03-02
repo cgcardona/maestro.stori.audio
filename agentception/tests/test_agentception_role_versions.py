@@ -74,7 +74,7 @@ async def test_record_version_bump_appends_to_history(tmp_path: Path) -> None:
     assert isinstance(versions, dict)
     cto_entry = versions.get("cto")
     assert isinstance(cto_entry, dict)
-    history: list[dict[str, object]] = cto_entry.get("history", [])  # type: ignore[assignment]
+    history: list[dict[str, object]] = cto_entry.get("history", [])
     assert len(history) == 1
     assert history[0]["sha"] == sha_1
     assert history[0]["label"] == "v1"
@@ -104,7 +104,7 @@ async def test_record_version_bump_idempotent_on_same_sha(tmp_path: Path) -> Non
     assert isinstance(versions, dict)
     cto = versions.get("cto")
     assert isinstance(cto, dict)
-    cto_history: list[object] = cto.get("history", [])  # type: ignore[assignment]
+    cto_history: list[object] = cto.get("history", [])
     assert len(cto_history) == 1, "Duplicate SHA must not produce two history entries"
 
 

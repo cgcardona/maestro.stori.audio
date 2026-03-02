@@ -1,0 +1,131 @@
+{% extends "base.html" %}
+
+{% block title %}AgentCeption — Worktrees & Git{% endblock %}
+
+{% block content %}
+<h1 class="section-title" style="margin-bottom:1rem;">Worktrees &amp; Git</h1>
+
+{# ── Active Worktrees ─────────────────────────────────────────────────────── #}
+<section>
+  <h2 class="section-title" style="margin-bottom:0.5rem;">Active Worktrees ({{ worktrees | length }})</h2>
+  {% if worktrees %}
+  <div class="card" style="padding:0;overflow:hidden;">
+    <table class="telemetry-table" style="width:100%;margin:0;">
+      <thead>
+        <tr>
+          <th>Path</th>
+          <th>Branch</th>
+          <th>HEAD</th>
+          <th>Commit</th>
+          <th>Type</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for wt in worktrees %}
+        <tr>
+          <td style="font-family:monospace;font-size:0.78rem;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
+            {{ wt.path }}
+          </td>
+          <td>
+            <code style="font-size:0.8rem;">{{ wt.branch or '(detached)' }}</code>
+          </td>
+          <td style="font-family:monospace;font-size:0.75rem;color:var(--text-muted);">
+            {{ (wt.head_sha or '')[:7] or '—' }}
+          </td>
+          <td style="font-size:0.8rem;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text-muted);">
+            {{ wt.head_message or '—' }}
+          </td>
+          <td>
+            {% if wt.is_main %}
+            <span class="badge badge--blue">main</span>
+            {% elif wt.is_agent_branch %}
+            <span class="badge badge--green">agent</span>
+            {% else %}
+            <span class="badge badge--grey">linked</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="card"><p class="text-muted empty-state">No worktrees found.</p></div>
+  {% endif %}
+</section>
+
+{# ── Local Branches ───────────────────────────────────────────────────────── #}
+<section class="mt-2">
+  <h2 class="section-title" style="margin-bottom:0.5rem;">Local Branches ({{ branches | length }})</h2>
+  {% if branches %}
+  <div class="card" style="padding:0;overflow:hidden;">
+    <table class="telemetry-table" style="width:100%;margin:0;">
+      <thead>
+        <tr>
+          <th>Branch</th>
+          <th>HEAD</th>
+          <th>Commit</th>
+          <th>↑ Ahead</th>
+          <th>↓ Behind</th>
+          <th>Type</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for b in branches %}
+        <tr {% if b.is_current %}style="background:rgba(124,58,237,0.06);"{% endif %}>
+          <td>
+            <code style="font-size:0.8rem;">
+              {% if b.is_current %}* {% endif %}{{ b.name }}
+            </code>
+          </td>
+          <td style="font-family:monospace;font-size:0.75rem;color:var(--text-muted);">
+            {{ (b.head_sha or '')[:7] or '—' }}
+          </td>
+          <td style="font-size:0.8rem;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text-muted);">
+            {{ b.head_message or '—' }}
+          </td>
+          <td style="text-align:right;color:{% if b.ahead > 0 %}var(--success){% else %}var(--text-muted){% endif %};">
+            {{ b.ahead }}
+          </td>
+          <td style="text-align:right;color:{% if b.behind > 0 %}var(--warning){% else %}var(--text-muted){% endif %};">
+            {{ b.behind }}
+          </td>
+          <td>
+            {% if b.is_agent_branch %}
+            <span class="badge badge--green" style="font-size:0.65rem;">agent</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="card"><p class="text-muted empty-state">No local branches found.</p></div>
+  {% endif %}
+</section>
+
+{# ── Stash entries ────────────────────────────────────────────────────────── #}
+<section class="mt-2">
+  <h2 class="section-title" style="margin-bottom:0.5rem;">Stash ({{ stash | length }})</h2>
+  {% if stash %}
+  <div class="card" style="padding:0;overflow:hidden;">
+    <table class="telemetry-table" style="width:100%;margin:0;">
+      <thead><tr><th>Ref</th><th>Branch</th><th>Message</th></tr></thead>
+      <tbody>
+        {% for entry in stash %}
+        <tr>
+          <td><code style="font-size:0.8rem;">{{ entry.ref }}</code></td>
+          <td><code style="font-size:0.8rem;">{{ entry.branch or '—' }}</code></td>
+          <td style="font-size:0.82rem;color:var(--text-muted);">{{ entry.message }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="card"><p class="text-muted empty-state">No stash entries.</p></div>
+  {% endif %}
+</section>
+
+{% endblock %}

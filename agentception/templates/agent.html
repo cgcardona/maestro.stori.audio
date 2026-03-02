@@ -40,14 +40,14 @@
     {% if node.issue_number %}
       <span class="meta-chip">
         <span class="meta-label">Issue</span>
-        <a href="https://github.com/cgcardona/maestro/issues/{{ node.issue_number }}"
+        <a href="{{ gh_base_url }}/issues/{{ node.issue_number }}"
            target="_blank" rel="noopener" class="meta-value">#{{ node.issue_number }}</a>
       </span>
     {% endif %}
     {% if node.pr_number %}
       <span class="meta-chip">
         <span class="meta-label">PR</span>
-        <a href="https://github.com/cgcardona/maestro/pull/{{ node.pr_number }}"
+        <a href="{{ gh_base_url }}/pull/{{ node.pr_number }}"
            target="_blank" rel="noopener" class="meta-value">#{{ node.pr_number }}</a>
       </span>
     {% endif %}
@@ -66,13 +66,13 @@
   {# ── Quick actions ──────────────────────────────────────────────────────── #}
   <div class="quick-actions" x-data="{ showKillModal: false }">
     {% if node.issue_number %}
-      <a href="https://github.com/cgcardona/maestro/issues/{{ node.issue_number }}"
+      <a href="{{ gh_base_url }}/issues/{{ node.issue_number }}"
          target="_blank" rel="noopener" class="btn btn-secondary">
         View Issue on GitHub ↗
       </a>
     {% endif %}
     {% if node.pr_number %}
-      <a href="https://github.com/cgcardona/maestro/pull/{{ node.pr_number }}"
+      <a href="{{ gh_base_url }}/pull/{{ node.pr_number }}"
          target="_blank" rel="noopener" class="btn btn-secondary">
         View PR on GitHub ↗
       </a>
@@ -150,7 +150,7 @@
           <tr>
             <td class="task-key">issue_number</td>
             <td class="task-value">
-              <a href="https://github.com/cgcardona/maestro/issues/{{ node.issue_number }}"
+              <a href="{{ gh_base_url }}/issues/{{ node.issue_number }}"
                  target="_blank" rel="noopener">#{{ node.issue_number }}</a>
             </td>
           </tr>
@@ -159,7 +159,7 @@
           <tr>
             <td class="task-key">pr_number</td>
             <td class="task-value">
-              <a href="https://github.com/cgcardona/maestro/pull/{{ node.pr_number }}"
+              <a href="{{ gh_base_url }}/pull/{{ node.pr_number }}"
                  target="_blank" rel="noopener">#{{ node.pr_number }}</a>
             </td>
           </tr>

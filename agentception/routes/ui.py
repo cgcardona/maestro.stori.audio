@@ -35,6 +35,16 @@ _TEMPLATES = Jinja2Templates(directory=str(_HERE.parent / "templates"))
 _TEMPLATES.env.filters["basename"] = os.path.basename
 _TEMPLATES.env.filters["dirname"] = os.path.dirname
 
+
+def _timestamp_to_date(ts: float) -> str:
+    try:
+        return datetime.datetime.utcfromtimestamp(ts).strftime("%Y-%m-%d")
+    except Exception:
+        return "—"
+
+
+_TEMPLATES.env.filters["timestamp_to_date"] = _timestamp_to_date
+
 # Inject global template variables so every template can reference them without
 # the route handler having to pass them explicitly.
 from agentception.config import settings as _settings
@@ -210,7 +220,7 @@ async def agents_list(request: Request) -> HTMLResponse:
     # Enrich with DB run history — recent completed runs, newest first.
     run_history: list[dict[str, object]] = []
     try:
-        run_history = await get_agent_run_history(limit=50)  # type: ignore[assignment]
+        run_history = await get_agent_run_history(limit=50)
     except Exception as exc:
         logger.debug("DB agent run history fetch skipped: %s", exc)
 
@@ -412,10 +422,16 @@ async def dag_page(request: Request) -> HTMLResponse:
     Callers who need the raw DAG data should use ``GET /api/dag`` instead.
     """
     dag: DependencyDAG = await build_dag()
+    phase_labels: list[str] = []
+    try:
+        pipeline_cfg = await read_pipeline_config()
+        phase_labels = pipeline_cfg.active_labels_order
+    except Exception:
+        pass
     return _TEMPLATES.TemplateResponse(
         request,
         "dag.html",
-        {"dag": dag.model_dump()},
+        {"dag": dag.model_dump(), "phase_labels": phase_labels},
     )
 
 
@@ -506,4 +522,194 @@ async def templates_ui(request: Request) -> HTMLResponse:
         request,
         "templates.html",
         {"stored_templates": stored},
+    )
+
+
+# ---------------------------------------------------------------------------
+# Issues list + detail
+# ---------------------------------------------------------------------------
+
+
+@router.get("/issues", response_class=HTMLResponse)
+async def issues_list(
+    request: Request,
+    state: str | None = None,
+) -> HTMLResponse:
+    """List all synced issues from the DB, filterable by state."""
+    from agentception.db.queries import get_all_issues
+
+    issues = await get_all_issues(repo=_settings.gh_repo, state=state)
+    return _TEMPLATES.TemplateResponse(
+        request,
+        "issues_list.html",
+        {"issues": issues, "state": state},
+    )
+
+
+@router.get("/issues/{number}", response_class=HTMLResponse)
+async def issue_detail(request: Request, number: int) -> HTMLResponse:
+    """Issue detail page — body, linked PRs, agent runs, and comments."""
+    from agentception.db.queries import get_issue_detail
+
+    issue = await get_issue_detail(repo=_settings.gh_repo, number=number)
+    if issue is None:
+        raise HTTPException(status_code=404, detail=f"Issue #{number} not found in DB")
+    return _TEMPLATES.TemplateResponse(request, "issue.html", {"issue": issue})
+
+
+# ---------------------------------------------------------------------------
+# Pull requests list + detail
+# ---------------------------------------------------------------------------
+
+
+@router.get("/prs", response_class=HTMLResponse)
+async def prs_list(
+    request: Request,
+    state: str | None = None,
+) -> HTMLResponse:
+    """List all synced pull requests from the DB, filterable by state."""
+    from agentception.db.queries import get_all_prs
+
+    prs = await get_all_prs(repo=_settings.gh_repo, state=state)
+    return _TEMPLATES.TemplateResponse(
+        request,
+        "prs_list.html",
+        {"prs": prs, "state": state},
+    )
+
+
+@router.get("/prs/{number}", response_class=HTMLResponse)
+async def pr_detail(request: Request, number: int) -> HTMLResponse:
+    """PR detail page — CI checks, reviews, agent runs."""
+    from agentception.db.queries import get_pr_detail
+
+    pr = await get_pr_detail(repo=_settings.gh_repo, number=number)
+    if pr is None:
+        raise HTTPException(status_code=404, detail=f"PR #{number} not found in DB")
+    return _TEMPLATES.TemplateResponse(request, "pr.html", {"pr": pr})
+
+
+# ---------------------------------------------------------------------------
+# Transcript browser
+# ---------------------------------------------------------------------------
+
+
+@router.get("/transcripts", response_class=HTMLResponse)
+async def transcripts_browser(request: Request) -> HTMLResponse:
+    """Browse all agent transcripts indexed from the Cursor filesystem."""
+    from agentception.readers.transcripts import find_transcript_root, index_transcripts
+
+    error: str | None = None
+    transcripts: list[dict[str, object]] = []
+    transcripts_dir_str: str = ""
+
+    try:
+        tr_root = await find_transcript_root()
+        if tr_root is not None:
+            transcripts_dir_str = str(tr_root)
+            transcripts = await index_transcripts(tr_root)
+        else:
+            error = "Transcript directory not found — check CURSOR_PROJECTS_DIR setting."
+    except Exception as exc:
+        error = str(exc)
+
+    return _TEMPLATES.TemplateResponse(
+        request,
+        "transcripts.html",
+        {
+            "transcripts": transcripts,
+            "transcripts_dir": transcripts_dir_str,
+            "error": error,
+        },
+    )
+
+
+# ---------------------------------------------------------------------------
+# Worktrees & git browser
+# ---------------------------------------------------------------------------
+
+
+@router.get("/worktrees", response_class=HTMLResponse)
+async def worktrees_page(request: Request) -> HTMLResponse:
+    """Live view of git worktrees, local branches, and stash."""
+    from agentception.readers.git import list_git_branches, list_git_stash, list_git_worktrees
+
+    worktrees: list[dict[str, object]] = []
+    branches: list[dict[str, object]] = []
+    stash: list[dict[str, object]] = []
+
+    try:
+        worktrees, branches, stash = await asyncio.gather(
+            list_git_worktrees(),
+            list_git_branches(),
+            list_git_stash(),
+        )
+    except Exception as exc:
+        logger.warning("⚠️  Worktrees page git read failed: %s", exc)
+
+    return _TEMPLATES.TemplateResponse(
+        request,
+        "worktrees.html",
+        {"worktrees": worktrees, "branches": branches, "stash": stash},
+    )
+
+
+# ---------------------------------------------------------------------------
+# .cursor/ docs viewer
+# ---------------------------------------------------------------------------
+
+_CURSOR_DOCS: list[dict[str, str]] = [
+    {"slug": "agent-command-policy",       "label": "Agent Command Policy",    "file": "agent-command-policy.md"},
+    {"slug": "conflict-rules",             "label": "Conflict Rules",           "file": "conflict-rules.md"},
+    {"slug": "multi-tier-agent-architecture", "label": "Multi-tier Architecture", "file": "multi-tier-agent-architecture.md"},
+    {"slug": "parallel-issue-to-pr",       "label": "Parallel Issue → PR",     "file": "parallel-issue-to-pr.md"},
+    {"slug": "parallel-pr-review",         "label": "Parallel PR Review",      "file": "parallel-pr-review.md"},
+    {"slug": "pipeline-howto",             "label": "Pipeline How-to",         "file": "pipeline-howto.md"},
+    {"slug": "parallel-bugs-to-issues",    "label": "Parallel Bugs → Issues",  "file": "parallel-bugs-to-issues.md"},
+]
+
+_CURSOR_DIR = Path(_settings.repo_dir) / ".cursor"
+
+
+@router.get("/docs", response_class=HTMLResponse)
+async def docs_index(request: Request) -> HTMLResponse:
+    """Redirect to the first available doc."""
+    first = next((d for d in _CURSOR_DOCS if (_CURSOR_DIR / d["file"]).exists()), None)
+    if first:
+        from fastapi.responses import RedirectResponse
+        return RedirectResponse(url=f"/docs/{first['slug']}", status_code=302)  # type: ignore[return-value]
+    raise HTTPException(status_code=404, detail="No .cursor/ docs found")
+
+
+@router.get("/docs/{slug}", response_class=HTMLResponse)
+async def docs_viewer(request: Request, slug: str) -> HTMLResponse:
+    """Render a .cursor/ markdown doc as plain text with syntax highlighting."""
+    doc_meta = next((d for d in _CURSOR_DOCS if d["slug"] == slug), None)
+    if doc_meta is None:
+        raise HTTPException(status_code=404, detail=f"Unknown doc slug: {slug}")
+
+    file_path = _CURSOR_DIR / doc_meta["file"]
+    content: str | None = None
+    error: str | None = None
+
+    try:
+        content = file_path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        error = f"File not found: {file_path}"
+    except OSError as exc:
+        error = str(exc)
+
+    return _TEMPLATES.TemplateResponse(
+        request,
+        "docs.html",
+        {
+            "slug": slug,
+            "file_path": str(file_path),
+            "content": content,
+            "error": error,
+            "available_docs": [
+                {"slug": d["slug"], "label": d["label"]}
+                for d in _CURSOR_DOCS
+            ],
+        },
     )

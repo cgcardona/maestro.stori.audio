@@ -25,6 +25,8 @@ from agentception.intelligence.guards import detect_out_of_order_prs, detect_sta
 from agentception.models import AgentNode, AgentStatus, BoardIssue, PipelineState, StaleClaim, TaskFile
 from agentception.readers.github import (
     get_active_label,
+    get_closed_issues,
+    get_merged_prs_full,
     get_open_issues,
     get_open_prs,
     get_wip_issues,
@@ -62,25 +64,39 @@ class GitHubBoard:
     open_issues: list[dict[str, object]]
     open_prs: list[dict[str, object]]
     wip_issues: list[dict[str, object]]
+    closed_issues: list[dict[str, object]] = dataclasses.field(default_factory=list)
+    merged_prs: list[dict[str, object]] = dataclasses.field(default_factory=list)
 
 
 async def build_github_board() -> GitHubBoard:
     """Fetch all required GitHub data in parallel and return a ``GitHubBoard``.
 
     Using ``asyncio.gather`` keeps the wall-clock cost equal to the slowest
-    individual request rather than the sum of all requests.
+    individual request rather than the sum of all requests.  Closed issues and
+    merged PRs are fetched with a limit cap so each tick stays bounded.
     """
-    active_label, open_issues, open_prs, wip_issues = await asyncio.gather(
+    (
+        active_label,
+        open_issues,
+        open_prs,
+        wip_issues,
+        closed_issues,
+        merged_prs,
+    ) = await asyncio.gather(
         get_active_label(),
         get_open_issues(),
         get_open_prs(),
         get_wip_issues(),
+        get_closed_issues(limit=100),
+        get_merged_prs_full(limit=100),
     )
     return GitHubBoard(
         active_label=active_label,
         open_issues=open_issues,
         open_prs=open_prs,
         wip_issues=wip_issues,
+        closed_issues=closed_issues,
+        merged_prs=merged_prs,
     )
 
 
@@ -344,6 +360,8 @@ async def tick() -> PipelineState:
             ),
             open_issues=github.open_issues,
             open_prs=github.open_prs,
+            closed_issues=github.closed_issues,
+            merged_prs=github.merged_prs,
             gh_repo=settings.gh_repo,
         )
     except Exception as exc:
@@ -351,6 +369,32 @@ async def tick() -> PipelineState:
 
     # ── Read board_issues back from Postgres (Postgres is the source of truth) ─
     board_issues = await _build_board_issues(github.active_label, settings.gh_repo)
+
+    # ── SSE expansion: closed/merged counts and stale branch detection ────────
+    closed_issues_count = 0
+    merged_prs_count = 0
+    stale_branches: list[str] = []
+    try:
+        from agentception.db.queries import get_closed_issues_count, get_merged_prs_count
+        from agentception.readers.git import list_git_branches, list_git_worktrees
+
+        closed_issues_count, merged_prs_count = await asyncio.gather(
+            get_closed_issues_count(settings.gh_repo),
+            get_merged_prs_count(settings.gh_repo),
+        )
+
+        # Stale branches: feat/issue-N local branches with no live worktree path.
+        live_branches: set[str] = {
+            str(wt.get("branch", ""))
+            for wt in await list_git_worktrees()
+            if wt.get("branch")
+        }
+        for branch in await list_git_branches():
+            name = str(branch.get("name", ""))
+            if branch.get("is_agent_branch") and name not in live_branches:
+                stale_branches.append(name)
+    except Exception as exc:
+        logger.debug("⚠️  SSE expansion data fetch skipped: %s", exc)
 
     state = PipelineState(
         active_label=github.active_label,
@@ -361,6 +405,9 @@ async def tick() -> PipelineState:
         stale_claims=stale_claims,
         board_issues=board_issues,
         polled_at=time.time(),
+        closed_issues_count=closed_issues_count,
+        merged_prs_count=merged_prs_count,
+        stale_branches=stale_branches,
     )
     _state = state
 

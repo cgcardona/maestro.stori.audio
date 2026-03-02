@@ -62,6 +62,26 @@
        class="{% if request.url.path.startswith('/templates') %}active{% endif %}">
       Templates
     </a>
+    <a href="/issues"
+       class="{% if request.url.path.startswith('/issues') %}active{% endif %}">
+      Issues
+    </a>
+    <a href="/prs"
+       class="{% if request.url.path.startswith('/prs') %}active{% endif %}">
+      PRs
+    </a>
+    <a href="/transcripts"
+       class="{% if request.url.path.startswith('/transcripts') %}active{% endif %}">
+      Transcripts
+    </a>
+    <a href="/worktrees"
+       class="{% if request.url.path.startswith('/worktrees') %}active{% endif %}">
+      Worktrees
+    </a>
+    <a href="/docs"
+       class="{% if request.url.path.startswith('/docs') %}active{% endif %}">
+      Docs
+    </a>
 
     {#
       Project switcher — shown only when pipeline-config.json defines multiple

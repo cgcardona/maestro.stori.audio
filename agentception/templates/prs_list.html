@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+
+{% block title %}AgentCeption — Pull Requests{% endblock %}
+
+{% block content %}
+<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem;">
+  <h1 class="section-title">Pull Requests</h1>
+  <div style="display:flex;gap:0.5rem;">
+    <a href="/prs?state=open" class="btn {% if state == 'open' %}btn-primary{% else %}btn-secondary{% endif %}">Open</a>
+    <a href="/prs?state=merged" class="btn {% if state == 'merged' %}btn-primary{% else %}btn-secondary{% endif %}">Merged</a>
+    <a href="/prs" class="btn {% if not state %}btn-primary{% else %}btn-secondary{% endif %}">All</a>
+  </div>
+</div>
+
+{% if prs %}
+<div class="card" style="padding:0;overflow:hidden;">
+  <table class="telemetry-table" style="width:100%;margin:0;">
+    <thead>
+      <tr>
+        <th style="width:3.5rem;">#</th>
+        <th>Title</th>
+        <th>State</th>
+        <th>Branch</th>
+        <th>Closes</th>
+        <th>Merged</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for pr in prs %}
+      <tr>
+        <td>
+          <a href="/prs/{{ pr.number }}" style="font-weight:600;">#{{ pr.number }}</a>
+        </td>
+        <td style="max-width:280px;">
+          <a href="/prs/{{ pr.number }}">{{ pr.title }}</a>
+        </td>
+        <td>
+          <span class="badge {% if pr.state == 'open' %}badge--green{% elif pr.state == 'merged' %}badge--purple{% else %}badge--grey{% endif %}">
+            {{ pr.state }}
+          </span>
+        </td>
+        <td>
+          <code style="font-size:0.75rem;">{{ pr.head_ref or '—' }}</code>
+        </td>
+        <td>
+          {% if pr.closes_issue_number %}
+          <a href="/issues/{{ pr.closes_issue_number }}">#{{ pr.closes_issue_number }}</a>
+          {% else %}—{% endif %}
+        </td>
+        <td style="font-size:0.75rem;color:var(--text-muted);">
+          {{ pr.merged_at[:10] if pr.merged_at else '—' }}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<div class="card">
+  <p class="text-muted empty-state">No pull requests in the database yet. The poller will sync them on the next tick.</p>
+</div>
+{% endif %}
+
+{% endblock %}

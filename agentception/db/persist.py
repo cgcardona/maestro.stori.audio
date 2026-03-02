@@ -59,16 +59,22 @@ async def persist_tick(
     open_issues: list[dict[str, object]],
     open_prs: list[dict[str, object]],
     gh_repo: str,
+    closed_issues: list[dict[str, object]] | None = None,
+    merged_prs: list[dict[str, object]] | None = None,
 ) -> None:
     """Persist everything derived from one polling tick.
 
-    Swallows all exceptions so a DB outage never crashes the poller.
+    Open + closed issues are upserted together so the DB retains full history.
+    Open + merged PRs likewise.  Swallows all exceptions so a DB outage never
+    crashes the poller.
     """
     try:
         async with get_session() as session:
             await _upsert_snapshot(session, state)
-            await _upsert_issues(session, open_issues, state.active_label, gh_repo)
-            await _upsert_prs(session, open_prs, gh_repo)
+            all_issues = list(open_issues) + list(closed_issues or [])
+            await _upsert_issues(session, all_issues, state.active_label, gh_repo)
+            all_prs = list(open_prs) + list(merged_prs or [])
+            await _upsert_prs(session, all_prs, gh_repo)
             await _upsert_agent_runs(session, state.agents)
             await session.commit()
     except Exception as exc:
@@ -80,7 +86,7 @@ async def persist_tick(
 # ---------------------------------------------------------------------------
 
 
-async def _upsert_snapshot(session: object, state: PipelineState) -> None:  # type: ignore[type-arg]
+async def _upsert_snapshot(session: object, state: PipelineState) -> None:
     from sqlalchemy.ext.asyncio import AsyncSession
 
     assert isinstance(session, AsyncSession)
@@ -199,6 +205,16 @@ async def _upsert_prs(
         )
         existing = result.scalar_one_or_none()
 
+        merged_at_raw = raw.get("mergedAt")
+        merged_at: datetime.datetime | None = None
+        if isinstance(merged_at_raw, str):
+            try:
+                merged_at = datetime.datetime.fromisoformat(
+                    merged_at_raw.replace("Z", "+00:00")
+                )
+            except ValueError:
+                pass
+
         if existing is None:
             session.add(
                 ACPullRequest(
@@ -209,6 +225,7 @@ async def _upsert_prs(
                     head_ref=str(head_ref) if isinstance(head_ref, str) else None,
                     labels_json=labels_json,
                     content_hash=content_hash,
+                    merged_at=merged_at,
                     first_seen_at=now,
                     last_synced_at=now,
                 )
@@ -219,6 +236,8 @@ async def _upsert_prs(
             existing.head_ref = str(head_ref) if isinstance(head_ref, str) else None
             existing.labels_json = labels_json
             existing.content_hash = content_hash
+            if merged_at is not None:
+                existing.merged_at = merged_at
             existing.last_synced_at = now
 
 

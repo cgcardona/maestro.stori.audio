@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+
+{% block title %}AgentCeption — Issues{% endblock %}
+
+{% block content %}
+<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem;">
+  <h1 class="section-title">Issues</h1>
+  <div style="display:flex;gap:0.5rem;">
+    <a href="/issues?state=open" class="btn {% if state == 'open' %}btn-primary{% else %}btn-secondary{% endif %}">Open</a>
+    <a href="/issues?state=closed" class="btn {% if state == 'closed' %}btn-primary{% else %}btn-secondary{% endif %}">Closed</a>
+    <a href="/issues" class="btn {% if not state %}btn-primary{% else %}btn-secondary{% endif %}">All</a>
+  </div>
+</div>
+
+{% if issues %}
+<div class="card" style="padding:0;overflow:hidden;">
+  <table class="telemetry-table" style="width:100%;margin:0;">
+    <thead>
+      <tr>
+        <th style="width:3.5rem;">#</th>
+        <th>Title</th>
+        <th>State</th>
+        <th>Phase</th>
+        <th>Synced</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for issue in issues %}
+      <tr>
+        <td>
+          <a href="/issues/{{ issue.number }}" style="font-weight:600;">#{{ issue.number }}</a>
+        </td>
+        <td style="max-width:340px;">
+          <a href="/issues/{{ issue.number }}">{{ issue.title }}</a>
+          {% if "agent:wip" in issue.labels %}
+          <span class="badge badge--yellow" style="margin-left:0.4rem;font-size:0.65rem;">wip</span>
+          {% endif %}
+        </td>
+        <td>
+          <span class="badge {% if issue.state == 'open' %}badge--green{% else %}badge--grey{% endif %}">
+            {{ issue.state }}
+          </span>
+        </td>
+        <td style="font-size:0.8rem;color:var(--text-muted);">
+          {{ issue.phase_label or '—' }}
+        </td>
+        <td style="font-size:0.75rem;color:var(--text-muted);">
+          {{ issue.last_synced_at[:10] }}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<div class="card">
+  <p class="text-muted empty-state">No issues in the database yet. The poller will sync them on the next tick.</p>
+</div>
+{% endif %}
+
+{% endblock %}
