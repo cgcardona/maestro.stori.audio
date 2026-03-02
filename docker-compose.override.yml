@@ -61,6 +61,10 @@ services:
       # below so spawned worktrees land on the host at the expected path.
       AC_REPO_DIR: /repo
       AC_WORKTREES_DIR: /worktrees
+      # AgentCeption's own ac_* tables live in the shared Postgres instance.
+      # Same DB as Maestro during the monorepo phase; ac_* prefix avoids collisions.
+      # When AgentCeption is extracted, point this at its own DB.
+      AC_DATABASE_URL: "postgresql+asyncpg://maestro:${DB_PASSWORD}@postgres:5432/maestro"
     volumes:
       # Live code — host edits are instantly visible; no rebuild needed
       - ./agentception:/app/agentception

@@ -273,7 +273,7 @@ async def broadcast(state: PipelineState) -> None:
 
 
 async def tick() -> PipelineState:
-    """Execute a single polling cycle: collect → merge → detect → broadcast.
+    """Execute a single polling cycle: collect → merge → detect → persist → broadcast.
 
     This is the unit of work for the background loop.  It is also the
     function to call directly in tests to exercise the full data pipeline
@@ -300,6 +300,20 @@ async def tick() -> PipelineState:
     )
 
     _state = state
+
+    # Persist tick data to Postgres (non-blocking — swallows DB errors so
+    # a database outage cannot crash the poller or stall the SSE stream).
+    try:
+        from agentception.db.persist import persist_tick
+        await persist_tick(
+            state=state,
+            open_issues=github.open_issues,
+            open_prs=github.open_prs,
+            gh_repo=settings.gh_repo,
+        )
+    except Exception as exc:
+        logger.warning("⚠️  DB persist skipped (non-fatal): %s", exc)
+
     await broadcast(state)
     return state
 

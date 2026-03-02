@@ -25,6 +25,7 @@ from fastapi.staticfiles import StaticFiles
 from sse_starlette.sse import EventSourceResponse
 from starlette.requests import Request
 
+from agentception.db.engine import close_db, init_db
 from agentception.poller import polling_loop, subscribe, unsubscribe
 from agentception.routes.api import router as api_router
 from agentception.routes.control import router as control_router
@@ -41,7 +42,8 @@ _HERE = Path(__file__).parent
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
-    """Start the background poller on startup; cancel it on shutdown."""
+    """Start DB, background poller on startup; tear both down on shutdown."""
+    await init_db()
     poller = asyncio.create_task(polling_loop(), name="agentception-poller")
     logger.info("✅ AgentCeption poller started")
     try:
@@ -52,6 +54,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             await poller
         except asyncio.CancelledError:
             pass
+        await close_db()
 
 
 app = FastAPI(
