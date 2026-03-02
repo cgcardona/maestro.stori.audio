@@ -485,6 +485,13 @@ async def get_issue_body(number: int) -> str:
     ----------
     number:
         GitHub issue number.
+
+    Note
+    ----
+    The ``gh`` CLI outputs string-valued jq results in **raw mode** (no JSON
+    quotes), so using ``--jq .body`` directly produces text that
+    ``json.loads`` cannot parse.  We fetch the full ``{"body": "..."}``
+    object with ``--jq "."`` and extract the field from the dict instead.
     """
     repo = settings.gh_repo
     args = [
@@ -492,10 +499,11 @@ async def get_issue_body(number: int) -> str:
         "--repo", repo,
         "--json", "body",
     ]
-    result = await gh_json(args, ".body", f"get_issue_body:{number}")
-    if not isinstance(result, str):
-        raise RuntimeError(f"get_issue_body: expected str from gh, got {type(result).__name__}")
-    return result
+    result = await gh_json(args, ".", f"get_issue_body:{number}")
+    if not isinstance(result, dict):
+        raise RuntimeError(f"get_issue_body: expected dict from gh, got {type(result).__name__}")
+    body = result.get("body")
+    return str(body) if body is not None else ""
 
 
 # ---------------------------------------------------------------------------
