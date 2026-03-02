@@ -36,7 +36,7 @@ codebases:
 
   agentception:
     container: "agentception"
-    mypy: "docker compose exec agentception mypy /app/agentception/"
+    mypy: 'docker compose exec agentception sh -c "PYTHONPATH=/worktrees/$WTNAME mypy /worktrees/$WTNAME/agentception/"'
     test_dir: "agentception/tests"
     test_glob: "agentception/tests/test_*.py"
     label_prefix: "agentception/"

@@ -401,7 +401,7 @@ IS_AC=$(echo "$ISSUE_LABEL" | grep -c "^agentception/" || true)
 
 # mypy — route by codebase (agentception and maestro are independent; never cross-run)
 if [ "$IS_AC" -gt 0 ]; then
-  cd "$REPO" && docker compose exec agentception mypy /app/agentception/
+  cd "$REPO" && docker compose exec agentception sh -c "PYTHONPATH=/worktrees/$WTNAME mypy /worktrees/$WTNAME/agentception/"
 else
   cd "$REPO" && docker compose exec maestro sh -c \
     "PYTHONPATH=/worktrees/$WTNAME mypy /worktrees/$WTNAME/maestro/ /worktrees/$WTNAME/tests/"
@@ -648,7 +648,7 @@ STEP 3 — IMPLEMENT (only if STEP 2 found nothing):
   echo "=== PRE-EXISTING MYPY BASELINE (dev, before any changes) ==="
   # Route by codebase — agentception and maestro are independent; never cross-run.
   if [ "$IS_AC" -gt 0 ]; then
-    cd "$REPO" && docker compose exec agentception mypy /app/agentception/ 2>&1 | tail -5
+    cd "$REPO" && docker compose exec agentception sh -c "PYTHONPATH=/worktrees/$WTNAME mypy /worktrees/$WTNAME/agentception/" 2>&1 | tail -5
   else
     cd "$REPO" && docker compose exec maestro sh -c \
       "PYTHONPATH=/worktrees/$WTNAME mypy /worktrees/$WTNAME/maestro/ /worktrees/$WTNAME/tests/" \
@@ -685,7 +685,7 @@ STEP 3 — IMPLEMENT (only if STEP 2 found nothing):
   # Route by IS_AC set in STEP 3.1. agentception and maestro are independent
   # codebases — never run maestro mypy for an agentception issue, and vice versa.
   if [ "$IS_AC" -gt 0 ]; then
-    cd "$REPO" && docker compose exec agentception mypy /app/agentception/
+    cd "$REPO" && docker compose exec agentception sh -c "PYTHONPATH=/worktrees/$WTNAME mypy /worktrees/$WTNAME/agentception/"
   else
     cd "$REPO" && docker compose exec maestro sh -c \
       "PYTHONPATH=/worktrees/$WTNAME mypy /worktrees/$WTNAME/maestro/ /worktrees/$WTNAME/tests/"
@@ -895,7 +895,7 @@ Maestro-Session: $AGENT_SESSION"
   │                                                                              │
   │ STEP E — Re-run mypy only if Python files were in conflict:                 │
   │   app.py changed → run mypy. Markdown-only conflicts → skip mypy.          │
-  │   agentception: docker compose exec agentception mypy /app/agentception/   │
+  │   agentception: docker compose exec agentception sh -c "PYTHONPATH=/worktrees/$WTNAME mypy /worktrees/$WTNAME/agentception/"   │
   │   maestro:      docker compose exec maestro sh -c "... mypy ..."           │
   │   Re-run targeted tests only if logic files changed.                        │
   │                                                                              │
