@@ -5,6 +5,7 @@ background poller via ``get_state()`` — routes are intentionally thin.
 """
 from __future__ import annotations
 
+import datetime
 import os
 from pathlib import Path
 
@@ -18,12 +19,30 @@ from agentception.models import AgentNode, PipelineState, VALID_ROLES
 from agentception.poller import get_state
 from agentception.readers.github import get_open_issues
 from agentception.readers.transcripts import read_transcript_messages
+from agentception.telemetry import WaveSummary, aggregate_waves
 
 _HERE = Path(__file__).parent
 _TEMPLATES = Jinja2Templates(directory=str(_HERE.parent / "templates"))
 # Register path filters used by agent.html kill-endpoint modal.
 _TEMPLATES.env.filters["basename"] = os.path.basename
 _TEMPLATES.env.filters["dirname"] = os.path.dirname
+
+
+def _format_ts(ts: float) -> str:
+    """Format a UNIX timestamp as a short UTC datetime string for the telemetry table."""
+    try:
+        return datetime.datetime.utcfromtimestamp(ts).strftime("%Y-%m-%d %H:%M")
+    except (OSError, OverflowError, ValueError):
+        return "—"
+
+
+def _format_number(n: int) -> str:
+    """Format an integer with thousands separators for readability."""
+    return f"{n:,}"
+
+
+_TEMPLATES.env.filters["format_ts"] = _format_ts
+_TEMPLATES.env.filters["format_number"] = _format_number
 
 router = APIRouter(tags=["ui"])
 
@@ -100,6 +119,45 @@ async def agent_detail(request: Request, agent_id: str) -> Response:
         request,
         "agent.html",
         {"node": node, "agent_id": agent_id, "messages": messages},
+    )
+
+
+@router.get("/telemetry", response_class=HTMLResponse)
+async def telemetry_page(request: Request) -> HTMLResponse:
+    """Telemetry dashboard — wave history as a CSS bar chart and summary table.
+
+    Aggregates all ``.agent-task`` files grouped by BATCH_ID into WaveSummary
+    objects. The chart is CSS-only (no JS charting library): bar widths are
+    computed server-side as percentages of the longest wave duration.
+    Returns an empty-wave view when no wave data is present.
+    """
+    waves: list[WaveSummary] = await aggregate_waves()
+
+    # Compute bar widths as percentages of the longest wave duration so all
+    # bars are proportional and the chart fills its container.
+    max_duration_s: float = 0.0
+    for wave in waves:
+        if wave.ended_at is not None:
+            max_duration_s = max(max_duration_s, wave.ended_at - wave.started_at)
+
+    # Pre-compute summary totals in Python so the template stays logic-free.
+    all_issues: set[int] = set()
+    for wave in waves:
+        all_issues.update(wave.issues_worked)
+    total_issues = len(all_issues)
+    total_cost_usd = round(sum(w.estimated_cost_usd for w in waves), 4)
+    total_agents = sum(len(w.agents) for w in waves)
+
+    return _TEMPLATES.TemplateResponse(
+        request,
+        "telemetry.html",
+        {
+            "waves": waves,
+            "max_duration_s": max_duration_s,
+            "total_issues": total_issues,
+            "total_cost_usd": total_cost_usd,
+            "total_agents": total_agents,
+        },
     )
 
 

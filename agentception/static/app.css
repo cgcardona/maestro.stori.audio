@@ -766,3 +766,167 @@ main {
   gap: 0.5rem;
   justify-content: flex-end;
 }
+
+/* ── Telemetry page ───────────────────────────────────────────────────────── */
+
+/* Chart section */
+
+.telemetry-chart-section {
+  /* section wrapper — uses existing .card and .mt-2 utilities */
+}
+
+.telemetry-chart {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 1rem 1.25rem;
+}
+
+.telemetry-bar-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  cursor: default;
+}
+
+.telemetry-bar-label {
+  flex: 0 0 220px;
+  font-size: 0.6875rem;
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: right;
+}
+
+.telemetry-bar-track {
+  flex: 1;
+  background: var(--bg-tertiary);
+  border-radius: 3px;
+  height: 22px;
+  overflow: hidden;
+}
+
+.telemetry-bar {
+  height: 100%;
+  border-radius: 3px;
+  display: flex;
+  align-items: center;
+  min-width: 4px;
+  transition: opacity 0.15s;
+}
+
+.telemetry-bar:hover {
+  opacity: 0.8;
+}
+
+.telemetry-bar--complete {
+  background: var(--success);
+}
+
+.telemetry-bar--active {
+  background: var(--warning);
+  /* pulse animation indicates the wave is still running */
+  animation: bar-pulse 2s ease-in-out infinite;
+}
+
+.telemetry-bar--short {
+  background: var(--text-muted);
+}
+
+@keyframes bar-pulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.6; }
+}
+
+.telemetry-bar-text {
+  font-size: 0.625rem;
+  font-weight: 600;
+  color: #0d1117;
+  padding: 0 0.4rem;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+/* Wave table */
+
+.telemetry-table-wrap {
+  overflow-x: auto;
+  padding: 0;
+}
+
+.telemetry-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8125rem;
+}
+
+.telemetry-th {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  padding: 0.5rem 0.875rem;
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+
+.telemetry-td {
+  padding: 0.5rem 0.875rem;
+  vertical-align: middle;
+  border-bottom: 1px solid var(--border);
+}
+
+.telemetry-row:last-child .telemetry-td {
+  border-bottom: none;
+}
+
+.telemetry-td--batch {
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.telemetry-batch-id {
+  font-size: 0.6875rem;
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+  color: var(--accent-hover);
+}
+
+.telemetry-expand-btn {
+  font-size: 0.75rem;
+  padding: 0.1875rem 0.5rem;
+  white-space: nowrap;
+}
+
+/* Agent details sub-row */
+
+.telemetry-agents-row {
+  background: var(--bg-tertiary);
+}
+
+.telemetry-agents-cell {
+  padding: 0.625rem 0.875rem 0.625rem 2rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.telemetry-agents-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+}
+
+.telemetry-agent-item {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.telemetry-agent-role {
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--text-primary);
+}
