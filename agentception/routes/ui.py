@@ -21,7 +21,7 @@ from agentception.intelligence.analyzer import IssueAnalysis, analyze_issue
 from agentception.intelligence.dag import DependencyDAG, build_dag
 from agentception.models import AgentNode, PipelineConfig, PipelineState, RoleMeta, VALID_ROLES
 from agentception.poller import get_state
-from agentception.readers.github import get_open_issues
+from agentception.readers.github import get_active_label, get_open_issues
 from agentception.readers.pipeline_config import read_pipeline_config
 from agentception.readers.transcripts import read_transcript_messages
 from agentception.routes.roles import list_roles
@@ -34,6 +34,12 @@ _TEMPLATES = Jinja2Templates(directory=str(_HERE.parent / "templates"))
 # Register path filters used by agent.html kill-endpoint modal.
 _TEMPLATES.env.filters["basename"] = os.path.basename
 _TEMPLATES.env.filters["dirname"] = os.path.dirname
+
+# Inject global template variables so every template can reference them without
+# the route handler having to pass them explicitly.
+from agentception.config import settings as _settings
+_TEMPLATES.env.globals["gh_repo"] = _settings.gh_repo
+_TEMPLATES.env.globals["gh_base_url"] = f"https://github.com/{_settings.gh_repo}"
 
 
 def _format_ts(ts: float) -> str:
@@ -98,20 +104,41 @@ async def overview(request: Request) -> HTMLResponse:
 
     Renders on every request with the latest polled state. The page connects
     to ``GET /events`` via SSE to receive live updates without reloading.
-    Open unclaimed issues are fetched from GitHub and displayed in the board
-    sidebar with an "Analyze" button each.
+
+    Board sidebar shows only issues carrying the active phase label (from
+    ``pipeline-config.json`` active_labels_order), filtered to unclaimed ones.
+    This keeps the board focused on the current phase rather than showing all
+    open issues across every label.
     """
     state = get_state() or PipelineState.empty()
     board_issues: list[dict[str, object]] = []
+    active_phase_label: str | None = None
+    total_phase_issues: int = 0
+
     try:
-        all_open = await get_open_issues()
-        board_issues = [iss for iss in all_open if not _issue_is_claimed(iss)]
+        active_phase_label = await get_active_label()
+        if active_phase_label:
+            # Fetch only issues in the current active phase.
+            phase_issues = await get_open_issues(label=active_phase_label)
+            total_phase_issues = len(phase_issues)
+            board_issues = [iss for iss in phase_issues if not _issue_is_claimed(iss)]
+        else:
+            # Fallback: show all unclaimed open issues when no phase is configured.
+            all_open = await get_open_issues()
+            board_issues = [iss for iss in all_open if not _issue_is_claimed(iss)]
     except Exception as exc:  # pragma: no cover — network failure path
         logger.warning("⚠️ Could not fetch open issues for board sidebar: %s", exc)
+
     return _TEMPLATES.TemplateResponse(
         request,
         "overview.html",
-        {"state": state, "board_issues": board_issues},
+        {
+            "state": state,
+            "board_issues": board_issues,
+            "active_phase_label": active_phase_label,
+            "total_phase_issues": total_phase_issues,
+            "unclaimed_count": len(board_issues),
+        },
     )
 
 
@@ -174,7 +201,7 @@ async def agents_list(request: Request) -> HTMLResponse:
 
 
 @router.get("/controls", response_class=HTMLResponse)
-async def controls_hub(request: Request) -> HTMLResponse:
+async def controls_hub(request: Request) -> Response:
     """Controls hub — redirects to the spawn form (the primary control action)."""
     from starlette.responses import RedirectResponse
     return RedirectResponse(url="/control/spawn", status_code=302)

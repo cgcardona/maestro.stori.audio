@@ -257,14 +257,30 @@ async def get_wip_issues() -> list[dict[str, object]]:
 
 
 async def get_active_label() -> str | None:
-    """Find the lowest-numbered ``agentception/*`` label that has open issues.
+    """Return the first label in ``pipeline-config.json`` active_labels_order that has open issues.
 
-    Labels follow the pattern ``agentception/<N>-<slug>``.  The «active»
-    label is the one with the smallest ``<N>`` — i.e. the phase currently
-    being worked on.
+    The pipeline config is the single source of truth for label ordering — it
+    is not hardcoded to any prefix.  This means the function works for any
+    label scheme (``agentception/*``, ``ac-ui/*``, ``htmx/*``, etc.) as long
+    as ``pipeline-config.json`` lists them in the desired phase order.
 
-    Returns ``None`` when no open issues carry an ``agentception/*`` label.
+    Returns the first label (lowest index in active_labels_order) for which at
+    least one open GitHub issue carries that label.  Returns ``None`` when the
+    config is unreadable or no configured label has open issues.
     """
+    from agentception.readers.pipeline_config import read_pipeline_config  # local import to avoid circular
+
+    try:
+        config = await read_pipeline_config()
+        labels_order: list[str] = config.active_labels_order
+    except Exception as exc:
+        logger.warning("⚠️  Could not read pipeline config for active label: %s", exc)
+        labels_order = []
+
+    if not labels_order:
+        return None
+
+    # Fetch all labels present on any open issue (one gh call, cached).
     repo = settings.gh_repo
     args = [
         "issue", "list",
@@ -276,22 +292,14 @@ async def get_active_label() -> str | None:
     if not isinstance(result, list):
         raise RuntimeError(f"get_active_label: expected list from gh, got {type(result).__name__}")
 
-    agentception_labels: set[str] = {
-        name for name in result if isinstance(name, str) and name.startswith("agentception/")
-    }
-    if not agentception_labels:
-        return None
+    open_labels: set[str] = {name for name in result if isinstance(name, str)}
 
-    def _sort_key(name: str) -> int:
-        """Extract the numeric prefix after the slash for ordering."""
-        suffix = name.split("/", 1)[-1]          # e.g. "0-scaffold"
-        prefix = suffix.split("-", 1)[0]          # e.g. "0"
-        try:
-            return int(prefix)
-        except ValueError:
-            return 999
+    # Return the first configured label that actually has open issues.
+    for label in labels_order:
+        if label in open_labels:
+            return label
 
-    return min(agentception_labels, key=_sort_key)
+    return None
 
 
 async def get_issue(number: int) -> dict[str, object]:
