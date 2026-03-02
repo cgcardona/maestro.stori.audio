@@ -1593,9 +1593,8 @@ async def compare_page(
     owner: str,
     repo_slug: str,
     refs: str,
-    format: str | None = Query(None, description="Force response format: 'json' or omit for HTML"),
     db: AsyncSession = Depends(get_db),
-) -> StarletteResponse:
+) -> Response:
     """Render the compare view for two refs — fully SSR.
 
     The ``refs`` path segment encodes both refs separated by ``...``:
