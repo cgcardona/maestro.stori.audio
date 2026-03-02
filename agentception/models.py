@@ -366,3 +366,74 @@ class RoleVersionsResponse(BaseModel):
 
     slug: str
     versions: RoleVersionInfo
+
+
+# ---------------------------------------------------------------------------
+# Template export / import  (AC-602)
+# ---------------------------------------------------------------------------
+
+
+class TemplateExportRequest(BaseModel):
+    """Request body for ``POST /api/templates/export``.
+
+    ``name`` and ``version`` are embedded in the manifest inside the archive
+    so that importers know what they are applying.
+    """
+
+    name: str
+    version: str
+
+
+class TemplateManifest(BaseModel):
+    """Metadata record written as ``template-manifest.json`` inside the archive.
+
+    Included in every exported template so importers can surface provenance
+    without unpacking the whole tarball.
+    """
+
+    name: str
+    version: str
+    created_at: str
+    gh_repo: str
+    files: list[str]
+
+
+class TemplateConflict(BaseModel):
+    """A single file that already exists in the target repo's ``.cursor/`` directory.
+
+    Surfaced by the import endpoint before any file is overwritten so the
+    caller can decide whether to proceed.
+    """
+
+    path: str
+    exists: bool
+
+
+class TemplateImportResult(BaseModel):
+    """Response for ``POST /api/templates/import``.
+
+    ``extracted`` lists every file path that was written (relative to the
+    target repo root).  ``conflicts`` lists files that already existed — they
+    are still overwritten, but the caller is informed so the UI can display
+    a warning banner.
+    """
+
+    name: str
+    version: str
+    extracted: list[str]
+    conflicts: list[TemplateConflict]
+
+
+class TemplateListEntry(BaseModel):
+    """Summary of one previously exported template stored on disk.
+
+    Represents a single ``.tar.gz`` archive in the templates store directory.
+    ``size_bytes`` is the archive size (not uncompressed size).
+    """
+
+    filename: str
+    name: str
+    version: str
+    created_at: str
+    gh_repo: str
+    size_bytes: int
