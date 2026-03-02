@@ -25,11 +25,11 @@
     #}
     <div
       class="phase-switcher"
-      x-data="phaseSwitcher(
+      x-data='phaseSwitcher(
         {{ active_phase_label | tojson }},
         {{ all_phase_labels | tojson }},
         {{ label_is_pinned | tojson }}
-      )"
+      )'
       @keydown.escape.window="open = false"
       @click.outside="open = false"
     >
@@ -59,10 +59,10 @@
         {% for lbl in all_phase_labels %}
         <button
           class="phase-switcher__option"
-          :class="pinned && current === {{ lbl | tojson }} ? 'phase-switcher__option--active' : ''"
-          @click="selectLabel({{ lbl | tojson }})"
+          :class='pinned && current === {{ lbl | tojson }} ? "phase-switcher__option--active" : ""'
+          @click='selectLabel({{ lbl | tojson }})'
         >
-          <span class="phase-switcher__option-check" x-text="pinned && current === {{ lbl | tojson }} ? '✓' : ''"></span>
+          <span class="phase-switcher__option-check" x-text='pinned && current === {{ lbl | tojson }} ? "✓" : ""'></span>
           <span>{{ lbl }}</span>
         </button>
         {% endfor %}
