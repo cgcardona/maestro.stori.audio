@@ -57,6 +57,25 @@ class PipelineState(BaseModel):
     alerts: list[str] = []
     polled_at: float
 
+    @classmethod
+    def empty(cls) -> PipelineState:
+        """Return a zero-value PipelineState for pre-first-tick callers.
+
+        Routes and the API endpoint use this when ``get_state()`` returns
+        ``None`` (i.e. the background poller hasn't completed its first tick).
+        Callers should treat ``agents == []`` as "loading", not "no agents."
+        """
+        import time
+
+        return cls(
+            active_label=None,
+            issues_open=0,
+            prs_open=0,
+            agents=[],
+            alerts=[],
+            polled_at=time.time(),
+        )
+
 
 class TaskFile(BaseModel):
     """Parsed content of a ``.agent-task`` file from a worktree.

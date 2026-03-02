@@ -5,7 +5,6 @@ background poller via ``get_state()`` — routes are intentionally thin.
 """
 from __future__ import annotations
 
-import time
 from pathlib import Path
 
 from fastapi import APIRouter
@@ -22,18 +21,6 @@ _TEMPLATES = Jinja2Templates(directory=str(_HERE.parent / "templates"))
 router = APIRouter(tags=["ui"])
 
 
-def _empty_state() -> PipelineState:
-    """Return a zero-value PipelineState for pre-first-tick requests."""
-    return PipelineState(
-        active_label=None,
-        issues_open=0,
-        prs_open=0,
-        agents=[],
-        alerts=[],
-        polled_at=time.time(),
-    )
-
-
 @router.get("/", response_class=HTMLResponse)
 async def overview(request: Request) -> HTMLResponse:
     """Dashboard overview — live agent hierarchy tree and GitHub board sidebar.
@@ -41,5 +28,5 @@ async def overview(request: Request) -> HTMLResponse:
     Renders on every request with the latest polled state. The page connects
     to ``GET /events`` via SSE to receive live updates without reloading.
     """
-    state = get_state() or _empty_state()
+    state = get_state() or PipelineState.empty()
     return _TEMPLATES.TemplateResponse(request, "overview.html", {"state": state})
