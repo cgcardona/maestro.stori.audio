@@ -144,6 +144,25 @@ class AbModeConfig(BaseModel):
     variant_b_file: str | None = None
 
 
+class ProjectConfig(BaseModel):
+    """A single project entry in ``pipeline-config.json``.
+
+    Each project maps to a distinct GitHub repository and local workspace.
+    The ``active_project`` field in :class:`PipelineConfig` selects which
+    project the AgentCeption dashboard currently targets.
+
+    ``worktrees_dir`` supports ``~`` expansion (e.g. ``~/.cursor/worktrees/maestro``).
+    ``cursor_project_id`` is the Cursor project slug used to locate transcript files.
+    """
+
+    name: str
+    gh_repo: str
+    repo_dir: str
+    worktrees_dir: str
+    cursor_project_id: str
+    active_labels_order: list[str] = []
+
+
 class PipelineConfig(BaseModel):
     """Validated shape of ``.cursor/pipeline-config.json``.
 
@@ -151,6 +170,11 @@ class PipelineConfig(BaseModel):
     Engineering VP role files read this model at the start of every loop/seed
     cycle.  The ``PUT /api/config`` route validates incoming bodies against
     this schema before persisting them to disk.
+
+    ``projects`` lists all configured projects; ``active_project`` is the name
+    of the currently active one.  When ``active_project`` is set, the dashboard
+    targets the corresponding project's ``gh_repo``, ``repo_dir``, and
+    ``worktrees_dir`` instead of the defaults in :class:`AgentCeptionSettings`.
     """
 
     max_eng_vps: int
@@ -158,6 +182,8 @@ class PipelineConfig(BaseModel):
     pool_size_per_vp: int
     active_labels_order: list[str]
     ab_mode: AbModeConfig = AbModeConfig()
+    projects: list[ProjectConfig] = []
+    active_project: str | None = None
 
 
 class SpawnRequest(BaseModel):
@@ -193,6 +219,17 @@ class SpawnResult(BaseModel):
     worktree: str
     branch: str
     agent_task: str
+
+
+class SwitchProjectRequest(BaseModel):
+    """Request body for ``POST /api/config/switch-project``.
+
+    ``project_name`` must match the ``name`` field of one of the entries in
+    ``PipelineConfig.projects``.  If no match is found the endpoint returns
+    HTTP 404 rather than silently writing an invalid ``active_project`` value.
+    """
+
+    project_name: str
 
 
 class RoleMeta(BaseModel):

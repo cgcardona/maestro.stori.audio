@@ -72,6 +72,40 @@ async def read_pipeline_config() -> PipelineConfig:
     return PipelineConfig.model_validate(raw)
 
 
+async def switch_project(project_name: str) -> PipelineConfig:
+    """Set ``active_project`` in ``pipeline-config.json`` and return the updated config.
+
+    Validates that *project_name* matches an existing entry in
+    ``PipelineConfig.projects`` before writing.  A name that does not exist
+    raises :class:`ValueError` so callers (the API route) can surface HTTP 404
+    rather than silently persisting an invalid value.
+
+    Parameters
+    ----------
+    project_name:
+        The ``name`` field of the project to activate.
+
+    Returns
+    -------
+    PipelineConfig
+        The updated config with ``active_project`` set to *project_name*.
+
+    Raises
+    ------
+    ValueError
+        When *project_name* does not match any entry in ``projects``.
+    """
+    config = await read_pipeline_config()
+    known_names = [p.name for p in config.projects]
+    if project_name not in known_names:
+        raise ValueError(
+            f"Unknown project {project_name!r}. "
+            f"Available: {known_names if known_names else '(no projects configured)'}"
+        )
+    updated = config.model_copy(update={"active_project": project_name})
+    return await write_pipeline_config(updated)
+
+
 async def write_pipeline_config(config: PipelineConfig) -> PipelineConfig:
     """Persist *config* to disk and return the saved value.
 
