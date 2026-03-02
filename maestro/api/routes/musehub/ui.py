@@ -96,7 +96,7 @@ from maestro.models.musehub import (
 from maestro.db import musehub_models as musehub_db
 from maestro.muse_cli.models import MuseCliTag
 from maestro.db import musehub_label_models as label_db
-from maestro.services import musehub_divergence, musehub_issues, musehub_listen, musehub_pull_requests, musehub_releases
+from maestro.services import musehub_credits, musehub_divergence, musehub_events, musehub_issues, musehub_listen, musehub_pull_requests, musehub_releases
 from maestro.services import musehub_discover, musehub_repository
 
 logger = logging.getLogger(__name__)
@@ -1339,27 +1339,31 @@ async def credits_page(
     request: Request,
     owner: str,
     repo_slug: str,
+    sort: str = Query("count", pattern="^(count|recency|alpha)$"),
     db: AsyncSession = Depends(get_db),
 ) -> Response:
-    """Render the dynamic credits page -- album liner notes for the repo.
+    """Render the dynamic credits page — album liner notes for the repo.
 
-    Displays every contributor with session count, inferred roles, and activity
-    timeline.  Embeds ``<script type="application/ld+json">`` for machine-readable
-    attribution using schema.org ``MusicComposition`` vocabulary.
+    Fetches contributor credits server-side and renders them directly into the
+    template, eliminating the client-side JS fetch.  All formatting (dates,
+    roles, contribution window) is handled in the Jinja2 template using the
+    ``fmtdate`` and ``fmtrelative`` filters.
+
+    No JWT required — credits data is publicly readable.
     """
     repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
+    credits_data = await musehub_credits.aggregate_credits(db, repo_id, sort=sort)
     ctx: dict[str, object] = {
         "owner": owner,
         "repo_slug": repo_slug,
         "repo_id": repo_id,
         "base_url": base_url,
         "current_page": "credits",
+        "contributors": credits_data.contributors,
+        "total_contributors": credits_data.total_contributors,
+        "sort": sort,
     }
-    return json_or_html(
-        request,
-        lambda: templates.TemplateResponse(request, "musehub/pages/credits.html", ctx),
-        ctx,
-    )
+    return templates.TemplateResponse(request, "musehub/pages/credits.html", ctx)
 
 @router.get(
     "/{owner}/{repo_slug}/analysis/{ref}",
@@ -3005,29 +3009,49 @@ async def activity_page(
     request: Request,
     owner: str,
     repo_slug: str,
+    event_type: str | None = Query(None),
+    page: int = Query(1, ge=1),
+    per_page: int = Query(30, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
 ) -> Response:
-    """Render the repo-level activity feed page.
+    """Render the repo-level activity feed page with full SSR and HTMX fragment support.
 
-    Shows a chronological, paginated event stream for the repo covering:
-    commit pushes, PR opens/merges/closes, issue opens/closes, branch and tag
-    operations, and recording sessions.  A dropdown filters by event type.
+    Fetches events server-side and renders them directly, eliminating the
+    client-side JS fetch loop.  HTMX filter and pagination requests receive
+    only the ``activity_rows.html`` fragment; direct browser navigation receives
+    the full page extending ``base.html``.
 
-    No JWT is required to render the HTML shell.  Auth is handled client-side
-    via localStorage JWT, matching all other UI pages.
+    No JWT required — activity data is publicly readable.
     """
     repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
+    feed = await musehub_events.list_events(
+        db,
+        repo_id,
+        event_type=event_type or None,
+        page=page,
+        page_size=per_page,
+    )
+    total_pages = max(1, (feed.total + per_page - 1) // per_page)
     ctx: dict[str, object] = {
         "owner": owner,
         "repo_slug": repo_slug,
         "repo_id": repo_id,
         "base_url": base_url,
         "current_page": "activity",
+        "events": feed.events,
+        "total": feed.total,
+        "page": page,
+        "per_page": per_page,
+        "total_pages": total_pages,
+        "event_type": event_type or "",
+        "event_types": sorted(musehub_events.KNOWN_EVENT_TYPES),
     }
-    return json_or_html(
+    return await htmx_fragment_or_full(
         request,
-        lambda: templates.TemplateResponse(request, "musehub/pages/activity.html", ctx),
+        templates,
         ctx,
+        full_template="musehub/pages/activity.html",
+        fragment_template="musehub/fragments/activity_rows.html",
     )
 
 
