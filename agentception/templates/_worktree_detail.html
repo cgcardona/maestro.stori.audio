@@ -1,0 +1,45 @@
+{#
+  HTMX partial — rendered into the expandable body of a worktree card.
+  Receives: slug, found, branch, commits, diff_stat, task_content
+#}
+{% if not found %}
+<p class="wt-detail-empty">Worktree not found.</p>
+{% else %}
+
+{# ── Commits ahead of origin/dev ────────────────────────────────────────── #}
+<div class="wt-detail-section">
+  <h3 class="wt-detail-section-title">
+    Commits
+    <span class="wt-detail-count">{{ commits | length }} ahead of origin/dev</span>
+  </h3>
+  {% if commits %}
+  <ul class="wt-commits">
+    {% for c in commits %}
+    <li class="wt-commit">
+      <code class="wt-commit-sha">{{ c.sha }}</code>
+      <span class="wt-commit-msg">{{ c.message }}</span>
+    </li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <p class="wt-detail-empty">No commits ahead of origin/dev.</p>
+  {% endif %}
+</div>
+
+{# ── Diff stat vs origin/dev ─────────────────────────────────────────────── #}
+{% if diff_stat %}
+<div class="wt-detail-section">
+  <h3 class="wt-detail-section-title">Changed Files</h3>
+  <pre class="wt-diff-stat">{{ diff_stat }}</pre>
+</div>
+{% endif %}
+
+{# ── Agent task file ─────────────────────────────────────────────────────── #}
+{% if task_content %}
+<div class="wt-detail-section">
+  <h3 class="wt-detail-section-title">Agent Task</h3>
+  <pre class="wt-task-file">{{ task_content }}</pre>
+</div>
+{% endif %}
+
+{% endif %}

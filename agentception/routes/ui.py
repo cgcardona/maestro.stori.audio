@@ -1147,10 +1147,37 @@ async def worktrees_page(request: Request) -> HTMLResponse:
     for b in branches:
         b["is_stale"] = bool(b.get("is_agent_branch")) and str(b.get("name", "")) not in live_branches
 
+    stale_count = sum(1 for b in branches if b.get("is_stale"))
+    agent_worktrees = [wt for wt in worktrees if not wt.get("is_main")]
+
     return _TEMPLATES.TemplateResponse(
         request,
         "worktrees.html",
-        {"worktrees": worktrees, "branches": branches, "stash": stash},
+        {
+            "worktrees": worktrees,
+            "agent_worktrees": agent_worktrees,
+            "branches": branches,
+            "stash": stash,
+            "stale_count": stale_count,
+            "gh_repo": _settings.gh_repo,
+        },
+    )
+
+
+@router.get("/worktrees/{slug}/detail", response_class=HTMLResponse)
+async def worktree_detail_partial(request: Request, slug: str) -> HTMLResponse:
+    """HTMX partial: on-demand detail panel for a single worktree.
+
+    Returns commits ahead of origin/dev, a diff stat, and the raw
+    .agent-task file content — all rendered server-side.
+    """
+    from agentception.readers.git import get_worktree_detail
+
+    detail = await get_worktree_detail(slug)
+    return _TEMPLATES.TemplateResponse(
+        request,
+        "_worktree_detail.html",
+        {"slug": slug, **detail},
     )
 
 
