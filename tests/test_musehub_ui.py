@@ -4814,15 +4814,15 @@ async def test_harmony_page_renders(
     client: AsyncClient,
     db_session: AsyncSession,
 ) -> None:
-    """GET /musehub/ui/{repo_id}/analysis/{ref}/harmony returns 200 HTML without auth."""
-    repo_id = await _make_repo(db_session)
+    """GET /musehub/ui/{owner}/{repo_slug}/analysis/{ref}/harmony returns 200 SSR HTML."""
+    await _make_repo(db_session)
     ref = "abc1234567890abcdef"
-    response = await client.get(f"/musehub/ui/{repo_id}/analysis/{ref}/harmony")
+    response = await client.get(f"/musehub/ui/testuser/test-beats/analysis/{ref}/harmony")
     assert response.status_code == 200
     assert "text/html" in response.headers["content-type"]
     body = response.text
     assert "Muse Hub" in body
-    assert "harmony" in body.lower()
+    assert "Harmony Analysis" in body
 
 
 @pytest.mark.anyio
@@ -4830,10 +4830,10 @@ async def test_harmony_page_no_auth_required(
     client: AsyncClient,
     db_session: AsyncSession,
 ) -> None:
-    """Harmony analysis page HTML shell must be accessible without a JWT (not 401)."""
-    repo_id = await _make_repo(db_session)
+    """Harmony analysis SSR page must be accessible without a JWT (not 401)."""
+    await _make_repo(db_session)
     ref = "deadbeef00001234"
-    response = await client.get(f"/musehub/ui/{repo_id}/analysis/{ref}/harmony")
+    response = await client.get(f"/musehub/ui/testuser/test-beats/analysis/{ref}/harmony")
     assert response.status_code != 401
     assert response.status_code == 200
 
@@ -4843,17 +4843,17 @@ async def test_harmony_page_contains_key_display(
     client: AsyncClient,
     db_session: AsyncSession,
 ) -> None:
-    """Harmony page JS must reference key, mode, and relative-key fields from the API response."""
-    repo_id = await _make_repo(db_session)
+    """Harmony SSR page must render key and mode summary from HarmonyAnalysisResponse."""
+    await _make_repo(db_session)
     ref = "cafe0000000000000001"
-    response = await client.get(f"/musehub/ui/{repo_id}/analysis/{ref}/harmony")
+    response = await client.get(f"/musehub/ui/testuser/test-beats/analysis/{ref}/harmony")
     assert response.status_code == 200
     body = response.text
-    # Client-side JS field references (camelCase from Pydantic CamelModel)
-    assert "tonic" in body
-    assert "mode" in body
-    assert "relativeKey" in body or "relative" in body.lower()
-    assert "keyConfidence" in body or "key_confidence" in body.lower()
+    # SSR template renders key summary card with harmony_data.key (full key label e.g. "F major"),
+    # harmony_data.mode (e.g. "major"), and harmonic_rhythm_bpm as "chords/min"
+    assert "Harmony Analysis" in body
+    assert "CHORD EVENTS" in body
+    assert "chords/min" in body
 
 
 @pytest.mark.anyio
@@ -4861,15 +4861,14 @@ async def test_harmony_page_contains_chord_timeline(
     client: AsyncClient,
     db_session: AsyncSession,
 ) -> None:
-    """Harmony page must embed the chord progression timeline renderer."""
-    repo_id = await _make_repo(db_session)
+    """Harmony SSR page must render the Roman-numeral chord events section."""
+    await _make_repo(db_session)
     ref = "babe0000000000000002"
-    response = await client.get(f"/musehub/ui/{repo_id}/analysis/{ref}/harmony")
+    response = await client.get(f"/musehub/ui/testuser/test-beats/analysis/{ref}/harmony")
     assert response.status_code == 200
     body = response.text
-    assert "renderChordTimeline" in body
-    assert "chordProgression" in body
-    assert "Chord Progression Timeline" in body
+    # SSR template renders a CHORD EVENTS card with Roman numeral symbols
+    assert "CHORD EVENTS" in body
 
 
 @pytest.mark.anyio
@@ -4877,15 +4876,14 @@ async def test_harmony_page_contains_tension_curve(
     client: AsyncClient,
     db_session: AsyncSession,
 ) -> None:
-    """Harmony page must embed the tension curve SVG renderer."""
-    repo_id = await _make_repo(db_session)
+    """Harmony SSR page must render the cadences section (replaces the old tension-curve card)."""
+    await _make_repo(db_session)
     ref = "face0000000000000003"
-    response = await client.get(f"/musehub/ui/{repo_id}/analysis/{ref}/harmony")
+    response = await client.get(f"/musehub/ui/testuser/test-beats/analysis/{ref}/harmony")
     assert response.status_code == 200
     body = response.text
-    assert "renderTensionCurve" in body
-    assert "tensionCurve" in body
-    assert "Tension Curve" in body
+    # SSR template renders a CADENCES card (server-side, no JS SVG renderer needed)
+    assert "CADENCES" in body
 
 
 @pytest.mark.anyio
@@ -4893,15 +4891,14 @@ async def test_harmony_page_contains_modulation_section(
     client: AsyncClient,
     db_session: AsyncSession,
 ) -> None:
-    """Harmony page must include the modulation markers section."""
-    repo_id = await _make_repo(db_session)
+    """Harmony SSR page must render the MODULATIONS card server-side."""
+    await _make_repo(db_session)
     ref = "feed0000000000000004"
-    response = await client.get(f"/musehub/ui/{repo_id}/analysis/{ref}/harmony")
+    response = await client.get(f"/musehub/ui/testuser/test-beats/analysis/{ref}/harmony")
     assert response.status_code == 200
     body = response.text
-    assert "renderModulationPoints" in body
-    assert "modulationPoints" in body
-    assert "Modulation Points" in body
+    # SSR template renders a MODULATIONS card from harmony_data.modulations
+    assert "MODULATIONS" in body
 
 
 @pytest.mark.anyio
@@ -4909,18 +4906,21 @@ async def test_harmony_page_contains_filter_controls(
     client: AsyncClient,
     db_session: AsyncSession,
 ) -> None:
-    """Harmony page must include track and section filter dropdowns."""
-    repo_id = await _make_repo(db_session)
+    """Harmony SSR page must include HTMX fragment support (HX-Request returns partial HTML)."""
+    await _make_repo(db_session)
     ref = "beef0000000000000005"
-    response = await client.get(f"/musehub/ui/{repo_id}/analysis/{ref}/harmony")
-    assert response.status_code == 200
-    body = response.text
-    assert "track-sel" in body
-    assert "section-sel" in body
-    assert "setFilter" in body
-    # Common track options present
-    assert "bass" in body
-    assert "All tracks" in body
+    # Full page response
+    full = await client.get(f"/musehub/ui/testuser/test-beats/analysis/{ref}/harmony")
+    assert full.status_code == 200
+    assert "<html" in full.text
+    # HTMX fragment response (no outer HTML wrapper)
+    fragment = await client.get(
+        f"/musehub/ui/testuser/test-beats/analysis/{ref}/harmony",
+        headers={"HX-Request": "true"},
+    )
+    assert fragment.status_code == 200
+    assert "<html" not in fragment.text
+    assert "Harmony Analysis" in fragment.text
 
 
 @pytest.mark.anyio
@@ -4928,15 +4928,16 @@ async def test_harmony_page_contains_key_history(
     client: AsyncClient,
     db_session: AsyncSession,
 ) -> None:
-    """Harmony page must include key history across commits section."""
-    repo_id = await _make_repo(db_session)
+    """Harmony SSR page must render breadcrumb with owner/repo_slug/analysis path."""
+    await _make_repo(db_session)
     ref = "0000000000000000dead"
-    response = await client.get(f"/musehub/ui/{repo_id}/analysis/{ref}/harmony")
+    response = await client.get(f"/musehub/ui/testuser/test-beats/analysis/{ref}/harmony")
     assert response.status_code == 200
     body = response.text
-    assert "Key History Across Commits" in body
-    assert "loadKeyHistory" in body
-    assert "key-history-content" in body
+    # SSR template breadcrumb shows owner, repo_slug, and analysis path
+    assert "testuser" in body
+    assert "test-beats" in body
+    assert "analysis" in body
 
 
 @pytest.mark.anyio
@@ -4944,14 +4945,14 @@ async def test_harmony_page_contains_voice_leading(
     client: AsyncClient,
     db_session: AsyncSession,
 ) -> None:
-    """Harmony page must include voice-leading quality indicator."""
-    repo_id = await _make_repo(db_session)
+    """Harmony SSR page must render harmonic rhythm (replaces the old voice-leading JS card)."""
+    await _make_repo(db_session)
     ref = "1111111111111111beef"
-    response = await client.get(f"/musehub/ui/{repo_id}/analysis/{ref}/harmony")
+    response = await client.get(f"/musehub/ui/testuser/test-beats/analysis/{ref}/harmony")
     assert response.status_code == 200
     body = response.text
-    assert "renderVoiceLeading" in body
-    assert "Voice-Leading Quality" in body
+    # SSR template renders harmonic_rhythm_bpm as "chords/min" in the key summary card
+    assert "chords/min" in body
 
 
 @pytest.mark.anyio
@@ -4959,14 +4960,14 @@ async def test_harmony_page_has_token_form(
     client: AsyncClient,
     db_session: AsyncSession,
 ) -> None:
-    """Harmony page must include the JWT token form so unauthenticated visitors can sign in.
+    """Harmony SSR page must include JWT token form and musehub.js via base.html layout.
 
     Auth state (localStorage / musehub_token) is managed by musehub.js; the
-    HTML shell must include the token-form element and the musehub.js script tag.
+    base layout must include the token-form element and the musehub.js script tag.
     """
-    repo_id = await _make_repo(db_session)
+    await _make_repo(db_session)
     ref = "2222222222222222cafe"
-    response = await client.get(f"/musehub/ui/{repo_id}/analysis/{ref}/harmony")
+    response = await client.get(f"/musehub/ui/testuser/test-beats/analysis/{ref}/harmony")
     assert response.status_code == 200
     body = response.text
     assert 'id="token-form"' in body

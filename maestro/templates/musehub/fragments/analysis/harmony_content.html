@@ -1,0 +1,130 @@
+{#  fragments/analysis/harmony_content.html — bare HTMX fragment for the harmony analysis page.
+
+    Renders Roman-numeral chord events, cadences, modulations, and harmonic
+    rhythm server-side.  No client-side API fetch required — all data is
+    passed via ctx.
+
+    This template is intentionally minimal — no <html>, <head>, or nav.
+    Rendered when ``HX-Request: true`` is present in the request.
+
+    Required context variables
+    --------------------------
+    harmony_data : HarmonyAnalysisResponse — from compute_harmony_analysis()
+    ref          : str                     — muse commit ref
+    base_url     : str                     — repo base URL
+#}
+{% set function_colors = {
+  'tonic': '#3fb950',
+  'subdominant': '#58a6ff',
+  'dominant': '#f85149',
+  'pre-dominant': '#ffa657',
+  'secondary-dominant': '#bc8cff',
+} %}
+{% set cadence_labels = {
+  'authentic': 'Authentic',
+  'perfect-authentic': 'Perfect Authentic',
+  'imperfect-authentic': 'Imperfect Authentic',
+  'half': 'Half',
+  'plagal': 'Plagal',
+  'deceptive': 'Deceptive',
+} %}
+
+<div style="margin-bottom:12px">
+  <a href="{{ base_url }}/analysis/{{ ref }}">&larr; Back to analysis</a>
+</div>
+
+{# Key summary card #}
+<div class="card" style="border-color:#1f6feb;margin-bottom:var(--space-3)">
+  <div style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:12px">
+    <div>
+      <h1 style="margin:0;font-size:24px">🎹 Harmony Analysis</h1>
+      <div style="font-size:14px;color:#8b949e;margin-top:6px">
+        <span style="font-size:18px;font-weight:700;color:#e6edf3">{{ harmony_data.key }}</span>
+        &nbsp;&bull;&nbsp;
+        <span style="font-size:13px;color:#8b949e">{{ harmony_data.mode }}</span>
+      </div>
+      <div style="font-size:12px;color:#8b949e;margin-top:4px">
+        Harmonic rhythm:
+        <strong style="color:#58a6ff">{{ "%.2f" | format(harmony_data.harmonic_rhythm_bpm) }}</strong>
+        chords/min &nbsp;&bull;&nbsp;
+        ref: <code style="font-size:11px;background:#0d1117;padding:1px 6px;border-radius:3px">{{ ref[:8] }}</code>
+      </div>
+    </div>
+  </div>
+</div>
+
+{# Roman numeral events table #}
+<div class="card" style="margin-bottom:var(--space-3)">
+  <h2 style="font-size:14px;margin:0 0 var(--space-3) 0;color:#8b949e">CHORD EVENTS</h2>
+  {% if harmony_data.roman_numerals %}
+  <div style="display:flex;flex-wrap:wrap;gap:var(--space-2)">
+    {% for ev in harmony_data.roman_numerals %}
+    {% set fn_color = function_colors.get(ev.function, '#8b949e') %}
+    <div style="background:#0d1117;border:1px solid {{ fn_color }}44;border-radius:6px;
+                padding:var(--space-2) var(--space-3);text-align:center;min-width:80px">
+      <div style="font-size:20px;font-weight:700;color:#e6edf3;font-family:monospace">{{ ev.chord }}</div>
+      <div style="font-size:11px;color:#8b949e;margin-top:2px">{{ ev.root }} {{ ev.quality }}</div>
+      <div style="margin-top:6px">
+        <span style="font-size:10px;background:{{ fn_color }}22;color:{{ fn_color }};
+                     border:1px solid {{ fn_color }}44;border-radius:3px;padding:1px 5px">
+          {{ ev.function }}
+        </span>
+      </div>
+      <div style="font-size:10px;color:#6e7681;margin-top:4px">beat {{ ev.beat | int }}</div>
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <p style="color:#8b949e;font-size:13px">No chord events detected.</p>
+  {% endif %}
+</div>
+
+{# Cadences #}
+<div class="card" style="margin-bottom:var(--space-3)">
+  <h2 style="font-size:14px;margin:0 0 var(--space-3) 0;color:#8b949e">CADENCES</h2>
+  {% if harmony_data.cadences %}
+  <div style="display:flex;flex-direction:column;gap:var(--space-2)">
+    {% for cad in harmony_data.cadences %}
+    <div style="display:flex;align-items:center;gap:var(--space-3);padding:var(--space-2);
+                background:#0d1117;border:1px solid #30363d;border-radius:6px">
+      <code style="font-size:13px;color:#f0883e;min-width:60px">beat {{ cad.beat | int }}</code>
+      <span style="font-size:13px;font-family:monospace">
+        {{ cad.from_ }} &rarr; <strong style="color:#58a6ff">{{ cad.to }}</strong>
+      </span>
+      <span class="badge" style="background:#30363d;border-radius:4px;font-size:11px;padding:2px 8px;color:#8b949e">
+        {{ cadence_labels.get(cad.type, cad.type) }}
+      </span>
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <p style="color:#3fb950;font-size:13px">No cadences detected — open harmonic flow.</p>
+  {% endif %}
+</div>
+
+{# Modulations #}
+<div class="card">
+  <h2 style="font-size:14px;margin:0 0 var(--space-3) 0;color:#8b949e">MODULATIONS</h2>
+  {% if harmony_data.modulations %}
+  <div style="display:flex;flex-direction:column;gap:var(--space-2)">
+    {% for mod in harmony_data.modulations %}
+    <div style="display:flex;align-items:center;gap:var(--space-3);padding:var(--space-2);
+                background:#0d1117;border:1px solid #30363d;border-radius:6px;flex-wrap:wrap">
+      <code style="font-size:13px;color:#f0883e;min-width:60px">beat {{ mod.beat | int }}</code>
+      <span style="font-size:13px">
+        {{ mod.from_key }} &rarr; <strong style="color:#58a6ff">{{ mod.to_key }}</strong>
+      </span>
+      {% if mod.pivot_chord %}
+      <span style="font-size:12px;color:#8b949e">
+        via pivot: <code style="font-size:11px;background:#21262d;padding:1px 5px;border-radius:3px">{{ mod.pivot_chord }}</code>
+      </span>
+      {% else %}
+      <span style="font-size:12px;color:#8b949e">direct modulation</span>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <p style="color:#3fb950;font-size:13px">No modulations detected — piece remains in one key.</p>
+  {% endif %}
+</div>
