@@ -531,15 +531,31 @@ STEP 3 — IMPLEMENT (only if STEP 2 found nothing):
   # ── STEP 3.0 — DEPENDENCY GATE ────────────────────────────────────────────
   # Read DEPENDS_ON from .agent-task. If set, verify those PRs/issues are merged
   # before implementing — your code may import from them at runtime.
-  DEPENDS_ON=$(grep "^DEPENDS_ON=" .agent-task | cut -d= -f2)
-  if [ -n "$DEPENDS_ON" ] && [ "$DEPENDS_ON" != "none" ]; then
-    echo "ℹ️  DEPENDS_ON: $DEPENDS_ON"
+  #
+  # ⚠️  DEPENDS_ON is a comma-separated list (e.g. "614,615"). NEVER pass the raw
+  # string to `gh issue view` — always split on commas and iterate each number.
+  # Passing "614,615" as a single argument produces: invalid issue format: "614\n615"
+  DEPENDS_ON_RAW=$(grep "^DEPENDS_ON=" .agent-task | cut -d= -f2)
+  if [ -n "$DEPENDS_ON_RAW" ] && [ "$DEPENDS_ON_RAW" != "none" ]; then
+    echo "ℹ️  DEPENDS_ON: $DEPENDS_ON_RAW"
     echo "   Checking whether dependencies are already on dev..."
-    # For each PR number listed, verify it is MERGED. If not, note it in the PR body
-    # so reviewers know to merge dependencies first. Do NOT block implementation —
-    # implement against dev and note the dependency clearly in the PR description.
-    # If the dependency is a missing ORM model or missing module, use TYPE_CHECKING
-    # guard for the import so mypy passes on the current dev state.
+    ALL_DEPS_MET=true
+    IFS=',' read -ra DEP_NUMS <<< "$DEPENDS_ON_RAW"
+    for DEP in "${DEP_NUMS[@]}"; do
+      DEP=$(echo "$DEP" | tr -d '[:space:]')
+      [ -z "$DEP" ] && continue
+      DEP_STATE=$(gh issue view "$DEP" --repo "$GH_REPO" --json state --jq '.state' 2>/dev/null || echo "UNKNOWN")
+      if [ "$DEP_STATE" != "CLOSED" ]; then
+        echo "⚠️  Dependency #$DEP is $DEP_STATE (not yet merged). Note in PR body."
+        ALL_DEPS_MET=false
+      else
+        echo "✅ Dependency #$DEP is CLOSED (merged)."
+      fi
+    done
+    # Do NOT block implementation — implement against dev and note unmet deps clearly
+    # in the PR description. If a dependency introduces a missing module, use a
+    # TYPE_CHECKING guard for the import so mypy passes on the current dev state.
+    [ "$ALL_DEPS_MET" = "false" ] && echo "⚠️  Some deps unmet — document in PR body."
   fi
 
   # ── STEP 3.1 — BASELINE HEALTH SNAPSHOT (before touching any code) ────────
