@@ -6,29 +6,29 @@ audio/MIDI artifacts ready for distribution.
 
 Usage::
 
-    muse release v1.0                                    # manifest only (dry run)
-    muse release v1.0 --render-audio                     # single WAV file
-    muse release v1.0 --render-midi                      # zip of all MIDI files
-    muse release v1.0 --export-stems --format flac       # per-track FLAC stems
+    muse release v1.0 # manifest only (dry run)
+    muse release v1.0 --render-audio # single WAV file
+    muse release v1.0 --render-midi # zip of all MIDI files
+    muse release v1.0 --export-stems --format flac # per-track FLAC stems
     muse release v1.0 --render-audio --render-midi \\
-        --output-dir ./dist/v1.0                         # custom output dir
+        --output-dir ./dist/v1.0 # custom output dir
 
 Flags:
-    <tag>               Music-semantic tag created via ``muse tag add``.
-    --render-audio      Render all MIDI to a single audio file via Storpheus.
-    --render-midi       Bundle all .mid files into a zip archive.
-    --export-stems      Export each track as a separate audio file.
-    --format            Audio output format: wav | mp3 | flac (default: wav).
-    --output-dir PATH   Where to write artifacts (default: ./releases/<tag>/).
-    --json              Emit structured JSON output for agent consumption.
+    <tag> Music-semantic tag created via ``muse tag add``.
+    --render-audio Render all MIDI to a single audio file via Storpheus.
+    --render-midi Bundle all .mid files into a zip archive.
+    --export-stems Export each track as a separate audio file.
+    --format Audio output format: wav | mp3 | flac (default: wav).
+    --output-dir PATH Where to write artifacts (default: ./releases/<tag>/).
+    --json Emit structured JSON output for agent consumption.
 
 Output layout::
 
     <output-dir>/
-        release-manifest.json        # always written; SHA-256 checksums
-        audio/<commit8>.<format>     # --render-audio
-        midi/midi-bundle.zip         # --render-midi
-        stems/<stem>.<format>        # --export-stems
+        release-manifest.json # always written; SHA-256 checksums
+        audio/<commit8>.<format> # --render-audio
+        midi/midi-bundle.zip # --render-midi
+        stems/<stem>.<format> # --export-stems
 
 This command resolves the tag via the Muse tag database (``muse tag add``).
 If multiple commits share the same tag the most recently committed one is used.
@@ -67,7 +67,7 @@ _DEFAULT_RELEASES_DIR = "releases"
 def _default_output_dir(tag: str) -> pathlib.Path:
     """Return the default output directory for a release.
 
-    Pattern: ``./releases/<tag>/``.  Safe for any tag string that is a valid
+    Pattern: ``./releases/<tag>/``. Safe for any tag string that is a valid
     directory name — callers should sanitise the tag before passing here.
 
     Args:
@@ -87,7 +87,7 @@ async def _resolve_tag_to_commit(
 ) -> str:
     """Resolve a music-semantic tag string to a full commit ID.
 
-    Queries the ``muse_cli_tags`` table for commits carrying *tag*.  When
+    Queries the ``muse_cli_tags`` table for commits carrying *tag*. When
     multiple commits share the tag, the most recently committed one is returned
     — this matches the producer's expectation that ``v1.0`` refers to the
     latest commit labelled with that tag.
@@ -154,7 +154,7 @@ async def _resolve_tag_to_commit(
             f"— matches {len(prefix_matches)} commits:"
         )
         for c in prefix_matches:
-            typer.echo(f"   {c.commit_id[:8]}  {c.message[:60]}")
+            typer.echo(f" {c.commit_id[:8]} {c.message[:60]}")
         typer.echo("Use a longer prefix or an exact tag string to disambiguate.")
         raise typer.Exit(code=ExitCode.USER_ERROR)
 
@@ -208,7 +208,7 @@ async def _release_async(
 
     if not manifest:
         typer.echo(
-            f"⚠️  Snapshot for commit {full_commit_id[:8]} is empty — nothing to release."
+            f"⚠️ Snapshot for commit {full_commit_id[:8]} is empty — nothing to release."
         )
         raise typer.Exit(code=ExitCode.USER_ERROR)
 
@@ -276,7 +276,7 @@ def release(
     """Export a tagged commit as distribution-ready release artifacts.
 
     Resolves TAG to a commit (via ``muse tag add``), fetches its snapshot,
-    and produces the requested artifacts under the output directory.  Always
+    and produces the requested artifacts under the output directory. Always
     writes a ``release-manifest.json`` with SHA-256 checksums.
 
     Examples::
@@ -345,18 +345,18 @@ def release(
                 f"(commit {result.commit_id[:8]}):"
             )
             for a in non_manifest:
-                typer.echo(f"   [{a.role}] {a.path}")
+                typer.echo(f" [{a.role}] {a.path}")
         else:
             typer.echo(
-                f"⚠️  No render flags specified — only manifest written for tag {result.tag!r}."
+                f"⚠️ No render flags specified — only manifest written for tag {result.tag!r}."
                 "\nUse --render-audio, --render-midi, or --export-stems."
             )
 
-        typer.echo(f"   [manifest] {result.manifest_path}")
+        typer.echo(f" [manifest] {result.manifest_path}")
 
         if result.stubbed:
             typer.echo(
-                "⚠️  Audio files are MIDI stubs (Storpheus /render endpoint not yet deployed)."
+                "⚠️ Audio files are MIDI stubs (Storpheus /render endpoint not yet deployed)."
             )
 
     logger.info(

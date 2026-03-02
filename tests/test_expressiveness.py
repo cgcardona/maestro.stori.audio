@@ -175,7 +175,7 @@ class TestVelocityCurves:
         add_velocity_curves(notes, "classical", 8, rng=random.Random(42))
         vels = [n["velocity"] for n in notes if "start_beat" in n]
         peak_idx = vels.index(max(vels))
-        assert 15 <= peak_idx <= 25  # roughly in the 2/3 zone
+        assert 15 <= peak_idx <= 25 # roughly in the 2/3 zone
 
     def test_bar_shape(self) -> None:
 
@@ -211,7 +211,7 @@ class TestVelocityCurves:
         notes = _make_notes(20, bars=4, velocity=80)
         original_count = len(notes)
         add_velocity_curves(notes, "funk", 4, rng=random.Random(42))
-        assert len(notes) >= original_count  # may add ghost notes
+        assert len(notes) >= original_count # may add ghost notes
 
     def test_ghost_note_velocity_range(self) -> None:
 
@@ -501,7 +501,7 @@ class TestApplyExpressiveness:
         """Melody instrument gets velocity curves and timing applied."""
         notes = _make_notes(16, bars=4, velocity=80)
         result = apply_expressiveness(notes, "jazz", 4, instrument_role="melody")
-        assert result["notes"] is notes  # mutated in place
+        assert result["notes"] is notes # mutated in place
         vels = [n["velocity"] for n in result["notes"]]
         assert not all(v == 80 for v in vels)
 
@@ -512,7 +512,7 @@ class TestApplyExpressiveness:
         result = apply_expressiveness(notes, "classical", 4, instrument_role="piano")
         ccs = result["cc_events"]
         cc_numbers = {e["cc"] for e in ccs}
-        assert 64 in cc_numbers  # sustain pedal
+        assert 64 in cc_numbers # sustain pedal
 
     def test_pitch_bends_for_trap_bass(self) -> None:
 

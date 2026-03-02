@@ -4,11 +4,11 @@ Usage
 -----
 ::
 
-    muse tempo [<commit>]            # read tempo from HEAD or named commit
-    muse tempo --set 128             # annotate HEAD with explicit BPM
-    muse tempo --set 128 <commit>    # annotate a named commit
-    muse tempo --history             # show BPM across all commits
-    muse tempo --json                # machine-readable JSON output
+    muse tempo [<commit>] # read tempo from HEAD or named commit
+    muse tempo --set 128 # annotate HEAD with explicit BPM
+    muse tempo --set 128 <commit> # annotate a named commit
+    muse tempo --history # show BPM across all commits
+    muse tempo --json # machine-readable JSON output
 
 Tempo resolution order (read path)
 -----------------------------------
@@ -19,13 +19,13 @@ Tempo resolution order (read path)
 Tempo storage (write path)
 ---------------------------
 ``--set`` writes ``{"tempo_bpm": <float>}`` into the ``metadata`` JSON column
-of the target commit row.  Other metadata keys are preserved.  No new DB rows
+of the target commit row. Other metadata keys are preserved. No new DB rows
 are created — only the existing commit is annotated.
 
 History traversal
 -----------------
 ``--history`` walks the full parent chain from HEAD (or the named commit),
-using only explicitly annotated values (``metadata.tempo_bpm``).  Auto-detected
+using only explicitly annotated values (``metadata.tempo_bpm``). Auto-detected
 BPM is shown on the single-commit read path but is not persisted, so it cannot
 appear in history.
 """
@@ -114,7 +114,7 @@ async def _tempo_read_async(
 ) -> MuseTempoResult:
     """Load a commit and return its tempo result.
 
-    Reads the annotated BPM from ``metadata.tempo_bpm``.  If absent, scans
+    Reads the annotated BPM from ``metadata.tempo_bpm``. If absent, scans
     MIDI files in the commit's snapshot for a Set Tempo event.
     """
     from maestro.muse_cli.db import get_commit_snapshot_manifest
@@ -173,7 +173,7 @@ async def _tempo_set_async(
         typer.echo(f"❌ Could not update commit {commit.commit_id[:8]}")
         raise typer.Exit(code=ExitCode.INTERNAL_ERROR)
 
-    typer.echo(f"✅ Set tempo {bpm:.1f} BPM on commit {commit.commit_id[:8]}  ({commit.message})")
+    typer.echo(f"✅ Set tempo {bpm:.1f} BPM on commit {commit.commit_id[:8]} ({commit.message})")
 
 
 async def _tempo_history_async(
@@ -212,16 +212,16 @@ def _bpm_str(bpm: float | None) -> str:
 
 
 def _print_result_human(result: MuseTempoResult) -> None:
-    typer.echo(f"commit  {result.commit_id}")
-    typer.echo(f"branch  {result.branch}")
+    typer.echo(f"commit {result.commit_id}")
+    typer.echo(f"branch {result.branch}")
     typer.echo(f"message {result.message}")
     typer.echo("")
     if result.tempo_bpm is not None:
-        typer.echo(f"tempo   {result.tempo_bpm:.1f} BPM  (annotated)")
+        typer.echo(f"tempo {result.tempo_bpm:.1f} BPM (annotated)")
     elif result.detected_bpm is not None:
-        typer.echo(f"tempo   {result.detected_bpm:.1f} BPM  (detected from MIDI)")
+        typer.echo(f"tempo {result.detected_bpm:.1f} BPM (detected from MIDI)")
     else:
-        typer.echo("tempo   -- (no annotation; no MIDI tempo event found)")
+        typer.echo("tempo -- (no annotation; no MIDI tempo event found)")
 
 
 def _print_result_json(result: MuseTempoResult) -> None:
@@ -244,19 +244,19 @@ def _print_history_human(history: list[MuseTempoHistoryEntry]) -> None:
     if not history:
         typer.echo("No commits in history.")
         return
-    header = f"{'COMMIT':<10}  {'BPM':>7}  {'DELTA':>7}  MESSAGE"
+    header = f"{'COMMIT':<10} {'BPM':>7} {'DELTA':>7} MESSAGE"
     typer.echo(header)
     typer.echo("-" * len(header))
     for entry in history:
         short_id = entry.commit_id[:8]
         bpm_col = _bpm_str(entry.effective_bpm)
         if entry.delta_bpm is None:
-            delta_col = "  --"
+            delta_col = " --"
         elif entry.delta_bpm > 0:
             delta_col = f"+{entry.delta_bpm:.1f}"
         else:
             delta_col = f"{entry.delta_bpm:.1f}"
-        typer.echo(f"{short_id:<10}  {bpm_col:>7}  {delta_col:>7}  {entry.message}")
+        typer.echo(f"{short_id:<10} {bpm_col:>7} {delta_col:>7} {entry.message}")
 
 
 def _print_history_json(history: list[MuseTempoHistoryEntry]) -> None:
@@ -304,8 +304,8 @@ def tempo(
 ) -> None:
     """Read or set the tempo (BPM) of a commit.
 
-    Without flags, prints the BPM for the target commit.  Use ``--set``
-    to annotate a commit with an explicit BPM.  Use ``--history`` to show
+    Without flags, prints the BPM for the target commit. Use ``--set``
+    to annotate a commit with an explicit BPM. Use ``--history`` to show
     the BPM timeline across the full parent chain.
     """
     root = require_repo()

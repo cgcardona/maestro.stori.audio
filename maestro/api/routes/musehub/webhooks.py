@@ -1,11 +1,11 @@
 """Muse Hub webhook subscription route handlers.
 
 Endpoint summary:
-  POST   /musehub/repos/{repo_id}/webhooks                                              — register a webhook
-  GET    /musehub/repos/{repo_id}/webhooks                                              — list webhooks
-  DELETE /musehub/repos/{repo_id}/webhooks/{webhook_id}                                — remove a webhook
-  GET    /musehub/repos/{repo_id}/webhooks/{webhook_id}/deliveries                     — delivery history
-  POST   /musehub/repos/{repo_id}/webhooks/{webhook_id}/deliveries/{delivery_id}/redeliver — retry a delivery
+  POST /musehub/repos/{repo_id}/webhooks — register a webhook
+  GET /musehub/repos/{repo_id}/webhooks — list webhooks
+  DELETE /musehub/repos/{repo_id}/webhooks/{webhook_id} — remove a webhook
+  GET /musehub/repos/{repo_id}/webhooks/{webhook_id}/deliveries — delivery history
+  POST /musehub/repos/{repo_id}/webhooks/{webhook_id}/deliveries/{delivery_id}/redeliver — retry a delivery
 
 All endpoints require a valid JWT Bearer token.
 No business logic lives here — all persistence is delegated to
@@ -51,7 +51,7 @@ async def create_webhook(
     """Register a new webhook that will receive HTTP POSTs for the requested event types.
 
     ``events`` must be a non-empty subset of: push, pull_request, issue,
-    release, branch, tag, session, analysis.  Unknown event types are rejected
+    release, branch, tag, session, analysis. Unknown event types are rejected
     with HTTP 422.
     """
     repo = await musehub_repository.get_repo(db, repo_id)
@@ -108,7 +108,7 @@ async def delete_webhook(
     db: AsyncSession = Depends(get_db),
     _: TokenClaims = Depends(require_valid_token),
 ) -> None:
-    """Remove a webhook subscription.  All delivery history is also deleted (cascade)."""
+    """Remove a webhook subscription. All delivery history is also deleted (cascade)."""
     repo = await musehub_repository.get_repo(db, repo_id)
     if repo is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repo not found")
@@ -134,7 +134,7 @@ async def list_deliveries(
 ) -> WebhookDeliveryListResponse:
     """Return delivery attempts for a webhook, newest first.
 
-    Each attempt (including retries) is a separate record.  Use ``limit`` to
+    Each attempt (including retries) is a separate record. Use ``limit`` to
     page through the history.
     """
     repo = await musehub_repository.get_repo(db, repo_id)
@@ -165,7 +165,7 @@ async def redeliver_delivery(
     """Re-send the original payload from a past delivery attempt.
 
     Looks up the delivery by ``delivery_id`` and POSTs its stored payload to
-    the webhook's current URL.  Each retry attempt is recorded as a new
+    the webhook's current URL. Each retry attempt is recorded as a new
     delivery row — the original row is never mutated.
 
     Returns 404 when the repo, webhook, or delivery cannot be found.

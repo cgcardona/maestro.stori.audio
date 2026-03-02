@@ -26,7 +26,7 @@ from maestro.core.plan_schemas.plan_json_types import PlanJsonDict
 from maestro.contracts.project_types import ProjectContext
 
 ProjectState = ProjectContext
-SSEEventDict = JSONObject  # SSE event wire dict — JSON object emitted to the client
+SSEEventDict = JSONObject # SSE event wire dict — JSON object emitted to the client
 
 from maestro.core.expansion import ToolCall
 from maestro.core.intent import IntentResult

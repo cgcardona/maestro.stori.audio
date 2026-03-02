@@ -56,7 +56,7 @@ class TestAllowlistValidation:
         result = validate_tool_call(
             tool_name="stori_generate_midi",
             params={"role": "drums"},
-            allowed_tools={"stori_set_tempo"},  # Compose pass: no generators in allowlist
+            allowed_tools={"stori_set_tempo"}, # Compose pass: no generators in allowlist
         )
         assert not result.valid
         assert any(e.code == "TOOL_NOT_ALLOWED" for e in result.errors)
@@ -70,7 +70,7 @@ class TestSchemaValidation:
         """Should fail when required field is missing."""
         result = validate_tool_call(
             tool_name="stori_set_tempo",
-            params={},  # Missing 'tempo'
+            params={}, # Missing 'tempo'
             allowed_tools={"stori_set_tempo"},
         )
         
@@ -297,7 +297,7 @@ class TestValueRangeValidation:
         
         result = validate_tool_call(
             tool_name="stori_set_track_volume",
-            params={"trackId": track_id, "volume": 3.0},  # Too high
+            params={"trackId": track_id, "volume": 3.0}, # Too high
             allowed_tools={"stori_set_track_volume"},
             registry=registry,
         )
@@ -328,7 +328,7 @@ class TestValueRangeValidation:
         
         result = validate_tool_call(
             tool_name="stori_set_track_pan",
-            params={"trackId": track_id, "pan": 1.5},  # Too high
+            params={"trackId": track_id, "pan": 1.5}, # Too high
             allowed_tools={"stori_set_track_pan"},
             registry=registry,
         )
@@ -379,7 +379,7 @@ class TestToolSpecificValidation:
 
         result = validate_tool_call(
             tool_name="stori_quantize_notes",
-            params={"regionId": region_id, "gridSize": 0.25},  # 1/16 note
+            params={"regionId": region_id, "gridSize": 0.25}, # 1/16 note
             allowed_tools={"stori_quantize_notes"},
             registry=registry,
         )
@@ -395,7 +395,7 @@ class TestToolSpecificValidation:
 
         result = validate_tool_call(
             tool_name="stori_quantize_notes",
-            params={"regionId": region_id, "gridSize": 0.3},  # Not a valid grid value
+            params={"regionId": region_id, "gridSize": 0.3}, # Not a valid grid value
             allowed_tools={"stori_quantize_notes"},
             registry=registry,
         )

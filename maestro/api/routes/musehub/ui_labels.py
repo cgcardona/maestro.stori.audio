@@ -4,11 +4,11 @@ Serves the labels management page at ``/{owner}/{repo}/labels`` and
 provides POST handlers for label mutations (create, edit, delete, reset).
 
 Endpoint summary:
-  GET  /musehub/ui/{owner}/{repo_slug}/labels                          — label list page (public)
-  POST /musehub/ui/{owner}/{repo_slug}/labels                          — create label (auth required)
-  POST /musehub/ui/{owner}/{repo_slug}/labels/{label_id}/edit          — update label (auth required)
-  POST /musehub/ui/{owner}/{repo_slug}/labels/{label_id}/delete        — delete label (auth required)
-  POST /musehub/ui/{owner}/{repo_slug}/labels/reset                    — reset to 10 defaults (auth required)
+  GET /musehub/ui/{owner}/{repo_slug}/labels — label list page (public)
+  POST /musehub/ui/{owner}/{repo_slug}/labels — create label (auth required)
+  POST /musehub/ui/{owner}/{repo_slug}/labels/{label_id}/edit — update label (auth required)
+  POST /musehub/ui/{owner}/{repo_slug}/labels/{label_id}/delete — delete label (auth required)
+  POST /musehub/ui/{owner}/{repo_slug}/labels/reset — reset to 10 defaults (auth required)
 
 Auth policy:
   GET: no authentication required — public repos are readable without a token.
@@ -18,11 +18,11 @@ Auth policy:
 
 Design rationale:
   POST routes return JSON so the in-page JS can handle success/error inline
-  without a full page reload.  This keeps the UX snappy while keeping the
+  without a full page reload. This keeps the UX snappy while keeping the
   server-side contract simple and testable.
 
   The ``reset`` route is UI-only (not in the JSON API): it wipes all repo
-  labels and re-seeds the canonical 10 defaults.  It is useful after
+  labels and re-seeds the canonical 10 defaults. It is useful after
   accidental bulk deletions or when onboarding a repo from an external source.
 """
 from __future__ import annotations
@@ -130,16 +130,16 @@ async def _fetch_labels(db: AsyncSession, repo_id: str) -> list[_LabelRow]:
     """Return all labels for *repo_id* with their open-issue counts.
 
     Uses a LEFT JOIN on ``musehub_issue_labels`` / ``musehub_issues`` so that
-    labels with zero issues still appear.  Sorted alphabetically by name.
+    labels with zero issues still appear. Sorted alphabetically by name.
     """
     result = await db.execute(
         text(
             """
             SELECT
-              ml.id          AS label_id,
-              ml.repo_id     AS repo_id,
-              ml.name        AS name,
-              ml.color       AS color,
+              ml.id AS label_id,
+              ml.repo_id AS repo_id,
+              ml.name AS name,
+              ml.color AS color,
               ml.description AS description,
               COUNT(mil.label_id) AS issue_count
             FROM musehub_labels ml
@@ -254,7 +254,7 @@ async def create_label(
 ) -> JSONResponse:
     """Create a label with the given name, hex colour, and optional description.
 
-    Names must be unique within the repo.  Returns the new label's UUID and a
+    Names must be unique within the repo. Returns the new label's UUID and a
     confirmation message so the in-page JS can optimistically add the row.
 
     Called via ``fetch()`` from the in-page JavaScript with the Bearer token
@@ -468,7 +468,7 @@ async def reset_labels(
         text(
             "DELETE FROM musehub_issue_labels "
             "WHERE label_id IN ("
-            "  SELECT id FROM musehub_labels WHERE repo_id = :repo_id"
+            " SELECT id FROM musehub_labels WHERE repo_id = :repo_id"
             ")"
         ),
         {"repo_id": repo_id},
@@ -477,7 +477,7 @@ async def reset_labels(
         text(
             "DELETE FROM musehub_pr_labels "
             "WHERE label_id IN ("
-            "  SELECT id FROM musehub_labels WHERE repo_id = :repo_id"
+            " SELECT id FROM musehub_labels WHERE repo_id = :repo_id"
             ")"
         ),
         {"repo_id": repo_id},

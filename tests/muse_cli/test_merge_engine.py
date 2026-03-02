@@ -1,6 +1,6 @@
 """Unit tests for the Muse CLI merge engine (pure functions + find_merge_base).
 
-All async tests use ``@pytest.mark.anyio``.  Pure-function tests are
+All async tests use ``@pytest.mark.anyio``. Pure-function tests are
 synchronous and exercise the filesystem-free merge logic in isolation.
 ``find_merge_base`` tests use the in-memory SQLite session from ``conftest.py``.
 """
@@ -142,7 +142,7 @@ def test_apply_merge_takes_theirs_only_change() -> None:
 def test_apply_merge_deleted_on_ours() -> None:
     """A path deleted on ours (not in ours manifest) is removed from merged."""
     base = {"a.mid": "base", "b.mid": "base"}
-    ours = {"b.mid": "base"}   # a.mid deleted on ours
+    ours = {"b.mid": "base"} # a.mid deleted on ours
     theirs = {"a.mid": "base", "b.mid": "base"}
     ours_changed = {"a.mid"}
     merged = apply_merge(base, ours, theirs, ours_changed, set(), set())

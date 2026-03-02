@@ -1,15 +1,15 @@
 """Agent contracts for the three-level architecture.
 
 Contracts are frozen dataclasses that define immutable handoffs between
-agent layers.  They replace loose dicts and natural-language prompt
+agent layers. They replace loose dicts and natural-language prompt
 passthrough, preventing "semantic telephone" where each layer
 reinterprets the task instead of executing a protocol.
 
 Contract hierarchy:
-  L1 → L2:  ``InstrumentContract``  (coordinator builds, agent executes)
-  L2 → L3:  ``SectionContract``     (dispatch builds, section child executes)
+  L1 → L2: ``InstrumentContract`` (coordinator builds, agent executes)
+  L2 → L3: ``SectionContract`` (dispatch builds, section child executes)
 
-  ``RuntimeContext``  carries pure data (prompt, emotion, quality preset).
+  ``RuntimeContext`` carries pure data (prompt, emotion, quality preset).
   ``ExecutionServices`` carries mutable coordination primitives (signals,
   state) and is passed alongside contracts — never inside them.
 
@@ -84,11 +84,11 @@ class SectionSpec:
     """One section's layout in the composition plan.
 
     Built by the coordinator (L1) from ``parse_sections`` output and
-    canonical templates.  Immutable — L2 and L3 execute against these
+    canonical templates. Immutable — L2 and L3 execute against these
     values, they never recompute or reinterpret them.
 
     ``section_id`` is the stable unique key used for signal/state
-    coordination.  It prevents collisions when a composition has
+    coordination. It prevents collisions when a composition has
     repeated section names (e.g. two "verse" sections).
 
     ``contract_hash`` is set by the coordinator after construction via
@@ -128,7 +128,7 @@ class SectionSpec:
 class SectionContract:
     """Immutable contract from L2 instrument parent to L3 section child.
 
-    L3 MUST use structural fields exactly as provided.  L3 may only
+    L3 MUST use structural fields exactly as provided. L3 may only
     reason about the Orpheus generation prompt (HOW to describe the music),
     never about WHAT section it is, WHERE to place regions, or WHAT role
     it plays.
@@ -211,9 +211,9 @@ class SectionContract:
 class InstrumentContract:
     """Immutable contract from L1 coordinator to L2 instrument parent.
 
-    The coordinator builds one per instrument.  L2 MUST use these values
+    The coordinator builds one per instrument. L2 MUST use these values
     for track creation, section dispatching, and system prompt construction.
-    L2 may only reason about musical character and generate prompts —
+    L2 may only reason about musical character and generate prompts
     it must not reinterpret structural fields.
 
     ``contract_hash`` captures structural identity; ``parent_contract_hash``
@@ -283,8 +283,8 @@ class InstrumentContract:
 class ExecutionServices:
     """Mutable coordination primitives passed alongside contracts.
 
-    Explicitly NOT frozen.  These are live asyncio-backed objects that
-    must be shared by reference across concurrent agent tasks.  They
+    Explicitly NOT frozen. These are live asyncio-backed objects that
+    must be shared by reference across concurrent agent tasks. They
     are separated from ``RuntimeContext`` so that frozen data contracts
     never wrap mutable synchronization state.
     """
@@ -302,8 +302,8 @@ class ExecutionServices:
 class RuntimeContext:
     """Frozen runtime context carrying pure data alongside contracts.
 
-    Contains prompt text, emotion conditioning, and quality preset —
-    all immutable.  Mutable coordination primitives (signals, state)
+    Contains prompt text, emotion conditioning, and quality preset
+    all immutable. Mutable coordination primitives (signals, state)
     live in ``ExecutionServices``, never here.
 
     ``emotion_vector`` is stored as a frozen tuple-of-pairs so no
@@ -351,7 +351,7 @@ class RuntimeContext:
     def to_composition_context(self) -> CompositionContext:
         """Build a CompositionContext from this RuntimeContext.
 
-        Exposes only the fields that generation tool calls need —
+        Exposes only the fields that generation tool calls need
         does NOT include mutable services (signals, state).
 
         Reconstructs ``EmotionVector`` from the frozen tuple so downstream

@@ -7,11 +7,11 @@ Endpoint summary:
   GET /musehub/ui/{owner}/{repo_slug}/similarity/{refs}
     refs encodes ``base...head`` (same convention as the compare page).
     HTML (default) → interactive similarity report with radar chart.
-    JSON  (``?format=json`` or ``Accept: application/json``)
+    JSON (``?format=json`` or ``Accept: application/json``)
          → raw :class:`~maestro.models.musehub_analysis.RefSimilarityResponse`.
 
 Why a dedicated page instead of reusing compare:
-  The compare page shows *divergence* (how much changed).  This page shows
+  The compare page shows *divergence* (how much changed). This page shows
   *similarity* (how musically alike two refs are) — an inverted framing that
   is more useful when evaluating whether a variation stays true to a reference.
   The 10-dimension spider chart with base=solid and head=dashed allows a
@@ -68,7 +68,7 @@ async def similarity_page(
     """Render the musical similarity report between two Muse refs.
 
     ``refs`` encodes the two refs as ``base...head``, matching the URL
-    convention used by the compare page.  The 10-dimension spider chart
+    convention used by the compare page. The 10-dimension spider chart
     renders the base ref as a solid polygon and the head ref as a dashed
     overlay so producers can immediately see where the two refs diverge.
 
@@ -83,7 +83,7 @@ async def similarity_page(
 
     Agent use case: call with ``?format=json`` to obtain a machine-readable
     similarity vector before deciding whether to generate additional variation
-    material.  An ``overall_similarity`` below 0.75 signals that the two refs
+    material. An ``overall_similarity`` below 0.75 signals that the two refs
     have diverged significantly and a merge should be reviewed carefully.
     """
     if "..." not in refs:

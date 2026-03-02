@@ -87,7 +87,7 @@ def _compute_push_delta(
     If *remote_head* is ``None`` (first push), all commits are included.
 
     We include every commit from the local HEAD down to—but not including—the
-    known remote HEAD.  The list is returned in chronological order (oldest
+    known remote HEAD. The list is returned in chronological order (oldest
     first) so the Hub can apply them in ancestry order.
     """
     if not commits:
@@ -155,7 +155,7 @@ def _build_push_request(
     Hub's responsibility).
 
     When ``force_with_lease`` is ``True``, ``expected_remote_head`` is the
-    commit ID we believe the remote HEAD to be.  The Hub must reject the push
+    commit ID we believe the remote HEAD to be. The Hub must reject the push
     if its current HEAD differs.
 
     Args:
@@ -298,7 +298,7 @@ async def _push_async(
 
     flags_desc = f" [{', '.join(extra_flags)}]" if extra_flags else ""
     typer.echo(
-        f"⬆️  Pushing {len(delta)} commit(s) to {remote_name}/{effective_branch}{flags_desc} …"
+        f"⬆️ Pushing {len(delta)} commit(s) to {remote_name}/{effective_branch}{flags_desc} …"
     )
 
     # ── HTTP push ────────────────────────────────────────────────────────

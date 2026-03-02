@@ -1,6 +1,6 @@
 """Tests for MuseHub search endpoints.
 
-Covers semantic similarity search (issue #237):
+Covers semantic similarity search:
 - GET /musehub/search/similar?commit={sha} returns ranked results
 - Private repos are excluded from results (public_only enforced)
 - 404 when commit SHA is not found
@@ -8,35 +8,35 @@ Covers semantic similarity search (issue #237):
 - Results are sorted by descending score
 - Unauthenticated requests return 401
 
-Covers cross-repo global search (issue #236):
-- test_global_search_page_renders          — GET /musehub/ui/search returns 200 HTML
-- test_global_search_results_grouped       — JSON results are grouped by repo
-- test_global_search_public_only           — private repos are excluded
-- test_global_search_json                  — JSON content-type returned
-- test_global_search_empty_query_handled   — graceful response for empty result set
-- test_global_search_requires_auth         — 401 without JWT
-- test_global_search_keyword_mode          — keyword mode matches across message terms
-- test_global_search_pattern_mode          — pattern mode uses SQL LIKE
-- test_global_search_pagination            — page/page_size params respected
+Covers cross-repo global search:
+- test_global_search_page_renders — GET /musehub/ui/search returns 200 HTML
+- test_global_search_results_grouped — JSON results are grouped by repo
+- test_global_search_public_only — private repos are excluded
+- test_global_search_json — JSON content-type returned
+- test_global_search_empty_query_handled — graceful response for empty result set
+- test_global_search_requires_auth — 401 without JWT
+- test_global_search_keyword_mode — keyword mode matches across message terms
+- test_global_search_pattern_mode — pattern mode uses SQL LIKE
+- test_global_search_pagination — page/page_size params respected
 
-Covers in-repo search (issue #235):
-- test_search_page_renders              — GET /musehub/ui/{repo_id}/search → 200 HTML
-- test_search_keyword_mode              — keyword search returns matching commits
-- test_search_keyword_empty_query       — empty keyword query returns empty matches
-- test_search_musical_property          — musical property filter works
-- test_search_natural_language          — ask mode returns matching commits
-- test_search_pattern_message           — pattern matches commit message
-- test_search_pattern_branch            — pattern matches branch name
-- test_search_json_response             — JSON search endpoint returns SearchResponse shape
-- test_search_date_range_since          — since filter excludes old commits
-- test_search_date_range_until          — until filter excludes future commits
-- test_search_invalid_mode              — invalid mode returns 422
-- test_search_unknown_repo              — unknown repo_id returns 404
-- test_search_requires_auth             — unauthenticated request returns 401
-- test_search_limit_respected           — limit caps result count
+Covers in-repo search:
+- test_search_page_renders — GET /musehub/ui/{repo_id}/search → 200 HTML
+- test_search_keyword_mode — keyword search returns matching commits
+- test_search_keyword_empty_query — empty keyword query returns empty matches
+- test_search_musical_property — musical property filter works
+- test_search_natural_language — ask mode returns matching commits
+- test_search_pattern_message — pattern matches commit message
+- test_search_pattern_branch — pattern matches branch name
+- test_search_json_response — JSON search endpoint returns SearchResponse shape
+- test_search_date_range_since — since filter excludes old commits
+- test_search_date_range_until — until filter excludes future commits
+- test_search_invalid_mode — invalid mode returns 422
+- test_search_unknown_repo — unknown repo_id returns 404
+- test_search_requires_auth — unauthenticated request returns 401
+- test_search_limit_respected — limit caps result count
 
 All tests use the shared ``client`` and ``auth_headers`` fixtures from
-conftest.py.  Qdrant calls are mocked — no live vector database required.
+conftest.py. Qdrant calls are mocked — no live vector database required.
 """
 from __future__ import annotations
 
@@ -470,7 +470,7 @@ async def test_similar_search_limit_respected(
 
 
 # ---------------------------------------------------------------------------
-# Similarity search — DI override (regression for issue #272)
+# Similarity search — DI override (regression)
 # ---------------------------------------------------------------------------
 
 
@@ -481,7 +481,7 @@ async def test_similar_search_qdrant_injected_via_dependency_override(
 ) -> None:
     """Qdrant client is injected via FastAPI dependency_overrides, not module patching.
 
-    Regression test for issue #272: confirms that get_qdrant_client is a proper
+    Regression test: confirms that get_qdrant_client is a proper
     FastAPI dependency so tests can override it without patching module internals.
     """
     create_resp = await client.post(
@@ -667,7 +667,7 @@ async def test_global_search_results_grouped(
         assert "repoId" in group
         assert "repoName" in group
         assert "repoOwner" in group
-        assert "repoSlug" in group  # PR #282: slug required for UI link construction
+        assert "repoSlug" in group # PR #282: slug required for UI link construction
         assert "repoVisibility" in group
         assert "matches" in group
         assert "totalMatches" in group
@@ -825,7 +825,7 @@ async def test_global_search_match_contains_required_fields(
 
 
 # ---------------------------------------------------------------------------
-# Global search — audio preview batching (issue #270)
+# Global search — audio preview batching
 # ---------------------------------------------------------------------------
 
 
@@ -841,7 +841,7 @@ async def test_global_search_audio_preview_populated_for_multiple_repos(
     contains the correct audioObjectId — confirming the batched path works
     end-to-end and produces the same result as the old N+1 per-repo loop.
 
-    Regression test for the N+1 bug fixed in issue #270.
+    Regression test for the N+1 bug fixed.
     """
     repo_a = await _make_repo(db_session, name="audio-repo-alpha", visibility="public")
     repo_b = await _make_repo(db_session, name="audio-repo-beta", visibility="public")

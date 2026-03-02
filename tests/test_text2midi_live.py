@@ -112,7 +112,7 @@ class TestText2MidiLive:
         
         logger.info("Generating upbeat melody...")
         upbeat_desc = emotion_to_text_description(upbeat, key="G", tempo=140)
-        logger.info("  Description: %s...", upbeat_desc[:80])
+        logger.info(" Description: %s...", upbeat_desc[:80])
         
         upbeat_result = await backend.generate(
             bars=4,
@@ -123,7 +123,7 @@ class TestText2MidiLive:
         
         logger.info("Generating somber melody...")
         somber_desc = emotion_to_text_description(somber, key="Dm", tempo=60)
-        logger.info("  Description: %s...", somber_desc[:80])
+        logger.info(" Description: %s...", somber_desc[:80])
         
         somber_result = await backend.generate(
             bars=4,

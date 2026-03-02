@@ -2,7 +2,7 @@
 
 ``_write_tree_async`` is exercised directly with an in-memory SQLite session
 (via the ``muse_cli_db_session`` fixture) so no real Postgres instance is
-needed.  The Typer CLI runner covers the command surface (repo detection,
+needed. The Typer CLI runner covers the command surface (repo detection,
 exit codes, flag handling).
 
 All async tests use ``@pytest.mark.anyio``.

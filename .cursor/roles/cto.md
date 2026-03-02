@@ -56,19 +56,28 @@ LOOP:
 
   0. Preflight stale sweep — run this before EVERY wave (not just the first):
        # Clear agent:wip from issues whose worktree is missing OR has 0 commits ahead of dev.
-       # This prevents a stale claim from blocking the Eng VP's unclaimed-issue query.
+       # EXCEPTION: never clear agent:wip when an open PR already exists for the issue —
+       # the implementer worktree is intentionally pruned after PR creation, so a missing
+       # worktree + open PR = active claim, not a stale one.
        MAIN_REPO="$HOME/dev/tellurstori/maestro"
        for NUM in $(gh issue list --state open --label "agent:wip" \
            --repo cgcardona/maestro --json number --jq '.[].number' 2>/dev/null); do
+         # Open PR guard — branch name is the canonical link between issue and PR.
+         OPEN_PR=$(gh pr list --state open --repo cgcardona/maestro \
+           --head "feat/issue-${NUM}" --json number --jq '.[0].number // empty' 2>/dev/null || echo "")
+         if [ -n "$OPEN_PR" ]; then
+           echo "CTO preflight: keeping agent:wip on #$NUM (open PR #$OPEN_PR — worktree pruning expected)"
+           continue
+         fi
          WORKTREE="$HOME/.cursor/worktrees/maestro/issue-$NUM"
          if [ ! -d "$WORKTREE" ]; then
-           echo "CTO preflight: clearing stale agent:wip from #$NUM (no worktree)"
+           echo "CTO preflight: clearing stale agent:wip from #$NUM (no worktree, no open PR)"
            gh issue edit "$NUM" --repo cgcardona/maestro --remove-label "agent:wip" 2>/dev/null || true
          else
            BRANCH=$(git -C "$WORKTREE" branch --show-current 2>/dev/null || echo "")
            AHEAD=$(git -C "$MAIN_REPO" rev-list --count "dev..${BRANCH}" 2>/dev/null || echo "0")
            if [ "${AHEAD:-0}" -eq 0 ]; then
-             echo "CTO preflight: clearing stale agent:wip from #$NUM (0 commits ahead)"
+             echo "CTO preflight: clearing stale agent:wip from #$NUM (0 commits ahead, no open PR)"
              gh issue edit "$NUM" --repo cgcardona/maestro --remove-label "agent:wip" 2>/dev/null || true
            fi
          fi
@@ -77,15 +86,12 @@ LOOP:
   1. Survey — determine the ACTIVE_LABEL and counts:
 
        # Labels are processed in strict order — NEVER skip ahead.
-       # Read label order from pipeline-config.json (single source of truth).
-       CONFIG=$(cat /Users/gabriel/dev/tellurstori/maestro/.cursor/pipeline-config.json)
-       LABEL_ORDER=$(echo "$CONFIG" | python3 -c "import sys,json; print(' '.join(json.load(sys.stdin)['active_labels_order']))")
-       MAX_ENG_VPS=$(echo "$CONFIG" | python3 -c "import sys,json; print(json.load(sys.stdin)['max_eng_vps'])")
-       MAX_QA_VPS=$(echo "$CONFIG" | python3 -c "import sys,json; print(json.load(sys.stdin)['max_qa_vps'])")
-
        # Find the lowest-numbered label that still has open issues.
        ACTIVE_LABEL=""
-       for label in $LABEL_ORDER; do
+       for label in agentception/0-scaffold agentception/1-controls \
+                        agentception/2-telemetry agentception/3-roles \
+                        agentception/4-intelligence agentception/5-scaling \
+                        agentception/6-generalization; do
          COUNT=$(gh issue list --state open --repo cgcardona/maestro \
                    --label "$label" --json number --jq 'length')
          if [ "$COUNT" -gt 0 ]; then
@@ -105,21 +111,20 @@ LOOP:
   2. If ISSUES == 0 AND PRS == 0 → report completion. Stop.
      If ISSUES == 0 AND PRS > 0 → dispatch QA VPs only (drain remaining reviews).
 
-  3. Allocate VP slots — use MAX_ENG_VPS and MAX_QA_VPS from pipeline-config.json:
-     (already loaded in step 1 above as $MAX_ENG_VPS and $MAX_QA_VPS)
+  3. Allocate VP slots — always exactly 1 Eng VP, 1 QA VP max:
 
-       ┌────────────────────────────────┬──────────────────────┬─────────────────────┐
-       │ Condition                      │ Eng VPs              │ QA VPs              │
-       ├────────────────────────────────┼──────────────────────┼─────────────────────┤
-       │ ISSUES == 0                    │ 0                    │ $MAX_QA_VPS         │
-       │ PRS == 0                       │ $MAX_ENG_VPS         │ 0                   │
-       │ otherwise                      │ $MAX_ENG_VPS         │ $MAX_QA_VPS         │
-       └────────────────────────────────┴──────────────────────┴─────────────────────┘
+       ┌────────────────────────────────┬──────────┬─────────┐
+       │ Condition                      │ Eng VPs  │  QA VPs │
+       ├────────────────────────────────┼──────────┼─────────┤
+       │ ISSUES == 0                    │    0     │    1    │  ← drain remaining reviews
+       │ PRS == 0                       │    1     │    0    │  ← pure implementation
+       │ otherwise                      │    1     │    1    │  ← balanced
+       └────────────────────────────────┴──────────┴─────────┘
 
-     ⚠️  DEFAULT IS 1 ENG VP: The default ``max_eng_vps`` is 1.  One VP seeds up
-     to 4 engineers and the chain self-replaces. Multiple Eng VPs race to claim
-     the same tickets and cause stampedes — do not raise ``max_eng_vps`` above 1
-     unless you have verified the pipeline is stampede-safe.
+     ⚠️  ALWAYS 1 ENG VP, NEVER MORE: One VP seeds up to 4 engineers and the
+     chain self-replaces. Multiple Eng VPs race to claim the same tickets and
+     cause stampedes — this has been proven to break the pipeline. Do not change
+     this to more than 1 Eng VP regardless of queue depth.
 
      ⚠️  ACTIVE_LABEL GATE: The single Eng VP ONLY works on ACTIVE_LABEL issues.
      It MUST NOT claim issues from any other agentception/* label.

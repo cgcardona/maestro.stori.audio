@@ -1,10 +1,10 @@
 """Muse Hub collaborators management route handlers.
 
 Endpoint summary:
-  GET    /musehub/repos/{repo_id}/collaborators                          — list collaborators with permission level (auth required)
-  POST   /musehub/repos/{repo_id}/collaborators                          — invite collaborator (auth required, admin+)
-  PUT    /musehub/repos/{repo_id}/collaborators/{user_id}/permission     — update permission level (auth required, admin+)
-  DELETE /musehub/repos/{repo_id}/collaborators/{user_id}               — remove collaborator (auth required, admin+)
+  GET /musehub/repos/{repo_id}/collaborators — list collaborators with permission level (auth required)
+  POST /musehub/repos/{repo_id}/collaborators — invite collaborator (auth required, admin+)
+  PUT /musehub/repos/{repo_id}/collaborators/{user_id}/permission — update permission level (auth required, admin+)
+  DELETE /musehub/repos/{repo_id}/collaborators/{user_id} — remove collaborator (auth required, admin+)
 
   The read-only access-check endpoint (GET /repos/{repo_id}/collaborators/{username}/permission)
   lives in repos.py — it has a different response shape and 404-on-absence semantics.

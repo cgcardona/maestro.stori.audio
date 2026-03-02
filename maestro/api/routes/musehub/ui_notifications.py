@@ -10,20 +10,20 @@ Endpoint:
       ``NotificationsPageResponse`` for agent consumption.
 
 Query parameters (HTML and JSON):
-  type        Filter by notification event type (e.g. ``mention``, ``watch``,
-              ``fork``).  Omit to show all types.
+  type Filter by notification event type (e.g. ``mention``, ``watch``,
+              ``fork``). Omit to show all types.
   unread_only Show only unread notifications (default: ``false``).
-  page        Page number (1-indexed, default: 1).
-  per_page    Items per page (1–100, default: 25).
-  format      Force ``json`` response regardless of Accept header.
+  page Page number (1-indexed, default: 1).
+  per_page Items per page (1–100, default: 25).
+  format Force ``json`` response regardless of Accept header.
 
 Auth: JWT required for JSON responses (personal data); the HTML shell is
 served without auth so the browser can display a JWT entry prompt for users
-who are not yet authenticated.  Client-side JavaScript enforces auth via the
+who are not yet authenticated. Client-side JavaScript enforces auth via the
 ``localStorage`` token before fetching notification data from the API.
 
 Auto-discovered by ``maestro.api.routes.musehub.__init__`` because this
-module exposes a ``router`` attribute.  No changes to ``__init__.py`` needed.
+module exposes a ``router`` attribute. No changes to ``__init__.py`` needed.
 """
 from __future__ import annotations
 
@@ -63,7 +63,7 @@ class NotificationItem(BaseModel):
     """A single notification entry in the inbox response.
 
     ``created_at`` is ISO 8601 so JSON consumers can parse it without knowing
-    the server's timezone.  Keys are camelCase for consistency with all other
+    the server's timezone. Keys are camelCase for consistency with all other
     MuseHub JSON endpoints.
     """
 
@@ -194,7 +194,7 @@ def _prefers_json(request: Request, format_param: str | None) -> bool:
     """Return True when the caller prefers a JSON response.
 
     Mirrors the logic in ``negotiate.py`` without importing the private
-    ``_wants_json`` helper.  Decision order: ``?format=json`` param, then
+    ``_wants_json`` helper. Decision order: ``?format=json`` param, then
     ``Accept: application/json`` header.
     """
     if format_param == "json":

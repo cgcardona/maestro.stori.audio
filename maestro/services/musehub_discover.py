@@ -10,10 +10,10 @@ Boundary rules:
 - May import Pydantic response models from maestro.models.musehub.
 
 Sort semantics:
-  "stars"    — repos with the most stars first (trending signal)
+  "stars" — repos with the most stars first (trending signal)
   "activity" — repos with the most recent commit first
-  "commits"  — repos with the highest total commit count first
-  "created"  — newest repos first (default for explore page)
+  "commits" — repos with the highest total commit count first
+  "created" — newest repos first (default for explore page)
 
 Tag filtering uses a contains check on the JSON ``tags`` column. For portability
 across Postgres and SQLite (tests), the check is done server-side via a
@@ -138,7 +138,7 @@ async def list_public_repos(
         base_q = base_q.order_by(desc("latest_commit"), desc(db.MusehubRepo.created_at))
     elif sort == "commits":
         base_q = base_q.order_by(desc("commit_count"), desc(db.MusehubRepo.created_at))
-    else:  # "created"
+    else: # "created"
         base_q = base_q.order_by(desc(db.MusehubRepo.created_at))
 
     rows = (await session.execute(base_q.offset(offset).limit(page_size))).all()

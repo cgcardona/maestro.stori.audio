@@ -1,23 +1,23 @@
-"""Tests for the MuseHub render pipeline (issue #214).
+"""Tests for the MuseHub render pipeline.
 
 Covers the acceptance criteria from the issue:
-  test_push_triggers_render               — Push endpoint triggers render task
-  test_render_creates_mp3_objects         — Render creates MP3 objects in store
-  test_render_creates_piano_roll_images   — Render creates PNG objects in store
-  test_render_idempotent                  — Re-push does not duplicate renders
+  test_push_triggers_render — Push endpoint triggers render task
+  test_render_creates_mp3_objects — Render creates MP3 objects in store
+  test_render_creates_piano_roll_images — Render creates PNG objects in store
+  test_render_idempotent — Re-push does not duplicate renders
   test_render_failure_does_not_block_push — Failed render still allows push to complete
-  test_render_status_endpoint             — Render status queryable by commit SHA
+  test_render_status_endpoint — Render status queryable by commit SHA
 
 Unit tests (service-level, no HTTP client):
-  test_piano_roll_render_note_events      — Valid MIDI produces non-blank PNG
-  test_piano_roll_render_empty_midi       — Empty/blank MIDI produces stubbed=True result
-  test_piano_roll_render_invalid_bytes    — Garbage bytes produce stubbed=True result
-  test_render_pipeline_midi_filter        — Only .mid/.midi paths are processed
-  test_render_status_not_found            — Missing commit returns not_found status
+  test_piano_roll_render_note_events — Valid MIDI produces non-blank PNG
+  test_piano_roll_render_empty_midi — Empty/blank MIDI produces stubbed=True result
+  test_piano_roll_render_invalid_bytes — Garbage bytes produce stubbed=True result
+  test_render_pipeline_midi_filter — Only .mid/.midi paths are processed
+  test_render_status_not_found — Missing commit returns not_found status
 
 Integration tests (HTTP client + in-memory SQLite):
-  test_render_status_endpoint_not_found   — Endpoint returns not_found for unknown commit
-  test_render_status_endpoint_complete    — Endpoint returns complete job
+  test_render_status_endpoint_not_found — Endpoint returns not_found for unknown commit
+  test_render_status_endpoint_complete — Endpoint returns complete job
   test_render_status_endpoint_private_repo_no_auth — Private repo returns 401
 """
 from __future__ import annotations
@@ -587,7 +587,7 @@ async def test_render_failure_does_not_block_push(
     """Push succeeds even when the render background task is a no-op.
 
     The push HTTP response is returned before background tasks run, so the
-    push is never blocked by render pipeline work.  We verify this by patching
+    push is never blocked by render pipeline work. We verify this by patching
     ``trigger_render_background`` to a no-op (which never interferes with the
     HTTP response) and confirming the push still returns 200.
 
@@ -597,7 +597,7 @@ async def test_render_failure_does_not_block_push(
     repo_id, _ = await _seed_repo(db_session)
 
     async def noop_trigger(**kwargs: object) -> None:
-        pass  # Deliberately does nothing — simulates a render that never runs
+        pass # Deliberately does nothing — simulates a render that never runs
 
     with patch(
         "maestro.api.routes.musehub.sync.trigger_render_background",

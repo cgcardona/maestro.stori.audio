@@ -44,7 +44,7 @@ needs multiple independent reviewers (e.g. one for types, one for tests, one
 for docs). Each sub-reviewer writes its grade and findings into its own
 worktree; the sub-coordinator collects them and emits a composite grade.
 
-See `PARALLEL_BUGS_TO_ISSUES.md` → "Agent Task File Reference" for the
+See `parallel-bugs-to-issues.md` → "Agent Task File Reference" for the
 full field reference.
 
 ---
@@ -107,7 +107,7 @@ mkdir -p "$PRTREES"
 cd "$REPO"
 
 # Enable rerere so git caches conflict resolutions across agents.
-# When multiple agents resolve the same conflict (e.g. muse_vcs.md), rerere
+# When multiple agents resolve the same conflict (e.g. muse-vcs.md), rerere
 # automatically reuses the recorded resolution — no manual work needed.
 # || true: the sandbox blocks .git/config writes (EPERM) when this runs as
 # part of a multi-statement block. rerere is an optimization, not critical.
@@ -329,7 +329,7 @@ the `dev` branch with uncommitted changes that don't belong there.
 
 ### Command policy
 
-Consult `.cursor/AGENT_COMMAND_POLICY.md` for the full tier list. Summary:
+Consult `.cursor/agent-command-policy.md` for the full tier list. Summary:
 - **Green (auto-allow):** `ls`, `git status/log/diff/fetch`, `gh pr view`, `mypy`, `pytest`, `rg`
 - **Yellow (review before running):** `docker compose build`, `rm <single file>`, `git rebase`
 - **Red (never):** `rm -rf`, `git push --force`, `git push origin dev`, `docker system prune`
@@ -341,7 +341,7 @@ Consult `.cursor/AGENT_COMMAND_POLICY.md` for the full tier list. Summary:
 ```
 PARALLEL AGENT COORDINATION — PR REVIEW
 
-Read .cursor/AGENT_COMMAND_POLICY.md before issuing any shell commands.
+Read .cursor/agent-command-policy.md before issuing any shell commands.
 Green-tier commands run without confirmation. Yellow = check scope first.
 Red = never, ask the user instead.
 
@@ -508,13 +508,13 @@ STEP 3 — CHECKOUT & SYNC (only if STEP 2 shows the PR is open and unreviewed):
   #
   #    FILE                              ALWAYS-SAFE RULE
   #    maestro/muse_cli/app.py           Keep ALL app.add_typer() lines from both sides.
-  #    docs/architecture/muse_vcs.md    Keep ALL ## sections from both sides, sort alpha.
-  #    docs/reference/type_contracts.md Keep ALL entries from both sides.
+  #    docs/architecture/muse-vcs.md    Keep ALL ## sections from both sides, sort alpha.
+  #    docs/reference/type-contracts.md Keep ALL entries from both sides.
   #
-  #    ⚡ SHORTCUT: open .cursor/CONFLICT_RULES.md — every common conflict in this
+  #    ⚡ SHORTCUT: open .cursor/conflict-rules.md — every common conflict in this
   #    repo has a one-line mechanical rule. Do NOT use sed/grep/hexdump loops.
   #    maestro/api/routes/musehub/__init__.py NEVER conflicts (auto-discovery).
-  #    app.py, muse_vcs.md, type_contracts.md use union merge via .gitattributes.
+  #    app.py, muse-vcs.md, type-contracts.md use union merge via .gitattributes.
 
   # 4. Merge the latest dev into this feature branch NOW
   git merge origin/dev
@@ -550,7 +550,7 @@ STEP 3 — CHECKOUT & SYNC (only if STEP 2 shows the PR is open and unreviewed):
   │     Keep either side, remove markers. Done.                                │
   │                                                                              │
   │   RULE 2 ─ KNOWN ADDITIVE FILE → apply the file-specific rule in STEP B:  │
-  │     muse_cli/app.py  •  muse_vcs.md  •  type_contracts.md                 │
+  │     muse_cli/app.py  •  muse-vcs.md  •  type-contracts.md                 │
   │                                                                              │
   │   RULE 3 ─ ALL OTHER FILES (judgment conflict):                             │
   │     Preserve dev's version PLUS this PR's additions.                       │
@@ -571,9 +571,9 @@ STEP 3 — CHECKOUT & SYNC (only if STEP 2 shows the PR is open and unreviewed):
   │ │   count must equal the total number of registered sub-apps            │  │
   │ └───────────────────────────────────────────────────────────────────────┘  │
   │                                                                              │
-  │ ┌─ docs/architecture/muse_vcs.md ───────────────────────────────────────┐  │
+  │ ┌─ docs/architecture/muse-vcs.md ───────────────────────────────────────┐  │
   │ │ Count markers first:                                                   │  │
-  │ │   grep -c "^<<<<<" docs/architecture/muse_vcs.md                      │  │
+  │ │   grep -c "^<<<<<" docs/architecture/muse-vcs.md                      │  │
   │ │ That is how many conflict blocks you must resolve.                     │  │
   │ │                                                                        │  │
   │ │ For each block, identify pattern and apply rule:                       │  │
@@ -599,13 +599,13 @@ STEP 3 — CHECKOUT & SYNC (only if STEP 2 shows the PR is open and unreviewed):
   │ │   If genuinely unclear, keep both and note in the commit message.     │  │
   │ │                                                                        │  │
   │ │ Final check (must return empty):                                       │  │
-  │ │   grep -n "<<<<<<\|=======\|>>>>>>>" docs/architecture/muse_vcs.md   │  │
+  │ │   grep -n "<<<<<<\|=======\|>>>>>>>" docs/architecture/muse-vcs.md   │  │
   │ └───────────────────────────────────────────────────────────────────────┘  │
   │                                                                              │
-  │ ┌─ docs/reference/type_contracts.md ────────────────────────────────────┐  │
+  │ ┌─ docs/reference/type-contracts.md ────────────────────────────────────┐  │
   │ │ Each agent registers new named types. Both belong.                    │  │
   │ │ Rule: KEEP ALL entries from BOTH sides. Remove markers.              │  │
-  │ │ Final check: grep -n "<<<<<<\|=======\|>>>>>>>" docs/reference/type_contracts.md │
+  │ │ Final check: grep -n "<<<<<<\|=======\|>>>>>>>" docs/reference/type-contracts.md │
   │ └───────────────────────────────────────────────────────────────────────┘  │
   │                                                                              │
   │ ┌─ Any other file (JUDGMENT CONFLICTS) ─────────────────────────────────┐  │
@@ -705,7 +705,7 @@ STEP 4 — TARGETED TEST SCOPING (before review):
   fi
 
 STEP 5 — REVIEW:
-  Read and follow every step in .github/PR_REVIEW_PROMPT.md exactly.
+  Read and follow every step in .github/pr-review-prompt.md exactly.
   1. Context — read PR description, referenced issue, commits, files changed
   2. Deep review — work through all applicable checklist sections (3a–3j)
 
@@ -716,13 +716,13 @@ STEP 5 — REVIEW:
     - dict[str, Any], list[dict], or bare tuples crossing module boundaries
       (must be wrapped in a named entity: <Domain><Concept>Result)
     - # type: ignore without an inline comment naming the 3rd-party issue
-    - See docs/reference/type_contracts.md for the canonical entity inventory
+    - See docs/reference/type-contracts.md for the canonical entity inventory
 
   DOCS — automatic C grade if any of these are missing:
     - Docstrings on every new public module, class, and function
-    - New muse <cmd> section in docs/architecture/muse_vcs.md
+    - New muse <cmd> section in docs/architecture/muse-vcs.md
       (must include: purpose, flags table, output example, result type, agent use case)
-    - New result types registered in docs/reference/type_contracts.md
+    - New result types registered in docs/reference/type-contracts.md
     - Docs in the same commit as code (not a follow-up PR)
 
   3. Add/fix tests if weak or missing
@@ -935,7 +935,7 @@ STEP 6 — PRE-MERGE SYNC (only if grade is A or B):
 
   If new conflicts appear after the final sync:
   - Use the CONFLICT PLAYBOOK from STEP 3 — same rules apply.
-  - For markdown-only conflicts (muse_vcs.md, type_contracts.md), skip mypy.
+  - For markdown-only conflicts (muse-vcs.md, type-contracts.md), skip mypy.
   - For app.py or any Python file, re-run mypy before pushing.
   - If conflicts are non-trivial and introduce risk → resolve them here,
     re-run mypy and targeted tests, and re-grade before merging.
@@ -1268,7 +1268,7 @@ TASK
       echo "✅ Chain: spawning engineer for issue #$NEXT_ISSUE (will spawn its own reviewer when done)"
       # AGENT INSTRUCTION: call Task(prompt="Read the .agent-task file in your worktree,
       # then follow the complete Kickoff Prompt in
-      # /Users/gabriel/dev/tellurstori/maestro/.cursor/PARALLEL_ISSUE_TO_PR.md.
+      # /Users/gabriel/dev/tellurstori/maestro/.cursor/parallel-issue-to-pr.md.
       # GH_REPO={{ gh_repo }}  Repo: /Users/gabriel/dev/tellurstori/maestro",
       # worktree="$NEXT_WORKTREE")
     else
@@ -1331,7 +1331,7 @@ TASK
       echo "✅ Pool: spawning replacement reviewer for PR #$NEXT_PR"
       # AGENT INSTRUCTION: call Task(prompt="Read the .agent-task file in your worktree,
       # then follow the complete Kickoff Prompt in
-      # /Users/gabriel/dev/tellurstori/maestro/.cursor/PARALLEL_PR_REVIEW.md.
+      # /Users/gabriel/dev/tellurstori/maestro/.cursor/parallel-pr-review.md.
       # GH_REPO={{ gh_repo }}  Repo: /Users/gabriel/dev/tellurstori/maestro",
       # worktree="$NEXT_WORKTREE")
     else

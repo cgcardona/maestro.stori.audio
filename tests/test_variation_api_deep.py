@@ -281,7 +281,7 @@ class TestDiscardVariation:
             })
 
         # Should fail since COMMITTED cannot transition to DISCARDED
-        assert resp.status_code in (409, 200)  # depends on implementation
+        assert resp.status_code in (409, 200) # depends on implementation
 
     @pytest.mark.anyio
     async def test_discard_not_found_ok(self, var_client: AsyncClient) -> None:

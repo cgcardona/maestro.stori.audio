@@ -60,7 +60,7 @@ def structured_prompt_context(parsed: "MaestroPrompt") -> str:
     Used by the EDITING LLM, which needs the creative brief to generate
     correct note data, voicings, dynamics, etc.
     """
-    import yaml as _yaml  # PyYAML ships no py.typed marker
+    import yaml as _yaml # PyYAML ships no py.typed marker
 
     lines = _structured_routing_lines(parsed)
 
@@ -77,7 +77,7 @@ def structured_prompt_context(parsed: "MaestroPrompt") -> str:
             lines.append(ext_yaml)
         except Exception:
             for k, v in parsed.extensions.items():
-                lines.append(f"  {k}: {v}")
+                lines.append(f" {k}: {v}")
 
         ext_keys = {k.lower() for k in parsed.extensions}
         translation_lines: list[str] = []
@@ -117,7 +117,7 @@ def structured_prompt_context(parsed: "MaestroPrompt") -> str:
             lines.append("")
             lines.append("▶ EXECUTION REQUIREMENTS (these are tool calls, not suggestions):")
             for tl in translation_lines:
-                lines.append(f"  • {tl}")
+                lines.append(f" • {tl}")
 
     lines.append("═════════════════════════════════════")
     lines.append("")

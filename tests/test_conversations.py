@@ -519,7 +519,7 @@ async def test_generate_title_from_prompt() -> None:
     # Test truncation
     long_prompt = "a" * 100
     title = conv_service.generate_title_from_prompt(long_prompt)
-    assert len(title) <= 53  # 50 + "..."
+    assert len(title) <= 53 # 50 + "..."
     
     # Test sentence extraction (first sentence or first segment; implementation may vary)
     title = conv_service.generate_title_from_prompt(

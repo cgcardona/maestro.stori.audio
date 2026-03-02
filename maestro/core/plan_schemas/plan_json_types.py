@@ -1,7 +1,7 @@
 """Wire-format TypedDicts for the execution plan JSON produced by the planner LLM.
 
 These types represent the **input** shape — the raw JSON dict returned by the
-planner LLM and passed to ``validate_plan_json`` / ``build_plan_from_dict`` —
+planner LLM and passed to ``validate_plan_json`` / ``build_plan_from_dict``
 before Pydantic coerces and validates it into the domain models in
 ``app/core/plan_schemas/models.py``.
 
@@ -15,20 +15,20 @@ Relationship to Pydantic models
 --------------------------------
 Each TypedDict mirrors its Pydantic counterpart:
 
-  ``GenerationStepDict``  →  ``GenerationStep`` (Pydantic)
-  ``EditStepDict``        →  ``EditStep``        (Pydantic)
-  ``MixStepDict``         →  ``MixStep``         (Pydantic)
-  ``PlanJsonDict``        →  ``ExecutionPlanSchema`` (Pydantic)
+  ``GenerationStepDict`` → ``GenerationStep`` (Pydantic)
+  ``EditStepDict`` → ``EditStep`` (Pydantic)
+  ``MixStepDict`` → ``MixStep`` (Pydantic)
+  ``PlanJsonDict`` → ``ExecutionPlanSchema`` (Pydantic)
 
 All TypedDicts use ``total=False`` because the LLM may emit partial objects;
-Pydantic enforces required fields at validation time.  Downstream code that
+Pydantic enforces required fields at validation time. Downstream code that
 holds a *validated* plan should work with the domain models, not these dicts.
 
 Boundary rule
 -------------
 ``validate_plan_json`` (boundary validator) accepts ``Mapping[str, object]``
 because its job is to classify *arbitrary* LLM output as valid/invalid.
-Everything that already *knows* it has a plan dict — helpers, tests, macros —
+Everything that already *knows* it has a plan dict — helpers, tests, macros
 uses ``PlanJsonDict`` for structural guarantees.
 """
 
@@ -45,7 +45,7 @@ class GenerationStepDict(TypedDict, total=False):
     Mirrors ``app.core.plan_schemas.models.GenerationStep``.
 
     Required at runtime (Pydantic-enforced): ``role``, ``style``, ``tempo``,
-    ``bars``.  All other fields are optional.
+    ``bars``. All other fields are optional.
 
     Fields
     ------
@@ -61,7 +61,7 @@ class GenerationStepDict(TypedDict, total=False):
     bars
         Number of bars to generate (1–64).
     key
-        Root key (e.g. ``"Am"``, ``"F#"``, ``"G minor"``).  Required for
+        Root key (e.g. ``"Am"``, ``"F#"``, ``"G minor"``). Required for
         melodic instruments; optional but warned-on if absent.
     constraints
         Open-shape per-role generation hints (density, syncopation, swing …).
@@ -77,7 +77,7 @@ class GenerationStepDict(TypedDict, total=False):
     bars: int
     key: str
     constraints: dict[str, JSONValue]
-    trackName: str  # noqa: N815
+    trackName: str # noqa: N815
 
 
 class EditStepDict(TypedDict, total=False):
@@ -85,10 +85,10 @@ class EditStepDict(TypedDict, total=False):
 
     Mirrors ``app.core.plan_schemas.models.EditStep``.
 
-    Required at runtime (Pydantic-enforced): ``action``.  Additional fields
+    Required at runtime (Pydantic-enforced): ``action``. Additional fields
     depend on the action:
 
-    - ``add_track``  → ``name`` required
+    - ``add_track`` → ``name`` required
     - ``add_region`` → ``track`` + ``bars`` required; ``barStart`` defaults to 0
 
     Fields
@@ -100,7 +100,7 @@ class EditStepDict(TypedDict, total=False):
     track
         Target track name for region creation (``add_region``).
     barStart
-        Zero-indexed start bar for the region (``add_region``).  Defaults to 0.
+        Zero-indexed start bar for the region (``add_region``). Defaults to 0.
     bars
         Duration in bars (``add_region``, 1–64).
     """
@@ -108,7 +108,7 @@ class EditStepDict(TypedDict, total=False):
     action: str
     name: str
     track: str
-    barStart: int  # noqa: N815
+    barStart: int # noqa: N815
     bars: int
 
 
@@ -117,11 +117,11 @@ class MixStepDict(TypedDict, total=False):
 
     Mirrors ``app.core.plan_schemas.models.MixStep``.
 
-    Required at runtime (Pydantic-enforced): ``action``, ``track``.  Additional
+    Required at runtime (Pydantic-enforced): ``action``, ``track``. Additional
     fields depend on the action:
 
     - ``add_insert`` → ``type`` required (normalised to known effect names)
-    - ``add_send``   → ``bus`` required
+    - ``add_send`` → ``bus`` required
     - ``set_volume`` / ``set_pan`` → ``value`` required
 
     Fields
@@ -133,7 +133,7 @@ class MixStepDict(TypedDict, total=False):
         Target track display name.
     type
         Effect type for ``add_insert`` (e.g. ``"compressor"``, ``"eq"``,
-        ``"reverb"``).  Pydantic validates against a known-effect allow-list.
+        ``"reverb"``). Pydantic validates against a known-effect allow-list.
     bus
         Bus name for ``add_send``.
     value
@@ -160,14 +160,14 @@ class PlanJsonDict(TypedDict, total=False):
     Fields
     ------
     generations
-        Ordered list of MIDI generation steps.  Each entry maps to a Storpheus
+        Ordered list of MIDI generation steps. Each entry maps to a Storpheus
         ``/generate`` call via the planner executor.
     edits
         Ordered list of DAW edit steps (track and region creation).
     mix
         Ordered list of mixing/effects steps applied after generation.
     explanation
-        LLM-provided explanation of the plan.  Logged but never executed.
+        LLM-provided explanation of the plan. Logged but never executed.
     """
 
     generations: list[GenerationStepDict]

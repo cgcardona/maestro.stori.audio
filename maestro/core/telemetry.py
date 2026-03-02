@@ -1,7 +1,7 @@
 """Deterministic musical telemetry derived from generated MIDI data.
 
 All computations are pure math — no LLM calls, no external dependencies
-beyond stdlib.  Typical execution time is <1ms for realistic section sizes.
+beyond stdlib. Typical execution time is <1ms for realistic section sizes.
 """
 
 from __future__ import annotations
@@ -17,7 +17,7 @@ class SectionTelemetry:
 
     Computed once immediately after Orpheus generation completes, stored in
     ``SectionState``, and consumed by downstream agents (e.g. bass reads drum
-    telemetry to lock its groove to the kick pattern).  All values are pure
+    telemetry to lock its groove to the kick pattern). All values are pure
     math — no LLM calls, no external I/O.
 
     Written via ``SectionState.store()``, read via ``SectionState.get()``.
@@ -26,19 +26,19 @@ class SectionTelemetry:
         section_name: Human-readable section label (e.g. ``"verse"``, ``"chorus"``).
         instrument: Instrument role that generated this section (e.g. ``"Drums"``).
         tempo: Project tempo in BPM at generation time (always a whole integer).
-        energy_level: Normalised energy 0–1.  Derived from mean velocity × note
-            density capped at 4 notes/beat.  High values → loud, dense sections.
-        density_score: Notes per beat.  Typical ranges: drums 2–8, bass 1–4,
+        energy_level: Normalised energy 0–1. Derived from mean velocity × note
+            density capped at 4 notes/beat. High values → loud, dense sections.
+        density_score: Notes per beat. Typical ranges: drums 2–8, bass 1–4,
             pads 0.5–2.
         groove_vector: 16-element tuple of normalised onset counts per 16th-note
-            bin within a beat.  Index 0 = downbeat, index 4 = second 16th, etc.
+            bin within a beat. Index 0 = downbeat, index 4 = second 16th, etc.
             Used by bass agents to lock their rhythm to the drum grid.
         kick_pattern_hash: MD5 fingerprint (first 8 hex chars) of the sorted kick
-            drum onset positions (GM pitches 35/36).  Empty string when no kicks
-            were generated.  Lets bass agents detect kick pattern changes between
+            drum onset positions (GM pitches 35/36). Empty string when no kicks
+            were generated. Lets bass agents detect kick pattern changes between
             sections.
         rhythmic_complexity: Standard deviation of inter-onset intervals (in
-            beats).  Low values → metronomic; high values → syncopated/polyrhythmic.
+            beats). Low values → metronomic; high values → syncopated/polyrhythmic.
         velocity_mean: Mean MIDI velocity across all notes (0–127 scale).
         velocity_variance: Variance of MIDI velocity — high values indicate
             dynamic (humanised) playing; low values indicate mechanical patterns.

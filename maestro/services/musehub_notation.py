@@ -1,7 +1,7 @@
 """Muse Hub Notation Service — MIDI-to-standard-notation conversion.
 
 Converts MIDI note data (as stored in Muse commits) into quantized, structured
-notation data suitable for rendering as sheet music.  The output is a typed
+notation data suitable for rendering as sheet music. The output is a typed
 JSON payload consumed by the client-side SVG score renderer.
 
 Why this exists
@@ -13,14 +13,14 @@ the score page renders directly in the browser.
 
 Design decisions
 ----------------
-- Server-side quantization only.  The browser renderer is intentionally thin —
+- Server-side quantization only. The browser renderer is intentionally thin
   it receives pre-computed beat-aligned note data and draws SVG, it does not
   re-quantize or re-interpret pitch.
-- Deterministic stubs keyed on ``ref``.  Full Storpheus MIDI introspection will
-  be wired in once the per-commit MIDI endpoint is stable.  Until then, stub
+- Deterministic stubs keyed on ``ref``. Full Storpheus MIDI introspection will
+  be wired in once the per-commit MIDI endpoint is stable. Until then, stub
   data is musically realistic and internally consistent.
-- No external I/O.  This module is pure data — no database, no network calls,
-  no side effects.  Route handlers inject all inputs.
+- No external I/O. This module is pure data — no database, no network calls,
+  no side effects. Route handlers inject all inputs.
 
 Boundary rules
 --------------
@@ -48,11 +48,11 @@ class NotationNote(TypedDict):
     destructuring on the client side.
 
     pitch_name: e.g. "C", "F#", "Bb"
-    octave:     MIDI octave number (4 = middle octave)
-    duration:   note duration as a fraction string, e.g. "1/4", "1/8", "1/2"
+    octave: MIDI octave number (4 = middle octave)
+    duration: note duration as a fraction string, e.g. "1/4", "1/8", "1/2"
     start_beat: beat position (0-indexed from the start of the piece)
-    velocity:   MIDI velocity 0–127
-    track_id:   source track index (matches NotationTrack.track_id)
+    velocity: MIDI velocity 0–127
+    track_id: source track index (matches NotationTrack.track_id)
     """
 
     pitch_name: str
@@ -80,7 +80,7 @@ class NotationResult(NamedTuple):
     Attributes
     ----------
     tracks:
-        List of ``NotationTrack`` dicts, one per instrument part.  Each track
+        List of ``NotationTrack`` dicts, one per instrument part. Each track
         includes clef, key_signature, time_signature, and a list of
         ``NotationNote`` dicts ordered by start_beat.
     tempo:
@@ -156,7 +156,7 @@ def _notes_for_track(
     """Generate a list of quantized notation notes for one track.
 
     Uses a seeded pseudo-random sequence so that the same ref always produces
-    the same notes.  The quantization grid matches the time signature — quarter
+    the same notes. The quantization grid matches the time signature — quarter
     notes for 4/4 and 3/4, eighth notes for 6/8.
     """
     beats_per_bar, _ = (int(x) for x in time_sig.split("/"))
@@ -174,7 +174,7 @@ def _notes_for_track(
             s = _lcg(s)
             pitch_idx = s % 12
             s = _lcg(s)
-            octave = 3 + (s % 3)  # octaves 3, 4, 5
+            octave = 3 + (s % 3) # octaves 3, 4, 5
             s = _lcg(s)
             dur_idx = s % len(_DURATIONS)
             duration = _DURATIONS[dur_idx]
@@ -217,12 +217,12 @@ def convert_ref_to_notation(
     Parameters
     ----------
     ref:
-        Muse commit ref (branch name, tag, or commit SHA).  Used as a seed so
+        Muse commit ref (branch name, tag, or commit SHA). Used as a seed so
         that the same ref always returns the same notation.
     num_tracks:
-        Number of instrument tracks to generate.  Clamped to [1, 8].
+        Number of instrument tracks to generate. Clamped to [1, 8].
     num_bars:
-        Number of bars of music to generate per track.  Clamped to [1, 32].
+        Number of bars of music to generate per track. Clamped to [1, 32].
     """
     num_tracks = max(1, min(8, num_tracks))
     num_bars = max(1, min(32, num_bars))

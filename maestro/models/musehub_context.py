@@ -1,14 +1,14 @@
 """Pydantic v2 request/response models for the agent context endpoint.
 
 The context endpoint (GET /musehub/repos/{repo_id}/context) is the canonical
-agent entry point for composition sessions.  These models define the wire
+agent entry point for composition sessions. These models define the wire
 format that agents receive when they ask: "what do I need to know to start
 composing in this project?"
 
 Depth levels control how much data is returned:
-- ``brief``    — fits in ~2 K tokens; musical state + 3 history entries
+- ``brief`` — fits in ~2 K tokens; musical state + 3 history entries
 - ``standard`` — fits in ~8 K tokens; full state + 10 history + analysis
-- ``verbose``  — uncapped; all history, full issue/PR bodies, full analysis
+- ``verbose`` — uncapped; all history, full issue/PR bodies, full analysis
 """
 from __future__ import annotations
 

@@ -40,7 +40,7 @@ class DiscardVariationResponse(BaseModel):
     or if the state machine rejects the transition.
 
     Attributes:
-        ok: Always ``True`` in the response body.  The endpoint uses HTTP
+        ok: Always ``True`` in the response body. The endpoint uses HTTP
             status codes for failure signalling, so ``ok=False`` is never
             returned.
     """

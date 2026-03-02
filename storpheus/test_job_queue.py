@@ -142,7 +142,7 @@ class TestJobQueue:
         j1 = q.submit(GenerateRequest(genre="lofi", tempo=85), dedupe_key="abc123")
         j2 = q.submit(GenerateRequest(genre="lofi", tempo=85), dedupe_key="abc123")
         assert j1 is j2
-        assert q.depth == 1  # only one job in the queue
+        assert q.depth == 1 # only one job in the queue
 
     @pytest.mark.asyncio
     async def test_dedupe_allows_different_keys(self) -> None:
@@ -167,7 +167,7 @@ class TestJobQueue:
                 assert j1.status == JobStatus.COMPLETE
 
                 j2 = q.submit(GenerateRequest(genre="x", tempo=90), dedupe_key="dup")
-                assert j2 is not j1  # new job created
+                assert j2 is not j1 # new job created
                 assert j2.status == JobStatus.QUEUED
             finally:
                 await q.shutdown()
@@ -214,14 +214,14 @@ class TestJobQueue:
             await q.start()
             try:
                 j1 = q.submit(GenerateRequest(genre="first", tempo=90))
-                q.cancel(j1.id)  # cancel before worker picks it up
+                q.cancel(j1.id) # cancel before worker picks it up
 
                 j2 = q.submit(GenerateRequest(genre="second", tempo=90))
                 await asyncio.wait_for(j2.event.wait(), timeout=5)
             finally:
                 await q.shutdown()
 
-        assert call_count == 1  # only j2 was processed
+        assert call_count == 1 # only j2 was processed
         assert j1.status == JobStatus.CANCELED
         assert j2.status == JobStatus.COMPLETE
 
@@ -240,7 +240,7 @@ class TestJobQueue:
 
                 result = q.cancel(job.id)
                 assert result is not None
-                assert result.status == JobStatus.COMPLETE  # unchanged
+                assert result.status == JobStatus.COMPLETE # unchanged
             finally:
                 await q.shutdown()
 
@@ -257,7 +257,7 @@ class TestJobQueue:
 
                 assert q.get_job(job.id) is not None
                 # Simulate age past TTL
-                job.completed_at = job.completed_at - 600  # type: ignore[operator]
+                job.completed_at = job.completed_at - 600 # type: ignore[operator]
                 # Manually trigger cleanup by calling private method
                 await q._cleanup_loop.__wrapped__(q) if hasattr(q._cleanup_loop, '__wrapped__') else None
                 # Fallback: patch sleep to break immediately

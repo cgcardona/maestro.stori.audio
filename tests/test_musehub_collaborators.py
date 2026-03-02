@@ -1,6 +1,6 @@
 """Tests for Muse Hub collaborators management endpoints.
 
-Covers the acceptance criteria from issue #413:
+Covers the acceptance criteria:
 - GET /musehub/repos/{repo_id}/collaborators returns collaborator list
 - POST /musehub/repos/{repo_id}/collaborators invites a collaborator (owner/admin+)
 - PUT /musehub/repos/{repo_id}/collaborators/{user_id}/permission updates permission

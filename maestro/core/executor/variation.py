@@ -382,7 +382,7 @@ def compute_variation_from_context(
 ) -> Variation:
     """Muse computation — produce a Variation diff from collected musical data.
 
-    This function has NO access to StateStore or EntityRegistry.  All inputs
+    This function has NO access to StateStore or EntityRegistry. All inputs
     are plain data extracted at the Maestro->Muse boundary.
     """
     variation_service = get_variation_service()

@@ -8,11 +8,11 @@ Endpoint summary:
     refs encodes ``base...head`` (same convention as the compare page).
     HTML (default) → interactive emotion-diff report with side-by-side
                      radar charts, delta bar chart, and trajectory timeline.
-    JSON  (``?format=json`` or ``Accept: application/json``)
+    JSON (``?format=json`` or ``Accept: application/json``)
          → raw :class:`~maestro.models.musehub_analysis.EmotionDiffResponse`.
 
 Why a dedicated page instead of reusing the PR detail emotion widget:
-  The PR detail page embeds the emotion radar as one panel among many.  This
+  The PR detail page embeds the emotion radar as one panel among many. This
   page gives the full-screen emotion-diff view with per-ref 8D radar charts,
   a delta bar chart, a prose interpretation, a "Listen to comparison" button,
   and an emotional trajectory timeline — features that do not fit in the PR
@@ -71,7 +71,7 @@ async def emotion_diff_page(
     """Render the 8-axis emotional diff page between two Muse refs.
 
     ``refs`` encodes the two refs as ``base...head``, matching the URL
-    convention used by the compare and similarity pages.  The page renders:
+    convention used by the compare and similarity pages. The page renders:
 
     - Side-by-side 8-dimension radar charts (one per ref, same axis scale)
     - A delta bar chart per axis: green = increase, red = decrease

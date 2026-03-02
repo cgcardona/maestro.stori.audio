@@ -1,17 +1,17 @@
 """muse amend — fold working-tree changes into the most recent commit.
 
-Equivalent to ``git commit --amend``.  The original HEAD commit is replaced
+Equivalent to ``git commit --amend``. The original HEAD commit is replaced
 by a new commit that shares the same *parent* as the original, effectively
-orphaning the original HEAD.  The amended commit is a fresh object with a
+orphaning the original HEAD. The amended commit is a fresh object with a
 new deterministic ``commit_id``.
 
 Flag summary
 ------------
-- ``-m / --message TEXT``  — use TEXT as the new commit message.
-- ``--no-edit``            — keep the original commit message (default when
-                             ``-m`` is omitted).  When both ``-m`` and
+- ``-m / --message TEXT`` — use TEXT as the new commit message.
+- ``--no-edit`` — keep the original commit message (default when
+                             ``-m`` is omitted). When both ``-m`` and
                              ``--no-edit`` are supplied, ``--no-edit`` wins.
-- ``--reset-author``       — reset the author field to the current user
+- ``--reset-author`` — reset the author field to the current user
                              (stub: sets author to empty string until a user
                              identity system is implemented).
 
@@ -26,7 +26,7 @@ Behaviour
 5. Blocked when there are no commits yet on the current branch.
 
 The original HEAD commit becomes an orphan: it is no longer reachable from
-any branch ref but remains in the database for forensic traceability.  A
+any branch ref but remains in the database for forensic traceability. A
 future ``muse gc`` pass may prune it.
 """
 from __future__ import annotations
@@ -82,14 +82,14 @@ async def _amend_async(
     real database.
 
     Args:
-        message:      New commit message, or ``None`` to keep the original.
+        message: New commit message, or ``None`` to keep the original.
                       Ignored when *no_edit* is ``True``.
-        no_edit:      When ``True``, keep the original commit message even if
+        no_edit: When ``True``, keep the original commit message even if
                       *message* is also supplied.
         reset_author: When ``True``, reset the author field (stub: empty string
                       until a user-identity system is introduced).
-        root:         Repository root (directory containing ``.muse/``).
-        session:      An open async DB session.
+        root: Repository root (directory containing ``.muse/``).
+        session: An open async DB session.
 
     Returns:
         The new ``commit_id`` (64-char sha256 hex string).
@@ -105,7 +105,7 @@ async def _amend_async(
     if merge_state is not None:
         typer.echo(
             "❌ A merge is in progress — amend is not allowed.\n"
-            "   Resolve any conflicts and run 'muse commit', or abort the merge first."
+            " Resolve any conflicts and run 'muse commit', or abort the merge first."
         )
         raise typer.Exit(code=ExitCode.USER_ERROR)
 
@@ -114,14 +114,14 @@ async def _amend_async(
     repo_id = repo_data["repo_id"]
 
     # ── Current branch ───────────────────────────────────────────────────
-    head_ref = (muse_dir / "HEAD").read_text().strip()   # "refs/heads/main"
-    branch = head_ref.rsplit("/", 1)[-1]                 # "main"
+    head_ref = (muse_dir / "HEAD").read_text().strip() # "refs/heads/main"
+    branch = head_ref.rsplit("/", 1)[-1] # "main"
     ref_path = muse_dir / pathlib.Path(head_ref)
 
     if not ref_path.exists() or not ref_path.read_text().strip():
         typer.echo(
             "❌ Nothing to amend — no commits yet on this branch.\n"
-            "   Run 'muse commit -m <message>' to create the first commit."
+            " Run 'muse commit -m <message>' to create the first commit."
         )
         raise typer.Exit(code=ExitCode.USER_ERROR)
 
@@ -132,7 +132,7 @@ async def _amend_async(
     if head_commit is None:
         typer.echo(
             f"❌ HEAD commit {head_commit_id[:8]} not found in database.\n"
-            "   Repository may be in an inconsistent state."
+            " Repository may be in an inconsistent state."
         )
         raise typer.Exit(code=ExitCode.INTERNAL_ERROR)
 
@@ -147,14 +147,14 @@ async def _amend_async(
     workdir = root / "muse-work"
     if not workdir.exists():
         typer.echo(
-            "⚠️  No muse-work/ directory found — nothing to snapshot.\n"
-            "     Generate some artifacts before running 'muse amend'."
+            "⚠️ No muse-work/ directory found — nothing to snapshot.\n"
+            " Generate some artifacts before running 'muse amend'."
         )
         raise typer.Exit(code=ExitCode.USER_ERROR)
 
     manifest = build_snapshot_manifest(workdir)
     if not manifest:
-        typer.echo("⚠️  muse-work/ is empty — cannot amend with an empty snapshot.")
+        typer.echo("⚠️ muse-work/ is empty — cannot amend with an empty snapshot.")
         raise typer.Exit(code=ExitCode.USER_ERROR)
 
     snapshot_id = compute_snapshot_id(manifest)
@@ -185,7 +185,7 @@ async def _amend_async(
     await session.flush()
 
     # ── Persist amended commit ────────────────────────────────────────────
-    author = ""  # stub: no user-identity system yet; reset_author is a no-op for now
+    author = "" # stub: no user-identity system yet; reset_author is a no-op for now
     new_commit = MuseCliCommit(
         commit_id=new_commit_id,
         repo_id=repo_id,

@@ -6,7 +6,7 @@ Using named models instead of raw ``dict[str, object]`` means the type checker
 — not the programmer — enforces what fields are present and what they contain.
 
 Wire format note: all fields use camelCase names because these models do **not**
-extend ``CamelModel`` — the field names are camelCase by declaration.  This
+extend ``CamelModel`` — the field names are camelCase by declaration. This
 matches the existing wire format the Swift frontend already consumes.
 """
 
@@ -23,20 +23,20 @@ class ProtocolInfoResponse(BaseModel):
     """Summary response for ``GET /protocol``.
 
     Lightweight snapshot of the active protocol: version string, content hash,
-    and a flat list of registered event type names.  Suitable for polling or
+    and a flat list of registered event type names. Suitable for polling or
     drift detection without the overhead of fetching full JSON schemas.
 
     Attributes:
         protocolVersion: Semver string derived from ``pyproject.toml`` (e.g.
-            ``"1.4.2"``).  Bumped on any schema-breaking change.
+            ``"1.4.2"``). Bumped on any schema-breaking change.
         protocolHash: SHA-256 content hash of the full serialised schema (hex
-            string).  Changes whenever any event shape, field, or tool
+            string). Changes whenever any event shape, field, or tool
             definition changes, even without a version bump.
         eventTypes: Alphabetically sorted list of every registered SSE event
             type name (e.g. ``["complete", "error", "generator_complete",
-            …]``).  Used to enumerate valid event keys without fetching their
+            …]``). Used to enumerate valid event keys without fetching their
             full schemas.
-        eventCount: Number of registered event types.  Equals
+        eventCount: Number of registered event types. Equals
             ``len(eventTypes)``.
     """
 
@@ -66,14 +66,14 @@ class ProtocolInfoResponse(BaseModel):
 class ProtocolEventsResponse(BaseModel):
     """Response for ``GET /protocol/events.json``.
 
-    Full JSON Schema for every registered SSE event type.  The Stori DAW
+    Full JSON Schema for every registered SSE event type. The Stori DAW
     frontend consumes this endpoint to auto-generate Swift ``Codable`` structs
     and to validate incoming SSE payloads at runtime.
 
     Attributes:
         protocolVersion: Semver string of the protocol version that produced
             these schemas.
-        events: Map from event type name to its JSON Schema object.  Keys are
+        events: Map from event type name to its JSON Schema object. Keys are
             event type strings (e.g. ``"complete"``); values are ``dict``
             objects conforming to JSON Schema draft-07 (``EventSchemaMap``).
     """
@@ -93,7 +93,7 @@ class ProtocolEventsResponse(BaseModel):
 class ProtocolToolsResponse(BaseModel):
     """Response for ``GET /protocol/tools.json``.
 
-    All registered MCP tool definitions in MCP wire format.  Used by the
+    All registered MCP tool definitions in MCP wire format. Used by the
     frontend to build the tool palette and by the MCP adapter to expose tools
     to Cursor / Claude Desktop.
 
@@ -102,7 +102,7 @@ class ProtocolToolsResponse(BaseModel):
             these tool definitions.
         tools: Ordered list of every registered ``MCPToolDef`` (TypedDict with
             ``name``, ``description``, ``inputSchema``).
-        toolCount: Number of tool definitions.  Equals ``len(tools)``.
+        toolCount: Number of tool definitions. Equals ``len(tools)``.
     """
 
     protocolVersion: str = Field(
@@ -124,7 +124,7 @@ class ProtocolSchemaResponse(BaseModel):
     """Response for ``GET /protocol/schema.json``.
 
     Unified schema snapshot — version, hash, all event schemas, enum
-    definitions, and tool definitions in one fetch.  Cacheable by
+    definitions, and tool definitions in one fetch. Cacheable by
     ``protocolHash``; the frontend uses this for full Swift type generation
     and for verifying that the running backend matches the code it was
     compiled against.
@@ -132,15 +132,15 @@ class ProtocolSchemaResponse(BaseModel):
     Attributes:
         protocolVersion: Semver string of the protocol version that produced
             this snapshot.
-        protocolHash: SHA-256 content hash of this snapshot.  Stable across
+        protocolHash: SHA-256 content hash of this snapshot. Stable across
             identical schema content; changes on any structural edit.
         events: Map from event type name to its JSON Schema object
             (``EventSchemaMap``).
         enums: Map from enum name to its sorted list of allowed string values
-            (``EnumDefinitionMap``).  Used to generate Swift enum types.
+            (``EnumDefinitionMap``). Used to generate Swift enum types.
         tools: Ordered list of every registered ``MCPToolDef``.
-        toolCount: Number of tool definitions.  Equals ``len(tools)``.
-        eventCount: Number of registered event types.  Equals ``len(events)``.
+        toolCount: Number of tool definitions. Equals ``len(tools)``.
+        eventCount: Number of registered event types. Equals ``len(events)``.
     """
 
     protocolVersion: str = Field(

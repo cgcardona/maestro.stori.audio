@@ -1,28 +1,28 @@
 """Tests for the Muse Hub notification inbox UI page (ui_notifications.py).
 
-Covers issue #428 — GET /musehub/ui/notifications:
+Covers — GET /musehub/ui/notifications:
 
 HTML page (unauthenticated shell):
-- test_notifications_page_returns_200_html         — page renders without auth
-- test_notifications_page_contains_load_function   — loadNotifications() JS present
+- test_notifications_page_returns_200_html — page renders without auth
+- test_notifications_page_contains_load_function — loadNotifications() JS present
 - test_notifications_page_contains_filter_controls — type filter and unread-only controls
-- test_notifications_page_contains_mark_all_read   — markAllRead() JS function present
-- test_notifications_page_contains_mark_one_read   — markOneRead() JS function present
-- test_notifications_page_contains_pagination      — renderPagination() JS function present
+- test_notifications_page_contains_mark_all_read — markAllRead() JS function present
+- test_notifications_page_contains_mark_one_read — markOneRead() JS function present
+- test_notifications_page_contains_pagination — renderPagination() JS function present
 
 JSON alternate (authenticated):
-- test_notifications_json_requires_auth            — JSON path returns 401 without token
-- test_notifications_json_returns_empty_inbox      — authenticated user with no notifs
-- test_notifications_json_pagination               — per_page / page respected
-- test_notifications_json_type_filter_mention      — type=mention filters by event_type
-- test_notifications_json_type_filter_watch        — type=watch filters by event_type
-- test_notifications_json_type_filter_fork         — type=fork filters by event_type
-- test_notifications_json_unread_only              — unread_only=true excludes read items
-- test_notifications_json_mark_one_read_reflected  — read status respected in JSON response
-- test_notifications_json_unread_count_global      — unread_count not scoped by type filter
-- test_notifications_json_accept_header            — Accept: application/json triggers JSON path
-- test_notifications_json_pagination_metadata      — total / total_pages / page in response
-- test_notifications_json_empty_state_structure    — empty inbox returns valid schema
+- test_notifications_json_requires_auth — JSON path returns 401 without token
+- test_notifications_json_returns_empty_inbox — authenticated user with no notifs
+- test_notifications_json_pagination — per_page / page respected
+- test_notifications_json_type_filter_mention — type=mention filters by event_type
+- test_notifications_json_type_filter_watch — type=watch filters by event_type
+- test_notifications_json_type_filter_fork — type=fork filters by event_type
+- test_notifications_json_unread_only — unread_only=true excludes read items
+- test_notifications_json_mark_one_read_reflected — read status respected in JSON response
+- test_notifications_json_unread_count_global — unread_count not scoped by type filter
+- test_notifications_json_accept_header — Accept: application/json triggers JSON path
+- test_notifications_json_pagination_metadata — total / total_pages / page in response
+- test_notifications_json_empty_state_structure — empty inbox returns valid schema
 """
 from __future__ import annotations
 
@@ -388,7 +388,7 @@ async def test_notifications_json_only_own_notifications(
     await _seed(
         db_session,
         _make_notif(_TEST_USER_ID),
-        _make_notif(other_user_id),   # belongs to a different user
+        _make_notif(other_user_id), # belongs to a different user
     )
     resp = await client.get(
         _UI_PATH, params={"format": "json"}, headers=auth_headers

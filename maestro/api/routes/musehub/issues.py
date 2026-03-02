@@ -1,20 +1,20 @@
 """Muse Hub issue tracking route handlers.
 
 Endpoint summary:
-  POST /musehub/repos/{repo_id}/issues                              — create issue (auth required)
-  GET  /musehub/repos/{repo_id}/issues                              — list issues (public: no auth)
-  GET  /musehub/repos/{repo_id}/issues/{issue_number}               — get issue (public: no auth)
-  PATCH /musehub/repos/{repo_id}/issues/{issue_number}              — edit title/body/labels (auth required)
-  POST /musehub/repos/{repo_id}/issues/{issue_number}/close         — close issue (auth required)
-  POST /musehub/repos/{repo_id}/issues/{issue_number}/reopen        — reopen issue (auth required)
-  POST /musehub/repos/{repo_id}/issues/{issue_number}/assign        — set/clear assignee (auth required)
-  POST /musehub/repos/{repo_id}/issues/{issue_number}/milestone     — set/clear milestone (auth required)
-  DELETE /musehub/repos/{repo_id}/issues/{issue_number}/milestone   — remove milestone (auth required)
-  POST /musehub/repos/{repo_id}/issues/{issue_number}/labels        — bulk assign labels (auth required)
+  POST /musehub/repos/{repo_id}/issues — create issue (auth required)
+  GET /musehub/repos/{repo_id}/issues — list issues (public: no auth)
+  GET /musehub/repos/{repo_id}/issues/{issue_number} — get issue (public: no auth)
+  PATCH /musehub/repos/{repo_id}/issues/{issue_number} — edit title/body/labels (auth required)
+  POST /musehub/repos/{repo_id}/issues/{issue_number}/close — close issue (auth required)
+  POST /musehub/repos/{repo_id}/issues/{issue_number}/reopen — reopen issue (auth required)
+  POST /musehub/repos/{repo_id}/issues/{issue_number}/assign — set/clear assignee (auth required)
+  POST /musehub/repos/{repo_id}/issues/{issue_number}/milestone — set/clear milestone (auth required)
+  DELETE /musehub/repos/{repo_id}/issues/{issue_number}/milestone — remove milestone (auth required)
+  POST /musehub/repos/{repo_id}/issues/{issue_number}/labels — bulk assign labels (auth required)
   DELETE /musehub/repos/{repo_id}/issues/{issue_number}/labels/{label_name} — remove one label (auth required)
 
-  GET  /musehub/repos/{repo_id}/issues/{issue_number}/comments      — list comments (public: no auth)
-  POST /musehub/repos/{repo_id}/issues/{issue_number}/comments      — create comment (auth required)
+  GET /musehub/repos/{repo_id}/issues/{issue_number}/comments — list comments (public: no auth)
+  POST /musehub/repos/{repo_id}/issues/{issue_number}/comments — create comment (auth required)
   DELETE /musehub/repos/{repo_id}/issues/{issue_number}/comments/{comment_id} — delete comment (auth)
 
 Milestone CRUD (GET/POST/GET-single/PATCH/DELETE) lives in maestro.api.routes.musehub.milestones.

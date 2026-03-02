@@ -31,7 +31,7 @@ class ExecutionResult:
             on failure).
         error: Human-readable error string when ``success`` is ``False``.
         entity_created: Entity UUID when the tool created a track, region, or
-            bus; ``None`` otherwise.  Used by ``ExecutionContext.created_entities``
+            bus; ``None`` otherwise. Used by ``ExecutionContext.created_entities``
             to build the forward-reference resolution map.
     """
 
@@ -47,7 +47,7 @@ class ExecutionContext:
     """Mutable accumulator for one plan execution run.
 
     Holds the live ``StateStore`` transaction, trace context, and all results
-    emitted so far.  Passed through every tool handler and read at the end to
+    emitted so far. Passed through every tool handler and read at the end to
     produce the SSE summary event.
 
     Attributes:
@@ -139,7 +139,7 @@ class VariationExecutionContext:
     """Mutable execution state — lives only inside the executor.
 
     Holds the StateStore reference needed for entity resolution during
-    tool dispatch.  Must NOT cross the Muse boundary.
+    tool dispatch. Must NOT cross the Muse boundary.
     """
 
     store: StateStore
@@ -162,7 +162,7 @@ class VariationContext:
         """Record the pre-execution note state for a region (idempotent).
 
         Guards against double-capture: if ``region_id`` is already in
-        ``self.base.notes``, the call is silently skipped.  This matters for
+        ``self.base.notes``, the call is silently skipped. This matters for
         tools like ``stori_clear_notes`` + ``stori_add_notes`` that operate on
         the same region in the same plan.
         """

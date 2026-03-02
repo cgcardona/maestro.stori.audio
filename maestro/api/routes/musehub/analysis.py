@@ -1,25 +1,25 @@
 """Muse Hub Analysis API — agent-friendly structured JSON for all musical dimensions.
 
 Endpoint summary:
-  GET /musehub/repos/{repo_id}/analysis/{ref}                       — all 13 dimensions
-  GET /musehub/repos/{repo_id}/analysis/{ref}/emotion-map           — emotion map (issue #227)
-  GET /musehub/repos/{repo_id}/analysis/{ref}/recall?q=<query>      — semantic recall (issue #410)
-  GET /musehub/repos/{repo_id}/analysis/{ref}/similarity            — cross-ref similarity (issue #406)
-  GET /musehub/repos/{repo_id}/analysis/{ref}/emotion-diff?base=X   — 8-axis emotion diff (issue #420)
-  GET /musehub/repos/{repo_id}/analysis/{ref}/dynamics/page         — per-track dynamics page
-  GET /musehub/repos/{repo_id}/analysis/{ref}/{dimension}           — one dimension
+  GET /musehub/repos/{repo_id}/analysis/{ref} — all 13 dimensions
+  GET /musehub/repos/{repo_id}/analysis/{ref}/emotion-map — emotion map
+  GET /musehub/repos/{repo_id}/analysis/{ref}/recall?q=<query> — semantic recall
+  GET /musehub/repos/{repo_id}/analysis/{ref}/similarity — cross-ref similarity
+  GET /musehub/repos/{repo_id}/analysis/{ref}/emotion-diff?base=X — 8-axis emotion diff
+  GET /musehub/repos/{repo_id}/analysis/{ref}/dynamics/page — per-track dynamics page
+  GET /musehub/repos/{repo_id}/analysis/{ref}/{dimension} — one dimension
 
 Supported dimensions (13):
   harmony, dynamics, motifs, form, groove, emotion, chord-map, contour,
   key, tempo, meter, similarity, divergence
 
 Query params (both endpoints):
-  ?track=<instrument>   — restrict analysis to a named instrument track
-  ?section=<label>      — restrict analysis to a named musical section (e.g. chorus)
+  ?track=<instrument> — restrict analysis to a named instrument track
+  ?section=<label> — restrict analysis to a named musical section (e.g. chorus)
 
 Route ordering note:
   Specific fixed-segment routes (/emotion-map, /similarity, /dynamics/page) MUST be
-  registered before the /{dimension} catch-all so FastAPI matches them first.  New
+  registered before the /{dimension} catch-all so FastAPI matches them first. New
   fixed-segment routes added in future batches must follow this same ordering rule.
 
 Cache semantics:
@@ -27,7 +27,7 @@ Cache semantics:
   Agents may use these to avoid re-fetching unchanged analysis.
 
 Auth: all endpoints require a valid JWT Bearer token (inherited from the
-musehub router-level dependency).  No business logic lives here — all
+musehub router-level dependency). No business logic lives here — all
 analysis is delegated to :mod:`maestro.services.musehub_analysis`.
 """
 from __future__ import annotations
@@ -64,7 +64,7 @@ _LAST_MODIFIED = datetime(2026, 1, 1, tzinfo=timezone.utc).strftime("%a, %d %b %
 def _etag(repo_id: str, ref: str, dimension: str) -> str:
     """Derive a stable ETag for a dimension+ref combination."""
     raw = f"{repo_id}:{ref}:{dimension}"
-    return f'"{hashlib.md5(raw.encode()).hexdigest()}"'  # noqa: S324 — non-crypto use
+    return f'"{hashlib.md5(raw.encode()).hexdigest()}"' # noqa: S324 — non-crypto use
 
 
 @router.get(
@@ -74,7 +74,7 @@ def _etag(repo_id: str, ref: str, dimension: str) -> str:
     summary="Aggregate analysis — all 13 musical dimensions for a ref",
     description=(
         "Returns structured JSON for all 13 musical dimensions of a Muse commit ref "
-        "in a single response.  Agents that need a full musical picture should prefer "
+        "in a single response. Agents that need a full musical picture should prefer "
         "this endpoint over 13 sequential per-dimension requests."
     ),
 )
@@ -152,9 +152,9 @@ async def get_emotion_map(
     MuseHub emotion map page needs in a single authenticated request.
 
     Emotion vectors use four normalised axes (all 0.0–1.0):
-    - ``energy``   — compositional drive/activity level
-    - ``valence``  — brightness/positivity (0=dark, 1=bright)
-    - ``tension``  — harmonic and rhythmic tension
+    - ``energy`` — compositional drive/activity level
+    - ``valence`` — brightness/positivity (0=dark, 1=bright)
+    - ``tension`` — harmonic and rhythmic tension
     - ``darkness`` — brooding/ominous quality (inversely correlated with valence)
     """
     repo = await musehub_repository.get_repo(db, repo_id)
@@ -245,7 +245,7 @@ async def get_emotion_diff(
         "to a natural-language description.\n\n"
         "**Example:** ``?q=jazzy+chord+progression+with+swing+groove``\n\n"
         "Results are ranked by cosine similarity in the 128-dim musical feature "
-        "embedding space.  Each match includes the commit ID, message, branch, "
+        "embedding space. Each match includes the commit ID, message, branch, "
         "similarity score (0–1), and the musical dimensions most responsible for "
         "the match.\n\n"
         "Use ``?limit=N`` to control how many results are returned (default 10, max 50). "
@@ -265,7 +265,7 @@ async def get_analysis_recall(
     """Return commits semantically matching a natural-language query.
 
     Embeds ``q`` into the 128-dim musical feature space and retrieves the
-    ``limit`` most similar commits reachable from ``ref``.  Authentication is
+    ``limit`` most similar commits reachable from ``ref``. Authentication is
     required unconditionally — the recall index may surface private content.
 
     The response is deterministic for a given (repo_id, ref, q) triple so
@@ -274,9 +274,9 @@ async def get_analysis_recall(
 
     Args:
         repo_id: Muse Hub repo UUID.
-        ref:     Muse commit ref scoping the search.
-        q:       Natural-language query string.
-        limit:   Result count cap (1–50, default 10).
+        ref: Muse commit ref scoping the search.
+        q: Natural-language query string.
+        limit: Result count cap (1–50, default 10).
     """
     repo = await musehub_repository.get_repo(db, repo_id)
     if repo is None:
@@ -329,7 +329,7 @@ async def get_ref_similarity(
     """Return cross-ref similarity between ``ref`` and ``compare`` for a Muse repo.
 
     Scores all 10 musical dimensions independently, then computes an overall
-    weighted mean.  The ``interpretation`` field provides a human-readable
+    weighted mean. The ``interpretation`` field provides a human-readable
     summary identifying the dominant divergence axis when overall similarity
     is below 0.90.
 
@@ -438,7 +438,7 @@ async def get_dimension_analysis(
     description=(
         "Returns enriched per-track dynamic analysis: velocity profiles, arc "
         "classifications, peak velocity, velocity range, and cross-track loudness "
-        "data.  Consumed by the Dynamics Analysis web page and by AI agents that "
+        "data. Consumed by the Dynamics Analysis web page and by AI agents that "
         "need per-track dynamic context for orchestration decisions. "
         "Use ``?track=<name>`` to restrict to a single instrument track. "
         "Use ``?section=<label>`` to restrict to a musical section."
@@ -490,7 +490,7 @@ async def get_dynamics_page_data(
 
 # Dedicated harmony router — must be included BEFORE the main analysis router in
 # __init__.py so this specific path takes priority over the generic /{dimension}
-# catch-all route.  See: maestro/api/routes/musehub/__init__.py.
+# catch-all route. See: maestro/api/routes/musehub/__init__.py.
 harmony_router = APIRouter()
 
 
@@ -528,7 +528,7 @@ async def get_harmony_analysis(
 
     Provides a Roman-numeral view of the harmonic content — scale degrees,
     tonal functions, cadence positions, and detected modulations — structured
-    for agent consumption.  Maps to ``muse harmony --ref {ref}``.
+    for agent consumption. Maps to ``muse harmony --ref {ref}``.
 
     Access control mirrors the other analysis endpoints: public repos are
     accessible without authentication; private repos require a valid JWT.

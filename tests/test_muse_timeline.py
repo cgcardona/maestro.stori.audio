@@ -28,7 +28,7 @@ from sqlalchemy.pool import StaticPool
 from typer.testing import CliRunner
 
 from maestro.db.database import Base
-import maestro.muse_cli.models  # noqa: F401 — registers models with Base.metadata
+import maestro.muse_cli.models # noqa: F401 — registers models with Base.metadata
 from maestro.muse_cli.app import cli
 from maestro.muse_cli.commands.timeline import (
     _activity_bar,
@@ -66,11 +66,11 @@ def _repo_id() -> str:
 
 
 def _snapshot_id() -> str:
-    return uuid.uuid4().hex * 2  # 64-char hex
+    return uuid.uuid4().hex * 2 # 64-char hex
 
 
 def _commit_id() -> str:
-    return uuid.uuid4().hex * 2  # 64-char hex
+    return uuid.uuid4().hex * 2 # 64-char hex
 
 
 # ---------------------------------------------------------------------------
@@ -214,7 +214,7 @@ def test_make_entry_parses_emotion_and_section_and_tracks() -> None:
     assert entry.emotion == "joyful"
     assert entry.sections == ("chorus",)
     assert set(entry.tracks) == {"keys", "vocals"}
-    assert entry.activity == 2  # two tracks
+    assert entry.activity == 2 # two tracks
 
 
 def test_make_entry_defaults_when_no_tags() -> None:
@@ -250,7 +250,7 @@ def test_activity_bar_max_activity_produces_max_blocks() -> None:
 def test_activity_bar_scales_proportionally() -> None:
     """Half-max activity should produce ~half the blocks."""
     bar = _activity_bar(5, 10)
-    assert 4 <= len(bar) <= 6  # allow rounding
+    assert 4 <= len(bar) <= 6 # allow rounding
 
 
 def test_activity_bar_zero_max_returns_minimum() -> None:
@@ -285,9 +285,9 @@ async def test_timeline_outputs_chronological_history(
     )
 
     assert result.total_commits == 3
-    assert result.entries[0].commit_id == c1.commit_id   # oldest first
+    assert result.entries[0].commit_id == c1.commit_id # oldest first
     assert result.entries[1].commit_id == c2.commit_id
-    assert result.entries[2].commit_id == c3.commit_id   # newest last
+    assert result.entries[2].commit_id == c3.commit_id # newest last
 
 
 @pytest.mark.anyio
@@ -606,7 +606,7 @@ async def test_timeline_async_default_output(
     )
 
     assert result.total_commits == 2
-    assert result.entries[0].commit_id == c1.commit_id  # oldest first
+    assert result.entries[0].commit_id == c1.commit_id # oldest first
     out = capsys.readouterr().out
     assert "main" in out
     assert "2026-02-01" in out
@@ -793,7 +793,7 @@ async def test_timeline_async_graceful_with_no_metadata_tags(
     db_session: AsyncSession,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """_timeline_async renders commits with no tags without crashing (shows '—')."""
+    """_timeline_async renders commits with no tags without crashing (shows '')."""
     rid = _init_muse_repo(tmp_path)
     c1 = await _insert_commit(db_session, rid, "main", "Raw commit", _utc(2026, 2, 1))
     await db_session.commit()

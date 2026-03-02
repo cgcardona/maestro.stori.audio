@@ -1,13 +1,13 @@
 """Tests for Muse Hub label management endpoints.
 
-Covers all acceptance criteria from issue #409:
-- GET  /musehub/repos/{repo_id}/labels            — list labels (public)
-- POST /musehub/repos/{repo_id}/labels            — create label (auth required)
+Covers all acceptance criteria:
+- GET /musehub/repos/{repo_id}/labels — list labels (public)
+- POST /musehub/repos/{repo_id}/labels — create label (auth required)
 - PATCH /musehub/repos/{repo_id}/labels/{label_id} — update label (auth required)
 - DELETE /musehub/repos/{repo_id}/labels/{label_id} — delete label (auth required)
-- POST .../issues/{number}/labels                  — assign labels to issue (auth required)
-- DELETE .../issues/{number}/labels/{label_id}     — remove label from issue (auth required)
-- POST .../pull-requests/{pr_id}/labels            — assign labels to PR (auth required)
+- POST .../issues/{number}/labels — assign labels to issue (auth required)
+- DELETE .../issues/{number}/labels/{label_id} — remove label from issue (auth required)
+- POST .../pull-requests/{pr_id}/labels — assign labels to PR (auth required)
 - DELETE .../pull-requests/{pr_id}/labels/{label_id} — remove label from PR (auth required)
 
 All tests use the shared ``client``, ``auth_headers``, and ``db_session``

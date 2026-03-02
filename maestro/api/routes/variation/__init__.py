@@ -2,11 +2,11 @@
 Variation route package.
 
 Implements the Muse/Variation protocol:
-- POST /variation/propose  — create record, launch background generation
-- GET  /variation/stream   — real SSE stream with envelopes + replay
-- GET  /variation/{id}     — poll status + phrases (reconnect support)
-- POST /variation/commit   — apply accepted phrases from store
-- POST /variation/discard  — cancel generation, transition to DISCARDED
+- POST /variation/propose — create record, launch background generation
+- GET /variation/stream — real SSE stream with envelopes + replay
+- GET /variation/{id} — poll status + phrases (reconnect support)
+- POST /variation/commit — apply accepted phrases from store
+- POST /variation/discard — cancel generation, transition to DISCARDED
 
 Public re-exports for test imports:
     _record_to_variation — used by test_variation_protocol.py

@@ -1,4 +1,4 @@
-"""Tests for progressive instrument generation (#27).
+"""Tests for progressive instrument generation.
 
 Covers:
 - InstrumentTier classification for all four tiers
@@ -90,8 +90,8 @@ class TestClassifyInstrumentTier:
         assert classify_instrument_tier("Piano") == InstrumentTier.HARMONY
 
     def test_whitespace_stripped(self) -> None:
-        assert classify_instrument_tier("  drums  ") == InstrumentTier.DRUMS
-        assert classify_instrument_tier("  bass  ") == InstrumentTier.BASS
+        assert classify_instrument_tier(" drums ") == InstrumentTier.DRUMS
+        assert classify_instrument_tier(" bass ") == InstrumentTier.BASS
 
 
 # ---------------------------------------------------------------------------
@@ -249,8 +249,8 @@ class TestDoProgressiveGenerate:
             nonlocal call_count
             call_count += 1
             if call_count == 1:
-                return _make_ok_response()  # drums ok
-            return _make_err_response("bass gpu oom")  # bass fails
+                return _make_ok_response() # drums ok
+            return _make_err_response("bass gpu oom") # bass fails
 
         with patch("music_service._do_generate", side_effect=mock_generate):
             request = ProgressiveGenerateRequest(instruments=["drums", "bass", "piano"])

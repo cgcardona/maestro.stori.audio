@@ -36,10 +36,10 @@ from dataclasses import dataclass
 @dataclass
 class GMInstrument:
     """A General MIDI instrument."""
-    program: int  # 0-127
-    name: str  # Official GM name
-    category: str  # Instrument category
-    aliases: tuple[str, ...]  # Alternative names for matching
+    program: int # 0-127
+    name: str # Official GM name
+    category: str # Instrument category
+    aliases: tuple[str, ...] # Alternative names for matching
 
 
 # =============================================================================
@@ -262,8 +262,8 @@ def get_instrument_name(program: int) -> str:
 def _normalize(text: str) -> str:
     """Normalize text for matching: lowercase, remove punctuation, collapse whitespace."""
     text = text.lower()
-    text = re.sub(r'[^\w\s]', ' ', text)  # Remove punctuation
-    text = re.sub(r'\s+', ' ', text).strip()  # Collapse whitespace
+    text = re.sub(r'[^\w\s]', ' ', text) # Remove punctuation
+    text = re.sub(r'\s+', ' ', text).strip() # Collapse whitespace
     return text
 
 
@@ -293,13 +293,13 @@ def infer_gm_program(
         
     Examples:
         >>> infer_gm_program("Acoustic Guitar")
-        25  # Steel string (default acoustic)
+        25 # Steel string (default acoustic)
         >>> infer_gm_program("Electric Bass")
-        33  # Finger bass
+        33 # Finger bass
         >>> infer_gm_program("Rhodes")
-        4   # Electric Piano 1
+        4 # Electric Piano 1
         >>> infer_gm_program("Drums")
-        None  # Drums use channel 10, no program needed
+        None # Drums use channel 10, no program needed
     """
     if not text:
         return default_program
@@ -310,7 +310,7 @@ def infer_gm_program(
     # Special case: drums don't need a GM program (channel 10)
     drum_keywords = {"drums", "drum", "kick", "snare", "hihat", "hi-hat", "percussion", "perc", "beat", "kit"}
     if text_tokens & drum_keywords:
-        return None  # Drums use channel 10
+        return None # Drums use channel 10
     
     best_match: GMInstrument | None = None
     best_score = 0
@@ -331,7 +331,7 @@ def infer_gm_program(
             
             # Alias is substring of text
             if alias_normalized in normalized:
-                score = len(alias_normalized) * 10  # Longer matches score higher
+                score = len(alias_normalized) * 10 # Longer matches score higher
                 if score > best_score:
                     best_score = score
                     best_match = inst
@@ -349,26 +349,26 @@ def infer_gm_program(
     
     # Fallback: check category keywords
     category_defaults: dict[str, int] = {
-        "piano": 0,       # Acoustic Grand Piano
-        "keys": 0,        # Acoustic Grand Piano
-        "keyboard": 0,    # Acoustic Grand Piano
-        "organ": 16,      # Drawbar Organ
-        "guitar": 25,     # Acoustic Guitar (steel)
-        "bass": 33,       # Electric Bass (finger)
-        "strings": 48,    # String Ensemble 1
-        "brass": 61,      # Brass Section
-        "sax": 66,        # Tenor Sax
-        "saxophone": 66,  # Tenor Sax
-        "flute": 73,      # Flute
-        "synth": 80,      # Synth Lead (square)
-        "lead": 80,       # Synth Lead
-        "pad": 88,        # Synth Pad (new age)
-        "choir": 52,      # Choir Aahs
-        "voice": 52,      # Choir Aahs
-        "violin": 40,     # Violin
-        "cello": 42,      # Cello
-        "trumpet": 56,    # Trumpet
-        "trombone": 57,   # Trombone
+        "piano": 0, # Acoustic Grand Piano
+        "keys": 0, # Acoustic Grand Piano
+        "keyboard": 0, # Acoustic Grand Piano
+        "organ": 16, # Drawbar Organ
+        "guitar": 25, # Acoustic Guitar (steel)
+        "bass": 33, # Electric Bass (finger)
+        "strings": 48, # String Ensemble 1
+        "brass": 61, # Brass Section
+        "sax": 66, # Tenor Sax
+        "saxophone": 66, # Tenor Sax
+        "flute": 73, # Flute
+        "synth": 80, # Synth Lead (square)
+        "lead": 80, # Synth Lead
+        "pad": 88, # Synth Pad (new age)
+        "choir": 52, # Choir Aahs
+        "voice": 52, # Choir Aahs
+        "violin": 40, # Violin
+        "cello": 42, # Cello
+        "trumpet": 56, # Trumpet
+        "trombone": 57, # Trombone
     }
     
     for keyword, program in category_defaults.items():
@@ -1527,7 +1527,7 @@ def get_genre_gm_guidance(style: str, role: str) -> str:
 
     lines = [f"GENRE GM VOICE GUIDANCE ({style}):", "Recommended GM programs for this role:"]
     for prog, desc in programs:
-        lines.append(f"  - gmProgram={prog}: {desc}")
+        lines.append(f" - gmProgram={prog}: {desc}")
     lines.append("Use the FIRST option unless the track name or prompt strongly suggests another.")
     return "\n".join(lines)
 
@@ -1553,28 +1553,28 @@ def get_default_program_for_role(role: str) -> int | None:
         "percussion": None,
         
         # Bass
-        "bass": 33,  # Electric Bass (finger)
+        "bass": 33, # Electric Bass (finger)
         
         # Chords/Harmony
-        "chords": 4,  # Electric Piano 1 (Rhodes)
-        "keys": 0,    # Acoustic Grand Piano
-        "piano": 0,   # Acoustic Grand Piano
-        "pads": 88,   # Synth Pad
-        "pad": 88,    # Synth Pad
+        "chords": 4, # Electric Piano 1 (Rhodes)
+        "keys": 0, # Acoustic Grand Piano
+        "piano": 0, # Acoustic Grand Piano
+        "pads": 88, # Synth Pad
+        "pad": 88, # Synth Pad
         
         # Melody
-        "melody": 80,  # Synth Lead
-        "lead": 80,    # Synth Lead
+        "melody": 80, # Synth Lead
+        "lead": 80, # Synth Lead
         
         # Arpeggio
-        "arp": 80,     # Synth Lead
+        "arp": 80, # Synth Lead
         
         # Strings
-        "strings": 48,  # String Ensemble
+        "strings": 48, # String Ensemble
         
         # Other
-        "fx": 99,      # Atmosphere
-        "sfx": 99,     # Atmosphere
+        "fx": 99, # Atmosphere
+        "sfx": 99, # Atmosphere
     }
     
     return role_to_program.get(role_lower)
@@ -1583,10 +1583,10 @@ def get_default_program_for_role(role: str) -> int | None:
 @dataclass
 class GMInferenceResult:
     """Result of GM program inference with context."""
-    program: int | None  # GM program (0-127) or None for drums
-    instrument_name: str    # Human-readable name
-    confidence: str         # "high", "medium", "low", "none"
-    is_drums: bool          # True if this should use channel 10
+    program: int | None # GM program (0-127) or None for drums
+    instrument_name: str # Human-readable name
+    confidence: str # "high", "medium", "low", "none"
+    is_drums: bool # True if this should use channel 10
     
     @property
     def needs_program_change(self) -> bool:
@@ -1687,22 +1687,22 @@ def infer_gm_program_with_context(
 # ---------------------------------------------------------------------------
 
 _GM_CATEGORY_ICONS: list[tuple[range, str]] = [
-    (range(0,   8),   "pianokeys"),              # Piano
-    (range(8,  16),   "instrument.xylophone"),   # Chromatic Percussion
-    (range(16, 24),   "pianokeys"),              # Organ (keyboard family)
-    (range(24, 32),   "guitars.fill"),            # Guitar
-    (range(32, 40),   "guitars.fill"),            # Bass (guitar family)
-    (range(40, 48),   "instrument.violin"),       # Strings
-    (range(48, 56),   "instrument.violin"),       # Ensemble / Strings
-    (range(56, 64),   "instrument.trumpet"),      # Brass
-    (range(64, 72),   "instrument.saxophone"),    # Reed
-    (range(72, 80),   "instrument.flute"),        # Pipe
-    (range(80, 88),   "pianokeys.inverse"),       # Synth Lead
-    (range(88, 96),   "pianokeys.inverse"),       # Synth Pad
-    (range(96, 104),  "sparkles"),                # Synth Effects
-    (range(104, 112), "globe"),                   # Ethnic
-    (range(112, 120), "instrument.drum"),         # Percussive
-    (range(120, 128), "sparkles"),                # Sound Effects
+    (range(0, 8), "pianokeys"), # Piano
+    (range(8, 16), "instrument.xylophone"), # Chromatic Percussion
+    (range(16, 24), "pianokeys"), # Organ (keyboard family)
+    (range(24, 32), "guitars.fill"), # Guitar
+    (range(32, 40), "guitars.fill"), # Bass (guitar family)
+    (range(40, 48), "instrument.violin"), # Strings
+    (range(48, 56), "instrument.violin"), # Ensemble / Strings
+    (range(56, 64), "instrument.trumpet"), # Brass
+    (range(64, 72), "instrument.saxophone"), # Reed
+    (range(72, 80), "instrument.flute"), # Pipe
+    (range(80, 88), "pianokeys.inverse"), # Synth Lead
+    (range(88, 96), "pianokeys.inverse"), # Synth Pad
+    (range(96, 104), "sparkles"), # Synth Effects
+    (range(104, 112), "globe"), # Ethnic
+    (range(112, 120), "instrument.drum"), # Percussive
+    (range(120, 128), "sparkles"), # Sound Effects
 ]
 
 DRUM_ICON = "instrument.drum"
@@ -1717,4 +1717,4 @@ def icon_for_gm_program(gm_program: int) -> str:
     for r, icon in _GM_CATEGORY_ICONS:
         if gm_program in r:
             return icon
-    return "pianokeys"  # fallback for out-of-range values
+    return "pianokeys" # fallback for out-of-range values

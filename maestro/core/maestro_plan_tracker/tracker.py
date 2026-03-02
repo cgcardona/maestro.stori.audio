@@ -76,8 +76,8 @@ class _PlanTracker:
         """Build a musically descriptive plan title.
 
         Target patterns (from ExecutionTimelineView spec):
-          Editing:    "Building Funk Groove"
-          Composing:  "Composing Lo-Fi Hip Hop"
+          Editing: "Building Funk Groove"
+          Composing: "Composing Lo-Fi Hip Hop"
           Multi-track: "Setting Up 6-Track Jazz"
         """
         track_count = sum(
@@ -140,15 +140,15 @@ class _PlanTracker:
         """Group tool calls into plan steps using canonical label patterns.
 
         Canonical patterns recognised by ExecutionTimelineView:
-          "Create <TrackName> track"     — track creation
-          "Add content to <TrackName>"   — region + note generation
-          "Add notes to <TrackName>"     — note-only addition
-          "Add region to <TrackName>"    — region-only
-          "Add effects to <TrackName>"   — insert effects for a track
-          "Add MIDI CC to <TrackName>"   — CC curves
+          "Create <TrackName> track" — track creation
+          "Add content to <TrackName>" — region + note generation
+          "Add notes to <TrackName>" — note-only addition
+          "Add region to <TrackName>" — region-only
+          "Add effects to <TrackName>" — insert effects for a track
+          "Add MIDI CC to <TrackName>" — CC curves
           "Add pitch bend to <TrackName>"— pitch bend events
           "Write automation for <TrackName>" — automation lanes
-          "set up shared Reverb bus"     — project-level bus setup
+          "set up shared Reverb bus" — project-level bus setup
 
         Project-level steps (tempo, key, bus) must NOT contain a
         preposition pattern — they fall into "Project Setup".

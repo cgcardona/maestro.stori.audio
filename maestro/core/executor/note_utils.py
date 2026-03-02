@@ -2,7 +2,7 @@
 
 Storpheus returns notes in camelCase wire format (``startBeat``,
 ``durationBeats``); the internal pipeline uses snake_case (``start_beat``,
-``duration_beats``).  This module provides a single boundary-crossing function
+``duration_beats``). This module provides a single boundary-crossing function
 ``_normalize_note`` that converts incoming MCP/Storpheus payloads to the
 canonical internal format.
 
@@ -10,7 +10,7 @@ Design decision — explicit field extraction over dynamic key remapping
 ----------------------------------------------------------------------
 Dynamic key remapping (``for k, v in note.items(): result[MAP[k]] = v``)
 produces ``dict[str, object]`` at runtime and breaks static type-checking on
-``NoteDict`` because TypedDicts are invariant in their key types.  Explicit
+``NoteDict`` because TypedDicts are invariant in their key types. Explicit
 per-field extraction lets mypy verify that every field's type contract is
 honoured at the normalization boundary without any casts or ``type: ignore``
 comments.
@@ -18,7 +18,7 @@ comments.
 Boundary position
 -----------------
 Call ``_normalize_note`` exactly once, at the point where a raw note payload
-enters the pipeline (executor or MCP tool handler).  Downstream code always
+enters the pipeline (executor or MCP tool handler). Downstream code always
 works in snake_case and may assume the conversion has already happened.
 """
 
@@ -38,7 +38,7 @@ def _normalize_note(note: NoteDict) -> NoteDict:
     """Return a copy of *note* with camelCase timing keys converted to snake_case.
 
     ``startBeat`` → ``start_beat``, ``durationBeats`` → ``duration_beats``.
-    All other fields are preserved unchanged.  Operates on known NoteDict
+    All other fields are preserved unchanged. Operates on known NoteDict
     fields explicitly so the type system can verify correctness statically.
     """
     result: NoteDict = {}

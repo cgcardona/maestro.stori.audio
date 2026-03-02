@@ -22,9 +22,9 @@ Design
 Path-scoped stash (``--track`` / ``--section``)
 ------------------------------------------------
 When a scope is supplied, only files under ``tracks/<track>/`` or
-``sections/<section>/`` are saved to the stash.  After saving the scope,
+``sections/<section>/`` are saved to the stash. After saving the scope,
 the HEAD snapshot is restored only for those paths (other working-tree
-files are left untouched).  Applying a scoped stash similarly only writes
+files are left untouched). Applying a scoped stash similarly only writes
 paths that match the original scope.
 
 Boundary rules:
@@ -67,14 +67,14 @@ class StashEntry:
     """A single stash entry persisted in ``.muse/stash/``.
 
     Attributes:
-        stash_id:   Unique filename stem (``stash-<epoch_ns>-<uuid8>``).
-        index:      Position in the stack (0 = most recent).
-        branch:     Branch name at the time of stash.
-        message:    Human-readable label (``On <branch>: <text>``).
+        stash_id: Unique filename stem (``stash-<epoch_ns>-<uuid8>``).
+        index: Position in the stack (0 = most recent).
+        branch: Branch name at the time of stash.
+        message: Human-readable label (``On <branch>: <text>``).
         created_at: ISO-8601 timestamp.
-        manifest:   ``{rel_path: sha256_object_id}`` of stashed files.
-        track:      Optional track scope used during push.
-        section:    Optional section scope used during push.
+        manifest: ``{rel_path: sha256_object_id}`` of stashed files.
+        track: Optional track scope used during push.
+        section: Optional section scope used during push.
     """
 
     stash_id: str
@@ -92,12 +92,12 @@ class StashPushResult:
     """Outcome of ``muse stash push``.
 
     Attributes:
-        stash_ref:      Human label (``stash@{0}``).
-        message:        The label stored in the entry.
-        branch:         Branch at the time of push.
-        files_stashed:  Number of files saved into the stash.
-        head_restored:  Whether HEAD snapshot was restored to muse-work/.
-        missing_head:   Paths that could not be restored from the object store
+        stash_ref: Human label (``stash@{0}``).
+        message: The label stored in the entry.
+        branch: Branch at the time of push.
+        files_stashed: Number of files saved into the stash.
+        head_restored: Whether HEAD snapshot was restored to muse-work/.
+        missing_head: Paths that could not be restored from the object store
                         (object bytes not present; stash push succeeded but
                         HEAD restoration is incomplete).
     """
@@ -115,11 +115,11 @@ class StashApplyResult:
     """Outcome of ``muse stash apply`` or ``muse stash pop``.
 
     Attributes:
-        stash_ref:     Human label of the entry that was applied.
-        message:       The entry's label.
+        stash_ref: Human label of the entry that was applied.
+        message: The entry's label.
         files_applied: Number of files written to muse-work/.
-        missing:       Paths whose object bytes were absent from the store.
-        dropped:       True when the entry was removed (pop); False for apply.
+        missing: Paths whose object bytes were absent from the store.
+        dropped: True when the entry was removed (pop); False for apply.
     """
 
     stash_ref: str
@@ -175,7 +175,7 @@ def _read_entry(entry_file: pathlib.Path, index: int) -> StashEntry:
 
 
 def _write_entry(root: pathlib.Path, entry_data: dict[str, object]) -> str:
-    """Serialize and write a stash entry.  Returns the stash_id."""
+    """Serialize and write a stash entry. Returns the stash_id."""
     stash_dir = _stash_dir(root)
     stash_dir.mkdir(parents=True, exist_ok=True)
     stash_id = str(entry_data["stash_id"])
@@ -323,7 +323,7 @@ def drop_stash(root: pathlib.Path, index: int) -> StashEntry:
     """Remove the stash entry at *index* from the stack.
 
     Args:
-        root:  Muse repository root.
+        root: Muse repository root.
         index: 0-based stash index (0 = most recent).
 
     Returns:
@@ -387,12 +387,12 @@ def push_stash(
          remain untouched.
 
     Args:
-        root:          Muse repository root.
-        message:       Optional label; defaults to ``On <branch>: stash``.
-        track:         Optional track name scope (e.g. ``"drums"``).
-        section:       Optional section name scope (e.g. ``"chorus"``).
+        root: Muse repository root.
+        message: Optional label; defaults to ``On <branch>: stash``.
+        track: Optional track name scope (e.g. ``"drums"``).
+        section: Optional section name scope (e.g. ``"chorus"``).
         head_manifest: Snapshot manifest for the current HEAD commit, used
-                       to restore muse-work/ after stashing.  When ``None``
+                       to restore muse-work/ after stashing. When ``None``
                        the branch has no commits and muse-work/ is cleared
                        (full push) or left untouched (scoped push).
 
@@ -466,7 +466,7 @@ def push_stash(
                 if abs_path.exists():
                     abs_path.unlink(missing_ok=True)
         else:
-            restore_scope = None  # full restore
+            restore_scope = None # full restore
 
         _, missing_head = _restore_from_manifest(
             root, workdir, head_manifest, restore_scope
@@ -515,13 +515,13 @@ def apply_stash(
        store back into muse-work/ (overwriting any conflicting file).
     3. If *drop* is True, remove the stash entry (this is ``pop`` semantics).
 
-    Conflict strategy: last-write-wins.  Files in muse-work/ that are NOT
+    Conflict strategy: last-write-wins. Files in muse-work/ that are NOT
     in the stash manifest are left untouched; only stash paths are written.
 
     Args:
-        root:  Muse repository root.
+        root: Muse repository root.
         index: 0-based stash index (0 = most recent).
-        drop:  Remove the entry after applying (True → pop, False → apply).
+        drop: Remove the entry after applying (True → pop, False → apply).
 
     Returns:
         :class:`StashApplyResult` describing what was applied.

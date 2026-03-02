@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 
 # ── Krumhansl-Kessler key profiles ──────────────────────────────────
 # Empirically derived weights for each pitch class (C=0 … B=11) in
-# major and minor keys rooted at C.  To test against other roots, we
+# major and minor keys rooted at C. To test against other roots, we
 # rotate the observed distribution rather than rotating the profiles.
 
 MAJOR_PROFILE: tuple[float, ...] = (
@@ -177,7 +177,7 @@ def transpose_distance(
 ) -> int:
     """Compute the shortest transposition in semitones from source to target key.
 
-    Returns a value in [-6, +6].  Mode is informational — distance is
+    Returns a value in [-6, +6]. Mode is informational — distance is
     purely based on tonic pitch class distance.
     """
     src = key_to_semitones(source_tonic, source_mode)

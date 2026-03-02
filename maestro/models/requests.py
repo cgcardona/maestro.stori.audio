@@ -16,7 +16,7 @@ class ProposeVariationScopeDict(TypedDict, total=False):
     """Optional scope that constrains a variation proposal to a subset of the project.
 
     When ``trackIds`` or ``regionIds`` are provided, the variation only affects
-    those tracks/regions.  ``beatRange`` limits generation to a specific beat window.
+    those tracks/regions. ``beatRange`` limits generation to a specific beat window.
     """
 
     trackIds: list[str]
@@ -36,7 +36,7 @@ class ProposeVariationOptionsDict(TypedDict, total=False):
 
 # Generous limit — comfortably fits long MAESTRO PROMPT YAML with Maestro dimensions.
 # The nginx layer guards against large binary payloads; this catches oversized text.
-_MAX_PROMPT_BYTES = 32_768   # 32 KB
+_MAX_PROMPT_BYTES = 32_768 # 32 KB
 
 
 class MaestroRequest(CamelModel):
@@ -93,7 +93,7 @@ class MaestroRequest(CamelModel):
         """Validate the project payload against the ProjectSnapshot schema.
 
         Catches structural issues (invalid pitch, out-of-range tempo, etc.)
-        at the request boundary.  On validation failure the payload is
+        at the request boundary. On validation failure the payload is
         nullified so downstream handlers operate on a clean slate.
         """
         if v is None or not isinstance(v, dict):

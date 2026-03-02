@@ -1,7 +1,7 @@
 """COMPOSING and REASONING handlers — Maestro ↔ Muse integration boundary.
 
 This package is the **only** place where Maestro's orchestration layer
-touches Muse's variation/commit subsystem.  No code above this package
+touches Muse's variation/commit subsystem. No code above this package
 (e.g. ``maestro_handlers.py``) should import Muse-specific types
 (``Variation``, ``VariationStore``, ``VariationService``, ``Phrase``,
 ``NoteChange``).

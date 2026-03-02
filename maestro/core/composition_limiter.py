@@ -2,7 +2,7 @@
 
 Tracks active compositions per user_id in memory. Use as an async context
 manager around the composition lifecycle to automatically acquire/release
-slots.  Raises ``CompositionLimitExceeded`` when a user exceeds their quota.
+slots. Raises ``CompositionLimitExceeded`` when a user exceeds their quota.
 """
 from __future__ import annotations
 
@@ -75,7 +75,7 @@ def get_composition_limiter() -> CompositionLimiter:
     """Return the process-wide singleton ``CompositionLimiter``, creating it if needed.
 
     Configured from ``MAX_CONCURRENT_COMPOSITIONS_PER_USER`` via
-    ``app.config.settings``.  Setting the value to ``0`` disables per-user
+    ``app.config.settings``. Setting the value to ``0`` disables per-user
     limits entirely (the ``acquire`` context manager becomes a no-op).
     """
     global _limiter

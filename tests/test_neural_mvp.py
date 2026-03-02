@@ -52,10 +52,10 @@ class TestEmotionVector:
 
         """Should clamp values to valid ranges."""
         ev = EmotionVector(
-            energy=2.0,  # Should clamp to 1.0
-            valence=-5.0,  # Should clamp to -1.0
-            tension=-0.5,  # Should clamp to 0.0
-            intimacy=1.5,  # Should clamp to 1.0
+            energy=2.0, # Should clamp to 1.0
+            valence=-5.0, # Should clamp to -1.0
+            tension=-0.5, # Should clamp to 0.0
+            intimacy=1.5, # Should clamp to 1.0
             motion=0.5,
         )
         assert ev.energy == 1.0
@@ -79,7 +79,7 @@ class TestEmotionVector:
         # Make it sadder
         new_ev = ev.apply_delta({"valence": -0.3})
         assert new_ev.valence == -0.3
-        assert new_ev.energy == 0.5  # Unchanged
+        assert new_ev.energy == 0.5 # Unchanged
         
         # Delta is clamped
         very_sad = ev.apply_delta({"valence": -2.0})
@@ -254,9 +254,9 @@ class TestMidiTokenizer:
         """Should handle multi-bar sequences."""
         tokenizer = MidiTokenizer()
         notes: list[NoteDict] = [
-            _note(60, 0.0, 1.0, 80),   # Bar 0
-            _note(62, 4.0, 1.0, 80),   # Bar 1
-            _note(64, 8.0, 1.0, 80),   # Bar 2
+            _note(60, 0.0, 1.0, 80), # Bar 0
+            _note(62, 4.0, 1.0, 80), # Bar 1
+            _note(64, 8.0, 1.0, 80), # Bar 2
         ]
         
         token_ids = tokenizer.encode(notes, bars=3)
@@ -523,7 +523,7 @@ class TestNeuralGeneratorWithHuggingFace:
     async def test_generator_with_hf_backend(self) -> None:
 
         """Should work with HuggingFace backend."""
-        hf_backend = HuggingFaceMelodyBackend(api_key=None)  # Will use fallback
+        hf_backend = HuggingFaceMelodyBackend(api_key=None) # Will use fallback
         generator = NeuralMelodyGenerator(backend=hf_backend)
         
         result = await generator.generate(
@@ -706,7 +706,7 @@ class TestEmotionVectorFromMaestroPrompt:
         blend_ev = emotion_vector_from_maestro_prompt("MAESTRO PROMPT\nVibe: Dark, Bright")
         # Blend should sit between the two extremes
         lo, hi = sorted([dark_ev.valence, bright_ev.valence])
-        assert lo <= blend_ev.valence <= hi + 0.15  # small tolerance for blending math
+        assert lo <= blend_ev.valence <= hi + 0.15 # small tolerance for blending math
 
     def test_full_maestro_prompt_melancholic_verse(self) -> None:
 
@@ -723,7 +723,7 @@ class TestEmotionVectorFromMaestroPrompt:
         )
         assert ev.energy < 0.5
         assert ev.intimacy > 0.5
-        assert ev.valence < 0.2  # warm+nostalgic+melancholic blend is slightly negative
+        assert ev.valence < 0.2 # warm+nostalgic+melancholic blend is slightly negative
 
     def test_full_maestro_prompt_euphoric_drop(self) -> None:
 

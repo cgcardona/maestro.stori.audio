@@ -99,7 +99,7 @@ def _is_fast_forward(
     - the remote head appears somewhere in the ancestry graph of the pushed
       commits (meaning the client built on top of the remote head).
 
-    We build a local graph from the pushed commits and walk parents.  This
+    We build a local graph from the pushed commits and walk parents. This
     does NOT query the DB for previously stored commits — for MVP the client
     is expected to include all commits since the common ancestor.
     """
@@ -146,7 +146,7 @@ async def ingest_push(
 
     Raises:
         ValueError: with key ``"non_fast_forward"`` when the update would be
-            non-fast-forward and ``force`` is False.  The route handler maps
+            non-fast-forward and ``force`` is False. The route handler maps
             this to HTTP 409.
     """
     # ------------------------------------------------------------------
@@ -242,7 +242,7 @@ async def compute_pull_delta(
 
     MVP simplification: ``have_commits`` / ``have_objects`` act as exclusion
     lists — we return everything stored for this repo/branch that is NOT in
-    those lists.  No ancestry traversal is performed; the client gets all
+    those lists. No ancestry traversal is performed; the client gets all
     missing data in one response.
     """
     branch_row = await _get_branch(session, repo_id=repo_id, branch=branch)

@@ -91,7 +91,7 @@ class VariationService:
             explanation: Optional Muse explanation of changes
             variation_id: Optional pre-generated variation ID
             region_start_beat: Absolute beat position of the region in the
-                project timeline.  Added to phrase start_beat/end_beat so
+                project timeline. Added to phrase start_beat/end_beat so
                 they represent absolute project positions.
 
         Returns:
@@ -172,9 +172,9 @@ class VariationService:
             region_id: Region the changes belong to.
             track_id: Track the region belongs to.
             region_start_beat: Absolute beat position of the region in the
-                project timeline.  Added to the phrase's ``start_beat`` /
+                project timeline. Added to the phrase's ``start_beat`` /
                 ``end_beat`` so the frontend receives absolute project
-                positions.  Note start_beat values inside ``noteChanges``
+                positions. Note start_beat values inside ``noteChanges``
                 remain region-relative (matching standard MIDI region storage).
             cc_events: MIDI CC events for this region (region-relative beats).
             pitch_bends: Pitch bend events for this region (region-relative beats).
@@ -330,7 +330,7 @@ class VariationService:
             intent: User intent
             explanation: Optional Muse explanation
             region_start_beats: Mapping of region_id to the region's absolute start
-                beat in the project timeline.  Used to convert phrase start_beat /
+                beat in the project timeline. Used to convert phrase start_beat /
                 end_beat to absolute project positions.
 
         Returns:

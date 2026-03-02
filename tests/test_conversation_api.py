@@ -30,7 +30,7 @@ async def test_user(db_session: AsyncSession) -> User:
     """Create a test user with budget."""
     user = User(
         id="test-user-api-123",
-        budget_cents=500,  # $5.00
+        budget_cents=500, # $5.00
         budget_limit_cents=500,
     )
     db_session.add(user)
@@ -474,7 +474,7 @@ async def test_search_conversations_missing_query(db_session: AsyncSession, auth
             headers=auth_headers,
         )
     
-    assert response.status_code == 422  # Validation error
+    assert response.status_code == 422 # Validation error
 
 
 # =============================================================================
@@ -701,7 +701,7 @@ async def test_entity_id_tracking_across_turns(test_user: User, auth_headers: di
         # Verify conversation history structure
         # The key fix is that conversation history is passed to orchestrate()
         # which includes previous tool calls with their parameters (including IDs)
-        assert len(final_data["messages"]) >= 2  # At least user + assistant messages
+        assert len(final_data["messages"]) >= 2 # At least user + assistant messages
         
         # The test verifies that:
         # 1. build_conversation_history_for_llm() properly formats messages

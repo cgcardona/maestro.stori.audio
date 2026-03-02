@@ -1,14 +1,14 @@
 """Muse Hub label management route handlers.
 
 Endpoint summary:
-  GET    /musehub/repos/{repo_id}/labels                                     — list labels (public)
-  POST   /musehub/repos/{repo_id}/labels                                     — create label (auth required)
-  PATCH  /musehub/repos/{repo_id}/labels/{label_id}                          — update label (auth required)
-  DELETE /musehub/repos/{repo_id}/labels/{label_id}                          — delete label (auth required)
-  POST   /musehub/repos/{repo_id}/issues/{number}/labels                     — assign labels to issue (auth required)
-  DELETE /musehub/repos/{repo_id}/issues/{number}/labels/{label_id}          — remove label from issue (auth required)
-  POST   /musehub/repos/{repo_id}/pull-requests/{pr_id}/labels               — assign labels to PR (auth required)
-  DELETE /musehub/repos/{repo_id}/pull-requests/{pr_id}/labels/{label_id}    — remove label from PR (auth required)
+  GET /musehub/repos/{repo_id}/labels — list labels (public)
+  POST /musehub/repos/{repo_id}/labels — create label (auth required)
+  PATCH /musehub/repos/{repo_id}/labels/{label_id} — update label (auth required)
+  DELETE /musehub/repos/{repo_id}/labels/{label_id} — delete label (auth required)
+  POST /musehub/repos/{repo_id}/issues/{number}/labels — assign labels to issue (auth required)
+  DELETE /musehub/repos/{repo_id}/issues/{number}/labels/{label_id} — remove label from issue (auth required)
+  POST /musehub/repos/{repo_id}/pull-requests/{pr_id}/labels — assign labels to PR (auth required)
+  DELETE /musehub/repos/{repo_id}/pull-requests/{pr_id}/labels/{label_id} — remove label from PR (auth required)
 
 Read endpoints use optional_token — unauthenticated access is allowed for public repos.
 Write endpoints always require a valid JWT Bearer token.
@@ -33,7 +33,7 @@ from maestro.db import get_db
 from maestro.services import musehub_repository
 
 if TYPE_CHECKING:
-    pass  # ORM models imported at runtime below via conditional import
+    pass # ORM models imported at runtime below via conditional import
 
 logger = logging.getLogger(__name__)
 
@@ -177,7 +177,7 @@ async def create_label(
 ) -> LabelResponse:
     """Create a new label with a name, hex colour, and optional description.
 
-    The caller must be authenticated.  Names must be unique within the repo.
+    The caller must be authenticated. Names must be unique within the repo.
     """
     repo = await musehub_repository.get_repo(db, repo_id)
     if repo is None:
@@ -238,7 +238,7 @@ async def update_label(
     """Partially update an existing label.
 
     Only fields present in the request body are modified; omitted fields are
-    left unchanged.  The caller must be authenticated.
+    left unchanged. The caller must be authenticated.
     """
     label = await _get_label_or_404(db, repo_id, label_id)
 
@@ -390,7 +390,7 @@ async def remove_label_from_issue(
     """Remove a single label association from an issue.
 
     Returns 204 whether or not the label was assigned to the issue, making
-    this endpoint safely idempotent.  The caller must be authenticated.
+    this endpoint safely idempotent. The caller must be authenticated.
     """
     issue_result = await db.execute(
         text(
@@ -481,7 +481,7 @@ async def remove_label_from_pr(
     """Remove a single label association from a pull request.
 
     Returns 204 whether or not the label was previously assigned, making
-    this endpoint safely idempotent.  The caller must be authenticated.
+    this endpoint safely idempotent. The caller must be authenticated.
     """
     pr_result = await db.execute(
         text(
@@ -524,7 +524,7 @@ async def seed_default_labels(db: AsyncSession, repo_id: str) -> None:
             {"repo_id": repo_id, "name": label_def["name"]},
         )
         if existing.scalar_one_or_none() is not None:
-            continue  # Already seeded — skip.
+            continue # Already seeded — skip.
         await db.execute(
             text(
                 "INSERT INTO musehub_labels (id, repo_id, name, color, description, created_at) "

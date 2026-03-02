@@ -45,12 +45,12 @@ class MuseNoteChange(TypedDict, total=False):
     """One note add/remove record in a region diff.
 
     Exactly one of ``before`` / ``after`` is ``None``:
-    - added  → before=None, after=<new note>
+    - added → before=None, after=<new note>
     - removed → before=<old note>, after=None
     """
 
     note_id: str
-    change_type: str  # "added" | "removed"
+    change_type: str # "added" | "removed"
     before: NoteDict | None
     after: NoteDict | None
 

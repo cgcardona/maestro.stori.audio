@@ -16,7 +16,7 @@ Boundary rules (same as other musehub services):
 Public factory
 --------------
 ``get_qdrant_client()`` is an ``@lru_cache``-backed factory that returns the
-process-level singleton.  Inject it via ``Depends(get_qdrant_client)`` in
+process-level singleton. Inject it via ``Depends(get_qdrant_client)`` in
 FastAPI route handlers so the dependency is explicit, overridable in tests via
 ``app.dependency_overrides``, and never leaks global mutable state.
 """

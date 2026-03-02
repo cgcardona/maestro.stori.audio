@@ -71,7 +71,7 @@ _ALL_MUSE_TAGS = (
 # ---------------------------------------------------------------------------
 
 # Import the helpers we actually want to test
-from scripts.seed_musehub import (  # noqa: E402
+from scripts.seed_musehub import ( # noqa: E402
     PROJECT_COMMUNITY_COLLAB,
     PROJECT_NEO_BAROQUE,
     REGION_IDS_COMMUNITY,
@@ -81,7 +81,7 @@ from scripts.seed_musehub import (  # noqa: E402
     VARIATION_INTENTS_COMMUNITY_COLLAB,
     VARIATION_INTENTS_NEO_BAROQUE,
     _make_variation_section,
-    # Social graph constants (issue #451)
+    # Social graph constants
     AALIYA,
     BACH,
     CHEN,
@@ -409,11 +409,11 @@ def test_all_tag_categories_covered() -> None:
     """Every taxonomy category must be non-empty and its values unique."""
     categories: dict[str, list[str]] = {
         "emotion": MUSE_EMOTION_TAGS,
-        "stage":   MUSE_STAGE_TAGS,
-        "key":     MUSE_KEY_TAGS,
-        "tempo":   MUSE_TEMPO_TAGS,
-        "genre":   MUSE_GENRE_TAGS,
-        "ref":     MUSE_REF_TAGS,
+        "stage": MUSE_STAGE_TAGS,
+        "key": MUSE_KEY_TAGS,
+        "tempo": MUSE_TEMPO_TAGS,
+        "genre": MUSE_GENRE_TAGS,
+        "ref": MUSE_REF_TAGS,
     }
     for cat, values in categories.items():
         assert values, f"Category '{cat}' is empty"
@@ -668,10 +668,10 @@ def test_commit_metadata_instrument_count_is_int() -> None:
 
 def test_solo_instrument_sizes_in_range() -> None:
     """Single-track (solo) file sizes must be 8KB–40KB."""
-    solo_sizes = [24576, 12288, 16384, 18432, 13312,  # neo-soul
-                  28672, 10240, 14336, 11264,           # modal-jazz
-                  26624, 11264, 13312,                  # jazz-trio
-                  36864, 17408,                         # chanson
+    solo_sizes = [24576, 12288, 16384, 18432, 13312, # neo-soul
+                  28672, 10240, 14336, 11264, # modal-jazz
+                  26624, 11264, 13312, # jazz-trio
+                  36864, 17408, # chanson
                   ]
     for sz in solo_sizes:
         assert 8 * 1024 <= sz <= 40 * 1024, f"Size {sz} out of 8KB–40KB range"
@@ -682,8 +682,8 @@ def test_solo_instrument_sizes_in_range() -> None:
 # ---------------------------------------------------------------------------
 
 # Import only the data structures, not the script entry point.
-import sys, importlib.util  # noqa: E402
-from pathlib import Path  # noqa: E402
+import sys, importlib.util # noqa: E402
+from pathlib import Path # noqa: E402
 
 def _load_seed_constants() -> dict[str, object]:
     """Load top-level constants from seed_musehub without executing asyncio.run."""
@@ -811,8 +811,7 @@ def test_webhook_deliveries_have_mixed_outcomes(seed_mod: dict[str, object]) -> 
 
 
 # ---------------------------------------------------------------------------
-# Social graph — issue #451
-# Each assertion mirrors a spec requirement from the issue body so regressions
+# Social graph — # Each assertion mirrors a spec requirement from the issue body so regressions
 # are immediately traceable back to the spec.
 # ---------------------------------------------------------------------------
 
@@ -843,41 +842,41 @@ def test_watches_constants_cover_60_pairs() -> None:
         (GABRIEL, "repo-funk-suite-0000001"), (GABRIEL, "repo-jazz-trio-0000001"),
         (GABRIEL, "repo-granular-studies-1"), (GABRIEL, "repo-chanson-minimale-1"),
         (GABRIEL, "repo-microtonal-etudes1"), (GABRIEL, "repo-drum-machine-00001"),
-        (SOFIA,   "repo-neo-soul-00000001"), (SOFIA,   "repo-funk-suite-0000001"),
-        (SOFIA,   "repo-chanson-minimale-1"), (SOFIA,  "repo-modal-jazz-000001"),
-        (SOFIA,   "repo-afrobeat-grooves-1"), (SOFIA,  "repo-microtonal-etudes1"),
-        (MARCUS,  "repo-neo-soul-00000001"), (MARCUS,  "repo-ambient-textures-1"),
-        (MARCUS,  "repo-afrobeat-grooves-1"), (MARCUS, "repo-modal-jazz-000001"),
-        (MARCUS,  "repo-jazz-trio-0000001"),  (MARCUS, "repo-funk-suite-0000001"),
-        (YUKI,    "repo-ambient-textures-1"), (YUKI,   "repo-granular-studies-1"),
-        (YUKI,    "repo-microtonal-etudes1"), (YUKI,   "repo-neo-soul-00000001"),
-        (YUKI,    "repo-drum-machine-00001"),
-        (AALIYA,  "repo-neo-soul-00000001"), (AALIYA,  "repo-afrobeat-grooves-1"),
-        (AALIYA,  "repo-funk-suite-0000001"), (AALIYA, "repo-modal-jazz-000001"),
-        (AALIYA,  "repo-jazz-trio-0000001"),  (AALIYA, "repo-chanson-minimale-1"),
-        (CHEN,    "repo-microtonal-etudes1"), (CHEN,   "repo-ambient-textures-1"),
-        (CHEN,    "repo-granular-studies-1"), (CHEN,   "repo-modal-jazz-000001"),
-        (CHEN,    "repo-neo-soul-00000001"),  (CHEN,   "repo-drum-machine-00001"),
-        (FATOU,   "repo-afrobeat-grooves-1"), (FATOU,  "repo-drum-machine-00001"),
-        (FATOU,   "repo-funk-suite-0000001"), (FATOU,  "repo-neo-soul-00000001"),
-        (FATOU,   "repo-modal-jazz-000001"),  (FATOU,  "repo-granular-studies-1"),
-        (PIERRE,  "repo-chanson-minimale-1"), (PIERRE, "repo-ambient-textures-1"),
-        (PIERRE,  "repo-neo-soul-00000001"),  (PIERRE, "repo-modal-jazz-000001"),
-        (PIERRE,  "repo-microtonal-etudes1"),
+        (SOFIA, "repo-neo-soul-00000001"), (SOFIA, "repo-funk-suite-0000001"),
+        (SOFIA, "repo-chanson-minimale-1"), (SOFIA, "repo-modal-jazz-000001"),
+        (SOFIA, "repo-afrobeat-grooves-1"), (SOFIA, "repo-microtonal-etudes1"),
+        (MARCUS, "repo-neo-soul-00000001"), (MARCUS, "repo-ambient-textures-1"),
+        (MARCUS, "repo-afrobeat-grooves-1"), (MARCUS, "repo-modal-jazz-000001"),
+        (MARCUS, "repo-jazz-trio-0000001"), (MARCUS, "repo-funk-suite-0000001"),
+        (YUKI, "repo-ambient-textures-1"), (YUKI, "repo-granular-studies-1"),
+        (YUKI, "repo-microtonal-etudes1"), (YUKI, "repo-neo-soul-00000001"),
+        (YUKI, "repo-drum-machine-00001"),
+        (AALIYA, "repo-neo-soul-00000001"), (AALIYA, "repo-afrobeat-grooves-1"),
+        (AALIYA, "repo-funk-suite-0000001"), (AALIYA, "repo-modal-jazz-000001"),
+        (AALIYA, "repo-jazz-trio-0000001"), (AALIYA, "repo-chanson-minimale-1"),
+        (CHEN, "repo-microtonal-etudes1"), (CHEN, "repo-ambient-textures-1"),
+        (CHEN, "repo-granular-studies-1"), (CHEN, "repo-modal-jazz-000001"),
+        (CHEN, "repo-neo-soul-00000001"), (CHEN, "repo-drum-machine-00001"),
+        (FATOU, "repo-afrobeat-grooves-1"), (FATOU, "repo-drum-machine-00001"),
+        (FATOU, "repo-funk-suite-0000001"), (FATOU, "repo-neo-soul-00000001"),
+        (FATOU, "repo-modal-jazz-000001"), (FATOU, "repo-granular-studies-1"),
+        (PIERRE, "repo-chanson-minimale-1"), (PIERRE, "repo-ambient-textures-1"),
+        (PIERRE, "repo-neo-soul-00000001"), (PIERRE, "repo-modal-jazz-000001"),
+        (PIERRE, "repo-microtonal-etudes1"),
         # Genre archive watches
         (GABRIEL, REPO_GOLDBERG), (GABRIEL, "repo-well-tempered-cl01"),
         (GABRIEL, REPO_NOCTURNES), (GABRIEL, REPO_MAPLE_LEAF), (GABRIEL, REPO_CIN_STRINGS),
-        (SOFIA,   REPO_GOLDBERG), (SOFIA,   "repo-well-tempered-cl01"),
-        (SOFIA,   REPO_NOCTURNES),
-        (MARCUS,  REPO_MAPLE_LEAF), (MARCUS,  REPO_GOLDBERG), (MARCUS, "repo-well-tempered-cl01"),
-        (AALIYA,  REPO_NOCTURNES),  (AALIYA,  REPO_MAPLE_LEAF),
-        (CHEN,    REPO_CIN_STRINGS), (CHEN,   REPO_GOLDBERG),
-        (YUKI,    "repo-well-tempered-cl01"), (FATOU, REPO_MAPLE_LEAF),
-        (PIERRE,  REPO_NOCTURNES),
-        (SOFIA,   REPO_NEO_BAROQUE),  (MARCUS,  REPO_NEO_BAROQUE),
-        (GABRIEL, REPO_JAZZ_CHOPIN),  (MARCUS,  REPO_RAGTIME_EDM),
-        (GABRIEL, REPO_FILM_SCORE),   (SOFIA,   REPO_FILM_SCORE),
-        (GABRIEL, REPO_COMMUNITY),    (AALIYA,  REPO_COMMUNITY),
+        (SOFIA, REPO_GOLDBERG), (SOFIA, "repo-well-tempered-cl01"),
+        (SOFIA, REPO_NOCTURNES),
+        (MARCUS, REPO_MAPLE_LEAF), (MARCUS, REPO_GOLDBERG), (MARCUS, "repo-well-tempered-cl01"),
+        (AALIYA, REPO_NOCTURNES), (AALIYA, REPO_MAPLE_LEAF),
+        (CHEN, REPO_CIN_STRINGS), (CHEN, REPO_GOLDBERG),
+        (YUKI, "repo-well-tempered-cl01"), (FATOU, REPO_MAPLE_LEAF),
+        (PIERRE, REPO_NOCTURNES),
+        (SOFIA, REPO_NEO_BAROQUE), (MARCUS, REPO_NEO_BAROQUE),
+        (GABRIEL, REPO_JAZZ_CHOPIN), (MARCUS, REPO_RAGTIME_EDM),
+        (GABRIEL, REPO_FILM_SCORE), (SOFIA, REPO_FILM_SCORE),
+        (GABRIEL, REPO_COMMUNITY), (AALIYA, REPO_COMMUNITY),
     ]
     assert len(watch_pairs) >= 60, f"Only {len(watch_pairs)} watch pairs — need 60+"
 
@@ -885,10 +884,10 @@ def test_watches_constants_cover_60_pairs() -> None:
 def test_bidirectional_follows_exist() -> None:
     """Canonical bidirectional pairs from the spec must both directions exist."""
     bidirectional_pairs = [
-        (GABRIEL, SOFIA),   (SOFIA, GABRIEL),
-        (MARCUS, FATOU),    (FATOU, MARCUS),
-        (YUKI, CHEN),       (CHEN, YUKI),
-        (AALIYA, PIERRE),   (PIERRE, AALIYA),
+        (GABRIEL, SOFIA), (SOFIA, GABRIEL),
+        (MARCUS, FATOU), (FATOU, MARCUS),
+        (YUKI, CHEN), (CHEN, YUKI),
+        (AALIYA, PIERRE), (PIERRE, AALIYA),
     ]
     # These pairs must be distinct (8 directed edges total)
     assert len(set(bidirectional_pairs)) == 8
@@ -898,10 +897,10 @@ def test_follows_total_meets_60() -> None:
     """Total follow relationships across all users must be ≥ 60."""
     # The seed script creates NOTIFS_PER_USER=20 × 8 users = 160 notifications
     # and roughly 65 follow pairs. Verify the formula holds at spec minimums.
-    community_count = len(USERS)    # 8
+    community_count = len(USERS) # 8
     # Each community user follows ≥ 7 others + composer follows ≥ 4 composers
     follows_per_user_lower_bound = 7
-    composer_follows = community_count * 4          # each user follows 4 composers
+    composer_follows = community_count * 4 # each user follows 4 composers
     community_follows = community_count * follows_per_user_lower_bound
     total_lower_bound = community_follows + composer_follows
     assert total_lower_bound >= 60, (
@@ -913,16 +912,16 @@ def test_genre_forks_cover_spec_relationships() -> None:
     """The 5 genre-archive fork relationships required by the spec must be defined."""
     required_forks = [
         # (source_repo_id, fork_repo_id, forked_by)
-        (REPO_MAPLE_LEAF,  REPO_RAGTIME_EDM,  "marcus"),    # marcus/ragtime-edm ← joplin
-        (REPO_NOCTURNES,   REPO_JAZZ_CHOPIN,  "aaliya"),    # aaliya/jazz-chopin ← chopin
-        (REPO_GOLDBERG,    REPO_NEO_BAROQUE,  "gabriel"),   # gabriel/neo-baroque ← bach/goldberg
-        (REPO_CIN_STRINGS, REPO_FILM_SCORE,   "chen"),      # chen/film-score ← macleod
-        (REPO_GOLDBERG,    REPO_COMMUNITY,    "gabriel"),   # gabriel/community-collab ← bach/goldberg
+        (REPO_MAPLE_LEAF, REPO_RAGTIME_EDM, "marcus"), # marcus/ragtime-edm ← joplin
+        (REPO_NOCTURNES, REPO_JAZZ_CHOPIN, "aaliya"), # aaliya/jazz-chopin ← chopin
+        (REPO_GOLDBERG, REPO_NEO_BAROQUE, "gabriel"), # gabriel/neo-baroque ← bach/goldberg
+        (REPO_CIN_STRINGS, REPO_FILM_SCORE, "chen"), # chen/film-score ← macleod
+        (REPO_GOLDBERG, REPO_COMMUNITY, "gabriel"), # gabriel/community-collab ← bach/goldberg
     ]
     # Verify the constant IDs that drive the forks are non-empty strings
     for source, fork, actor in required_forks:
         assert source, f"Source repo ID for {actor} is empty"
-        assert fork,   f"Fork repo ID for {actor} is empty"
+        assert fork, f"Fork repo ID for {actor} is empty"
 
 
 def test_reactions_use_all_8_spec_emojis() -> None:

@@ -2,7 +2,7 @@
 
 Examines the harmonic profile (key, mode, chord progression, harmonic
 rhythm, and tension) of a given commit (default: HEAD) or a range of
-commits.  Harmonic analysis is one of the most musically significant
+commits. Harmonic analysis is one of the most musically significant
 dimensions exposed by Muse VCS — information that Git has no concept of.
 
 An AI agent calling ``muse harmony --json`` receives a structured snapshot
@@ -56,8 +56,8 @@ Machine-readable JSON output::
 Stub note
 ---------
 Full chord detection requires MIDI note extraction from committed snapshot
-objects.  This implementation provides a realistic placeholder in the
-correct schema.  The result type and CLI contract are stable.
+objects. This implementation provides a realistic placeholder in the
+correct schema. The result type and CLI contract are stable.
 """
 from __future__ import annotations
 
@@ -104,7 +104,7 @@ KNOWN_MODES_SET: frozenset[str] = frozenset(KNOWN_MODES)
 class HarmonyResult(TypedDict):
     """Harmonic analysis result for a single commit.
 
-    This is the primary result type for ``muse harmony``.  Every field is
+    This is the primary result type for ``muse harmony``. Every field is
     populated by stub logic today and will be backed by MIDI analysis once
     the Storpheus inference endpoint exposes a chord detection route.
 
@@ -186,7 +186,7 @@ def _stub_harmony(commit_id: str, branch: str, track: str = "all") -> HarmonyRes
     """Return a realistic placeholder HarmonyResult.
 
     Produces a II-V-I flavored progression in Eb major — one of the most
-    common key centers in jazz and soul productions.  Confidence and tension
+    common key centers in jazz and soul productions. Confidence and tension
     values reflect a textbook tension-release arc.
     """
     return HarmonyResult(
@@ -233,18 +233,18 @@ async def _harmony_analyze_async(
     without parsing stdout.
 
     Args:
-        root:             Repository root (directory containing ``.muse/``).
-        session:          Open async DB session (reserved for full implementation).
-        commit:           Commit ref to analyse; defaults to HEAD.
-        track:            Restrict to a named MIDI track, or ``None`` for all.
-        section:          Restrict to a named region (stub: noted in output).
-        compare:          Second commit ref for side-by-side comparison.
-        commit_range:     ``from..to`` range string (stub: noted in output).
+        root: Repository root (directory containing ``.muse/``).
+        session: Open async DB session (reserved for full implementation).
+        commit: Commit ref to analyse; defaults to HEAD.
+        track: Restrict to a named MIDI track, or ``None`` for all.
+        section: Restrict to a named region (stub: noted in output).
+        compare: Second commit ref for side-by-side comparison.
+        commit_range: ``from..to`` range string (stub: noted in output).
         show_progression: If ``True``, show only the chord progression sequence.
-        show_key:         If ``True``, show only the detected key center.
-        show_mode:        If ``True``, show only the detected mode.
-        show_tension:     If ``True``, show only the tension profile.
-        as_json:          Emit JSON instead of human-readable text.
+        show_key: If ``True``, show only the detected key center.
+        show_mode: If ``True``, show only the detected mode.
+        show_tension: If ``True``, show only the tension profile.
+        as_json: Emit JSON instead of human-readable text.
     """
     muse_dir = root / ".muse"
 
@@ -272,11 +272,11 @@ async def _harmony_analyze_async(
     # -- Stub boundary notes for unimplemented flags --
     if commit_range:
         typer.echo(
-            f"⚠️  --range {commit_range!r}: range analysis not yet implemented. "
+            f"⚠️ --range {commit_range!r}: range analysis not yet implemented. "
             f"Showing HEAD ({resolved_commit}) only."
         )
     if section:
-        typer.echo(f"⚠️  --section {section!r}: region filtering not yet implemented.")
+        typer.echo(f"⚠️ --section {section!r}: region filtering not yet implemented.")
 
     # -- Render --
     if compare is not None:
@@ -365,14 +365,14 @@ def _render_result_human(
         typer.echo("")
 
     if full or show_key:
-        key_display = result["key"] or "—  (no pitched content)"
+        key_display = result["key"] or "— (no pitched content)"
         typer.echo(
             f"Key: {key_display}"
             + (f" (confidence: {result['confidence']:.2f})" if result["key"] else "")
         )
 
     if full or show_mode:
-        mode_display = result["mode"] or "—"
+        mode_display = result["mode"] or ""
         typer.echo(f"Mode: {mode_display}")
 
     if full or show_progression:
@@ -388,7 +388,7 @@ def _render_result_human(
     if full or show_tension:
         label = _tension_label(result["tension_profile"])
         profile_str = " → ".join(f"{v:.1f}" for v in result["tension_profile"])
-        typer.echo(f"Tension profile: {label}  [{profile_str}]")
+        typer.echo(f"Tension profile: {label} [{profile_str}]")
 
 
 def _render_result_json(
@@ -425,14 +425,14 @@ def _render_compare_human(cmp: HarmonyCompareResult) -> None:
 
     typer.echo(f"Harmonic Comparison — HEAD ({head['commit_id']}) vs {ref['commit_id']}")
     typer.echo("")
-    typer.echo(f"  Key   HEAD: {head['key'] or '—'}   Compare: {ref['key'] or '—'}")
-    typer.echo(f"  Mode  HEAD: {head['mode'] or '—'}  Compare: {ref['mode'] or '—'}")
-    typer.echo(f"  Key changed:  {'yes' if cmp['key_changed'] else 'no'}")
-    typer.echo(f"  Mode changed: {'yes' if cmp['mode_changed'] else 'no'}")
+    typer.echo(f" Key HEAD: {head['key'] or ''} Compare: {ref['key'] or ''}")
+    typer.echo(f" Mode HEAD: {head['mode'] or ''} Compare: {ref['mode'] or ''}")
+    typer.echo(f" Key changed: {'yes' if cmp['key_changed'] else 'no'}")
+    typer.echo(f" Mode changed: {'yes' if cmp['mode_changed'] else 'no'}")
     if cmp["chord_progression_delta"]:
-        typer.echo(f"  New chords in HEAD: {' '.join(cmp['chord_progression_delta'])}")
+        typer.echo(f" New chords in HEAD: {' '.join(cmp['chord_progression_delta'])}")
     else:
-        typer.echo("  Chord progression: unchanged")
+        typer.echo(" Chord progression: unchanged")
 
 
 def _render_compare_json(cmp: HarmonyCompareResult) -> None:
@@ -529,7 +529,7 @@ def harmony(
 
     Without flags, prints a full harmonic summary for the target commit.
     Use ``--key``, ``--mode``, ``--progression``, or ``--tension`` to
-    scope the output to a single dimension.  Use ``--json`` for structured
+    scope the output to a single dimension. Use ``--json`` for structured
     output suitable for AI agent consumption.
     """
     root = require_repo()

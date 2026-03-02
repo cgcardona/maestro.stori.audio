@@ -1,7 +1,7 @@
 """Public API for Muse CLI repository detection.
 
 This module is the stable, importable surface for ``find_repo_root()`` and
-``require_repo_root()``.  All internal commands continue to import from
+``require_repo_root()``. All internal commands continue to import from
 ``_repo`` (the original private module); this public re-export exists so
 external tooling and new commands can depend on a name that is not
 prefixed with an underscore.

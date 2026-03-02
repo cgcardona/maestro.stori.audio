@@ -79,7 +79,7 @@ limiter = Limiter(key_func=get_remote_address)
 class ValidateTokenResponse(CamelModel):
     """JWT validation result returned by ``GET /validate-token``.
 
-    Confirms that the bearer token is valid and not expired.  When the token's
+    Confirms that the bearer token is valid and not expired. When the token's
     ``sub`` claim resolves to a known user, budget fields are also populated
     so the DAW can display a live credit balance without a separate request.
 
@@ -141,7 +141,7 @@ class PlanPreviewResponse(CamelModel):
     """Execution plan produced by ``POST /maestro/preview`` (without executing).
 
     Populated from ``PlanPreview`` (a ``TypedDict``) returned by
-    ``preview_plan()``.  All fields are optional because the planner may
+    ``preview_plan()``. All fields are optional because the planner may
     produce an empty or invalid plan when the intent is unrecognised.
 
     Wire format: camelCase (via ``CamelModel``).
@@ -202,7 +202,7 @@ class PlanPreviewResponse(CamelModel):
 class PreviewMaestroResponse(CamelModel):
     """Response from ``POST /maestro/preview``.
 
-    Top-level envelope for a plan preview.  When ``preview_available`` is
+    Top-level envelope for a plan preview. When ``preview_available`` is
     ``True``, the ``preview`` field contains the full ``PlanPreviewResponse``.
     When ``False``, ``reason`` explains why a preview could not be produced
     (e.g. the prompt was classified as REASONING rather than COMPOSING).
@@ -216,7 +216,7 @@ class PreviewMaestroResponse(CamelModel):
         intent: The classified intent value for the prompt (e.g.
             ``"COMPOSING"``, ``"REASONING"``, ``"EDITING"``).
         sse_state: The SSE state string corresponding to the intent (e.g.
-            ``"composing"``, ``"reasoning"``).  Used by the DAW to display the
+            ``"composing"``, ``"reasoning"``). Used by the DAW to display the
             correct UI mode.
         reason: Human-readable explanation of why ``preview_available`` is
             ``False`` (e.g. ``"Preview only available for COMPOSING mode"``).

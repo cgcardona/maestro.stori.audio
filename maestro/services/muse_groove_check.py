@@ -5,11 +5,11 @@ from the quantization grid, then detects which commits introduced
 rhythmic inconsistency relative to their neighbors.
 
 "Groove drift" is the absolute change in average onset deviation between
-adjacent commits.  A commit with a large drift delta is the one that
+adjacent commits. A commit with a large drift delta is the one that
 "killed the groove."
 
 This is a stub implementation that demonstrates the correct CLI contract
-and result schema.  Full MIDI content analysis will be wired in once
+and result schema. Full MIDI content analysis will be wired in once
 Storpheus exposes a rhythmic quantization introspection route.
 
 Boundary rules:
@@ -31,8 +31,8 @@ logger = logging.getLogger(__name__)
 # Constants
 # ---------------------------------------------------------------------------
 
-DEFAULT_THRESHOLD = 0.1  # beats — flag commits whose drift_delta exceeds this
-DEFAULT_COMMIT_LIMIT = 10  # fallback window when no explicit range is given
+DEFAULT_THRESHOLD = 0.1 # beats — flag commits whose drift_delta exceeds this
+DEFAULT_COMMIT_LIMIT = 10 # fallback window when no explicit range is given
 
 
 # ---------------------------------------------------------------------------
@@ -43,7 +43,7 @@ DEFAULT_COMMIT_LIMIT = 10  # fallback window when no explicit range is given
 class GrooveStatus(str, Enum):
     """Per-commit groove assessment relative to the configured threshold.
 
-    OK   — drift_delta ≤ threshold; rhythm is consistent with neighbors.
+    OK — drift_delta ≤ threshold; rhythm is consistent with neighbors.
     WARN — drift_delta is between threshold and 2× threshold; mild drift.
     FAIL — drift_delta > 2× threshold; likely culprit for groove regression.
     """
@@ -57,15 +57,15 @@ class GrooveStatus(str, Enum):
 class CommitGrooveMetrics:
     """Rhythmic groove metrics for a single commit.
 
-    groove_score  — average note-onset deviation from the quantization grid,
-                    in beats.  Lower is tighter (closer to the grid).
-    drift_delta   — absolute change in groove_score relative to the prior
-                    commit in the range.  The first commit always has delta 0.0.
-    status        — OK / WARN / FAIL classification against the threshold.
-    commit        — short commit ref (8 hex chars or resolved ID).
-    track         — track scope used for analysis, or "all".
-    section       — section scope used for analysis, or "all".
-    midi_files    — number of MIDI snapshots analysed for this commit.
+    groove_score — average note-onset deviation from the quantization grid,
+                    in beats. Lower is tighter (closer to the grid).
+    drift_delta — absolute change in groove_score relative to the prior
+                    commit in the range. The first commit always has delta 0.0.
+    status — OK / WARN / FAIL classification against the threshold.
+    commit — short commit ref (8 hex chars or resolved ID).
+    track — track scope used for analysis, or "all".
+    section — section scope used for analysis, or "all".
+    midi_files — number of MIDI snapshots analysed for this commit.
     """
 
     commit: str
@@ -81,12 +81,12 @@ class CommitGrooveMetrics:
 class GrooveCheckResult:
     """Aggregate result for a `muse groove-check` run.
 
-    commit_range    — the range string that was analysed (e.g. "HEAD~5..HEAD").
-    threshold       — drift threshold used for WARN/FAIL classification.
-    total_commits   — total commits in the analysis window.
+    commit_range — the range string that was analysed (e.g. "HEAD~5..HEAD").
+    threshold — drift threshold used for WARN/FAIL classification.
+    total_commits — total commits in the analysis window.
     flagged_commits — number of commits with status WARN or FAIL.
-    worst_commit    — commit ref with the highest drift_delta, or empty string.
-    entries         — per-commit metrics, oldest-first.
+    worst_commit — commit ref with the highest drift_delta, or empty string.
+    entries — per-commit metrics, oldest-first.
     """
 
     commit_range: str
@@ -107,7 +107,7 @@ def classify_status(drift_delta: float, threshold: float) -> GrooveStatus:
 
     Args:
         drift_delta: Absolute change in groove_score vs. prior commit.
-        threshold:   User-configurable WARN boundary in beats.
+        threshold: User-configurable WARN boundary in beats.
 
     Returns:
         :class:`GrooveStatus` OK, WARN, or FAIL.
@@ -128,9 +128,9 @@ _STUB_COMMITS: tuple[tuple[str, float, int], ...] = (
     ("e5f6a7b8", 0.05, 3),
     ("c9d0e1f2", 0.06, 3),
     ("a3b4c5d6", 0.09, 3),
-    ("e7f8a9b0", 0.15, 3),  # groove degraded here
+    ("e7f8a9b0", 0.15, 3), # groove degraded here
     ("c1d2e3f4", 0.13, 3),
-    ("a5b6c7d8", 0.08, 3),  # recovered
+    ("a5b6c7d8", 0.08, 3), # recovered
 )
 
 
@@ -148,9 +148,9 @@ def build_stub_entries(
 
     Args:
         threshold: WARN/FAIL boundary in beats.
-        track:     Track filter (stored in metadata; no content effect in stub).
-        section:   Section filter (stored in metadata; no content effect in stub).
-        limit:     Maximum number of commits to return.
+        track: Track filter (stored in metadata; no content effect in stub).
+        section: Section filter (stored in metadata; no content effect in stub).
+        limit: Maximum number of commits to return.
 
     Returns:
         List of :class:`CommitGrooveMetrics`, oldest-first.
@@ -192,10 +192,10 @@ def compute_groove_check(
 
     Args:
         commit_range: Commit range string used for display (e.g. "HEAD~5..HEAD").
-        threshold:    Drift threshold in beats (default 0.1).
-        track:        Restrict analysis to a named instrument track.
-        section:      Restrict analysis to a named musical section.
-        limit:        Maximum number of commits to include (default 10).
+        threshold: Drift threshold in beats (default 0.1).
+        track: Restrict analysis to a named instrument track.
+        section: Restrict analysis to a named musical section.
+        limit: Maximum number of commits to include (default 10).
 
     Returns:
         A :class:`GrooveCheckResult` with per-commit metrics and summary fields.

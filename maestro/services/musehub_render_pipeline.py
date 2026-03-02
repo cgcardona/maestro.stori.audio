@@ -1,7 +1,7 @@
 """MuseHub render pipeline — auto-generate MP3 and piano-roll images on commit push.
 
 Orchestrates the asynchronous artifact generation triggered by every successful
-push to MuseHub.  For each new commit the pipeline:
+push to MuseHub. For each new commit the pipeline:
 
 1. Checks for an existing render job (idempotency guard — re-pushing the same
    commit SHA skips a duplicate render).
@@ -17,7 +17,7 @@ push to MuseHub.  For each new commit the pipeline:
 6. Updates the job status to ``complete`` or ``failed``.
 
 The pipeline runs as a FastAPI ``BackgroundTask`` so it never blocks the push
-HTTP response.  Failures are logged but not re-raised — a failed render is
+HTTP response. Failures are logged but not re-raised — a failed render is
 recoverable; the push is not rolled back.
 
 Boundary rules (same as musehub_sync):
@@ -145,7 +145,7 @@ def _make_stub_mp3(midi_bytes: bytes, output_path: Path) -> bytes:
     """Copy MIDI bytes to the output path as an MP3 stub.
 
     Storpheus ``POST /render`` (MIDI-in → audio-out) is not yet deployed.
-    Until it ships, the MIDI file is copied verbatim as a placeholder.  The
+    Until it ships, the MIDI file is copied verbatim as a placeholder. The
     ``stubbed`` contract from ``muse_render_preview`` is mirrored here.
 
     Args:
@@ -324,7 +324,7 @@ async def trigger_render_background(
                 midi_count=len(midi_objects),
             )
             session.add(job)
-            await session.flush()  # Obtain PK before proceeding
+            await session.flush() # Obtain PK before proceeding
 
             logger.info(
                 "✅ Render job created: commit=%s midi_files=%d",

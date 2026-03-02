@@ -3,14 +3,14 @@
 Workflow
 --------
 When ``muse merge`` encounters conflicts it writes ``.muse/MERGE_STATE.json``
-and exits.  The user then inspects the listed conflict paths and resolves each
+and exits. The user then inspects the listed conflict paths and resolves each
 one:
 
-- ``--ours``:   Keep the current branch's version already in ``muse-work/``.
+- ``--ours``: Keep the current branch's version already in ``muse-work/``.
                 The file is left untouched; the path is removed from the conflict
                 list in ``MERGE_STATE.json``.
 
-- ``--theirs``: Accept the incoming branch's version.  This command fetches
+- ``--theirs``: Accept the incoming branch's version. This command fetches
                 the object from the local store (written when the other branch's
                 commits were made) and writes it to ``muse-work/<path>`` before
                 removing the path from the conflict list.
@@ -21,11 +21,11 @@ merge commit.
 Resolution strategies
 ---------------------
 Both strategies ultimately remove the path from ``conflict_paths`` in
-``MERGE_STATE.json``.  When the list reaches zero, ``muse merge --continue``
+``MERGE_STATE.json``. When the list reaches zero, ``muse merge --continue``
 can proceed.
 
 The ``--theirs`` strategy requires the theirs commit's objects to be present
-in the local ``.muse/objects/`` store.  Objects are written there when commits
+in the local ``.muse/objects/`` store. Objects are written there when commits
 are made locally; ``muse pull`` fetches them from the remote.
 """
 from __future__ import annotations
@@ -68,20 +68,20 @@ async def resolve_conflict_async(
     """Mark *file_path* as resolved in ``.muse/MERGE_STATE.json``.
 
     For ``--ours`` no file change is made — the current ``muse-work/`` content
-    is accepted as-is.  For ``--theirs`` this function fetches the theirs
+    is accepted as-is. For ``--theirs`` this function fetches the theirs
     branch's object from the local store and writes it to
     ``muse-work/<file_path>``.
 
     Args:
-        file_path: Path of the conflicted file.  Accepted as:
+        file_path: Path of the conflicted file. Accepted as:
                    - absolute path (converted to relative to ``muse-work/``)
                    - path relative to ``muse-work/`` (e.g. ``meta/foo.json``)
                    - path relative to repo root (e.g. ``muse-work/meta/foo.json``)
-        ours:      ``True`` to accept ours (no file change); ``False`` to
+        ours: ``True`` to accept ours (no file change); ``False`` to
                    accept theirs (object is fetched from local store and written
                    to ``muse-work/<file_path>``).
-        root:      Repository root containing ``.muse/``.
-        session:   Open async DB session (used for ``--theirs`` to look up the
+        root: Repository root containing ``.muse/``.
+        session: Open async DB session (used for ``--theirs`` to look up the
                    theirs commit's snapshot manifest).
 
     Raises:
@@ -113,7 +113,7 @@ async def resolve_conflict_async(
     if rel_path not in merge_state.conflict_paths:
         typer.echo(
             f"❌ '{rel_path}' is not listed as a conflict.\n"
-            f"   Current conflicts: {merge_state.conflict_paths}"
+            f" Current conflicts: {merge_state.conflict_paths}"
         )
         raise typer.Exit(code=ExitCode.USER_ERROR)
 
@@ -144,7 +144,7 @@ async def resolve_conflict_async(
             except FileNotFoundError:
                 typer.echo(
                     f"❌ Object for '{rel_path}' is not in the local store.\n"
-                    "   Run 'muse pull' to fetch the remote objects, then retry."
+                    " Run 'muse pull' to fetch the remote objects, then retry."
                 )
                 raise typer.Exit(code=ExitCode.USER_ERROR)
             typer.echo(f"✅ Resolved '{rel_path}' — keeping theirs")
@@ -158,7 +158,7 @@ async def resolve_conflict_async(
     # Always rewrite MERGE_STATE with the updated (possibly empty) conflict list.
     # Keeping the file even when conflict_paths=[] lets `muse merge --continue`
     # read the stored commit IDs (ours_commit, theirs_commit) to build the merge
-    # commit.  `muse merge --continue` is responsible for clearing this file.
+    # commit. `muse merge --continue` is responsible for clearing this file.
     write_merge_state(
         root,
         base_commit=merge_state.base_commit or "",
@@ -170,7 +170,7 @@ async def resolve_conflict_async(
 
     if remaining:
         typer.echo(
-            f"   {len(remaining)} conflict(s) remaining. "
+            f" {len(remaining)} conflict(s) remaining. "
             "Resolve all, then run 'muse merge --continue'."
         )
     else:

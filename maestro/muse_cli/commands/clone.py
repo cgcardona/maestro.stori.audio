@@ -5,13 +5,13 @@ Clone algorithm
 1. Parse *url* to derive the default target directory name (last URL path
    component, stripped of trailing slashes).
 2. Resolve the effective target directory (explicit *directory* arg or the
-   derived default).  Abort if it already exists.
+   derived default). Abort if it already exists.
 3. Create the target directory and initialise ``.muse/`` structure (mirroring
    ``muse init`` without re-invoking it):
-       <target>/.muse/repo.json        — stub; repo_id written after Hub reply
-       <target>/.muse/HEAD             — refs/heads/<effective_branch>
-       <target>/.muse/refs/heads/      — ref files populated after clone
-       <target>/.muse/config.toml      — origin remote set to *url*
+       <target>/.muse/repo.json — stub; repo_id written after Hub reply
+       <target>/.muse/HEAD — refs/heads/<effective_branch>
+       <target>/.muse/refs/heads/ — ref files populated after clone
+       <target>/.muse/config.toml — origin remote set to *url*
 4. POST to ``<url>/clone`` with branch, depth, single_track parameters.
 5. Write ``repo_id`` returned by Hub into ``.muse/repo.json``.
 6. Store returned commits and object descriptors in local Postgres.
@@ -76,7 +76,7 @@ token = ""
 def _derive_directory_name(url: str) -> str:
     """Derive a directory name from a Hub URL.
 
-    Strips trailing slashes and returns the last path component.  Falls back
+    Strips trailing slashes and returns the last path component. Falls back
     to ``"muse-clone"`` when the URL has no meaningful path segment.
 
     Args:
@@ -103,8 +103,8 @@ def _init_muse_dir(
     the remote HEAD commit ID.
 
     Args:
-        target:     Repository root directory (must exist and be empty).
-        branch:     Default branch name (written to HEAD).
+        target: Repository root directory (must exist and be empty).
+        branch: Default branch name (written to HEAD).
         origin_url: Remote URL written as ``[remotes.origin]`` in config.toml.
     """
     muse_dir = target / ".muse"
@@ -158,13 +158,13 @@ async def _clone_async(
     paths so the Typer callback can remain thin.
 
     Args:
-        url:          Muse Hub repo URL to clone from.
-        directory:    Local target directory path (derived from URL if None).
-        depth:        Shallow-clone depth (number of commits to fetch).
-        branch:       Branch to clone and check out (Hub default if None).
+        url: Muse Hub repo URL to clone from.
+        directory: Local target directory path (derived from URL if None).
+        depth: Shallow-clone depth (number of commits to fetch).
+        branch: Branch to clone and check out (Hub default if None).
         single_track: Instrument track filter — only files whose first path
                       component matches this string are downloaded.
-        no_checkout:  When True, skip populating ``muse-work/``.
+        no_checkout: When True, skip populating ``muse-work/``.
     """
     # ── Resolve target directory ──────────────────────────────────────────
     target_name = directory or _derive_directory_name(url)
@@ -173,7 +173,7 @@ async def _clone_async(
     if target.exists():
         typer.echo(
             f"❌ Destination '{target}' already exists.\n"
-            "   Choose a different directory or remove it first."
+            " Choose a different directory or remove it first."
         )
         raise typer.Exit(code=int(ExitCode.USER_ERROR))
 

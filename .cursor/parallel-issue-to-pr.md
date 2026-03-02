@@ -46,7 +46,7 @@ Task(worktree="/path/to/issue-405", prompt=KICKOFF_PROMPT)
 sub-worktrees with sub-task files and launches leaf agents. This creates
 a tree of unlimited depth and width.
 
-See `PARALLEL_BUGS_TO_ISSUES.md` → "Agent Task File Reference" for the
+See `parallel-bugs-to-issues.md` → "Agent Task File Reference" for the
 full field reference including nested orchestration patterns.
 
 ---
@@ -430,7 +430,7 @@ the `dev` branch with uncommitted changes.
 
 ### Command policy
 
-Consult `.cursor/AGENT_COMMAND_POLICY.md` for the full tier list. Summary:
+Consult `.cursor/agent-command-policy.md` for the full tier list. Summary:
 - **Green (auto-allow):** `ls`, `git status/log/diff/fetch`, `gh pr view`, `mypy`, `pytest`, `rg`
 - **Yellow (review before running):** `docker compose build`, `rm <single file>`, `git rebase`
 - **Red (never):** `rm -rf`, `git push --force`, `git push origin dev`, `docker system prune`
@@ -442,7 +442,7 @@ Consult `.cursor/AGENT_COMMAND_POLICY.md` for the full tier list. Summary:
 ```
 PARALLEL AGENT COORDINATION — ISSUE TO PR
 
-Read .cursor/AGENT_COMMAND_POLICY.md before issuing any shell commands.
+Read .cursor/agent-command-policy.md before issuing any shell commands.
 Green-tier commands run without confirmation. Yellow = check scope first.
 Red = never, ask the user instead.
 
@@ -513,7 +513,7 @@ STEP 0.5 — LOAD YOUR ROLE AND COGNITIVE ARCHITECTURE:
       echo "⚠️  resolve_arch.py not found at $RESOLVE_ARCH — skipping context block."
     fi
     echo ""
-    echo "Let these govern your approach to this task. See TICKET_TAXONOMY.md for rationale."
+    echo "Let these govern your approach to this task. See ticket-taxonomy.md for rationale."
   else
     echo "⚠️  No COGNITIVE_ARCH set — using default pragmatist:python approach."
   fi
@@ -548,6 +548,9 @@ STEP 2 — CHECK CANONICAL STATE BEFORE DOING ANY WORK:
 
   # Leave an audit trail: which cognitive identity claimed this issue.
   AGENT_SESSION="eng-$(date -u +%Y%m%dT%H%M%SZ)-$(printf '%04x' $RANDOM)"
+  # Re-derive REPO here so the fingerprint call works even if STEP 1 hasn't run yet.
+  REPO=$(git worktree list | head -1 | awk '{print $1}')
+  VP_FINGERPRINT=$(grep "^VP_FINGERPRINT=" .agent-task | cut -d= -f2)
   CLAIM_FINGERPRINT=$(python3 "$REPO/scripts/gen_prompts/resolve_arch.py" "${COGNITIVE_ARCH:-unset}" \
     --fingerprint \
     --role "${ROLE:-python-developer}" \
@@ -631,7 +634,7 @@ $CLAIM_FINGERPRINT
     re-implement the work from scratch. Proceed to STEP 3. Do NOT close the issue.
 
 STEP 3 — IMPLEMENT (only if STEP 2 found nothing):
-  Read and follow every step in .github/CREATE_PR_PROMPT.md exactly.
+  Read and follow every step in .github/create-pr-prompt.md exactly.
   Steps: baseline → branch → implement → mypy → tests → commit → docs → PR.
 
   # ── STEP 3.0 — DEPENDENCY GATE ────────────────────────────────────────────
@@ -740,7 +743,7 @@ STEP 3 — IMPLEMENT (only if STEP 2 found nothing):
     - No non-ASCII characters inside b"..." — encode explicitly.
     - Two failed fix attempts = stop and redesign.
     - Every new public function signature is a contract — register result types in
-      docs/reference/type_contracts.md.
+      docs/reference/type-contracts.md.
 
   ⚠️  PRE-EXISTING MYPY ERRORS — you own them if they are in files you touch:
     - If an error was already present on dev (confirmed by STEP 3.1 baseline) AND
@@ -809,9 +812,9 @@ STEP 3 — IMPLEMENT (only if STEP 2 found nothing):
 
   DOCS — non-negotiable, same commit as code:
     - Docstrings on every new module, class, and public function (why + contract, not what)
-    - For new `muse <cmd>`: add a section to docs/architecture/muse_vcs.md with:
+    - For new `muse <cmd>`: add a section to docs/architecture/muse-vcs.md with:
         purpose, flags table, output example, result type, agent use case
-    - Register new named result types in docs/reference/type_contracts.md
+    - Register new named result types in docs/reference/type-contracts.md
     - Docs are written for AI agent consumers — explain the contract and when to call this
 
 STEP 4 — PRE-PUSH SYNC (critical — always run before pushing):
@@ -833,16 +836,16 @@ Maestro-Session: $AGENT_SESSION"
   #
   #   FILE                              ALWAYS-SAFE RULE
   #   maestro/muse_cli/app.py           Keep ALL app.add_typer() lines from both sides.
-  #   docs/architecture/muse_vcs.md    Keep ALL ## sections from both sides, sort alpha.
-  #   docs/reference/type_contracts.md Keep ALL entries from both sides.
+  #   docs/architecture/muse-vcs.md    Keep ALL ## sections from both sides, sort alpha.
+  #   docs/reference/type-contracts.md Keep ALL entries from both sides.
 
   git fetch origin
   git merge origin/dev
 
-  ⚡ CONFLICT SHORTCUT: open .cursor/CONFLICT_RULES.md FIRST.
+  ⚡ CONFLICT SHORTCUT: open .cursor/conflict-rules.md FIRST.
   Every common conflict has a one-line rule. NO sed/grep/hexdump loops.
   maestro/api/routes/musehub/__init__.py NEVER conflicts (auto-discovery).
-  app.py, muse_vcs.md, type_contracts.md use union merge (.gitattributes).
+  app.py, muse-vcs.md, type-contracts.md use union merge (.gitattributes).
 
   ── CONFLICT PLAYBOOK (reference this immediately when git reports conflicts) ──
   │                                                                              │
@@ -875,7 +878,7 @@ Maestro-Session: $AGENT_SESSION"
   │     Keep either side, remove markers. Done.                                │
   │                                                                              │
   │   RULE 2 ─ KNOWN ADDITIVE FILE → apply the file-specific rule in STEP B:  │
-  │     muse_cli/app.py  •  muse_vcs.md  •  type_contracts.md                 │
+  │     muse_cli/app.py  •  muse-vcs.md  •  type-contracts.md                 │
   │                                                                              │
   │   RULE 3 ─ ALL OTHER FILES (judgment conflict):                             │
   │     Preserve dev's version PLUS your additions.                            │
@@ -896,9 +899,9 @@ Maestro-Session: $AGENT_SESSION"
   │ │   count must equal the total number of registered sub-apps            │  │
   │ └───────────────────────────────────────────────────────────────────────┘  │
   │                                                                              │
-  │ ┌─ docs/architecture/muse_vcs.md ───────────────────────────────────────┐  │
+  │ ┌─ docs/architecture/muse-vcs.md ───────────────────────────────────────┐  │
   │ │ Count markers first:                                                   │  │
-  │ │   grep -c "^<<<<<" docs/architecture/muse_vcs.md                      │  │
+  │ │   grep -c "^<<<<<" docs/architecture/muse-vcs.md                      │  │
   │ │ That is how many conflict blocks you must resolve.                     │  │
   │ │                                                                        │  │
   │ │ Pattern A — both sides have a real ## section:                        │  │
@@ -911,12 +914,12 @@ Maestro-Session: $AGENT_SESSION"
   │ │   Rule: keep the more complete / accurate version.                    │  │
   │ │                                                                        │  │
   │ │ Final check (must return empty):                                       │  │
-  │ │   grep -n "<<<<<<\|=======\|>>>>>>>" docs/architecture/muse_vcs.md   │  │
+  │ │   grep -n "<<<<<<\|=======\|>>>>>>>" docs/architecture/muse-vcs.md   │  │
   │ └───────────────────────────────────────────────────────────────────────┘  │
   │                                                                              │
-  │ ┌─ docs/reference/type_contracts.md ────────────────────────────────────┐  │
+  │ ┌─ docs/reference/type-contracts.md ────────────────────────────────────┐  │
   │ │ Rule: KEEP ALL entries from BOTH sides. Remove markers.              │  │
-  │ │ Final check: grep -n "<<<<<<\|=======\|>>>>>>>" docs/reference/type_contracts.md │
+  │ │ Final check: grep -n "<<<<<<\|=======\|>>>>>>>" docs/reference/type-contracts.md │
   │ └───────────────────────────────────────────────────────────────────────┘  │
   │                                                                              │
   │ ┌─ Any other file (JUDGMENT CONFLICTS) ─────────────────────────────────┐  │
@@ -985,6 +988,10 @@ STEP 5 — PUSH & CREATE PR:
   if [ -n "$MY_PR_NUM" ]; then
     sed -i '' "s/^LINKED_PR=.*/LINKED_PR=$MY_PR_NUM/" .agent-task 2>/dev/null || true
     echo "✅ LINKED_PR=$MY_PR_NUM written back to .agent-task"
+    # Label the PR agent:wip so the stale sweep never mistakes the issue for
+    # unclaimed just because the implementer worktree was pruned after PR creation.
+    gh pr edit "$MY_PR_NUM" --add-label "agent:wip" --repo "$GH_REPO" 2>/dev/null || true
+    echo "✅ agent:wip added to PR #$MY_PR_NUM"
   fi
 
   # Post fingerprint comment on the issue so it's traceable even if the claim
@@ -1085,7 +1092,7 @@ TASK
     echo "✅ Spawning QA reviewer for PR #$MY_PR (chain mode — reviewer will spawn next engineer)"
     # AGENT INSTRUCTION: call Task(prompt="Read the .agent-task file in your worktree,
     # then follow the complete Kickoff Prompt in
-    # $HOME/dev/tellurstori/maestro/.cursor/PARALLEL_PR_REVIEW.md.
+    # $HOME/dev/tellurstori/maestro/.cursor/parallel-pr-review.md.
     # GH_REPO=cgcardona/maestro  Repo: $HOME/dev/tellurstori/maestro",
     # worktree="$REVIEW_WORKTREE")
   else
@@ -1310,4 +1317,4 @@ git -C "$REPO" status
 
 ### 5 — Hand off to PR review
 
-PRs from this batch are immediately available for the **PARALLEL_PR_REVIEW.md** workflow. Run that now — issues only close automatically when PRs are **merged**, not just opened.
+PRs from this batch are immediately available for the **parallel-pr-review.md** workflow. Run that now — issues only close automatically when PRs are **merged**, not just opened.

@@ -10,10 +10,10 @@ Usage
 
 Options
 -------
-- ``--since <commit>``       Common ancestor commit ID (auto-detected if omitted).
-- ``--dimensions <name>``    Dimension(s) to analyse — may be repeated
+- ``--since <commit>`` Common ancestor commit ID (auto-detected if omitted).
+- ``--dimensions <name>`` Dimension(s) to analyse — may be repeated
                              (default: all five dimensions).
-- ``--json``                 Machine-readable JSON output.
+- ``--json`` Machine-readable JSON output.
 
 Output example (text mode)
 --------------------------
@@ -22,13 +22,13 @@ Output example (text mode)
     Musical Divergence: feature/guitar-version vs feature/piano-version
     Common ancestor: 7e3a1f2c
 
-    Melodic divergence:     HIGH — High melodic divergence — branches took different creative paths.
+    Melodic divergence: HIGH — High melodic divergence — branches took different creative paths.
       feature/guitar-version: 2 melodic file(s) changed
-      feature/piano-version:  0 melodic file(s) changed
+      feature/piano-version: 0 melodic file(s) changed
 
-    Harmonic divergence:    MED  — Moderate harmonic divergence — different directions.
+    Harmonic divergence: MED — Moderate harmonic divergence — different directions.
       feature/guitar-version: 1 harmonic file(s) changed
-      feature/piano-version:  2 harmonic file(s) changed
+      feature/piano-version: 2 harmonic file(s) changed
 
     Overall divergence score: 0.60
 
@@ -101,8 +101,8 @@ class _DivergenceJson(TypedDict):
 
 _LEVEL_LABELS: dict[DivergenceLevel, str] = {
     DivergenceLevel.NONE: "NONE",
-    DivergenceLevel.LOW:  "LOW ",
-    DivergenceLevel.MED:  "MED ",
+    DivergenceLevel.LOW: "LOW ",
+    DivergenceLevel.MED: "MED ",
     DivergenceLevel.HIGH: "HIGH",
 }
 
@@ -127,8 +127,8 @@ def render_text(result: MuseDivergenceResult) -> None:
         typer.echo(
             f"{dim.dimension.capitalize()} divergence:\t{label} — {dim.description}"
         )
-        typer.echo(f"  {result.branch_a}: {dim.branch_a_summary}")
-        typer.echo(f"  {result.branch_b}: {dim.branch_b_summary}")
+        typer.echo(f" {result.branch_a}: {dim.branch_a_summary}")
+        typer.echo(f" {result.branch_b}: {dim.branch_b_summary}")
         typer.echo("")
     typer.echo(f"Overall divergence score: {result.overall_score:.4f}")
 
@@ -180,12 +180,12 @@ async def _divergence_async(
     and writes output via the appropriate renderer.
 
     Args:
-        branch_a:    First branch name.
-        branch_b:    Second branch name.
-        root:        Repository root (directory containing ``.muse/``).
-        session:     Open async DB session.
-        since:       Common ancestor commit ID override (``None`` → auto-detect).
-        dimensions:  Dimensions to analyse (empty → all).
+        branch_a: First branch name.
+        branch_b: Second branch name.
+        root: Repository root (directory containing ``.muse/``).
+        session: Open async DB session.
+        since: Common ancestor commit ID override (``None`` → auto-detect).
+        dimensions: Dimensions to analyse (empty → all).
         output_json: If ``True``, render JSON; otherwise render text.
     """
     muse_dir = root / ".muse"

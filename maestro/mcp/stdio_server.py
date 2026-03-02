@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Maestro MCP Stdio Server — standalone MCP server via stdio.
 
-Registered with Cursor or Claude Desktop.  When MAESTRO_MCP_URL and
+Registered with Cursor or Claude Desktop. When MAESTRO_MCP_URL and
 MCP_TOKEN are set, DAW tool calls are proxied to the Maestro backend
-(where the DAW WebSocket is registered).  That way Cursor and the DAW
+(where the DAW WebSocket is registered). That way Cursor and the DAW
 app share the same connection.
 
 Usage:

@@ -1,6 +1,6 @@
 """Pydantic v2 request/response models for the Muse Hub API.
 
-All wire-format fields use camelCase via CamelModel.  Python code uses
+All wire-format fields use camelCase via CamelModel. Python code uses
 snake_case throughout; only serialisation to JSON uses camelCase.
 """
 from __future__ import annotations
@@ -50,7 +50,7 @@ class CommitInput(CamelModel):
 class ObjectInput(CamelModel):
     """A binary object transferred in a push payload.
 
-    Content is base64-encoded.  For MVP, objects up to ~1 MB are fine; larger
+    Content is base64-encoded. For MVP, objects up to ~1 MB are fine; larger
     files will require pre-signed URL upload in a future release.
     """
 
@@ -151,7 +151,7 @@ class CreateRepoRequest(CamelModel):
     )
     key_signature: str | None = Field(None, max_length=50, description="Musical key (e.g. 'C major', 'F# minor')")
     tempo_bpm: int | None = Field(None, ge=20, le=300, description="Tempo in BPM")
-    # ── Wizard extensions (issue #434) ────────────────────────────────────────
+    # ── Wizard extensions ────────────────────────────────────────
     license: str | None = Field(None, max_length=100, description="License identifier (e.g. 'CC BY 4.0', 'MIT')")
     topics: list[str] = Field(
         default_factory=list,
@@ -208,7 +208,7 @@ class TransferOwnershipRequest(CamelModel):
 class RepoListResponse(CamelModel):
     """Paginated list of repos for the authenticated user.
 
-    Covers repos they own plus repos they collaborate on.  The ``next_cursor``
+    Covers repos they own plus repos they collaborate on. The ``next_cursor``
     opaque string is passed back as ``?cursor=`` to retrieve the next page;
     a null value means there are no more results.
     """
@@ -251,7 +251,7 @@ class BranchListResponse(CamelModel):
 class BranchDivergenceScores(CamelModel):
     """Placeholder musical divergence scores between a branch and the default branch.
 
-    These five dimensions mirror the ``muse divergence`` command output.  Values
+    These five dimensions mirror the ``muse divergence`` command output. Values
     are floats in [0.0, 1.0] where 0 = identical and 1 = maximally different.
     All fields are ``None`` when divergence cannot yet be computed server-side
     (e.g. no audio snapshots attached to commits).
@@ -295,7 +295,7 @@ class BranchDetailListResponse(CamelModel):
 class TagResponse(CamelModel):
     """A single tag entry for the tag browser page.
 
-    Tags are sourced from ``musehub_releases``.  The ``namespace`` field is
+    Tags are sourced from ``musehub_releases``. The ``namespace`` field is
     derived from the tag name: ``emotion:happy`` → namespace ``emotion``,
     ``v1.0`` → namespace ``version``.
     """
@@ -311,7 +311,7 @@ class TagListResponse(CamelModel):
     """All tags for a repo, grouped by namespace.
 
     ``namespaces`` is an ordered list of distinct namespace strings present in
-    the repo.  ``tags`` is the flat list; clients should filter/group client-side
+    the repo. ``tags`` is the flat list; clients should filter/group client-side
     using the ``namespace`` field.
     """
 
@@ -412,9 +412,9 @@ class MusicalRef(CamelModel):
     """A parsed musical context reference extracted from a comment body.
 
     Examples from user text:
-    - ``track:bass``      → type="track", value="bass"
-    - ``section:chorus``  → type="section", value="chorus"
-    - ``beats:16-24``     → type="beats", value="16-24"
+    - ``track:bass`` → type="track", value="bass"
+    - ``section:chorus`` → type="section", value="chorus"
+    - ``beats:16-24`` → type="beats", value="16-24"
 
     These are parsed at write time and stored alongside the comment so that
     the UI can render them as clickable links without re-parsing on every read.
@@ -530,7 +530,7 @@ class IssueAssignRequest(CamelModel):
 class IssueLabelAssignRequest(CamelModel):
     """Body for POST /musehub/repos/{repo_id}/issues/{number}/labels.
 
-    Replaces the entire label list on the issue.  To append labels, fetch the
+    Replaces the entire label list on the issue. To append labels, fetch the
     current list first, merge client-side, and post the merged result.
     """
 
@@ -640,7 +640,7 @@ class PRDiffResponse(CamelModel):
 
     Returned by ``GET /api/v1/musehub/repos/{repo_id}/pull-requests/{pr_id}/diff``.
     Consumed by the PR detail page to render the radar chart, piano roll diff,
-    audio A/B toggle, and dimension badges.  Also consumed by AI agents to
+    audio A/B toggle, and dimension badges. Also consumed by AI agents to
     reason about musical impact before merging.
 
     ``overall_score`` is in [0.0, 1.0]; multiply by 100 for a percentage.
@@ -678,10 +678,10 @@ class PRCommentCreate(CamelModel):
     """Body for POST /musehub/repos/{repo_id}/pull-requests/{pr_id}/comments.
 
     ``target_type`` selects the granularity of the musical annotation:
-      - ``general``  — whole PR, no positional context
-      - ``track``    — a named instrument track (supply ``target_track``)
-      - ``region``   — beat range within a track (supply track + beat_start/end)
-      - ``note``     — single note event (supply track + beat_start + note_pitch)
+      - ``general`` — whole PR, no positional context
+      - ``track`` — a named instrument track (supply ``target_track``)
+      - ``region`` — beat range within a track (supply track + beat_start/end)
+      - ``note`` — single note event (supply track + beat_start + note_pitch)
 
     ``body`` supports Markdown so reviewers can format code-fence chord charts,
     lists of suggested edits, etc.
@@ -755,7 +755,7 @@ class PRCommentListResponse(CamelModel):
     """Threaded list of review comments for a PR.
 
     ``comments`` contains only top-level comments; each carries a ``replies``
-    list with its direct children, sorted chronologically.  This two-level
+    list with its direct children, sorted chronologically. This two-level
     structure covers all current threading requirements without recursive fetches.
     """
 
@@ -776,8 +776,8 @@ PRCommentResponse.model_rebuild()
 class PRReviewerRequest(CamelModel):
     """Body for POST /musehub/repos/{repo_id}/pull-requests/{pr_id}/reviewers.
 
-    Requests a review from one or more users.  Each username is added as a
-    ``pending`` review row.  Duplicate requests for the same reviewer are
+    Requests a review from one or more users. Each username is added as a
+    ``pending`` review row. Duplicate requests for the same reviewer are
     idempotent — the state is not reset if the reviewer already submitted.
     """
 
@@ -793,10 +793,10 @@ class PRReviewResponse(CamelModel):
     """Wire representation of a single PR review.
 
     ``state`` reflects the current disposition of the reviewer:
-      - ``pending``           — review requested, not yet submitted
-      - ``approved``          — reviewer approved the changes
+      - ``pending`` — review requested, not yet submitted
+      - ``approved`` — reviewer approved the changes
       - ``changes_requested`` — reviewer blocked the merge pending fixes
-      - ``dismissed``         — a previous review was dismissed by the PR author
+      - ``dismissed`` — a previous review was dismissed by the PR author
 
     ``submitted_at`` is ``None`` while the review is in ``pending`` state.
     """
@@ -818,7 +818,7 @@ class PRReviewListResponse(CamelModel):
     """List of reviews for a pull request.
 
     Used by the PR detail page review panel and by AI agents evaluating
-    merge readiness.  Includes both pending assignments and submitted reviews.
+    merge readiness. Includes both pending assignments and submitted reviews.
     """
 
     reviews: list[PRReviewResponse] = Field(
@@ -831,14 +831,14 @@ class PRReviewListResponse(CamelModel):
 class PRReviewCreate(CamelModel):
     """Body for POST /musehub/repos/{repo_id}/pull-requests/{pr_id}/reviews.
 
-    Submits a formal review for the authenticated user.  If the user was
+    Submits a formal review for the authenticated user. If the user was
     previously assigned as a reviewer, the existing ``pending`` row is updated
-    in-place.  If no prior row exists, a new one is created.
+    in-place. If no prior row exists, a new one is created.
 
     ``event`` governs the new review state:
-      - ``approve``          → state = approved
-      - ``request_changes``  → state = changes_requested
-      - ``comment``          → state = pending (body-only feedback, no verdict)
+      - ``approve`` → state = approved
+      - ``request_changes`` → state = changes_requested
+      - ``comment`` → state = pending (body-only feedback, no verdict)
     """
 
     event: str = Field(
@@ -1170,7 +1170,7 @@ class DivergenceDimensionResponse(CamelModel):
     """Wire representation of divergence scores for a single musical dimension.
 
     Mirrors :class:`maestro.services.musehub_divergence.MuseHubDimensionDivergence`
-    for JSON serialization.  AI agents consume this to decide which dimension
+    for JSON serialization. AI agents consume this to decide which dimension
     of a branch needs creative attention before merging.
     """
 
@@ -1185,7 +1185,7 @@ class DivergenceDimensionResponse(CamelModel):
 class DivergenceResponse(CamelModel):
     """Full musical divergence report between two Muse Hub branches.
 
-    Returned by ``GET /musehub/repos/{repo_id}/divergence``.  Contains five
+    Returned by ``GET /musehub/repos/{repo_id}/divergence``. Contains five
     per-dimension scores (melodic, harmonic, rhythmic, structural, dynamic)
     and an overall score computed as the mean of those five scores.
 
@@ -1350,7 +1350,7 @@ class ProfileResponse(CamelModel):
     ``session_credits`` is the total number of commits across all repos
     (a proxy for creative session activity).
 
-    CC attribution fields added in issue #448:
+    CC attribution fields added:
     ``is_verified`` is True for Public Domain / Creative Commons artists.
     ``cc_license`` is the SPDX-style license string (e.g. "CC BY 4.0") or
     None for community users who retain all rights.
@@ -1534,7 +1534,7 @@ class PullRequestEventPayload(TypedDict):
     mergeCommitId: NotRequired[str]
 
 
-# Union of all typed webhook event payloads.  The dispatcher accepts any of
+# Union of all typed webhook event payloads. The dispatcher accepts any of
 # these; callers pass the specific TypedDict for their event type.
 WebhookEventPayload = PushEventPayload | IssueEventPayload | PullRequestEventPayload
 
@@ -1573,8 +1573,8 @@ class GlobalSearchResult(CamelModel):
     """Top-level response for GET /search?q={query}.
 
     ``groups`` contains one entry per public repo that had at least one
-    matching commit.  ``total_repos`` is the count of repos searched, not just
-    the repos with matches.  ``page`` / ``page_size`` enable offset pagination
+    matching commit. ``total_repos`` is the count of repos searched, not just
+    the repos with matches. ``page`` / ``page_size`` enable offset pagination
     across groups.
     """
 
@@ -1624,17 +1624,17 @@ class MuseHubContextResponse(CamelModel):
 
     This is the MuseHub equivalent of ``MuseContextResult`` -- built from
     the remote repo's commit graph and stored objects rather than the local
-    ``.muse`` filesystem.  The structure deliberately mirrors ``MuseContextResult``
+    ``.muse`` filesystem. The structure deliberately mirrors ``MuseContextResult``
     so that agents consuming either source see the same schema.
 
     Fields:
-        repo_id:        The hub repo identifier.
+        repo_id: The hub repo identifier.
         current_branch: Branch name for the target commit.
-        head_commit:    Metadata for the resolved commit (ref).
-        musical_state:  Active tracks and any available musical dimensions.
-        history:        Up to 5 ancestor commits, newest-first.
+        head_commit: Metadata for the resolved commit (ref).
+        musical_state: Active tracks and any available musical dimensions.
+        history: Up to 5 ancestor commits, newest-first.
         missing_elements: Dimensions that could not be determined from stored data.
-        suggestions:    Composer-facing hints about what to work on next.
+        suggestions: Composer-facing hints about what to work on next.
     """
 
     repo_id: str
@@ -1670,7 +1670,7 @@ class SearchResponse(CamelModel):
     """Response envelope for all four in-repo search modes.
 
     ``mode`` echoes back the requested search mode so clients can render
-    mode-appropriate headers.  ``total_scanned`` is the number of commits
+    mode-appropriate headers. ``total_scanned`` is the number of commits
     examined before limit was applied; useful for indicating search depth.
     """
 
@@ -1932,7 +1932,7 @@ class TreeEntryResponse(CamelModel):
     GET /musehub/repos/{repo_id}/tree/{ref}/{path}.
 
     Consumers should use ``type`` to render the appropriate icon:
-    - "dir"  → folder icon, clickable to navigate deeper
+    - "dir" → folder icon, clickable to navigate deeper
     - "file" → file-type icon based on ``name`` extension
       (.mid → piano, .mp3/.wav → waveform, .json → braces, .webp/.png → photo)
 
@@ -1975,11 +1975,11 @@ class TreeListResponse(CamelModel):
 class GrooveCommitEntry(CamelModel):
     """Per-commit groove metrics within a groove-check analysis window.
 
-    groove_score  — average note-onset deviation from the quantization grid,
+    groove_score — average note-onset deviation from the quantization grid,
                     measured in beats (lower = tighter to the grid).
-    drift_delta   — absolute change in groove_score relative to the prior
-                    commit.  The oldest commit in the window always has 0.0.
-    status        — OK / WARN / FAIL classification against the threshold.
+    drift_delta — absolute change in groove_score relative to the prior
+                    commit. The oldest commit in the window always has 0.0.
+    status — OK / WARN / FAIL classification against the threshold.
     """
 
     commit: str = Field(..., description="Short commit reference (8 hex chars)")
@@ -2044,7 +2044,7 @@ class ArrangementMatrixResponse(CamelModel):
     so producers can evaluate orchestration density without downloading tracks.
 
     The ``cells`` list is a flat row-major enumeration of (instrument, section)
-    pairs.  Consumers should index by (instrument, section) for O(1) lookup.
+    pairs. Consumers should index by (instrument, section) for O(1) lookup.
     Row/column summaries pre-aggregate totals so the UI can draw marginal bars
     without re-summing the cell list.
     """
@@ -2100,7 +2100,7 @@ class GrooveCheckResponse(CamelModel):
     """Rhythmic consistency dashboard data for a commit range in a Muse Hub repo.
 
     Aggregates timing deviation, swing ratio, and quantization tightness
-    metrics derived from MIDI snapshots across a window of commits.  The
+    metrics derived from MIDI snapshots across a window of commits. The
     ``entries`` list is ordered oldest-first so consumers can plot groove
     evolution over time.
     """
@@ -2128,9 +2128,9 @@ class GrooveCheckResponse(CamelModel):
 class AudioTrackEntry(CamelModel):
     """A single audio artifact surfaced on the listen page.
 
-    Represents one stem or full-mix file at a given commit ref.  The
+    Represents one stem or full-mix file at a given commit ref. The
     ``audio_url`` is the canonical download path served by the objects
-    endpoint.  ``piano_roll_url`` is non-None only when a matching .webp
+    endpoint. ``piano_roll_url`` is non-None only when a matching .webp
     piano-roll image exists at the same path prefix.
     """
 
@@ -2150,7 +2150,7 @@ class TrackListingResponse(CamelModel):
     """Full-mix and per-track audio listing for a repo at a given ref.
 
     Powers the listen page's dual-view UX: the full-mix player at the top
-    and the per-track listing below.  The ``has_renders`` flag lets the
+    and the per-track listing below. The ``has_renders`` flag lets the
     client differentiate between a repo with no audio at all and one that
     has audio but no explicit full-mix file.
     """
@@ -2177,9 +2177,9 @@ class TrackListingResponse(CamelModel):
 class EmotionDiffResponse(CamelModel):
     """Delta between the emotional character of base and head refs.
 
-    Each field is ``head_value − base_value`` in [−1.0, 1.0].  Positive
+    Each field is ``head_value − base_value`` in [−1.0, 1.0]. Positive
     means head is more energetic/positive/tense/dark than base; negative
-    means the opposite.  Values are derived deterministically from commit
+    means the opposite. Values are derived deterministically from commit
     SHA hashes so they are always reproducible.
 
     Agents use this to answer "how did the mood shift between these two
@@ -2216,7 +2216,7 @@ class CompareResponse(CamelModel):
     payload that powers the compare page UI.
 
     The ``commits`` list contains only commits that are reachable from ``head``
-    but not from ``base`` (i.e. commits unique to head), newest first.  This
+    but not from ``base`` (i.e. commits unique to head), newest first. This
     mirrors GitHub's compare view: "commits you'd be adding to base."
 
     Agents use this to decide whether to open a pull request and what the
@@ -2254,7 +2254,7 @@ class CompareResponse(CamelModel):
 class StargazerEntry(CamelModel):
     """A single user who has starred a repo.
 
-    Returned as items in ``StargazerListResponse``.  ``user_id`` is the JWT
+    Returned as items in ``StargazerListResponse``. ``user_id`` is the JWT
     ``sub`` of the starring user; ``starred_at`` is when the star was created.
     """
 
@@ -2278,7 +2278,7 @@ class ForkEntry(CamelModel):
     """A single fork of a repo.
 
     Carries both the fork's repo metadata and the lineage link back to the
-    source repo.  Returned as items in ``ForkListResponse``.
+    source repo. Returned as items in ``ForkListResponse``.
     """
 
     fork_id: str = Field(..., description="Internal UUID of the fork relationship record")
@@ -2305,7 +2305,7 @@ class ForkCreateResponse(CamelModel):
 
     Returned by ``POST /api/v1/musehub/repos/{repo_id}/fork``.
     ``fork_repo`` is the newly created repo under the authenticated user's
-    namespace.  ``source_repo_id`` is the original repo's ID for lineage
+    namespace. ``source_repo_id`` is the original repo's ID for lineage
     display on the fork's home page.
     """
 
@@ -2375,7 +2375,7 @@ class ForkNetworkResponse(CamelModel):
 
     Returned by ``GET /musehub/ui/{owner}/{repo_slug}/forks?format=json``.
 
-    The ``root`` node represents the canonical upstream repo.  Each
+    The ``root`` node represents the canonical upstream repo. Each
     ``ForkNetworkNode`` in ``root.children`` is a direct fork; their
     own ``children`` lists contain second-level forks, and so on.
 
@@ -2450,7 +2450,7 @@ class RepoSettingsResponse(CamelModel):
 
     Returned by ``GET /api/v1/musehub/repos/{repo_id}/settings``.
 
-    Fields map to GitHub-style repo settings.  ``name``, ``description``,
+    Fields map to GitHub-style repo settings. ``name``, ``description``,
     ``visibility``, and ``topics`` are stored in dedicated repo columns;
     all remaining flags are stored in the ``settings`` JSON blob.
 
@@ -2551,7 +2551,7 @@ class BlameEntry(CamelModel):
     """A single blame annotation entry attributing a note event to a commit.
 
     Each entry maps a note (identified by pitch, track, and beat range) to the
-    commit that last introduced or modified it.  When filtering by ``track`` or
+    commit that last introduced or modified it. When filtering by ``track`` or
     ``beat_start``/``beat_end``, only entries within the specified scope are
     returned.
 
@@ -2576,7 +2576,7 @@ class BlameResponse(CamelModel):
     """Response envelope for the blame API.
 
     ``entries`` is the list of blame annotations, each attributing a note to the
-    commit that last modified it.  ``total_entries`` reflects the total number of
+    commit that last modified it. ``total_entries`` reflects the total number of
     matching entries before any client-side pagination.
 
     When no matching notes are found (e.g. the path does not exist at ``ref``
@@ -2601,7 +2601,7 @@ class CollaboratorAccessResponse(CamelModel):
     """Response for the collaborator access-check endpoint.
 
     Returns the effective permission level for a given username on a repo.
-    The owner's effective permission is always ``"owner"``.  Non-collaborators
+    The owner's effective permission is always ``"owner"``. Non-collaborators
     are reported as 404 rather than returning a ``"none"`` permission value,
     so callers can distinguish a known absence (404) from a positive result.
 

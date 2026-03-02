@@ -10,9 +10,9 @@ Output modes
     Changes since last commit:
       (use "muse commit -m <msg>" to record changes)
 
-            modified:   beat.mid
-            new file:   lead.mp3
-            deleted:    scratch.mid
+            modified: beat.mid
+            new file: lead.mp3
+            deleted: scratch.mid
 
 **--short** (condensed, one file per line)::
 
@@ -101,9 +101,9 @@ _PORCELAIN_CODES: dict[str, str] = {
 
 # Verbose labels for default output
 _VERBOSE_LABELS: dict[str, str] = {
-    "modified": "modified:  ",
-    "added": "new file:  ",
-    "deleted": "deleted:   ",
+    "modified": "modified: ",
+    "added": "new file: ",
+    "deleted": "deleted: ",
     "untracked": "untracked: ",
 }
 
@@ -142,9 +142,9 @@ def _format_line(status: str, path: str, *, short: bool, porcelain: bool) -> str
     Priority: porcelain → short → verbose.
 
     Args:
-        status:    One of ``"modified"``, ``"added"``, ``"deleted"``, ``"untracked"``.
-        path:      Repo-relative path (POSIX separators).
-        short:     Emit condensed ``X path`` format.
+        status: One of ``"modified"``, ``"added"``, ``"deleted"``, ``"untracked"``.
+        path: Repo-relative path (POSIX separators).
+        short: Emit condensed ``X path`` format.
         porcelain: Emit stable ``XY path`` format.
 
     Returns:
@@ -164,7 +164,7 @@ def _group_by_first_dir(entries: list[tuple[str, str]]) -> dict[str, list[tuple[
     """Group ``(status, path)`` entries by the first directory component of *path*.
 
     Files that live directly in the working-tree root (no sub-directory) are
-    placed under the key ``"(root)"``.  This allows section/track grouping to
+    placed under the key ``"(root)"``. This allows section/track grouping to
     degrade gracefully when users have files at the top level.
     """
     groups: dict[str, list[tuple[str, str]]] = defaultdict(list)
@@ -194,8 +194,8 @@ def _render_grouped(
 ) -> None:
     """Write entries to stdout grouped under ``## <section>`` headers.
 
-    Grouping is by the first directory component of each path.  Within each
-    group the entries are sorted by path.  An empty line follows each group
+    Grouping is by the first directory component of each path. Within each
+    group the entries are sorted by path. An empty line follows each group
     to improve readability.
     """
     groups = _group_by_first_dir(entries)
@@ -240,20 +240,20 @@ async def _status_async(
     lines grouped by section.
 
     Args:
-        root:        Repository root (directory containing ``.muse/``).
-        session:     An open async DB session used to load the HEAD snapshot.
-        short:       Emit condensed one-line-per-file output.
+        root: Repository root (directory containing ``.muse/``).
+        session: An open async DB session used to load the HEAD snapshot.
+        short: Emit condensed one-line-per-file output.
         branch_only: Emit only the branch/tracking line; skip file listing.
-        porcelain:   Emit machine-readable ``XY path`` format with ``## branch`` header.
-        sections:    Group output by first directory component (musical sections).
-        tracks:      Group output by first directory component (instrument tracks).
+        porcelain: Emit machine-readable ``XY path`` format with ``## branch`` header.
+        sections: Group output by first directory component (musical sections).
+        tracks: Group output by first directory component (instrument tracks).
     """
     muse_dir = root / ".muse"
     grouped = sections or tracks
 
     # -- Branch name --
     head_path = muse_dir / "HEAD"
-    head_ref = head_path.read_text().strip()          # "refs/heads/main"
+    head_ref = head_path.read_text().strip() # "refs/heads/main"
     branch = head_ref.rsplit("/", 1)[-1] if "/" in head_ref else head_ref
 
     # --branch: emit only the branch line and return.
@@ -267,11 +267,11 @@ async def _status_async(
         typer.echo(f"On branch {branch}")
         typer.echo("")
         typer.echo("You have unmerged paths.")
-        typer.echo('  (fix conflicts and run "muse merge --continue")')
+        typer.echo(' (fix conflicts and run "muse merge --continue")')
         typer.echo("")
         typer.echo("Unmerged paths:")
         for conflict_path in sorted(merge_state.conflict_paths):
-            typer.echo(f"\tboth modified:   {conflict_path}")
+            typer.echo(f"\tboth modified: {conflict_path}")
         typer.echo("")
         return
 
@@ -305,7 +305,7 @@ async def _status_async(
                 typer.echo(f"On branch {branch}, no commits yet")
                 typer.echo("")
                 typer.echo("Untracked files:")
-                typer.echo('  (use "muse commit -m <msg>" to record changes)')
+                typer.echo(' (use "muse commit -m <msg>" to record changes)')
                 typer.echo("")
                 for path in sorted(untracked_files):
                     typer.echo(f"\t{path}")
@@ -364,14 +364,14 @@ async def _status_async(
     typer.echo(f"On branch {branch}")
     typer.echo("")
     typer.echo("Changes since last commit:")
-    typer.echo('  (use "muse commit -m <msg>" to record changes)')
+    typer.echo(' (use "muse commit -m <msg>" to record changes)')
     typer.echo("")
     for path in sorted(modified):
-        typer.echo(f"\tmodified:   {path}")
+        typer.echo(f"\tmodified: {path}")
     for path in sorted(added):
-        typer.echo(f"\tnew file:   {path}")
+        typer.echo(f"\tnew file: {path}")
     for path in sorted(deleted):
-        typer.echo(f"\tdeleted:    {path}")
+        typer.echo(f"\tdeleted: {path}")
     typer.echo("")
 
 

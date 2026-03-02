@@ -6,7 +6,7 @@ Every MuseHub URL can serve two audiences from the same path:
 
 This module provides ``negotiate_response()`` — a single function that route
 handlers call after preparing both a Pydantic data model and a Jinja2 template
-context.  The function inspects the ``Accept`` header and an optional
+context. The function inspects the ``Accept`` header and an optional
 ``?format`` query parameter, then dispatches to the correct serialiser.
 
 Design rationale:
@@ -58,11 +58,11 @@ async def negotiate_response(
 
     Route handlers should call this instead of constructing responses directly.
     The handler prepares:
-    - ``context``   — Jinja2 template variables for the HTML path.
+    - ``context`` — Jinja2 template variables for the HTML path.
     - ``json_data`` — Pydantic model for the JSON path (camelCase serialised).
 
     When ``json_data`` is ``None`` and JSON is requested, ``context`` is
-    serialised as-is.  This is a fallback for pages that have no structured
+    serialised as-is. This is a fallback for pages that have no structured
     backend data; prefer providing a Pydantic model whenever possible.
 
     Args:

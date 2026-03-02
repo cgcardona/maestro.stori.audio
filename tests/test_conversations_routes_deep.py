@@ -234,7 +234,7 @@ class TestConversationSearchAPI:
             "/api/v1/conversations/search",
             headers=auth_headers,
         )
-        assert resp.status_code == 422  # Missing required query param
+        assert resp.status_code == 422 # Missing required query param
 
 
 class TestConversationUpdateAPI:

@@ -137,7 +137,7 @@ def _is_valid_midi(path: pathlib.Path) -> bool:
     """Return True iff *path* begins with the Standard MIDI File header (MThd).
 
     This is a fast structural check — it verifies the 4-byte magic header and
-    the header chunk length (always 6 bytes for SMF).  Full parse correctness
+    the header chunk length (always 6 bytes for SMF). Full parse correctness
     is left to ``mido`` in the import pipeline; here we just reject obviously
     corrupt or truncated files so agents get an actionable error before commit.
     """
@@ -165,7 +165,7 @@ def check_midi_integrity(
     exports, or bit-rot before the file is committed to Muse VCS history.
 
     Args:
-        workdir:      The ``muse-work/`` directory to scan.
+        workdir: The ``muse-work/`` directory to scan.
         track_filter: If given, only MIDI files whose relative path contains
                       this string (case-insensitive) are validated.
 
@@ -211,12 +211,12 @@ def check_manifest_consistency(
     """Compare the committed snapshot manifest against the actual working tree.
 
     Detects orphaned files (in the manifest but missing from disk) and
-    unregistered files (on disk but absent from the manifest).  These indicate
+    unregistered files (on disk but absent from the manifest). These indicate
     that the working tree has drifted from the last commit — potentially from
     manual edits or a failed ``muse checkout``.
 
     Args:
-        root:         Repository root (contains ``.muse/`` and ``muse-work/``).
+        root: Repository root (contains ``.muse/`` and ``muse-work/``).
         track_filter: Scope validation to paths containing this string.
 
     Returns:
@@ -329,14 +329,14 @@ def check_no_duplicate_tracks(
 
     A duplicate is defined as two or more MIDI files sharing the same
     instrument role name (the stem of their filename, excluding the extension
-    and any numeric suffix).  For example: ``bass.mid`` and ``bass_alt.mid``
+    and any numeric suffix). For example: ``bass.mid`` and ``bass_alt.mid``
     both define a bass role.
 
     Agents use this to prevent ambiguous track assignments that would cause
     Storpheus to generate for the wrong instrument during composition.
 
     Args:
-        workdir:      The ``muse-work/`` directory to scan.
+        workdir: The ``muse-work/`` directory to scan.
         track_filter: If given, only roles whose name contains this string
                       (case-insensitive) are evaluated.
 
@@ -396,7 +396,7 @@ def check_section_naming(
     shell quoting issues.
 
     Args:
-        workdir:       The ``muse-work/`` directory to scan.
+        workdir: The ``muse-work/`` directory to scan.
         section_filter: If given, only directories whose name contains this
                         string (case-insensitive) are evaluated.
 
@@ -450,7 +450,7 @@ def check_emotion_tags(
     Maestro's mood model has not been trained on.
 
     Args:
-        root:         Repository root.
+        root: Repository root.
         track_filter: Unused for this check (included for API symmetry).
 
     Returns:
@@ -527,7 +527,7 @@ def apply_fixes(
 
     Args:
         workdir: The ``muse-work/`` working tree directory.
-        issues:  The full list of issues found during validation.
+        issues: The full list of issues found during validation.
 
     Returns:
         List of human-readable strings describing each fix applied.
@@ -563,16 +563,16 @@ def run_validate(
 ) -> MuseValidateResult:
     """Run all integrity checks against the working tree at *root*.
 
-    This is the single entry point for the validate subsystem.  It runs
+    This is the single entry point for the validate subsystem. It runs
     checks in dependency order and aggregates results into a single
     :class:`MuseValidateResult`.
 
     Args:
-        root:           Repository root (contains ``.muse/`` and ``muse-work/``).
-        strict:         Treat WARN-severity issues as fatal (exit 2 in CLI).
-        track_filter:   Restrict checks to files/paths containing this string.
+        root: Repository root (contains ``.muse/`` and ``muse-work/``).
+        strict: Treat WARN-severity issues as fatal (exit 2 in CLI).
+        track_filter: Restrict checks to files/paths containing this string.
         section_filter: Restrict section-naming check to dirs matching this.
-        auto_fix:       Attempt to auto-correct fixable issues before reporting.
+        auto_fix: Attempt to auto-correct fixable issues before reporting.
 
     Returns:
         MuseValidateResult with all check outcomes and any fixes applied.

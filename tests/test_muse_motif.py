@@ -7,7 +7,7 @@ Covers:
 - CLI command rendering helpers: _format_find, _format_track, _format_diff,
   _format_list.
 
-All async tests use @pytest.mark.anyio.  No live DB or external API calls.
+All async tests use @pytest.mark.anyio. No live DB or external API calls.
 """
 from __future__ import annotations
 

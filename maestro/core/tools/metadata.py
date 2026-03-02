@@ -1,7 +1,7 @@
 """Tool metadata models and enums.
 
 ``ToolTier`` and ``ToolKind`` classify every DAW tool for routing,
-planner gating, and allowlist construction.  ``ToolMeta`` is the single
+planner gating, and allowlist construction. ``ToolMeta`` is the single
 authoritative record per tool — populated once in ``app/daw/stori/tool_registry.py``
 and queried everywhere else.
 """
@@ -20,8 +20,8 @@ class ToolTier(str, Enum):
     execution and always appear in SSE ``toolCall`` events.
     """
 
-    TIER1 = "tier1"  # server-side (Maestro / Orpheus)
-    TIER2 = "tier2"  # client-side (Stori DAW via WebSocket / SSE)
+    TIER1 = "tier1" # server-side (Maestro / Orpheus)
+    TIER2 = "tier2" # client-side (Stori DAW via WebSocket / SSE)
 
 
 class ToolKind(str, Enum):
@@ -29,7 +29,7 @@ class ToolKind(str, Enum):
 
     ``PRIMITIVE`` — atomic DAW operation (add track, add notes, set tempo …).
     ``GENERATOR`` — calls Orpheus to generate MIDI; always ``TIER1`` and ``planner_only``.
-    ``MACRO``     — expands into a list of primitives at plan time; never sent to the LLM.
+    ``MACRO`` — expands into a list of primitives at plan time; never sent to the LLM.
     """
 
     PRIMITIVE = "primitive"
@@ -42,7 +42,7 @@ class ToolMeta:
     """Immutable metadata record for one registered DAW tool.
 
     One instance is created per tool in ``build_tool_registry()`` and stored
-    in the module-level ``_TOOL_META`` dict.  All downstream code reads from
+    in the module-level ``_TOOL_META`` dict. All downstream code reads from
     there — never constructs ``ToolMeta`` directly.
 
     Attributes:
@@ -53,12 +53,12 @@ class ToolMeta:
             entity (``"track"``, ``"region"``, or ``"bus"``); ``None`` otherwise.
             The executor uses this to wire up ``EntityRegistry.register_*`` calls.
         id_fields: Names of output fields that contain server-generated entity UUIDs
-            (e.g. ``("trackId",)``).  Used by the executor to resolve forward
+            (e.g. ``("trackId",)``). Used by the executor to resolve forward
             references like ``$0.trackId`` in downstream tool params.
         reversible: ``False`` for destructive operations where undo is impractical
-            (e.g. ``stori_create_project``).  Advisory only today.
+            (e.g. ``stori_create_project``). Advisory only today.
         planner_only: When ``True``, the tool is never exposed directly to the LLM
-            and does not appear in the tool-allowlist sent to the model.  Used for
+            and does not appear in the tool-allowlist sent to the model. Used for
             ``GENERATOR`` tools that the planner emits on the model's behalf.
         deprecated: Signals that this tool has a preferred replacement and should
             not be emitted in new plans.

@@ -7,7 +7,7 @@ specific track patterns and musical dimensions.
 File format (one rule per line)::
 
     # comment
-    <track-pattern>  <dimension>  <strategy>
+    <track-pattern> <dimension> <strategy>
 
 Where:
 - ``<track-pattern>`` is an fnmatch glob (e.g. ``drums/*``, ``bass/*``, ``*``).
@@ -19,11 +19,11 @@ Resolution precedence: the *first* matching rule wins.
 Example::
 
     # Drums are always authoritative — keep ours on conflict.
-    drums/*  *        ours
+    drums/* * ours
     # Accept collaborator keys wholesale.
-    keys/*   harmonic theirs
+    keys/* harmonic theirs
     # Everything else: automatic merge.
-    *        *        auto
+    * * auto
 """
 from __future__ import annotations
 
@@ -72,7 +72,7 @@ class MuseAttribute(BaseModel):
 def parse_museattributes_file(content: str) -> list[MuseAttribute]:
     """Parse the text content of a ``.museattributes`` file into a list of rules.
 
-    Lines that are empty or start with ``#`` are ignored.  Each rule line must
+    Lines that are empty or start with ``#`` are ignored. Each rule line must
     contain exactly three whitespace-separated tokens; malformed lines are
     logged as warnings and skipped.
 
@@ -138,7 +138,7 @@ def load_attributes(repo_path: Path) -> list[MuseAttribute]:
             the ``.muse/`` folder).
 
     Returns:
-        Parsed list of ``MuseAttribute`` rules.  Returns an empty list if the
+        Parsed list of ``MuseAttribute`` rules. Returns an empty list if the
         file does not exist; never raises.
     """
     attr_file = repo_path / MUSEATTRIBUTES_FILENAME
@@ -167,9 +167,9 @@ def resolve_strategy(
 ) -> MergeStrategy:
     """Return the configured ``MergeStrategy`` for a track + dimension pair.
 
-    Iterates through ``attributes`` in order (first-match-wins).  The
+    Iterates through ``attributes`` in order (first-match-wins). The
     ``track_pattern`` is matched using ``fnmatch`` so patterns like
-    ``drums/*``, ``*``, or ``bass/kick`` all work as expected.  The
+    ``drums/*``, ``*``, or ``bass/kick`` all work as expected. The
     ``dimension`` is matched with fnmatch as well, allowing ``*`` to cover
     all dimensions.
 

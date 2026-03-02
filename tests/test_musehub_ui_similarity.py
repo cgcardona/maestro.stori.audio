@@ -1,16 +1,16 @@
-"""Tests for the Muse Hub musical similarity page (issue #427).
+"""Tests for the Muse Hub musical similarity page.
 
 Covers:
-- test_similarity_page_renders              — GET /{owner}/{repo}/similarity/{base}...{head} returns 200 HTML
-- test_similarity_page_no_auth_required     — accessible without JWT
-- test_similarity_page_invalid_ref_404      — refs without '...' separator return 404
-- test_similarity_page_unknown_owner_404    — unknown owner/slug returns 404
-- test_similarity_page_includes_radar       — page contains radar chart JavaScript
-- test_similarity_page_includes_dimensions  — page contains 10-dimension table JS
+- test_similarity_page_renders — GET /{owner}/{repo}/similarity/{base}...{head} returns 200 HTML
+- test_similarity_page_no_auth_required — accessible without JWT
+- test_similarity_page_invalid_ref_404 — refs without '...' separator return 404
+- test_similarity_page_unknown_owner_404 — unknown owner/slug returns 404
+- test_similarity_page_includes_radar — page contains radar chart JavaScript
+- test_similarity_page_includes_dimensions — page contains 10-dimension table JS
 - test_similarity_page_includes_overall_badge — page contains overall % badge JS
 - test_similarity_page_includes_diff_button — page contains "Open Full Diff" link
-- test_similarity_page_includes_create_pr   — page contains "Create Pull Request" CTA
-- test_similarity_json_response             — ?format=json returns RefSimilarityResponse shape
+- test_similarity_page_includes_create_pr — page contains "Create Pull Request" CTA
+- test_similarity_json_response — ?format=json returns RefSimilarityResponse shape
 """
 from __future__ import annotations
 

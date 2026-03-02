@@ -3,13 +3,13 @@
 Serves browser-readable HTML pages for the milestones section of a Muse Hub
 repo — analogous to GitHub's Milestones tab but for music projects.
 
-All pages are rendered via Jinja2 templates.  Route handlers resolve
+All pages are rendered via Jinja2 templates. Route handlers resolve
 server-side data (repo_id, owner, slug, milestone data) and pass a minimal
 context dict to the template engine; all HTML, CSS, and JavaScript lives in
 the template files, not here.
 
 Endpoint summary:
-  GET /musehub/ui/{owner}/{repo_slug}/milestones        — milestones list with progress bars
+  GET /musehub/ui/{owner}/{repo_slug}/milestones — milestones list with progress bars
   GET /musehub/ui/{owner}/{repo_slug}/milestones/{number} — milestone detail with linked issues
 
 Content negotiation applies to both endpoints:

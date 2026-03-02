@@ -162,7 +162,7 @@ class TestDedupeToolCalls:
 
         tc_a = ToolCall(name="stori_play", params={})
         tc_b = ToolCall(name="stori_stop", params={})
-        tc_c = ToolCall(name="stori_play", params={})  # duplicate of a
+        tc_c = ToolCall(name="stori_play", params={}) # duplicate of a
         result = dedupe_tool_calls([tc_a, tc_b, tc_c])
         assert result[0] == tc_a
         assert result[1] == tc_b

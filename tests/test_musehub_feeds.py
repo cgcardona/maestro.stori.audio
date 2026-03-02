@@ -1,10 +1,10 @@
 """Tests for Muse Hub RSS/Atom feed endpoints.
 
-Covers every acceptance criterion from issue #430:
-- GET /musehub/repos/{repo_id}/feed.rss     — RSS 2.0 commit feed
+Covers every acceptance criterion:
+- GET /musehub/repos/{repo_id}/feed.rss — RSS 2.0 commit feed
 - GET /musehub/repos/{repo_id}/releases.rss — RSS 2.0 releases feed
-- GET /musehub/repos/{repo_id}/issues.rss   — RSS 2.0 open-issues feed
-- GET /musehub/repos/{repo_id}/feed.atom    — Atom 1.0 commit feed
+- GET /musehub/repos/{repo_id}/issues.rss — RSS 2.0 open-issues feed
+- GET /musehub/repos/{repo_id}/feed.atom — Atom 1.0 commit feed
 - Public repos return 200 with correct Content-Type
 - Private repos return 403 (feed readers cannot supply credentials)
 - Non-existent repos return 404

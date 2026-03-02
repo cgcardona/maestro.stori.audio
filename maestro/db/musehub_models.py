@@ -47,7 +47,7 @@ class MusehubRepo(Base):
 
     ``owner`` is the URL-visible username (e.g. "gabriel") and ``slug`` is the
     URL-safe repo name auto-generated from ``name`` (e.g. "neo-soul-experiment").
-    Together they form the canonical /{owner}/{slug} URL scheme.  The internal
+    Together they form the canonical /{owner}/{slug} URL scheme. The internal
     ``repo_id`` UUID remains the primary key — external URLs never expose it.
 
     Music-semantic fields (key_signature, tempo_bpm, tags) are optional metadata
@@ -74,8 +74,8 @@ class MusehubRepo(Base):
     tempo_bpm: Mapped[int | None] = mapped_column(Integer, nullable=True)
     # Feature-flag settings not covered by dedicated columns (JSON blob).
     # Keys: has_issues, has_projects, has_wiki, license, homepage_url,
-    #       allow_merge_commit, allow_squash_merge, allow_rebase_merge,
-    #       delete_branch_on_merge, default_branch.
+    # allow_merge_commit, allow_squash_merge, allow_rebase_merge,
+    # delete_branch_on_merge, default_branch.
     settings: Mapped[dict[str, object] | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=_utc_now
@@ -174,7 +174,7 @@ class MusehubObject(Base):
     """A binary artifact (MIDI, MP3, WebP piano roll) stored in Muse Hub.
 
     Object content is written to disk at ``disk_path``; only metadata lives in
-    Postgres.  ``object_id`` is the canonical content-addressed identifier in
+    Postgres. ``object_id`` is the canonical content-addressed identifier in
     the form ``sha256:<hex>`` and doubles as the primary key — upserts are safe
     by design because the same content always maps to the same ID.
     """
@@ -425,13 +425,13 @@ class MusehubPRReview(Base):
     """A formal review submission on a pull request.
 
     Tracks both reviewer assignment (``pending`` state) and submitted reviews
-    (``approved``, ``changes_requested``, ``dismissed``).  One row per
+    (``approved``, ``changes_requested``, ``dismissed``). One row per
     (pr_id, reviewer_username) pair — a reviewer can only hold one active state
-    at a time.  Re-submitting replaces the previous state.
+    at a time. Re-submitting replaces the previous state.
 
     State lifecycle:
       requested (by PR author) → pending
-      reviewer submits         → approved | changes_requested | dismissed
+      reviewer submits → approved | changes_requested | dismissed
 
     A PR is merge-ready when every pending/changes_requested review has been
     resolved to ``approved``, or the owner forces a merge.
@@ -468,13 +468,13 @@ class MusehubPRComment(Base):
 
     Supports four targeting granularities to let reviewers pinpoint exactly
     what they're commenting on:
-      - ``general``  — whole PR (no positional target)
-      - ``track``    — a named instrument track (e.g. "bass", "keys")
-      - ``region``   — a beat range within a track (beat_start..beat_end)
-      - ``note``     — a single note event (track + beat + pitch)
+      - ``general`` — whole PR (no positional target)
+      - ``track`` — a named instrument track (e.g. "bass", "keys")
+      - ``region`` — a beat range within a track (beat_start..beat_end)
+      - ``note`` — a single note event (track + beat + pitch)
 
-    ``parent_comment_id`` enables threaded replies.  None means a top-level
-    review comment.  Replies carry the same ``pr_id`` so threads can be
+    ``parent_comment_id`` enables threaded replies. None means a top-level
+    review comment. Replies carry the same ``pr_id`` so threads can be
     assembled in a single query.
     """
 
@@ -657,7 +657,7 @@ class MusehubWebhook(Base):
     """A registered webhook subscription for a Muse Hub repo.
 
     When an event matching one of the subscribed ``events`` types fires, the
-    dispatcher POSTs a signed JSON payload to ``url``.  The ``secret`` is used
+    dispatcher POSTs a signed JSON payload to ``url``. The ``secret`` is used
     to compute an HMAC-SHA256 signature sent in the ``X-MuseHub-Signature``
     header so receivers can verify authenticity without trusting the network.
 
@@ -693,7 +693,7 @@ class MusehubWebhookDelivery(Base):
     """One delivery attempt for a webhook event.
 
     Each row records the outcome of a single HTTP POST to a ``MusehubWebhook``
-    URL.  The dispatcher creates one row per attempt (including retries), so a
+    URL. The dispatcher creates one row per attempt (including retries), so a
     delivery that required 3 attempts produces 3 rows with the same
     ``event_type`` and incrementing ``attempt`` counters.
 
@@ -731,7 +731,7 @@ class MusehubStar(Base):
     """A single user's star on a public repo.
 
     Stars are the primary signal for the explore page's "trending" sort.
-    The unique constraint on (repo_id, user_id) makes starring idempotent —
+    The unique constraint on (repo_id, user_id) makes starring idempotent
     a user can only star a repo once, and duplicate requests are safe.
     """
 
@@ -802,7 +802,7 @@ class MusehubComment(Base):
     """Threaded comment on a repo object (commit, PR, issue, or repo itself).
 
     ``target_type`` distinguishes what the comment is attached to:
-      "commit"  | "pull_request" | "issue" | "repo"
+      "commit" | "pull_request" | "issue" | "repo"
     ``target_id`` is the primary key of the target object.
     ``parent_id`` enables threaded replies; None means a top-level comment.
     """
@@ -1055,8 +1055,8 @@ class MusehubEvent(Base):
     ``metadata`` carries event-specific structured data (e.g. commit SHA, PR number)
     for deep-link rendering without additional DB joins.
 
-    Design: append-only.  Events are never updated or deleted (cascade only on
-    repo delete).  The feed is read newest-first, paginated by ``(repo_id, created_at)``.
+    Design: append-only. Events are never updated or deleted (cascade only on
+    repo delete). The feed is read newest-first, paginated by ``(repo_id, created_at)``.
     """
 
     __tablename__ = "musehub_events"
@@ -1069,8 +1069,8 @@ class MusehubEvent(Base):
         index=True,
     )
     # Vocabulary: commit_pushed | pr_opened | pr_merged | pr_closed |
-    #             issue_opened | issue_closed | branch_created | branch_deleted |
-    #             tag_pushed | session_started | session_ended
+    # issue_opened | issue_closed | branch_created | branch_deleted |
+    # tag_pushed | session_started | session_ended
     event_type: Mapped[str] = mapped_column(String(40), nullable=False, index=True)
     # Human-readable actor — JWT sub or pusher username
     actor: Mapped[str] = mapped_column(String(255), nullable=False)

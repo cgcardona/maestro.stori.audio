@@ -78,12 +78,12 @@ def _extract_cache_stats(usage: UsageStats) -> tuple[int, int, float]:
     OpenRouter surfaces cache data in at least two ways depending on model and
     version — check all known field names and return the first non-zero value:
 
-    prompt_tokens_details.cached_tokens      → read hits (OR standard)
+    prompt_tokens_details.cached_tokens → read hits (OR standard)
     prompt_tokens_details.cache_write_tokens → write/creation (OR standard)
-    native_tokens_cached                     → confirmed cache hit (OR alt)
-    cache_read_input_tokens                  → Anthropic direct API
-    cache_creation_input_tokens              → Anthropic direct API
-    cache_discount                           → dollar savings (OR)
+    native_tokens_cached → confirmed cache hit (OR alt)
+    cache_read_input_tokens → Anthropic direct API
+    cache_creation_input_tokens → Anthropic direct API
+    cache_discount → dollar savings (OR)
     """
     details = usage.get("prompt_tokens_details", {})
     read = (
@@ -128,8 +128,8 @@ class LLMClient:
     ANTHROPIC_CACHE_BETA = "prompt-caching-2024-07-31"
 
     # Models we actively use. Update both sets when upgrading.
-    # Sonnet 4.6: everyday driver  — $3/M in, $15/M out
-    # Opus 4.6:   pro / composing  — $5/M in, $25/M out
+    # Sonnet 4.6: everyday driver — $3/M in, $15/M out
+    # Opus 4.6: pro / composing — $5/M in, $25/M out
     SUPPORTED_MODELS = {
         "anthropic/claude-sonnet-4.6",
         "anthropic/claude-opus-4.6",
@@ -185,7 +185,7 @@ class LLMClient:
     def client(self) -> httpx.AsyncClient:
         """Return the shared ``httpx.AsyncClient``, creating it lazily on first access.
 
-        Injects auth and referrer headers at construction time.  Notably, the
+        Injects auth and referrer headers at construction time. Notably, the
         ``anthropic-beta`` header is intentionally omitted: Claude 4.x has
         stable prompt caching and sending the 2024-07-31 beta value causes
         silent failures on newer model versions.
@@ -255,8 +255,8 @@ class LLMClient:
 
         Returns (non_system_messages, cached_tools, system_blocks):
           - non_system_messages: messages list with the role:system entry removed
-          - cached_tools:        tools with cache_control on the last entry
-          - system_blocks:       Anthropic-native content-block array for the
+          - cached_tools: tools with cache_control on the last entry
+          - system_blocks: Anthropic-native content-block array for the
                                  top-level ``system`` payload key
 
         Strategy (per external infra diagnosis, Feb 2026):
@@ -441,7 +441,7 @@ class LLMClient:
             fraction = reasoning_fraction if reasoning_fraction is not None else 0.8
             reasoning_budget = int(max_tok * fraction)
             payload["reasoning"] = {
-                "max_tokens": max(reasoning_budget, 1024),  # Minimum 1K tokens for reasoning
+                "max_tokens": max(reasoning_budget, 1024), # Minimum 1K tokens for reasoning
             }
             logger.info(f"🧠 Reasoning enabled: {reasoning_budget} tokens")
 
@@ -453,7 +453,7 @@ class LLMClient:
         accumulated_tool_calls: dict[int, ToolCallEntry] = {}
         finish_reason: str | None = None
         usage: UsageStats = {}
-        debug_logged = False  # Flag to log first delta
+        debug_logged = False # Flag to log first delta
         
         try:
             logger.info(f"🚀 Streaming request to OpenRouter: model={self.model}, reasoning_enabled={self.supports_reasoning()}")

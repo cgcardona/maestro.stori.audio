@@ -26,7 +26,7 @@ from collections.abc import AsyncGenerator
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from maestro.db.database import Base
-from maestro.db import muse_models  # noqa: F401
+from maestro.db import muse_models # noqa: F401
 from maestro.models.variation import (
     MidiNoteSnapshot,
     NoteChange,
@@ -489,16 +489,16 @@ class TestMuseAttributeDimensions:
     """Verify that rhythmic and structural dimensions are parsed correctly
     but have no current effect on merge outcome (reserved for future wiring).
 
-    These tests document the intentional gap described in issue #510: all five
+    These tests document the intentional gap described: all five
     dimension names are valid in .museattributes, but build_merge_result does
-    not yet consult resolve_strategy for any event type.  When dimension wiring
+    not yet consult resolve_strategy for any event type. When dimension wiring
     is eventually implemented, these tests should be updated to reflect the new
     expected behavior.
     """
 
     def test_rhythmic_dimension_parses_correctly(self) -> None:
         """'rhythmic' is a valid dimension name — parsing must not reject it."""
-        content = "drums/*  rhythmic  ours\n"
+        content = "drums/* rhythmic ours\n"
         attrs = parse_museattributes_file(content)
         assert len(attrs) == 1
         assert attrs[0].dimension == "rhythmic"
@@ -506,7 +506,7 @@ class TestMuseAttributeDimensions:
 
     def test_structural_dimension_parses_correctly(self) -> None:
         """'structural' is a valid dimension name — parsing must not reject it."""
-        content = "*  structural  manual\n"
+        content = "* structural manual\n"
         attrs = parse_museattributes_file(content)
         assert len(attrs) == 1
         assert attrs[0].dimension == "structural"
@@ -514,13 +514,13 @@ class TestMuseAttributeDimensions:
 
     def test_resolve_strategy_returns_ours_for_rhythmic(self) -> None:
         """resolve_strategy correctly resolves 'rhythmic' when a matching rule exists."""
-        attrs = parse_museattributes_file("drums/*  rhythmic  ours\n")
+        attrs = parse_museattributes_file("drums/* rhythmic ours\n")
         result = resolve_strategy(attrs, "drums/kick", "rhythmic")
         assert result == MergeStrategy.OURS
 
     def test_resolve_strategy_returns_auto_for_unmatched_rhythmic(self) -> None:
         """resolve_strategy falls back to AUTO when no rhythmic rule matches."""
-        attrs = parse_museattributes_file("keys/*  harmonic  theirs\n")
+        attrs = parse_museattributes_file("keys/* harmonic theirs\n")
         result = resolve_strategy(attrs, "drums/kick", "rhythmic")
         assert result == MergeStrategy.AUTO
 
@@ -528,7 +528,7 @@ class TestMuseAttributeDimensions:
         """Regression: 'drums/* rhythmic ours' must not silently corrupt merge.
 
         build_merge_result does not yet accept attributes, so dimension-based
-        strategy resolution is not applied.  A note conflict on a region that
+        strategy resolution is not applied. A note conflict on a region that
         would match 'drums/* rhythmic ours' is still reported as a conflict.
         This is the expected behaviour until the merge engine is wired up to
         consult resolve_strategy per event type.
@@ -544,7 +544,7 @@ class TestMuseAttributeDimensions:
 
         assert result.has_conflicts, (
             "Expected a note conflict regardless of .museattributes rhythmic rule "
-            "(dimension wiring not yet implemented — see issue #510)"
+            "(dimension wiring not yet implemented — see )"
         )
         assert any(c.type == "note" for c in result.conflicts)
         assert result.merged_snapshot is None
@@ -563,18 +563,18 @@ class TestMuseAttributeDimensions:
 
         assert result.has_conflicts, (
             "Expected a note conflict regardless of .museattributes structural rule "
-            "(dimension wiring not yet implemented — see issue #510)"
+            "(dimension wiring not yet implemented — see )"
         )
         assert result.merged_snapshot is None
 
     def test_all_five_dimensions_parse_without_error(self) -> None:
         """All five dimension names are accepted by the parser without warnings."""
         content = (
-            "drums/*    rhythmic    ours\n"
-            "keys/*     harmonic    theirs\n"
-            "*          melodic     auto\n"
-            "*          dynamic     union\n"
-            "*          structural  manual\n"
+            "drums/* rhythmic ours\n"
+            "keys/* harmonic theirs\n"
+            "* melodic auto\n"
+            "* dynamic union\n"
+            "* structural manual\n"
         )
         attrs = parse_museattributes_file(content)
         assert len(attrs) == 5
@@ -583,6 +583,6 @@ class TestMuseAttributeDimensions:
 
     def test_wildcard_dimension_matches_rhythmic_and_structural(self) -> None:
         """A '*' dimension rule resolves for both 'rhythmic' and 'structural'."""
-        attrs = parse_museattributes_file("*  *  ours\n")
+        attrs = parse_museattributes_file("* * ours\n")
         assert resolve_strategy(attrs, "drums/kick", "rhythmic") == MergeStrategy.OURS
         assert resolve_strategy(attrs, "any_track", "structural") == MergeStrategy.OURS

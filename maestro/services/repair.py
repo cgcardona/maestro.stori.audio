@@ -106,7 +106,7 @@ def apply_drum_repair(
         instr_lower = instr.lower()
         # instrument_coverage_low: add ghost_layer hits in bars 2 and 4
         if "instrument_coverage_low" in instr_lower and "ghost" in instr_lower:
-            ghost_pitches = [37, 40, 41]  # rim, e.snare, low tom
+            ghost_pitches = [37, 40, 41] # rim, e.snare, low tom
             for bar in [2, 4]:
                 bar_start = bar * 4.0
                 for _ in range(rng.randint(2, 4)):
@@ -141,7 +141,7 @@ def apply_drum_repair(
         # hats_repetitive: add open hat (46) on beat 4 of bar 2 and 4
         if "hats_repetitive" in instr_lower or "open hat" in instr_lower:
             for bar in [2, 4]:
-                beat = bar * 4.0 + 3.0  # beat 4 of bar
+                beat = bar * 4.0 + 3.0 # beat 4 of bar
                 if _can_add_at_beat(out, beat, "timekeepers", max_sal, salience_weight):
                     out.append({
                         "pitch": 46,

@@ -9,35 +9,35 @@ Algorithm
    ``MuseCliCommit`` row via :func:`~maestro.services.muse_reset.resolve_ref`.
 5. Apply the chosen mode:
 
-   ``--soft``  — update ``.muse/refs/heads/<branch>`` only.  muse-work/
-                 files and the object store are untouched.  The producer
+   ``--soft`` — update ``.muse/refs/heads/<branch>`` only. muse-work/
+                 files and the object store are untouched. The producer
                  can immediately ``muse commit`` a new snapshot on top of
                  the rewound head.
 
    ``--mixed`` (default) — same as ``--soft`` in the current Muse model
-                 (no explicit staging area).  Included for API symmetry
+                 (no explicit staging area). Included for API symmetry
                  and forward-compatibility.
 
-   ``--hard``  — update the branch ref AND overwrite ``muse-work/`` with
-                 the file content recorded in the target snapshot.  Objects
+   ``--hard`` — update the branch ref AND overwrite ``muse-work/`` with
+                 the file content recorded in the target snapshot. Objects
                  are read from ``.muse/objects/`` (the blob store populated
-                 by ``muse commit``).  Prompts for confirmation unless
+                 by ``muse commit``). Prompts for confirmation unless
                  ``--yes`` is given, because this operation discards any
                  uncommitted changes in muse-work/.
 
 HEAD~N
 ------
-    muse reset HEAD~1        # one parent back
-    muse reset HEAD~3        # three parents back
-    muse reset abc123        # abbreviated SHA
+    muse reset HEAD~1 # one parent back
+    muse reset HEAD~3 # three parents back
+    muse reset abc123 # abbreviated SHA
     muse reset --hard HEAD~2 # two parents back + restore working tree
 
 Exit codes
 ----------
-0  success
-1  user error (ref not found, merge in progress, no commits, abort)
-2  not a Muse repo
-3  internal error (DB inconsistency, missing object blobs)
+0 success
+1 user error (ref not found, merge in progress, no commits, abort)
+2 not a Muse repo
+3 internal error (DB inconsistency, missing object blobs)
 """
 from __future__ import annotations
 
@@ -66,7 +66,7 @@ def reset(
     commit: str = typer.Argument(
         ...,
         help=(
-            "Target commit reference.  Accepts: HEAD, HEAD~N, "
+            "Target commit reference. Accepts: HEAD, HEAD~N, "
             "a full 64-char SHA, or any unambiguous SHA prefix."
         ),
     ),
@@ -104,13 +104,13 @@ def reset(
     elif soft:
         mode = ResetMode.SOFT
     else:
-        mode = ResetMode.MIXED  # default
+        mode = ResetMode.MIXED # default
 
     # ── Hard-mode confirmation ────────────────────────────────────────────
     if mode is ResetMode.HARD and not yes:
         typer.echo(
-            "⚠️  muse reset --hard will OVERWRITE muse-work/ with the target snapshot.\n"
-            "    All uncommitted changes will be LOST."
+            "⚠️ muse reset --hard will OVERWRITE muse-work/ with the target snapshot.\n"
+            " All uncommitted changes will be LOST."
         )
         confirmed = typer.confirm("Proceed?", default=False)
         if not confirmed:

@@ -1,12 +1,12 @@
-"""Muse Hub new repo creation wizard — issue #438.
+"""Muse Hub new repo creation wizard — .
 
 Serves the repository creation wizard at /musehub/ui/new.
 
 Routes:
-  GET  /musehub/ui/new        — creation wizard form (HTML shell, auth-agnostic)
-  POST /musehub/ui/new        — create repo (JSON body, auth required), returns
+  GET /musehub/ui/new — creation wizard form (HTML shell, auth-agnostic)
+  POST /musehub/ui/new — create repo (JSON body, auth required), returns
                                 redirect URL for JS navigation
-  GET  /musehub/ui/new/check  — name availability check (JSON, unauthenticated)
+  GET /musehub/ui/new/check — name availability check (JSON, unauthenticated)
 
 Auth contract:
 - GET renders the HTML shell without requiring a JWT. Client JS reads the

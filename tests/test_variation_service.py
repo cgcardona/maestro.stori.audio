@@ -2,18 +2,18 @@
 Tests for app.services.variation and app.models.variation.
 
 These cover every public class and function with zero prior test coverage:
-  1.  NoteMatch properties (is_added, is_removed, is_modified, is_unchanged, _has_changes)
-  2.  _notes_match (pitch tolerance, timing tolerance)
-  3.  match_notes  (all-add, all-remove, matched pairs, mixed, empty inputs)
-  4.  _beat_to_bar / _generate_bar_label helpers
-  5.  _detect_change_tags (pitch, rhythm, velocity, articulation, harmony, scale, register, density)
-  6.  VariationService.compute_variation (no changes, adds, removes, modifications, phrase grouping)
-  7.  VariationService.compute_multi_region_variation
-  8.  get_variation_service singleton
-  9.  Variation model properties (total_changes, note_counts, is_empty, get_phrase, get_accepted_notes)
- 10.  Phrase model properties (added_count, removed_count, modified_count, is_empty)
- 11.  MidiNoteSnapshot.from_note_dict / to_note_dict
- 12.  NoteChange model_post_init validation constraints
+  1. NoteMatch properties (is_added, is_removed, is_modified, is_unchanged, _has_changes)
+  2. _notes_match (pitch tolerance, timing tolerance)
+  3. match_notes (all-add, all-remove, matched pairs, mixed, empty inputs)
+  4. _beat_to_bar / _generate_bar_label helpers
+  5. _detect_change_tags (pitch, rhythm, velocity, articulation, harmony, scale, register, density)
+  6. VariationService.compute_variation (no changes, adds, removes, modifications, phrase grouping)
+  7. VariationService.compute_multi_region_variation
+  8. get_variation_service singleton
+  9. Variation model properties (total_changes, note_counts, is_empty, get_phrase, get_accepted_notes)
+ 10. Phrase model properties (added_count, removed_count, modified_count, is_empty)
+ 11. MidiNoteSnapshot.from_note_dict / to_note_dict
+ 12. NoteChange model_post_init validation constraints
 """
 from __future__ import annotations
 
@@ -165,7 +165,7 @@ class TestNotesMatch:
 
     def test_none_pitch_returns_false(self) -> None:
 
-        assert not _notes_match({"start_beat": 0}, _note())  # NoteDict is total=False; absent pitch → get() returns None
+        assert not _notes_match({"start_beat": 0}, _note()) # NoteDict is total=False; absent pitch → get() returns None
 
 
 # ===========================================================================
@@ -200,7 +200,7 @@ class TestMatchNotes:
     def test_modified_note(self) -> None:
 
         base = [_note(60)]
-        proposed = [_note(62)]  # different pitch → add + remove
+        proposed = [_note(62)] # different pitch → add + remove
         matches = match_notes(base, proposed)
         has_removed = any(m.is_removed for m in matches)
         has_added = any(m.is_added for m in matches)
@@ -209,7 +209,7 @@ class TestMatchNotes:
     def test_mixed_unchanged_and_changed(self) -> None:
 
         base = [_note(60, 0.0), _note(64, 2.0)]
-        proposed = [_note(60, 0.0), _note(67, 2.0)]  # first unchanged, second changed
+        proposed = [_note(60, 0.0), _note(67, 2.0)] # first unchanged, second changed
         matches = match_notes(base, proposed)
         unchanged = [m for m in matches if m.is_unchanged]
         assert len(unchanged) >= 1
@@ -218,7 +218,7 @@ class TestMatchNotes:
 
         """A note should not be matched to multiple proposed notes."""
         base = [_note(60)]
-        proposed = [_note(60), _note(60)]  # two identical proposed
+        proposed = [_note(60), _note(60)] # two identical proposed
         matches = match_notes(base, proposed)
         # base has 1, proposed has 2 → one unchanged + one added
         added = [m for m in matches if m.is_added]
@@ -313,13 +313,13 @@ class TestDetectChangeTags:
 
     def test_semitone_pitch_change_scale_tag(self) -> None:
 
-        nc = self._modified_change(_snapshot(pitch=60), _snapshot(pitch=61))  # 1 semitone
+        nc = self._modified_change(_snapshot(pitch=60), _snapshot(pitch=61)) # 1 semitone
         tags = _detect_change_tags([nc])
         assert "scaleChange" in tags
 
     def test_third_interval_harmony_tag(self) -> None:
 
-        nc = self._modified_change(_snapshot(pitch=60), _snapshot(pitch=63))  # minor third
+        nc = self._modified_change(_snapshot(pitch=60), _snapshot(pitch=63)) # minor third
         tags = _detect_change_tags([nc])
         assert "harmonyChange" in tags
 
@@ -349,7 +349,7 @@ class TestDetectChangeTags:
 
     def test_register_change_tag(self) -> None:
 
-        nc = self._modified_change(_snapshot(pitch=60), _snapshot(pitch=73))  # 13 semitones
+        nc = self._modified_change(_snapshot(pitch=60), _snapshot(pitch=73)) # 13 semitones
         tags = _detect_change_tags([nc])
         assert "registerChange" in tags
 
@@ -447,7 +447,7 @@ class TestComputeVariation:
 
         svc = _service()
         # Notes in two different 4-bar phrase windows
-        notes_phrase_1 = [_note(60, start=0.0), _note(64, start=2.0)]   # beats 0-2 → phrase 0
+        notes_phrase_1 = [_note(60, start=0.0), _note(64, start=2.0)] # beats 0-2 → phrase 0
         notes_phrase_2 = [_note(67, start=16.0), _note(69, start=18.0)] # beats 16-18 → phrase 1
         variation = svc.compute_variation(
             [],
@@ -501,7 +501,7 @@ class TestComputeMultiRegionVariation:
         svc = _service()
         variation = svc.compute_multi_region_variation(
             base_regions={"r1": [_note(60)], "r2": [_note(64)]},
-            proposed_regions={"r1": [_note(60)], "r2": [_note(67)]},  # r2 changed
+            proposed_regions={"r1": [_note(60)], "r2": [_note(67)]}, # r2 changed
             track_regions={"r1": "t1", "r2": "t1"},
             intent="raise r2 note",
         )
@@ -695,7 +695,7 @@ class TestVariationModel:
         p1 = self._phrase_with(n_added=2)
         p2 = self._phrase_with(n_added=1)
         v = self._variation([p1, p2])
-        notes = v.get_accepted_notes([p1.phrase_id])  # only accept p1
+        notes = v.get_accepted_notes([p1.phrase_id]) # only accept p1
         assert len(notes) == 2
 
     def test_get_removed_note_ids_for_removed_changes(self) -> None:
@@ -710,7 +710,7 @@ class TestVariationModel:
         phrase = self._phrase_with(n_modified=1)
         v = self._variation([phrase])
         ids = v.get_removed_note_ids([phrase.phrase_id])
-        assert len(ids) == 1  # modified counts as a "before" removal
+        assert len(ids) == 1 # modified counts as a "before" removal
 
 
 # ===========================================================================
@@ -802,11 +802,11 @@ class TestMidiNoteSnapshot:
 class TestNoteChangeValidation:
     def test_added_with_before_raises(self) -> None:
 
-        with pytest.raises(Exception):  # ValueError via Pydantic
+        with pytest.raises(Exception): # ValueError via Pydantic
             NoteChange(
                 note_id="n",
                 change_type="added",
-                before=_snapshot(),  # must be None
+                before=_snapshot(), # must be None
                 after=_snapshot(),
             )
 
@@ -817,7 +817,7 @@ class TestNoteChangeValidation:
                 note_id="n",
                 change_type="removed",
                 before=_snapshot(),
-                after=_snapshot(),  # must be None
+                after=_snapshot(), # must be None
             )
 
     def test_modified_with_missing_before_raises(self) -> None:

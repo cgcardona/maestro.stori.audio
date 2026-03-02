@@ -66,7 +66,7 @@ class TestCompositionLimiter:
         async with lim.acquire("user-1"):
             async with lim.acquire("user-1"):
                 async with lim.acquire("user-1"):
-                    assert lim.active_count("user-1") == 0  # not tracked
+                    assert lim.active_count("user-1") == 0 # not tracked
 
     @pytest.mark.asyncio
     async def test_none_user_bypasses(self) -> None:

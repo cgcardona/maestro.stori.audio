@@ -1,21 +1,21 @@
 """Tests for ``muse restore`` — surgical file-level restore from a snapshot.
 
 Verifies:
-- test_muse_restore_from_head                   — default restore from HEAD
-- test_muse_restore_staged_equivalent           — --staged behaves like --worktree (current model)
-- test_muse_restore_source_commit               — --source <commit> extracts from historical snapshot
-- test_muse_restore_multiple_paths              — multiple paths restored in one call
-- test_muse_restore_muse_work_prefix_stripped   — "muse-work/" prefix is normalised away
-- test_muse_restore_errors_on_missing_path      — PathNotInSnapshotError when path absent
-- test_muse_restore_source_missing_path         — PathNotInSnapshotError on historical commit
-- test_muse_restore_missing_object_store        — MissingObjectError when blob absent
-- test_muse_restore_ref_not_found               — unknown source ref exits USER_ERROR
-- test_muse_restore_no_commits                  — branch with no commits exits USER_ERROR
-- test_muse_restore_result_fields               — RestoreResult fields are correct
-- test_muse_restore_result_frozen               — RestoreResult is immutable
-- test_boundary_no_forbidden_imports            — AST boundary seal
-- test_restore_service_has_future_import        — from __future__ import annotations present
-- test_restore_command_has_future_import        — CLI command has future import
+- test_muse_restore_from_head — default restore from HEAD
+- test_muse_restore_staged_equivalent — --staged behaves like --worktree (current model)
+- test_muse_restore_source_commit — --source <commit> extracts from historical snapshot
+- test_muse_restore_multiple_paths — multiple paths restored in one call
+- test_muse_restore_muse_work_prefix_stripped"muse-work/" prefix is normalised away
+- test_muse_restore_errors_on_missing_path — PathNotInSnapshotError when path absent
+- test_muse_restore_source_missing_path — PathNotInSnapshotError on historical commit
+- test_muse_restore_missing_object_store — MissingObjectError when blob absent
+- test_muse_restore_ref_not_found — unknown source ref exits USER_ERROR
+- test_muse_restore_no_commits — branch with no commits exits USER_ERROR
+- test_muse_restore_result_fields — RestoreResult fields are correct
+- test_muse_restore_result_frozen — RestoreResult is immutable
+- test_boundary_no_forbidden_imports — AST boundary seal
+- test_restore_service_has_future_import — from __future__ import annotations present
+- test_restore_command_has_future_import — CLI command has future import
 """
 from __future__ import annotations
 
@@ -31,7 +31,7 @@ import pytest
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from maestro.db.database import Base
-from maestro.muse_cli import models as cli_models  # noqa: F401 — register tables
+from maestro.muse_cli import models as cli_models # noqa: F401 — register tables
 from maestro.muse_cli.errors import ExitCode
 from maestro.muse_cli.models import MuseCliCommit, MuseCliObject, MuseCliSnapshot
 from maestro.muse_cli.object_store import write_object
@@ -374,7 +374,7 @@ class TestRestoreMultiplePaths:
         result = await perform_restore(
             root=repo_root,
             session=async_session,
-            paths=["muse-work/lead.mid"],  # with prefix
+            paths=["muse-work/lead.mid"], # with prefix
             source_ref=None,
             staged=False,
         )
@@ -458,7 +458,7 @@ class TestRestoreErrors:
             await perform_restore(
                 root=repo_root,
                 session=async_session,
-                paths=["new_track.mid"],  # not in old_commit's snapshot
+                paths=["new_track.mid"], # not in old_commit's snapshot
                 source_ref=old_commit.commit_id,
                 staged=False,
             )
@@ -569,7 +569,7 @@ class TestRestoreResult:
         """RestoreResult is immutable (frozen dataclass)."""
         r = RestoreResult(source_commit_id="b" * 64)
         with pytest.raises(Exception):
-            r.staged = True  # type: ignore[misc]
+            r.staged = True # type: ignore[misc]
 
     def test_muse_restore_result_defaults(self) -> None:
         """RestoreResult has sensible defaults for optional fields."""

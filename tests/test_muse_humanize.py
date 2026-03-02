@@ -1,7 +1,7 @@
 """Tests for ``muse humanize`` — CLI interface, flag parsing, and stub output.
 
 All CLI-level tests use ``typer.testing.CliRunner`` against the full ``muse``
-app.  Async core tests call ``_humanize_async`` directly with an in-memory
+app. Async core tests call ``_humanize_async`` directly with an in-memory
 SQLite session — the stub does not query the DB, so the session satisfies only
 the signature contract.
 
@@ -30,7 +30,7 @@ from sqlalchemy.pool import StaticPool
 from typer.testing import CliRunner
 
 from maestro.db.database import Base
-import maestro.muse_cli.models  # noqa: F401  — registers MuseCli* ORM models
+import maestro.muse_cli.models # noqa: F401 — registers MuseCli* ORM models
 from maestro.muse_cli.app import cli
 from maestro.muse_cli.commands.humanize import (
     LOOSE_TIMING_MS,

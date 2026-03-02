@@ -1,19 +1,19 @@
 """Muse Hub RSS/Atom feed route handlers.
 
 Endpoint summary:
-  GET /musehub/repos/{repo_id}/feed.rss      — RSS 2.0 feed of recent commits
-  GET /musehub/repos/{repo_id}/releases.rss  — RSS 2.0 feed of releases
-  GET /musehub/repos/{repo_id}/issues.rss    — RSS 2.0 feed of open issues
-  GET /musehub/repos/{repo_id}/feed.atom     — Atom 1.0 feed of recent commits
+  GET /musehub/repos/{repo_id}/feed.rss — RSS 2.0 feed of recent commits
+  GET /musehub/repos/{repo_id}/releases.rss — RSS 2.0 feed of releases
+  GET /musehub/repos/{repo_id}/issues.rss — RSS 2.0 feed of open issues
+  GET /musehub/repos/{repo_id}/feed.atom — Atom 1.0 feed of recent commits
 
 All feed endpoints are restricted to **public** repos only. Private repos return
 403 Forbidden. Feed consumers (aggregators, agent subscribers) poll these URLs
 without credentials — adding auth would break standard feed readers.
 
 No business logic lives here. Persistence is delegated to:
-  - maestro.services.musehub_repository  (commits)
-  - maestro.services.musehub_releases    (releases)
-  - maestro.services.musehub_issues      (issues)
+  - maestro.services.musehub_repository (commits)
+  - maestro.services.musehub_releases (releases)
+  - maestro.services.musehub_issues (issues)
 """
 from __future__ import annotations
 
@@ -93,16 +93,16 @@ def _commit_description(commit: CommitResponse) -> str:
 
 def _build_rss_envelope(title: str, link: str, description: str, items: list[str]) -> str:
     """Wrap feed items in an RSS 2.0 <channel> envelope."""
-    items_xml = "\n    ".join(items)
+    items_xml = "\n ".join(items)
     return (
         '<?xml version="1.0" encoding="UTF-8"?>\n'
         '<rss version="2.0">\n'
-        "  <channel>\n"
-        f"    <title>{escape(title)}</title>\n"
-        f"    <link>{escape(link)}</link>\n"
-        f"    <description>{escape(description)}</description>\n"
-        f"    {items_xml}\n"
-        "  </channel>\n"
+        " <channel>\n"
+        f" <title>{escape(title)}</title>\n"
+        f" <link>{escape(link)}</link>\n"
+        f" <description>{escape(description)}</description>\n"
+        f" {items_xml}\n"
+        " </channel>\n"
         "</rss>"
     )
 
@@ -116,12 +116,12 @@ def _commit_rss_item(commit: CommitResponse, owner: str, slug: str) -> str:
     guid = escape(commit.commit_id)
     return (
         "<item>\n"
-        f"      <title>{title}</title>\n"
-        f"      <link>{link}</link>\n"
-        f"      <description>{description}</description>\n"
-        f"      <pubDate>{pub_date}</pubDate>\n"
-        f"      <guid isPermaLink=\"false\">{guid}</guid>\n"
-        "    </item>"
+        f" <title>{title}</title>\n"
+        f" <link>{link}</link>\n"
+        f" <description>{description}</description>\n"
+        f" <pubDate>{pub_date}</pubDate>\n"
+        f" <guid isPermaLink=\"false\">{guid}</guid>\n"
+        " </item>"
     )
 
 
@@ -137,18 +137,18 @@ def _release_rss_item(release: ReleaseResponse, owner: str, slug: str) -> str:
     mp3_url = release.download_urls.mp3 if release.download_urls else None
     if mp3_url:
         enclosure_xml = (
-            f'\n      <enclosure url="{escape(mp3_url)}" type="audio/mpeg" length="0"/>'
+            f'\n <enclosure url="{escape(mp3_url)}" type="audio/mpeg" length="0"/>'
         )
 
     return (
         "<item>\n"
-        f"      <title>{title}</title>\n"
-        f"      <link>{link}</link>\n"
-        f"      <description>{description}</description>\n"
-        f"      <pubDate>{pub_date}</pubDate>\n"
-        f"      <guid isPermaLink=\"false\">{guid}</guid>"
+        f" <title>{title}</title>\n"
+        f" <link>{link}</link>\n"
+        f" <description>{description}</description>\n"
+        f" <pubDate>{pub_date}</pubDate>\n"
+        f" <guid isPermaLink=\"false\">{guid}</guid>"
         f"{enclosure_xml}\n"
-        "    </item>"
+        " </item>"
     )
 
 
@@ -161,12 +161,12 @@ def _issue_rss_item(issue: IssueResponse, owner: str, slug: str) -> str:
     guid = escape(issue.issue_id)
     return (
         "<item>\n"
-        f"      <title>{title}</title>\n"
-        f"      <link>{link}</link>\n"
-        f"      <description>{description}</description>\n"
-        f"      <pubDate>{pub_date}</pubDate>\n"
-        f"      <guid isPermaLink=\"false\">{guid}</guid>\n"
-        "    </item>"
+        f" <title>{title}</title>\n"
+        f" <link>{link}</link>\n"
+        f" <description>{description}</description>\n"
+        f" <pubDate>{pub_date}</pubDate>\n"
+        f" <guid isPermaLink=\"false\">{guid}</guid>\n"
+        " </item>"
     )
 
 
@@ -177,14 +177,14 @@ def _build_atom_envelope(
     entries: list[str],
 ) -> str:
     """Wrap Atom entries in a <feed> envelope (Atom 1.0, RFC 4287)."""
-    entries_xml = "\n  ".join(entries)
+    entries_xml = "\n ".join(entries)
     return (
         '<?xml version="1.0" encoding="UTF-8"?>\n'
         '<feed xmlns="http://www.w3.org/2005/Atom">\n'
-        f"  <title>{escape(title)}</title>\n"
-        f"  <id>{escape(feed_id)}</id>\n"
-        f"  <updated>{updated}</updated>\n"
-        f"  {entries_xml}\n"
+        f" <title>{escape(title)}</title>\n"
+        f" <id>{escape(feed_id)}</id>\n"
+        f" <updated>{updated}</updated>\n"
+        f" {entries_xml}\n"
         "</feed>"
     )
 
@@ -198,12 +198,12 @@ def _commit_atom_entry(commit: CommitResponse, owner: str, slug: str) -> str:
     summary = escape(commit.message)
     return (
         "<entry>\n"
-        f"    <title>{title}</title>\n"
-        f'    <link href="{link}"/>\n'
-        f"    <id>{entry_id}</id>\n"
-        f"    <updated>{updated}</updated>\n"
-        f"    <summary>{summary}</summary>\n"
-        "  </entry>"
+        f" <title>{title}</title>\n"
+        f' <link href="{link}"/>\n'
+        f" <id>{entry_id}</id>\n"
+        f" <updated>{updated}</updated>\n"
+        f" <summary>{summary}</summary>\n"
+        " </entry>"
     )
 
 

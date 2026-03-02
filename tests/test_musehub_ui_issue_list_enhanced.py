@@ -1,60 +1,60 @@
-"""Regression tests for the enhanced issue list page (issue #445).
+"""Regression tests for the enhanced issue list page.
 
 Covers five feature areas added to issue_list.html:
 
 Filter sidebar
-- test_issue_list_page_returns_200                  — page renders without auth
-- test_issue_list_no_auth_required                  — GET needs no JWT
-- test_issue_list_unknown_repo_404                  — unknown owner/slug → 404
-- test_issue_list_filter_sidebar_present            — filter-sidebar element present
-- test_issue_list_label_chip_container_present      — label-chip-container element present
-- test_issue_list_filter_milestone_select_present   — filter-milestone <select> present
-- test_issue_list_filter_assignee_select_present    — filter-assignee <select> present
-- test_issue_list_filter_author_input_present       — filter-author <input> present
-- test_issue_list_sort_radio_group_present          — sort-radio-group element present
-- test_issue_list_sort_radio_buttons_present        — radio inputs with name="sort-radio" present
-- test_issue_list_clear_filters_btn_present         — clear-all-filters button present
-- test_issue_list_toggle_label_filter_js_present    — toggleLabelFilter() JS function present
-- test_issue_list_clear_all_filters_js_present      — clearAllFilters() JS function present
-- test_issue_list_apply_filters_js_present          — applyFilters() JS function present
+- test_issue_list_page_returns_200 — page renders without auth
+- test_issue_list_no_auth_required — GET needs no JWT
+- test_issue_list_unknown_repo_404 — unknown owner/slug → 404
+- test_issue_list_filter_sidebar_present — filter-sidebar element present
+- test_issue_list_label_chip_container_present — label-chip-container element present
+- test_issue_list_filter_milestone_select_present — filter-milestone <select> present
+- test_issue_list_filter_assignee_select_present — filter-assignee <select> present
+- test_issue_list_filter_author_input_present — filter-author <input> present
+- test_issue_list_sort_radio_group_present — sort-radio-group element present
+- test_issue_list_sort_radio_buttons_present — radio inputs with name="sort-radio" present
+- test_issue_list_clear_filters_btn_present — clear-all-filters button present
+- test_issue_list_toggle_label_filter_js_present — toggleLabelFilter() JS function present
+- test_issue_list_clear_all_filters_js_present — clearAllFilters() JS function present
+- test_issue_list_apply_filters_js_present — applyFilters() JS function present
 
 Milestone progress sidebar
-- test_issue_list_milestone_progress_heading_present  — milestone-progress-heading element present
-- test_issue_list_milestone_progress_bar_css_present  — milestone-progress-bar-fill CSS present
-- test_issue_list_right_sidebar_present               — sidebar-right element present
-- test_issue_list_render_right_sidebar_js_present     — renderRightSidebar() JS function present
-- test_issue_list_milestone_progress_list_present     — milestone-progress-list element present
+- test_issue_list_milestone_progress_heading_present — milestone-progress-heading element present
+- test_issue_list_milestone_progress_bar_css_present — milestone-progress-bar-fill CSS present
+- test_issue_list_right_sidebar_present — sidebar-right element present
+- test_issue_list_render_right_sidebar_js_present — renderRightSidebar() JS function present
+- test_issue_list_milestone_progress_list_present — milestone-progress-list element present
 
 Labels sidebar
-- test_issue_list_labels_summary_heading_present    — labels-summary-heading element present
-- test_issue_list_labels_summary_list_present       — labels-summary-list element present
-- test_issue_list_render_right_sidebar_label_js     — renderRightSidebar contains label sidebar logic
+- test_issue_list_labels_summary_heading_present — labels-summary-heading element present
+- test_issue_list_labels_summary_list_present — labels-summary-list element present
+- test_issue_list_render_right_sidebar_label_js — renderRightSidebar contains label sidebar logic
 
 Bulk actions toolbar
-- test_issue_list_bulk_toolbar_present              — bulk-toolbar element present
-- test_issue_list_bulk_count_present               — bulk-count element present
-- test_issue_list_bulk_label_select_present        — bulk-label-select element present
-- test_issue_list_bulk_milestone_select_present    — bulk-milestone-select element present
-- test_issue_list_bulk_close_button_present        — bulkClose() function present
-- test_issue_list_bulk_reopen_button_present       — bulkReopen() function present
-- test_issue_list_bulk_assign_label_js_present     — bulkAssignLabel() JS function present
+- test_issue_list_bulk_toolbar_present — bulk-toolbar element present
+- test_issue_list_bulk_count_present — bulk-count element present
+- test_issue_list_bulk_label_select_present — bulk-label-select element present
+- test_issue_list_bulk_milestone_select_present — bulk-milestone-select element present
+- test_issue_list_bulk_close_button_present — bulkClose() function present
+- test_issue_list_bulk_reopen_button_present — bulkReopen() function present
+- test_issue_list_bulk_assign_label_js_present — bulkAssignLabel() JS function present
 - test_issue_list_bulk_assign_milestone_js_present — bulkAssignMilestone() JS function present
-- test_issue_list_toggle_issue_select_js_present   — toggleIssueSelect() JS function present
-- test_issue_list_deselect_all_js_present          — deselectAll() JS function present
-- test_issue_list_issue_row_checkbox_js_present    — issue-row-check checkbox class present
-- test_issue_list_update_bulk_toolbar_js_present   — updateBulkToolbar() JS function present
+- test_issue_list_toggle_issue_select_js_present — toggleIssueSelect() JS function present
+- test_issue_list_deselect_all_js_present — deselectAll() JS function present
+- test_issue_list_issue_row_checkbox_js_present — issue-row-check checkbox class present
+- test_issue_list_update_bulk_toolbar_js_present — updateBulkToolbar() JS function present
 
 Issue template selector
-- test_issue_list_template_picker_present          — template-picker element present
-- test_issue_list_template_grid_present            — template-grid element present
-- test_issue_list_template_cards_present           — template-card elements present
-- test_issue_list_show_template_picker_js_present  — showTemplatePicker() JS function present
-- test_issue_list_select_template_js_present       — selectTemplate() JS function present
-- test_issue_list_issue_templates_const_present    — ISSUE_TEMPLATES constant defined
-- test_issue_list_new_issue_btn_calls_template     — new-issue-btn invokes showTemplatePicker
-- test_issue_list_templates_back_btn_present       — ← Templates back button present
-- test_issue_list_blank_template_defined           — blank template in ISSUE_TEMPLATES
-- test_issue_list_bug_template_defined             — bug template in ISSUE_TEMPLATES
+- test_issue_list_template_picker_present — template-picker element present
+- test_issue_list_template_grid_present — template-grid element present
+- test_issue_list_template_cards_present — template-card elements present
+- test_issue_list_show_template_picker_js_present — showTemplatePicker() JS function present
+- test_issue_list_select_template_js_present — selectTemplate() JS function present
+- test_issue_list_issue_templates_const_present — ISSUE_TEMPLATES constant defined
+- test_issue_list_new_issue_btn_calls_template — new-issue-btn invokes showTemplatePicker
+- test_issue_list_templates_back_btn_present — ← Templates back button present
+- test_issue_list_blank_template_defined — blank template in ISSUE_TEMPLATES
+- test_issue_list_bug_template_defined — bug template in ISSUE_TEMPLATES
 """
 from __future__ import annotations
 

@@ -1,27 +1,27 @@
-"""Tests for Muse Hub milestones UI endpoints (issue #425).
+"""Tests for Muse Hub milestones UI endpoints.
 
 Covers GET /musehub/ui/{owner}/{repo_slug}/milestones:
-- test_milestones_list_page_returns_200          — page renders without auth
-- test_milestones_list_no_auth_required          — no JWT needed for HTML shell
-- test_milestones_list_has_progress_bar_js       — progress bar rendering present
-- test_milestones_list_has_state_tabs_js         — open/closed/all state tabs present
-- test_milestones_list_has_sort_controls_js      — due_on/title/completeness sort buttons
-- test_milestones_list_json_response             — ?format=json returns MilestoneListResponse
-- test_milestones_list_json_has_milestones_key   — JSON contains milestones array
-- test_milestones_list_unknown_repo_404          — unknown owner/slug → 404
+- test_milestones_list_page_returns_200 — page renders without auth
+- test_milestones_list_no_auth_required — no JWT needed for HTML shell
+- test_milestones_list_has_progress_bar_js — progress bar rendering present
+- test_milestones_list_has_state_tabs_js — open/closed/all state tabs present
+- test_milestones_list_has_sort_controls_js — due_on/title/completeness sort buttons
+- test_milestones_list_json_response — ?format=json returns MilestoneListResponse
+- test_milestones_list_json_has_milestones_key — JSON contains milestones array
+- test_milestones_list_unknown_repo_404 — unknown owner/slug → 404
 - test_milestones_list_shows_base_url_not_repo_id — base_url uses owner/slug pattern
 
 Covers GET /musehub/ui/{owner}/{repo_slug}/milestones/{number}:
-- test_milestone_detail_page_returns_200         — page renders without auth
-- test_milestone_detail_no_auth_required         — no JWT needed for HTML shell
-- test_milestone_detail_has_progress_bar         — progress bar JS present
-- test_milestone_detail_has_linked_issues_js     — issue list rendering JS present
-- test_milestone_detail_has_state_filter_tabs    — open/closed/all issue filter tabs
-- test_milestone_detail_json_response            — ?format=json returns composite response
-- test_milestone_detail_json_has_linked_issues   — JSON contains linked_issues key
-- test_milestone_detail_unknown_number_404       — non-existent milestone number → 404
-- test_milestone_detail_unknown_repo_404         — unknown owner/slug → 404
-- test_milestone_detail_json_issue_counts        — JSON open_issues/closed_issues counts correct
+- test_milestone_detail_page_returns_200 — page renders without auth
+- test_milestone_detail_no_auth_required — no JWT needed for HTML shell
+- test_milestone_detail_has_progress_bar — progress bar JS present
+- test_milestone_detail_has_linked_issues_js — issue list rendering JS present
+- test_milestone_detail_has_state_filter_tabs — open/closed/all issue filter tabs
+- test_milestone_detail_json_response — ?format=json returns composite response
+- test_milestone_detail_json_has_linked_issues — JSON contains linked_issues key
+- test_milestone_detail_unknown_number_404 — non-existent milestone number → 404
+- test_milestone_detail_unknown_repo_404 — unknown owner/slug → 404
+- test_milestone_detail_json_issue_counts — JSON open_issues/closed_issues counts correct
 """
 from __future__ import annotations
 

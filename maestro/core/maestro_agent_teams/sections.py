@@ -330,7 +330,7 @@ def _build_sections(
 
     for i, name in enumerate(ordered):
         w = weights.get(name, 0.2)
-        length = round((w / total_weight) * beats_total / 4) * 4  # snap to bar boundary
+        length = round((w / total_weight) * beats_total / 4) * 4 # snap to bar boundary
         # Ensure last section reaches the end exactly
         if i == len(ordered) - 1:
             length = int(beats_total - current_beat)
