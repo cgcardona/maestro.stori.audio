@@ -336,7 +336,12 @@
     <aside class="github-board" aria-label="GitHub board">
       <h2 class="section-title">GitHub Board</h2>
 
-      {# ── Wave Control panel ──────────────────────────────────────────── #}
+      {#
+        Wave Control panel — fully reactive from SSE state.
+        Phase label, unclaimed count, and Start Wave button all update live
+        without page reload as the SSE stream delivers each new PipelineState.
+        board_issues is populated from ac_issues (Postgres) on every poller tick.
+      #}
       <div
         class="card wave-control-card"
         x-data="waveControl()"
@@ -345,40 +350,43 @@
         <div class="wave-control-header">
           <div>
             <div class="wave-phase-label">
-              {% if active_phase_label %}
-                <span class="label-chip label-chip--active">{{ active_phase_label }}</span>
-              {% else %}
+              <template x-if="state.active_label">
+                <span class="label-chip label-chip--active" x-text="state.active_label"></span>
+              </template>
+              <template x-if="!state.active_label">
                 <span class="label-chip label-chip--none">No active phase</span>
-              {% endif %}
+              </template>
             </div>
             <div class="wave-phase-stats">
-              {% if active_phase_label %}
+              <template x-if="state.active_label">
                 <span class="text-muted">
-                  {{ unclaimed_count }} unclaimed
+                  <span x-text="unclaimedCount()"></span> unclaimed
                   <span class="board-stats-sep">·</span>
-                  {{ total_phase_issues - unclaimed_count }} claimed
+                  <span x-text="claimedCount()"></span> claimed
                   <span class="board-stats-sep">·</span>
-                  {{ total_phase_issues }} total
+                  <span x-text="state.board_issues ? state.board_issues.length : 0"></span> total
                 </span>
-              {% else %}
+              </template>
+              <template x-if="!state.active_label">
                 <span class="text-muted">Set active_labels_order in pipeline-config.json</span>
-              {% endif %}
+              </template>
             </div>
           </div>
 
-          {# Start Wave button — only shown when there are unclaimed issues #}
-          {% if active_phase_label and unclaimed_count > 0 %}
-          <button
-            class="btn btn-primary btn-wave-start"
-            @click="startWave()"
-            :disabled="launching"
-            x-text="launching ? 'Launching…' : 'Start Wave'"
-            title="Spawn agents for all {{ unclaimed_count }} unclaimed issues in {{ active_phase_label }}"
-            aria-label="Start pipeline wave"
-          ></button>
-          {% elif active_phase_label %}
-          <span class="badge badge--green">All claimed ✓</span>
-          {% endif %}
+          {# Start Wave — reactive: shown when there are unclaimed issues #}
+          <template x-if="state.active_label && unclaimedCount() > 0">
+            <button
+              class="btn btn-primary btn-wave-start"
+              @click="startWave()"
+              :disabled="launching"
+              x-text="launching ? 'Launching…' : 'Start Wave'"
+              :title="'Spawn agents for all unclaimed issues in ' + state.active_label"
+              aria-label="Start pipeline wave"
+            ></button>
+          </template>
+          <template x-if="state.active_label && unclaimedCount() === 0">
+            <span class="badge badge--green">All claimed ✓</span>
+          </template>
         </div>
 
         {# Wave launch result #}
@@ -411,11 +419,11 @@
 
         <div class="board-stats mt-1">
           <span class="text-muted">
-            <span x-text="state.issues_open"></span> open issues (all labels)
+            <span x-text="state.issues_open"></span> open (all labels)
           </span>
           <span class="board-stats-sep">·</span>
           <span class="text-muted">
-            <span x-text="state.prs_open"></span> open PRs
+            <span x-text="state.prs_open"></span> PRs open
           </span>
         </div>
       </div>
@@ -467,40 +475,68 @@
       </div>
 
       {#
-        Open unclaimed issue cards — one per GitHub issue without agent:wip.
-        Each card has an "Analyze" button that POSTs to the partial endpoint
-        via HTMX and swaps the result inline without a full page reload.
-        The analysis result div starts empty and is populated on click.
+        Open issue cards — fully reactive from state.board_issues (SSE).
+        Issues come from ac_issues (Postgres) via the poller, not directly
+        from the GitHub CLI.  The list updates live on every tick without
+        a page reload.  Claimed issues are excluded automatically by the
+        poller's _build_board_issues() query.
+
+        "Analyze" uses Alpine fetch so the button works inside x-for without
+        HTMX needing to re-process dynamically generated DOM nodes.
       #}
-      {% if board_issues %}
-      <div class="mt-2">
-        <h3 class="section-subtitle">Open Issues</h3>
-        {% for issue in board_issues %}
-        <div class="issue-card" id="issue-card-{{ issue.number }}">
-          <div class="issue-card-header">
-            <a
-              class="issue-card-number"
-              href="{{ gh_base_url }}/issues/{{ issue.number }}"
-              target="_blank"
-              rel="noopener noreferrer"
-            >#{{ issue.number }}</a>
-            <span class="issue-card-title">{{ issue.title }}</span>
+      <div x-show="state.board_issues && state.board_issues.length > 0" class="mt-2">
+        <h3 class="section-subtitle">
+          Open Issues
+          <span class="badge badge-count" x-text="state.board_issues ? state.board_issues.length : 0"></span>
+        </h3>
+        <template x-for="issue in (state.board_issues || [])" :key="issue.number">
+          <div
+            class="issue-card"
+            :id="'issue-card-' + issue.number"
+            x-data="{ analysisHtml: '', analyzing: false, analyzeError: null }"
+          >
+            <div class="issue-card-header">
+              <a
+                class="issue-card-number"
+                :href="GH_BASE_URL + '/issues/' + issue.number"
+                target="_blank"
+                rel="noopener noreferrer"
+              >#<span x-text="issue.number"></span></a>
+              <span class="issue-card-title" x-text="issue.title"></span>
+            </div>
+            {# Phase label chips #}
+            <div class="issue-card-labels" x-show="issue.labels && issue.labels.length > 0">
+              <template x-for="lbl in (issue.labels || [])" :key="lbl">
+                <span class="label-chip label-chip--small" x-text="lbl"></span>
+              </template>
+            </div>
+            <div class="issue-card-actions">
+              <button
+                class="btn btn-sm btn-secondary"
+                @click="analyzing = true; analyzeError = null;
+                        fetch('/api/analyze/issue/' + issue.number + '/partial', {method: 'POST'})
+                          .then(r => r.text())
+                          .then(html => { analysisHtml = html; analyzing = false; })
+                          .catch(err => { analyzeError = err.message; analyzing = false; })"
+                :disabled="analyzing"
+                x-text="analyzing ? 'Analyzing…' : 'Analyze'"
+                :aria-label="'Analyze issue #' + issue.number"
+              ></button>
+            </div>
+            <div x-show="analyzeError" class="text-danger text-sm mt-1" x-text="analyzeError"></div>
+            <div x-show="analysisHtml" x-html="analysisHtml" class="issue-analysis-result"></div>
           </div>
-          <div class="issue-card-actions">
-            <button
-              class="btn btn-sm btn-secondary"
-              hx-post="/api/analyze/issue/{{ issue.number }}/partial"
-              hx-target="#analysis-{{ issue.number }}"
-              hx-swap="innerHTML"
-              hx-indicator="#analysis-{{ issue.number }}"
-              aria-label="Analyze issue #{{ issue.number }}"
-            >Analyze</button>
-          </div>
-          <div id="analysis-{{ issue.number }}" class="issue-analysis-result"></div>
-        </div>
-        {% endfor %}
+        </template>
       </div>
-      {% endif %}
+
+      {# Empty board state — only visible while ac_issues is warming up #}
+      <div
+        x-show="!state.board_issues || state.board_issues.length === 0"
+        class="mt-2 text-muted empty-state"
+      >
+        <p>No open unclaimed issues in the active phase.</p>
+        <p class="text-sm mt-1">The board updates live every 5 seconds via SSE.</p>
+      </div>
 
     </aside>
 
@@ -508,12 +544,15 @@
 </div>{# Alpine root #}
 
 <script>
+// Injected once by the server so Alpine x-for loops can build GitHub URLs
+// without accessing Jinja2 globals (which aren't available inside JS scope).
+const GH_BASE_URL = {{ gh_base_url | tojson }};
+
 /**
  * Alpine.js component for the Wave Control panel.
  *
- * Calls POST /api/control/spawn-wave to create worktrees for all unclaimed
- * issues in the active phase.  Shows worktree paths on success so the user
- * knows where to point Cursor Tasks.
+ * Counts come from state.board_issues (SSE-delivered from Postgres) so they
+ * update live.  Calls POST /api/control/spawn-wave to create worktrees.
  */
 function waveControl() {
   return {
@@ -522,7 +561,21 @@ function waveControl() {
     waveError: null,
 
     init() {
-      // No auto-fetch needed — all data comes from server-side template vars.
+      // All data flows from parent state via SSE — no polling needed.
+    },
+
+    /** Number of unclaimed issues in the active phase board. */
+    unclaimedCount() {
+      const issues = this.state?.board_issues;
+      if (!issues) return 0;
+      return issues.filter(i => !i.claimed).length;
+    },
+
+    /** Number of claimed issues in the active phase board. */
+    claimedCount() {
+      const issues = this.state?.board_issues;
+      if (!issues) return 0;
+      return issues.filter(i => i.claimed).length;
     },
 
     async startWave() {

@@ -220,16 +220,20 @@ def test_spawn_existing_worktree_returns_409(
 
 
 def test_spawn_form_renders_issue_list(client: TestClient) -> None:
-    """GET /control/spawn must render a form containing open, unclaimed issues."""
+    """GET /control/spawn must render a form containing open, unclaimed issues.
+
+    The spawn form now reads from ac_issues (Postgres) via get_board_issues,
+    which already filters claimed issues — only unclaimed rows are returned.
+    """
     fake_issues = [
-        _open_issue_list(100, "Issue Alpha"),
-        _open_issue_list(101, "Issue Beta"),
-        _open_issue_list(102, "Issue Gamma — already claimed", ["agent:wip"]),
+        {"number": 100, "title": "Issue Alpha", "labels": [], "claimed": False},
+        {"number": 101, "title": "Issue Beta", "labels": [], "claimed": False},
+        # Issue 102 is claimed — get_board_issues excludes it, so we don't include it here.
     ]
 
     with patch(
-        "agentception.routes.ui.get_open_issues",
-        return_value=fake_issues,
+        "agentception.db.queries.get_board_issues",
+        new=AsyncMock(return_value=fake_issues),
     ):
         response = client.get("/control/spawn")
 
@@ -239,14 +243,16 @@ def test_spawn_form_renders_issue_list(client: TestClient) -> None:
     assert "Issue Alpha" in html
     assert "#101" in html
     assert "Issue Beta" in html
-    # Claimed issue must NOT appear in the picker
+    # Claimed issue is excluded by the query layer, not the route.
     assert "#102" not in html
-    assert "Issue Gamma" not in html
 
 
 def test_spawn_form_renders_role_options(client: TestClient) -> None:
     """GET /control/spawn form must include all valid role options."""
-    with patch("agentception.routes.ui.get_open_issues", return_value=[]):
+    with patch(
+        "agentception.db.queries.get_board_issues",
+        new=AsyncMock(return_value=[]),
+    ):
         response = client.get("/control/spawn")
 
     assert response.status_code == 200
@@ -257,7 +263,10 @@ def test_spawn_form_renders_role_options(client: TestClient) -> None:
 
 def test_spawn_form_renders_empty_state_gracefully(client: TestClient) -> None:
     """GET /control/spawn must render without error when there are no unclaimed issues."""
-    with patch("agentception.routes.ui.get_open_issues", return_value=[]):
+    with patch(
+        "agentception.db.queries.get_board_issues",
+        new=AsyncMock(return_value=[]),
+    ):
         response = client.get("/control/spawn")
 
     assert response.status_code == 200

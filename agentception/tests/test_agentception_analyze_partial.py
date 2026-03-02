@@ -231,44 +231,49 @@ def test_analysis_partial_500_on_github_error(client: TestClient) -> None:
 
 
 def test_overview_shows_analyze_button_for_unclaimed_issues(client: TestClient) -> None:
-    """GET / must include Analyze buttons for unclaimed issues in the board sidebar."""
-    from agentception.models import PipelineState
+    """GET / must include the Analyze button markup and embed board_issues in initial state.
 
-    state = PipelineState.empty()
-    open_issues: list[dict[str, object]] = [
-        {"number": 42, "title": "Add feature X", "labels": []},
-    ]
-    with (
-        patch("agentception.routes.ui.get_state", return_value=state),
-        patch(
-            "agentception.routes.ui.get_open_issues",
-            new=AsyncMock(return_value=open_issues),
-        ),
-    ):
+    The board sidebar is now fully Alpine-reactive: issue cards are rendered
+    by `x-for` in the browser using `state.board_issues` from the SSE stream.
+    We verify the server embeds the issue data in the serialised initial state
+    JSON and includes the 'Analyze' button markup template in the HTML.
+    """
+    from agentception.models import BoardIssue, PipelineState
+
+    state = PipelineState(
+        active_label="ac-ui/0-critical-bugs",
+        issues_open=1,
+        prs_open=0,
+        agents=[],
+        board_issues=[BoardIssue(number=42, title="Add feature X")],
+        polled_at=0.0,
+    )
+    with patch("agentception.routes.ui.get_state", return_value=state):
         response = client.get("/")
+
     assert response.status_code == 200
-    assert "Analyze" in response.text
-    assert "issue-card" in response.text
-    assert "#42" in response.text
+    html = response.text
+    # Issue data is embedded in the Alpine initial state JSON.
+    assert "42" in html
+    assert "Add feature X" in html
+    # Analyze button template must be present in the page source.
+    assert "Analyze" in html
 
 
 def test_overview_hides_analyze_button_for_claimed_issues(client: TestClient) -> None:
-    """GET / must NOT render issue cards for issues already carrying agent:wip."""
+    """GET / must NOT embed claimed issue data in board_issues initial state.
+
+    The poller's _build_board_issues() filters out claimed issues before
+    adding them to PipelineState.board_issues — so when state.board_issues
+    is empty, issue #99 should not appear anywhere in the page source.
+    """
     from agentception.models import PipelineState
 
+    # board_issues is empty — claimed issues are filtered before reaching state.
     state = PipelineState.empty()
-    # Issue #99 is claimed — should be filtered out
-    open_issues: list[dict[str, object]] = [
-        {"number": 99, "title": "Claimed issue", "labels": ["agent:wip"]},
-    ]
-    with (
-        patch("agentception.routes.ui.get_state", return_value=state),
-        patch(
-            "agentception.routes.ui.get_open_issues",
-            new=AsyncMock(return_value=open_issues),
-        ),
-    ):
+    with patch("agentception.routes.ui.get_state", return_value=state):
         response = client.get("/")
+
     assert response.status_code == 200
-    # Claimed issue should not appear in the board
-    assert "issue-card" not in response.text
+    # Issue 99 must not appear — it was never put into board_issues.
+    assert "99" not in response.text

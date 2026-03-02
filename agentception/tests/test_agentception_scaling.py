@@ -450,17 +450,11 @@ def test_banner_hidden_when_dismissed_markup_present() -> None:
         agents=[],
         alerts=[],
         stale_claims=[],
+        board_issues=[],
         polled_at=time.time(),
     )
 
-    with (
-        patch("agentception.routes.ui.get_state", return_value=state),
-        patch(
-            "agentception.routes.ui.get_open_issues",
-            new_callable=AsyncMock,
-            return_value=[],
-        ),
-    ):
+    with patch("agentception.routes.ui.get_state", return_value=state):
         with TestClient(app) as client:
             response = client.get("/")
 
