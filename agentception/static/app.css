@@ -477,6 +477,75 @@ main {
   color: #fff;
 }
 
+.btn-sm {
+  padding: 0.15rem 0.5rem;
+  font-size: 0.78rem;
+}
+
+.btn-warning {
+  background: rgba(210, 153, 34, 0.12);
+  border-color: #d29922;
+  color: #d29922;
+}
+
+.btn-warning:hover:not(:disabled) {
+  background: #d29922;
+  color: #fff;
+}
+
+/* ── Stale claim cards ── */
+
+.stale-claim-card {
+  background: rgba(248, 81, 73, 0.05);
+  border: 1px solid rgba(248, 81, 73, 0.25);
+  border-radius: 4px;
+  padding: 0.6rem 0.75rem;
+  margin-bottom: 0.5rem;
+}
+
+.stale-claim-header {
+  display: flex;
+  align-items: baseline;
+  gap: 0.4rem;
+  margin-bottom: 0.25rem;
+}
+
+.stale-claim-number {
+  font-weight: 600;
+  color: var(--danger);
+  flex-shrink: 0;
+}
+
+.stale-claim-title {
+  font-size: 0.85rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.stale-claim-path {
+  font-size: 0.72rem;
+  font-family: var(--font-mono);
+  margin-bottom: 0.4rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.stale-claim-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+
+.stale-claim-confirm {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.82rem;
+}
+
 /* ── Agent detail two-column layout ── */
 
 .agent-detail-columns {
