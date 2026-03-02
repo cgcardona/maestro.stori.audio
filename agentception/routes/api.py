@@ -89,7 +89,8 @@ def _build_agent_task(
 
     The format mirrors what the parallel-batch coordinator writes so that
     agents spawned via the control plane behave identically to batch-spawned
-    agents.
+    agents.  ``BRANCH`` is included so the engineer kickoff prompt can derive
+    the feature branch name without re-computing it.
     """
     now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     repo = settings.gh_repo
@@ -100,6 +101,7 @@ def _build_agent_task(
         f"ISSUE_NUMBER={issue_number}\n"
         f"ISSUE_TITLE={title}\n"
         f"ISSUE_URL=https://github.com/{repo}/issues/{issue_number}\n"
+        f"BRANCH={branch}\n"
         f"ROLE={role}\n"
         f"ROLE_FILE={role_file}\n"
         f"WORKTREE={worktree}\n"
@@ -171,10 +173,10 @@ async def spawn_agent(body: SpawnRequest) -> SpawnResult:
             detail=f"Issue #{issue_number} is already claimed (agent:wip label present)",
         )
 
-    # ── 3. Add agent:wip label ────────────────────────────────────────────────
-    await add_wip_label(issue_number)
-
-    # ── 4. Create git worktree ────────────────────────────────────────────────
+    # ── 3. Pre-flight: check for an existing worktree BEFORE claiming ─────────
+    # Claiming (add_wip_label) is irreversible in the short term; checking the
+    # worktree path first prevents leaving an issue permanently labelled
+    # agent:wip with no agent actually working on it.
     branch = f"feat/issue-{issue_number}"
     worktree_path = settings.worktrees_dir / f"issue-{issue_number}"
 
@@ -186,6 +188,9 @@ async def spawn_agent(body: SpawnRequest) -> SpawnResult:
                 "Remove it manually and retry."
             ),
         )
+
+    # ── 4. Add agent:wip label ────────────────────────────────────────────────
+    await add_wip_label(issue_number)
 
     repo_dir = str(settings.repo_dir)
     proc = await asyncio.create_subprocess_exec(

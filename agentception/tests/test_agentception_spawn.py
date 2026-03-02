@@ -116,6 +116,7 @@ def test_spawn_creates_worktree_and_task_file(
     assert "issue-42" in data["worktree"]
     assert data["branch"] == "feat/issue-42"
     assert "ISSUE_NUMBER=42" in data["agent_task"]
+    assert "BRANCH=feat/issue-42" in data["agent_task"]
     assert "ROLE=python-developer" in data["agent_task"]
     # Verify the .agent-task file was actually written to disk.
     task_file = expected_worktree / ".agent-task"
@@ -281,5 +282,5 @@ def test_spawn_request_accepts_all_valid_roles() -> None:
 
 def test_spawn_request_rejects_unknown_role() -> None:
     """SpawnRequest must raise ValueError for an unrecognised role."""
-    with pytest.raises(Exception):
+    with pytest.raises(ValueError):
         SpawnRequest(issue_number=1, role="hacker")
