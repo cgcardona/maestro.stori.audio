@@ -21,7 +21,8 @@ import time
 from pathlib import Path
 
 from agentception.config import settings
-from agentception.models import AgentNode, AgentStatus, PipelineState, TaskFile
+from agentception.intelligence.guards import detect_stale_claims
+from agentception.models import AgentNode, AgentStatus, PipelineState, StaleClaim, TaskFile
 from agentception.readers.github import (
     get_active_label,
     get_open_issues,
@@ -147,28 +148,26 @@ async def merge_agents(
 async def detect_alerts(
     worktrees: list[TaskFile],
     github: GitHubBoard,
-) -> list[str]:
-    """Detect pipeline problems and return human-readable alert strings.
+) -> tuple[list[str], list[StaleClaim]]:
+    """Detect pipeline problems and return human-readable alert strings plus structured stale claims.
 
     Three alert classes:
     1. **Stale claim** — an ``agent:wip`` issue has no live worktree.
     2. **Out-of-order PR** — an open PR's labels include an agentception phase
        that no longer matches the currently active phase.
     3. **Stuck agent** — the most-recent commit in a worktree is > 30 min old.
+
+    Returns a tuple of (alert strings, stale_claims).  Alert strings include a
+    human-readable summary of each stale claim; ``stale_claims`` provides the
+    structured data used by the UI "Clear Label" action.
     """
     alerts: list[str] = []
     now = time.time()
 
-    # Fast lookup set: which issue numbers have a live worktree?
-    worktree_issue_numbers: set[int] = {
-        tf.issue_number for tf in worktrees if tf.issue_number is not None
-    }
-
     # ── Alert 1: agent:wip issue with no matching worktree ─────────────────
-    for issue in github.wip_issues:
-        num = issue.get("number")
-        if isinstance(num, int) and num not in worktree_issue_numbers:
-            alerts.append(f"Stale claim on #{num}")
+    stale_claims = await detect_stale_claims(github.wip_issues, settings.worktrees_dir)
+    for claim in stale_claims:
+        alerts.append(f"Stale claim on #{claim.issue_number}")
 
     # ── Alert 2: open PR labelled with a non-active agentception phase ──────
     active = github.active_label
@@ -202,7 +201,7 @@ async def detect_alerts(
             label = f"issue #{tf.issue_number}" if tf.issue_number else path.name
             alerts.append(f"Possible stuck agent on {label}")
 
-    return alerts
+    return alerts, stale_claims
 
 
 # ---------------------------------------------------------------------------
@@ -274,7 +273,7 @@ async def tick() -> PipelineState:
     worktrees = await list_active_worktrees()
     github = await build_github_board()
     agents = await merge_agents(worktrees, github)
-    alerts = await detect_alerts(worktrees, github)
+    alerts, stale_claims = await detect_alerts(worktrees, github)
 
     state = PipelineState(
         active_label=github.active_label,
@@ -282,6 +281,7 @@ async def tick() -> PipelineState:
         prs_open=len(github.open_prs),
         agents=agents,
         alerts=alerts,
+        stale_claims=stale_claims,
         polled_at=time.time(),
     )
 
