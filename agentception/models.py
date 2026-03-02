@@ -211,7 +211,7 @@ class ProjectConfig(BaseModel):
     gh_repo: str
     repo_dir: str
     worktrees_dir: str
-    cursor_project_id: str
+    cursor_project_id: str | None = None
     active_labels_order: list[str] = []
 
 

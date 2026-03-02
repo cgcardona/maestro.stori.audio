@@ -211,6 +211,10 @@ function waveControl() {
     waveResult: null,
     waveError: null,
 
+    init() {
+      // Data flows from the parent pipelineDashboard scope via SSE — no polling needed here.
+    },
+
     unclaimedCount() {
       const issues = this.state?.board_issues;
       if (!issues) return 0;
