@@ -10,7 +10,7 @@
 {% block body_extra %}
 {# SSR playlist data — WaveSurfer reads these globals on init #}
 <script>window.__playlist = {{ playlist_json | default([]) | tojson }};</script>
-<script>window.__firstTrackUrl = {{ first_track_url | tojson }};</script>
+<script>window.__firstTrackUrl = {{ first_track_url | default(none) | tojson }};</script>
 <script src="/musehub/static/vendor/wavesurfer.min.js"></script>
 <script src="/musehub/static/audio-player.js"></script>
 {% endblock %}
