@@ -2618,3 +2618,58 @@ class CollaboratorAccessResponse(CamelModel):
         None,
         description="UTC timestamp when the collaborator accepted the invitation; null for owners",
     )
+
+
+# ── Canvas SSR scaffolding models ─────────────────────────────────────────────
+
+
+class InstrumentInfo(CamelModel):
+    """Metadata for a single instrument lane in the piano roll sidebar.
+
+    Derived server-side from stored MIDI object paths so the instrument
+    sidebar is rendered in SSR without requiring a client fetch cycle.
+    ``channel`` is the zero-based index of this instrument among all MIDI
+    objects in the repo; ``gm_program`` is None until MIDI parsing is available.
+    """
+
+    name: str = Field(..., description="Human-readable instrument name, e.g. 'bass'")
+    channel: int = Field(..., description="Zero-based lane index (render order)")
+    gm_program: int | None = Field(
+        None, description="General MIDI program number when known; null otherwise"
+    )
+
+
+class TrackInfo(CamelModel):
+    """SSR metadata for a single MIDI track shown in the piano roll header.
+
+    Populated from the ``musehub_objects`` row matching the requested path.
+    ``duration_sec`` and ``track_count`` are None until server-side MIDI
+    parsing is implemented; the template renders them conditionally.
+    """
+
+    name: str = Field(..., description="Display name derived from the object path")
+    size_bytes: int = Field(..., description="File size in bytes")
+    duration_sec: float | None = Field(
+        None, description="Track duration in seconds; null until MIDI parsing is available"
+    )
+    track_count: int | None = Field(
+        None, description="Number of MIDI tracks; null until MIDI parsing is available"
+    )
+
+
+class ScoreMetaInfo(CamelModel):
+    """SSR metadata displayed in the score page header before JS renders notation.
+
+    Fields are derived from stored object metadata; ``key``, ``meter``,
+    ``composer``, and ``instrument_count`` are None until server-side MIDI
+    parsing is implemented.  The template renders them conditionally so the
+    page is useful even with partial data.
+    """
+
+    title: str = Field(..., description="Score title derived from the file path")
+    composer: str | None = Field(None, description="Composer name when known")
+    key: str | None = Field(None, description="Key signature when known, e.g. 'C major'")
+    meter: str | None = Field(None, description="Time signature when known, e.g. '4/4'")
+    instrument_count: int | None = Field(
+        None, description="Number of instrument parts when known"
+    )

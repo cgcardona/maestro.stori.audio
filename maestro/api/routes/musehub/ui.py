@@ -66,7 +66,9 @@ The embed route sets ``X-Frame-Options: ALLOWALL`` for cross-origin iframe use.
 """
 from __future__ import annotations
 
+import asyncio
 import logging
+import os
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
@@ -121,6 +123,42 @@ register_musehub_filters(templates.env)
 def _base_url(owner: str, repo_slug: str) -> str:
     """Return the canonical UI base URL for a repo."""
     return f"/musehub/ui/{owner}/{repo_slug}"
+
+
+# Maps file extensions to display-friendly language names for the blob viewer.
+# Used by _detect_language() to annotate server-rendered file content.
+_LANG_MAP: dict[str, str] = {
+    ".py": "python",
+    ".js": "javascript",
+    ".ts": "typescript",
+    ".json": "json",
+    ".yaml": "yaml",
+    ".yml": "yaml",
+    ".md": "markdown",
+    ".txt": "text",
+    ".xml": "xml",
+    ".html": "html",
+    ".css": "css",
+    ".sh": "bash",
+    ".mid": "midi",
+    ".midi": "midi",
+}
+
+# File types (from extension) that should not be rendered as text lines.
+_BLOB_BINARY_TYPES: frozenset[str] = frozenset(
+    [".mid", ".midi", ".mp3", ".wav", ".flac", ".ogg", ".webp", ".png", ".jpg", ".jpeg"]
+)
+
+
+def _detect_language(path: str) -> str:
+    """Return a display-friendly language name for a file path based on its extension.
+
+    Used by blob_page() to annotate server-rendered file content and choose
+    the correct syntax-highlighting hint for the client-side enhancer.
+    Returns an empty string for unrecognised extensions.
+    """
+    ext = os.path.splitext(path)[1].lower()
+    return _LANG_MAP.get(ext, "")
 
 
 def _breadcrumbs(*segments: tuple[str, str]) -> list[dict[str, str]]:
@@ -848,18 +886,43 @@ async def graph_page(
     repo_slug: str,
     db: AsyncSession = Depends(get_db),
 ) -> Response:
-    """Render the interactive DAG commit graph.
+    """Render the interactive DAG commit graph with SSR metadata scaffolding.
 
-    Client-side SVG renderer with branch colour-coding, merge-commit diamonds,
-    zoom/pan, hover popovers, and click-to-navigate.
+    Fetches commit and branch counts server-side and injects them into the
+    template so the page header renders without JS.  Commit graph data is
+    also pre-serialised into ``window.__graphData`` so the client-side DAG
+    renderer can skip the initial API round-trip and render immediately.
+
+    The complex SVG layout computation (force-directed positioning, zoom/pan,
+    popover hover) remains client-side — this is inherently visual and cannot
+    be SSR'd in a meaningful way.
     """
     repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
+
+    commits, _total = await musehub_repository.list_commits(db, repo_id, limit=100)
+    branches = await musehub_repository.list_branches(db, repo_id)
+
+    graph_data = [
+        {
+            "sha": c.commit_id,
+            "shortSha": c.commit_id[:8],
+            "message": c.message,
+            "author": c.author,
+            "timestamp": c.timestamp.isoformat(),
+            "parents": c.parent_ids,
+        }
+        for c in commits
+    ]
+
     ctx: dict[str, object] = {
         "owner": owner,
         "repo_slug": repo_slug,
         "repo_id": repo_id,
         "base_url": base_url,
         "current_page": "graph",
+        "graph_data_json": graph_data,
+        "commit_count": len(commits),
+        "branch_count": len(branches),
     }
     return json_or_html(
         request,
@@ -1238,6 +1301,11 @@ async def embed_page(
     repo_id, _ = await _resolve_repo(owner, repo_slug, db)
     short_ref = ref[:8] if len(ref) >= 8 else ref
     listen_url = _base_url(owner, repo_slug)
+
+    # Resolve first audio track for SSR — no auth check needed (public embed)
+    listing = await musehub_listen.build_track_listing(db, repo_id, ref)
+    first_track = listing.tracks[0] if listing.tracks else None
+
     content = templates.TemplateResponse(
         request,
         "musehub/pages/embed.html",
@@ -1246,6 +1314,10 @@ async def embed_page(
             "repo_id": repo_id,
             "ref": ref,
             "listen_url": listen_url,
+            "owner": owner,
+            "repo_slug": repo_slug,
+            "track_url": first_track.audio_url if first_track else None,
+            "track_name": first_track.name if first_track else short_ref,
         },
     )
     return Response(
@@ -1287,6 +1359,17 @@ async def listen_page(
     repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
     json_data = await musehub_listen.build_track_listing(db, repo_id, ref)
 
+    # Build playlist payload for WaveSurfer — passed as window.__playlist
+    playlist_data = [
+        {
+            "name": t.name,
+            "url": t.audio_url,
+            "size": t.size_bytes,
+        }
+        for t in json_data.tracks
+    ]
+    first_track = json_data.tracks[0] if json_data.tracks else None
+
     return await negotiate_response(
         request=request,
         template_name="musehub/pages/listen.html",
@@ -1297,6 +1380,10 @@ async def listen_page(
             "ref": ref,
             "base_url": base_url,
             "current_page": "listen",
+            "tracks": json_data.tracks,
+            "playlist_json": playlist_data,
+            "first_track_url": first_track.audio_url if first_track else None,
+            "first_track_name": first_track.name if first_track else None,
         },
         templates=templates,
         json_data=json_data,
@@ -2988,25 +3075,18 @@ async def piano_roll_page(
 ) -> Response:
     """Render the Canvas-based interactive piano roll for all MIDI tracks at ``ref``.
 
-    The page shell fetches a list of MIDI artifacts at the given ref from the
-    ``GET /api/v1/musehub/repos/{repo_id}/objects`` endpoint, then calls
-    ``GET /api/v1/musehub/repos/{repo_id}/objects/{id}/parse-midi`` for each
-    selected file.  The parsed note data is rendered into a Canvas element via
-    ``piano-roll.js``.
-
-    Features:
-    - Pitch on Y-axis with a piano keyboard strip
-    - Beat grid on X-axis with measure markers
-    - Per-track colour coding (design system palette)
-    - Velocity mapped to rectangle opacity
-    - Zoom controls (horizontal and vertical sliders)
-    - Pan via click-drag
-    - Hover tooltip: pitch name, velocity, beat position, duration
+    Fetches instrument lane metadata server-side so the sidebar is rendered in
+    SSR without requiring a client round-trip.  The Canvas itself and
+    ``piano-roll.js`` remain client-side — MIDI rendering to a canvas is
+    inherently a browser operation.
 
     No JWT required — HTML shell; JS fetches authed data via localStorage token.
     """
     repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
     short_ref = ref[:8] if len(ref) >= 8 else ref
+    instruments = await musehub_repository.get_instruments_for_repo(db, repo_id)
+    piano_roll_data_url = f"/api/v1/musehub/repos/{repo_id}/midi?ref={ref}"
+    instruments_data = [i.model_dump(by_alias=True, mode="json") for i in instruments]
     ctx: dict[str, object] = {
         "owner": owner,
         "repo_slug": repo_slug,
@@ -3016,6 +3096,10 @@ async def piano_roll_page(
         "path": None,
         "base_url": base_url,
         "current_page": "piano-roll",
+        "track": None,
+        "instruments": instruments_data,
+        "track_path": None,
+        "piano_roll_data_url": piano_roll_data_url,
     }
     return json_or_html(
         request,
@@ -3038,17 +3122,22 @@ async def piano_roll_track_page(
 ) -> Response:
     """Render the Canvas-based piano roll scoped to a single MIDI file ``path``.
 
-    Identical to :func:`piano_roll_page` but restricts the view to one specific
-    MIDI artifact identified by its repo-relative path
-    (e.g. ``tracks/bass.mid``).  The ``path`` segment is forwarded to the
-    template as a JavaScript string; the client-side code resolves the
-    matching object ID via the objects list API.
+    Fetches track metadata and instrument lane descriptors server-side so the
+    header and sidebar render without a client round-trip.  The Canvas and
+    ``piano-roll.js`` remain client-side.
 
     Useful for per-track deep-dive links from the tree browser or commit
     detail page.
     """
     repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
     short_ref = ref[:8] if len(ref) >= 8 else ref
+    track = await musehub_repository.get_track_info(db, repo_id, path)
+    instruments = await musehub_repository.get_instruments_for_repo(db, repo_id)
+    piano_roll_data_url = (
+        f"/api/v1/musehub/repos/{repo_id}/midi?ref={ref}&path={path}"
+    )
+    track_data = track.model_dump(by_alias=True, mode="json") if track else None
+    instruments_data = [i.model_dump(by_alias=True, mode="json") for i in instruments]
     ctx: dict[str, object] = {
         "owner": owner,
         "repo_slug": repo_slug,
@@ -3058,6 +3147,10 @@ async def piano_roll_track_page(
         "path": path,
         "base_url": base_url,
         "current_page": "piano-roll",
+        "track": track_data,
+        "instruments": instruments_data,
+        "track_path": path,
+        "piano_roll_data_url": piano_roll_data_url,
     }
     return json_or_html(
         request,
@@ -3078,18 +3171,22 @@ async def blob_page(
     path: str,
     db: AsyncSession = Depends(get_db),
 ) -> Response:
-    """Render the music-aware blob viewer for a single file at a given ref.
+    """Render the music-aware blob viewer with SSR scaffolding.
 
-    Dispatches to the appropriate rendering mode based on file extension:
-    - .mid/.midi → piano roll preview with "View in Piano Roll" quick link
-    - .mp3/.wav/.flac → <audio> player with "Listen" quick link
-    - .json → syntax-highlighted, formatted JSON with collapsible sections
-    - .webp/.png/.jpg → inline <img> display
-    - .xml → syntax-highlighted XML (MusicXML support)
-    - Other → hex dump preview with raw download link
+    Fetches the file object from the database server-side and populates the
+    template with enough context to render the page header, file metadata,
+    and (for text files) the full line-numbered content without JavaScript.
 
-    Metadata shown: filename, size, SHA, commit date.
-    Raw download button links to /{owner}/{repo_slug}/raw/{ref}/{path}.
+    Rendering modes by extension:
+    - .mid/.midi → MIDI player shell with data-midi-url attribute
+    - .mp3/.wav/.flac → client-side audio player (JS required for <audio>)
+    - Text/code files → server-rendered line-numbered table; JS enhances with
+      syntax highlighting progressively
+    - Binary / oversized (>1 MB) → download link only
+
+    If no object exists at ``path`` in the repo a 404 is raised immediately,
+    avoiding the JS "File not found" flash that the previous implementation
+    produced.
 
     Auth: no JWT required for public repos.  Private-repo auth is
     handled client-side via localStorage JWT (consistent with other
@@ -3097,6 +3194,37 @@ async def blob_page(
     """
     repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
     filename = path.split("/")[-1] if path else ""
+
+    obj = await musehub_repository.get_object_by_path(db, repo_id, path)
+
+    lang = _detect_language(path)
+    ext = os.path.splitext(path)[1].lower()
+    is_binary = ext in _BLOB_BINARY_TYPES
+    is_midi = ext in (".mid", ".midi")
+    size_bytes: int = obj.size_bytes if obj is not None else 0
+
+    # Treat files over 1 MB as binary regardless of extension.
+    if size_bytes > 1_000_000:
+        is_binary = True
+
+    # Read text content for small non-binary files so we can SSR line numbers.
+    # Use asyncio.to_thread so the blocking file read does not stall the event loop.
+    content: str | None = None
+    if obj is not None and not is_binary and os.path.exists(obj.disk_path):
+        _disk_path = obj.disk_path
+
+        def _read_file() -> str:
+            with open(_disk_path, encoding="utf-8", errors="replace") as fh:
+                return fh.read()
+
+        try:
+            content = await asyncio.to_thread(_read_file)
+        except OSError:
+            logger.warning("⚠️ blob_page: could not read %s", obj.disk_path)
+
+    lines: list[str] = content.splitlines() if content is not None else []
+    line_count = len(lines)
+
     ctx: dict[str, object] = {
         "owner": owner,
         "repo_slug": repo_slug,
@@ -3106,6 +3234,13 @@ async def blob_page(
         "filename": filename,
         "base_url": base_url,
         "current_page": "tree",
+        "lang": lang,
+        "is_binary": is_binary,
+        "is_midi": is_midi,
+        "size_bytes": size_bytes,
+        "lines": lines,
+        "line_count": line_count,
+        "blob_found": obj is not None,
     }
     return json_or_html(
         request,
@@ -3127,15 +3262,9 @@ async def score_page(
 ) -> Response:
     """Render the sheet music score page for a given commit ref (all tracks).
 
-    Displays all instrument parts as standard music notation rendered via a
-    lightweight SVG renderer.  The page fetches quantized notation JSON from
-    ``GET /api/v1/musehub/repos/{repo_id}/notation/{ref}`` and draws:
-
-    - Staff lines (treble and bass clefs as appropriate)
-    - Key signature and time signature
-    - Note heads, stems, flags, ledger lines
-    - Accidental markers (sharps and flats)
-    - Track/part selector dropdown
+    Fetches score metadata server-side so the header (title, key, meter,
+    instrument count) renders without a client round-trip.  The SVG notation
+    renderer remains client-side — music layout requires DOM measurement.
 
     No JWT is required to render the HTML shell.  Auth is handled client-side
     via localStorage JWT, matching all other UI pages.
@@ -3144,6 +3273,8 @@ async def score_page(
     to one instrument track.
     """
     repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
+    score_meta = await musehub_repository.get_score_meta_for_repo(db, repo_id, "")
+    abc_url = f"/api/v1/musehub/repos/{repo_id}/abc?ref={ref}"
     ctx: dict[str, object] = {
         "owner": owner,
         "repo_slug": repo_slug,
@@ -3152,6 +3283,8 @@ async def score_page(
         "base_url": base_url,
         "path": "",
         "current_page": "score",
+        "score_meta": score_meta.model_dump(by_alias=True, mode="json"),
+        "abc_url": abc_url,
     }
     return json_or_html(
         request,
@@ -3228,13 +3361,15 @@ async def score_part_page(
 ) -> Response:
     """Render the sheet music score page filtered to a single instrument part.
 
-    Identical to ``score/{ref}`` but the ``path`` segment identifies a specific
-    instrument track (e.g. ``piano``, ``bass``, ``guitar``).  The client-side
-    renderer pre-selects that track in the part selector on load.
+    Fetches score metadata server-side using the ``path`` segment as the
+    track title source.  The client-side renderer pre-selects that track
+    in the part selector on load.
 
     No JWT is required to render the HTML shell.
     """
     repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
+    score_meta = await musehub_repository.get_score_meta_for_repo(db, repo_id, path)
+    abc_url = f"/api/v1/musehub/repos/{repo_id}/abc?ref={ref}&path={path}"
     ctx: dict[str, object] = {
         "owner": owner,
         "repo_slug": repo_slug,
@@ -3243,6 +3378,8 @@ async def score_part_page(
         "base_url": base_url,
         "path": path,
         "current_page": "score",
+        "score_meta": score_meta.model_dump(by_alias=True, mode="json"),
+        "abc_url": abc_url,
     }
     return json_or_html(
         request,
