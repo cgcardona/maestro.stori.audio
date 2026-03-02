@@ -287,6 +287,26 @@ rooted in each `issue-<N>` directory.
 
 ---
 
+## ⛔ DOCKER-FIRST — NON-NEGOTIABLE
+
+**NEVER run `python`, `python3`, `mypy`, or `pytest` directly on the host.**
+Every command that touches Python must go through Docker:
+
+```bash
+# CORRECT
+cd "$REPO" && docker compose exec maestro mypy maestro/ tests/
+cd "$REPO" && docker compose exec agentception sh -c "PYTHONPATH=/worktrees/$WTNAME mypy /worktrees/$WTNAME/agentception/"
+
+# WRONG — will fail with "No module named mypy"
+python3 -m mypy ...
+mypy ...
+pytest ...
+```
+
+If you see "No module named X", you are on the host. Stop. Use `docker compose exec`.
+
+---
+
 ## Environment (agents read this first)
 
 **You are running inside a Cursor worktree.** Your working directory is NOT the main repo.
