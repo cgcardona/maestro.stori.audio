@@ -192,30 +192,55 @@ async def test_get_wip_issues_passes_label() -> None:
 # ---------------------------------------------------------------------------
 
 @pytest.mark.anyio
-async def test_get_active_label_returns_lowest() -> None:
-    """get_active_label() must return the agentception/* label with the lowest numeric prefix."""
-    label_names = [
-        "agentception/2-something",
-        "agentception/0-scaffold",
-        "agentception/1-readers",
-        "enhancement",
-    ]
+async def test_get_active_label_returns_first_match_from_config() -> None:
+    """get_active_label() returns the first label in pipeline-config active_labels_order
+    that has an open issue — not the lexicographically lowest label."""
+    from agentception.models import PipelineConfig
+    from agentception.readers import pipeline_config as _pc
 
-    with patch(
-        "agentception.readers.github.asyncio.create_subprocess_exec",
-        return_value=_make_process(json.dumps(label_names).encode()),
+    mock_config = PipelineConfig(
+        max_eng_vps=1,
+        max_qa_vps=1,
+        pool_size_per_vp=4,
+        active_labels_order=["ac-ui/0-critical-bugs", "ac-ui/1-design-tokens", "ac-ui/2-data-model"],
+    )
+    # Issues only have ac-ui/1 and ac-ui/2 labels (phase 0 is all done)
+    label_names = ["ac-ui/1-design-tokens", "ac-ui/2-data-model", "enhancement"]
+
+    with (
+        patch.object(_pc, "read_pipeline_config", return_value=mock_config),
+        patch(
+            "agentception.readers.github.asyncio.create_subprocess_exec",
+            return_value=_make_process(json.dumps(label_names).encode()),
+        ),
     ):
         result = await get_active_label()
 
-    assert result == "agentception/0-scaffold"
+    # ac-ui/0 has no open issues, so ac-ui/1 is the first match
+    assert result == "ac-ui/1-design-tokens"
 
 
 @pytest.mark.anyio
-async def test_get_active_label_returns_none_when_no_agentception_labels() -> None:
-    """get_active_label() must return None when no agentception/* labels are present."""
-    with patch(
-        "agentception.readers.github.asyncio.create_subprocess_exec",
-        return_value=_make_process(json.dumps(["enhancement", "batch-01"]).encode()),
+async def test_get_active_label_returns_none_when_no_configured_labels_have_issues() -> None:
+    """get_active_label() returns None when no label in active_labels_order has open issues."""
+    from agentception.models import PipelineConfig
+    from agentception.readers import pipeline_config as _pc
+
+    mock_config = PipelineConfig(
+        max_eng_vps=1,
+        max_qa_vps=1,
+        pool_size_per_vp=4,
+        active_labels_order=["ac-ui/0-critical-bugs", "ac-ui/1-design-tokens"],
+    )
+    # No ac-ui/* issues open
+    label_names_no_match = ["enhancement", "batch-01", "bug"]
+
+    with (
+        patch.object(_pc, "read_pipeline_config", return_value=mock_config),
+        patch(
+            "agentception.readers.github.asyncio.create_subprocess_exec",
+            return_value=_make_process(json.dumps(label_names_no_match).encode()),
+        ),
     ):
         result = await get_active_label()
 

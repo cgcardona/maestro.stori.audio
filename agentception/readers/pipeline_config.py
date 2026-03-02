@@ -25,13 +25,12 @@ _DEFAULTS: dict[str, int | list[str]] = {
     "max_qa_vps": 1,
     "pool_size_per_vp": 4,
     "active_labels_order": [
-        "agentception/0-scaffold",
-        "agentception/1-controls",
-        "agentception/2-telemetry",
-        "agentception/3-roles",
-        "agentception/4-intelligence",
-        "agentception/5-scaling",
-        "agentception/6-generalization",
+        "ac-ui/0-critical-bugs",
+        "ac-ui/1-design-tokens",
+        "ac-ui/2-data-model",
+        "ac-ui/3-core-pages",
+        "ac-ui/4-controls-intelligence",
+        "ac-ui/5-polish",
     ],
 }
 

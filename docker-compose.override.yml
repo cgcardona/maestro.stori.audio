@@ -58,5 +58,8 @@ services:
     volumes:
       # Live code — host edits are instantly visible; no rebuild needed
       - ./agentception:/app/agentception
+      # .cursor/ — mounted so pipeline-config.json and role files are readable
+      # by get_active_label(), read_pipeline_config(), and the spawn endpoint.
+      - ./.cursor:/app/.cursor:ro
       # agentception tests live under agentception/tests/ (isolated from maestro conftest)
       - ${HOME}/.cursor/worktrees/maestro:/worktrees

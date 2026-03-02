@@ -12,14 +12,15 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel
 
 from agentception.config import settings
 from agentception.intelligence.analyzer import IssueAnalysis, analyze_issue
 from agentception.intelligence.dag import DependencyDAG, build_dag
 from agentception.intelligence.guards import PRViolation, detect_out_of_order_prs
-from agentception.models import AgentNode, PipelineConfig, PipelineState, SpawnRequest, SpawnResult, SwitchProjectRequest
+from agentception.models import AgentNode, PipelineConfig, PipelineState, SpawnRequest, SpawnResult, SwitchProjectRequest  # noqa: E501
 from agentception.poller import get_state
-from agentception.readers.github import add_wip_label, close_pr, get_issue
+from agentception.readers.github import add_wip_label, close_pr, get_active_label, get_issue, get_open_issues
 from agentception.readers.pipeline_config import read_pipeline_config, switch_project, write_pipeline_config
 from agentception.readers.transcripts import read_transcript_messages
 from agentception.routes.ui import _find_agent
@@ -418,6 +419,112 @@ async def spawn_agent(body: SpawnRequest) -> SpawnResult:
         branch=branch,
         agent_task=agent_task_content,
     )
+
+
+def _issue_is_claimed_api(iss: dict[str, object]) -> bool:
+    """Return True when an issue carries the ``agent:wip`` label."""
+    raw = iss.get("labels")
+    if not isinstance(raw, list):
+        return False
+    for lbl in raw:
+        if isinstance(lbl, str) and lbl == "agent:wip":
+            return True
+        if isinstance(lbl, dict) and lbl.get("name") == "agent:wip":
+            return True
+    return False
+
+
+class WaveSpawnResult(BaseModel):
+    """Result of a batch spawn-wave operation."""
+
+    active_label: str
+    spawned: list[SpawnResult]
+    skipped: list[dict[str, object]]  # issues skipped because already claimed / worktree exists
+
+
+@router.post("/control/spawn-wave", tags=["control"])
+async def spawn_wave(role: str = "python-developer") -> WaveSpawnResult:
+    """Spawn agents for all unclaimed issues in the currently active phase.
+
+    Reads the active phase label from ``pipeline-config.json``, fetches all
+    open unclaimed issues carrying that label, and calls the single-spawn
+    logic for each one.  Issues that are already claimed or already have a
+    worktree are silently skipped (not an error).
+
+    This is the "Start Wave" action available in the Overview dashboard.  The
+    caller is still responsible for launching a Cursor Task pointed at each
+    returned worktree path — this endpoint only creates the worktrees and
+    ``.agent-task`` files.
+
+    Parameters
+    ----------
+    role:
+        Role file slug to assign to every spawned agent.  Defaults to
+        ``python-developer``.  Must be a member of ``VALID_ROLES``.
+
+    Raises
+    ------
+    HTTP 404
+        When no active phase label is found in ``pipeline-config.json`` or
+        no open issues carry that label.
+    HTTP 422
+        When ``role`` is not a recognised role slug.
+    """
+    from agentception.models import VALID_ROLES
+    if role not in VALID_ROLES:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Unknown role {role!r}. Valid roles: {sorted(VALID_ROLES)}",
+        )
+
+    active_label = await get_active_label()
+    if not active_label:
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                "No active phase label found. Check that pipeline-config.json "
+                "active_labels_order contains labels with open issues."
+            ),
+        )
+
+    phase_issues = await get_open_issues(label=active_label)
+    unclaimed = [iss for iss in phase_issues if not _issue_is_claimed_api(iss)]
+
+    if not unclaimed:
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                f"No unclaimed open issues found for label '{active_label}'. "
+                "All issues may already be claimed or there are no open issues."
+            ),
+        )
+
+    spawned: list[SpawnResult] = []
+    skipped: list[dict[str, object]] = []
+
+    for iss in unclaimed:
+        issue_num = iss.get("number")
+        if not isinstance(issue_num, int):
+            continue
+        try:
+            result = await spawn_agent(SpawnRequest(issue_number=issue_num, role=role))
+            spawned.append(result)
+            logger.info("✅ Wave spawn: issue #%d → %s", issue_num, result.worktree)
+        except HTTPException as exc:
+            # 409 = already claimed or worktree exists → skip, not an error.
+            if exc.status_code == 409:
+                skipped.append({"issue_number": issue_num, "reason": exc.detail})
+                logger.info("⏭️  Wave spawn skipped issue #%d: %s", issue_num, exc.detail)
+            else:
+                # Any other error (404 issue gone, 500 git failure) — skip and log.
+                skipped.append({"issue_number": issue_num, "reason": exc.detail})
+                logger.warning("⚠️  Wave spawn failed for issue #%d: %s", issue_num, exc.detail)
+
+    logger.info(
+        "✅ spawn-wave complete: label=%s spawned=%d skipped=%d",
+        active_label, len(spawned), len(skipped),
+    )
+    return WaveSpawnResult(active_label=active_label, spawned=spawned, skipped=skipped)
 
 
 @router.post("/analyze/issue/{number}", tags=["intelligence"])
