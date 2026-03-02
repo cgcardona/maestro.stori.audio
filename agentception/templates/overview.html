@@ -42,6 +42,33 @@
         x-text="connected ? '● Live' : '○ Reconnecting…'"
       ></span>
     </div>
+
+    {#
+      Pause/resume toggle — issues a POST via HTMX and swaps only this element
+      so the rest of the dashboard stays live.  The paused flag is polled from
+      /api/control/status on page load and updated optimistically on click.
+    #}
+    <div
+      class="summary-item summary-item--control"
+      id="pipeline-control"
+      x-data="pipelineControl()"
+      x-init="fetchStatus()"
+    >
+      <span
+        class="pipeline-status-badge"
+        :class="paused ? 'pipeline-status-badge--paused' : 'pipeline-status-badge--running'"
+        x-text="paused ? 'PAUSED' : 'RUNNING'"
+        role="status"
+        :aria-label="paused ? 'Pipeline paused' : 'Pipeline running'"
+      ></span>
+      <button
+        class="control-btn"
+        :class="paused ? 'control-btn--resume' : 'control-btn--pause'"
+        x-text="paused ? 'Resume' : 'Pause'"
+        @click="toggle()"
+        :aria-label="paused ? 'Resume pipeline' : 'Pause pipeline'"
+      ></button>
+    </div>
   </div>
 
   {# ── Alert banners ─────────────────────────────────────────────────────── #}
@@ -282,6 +309,44 @@ function pipelineDashboard(initial) {
       if (secs < 60) return secs + 's ago';
       if (secs < 3600) return Math.floor(secs / 60) + 'm ago';
       return Math.floor(secs / 3600) + 'h ago';
+    },
+  };
+}
+
+/**
+ * Alpine.js component for the pipeline pause/resume control.
+ *
+ * Fetches current pause state from GET /api/control/status on init.
+ * Toggle sends a POST to /api/control/pause or /api/control/resume and
+ * updates the badge optimistically — no page reload needed.
+ */
+function pipelineControl() {
+  return {
+    paused: false,
+
+    async fetchStatus() {
+      try {
+        const res = await fetch('/api/control/status');
+        if (res.ok) {
+          const data = await res.json();
+          this.paused = data.paused;
+        }
+      } catch (_) {
+        // Network error — keep current state, will retry on next toggle.
+      }
+    },
+
+    async toggle() {
+      const endpoint = this.paused ? '/api/control/resume' : '/api/control/pause';
+      try {
+        const res = await fetch(endpoint, { method: 'POST' });
+        if (res.ok) {
+          const data = await res.json();
+          this.paused = data.paused;
+        }
+      } catch (_) {
+        // Network error — leave state unchanged so the badge stays accurate.
+      }
     },
   };
 }
