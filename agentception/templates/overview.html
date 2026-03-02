@@ -71,6 +71,40 @@
     </div>
   </div>
 
+  {#
+    Scaling advisor banner — appears below the pipeline summary bar.
+    Fetches GET /api/intelligence/scaling-advice on mount. Hidden when:
+      - recommendation.action === "no_change" (nothing to suggest), OR
+      - the operator has dismissed it for this page session.
+    "Apply" POSTs to /api/intelligence/scaling-advice/apply via fetch and
+    dismisses the banner on success.  "Dismiss" hides without applying.
+  #}
+  <div
+    x-data="scalingAdvisor()"
+    x-init="load()"
+    x-show="!dismissed && recommendation !== null && recommendation.action !== 'no_change'"
+    x-cloak
+    class="alert-banner alert-banner--info"
+    role="status"
+    aria-label="Scaling recommendation"
+  >
+    <span>💡</span>
+    <span x-text="recommendation ? recommendation.reason : ''"></span>
+    <button
+      class="btn btn-sm btn-primary"
+      @click="apply()"
+      :disabled="applying"
+      x-text="applying ? 'Applying…' : 'Apply'"
+      aria-label="Apply scaling recommendation"
+    ></button>
+    <button
+      class="btn btn-sm btn-secondary"
+      @click="dismissed = true"
+      aria-label="Dismiss scaling recommendation"
+    >Dismiss</button>
+    <span x-show="applyError" class="text-danger" x-text="applyError"></span>
+  </div>
+
   {# ── Generic alert banners ─────────────────────────────────────────────── #}
   <template x-for="alert in state.alerts" :key="alert">
     <div class="alert-banner" role="alert">
@@ -498,6 +532,54 @@ function staleClaimCard(claim) {
         this.error = err.message || 'Network error';
       } finally {
         this.clearing = false;
+      }
+    },
+  };
+}
+
+/**
+ * Alpine.js component for the scaling advisor banner.
+ *
+ * Fetches GET /api/intelligence/scaling-advice on mount.  When the
+ * recommendation action is not "no_change" the banner becomes visible.
+ * "Apply" posts to POST /api/intelligence/scaling-advice/apply and hides
+ * the banner on success.  "Dismiss" hides without writing to config.
+ * Both actions are session-scoped — the banner reappears on next page load
+ * if the recommendation still applies.
+ */
+function scalingAdvisor() {
+  return {
+    recommendation: null,
+    dismissed: false,
+    applying: false,
+    applyError: null,
+
+    async load() {
+      try {
+        const res = await fetch('/api/intelligence/scaling-advice');
+        if (res.ok) {
+          this.recommendation = await res.json();
+        }
+      } catch (_) {
+        // Network error — keep banner hidden; no stale data shown.
+      }
+    },
+
+    async apply() {
+      this.applying = true;
+      this.applyError = null;
+      try {
+        const res = await fetch('/api/intelligence/scaling-advice/apply', { method: 'POST' });
+        if (res.ok) {
+          this.dismissed = true;
+        } else {
+          const data = await res.json().catch(() => ({}));
+          this.applyError = data.detail || `HTTP ${res.status}`;
+        }
+      } catch (err) {
+        this.applyError = err.message || 'Network error';
+      } finally {
+        this.applying = false;
       }
     },
   };
