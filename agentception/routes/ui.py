@@ -6,15 +6,17 @@ background poller via ``get_state()`` — routes are intentionally thin.
 from __future__ import annotations
 
 import datetime
+import logging
 import os
 from pathlib import Path
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 from starlette.requests import Request
 from starlette.responses import Response
 
+from agentception.intelligence.analyzer import IssueAnalysis, analyze_issue
 from agentception.intelligence.dag import DependencyDAG, build_dag
 from agentception.models import AgentNode, PipelineConfig, PipelineState, RoleMeta, VALID_ROLES
 from agentception.poller import get_state
@@ -23,6 +25,8 @@ from agentception.readers.pipeline_config import read_pipeline_config
 from agentception.readers.transcripts import read_transcript_messages
 from agentception.routes.roles import list_roles
 from agentception.telemetry import WaveSummary, aggregate_waves
+
+logger = logging.getLogger(__name__)
 
 _HERE = Path(__file__).parent
 _TEMPLATES = Jinja2Templates(directory=str(_HERE.parent / "templates"))
@@ -93,9 +97,58 @@ async def overview(request: Request) -> HTMLResponse:
 
     Renders on every request with the latest polled state. The page connects
     to ``GET /events`` via SSE to receive live updates without reloading.
+    Open unclaimed issues are fetched from GitHub and displayed in the board
+    sidebar with an "Analyze" button each.
     """
     state = get_state() or PipelineState.empty()
-    return _TEMPLATES.TemplateResponse(request, "overview.html", {"state": state})
+    board_issues: list[dict[str, object]] = []
+    try:
+        all_open = await get_open_issues()
+        board_issues = [iss for iss in all_open if not _issue_is_claimed(iss)]
+    except Exception as exc:  # pragma: no cover — network failure path
+        logger.warning("⚠️ Could not fetch open issues for board sidebar: %s", exc)
+    return _TEMPLATES.TemplateResponse(
+        request,
+        "overview.html",
+        {"state": state, "board_issues": board_issues},
+    )
+
+
+@router.post("/api/analyze/issue/{number}/partial", response_class=HTMLResponse)
+async def analyze_partial(request: Request, number: int) -> HTMLResponse:
+    """Return an HTMX partial with analysis results for a single GitHub issue.
+
+    Calls :func:`~agentception.intelligence.analyzer.analyze_issue` with the
+    given issue number, then renders ``partials/analysis.html`` with the
+    :class:`~agentception.intelligence.analyzer.IssueAnalysis` result.
+
+    Intended to be called by the "Analyze" button on each issue card in the
+    GitHub board sidebar via ``hx-post`` / ``hx-swap="innerHTML"``.
+
+    Parameters
+    ----------
+    number:
+        GitHub issue number to analyse.
+
+    Raises
+    ------
+    HTTP 404
+        When the GitHub CLI cannot find the issue.
+    HTTP 500
+        When the ``gh`` subprocess fails for any other reason.
+    """
+    try:
+        analysis: IssueAnalysis = await analyze_issue(number)
+    except RuntimeError as exc:
+        detail = str(exc)
+        status = 404 if "not found" in detail.lower() else 500
+        raise HTTPException(status_code=status, detail=detail) from exc
+    logger.info("✅ Analysis complete for issue #%d: %s", number, analysis.parallelism)
+    return _TEMPLATES.TemplateResponse(
+        request,
+        "partials/analysis.html",
+        {"a": analysis},
+    )
 
 
 @router.get("/agents/{agent_id}", response_class=HTMLResponse)
