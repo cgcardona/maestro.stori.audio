@@ -63,6 +63,7 @@ class AgentNode(BaseModel):
     message_count: int = 0
     last_activity_mtime: float = 0.0
     children: list[AgentNode] = []
+    cognitive_arch: str | None = None
 
 
 class StaleClaim(BaseModel):
@@ -175,6 +176,7 @@ class TaskFile(BaseModel):
     attempt_n: int = 0
     required_output: str | None = None
     on_block: str | None = None
+    cognitive_arch: str | None = None
 
 
 class AbModeConfig(BaseModel):

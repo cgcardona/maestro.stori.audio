@@ -23,44 +23,70 @@
 </div>
 
 {% else %}
-{# ── Agent header ────────────────────────────────────────────────────────── #}
-<div class="agent-detail-header card">
-  <div class="agent-detail-title">
-    <span class="status-badge status-badge--{{ node.status.value }}" aria-label="Status">{{ node.status.value }}</span>
-    <h1 class="agent-detail-role">{{ node.role }}</h1>
-  </div>
 
-  <div class="agent-detail-meta">
-    {% if node.batch_id %}
-      <span class="meta-chip">
-        <span class="meta-label">Batch</span>
-        <code class="meta-value">{{ node.batch_id }}</code>
-      </span>
-    {% endif %}
-    {% if node.issue_number %}
-      <span class="meta-chip">
-        <span class="meta-label">Issue</span>
-        <a href="{{ gh_base_url }}/issues/{{ node.issue_number }}"
-           target="_blank" rel="noopener" class="meta-value">#{{ node.issue_number }}</a>
-      </span>
-    {% endif %}
-    {% if node.pr_number %}
-      <span class="meta-chip">
-        <span class="meta-label">PR</span>
-        <a href="{{ gh_base_url }}/pull/{{ node.pr_number }}"
-           target="_blank" rel="noopener" class="meta-value">#{{ node.pr_number }}</a>
-      </span>
-    {% endif %}
-    {% if node.branch %}
-      <span class="meta-chip">
-        <span class="meta-label">Branch</span>
-        <code class="meta-value">{{ node.branch }}</code>
-      </span>
-    {% endif %}
-    <span class="meta-chip">
-      <span class="meta-label">Messages</span>
-      <span class="meta-value">{{ node.message_count }}</span>
-    </span>
+{# ── Agent header + persona hero ─────────────────────────────────────────── #}
+<div class="agent-detail-header card">
+  <div class="agent-hero-row">
+
+    {# Persona avatar #}
+    <div class="agent-persona-avatar agent-persona-avatar--{{ persona.archetype | replace('the_','') if persona.archetype else 'default' }}">
+      <span class="agent-persona-emoji">{{ persona.archetype_emoji }}</span>
+    </div>
+
+    <div class="agent-hero-body">
+      <div class="agent-detail-title">
+        <span class="status-badge status-badge--{{ node.status.value }}" aria-label="Status">{{ node.status.value }}</span>
+        <h1 class="agent-detail-role">{{ node.role | replace('-', ' ') | title }}</h1>
+      </div>
+
+      {# Persona line #}
+      <div class="agent-persona-line">
+        <span class="agent-persona-name">{{ persona.display_name }}</span>
+        {% if persona.archetype %}
+          <span class="agent-persona-archetype">{{ persona.archetype | replace('_', ' ') | title }}</span>
+        {% endif %}
+        {% if persona.raw %}
+          <a href="/cognitive-arch/{{ persona.raw | urlencode }}"
+             class="agent-persona-link" title="View full cognitive architecture">
+            View Architecture →
+          </a>
+        {% endif %}
+      </div>
+
+      {# Meta chips #}
+      <div class="agent-detail-meta">
+        {% if node.batch_id %}
+          <span class="meta-chip">
+            <span class="meta-label">Batch</span>
+            <code class="meta-value">{{ node.batch_id }}</code>
+          </span>
+        {% endif %}
+        {% if node.issue_number %}
+          <span class="meta-chip">
+            <span class="meta-label">Issue</span>
+            <a href="{{ gh_base_url }}/issues/{{ node.issue_number }}"
+               target="_blank" rel="noopener" class="meta-value">#{{ node.issue_number }}</a>
+          </span>
+        {% endif %}
+        {% if node.pr_number %}
+          <span class="meta-chip">
+            <span class="meta-label">PR</span>
+            <a href="{{ gh_base_url }}/pull/{{ node.pr_number }}"
+               target="_blank" rel="noopener" class="meta-value">#{{ node.pr_number }}</a>
+          </span>
+        {% endif %}
+        {% if node.branch %}
+          <span class="meta-chip">
+            <span class="meta-label">Branch</span>
+            <code class="meta-value">{{ node.branch }}</code>
+          </span>
+        {% endif %}
+        <span class="meta-chip">
+          <span class="meta-label">Messages</span>
+          <span class="meta-value">{{ node.message_count }}</span>
+        </span>
+      </div>
+    </div>
   </div>
 
   {# ── Quick actions ──────────────────────────────────────────────────────── #}
@@ -77,6 +103,12 @@
         View PR on GitHub ↗
       </a>
     {% endif %}
+    {% if persona.raw %}
+      <a href="/cognitive-arch/{{ persona.raw | urlencode }}"
+         class="btn btn-secondary">
+        {{ persona.archetype_emoji }} Cognitive Architecture
+      </a>
+    {% endif %}
 
     {# Kill button — only shown for active agents that have a worktree slug #}
     {% if node.worktree_path %}
@@ -84,7 +116,6 @@
       Kill Agent
     </button>
 
-    {# Confirmation modal — rendered inline so no extra fetch is needed #}
     <div
       class="modal-backdrop"
       x-show="showKillModal"
@@ -116,12 +147,60 @@
         </div>
       </div>
     </div>
-
-    {# Result area — HTMX writes the server response here after kill #}
     <div id="result"></div>
     {% endif %}
   </div>
 </div>
+
+{# ── Cognitive Architecture panel ────────────────────────────────────────── #}
+{% if persona.is_named_figure or persona.raw %}
+<div class="cog-panel card mt-2">
+  <div class="cog-panel__header">
+    <span class="cog-panel__emoji">{{ persona.archetype_emoji }}</span>
+    <div>
+      <div class="cog-panel__title">{{ persona.display_name }}</div>
+      {% if persona.archetype %}
+        <div class="cog-panel__sub">{{ persona.archetype | replace('_', ' ') | title }}</div>
+      {% endif %}
+    </div>
+    {% if persona.raw %}
+      <a href="/cognitive-arch/{{ persona.raw | urlencode }}"
+         class="cog-panel__detail-link">Full Architecture Page →</a>
+    {% endif %}
+  </div>
+
+  {% if persona.description %}
+  <p class="cog-panel__desc">{{ persona.description | truncate(280) }}</p>
+  {% endif %}
+
+  <div class="cog-panel__body">
+    {% if persona.overrides %}
+    <div class="cog-panel__atoms">
+      <div class="cog-panel__section-label">Cognitive Atoms</div>
+      <div class="cog-atoms-row">
+        {% for dim, val in persona.overrides.items() %}
+        <div class="cog-atom-pill">
+          <span class="cog-atom-pill__key">{{ dim | replace('_', ' ') }}</span>
+          <span class="cog-atom-pill__val">{{ val | replace('_', ' ') }}</span>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
+
+    {% if persona.skill_domains %}
+    <div class="cog-panel__skills">
+      <div class="cog-panel__section-label">Skill Domains</div>
+      <div class="cog-skills-row">
+        {% for skill in persona.skill_domains %}
+        <span class="cog-skill-tag">{{ skill | replace('_', ' ') | title }}</span>
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endif %}
 
 {# ── Two-column body ─────────────────────────────────────────────────────── #}
 <div class="agent-detail-columns mt-2">
@@ -146,6 +225,16 @@
               <span class="status-badge status-badge--{{ node.status.value }}">{{ node.status.value }}</span>
             </td>
           </tr>
+          {% if node.cognitive_arch %}
+          <tr>
+            <td class="task-key">cognitive_arch</td>
+            <td class="task-value">
+              <a href="/cognitive-arch/{{ node.cognitive_arch | urlencode }}">
+                <code>{{ node.cognitive_arch }}</code>
+              </a>
+            </td>
+          </tr>
+          {% endif %}
           {% if node.issue_number %}
           <tr>
             <td class="task-key">issue_number</td>
@@ -218,7 +307,7 @@
           :class="expanded ? 'message-body--expanded' : 'message-body--collapsed'"
           @click="expanded = !expanded"
         >
-          <pre class="message-text">{{ msg.text | truncate(400, True, '…') }}</pre>
+          <pre class="message-text">{{ msg.text | truncate(400, True, '…') if msg.text is defined else msg.content | truncate(400, True, '…') }}</pre>
         </div>
         <button
           class="message-expand-btn"
@@ -231,7 +320,6 @@
     </div>
 
     <script>
-    // Auto-scroll to the last message on page load so users see the most recent activity.
     document.addEventListener('DOMContentLoaded', function () {
       const container = document.getElementById('transcript');
       if (container) {

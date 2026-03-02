@@ -66,6 +66,15 @@ def _format_number(n: int) -> str:
 _TEMPLATES.env.filters["format_ts"] = _format_ts
 _TEMPLATES.env.filters["format_number"] = _format_number
 
+
+def _dirname(path: str) -> str:
+    """Return the parent directory of a path string (equivalent to os.path.dirname)."""
+    import os
+    return os.path.dirname(path)
+
+
+_TEMPLATES.env.filters["dirname"] = _dirname
+
 router = APIRouter(tags=["ui"])
 
 
@@ -329,6 +338,9 @@ async def agent_detail(request: Request, agent_id: str) -> Response:
             for m in db_messages
         ]
 
+    from agentception.routes.roles import resolve_cognitive_arch
+    persona = resolve_cognitive_arch(node.cognitive_arch if node else None)
+
     return _TEMPLATES.TemplateResponse(
         request,
         "agent.html",
@@ -337,6 +349,7 @@ async def agent_detail(request: Request, agent_id: str) -> Response:
             "agent_id": agent_id,
             "messages": messages,
             "db_run": db_run,
+            "persona": persona,
         },
     )
 
@@ -564,6 +577,39 @@ async def templates_ui(request: Request) -> HTMLResponse:
         request,
         "templates.html",
         {"stored_templates": stored},
+    )
+
+
+# ---------------------------------------------------------------------------
+# Cognitive architecture detail page
+# ---------------------------------------------------------------------------
+
+
+@router.get("/cognitive-arch/{arch_id}", response_class=HTMLResponse)
+async def cognitive_arch_detail(request: Request, arch_id: str) -> HTMLResponse:
+    """Cognitive architecture detail page — full visualisation of a figure or composed arch.
+
+    ``arch_id`` is a URL-safe version of the COGNITIVE_ARCH string, with colons
+    replaced by hyphens (e.g. ``steve_jobs-python-fastapi`` for
+    ``steve_jobs:python:fastapi``).  The route normalises both forms so links
+    from agent cards work regardless of encoding.
+    """
+    from agentception.routes.roles import resolve_cognitive_arch
+
+    # Accept both colon-separated (raw) and hyphen-separated (URL-safe) forms.
+    arch_str = arch_id.replace("-", ":") if ":" not in arch_id else arch_id
+    # But figure IDs use underscores — only replace hyphens that are between parts.
+    # Re-split on colons to normalise; if no colons, try underscore-safe split.
+    persona = resolve_cognitive_arch(arch_str)
+
+    return _TEMPLATES.TemplateResponse(
+        request,
+        "cognitive_arch.html",
+        {
+            "arch_id": arch_id,
+            "arch_str": arch_str,
+            "persona": persona,
+        },
     )
 
 

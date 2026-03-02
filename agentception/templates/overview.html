@@ -232,15 +232,31 @@
                 x-show="isActive(agent.status)"
               ></span>
 
+              {# Persona avatar — emoji circle derived from cognitive_arch #}
+              <div
+                class="card-persona-avatar"
+                :class="'card-persona-avatar--' + parseArch(agent.cognitive_arch).archetypeKey"
+                :title="parseArch(agent.cognitive_arch).displayName"
+              >
+                <span x-text="parseArch(agent.cognitive_arch).emoji"></span>
+              </div>
+
+              {# Role + persona name stacked #}
+              <div class="agent-role-stack">
+                <span class="agent-role-name" x-text="formatRole(agent.role)"></span>
+                <span
+                  class="agent-persona-sub"
+                  x-show="agent.cognitive_arch"
+                  x-text="parseArch(agent.cognitive_arch).displayName"
+                ></span>
+              </div>
+
               {# Status badge #}
               <span
                 class="status-badge"
                 :class="'status-badge--' + agent.status"
                 x-text="agent.status"
               ></span>
-
-              {# Role (formatted) #}
-              <span class="agent-role-name" x-text="formatRole(agent.role)"></span>
 
               {# Issue chip #}
               <a
@@ -338,6 +354,33 @@
 
               </div>
 
+              {# Cognitive Architecture mini-panel #}
+              <template x-if="agent.cognitive_arch">
+                <div class="card-arch-panel">
+                  <div class="card-arch-panel__header">
+                    <span x-text="parseArch(agent.cognitive_arch).emoji"></span>
+                    <strong x-text="parseArch(agent.cognitive_arch).displayName"></strong>
+                    <span
+                      class="card-arch-panel__archetype"
+                      x-show="parseArch(agent.cognitive_arch).archetype"
+                      x-text="parseArch(agent.cognitive_arch).archetype"
+                    ></span>
+                  </div>
+                  <template x-if="parseArch(agent.cognitive_arch).skillDomains.length > 0">
+                    <div class="card-arch-panel__skills">
+                      <template x-for="skill in parseArch(agent.cognitive_arch).skillDomains" :key="skill">
+                        <span class="cog-skill-tag cog-skill-tag--sm" x-text="skill.replace(/_/g, ' ')"></span>
+                      </template>
+                    </div>
+                  </template>
+                  <a
+                    :href="'/cognitive-arch/' + encodeURIComponent(agent.cognitive_arch)"
+                    class="card-arch-panel__link"
+                    @click.stop
+                  >View Architecture →</a>
+                </div>
+              </template>
+
               {# Task details table #}
               <div class="agent-task-details">
                 <div class="agent-task-details__title">Task Details</div>
@@ -369,6 +412,13 @@
                   class="btn btn-sm btn-secondary"
                   @click.stop
                 >View PR ↗</a>
+                <a
+                  x-show="agent.cognitive_arch"
+                  :href="'/cognitive-arch/' + encodeURIComponent(agent.cognitive_arch)"
+                  class="btn btn-sm btn-secondary"
+                  @click.stop
+                  x-text="parseArch(agent.cognitive_arch).emoji + ' Architecture'"
+                ></a>
                 <a
                   :href="'/agents/' + agent.id"
                   class="btn btn-sm btn-secondary"
