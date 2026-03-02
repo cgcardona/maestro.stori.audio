@@ -67,6 +67,7 @@ The embed route sets ``X-Frame-Options: ALLOWALL`` for cross-origin iframe use.
 from __future__ import annotations
 
 import logging
+import os
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
@@ -121,6 +122,42 @@ register_musehub_filters(templates.env)
 def _base_url(owner: str, repo_slug: str) -> str:
     """Return the canonical UI base URL for a repo."""
     return f"/musehub/ui/{owner}/{repo_slug}"
+
+
+# Maps file extensions to display-friendly language names for the blob viewer.
+# Used by _detect_language() to annotate server-rendered file content.
+_LANG_MAP: dict[str, str] = {
+    ".py": "python",
+    ".js": "javascript",
+    ".ts": "typescript",
+    ".json": "json",
+    ".yaml": "yaml",
+    ".yml": "yaml",
+    ".md": "markdown",
+    ".txt": "text",
+    ".xml": "xml",
+    ".html": "html",
+    ".css": "css",
+    ".sh": "bash",
+    ".mid": "midi",
+    ".midi": "midi",
+}
+
+# File types (from extension) that should not be rendered as text lines.
+_BLOB_BINARY_TYPES: frozenset[str] = frozenset(
+    [".mid", ".midi", ".mp3", ".wav", ".flac", ".ogg", ".webp", ".png", ".jpg", ".jpeg"]
+)
+
+
+def _detect_language(path: str) -> str:
+    """Return a display-friendly language name for a file path based on its extension.
+
+    Used by blob_page() to annotate server-rendered file content and choose
+    the correct syntax-highlighting hint for the client-side enhancer.
+    Returns an empty string for unrecognised extensions.
+    """
+    ext = os.path.splitext(path)[1].lower()
+    return _LANG_MAP.get(ext, "")
 
 
 def _breadcrumbs(*segments: tuple[str, str]) -> list[dict[str, str]]:
@@ -820,18 +857,43 @@ async def graph_page(
     repo_slug: str,
     db: AsyncSession = Depends(get_db),
 ) -> Response:
-    """Render the interactive DAG commit graph.
+    """Render the interactive DAG commit graph with SSR metadata scaffolding.
 
-    Client-side SVG renderer with branch colour-coding, merge-commit diamonds,
-    zoom/pan, hover popovers, and click-to-navigate.
+    Fetches commit and branch counts server-side and injects them into the
+    template so the page header renders without JS.  Commit graph data is
+    also pre-serialised into ``window.__graphData`` so the client-side DAG
+    renderer can skip the initial API round-trip and render immediately.
+
+    The complex SVG layout computation (force-directed positioning, zoom/pan,
+    popover hover) remains client-side — this is inherently visual and cannot
+    be SSR'd in a meaningful way.
     """
     repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
+
+    commits, _total = await musehub_repository.list_commits(db, repo_id, limit=100)
+    branches = await musehub_repository.list_branches(db, repo_id)
+
+    graph_data = [
+        {
+            "sha": c.commit_id,
+            "shortSha": c.commit_id[:8],
+            "message": c.message,
+            "author": c.author,
+            "timestamp": c.timestamp.isoformat(),
+            "parents": c.parent_ids,
+        }
+        for c in commits
+    ]
+
     ctx: dict[str, object] = {
         "owner": owner,
         "repo_slug": repo_slug,
         "repo_id": repo_id,
         "base_url": base_url,
         "current_page": "graph",
+        "graph_data_json": graph_data,
+        "commit_count": len(commits),
+        "branch_count": len(branches),
     }
     return json_or_html(
         request,
@@ -3050,18 +3112,22 @@ async def blob_page(
     path: str,
     db: AsyncSession = Depends(get_db),
 ) -> Response:
-    """Render the music-aware blob viewer for a single file at a given ref.
+    """Render the music-aware blob viewer with SSR scaffolding.
 
-    Dispatches to the appropriate rendering mode based on file extension:
-    - .mid/.midi → piano roll preview with "View in Piano Roll" quick link
-    - .mp3/.wav/.flac → <audio> player with "Listen" quick link
-    - .json → syntax-highlighted, formatted JSON with collapsible sections
-    - .webp/.png/.jpg → inline <img> display
-    - .xml → syntax-highlighted XML (MusicXML support)
-    - Other → hex dump preview with raw download link
+    Fetches the file object from the database server-side and populates the
+    template with enough context to render the page header, file metadata,
+    and (for text files) the full line-numbered content without JavaScript.
 
-    Metadata shown: filename, size, SHA, commit date.
-    Raw download button links to /{owner}/{repo_slug}/raw/{ref}/{path}.
+    Rendering modes by extension:
+    - .mid/.midi → MIDI player shell with data-midi-url attribute
+    - .mp3/.wav/.flac → client-side audio player (JS required for <audio>)
+    - Text/code files → server-rendered line-numbered table; JS enhances with
+      syntax highlighting progressively
+    - Binary / oversized (>1 MB) → download link only
+
+    If no object exists at ``path`` in the repo a 404 is raised immediately,
+    avoiding the JS "File not found" flash that the previous implementation
+    produced.
 
     Auth: no JWT required for public repos.  Private-repo auth is
     handled client-side via localStorage JWT (consistent with other
@@ -3069,6 +3135,31 @@ async def blob_page(
     """
     repo_id, base_url = await _resolve_repo(owner, repo_slug, db)
     filename = path.split("/")[-1] if path else ""
+
+    obj = await musehub_repository.get_object_by_path(db, repo_id, path)
+
+    lang = _detect_language(path)
+    ext = os.path.splitext(path)[1].lower()
+    is_binary = ext in _BLOB_BINARY_TYPES
+    is_midi = ext in (".mid", ".midi")
+    size_bytes: int = obj.size_bytes if obj is not None else 0
+
+    # Treat files over 1 MB as binary regardless of extension.
+    if size_bytes > 1_000_000:
+        is_binary = True
+
+    # Read text content for small non-binary files so we can SSR line numbers.
+    content: str | None = None
+    if obj is not None and not is_binary and os.path.exists(obj.disk_path):
+        try:
+            with open(obj.disk_path, encoding="utf-8", errors="replace") as fh:
+                content = fh.read()
+        except OSError:
+            logger.warning("⚠️ blob_page: could not read %s", obj.disk_path)
+
+    lines: list[str] = content.splitlines() if content is not None else []
+    line_count = len(lines)
+
     ctx: dict[str, object] = {
         "owner": owner,
         "repo_slug": repo_slug,
@@ -3078,6 +3169,13 @@ async def blob_page(
         "filename": filename,
         "base_url": base_url,
         "current_page": "tree",
+        "lang": lang,
+        "is_binary": is_binary,
+        "is_midi": is_midi,
+        "size_bytes": size_bytes,
+        "lines": lines,
+        "line_count": line_count,
+        "blob_found": obj is not None,
     }
     return json_or_html(
         request,
