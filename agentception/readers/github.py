@@ -257,18 +257,26 @@ async def get_wip_issues() -> list[dict[str, object]]:
 
 
 async def get_active_label() -> str | None:
-    """Return the first label in ``pipeline-config.json`` active_labels_order that has open issues.
+    """Return the currently active pipeline phase label.
 
-    The pipeline config is the single source of truth for label ordering — it
-    is not hardcoded to any prefix.  This means the function works for any
-    label scheme (``agentception/*``, ``ac-ui/*``, ``htmx/*``, etc.) as long
-    as ``pipeline-config.json`` lists them in the desired phase order.
+    Resolution order:
+    1. If an operator has manually pinned a label via the UI (see
+       :mod:`agentception.readers.active_label_override`), return that pin
+       immediately without touching GitHub.  This lets operators override the
+       automatic phase selection — e.g. to target a later phase regardless of
+       whether earlier phases are fully closed.
+    2. Otherwise, scan open GitHub issues for the first label in
+       ``pipeline-config.json`` ``active_labels_order`` that has at least one
+       open issue (auto-advance behaviour).
 
-    Returns the first label (lowest index in active_labels_order) for which at
-    least one open GitHub issue carries that label.  Returns ``None`` when the
-    config is unreadable or no configured label has open issues.
+    Returns ``None`` when no pin is set and no configured label has open issues.
     """
+    from agentception.readers.active_label_override import get_pin
     from agentception.readers.pipeline_config import read_pipeline_config  # local import to avoid circular
+
+    pin = get_pin()
+    if pin is not None:
+        return pin
 
     try:
         config = await read_pipeline_config()

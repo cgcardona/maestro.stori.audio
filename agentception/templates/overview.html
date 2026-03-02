@@ -15,9 +15,58 @@
 
   {# ── Pipeline summary bar ──────────────────────────────────────────────── #}
   <div class="pipeline-summary-bar" role="status" aria-label="Pipeline summary">
-    <div class="summary-item">
-      <span class="summary-label">Active label</span>
-      <span class="summary-value" x-text="state.active_label ?? '—'"></span>
+
+    {#
+      Phase switcher — GitHub branch-switcher style dropdown.
+      Shows the active label; click to open a list of all configured phases.
+      Selecting a phase PUTs to /api/control/active-label (manual pin).
+      "Auto" option at the top DELETEs the pin and returns to auto-advance.
+      A pin indicator (📌) appears when the label is manually overridden.
+    #}
+    <div
+      class="phase-switcher"
+      x-data="phaseSwitcher(
+        {{ active_phase_label | tojson }},
+        {{ all_phase_labels | tojson }},
+        {{ label_is_pinned | tojson }}
+      )"
+      @keydown.escape.window="open = false"
+      @click.outside="open = false"
+    >
+      <button class="phase-switcher__trigger" @click="open = !open" :aria-expanded="open">
+        <span class="phase-switcher__icon">⎇</span>
+        <span class="phase-switcher__current" x-text="current ?? '—'"></span>
+        <span class="phase-switcher__pin" x-show="pinned" title="Manually pinned — click Auto to release">📌</span>
+        <span class="phase-switcher__caret">▾</span>
+      </button>
+
+      <div class="phase-switcher__dropdown" x-show="open" x-transition>
+        <div class="phase-switcher__header">Switch phase</div>
+
+        {# Auto option — clears the manual pin #}
+        <button
+          class="phase-switcher__option"
+          :class="!pinned ? 'phase-switcher__option--active' : ''"
+          @click="selectAuto()"
+        >
+          <span class="phase-switcher__option-check" x-text="!pinned ? '✓' : ''"></span>
+          <span>Auto <span class="phase-switcher__auto-hint" x-text="!pinned && current ? '(' + current + ')' : ''"></span></span>
+        </button>
+
+        <div class="phase-switcher__divider"></div>
+
+        {# One option per configured phase #}
+        {% for lbl in all_phase_labels %}
+        <button
+          class="phase-switcher__option"
+          :class="pinned && current === {{ lbl | tojson }} ? 'phase-switcher__option--active' : ''"
+          @click="selectLabel({{ lbl | tojson }})"
+        >
+          <span class="phase-switcher__option-check" x-text="pinned && current === {{ lbl | tojson }} ? '✓' : ''"></span>
+          <span>{{ lbl }}</span>
+        </button>
+        {% endfor %}
+      </div>
     </div>
     <div class="summary-item">
       <span class="summary-label">Issues open</span>
@@ -714,6 +763,46 @@ function pipelineControl() {
       } catch (_) {
         // Network error — leave state unchanged so the badge stays accurate.
       }
+    },
+  };
+}
+
+function phaseSwitcher(initialLabel, allLabels, initialPinned) {
+  return {
+    current: initialLabel,
+    labels: allLabels,
+    pinned: initialPinned,
+    open: false,
+
+    async selectLabel(label) {
+      this.open = false;
+      try {
+        const res = await fetch('/api/control/active-label', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ label }),
+        });
+        if (res.ok) {
+          const data = await res.json();
+          this.current = data.label;
+          this.pinned = data.pinned;
+          // Reload the page so the board sidebar reflects the new phase.
+          window.location.reload();
+        }
+      } catch (_) {}
+    },
+
+    async selectAuto() {
+      this.open = false;
+      try {
+        const res = await fetch('/api/control/active-label', { method: 'DELETE' });
+        if (res.ok) {
+          const data = await res.json();
+          this.current = data.label;
+          this.pinned = false;
+          window.location.reload();
+        }
+      } catch (_) {}
     },
   };
 }
