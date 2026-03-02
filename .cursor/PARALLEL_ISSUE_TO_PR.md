@@ -257,6 +257,45 @@ for entry in "${SELECTED_ISSUES[@]}"; do
   # Leave as "tbd" if unknown — agent will document its actual files in the PR body.
   FILE_OWNERSHIP_VALUE="${FILE_OWNERSHIP:-tbd}"
 
+  # Resolve COGNITIVE_ARCH for this issue's tech stack
+  ISSUE_BODY=$(gh issue view "$NUM" --repo "$GH_REPO" --json body --jq '.body' 2>/dev/null)
+  if echo "$ISSUE_BODY" | grep -qiE "d3\.js|force-directed|d3\.force|d3\.select"; then
+    SKILLS="d3:javascript"
+  elif echo "$ISSUE_BODY" | grep -qiE "monaco|vs/loader|editor.*cdn"; then
+    SKILLS="monaco"
+  elif echo "$ISSUE_BODY" | grep -qiE "htmx|hx-|sse-connect|hx-ext"; then
+    SKILLS="htmx"
+    echo "$ISSUE_BODY" | grep -qiE "jinja2|\.html|TemplateResponse|extends.*html" && SKILLS="${SKILLS}:jinja2"
+    echo "$ISSUE_BODY" | grep -qiE "alpine|x-data|x-show" && SKILLS="${SKILLS}:alpine"
+  elif echo "$ISSUE_BODY" | grep -qiE "jinja2|TemplateResponse|extends.*html"; then
+    SKILLS="jinja2"
+  elif echo "$ISSUE_BODY" | grep -qiE "postgres|alembic|migration|sqlalchemy"; then
+    SKILLS="postgresql:python"
+  elif echo "$ISSUE_BODY" | grep -qiE "dockerfile|FROM python|compose.*service"; then
+    SKILLS="devops"
+  elif echo "$ISSUE_BODY" | grep -qiE "midi|storpheus|gm.program|tmidix"; then
+    SKILLS="midi:python"
+  elif echo "$ISSUE_BODY" | grep -qiE "llm|embedding|rag|openrouter|claude"; then
+    SKILLS="llm:python"
+  elif echo "$ISSUE_BODY" | grep -qiE "APIRouter|FastAPI|Depends|response_model"; then
+    SKILLS="fastapi:python"
+  else
+    SKILLS="python"
+  fi
+  if echo "$ISSUE_BODY" | grep -qiE "migration|alembic|schema|db.model|postgres"; then
+    FIGURE="dijkstra"
+  elif echo "$ISSUE_BODY" | grep -qiE "SSE|broadcast|async|asyncio|fanout"; then
+    FIGURE="shannon"
+  elif echo "$ISSUE_BODY" | grep -qiE "overview|dashboard|pipeline|tree"; then
+    FIGURE="lovelace"
+  elif echo "$ISSUE_BODY" | grep -qiE "api|endpoint|route|contract"; then
+    FIGURE="turing"
+  else
+    FIGURE="hopper"
+  fi
+  COGNITIVE_ARCH_VAL="${FIGURE}:${SKILLS}"
+  ROLE_FILE_VAL="$REPO/.cursor/roles/${AGENT_ROLE}.md"
+
   cat > "$WT/.agent-task" << TASKEOF
 WORKFLOW=issue-to-pr
 GH_REPO=$GH_REPO
@@ -269,6 +308,16 @@ ALL_ISSUE_LABELS=$LABELS
 DEPENDS_ON=$DEPENDS_ON
 FILE_OWNERSHIP=$FILE_OWNERSHIP_VALUE
 ROLE=$AGENT_ROLE
+ROLE_FILE=$ROLE_FILE_VAL
+WORKTREE=$WT
+BASE=dev
+CLOSES_ISSUES=$NUM
+BATCH_ID=$BATCH_ID
+COGNITIVE_ARCH=$COGNITIVE_ARCH_VAL
+WAVE=${CTO_WAVE:-unset}
+CREATED_AT=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
+SPAWN_MODE=chain
+LINKED_PR=none
 SPAWN_SUB_AGENTS=false
 ATTEMPT_N=0
 REQUIRED_OUTPUT=pr_url
@@ -880,6 +929,15 @@ STEP 5 — PUSH & CREATE PR:
   EOF
   )"
 
+  # Write the new PR number back to .agent-task so the chain can use it for MERGE_AFTER.
+  MY_BRANCH=$(git -C "$WORKTREE" rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")
+  MY_PR_NUM=$(gh pr list --repo "$GH_REPO" --head "$MY_BRANCH" --state open \
+    --json number --jq '.[0].number // empty' 2>/dev/null || echo "")
+  if [ -n "$MY_PR_NUM" ]; then
+    sed -i '' "s/^LINKED_PR=.*/LINKED_PR=$MY_PR_NUM/" .agent-task 2>/dev/null || true
+    echo "✅ LINKED_PR=$MY_PR_NUM written back to .agent-task"
+  fi
+
   # Transition status label: in-progress → pr-open
   gh issue edit <N> --repo "$GH_REPO" \
     --remove-label "status/in-progress" 2>/dev/null || true
@@ -929,18 +987,37 @@ STEP 6 — SPAWN A QA REVIEWER FOR YOUR OWN PR (run this before self-destructing
     # resolve_arch.py will switch to --mode reviewer to load the checklist instead of
     # the implementer fragments.
     REVIEWER_ARCH="${COGNITIVE_ARCH:-knuth:python}"
+    PR_TITLE_VAL=$(gh pr view "$MY_PR" --repo "$GH_REPO" --json title --jq '.title' 2>/dev/null || echo "")
+    PR_FILES_VAL=$(gh pr diff "$MY_PR" --repo "$GH_REPO" --name-only 2>/dev/null | tr '\n' ',' | sed 's/,$//')
+    CLOSES_VAL=$(gh pr view "$MY_PR" --repo "$GH_REPO" --json body --jq '.body' 2>/dev/null \
+      | grep -oE '[Cc]loses?\s+#[0-9]+' | grep -oE '[0-9]+' | tr '\n' ',' | sed 's/,$//')
+    HAS_MIG=$(echo "$PR_FILES_VAL" | grep -c "alembic/versions/" || echo 0)
+    [ "$HAS_MIG" -gt 0 ] && HAS_MIG_VAL=true || HAS_MIG_VAL=false
     cat > "$REVIEW_WORKTREE/.agent-task" <<TASK
-TASK=pr-review
-PR=$MY_PR
-BRANCH=$MY_BRANCH
+WORKFLOW=pr-review
+GH_REPO=cgcardona/maestro
+PR_NUMBER=$MY_PR
+PR_TITLE=$PR_TITLE_VAL
+PR_URL=https://github.com/cgcardona/maestro/pull/$MY_PR
+PR_BRANCH=$MY_BRANCH
 WORKTREE=$REVIEW_WORKTREE
+BASE=dev
+CLOSES_ISSUES=$CLOSES_VAL
+FILES_CHANGED=$PR_FILES_VAL
+MERGE_AFTER=none
+HAS_MIGRATION=$HAS_MIG_VAL
 ROLE=pr-reviewer
 ROLE_FILE=$HOME/dev/tellurstori/maestro/.cursor/roles/pr-reviewer.md
-BASE=dev
-GH_REPO=cgcardona/maestro
-BATCH_ID=${BATCH_ID:-none}
 COGNITIVE_ARCH=${REVIEWER_ARCH}
+BATCH_ID=${BATCH_ID:-none}
+WAVE=${WAVE:-unset}
+CREATED_AT=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
 SPAWN_MODE=chain
+LINKED_PR=$MY_PR
+SPAWN_SUB_AGENTS=false
+ATTEMPT_N=0
+REQUIRED_OUTPUT=grade,merge_status,pr_url
+ON_BLOCK=stop
 TASK
 
     echo "✅ Spawning QA reviewer for PR #$MY_PR (chain mode — reviewer will spawn next engineer)"
