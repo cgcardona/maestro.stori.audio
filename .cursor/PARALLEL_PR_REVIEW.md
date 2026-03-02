@@ -728,7 +728,7 @@ STEP 5 — REVIEW:
       2>&1 | tail -10
   fi
   # Note: any error shown here is pre-existing on dev — you own fixing it if it
-  # is in a file this PR touches. Errors in untouched files → file a follow-up issue.
+  # is in a file this PR touches. Errors in untouched files → note in report, do not block merge.
 
   echo "=== PRE-EXISTING TEST BASELINE (targeted) ==="
   # (Run targeted tests relevant to the PR's module — same files you'll test after merge)
@@ -772,8 +772,7 @@ STEP 5 — REVIEW:
      Any mypy error in a file this PR modifies that was ALSO present in the baseline
      (STEP 5.A) must be fixed in this review cycle. Commit the fix separately:
        "fix: resolve pre-existing mypy error in <file> — <brief description>"
-     Errors in files this PR does NOT touch: file a GitHub issue, note it in report,
-     do NOT block this merge on it.
+     Errors in files this PR does NOT touch: note it in report, do NOT block this merge on it.
 
      ─── broken tests ───
      Any test that failed in the baseline AND still fails after the PR is applied must
@@ -793,30 +792,30 @@ STEP 5 — REVIEW:
      A clean run has zero warnings AND zero failures. Note all warnings resolved in your report.
   7. Grade the PR (A/B/C/D/F) — OUTPUT GRADE FIRST before any merge command
 
-  GRADE B — FIX-OR-TICKET PROTOCOL (apply before proceeding to STEP 6):
+  GRADE B — MANDATORY FIX PROTOCOL (always fix to A — never file a follow-up ticket):
     A B grade means the PR is solid but has at least one specific, named concern.
-    Before merging a B, you MUST choose exactly one of these two paths:
+    You MUST fix every B-grade concern in place and upgrade the grade to A before merging.
+    ⚠️  Do NOT file follow-up tickets for B-grade concerns — fix them here and now.
+    ⚠️  "B → ticket → merge" leaves known defects in main and floods the backlog.
 
-    PATH 1 — Fix it to an A (preferred):
-      If the concern is a straightforward improvement (missing test assertion,
-      weak docstring, minor type narrowing, a cleaner error message), fix it
-      right here in the worktree, re-run mypy + targeted tests, and upgrade
-      the grade to A. Commit the fix with:
-        git commit -m "fix: address PR review concern — <one-line description>"
-      Then push and continue to STEP 6.
+    Treat a B exactly like a C: fix it in the worktree, re-run mypy + targeted tests,
+    and re-grade to A. Common B-grade fixes:
+      - Missing test assertion → add it
+      - Weak docstring → strengthen it
+      - Minor type narrowing → apply it
+      - Cleaner error message → write it
+      - Missing from __future__ import annotations → add it
 
-    PATH 2 — Create a follow-up ticket (when fix is non-trivial):
-      If the concern requires design thought, touches other files, or risks
-      introducing new bugs, capture it as a GitHub issue instead of fixing
-      in place. File it BEFORE merging.
+    After fixing, commit with:
+      git commit -m "fix: upgrade B-grade review concerns to A — <one-line summary>"
+    Then push and re-grade. Grade must reach A before proceeding to STEP 6.
 
   GRADE C — MANDATORY FIX PROTOCOL (never stop on a C — always fix and re-grade):
     A C grade means the quality bar was not met, but the work is recoverable.
     ⚠️  You MUST attempt to fix every C-grade issue in place. Do NOT self-destruct.
     ⚠️  "C → stop" breaks sequential merge chains and wastes all upstream work.
 
-    Treat a C exactly like a B-PATH-1: fix it here in the worktree, re-run
-    mypy + targeted tests, and re-grade. Common C-grade fixes:
+    Fix it in the worktree, re-run mypy + targeted tests, and re-grade. Common C-grade fixes:
       - Missing from __future__ import annotations → add it
       - Any in return type → replace with a concrete type or TypedDict
       - Missing docstrings → add them
@@ -833,6 +832,8 @@ STEP 5 — REVIEW:
     missing foreign key chain, irrecoverable schema conflict). In that case:
       - DO NOT merge
       - File a GitHub issue describing exactly what must change
+      - Apply labels with gh issue edit after creation (two-step pattern — never --label on create)
+      - Apply "bug" label plus the current batch label (${BATCH_ID:-none} or agentception/*)
       - Self-destruct and report the issue URL to the coordinator
       - Never loop or block silently
 
@@ -854,35 +855,11 @@ STEP 5 — REVIEW:
       │ Step 2: apply labels with gh issue edit (|| true = non-fatal)         │
       └────────────────────────────────────────────────────────────────────────
 
-        FOLLOW_UP_URL=$(gh issue create \
-          --title "follow-up: <specific concern from PR #<N>>" \
-          --body "$(cat <<'EOF'
-        ## Context
-        Identified during review of PR #<N> (grade B).
-
-        ## Concern
-        <Exact description of what fell short and why it matters>
-
-        ## Acceptance Criteria
-        <What the fix must do to close this issue>
-
-        ## Files Affected
-        <List of files that need to change>
-        EOF
-        )")
-        # Apply labels separately — each on its own line so one failure
-        # doesn't block the others. Pick from the LABEL REFERENCE above only.
-        gh issue edit "$FOLLOW_UP_URL" --add-label "enhancement" 2>/dev/null || true
-      Report the follow-up issue URL ($FOLLOW_UP_URL) in your final report. Then proceed to STEP 6.
-
-    ⚠️  A B grade without a fix OR a follow-up ticket URL is not acceptable.
-        You must produce one artifact per B-grade concern before merging.
-
   8. Grade decision:
      A       → proceed to STEP 5.5 (merge order gate)
-     B       → fix-or-ticket per GRADE B protocol above, then STEP 5.5
+     B       → fix in place per GRADE B protocol above, upgrade to A, then STEP 5.5
      C       → fix in place per GRADE C protocol above, re-grade, then STEP 5.5
-     D or F  → DO NOT merge. File a GitHub issue. Self-destruct. Report to user.
+     D or F  → DO NOT merge. File a GitHub issue (bug + batch label). Self-destruct. Report to user.
 
 STEP 5.5 — MERGE ORDER GATE (sequential chain safety):
   Read the MERGE_AFTER field from .agent-task:
@@ -942,8 +919,8 @@ STEP 6 — PRE-MERGE SYNC (only if grade is A or B):
   - Use the CONFLICT PLAYBOOK from STEP 3 — same rules apply.
   - For markdown-only conflicts (muse_vcs.md, type_contracts.md), skip mypy.
   - For app.py or any Python file, re-run mypy before pushing.
-  - If conflicts are non-trivial and introduce risk → downgrade grade to B
-    and file a follow-up issue. Still merge if the overall work is solid.
+  - If conflicts are non-trivial and introduce risk → resolve them here,
+    re-run mypy and targeted tests, and re-grade before merging.
 
   # 3. ALWAYS push the branch before merging — even if there were no conflicts.
   #    GitHub sees the REMOTE branch tip, not your local state. If another PR landed
@@ -1363,7 +1340,7 @@ STEP 9 — SELF-DESTRUCT (always run this after STEP 8, merge or not, early stop
 CRITICAL: You MUST output your grade and "Approved for merge" OR "Not approved — do not merge"
 BEFORE running any gh pr merge command.
 
-Report: PR number, grade, merge status, any improvements made, follow-up issues to file.
+Report: PR number, grade (must be A before merge), merge status, any improvements made.
 ```
 
 ---
@@ -1373,10 +1350,10 @@ Report: PR number, grade, merge status, any improvements made, follow-up issues 
 | Grade | Meaning | Action |
 |-------|---------|--------|
 | **A** | Production-ready. Types, tests, docs all solid. | Merge immediately. |
-| **B** | Solid but has named minor concerns. | Fix in place → upgrade to A (preferred), OR file follow-up ticket → then merge. Fix commit OR issue URL required. |
-| **C** | Quality bar not met but recoverable. | **Fix in place and re-grade. Never stop on a C.** Same as B-PATH-1. Escalate only if architecturally irrecoverable — file issue URL, self-destruct, report to user. |
-| **D** | Unsafe, incomplete, or breaks a contract. | Do NOT merge. File GitHub issue. Self-destruct. Report issue URL to user. |
-| **F** | Regression, security hole, or architectural violation. | Reject. File GitHub issue. Self-destruct. Report issue URL to user. |
+| **B** | Solid but has named minor concerns. | **Always fix in place → upgrade to A.** Never file a follow-up ticket. Commit fix, re-grade, then merge. |
+| **C** | Quality bar not met but recoverable. | **Fix in place and re-grade. Never stop on a C.** Escalate only if architecturally irrecoverable — file issue (bug + batch label), self-destruct, report to user. |
+| **D** | Unsafe, incomplete, or breaks a contract. | Do NOT merge. File GitHub issue (bug + batch label). Self-destruct. Report issue URL to user. |
+| **F** | Regression, security hole, or architectural violation. | Reject. File GitHub issue (bug + batch label). Self-destruct. Report issue URL to user. |
 
 ---
 
