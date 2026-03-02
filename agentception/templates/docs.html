@@ -1,55 +1,60 @@
 {% extends "base.html" %}
 
-{% block title %}AgentCeption — Docs: {{ slug }}{% endblock %}
+{% block title %}Agentception — Docs: {{ label }}{% endblock %}
 
 {% block content %}
+
 {# ── Breadcrumb ──────────────────────────────────────────────────────────── #}
 <nav class="breadcrumb" aria-label="Breadcrumb">
   <a href="/">← Overview</a>
   <span class="breadcrumb-sep">/</span>
   <a href="/docs">Docs</a>
   <span class="breadcrumb-sep">/</span>
-  <span class="breadcrumb-current">{{ slug }}</span>
+  <span class="breadcrumb-current">{{ label }}</span>
 </nav>
 
-<div style="display:grid;grid-template-columns:200px 1fr;gap:1.5rem;margin-top:1rem;" class="docs-layout">
+{#
+  Alpine component: tracks which slug is "active" in the sidebar.
+  After every HTMX settle event (triggered by sidebar link clicks),
+  read the current pathname and update `activeSlug` accordingly.
+  This keeps the sidebar highlight in sync without a full page reload.
+#}
+<div
+  class="docs-layout"
+  x-data="{
+    activeSlug: '{{ slug }}',
+    init() {
+      window.addEventListener('htmx:afterSettle', () => {
+        const m = location.pathname.match(/\/docs\/([^/]+)/);
+        if (m) this.activeSlug = m[1];
+      });
+    }
+  }"
+>
 
-  {# ── Sidebar: doc index ─────────────────────────────────────────────────── #}
-  <nav class="card" style="align-self:start;padding:0.75rem;">
-    <h2 style="font-size:0.78rem;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-muted);margin-bottom:0.5rem;">
-      Documents
-    </h2>
-    <ul style="list-style:none;padding:0;margin:0;display:flex;flex-direction:column;gap:0.25rem;">
+  {# ── Sidebar: document index ─────────────────────────────────────────── #}
+  <nav class="docs-sidebar card" aria-label="Documents">
+    <h2 class="docs-sidebar-heading">Documents</h2>
+    <ul class="docs-sidebar-list">
       {% for doc in available_docs %}
       <li>
-        <a href="/docs/{{ doc.slug }}"
-           style="display:block;padding:0.3rem 0.5rem;border-radius:4px;font-size:0.85rem;
-                  {% if doc.slug == slug %}background:rgba(124,58,237,0.12);color:var(--accent);font-weight:600;
-                  {% else %}color:var(--text-primary);{% endif %}">
-          {{ doc.label }}
-        </a>
+        <a
+          href="/docs/{{ doc.slug }}"
+          class="docs-sidebar-link"
+          :class="activeSlug === '{{ doc.slug }}' ? 'docs-sidebar-link--active' : ''"
+          hx-get="/docs/{{ doc.slug }}/content"
+          hx-target="#docs-content"
+          hx-swap="innerHTML"
+          hx-push-url="/docs/{{ doc.slug }}"
+        >{{ doc.label }}</a>
       </li>
       {% endfor %}
     </ul>
   </nav>
 
-  {# ── Main: rendered content ─────────────────────────────────────────────── #}
-  <section>
-    <div class="card">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem;">
-        <h1 style="font-size:1.1rem;font-weight:700;margin:0;">{{ slug }}</h1>
-        <span style="font-size:0.78rem;color:var(--text-muted);">
-          {{ file_path }}
-        </span>
-      </div>
-      {% if content %}
-      <pre style="white-space:pre-wrap;word-break:break-word;font-family:monospace;font-size:0.82rem;line-height:1.65;color:var(--text-primary);">{{ content }}</pre>
-      {% elif error %}
-      <p class="text-muted" style="color:var(--danger);">⚠️ {{ error }}</p>
-      {% else %}
-      <p class="text-muted empty-state">File is empty.</p>
-      {% endif %}
-    </div>
+  {# ── Main: rendered doc content ───────────────────────────────────────── #}
+  <section id="docs-content" class="docs-content card">
+    {% include "_doc_content.html" %}
   </section>
 
 </div>
