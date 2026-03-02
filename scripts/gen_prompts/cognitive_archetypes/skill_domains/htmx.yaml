@@ -50,5 +50,5 @@ review_checklist: |
   - hx-push-url used only when the swap represents a genuine page state change
 
 quality_gates:
-  linter: "docker compose exec agentception mypy /app/agentception/"
+  linter: 'docker compose exec agentception sh -c "PYTHONPATH=/worktrees/$WTNAME mypy /worktrees/$WTNAME/agentception/"'
   test_runner: "docker compose exec agentception pytest agentception/tests/ -v"

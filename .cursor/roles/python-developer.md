@@ -46,7 +46,7 @@ Every piece of code you write or touch must satisfy:
 Run in order — types before tests:
 
 ```
-docker compose exec agentception mypy /app/agentception/
+docker compose exec agentception sh -c "PYTHONPATH=/worktrees/$WTNAME mypy /worktrees/$WTNAME/agentception/"
 ```
 
 Then run **only the test files for modules you changed** — never `agentception/tests/` as a directory:
