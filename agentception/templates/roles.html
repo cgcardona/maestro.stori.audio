@@ -477,10 +477,13 @@
     document.getElementById('btn-diff-commit').disabled = true;
     document.getElementById('diff-modal-overlay').classList.add('visible');
 
-    var url = '/api/roles/' + encodeURIComponent(_currentSlug) + '/diff?proposed=' +
-      encodeURIComponent(content);
+    var url = '/api/roles/' + encodeURIComponent(_currentSlug) + '/diff';
 
-    fetch(url)
+    fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ content: content }),
+    })
       .then(function (r) {
         if (!r.ok) throw new Error('HTTP ' + r.status + ' — ' + r.statusText);
         return r.json();

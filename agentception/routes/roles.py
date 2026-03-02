@@ -15,13 +15,14 @@ import logging
 import tempfile
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException
 
 from agentception.config import settings
 from agentception.models import (
     RoleCommitRequest,
     RoleCommitResponse,
     RoleContent,
+    RoleDiffRequest,
     RoleDiffResponse,
     RoleMeta,
     RoleUpdateRequest,
@@ -207,14 +208,16 @@ async def role_history(slug: str) -> list[dict[str, str]]:
     return await _git_log_recent(settings.repo_dir, rel_path)
 
 
-@router.get("/{slug}/diff", summary="Preview a unified diff of proposed content vs HEAD")
-async def role_diff(slug: str, proposed: str = Query(...)) -> RoleDiffResponse:
-    """Return a unified diff comparing ``proposed`` content against HEAD without writing the file.
+@router.post("/{slug}/diff", summary="Preview a unified diff of proposed content vs HEAD")
+async def role_diff(slug: str, body: RoleDiffRequest) -> RoleDiffResponse:
+    """Return a unified diff comparing ``body.content`` against HEAD without writing the file.
 
-    Writes ``proposed`` to a temp file, then runs ``git diff --no-index``
-    between the committed file and the temp file so the user can review changes
-    before saving.  An empty ``diff`` string means the proposed content is
-    identical to the committed version.  Raises HTTP 404 for unknown slugs.
+    Accepts a POST body so that large managed files (e.g. PARALLEL_PR_REVIEW.md)
+    do not exceed Nginx's URI length limit.  Writes ``body.content`` to a temp
+    file, then runs ``git diff --no-index`` between the committed file and the
+    temp file so the user can review changes before saving.  An empty ``diff``
+    string means the proposed content is identical to the committed version.
+    Raises HTTP 404 for unknown slugs.
     """
     rel_path = _resolve_slug(slug)
     abs_path = settings.repo_dir / rel_path
@@ -225,7 +228,7 @@ async def role_diff(slug: str, proposed: str = Query(...)) -> RoleDiffResponse:
     with tempfile.NamedTemporaryFile(
         mode="w", suffix=".md", encoding="utf-8", delete=False
     ) as tmp:
-        tmp.write(proposed)
+        tmp.write(body.content)
         tmp_path = tmp.name
 
     try:

@@ -7,8 +7,8 @@ Covers:
 - update_role writes new content to disk
 - role_history returns a list of commit dicts
 - GET /roles page returns 200 with file list and Monaco CDN script
-- role_diff returns unified diff of proposed vs HEAD (AC-303)
-- role_diff returns empty diff when content is identical (AC-303)
+- role_diff returns unified diff of proposed content vs HEAD (AC-303)
+- role_diff returns empty diff when proposed content is identical to HEAD (AC-303)
 - commit_role writes file and creates git commit (AC-303)
 - commit_role returns correct commit message format (AC-303)
 
@@ -263,7 +263,7 @@ def test_diff_endpoint_returns_unified_diff(
     client: TestClient,
     tmp_repo: Path,
 ) -> None:
-    """GET /api/roles/{slug}/diff must return a non-empty unified diff for changed content."""
+    """POST /api/roles/{slug}/diff must return a non-empty unified diff for changed content."""
     proposed = "# CTO (Changed)\nDifferent content.\n"
 
     with patch("agentception.routes.roles.settings") as mock_settings:
@@ -279,9 +279,9 @@ def test_diff_endpoint_returns_unified_diff(
             return FakeProc()
 
         with patch("asyncio.create_subprocess_exec", side_effect=fake_diff):
-            response = client.get(
+            response = client.post(
                 "/api/roles/cto/diff",
-                params={"proposed": proposed},
+                json={"content": proposed},
             )
 
     assert response.status_code == 200
@@ -295,7 +295,7 @@ def test_diff_identical_content_returns_empty(
     client: TestClient,
     tmp_repo: Path,
 ) -> None:
-    """GET /api/roles/{slug}/diff must return an empty diff when proposed matches HEAD."""
+    """POST /api/roles/{slug}/diff must return an empty diff when proposed matches HEAD."""
     with patch("agentception.routes.roles.settings") as mock_settings:
         mock_settings.repo_dir = tmp_repo
 
@@ -309,9 +309,9 @@ def test_diff_identical_content_returns_empty(
             return FakeProc()
 
         with patch("asyncio.create_subprocess_exec", side_effect=fake_no_diff):
-            response = client.get(
+            response = client.post(
                 "/api/roles/cto/diff",
-                params={"proposed": "# CTO\nLeads engineering."},
+                json={"content": "# CTO\nLeads engineering."},
             )
 
     assert response.status_code == 200

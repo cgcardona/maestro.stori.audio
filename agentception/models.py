@@ -210,10 +210,22 @@ class RoleUpdateResponse(BaseModel):
     meta: RoleMeta
 
 
-class RoleDiffResponse(BaseModel):
-    """Response for ``GET /api/roles/{slug}/diff`` — diff of proposed vs HEAD.
+class RoleDiffRequest(BaseModel):
+    """Request body for ``POST /api/roles/{slug}/diff`` (AC-303).
 
-    ``diff`` is a unified diff string comparing ``proposed`` content against
+    ``content`` is the proposed file content to diff against the HEAD-committed
+    version.  No file is written to disk — this is a pure preview operation.
+    Using a POST body avoids URL-length limits for large managed files (e.g.
+    PARALLEL_PR_REVIEW.md which exceeds Nginx's default 4 KB URI limit).
+    """
+
+    content: str
+
+
+class RoleDiffResponse(BaseModel):
+    """Response for ``POST /api/roles/{slug}/diff`` — diff of proposed vs HEAD.
+
+    ``diff`` is a unified diff string comparing ``content`` against
     the HEAD-committed version.  An empty string means the proposed content is
     identical to the committed file.  No file is written to disk.
     """
