@@ -1,0 +1,78 @@
+{#  fragments/collaborator_rows.html — bare HTMX fragment: collaborator table rows.
+
+    Rendered in two contexts:
+
+    1. Full-page load: included inline by musehub/pages/collaborators_settings.html
+       inside the ``<div id="collaborator-rows">`` target container.
+
+    2. HTMX partial swap: returned directly when the handler detects
+       ``HX-Request: true``, replacing only the ``#collaborator-rows`` container
+       after invite or remove actions.
+
+    Required context variables
+    --------------------------
+    collaborators  : list[dict]   — snake_case dicts from CollaboratorResponse.model_dump()
+                                    keys: user_id, permission, invited_by, repo_id, collaborator_id
+    repo_id        : str          — repository UUID (used in HTMX action URLs)
+
+    Pattern: all data is prepared server-side — no JS fetches.
+#}
+{% from "musehub/macros/empty_state.html" import empty_state %}
+
+{% if collaborators %}
+  <table class="collab-table">
+    <thead>
+      <tr>
+        <th>Collaborator</th>
+        <th>Permission</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for collab in collaborators %}
+      <tr id="collab-{{ collab.user_id }}">
+        <td>
+          <div style="display:flex;align-items:center;gap:10px">
+            <div style="width:32px;height:32px;border-radius:50%;background:var(--bg-overlay,#21262d);
+                        display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0">
+              👤
+            </div>
+            <div>
+              <span style="font-weight:600;font-size:13px">{{ collab.user_id }}</span>
+              {% if collab.invited_by %}
+                <div style="font-size:11px;color:var(--text-muted,#8b949e)">Invited by {{ collab.invited_by }}</div>
+              {% endif %}
+            </div>
+          </div>
+        </td>
+        <td>
+          <span class="badge badge-perm-{{ collab.permission }}"
+                style="border-radius:4px;padding:2px 8px;font-size:11px;font-weight:600">
+            {{ collab.permission }}{% if collab.permission == 'owner' %} 👑{% endif %}
+          </span>
+        </td>
+        <td style="text-align:right">
+          {% if collab.permission != 'owner' %}
+          <form hx-delete="/api/v1/musehub/repos/{{ repo_id }}/collaborators/{{ collab.user_id }}"
+                hx-target="#collaborator-rows"
+                hx-swap="innerHTML"
+                hx-confirm="Remove {{ collab.user_id }} from collaborators? They will lose access immediately."
+                style="display:inline">
+            <button type="submit" class="btn btn-ghost btn-sm"
+                    style="font-size:12px;padding:3px 10px;color:var(--color-danger,#f85149)">
+              Remove
+            </button>
+          </form>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+{% else %}
+  {{ empty_state(
+      "👥",
+      "No collaborators yet",
+      "Invite collaborators to give them access to this repository.",
+  ) }}
+{% endif %}

@@ -4,18 +4,22 @@ Serves the admin-only team management page at:
   GET /musehub/ui/{owner}/{repo_slug}/settings/collaborators
 
 The page lets repository admins and owners manage team access:
-- User search + invite form with permission selector (read / write / admin)
-- Collaborators table with colour-coded permission badges and remove buttons
-- Pending invites section (invites not yet accepted)
-- Owner crown badge to distinguish the repo owner from regular collaborators
+- Server-rendered collaborators table with colour-coded permission badges and HTMX remove buttons
+- Invite form with HTMX submission (hx-post) that returns an updated collaborator list fragment
+- Owner crown badge (👑) to distinguish the repo owner from regular collaborators
 
 Auth policy
 -----------
-The HTML shell requires no JWT — auth is enforced client-side:
-  - The embedded JS reads a JWT from ``localStorage`` and sends it as a
-    Bearer token to the collaborators JSON API.
-  - If the caller lacks admin+ permission the API returns 403; the page
-    renders a "Permission denied" error card rather than crashing.
+The HTML page requires no JWT for rendering — auth is enforced by the mutation API endpoints:
+  - POST/DELETE /api/v1/musehub/repos/{repo_id}/collaborators/* return 403 for
+    callers without admin+ permission.
+  - The page renders all server-fetched collaborator data without client-side JS fetching.
+
+SSR / HTMX pattern
+-------------------
+All collaborator data is fetched server-side on every GET.  HTMX ``hx-post``
+and ``hx-delete`` forms call the existing JSON API and target ``#collaborator-rows``
+to replace the collaborator list fragment without a full page reload.
 
 JSON alternate
 --------------
@@ -24,7 +28,7 @@ JSON alternate
 populated from the database, suitable for agent consumption.
 
 Endpoint summary:
-  GET /musehub/ui/{owner}/{repo_slug}/settings/collaborators — HTML (default) or JSON
+  GET /musehub/ui/{owner}/{repo_slug}/settings/collaborators — HTML (default), HTMX fragment, or JSON
 """
 from __future__ import annotations
 
@@ -86,59 +90,59 @@ async def collaborators_settings_page(
     format: str | None = Query(None, description="Force response format: 'json' or omit for HTML"),
     db: AsyncSession = Depends(get_db),
 ) -> StarletteResponse:
-    """Render the admin-only collaborators/team management page.
+    """Render the SSR collaborators/team management page.
 
     Why this route exists: repository admins need a GUI to manage who has
     access to a composition project, set granular permission levels (read /
-    write / admin), search for MuseHub users to invite, and remove stale
-    collaborators — all without issuing raw API calls.
+    write / admin), invite MuseHub users, and remove stale collaborators —
+    all rendered server-side without client-side JS fetching.
 
     HTML (default): renders ``musehub/pages/collaborators_settings.html``
-    with:
-      - User search + invite form with permission selector
-      - Collaborators table: avatar placeholder, username, permission badge
-        (colour-coded: read=grey, write=blue, admin=orange, owner=gold crown)
-      - Pending invites section
-      - Remove button on each non-owner row (admin+ only; disabled for owner)
+    with collaborators server-rendered into the page. HTMX forms on the page
+    call the existing API endpoints and swap ``#collaborator-rows`` inline.
+
+    HTMX fragment (``HX-Request: true``): returns only
+    ``musehub/fragments/collaborator_rows.html`` — the bare collaborator list
+    for inline DOM replacement after invite/remove actions.
 
     JSON (``Accept: application/json`` or ``?format=json``): returns
-    ``CollaboratorListResponse`` with all current collaborators. Pending
-    invites are not exposed via this shortcut — use the full collaborators
-    API for filtering by invite status.
-
-    Auth: the HTML shell carries no JWT server-side. Client JS reads the
-    token from ``localStorage`` and attaches it to every API call. If the
-    caller lacks admin+ permission the API returns 403; the page renders an
-    inline error rather than crashing.
+    ``CollaboratorListResponse`` with all current collaborators.
     """
     repo_id, base_url = await _resolve_repo_id(owner, repo_slug, db)
 
-    # For JSON responses, eagerly fetch the collaborator list from DB.
     result = await db.execute(
         select(MusehubCollaborator).where(MusehubCollaborator.repo_id == repo_id)
     )
     rows = result.scalars().all()
-    collaborators = [_orm_to_response(r) for r in rows]
-    json_data = CollaboratorListResponse(collaborators=collaborators, total=len(collaborators))
+    collaborator_responses = [_orm_to_response(r) for r in rows]
+    json_data = CollaboratorListResponse(
+        collaborators=collaborator_responses, total=len(collaborator_responses)
+    )
+
+    ctx: dict[str, object] = {
+        "owner": owner,
+        "repo_slug": repo_slug,
+        "repo_id": repo_id,
+        "base_url": base_url,
+        "current_page": "settings",
+        "settings_tab": "collaborators",
+        "collaborators": [
+            c.model_dump(by_alias=False, mode="json") for c in collaborator_responses
+        ],
+        "breadcrumb_data": [
+            {"label": owner, "url": f"/musehub/ui/{owner}"},
+            {"label": repo_slug, "url": base_url},
+            {"label": "Settings", "url": f"{base_url}/settings"},
+            {"label": "Collaborators", "url": ""},
+        ],
+    }
 
     return await negotiate_response(
         request=request,
         template_name="musehub/pages/collaborators_settings.html",
-        context={
-            "owner": owner,
-            "repo_slug": repo_slug,
-            "repo_id": repo_id,
-            "base_url": base_url,
-            "current_page": "settings",
-            "settings_tab": "collaborators",
-            "breadcrumb_data": [
-                {"label": owner, "url": f"/musehub/ui/{owner}"},
-                {"label": repo_slug, "url": base_url},
-                {"label": "Settings", "url": f"{base_url}/settings"},
-                {"label": "Collaborators", "url": ""},
-            ],
-        },
+        context=ctx,
         templates=templates,
         json_data=json_data,
         format_param=format,
+        fragment_template="musehub/fragments/collaborator_rows.html",
     )
