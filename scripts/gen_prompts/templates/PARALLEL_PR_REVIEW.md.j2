@@ -972,10 +972,13 @@ STEP 6 — PRE-MERGE SYNC (only if grade is A or B):
   │ URL and the exact error, and let the user merge manually.                  │
   └─────────────────────────────────────────────────────────────────────────────
 
-  # 6. Delete the remote branch manually (now safe — merge is done):
+  # 6. Clear agent:wip now that the PR is merged — it must not persist on closed PRs.
+       gh pr edit <N> --repo "$GH_REPO" --remove-label "agent:wip" 2>/dev/null || true
+
+  # 7. Delete the remote branch manually (now safe — merge is done):
        git push origin --delete "$BRANCH"
 
-  # 7. Post a fingerprint comment on the PR so every merge is permanently traceable:
+  # 8. Post a fingerprint comment on the PR so every merge is permanently traceable:
        MERGE_FINGERPRINT=$(python3 "$REPO/scripts/gen_prompts/resolve_arch.py" "${COGNITIVE_ARCH:-unset}" \
          --fingerprint \
          --role "${ROLE:-pr-reviewer}" \
@@ -991,9 +994,9 @@ $MERGE_FINGERPRINT
 
   # NOTE: Do NOT delete the local branch here — the branch is still checked out
   # in this worktree, so git will refuse. The local branch ref is cleaned up in
-  # STEP 8 (SELF-DESTRUCT) AFTER the worktree is removed.
+  # SELF-DESTRUCT (final step) AFTER the worktree is removed.
 
-  # 7. Close every referenced issue — only the reviewer who merges the PR does this.
+  # 9. Close every referenced issue — only the reviewer who merges the PR does this.
   #    CLOSES_ISSUES is pre-populated from .agent-task (the coordinator extracted
   #    it at setup time). Use it directly to avoid re-parsing the PR body.
   #    ⚠️  Do NOT use `grep -o '#[0-9]*'` — it matches any #N (commit hashes,
@@ -1031,7 +1034,7 @@ $CLOSE_FINGERPRINT
       gh attempts to checkout dev locally to delete the feature branch, but dev
       is already checked out in the main worktree and git will refuse.
 
-  # 8. Mark linked issues as merged (conductor reads this as "done").
+  # 10. Mark linked issues as merged (conductor reads this as "done").
   CLOSES_ISSUES_FOR_LABEL=$(grep "^CLOSES_ISSUES=" .agent-task | cut -d= -f2)
   if [ -n "$CLOSES_ISSUES_FOR_LABEL" ]; then
     echo "$CLOSES_ISSUES_FOR_LABEL" | tr ',' '\n' | xargs -I{} sh -c \
