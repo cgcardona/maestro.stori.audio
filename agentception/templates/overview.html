@@ -1,30 +1,275 @@
 {% extends "base.html" %}
 
-{% block title %}AgentCeption — Amplify Yourself{% endblock %}
+{% block title %}Agentception — The Singularity Is Here{% endblock %}
+
+{# ─────────────────────────────────────────────────────────────────────────────
+   JINJA MACROS
+   Defined here (outside blocks) so they can be called from {% block content %}.
+
+   agent_header(v, simplified)
+     Renders the collapsed header row for one agent card.
+     v          — Alpine loop variable name ("agent" or "child")
+     simplified — True for child cards (no persona avatar / role stack)
+
+   agent_body(v, simplified)
+     Renders the expanded body panel for one agent card.
+     v          — Alpine loop variable name
+     simplified — True for child cards (no arch panel, no worktree row)
+───────────────────────────────────────────────────────────────────────────── #}
+
+{% macro agent_header(v, simplified=False) %}
+<div class="agent-card__header" @click="toggle({{ v }}.id)">
+
+  <span
+    class="agent-pulse"
+    :class="'agent-pulse--' + {{ v }}.status"
+    x-show="isActive({{ v }}.status)"
+  ></span>
+
+  {% if not simplified %}
+  <div
+    class="card-persona-avatar"
+    :class="'card-persona-avatar--' + parseArch({{ v }}.cognitive_arch).archetypeKey"
+    :title="parseArch({{ v }}.cognitive_arch).displayName"
+  >
+    <span x-text="parseArch({{ v }}.cognitive_arch).emoji"></span>
+  </div>
+
+  <div class="agent-role-stack">
+    <span class="agent-role-name" x-text="formatRole({{ v }}.role)"></span>
+    <span
+      class="agent-persona-sub"
+      x-show="{{ v }}.cognitive_arch"
+      x-text="parseArch({{ v }}.cognitive_arch).displayName"
+    ></span>
+  </div>
+  {% endif %}
+
+  <span
+    class="status-badge"
+    :class="'status-badge--' + {{ v }}.status"
+    x-text="{{ v }}.status"
+  ></span>
+
+  {% if simplified %}
+  <span class="agent-role-name" x-text="formatRole({{ v }}.role)"></span>
+  {% endif %}
+
+  <a
+    x-show="{{ v }}.issue_number != null"
+    :href="GH_BASE_URL + '/issues/' + {{ v }}.issue_number"
+    class="agent-meta-chip agent-meta-chip--issue"
+    target="_blank" rel="noopener noreferrer"
+    @click.stop
+  >#<span x-text="{{ v }}.issue_number"></span></a>
+
+  <a
+    x-show="{{ v }}.pr_number != null"
+    :href="GH_BASE_URL + '/pull/' + {{ v }}.pr_number"
+    class="agent-meta-chip agent-meta-chip--pr"
+    target="_blank" rel="noopener noreferrer"
+    @click.stop
+  >PR&nbsp;#<span x-text="{{ v }}.pr_number"></span></a>
+
+  <code
+    class="agent-branch-chip text-muted"
+    x-show="{{ v }}.branch"
+    x-text="{{ v }}.branch"
+  ></code>
+
+  <span class="agent-meta text-muted" x-show="{{ v }}.message_count > 0">
+    <span x-text="{{ v }}.message_count"></span> msgs
+  </span>
+
+  <span
+    class="agent-meta text-muted"
+    x-show="{{ v }}.last_activity_mtime > 0"
+    x-text="relativeTime({{ v }}.last_activity_mtime)"
+  ></span>
+
+  <span
+    class="agent-card__chevron"
+    :class="{ 'agent-card__chevron--open': expanded }"
+  >›</span>
+
+  <button
+    class="btn-kill-inline"
+    x-show="{{ v }}.worktree_path != null && ['implementing','reviewing','stale'].includes({{ v }}.status)"
+    @click.stop="$dispatch('open-kill-modal', {id: {{ v }}.id, issue: {{ v }}.issue_number})"
+    title="Kill agent"
+    aria-label="Kill agent"
+  >✕</button>
+
+</div>
+{% endmacro %}
+
+
+{% macro agent_body(v, simplified=False) %}
+<div class="agent-card__body" x-show="expanded" x-transition>
+
+  {# Transcript feed #}
+  <div class="transcript-feed">
+    <div x-show="transcriptLoading" class="transcript-loading">Loading transcript…</div>
+    <div x-show="transcriptError" class="transcript-error" x-text="transcriptError"></div>
+
+    <template x-for="(msg, idx) in transcript" :key="idx">
+      <div class="transcript-msg" :class="'transcript-msg--' + msg.role">
+        <span class="transcript-msg__icon" x-text="msg.role === 'user' ? '🧑' : '🤖'"></span>
+        <div class="transcript-msg__body">
+          <div class="transcript-msg__role" x-text="msg.role"></div>
+          <div class="transcript-msg__text" x-text="truncate(msg.text, 500)"></div>
+        </div>
+      </div>
+    </template>
+
+    <div
+      class="transcript-thinking"
+      x-show="isActive({{ v }}.status) && !transcriptLoading"
+    >
+      <span class="transcript-thinking__dot"></span>
+      <span>Agent is working…</span>
+    </div>
+
+    <div
+      x-show="!transcriptLoading && !transcriptError && transcript.length === 0 && !isActive({{ v }}.status)"
+      class="transcript-empty"
+    >No transcript recorded yet.</div>
+  </div>
+
+  {% if not simplified %}
+  {# Cognitive architecture mini-panel #}
+  <template x-if="{{ v }}.cognitive_arch">
+    <div class="card-arch-panel">
+      <div class="card-arch-panel__header">
+        <span x-text="parseArch({{ v }}.cognitive_arch).emoji"></span>
+        <strong x-text="parseArch({{ v }}.cognitive_arch).displayName"></strong>
+        <span
+          class="card-arch-panel__archetype"
+          x-show="parseArch({{ v }}.cognitive_arch).archetype"
+          x-text="parseArch({{ v }}.cognitive_arch).archetype"
+        ></span>
+      </div>
+      <template x-if="parseArch({{ v }}.cognitive_arch).skillDomains.length > 0">
+        <div class="card-arch-panel__skills">
+          <template x-for="skill in parseArch({{ v }}.cognitive_arch).skillDomains" :key="skill">
+            <span class="cog-skill-tag cog-skill-tag--sm" x-text="skill.replace(/_/g, ' ')"></span>
+          </template>
+        </div>
+      </template>
+      <a
+        :href="'/cognitive-arch/' + encodeURIComponent({{ v }}.cognitive_arch)"
+        class="card-arch-panel__link"
+        @click.stop
+      >View Architecture →</a>
+    </div>
+  </template>
+  {% endif %}
+
+  {# Task details #}
+  <div class="agent-task-details">
+    <div class="agent-task-details__title">Task Details</div>
+    <div class="agent-task-grid">
+      <span class="agent-task-grid__key">Branch</span>
+      <span class="agent-task-grid__value" x-text="{{ v }}.branch || '—'"></span>
+      <span class="agent-task-grid__key">Batch</span>
+      <span class="agent-task-grid__value" x-text="{{ v }}.batch_id || '—'"></span>
+      {% if not simplified %}
+      <span class="agent-task-grid__key">Worktree</span>
+      <span class="agent-task-grid__value" x-text="{{ v }}.worktree_path || '—'"></span>
+      {% endif %}
+      <span class="agent-task-grid__key">Messages</span>
+      <span class="agent-task-grid__value" x-text="{{ v }}.message_count || 0"></span>
+    </div>
+  </div>
+
+  {# Quick actions #}
+  <div class="agent-card-actions">
+    {% if not simplified %}
+    <a
+      x-show="{{ v }}.issue_number"
+      :href="GH_BASE_URL + '/issues/' + {{ v }}.issue_number"
+      target="_blank" rel="noopener noreferrer"
+      class="btn btn-sm btn-secondary"
+      @click.stop
+    >View Issue ↗</a>
+    {% endif %}
+    <a
+      x-show="{{ v }}.pr_number"
+      :href="GH_BASE_URL + '/pull/' + {{ v }}.pr_number"
+      target="_blank" rel="noopener noreferrer"
+      class="btn btn-sm btn-secondary"
+      @click.stop
+    >View PR ↗</a>
+    {% if not simplified %}
+    <a
+      x-show="{{ v }}.cognitive_arch"
+      :href="'/cognitive-arch/' + encodeURIComponent({{ v }}.cognitive_arch)"
+      class="btn btn-sm btn-secondary"
+      @click.stop
+      x-text="parseArch({{ v }}.cognitive_arch).emoji + ' Architecture'"
+    ></a>
+    {% endif %}
+    <a
+      :href="'/agents/' + {{ v }}.id"
+      class="btn btn-sm btn-secondary"
+      @click.stop
+    >Full Detail →</a>
+  </div>
+
+</div>
+{% endmacro %}
+
 
 {% block content %}
 {#
-  Alpine.js reactive component wrapping the entire overview page.
-  Initial state is injected via Jinja2 (server-side); live updates are
-  received from GET /events (SSE) and applied reactively without page reload.
+  Root Alpine scope: pipelineDashboard.
+  GH_BASE_URL is read from data-gh-base-url in connect() — no inline <script> needed.
+  All child components access GH_BASE_URL through Alpine's scope chain.
 #}
 <div
   x-data='pipelineDashboard({{ state.model_dump() | tojson }})'
   x-init="connect()"
+  data-gh-base-url="{{ gh_base_url }}"
   @phase-switching.window="boardLoading = true"
+  @open-kill-modal.window="openKillModal($event.detail.id, $event.detail.issue)"
+  @keydown.escape.window="closeKillModal()"
   x-cloak
 >
+
+  {# ── Kill modal — global, lives at root scope ──────────────────────────── #}
+  <div
+    class="modal-backdrop"
+    x-show="killModal.show"
+    x-cloak
+    x-transition.opacity
+    @click.self="closeKillModal()"
+    role="dialog"
+    aria-modal="true"
+    aria-labelledby="kill-modal-title"
+  >
+    <div class="modal-box">
+      <h2 class="modal-title" id="kill-modal-title">Kill agent?</h2>
+      <p class="modal-body">
+        Removes the agent's work environment.
+        <template x-if="killModal.issueNumber">
+          <span>Issue <strong x-text="'#' + killModal.issueNumber"></strong> will be available for re-claim.</span>
+        </template>
+      </p>
+      <div class="modal-actions">
+        <button class="btn btn-secondary" @click="closeKillModal()" :disabled="killModal.killing">Cancel</button>
+        <button
+          class="btn btn-danger"
+          @click="confirmKill()"
+          :disabled="killModal.killing"
+          x-text="killModal.killing ? 'Killing…' : 'Confirm Kill'"
+        ></button>
+      </div>
+    </div>
+  </div>
 
   {# ── Pipeline summary bar ──────────────────────────────────────────────── #}
   <div class="pipeline-summary-bar" role="status" aria-label="Pipeline summary">
 
-    {#
-      Phase switcher — GitHub branch-switcher style dropdown.
-      Shows the active label; click to open a list of all configured phases.
-      Selecting a phase PUTs to /api/control/active-label (manual pin).
-      "Auto" option at the top DELETEs the pin and returns to auto-advance.
-      A pin indicator (📌) appears when the label is manually overridden.
-    #}
     <div
       class="phase-switcher"
       x-data='phaseSwitcher(
@@ -45,7 +290,6 @@
       <div class="phase-switcher__dropdown" x-show="open" x-transition x-cloak>
         <div class="phase-switcher__header">Switch phase</div>
 
-        {# Auto option — clears the manual pin #}
         <button
           class="phase-switcher__option"
           :class="!pinned ? 'phase-switcher__option--active' : ''"
@@ -57,7 +301,6 @@
 
         <div class="phase-switcher__divider"></div>
 
-        {# One option per configured phase #}
         {% for lbl in all_phase_labels %}
         <button
           class="phase-switcher__option"
@@ -70,71 +313,78 @@
         {% endfor %}
       </div>
     </div>
+
     <div class="summary-item">
-      <span class="summary-label">Issues open</span>
+      <span class="summary-label">Issues</span>
       <span class="summary-value" x-text="state.issues_open"></span>
     </div>
     <div class="summary-item">
-      <span class="summary-label">PRs open</span>
+      <span class="summary-label">PRs</span>
       <span class="summary-value" x-text="state.prs_open"></span>
     </div>
     <div class="summary-item">
-      <span class="summary-label">Agents active</span>
-      <span class="summary-value" style="color:var(--success);" x-text="state.agents.length"></span>
+      <span class="summary-label">Active</span>
+      <span class="summary-value summary-value--active" x-text="state.agents.length"></span>
     </div>
     <div class="summary-item">
-      <span class="summary-label">Merged today</span>
-      <span class="summary-value" style="color:var(--accent-bright);" x-text="state.merged_prs_count ?? 0"></span>
+      <span class="summary-label">Merged</span>
+      <span class="summary-value summary-value--accent" x-text="state.merged_prs_count ?? 0"></span>
     </div>
     <div class="summary-item">
-      <span class="summary-label">Closed today</span>
-      <span class="summary-value" style="color:var(--accent-bright);" x-text="state.closed_issues_count ?? 0"></span>
+      <span class="summary-label">Closed</span>
+      <span class="summary-value summary-value--accent" x-text="state.closed_issues_count ?? 0"></span>
     </div>
-    <div class="summary-item" :style="(state.stale_branches || []).length > 0 ? 'opacity:1' : 'opacity:0.45'">
-      <span class="summary-label" :style="(state.stale_branches || []).length > 0 ? 'color:var(--warning)' : ''">Stale branches</span>
-      <span class="summary-value" :style="(state.stale_branches || []).length > 0 ? 'color:var(--warning)' : ''" x-text="(state.stale_branches || []).length"></span>
-    </div>
-    <div class="summary-item">
-      <span class="summary-label">Messages</span>
-      <span class="summary-value" style="color:var(--accent-bright);" x-text="totalMsgCount()"></span>
-    </div>
-    <div class="summary-item">
-      <span class="summary-label">Last polled</span>
-      <span class="summary-value" style="font-size:1rem;letter-spacing:0;" x-text="relativeTime(state.polled_at)"></span>
-    </div>
-    {#
-      Poller status + pause/resume — grouped at the far right of the summary bar.
-      Shows a labelled live/reconnecting dot and a clearly-labelled toggle button
-      so it's obvious this controls the AgentCeption background poller, not a wave.
-    #}
     <div
-      class="poller-control"
+      class="summary-item"
+      :class="(state.stale_branches || []).length > 0 ? 'summary-item--warn' : 'summary-item--dim'"
+      x-data="sweepControl()"
+    >
+      <span class="summary-label">Stale</span>
+      <span class="summary-value" x-text="(state.stale_branches || []).length"></span>
+      <button
+        class="sweep-btn"
+        x-show="(state.stale_branches || []).length > 0"
+        x-cloak
+        @click.stop="sweep()"
+        :disabled="sweeping"
+        :title="sweeping ? 'Sweeping…' : 'Delete all stale branches and clear orphan labels'"
+        x-text="sweeping ? '…' : '⌫'"
+      ></button>
+    </div>
+    <div class="summary-item">
+      <span class="summary-label">Msgs</span>
+      <span class="summary-value summary-value--accent" x-text="totalMsgCount()"></span>
+    </div>
+
+    <div
+      class="poller-right"
       id="pipeline-control"
       x-data="pipelineControl({{ poller_paused | tojson }})"
     >
-      <div class="poller-status" :class="paused ? 'poller-status--paused' : (connected ? 'poller-status--live' : 'poller-status--reconnecting')">
-        <span class="poller-status__dot"></span>
-        <span class="poller-status__label" x-text="paused ? 'Poller paused' : (connected ? 'Poller live' : 'Reconnecting…')"></span>
+      <div class="poller-polled">
+        <span class="poller-polled__label">Polled</span>
+        <span class="poller-polled__value" x-text="relativeTime(state.polled_at)"></span>
       </div>
       <button
-        class="poller-toggle-btn"
-        :class="paused ? 'poller-toggle-btn--resume' : 'poller-toggle-btn--pause'"
+        class="poller-btn"
         @click="toggle()"
-        :title="paused ? 'Resume AgentCeption poller' : 'Pause AgentCeption poller'"
+        :title="paused ? 'Resume poller' : 'Pause poller'"
+        :aria-pressed="paused"
       >
-        <span x-text="paused ? '▶ Resume' : '⏸ Pause'"></span>
+        <span
+          class="poller-dot"
+          :class="paused ? 'poller-dot--paused' : (connected ? 'poller-dot--live' : 'poller-dot--warn')"
+        ></span>
+        <span
+          class="poller-btn__label"
+          x-text="paused ? 'Paused' : (connected ? 'Live' : '…')"
+        ></span>
       </button>
     </div>
-  </div>
 
-  {#
-    Scaling advisor banner — appears below the pipeline summary bar.
-    Fetches GET /api/intelligence/scaling-advice on mount. Hidden when:
-      - recommendation.action === "no_change" (nothing to suggest), OR
-      - the operator has dismissed it for this page session.
-    "Apply" POSTs to /api/intelligence/scaling-advice/apply via fetch and
-    dismisses the banner on success.  "Dismiss" hides without applying.
-  #}
+  </div>{# /.pipeline-summary-bar #}
+
+  {# ── Scaling advisor ───────────────────────────────────────────────────── #}
   <div
     x-data='scalingAdvisor({{ scaling_advice | tojson }})'
     x-show="!dismissed && recommendation !== null && recommendation.action !== 'no_change'"
@@ -160,7 +410,7 @@
     <span x-show="applyError" class="text-danger" x-text="applyError"></span>
   </div>
 
-  {# ── Generic alert banners ─────────────────────────────────────────────── #}
+  {# ── Generic alert banners (SSE-driven) ───────────────────────────────── #}
   <template x-for="alert in state.alerts" :key="alert">
     <div class="alert-banner" role="alert">
       <span>⚠️</span>
@@ -168,15 +418,8 @@
     </div>
   </template>
 
-  {#
-    PR violation banners — one per out-of-order PR, with a one-click Close PR
-    action.  Data is fetched from GET /api/intelligence/pr-violations on load
-    and after each Close action so the list stays current without a full
-    page reload.  Alpine.js manages the fetch lifecycle.
-  #}
-  <div
-    x-data='prViolations({{ pr_violations | tojson }})'
-  >
+  {# ── PR violation banners ──────────────────────────────────────────────── #}
+  <div x-data='prViolations({{ pr_violations | tojson }})'>
     <template x-for="v in violations" :key="v.pr_number">
       <div class="alert-banner alert-banner--violation" role="alert">
         <span>🚫</span>
@@ -198,22 +441,21 @@
     </template>
   </div>
 
-  {# ── Two-column overview layout ────────────────────────────────────────── #}
+  {# ── Two-column layout ─────────────────────────────────────────────────── #}
   <div class="overview-columns">
 
-    {# ── Agent tree — left 65% ─────────────────────────────────────────── #}
+    {# ── Left: Agent Tree ──────────────────────────────────────────────── #}
     <section class="agent-tree-container" aria-label="Agent tree">
       <h2 class="section-title">Agent Tree</h2>
 
       <div id="tree">
 
-        {# Empty state #}
         <div x-show="state.agents.length === 0" class="empty-state text-muted">
           <p>The pipeline is idle.</p>
           <p class="text-sm mt-1">Start a wave or spawn an agent to begin.</p>
         </div>
 
-        {# Root agent cards — each is an expandable agentCard() component #}
+        {# Root agent cards #}
         <template x-for="agent in state.agents" :key="agent.id">
           <div
             class="agent-row"
@@ -221,243 +463,10 @@
             x-data="agentCard()"
             x-effect="checkRefresh(agent, agent.message_count)"
           >
+            {{ agent_header('agent') }}
+            {{ agent_body('agent') }}
 
-            {# ── Collapsed header (click to expand) ──────────────────────── #}
-            <div class="agent-card__header" @click="toggle(agent.id)">
-
-              {# Animated pulse for active statuses #}
-              <span
-                class="agent-pulse"
-                :class="'agent-pulse--' + agent.status"
-                x-show="isActive(agent.status)"
-              ></span>
-
-              {# Persona avatar — emoji circle derived from cognitive_arch #}
-              <div
-                class="card-persona-avatar"
-                :class="'card-persona-avatar--' + parseArch(agent.cognitive_arch).archetypeKey"
-                :title="parseArch(agent.cognitive_arch).displayName"
-              >
-                <span x-text="parseArch(agent.cognitive_arch).emoji"></span>
-              </div>
-
-              {# Role + persona name stacked #}
-              <div class="agent-role-stack">
-                <span class="agent-role-name" x-text="formatRole(agent.role)"></span>
-                <span
-                  class="agent-persona-sub"
-                  x-show="agent.cognitive_arch"
-                  x-text="parseArch(agent.cognitive_arch).displayName"
-                ></span>
-              </div>
-
-              {# Status badge #}
-              <span
-                class="status-badge"
-                :class="'status-badge--' + agent.status"
-                x-text="agent.status"
-              ></span>
-
-              {# Issue chip #}
-              <a
-                x-show="agent.issue_number != null"
-                :href="GH_BASE_URL + '/issues/' + agent.issue_number"
-                class="agent-meta-chip agent-meta-chip--issue"
-                target="_blank" rel="noopener noreferrer"
-                @click.stop
-              >#<span x-text="agent.issue_number"></span></a>
-
-              {# PR chip #}
-              <a
-                x-show="agent.pr_number != null"
-                :href="GH_BASE_URL + '/pull/' + agent.pr_number"
-                class="agent-meta-chip agent-meta-chip--pr"
-                target="_blank" rel="noopener noreferrer"
-                @click.stop
-              >PR&nbsp;#<span x-text="agent.pr_number"></span></a>
-
-              {# Branch #}
-              <code
-                class="agent-branch-chip text-muted"
-                x-show="agent.branch"
-                x-text="agent.branch"
-              ></code>
-
-              {# Message count #}
-              <span class="agent-meta text-muted" x-show="agent.message_count > 0">
-                <span x-text="agent.message_count"></span> msgs
-              </span>
-
-              {# Last activity #}
-              <span
-                class="agent-meta text-muted"
-                x-show="agent.last_activity_mtime > 0"
-                x-text="relativeTime(agent.last_activity_mtime)"
-              ></span>
-
-              {# Expand chevron — auto-margin pushes it to the far right #}
-              <span
-                class="agent-card__chevron"
-                :class="{ 'agent-card__chevron--open': expanded }"
-              >›</span>
-
-              {# Kill button — revealed on row hover #}
-              <button
-                class="btn-kill-inline"
-                x-show="agent.worktree_path != null && ['implementing','reviewing','stale'].includes(agent.status)"
-                @click.stop="showKillModal = true"
-                title="Kill agent"
-                aria-label="Kill agent"
-              >✕</button>
-            </div>
-
-            {# ── Expanded body ─────────────────────────────────────────────── #}
-            <div class="agent-card__body" x-show="expanded" x-transition>
-
-              {# Transcript feed #}
-              <div class="transcript-feed">
-
-                <div x-show="transcriptLoading" class="transcript-loading">
-                  Loading transcript…
-                </div>
-
-                <div
-                  x-show="transcriptError"
-                  class="transcript-error"
-                  x-text="transcriptError"
-                ></div>
-
-                <template x-for="(msg, idx) in transcript" :key="idx">
-                  <div class="transcript-msg" :class="'transcript-msg--' + msg.role">
-                    <span class="transcript-msg__icon" x-text="msg.role === 'user' ? '🧑' : '🤖'"></span>
-                    <div class="transcript-msg__body">
-                      <div class="transcript-msg__role" x-text="msg.role"></div>
-                      <div class="transcript-msg__text" x-text="truncate(msg.text, 500)"></div>
-                    </div>
-                  </div>
-                </template>
-
-                {# "Thinking" spinner — visible when agent is active #}
-                <div
-                  class="transcript-thinking"
-                  x-show="isActive(agent.status) && !transcriptLoading"
-                >
-                  <span class="transcript-thinking__dot"></span>
-                  <span>Agent is working…</span>
-                </div>
-
-                {# Empty state #}
-                <div
-                  x-show="!transcriptLoading && !transcriptError && transcript.length === 0 && !isActive(agent.status)"
-                  class="transcript-empty"
-                >No transcript recorded yet.</div>
-
-              </div>
-
-              {# Cognitive Architecture mini-panel #}
-              <template x-if="agent.cognitive_arch">
-                <div class="card-arch-panel">
-                  <div class="card-arch-panel__header">
-                    <span x-text="parseArch(agent.cognitive_arch).emoji"></span>
-                    <strong x-text="parseArch(agent.cognitive_arch).displayName"></strong>
-                    <span
-                      class="card-arch-panel__archetype"
-                      x-show="parseArch(agent.cognitive_arch).archetype"
-                      x-text="parseArch(agent.cognitive_arch).archetype"
-                    ></span>
-                  </div>
-                  <template x-if="parseArch(agent.cognitive_arch).skillDomains.length > 0">
-                    <div class="card-arch-panel__skills">
-                      <template x-for="skill in parseArch(agent.cognitive_arch).skillDomains" :key="skill">
-                        <span class="cog-skill-tag cog-skill-tag--sm" x-text="skill.replace(/_/g, ' ')"></span>
-                      </template>
-                    </div>
-                  </template>
-                  <a
-                    :href="'/cognitive-arch/' + encodeURIComponent(agent.cognitive_arch)"
-                    class="card-arch-panel__link"
-                    @click.stop
-                  >View Architecture →</a>
-                </div>
-              </template>
-
-              {# Task details table #}
-              <div class="agent-task-details">
-                <div class="agent-task-details__title">Task Details</div>
-                <div class="agent-task-grid">
-                  <span class="agent-task-grid__key">Branch</span>
-                  <span class="agent-task-grid__value" x-text="agent.branch || '—'"></span>
-                  <span class="agent-task-grid__key">Batch</span>
-                  <span class="agent-task-grid__value" x-text="agent.batch_id || '—'"></span>
-                  <span class="agent-task-grid__key">Worktree</span>
-                  <span class="agent-task-grid__value" x-text="agent.worktree_path || '—'"></span>
-                  <span class="agent-task-grid__key">Messages</span>
-                  <span class="agent-task-grid__value" x-text="agent.message_count || 0"></span>
-                </div>
-              </div>
-
-              {# Quick action links #}
-              <div class="agent-card-actions">
-                <a
-                  x-show="agent.issue_number"
-                  :href="GH_BASE_URL + '/issues/' + agent.issue_number"
-                  target="_blank" rel="noopener noreferrer"
-                  class="btn btn-sm btn-secondary"
-                  @click.stop
-                >View Issue ↗</a>
-                <a
-                  x-show="agent.pr_number"
-                  :href="GH_BASE_URL + '/pull/' + agent.pr_number"
-                  target="_blank" rel="noopener noreferrer"
-                  class="btn btn-sm btn-secondary"
-                  @click.stop
-                >View PR ↗</a>
-                <a
-                  x-show="agent.cognitive_arch"
-                  :href="'/cognitive-arch/' + encodeURIComponent(agent.cognitive_arch)"
-                  class="btn btn-sm btn-secondary"
-                  @click.stop
-                  x-text="parseArch(agent.cognitive_arch).emoji + ' Architecture'"
-                ></a>
-                <a
-                  :href="'/agents/' + agent.id"
-                  class="btn btn-sm btn-secondary"
-                  @click.stop
-                >Full Detail →</a>
-              </div>
-            </div>
-
-            {# ── Kill confirmation modal ───────────────────────────────────── #}
-            <div
-              class="modal-backdrop"
-              x-show="showKillModal"
-              x-cloak
-              @keydown.escape.window="showKillModal = false"
-              role="dialog"
-              aria-modal="true"
-            >
-              <div class="modal-box">
-                <h2 class="modal-title">
-                  Kill agent<span x-show="agent.issue_number != null"> for issue #<span x-text="agent.issue_number"></span></span>?
-                </h2>
-                <p class="modal-body">
-                  Removes the worktree and clears the <code>agent:wip</code> label.
-                  The issue will be available for re-claim.
-                </p>
-                <div class="modal-actions">
-                  <button class="btn btn-secondary" @click="showKillModal = false">Cancel</button>
-                  <button
-                    class="btn btn-danger"
-                    :hx-post="'/api/control/kill/' + agent.id"
-                    hx-target="closest .agent-row"
-                    hx-swap="outerHTML"
-                    @click="showKillModal = false"
-                  >Confirm Kill</button>
-                </div>
-              </div>
-            </div>
-
-            {# ── Child agents (one level deep) ────────────────────────────── #}
+            {# Child agents #}
             <template x-if="agent.children && agent.children.length > 0">
               <div class="agent-children">
                 <template x-for="child in agent.children" :key="child.id">
@@ -467,63 +476,8 @@
                     x-data="agentCard()"
                     x-effect="checkRefresh(child, child.message_count)"
                   >
-                    <div class="agent-card__header" @click="toggle(child.id)">
-                      <span class="agent-pulse" :class="'agent-pulse--' + child.status" x-show="isActive(child.status)"></span>
-                      <span class="status-badge" :class="'status-badge--' + child.status" x-text="child.status"></span>
-                      <span class="agent-role-name" x-text="formatRole(child.role)"></span>
-                      <a x-show="child.issue_number != null" :href="GH_BASE_URL + '/issues/' + child.issue_number" class="agent-meta-chip agent-meta-chip--issue" target="_blank" rel="noopener noreferrer" @click.stop>#<span x-text="child.issue_number"></span></a>
-                      <a x-show="child.pr_number != null" :href="GH_BASE_URL + '/pull/' + child.pr_number" class="agent-meta-chip agent-meta-chip--pr" target="_blank" rel="noopener noreferrer" @click.stop>PR&nbsp;#<span x-text="child.pr_number"></span></a>
-                      <code class="agent-branch-chip text-muted" x-show="child.branch" x-text="child.branch"></code>
-                      <span class="agent-meta text-muted" x-show="child.message_count > 0"><span x-text="child.message_count"></span> msgs</span>
-                      <span class="agent-meta text-muted" x-show="child.last_activity_mtime > 0" x-text="relativeTime(child.last_activity_mtime)"></span>
-                      <span class="agent-card__chevron" :class="{ 'agent-card__chevron--open': expanded }">›</span>
-                      <button class="btn-kill-inline" x-show="child.worktree_path != null && isActive(child.status)" @click.stop="showKillModal = true" title="Kill agent" aria-label="Kill agent">✕</button>
-                    </div>
-
-                    <div class="agent-card__body" x-show="expanded" x-transition>
-                      <div class="transcript-feed">
-                        <div x-show="transcriptLoading" class="transcript-loading">Loading transcript…</div>
-                        <div x-show="transcriptError" class="transcript-error" x-text="transcriptError"></div>
-                        <template x-for="(msg, idx) in transcript" :key="idx">
-                          <div class="transcript-msg" :class="'transcript-msg--' + msg.role">
-                            <span class="transcript-msg__icon" x-text="msg.role === 'user' ? '🧑' : '🤖'"></span>
-                            <div class="transcript-msg__body">
-                              <div class="transcript-msg__role" x-text="msg.role"></div>
-                              <div class="transcript-msg__text" x-text="truncate(msg.text, 500)"></div>
-                            </div>
-                          </div>
-                        </template>
-                        <div class="transcript-thinking" x-show="isActive(child.status) && !transcriptLoading">
-                          <span class="transcript-thinking__dot"></span>
-                          <span>Agent is working…</span>
-                        </div>
-                        <div x-show="!transcriptLoading && !transcriptError && transcript.length === 0 && !isActive(child.status)" class="transcript-empty">No transcript recorded yet.</div>
-                      </div>
-                      <div class="agent-task-details">
-                        <div class="agent-task-details__title">Task Details</div>
-                        <div class="agent-task-grid">
-                          <span class="agent-task-grid__key">Branch</span><span class="agent-task-grid__value" x-text="child.branch || '—'"></span>
-                          <span class="agent-task-grid__key">Batch</span><span class="agent-task-grid__value" x-text="child.batch_id || '—'"></span>
-                          <span class="agent-task-grid__key">Messages</span><span class="agent-task-grid__value" x-text="child.message_count || 0"></span>
-                        </div>
-                      </div>
-                      <div class="agent-card-actions">
-                        <a x-show="child.pr_number" :href="GH_BASE_URL + '/pull/' + child.pr_number" target="_blank" rel="noopener noreferrer" class="btn btn-sm btn-secondary" @click.stop>View PR ↗</a>
-                        <a :href="'/agents/' + child.id" class="btn btn-sm btn-secondary" @click.stop>Full Detail →</a>
-                      </div>
-                    </div>
-
-                    <div class="modal-backdrop" x-show="showKillModal" x-cloak @keydown.escape.window="showKillModal = false" role="dialog" aria-modal="true">
-                      <div class="modal-box">
-                        <h2 class="modal-title">Kill agent<span x-show="child.issue_number != null"> for issue #<span x-text="child.issue_number"></span></span>?</h2>
-                        <p class="modal-body">Removes the worktree and clears the <code>agent:wip</code> label.</p>
-                        <div class="modal-actions">
-                          <button class="btn btn-secondary" @click="showKillModal = false">Cancel</button>
-                          <button class="btn btn-danger" :hx-post="'/api/control/kill/' + child.id" hx-target="closest .agent-row" hx-swap="outerHTML" @click="showKillModal = false">Confirm Kill</button>
-                        </div>
-                      </div>
-                    </div>
-
+                    {{ agent_header('child', simplified=True) }}
+                    {{ agent_body('child', simplified=True) }}
                   </div>
                 </template>
               </div>
@@ -535,21 +489,12 @@
       </div>
     </section>
 
-    {# ── GitHub board — right 35% ──────────────────────────────────────── #}
+    {# ── Right: GitHub Board ────────────────────────────────────────────── #}
     <aside class="github-board" aria-label="GitHub board">
       <h2 class="section-title">GitHub Board</h2>
 
-      {#
-        Wave Control panel — fully reactive from SSE state.
-        Phase label, unclaimed count, and Start Wave button all update live
-        without page reload as the SSE stream delivers each new PipelineState.
-        board_issues is populated from ac_issues (Postgres) on every poller tick.
-      #}
-      <div
-        class="card wave-control-card"
-        x-data="waveControl()"
-        x-init="init()"
-      >
+      {# Wave control card #}
+      <div class="card wave-control-card" x-data="waveControl()" x-init="init()">
         <div class="wave-control-header">
           <div>
             <div class="wave-phase-label">
@@ -576,12 +521,6 @@
             </div>
           </div>
 
-          {#
-            Three mutually exclusive CTA states — evaluated in priority order:
-            1. Unclaimed issues exist → "Start Wave" button
-            2. Board has issues, all claimed → "All claimed ✓" badge
-            3. Board is empty (DB not yet synced) → "Syncing…" hint
-          #}
           <template x-if="state.active_label && unclaimedCount() > 0">
             <button
               class="btn btn-primary btn-wave-start"
@@ -600,7 +539,6 @@
           </template>
         </div>
 
-        {# Wave launch result — no Cursor instructions; agent tree updates via SSE #}
         <template x-if="waveResult">
           <div class="wave-result mt-1">
             <p class="text-success">
@@ -641,6 +579,7 @@
         </div>
       </div>
 
+      {# Alerts #}
       <div x-show="state.alerts.length > 0" class="mt-2">
         <h3 class="section-subtitle">Alerts</h3>
         <template x-for="alert in state.alerts" :key="alert">
@@ -648,19 +587,11 @@
         </template>
       </div>
 
-      {#
-        Stale claim cards — one per issue with agent:wip but no live worktree.
-        Each card shows the issue number, title, and expected worktree path,
-        plus a "Clear Label" button that removes agent:wip so the issue re-enters
-        the scheduling pool.
-      #}
+      {# Stale claims #}
       <div x-show="state.stale_claims && state.stale_claims.length > 0" class="mt-2">
         <h3 class="section-subtitle">Stale Claims</h3>
         <template x-for="claim in state.stale_claims" :key="claim.issue_number">
-          <div
-            class="stale-claim-card"
-            x-data="staleClaimCard(claim)"
-          >
+          <div class="stale-claim-card" x-data="staleClaimCard(claim)">
             <div class="stale-claim-header">
               <span class="stale-claim-number">#<span x-text="claim.issue_number"></span></span>
               <span class="stale-claim-title" x-text="claim.issue_title"></span>
@@ -672,13 +603,11 @@
                 x-show="!confirming && !clearing"
                 @click="confirming = true"
               >Clear Label</button>
-
               <span x-show="confirming && !clearing" class="stale-claim-confirm">
                 Remove <code>agent:wip</code> from #<span x-text="claim.issue_number"></span>?
                 <button class="btn btn-sm btn-secondary" @click="confirming = false">Cancel</button>
                 <button class="btn btn-sm btn-danger" @click="clear(claim.issue_number)">Confirm</button>
               </span>
-
               <span x-show="clearing" class="text-muted">Clearing…</span>
               <span x-show="cleared" class="text-success">✅ Cleared</span>
               <span x-show="error" class="text-danger" x-text="error"></span>
@@ -687,17 +616,7 @@
         </template>
       </div>
 
-      {#
-        Open issue cards — fully reactive from state.board_issues (SSE).
-        Issues come from ac_issues (Postgres) via the poller, not directly
-        from the GitHub CLI.  The list updates live on every tick without
-        a page reload.  Claimed issues are excluded automatically by the
-        poller's _build_board_issues() query.
-
-        "Analyze" uses Alpine fetch so the button works inside x-for without
-        HTMX needing to re-process dynamically generated DOM nodes.
-      #}
-      {# Spinner — visible while a phase switch is in flight (before page reloads) #}
+      {# Open issues board #}
       <div x-show="boardLoading" class="board-spinner mt-2">
         <div class="board-spinner__ring"></div>
         <span>Switching phase…</span>
@@ -712,7 +631,7 @@
           <div
             class="issue-card"
             :id="'issue-card-' + issue.number"
-            x-data="{ analysisHtml: '', analyzing: false, analyzeError: null }"
+            x-data="issueCard(issue.number)"
           >
             <div class="issue-card-header">
               <a
@@ -723,17 +642,11 @@
               >#<span x-text="issue.number"></span></a>
               <span class="issue-card-title" x-text="issue.title"></span>
             </div>
-            {# Phase label chips #}
             <div class="issue-card-labels" x-show="issue.labels && issue.labels.length > 0">
               <template x-for="lbl in (issue.labels || [])" :key="lbl">
                 <span class="label-chip label-chip--small" x-text="lbl"></span>
               </template>
             </div>
-            {#
-              Status slot — cross-references board_issues[].claimed with state.agents[]
-              to determine whether the issue is available, being implemented, or has a PR.
-              agentForIssue() is a helper on the parent pipelineDashboard scope.
-            #}
             <div class="issue-card-status">
               <template x-if="!issue.claimed">
                 <span class="issue-status-badge issue-status-badge--available">Available</span>
@@ -755,11 +668,7 @@
             <div class="issue-card-actions">
               <button
                 class="btn btn-sm btn-secondary"
-                @click="analyzing = true; analyzeError = null;
-                        fetch('/api/analyze/issue/' + issue.number + '/partial', {method: 'POST'})
-                          .then(r => r.text())
-                          .then(html => { analysisHtml = html; analyzing = false; })
-                          .catch(err => { analyzeError = err.message; analyzing = false; })"
+                @click="analyze()"
                 :disabled="analyzing"
                 x-text="analyzing ? 'Analyzing…' : 'Analyze'"
                 :aria-label="'Analyze issue #' + issue.number"
@@ -771,7 +680,6 @@
         </template>
       </div>
 
-      {# Empty board state — only visible while ac_issues is warming up #}
       <div
         x-show="!boardLoading && (!state.board_issues || state.board_issues.length === 0)"
         class="mt-2 text-muted empty-state"
@@ -782,260 +690,6 @@
 
     </aside>
 
-  </div>{# .overview-columns #}
-</div>{# Alpine root #}
-
-<script>
-// Server-injected constant — used by Alpine x-for loops to build GitHub URLs.
-const GH_BASE_URL = {{ gh_base_url | tojson }};
-</script>
-
+  </div>{# /.overview-columns #}
+</div>{# /pipelineDashboard #}
 {% endblock %}
-
-{# All Alpine component functions live in /static/app.js (loaded by base.html). #}
-
-{# REMOVING OLD INLINE FUNCTIONS — DO NOT RESTORE #}
-{# The following was the old inline script block. It is kept as a Jinja comment
-   only to make the diff readable. The actual JS has moved to /static/app.js. #}
-{#
-/**
- * Alpine.js component for the Wave Control panel.
- *
- * Counts come from state.board_issues (SSE-delivered from Postgres) so they
- * update live.  Calls POST /api/control/spawn-wave to create worktrees.
- */
-function waveControl() {
-  return {
-    launching: false,
-    waveResult: null,
-    waveError: null,
-
-    init() {
-      // All data flows from parent state via SSE — no polling needed.
-    },
-
-    /** Number of unclaimed issues in the active phase board. */
-    unclaimedCount() {
-      const issues = this.state?.board_issues;
-      if (!issues) return 0;
-      return issues.filter(i => !i.claimed).length;
-    },
-
-    /** Number of claimed issues in the active phase board. */
-    claimedCount() {
-      const issues = this.state?.board_issues;
-      if (!issues) return 0;
-      return issues.filter(i => i.claimed).length;
-    },
-
-    async startWave() {
-      this.launching = true;
-      this.waveResult = null;
-      this.waveError = null;
-
-      try {
-        const resp = await fetch('/api/control/spawn-wave', { method: 'POST' });
-        const data = await resp.json();
-
-        if (!resp.ok) {
-          this.waveError = data.detail ?? `HTTP ${resp.status}`;
-        } else {
-          this.waveResult = data;
-        }
-      } catch (err) {
-        this.waveError = `Network error: ${err.message}`;
-      } finally {
-        this.launching = false;
-      }
-    },
-  };
-}
-
-/**
- * Alpine.js component for the pipeline overview dashboard.
- *
- * Receives a PipelineState snapshot from the server as the initial value,
- * then subscribes to GET /events (SSE) for live 5-second updates.
- * Never polls — it is fully event-driven once connected.
- */
-function pipelineDashboard(initial) {
-  return {
-    state: initial,
-    connected: false,
-    boardLoading: false,
-    _es: null,
-
-    connect() {
-      this._es = new EventSource('/events');
-
-      this._es.onopen = () => {
-        this.connected = true;
-      };
-
-      this._es.onmessage = (e) => {
-        try {
-          this.state = JSON.parse(e.data);
-          this.connected = true;
-        } catch (_) {
-          // Malformed JSON from server — keep stale state.
-        }
-      };
-
-      this._es.onerror = () => {
-        this.connected = false;
-        // EventSource auto-reconnects; we just update the indicator.
-      };
-    },
-
-    /**
-     * Format a UNIX timestamp as a human-readable relative time string.
-     * Returns '—' for falsy values (pre-first-tick state).
-     */
-    relativeTime(ts) {
-      if (!ts) return '—';
-      const secs = Math.floor(Date.now() / 1000 - ts);
-      if (secs < 5)  return 'just now';
-      if (secs < 60) return secs + 's ago';
-      if (secs < 3600) return Math.floor(secs / 60) + 'm ago';
-      return Math.floor(secs / 3600) + 'h ago';
-    },
-  };
-}
-
-/**
- * Alpine.js component for PR violation banners.
- *
- * Fetches GET /api/intelligence/pr-violations on mount and after each
- * successful Close action so the list stays current without a page reload.
- * Closing a PR posts to POST /api/intelligence/pr-violations/{n}/close and
- * removes the entry from the local list on success.
- */
-function prViolations(initial) {
-  return {
-    violations: initial ?? [],
-    closing: null,
-
-    async closeViolation(prNumber) {
-      this.closing = prNumber;
-      try {
-        const res = await fetch(
-          `/api/intelligence/pr-violations/${prNumber}/close`,
-          { method: 'POST' },
-        );
-        if (res.ok) {
-          this.violations = this.violations.filter(v => v.pr_number !== prNumber);
-        }
-      } catch (_) {
-        // Network error — leave the card visible so the user can retry.
-      } finally {
-        this.closing = null;
-      }
-    },
-  };
-}
-
-/**
- * Alpine.js component for a single stale-claim card.
- *
- * Manages a two-step confirmation flow ("Clear Label" → confirm → POST) so
- * accidental clicks do not immediately remove the agent:wip label.  Each card
- * is independent — clearing one does not affect siblings.
- *
- * @param {object} claim - StaleClaim object from PipelineState.stale_claims.
- */
-function staleClaimCard(claim) {
-  return {
-    confirming: false,
-    clearing: false,
-    cleared: false,
-    error: null,
-
-    async clear(issueNumber) {
-      this.confirming = false;
-      this.clearing = true;
-      this.error = null;
-      try {
-        const res = await fetch(
-          `/api/intelligence/stale-claims/${issueNumber}/clear`,
-          { method: 'POST' },
-        );
-        if (res.ok) {
-          this.cleared = true;
-        } else {
-          const data = await res.json().catch(() => ({}));
-          this.error = data.detail || `HTTP ${res.status}`;
-        }
-      } catch (err) {
-        this.error = err.message || 'Network error';
-      } finally {
-        this.clearing = false;
-      }
-    },
-  };
-}
-
-/**
- * Alpine.js component for the scaling advisor banner.
- *
- * Fetches GET /api/intelligence/scaling-advice on mount.  When the
- * recommendation action is not "no_change" the banner becomes visible.
- * "Apply" posts to POST /api/intelligence/scaling-advice/apply and hides
- * the banner on success.  "Dismiss" hides without writing to config.
- * Both actions are session-scoped — the banner reappears on next page load
- * if the recommendation still applies.
- */
-function scalingAdvisor(initial) {
-  return {
-    recommendation: initial ?? null,
-    dismissed: false,
-    applying: false,
-    applyError: null,
-
-    async apply() {
-      this.applying = true;
-      this.applyError = null;
-      try {
-        const res = await fetch('/api/intelligence/scaling-advice/apply', { method: 'POST' });
-        if (res.ok) {
-          this.dismissed = true;
-        } else {
-          const data = await res.json().catch(() => ({}));
-          this.applyError = data.detail || `HTTP ${res.status}`;
-        }
-      } catch (err) {
-        this.applyError = err.message || 'Network error';
-      } finally {
-        this.applying = false;
-      }
-    },
-  };
-}
-
-/**
- * Alpine.js component for the pipeline pause/resume control.
- *
- * Fetches current pause state from GET /api/control/status on init.
- * Toggle sends a POST to /api/control/pause or /api/control/resume and
- * updates the badge optimistically — no page reload needed.
- */
-function pipelineControl(initialPaused) {
-  return {
-    paused: initialPaused ?? false,
-
-    async toggle() {
-      const endpoint = this.paused ? '/api/control/resume' : '/api/control/pause';
-      try {
-        const res = await fetch(endpoint, { method: 'POST' });
-        if (res.ok) {
-          const data = await res.json();
-          this.paused = data.paused;
-        }
-      } catch (_) {
-        // Network error — leave state unchanged so the badge stays accurate.
-      }
-    },
-  };
-}
-
-phaseSwitcher — see /static/app.js
-#}

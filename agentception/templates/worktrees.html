@@ -55,8 +55,16 @@
 </section>
 
 {# ── Local Branches ───────────────────────────────────────────────────────── #}
-<section class="mt-2">
-  <h2 class="section-title" style="margin-bottom:0.5rem;">Local Branches ({{ branches | length }})</h2>
+<section class="mt-2" x-data="branchManager()">
+  <div style="display:flex;align-items:center;gap:1rem;margin-bottom:0.5rem;">
+    <h2 class="section-title" style="margin:0;">Local Branches ({{ branches | length }})</h2>
+    {% set stale_count = branches | selectattr('is_stale') | list | length %}
+    {% if stale_count > 0 %}
+    <button class="btn btn-sm btn-danger" @click="sweepAll()" :disabled="sweeping">
+      <span x-text="sweeping ? 'Sweeping…' : 'Sweep {{ stale_count }} stale'"></span>
+    </button>
+    {% endif %}
+  </div>
   {% if branches %}
   <div class="card" style="padding:0;overflow:hidden;">
     <table class="telemetry-table" style="width:100%;margin:0;">
@@ -65,14 +73,16 @@
           <th>Branch</th>
           <th>HEAD</th>
           <th>Commit</th>
-          <th>↑ Ahead</th>
-          <th>↓ Behind</th>
+          <th>↑</th>
+          <th>↓</th>
           <th>Type</th>
+          <th></th>
         </tr>
       </thead>
       <tbody>
         {% for b in branches %}
-        <tr {% if b.is_current %}style="background:rgba(124,58,237,0.06);"{% endif %}>
+        <tr {% if b.is_current %}style="background:rgba(124,58,237,0.06);"{% endif %}
+            {% if b.is_stale %}style="opacity:0.65;"{% endif %}>
           <td>
             <code style="font-size:0.8rem;">
               {% if b.is_current %}* {% endif %}{{ b.name }}
@@ -91,8 +101,19 @@
             {{ b.behind }}
           </td>
           <td>
-            {% if b.is_agent_branch %}
+            {% if b.is_stale %}
+            <span class="badge badge--warn" style="font-size:0.65rem;">stale</span>
+            {% elif b.is_agent_branch %}
             <span class="badge badge--green" style="font-size:0.65rem;">agent</span>
+            {% endif %}
+          </td>
+          <td style="text-align:right;padding-right:0.75rem;">
+            {% if b.is_stale and not b.is_current %}
+            <button
+              class="btn btn-xs btn-danger"
+              @click="deleteBranch('{{ b.name }}')"
+              title="Delete stale branch"
+            >⌫</button>
             {% endif %}
           </td>
         </tr>
@@ -104,6 +125,30 @@
   <div class="card"><p class="text-muted empty-state">No local branches found.</p></div>
   {% endif %}
 </section>
+
+<script>
+function branchManager() {
+  return {
+    sweeping: false,
+
+    async deleteBranch(name) {
+      if (!confirm(`Delete branch "${name}"?`)) return;
+      const resp = await fetch('/api/control/sweep', { method: 'POST' });
+      if (resp.ok) location.reload();
+      else alert(`Failed: ${(await resp.json()).detail ?? resp.status}`);
+    },
+
+    async sweepAll() {
+      if (!confirm('Delete all stale agent branches and clear orphan labels?')) return;
+      this.sweeping = true;
+      const resp = await fetch('/api/control/sweep', { method: 'POST' });
+      this.sweeping = false;
+      if (resp.ok) location.reload();
+      else alert(`Sweep failed: ${(await resp.json()).detail ?? resp.status}`);
+    },
+  };
+}
+</script>
 
 {# ── Stash entries ────────────────────────────────────────────────────────── #}
 <section class="mt-2">

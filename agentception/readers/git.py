@@ -21,7 +21,8 @@ from agentception.config import settings
 
 logger = logging.getLogger(__name__)
 
-_AGENT_BRANCH_RE = re.compile(r"^feat/issue-\d+$")
+# Matches any branch created by AgentCeption: feat/issue-N or feat/brain-dump-*
+_AGENT_BRANCH_RE = re.compile(r"^feat/(issue-\d+|brain-dump-.+)$")
 
 
 async def _git(args: list[str]) -> str:

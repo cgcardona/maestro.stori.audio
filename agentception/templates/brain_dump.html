@@ -1,0 +1,189 @@
+{% extends "base.html" %}
+{% block content %}
+
+{#
+  Brain Dump — architecture layers
+  ─────────────────────────────────────────────────────────────────────────────
+  Jinja  : page copy, funnel stage structure, seed chips, recent-runs (initial)
+  HTMX   : refreshes #bd-recent-runs after submit (triggered from Alpine)
+  Alpine : step machine (input → loading → done), form state, loading animation
+  CSS    : app.css  §  Brain Dump
+  JS     : app.js   →  brainDump()
+  ─────────────────────────────────────────────────────────────────────────────
+#}
+
+<div
+  class="bd-page"
+  x-data="brainDump()"
+  x-init="init()"
+  data-loading-msgs="{{ loading_msgs | tojson }}"
+>
+
+  {# ══════════════════════════════════════════════════════════════════════
+     LEFT — three-step form (input → loading → done)
+     ══════════════════════════════════════════════════════════════════════ #}
+  <div class="bd-main">
+
+    {# ── Step: INPUT ──────────────────────────────────────────────────── #}
+    <div x-show="step === 'input'" x-transition.opacity>
+
+      <h1 class="bd-title">Messy thoughts → shipped work.</h1>
+      <p class="bd-sub">Dump anything — ideas, bugs, features, debt. We'll plan the phases and file the issues.</p>
+
+      {# Textarea ──────────────────────────────────────────────────────── #}
+      <div class="bd-textarea-wrap" :class="{'bd-textarea-wrap--focused': focused}">
+        <textarea
+          id="bd-text"
+          class="bd-textarea"
+          x-model="text"
+          x-ref="textarea"
+          @focus="focused = true"
+          @blur="focused = false"
+          @input="autoGrow($refs.textarea)"
+          @keydown.meta.enter.prevent="submit()"
+          placeholder="e.g.&#10;- Add dark mode toggle&#10;- Fix the flaky login test when DB is slow&#10;- Refactor auth middleware to validate JWT expiry&#10;- CSV export breaks for reports over 10k rows&#10;- Need a rate limiter on the public API&#10;- Users can't reset password on mobile&#10;..."
+          :disabled="submitting"
+          spellcheck="true"
+        ></textarea>
+
+        <div class="bd-textarea-toolbar">
+          <button class="bd-toolbar-btn" @click="pasteClipboard()" :disabled="submitting" title="Paste from clipboard">
+            📋 Paste
+          </button>
+          <button
+            class="bd-toolbar-btn"
+            @click="text = ''; $nextTick(() => autoGrow($refs.textarea))"
+            x-show="text.length > 0"
+            :disabled="submitting"
+          >
+            ✕ Clear
+          </button>
+          <span class="bd-char-count" x-show="text.trim().length > 0" x-text="lineCount + ' lines · ' + text.trim().length + ' chars'"></span>
+        </div>
+      </div>
+
+      {# Seed chips — server-rendered by Jinja; Alpine reads text from data attr ── #}
+      <div class="bd-seeds">
+        <span class="bd-seeds-label">Try:</span>
+        {% for seed in seeds %}
+        <button
+          class="bd-seed-chip"
+          data-text="{{ seed.text }}"
+          @click="appendSeed($el.dataset.text)"
+          :disabled="submitting"
+        >{{ seed.label }}</button>
+        {% endfor %}
+      </div>
+
+      {# Options (collapsible) ─────────────────────────────────────────── #}
+      <div class="bd-options-row">
+        <button class="bd-options-btn" @click="showOptions = !showOptions">
+          <span x-text="showOptions ? '▾' : '▸'"></span>
+          <span>Options</span>
+          <span class="bd-options-badge" x-show="labelPrefix" x-text="labelPrefix"></span>
+        </button>
+
+        <div class="bd-options-fields" x-show="showOptions">
+          <label class="bd-label-sm" for="bd-prefix">
+            Initiative label <span class="bd-optional">(optional)</span>
+          </label>
+          <div class="bd-prefix-row">
+            <input
+              id="bd-prefix"
+              class="bd-input"
+              type="text"
+              x-model="labelPrefix"
+              placeholder="e.g. q2-rewrite"
+              :disabled="submitting"
+              maxlength="40"
+            />
+            <span class="bd-hint" x-show="labelPrefix">→ <code x-text="'phase-1/' + labelPrefix"></code></span>
+            <span class="bd-hint" x-show="!labelPrefix">Scopes all generated labels to a named initiative.</span>
+          </div>
+        </div>
+      </div>
+
+      {# Submit ─────────────────────────────────────────────────────────── #}
+      <div class="bd-submit-row">
+        <button
+          class="btn btn-primary bd-submit-btn"
+          @click="submit()"
+          :disabled="submitting || !text.trim()"
+        >
+          Plan my issues →
+        </button>
+        <kbd class="bd-kbd">⌘ ↵</kbd>
+      </div>
+
+      <div class="bd-error" x-show="errorMsg" x-transition>
+        <span x-text="errorMsg"></span>
+      </div>
+
+    </div>
+
+    {# ── Step: LOADING ───────────────────────────────────────────────── #}
+    <div class="bd-loading-panel" x-show="step === 'loading'" x-transition.opacity>
+      <div class="bd-spinner"></div>
+      <p class="bd-loading-text" x-text="loadingMsg"></p>
+    </div>
+
+    {# ── Step: DONE ──────────────────────────────────────────────────── #}
+    <div class="bd-done-panel" x-show="step === 'done'" x-transition.opacity>
+      <div class="bd-done-badge">🚀</div>
+      <h2 class="bd-done-title">Coordinator queued</h2>
+      <p class="bd-done-sub">
+        Your brain dump is being turned into phased, load-bearing GitHub issues.
+        Track the coordinator on the Agents page, or check Issues once they appear.
+      </p>
+
+      <div class="bd-done-actions">
+        <a href="/agents" class="btn btn-primary">Track Agents →</a>
+        <a href="/issues" class="btn btn-secondary">View Issues →</a>
+      </div>
+
+      <details class="bd-task-details">
+        <summary class="bd-task-summary">Agent task details</summary>
+        <pre class="bd-task-pre" x-text="result.agent_task"></pre>
+      </details>
+
+      <button class="bd-restart-btn" @click="reset()">← New Brain Dump</button>
+    </div>
+
+  </div>
+
+  {# ══════════════════════════════════════════════════════════════════════
+     RIGHT SIDEBAR — pipeline funnel + recent runs
+     ══════════════════════════════════════════════════════════════════════ #}
+  <aside class="bd-sidebar">
+
+    {# Pipeline funnel — structure is static Jinja, active state is Alpine ── #}
+    <p class="bd-funnel-heading">Pipeline</p>
+    <div class="bd-funnel">
+      {% for stage in funnel_stages %}
+      <div class="bd-funnel-stage" :class="stageClass({{ loop.index0 }})">
+        <span class="bd-funnel-icon">{{ stage.icon }}</span>
+        <div class="bd-funnel-info">
+          <span class="bd-funnel-label">{{ stage.label }}</span>
+          <span class="bd-funnel-desc">{{ stage.desc }}</span>
+        </div>
+      </div>
+      {% if not loop.last %}
+      <div class="bd-funnel-connector" :class="{'bd-funnel-connector--lit': funnelStage > {{ loop.index0 }}}"></div>
+      {% endif %}
+      {% endfor %}
+    </div>
+
+    {# Recent runs — server-rendered initially, HTMX-refreshed after submit ── #}
+    <div
+      id="bd-recent-runs"
+      hx-get="/brain-dump/recent-runs"
+      hx-trigger="refresh"
+      hx-swap="outerHTML"
+    >
+      {% include "_bd_recent_runs.html" %}
+    </div>
+
+  </aside>
+
+</div>
+{% endblock %}

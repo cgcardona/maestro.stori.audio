@@ -25,7 +25,7 @@ from agentception.models import AgentNode, PipelineConfig, PipelineState, RoleMe
 from agentception.poller import get_state, tick as _poller_tick
 from agentception.readers.pipeline_config import read_pipeline_config
 from agentception.readers.transcripts import read_transcript_messages
-from agentception.routes.roles import list_roles
+from agentception.routes.roles import get_atoms, get_personas, get_taxonomy, list_roles
 from agentception.telemetry import WaveSummary, aggregate_waves
 
 logger = logging.getLogger(__name__)
@@ -42,6 +42,37 @@ def _timestamp_to_date(ts: float) -> str:
 
 
 _TEMPLATES.env.filters["timestamp_to_date"] = _timestamp_to_date
+
+
+def _md_to_html(text: str) -> str:
+    """Convert Markdown text to safe HTML for use in Jinja templates.
+
+    Pre-processes docstring-style text to ensure bullet lists are detected:
+    Python docstrings often place ``- item`` immediately after a sentence with
+    only a single newline, but the Markdown spec requires a blank line before
+    a bullet list.  We insert that blank line automatically.
+
+    Enabled extensions:
+    - ``fenced_code``  — triple-backtick code blocks
+    - ``tables``       — GFM-style tables
+    """
+    import re
+    import markdown as _md
+    from markupsafe import Markup
+
+    # Insert a blank line before bullet/numbered list items that follow a
+    # non-blank line so the Markdown parser recognises them as a list block.
+    text = re.sub(r"([^\n])\n([ \t]*(?:[-*+]|\d+\.) )", r"\1\n\n\2", text)
+
+    result = _md.markdown(
+        text,
+        extensions=["fenced_code", "tables"],
+        output_format="html",
+    )
+    return Markup(result)
+
+
+_TEMPLATES.env.filters["markdown"] = _md_to_html
 
 # Inject global template variables so every template can reference them without
 # the route handler having to pass them explicitly.
@@ -515,28 +546,87 @@ async def telemetry_page(request: Request) -> HTMLResponse:
 
 @router.get("/roles", response_class=HTMLResponse)
 async def roles_page(request: Request) -> HTMLResponse:
-    """Role Studio — Monaco editor for live editing of managed role and cursor files.
-
-    Renders the Role Studio UI (AC-302): a two-panel layout with a file list
-    on the left and a Monaco editor on the right. File content is loaded into
-    the editor via ``GET /api/roles/{slug}`` when a file row is clicked.
-    Save triggers ``PUT /api/roles/{slug}`` with the editor content.
-
-    On any API read error the page renders with an empty roles list and a
-    visible error banner — the editor chrome always mounts so Monaco can
-    load and the UI stays accessible.
-    """
-    roles: list[RoleMeta] = []
-    error: str | None = None
+    """Cognitive Architecture Studio — server-side rendered org tree with HTMX role selection."""
     try:
-        roles = await list_roles()
-    except Exception as exc:  # pragma: no cover — filesystem error path
-        error = f"Could not load role file list: {exc}"
+        taxonomy = await get_taxonomy()
+        personas_resp = await get_personas()
+        atoms_resp = await get_atoms()
+    except Exception as exc:
+        return _TEMPLATES.TemplateResponse(
+            request, "roles.html",
+            {"taxonomy": None, "personas_by_id": {}, "atoms": [], "error": str(exc)},
+        )
+
+    personas_by_id = {p.id: p for p in personas_resp.personas}
+    return _TEMPLATES.TemplateResponse(
+        request, "roles.html",
+        {
+            "taxonomy": taxonomy,
+            "personas_by_id": personas_by_id,
+            "atoms": atoms_resp.atoms,
+            "error": None,
+        },
+    )
+
+
+@router.get("/roles/{slug}/detail", response_class=HTMLResponse)
+async def role_detail_partial(request: Request, slug: str) -> HTMLResponse:
+    """HTMX partial — rendered when a role is selected in the org tree.
+
+    Returns the center panel: persona cards for this role + the composer form.
+    The editor content is loaded separately via the Monaco init in app.js.
+    """
+    try:
+        taxonomy = await get_taxonomy()
+        personas_resp = await get_personas()
+        atoms_resp = await get_atoms()
+    except Exception as exc:
+        return HTMLResponse(f'<p class="text-muted" style="padding:1rem">Error: {exc}</p>')
+
+    # Find the role in the taxonomy
+    selected_role = None
+    for level in taxonomy.levels:
+        for role in level.roles:
+            if role.slug == slug:
+                selected_role = role
+                break
+
+    if selected_role is None:
+        return HTMLResponse('<p class="text-muted" style="padding:1rem">Role not found.</p>')
+
+    # Filter personas compatible with this role
+    compatible_personas = [
+        p for p in personas_resp.personas
+        if p.id in selected_role.compatible_figures
+    ]
+
+    # Collect all unique skill domains across the full taxonomy (used by composer)
+    all_skill_domains: list[str] = []
+    seen_skills: set[str] = set()
+    for level in taxonomy.levels:
+        for role in level.roles:
+            for s in role.compatible_skill_domains:
+                if s not in seen_skills:
+                    seen_skills.add(s)
+                    all_skill_domains.append(s)
+    all_skill_domains.sort()
+
+    # Serialize Pydantic models to plain dicts so Jinja2 tojson works correctly.
+    # `personas_json` is embedded as JSON in the Alpine component for client-side
+    # "Apply to Composer" logic; `personas` and `all_personas` are for Jinja2 loops.
+    personas_json = [p.model_dump() for p in compatible_personas]
 
     return _TEMPLATES.TemplateResponse(
-        request,
-        "roles.html",
-        {"roles": roles, "error": error},
+        request, "_role_detail.html",
+        {
+            "role": selected_role,
+            "personas": compatible_personas,
+            "personas_json": personas_json,
+            "all_personas": personas_resp.personas,
+            "atoms": atoms_resp.atoms,
+            "skill_domains": all_skill_domains,
+            "slug": slug,
+        },
     )
 
 
@@ -630,6 +720,143 @@ async def ab_testing_page(request: Request) -> HTMLResponse:
             "winner": winner,
             "error": error,
         },
+    )
+
+
+# ---------------------------------------------------------------------------
+# Brain Dump page — static data (defined once, passed to Jinja)
+# ---------------------------------------------------------------------------
+
+_BD_FUNNEL_STAGES = [
+    {"icon": "🧠", "label": "Dump",    "desc": "Your raw input"},
+    {"icon": "📋", "label": "Analyze", "desc": "Classify items"},
+    {"icon": "🗂️", "label": "Phase",   "desc": "Group by dependency"},
+    {"icon": "🏷️", "label": "Label",   "desc": "Create GitHub labels"},
+    {"icon": "📝", "label": "Issues",  "desc": "File structured tickets"},
+    {"icon": "🤖", "label": "Agents",  "desc": "Dispatch to engineers"},
+]
+
+_BD_SEEDS = [
+    {
+        "label": "🐛 Bug triage",
+        "text": (
+            "- Login fails intermittently on mobile\n"
+            "- Rate limiter not applied to /api/public\n"
+            "- CSV export hangs for reports > 10k rows\n"
+            "- Dark mode toggle state lost on refresh"
+        ),
+    },
+    {
+        "label": "🗓️ Sprint planning",
+        "text": (
+            "- Migrate auth to JWT with refresh tokens\n"
+            "- Add pagination to the issues API\n"
+            "- Write integration tests for the billing flow\n"
+            "- Document the webhook contract"
+        ),
+    },
+    {
+        "label": "💡 Feature ideas",
+        "text": (
+            "- Let users star/pin their favourite agents\n"
+            "- Add Slack notifications for PR merges\n"
+            "- Dark mode across the entire dashboard\n"
+            "- Export pipeline config as a shareable template"
+        ),
+    },
+    {
+        "label": "🏗️ Tech debt",
+        "text": (
+            "- Replace legacy jQuery with Alpine across all pages\n"
+            "- Remove the deprecated v1 API endpoints\n"
+            "- Add mypy strict mode to the agentception module\n"
+            "- Consolidate duplicate GitHub fetch helpers"
+        ),
+    },
+]
+
+_BD_LOADING_MSGS: list[str] = [
+    "Analyzing your dump…",
+    "Planning phases…",
+    "Setting up labels…",
+    "Preparing issues…",
+    "Dispatching coordinator…",
+]
+
+
+async def _build_recent_dumps() -> list[dict[str, str]]:
+    """Scan the worktrees directory and return metadata for the 6 most recent brain-dump runs."""
+    from agentception.config import settings as _cfg
+
+    recent_dumps: list[dict[str, str]] = []
+    worktrees_dir = _cfg.worktrees_dir
+    try:
+        if worktrees_dir.exists():
+            candidates = sorted(
+                (d for d in worktrees_dir.iterdir() if d.is_dir() and d.name.startswith("brain-dump-")),
+                key=lambda p: p.stat().st_mtime,
+                reverse=True,
+            )
+            for d in candidates[:6]:
+                label_prefix = ""
+                preview = ""
+                task_file = d / ".agent-task"
+                if task_file.exists():
+                    try:
+                        content = task_file.read_text(encoding="utf-8")
+                        for raw_line in content.splitlines():
+                            if raw_line.startswith("LABEL_PREFIX="):
+                                label_prefix = raw_line.split("=", 1)[1].strip()
+                        if "BRAIN_DUMP:" in content:
+                            dump_part = content.split("BRAIN_DUMP:", 1)[1].strip()
+                            first = next((ln.strip() for ln in dump_part.splitlines() if ln.strip()), "")
+                            preview = first[:90]
+                    except OSError:
+                        pass
+                ts_raw = d.name[len("brain-dump-"):]
+                try:
+                    ts_fmt = f"{ts_raw[:4]}-{ts_raw[4:6]}-{ts_raw[6:8]} {ts_raw[9:11]}:{ts_raw[11:13]}"
+                except Exception:
+                    ts_fmt = ts_raw
+                recent_dumps.append({"slug": d.name, "label_prefix": label_prefix, "preview": preview, "ts": ts_fmt})
+    except OSError:
+        pass
+    return recent_dumps
+
+
+@router.get("/brain-dump", response_class=HTMLResponse)
+async def brain_dump_page(request: Request) -> HTMLResponse:
+    """Brain Dump — convert free-form text into phased GitHub issues."""
+    from agentception.config import settings as _cfg
+
+    recent_dumps = await _build_recent_dumps()
+    return _TEMPLATES.TemplateResponse(
+        request,
+        "brain_dump.html",
+        {
+            "recent_dumps": recent_dumps,
+            "gh_repo": _cfg.gh_repo,
+            "funnel_stages": _BD_FUNNEL_STAGES,
+            "seeds": _BD_SEEDS,
+            "loading_msgs": _BD_LOADING_MSGS,
+        },
+    )
+
+
+@router.get("/brain-dump/recent-runs", response_class=HTMLResponse)
+async def brain_dump_recent_runs(request: Request) -> HTMLResponse:
+    """HTMX partial — returns the recent-runs sidebar section.
+
+    Triggered by Alpine after a successful brain-dump submit so the sidebar
+    updates without a full page reload.
+    """
+    from agentception.config import settings as _cfg
+
+    recent_dumps = await _build_recent_dumps()
+    return _TEMPLATES.TemplateResponse(
+        request,
+        "_bd_recent_runs.html",
+        {"recent_dumps": recent_dumps, "gh_repo": _cfg.gh_repo},
     )
 
 
@@ -911,6 +1138,15 @@ async def worktrees_page(request: Request) -> HTMLResponse:
     except Exception as exc:
         logger.warning("⚠️  Worktrees page git read failed: %s", exc)
 
+    # Mark branches as stale: agent branch with no live worktree checked out.
+    live_branches: set[str] = {
+        str(wt.get("branch", ""))
+        for wt in worktrees
+        if wt.get("branch") and not wt.get("is_main")
+    }
+    for b in branches:
+        b["is_stale"] = bool(b.get("is_agent_branch")) and str(b.get("name", "")) not in live_branches
+
     return _TEMPLATES.TemplateResponse(
         request,
         "worktrees.html",
@@ -975,5 +1211,248 @@ async def docs_viewer(request: Request, slug: str) -> HTMLResponse:
                 {"slug": d["slug"], "label": d["label"]}
                 for d in _CURSOR_DOCS
             ],
+        },
+    )
+
+
+# ---------------------------------------------------------------------------
+# Native API Reference
+# ---------------------------------------------------------------------------
+
+#: Human-readable labels and display order for OpenAPI tags.
+_API_TAG_META: dict[str, str] = {
+    "ui":           "UI Pages",
+    "api":          "REST API",
+    "control":      "Control Plane",
+    "intelligence": "Intelligence",
+    "roles":        "Roles",
+    "config":       "Configuration",
+    "telemetry":    "Telemetry",
+    "templates":    "Templates",
+    "sse":          "Server-Sent Events",
+    "health":       "Health",
+}
+
+
+def _resolve_ref(schema_root: dict[str, object], ref: str) -> dict[str, object]:
+    """Walk a JSON Pointer like '#/components/schemas/Foo' and return the node."""
+    parts = ref.lstrip("#/").split("/")
+    node: object = schema_root
+    for part in parts:
+        if isinstance(node, dict):
+            node = node.get(part, {})
+        else:
+            return {}
+    return node if isinstance(node, dict) else {}
+
+
+def _resolve_schema(
+    schema_root: dict[str, object],
+    schema: dict[str, object],
+    depth: int = 0,
+) -> dict[str, object]:
+    """Recursively resolve $ref and allOf, capped to avoid circular loops."""
+    if depth > 5:
+        return schema
+    if "$ref" in schema:
+        resolved = _resolve_ref(schema_root, str(schema["$ref"]))
+        return _resolve_schema(schema_root, resolved, depth + 1)
+    if "allOf" in schema:
+        merged: dict[str, object] = {}
+        for sub in schema.get("allOf", []):
+            if isinstance(sub, dict):
+                merged.update(_resolve_schema(schema_root, sub, depth + 1))
+        return merged
+    return schema
+
+
+def _schema_to_fields(
+    schema_root: dict[str, object],
+    schema: dict[str, object],
+    depth: int = 0,
+) -> list[dict[str, object]]:
+    """Flatten a JSON Schema object into a list of field descriptors."""
+    resolved = _resolve_schema(schema_root, schema, depth)
+    props: dict[str, object] = {}
+    if isinstance(resolved.get("properties"), dict):
+        props = resolved["properties"]  # type: ignore[assignment]
+    required_set: set[str] = set(resolved.get("required", []))  # type: ignore[arg-type]
+    fields: list[dict[str, object]] = []
+    for name, prop in props.items():
+        if not isinstance(prop, dict):
+            continue
+        prop = _resolve_schema(schema_root, prop, depth + 1)
+        if prop.get("type") == "array":
+            items = prop.get("items", {})
+            if isinstance(items, dict):
+                items = _resolve_schema(schema_root, items, depth + 2)
+                type_str: str = f"array[{items.get('type', 'object')}]"
+            else:
+                type_str = "array"
+        elif "anyOf" in prop:
+            parts_list = [
+                _resolve_schema(schema_root, t, depth + 1).get("type", "")
+                for t in prop.get("anyOf", [])
+                if isinstance(t, dict)
+            ]
+            type_str = " | ".join(str(p) for p in parts_list if p and p != "null") or "any"
+        else:
+            type_str = str(prop.get("type", "any"))
+        fields.append({
+            "name": name,
+            "type": type_str,
+            "required": name in required_set,
+            "description": str(prop.get("description", "")),
+            "default": prop.get("default"),
+        })
+    return fields
+
+
+def _build_api_groups(
+    schema_root: dict[str, object],
+) -> list[dict[str, object]]:
+    """Group endpoints by their first tag and return ordered groups.
+
+    Every endpoint dict carries the full set of fields Swagger UI exposes:
+    deprecated, operationId, per-response content-type and schema fields.
+    """
+    paths: dict[str, object] = schema_root.get("paths", {})  # type: ignore[assignment]
+
+    tag_order: list[str] = list(_API_TAG_META)
+    buckets: dict[str, list[dict[str, object]]] = {t: [] for t in tag_order}
+
+    for path, methods in paths.items():
+        if not isinstance(methods, dict):
+            continue
+        for method, op in methods.items():
+            if not isinstance(op, dict):
+                continue
+            tags: list[str] = op.get("tags", ["other"])  # type: ignore[assignment]
+            tag = tags[0] if tags else "other"
+            if tag not in buckets:
+                buckets[tag] = []
+
+            # ── Request body ───────────────────────────────────────────────
+            request_body: dict[str, object] | None = None
+            rb = op.get("requestBody")
+            if isinstance(rb, dict):
+                rb_content = rb.get("content", {})
+                if isinstance(rb_content, dict):
+                    # Prefer JSON; fall back to first available content type.
+                    rb_ct = "application/json" if "application/json" in rb_content else (
+                        next(iter(rb_content), "")
+                    )
+                    rb_ct_data: dict[str, object] = rb_content.get(rb_ct, {})  # type: ignore[assignment]
+                    raw_schema = rb_ct_data.get("schema", {}) if isinstance(rb_ct_data, dict) else {}
+                    if isinstance(raw_schema, dict):
+                        ref_name = str(raw_schema.get("$ref", "")).split("/")[-1]
+                        request_body = {
+                            "required": bool(rb.get("required", False)),
+                            "schema_name": ref_name,
+                            "content_type": rb_ct,
+                            "fields": _schema_to_fields(schema_root, raw_schema),
+                        }
+
+            # ── Responses ──────────────────────────────────────────────────
+            responses: list[dict[str, object]] = []
+            for code, resp_data in (op.get("responses") or {}).items():
+                if not isinstance(resp_data, dict):
+                    continue
+                resp_content = resp_data.get("content") or {}
+                # Pick primary content type (JSON preferred, then html, then first)
+                resp_ct = ""
+                resp_schema_raw: dict[str, object] = {}
+                if isinstance(resp_content, dict) and resp_content:
+                    for ct_pref in ("application/json", "text/html", "text/plain"):
+                        if ct_pref in resp_content:
+                            resp_ct = ct_pref
+                            ct_data = resp_content[ct_pref]
+                            if isinstance(ct_data, dict):
+                                s = ct_data.get("schema", {})
+                                resp_schema_raw = s if isinstance(s, dict) else {}
+                            break
+                    if not resp_ct:
+                        resp_ct = next(iter(resp_content))
+
+                ref_name = str(resp_schema_raw.get("$ref", "")).split("/")[-1]
+                # Expand schema fields for non-trivial schemas (skip error types)
+                skip_expand = {"HTTPValidationError", "ValidationError", ""}
+                resp_fields = (
+                    _schema_to_fields(schema_root, resp_schema_raw)
+                    if ref_name not in skip_expand
+                    else []
+                )
+                responses.append({
+                    "code": str(code),
+                    "description": str(resp_data.get("description", "")),
+                    "schema_name": ref_name,
+                    "content_type": resp_ct,
+                    "fields": resp_fields,
+                })
+
+            buckets[tag].append({
+                "method": method.upper(),
+                "path": str(path),
+                "summary": str(op.get("summary", "")),
+                "description": str(op.get("description", "")),
+                "operation_id": str(op.get("operationId", "")),
+                "deprecated": bool(op.get("deprecated", False)),
+                "parameters": op.get("parameters", []),
+                "request_body": request_body,
+                "responses": responses,
+            })
+
+    ordered = [t for t in tag_order if buckets.get(t)]
+    extra = [t for t in buckets if t not in tag_order and buckets[t]]
+    return [
+        {
+            "tag": tag,
+            "label": _API_TAG_META.get(tag, tag.replace("-", " ").title()),
+            "endpoints": buckets[tag],
+        }
+        for tag in ordered + extra
+    ]
+
+
+def _build_schema_models(schema_root: dict[str, object]) -> list[dict[str, object]]:
+    """Return a sorted list of all component schemas with their resolved fields.
+
+    Excludes low-signal FastAPI-generated error types.
+    """
+    raw: dict[str, object] = (
+        schema_root.get("components", {}).get("schemas", {})  # type: ignore[union-attr]
+    )
+    skip = {"HTTPValidationError", "ValidationError"}
+    models: list[dict[str, object]] = []
+    for name, s in raw.items():
+        if name in skip or not isinstance(s, dict):
+            continue
+        resolved = _resolve_schema(schema_root, s)
+        models.append({
+            "name": name,
+            "description": str(resolved.get("description", "")),
+            "fields": _schema_to_fields(schema_root, resolved),
+        })
+    return sorted(models, key=lambda m: str(m["name"]))
+
+
+@router.get("/api", response_class=HTMLResponse)
+async def api_reference(request: Request) -> HTMLResponse:
+    """Native API reference — renders the OpenAPI schema as a first-party branded page.
+
+    Replaces FastAPI's built-in Swagger UI (which is disabled in app.py).
+    The schema is pre-processed in Python ($refs resolved, endpoints grouped by
+    tag, response schemas expanded, schema models collected) so the Jinja
+    template receives clean structured data with no schema logic inside.
+    """
+    schema: dict[str, object] = request.app.openapi()
+    info: dict[str, object] = schema.get("info", {})  # type: ignore[assignment]
+    return _TEMPLATES.TemplateResponse(
+        request,
+        "api_reference.html",
+        {
+            "info": info,
+            "groups": _build_api_groups(schema),
+            "schema_models": _build_schema_models(schema),
         },
     )

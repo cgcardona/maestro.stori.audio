@@ -280,6 +280,39 @@ class SpawnResult(BaseModel):
     agent_task: str
 
 
+class SpawnCoordinatorRequest(BaseModel):
+    """Request body for ``POST /api/control/spawn-coordinator``.
+
+    ``brain_dump`` is the user's raw unstructured text — feature ideas, bug
+    descriptions, or any free-form list of work items.  The coordinator agent
+    reads this field from its ``.agent-task`` file and runs the Phase Planner
+    step in ``parallel-bugs-to-issues.md``, producing labelled GitHub issues.
+
+    ``label_prefix`` optionally scopes the generated phase labels to a named
+    initiative (e.g. ``"q2-rewrite"`` → labels like ``phase-1/q2-rewrite``).
+    Leave blank for the default label scheme.
+    """
+
+    brain_dump: str
+    label_prefix: str = ""
+
+
+class SpawnCoordinatorResult(BaseModel):
+    """Response for a successful ``POST /api/control/spawn-coordinator``.
+
+    ``slug`` is the worktree directory name (e.g. ``brain-dump-20260301-143022``).
+    ``host_worktree`` is the path the user should open in Cursor to activate
+    the coordinator agent.  ``agent_task`` is the raw ``.agent-task`` content
+    written to disk — useful for display and debugging.
+    """
+
+    slug: str
+    worktree: str
+    host_worktree: str
+    branch: str
+    agent_task: str
+
+
 class SwitchProjectRequest(BaseModel):
     """Request body for ``POST /api/config/switch-project``.
 

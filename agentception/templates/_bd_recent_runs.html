@@ -1,0 +1,25 @@
+{#
+  HTMX partial — Brain Dump recent runs sidebar section.
+  Included inline on first load (brain_dump.html {% include %}).
+  HTMX swaps outerHTML of #bd-recent-runs after a successful submit.
+#}
+{% if recent_dumps %}
+<p class="bd-funnel-heading">Recent runs</p>
+<div class="bd-history">
+  {% for run in recent_dumps %}
+  <div class="bd-history-card">
+    <div class="bd-history-meta">
+      <span class="bd-history-ts">{{ run.ts }}</span>
+      {% if run.label_prefix %}
+      <span class="bd-history-prefix">{{ run.label_prefix }}</span>
+      {% endif %}
+    </div>
+    <p class="bd-history-preview">{{ run.preview or '(no preview)' }}</p>
+    <div class="bd-history-links">
+      <a href="https://github.com/{{ gh_repo }}/issues" target="_blank" rel="noopener noreferrer" class="bd-history-link">Issues ↗</a>
+      <a href="/agents" class="bd-history-link">Agents →</a>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
