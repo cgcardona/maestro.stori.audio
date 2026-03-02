@@ -25,6 +25,7 @@ dev = [
     "pytest-anyio>=0.0.0",
     "mypy>=1.8.0",
     "types-aiofiles>=23.2.0",
+    "types-PyYAML>=6.0.0",
 ]
 
 [project.scripts]
@@ -51,7 +52,7 @@ show_error_codes = true
 # Third-party stubs are not always available; suppress missing-import noise
 # for libraries that ship without inline types.
 [[tool.mypy.overrides]]
-module = ["sqlalchemy.*", "alembic.*", "asyncpg.*", "aiosqlite.*", "yaml"]
+module = ["sqlalchemy.*", "alembic.*", "asyncpg.*", "aiosqlite.*"]
 ignore_missing_imports = true
 
 # pytest decorators are untyped by design; relaxing this keeps test files clean.
