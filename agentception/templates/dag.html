@@ -341,6 +341,9 @@
               .on("drag",  dragged)
               .on("end",   dragend));
 
+          g.append("title")
+            .text(d => `#${d.number} — ${d.title}`);
+
           g.append("circle")
             .attr("r", NODE_RADIUS);
 
