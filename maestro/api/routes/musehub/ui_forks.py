@@ -1,6 +1,6 @@
 """Muse Hub fork network UI route — interactive DAG of a repo's fork tree.
 
-Serves the fork network page for any public Muse Hub repo.  The page renders
+Serves the fork network page for any public Muse Hub repo. The page renders
 an interactive SVG directed acyclic graph (DAG) where each node is a fork and
 each edge is coloured by the divergence (commits ahead) between the fork and
 its parent.
@@ -15,7 +15,7 @@ Content negotiation (one URL, two audiences):
   traversal by agents.
 
 Auth:
-  No JWT required — public repos are visible to everyone.  The client-side
+  No JWT required — public repos are visible to everyone. The client-side
   JavaScript reads a token from ``localStorage`` only for write actions
   (e.g. "Contribute upstream").
 """
@@ -23,14 +23,15 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timezone
+from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi import status as http_status
+from fastapi.templating import Jinja2Templates
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.responses import Response
 
-from maestro.api.routes.musehub._templates import templates
 from maestro.api.routes.musehub.negotiate import negotiate_response
 from maestro.db import musehub_models as db
 from maestro.db import get_db
@@ -40,6 +41,9 @@ from maestro.services import musehub_repository
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/musehub/ui", tags=["musehub-ui"])
+
+_TEMPLATE_DIR = Path(__file__).parent.parent.parent.parent / "templates"
+templates = Jinja2Templates(directory=str(_TEMPLATE_DIR))
 
 
 # ---------------------------------------------------------------------------
@@ -84,9 +88,9 @@ async def _build_fork_network(
     """Build the full fork network tree rooted at *source_repo_id*.
 
     Queries ``musehub_forks`` for all direct forks of the source repo, then
-    for each fork repo fetches its metadata and commit count.  Divergence is
+    for each fork repo fetches its metadata and commit count. Divergence is
     approximated as the number of commits in the fork that exceed the source's
-    count (commits ahead).  This is a set-cardinality proxy — sufficient for
+    count (commits ahead). This is a set-cardinality proxy — sufficient for
     display without requiring a full commit-graph traversal.
 
     Returns a ``ForkNetworkResponse`` with a recursive ``ForkNetworkNode`` tree.
@@ -159,17 +163,19 @@ async def forks_page(
 ) -> Response:
     """Render the fork network page or return structured fork data as JSON.
 
-    HTML (default): renders an SSR fork table and an interactive SVG DAG where
-    each node represents a fork of the source repo.  The table is rendered
-    server-side by Jinja2; the DAG is driven by JavaScript using fork data
-    injected as ``window.__forkNetwork`` (no async fetch needed).
+    HTML (default): renders an interactive SVG DAG where each node represents
+    a fork of the source repo. Edges are coloured by divergence (commits
+    ahead of the parent). Each node shows the fork owner's avatar, last
+    commit message, commits ahead/behind, and star count. Action buttons
+    link to the Compare page and open a PR against the parent ("Contribute
+    upstream").
 
     JSON (``Accept: application/json`` or ``?format=json``): returns
     ``ForkNetworkResponse`` with a recursive ``ForkNetworkNode`` tree — the
     canonical contract for agents that need to reason about the fork graph
     without parsing HTML.
 
-    No JWT required — public repo fork graphs are visible to everyone.  The
+    No JWT required — public repo fork graphs are visible to everyone. The
     client-side token is only used for write actions embedded in the page.
 
     Returns 404 when the owner/slug combination is not found.
@@ -185,11 +191,6 @@ async def forks_page(
         source_commit_count=source_commit_count,
     )
 
-    # Pre-serialize the full network for the SVG DAG JavaScript renderer.
-    # Jinja2's tojson filter cannot serialize Pydantic models directly, so we
-    # convert to a plain dict (camelCase, JSON-safe) before passing to the template.
-    fork_network_json: dict[str, object] = fork_network.model_dump(by_alias=True, mode="json")
-
     return await negotiate_response(
         request=request,
         template_name="musehub/pages/forks.html",
@@ -200,8 +201,6 @@ async def forks_page(
             "base_url": base_url,
             "current_page": "forks",
             "total_forks": fork_network.total_forks,
-            "forks": fork_network.root.children,
-            "fork_network_json": fork_network_json,
             "breadcrumb_data": [
                 {"label": owner, "url": f"/musehub/ui/{owner}"},
                 {"label": repo_slug, "url": base_url},

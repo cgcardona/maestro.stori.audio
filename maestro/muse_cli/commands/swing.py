@@ -2,13 +2,13 @@
 
 Swing factor encodes the rhythmic feel of a MIDI performance on a
 normalized 0.5–0.67 scale, where 0.5 is mathematically straight (no
-swing) and 0.67 approximates a full triplet feel.  Human-readable
+swing) and 0.67 approximates a full triplet feel. Human-readable
 labels map ranges to familiar production vocabulary:
 
-    Straight   factor < 0.53
-    Light      0.53 ≤ factor < 0.58
-    Medium     0.58 ≤ factor < 0.63
-    Hard       factor ≥ 0.63
+    Straight factor < 0.53
+    Light 0.53 ≤ factor < 0.58
+    Medium 0.58 ≤ factor < 0.63
+    Hard factor ≥ 0.63
 
 Command forms
 -------------
@@ -134,14 +134,14 @@ async def _swing_detect_async(
     """Detect the swing factor for a commit (or the working tree).
 
     This is a stub that returns a realistic placeholder result in the
-    correct schema.  Full MIDI-based analysis will be wired in once
+    correct schema. Full MIDI-based analysis will be wired in once
     the Storpheus inference endpoint exposes a swing detection route.
 
     Args:
-        root:    Repository root.
+        root: Repository root.
         session: Open async DB session.
-        commit:  Commit SHA to analyse, or ``None`` for the working tree.
-        track:   Restrict analysis to a named MIDI track, or ``None`` for all.
+        commit: Commit SHA to analyse, or ``None`` for the working tree.
+        track: Restrict analysis to a named MIDI track, or ``None`` for all.
 
     Returns:
         A :class:`SwingDetectResult` with ``factor``, ``label``, ``commit``,
@@ -176,14 +176,14 @@ async def _swing_history_async(
 ) -> list[SwingDetectResult]:
     """Return the swing history for the current branch.
 
-    Stub implementation returning a single placeholder entry.  Full
+    Stub implementation returning a single placeholder entry. Full
     implementation will walk the commit chain and aggregate swing
     annotations stored per-commit.
 
     Args:
-        root:    Repository root.
+        root: Repository root.
         session: Open async DB session.
-        track:   Restrict to a named MIDI track, or ``None`` for all.
+        track: Restrict to a named MIDI track, or ``None`` for all.
 
     Returns:
         List of :class:`SwingDetectResult` entries, newest first.
@@ -203,15 +203,15 @@ async def _swing_compare_async(
 ) -> SwingCompareResult:
     """Compare swing between HEAD and *compare_commit*.
 
-    Stub implementation.  Full implementation will load the swing
+    Stub implementation. Full implementation will load the swing
     annotation (or detect it on the fly) for both commits and compute
     the delta.
 
     Args:
-        root:           Repository root.
-        session:        Open async DB session.
+        root: Repository root.
+        session: Open async DB session.
         compare_commit: SHA or ref to compare against.
-        track:          Restrict to a named MIDI track, or ``None``.
+        track: Restrict to a named MIDI track, or ``None``.
 
     Returns:
         A :class:`SwingCompareResult` with ``head``, ``compare``, and ``delta``.
@@ -241,7 +241,7 @@ def _format_detect(result: SwingDetectResult, *, as_json: bool) -> str:
         return json.dumps(dict(result), indent=2)
     lines = [
         f"Swing factor: {result['factor']} ({result['label']})",
-        f"Commit: {result['commit']}  Branch: {result['branch']}",
+        f"Commit: {result['commit']} Branch: {result['branch']}",
         f"Track: {result['track']}",
     ]
     if result.get("source") == "stub":
@@ -258,8 +258,8 @@ def _format_history(
     lines: list[str] = []
     for entry in entries:
         lines.append(
-            f"{entry['commit']}  {entry['factor']} ({entry['label']})"
-            + (f"  [{entry['track']}]" if entry.get("track") != "all" else "")
+            f"{entry['commit']} {entry['factor']} ({entry['label']})"
+            + (f" [{entry['track']}]" if entry.get("track") != "all" else "")
         )
     return "\n".join(lines) if lines else "(no swing history found)"
 
@@ -273,9 +273,9 @@ def _format_compare(result: SwingCompareResult, *, as_json: bool) -> str:
     delta = result["delta"]
     sign = "+" if delta >= 0 else ""
     return (
-        f"HEAD    {head['factor']} ({head['label']})\n"
+        f"HEAD {head['factor']} ({head['label']})\n"
         f"Compare {compare['factor']} ({compare['label']})\n"
-        f"Delta   {sign}{delta}"
+        f"Delta {sign}{delta}"
     )
 
 
@@ -341,7 +341,7 @@ def swing(
     """Analyze or annotate the swing factor of a musical composition.
 
     With no flags, detects and displays the swing factor for the current
-    HEAD commit.  Use ``--set`` to persist an explicit factor annotation.
+    HEAD commit. Use ``--set`` to persist an explicit factor annotation.
     """
     root = require_repo()
 
@@ -371,7 +371,7 @@ def swing(
                 else:
                     typer.echo(
                         f"✅ Swing annotated: {set_factor} ({label})"
-                        + (f"  track={track}" if track else "")
+                        + (f" track={track}" if track else "")
                     )
                 return
 

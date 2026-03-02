@@ -159,7 +159,7 @@ class TestHelpers:
         mod = _load_module()
         result: str = mod._sha("test-seed")
         assert isinstance(result, str)
-        assert len(result) == 64  # SHA-256 hex digest
+        assert len(result) == 64 # SHA-256 hex digest
 
     def test_uid_returns_uuid_string(self) -> None:
         mod = _load_module()
@@ -219,7 +219,7 @@ def _find_list_elts(src: str, var_name: str) -> Sequence[ast.expr | None] | None
             if isinstance(value, (ast.List, ast.Dict)):
                 if isinstance(value, ast.List):
                     return value.elts
-                return list(value.keys)  # ast.Dict.keys is list[expr | None]
+                return list(value.keys) # ast.Dict.keys is list[expr | None]
     return None
 
 
@@ -330,7 +330,7 @@ class TestMainCallable:
 
         mock_db = AsyncMock()
         mock_result = MagicMock()
-        mock_result.scalar = MagicMock(return_value=1)  # already seeded
+        mock_result.scalar = MagicMock(return_value=1) # already seeded
         mock_db.execute = AsyncMock(return_value=mock_result)
         mock_db.flush = AsyncMock()
         mock_db.commit = AsyncMock()

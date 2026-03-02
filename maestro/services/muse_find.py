@@ -2,21 +2,21 @@
 
 This is the musical equivalent of ``git log --grep``, extended with
 domain-specific filters for harmony, rhythm, melody, structure, dynamics,
-and emotion.  All filters combine with AND logic: a commit must satisfy
+and emotion. All filters combine with AND logic: a commit must satisfy
 every non-None criterion to appear in results.
 
 Query DSL
 ---------
 Each property filter accepts a free-text query string matched
-case-insensitively against the commit message.  Two syntaxes:
+case-insensitively against the commit message. Two syntaxes:
 
 **Equality match** (default)::
 
-    --harmony "key=Eb"   → substring match for "key=Eb" in message
+    --harmony "key=Eb" → substring match for "key=Eb" in message
 
 **Numeric range** (``key=low-high``)::
 
-    --rhythm "tempo=120-130"  → extract tempo=<N> from message,
+    --rhythm "tempo=120-130" → extract tempo=<N> from message,
                                  check 120 <= N <= 130
 
 Range syntax is triggered when the value portion of ``key=value``
@@ -44,7 +44,7 @@ _DEFAULT_LIMIT = 20
 class MuseFindQuery:
     """All search criteria for a ``muse find`` invocation.
 
-    Every field is optional.  Non-None fields are ANDed together.
+    Every field is optional. Non-None fields are ANDed together.
     ``limit`` caps the result set (default 20).
     """
 
@@ -98,8 +98,8 @@ def _parse_property_filter(query_str: str) -> tuple[str, float, float] | None:
 
     Examples::
 
-        "tempo=120-130"  -> ("tempo", 120.0, 130.0)
-        "key=Eb"         -> None
+        "tempo=120-130" -> ("tempo", 120.0, 130.0)
+        "key=Eb" -> None
     """
     m = _KEY_VALUE_RE.match(query_str)
     if m is None:
@@ -120,7 +120,7 @@ def _extract_numeric_value(message: str, key: str) -> float | None:
     Examples::
 
         "tempo=125 bpm" -> key="tempo" -> 125.0
-        "swing=0.72"    -> key="swing" -> 0.72
+        "swing=0.72" -> key="swing" -> 0.72
     """
     pattern = re.compile(
         r"\b" + re.escape(key) + r"\s*=\s*(\d+(?:\.\d+)?)\b",

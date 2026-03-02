@@ -34,5 +34,5 @@ class RepoNotFoundError(MuseCLIError):
         super().__init__(message, exit_code=ExitCode.REPO_NOT_FOUND)
 
 
-#: Canonical public alias matching the name specified in issue #46.
+#: Canonical public alias matching the name specified.
 MuseNotARepoError = RepoNotFoundError

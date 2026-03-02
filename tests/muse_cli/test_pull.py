@@ -1,13 +1,13 @@
 """Tests for ``muse pull``.
 
-Covers acceptance criteria from issue #38:
+Covers acceptance criteria:
 - ``muse pull`` with no remote configured exits 1 with instructive message.
 - ``muse pull`` calls ``POST <remote>/pull`` with correct payload structure.
 - Returned commits are stored in local Postgres (via DB helpers).
 - ``.muse/remotes/origin/<branch>`` is updated after a successful pull.
 - Divergence message is printed (exit 0) when branches have diverged.
 
-Covers acceptance criteria from issue #77 (new remote sync flags):
+Covers acceptance criteria (new remote sync flags):
 - ``muse pull --rebase``: fast-forwards local branch when remote is ahead.
 - ``muse pull --rebase``: rebases local commits when branches have diverged.
 - ``muse pull --ff-only``: fast-forwards local branch when remote is ahead.
@@ -189,7 +189,7 @@ async def test_pull_stores_commits_in_db(muse_cli_db_session: object) -> None:
     from sqlalchemy.ext.asyncio import AsyncSession
     from maestro.muse_cli.models import MuseCliCommit as MCCommit
 
-    session: AsyncSession = muse_cli_db_session  # type: ignore[assignment]
+    session: AsyncSession = muse_cli_db_session # type: ignore[assignment]
 
     commit_data: dict[str, object] = {
         "commit_id": "pulled-commit-abc123" * 3,
@@ -222,7 +222,7 @@ async def test_pull_stores_commits_idempotent(muse_cli_db_session: object) -> No
     """Storing the same pulled commit twice does not raise and returns False on dup."""
     from sqlalchemy.ext.asyncio import AsyncSession
 
-    session: AsyncSession = muse_cli_db_session  # type: ignore[assignment]
+    session: AsyncSession = muse_cli_db_session # type: ignore[assignment]
 
     commit_data: dict[str, object] = {
         "commit_id": "idem-commit-xyz789" * 3,
@@ -250,7 +250,7 @@ async def test_pull_stores_objects_in_db(muse_cli_db_session: object) -> None:
     from sqlalchemy.ext.asyncio import AsyncSession
     from maestro.muse_cli.models import MuseCliObject
 
-    session: AsyncSession = muse_cli_db_session  # type: ignore[assignment]
+    session: AsyncSession = muse_cli_db_session # type: ignore[assignment]
 
     obj_data: dict[str, object] = {
         "object_id": "a" * 64,
@@ -436,7 +436,7 @@ async def test_push_pull_roundtrip(tmp_path: pathlib.Path) -> None:
     """Simulate push from dir A then pull in dir B — remote_head is consistent.
 
     This is a lightweight integration test: both push and pull call real config
-    read/write code; only the HTTP and DB layers are mocked.  The remote_head
+    read/write code; only the HTTP and DB layers are mocked. The remote_head
     tracking file is the shared state that must be consistent across both
     operations.
     """
@@ -572,7 +572,7 @@ async def test_pull_ff_only_fast_forwards_when_remote_ahead(
 ) -> None:
     """--ff-only updates local branch ref when remote HEAD is a fast-forward.
 
-    Regression for issue #77: pulling with --ff-only when remote is strictly
+    Regression: pulling with --ff-only when remote is strictly
     ahead of local should advance the local branch ref without merge.
     """
     root = _init_repo(tmp_path)
@@ -644,7 +644,7 @@ async def test_pull_ff_only_fails_when_not_ff(
 ) -> None:
     """--ff-only exits 1 when branches have diverged (cannot fast-forward).
 
-    Regression for issue #77: pulling with --ff-only must refuse to integrate
+    Regression: pulling with --ff-only must refuse to integrate
     when the remote and local branches have diverged.
     """
     import typer
@@ -716,7 +716,7 @@ async def test_pull_rebase_fast_forwards_when_remote_ahead(
 ) -> None:
     """--rebase fast-forwards local branch when remote is strictly ahead.
 
-    Regression for issue #77: when remote is simply ahead (no local commits
+    Regression: when remote is simply ahead (no local commits
     above the common base), --rebase acts like a fast-forward.
     """
     root = _init_repo(tmp_path)
@@ -906,8 +906,8 @@ async def test_pull_rebase_replays_local_commits_on_diverged_branch(
 ) -> None:
     """--rebase replays local-only commits onto remote HEAD when branches have diverged.
 
-    Regression for issue #238: the diverged rebase path (find_merge_base →
-    _rebase_commits_onto) was missing test coverage.  This test verifies that:
+    Regression: the diverged rebase path (find_merge_base →
+    _rebase_commits_onto) was missing test coverage. This test verifies that:
 
     1. ``find_merge_base`` is called with the local and remote HEAD commit IDs.
     2. ``_rebase_commits_onto`` is called with the commits above the merge base.
@@ -917,8 +917,8 @@ async def test_pull_rebase_replays_local_commits_on_diverged_branch(
     root = _init_repo(tmp_path)
     _write_config_with_token(root, "https://hub.example.com/musehub/repos/r")
 
-    # History: base ← local_a ← local_b  (local side, 2 commits above base)
-    #          base ← remote_a            (remote side, diverged)
+    # History: base ← local_a ← local_b (local side, 2 commits above base)
+    # base ← remote_a (remote side, diverged)
     base_id = "base-commit-0000" * 4
     local_a_id = "local-commit-a001" * 4
     local_b_id = "local-commit-b002" * 4
@@ -1023,7 +1023,7 @@ async def test_pull_rebase_diverged_no_common_ancestor_exits_1(
     """--rebase exits 1 with instructive message when no common ancestor exists.
 
     Guards the ``merge_base_id is None`` branch in _pull_async (diverged rebase
-    path) that was untested before issue #238.
+    path) that was untested before .
     """
     import typer
 
@@ -1068,7 +1068,7 @@ async def test_pull_rebase_diverged_no_common_ancestor_exits_1(
         patch("maestro.muse_cli.commands.pull.MuseHubClient", return_value=mock_hub),
         patch(
             "maestro.muse_cli.commands.pull.find_merge_base",
-            new=AsyncMock(return_value=None),  # no common ancestor
+            new=AsyncMock(return_value=None), # no common ancestor
         ),
     ):
         ctx = MagicMock()
@@ -1090,17 +1090,17 @@ async def test_pull_rebase_diverged_no_common_ancestor_exits_1(
 async def test_rebase_commits_onto_idempotent(tmp_path: pathlib.Path) -> None:
     """_rebase_commits_onto is idempotent: running twice yields the same HEAD.
 
-    Verifies the idempotency contract documented in issue #238: re-running a
+    Verifies the idempotency contract documented: re-running a
     rebase with the same inputs (same parent IDs, snapshot IDs, messages, and
     authors) produces the same deterministic commit IDs and does not insert
-    duplicate rows.  Uses a dedicated in-memory SQLite engine so that both
+    duplicate rows. Uses a dedicated in-memory SQLite engine so that both
     invocations share the same DB state.
     """
     from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
     from sqlalchemy.pool import StaticPool
 
     from maestro.db.database import Base
-    import maestro.muse_cli.models  # noqa: F401 — registers MuseCli* models with Base
+    import maestro.muse_cli.models # noqa: F401 — registers MuseCli* models with Base
     from maestro.muse_cli.models import MuseCliCommit as MCCommit
     from maestro.muse_cli.snapshot import compute_commit_tree_id
 

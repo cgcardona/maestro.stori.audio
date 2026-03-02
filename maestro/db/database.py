@@ -45,7 +45,7 @@ async def init_db() -> None:
     """Initialize database engine and session factory.
 
     Schema is managed by Alembic (``alembic upgrade head`` runs in
-    the container entrypoint *before* the app starts).  This function
+    the container entrypoint *before* the app starts). This function
     only creates the async engine and session factory.
     """
     global _engine, _async_session_factory
@@ -70,8 +70,8 @@ async def init_db() -> None:
     )
     
     # Import models so relationships resolve even though Alembic owns DDL.
-    from maestro.db import models  # noqa: F401
-    from maestro.db import muse_models  # noqa: F401
+    from maestro.db import models # noqa: F401
+    from maestro.db import muse_models # noqa: F401
     
     logger.info("Database initialized successfully")
 

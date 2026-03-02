@@ -1,7 +1,7 @@
 """muse hash-object — compute and optionally store a Muse content-addressed object.
 
 Mirrors ``git hash-object`` plumbing semantics: given a file path (or stdin),
-compute the SHA-256 hash of its raw bytes and print it.  With ``-w`` the object
+compute the SHA-256 hash of its raw bytes and print it. With ``-w`` the object
 is written into both the local on-disk store (``.muse/objects/``) and the
 Postgres ``muse_cli_objects`` table so it can be referenced by future
 ``muse commit-tree`` or ``muse cat-object`` calls.
@@ -64,7 +64,7 @@ class HashObjectResult:
 
     Args:
         object_id: The 64-character lowercase hex SHA-256 digest.
-        stored:    ``True`` when the object was written to the store
+        stored: ``True`` when the object was written to the store
                    (``-w`` flag), ``False`` for a compute-only run.
         already_existed: ``True`` when ``-w`` was given but the object was
                          already present in the store (idempotent).
@@ -120,14 +120,14 @@ async def _hash_object_async(
 
     1. Write the raw bytes into the local on-disk store (``.muse/objects/``).
     2. Upsert a ``MuseCliObject`` row into Postgres with the object ID and
-       byte count.  The upsert is idempotent: inserting the same object twice
+       byte count. The upsert is idempotent: inserting the same object twice
        is a no-op.
 
     Args:
-        session:   Open async DB session (used only when *write* is ``True``).
-        content:   Raw bytes to hash (and optionally store).
-        write:     When ``True``, persist the object to the store.
-        repo_root: Path to the Muse repo root for the on-disk store.  When
+        session: Open async DB session (used only when *write* is ``True``).
+        content: Raw bytes to hash (and optionally store).
+        write: When ``True``, persist the object to the store.
+        repo_root: Path to the Muse repo root for the on-disk store. When
                    ``None`` the repo root is resolved from the current
                    working directory via :func:`~maestro.muse_cli._repo.require_repo`.
 
@@ -192,7 +192,7 @@ def hash_object(
 ) -> None:
     """Compute the SHA-256 object ID for a file (or stdin content).
 
-    Prints the 64-character hex hash to stdout.  With ``-w``, the object is
+    Prints the 64-character hex hash to stdout. With ``-w``, the object is
     also written to the local store and the Postgres ``muse_cli_objects``
     table so it can be referenced by other plumbing commands.
 

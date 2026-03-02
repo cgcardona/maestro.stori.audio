@@ -52,7 +52,7 @@ def calculate_cost_cents(
     if not model_info:
         # Use default model pricing if unknown
         model_info = APPROVED_MODELS.get(settings.llm_model, {
-            "input_cost": 3.0,  # Default to Claude pricing
+            "input_cost": 3.0, # Default to Claude pricing
             "output_cost": 15.0,
         })
     
@@ -69,7 +69,7 @@ def calculate_cost_cents(
     # Convert to cents (round up to ensure we don't undercharge)
     cost_cents = int(total_cost * 100) + (1 if total_cost * 100 % 1 > 0 else 0)
     
-    return max(cost_cents, 1)  # Minimum 1 cent per request
+    return max(cost_cents, 1) # Minimum 1 cent per request
 
 
 async def check_budget(
@@ -247,17 +247,14 @@ def get_model_or_default(model: str | None) -> str:
 # Optimistic Budget Reservation
 # =============================================================================
 
-# Estimated costs per model (in cents) - conservative estimates
+# Estimated costs per model (in cents) — only approved models are listed.
+# All other models fall through to DEFAULT_ESTIMATED_COST.
 ESTIMATED_COSTS = {
-    "anthropic/claude-3.5-sonnet": 25,  # ~$0.25 per typical request
-    "anthropic/claude-3-5-sonnet-20241022": 25,
-    "openai/gpt-4o": 20,
-    "openai/gpt-4o-mini": 5,
-    "openai/o1-preview": 50,
-    "openai/o1-mini": 10,
+    "anthropic/claude-sonnet-4.6": 25, # ~$0.25 per typical request
+    "anthropic/claude-opus-4.6": 75, # ~$0.75 per typical request (3× sonnet)
 }
 
-DEFAULT_ESTIMATED_COST = 25  # Default estimate in cents
+DEFAULT_ESTIMATED_COST = 25 # Default estimate in cents
 
 
 class BudgetReservation:

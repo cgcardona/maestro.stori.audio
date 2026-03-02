@@ -228,7 +228,7 @@ INTENT_CONFIGS: dict[Intent, IntentConfig] = {
         intent=Intent.FX_ADD_INSERT,
         sse_state=SSEState.EDITING,
         allowed_tools=_PRIMITIVES_FX,
-        force_stop_after=False,  # "Add reverb and delay" = 2 calls
+        force_stop_after=False, # "Add reverb and delay" = 2 calls
         tool_choice="auto",
         description="Add effect",
     ),
@@ -321,7 +321,7 @@ INTENT_CONFIGS: dict[Intent, IntentConfig] = {
     Intent.GENERATE_MUSIC: IntentConfig(
         intent=Intent.GENERATE_MUSIC,
         sse_state=SSEState.COMPOSING,
-        allowed_tools=frozenset(),  # Planner handles
+        allowed_tools=frozenset(), # Planner handles
         force_stop_after=True,
         tool_choice="auto",
         requires_planner=True,

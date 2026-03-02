@@ -1,12 +1,19 @@
-{# macros/commit.html — reusable commit row building block.
-   Import with:
-     {% from "musehub/macros/commit.html" import commit_row %}
-   Then call:
-     {{ commit_row(commit, base_url=base_url) }}
-   Requires the ``shortsha`` and ``fmtrelative`` Jinja2 filters to be registered
-   (see maestro/api/routes/musehub/jinja2_filters.py).
-#}
+{#
+  commit_row — renders one commit row.
 
+  Parameters
+  ----------
+  commit : object
+    Must have: commitId (str), message (str), author (str), timestamp
+    (ISO string or datetime).
+  base_url : str
+    Canonical repo UI prefix, e.g. "/musehub/ui/owner/repo".
+
+  Usage
+  -----
+  {% from "musehub/macros/commit.html" import commit_row %}
+  {{ commit_row(commit, base_url=base_url) }}
+#}
 {% macro commit_row(commit, base_url) %}
 <div class="commit-row">
   <a href="{{ base_url }}/commits/{{ commit.commitId }}" class="commit-message">

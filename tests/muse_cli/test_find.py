@@ -2,7 +2,7 @@
 
 All async tests call ``_find_async`` directly with an in-memory SQLite
 session and a ``tmp_path`` repo root — no real Postgres or running
-process required.  Commits are seeded via ``_commit_async`` so the two
+process required. Commits are seeded via ``_commit_async`` so the two
 commands are tested as an integrated pair.
 
 Naming convention: test_muse_find_<behavior>_<scenario>
@@ -142,7 +142,7 @@ async def test_muse_find_harmony_key_returns_matching_commits(
     query = MuseFindQuery(harmony="key=F minor", limit=20)
     results = await search_commits(muse_cli_db_session, _get_repo_id(tmp_path), query)
 
-    assert results.total_scanned == 2  # ILIKE applied at SQL level
+    assert results.total_scanned == 2 # ILIKE applied at SQL level
     assert len(results.matches) == 2
     for match in results.matches:
         assert "key=F minor" in match.message
@@ -202,8 +202,8 @@ async def test_muse_find_multiple_flags_combine_with_and_logic(
         muse_cli_db_session,
         [
             "melancholic bridge, key=F minor, has=bridge",
-            "melancholic verse, key=F minor",        # no bridge
-            "bright bridge, key=C major, has=bridge",  # wrong key
+            "melancholic verse, key=F minor", # no bridge
+            "bright bridge, key=C major, has=bridge", # wrong key
         ],
     )
 
@@ -323,7 +323,7 @@ async def test_muse_find_no_matches_returns_empty(
     results = await search_commits(muse_cli_db_session, _get_repo_id(tmp_path), query)
 
     assert len(results.matches) == 0
-    assert results.total_scanned == 0  # SQL ILIKE filters row out entirely
+    assert results.total_scanned == 0 # SQL ILIKE filters row out entirely
 
 
 # ---------------------------------------------------------------------------

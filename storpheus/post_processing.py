@@ -44,14 +44,14 @@ class PostProcessorConfig:
     register_spread: int | None = None
 
     # Quantization
-    subdivision: int | None = None  # 8 = 8th notes, 16 = 16th notes
+    subdivision: int | None = None # 8 = 8th notes, 16 = 16th notes
 
     # Duration cleanup
     min_duration_beats: float = 0.0
-    max_duration_beats: float = 0.0  # 0 = no cap
+    max_duration_beats: float = 0.0 # 0 = no cap
 
     # Humanization (from Musical DNA)
-    swing_amount: float = 0.0  # 0.0 = straight, >0 = swing odd 16ths
+    swing_amount: float = 0.0 # 0.0 = straight, >0 = swing odd 16ths
 
     enabled: bool = True
 
@@ -170,7 +170,7 @@ class PostProcessor:
         if sub is None or sub <= 0:
             return notes
 
-        grid = 4.0 / sub  # beats per grid line (e.g., 16th → 0.25)
+        grid = 4.0 / sub # beats per grid line (e.g., 16th → 0.25)
 
         for n in notes:
             quantized = round(n["start_beat"] / grid) * grid
@@ -206,14 +206,14 @@ class PostProcessor:
     def _apply_swing(self, notes: list[StorpheusNoteDict]) -> list[StorpheusNoteDict]:
         """Apply swing feel by delaying odd 16th-note positions.
 
-        ``swing_amount`` in [0, 1]:  0 = straight, 0.33 = light swing,
+        ``swing_amount`` in [0, 1]: 0 = straight, 0.33 = light swing,
         0.67 = heavy triplet swing.
         """
         amount = self.config.swing_amount
         if amount <= 0.01:
             return notes
 
-        grid_16th = 0.25  # one 16th note in beats
+        grid_16th = 0.25 # one 16th note in beats
         delay = grid_16th * amount * 0.5
 
         for n in notes:

@@ -1,7 +1,7 @@
 """Unit and integration tests for the ``muse resolve``, ``muse merge --continue``,
 ``muse merge --abort``, and conflict-aware ``muse status`` commands.
 
-All async tests use ``@pytest.mark.anyio``.  Tests exercise the testable async
+All async tests use ``@pytest.mark.anyio``. Tests exercise the testable async
 cores directly with in-memory SQLite and ``tmp_path`` so no real Postgres or
 Docker instance is required.
 """
@@ -331,7 +331,7 @@ async def test_resolve_no_merge_in_progress_exits_1(
 ) -> None:
     """Resolving when no merge is in progress exits 1."""
     _init_repo(tmp_path)
-    (tmp_path / ".muse").mkdir(exist_ok=True)  # ensure .muse exists
+    (tmp_path / ".muse").mkdir(exist_ok=True) # ensure .muse exists
 
     with pytest.raises(typer.Exit) as exc_info:
         await resolve_conflict_async(
@@ -378,7 +378,7 @@ async def test_merge_continue_creates_commit_when_clean(
         base_commit=base_commit,
         ours_commit=ours_commit,
         theirs_commit=theirs_commit,
-        conflict_paths=[],  # all resolved
+        conflict_paths=[], # all resolved
         other_branch="experiment",
     )
 
@@ -406,7 +406,7 @@ async def test_merge_continue_fails_with_remaining_conflicts(
         base_commit="base000",
         ours_commit="ours111",
         theirs_commit="their222",
-        conflict_paths=["beat.mid"],  # still has conflict
+        conflict_paths=["beat.mid"], # still has conflict
     )
 
     with pytest.raises(typer.Exit) as exc_info:
@@ -536,7 +536,7 @@ async def test_merge_abort_removes_theirs_only_file(
 def test_apply_resolution_writes_file(tmp_path: pathlib.Path) -> None:
     """apply_resolution() copies object content to muse-work/<rel_path>."""
     content = b"RESOLVED_CONTENT"
-    object_id = "a" * 64  # fake sha256 (64 hex chars)
+    object_id = "a" * 64 # fake sha256 (64 hex chars)
     write_object(tmp_path, object_id, content)
     (tmp_path / "muse-work").mkdir()
 

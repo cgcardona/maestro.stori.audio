@@ -24,21 +24,21 @@ def anyio_backend() -> str:
 
 
 @pytest.fixture()
-async def openapi_spec() -> dict:  # type: ignore[type-arg]
+async def openapi_spec() -> dict: # type: ignore[type-arg]
     """Fetch the OpenAPI spec from the running app."""
     async with AsyncClient(
         transport=ASGITransport(app=app), base_url="http://test"
     ) as client:
         response = await client.get("/api/v1/openapi.json")
     assert response.status_code == 200, f"OpenAPI spec endpoint returned {response.status_code}"
-    return response.json()  # type: ignore[no-any-return]
+    return response.json() # type: ignore[no-any-return]
 
 
 # ── Tests ─────────────────────────────────────────────────────────────────────
 
 
 @pytest.mark.anyio
-async def test_openapi_spec_valid(openapi_spec: dict) -> None:  # type: ignore[type-arg]
+async def test_openapi_spec_valid(openapi_spec: dict) -> None: # type: ignore[type-arg]
     """GET /api/v1/openapi.json returns valid JSON with openapi: '3.1.0'."""
     assert "openapi" in openapi_spec, "Spec missing 'openapi' field"
     assert openapi_spec["openapi"].startswith("3.1"), (
@@ -50,7 +50,7 @@ async def test_openapi_spec_valid(openapi_spec: dict) -> None:  # type: ignore[t
 
 
 @pytest.mark.anyio
-async def test_openapi_spec_has_title_and_version(openapi_spec: dict) -> None:  # type: ignore[type-arg]
+async def test_openapi_spec_has_title_and_version(openapi_spec: dict) -> None: # type: ignore[type-arg]
     """Spec info block contains a non-empty title and version."""
     info = openapi_spec["info"]
     assert info.get("title"), "OpenAPI info.title is empty"
@@ -58,7 +58,7 @@ async def test_openapi_spec_has_title_and_version(openapi_spec: dict) -> None:  
 
 
 @pytest.mark.anyio
-async def test_all_musehub_endpoints_in_spec(openapi_spec: dict) -> None:  # type: ignore[type-arg]
+async def test_all_musehub_endpoints_in_spec(openapi_spec: dict) -> None: # type: ignore[type-arg]
     """Core MuseHub API paths appear in the OpenAPI spec."""
     paths = openapi_spec["paths"]
     expected_path_prefixes = [
@@ -73,7 +73,7 @@ async def test_all_musehub_endpoints_in_spec(openapi_spec: dict) -> None:  # typ
 
 
 @pytest.mark.anyio
-async def test_operation_ids_unique(openapi_spec: dict) -> None:  # type: ignore[type-arg]
+async def test_operation_ids_unique(openapi_spec: dict) -> None: # type: ignore[type-arg]
     """No duplicate operationId values exist across the spec."""
     seen: set[str] = set()
     duplicates: list[str] = []
@@ -91,7 +91,7 @@ async def test_operation_ids_unique(openapi_spec: dict) -> None:  # type: ignore
 
 
 @pytest.mark.anyio
-async def test_musehub_endpoints_have_operation_ids(openapi_spec: dict) -> None:  # type: ignore[type-arg]
+async def test_musehub_endpoints_have_operation_ids(openapi_spec: dict) -> None: # type: ignore[type-arg]
     """All MuseHub API endpoints have operationId set."""
     missing: list[str] = []
 
@@ -113,7 +113,7 @@ async def test_musehub_endpoints_have_operation_ids(openapi_spec: dict) -> None:
 
 
 @pytest.mark.anyio
-async def test_key_musehub_operation_ids_exist(openapi_spec: dict) -> None:  # type: ignore[type-arg]
+async def test_key_musehub_operation_ids_exist(openapi_spec: dict) -> None: # type: ignore[type-arg]
     """Specific high-priority operationIds are present in the spec."""
     all_operation_ids: set[str] = set()
     for path_item in openapi_spec["paths"].values():
@@ -167,7 +167,7 @@ async def test_key_musehub_operation_ids_exist(openapi_spec: dict) -> None:  # t
 
 
 @pytest.mark.anyio
-async def test_openapi_spec_has_security_schemes(openapi_spec: dict) -> None:  # type: ignore[type-arg]
+async def test_openapi_spec_has_security_schemes(openapi_spec: dict) -> None: # type: ignore[type-arg]
     """Spec components contain security scheme definitions (Bearer JWT)."""
     components = openapi_spec.get("components", {})
     security_schemes = components.get("securitySchemes", {})
@@ -179,7 +179,7 @@ async def test_openapi_spec_has_security_schemes(openapi_spec: dict) -> None:  #
 
 
 @pytest.mark.anyio
-async def test_openapi_spec_info_contact(openapi_spec: dict) -> None:  # type: ignore[type-arg]
+async def test_openapi_spec_info_contact(openapi_spec: dict) -> None: # type: ignore[type-arg]
     """Spec info.contact is populated."""
     info = openapi_spec["info"]
     contact = info.get("contact", {})
@@ -190,7 +190,7 @@ async def test_openapi_spec_info_contact(openapi_spec: dict) -> None:  # type: i
 
 
 @pytest.mark.anyio
-async def test_repo_schema_has_descriptions(openapi_spec: dict) -> None:  # type: ignore[type-arg]
+async def test_repo_schema_has_descriptions(openapi_spec: dict) -> None: # type: ignore[type-arg]
     """RepoResponse schema properties have descriptions."""
     schemas = openapi_spec.get("components", {}).get("schemas", {})
     repo_schema = schemas.get("RepoResponse")
@@ -210,7 +210,7 @@ async def test_repo_schema_has_descriptions(openapi_spec: dict) -> None:  # type
 
 
 @pytest.mark.anyio
-async def test_commit_response_schema_has_descriptions(openapi_spec: dict) -> None:  # type: ignore[type-arg]
+async def test_commit_response_schema_has_descriptions(openapi_spec: dict) -> None: # type: ignore[type-arg]
     """CommitResponse schema properties have descriptions."""
     schemas = openapi_spec.get("components", {}).get("schemas", {})
     schema = schemas.get("CommitResponse")

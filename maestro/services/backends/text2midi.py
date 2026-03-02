@@ -129,7 +129,7 @@ class Text2MidiGeneratorBackend(MusicGeneratorBackend):
                 # Try to get from style
                 emotion_vector = STYLE_EMOTION_MAP.get(
                     style.lower().replace("-", "_").replace(" ", "_"),
-                    EmotionVector()  # Default neutral
+                    EmotionVector() # Default neutral
                 )
             
             # Map instrument name

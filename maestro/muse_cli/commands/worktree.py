@@ -7,24 +7,24 @@ switching branches back and forth.
 Architecture
 ------------
 Main repo (.muse/ directory):
-  .muse/worktrees/<slug>/path    — absolute path to the linked worktree directory
-  .muse/worktrees/<slug>/branch  — branch name checked out there
-  .muse/objects/                 — shared content-addressed object store
+  .muse/worktrees/<slug>/path — absolute path to the linked worktree directory
+  .muse/worktrees/<slug>/branch — branch name checked out there
+  .muse/objects/ — shared content-addressed object store
 
 Linked worktree directory:
-  .muse              — plain text file: "gitdir: <abs-path-to-main-.muse>"
-  muse-work/         — per-worktree working files (independent)
+  .muse — plain text file: "gitdir: <abs-path-to-main-.muse>"
+  muse-work/ — per-worktree working files (independent)
 
 The same-branch exclusivity constraint mirrors git: a branch can only be
-checked out in one worktree at a time.  Attempting to add a second worktree
+checked out in one worktree at a time. Attempting to add a second worktree
 on an already-checked-out branch exits with code 1.
 
 Subcommands
 -----------
-  muse worktree add <path> [branch]  — create a linked worktree
-  muse worktree remove <path>        — delete a linked worktree
-  muse worktree list                 — show all worktrees
-  muse worktree prune                — remove stale registrations
+  muse worktree add <path> [branch] — create a linked worktree
+  muse worktree remove <path> — delete a linked worktree
+  muse worktree list — show all worktrees
+  muse worktree prune — remove stale registrations
 """
 from __future__ import annotations
 
@@ -55,11 +55,11 @@ class WorktreeInfo:
     ``is_main`` is True for the primary repo directory (which owns the
     ``.muse/`` directory tree), False for linked worktrees.
 
-    ``slug`` is the sanitized key used inside ``.muse/worktrees/``.  It is
+    ``slug`` is the sanitized key used inside ``.muse/worktrees/``. It is
     the empty string for the main worktree.
 
     ``branch`` is the symbolic name of the checked-out branch (e.g.
-    ``"main"`` or ``"feature/club-mix"``).  When HEAD is detached (no branch
+    ``"main"`` or ``"feature/club-mix"``). When HEAD is detached (no branch
     ref), the value is ``"(detached)"``.
 
     ``head_commit`` is the current HEAD commit SHA for the worktree (empty
@@ -83,7 +83,7 @@ def _slugify(path: pathlib.Path) -> str:
 
     Converts the absolute path to a short ASCII slug by replacing every
     non-alphanumeric run with a single hyphen and stripping leading/trailing
-    hyphens.  Collision is extremely unlikely given unique absolute paths.
+    hyphens. Collision is extremely unlikely given unique absolute paths.
     """
     return re.sub(r"[^a-zA-Z0-9]+", "-", str(path.resolve())).strip("-")[:64]
 
@@ -133,7 +133,7 @@ def _read_head_commit(muse_dir: pathlib.Path) -> str:
 def _all_checked_out_branches(root: pathlib.Path) -> list[str]:
     """Return all branch names currently checked out across all worktrees.
 
-    Includes the main worktree plus every registered linked worktree.  Used
+    Includes the main worktree plus every registered linked worktree. Used
     to enforce the single-checkout-per-branch constraint.
     """
     muse_dir = root / ".muse"
@@ -163,7 +163,7 @@ def _all_checked_out_branches(root: pathlib.Path) -> list[str]:
 def list_worktrees(root: pathlib.Path) -> list[WorktreeInfo]:
     """Return all worktrees: main first, then linked (in registration order).
 
-    The main worktree is always first.  Linked worktrees are included even
+    The main worktree is always first. Linked worktrees are included even
     when their target directory no longer exists (``path.exists()`` may be
     False for stale entries — callers should check before accessing files).
 
@@ -239,18 +239,18 @@ def add_worktree(
     Layout of the new directory::
 
         <link_path>/
-          .muse          (plain-text file: "gitdir: <main-repo>/.muse")
-          muse-work/     (empty working directory)
+          .muse (plain-text file: "gitdir: <main-repo>/.muse")
+          muse-work/ (empty working directory)
 
     Registration in main repo::
 
-        .muse/worktrees/<slug>/path    → abs path to link_path
-        .muse/worktrees/<slug>/branch  → branch name
+        .muse/worktrees/<slug>/path → abs path to link_path
+        .muse/worktrees/<slug>/branch → branch name
 
     Args:
-        root:       Repository root (parent of ``.muse/``).
-        link_path:  Absolute path for the new linked worktree directory.
-        branch:     Branch name to check out.  Created from HEAD if absent.
+        root: Repository root (parent of ``.muse/``).
+        link_path: Absolute path for the new linked worktree directory.
+        branch: Branch name to check out. Created from HEAD if absent.
 
     Returns:
         :class:`WorktreeInfo` describing the newly created worktree.
@@ -270,7 +270,7 @@ def add_worktree(
     # Guard: path must not already exist.
     if link_path.exists():
         typer.echo(f"❌ Path already exists: {link_path}\n"
-                   "   Choose a different location for the linked worktree.")
+                   " Choose a different location for the linked worktree.")
         raise typer.Exit(code=ExitCode.USER_ERROR)
 
     # Guard: branch exclusivity.
@@ -278,7 +278,7 @@ def add_worktree(
     if branch in checked_out:
         typer.echo(
             f"❌ Branch '{branch}' is already checked out in another worktree.\n"
-            "   A branch can only be active in one worktree at a time."
+            " A branch can only be active in one worktree at a time."
         )
         raise typer.Exit(code=ExitCode.USER_ERROR)
 
@@ -325,14 +325,14 @@ def add_worktree(
 def remove_worktree(*, root: pathlib.Path, link_path: pathlib.Path) -> None:
     """Remove a linked worktree: delete its directory and de-register it.
 
-    The main worktree cannot be removed.  Only the linked worktree's own
+    The main worktree cannot be removed. Only the linked worktree's own
     directory and its registration entry are removed — the shared objects
     store and branch refs in the main repo are left intact, so the branch
     remains accessible from the main worktree.
 
     Args:
-        root:       Repository root (parent of ``.muse/``).
-        link_path:  Path to the linked worktree to remove.
+        root: Repository root (parent of ``.muse/``).
+        link_path: Path to the linked worktree to remove.
 
     Raises:
         typer.Exit(1): path is not a registered linked worktree or is the
@@ -358,7 +358,7 @@ def remove_worktree(*, root: pathlib.Path, link_path: pathlib.Path) -> None:
     if registration_dir is None:
         typer.echo(
             f"❌ '{link_path}' is not a registered linked worktree.\n"
-            "   Run 'muse worktree list' to see registered worktrees."
+            " Run 'muse worktree list' to see registered worktrees."
         )
         raise typer.Exit(code=ExitCode.USER_ERROR)
 
@@ -376,7 +376,7 @@ def prune_worktrees(*, root: pathlib.Path) -> list[str]:
     """Remove stale worktree registrations (directory no longer exists).
 
     Scans ``.muse/worktrees/`` for entries whose target path is absent and
-    removes those registration directories.  This is a local-only operation
+    removes those registration directories. This is a local-only operation
     that does not touch branch refs or the objects store.
 
     Args:
@@ -404,7 +404,7 @@ def prune_worktrees(*, root: pathlib.Path) -> list[str]:
         if not target.exists():
             pruned.append(str(target))
             _remove_tree(entry)
-            logger.info("⚠️  muse worktree prune: removed stale entry %s → %s", entry.name, target)
+            logger.info("⚠️ muse worktree prune: removed stale entry %s → %s", entry.name, target)
 
     return pruned
 
@@ -417,7 +417,7 @@ def prune_worktrees(*, root: pathlib.Path) -> list[str]:
 def _remove_tree(path: pathlib.Path) -> None:
     """Recursively remove a directory tree or a single file.
 
-    This is a pure Python implementation to avoid shelling out.  We intentionally
+    This is a pure Python implementation to avoid shelling out. We intentionally
     do not use ``shutil.rmtree`` to remain dependency-free (shutil is stdlib but
     the explicit implementation is clearer in tests and error traces).
     """
@@ -450,13 +450,13 @@ def worktree_add(
     path: str = typer.Argument(..., help="Directory to create the linked worktree in."),
     branch: str = typer.Argument(
         ...,
-        help="Branch name to check out.  Created from HEAD if it does not exist.",
+        help="Branch name to check out. Created from HEAD if it does not exist.",
     ),
 ) -> None:
     """Create a new linked worktree at PATH checked out to BRANCH.
 
     The new directory is created at PATH with an independent ``muse-work/``
-    working directory.  The shared ``.muse/objects/`` store remains in the
+    working directory. The shared ``.muse/objects/`` store remains in the
     main repository.
 
     Example::
@@ -475,7 +475,7 @@ def worktree_remove(
 ) -> None:
     """Remove a linked worktree and de-register it.
 
-    The branch ref and shared objects store are preserved.  Only the linked
+    The branch ref and shared objects store are preserved. Only the linked
     worktree directory and its registration entry are deleted.
 
     Example::
@@ -494,15 +494,15 @@ def worktree_list() -> None:
 
     Example output::
 
-        /path/to/project        [main]  branch: main          head: a1b2c3d4
-        /path/to/club-mix               branch: feature/club  head: a1b2c3d4
+        /path/to/project [main] branch: main head: a1b2c3d4
+        /path/to/club-mix branch: feature/club head: a1b2c3d4
     """
     root = require_repo()
     worktrees = list_worktrees(root)
     for wt in worktrees:
-        tag = "[main]" if wt.is_main else "      "
+        tag = "[main]" if wt.is_main else " "
         head = wt.head_commit[:8] if wt.head_commit else "(no commits)"
-        typer.echo(f"{wt.path!s:<50}  {tag}  branch: {wt.branch:<30}  head: {head}")
+        typer.echo(f"{wt.path!s:<50} {tag} branch: {wt.branch:<30} head: {head}")
 
 
 @app.command("prune")
@@ -510,7 +510,7 @@ def worktree_prune() -> None:
     """Remove stale worktree registrations (directory no longer exists).
 
     Scans ``.muse/worktrees/`` for entries whose target directory is absent
-    and removes them.  Safe to run any time — no data loss risk.
+    and removes them. Safe to run any time — no data loss risk.
 
     Example::
 
@@ -520,7 +520,7 @@ def worktree_prune() -> None:
     pruned = prune_worktrees(root=root)
     if pruned:
         for p in pruned:
-            typer.echo(f"⚠️  Pruned stale worktree: {p}")
+            typer.echo(f"⚠️ Pruned stale worktree: {p}")
         typer.echo(f"✅ Pruned {len(pruned)} stale worktree registration(s).")
     else:
         typer.echo("✅ No stale worktrees found.")

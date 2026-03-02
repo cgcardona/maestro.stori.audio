@@ -38,8 +38,8 @@ class EntityMetadata:
     """Typed metadata for tracks, regions, and buses.
 
     Wraps the raw metadata dict from the DAW with typed accessors
-    for well-known fields.  Unknown keys are preserved in ``extra``
-    for round-trip serialization.  (Named to avoid collision with
+    for well-known fields. Unknown keys are preserved in ``extra``
+    for round-trip serialization. (Named to avoid collision with
     app.contracts.json_types.EntityMetadataDict.)
     """
 
@@ -55,8 +55,8 @@ class EntityMetadata:
         """Construct an ``EntityMetadata`` from a raw camelCase dict (DAW wire format).
 
         Accepts the same shapes the DAW sends in tool-call params and project
-        context snapshots.  Unknown keys with scalar values are preserved in
-        ``extra`` for round-trip fidelity.  Returns an empty instance when
+        context snapshots. Unknown keys with scalar values are preserved in
+        ``extra`` for round-trip fidelity. Returns an empty instance when
         ``raw`` is ``None`` or empty.
         """
         if not raw:
@@ -110,7 +110,7 @@ class EntityInfo:
     """A registered DAW entity (track, region, or bus) as stored in the registry.
 
     Created by ``EntityRegistry.register_track/region/bus`` and returned by
-    all lookup methods.  The ``id`` field is the server-generated UUID that
+    all lookup methods. The ``id`` field is the server-generated UUID that
     the rest of the pipeline uses to reference this entity.
 
     Attributes:
@@ -120,12 +120,12 @@ class EntityInfo:
             ``BUS``, or ``PROJECT``.
         name: Human-readable display name (e.g. ``"Drums"``, ``"Verse Region"``).
         created_at: UTC timestamp of when this entity was registered in the store.
-        metadata: Typed metadata (beat positions, instrument, color).  See
+        metadata: Typed metadata (beat positions, instrument, color). See
             ``EntityMetadata``.
         parent_id: UUID of the parent entity, or ``None`` for top-level entities
             (e.g. a region's ``parent_id`` is its track's ``id``).
         owner_agent_id: Instrument agent ID that created this entity during an
-            Agent Teams composition, or ``None`` for user-initiated edits.  Used
+            Agent Teams composition, or ``None`` for user-initiated edits. Used
             by ``agent_manifest()`` to filter entities by owner and prevent
             cross-agent ID leakage.
     """
@@ -178,8 +178,8 @@ class EntityRegistry:
         region_id = registry.create_region("Main Pattern", parent_track_id=track_id)
         
         # Resolving references
-        resolved_id = registry.resolve_track("drums")  # Case-insensitive
-        resolved_id = registry.resolve_track("abc-123")  # Exact ID match
+        resolved_id = registry.resolve_track("drums") # Case-insensitive
+        resolved_id = registry.resolve_track("abc-123") # Exact ID match
         
         # Validation
         if registry.exists_track(some_id):
@@ -196,9 +196,9 @@ class EntityRegistry:
         self.project_id = project_id or str(uuid.uuid4())
         
         # Entity storage by type
-        self._tracks: dict[str, EntityInfo] = {}  # id -> EntityInfo
-        self._regions: dict[str, EntityInfo] = {}  # id -> EntityInfo
-        self._buses: dict[str, EntityInfo] = {}   # id -> EntityInfo
+        self._tracks: dict[str, EntityInfo] = {} # id -> EntityInfo
+        self._regions: dict[str, EntityInfo] = {} # id -> EntityInfo
+        self._buses: dict[str, EntityInfo] = {} # id -> EntityInfo
         
         # Name indexes for fast lookup (lowercase name -> id)
         self._track_names: dict[str, str] = {}
@@ -206,7 +206,7 @@ class EntityRegistry:
         self._bus_names: dict[str, str] = {}
         
         # Track → regions mapping for hierarchical lookup
-        self._track_regions: dict[str, list[str]] = {}  # track_id -> [region_ids]
+        self._track_regions: dict[str, list[str]] = {} # track_id -> [region_ids]
         
         logger.debug(f"🏗️ EntityRegistry initialized for project {self.project_id[:8]}")
     
@@ -288,7 +288,7 @@ class EntityRegistry:
 
         Idempotent: if a region already occupies the same beat range on the
         same track, the existing region ID is returned instead of creating a
-        duplicate.  This prevents collision errors when retry loops cause
+        duplicate. This prevents collision errors when retry loops cause
         duplicate region creation calls.
         """
         if parent_track_id not in self._tracks:
@@ -519,7 +519,7 @@ class EntityRegistry:
         region_ids = self._track_regions.get(track_id, [])
         if not region_ids:
             return None
-        return region_ids[-1]  # Last created
+        return region_ids[-1] # Last created
     
     # =========================================================================
     # Bulk Operations
@@ -528,7 +528,7 @@ class EntityRegistry:
     def list_tracks(self) -> list[EntityInfo]:
         """Return all registered tracks as an unordered list of ``EntityInfo``.
 
-        Order reflects insertion order (Python dict guarantee).  Returns an
+        Order reflects insertion order (Python dict guarantee). Returns an
         empty list when no tracks have been registered yet.
         """
         return list(self._tracks.values())
@@ -536,7 +536,7 @@ class EntityRegistry:
     def list_regions(self) -> list[EntityInfo]:
         """Return all registered regions as an unordered list of ``EntityInfo``.
 
-        Includes regions across all tracks.  Order reflects insertion order.
+        Includes regions across all tracks. Order reflects insertion order.
         Returns an empty list when no regions have been registered yet.
         """
         return list(self._regions.values())
@@ -544,7 +544,7 @@ class EntityRegistry:
     def list_buses(self) -> list[EntityInfo]:
         """Return all registered audio buses as an unordered list of ``EntityInfo``.
 
-        Order reflects insertion order.  Returns an empty list when no buses
+        Order reflects insertion order. Returns an empty list when no buses
         have been registered yet.
         """
         return list(self._buses.values())
@@ -557,7 +557,7 @@ class EntityRegistry:
         """Compact text manifest of entities for injection into LLM context.
 
         When ``track_id`` is given, only that track and its regions are
-        included.  When ``agent_id`` is given, only entities owned by
+        included. When ``agent_id`` is given, only entities owned by
         that agent are included — this prevents cross-agent contamination
         (e.g. Strings regions leaking into the Bass agent manifest).
         """
@@ -569,7 +569,7 @@ class EntityRegistry:
         if agent_id:
             tracks = [t for t in tracks if t.owner_agent_id == agent_id]
         if not tracks:
-            lines.append("  (no tracks yet)")
+            lines.append(" (no tracks yet)")
             return "\n".join(lines)
 
         for t in tracks:
@@ -581,7 +581,7 @@ class EntityRegistry:
                 extra = f", drumKit={drum_kit}"
             elif gm_prog is not None and gm_prog != "":
                 extra = f", gm={gm_prog}"
-            lines.append(f"  Track \"{t.name}\" → trackId='{t.id}'{extra}")
+            lines.append(f" Track \"{t.name}\" → trackId='{t.id}'{extra}")
 
             region_ids = self._track_regions.get(t.id, [])
             for rid in region_ids:
@@ -593,7 +593,7 @@ class EntityRegistry:
                 start = r.metadata.start_beat
                 dur = r.metadata.duration_beats
                 lines.append(
-                    f"    Region \"{r.name}\" → regionId='{r.id}' "
+                    f" Region \"{r.name}\" → regionId='{r.id}' "
                     f"(beat {start}–{int(start) + int(dur)})"
                 )
         return "\n".join(lines)

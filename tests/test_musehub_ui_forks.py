@@ -1,20 +1,20 @@
-"""Tests for Muse Hub fork network UI endpoint (issue #431).
+"""Tests for Muse Hub fork network UI endpoint.
 
 Covers GET /musehub/ui/{owner}/{repo_slug}/forks:
 
-- test_forks_page_returns_200                  — page renders without auth
-- test_forks_page_no_auth_required             — no JWT needed for HTML shell
-- test_forks_page_has_svg_dag_markup           — SVG DAG scaffold present in HTML
-- test_forks_page_has_legend                   — divergence colour legend present
-- test_forks_page_has_compare_button_js        — "Compare" action JS present
-- test_forks_page_has_contribute_upstream_js   — "Contribute upstream" action JS present
-- test_forks_page_json_response                — ?format=json returns ForkNetworkResponse
-- test_forks_page_json_has_root_and_total      — JSON contains root and totalForks fields
-- test_forks_page_json_children_present        — fork children appear in JSON root.children
-- test_forks_page_json_divergence_computed     — divergence_commits field is non-negative int
-- test_forks_page_unknown_repo_404             — unknown owner/slug → 404
-- test_forks_page_base_url_in_html             — HTML uses owner/slug base URL pattern
-- test_forks_page_json_empty_repo              — repo with no forks returns total_forks=0
+- test_forks_page_returns_200 — page renders without auth
+- test_forks_page_no_auth_required — no JWT needed for HTML shell
+- test_forks_page_has_svg_dag_markup — SVG DAG scaffold present in HTML
+- test_forks_page_has_legend — divergence colour legend present
+- test_forks_page_has_compare_button_js"Compare" action JS present
+- test_forks_page_has_contribute_upstream_js"Contribute upstream" action JS present
+- test_forks_page_json_response — ?format=json returns ForkNetworkResponse
+- test_forks_page_json_has_root_and_total — JSON contains root and totalForks fields
+- test_forks_page_json_children_present — fork children appear in JSON root.children
+- test_forks_page_json_divergence_computed — divergence_commits field is non-negative int
+- test_forks_page_unknown_repo_404 — unknown owner/slug → 404
+- test_forks_page_base_url_in_html — HTML uses owner/slug base URL pattern
+- test_forks_page_json_empty_repo — repo with no forks returns total_forks=0
 """
 from __future__ import annotations
 
@@ -240,8 +240,8 @@ async def test_forks_page_json_divergence_computed(
     db_session: AsyncSession,
 ) -> None:
     """divergenceCommits is a non-negative integer for each fork child."""
-    source_id  = await _make_repo(db_session)
-    fork_id    = await _make_fork(db_session, source_id, fork_owner="bob", fork_slug="bass-project")
+    source_id = await _make_repo(db_session)
+    fork_id = await _make_fork(db_session, source_id, fork_owner="bob", fork_slug="bass-project")
     # Add a commit to the fork so divergence > 0
     await _make_commit(db_session, fork_id, sha="fork-commit-001")
     response = await client.get("/musehub/ui/upstream/bass-project/forks?format=json")

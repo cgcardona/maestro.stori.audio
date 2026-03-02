@@ -1,6 +1,6 @@
 """Tests for Muse Hub pull request endpoints.
 
-Covers every acceptance criterion from issues #41, #215, and #384:
+Covers every acceptance criterion from issues #41, #215:
 - POST /musehub/repos/{repo_id}/pull-requests creates PR in open state
 - 422 when from_branch == to_branch
 - 404 when from_branch does not exist
@@ -416,7 +416,7 @@ async def test_merge_pr_requires_auth(client: AsyncClient) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Regression tests for issue #302 — author field on PR
+# Regression tests — author field on PR
 # ---------------------------------------------------------------------------
 
 
@@ -426,7 +426,7 @@ async def test_create_pr_author_in_response(
     auth_headers: dict[str, str],
     db_session: AsyncSession,
 ) -> None:
-    """POST /pull-requests response includes the author field (JWT sub) — regression for #302."""
+    """POST /pull-requests response includes the author field (JWT sub) — regression f."""
     repo_id = await _create_repo(client, auth_headers, "author-pr-repo")
     await _push_branch(db_session, repo_id, "feat/author-test")
     response = await client.post(
@@ -451,7 +451,7 @@ async def test_create_pr_author_persisted_in_list(
     auth_headers: dict[str, str],
     db_session: AsyncSession,
 ) -> None:
-    """Author field is persisted and returned in the PR list endpoint — regression for #302."""
+    """Author field is persisted and returned in the PR list endpoint — regression f."""
     repo_id = await _create_repo(client, auth_headers, "author-pr-list-repo")
     await _push_branch(db_session, repo_id, "feat/author-list-test")
     await client.post(
@@ -538,7 +538,7 @@ async def test_pr_diff_endpoint_graceful_when_no_commits(
     """Diff endpoint returns zero scores when branches have no commits (graceful degradation).
 
     When from_branch has commits but to_branch ('main') has none, compute_hub_divergence
-    raises ValueError.  The diff endpoint must catch it and return zero-score placeholders
+    raises ValueError. The diff endpoint must catch it and return zero-score placeholders
     so the PR detail page always renders.
     """
     from maestro.db.musehub_models import MusehubBranch, MusehubCommit, MusehubPullRequest
@@ -642,8 +642,7 @@ async def test_pr_merge_strategy_rebase_accepted(
 
 
 # ---------------------------------------------------------------------------
-# PR review comments — issue #216
-# ---------------------------------------------------------------------------
+# PR review comments — # ---------------------------------------------------------------------------
 
 
 @pytest.mark.anyio
@@ -910,8 +909,7 @@ def test_build_pr_diff_response_affected_sections_uses_commit_messages() -> None
 
 
 # ---------------------------------------------------------------------------
-# PR reviewer assignment endpoints — issue #415
-# ---------------------------------------------------------------------------
+# PR reviewer assignment endpoints — # ---------------------------------------------------------------------------
 
 
 @pytest.mark.anyio
@@ -966,7 +964,7 @@ async def test_request_reviewers_idempotent(
         headers=auth_headers,
     )
     assert response.status_code == 201
-    assert response.json()["total"] == 1  # still only one row
+    assert response.json()["total"] == 1 # still only one row
 
 
 @pytest.mark.anyio
@@ -1027,8 +1025,7 @@ async def test_remove_reviewer_not_found_returns_404(
 
 
 # ---------------------------------------------------------------------------
-# PR review submission endpoints — issue #415
-# ---------------------------------------------------------------------------
+# PR review submission endpoints — # ---------------------------------------------------------------------------
 
 
 @pytest.mark.anyio
@@ -1176,7 +1173,7 @@ async def test_remove_reviewer_after_submit_returns_409(
 
     The test JWT sub is the user UUID '550e8400-e29b-41d4-a716-446655440000'.
     Submitting a review via POST /reviews creates a row with that UUID as
-    reviewer_username, and state=approved.  Attempting to DELETE that reviewer
+    reviewer_username, and state=approved. Attempting to DELETE that reviewer
     must return 409 because the row is no longer pending.
     """
     test_jwt_sub = "550e8400-e29b-41d4-a716-446655440000"

@@ -26,17 +26,17 @@ ALL_SUBCOMMANDS = [
 ]
 
 # All commands in ALL_SUBCOMMANDS are now fully implemented — the stub list is
-# intentionally empty.  (checkout, remote, push, pull were once stubs but have
+# intentionally empty. (checkout, remote, push, pull were once stubs but have
 # been fully implemented in subsequent issues.)
 STUB_COMMANDS: list[str] = []
 
 # Repo-dependent commands that exit 2 outside a .muse/ repo.
-# ``commit``   requires -m so its no-repo exit-2 test lives in test_commit.py.
-# ``log``      no-repo exit-2 test lives in test_log.py.
-# ``merge``    requires a BRANCH arg — repo check tested in test_merge.py.
+# ``commit`` requires -m so its no-repo exit-2 test lives in test_commit.py.
+# ``log`` no-repo exit-2 test lives in test_log.py.
+# ``merge`` requires a BRANCH arg — repo check tested in test_merge.py.
 # ``checkout`` requires a BRANCH arg — Typer reports "Missing argument" before
-#              the repo check fires, so it is excluded from this parametrize.
-#              See test_muse_checkout_execution.py for the full checkout suite.
+# the repo check fires, so it is excluded from this parametrize.
+# See test_muse_checkout_execution.py for the full checkout suite.
 REPO_DEPENDENT_COMMANDS = [
     "status",
     "remote",

@@ -8,14 +8,14 @@ the individual object rows and the snapshot row to Postgres, and prints the
 Why this exists
 ---------------
 Porcelain commands like ``muse commit`` bundle snapshot creation with commit
-creation and branch-pointer updates.  Agents and tooling sometimes need the
+creation and branch-pointer updates. Agents and tooling sometimes need the
 snapshot object alone — e.g. to compare the current working tree against a
 reference snapshot without recording history, or to pre-hash the tree before
-deciding whether to commit.  ``muse write-tree`` exposes that primitive.
+deciding whether to commit. ``muse write-tree`` exposes that primitive.
 
 Key properties
 --------------
-- **Deterministic / idempotent**: same files → same ``snapshot_id``.  Running
+- **Deterministic / idempotent**: same files → same ``snapshot_id``. Running
   the command twice without changing any files outputs the same ID and makes
   exactly zero new DB writes (the upsert is a no-op).
 - **No commit**: the HEAD pointer and branch refs are never modified.
@@ -23,7 +23,7 @@ Key properties
   relative path starts with *PATH*, enabling per-instrument or per-section
   snapshots without committing unrelated work.
 - **Empty-tree handling**: by default the command exits 1 when ``muse-work/``
-  is absent or empty.  Pass ``--missing-ok`` to suppress the error and still
+  is absent or empty. Pass ``--missing-ok`` to suppress the error and still
   emit a valid (empty) ``snapshot_id``.
 """
 from __future__ import annotations
@@ -66,10 +66,10 @@ async def _write_tree_async(
 
     Args:
         root: Repo root directory (must contain ``muse-work/``).
-        session: Open async DB session.  The caller is responsible for
-            committing.  ``open_session()`` commits on clean exit.
+        session: Open async DB session. The caller is responsible for
+            committing. ``open_session()`` commits on clean exit.
         prefix: When set, restrict the snapshot to files whose repo-relative
-            path starts with *prefix*.  The prefix is matched against paths
+            path starts with *prefix*. The prefix is matched against paths
             of the form ``<prefix>/<rest>`` (no leading slash).
         missing_ok: When ``True``, an absent or empty ``muse-work/`` is not
             an error — the command writes an empty snapshot and exits 0.
@@ -77,7 +77,7 @@ async def _write_tree_async(
 
     Returns:
         The 64-character sha256 hex digest that uniquely identifies this
-        snapshot.  The same content always returns the same ID.
+        snapshot. The same content always returns the same ID.
 
     Raises:
         typer.Exit: With ``USER_ERROR`` (1) when ``muse-work/`` is missing or
@@ -89,9 +89,9 @@ async def _write_tree_async(
     if not workdir.exists():
         if not missing_ok:
             typer.echo(
-                "⚠️  No muse-work/ directory found. Generate some artifacts first.\n"
-                "     Tip: run the Maestro stress test to populate muse-work/.\n"
-                "     Or pass --missing-ok to allow an empty tree."
+                "⚠️ No muse-work/ directory found. Generate some artifacts first.\n"
+                " Tip: run the Maestro stress test to populate muse-work/.\n"
+                " Or pass --missing-ok to allow an empty tree."
             )
             raise typer.Exit(code=ExitCode.USER_ERROR)
         manifest: dict[str, str] = {}
@@ -112,13 +112,13 @@ async def _write_tree_async(
         if not manifest and not missing_ok:
             if prefix is not None:
                 typer.echo(
-                    f"⚠️  No files found under prefix '{prefix}' in muse-work/.\n"
-                    "     Pass --missing-ok to allow an empty snapshot."
+                    f"⚠️ No files found under prefix '{prefix}' in muse-work/.\n"
+                    " Pass --missing-ok to allow an empty snapshot."
                 )
             else:
                 typer.echo(
-                    "⚠️  muse-work/ is empty — no files to snapshot.\n"
-                    "     Pass --missing-ok to allow an empty snapshot."
+                    "⚠️ muse-work/ is empty — no files to snapshot.\n"
+                    " Pass --missing-ok to allow an empty snapshot."
                 )
             raise typer.Exit(code=ExitCode.USER_ERROR)
 
@@ -150,7 +150,7 @@ def write_tree(
         "--prefix",
         help=(
             "Only include files whose path (relative to muse-work/) starts "
-            "with this prefix.  Example: --prefix drums/ snapshots only the "
+            "with this prefix. Example: --prefix drums/ snapshots only the "
             "drums sub-directory."
         ),
     ),
@@ -159,14 +159,14 @@ def write_tree(
         "--missing-ok",
         help=(
             "Do not fail when muse-work/ is absent or empty (or when --prefix "
-            "matches no files).  The empty snapshot_id is still printed."
+            "matches no files). The empty snapshot_id is still printed."
         ),
     ),
 ) -> None:
     """Write the current muse-work/ state as a snapshot (tree) object.
 
     Hashes all files in muse-work/, persists the object and snapshot rows,
-    and prints the snapshot_id.  Does NOT create a commit or modify any
+    and prints the snapshot_id. Does NOT create a commit or modify any
     branch ref.
     """
     root = require_repo()

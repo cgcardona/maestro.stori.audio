@@ -32,7 +32,7 @@ class TestSectionDetection:
         assert len(sections) == 1
         assert sections[0]["name"] == "full"
         assert sections[0]["start_beat"] == 0.0
-        assert sections[0]["length_beats"] == 96.0  # 24 bars × 4 beats
+        assert sections[0]["length_beats"] == 96.0 # 24 bars × 4 beats
 
     def test_intro_verse_chorus_detected(self) -> None:
 
@@ -147,7 +147,7 @@ class TestPerTrackDescriptions:
 
         """Chorus drum description must convey high energy (not sparse/minimal)."""
         desc = _get_section_role_description("chorus", "drums")
-        assert desc  # non-empty
+        assert desc # non-empty
         low_energy_words = {"sparse", "minimal", "silent", "absent"}
         assert not any(w in desc.lower() for w in low_energy_words), (
             f"Chorus drum description should be energetic, got: {desc!r}"
@@ -167,7 +167,7 @@ class TestPerTrackDescriptions:
 
         """An unrecognised role name returns an empty string (no crash)."""
         desc = _get_section_role_description("verse", "theremin")
-        assert isinstance(desc, str)  # may be empty, must not raise
+        assert isinstance(desc, str) # may be empty, must not raise
 
 
 # =============================================================================
@@ -188,7 +188,7 @@ class TestSectionEdgeCases:
         prompt = "build into the drop, 16 bars"
         sections = parse_sections(prompt, bars=16, roles=ROLES)
         names = [s["name"] for s in sections]
-        assert "chorus" in names or "build" in names  # at least one detected
+        assert "chorus" in names or "build" in names # at least one detected
 
     def test_large_bar_count_preserved(self) -> None:
 
@@ -370,21 +370,21 @@ class TestFormStructureParsing:
     def test_parse_form_structure_basic(self) -> None:
 
         """_parse_form_structure extracts dash-separated section names."""
-        prompt = "Some text\nForm:\n  structure: intro-verse-chorus\n  more stuff"
+        prompt = "Some text\nForm:\n structure: intro-verse-chorus\n more stuff"
         result = _parse_form_structure(prompt)
         assert result == ["intro", "verse", "chorus"]
 
     def test_parse_form_structure_two_sections(self) -> None:
 
         """Two-section structure is parsed correctly."""
-        prompt = "MAESTRO PROMPT\nForm:\n  structure: intro-groove\n  development:"
+        prompt = "MAESTRO PROMPT\nForm:\n structure: intro-groove\n development:"
         result = _parse_form_structure(prompt)
         assert result == ["intro", "groove"]
 
     def test_parse_form_structure_nonstandard_names(self) -> None:
 
         """Non-standard names like alap-jor-gat-jhala are preserved."""
-        prompt = "Form:\n  structure: alap-jor-gat-jhala\n"
+        prompt = "Form:\n structure: alap-jor-gat-jhala\n"
         result = _parse_form_structure(prompt)
         assert result == ["alap", "jor", "gat", "jhala"]
 
@@ -398,7 +398,7 @@ class TestFormStructureParsing:
     def test_parse_form_structure_single_name(self) -> None:
 
         """Single section name is not enough for a split."""
-        prompt = "Form:\n  structure: full\n"
+        prompt = "Form:\n structure: full\n"
         result = _parse_form_structure(prompt)
         assert result is None
 
@@ -436,7 +436,7 @@ Form:
     def test_form_structure_sections_fit_within_bars(self) -> None:
 
         """Sections produced from Form.structure don't exceed total bars."""
-        prompt = "Form:\n  structure: intro-groove\n"
+        prompt = "Form:\n structure: intro-groove\n"
         sections = parse_sections(prompt, bars=8, roles=["drums"])
         total_beats = sum(s["length_beats"] for s in sections)
         assert total_beats == 32.0, f"8 bars = 32 beats, got {total_beats}"

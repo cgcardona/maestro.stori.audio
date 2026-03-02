@@ -110,7 +110,7 @@ class TestComputeTelemetry:
             notes=notes, tempo=120, instrument="Keys",
             section_name="verse", section_beats=16,
         )
-        assert t.density_score == 0.5  # 8 notes / 16 beats
+        assert t.density_score == 0.5 # 8 notes / 16 beats
 
     def test_velocity_statistics(self) -> None:
 
@@ -253,7 +253,7 @@ class TestComputeTelemetry:
             section_name="s", section_beats=4,
         )
         assert t.density_score == 0.25
-        assert t.groove_vector[8] == 1.0  # 0.5 offset → bin 8
+        assert t.groove_vector[8] == 1.0 # 0.5 offset → bin 8
 
 
 # =============================================================================

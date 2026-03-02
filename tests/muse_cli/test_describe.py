@@ -2,7 +2,7 @@
 
 All async tests call ``_describe_async`` directly with an in-memory SQLite
 session and a ``tmp_path`` repo root — no real Postgres or running process
-required.  Commits are seeded via ``_commit_async`` so the two commands
+required. Commits are seeded via ``_commit_async`` so the two commands
 are tested as an integrated pair.
 
 Coverage:
@@ -181,7 +181,7 @@ class TestDescribeResult:
             auto_tag=None,
         )
         defaults.update(kwargs)
-        return DescribeResult(**defaults)  # type: ignore[arg-type]
+        return DescribeResult(**defaults) # type: ignore[arg-type]
 
     def test_file_count_empty(self) -> None:
         r = self._make_result()
@@ -270,7 +270,7 @@ async def test_describe_head_shows_diff_from_parent(
     )
     await _make_commit(
         tmp_path, muse_cli_db_session, "update beat",
-        {"beat.mid": b"v2", "keys.mid": b"v1"}  # keys unchanged, beat modified
+        {"beat.mid": b"v2", "keys.mid": b"v1"} # keys unchanged, beat modified
     )
 
     result = await _describe_async(
@@ -471,7 +471,7 @@ async def test_describe_depth_verbose(
     # Parent shown
     assert cid1 in out
     # File status prefix
-    assert "M  " in out
+    assert "M " in out
 
 
 @pytest.mark.anyio
@@ -500,7 +500,7 @@ async def test_describe_json_output(
     )
 
     from maestro.muse_cli.commands.describe import _render_result
-    capsys.readouterr()  # discard ✅ output from _commit_async calls
+    capsys.readouterr() # discard ✅ output from _commit_async calls
     _render_result(result, as_json=True)
     out = capsys.readouterr().out
     data = json.loads(out)

@@ -1,21 +1,21 @@
 """muse transpose — apply MIDI pitch transposition as a Muse commit.
 
 Transposes all MIDI files in ``muse-work/`` by the given interval and records
-the result as a new Muse commit.  Drum channels (MIDI channel 9) are always
+the result as a new Muse commit. Drum channels (MIDI channel 9) are always
 excluded from pitch transposition because drums are unpitched.
 
 Usage
 -----
 ::
 
-    muse transpose +3                          # up 3 semitones from HEAD
-    muse transpose -5                          # down 5 semitones from HEAD
-    muse transpose up-minor3rd                 # named interval
-    muse transpose down-perfect5th --track melody  # single-track scope
-    muse transpose +2 --section chorus         # section scope (stub)
-    muse transpose +3 --dry-run                # preview without committing
-    muse transpose +3 --json                   # machine-readable result
-    muse transpose +2 <commit>                 # transpose from a named commit
+    muse transpose +3 # up 3 semitones from HEAD
+    muse transpose -5 # down 5 semitones from HEAD
+    muse transpose up-minor3rd # named interval
+    muse transpose down-perfect5th --track melody # single-track scope
+    muse transpose +2 --section chorus # section scope (stub)
+    muse transpose +3 --dry-run # preview without committing
+    muse transpose +3 --json # machine-readable result
+    muse transpose +2 <commit> # transpose from a named commit
 
 Interval syntax
 ---------------
@@ -123,15 +123,15 @@ async def _transpose_async(
     6. Return a ``TransposeResult`` and print human/JSON output.
 
     Args:
-        root:           Repository root (directory containing ``.muse/``).
-        session:        Open async DB session; committed by caller.
-        semitones:      Signed semitone offset to apply.
-        commit_ref:     Commit SHA or ref to transpose from, or ``None`` for HEAD.
-        track_filter:   Case-insensitive track name substring filter, or ``None``.
+        root: Repository root (directory containing ``.muse/``).
+        session: Open async DB session; committed by caller.
+        semitones: Signed semitone offset to apply.
+        commit_ref: Commit SHA or ref to transpose from, or ``None`` for HEAD.
+        track_filter: Case-insensitive track name substring filter, or ``None``.
         section_filter: Section name filter (stub — logged as not implemented).
-        message:        Custom commit message, or ``None`` for auto-generated.
-        dry_run:        When True, do not write files or create a commit.
-        as_json:        When True, emit JSON output instead of human text.
+        message: Custom commit message, or ``None`` for auto-generated.
+        dry_run: When True, do not write files or create a commit.
+        as_json: When True, emit JSON output instead of human text.
 
     Returns:
         ``TransposeResult`` with all fields populated.
@@ -187,7 +187,7 @@ async def _transpose_async(
 
     if not files_modified:
         typer.echo(
-            "⚠️  No MIDI files were modified. "
+            "⚠️ No MIDI files were modified. "
             "Check that muse-work/ contains .mid files and the interval is non-zero."
         )
         raise typer.Exit(code=ExitCode.USER_ERROR)
@@ -295,7 +295,7 @@ def _print_result(result: TransposeResult, *, as_json: bool) -> None:
         )
         return
 
-    prefix = "DRY RUN — " if result.dry_run else ""
+    prefix = "DRY RUN" if result.dry_run else ""
     if result.new_commit_id:
         typer.echo(
             f"✅ {prefix}[{result.new_commit_id[:8]}] Transpose {result.semitones:+d} semitones"
@@ -304,17 +304,17 @@ def _print_result(result: TransposeResult, *, as_json: bool) -> None:
         typer.echo(f"{prefix}Transpose {result.semitones:+d} semitones")
 
     if result.original_key and result.new_key:
-        typer.echo(f"   Key: {result.original_key}  →  {result.new_key}")
+        typer.echo(f" Key: {result.original_key} → {result.new_key}")
 
-    typer.echo(f"   Modified: {len(result.files_modified)} file(s)")
+    typer.echo(f" Modified: {len(result.files_modified)} file(s)")
     for f in result.files_modified:
-        typer.echo(f"     ✅ {f}")
+        typer.echo(f" ✅ {f}")
 
     if result.files_skipped:
-        typer.echo(f"   Skipped:  {len(result.files_skipped)} file(s) (non-MIDI or no pitched notes)")
+        typer.echo(f" Skipped: {len(result.files_skipped)} file(s) (non-MIDI or no pitched notes)")
 
     if result.dry_run:
-        typer.echo("   (dry-run: no files written, no commit created)")
+        typer.echo(" (dry-run: no files written, no commit created)")
 
 
 # ---------------------------------------------------------------------------
@@ -371,7 +371,7 @@ def transpose(
     """Apply MIDI pitch transposition and record it as a Muse commit.
 
     Transposes all MIDI files in ``muse-work/`` by the given interval,
-    then creates a new commit capturing the transposed snapshot.  Drum
+    then creates a new commit capturing the transposed snapshot. Drum
     channels (MIDI channel 9) are always excluded.
 
     Use ``--dry-run`` to preview what would change without committing.

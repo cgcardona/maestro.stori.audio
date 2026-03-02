@@ -27,7 +27,7 @@ import typer
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from maestro.db.database import Base
-from maestro.muse_cli import models as cli_models  # noqa: F401 — register tables
+from maestro.muse_cli import models as cli_models # noqa: F401 — register tables
 from maestro.muse_cli.errors import ExitCode
 from maestro.muse_cli.models import MuseCliCommit, MuseCliObject, MuseCliSnapshot
 from maestro.muse_cli.commands.update_ref import (
@@ -111,12 +111,12 @@ async def _insert_commit(
 
 def test_validate_ref_format_accepts_heads() -> None:
     """refs/heads/<name> must not raise."""
-    _validate_ref_format("refs/heads/main")  # no exception
+    _validate_ref_format("refs/heads/main") # no exception
 
 
 def test_validate_ref_format_accepts_tags() -> None:
     """refs/tags/<name> must not raise."""
-    _validate_ref_format("refs/tags/v1.0")  # no exception
+    _validate_ref_format("refs/tags/v1.0") # no exception
 
 
 def test_validate_ref_format_rejects_bare_name() -> None:
@@ -268,7 +268,7 @@ async def test_update_ref_cas_fails_when_current_differs(
         await _update_ref_async(
             ref="refs/heads/main",
             new_value=commit_id_v2,
-            old_value=commit_id_v1,  # expects v1, but current is v3
+            old_value=commit_id_v1, # expects v1, but current is v3
             root=repo_root,
             session=async_session,
         )
@@ -293,7 +293,7 @@ async def test_update_ref_cas_fails_when_ref_missing_and_old_value_given(
         await _update_ref_async(
             ref="refs/heads/new-branch",
             new_value=commit_id,
-            old_value="a" * 64,  # expects something, but ref is absent
+            old_value="a" * 64, # expects something, but ref is absent
             root=repo_root,
             session=async_session,
         )

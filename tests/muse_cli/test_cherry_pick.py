@@ -86,10 +86,10 @@ def test_compute_cherry_manifest_clean_apply() -> None:
     """Cherry diff applies cleanly when HEAD did not touch the same paths."""
     base = {"beat.mid": "aaa", "bass.mid": "bbb"}
     head = {"beat.mid": "aaa", "bass.mid": "bbb", "keys.mid": "kkk"}
-    cherry = {"beat.mid": "ccc", "bass.mid": "bbb"}  # cherry modified beat.mid
+    cherry = {"beat.mid": "ccc", "bass.mid": "bbb"} # cherry modified beat.mid
 
-    cherry_diff = {"beat.mid"}  # changed in cherry vs base
-    head_diff = {"keys.mid"}  # HEAD added keys.mid
+    cherry_diff = {"beat.mid"} # changed in cherry vs base
+    head_diff = {"keys.mid"} # HEAD added keys.mid
 
     result, conflicts = compute_cherry_manifest(
         base_manifest=base,
@@ -100,9 +100,9 @@ def test_compute_cherry_manifest_clean_apply() -> None:
     )
 
     assert conflicts == set()
-    assert result["beat.mid"] == "ccc"  # cherry version
-    assert result["keys.mid"] == "kkk"  # HEAD's addition preserved
-    assert result["bass.mid"] == "bbb"  # unchanged
+    assert result["beat.mid"] == "ccc" # cherry version
+    assert result["keys.mid"] == "kkk" # HEAD's addition preserved
+    assert result["bass.mid"] == "bbb" # unchanged
 
 
 def test_compute_cherry_manifest_conflict_detection() -> None:
@@ -152,9 +152,9 @@ def test_compute_cherry_manifest_cherry_deletion() -> None:
     """Cherry-pick removes a path that cherry deleted and HEAD did not touch."""
     base = {"beat.mid": "aaa", "old.mid": "old"}
     head = {"beat.mid": "aaa", "old.mid": "old"}
-    cherry = {"beat.mid": "aaa"}  # cherry deleted old.mid
+    cherry = {"beat.mid": "aaa"} # cherry deleted old.mid
 
-    cherry_diff = {"old.mid"}  # old.mid deleted in cherry
+    cherry_diff = {"old.mid"} # old.mid deleted in cherry
     head_diff: set[str] = set()
 
     result, conflicts = compute_cherry_manifest(
@@ -364,7 +364,7 @@ async def test_cherry_pick_continue_creates_commit_after_resolve(
         session=muse_cli_db_session,
     )
 
-    cherry_fake_id = "cherry" + "0" * 58  # fake 64-char hex ID
+    cherry_fake_id = "cherry" + "0" * 58 # fake 64-char hex ID
 
     # Write state with empty conflict_paths (conflicts resolved)
     write_cherry_pick_state(
@@ -470,7 +470,7 @@ async def test_cherry_pick_no_commit_does_not_create_commit(
     rows = (
         await muse_cli_db_session.execute(select(MuseCliCommit))
     ).scalars().all()
-    assert len(rows) == 2  # only A and B
+    assert len(rows) == 2 # only A and B
 
 
 @pytest.mark.anyio

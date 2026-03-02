@@ -65,7 +65,7 @@ def _format_attributes(attributes: list[MuseAttribute], *, as_json: bool) -> str
         max(col_widths[2], len("Strategy")),
     )
 
-    sep = "  "
+    sep = " "
     header = sep.join(
         label.ljust(w)
         for label, w in zip(

@@ -1,15 +1,15 @@
 """Server-side MIDI-to-JSON parser for MuseHub piano roll visualization.
 
 Converts raw MIDI file bytes into a structured note representation consumed
-by the Canvas-based piano roll renderer in the browser.  All timing is
+by the Canvas-based piano roll renderer in the browser. All timing is
 expressed in beats (quarter-note units) so the renderer remains tempo-
 agnostic — the client can choose whether to display wall-clock seconds or
 musical beats.
 
 Why this module exists:
-    MIDI files on MuseHub are stored as opaque binary objects.  The browser
+    MIDI files on MuseHub are stored as opaque binary objects. The browser
     cannot parse them natively at the precision required for a faithful piano
-    roll (sustain pedal, program changes, fine-grained velocity).  Parsing
+    roll (sustain pedal, program changes, fine-grained velocity). Parsing
     server-side also lets us normalise multi-track SMF formats (type 0/1/2)
     into a unified per-channel model before transmission.
 """
@@ -109,15 +109,15 @@ def pitch_to_name(pitch: int) -> str:
 # Core parser
 # ---------------------------------------------------------------------------
 
-_DEFAULT_TEMPO_US: int = 500_000  # 120 BPM in microseconds per quarter note
+_DEFAULT_TEMPO_US: int = 500_000 # 120 BPM in microseconds per quarter note
 
 
 def parse_midi_bytes(data: bytes) -> MidiParseResult:
     """Parse raw MIDI bytes into a structured :class:`MidiParseResult`.
 
-    Supports SMF types 0, 1, and 2.  All absolute tick offsets are converted
+    Supports SMF types 0, 1, and 2. All absolute tick offsets are converted
     to quarter-note beats using the file's ``ticks_per_beat`` resolution and
-    the first tempo event encountered.  If the file contains multiple tempo
+    the first tempo event encountered. If the file contains multiple tempo
     changes only the first is used for the overall ``tempo_bpm`` field; the
     note positions are computed against the initial tempo (accurate for the
     majority of single-tempo MIDI files common in DAW exports).

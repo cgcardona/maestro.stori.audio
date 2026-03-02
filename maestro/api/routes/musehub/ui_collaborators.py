@@ -24,18 +24,19 @@ JSON alternate
 populated from the database, suitable for agent consumption.
 
 Endpoint summary:
-  GET /musehub/ui/{owner}/{repo_slug}/settings/collaborators  — HTML (default) or JSON
+  GET /musehub/ui/{owner}/{repo_slug}/settings/collaborators — HTML (default) or JSON
 """
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 
 from fastapi import APIRouter, Depends, Query, Request
+from fastapi.templating import Jinja2Templates
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.responses import Response as StarletteResponse
 
-from maestro.api.routes.musehub._templates import templates
 from maestro.api.routes.musehub.collaborators import CollaboratorListResponse, _orm_to_response
 from maestro.api.routes.musehub.negotiate import negotiate_response
 from maestro.db import get_db
@@ -45,6 +46,11 @@ from maestro.services import musehub_repository
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/musehub/ui", tags=["musehub-ui"])
+
+_TEMPLATE_DIR = Path(__file__).parent.parent.parent.parent / "templates"
+
+# Instantiate locally rather than importing from ui.py to avoid a circular dep.
+templates = Jinja2Templates(directory=str(_TEMPLATE_DIR))
 
 
 def _base_url(owner: str, repo_slug: str) -> str:
@@ -96,12 +102,12 @@ async def collaborators_settings_page(
       - Remove button on each non-owner row (admin+ only; disabled for owner)
 
     JSON (``Accept: application/json`` or ``?format=json``): returns
-    ``CollaboratorListResponse`` with all current collaborators.  Pending
+    ``CollaboratorListResponse`` with all current collaborators. Pending
     invites are not exposed via this shortcut — use the full collaborators
     API for filtering by invite status.
 
-    Auth: the HTML shell carries no JWT server-side.  Client JS reads the
-    token from ``localStorage`` and attaches it to every API call.  If the
+    Auth: the HTML shell carries no JWT server-side. Client JS reads the
+    token from ``localStorage`` and attaches it to every API call. If the
     caller lacks admin+ permission the API returns 403; the page renders an
     inline error rather than crashing.
     """

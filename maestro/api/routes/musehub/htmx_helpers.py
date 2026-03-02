@@ -16,6 +16,7 @@ Priority order when a request arrives:
 1. HTMX partial request (HX-Request: true) + fragment_template → return fragment
 2. No HTMX header, or no fragment_template provided → return full page
 """
+
 from __future__ import annotations
 
 import json

@@ -1,7 +1,7 @@
 """Muse Arrange — arrangement map analysis for committed snapshots.
 
 Builds an *arrangement matrix* from the file manifest of a Muse commit:
-rows = instruments, columns = sections.  Each cell records whether the
+rows = instruments, columns = sections. Each cell records whether the
 instrument is active in that section and, in density mode, how many bytes
 of MIDI data it contributed (a byte-count proxy for note density).
 
@@ -12,9 +12,9 @@ Files in ``muse-work/`` that carry section metadata must follow::
 
 Examples::
 
-    intro/drums/beat.mid          → section=intro,   instrument=drums
-    chorus/strings/pad.mid        → section=chorus,  instrument=strings
-    verse/bass/line_v1.mid        → section=verse,   instrument=bass
+    intro/drums/beat.mid → section=intro, instrument=drums
+    chorus/strings/pad.mid → section=chorus, instrument=strings
+    verse/bass/line_v1.mid → section=verse, instrument=bass
 
 Files with fewer than two path components are uncategorised and excluded
 from the arrangement matrix.
@@ -22,7 +22,7 @@ from the arrangement matrix.
 **Outputs:**
 - Text (``--format text``) — Unicode block-char matrix, human-readable
 - JSON (``--format json``) — structured dict, AI-agent-consumable
-- CSV  (``--format csv``)  — spreadsheet-ready rows
+- CSV (``--format csv``) — spreadsheet-ready rows
 
 **Compare mode (``--compare commit-a commit-b``):**
 Produces an :class:`ArrangementDiff` showing which ``(section, instrument)``
@@ -81,10 +81,10 @@ def extract_section_instrument(rel_path: str) -> tuple[str, str] | None:
 
     Examples::
 
-        "intro/drums/beat.mid"     → ("intro", "drums")
-        "chorus/strings/pad.mid"   → ("chorus", "strings")
-        "bass/riff.mid"            → None  # only one directory component
-        "solo.mid"                 → None  # flat file
+        "intro/drums/beat.mid" → ("intro", "drums")
+        "chorus/strings/pad.mid" → ("chorus", "strings")
+        "bass/riff.mid" → None # only one directory component
+        "solo.mid" → None # flat file
     """
     parts = rel_path.replace("\\", "/").split("/")
     # Need at least section + instrument + filename (≥ 3 parts)
@@ -133,7 +133,7 @@ class ArrangementMatrix:
 
     Attributes:
         commit_id: The 64-char commit SHA used to build this matrix.
-        sections:  Ordered list of section names (columns).
+        sections: Ordered list of section names (columns).
         instruments: Ordered list of instrument names (rows).
         cells: Mapping ``(section, instrument) → ArrangementCell``.
     """
@@ -156,7 +156,7 @@ class ArrangementDiffCell:
     """Change status of a single cell between two commits.
 
     ``status`` is one of:
-    - ``"added"``   — active in commit-b, absent in commit-a
+    - ``"added"`` — active in commit-b, absent in commit-a
     - ``"removed"`` — active in commit-a, absent in commit-b
     - ``"unchanged"`` — same active/inactive state in both commits
     """
@@ -175,9 +175,9 @@ class ArrangementDiff:
     Attributes:
         commit_id_a: Commit SHA for the baseline (left side).
         commit_id_b: Commit SHA for the target (right side).
-        sections:    Union of section names across both matrices.
+        sections: Union of section names across both matrices.
         instruments: Union of instrument names across both matrices.
-        cells:       Mapping ``(section, instrument) → ArrangementDiffCell``.
+        cells: Mapping ``(section, instrument) → ArrangementDiffCell``.
     """
 
     commit_id_a: str
@@ -209,16 +209,16 @@ def build_arrangement_matrix(
         :func:`maestro.muse_cli.db.get_commit_snapshot_manifest`.
         Paths are relative to ``muse-work/``.
     object_sizes:
-        Optional ``{object_id: size_bytes}`` map.  When provided, each
+        Optional ``{object_id: size_bytes}`` map. When provided, each
         cell accumulates the byte sizes of its files so that
-        ``--density`` mode can report them.  Missing entries default to 0.
+        ``--density`` mode can report them. Missing entries default to 0.
 
     Returns
     -------
     ArrangementMatrix
         A matrix with sections and instruments ordered: first by the
         canonical section ordering defined in ``_SECTION_ORDER``, with any
-        unknown sections appended alphabetically.  Instruments are sorted
+        unknown sections appended alphabetically. Instruments are sorted
         alphabetically.
     """
     sizes = object_sizes or {}
@@ -286,8 +286,8 @@ def render_matrix_text(
 ) -> str:
     """Render *matrix* as a human-readable text table.
 
-    Each row is an instrument; each column is a section.  Active cells
-    show ``████``; inactive cells show ``░░░░``.  In ``density`` mode each
+    Each row is an instrument; each column is a section. Active cells
+    show ``████``; inactive cells show ``░░░░``. In ``density`` mode each
     cell shows the total byte size instead.
 
     Parameters
@@ -542,7 +542,7 @@ def render_diff_json(diff: ArrangementDiff) -> str:
 
 
 def _apply_section_filter(sections: list[str], section_filter: str | None) -> list[str]:
-    """Return the filtered section list.  ``None`` means no filter."""
+    """Return the filtered section list. ``None`` means no filter."""
     if section_filter is None:
         return sections
     normalised = _normalise_section(section_filter)
@@ -550,7 +550,7 @@ def _apply_section_filter(sections: list[str], section_filter: str | None) -> li
 
 
 def _apply_track_filter(instruments: list[str], track_filter: str | None) -> list[str]:
-    """Return the filtered instrument list.  ``None`` means no filter."""
+    """Return the filtered instrument list. ``None`` means no filter."""
     if track_filter is None:
         return instruments
     lower = track_filter.lower().strip()

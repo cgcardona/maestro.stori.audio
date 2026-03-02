@@ -119,7 +119,7 @@ async def test_merge_fast_forward_moves_pointer(
     # No new merge commit created — DB still has exactly 2 commits.
     result = await muse_cli_db_session.execute(select(MuseCliCommit))
     commits = result.scalars().all()
-    assert len(commits) == 2  # initial + experiment (no merge commit added)
+    assert len(commits) == 2 # initial + experiment (no merge commit added)
 
 
 @pytest.mark.anyio

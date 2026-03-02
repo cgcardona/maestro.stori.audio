@@ -1,25 +1,25 @@
-"""Tests for the Muse Hub blame UI page (issue #423).
+"""Tests for the Muse Hub blame UI page.
 
 Covers:
-- test_blame_page_renders                  — GET /musehub/ui/{owner}/{slug}/blame/{ref}/{path} returns 200 HTML
-- test_blame_page_no_auth_required         — page accessible without a JWT
-- test_blame_page_unknown_repo_404         — bad owner/slug returns 404
-- test_blame_page_contains_table_headers   — HTML contains blame table column headers
-- test_blame_page_contains_filter_bar      — HTML includes track/beat filter controls
-- test_blame_page_contains_breadcrumb      — breadcrumb links owner, repo_slug, ref, and filename
+- test_blame_page_renders — GET /musehub/ui/{owner}/{slug}/blame/{ref}/{path} returns 200 HTML
+- test_blame_page_no_auth_required — page accessible without a JWT
+- test_blame_page_unknown_repo_404 — bad owner/slug returns 404
+- test_blame_page_contains_table_headers — HTML contains blame table column headers
+- test_blame_page_contains_filter_bar — HTML includes track/beat filter controls
+- test_blame_page_contains_breadcrumb — breadcrumb links owner, repo_slug, ref, and filename
 - test_blame_page_contains_piano_roll_link — quick-link to the piano-roll page present
-- test_blame_page_contains_commits_link    — quick-link to the commit list present
-- test_blame_json_response                 — Accept: application/json returns BlameResponse JSON
-- test_blame_json_has_entries_key          — JSON body contains 'entries' and 'totalEntries' keys
-- test_blame_json_format_param             — ?format=json returns JSON without Accept header
-- test_blame_page_path_injected_in_js      — file path passed as JS context variable
-- test_blame_page_ref_injected_in_js       — commit ref passed as JS context variable
-- test_blame_page_api_fetch_call           — page JS calls blame API endpoint
+- test_blame_page_contains_commits_link — quick-link to the commit list present
+- test_blame_json_response — Accept: application/json returns BlameResponse JSON
+- test_blame_json_has_entries_key — JSON body contains 'entries' and 'totalEntries' keys
+- test_blame_json_format_param — ?format=json returns JSON without Accept header
+- test_blame_page_path_injected_in_js — file path passed as JS context variable
+- test_blame_page_ref_injected_in_js — commit ref passed as JS context variable
+- test_blame_page_api_fetch_call — page JS calls blame API endpoint
 - test_blame_page_filter_bar_track_options — track <select> lists standard instrument names
-- test_blame_page_pitch_name_helper        — pitchName helper renders note names in JS
-- test_blame_page_commit_sha_link          — commit SHA links to commit detail page in JS template
-- test_blame_page_velocity_bar_present     — velocity bar element present in JS template
-- test_blame_page_beat_range_column        — beat range column rendered in JS template
+- test_blame_page_pitch_name_helper — pitchName helper renders note names in JS
+- test_blame_page_commit_sha_link — commit SHA links to commit detail page in JS template
+- test_blame_page_velocity_bar_present — velocity bar element present in JS template
+- test_blame_page_beat_range_column — beat range column rendered in JS template
 """
 from __future__ import annotations
 

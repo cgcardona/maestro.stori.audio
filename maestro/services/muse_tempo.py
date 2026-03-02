@@ -99,7 +99,7 @@ def extract_bpm_from_midi(data: bytes) -> float | None:
       we return ``None`` rather than assume, so callers can distinguish
       "no event found" from "120 BPM was set explicitly").
 
-    Only the *first* tempo event is returned.  For rubato detection
+    Only the *first* tempo event is returned. For rubato detection
     (multiple tempo events) use ``detect_all_tempos_from_midi`` below.
     """
     if not data[:4] == _MIDI_HEADER:
@@ -154,7 +154,7 @@ def detect_tempo_from_snapshot(
 
     Iterates files in the manifest, reads those with a ``.mid`` or
     ``.midi`` suffix, and returns the BPM from the first tempo event
-    found across all files.  Files are processed in sorted order for
+    found across all files. Files are processed in sorted order for
     determinism.
 
     Returns ``None`` when no MIDI files are present or none contain a
@@ -189,11 +189,11 @@ def build_tempo_history(
     """Build a tempo history list from a newest-first commit chain.
 
     Each entry records the commit ID, message, effective BPM, and the
-    signed delta vs. the previous (older) commit.  The oldest commit has
+    signed delta vs. the previous (older) commit. The oldest commit has
     ``delta_bpm=None`` because it has no ancestor.
 
     *commits* must be ordered newest-first (as returned by ``_load_commits``
-    in ``commands/log.py``).  The delta is newest-relative-to-older so a
+    in ``commands/log.py``). The delta is newest-relative-to-older so a
     BPM increase shows as a positive delta.
 
     The effective BPM for each commit is the annotated ``tempo_bpm`` stored

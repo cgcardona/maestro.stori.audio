@@ -64,7 +64,7 @@ class AftertouchEvent(BaseModel):
     """MIDI aftertouch event (channel pressure or polyphonic key pressure).
 
     When ``pitch`` is ``None`` this is *channel pressure* — a single
-    pressure value applied to all notes on the channel.  When ``pitch``
+    pressure value applied to all notes on the channel. When ``pitch``
     is set this is *polyphonic key pressure* — per-note pressure.
     """
 

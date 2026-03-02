@@ -29,7 +29,7 @@ class TestNormalize:
 
     def test_lowercase_and_strip(self) -> None:
 
-        result = normalize("  SET TEMPO  ")
+        result = normalize(" SET TEMPO ")
         # "set" may or may not be stripped as filler; just ensure lowercase + stripped
         assert result == result.lower().strip()
 
@@ -43,8 +43,8 @@ class TestNormalize:
 
     def test_multiple_spaces_collapsed(self) -> None:
 
-        result = normalize("set   tempo   to   120")
-        assert "  " not in result
+        result = normalize("set tempo to 120")
+        assert " " not in result
 
 
 # ---------------------------------------------------------------------------

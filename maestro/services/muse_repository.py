@@ -1,7 +1,7 @@
 """Muse persistence adapter — single point of DB access for variation history.
 
 This module is the ONLY place that touches the variations/phrases/note_changes
-tables.  Orchestration, executor, and VariationService must never import it
+tables. Orchestration, executor, and VariationService must never import it
 or depend on it structurally — they produce/consume domain models
 (app.models.variation) and this module handles the storage translation.
 
@@ -55,7 +55,7 @@ def _parse_cc_event(raw: CCEventDict) -> CCEventDict:
     """Coerce a DB-deserialized CCEventDict to correct Python types.
 
     SQLAlchemy deserialises JSON columns as plain Python dicts; the value types
-    are whatever json.loads produced (int, float, str).  The defensive casts
+    are whatever json.loads produced (int, float, str). The defensive casts
     here handle cases where the stored value doesn't match the expected type.
     """
     def _to_int(v: object) -> int:

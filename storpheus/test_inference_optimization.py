@@ -1,5 +1,5 @@
 """
-Tests for inference optimization features added in issue #26.
+Tests for inference optimization features added.
 
 Covers:
 - GenerationTiming dataclass correctness
@@ -9,7 +9,7 @@ Covers:
 - Multi-batch optimization reduces re-generate calls
 - Timing data is included in generation response metadata
 
-These tests do NOT hit the live Gradio/HuggingFace API.  All network calls
+These tests do NOT hit the live Gradio/HuggingFace API. All network calls
 are patched with lightweight asyncio-compatible mocks.
 """
 from __future__ import annotations
@@ -77,7 +77,7 @@ def test_generation_timing_to_dict_rounds_floats() -> None:
     t = music_service.GenerationTiming()
     t.generate_elapsed_s = 1.23456789
     d = t.to_dict()
-    assert d["generate_elapsed_s"] == 1.235  # rounded to 3dp
+    assert d["generate_elapsed_s"] == 1.235 # rounded to 3dp
 
 
 # ---------------------------------------------------------------------------
@@ -128,7 +128,7 @@ def test_multi_batch_uses_unique_indices_per_generate() -> None:
     """Multi-batch sampling draws unique batch indices per generate call.
 
     Verifies the _used_batch_indices set prevents duplicate /add_batch calls
-    on the same generate result.  We test this by inspecting the set logic
+    on the same generate result. We test this by inspecting the set logic
     directly using the same list-comprehension the code uses.
     """
     used: set[int] = set()

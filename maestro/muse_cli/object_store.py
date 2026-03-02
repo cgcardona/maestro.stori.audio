@@ -1,7 +1,7 @@
 """Canonical content-addressed object store for the Muse VCS.
 
 All Muse commands that read or write blobs — ``muse commit``, ``muse read-tree``,
-``muse reset`` — go through this module exclusively.  No command may implement
+``muse reset`` — go through this module exclusively. No command may implement
 its own path logic or copy its own blobs.
 
 Layout
@@ -12,16 +12,16 @@ sharded directory layout that mirrors Git's loose-object format::
     .muse/objects/<sha2>/<sha62>
 
 where ``<sha2>`` is the first two hex characters of the SHA-256 digest and
-``<sha62>`` is the remaining 62 characters.  For example, the object with
+``<sha62>`` is the remaining 62 characters. For example, the object with
 digest ``ab1234...`` is stored at ``.muse/objects/ab/1234...``.
 
 Why sharding?
 -------------
 Music repositories accumulate objects at a far higher rate than code
 repositories: every generated take, every variation, every rendered clip is a
-new blob.  A single recording session can produce tens of thousands of objects.
+new blob. A single recording session can produce tens of thousands of objects.
 Without sharding, a flat directory exceeds filesystem limits (ext4, APFS, HFS+
-all degrade or hard-limit above ~32,000 entries per directory).  Two hex
+all degrade or hard-limit above ~32,000 entries per directory). Two hex
 characters yield 256 subdirectories — the same trade-off Git settled on after
 years of production use.
 
@@ -42,7 +42,7 @@ _OBJECTS_DIR = "objects"
 def objects_dir(repo_root: pathlib.Path) -> pathlib.Path:
     """Return the path to the local object store root directory.
 
-    The store lives at ``<repo_root>/.muse/objects/``.  Shard subdirectories
+    The store lives at ``<repo_root>/.muse/objects/``. Shard subdirectories
     are created lazily by :func:`write_object` and :func:`write_object_from_path`.
 
     Args:
@@ -93,16 +93,16 @@ def write_object(repo_root: pathlib.Path, object_id: str, content: bytes) -> boo
     """Write *content* to the local object store under *object_id*.
 
     If the object already exists (same ID = same content, content-addressed)
-    the write is skipped and ``False`` is returned.  Returns ``True`` when a
+    the write is skipped and ``False`` is returned. Returns ``True`` when a
     new object was written.
 
-    The shard directory is created on first write.  Subsequent writes for the
+    The shard directory is created on first write. Subsequent writes for the
     same ``object_id`` are no-ops — they never overwrite existing content.
 
     Args:
         repo_root: Root of the Muse repository.
         object_id: SHA-256 hex digest that identifies this object (64 chars).
-        content:   Raw bytes to persist.
+        content: Raw bytes to persist.
 
     Returns:
         ``True`` if the object was newly written, ``False`` if it already
@@ -134,7 +134,7 @@ def write_object_from_path(
     Args:
         repo_root: Root of the Muse repository.
         object_id: SHA-256 hex digest of *src*'s content (64 chars).
-        src:       Absolute path of the source file to store.
+        src: Absolute path of the source file to store.
 
     Returns:
         ``True`` if the object was newly written, ``False`` if it already
@@ -185,7 +185,7 @@ def restore_object(
     Args:
         repo_root: Root of the Muse repository.
         object_id: SHA-256 hex digest of the desired object (64 chars).
-        dest:      Absolute path to write the restored file.
+        dest: Absolute path to write the restored file.
 
     Returns:
         ``True`` on success, ``False`` if the object is not in the store.

@@ -1,0 +1,254 @@
+{% extends "base.html" %}
+
+{% block title %}
+  {% if node %}AgentCeption — {{ node.role }} ({{ node.id[:8] }}){% else %}AgentCeption — Agent Not Found{% endif %}
+{% endblock %}
+
+{% block content %}
+
+{# ── Breadcrumb ─────────────────────────────────────────────────────────── #}
+<nav class="breadcrumb" aria-label="Breadcrumb">
+  <a href="/">← Overview</a>
+  <span class="breadcrumb-sep">/</span>
+  <span class="breadcrumb-current">
+    {% if node %}{{ node.role }}{% else %}Not Found{% endif %}
+  </span>
+</nav>
+
+{% if not node %}
+{# ── 404 state ──────────────────────────────────────────────────────────── #}
+<div class="card mt-2">
+  <p class="text-danger">Agent <code>{{ agent_id }}</code> not found in the current pipeline state.</p>
+  <p class="text-muted mt-1">The agent may have completed and removed its worktree, or the ID is invalid.</p>
+</div>
+
+{% else %}
+{# ── Agent header ────────────────────────────────────────────────────────── #}
+<div class="agent-detail-header card">
+  <div class="agent-detail-title">
+    <span class="status-badge status-badge--{{ node.status.value }}" aria-label="Status">{{ node.status.value }}</span>
+    <h1 class="agent-detail-role">{{ node.role }}</h1>
+  </div>
+
+  <div class="agent-detail-meta">
+    {% if node.batch_id %}
+      <span class="meta-chip">
+        <span class="meta-label">Batch</span>
+        <code class="meta-value">{{ node.batch_id }}</code>
+      </span>
+    {% endif %}
+    {% if node.issue_number %}
+      <span class="meta-chip">
+        <span class="meta-label">Issue</span>
+        <a href="https://github.com/cgcardona/maestro/issues/{{ node.issue_number }}"
+           target="_blank" rel="noopener" class="meta-value">#{{ node.issue_number }}</a>
+      </span>
+    {% endif %}
+    {% if node.pr_number %}
+      <span class="meta-chip">
+        <span class="meta-label">PR</span>
+        <a href="https://github.com/cgcardona/maestro/pull/{{ node.pr_number }}"
+           target="_blank" rel="noopener" class="meta-value">#{{ node.pr_number }}</a>
+      </span>
+    {% endif %}
+    {% if node.branch %}
+      <span class="meta-chip">
+        <span class="meta-label">Branch</span>
+        <code class="meta-value">{{ node.branch }}</code>
+      </span>
+    {% endif %}
+    <span class="meta-chip">
+      <span class="meta-label">Messages</span>
+      <span class="meta-value">{{ node.message_count }}</span>
+    </span>
+  </div>
+
+  {# ── Quick actions ──────────────────────────────────────────────────────── #}
+  <div class="quick-actions" x-data="{ showKillModal: false }">
+    {% if node.issue_number %}
+      <a href="https://github.com/cgcardona/maestro/issues/{{ node.issue_number }}"
+         target="_blank" rel="noopener" class="btn btn-secondary">
+        View Issue on GitHub ↗
+      </a>
+    {% endif %}
+    {% if node.pr_number %}
+      <a href="https://github.com/cgcardona/maestro/pull/{{ node.pr_number }}"
+         target="_blank" rel="noopener" class="btn btn-secondary">
+        View PR on GitHub ↗
+      </a>
+    {% endif %}
+
+    {# Kill button — only shown for active agents that have a worktree slug #}
+    {% if node.worktree_path %}
+    <button class="btn btn-danger" @click="showKillModal = true">
+      Kill Agent
+    </button>
+
+    {# Confirmation modal — rendered inline so no extra fetch is needed #}
+    <div
+      class="modal-backdrop"
+      x-show="showKillModal"
+      x-cloak
+      @keydown.escape.window="showKillModal = false"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="kill-modal-title"
+    >
+      <div class="modal-box">
+        <h2 id="kill-modal-title" class="modal-title">Kill agent{% if node.issue_number %} for issue #{{ node.issue_number }}{% endif %}?</h2>
+        <p class="modal-body">
+          This removes the worktree at
+          <code>{{ node.worktree_path | replace(node.worktree_path | dirname, '…') }}</code>
+          and clears the <code>agent:wip</code> label.
+          The issue will be available for re-claim.
+        </p>
+        <div class="modal-actions">
+          <button class="btn btn-secondary" @click="showKillModal = false">Cancel</button>
+          <button
+            class="btn btn-danger"
+            hx-post="/api/control/kill/{{ node.worktree_path | basename }}"
+            hx-target="#result"
+            hx-swap="innerHTML"
+            @click="showKillModal = false"
+          >
+            Confirm Kill
+          </button>
+        </div>
+      </div>
+    </div>
+
+    {# Result area — HTMX writes the server response here after kill #}
+    <div id="result"></div>
+    {% endif %}
+  </div>
+</div>
+
+{# ── Two-column body ─────────────────────────────────────────────────────── #}
+<div class="agent-detail-columns mt-2">
+
+  {# ── Left: .agent-task table (40%) ──────────────────────────────────────── #}
+  <section class="agent-task-panel" aria-label="Agent task fields">
+    <h2 class="section-title">.agent-task</h2>
+    <div class="card">
+      <table class="task-table">
+        <tbody>
+          <tr>
+            <td class="task-key">id</td>
+            <td class="task-value"><code>{{ node.id }}</code></td>
+          </tr>
+          <tr>
+            <td class="task-key">role</td>
+            <td class="task-value">{{ node.role }}</td>
+          </tr>
+          <tr>
+            <td class="task-key">status</td>
+            <td class="task-value">
+              <span class="status-badge status-badge--{{ node.status.value }}">{{ node.status.value }}</span>
+            </td>
+          </tr>
+          {% if node.issue_number %}
+          <tr>
+            <td class="task-key">issue_number</td>
+            <td class="task-value">
+              <a href="https://github.com/cgcardona/maestro/issues/{{ node.issue_number }}"
+                 target="_blank" rel="noopener">#{{ node.issue_number }}</a>
+            </td>
+          </tr>
+          {% endif %}
+          {% if node.pr_number %}
+          <tr>
+            <td class="task-key">pr_number</td>
+            <td class="task-value">
+              <a href="https://github.com/cgcardona/maestro/pull/{{ node.pr_number }}"
+                 target="_blank" rel="noopener">#{{ node.pr_number }}</a>
+            </td>
+          </tr>
+          {% endif %}
+          {% if node.branch %}
+          <tr>
+            <td class="task-key">branch</td>
+            <td class="task-value"><code>{{ node.branch }}</code></td>
+          </tr>
+          {% endif %}
+          {% if node.batch_id %}
+          <tr>
+            <td class="task-key">batch_id</td>
+            <td class="task-value"><code>{{ node.batch_id }}</code></td>
+          </tr>
+          {% endif %}
+          {% if node.worktree_path %}
+          <tr>
+            <td class="task-key">worktree_path</td>
+            <td class="task-value task-value--path"><code>{{ node.worktree_path }}</code></td>
+          </tr>
+          {% endif %}
+          {% if node.transcript_path %}
+          <tr>
+            <td class="task-key">transcript_path</td>
+            <td class="task-value task-value--path"><code>{{ node.transcript_path }}</code></td>
+          </tr>
+          {% endif %}
+          <tr>
+            <td class="task-key">message_count</td>
+            <td class="task-value">{{ node.message_count }}</td>
+          </tr>
+          <tr>
+            <td class="task-key">children</td>
+            <td class="task-value">{{ node.children | length }}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  {# ── Right: Transcript (60%) ─────────────────────────────────────────────── #}
+  <section class="transcript-panel" aria-label="Agent transcript">
+    <h2 class="section-title">Transcript ({{ messages | length }} messages)</h2>
+
+    {% if messages %}
+    <div class="transcript-container" id="transcript">
+      {% for msg in messages %}
+      <div
+        class="message message--{{ msg.role }}"
+        x-data="{ expanded: false }"
+      >
+        <div class="message-role">{{ msg.role }}</div>
+        <div
+          class="message-body"
+          :class="expanded ? 'message-body--expanded' : 'message-body--collapsed'"
+          @click="expanded = !expanded"
+        >
+          <pre class="message-text">{{ msg.text | truncate(400, True, '…') }}</pre>
+        </div>
+        <button
+          class="message-expand-btn"
+          @click.stop="expanded = !expanded"
+          aria-label="Toggle full message"
+          x-text="expanded ? '▲ Collapse' : '▼ Expand'"
+        ></button>
+      </div>
+      {% endfor %}
+    </div>
+
+    <script>
+    // Auto-scroll to the last message on page load so users see the most recent activity.
+    document.addEventListener('DOMContentLoaded', function () {
+      const container = document.getElementById('transcript');
+      if (container) {
+        const last = container.lastElementChild;
+        if (last) last.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      }
+    });
+    </script>
+
+    {% else %}
+    <div class="card">
+      <p class="text-muted empty-state">No transcript available for this agent.</p>
+    </div>
+    {% endif %}
+  </section>
+
+</div>{# .agent-detail-columns #}
+{% endif %}{# node #}
+
+{% endblock %}

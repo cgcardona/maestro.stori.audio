@@ -34,8 +34,8 @@ class TokenType(Enum):
     CHORD = "CHORD"
     TEMPO = "TEMPO"
     PAD = "PAD"
-    BOS = "BOS"  # Beginning of sequence
-    EOS = "EOS"  # End of sequence
+    BOS = "BOS" # Beginning of sequence
+    EOS = "EOS" # End of sequence
 
 
 @dataclass
@@ -46,8 +46,8 @@ class TokenizerConfig:
     positions_per_bar: int = 16
     
     # Pitch range
-    min_pitch: int = 21  # A0
-    max_pitch: int = 108  # C8
+    min_pitch: int = 21 # A0
+    max_pitch: int = 108 # C8
     
     # Duration quantization (in positions)
     duration_bins: list[int] = field(default_factory=lambda: [1, 2, 3, 4, 6, 8, 12, 16, 24, 32])
@@ -146,7 +146,7 @@ class MidiTokenizer:
     def _quantize_duration(self, duration_beats: float, tempo: int = 120) -> int:
         """Quantize duration to nearest bin (in positions)."""
         # Convert beats to positions
-        positions = duration_beats * (self.config.positions_per_bar / 4)  # 4 beats per bar
+        positions = duration_beats * (self.config.positions_per_bar / 4) # 4 beats per bar
         
         # Find nearest bin
         best_bin = self.config.duration_bins[0]
@@ -200,7 +200,7 @@ class MidiTokenizer:
         
         # Group notes by bar
         for bar_idx in range(bars):
-            bar_start = bar_idx * 4  # 4 beats per bar
+            bar_start = bar_idx * 4 # 4 beats per bar
             bar_end = bar_start + 4
             
             # Add bar token
@@ -264,7 +264,7 @@ class MidiTokenizer:
         current_bar = -1
         current_position = 0
         current_pitch = None
-        current_duration = 4  # Default quarter note
+        current_duration = 4 # Default quarter note
         current_velocity = 80
         
         for token_id in token_ids:

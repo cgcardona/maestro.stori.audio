@@ -25,7 +25,7 @@ from sqlalchemy.pool import StaticPool
 from typer.testing import CliRunner
 
 from maestro.db.database import Base
-import maestro.muse_cli.models  # noqa: F401 — registers MuseCli* ORM models
+import maestro.muse_cli.models # noqa: F401 — registers MuseCli* ORM models
 from maestro.muse_cli.app import cli
 from maestro.muse_cli.commands.diff import (
     DynamicDiffResult,

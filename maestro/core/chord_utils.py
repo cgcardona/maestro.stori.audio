@@ -49,11 +49,11 @@ def chord_to_scale_degrees(chord_name: str, num_degrees: int = 3) -> list[int]:
     is_minor = "m" in s.lower() and s.lower().index("m") >= 1
     # root, third, fifth (and optionally seventh)
     if is_minor:
-        degrees = [0, 3, 7]  # min third, fifth
+        degrees = [0, 3, 7] # min third, fifth
     else:
-        degrees = [0, 4, 7]  # maj third, fifth
+        degrees = [0, 4, 7] # maj third, fifth
     if num_degrees >= 4:
-        degrees.append(10 if is_minor else 11)  # min7 or maj7
+        degrees.append(10 if is_minor else 11) # min7 or maj7
     return degrees[:num_degrees]
 
 

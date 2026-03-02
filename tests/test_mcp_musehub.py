@@ -1,4 +1,4 @@
-"""Tests for MuseHub MCP tools — issue #246.
+"""Tests for MuseHub MCP tools — .
 
 Covers all acceptance criteria:
   - musehub_browse_repo returns repo stats, branches, recent commits
@@ -135,7 +135,7 @@ class TestMusehubToolsRegistered:
             )
 
     def test_all_seven_tools_defined(self) -> None:
-        """Exactly the seven MuseHub tools from issue #246 are defined."""
+        """Exactly the seven MuseHub tools are defined."""
         expected = {
             "musehub_browse_repo",
             "musehub_list_branches",
@@ -171,10 +171,10 @@ class TestMusehubExecutors:
 
         assert result.ok is True
         # JSONValue union includes list[JSONValue] which rejects str keys — narrow at test boundary.
-        assert result.data["repo"]["name"] == "jazz-sessions"  # type: ignore[index, call-overload]
+        assert result.data["repo"]["name"] == "jazz-sessions" # type: ignore[index, call-overload]
         assert result.data["branch_count"] == 1
-        assert len(result.data["branches"]) == 1  # type: ignore[arg-type]
-        assert len(result.data["recent_commits"]) == 1  # type: ignore[arg-type]
+        assert len(result.data["branches"]) == 1 # type: ignore[arg-type]
+        assert len(result.data["recent_commits"]) == 1 # type: ignore[arg-type]
         assert result.data["total_commits"] == 1
 
     @pytest.mark.anyio
@@ -207,8 +207,8 @@ class TestMusehubExecutors:
         assert isinstance(branches, list)
         assert len(branches) == 1
         # JSONValue union includes list[JSONValue] which rejects str keys — narrow at test boundary.
-        assert branches[0]["name"] == "main"  # type: ignore[index, call-overload]
-        assert branches[0]["head_commit_id"] == "commit-001"  # type: ignore[index, call-overload]
+        assert branches[0]["name"] == "main" # type: ignore[index, call-overload]
+        assert branches[0]["head_commit_id"] == "commit-001" # type: ignore[index, call-overload]
 
     @pytest.mark.anyio
     async def test_mcp_list_commits_returns_paginated_list(
@@ -231,8 +231,8 @@ class TestMusehubExecutors:
         assert isinstance(commits, list)
         assert len(commits) == 1
         # JSONValue union includes list[JSONValue] which rejects str keys — narrow at test boundary.
-        assert commits[0]["message"] == "add bass track"  # type: ignore[index, call-overload]
-        assert commits[0]["author"] == "alice"  # type: ignore[index, call-overload]
+        assert commits[0]["message"] == "add bass track" # type: ignore[index, call-overload]
+        assert commits[0]["author"] == "alice" # type: ignore[index, call-overload]
 
     @pytest.mark.anyio
     async def test_mcp_list_commits_limit_clamped(
@@ -376,7 +376,7 @@ class TestMusehubExecutors:
         results = result.data["results"]
         assert isinstance(results, list)
         # JSONValue union includes list[JSONValue] which rejects str keys — narrow at test boundary.
-        assert results[0]["path"] == "tracks/bass.mid"  # type: ignore[index, call-overload]
+        assert results[0]["path"] == "tracks/bass.mid" # type: ignore[index, call-overload]
 
     @pytest.mark.anyio
     async def test_mcp_search_by_path_no_match(
@@ -415,7 +415,7 @@ class TestMusehubExecutors:
         results = result.data["results"]
         assert isinstance(results, list)
         # JSONValue union includes list[JSONValue] which rejects str keys — narrow at test boundary.
-        assert results[0]["message"] == "add bass track"  # type: ignore[index, call-overload]
+        assert results[0]["message"] == "add bass track" # type: ignore[index, call-overload]
 
     @pytest.mark.anyio
     async def test_mcp_search_invalid_mode(self, db_session: AsyncSession) -> None:
@@ -466,11 +466,11 @@ class TestMusehubExecutors:
         ctx = result.data["context"]
         assert isinstance(ctx, dict)
         # JSONValue union includes list[JSONValue] which rejects str keys — narrow at test boundary.
-        assert ctx["repo"]["name"] == "jazz-sessions"  # type: ignore[index, call-overload]
-        assert len(ctx["branches"]) == 1  # type: ignore[arg-type]
-        assert len(ctx["recent_commits"]) == 1  # type: ignore[arg-type]
-        assert ctx["artifacts"]["total_count"] == 1  # type: ignore[index, call-overload]
-        assert ctx["musical_analysis"]["key"] is None  # type: ignore[index, call-overload]
+        assert ctx["repo"]["name"] == "jazz-sessions" # type: ignore[index, call-overload]
+        assert len(ctx["branches"]) == 1 # type: ignore[arg-type]
+        assert len(ctx["recent_commits"]) == 1 # type: ignore[arg-type]
+        assert ctx["artifacts"]["total_count"] == 1 # type: ignore[index, call-overload]
+        assert ctx["musical_analysis"]["key"] is None # type: ignore[index, call-overload]
 
     @pytest.mark.anyio
     async def test_mcp_get_context_not_found(self, db_session: AsyncSession) -> None:

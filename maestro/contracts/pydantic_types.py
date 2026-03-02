@@ -5,18 +5,18 @@
 ``JSONValue`` (from ``app.contracts.json_types``) is a recursive type alias
 with string forward-references (``list["JSONValue"]``, ``dict[str, "JSONValue"]``).
 Pydantic v2 cannot resolve these implicit recursive aliases at schema generation
-time — it raises ``RecursionError``.  The fix is a *named* recursive
+time — it raises ``RecursionError``. The fix is a *named* recursive
 ``RootModel`` subclass that Pydantic resolves via ``model_rebuild()``.
 
 ## Entity catalog
 
 ``PydanticJson``
     Named recursive ``RootModel`` — use in every Pydantic ``BaseModel`` field
-    that must hold arbitrary JSON.  This is the only type that Pydantic can
+    that must hold arbitrary JSON. This is the only type that Pydantic can
     generate a valid schema for when the value is recursive.
 
 ``unwrap(v)``
-    ``PydanticJson`` → ``JSONValue``.  Pydantic→internal boundary.
+    ``PydanticJson`` → ``JSONValue``. Pydantic→internal boundary.
     Recurses into lists and dicts; no ``cast()`` needed.
 
 ``unwrap_dict(d)``
@@ -24,7 +24,7 @@ time — it raises ``RecursionError``.  The fix is a *named* recursive
     The standard conversion for Pydantic ``arguments``-style fields.
 
 ``wrap(v)``
-    ``JSONValue`` → ``PydanticJson``.  Internal→Pydantic boundary.
+    ``JSONValue`` → ``PydanticJson``. Internal→Pydantic boundary.
     Recurses into lists and dicts; the inverse of ``unwrap``.
 
 ``wrap_dict(d)``
@@ -49,8 +49,8 @@ time — it raises ``RecursionError``.  The fix is a *named* recursive
     # Inside the handler — wrap internal data before constructing the model:
     resp = MyResponse(params=wrap_dict(tool_params))
 
-**Rule:** ``PydanticJson`` stays inside Pydantic models.  ``JSONValue`` /
-``JSONObject`` stay inside internal code.  ``wrap``/``unwrap`` cross the
+**Rule:** ``PydanticJson`` stays inside Pydantic models. ``JSONValue`` /
+``JSONObject`` stay inside internal code. ``wrap``/``unwrap`` cross the
 boundary exactly once per request/response.
 """
 
@@ -68,14 +68,14 @@ class PydanticJson(RootModel[
 ]):
     """Named recursive Pydantic JSON type — the only safe recursive JSON field type.
 
-    **Why a ``RootModel``?**  ``JSONValue`` is a plain recursive type alias.
+    **Why a ``RootModel``?** ``JSONValue`` is a plain recursive type alias.
     Pydantic v2 resolves ``RootModel`` subclasses by name via ``model_rebuild()``;
     it cannot resolve implicit recursive string forward-references at schema
-    generation time.  Using ``PydanticJson`` avoids the ``RecursionError`` that
+    generation time. Using ``PydanticJson`` avoids the ``RecursionError`` that
     occurs whenever ``JSONValue`` appears in a Pydantic ``BaseModel`` field.
 
     **Usage:** Use as a Pydantic field type anywhere a Pydantic model must hold
-    arbitrary JSON.  Access the underlying Python value via ``.root``, or
+    arbitrary JSON. Access the underlying Python value via ``.root``, or
     convert to ``JSONValue`` once (at the Pydantic→internal boundary) using
     ``unwrap()`` or ``unwrap_dict()``.
 
@@ -94,7 +94,7 @@ PydanticJson.model_rebuild()
 def unwrap(v: PydanticJson) -> JSONValue:
     """Convert a single ``PydanticJson`` to a ``JSONValue``.
 
-    This is the Pydantic→internal boundary conversion.  Because ``PydanticJson``
+    This is the Pydantic→internal boundary conversion. Because ``PydanticJson``
     is a ``RootModel`` and Pydantic wraps list/dict elements as ``PydanticJson``
     instances, we must recurse to produce a plain ``JSONValue`` tree.
 
@@ -117,7 +117,7 @@ def unwrap_dict(d: dict[str, PydanticJson]) -> dict[str, JSONValue]:
     """Unwrap a ``dict[str, PydanticJson]`` to ``dict[str, JSONValue]``.
 
     The designated conversion point for Pydantic BaseModel ``arguments``-style
-    fields into internal pipeline types.  Callers receive a clean
+    fields into internal pipeline types. Callers receive a clean
     ``dict[str, JSONValue]`` with no further coercion needed.
 
     Example::
@@ -136,7 +136,7 @@ def wrap(v: JSONValue) -> PydanticJson:
     """Wrap a plain ``JSONValue`` recursively into a ``PydanticJson``.
 
     This is the internal→Pydantic boundary conversion — the exact inverse of
-    ``unwrap``.  Must recurse into lists and dicts because ``PydanticJson``
+    ``unwrap``. Must recurse into lists and dicts because ``PydanticJson``
     expects its children to also be ``PydanticJson`` instances.
 
     Use ``wrap_dict`` for the common case of converting a ``dict[str, JSONValue]``

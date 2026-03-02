@@ -1,17 +1,17 @@
 """muse arrange [<commit>] — display the arrangement map (instrument activity over sections).
 
 Shows which instruments are active in which musical sections for a given
-commit.  The arrangement is derived from the committed snapshot manifest:
+commit. The arrangement is derived from the committed snapshot manifest:
 files must follow the path convention ``<section>/<instrument>/<filename>``
 (relative to ``muse-work/``).
 
 Flags
 -----
-- ``[COMMIT]``          — target commit (default: HEAD)
-- ``--section TEXT``    — show only a specific section's instrumentation
-- ``--track TEXT``      — show only a specific instrument's section participation
-- ``--compare A B``     — diff two arrangements
-- ``--density``         — show byte-size density instead of binary active/inactive
+- ``[COMMIT]`` — target commit (default: HEAD)
+- ``--section TEXT`` — show only a specific section's instrumentation
+- ``--track TEXT`` — show only a specific instrument's section participation
+- ``--compare A B`` — diff two arrangements
+- ``--density`` — show byte-size density instead of binary active/inactive
 - ``--format text|json|csv`` — output format (default: text)
 """
 from __future__ import annotations
@@ -89,7 +89,7 @@ async def _resolve_commit_id(
     if len(commits) > 1:
         typer.echo(f"Ambiguous prefix '{prefix[:8]}' - matches {len(commits)} commits:")
         for c in commits:
-            typer.echo(f"   {c.commit_id[:8]}  {c.message[:60]}")
+            typer.echo(f" {c.commit_id[:8]} {c.message[:60]}")
         raise typer.Exit(code=ExitCode.USER_ERROR)
 
     return commits[0].commit_id
@@ -240,7 +240,7 @@ def arrange(
         if len(compare) != 2:
             typer.echo(
                 "--compare requires exactly two commit references.\n"
-                "   Use: --compare <commit-a> --compare <commit-b>"
+                " Use: --compare <commit-a> --compare <commit-b>"
             )
             raise typer.Exit(code=ExitCode.USER_ERROR)
         compare_a, compare_b = compare[0], compare[1]

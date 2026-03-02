@@ -1,15 +1,15 @@
 """Muse VCS routes — commit graph, checkout, merge, HEAD management.
 
 Production endpoints that expose Muse's version-control primitives to
-the Stori DAW.  These are the HTTP surface for the history engine built
+the Stori DAW. These are the HTTP surface for the history engine built
 in Phases 5–13.
 
 Endpoint summary:
-  POST /muse/variations     — persist a variation directly
-  POST /muse/head           — set HEAD pointer
-  GET  /muse/log            — commit DAG (MuseLogGraph)
-  POST /muse/checkout       — checkout to a variation (time travel)
-  POST /muse/merge          — three-way merge of two variations
+  POST /muse/variations — persist a variation directly
+  POST /muse/head — set HEAD pointer
+  GET /muse/log — commit DAG (MuseLogGraph)
+  POST /muse/checkout — checkout to a variation (time travel)
+  POST /muse/merge — three-way merge of two variations
 """
 
 from __future__ import annotations
@@ -109,7 +109,7 @@ class SaveVariationResponse(BaseModel):
     written to the database and the transaction committed.
 
     Attributes:
-        variation_id: UUID of the variation that was saved.  Echoes back the
+        variation_id: UUID of the variation that was saved. Echoes back the
             ID supplied in the request so the caller can correlate the response
             without re-reading the request body.
     """
@@ -126,7 +126,7 @@ class SetHeadResponse(BaseModel):
     the transaction committed.
 
     Attributes:
-        head: UUID of the variation that is now HEAD.  Echoes back the ID
+        head: UUID of the variation that is now HEAD. Echoes back the ID
             supplied in the request.
     """
 
@@ -145,13 +145,13 @@ class CheckoutExecutionStats(BaseModel):
         executed: Number of tool-call steps that were executed successfully
             during this checkout pass.
         failed: Number of tool-call steps that failed during this checkout
-            pass.  A non-zero value indicates a partial checkout — the DAW
+            pass. A non-zero value indicates a partial checkout — the DAW
             state may be inconsistent.
         plan_hash: SHA-256 content hash of the serialised checkout plan (hex
-            string).  Identical hashes guarantee identical execution plans;
+            string). Identical hashes guarantee identical execution plans;
             useful for deduplication and idempotency checks.
         events: Ordered list of SSE event payloads that were emitted during
-            execution.  Each element is a raw ``dict[str, object]`` matching
+            execution. Each element is a raw ``dict[str, object]`` matching
             the wire format of the corresponding ``MaestroEvent`` subclass.
             Included so callers can replay or inspect the execution trace
             without re-running the checkout.
@@ -185,7 +185,7 @@ class CheckoutResponse(BaseModel):
 
     Returned by ``POST /muse/checkout`` after the target variation has been
     reconstructed, its checkout plan executed against ``StateStore``, and HEAD
-    moved.  Returns 409 instead if the working tree is dirty and ``force`` is
+    moved. Returns 409 instead if the working tree is dirty and ``force`` is
     not set.
 
     Attributes:
@@ -196,7 +196,7 @@ class CheckoutResponse(BaseModel):
         execution: Plan-execution statistics and event trace for this checkout
             pass (see ``CheckoutExecutionStats``).
         head_moved: ``True`` if the HEAD pointer was successfully updated to
-            ``to_variation_id``.  ``False`` would indicate an unexpected
+            ``to_variation_id``. ``False`` would indicate an unexpected
             no-op (e.g. already at target), though in practice the endpoint
             raises on failure rather than returning ``False``.
     """
@@ -226,7 +226,7 @@ class MergeResponse(BaseModel):
 
     Returned by ``POST /muse/merge`` after the merge base is computed, the
     three-way diff is applied, the merged state is checked out via plan
-    execution, and a merge commit with two parents is created.  Returns 409
+    execution, and a merge commit with two parents is created. Returns 409
     instead if the merge has unresolvable conflicts.
 
     Attributes:
@@ -281,7 +281,7 @@ async def save_variation(
     """
     domain_phrases: list[DomainPhrase] = []
     for p_raw in req.phrases:
-        p = unwrap_dict(p_raw)  # dict[str, JSONValue] — known phrase shape
+        p = unwrap_dict(p_raw) # dict[str, JSONValue] — known phrase shape
         note_changes: list[DomainNoteChange] = []
         _raw_nc: JSONValue = p.get("note_changes", [])
         for nc in (_raw_nc if isinstance(_raw_nc, list) else []):

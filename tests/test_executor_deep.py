@@ -124,7 +124,7 @@ class TestExecutePlanVariation:
         )
         assert variation.total_changes == 0
         assert variation.phrases == []
-        assert variation.variation_id  # should still have an ID
+        assert variation.variation_id # should still have an ID
 
     @pytest.mark.anyio
     async def test_add_notes_produces_variation(self) -> None:
@@ -294,14 +294,14 @@ class TestApplyVariationPhrases:
         store = StateStore()
         result = await apply_variation_phrases(
             variation=variation,
-            accepted_phrase_ids=["p1"],  # only accept p1
+            accepted_phrase_ids=["p1"], # only accept p1
             project_state={},
             store=store,
         )
 
         assert result.success is True
         assert result.applied_phrase_ids == ["p1"]
-        assert result.notes_added == 1  # only p1's note
+        assert result.notes_added == 1 # only p1's note
 
     @pytest.mark.anyio
     async def test_unknown_phrase_id_skipped(self) -> None:
@@ -825,11 +825,11 @@ class TestParallelGeneratorDispatch:
 
             role = str(kwargs.get("instrument") or "unknown")
             in_flight.append(role)
-            await asyncio.sleep(0)  # yield so all tasks are in-flight together
+            await asyncio.sleep(0) # yield so all tasks are in-flight together
             call_order.append(role)
             in_flight.remove(role)
             return MagicMock(
-                success=False,  # success=False is fine — we just care about dispatch order
+                success=False, # success=False is fine — we just care about dispatch order
                 notes=[],
                 backend_used=MagicMock(),
                 metadata={},
@@ -1191,7 +1191,7 @@ class TestApplyVariationUpdatedRegions:
         store = MagicMock()
         store.registry.get_region.return_value = None
         store.get_region_track_id.return_value = "t1"
-        store.get_region_notes.return_value = []  # empty!
+        store.get_region_notes.return_value = [] # empty!
         store.add_notes = MagicMock()
         store.remove_notes = MagicMock()
         store.begin_transaction.return_value = MagicMock()

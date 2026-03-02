@@ -26,7 +26,7 @@ class TestProposeVariation:
         """Propose with missing fields should return validation error."""
         resp = await client.post(
             "/api/v1/variation/propose",
-            json={},  # Missing required fields
+            json={}, # Missing required fields
             headers=auth_headers,
         )
         assert resp.status_code in (200, 422)

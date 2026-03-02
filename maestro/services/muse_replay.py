@@ -145,14 +145,14 @@ async def reconstruct_head_snapshot(
     """Reconstruct a snapshot from the HEAD variation's persisted phrases.
 
     Walks the full lineage from root to HEAD and collects the cumulative
-    note state for each Muse-touched region.  For each NoteChange:
+    note state for each Muse-touched region. For each NoteChange:
 
     - ``added``: the ``after`` note is included in the result.
     - ``modified``: the ``after`` note is included.
     - ``removed``: no note is added (Muse removed it).
 
     This is a *partial* reconstruction — it only reflects notes that Muse
-    created or modified.  Notes that existed before Muse involvement are
+    created or modified. Notes that existed before Muse involvement are
     not tracked.
 
     Returns None if no HEAD exists for the project.

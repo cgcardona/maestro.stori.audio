@@ -2,7 +2,7 @@
 
 All async tests call ``_log_async`` directly with an in-memory SQLite
 session and a ``tmp_path`` repo root — no real Postgres or running process
-required.  Commits are seeded via ``_commit_async`` so the two commands
+required. Commits are seeded via ``_commit_async`` so the two commands
 are tested as an integrated pair.
 """
 from __future__ import annotations
@@ -73,7 +73,7 @@ async def test_log_shows_commits_newest_first(
     _init_muse_repo(tmp_path)
     cids = await _make_commits(tmp_path, muse_cli_db_session, ["take 1", "take 2", "take 3"])
 
-    capsys.readouterr()  # discard ✅ output from _commit_async calls
+    capsys.readouterr() # discard ✅ output from _commit_async calls
     await _log_async(
         root=tmp_path, session=muse_cli_db_session, limit=1000, graph=False
     )
@@ -119,7 +119,7 @@ async def test_log_shows_correct_parent_chain(
     first_commit_idx = out.index(cids[0])
     first_commit_block = out[first_commit_idx:]
     # The first block should not have a Parent: line before the next "commit " line
-    next_commit = first_commit_block.find("commit ", 8)  # skip the "commit <id>" itself
+    next_commit = first_commit_block.find("commit ", 8) # skip the "commit <id>" itself
     if next_commit == -1:
         block = first_commit_block
     else:
@@ -151,8 +151,8 @@ async def test_log_limit_restricts_output(
 
     assert out.count("commit ") == 2
     # Most recent two appear
-    assert cids[2] in out  # take 3
-    assert cids[1] in out  # take 2
+    assert cids[2] in out # take 3
+    assert cids[1] in out # take 2
     # Oldest excluded
     assert cids[0] not in out
 
@@ -171,7 +171,7 @@ async def test_log_shows_single_parent_line(
     """A commit with one parent shows exactly one ``Parent:`` line.
 
     Note: merge commits with two parents (``parent2_commit_id``) are
-    deferred to issue #35 (``muse merge``).  This test documents the
+    deferred to (``muse merge``). This test documents the
     current single-parent behavior.
     """
     _init_muse_repo(tmp_path)
@@ -285,9 +285,9 @@ async def test_log_head_marker_on_newest_commit(
     out = capsys.readouterr().out
 
     # Only the newest commit (cids[1]) carries the HEAD marker
-    assert f"{cids[1]}  (HEAD -> main)" in out
+    assert f"{cids[1]} (HEAD -> main)" in out
     # Older commit does NOT carry it
-    assert f"{cids[0]}  (HEAD -> main)" not in out
+    assert f"{cids[0]} (HEAD -> main)" not in out
 
 
 # ---------------------------------------------------------------------------

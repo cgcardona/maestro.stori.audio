@@ -1,17 +1,17 @@
 """Muse Hub pull request route handlers.
 
 Endpoint summary:
-  POST   /musehub/repos/{repo_id}/pull-requests                                    — open a PR
-  GET    /musehub/repos/{repo_id}/pull-requests                                    — list PRs
-  GET    /musehub/repos/{repo_id}/pull-requests/{pr_id}                            — get a PR
-  GET    /musehub/repos/{repo_id}/pull-requests/{pr_id}/diff                       — musical diff (radar data)
-  POST   /musehub/repos/{repo_id}/pull-requests/{pr_id}/merge                      — merge a PR
-  POST   /musehub/repos/{repo_id}/pull-requests/{pr_id}/comments                   — create review comment
-  GET    /musehub/repos/{repo_id}/pull-requests/{pr_id}/comments                   — list review comments (threaded)
-  POST   /musehub/repos/{repo_id}/pull-requests/{pr_id}/reviewers                  — request review from users
-  DELETE /musehub/repos/{repo_id}/pull-requests/{pr_id}/reviewers/{username}       — remove review request
-  GET    /musehub/repos/{repo_id}/pull-requests/{pr_id}/reviews                    — list reviews
-  POST   /musehub/repos/{repo_id}/pull-requests/{pr_id}/reviews                    — submit a review
+  POST /musehub/repos/{repo_id}/pull-requests — open a PR
+  GET /musehub/repos/{repo_id}/pull-requests — list PRs
+  GET /musehub/repos/{repo_id}/pull-requests/{pr_id} — get a PR
+  GET /musehub/repos/{repo_id}/pull-requests/{pr_id}/diff — musical diff (radar data)
+  POST /musehub/repos/{repo_id}/pull-requests/{pr_id}/merge — merge a PR
+  POST /musehub/repos/{repo_id}/pull-requests/{pr_id}/comments — create review comment
+  GET /musehub/repos/{repo_id}/pull-requests/{pr_id}/comments — list review comments (threaded)
+  POST /musehub/repos/{repo_id}/pull-requests/{pr_id}/reviewers — request review from users
+  DELETE /musehub/repos/{repo_id}/pull-requests/{pr_id}/reviewers/{username} — remove review request
+  GET /musehub/repos/{repo_id}/pull-requests/{pr_id}/reviews — list reviews
+  POST /musehub/repos/{repo_id}/pull-requests/{pr_id}/reviews — submit a review
 
 All endpoints require a valid JWT Bearer token (except diff which accepts anonymous reads
 of public repos, matching the same visibility rules as get_pull_request).
@@ -202,7 +202,7 @@ async def get_pull_request_diff(
     structural, and dynamic change magnitude between the two branches.
 
     This endpoint is consumed by the PR detail page to render the radar chart,
-    piano roll diff, audio A/B toggle, and dimension badges.  AI agents use it
+    piano roll diff, audio A/B toggle, and dimension badges. AI agents use it
     to reason about musical impact before approving a merge.
 
     Returns:
@@ -330,7 +330,7 @@ async def create_pr_comment(
     """Create a review comment on a PR and return the updated thread list.
 
     Comments can target the whole PR (general), a named track, a beat region,
-    or a single note event.  Replies attach via ``parent_comment_id``.
+    or a single note event. Replies attach via ``parent_comment_id``.
 
     Returns the full threaded comment list after insertion so the UI can
     refresh in a single round-trip.
@@ -419,7 +419,7 @@ async def request_pr_reviewers(
     """Add one or more users as requested reviewers on a PR.
 
     Creates a ``pending`` review row for each username that does not already
-    have one.  Existing rows (any state) are left unchanged so submitted
+    have one. Existing rows (any state) are left unchanged so submitted
     approvals are never silently reset.
 
     Returns the full updated review list for the PR.
@@ -459,7 +459,7 @@ async def remove_pr_reviewer(
 ) -> PRReviewListResponse:
     """Remove a pending review request for ``username`` from a PR.
 
-    Only ``pending`` assignments may be removed.  Submitted reviews (approved,
+    Only ``pending`` assignments may be removed. Submitted reviews (approved,
     changes_requested, dismissed) are immutable to preserve the audit trail.
 
     Returns the updated review list after deletion.
@@ -556,12 +556,12 @@ async def submit_pr_review(
     """Submit a formal review for the authenticated user.
 
     ``event`` governs the resulting review state:
-      - ``approve``          → sets state to ``approved``
-      - ``request_changes``  → sets state to ``changes_requested``
-      - ``comment``          → leaves state as ``pending`` (body-only feedback)
+      - ``approve`` → sets state to ``approved``
+      - ``request_changes`` → sets state to ``changes_requested``
+      - ``comment`` → leaves state as ``pending`` (body-only feedback)
 
     If the user already has a review row on this PR it is updated in-place;
-    otherwise a new row is created.  This allows reviewers to revise their
+    otherwise a new row is created. This allows reviewers to revise their
     verdict after seeing author responses.
 
     Returns 404 if the repo or PR is not found.

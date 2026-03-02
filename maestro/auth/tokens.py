@@ -73,7 +73,7 @@ def generate_access_code(
     Args:
         user_id: User UUID to associate with this token (required for budget tracking)
         duration_hours: Token validity in hours
-        duration_days: Token validity in days  
+        duration_days: Token validity in days 
         duration_minutes: Token validity in minutes (for testing)
         is_admin: If True, adds admin role to the token
         

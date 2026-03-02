@@ -8,7 +8,7 @@ Provides:
 
 The session factory created by ``open_session()`` reads DATABASE_URL
 from ``maestro.config.settings`` — the same env var used by the main
-FastAPI app.  Inside Docker all containers have this set; outside Docker
+FastAPI app. Inside Docker all containers have this set; outside Docker
 users need to export it before running ``muse commit``.
 """
 from __future__ import annotations
@@ -30,11 +30,11 @@ logger = logging.getLogger(__name__)
 async def open_session(url: str | None = None) -> AsyncGenerator[AsyncSession, None]:
     """Open a standalone async DB session suitable for CLI commands.
 
-    Commits on clean exit, rolls back on exception.  Disposes the engine
+    Commits on clean exit, rolls back on exception. Disposes the engine
     on exit so the process does not linger with open connections.
 
     ``url`` defaults to ``settings.database_url`` which reads the
-    ``DATABASE_URL`` env var.  Pass an explicit URL in tests.
+    ``DATABASE_URL`` env var. Pass an explicit URL in tests.
     """
     db_url = url or settings.database_url
     if not db_url:
@@ -110,7 +110,7 @@ async def get_commit_snapshot_manifest(
     """Return the file manifest for the snapshot attached to *commit_id*, or None.
 
     Fetches the :class:`MuseCliCommit` row by primary key, then loads its
-    :class:`MuseCliSnapshot` to retrieve the manifest.  Returns ``None``
+    :class:`MuseCliSnapshot` to retrieve the manifest. Returns ``None``
     when either row is missing (which should not occur in a consistent DB).
     """
     commit = await session.get(MuseCliCommit, commit_id)
@@ -243,7 +243,7 @@ async def store_pulled_commit(
 ) -> bool:
     """Persist a commit received from the Hub into local Postgres.
 
-    Idempotent — silently skips if the commit already exists.  Returns
+    Idempotent — silently skips if the commit already exists. Returns
     ``True`` if the row was newly inserted, ``False`` if it already existed.
 
     The *commit_data* dict must contain the keys defined in
@@ -313,7 +313,7 @@ async def store_pulled_object(
 ) -> bool:
     """Persist an object descriptor received from the Hub into local Postgres.
 
-    Idempotent — silently skips if the object already exists.  Returns
+    Idempotent — silently skips if the object already exists. Returns
     ``True`` if the row was newly inserted, ``False`` if it already existed.
     """
     object_id = str(object_data.get("object_id", ""))

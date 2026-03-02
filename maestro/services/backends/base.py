@@ -66,8 +66,8 @@ class GenerationMetadata(TypedDict, total=False):
     tempo: int
 
     # Neural backends — open sub-dicts kept as JSONValue-compatible
-    emotion_vector: dict[str, float]   # EmotionVector.to_dict()
-    constraints: dict[str, float]      # GenerationConstraints subset
+    emotion_vector: dict[str, float] # EmotionVector.to_dict()
+    constraints: dict[str, float] # GenerationConstraints subset
     error: str
     description: str
     temperature: float
@@ -81,21 +81,21 @@ class GenerationMetadata(TypedDict, total=False):
     candidate_idx: int
 
     # Backend provenance — which backend/section produced the result
-    source: str                 # e.g. "bass_ir", "storpheus", "text2midi"
-    coupling: str               # coupling description (bass IR: rhythm spine alignment)
-    kick_count: int             # drum kick count used for bass IR alignment
-    unified_section: str        # section key when extracted from a unified generation
-    extracted_channel: str      # instrument channel extracted from unified output
-    model: str                  # model identifier used (neural backends)
-    instrument: str             # instrument name passed to the backend
-    trace_id: str               # per-request trace ID propagated from the generation context
-    intent_hash: str            # hash of the intent vector for cache keying
-    unified_instruments: list[str]  # instrument list for unified generation
-    distinct_pitches: int       # distinct MIDI pitches in the output (drum IR)
-    repaired: bool              # True when the drum/IR output was repaired after scoring
-    hf_params: dict[str, JSONValue]  # HuggingFace inference params (huggingface_melody)
-    raw_note_count: int         # raw note count before post-processing (huggingface_melody)
-    storpheus_metadata: dict[str, JSONValue]  # raw metadata blob from Storpheus response
+    source: str # e.g. "bass_ir", "storpheus", "text2midi"
+    coupling: str # coupling description (bass IR: rhythm spine alignment)
+    kick_count: int # drum kick count used for bass IR alignment
+    unified_section: str # section key when extracted from a unified generation
+    extracted_channel: str # instrument channel extracted from unified output
+    model: str # model identifier used (neural backends)
+    instrument: str # instrument name passed to the backend
+    trace_id: str # per-request trace ID propagated from the generation context
+    intent_hash: str # hash of the intent vector for cache keying
+    unified_instruments: list[str] # instrument list for unified generation
+    distinct_pitches: int # distinct MIDI pitches in the output (drum IR)
+    repaired: bool # True when the drum/IR output was repaired after scoring
+    hf_params: dict[str, JSONValue] # HuggingFace inference params (huggingface_melody)
+    raw_note_count: int # raw note count before post-processing (huggingface_melody)
+    storpheus_metadata: dict[str, JSONValue] # raw metadata blob from Storpheus response
 
 
 @dataclass
@@ -109,7 +109,7 @@ class GenerationResult:
     - aftertouch: channel pressure and polyphonic key pressure
 
     ``metadata`` is a ``GenerationMetadata`` bag populated by the backend and
-    augmented by the critic layer.  All fields are optional; only those
+    augmented by the critic layer. All fields are optional; only those
     relevant to the generating backend are present.
     """
     success: bool

@@ -1,7 +1,7 @@
 """Muse bisect service — binary search over the commit graph for regression hunting.
 
 This service implements the state machine and commit graph traversal logic for
-``muse bisect``.  It is the music-domain analogue of ``git bisect``: given a
+``muse bisect``. It is the music-domain analogue of ``git bisect``: given a
 known-good commit and a known-bad commit, it finds the first commit that
 introduced a regression by binary searching the ancestry path.
 
@@ -65,11 +65,11 @@ class BisectState:
     """Mutable snapshot of an in-progress bisect session.
 
     Attributes:
-        good:             Commit ID of the last known-good revision.
-        bad:              Commit ID of the first known-bad revision.
-        current:          Commit ID currently checked out for testing.
-        tested:           Map from commit_id to verdict (``"good"`` or ``"bad"``).
-        pre_bisect_ref:   Symbolic ref HEAD pointed at before bisect started
+        good: Commit ID of the last known-good revision.
+        bad: Commit ID of the first known-bad revision.
+        current: Commit ID currently checked out for testing.
+        tested: Map from commit_id to verdict (``"good"`` or ``"bad"``).
+        pre_bisect_ref: Symbolic ref HEAD pointed at before bisect started
                           (e.g. ``refs/heads/main``).
         pre_bisect_commit: Commit ID HEAD resolved to before bisect started.
     """
@@ -94,10 +94,10 @@ class BisectStepResult:
     Returned by :func:`advance_bisect` after marking a commit as good or bad.
 
     Attributes:
-        culprit:    Commit ID of the first bad commit if identified, else ``None``.
+        culprit: Commit ID of the first bad commit if identified, else ``None``.
         next_commit: Commit ID to check out and test next, or ``None`` when done.
-        remaining:  Estimated number of commits still to test (0 when done).
-        message:    Human-readable summary of this step for CLI display.
+        remaining: Estimated number of commits still to test (0 when done).
+        message: Human-readable summary of this step for CLI display.
     """
 
     culprit: str | None
@@ -114,7 +114,7 @@ class BisectStepResult:
 def read_bisect_state(root: pathlib.Path) -> BisectState | None:
     """Return :class:`BisectState` if a bisect is in progress, else ``None``.
 
-    Reads ``.muse/BISECT_STATE.json``.  Returns ``None`` when no file exists
+    Reads ``.muse/BISECT_STATE.json``. Returns ``None`` when no file exists
     (no active session) or when the file cannot be parsed (treated as absent).
 
     Args:
@@ -127,7 +127,7 @@ def read_bisect_state(root: pathlib.Path) -> BisectState | None:
     try:
         raw: dict[str, object] = json.loads(state_path.read_text())
     except (json.JSONDecodeError, OSError) as exc:
-        logger.warning("⚠️  Failed to read %s: %s", _BISECT_STATE_FILENAME, exc)
+        logger.warning("⚠️ Failed to read %s: %s", _BISECT_STATE_FILENAME, exc)
         return None
 
     def _str_or_none(key: str) -> str | None:
@@ -155,7 +155,7 @@ def write_bisect_state(root: pathlib.Path, state: BisectState) -> None:
     """Persist *state* to ``.muse/BISECT_STATE.json``.
 
     Args:
-        root:  Repository root (directory containing ``.muse/``).
+        root: Repository root (directory containing ``.muse/``).
         state: Current bisect session state to persist.
     """
     state_path = root / ".muse" / _BISECT_STATE_FILENAME
@@ -196,16 +196,16 @@ async def get_commits_between(
     2. All ancestors of *bad_commit_id* (inclusive) → filtered by exclusion.
 
     Returns only commits that are ancestors of *bad* but not of *good*, sorted
-    by ``committed_at`` ascending (oldest first).  These are the commits the
+    by ``committed_at`` ascending (oldest first). These are the commits the
     bisect session needs to search through.
 
     An empty list means *good* and *bad* are the same commit or there is no
     commit between them — the culprit is *bad* itself.
 
     Args:
-        session:       Open async DB session.
+        session: Open async DB session.
         good_commit_id: Commit ID of the known-good revision.
-        bad_commit_id:  Commit ID of the known-bad revision.
+        bad_commit_id: Commit ID of the known-bad revision.
 
     Returns:
         Ordered list of :class:`MuseCliCommit` rows to bisect, oldest first.
@@ -255,7 +255,7 @@ def pick_midpoint(commits: list[MuseCliCommit]) -> MuseCliCommit | None:
     """Return the midpoint commit for binary search.
 
     Selects ``commits[(len(commits) - 1) // 2]`` — the lower-middle element
-    for even-length lists, middle for odd-length.  Returns ``None`` on empty.
+    for even-length lists, middle for odd-length. Returns ``None`` on empty.
 
     Args:
         commits: Ordered list of candidate commits (oldest first).
@@ -282,10 +282,10 @@ async def advance_bisect(
     reachable from bad that is not reachable from good).
 
     Args:
-        session:   Open async DB session.
-        root:      Repository root.
+        session: Open async DB session.
+        root: Repository root.
         commit_id: Commit being marked.
-        verdict:   Either ``"good"`` or ``"bad"``.
+        verdict: Either ``"good"`` or ``"bad"``.
 
     Returns:
         :class:`BisectStepResult` describing the outcome.
@@ -342,7 +342,7 @@ async def advance_bisect(
         )
 
     next_commit = pick_midpoint(candidates)
-    assert next_commit is not None  # candidates is non-empty
+    assert next_commit is not None # candidates is non-empty
     state.current = next_commit.commit_id
     write_bisect_state(root, state)
 

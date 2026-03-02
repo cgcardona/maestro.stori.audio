@@ -23,8 +23,8 @@ def _app_version_from_package() -> str:
 # Update this list when new versions ship; slugs must match OpenRouter IDs exactly.
 # Sorted cheapest-first by convention; the endpoint re-sorts by cost anyway.
 ALLOWED_MODEL_IDS: list[str] = [
-    "anthropic/claude-sonnet-4.6",  # Latest Claude Sonnet
-    "anthropic/claude-opus-4.6",    # Latest Claude Opus
+    "anthropic/claude-sonnet-4.6", # Latest Claude Sonnet
+    "anthropic/claude-opus-4.6", # Latest Claude Opus
     # Add new versions here as they release
 ]
 
@@ -66,7 +66,7 @@ APPROVED_MODELS: dict[str, dict[str, str | float]] = {
 # returns 0 so the frontend leaves the context-usage ring at its previous value.
 CONTEXT_WINDOW_TOKENS: dict[str, int] = {
     "anthropic/claude-sonnet-4.6": 200_000,
-    "anthropic/claude-opus-4.6":   200_000,
+    "anthropic/claude-opus-4.6": 200_000,
 }
 
 
@@ -75,7 +75,7 @@ def get_context_window_tokens(model: str) -> int:
     return CONTEXT_WINDOW_TOKENS.get(model, 0)
 
 
-# Single source of truth for default tempo (BPM).  Referenced by the executor,
+# Single source of truth for default tempo (BPM). Referenced by the executor,
 # Storpheus client, request models, and planner so they all agree.
 DEFAULT_TEMPO: int = 120
 
@@ -96,15 +96,15 @@ class Settings(BaseSettings):
     # PostgreSQL: postgresql+asyncpg://user:pass@localhost:5432/maestro
     # SQLite (dev): sqlite+aiosqlite:///./maestro.db
     database_url: str | None = None
-    db_password: str | None = None  # PostgreSQL password
+    db_password: str | None = None # PostgreSQL password
     
     # Budget Configuration
-    default_budget_cents: int = 500  # $5.00 default budget for new users
+    default_budget_cents: int = 500 # $5.00 default budget for new users
     
     # Cloud LLM Configuration (OpenRouter only)
     llm_provider: str = "openrouter"
-    llm_model: str = "anthropic/claude-sonnet-4.6"  # Default model with reasoning enabled via API parameter
-    llm_timeout: int = 120  # seconds
+    llm_model: str = "anthropic/claude-sonnet-4.6" # Default model with reasoning enabled via API parameter
+    llm_timeout: int = 120 # seconds
     llm_max_tokens: int = 4096
     
     # API Keys for Cloud Providers
@@ -116,23 +116,23 @@ class Settings(BaseSettings):
     
     # Music Generation Service Configuration
     storpheus_base_url: str = "http://localhost:10002"
-    storpheus_timeout: int = 180  # seconds — fallback max read timeout
-    storpheus_max_concurrent: int = 2  # max parallel submit+poll cycles (serializes GPU access)
-    storpheus_poll_timeout: int = 30   # seconds — long-poll timeout per /jobs/{id}/wait request
-    storpheus_poll_max_attempts: int = 10  # max polls before giving up (~5 min total)
-    storpheus_cb_threshold: int = 3   # consecutive failures before circuit breaker trips
-    storpheus_cb_cooldown: int = 120  # seconds before tripped circuit allows a probe request
-    storpheus_required: bool = True   # hard-gate: abort composition if pre-flight health check fails
-    storpheus_preserve_all_channels: bool = True   # return all generated MIDI channels (DAW handles routing)
-    storpheus_enable_beat_rescaling: bool = False   # disable beat rescaling to evaluate raw model timing
-    storpheus_max_session_tokens: int = 4096        # token cap before session rotation
-    storpheus_loops_space: str = ""                 # HF Space ID for Orpheus Loops model (e.g. "asigalov61/Orpheus-Music-Loops")
-    storpheus_use_loops_model: bool = False         # feature flag: route short requests (<=8 bars) to Loops model
-    skip_expressiveness: bool = True              # MVP: bypass post-processing until raw path is proven
-    max_concurrent_compositions_per_user: int = 2  # per-user composition concurrency limit (0 = unlimited)
+    storpheus_timeout: int = 180 # seconds — fallback max read timeout
+    storpheus_max_concurrent: int = 2 # max parallel submit+poll cycles (serializes GPU access)
+    storpheus_poll_timeout: int = 30 # seconds — long-poll timeout per /jobs/{id}/wait request
+    storpheus_poll_max_attempts: int = 10 # max polls before giving up (~5 min total)
+    storpheus_cb_threshold: int = 3 # consecutive failures before circuit breaker trips
+    storpheus_cb_cooldown: int = 120 # seconds before tripped circuit allows a probe request
+    storpheus_required: bool = True # hard-gate: abort composition if pre-flight health check fails
+    storpheus_preserve_all_channels: bool = True # return all generated MIDI channels (DAW handles routing)
+    storpheus_enable_beat_rescaling: bool = False # disable beat rescaling to evaluate raw model timing
+    storpheus_max_session_tokens: int = 4096 # token cap before session rotation
+    storpheus_loops_space: str = "" # HF Space ID for Orpheus Loops model (e.g. "asigalov61/Orpheus-Music-Loops")
+    storpheus_use_loops_model: bool = False # feature flag: route short requests (<=8 bars) to Loops model
+    skip_expressiveness: bool = True # MVP: bypass post-processing until raw path is proven
+    max_concurrent_compositions_per_user: int = 2 # per-user composition concurrency limit (0 = unlimited)
     
-    hf_api_key: str | None = None  # HuggingFace API key
-    hf_timeout: int = 120  # seconds (HF can be slow on cold starts)
+    hf_api_key: str | None = None # HuggingFace API key
+    hf_timeout: int = 120 # seconds (HF can be slow on cold starts)
     
     # Maestro Service Configuration
     maestro_host: str = "0.0.0.0"
@@ -143,17 +143,17 @@ class Settings(BaseSettings):
     llm_top_p: float = 0.95
 
     # Orchestration (EDITING loop and tool-calling)
-    orchestration_max_iterations: int = 5   # Max LLM turns per request in EDITING (non-composition)
-    composition_max_iterations: int = 20    # Higher iteration limit for composition (1-2 tools per turn with reasoning models)
-    orchestration_temperature: float = 0.1   # Low temp for deterministic tool selection
-    composition_max_tokens: int = 32768      # Higher token budget for GENERATE_MUSIC in EDITING mode
-    composition_reasoning_fraction: float = 0.08  # Keep reasoning tight for tool-calling; ~2,600 tokens on 32K budget
-    agent_reasoning_fraction: float = 0.05        # Minimal reasoning — agents execute a fixed pipeline; Storpheus handles musical decisions
+    orchestration_max_iterations: int = 5 # Max LLM turns per request in EDITING (non-composition)
+    composition_max_iterations: int = 20 # Higher iteration limit for composition (1-2 tools per turn with reasoning models)
+    orchestration_temperature: float = 0.1 # Low temp for deterministic tool selection
+    composition_max_tokens: int = 32768 # Higher token budget for GENERATE_MUSIC in EDITING mode
+    composition_reasoning_fraction: float = 0.08 # Keep reasoning tight for tool-calling; ~2,600 tokens on 32K budget
+    agent_reasoning_fraction: float = 0.05 # Minimal reasoning — agents execute a fixed pipeline; Storpheus handles musical decisions
 
     # Agent watchdog timeouts (seconds) — prevents orphaned subagents
-    section_child_timeout: int = 300     # 5 min per section child (region + generate + optional refinement)
-    instrument_agent_timeout: int = 600  # 10 min per instrument agent (LLM + all sections + effect)
-    bass_signal_wait_timeout: int = 240  # 4 min waiting for drum section signal before giving up
+    section_child_timeout: int = 300 # 5 min per section child (region + generate + optional refinement)
+    instrument_agent_timeout: int = 600 # 10 min per instrument agent (LLM + all sections + effect)
+    bass_signal_wait_timeout: int = 240 # 4 min waiting for drum section signal before giving up
     
     # CORS Settings (fail closed: no default origins)
     # set CORS_ORIGINS (JSON array) in .env. Local dev: ["http://localhost:5173", "stori://"].
@@ -180,10 +180,10 @@ class Settings(BaseSettings):
     # AWS S3 Asset Delivery (drum kits, GM soundfont)
     # Region MUST match the bucket's region (S3 returns 301 if URL uses wrong region).
     # Override with AWS_REGION if your bucket is in a different region.
-    aws_region: str = "eu-west-1"  # stori-assets bucket region; set AWS_REGION if different
-    aws_s3_asset_bucket: str | None = None  # e.g. stori-assets
-    aws_cloudfront_domain: str | None = None  # e.g. assets.example.com (optional)
-    presign_expiry_seconds: int = 1800  # 30 min default for presigned download URLs (leaked URLs die faster)
+    aws_region: str = "eu-west-1" # stori-assets bucket region; set AWS_REGION if different
+    aws_s3_asset_bucket: str | None = None # e.g. stori-assets
+    aws_cloudfront_domain: str | None = None # e.g. assets.example.com (optional)
+    presign_expiry_seconds: int = 1800 # 30 min default for presigned download URLs (leaked URLs die faster)
     
     # Asset endpoint rate limits (UUID-only auth, no JWT)
     # Per device (X-Device-ID) and per IP to prevent abuse
@@ -192,8 +192,8 @@ class Settings(BaseSettings):
 
     # Stdio MCP server: proxy DAW tools to Maestro backend (so Cursor sees the same DAW as the app)
     # When set, stdio server forwards DAW tool calls to this URL with the token; backend has the WebSocket.
-    maestro_mcp_url: str | None = None  # e.g. http://localhost:10001
-    mcp_token: str | None = None  # JWT for Authorization: Bearer when proxying
+    maestro_mcp_url: str | None = None # e.g. http://localhost:10001
+    mcp_token: str | None = None # JWT for Authorization: Bearer when proxying
 
     # Muse Hub object storage — binary artifacts (MIDI, MP3, WebP) written here as
     # flat files under <musehub_objects_dir>/<repo_id>/<object_id>.
@@ -202,7 +202,7 @@ class Settings(BaseSettings):
 
     # Webhook secret encryption key — AES-256 (Fernet) key for encrypting webhook signing
     # secrets at rest in musehub_webhooks.secret. Generate with:
-    #   python3 -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+    # python3 -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
     # Must be set in production. Defaults to None; when unset, secrets are stored as-is
     # (acceptable for local dev with no real webhook consumers).
     webhook_secret_key: str | None = None

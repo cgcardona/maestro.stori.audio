@@ -2,11 +2,11 @@
 
 Compares two commits across five orthogonal musical dimensions:
 
-- **harmonic**   — key, mode, chord progression, tension profile
-- **rhythmic**   — tempo, meter, swing factor, groove tightness
-- **melodic**    — motifs, melodic contour, pitch range
+- **harmonic** — key, mode, chord progression, tension profile
+- **rhythmic** — tempo, meter, swing factor, groove tightness
+- **melodic** — motifs, melodic contour, pitch range
 - **structural** — arrangement form, sections, instrumentation
-- **dynamic**    — overall volume arc, per-track loudness envelope
+- **dynamic** — overall volume arc, per-track loudness envelope
 
 Each dimension produces a focused, human-readable diff (or structured JSON).
 ``--all`` runs every dimension simultaneously and combines the results into a
@@ -14,15 +14,15 @@ single musical change report.
 
 Flags
 -----
-COMMIT_A TEXT  Earlier commit ref (default: HEAD~1).
-COMMIT_B TEXT  Later commit ref (default: HEAD).
---harmonic     Compare harmonic content between commits.
---rhythmic     Compare rhythmic content between commits.
---melodic      Compare melodic content between commits.
---structural   Compare arrangement/form between commits.
---dynamic      Compare dynamic profiles between commits.
---all          Run all dimension analyses and produce a combined report.
---json         Emit structured JSON for each dimension instead of text.
+COMMIT_A TEXT Earlier commit ref (default: HEAD~1).
+COMMIT_B TEXT Later commit ref (default: HEAD).
+--harmonic Compare harmonic content between commits.
+--rhythmic Compare rhythmic content between commits.
+--melodic Compare melodic content between commits.
+--structural Compare arrangement/form between commits.
+--dynamic Compare dynamic profiles between commits.
+--all Run all dimension analyses and produce a combined report.
+--json Emit structured JSON for each dimension instead of text.
 """
 from __future__ import annotations
 
@@ -381,14 +381,14 @@ def _render_harmonic(result: HarmonicDiffResult) -> str:
     lines = [
         f"Harmonic diff: {result['commit_a']} -> {result['commit_b']}",
         "",
-        f"Key:           {result['key_a']} -> {result['key_b']}",
-        f"Mode:          {result['mode_a']} -> {result['mode_b']}",
-        f"Chord prog:    {result['chord_prog_a']} -> {result['chord_prog_b']}",
+        f"Key: {result['key_a']} -> {result['key_b']}",
+        f"Mode: {result['mode_a']} -> {result['mode_b']}",
+        f"Chord prog: {result['chord_prog_a']} -> {result['chord_prog_b']}",
         (
-            f"Tension:       {result['tension_label_a']} ({result['tension_a']}) "
+            f"Tension: {result['tension_label_a']} ({result['tension_a']}) "
             f"-> {result['tension_label_b']} ({result['tension_b']})"
         ),
-        f"Summary:       {result['summary']}",
+        f"Summary: {result['summary']}",
     ]
     if not result["changed"]:
         lines.append("Unchanged")
@@ -402,11 +402,11 @@ def _render_rhythmic(result: RhythmicDiffResult) -> str:
     lines = [
         f"Rhythmic diff: {result['commit_a']} -> {result['commit_b']}",
         "",
-        f"Tempo:         {result['tempo_a']} BPM -> {result['tempo_b']} BPM ({tempo_sign}{tempo_delta:.1f} BPM)",
-        f"Meter:         {result['meter_a']} -> {result['meter_b']}",
-        f"Swing:         {result['swing_label_a']} ({result['swing_a']}) -> {result['swing_label_b']} ({result['swing_b']})",
-        f"Groove drift:  {result['groove_drift_ms_a']}ms -> {result['groove_drift_ms_b']}ms",
-        f"Summary:       {result['summary']}",
+        f"Tempo: {result['tempo_a']} BPM -> {result['tempo_b']} BPM ({tempo_sign}{tempo_delta:.1f} BPM)",
+        f"Meter: {result['meter_a']} -> {result['meter_b']}",
+        f"Swing: {result['swing_label_a']} ({result['swing_a']}) -> {result['swing_label_b']} ({result['swing_b']})",
+        f"Groove drift: {result['groove_drift_ms_a']}ms -> {result['groove_drift_ms_b']}ms",
+        f"Summary: {result['summary']}",
     ]
     if not result["changed"]:
         lines.append("Unchanged")
@@ -421,10 +421,10 @@ def _render_melodic(result: MelodicDiffResult) -> str:
         f"Melodic diff: {result['commit_a']} -> {result['commit_b']}",
         "",
         f"Motifs introduced: {introduced}",
-        f"Motifs removed:    {removed}",
-        f"Contour:           {result['contour_a']} -> {result['contour_b']}",
-        f"Pitch range:       {result['range_low_a']}-{result['range_high_a']} MIDI -> {result['range_low_b']}-{result['range_high_b']} MIDI",
-        f"Summary:           {result['summary']}",
+        f"Motifs removed: {removed}",
+        f"Contour: {result['contour_a']} -> {result['contour_b']}",
+        f"Pitch range: {result['range_low_a']}-{result['range_high_a']} MIDI -> {result['range_low_b']}-{result['range_high_b']} MIDI",
+        f"Summary: {result['summary']}",
     ]
     if not result["changed"]:
         lines.append("Unchanged")
@@ -440,12 +440,12 @@ def _render_structural(result: StructuralDiffResult) -> str:
     lines = [
         f"Structural diff: {result['commit_a']} -> {result['commit_b']}",
         "",
-        f"Sections added:      {s_added}",
-        f"Sections removed:    {s_removed}",
-        f"Instruments added:   {i_added}",
+        f"Sections added: {s_added}",
+        f"Sections removed: {s_removed}",
+        f"Instruments added: {i_added}",
         f"Instruments removed: {i_removed}",
-        f"Form:                {result['form_a']} -> {result['form_b']}",
-        f"Summary:             {result['summary']}",
+        f"Form: {result['form_a']} -> {result['form_b']}",
+        f"Summary: {result['summary']}",
     ]
     if not result["changed"]:
         lines.append("Unchanged")
@@ -462,12 +462,12 @@ def _render_dynamic(result: DynamicDiffResult) -> str:
     lines = [
         f"Dynamic diff: {result['commit_a']} -> {result['commit_b']}",
         "",
-        f"Avg velocity:  {result['avg_velocity_a']} -> {result['avg_velocity_b']} ({vel_sign}{vel_delta})",
-        f"Arc:           {result['arc_a']} -> {result['arc_b']}",
+        f"Avg velocity: {result['avg_velocity_a']} -> {result['avg_velocity_b']} ({vel_sign}{vel_delta})",
+        f"Arc: {result['arc_a']} -> {result['arc_b']}",
         f"Tracks louder: {louder}",
         f"Tracks softer: {softer}",
         f"Tracks silent: {silent}",
-        f"Summary:       {result['summary']}",
+        f"Summary: {result['summary']}",
     ]
     if not result["changed"]:
         lines.append("Unchanged")
@@ -478,7 +478,7 @@ def _render_report(report: MusicDiffReport) -> str:
     """Format a full MusicDiffReport as a combined multi-dimension block."""
     sections: list[str] = [
         f"Music diff: {report['commit_a']} -> {report['commit_b']}",
-        f"Changed:   {', '.join(report['changed_dimensions']) or 'none'}",
+        f"Changed: {', '.join(report['changed_dimensions']) or 'none'}",
         f"Unchanged: {', '.join(report['unchanged_dimensions']) or 'none'}",
         "",
     ]

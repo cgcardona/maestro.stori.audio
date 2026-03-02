@@ -4,7 +4,7 @@ Client for communicating with the Orpheus music generation service.
 
 The ``normalize_storpheus_tool_calls`` function is the adapter boundary:
 all Orpheus responses that contain ``tool_calls`` MUST pass through it
-before Maestro consumes the data.  Orpheus's internal tool names
+before Maestro consumes the data. Orpheus's internal tool names
 (``addNotes``, ``addMidiCC``, ``addPitchBend``, ``addAftertouch``) are
 an implementation detail of the Orpheus service and must not leak into
 Maestro's core.
@@ -71,7 +71,7 @@ _GRADIO_TRANSIENT_PHRASES = (
 )
 
 _MAX_RETRIES = 4
-_RETRY_DELAYS = [2, 5, 10, 20]  # seconds between attempts
+_RETRY_DELAYS = [2, 5, 10, 20] # seconds between attempts
 
 logger = logging.getLogger(__name__)
 
@@ -80,8 +80,8 @@ class _CircuitBreaker:
     """Prevents cascading failures when Orpheus is unavailable.
 
     After ``threshold`` consecutive failures the circuit opens and all
-    subsequent calls fail immediately for ``cooldown`` seconds.  After the
-    cooldown one probe request is allowed (half-open).  Success closes the
+    subsequent calls fail immediately for ``cooldown`` seconds. After the
+    cooldown one probe request is allowed (half-open). Success closes the
     circuit; failure re-opens it.
 
     Thread-safety is not needed — asyncio is single-threaded per event loop.
@@ -98,7 +98,7 @@ class _CircuitBreaker:
         """``True`` while the circuit is open (within the cooldown window).
 
         Implements the half-open probe window: once the cooldown expires the
-        property returns ``False``, allowing one probe request through.  If that
+        property returns ``False``, allowing one probe request through. If that
         probe fails, ``record_failure`` re-opens the circuit immediately.
         """
         if self._opened_at is None:
@@ -155,7 +155,7 @@ class StorpheusClient:
 
     Uses a long-lived httpx.AsyncClient with keepalive connection pooling so
     the TCP/TLS handshake cost is paid once per worker process rather than on
-    every generation request.  Call warmup() from the FastAPI lifespan to
+    every generation request. Call warmup() from the FastAPI lifespan to
     pre-establish the connection before the first user request arrives.
     """
 
@@ -191,7 +191,7 @@ class StorpheusClient:
         """Return the shared ``httpx.AsyncClient``, creating it lazily on first access.
 
         The client is intentionally long-lived so that keepalive connections to
-        Orpheus are reused across requests.  HF token auth headers are injected
+        Orpheus are reused across requests. HF token auth headers are injected
         at construction time so they apply to every request without per-call
         overhead.
         """
@@ -224,7 +224,7 @@ class StorpheusClient:
                 logger.info("Orpheus connection warmed up ✓")
             else:
                 logger.warning(
-                    "Orpheus warmup: service responded but health check failed — "
+                    "Orpheus warmup: service responded but health check failed"
                     "generation requests will retry automatically"
                 )
         except Exception as exc:
@@ -354,7 +354,7 @@ class StorpheusClient:
 
         if self._semaphore.locked():
             logger.info(
-                f"⏳ [Orpheus] All {self._max_concurrent} GPU slots in use — "
+                f"⏳ [Orpheus] All {self._max_concurrent} GPU slots in use"
                 f"request for {instruments} queued"
             )
 
@@ -598,7 +598,7 @@ def normalize_storpheus_tool_calls(
     """Translate Orpheus-format tool_calls into Maestro-internal flat lists.
 
     Orpheus returns DAW-style tool names (``addNotes``, ``addMidiCC``,
-    ``addPitchBend``, ``addAftertouch``).  This adapter extracts the
+    ``addPitchBend``, ``addAftertouch``). This adapter extracts the
     musical content into plain lists keyed by data type so that callers
     never handle Storpheus-specific tool names.
 

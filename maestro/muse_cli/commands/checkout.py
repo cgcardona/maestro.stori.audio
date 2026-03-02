@@ -7,18 +7,18 @@ Create + switch (``-b``)::
     muse checkout -b <new-branch>
 
 Writes ``.muse/refs/heads/<new-branch>`` with the current HEAD commit ID,
-then updates ``.muse/HEAD`` to point at the new branch.  Aborts if the
+then updates ``.muse/HEAD`` to point at the new branch. Aborts if the
 branch already exists.
 
 Switch to existing branch::
 
     muse checkout <branch>
 
-Updates ``.muse/HEAD`` to point at ``refs/heads/<branch>``.  Aborts if the
+Updates ``.muse/HEAD`` to point at ``refs/heads/<branch>``. Aborts if the
 branch does not exist.
 
 Both operations are purely local filesystem writes — no DB interaction is
-required at checkout time.  The DAG is intact in the DB; subsequent ``muse
+required at checkout time. The DAG is intact in the DB; subsequent ``muse
 log`` and ``muse commit`` commands operate correctly from the new HEAD.
 """
 from __future__ import annotations
@@ -53,7 +53,7 @@ def checkout_branch(
     branch absent when switching).
 
     Args:
-        root:   Repository root (directory containing ``.muse/``).
+        root: Repository root (directory containing ``.muse/``).
         branch: Target branch name (must be a simple identifier — no slashes
                 beyond the ``feature/`` prefix convention).
         create: When ``True``, create the branch from HEAD then switch to it.
@@ -67,12 +67,12 @@ def checkout_branch(
         if target_ref_path.exists() and target_ref_path.read_text().strip():
             typer.echo(
                 f"❌ Branch '{branch}' already exists.\n"
-                f"   Use 'muse checkout {branch}' to switch to it."
+                f" Use 'muse checkout {branch}' to switch to it."
             )
             raise typer.Exit(code=ExitCode.USER_ERROR)
 
         # Resolve current HEAD commit to seed the new branch pointer.
-        head_ref = (muse_dir / "HEAD").read_text().strip()  # "refs/heads/main"
+        head_ref = (muse_dir / "HEAD").read_text().strip() # "refs/heads/main"
         current_ref_path = muse_dir / pathlib.Path(head_ref)
         current_commit_id = ""
         if current_ref_path.exists():
@@ -95,7 +95,7 @@ def checkout_branch(
         if not target_ref_path.exists():
             typer.echo(
                 f"❌ Branch '{branch}' does not exist.\n"
-                f"   Use 'muse checkout -b {branch}' to create it."
+                f" Use 'muse checkout -b {branch}' to create it."
             )
             raise typer.Exit(code=ExitCode.USER_ERROR)
 

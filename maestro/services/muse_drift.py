@@ -1,4 +1,4 @@
-"""Muse Drift Detection Engine — 'git status' for music.
+"""Muse Drift Detection Engine'git status' for music.
 
 Compares a HEAD snapshot (from persisted variation history) against
 a working snapshot (live StateStore capture) to produce a deterministic
@@ -162,7 +162,7 @@ class CommitConflictPayload:
         """Construct a lightweight conflict payload from a full ``DriftReport``.
 
         Excludes ``sample_changes`` and full ``region_summaries`` to keep the
-        409 response body small.  The ``fingerprint_delta`` maps each dirty
+        409 response body small. The ``fingerprint_delta`` maps each dirty
         region to ``(head_fingerprint, working_fingerprint)`` so the client
         can identify exactly which regions changed without reading all note data.
         """
@@ -230,7 +230,7 @@ def compute_drift_report(
 ) -> DriftReport:
     """Compare HEAD snapshot against working snapshot — notes + controllers.
 
-    Pure function — no database access, no StateStore.  Uses matching
+    Pure function — no database access, no StateStore. Uses matching
     functions from the VariationService note-matching module.
 
     Args:

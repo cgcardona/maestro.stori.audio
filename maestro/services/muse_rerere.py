@@ -2,17 +2,17 @@
 
 In parallel multi-branch Muse workflows identical merge conflicts appear
 repeatedly (e.g. the same MIDI region modified in the same way on two
-independent branches).  rerere records conflict shapes and their resolutions
+independent branches). rerere records conflict shapes and their resolutions
 so they can be applied automatically on subsequent merges.
 
 Cache layout::
 
     .muse/rr-cache/<hash>/
-        conflict    — serialised conflict fingerprint (JSON)
-        postimage   — serialised resolution (JSON, written only after resolve)
+        conflict — serialised conflict fingerprint (JSON)
+        postimage — serialised resolution (JSON, written only after resolve)
 
 The conflict fingerprint is a normalised, transposition-independent hash
-of the conflict shape.  Two conflicts with the same structural shape but
+of the conflict shape. Two conflicts with the same structural shape but
 different absolute pitches are treated as the same conflict so that a
 resolution recorded in one key can be applied in another.
 
@@ -69,12 +69,12 @@ def _conflict_fingerprint(conflicts: list[ConflictDict]) -> str:
     """Compute a normalised, transposition-independent fingerprint for *conflicts*.
 
     Normalisation steps:
-    1.  Sort conflicts by (region_id, type, description) so that order does
+    1. Sort conflicts by (region_id, type, description) so that order does
         not affect the fingerprint.
-    2.  Strip absolute pitch values from descriptions and replace them with
+    2. Strip absolute pitch values from descriptions and replace them with
         relative pitch offsets from the lowest pitch in the conflict set.
         This makes the fingerprint invariant to transposition.
-    3.  SHA-256 the resulting JSON.
+    3. SHA-256 the resulting JSON.
     """
     all_pitches: list[int] = []
     for c in conflicts:
@@ -119,8 +119,8 @@ def record_conflict(repo_root: Path, conflicts: list[ConflictDict]) -> str:
     If the same conflict shape is already cached this is a no-op (idempotent).
 
     Args:
-        repo_root:  Repository root (directory containing ``.muse/``).
-        conflicts:  List of conflict dicts (keys: region_id, type, description).
+        repo_root: Repository root (directory containing ``.muse/``).
+        conflicts: List of conflict dicts (keys: region_id, type, description).
                     These are typically derived from :class:`MergeConflict` instances.
 
     Returns:
@@ -151,10 +151,10 @@ def record_resolution(
     """Persist a resolution for an existing conflict fingerprint.
 
     Args:
-        repo_root:      Repository root.
-        conflict_hash:  Hash returned by :func:`record_conflict`.
-        resolution:     Arbitrary resolution data (e.g. merged snapshot or
-                        per-file resolution strategies).  Must be JSON-serialisable.
+        repo_root: Repository root.
+        conflict_hash: Hash returned by :func:`record_conflict`.
+        resolution: Arbitrary resolution data (e.g. merged snapshot or
+                        per-file resolution strategies). Must be JSON-serialisable.
 
     Raises:
         FileNotFoundError: If *conflict_hash* is not in the cache (i.e.
@@ -180,8 +180,8 @@ def apply_rerere(
     """Attempt to auto-apply a cached resolution for *conflicts*.
 
     Args:
-        repo_root:  Repository root.
-        conflicts:  Current merge conflicts (same format as :func:`record_conflict`).
+        repo_root: Repository root.
+        conflicts: Current merge conflicts (same format as :func:`record_conflict`).
 
     Returns:
         A tuple ``(applied, resolution)`` where *applied* is the number of
@@ -216,7 +216,7 @@ def list_rerere(repo_root: Path) -> list[str]:
     ``postimage`` file.
 
     Args:
-        repo_root:  Repository root.
+        repo_root: Repository root.
 
     Returns:
         Sorted list of SHA-256 hex-digest strings.
@@ -233,8 +233,8 @@ def forget_rerere(repo_root: Path, conflict_hash: str) -> bool:
     """Remove a single cached conflict/resolution from the rr-cache.
 
     Args:
-        repo_root:      Repository root.
-        conflict_hash:  Hash to remove.
+        repo_root: Repository root.
+        conflict_hash: Hash to remove.
 
     Returns:
         ``True`` if the entry existed and was removed, ``False`` if it
@@ -256,7 +256,7 @@ def clear_rerere(repo_root: Path) -> int:
     """Remove ALL entries from the rr-cache.
 
     Args:
-        repo_root:  Repository root.
+        repo_root: Repository root.
 
     Returns:
         Number of entries removed.

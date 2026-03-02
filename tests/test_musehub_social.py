@@ -1111,7 +1111,7 @@ async def test_get_feed_returns_user_notifications(
     assert resp.status_code == 200
     items = resp.json()
     assert len(items) == 2
-    assert items[0]["event_type"] == "mention"   # newest first
+    assert items[0]["event_type"] == "mention" # newest first
     assert items[1]["event_type"] == "comment"
 
 

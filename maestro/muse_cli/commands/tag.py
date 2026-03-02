@@ -19,12 +19,12 @@ Tag namespaces
 --------------
 Tags are free-form strings. Conventional namespace prefixes:
 
-- ``emotion:*``  — emotional character, e.g. ``emotion:melancholic``
-- ``stage:*``    — production stage, e.g. ``stage:rough-mix``
-- ``ref:*``      — reference source, e.g. ``ref:beatles``
-- ``key:*``      — musical key, e.g. ``key:Am``
-- ``tempo:*``    — tempo annotation, e.g. ``tempo:120bpm``
-- free-form      — any other descriptive label
+- ``emotion:*`` — emotional character, e.g. ``emotion:melancholic``
+- ``stage:*`` — production stage, e.g. ``stage:rough-mix``
+- ``ref:*`` — reference source, e.g. ``ref:beatles``
+- ``key:*`` — musical key, e.g. ``key:Am``
+- ``tempo:*`` — tempo annotation, e.g. ``tempo:120bpm``
+- free-form — any other descriptive label
 """
 from __future__ import annotations
 
@@ -69,7 +69,7 @@ def _resolve_commit_id(root: pathlib.Path, commit_ref: str | None) -> str:
         typer.echo("❌ .muse/HEAD not found — is this a valid Muse repository?")
         raise typer.Exit(code=ExitCode.REPO_NOT_FOUND)
 
-    head_ref = head_file.read_text().strip()  # "refs/heads/main"
+    head_ref = head_file.read_text().strip() # "refs/heads/main"
     ref_path = muse_dir / pathlib.Path(head_ref)
     if not ref_path.exists() or not ref_path.read_text().strip():
         typer.echo("❌ No commits yet on this branch. Create a commit first.")
@@ -120,7 +120,7 @@ async def _tag_add_async(
         )
     )
     if existing.scalar_one_or_none() is not None:
-        typer.echo(f"⚠️  Tag {tag!r} already exists on commit {commit_id[:8]} — skipped.")
+        typer.echo(f"⚠️ Tag {tag!r} already exists on commit {commit_id[:8]} — skipped.")
         return
 
     session.add(MuseCliTag(repo_id=repo_id, commit_id=commit_id, tag=tag))
@@ -184,7 +184,7 @@ async def _tag_list_async(
     else:
         typer.echo(f"Tags on commit {commit_id[:8]}:")
         for t in tags:
-            typer.echo(f"  {t}")
+            typer.echo(f" {t}")
 
     return tags
 
@@ -229,7 +229,7 @@ async def _tag_search_async(
     else:
         typer.echo(f"Commits tagged with {tag!r}:")
         for commit_id, matched_tag in pairs:
-            typer.echo(f"  {commit_id[:8]}  {matched_tag}")
+            typer.echo(f" {commit_id[:8]} {matched_tag}")
 
     return pairs
 

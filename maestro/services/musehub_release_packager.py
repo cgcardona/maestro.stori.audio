@@ -3,11 +3,11 @@
 A release exposes music files in multiple formats so musicians and listeners
 can download the composition in their preferred format:
 
-- ``midi_bundle``  — full arrangement as a single MIDI file
-- ``stems``        — individual track stems as a zip of .mid files
-- ``mp3``          — full mix audio render
-- ``musicxml``     — notation export in MusicXML format
-- ``metadata``     — JSON manifest with tempo, key, and arrangement info
+- ``midi_bundle`` — full arrangement as a single MIDI file
+- ``stems`` — individual track stems as a zip of .mid files
+- ``mp3`` — full mix audio render
+- ``musicxml`` — notation export in MusicXML format
+- ``metadata`` — JSON manifest with tempo, key, and arrangement info
 
 At MVP these URLs are deterministic paths served by the object download
 endpoint (``GET /api/v1/musehub/repos/{repo_id}/objects/{object_id}/content``).

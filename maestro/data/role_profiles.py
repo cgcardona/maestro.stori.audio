@@ -2,7 +2,7 @@
 
 Loads heuristic statistics (median values) for each instrument role
 (lead, bass, chords, pads, drums) from analysis of 222,497 multi-instrument
-compositions totaling 1,844,218 tracks.  Used by:
+compositions totaling 1,844,218 tracks. Used by:
 
 - Instrument agent prompts (Musical DNA blocks)
 - Storpheus conditioning (complexity, density, musical_goals)
@@ -64,7 +64,7 @@ class RoleProfile:
     """Aggregate statistics for one instrument role.
 
     All numeric fields are median values from the 222K-file analysis unless
-    otherwise noted.  ``p25`` / ``p75`` fields carry interquartile bounds
+    otherwise noted. ``p25`` / ``p75`` fields carry interquartile bounds
     for key metrics so downstream code can express natural variation.
     """
 

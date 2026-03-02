@@ -2,15 +2,15 @@
 
 Compares a commit against its parent (or two commits via ``--compare``) and
 produces a structured description of the snapshot diff: which files changed
-and how many.  Depth controls verbosity:
+and how many. Depth controls verbosity:
 
-- **brief**    — one-line summary (commit ID + file count)
+- **brief** — one-line summary (commit ID + file count)
 - **standard** — commit message, changed files list, dimensions (default)
-- **verbose**  — standard plus parent commit info and full file paths
+- **verbose** — standard plus parent commit info and full file paths
 
 NOTE: Full harmonic/melodic analysis (identifying chord progressions, melodic
 motifs, rhythmic changes) requires ``muse harmony`` and ``muse motif`` — both
-planned enhancements tracked in follow-up issues.  This implementation uses
+planned enhancements tracked in follow-up issues. This implementation uses
 the snapshot manifest diff as a structural proxy: the set of files added,
 removed, or modified between two commits.
 
@@ -41,7 +41,7 @@ JSON (``--json``)::
 Auto-tag (``--auto-tag``)
 --------------------------
 When ``--auto-tag`` is given, a suggested tag is printed (or included in JSON)
-based on the file count and dimensions.  This is a heuristic stub — a full
+based on the file count and dimensions. This is a heuristic stub — a full
 tagger would classify by musical dimension (rhythm, harmony, melody, etc.)
 using instrument metadata.
 """
@@ -159,9 +159,9 @@ def _diff_manifests(
     Returns ``(changed, added, removed)`` where each entry is a relative
     file path (as stored in the manifest keys).
 
-    - *changed*  — path exists in both manifests but object_id differs
-    - *added*    — path exists in *target* but not *base*
-    - *removed*  — path exists in *base* but not *target*
+    - *changed* — path exists in both manifests but object_id differs
+    - *added* — path exists in *target* but not *base*
+    - *removed* — path exists in *base* but not *target*
     """
     all_paths = set(base) | set(target)
     changed: list[str] = []
@@ -188,7 +188,7 @@ def _infer_dimensions(
     """Infer musical dimensions from the file diff.
 
     This is a heuristic stub — always returns ``["structural"]`` with the
-    file count as context.  A full implementation would inspect MIDI metadata
+    file count as context. A full implementation would inspect MIDI metadata
     to classify changes as rhythmic, harmonic, or melodic.
     """
     if requested:
@@ -391,10 +391,10 @@ def _render_standard(result: DescribeResult) -> None:
 
 def _render_verbose(result: DescribeResult) -> None:
     """Verbose output: adds parent commit and full file paths."""
-    typer.echo(f"Commit:  {result.commit_id}")
+    typer.echo(f"Commit: {result.commit_id}")
     typer.echo(f'Message: "{result.message}"')
     if result.parent_id:
-        typer.echo(f"Parent:  {result.parent_id}")
+        typer.echo(f"Parent: {result.parent_id}")
     if result.compare_commit_id:
         typer.echo(f"Compare: {result.compare_commit_id} → {result.commit_id}")
 
@@ -402,20 +402,20 @@ def _render_verbose(result: DescribeResult) -> None:
     count = result.file_count()
     typer.echo(f"Changed files ({count}):")
     for p in result.changed_files:
-        typer.echo(f"  M  {p}")
+        typer.echo(f" M {p}")
     for p in result.added_files:
-        typer.echo(f"  A  {p}")
+        typer.echo(f" A {p}")
     for p in result.removed_files:
-        typer.echo(f"  D  {p}")
+        typer.echo(f" D {p}")
     if count == 0:
-        typer.echo("  (no changes)")
+        typer.echo(" (no changes)")
 
     typer.echo("")
     dims_str = ", ".join(result.dimensions) if result.dimensions else "none"
     typer.echo(f"Dimensions: {dims_str}")
 
     if result.auto_tag:
-        typer.echo(f"Tag:        {result.auto_tag}")
+        typer.echo(f"Tag: {result.auto_tag}")
 
     typer.echo(f"\nNote: {_LLM_NOTE}")
 

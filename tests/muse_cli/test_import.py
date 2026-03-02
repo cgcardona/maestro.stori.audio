@@ -59,15 +59,15 @@ def _make_minimal_midi(path: pathlib.Path) -> None:
     header = b"MThd" + struct.pack(">IHHH", 6, 0, 1, 480)
 
     # Track events (delta_time, event):
-    # 0   FF 51 03 07 A1 20  — set_tempo: 500000 µs = 120 BPM
-    # 0   90 3C 64           — note_on ch0 pitch=60 vel=100
-    # 240 80 3C 00           — note_off ch0 pitch=60
-    # 0   FF 2F 00           — end_of_track
+    # 0 FF 51 03 07 A1 20 — set_tempo: 500000 µs = 120 BPM
+    # 0 90 3C 64 — note_on ch0 pitch=60 vel=100
+    # 240 80 3C 00 — note_off ch0 pitch=60
+    # 0 FF 2F 00 — end_of_track
     track_data = (
-        b"\x00\xFF\x51\x03\x07\xA1\x20"   # tempo
-        b"\x00\x90\x3C\x64"               # note_on C4
-        b"\x81\x70\x80\x3C\x00"           # delta=240 (varint), note_off
-        b"\x00\xFF\x2F\x00"               # end_of_track
+        b"\x00\xFF\x51\x03\x07\xA1\x20" # tempo
+        b"\x00\x90\x3C\x64" # note_on C4
+        b"\x81\x70\x80\x3C\x00" # delta=240 (varint), note_off
+        b"\x00\xFF\x2F\x00" # end_of_track
     )
     track = b"MTrk" + struct.pack(">I", len(track_data)) + track_data
     path.write_bytes(header + track)

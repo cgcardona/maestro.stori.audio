@@ -13,7 +13,7 @@ distinct from the Muse variation tables (``muse_variations``, ``muse_phrases``,
 ``muse_note_changes``) which track DAW-level note editing history.
 
 ``muse_cli_commits.metadata`` is an extensible JSON blob for commit-level
-annotations.  Current keys:
+annotations. Current keys:
 
 - ``tempo_bpm`` (``float | None``): BPM set via ``muse tempo --set``.
 - ``key`` (``str | None``): Key string (e.g. ``"Eb major"``) auto-updated by
@@ -124,12 +124,12 @@ class MuseCliTag(Base):
     """A music-semantic tag attached to a Muse CLI commit.
 
     Tags are free-form strings supporting namespaced conventions:
-    - ``emotion:*``  — emotional character (e.g. emotion:melancholic)
-    - ``stage:*``    — production stage (e.g. stage:rough-mix)
-    - ``ref:*``      — reference track or external source (e.g. ref:beatles)
-    - ``key:*``      — musical key (e.g. key:Am)
-    - ``tempo:*``    — tempo annotation (e.g. tempo:120bpm)
-    - free-form      — any other descriptive label
+    - ``emotion:*`` — emotional character (e.g. emotion:melancholic)
+    - ``stage:*`` — production stage (e.g. stage:rough-mix)
+    - ``ref:*`` — reference track or external source (e.g. ref:beatles)
+    - ``key:*`` — musical key (e.g. key:Am)
+    - ``tempo:*`` — tempo annotation (e.g. tempo:120bpm)
+    - free-form — any other descriptive label
 
     Multiple tags can be attached to the same commit. Tags are scoped to a
     repo so that different local repos can use independent tag spaces.

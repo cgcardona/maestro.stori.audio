@@ -1,6 +1,6 @@
 """Tests for tools/lint_migration.py — migration structural linter.
 
-Regression suite for issue #273: 0001_consolidated_schema.py accumulated
+Regression suite: 0001_consolidated_schema.py accumulated
 duplicate def downgrade() blocks and syntax errors from parallel PR conflict
 resolution. These tests ensure the linter catches every class of corruption
 that can arise from automated conflict merges.
@@ -17,7 +17,7 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "tools"))
 
-from lint_migration import lint_migration  # noqa: E402
+from lint_migration import lint_migration # noqa: E402
 
 
 # ── helpers ───────────────────────────────────────────────────────────────────
@@ -30,11 +30,11 @@ def write_migration(tmp_path: Path, source: str) -> Path:
     return path
 
 
-# ── regression: the exact class of corruption from issue #273 ─────────────────
+# ── regression: the exact class of corruption ─────────────────
 
 
 def test_duplicate_downgrade_detected(tmp_path: Path) -> None:
-    """Two def downgrade() blocks — the primary failure mode from issue #273."""
+    """Two def downgrade() blocks — the primary failure mode."""
     path = write_migration(
         tmp_path,
         """
@@ -224,7 +224,7 @@ def test_clean_migration_passes(tmp_path: Path) -> None:
 def test_production_migration_file_is_clean() -> None:
     """The actual production migration passes all linter checks.
 
-    This is the primary regression guard for issue #273.
+    This is the primary regression guard.
     If this test fails, the migration has been corrupted and must be fixed
     before merging to dev.
     """
@@ -236,7 +236,7 @@ def test_production_migration_file_is_clean() -> None:
     errors = lint_migration(production_path)
     assert errors == [], (
         f"Production migration has {len(errors)} error(s):\n"
-        + "\n".join(f"  • {e}" for e in errors)
+        + "\n".join(f" • {e}" for e in errors)
     )
 
 

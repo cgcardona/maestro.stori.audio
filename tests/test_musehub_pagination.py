@@ -1,6 +1,6 @@
 """Tests for RFC 8288 Link header pagination on Muse Hub list endpoints.
 
-Covers acceptance criteria from issue #456:
+Covers acceptance criteria:
 - PaginationParams dependency parses page/per_page and cursor/limit query params
 - build_link_header emits correct RFC 8288 rel links for first/last/prev/next
 - build_cursor_link_header emits a rel="next" link with cursor and limit
@@ -103,7 +103,7 @@ def test_build_link_header_first_of_many() -> None:
     assert 'rel="next"' in header
     assert 'rel="prev"' not in header
     assert "page=2" in header
-    assert "page=6" in header  # last page for 55 items at 10/page
+    assert "page=6" in header # last page for 55 items at 10/page
 
 
 def test_build_link_header_middle_page() -> None:

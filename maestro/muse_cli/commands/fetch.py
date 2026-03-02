@@ -166,7 +166,7 @@ async def _fetch_remote_async(
     Args:
         root: Repository root path.
         remote_name: Name of the remote to fetch from (e.g. ``"origin"``).
-        branches: Specific branches to fetch.  Empty list means all branches.
+        branches: Specific branches to fetch. Empty list means all branches.
         prune: When ``True``, remove stale local remote-tracking refs after
                fetching.
 
@@ -238,7 +238,7 @@ async def _fetch_remote_async(
 
     # ── Determine which branches are new locally ──────────────────────────
     # Override is_new from the Hub: the Hub may not know whether we have a
-    # local tracking ref.  We always check ourselves.
+    # local tracking ref. We always check ourselves.
     updated_count = 0
     remote_branch_names: set[str] = set()
 
@@ -274,7 +274,7 @@ async def _fetch_remote_async(
             if local_branch not in remote_branch_names:
                 _remove_remote_tracking_ref(remote_name, local_branch, root)
                 typer.echo(
-                    f"✂️  Pruned {remote_name}/{local_branch} "
+                    f"✂️ Pruned {remote_name}/{local_branch} "
                     "(no longer exists on remote)"
                 )
 
@@ -301,7 +301,7 @@ async def _fetch_async(
         remote_name: Remote to fetch from (ignored when ``fetch_all`` is ``True``).
         fetch_all: When ``True``, fetch from every remote in ``.muse/config.toml``.
         prune: When ``True``, remove stale remote-tracking refs after fetching.
-        branches: Specific branches to request.  Empty = all branches.
+        branches: Specific branches to request. Empty = all branches.
 
     Raises:
         :class:`typer.Exit`: On any unrecoverable error.
@@ -375,7 +375,7 @@ def fetch(
 
     Updates ``.muse/remotes/<remote>/<branch>`` tracking pointers to reflect
     the current state of the remote without modifying the local branch or
-    muse-work/.  Use ``muse pull`` to fetch AND merge in one step.
+    muse-work/. Use ``muse pull`` to fetch AND merge in one step.
 
     Examples::
 

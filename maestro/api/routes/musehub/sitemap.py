@@ -1,8 +1,8 @@
 """Muse Hub sitemap.xml and robots.txt generation.
 
 Endpoint summary:
-  GET /sitemap.xml  — XML sitemap of all public MuseHub content (repos, users, topics, releases)
-  GET /robots.txt   — crawl policy for search engines and AI agents
+  GET /sitemap.xml — XML sitemap of all public MuseHub content (repos, users, topics, releases)
+  GET /robots.txt — crawl policy for search engines and AI agents
 
 These endpoints live at the top level (no /api/v1 prefix) so standard crawlers
 and search engines find them at the expected paths.
@@ -12,15 +12,15 @@ Registration: registered in ``maestro.main`` directly:
 NOT via the musehub __init__.py auto-discovery (these are not /musehub/ sub-paths).
 
 Sitemap format follows the sitemaps.org protocol (XML namespace
-http://www.sitemaps.org/schemas/sitemap/0.9).  Priority and changefreq are
+http://www.sitemaps.org/schemas/sitemap/0.9). Priority and changefreq are
 assigned by content type:
-  repos    → priority 0.8, daily (active) or monthly (inactive > 90 days)
+  repos → priority 0.8, daily (active) or monthly (inactive > 90 days)
   profiles → priority 0.7, weekly
-  topics   → priority 0.6, weekly
+  topics → priority 0.6, weekly
   releases → priority 0.5, monthly
-  static   → priority 0.9, monthly
+  static → priority 0.9, monthly
 
-The sitemap is capped at 50,000 URLs per the sitemaps.org spec.  When
+The sitemap is capped at 50,000 URLs per the sitemaps.org spec. When
 content grows beyond that limit add a sitemap index endpoint (sitemapindex XML)
 and paginate via ?page=N — the infrastructure is already designed for it.
 
@@ -135,7 +135,7 @@ async def _fetch_sitemap_entries(
       4. Releases — per public repo.
 
     Args:
-        session:  Async SQLAlchemy session.
+        session: Async SQLAlchemy session.
         base_url: Scheme + host of the server (e.g. ``https://musehub.stori.app``),
                   used as the URL prefix for all sitemap loc entries.
 
@@ -294,7 +294,7 @@ async def get_sitemap(
     """Return an XML sitemap of all public MuseHub content.
 
     Why this exists: search engines and AI discovery agents use sitemap.xml to
-    find and index all indexable URLs without crawling every page.  Including
+    find and index all indexable URLs without crawling every page. Including
     repos, profiles, topics, and releases here ensures new content is indexed
     quickly after it is published.
 
@@ -326,7 +326,7 @@ async def get_robots_txt(request: Request) -> PlainTextResponse:
     """Return robots.txt crawl directives for the MuseHub site.
 
     Why this exists: without robots.txt, well-behaved crawlers assume nothing
-    is allowed.  We explicitly open public MuseHub content to all crawlers
+    is allowed. We explicitly open public MuseHub content to all crawlers
     (including AI agents) while protecting user-private pages (settings,
     notifications) from indexing.
 

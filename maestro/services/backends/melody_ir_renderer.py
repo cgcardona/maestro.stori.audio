@@ -78,7 +78,7 @@ def render_melody_spec(
     pc = chord_root_pitch_class(key.replace("m", "").replace("M", "") if key else "C")
     base_midi = base_octave * 12 + pc
 
-    num_notes_target = int(bars * 4 * (1 - melody_spec.rest_density))  # 4 beats per bar, rest_density = rest fraction
+    num_notes_target = int(bars * 4 * (1 - melody_spec.rest_density)) # 4 beats per bar, rest_density = rest fraction
     num_notes_target = max(4, num_notes_target)
     contour_off = _contour_offsets(melody_spec.contour, num_notes_target)
 
@@ -89,7 +89,7 @@ def render_melody_spec(
             break
         chord = _chord_at_bar(schedule, bar_index)
         chord_pc = chord_root_pitch_class(chord)
-        chord_degrees = chord_to_scale_degrees(chord, 3)  # root, third, fifth
+        chord_degrees = chord_to_scale_degrees(chord, 3) # root, third, fifth
 
         # On chord boundaries (bar start), resolve to chord tone
         bar_start_beat = bar_index * 4.0
@@ -100,19 +100,19 @@ def render_melody_spec(
         else:
             degree = rng.choice(scale_degrees)
             contour_idx = min(i, len(contour_off) - 1)
-            octave_shift = int(contour_off[contour_idx] * 2) - 1  # -1, 0, or +1 octave
+            octave_shift = int(contour_off[contour_idx] * 2) - 1 # -1, 0, or +1 octave
             pitch = base_midi + degree + octave_shift * 12
 
-        pitch = max(48, min(84, pitch))  # clamp to melody range
+        pitch = max(48, min(84, pitch)) # clamp to melody range
         vel = rng.randint(80, 110)
-        dur = 0.25 + rng.random() * 0.5  # 8th to quarter
+        dur = 0.25 + rng.random() * 0.5 # 8th to quarter
         notes.append({
             "pitch": int(pitch),
             "start_beat": round(beat * 4) / 4,
             "duration_beats": round(dur * 4) / 4,
             "velocity": vel,
         })
-        beat += 0.5 + rng.random() * 0.5  # advance 0.5–1 beat
+        beat += 0.5 + rng.random() * 0.5 # advance 0.5–1 beat
 
     if apply_humanize and global_spec.microtiming_jitter_ms:
         j_lo, j_hi = global_spec.microtiming_jitter_ms

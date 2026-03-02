@@ -155,7 +155,7 @@ async def get_public_repos(
     """Return public repos owned by ``user_id``, newest first.
 
     Last-activity timestamp is the most recent commit timestamp across all
-    branches in the repo.  Star count is always 0 at MVP (no star mechanism).
+    branches in the repo. Star count is always 0 at MVP (no star mechanism).
     """
     repo_rows_result = await session.execute(
         select(db.MusehubRepo)
@@ -203,11 +203,11 @@ async def get_contribution_graph(
     """Return the last 52 weeks of daily commit activity for a user.
 
     Counts commits across ALL repos owned by ``user_id`` (public and private)
-    so the owner sees their full creative history.  Visitors see the same data
+    so the owner sees their full creative history. Visitors see the same data
     because the profile page is public (no server-side filtering by caller).
 
     Returns a list of 364 days in ascending date order, with ``count=0`` for
-    days with no commits.  The client renders this as a GitHub-style heatmap.
+    days with no commits. The client renders this as a GitHub-style heatmap.
     """
     today = _utc_today()
     cutoff = today - timedelta(weeks=_CONTRIBUTION_WEEKS)
@@ -260,7 +260,7 @@ async def get_session_credits(session: AsyncSession, user_id: str) -> int:
     """Count total commits across all repos for a user.
 
     Commits represent creative composition sessions — each push of a musical
-    snapshot to MuseHub is a unit of creative credit.  This is the MVP proxy
+    snapshot to MuseHub is a unit of creative credit. This is the MVP proxy
     for "session credits"; a future release may tie this to actual token usage.
     """
     repo_result = await session.execute(

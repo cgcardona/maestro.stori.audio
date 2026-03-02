@@ -1,21 +1,21 @@
 """Tests for the MuseHub notation service — MIDI-to-notation conversion.
 
-Covers acceptance criteria from issue #210 (score/notation renderer):
-- test_notation_convert_ref_returns_result     — convert_ref_to_notation returns NotationResult
-- test_notation_result_has_tracks             — result contains at least one track
+Covers acceptance criteria (score/notation renderer):
+- test_notation_convert_ref_returns_result — convert_ref_to_notation returns NotationResult
+- test_notation_result_has_tracks — result contains at least one track
 - test_notation_result_tracks_have_required_fields — each track has clef, key_signature, etc.
-- test_notation_notes_have_required_fields    — each note has pitch_name, octave, duration, etc.
-- test_notation_deterministic                 — same ref always returns same result
-- test_notation_different_refs_differ         — different refs produce different keys/tempos
-- test_notation_num_tracks_clamped            — num_tracks=0 is clamped to 1
-- test_notation_num_bars_clamped              — num_bars=0 is clamped to 1
-- test_notation_to_dict_camel_case            — serialized dict uses camelCase timeSig
-- test_notation_to_dict_has_all_keys          — serialized dict has tracks/tempo/key/timeSig
-- test_notation_clef_for_bass                 — bass role gets bass clef
-- test_notation_clef_for_piano               — piano role gets treble clef
-- test_notation_start_beat_non_negative       — all notes have start_beat >= 0
-- test_notation_velocity_in_range             — velocity is in [0, 127]
-- test_notation_duration_valid               — duration is a recognized fraction string
+- test_notation_notes_have_required_fields — each note has pitch_name, octave, duration, etc.
+- test_notation_deterministic — same ref always returns same result
+- test_notation_different_refs_differ — different refs produce different keys/tempos
+- test_notation_num_tracks_clamped — num_tracks=0 is clamped to 1
+- test_notation_num_bars_clamped — num_bars=0 is clamped to 1
+- test_notation_to_dict_camel_case — serialized dict uses camelCase timeSig
+- test_notation_to_dict_has_all_keys — serialized dict has tracks/tempo/key/timeSig
+- test_notation_clef_for_bass — bass role gets bass clef
+- test_notation_clef_for_piano — piano role gets treble clef
+- test_notation_start_beat_non_negative — all notes have start_beat >= 0
+- test_notation_velocity_in_range — velocity is in [0, 127]
+- test_notation_duration_valid — duration is a recognized fraction string
 """
 from __future__ import annotations
 

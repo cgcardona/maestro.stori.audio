@@ -1,6 +1,6 @@
 """Pydantic v2 models for the Muse Hub Analysis API and Dynamics Page.
 
-Each musical dimension has a dedicated typed data model.  All models are
+Each musical dimension has a dedicated typed data model. All models are
 consumed by AI agents and must be fully described so agents can reason
 about musical properties programmatically.
 
@@ -9,7 +9,7 @@ Dimensions supported (13 total):
   contour, key, tempo, meter, similarity, divergence
 
 Every endpoint returns an :class:`AnalysisResponse` envelope whose ``data``
-field is one of the dimension-specific ``*Data`` models below.  The
+field is one of the dimension-specific ``*Data`` models below. The
 aggregate endpoint returns :class:`AggregateAnalysisResponse` containing
 one ``AnalysisResponse`` per dimension.
 
@@ -31,12 +31,12 @@ from maestro.models.base import CamelModel
 
 # Arc classification labels for dynamic contour per track.
 # Each label describes the overall shape of the velocity curve:
-#   flat       — velocity is nearly constant throughout
-#   terraced   — abrupt step changes between dynamic levels
-#   crescendo  — steady or gradual increase in velocity
-#   decrescendo — steady or gradual decrease in velocity
-#   swell      — rises then falls (arch shape)
-#   hairpin    — falls then rises (valley shape)
+# flat — velocity is nearly constant throughout
+# terraced — abrupt step changes between dynamic levels
+# crescendo — steady or gradual increase in velocity
+# decrescendo — steady or gradual decrease in velocity
+# swell — rises then falls (arch shape)
+# hairpin — falls then rises (valley shape)
 DynamicArc = Literal["flat", "terraced", "crescendo", "decrescendo", "swell", "hairpin"]
 
 # ---------------------------------------------------------------------------
@@ -89,7 +89,7 @@ class HarmonyData(CamelModel):
     """Structured harmonic analysis for a Muse commit.
 
     Provides the detected key, chord progression, tension curve, and any
-    modulation points.  Agents use this to compose harmonically coherent
+    modulation points. Agents use this to compose harmonically coherent
     continuations or variations.
 
     ``tension_curve`` is sampled at one-beat intervals; its length equals
@@ -135,7 +135,7 @@ class MotifTransformation(CamelModel):
     """A single transformation of a motif (inversion, retrograde, transposition).
 
     Each transformation is a variant of the parent motif that has been detected
-    in the piece.  ``intervals`` is the transformed interval sequence.
+    in the piece. ``intervals`` is the transformed interval sequence.
     ``transposition_semitones`` is non-zero only for transposition transformations.
     ``occurrences`` are the beat positions where this specific transformation appears.
     """
@@ -160,7 +160,7 @@ class MotifRecurrenceCell(CamelModel):
     """A single cell in the motif recurrence grid (track x section).
 
     Encodes whether a motif (or one of its transformations) appears in a
-    specific track at a specific formal section.  Used by the motif browser
+    specific track at a specific formal section. Used by the motif browser
     to render the recurrence heatmap.
     """
 
@@ -267,7 +267,7 @@ class GrooveData(CamelModel):
     """Rhythmic groove analysis for a Muse commit.
 
     ``onset_deviation`` measures the mean absolute deviation of note onsets
-    from the quantization grid in beats.  Lower = tighter quantization.
+    from the quantization grid in beats. Lower = tighter quantization.
     ``swing_factor`` is 0.5 for straight time, ~0.67 for triplet swing.
     """
 
@@ -290,8 +290,8 @@ class GrooveData(CamelModel):
 class EmotionData(CamelModel):
     """Affective/emotional profile of a Muse commit.
 
-    Uses the valence-arousal model.  ``valence`` is -1 (sad/tense) to +1
-    (happy/bright).  ``arousal`` is 0 (calm) to 1 (energetic).
+    Uses the valence-arousal model. ``valence`` is -1 (sad/tense) to +1
+    (happy/bright). ``arousal`` is 0 (calm) to 1 (energetic).
     ``tension`` is 0 (relaxed) to 1 (tense/dissonant).
     Agents use this to maintain emotional continuity or introduce contrast.
     """
@@ -306,16 +306,16 @@ class EmotionData(CamelModel):
 
 
 # ---------------------------------------------------------------------------
-# Emotion map models (issue #227)
+# Emotion map models
 # ---------------------------------------------------------------------------
 
 
 class EmotionVector(CamelModel):
     """Four-axis emotion vector, all dimensions normalised to [0, 1].
 
-    - ``energy``   — 0 (passive/still) to 1 (active/driving)
-    - ``valence``  — 0 (dark/negative) to 1 (bright/positive)
-    - ``tension``  — 0 (relaxed) to 1 (tense/dissonant)
+    - ``energy`` — 0 (passive/still) to 1 (active/driving)
+    - ``valence`` — 0 (dark/negative) to 1 (bright/positive)
+    - ``tension`` — 0 (relaxed) to 1 (tense/dissonant)
     - ``darkness`` — 0 (luminous) to 1 (brooding/ominous)
 
     Note that ``valence`` here is re-normalised relative to :class:`EmotionData`
@@ -414,7 +414,7 @@ class EmotionMapResponse(CamelModel):
 class ChordMapData(CamelModel):
     """Full chord-by-chord map for a Muse commit.
 
-    Equivalent to a lead-sheet chord chart.  Agents use this to generate
+    Equivalent to a lead-sheet chord chart. Agents use this to generate
     harmonically idiomatic accompaniment or improvisation.
     ``progression`` is time-ordered, covering the full duration of the ref.
     """
@@ -429,7 +429,7 @@ class ContourData(CamelModel):
 
     ``shape`` is a coarse descriptor; ``pitch_curve`` is sampled at
     quarter-note intervals and gives the predominant pitch in MIDI note
-    numbers.  Agents use contour to match or contrast melodic shape
+    numbers. Agents use contour to match or contrast melodic shape
     in continuation material.
     """
 
@@ -508,7 +508,7 @@ class MeterData(CamelModel):
     """Metric analysis for a Muse commit.
 
     ``beat_strength_profile`` is the per-beat strength across one bar
-    (e.g. [1.0, 0.2, 0.6, 0.2] for 4/4).  Agents use this to place
+    (e.g. [1.0, 0.2, 0.6, 0.2] for 4/4). Agents use this to place
     accents and avoid metrically naïve generation.
     """
 
@@ -523,7 +523,7 @@ class MeterData(CamelModel):
 class SimilarCommit(CamelModel):
     """A commit that is harmonically/rhythmically similar to the queried ref.
 
-    ``score`` is 0–1 cosine similarity.  ``shared_motifs`` lists motif IDs
+    ``score`` is 0–1 cosine similarity. ``shared_motifs`` lists motif IDs
     that appear in both commits.
     """
 
@@ -569,14 +569,14 @@ class DivergenceData(CamelModel):
     changed_dimensions: list[ChangedDimension]
 
 
-# Form and structure page models (issue #225)
+# Form and structure page models
 # ---------------------------------------------------------------------------
 
 
 class SectionMapEntry(CamelModel):
     """A formal section rendered in bars for the section map visualisation.
 
-    Bar numbers are 1-indexed.  ``color_hint`` is a CSS colour string agents
+    Bar numbers are 1-indexed. ``color_hint`` is a CSS colour string agents
     and UIs can use for colour-coding the section timeline without computing
     a palette themselves.
     """
@@ -593,7 +593,7 @@ class RepetitionEntry(CamelModel):
     """A group of sections that share the same structural role (repeat).
 
     ``occurrences`` lists the 1-indexed bar positions where this pattern
-    starts.  ``similarity_score`` is 1.0 for exact repeats, lower for
+    starts. ``similarity_score`` is 1.0 for exact repeats, lower for
     varied repetitions.
     """
 
@@ -610,7 +610,7 @@ class SectionSimilarityHeatmap(CamelModel):
 
     ``labels`` lists section labels in the same order as ``matrix`` rows/cols.
     ``matrix`` is a square, symmetric matrix where ``matrix[i][j]`` is the
-    0–1 cosine similarity between section i and section j.  Diagonal is 1.0.
+    0–1 cosine similarity between section i and section j. Diagonal is 1.0.
 
     Agents use this to identify musical cousins (verses that sound similar
     to each other) and contrasting sections (bridge vs. chorus).
@@ -661,12 +661,12 @@ class TrackDynamicsProfile(CamelModel):
     (cross-track average) should use :class:`DynamicsData` instead.
 
     ``arc`` classifies the overall shape of the velocity curve:
-    - ``flat``       — velocity nearly constant
-    - ``terraced``   — abrupt step changes between levels
-    - ``crescendo``  — gradual increase
+    - ``flat`` — velocity nearly constant
+    - ``terraced`` — abrupt step changes between levels
+    - ``crescendo`` — gradual increase
     - ``decrescendo`` — gradual decrease
-    - ``swell``      — rises then falls (arch)
-    - ``hairpin``    — falls then rises (valley)
+    - ``swell`` — rises then falls (arch)
+    - ``hairpin`` — falls then rises (valley)
 
     ``velocity_curve`` samples the track at 2-beat intervals so a
     velocity profile graph can be drawn without requiring MIDI file access.
@@ -692,7 +692,7 @@ class DynamicsPageData(CamelModel):
     descending) so the bar chart can be drawn directly from ``tracks``.
 
     Agent use case: when orchestrating a mix, an agent inspects this to
-    identify dynamic imbalances — e.g. bass consistently louder than keys —
+    identify dynamic imbalances — e.g. bass consistently louder than keys
     and adjusts generation accordingly.
     """
 
@@ -763,7 +763,7 @@ DimensionData = (
 class AnalysisResponse(CamelModel):
     """Envelope for a single-dimension analysis result.
 
-    ``data`` contains dimension-specific structured data.  The envelope is
+    ``data`` contains dimension-specific structured data. The envelope is
     consistent across all 13 dimensions so agents can process responses
     uniformly without branching on ``dimension``.
 
@@ -794,7 +794,7 @@ class AggregateAnalysisResponse(CamelModel):
 
 
 # ---------------------------------------------------------------------------
-# Cross-ref similarity response (issue #406)
+# Cross-ref similarity response
 # ---------------------------------------------------------------------------
 
 
@@ -802,7 +802,7 @@ class RefSimilarityDimensions(CamelModel):
     """Per-dimension similarity scores between two Muse refs.
 
     Each score is a 0–1 float where 1.0 means identical and 0.0 means
-    maximally different.  Scores are computed independently per dimension
+    maximally different. Scores are computed independently per dimension
     so agents can see exactly where two commits agree or diverge.
     """
 
@@ -845,7 +845,7 @@ class RefSimilarityResponse(CamelModel):
     )
 
 
-# Emotion diff models (issue #420)
+# Emotion diff models
 # ---------------------------------------------------------------------------
 
 
@@ -855,14 +855,14 @@ class EmotionVector8D(CamelModel):
     Extends the four-axis :class:`EmotionVector` with four additional perceptual
     dimensions used by the emotion-diff radar chart:
 
-    - ``valence``      — 0 (dark/negative) to 1 (bright/positive)
-    - ``energy``       — 0 (passive/still) to 1 (active/driving)
-    - ``tension``      — 0 (relaxed) to 1 (tense/dissonant)
-    - ``complexity``   — 0 (sparse/simple) to 1 (dense/complex)
-    - ``warmth``       — 0 (cold/sterile) to 1 (warm/intimate)
-    - ``brightness``   — 0 (dark/dull) to 1 (bright/shimmering)
-    - ``darkness``     — 0 (luminous) to 1 (brooding/ominous)
-    - ``playfulness``  — 0 (serious/solemn) to 1 (playful/whimsical)
+    - ``valence`` — 0 (dark/negative) to 1 (bright/positive)
+    - ``energy`` — 0 (passive/still) to 1 (active/driving)
+    - ``tension`` — 0 (relaxed) to 1 (tense/dissonant)
+    - ``complexity`` — 0 (sparse/simple) to 1 (dense/complex)
+    - ``warmth`` — 0 (cold/sterile) to 1 (warm/intimate)
+    - ``brightness`` — 0 (dark/dull) to 1 (bright/shimmering)
+    - ``darkness`` — 0 (luminous) to 1 (brooding/ominous)
+    - ``playfulness`` — 0 (serious/solemn) to 1 (playful/whimsical)
     """
 
     valence: float = Field(..., ge=0.0, le=1.0)
@@ -905,7 +905,7 @@ class EmotionDiffResponse(CamelModel):
     darkness, or playfulness relative to a reference state.
 
     ``delta`` is ``head_emotion - base_emotion`` per axis (signed; negative means
-    the axis decreased).  ``interpretation`` is an auto-generated natural-language
+    the axis decreased). ``interpretation`` is an auto-generated natural-language
     summary of the most significant shifts for human and agent readability.
     """
 
@@ -927,7 +927,7 @@ class EmotionDiffResponse(CamelModel):
     )
 
 
-# Dedicated harmony endpoint models (issue #414) — muse harmony command
+# Dedicated harmony endpoint models — muse harmony command
 # ---------------------------------------------------------------------------
 
 
@@ -964,7 +964,7 @@ class CadenceEvent(CamelModel):
     ``beat`` is the beat position of the *resolution* chord (the final chord
     in the cadence formula, not the approach chord).
     ``from_`` is the departure chord (e.g. 'V') and ``to`` is the resolution
-    (e.g. 'I').  Named ``from_`` in Python to avoid the reserved keyword;
+    (e.g. 'I'). Named ``from_`` in Python to avoid the reserved keyword;
     serialised as ``from`` on the wire.
     """
 
@@ -989,7 +989,7 @@ class HarmonyModulationEvent(CamelModel):
     (V) indicates intensification, while a return to tonic signals resolution.
 
     ``pivot_chord`` is the enharmonic chord that belongs to both keys and
-    enables the smooth modulation.  May be an empty string if the modulation
+    enables the smooth modulation. May be an empty string if the modulation
     is abrupt (direct modulation).
     """
 
@@ -1015,7 +1015,7 @@ class HarmonyAnalysisResponse(CamelModel):
 
     ``key`` is the full key label (tonic + mode), e.g. ``"C major"``.
     ``harmonic_rhythm_bpm`` is the rate of chord changes in beats per minute
-    (chords per minute), not the tempo BPM.  A value of 2.0 means one chord
+    (chords per minute), not the tempo BPM. A value of 2.0 means one chord
     change every 0.5 beats (half-beat harmonic rhythm).
     """
 
@@ -1030,7 +1030,7 @@ class HarmonyAnalysisResponse(CamelModel):
 
 
 # ---------------------------------------------------------------------------
-# Recall / semantic search models (issue #410)
+# Recall / semantic search models
 # ---------------------------------------------------------------------------
 
 
@@ -1038,7 +1038,7 @@ class RecallMatch(CamelModel):
     """A single commit matched by semantic recall search.
 
     ``score`` is a cosine similarity value in [0.0, 1.0] where 1.0 means
-    maximally similar to the query.  Results are returned pre-sorted
+    maximally similar to the query. Results are returned pre-sorted
     descending by score so callers can render a ranked list directly.
 
     ``matched_dimensions`` names the musical dimensions most responsible for
@@ -1061,12 +1061,12 @@ class RecallResponse(CamelModel):
     Returned by ``GET /api/v1/musehub/repos/{repo_id}/analysis/{ref}/recall?q=``.
 
     Agents use this to surface musically relevant commits given a natural-language
-    query (e.g. ``"a jazzy chord progression with swing groove"``).  The results
+    query (e.g. ``"a jazzy chord progression with swing groove"``). The results
     are ranked by cosine similarity in the 128-dim musical feature embedding space.
 
     ``query`` echoes the ``?q=`` parameter so clients can display it alongside
-    results.  ``ref`` is the ref scope — only commits reachable from this ref
-    are returned (scoped recall).  ``total_matches`` is the total number of
+    results. ``ref`` is the ref scope — only commits reachable from this ref
+    are returned (scoped recall). ``total_matches`` is the total number of
     matching commits before ``limit`` was applied.
     """
 

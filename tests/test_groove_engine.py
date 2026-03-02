@@ -42,13 +42,13 @@ class TestGrooveProfiles:
 
         """Boom bap profile should have correct characteristics."""
         assert BOOM_BAP.name == "boom_bap"
-        assert BOOM_BAP.swing_amount > 0.3  # Should have swing
-        assert BOOM_BAP.swing_grid == "8th"  # 8th note swing
+        assert BOOM_BAP.swing_amount > 0.3 # Should have swing
+        assert BOOM_BAP.swing_grid == "8th" # 8th note swing
         
         # Snare should be late, kick should be early
         kick_lo, kick_hi = BOOM_BAP.role_offset_ms["kick"]
         snare_lo, snare_hi = BOOM_BAP.role_offset_ms["snare"]
-        assert kick_hi < snare_lo  # Kick max < snare min (kick early, snare late)
+        assert kick_hi < snare_lo # Kick max < snare min (kick early, snare late)
     
     def test_trap_straight_is_straight(self) -> None:
 
@@ -66,7 +66,7 @@ class TestGrooveProfiles:
 
         """House/four-on-floor should have tight kick timing."""
         kick_lo, kick_hi = HOUSE_FOUR_ON_FLOOR.role_offset_ms["kick"]
-        assert abs(kick_lo) <= 5 and abs(kick_hi) <= 5  # Very tight
+        assert abs(kick_lo) <= 5 and abs(kick_hi) <= 5 # Very tight
     
     def test_all_profiles_have_required_fields(self) -> None:
 
@@ -155,7 +155,7 @@ class TestSwingCalculation:
         
         # Offbeat should have swing offset
         offset = calculate_swing_offset(0.5, BOOM_BAP, 120)
-        assert offset > 0  # Should be delayed
+        assert offset > 0 # Should be delayed
     
     def test_no_swing_with_zero_amount(self) -> None:
 
@@ -174,7 +174,7 @@ class TestGrooveApplication:
             {"pitch": 38, "start_beat": 1.0, "duration_beats": 0.25, "velocity": 100},
         ]
         
-        rng = random.Random(42)  # Deterministic
+        rng = random.Random(42) # Deterministic
         result = apply_groove_map(notes, tempo=120, style="boom_bap", rng=rng)
         
         # Notes should still exist
@@ -182,8 +182,8 @@ class TestGrooveApplication:
         
         # Timing should be modified (within reasonable range)
         for n in result:
-            assert n["start_beat"] >= -0.1  # Not too early
-            assert n["start_beat"] <= 2.0  # Not too late
+            assert n["start_beat"] >= -0.1 # Not too early
+            assert n["start_beat"] <= 2.0 # Not too late
     
     def test_applies_velocity_shaping(self) -> None:
 
@@ -198,8 +198,8 @@ class TestGrooveApplication:
         
         # Velocity should vary
         velocities = [n["velocity"] for n in result]
-        assert max(velocities) > min(velocities)  # Not all same
-        assert all(1 <= v <= 127 for v in velocities)  # In MIDI range
+        assert max(velocities) > min(velocities) # Not all same
+        assert all(1 <= v <= 127 for v in velocities) # In MIDI range
     
     def test_hat_arc_applied(self) -> None:
 
@@ -216,7 +216,7 @@ class TestGrooveApplication:
         
         # Velocities should vary with arc pattern
         velocities = [n["velocity"] for n in result]
-        assert len(set(velocities)) > 1  # Not all same
+        assert len(set(velocities)) > 1 # Not all same
     
     def test_deterministic_with_seed(self) -> None:
 

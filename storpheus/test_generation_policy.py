@@ -146,8 +146,8 @@ def test_musical_goals_dark() -> None:
     controls = GenerationControlVector()
     result = apply_musical_goals(controls, ["dark"])
     
-    assert result.brightness < 0.5  # Should be reduced from default
-    assert result.tension > 0.5     # Should be increased from default
+    assert result.brightness < 0.5 # Should be reduced from default
+    assert result.tension > 0.5 # Should be increased from default
 
 
 def test_musical_goals_energetic() -> None:
@@ -181,8 +181,8 @@ def test_musical_goals_cinematic() -> None:
 def test_controls_clamp() -> None:
     """Test control values are clamped to 0-1."""
     controls = GenerationControlVector(
-        creativity=1.5,   # Over limit
-        density=-0.2,     # Under limit
+        creativity=1.5, # Over limit
+        density=-0.2, # Under limit
         complexity=0.5
     )
     
@@ -196,16 +196,16 @@ def test_controls_clamp() -> None:
 def test_compound_genres() -> None:
     """Test compound genre handling (e.g., 'dark trap')."""
     controls = intent_to_controls(
-        genre="trap",  # Base genre
+        genre="trap", # Base genre
         tempo=140,
-        musical_goals=["dark", "minimal"],  # Modifiers
+        musical_goals=["dark", "minimal"], # Modifiers
         tone_brightness=-0.6,
     )
     
     # Should combine trap baseline + dark + minimal modifiers
-    assert controls.brightness < 0.4  # Dark effect
-    assert controls.complexity < 0.6  # Minimal effect
-    assert controls.density > 0.4     # Trap baseline, reduced by minimal
+    assert controls.brightness < 0.4 # Dark effect
+    assert controls.complexity < 0.6 # Minimal effect
+    assert controls.density > 0.4 # Trap baseline, reduced by minimal
 
 
 def test_policy_is_deterministic() -> None:

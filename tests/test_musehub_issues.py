@@ -1,6 +1,6 @@
 """Tests for Muse Hub issue tracking endpoints.
 
-Covers every acceptance criterion from issue #42:
+Covers every acceptance criterion:
 - POST /musehub/repos/{repo_id}/issues creates an issue in open state
 - Issue numbers are sequential per repo starting at 1
 - GET /musehub/repos/{repo_id}/issues returns open issues by default
@@ -377,7 +377,7 @@ async def test_list_issues_closed_state_filter(db_session: AsyncSession) -> None
 
 
 # ---------------------------------------------------------------------------
-# Regression tests for issue #302 — author field on Issue, PR, Release
+# Regression tests — author field on Issue, PR, Release
 # ---------------------------------------------------------------------------
 
 
@@ -386,7 +386,7 @@ async def test_create_issue_author_in_response(
     client: AsyncClient,
     auth_headers: dict[str, str],
 ) -> None:
-    """POST /issues response includes the author field (JWT sub) — regression for #302."""
+    """POST /issues response includes the author field (JWT sub) — regression f."""
     repo_id = await _create_repo(client, auth_headers, "author-issue-repo")
     response = await client.post(
         f"/api/v1/musehub/repos/{repo_id}/issues",
@@ -405,7 +405,7 @@ async def test_create_issue_author_persisted_in_list(
     client: AsyncClient,
     auth_headers: dict[str, str],
 ) -> None:
-    """Author field is persisted and returned in the issue list endpoint — regression for #302."""
+    """Author field is persisted and returned in the issue list endpoint — regression f."""
     repo_id = await _create_repo(client, auth_headers, "author-list-repo")
     await client.post(
         f"/api/v1/musehub/repos/{repo_id}/issues",
@@ -428,7 +428,7 @@ async def test_issue_detail_page_shows_author_label(
     client: AsyncClient,
     db_session: AsyncSession,
 ) -> None:
-    """issue_detail.html template contains the 'Author' meta-label — regression for #302."""
+    """issue_detail.html template contains the 'Author' meta-label — regression f."""
     from maestro.db.musehub_models import MusehubRepo
     repo = MusehubRepo(
         name="author-detail-beats",

@@ -16,7 +16,7 @@ if TYPE_CHECKING:
 class SlotsExtrasDict(TypedDict, total=False):
     """Typed extras bag on ``Slots``.
 
-    All fields are optional (``total=False``).  Each field is populated by a
+    All fields are optional (``total=False``). Each field is populated by a
     specific part of the intent routing / parsing pipeline:
 
     parsed_prompt

@@ -2,7 +2,7 @@
 
 Time-scaling (changing tempo while preserving pitch) is a fundamental
 production operation: halving time values creates a double-time feel;
-doubling them creates a half-time groove.  Because Muse commits track
+doubling them creates a half-time groove. Because Muse commits track
 MIDI note events and tempo metadata, this transformation is applied
 deterministically — same factor + same source commit = identical result.
 
@@ -65,8 +65,8 @@ app = typer.Typer()
 # Constants
 # ---------------------------------------------------------------------------
 
-FACTOR_MIN = 0.01  # below this the result is effectively silence
-FACTOR_MAX = 100.0  # above this is unreasonably fast
+FACTOR_MIN = 0.01 # below this the result is effectively silence
+FACTOR_MAX = 100.0 # above this is unreasonably fast
 
 
 # ---------------------------------------------------------------------------
@@ -78,7 +78,7 @@ class TempoScaleResult(TypedDict):
     """Result of a tempo-scale operation.
 
     Returned by ``_tempo_scale_async`` and emitted as JSON when ``--json``
-    is given.  Agents should treat ``new_commit`` as the SHA that replaces
+    is given. Agents should treat ``new_commit`` as the SHA that replaces
     the source commit in the timeline.
 
     Fields
@@ -119,7 +119,7 @@ class TempoScaleResult(TypedDict):
 def compute_factor_from_bpm(source_bpm: float, target_bpm: float) -> float:
     """Compute the scaling factor needed to reach *target_bpm* from *source_bpm*.
 
-    Uses the relation: factor = target_bpm / source_bpm.  A factor > 1
+    Uses the relation: factor = target_bpm / source_bpm. A factor > 1
     compresses time (faster); < 1 stretches it (slower).
 
     Args:
@@ -143,7 +143,7 @@ def apply_factor(bpm: float, factor: float) -> float:
     """Return the new BPM after applying *factor*.
 
     Args:
-        bpm:    Source tempo in BPM.
+        bpm: Source tempo in BPM.
         factor: Scaling factor (> 0).
 
     Returns:
@@ -171,7 +171,7 @@ async def _tempo_scale_async(
     """Apply tempo scaling to a commit and return the operation result.
 
     This is a stub implementation that models the correct schema and
-    deterministic semantics.  Full MIDI note manipulation will be wired in
+    deterministic semantics. Full MIDI note manipulation will be wired in
     when the Storpheus note-event query route is available.
 
     The scaling factor is resolved in this order:
@@ -179,14 +179,14 @@ async def _tempo_scale_async(
     2. Otherwise use *factor* directly.
 
     Args:
-        root:                  Repository root (directory containing ``.muse/``).
-        session:               Open async DB session (reserved for full impl).
-        commit:                Source commit SHA; defaults to HEAD.
-        factor:                Explicit scaling factor (``None`` when ``--bpm`` used).
-        bpm:                   Target BPM (``None`` when factor is used directly).
-        track:                 Restrict scaling to a named MIDI track, or ``None``.
-        preserve_expressions:  Scale CC/expression events proportionally.
-        message:               Commit message for the new commit.
+        root: Repository root (directory containing ``.muse/``).
+        session: Open async DB session (reserved for full impl).
+        commit: Source commit SHA; defaults to HEAD.
+        factor: Explicit scaling factor (``None`` when ``--bpm`` used).
+        bpm: Target BPM (``None`` when factor is used directly).
+        track: Restrict scaling to a named MIDI track, or ``None``.
+        preserve_expressions: Scale CC/expression events proportionally.
+        message: Commit message for the new commit.
 
     Returns:
         A :class:`TempoScaleResult` describing the new tempo-scaled commit.
@@ -224,12 +224,12 @@ async def _tempo_scale_async(
     # Deterministic stub commit SHA — same inputs always produce the same hash.
     # Full implementation persists note events and tempo metadata to the DB.
     raw = f"{source_commit}:{resolved_factor}:{track or 'all'}:{preserve_expressions}"
-    new_commit = hashlib.sha1(raw.encode()).hexdigest()[:8]  # noqa: S324 — not crypto
+    new_commit = hashlib.sha1(raw.encode()).hexdigest()[:8] # noqa: S324 — not crypto
 
     resolved_message = message or f"tempo-scale {resolved_factor:.4f}x (stub)"
 
     logger.info(
-        "✅ tempo-scale: %s -> %s  factor=%.4f  %.1f->%.1f BPM  track=%s",
+        "✅ tempo-scale: %s -> %s factor=%.4f %.1f->%.1f BPM track=%s",
         source_commit,
         new_commit,
         resolved_factor,
@@ -259,7 +259,7 @@ def _format_result(result: TempoScaleResult, *, as_json: bool) -> str:
     """Render a TempoScaleResult as human-readable text or compact JSON.
 
     Args:
-        result:  The tempo-scale operation result to render.
+        result: The tempo-scale operation result to render.
         as_json: Emit compact JSON when True; ASCII summary when False.
 
     Returns:
@@ -275,14 +275,14 @@ def _format_result(result: TempoScaleResult, *, as_json: bool) -> str:
         display = f"/{1.0 / factor:.4f}"
     lines = [
         f"Tempo scaled: {result['source_commit']} -> {result['new_commit']}",
-        f"  Factor:  {factor:.4f}  ({display})",
-        f"  Tempo:   {result['source_bpm']:.1f} BPM -> {result['new_bpm']:.1f} BPM",
-        f"  Track:   {result['track']}",
+        f" Factor: {factor:.4f} ({display})",
+        f" Tempo: {result['source_bpm']:.1f} BPM -> {result['new_bpm']:.1f} BPM",
+        f" Track: {result['track']}",
     ]
     if result["preserve_expressions"]:
-        lines.append("  Expressions: scaled proportionally")
-    lines.append(f"  Message: {result['message']}")
-    lines.append("  (stub -- full MIDI note manipulation pending)")
+        lines.append(" Expressions: scaled proportionally")
+    lines.append(f" Message: {result['message']}")
+    lines.append(" (stub -- full MIDI note manipulation pending)")
     return "\n".join(lines)
 
 
@@ -358,7 +358,7 @@ def tempo_scale(
     """Stretch or compress the timing of a commit.
 
     Scales all MIDI note onset/offset times by <factor>, updates tempo
-    metadata, and records a new commit.  Pitch is preserved -- this is pure
+    metadata, and records a new commit. Pitch is preserved -- this is pure
     MIDI timing manipulation, not audio time-stretching.
 
     Use ``--bpm N`` instead of <factor> to target an exact tempo.

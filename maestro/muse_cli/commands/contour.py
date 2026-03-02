@@ -7,12 +7,12 @@ reports phrase statistics for a target commit (default HEAD).
 
 Shape vocabulary
 ----------------
-- ascending       — net upward movement across the full phrase
-- descending      — net downward movement across the full phrase
-- arch            — rises then falls (single peak)
-- inverted-arch   — falls then rises (valley shape)
-- wave            — multiple peaks; alternating rise and fall
-- static          — narrow pitch range (< 2 semitones spread)
+- ascending — net upward movement across the full phrase
+- descending — net downward movement across the full phrase
+- arch — rises then falls (single peak)
+- inverted-arch — falls then rises (valley shape)
+- wave — multiple peaks; alternating rise and fall
+- static — narrow pitch range (< 2 semitones spread)
 
 Command forms
 -------------
@@ -73,7 +73,7 @@ app = typer.Typer()
 # Shape label constants
 # ---------------------------------------------------------------------------
 
-ShapeLabel = str  # one of the SHAPE_LABELS values
+ShapeLabel = str # one of the SHAPE_LABELS values
 
 SHAPE_LABELS: tuple[str, ...] = (
     "ascending",
@@ -96,17 +96,17 @@ class ContourResult(TypedDict):
 
     Fields
     ------
-    shape:         Overall melodic shape label (ascending, descending, arch, …).
-    tessitura:     Effective pitch range in semitones.
-    avg_interval:  Mean absolute note-to-note interval (semitones).  Higher
+    shape: Overall melodic shape label (ascending, descending, arch, …).
+    tessitura: Effective pitch range in semitones.
+    avg_interval: Mean absolute note-to-note interval (semitones). Higher
                    values indicate more angular, wider-leaping melodies.
-    phrase_count:  Number of detected melodic phrases.
+    phrase_count: Number of detected melodic phrases.
     avg_phrase_bars: Mean phrase length in bars.
-    commit:        Commit SHA analysed (8-char prefix).
-    branch:        Current branch name.
-    track:         Track name analysed, or "all".
-    section:       Section name scoped, or "all".
-    source:        "stub" until MIDI analysis is wired in.
+    commit: Commit SHA analysed (8-char prefix).
+    branch: Current branch name.
+    track: Track name analysed, or "all".
+    section: Section name scoped, or "all".
+    source: "stub" until MIDI analysis is wired in.
     """
 
     shape: str
@@ -126,11 +126,11 @@ class ContourCompareResult(TypedDict):
 
     Fields
     ------
-    commit_a:         ContourResult for the first commit (or HEAD).
-    commit_b:         ContourResult for the reference commit.
-    shape_changed:    True when the overall shape label differs.
+    commit_a: ContourResult for the first commit (or HEAD).
+    commit_b: ContourResult for the reference commit.
+    shape_changed: True when the overall shape label differs.
     angularity_delta: Change in avg_interval (positive = more angular).
-    tessitura_delta:  Change in tessitura semitones (positive = wider).
+    tessitura_delta: Change in tessitura semitones (positive = wider).
     """
 
     commit_a: ContourResult
@@ -145,8 +145,8 @@ class ContourCompareResult(TypedDict):
 # ---------------------------------------------------------------------------
 
 _STUB_SHAPE: ShapeLabel = "arch"
-_STUB_TESSITURA = 24  # 2 octaves
-_STUB_AVG_INTERVAL = 2.5  # semitones
+_STUB_TESSITURA = 24 # 2 octaves
+_STUB_AVG_INTERVAL = 2.5 # semitones
 _STUB_PHRASE_COUNT = 4
 _STUB_AVG_PHRASE_BARS = 8.0
 
@@ -160,7 +160,7 @@ async def _resolve_head(root: pathlib.Path) -> tuple[str, str]:
     """Return (branch, head_sha) from the .muse/ layout.
 
     Reads HEAD → ref → SHA, returning empty string for the SHA when no commits
-    exist yet.  Called by every analysis function to avoid duplicating file I/O.
+    exist yet. Called by every analysis function to avoid duplicating file I/O.
 
     Args:
         root: Repository root (directory that contains ``.muse/``).
@@ -187,14 +187,14 @@ async def _contour_detect_async(
     """Compute the melodic contour for a single commit (or working tree).
 
     Stub implementation: resolves branch/commit metadata from ``.muse/`` and
-    returns a realistic placeholder result in the correct schema.  Full MIDI
+    returns a realistic placeholder result in the correct schema. Full MIDI
     analysis will be wired once Storpheus exposes a pitch-trajectory route.
 
     Args:
-        root:    Repository root.
+        root: Repository root.
         session: Open async DB session (reserved for full implementation).
-        commit:  Commit SHA to analyse, or ``None`` for HEAD.
-        track:   Named MIDI track to analyse, or ``None`` for all tracks.
+        commit: Commit SHA to analyse, or ``None`` for HEAD.
+        track: Named MIDI track to analyse, or ``None`` for all tracks.
         section: Named section to scope analysis, or ``None`` for the full piece.
 
     Returns:
@@ -230,16 +230,16 @@ async def _contour_compare_async(
     """Compare melodic contour between two commits.
 
     Stub implementation: both sides share the same placeholder metric values,
-    so shape_changed is always False and deltas are always 0.  Full implementation
+    so shape_changed is always False and deltas are always 0. Full implementation
     will load per-commit pitch trajectories from Storpheus.
 
     Args:
-        root:     Repository root.
-        session:  Open async DB session.
+        root: Repository root.
+        session: Open async DB session.
         commit_a: First commit ref (defaults to HEAD when ``None``).
         commit_b: Reference commit ref to compare against.
-        track:    Named MIDI track, or ``None`` for all.
-        section:  Named section, or ``None`` for the full piece.
+        track: Named MIDI track, or ``None`` for all.
+        section: Named section, or ``None`` for the full piece.
 
     Returns:
         A :class:`ContourCompareResult` with both sides and diff metrics.
@@ -270,14 +270,14 @@ async def _contour_history_async(
 ) -> list[ContourResult]:
     """Return the contour history for the current branch.
 
-    Stub implementation: returns a single entry for HEAD.  Full implementation
+    Stub implementation: returns a single entry for HEAD. Full implementation
     will walk the commit chain and return one :class:`ContourResult` per commit,
     newest first.
 
     Args:
-        root:    Repository root.
+        root: Repository root.
         session: Open async DB session.
-        track:   Named MIDI track, or ``None`` for all.
+        track: Named MIDI track, or ``None`` for all.
         section: Named section, or ``None`` for the full piece.
 
     Returns:
@@ -298,12 +298,12 @@ def _format_detect(result: ContourResult, *, as_json: bool, shape_only: bool) ->
     """Render a detect result as human-readable text or JSON.
 
     When *shape_only* is True, only the shape label line is printed (useful
-    for quick scripting).  When *as_json* is True, the full :class:`ContourResult`
+    for quick scripting). When *as_json* is True, the full :class:`ContourResult`
     is serialised as indented JSON.
 
     Args:
-        result:     Analysis result to render.
-        as_json:    Emit JSON instead of human-readable text.
+        result: Analysis result to render.
+        as_json: Emit JSON instead of human-readable text.
         shape_only: Emit the shape label line only (ignored when as_json=True).
 
     Returns:
@@ -321,8 +321,8 @@ def _format_detect(result: ContourResult, *, as_json: bool, shape_only: bool) ->
     lines = [
         f"Shape: {result['shape']} | Range: {range_str} | "
         f"Phrases: {result['phrase_count']} avg {result['avg_phrase_bars']:.0f} bars",
-        f"Commit: {result['commit']}  Branch: {result['branch']}",
-        f"Track: {result['track']}  Section: {result['section']}",
+        f"Commit: {result['commit']} Branch: {result['branch']}",
+        f"Track: {result['track']} Section: {result['section']}",
         f"Angularity: {result['avg_interval']} st avg interval",
     ]
     if result.get("source") == "stub":
@@ -334,7 +334,7 @@ def _format_compare(result: ContourCompareResult, *, as_json: bool) -> str:
     """Render a compare result as human-readable text or JSON.
 
     Args:
-        result:  Comparison result to render.
+        result: Comparison result to render.
         as_json: Emit JSON instead of human-readable text.
 
     Returns:
@@ -357,9 +357,9 @@ def _format_compare(result: ContourCompareResult, *, as_json: bool) -> str:
     sign = "+" if ang_delta >= 0 else ""
     shape_note = " (shape changed)" if result["shape_changed"] else ""
     return (
-        f"A ({a['commit']})  Shape: {a['shape']} | Angularity: {a['avg_interval']} st\n"
-        f"B ({b['commit']})  Shape: {b['shape']} | Angularity: {b['avg_interval']} st\n"
-        f"Delta  angularity {sign}{ang_delta} st | tessitura {result['tessitura_delta']:+d} st"
+        f"A ({a['commit']}) Shape: {a['shape']} | Angularity: {a['avg_interval']} st\n"
+        f"B ({b['commit']}) Shape: {b['shape']} | Angularity: {b['avg_interval']} st\n"
+        f"Delta angularity {sign}{ang_delta} st | tessitura {result['tessitura_delta']:+d} st"
         + shape_note
     )
 
@@ -381,10 +381,10 @@ def _format_history(entries: list[ContourResult], *, as_json: bool) -> str:
     lines: list[str] = []
     for entry in entries:
         lines.append(
-            f"{entry['commit']}  {entry['shape']} | "
+            f"{entry['commit']} {entry['shape']} | "
             f"range {entry['tessitura']} st | "
             f"ang {entry['avg_interval']} st"
-            + (f"  [{entry['track']}]" if entry["track"] != "all" else "")
+            + (f" [{entry['track']}]" if entry["track"] != "all" else "")
         )
     return "\n".join(lines)
 
@@ -447,7 +447,7 @@ def contour(
     """Analyze melodic contour and phrase shape for a composition commit.
 
     With no flags, analyses HEAD and prints shape, range, phrase count, and
-    angularity.  Use ``--compare`` to diff two commits, ``--history`` to see
+    angularity. Use ``--compare`` to diff two commits, ``--history`` to see
     how melodic character evolved, and ``--shape`` for a one-line shape label.
     """
     root = require_repo()

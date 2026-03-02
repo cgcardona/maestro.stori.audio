@@ -1,20 +1,20 @@
 """Tests for the Muse Hub raw file download endpoint.
 
-Covers every acceptance criterion from issue #245:
-- test_raw_midi_correct_mime       — .mid served with audio/midi
-- test_raw_mp3_correct_mime        — .mp3 served with audio/mpeg
-- test_raw_wav_correct_mime        — .wav served with audio/wav
-- test_raw_json_correct_mime       — .json served with application/json
-- test_raw_webp_correct_mime       — .webp served with image/webp
-- test_raw_xml_correct_mime        — .xml served with application/xml
-- test_raw_404_unknown_path        — nonexistent path returns 404
-- test_raw_404_unknown_repo        — nonexistent repo_id returns 404
-- test_raw_public_no_auth          — public repo accessible without JWT
-- test_raw_private_requires_auth   — private repo returns 401 without JWT
-- test_raw_private_with_auth       — private repo accessible with valid JWT
-- test_raw_range_request           — Range request returns 206 with partial content
-- test_raw_content_disposition     — Content-Disposition header carries filename
-- test_raw_accept_ranges_header    — Accept-Ranges: bytes is present in response
+Covers every acceptance criterion:
+- test_raw_midi_correct_mime — .mid served with audio/midi
+- test_raw_mp3_correct_mime — .mp3 served with audio/mpeg
+- test_raw_wav_correct_mime — .wav served with audio/wav
+- test_raw_json_correct_mime — .json served with application/json
+- test_raw_webp_correct_mime — .webp served with image/webp
+- test_raw_xml_correct_mime — .xml served with application/xml
+- test_raw_404_unknown_path — nonexistent path returns 404
+- test_raw_404_unknown_repo — nonexistent repo_id returns 404
+- test_raw_public_no_auth — public repo accessible without JWT
+- test_raw_private_requires_auth — private repo returns 401 without JWT
+- test_raw_private_with_auth — private repo accessible with valid JWT
+- test_raw_range_request — Range request returns 206 with partial content
+- test_raw_content_disposition — Content-Disposition header carries filename
+- test_raw_accept_ranges_header — Accept-Ranges: bytes is present in response
 
 The endpoint under test:
   GET /api/v1/musehub/repos/{repo_id}/raw/{ref}/{path:path}

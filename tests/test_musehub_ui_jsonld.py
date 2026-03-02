@@ -1,6 +1,6 @@
 """Unit tests for the MuseHub JSON-LD structured data helpers.
 
-Covers issue #454 — jsonld_repo and jsonld_release produce valid
+Covers — jsonld_repo and jsonld_release produce valid
 schema.org/MusicComposition and schema.org/MusicRecording dicts.
 render_jsonld_script produces a safe, well-formed <script> tag.
 

@@ -64,7 +64,7 @@ def analyze_quality(notes: list[StorpheusNoteDict], bars: int, tempo: int) -> di
     start_beats = [n["start_beat"] for n in notes]
     if start_beats:
         # Check for quantization (how "on-grid" are the notes?)
-        fractional_parts = [b % 0.25 for b in start_beats]  # 16th note grid
+        fractional_parts = [b % 0.25 for b in start_beats] # 16th note grid
         metrics["timing_quantization"] = 1.0 - (statistics.mean(fractional_parts) / 0.25)
         
         # Note spacing (are notes evenly distributed or clustered?)
@@ -98,14 +98,14 @@ def analyze_quality(notes: list[StorpheusNoteDict], bars: int, tempo: int) -> di
     
     # Prefer reasonable note density (not too sparse, not too dense)
     if "notes_per_bar" in metrics:
-        ideal_density = 8.0  # ~8 notes per bar is "good"
+        ideal_density = 8.0 # ~8 notes per bar is "good"
         density_score = 1.0 - min(abs(metrics["notes_per_bar"] - ideal_density) / ideal_density, 1.0)
         quality_score += density_score * 0.3
         weights_sum += 0.3
     
     # Prefer good velocity variation (not flat, not chaotic)
     if "velocity_variation" in metrics:
-        ideal_variation = 0.15  # 15% variation
+        ideal_variation = 0.15 # 15% variation
         variation_score = 1.0 - min(abs(metrics["velocity_variation"] - ideal_variation) / ideal_variation, 1.0)
         quality_score += variation_score * 0.2
         weights_sum += 0.2
@@ -113,7 +113,7 @@ def analyze_quality(notes: list[StorpheusNoteDict], bars: int, tempo: int) -> di
     # Prefer reasonable pitch range (not too narrow, not impossible)
     if "pitch_range" in metrics:
         range_val = metrics["pitch_range"]
-        if 12 <= range_val <= 36:  # 1-3 octaves is good
+        if 12 <= range_val <= 36: # 1-3 octaves is good
             range_score = 1.0
         else:
             range_score = 0.5
@@ -123,12 +123,12 @@ def analyze_quality(notes: list[StorpheusNoteDict], bars: int, tempo: int) -> di
     # Prefer some repetition (musically coherent) but not total repetition
     if "pattern_repetition_rate" in metrics:
         rep_rate = metrics["pattern_repetition_rate"]
-        if 0.2 <= rep_rate <= 0.5:  # Sweet spot
+        if 0.2 <= rep_rate <= 0.5: # Sweet spot
             rep_score = 1.0
         elif rep_rate < 0.2:
-            rep_score = 0.7  # Too random
+            rep_score = 0.7 # Too random
         else:
-            rep_score = 0.6  # Too repetitive
+            rep_score = 0.6 # Too repetitive
         quality_score += rep_score * 0.3
         weights_sum += 0.3
     

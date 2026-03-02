@@ -1,6 +1,6 @@
 """Tests for ``muse fetch``.
 
-Covers acceptance criteria from issue #80:
+Covers acceptance criteria:
 - ``muse fetch`` with no remote configured exits 1 with instructive message.
 - ``muse fetch`` POSTs to ``/fetch`` with correct payload structure.
 - Remote-tracking refs (``.muse/remotes/origin/<branch>``) are updated.
@@ -365,7 +365,7 @@ async def test_fetch_prune_removes_stale_remote_tracking_refs(
     set_remote_head("origin", "main", "active-commit-id", root)
     set_remote_head("origin", "deleted-branch", "old-commit-id", root)
 
-    # Remote only reports "main" — "deleted-branch" has been removed on the remote
+    # Remote only reports "main""deleted-branch" has been removed on the remote
     mock_response = _make_hub_fetch_response(
         branches=[_make_branch_info("main", "active-commit-id-v2", is_new=False)]
     )

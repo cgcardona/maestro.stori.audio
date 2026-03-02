@@ -8,7 +8,7 @@ contents, and optional music-native views for any historical commit.
     commit a1b2c3d4e5f6...
     Branch: main
     Author: producer@stori.app
-    Date:   2026-02-27 17:30:00
+    Date: 2026-02-27 17:30:00
 
         Add bridge section with Rhodes keys
 
@@ -19,9 +19,9 @@ contents, and optional music-native views for any historical commit.
 
 **Flag summary:**
 
-- ``--json``          — full commit metadata + snapshot manifest as JSON
-- ``--diff``          — path-level diff vs parent commit (A/M/D markers)
-- ``--midi``          — list MIDI files in the snapshot
+- ``--json`` — full commit metadata + snapshot manifest as JSON
+- ``--diff`` — path-level diff vs parent commit (A/M/D markers)
+- ``--midi`` — list MIDI files in the snapshot
 - ``--audio-preview`` — generate and open audio preview of the snapshot (macOS)
 
 **Commit resolution** (same strategy as ``muse arrange``):
@@ -73,7 +73,7 @@ class ShowCommitResult(TypedDict):
     DB round-trip.
 
     Music-domain fields are surfaced at the top level for easy agent
-    consumption (sourced from ``commit_metadata`` in the DB).  All are
+    consumption (sourced from ``commit_metadata`` in the DB). All are
     ``None`` when the commit was created without the corresponding flag.
     """
 
@@ -171,7 +171,7 @@ async def _resolve_commit(
     if len(matches) > 1:
         typer.echo(f"❌ Ambiguous prefix '{prefix[:8]}' matches {len(matches)} commits:")
         for c in matches:
-            typer.echo(f"   {c.commit_id[:8]}  {c.message[:60]}")
+            typer.echo(f" {c.commit_id[:8]} {c.message[:60]}")
         raise typer.Exit(code=ExitCode.USER_ERROR)
 
     return matches[0]
@@ -209,7 +209,7 @@ async def _show_async(
 ) -> ShowCommitResult:
     """Load commit metadata and snapshot manifest for *ref*.
 
-    Used by the Typer command and directly by tests.  All I/O goes through
+    Used by the Typer command and directly by tests. All I/O goes through
     *session* — no filesystem side-effects beyond reading ``.muse/`` refs.
     """
     commit = await _resolve_commit(session, muse_dir, ref)
@@ -298,30 +298,30 @@ def _midi_files_in_manifest(manifest: dict[str, str]) -> list[str]:
 def _render_show(result: ShowCommitResult) -> None:
     """Print commit metadata in ``git show`` style."""
     typer.echo(f"commit {result['commit_id']}")
-    typer.echo(f"Branch:  {result['branch']}")
+    typer.echo(f"Branch: {result['branch']}")
     if result["author"]:
-        typer.echo(f"Author:  {result['author']}")
-    typer.echo(f"Date:    {result['committed_at']}")
+        typer.echo(f"Author: {result['author']}")
+    typer.echo(f"Date: {result['committed_at']}")
     if result["parent_commit_id"]:
-        typer.echo(f"Parent:  {result['parent_commit_id'][:8]}")
+        typer.echo(f"Parent: {result['parent_commit_id'][:8]}")
     if result["parent2_commit_id"]:
         typer.echo(f"Parent2: {result['parent2_commit_id'][:8]}")
     # Music-domain metadata (only shown when present)
     if result["section"]:
         typer.echo(f"Section: {result['section']}")
     if result["track"]:
-        typer.echo(f"Track:   {result['track']}")
+        typer.echo(f"Track: {result['track']}")
     if result["emotion"]:
         typer.echo(f"Emotion: {result['emotion']}")
     typer.echo("")
-    typer.echo(f"    {result['message']}")
+    typer.echo(f" {result['message']}")
     typer.echo("")
 
     manifest = result["snapshot_manifest"]
     paths = sorted(manifest)
     typer.echo(f"Snapshot: {len(paths)} file{'s' if len(paths) != 1 else ''}")
     for p in paths:
-        typer.echo(f"  {p}")
+        typer.echo(f" {p}")
 
 
 def _render_diff(diff: ShowDiffResult) -> None:
@@ -332,11 +332,11 @@ def _render_diff(diff: ShowDiffResult) -> None:
     typer.echo("")
 
     for p in diff["added"]:
-        typer.echo(f"A  {p}")
+        typer.echo(f"A {p}")
     for p in diff["modified"]:
-        typer.echo(f"M  {p}")
+        typer.echo(f"M {p}")
     for p in diff["removed"]:
-        typer.echo(f"D  {p}")
+        typer.echo(f"D {p}")
 
     if diff["total_changed"] == 0:
         typer.echo("(no changes vs parent)")
@@ -355,14 +355,14 @@ def _render_midi(manifest: dict[str, str], commit_id: str) -> None:
     typer.echo(f"MIDI files in snapshot {short} ({len(midi_files)}):")
     for path in midi_files:
         obj_id = manifest[path]
-        typer.echo(f"  {path}  ({obj_id[:8]})")
+        typer.echo(f" {path} ({obj_id[:8]})")
 
 
 def _render_audio_preview(commit_id: str, root: pathlib.Path) -> None:
     """Trigger an audio preview for the commit's snapshot (macOS, stub).
 
     The full implementation would call the Storpheus render-preview pipeline
-    and stream the result to ``afplay``.  This stub prints the resolved path
+    and stream the result to ``afplay``. This stub prints the resolved path
     and launches ``afplay`` on any pre-rendered WAV file in the export cache,
     falling back to a clear help message when nothing is cached.
     """
@@ -370,16 +370,16 @@ def _render_audio_preview(commit_id: str, root: pathlib.Path) -> None:
     export_dir = root / ".muse" / "exports" / short
     if not export_dir.exists():
         typer.echo(
-            f"⚠️  No cached audio preview for commit {short}.\n"
-            f"    Run: muse export {short} --wav  to render first, then retry."
+            f"⚠️ No cached audio preview for commit {short}.\n"
+            f" Run: muse export {short} --wav to render first, then retry."
         )
         return
 
     wav_files = sorted(export_dir.glob("*.wav"))
     if not wav_files:
         typer.echo(
-            f"⚠️  Export directory exists but contains no WAV files for {short}.\n"
-            f"    Run: muse export {short} --wav  to regenerate."
+            f"⚠️ Export directory exists but contains no WAV files for {short}.\n"
+            f" Run: muse export {short} --wav to regenerate."
         )
         return
 
@@ -434,7 +434,7 @@ def show(
     """Inspect a commit: metadata, snapshot, diff, and music-native views.
 
     Equivalent to ``git show`` — lets you inspect any historical creative
-    decision in the Muse VCS.  The ``--midi`` and ``--audio-preview`` flags
+    decision in the Muse VCS. The ``--midi`` and ``--audio-preview`` flags
     make it music-native, allowing direct playback of historical snapshots.
 
     Without flags, prints commit metadata and snapshot file list.

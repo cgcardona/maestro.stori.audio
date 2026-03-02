@@ -21,14 +21,14 @@ class VariationPhraseResponse(CamelModel):
     """A single generated phrase within a polled variation.
 
     Each ``VariationPhraseResponse`` represents one MIDI phrase that was
-    produced during a generation pass.  Phrases are ordered by ``sequence``
+    produced during a generation pass. Phrases are ordered by ``sequence``
     and scoped to a specific track and region in the DAW project.
 
     Wire format: camelCase (via ``CamelModel``) — e.g. ``phraseId``,
     ``trackId``, ``beatStart``, ``aiExplanation``.
 
     Attributes:
-        phrase_id: Stable UUID for this phrase.  Assigned at generation time;
+        phrase_id: Stable UUID for this phrase. Assigned at generation time;
             consistent across reconnect polls.
         sequence: Monotonically increasing integer within the variation.
             Phrases are delivered in sequence order; the last sequence number
@@ -38,7 +38,7 @@ class VariationPhraseResponse(CamelModel):
             occupies.
         beat_start: Beat position (float) at which this phrase starts in the
             project timeline.
-        beat_end: Beat position (float) at which this phrase ends.  The phrase
+        beat_end: Beat position (float) at which this phrase ends. The phrase
             duration in beats is ``beat_end - beat_start``.
         label: Human-readable display label for the phrase in the DAW
             (e.g. ``"Verse 1 Bass"``).
@@ -47,7 +47,7 @@ class VariationPhraseResponse(CamelModel):
         ai_explanation: Natural-language explanation of what the AI generated
             in this phrase, or ``None`` if none was produced.
         diff: MIDI delta for this phrase as a raw ``dict[str, object]`` in the
-            internal diff-JSON format.  Contains added/removed/modified notes
+            internal diff-JSON format. Contains added/removed/modified notes
             and controller events relative to the base state.
     """
 
@@ -89,7 +89,7 @@ class VariationPhraseResponse(CamelModel):
 class GetVariationResponse(CamelModel):
     """Full variation status and phrase payload for polling clients.
 
-    Returned by ``GET /variation/{variation_id}``.  Designed for clients that
+    Returned by ``GET /variation/{variation_id}``. Designed for clients that
     cannot maintain an SSE connection (e.g. after a disconnect / reconnect) and
     need to recover the current generation state in a single HTTP request.
 
@@ -103,7 +103,7 @@ class GetVariationResponse(CamelModel):
             base when generation started (typically ``"muse"``).
         intent: The user's natural-language intent for this variation
             (e.g. ``"add a funky bass line"``).
-        status: Current lifecycle status of the variation.  One of
+        status: Current lifecycle status of the variation. One of
             ``"streaming"``, ``"committed"``, ``"discarded"``, ``"error"``,
             or ``"pending"``.
         ai_explanation: Top-level AI explanation of the variation as a whole,
@@ -112,7 +112,7 @@ class GetVariationResponse(CamelModel):
         affected_regions: List of region IDs that this variation modifies.
         phrases: Ordered list of all phrases generated so far, sorted by
             ``sequence`` ascending.
-        phrase_count: Total number of phrases generated so far.  Equals
+        phrase_count: Total number of phrases generated so far. Equals
             ``len(phrases)``.
         last_sequence: Sequence number of the most recently delivered phrase.
             Useful for resuming a stream: the client can request events with

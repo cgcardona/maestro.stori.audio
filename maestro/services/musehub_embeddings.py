@@ -176,15 +176,15 @@ def features_to_vector(features: MusicalFeatures) -> list[float]:
     """Convert a MusicalFeatures record to a fixed-dim float vector.
 
     Vector layout (128 dimensions total):
-      [0]   key_index normalised to [0, 1] (key_index / 11.0, or 0.5 if unknown)
-      [1]   mode_score
-      [2]   tempo_norm
-      [3]   note_density
-      [4]   velocity_mean
-      [5]   valence
-      [6]   arousal
-      [7]   chord_complexity
-      [8–19]  chroma (12 dims)
+      [0] key_index normalised to [0, 1] (key_index / 11.0, or 0.5 if unknown)
+      [1] mode_score
+      [2] tempo_norm
+      [3] note_density
+      [4] velocity_mean
+      [5] valence
+      [6] arousal
+      [7] chord_complexity
+      [8–19] chroma (12 dims)
       [20–35] text_fingerprint (16 dims)
       [36–127] zero-padded (reserved for future MIDI features)
 
@@ -207,8 +207,8 @@ def features_to_vector(features: MusicalFeatures) -> list[float]:
         features.valence,
         features.arousal,
         features.chord_complexity,
-        *features.chroma,       # 12 dims
-        *features.text_fingerprint,  # 16 dims
+        *features.chroma, # 12 dims
+        *features.text_fingerprint, # 16 dims
     ]
     # Zero-pad to VECTOR_DIM
     raw += [0.0] * (VECTOR_DIM - len(raw))

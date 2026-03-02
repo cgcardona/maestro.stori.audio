@@ -10,10 +10,10 @@ Rather than resetting (which loses history), ``muse revert`` creates an
 
 Flags
 -----
-COMMIT TEXT       Commit ID to revert (required, positional, accepts prefix).
---no-commit       Apply the inverse changes to muse-work/ without committing.
---track TEXT      Scope the revert to paths under tracks/<track>/.
---section TEXT    Scope the revert to paths under sections/<section>/.
+COMMIT TEXT Commit ID to revert (required, positional, accepts prefix).
+--no-commit Apply the inverse changes to muse-work/ without committing.
+--track TEXT Scope the revert to paths under tracks/<track>/.
+--section TEXT Scope the revert to paths under sections/<section>/.
 """
 from __future__ import annotations
 

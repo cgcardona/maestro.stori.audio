@@ -1,19 +1,19 @@
-"""Tests for the Muse Hub emotion-diff UI page (issue #432).
+"""Tests for the Muse Hub emotion-diff UI page.
 
 Covers:
-- test_emotion_diff_page_renders              — GET /{owner}/{repo}/emotion-diff/{base}...{head} returns 200 HTML
-- test_emotion_diff_page_no_auth_required     — accessible without JWT
-- test_emotion_diff_page_invalid_ref_404      — refs without '...' separator return 404
-- test_emotion_diff_page_unknown_owner_404    — unknown owner/slug returns 404
-- test_emotion_diff_page_includes_radar       — page contains radar chart JavaScript
+- test_emotion_diff_page_renders — GET /{owner}/{repo}/emotion-diff/{base}...{head} returns 200 HTML
+- test_emotion_diff_page_no_auth_required — accessible without JWT
+- test_emotion_diff_page_invalid_ref_404 — refs without '...' separator return 404
+- test_emotion_diff_page_unknown_owner_404 — unknown owner/slug returns 404
+- test_emotion_diff_page_includes_radar — page contains radar chart JavaScript
 - test_emotion_diff_page_includes_8_dimensions — page contains all 8 emotion-diff dimension keys
 - test_emotion_diff_page_includes_delta_chart — page contains delta bar chart JavaScript
-- test_emotion_diff_page_includes_trajectory  — page contains trajectory timeline JavaScript
+- test_emotion_diff_page_includes_trajectory — page contains trajectory timeline JavaScript
 - test_emotion_diff_page_includes_listen_button — page contains "Listen" comparison buttons
 - test_emotion_diff_page_includes_interpretation — page contains interpretation text
-- test_emotion_diff_json_response             — ?format=json returns EmotionDiffResponse shape
-- test_emotion_diff_page_empty_base_ref_404   — base ref empty returns 404
-- test_emotion_diff_page_empty_head_ref_404   — head ref empty returns 404
+- test_emotion_diff_json_response — ?format=json returns EmotionDiffResponse shape
+- test_emotion_diff_page_empty_base_ref_404 — base ref empty returns 404
+- test_emotion_diff_page_empty_head_ref_404 — head ref empty returns 404
 """
 from __future__ import annotations
 

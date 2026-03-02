@@ -68,7 +68,7 @@ async def list_drum_kits(
         logger.info("Listed %d drum kits", len(kits))
         return JSONResponse(
             content=kits,
-            headers={"Cache-Control": "public, max-age=300"},  # 5 min cache for list
+            headers={"Cache-Control": "public, max-age=300"}, # 5 min cache for list
         )
     except RateLimitExceeded:
         raise

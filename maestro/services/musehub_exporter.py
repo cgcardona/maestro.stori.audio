@@ -5,12 +5,12 @@ into a downloadable payload. The export is deterministic for a given
 repo + ref + format + options combination.
 
 Format support:
-  midi      — returns .mid artifacts directly or ZIPed for split_tracks
-  json      — serialises commit metadata + object index as JSON
-  musicxml  — returns .xml/.musicxml/.mxl artifacts (pass-through)
-  abc       — returns .abc artifacts (pass-through)
-  wav       — returns .wav artifacts (pass-through)
-  mp3       — returns .mp3 artifacts (pass-through)
+  midi — returns .mid artifacts directly or ZIPed for split_tracks
+  json — serialises commit metadata + object index as JSON
+  musicxml — returns .xml/.musicxml/.mxl artifacts (pass-through)
+  abc — returns .abc artifacts (pass-through)
+  wav — returns .wav artifacts (pass-through)
+  mp3 — returns .mp3 artifacts (pass-through)
 
 For split_tracks=True or when multiple artifacts match the requested format,
 all files are bundled into a ZIP archive. Single-artifact exports are returned
@@ -47,12 +47,12 @@ logger = logging.getLogger(__name__)
 class ExportFormat(str, Enum):
     """Supported export formats for a Muse Hub repo snapshot.
 
-    midi      — Audio MIDI (.mid); the native Muse format.
-    json      — Commit metadata + object index; machine-readable for agents.
-    musicxml  — MusicXML (.xml/.musicxml/.mxl); notation-app interchange.
-    abc       — ABC notation (.abc); plain-text music representation.
-    wav       — PCM audio (.wav); lossless render.
-    mp3       — Compressed audio (.mp3); delivery format.
+    midi — Audio MIDI (.mid); the native Muse format.
+    json — Commit metadata + object index; machine-readable for agents.
+    musicxml — MusicXML (.xml/.musicxml/.mxl); notation-app interchange.
+    abc — ABC notation (.abc); plain-text music representation.
+    wav — PCM audio (.wav); lossless render.
+    mp3 — Compressed audio (.mp3); delivery format.
     """
 
     midi = "midi"
@@ -78,9 +78,9 @@ class ObjectIndexEntry(TypedDict):
 class ExportResult:
     """Fully packaged export artifact ready for streaming to the client.
 
-    content      — Raw bytes of the file or ZIP archive.
+    content — Raw bytes of the file or ZIP archive.
     content_type — MIME type for the HTTP response Content-Type header.
-    filename     — Suggested filename for Content-Disposition: attachment.
+    filename — Suggested filename for Content-Disposition: attachment.
     """
 
     content: bytes
@@ -218,19 +218,19 @@ async def export_repo_at_ref(
     session: AsyncSession,
     repo_id: str,
     ref: str,
-    format: ExportFormat,  # noqa: A002 — shadows built-in intentionally for clarity
+    format: ExportFormat, # noqa: A002 — shadows built-in intentionally for clarity
     split_tracks: bool = False,
     sections: list[str] | None = None,
 ) -> ExportResult | Literal["ref_not_found", "no_matching_objects"]:
     """Package stored artifacts for download at the given commit ref.
 
     Args:
-        session:       Active async DB session.
-        repo_id:       Target Muse Hub repository ID.
-        ref:           Commit ID or branch name to export from.
-        format:        Output format (ExportFormat enum).
-        split_tracks:  When True, always bundle into a ZIP even for a single artifact.
-        sections:      Optional section name filter; only artifacts whose path
+        session: Active async DB session.
+        repo_id: Target Muse Hub repository ID.
+        ref: Commit ID or branch name to export from.
+        format: Output format (ExportFormat enum).
+        split_tracks: When True, always bundle into a ZIP even for a single artifact.
+        sections: Optional section name filter; only artifacts whose path
                        contains a listed section name are included.
 
     Returns:

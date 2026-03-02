@@ -58,7 +58,7 @@ def _load_config(config_path: pathlib.Path) -> dict[str, object]:
     try:
         with config_path.open("rb") as fh:
             return tomllib.load(fh)
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc: # noqa: BLE001
         logger.warning("⚠️ Failed to parse %s: %s", config_path, exc)
         return {}
 
@@ -124,8 +124,8 @@ def get_auth_token(repo_root: pathlib.Path | None = None) -> str | None:
     The token value is NEVER logged — log lines mask it as ``"Bearer ***"``.
 
     Args:
-        repo_root: Explicit repository root.  Defaults to the current working
-                   directory.  In tests, pass a ``tmp_path`` fixture value.
+        repo_root: Explicit repository root. Defaults to the current working
+                   directory. In tests, pass a ``tmp_path`` fixture value.
 
     Returns:
         The raw token string, or ``None``.
@@ -156,11 +156,11 @@ def get_remote(name: str, repo_root: pathlib.Path | None = None) -> str | None:
     """Return the URL for remote *name* from ``[remotes.<name>] url``.
 
     Returns ``None`` when the config file is absent or the named remote has
-    not been configured.  Never raises — callers decide what to do on miss.
+    not been configured. Never raises — callers decide what to do on miss.
 
     Args:
         name: Remote name (e.g. ``"origin"``).
-        repo_root: Repository root.  Defaults to ``Path.cwd()``.
+        repo_root: Repository root. Defaults to ``Path.cwd()``.
 
     Returns:
         URL string, or ``None``.
@@ -186,13 +186,13 @@ def set_remote(
 ) -> None:
     """Write ``[remotes.<name>] url = "<url>"`` to ``.muse/config.toml``.
 
-    Preserves all other sections already in the config file.  Creates the
+    Preserves all other sections already in the config file. Creates the
     ``.muse/`` directory and ``config.toml`` if they do not exist.
 
     Args:
         name: Remote name (e.g. ``"origin"``).
         url: Remote URL (e.g. ``"https://hub.example.com/musehub/repos/my-repo"``).
-        repo_root: Repository root.  Defaults to ``Path.cwd()``.
+        repo_root: Repository root. Defaults to ``Path.cwd()``.
     """
     config_path = _config_path(repo_root)
     config_path.parent.mkdir(parents=True, exist_ok=True)
@@ -202,10 +202,10 @@ def set_remote(
     # Ensure the nested structure exists
     if "remotes" not in data or not isinstance(data["remotes"], dict):
         data["remotes"] = {}
-    remotes: dict[str, object] = data["remotes"]  # type: ignore[assignment]
+    remotes: dict[str, object] = data["remotes"] # type: ignore[assignment]
     if name not in remotes or not isinstance(remotes[name], dict):
         remotes[name] = {}
-    remote_entry: dict[str, object] = remotes[name]  # type: ignore[assignment]
+    remote_entry: dict[str, object] = remotes[name] # type: ignore[assignment]
     remote_entry["url"] = url
 
     config_path.write_text(_dump_toml(data), encoding="utf-8")
@@ -219,13 +219,13 @@ def remove_remote(
     """Remove a named remote and all its tracking refs from ``.muse/``.
 
     Deletes ``[remotes.<name>]`` from ``config.toml`` and removes the entire
-    ``.muse/remotes/<name>/`` directory tree (tracking head files).  Raises
+    ``.muse/remotes/<name>/`` directory tree (tracking head files). Raises
     ``KeyError`` when the remote does not exist so callers can surface a clear
     error message to the user.
 
     Args:
         name: Remote name to remove (e.g. ``"origin"``).
-        repo_root: Repository root.  Defaults to ``Path.cwd()``.
+        repo_root: Repository root. Defaults to ``Path.cwd()``.
 
     Raises:
         KeyError: If *name* is not a configured remote.
@@ -260,13 +260,13 @@ def rename_remote(
 
     Updates ``[remotes.<old_name>]`` → ``[remotes.<new_name>]`` in config and
     moves ``.muse/remotes/<old_name>/`` → ``.muse/remotes/<new_name>/``.
-    Raises ``KeyError`` when *old_name* does not exist.  Raises ``ValueError``
+    Raises ``KeyError`` when *old_name* does not exist. Raises ``ValueError``
     when *new_name* is already configured.
 
     Args:
         old_name: Current remote name.
         new_name: Desired new remote name.
-        repo_root: Repository root.  Defaults to ``Path.cwd()``.
+        repo_root: Repository root. Defaults to ``Path.cwd()``.
 
     Raises:
         KeyError: If *old_name* is not a configured remote.
@@ -300,10 +300,10 @@ def list_remotes(repo_root: pathlib.Path | None = None) -> list[RemoteConfig]:
     """Return all configured remotes as :class:`RemoteConfig` dicts.
 
     Returns an empty list when the config file is absent or contains no
-    ``[remotes.*]`` sections.  Sorted alphabetically by remote name.
+    ``[remotes.*]`` sections. Sorted alphabetically by remote name.
 
     Args:
-        repo_root: Repository root.  Defaults to ``Path.cwd()``.
+        repo_root: Repository root. Defaults to ``Path.cwd()``.
 
     Returns:
         List of ``{"name": str, "url": str}`` dicts.
@@ -358,7 +358,7 @@ def get_remote_head(
     Args:
         remote_name: Remote name (e.g. ``"origin"``).
         branch: Branch name (e.g. ``"main"``).
-        repo_root: Repository root.  Defaults to ``Path.cwd()``.
+        repo_root: Repository root. Defaults to ``Path.cwd()``.
 
     Returns:
         Commit ID string, or ``None``.
@@ -384,7 +384,7 @@ def set_remote_head(
         remote_name: Remote name (e.g. ``"origin"``).
         branch: Branch name (e.g. ``"main"``).
         commit_id: Commit ID to record as the known remote HEAD.
-        repo_root: Repository root.  Defaults to ``Path.cwd()``.
+        repo_root: Repository root. Defaults to ``Path.cwd()``.
     """
     pointer = _remote_head_path(remote_name, branch, repo_root)
     pointer.parent.mkdir(parents=True, exist_ok=True)
@@ -405,13 +405,13 @@ def set_upstream(
     """Record *remote_name* as the upstream remote for *branch*.
 
     Writes ``branch = "<branch>"`` under ``[remotes.<remote_name>]`` in
-    ``.muse/config.toml``.  This mirrors the git ``--set-upstream`` behaviour:
+    ``.muse/config.toml``. This mirrors the git ``--set-upstream`` behaviour:
     the local branch knows which remote branch to track for future push/pull.
 
     Args:
         branch: Local (and remote) branch name (e.g. ``"main"``).
         remote_name: Remote name (e.g. ``"origin"``).
-        repo_root: Repository root.  Defaults to ``Path.cwd()``.
+        repo_root: Repository root. Defaults to ``Path.cwd()``.
     """
     config_path = _config_path(repo_root)
     config_path.parent.mkdir(parents=True, exist_ok=True)
@@ -420,10 +420,10 @@ def set_upstream(
 
     if "remotes" not in data or not isinstance(data["remotes"], dict):
         data["remotes"] = {}
-    remotes: dict[str, object] = data["remotes"]  # type: ignore[assignment]
+    remotes: dict[str, object] = data["remotes"] # type: ignore[assignment]
     if remote_name not in remotes or not isinstance(remotes[remote_name], dict):
         remotes[remote_name] = {}
-    remote_entry: dict[str, object] = remotes[remote_name]  # type: ignore[assignment]
+    remote_entry: dict[str, object] = remotes[remote_name] # type: ignore[assignment]
     remote_entry["branch"] = branch
 
     config_path.write_text(_dump_toml(data), encoding="utf-8")
@@ -441,7 +441,7 @@ def get_upstream(
 
     Args:
         branch: Local branch name (e.g. ``"main"``).
-        repo_root: Repository root.  Defaults to ``Path.cwd()``.
+        repo_root: Repository root. Defaults to ``Path.cwd()``.
 
     Returns:
         Remote name string (e.g. ``"origin"``), or ``None`` when no upstream
