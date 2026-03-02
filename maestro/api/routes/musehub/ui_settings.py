@@ -117,6 +117,12 @@ async def settings_page(
             "base_url": base_url,
             "active_section": section,
             "current_page": "settings",
+            "settings": settings,
+            "breadcrumb_data": [
+                {"label": owner, "url": f"/musehub/ui/{owner}"},
+                {"label": repo_slug, "url": base_url},
+                {"label": "Settings", "url": ""},
+            ],
         },
         templates=_templates,
         json_data=settings,
