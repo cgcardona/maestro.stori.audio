@@ -125,6 +125,25 @@ class TaskFile(BaseModel):
     on_block: str | None = None
 
 
+class AbModeConfig(BaseModel):
+    """A/B mode configuration for role file experimentation (AC-504).
+
+    When ``enabled`` is true the Engineering VP alternates between two role
+    files for the ``target_role`` based on whether the BATCH_ID timestamp
+    second is even (variant A) or odd (variant B).  This enables controlled
+    experiments where successive batches see different role prompts so outcomes
+    can be compared with everything else held constant.
+
+    ``variant_a_file`` and ``variant_b_file`` are paths relative to the
+    repository root (e.g. ``.cursor/roles/python-developer.md``).
+    """
+
+    enabled: bool = False
+    target_role: str | None = None
+    variant_a_file: str | None = None
+    variant_b_file: str | None = None
+
+
 class PipelineConfig(BaseModel):
     """Validated shape of ``.cursor/pipeline-config.json``.
 
@@ -138,6 +157,7 @@ class PipelineConfig(BaseModel):
     max_qa_vps: int
     pool_size_per_vp: int
     active_labels_order: list[str]
+    ab_mode: AbModeConfig = AbModeConfig()
 
 
 class SpawnRequest(BaseModel):
