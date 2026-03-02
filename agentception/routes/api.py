@@ -14,9 +14,10 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException
 
 from agentception.config import settings
+from agentception.intelligence.guards import PRViolation, detect_out_of_order_prs
 from agentception.models import AgentNode, PipelineConfig, PipelineState, SpawnRequest, SpawnResult
 from agentception.poller import get_state
-from agentception.readers.github import add_wip_label, get_issue
+from agentception.readers.github import add_wip_label, close_pr, get_issue
 from agentception.readers.pipeline_config import read_pipeline_config, write_pipeline_config
 from agentception.readers.transcripts import read_transcript_messages
 from agentception.routes.ui import _find_agent
@@ -211,6 +212,45 @@ def _build_agent_task(
         f"REQUIRED_OUTPUT=pr_url\n"
         f"ON_BLOCK=stop\n"
     )
+
+
+@router.get("/intelligence/pr-violations", tags=["intelligence"])
+async def pr_violations_api() -> list[PRViolation]:
+    """Return open PRs that violate active pipeline phase ordering.
+
+    Checks each open PR's ``Closes #N`` reference against the currently active
+    ``agentception/*`` label.  A PR is a violation when the issue it closes
+    belongs to an earlier (or later) phase than the one currently being worked.
+
+    Returns an empty list when there are no violations or no active label.
+    """
+    return await detect_out_of_order_prs()
+
+
+@router.post("/intelligence/pr-violations/{pr_number}/close", tags=["intelligence"])
+async def close_violating_pr(pr_number: int) -> dict[str, int]:
+    """Close a PR identified as an out-of-order violation.
+
+    Posts an automated comment explaining the closure before closing the PR so
+    the git history and GitHub timeline both retain the reason.
+
+    Raises
+    ------
+    HTTP 500
+        When the ``gh pr close`` subprocess call fails (e.g. PR already closed).
+    """
+    try:
+        await close_pr(
+            pr_number,
+            "Closed by AgentCeption: out-of-order PR violation.",
+        )
+    except RuntimeError as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to close PR #{pr_number}: {exc}",
+        ) from exc
+    logger.info("✅ Closed violating PR #%d", pr_number)
+    return {"closed": pr_number}
 
 
 @router.post("/control/spawn")

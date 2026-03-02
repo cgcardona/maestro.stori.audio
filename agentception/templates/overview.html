@@ -71,13 +71,44 @@
     </div>
   </div>
 
-  {# ── Alert banners ─────────────────────────────────────────────────────── #}
+  {# ── Generic alert banners ─────────────────────────────────────────────── #}
   <template x-for="alert in state.alerts" :key="alert">
     <div class="alert-banner" role="alert">
       <span>⚠️</span>
       <span x-text="alert"></span>
     </div>
   </template>
+
+  {#
+    PR violation banners — one per out-of-order PR, with a one-click Close PR
+    action.  Data is fetched from GET /api/intelligence/pr-violations on load
+    and after each Close action so the list stays current without a full
+    page reload.  Alpine.js manages the fetch lifecycle.
+  #}
+  <div
+    x-data="prViolations()"
+    x-init="load()"
+  >
+    <template x-for="v in violations" :key="v.pr_number">
+      <div class="alert-banner alert-banner--violation" role="alert">
+        <span>🚫</span>
+        <span>
+          Out-of-order PR
+          <strong x-text="'#' + v.pr_number"></strong>
+          <em x-text="v.pr_title"></em>
+          — expected <code x-text="v.expected_label"></code>,
+          got <code x-text="v.actual_label"></code>
+        </span>
+        <button
+          class="btn btn-danger btn-sm"
+          @click="closeViolation(v.pr_number)"
+          :disabled="closing === v.pr_number"
+          x-text="closing === v.pr_number ? 'Closing…' : 'Close PR'"
+          aria-label="Close out-of-order PR"
+        ></button>
+      </div>
+    </template>
+  </div>
 
   {# ── Two-column overview layout ────────────────────────────────────────── #}
   <div class="overview-columns">
@@ -309,6 +340,49 @@ function pipelineDashboard(initial) {
       if (secs < 60) return secs + 's ago';
       if (secs < 3600) return Math.floor(secs / 60) + 'm ago';
       return Math.floor(secs / 3600) + 'h ago';
+    },
+  };
+}
+
+/**
+ * Alpine.js component for PR violation banners.
+ *
+ * Fetches GET /api/intelligence/pr-violations on mount and after each
+ * successful Close action so the list stays current without a page reload.
+ * Closing a PR posts to POST /api/intelligence/pr-violations/{n}/close and
+ * removes the entry from the local list on success.
+ */
+function prViolations() {
+  return {
+    violations: [],
+    closing: null,
+
+    async load() {
+      try {
+        const res = await fetch('/api/intelligence/pr-violations');
+        if (res.ok) {
+          this.violations = await res.json();
+        }
+      } catch (_) {
+        // Network error — keep empty list; next poll will retry.
+      }
+    },
+
+    async closeViolation(prNumber) {
+      this.closing = prNumber;
+      try {
+        const res = await fetch(
+          `/api/intelligence/pr-violations/${prNumber}/close`,
+          { method: 'POST' },
+        );
+        if (res.ok) {
+          this.violations = this.violations.filter(v => v.pr_number !== prNumber);
+        }
+      } catch (_) {
+        // Network error — leave the card visible so the user can retry.
+      } finally {
+        this.closing = null;
+      }
     },
   };
 }

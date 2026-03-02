@@ -21,6 +21,7 @@ import time
 from pathlib import Path
 
 from agentception.config import settings
+from agentception.intelligence.guards import detect_out_of_order_prs
 from agentception.models import AgentNode, AgentStatus, PipelineState, TaskFile
 from agentception.readers.github import (
     get_active_label,
@@ -201,6 +202,20 @@ async def detect_alerts(
         if last_commit > 0.0 and (now - last_commit) > _STUCK_THRESHOLD_SECONDS:
             label = f"issue #{tf.issue_number}" if tf.issue_number else path.name
             alerts.append(f"Possible stuck agent on {label}")
+
+    # ── Alert 4: structured out-of-order PR violations (linked-issue check) ─
+    # Complements Alert 2: while Alert 2 checks the PR's own labels, this
+    # check inspects the issue the PR closes — more precise for the common
+    # case where the PR body contains a 'Closes #N' reference.
+    try:
+        violations = await detect_out_of_order_prs()
+        for v in violations:
+            alerts.append(
+                f"Out-of-order PR #{v.pr_number} — "
+                f"expected {v.expected_label}, got {v.actual_label}"
+            )
+    except Exception as exc:
+        logger.warning("⚠️  detect_out_of_order_prs failed: %s", exc)
 
     return alerts
 

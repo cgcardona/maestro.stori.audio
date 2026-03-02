@@ -178,6 +178,29 @@ async def get_open_prs() -> list[dict[str, object]]:
     return [item for item in result if isinstance(item, dict)]
 
 
+async def get_open_prs_with_body() -> list[dict[str, object]]:
+    """List open PRs targeting ``dev`` including the body text.
+
+    Like ``get_open_prs()`` but also fetches the PR body so callers can parse
+    ``Closes #NNN`` references to identify linked issues.  Used by the
+    out-of-order PR guard (``agentception.intelligence.guards``).
+    """
+    repo = settings.gh_repo
+    args = [
+        "pr", "list",
+        "--repo", repo,
+        "--base", "dev",
+        "--state", "open",
+        "--json", "number,title,headRefName,labels,body",
+    ]
+    result = await gh_json(args, ".", "get_open_prs_with_body")
+    if not isinstance(result, list):
+        raise RuntimeError(
+            f"get_open_prs_with_body: expected list from gh, got {type(result).__name__}"
+        )
+    return [item for item in result if isinstance(item, dict)]
+
+
 async def get_wip_issues() -> list[dict[str, object]]:
     """Return issues currently labelled ``agent:wip``.
 

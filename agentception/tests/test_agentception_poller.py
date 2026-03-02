@@ -71,6 +71,7 @@ async def test_tick_returns_pipeline_state() -> None:
     with (
         patch("agentception.poller.list_active_worktrees", new_callable=AsyncMock, return_value=[]),
         patch("agentception.poller.build_github_board", new_callable=AsyncMock, return_value=board),
+        patch("agentception.poller.detect_out_of_order_prs", new_callable=AsyncMock, return_value=[]),
     ):
         before = time.time()
         state = await tick()
@@ -93,6 +94,7 @@ async def test_tick_updates_global_state() -> None:
     with (
         patch("agentception.poller.list_active_worktrees", new_callable=AsyncMock, return_value=[]),
         patch("agentception.poller.build_github_board", new_callable=AsyncMock, return_value=board),
+        patch("agentception.poller.detect_out_of_order_prs", new_callable=AsyncMock, return_value=[]),
     ):
         state = await tick()
 
@@ -188,7 +190,12 @@ async def test_stale_claim_alert_detected() -> None:
         wip_issues=[{"number": 42, "title": "Test issue", "labels": [{"name": "agent:wip"}]}],
     )
     # No worktrees — issue 42 has no live worktree.
-    alerts = await detect_alerts([], board)
+    with patch(
+        "agentception.poller.detect_out_of_order_prs",
+        new_callable=AsyncMock,
+        return_value=[],
+    ):
+        alerts = await detect_alerts([], board)
 
     assert any("Stale claim on #42" in a for a in alerts), f"Expected stale-claim alert, got: {alerts}"
 
@@ -203,7 +210,12 @@ async def test_no_stale_claim_when_worktree_exists() -> None:
         wip_issues=[{"number": 99, "title": "In progress", "labels": [{"name": "agent:wip"}]}],
     )
     worktrees = [_make_worktree(issue_number=99, branch="feat/issue-99")]
-    alerts = await detect_alerts(worktrees, board)
+    with patch(
+        "agentception.poller.detect_out_of_order_prs",
+        new_callable=AsyncMock,
+        return_value=[],
+    ):
+        alerts = await detect_alerts(worktrees, board)
 
     assert not any("Stale claim on #99" in a for a in alerts)
 
@@ -223,7 +235,12 @@ async def test_out_of_order_pr_alert() -> None:
         ],
         wip_issues=[],
     )
-    alerts = await detect_alerts([], board)
+    with patch(
+        "agentception.poller.detect_out_of_order_prs",
+        new_callable=AsyncMock,
+        return_value=[],
+    ):
+        alerts = await detect_alerts([], board)
 
     assert any("Out-of-order PR #77" in a for a in alerts), f"Expected out-of-order alert, got: {alerts}"
 
@@ -244,10 +261,17 @@ async def test_stuck_agent_alert_detected(tmp_path: Path) -> None:
     ]
     board = _empty_board()
 
-    with patch(
-        "agentception.poller.worktree_last_commit_time",
-        new_callable=AsyncMock,
-        return_value=old_timestamp,
+    with (
+        patch(
+            "agentception.poller.worktree_last_commit_time",
+            new_callable=AsyncMock,
+            return_value=old_timestamp,
+        ),
+        patch(
+            "agentception.poller.detect_out_of_order_prs",
+            new_callable=AsyncMock,
+            return_value=[],
+        ),
     ):
         alerts = await detect_alerts(worktrees, board)
 
