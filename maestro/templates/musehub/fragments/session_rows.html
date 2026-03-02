@@ -1,0 +1,75 @@
+{#  fragments/session_rows.html — bare HTMX fragment: session list rows.
+
+    Rendered in two contexts:
+
+    1. Full-page load: included inline by musehub/pages/sessions.html inside
+       the ``<div id="session-rows">`` target container.
+
+    2. HTMX partial swap: returned directly when the handler detects
+       ``HX-Request: true``, replacing only the ``#session-rows`` container.
+
+    Required context variables
+    --------------------------
+    sessions      : list[dict]  — current page of sessions (camelCase keys from model_dump)
+    total         : int         — total number of sessions
+    page          : int         — current page (1-based)
+    total_pages   : int         — total number of pages
+    base_url      : str         — repo base URL, e.g. /musehub/ui/owner/slug
+#}
+{% from "musehub/macros/pagination.html" import pagination %}
+{% from "musehub/macros/empty_state.html" import empty_state %}
+
+{% if sessions %}
+  {% for s in sessions %}
+  <div class="session-row{% if s.isActive %} session-row-active{% endif %}">
+    <div>
+      {% if s.isActive %}
+        <span class="badge badge-active"><span class="session-live-dot"></span> live</span>
+      {% else %}
+        <span class="badge badge-closed">ended</span>
+      {% endif %}
+    </div>
+    <div class="session-meta">
+      <div class="session-header">
+        <a href="{{ base_url }}/sessions/{{ s.sessionId }}" style="font-weight:600;color:var(--text-primary)">
+          {{ s.sessionId[:8] }}
+        </a>
+        <span class="session-time">
+          Started {{ s.startedAt | fmtrelative }}
+          {% if s.endedAt %} · Ended {{ s.endedAt | fmtrelative }}{% endif %}
+        </span>
+        {% if s.commits %}
+        <span class="badge" title="{{ s.commits | length }} commit{{ 's' if s.commits | length != 1 else '' }} in this session">
+          🎵 {{ s.commits | length }}
+        </span>
+        {% endif %}
+      </div>
+      {% if s.intent %}
+      <div class="session-intent">
+        <strong>Intent:</strong> {{ s.intent }}
+      </div>
+      {% endif %}
+      {% if s.notes %}
+      <div class="session-notes">{{ s.notes | truncate(80) }}</div>
+      {% endif %}
+      {% if s.participants %}
+      <div class="session-participants">
+        {% for p in s.participants %}
+        <a href="/musehub/ui/users/{{ p | urlencode }}" class="participant-chip">{{ p }}</a>
+        {% endfor %}
+      </div>
+      {% endif %}
+    </div>
+    {% if s.location %}
+    <span style="font-size:11px;color:var(--text-muted)">📍 {{ s.location }}</span>
+    {% endif %}
+  </div>
+  {% endfor %}
+  {{ pagination(page, total_pages, base_url ~ '/sessions') }}
+{% else %}
+  {{ empty_state(
+      "🎹",
+      "No sessions yet",
+      "Start a collaboration session in the Stori DAW to record collaborative changes.",
+  ) }}
+{% endif %}

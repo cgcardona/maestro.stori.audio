@@ -1,0 +1,73 @@
+{#  fragments/pr_comments.html — bare HTMX fragment: PR comment thread.
+
+    Rendered in two contexts:
+
+    1. Full-page load: included inline by musehub/pages/pr_detail.html inside
+       the ``<div id="pr-comments">`` target container.
+
+    2. HTMX partial swap: returned directly when the handler detects
+       ``HX-Request: true``, replacing only ``#pr-comments`` after a new
+       comment is submitted.
+
+    Required context variables
+    --------------------------
+    comments       : list[dict]   — PRCommentResponse.model_dump() (threaded, top-level only)
+    comment_count  : int          — total comment count (all levels)
+    base_url       : str          — repo UI prefix
+#}
+{% from "musehub/macros/empty_state.html" import empty_state %}
+
+<h3 style="margin:0 0 var(--space-3);font-size:15px">
+  Review comments ({{ comment_count }})
+</h3>
+
+{% if comments %}
+  {% for comment in comments %}
+    <div class="comment-block">
+      <div class="comment-header-row">
+        <span style="display:inline-flex;align-items:center;justify-content:center;
+          width:22px;height:22px;border-radius:50%;
+          background:var(--color-accent-subtle,#1c2d3f);
+          color:var(--color-accent,#58a6ff);font-size:11px;font-weight:700">
+          {{ comment.author[0].upper() if comment.author else '?' }}
+        </span>
+        <strong>{{ comment.author or 'unknown' }}</strong>
+        <span style="font-size:11px;color:#8b949e">{{ comment.created_at | fmtdate }}</span>
+        {% if comment.target_type and comment.target_type != 'general' %}
+          <span style="font-size:11px;background:var(--color-surface-2,#21262d);
+            color:#8b949e;border-radius:3px;padding:1px 6px">
+            {{ comment.target_type }}
+            {% if comment.target_track %}: {{ comment.target_track }}{% endif %}
+            {% if comment.target_beat_start is not none %} beat {{ comment.target_beat_start }}{% endif %}
+          </span>
+        {% endif %}
+      </div>
+      <div class="comment-body-text">{{ comment.body }}</div>
+
+      {# Replies (one level deep) #}
+      {% if comment.replies %}
+        {% for reply in comment.replies %}
+          <div class="comment-reply">
+            <div class="comment-header-row">
+              <span style="display:inline-flex;align-items:center;justify-content:center;
+                width:18px;height:18px;border-radius:50%;
+                background:var(--color-surface-2,#21262d);
+                color:#8b949e;font-size:10px;font-weight:700">
+                {{ reply.author[0].upper() if reply.author else '?' }}
+              </span>
+              <strong style="font-size:12px">{{ reply.author or 'unknown' }}</strong>
+              <span style="font-size:11px;color:#8b949e">{{ reply.created_at | fmtdate }}</span>
+            </div>
+            <div class="comment-body-text">{{ reply.body }}</div>
+          </div>
+        {% endfor %}
+      {% endif %}
+    </div>
+  {% endfor %}
+{% else %}
+  {{ empty_state(
+      "💬",
+      "No review comments yet",
+      "Be the first to leave a review comment on this pull request.",
+  ) }}
+{% endif %}
