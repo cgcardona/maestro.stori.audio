@@ -1,0 +1,173 @@
+{% extends "base.html" %}
+
+{% block title %}AgentCeption — Agents{% endblock %}
+
+{% block content %}
+<div class="agents-page">
+
+  {# ── Page header ──────────────────────────────────────────────────────────── #}
+  <div class="page-header">
+    <h1 class="page-title">Agents
+      <span class="badge badge-count">{{ agents | length }}</span>
+    </h1>
+    <p class="text-muted">
+      All active agents in the current pipeline wave.
+      Click any card to view transcript and task details.
+    </p>
+  </div>
+
+  {% if not agents %}
+  {# ── Empty state ─────────────────────────────────────────────────────────── #}
+  <div class="card empty-state">
+    <div class="empty-icon">🤖</div>
+    <p class="empty-title">No agents running</p>
+    <p class="text-muted mt-1">
+      The pipeline is idle. Agents appear here when worktrees with
+      <code>.agent-task</code> files are active.
+    </p>
+    <a href="/control/spawn" class="btn btn-primary mt-2">Spawn an agent</a>
+  </div>
+
+  {% else %}
+
+  {# ── Status sections ──────────────────────────────────────────────────────── #}
+  {% set statuses = [
+    ("running",  "🟢 Running"),
+    ("blocked",  "🟡 Blocked"),
+    ("done",     "✅ Done"),
+    ("unknown",  "⬜ Unknown"),
+  ] %}
+
+  {% for status_val, status_label in statuses %}
+    {% set section_agents = agents | selectattr("status.value", "equalto", status_val) | list %}
+    {% if section_agents %}
+    <section class="agents-section">
+      <h2 class="agents-section-title">{{ status_label }}
+        <span class="badge badge-count">{{ section_agents | length }}</span>
+      </h2>
+      <div class="agents-grid">
+        {% for node in section_agents %}
+        <a href="/agents/{{ node.id }}" class="agent-card agent-card--{{ node.status.value }}">
+          <div class="agent-card-header">
+            <span class="status-badge status-badge--{{ node.status.value }}">
+              {{ node.status.value }}
+            </span>
+            <code class="agent-card-id">{{ node.id[:8] }}</code>
+          </div>
+
+          <div class="agent-card-role">{{ node.role }}</div>
+
+          <div class="agent-card-meta">
+            {% if node.issue_number %}
+            <span class="meta-chip meta-chip--sm">
+              <span class="meta-label">Issue</span>
+              <span class="meta-value">#{{ node.issue_number }}</span>
+            </span>
+            {% endif %}
+            {% if node.pr_number %}
+            <span class="meta-chip meta-chip--sm">
+              <span class="meta-label">PR</span>
+              <span class="meta-value">#{{ node.pr_number }}</span>
+            </span>
+            {% endif %}
+            {% if node.branch %}
+            <span class="meta-chip meta-chip--sm">
+              <span class="meta-label">Branch</span>
+              <code class="meta-value">{{ node.branch | truncate(28, True, '…') }}</code>
+            </span>
+            {% endif %}
+            {% if node.batch_id %}
+            <span class="meta-chip meta-chip--sm">
+              <span class="meta-label">Batch</span>
+              <code class="meta-value">{{ node.batch_id | truncate(20, True, '…') }}</code>
+            </span>
+            {% endif %}
+          </div>
+
+          {% if node.children %}
+          <div class="agent-card-children">
+            <span class="text-muted" style="font-size:0.75rem">
+              {{ node.children | length }} sub-agent{{ 's' if node.children | length != 1 }}
+            </span>
+          </div>
+          {% endif %}
+        </a>
+        {% endfor %}
+      </div>
+    </section>
+    {% endif %}
+  {% endfor %}
+
+  {% endif %}
+
+</div>
+
+<style>
+.agents-page { display: flex; flex-direction: column; gap: 1.5rem; }
+
+.page-header { margin-bottom: 0.5rem; }
+.page-title { font-size: 1.5rem; font-weight: 700; display: flex; align-items: center; gap: 0.5rem; }
+
+.badge-count {
+  display: inline-flex; align-items: center; justify-content: center;
+  background: var(--color-border);
+  color: var(--color-text-muted);
+  border-radius: 999px;
+  font-size: 0.7rem; font-weight: 600;
+  padding: 0.1rem 0.5rem;
+  min-width: 1.5rem;
+}
+
+.empty-state {
+  text-align: center;
+  padding: 3rem 1.5rem;
+}
+.empty-icon { font-size: 3rem; margin-bottom: 0.75rem; }
+.empty-title { font-size: 1.1rem; font-weight: 600; }
+
+.agents-section { display: flex; flex-direction: column; gap: 0.75rem; }
+.agents-section-title {
+  font-size: 1rem; font-weight: 600;
+  display: flex; align-items: center; gap: 0.5rem;
+  border-bottom: 1px solid var(--color-border);
+  padding-bottom: 0.4rem;
+}
+
+.agents-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 0.75rem;
+}
+
+.agent-card {
+  display: flex; flex-direction: column; gap: 0.5rem;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  padding: 0.85rem 1rem;
+  text-decoration: none;
+  color: inherit;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.agent-card:hover {
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 1px var(--color-accent);
+}
+.agent-card--running { border-left: 3px solid #22c55e; }
+.agent-card--blocked { border-left: 3px solid #eab308; }
+.agent-card--done    { border-left: 3px solid #3b82f6; }
+
+.agent-card-header {
+  display: flex; align-items: center; justify-content: space-between;
+}
+.agent-card-id { font-size: 0.7rem; color: var(--color-text-muted); }
+.agent-card-role { font-size: 0.9rem; font-weight: 600; }
+.agent-card-meta { display: flex; flex-wrap: wrap; gap: 0.35rem; }
+.meta-chip--sm { font-size: 0.7rem; padding: 0.1rem 0.4rem; }
+.agent-card-children { margin-top: 0.25rem; }
+
+.btn { display: inline-block; padding: 0.4rem 1rem; border-radius: var(--radius); text-decoration: none; font-size: 0.85rem; font-weight: 500; }
+.btn-primary { background: var(--color-accent); color: #fff; }
+.btn-primary:hover { opacity: 0.88; }
+</style>
+{% endblock %}

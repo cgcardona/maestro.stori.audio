@@ -317,8 +317,8 @@ async def polling_loop() -> None:
     )
     while True:
         try:
-            await asyncio.sleep(settings.poll_interval_seconds)
             await tick()
+            await asyncio.sleep(settings.poll_interval_seconds)
         except asyncio.CancelledError:
             logger.info("✅ Polling loop stopped cleanly")
             return
