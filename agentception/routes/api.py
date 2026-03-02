@@ -10,12 +10,49 @@ from pathlib import Path
 
 from fastapi import APIRouter, HTTPException
 
+from agentception.config import settings
 from agentception.models import AgentNode, PipelineState
 from agentception.poller import get_state
 from agentception.readers.transcripts import read_transcript_messages
 from agentception.routes.ui import _find_agent
 
 router = APIRouter(prefix="/api", tags=["api"])
+
+# Path to the sentinel file that pauses the agent pipeline.
+# Writing this file tells CTO and Eng VP loops to wait rather than spawn agents.
+_SENTINEL: Path = settings.repo_dir / ".cursor" / ".pipeline-pause"
+
+
+@router.post("/control/pause", tags=["control"])
+async def pause_pipeline() -> dict[str, bool]:
+    """Create the pipeline-pause sentinel file, halting agent spawning.
+
+    Idempotent — calling pause when already paused is a no-op.
+    The CTO and Eng VP role files check for this sentinel at the top of
+    every loop iteration and sleep instead of dispatching new agents.
+    """
+    _SENTINEL.touch()
+    return {"paused": True}
+
+
+@router.post("/control/resume", tags=["control"])
+async def resume_pipeline() -> dict[str, bool]:
+    """Remove the pipeline-pause sentinel file, allowing agent spawning to continue.
+
+    Idempotent — calling resume when not paused is a no-op.
+    """
+    _SENTINEL.unlink(missing_ok=True)
+    return {"paused": False}
+
+
+@router.get("/control/status", tags=["control"])
+async def control_status() -> dict[str, bool]:
+    """Return the current pause state of the agent pipeline.
+
+    Returns ``{"paused": true}`` when the sentinel file exists,
+    ``{"paused": false}`` otherwise.
+    """
+    return {"paused": _SENTINEL.exists()}
 
 
 @router.get("/pipeline")

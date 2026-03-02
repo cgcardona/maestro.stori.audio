@@ -15,6 +15,12 @@ entire chain to drain.
 
 ```
 SEED:
+  0. Pipeline-pause sentinel — check BEFORE seeding any agents:
+       # The AgentCeption dashboard writes .cursor/.pipeline-pause to request a pause.
+       # When the file exists, wait 30 s and restart the SEED block without spawning.
+       [ -f /Users/gabriel/dev/tellurstori/maestro/.cursor/.pipeline-pause ] && \
+         echo "⏸ Pipeline paused by AgentCeption dashboard." && sleep 30 && continue
+
   1. Ensure the claim label exists with canonical color (idempotent):
        # create first; if it already exists, edit to enforce the canonical color.
        # Never rely on create alone — it fails silently if the label exists, leaving
