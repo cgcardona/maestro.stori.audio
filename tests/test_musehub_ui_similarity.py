@@ -5,9 +5,9 @@ Covers:
 - test_similarity_page_no_auth_required — accessible without JWT
 - test_similarity_page_invalid_ref_404 — refs without '...' separator return 404
 - test_similarity_page_unknown_owner_404 — unknown owner/slug returns 404
-- test_similarity_page_includes_radar — page contains radar chart JavaScript
-- test_similarity_page_includes_dimensions — page contains 10-dimension table JS
-- test_similarity_page_includes_overall_badge — page contains overall % badge JS
+- test_similarity_page_includes_radar — page contains server-rendered SVG radar
+- test_similarity_page_includes_dimensions — page contains 10-dimension breakdown table (SSR)
+- test_similarity_page_includes_overall_badge — page contains overall % badge (SSR)
 - test_similarity_page_includes_diff_button — page contains "Open Full Diff" link
 - test_similarity_page_includes_create_pr — page contains "Create Pull Request" CTA
 - test_similarity_json_response — ?format=json returns RefSimilarityResponse shape
@@ -98,13 +98,13 @@ async def test_similarity_page_includes_radar(
     client: AsyncClient,
     db_session: AsyncSession,
 ) -> None:
-    """Similarity page HTML contains radar chart JavaScript."""
+    """Similarity page HTML contains a server-rendered SVG radar chart."""
     await _make_repo(db_session)
     response = await client.get("/musehub/ui/testuser/test-beats/similarity/main...feature")
     assert response.status_code == 200
     body = response.text
-    assert "radarSvg" in body
-    assert "DIMENSIONS" in body
+    assert "<svg" in body
+    assert "viewBox" in body
 
 
 @pytest.mark.anyio
@@ -112,13 +112,13 @@ async def test_similarity_page_includes_dimensions(
     client: AsyncClient,
     db_session: AsyncSession,
 ) -> None:
-    """Similarity page HTML contains 10-dimension breakdown table JavaScript."""
+    """Similarity page HTML contains the 10-dimension breakdown table (SSR)."""
     await _make_repo(db_session)
     response = await client.get("/musehub/ui/testuser/test-beats/similarity/main...feature")
     assert response.status_code == 200
     body = response.text
-    assert "dimRow" in body
     assert "Dimension Breakdown" in body
+    assert "Pitch" in body
 
 
 @pytest.mark.anyio
@@ -126,13 +126,13 @@ async def test_similarity_page_includes_overall_badge(
     client: AsyncClient,
     db_session: AsyncSession,
 ) -> None:
-    """Similarity page HTML contains overall similarity badge and interpretation logic."""
+    """Similarity page HTML contains overall similarity badge rendered server-side."""
     await _make_repo(db_session)
     response = await client.get("/musehub/ui/testuser/test-beats/similarity/main...feature")
     assert response.status_code == 200
     body = response.text
-    assert "interpretBadge" in body
     assert "overall musical similarity" in body
+    assert "%" in body
 
 
 @pytest.mark.anyio
