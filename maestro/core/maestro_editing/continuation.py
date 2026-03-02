@@ -109,7 +109,7 @@ def _get_missing_expressive_steps(
         ]
         if len(tracks_needing_reverb) >= 2 and "stori_ensure_bus" not in called_tools:
             missing.append(
-                f"Multiple tracks ({', '.join(tracks_needing_reverb)}) need reverb — "
+                f"Multiple tracks ({', '.join(tracks_needing_reverb)}) need reverb"
                 "use a shared Reverb bus: call stori_ensure_bus(name='Reverb') once, "
                 "then stori_add_send(trackId=X, busId=$N.busId, levelDb=-6) for each track."
             )

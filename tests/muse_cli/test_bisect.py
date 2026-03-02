@@ -124,7 +124,7 @@ def test_clear_bisect_state_removes_file(tmp_path: pathlib.Path) -> None:
 def test_clear_bisect_state_is_idempotent(tmp_path: pathlib.Path) -> None:
     """Calling clear_bisect_state when no file exists does not raise."""
     _init_repo(tmp_path)
-    clear_bisect_state(tmp_path)  # should not raise
+    clear_bisect_state(tmp_path) # should not raise
 
 
 # ---------------------------------------------------------------------------
@@ -254,7 +254,7 @@ async def test_bisect_state_machine_advances_correctly(
 ) -> None:
     """Regression test: bisect narrows range and identifies the culprit.
 
-    Topology: good → c1 → culprit → c3 → bad  (4 inner commits)
+    Topology: good → c1 → culprit → c3 → bad (4 inner commits)
     Bisect should identify *culprit* after ≤ 2 steps by binary search.
     """
     _init_repo(tmp_path)

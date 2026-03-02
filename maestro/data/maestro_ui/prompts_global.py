@@ -301,7 +301,7 @@ Request: |
   that interlock like gears. 8-bar communion — a 6-against-4 cross-
   rhythm emerges: the djembe plays groups of 6 against the dundun's
   groups of 4, the balafon shifts to call-and-response with the kora,
-  and at bar 21, all voices converge on the downbeat of every 2 bars —
+  and at bar 21, all voices converge on the downbeat of every 2 bars
   moments of rhythmic unity before separating again. The piece peaks
   at this convergence. Community as music. Music as community.
 
@@ -407,14 +407,14 @@ Expression:
   narrative: |
     The dundun at bar 1 is the heartbeat — the timeline that everything
     else relates to. When the djembe enters at bar 5 with its 4-against-3
-    cross-rhythm, the mathematics of joy begins. You feel the pull —
+    cross-rhythm, the mathematics of joy begins. You feel the pull
     your body wants to follow the dundun, your hands want to follow the
     djembe. This is the genius of West African music: multiple truths
     coexisting. The balafon and kora at bar 9 add melodic streams to
     the rhythmic ones — five independent voices, each telling its own
     story, all of them true. The communion at bar 17 introduces 6:4,
     the most complex cross-rhythm, and yet at bar 21, all five voices
-    land together on the downbeat. That convergence is not resolution —
+    land together on the downbeat. That convergence is not resolution
     it is recognition. We are separate. We are together. Both are true.
   character: Mamady Keita's djembe mastery. Toumani Diabat\u00e9's kora.
     The griot tradition. The village circle. Ubuntu — I am because we are.
@@ -769,7 +769,7 @@ Constraints:
 Vibe: [hypnotic x4, spiritual x3, ancient, trance, healing, deep, eternal]
 
 Request: |
-  A full Gnawa trance ceremony piece in four sections. 8-bar invocation —
+  A full Gnawa trance ceremony piece in four sections. 8-bar invocation
   a deep bass drone on G0 alone, the guembri (GM 33 fingered bass) enters
   at bar 3 with a repeating 2-bar bass ostinato in Gm, pentatonic, each
   note heavy and deliberate. 8-bar gathering — the qraqeb (GM 0 drums,
@@ -1371,7 +1371,7 @@ Expression:
     enters at bar 9, the air fills with bronze — two players, neither
     playing a complete melody, together creating something neither could
     alone. This is gamelan's deepest teaching: the music exists between
-    the players. The ngubeng-ngoret at bar 17 is the kotekan in flight —
+    the players. The ngubeng-ngoret at bar 17 is the kotekan in flight
     patterns shifting, the kendang driving, bronze and wood and skin
     all shimmering together. The gong at bar 24 closes the cycle. The
     temple is full. The sun has set. The music continues after the
@@ -1594,7 +1594,7 @@ Expression:
     the emptiness that gives form its meaning. The koto at bar 9
     places notes like stones in a garden — each one chosen, each
     position considered, each surrounded by vast space. The water
-    section at bar 17 is the closest this piece comes to motion —
+    section at bar 17 is the closest this piece comes to motion
     the shakuhachi ascending the pentatonic scale like water finding
     its path downhill. The final held D5 is not an ending. It is a
     return to what was always there. The silence after the last koto
@@ -2232,7 +2232,7 @@ Request: |
   the short-necked lute) plays a solo taqsim (free improvisation) in
   Maqam Hijaz, exploring the characteristic augmented 2nd between Eb
   and F# that gives Hijaz its yearning quality. Free, unmetered,
-  ornamental. A bass drone (low D) sustains beneath. 8-bar groove —
+  ornamental. A bass drone (low D) sustains beneath. 8-bar groove
   the riq (GM 0 drums, channel 10, representing the tambourine) enters
   with a saidi rhythm (DUM-DUM-tek-DUM-tek), the ney (GM 73 flute)
   plays a second melody weaving around the oud's phrases, the qanun
@@ -2341,7 +2341,7 @@ Effects:
 Expression:
   arc: contemplation to groove to ecstasy to resolution
   narrative: |
-    The augmented 2nd between Eb and F# is the soul of Maqam Hijaz —
+    The augmented 2nd between Eb and F# is the soul of Maqam Hijaz
     an interval that yearns. The oud's taqsim at bar 1 explores this
     yearning freely, each phrase a question. When the riq enters at
     bar 9 with the saidi rhythm, the questions find a pulse. The ney

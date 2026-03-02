@@ -296,7 +296,7 @@ def emotion_vector_from_maestro_prompt(text: str) -> EmotionVector:
     Derive an EmotionVector from a MAESTRO PROMPT YAML block.
 
     Parses Vibe, Energy, Section, and Style fields and blends their
-    contributions into a 5-axis emotion vector.  Falls back to the
+    contributions into a 5-axis emotion vector. Falls back to the
     "neutral" preset when no recognisable fields are found.
 
     This is the bridge between the natural-language creative brief and
@@ -335,7 +335,7 @@ def emotion_vector_from_maestro_prompt(text: str) -> EmotionVector:
         "intimacy": base.intimacy,
         "motion": base.motion,
     }
-    n: float = 1  # weight of the neutral baseline
+    n: float = 1 # weight of the neutral baseline
 
     def _blend(overrides: dict[str, float], weight: float = 1.0) -> None:
         nonlocal n
@@ -345,7 +345,7 @@ def emotion_vector_from_maestro_prompt(text: str) -> EmotionVector:
 
     # 1. Section preset (verse/chorus/bridge/etc.) as coarse baseline.
     if section_text:
-        preset_name = section_text.split()[0]  # "Verse 1" → "verse"
+        preset_name = section_text.split()[0] # "Verse 1" → "verse"
         preset = EMOTION_PRESETS.get(preset_name)
         if preset:
             _blend(
@@ -413,20 +413,20 @@ class GenerationConstraints:
     These are the actual parameters that affect note generation.
     """
     # Rhythm
-    drum_density: float = 0.5  # 0-1, affects note count
-    subdivision: int = 8  # 8 = 8th notes, 16 = 16th notes
-    swing_amount: float = 0.0  # 0-0.3
+    drum_density: float = 0.5 # 0-1, affects note count
+    subdivision: int = 8 # 8 = 8th notes, 16 = 16th notes
+    swing_amount: float = 0.0 # 0-0.3
     
     # Melody
-    register_center: int = 60  # MIDI note number
-    register_spread: int = 12  # Semitones above/below center
-    rest_density: float = 0.3  # Fraction of time as rest
-    leap_probability: float = 0.2  # Probability of large intervals
+    register_center: int = 60 # MIDI note number
+    register_spread: int = 12 # Semitones above/below center
+    rest_density: float = 0.3 # Fraction of time as rest
+    leap_probability: float = 0.2 # Probability of large intervals
     
     # Harmony
-    chord_extensions: bool = False  # Use 7ths, 9ths, etc.
+    chord_extensions: bool = False # Use 7ths, 9ths, etc.
     borrowed_chord_probability: float = 0.0
-    harmonic_rhythm_bars: float = 1.0  # Chord changes per bar
+    harmonic_rhythm_bars: float = 1.0 # Chord changes per bar
     
     # Dynamics
     velocity_floor: int = 60

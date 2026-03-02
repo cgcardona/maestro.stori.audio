@@ -14,7 +14,7 @@ class ExecutionPlanSummary(TypedDict):
     """Wire shape of ``ExecutionPlan.to_dict()``.
 
     Emitted in the ``plan`` SSE event so the frontend can render a step-by-step
-    checklist before execution begins.  ``tool_calls`` mirrors the ``ToolCall``
+    checklist before execution begins. ``tool_calls`` mirrors the ``ToolCall``
     representation (name + params); ``validation_errors`` is empty on a valid plan.
     """
 
@@ -33,7 +33,7 @@ class ExecutionPlan:
     safety validation AND contains at least one tool call.
 
     Attributes:
-        tool_calls: Ordered list of ``ToolCall``s to execute.  May include both
+        tool_calls: Ordered list of ``ToolCall``s to execute. May include both
             generator calls (``stori_generate_midi``) and primitive DAW calls.
         notes: Human-readable annotations from the planner LLM (not executed).
         safety_validated: Set to ``True`` by the validator after checking the

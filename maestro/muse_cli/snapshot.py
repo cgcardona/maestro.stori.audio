@@ -1,14 +1,14 @@
 """Pure filesystem snapshot logic for ``muse commit``.
 
 All functions here are side-effect-free (no DB, no I/O besides reading
-files under ``workdir``).  They are kept separate so they can be
+files under ``workdir``). They are kept separate so they can be
 unit-tested without a database.
 
 ID derivation contract (deterministic, no random/UUID components):
 
-    object_id   = sha256(file_bytes).hexdigest()
+    object_id = sha256(file_bytes).hexdigest()
     snapshot_id = sha256("|".join(sorted(f"{path}:{oid}" for path, oid in manifest.items()))).hexdigest()
-    commit_id   = sha256(
+    commit_id = sha256(
                     "|".join(sorted(parent_ids))
                     + "|" + snapshot_id
                     + "|" + message
@@ -24,7 +24,7 @@ import pathlib
 def hash_file(path: pathlib.Path) -> str:
     """Return the sha256 hex digest of a file's raw bytes.
 
-    This is the ``object_id`` for the given file.  Reading in chunks
+    This is the ``object_id`` for the given file. Reading in chunks
     keeps memory usage constant regardless of file size.
     """
     h = hashlib.sha256()
@@ -44,7 +44,7 @@ def walk_workdir(workdir: pathlib.Path) -> dict[str, str]:
 
     Only regular files are included (symlinks and directories are skipped).
     Paths use POSIX separators regardless of host OS for cross-platform
-    reproducibility.  Hidden files (starting with ``.``) are excluded.
+    reproducibility. Hidden files (starting with ``.``) are excluded.
     """
     manifest: dict[str, str] = {}
     for file_path in sorted(workdir.rglob("*")):
@@ -76,10 +76,10 @@ def diff_workdir_vs_snapshot(
 
     Returns a tuple of four disjoint path sets:
 
-    - ``added``     — files in *workdir* absent from *last_manifest*
+    - ``added`` — files in *workdir* absent from *last_manifest*
                       (new files since the last commit).
-    - ``modified``  — files present in both but with a differing sha256 hash.
-    - ``deleted``   — files in *last_manifest* absent from *workdir*.
+    - ``modified`` — files present in both but with a differing sha256 hash.
+    - ``deleted`` — files in *last_manifest* absent from *workdir*.
     - ``untracked`` — non-empty only when *last_manifest* is empty (i.e. the
                       branch has no commits yet): every file in *workdir* is
                       treated as untracked rather than as newly-added.
@@ -137,12 +137,12 @@ def compute_commit_tree_id(
 
     Unlike ``compute_commit_id``, this function omits ``committed_at`` so that
     the same (parent_ids, snapshot_id, message, author) tuple always produces
-    the same commit_id.  This guarantees idempotency for ``muse commit-tree``:
+    the same commit_id. This guarantees idempotency for ``muse commit-tree``:
     re-running with identical inputs returns the same ID without inserting a
     duplicate row.
 
     Args:
-        parent_ids: Zero or more parent commit IDs.  Sorted before hashing.
+        parent_ids: Zero or more parent commit IDs. Sorted before hashing.
         snapshot_id: The sha256 ID of the snapshot this commit points to.
         message: The commit message.
         author: The author name string.

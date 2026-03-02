@@ -15,7 +15,7 @@ Algorithm
    current branch; only one parent (ours_commit_id); no ``parent2_commit_id``.
 8. **--strategy ours|theirs** — shortcut resolution before conflict detection:
    ``ours`` keeps every file from the current branch; ``theirs`` takes every file
-   from the target branch.  No conflict detection runs when a strategy is set.
+   from the target branch. No conflict detection runs when a strategy is set.
 9. **3-way merge** — branches have diverged:
    a. Compute ``diff(base → ours)`` and ``diff(base → theirs)``.
    b. Detect conflicts (paths changed on both sides).
@@ -97,13 +97,13 @@ async def _merge_async(
     callback surfaces a clean message.
 
     Args:
-        branch:   Name of the branch to merge into the current branch.
-        root:     Repository root (directory containing ``.muse/``).
-        session:  Open async DB session.
-        no_ff:    Force a merge commit even when fast-forward is possible.
+        branch: Name of the branch to merge into the current branch.
+        root: Repository root (directory containing ``.muse/``).
+        session: Open async DB session.
+        no_ff: Force a merge commit even when fast-forward is possible.
                   Preserves branch topology in the history graph.
-        squash:   Squash all commits from *branch* into one new commit on the
-                  current branch.  The resulting commit has a single parent
+        squash: Squash all commits from *branch* into one new commit on the
+                  current branch. The resulting commit has a single parent
                   (HEAD) and no ``parent2_commit_id`` — it does not form a
                   merge commit in the DAG.
         strategy: Resolution shortcut applied before conflict detection.
@@ -125,8 +125,8 @@ async def _merge_async(
     repo_id = repo_data["repo_id"]
 
     # ── Current branch ───────────────────────────────────────────────────
-    head_ref = (muse_dir / "HEAD").read_text().strip()   # "refs/heads/main"
-    current_branch = head_ref.rsplit("/", 1)[-1]         # "main"
+    head_ref = (muse_dir / "HEAD").read_text().strip() # "refs/heads/main"
+    current_branch = head_ref.rsplit("/", 1)[-1] # "main"
     our_ref_path = muse_dir / pathlib.Path(head_ref)
 
     ours_commit_id = our_ref_path.read_text().strip() if our_ref_path.exists() else ""
@@ -208,7 +208,7 @@ async def _merge_async(
             )
             typer.echo(f"❌ Merge conflict in {len(conflict_paths)} file(s):")
             for path in sorted(conflict_paths):
-                typer.echo(f"\tboth modified:   {path}")
+                typer.echo(f"\tboth modified: {path}")
             typer.echo('Fix conflicts and run "muse commit" to conclude the merge.')
             raise typer.Exit(code=ExitCode.USER_ERROR)
 
@@ -329,7 +329,7 @@ async def _merge_continue_async(
     ``MERGE_STATE.json``.
 
     Args:
-        root:    Repository root.
+        root: Repository root.
         session: Open async DB session.
 
     Raises:
@@ -344,7 +344,7 @@ async def _merge_continue_async(
     if merge_state.conflict_paths:
         typer.echo(
             f"❌ {len(merge_state.conflict_paths)} conflict(s) not yet resolved:\n"
-            + "\n".join(f"\tboth modified:   {p}" for p in merge_state.conflict_paths)
+            + "\n".join(f"\tboth modified: {p}" for p in merge_state.conflict_paths)
             + "\nRun 'muse resolve <path> --ours/--theirs' for each file."
         )
         raise typer.Exit(code=ExitCode.USER_ERROR)
@@ -368,12 +368,12 @@ async def _merge_continue_async(
     # Build snapshot from current muse-work/ contents (conflicts already resolved).
     workdir = root / "muse-work"
     if not workdir.exists():
-        typer.echo("⚠️  muse-work/ is missing. Cannot create merge snapshot.")
+        typer.echo("⚠️ muse-work/ is missing. Cannot create merge snapshot.")
         raise typer.Exit(code=ExitCode.USER_ERROR)
 
     manifest = build_snapshot_manifest(workdir)
     if not manifest:
-        typer.echo("⚠️  muse-work/ is empty. Nothing to commit for the merge.")
+        typer.echo("⚠️ muse-work/ is empty. Nothing to commit for the merge.")
         raise typer.Exit(code=ExitCode.USER_ERROR)
 
     snapshot_id = compute_snapshot_id(manifest)
@@ -444,14 +444,14 @@ async def _merge_abort_async(
 
     Reads ``MERGE_STATE.json``, fetches the ours_commit snapshot manifest, and
     restores the ours version of each conflicted file from the local object
-    store to ``muse-work/``.  Clears ``MERGE_STATE.json`` on success.
+    store to ``muse-work/``. Clears ``MERGE_STATE.json`` on success.
 
     Files that existed only on the theirs branch (i.e. path absent from ours
     manifest) are removed from ``muse-work/`` — they should not exist in the
     pre-merge state.
 
     Args:
-        root:    Repository root.
+        root: Repository root.
         session: Open async DB session used to look up the ours commit's
                  snapshot manifest.
 
@@ -544,11 +544,11 @@ def merge(
     """Merge a branch into the current branch (fast-forward or 3-way).
 
     Flags:
-        --no-ff       Force a merge commit even when fast-forward is possible.
-        --squash      Collapse target branch history into one commit (no parent2).
-        --strategy    Resolution shortcut: 'ours' or 'theirs'.
-        --continue    Finalize a paused merge after resolving all conflicts.
-        --abort       Cancel and restore the pre-merge working-tree state.
+        --no-ff Force a merge commit even when fast-forward is possible.
+        --squash Collapse target branch history into one commit (no parent2).
+        --strategy Resolution shortcut: 'ours' or 'theirs'.
+        --continue Finalize a paused merge after resolving all conflicts.
+        --abort Cancel and restore the pre-merge working-tree state.
     """
     root = require_repo()
 

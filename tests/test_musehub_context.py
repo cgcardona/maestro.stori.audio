@@ -1,6 +1,6 @@
 """Tests for the agent context endpoint (GET /musehub/repos/{repo_id}/context).
 
-Covers every acceptance criterion from issue #249:
+Covers every acceptance criterion:
 - GET /musehub/repos/{repo_id}/context returns all required sections
 - Musical state section is present (active_tracks, key, tempo, etc.)
 - History section includes recent commits
@@ -20,7 +20,7 @@ All tests use fixtures from conftest.py.
 from __future__ import annotations
 
 import pytest
-import yaml  # PyYAML ships no py.typed marker
+import yaml # PyYAML ships no py.typed marker
 from datetime import datetime, timezone
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession

@@ -1,7 +1,7 @@
 """Credits aggregation service for Muse Hub repos.
 
 Aggregates contributor information from commit history — think dynamic album
-liner notes that update as the composition evolves.  Every pushed commit
+liner notes that update as the composition evolves. Every pushed commit
 contributes an author name, a timestamp, and a message whose keywords are
 used to infer contribution types (composer, arranger, producer, etc.).
 
@@ -30,7 +30,7 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # Role inference keyword map
 # Keys are contribution-type labels; values are substrings to search for in
-# the lower-cased commit message.  Order matters: first match wins per token.
+# the lower-cased commit message. Order matters: first match wins per token.
 # ---------------------------------------------------------------------------
 
 _ROLE_KEYWORDS: dict[str, list[str]] = {
@@ -48,7 +48,7 @@ _ROLE_KEYWORDS: dict[str, list[str]] = {
 def _infer_roles(message: str) -> list[str]:
     """Return contribution type labels detected from a commit message.
 
-    Uses a simple keyword scan — sufficient for MVP.  If no keywords match,
+    Uses a simple keyword scan — sufficient for MVP. If no keywords match,
     falls back to ``["contributor"]`` so every commit always carries a role.
     """
     lower = message.lower()
@@ -65,9 +65,9 @@ def _sort_contributors(
     """Apply the requested sort order to the contributor list.
 
     Supported values:
-    - ``"count"``      — most prolific contributor first (default)
-    - ``"recency"``    — most recently active contributor first
-    - ``"alpha"``      — alphabetical by author name
+    - ``"count"`` — most prolific contributor first (default)
+    - ``"recency"`` — most recently active contributor first
+    - ``"alpha"`` — alphabetical by author name
     """
     if sort == "recency":
         return sorted(contributors, key=lambda c: c.last_active, reverse=True)
@@ -86,7 +86,7 @@ async def aggregate_credits(
     """Aggregate contributors across all commits in a repo.
 
     Reads every commit for the repo (no limit — credits need completeness,
-    not pagination).  Groups by author string, counts sessions, infers roles
+    not pagination). Groups by author string, counts sessions, infers roles
     from commit messages, and records activity timestamps.
 
     Args:

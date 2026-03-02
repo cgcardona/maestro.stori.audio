@@ -2,12 +2,12 @@
 
 All async tests call ``_blame_async`` directly with an in-memory SQLite
 session and a ``tmp_path`` repo root — no real Postgres or running process
-required.  Commits are seeded via ``_commit_async`` so blame and commit
+required. Commits are seeded via ``_commit_async`` so blame and commit
 are tested as an integrated pair.
 
 Covered scenarios:
 
-- ``test_blame_returns_last_commit_per_path``  (regression)
+- ``test_blame_returns_last_commit_per_path`` (regression)
 - ``test_blame_path_filter_restricts_output``
 - ``test_blame_track_filter_glob``
 - ``test_blame_section_filter``
@@ -73,7 +73,7 @@ async def test_blame_returns_last_commit_per_path(
 ) -> None:
     """Blame returns the most-recent commit that changed each path.
 
-    Regression for issue #72: ``muse blame <path>`` must walk the commit
+    Regression: ``muse blame <path>`` must walk the commit
     graph and return the correct last-change commit, not simply the HEAD
     commit for all paths.
     """

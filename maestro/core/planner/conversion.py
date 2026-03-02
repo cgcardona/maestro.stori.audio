@@ -38,10 +38,10 @@ class _AddMidiRegionParams(TypedDict, total=False):
     """Parameters for a ``stori_add_midi_region`` tool call built by the planner."""
 
     name: Required[str]
-    trackName: Required[str]  # noqa: N815
-    startBeat: Required[float]  # noqa: N815
-    durationBeats: Required[float]  # noqa: N815
-    trackId: str  # noqa: N815  present when targeting an existing track
+    trackName: Required[str] # noqa: N815
+    startBeat: Required[float] # noqa: N815
+    durationBeats: Required[float] # noqa: N815
+    trackId: str # noqa: N815 present when targeting an existing track
 
 
 class _GenerateParams(TypedDict, total=False):
@@ -52,9 +52,9 @@ class _GenerateParams(TypedDict, total=False):
     tempo: Required[int]
     bars: Required[int]
     key: Required[str]
-    trackName: Required[str]  # noqa: N815
+    trackName: Required[str] # noqa: N815
     constraints: dict[str, JSONValue]
-    trackId: str  # noqa: N815  present when targeting an existing track
+    trackId: str # noqa: N815 present when targeting an existing track
 
 
 def _beats_per_bar(project_state: ProjectContext | None) -> int:
@@ -166,7 +166,7 @@ def _schema_to_tool_calls(
         is_role_mapped = t_lower in _role_mapped_existing
 
         # 1. Track creation (color + icon + gmProgram inline so the
-        #    frontend can create the track in a single atomic step).
+        # frontend can create the track in a single atomic step).
         if not is_existing and not is_role_mapped and t_lower in edits_by_track:
             styling = get_track_styling(track_name, rotation_index=_new_track_idx)
             _new_track_idx += 1

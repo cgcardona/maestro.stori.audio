@@ -1,7 +1,7 @@
 """Muse Hub HTTP client with JWT bearer authentication.
 
 Reads the auth token from ``.muse/config.toml`` and injects it into every
-outbound request as ``Authorization: Bearer <token>``.  The token value is
+outbound request as ``Authorization: Bearer <token>``. The token value is
 never written to logs — log lines use ``"Bearer ***"`` as a placeholder.
 
 Usage::
@@ -45,7 +45,7 @@ _MISSING_TOKEN_MSG = (
 class PushCommitPayload(TypedDict):
     """A single commit record sent to the Hub during a push.
 
-    All datetime fields are ISO-8601 strings (UTC).  ``metadata`` carries
+    All datetime fields are ISO-8601 strings (UTC). ``metadata`` carries
     music-domain annotations (tempo_bpm, key, meter, etc.).
     """
 
@@ -179,7 +179,7 @@ class PullResponse(TypedDict):
 class FetchRequest(TypedDict):
     """Payload sent to ``POST /musehub/repos/{repo_id}/fetch``.
 
-    ``branches`` lists the specific branch names to fetch.  An empty list
+    ``branches`` lists the specific branch names to fetch. An empty list
     means "fetch all branches" — the Hub returns all it knows about.
     """
 
@@ -203,7 +203,7 @@ class FetchResponse(TypedDict):
     """Response from the Hub fetch endpoint.
 
     ``branches`` lists every branch the Hub knows about (filtered by the
-    request's ``branches`` list when non-empty).  The caller uses this to
+    request's ``branches`` list when non-empty). The caller uses this to
     update local remote-tracking refs and, when ``--prune`` is active, to
     identify stale local refs that should be removed.
     """
@@ -220,7 +220,7 @@ class MuseHubClient:
     """Async HTTP client for the Muse Hub API.
 
     Wraps :class:`httpx.AsyncClient` and injects the Bearer token read from
-    ``.muse/config.toml`` into every request.  All auth logic is handled at
+    ``.muse/config.toml`` into every request. All auth logic is handled at
     construction time — if the token is absent the caller never reaches the
     first network call.
 
@@ -250,7 +250,7 @@ class MuseHubClient:
         """Return ``{"Authorization": "Bearer <token>"}`` or exit 1.
 
         Reads the token from ``.muse/config.toml`` via
-        :func:`~maestro.muse_cli.config.get_auth_token`.  If the token is
+        :func:`~maestro.muse_cli.config.get_auth_token`. If the token is
         absent or empty, prints an actionable message and raises
         :class:`typer.Exit` with code 1.
 
@@ -300,27 +300,27 @@ class MuseHubClient:
 
     async def get(self, path: str, **kwargs: object) -> httpx.Response:
         """Issue a GET request to *path*."""
-        return await self._require_client().get(path, **kwargs)  # type: ignore[arg-type]  # httpx stubs use Any for kwargs
+        return await self._require_client().get(path, **kwargs) # type: ignore[arg-type] # httpx stubs use Any for kwargs
 
     async def post(self, path: str, **kwargs: object) -> httpx.Response:
         """Issue a POST request to *path*."""
-        return await self._require_client().post(path, **kwargs)  # type: ignore[arg-type]  # httpx stubs use Any for kwargs
+        return await self._require_client().post(path, **kwargs) # type: ignore[arg-type] # httpx stubs use Any for kwargs
 
     async def put(self, path: str, **kwargs: object) -> httpx.Response:
         """Issue a PUT request to *path*."""
-        return await self._require_client().put(path, **kwargs)  # type: ignore[arg-type]  # httpx stubs use Any for kwargs
+        return await self._require_client().put(path, **kwargs) # type: ignore[arg-type] # httpx stubs use Any for kwargs
 
     async def delete(self, path: str, **kwargs: object) -> httpx.Response:
         """Issue a DELETE request to *path*."""
-        return await self._require_client().delete(path, **kwargs)  # type: ignore[arg-type]  # httpx stubs use Any for kwargs
+        return await self._require_client().delete(path, **kwargs) # type: ignore[arg-type] # httpx stubs use Any for kwargs
 
 
 class CloneRequest(TypedDict):
     """Payload sent to ``POST /musehub/repos/{repo_id}/clone``.
 
-    ``branch`` selects which branch HEAD to seed the clone from.  When
+    ``branch`` selects which branch HEAD to seed the clone from. When
     ``depth`` is set the Hub returns only the last *N* commits (shallow
-    clone).  ``single_track`` restricts returned file paths to those
+    clone). ``single_track`` restricts returned file paths to those
     whose first path component matches the given instrument track name
     (e.g. ``"drums"``).
     """
@@ -353,10 +353,10 @@ class CloneObjectPayload(TypedDict):
 class CloneResponse(TypedDict):
     """Response from the Hub clone endpoint.
 
-    ``repo_id`` is the canonical Hub identifier for the cloned repository —
+    ``repo_id`` is the canonical Hub identifier for the cloned repository
     stored in ``<target>/.muse/repo.json`` so subsequent push/pull calls can
-    address the correct Hub repo.  ``default_branch`` is the branch that
-    ``remote_head`` belongs to.  ``commits`` and ``objects`` carry the
+    address the correct Hub repo. ``default_branch`` is the branch that
+    ``remote_head`` belongs to. ``commits`` and ``objects`` carry the
     payload to seed the local database.
     """
 

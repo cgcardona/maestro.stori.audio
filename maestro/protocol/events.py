@@ -43,21 +43,21 @@ class ToolCallWire(CamelModel):
     ``ToolCallEvent`` — wherever a tool call must cross the Pydantic model
     boundary (SSE serialization, API responses).
 
-    **Why not ``ToolCallDict``?**  ``ToolCallDict.params`` is
-    ``dict[str, JSONValue]``, a recursive type alias.  Pydantic v2 cannot
+    **Why not ``ToolCallDict``?** ``ToolCallDict.params`` is
+    ``dict[str, JSONValue]``, a recursive type alias. Pydantic v2 cannot
     generate a finite JSON Schema for recursive aliases — it raises
-    ``RecursionError`` at model class definition time.  ``ToolCallWire``
+    ``RecursionError`` at model class definition time. ``ToolCallWire``
     replaces ``params`` with ``dict[str, PydanticJson]``, which Pydantic
     resolves correctly via ``PydanticJson.model_rebuild()``.
 
-    **Conversion from internal code:**  All producers (editing handler,
+    **Conversion from internal code:** All producers (editing handler,
     composing coordinator, agent teams) hold ``list[ToolCallDict]`` internally.
     Convert at the SSE emit boundary using ``from_tool_call_dict()``::
 
         tool_calls=[ToolCallWire.from_tool_call_dict(tc) for tc in collected]
 
     **Serialization:** ``CamelModel`` serializes ``tool`` and ``params`` as
-    camelCase via ``by_alias=True``.  The ``params`` values round-trip through
+    camelCase via ``by_alias=True``. The ``params`` values round-trip through
     ``PydanticJson`` transparently — the SSE client receives standard JSON.
     """
 
@@ -69,7 +69,7 @@ class ToolCallWire(CamelModel):
         """Convert an internal ``ToolCallDict`` to a Pydantic-safe wire model.
 
         Wraps ``tc["params"]`` (``dict[str, JSONValue]``) into
-        ``dict[str, PydanticJson]`` using ``wrap_dict()``.  This is the single
+        ``dict[str, PydanticJson]`` using ``wrap_dict()``. This is the single
         conversion point for crossing the internal→Pydantic boundary for tool
         call params.
         """
@@ -81,7 +81,7 @@ class MaestroEvent(CamelModel):
     """Base class for all SSE events.
 
     ``seq`` and ``protocol_version`` are injected by the emitter, not
-    by event constructors.  Subclasses only set ``type`` and their
+    by event constructors. Subclasses only set ``type`` and their
     domain-specific fields.
     """
 
@@ -112,7 +112,7 @@ class ReasoningEvent(MaestroEvent):
     """Sanitized analysis summary for the user.
 
     Carries user-safe musical reasoning produced by ReasoningBuffer +
-    sanitize_reasoning().  NOT raw chain-of-thought or internal LLM
+    sanitize_reasoning(). NOT raw chain-of-thought or internal LLM
     traces — those are stripped before emission.
     """
 

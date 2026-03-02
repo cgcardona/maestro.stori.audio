@@ -2,7 +2,7 @@
 
 All async tests call ``_inspect_async`` directly with an in-memory SQLite
 session and a ``tmp_path`` repo root — no real Postgres or running
-process required.  Commits are seeded via ``_commit_async``.
+process required. Commits are seeded via ``_commit_async``.
 
 Naming convention: test_inspect_<behavior>_<scenario>
 """
@@ -215,7 +215,7 @@ async def test_inspect_result_includes_branch_pointers(
         include_branches=False,
     )
 
-    assert result.branches["main"] == cids[1]  # HEAD = newest commit
+    assert result.branches["main"] == cids[1] # HEAD = newest commit
 
 
 # ---------------------------------------------------------------------------

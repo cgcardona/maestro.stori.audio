@@ -1,6 +1,6 @@
 """Muse Hub fork network UI route — interactive DAG of a repo's fork tree.
 
-Serves the fork network page for any public Muse Hub repo.  The page renders
+Serves the fork network page for any public Muse Hub repo. The page renders
 an interactive SVG directed acyclic graph (DAG) where each node is a fork and
 each edge is coloured by the divergence (commits ahead) between the fork and
 its parent.
@@ -15,7 +15,7 @@ Content negotiation (one URL, two audiences):
   traversal by agents.
 
 Auth:
-  No JWT required — public repos are visible to everyone.  The client-side
+  No JWT required — public repos are visible to everyone. The client-side
   JavaScript reads a token from ``localStorage`` only for write actions
   (e.g. "Contribute upstream").
 """
@@ -88,9 +88,9 @@ async def _build_fork_network(
     """Build the full fork network tree rooted at *source_repo_id*.
 
     Queries ``musehub_forks`` for all direct forks of the source repo, then
-    for each fork repo fetches its metadata and commit count.  Divergence is
+    for each fork repo fetches its metadata and commit count. Divergence is
     approximated as the number of commits in the fork that exceed the source's
-    count (commits ahead).  This is a set-cardinality proxy — sufficient for
+    count (commits ahead). This is a set-cardinality proxy — sufficient for
     display without requiring a full commit-graph traversal.
 
     Returns a ``ForkNetworkResponse`` with a recursive ``ForkNetworkNode`` tree.
@@ -164,9 +164,9 @@ async def forks_page(
     """Render the fork network page or return structured fork data as JSON.
 
     HTML (default): renders an interactive SVG DAG where each node represents
-    a fork of the source repo.  Edges are coloured by divergence (commits
-    ahead of the parent).  Each node shows the fork owner's avatar, last
-    commit message, commits ahead/behind, and star count.  Action buttons
+    a fork of the source repo. Edges are coloured by divergence (commits
+    ahead of the parent). Each node shows the fork owner's avatar, last
+    commit message, commits ahead/behind, and star count. Action buttons
     link to the Compare page and open a PR against the parent ("Contribute
     upstream").
 
@@ -175,7 +175,7 @@ async def forks_page(
     canonical contract for agents that need to reason about the fork graph
     without parsing HTML.
 
-    No JWT required — public repo fork graphs are visible to everyone.  The
+    No JWT required — public repo fork graphs are visible to everyone. The
     client-side token is only used for write actions embedded in the page.
 
     Returns 404 when the owner/slug combination is not found.

@@ -1,40 +1,40 @@
-"""Tests for Muse Hub label management UI endpoints (issue #426).
+"""Tests for Muse Hub label management UI endpoints.
 
 Covers GET /musehub/ui/{owner}/{repo_slug}/labels:
-- test_labels_page_returns_200               — page renders without auth
-- test_labels_page_no_auth_required          — GET needs no JWT
-- test_labels_page_unknown_repo_404          — unknown owner/slug → 404
-- test_labels_page_has_color_picker_js       — colour picker rendered in template
-- test_labels_page_has_label_list_js         — label list JS present
-- test_labels_page_json_format              — ?format=json returns structured data
-- test_labels_page_json_has_items_key       — JSON payload includes 'items' array
-- test_labels_page_shows_issue_count        — issue counts included in JSON response
-- test_labels_page_base_url_uses_slug       — base_url in context uses owner/slug not repo_id
+- test_labels_page_returns_200 — page renders without auth
+- test_labels_page_no_auth_required — GET needs no JWT
+- test_labels_page_unknown_repo_404 — unknown owner/slug → 404
+- test_labels_page_has_color_picker_js — colour picker rendered in template
+- test_labels_page_has_label_list_js — label list JS present
+- test_labels_page_json_format — ?format=json returns structured data
+- test_labels_page_json_has_items_key — JSON payload includes 'items' array
+- test_labels_page_shows_issue_count — issue counts included in JSON response
+- test_labels_page_base_url_uses_slug — base_url in context uses owner/slug not repo_id
 
 Covers POST /musehub/ui/{owner}/{repo_slug}/labels:
-- test_create_label_success                 — 201 + label_id returned
-- test_create_label_requires_auth          — 401 without Bearer token
-- test_create_label_duplicate_name_409     — duplicate name → 409
-- test_create_label_invalid_color_422      — bad hex color → 422
-- test_create_label_unknown_repo_404       — unknown repo → 404
+- test_create_label_success — 201 + label_id returned
+- test_create_label_requires_auth — 401 without Bearer token
+- test_create_label_duplicate_name_409 — duplicate name → 409
+- test_create_label_invalid_color_422 — bad hex color → 422
+- test_create_label_unknown_repo_404 — unknown repo → 404
 
 Covers POST /musehub/ui/{owner}/{repo_slug}/labels/{label_id}/edit:
-- test_edit_label_success                  — 200 + updated values
-- test_edit_label_requires_auth           — 401 without token
-- test_edit_label_unknown_label_404       — unknown label_id → 404
-- test_edit_label_name_conflict_409       — name collision → 409
-- test_edit_label_partial_update          — partial body updates only supplied fields
+- test_edit_label_success — 200 + updated values
+- test_edit_label_requires_auth — 401 without token
+- test_edit_label_unknown_label_404 — unknown label_id → 404
+- test_edit_label_name_conflict_409 — name collision → 409
+- test_edit_label_partial_update — partial body updates only supplied fields
 
 Covers POST /musehub/ui/{owner}/{repo_slug}/labels/{label_id}/delete:
-- test_delete_label_success               — 200 ok=True
-- test_delete_label_requires_auth        — 401 without token
-- test_delete_label_unknown_label_404    — unknown label_id → 404
+- test_delete_label_success — 200 ok=True
+- test_delete_label_requires_auth — 401 without token
+- test_delete_label_unknown_label_404 — unknown label_id → 404
 
 Covers POST /musehub/ui/{owner}/{repo_slug}/labels/reset:
-- test_reset_labels_success              — 200 + 10 defaults seeded
-- test_reset_labels_requires_auth       — 401 without token
+- test_reset_labels_success — 200 + 10 defaults seeded
+- test_reset_labels_requires_auth — 401 without token
 - test_reset_labels_wipes_custom_labels — existing labels replaced
-- test_reset_labels_unknown_repo_404    — unknown repo → 404
+- test_reset_labels_unknown_repo_404 — unknown repo → 404
 """
 from __future__ import annotations
 

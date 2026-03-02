@@ -26,20 +26,20 @@ from maestro.core.emotion_vector import EmotionVector, emotion_to_constraints
 class HFGenerationParams(TypedDict):
     """Parameters sent to the HuggingFace text-generation API.
 
-    Derived from the emotion vector via ``_emotion_to_hf_params``.  Values are
+    Derived from the emotion vector via ``_emotion_to_hf_params``. Values are
     clamped to safe inference ranges before being passed to the Gradio endpoint.
     """
 
-    temperature: float    # 0.5–1.4: higher = more variation (energy + tension)
-    top_p: float          # 0.8–0.95: lower = more focused (intimacy)
-    max_tokens: int       # bars × 32 × motion_multiplier, capped at model config
+    temperature: float # 0.5–1.4: higher = more variation (energy + tension)
+    top_p: float # 0.8–0.95: lower = more focused (intimacy)
+    max_tokens: int # bars × 32 × motion_multiplier, capped at model config
 
 
 class HFTextOutput(TypedDict):
     """Single element in the HuggingFace text-generation API response list.
 
     The Gradio / HF inference API wraps each generated text in a dict with a
-    ``generated_text`` key.  We use this TypedDict to document the expected
+    ``generated_text`` key. We use this TypedDict to document the expected
     shape at the library boundary and narrow with isinstance checks at parse time.
     """
 
@@ -68,7 +68,7 @@ class HFModelConfig:
     model_id: str
     max_tokens: int = 512
     supports_conditioning: bool = False
-    token_format: str = "remi"  # remi, octuple, custom
+    token_format: str = "remi" # remi, octuple, custom
 
 
 # Available models with their configurations
@@ -242,7 +242,7 @@ class HuggingFaceMelodyBackend(MelodyModelBackend):
         """Map emotion vector to HuggingFace generation parameters.
 
         Returns a ``dict[str, JSONValue]`` suitable for both the API payload and
-        metadata storage.  Documented shape: ``HFGenerationParams``.
+        metadata storage. Documented shape: ``HFGenerationParams``.
 
         Higher energy/tension → higher temperature (more variation)
         Higher intimacy → lower top_p (more focused)
@@ -250,16 +250,16 @@ class HuggingFaceMelodyBackend(MelodyModelBackend):
         """
         # Temperature: 0.7 - 1.3 based on energy and tension
         base_temp = 0.85
-        energy_factor = (ev.energy - 0.5) * 0.3  # -0.15 to +0.15
-        tension_factor = (ev.tension - 0.5) * 0.2  # -0.1 to +0.1
+        energy_factor = (ev.energy - 0.5) * 0.3 # -0.15 to +0.15
+        tension_factor = (ev.tension - 0.5) * 0.2 # -0.1 to +0.1
         temperature: float = round(max(0.5, min(1.4, base_temp + energy_factor + tension_factor)), 2)
 
         # Top-p: 0.8 - 0.98 based on intimacy (intimate = more focused)
-        top_p: float = round(0.95 - (ev.intimacy * 0.15), 2)  # 0.8 to 0.95
+        top_p: float = round(0.95 - (ev.intimacy * 0.15), 2) # 0.8 to 0.95
 
         # Max tokens: based on motion and bars
-        base_tokens = bars * 32  # ~32 tokens per bar base
-        motion_multiplier = 0.7 + (ev.motion * 0.6)  # 0.7x to 1.3x
+        base_tokens = bars * 32 # ~32 tokens per bar base
+        motion_multiplier = 0.7 + (ev.motion * 0.6) # 0.7x to 1.3x
         max_tokens: int = min(int(base_tokens * motion_multiplier), self.model_config.max_tokens)
 
         return {
@@ -313,7 +313,7 @@ class HuggingFaceMelodyBackend(MelodyModelBackend):
         """Parse HuggingFace model output into notes.
 
         ``data`` is expected to be a list of ``HFTextOutput`` dicts from the
-        Gradio/HF text-generation endpoint.  The caller validates the raw API
+        Gradio/HF text-generation endpoint. The caller validates the raw API
         response with isinstance checks before passing it here.
         """
         notes: list[NoteDict] = []
@@ -387,7 +387,7 @@ class HuggingFaceMelodyBackend(MelodyModelBackend):
                     "velocity": velocity,
                 })
                 
-                current_beat += duration * 0.75 + 0.25  # Some overlap possible
+                current_beat += duration * 0.75 + 0.25 # Some overlap possible
                 
             except (ValueError, IndexError):
                 continue

@@ -1,4 +1,4 @@
-"""Tests for muse grep — pattern search across Muse VCS commits (issue #124).
+"""Tests for muse grep — pattern search across Muse VCS commits.
 
 Verifies:
 - Pattern matching against commit messages (case-insensitive).
@@ -103,7 +103,7 @@ def _make_commit_obj(
     """Build a MuseCliCommit using its normal constructor (no DB session needed).
 
     SQLAlchemy ORM models can be instantiated without a session by using the
-    regular constructor.  The instance is transient (not associated with any
+    regular constructor. The instance is transient (not associated with any
     session) which is sufficient for testing ``_match_commit``.
     """
     return MuseCliCommit(
@@ -216,7 +216,7 @@ async def test_load_all_commits_walks_chain(async_session: AsyncSession) -> None
 
     commits = await _load_all_commits(async_session, head_commit_id=c2.commit_id, limit=100)
     assert len(commits) == 2
-    assert commits[0].commit_id == c2.commit_id  # newest first
+    assert commits[0].commit_id == c2.commit_id # newest first
     assert commits[1].commit_id == c1.commit_id
 
 

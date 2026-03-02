@@ -4,13 +4,13 @@ Endpoint:
   GET /musehub/repos/{repo_id}/blame/{ref}?path=<midi_path>
 
 Query params:
-  path        (required) — MIDI file path within the repo
-  track       (optional) — instrument name filter (e.g. "piano", "bass")
-  beat_start  (optional float) — restrict to notes starting at or after this beat
-  beat_end    (optional float) — restrict to notes starting before this beat
+  path (required) — MIDI file path within the repo
+  track (optional) — instrument name filter (e.g. "piano", "bass")
+  beat_start (optional float) — restrict to notes starting at or after this beat
+  beat_end (optional float) — restrict to notes starting before this beat
 
 The implementation derives realistic blame data from the ``musehub_commits``
-table.  A production implementation would walk the object DAG to identify the
+table. A production implementation would walk the object DAG to identify the
 exact commit that last touched each note; at API contract scope, the seed data
 is generated deterministically from the commit history so the UI page has a
 realistic dataset to render.
@@ -58,7 +58,7 @@ def _pitches_for(track: str) -> list[int]:
 
 def _stable_int(seed: str, mod: int) -> int:
     """Deterministic pseudo-random integer in [0, mod) derived from a string seed."""
-    digest = int(hashlib.md5(seed.encode()).hexdigest(), 16)  # noqa: S324 — non-crypto
+    digest = int(hashlib.md5(seed.encode()).hexdigest(), 16) # noqa: S324 — non-crypto
     return digest % mod
 
 
@@ -186,7 +186,7 @@ async def get_blame(
     introduced or modified that note.
 
     Blame data is derived deterministically from the commit history stored in
-    ``musehub_commits``.  The optional ``track``, ``beatStart``, and ``beatEnd``
+    ``musehub_commits``. The optional ``track``, ``beatStart``, and ``beatEnd``
     query params narrow the result to a specific instrument or beat window — useful
     for the blame UI page's track-filtered and region-zoomed views.
 

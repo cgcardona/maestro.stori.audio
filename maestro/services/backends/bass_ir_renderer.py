@@ -83,7 +83,7 @@ def _kick_beats_for_bar(groove_template: str, bar_start_beat: float) -> list[flo
 def _is_dense_region(bar_index: int, bars: int, kick_count_in_bar: int) -> bool:
     """Detect if this is a dense rhythmic region (more activity)."""
     # Fill bars and bars with many kicks are dense
-    if bar_index % 4 == 3:  # Fill bar
+    if bar_index % 4 == 3: # Fill bar
         return True
     if kick_count_in_bar >= 3:
         return True
@@ -193,7 +193,7 @@ def render_bass_spec(
             
             # Priority 2: Anticipation (slightly before kick on strong beats)
             if b is None and bass_spec.anticipation_allowed and bar_anticipation_slots:
-                if rng.random() < 0.35:  # 35% chance to use anticipation
+                if rng.random() < 0.35: # 35% chance to use anticipation
                     pool = [a for a in bar_anticipation_slots if a not in used_beats and a >= bar_start]
                     if pool:
                         b = rng.choice(pool)
@@ -239,14 +239,14 @@ def render_bass_spec(
             else:
                 # Longer notes in sparse regions
                 duration = dur_lo + rng.random() * (dur_hi - dur_lo)
-            duration = round(duration * 4) / 4  # quarter grid
+            duration = round(duration * 4) / 4 # quarter grid
 
             # Velocity: slightly louder on kick-aligned notes
             base_vel = rng.randint(80, 105)
             if is_kick_aligned:
                 vel = min(127, base_vel + 8)
             elif is_anticipation:
-                vel = max(70, base_vel - 5)  # Slightly softer on anticipation
+                vel = max(70, base_vel - 5) # Slightly softer on anticipation
             else:
                 vel = base_vel
             

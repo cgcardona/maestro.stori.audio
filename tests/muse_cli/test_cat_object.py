@@ -2,7 +2,7 @@
 
 All async tests call ``_cat_object_async`` and ``_lookup_object`` directly
 with an in-memory SQLite session and a ``tmp_path`` repo root — no real
-Postgres or running process required.  ORM rows are seeded directly so the
+Postgres or running process required. ORM rows are seeded directly so the
 lookup tests are independent of ``muse commit``.
 """
 from __future__ import annotations
@@ -180,7 +180,7 @@ async def test_cat_object_default_prints_object_metadata(
     )
 
     out = capsys.readouterr().out
-    assert "type:       object" in out
+    assert "type: object" in out
     assert oid in out
     assert "2048 bytes" in out
 
@@ -203,9 +203,9 @@ async def test_cat_object_default_prints_snapshot_metadata(
     )
 
     out = capsys.readouterr().out
-    assert "type:        snapshot" in out
+    assert "type: snapshot" in out
     assert sid in out
-    assert "files:       2" in out
+    assert "files: 2" in out
 
 
 @pytest.mark.anyio
@@ -227,7 +227,7 @@ async def test_cat_object_default_prints_commit_metadata(
     )
 
     out = capsys.readouterr().out
-    assert "type:       commit" in out
+    assert "type: commit" in out
     assert cid in out
     assert "main" in out
     assert "initial take" in out

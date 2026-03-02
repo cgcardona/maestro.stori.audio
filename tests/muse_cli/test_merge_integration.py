@@ -2,18 +2,18 @@
 
 These tests exercise the complete cycle:
 
-    muse merge <branch>     → conflict detected, MERGE_STATE.json written
+    muse merge <branch> → conflict detected, MERGE_STATE.json written
     muse resolve <path> ... → path removed from conflict list
-    muse merge --continue   → merge commit created, MERGE_STATE.json cleared
-    muse log                → merge commit visible in history
+    muse merge --continue → merge commit created, MERGE_STATE.json cleared
+    muse log → merge commit visible in history
 
 A separate test covers the abort path:
 
-    muse merge <branch>     → conflict detected
-    muse merge --abort      → pre-merge state restored
+    muse merge <branch> → conflict detected
+    muse merge --abort → pre-merge state restored
 
 Both tests require two real branches with divergent commits, making them true
-integration tests rather than unit tests.  They use in-memory SQLite and
+integration tests rather than unit tests. They use in-memory SQLite and
 ``tmp_path`` — no real database or Docker is needed.
 
 All async tests use ``@pytest.mark.anyio``.
@@ -132,7 +132,7 @@ async def test_full_conflict_resolve_cycle(
 
     # --- Step 5: merge → conflict ---
     _switch_branch(tmp_path, "main")
-    _write_workdir(tmp_path, {"beat.mid": b"OURS_VERSION"})  # restore ours in workdir
+    _write_workdir(tmp_path, {"beat.mid": b"OURS_VERSION"}) # restore ours in workdir
 
     with pytest.raises(typer.Exit) as exc_info:
         await _merge_async(

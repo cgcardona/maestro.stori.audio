@@ -1,23 +1,23 @@
 """Muse Render-Preview Service — MIDI → audio preview via Storpheus.
 
 Converts a Muse commit snapshot (a manifest of MIDI files) into a rendered
-audio file by delegating to the Storpheus render endpoint.  This is the
+audio file by delegating to the Storpheus render endpoint. This is the
 commit-aware counterpart to ``muse play``: instead of playing whatever file
 the user points to, it first resolves a commit, extracts its MIDI files, and
 dispatches them for audio rendering.
 
 Boundary contract:
-- Input:  ``dict[str, str]`` snapshot manifest (rel_path → object_id)
+- Input: ``dict[str, str]`` snapshot manifest (rel_path → object_id)
 - Output: ``RenderPreviewResult`` — path written, format, commit short ID, and
           a ``stubbed`` flag that signals whether a full Storpheus render
           actually occurred or whether the MIDI was copied as a placeholder.
-- Side effects:  Writes exactly one file to the caller-supplied ``output_path``.
+- Side effects: Writes exactly one file to the caller-supplied ``output_path``.
   Never touches the Muse repository or the database.
 
 Storpheus render status:
   The Storpheus service exposes MIDI *generation* at ``POST /generate``.
   A dedicated ``POST /render`` endpoint (MIDI-in → audio-out) is planned but
-  not yet deployed.  Until that endpoint ships this module performs a
+  not yet deployed. Until that endpoint ships this module performs a
   health-check to confirm Storpheus is reachable, then writes the first MIDI
   file from the manifest to the output path (format: wav stub).
 
@@ -62,7 +62,7 @@ class RenderPreviewResult:
         midi_files_used: Number of MIDI files from the snapshot used for rendering.
         skipped_count: Manifest entries skipped (wrong type / missing on disk).
         stubbed: True when the Storpheus ``/render`` endpoint is not yet
-            available and a MIDI file was copied in its place.  Consumers
+            available and a MIDI file was copied in its place. Consumers
             should surface this to the user so they understand the file is
             not a full audio render.
     """
@@ -99,7 +99,7 @@ def _collect_midi_files(
     """Walk the snapshot manifest and return (midi_paths, skipped_count).
 
     Applies optional ``track`` and ``section`` substring filters before
-    collecting.  Files that pass the filter but are absent on disk are
+    collecting. Files that pass the filter but are absent on disk are
     counted in ``skipped_count`` and logged at WARNING level.
 
     Args:
@@ -175,7 +175,7 @@ def _render_via_storpheus(
     """Attempt to render *midi_path* to audio via Storpheus ``POST /render``.
 
     This is a *stub implementation*: the Storpheus ``/render`` endpoint
-    (MIDI-in → audio-out) is not yet deployed.  Until it ships the function
+    (MIDI-in → audio-out) is not yet deployed. Until it ships the function
     copies the MIDI file to ``output_path`` as a placeholder and returns
     ``True`` (stubbed=True).
 
@@ -195,7 +195,7 @@ def _render_via_storpheus(
         True when the output is a MIDI stub (no real audio render occurred).
     """
     logger.warning(
-        "⚠️ Storpheus /render endpoint not yet available — "
+        "⚠️ Storpheus /render endpoint not yet available"
         "copying MIDI as placeholder for %s",
         output_path.name,
     )
@@ -207,7 +207,7 @@ def _render_via_storpheus(
         output_path,
         fmt.value,
     )
-    return True  # stubbed
+    return True # stubbed
 
 
 # ---------------------------------------------------------------------------
@@ -227,7 +227,7 @@ def render_preview(
 ) -> RenderPreviewResult:
     """Render a commit snapshot to an audio preview file.
 
-    Entry point for the ``muse render-preview`` command.  Collects MIDI
+    Entry point for the ``muse render-preview`` command. Collects MIDI
     files from the snapshot, checks that Storpheus is reachable, then
     delegates to ``_render_via_storpheus`` for the actual audio conversion.
 
@@ -262,7 +262,7 @@ def render_preview(
 
     _check_storpheus_reachable(storpheus_url)
 
-    # Render the first MIDI file.  When /render supports multi-track mixing,
+    # Render the first MIDI file. When /render supports multi-track mixing,
     # pass all midi_paths and merge the output here.
     primary_midi = midi_paths[0]
     stubbed = _render_via_storpheus(primary_midi, output_path, fmt, storpheus_url)

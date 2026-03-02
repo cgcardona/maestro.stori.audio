@@ -1,6 +1,6 @@
 """Tests for ``muse push``.
 
-Covers acceptance criteria from issue #38:
+Covers acceptance criteria:
 - ``muse push`` with no remote configured exits 1 with instructive message.
 - ``muse push`` calls ``POST <remote>/push`` with correct payload structure.
 - ``muse push`` updates ``.muse/remotes/origin/<branch>`` after a successful push.
@@ -8,7 +8,7 @@ Covers acceptance criteria from issue #38:
 - Network errors surface as exit code 3.
 - ``muse push`` with all commits already on remote prints up-to-date message.
 
-Covers acceptance criteria from issue #77 (new remote sync flags):
+Covers acceptance criteria (new remote sync flags):
 - ``muse push --force`` sends ``force=True`` in the payload.
 - ``muse push --force-with-lease`` sends ``force_with_lease=True`` and
   ``expected_remote_head`` in the payload; a 409 response exits 1.
@@ -276,7 +276,7 @@ def test_compute_push_delta_returns_only_new_commits() -> None:
     c1 = _make_commit("commit-001")
     c2 = _make_commit("commit-002", parent_id="commit-001")
     c3 = _make_commit("commit-003", parent_id="commit-002")
-    commits = [c3, c2, c1]  # newest first
+    commits = [c3, c2, c1] # newest first
 
     delta = _compute_push_delta(commits, remote_head="commit-001")
     assert [c.commit_id for c in delta] == ["commit-002", "commit-003"]
@@ -427,7 +427,7 @@ def test_collect_tag_refs_ignores_empty_files(tmp_path: pathlib.Path) -> None:
 
 
 # ---------------------------------------------------------------------------
-# test_push_force_with_lease_rejects_mismatch (regression from issue #77)
+# test_push_force_with_lease_rejects_mismatch (regression)
 # ---------------------------------------------------------------------------
 
 
@@ -438,7 +438,7 @@ async def test_push_force_with_lease_rejects_mismatch(
 ) -> None:
     """When Hub returns 409, --force-with-lease exits 1 with instructive message.
 
-    Regression for issue #77: the hub rejects the push because the remote HEAD
+    Regression: the hub rejects the push because the remote HEAD
     has advanced beyond our last-known tracking pointer.
     """
     import typer
@@ -500,7 +500,7 @@ async def test_push_force_with_lease_rejects_mismatch(
 
 
 # ---------------------------------------------------------------------------
-# test_push_tags_includes_tags (regression from issue #77)
+# test_push_tags_includes_tags (regression)
 # ---------------------------------------------------------------------------
 
 
@@ -570,7 +570,7 @@ async def test_push_tags_includes_tags(tmp_path: pathlib.Path) -> None:
 
 
 # ---------------------------------------------------------------------------
-# test_push_set_upstream_writes_config (regression from issue #77)
+# test_push_set_upstream_writes_config (regression)
 # ---------------------------------------------------------------------------
 
 

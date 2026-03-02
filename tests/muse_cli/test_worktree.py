@@ -1,6 +1,6 @@
 """Tests for ``muse worktree`` subcommands.
 
-Covers the acceptance criteria from issue #83:
+Covers the acceptance criteria:
 - ``muse worktree add`` creates a linked worktree with shared objects store.
 - Linked worktrees have independent muse-work/ and .muse gitdir file.
 - ``muse worktree list`` shows main + linked worktrees with path, branch, HEAD.
@@ -89,8 +89,7 @@ class TestListWorktrees:
 
 
 # ---------------------------------------------------------------------------
-# add_worktree — regression test required by issue #83
-# ---------------------------------------------------------------------------
+# add_worktree — regression test required by # ---------------------------------------------------------------------------
 
 
 class TestWorktreeAdd:

@@ -191,7 +191,7 @@ class TestProposeVariation:
             # Make request
             request_data = {
                 "project_id": mock_project_id,
-                "base_state_id": "42",  # Expected state
+                "base_state_id": "42", # Expected state
                 "intent": "make it darker",
             }
             
@@ -200,7 +200,7 @@ class TestProposeVariation:
                 json=request_data,
             )
             
-            assert response.status_code == 409  # Conflict
+            assert response.status_code == 409 # Conflict
             data = response.json()
             assert "error" in data["detail"]
             assert "State conflict" in data["detail"]["error"]
@@ -383,7 +383,7 @@ class TestStateStoreIntegration:
         state_id = store.get_state_id()
         
         assert isinstance(state_id, str)
-        assert state_id == "0"  # Initial version
+        assert state_id == "0" # Initial version
     
     def test_check_state_id_match(self) -> None:
 

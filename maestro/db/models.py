@@ -63,12 +63,12 @@ class User(Base):
     # Budget tracking (in cents to avoid float precision issues)
     budget_cents: Mapped[int] = mapped_column(
         Integer,
-        default=500,  # $5.00 default
+        default=500, # $5.00 default
         nullable=False,
     )
     budget_limit_cents: Mapped[int] = mapped_column(
         Integer,
-        default=500,  # $5.00 default
+        default=500, # $5.00 default
         nullable=False,
     )
     
@@ -147,7 +147,7 @@ class UsageLog(Base):
     # Request details
     prompt: Mapped[str | None] = mapped_column(
         Text,
-        nullable=True,  # Null if user opted out
+        nullable=True, # Null if user opted out
     )
     model: Mapped[str] = mapped_column(
         String(100),
@@ -358,7 +358,7 @@ class ConversationMessage(Base):
     role: Mapped[str] = mapped_column(
         String(20),
         nullable=False,
-    )  # 'user', 'assistant', 'system'
+    ) # 'user', 'assistant', 'system'
     
     content: Mapped[str] = mapped_column(
         Text,
@@ -374,7 +374,7 @@ class ConversationMessage(Base):
     tokens_used: Mapped[UsageStats | None] = mapped_column(
         JSON,
         nullable=True,
-    )  # {"prompt_tokens": 1234, "completion_tokens": 567}
+    ) # {"prompt_tokens": 1234, "completion_tokens": 567}
     
     # Cost in cents
     cost_cents: Mapped[int] = mapped_column(
@@ -458,7 +458,7 @@ class MessageAction(Base):
     action_type: Mapped[str] = mapped_column(
         String(50),
         nullable=False,
-    )  # track_added, region_created, notes_added, etc.
+    ) # track_added, region_created, notes_added, etc.
     
     description: Mapped[str] = mapped_column(
         Text,
@@ -479,7 +479,7 @@ class MessageAction(Base):
     extra_metadata: Mapped[dict[str, object] | None] = mapped_column(
         JSON,
         nullable=True,
-    )  # Track ID, region ID, etc.
+    ) # Track ID, region ID, etc.
     
     # Timestamp
     timestamp: Mapped[datetime] = mapped_column(

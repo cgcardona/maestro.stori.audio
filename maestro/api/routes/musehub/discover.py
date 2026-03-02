@@ -1,9 +1,9 @@
 """Muse Hub discover/explore API route handlers.
 
 Endpoint summary:
-  GET  /api/v1/musehub/discover/repos           — list public repos (no auth required)
-  POST /api/v1/musehub/repos/{repo_id}/star     — star a repo (idempotent add, auth required)
-  DELETE /api/v1/musehub/repos/{repo_id}/star   — unstar a repo (auth required)
+  GET /api/v1/musehub/discover/repos — list public repos (no auth required)
+  POST /api/v1/musehub/repos/{repo_id}/star — star a repo (idempotent add, auth required)
+  DELETE /api/v1/musehub/repos/{repo_id}/star — unstar a repo (auth required)
 
 The browse endpoint is intentionally unauthenticated so that anyone can discover
 public compositions without creating an account — matching the HuggingFace model
@@ -75,7 +75,7 @@ async def list_public_repos(
         tempo_min=tempo_min,
         tempo_max=tempo_max,
         instrumentation=instrumentation,
-        sort=sort,  # type: ignore[arg-type]  # validated above via _VALID_SORTS check
+        sort=sort, # type: ignore[arg-type] # validated above via _VALID_SORTS check
         page=page,
         page_size=page_size,
     )
@@ -96,7 +96,7 @@ async def star_repo(
     """Add a star to a public repo on behalf of the authenticated user.
 
     Idempotent — starring an already-starred repo returns the current star count
-    without creating a duplicate.  Use DELETE /star to remove a star.
+    without creating a duplicate. Use DELETE /star to remove a star.
 
     Raises 404 if the repo does not exist or is not public.
     """

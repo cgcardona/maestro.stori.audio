@@ -55,7 +55,7 @@ def json_or_html(
     Args:
         request: The incoming FastAPI request.
         template_fn: Zero-argument callable that renders and returns the HTML
-            response.  Called lazily — only when the caller wants HTML.
+            response. Called lazily — only when the caller wants HTML.
         json_data: Serialisable dict to embed under the ``data`` key.
 
     Returns:
@@ -77,7 +77,7 @@ def add_json_available_header(response: Response, request: Request) -> Response:
     """Attach ``X-MuseHub-JSON-Available: true`` to bot responses.
 
     Agents that do not yet set ``Accept: application/json`` can detect support
-    from this header and switch on their next request.  The header is only
+    from this header and switch on their next request. The header is only
     added for known bot User-Agents to avoid polluting browser network traces.
 
     Args:

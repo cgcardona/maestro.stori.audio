@@ -1,16 +1,16 @@
 """Tests for Muse Hub repo, branch, and commit endpoints.
 
-Covers every acceptance criterion from issue #39:
+Covers every acceptance criterion:
 - POST /musehub/repos returns 201 with correct fields
 - POST requires auth — unauthenticated requests return 401
 - GET /musehub/repos/{repo_id} returns 200; 404 for unknown repo
 - GET /musehub/repos/{repo_id}/branches returns empty list on new repo
 - GET /musehub/repos/{repo_id}/commits returns newest first, respects ?limit
 
-Covers issue #217 (compare view API endpoint):
-- test_compare_radar_data        — compare endpoint returns 5 dimension scores
-- test_compare_commit_list       — commits unique to head are listed
-- test_compare_unknown_ref_404   — unknown ref returns 422
+Covers (compare view API endpoint):
+- test_compare_radar_data — compare endpoint returns 5 dimension scores
+- test_compare_commit_list — commits unique to head are listed
+- test_compare_unknown_ref_404 — unknown ref returns 422
 
 All tests use the shared ``client`` and ``auth_headers`` fixtures from conftest.py.
 """
@@ -540,7 +540,7 @@ async def test_divergence_endpoint_returns_422_for_empty_branch(
 
 
 # ---------------------------------------------------------------------------
-# GET /musehub/repos/{repo_id}/dag  (issue #229)
+# GET /musehub/repos/{repo_id}/dag
 # ---------------------------------------------------------------------------
 
 
@@ -980,7 +980,7 @@ async def test_credits_aggregation_service_direct(db_session: AsyncSession) -> N
 
 
 # ---------------------------------------------------------------------------
-# Compare endpoint (issue #217)
+# Compare endpoint
 # ---------------------------------------------------------------------------
 
 
@@ -1121,8 +1121,7 @@ async def test_compare_emotion_diff_fields(
 
 
 # ---------------------------------------------------------------------------
-# Arrangement matrix endpoint — issue #212
-# ---------------------------------------------------------------------------
+# Arrangement matrix endpoint — # ---------------------------------------------------------------------------
 
 
 @pytest.mark.anyio
@@ -1365,8 +1364,7 @@ async def test_arrange_service_direct() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Star/Fork endpoints — issue #220
-# ---------------------------------------------------------------------------
+# Star/Fork endpoints — # ---------------------------------------------------------------------------
 
 
 @pytest.mark.anyio
@@ -1601,7 +1599,7 @@ async def test_list_forks_returns_fork_entry(
 
 
 # ---------------------------------------------------------------------------
-# GET /repos/{repo_id}/settings  (issue #412)
+# GET /repos/{repo_id}/settings
 # ---------------------------------------------------------------------------
 
 TEST_OWNER_USER_ID = "550e8400-e29b-41d4-a716-446655440000"
@@ -1700,7 +1698,7 @@ async def test_get_repo_settings_returns_404_for_unknown_repo(
 
 
 # ---------------------------------------------------------------------------
-# PATCH /repos/{repo_id}/settings  (issue #412)
+# PATCH /repos/{repo_id}/settings
 # ---------------------------------------------------------------------------
 
 
@@ -1829,7 +1827,7 @@ async def test_patch_repo_settings_returns_403_for_non_admin(
 
 
 # ---------------------------------------------------------------------------
-# DELETE /repos/{repo_id} — soft-delete (issue #416)
+# DELETE /repos/{repo_id} — soft-delete
 # ---------------------------------------------------------------------------
 
 
@@ -1960,7 +1958,7 @@ async def test_delete_repo_service_returns_false_for_unknown(
 
 
 # ---------------------------------------------------------------------------
-# POST /repos/{repo_id}/transfer  — transfer ownership (issue #416)
+# POST /repos/{repo_id}/transfer — transfer ownership
 # ---------------------------------------------------------------------------
 
 
@@ -2015,8 +2013,7 @@ async def test_transfer_repo_requires_auth(
 
 
 # ---------------------------------------------------------------------------
-# Wizard creation endpoint — issue #434
-# ---------------------------------------------------------------------------
+# Wizard creation endpoint — # ---------------------------------------------------------------------------
 
 
 @pytest.mark.anyio
@@ -2101,7 +2098,7 @@ async def test_create_repo_wizard_topics_merged_into_tags(
             "name": "topics-test-repo",
             "owner": "testuser",
             "tags": ["jazz"],
-            "topics": ["classical", "jazz"],  # 'jazz' deduped
+            "topics": ["classical", "jazz"], # 'jazz' deduped
             "initialize": False,
         },
         headers=auth_headers,
@@ -2237,7 +2234,7 @@ async def test_create_repo_wizard_custom_default_branch(
 
 
 # ---------------------------------------------------------------------------
-# GET /repos — list repos for authenticated user  (issue #434)
+# GET /repos — list repos for authenticated user
 # ---------------------------------------------------------------------------
 
 
@@ -2454,7 +2451,7 @@ async def test_list_my_repos_service_direct(db_session: AsyncSession) -> None:
 
 
 # ---------------------------------------------------------------------------
-# GET /repos/{repo_id}/collaborators/{username}/permission  (issue #424)
+# GET /repos/{repo_id}/collaborators/{username}/permission
 # ---------------------------------------------------------------------------
 
 

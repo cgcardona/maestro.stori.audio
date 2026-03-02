@@ -1,11 +1,11 @@
 """Muse Hub milestones route handlers.
 
 Endpoint summary:
-  GET    /musehub/repos/{repo_id}/milestones                     — list milestones (public)
-  POST   /musehub/repos/{repo_id}/milestones                     — create milestone (auth required)
-  GET    /musehub/repos/{repo_id}/milestones/{number}            — get single milestone (public)
-  PATCH  /musehub/repos/{repo_id}/milestones/{number}            — update milestone (auth required)
-  DELETE /musehub/repos/{repo_id}/milestones/{number}            — delete milestone (auth required)
+  GET /musehub/repos/{repo_id}/milestones — list milestones (public)
+  POST /musehub/repos/{repo_id}/milestones — create milestone (auth required)
+  GET /musehub/repos/{repo_id}/milestones/{number} — get single milestone (public)
+  PATCH /musehub/repos/{repo_id}/milestones/{number} — update milestone (auth required)
+  DELETE /musehub/repos/{repo_id}/milestones/{number} — delete milestone (auth required)
 
 Read endpoints use optional_token — unauthenticated access is allowed for public repos.
 Write endpoints always require a valid JWT Bearer token.

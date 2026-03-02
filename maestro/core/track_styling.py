@@ -27,18 +27,18 @@ PALETTE_ROTATION: list[str] = list(NAMED_COLORS)
 # 12 colors with high hue separation; pick in index order and cycle
 # only after all 12 are exhausted.
 COMPOSITION_PALETTE: list[str] = [
-    "#E85D75",  # rose
-    "#5B8DEF",  # blue
-    "#50C878",  # emerald
-    "#F5A623",  # amber
-    "#9B59B6",  # violet
-    "#1ABC9C",  # teal
-    "#E74C3C",  # red
-    "#3498DB",  # sky blue
-    "#2ECC71",  # green
-    "#F39C12",  # gold
-    "#8E44AD",  # purple
-    "#16A085",  # dark teal
+    "#E85D75", # rose
+    "#5B8DEF", # blue
+    "#50C878", # emerald
+    "#F5A623", # amber
+    "#9B59B6", # violet
+    "#1ABC9C", # teal
+    "#E74C3C", # red
+    "#3498DB", # sky blue
+    "#2ECC71", # green
+    "#F39C12", # gold
+    "#8E44AD", # purple
+    "#16A085", # dark teal
 ]
 
 # Role/keyword → preferred named color (from FE contract).
@@ -208,7 +208,7 @@ def allocate_colors(instrument_names: list[str]) -> dict[str, str]:
     """Assign one hex color per instrument, guaranteed no repeats.
 
     Colors are drawn from ``COMPOSITION_PALETTE`` in index order so that
-    adjacent tracks are always maximally distinct.  The palette cycles only
+    adjacent tracks are always maximally distinct. The palette cycles only
     after all 8 entries are exhausted (rare in practice).
 
     Args:

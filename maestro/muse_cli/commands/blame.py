@@ -27,15 +27,15 @@ history (typically <1 000 commits, <100 files per snapshot).
 
 Flags
 -----
-PATH TEXT         Positional — relative path within muse-work/ to annotate.
+PATH TEXT Positional — relative path within muse-work/ to annotate.
                   Omit to blame all tracked files.
---track TEXT      Filter to paths whose last component matches this pattern
+--track TEXT Filter to paths whose last component matches this pattern
                   (fnmatch-style glob, e.g. ``bass*`` or ``*.mid``).
---section TEXT    Filter to paths whose first directory component equals this
+--section TEXT Filter to paths whose first directory component equals this
                   section name (e.g. ``chorus`` or ``bridge``).
---line-range N,M  Note: MIDI/audio are binary; line-range is recorded in the
+--line-range N,M Note: MIDI/audio are binary; line-range is recorded in the
                   output for annotation purposes but does not slice the file.
---json            Emit structured JSON for agent consumption.
+--json Emit structured JSON for agent consumption.
 """
 from __future__ import annotations
 
@@ -70,8 +70,8 @@ class BlameEntry(TypedDict):
 
     ``change_type`` describes how the path changed in ``commit_id``:
 
-    - ``"added"``     — first commit to include this path
-    - ``"modified"``  — object_id changed compared to the parent snapshot
+    - ``"added"`` — first commit to include this path
+    - ``"modified"`` — object_id changed compared to the parent snapshot
     - ``"unchanged"`` — fallback when the graph walk finds no modification
                         (should not occur in a consistent database)
     """
@@ -185,12 +185,12 @@ async def _blame_async(
 
     Walks the commit graph from HEAD, comparing snapshot manifests between
     adjacent commits to attribute each file to the most recent commit that
-    touched it.  Returns a :class:`BlameResult` suitable for both human-
+    touched it. Returns a :class:`BlameResult` suitable for both human-
     readable rendering and JSON serialisation.
     """
     muse_dir = root / ".muse"
     repo_data: dict[str, str] = json.loads((muse_dir / "repo.json").read_text())
-    repo_id = repo_data["repo_id"]  # noqa: F841
+    repo_id = repo_data["repo_id"] # noqa: F841
 
     head_ref = (muse_dir / "HEAD").read_text().strip()
     branch = head_ref.rsplit("/", 1)[-1]
@@ -221,7 +221,7 @@ async def _blame_async(
     head_manifest = manifests[0]
 
     # blame_map: path → commit (newest commit that changed this path)
-    blame_map: dict[str, tuple[MuseCliCommit, str]] = {}  # path → (commit, change_type)
+    blame_map: dict[str, tuple[MuseCliCommit, str]] = {} # path → (commit, change_type)
 
     # Walk pairs newest→oldest: (commits[i], commits[i+1])
     for i in range(len(commits) - 1):
@@ -231,7 +231,7 @@ async def _blame_async(
 
         for path in newer_manifest:
             if path in blame_map:
-                continue  # already attributed to a more recent commit
+                continue # already attributed to a more recent commit
             newer_oid = newer_manifest[path]
             older_oid = older_manifest.get(path)
             if older_oid is None:
@@ -297,10 +297,10 @@ def _render_blame(result: BlameResult) -> str:
         lines.append("")
     for entry in result["entries"]:
         lines.append(
-            f"{entry['commit_short']}  {entry['author']:<20}  "
-            f"{entry['committed_at']}  ({entry['change_type']:>10})  {entry['path']}"
+            f"{entry['commit_short']} {entry['author']:<20} "
+            f"{entry['committed_at']} ({entry['change_type']:>10}) {entry['path']}"
         )
-        lines.append(f"    {entry['message']}")
+        lines.append(f" {entry['message']}")
     return "\n".join(lines)
 
 

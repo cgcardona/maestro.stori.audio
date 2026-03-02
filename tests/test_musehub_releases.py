@@ -1,16 +1,16 @@
 """Tests for Muse Hub release management endpoints.
 
-Covers every acceptance criterion from issue #242:
+Covers every acceptance criterion:
 - POST /musehub/repos/{repo_id}/releases creates a release tied to a tag
-- GET  /musehub/repos/{repo_id}/releases lists all releases (newest first)
-- GET  /musehub/repos/{repo_id}/releases/{tag} returns release detail with download URLs
+- GET /musehub/repos/{repo_id}/releases lists all releases (newest first)
+- GET /musehub/repos/{repo_id}/releases/{tag} returns release detail with download URLs
 - Duplicate tag within the same repo returns 409 Conflict
 - All endpoints require valid JWT (401 without token)
 - Service layer: create_release, list_releases, get_release_by_tag, get_latest_release
 
-Covers issue #421 (asset management and download stats):
-- GET  /repos/{repo_id}/releases/{tag}/downloads — download count per asset
-- POST /repos/{repo_id}/releases/{tag}/assets    — attach asset to release
+Covers (asset management and download stats):
+- GET /repos/{repo_id}/releases/{tag}/downloads — download count per asset
+- POST /repos/{repo_id}/releases/{tag}/assets — attach asset to release
 - DELETE /repos/{repo_id}/releases/{tag}/assets/{asset_id} — remove asset
 - Service layer: attach_asset, get_asset, remove_asset, get_download_stats
 
@@ -525,7 +525,7 @@ def test_build_download_urls_no_packages() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Regression tests for issue #302 — author field on Release
+# Regression tests — author field on Release
 # ---------------------------------------------------------------------------
 
 
@@ -534,7 +534,7 @@ async def test_create_release_author_in_response(
     client: AsyncClient,
     auth_headers: dict[str, str],
 ) -> None:
-    """POST /releases response includes the author field (JWT sub) — regression for #302."""
+    """POST /releases response includes the author field (JWT sub) — regression f."""
     repo_id = await _create_repo(client, auth_headers, "author-release-repo")
     response = await client.post(
         f"/api/v1/musehub/repos/{repo_id}/releases",
@@ -552,7 +552,7 @@ async def test_create_release_author_persisted_in_list(
     client: AsyncClient,
     auth_headers: dict[str, str],
 ) -> None:
-    """Author field is persisted and returned in the release list endpoint — regression for #302."""
+    """Author field is persisted and returned in the release list endpoint — regression f."""
     repo_id = await _create_repo(client, auth_headers, "author-release-list-repo")
     await client.post(
         f"/api/v1/musehub/repos/{repo_id}/releases",
@@ -944,7 +944,7 @@ async def test_get_download_stats_aggregates_correctly(db_session: AsyncSession)
 
 
 
-# ── Regression tests for issue #449 ───────────────────────────────────────────
+# ── Regression tests ───────────────────────────────────────────
 # New fields: is_prerelease, is_draft, gpg_signature, list_release_assets,
 # increment_asset_download_count, and the GET/POST asset endpoints.
 

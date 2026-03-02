@@ -1,7 +1,7 @@
 """Repository detection utilities for the Muse CLI.
 
 Walking up the directory tree to locate a ``.muse/`` directory is the
-single most-called internal primitive. Every subcommand uses it.  Keeping
+single most-called internal primitive. Every subcommand uses it. Keeping
 the semantics clear (``None`` on miss, never raises) makes callers simpler
 and test isolation easier (``MUSE_REPO_ROOT`` env-var override).
 """
@@ -22,7 +22,7 @@ def find_repo_root(start: pathlib.Path | None = None) -> pathlib.Path | None:
     """Walk up from *start* (default ``Path.cwd()``) looking for ``.muse/``.
 
     Returns the first directory that contains ``.muse/``, or ``None`` if no
-    such ancestor exists.  Never raises — callers decide what to do on miss.
+    such ancestor exists. Never raises — callers decide what to do on miss.
 
     The ``MUSE_REPO_ROOT`` environment variable overrides discovery entirely;
     set it in tests to avoid ``os.chdir`` calls.
@@ -53,7 +53,7 @@ def require_repo(start: pathlib.Path | None = None) -> pathlib.Path:
     """Return the repo root or exit 2 with a clear error message.
 
     Wraps ``find_repo_root()`` for command callbacks that must be inside a
-    Muse repository.  The error text intentionally echoes to stdout so that
+    Muse repository. The error text intentionally echoes to stdout so that
     ``typer.testing.CliRunner`` captures it in ``result.output`` without
     needing ``mix_stderr=True``.
     """
@@ -64,5 +64,5 @@ def require_repo(start: pathlib.Path | None = None) -> pathlib.Path:
     return root
 
 
-#: Public alias matching the function name specified in issue #46.
+#: Public alias matching the function name specified.
 require_repo_root = require_repo

@@ -129,8 +129,8 @@ async def register_user(
         budget_limit_cents=settings.default_budget_cents,
     )
     db.add(new_user)
-    await db.flush()  # Get the created_at timestamp
-    await db.commit()  # Commit the transaction to persist the user
+    await db.flush() # Get the created_at timestamp
+    await db.commit() # Commit the transaction to persist the user
     
     logger.info(f"Registered new user {request.user_id[:8]}... with ${settings.default_budget_cents / 100:.2f} budget")
     
@@ -201,7 +201,7 @@ async def list_models() -> ModelsResponse:
 
     if not allowed:
         logger.warning(
-            "ALLOWED_MODEL_IDS produced no matches in APPROVED_MODELS — "
+            "ALLOWED_MODEL_IDS produced no matches in APPROVED_MODELS"
             "falling back to all Claude models. Update ALLOWED_MODEL_IDS in config.py."
         )
         allowed = {mid for mid in APPROVED_MODELS if "claude" in mid}

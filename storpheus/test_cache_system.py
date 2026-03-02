@@ -56,8 +56,8 @@ def test_cache_key_generation() -> None:
 def test_cache_key_differences() -> None:
     """Test that different inputs produce different keys."""
     req1 = GenerateRequest(genre="trap", tempo=140)
-    req2 = GenerateRequest(genre="trap", tempo=141)  # Different tempo
-    req3 = GenerateRequest(genre="house", tempo=140)  # Different genre
+    req2 = GenerateRequest(genre="trap", tempo=141) # Different tempo
+    req3 = GenerateRequest(genre="house", tempo=140) # Different genre
     
     key1 = get_cache_key(req1)
     key2 = get_cache_key(req2)
@@ -98,8 +98,8 @@ def test_cache_lru_ordering() -> None:
     
     # Check order (most recently used should be last)
     keys = list(_result_cache.keys())
-    assert keys[-1] == "key1"  # Last accessed
-    assert keys[0] == "key2"   # Oldest
+    assert keys[-1] == "key1" # Last accessed
+    assert keys[0] == "key2" # Oldest
 
 
 def test_cache_eviction_at_capacity() -> None:
@@ -143,7 +143,7 @@ def test_cache_ttl_expiration() -> None:
     # Manually create expired entry
     _result_cache[key] = CacheEntry(
         result={"data": 1},
-        timestamp=time() - (CACHE_TTL_SECONDS + 100),  # Expired
+        timestamp=time() - (CACHE_TTL_SECONDS + 100), # Expired
         hits=0
     )
     
@@ -160,7 +160,7 @@ def test_cache_ttl_not_expired() -> None:
     # Create recent entry
     _result_cache[key] = CacheEntry(
         result={"data": 1},
-        timestamp=time() - 60,  # 1 minute ago (not expired)
+        timestamp=time() - 60, # 1 minute ago (not expired)
         hits=0
     )
     
@@ -209,4 +209,4 @@ def test_cache_preserves_data() -> None:
     # Original cache should be unchanged
     cached_again = get_cached_result(key)
     assert cached_again is not None
-    assert cached_again["success"] is True  # Not modified
+    assert cached_again["success"] is True # Not modified

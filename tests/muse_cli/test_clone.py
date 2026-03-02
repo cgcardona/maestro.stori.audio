@@ -1,6 +1,6 @@
 """Tests for ``muse clone``.
 
-Covers acceptance criteria from issue #73:
+Covers acceptance criteria:
 - ``muse clone <url>`` creates a new directory with .muse/ initialised.
 - ``muse clone <url> my-project`` creates ./my-project/.
 - Directory name is derived from the URL when no directory argument is given.
@@ -194,7 +194,7 @@ def test_init_muse_dir_repo_json_has_schema_version(tmp_path: pathlib.Path) -> N
 def test_clone_creates_repo_with_origin_remote(tmp_path: pathlib.Path) -> None:
     """muse clone creates .muse/ and sets origin remote to the source URL.
 
-    Regression for issue #73 — collaborators had no way to create a local
+    Regression — collaborators had no way to create a local
     copy of a remote Muse Hub repo from scratch.
     """
     url = "https://hub.stori.app/repos/my-project"
@@ -512,7 +512,7 @@ async def test_clone_stores_commits_in_db(muse_cli_db_session: object) -> None:
     from sqlalchemy.ext.asyncio import AsyncSession
     from maestro.muse_cli.models import MuseCliCommit
 
-    session: AsyncSession = muse_cli_db_session  # type: ignore[assignment]
+    session: AsyncSession = muse_cli_db_session # type: ignore[assignment]
 
     commit_data: dict[str, object] = {
         "commit_id": "cloned-commit-aabbcc" * 3,

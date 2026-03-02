@@ -188,7 +188,7 @@ async def test_muse_show_displays_commit_metadata(
         assert result["message"] == "Add piano melody to verse"
         assert result["branch"] == "main"
         assert "piano.mid" in result["snapshot_manifest"]
-        assert result["parent_commit_id"] is None  # root commit
+        assert result["parent_commit_id"] is None # root commit
     finally:
         del os.environ["MUSE_REPO_ROOT"]
 
@@ -521,7 +521,7 @@ async def test_muse_show_diff_identical_files_across_commits(
 
     We commit twice with different messages but the same *tracked* file
     content, then verify that the diff between the second commit and its
-    parent is empty.  We use slightly different file contents to avoid the
+    parent is empty. We use slightly different file contents to avoid the
     'nothing to commit' early-exit from _commit_async.
     """
     os.environ["MUSE_REPO_ROOT"] = str(tmp_path)
@@ -548,13 +548,13 @@ async def test_muse_show_diff_identical_files_across_commits(
 
         # Create a second commit that points to the same snapshot (identical content)
         now = datetime.now(timezone.utc)
-        second_commit_id = "ee" * 32  # deterministic, distinct ID
+        second_commit_id = "ee" * 32 # deterministic, distinct ID
         second_commit = MuseCliCommit(
             commit_id=second_commit_id,
             repo_id="test-repo",
             branch="main",
             parent_commit_id=first_commit_id,
-            snapshot_id=first_commit.snapshot_id,  # same snapshot
+            snapshot_id=first_commit.snapshot_id, # same snapshot
             message="second commit same snapshot",
             author="test",
             committed_at=now,

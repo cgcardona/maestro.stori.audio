@@ -1,6 +1,6 @@
 """Tests for MuseHubClient — JWT auth injection and error handling.
 
-Covers acceptance criteria from issue #47:
+Covers acceptance criteria:
 - Token from config.toml is sent in Authorization header on every request.
 - Missing/empty token causes exit 1 with an actionable message.
 - The raw token value never appears in log output.

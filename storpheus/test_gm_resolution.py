@@ -82,7 +82,7 @@ class TestResolveGmProgram:
 
     def test_whitespace_stripped(self) -> None:
         """Leading/trailing whitespace is stripped."""
-        assert resolve_gm_program("  piano  ") == 0
+        assert resolve_gm_program(" piano ") == 0
         assert resolve_gm_program(" bass\t") == 33
 
     def test_substring_matching(self) -> None:

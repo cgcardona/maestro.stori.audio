@@ -30,7 +30,7 @@ from maestro.services.muse_attributes import (
 
 class TestParseMuseattributesFile:
     def test_parses_basic_rule(self) -> None:
-        content = "drums/*  *  ours\n"
+        content = "drums/* * ours\n"
         rules = parse_museattributes_file(content)
         assert len(rules) == 1
         assert rules[0].track_pattern == "drums/*"
@@ -39,9 +39,9 @@ class TestParseMuseattributesFile:
 
     def test_parses_multiple_rules(self) -> None:
         content = (
-            "drums/*  *        ours\n"
-            "bass/*   harmonic  theirs\n"
-            "*        *         auto\n"
+            "drums/* * ours\n"
+            "bass/* harmonic theirs\n"
+            "* * auto\n"
         )
         rules = parse_museattributes_file(content)
         assert len(rules) == 3
@@ -50,32 +50,32 @@ class TestParseMuseattributesFile:
         assert rules[2].strategy == MergeStrategy.AUTO
 
     def test_ignores_blank_lines(self) -> None:
-        content = "\n\ndrum/*  *  ours\n\n"
+        content = "\n\ndrum/* * ours\n\n"
         rules = parse_museattributes_file(content)
         assert len(rules) == 1
 
     def test_ignores_comment_lines(self) -> None:
-        content = "# This is a comment\ndrum/*  *  ours\n"
+        content = "# This is a comment\ndrum/* * ours\n"
         rules = parse_museattributes_file(content)
         assert len(rules) == 1
 
     def test_skips_malformed_lines(self) -> None:
-        content = "bad-line-only-two-tokens  ours\n"
+        content = "bad-line-only-two-tokens ours\n"
         rules = parse_museattributes_file(content)
         assert len(rules) == 0
 
     def test_skips_unknown_strategy(self) -> None:
-        content = "drums/*  *  unknown_strategy\n"
+        content = "drums/* * unknown_strategy\n"
         rules = parse_museattributes_file(content)
         assert len(rules) == 0
 
     def test_all_valid_strategies(self) -> None:
         content = (
-            "a  *  ours\n"
-            "b  *  theirs\n"
-            "c  *  union\n"
-            "d  *  auto\n"
-            "e  *  manual\n"
+            "a * ours\n"
+            "b * theirs\n"
+            "c * union\n"
+            "d * auto\n"
+            "e * manual\n"
         )
         rules = parse_museattributes_file(content)
         strategies = [r.strategy for r in rules]
@@ -86,7 +86,7 @@ class TestParseMuseattributesFile:
         assert MergeStrategy.MANUAL in strategies
 
     def test_strategy_case_insensitive(self) -> None:
-        content = "drums/*  *  OURS\n"
+        content = "drums/* * OURS\n"
         rules = parse_museattributes_file(content)
         assert len(rules) == 1
         assert rules[0].strategy == MergeStrategy.OURS
@@ -186,7 +186,7 @@ class TestLoadAttributes:
 
     def test_reads_and_parses_museattributes_file(self, tmp_path: pathlib.Path) -> None:
         attr_file = tmp_path / ".museattributes"
-        attr_file.write_text("drums/*  *  ours\nbass/*  harmonic  theirs\n")
+        attr_file.write_text("drums/* * ours\nbass/* harmonic theirs\n")
         result = load_attributes(tmp_path)
         assert len(result) == 2
         assert result[0].track_pattern == "drums/*"

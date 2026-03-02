@@ -5,16 +5,16 @@ This module fires on every track creation — wrong inference = wrong MIDI
 instrument on every note. Zero test coverage previously.
 
 Coverage:
-  1.  GM_INSTRUMENTS list integrity — 128 entries, programs 0-127, no gaps
-  2.  get_instrument_by_program — all 128 programs, out-of-range, None
-  3.  get_instrument_name — known programs, unknown, boundary
-  4.  _normalize helper — lowercase, punctuation, whitespace
-  5.  infer_gm_program — exact alias, fuzzy token, category fallback, drums
-  6.  infer_gm_program — specific well-known instruments (regression table)
-  7.  get_default_program_for_role — all defined roles
-  8.  GMInferenceResult.needs_program_change property
-  9.  infer_gm_program_with_context — priority chain, drums detection
- 10.  infer_gm_program_with_context — edge cases (empty, all None)
+  1. GM_INSTRUMENTS list integrity — 128 entries, programs 0-127, no gaps
+  2. get_instrument_by_program — all 128 programs, out-of-range, None
+  3. get_instrument_name — known programs, unknown, boundary
+  4. _normalize helper — lowercase, punctuation, whitespace
+  5. infer_gm_program — exact alias, fuzzy token, category fallback, drums
+  6. infer_gm_program — specific well-known instruments (regression table)
+  7. get_default_program_for_role — all defined roles
+  8. GMInferenceResult.needs_program_change property
+  9. infer_gm_program_with_context — priority chain, drums detection
+ 10. infer_gm_program_with_context — edge cases (empty, all None)
 """
 from __future__ import annotations
 
@@ -176,8 +176,8 @@ class TestNormalize:
 
     def test_whitespace_collapsed(self) -> None:
 
-        result = _normalize("  electric   bass  ")
-        assert "  " not in result
+        result = _normalize(" electric bass ")
+        assert " " not in result
         assert result == result.strip()
 
     def test_hyphen_treated_as_space(self) -> None:
@@ -214,7 +214,7 @@ class TestInferGMProgram:
 
     def test_exact_alias_match(self) -> None:
 
-        assert infer_gm_program("rhodes") == 4       # Electric Piano 1
+        assert infer_gm_program("rhodes") == 4 # Electric Piano 1
         assert infer_gm_program("harmonica") == 22
         assert infer_gm_program("sitar") == 104
 
@@ -227,7 +227,7 @@ class TestInferGMProgram:
 
         result = infer_gm_program("Deep Bass")
         assert result is not None
-        assert 32 <= result <= 39  # Bass family
+        assert 32 <= result <= 39 # Bass family
 
     def test_category_keyword_piano(self) -> None:
 
@@ -242,7 +242,7 @@ class TestInferGMProgram:
     def test_completely_unknown_returns_default(self) -> None:
 
         result = infer_gm_program("xyzzy-instrument-12345")
-        assert result is None  # no match, no default
+        assert result is None # no match, no default
 
     def test_completely_unknown_with_default_returns_default(self) -> None:
 
@@ -267,46 +267,46 @@ class TestInferGMProgramRegressionTable:
 
     @pytest.mark.parametrize("text,expected_program", [
         # Piano family
-        ("piano",          0),
+        ("piano", 0),
         ("acoustic piano", 0),
         ("electric piano", 4),
-        ("rhodes",         4),
+        ("rhodes", 4),
 
         # Bass family
-        ("electric bass",  33),
-        ("bass guitar",    33),
-        ("synth bass",     38),
-        ("upright bass",   32),
+        ("electric bass", 33),
+        ("bass guitar", 33),
+        ("synth bass", 38),
+        ("upright bass", 32),
 
         # Guitar
         ("acoustic guitar", 25),
-        ("nylon guitar",    24),
+        ("nylon guitar", 24),
 
         # Strings
-        ("violin",   40),
-        ("cello",    42),
+        ("violin", 40),
+        ("cello", 42),
 
         # Brass
-        ("trumpet",  56),
+        ("trumpet", 56),
         ("trombone", 57),
 
         # Reed
         ("saxophone", 66),
-        ("clarinet",  71),
-        ("flute",     73),
+        ("clarinet", 71),
+        ("flute", 73),
 
         # Organ
-        ("hammond",  16),
-        ("organ",    16),
+        ("hammond", 16),
+        ("organ", 16),
 
         # Synth
-        ("pad",      88),
-        ("choir",    52),
+        ("pad", 88),
+        ("choir", 52),
 
         # Ethnic
-        ("sitar",    104),
-        ("banjo",    105),
-        ("kalimba",  108),
+        ("sitar", 104),
+        ("banjo", 105),
+        ("kalimba", 108),
     ])
     def test_known_instrument(self, text: str, expected_program: int) -> None:
 
@@ -396,7 +396,7 @@ class TestGetDefaultProgramForRole:
 
     def test_whitespace_stripped(self) -> None:
 
-        assert get_default_program_for_role("  bass  ") == 33
+        assert get_default_program_for_role(" bass ") == 33
 
 
 # ===========================================================================
@@ -473,8 +473,8 @@ class TestInferGMProgramWithContext:
 
         """Explicit instrument overrides track name."""
         result = infer_gm_program_with_context(
-            track_name="Lead Melody",   # would resolve to synth lead
-            instrument="rhodes",         # should win
+            track_name="Lead Melody", # would resolve to synth lead
+            instrument="rhodes", # should win
         )
         assert result.program == 4
         assert result.confidence == "high"
@@ -484,9 +484,9 @@ class TestInferGMProgramWithContext:
         """Track name overrides role when it matches."""
         result = infer_gm_program_with_context(
             track_name="Electric Bass",
-            role="melody",  # would give synth lead
+            role="melody", # would give synth lead
         )
-        assert result.program == 33  # bass wins
+        assert result.program == 33 # bass wins
 
     def test_role_fallback_when_track_name_unknown(self) -> None:
 
@@ -541,7 +541,7 @@ class TestInferGMProgramWithContext:
             track_name="xyzzy-unknown-track",
         )
         assert result.confidence == "none"
-        assert result.program == 0  # default piano
+        assert result.program == 0 # default piano
 
 
 # ===========================================================================
@@ -558,7 +558,7 @@ class TestInferGMProgramWithContextEdgeCases:
 
     def test_whitespace_track_name(self) -> None:
 
-        result = infer_gm_program_with_context(track_name="   ")
+        result = infer_gm_program_with_context(track_name=" ")
         assert isinstance(result, GMInferenceResult)
 
     def test_none_track_name(self) -> None:
@@ -595,16 +595,16 @@ class TestInferGMProgramWithContextEdgeCases:
         assert not result.is_drums
 
     @pytest.mark.parametrize("track_name,expected_is_drums", [
-        ("Drums",          True),
-        ("Kick",           True),
-        ("Snare Hits",     True),
+        ("Drums", True),
+        ("Kick", True),
+        ("Snare Hits", True),
         ("Hi-Hat Pattern", True),
-        ("Beat Machine",   True),
-        ("Drum Kit",       True),
-        ("Bass",           False),
-        ("Piano",          False),
-        ("Lead Synth",     False),
-        ("Strings",        False),
+        ("Beat Machine", True),
+        ("Drum Kit", True),
+        ("Bass", False),
+        ("Piano", False),
+        ("Lead Synth", False),
+        ("Strings", False),
     ])
     def test_drums_detection_parametrized(self, track_name: str, expected_is_drums: bool) -> None:
 
@@ -624,25 +624,25 @@ class TestIconForGMProgram:
 
     @pytest.mark.parametrize("program,expected", [
         # One representative from each of the 16 GM categories
-        (0,   "pianokeys"),                # Piano
-        (8,   "instrument.xylophone"),     # Chromatic Percussion
-        (16,  "pianokeys"),                # Organ (keyboard family)
-        (24,  "guitars.fill"),             # Guitar
-        (32,  "guitars.fill"),             # Bass (guitar family)
-        (40,  "instrument.violin"),        # Strings
-        (48,  "instrument.violin"),        # Ensemble / Strings
-        (56,  "instrument.trumpet"),       # Brass
-        (64,  "instrument.saxophone"),     # Reed
-        (72,  "instrument.flute"),         # Pipe
-        (80,  "pianokeys.inverse"),        # Synth Lead
-        (88,  "pianokeys.inverse"),        # Synth Pad
-        (96,  "sparkles"),                 # Synth Effects
-        (104, "globe"),                    # Ethnic
-        (112, "instrument.drum"),          # Percussive
-        (120, "sparkles"),                 # Sound Effects
+        (0, "pianokeys"), # Piano
+        (8, "instrument.xylophone"), # Chromatic Percussion
+        (16, "pianokeys"), # Organ (keyboard family)
+        (24, "guitars.fill"), # Guitar
+        (32, "guitars.fill"), # Bass (guitar family)
+        (40, "instrument.violin"), # Strings
+        (48, "instrument.violin"), # Ensemble / Strings
+        (56, "instrument.trumpet"), # Brass
+        (64, "instrument.saxophone"), # Reed
+        (72, "instrument.flute"), # Pipe
+        (80, "pianokeys.inverse"), # Synth Lead
+        (88, "pianokeys.inverse"), # Synth Pad
+        (96, "sparkles"), # Synth Effects
+        (104, "globe"), # Ethnic
+        (112, "instrument.drum"), # Percussive
+        (120, "sparkles"), # Sound Effects
         # Boundary values
-        (7,   "pianokeys"),
-        (15,  "instrument.xylophone"),
+        (7, "pianokeys"),
+        (15, "instrument.xylophone"),
         (127, "sparkles"),
     ])
     def test_category_boundaries(self, program: int, expected: str) -> None:
@@ -697,4 +697,4 @@ class TestPercKeywordDetectedAsDrums:
 
         """The lower-level infer_gm_program should also detect 'perc'."""
         result = infer_gm_program("perc")
-        assert result is None  # drums → channel 10, no GM program
+        assert result is None # drums → channel 10, no GM program

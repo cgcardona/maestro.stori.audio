@@ -23,7 +23,7 @@ from sqlalchemy.pool import StaticPool
 from typer.testing import CliRunner
 
 from maestro.db.database import Base
-import maestro.muse_cli.models  # noqa: F401  -- registers MuseCli* with Base.metadata
+import maestro.muse_cli.models # noqa: F401 -- registers MuseCli* with Base.metadata
 from maestro.muse_cli.app import cli
 from maestro.muse_cli.commands.form import (
     FormAnalysisResult,

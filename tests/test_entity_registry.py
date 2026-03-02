@@ -44,7 +44,7 @@ class TestEntityRegistryBasics:
         track_id = registry.create_track("Drums")
         
         assert track_id is not None
-        assert len(track_id) == 36  # UUID format
+        assert len(track_id) == 36 # UUID format
         assert registry.exists_track(track_id)
         info = registry.get_track(track_id)
         assert info is not None and info.name == "Drums"

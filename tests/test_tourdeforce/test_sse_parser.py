@@ -28,7 +28,7 @@ class TestParseSSELine:
     def test_empty_line_returns_none(self) -> None:
 
         assert parse_sse_line("") is None
-        assert parse_sse_line("   ") is None
+        assert parse_sse_line(" ") is None
 
     def test_comment_returns_none(self) -> None:
 

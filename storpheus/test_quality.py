@@ -60,14 +60,14 @@ for i in range(1, NUM_ITERATIONS + 1):
         api_name="/generate_music_and_state",
     )
     gen_time = time.time() - t0
-    print(f"  Generated in {gen_time:.1f}s")
+    print(f" Generated in {gen_time:.1f}s")
 
     batch = client.predict(batch_number=0, api_name="/add_batch")
     midi_path = batch[2]
     audio_path = batch[0]
 
     midi_size = os.path.getsize(str(midi_path)) if midi_path else 0
-    print(f"  Batch 0 added: MIDI={midi_size} bytes")
+    print(f" Batch 0 added: MIDI={midi_size} bytes")
 
     iter_mid = os.path.join(OUT, f"iter_{i}.mid")
     if midi_path:
@@ -91,4 +91,4 @@ if os.path.exists(final_mp3):
 print(f"=== DONE in {total_time:.0f}s ===")
 for f in sorted(os.listdir(OUT)):
     size = os.path.getsize(os.path.join(OUT, f))
-    print(f"  {f}: {size // 1024}KB")
+    print(f" {f}: {size // 1024}KB")

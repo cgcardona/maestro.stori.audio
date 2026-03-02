@@ -115,7 +115,7 @@ class TransposeResult:
 
     Agent use case: after transposition, agents can inspect ``new_commit_id``
     to verify the commit was created and ``new_key`` to update their musical
-    context about the current key center.  ``files_modified`` tells the agent
+    context about the current key center. ``files_modified`` tells the agent
     which tracks changed so it can selectively re-render only those tracks.
     """
 
@@ -208,12 +208,12 @@ def update_key_metadata(key_str: str, semitones: int) -> str:
     """Transpose a key string by *semitones* and return the updated key name.
 
     Parses strings in the format ``"<note> <mode>"`` (e.g. ``"Eb major"``,
-    ``"F# minor"``).  The root note is transposed; the mode string is preserved
-    verbatim.  Unrecognized root notes are returned unchanged so callers can
+    ``"F# minor"``). The root note is transposed; the mode string is preserved
+    verbatim. Unrecognized root notes are returned unchanged so callers can
     safely pass arbitrary metadata strings without crashing.
 
     Args:
-        key_str:   Key string to transpose (e.g. ``"Eb major"``).
+        key_str: Key string to transpose (e.g. ``"Eb major"``).
         semitones: Signed semitone offset.
 
     Returns:
@@ -245,7 +245,7 @@ def _read_vlq(data: bytes, pos: int) -> tuple[int, int]:
     """Read a MIDI variable-length quantity starting at *pos*.
 
     Returns ``(value, new_pos)`` where *new_pos* points past the last byte
-    consumed.  Raises ``IndexError`` if the data is truncated mid-VLQ.
+    consumed. Raises ``IndexError`` if the data is truncated mid-VLQ.
 
     VLQ encoding: each byte's high bit signals a continuation byte follows.
     The low 7 bits of each byte are concatenated MSB-first to form the value.
@@ -264,7 +264,7 @@ def _get_track_name(track_data: bytes) -> str | None:
     """Extract the track name from a MIDI track chunk's raw event data.
 
     Scans for the first Track Name meta-event (``0xFF 0x03``) and returns the
-    name decoded as latin-1.  Returns ``None`` if no name meta-event is found
+    name decoded as latin-1. Returns ``None`` if no name meta-event is found
     before the stream ends or becomes unparseable.
 
     This enables the ``--track`` filter in ``muse transpose``: only tracks whose
@@ -280,14 +280,14 @@ def _get_track_name(track_data: bytes) -> str | None:
             pos += 1
         if pos >= length:
             break
-        pos += 1  # last VLQ byte of delta time
+        pos += 1 # last VLQ byte of delta time
 
         if pos >= length:
             break
 
         b = track_data[pos]
 
-        if b == 0xFF:  # meta event
+        if b == 0xFF: # meta event
             pos += 1
             if pos >= length:
                 break
@@ -297,11 +297,11 @@ def _get_track_name(track_data: bytes) -> str | None:
                 meta_len, pos = _read_vlq(track_data, pos)
             except IndexError:
                 break
-            if meta_type == 0x03 and pos + meta_len <= length:  # Track Name
+            if meta_type == 0x03 and pos + meta_len <= length: # Track Name
                 return track_data[pos : pos + meta_len].decode("latin-1")
             pos += meta_len
 
-        elif b == 0xF0 or b == 0xF7:  # sysex
+        elif b == 0xF0 or b == 0xF7: # sysex
             pos += 1
             try:
                 sysex_len, pos = _read_vlq(track_data, pos)
@@ -316,12 +316,12 @@ def _get_track_name(track_data: bytes) -> str | None:
                 pos += 1
             status = running_status
             msg_type = (status >> 4) & 0x0F
-            if msg_type in (0x8, 0x9, 0xA, 0xB, 0xE):  # 2 data bytes
+            if msg_type in (0x8, 0x9, 0xA, 0xB, 0xE): # 2 data bytes
                 pos += 2
-            elif msg_type in (0xC, 0xD):  # 1 data byte
+            elif msg_type in (0xC, 0xD): # 1 data byte
                 pos += 1
             else:
-                break  # unrecognised — stop scan
+                break # unrecognised — stop scan
 
     return None
 
@@ -330,17 +330,17 @@ def _transpose_track_data(track_data: bytes, semitones: int) -> bytes:
     """Transpose MIDI notes in a single track's event data.
 
     Scans the MIDI event stream and modifies Note-On (0x9n) and Note-Off (0x8n)
-    events on non-drum channels (channel != 9).  Notes are clamped to [0, 127].
+    events on non-drum channels (channel != 9). Notes are clamped to [0, 127].
     All other events (meta, sysex, CC, program change, pitch bend, etc.) are
     preserved byte-for-byte.
 
     The modification is done in-place on a bytearray copy so the track length
-    is unchanged — only the note byte values differ.  This guarantees the MTrk
+    is unchanged — only the note byte values differ. This guarantees the MTrk
     chunk length header stays valid without re-encoding.
 
     Args:
         track_data: Raw event bytes from an MTrk chunk (after the 8-byte header).
-        semitones:  Signed semitone offset to apply.
+        semitones: Signed semitone offset to apply.
 
     Returns:
         Modified event data of the same length as *track_data*.
@@ -356,25 +356,25 @@ def _transpose_track_data(track_data: bytes, semitones: int) -> bytes:
             pos += 1
         if pos >= length:
             break
-        pos += 1  # last VLQ byte
+        pos += 1 # last VLQ byte
 
         if pos >= length:
             break
 
         b = track_data[pos]
 
-        if b == 0xFF:  # meta event — skip completely
+        if b == 0xFF: # meta event — skip completely
             pos += 1
             if pos >= length:
                 break
-            pos += 1  # meta type
+            pos += 1 # meta type
             try:
                 meta_len, pos = _read_vlq(track_data, pos)
             except IndexError:
                 break
             pos += meta_len
 
-        elif b == 0xF0 or b == 0xF7:  # sysex — skip completely
+        elif b == 0xF0 or b == 0xF7: # sysex — skip completely
             pos += 1
             try:
                 sysex_len, pos = _read_vlq(track_data, pos)
@@ -391,14 +391,14 @@ def _transpose_track_data(track_data: bytes, semitones: int) -> bytes:
             channel = status & 0x0F
             msg_type = (status >> 4) & 0x0F
 
-            if msg_type in (0x8, 0x9):  # note-off, note-on
+            if msg_type in (0x8, 0x9): # note-off, note-on
                 if pos + 1 < length and channel != _DRUM_CHANNEL:
                     original_note = track_data[pos]
                     buf[pos] = max(0, min(127, original_note + semitones))
                 pos += 2
-            elif msg_type in (0xA, 0xB, 0xE):  # poly pressure, CC, pitch bend
+            elif msg_type in (0xA, 0xB, 0xE): # poly pressure, CC, pitch bend
                 pos += 2
-            elif msg_type in (0xC, 0xD):  # program change, channel pressure
+            elif msg_type in (0xC, 0xD): # program change, channel pressure
                 pos += 1
             else:
                 logger.warning(
@@ -424,7 +424,7 @@ def transpose_midi_bytes(
     """Apply pitch transposition to a MIDI file's raw bytes.
 
     Parses the standard MIDI file structure (MThd header + MTrk chunks) and
-    transposes Note-On/Note-Off events on non-drum channels.  The file
+    transposes Note-On/Note-Off events on non-drum channels. The file
     structure, chunk layout, and all non-note events are preserved exactly.
 
     When *track_filter* is provided, only MTrk chunks whose Track Name
@@ -432,14 +432,14 @@ def transpose_midi_bytes(
     are transposed; other tracks are copied verbatim.
 
     Args:
-        data:          Raw MIDI file bytes.
-        semitones:     Signed semitone offset to apply.
-        track_filter:  If set, only tracks whose name matches this substring
+        data: Raw MIDI file bytes.
+        semitones: Signed semitone offset to apply.
+        track_filter: If set, only tracks whose name matches this substring
                        (case-insensitive) are transposed.
 
     Returns:
         ``(modified_bytes, notes_changed_count)`` where *notes_changed_count*
-        is the number of note bytes that were actually modified.  If *data* is
+        is the number of note bytes that were actually modified. If *data* is
         not a valid MIDI file (no ``MThd`` header), returns ``(data, 0)``.
     """
     if len(data) < 14 or data[:4] != b"MThd":
@@ -516,20 +516,20 @@ def apply_transpose_to_workdir(
     channels), and writes modified files back in place unless *dry_run* is set.
 
     Section filtering is a stub: if *section_filter* is provided a warning is
-    logged and the filter is ignored.  Full section-scoped transposition requires
+    logged and the filter is ignored. Full section-scoped transposition requires
     section boundary markers embedded in the committed MIDI metadata — a future
     enhancement tracked separately.
 
     Args:
-        workdir:        Path to the ``muse-work/`` directory.
-        semitones:      Signed semitone offset (positive = up, negative = down).
-        track_filter:   Case-insensitive track name substring filter, or None.
+        workdir: Path to the ``muse-work/`` directory.
+        semitones: Signed semitone offset (positive = up, negative = down).
+        track_filter: Case-insensitive track name substring filter, or None.
         section_filter: Section name filter (stub — ignored with a warning).
-        dry_run:        When True, compute what would change but write nothing.
+        dry_run: When True, compute what would change but write nothing.
 
     Returns:
         ``(files_modified, files_skipped)`` — lists of POSIX paths relative
-        to *workdir*.  Modified files had at least one note byte changed.
+        to *workdir*. Modified files had at least one note byte changed.
         Skipped files are non-MIDI, unreadable, or had no transposable notes.
     """
     if section_filter is not None:

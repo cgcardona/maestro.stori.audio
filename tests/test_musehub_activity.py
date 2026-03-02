@@ -1,4 +1,4 @@
-"""Tests for the MuseHub activity feed — issue #219.
+"""Tests for the MuseHub activity feed — .
 
 Covers:
 - GET /musehub/repos/{repo_id}/activity returns empty feed on new repo

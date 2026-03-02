@@ -1,7 +1,7 @@
 """muse inspect [<ref>] — print structured JSON of the Muse commit graph.
 
 Serializes the full commit graph reachable from a starting reference (default:
-HEAD) into machine-readable output.  Three formats are supported:
+HEAD) into machine-readable output. Three formats are supported:
 
 JSON (default)::
 
@@ -19,11 +19,11 @@ Mermaid.js::
 
 Flags
 -----
-[<ref>]          Optional starting commit or branch name (default: HEAD).
---depth N        Limit traversal to N commits per branch (default: unlimited).
---branches       Include all branch heads and their reachable commits.
---tags           Include tag refs in the output (branch pointers always included).
---format         Output format: json (default), dot, mermaid.
+[<ref>] Optional starting commit or branch name (default: HEAD).
+--depth N Limit traversal to N commits per branch (default: unlimited).
+--branches Include all branch heads and their reachable commits.
+--tags Include tag refs in the output (branch pointers always included).
+--format Output format: json (default), dot, mermaid.
 """
 from __future__ import annotations
 
@@ -72,12 +72,12 @@ async def _inspect_async(
     and renders the result to the requested format via ``typer.echo``.
 
     Args:
-        root:     Repository root path.
-        session:  Open async DB session.
-        ref:      Starting commit reference (None = HEAD).
-        depth:    Maximum commits per branch (None = unlimited).
+        root: Repository root path.
+        session: Open async DB session.
+        ref: Starting commit reference (None = HEAD).
+        depth: Maximum commits per branch (None = unlimited).
         branches: Whether to traverse all branches.
-        fmt:      Output format (json, dot, mermaid).
+        fmt: Output format (json, dot, mermaid).
 
     Returns:
         The :class:`~maestro.services.muse_inspect.MuseInspectResult` so tests
@@ -139,7 +139,7 @@ def inspect(
     """Print structured output of the Muse commit graph.
 
     Serializes the full commit graph reachable from the starting reference
-    (default: HEAD) into machine-readable output.  Use ``--format json`` (the
+    (default: HEAD) into machine-readable output. Use ``--format json`` (the
     default) for agent consumption, ``--format dot`` for Graphviz, or
     ``--format mermaid`` for GitHub markdown embedding.
     """

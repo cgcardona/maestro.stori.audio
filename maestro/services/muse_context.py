@@ -1,7 +1,7 @@
 """Muse Context service — structured musical state document for AI agent consumption.
 
 This is the primary read-side interface between Muse VCS and AI music generation
-agents.  ``build_muse_context()`` traverses the commit graph to produce a
+agents. ``build_muse_context()`` traverses the commit graph to produce a
 self-contained ``MuseContextResult`` describing the current musical state of a
 repository at a given commit (or HEAD).
 
@@ -46,7 +46,7 @@ class MuseHeadCommitInfo:
     commit_id: str
     message: str
     author: str
-    committed_at: str  # ISO-8601 UTC
+    committed_at: str # ISO-8601 UTC
 
 
 @dataclass(frozen=True)
@@ -130,7 +130,7 @@ class MuseHistoryEntry:
     commit_id: str
     message: str
     author: str
-    committed_at: str  # ISO-8601 UTC
+    committed_at: str # ISO-8601 UTC
     active_tracks: list[str]
     key: Optional[str] = None
     tempo_bpm: Optional[int] = None
@@ -141,7 +141,7 @@ class MuseHistoryEntry:
 class MuseContextResult:
     """Complete musical context document for AI agent consumption.
 
-    Returned by ``build_muse_context()``.  Self-contained: an agent receiving
+    Returned by ``build_muse_context()``. Self-contained: an agent receiving
     only this document has everything it needs to generate structurally and
     stylistically coherent music.
 
@@ -175,7 +175,7 @@ def _extract_track_names(manifest: dict[str, str]) -> list[str]:
     """Derive human-readable track names from snapshot manifest file paths.
 
     Files with recognised music extensions whose stems do not look like raw
-    SHA-256 hashes are treated as track names.  The stem is lowercased and
+    SHA-256 hashes are treated as track names. The stem is lowercased and
     de-duplicated.
 
     Example:
@@ -238,7 +238,7 @@ async def _build_history(
     """Walk the parent chain, returning up to *depth* ancestor entries.
 
     The *start_commit* (HEAD) is NOT included — it is surfaced separately as
-    ``head_commit`` in the result.  Entries are returned newest-first.
+    ``head_commit`` in the result. Entries are returned newest-first.
     """
     entries: list[MuseHistoryEntry] = []
     current_id: str | None = start_commit.parent_commit_id
@@ -292,18 +292,18 @@ async def build_muse_context(
     output is always identical, making it safe to cache and reproduce.
 
     Args:
-        session:          Open async DB session. Read-only — no writes performed.
-        root:             Repository root (the directory containing ``.muse/``).
-        commit_id:        Target commit ID, or None to use HEAD.
-        depth:            Number of ancestor commits to include in ``history``.
+        session: Open async DB session. Read-only — no writes performed.
+        root: Repository root (the directory containing ``.muse/``).
+        commit_id: Target commit ID, or None to use HEAD.
+        depth: Number of ancestor commits to include in ``history``.
                           Pass 0 to omit history entirely.
         include_sections: When True, expand section-level detail in
-                          ``musical_state.sections``.  Sections are currently
+                          ``musical_state.sections``. Sections are currently
                           stubbed (one "main" section) until MIDI region
                           metadata is integrated.
-        include_tracks:   When True, add per-track harmonic/dynamic detail in
+        include_tracks: When True, add per-track harmonic/dynamic detail in
                           ``musical_state.tracks``.
-        include_history:  Reserved for future use — will annotate each history
+        include_history: Reserved for future use — will annotate each history
                           entry with dimensional deltas once Storpheus MIDI
                           analysis is integrated.
 
@@ -311,7 +311,7 @@ async def build_muse_context(
         MuseContextResult — serialise with ``.to_dict()`` before JSON/YAML output.
 
     Raises:
-        ValueError:  If *commit_id* is provided but not found in the DB.
+        ValueError: If *commit_id* is provided but not found in the DB.
         RuntimeError: If the repository has no commits yet and commit_id is None.
     """
     repo_id, branch = _read_repo_meta(root)

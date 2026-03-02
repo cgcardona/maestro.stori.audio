@@ -23,7 +23,7 @@ from maestro.models.variation import (
 ROOT = Path(__file__).resolve().parent.parent
 
 
-# ── 1.1  Muse compute boundary is pure ──
+# ── 1.1 Muse compute boundary is pure ──
 
 
 class TestMuseComputeBoundary:
@@ -73,7 +73,7 @@ class TestMuseComputeBoundary:
                         )
 
 
-# ── 1.2  VariationContext is data-only ──
+# ── 1.2 VariationContext is data-only ──
 
 
 class TestVariationContextDataOnly:
@@ -96,7 +96,7 @@ class TestVariationContextDataOnly:
         assert ctx["proposed"].type in (SnapshotBundle, "SnapshotBundle")
 
 
-# ── 1.3  Commit path doesn't call get_or_create_store ──
+# ── 1.3 Commit path doesn't call get_or_create_store ──
 
 
 class TestApplyVariationBoundary:
@@ -183,7 +183,7 @@ class TestApplyVariationBoundary:
             )
 
 
-# ── 1.4  muse_repository boundary ──
+# ── 1.4 muse_repository boundary ──
 
 
 class TestMuseRepositoryBoundary:
@@ -280,7 +280,7 @@ class TestMuseDriftBoundary:
                 )
 
 
-# ── 3.3  Golden shape tests ──
+# ── 3.3 Golden shape tests ──
 
 
 class TestGoldenShapes:

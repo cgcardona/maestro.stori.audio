@@ -4,8 +4,8 @@ Intent routing package for Maestro.
 Routes user prompts to the appropriate execution path (REASONING/EDITING/COMPOSING).
 
 Public API:
-    get_intent_result(prompt, project_context) -> IntentResult          # sync, pattern-only
-    get_intent_result_with_llm(prompt, project_context, llm) -> IntentResult  # async + LLM
+    get_intent_result(prompt, project_context) -> IntentResult # sync, pattern-only
+    get_intent_result_with_llm(prompt, project_context, llm) -> IntentResult # async + LLM
 
 Re-exports Intent and SSEState for backward compatibility.
 """

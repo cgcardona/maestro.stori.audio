@@ -147,7 +147,7 @@ async def test_generate_cache_hit_returns_immediately(client: StorpheusClient) -
     client._client.post = AsyncMock(
         return_value=_submit_resp(status="complete", result=_ok_gen_result())
     )
-    client._client.get = AsyncMock()  # should not be called
+    client._client.get = AsyncMock() # should not be called
     result = await client.generate(genre="boom_bap", tempo=90, bars=4)
     assert result["success"] is True
     client._client.get.assert_not_called()
@@ -225,24 +225,24 @@ def test_get_storpheus_client_returns_singleton() -> None:
     """get_storpheus_client() returns the same instance on repeated calls (sync — no loop needed)."""
     import maestro.services.storpheus as storpheus_module
     from maestro.services.storpheus import get_storpheus_client
-    storpheus_module._shared_client = None  # reset
+    storpheus_module._shared_client = None # reset
     c1 = get_storpheus_client()
     c2 = get_storpheus_client()
     assert c1 is c2
-    storpheus_module._shared_client = None  # cleanup without awaiting close
+    storpheus_module._shared_client = None # cleanup without awaiting close
 
 
 def test_close_storpheus_client_resets_singleton() -> None:
     """close_storpheus_client() clears the singleton so the next call makes a fresh one."""
     import maestro.services.storpheus as storpheus_module
     from maestro.services.storpheus import get_storpheus_client
-    storpheus_module._shared_client = None  # start clean
+    storpheus_module._shared_client = None # start clean
     c1 = get_storpheus_client()
     # Directly reset the module-level variable (avoids async close complications)
     storpheus_module._shared_client = None
     c2 = get_storpheus_client()
     assert c1 is not c2
-    storpheus_module._shared_client = None  # cleanup
+    storpheus_module._shared_client = None # cleanup
 
 
 @pytest.mark.asyncio
@@ -298,14 +298,14 @@ def test_connection_limits_configured() -> None:
         captured_limits = limits
         original_init(self, timeout=timeout, limits=limits, headers=headers)
 
-    storpheus_module._shared_client = None  # force fresh
+    storpheus_module._shared_client = None # force fresh
     with patch("maestro.services.storpheus.settings") as m:
         _patch_settings(m)
         m.storpheus_max_concurrent = 4
         storpheus_module._shared_client = None
         c = get_storpheus_client()
         with patch.object(httpx.AsyncClient, "__init__", capturing_init):
-            c._client = None  # force re-creation through the property
+            c._client = None # force re-creation through the property
             _ = c.client
         assert isinstance(captured_limits, httpx.Limits)
         assert captured_limits.max_connections == 20
@@ -518,7 +518,7 @@ class TestStorpheusBeatRescaling:
         max_end_compressed = max(
             n["startBeat"] + n["durationBeats"] for n in compressed_notes
         )
-        assert max_end_compressed < 10  # notes span < 10 beats
+        assert max_end_compressed < 10 # notes span < 10 beats
 
         mock = MagicMock()
         mock.generate = AsyncMock(return_value={

@@ -3,17 +3,17 @@
 Single source of truth for the audio-track scanning and ``TrackListingResponse``
 construction logic shared between:
 
-- ``GET /musehub/repos/{repo_id}/listen/{ref}/tracks``  (repos.py)
-- ``GET /musehub/ui/{owner}/{repo_slug}/listen/{ref}``  (ui.py)
+- ``GET /musehub/repos/{repo_id}/listen/{ref}/tracks`` (repos.py)
+- ``GET /musehub/ui/{owner}/{repo_slug}/listen/{ref}`` (ui.py)
 
 Why this module exists
 ----------------------
 Prior to extraction, ``_AUDIO_EXTENSIONS``, ``_IMAGE_EXTENSIONS``,
 ``_FULL_MIX_KEYWORDS``, and the ``AudioTrackEntry`` construction loop were
-duplicated between the two handlers.  Any change (e.g. adding ``.aiff`` support)
+duplicated between the two handlers. Any change (e.g. adding ``.aiff`` support)
 had to be made in two places, creating a divergence risk.
 
-This service owns all of that logic.  Both handlers are now thin call-through
+This service owns all of that logic. Both handlers are now thin call-through
 wrappers around ``build_track_listing()``.
 """
 from __future__ import annotations

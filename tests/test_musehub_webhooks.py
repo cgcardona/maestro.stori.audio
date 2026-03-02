@@ -1,8 +1,8 @@
 """Tests for Muse Hub webhook subscription endpoints and dispatch.
 
-Covers every acceptance criterion from issue #247 and #422:
+Covers every acceptance criterion:
 - POST /musehub/repos/{repo_id}/webhooks registers a webhook with URL and events
-- GET  /musehub/repos/{repo_id}/webhooks lists registered webhooks
+- GET /musehub/repos/{repo_id}/webhooks lists registered webhooks
 - DELETE /musehub/repos/{repo_id}/webhooks/{webhook_id} removes a webhook
 - GET /musehub/repos/{repo_id}/webhooks/{webhook_id}/deliveries lists delivery history
 - POST /musehub/repos/{repo_id}/webhooks/{webhook_id}/deliveries/{id}/redeliver retries delivery
@@ -20,7 +20,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
-from typing import Any  # used for MagicMock return annotations only
+from typing import Any # used for MagicMock return annotations only
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -669,7 +669,7 @@ async def test_list_deliveries_via_api_after_dispatch(
 
 
 # ---------------------------------------------------------------------------
-# Webhook secret encryption (issue #271)
+# Webhook secret encryption
 # ---------------------------------------------------------------------------
 
 
@@ -727,7 +727,7 @@ def test_decrypt_invalid_token_raises_value_error() -> None:
 def test_decrypt_plaintext_secret_returns_value_when_key_set() -> None:
     """decrypt_secret returns a plaintext secret as-is when it lacks the Fernet prefix.
 
-    This is the transparent migration fallback (issue #347): secrets written
+    This is the transparent migration fallback: secrets written
     before STORI_WEBHOOK_SECRET_KEY was enabled do not start with "gAAAAAB".
     Rather than raising ValueError and breaking all existing webhooks, we
     return the plaintext and emit a deprecation warning so operators know they
@@ -741,7 +741,7 @@ def test_decrypt_plaintext_secret_returns_value_when_key_set() -> None:
     with patch.object(crypto, "_fernet", None), patch.object(crypto, "_fernet_initialised", False):
         with patch("maestro.services.musehub_webhook_crypto.settings") as mock_settings:
             mock_settings.webhook_secret_key = test_key
-            crypto.encrypt_secret("seed")  # initialise singleton
+            crypto.encrypt_secret("seed") # initialise singleton
             plaintext_secret = "pre-migration-plaintext-secret"
             # Must NOT start with "gAAAAAB" (simulates a legacy row)
             assert not plaintext_secret.startswith("gAAAAAB")
@@ -1062,7 +1062,7 @@ def test_migrate_webhook_secrets_logic() -> None:
     # Plaintext row was migrated; already-encrypted and empty rows were skipped.
     assert len(migrated) == 1
     assert is_fernet_token(migrated[0])
-    assert len(skipped) == 2  # already_fernet + empty
+    assert len(skipped) == 2 # already_fernet + empty
 
 
 def test_encrypt_decrypt_no_key_passthrough() -> None:

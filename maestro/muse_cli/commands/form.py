@@ -33,12 +33,12 @@ Machine-readable JSON output::
 
 Flags
 -----
-``[<commit>]``   Target commit ref (default: HEAD).
-``--set TEXT``   Annotate with an explicit form string (e.g. "AABA", "verse-chorus").
-``--detect``     Auto-detect form from section repetition patterns (default).
-``--map``        Show the section arrangement as a visual timeline.
-``--history``    Show how the form changed across commits.
-``--json``       Machine-readable output.
+``[<commit>]`` Target commit ref (default: HEAD).
+``--set TEXT`` Annotate with an explicit form string (e.g. "AABA", "verse-chorus").
+``--detect`` Auto-detect form from section repetition patterns (default).
+``--map`` Show the section arrangement as a visual timeline.
+``--history`` Show how the form changed across commits.
+``--json`` Machine-readable output.
 
 Section vocabulary
 ------------------
@@ -47,14 +47,14 @@ intro, verse, pre-chorus, chorus, bridge, breakdown, outro, A, B, C
 Detection heuristic
 -------------------
 Sections with identical content fingerprints are assigned the same label
-(A, B, C...).  Named roles (verse, chorus, etc.) are inferred from MIDI
+(A, B, C...). Named roles (verse, chorus, etc.) are inferred from MIDI
 metadata stored in ``.muse/sections/`` when available; otherwise uppercase
 letter labels are used.
 
 Result type
 -----------
 ``FormAnalysisResult`` (TypedDict) -- stable schema for agent consumers.
-``FormHistoryEntry``   (TypedDict) -- wraps FormAnalysisResult with commit metadata.
+``FormHistoryEntry`` (TypedDict) -- wraps FormAnalysisResult with commit metadata.
 
 See ``docs/reference/type_contracts.md S FormAnalysisResult``.
 """
@@ -185,20 +185,20 @@ def _render_form_text(result: FormAnalysisResult) -> str:
     Returns:
         Multi-line string ready for typer.echo.
     """
-    head_label = f"  (HEAD -> {result['branch']})" if result["branch"] else ""
+    head_label = f" (HEAD -> {result['branch']})" if result["branch"] else ""
     lines = [
         f"Musical form -- commit {result['commit']}{head_label}",
         "",
-        f"  {result['form_string']}",
+        f" {result['form_string']}",
         "",
         "Sections:",
     ]
     for sec in result["sections"]:
-        role_hint = f"  [{sec['role']}]" if sec["role"] != sec["label"] else ""
-        lines.append(f"  {sec['index'] + 1:>2}. {sec['label']:<12}{role_hint}")
+        role_hint = f" [{sec['role']}]" if sec["role"] != sec["label"] else ""
+        lines.append(f" {sec['index'] + 1:>2}. {sec['label']:<12}{role_hint}")
     if result.get("source") == "stub":
         lines.append("")
-        lines.append("  (stub -- full section analysis pending)")
+        lines.append(" (stub -- full section analysis pending)")
     return "\n".join(lines)
 
 
@@ -214,7 +214,7 @@ def _render_map_text(result: FormAnalysisResult) -> str:
     Returns:
         Multi-line string ready for typer.echo.
     """
-    head_label = f"  (HEAD -> {result['branch']})" if result["branch"] else ""
+    head_label = f" (HEAD -> {result['branch']})" if result["branch"] else ""
     cell_w = 10
     sections = result["sections"]
     top = "+" + "+".join("-" * cell_w for _ in sections) + "+"
@@ -249,7 +249,7 @@ def _render_history_text(entries: list[FormHistoryEntry]) -> str:
     lines: list[str] = []
     for entry in entries:
         r = entry["result"]
-        lines.append(f"  #{entry['position']}  {r['commit']}  {r['form_string']}")
+        lines.append(f" #{entry['position']} {r['commit']} {r['form_string']}")
     return "\n".join(lines)
 
 
@@ -267,14 +267,14 @@ async def _form_detect_async(
     """Detect the musical form for a given commit (or HEAD).
 
     Stub implementation: resolves the branch/commit from ``.muse/HEAD`` and
-    returns a placeholder verse-chorus-bridge structure.  Full analysis will
+    returns a placeholder verse-chorus-bridge structure. Full analysis will
     read section fingerprints from ``.muse/sections/`` and compare content
     hashes to assign repeated-section labels automatically.
 
     Args:
-        root:    Repository root (directory containing ``.muse/``).
+        root: Repository root (directory containing ``.muse/``).
         session: Open async DB session (reserved for full implementation).
-        commit:  Commit SHA to analyse, or None for HEAD.
+        commit: Commit SHA to analyse, or None for HEAD.
 
     Returns:
         A FormAnalysisResult with commit, branch, form_string, sections, source.
@@ -310,13 +310,13 @@ async def _form_set_async(
 
     Parses the user-supplied form string (e.g. "AABA" or
     "verse-chorus-bridge") into FormSection entries and records the
-    annotation.  The stub writes the annotation to
+    annotation. The stub writes the annotation to
     ``.muse/form_annotation.json``; the full implementation will attach it
     to the pending commit object.
 
     Args:
-        root:       Repository root.
-        session:    Open async DB session.
+        root: Repository root.
+        session: Open async DB session.
         form_value: Explicit form string supplied via --set.
 
     Returns:
@@ -374,12 +374,12 @@ async def _form_history_async(
 ) -> list[FormHistoryEntry]:
     """Return the form history for the current branch.
 
-    Stub implementation returning a single HEAD entry.  Full implementation
+    Stub implementation returning a single HEAD entry. Full implementation
     will walk the commit chain and aggregate form annotations stored per-commit
     in ``.muse/objects/``, surfacing structural restructures as distinct entries.
 
     Args:
-        root:    Repository root.
+        root: Repository root.
         session: Open async DB session.
 
     Returns:
@@ -444,8 +444,8 @@ def form(
     """Analyze and display the musical form of a composition.
 
     With no flags, detects and displays the musical form for the HEAD commit.
-    Use --set to persist an explicit form annotation.  Use --map to
-    visualise the section layout as a timeline.  Use --history to see how
+    Use --set to persist an explicit form annotation. Use --map to
+    visualise the section layout as a timeline. Use --history to see how
     the form evolved across the commit chain.
     """
     root = require_repo()

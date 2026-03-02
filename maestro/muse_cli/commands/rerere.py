@@ -4,10 +4,10 @@ Commands
 --------
 ``muse rerere``
     Attempt to auto-apply any cached resolution for conflicts currently
-    listed in ``.muse/MERGE_STATE.json``.  Prints the number resolved.
+    listed in ``.muse/MERGE_STATE.json``. Prints the number resolved.
 
 ``muse rerere list``
-    Show all conflict fingerprints currently in the rr-cache.  Entries
+    Show all conflict fingerprints currently in the rr-cache. Entries
     marked with ``[R]`` have a postimage (resolution recorded); entries
     marked with ``[C]`` are conflict-only (awaiting resolution).
 
@@ -15,7 +15,7 @@ Commands
     Remove a single cached conflict/resolution from the rr-cache.
 
 ``muse rerere clear``
-    Purge the entire rr-cache.  Use when cached resolutions are stale or
+    Purge the entire rr-cache. Use when cached resolutions are stale or
     incorrect.
 """
 from __future__ import annotations
@@ -60,10 +60,10 @@ def _load_current_conflicts(root: pathlib.Path) -> list[ConflictDict]:
         data = json.loads(merge_state_path.read_text(encoding="utf-8"))
         raw = data.get("conflict_paths", [])
         # conflict_paths is a list of file-path strings in the merge engine
-        # (file-level conflicts), not MergeConflict dicts.  Wrap each path
+        # (file-level conflicts), not MergeConflict dicts. Wrap each path
         # in a minimal dict so rerere can fingerprint it.
         return [ConflictDict(region_id=p, type="file", description=f"conflict in {p}") for p in raw]
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc: # noqa: BLE001
         logger.warning("⚠️ muse rerere: could not read MERGE_STATE.json: %s", exc)
         return []
 
@@ -114,7 +114,7 @@ def rerere_list() -> None:
     for h in hashes:
         postimage = cache_root / h / "postimage"
         tag = "[R]" if postimage.exists() else "[C]"
-        typer.echo(f"  {tag} {h}")
+        typer.echo(f" {tag} {h}")
 
 
 # ---------------------------------------------------------------------------

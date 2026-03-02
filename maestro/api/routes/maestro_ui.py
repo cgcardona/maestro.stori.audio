@@ -42,10 +42,10 @@ def _derive_budget_state(remaining: float) -> BudgetState:
     """Compute the fuel state from the remaining budget.
 
     Thresholds are authoritative and must match the frontend derivation:
-        remaining <= 0      → "exhausted"
-        remaining <  0.25   → "critical"
-        remaining <  1.0    → "low"
-        else                → "normal"
+        remaining <= 0 → "exhausted"
+        remaining < 0.25 → "critical"
+        remaining < 1.0 → "low"
+        else → "normal"
     """
     if remaining <= 0:
         return "exhausted"
@@ -93,9 +93,9 @@ async def get_prompts() -> PromptsResponse:
     from every continent. No auth required.
 
     Each item carries:
-      - id         — unique slug
-      - title      — human label (e.g. "Lo-fi boom bap · Cm · 75 BPM")
-      - preview    — first 3–4 YAML lines visible in the card
+      - id — unique slug
+      - title — human label (e.g. "Lo-fi boom bap · Cm · 75 BPM")
+      - preview — first 3–4 YAML lines visible in the card
       - fullPrompt — complete MAESTRO PROMPT YAML, injected verbatim on tap
     """
     sample_size = min(_PROMPTS_SAMPLE_SIZE, len(PROMPT_POOL))
@@ -152,7 +152,7 @@ async def get_budget_status(
     """Focused budget status for the Creative Fuel UI.
 
     Returns remaining/total budget, the derived fuel state, and the number of
-    compose sessions used this billing period.  Auth required.
+    compose sessions used this billing period. Auth required.
     """
     user_id = token_claims.get("sub")
     if not user_id:

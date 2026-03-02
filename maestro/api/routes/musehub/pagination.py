@@ -3,7 +3,7 @@
 Why this exists: large repos with hundreds of commits, issues, or PRs are
 unusable when list endpoints return everything in a single unbounded response.
 This module provides a reusable FastAPI dependency (PaginationParams) and two
-Link header builders — one for page-based pagination and one for cursor-based —
+Link header builders — one for page-based pagination and one for cursor-based
 so every list endpoint can participate in RFC 8288 navigation without duplicating
 the header-construction logic.
 
@@ -42,7 +42,7 @@ class PaginationParams:
     - Cursor-based: ``?cursor=X&limit=N`` — use with ``build_cursor_link_header``.
 
     Both sets of params are always parsed; route handlers pick the mode that matches
-    their backing service.  Unused params are silently ignored by the endpoint.
+    their backing service. Unused params are silently ignored by the endpoint.
     """
 
     def __init__(
@@ -61,15 +61,15 @@ class PaginationParams:
 def build_link_header(request: Request, total: int, page: int, per_page: int) -> str:
     """Build an RFC 8288 Link header string for page-based pagination.
 
-    Always emits rel="first" and rel="last".  Emits rel="prev" when page > 1
-    and rel="next" when page < last_page.  Query parameters already present on
+    Always emits rel="first" and rel="last". Emits rel="prev" when page > 1
+    and rel="next" when page < last_page. Query parameters already present on
     the request URL are preserved; ``page`` and ``per_page`` are overridden.
 
     Args:
         request: The current FastAPI Request — used to derive the base URL and
                  carry-forward any existing query string parameters.
-        total:   Total number of items across all pages (used to compute last page).
-        page:    Current 1-indexed page number.
+        total: Total number of items across all pages (used to compute last page).
+        page: Current 1-indexed page number.
         per_page: Number of items per page.
 
     Returns:
@@ -103,9 +103,9 @@ def build_cursor_link_header(request: Request, next_cursor: str, limit: int) -> 
     repos that may have thousands of items.
 
     Args:
-        request:     The current FastAPI Request — used to derive the base URL.
+        request: The current FastAPI Request — used to derive the base URL.
         next_cursor: Opaque cursor value returned by the backing service.
-        limit:       The page size that was used for the current request.
+        limit: The page size that was used for the current request.
 
     Returns:
         A single RFC 8288 link: ``<https://…?cursor=X&limit=N>; rel="next"``
@@ -124,8 +124,8 @@ def paginate_list(items: list[T], page: int, per_page: int) -> tuple[list[T], in
     after an in-memory label filter) and the route layer applies pagination.
 
     Args:
-        items:    Full result list from the service layer.
-        page:     1-indexed page number requested by the client.
+        items: Full result list from the service layer.
+        page: 1-indexed page number requested by the client.
         per_page: Number of items per page.
 
     Returns:

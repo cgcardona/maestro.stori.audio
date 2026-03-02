@@ -1,10 +1,10 @@
 """Muse Hub topics/tag browse API route handlers.
 
 Endpoints:
-  GET  /musehub/topics                     — list all topics with repo_count, sorted desc
-  GET  /musehub/topics/{tag}/repos         — list public repos tagged with this topic
+  GET /musehub/topics — list all topics with repo_count, sorted desc
+  GET /musehub/topics/{tag}/repos — list public repos tagged with this topic
                                              (paginated, sortable by stars/updated)
-  POST /musehub/repos/{repo_id}/topics     — set topics for a repo (replaces entire list,
+  POST /musehub/repos/{repo_id}/topics — set topics for a repo (replaces entire list,
                                              auth required)
 
 Topics are free-form lowercase slugs stored in ``musehub_repos.tags`` as a JSON array.
@@ -16,8 +16,8 @@ Slug rules:
   - Max 20 topics per repo
 
 Agent use case:
-  Call ``GET /topics`` to populate a tag cloud or filter bar.  Call
-  ``GET /topics/{tag}/repos`` to show the topic detail page.  Call
+  Call ``GET /topics`` to populate a tag cloud or filter bar. Call
+  ``GET /topics/{tag}/repos`` to show the topic detail page. Call
   ``POST /repos/{repo_id}/topics`` from the repo settings panel (auth required).
 """
 from __future__ import annotations
@@ -68,7 +68,7 @@ class TopicListResponse(BaseModel):
     """Response for GET /musehub/topics.
 
     Topics are sorted by ``repo_count`` descending so the most popular genres
-    appear first.  Only topics that exist on at least one public repo are
+    appear first. Only topics that exist on at least one public repo are
     included — empty topics are not materialised.
     """
 
@@ -131,15 +131,15 @@ async def list_topics(
     """Return every topic that appears on at least one public repo, with its repo count.
 
     Topics are aggregated from the ``musehub_repos.tags`` JSON array across all
-    public repos.  The result is sorted by ``repo_count`` descending so popular
+    public repos. The result is sorted by ``repo_count`` descending so popular
     genres appear first — suitable for rendering a tag cloud or filter sidebar.
 
-    Only public repos contribute to counts.  Private repo tags are excluded
+    Only public repos contribute to counts. Private repo tags are excluded
     entirely — callers cannot infer private repo existence from the response.
 
     Performance note: aggregation is done in Python over the tags column because
     JSON unnesting syntax differs between PostgreSQL (``json_array_elements_text``)
-    and SQLite (used in tests).  At expected MuseHub scale this is negligible;
+    and SQLite (used in tests). At expected MuseHub scale this is negligible;
     a materialised view can be added later without changing the API contract.
     """
     rows = await db_session.execute(
@@ -178,19 +178,19 @@ async def list_repos_by_topic(
 ) -> TopicReposResponse:
     """Return a paginated list of public repos tagged with the requested topic slug.
 
-    Tag matching is case-insensitive and exact (not substring).  A repo appears
+    Tag matching is case-insensitive and exact (not substring). A repo appears
     in results only if ``tag`` is literally present in its tags array — not if it
     merely contains ``tag`` as a substring of another tag.
 
     Sort options:
-    - ``stars``   — repos with the most MuseHub stars first (trending signal).
+    - ``stars`` — repos with the most MuseHub stars first (trending signal).
     - ``updated`` — repos with the most recent commit first (freshest content).
 
     Returns an empty ``repos`` list when the topic exists but no public repos
-    carry it — this is not a 404.  Returns 422 when ``sort`` is invalid.
+    carry it — this is not a 404. Returns 422 when ``sort`` is invalid.
     """
     effective_sort: Literal["stars", "updated"] = (
-        "stars" if sort not in _VALID_SORTS else sort  # type: ignore[assignment]
+        "stars" if sort not in _VALID_SORTS else sort # type: ignore[assignment]
     )
     if effective_sort != sort:
         raise HTTPException(
@@ -234,7 +234,7 @@ async def list_repos_by_topic(
     # Apply sort
     if effective_sort == "stars":
         base_q = base_q.order_by(desc("star_count"), desc(db.MusehubRepo.created_at))
-    else:  # "updated"
+    else: # "updated"
         base_q = base_q.order_by(desc("latest_commit"), desc(db.MusehubRepo.created_at))
 
     rows = (await db_session.execute(base_q.offset(offset).limit(page_size))).all()
@@ -284,8 +284,8 @@ async def set_repo_topics(
     """Replace the topic list for a repo with the supplied slugs.
 
     The operation is idempotent — calling it twice with the same list produces
-    the same result.  Topics are deduplicated and normalised to lowercase before
-    storage.  Invalid slugs (non ``[a-z0-9-]``) cause a 422 error listing the
+    the same result. Topics are deduplicated and normalised to lowercase before
+    storage. Invalid slugs (non ``[a-z0-9-]``) cause a 422 error listing the
     offending values — the caller should sanitise on the client side.
 
     Raises:

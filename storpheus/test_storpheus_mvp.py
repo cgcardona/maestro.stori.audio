@@ -34,7 +34,7 @@ def create_minimal_seed(tempo: int = 120) -> str:
 
     # Tempo meta event: FF 51 03 <3 bytes of microseconds per beat>
     tempo_event = bytes([
-        0x00,        # delta time
+        0x00, # delta time
         0xFF, 0x51, 0x03,
         (us_per_beat >> 16) & 0xFF,
         (us_per_beat >> 8) & 0xFF,
@@ -59,7 +59,7 @@ def analyze_midi(path: str) -> dict[str, Any]:
     import mido
 
     mid = mido.MidiFile(path)
-    logger.info(f"  MIDI type: {mid.type}, ticks_per_beat: {mid.ticks_per_beat}, "
+    logger.info(f" MIDI type: {mid.type}, ticks_per_beat: {mid.ticks_per_beat}, "
                 f"tracks: {len(mid.tracks)}")
 
     total_notes = 0
@@ -81,28 +81,28 @@ def analyze_midi(path: str) -> dict[str, Any]:
 
         total_notes += track_notes
         if track_notes > 0:
-            logger.info(f"  Track {i}: {track_notes} notes, {len(track)} events")
+            logger.info(f" Track {i}: {track_notes} notes, {len(track)} events")
 
-    logger.info(f"  Total notes: {total_notes}")
-    logger.info(f"  Channels used: {sorted(channels_used)}")
-    logger.info(f"  Programs: {programs_used}")
+    logger.info(f" Total notes: {total_notes}")
+    logger.info(f" Channels used: {sorted(channels_used)}")
+    logger.info(f" Programs: {programs_used}")
 
     if note_on_velocities:
         avg_vel = sum(note_on_velocities) / len(note_on_velocities)
         min_vel = min(note_on_velocities)
         max_vel = max(note_on_velocities)
         unique_vel = len(set(note_on_velocities))
-        logger.info(f"  Velocity: avg={avg_vel:.0f}, min={min_vel}, max={max_vel}, "
+        logger.info(f" Velocity: avg={avg_vel:.0f}, min={min_vel}, max={max_vel}, "
                      f"unique={unique_vel}")
 
     if pitches:
         pitch_range = max(pitches) - min(pitches)
         unique_pitches = len(set(pitches))
-        logger.info(f"  Pitch: range={pitch_range} semitones, "
+        logger.info(f" Pitch: range={pitch_range} semitones, "
                      f"unique={unique_pitches}, low={min(pitches)}, high={max(pitches)}")
 
     duration_s = mid.length
-    logger.info(f"  Duration: {duration_s:.1f}s")
+    logger.info(f" Duration: {duration_s:.1f}s")
 
     return {
         "total_notes": total_notes,
@@ -147,7 +147,7 @@ def main() -> None:
         t0 = time.time()
         client = Client(space_id, hf_token=hf_token)
         t_connect = time.time() - t0
-        logger.info(f"  Client connected in {t_connect:.1f}s")
+        logger.info(f" Client connected in {t_connect:.1f}s")
 
         # Step 3: Generate 10 batches
         t1 = time.time()
@@ -162,7 +162,7 @@ def main() -> None:
             api_name="/generate_music_and_state",
         )
         t_gen = time.time() - t1
-        logger.info(f"  /generate_music_and_state completed in {t_gen:.1f}s")
+        logger.info(f" /generate_music_and_state completed in {t_gen:.1f}s")
 
         # Step 4: Pick one batch
         t2 = time.time()
@@ -171,21 +171,21 @@ def main() -> None:
             api_name="/add_batch",
         )
         t_batch = time.time() - t2
-        logger.info(f"  /add_batch({batch_idx}) completed in {t_batch:.1f}s")
+        logger.info(f" /add_batch({batch_idx}) completed in {t_batch:.1f}s")
 
         # Step 5: Get the MIDI file path
         midi_path = batch_result[2]
-        logger.info(f"  MIDI output: {midi_path}")
+        logger.info(f" MIDI output: {midi_path}")
 
         if midi_path and os.path.exists(midi_path):
             file_size = os.path.getsize(midi_path)
-            logger.info(f"  File size: {file_size} bytes")
+            logger.info(f" File size: {file_size} bytes")
 
             # Copy to a persistent location
             import shutil
             out_path = f"/tmp/storpheus_mvp_batch_{batch_idx}.mid"
             shutil.copy2(midi_path, out_path)
-            logger.info(f"  Saved to: {out_path}")
+            logger.info(f" Saved to: {out_path}")
 
             analysis = analyze_midi(midi_path)
             results.append({
@@ -195,7 +195,7 @@ def main() -> None:
                 "total_time": t_connect + t_gen + t_batch,
             })
         else:
-            logger.error(f"  No MIDI file returned!")
+            logger.error(f" No MIDI file returned!")
             results.append({"batch": batch_idx, "error": "No MIDI file"})
 
     # Summary
@@ -205,11 +205,11 @@ def main() -> None:
     logger.info("=" * 60)
     for r in results:
         if "error" in r:
-            logger.info(f"  Batch {r['batch']}: ERROR - {r['error']}")
+            logger.info(f" Batch {r['batch']}: ERROR - {r['error']}")
         else:
             a = r["analysis"]
             logger.info(
-                f"  Batch {r['batch']}: {a['total_notes']} notes, "
+                f" Batch {r['batch']}: {a['total_notes']} notes, "
                 f"{a['unique_pitches']} unique pitches, "
                 f"{a['unique_velocities']} unique velocities, "
                 f"{a['duration_s']:.1f}s, "

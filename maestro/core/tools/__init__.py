@@ -1,7 +1,7 @@
 """Tool metadata and schema access for the Maestro orchestrator.
 
 Generic tool classification types (``ToolTier``, ``ToolKind``,
-``ToolMeta``) live in ``app.core.tools.metadata``.  Stori-specific
+``ToolMeta``) live in ``app.core.tools.metadata``. Stori-specific
 tool registrations, schemas, and derived sets live in
 ``app.daw.stori.tool_registry``.
 

@@ -51,7 +51,7 @@ def _tool_schemas_canonical() -> list[dict[str, object]]:
 def _enum_definitions_canonical() -> list[dict[str, object]]:
     """Extract enum values for contract-critical enums.
 
-    ``sorted(m.value ...)`` returns ``list[str]``.  Stored as ``list[object]``
+    ``sorted(m.value ...)`` returns ``list[str]``. Stored as ``list[object]``
     — no cast needed; ``str`` is a subtype of ``object``.
     """
     from maestro.core.intent_config.enums import SSEState, Intent

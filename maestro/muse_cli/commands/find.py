@@ -118,9 +118,9 @@ def _render_text(results: MuseFindResults) -> None:
             typer.echo(f"Branch: {commit.branch}")
             typer.echo(f"Parent: {commit.parent_commit_id[:8]}")
         ts = commit.committed_at.strftime("%Y-%m-%d %H:%M:%S")
-        typer.echo(f"Date:   {ts}")
+        typer.echo(f"Date: {ts}")
         typer.echo("")
-        typer.echo(f"    {commit.message}")
+        typer.echo(f" {commit.message}")
         typer.echo("")
 
 

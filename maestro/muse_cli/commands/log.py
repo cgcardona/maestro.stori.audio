@@ -7,9 +7,9 @@ Output modes (combinable with filters):
 
 Default (``git log`` style)::
 
-    commit a1b2c3d4  (HEAD -> main)
+    commit a1b2c3d4 (HEAD -> main)
     Parent: f9e8d7c6
-    Date:   2026-02-27 17:30:00
+    Date: 2026-02-27 17:30:00
 
         boom bap demo take 1
 
@@ -25,8 +25,8 @@ Default (``git log`` style)::
 
 ``--stat``::
 
-    commit a1b2c3d4  (HEAD -> main)
-    Date:   2026-02-27 17:30:00
+    commit a1b2c3d4 (HEAD -> main)
+    Date: 2026-02-27 17:30:00
 
         boom bap demo take 1
 
@@ -35,8 +35,8 @@ Default (``git log`` style)::
 
 ``--patch``::
 
-    commit a1b2c3d4  (HEAD -> main)
-    Date:   2026-02-27 17:30:00
+    commit a1b2c3d4 (HEAD -> main)
+    Date: 2026-02-27 17:30:00
 
         boom bap demo take 1
 
@@ -57,8 +57,7 @@ Filters (all combinable with each other and with output modes):
 by adapting ``MuseCliCommit`` rows to the ``MuseLogGraph``/``MuseLogNode``
 dataclasses that the renderer expects.
 
-Merge commits (two parents) will be supported once ``muse merge`` lands
-in issue #35.  The current data model stores a single ``parent_commit_id``;
+Merge commits (two parents) will be supported once ``muse merge`` lands. The current data model stores a single ``parent_commit_id``;
 ``parent2_commit_id`` is reserved for that iteration.
 """
 from __future__ import annotations
@@ -126,7 +125,7 @@ def parse_date_filter(text: str) -> datetime:
             delta = timedelta(weeks=n)
         elif unit == "month":
             delta = timedelta(days=n * 30)
-        else:  # year
+        else: # year
             delta = timedelta(days=n * 365)
         return now - delta
 
@@ -211,11 +210,11 @@ async def _load_commits(
     """Walk the parent chain from *head_commit_id*, returning newest-first.
 
     Applies date and author filters inline while walking so we stop early when
-    walking past the ``--since`` boundary.  Tag-based filters (emotion, section,
+    walking past the ``--since`` boundary. Tag-based filters (emotion, section,
     track) are applied afterward by ``_filter_by_tags`` to keep this function
     focused on chain traversal.
 
-    Date comparison uses ``committed_at`` (UTC-aware).  Both ``since`` and
+    Date comparison uses ``committed_at`` (UTC-aware). Both ``since`` and
     ``until`` should be UTC-aware datetimes (produced by :func:`parse_date_filter`).
     """
     commits: list[MuseCliCommit] = []
@@ -265,7 +264,7 @@ async def _filter_by_tags(
     """Retain only commits that have ALL of the requested music-native tags.
 
     Tags are stored in the ``muse_cli_tags`` table with ``emotion:<value>``,
-    ``section:<value>``, and ``track:<value>`` conventions.  A commit must
+    ``section:<value>``, and ``track:<value>`` conventions. A commit must
     carry every specified tag to pass the filter — filters are AND-combined.
 
     When no tag filters are specified the input list is returned unchanged.
@@ -314,14 +313,14 @@ def _render_log(
 ) -> None:
     """Print commits in ``git log`` style, newest-first."""
     for commit in commits:
-        head_marker = f"  (HEAD -> {branch})" if commit.commit_id == head_commit_id else ""
+        head_marker = f" (HEAD -> {branch})" if commit.commit_id == head_commit_id else ""
         typer.echo(f"commit {commit.commit_id}{head_marker}")
         if commit.parent_commit_id:
             typer.echo(f"Parent: {commit.parent_commit_id[:8]}")
         ts = commit.committed_at.strftime("%Y-%m-%d %H:%M:%S")
-        typer.echo(f"Date:   {ts}")
+        typer.echo(f"Date: {ts}")
         typer.echo("")
-        typer.echo(f"    {commit.message}")
+        typer.echo(f" {commit.message}")
         typer.echo("")
 
 
@@ -355,13 +354,13 @@ def _render_graph(commits: list[MuseCliCommit], *, head_commit_id: str) -> None:
         MuseLogNode(
             variation_id=c.commit_id,
             parent=c.parent_commit_id,
-            parent2=None,           # merge parent — added in issue #35
+            parent2=None, # merge parent — added
             is_head=(c.commit_id == head_commit_id),
             timestamp=c.committed_at.timestamp(),
             intent=c.message,
             affected_regions=(),
         )
-        for c in reversed(commits)  # oldest → newest for the DAG walker
+        for c in reversed(commits) # oldest → newest for the DAG walker
     )
     graph_obj = MuseLogGraph(project_id="muse-cli", head=head_commit_id, nodes=nodes)
     typer.echo(render_ascii_graph(graph_obj))
@@ -381,14 +380,14 @@ def _render_stat(
     Mirrors ``git log --stat`` output style.
     """
     for commit, diff in zip(commits, diffs):
-        head_marker = f"  (HEAD -> {branch})" if commit.commit_id == head_commit_id else ""
+        head_marker = f" (HEAD -> {branch})" if commit.commit_id == head_commit_id else ""
         typer.echo(f"commit {commit.commit_id}{head_marker}")
         if commit.parent_commit_id:
             typer.echo(f"Parent: {commit.parent_commit_id[:8]}")
         ts = commit.committed_at.strftime("%Y-%m-%d %H:%M:%S")
-        typer.echo(f"Date:   {ts}")
+        typer.echo(f"Date: {ts}")
         typer.echo("")
-        typer.echo(f"    {commit.message}")
+        typer.echo(f" {commit.message}")
         typer.echo("")
 
         # File stats
@@ -422,19 +421,19 @@ def _render_patch(
     """Print commits with a path-level diff block.
 
     Shows which files were added, removed, or modified relative to the
-    parent commit.  This is a structural diff (path-level, not byte-level)
+    parent commit. This is a structural diff (path-level, not byte-level)
     since Muse tracks MIDI/audio blobs that are not line-diffable.
     Mirrors the visual intent of ``git log --patch``.
     """
     for commit, diff in zip(commits, diffs):
-        head_marker = f"  (HEAD -> {branch})" if commit.commit_id == head_commit_id else ""
+        head_marker = f" (HEAD -> {branch})" if commit.commit_id == head_commit_id else ""
         typer.echo(f"commit {commit.commit_id}{head_marker}")
         if commit.parent_commit_id:
             typer.echo(f"Parent: {commit.parent_commit_id[:8]}")
         ts = commit.committed_at.strftime("%Y-%m-%d %H:%M:%S")
-        typer.echo(f"Date:   {ts}")
+        typer.echo(f"Date: {ts}")
         typer.echo("")
-        typer.echo(f"    {commit.message}")
+        typer.echo(f" {commit.message}")
         typer.echo("")
 
         if diff.total_files == 0:
@@ -479,7 +478,7 @@ async def _log_async(
 
     Reads repo state from ``.muse/``, loads and filters commits from the DB
     session, then dispatches to the appropriate renderer based on output mode
-    flags.  All flags are combinable: filters narrow the commit set, output
+    flags. All flags are combinable: filters narrow the commit set, output
     mode flags control formatting.
 
     Priority when multiple output modes are specified:
@@ -487,10 +486,10 @@ async def _log_async(
     """
     muse_dir = root / ".muse"
     repo_data: dict[str, str] = json.loads((muse_dir / "repo.json").read_text())
-    repo_id = repo_data["repo_id"]  # noqa: F841 — kept for future remote filtering
+    repo_id = repo_data["repo_id"] # noqa: F841 — kept for future remote filtering
 
-    head_ref = (muse_dir / "HEAD").read_text().strip()   # "refs/heads/main"
-    branch = head_ref.rsplit("/", 1)[-1]                 # "main"
+    head_ref = (muse_dir / "HEAD").read_text().strip() # "refs/heads/main"
+    branch = head_ref.rsplit("/", 1)[-1] # "main"
     ref_path = muse_dir / pathlib.Path(head_ref)
 
     head_commit_id = ""

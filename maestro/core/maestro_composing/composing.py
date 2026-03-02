@@ -253,7 +253,7 @@ async def _handle_composing(
                 if len(variation.phrases) == 0:
                     logger.error(
                         f"[{trace.trace_id[:8]}] COMPOSING produced 0 phrases "
-                        f"despite {len(plan.tool_calls)} tool calls — "
+                        f"despite {len(plan.tool_calls)} tool calls"
                         f"this indicates a generation or entity resolution failure. "
                         f"Proposed notes captured: {sum(len(n) for n in getattr(variation, '_proposed_notes', {}).values()) if hasattr(variation, '_proposed_notes') else 'N/A'}"
                     )
@@ -418,7 +418,7 @@ async def _handle_composing_with_agent_teams(
     Muse's Variation system for human-reviewable commit/discard.
 
     ``Mode: compose`` is the directive — any compose request with parsed
-    roles (1+) uses this path.  The instrument count determines
+    roles (1+) uses this path. The instrument count determines
     parallelism (1 agent vs N parallel agents), not the execution path.
 
     Flow:
@@ -449,12 +449,12 @@ async def _handle_composing_with_agent_teams(
                 _track_regions[rid] = track_id
 
     # Agent Teams needs an editing-level tool allowlist (tempo, key, tracks,
-    # regions, generators, effects).  The COMPOSING route may have a narrower
+    # regions, generators, effects). The COMPOSING route may have a narrower
     # set, so we create an editing composition route for the coordinator.
     _at_route = _create_editing_composition_route(route)
 
     # ── 2. Run Agent Teams — intercept the ``complete`` event ──
-    _agent_complete: dict[str, JSONValue] | None = None  # parse boundary: SSE complete event
+    _agent_complete: dict[str, JSONValue] | None = None # parse boundary: SSE complete event
     _SSE_PREFIX = "data: "
 
     async for event_str in _handle_composition_agent_team(

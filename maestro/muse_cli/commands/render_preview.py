@@ -1,7 +1,7 @@
 """muse render-preview — generate an audio preview of a commit's snapshot.
 
 Fetches the MIDI snapshot for a target commit, passes it to the Storpheus
-render pipeline, and writes the resulting audio file to disk.  Optionally
+render pipeline, and writes the resulting audio file to disk. Optionally
 opens the file in the system default audio player.
 
 This is the musical equivalent of ``git show <commit>`` + audio playback:
@@ -10,21 +10,21 @@ without opening a DAW session.
 
 Usage::
 
-    muse render-preview                                 # HEAD → /tmp/muse-preview-<id>.wav
-    muse render-preview abc1234                         # specific commit
+    muse render-preview # HEAD → /tmp/muse-preview-<id>.wav
+    muse render-preview abc1234 # specific commit
     muse render-preview --format mp3 --output ./my.mp3 # custom path and format
-    muse render-preview --track drums --section chorus  # filtered render
-    muse render-preview abc1234 --open                  # render + open in system player
+    muse render-preview --track drums --section chorus # filtered render
+    muse render-preview abc1234 --open # render + open in system player
 
 Flags:
-    [<commit>]       Short commit ID prefix (default: HEAD).
-    --track TEXT     Render only MIDI files matching this track name substring.
-    --section TEXT   Render only MIDI files matching this section name substring.
-    --format         Output audio format: wav | mp3 | flac (default: wav).
-    --open           Open the rendered file in the system default player after rendering.
-    --output PATH    Write the preview to a specific path
+    [<commit>] Short commit ID prefix (default: HEAD).
+    --track TEXT Render only MIDI files matching this track name substring.
+    --section TEXT Render only MIDI files matching this section name substring.
+    --format Output audio format: wav | mp3 | flac (default: wav).
+    --open Open the rendered file in the system default player after rendering.
+    --output PATH Write the preview to a specific path
                      (default: /tmp/muse-preview-<short_id>.<format>).
-    --json           Emit structured JSON instead of human-readable output.
+    --json Emit structured JSON instead of human-readable output.
 
 This command is read-only — it never creates a new Muse commit or modifies
 the working tree.
@@ -85,7 +85,7 @@ def _open_file(path: pathlib.Path) -> None:
     """
     if platform.system() != "Darwin":
         typer.echo(
-            "⚠️  --open is only supported on macOS. "
+            "⚠️ --open is only supported on macOS. "
             f"Open manually: {path}"
         )
         return
@@ -93,7 +93,7 @@ def _open_file(path: pathlib.Path) -> None:
         subprocess.run(["open", str(path)], check=True)
         logger.info("✅ muse render-preview: opened %s in system player", path)
     except subprocess.CalledProcessError as exc:
-        typer.echo(f"⚠️  Failed to open {path}: {exc}")
+        typer.echo(f"⚠️ Failed to open {path}: {exc}")
         logger.warning("⚠️ muse render-preview: open failed: %s", exc)
 
 
@@ -147,7 +147,7 @@ async def _render_preview_async(
                 f"— matches {len(matches)} commits:"
             )
             for c in matches:
-                typer.echo(f"   {c.commit_id[:8]}  {c.message[:60]}")
+                typer.echo(f" {c.commit_id[:8]} {c.message[:60]}")
             typer.echo("Use a longer prefix to disambiguate.")
             raise typer.Exit(code=ExitCode.USER_ERROR)
         full_commit_id = matches[0].commit_id
@@ -161,7 +161,7 @@ async def _render_preview_async(
 
     if not manifest:
         typer.echo(
-            f"⚠️  Snapshot for commit {full_commit_id[:8]} is empty — nothing to render."
+            f"⚠️ Snapshot for commit {full_commit_id[:8]} is empty — nothing to render."
         )
         raise typer.Exit(code=ExitCode.USER_ERROR)
 
@@ -227,7 +227,7 @@ def render_preview_cmd(
     Retrieves the snapshot for COMMIT (default: HEAD), renders its MIDI
     content to audio via Storpheus, and writes the result to disk.
 
-    Use --open to hear the preview immediately.  Use --json for structured
+    Use --open to hear the preview immediately. Use --json for structured
     output suitable for AI agent consumption.
 
     Supported formats: wav (default), mp3, flac.
@@ -277,18 +277,18 @@ def render_preview_cmd(
     else:
         if result.stubbed:
             typer.echo(
-                f"⚠️  Preview generated (stub — Storpheus /render not yet deployed):\n"
-                f"   {result.output_path}"
+                f"⚠️ Preview generated (stub — Storpheus /render not yet deployed):\n"
+                f" {result.output_path}"
             )
         else:
             typer.echo(
                 f"✅ Preview rendered [{result.format.value}]:\n"
-                f"   {result.output_path}"
+                f" {result.output_path}"
             )
         if result.midi_files_used > 1:
-            typer.echo(f"   ({result.midi_files_used} MIDI files used)")
+            typer.echo(f" ({result.midi_files_used} MIDI files used)")
         if result.skipped_count:
-            typer.echo(f"   ({result.skipped_count} entries skipped)")
+            typer.echo(f" ({result.skipped_count} entries skipped)")
 
     logger.info(
         "muse render-preview: commit=%s format=%s output=%s stubbed=%s",

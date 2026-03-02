@@ -14,8 +14,8 @@ from maestro.contracts.json_types import (
 )
 
 # Matching tolerances
-TIMING_TOLERANCE_BEATS = 0.05  # Notes within 0.05 beats are considered same timing
-PITCH_TOLERANCE = 0  # Exact pitch match required
+TIMING_TOLERANCE_BEATS = 0.05 # Notes within 0.05 beats are considered same timing
+PITCH_TOLERANCE = 0 # Exact pitch match required
 
 
 @dataclass

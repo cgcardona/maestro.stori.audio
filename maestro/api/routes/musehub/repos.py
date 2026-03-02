@@ -1,22 +1,22 @@
 """Muse Hub repo, branch, commit, credits, and agent context route handlers.
 
 Endpoint summary:
-  POST   /musehub/repos                                                     — create a new remote repo
-  GET    /musehub/repos/{repo_id}                                           — get repo metadata (by internal UUID)
-  DELETE /musehub/repos/{repo_id}                                           — soft-delete a repo (owner only)
-  POST   /musehub/repos/{repo_id}/transfer                                  — transfer repo ownership (owner only)
-  GET    /musehub/{owner}/{repo_slug}                                       — get repo metadata (by owner/slug)
-  GET    /musehub/repos/{repo_id}/branches                                  — list all branches
-  GET    /musehub/repos/{repo_id}/commits                                   — list commits (newest first)
-  GET    /musehub/repos/{repo_id}/commits/{sha}/render-status               — render job status for a commit
-  GET    /musehub/repos/{repo_id}/credits                                   — aggregated contributor credits
-  GET    /musehub/repos/{repo_id}/context                                   — agent context briefing
-  GET    /musehub/repos/{repo_id}/timeline                                  — chronological timeline with emotion/section/track layers
-  GET    /musehub/repos/{repo_id}/form-structure/{ref}                      — form and structure analysis
-  POST   /musehub/repos/{repo_id}/sessions                                  — push a recording session
-  GET    /musehub/repos/{repo_id}/sessions                                  — list recording sessions
-  GET    /musehub/repos/{repo_id}/sessions/{session_id}                     — get a single session
-  GET    /musehub/repos/{repo_id}/arrange/{ref}                             — arrangement matrix (instrument × section grid)
+  POST /musehub/repos — create a new remote repo
+  GET /musehub/repos/{repo_id} — get repo metadata (by internal UUID)
+  DELETE /musehub/repos/{repo_id} — soft-delete a repo (owner only)
+  POST /musehub/repos/{repo_id}/transfer — transfer repo ownership (owner only)
+  GET /musehub/{owner}/{repo_slug} — get repo metadata (by owner/slug)
+  GET /musehub/repos/{repo_id}/branches — list all branches
+  GET /musehub/repos/{repo_id}/commits — list commits (newest first)
+  GET /musehub/repos/{repo_id}/commits/{sha}/render-status — render job status for a commit
+  GET /musehub/repos/{repo_id}/credits — aggregated contributor credits
+  GET /musehub/repos/{repo_id}/context — agent context briefing
+  GET /musehub/repos/{repo_id}/timeline — chronological timeline with emotion/section/track layers
+  GET /musehub/repos/{repo_id}/form-structure/{ref} — form and structure analysis
+  POST /musehub/repos/{repo_id}/sessions — push a recording session
+  GET /musehub/repos/{repo_id}/sessions — list recording sessions
+  GET /musehub/repos/{repo_id}/sessions/{session_id} — get a single session
+  GET /musehub/repos/{repo_id}/arrange/{ref} — arrangement matrix (instrument × section grid)
 
 All endpoints require a valid JWT Bearer token.
 No business logic lives here — all persistence is delegated to
@@ -119,7 +119,7 @@ async def list_my_repos(
 ) -> RepoListResponse:
     """Return repos owned by or collaborated on by the authenticated user.
 
-    Results are ordered newest-first.  Pass the ``nextCursor`` value from the
+    Results are ordered newest-first. Pass the ``nextCursor`` value from the
     previous response as ``?cursor=`` to advance through subsequent pages.
     An absent ``nextCursor`` in the response means you have reached the last page.
 
@@ -151,7 +151,7 @@ async def create_repo(
 ) -> RepoResponse:
     """Create a new remote Muse Hub repository owned by the authenticated user.
 
-    ``slug`` is auto-generated from ``name``.  Returns 409 if the ``(owner, slug)``
+    ``slug`` is auto-generated from ``name``. Returns 409 if the ``(owner, slug)``
     pair already exists — the musician must rename the repo to get a distinct slug.
 
     Wizard behaviors (from the request body):
@@ -208,7 +208,7 @@ async def get_repo(
     """Return metadata for the given repo. Returns 404 if not found."""
     repo = await musehub_repository.get_repo(db, repo_id)
     _guard_visibility(repo, claims)
-    return repo  # type: ignore[return-value]  # _guard_visibility raises if None
+    return repo # type: ignore[return-value] # _guard_visibility raises if None
 
 
 @router.get(
@@ -344,7 +344,7 @@ async def get_commit_diff_summary(
     """Return a five-dimension musical diff summary between a commit and its parent.
 
     Computes heuristic per-dimension change scores (harmonic, rhythmic, melodic,
-    structural, dynamic) from the commit message keywords and metadata.  Scores
+    structural, dynamic) from the commit message keywords and metadata. Scores
     are in [0.0, 1.0] where 0 = no change and 1 = complete replacement.
 
     Consumed by the commit detail page to render coloured dimension-change badges
@@ -432,7 +432,7 @@ def _keyword_score(message: str, keywords: frozenset[str]) -> float:
     """Return a [0, 1] score based on keyword density in a commit message.
 
     Presence of any keyword gives a base 0.35 score; each additional keyword
-    adds 0.15 up to a ceiling of 0.95.  Root commits (empty parent) implicitly
+    adds 0.15 up to a ceiling of 0.95. Root commits (empty parent) implicitly
     score 1.0 on all dimensions since everything is new.
     """
     msg_lower = message.lower()
@@ -583,13 +583,13 @@ async def get_divergence(
     """Return a five-dimension musical divergence report between two branches.
 
     Computes a per-dimension Jaccard divergence score by comparing each
-    branch's commit history since their common ancestor.  Dimensions are:
+    branch's commit history since their common ancestor. Dimensions are:
     melodic, harmonic, rhythmic, structural, and dynamic.
 
     The ``overallScore`` field is the mean of all five dimension scores,
-    expressed in [0.0, 1.0].  Multiply by 100 for a percentage display.
+    expressed in [0.0, 1.0]. Multiply by 100 for a percentage display.
 
-    Content negotiation: this endpoint always returns JSON.  The UI page at
+    Content negotiation: this endpoint always returns JSON. The UI page at
     ``GET /musehub/ui/{repo_id}/divergence`` renders the radar chart.
 
     Returns:
@@ -659,7 +659,7 @@ async def get_credits(
     Content negotiation: when the request ``Accept`` header includes
     ``application/ld+json``, clients should request the ``/credits`` endpoint
     directly — the JSON body is schema.org-compatible and can be wrapped in
-    JSON-LD by the consumer.  This endpoint always returns ``application/json``.
+    JSON-LD by the consumer. This endpoint always returns ``application/json``.
 
     Returns 404 if the repo does not exist.
     Returns an empty ``contributors`` list when no commits have been pushed yet.
@@ -731,7 +731,7 @@ async def get_agent_context(
     """Return a complete musical context briefing for AI agent consumption.
 
     This endpoint is the canonical entry point for agents starting a composition
-    session.  It aggregates musical state, commit history, per-dimension analysis,
+    session. It aggregates musical state, commit history, per-dimension analysis,
     open PRs, open issues, and actionable suggestions into a single document.
 
     Use ``?depth=brief`` to fit the response in a small context window (~2 K tokens).
@@ -878,7 +878,7 @@ async def list_sessions(
 ) -> SessionListResponse:
     """Return sessions for a repo, sorted newest-first by started_at.
 
-    Returns 404 if the repo does not exist.  Use ``limit`` to paginate large
+    Returns 404 if the repo does not exist. Use ``limit`` to paginate large
     session histories (default 50, max 200).
     """
     repo = await musehub_repository.get_repo(db, repo_id)
@@ -902,7 +902,7 @@ async def get_session(
 ) -> SessionResponse:
     """Return a single session record.
 
-    Returns 404 if the repo or session does not exist.  The ``session_id``
+    Returns 404 if the repo or session does not exist. The ``session_id``
     must be an exact match — the hub does not support prefix lookups.
     """
     repo = await musehub_repository.get_repo(db, repo_id)
@@ -1057,7 +1057,7 @@ async def list_listen_tracks(
 ) -> TrackListingResponse:
     """Return the full-mix and per-stem track listing for the listen page.
 
-    Thin wrapper around ``musehub_listen.build_track_listing``.  Auth/visibility
+    Thin wrapper around ``musehub_listen.build_track_listing``. Auth/visibility
     is enforced here before delegating scanning logic to the service.
 
     Returns 404 if the repo does not exist or is not accessible.
@@ -1074,7 +1074,7 @@ def _derive_emotion_vector(commit_id: str) -> tuple[float, float, float, float]:
     """Derive a deterministic (valence, energy, tension, darkness) vector from a commit SHA.
 
     Mirrors the algorithm in musehub_repository._derive_emotion so that the
-    compare endpoint produces values consistent with the timeline page.  Four
+    compare endpoint produces values consistent with the timeline page. Four
     non-overlapping 4-hex-char windows of the SHA are mapped to [0.0, 1.0].
     """
     sha = commit_id.ljust(16, "0")
@@ -1151,7 +1151,7 @@ async def compare_refs(
     structural, dynamic), lists commits unique to the head ref, and summarises
     the emotional delta between the two refs.
 
-    ``base`` and ``head`` are resolved as branch names first.  If no commits
+    ``base`` and ``head`` are resolved as branch names first. If no commits
     are found on a branch with that exact name, the ref is treated as a commit
     SHA prefix and all commits for the repo are scanned.
 
@@ -1237,11 +1237,11 @@ async def get_arrangement_matrix(
     """Return the arrangement matrix for a Muse Hub commit ref.
 
     The matrix encodes note density for every (instrument, section) pair so
-    the arrangement page can render a colour-coded grid.  Row and column
+    the arrangement page can render a colour-coded grid. Row and column
     summaries are pre-computed to avoid redundant aggregation in the client.
 
     Deterministic stub data is seeded by ``ref`` so agents receive consistent
-    responses across retries.  Full MIDI content analysis will be wired in
+    responses across retries. Full MIDI content analysis will be wired in
     once Storpheus exposes per-section introspection.
 
     Returns 404 if the repo does not exist.
@@ -1270,8 +1270,8 @@ async def list_stargazers(
 ) -> StargazerListResponse:
     """Return the list of users who have starred this repo.
 
-    Public repos return this list unauthenticated.  Private repos require a
-    valid JWT.  Returns an empty list when no one has starred the repo yet.
+    Public repos return this list unauthenticated. Private repos require a
+    valid JWT. Returns an empty list when no one has starred the repo yet.
 
     Raises 404 if the repo does not exist.
     """
@@ -1309,7 +1309,7 @@ async def get_repo_activity(
     """Return the chronological (newest-first) activity feed for a repo.
 
     Events cover: commit pushes, PR lifecycle, issue lifecycle, branch and tag
-    operations, and recording sessions.  Pass ``event_type`` to filter to a
+    operations, and recording sessions. Pass ``event_type`` to filter to a
     single category; omit it to see all events.
 
     Pagination is 1-indexed; ``page_size`` is capped at 100.
@@ -1334,7 +1334,7 @@ def _guard_owner(repo: RepoResponse | None, caller_user_id: str) -> None:
     """Raise 404 if the repo does not exist; raise 403 if the caller is not the owner.
 
     Transfer and deletion are owner-only operations — admin collaborators are
-    explicitly excluded.  Accepting any collaborator here would allow a
+    explicitly excluded. Accepting any collaborator here would allow a
     compromised collaborator account to destroy or hijack repos.
     """
     if repo is None:
@@ -1364,7 +1364,7 @@ async def delete_repo(
     """Soft-delete a Muse Hub repo.
 
     Marks the repo as deleted by recording a ``deleted_at`` timestamp; all
-    data is retained in the database for audit purposes.  Subsequent reads
+    data is retained in the database for audit purposes. Subsequent reads
     (GET /repos/{repo_id}, branch/commit queries, etc.) will return 404.
 
     Only the repo owner may delete a repo — admin collaborators are not
@@ -1407,9 +1407,9 @@ async def transfer_repo_ownership(
 ) -> RepoResponse:
     """Transfer ownership of a Muse Hub repo to another user.
 
-    Updates ``owner_user_id`` on the repo record.  After a successful transfer
+    Updates ``owner_user_id`` on the repo record. After a successful transfer
     the calling user loses owner privileges; the new owner gains them
-    immediately.  The public ``owner`` username slug is NOT automatically
+    immediately. The public ``owner`` username slug is NOT automatically
     changed — the new owner may update it via the settings endpoint.
 
     Only the current repo owner may initiate a transfer — admin collaborators
@@ -1498,7 +1498,7 @@ async def get_repo_settings(
 
     Settings combine dedicated-column values (name, description, visibility,
     topics) with feature flags stored in the ``settings`` JSON blob
-    (has_issues, allow_merge_commit, etc.).  Missing flags are back-filled
+    (has_issues, allow_merge_commit, etc.). Missing flags are back-filled
     with canonical defaults on first read so every response is fully
     populated regardless of when the repo was created.
 
@@ -1536,7 +1536,7 @@ async def patch_repo_settings(
     ``topics`` replaces the full tag list when provided.
 
     Returns 403 when the caller lacks admin permission; 404 when the repo
-    does not exist.  On success, the full updated settings object is returned
+    does not exist. On success, the full updated settings object is returned
     so callers do not need a follow-up GET.
 
     Agent use case: update visibility, merge strategy, or homepage URL

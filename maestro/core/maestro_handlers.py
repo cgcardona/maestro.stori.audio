@@ -3,11 +3,11 @@
 This module is the public API surface: it exports ``orchestrate`` and
 ``UsageTracker``. All handler logic lives in focused sub-modules:
 
-- ``maestro_helpers``      — shared utilities, UsageTracker, StreamFinalResponse
+- ``maestro_helpers`` — shared utilities, UsageTracker, StreamFinalResponse
 - ``maestro_plan_tracker`` — _PlanTracker, _PlanStep, tool-name sets
-- ``maestro_editing``      — _handle_editing, _apply_single_tool_call, routing helpers
-- ``maestro_composing``    — _handle_composing, _handle_reasoning, _store_variation
-- ``maestro_agent_teams``  — _run_instrument_agent, _handle_composition_agent_team
+- ``maestro_editing`` — _handle_editing, _apply_single_tool_call, routing helpers
+- ``maestro_composing`` — _handle_composing, _handle_reasoning, _store_variation
+- ``maestro_agent_teams`` — _run_instrument_agent, _handle_composition_agent_team
 """
 
 from __future__ import annotations
@@ -39,7 +39,7 @@ from maestro.services.budget import get_model_or_default
 
 # Public re-exports — external callers (routes, planner, pipeline) import these
 # from maestro_handlers without needing to know the sub-module layout.
-from maestro.core.maestro_helpers import UsageTracker, StreamFinalResponse  # noqa: F401
+from maestro.core.maestro_helpers import UsageTracker, StreamFinalResponse # noqa: F401
 from maestro.core.maestro_editing import (
     _project_needs_structure,
     _is_additive_composition,
@@ -116,10 +116,10 @@ async def orchestrate(
 
                 # Backend-owned execution mode policy:
                 # COMPOSING → variation (music generation requires human review)
-                #   EXCEPT: empty project → override to EDITING (can't diff against nothing)
-                #   EXCEPT: additive composition (new section / new tracks) → EDITING
-                #   OVERRIDE: explicit `Mode: compose` in MAESTRO PROMPT always stays COMPOSING
-                # EDITING   → apply (structural ops execute directly)
+                # EXCEPT: empty project → override to EDITING (can't diff against nothing)
+                # EXCEPT: additive composition (new section / new tracks) → EDITING
+                # OVERRIDE: explicit `Mode: compose` in MAESTRO PROMPT always stays COMPOSING
+                # EDITING → apply (structural ops execute directly)
                 # REASONING → n/a (no tools)
                 _explicit_compose = (
                     _orch_parsed is not None and _orch_parsed.mode == "compose"
@@ -129,7 +129,7 @@ async def orchestrate(
                     if _explicit_compose:
                         execution_mode = "variation"
                         logger.info(
-                            f"🎵 Explicit Mode: compose in MAESTRO PROMPT — "
+                            f"🎵 Explicit Mode: compose in MAESTRO PROMPT"
                             f"staying COMPOSING (Orpheus generation)"
                         )
                     elif _project_needs_structure(project_context):
@@ -209,7 +209,7 @@ async def orchestrate(
                     and bool(getattr(_orch_parsed, "roles", None))
                 )
                 if _explicit_compose and _has_roles:
-                    assert _orch_parsed is not None  # narrowed by _has_roles
+                    assert _orch_parsed is not None # narrowed by _has_roles
                     logger.info(
                         f"[{trace.trace_id[:8]}] 🎼 Mode: compose with "
                         f"{len(_orch_parsed.roles)} role(s) → "

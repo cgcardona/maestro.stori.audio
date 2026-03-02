@@ -90,7 +90,7 @@ def transpose_notes(
     """Transpose a list of parsed note dicts in-place.
 
     Operates on the ``{"pitch": int, ...}`` dicts produced by
-    ``parse_midi_to_notes``.  Drum notes are left untouched.
+    ``parse_midi_to_notes``. Drum notes are left untouched.
     """
     if semitones == 0 or is_drums:
         return notes

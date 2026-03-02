@@ -30,8 +30,8 @@ async def test_user(db_session: AsyncSession) -> User:
     """Create a test user with limited budget."""
     user = User(
         id="budget-test-user",
-        budget_cents=100,  # $1.00 remaining
-        budget_limit_cents=500,  # $5.00 total
+        budget_cents=100, # $1.00 remaining
+        budget_limit_cents=500, # $5.00 total
     )
     db_session.add(user)
     await db_session.commit()
@@ -245,7 +245,7 @@ async def test_deduct_budget_without_storing_prompt(db_session: AsyncSession, te
         model="anthropic/claude-3.7-sonnet",
         prompt_tokens=500,
         completion_tokens=250,
-        prompt=None,  # Don't store prompt
+        prompt=None, # Don't store prompt
     )
     await db_session.commit()
     
@@ -475,7 +475,7 @@ async def test_multiple_usage_logs(db_session: AsyncSession, test_user: User) ->
     logs = list(result.scalars().all())
     
     assert len(logs) == 3
-    assert test_user.budget_cents == 70  # Started with 100, spent 30
+    assert test_user.budget_cents == 70 # Started with 100, spent 30
 
 
 # =============================================================================
@@ -497,5 +497,5 @@ async def test_get_user_budget_info(test_user: User, auth_headers: dict[str, str
     data = response.json()
     assert "budgetRemaining" in data
     assert "budgetLimit" in data
-    assert data["budgetRemaining"] == 1.0  # 100 cents = $1.00
-    assert data["budgetLimit"] == 5.0  # 500 cents = $5.00
+    assert data["budgetRemaining"] == 1.0 # 100 cents = $1.00
+    assert data["budgetLimit"] == 5.0 # 500 cents = $5.00

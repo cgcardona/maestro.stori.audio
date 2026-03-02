@@ -70,7 +70,7 @@ def _generate_slug(name: str) -> str:
     """Derive a URL-safe slug from a human-readable repo name.
 
     Rules: lowercase, non-alphanumeric chars collapsed to single hyphens,
-    leading/trailing hyphens stripped, max 64 chars.  If the result is empty
+    leading/trailing hyphens stripped, max 64 chars. If the result is empty
     (e.g. name was all symbols) we fall back to "repo".
     """
     slug = name.lower()
@@ -84,7 +84,7 @@ def _repo_clone_url(owner: str, slug: str) -> str:
     """Derive the canonical clone URL from owner and slug.
 
     Uses the musehub://{owner}/{slug} scheme — the DAW's native protocol handler
-    resolves this to the correct API base at runtime.  No internal UUID is exposed
+    resolves this to the correct API base at runtime. No internal UUID is exposed
     in external URLs.
     """
     return f"musehub://{owner}/{slug}"
@@ -138,7 +138,7 @@ async def create_repo(
     tags: list[str] | None = None,
     key_signature: str | None = None,
     tempo_bpm: int | None = None,
-    # ── Wizard extensions (issue #434) ────────────────────────────────────────
+    # ── Wizard extensions ────────────────────────────────────────
     license: str | None = None,
     topics: list[str] | None = None,
     initialize: bool = False,
@@ -147,7 +147,7 @@ async def create_repo(
 ) -> RepoResponse:
     """Persist a new remote repo and return its wire representation.
 
-    ``slug`` is auto-generated from ``name``.  The ``(owner, slug)`` pair must
+    ``slug`` is auto-generated from ``name``. The ``(owner, slug)`` pair must
     be unique — callers should catch ``IntegrityError`` and surface a 409.
 
     Wizard behaviors:
@@ -190,7 +190,7 @@ async def create_repo(
         settings=settings or None,
     )
     session.add(repo)
-    await session.flush()  # populate default columns before reading
+    await session.flush() # populate default columns before reading
     await session.refresh(repo)
 
     # Wizard initialisation: create default branch + empty initial commit.
@@ -236,7 +236,7 @@ async def delete_repo(session: AsyncSession, repo_id: str) -> bool:
     """Soft-delete a repo by recording its deletion timestamp.
 
     Returns True when the repo existed and was deleted; False when the repo
-    was not found or had already been soft-deleted.  The caller is responsible
+    was not found or had already been soft-deleted. The caller is responsible
     for committing the session.
     """
     row = await session.get(db.MusehubRepo, repo_id)
@@ -258,7 +258,7 @@ async def transfer_repo_ownership(
     settings-level change the new owner makes separately.
 
     Returns the updated RepoResponse, or None when the repo is not found or
-    has been soft-deleted.  The caller is responsible for committing the session.
+    has been soft-deleted. The caller is responsible for committing the session.
     """
     row = await session.get(db.MusehubRepo, repo_id)
     if row is None or row.deleted_at is not None:
@@ -299,7 +299,7 @@ async def list_repos_for_user(
 ) -> RepoListResponse:
     """Return repos owned by or collaborated on by ``user_id``.
 
-    Results are ordered by ``created_at`` descending (newest first).  Pagination
+    Results are ordered by ``created_at`` descending (newest first). Pagination
     uses an opaque cursor encoding the ``created_at`` ISO timestamp of the last
     item on the current page — pass it back as ``?cursor=`` to advance.
 
@@ -337,7 +337,7 @@ async def list_repos_for_user(
             cursor_dt = datetime.fromisoformat(cursor)
             page_filter = base_filter & (db.MusehubRepo.created_at < cursor_dt)
         except ValueError:
-            pass  # malformed cursor — ignore and return from the beginning
+            pass # malformed cursor — ignore and return from the beginning
 
     stmt = (
         select(db.MusehubRepo)
@@ -387,7 +387,7 @@ async def list_branches_with_detail(
     """Return branches enriched with ahead/behind counts vs the default branch.
 
     The default branch is whichever branch is named "main"; if no "main" branch
-    exists, the first branch alphabetically is used.  Ahead/behind counts are
+    exists, the first branch alphabetically is used. Ahead/behind counts are
     computed by comparing the set of commit IDs on each branch vs the default
     branch — a set-difference approximation suitable for display purposes.
 
@@ -503,7 +503,7 @@ async def get_object_by_path(
     """Return the most-recently-created object matching ``path`` in a repo.
 
     Used by the raw file endpoint to resolve a human-readable path
-    (e.g. ``tracks/bass.mid``) to the stored artifact on disk.  When
+    (e.g. ``tracks/bass.mid``) to the stored artifact on disk. When
     multiple objects share the same path (re-pushed content), the newest
     one wins — consistent with Git's ref semantics where HEAD always
     points at the latest version.
@@ -623,7 +623,7 @@ def _derive_emotion(row: db.MusehubCommit) -> TimelineEmotionEvent:
     """Derive a deterministic emotion vector from the commit SHA.
 
     Uses three non-overlapping byte windows of the SHA hex to produce
-    valence, energy, and tension in [0.0, 1.0].  Deterministic so the
+    valence, energy, and tension in [0.0, 1.0]. Deterministic so the
     timeline is always reproducible without external ML inference.
     """
     sha = row.commit_id
@@ -665,7 +665,7 @@ async def get_timeline_events(
     rows_stmt = (
         select(db.MusehubCommit)
         .where(db.MusehubCommit.repo_id == repo_id)
-        .order_by(db.MusehubCommit.timestamp)  # oldest-first for temporal rendering
+        .order_by(db.MusehubCommit.timestamp) # oldest-first for temporal rendering
         .limit(limit)
     )
     rows = (await session.execute(rows_stmt)).scalars().all()
@@ -708,7 +708,7 @@ async def global_search(
     """Search commit messages across all public Muse Hub repos.
 
     Only ``visibility='public'`` repos are searched — private repos are never
-    exposed regardless of caller identity.  This enforces the public-only
+    exposed regardless of caller identity. This enforces the public-only
     contract at the persistence layer so no route handler can accidentally
     bypass it.
 
@@ -718,7 +718,7 @@ async def global_search(
     - ``pattern``: raw SQL LIKE pattern applied to commit message only.
 
     Results are grouped by repo and paginated by repo-group (``page_size``
-    controls how many repo-groups per page).  Within each group, up to 20
+    controls how many repo-groups per page). Within each group, up to 20
     matching commits are returned newest-first.
 
     An audio preview object ID is attached when the repo contains any .mp3,
@@ -727,10 +727,10 @@ async def global_search(
     repos (not N per-repo queries) to avoid the N+1 pattern.
 
     Args:
-        session:   Active async DB session.
-        query:     Raw search string from the user or agent.
-        mode:      "keyword" or "pattern".  Defaults to "keyword".
-        page:      1-based page number for repo-group pagination.
+        session: Active async DB session.
+        query: Raw search string from the user or agent.
+        mode: "keyword" or "pattern". Defaults to "keyword".
+        page: 1-based page number for repo-group pagination.
         page_size: Number of repo-groups per page (1–50).
 
     Returns:
@@ -998,7 +998,7 @@ def _extract_track_names_from_objects(objects: list[db.MusehubObject]) -> list[s
     """Derive human-readable track names from stored object paths.
 
     Files with recognised music extensions whose stems do not look like raw
-    SHA-256 hashes are treated as track names.  The stem is lowercased and
+    SHA-256 hashes are treated as track names. The stem is lowercased and
     de-duplicated, matching the convention in ``muse_context._extract_track_names``.
     """
     import pathlib
@@ -1035,7 +1035,7 @@ async def _build_hub_history(
     """Walk the parent chain, returning up to *depth* ancestor entries.
 
     The *start_commit* (the context target) is NOT included — it is surfaced
-    separately as ``head_commit`` in the result.  Entries are newest-first.
+    separately as ``head_commit`` in the result. Entries are newest-first.
     The object list is reused across entries since we have no per-commit object
     index at this layer; active tracks reflect the overall repo's artifact set.
     """
@@ -1070,13 +1070,13 @@ async def get_context_for_commit(
     """Build a musical context document for a MuseHub commit.
 
     Traverses the commit's parent chain (up to 5 ancestors) and derives active
-    tracks from the repo's stored objects.  Musical dimensions (key, tempo,
+    tracks from the repo's stored objects. Musical dimensions (key, tempo,
     etc.) are always None until Storpheus MIDI analysis is integrated.
 
     Args:
-        session:  Open async DB session. Read-only — no writes performed.
-        repo_id:  Hub repo identifier.
-        ref:      Target commit ID.  Must belong to this repo.
+        session: Open async DB session. Read-only — no writes performed.
+        repo_id: Hub repo identifier.
+        ref: Target commit ID. Must belong to this repo.
 
     Returns:
         ``MuseHubContextResponse`` ready for JSON serialisation, or None if the
@@ -1314,12 +1314,12 @@ async def list_tree(
     recursive sum is deferred to client-side rendering.
 
     Args:
-        session:   Active async DB session.
-        repo_id:   UUID of the target repo.
-        owner:     Repo owner username (for response breadcrumbs).
+        session: Active async DB session.
+        repo_id: UUID of the target repo.
+        owner: Repo owner username (for response breadcrumbs).
         repo_slug: Repo slug (for response breadcrumbs).
-        ref:       Branch name or commit SHA (for response breadcrumbs).
-        dir_path:  Current directory prefix; empty string for repo root.
+        ref: Branch name or commit SHA (for response breadcrumbs).
+        dir_path: Current directory prefix; empty string for repo root.
 
     Returns:
         TreeListResponse with entries sorted dirs-first, then files.
@@ -1422,7 +1422,7 @@ async def list_repo_forks(db_session: AsyncSession, repo_id: str) -> ForkNetwork
     owner/slug, then counts commits ahead of the source branch as a
     heuristic divergence indicator.
 
-    The tree is currently one level deep (root + direct forks).  Recursive
+    The tree is currently one level deep (root + direct forks). Recursive
     multi-level fork chains are uncommon in music repos and would require a
     recursive CTE; extend this function when that need arises.
 
@@ -1460,11 +1460,11 @@ async def list_repo_forks(db_session: AsyncSession, repo_id: str) -> ForkNetwork
     children: list[ForkNetworkNode] = []
     for fork, fork_repo in fork_rows:
         # Divergence approximation: count commits on the fork branch that are
-        # not on the source.  Until per-branch commit counts are indexed,
+        # not on the source. Until per-branch commit counts are indexed,
         # derive a deterministic placeholder from the fork_id hash so the
         # value is stable across retries and non-zero for visual interest.
         seed = int(fork.fork_id.replace("-", ""), 16) % 100 if fork.fork_id else 0
-        divergence = seed % 15  # 0–14 commits — visually meaningful range
+        divergence = seed % 15 # 0–14 commits — visually meaningful range
 
         children.append(
             ForkNetworkNode(
@@ -1588,7 +1588,7 @@ def _merge_settings(stored: dict[str, object] | None) -> dict[str, object]:
     """Return a complete settings dict by filling missing keys with defaults.
 
     ``stored`` may be None (new repos) or a partial dict (old rows that predate
-    individual flag additions).  Defaults are applied for any absent key so callers
+    individual flag additions). Defaults are applied for any absent key so callers
     always receive a fully-populated dict.
     """
     base = dict(_SETTINGS_DEFAULTS)
@@ -1603,7 +1603,7 @@ async def get_repo_settings(
     """Return the mutable settings for a repo, or None if the repo does not exist.
 
     Combines dedicated column values (name, description, visibility, tags) with
-    feature-flag values from the ``settings`` JSON blob.  Missing flags are
+    feature-flag values from the ``settings`` JSON blob. Missing flags are
     back-filled with ``_SETTINGS_DEFAULTS`` so new and legacy repos both return
     a complete response.
 
@@ -1627,8 +1627,8 @@ async def get_repo_settings(
         has_projects=bool(flags.get("has_projects", False)),
         has_wiki=bool(flags.get("has_wiki", False)),
         topics=list(row.tags or []),
-        license=flags.get("license") if flags.get("license") is not None else None,  # type: ignore[arg-type]
-        homepage_url=flags.get("homepage_url") if flags.get("homepage_url") is not None else None,  # type: ignore[arg-type]
+        license=flags.get("license") if flags.get("license") is not None else None, # type: ignore[arg-type]
+        homepage_url=flags.get("homepage_url") if flags.get("homepage_url") is not None else None, # type: ignore[arg-type]
         allow_merge_commit=bool(flags.get("allow_merge_commit", True)),
         allow_squash_merge=bool(flags.get("allow_squash_merge", True)),
         allow_rebase_merge=bool(flags.get("allow_rebase_merge", False)),
@@ -1643,11 +1643,11 @@ async def update_repo_settings(
 ) -> RepoSettingsResponse | None:
     """Apply a partial settings update to a repo and return the updated settings.
 
-    Only non-None fields in ``patch`` are written.  Dedicated columns
+    Only non-None fields in ``patch`` are written. Dedicated columns
     (name, description, visibility, tags) are updated directly on the ORM row;
     feature flags are merged into the ``settings`` JSON blob.
 
-    Returns None if the repo does not exist.  The caller is responsible for
+    Returns None if the repo does not exist. The caller is responsible for
     committing the session after a successful return.
 
     Called by ``PATCH /api/v1/musehub/repos/{repo_id}/settings``.
