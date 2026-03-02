@@ -1,0 +1,352 @@
+"""DB persistence layer called by the AgentCeption poller after each tick.
+
+Strategy per entity type
+------------------------
+ACPipelineSnapshot  — one row per tick, always (lightweight scalars only).
+ACIssue / ACPullRequest — upsert on hash-diff: only write when content changes.
+ACAgentRun          — upsert on every tick so status transitions are recorded.
+ACAgentMessage      — fire-and-forget async task, never blocks the tick loop.
+ACRoleVersion       — insert-if-not-exists on role file content hash.
+
+All writes are wrapped in a single ``try/except`` so a DB outage never takes
+down the poller — the dashboard degrades gracefully to filesystem-only mode.
+"""
+from __future__ import annotations
+
+import asyncio
+import datetime
+import hashlib
+import json
+import logging
+from typing import TYPE_CHECKING
+
+from sqlalchemy import select
+
+from agentception.db.engine import get_session
+from agentception.db.models import (
+    ACAgentMessage,
+    ACAgentRun,
+    ACIssue,
+    ACPipelineSnapshot,
+    ACPullRequest,
+    ACRoleVersion,
+)
+
+if TYPE_CHECKING:
+    from agentception.models import AgentNode, PipelineState
+
+logger = logging.getLogger(__name__)
+
+_UTC = datetime.timezone.utc
+
+
+def _now() -> datetime.datetime:
+    return datetime.datetime.now(_UTC)
+
+
+def _hash(*parts: str) -> str:
+    """SHA-256 of the concatenation of all parts — used as the change sentinel."""
+    return hashlib.sha256("".join(parts).encode()).hexdigest()
+
+
+# ---------------------------------------------------------------------------
+# Public entry point — called by poller.tick()
+# ---------------------------------------------------------------------------
+
+
+async def persist_tick(
+    state: PipelineState,
+    open_issues: list[dict[str, object]],
+    open_prs: list[dict[str, object]],
+    gh_repo: str,
+) -> None:
+    """Persist everything derived from one polling tick.
+
+    Swallows all exceptions so a DB outage never crashes the poller.
+    """
+    try:
+        async with get_session() as session:
+            await _upsert_snapshot(session, state)
+            await _upsert_issues(session, open_issues, state.active_label, gh_repo)
+            await _upsert_prs(session, open_prs, gh_repo)
+            await _upsert_agent_runs(session, state.agents)
+            await session.commit()
+    except Exception as exc:
+        logger.warning("⚠️  DB persist_tick failed (non-fatal): %s", exc)
+
+
+# ---------------------------------------------------------------------------
+# Snapshot
+# ---------------------------------------------------------------------------
+
+
+async def _upsert_snapshot(session: object, state: PipelineState) -> None:  # type: ignore[type-arg]
+    from sqlalchemy.ext.asyncio import AsyncSession
+
+    assert isinstance(session, AsyncSession)
+    snap = ACPipelineSnapshot(
+        polled_at=datetime.datetime.fromtimestamp(state.polled_at, tz=_UTC),
+        active_label=state.active_label,
+        issues_open=state.issues_open,
+        prs_open=state.prs_open,
+        agents_active=len(state.agents),
+        alerts_json=json.dumps(state.alerts),
+    )
+    session.add(snap)
+
+
+# ---------------------------------------------------------------------------
+# Issues (hash-diff upsert)
+# ---------------------------------------------------------------------------
+
+
+async def _upsert_issues(
+    session: object,
+    issues: list[dict[str, object]],
+    active_label: str | None,
+    repo: str,
+) -> None:
+    from sqlalchemy.ext.asyncio import AsyncSession
+
+    assert isinstance(session, AsyncSession)
+    now = _now()
+
+    for raw in issues:
+        num = raw.get("number")
+        if not isinstance(num, int):
+            continue
+        title = str(raw.get("title", ""))
+        state_str = str(raw.get("state", "open"))
+        labels_raw = raw.get("labels", [])
+        label_names: list[str] = []
+        if isinstance(labels_raw, list):
+            for lbl in labels_raw:
+                if isinstance(lbl, str):
+                    label_names.append(lbl)
+                elif isinstance(lbl, dict):
+                    n = lbl.get("name")
+                    if isinstance(n, str):
+                        label_names.append(n)
+        labels_json = json.dumps(sorted(label_names))
+        content_hash = _hash(title, state_str, labels_json)
+
+        result = await session.execute(
+            select(ACIssue).where(ACIssue.github_number == num, ACIssue.repo == repo)
+        )
+        existing = result.scalar_one_or_none()
+
+        if existing is None:
+            session.add(
+                ACIssue(
+                    github_number=num,
+                    repo=repo,
+                    title=title,
+                    body=str(raw.get("body", "")) or None,
+                    state=state_str,
+                    phase_label=active_label,
+                    labels_json=labels_json,
+                    content_hash=content_hash,
+                    first_seen_at=now,
+                    last_synced_at=now,
+                )
+            )
+        elif existing.content_hash != content_hash:
+            existing.title = title
+            existing.state = state_str
+            existing.phase_label = active_label
+            existing.labels_json = labels_json
+            existing.content_hash = content_hash
+            existing.last_synced_at = now
+
+
+# ---------------------------------------------------------------------------
+# PRs (hash-diff upsert)
+# ---------------------------------------------------------------------------
+
+
+async def _upsert_prs(
+    session: object,
+    prs: list[dict[str, object]],
+    repo: str,
+) -> None:
+    from sqlalchemy.ext.asyncio import AsyncSession
+
+    assert isinstance(session, AsyncSession)
+    now = _now()
+
+    for raw in prs:
+        num = raw.get("number")
+        if not isinstance(num, int):
+            continue
+        title = str(raw.get("title", ""))
+        state_str = str(raw.get("state", "open"))
+        head_ref = raw.get("headRefName")
+        labels_raw = raw.get("labels", [])
+        label_names: list[str] = []
+        if isinstance(labels_raw, list):
+            label_names = [
+                lbl.get("name", "") if isinstance(lbl, dict) else str(lbl)
+                for lbl in labels_raw
+                if isinstance(lbl, (str, dict))
+            ]
+        labels_json = json.dumps(sorted(label_names))
+        content_hash = _hash(title, state_str, labels_json, str(head_ref))
+
+        result = await session.execute(
+            select(ACPullRequest).where(
+                ACPullRequest.github_number == num, ACPullRequest.repo == repo
+            )
+        )
+        existing = result.scalar_one_or_none()
+
+        if existing is None:
+            session.add(
+                ACPullRequest(
+                    github_number=num,
+                    repo=repo,
+                    title=title,
+                    state=state_str,
+                    head_ref=str(head_ref) if isinstance(head_ref, str) else None,
+                    labels_json=labels_json,
+                    content_hash=content_hash,
+                    first_seen_at=now,
+                    last_synced_at=now,
+                )
+            )
+        elif existing.content_hash != content_hash:
+            existing.title = title
+            existing.state = state_str
+            existing.head_ref = str(head_ref) if isinstance(head_ref, str) else None
+            existing.labels_json = labels_json
+            existing.content_hash = content_hash
+            existing.last_synced_at = now
+
+
+# ---------------------------------------------------------------------------
+# Agent runs (status upsert)
+# ---------------------------------------------------------------------------
+
+
+async def _upsert_agent_runs(
+    session: object,
+    agents: list[AgentNode],
+) -> None:
+    from sqlalchemy.ext.asyncio import AsyncSession
+
+    assert isinstance(session, AsyncSession)
+    now = _now()
+
+    for agent in agents:
+        run_id = agent.id
+        result = await session.execute(
+            select(ACAgentRun).where(ACAgentRun.id == run_id)
+        )
+        existing = result.scalar_one_or_none()
+
+        if existing is None:
+            session.add(
+                ACAgentRun(
+                    id=run_id,
+                    wave_id=None,
+                    issue_number=agent.issue_number,
+                    pr_number=agent.pr_number,
+                    branch=agent.branch,
+                    worktree_path=agent.worktree_path,
+                    role=agent.role,
+                    status=agent.status.value,
+                    batch_id=agent.batch_id,
+                    spawned_at=now,
+                    last_activity_at=now,
+                )
+            )
+        else:
+            existing.status = agent.status.value
+            existing.pr_number = agent.pr_number
+            existing.last_activity_at = now
+
+
+# ---------------------------------------------------------------------------
+# Role version snapshot (content-addressed insert-if-new)
+# ---------------------------------------------------------------------------
+
+
+async def persist_role_version(role_name: str, content: str) -> None:
+    """Snapshot a role file if its content has changed since last seen.
+
+    Called at startup and whenever a role file is read.  Safe to call
+    concurrently — the unique constraint on (role_name, content_hash) acts
+    as the idempotency guard.
+    """
+    content_hash = _hash(content)
+    try:
+        async with get_session() as session:
+            result = await session.execute(
+                select(ACRoleVersion).where(
+                    ACRoleVersion.role_name == role_name,
+                    ACRoleVersion.content_hash == content_hash,
+                )
+            )
+            if result.scalar_one_or_none() is None:
+                session.add(
+                    ACRoleVersion(
+                        role_name=role_name,
+                        content_hash=content_hash,
+                        content=content,
+                        first_seen_at=_now(),
+                    )
+                )
+                await session.commit()
+                logger.info("📸 Role version snapshot: %s (%s…)", role_name, content_hash[:8])
+    except Exception as exc:
+        logger.warning("⚠️  persist_role_version failed (non-fatal): %s", exc)
+
+
+# ---------------------------------------------------------------------------
+# Agent messages (async fire-and-forget)
+# ---------------------------------------------------------------------------
+
+
+async def persist_agent_messages_async(
+    agent_run_id: str,
+    messages: list[dict[str, object]],
+) -> None:
+    """Persist transcript messages without blocking the caller.
+
+    Launched as a background asyncio Task so the tick loop is never delayed
+    by transcript I/O.  Errors are swallowed — message loss is preferable to
+    a crashed poller.
+    """
+    asyncio.create_task(_write_messages(agent_run_id, messages))
+
+
+async def _write_messages(
+    agent_run_id: str,
+    messages: list[dict[str, object]],
+) -> None:
+    try:
+        async with get_session() as session:
+            # Determine the next sequence index to avoid duplicates.
+            result = await session.execute(
+                select(ACAgentMessage.sequence_index)
+                .where(ACAgentMessage.agent_run_id == agent_run_id)
+                .order_by(ACAgentMessage.sequence_index.desc())
+                .limit(1)
+            )
+            last_seq = result.scalar_one_or_none()
+            start_idx = (last_seq + 1) if last_seq is not None else 0
+            now = _now()
+
+            for i, msg in enumerate(list(messages)[start_idx:], start=start_idx):
+                session.add(
+                    ACAgentMessage(
+                        agent_run_id=agent_run_id,
+                        role=str(msg.get("role", "unknown")),
+                        content=str(msg.get("content", "")) or None,
+                        tool_name=str(msg.get("tool_name", "")) or None,
+                        sequence_index=i,
+                        recorded_at=now,
+                    )
+                )
+            await session.commit()
+    except Exception as exc:
+        logger.warning("⚠️  _write_messages failed (non-fatal): %s", exc)

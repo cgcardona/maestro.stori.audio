@@ -36,6 +36,13 @@ class AgentCeptionSettings(BaseSettings):
     gh_repo: str = "cgcardona/maestro"
     poll_interval_seconds: int = 5
     github_cache_seconds: int = 10
+    database_url: str | None = None
+    """Async database URL for AgentCeption's own ac_* tables.
+
+    Set via ``AC_DATABASE_URL`` env var (docker-compose injects this).
+    Falls back to a local SQLite file when absent so the service starts
+    without Postgres in pure-filesystem dev mode.
+    """
 
     @model_validator(mode="after")
     def _apply_active_project(self) -> AgentCeptionSettings:
