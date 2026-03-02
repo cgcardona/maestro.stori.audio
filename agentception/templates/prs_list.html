@@ -3,17 +3,21 @@
 {% block title %}AgentCeption — Pull Requests{% endblock %}
 
 {% block content %}
-<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem;">
+<div class="page-header">
   <div>
-    <h1 class="section-title" style="margin-bottom:0.25rem;">Pull Requests</h1>
+    <h1 class="page-title">Pull Requests</h1>
     {% if prs %}
-    <p style="color:var(--text-muted);font-size:0.85rem;margin:0;">{{ prs|length }} PR{{ 's' if prs|length != 1 }} — sourced from Postgres (<a href="https://github.com/{{ gh_repo }}/pulls" target="_blank" style="color:var(--accent);">view on GitHub ↗</a>)</p>
+    <p class="page-subtitle">
+      {{ prs|length }} PR{{ 's' if prs|length != 1 }} — Postgres cache
+      &nbsp;·&nbsp;
+      <a href="https://github.com/{{ gh_repo }}/pulls" target="_blank" rel="noopener">view on GitHub ↗</a>
+    </p>
     {% endif %}
   </div>
-  <div style="display:flex;gap:0.5rem;">
-    <a href="/prs?state=open" class="btn {% if state == 'open' %}btn-primary{% else %}btn-secondary{% endif %}">Open</a>
-    <a href="/prs?state=merged" class="btn {% if state == 'merged' %}btn-primary{% else %}btn-secondary{% endif %}">Merged</a>
-    <a href="/prs" class="btn {% if not state %}btn-primary{% else %}btn-secondary{% endif %}">All</a>
+  <div class="filter-group">
+    <a href="/prs?state=open"   class="btn btn-sm {% if state == 'open' %}btn-primary{% else %}btn-secondary{% endif %}">Open</a>
+    <a href="/prs?state=merged" class="btn btn-sm {% if state == 'merged' %}btn-primary{% else %}btn-secondary{% endif %}">Merged</a>
+    <a href="/prs"              class="btn btn-sm {% if not state %}btn-primary{% else %}btn-secondary{% endif %}">All</a>
   </div>
 </div>
 
@@ -24,9 +28,9 @@
       <tr>
         <th style="width:3.5rem;">#</th>
         <th>Title</th>
-        <th style="width:6rem;">State</th>
-        <th style="width:9rem;">Branch</th>
-        <th style="width:5.5rem;">Issue</th>
+        <th style="width:5.5rem;">State</th>
+        <th style="width:10rem;">Branch</th>
+        <th style="width:5rem;">Issue</th>
         <th style="width:7rem;">Merged</th>
       </tr>
     </thead>
@@ -34,25 +38,30 @@
       {% for pr in prs %}
       <tr>
         <td>
-          <a href="/prs/{{ pr.number }}" style="font-weight:600;font-family:monospace;">#{{ pr.number }}</a>
+          <a href="/prs/{{ pr.number }}">#{{ pr.number }}</a>
         </td>
-        <td style="max-width:280px;">
-          <a href="/prs/{{ pr.number }}" style="color:var(--text-primary);">{{ pr.title }}</a>
+        <td style="max-width:320px;">
+          <a href="/prs/{{ pr.number }}" style="color:var(--text-primary);font-family:var(--font-sans);">{{ pr.title }}</a>
         </td>
         <td>
-          <span class="badge {% if pr.state == 'open' %}badge--green{% elif pr.state == 'merged' %}badge--purple{% else %}badge--grey{% endif %}">
+          <span class="badge
+            {% if pr.state == 'open' %}badge--green
+            {% elif pr.state == 'merged' %}badge--purple
+            {% else %}badge--grey{% endif %}">
             {{ pr.state }}
           </span>
         </td>
-        <td style="font-size:0.72rem;">
-          <code>{{ pr.head_ref or '—' }}</code>
+        <td>
+          {% if pr.head_ref %}
+          <code style="font-size:0.6875rem;color:var(--text-secondary);">{{ pr.head_ref }}</code>
+          {% else %}<span class="text-muted">—</span>{% endif %}
         </td>
         <td>
           {% if pr.closes_issue_number %}
-          <a href="/issues/{{ pr.closes_issue_number }}" style="font-family:monospace;">#{{ pr.closes_issue_number }}</a>
-          {% else %}—{% endif %}
+          <a href="/issues/{{ pr.closes_issue_number }}">#{{ pr.closes_issue_number }}</a>
+          {% else %}<span class="text-muted">—</span>{% endif %}
         </td>
-        <td style="font-size:0.75rem;color:var(--text-muted);">
+        <td style="font-size:0.75rem;color:var(--text-muted);font-variant-numeric:tabular-nums;">
           {{ pr.merged_at[:10] if pr.merged_at else '—' }}
         </td>
       </tr>
@@ -61,8 +70,9 @@
   </table>
 </div>
 {% else %}
-<div class="card">
-  <p class="text-muted empty-state">No pull requests found{% if state %} with state "{{ state }}"{% endif %}. The poller syncs every few seconds.</p>
+<div class="card empty-state">
+  <p>No pull requests found{% if state %} with state "{{ state }}"{% endif %}.</p>
+  <p class="text-sm mt-1">The poller syncs every few seconds.</p>
 </div>
 {% endif %}
 
