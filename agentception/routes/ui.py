@@ -314,6 +314,28 @@ async def agent_detail(request: Request, agent_id: str) -> Response:
             status_code=404,
         )
 
+    # If the agent left the live poller state but exists in the DB (historical
+    # run), synthesize a lightweight AgentNode so the template can render its
+    # normal detail view without needing two code paths.
+    if node is None and db_run is not None:
+        from agentception.models import AgentStatus as _AgentStatus
+        raw_status = str(db_run.get("status", "unknown")).lower()
+        try:
+            synth_status = _AgentStatus(raw_status)
+        except ValueError:
+            synth_status = _AgentStatus.UNKNOWN
+        raw_id = str(db_run.get("id", agent_id))
+        node = AgentNode(
+            id=Path(raw_id).name if "/" in raw_id else raw_id,
+            role=str(db_run.get("role", "unknown")),
+            status=synth_status,
+            issue_number=db_run.get("issue_number"),  # type: ignore[arg-type]
+            pr_number=db_run.get("pr_number"),  # type: ignore[arg-type]
+            branch=db_run.get("branch"),  # type: ignore[arg-type]
+            batch_id=db_run.get("batch_id"),  # type: ignore[arg-type]
+            worktree_path=db_run.get("worktree_path"),  # type: ignore[arg-type]
+        )
+
     # Filesystem transcript takes priority — it's the live Cursor session.
     messages: list[dict[str, str]] = []
     if node and node.transcript_path:
