@@ -112,7 +112,7 @@
           data-words="{{ t.word_count }}"
           data-subagents="{{ t.subagent_count }}"
           class="transcript-row"
-          onclick="window.location='/transcripts/{{ t.uuid }}'"
+          @click="window.location='/transcripts/{{ t.uuid }}'"
           title="Open conversation {{ t.uuid }}"
         >
           {# UUID #}
@@ -166,7 +166,7 @@
           {# Linked issues #}
           <td class="transcript-issues-cell">
             {% for n in (t.linked_issues or [])[:3] %}
-            <a href="/issues/{{ n }}" onclick="event.stopPropagation();" class="issue-link">#{{ n }}</a>{% if not loop.last %} {% endif %}
+            <a href="/issues/{{ n }}" @click.stop class="issue-link">#{{ n }}</a>{% if not loop.last %} {% endif %}
             {% endfor %}
             {% if (t.linked_issues | length) > 3 %}
             <span class="text-muted">+{{ (t.linked_issues | length) - 3 }}</span>
