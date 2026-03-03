@@ -31,13 +31,13 @@
     <span class="brand">⚡ Agentception</span>
 
     {# ── Primary nav: Plan → Build → Ship ───────────────────────────────── #}
-    <a href="/brain-dump" class="nav-cta {% if request.url.path.startswith('/brain-dump') %}active{% endif %}">Plan</a>
+    <a href="/plan" class="nav-cta {% if request.url.path.startswith('/plan') %}active{% endif %}">Plan</a>
     <a href="/org-chart"  class="{% if request.url.path.startswith('/org-chart') %}active{% endif %}">Build</a>
     <a href="/controls"   class="{% if request.url.path.startswith('/controls') %}active{% endif %}">Ship</a>
 
     {# ── Secondary pages — temporarily hidden while 1-2-3 flow is primary ─ #}
     {#
-    <a href="/brain-dump" class="nav-cta {% if request.url.path.startswith('/brain-dump') %}active{% endif %}">Brain Dump</a>
+    <a href="/plan" class="nav-cta {% if request.url.path.startswith('/plan') %}active{% endif %}">Plan</a>
     <a href="/agents"   class="{% if request.url.path.startswith('/agents') %}active{% endif %}">Agents</a>
     <a href="/telemetry" class="{% if request.url.path.startswith('/telemetry') %}active{% endif %}">Telemetry</a>
     <a href="/roles"    class="{% if request.url.path.startswith('/roles') %}active{% endif %}">Roles</a>
