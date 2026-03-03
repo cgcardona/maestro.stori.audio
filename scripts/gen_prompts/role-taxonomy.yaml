@@ -7,6 +7,10 @@
 #
 # Spawnable roles are those that can be assigned to a leaf agent via POST /api/control/spawn.
 # Orchestration roles (CTO, VPs, Coordinator) are spawnable only through the CTO pipeline.
+#
+# The system is intentionally not limited to tech startups. Any hierarchy of cognitive
+# archetypes can be composed here: research labs, creative studios, government agencies,
+# scientific expeditions, military units, or any domain the user defines.
 
 levels:
   - id: c_suite
@@ -23,8 +27,17 @@ levels:
           - steve_jobs
           - satya_nadella
           - jeff_bezos
-          - einstein
-          - von_neumann
+          - bill_gates
+          - paul_graham
+          - patrick_collison
+          - sam_altman
+          - elon_musk
+          - andy_grove
+          - peter_drucker
+          - sun_tzu
+          - da_vinci
+          - newton
+          - darwin
         compatible_skill_domains:
           - llm
           - python
@@ -42,6 +55,16 @@ levels:
           - turing
           - shannon
           - von_neumann
+          - jeff_dean
+          - leslie_lamport
+          - vint_cerf
+          - ken_thompson
+          - rob_pike
+          - anders_hejlsberg
+          - linus_torvalds
+          - bjarne_stroustrup
+          - barbara_liskov
+          - wozniak
         compatible_skill_domains:
           - fastapi
           - postgresql
@@ -61,6 +84,11 @@ levels:
           - lovelace
           - feynman
           - einstein
+          - don_norman
+          - paul_graham
+          - patrick_collison
+          - da_vinci
+          - nassim_taleb
         compatible_skill_domains:
           - llm
           - javascript
@@ -76,6 +104,9 @@ levels:
           - von_neumann
           - hamming
           - shannon
+          - nassim_taleb
+          - andy_grove
+          - peter_drucker
         compatible_skill_domains:
           - python
           - postgresql
@@ -92,6 +123,8 @@ levels:
           - bruce_schneier
           - dijkstra
           - knuth
+          - nassim_taleb
+          - sun_tzu
         compatible_skill_domains:
           - devops
           - python
@@ -109,6 +142,9 @@ levels:
           - shannon
           - von_neumann
           - hamming
+          - fei_fei_li
+          - geoffrey_hinton
+          - jeff_dean
         compatible_skill_domains:
           - postgresql
           - python
@@ -126,6 +162,8 @@ levels:
           - satya_nadella
           - feynman
           - lovelace
+          - carl_sagan
+          - paul_graham
         compatible_skill_domains:
           - javascript
           - llm
@@ -142,6 +180,9 @@ levels:
           - hamming
           - ritchie
           - hopper
+          - andy_grove
+          - peter_drucker
+          - sun_tzu
         compatible_skill_domains:
           - python
           - devops
@@ -165,6 +206,12 @@ levels:
           - hopper
           - hamming
           - ritchie
+          - ken_thompson
+          - rob_pike
+          - jeff_dean
+          - barbara_liskov
+          - andy_grove
+          - joe_armstrong
         compatible_skill_domains:
           - fastapi
           - python
@@ -184,6 +231,9 @@ levels:
           - margaret_hamilton
           - turing
           - bruce_schneier
+          - barbara_liskov
+          - marie_curie
+          - leslie_lamport
         compatible_skill_domains:
           - python
           - fastapi
@@ -201,6 +251,9 @@ levels:
           - lovelace
           - feynman
           - einstein
+          - don_norman
+          - paul_graham
+          - da_vinci
         compatible_skill_domains:
           - llm
           - javascript
@@ -218,6 +271,8 @@ levels:
           - steve_jobs
           - feynman
           - einstein
+          - don_norman
+          - da_vinci
         compatible_skill_domains:
           - javascript
           - alpine
@@ -236,6 +291,10 @@ levels:
           - shannon
           - hamming
           - von_neumann
+          - fei_fei_li
+          - jeff_dean
+          - darwin
+          - marie_curie
         compatible_skill_domains:
           - postgresql
           - python
@@ -253,6 +312,8 @@ levels:
           - dijkstra
           - margaret_hamilton
           - knuth
+          - sun_tzu
+          - nassim_taleb
         compatible_skill_domains:
           - devops
           - python
@@ -270,6 +331,9 @@ levels:
           - linus_torvalds
           - werner_vogels
           - hopper
+          - vint_cerf
+          - ken_thompson
+          - joe_armstrong
         compatible_skill_domains:
           - devops
           - python
@@ -287,6 +351,8 @@ levels:
           - lovelace
           - steve_jobs
           - ritchie
+          - wozniak
+          - don_norman
         compatible_skill_domains:
           - javascript
           - devops
@@ -303,6 +369,10 @@ levels:
           - mccarthy
           - turing
           - bjarne_stroustrup
+          - vint_cerf
+          - tim_berners_lee
+          - patrick_collison
+          - anders_hejlsberg
         compatible_skill_domains:
           - fastapi
           - python
@@ -322,6 +392,10 @@ levels:
           - turing
           - shannon
           - von_neumann
+          - geoffrey_hinton
+          - ilya_sutskever
+          - demis_hassabis
+          - fei_fei_li
         compatible_skill_domains:
           - python
           - llm
@@ -346,6 +420,9 @@ levels:
           - turing
           - dijkstra
           - shannon
+          - dhh
+          - rich_hickey
+          - nassim_taleb
         compatible_skill_domains:
           - python
           - fastapi
@@ -365,10 +442,14 @@ levels:
           - knuth
           - shannon
           - hamming
+          - leslie_lamport
+          - rich_hickey
+          - barbara_liskov
         compatible_skill_domains:
           - postgresql
           - python
           - fastapi
+          - sql
         file_exists: true
 
       - slug: pr-reviewer
@@ -383,6 +464,9 @@ levels:
           - margaret_hamilton
           - turing
           - shannon
+          - barbara_liskov
+          - marie_curie
+          - linus_torvalds
         compatible_skill_domains:
           - python
           - fastapi
@@ -400,6 +484,9 @@ levels:
           - hopper
           - feynman
           - ritchie
+          - don_norman
+          - brendan_eich
+          - da_vinci
         compatible_skill_domains:
           - htmx
           - alpine
@@ -419,6 +506,8 @@ levels:
           - feynman
           - ritchie
           - hamming
+          - dhh
+          - don_norman
         compatible_skill_domains:
           - python
           - fastapi
@@ -439,7 +528,11 @@ levels:
           - hopper
           - ritchie
           - steve_jobs
+          - wozniak
+          - don_norman
         compatible_skill_domains:
+          - swift
+          - swift_ui
           - javascript
           - devops
         file_exists: false
@@ -456,7 +549,14 @@ levels:
           - dijkstra
           - knuth
           - bjarne_stroustrup
+          - graydon_hoare
+          - ken_thompson
+          - fabrice_bellard
+          - wozniak
+          - nikola_tesla
         compatible_skill_domains:
+          - rust
+          - cpp
           - python
           - devops
         file_exists: false
@@ -473,9 +573,14 @@ levels:
           - turing
           - shannon
           - von_neumann
+          - geoffrey_hinton
+          - ilya_sutskever
+          - fei_fei_li
+          - john_carmack
         compatible_skill_domains:
           - python
           - llm
+          - pytorch
           - postgresql
         file_exists: false
 
@@ -490,10 +595,14 @@ levels:
           - hamming
           - von_neumann
           - dijkstra
+          - jeff_dean
+          - darwin
         compatible_skill_domains:
           - postgresql
           - python
           - fastapi
+          - kafka
+          - sql
         file_exists: false
 
       - slug: devops-engineer
@@ -507,8 +616,15 @@ levels:
           - hopper
           - linus_torvalds
           - hamming
+          - vint_cerf
+          - ken_thompson
+          - joe_armstrong
         compatible_skill_domains:
           - devops
+          - docker
+          - kubernetes
+          - terraform
+          - aws
           - python
           - postgresql
         file_exists: false
@@ -524,10 +640,13 @@ levels:
           - dijkstra
           - margaret_hamilton
           - knuth
+          - sun_tzu
+          - nassim_taleb
         compatible_skill_domains:
           - python
           - devops
           - postgresql
+          - application_security
         file_exists: false
 
       - slug: test-engineer
@@ -541,11 +660,15 @@ levels:
           - knuth
           - margaret_hamilton
           - turing
+          - barbara_liskov
+          - marie_curie
+          - leslie_lamport
         compatible_skill_domains:
           - python
           - fastapi
           - postgresql
           - htmx
+          - testing
         file_exists: false
 
       - slug: architect
@@ -561,6 +684,11 @@ levels:
           - shannon
           - mccarthy
           - bjarne_stroustrup
+          - barbara_liskov
+          - leslie_lamport
+          - rich_hickey
+          - vint_cerf
+          - joe_armstrong
         compatible_skill_domains:
           - python
           - fastapi
@@ -580,11 +708,15 @@ levels:
           - mccarthy
           - turing
           - hopper
+          - vint_cerf
+          - tim_berners_lee
+          - anders_hejlsberg
         compatible_skill_domains:
           - fastapi
           - python
           - postgresql
           - javascript
+          - graphql
         file_exists: false
 
       - slug: technical-writer
@@ -598,8 +730,220 @@ levels:
           - hopper
           - lovelace
           - knuth
+          - carl_sagan
+          - don_norman
+          - paul_graham
         compatible_skill_domains:
           - python
           - llm
           - jinja2
+        file_exists: false
+
+      # ── New Worker Roles ──────────────────────────────────────────────────────
+
+      - slug: rust-developer
+        label: "Rust Developer"
+        title: "Rust / Systems Developer"
+        category: systems
+        description: "Memory-safe systems programming in Rust: ownership model, zero-cost abstractions, async Tokio services."
+        spawnable: true
+        compatible_figures:
+          - graydon_hoare
+          - ken_thompson
+          - ritchie
+          - linus_torvalds
+          - bjarne_stroustrup
+          - fabrice_bellard
+          - john_carmack
+          - wozniak
+        compatible_skill_domains:
+          - rust
+          - systems
+          - cpp
+          - devops
+        file_exists: false
+
+      - slug: go-developer
+        label: "Go Developer"
+        title: "Go / Backend Developer"
+        category: engineering
+        description: "Idiomatic Go services: goroutines, channels, net/http, gRPC, structured concurrency."
+        spawnable: true
+        compatible_figures:
+          - rob_pike
+          - ken_thompson
+          - ritchie
+          - joe_armstrong
+          - vint_cerf
+        compatible_skill_domains:
+          - go
+          - devops
+          - postgresql
+          - python
+        file_exists: false
+
+      - slug: typescript-developer
+        label: "TypeScript Developer"
+        title: "TypeScript / Full-Stack Developer"
+        category: frontend
+        description: "Type-safe full-stack TypeScript: strict mode, Zod validation, React/Next.js, Node.js APIs."
+        spawnable: true
+        compatible_figures:
+          - anders_hejlsberg
+          - brendan_eich
+          - ryan_dahl
+          - lovelace
+          - don_norman
+        compatible_skill_domains:
+          - typescript
+          - javascript
+          - react
+          - nextjs
+          - nodejs
+        file_exists: false
+
+      - slug: ios-developer
+        label: "iOS / macOS Developer"
+        title: "iOS / macOS Developer"
+        category: mobile
+        description: "Swift/SwiftUI applications for Apple platforms. Concurrency with async/await and Actors."
+        spawnable: true
+        compatible_figures:
+          - steve_jobs
+          - wozniak
+          - lovelace
+          - don_norman
+          - hopper
+        compatible_skill_domains:
+          - swift
+          - swift_ui
+          - devops
+        file_exists: false
+
+      - slug: android-developer
+        label: "Android Developer"
+        title: "Android / Kotlin Developer"
+        category: mobile
+        description: "Kotlin and Jetpack Compose for Android. Coroutines, StateFlow, MVVM architecture."
+        spawnable: true
+        compatible_figures:
+          - james_gosling
+          - lovelace
+          - don_norman
+          - hopper
+          - ritchie
+        compatible_skill_domains:
+          - kotlin
+          - java
+          - devops
+        file_exists: false
+
+      - slug: rails-developer
+        label: "Rails Developer"
+        title: "Ruby on Rails Developer"
+        category: engineering
+        description: "Convention-over-configuration Rails apps: ActiveRecord, Turbo/Hotwire, Sidekiq, REST APIs."
+        spawnable: true
+        compatible_figures:
+          - dhh
+          - matz
+          - kent_beck
+          - martin_fowler
+          - hopper
+        compatible_skill_domains:
+          - rails
+          - ruby
+          - postgresql
+          - javascript
+        file_exists: false
+
+      - slug: react-developer
+        label: "React Developer"
+        title: "React / Frontend Developer"
+        category: frontend
+        description: "Modern React with TypeScript: hooks, React Query, component architecture, testing."
+        spawnable: true
+        compatible_figures:
+          - brendan_eich
+          - anders_hejlsberg
+          - ryan_dahl
+          - lovelace
+          - don_norman
+        compatible_skill_domains:
+          - react
+          - typescript
+          - javascript
+          - nextjs
+        file_exists: false
+
+      - slug: site-reliability-engineer
+        label: "Site Reliability Engineer"
+        title: "Site Reliability Engineer (SRE)"
+        category: infrastructure
+        description: "Owns availability, latency, error budgets, SLOs/SLIs, incident response, and chaos engineering."
+        spawnable: true
+        compatible_figures:
+          - werner_vogels
+          - linus_torvalds
+          - hopper
+          - joe_armstrong
+          - vint_cerf
+          - nassim_taleb
+          - andy_grove
+        compatible_skill_domains:
+          - devops
+          - kubernetes
+          - python
+          - postgresql
+          - aws
+        file_exists: false
+
+      - slug: ml-researcher
+        label: "ML Researcher"
+        title: "Machine Learning Researcher"
+        category: ml_ai
+        description: "Novel ML research: architecture design, training dynamics, evaluation methodology, paper-level rigour."
+        spawnable: true
+        compatible_figures:
+          - andrej_karpathy
+          - geoffrey_hinton
+          - ilya_sutskever
+          - yann_lecun
+          - fei_fei_li
+          - demis_hassabis
+          - turing
+          - shannon
+          - von_neumann
+          - darwin
+          - linus_pauling
+          - marie_curie
+        compatible_skill_domains:
+          - python
+          - pytorch
+          - llm
+          - postgresql
+        file_exists: false
+
+      - slug: data-scientist
+        label: "Data Scientist"
+        title: "Data Scientist"
+        category: data
+        description: "Statistical analysis, experiment design, A/B testing, ML modeling, and insight communication."
+        spawnable: true
+        compatible_figures:
+          - shannon
+          - hamming
+          - von_neumann
+          - darwin
+          - marie_curie
+          - feynman
+          - nassim_taleb
+          - fei_fei_li
+          - carl_sagan
+        compatible_skill_domains:
+          - python
+          - postgresql
+          - sql
+          - pytorch
+          - llm
         file_exists: false
