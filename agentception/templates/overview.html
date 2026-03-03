@@ -236,6 +236,137 @@
   x-cloak
 >
 
+  {# ── Run Conductor panel — own Alpine scope, listens for dispatch ──────── #}
+  <div
+    x-data='runConductorPanel({{ active_phase_label | tojson }}, {{ all_phase_labels | tojson }}, {{ active_org | tojson }})'
+    x-init="init()"
+    @open-run-conductor-modal.window="open = true; fetchHistory()"
+    @keydown.escape.window="if (open) dismiss()"
+  >
+    <div
+      class="modal-backdrop"
+      x-show="open"
+      x-cloak
+      x-transition.opacity
+      @click.self="dismiss()"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="run-conductor-modal-title"
+    >
+      <div class="modal-box">
+        <h2 class="modal-title" id="run-conductor-modal-title">🎼 Run Conductor</h2>
+
+        <template x-if="!result && !launching && !error">
+          <div>
+            <p class="modal-body">
+              Spawn a conductor agent for the active phase. The conductor will
+              orchestrate sub-agents across all unclaimed issues without manual
+              intervention per-issue.
+            </p>
+            <template x-if="activeLabel">
+              <p class="text-muted mt-1" style="font-size:0.9rem;">
+                Phase: <span class="label-chip label-chip--active" x-text="activeLabel"></span>
+                <template x-if="activeOrg">
+                  &nbsp;· Org: <code x-text="activeOrg"></code>
+                </template>
+              </p>
+            </template>
+            <template x-if="!activeLabel">
+              <p class="text-muted mt-1">No active phase configured — set <code>active_labels_order</code> in pipeline-config.json.</p>
+            </template>
+            <div class="modal-actions">
+              <button class="btn btn-secondary" @click="dismiss()">Cancel</button>
+              <button
+                class="btn btn-primary"
+                @click="launch()"
+                :disabled="!activeLabel"
+              >Run Conductor</button>
+            </div>
+          </div>
+        </template>
+
+        <template x-if="launching">
+          <div class="flex-row gap-1 mt-1" style="align-items:center;">
+            <span class="agent-pulse agent-pulse--implementing"></span>
+            <span class="text-muted">Spawning conductor worktree…</span>
+          </div>
+        </template>
+
+        <template x-if="result && !launching">
+          <div>
+            <p class="text-success mt-1">✅ Conductor ready — open the folder in Cursor to start.</p>
+            <div class="flex-row gap-1 mt-1" style="align-items:center;flex-wrap:wrap;">
+              <code style="font-size:0.8rem;word-break:break-all;" x-text="result.host_worktree"></code>
+              <button
+                class="btn btn-secondary"
+                style="padding:2px 8px;font-size:0.8rem;"
+                @click="copyPath(result.host_worktree)"
+                x-text="copied ? '✅ Copied!' : '📋 Copy path'"
+              ></button>
+            </div>
+            <p class="text-muted mt-1" style="font-size:0.85rem;">
+              Open this folder in Cursor — the conductor will start automatically.
+            </p>
+            <p class="mt-1" style="font-size:0.85rem;">
+              <a href="/agents" class="btn btn-sm btn-secondary">Monitor agents →</a>
+            </p>
+            <div class="modal-actions">
+              <button class="btn btn-secondary" @click="dismiss()">Close</button>
+            </div>
+          </div>
+        </template>
+
+        <template x-if="error && !launching">
+          <div>
+            <div class="alert-banner mt-1" role="alert">
+              <span>❌</span>
+              <span x-text="error"></span>
+            </div>
+            <div class="modal-actions">
+              <button class="btn btn-secondary" @click="dismiss()">Close</button>
+              <button class="btn btn-primary" @click="error = null; result = null">Try Again</button>
+            </div>
+          </div>
+        </template>
+
+        {# ── History section ─────────────────────────────────────────────── #}
+        <template x-if="history.length > 0">
+          <div class="mt-2" style="border-top:1px solid var(--border);padding-top:0.75rem;">
+            <button
+              class="btn btn-sm btn-secondary"
+              style="font-size:0.8rem;margin-bottom:0.5rem;"
+              @click="historyOpen = !historyOpen"
+              x-text="historyOpen ? '▾ Hide history' : '▸ Show last ' + history.length + ' conductor' + (history.length === 1 ? '' : 's')"
+            ></button>
+            <template x-if="historyOpen">
+              <div>
+                <template x-for="entry in history" :key="entry.wave_id">
+                  <div style="margin-bottom:0.5rem;padding:0.4rem 0.5rem;background:var(--bg-secondary);border-radius:4px;font-size:0.8rem;">
+                    <div class="flex-row gap-1" style="align-items:center;flex-wrap:wrap;">
+                      <span
+                        class="badge"
+                        :class="entry.status === 'active' ? 'badge--green' : 'badge--dim'"
+                        x-text="entry.status"
+                      ></span>
+                      <code style="word-break:break-all;flex:1;" x-text="entry.host_worktree"></code>
+                      <button
+                        class="btn btn-sm btn-secondary"
+                        style="padding:1px 6px;font-size:0.75rem;"
+                        @click="copyPath(entry.host_worktree)"
+                      >📋</button>
+                    </div>
+                    <div class="text-muted" style="margin-top:0.2rem;" x-text="entry.started_at"></div>
+                  </div>
+                </template>
+              </div>
+            </template>
+          </div>
+        </template>
+
+      </div>
+    </div>
+  </div>
+
   {# ── Conductor modal — own Alpine scope, listens for dispatch ──────────── #}
   <div
     x-data='conductorModal({{ state.model_dump() | tojson }})'
@@ -646,6 +777,13 @@
               :title="state.agents && state.agents.length > 0 ? 'Cannot launch while agents are active' : 'Launch a conductor agent across selected phases'"
               aria-label="Launch conductor wave"
             >🚀 Launch Wave</button>
+            <button
+              class="btn btn-secondary"
+              style="font-size:0.85rem;"
+              @click="$dispatch('open-run-conductor-modal')"
+              title="Spawn a conductor agent for the active phase"
+              aria-label="Run conductor agent"
+            >🎼 Run Conductor</button>
           </div>
           <template x-if="state.active_label && state.board_issues && state.board_issues.length > 0 && unclaimedCount() === 0">
             <span class="badge badge--green">All claimed ✓</span>

@@ -624,6 +624,91 @@ export function conductorModal(initial) {
 }
 
 /**
+ * "Run Conductor" button panel — one-click conductor spawn with result modal and history.
+ *
+ * Dispatched to by the `open-run-conductor-modal` custom event from the
+ * secondary "Run Conductor" button in the wave-control-card header.
+ * Calls POST /api/control/spawn-conductor with the active phase and org,
+ * then shows the result in a modal with a copy-path affordance.
+ *
+ * @param {string|null} activeLabel - Server-rendered active phase label.
+ * @param {string[]}    allLabels   - All configured phase labels (fallback).
+ * @param {string|null} activeOrg   - active_org from pipeline-config.json.
+ */
+export function runConductorPanel(activeLabel, allLabels, activeOrg) {
+  return {
+    open: false,
+    launching: false,
+    result: null,
+    error: null,
+    history: [],
+    historyOpen: false,
+    activeLabel,
+    allLabels,
+    activeOrg,
+    copied: false,
+
+    init() {
+      this.fetchHistory();
+    },
+
+    async fetchHistory() {
+      try {
+        const resp = await fetch('/api/control/conductor-history');
+        if (resp.ok) this.history = await resp.json();
+      } catch (_) {
+        // Non-fatal — history section stays empty.
+      }
+    },
+
+    async launch() {
+      const phases = this.activeLabel ? [this.activeLabel] : this.allLabels;
+      if (!phases.length) {
+        this.error = 'No active phase configured — set active_labels_order in pipeline-config.json.';
+        return;
+      }
+      this.launching = true;
+      this.result = null;
+      this.error = null;
+      try {
+        const resp = await fetch('/api/control/spawn-conductor', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ phases, org: this.activeOrg || null }),
+        });
+        const data = await resp.json();
+        if (!resp.ok) {
+          this.error = data.detail ?? `HTTP ${resp.status}`;
+        } else {
+          this.result = data;
+          await this.fetchHistory();
+        }
+      } catch (err) {
+        this.error = `Network error: ${err.message}`;
+      } finally {
+        this.launching = false;
+      }
+    },
+
+    async copyPath(path) {
+      if (!path) return;
+      try {
+        await navigator.clipboard.writeText(path);
+        this.copied = true;
+        setTimeout(() => { this.copied = false; }, 2000);
+      } catch (_) {}
+    },
+
+    dismiss() {
+      this.open = false;
+      this.result = null;
+      this.error = null;
+      this.copied = false;
+    },
+  };
+}
+
+/**
  * Powers each issue card in the GitHub Board's open issues list.
  *
  * Keeps the inline fetch out of the template.  The analysisHtml is injected

@@ -12,6 +12,8 @@ from typing import Any
 
 from sqlalchemy import select, text
 
+from pathlib import Path
+
 from agentception.db.engine import get_session
 from agentception.db.models import (
     ACAgentMessage,
@@ -19,6 +21,7 @@ from agentception.db.models import (
     ACIssue,
     ACPipelineSnapshot,
     ACPullRequest,
+    ACWave,
 )
 
 logger = logging.getLogger(__name__)
@@ -632,3 +635,56 @@ async def get_merged_prs_count(repo: str, hours: int = 24) -> int:
     except Exception as exc:
         logger.warning("⚠️  get_merged_prs_count failed (non-fatal): %s", exc)
         return 0
+
+
+# ---------------------------------------------------------------------------
+# Conductor spawn history
+# ---------------------------------------------------------------------------
+
+
+async def get_conductor_history(
+    limit: int = 5,
+    worktrees_dir: Path | None = None,
+    host_worktrees_dir: Path | None = None,
+) -> list[dict[str, Any]]:
+    """Return the last *limit* conductor spawns with current active/completed status.
+
+    Status is ``"active"`` when the worktree directory still exists on disk and
+    ``"completed"`` once it has been removed.  Falls back to ``[]`` on any DB
+    error so the UI degrades gracefully without surfacing the error to the user.
+    """
+    from sqlalchemy import desc
+
+    from agentception.config import settings
+
+    wt_dir = worktrees_dir or settings.worktrees_dir
+    host_wt_dir = host_worktrees_dir or settings.host_worktrees_dir
+
+    try:
+        async with get_session() as session:
+            stmt = (
+                select(ACWave)
+                .where(ACWave.role == "conductor")
+                .order_by(desc(ACWave.started_at))
+                .limit(limit)
+            )
+            result = await session.execute(stmt)
+            waves = result.scalars().all()
+
+        entries: list[dict[str, Any]] = []
+        for wave in waves:
+            worktree = Path(wt_dir) / wave.id
+            host_worktree = Path(host_wt_dir) / wave.id
+            entries.append(
+                {
+                    "wave_id": wave.id,
+                    "worktree": str(worktree),
+                    "host_worktree": str(host_worktree),
+                    "started_at": wave.started_at.strftime("%Y-%m-%d %H:%M UTC"),
+                    "status": "active" if worktree.exists() else "completed",
+                }
+            )
+        return entries
+    except Exception as exc:
+        logger.warning("⚠️  get_conductor_history DB query failed (non-fatal): %s", exc)
+        return []

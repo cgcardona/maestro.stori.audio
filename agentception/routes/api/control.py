@@ -640,6 +640,31 @@ async def spawn_coordinator(body: SpawnCoordinatorRequest) -> SpawnCoordinatorRe
     )
 
 
+class ConductorHistoryEntry(BaseModel):
+    """One entry in the conductor spawn history returned by ``GET /control/conductor-history``."""
+
+    wave_id: str
+    worktree: str
+    host_worktree: str
+    started_at: str
+    status: str  # "active" (worktree exists) | "completed" (worktree removed)
+
+
+@router.get("/control/conductor-history", tags=["control"])
+async def conductor_history() -> list[ConductorHistoryEntry]:
+    """Return the last 5 conductor spawns with their current status.
+
+    Status is ``"active"`` when the worktree directory is still present on disk
+    and ``"completed"`` once it has been removed.  Returns ``[]`` when the DB
+    is unavailable rather than raising an error — callers should treat an empty
+    list as "no history yet."
+    """
+    from agentception.db.queries import get_conductor_history
+
+    entries = await get_conductor_history(limit=5)
+    return [ConductorHistoryEntry(**e) for e in entries]
+
+
 @router.post("/control/spawn-conductor", tags=["control"])
 async def spawn_conductor(body: SpawnConductorRequest) -> SpawnConductorResult:
     """Seed a conductor worktree that orchestrates a multi-phase wave.
