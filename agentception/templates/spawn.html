@@ -25,6 +25,7 @@
   attribute boundary. missionControl() reads them in its init() hook via $el.dataset.
 #}
 <div
+  id="spawn-form-container"
   class="spawn-page"
   x-data="missionControl()"
   data-issues='{{ issues | tojson }}'
@@ -163,7 +164,12 @@
             :aria-checked="selectedRole === '{{ role.slug }}'"
           >
             <div class="spawn-role-radio"></div>
-            <span class="spawn-role-name">{{ role.label }}</span>
+            <div class="spawn-role-body">
+              <span class="spawn-role-name">{{ role.label }}</span>
+              {% if role.description %}
+              <small class="spawn-role-desc">{{ role.description }}</small>
+              {% endif %}
+            </div>
           </div>
           {% endfor %}
         </div>

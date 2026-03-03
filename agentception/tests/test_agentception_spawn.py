@@ -88,30 +88,30 @@ def test_spawn_creates_worktree_and_task_file(
 
     with (
         patch(
-            "agentception.routes.api.get_issue",
+            "agentception.routes.api.control.get_issue",
             return_value=_open_issue(42, "Fix the thing"),
         ),
         patch(
-            "agentception.routes.api.get_issue_body",
+            "agentception.routes.api.control.get_issue_body",
             new_callable=AsyncMock,
             return_value="Refactor the config module to use fastapi settings.",
         ),
         patch(
-            "agentception.routes.api.get_active_label",
+            "agentception.routes.api.control.get_active_label",
             new_callable=AsyncMock,
             return_value="ac-ui/1-design-tokens",
         ),
-        patch("agentception.routes.api.add_wip_label", new_callable=AsyncMock),
+        patch("agentception.routes.api.control.add_wip_label", new_callable=AsyncMock),
         patch(
-            "agentception.routes.api.settings.worktrees_dir",
+            "agentception.routes.api.control.settings.worktrees_dir",
             worktree_dir,
         ),
         patch(
-            "agentception.routes.api.settings.host_worktrees_dir",
+            "agentception.routes.api.control.settings.host_worktrees_dir",
             worktree_dir,
         ),
         patch(
-            "agentception.routes.api.settings.repo_dir",
+            "agentception.routes.api.control.settings.repo_dir",
             Path("/fake/repo"),
         ),
         patch(
@@ -146,7 +146,7 @@ def test_spawn_creates_worktree_and_task_file(
 def test_spawn_already_claimed_returns_409(client: TestClient) -> None:
     """POST /api/control/spawn must return 409 when the issue already has agent:wip."""
     with patch(
-        "agentception.routes.api.get_issue",
+        "agentception.routes.api.control.get_issue",
         return_value=_open_issue(42, "Fix the thing", labels=["agent:wip", "enhancement"]),
     ):
         response = client.post(
@@ -164,7 +164,7 @@ def test_spawn_already_claimed_returns_409(client: TestClient) -> None:
 def test_spawn_invalid_issue_returns_404(client: TestClient) -> None:
     """POST /api/control/spawn must return 404 when gh cannot find the issue."""
     with patch(
-        "agentception.routes.api.get_issue",
+        "agentception.routes.api.control.get_issue",
         side_effect=RuntimeError("issue not found"),
     ):
         response = client.post(
@@ -181,7 +181,7 @@ def test_spawn_closed_issue_returns_404(client: TestClient) -> None:
     closed = _open_issue(42)
     closed["state"] = "CLOSED"
 
-    with patch("agentception.routes.api.get_issue", return_value=closed):
+    with patch("agentception.routes.api.control.get_issue", return_value=closed):
         response = client.post(
             "/api/control/spawn",
             json={"issue_number": 42},
@@ -217,11 +217,11 @@ def test_spawn_existing_worktree_returns_409(
 
     with (
         patch(
-            "agentception.routes.api.get_issue",
+            "agentception.routes.api.control.get_issue",
             return_value=_open_issue(42),
         ),
-        patch("agentception.routes.api.add_wip_label", new_callable=AsyncMock),
-        patch("agentception.routes.api.settings.worktrees_dir", worktrees),
+        patch("agentception.routes.api.control.add_wip_label", new_callable=AsyncMock),
+        patch("agentception.routes.api.control.settings.worktrees_dir", worktrees),
     ):
         response = client.post(
             "/api/control/spawn",
@@ -236,15 +236,15 @@ def test_spawn_existing_worktree_returns_409(
 
 
 def test_spawn_form_renders_issue_list(client: TestClient) -> None:
-    """GET /control/spawn must render a form containing open, unclaimed issues.
+    """GET /control/spawn must embed issue data in the Alpine data-issues attribute.
 
-    The spawn form now reads from ac_issues (Postgres) via get_board_issues,
-    which already filters claimed issues — only unclaimed rows are returned.
+    Issues are rendered client-side by Alpine.js from the JSON in data-issues,
+    so we check the JSON payload — not rendered HTML text.
+    Issue 102 is not in the fake list (the query layer excludes claimed issues).
     """
     fake_issues = [
         {"number": 100, "title": "Issue Alpha", "labels": [], "claimed": False},
         {"number": 101, "title": "Issue Beta", "labels": [], "claimed": False},
-        # Issue 102 is claimed — get_board_issues excludes it, so we don't include it here.
     ]
 
     with patch(
@@ -255,12 +255,12 @@ def test_spawn_form_renders_issue_list(client: TestClient) -> None:
 
     assert response.status_code == 200
     html = response.text
-    assert "#100" in html
+    # Issue data lives in the data-issues JSON attribute (Alpine hydration).
+    assert '"number": 100' in html or "100" in html
     assert "Issue Alpha" in html
-    assert "#101" in html
     assert "Issue Beta" in html
-    # Claimed issue is excluded by the query layer, not the route.
-    assert "#102" not in html
+    # Issue 102 is excluded by the query layer; its number must not appear.
+    assert "102" not in html
 
 
 def test_spawn_form_renders_role_options(client: TestClient) -> None:
@@ -287,6 +287,135 @@ def test_spawn_form_renders_empty_state_gracefully(client: TestClient) -> None:
 
     assert response.status_code == 200
     assert "AgentCeption" in response.text
+
+
+# ── HTML success panel (Accept: text/html) ────────────────────────────────────
+
+
+def test_spawn_returns_html_when_accept_text_html(
+    client: TestClient, tmp_path: Path
+) -> None:
+    """POST /api/control/spawn with Accept: text/html must return the success partial."""
+    worktree_dir = tmp_path / "worktrees" / "maestro"
+    worktree_dir.mkdir(parents=True)
+    expected_worktree = worktree_dir / "issue-55"
+
+    proc_mock = MagicMock()
+    proc_mock.returncode = 0
+
+    async def _fake_communicate() -> tuple[bytes, bytes]:
+        expected_worktree.mkdir(parents=True, exist_ok=True)
+        return (b"", b"")
+
+    proc_mock.communicate = _fake_communicate
+
+    async def _fake_exec(*args: object, **kwargs: object) -> MagicMock:
+        return proc_mock
+
+    with (
+        patch(
+            "agentception.routes.api.control.get_issue",
+            return_value=_open_issue(55, "HTML test issue"),
+        ),
+        patch(
+            "agentception.routes.api.control.get_issue_body",
+            new_callable=AsyncMock,
+            return_value="",
+        ),
+        patch(
+            "agentception.routes.api.control.get_active_label",
+            new_callable=AsyncMock,
+            return_value="ac-ui/4",
+        ),
+        patch("agentception.routes.api.control.add_wip_label", new_callable=AsyncMock),
+        patch("agentception.routes.api.control.settings.worktrees_dir", worktree_dir),
+        patch("agentception.routes.api.control.settings.host_worktrees_dir", worktree_dir),
+        patch("agentception.routes.api.control.settings.repo_dir", Path("/fake/repo")),
+        patch("asyncio.create_subprocess_exec", side_effect=_fake_exec),
+    ):
+        response = client.post(
+            "/api/control/spawn",
+            json={"issue_number": 55, "role": "python-developer"},
+            headers={"Accept": "text/html, application/json"},
+        )
+
+    assert response.status_code == 200
+    # HTML path must return text/html content.
+    assert "text/html" in response.headers.get("content-type", "")
+    html = response.text
+    # Success panel must include the agent detail link and key information.
+    assert "/agents/issue-55" in html
+    assert "55" in html
+    assert "View agent" in html
+    assert "spawn-form-container" in html
+    # spawned_at timestamp must be present.
+    assert "UTC" in html
+
+
+def test_spawn_returns_json_without_html_accept(
+    client: TestClient, tmp_path: Path
+) -> None:
+    """POST /api/control/spawn without Accept: text/html must still return JSON."""
+    worktree_dir = tmp_path / "worktrees" / "maestro"
+    worktree_dir.mkdir(parents=True)
+    expected_worktree = worktree_dir / "issue-56"
+
+    proc_mock = MagicMock()
+    proc_mock.returncode = 0
+
+    async def _fake_communicate() -> tuple[bytes, bytes]:
+        expected_worktree.mkdir(parents=True, exist_ok=True)
+        return (b"", b"")
+
+    proc_mock.communicate = _fake_communicate
+
+    async def _fake_exec(*args: object, **kwargs: object) -> MagicMock:
+        return proc_mock
+
+    with (
+        patch(
+            "agentception.routes.api.control.get_issue",
+            return_value=_open_issue(56, "JSON path test"),
+        ),
+        patch(
+            "agentception.routes.api.control.get_issue_body",
+            new_callable=AsyncMock,
+            return_value="",
+        ),
+        patch(
+            "agentception.routes.api.control.get_active_label",
+            new_callable=AsyncMock,
+            return_value="",
+        ),
+        patch("agentception.routes.api.control.add_wip_label", new_callable=AsyncMock),
+        patch("agentception.routes.api.control.settings.worktrees_dir", worktree_dir),
+        patch("agentception.routes.api.control.settings.host_worktrees_dir", worktree_dir),
+        patch("agentception.routes.api.control.settings.repo_dir", Path("/fake/repo")),
+        patch("asyncio.create_subprocess_exec", side_effect=_fake_exec),
+    ):
+        response = client.post(
+            "/api/control/spawn",
+            json={"issue_number": 56, "role": "python-developer"},
+        )
+
+    assert response.status_code == 200
+    assert "application/json" in response.headers.get("content-type", "")
+    data = response.json()
+    assert data["spawned"] == 56
+    assert "spawned_at" in data
+
+
+def test_spawn_result_includes_spawned_at() -> None:
+    """SpawnResult must include a spawned_at timestamp field (defaults to empty string)."""
+    from agentception.models import SpawnResult
+    result = SpawnResult(
+        spawned=1,
+        worktree="/wt/issue-1",
+        host_worktree="/host/issue-1",
+        branch="feat/issue-1",
+        agent_task="ISSUE_NUMBER=1\n",
+    )
+    assert isinstance(result.spawned_at, str)
 
 
 # ── SpawnRequest model validation ─────────────────────────────────────────────

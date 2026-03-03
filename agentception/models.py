@@ -271,6 +271,8 @@ class SpawnResult(BaseModel):
     ``worktree`` is the container-side path (``/worktrees/issue-N``).
     ``host_worktree`` is the equivalent host-side path the user can open in
     Cursor (``~/.cursor/worktrees/maestro/issue-N``).
+    ``spawned_at`` is an ISO-8601 UTC timestamp indicating when the worktree
+    was created (included for display in the HTML success panel).
     """
 
     spawned: int
@@ -278,6 +280,7 @@ class SpawnResult(BaseModel):
     host_worktree: str
     branch: str
     agent_task: str
+    spawned_at: str = ""
 
 
 class SpawnCoordinatorRequest(BaseModel):
