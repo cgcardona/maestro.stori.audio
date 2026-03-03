@@ -103,7 +103,7 @@ async def agents_list(request: Request) -> HTMLResponse:
                 completed_count += 1
 
         enriched_history.append({
-            **run,  # type: ignore[arg-type]
+            **run,
             "duration_s": duration_s,
             "duration_str": duration_str,
             "spawned_fmt": str(run.get("spawned_at", ""))[:16].replace("T", " "),
@@ -221,10 +221,58 @@ async def agents_partial(request: Request) -> HTMLResponse:
 
 
 @router.get("/controls", response_class=HTMLResponse)
-async def controls_hub(request: Request) -> Response:
-    """Controls hub — redirects to the spawn form (the primary control action)."""
-    from starlette.responses import RedirectResponse
-    return RedirectResponse(url="/agents/spawn", status_code=302)
+async def controls_hub(request: Request) -> HTMLResponse:
+    """Controls hub — central page for all pipeline control actions.
+
+    Renders pause/resume, kill-agent, spawn-agent, and trigger-poll actions.
+
+    Context supplied to the template:
+    - ``paused``         — bool: is the pipeline currently paused?
+    - ``state``          — PipelineState: current in-memory poller snapshot.
+    - ``running_agents`` — list of live agent slugs (worktree directory names).
+    - ``kill_history``   — last 10 completed/stale agent runs from Postgres.
+    """
+    from pathlib import Path as _Path
+    from agentception.config import settings as _cfg
+    from agentception.db.queries import get_agent_run_history
+
+    sentinel = _Path(_cfg.repo_dir) / ".cursor" / ".pipeline-pause"
+    paused: bool = sentinel.exists()
+
+    state = get_state() or PipelineState.empty()
+
+    # Collect live agent slugs from the worktrees directory so the kill form
+    # can offer a select of currently running agent directories.
+    running_agents: list[str] = []
+    try:
+        wt_dir = _cfg.worktrees_dir
+        running_agents = sorted(
+            p.name for p in wt_dir.iterdir() if p.is_dir()
+        ) if wt_dir.exists() else []
+    except OSError:
+        logger.warning("⚠️ Could not list worktrees dir for controls hub")
+
+    # Recent kill history from Postgres — status done/stale = terminated runs.
+    kill_history: list[dict[str, object]] = []
+    try:
+        history = await get_agent_run_history(limit=50)
+        kill_history = [
+            r for r in history
+            if r.get("status") in ("done", "stale", "unknown")
+        ][:10]
+    except Exception as exc:
+        logger.debug("DB kill history fetch skipped: %s", exc)
+
+    return _TEMPLATES.TemplateResponse(
+        request,
+        "controls.html",
+        {
+            "paused": paused,
+            "state": state,
+            "running_agents": running_agents,
+            "kill_history": kill_history,
+        },
+    )
 
 
 @router.get("/control/spawn", response_class=HTMLResponse)
@@ -352,7 +400,7 @@ async def agent_transcript_partial(request: Request, agent_id: str) -> Response:
         try:
             db_run = await get_agent_run_detail(agent_id)
             if db_run:
-                db_messages = db_run.get("messages", [])  # type: ignore[assignment]
+                db_messages = db_run.get("messages", [])
                 raw_status = str(db_run.get("status", "unknown")).lower()
                 try:
                     synth_status = _AgentStatus(raw_status)
@@ -362,11 +410,11 @@ async def agent_transcript_partial(request: Request, agent_id: str) -> Response:
                     id=str(db_run.get("id", agent_id)),
                     role=str(db_run.get("role", "unknown")),
                     status=synth_status,
-                    issue_number=db_run.get("issue_number"),  # type: ignore[arg-type]
-                    pr_number=db_run.get("pr_number"),  # type: ignore[arg-type]
-                    branch=db_run.get("branch"),  # type: ignore[arg-type]
-                    batch_id=db_run.get("batch_id"),  # type: ignore[arg-type]
-                    worktree_path=db_run.get("worktree_path"),  # type: ignore[arg-type]
+                    issue_number=db_run.get("issue_number"),
+                    pr_number=db_run.get("pr_number"),
+                    branch=db_run.get("branch"),
+                    batch_id=db_run.get("batch_id"),
+                    worktree_path=db_run.get("worktree_path")
                 )
         except Exception as exc:
             logger.debug("DB agent run lookup skipped for transcript partial: %s", exc)

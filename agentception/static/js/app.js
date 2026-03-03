@@ -24,6 +24,7 @@
  *   transcripts.js  — transcriptBrowser, transcriptDetail
  *   templates.js    — exportPanel, importPanel, envSandbox
  *   api.js          — apiEndpoint
+ *   controls.js     — controlsKill
  */
 
 'use strict';
@@ -43,6 +44,7 @@ import { brainDump } from './brain_dump.js';
 import { transcriptBrowser, transcriptDetail } from './transcripts.js';
 import { exportPanel, importPanel, envSandbox } from './templates.js';
 import { apiEndpoint } from './api.js';
+import { controlsKill } from './controls.js';
 
 // Expose all Alpine component factory functions globally so templates can
 // reference them via x-data="functionName()" without any changes.
@@ -60,4 +62,5 @@ Object.assign(window, {
   transcriptBrowser, transcriptDetail,
   exportPanel, importPanel, envSandbox,
   apiEndpoint,
+  controlsKill,
 });
