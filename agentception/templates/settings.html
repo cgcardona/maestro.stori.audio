@@ -88,7 +88,7 @@
         <dt class="settings-label">Database URL</dt>
         <dd class="settings-value settings-value--mono">
           {% if settings.database_url %}
-            {{ settings.database_url | replace("://", "://***@", 1) if "@" not in settings.database_url else settings.database_url.split("@")[-1] }}
+            {{ settings.database_url.split("@")[-1] if "@" in settings.database_url else settings.database_url }}
           {% else %}
             <span class="settings-empty">Not configured (SQLite fallback)</span>
           {% endif %}
