@@ -101,6 +101,8 @@ export function waveTable() {
           case 'batch_id':
             return dir * String(a.batch_id || '').localeCompare(String(b.batch_id || ''));
           case 'duration':
+            // Guard: both null → equal (Infinity - Infinity = NaN breaks sort).
+            if (a.ended_at == null && b.ended_at == null) return 0;
             av = a.ended_at != null ? Number(a.ended_at) - Number(a.started_at) : Infinity;
             bv = b.ended_at != null ? Number(b.ended_at) - Number(b.started_at) : Infinity;
             break;
@@ -175,6 +177,17 @@ export function waveTable() {
      * prs_opened, estimated_tokens, estimated_cost_usd, agent_count.
      */
     exportCSV() {
+      /**
+       * RFC 4180 CSV field: wrap in double quotes, escape internal " as "".
+       * Never use JSON.stringify — it escapes " as \" which is not valid CSV.
+       * @param {string|number} v
+       * @returns {string}
+       */
+      const csvField = (v) => {
+        const s = String(v == null ? '' : v);
+        return '"' + s.replaceAll('"', '""') + '"';
+      };
+
       const rows = this.sortedRows;
       const headers = [
         'batch_id', 'started_at', 'duration_s', 'issues_worked',
@@ -188,10 +201,10 @@ export function waveTable() {
             : '';
         const issues = Array.isArray(w.issues_worked) ? w.issues_worked.join(';') : '';
         lines.push([
-          JSON.stringify(w.batch_id || ''),
-          JSON.stringify(this.formatTs(w.started_at)),
+          csvField(w.batch_id || ''),
+          csvField(this.formatTs(w.started_at)),
           duration,
-          JSON.stringify(issues),
+          csvField(issues),
           Number(w.prs_opened) || 0,
           Number(w.estimated_tokens) || 0,
           (Number(w.estimated_cost_usd) || 0).toFixed(4),
