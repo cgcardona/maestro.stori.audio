@@ -91,7 +91,7 @@ def test_agent_detail_404_unknown_id(client: TestClient) -> None:
         alerts=[],
         polled_at=time.time(),
     )
-    with patch("agentception.routes.ui.get_state", return_value=state):
+    with patch("agentception.routes.ui.agents.get_state", return_value=state):
         response = client.get("/agents/does-not-exist")
     assert response.status_code == 404
     assert "does-not-exist" in response.text
@@ -106,9 +106,9 @@ def test_agent_detail_renders_transcript(
         {"role": "assistant", "text": "On it. Reading the issue..."},
     ]
     with (
-        patch("agentception.routes.ui.get_state", return_value=pipeline_with_agent),
+        patch("agentception.routes.ui.agents.get_state", return_value=pipeline_with_agent),
         patch(
-            "agentception.routes.ui.read_transcript_messages",
+            "agentception.routes.ui.agents.read_transcript_messages",
             new_callable=AsyncMock,
             return_value=fake_messages,
         ),
@@ -125,9 +125,9 @@ def test_agent_detail_renders_child_agent(
 ) -> None:
     """GET /agents/<child-id> must resolve child agents one level deep."""
     with (
-        patch("agentception.routes.ui.get_state", return_value=pipeline_with_agent),
+        patch("agentception.routes.ui.agents.get_state", return_value=pipeline_with_agent),
         patch(
-            "agentception.routes.ui.read_transcript_messages",
+            "agentception.routes.ui.agents.read_transcript_messages",
             new_callable=AsyncMock,
             return_value=[],
         ),
@@ -154,7 +154,7 @@ def test_agent_detail_no_transcript_path(client: TestClient) -> None:
         alerts=[],
         polled_at=time.time(),
     )
-    with patch("agentception.routes.ui.get_state", return_value=state):
+    with patch("agentception.routes.ui.agents.get_state", return_value=state):
         response = client.get("/agents/no-transcript")
     assert response.status_code == 200
     assert "No transcript available" in response.text
@@ -165,9 +165,9 @@ def test_agent_detail_contains_task_table(
 ) -> None:
     """GET /agents/<id> HTML must include the .agent-task key/value table."""
     with (
-        patch("agentception.routes.ui.get_state", return_value=pipeline_with_agent),
+        patch("agentception.routes.ui.agents.get_state", return_value=pipeline_with_agent),
         patch(
-            "agentception.routes.ui.read_transcript_messages",
+            "agentception.routes.ui.agents.read_transcript_messages",
             new_callable=AsyncMock,
             return_value=[],
         ),
@@ -183,9 +183,9 @@ def test_agent_detail_contains_breadcrumb(
 ) -> None:
     """GET /agents/<id> HTML must include a breadcrumb link back to overview."""
     with (
-        patch("agentception.routes.ui.get_state", return_value=pipeline_with_agent),
+        patch("agentception.routes.ui.agents.get_state", return_value=pipeline_with_agent),
         patch(
-            "agentception.routes.ui.read_transcript_messages",
+            "agentception.routes.ui.agents.read_transcript_messages",
             new_callable=AsyncMock,
             return_value=[],
         ),
@@ -203,7 +203,7 @@ def test_agents_list_api_returns_array(
     client: TestClient, pipeline_with_agent: PipelineState
 ) -> None:
     """GET /api/agents must return a JSON array of AgentNodes."""
-    with patch("agentception.routes.api.get_state", return_value=pipeline_with_agent):
+    with patch("agentception.routes.api.pipeline.get_state", return_value=pipeline_with_agent):
         response = client.get("/api/agents")
     assert response.status_code == 200
     data = response.json()
@@ -215,7 +215,7 @@ def test_agents_list_api_returns_array(
 
 def test_agents_list_api_empty_state(client: TestClient) -> None:
     """GET /api/agents must return an empty array when no agents are active."""
-    with patch("agentception.routes.api.get_state", return_value=None):
+    with patch("agentception.routes.api.pipeline.get_state", return_value=None):
         response = client.get("/api/agents")
     assert response.status_code == 200
     data = response.json()
@@ -229,7 +229,7 @@ def test_agent_api_returns_node(
     client: TestClient, pipeline_with_agent: PipelineState
 ) -> None:
     """GET /api/agents/<id> must return the matching AgentNode as JSON."""
-    with patch("agentception.routes.api.get_state", return_value=pipeline_with_agent):
+    with patch("agentception.routes.api.pipeline.get_state", return_value=pipeline_with_agent):
         response = client.get("/api/agents/issue-616")
     assert response.status_code == 200
     data = response.json()
@@ -247,7 +247,7 @@ def test_agent_api_404_unknown(client: TestClient) -> None:
         alerts=[],
         polled_at=time.time(),
     )
-    with patch("agentception.routes.api.get_state", return_value=state):
+    with patch("agentception.routes.api.pipeline.get_state", return_value=state):
         response = client.get("/api/agents/not-real")
     assert response.status_code == 404
 
@@ -264,9 +264,9 @@ def test_transcript_api_returns_list(
         {"role": "assistant", "text": "Starting now."},
     ]
     with (
-        patch("agentception.routes.api.get_state", return_value=pipeline_with_agent),
+        patch("agentception.routes.api.pipeline.get_state", return_value=pipeline_with_agent),
         patch(
-            "agentception.routes.api.read_transcript_messages",
+            "agentception.routes.api.pipeline.read_transcript_messages",
             new_callable=AsyncMock,
             return_value=fake_messages,
         ),
@@ -290,7 +290,7 @@ def test_transcript_api_404_unknown(client: TestClient) -> None:
         alerts=[],
         polled_at=time.time(),
     )
-    with patch("agentception.routes.api.get_state", return_value=state):
+    with patch("agentception.routes.api.pipeline.get_state", return_value=state):
         response = client.get("/api/agents/ghost/transcript")
     assert response.status_code == 404
 
@@ -314,7 +314,107 @@ def test_transcript_api_empty_when_no_path(
         alerts=[],
         polled_at=time.time(),
     )
-    with patch("agentception.routes.api.get_state", return_value=state):
+    with patch("agentception.routes.api.pipeline.get_state", return_value=state):
         response = client.get("/api/agents/notranscript/transcript")
     assert response.status_code == 200
     assert response.json() == []
+
+
+# ── New tests for issue #741 ───────────────────────────────────────────────────
+
+
+def test_transcript_not_truncated(
+    client: TestClient, pipeline_with_agent: PipelineState
+) -> None:
+    """GET /agents/<id> must render full message content — no 400-char truncation."""
+    long_text = "A" * 1000
+    fake_messages = [{"role": "assistant", "text": long_text}]
+    with (
+        patch("agentception.routes.ui.agents.get_state", return_value=pipeline_with_agent),
+        patch(
+            "agentception.routes.ui.agents.read_transcript_messages",
+            new_callable=AsyncMock,
+            return_value=fake_messages,
+        ),
+    ):
+        response = client.get("/agents/issue-616")
+    assert response.status_code == 200
+    # All 1000 characters must appear in the rendered HTML — no truncation at 400.
+    assert long_text in response.text
+
+
+def test_transcript_partial_returns_200(
+    client: TestClient, pipeline_with_agent: PipelineState
+) -> None:
+    """GET /partials/agents/<id>/transcript must return HTTP 200 with message HTML."""
+    fake_messages = [
+        {"role": "user", "text": "Start."},
+        {"role": "assistant", "text": "Done."},
+    ]
+    with (
+        patch("agentception.routes.ui.agents.get_state", return_value=pipeline_with_agent),
+        patch(
+            "agentception.routes.ui.agents.read_transcript_messages",
+            new_callable=AsyncMock,
+            return_value=fake_messages,
+        ),
+    ):
+        response = client.get("/partials/agents/issue-616/transcript")
+    assert response.status_code == 200
+    assert "message--user" in response.text
+    assert "message--assistant" in response.text
+    assert "Start." in response.text
+    assert "Done." in response.text
+
+
+def test_transcript_partial_empty_when_no_messages(
+    client: TestClient, pipeline_with_agent: PipelineState
+) -> None:
+    """GET /partials/agents/<id>/transcript with no messages shows empty state."""
+    with (
+        patch("agentception.routes.ui.agents.get_state", return_value=pipeline_with_agent),
+        patch(
+            "agentception.routes.ui.agents.read_transcript_messages",
+            new_callable=AsyncMock,
+            return_value=[],
+        ),
+    ):
+        response = client.get("/partials/agents/issue-616/transcript")
+    assert response.status_code == 200
+    assert "No transcript available" in response.text
+
+
+def test_agent_detail_has_copy_buttons(
+    client: TestClient, pipeline_with_agent: PipelineState
+) -> None:
+    """GET /agents/<id> HTML must include copy buttons (btn-copy class)."""
+    with (
+        patch("agentception.routes.ui.agents.get_state", return_value=pipeline_with_agent),
+        patch(
+            "agentception.routes.ui.agents.read_transcript_messages",
+            new_callable=AsyncMock,
+            return_value=[],
+        ),
+    ):
+        response = client.get("/agents/issue-616")
+    assert response.status_code == 200
+    assert "btn-copy" in response.text
+
+
+def test_agent_detail_has_htmx_polling(
+    client: TestClient, pipeline_with_agent: PipelineState
+) -> None:
+    """GET /agents/<id> HTML must include hx-trigger polling on the transcript section."""
+    with (
+        patch("agentception.routes.ui.agents.get_state", return_value=pipeline_with_agent),
+        patch(
+            "agentception.routes.ui.agents.read_transcript_messages",
+            new_callable=AsyncMock,
+            return_value=[],
+        ),
+    ):
+        response = client.get("/agents/issue-616")
+    assert response.status_code == 200
+    assert "hx-trigger" in response.text
+    assert "every 8s" in response.text
+    assert "transcript-section" in response.text
