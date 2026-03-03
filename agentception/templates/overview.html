@@ -406,7 +406,15 @@
     <span x-show="applyError" class="text-danger" x-text="applyError"></span>
   </div>
 
-  {# ── Generic alert banners (SSE-driven) ───────────────────────────────── #}
+  {# ── Pipeline paused banner (server-rendered, shown once) ─────────────── #}
+  {% if poller_paused %}
+  <div class="alert-banner alert-banner--warning" role="status" aria-label="Pipeline paused">
+    <span>⏸️</span>
+    <span>Pipeline paused</span>
+  </div>
+  {% endif %}
+
+  {# ── Generic alert banners (SSE-driven, top-level only) ───────────────── #}
   <template x-for="alert in state.alerts" :key="alert">
     <div class="alert-banner" role="alert">
       <span>⚠️</span>
@@ -575,14 +583,6 @@
         </div>
       </div>
 
-      {# Alerts #}
-      <div x-show="state.alerts.length > 0" class="mt-2">
-        <h3 class="section-subtitle">Alerts</h3>
-        <template x-for="alert in state.alerts" :key="alert">
-          <div class="alert-item" x-text="alert"></div>
-        </template>
-      </div>
-
       {# Stale claims #}
       <div x-show="state.stale_claims && state.stale_claims.length > 0" class="mt-2">
         <h3 class="section-subtitle">Stale Claims</h3>
@@ -618,70 +618,76 @@
         <span>Switching phase…</span>
       </div>
 
-      <div x-show="!boardLoading && state.board_issues && state.board_issues.length > 0" class="mt-2">
-        <h3 class="section-subtitle">
-          Open Issues
-          <span class="badge badge-count" x-text="state.board_issues ? state.board_issues.length : 0"></span>
-        </h3>
-        <template x-for="issue in (state.board_issues || [])" :key="issue.number">
-          <div
-            class="issue-card"
-            :id="'issue-card-' + issue.number"
-            x-data="issueCard(issue.number)"
-          >
-            <div class="issue-card-header">
-              <a
-                class="issue-card-number"
-                :href="GH_BASE_URL + '/issues/' + issue.number"
-                target="_blank"
-                rel="noopener noreferrer"
-              >#<span x-text="issue.number"></span></a>
-              <span class="issue-card-title" x-text="issue.title"></span>
-            </div>
-            <div class="issue-card-labels" x-show="issue.labels && issue.labels.length > 0">
-              <template x-for="lbl in (issue.labels || [])" :key="lbl">
-                <span class="label-chip label-chip--small" x-text="lbl"></span>
-              </template>
-            </div>
-            <div class="issue-card-status">
-              <template x-if="!issue.claimed">
-                <span class="issue-status-badge issue-status-badge--available">Available</span>
-              </template>
-              <template x-if="issue.claimed">
-                <template x-if="agentForIssue(issue.number) && agentForIssue(issue.number).pr_number">
+      {# Open issues — grouped by batch (phase_label), server-rendered sections #}
+      <div x-show="!boardLoading">
+        {% if grouped_board_issues %}
+          {% for batch_label, batch_issues in grouped_board_issues %}
+          <section class="batch-group mt-2">
+            <h3 class="batch-heading">
+              {{ batch_label }}
+              <span class="badge badge-count">{{ batch_issues | length }}</span>
+            </h3>
+            <div class="issue-grid">
+              {% for issue in batch_issues %}
+              <div
+                class="issue-card"
+                id="issue-card-{{ issue.number }}"
+                x-data="issueCard({{ issue.number }})"
+              >
+                <div class="issue-card-header">
                   <a
-                    :href="GH_BASE_URL + '/pull/' + agentForIssue(issue.number).pr_number"
-                    class="issue-status-badge issue-status-badge--pr"
+                    class="issue-card-number"
+                    href="{{ gh_base_url }}/issues/{{ issue.number }}"
                     target="_blank"
                     rel="noopener noreferrer"
-                  >PR #<span x-text="agentForIssue(issue.number).pr_number"></span> open ↗</a>
-                </template>
-                <template x-if="!(agentForIssue(issue.number) && agentForIssue(issue.number).pr_number)">
-                  <span class="issue-status-badge issue-status-badge--implementing">Implementing</span>
-                </template>
-              </template>
+                  >#{{ issue.number }}</a>
+                  <span class="issue-card-title">{{ issue.title }}</span>
+                </div>
+                {% if issue.labels %}
+                <div class="issue-card-labels">
+                  {% for lbl in issue.labels %}
+                  <span class="label-chip label-chip--small">{{ lbl }}</span>
+                  {% endfor %}
+                </div>
+                {% endif %}
+                <div class="issue-card-status">
+                  <template x-if="!agentForIssue({{ issue.number }})">
+                    <span class="issue-status-badge issue-status-badge--available">Available</span>
+                  </template>
+                  <template x-if="agentForIssue({{ issue.number }}) && agentForIssue({{ issue.number }}).pr_number">
+                    <a
+                      :href="GH_BASE_URL + '/pull/' + agentForIssue({{ issue.number }}).pr_number"
+                      class="issue-status-badge issue-status-badge--pr"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >PR #<span x-text="agentForIssue({{ issue.number }}).pr_number"></span> open ↗</a>
+                  </template>
+                  <template x-if="agentForIssue({{ issue.number }}) && !agentForIssue({{ issue.number }}).pr_number">
+                    <span class="issue-status-badge issue-status-badge--implementing">Implementing</span>
+                  </template>
+                </div>
+                <div class="issue-card-actions">
+                  <button
+                    class="btn btn-sm btn-secondary"
+                    @click="analyze()"
+                    :disabled="analyzing"
+                    x-text="analyzing ? 'Analyzing…' : 'Analyze'"
+                    :aria-label="'Analyze issue #{{ issue.number }}'"
+                  ></button>
+                </div>
+                <div x-show="analyzeError" class="text-danger text-sm mt-1" x-text="analyzeError"></div>
+                <div x-show="analysisHtml" x-html="analysisHtml" class="issue-analysis-result"></div>
+              </div>
+              {% endfor %}
             </div>
-            <div class="issue-card-actions">
-              <button
-                class="btn btn-sm btn-secondary"
-                @click="analyze()"
-                :disabled="analyzing"
-                x-text="analyzing ? 'Analyzing…' : 'Analyze'"
-                :aria-label="'Analyze issue #' + issue.number"
-              ></button>
-            </div>
-            <div x-show="analyzeError" class="text-danger text-sm mt-1" x-text="analyzeError"></div>
-            <div x-show="analysisHtml" x-html="analysisHtml" class="issue-analysis-result"></div>
-          </div>
-        </template>
-      </div>
-
-      <div
-        x-show="!boardLoading && (!state.board_issues || state.board_issues.length === 0)"
-        class="mt-2 text-muted empty-state"
-      >
-        <p>No open unclaimed issues in the active phase.</p>
-        <p class="text-sm mt-1">The board updates live every 5 seconds via SSE.</p>
+          </section>
+          {% endfor %}
+        {% else %}
+        <div class="mt-2 text-muted empty-state">
+          <p>No open unclaimed issues in the active phase.</p>
+          <p class="text-sm mt-1">The board updates live every 5 seconds via SSE.</p>
+        </div>
+        {% endif %}
       </div>
 
     </aside>
