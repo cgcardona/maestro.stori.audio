@@ -39,7 +39,6 @@ from agentception.models import (
     RoleContent,
     RoleDiffRequest,
     RoleDiffResponse,
-    RoleHistoryEntry,
     RoleMeta,
     RoleUpdateRequest,
     RoleUpdateResponse,
@@ -121,10 +120,10 @@ async def _git_log_one(repo_dir: Path, rel_path: str) -> tuple[str, str]:
     return sha.strip(), subject.strip()
 
 
-async def _git_log_recent(repo_dir: Path, rel_path: str, n: int = 20) -> list[RoleHistoryEntry]:
-    """Return the last ``n`` commits touching ``rel_path`` as a list of RoleHistoryEntry.
+async def _git_log_recent(repo_dir: Path, rel_path: str, n: int = 20) -> list[dict[str, str]]:
+    """Return the last ``n`` commits touching ``rel_path`` as a list of dicts.
 
-    Each entry has ``sha``, ``date`` (ISO-8601), and ``subject``.
+    Each dict has ``sha``, ``subject``, and ``date`` (ISO-8601 format).
     Returns an empty list when there are no commits for the file.
     """
     proc = await asyncio.create_subprocess_exec(
@@ -134,7 +133,7 @@ async def _git_log_recent(repo_dir: Path, rel_path: str, n: int = 20) -> list[Ro
         stderr=asyncio.subprocess.DEVNULL,
     )
     stdout, _ = await proc.communicate()
-    entries: list[RoleHistoryEntry] = []
+    entries: list[dict[str, str]] = []
     for line in stdout.decode().splitlines():
         line = line.strip()
         if not line:
@@ -142,7 +141,7 @@ async def _git_log_recent(repo_dir: Path, rel_path: str, n: int = 20) -> list[Ro
         parts = line.split("\t", 2)
         if len(parts) < 3:
             continue
-        entries.append(RoleHistoryEntry(sha=parts[0], date=parts[1], subject=parts[2]))
+        entries.append({"sha": parts[0], "date": parts[1], "subject": parts[2]})
     return entries
 
 
@@ -157,10 +156,9 @@ async def _build_meta(slug: str, rel_path: str) -> RoleMeta:
     if not abs_path.exists():
         raise HTTPException(status_code=404, detail=f"Managed file not found on disk: {rel_path}")
 
-    content = await asyncio.to_thread(abs_path.read_text, encoding="utf-8")
+    content = abs_path.read_text(encoding="utf-8")
     line_count = len(content.splitlines())
-    stat_result = await asyncio.to_thread(abs_path.stat)
-    mtime = stat_result.st_mtime
+    mtime = abs_path.stat().st_mtime
 
     sha, message = await _git_log_one(settings.repo_dir, rel_path)
 
@@ -471,7 +469,7 @@ async def get_role(slug: str) -> RoleContent:
     rel_path = _resolve_slug(slug)
     meta = await _build_meta(slug, rel_path)
     abs_path = settings.repo_dir / rel_path
-    content = await asyncio.to_thread(abs_path.read_text, encoding="utf-8")
+    content = abs_path.read_text(encoding="utf-8")
     return RoleContent(slug=slug, content=content, meta=meta)
 
 
@@ -488,7 +486,7 @@ async def update_role(slug: str, body: RoleUpdateRequest) -> RoleUpdateResponse:
     """
     rel_path = _resolve_slug(slug)
     abs_path = settings.repo_dir / rel_path
-    await asyncio.to_thread(abs_path.write_text, body.content, encoding="utf-8")
+    abs_path.write_text(body.content, encoding="utf-8")
     logger.info("✅ Wrote %d bytes to %s", len(body.content), rel_path)
 
     proc = await asyncio.create_subprocess_exec(
@@ -505,7 +503,7 @@ async def update_role(slug: str, body: RoleUpdateRequest) -> RoleUpdateResponse:
 
 
 @router.get("/{slug}/history", summary="Return git commit history for a managed role file")
-async def role_history(slug: str) -> list[RoleHistoryEntry]:
+async def role_history(slug: str) -> list[dict[str, str]]:
     """Return the last 20 git commits that touched the managed file.
 
     Each entry has ``sha``, ``date`` (ISO-8601), and ``subject``.
@@ -571,7 +569,7 @@ async def commit_role(slug: str, body: RoleCommitRequest) -> RoleCommitResponse:
     if not abs_path.exists():
         raise HTTPException(status_code=404, detail=f"Managed file not found on disk: {rel_path}")
 
-    abs_path.write_text(body.content, encoding="utf-8")
+    await asyncio.to_thread(abs_path.write_text, body.content, encoding="utf-8")
     logger.info("✅ Wrote %d bytes to %s for commit", len(body.content), rel_path)
 
     add_proc = await asyncio.create_subprocess_exec(
