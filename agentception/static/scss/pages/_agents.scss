@@ -433,6 +433,36 @@
 .run-spawn-mode--chain  { color: #3b82f6;              background: rgba(59,130,246,.1);   border: 1px solid rgba(59,130,246,.2); }
 .run-spawn-mode--manual { color: var(--text-muted);    background: var(--bg-elevated);    border: 1px solid var(--border-subtle); }
 
+/* ── Copy button ───────────────────────────────────────────── */
+.btn-copy {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: 0.35rem;
+  padding: 0.15rem 0.35rem;
+  font-size: 0.75rem;
+  line-height: 1;
+  color: var(--text-muted);
+  background: transparent;
+  border: 1px solid var(--border-subtle);
+  border-radius: 4px;
+  cursor: pointer;
+  vertical-align: middle;
+  transition: color 0.15s, border-color 0.15s, background 0.15s;
+
+  &:hover {
+    color: var(--text-primary);
+    border-color: var(--border-strong);
+    background: var(--bg-elevated);
+  }
+
+  &:active {
+    color: var(--success);
+    border-color: var(--success);
+    background: rgba(34, 197, 94, 0.08);
+  }
+}
+
 /* ── History table ─────────────────────────────────────────── */
 .run-row:hover td { background: var(--bg-elevated); }
 .run-row--implementing td:first-child { border-left: 2px solid #3b82f6; }

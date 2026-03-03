@@ -332,6 +332,65 @@ async def spawn_issues_partial(request: Request) -> HTMLResponse:
     )
 
 
+@router.get("/partials/agents/{agent_id}/transcript", response_class=HTMLResponse)
+async def agent_transcript_partial(request: Request, agent_id: str) -> Response:
+    """HTMX partial — returns only the transcript message list for live polling.
+
+    Called every 8 seconds by ``hx-trigger="every 8s"`` on the transcript
+    section in agent.html.  Returns just the message list fragment so HTMX
+    can swap it in without a full page reload.
+    """
+    from agentception.db.queries import get_agent_run_detail
+    from agentception.models import AgentStatus as _AgentStatus
+    from ._shared import _find_agent
+
+    state = get_state()
+    node = _find_agent(state, agent_id)
+
+    db_messages: list[dict[str, object]] = []
+    if node is None:
+        try:
+            db_run = await get_agent_run_detail(agent_id)
+            if db_run:
+                db_messages = db_run.get("messages", [])  # type: ignore[assignment]
+                raw_status = str(db_run.get("status", "unknown")).lower()
+                try:
+                    synth_status = _AgentStatus(raw_status)
+                except ValueError:
+                    synth_status = _AgentStatus.UNKNOWN
+                node = AgentNode(
+                    id=str(db_run.get("id", agent_id)),
+                    role=str(db_run.get("role", "unknown")),
+                    status=synth_status,
+                    issue_number=db_run.get("issue_number"),  # type: ignore[arg-type]
+                    pr_number=db_run.get("pr_number"),  # type: ignore[arg-type]
+                    branch=db_run.get("branch"),  # type: ignore[arg-type]
+                    batch_id=db_run.get("batch_id"),  # type: ignore[arg-type]
+                    worktree_path=db_run.get("worktree_path"),  # type: ignore[arg-type]
+                )
+        except Exception as exc:
+            logger.debug("DB agent run lookup skipped for transcript partial: %s", exc)
+
+    messages: list[dict[str, str]] = []
+    if node and node.transcript_path:
+        messages = await read_transcript_messages(Path(node.transcript_path))
+
+    if not messages and db_messages:
+        messages = [
+            {"role": str(m.get("role", "")), "content": str(m.get("content", ""))}
+            for m in db_messages
+        ]
+
+    return _TEMPLATES.TemplateResponse(
+        request,
+        "partials/agent_transcript.html",
+        {
+            "messages": messages,
+            "agent_id": agent_id,
+        },
+    )
+
+
 @router.get("/agents/{agent_id}", response_class=HTMLResponse)
 async def agent_detail(request: Request, agent_id: str) -> Response:
     """Agent detail page — transcript viewer and .agent-task fields.
