@@ -1,7 +1,7 @@
-"""API route: POST /api/plan/draft — accept a brain dump and dispatch to Cursor.
+"""API routes: POST /api/plan/draft and POST /api/plan/launch.
 
-Contract
---------
+POST /api/plan/draft
+--------------------
 Input:  PlanDraftRequest(dump: str)  — non-empty, non-whitespace text
 Output: PlanDraftResponse            — draft_id (uuid4), task_file path,
                                        output_path, status='pending'
@@ -13,17 +13,34 @@ Side effects
 2. A ``.agent-task`` file is written to the new worktree using the K=V format
    that is compatible with the future TOML migration (issue #888).
 
+POST /api/plan/launch
+---------------------
+Input:  PlanLaunchRequest(yaml_text: str)  — YAML-encoded plan manifest
+Output: PlanLaunchResponse                 — worktree, branch, agent_task_path,
+                                             batch_id from the coordinator spawn
+
+Steps:
+1. Parse yaml_text → PlanSpec (422 on YAML error with line/col if available).
+2. Validate PlanSpec fields via Pydantic (422 on field errors).
+3. Validate DAG: detect cycles in depends_on relationships (422 with description).
+4. Call plan_spawn_coordinator(manifest_json) — fire-and-forget style.
+5. Return PlanLaunchResponse immediately.
+
 Boundary: zero imports from maestro/, muse/, kly/, or storpheus/.
 """
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import uuid
 from pathlib import Path
 
+import yaml
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, field_validator
+
+from agentception.mcp.plan_tools import plan_spawn_coordinator
 
 logger = logging.getLogger(__name__)
 
@@ -120,4 +137,166 @@ async def post_plan_draft(request: PlanDraftRequest) -> PlanDraftResponse:
         task_file=str(task_file_path),
         output_path=str(worktree_path),
         status="pending",
+    )
+
+
+# ---------------------------------------------------------------------------
+# POST /api/plan/launch — validate manifest, detect DAG cycles, spawn coordinator
+# ---------------------------------------------------------------------------
+
+
+class PlanIssue(BaseModel):
+    """A single issue entry in a PlanLaunchRequest manifest.
+
+    ``number`` is the GitHub issue number; ``depends_on`` lists issue numbers
+    that must be merged before this one can start.  Both are integers so the
+    DAG is resolved by numeric reference, not by title string matching.
+    """
+
+    number: int
+    title: str
+    depends_on: list[int] = []
+
+
+class PlanSpec(BaseModel):
+    """Top-level manifest parsed from the YAML supplied to POST /api/plan/launch.
+
+    ``batch_id`` is a short human slug for the batch (e.g. ``"plan-p2-20260303"``).
+    ``issues`` is the ordered list of work units; each carries its numeric
+    dependency set so the DAG can be validated before the coordinator is spawned.
+    """
+
+    batch_id: str
+    issues: list[PlanIssue]
+
+
+class PlanLaunchRequest(BaseModel):
+    """Request body for POST /api/plan/launch.
+
+    ``yaml_text`` is the raw YAML string of the plan manifest.  It must parse
+    into a :class:`PlanSpec`; any YAML syntax error or schema mismatch returns
+    422 before the coordinator is contacted.
+    """
+
+    yaml_text: str
+
+
+class PlanLaunchResponse(BaseModel):
+    """Response returned after the coordinator worktree has been spawned.
+
+    Fields mirror the return value of
+    :func:`agentception.mcp.plan_tools.plan_spawn_coordinator`.
+    """
+
+    worktree: str
+    branch: str
+    agent_task_path: str
+    batch_id: str
+
+
+def _detect_cycle(issues: list[PlanIssue]) -> str | None:
+    """Return a human-readable cycle description if the dependency graph has a cycle.
+
+    Uses DFS with a per-path *in-stack* set.  The first back-edge found produces
+    a description of the form ``"Cycle detected: N → M → N"``.
+
+    Args:
+        issues: List of :class:`PlanIssue` objects to check.
+
+    Returns:
+        ``None`` when the DAG is acyclic; a non-empty string when a cycle exists.
+    """
+    issue_map: dict[int, PlanIssue] = {issue.number: issue for issue in issues}
+    visited: set[int] = set()
+    in_stack: list[int] = []
+
+    def dfs(node: int) -> str | None:
+        if node in in_stack:
+            cycle_start = in_stack.index(node)
+            cycle_path = in_stack[cycle_start:] + [node]
+            return "Cycle detected: " + " → ".join(str(n) for n in cycle_path)
+        if node in visited:
+            return None
+        visited.add(node)
+        in_stack.append(node)
+        issue = issue_map.get(node)
+        if issue is not None:
+            for dep in issue.depends_on:
+                result = dfs(dep)
+                if result is not None:
+                    return result
+        in_stack.pop()
+        return None
+
+    for issue in issues:
+        if issue.number not in visited:
+            result = dfs(issue.number)
+            if result is not None:
+                return result
+    return None
+
+
+@router.post("/launch")
+async def post_plan_launch(request: PlanLaunchRequest) -> PlanLaunchResponse:
+    """Validate a YAML plan manifest, check for DAG cycles, and spawn a coordinator.
+
+    Steps:
+    1. Parse ``yaml_text`` → :class:`PlanSpec` (422 on YAML or schema error).
+    2. Run cycle detection on the ``depends_on`` graph (422 if cycle found).
+    3. Await :func:`agentception.mcp.plan_tools.plan_spawn_coordinator` with
+       the manifest serialised as JSON.
+    4. Return :class:`PlanLaunchResponse` immediately.
+
+    Returns:
+        422 on YAML parse error, field validation error, or detected cycle.
+        500 if the coordinator spawn fails unexpectedly.
+        200 with :class:`PlanLaunchResponse` on success.
+    """
+    try:
+        raw: object = yaml.safe_load(request.yaml_text)
+    except yaml.YAMLError as exc:
+        detail = f"YAML parse error: {exc}"
+        logger.warning("⚠️ /api/plan/launch — %s", detail)
+        raise HTTPException(status_code=422, detail=detail)
+
+    if not isinstance(raw, dict):
+        raise HTTPException(
+            status_code=422,
+            detail=f"Expected a YAML mapping at the top level, got {type(raw).__name__}",
+        )
+
+    try:
+        spec = PlanSpec.model_validate(raw)
+    except Exception as exc:
+        logger.warning("⚠️ /api/plan/launch — PlanSpec validation failed: %s", exc)
+        raise HTTPException(status_code=422, detail=f"Manifest validation error: {exc}")
+
+    cycle = _detect_cycle(spec.issues)
+    if cycle is not None:
+        logger.warning("⚠️ /api/plan/launch — DAG cycle: %s", cycle)
+        raise HTTPException(status_code=422, detail=cycle)
+
+    manifest_json: str = json.dumps(spec.model_dump())
+
+    try:
+        result = await plan_spawn_coordinator(manifest_json)
+    except Exception as exc:
+        logger.error("❌ /api/plan/launch — coordinator spawn failed: %s", exc)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Coordinator spawn failed: {exc}",
+        )
+
+    if "error" in result:
+        raise HTTPException(status_code=422, detail=str(result["error"]))
+
+    logger.info(
+        "✅ /api/plan/launch — coordinator spawned; worktree=%s", result.get("worktree")
+    )
+
+    return PlanLaunchResponse(
+        worktree=str(result["worktree"]),
+        branch=str(result["branch"]),
+        agent_task_path=str(result["agent_task_path"]),
+        batch_id=str(result["batch_id"]),
     )

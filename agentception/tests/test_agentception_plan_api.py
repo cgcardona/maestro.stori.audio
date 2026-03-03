@@ -1,6 +1,6 @@
-"""Tests for POST /api/plan/draft (issue #872).
+"""Tests for POST /api/plan/draft (issue #872) and POST /api/plan/launch (issue #873).
 
-Covers:
+POST /api/plan/draft covers:
 - Valid dump returns 200 with status=pending and a uuid4 draft_id.
 - Empty dump returns 422.
 - Whitespace-only dump returns 422.
@@ -8,13 +8,20 @@ Covers:
   and the dump text.
 - asyncio.create_subprocess_exec is called with ``git worktree add``.
 
-All git subprocess calls are mocked so these tests do not require a live git
-repository or any filesystem writes outside a tmp_path fixture.
+POST /api/plan/launch covers:
+- Valid YAML manifest → 200 with worktree, branch, agent_task_path, batch_id.
+- Malformed YAML (syntax error) → 422 with error detail.
+- YAML with cyclic depends_on → 422 with cycle description.
+- plan_spawn_coordinator called with correct manifest JSON.
+
+All git subprocess calls and plan_spawn_coordinator are mocked so these tests
+do not require a live git repository or network access.
 
 Boundary: zero imports from maestro/, muse/, kly/, or storpheus/.
 """
 from __future__ import annotations
 
+import json
 import uuid
 from collections.abc import AsyncGenerator
 from pathlib import Path
@@ -186,3 +193,127 @@ async def test_post_whitespace_dump_returns_422(async_client: AsyncClient) -> No
         json={"dump": "   \t\n  "},
     )
     assert response.status_code == 422
+
+
+# ---------------------------------------------------------------------------
+# POST /api/plan/launch — issue #873
+# ---------------------------------------------------------------------------
+
+_VALID_YAML = """\
+batch_id: plan-p2-20260303
+issues:
+  - number: 870
+    title: "Dump spec to file"
+    depends_on: []
+  - number: 871
+    title: "Enrich spec"
+    depends_on: [870]
+  - number: 872
+    title: "POST /api/plan/draft"
+    depends_on: [871]
+  - number: 873
+    title: "POST /api/plan/launch"
+    depends_on: [872]
+"""
+
+_SPAWN_RESULT = {
+    "worktree": "/tmp/worktrees/coordinator-20260303-142201",
+    "branch": "coordinator/20260303-142201",
+    "agent_task_path": "/tmp/worktrees/coordinator-20260303-142201/.agent-task",
+    "batch_id": "coordinator-20260303-142201",
+}
+
+
+@pytest.mark.anyio
+async def test_post_valid_yaml_returns_200_with_worktree(
+    async_client: AsyncClient,
+) -> None:
+    """POST a valid YAML manifest → 200 with worktree, branch, agent_task_path, batch_id."""
+    with patch(
+        "agentception.routes.api.plan.plan_spawn_coordinator",
+        new=AsyncMock(return_value=_SPAWN_RESULT),
+    ):
+        response = await async_client.post(
+            "/api/plan/launch",
+            json={"yaml_text": _VALID_YAML},
+        )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["worktree"] == _SPAWN_RESULT["worktree"]
+    assert body["branch"] == _SPAWN_RESULT["branch"]
+    assert body["agent_task_path"] == _SPAWN_RESULT["agent_task_path"]
+    assert body["batch_id"] == _SPAWN_RESULT["batch_id"]
+
+
+@pytest.mark.anyio
+async def test_post_malformed_yaml_returns_422(async_client: AsyncClient) -> None:
+    """POST a malformed YAML string (unclosed sequence) → 422 with error detail."""
+    with patch(
+        "agentception.routes.api.plan.plan_spawn_coordinator",
+        new=AsyncMock(return_value=_SPAWN_RESULT),
+    ):
+        response = await async_client.post(
+            "/api/plan/launch",
+            json={"yaml_text": "key: [unclosed"},
+        )
+
+    assert response.status_code == 422
+    body = response.json()
+    assert "YAML" in body["detail"] or "yaml" in body["detail"].lower()
+
+
+@pytest.mark.anyio
+async def test_post_yaml_with_cyclic_deps_returns_422(async_client: AsyncClient) -> None:
+    """POST YAML where issue A depends on B and B depends on A → 422 with cycle description."""
+    cyclic_yaml = """\
+batch_id: cyclic-test
+issues:
+  - number: 1
+    title: "Issue A"
+    depends_on: [2]
+  - number: 2
+    title: "Issue B"
+    depends_on: [1]
+"""
+    with patch(
+        "agentception.routes.api.plan.plan_spawn_coordinator",
+        new=AsyncMock(return_value=_SPAWN_RESULT),
+    ):
+        response = await async_client.post(
+            "/api/plan/launch",
+            json={"yaml_text": cyclic_yaml},
+        )
+
+    assert response.status_code == 422
+    body = response.json()
+    assert "Cycle" in body["detail"] or "cycle" in body["detail"].lower()
+
+
+@pytest.mark.anyio
+async def test_plan_spawn_coordinator_called_with_correct_manifest(
+    async_client: AsyncClient,
+) -> None:
+    """plan_spawn_coordinator must be called with the serialised PlanSpec JSON."""
+    spawn_mock = AsyncMock(return_value=_SPAWN_RESULT)
+
+    with patch(
+        "agentception.routes.api.plan.plan_spawn_coordinator",
+        new=spawn_mock,
+    ):
+        response = await async_client.post(
+            "/api/plan/launch",
+            json={"yaml_text": _VALID_YAML},
+        )
+
+    assert response.status_code == 200
+    spawn_mock.assert_called_once()
+
+    # Verify the argument is valid JSON containing the batch_id and issues
+    call_args = spawn_mock.call_args
+    assert call_args is not None
+    manifest_json_arg: str = call_args[0][0]
+    parsed = json.loads(manifest_json_arg)
+    assert parsed["batch_id"] == "plan-p2-20260303"
+    issue_numbers = [i["number"] for i in parsed["issues"]]
+    assert issue_numbers == [870, 871, 872, 873]
