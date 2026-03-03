@@ -454,7 +454,7 @@ def test_banner_hidden_when_dismissed_markup_present() -> None:
         polled_at=time.time(),
     )
 
-    with patch("agentception.routes.ui.get_state", return_value=state):
+    with patch("agentception.routes.ui.overview.get_state", return_value=state):
         with TestClient(app) as client:
             response = client.get("/")
 

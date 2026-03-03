@@ -122,9 +122,9 @@
         </div>
 
         <div class="cfg-slider-row">
-          <label class="cfg-slider-label" for="slider-pool">Pool size per VP</label>
+          <label class="cfg-slider-label" for="slider-pool-size">Pool size per VP</label>
           <p class="cfg-slider-hint">Worker agents assigned to each VP</p>
-          <input id="slider-pool"
+          <input id="slider-pool-size"
                  class="cfg-slider-input"
                  type="range" min="1" max="20" step="1"
                  x-model.number="config.pool_size_per_vp"
@@ -380,6 +380,7 @@
             @click="cancel()">Discard</button>
 
     <button class="btn btn-primary"
+            id="btn-save-config"
             type="button"
             :disabled="saving"
             @click="save()"

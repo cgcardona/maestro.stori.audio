@@ -55,7 +55,7 @@ def test_analysis_partial_returns_html(client: TestClient) -> None:
     """POST /api/analyze/issue/{number}/partial must return HTML with 200 OK."""
     analysis = _make_analysis(number=101)
     with patch(
-        "agentception.routes.ui.analyze_issue",
+        "agentception.routes.ui.overview.analyze_issue",
         new=AsyncMock(return_value=analysis),
     ):
         response = client.post("/api/analyze/issue/101/partial")
@@ -68,7 +68,7 @@ def test_analysis_partial_returns_html_structure(client: TestClient) -> None:
     """Partial must include the analysis-card wrapper and labelled rows."""
     analysis = _make_analysis(number=202)
     with patch(
-        "agentception.routes.ui.analyze_issue",
+        "agentception.routes.ui.overview.analyze_issue",
         new=AsyncMock(return_value=analysis),
     ):
         response = client.post("/api/analyze/issue/202/partial")
@@ -88,7 +88,7 @@ def test_analysis_partial_shows_deps(client: TestClient) -> None:
     """Partial must render dependency chips linking to each dep issue."""
     analysis = _make_analysis(number=303, dependencies=[614, 615], recommended_merge_after=615)
     with patch(
-        "agentception.routes.ui.analyze_issue",
+        "agentception.routes.ui.overview.analyze_issue",
         new=AsyncMock(return_value=analysis),
     ):
         response = client.post("/api/analyze/issue/303/partial")
@@ -105,7 +105,7 @@ def test_analysis_partial_shows_no_deps_text(client: TestClient) -> None:
     """Partial must render 'None' when the issue has no dependencies."""
     analysis = _make_analysis(number=404, dependencies=[])
     with patch(
-        "agentception.routes.ui.analyze_issue",
+        "agentception.routes.ui.overview.analyze_issue",
         new=AsyncMock(return_value=analysis),
     ):
         response = client.post("/api/analyze/issue/404/partial")
@@ -117,7 +117,7 @@ def test_analysis_partial_shows_merge_after(client: TestClient) -> None:
     """Partial must render the MERGE_AFTER chip when recommended_merge_after is set."""
     analysis = _make_analysis(number=505, dependencies=[620], recommended_merge_after=620)
     with patch(
-        "agentception.routes.ui.analyze_issue",
+        "agentception.routes.ui.overview.analyze_issue",
         new=AsyncMock(return_value=analysis),
     ):
         response = client.post("/api/analyze/issue/505/partial")
@@ -135,7 +135,7 @@ def test_analysis_partial_shows_role(client: TestClient) -> None:
     """Partial must render the recommended role as a role chip."""
     analysis = _make_analysis(number=606, recommended_role="python-developer")
     with patch(
-        "agentception.routes.ui.analyze_issue",
+        "agentception.routes.ui.overview.analyze_issue",
         new=AsyncMock(return_value=analysis),
     ):
         response = client.post("/api/analyze/issue/606/partial")
@@ -148,7 +148,7 @@ def test_analysis_partial_shows_database_architect_role(client: TestClient) -> N
     """Partial must render database-architect role when analysis recommends it."""
     analysis = _make_analysis(number=707, recommended_role="database-architect")
     with patch(
-        "agentception.routes.ui.analyze_issue",
+        "agentception.routes.ui.overview.analyze_issue",
         new=AsyncMock(return_value=analysis),
     ):
         response = client.post("/api/analyze/issue/707/partial")
@@ -165,7 +165,7 @@ def test_analysis_partial_shows_parallelism_safe_badge(client: TestClient) -> No
     """Partial must render a green 'Parallel safe' badge for safe issues."""
     analysis = _make_analysis(number=808, parallelism="safe")
     with patch(
-        "agentception.routes.ui.analyze_issue",
+        "agentception.routes.ui.overview.analyze_issue",
         new=AsyncMock(return_value=analysis),
     ):
         response = client.post("/api/analyze/issue/808/partial")
@@ -178,7 +178,7 @@ def test_analysis_partial_shows_parallelism_risky_badge(client: TestClient) -> N
     """Partial must render a yellow 'Risky' badge for risky issues."""
     analysis = _make_analysis(number=909, parallelism="risky")
     with patch(
-        "agentception.routes.ui.analyze_issue",
+        "agentception.routes.ui.overview.analyze_issue",
         new=AsyncMock(return_value=analysis),
     ):
         response = client.post("/api/analyze/issue/909/partial")
@@ -191,7 +191,7 @@ def test_analysis_partial_shows_serial_badge(client: TestClient) -> None:
     """Partial must render a red 'Serial only' badge for serial issues."""
     analysis = _make_analysis(number=111, parallelism="serial")
     with patch(
-        "agentception.routes.ui.analyze_issue",
+        "agentception.routes.ui.overview.analyze_issue",
         new=AsyncMock(return_value=analysis),
     ):
         response = client.post("/api/analyze/issue/111/partial")
@@ -208,7 +208,7 @@ def test_analysis_partial_shows_serial_badge(client: TestClient) -> None:
 def test_analysis_partial_404_on_unknown_issue(client: TestClient) -> None:
     """POST must return HTTP 404 when the GitHub CLI reports the issue not found."""
     with patch(
-        "agentception.routes.ui.analyze_issue",
+        "agentception.routes.ui.overview.analyze_issue",
         new=AsyncMock(side_effect=RuntimeError("issue not found: #99999")),
     ):
         response = client.post("/api/analyze/issue/99999/partial")
@@ -218,7 +218,7 @@ def test_analysis_partial_404_on_unknown_issue(client: TestClient) -> None:
 def test_analysis_partial_500_on_github_error(client: TestClient) -> None:
     """POST must return HTTP 500 when the GitHub CLI exits with a non-zero status."""
     with patch(
-        "agentception.routes.ui.analyze_issue",
+        "agentception.routes.ui.overview.analyze_issue",
         new=AsyncMock(side_effect=RuntimeError("gh: authentication failed")),
     ):
         response = client.post("/api/analyze/issue/123/partial")
@@ -248,7 +248,7 @@ def test_overview_shows_analyze_button_for_unclaimed_issues(client: TestClient) 
         board_issues=[BoardIssue(number=42, title="Add feature X")],
         polled_at=0.0,
     )
-    with patch("agentception.routes.ui.get_state", return_value=state):
+    with patch("agentception.routes.ui.overview.get_state", return_value=state):
         response = client.get("/")
 
     assert response.status_code == 200
@@ -271,9 +271,12 @@ def test_overview_hides_analyze_button_for_claimed_issues(client: TestClient) ->
 
     # board_issues is empty — claimed issues are filtered before reaching state.
     state = PipelineState.empty()
-    with patch("agentception.routes.ui.get_state", return_value=state):
+    with patch("agentception.routes.ui.overview.get_state", return_value=state):
         response = client.get("/")
 
     assert response.status_code == 200
-    # Issue 99 must not appear — it was never put into board_issues.
-    assert "99" not in response.text
+    # Issue 99 must not appear in board_issues — it was claimed and filtered out.
+    # We check for the JSON field "number": 99 rather than bare "99" which can
+    # appear inside timestamps or other numeric values in the page.
+    assert '"number": 99' not in response.text
+    assert "issue-99" not in response.text

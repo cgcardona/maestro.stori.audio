@@ -73,18 +73,22 @@ def test_spawn_creates_worktree_and_task_file(
     # Simulate what `git worktree add` would do: create the directory.
     expected_worktree = worktree_dir / "issue-42"
 
-    proc_mock = MagicMock()
-    proc_mock.returncode = 0
-
-    async def _fake_communicate() -> tuple[bytes, bytes]:
-        # Simulate git creating the worktree directory on communicate().
-        expected_worktree.mkdir(parents=True, exist_ok=True)
-        return (b"", b"")
-
-    proc_mock.communicate = _fake_communicate
-
     async def _fake_exec(*args: object, **kwargs: object) -> MagicMock:
-        return proc_mock
+        # Only simulate `git worktree add` creating the directory.  Other
+        # subprocesses (e.g. `gh` CLI calls from the background poller) must
+        # NOT create the worktree prematurely or the pre-flight existence check
+        # will fire a spurious 409 before the spawn handler even starts.
+        is_worktree_add = "worktree" in args and "add" in args
+        mock = MagicMock()
+        mock.returncode = 0
+
+        async def _fake_communicate() -> tuple[bytes, bytes]:
+            if is_worktree_add:
+                expected_worktree.mkdir(parents=True, exist_ok=True)
+            return (b"", b"")
+
+        mock.communicate = _fake_communicate
+        return mock
 
     with (
         patch(
@@ -300,17 +304,18 @@ def test_spawn_returns_html_when_accept_text_html(
     worktree_dir.mkdir(parents=True)
     expected_worktree = worktree_dir / "issue-55"
 
-    proc_mock = MagicMock()
-    proc_mock.returncode = 0
-
-    async def _fake_communicate() -> tuple[bytes, bytes]:
-        expected_worktree.mkdir(parents=True, exist_ok=True)
-        return (b"", b"")
-
-    proc_mock.communicate = _fake_communicate
-
     async def _fake_exec(*args: object, **kwargs: object) -> MagicMock:
-        return proc_mock
+        is_worktree_add = "worktree" in args and "add" in args
+        mock = MagicMock()
+        mock.returncode = 0
+
+        async def _fake_communicate() -> tuple[bytes, bytes]:
+            if is_worktree_add:
+                expected_worktree.mkdir(parents=True, exist_ok=True)
+            return (b"", b"")
+
+        mock.communicate = _fake_communicate
+        return mock
 
     with (
         patch(
@@ -360,17 +365,18 @@ def test_spawn_returns_json_without_html_accept(
     worktree_dir.mkdir(parents=True)
     expected_worktree = worktree_dir / "issue-56"
 
-    proc_mock = MagicMock()
-    proc_mock.returncode = 0
-
-    async def _fake_communicate() -> tuple[bytes, bytes]:
-        expected_worktree.mkdir(parents=True, exist_ok=True)
-        return (b"", b"")
-
-    proc_mock.communicate = _fake_communicate
-
     async def _fake_exec(*args: object, **kwargs: object) -> MagicMock:
-        return proc_mock
+        is_worktree_add = "worktree" in args and "add" in args
+        mock = MagicMock()
+        mock.returncode = 0
+
+        async def _fake_communicate() -> tuple[bytes, bytes]:
+            if is_worktree_add:
+                expected_worktree.mkdir(parents=True, exist_ok=True)
+            return (b"", b"")
+
+        mock.communicate = _fake_communicate
+        return mock
 
     with (
         patch(

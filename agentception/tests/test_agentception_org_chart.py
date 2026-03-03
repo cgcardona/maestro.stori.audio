@@ -225,17 +225,17 @@ class TestSelectPreset:
 
 
 class TestRolesTaxonomy:
-    """GET /api/roles/taxonomy — role taxonomy endpoint."""
+    """GET /api/org/taxonomy — org-chart tier taxonomy endpoint."""
 
     def test_taxonomy_returns_200(self, client: TestClient) -> None:
-        """GET /api/roles/taxonomy should return HTTP 200 with JSON."""
-        resp = client.get("/api/roles/taxonomy")
+        """GET /api/org/taxonomy should return HTTP 200 with JSON."""
+        resp = client.get("/api/org/taxonomy")
         assert resp.status_code == 200
         assert "application/json" in resp.headers["content-type"]
 
     def test_taxonomy_has_all_tiers(self, client: TestClient) -> None:
         """Response must contain c_suite, vp, and worker tiers."""
-        resp = client.get("/api/roles/taxonomy")
+        resp = client.get("/api/org/taxonomy")
         data = resp.json()
         assert "tiers" in data
         tiers = data["tiers"]
@@ -245,7 +245,7 @@ class TestRolesTaxonomy:
 
     def test_taxonomy_tier_has_label_and_roles(self, client: TestClient) -> None:
         """Each tier entry must have a 'label' string and a 'roles' list."""
-        resp = client.get("/api/roles/taxonomy")
+        resp = client.get("/api/org/taxonomy")
         tiers = resp.json()["tiers"]
         for tier_key, tier_data in tiers.items():
             assert "label" in tier_data, f"tier {tier_key!r} missing 'label'"
@@ -254,7 +254,7 @@ class TestRolesTaxonomy:
 
     def test_taxonomy_contains_known_roles(self, client: TestClient) -> None:
         """Known roles like 'cto' and 'python-developer' must appear in the taxonomy."""
-        resp = client.get("/api/roles/taxonomy")
+        resp = client.get("/api/org/taxonomy")
         tiers = resp.json()["tiers"]
         all_roles: list[str] = []
         for tier_data in tiers.values():
