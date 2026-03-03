@@ -215,8 +215,8 @@ def test_roles_page_loads_successfully(
 ) -> None:
     """GET /roles HTML must return 200 with the three-panel Cognitive Architecture UI.
 
-    The new design fetches role data from /api/roles/taxonomy via JS, so the
-    initial HTML contains structural elements rather than a rendered role list.
+    The template uses SSR Jinja2 for the org tree panel and Alpine.js components
+    for the detail/editor panels.  CSS class names encode the three-panel structure.
     """
     with patch("agentception.routes.roles.settings") as mock_settings:
         mock_settings.repo_dir = tmp_repo
@@ -225,24 +225,25 @@ def test_roles_page_loads_successfully(
 
     assert response.status_code == 200
     html = response.text
-    # Three-panel layout markers
-    assert "org-tree" in html
-    assert "panel-center" in html
-    assert "panel-editor" in html
-    # JS bootstrap fetches taxonomy
-    assert "/api/roles/taxonomy" in html
-    assert "/api/roles/personas" in html
-    assert "/api/roles/atoms" in html
+    # Three-panel layout markers (CSS class names used by the template)
+    assert "cas-panel--org" in html
+    assert "cas-panel--detail" in html
+    assert "cas-panel--editor" in html
+    # Alpine.js components that drive interactivity
+    assert "rolesEditor()" in html
 
 
 def test_roles_page_includes_monaco_cdn(
     client: TestClient,
     tmp_repo: Path,
 ) -> None:
-    """GET /roles HTML must include the Monaco Editor CDN loader script tag.
+    """GET /roles HTML must load the rolesEditor() Alpine component.
 
-    The Monaco AMD loader URL must appear verbatim — frontend consumers
-    depend on this exact CDN path for Monaco to initialise.
+    Monaco is bootstrapped lazily by rolesEditor._bootMonaco() when the user
+    first opens a prompt for editing — the CDN script tag is injected at
+    runtime, not on page load.  The HTML therefore does NOT contain a static
+    Monaco <script> tag; instead we verify the rolesEditor Alpine component is
+    present, which is the entry-point that boots Monaco on demand.
     """
     with patch("agentception.routes.roles.settings") as mock_settings:
         mock_settings.repo_dir = tmp_repo
@@ -254,7 +255,7 @@ def test_roles_page_includes_monaco_cdn(
             response = client.get("/roles")
 
     assert response.status_code == 200
-    assert "cdn.jsdelivr.net/npm/monaco-editor@0.52.0/min/vs/loader.js" in response.text
+    assert "rolesEditor()" in response.text
 
 
 # ── role_diff (AC-303) ────────────────────────────────────────────────────────
@@ -334,19 +335,17 @@ def test_commit_writes_file_and_creates_commit(
     with patch("agentception.routes.roles.settings") as mock_settings:
         mock_settings.repo_dir = tmp_repo
 
-        call_count = 0
+        _SHA = b"abcdef1234567890abcdef1234567890abcdef12\n"
 
         async def fake_git(*args: object, **kwargs: object) -> object:
-            nonlocal call_count
-            call_count += 1
+            # Return the commit SHA for rev-parse; empty stdout for add/commit.
+            is_rev_parse = len(args) >= 1 and "rev-parse" in args
 
             class FakeProc:
                 returncode = 0
 
                 async def communicate(self) -> tuple[bytes, bytes]:
-                    if call_count == 3:
-                        return b"abcdef1234567890abcdef1234567890abcdef12\n", b""
-                    return b"", b""
+                    return (_SHA, b"") if is_rev_parse else (b"", b"")
 
             return FakeProc()
 

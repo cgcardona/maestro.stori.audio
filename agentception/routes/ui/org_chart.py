@@ -7,7 +7,7 @@ Provides:
   preset to ``pipeline-config.json`` and refreshes the left panel.
 - ``GET /api/org/tree`` — returns the active preset as a hierarchical JSON
   tree consumed by the D3 tree visualization in ``org_chart_tree.js``.
-- ``GET /api/roles/taxonomy`` — returns the role taxonomy grouped by tier
+- ``GET /api/org/taxonomy`` — returns the role taxonomy grouped by tier (org-chart view)
   (c_suite / vp / worker) for the Add Role dropdown.
 - ``POST /api/org/roles/add`` — adds a role to the active builder org and
   returns a refreshed role list partial.
@@ -488,7 +488,7 @@ async def select_preset(
     )
 
 
-@router.get("/api/roles/taxonomy")
+@router.get("/api/org/taxonomy")
 async def roles_taxonomy() -> JSONResponse:
     """Return the role taxonomy grouped by tier for the Add Role dropdown.
 
