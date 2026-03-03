@@ -1,12 +1,15 @@
-"""AgentCeption MCP layer — JSON-RPC 2.0 tool server.
+"""AgentCeption MCP package.
 
-Exposes AgentCeption plan schema and validation capabilities as MCP tools
-via a self-contained JSON-RPC 2.0 dispatcher.
+Provides Model Context Protocol (JSON-RPC 2.0) tool definitions and
+dispatchers for the plan-step-v2 pipeline.  All tools operate within the
+``agentception/`` boundary — zero imports from maestro, muse, kly, or storpheus.
 
 Public surface:
-  - ``agentception.mcp.types``   — protocol TypedDicts (ACToolDef, ACToolResult, …)
-  - ``agentception.mcp.plan_tools`` — plan_get_schema(), plan_validate_spec()
-  - ``agentception.mcp.server``  — JSON-RPC 2.0 dispatcher (handle_request)
+  - ``agentception.mcp.types``      — protocol TypedDicts (ACToolDef, ACToolResult, …)
+  - ``agentception.mcp.plan_tools`` — plan_get_schema(), plan_validate_spec(),
+                                      plan_get_labels(), plan_validate_manifest(),
+                                      plan_spawn_coordinator()
+  - ``agentception.mcp.server``     — JSON-RPC 2.0 dispatcher (handle_request)
 
 Boundary constraint: zero imports from maestro, muse, kly, or storpheus.
 """

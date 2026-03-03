@@ -21,8 +21,14 @@ from __future__ import annotations
 
 import json
 import logging
+from typing import cast
 
-from agentception.mcp.plan_tools import plan_get_schema, plan_validate_spec
+from agentception.mcp.plan_tools import (
+    plan_get_labels,
+    plan_get_schema,
+    plan_validate_manifest,
+    plan_validate_spec,
+)
 from agentception.mcp.types import (
     ACToolContent,
     ACToolDef,
@@ -31,6 +37,9 @@ from agentception.mcp.types import (
     JSONRPC_ERR_INVALID_PARAMS,
     JSONRPC_ERR_INVALID_REQUEST,
     JSONRPC_ERR_METHOD_NOT_FOUND,
+    JsonRpcError,
+    JsonRpcErrorResponse,
+    JsonRpcSuccessResponse,
 )
 
 logger = logging.getLogger(__name__)
@@ -73,6 +82,55 @@ TOOLS: list[ACToolDef] = [
             "additionalProperties": False,
         },
     ),
+    ACToolDef(
+        name="plan_get_labels",
+        description=(
+            "Fetch the full GitHub label list for the configured repository. "
+            "Returns {labels: [{name: str, description: str}, ...]}."
+        ),
+        inputSchema={
+            "type": "object",
+            "properties": {},
+            "additionalProperties": False,
+        },
+    ),
+    ACToolDef(
+        name="plan_validate_manifest",
+        description=(
+            "Validate a JSON string against the EnrichedManifest schema. "
+            "Returns {valid: true, manifest: {...}, total_issues: int, estimated_waves: int} "
+            "or {valid: false, errors: [...]}."
+        ),
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "json_text": {
+                    "type": "string",
+                    "description": "A JSON-encoded EnrichedManifest object to validate.",
+                }
+            },
+            "required": ["json_text"],
+            "additionalProperties": False,
+        },
+    ),
+    ACToolDef(
+        name="plan_spawn_coordinator",
+        description=(
+            "Validate a manifest and create a coordinator git worktree with a .agent-task file. "
+            "Returns {worktree, branch, agent_task_path, batch_id}."
+        ),
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "manifest_json": {
+                    "type": "string",
+                    "description": "A JSON-encoded EnrichedManifest for the coordinator.",
+                }
+            },
+            "required": ["manifest_json"],
+            "additionalProperties": False,
+        },
+    ),
 ]
 
 # ---------------------------------------------------------------------------
@@ -85,29 +143,18 @@ def _make_error_response(
     code: int,
     message: str,
     data: object = None,
-) -> dict[str, object]:
+) -> JsonRpcErrorResponse:
     """Build a well-formed JSON-RPC 2.0 error response."""
-    return {
-        "jsonrpc": "2.0",
-        "id": request_id,
-        "error": {
-            "code": code,
-            "message": message,
-            "data": data,
-        },
-    }
+    error: JsonRpcError = JsonRpcError(code=code, message=message, data=data)
+    return JsonRpcErrorResponse(jsonrpc="2.0", id=request_id, error=error)
 
 
 def _make_success_response(
     request_id: int | str | None,
     result: object,
-) -> dict[str, object]:
+) -> JsonRpcSuccessResponse:
     """Build a well-formed JSON-RPC 2.0 success response."""
-    return {
-        "jsonrpc": "2.0",
-        "id": request_id,
-        "result": result,
-    }
+    return JsonRpcSuccessResponse(jsonrpc="2.0", id=request_id, result=result)
 
 
 def _tool_result_to_text(result: dict[str, object]) -> str:
@@ -132,6 +179,10 @@ def list_tools() -> list[ACToolDef]:
 
 def call_tool(name: str, arguments: dict[str, object]) -> ACToolResult:
     """Dispatch a ``tools/call`` request to the named tool function.
+
+    Note: ``plan_get_labels`` and ``plan_spawn_coordinator`` are async and
+    cannot be invoked here directly.  Callers that need those tools must use
+    the async variants directly or wrap this dispatcher in an async context.
 
     Args:
         name:      The tool name as it appears in the ``tools/list`` response.
@@ -166,6 +217,33 @@ def call_tool(name: str, arguments: dict[str, object]) -> ACToolResult:
         return ACToolResult(
             content=[ACToolContent(type="text", text=text)],
             isError=is_error,
+        )
+
+    if name == "plan_validate_manifest":
+        json_text = arguments.get("json_text")
+        if not isinstance(json_text, str):
+            err_text = _tool_result_to_text(
+                {"error": "Missing or invalid required argument 'json_text' (must be a string)"}
+            )
+            return ACToolResult(
+                content=[ACToolContent(type="text", text=err_text)],
+                isError=True,
+            )
+        result = plan_validate_manifest(json_text)
+        text = _tool_result_to_text(result)
+        is_error = not bool(result.get("valid", False))
+        return ACToolResult(
+            content=[ACToolContent(type="text", text=text)],
+            isError=is_error,
+        )
+
+    if name in ("plan_get_labels", "plan_spawn_coordinator"):
+        err_text = _tool_result_to_text(
+            {"error": f"Tool {name!r} is async — use the async call path"}
+        )
+        return ACToolResult(
+            content=[ACToolContent(type="text", text=err_text)],
+            isError=True,
         )
 
     err_text = _tool_result_to_text({"error": f"Unknown tool: {name!r}"})
@@ -208,50 +286,50 @@ def handle_request(
 
     jsonrpc = raw.get("jsonrpc")
     if jsonrpc != "2.0":
-        return _make_error_response(
+        return cast(dict[str, object], _make_error_response(
             request_id,
             JSONRPC_ERR_INVALID_REQUEST,
             "jsonrpc must be '2.0'",
-        )
+        ))
 
     method = raw.get("method")
     if not isinstance(method, str):
-        return _make_error_response(
+        return cast(dict[str, object], _make_error_response(
             request_id,
             JSONRPC_ERR_INVALID_REQUEST,
             "method must be a string",
-        )
+        ))
 
     logger.debug("🔧 handle_request: method=%r id=%r", method, request_id)
 
     if method == "tools/list":
         tools = list_tools()
-        return _make_success_response(request_id, {"tools": tools})
+        return cast(dict[str, object], _make_success_response(request_id, {"tools": tools}))
 
     if method == "tools/call":
         params = raw.get("params")
         if not isinstance(params, dict):
-            return _make_error_response(
+            return cast(dict[str, object], _make_error_response(
                 request_id,
                 JSONRPC_ERR_INVALID_PARAMS,
                 "params must be an object for tools/call",
-            )
+            ))
 
         tool_name = params.get("name")
         if not isinstance(tool_name, str):
-            return _make_error_response(
+            return cast(dict[str, object], _make_error_response(
                 request_id,
                 JSONRPC_ERR_INVALID_PARAMS,
                 "params.name must be a string",
-            )
+            ))
 
         arguments_raw = params.get("arguments", {})
         if not isinstance(arguments_raw, dict):
-            return _make_error_response(
+            return cast(dict[str, object], _make_error_response(
                 request_id,
                 JSONRPC_ERR_INVALID_PARAMS,
                 "params.arguments must be an object",
-            )
+            ))
 
         arguments: dict[str, object] = {k: v for k, v in arguments_raw.items()}
 
@@ -259,16 +337,16 @@ def handle_request(
             tool_result = call_tool(tool_name, arguments)
         except Exception as exc:
             logger.error("❌ handle_request: internal error in call_tool — %s", exc, exc_info=True)
-            return _make_error_response(
+            return cast(dict[str, object], _make_error_response(
                 request_id,
                 JSONRPC_ERR_INTERNAL_ERROR,
                 f"Internal error: {exc}",
-            )
+            ))
 
-        return _make_success_response(request_id, tool_result)
+        return cast(dict[str, object], _make_success_response(request_id, tool_result))
 
-    return _make_error_response(
+    return cast(dict[str, object], _make_error_response(
         request_id,
         JSONRPC_ERR_METHOD_NOT_FOUND,
         f"Method not found: {method!r}",
-    )
+    ))
