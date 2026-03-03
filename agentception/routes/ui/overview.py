@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from itertools import groupby as _groupby
 
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import HTMLResponse
@@ -81,12 +82,28 @@ async def overview(request: Request) -> HTMLResponse:
     board_issues = state.board_issues
     unclaimed = [i for i in board_issues if not i.claimed]
 
+    # Group board issues by phase_label for the batch-grouped board layout.
+    # Issues without a phase_label are collected under "unassigned".
+    board_issues_dicts = [i.model_dump() for i in board_issues]
+    sorted_for_grouping = sorted(
+        board_issues_dicts,
+        key=lambda i: i.get("phase_label") or "unassigned",
+    )
+    grouped_board_issues: list[tuple[str, list[dict[str, object]]]] = [
+        (batch_key, list(batch))
+        for batch_key, batch in _groupby(
+            sorted_for_grouping,
+            key=lambda i: i.get("phase_label") or "unassigned",
+        )
+    ]
+
     return _TEMPLATES.TemplateResponse(
         request,
         "overview.html",
         {
             "state": state,
-            "board_issues": [i.model_dump() for i in board_issues],
+            "board_issues": board_issues_dicts,
+            "grouped_board_issues": grouped_board_issues,
             "active_phase_label": state.active_label,
             "all_phase_labels": all_phase_labels,
             "label_is_pinned": label_is_pinned,
