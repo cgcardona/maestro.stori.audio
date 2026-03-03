@@ -2,10 +2,10 @@
 
 Endpoints
 ---------
-POST /api/brain-dump/plan                    — phase preview (no GitHub resources created)
-GET  /brain-dump                             — full page
-GET  /brain-dump/recent-runs                 — HTMX partial (sidebar refresh)
-GET  /api/brain-dump/{run_id}/dump-text      — return original plan text for re-run
+POST /api/plan/preview                   — phase preview (no GitHub resources created)
+GET  /plan                               — full page
+GET  /plan/recent-runs                   — HTMX partial (sidebar refresh)
+GET  /api/plan/{run_id}/plan-text        — return original plan text for re-run
 """
 from __future__ import annotations
 
@@ -27,7 +27,7 @@ router = APIRouter()
 # Plan page — static data (defined once, passed to Jinja)
 # ---------------------------------------------------------------------------
 
-_BD_FUNNEL_STAGES = [
+_PLAN_FUNNEL_STAGES = [
     {"icon": "🧠", "label": "Plan",    "desc": "Your raw input"},
     {"icon": "📋", "label": "Analyze", "desc": "Classify items"},
     {"icon": "🗂️", "label": "Phase",   "desc": "Group by dependency"},
@@ -36,7 +36,7 @@ _BD_FUNNEL_STAGES = [
     {"icon": "🤖", "label": "Agents",  "desc": "Dispatch to engineers"},
 ]
 
-_BD_SEEDS = [
+_PLAN_SEEDS = [
     {
         "label": "🐛 Bug triage",
         "text": (
@@ -75,7 +75,7 @@ _BD_SEEDS = [
     },
 ]
 
-_BD_LOADING_MSGS: list[str] = [
+_PLAN_LOADING_MSGS: list[str] = [
     "Analyzing your plan…",
     "Planning phases…",
     "Setting up labels…",
@@ -87,13 +87,13 @@ _BD_LOADING_MSGS: list[str] = [
 def _parse_task_fields(content: str) -> dict[str, str]:
     """Parse key=value lines from the structured header of a ``.agent-task`` file.
 
-    Only processes lines before the first blank line or ``BRAIN_DUMP:`` marker so
-    that multi-line dump text is never misinterpreted as a key=value pair.
+    Only processes lines before the first blank line or ``PLAN_DUMP:`` marker so
+    that multi-line plan text is never misinterpreted as a key=value pair.
     """
     fields: dict[str, str] = {}
     for line in content.splitlines():
         stripped = line.strip()
-        if not stripped or stripped == "BRAIN_DUMP:":
+        if not stripped or stripped == "PLAN_DUMP:":
             break
         if "=" in stripped:
             key, _, val = stripped.partition("=")
@@ -101,26 +101,26 @@ def _parse_task_fields(content: str) -> dict[str, str]:
     return fields
 
 
-def _count_dump_items(dump_text: str) -> int:
-    """Count non-empty lines in a BRAIN_DUMP block as a proxy for item count."""
-    return sum(1 for ln in dump_text.splitlines() if ln.strip())
+def _count_plan_items(plan_text: str) -> int:
+    """Count non-empty lines in a PLAN_DUMP block as a proxy for item count."""
+    return sum(1 for ln in plan_text.splitlines() if ln.strip())
 
 
-async def _build_recent_dumps() -> list[dict[str, str]]:
-    """Scan the worktrees directory and return metadata for the 6 most recent brain-dump runs.
+async def _build_recent_plans() -> list[dict[str, str]]:
+    """Scan the worktrees directory and return metadata for the 6 most recent plan runs.
 
     Each entry contains: slug, label_prefix, preview, ts, batch_id, item_count.
-    ``item_count`` is a line-count heuristic over the BRAIN_DUMP block (not a live
+    ``item_count`` is a line-count heuristic over the PLAN_DUMP block (not a live
     GitHub issue count) so no network call is needed on the hot render path.
     """
     from agentception.config import settings as _cfg
 
-    recent_dumps: list[dict[str, str]] = []
+    recent_plans: list[dict[str, str]] = []
     worktrees_dir = _cfg.worktrees_dir
     try:
         if worktrees_dir.exists():
             candidates = sorted(
-                (d for d in worktrees_dir.iterdir() if d.is_dir() and d.name.startswith("brain-dump-")),
+                (d for d in worktrees_dir.iterdir() if d.is_dir() and d.name.startswith("plan-")),
                 key=lambda p: p.stat().st_mtime,
                 reverse=True,
             )
@@ -136,20 +136,20 @@ async def _build_recent_dumps() -> list[dict[str, str]]:
                         fields = _parse_task_fields(content)
                         label_prefix = fields.get("LABEL_PREFIX", "")
                         batch_id = fields.get("BATCH_ID", d.name)
-                        if "BRAIN_DUMP:" in content:
-                            dump_part = content.split("BRAIN_DUMP:", 1)[1].strip()
-                            first = next((ln.strip() for ln in dump_part.splitlines() if ln.strip()), "")
+                        if "PLAN_DUMP:" in content:
+                            plan_part = content.split("PLAN_DUMP:", 1)[1].strip()
+                            first = next((ln.strip() for ln in plan_part.splitlines() if ln.strip()), "")
                             preview = first[:90]
-                            count = _count_dump_items(dump_part)
+                            count = _count_plan_items(plan_part)
                             item_count = str(count) if count else "—"
                     except OSError:
                         pass
-                ts_raw = d.name[len("brain-dump-"):]
+                ts_raw = d.name[len("plan-"):]
                 try:
                     ts_fmt = f"{ts_raw[:4]}-{ts_raw[4:6]}-{ts_raw[6:8]} {ts_raw[9:11]}:{ts_raw[11:13]}"
                 except Exception:
                     ts_fmt = ts_raw
-                recent_dumps.append({
+                recent_plans.append({
                     "slug": d.name,
                     "label_prefix": label_prefix,
                     "preview": preview,
@@ -159,11 +159,11 @@ async def _build_recent_dumps() -> list[dict[str, str]]:
                 })
     except OSError:
         pass
-    return recent_dumps
+    return recent_plans
 
 
-@router.post("/api/brain-dump/plan", response_model=PlanResult)
-async def brain_dump_plan(body: PlanRequest) -> PlanResult:
+@router.post("/api/plan/preview", response_model=PlanResult)
+async def plan_preview(body: PlanRequest) -> PlanResult:
     """Run the Phase Planner against a plan without creating any GitHub resources.
 
     This is Step -1 of the coordinator workflow — it analyses the raw plan text,
@@ -180,49 +180,49 @@ async def brain_dump_plan(body: PlanRequest) -> PlanResult:
         result = plan_phases(body.dump)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
-    logger.info("✅ Phase plan: %d phases for dump of %d chars", len(result.phases), len(body.dump))
+    logger.info("✅ Phase plan: %d phases for plan of %d chars", len(result.phases), len(body.dump))
     return result
 
 
-@router.get("/brain-dump", response_class=HTMLResponse)
-async def brain_dump_page(request: Request) -> HTMLResponse:
+@router.get("/plan", response_class=HTMLResponse)
+async def plan_page(request: Request) -> HTMLResponse:
     """Plan — convert free-form text into phased GitHub issues."""
     from agentception.config import settings as _cfg
 
-    recent_dumps = await _build_recent_dumps()
+    recent_plans = await _build_recent_plans()
     return _TEMPLATES.TemplateResponse(
         request,
-        "brain_dump.html",
+        "plan.html",
         {
-            "recent_dumps": recent_dumps,
+            "recent_plans": recent_plans,
             "gh_repo": _cfg.gh_repo,
-            "funnel_stages": _BD_FUNNEL_STAGES,
-            "seeds": _BD_SEEDS,
-            "loading_msgs": _BD_LOADING_MSGS,
+            "funnel_stages": _PLAN_FUNNEL_STAGES,
+            "seeds": _PLAN_SEEDS,
+            "loading_msgs": _PLAN_LOADING_MSGS,
         },
     )
 
 
-@router.get("/brain-dump/recent-runs", response_class=HTMLResponse)
-async def brain_dump_recent_runs(request: Request) -> HTMLResponse:
+@router.get("/plan/recent-runs", response_class=HTMLResponse)
+async def plan_recent_runs(request: Request) -> HTMLResponse:
     """HTMX partial — returns the recent-runs sidebar section.
 
-    Triggered by Alpine after a successful brain-dump submit so the sidebar
+    Triggered by Alpine after a successful plan submit so the sidebar
     updates without a full page reload.
     """
     from agentception.config import settings as _cfg
 
-    recent_dumps = await _build_recent_dumps()
+    recent_plans = await _build_recent_plans()
     return _TEMPLATES.TemplateResponse(
         request,
-        "_bd_recent_runs.html",
-        {"recent_dumps": recent_dumps, "gh_repo": _cfg.gh_repo},
+        "_plan_recent_runs.html",
+        {"recent_plans": recent_plans, "gh_repo": _cfg.gh_repo},
     )
 
 
-@router.get("/api/brain-dump/{run_id}/dump-text")
-async def brain_dump_run_dump_text(run_id: str) -> JSONResponse:
-    """Return the original BRAIN_DUMP text for a given run slug.
+@router.get("/api/plan/{run_id}/plan-text")
+async def plan_run_text(run_id: str) -> JSONResponse:
+    """Return the original PLAN_DUMP text for a given run slug.
 
     Used by the "Re-run →" button in the sidebar: the JS handler fetches this,
     populates the main textarea, and switches Alpine to the ``input`` step so
@@ -231,21 +231,21 @@ async def brain_dump_run_dump_text(run_id: str) -> JSONResponse:
     Parameters
     ----------
     run_id:
-        The directory slug, e.g. ``brain-dump-20260303-164033``.  Must start
-        with ``brain-dump-`` and must not contain path traversal characters.
+        The directory slug, e.g. ``plan-20260303-164033``.  Must start
+        with ``plan-`` and must not contain path traversal characters.
 
     Raises
     ------
     HTTP 400
         When ``run_id`` contains illegal characters or does not start with
-        ``brain-dump-``.
+        ``plan-``.
     HTTP 404
         When the worktree directory or ``.agent-task`` file does not exist, or
-        the file contains no ``BRAIN_DUMP:`` section.
+        the file contains no ``PLAN_DUMP:`` section.
     """
     from agentception.config import settings as _cfg
 
-    if not run_id.startswith("brain-dump-") or "/" in run_id or ".." in run_id:
+    if not run_id.startswith("plan-") or "/" in run_id or ".." in run_id:
         raise HTTPException(status_code=400, detail="Invalid run_id format.")
 
     task_file = _cfg.worktrees_dir / run_id / ".agent-task"
@@ -258,8 +258,8 @@ async def brain_dump_run_dump_text(run_id: str) -> JSONResponse:
         logger.warning("⚠️ Could not read .agent-task for run %s: %s", run_id, exc)
         raise HTTPException(status_code=404, detail="Could not read task file.") from exc
 
-    if "BRAIN_DUMP:" not in content:
-        raise HTTPException(status_code=404, detail="No BRAIN_DUMP section in task file.")
+    if "PLAN_DUMP:" not in content:
+        raise HTTPException(status_code=404, detail="No PLAN_DUMP section in task file.")
 
-    dump_text = content.split("BRAIN_DUMP:", 1)[1].strip()
-    return JSONResponse({"dump_text": dump_text})
+    plan_text = content.split("PLAN_DUMP:", 1)[1].strip()
+    return JSONResponse({"plan_text": plan_text})

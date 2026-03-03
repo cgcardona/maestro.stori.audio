@@ -9,13 +9,13 @@
   Alpine : step machine (input → previewing → loading → done), form state,
            phase card preview, loading animation
   CSS    : app.css  §  Plan
-  JS     : brain_dump.js  →  brainDump()
+  JS     : plan.js  →  planForm()
   ─────────────────────────────────────────────────────────────────────────────
 #}
 
 <div
   class="bd-page"
-  x-data="brainDump()"
+  x-data="planForm()"
   x-init="init()"
   data-loading-msgs='{{ loading_msgs | tojson }}'
 >
@@ -229,7 +229,7 @@
       <div class="bd-preview-actions">
         <button
           class="btn btn-secondary bd-back-btn"
-          @click="editDump()"
+          @click="editPlan()"
           :disabled="submitting"
         >
           ← Edit plan
@@ -299,7 +299,7 @@
 
     {# Recent runs — server-rendered initially, HTMX-refreshed after submit ── #}
     {# The partial owns the #bd-recent-runs div with HTMX attrs so outerHTML swap works. #}
-    {% include "_bd_recent_runs.html" %}
+    {% include "_plan_recent_runs.html" %}
 
   </aside>
 

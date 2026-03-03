@@ -165,40 +165,40 @@ def test_config_panels_have_aria_labelledby() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_brain_dump_stepper_present() -> None:
-    """brain_dump.html must include the horizontal step indicator nav element."""
-    content = _read("brain_dump.html")
+def test_plan_stepper_present() -> None:
+    """plan.html must include the horizontal step indicator nav element."""
+    content = _read("plan.html")
     assert 'class="bd-stepper"' in content, (
-        "brain_dump.html is missing the .bd-stepper nav element"
+        "plan.html is missing the .bd-stepper nav element"
     )
 
 
-def test_brain_dump_stepper_has_aria_label() -> None:
+def test_plan_stepper_has_aria_label() -> None:
     """The stepper nav must carry aria-label='Progress' for screen readers."""
-    content = _read("brain_dump.html")
+    content = _read("plan.html")
     assert 'aria-label="Progress"' in content, (
-        "brain_dump.html stepper is missing aria-label='Progress'"
+        "plan.html stepper is missing aria-label='Progress'"
     )
 
 
-def test_brain_dump_stepper_has_four_steps() -> None:
-    """The stepper must render exactly four step labels: Dump, Preview, Running, Done."""
-    content = _read("brain_dump.html")
-    for label in ("Dump", "Preview", "Running", "Done"):
+def test_plan_stepper_has_four_steps() -> None:
+    """The stepper must render exactly four step labels: Plan, Preview, Running, Done."""
+    content = _read("plan.html")
+    for label in ("Plan", "Preview", "Running", "Done"):
         assert f">{label}<" in content, (
-            f"brain_dump.html stepper is missing step label '{label}'"
+            f"plan.html stepper is missing step label '{label}'"
         )
 
 
-def test_brain_dump_stepper_driven_by_step_var() -> None:
+def test_plan_stepper_driven_by_step_var() -> None:
     """Stepper classes must reference the existing Alpine 'step' variable, not new state."""
-    content = _read("brain_dump.html")
+    content = _read("plan.html")
     assert "step === 'input'" in content, (
-        "brain_dump.html stepper must use the existing Alpine 'step' variable"
+        "plan.html stepper must use the existing Alpine 'step' variable"
     )
     assert "step === 'loading'" in content, (
-        "brain_dump.html stepper must reference 'loading' state"
+        "plan.html stepper must reference 'loading' state"
     )
     assert "step === 'done'" in content, (
-        "brain_dump.html stepper must reference 'done' state"
+        "plan.html stepper must reference 'done' state"
     )
