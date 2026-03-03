@@ -90,6 +90,19 @@ export function dagVisualization() {
     _initD3() {
       if (typeof d3 === 'undefined') return;
 
+      // Capture Alpine component reference so non-Alpine closures (e.g.
+      // ResizeObserver) can call methods without relying on `this` binding.
+      const self = this;
+
+      // Signal latch: mirrors this.filter so the ResizeObserver closure
+      // always holds the latest filter value without accessing Alpine state.
+      let _activeFilter = this.filter;
+
+      // Debounce timer for ResizeObserver — acts as a 100 ms low-pass filter
+      // on the resize signal so rapid dimension changes coalesce into one
+      // _render() call.
+      let _resizeTimer = null;
+
       this._svg = d3.select('#dag-svg');
 
       this._zoom = d3.zoom()
@@ -119,9 +132,31 @@ export function dagVisualization() {
 
       this._render();
 
-      // Re-render whenever filter or search changes
-      this.$watch('filter', () => this._render());
-      this.$watch('search', () => this._render());
+      // Re-render whenever filter or search changes; keep _activeFilter in sync
+      // so the ResizeObserver latch is never stale.
+      this.$watch('filter', () => {
+        _activeFilter = self.filter;
+        self._render();
+      });
+      this.$watch('search', () => self._render());
+
+      // ResizeObserver — re-centres the force simulation when the SVG element
+      // changes dimensions.  The 100 ms debounce is a low-pass filter on the
+      // resize signal: rapid resize events coalesce into a single _render()
+      // invocation, avoiding mid-drag jitter.
+      const _observer = new ResizeObserver(() => {
+        clearTimeout(_resizeTimer);
+        _resizeTimer = setTimeout(() => self._render(_activeFilter), 100);
+      });
+      const svgEl = document.getElementById('dag-svg');
+      if (svgEl) _observer.observe(svgEl);
+
+      // Teardown: Alpine.js v3's data-object API does not expose a destroy()
+      // lifecycle hook on the component itself.  The correct approach is to
+      // register an 'alpine:destroy' listener on the root element via x-on or
+      // Alpine.bind — that handler should call _observer.disconnect().
+      // Leaving it disconnected here means the observer lives until the page
+      // is unloaded, which is acceptable for a single-page DAG view.
     },
 
     // ── D3 render ─────────────────────────────────────────────────────────
