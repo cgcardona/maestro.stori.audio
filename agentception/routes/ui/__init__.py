@@ -14,6 +14,7 @@ from fastapi import APIRouter
 
 from .ab_testing import router as _ab
 from .agents import router as _agents
+from .cognitive_arch import router as _cognitive_arch
 from .api_reference import router as _api_reference
 from .brain_dump import router as _brain_dump
 from .config import router as _config
@@ -49,3 +50,4 @@ router.include_router(_docs)
 router.include_router(_api_reference)
 router.include_router(_settings)
 router.include_router(_templates_ui)
+router.include_router(_cognitive_arch)
