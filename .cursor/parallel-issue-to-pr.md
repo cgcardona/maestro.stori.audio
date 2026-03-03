@@ -545,13 +545,15 @@ STEP 2 — CHECK CANONICAL STATE BEFORE DOING ANY WORK:
 
   # Leave an audit trail: which cognitive identity claimed this issue.
   AGENT_SESSION="eng-$(date -u +%Y%m%dT%H%M%SZ)-$(printf '%04x' $RANDOM)"
+  CLAIMED_AT=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
   CLAIM_FINGERPRINT=$(python3 "$REPO/scripts/gen_prompts/resolve_arch.py" "${COGNITIVE_ARCH:-unset}" \
     --fingerprint \
     --role "${ROLE:-python-developer}" \
     --session "$AGENT_SESSION" \
     --batch "${BATCH_ID:-none}" \
     --wave "${WAVE:-unset}" \
-    --vp "${VP_FINGERPRINT:-unset}" 2>/dev/null)
+    --vp "${VP_FINGERPRINT:-unset}" \
+    --started-at "$CLAIMED_AT" 2>/dev/null)
   # Fallback: if resolve_arch.py is unavailable or returned nothing, build the table in shell.
   # This ensures a consistent <details> table appears even when Python/PyYAML is absent.
   # ⚠️  Row labels MUST match render_fingerprint() exactly — this is the single source of truth.
@@ -1011,16 +1013,35 @@ STEP 5 — PUSH & CREATE PR:
 
   # Post fingerprint comment on the issue so it's traceable even if the claim
   # step was skipped (e.g. issue opened manually rather than claimed from pool).
-  gh issue comment <N> --repo "$GH_REPO" \
-    --body "🤖 **Implemented by agent** — PR #${MY_PR_NUM:-?}
-
-$(python3 "$REPO/scripts/gen_prompts/resolve_arch.py" "${COGNITIVE_ARCH:-unset}" \
+  # Reuse $PR_CREATED_AT so "Implemented" timestamp matches the PR creation moment.
+  IMPL_FINGERPRINT=$(python3 "$REPO/scripts/gen_prompts/resolve_arch.py" "${COGNITIVE_ARCH:-unset}" \
     --fingerprint \
     --role "${ROLE:-python-developer}" \
     --session "${AGENT_SESSION:-unset}" \
     --batch "${BATCH_ID:-none}" \
     --wave "${WAVE:-unset}" \
-    --vp "${VP_FINGERPRINT:-unset}")" 2>/dev/null || true
+    --vp "${VP_FINGERPRINT:-unset}" \
+    --started-at "${PR_CREATED_AT:-$(date -u '+%Y-%m-%dT%H:%M:%SZ')}" 2>/dev/null)
+  if [ -z "$IMPL_FINGERPRINT" ]; then
+    IMPL_FINGERPRINT="<details>
+<summary>🤖 Agent Fingerprint</summary>
+
+| | |
+|---|---|
+| **Role** | \`${ROLE:-python-developer}\` |
+| **Architecture** | \`${COGNITIVE_ARCH:-unset}\` |
+| **Session** | \`${AGENT_SESSION:-unset}\` |
+| **CTO Wave** | \`${WAVE:-unset}\` |
+| **VP Batch** | \`${BATCH_ID:-none}\` |
+| **VP** | \`${VP_FINGERPRINT:-unset}\` |
+| **Timestamp** | \`${PR_CREATED_AT:-$(date -u '+%Y-%m-%dT%H:%M:%SZ')}\` |
+
+</details>"
+  fi
+  gh issue comment <N> --repo "$GH_REPO" \
+    --body "🤖 **Implemented by agent** — PR #${MY_PR_NUM:-?}
+
+$IMPL_FINGERPRINT" 2>/dev/null || true
 
   # Transition status label: in-progress → pr-open
   gh issue edit <N> --repo "$GH_REPO" \
