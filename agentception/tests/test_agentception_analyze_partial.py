@@ -275,5 +275,8 @@ def test_overview_hides_analyze_button_for_claimed_issues(client: TestClient) ->
         response = client.get("/")
 
     assert response.status_code == 200
-    # Issue 99 must not appear — it was never put into board_issues.
-    assert "99" not in response.text
+    # Issue 99 must not appear in board_issues — it was claimed and filtered out.
+    # We check for the JSON field "number": 99 rather than bare "99" which can
+    # appear inside timestamps or other numeric values in the page.
+    assert '"number": 99' not in response.text
+    assert "issue-99" not in response.text
