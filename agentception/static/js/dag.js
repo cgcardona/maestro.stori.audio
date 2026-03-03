@@ -308,6 +308,38 @@ export function dagVisualization() {
       this._render();
     },
 
+    fitView() {
+      if (!this._svg || !this._zoom || !this._sim) return;
+      const nodes = this._sim.nodes();
+      if (!nodes.length) return;
+
+      const svgEl = document.getElementById('dag-svg');
+      const W = svgEl ? (svgEl.clientWidth  || 900) : 900;
+      const H = svgEl ? (svgEl.clientHeight || 520) : 520;
+      const pad = 48;
+
+      let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+      for (const n of nodes) {
+        x0 = Math.min(x0, (n.x || 0) - NODE_RADIUS);
+        x1 = Math.max(x1, (n.x || 0) + NODE_RADIUS);
+        y0 = Math.min(y0, (n.y || 0) - NODE_RADIUS);
+        y1 = Math.max(y1, (n.y || 0) + NODE_RADIUS);
+      }
+
+      const bboxW = Math.max(x1 - x0, 1);
+      const bboxH = Math.max(y1 - y0, 1);
+      const scale = Math.min(
+        (W - pad * 2) / bboxW,
+        (H - pad * 2) / bboxH,
+        5,
+      );
+      const tx = (W - bboxW * scale) / 2 - x0 * scale;
+      const ty = (H - bboxH * scale) / 2 - y0 * scale;
+
+      this._svg.transition().duration(400)
+        .call(this._zoom.transform, d3.zoomIdentity.translate(tx, ty).scale(scale));
+    },
+
     async refreshData() {
       this.refreshing = true;
       try {

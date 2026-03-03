@@ -312,7 +312,7 @@ def test_dag_page_returns_200(
 ) -> None:
     """GET /dag must return HTTP 200 with a mocked empty DAG."""
     with patch(
-        "agentception.routes.ui.build_dag",
+        "agentception.routes.ui.dag.build_dag",
         new_callable=AsyncMock,
         return_value=_empty_dag,
     ):
@@ -325,12 +325,40 @@ def test_dag_page_includes_d3_cdn(
 ) -> None:
     """GET /dag HTML must load D3.js from the CDN (cdn.jsdelivr.net/npm/d3)."""
     with patch(
-        "agentception.routes.ui.build_dag",
+        "agentception.routes.ui.dag.build_dag",
         new_callable=AsyncMock,
         return_value=_empty_dag,
     ):
         response = client.get("/dag")
     assert "cdn.jsdelivr.net/npm/d3" in response.text
+
+
+def test_dag_page_includes_fit_view_button(
+    client: TestClient, _empty_dag: DependencyDAG
+) -> None:
+    """GET /dag HTML must include a Fit view control button."""
+    with patch(
+        "agentception.routes.ui.dag.build_dag",
+        new_callable=AsyncMock,
+        return_value=_empty_dag,
+    ):
+        response = client.get("/dag")
+    assert "fitView()" in response.text
+    assert "Fit view" in response.text
+
+
+def test_dag_page_includes_edge_legend(
+    client: TestClient, _empty_dag: DependencyDAG
+) -> None:
+    """GET /dag HTML must include an edge-type legend entry explaining the dependency arrow."""
+    with patch(
+        "agentception.routes.ui.dag.build_dag",
+        new_callable=AsyncMock,
+        return_value=_empty_dag,
+    ):
+        response = client.get("/dag")
+    assert "dag-legend-edge-indicator" in response.text
+    assert "Depends on" in response.text
 
 
 def test_dag_api_returns_nodes_and_edges(client: TestClient) -> None:
