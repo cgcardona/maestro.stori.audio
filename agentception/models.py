@@ -6,32 +6,59 @@ models that reference external services.
 """
 from __future__ import annotations
 
+import logging
 from enum import Enum
+from pathlib import Path
 
+import yaml
 from pydantic import BaseModel, Field, field_validator
 
+logger = logging.getLogger(__name__)
+
+# Path to the canonical role taxonomy — two directories up from this file (repo root).
+_TAXONOMY_PATH: Path = (
+    Path(__file__).parent.parent / "scripts" / "gen_prompts" / "role-taxonomy.yaml"
+)
+
+
+def _load_valid_roles() -> frozenset[str]:
+    """Load spawnable role slugs from role-taxonomy.yaml at import time.
+
+    Extracts every entry with ``spawnable: true`` from the three-tier org
+    hierarchy and returns their slugs as an immutable set. This keeps
+    ``VALID_ROLES`` automatically in sync with the taxonomy without manual
+    list maintenance.
+
+    Logs a warning and returns an empty frozenset when the taxonomy file is
+    absent (e.g. during tests that run against an isolated module).
+    """
+    if not _TAXONOMY_PATH.exists():
+        logger.warning(
+            "⚠️ role-taxonomy.yaml not found at %s — VALID_ROLES will be empty",
+            _TAXONOMY_PATH,
+        )
+        return frozenset()
+    raw: object = yaml.safe_load(_TAXONOMY_PATH.read_text(encoding="utf-8"))
+    if not isinstance(raw, dict):
+        logger.warning("⚠️ role-taxonomy.yaml has unexpected structure — VALID_ROLES will be empty")
+        return frozenset()
+    roles: set[str] = set()
+    for level in raw.get("levels", []):
+        if not isinstance(level, dict):
+            continue
+        for role in level.get("roles", []):
+            if isinstance(role, dict) and role.get("spawnable") is True:
+                slug = role.get("slug")
+                if isinstance(slug, str):
+                    roles.add(slug)
+    return frozenset(roles)
+
+
 #: Roles that can be assigned to a spawned leaf agent via POST /api/control/spawn.
+#: Derived dynamically from ``scripts/gen_prompts/role-taxonomy.yaml`` (spawnable: true entries).
 #: Orchestration roles (cto, engineering-manager, qa-manager, coordinator) are
-#: spawnable only through the CTO pipeline, not directly via the control plane.
-VALID_ROLES: frozenset[str] = frozenset({
-    # Original leaf roles
-    "python-developer",
-    "database-architect",
-    "pr-reviewer",
-    # New worker / leaf roles
-    "frontend-developer",
-    "full-stack-developer",
-    "mobile-developer",
-    "systems-programmer",
-    "ml-engineer",
-    "data-engineer",
-    "devops-engineer",
-    "security-engineer",
-    "test-engineer",
-    "architect",
-    "api-developer",
-    "technical-writer",
-})
+#: spawnable only through the CTO pipeline — their taxonomy entries have spawnable: false.
+VALID_ROLES: frozenset[str] = _load_valid_roles()
 
 
 class AgentStatus(str, Enum):
