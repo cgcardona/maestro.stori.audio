@@ -240,14 +240,8 @@
     </div>
 
     {# Recent runs — server-rendered initially, HTMX-refreshed after submit ── #}
-    <div
-      id="bd-recent-runs"
-      hx-get="/brain-dump/recent-runs"
-      hx-trigger="refresh"
-      hx-swap="outerHTML"
-    >
-      {% include "_bd_recent_runs.html" %}
-    </div>
+    {# The partial owns the #bd-recent-runs div with HTMX attrs so outerHTML swap works. #}
+    {% include "_bd_recent_runs.html" %}
 
   </aside>
 
