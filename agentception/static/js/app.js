@@ -25,6 +25,7 @@
  *   templates.js    — exportPanel, importPanel, envSandbox
  *   api.js          — apiEndpoint
  *   controls.js     — controlsKill
+ *   toast.js        — toastStore
  */
 
 'use strict';
@@ -45,6 +46,7 @@ import { transcriptBrowser, transcriptDetail } from './transcripts.js';
 import { exportPanel, importPanel, envSandbox } from './templates.js';
 import { apiEndpoint } from './api.js';
 import { controlsKill } from './controls.js';
+import { toastStore } from './toast.js';
 
 // Expose all Alpine component factory functions globally so templates can
 // reference them via x-data="functionName()" without any changes.
@@ -63,4 +65,5 @@ Object.assign(window, {
   exportPanel, importPanel, envSandbox,
   apiEndpoint,
   controlsKill,
+  toastStore,
 });
