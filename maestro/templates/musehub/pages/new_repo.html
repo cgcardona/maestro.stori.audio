@@ -83,6 +83,14 @@
   font-size: 12px;
   min-height: 16px;
 }
+.htmx-indicator {
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+.htmx-request .htmx-indicator,
+.htmx-request.htmx-indicator {
+  opacity: 1;
+}
 .visibility-row {
   display: flex;
   gap: var(--space-3);
@@ -222,8 +230,10 @@
                hx-get="/musehub/ui/new/check"
                hx-trigger="input changed delay:300ms"
                hx-target="#name-check"
+               hx-indicator="#name-check-indicator"
                hx-include="#f-owner, #f-name"
                hx-vals='js:{"owner": document.getElementById("f-owner").value, "slug": event.target.value}'/>
+        <span id="name-check-indicator" class="htmx-indicator" aria-label="Checking…">⏳</span>
         <span id="name-check"></span>
       </div>
     </div>
