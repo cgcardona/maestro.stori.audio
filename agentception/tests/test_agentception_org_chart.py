@@ -1,9 +1,14 @@
-"""Tests for the /org-chart page, POST /api/org/select-preset, and GET /api/org/tree.
+"""Tests for the org-chart page, builder API, and D3 tree endpoint.
 
 Covers:
-- GET /org-chart renders the page with preset cards and D3 tree panel
+- GET /org-chart renders the page with preset cards and builder panel
 - POST /api/org/select-preset persists the selection and returns a refreshed partial
 - POST /api/org/select-preset rejects unknown preset IDs with HTTP 422
+- GET /api/roles/taxonomy returns grouped role taxonomy
+- POST /api/org/roles/add adds a role to the active org
+- DELETE /api/org/roles/{slug} removes a role from the active org
+- POST /api/org/roles/{slug}/phases updates phase assignments
+- POST /api/org/templates saves the current org as a named preset
 - GET /api/org/tree returns a hierarchical JSON tree for the active preset
 - GET /api/org/tree returns 404 when no active preset is selected
 
@@ -217,6 +222,256 @@ class TestSelectPreset:
 
         assert resp.status_code == 200
         assert "org-preset-card--active" in resp.text
+
+
+class TestRolesTaxonomy:
+    """GET /api/roles/taxonomy — role taxonomy endpoint."""
+
+    def test_taxonomy_returns_200(self, client: TestClient) -> None:
+        """GET /api/roles/taxonomy should return HTTP 200 with JSON."""
+        resp = client.get("/api/roles/taxonomy")
+        assert resp.status_code == 200
+        assert "application/json" in resp.headers["content-type"]
+
+    def test_taxonomy_has_all_tiers(self, client: TestClient) -> None:
+        """Response must contain c_suite, vp, and worker tiers."""
+        resp = client.get("/api/roles/taxonomy")
+        data = resp.json()
+        assert "tiers" in data
+        tiers = data["tiers"]
+        assert "c_suite" in tiers
+        assert "vp" in tiers
+        assert "worker" in tiers
+
+    def test_taxonomy_tier_has_label_and_roles(self, client: TestClient) -> None:
+        """Each tier entry must have a 'label' string and a 'roles' list."""
+        resp = client.get("/api/roles/taxonomy")
+        tiers = resp.json()["tiers"]
+        for tier_key, tier_data in tiers.items():
+            assert "label" in tier_data, f"tier {tier_key!r} missing 'label'"
+            assert "roles" in tier_data, f"tier {tier_key!r} missing 'roles'"
+            assert isinstance(tier_data["roles"], list)
+
+    def test_taxonomy_contains_known_roles(self, client: TestClient) -> None:
+        """Known roles like 'cto' and 'python-developer' must appear in the taxonomy."""
+        resp = client.get("/api/roles/taxonomy")
+        tiers = resp.json()["tiers"]
+        all_roles: list[str] = []
+        for tier_data in tiers.values():
+            all_roles.extend(tier_data["roles"])
+        assert "cto" in all_roles
+        assert "python-developer" in all_roles
+        assert "vp-engineering" in all_roles
+
+
+class TestAddRole:
+    """POST /api/org/roles/add — add role to active builder org."""
+
+    def test_add_role_returns_200(
+        self,
+        client: TestClient,
+        tmp_pipeline_config: Path,
+    ) -> None:
+        """Adding a valid role should return HTTP 200 with an HTML role list."""
+        resp = client.post("/api/org/roles/add", data={"slug": "python-developer"})
+        assert resp.status_code == 200
+        assert "text/html" in resp.headers["content-type"]
+
+    def test_add_role_persists_to_config(
+        self,
+        client: TestClient,
+        tmp_pipeline_config: Path,
+    ) -> None:
+        """After adding a role, pipeline-config.json must contain that slug."""
+        client.post("/api/org/roles/add", data={"slug": "cto"})
+        written = json.loads(tmp_pipeline_config.read_text(encoding="utf-8"))
+        roles = written.get("active_org_roles", [])
+        slugs = [r["slug"] for r in roles]
+        assert "cto" in slugs
+
+    def test_add_role_role_card_in_response(
+        self,
+        client: TestClient,
+        tmp_pipeline_config: Path,
+    ) -> None:
+        """The response HTML should contain the added role's slug."""
+        resp = client.post("/api/org/roles/add", data={"slug": "python-developer"})
+        assert "python-developer" in resp.text
+
+    def test_add_role_duplicate_is_idempotent(
+        self,
+        client: TestClient,
+        tmp_pipeline_config: Path,
+    ) -> None:
+        """Adding the same role twice should not create duplicates in config."""
+        client.post("/api/org/roles/add", data={"slug": "cto"})
+        client.post("/api/org/roles/add", data={"slug": "cto"})
+        written = json.loads(tmp_pipeline_config.read_text(encoding="utf-8"))
+        roles = written.get("active_org_roles", [])
+        cto_entries = [r for r in roles if r["slug"] == "cto"]
+        assert len(cto_entries) == 1
+
+    def test_add_role_unknown_slug_returns_422(
+        self,
+        client: TestClient,
+    ) -> None:
+        """An unknown role slug should return HTTP 422."""
+        resp = client.post("/api/org/roles/add", data={"slug": "not-a-real-role"})
+        assert resp.status_code == 422
+
+
+class TestRemoveRole:
+    """DELETE /api/org/roles/{slug} — remove role from active builder org."""
+
+    def test_remove_role_returns_200(
+        self,
+        client: TestClient,
+        tmp_pipeline_config: Path,
+    ) -> None:
+        """Removing a role that exists should return HTTP 200."""
+        client.post("/api/org/roles/add", data={"slug": "cto"})
+        resp = client.delete("/api/org/roles/cto")
+        assert resp.status_code == 200
+
+    def test_remove_role_removes_from_config(
+        self,
+        client: TestClient,
+        tmp_pipeline_config: Path,
+    ) -> None:
+        """After removing a role, it must no longer appear in pipeline-config.json."""
+        client.post("/api/org/roles/add", data={"slug": "python-developer"})
+        client.delete("/api/org/roles/python-developer")
+        written = json.loads(tmp_pipeline_config.read_text(encoding="utf-8"))
+        roles = written.get("active_org_roles", [])
+        slugs = [r["slug"] for r in roles]
+        assert "python-developer" not in slugs
+
+    def test_remove_role_nonexistent_is_idempotent(
+        self,
+        client: TestClient,
+        tmp_pipeline_config: Path,
+    ) -> None:
+        """Removing a slug not in the list should silently succeed (HTTP 200)."""
+        resp = client.delete("/api/org/roles/nonexistent-slug")
+        assert resp.status_code == 200
+
+    def test_remove_role_returns_html_list(
+        self,
+        client: TestClient,
+        tmp_pipeline_config: Path,
+    ) -> None:
+        """Response must be HTML containing the role list container."""
+        resp = client.delete("/api/org/roles/cto")
+        assert "text/html" in resp.headers["content-type"]
+        assert "org-role-list" in resp.text
+
+
+class TestUpdateRolePhases:
+    """POST /api/org/roles/{slug}/phases — update phase assignments."""
+
+    def test_update_phases_returns_200(
+        self,
+        client: TestClient,
+        tmp_pipeline_config: Path,
+    ) -> None:
+        """Updating phases for an existing role should return HTTP 200."""
+        client.post("/api/org/roles/add", data={"slug": "cto"})
+        resp = client.post(
+            "/api/org/roles/cto/phases",
+            data={"phases": ["ac-workflow/1-setup"]},
+        )
+        assert resp.status_code == 200
+
+    def test_update_phases_persists_to_config(
+        self,
+        client: TestClient,
+        tmp_pipeline_config: Path,
+    ) -> None:
+        """After updating phases, the assigned phases must appear in pipeline-config.json."""
+        client.post("/api/org/roles/add", data={"slug": "vp-engineering"})
+        client.post(
+            "/api/org/roles/vp-engineering/phases",
+            data={"phases": ["phase-a", "phase-b"]},
+        )
+        written = json.loads(tmp_pipeline_config.read_text(encoding="utf-8"))
+        roles = written.get("active_org_roles", [])
+        vp = next((r for r in roles if r["slug"] == "vp-engineering"), None)
+        assert vp is not None
+        assert "phase-a" in vp["assigned_phases"]
+        assert "phase-b" in vp["assigned_phases"]
+
+    def test_update_phases_clears_when_empty(
+        self,
+        client: TestClient,
+        tmp_pipeline_config: Path,
+    ) -> None:
+        """Submitting no phases should clear the assigned_phases list."""
+        client.post("/api/org/roles/add", data={"slug": "cto"})
+        client.post("/api/org/roles/cto/phases", data={"phases": ["phase-a"]})
+        # Now clear by sending no phases
+        client.post("/api/org/roles/cto/phases", data={})
+        written = json.loads(tmp_pipeline_config.read_text(encoding="utf-8"))
+        roles = written.get("active_org_roles", [])
+        cto = next((r for r in roles if r["slug"] == "cto"), None)
+        assert cto is not None
+        assert cto["assigned_phases"] == []
+
+    def test_update_phases_returns_404_for_missing_role(
+        self,
+        client: TestClient,
+        tmp_pipeline_config: Path,
+    ) -> None:
+        """Updating phases for a slug not in the active org should return HTTP 404."""
+        resp = client.post(
+            "/api/org/roles/nonexistent/phases",
+            data={"phases": ["phase-a"]},
+        )
+        assert resp.status_code == 404
+
+
+class TestSaveTemplate:
+    """POST /api/org/templates — save current org as a named preset."""
+
+    def test_save_template_returns_200(
+        self,
+        client: TestClient,
+        tmp_pipeline_config: Path,
+        tmp_path: Path,
+    ) -> None:
+        """Saving a valid template should return HTTP 200 with preset list HTML."""
+        client.post("/api/org/roles/add", data={"slug": "cto"})
+        with patch(
+            "agentception.routes.ui.org_chart._PRESETS_PATH",
+            tmp_path / "org-presets.yaml",
+        ):
+            (tmp_path / "org-presets.yaml").write_text(
+                "presets: []\n", encoding="utf-8"
+            )
+            resp = client.post(
+                "/api/org/templates",
+                data={"name": "My Template"},
+            )
+        assert resp.status_code == 200
+        assert "text/html" in resp.headers["content-type"]
+
+    def test_save_template_blank_name_returns_422(
+        self,
+        client: TestClient,
+        tmp_pipeline_config: Path,
+    ) -> None:
+        """A blank template name should return HTTP 422."""
+        client.post("/api/org/roles/add", data={"slug": "cto"})
+        resp = client.post("/api/org/templates", data={"name": "   "})
+        assert resp.status_code == 422
+
+    def test_save_template_empty_roles_returns_422(
+        self,
+        client: TestClient,
+        tmp_pipeline_config: Path,
+    ) -> None:
+        """Saving a template with no roles should return HTTP 422."""
+        resp = client.post("/api/org/templates", data={"name": "Empty"})
+        assert resp.status_code == 422
 
 
 class TestOrgTree:
