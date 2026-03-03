@@ -16,6 +16,7 @@ from .control import router as _control
 from .intelligence import router as _intelligence
 from .issues import router as _issues
 from .pipeline import router as _pipeline
+from .plan import router as _plan
 from .telemetry import router as _telemetry
 from .wizard import router as _wizard
 from .worktrees import router as _worktrees
@@ -29,3 +30,4 @@ router.include_router(_telemetry)
 router.include_router(_worktrees)
 router.include_router(_issues)
 router.include_router(_wizard)
+router.include_router(_plan)
