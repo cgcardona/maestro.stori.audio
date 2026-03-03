@@ -11,7 +11,7 @@ from enum import Enum
 from pathlib import Path
 
 import yaml
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 logger = logging.getLogger(__name__)
 
@@ -762,3 +762,145 @@ class OrgTreeNode(BaseModel):
 
 
 OrgTreeNode.model_rebuild()
+
+
+# ---------------------------------------------------------------------------
+# PlanSpec — YAML schema contract for plan-step-v2 pipeline (AC-867)
+# ---------------------------------------------------------------------------
+
+
+class PlanIssue(BaseModel):
+    """A single GitHub issue to be created within a plan phase.
+
+    ``title`` is the issue title; ``body`` is the Markdown description.
+    ``depends_on`` lists titles of other issues (within the same or earlier
+    phases) that must be merged before this one can begin.
+    """
+
+    title: str
+    body: str
+    depends_on: list[str] = []
+
+
+class PlanPhase(BaseModel):
+    """A sequenced phase grouping related issues in a PlanSpec.
+
+    ``label`` is a short slug used as the GitHub phase label (e.g.
+    ``"0-foundation"``).  ``description`` is a one-sentence human summary.
+    ``depends_on`` lists labels of phases that must complete before this one
+    starts.  ``issues`` is the ordered list of issues to create.
+
+    Raises ``ValueError`` if ``issues`` is empty — a phase with no issues
+    cannot advance the pipeline.
+    """
+
+    label: str
+    description: str
+    depends_on: list[str] = []
+    issues: list[PlanIssue]
+
+    @field_validator("issues")
+    @classmethod
+    def issues_must_be_non_empty(cls, v: list[PlanIssue]) -> list[PlanIssue]:
+        """A phase must contain at least one issue."""
+        if not v:
+            raise ValueError("phases must each contain at least one issue")
+        return v
+
+
+class PlanSpec(BaseModel):
+    """Root schema for the plan-step-v2 YAML contract.
+
+    ``initiative`` is a short human name for the batch (e.g. ``"auth-rewrite"``).
+    ``phases`` is an ordered list of :class:`PlanPhase` objects; index 0 is the
+    foundation phase that has no dependencies.
+
+    Invariants enforced at construction time:
+    - ``phases`` must be non-empty.
+    - Phase ``depends_on`` labels must all reference labels that appear
+      earlier in the list (strict DAG; no forward references, no cycles).
+
+    Round-trip serialization:
+    - :meth:`to_yaml` produces clean YAML with no Pydantic internals.
+    - :meth:`from_yaml` parses and validates; raises :class:`ValueError` on
+      malformed input.
+    """
+
+    initiative: str
+    phases: list[PlanPhase]
+
+    @field_validator("phases")
+    @classmethod
+    def phases_must_be_non_empty(cls, v: list[PlanPhase]) -> list[PlanPhase]:
+        """At least one phase is required."""
+        if not v:
+            raise ValueError("PlanSpec must contain at least one phase")
+        return v
+
+    @model_validator(mode="after")
+    def validate_phase_dag(self) -> "PlanSpec":
+        """Ensure phase depends_on references form a valid DAG.
+
+        Each phase may only depend on phases that appear *before* it in the
+        list.  Forward references and cycles are both rejected.  This is a
+        necessary (though not sufficient) condition for a valid DAG: because
+        phases are linearly ordered and can only reference earlier entries,
+        the dependency graph is acyclic by construction.
+        """
+        seen: set[str] = set()
+        for phase in self.phases:
+            for dep in phase.depends_on:
+                if dep not in seen:
+                    raise ValueError(
+                        f"Phase {phase.label!r} depends_on {dep!r} which is not a "
+                        f"previously defined phase label (forward reference or cycle)"
+                    )
+            seen.add(phase.label)
+        return self
+
+    def to_yaml(self) -> str:
+        """Serialize to a clean YAML string.
+
+        Uses PyYAML ``safe_dump`` with ``default_flow_style=False`` and
+        ``sort_keys=False`` so the output preserves insertion order and omits
+        Pydantic-internal fields.
+        """
+        data: dict[str, object] = {
+            "initiative": self.initiative,
+            "phases": [
+                {
+                    "label": phase.label,
+                    "description": phase.description,
+                    "depends_on": phase.depends_on,
+                    "issues": [
+                        {
+                            "title": issue.title,
+                            "body": issue.body,
+                            "depends_on": issue.depends_on,
+                        }
+                        for issue in phase.issues
+                    ],
+                }
+                for phase in self.phases
+            ],
+        }
+        return yaml.safe_dump(data, default_flow_style=False, sort_keys=False, allow_unicode=True)
+
+    @classmethod
+    def from_yaml(cls, text: str) -> "PlanSpec":
+        """Parse and validate a YAML string into a PlanSpec.
+
+        Raises:
+            ValueError: If the YAML is malformed, missing required fields,
+                or violates any PlanSpec invariant (empty phases, bad deps).
+        """
+        try:
+            raw: object = yaml.safe_load(text)
+        except yaml.YAMLError as exc:
+            raise ValueError(f"Malformed YAML: {exc}") from exc
+        if not isinstance(raw, dict):
+            raise ValueError(f"Expected a YAML mapping at the top level, got {type(raw).__name__}")
+        try:
+            return cls.model_validate(raw)
+        except Exception as exc:
+            raise ValueError(f"PlanSpec validation failed: {exc}") from exc

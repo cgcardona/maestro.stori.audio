@@ -1049,3 +1049,82 @@ Three-panel layout:
   - *Personas*: Card grid of compatible historical/industry personas for the selected role. Click to apply to the composer.
   - *Primitive Composer*: Dropdowns for figure, per-atom overrides, and skill domain checkboxes. Displays the assembled `COGNITIVE_ARCH` string.
 - **Right — Role Studio:** Monaco editor for editing the selected role's `.md` file. Diff preview and git commit via the existing roles API.
+
+---
+
+## PlanSpec — YAML Schema Contract (plan-step-v2, AC-867)
+
+`PlanSpec` is the root Pydantic v2 model that forms the **typed YAML contract** between the Step 1.A (brain-dump → spec) and Step 1.B (spec → enriched GitHub issue manifest) stages of the plan-step-v2 pipeline.
+
+Defined in `agentception/models.py`. Serialized to/from YAML via `to_yaml()` / `from_yaml()`.
+
+### Model Hierarchy
+
+```
+PlanSpec
+├── initiative: str               # short slug for the batch (e.g. "auth-rewrite")
+└── phases: list[PlanPhase]       # ordered; index 0 = foundation (no deps)
+    ├── label: str                # phase slug used as GitHub label (e.g. "0-foundation")
+    ├── description: str          # one-sentence human summary
+    ├── depends_on: list[str]     # labels of phases that must complete first
+    └── issues: list[PlanIssue]   # ordered list of issues to create
+        ├── title: str            # issue title
+        ├── body: str             # issue body (Markdown)
+        └── depends_on: list[str] # titles of prerequisite issues
+```
+
+### Invariants
+
+| Invariant | Enforced by |
+|-----------|-------------|
+| `phases` must be non-empty | `@field_validator("phases")` on `PlanSpec` |
+| Each phase's `issues` must be non-empty | `@field_validator("issues")` on `PlanPhase` |
+| Phase `depends_on` labels must reference only previously-defined phase labels (no forward refs, no cycles) | `@model_validator(mode="after")` on `PlanSpec` |
+| Malformed YAML raises `ValueError` | `from_yaml()` catches `yaml.YAMLError` |
+| Non-mapping YAML root raises `ValueError` | `from_yaml()` type-guards the parsed object |
+
+### Annotated YAML Example
+
+```yaml
+initiative: auth-rewrite          # short batch name — used in PR titles and issue labels
+
+phases:
+  - label: 0-foundation           # phase slug → becomes GitHub label "plan-step-v2/0-foundation"
+    description: Core auth types and JWT validation primitives
+    depends_on: []                # foundation has no prerequisites
+    issues:
+      - title: Define AuthToken Pydantic model
+        body: |
+          ## Summary
+          Add `AuthToken(BaseModel)` to `agentception/models.py` with fields
+          `token: str`, `expires_at: datetime`, `scopes: list[str]`.
+        depends_on: []            # no intra-phase prerequisite
+
+      - title: Add JWT validation helper
+        body: |
+          ## Summary
+          Implement `validate_jwt(token: str) -> AuthToken` in
+          `agentception/auth.py`. Must raise `ValueError` on expired or
+          malformed tokens.
+        depends_on:
+          - Define AuthToken Pydantic model   # must merge first
+
+  - label: 1-api                  # second phase — starts after 0-foundation is merged
+    description: REST endpoints for authentication flow
+    depends_on:
+      - 0-foundation
+    issues:
+      - title: "POST /auth/login endpoint"
+        body: |
+          ## Summary
+          Add `POST /api/auth/login` that accepts `{username, password}`,
+          validates credentials, and returns a signed `AuthToken`.
+        depends_on: []
+```
+
+### Serialization Contract
+
+| Method | Signature | Behaviour |
+|--------|-----------|-----------|
+| `to_yaml()` | `(self) -> str` | Serializes to clean PyYAML `safe_dump` output. No Pydantic internal fields. Order preserved (`sort_keys=False`). |
+| `from_yaml()` | `(cls, text: str) -> PlanSpec` | Parses with `yaml.safe_load`, then calls `model_validate`. Raises `ValueError` on any error (parse, type, invariant). |
