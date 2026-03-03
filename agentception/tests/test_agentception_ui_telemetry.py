@@ -1,9 +1,10 @@
-"""Tests for the AgentCeption telemetry UI page (AC-203).
+"""Tests for the AgentCeption telemetry UI page (AC-203, #743).
 
-Covers the three acceptance criteria from issue #622:
+Covers:
 - GET /telemetry returns HTTP 200 for both empty and non-empty wave history
-- The page renders a wave table when waves are present
+- The page renders a wave table with sort controls when waves are present
 - The page renders gracefully with an empty wave list
+- Date filter inputs and CSV export button are present when waves exist
 
 Run targeted:
     pytest agentception/tests/test_agentception_ui_telemetry.py -v
@@ -80,7 +81,7 @@ def test_telemetry_page_returns_200(
 ) -> None:
     """GET /telemetry must return HTTP 200 when wave history is present."""
     with patch(
-        "agentception.routes.ui.aggregate_waves",
+        "agentception.routes.ui.telemetry.aggregate_waves",
         new_callable=AsyncMock,
         return_value=populated_waves,
     ):
@@ -94,9 +95,9 @@ def test_telemetry_page_returns_200(
 def test_telemetry_page_shows_wave_table(
     client: TestClient, populated_waves: list[WaveSummary]
 ) -> None:
-    """GET /telemetry must render the wave table with batch IDs and chart bars."""
+    """GET /telemetry must render the wave table with sort controls and export button."""
     with patch(
-        "agentception.routes.ui.aggregate_waves",
+        "agentception.routes.ui.telemetry.aggregate_waves",
         new_callable=AsyncMock,
         return_value=populated_waves,
     ):
@@ -106,11 +107,17 @@ def test_telemetry_page_shows_wave_table(
     html = response.text
     # Table must be present
     assert "telemetry-table" in html
-    # Both batch IDs must appear
+    # Both batch IDs must appear in the embedded JSON blob
     assert "eng-batch-A" in html
     assert "eng-batch-B" in html
-    # Chart bar track must be rendered
-    assert "telemetry-bar-track" in html
+    # Sortable column headers must be present
+    assert "telemetry-th--sortable" in html
+    # Date range filter inputs must be present
+    assert "telemetry-date-input" in html
+    # CSV export button must be present
+    assert "Export CSV" in html
+    # Controls container must be present
+    assert "telemetry-controls" in html
     # Summary stats bar must be present
     assert "pipeline-summary-bar" in html
 
@@ -123,7 +130,7 @@ def test_telemetry_page_empty_waves(
 ) -> None:
     """GET /telemetry must return HTTP 200 and an empty-state message when there are no waves."""
     with patch(
-        "agentception.routes.ui.aggregate_waves",
+        "agentception.routes.ui.telemetry.aggregate_waves",
         new_callable=AsyncMock,
         return_value=empty_waves,
     ):

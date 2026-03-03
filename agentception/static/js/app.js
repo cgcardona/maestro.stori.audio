@@ -16,7 +16,7 @@
  *                     pipelineControl, sweepControl, waveControl,
  *                     scalingAdvisor, prViolations, staleClaimCard, issueCard
  *   agents.js       — agentsPage, missionControl
- *   telemetry.js    — telemetryDash
+ *   telemetry.js    — telemetryDash, waveTable
  *   dag.js          — dagVisualization
  *   config.js       — configPanel
  *   roles.js        — roleDetail, rolesEditor
@@ -35,7 +35,7 @@ import {
   staleClaimCard, issueCard,
 } from './overview.js';
 import { agentsPage, missionControl } from './agents.js';
-import { telemetryDash } from './telemetry.js';
+import { telemetryDash, waveTable } from './telemetry.js';
 import { dagVisualization } from './dag.js';
 import { configPanel } from './config.js';
 import { roleDetail, rolesEditor } from './roles.js';
@@ -52,7 +52,7 @@ Object.assign(window, {
   sweepControl, waveControl, scalingAdvisor, prViolations,
   staleClaimCard, issueCard,
   agentsPage, missionControl,
-  telemetryDash,
+  telemetryDash, waveTable,
   dagVisualization,
   configPanel,
   roleDetail, rolesEditor,
