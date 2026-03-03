@@ -129,7 +129,9 @@
                 'spawn-issue-card--claimed':  iss.claimed,
               }"
               @click="selectIssue(iss)"
+              @keydown.enter.space.prevent="selectIssue(iss)"
               role="option"
+              tabindex="0"
               :aria-selected="selectedIssue?.number === iss.number"
               :title="iss.claimed ? 'Already claimed (agent:wip)' : iss.title"
             >
@@ -160,7 +162,9 @@
             class="spawn-role-option"
             :class="{ 'spawn-role-option--selected': selectedRole === '{{ role.slug }}' }"
             @click="selectRole('{{ role.slug }}')"
+            @keydown.enter.space.prevent="selectRole('{{ role.slug }}')"
             role="radio"
+            tabindex="0"
             :aria-checked="selectedRole === '{{ role.slug }}'"
           >
             <div class="spawn-role-radio"></div>

@@ -25,6 +25,8 @@
 <body class="layout"
       hx-on::after-request="const hdr = event.detail.xhr.getResponseHeader('HX-Trigger'); if (hdr) { try { const triggers = JSON.parse(hdr); if (triggers.toast) window.dispatchEvent(new CustomEvent('toast', { detail: triggers.toast })); } catch(e) {} }">
 
+  <a href="#main-content" class="skip-link">Skip to main content</a>
+
   <nav class="topnav" role="navigation" aria-label="Main navigation">
     <a href="/" class="brand" title="The Singularity Is Here">⚡ Agentception</a>
 
@@ -69,7 +71,7 @@
     </div>
   </nav>
 
-  <main role="main">
+  <main id="main-content" role="main">
     {% block content %}
     <div class="card">
       <p class="text-muted">Welcome to <strong>Agentception</strong> — <em>The Singularity Is Here.</em></p>
