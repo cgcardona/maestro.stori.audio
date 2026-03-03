@@ -981,7 +981,19 @@ STEP 6 — PRE-MERGE SYNC (only if grade is A or B):
        gh pr edit <N> --repo "$GH_REPO" --remove-label "agent:wip" 2>/dev/null || true
 
   # 7. Delete the remote branch manually (now safe — merge is done):
-       git push origin --delete "$BRANCH"
+  # NOTE: GitHub auto-delete-head-branches is ENABLED on this repo.
+  # The explicit push --delete here is belt-and-suspenders: it handles the
+  # case where auto-delete races with a local delete or the setting is toggled off.
+       git push origin --delete "$BRANCH" 2>&1 || echo "⚠️  Remote branch delete failed or already deleted — continuing"
+
+  # Verify remote branch is gone:
+       STILL_EXISTS=$(git ls-remote --heads origin "$BRANCH" | wc -l | tr -d ' ')
+       if [ "$STILL_EXISTS" -gt 0 ]; then
+         echo "⚠️  Remote branch $BRANCH still exists — retrying deletion"
+         git push origin --delete "$BRANCH" 2>&1 || echo "⚠️  Branch delete failed or already deleted"
+       else
+         echo "✅ Remote branch $BRANCH deleted"
+       fi
 
   # 8. Post a fingerprint comment on the PR so every merge is permanently traceable:
        MERGE_FINGERPRINT=$(python3 "$REPO/scripts/gen_prompts/resolve_arch.py" "${COGNITIVE_ARCH:-unset}" \
