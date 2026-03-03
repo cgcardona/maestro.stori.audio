@@ -21,6 +21,7 @@ from .config import router as _config
 from .dag import router as _dag
 from .docs import router as _docs
 from .github_ui import router as _github
+from .org_chart import router as _org_chart
 from .overview import router as _overview
 from .roles_ui import router as _roles_ui
 from .telemetry import router as _telemetry
@@ -43,6 +44,7 @@ router.include_router(_config)
 router.include_router(_ab)
 router.include_router(_brain_dump)
 router.include_router(_roles_ui)
+router.include_router(_org_chart)
 router.include_router(_github)
 router.include_router(_transcripts)
 router.include_router(_worktrees)

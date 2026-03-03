@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+
+{% block title %}Org Chart — Agentception{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1 class="page-title">Org Chart</h1>
+  <p class="page-subtitle text-muted">
+    Choose a preset org topology. The active org governs which agent roles the
+    pipeline spawns.  Issues #829 and #830 will add an interactive builder and
+    D3 tree to the right panel.
+  </p>
+</div>
+
+<div class="org-chart-layout">
+
+  {# ── Left panel: preset org picker ──────────────────────────────────────── #}
+  <section class="org-chart-left" aria-label="Preset org configurations">
+    <h2 class="panel-title">Preset Configurations</h2>
+    {% include "_org_preset_list.html" %}
+  </section>
+
+  {# ── Right panel: builder shell — reserved for #829 (builder) and #830 (D3) #}
+  <section class="org-chart-right" aria-label="Org chart builder">
+    <div id="org-right-panel" class="org-right-panel">
+      <div class="org-right-panel__placeholder">
+        <span class="org-right-panel__icon" aria-hidden="true">🌳</span>
+        <p class="org-right-panel__message text-muted">
+          Interactive builder coming in <strong>#829</strong>.
+          D3 org tree coming in <strong>#830</strong>.
+        </p>
+        {% if active_org_id %}
+        <p class="text-muted">
+          Active preset: <code>{{ active_org_id }}</code>
+        </p>
+        {% endif %}
+      </div>
+    </div>
+  </section>
+
+</div>
+{% endblock %}
