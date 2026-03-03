@@ -189,6 +189,42 @@ def test_config_api_put_validates_schema_and_persists() -> None:
     assert response.json() == saved_config.model_dump()
 
 
+def test_pipeline_config_rejects_zero_max_eng_vps() -> None:
+    """PUT /api/config with max_eng_vps=0 must return 422."""
+    payload = {
+        "max_eng_vps": 0,
+        "max_qa_vps": 1,
+        "pool_size_per_vp": 4,
+        "active_labels_order": [],
+    }
+    response = client.put("/api/config", json=payload)
+    assert response.status_code == 422
+
+
+def test_pipeline_config_rejects_negative_max_qa_vps() -> None:
+    """PUT /api/config with max_qa_vps=-1 must return 422."""
+    payload = {
+        "max_eng_vps": 1,
+        "max_qa_vps": -1,
+        "pool_size_per_vp": 4,
+        "active_labels_order": [],
+    }
+    response = client.put("/api/config", json=payload)
+    assert response.status_code == 422
+
+
+def test_pipeline_config_rejects_zero_pool_size_per_vp() -> None:
+    """PUT /api/config with pool_size_per_vp=0 must return 422."""
+    payload = {
+        "max_eng_vps": 1,
+        "max_qa_vps": 1,
+        "pool_size_per_vp": 0,
+        "active_labels_order": [],
+    }
+    response = client.put("/api/config", json=payload)
+    assert response.status_code == 422
+
+
 def test_config_api_put_rejects_missing_fields() -> None:
     """PUT /api/config returns 422 when required fields are absent."""
     incomplete = {"max_eng_vps": 1}  # missing max_qa_vps, pool_size_per_vp, active_labels_order

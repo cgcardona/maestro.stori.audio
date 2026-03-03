@@ -26,6 +26,7 @@ services:
     volumes:
       - maestro_data:/data
       - ./maestro:/app/maestro
+      - ./agentception:/app/agentception
       - ./tests:/app/tests
       - ./scripts:/app/scripts
       - ./tools:/app/tools
