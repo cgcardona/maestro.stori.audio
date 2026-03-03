@@ -250,3 +250,6 @@ stori_tourdeforce/*.db
 .agent-task
 .session-id
 .coord-*
+
+# CSS source maps (generated build artifacts)
+**/*.css.map
