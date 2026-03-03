@@ -184,5 +184,32 @@ export function brainDump() {
       this.phases = [];
       this.result = {};
     },
+
+    /**
+     * Load a previous run's dump text into the editor and switch to input step.
+     *
+     * Called from the "Re-run →" button rendered in _bd_recent_runs.html:
+     *   @click='reRun({{ run.slug | tojson }})'
+     *
+     * Fetches GET /api/brain-dump/{runId}/dump-text, populates the textarea,
+     * then resets to the input step so the user can review and resubmit.
+     */
+    async reRun(runId) {
+      try {
+        const resp = await fetch(`/api/brain-dump/${encodeURIComponent(runId)}/dump-text`);
+        if (!resp.ok) {
+          const body = await resp.json().catch(() => ({}));
+          this.errorMsg = body.detail || `Could not load run (HTTP ${resp.status})`;
+          return;
+        }
+        const data = await resp.json();
+        this.reset();
+        this.text = data.dump_text ?? '';
+        await this.$nextTick();
+        if (this.$refs.textarea) this.autoGrow(this.$refs.textarea);
+      } catch (err) {
+        this.errorMsg = err.message || 'Failed to load previous run.';
+      }
+    },
   };
 }
