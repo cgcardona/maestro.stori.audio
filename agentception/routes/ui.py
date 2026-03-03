@@ -33,6 +33,30 @@ logger = logging.getLogger(__name__)
 _HERE = Path(__file__).parent
 _TEMPLATES = Jinja2Templates(directory=str(_HERE.parent / "templates"))
 
+# Ordered category map for the spawn Mission Control role picker.
+# Each entry: slug → (category_name, sort_position_within_category)
+_ROLE_CATEGORY_MAP: dict[str, tuple[str, int]] = {
+    "python-developer":     ("Backend", 0),
+    "api-developer":        ("Backend", 1),
+    "database-architect":   ("Backend", 2),
+    "systems-programmer":   ("Backend", 3),
+    "frontend-developer":   ("Frontend", 0),
+    "mobile-developer":     ("Frontend", 1),
+    "full-stack-developer": ("Frontend", 2),
+    "test-engineer":        ("Quality", 0),
+    "pr-reviewer":          ("Quality", 1),
+    "technical-writer":     ("Quality", 2),
+    "devops-engineer":      ("Infrastructure", 0),
+    "security-engineer":    ("Infrastructure", 1),
+    "ml-engineer":          ("Data / AI", 0),
+    "data-engineer":        ("Data / AI", 1),
+    "architect":            ("Architecture", 0),
+}
+
+_CATEGORY_ORDER: list[str] = [
+    "Backend", "Frontend", "Quality", "Infrastructure", "Data / AI", "Architecture",
+]
+
 
 def _timestamp_to_date(ts: float) -> str:
     try:
@@ -57,7 +81,7 @@ def _md_to_html(text: str) -> str:
     - ``tables``       — GFM-style tables
     """
     import re
-    import markdown as _md
+    import markdown as _md  # type: ignore[import-untyped]
     from markupsafe import Markup
 
     # Insert a blank line before bullet/numbered list items that follow a
@@ -79,6 +103,36 @@ _TEMPLATES.env.filters["markdown"] = _md_to_html
 from agentception.config import settings as _settings
 _TEMPLATES.env.globals["gh_repo"] = _settings.gh_repo
 _TEMPLATES.env.globals["gh_base_url"] = f"https://github.com/{_settings.gh_repo}"
+
+
+def _parse_iso(s: object) -> datetime.datetime | None:
+    """Parse an ISO-8601 datetime string, returning None on failure."""
+    if not isinstance(s, str):
+        return None
+    try:
+        return datetime.datetime.fromisoformat(s.rstrip("Z"))
+    except ValueError:
+        return None
+
+
+def _fmt_duration(seconds: float) -> str:
+    """Format a duration in seconds as a human-readable string."""
+    if seconds < 60:
+        return f"{int(seconds)}s"
+    if seconds < 3600:
+        return f"{int(seconds // 60)}m {int(seconds % 60)}s"
+    h = int(seconds // 3600)
+    m = int((seconds % 3600) // 60)
+    return f"{h}h {m}m"
+
+
+def _fmt_elapsed(spawned_iso: object) -> str:
+    """Return a human-readable elapsed time string from an ISO spawn timestamp to now."""
+    dt = _parse_iso(spawned_iso)
+    if dt is None:
+        return ""
+    delta = datetime.datetime.utcnow() - dt
+    return _fmt_duration(max(0.0, delta.total_seconds()))
 
 
 def _format_ts(ts: float) -> str:
@@ -269,16 +323,17 @@ async def agents_list(request: Request) -> HTMLResponse:
     completed agents are visible even after their worktrees are removed.
 
     Data enrichments served to the template:
+    - ``agents``        — live in-memory agents enriched with persona + elapsed/staleness.
     - ``stats``         — KPI counts (total, active, done, success_rate, avg_duration_s).
-    - ``batches``       — run history grouped by batch_id, newest batch first.
+    - ``batches``       — run history grouped by batch_id with per-batch success rate.
     - ``all_roles``     — unique roles seen in history (for filter dropdown).
     - ``all_statuses``  — unique statuses seen (for filter chips).
     """
-    import datetime
     from agentception.db.queries import get_agent_run_history
     from agentception.routes.roles import resolve_cognitive_arch
 
     state = get_state() or PipelineState.empty()
+    now_utc = datetime.datetime.utcnow()
 
     # Flatten root + children into one list for the listing view.
     all_agents: list[AgentNode] = []
@@ -286,13 +341,28 @@ async def agents_list(request: Request) -> HTMLResponse:
         all_agents.append(agent)
         all_agents.extend(agent.children)
 
-    # Enrich each live agent with persona data for the card display.
+    # Enrich each live agent with persona + runtime context.
     agents_enriched: list[dict[str, object]] = []
     for ag in all_agents:
         persona = resolve_cognitive_arch(ag.cognitive_arch)
+        elapsed = ""
+        is_stale_idle = False
+        spawned_dt = _parse_iso(ag.spawned_at.isoformat() if hasattr(ag, "spawned_at") and ag.spawned_at else None)
+        if spawned_dt:
+            elapsed = _fmt_duration((now_utc - spawned_dt).total_seconds())
+        last_activity_dt = _parse_iso(
+            ag.last_activity_at.isoformat()
+            if hasattr(ag, "last_activity_at") and ag.last_activity_at
+            else None
+        )
+        if last_activity_dt:
+            idle_s = (now_utc - last_activity_dt).total_seconds()
+            is_stale_idle = idle_s > 900  # >15 min without activity
         agents_enriched.append({
             "node": ag,
             "persona": persona,
+            "elapsed": elapsed,
+            "is_stale_idle": is_stale_idle,
         })
 
     # Fetch full history from Postgres.
@@ -303,23 +373,6 @@ async def agents_list(request: Request) -> HTMLResponse:
         logger.debug("DB agent run history fetch skipped: %s", exc)
 
     # ── Compute duration + enrich each history row ────────────────────────
-    def _parse_iso(s: object) -> datetime.datetime | None:
-        if not isinstance(s, str):
-            return None
-        try:
-            return datetime.datetime.fromisoformat(s.rstrip("Z"))
-        except ValueError:
-            return None
-
-    def _fmt_duration(seconds: float) -> str:
-        if seconds < 60:
-            return f"{int(seconds)}s"
-        if seconds < 3600:
-            return f"{int(seconds // 60)}m {int(seconds % 60)}s"
-        h = int(seconds // 3600)
-        m = int((seconds % 3600) // 60)
-        return f"{h}h {m}m"
-
     enriched_history: list[dict[str, object]] = []
     total_duration_s = 0.0
     completed_count = 0
@@ -354,6 +407,8 @@ async def agents_list(request: Request) -> HTMLResponse:
                 "runs": [],
                 "spawned_at": run.get("spawned_at"),
                 "spawned_fmt": run.get("spawned_fmt"),
+                # phase_label is derived from the batch_id string (e.g. "eng-20260302T…")
+                "phase_label": str(bid).split("-")[0] if bid != "ungrouped" else "",
             }
             seen_batches[bid] = batch_entry
             batches.append(batch_entry)
@@ -361,9 +416,18 @@ async def agents_list(request: Request) -> HTMLResponse:
         assert isinstance(batch_runs, list)
         batch_runs.append(run)
 
+    # Add per-batch success rate.
+    for batch in batches:
+        b_runs = batch["runs"]
+        assert isinstance(b_runs, list)
+        b_total = len(b_runs)
+        b_done = sum(1 for r in b_runs if isinstance(r, dict) and r.get("status") == "done")
+        batch["success_rate"] = round(b_done / b_total * 100) if b_total else 0
+
     # ── Aggregate KPI stats ───────────────────────────────────────────────
     total = len(enriched_history)
     done_count = sum(1 for r in enriched_history if r.get("status") == "done")
+    failed_count = sum(1 for r in enriched_history if r.get("status") in ("stale", "unknown"))
     success_rate = round(done_count / total * 100) if total else 0
     avg_duration_str = _fmt_duration(total_duration_s / completed_count) if completed_count else "—"
 
@@ -371,6 +435,7 @@ async def agents_list(request: Request) -> HTMLResponse:
         "total": total,
         "active": len(all_agents),
         "done": done_count,
+        "failed": failed_count,
         "success_rate": success_rate,
         "avg_duration": avg_duration_str,
     }
@@ -397,7 +462,112 @@ async def agents_list(request: Request) -> HTMLResponse:
 async def controls_hub(request: Request) -> Response:
     """Controls hub — redirects to the spawn form (the primary control action)."""
     from starlette.responses import RedirectResponse
-    return RedirectResponse(url="/control/spawn", status_code=302)
+    return RedirectResponse(url="/agents/spawn", status_code=302)
+
+
+@router.get("/control/spawn", response_class=HTMLResponse)
+async def spawn_form_legacy(request: Request) -> Response:
+    """Backwards-compat redirect — /control/spawn → /agents/spawn."""
+    from starlette.responses import RedirectResponse
+    return RedirectResponse(url="/agents/spawn", status_code=302)
+
+
+@router.get("/agents/spawn", response_class=HTMLResponse)
+async def spawn_form(request: Request) -> HTMLResponse:
+    """Mission Control — orchestration dashboard for spawning agents.
+
+    Renders all three spawn modes (single agent, wave, coordinator) with a
+    visual issue board and role card picker. Fetches issues and board counts
+    concurrently; falls back gracefully when the DB is unavailable.
+    """
+    from agentception.db.queries import (
+        get_board_issues as _get_board_issues,
+        get_board_counts as _get_board_counts,
+    )
+    from agentception.config import settings as _cfg
+
+    error: str | None = None
+    issues: list[dict[str, object]] = []
+    board_counts: dict[str, int] = {"total": 0, "claimed": 0, "unclaimed": 0}
+
+    try:
+        issues_raw, counts = await asyncio.gather(
+            _get_board_issues(repo=_cfg.gh_repo, include_claimed=True),
+            _get_board_counts(repo=_cfg.gh_repo),
+        )
+        issues = list(issues_raw)
+        board_counts = counts
+    except Exception as exc:  # pragma: no cover — DB failure path
+        error = f"Could not load issues: {exc}"
+
+    state = get_state()
+    active_label: str = (state.active_label or "") if state else ""
+
+    # Build role groups in category order for the Jinja role card grid.
+    # We produce a list of {category, roles} dicts to preserve the
+    # canonical category ordering (_CATEGORY_ORDER) — Jinja's groupby
+    # filter sorts alphabetically and would scramble the order.
+    _cat_buckets: dict[str, list[dict[str, str]]] = {c: [] for c in _CATEGORY_ORDER}
+    for slug in VALID_ROLES:
+        cat, pos = _ROLE_CATEGORY_MAP.get(slug, ("Other", 99))
+        entry: dict[str, str] = {
+            "slug": slug,
+            "label": slug.replace("-", " ").title(),
+            "category": cat,
+        }
+        _cat_buckets.setdefault(cat, []).append(entry)
+    # Sort roles within each category by their defined position.
+    for cat in _cat_buckets:
+        _cat_buckets[cat].sort(key=lambda r: _ROLE_CATEGORY_MAP.get(r["slug"], ("", 99))[1])
+
+    role_groups: list[dict[str, object]] = [
+        {"category": cat, "roles": _cat_buckets[cat]}
+        for cat in _CATEGORY_ORDER
+        if _cat_buckets.get(cat)
+    ]
+    # Flat roles list for the wave-mode <select> (all roles, sorted by category then position).
+    roles_flat: list[dict[str, str]] = [
+        r
+        for g in role_groups
+        for r in (g["roles"] if isinstance(g["roles"], list) else [])
+    ]
+
+    return _TEMPLATES.TemplateResponse(
+        request,
+        "spawn.html",
+        {
+            "issues": issues,
+            "role_groups": role_groups,
+            "roles_flat": roles_flat,
+            "active_label": active_label,
+            "board_counts": board_counts,
+            "error": error,
+        },
+    )
+
+
+@router.get("/agents/spawn/issues", response_class=HTMLResponse)
+async def spawn_issues_partial(request: Request) -> HTMLResponse:
+    """HTMX partial — refreshes the issue board inside the spawn Mission Control.
+
+    Returns just the issue card list so the browser can swap it in without a
+    full page reload (hx-target="#spawn-issue-list").
+    """
+    from agentception.db.queries import get_board_issues as _get_board_issues
+    from agentception.config import settings as _cfg
+
+    issues: list[dict[str, object]] = []
+    try:
+        issues_raw = await _get_board_issues(repo=_cfg.gh_repo, include_claimed=True)
+        issues = list(issues_raw)
+    except Exception as exc:  # pragma: no cover
+        logger.warning("⚠️ spawn_issues_partial: DB failure: %s", exc)
+
+    return _TEMPLATES.TemplateResponse(
+        request,
+        "_spawn_issues.html",
+        {"issues": issues},
+    )
 
 
 @router.get("/agents/{agent_id}", response_class=HTMLResponse)
@@ -860,35 +1030,6 @@ async def brain_dump_recent_runs(request: Request) -> HTMLResponse:
     )
 
 
-@router.get("/control/spawn", response_class=HTMLResponse)
-async def spawn_form(request: Request) -> HTMLResponse:
-    """Issue picker form for manually spawning a new engineer agent.
-
-    Reads unclaimed open issues from ``ac_issues`` (Postgres) so the picker
-    stays fast and consistent with the board sidebar.  Falls back to an empty
-    list with an error banner when the DB is unavailable.
-    """
-    from agentception.db.queries import get_board_issues as _get_board_issues
-    from agentception.config import settings as _cfg
-
-    error: str | None = None
-    issues: list[dict[str, object]] = []
-    try:
-        issues = await _get_board_issues(repo=_cfg.gh_repo, include_claimed=False)
-    except Exception as exc:  # pragma: no cover — DB failure path
-        error = f"Could not load issues: {exc}"
-
-    return _TEMPLATES.TemplateResponse(
-        request,
-        "spawn.html",
-        {
-            "issues": issues,
-            "roles": sorted(VALID_ROLES),
-            "error": error,
-        },
-    )
-
-
 @router.get("/templates", response_class=HTMLResponse)
 async def templates_ui(request: Request) -> HTMLResponse:
     """Template marketplace — export and import pipeline configuration bundles.
@@ -1122,43 +1263,25 @@ async def transcript_detail(request: Request, uuid: str) -> HTMLResponse:
 
 @router.get("/worktrees", response_class=HTMLResponse)
 async def worktrees_page(request: Request) -> HTMLResponse:
-    """Live view of git worktrees, local branches, and stash."""
-    from agentception.readers.git import list_git_branches, list_git_stash, list_git_worktrees
+    """Agent Sandboxes — live view of git worktrees as isolated code environments."""
+    from agentception.readers.git import list_git_worktrees
 
     worktrees: list[dict[str, object]] = []
-    branches: list[dict[str, object]] = []
-    stash: list[dict[str, object]] = []
 
     try:
-        worktrees, branches, stash = await asyncio.gather(
-            list_git_worktrees(),
-            list_git_branches(),
-            list_git_stash(),
-        )
+        worktrees = await list_git_worktrees()
     except Exception as exc:
         logger.warning("⚠️  Worktrees page git read failed: %s", exc)
 
-    # Mark branches as stale: agent branch with no live worktree checked out.
-    live_branches: set[str] = {
-        str(wt.get("branch", ""))
-        for wt in worktrees
-        if wt.get("branch") and not wt.get("is_main")
-    }
-    for b in branches:
-        b["is_stale"] = bool(b.get("is_agent_branch")) and str(b.get("name", "")) not in live_branches
-
-    stale_count = sum(1 for b in branches if b.get("is_stale"))
+    main_wt = next((wt for wt in worktrees if wt.get("is_main")), None)
     agent_worktrees = [wt for wt in worktrees if not wt.get("is_main")]
 
     return _TEMPLATES.TemplateResponse(
         request,
         "worktrees.html",
         {
-            "worktrees": worktrees,
+            "main_wt": main_wt,
             "agent_worktrees": agent_worktrees,
-            "branches": branches,
-            "stash": stash,
-            "stale_count": stale_count,
             "gh_repo": _settings.gh_repo,
         },
     )
@@ -1319,7 +1442,8 @@ def _resolve_schema(
         return _resolve_schema(schema_root, resolved, depth + 1)
     if "allOf" in schema:
         merged: dict[str, object] = {}
-        for sub in schema.get("allOf", []):
+        all_of = schema.get("allOf", [])
+        for sub in (all_of if isinstance(all_of, list) else []):
             if isinstance(sub, dict):
                 merged.update(_resolve_schema(schema_root, sub, depth + 1))
         return merged
@@ -1336,7 +1460,8 @@ def _schema_to_fields(
     props: dict[str, object] = {}
     if isinstance(resolved.get("properties"), dict):
         props = resolved["properties"]  # type: ignore[assignment]
-    required_set: set[str] = set(resolved.get("required", []))  # type: ignore[arg-type]
+    required_raw = resolved.get("required", [])
+    required_set: set[str] = set(required_raw) if isinstance(required_raw, list) else set()
     fields: list[dict[str, object]] = []
     for name, prop in props.items():
         if not isinstance(prop, dict):
@@ -1350,9 +1475,10 @@ def _schema_to_fields(
             else:
                 type_str = "array"
         elif "anyOf" in prop:
+            any_of = prop.get("anyOf", [])
             parts_list = [
                 _resolve_schema(schema_root, t, depth + 1).get("type", "")
-                for t in prop.get("anyOf", [])
+                for t in (any_of if isinstance(any_of, list) else [])
                 if isinstance(t, dict)
             ]
             type_str = " | ".join(str(p) for p in parts_list if p and p != "null") or "any"
@@ -1479,8 +1605,9 @@ def _build_schema_models(schema_root: dict[str, object]) -> list[dict[str, objec
 
     Excludes low-signal FastAPI-generated error types.
     """
+    components = schema_root.get("components", {})
     raw: dict[str, object] = (
-        schema_root.get("components", {}).get("schemas", {})  # type: ignore[union-attr]
+        components.get("schemas", {}) if isinstance(components, dict) else {}
     )
     skip = {"HTTPValidationError", "ValidationError"}
     models: list[dict[str, object]] = []
