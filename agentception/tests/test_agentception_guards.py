@@ -175,7 +175,7 @@ def test_close_violating_pr_calls_gh() -> None:
 
     with TestClient(app) as client:
         with patch(
-            "agentception.routes.api.close_pr",
+            "agentception.routes.api.intelligence.close_pr",
             new_callable=AsyncMock,
         ) as mock_close:
             response = client.post("/api/intelligence/pr-violations/42/close")

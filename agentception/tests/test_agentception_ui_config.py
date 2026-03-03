@@ -54,7 +54,7 @@ _CUSTOM_CONFIG = PipelineConfig(
 def test_config_page_returns_200(client: TestClient) -> None:
     """GET /config returns HTTP 200 and renders the config HTML page."""
     with patch(
-        "agentception.routes.ui.read_pipeline_config",
+        "agentception.routes.ui.config.read_pipeline_config",
         new_callable=AsyncMock,
         return_value=_DEFAULT_CONFIG,
     ):
@@ -67,7 +67,7 @@ def test_config_page_returns_200(client: TestClient) -> None:
 def test_config_page_returns_200_without_config_reader(client: TestClient) -> None:
     """GET /config still returns 200 even when the config reader raises an exception."""
     with patch(
-        "agentception.routes.ui.read_pipeline_config",
+        "agentception.routes.ui.config.read_pipeline_config",
         new_callable=AsyncMock,
         side_effect=OSError("disk read error"),
     ):
@@ -84,7 +84,7 @@ def test_config_page_returns_200_without_config_reader(client: TestClient) -> No
 def test_config_page_shows_current_values(client: TestClient) -> None:
     """GET /config renders a page that contains the Alpine.js configPanel component."""
     with patch(
-        "agentception.routes.ui.read_pipeline_config",
+        "agentception.routes.ui.config.read_pipeline_config",
         new_callable=AsyncMock,
         return_value=_CUSTOM_CONFIG,
     ):
@@ -111,7 +111,7 @@ def test_config_page_shows_current_values(client: TestClient) -> None:
 def test_config_page_contains_api_put_endpoint(client: TestClient) -> None:
     """GET /config page loads app.js which calls PUT /api/config on save."""
     with patch(
-        "agentception.routes.ui.read_pipeline_config",
+        "agentception.routes.ui.config.read_pipeline_config",
         new_callable=AsyncMock,
         return_value=_DEFAULT_CONFIG,
     ):
@@ -126,7 +126,7 @@ def test_config_page_contains_api_put_endpoint(client: TestClient) -> None:
 def test_config_page_nav_link_active(client: TestClient) -> None:
     """GET /config marks the Config nav link as active in the base template."""
     with patch(
-        "agentception.routes.ui.read_pipeline_config",
+        "agentception.routes.ui.config.read_pipeline_config",
         new_callable=AsyncMock,
         return_value=_DEFAULT_CONFIG,
     ):
@@ -153,7 +153,7 @@ def test_config_save_calls_put_api_valid_payload(client: TestClient) -> None:
     }
     saved = PipelineConfig.model_validate(payload)
     with patch(
-        "agentception.routes.api.write_pipeline_config",
+        "agentception.routes.api.config.write_pipeline_config",
         new_callable=AsyncMock,
         return_value=saved,
     ):
@@ -182,7 +182,7 @@ def test_config_save_calls_put_api_slider_ranges(client: TestClient) -> None:
     }
     saved = PipelineConfig.model_validate(payload)
     with patch(
-        "agentception.routes.api.write_pipeline_config",
+        "agentception.routes.api.config.write_pipeline_config",
         new_callable=AsyncMock,
         return_value=saved,
     ):
@@ -207,7 +207,7 @@ def test_nav_shows_project_dropdown(client: TestClient) -> None:
     function must always be present so Alpine can initialise correctly.
     """
     with patch(
-        "agentception.routes.ui.read_pipeline_config",
+        "agentception.routes.ui.config.read_pipeline_config",
         new_callable=AsyncMock,
         return_value=_DEFAULT_CONFIG,
     ):

@@ -119,7 +119,7 @@ def test_config_api_get_returns_defaults() -> None:
     """GET /api/config returns built-in defaults when config file is absent."""
     default_config = PipelineConfig.model_validate(_DEFAULTS)
     with patch(
-        "agentception.routes.api.read_pipeline_config",
+        "agentception.routes.api.config.read_pipeline_config",
         new_callable=AsyncMock,
         return_value=default_config,
     ):
@@ -141,7 +141,7 @@ def test_config_api_get_returns_custom_values() -> None:
         active_labels_order=["agentception/0-scaffold"],
     )
     with patch(
-        "agentception.routes.api.read_pipeline_config",
+        "agentception.routes.api.config.read_pipeline_config",
         new_callable=AsyncMock,
         return_value=custom_config,
     ):
@@ -178,7 +178,7 @@ def test_config_api_put_validates_schema_and_persists() -> None:
     }
     saved_config = PipelineConfig.model_validate(payload)
     with patch(
-        "agentception.routes.api.write_pipeline_config",
+        "agentception.routes.api.config.write_pipeline_config",
         new_callable=AsyncMock,
         return_value=saved_config,
     ):
@@ -373,7 +373,7 @@ async def test_switch_project_rejects_unknown_name(tmp_path: Path) -> None:
 def test_switch_project_api_returns_404_for_unknown_project() -> None:
     """POST /api/config/switch-project returns 404 when project_name is not in projects."""
     with patch(
-        "agentception.routes.api.switch_project",
+        "agentception.routes.api.config.switch_project",
         new_callable=AsyncMock,
         side_effect=ValueError("Unknown project 'Nonexistent'. Available: []"),
     ):
@@ -396,7 +396,7 @@ def test_switch_project_api_returns_updated_config() -> None:
         projects=[],
     )
     with patch(
-        "agentception.routes.api.switch_project",
+        "agentception.routes.api.config.switch_project",
         new_callable=AsyncMock,
         return_value=updated_config,
     ):
