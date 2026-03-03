@@ -12,6 +12,7 @@ from starlette.requests import Request
 from agentception.config import settings as _settings
 from agentception.intelligence.analyzer import IssueAnalysis, analyze_issue
 from agentception.intelligence.guards import PRViolation, detect_out_of_order_prs
+from agentception.intelligence.pipeline_lanes import PhaseLane, compute_phase_lanes
 from agentception.intelligence.scaling import ScalingRecommendation, compute_recommendation
 from agentception.models import PipelineState
 from agentception.poller import get_state, tick as _poller_tick
@@ -82,6 +83,13 @@ async def overview(request: Request) -> HTMLResponse:
     board_issues = state.board_issues
     unclaimed = [i for i in board_issues if not i.claimed]
 
+    # Phase gate lanes — pure computation, no I/O.
+    phase_lanes: list[PhaseLane] = compute_phase_lanes(
+        labels=all_phase_labels,
+        board_issues=board_issues,
+        agents=state.agents,
+    )
+
     # Group board issues by phase_label for the batch-grouped board layout.
     # Issues without a phase_label are collected under "unassigned".
     board_issues_dicts = [i.model_dump() for i in board_issues]
@@ -113,6 +121,7 @@ async def overview(request: Request) -> HTMLResponse:
             "scaling_advice": scaling_advice.model_dump() if scaling_advice else None,
             "pr_violations": [v.model_dump() for v in pr_violations],
             "poller_paused": poller_paused,
+            "phase_lanes": phase_lanes,
         },
     )
 
