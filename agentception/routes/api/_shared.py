@@ -168,6 +168,47 @@ def _build_coordinator_task(
     )
 
 
+def _build_conductor_task(
+    wave_id: str,
+    phases: list[str],
+    org: str | None,
+    worktree: Path,
+    host_worktree: Path,
+    branch: str,
+) -> str:
+    """Build the ``.agent-task`` content for a conductor worktree.
+
+    The conductor agent reads ``WORKFLOW=conductor`` and coordinates across the
+    listed phases, spawning sub-agents for each unclaimed issue.  AgentCeption
+    only prepares the worktree and this file — all LLM work happens inside
+    the Cursor background agent that opens the returned ``host_worktree``.
+    """
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    repo = settings.gh_repo
+    return (
+        f"WORKFLOW=conductor\n"
+        f"GH_REPO={repo}\n"
+        f"ROLE=conductor\n"
+        f"ROLE_FILE=<host-repo>/.cursor/roles/conductor.md\n"
+        f"WAVE_ID={wave_id}\n"
+        f"PHASES={','.join(phases)}\n"
+        f"ORG={org or ''}\n"
+        f"BRANCH={branch}\n"
+        f"WORKTREE={worktree}\n"
+        f"HOST_WORKTREE={host_worktree}\n"
+        f"BASE=dev\n"
+        f"BATCH_ID={wave_id}\n"
+        f"WAVE={wave_id}\n"
+        f"COGNITIVE_ARCH=conductor\n"
+        f"CREATED_AT={now}\n"
+        f"SPAWN_MODE=chain\n"
+        f"SPAWN_SUB_AGENTS=true\n"
+        f"ATTEMPT_N=0\n"
+        f"REQUIRED_OUTPUT=wave_complete\n"
+        f"ON_BLOCK=stop\n"
+    )
+
+
 def _issue_is_claimed_api(iss: dict[str, object]) -> bool:
     """Return True when an issue carries the ``agent:wip`` label."""
     raw = iss.get("labels")
