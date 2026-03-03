@@ -10,6 +10,8 @@ Covers:
 - test_new_repo_page_has_hx_get_on_name_input — name input has hx-get attribute
 - test_new_repo_page_has_visibility_inputs — Public/Private radio inputs in HTML
 - test_new_repo_page_form_renders_without_js — form element in SSR HTML
+- test_new_repo_page_has_hx_indicator_on_name_input — hx-indicator attribute present
+- test_new_repo_page_has_name_check_indicator_span — indicator span exists in HTML
 - test_new_repo_name_check_htmx_returns_available_html — HTMX → HTML span "Available"
 - test_new_repo_name_check_htmx_returns_taken_html — HTMX → HTML span "taken"
 - test_new_repo_name_check_json_path_unchanged — no HX-Request → JSON response
@@ -110,6 +112,40 @@ async def test_new_repo_page_form_renders_without_js(
     response = await client.get("/musehub/ui/new")
     assert response.status_code == 200
     assert "<form" in response.text
+
+
+@pytest.mark.anyio
+async def test_new_repo_page_has_hx_indicator_on_name_input(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """The name input has hx-indicator pointing at #name-check-indicator.
+
+    This gives users a loading spinner while the debounced availability check
+    request is in-flight (issue #704).
+    """
+    response = await client.get("/musehub/ui/new")
+    assert response.status_code == 200
+    body = response.text
+    assert 'hx-indicator="#name-check-indicator"' in body
+
+
+@pytest.mark.anyio
+async def test_new_repo_page_has_name_check_indicator_span(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """A span with id=name-check-indicator and class=htmx-indicator is rendered.
+
+    HTMX toggles opacity on this element while the availability check is
+    in-flight, giving the user visual feedback without any custom JavaScript
+    (issue #704).
+    """
+    response = await client.get("/musehub/ui/new")
+    assert response.status_code == 200
+    body = response.text
+    assert 'id="name-check-indicator"' in body
+    assert 'class="htmx-indicator"' in body
 
 
 # ---------------------------------------------------------------------------
