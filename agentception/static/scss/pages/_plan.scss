@@ -680,11 +680,13 @@
 /* ── Nav CTA highlight ───────────────────────────────────────────────────── */
 .topnav .nav-cta {
   font-weight: 600;
-  color: var(--accent, #6366f1) !important;
 }
-.topnav .nav-cta:hover,
 .topnav .nav-cta.active {
+  color: var(--accent, #6366f1) !important;
   background: rgba(99, 102, 241, 0.1) !important;
+}
+.topnav .nav-cta:hover:not(.active) {
+  background: rgba(99, 102, 241, 0.06) !important;
 }
 
 /* Responsive: stack at narrow viewports */
