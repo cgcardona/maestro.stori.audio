@@ -27,18 +27,24 @@
     <span class="cfg-sidebar-label">Settings</span>
 
     <button class="cfg-tab-btn"
+            id="tab-btn-allocation"
             :class="{ active: activeTab === 'allocation' }"
             @click="setTab('allocation')"
             type="button"
+            role="tab"
+            :aria-selected="activeTab === 'allocation'"
             aria-controls="panel-allocation">
       <span class="cfg-tab-icon">⚡</span>
       Allocation
     </button>
 
     <button class="cfg-tab-btn"
+            id="tab-btn-labels"
             :class="{ active: activeTab === 'labels' }"
             @click="setTab('labels')"
             type="button"
+            role="tab"
+            :aria-selected="activeTab === 'labels'"
             aria-controls="panel-labels">
       <span class="cfg-tab-icon">🏷</span>
       Labels
@@ -48,9 +54,12 @@
     </button>
 
     <button class="cfg-tab-btn"
+            id="tab-btn-ab"
             :class="{ active: activeTab === 'ab' }"
             @click="setTab('ab')"
             type="button"
+            role="tab"
+            :aria-selected="activeTab === 'ab'"
             aria-controls="panel-ab">
       <span class="cfg-tab-icon">🔬</span>
       A/B Testing
@@ -59,9 +68,12 @@
     </button>
 
     <button class="cfg-tab-btn"
+            id="tab-btn-projects"
             :class="{ active: activeTab === 'projects' }"
             @click="setTab('projects')"
             type="button"
+            role="tab"
+            :aria-selected="activeTab === 'projects'"
             aria-controls="panel-projects">
       <span class="cfg-tab-icon">📂</span>
       Projects
@@ -77,6 +89,7 @@
     {# ════════ Allocation Panel ════════ #}
     <section id="panel-allocation"
              role="tabpanel"
+             aria-labelledby="tab-btn-allocation"
              x-show="activeTab === 'allocation'"
              x-transition:enter="transition ease-out duration-150"
              x-transition:enter-start="opacity-0"
@@ -160,6 +173,7 @@
     {# ════════ Labels Panel ════════ #}
     <section id="panel-labels"
              role="tabpanel"
+             aria-labelledby="tab-btn-labels"
              x-show="activeTab === 'labels'"
              x-transition:enter="transition ease-out duration-150"
              x-transition:enter-start="opacity-0"
@@ -213,6 +227,7 @@
     {# ════════ A/B Testing Panel ════════ #}
     <section id="panel-ab"
              role="tabpanel"
+             aria-labelledby="tab-btn-ab"
              x-show="activeTab === 'ab'"
              x-transition:enter="transition ease-out duration-150"
              x-transition:enter-start="opacity-0"
@@ -293,6 +308,7 @@
     {# ════════ Projects Panel ════════ #}
     <section id="panel-projects"
              role="tabpanel"
+             aria-labelledby="tab-btn-projects"
              x-show="activeTab === 'projects'"
              x-transition:enter="transition ease-out duration-150"
              x-transition:enter-start="opacity-0"
