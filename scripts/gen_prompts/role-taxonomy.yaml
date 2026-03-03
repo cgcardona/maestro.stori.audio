@@ -38,6 +38,8 @@ levels:
           - da_vinci
           - newton
           - darwin
+          - satoshi_nakamoto
+          - vitalik_buterin
           - gabriel_cardona
         compatible_skill_domains:
           - llm
@@ -66,6 +68,8 @@ levels:
           - bjarne_stroustrup
           - barbara_liskov
           - wozniak
+          - emin_gun_sirer
+          - gavin_wood
           - gabriel_cardona
         compatible_skill_domains:
           - fastapi
@@ -128,6 +132,9 @@ levels:
           - knuth
           - nassim_taleb
           - sun_tzu
+          - david_chaum
+          - hal_finney
+          - nick_szabo
         compatible_skill_domains:
           - devops
           - python
@@ -318,6 +325,9 @@ levels:
           - knuth
           - sun_tzu
           - nassim_taleb
+          - david_chaum
+          - hal_finney
+          - nick_szabo
         compatible_skill_domains:
           - devops
           - python
@@ -377,6 +387,9 @@ levels:
           - tim_berners_lee
           - patrick_collison
           - anders_hejlsberg
+          - satoshi_nakamoto
+          - vitalik_buterin
+          - gavin_wood
           - gabriel_cardona
         compatible_skill_domains:
           - fastapi
@@ -563,6 +576,8 @@ levels:
           - fabrice_bellard
           - wozniak
           - nikola_tesla
+          - satoshi_nakamoto
+          - hal_finney
         compatible_skill_domains:
           - rust
           - cpp
@@ -652,11 +667,15 @@ levels:
           - knuth
           - sun_tzu
           - nassim_taleb
+          - david_chaum
+          - hal_finney
+          - nick_szabo
         compatible_skill_domains:
           - python
           - devops
           - postgresql
           - application_security
+          - cryptography
         file_exists: false
 
       - slug: test-engineer
@@ -699,6 +718,10 @@ levels:
           - rich_hickey
           - vint_cerf
           - joe_armstrong
+          - satoshi_nakamoto
+          - emin_gun_sirer
+          - gavin_wood
+          - nick_szabo
           - gabriel_cardona
         compatible_skill_domains:
           - python
@@ -706,6 +729,8 @@ levels:
           - postgresql
           - devops
           - llm
+          - blockchain
+          - cryptography
         file_exists: false
 
       - slug: api-developer
@@ -722,6 +747,8 @@ levels:
           - vint_cerf
           - tim_berners_lee
           - anders_hejlsberg
+          - vitalik_buterin
+          - gavin_wood
           - gabriel_cardona
         compatible_skill_domains:
           - fastapi
@@ -729,6 +756,7 @@ levels:
           - postgresql
           - javascript
           - graphql
+          - blockchain
         file_exists: false
 
       - slug: technical-writer
@@ -769,11 +797,14 @@ levels:
           - fabrice_bellard
           - john_carmack
           - wozniak
+          - gavin_wood
+          - emin_gun_sirer
         compatible_skill_domains:
           - rust
           - systems
           - cpp
           - devops
+          - blockchain
         file_exists: false
 
       - slug: go-developer
@@ -934,11 +965,13 @@ levels:
           - darwin
           - linus_pauling
           - marie_curie
+          - emin_gun_sirer
         compatible_skill_domains:
           - python
           - pytorch
           - llm
           - postgresql
+          - cryptography
         file_exists: false
 
       - slug: data-scientist
