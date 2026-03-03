@@ -27,6 +27,7 @@
 //     _agents.scss      Agents list page
 //     _config.scss      Pipeline Config page
 //     _templates.scss   Templates (export / import / sandbox) page
+//     _toast.scss       Global toast notification overlay (Alpine + HX-Trigger)
 //
 // Compilation
 // ───────────
@@ -58,3 +59,4 @@
 @use 'pages/templates';
 @use 'pages/ab-testing';
 @use 'pages/controls';
+@use 'pages/toast';
