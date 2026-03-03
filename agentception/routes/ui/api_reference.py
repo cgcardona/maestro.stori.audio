@@ -124,7 +124,7 @@ def _build_api_groups(
         for method, op in methods.items():
             if not isinstance(op, dict):
                 continue
-            tags: list[str] = op.get("tags", ["other"])  # type: ignore[assignment]
+            tags: list[str] = op.get("tags", ["other"])
             tag = tags[0] if tags else "other"
             if tag not in buckets:
                 buckets[tag] = []
@@ -139,7 +139,7 @@ def _build_api_groups(
                     rb_ct = "application/json" if "application/json" in rb_content else (
                         next(iter(rb_content), "")
                     )
-                    rb_ct_data: dict[str, object] = rb_content.get(rb_ct, {})  # type: ignore[assignment]
+                    rb_ct_data: dict[str, object] = rb_content.get(rb_ct, {})
                     raw_schema = rb_ct_data.get("schema", {}) if isinstance(rb_ct_data, dict) else {}
                     if isinstance(raw_schema, dict):
                         ref_name = str(raw_schema.get("$ref", "")).split("/")[-1]
