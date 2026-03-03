@@ -25,6 +25,7 @@
 //     _brain-dump.scss  Brain Dump page
 //     _roles.scss       Cognitive Architecture Studio
 //     _agents.scss      Agents list page
+//     _config.scss      Pipeline Config page
 //
 // Compilation
 // ───────────
@@ -51,3 +52,4 @@
 @use 'pages/brain-dump';
 @use 'pages/roles';
 @use 'pages/agents';
+@use 'pages/config';
