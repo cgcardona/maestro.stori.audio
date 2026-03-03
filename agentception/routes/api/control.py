@@ -475,6 +475,21 @@ async def sweep_stale(dry_run: bool = False) -> SweepResult:
     )
 
 
+@router.post("/control/trigger-poll", tags=["control"])
+async def trigger_poll() -> dict[str, bool]:
+    """Fire an immediate poller tick, refreshing pipeline state from the filesystem.
+
+    Equivalent to what the overview page fires in the background on load.
+    The tick runs asynchronously; the response returns immediately without
+    waiting for the tick to complete.
+    """
+    from agentception.poller import tick as _tick
+
+    asyncio.create_task(_tick())
+    logger.info("✅ Manual poll tick triggered via /control/trigger-poll")
+    return {"triggered": True}
+
+
 @router.post("/control/spawn-coordinator", tags=["control"])
 async def spawn_coordinator(body: SpawnCoordinatorRequest) -> SpawnCoordinatorResult:
     """Seed a coordinator worktree from a free-form brain dump.
