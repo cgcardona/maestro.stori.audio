@@ -29,7 +29,7 @@ def client(tmp_path: Path) -> Generator[TestClient, None, None]:
     """Test client with a temporary repo_dir so sentinel writes stay isolated."""
     # Patch _SENTINEL in the api module to point into tmp_path.
     sentinel = tmp_path / ".pipeline-pause"
-    with patch("agentception.routes.api._SENTINEL", sentinel):
+    with patch("agentception.routes.api.control._SENTINEL", sentinel):
         with TestClient(app) as c:
             yield c
 
@@ -39,7 +39,7 @@ def client_paused(tmp_path: Path) -> Generator[TestClient, None, None]:
     """Test client with the sentinel file pre-created (pipeline already paused)."""
     sentinel = tmp_path / ".pipeline-pause"
     sentinel.touch()
-    with patch("agentception.routes.api._SENTINEL", sentinel):
+    with patch("agentception.routes.api.control._SENTINEL", sentinel):
         with TestClient(app) as c:
             yield c
 
@@ -51,7 +51,7 @@ def test_pause_creates_sentinel_file(tmp_path: Path, client: TestClient) -> None
     """POST /api/control/pause must create the sentinel file on disk."""
     sentinel = tmp_path / ".pipeline-pause"
     assert not sentinel.exists(), "Sentinel must not exist before pause"
-    with patch("agentception.routes.api._SENTINEL", sentinel):
+    with patch("agentception.routes.api.control._SENTINEL", sentinel):
         response = client.post("/api/control/pause")
     assert response.status_code == 200
     assert sentinel.exists(), "Sentinel must be created after pause"
@@ -60,7 +60,7 @@ def test_pause_creates_sentinel_file(tmp_path: Path, client: TestClient) -> None
 def test_pause_returns_paused_true(tmp_path: Path, client: TestClient) -> None:
     """POST /api/control/pause must return {paused: true}."""
     sentinel = tmp_path / ".pipeline-pause"
-    with patch("agentception.routes.api._SENTINEL", sentinel):
+    with patch("agentception.routes.api.control._SENTINEL", sentinel):
         response = client.post("/api/control/pause")
     assert response.status_code == 200
     assert response.json() == {"paused": True}
@@ -69,7 +69,7 @@ def test_pause_returns_paused_true(tmp_path: Path, client: TestClient) -> None:
 def test_pause_idempotent(tmp_path: Path, client_paused: TestClient) -> None:
     """POST /api/control/pause when already paused must succeed without error."""
     sentinel = tmp_path / ".pipeline-pause"
-    with patch("agentception.routes.api._SENTINEL", sentinel):
+    with patch("agentception.routes.api.control._SENTINEL", sentinel):
         response = client_paused.post("/api/control/pause")
     assert response.status_code == 200
     assert response.json() == {"paused": True}
@@ -82,7 +82,7 @@ def test_resume_deletes_sentinel_file(tmp_path: Path, client_paused: TestClient)
     """POST /api/control/resume must remove the sentinel file when it exists."""
     sentinel = tmp_path / ".pipeline-pause"
     assert sentinel.exists(), "Sentinel must exist before resume"
-    with patch("agentception.routes.api._SENTINEL", sentinel):
+    with patch("agentception.routes.api.control._SENTINEL", sentinel):
         response = client_paused.post("/api/control/resume")
     assert response.status_code == 200
     assert not sentinel.exists(), "Sentinel must be gone after resume"
@@ -91,7 +91,7 @@ def test_resume_deletes_sentinel_file(tmp_path: Path, client_paused: TestClient)
 def test_resume_returns_paused_false(tmp_path: Path, client_paused: TestClient) -> None:
     """POST /api/control/resume must return {paused: false}."""
     sentinel = tmp_path / ".pipeline-pause"
-    with patch("agentception.routes.api._SENTINEL", sentinel):
+    with patch("agentception.routes.api.control._SENTINEL", sentinel):
         response = client_paused.post("/api/control/resume")
     assert response.status_code == 200
     assert response.json() == {"paused": False}
@@ -101,7 +101,7 @@ def test_resume_idempotent_when_not_paused(tmp_path: Path, client: TestClient) -
     """POST /api/control/resume when not paused must succeed without error."""
     sentinel = tmp_path / ".pipeline-pause"
     assert not sentinel.exists()
-    with patch("agentception.routes.api._SENTINEL", sentinel):
+    with patch("agentception.routes.api.control._SENTINEL", sentinel):
         response = client.post("/api/control/resume")
     assert response.status_code == 200
     assert response.json() == {"paused": False}
@@ -114,7 +114,7 @@ def test_status_reflects_sentinel_state_running(tmp_path: Path, client: TestClie
     """GET /api/control/status must return {paused: false} when sentinel is absent."""
     sentinel = tmp_path / ".pipeline-pause"
     assert not sentinel.exists()
-    with patch("agentception.routes.api._SENTINEL", sentinel):
+    with patch("agentception.routes.api.control._SENTINEL", sentinel):
         response = client.get("/api/control/status")
     assert response.status_code == 200
     assert response.json() == {"paused": False}
@@ -124,7 +124,7 @@ def test_status_reflects_sentinel_state_paused(tmp_path: Path, client_paused: Te
     """GET /api/control/status must return {paused: true} when sentinel is present."""
     sentinel = tmp_path / ".pipeline-pause"
     assert sentinel.exists()
-    with patch("agentception.routes.api._SENTINEL", sentinel):
+    with patch("agentception.routes.api.control._SENTINEL", sentinel):
         response = client_paused.get("/api/control/status")
     assert response.status_code == 200
     assert response.json() == {"paused": True}
@@ -133,7 +133,7 @@ def test_status_reflects_sentinel_state_paused(tmp_path: Path, client_paused: Te
 def test_status_updates_after_pause(tmp_path: Path, client: TestClient) -> None:
     """GET /api/control/status must reflect paused=true immediately after a pause call."""
     sentinel = tmp_path / ".pipeline-pause"
-    with patch("agentception.routes.api._SENTINEL", sentinel):
+    with patch("agentception.routes.api.control._SENTINEL", sentinel):
         client.post("/api/control/pause")
         response = client.get("/api/control/status")
     assert response.json() == {"paused": True}
@@ -142,7 +142,7 @@ def test_status_updates_after_pause(tmp_path: Path, client: TestClient) -> None:
 def test_status_updates_after_resume(tmp_path: Path, client_paused: TestClient) -> None:
     """GET /api/control/status must reflect paused=false immediately after a resume call."""
     sentinel = tmp_path / ".pipeline-pause"
-    with patch("agentception.routes.api._SENTINEL", sentinel):
+    with patch("agentception.routes.api.control._SENTINEL", sentinel):
         client_paused.post("/api/control/resume")
         response = client_paused.get("/api/control/status")
     assert response.json() == {"paused": False}

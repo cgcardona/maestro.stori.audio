@@ -103,7 +103,7 @@ async def agents_list(request: Request) -> HTMLResponse:
                 completed_count += 1
 
         enriched_history.append({
-            **run,  # type: ignore[arg-type]
+            **run,
             "duration_s": duration_s,
             "duration_str": duration_str,
             "spawned_fmt": str(run.get("spawned_at", ""))[:16].replace("T", " "),
@@ -265,6 +265,19 @@ async def spawn_form(request: Request) -> HTMLResponse:
     state = get_state()
     active_label: str = (state.active_label or "") if state else ""
 
+    # Fetch role descriptions from the taxonomy YAML (best-effort — gracefully
+    # degrades to empty strings when the YAML is absent or the taxonomy API
+    # fails, which happens in test environments without the scripts/ tree).
+    _role_descriptions: dict[str, str] = {}
+    try:
+        from agentception.routes.roles import get_taxonomy as _get_taxonomy
+        _taxonomy = await _get_taxonomy()
+        for _level in _taxonomy.levels:
+            for _trole in _level.roles:
+                _role_descriptions[_trole.slug] = _trole.description
+    except Exception:
+        pass  # descriptions stay empty; UI renders without them
+
     # Build role groups in category order for the Jinja role card grid.
     # We produce a list of {category, roles} dicts to preserve the
     # canonical category ordering (_CATEGORY_ORDER) — Jinja's groupby
@@ -276,6 +289,7 @@ async def spawn_form(request: Request) -> HTMLResponse:
             "slug": slug,
             "label": slug.replace("-", " ").title(),
             "category": cat,
+            "description": _role_descriptions.get(slug, ""),
         }
         _cat_buckets.setdefault(cat, []).append(entry)
     # Sort roles within each category by their defined position.

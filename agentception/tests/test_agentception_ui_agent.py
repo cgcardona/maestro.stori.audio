@@ -91,7 +91,7 @@ def test_agent_detail_404_unknown_id(client: TestClient) -> None:
         alerts=[],
         polled_at=time.time(),
     )
-    with patch("agentception.routes.ui.get_state", return_value=state):
+    with patch("agentception.routes.ui.agents.get_state", return_value=state):
         response = client.get("/agents/does-not-exist")
     assert response.status_code == 404
     assert "does-not-exist" in response.text
@@ -106,9 +106,9 @@ def test_agent_detail_renders_transcript(
         {"role": "assistant", "text": "On it. Reading the issue..."},
     ]
     with (
-        patch("agentception.routes.ui.get_state", return_value=pipeline_with_agent),
+        patch("agentception.routes.ui.agents.get_state", return_value=pipeline_with_agent),
         patch(
-            "agentception.routes.ui.read_transcript_messages",
+            "agentception.routes.ui.agents.read_transcript_messages",
             new_callable=AsyncMock,
             return_value=fake_messages,
         ),
@@ -125,9 +125,9 @@ def test_agent_detail_renders_child_agent(
 ) -> None:
     """GET /agents/<child-id> must resolve child agents one level deep."""
     with (
-        patch("agentception.routes.ui.get_state", return_value=pipeline_with_agent),
+        patch("agentception.routes.ui.agents.get_state", return_value=pipeline_with_agent),
         patch(
-            "agentception.routes.ui.read_transcript_messages",
+            "agentception.routes.ui.agents.read_transcript_messages",
             new_callable=AsyncMock,
             return_value=[],
         ),
@@ -154,7 +154,7 @@ def test_agent_detail_no_transcript_path(client: TestClient) -> None:
         alerts=[],
         polled_at=time.time(),
     )
-    with patch("agentception.routes.ui.get_state", return_value=state):
+    with patch("agentception.routes.ui.agents.get_state", return_value=state):
         response = client.get("/agents/no-transcript")
     assert response.status_code == 200
     assert "No transcript available" in response.text
@@ -165,9 +165,9 @@ def test_agent_detail_contains_task_table(
 ) -> None:
     """GET /agents/<id> HTML must include the .agent-task key/value table."""
     with (
-        patch("agentception.routes.ui.get_state", return_value=pipeline_with_agent),
+        patch("agentception.routes.ui.agents.get_state", return_value=pipeline_with_agent),
         patch(
-            "agentception.routes.ui.read_transcript_messages",
+            "agentception.routes.ui.agents.read_transcript_messages",
             new_callable=AsyncMock,
             return_value=[],
         ),
@@ -183,9 +183,9 @@ def test_agent_detail_contains_breadcrumb(
 ) -> None:
     """GET /agents/<id> HTML must include a breadcrumb link back to overview."""
     with (
-        patch("agentception.routes.ui.get_state", return_value=pipeline_with_agent),
+        patch("agentception.routes.ui.agents.get_state", return_value=pipeline_with_agent),
         patch(
-            "agentception.routes.ui.read_transcript_messages",
+            "agentception.routes.ui.agents.read_transcript_messages",
             new_callable=AsyncMock,
             return_value=[],
         ),
