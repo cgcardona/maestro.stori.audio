@@ -89,7 +89,10 @@ async def test_post_valid_dump_returns_200_pending(
     # draft_id must be a valid uuid4
     parsed = uuid.UUID(body["draft_id"], version=4)
     assert str(parsed) == body["draft_id"]
+    # output_path must be a specific file (not the directory) so the poller
+    # can watch for it and emit task_output_ready when it appears.
     assert "plan-draft-" in body["output_path"]
+    assert body["output_path"].endswith(".plan-output.yaml")
     assert body["task_file"].endswith(".agent-task")
     mock_exec.assert_called_once()
 
@@ -126,6 +129,11 @@ async def test_agent_task_written_with_workflow_plan_spec(
     content = task_file.read_text(encoding="utf-8")
     assert "WORKFLOW=plan-spec" in content
     assert dump_text in content
+    # Output path must be a specific file so the AgentCeption poller can watch
+    # for it; the mcp_tools_hint guides the Cursor agent to call plan_get_schema.
+    assert ".plan-output.yaml" in content
+    assert "mcp_tools_hint=call plan_get_schema()" in content
+    assert "output_schema=plan_get_schema" in content
 
 
 @pytest.mark.anyio
