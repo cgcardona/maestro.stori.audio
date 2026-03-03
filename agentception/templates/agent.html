@@ -122,11 +122,11 @@
       x-cloak
       @keydown.escape.window="showKillModal = false"
       @click.self="showKillModal = false"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="kill-modal-title"
     >
-      <div class="modal-box">
+      <div class="modal-box"
+           role="dialog"
+           aria-modal="true"
+           aria-labelledby="kill-modal-title">
         <h2 id="kill-modal-title" class="modal-title">Kill agent{% if node.issue_number %} for issue #{{ node.issue_number }}{% endif %}?</h2>
         <p class="modal-body">
           This removes the worktree at
@@ -325,7 +325,10 @@
     <div id="transcript-section"
          hx-get="/partials/agents/{{ node.id }}/transcript"
          hx-trigger="every 8s"
-         hx-swap="innerHTML">
+         hx-swap="innerHTML"
+         x-data
+         x-init="$nextTick(() => { const l = document.querySelector('#transcript .message:last-child'); l?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); })"
+         hx-on:htmx:after-settle="(function(){ const l = document.querySelector('#transcript .message:last-child'); l?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); })()">
       {% if messages %}
       <div class="transcript-container" id="transcript">
         {% for msg in messages %}
@@ -357,15 +360,6 @@
       {% endif %}
     </div>
 
-    <script>
-    document.addEventListener('DOMContentLoaded', function () {
-      const container = document.getElementById('transcript');
-      if (container) {
-        const last = container.lastElementChild;
-        if (last) last.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-      }
-    });
-    </script>
   </section>
 
 </div>{# .agent-detail-columns #}

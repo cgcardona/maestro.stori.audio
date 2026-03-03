@@ -189,14 +189,14 @@
     <div
       class="cas-diff-overlay"
       :class="diffVisible && 'cas-diff-overlay--visible'"
-      role="dialog"
-      aria-modal="true"
-      aria-label="Diff preview"
       @click.self="diffVisible = false"
       @keydown.escape.window="diffVisible = false"
       x-cloak
     >
-      <div class="cas-diff-modal">
+      <div class="cas-diff-modal"
+           role="dialog"
+           aria-modal="true"
+           aria-label="Diff preview">
         <div class="cas-diff-modal__header">
           <span x-text="diffTitle">Diff preview</span>
           <button @click="diffVisible = false" aria-label="Close diff">✕</button>
