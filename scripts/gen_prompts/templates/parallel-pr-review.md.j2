@@ -1036,14 +1036,14 @@ $CLOSE_FINGERPRINT"
        export GH_REPO
        if [ -n "$CLOSES_ISSUES" ]; then
          echo "$CLOSES_ISSUES" | tr ',' '\n' | xargs -I{} sh -c \
-           'gh issue close {} --comment "$CLOSE_COMMENT" --repo "$GH_REPO"; gh issue edit {} --remove-label "agent:wip" --repo "$GH_REPO" 2>/dev/null || true'
+           'gh issue close {} --comment "$CLOSE_COMMENT" --repo "$GH_REPO" 2>/dev/null || true; gh issue edit {} --remove-label "agent:wip" --repo "$GH_REPO" 2>/dev/null || true'
        else
          # Fallback: re-parse the PR body if CLOSES_ISSUES was empty in task file
          gh pr view "$N" --json body --jq '.body' \
            | grep -oE '[Cc]loses?\s+#[0-9]+' \
            | grep -oE '[0-9]+' \
            | xargs -I{} sh -c \
-               'gh issue close {} --comment "$CLOSE_COMMENT" --repo "$GH_REPO"; gh issue edit {} --remove-label "agent:wip" --repo "$GH_REPO" 2>/dev/null || true'
+               'gh issue close {} --comment "$CLOSE_COMMENT" --repo "$GH_REPO" 2>/dev/null || true; gh issue edit {} --remove-label "agent:wip" --repo "$GH_REPO" 2>/dev/null || true'
        fi
 
   ⚠️  Never use --delete-branch with gh pr merge in a multi-worktree setup.
@@ -1062,6 +1062,15 @@ $CLOSE_FINGERPRINT"
   #    working copy reflects reality and the next batch starts from the true tip.
   #    This is the step that prevents "relation does not exist" DB errors when the
   #    coordinator tries to apply migrations before fetching.
+  #
+  #    ⚠️  COMMIT GUARD — the main repo may have uncommitted files (e.g. from a
+  #    previous agent run that wrote directly to the main worktree, or from generate.py
+  #    updating role files). An uncommitted working tree aborts git merge. Commit
+  #    whatever is there so the merge can proceed cleanly.
+  git -C "$REPO" add -A
+  git -C "$REPO" diff --cached --quiet || git -C "$REPO" commit -m "chore: save main repo state before post-merge dev sync
+
+Maestro-Session: ${AGENT_SESSION:-unset}"
   git -C "$REPO" fetch origin
   git -C "$REPO" merge origin/dev
 
@@ -1070,7 +1079,12 @@ STEP 7 — REGRESSION FEEDBACK LOOP (only if merge succeeded — skip if D/F gra
   introduced by this batch. Any new failures become GitHub issues automatically
   and re-enter the pipeline — no human triage required.
 
-  # Pull the latest dev (contains the just-merged PR):
+  # Pull the latest dev (contains the just-merged PR).
+  # ⚠️  COMMIT GUARD: same as step 6.9 — guard against uncommitted main-repo state.
+  git -C "$REPO" add -A
+  git -C "$REPO" diff --cached --quiet || git -C "$REPO" commit -m "chore: save main repo state before regression-feedback dev sync
+
+Maestro-Session: ${AGENT_SESSION:-unset}"
   git -C "$REPO" fetch origin && git -C "$REPO" merge origin/dev
 
   # Run TARGETED tests only — never the full suite.
