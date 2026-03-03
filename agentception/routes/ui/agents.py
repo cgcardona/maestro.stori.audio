@@ -172,6 +172,54 @@ async def agents_list(request: Request) -> HTMLResponse:
     )
 
 
+@router.get("/partials/agents", response_class=HTMLResponse)
+async def agents_partial(request: Request) -> HTMLResponse:
+    """HTMX partial — returns only the live agents grid for polling.
+
+    Called every 15 s by hx-trigger on the agents page inner div.
+    Returns a bare HTML fragment (no base layout, no nav) so HTMX can
+    swap just the live-agents card grid without destroying Alpine state.
+    """
+    from agentception.routes.roles import resolve_cognitive_arch
+
+    state = get_state() or PipelineState.empty()
+    now_utc = datetime.datetime.utcnow()
+
+    all_agents: list[AgentNode] = []
+    for agent in state.agents:
+        all_agents.append(agent)
+        all_agents.extend(agent.children)
+
+    agents_enriched: list[dict[str, object]] = []
+    for ag in all_agents:
+        persona = resolve_cognitive_arch(ag.cognitive_arch)
+        elapsed = ""
+        is_stale_idle = False
+        spawned_dt = _parse_iso(ag.spawned_at.isoformat() if hasattr(ag, "spawned_at") and ag.spawned_at else None)
+        if spawned_dt:
+            elapsed = _fmt_duration((now_utc - spawned_dt).total_seconds())
+        last_activity_dt = _parse_iso(
+            ag.last_activity_at.isoformat()
+            if hasattr(ag, "last_activity_at") and ag.last_activity_at
+            else None
+        )
+        if last_activity_dt:
+            idle_s = (now_utc - last_activity_dt).total_seconds()
+            is_stale_idle = idle_s > 900
+        agents_enriched.append({
+            "node": ag,
+            "persona": persona,
+            "elapsed": elapsed,
+            "is_stale_idle": is_stale_idle,
+        })
+
+    return _TEMPLATES.TemplateResponse(
+        request,
+        "partials/agents_list.html",
+        {"agents": agents_enriched},
+    )
+
+
 @router.get("/controls", response_class=HTMLResponse)
 async def controls_hub(request: Request) -> Response:
     """Controls hub — redirects to the spawn form (the primary control action)."""

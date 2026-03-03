@@ -139,6 +139,16 @@
       <span class="badge badge-count {% if agents %}badge-count--live{% endif %}">{{ agents | length }}</span>
     </h2>
 
+    {# ── Live agents grid — HTMX polls /partials/agents every 15 s.
+       The hx-trigger div wraps only this server-rendered card grid;
+       the Alpine root (agentsPage) and filter toolbar are outside and
+       untouched by each swap, so filter/search/sort state is preserved. #}
+    <div
+      id="agents-live-inner"
+      hx-get="/partials/agents"
+      hx-trigger="every 15s"
+      hx-swap="innerHTML"
+    >
     {% if not agents %}
     <div class="agents-empty card">
       <div class="agents-empty__icon">🤖</div>
@@ -227,6 +237,7 @@
       {% endfor %}
     </div>
     {% endif %}
+    </div>{# #agents-live-inner #}
   </section>
 
   {# ── Run History section ──────────────────────────────────────────────────── #}
