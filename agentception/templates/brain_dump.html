@@ -2,13 +2,13 @@
 {% block content %}
 
 {#
-  Brain Dump — architecture layers
+  Plan — architecture layers
   ─────────────────────────────────────────────────────────────────────────────
   Jinja  : page copy, funnel stage structure, seed chips, recent-runs (initial)
   HTMX   : refreshes #bd-recent-runs after submit (triggered from Alpine)
   Alpine : step machine (input → previewing → loading → done), form state,
            phase card preview, loading animation
-  CSS    : app.css  §  Brain Dump
+  CSS    : app.css  §  Plan
   JS     : brain_dump.js  →  brainDump()
   ─────────────────────────────────────────────────────────────────────────────
 #}
@@ -25,11 +25,11 @@
      ══════════════════════════════════════════════════════════════════════ #}
   <div class="bd-main">
 
-    {# ── Step indicator: 1 Dump → 2 Preview → 3 Running → 4 Done ─────── #}
+    {# ── Step indicator: 1 Plan → 2 Preview → 3 Running → 4 Done ─────── #}
     <nav class="bd-stepper" aria-label="Progress">
       <div class="bd-stepper-list">
 
-        {# Step 1: Dump — active while user is writing #}
+        {# Step 1: Plan — active while user is writing #}
         <div class="bd-step"
              :class="step === 'input' ? 'bd-step--active' : 'bd-step--done'"
              :aria-current='step === "input" ? "step" : "false"'>
@@ -37,7 +37,7 @@
             <span class="bd-step-check" x-show="step !== 'input'" aria-hidden="true">✓</span>
             <span class="bd-step-num"   x-show="step === 'input'"  aria-hidden="true">1</span>
           </span>
-          <span class="bd-step-label">Dump</span>
+          <span class="bd-step-label">Plan</span>
         </div>
 
         <div class="bd-step-conn"
@@ -95,7 +95,7 @@
     <div x-show="step === 'input'" x-transition.opacity>
 
       <h1 class="bd-title">Messy thoughts → shipped work.</h1>
-      <p class="bd-sub">Dump anything — ideas, bugs, features, debt. We'll plan the phases and file the issues.</p>
+      <p class="bd-sub">Plan anything — ideas, bugs, features, debt. We'll plan the phases and file the issues.</p>
 
       {# Textarea ──────────────────────────────────────────────────────── #}
       <div class="bd-textarea-wrap" :class="{'bd-textarea-wrap--focused': focused}">
@@ -232,7 +232,7 @@
           @click="editDump()"
           :disabled="submitting"
         >
-          ← Edit dump
+          ← Edit plan
         </button>
         <button
           class="btn btn-primary bd-confirm-btn"
@@ -256,7 +256,7 @@
       <div class="bd-done-badge">🚀</div>
       <h2 class="bd-done-title">Coordinator queued</h2>
       <p class="bd-done-sub">
-        Your brain dump is being turned into phased, load-bearing GitHub issues.
+        Your plan is being turned into phased, load-bearing GitHub issues.
         Track the coordinator on the Agents page, or check Issues once they appear.
       </p>
 
@@ -270,7 +270,7 @@
         <pre class="bd-task-pre" x-text="result.agent_task"></pre>
       </details>
 
-      <button class="bd-restart-btn" @click="reset()">← New Brain Dump</button>
+      <button class="bd-restart-btn" @click="reset()">← New Plan</button>
     </div>
 
   </div>

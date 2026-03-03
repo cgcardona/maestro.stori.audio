@@ -1,4 +1,4 @@
-"""Tests for the Brain Dump UI routes (issue #826 — sidebar polish).
+"""Tests for the Plan UI routes (issue #826 — sidebar polish).
 
 Covers:
 - GET /brain-dump page renders correctly
@@ -97,7 +97,7 @@ def test_brain_dump_page_renders(client: TestClient) -> None:
     """GET /brain-dump must return 200 with the page title."""
     resp = client.get("/brain-dump")
     assert resp.status_code == 200
-    assert "Brain Dump" in resp.text or "brain-dump" in resp.text.lower()
+    assert "Plan" in resp.text or "brain-dump" in resp.text.lower()
 
 
 def test_brain_dump_recent_runs_partial_empty(client: TestClient, tmp_path: Path) -> None:

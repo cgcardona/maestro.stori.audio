@@ -1,5 +1,5 @@
 {#
-  HTMX partial — Brain Dump recent runs sidebar section.
+  HTMX partial — Plan recent runs sidebar section.
 
   This template owns the #bd-recent-runs wrapper div, including HTMX attributes,
   so that outerHTML swaps after a successful submit keep re-triggering functional.
@@ -33,7 +33,7 @@
       <span class="bd-history-prefix">{{ run.label_prefix }}</span>
       {% endif %}
       {% if run.item_count and run.item_count != "—" %}
-      <span class="bd-history-count" title="Items in dump">{{ run.item_count }} items</span>
+      <span class="bd-history-count" title="Items in plan">{{ run.item_count }} items</span>
       {% endif %}
     </div>
     <p class="bd-history-preview">{{ run.preview or '(no preview)' }}</p>
@@ -52,7 +52,7 @@
       <button
         class="bd-rerun-btn"
         @click='reRun({{ run.slug | tojson }})'
-        title="Load this dump into the editor"
+        title="Load this plan into the editor"
       >Re-run →</button>
     </div>
   </div>

@@ -1,11 +1,11 @@
-"""UI routes: Brain Dump page, recent-runs partial, and plan preview endpoint.
+"""UI routes: Plan page, recent-runs partial, and plan preview endpoint.
 
 Endpoints
 ---------
 POST /api/brain-dump/plan                    — phase preview (no GitHub resources created)
 GET  /brain-dump                             — full page
 GET  /brain-dump/recent-runs                 — HTMX partial (sidebar refresh)
-GET  /api/brain-dump/{run_id}/dump-text      — return original dump text for re-run
+GET  /api/brain-dump/{run_id}/dump-text      — return original plan text for re-run
 """
 from __future__ import annotations
 
@@ -24,11 +24,11 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 # ---------------------------------------------------------------------------
-# Brain Dump page — static data (defined once, passed to Jinja)
+# Plan page — static data (defined once, passed to Jinja)
 # ---------------------------------------------------------------------------
 
 _BD_FUNNEL_STAGES = [
-    {"icon": "🧠", "label": "Dump",    "desc": "Your raw input"},
+    {"icon": "🧠", "label": "Plan",    "desc": "Your raw input"},
     {"icon": "📋", "label": "Analyze", "desc": "Classify items"},
     {"icon": "🗂️", "label": "Phase",   "desc": "Group by dependency"},
     {"icon": "🏷️", "label": "Label",   "desc": "Create GitHub labels"},
@@ -76,7 +76,7 @@ _BD_SEEDS = [
 ]
 
 _BD_LOADING_MSGS: list[str] = [
-    "Analyzing your dump…",
+    "Analyzing your plan…",
     "Planning phases…",
     "Setting up labels…",
     "Preparing issues…",
@@ -164,12 +164,12 @@ async def _build_recent_dumps() -> list[dict[str, str]]:
 
 @router.post("/api/brain-dump/plan", response_model=PlanResult)
 async def brain_dump_plan(body: PlanRequest) -> PlanResult:
-    """Run the Phase Planner against a brain dump without creating any GitHub resources.
+    """Run the Phase Planner against a plan without creating any GitHub resources.
 
-    This is Step -1 of the coordinator workflow — it analyses the raw dump text,
+    This is Step -1 of the coordinator workflow — it analyses the raw plan text,
     groups work items into sequenced phases, and returns a ``PlanResult`` that the
     UI shows as a confirmation card deck.  The user can then press "Create Issues"
-    to fire the full coordinator, or go back to edit their dump.
+    to fire the full coordinator, or go back to edit their plan.
 
     Raises
     ------
@@ -186,7 +186,7 @@ async def brain_dump_plan(body: PlanRequest) -> PlanResult:
 
 @router.get("/brain-dump", response_class=HTMLResponse)
 async def brain_dump_page(request: Request) -> HTMLResponse:
-    """Brain Dump — convert free-form text into phased GitHub issues."""
+    """Plan — convert free-form text into phased GitHub issues."""
     from agentception.config import settings as _cfg
 
     recent_dumps = await _build_recent_dumps()
