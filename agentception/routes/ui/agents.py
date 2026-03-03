@@ -172,6 +172,54 @@ async def agents_list(request: Request) -> HTMLResponse:
     )
 
 
+@router.get("/partials/agents", response_class=HTMLResponse)
+async def agents_partial(request: Request) -> HTMLResponse:
+    """HTMX partial — returns only the live agents grid for polling.
+
+    Called every 15 s by hx-trigger on the agents page inner div.
+    Returns a bare HTML fragment (no base layout, no nav) so HTMX can
+    swap just the live-agents card grid without destroying Alpine state.
+    """
+    from agentception.routes.roles import resolve_cognitive_arch
+
+    state = get_state() or PipelineState.empty()
+    now_utc = datetime.datetime.utcnow()
+
+    all_agents: list[AgentNode] = []
+    for agent in state.agents:
+        all_agents.append(agent)
+        all_agents.extend(agent.children)
+
+    agents_enriched: list[dict[str, object]] = []
+    for ag in all_agents:
+        persona = resolve_cognitive_arch(ag.cognitive_arch)
+        elapsed = ""
+        is_stale_idle = False
+        spawned_dt = _parse_iso(ag.spawned_at.isoformat() if hasattr(ag, "spawned_at") and ag.spawned_at else None)
+        if spawned_dt:
+            elapsed = _fmt_duration((now_utc - spawned_dt).total_seconds())
+        last_activity_dt = _parse_iso(
+            ag.last_activity_at.isoformat()
+            if hasattr(ag, "last_activity_at") and ag.last_activity_at
+            else None
+        )
+        if last_activity_dt:
+            idle_s = (now_utc - last_activity_dt).total_seconds()
+            is_stale_idle = idle_s > 900
+        agents_enriched.append({
+            "node": ag,
+            "persona": persona,
+            "elapsed": elapsed,
+            "is_stale_idle": is_stale_idle,
+        })
+
+    return _TEMPLATES.TemplateResponse(
+        request,
+        "partials/agents_list.html",
+        {"agents": agents_enriched},
+    )
+
+
 @router.get("/controls", response_class=HTMLResponse)
 async def controls_hub(request: Request) -> Response:
     """Controls hub — redirects to the spawn form (the primary control action)."""
@@ -281,6 +329,65 @@ async def spawn_issues_partial(request: Request) -> HTMLResponse:
         request,
         "_spawn_issues.html",
         {"issues": issues},
+    )
+
+
+@router.get("/partials/agents/{agent_id}/transcript", response_class=HTMLResponse)
+async def agent_transcript_partial(request: Request, agent_id: str) -> Response:
+    """HTMX partial — returns only the transcript message list for live polling.
+
+    Called every 8 seconds by ``hx-trigger="every 8s"`` on the transcript
+    section in agent.html.  Returns just the message list fragment so HTMX
+    can swap it in without a full page reload.
+    """
+    from agentception.db.queries import get_agent_run_detail
+    from agentception.models import AgentStatus as _AgentStatus
+    from ._shared import _find_agent
+
+    state = get_state()
+    node = _find_agent(state, agent_id)
+
+    db_messages: list[dict[str, object]] = []
+    if node is None:
+        try:
+            db_run = await get_agent_run_detail(agent_id)
+            if db_run:
+                db_messages = db_run.get("messages", [])  # type: ignore[assignment]
+                raw_status = str(db_run.get("status", "unknown")).lower()
+                try:
+                    synth_status = _AgentStatus(raw_status)
+                except ValueError:
+                    synth_status = _AgentStatus.UNKNOWN
+                node = AgentNode(
+                    id=str(db_run.get("id", agent_id)),
+                    role=str(db_run.get("role", "unknown")),
+                    status=synth_status,
+                    issue_number=db_run.get("issue_number"),  # type: ignore[arg-type]
+                    pr_number=db_run.get("pr_number"),  # type: ignore[arg-type]
+                    branch=db_run.get("branch"),  # type: ignore[arg-type]
+                    batch_id=db_run.get("batch_id"),  # type: ignore[arg-type]
+                    worktree_path=db_run.get("worktree_path"),  # type: ignore[arg-type]
+                )
+        except Exception as exc:
+            logger.debug("DB agent run lookup skipped for transcript partial: %s", exc)
+
+    messages: list[dict[str, str]] = []
+    if node and node.transcript_path:
+        messages = await read_transcript_messages(Path(node.transcript_path))
+
+    if not messages and db_messages:
+        messages = [
+            {"role": str(m.get("role", "")), "content": str(m.get("content", ""))}
+            for m in db_messages
+        ]
+
+    return _TEMPLATES.TemplateResponse(
+        request,
+        "partials/agent_transcript.html",
+        {
+            "messages": messages,
+            "agent_id": agent_id,
+        },
     )
 
 

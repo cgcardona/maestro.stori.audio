@@ -213,7 +213,16 @@
         <tbody>
           <tr>
             <td class="task-key">id</td>
-            <td class="task-value"><code>{{ node.id }}</code></td>
+            <td class="task-value">
+              <code>{{ node.id }}</code>
+              <button
+                class="btn btn-sm btn-ghost btn-copy"
+                title="Copy to clipboard"
+                x-data="{ copied: false }"
+                @click="navigator.clipboard.writeText('{{ node.id }}').then(() => { copied = true; setTimeout(() => copied = false, 1500) })"
+                :aria-label="copied ? 'Copied!' : 'Copy'"
+              ><span x-text="copied ? '✓' : '⧉'"></span></button>
+            </td>
           </tr>
           <tr>
             <td class="task-key">role</td>
@@ -256,7 +265,16 @@
           {% if node.branch %}
           <tr>
             <td class="task-key">branch</td>
-            <td class="task-value"><code>{{ node.branch }}</code></td>
+            <td class="task-value">
+              <code>{{ node.branch }}</code>
+              <button
+                class="btn btn-sm btn-ghost btn-copy"
+                title="Copy to clipboard"
+                x-data="{ copied: false }"
+                @click="navigator.clipboard.writeText('{{ node.branch }}').then(() => { copied = true; setTimeout(() => copied = false, 1500) })"
+                :aria-label="copied ? 'Copied!' : 'Copy'"
+              ><span x-text="copied ? '✓' : '⧉'"></span></button>
+            </td>
           </tr>
           {% endif %}
           {% if node.batch_id %}
@@ -268,7 +286,16 @@
           {% if node.worktree_path %}
           <tr>
             <td class="task-key">worktree_path</td>
-            <td class="task-value task-value--path"><code>{{ node.worktree_path }}</code></td>
+            <td class="task-value task-value--path">
+              <code>{{ node.worktree_path }}</code>
+              <button
+                class="btn btn-sm btn-ghost btn-copy"
+                title="Copy to clipboard"
+                x-data="{ copied: false }"
+                @click="navigator.clipboard.writeText('{{ node.worktree_path }}').then(() => { copied = true; setTimeout(() => copied = false, 1500) })"
+                :aria-label="copied ? 'Copied!' : 'Copy'"
+              ><span x-text="copied ? '✓' : '⧉'"></span></button>
+            </td>
           </tr>
           {% endif %}
           {% if node.transcript_path %}
@@ -294,29 +321,39 @@
   <section class="transcript-panel" aria-label="Agent transcript">
     <h2 class="section-title">Transcript ({{ messages | length }} messages)</h2>
 
-    {% if messages %}
-    <div class="transcript-container" id="transcript">
-      {% for msg in messages %}
-      <div
-        class="message message--{{ msg.role }}"
-        x-data="{ expanded: false }"
-      >
-        <div class="message-role">{{ msg.role }}</div>
+    <div id="transcript-section"
+         hx-get="/partials/agents/{{ node.id }}/transcript"
+         hx-trigger="every 8s"
+         hx-swap="innerHTML">
+      {% if messages %}
+      <div class="transcript-container" id="transcript">
+        {% for msg in messages %}
         <div
-          class="message-body"
-          :class="expanded ? 'message-body--expanded' : 'message-body--collapsed'"
-          @click="expanded = !expanded"
+          class="message message--{{ msg.role }}"
+          x-data='{ "expanded": {{ loop.last | tojson }} }'
         >
-          <pre class="message-text">{{ msg.text | truncate(400, True, '…') if msg.text is defined else msg.content | truncate(400, True, '…') }}</pre>
+          <div class="message-role">{{ msg.role }}</div>
+          <div
+            class="message-body"
+            :class="expanded ? 'message-body--expanded' : 'message-body--collapsed'"
+            @click="expanded = !expanded"
+          >
+            <pre class="message-text">{{ msg.text if msg.text is defined else msg.content }}</pre>
+          </div>
+          <button
+            class="message-expand-btn"
+            @click.stop="expanded = !expanded"
+            aria-label="Toggle full message"
+            x-text="expanded ? '▲ Collapse' : '▼ Expand'"
+          ></button>
         </div>
-        <button
-          class="message-expand-btn"
-          @click.stop="expanded = !expanded"
-          aria-label="Toggle full message"
-          x-text="expanded ? '▲ Collapse' : '▼ Expand'"
-        ></button>
+        {% endfor %}
       </div>
-      {% endfor %}
+      {% else %}
+      <div class="card">
+        <p class="text-muted empty-state">No transcript available for this agent.</p>
+      </div>
+      {% endif %}
     </div>
 
     <script>
@@ -328,12 +365,6 @@
       }
     });
     </script>
-
-    {% else %}
-    <div class="card">
-      <p class="text-muted empty-state">No transcript available for this agent.</p>
-    </div>
-    {% endif %}
   </section>
 
 </div>{# .agent-detail-columns #}
