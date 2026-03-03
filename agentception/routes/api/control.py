@@ -484,9 +484,8 @@ async def trigger_poll() -> dict[str, bool]:
     waiting for the tick to complete.
     """
     from agentception.poller import tick as _tick
-    import asyncio as _asyncio
 
-    _asyncio.get_event_loop().create_task(_tick())
+    asyncio.create_task(_tick())
     logger.info("✅ Manual poll tick triggered via /control/trigger-poll")
     return {"triggered": True}
 
