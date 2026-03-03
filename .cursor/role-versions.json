@@ -1,7 +1,7 @@
 {
   "versions": {
     "cto": {
-      "current": "v3",
+      "current": "v15",
       "history": [
         {
           "sha": "cafecafecafecafecafecafecafecafecafecafe",
@@ -17,6 +17,66 @@
           "sha": "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
           "label": "v3",
           "timestamp": 1772481061
+        },
+        {
+          "sha": "abcdef1234567890abcdef1234567890abcdef12",
+          "label": "v4",
+          "timestamp": 1772515552
+        },
+        {
+          "sha": "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
+          "label": "v5",
+          "timestamp": 1772515552
+        },
+        {
+          "sha": "abcdef1234567890abcdef1234567890abcdef12",
+          "label": "v6",
+          "timestamp": 1772515959
+        },
+        {
+          "sha": "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
+          "label": "v7",
+          "timestamp": 1772515959
+        },
+        {
+          "sha": "abcdef1234567890abcdef1234567890abcdef12",
+          "label": "v8",
+          "timestamp": 1772515996
+        },
+        {
+          "sha": "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
+          "label": "v9",
+          "timestamp": 1772515996
+        },
+        {
+          "sha": "abcdef1234567890abcdef1234567890abcdef12",
+          "label": "v10",
+          "timestamp": 1772516113
+        },
+        {
+          "sha": "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
+          "label": "v11",
+          "timestamp": 1772516113
+        },
+        {
+          "sha": "abcdef1234567890abcdef1234567890abcdef12",
+          "label": "v12",
+          "timestamp": 1772553328
+        },
+        {
+          "sha": "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
+          "label": "v13",
+          "timestamp": 1772553328
+        },
+        {
+          "sha": "abcdef1234567890abcdef1234567890abcdef12",
+          "label": "v14",
+          "timestamp": 1772553354
+        },
+        {
+          "sha": "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
+          "label": "v15",
+          "timestamp": 1772553354
         }
       ]
     },
