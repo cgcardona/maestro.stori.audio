@@ -1,10 +1,11 @@
-"""UI routes: Brain Dump page and recent-runs partial.
+"""UI routes: Brain Dump page, recent-runs partial, and plan preview endpoint.
 
 Endpoints
 ---------
-GET /brain-dump                              — full page
-GET /brain-dump/recent-runs                  — HTMX partial (sidebar refresh)
-GET /api/brain-dump/{run_id}/dump-text       — return original dump text for re-run
+POST /api/brain-dump/plan                    — phase preview (no GitHub resources created)
+GET  /brain-dump                             — full page
+GET  /brain-dump/recent-runs                 — HTMX partial (sidebar refresh)
+GET  /api/brain-dump/{run_id}/dump-text      — return original dump text for re-run
 """
 from __future__ import annotations
 
@@ -14,6 +15,8 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import HTMLResponse, JSONResponse
 from starlette.requests import Request
 
+from agentception.models import PlanRequest, PlanResult
+from agentception.readers.phase_planner import plan_phases
 from ._shared import _TEMPLATES
 
 logger = logging.getLogger(__name__)
@@ -157,6 +160,28 @@ async def _build_recent_dumps() -> list[dict[str, str]]:
     except OSError:
         pass
     return recent_dumps
+
+
+@router.post("/api/brain-dump/plan", response_model=PlanResult)
+async def brain_dump_plan(body: PlanRequest) -> PlanResult:
+    """Run the Phase Planner against a brain dump without creating any GitHub resources.
+
+    This is Step -1 of the coordinator workflow — it analyses the raw dump text,
+    groups work items into sequenced phases, and returns a ``PlanResult`` that the
+    UI shows as a confirmation card deck.  The user can then press "Create Issues"
+    to fire the full coordinator, or go back to edit their dump.
+
+    Raises
+    ------
+    HTTP 422
+        When ``dump`` is empty or contains no extractable work items.
+    """
+    try:
+        result = plan_phases(body.dump)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    logger.info("✅ Phase plan: %d phases for dump of %d chars", len(result.phases), len(body.dump))
+    return result
 
 
 @router.get("/brain-dump", response_class=HTMLResponse)

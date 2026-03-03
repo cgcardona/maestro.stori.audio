@@ -1,7 +1,13 @@
 'use strict';
 
 /**
- * Powers the Brain Dump form — text input → loading animation → done panel.
+ * Powers the Brain Dump form — text input → phase preview → create issues → done.
+ *
+ * State machine steps:
+ *   input      — user types their dump and clicks "Plan my issues"
+ *   previewing — phase cards are shown; user confirms or goes back to edit
+ *   loading    — POST /api/control/spawn-coordinator in flight
+ *   done       — coordinator queued successfully
  *
  * Static data (loading messages) is read from data attributes on the root
  * element so they live in Python/Jinja, not in this file.
@@ -25,6 +31,10 @@ export function brainDump() {
     loadingMsg: '',
     _loadingMsgs: [],
     _loadingTimer: null,
+
+    // Phase preview state (populated after POST /api/brain-dump/plan)
+    phases: [],
+    planError: '',
 
     init() {
       // Loading messages are defined in Python, injected via data attribute.
@@ -79,7 +89,44 @@ export function brainDump() {
       this.funnelStage = finalStage;
     },
 
+    /**
+     * Step 1: call the Phase Planner and show a phase card preview.
+     * Fires when the user clicks "Plan my issues →".
+     */
     async submit() {
+      const trimmed = this.text.trim();
+      if (!trimmed) return;
+      this.submitting = true;
+      this.errorMsg = '';
+      this.planError = '';
+      this.funnelStage = 1;
+      try {
+        const resp = await fetch('/api/brain-dump/plan', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ dump: trimmed }),
+        });
+        if (!resp.ok) {
+          const body = await resp.json().catch(() => ({}));
+          throw new Error(body.detail || `HTTP ${resp.status}`);
+        }
+        const data = await resp.json();
+        this.phases = data.phases || [];
+        this.step = 'previewing';
+        this.funnelStage = 2;
+      } catch (err) {
+        this.errorMsg = err.message;
+        this.funnelStage = 0;
+      } finally {
+        this.submitting = false;
+      }
+    },
+
+    /**
+     * Step 2: user confirmed the plan — fire the coordinator.
+     * Called from the "Looks good — Create Issues" button.
+     */
+    async confirmAndCreate() {
       const trimmed = this.text.trim();
       if (!trimmed) return;
       this.submitting = true;
@@ -103,12 +150,26 @@ export function brainDump() {
         const sidebar = document.getElementById('bd-recent-runs');
         if (sidebar && typeof htmx !== 'undefined') htmx.trigger(sidebar, 'refresh');
       } catch (err) {
-        this._stopLoadingAnimation(0);
+        this._stopLoadingAnimation(2);
         this.errorMsg = err.message;
-        this.step = 'input';
+        this.step = 'previewing';
       } finally {
         this.submitting = false;
       }
+    },
+
+    /**
+     * Go back from the preview step to input, keeping the textarea content.
+     */
+    editDump() {
+      this.step = 'input';
+      this.funnelStage = 0;
+      this.phases = [];
+      this.planError = '';
+      this.errorMsg = '';
+      this.$nextTick(() => {
+        if (this.$refs.textarea) this.autoGrow(this.$refs.textarea);
+      });
     },
 
     reset() {
@@ -119,6 +180,8 @@ export function brainDump() {
       this.labelPrefix = '';
       this.showOptions = false;
       this.errorMsg = '';
+      this.planError = '';
+      this.phases = [];
       this.result = {};
     },
 
