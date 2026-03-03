@@ -1,10 +1,10 @@
 'use strict';
 
 /**
- * Powers the Brain Dump form — text input → phase preview → create issues → done.
+ * Powers the Plan form — text input → phase preview → create issues → done.
  *
  * State machine steps:
- *   input      — user types their dump and clicks "Plan my issues"
+ *   input      — user types their plan and clicks "Plan my issues"
  *   previewing — phase cards are shown; user confirms or goes back to edit
  *   loading    — POST /api/control/spawn-coordinator in flight
  *   done       — coordinator queued successfully
@@ -17,7 +17,7 @@
  * HTMX refreshes the recent-runs sidebar after a successful submit:
  *   htmx.trigger('#bd-recent-runs', 'refresh')
  */
-export function brainDump() {
+export function planForm() {
   return {
     step: 'input',
     funnelStage: 0,
@@ -32,7 +32,7 @@ export function brainDump() {
     _loadingMsgs: [],
     _loadingTimer: null,
 
-    // Phase preview state (populated after POST /api/brain-dump/plan)
+    // Phase preview state (populated after POST /api/plan/preview)
     phases: [],
     planError: '',
 
@@ -101,7 +101,7 @@ export function brainDump() {
       this.planError = '';
       this.funnelStage = 1;
       try {
-        const resp = await fetch('/api/brain-dump/plan', {
+        const resp = await fetch('/api/plan/preview', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ dump: trimmed }),
@@ -137,7 +137,7 @@ export function brainDump() {
         const resp = await fetch('/api/control/spawn-coordinator', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ brain_dump: trimmed, label_prefix: this.labelPrefix.trim() }),
+          body: JSON.stringify({ plan_text: trimmed, label_prefix: this.labelPrefix.trim() }),
         });
         if (!resp.ok) {
           const body = await resp.json().catch(() => ({}));
@@ -161,7 +161,7 @@ export function brainDump() {
     /**
      * Go back from the preview step to input, keeping the textarea content.
      */
-    editDump() {
+    editPlan() {
       this.step = 'input';
       this.funnelStage = 0;
       this.phases = [];
@@ -186,17 +186,17 @@ export function brainDump() {
     },
 
     /**
-     * Load a previous run's dump text into the editor and switch to input step.
+     * Load a previous run's plan text into the editor and switch to input step.
      *
-     * Called from the "Re-run →" button rendered in _bd_recent_runs.html:
+     * Called from the "Re-run →" button rendered in _plan_recent_runs.html:
      *   @click='reRun({{ run.slug | tojson }})'
      *
-     * Fetches GET /api/brain-dump/{runId}/dump-text, populates the textarea,
+     * Fetches GET /api/plan/{runId}/plan-text, populates the textarea,
      * then resets to the input step so the user can review and resubmit.
      */
     async reRun(runId) {
       try {
-        const resp = await fetch(`/api/brain-dump/${encodeURIComponent(runId)}/dump-text`);
+        const resp = await fetch(`/api/plan/${encodeURIComponent(runId)}/plan-text`);
         if (!resp.ok) {
           const body = await resp.json().catch(() => ({}));
           this.errorMsg = body.detail || `Could not load run (HTTP ${resp.status})`;
@@ -204,7 +204,7 @@ export function brainDump() {
         }
         const data = await resp.json();
         this.reset();
-        this.text = data.dump_text ?? '';
+        this.text = data.plan_text ?? '';
         await this.$nextTick();
         if (this.$refs.textarea) this.autoGrow(this.$refs.textarea);
       } catch (err) {

@@ -16,7 +16,7 @@ from .ab_testing import router as _ab
 from .agents import router as _agents
 from .cognitive_arch import router as _cognitive_arch
 from .api_reference import router as _api_reference
-from .brain_dump import router as _brain_dump
+from .plan_ui import router as _plan_ui
 from .config import router as _config
 from .dag import router as _dag
 from .docs import router as _docs
@@ -42,7 +42,7 @@ router.include_router(_telemetry)
 router.include_router(_dag)
 router.include_router(_config)
 router.include_router(_ab)
-router.include_router(_brain_dump)
+router.include_router(_plan_ui)
 router.include_router(_roles_ui)
 router.include_router(_org_chart)
 router.include_router(_github)

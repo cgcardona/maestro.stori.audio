@@ -4,28 +4,28 @@
   This template owns the #bd-recent-runs wrapper div, including HTMX attributes,
   so that outerHTML swaps after a successful submit keep re-triggering functional.
 
-  Included inline on first load via brain_dump.html {% include %}.
-  The /brain-dump/recent-runs endpoint returns this same template so HTMX
+  Included inline on first load via plan.html {% include %}.
+  The /plan/recent-runs endpoint returns this same template so HTMX
   replaces the entire div (outerHTML) and the refreshed version is identical
   in structure, preserving Alpine bindings on the parent scope.
 
   Each card shows:
     - Run timestamp and optional initiative label
-    - Item count (lines parsed from BRAIN_DUMP block)
-    - Preview of the first dump line
+    - Item count (lines parsed from PLAN_DUMP block)
+    - Preview of the first plan line
     - "View DAG" link to /dag?batch=<batch_id>
     - "Re-run →" button — calls reRun(slug) on the parent Alpine component
 #}
 <div
   id="bd-recent-runs"
-  hx-get="/brain-dump/recent-runs"
+  hx-get="/plan/recent-runs"
   hx-trigger="refresh"
   hx-swap="outerHTML"
 >
-{% if recent_dumps %}
+{% if recent_plans %}
 <p class="bd-funnel-heading">Recent runs</p>
 <div class="bd-history">
-  {% for run in recent_dumps %}
+  {% for run in recent_plans %}
   <div class="bd-history-card">
     <div class="bd-history-meta">
       <span class="bd-history-ts">{{ run.ts }}</span>
