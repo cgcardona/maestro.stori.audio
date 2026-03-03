@@ -980,19 +980,18 @@ STEP 6 — PRE-MERGE SYNC (only if grade is A or B):
   # 6. Clear agent:wip now that the PR is merged — it must not persist on closed PRs.
        gh pr edit <N> --repo "$GH_REPO" --remove-label "agent:wip" 2>/dev/null || true
 
-  # 7. Delete the remote branch manually (now safe — merge is done):
-  # NOTE: GitHub auto-delete-head-branches is ENABLED on this repo.
-  # The explicit push --delete here is belt-and-suspenders: it handles the
-  # case where auto-delete races with a local delete or the setting is toggled off.
-       git push origin --delete "$BRANCH" 2>&1 || echo "⚠️  Remote branch delete failed or already deleted — continuing"
-
-  # Verify remote branch is gone:
+  # 7. Delete the remote branch — CHECK EXISTENCE FIRST.
+  # GitHub auto-delete-head-branches is ENABLED on this repo, so the branch is
+  # usually already gone by the time we reach this step. Attempting push --delete
+  # on a non-existent branch always produces an error even with || true, which is
+  # noisy and confusing. Check with ls-remote first; only delete if still present.
+       git fetch --prune 2>/dev/null || true
        STILL_EXISTS=$(git ls-remote --heads origin "$BRANCH" | wc -l | tr -d ' ')
        if [ "$STILL_EXISTS" -gt 0 ]; then
-         echo "⚠️  Remote branch $BRANCH still exists — retrying deletion"
-         git push origin --delete "$BRANCH" 2>&1 || echo "⚠️  Branch delete failed or already deleted"
+         echo "🗑️  Remote branch $BRANCH still exists — deleting..."
+         git push origin --delete "$BRANCH" 2>&1 || echo "⚠️  Branch delete failed — may need manual cleanup"
        else
-         echo "✅ Remote branch $BRANCH deleted"
+         echo "✅ Remote branch $BRANCH already removed (GitHub auto-delete)."
        fi
 
   # 8. Post a fingerprint comment on the PR so every merge is permanently traceable:
