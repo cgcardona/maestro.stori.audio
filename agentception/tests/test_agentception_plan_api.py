@@ -9,9 +9,10 @@ POST /api/plan/draft covers:
 - asyncio.create_subprocess_exec is called with ``git worktree add``.
 
 POST /api/plan/launch covers:
-- Valid YAML manifest → 200 with worktree, branch, agent_task_path, batch_id.
+- Valid EnrichedManifest YAML → 200 with worktree, branch, agent_task_path, batch_id.
 - Malformed YAML (syntax error) → 422 with error detail.
-- YAML with cyclic depends_on → 422 with cycle description.
+- YAML that fails EnrichedManifest validation → 422 with error detail.
+- YAML with cyclic issue depends_on → 422 with cycle description.
 - plan_spawn_coordinator called with correct manifest JSON.
 
 All git subprocess calls and plan_spawn_coordinator are mocked so these tests
@@ -62,7 +63,7 @@ async def async_client() -> AsyncGenerator[AsyncClient, None]:
 
 
 # ---------------------------------------------------------------------------
-# Happy-path tests
+# POST /api/plan/draft — happy-path tests
 # ---------------------------------------------------------------------------
 
 
@@ -179,7 +180,7 @@ async def test_git_worktree_add_called(
 
 
 # ---------------------------------------------------------------------------
-# Validation tests
+# POST /api/plan/draft — validation tests
 # ---------------------------------------------------------------------------
 
 
@@ -205,23 +206,39 @@ async def test_post_whitespace_dump_returns_422(async_client: AsyncClient) -> No
 
 # ---------------------------------------------------------------------------
 # POST /api/plan/launch — issue #873
+#
+# Test YAML uses EnrichedManifest format (initiative + phases with EnrichedIssue).
+# This is the schema plan_spawn_coordinator validates against internally.
 # ---------------------------------------------------------------------------
 
 _VALID_YAML = """\
-batch_id: plan-p2-20260303
-issues:
-  - number: 870
-    title: "Dump spec to file"
+initiative: plan-p2-20260303
+phases:
+  - label: foundation
+    description: "Core MCP and schema tooling"
     depends_on: []
-  - number: 871
-    title: "Enrich spec"
-    depends_on: [870]
-  - number: 872
-    title: "POST /api/plan/draft"
-    depends_on: [871]
-  - number: 873
-    title: "POST /api/plan/launch"
-    depends_on: [872]
+    issues:
+      - title: "MCP layer + schema tools"
+        body: "Implement plan_get_schema and plan_validate_spec MCP tools"
+        labels: [enhancement]
+        phase: foundation
+        depends_on: []
+        can_parallel: true
+        acceptance_criteria: ["plan_get_schema returns valid JSON Schema"]
+        tests_required: ["test_plan_get_schema"]
+        docs_required: ["docs/reference/plan-tools.md"]
+      - title: "Plan tools — label context + coordinator spawn"
+        body: "Implement plan_spawn_coordinator"
+        labels: [enhancement]
+        phase: foundation
+        depends_on: ["MCP layer + schema tools"]
+        can_parallel: false
+        acceptance_criteria: ["plan_spawn_coordinator creates worktree"]
+        tests_required: ["test_plan_spawn_coordinator"]
+        docs_required: []
+    parallel_groups:
+      - ["MCP layer + schema tools"]
+      - ["Plan tools — label context + coordinator spawn"]
 """
 
 _SPAWN_RESULT = {
@@ -236,7 +253,7 @@ _SPAWN_RESULT = {
 async def test_post_valid_yaml_returns_200_with_worktree(
     async_client: AsyncClient,
 ) -> None:
-    """POST a valid YAML manifest → 200 with worktree, branch, agent_task_path, batch_id."""
+    """POST a valid EnrichedManifest YAML → 200 with worktree, branch, agent_task_path, batch_id."""
     with patch(
         "agentception.routes.api.plan.plan_spawn_coordinator",
         new=AsyncMock(return_value=_SPAWN_RESULT),
@@ -272,17 +289,52 @@ async def test_post_malformed_yaml_returns_422(async_client: AsyncClient) -> Non
 
 
 @pytest.mark.anyio
+async def test_post_yaml_invalid_manifest_returns_422(async_client: AsyncClient) -> None:
+    """POST YAML that doesn't match EnrichedManifest schema → 422 with validation detail."""
+    with patch(
+        "agentception.routes.api.plan.plan_spawn_coordinator",
+        new=AsyncMock(return_value=_SPAWN_RESULT),
+    ):
+        response = await async_client.post(
+            "/api/plan/launch",
+            # Missing required 'phases' — will fail EnrichedManifest validation
+            json={"yaml_text": "initiative: test\n"},
+        )
+
+    assert response.status_code == 422
+    body = response.json()
+    assert "validation" in body["detail"].lower() or "phases" in body["detail"].lower()
+
+
+@pytest.mark.anyio
 async def test_post_yaml_with_cyclic_deps_returns_422(async_client: AsyncClient) -> None:
     """POST YAML where issue A depends on B and B depends on A → 422 with cycle description."""
     cyclic_yaml = """\
-batch_id: cyclic-test
-issues:
-  - number: 1
-    title: "Issue A"
-    depends_on: [2]
-  - number: 2
-    title: "Issue B"
-    depends_on: [1]
+initiative: cyclic-test
+phases:
+  - label: foundation
+    description: "Cyclic phase"
+    depends_on: []
+    issues:
+      - title: "Issue A"
+        body: "Depends on B"
+        labels: []
+        phase: foundation
+        depends_on: ["Issue B"]
+        can_parallel: false
+        acceptance_criteria: []
+        tests_required: []
+        docs_required: []
+      - title: "Issue B"
+        body: "Depends on A"
+        labels: []
+        phase: foundation
+        depends_on: ["Issue A"]
+        can_parallel: false
+        acceptance_criteria: []
+        tests_required: []
+        docs_required: []
+    parallel_groups: []
 """
     with patch(
         "agentception.routes.api.plan.plan_spawn_coordinator",
@@ -302,7 +354,7 @@ issues:
 async def test_plan_spawn_coordinator_called_with_correct_manifest(
     async_client: AsyncClient,
 ) -> None:
-    """plan_spawn_coordinator must be called with the serialised PlanSpec JSON."""
+    """plan_spawn_coordinator must be called with the serialised EnrichedManifest JSON."""
     spawn_mock = AsyncMock(return_value=_SPAWN_RESULT)
 
     with patch(
@@ -317,11 +369,11 @@ async def test_plan_spawn_coordinator_called_with_correct_manifest(
     assert response.status_code == 200
     spawn_mock.assert_called_once()
 
-    # Verify the argument is valid JSON containing the batch_id and issues
+    # Verify the argument is valid JSON containing the initiative and phases
     call_args = spawn_mock.call_args
     assert call_args is not None
     manifest_json_arg: str = call_args[0][0]
     parsed = json.loads(manifest_json_arg)
-    assert parsed["batch_id"] == "plan-p2-20260303"
-    issue_numbers = [i["number"] for i in parsed["issues"]]
-    assert issue_numbers == [870, 871, 872, 873]
+    assert parsed["initiative"] == "plan-p2-20260303"
+    assert len(parsed["phases"]) == 1
+    assert parsed["phases"][0]["label"] == "foundation"

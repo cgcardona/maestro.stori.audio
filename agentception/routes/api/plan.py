@@ -15,14 +15,17 @@ Side effects
 
 POST /api/plan/launch
 ---------------------
-Input:  PlanLaunchRequest(yaml_text: str)  — YAML-encoded plan manifest
+Input:  PlanLaunchRequest(yaml_text: str)  — YAML-encoded EnrichedManifest
 Output: PlanLaunchResponse                 — worktree, branch, agent_task_path,
                                              batch_id from the coordinator spawn
 
 Steps:
-1. Parse yaml_text → PlanSpec (422 on YAML error with line/col if available).
-2. Validate PlanSpec fields via Pydantic (422 on field errors).
-3. Validate DAG: detect cycles in depends_on relationships (422 with description).
+1. Parse yaml_text → dict (422 on YAML syntax error).
+2. Validate as EnrichedManifest via Pydantic (422 on field errors including
+   the phase DAG invariant — EnrichedManifest.validate_phase_dag enforces that
+   phases depend only on earlier phases, which prevents phase-level cycles).
+3. Detect issue-level cycles in the title-based depends_on graph (422 with
+   a human-readable cycle description).
 4. Call plan_spawn_coordinator(manifest_json) — fire-and-forget style.
 5. Return PlanLaunchResponse immediately.
 
@@ -41,6 +44,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, field_validator
 
 from agentception.mcp.plan_tools import plan_spawn_coordinator
+from agentception.models import EnrichedManifest, EnrichedPhase
 
 logger = logging.getLogger(__name__)
 
@@ -156,41 +160,18 @@ async def post_plan_draft(request: PlanDraftRequest) -> PlanDraftResponse:
 
 
 # ---------------------------------------------------------------------------
-# POST /api/plan/launch — validate manifest, detect DAG cycles, spawn coordinator
+# POST /api/plan/launch — validate EnrichedManifest, spawn coordinator
 # ---------------------------------------------------------------------------
-
-
-class PlanIssue(BaseModel):
-    """A single issue entry in a PlanLaunchRequest manifest.
-
-    ``number`` is the GitHub issue number; ``depends_on`` lists issue numbers
-    that must be merged before this one can start.  Both are integers so the
-    DAG is resolved by numeric reference, not by title string matching.
-    """
-
-    number: int
-    title: str
-    depends_on: list[int] = []
-
-
-class PlanSpec(BaseModel):
-    """Top-level manifest parsed from the YAML supplied to POST /api/plan/launch.
-
-    ``batch_id`` is a short human slug for the batch (e.g. ``"plan-p2-20260303"``).
-    ``issues`` is the ordered list of work units; each carries its numeric
-    dependency set so the DAG can be validated before the coordinator is spawned.
-    """
-
-    batch_id: str
-    issues: list[PlanIssue]
 
 
 class PlanLaunchRequest(BaseModel):
     """Request body for POST /api/plan/launch.
 
-    ``yaml_text`` is the raw YAML string of the plan manifest.  It must parse
-    into a :class:`PlanSpec`; any YAML syntax error or schema mismatch returns
-    422 before the coordinator is contacted.
+    ``yaml_text`` is the YAML-encoded :class:`~agentception.models.EnrichedManifest`
+    produced by the Cursor agent after processing a brain dump.  It must
+    validate against :class:`~agentception.models.EnrichedManifest`; any YAML
+    syntax error or schema mismatch returns 422 before the coordinator is
+    contacted.
     """
 
     yaml_text: str
@@ -209,43 +190,51 @@ class PlanLaunchResponse(BaseModel):
     batch_id: str
 
 
-def _detect_cycle(issues: list[PlanIssue]) -> str | None:
-    """Return a human-readable cycle description if the dependency graph has a cycle.
+def _detect_issue_cycle(phases: list[EnrichedPhase]) -> str | None:
+    """Return a human-readable cycle description if issue depends_on titles cycle.
 
-    Uses DFS with a per-path *in-stack* set.  The first back-edge found produces
-    a description of the form ``"Cycle detected: N → M → N"``.
+    Iterates across all phases and builds a global issue title → depends_on
+    mapping, then runs DFS to find any back-edge.  Returns ``None`` when the
+    graph is acyclic.
+
+    Note: Phase-level DAG validation (phases only depend on earlier phases) is
+    enforced by :class:`~agentception.models.PlanSpec`'s ``validate_phase_dag``
+    validator at model construction time, so we only need to check issue-level
+    cycles here.
 
     Args:
-        issues: List of :class:`PlanIssue` objects to check.
+        phases: List of :class:`~agentception.models.EnrichedPhase` objects.
 
     Returns:
-        ``None`` when the DAG is acyclic; a non-empty string when a cycle exists.
+        ``None`` when acyclic; a non-empty cycle description string otherwise.
     """
-    issue_map: dict[int, PlanIssue] = {issue.number: issue for issue in issues}
-    visited: set[int] = set()
-    in_stack: list[int] = []
+    deps_map: dict[str, list[str]] = {}
+    for phase in phases:
+        for issue in phase.issues:
+            deps_map[issue.title] = list(issue.depends_on)
 
-    def dfs(node: int) -> str | None:
+    visited: set[str] = set()
+    in_stack: list[str] = []
+
+    def dfs(node: str) -> str | None:
         if node in in_stack:
             cycle_start = in_stack.index(node)
             cycle_path = in_stack[cycle_start:] + [node]
-            return "Cycle detected: " + " → ".join(str(n) for n in cycle_path)
+            return "Cycle detected: " + " → ".join(cycle_path)
         if node in visited:
             return None
         visited.add(node)
         in_stack.append(node)
-        issue = issue_map.get(node)
-        if issue is not None:
-            for dep in issue.depends_on:
-                result = dfs(dep)
-                if result is not None:
-                    return result
+        for dep in deps_map.get(node, []):
+            result = dfs(dep)
+            if result is not None:
+                return result
         in_stack.pop()
         return None
 
-    for issue in issues:
-        if issue.number not in visited:
-            result = dfs(issue.number)
+    for title in deps_map:
+        if title not in visited:
+            result = dfs(title)
             if result is not None:
                 return result
     return None
@@ -253,14 +242,17 @@ def _detect_cycle(issues: list[PlanIssue]) -> str | None:
 
 @router.post("/launch")
 async def post_plan_launch(request: PlanLaunchRequest) -> PlanLaunchResponse:
-    """Validate a YAML plan manifest, check for DAG cycles, and spawn a coordinator.
+    """Validate an EnrichedManifest YAML, check for issue cycles, and spawn a coordinator.
 
     Steps:
-    1. Parse ``yaml_text`` → :class:`PlanSpec` (422 on YAML or schema error).
-    2. Run cycle detection on the ``depends_on`` graph (422 if cycle found).
-    3. Await :func:`agentception.mcp.plan_tools.plan_spawn_coordinator` with
+    1. Parse ``yaml_text`` → dict (422 on YAML syntax error).
+    2. Validate as :class:`~agentception.models.EnrichedManifest` via Pydantic
+       (422 on field or phase-DAG errors).
+    3. Run issue-level cycle detection on the title-based ``depends_on`` graph
+       (422 if an issue cycle is found).
+    4. Await :func:`agentception.mcp.plan_tools.plan_spawn_coordinator` with
        the manifest serialised as JSON.
-    4. Return :class:`PlanLaunchResponse` immediately.
+    5. Return :class:`PlanLaunchResponse` immediately.
 
     Returns:
         422 on YAML parse error, field validation error, or detected cycle.
@@ -281,17 +273,17 @@ async def post_plan_launch(request: PlanLaunchRequest) -> PlanLaunchResponse:
         )
 
     try:
-        spec = PlanSpec.model_validate(raw)
+        manifest = EnrichedManifest.model_validate(raw)
     except Exception as exc:
-        logger.warning("⚠️ /api/plan/launch — PlanSpec validation failed: %s", exc)
+        logger.warning("⚠️ /api/plan/launch — EnrichedManifest validation failed: %s", exc)
         raise HTTPException(status_code=422, detail=f"Manifest validation error: {exc}")
 
-    cycle = _detect_cycle(spec.issues)
+    cycle = _detect_issue_cycle(manifest.phases)
     if cycle is not None:
-        logger.warning("⚠️ /api/plan/launch — DAG cycle: %s", cycle)
+        logger.warning("⚠️ /api/plan/launch — DAG cycle in issues: %s", cycle)
         raise HTTPException(status_code=422, detail=cycle)
 
-    manifest_json: str = json.dumps(spec.model_dump())
+    manifest_json: str = json.dumps(manifest.model_dump())
 
     try:
         result = await plan_spawn_coordinator(manifest_json)
