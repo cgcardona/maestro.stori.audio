@@ -442,6 +442,38 @@ $(gh pr list --repo "$GH_REPO" --state open \
       --title "⏰ Conductor reminder — pipeline incomplete ($(date -u '+%Y-%m-%d'))" \
       --body "$STATUS_BODY")
     gh issue edit "$REMINDER_URL" --add-label "conductor-reminder" 2>/dev/null || true
+
+    # Fingerprint the reminder issue so every conductor run is traceable.
+    CONDUCTOR_CREATED_AT=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
+    CONDUCTOR_FINGERPRINT=$(python3 "$REPO/scripts/gen_prompts/resolve_arch.py" "${COGNITIVE_ARCH:-unset}" \
+      --fingerprint \
+      --role "${ROLE:-cto}" \
+      --session "${AGENT_SESSION:-unset}" \
+      --batch "${BATCH_ID:-none}" \
+      --wave "${WAVE:-unset}" \
+      --vp "none" \
+      --started-at "$CONDUCTOR_CREATED_AT" 2>/dev/null)
+    if [ -z "$CONDUCTOR_FINGERPRINT" ]; then
+      CONDUCTOR_FINGERPRINT="<details>
+<summary>🤖 Agent Fingerprint</summary>
+
+| | |
+|---|---|
+| **Role** | \`${ROLE:-cto}\` |
+| **Architecture** | \`${COGNITIVE_ARCH:-unset}\` |
+| **Session** | \`${AGENT_SESSION:-unset}\` |
+| **CTO Wave** | \`${WAVE:-unset}\` |
+| **VP Batch** | \`${BATCH_ID:-none}\` |
+| **VP** | \`none\` |
+| **Timestamp** | \`$CONDUCTOR_CREATED_AT\` |
+
+</details>"
+    fi
+    gh issue comment "$REMINDER_URL" --repo "$GH_REPO" \
+      --body "🎼 **Created by conductor**
+
+$CONDUCTOR_FINGERPRINT" 2>/dev/null || true
+
     echo "✅ Reminder created: $REMINDER_URL"
     echo "   Re-run the conductor when coordinators have completed their work."
   else
@@ -450,6 +482,23 @@ $(gh pr list --repo "$GH_REPO" --state open \
     echo "   All batches are implemented and merged. Well done."
     echo "   Push new GitHub issues with phase/batch labels to start the next development cycle."
   fi
+
+STEP 7.5 — POST-WAVE STALE BRANCH CLEANUP:
+  # Belt-and-suspenders sweep for remote branches that survived after PR merge.
+  # GitHub auto-delete-head-branches is ENABLED on this repo, so this step
+  # mainly catches race conditions (merge-then-disable race, manual merges, etc.)
+  # Only branches that have a confirmed merged PR are deleted.
+  git fetch --prune
+  STALE_BRANCHES=$(git branch -r 2>/dev/null | grep -v "origin/main\|origin/dev\|HEAD" | sed 's|  origin/||' | tr -d ' ')
+  for br in $STALE_BRANCHES; do
+    MERGED=$(gh pr list --head "$br" --state merged --json number --jq '.[0].number' --repo "$GH_REPO" 2>/dev/null)
+    if [ -n "$MERGED" ]; then
+      git push origin --delete "$br" 2>/dev/null \
+        && echo "🧹 Deleted $br (PR #$MERGED merged)" \
+        || echo "⚠️  Could not delete $br — may already be gone"
+    fi
+  done
+  echo "✅ Stale branch sweep complete"
 
 STEP 8 — SELF-DESTRUCT:
   REPO=$(git worktree list | head -1 | awk '{print $1}')

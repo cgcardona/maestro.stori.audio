@@ -1055,28 +1055,27 @@ STEP 2 — CHECK CANONICAL STATE BEFORE DOING ANY WORK:
     --vp "${VP_FINGERPRINT:-unset}" 2>/dev/null)
   # Fallback: if resolve_arch.py is unavailable or returned nothing, build the table in shell.
   # This ensures a consistent <details> table appears even when Python/PyYAML is absent.
+  # ⚠️  Row labels MUST match render_fingerprint() exactly — this is the single source of truth.
   if [ -z "$CLAIM_FINGERPRINT" ]; then
     CLAIM_FINGERPRINT="<details>
 <summary>🤖 Agent Fingerprint</summary>
 
 | | |
 |---|---|
-| **Architecture** | \`${COGNITIVE_ARCH:-unset}\` |
-| **Skills** | unknown |
 | **Role** | \`${ROLE:-python-developer}\` |
-| **Session** | \`$AGENT_SESSION\` |
-| **Batch (VP)** | \`${BATCH_ID:-none}\` |
-| **Wave (CTO)** | \`${WAVE:-unset}\` |
+| **Architecture** | \`${COGNITIVE_ARCH:-unset}\` |
+| **Session** | \`${AGENT_SESSION:-unset}\` |
+| **CTO Wave** | \`${WAVE:-unset}\` |
+| **VP Batch** | \`${BATCH_ID:-none}\` |
 | **VP** | \`${VP_FINGERPRINT:-unset}\` |
+| **Timestamp** | \`$(date -u '+%Y-%m-%dT%H:%M:%SZ')\` |
 
 </details>"
   fi
   gh issue comment <N> --repo "$GH_REPO" \
     --body "🔖 **Claimed by agent**
 
-$CLAIM_FINGERPRINT
-
-**Claimed at:** $(date -u '+%Y-%m-%dT%H:%M:%SZ')" 2>/dev/null || true
+$CLAIM_FINGERPRINT" 2>/dev/null || true
 
   # 0. Is the issue itself already closed? (fastest exit — check this FIRST)
   ISSUE_STATE=$(gh issue view <N> --json state --jq '.state')
@@ -1445,6 +1444,34 @@ Maestro-Session: $AGENT_SESSION"
 STEP 5 — PUSH & CREATE PR:
   git push origin feat/<short-description>
 
+  # Compute PR fingerprint before the heredoc so errors don't pollute the PR body.
+  PR_CREATED_AT=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
+  PR_FINGERPRINT=$(python3 "$REPO/scripts/gen_prompts/resolve_arch.py" "${COGNITIVE_ARCH:-unset}" \
+    --fingerprint \
+    --role "${ROLE:-python-developer}" \
+    --session "${AGENT_SESSION:-unset}" \
+    --batch "${BATCH_ID:-none}" \
+    --wave "${WAVE:-unset}" \
+    --vp "${VP_FINGERPRINT:-unset}" \
+    --started-at "$PR_CREATED_AT" 2>/dev/null)
+  # Fallback: match render_fingerprint() rows exactly.
+  if [ -z "$PR_FINGERPRINT" ]; then
+    PR_FINGERPRINT="<details>
+<summary>🤖 Agent Fingerprint</summary>
+
+| | |
+|---|---|
+| **Role** | \`${ROLE:-python-developer}\` |
+| **Architecture** | \`${COGNITIVE_ARCH:-unset}\` |
+| **Session** | \`${AGENT_SESSION:-unset}\` |
+| **CTO Wave** | \`${WAVE:-unset}\` |
+| **VP Batch** | \`${BATCH_ID:-none}\` |
+| **VP** | \`${VP_FINGERPRINT:-unset}\` |
+| **Timestamp** | \`$PR_CREATED_AT\` |
+
+</details>"
+  fi
+
   gh pr create \
     --base dev \
     --head feat/<short-description> \
@@ -1465,14 +1492,7 @@ STEP 5 — PUSH & CREATE PR:
   - [ ] Docs updated
 
   ---
-  ---
-  $(python3 "$REPO/scripts/gen_prompts/resolve_arch.py" "${COGNITIVE_ARCH:-unset}" \
-    --fingerprint \
-    --role "${ROLE:-python-developer}" \
-    --session "${AGENT_SESSION:-unset}" \
-    --batch "${BATCH_ID:-none}" \
-    --wave "${WAVE:-unset}" \
-    --vp "${VP_FINGERPRINT:-unset}")
+  $PR_FINGERPRINT
   EOF
   )"
 
@@ -2480,20 +2500,20 @@ STEP 0 — READ YOUR TASK FILE:
       --vp "${VP_FINGERPRINT:-unset}" \
       --started-at "$REVIEW_START" 2>/dev/null)
     # Fallback: if resolve_arch.py is unavailable or returned nothing, build the table in shell.
+    # ⚠️  Row labels MUST match render_fingerprint() exactly — this is the single source of truth.
     if [ -z "$REVIEW_FINGERPRINT" ]; then
       REVIEW_FINGERPRINT="<details>
 <summary>🤖 Agent Fingerprint</summary>
 
 | | |
 |---|---|
-| **Architecture** | \`${COGNITIVE_ARCH:-unset}\` |
-| **Skills** | unknown |
 | **Role** | \`${ROLE:-pr-reviewer}\` |
-| **Session** | \`$AGENT_SESSION\` |
-| **Batch (VP)** | \`${BATCH_ID:-none}\` |
-| **Wave (CTO)** | \`${WAVE:-unset}\` |
+| **Architecture** | \`${COGNITIVE_ARCH:-unset}\` |
+| **Session** | \`${AGENT_SESSION:-unset}\` |
+| **CTO Wave** | \`${WAVE:-unset}\` |
+| **VP Batch** | \`${BATCH_ID:-none}\` |
 | **VP** | \`${VP_FINGERPRINT:-unset}\` |
-| **Started at** | \`$REVIEW_START\` |
+| **Timestamp** | \`$REVIEW_START\` |
 
 </details>"
     fi
@@ -3071,21 +3091,33 @@ STEP 6 — PRE-MERGE SYNC (only if grade is A or B):
        gh pr edit <N> --repo "$GH_REPO" --remove-label "agent:wip" 2>/dev/null || true
 
   # 7. Delete the remote branch manually (now safe — merge is done):
-       git push origin --delete "$BRANCH"
+  # NOTE: GitHub auto-delete-head-branches is ENABLED on this repo.
+  # The explicit push --delete here is belt-and-suspenders: it handles the
+  # case where auto-delete races with a local delete or the setting is toggled off.
+       git push origin --delete "$BRANCH" 2>&1 || echo "⚠️  Remote branch delete failed or already deleted — continuing"
+
+  # Verify remote branch is gone:
+       STILL_EXISTS=$(git ls-remote --heads origin "$BRANCH" | wc -l | tr -d ' ')
+       if [ "$STILL_EXISTS" -gt 0 ]; then
+         echo "⚠️  Remote branch $BRANCH still exists — retrying deletion"
+         git push origin --delete "$BRANCH" 2>&1 || echo "⚠️  Branch delete failed or already deleted"
+       else
+         echo "✅ Remote branch $BRANCH deleted"
+       fi
 
   # 8. Post a fingerprint comment on the PR so every merge is permanently traceable:
+       MERGED_AT=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
        MERGE_FINGERPRINT=$(python3 "$REPO/scripts/gen_prompts/resolve_arch.py" "${COGNITIVE_ARCH:-unset}" \
          --fingerprint \
          --role "${ROLE:-pr-reviewer}" \
          --session "$AGENT_SESSION" \
          --batch "${BATCH_ID:-none}" \
          --wave "${WAVE:-unset}" \
-         --vp "${VP_FINGERPRINT:-unset}" 2>/dev/null)
+         --vp "${VP_FINGERPRINT:-unset}" \
+         --started-at "$MERGED_AT" 2>/dev/null)
        gh pr comment "$N" --repo "$GH_REPO" --body "✅ **Review complete — Grade: \`<A/B/C/D/F>\`**
 
-$MERGE_FINGERPRINT
-
-**Merged at:** $(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+$MERGE_FINGERPRINT"
 
   # NOTE: Do NOT delete the local branch here — the branch is still checked out
   # in this worktree, so git will refuse. The local branch ref is cleaned up in
@@ -3103,12 +3135,11 @@ $MERGE_FINGERPRINT
          --session "$AGENT_SESSION" \
          --batch "${BATCH_ID:-none}" \
          --wave "${WAVE:-unset}" \
-         --vp "${VP_FINGERPRINT:-unset}" 2>/dev/null)
+         --vp "${VP_FINGERPRINT:-unset}" \
+         --started-at "$MERGED_AT" 2>/dev/null)
        CLOSE_COMMENT="✅ Closed by PR #$N (merged).
 
-$CLOSE_FINGERPRINT
-
-📅 **Merged at:** $(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+$CLOSE_FINGERPRINT"
 
        CLOSES_ISSUES=$(grep "^CLOSES_ISSUES=" .agent-task | cut -d= -f2)
        # Export so the xargs subshell can see both variables (single-quoted sh -c)
@@ -4305,20 +4336,20 @@ STEP 0 — READ YOUR TASK FILE:
       --vp "${VP_FINGERPRINT:-unset}" \
       --started-at "$REVIEW_START" 2>/dev/null)
     # Fallback: if resolve_arch.py is unavailable or returned nothing, build the table in shell.
+    # ⚠️  Row labels MUST match render_fingerprint() exactly — this is the single source of truth.
     if [ -z "$REVIEW_FINGERPRINT" ]; then
       REVIEW_FINGERPRINT="<details>
 <summary>🤖 Agent Fingerprint</summary>
 
 | | |
 |---|---|
-| **Architecture** | \`${COGNITIVE_ARCH:-unset}\` |
-| **Skills** | unknown |
 | **Role** | \`${ROLE:-pr-reviewer}\` |
-| **Session** | \`$AGENT_SESSION\` |
-| **Batch (VP)** | \`${BATCH_ID:-none}\` |
-| **Wave (CTO)** | \`${WAVE:-unset}\` |
+| **Architecture** | \`${COGNITIVE_ARCH:-unset}\` |
+| **Session** | \`${AGENT_SESSION:-unset}\` |
+| **CTO Wave** | \`${WAVE:-unset}\` |
+| **VP Batch** | \`${BATCH_ID:-none}\` |
 | **VP** | \`${VP_FINGERPRINT:-unset}\` |
-| **Started at** | \`$REVIEW_START\` |
+| **Timestamp** | \`$REVIEW_START\` |
 
 </details>"
     fi
@@ -4896,21 +4927,33 @@ STEP 6 — PRE-MERGE SYNC (only if grade is A or B):
        gh pr edit <N> --repo "$GH_REPO" --remove-label "agent:wip" 2>/dev/null || true
 
   # 7. Delete the remote branch manually (now safe — merge is done):
-       git push origin --delete "$BRANCH"
+  # NOTE: GitHub auto-delete-head-branches is ENABLED on this repo.
+  # The explicit push --delete here is belt-and-suspenders: it handles the
+  # case where auto-delete races with a local delete or the setting is toggled off.
+       git push origin --delete "$BRANCH" 2>&1 || echo "⚠️  Remote branch delete failed or already deleted — continuing"
+
+  # Verify remote branch is gone:
+       STILL_EXISTS=$(git ls-remote --heads origin "$BRANCH" | wc -l | tr -d ' ')
+       if [ "$STILL_EXISTS" -gt 0 ]; then
+         echo "⚠️  Remote branch $BRANCH still exists — retrying deletion"
+         git push origin --delete "$BRANCH" 2>&1 || echo "⚠️  Branch delete failed or already deleted"
+       else
+         echo "✅ Remote branch $BRANCH deleted"
+       fi
 
   # 8. Post a fingerprint comment on the PR so every merge is permanently traceable:
+       MERGED_AT=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
        MERGE_FINGERPRINT=$(python3 "$REPO/scripts/gen_prompts/resolve_arch.py" "${COGNITIVE_ARCH:-unset}" \
          --fingerprint \
          --role "${ROLE:-pr-reviewer}" \
          --session "$AGENT_SESSION" \
          --batch "${BATCH_ID:-none}" \
          --wave "${WAVE:-unset}" \
-         --vp "${VP_FINGERPRINT:-unset}" 2>/dev/null)
+         --vp "${VP_FINGERPRINT:-unset}" \
+         --started-at "$MERGED_AT" 2>/dev/null)
        gh pr comment "$N" --repo "$GH_REPO" --body "✅ **Review complete — Grade: \`<A/B/C/D/F>\`**
 
-$MERGE_FINGERPRINT
-
-**Merged at:** $(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+$MERGE_FINGERPRINT"
 
   # NOTE: Do NOT delete the local branch here — the branch is still checked out
   # in this worktree, so git will refuse. The local branch ref is cleaned up in
@@ -4928,12 +4971,11 @@ $MERGE_FINGERPRINT
          --session "$AGENT_SESSION" \
          --batch "${BATCH_ID:-none}" \
          --wave "${WAVE:-unset}" \
-         --vp "${VP_FINGERPRINT:-unset}" 2>/dev/null)
+         --vp "${VP_FINGERPRINT:-unset}" \
+         --started-at "$MERGED_AT" 2>/dev/null)
        CLOSE_COMMENT="✅ Closed by PR #$N (merged).
 
-$CLOSE_FINGERPRINT
-
-📅 **Merged at:** $(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+$CLOSE_FINGERPRINT"
 
        CLOSES_ISSUES=$(grep "^CLOSES_ISSUES=" .agent-task | cut -d= -f2)
        # Export so the xargs subshell can see both variables (single-quoted sh -c)
@@ -6075,28 +6117,27 @@ STEP 2 — CHECK CANONICAL STATE BEFORE DOING ANY WORK:
     --vp "${VP_FINGERPRINT:-unset}" 2>/dev/null)
   # Fallback: if resolve_arch.py is unavailable or returned nothing, build the table in shell.
   # This ensures a consistent <details> table appears even when Python/PyYAML is absent.
+  # ⚠️  Row labels MUST match render_fingerprint() exactly — this is the single source of truth.
   if [ -z "$CLAIM_FINGERPRINT" ]; then
     CLAIM_FINGERPRINT="<details>
 <summary>🤖 Agent Fingerprint</summary>
 
 | | |
 |---|---|
-| **Architecture** | \`${COGNITIVE_ARCH:-unset}\` |
-| **Skills** | unknown |
 | **Role** | \`${ROLE:-python-developer}\` |
-| **Session** | \`$AGENT_SESSION\` |
-| **Batch (VP)** | \`${BATCH_ID:-none}\` |
-| **Wave (CTO)** | \`${WAVE:-unset}\` |
+| **Architecture** | \`${COGNITIVE_ARCH:-unset}\` |
+| **Session** | \`${AGENT_SESSION:-unset}\` |
+| **CTO Wave** | \`${WAVE:-unset}\` |
+| **VP Batch** | \`${BATCH_ID:-none}\` |
 | **VP** | \`${VP_FINGERPRINT:-unset}\` |
+| **Timestamp** | \`$(date -u '+%Y-%m-%dT%H:%M:%SZ')\` |
 
 </details>"
   fi
   gh issue comment <N> --repo "$GH_REPO" \
     --body "🔖 **Claimed by agent**
 
-$CLAIM_FINGERPRINT
-
-**Claimed at:** $(date -u '+%Y-%m-%dT%H:%M:%SZ')" 2>/dev/null || true
+$CLAIM_FINGERPRINT" 2>/dev/null || true
 
   # 0. Is the issue itself already closed? (fastest exit — check this FIRST)
   ISSUE_STATE=$(gh issue view <N> --json state --jq '.state')
@@ -6465,6 +6506,34 @@ Maestro-Session: $AGENT_SESSION"
 STEP 5 — PUSH & CREATE PR:
   git push origin feat/<short-description>
 
+  # Compute PR fingerprint before the heredoc so errors don't pollute the PR body.
+  PR_CREATED_AT=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
+  PR_FINGERPRINT=$(python3 "$REPO/scripts/gen_prompts/resolve_arch.py" "${COGNITIVE_ARCH:-unset}" \
+    --fingerprint \
+    --role "${ROLE:-python-developer}" \
+    --session "${AGENT_SESSION:-unset}" \
+    --batch "${BATCH_ID:-none}" \
+    --wave "${WAVE:-unset}" \
+    --vp "${VP_FINGERPRINT:-unset}" \
+    --started-at "$PR_CREATED_AT" 2>/dev/null)
+  # Fallback: match render_fingerprint() rows exactly.
+  if [ -z "$PR_FINGERPRINT" ]; then
+    PR_FINGERPRINT="<details>
+<summary>🤖 Agent Fingerprint</summary>
+
+| | |
+|---|---|
+| **Role** | \`${ROLE:-python-developer}\` |
+| **Architecture** | \`${COGNITIVE_ARCH:-unset}\` |
+| **Session** | \`${AGENT_SESSION:-unset}\` |
+| **CTO Wave** | \`${WAVE:-unset}\` |
+| **VP Batch** | \`${BATCH_ID:-none}\` |
+| **VP** | \`${VP_FINGERPRINT:-unset}\` |
+| **Timestamp** | \`$PR_CREATED_AT\` |
+
+</details>"
+  fi
+
   gh pr create \
     --base dev \
     --head feat/<short-description> \
@@ -6485,14 +6554,7 @@ STEP 5 — PUSH & CREATE PR:
   - [ ] Docs updated
 
   ---
-  ---
-  $(python3 "$REPO/scripts/gen_prompts/resolve_arch.py" "${COGNITIVE_ARCH:-unset}" \
-    --fingerprint \
-    --role "${ROLE:-python-developer}" \
-    --session "${AGENT_SESSION:-unset}" \
-    --batch "${BATCH_ID:-none}" \
-    --wave "${WAVE:-unset}" \
-    --vp "${VP_FINGERPRINT:-unset}")
+  $PR_FINGERPRINT
   EOF
   )"
 
