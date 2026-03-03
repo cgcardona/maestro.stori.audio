@@ -463,6 +463,14 @@ class RoleVersionsResponse(BaseModel):
     versions: RoleVersionInfo
 
 
+class RoleHistoryEntry(BaseModel):
+    """One git log entry for a role file's revision history."""
+
+    sha: str
+    date: str
+    subject: str
+
+
 # ---------------------------------------------------------------------------
 # Cognitive Architecture API — taxonomy, personas, atoms
 # ---------------------------------------------------------------------------

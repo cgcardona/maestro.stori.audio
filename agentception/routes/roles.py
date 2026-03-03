@@ -569,7 +569,7 @@ async def commit_role(slug: str, body: RoleCommitRequest) -> RoleCommitResponse:
     if not abs_path.exists():
         raise HTTPException(status_code=404, detail=f"Managed file not found on disk: {rel_path}")
 
-    abs_path.write_text(body.content, encoding="utf-8")
+    await asyncio.to_thread(abs_path.write_text, body.content, encoding="utf-8")
     logger.info("✅ Wrote %d bytes to %s for commit", len(body.content), rel_path)
 
     add_proc = await asyncio.create_subprocess_exec(
