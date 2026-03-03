@@ -2,14 +2,18 @@
 
 POST /api/plan/draft
 --------------------
-Input:  PlanDraftRequest(dump: str)  — non-empty, non-whitespace text
+Input:  PlanDraftRequest(text: str)  — non-empty, non-whitespace plan text
 Output: PlanDraftResponse            — draft_id (uuid4), task_file path,
                                        output_path, status='pending'
 
 Side effects
 ------------
-1. ``git worktree add /tmp/worktrees/plan-draft-<draft_id>`` is executed
+1. ``git worktree add <worktrees_dir>/plan-draft-<draft_id>`` is executed
    (awaited; it is fast and must succeed before we write the task file).
+   The worktree is created under ``settings.worktrees_dir`` — the canonical
+   Docker-mounted path (``/worktrees`` in-container, ``~/.cursor/worktrees/maestro``
+   on the host) — so mypy/pytest can reference it via ``/worktrees/<name>``
+   inside the container without path mismatches.
 2. A ``.agent-task`` file is written to the new worktree using the K=V format
    that is compatible with the future TOML migration (issue #888).
 
@@ -37,12 +41,12 @@ import asyncio
 import json
 import logging
 import uuid
-from pathlib import Path
 
 import yaml
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, field_validator
 
+from agentception.config import settings
 from agentception.mcp.plan_tools import plan_spawn_coordinator
 from agentception.models import EnrichedManifest, EnrichedPhase
 
@@ -50,24 +54,22 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/plan", tags=["plan"])
 
-_WORKTREES_BASE = Path("/tmp/worktrees")
-
 
 class PlanDraftRequest(BaseModel):
     """Request body for POST /api/plan/draft.
 
-    ``dump`` is the raw brain-dump text submitted by the DAW or a human.
+    ``text`` is the raw plan text submitted by the user.
     Empty or whitespace-only strings are rejected at validation time (422).
     """
 
-    dump: str
+    text: str
 
-    @field_validator("dump")
+    @field_validator("text")
     @classmethod
-    def dump_must_not_be_blank(cls, v: str) -> str:
-        """Reject empty or whitespace-only dump strings before the handler runs."""
+    def text_must_not_be_blank(cls, v: str) -> str:
+        """Reject empty or whitespace-only plan text before the handler runs."""
         if not v or not v.strip():
-            raise ValueError("dump must not be empty or whitespace-only")
+            raise ValueError("text must not be empty or whitespace-only")
         return v
 
 
@@ -91,29 +93,37 @@ class PlanDraftResponse(BaseModel):
 
 @router.post("/draft")
 async def post_plan_draft(request: PlanDraftRequest) -> PlanDraftResponse:
-    """Accept a brain dump, create a git worktree, and write an .agent-task file.
+    """Accept plan text, create a git worktree, and write an .agent-task file.
 
     Steps:
     1. Generate a uuid4 draft_id.
-    2. Run ``git worktree add /tmp/worktrees/plan-draft-<draft_id>`` (awaited).
-    3. Write a K=V .agent-task to that path so an agent can pick it up.
+    2. Run ``git worktree add <worktrees_dir>/plan-draft-<draft_id>`` off origin/dev.
+       Uses the canonical ``settings.worktrees_dir`` so the path is visible inside
+       Docker at ``/worktrees/plan-draft-<draft_id>`` — never ``/tmp/``.
+    3. Write a K=V .agent-task to that path so a Cursor agent can pick it up.
     4. Return PlanDraftResponse immediately.
 
-    Returns 422 if dump is empty/whitespace (validated by PlanDraftRequest).
+    Returns 422 if text is empty/whitespace (validated by PlanDraftRequest).
     Returns 500 if the git worktree add subprocess fails.
     """
     draft_id = str(uuid.uuid4())
-    worktree_path = _WORKTREES_BASE / f"plan-draft-{draft_id}"
+    slug = f"plan-draft-{draft_id}"
+    branch = f"feat/{slug}"
+    worktree_path = settings.worktrees_dir / slug
+    host_worktree_path = settings.host_worktrees_dir / slug
     task_file_path = worktree_path / ".agent-task"
     # The output file is where the Cursor agent writes the finished PlanSpec YAML.
     # The AgentCeption poller watches *this file* (not the directory) and emits
     # ``task_output_ready`` when it appears on disk.
-    output_file_path = worktree_path / ".plan-output.yaml"
+    output_file_path = host_worktree_path / ".plan-output.yaml"
 
     logger.info("✅ Plan draft %s — creating worktree at %s", draft_id, worktree_path)
 
+    repo_dir = str(settings.repo_dir)
     proc = await asyncio.create_subprocess_exec(
-        "git", "worktree", "add", str(worktree_path),
+        "git", "-C", repo_dir,
+        "worktree", "add", "-b", branch,
+        str(worktree_path), "origin/dev",
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
     )
@@ -145,7 +155,7 @@ async def post_plan_draft(request: PlanDraftRequest) -> PlanDraftResponse:
         # TOML schema, then produce valid TOML matching that schema.
         f"mcp_tools_hint=call plan_get_schema() to get the PlanSpec TOML schema first\n"
         f"output_schema=plan_get_schema\n"
-        f"plan_draft.dump={request.dump}\n"
+        f"plan_draft.text={request.text}\n"
     )
     task_file_path.write_text(task_content, encoding="utf-8")
 

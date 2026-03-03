@@ -452,7 +452,7 @@ async def sweep_stale(dry_run: bool = False) -> SweepResult:
     """Delete all stale agent branches, remove orphan worktrees, and clear stale agent:wip labels.
 
     A branch is stale when it is an agent branch (``feat/issue-N`` or
-    ``feat/brain-dump-*``) with no live git worktree checked out on it.
+        ``feat/plan-*``) with no live git worktree checked out on it.
     A claim is stale when an issue carries ``agent:wip`` but has no matching
     worktree directory.
 
@@ -580,12 +580,12 @@ async def spawn_coordinator(body: SpawnCoordinatorRequest) -> SpawnCoordinatorRe
     HTTP 500
         When ``git worktree add`` fails.
     """
-    brain_dump = body.brain_dump.strip()
-    if not brain_dump:
-        raise HTTPException(status_code=422, detail="brain_dump must not be empty")
+    plan_text = body.plan_text.strip()
+    if not plan_text:
+        raise HTTPException(status_code=422, detail="plan_text must not be empty")
 
     now_slug = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
-    slug = f"brain-dump-{now_slug}"
+    slug = f"plan-{now_slug}"
     branch = f"feat/{slug}"
     worktree_path = settings.worktrees_dir / slug
     host_worktree_path = settings.host_worktrees_dir / slug
@@ -621,7 +621,7 @@ async def spawn_coordinator(body: SpawnCoordinatorRequest) -> SpawnCoordinatorRe
 
     agent_task_content = _build_coordinator_task(
         slug=slug,
-        brain_dump=brain_dump,
+        plan_text=plan_text,
         label_prefix=body.label_prefix,
         worktree=worktree_path,
         host_worktree=host_worktree_path,

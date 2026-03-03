@@ -1,11 +1,11 @@
 """Tests for POST /api/plan/draft (issue #872) and POST /api/plan/launch (issue #873).
 
 POST /api/plan/draft covers:
-- Valid dump returns 200 with status=pending and a uuid4 draft_id.
-- Empty dump returns 422.
-- Whitespace-only dump returns 422.
+- Valid text returns 200 with status=pending and a uuid4 draft_id.
+- Empty text returns 422.
+- Whitespace-only text returns 422.
 - After a valid POST the .agent-task file is written with WORKFLOW=plan-spec
-  and the dump text.
+  and the plan text.
 - asyncio.create_subprocess_exec is called with ``git worktree add``.
 
 POST /api/plan/launch covers:
@@ -72,7 +72,7 @@ async def test_post_valid_dump_returns_200_pending(
     async_client: AsyncClient,
     tmp_path: Path,
 ) -> None:
-    """POST with a valid dump string must return 200 and status='pending'."""
+    """POST with valid plan text must return 200 and status='pending'."""
     proc_mock = _make_proc_mock(returncode=0)
 
     with (
@@ -81,13 +81,17 @@ async def test_post_valid_dump_returns_200_pending(
             return_value=proc_mock,
         ) as mock_exec,
         patch(
-            "agentception.routes.api.plan._WORKTREES_BASE",
+            "agentception.routes.api.plan.settings.worktrees_dir",
+            tmp_path,
+        ),
+        patch(
+            "agentception.routes.api.plan.settings.host_worktrees_dir",
             tmp_path,
         ),
     ):
         response = await async_client.post(
             "/api/plan/draft",
-            json={"dump": "I want a song about mountains"},
+            json={"text": "I want a song about mountains"},
         )
 
     assert response.status_code == 200
@@ -110,8 +114,8 @@ async def test_agent_task_written_with_workflow_plan_spec(
     async_client: AsyncClient,
     tmp_path: Path,
 ) -> None:
-    """After a valid POST the .agent-task must contain WORKFLOW=plan-spec and the dump."""
-    dump_text = "Build a calm lo-fi track with piano and soft drums"
+    """After a valid POST the .agent-task must contain WORKFLOW=plan-spec and the plan text."""
+    plan_text = "Build a calm lo-fi track with piano and soft drums"
     proc_mock = _make_proc_mock(returncode=0)
 
     with (
@@ -120,13 +124,17 @@ async def test_agent_task_written_with_workflow_plan_spec(
             return_value=proc_mock,
         ),
         patch(
-            "agentception.routes.api.plan._WORKTREES_BASE",
+            "agentception.routes.api.plan.settings.worktrees_dir",
+            tmp_path,
+        ),
+        patch(
+            "agentception.routes.api.plan.settings.host_worktrees_dir",
             tmp_path,
         ),
     ):
         response = await async_client.post(
             "/api/plan/draft",
-            json={"dump": dump_text},
+            json={"text": plan_text},
         )
 
     assert response.status_code == 200
@@ -136,7 +144,7 @@ async def test_agent_task_written_with_workflow_plan_spec(
 
     content = task_file.read_text(encoding="utf-8")
     assert "WORKFLOW=plan-spec" in content
-    assert dump_text in content
+    assert plan_text in content
     # Output path must be a specific file so the AgentCeption poller can watch
     # for it; the mcp_tools_hint guides the Cursor agent to call plan_get_schema.
     assert ".plan-output.yaml" in content
@@ -149,7 +157,7 @@ async def test_git_worktree_add_called(
     async_client: AsyncClient,
     tmp_path: Path,
 ) -> None:
-    """POST must call asyncio.create_subprocess_exec with 'git worktree add'."""
+    """POST must call asyncio.create_subprocess_exec with 'git -C <repo> worktree add -b ...'."""
     proc_mock = _make_proc_mock(returncode=0)
 
     with (
@@ -158,25 +166,31 @@ async def test_git_worktree_add_called(
             return_value=proc_mock,
         ) as mock_exec,
         patch(
-            "agentception.routes.api.plan._WORKTREES_BASE",
+            "agentception.routes.api.plan.settings.worktrees_dir",
+            tmp_path,
+        ),
+        patch(
+            "agentception.routes.api.plan.settings.host_worktrees_dir",
             tmp_path,
         ),
     ):
         response = await async_client.post(
             "/api/plan/draft",
-            json={"dump": "Any valid dump text"},
+            json={"text": "Any valid plan text"},
         )
 
     assert response.status_code == 200
-    # Verify the subprocess was called with the git worktree add arguments
+    # git -C <repo_dir> worktree add -b <branch> <path> origin/dev
     call_args = mock_exec.call_args
     assert call_args is not None
     args = call_args[0]
     assert args[0] == "git"
-    assert args[1] == "worktree"
-    assert args[2] == "add"
-    # 4th arg is the worktree path
-    assert "plan-draft-" in args[3]
+    assert args[1] == "-C"           # repo flag
+    assert args[3] == "worktree"
+    assert args[4] == "add"
+    assert args[5] == "-b"           # named branch
+    assert "plan-draft-" in args[6]  # branch name contains slug
+    assert "plan-draft-" in str(args[7])  # worktree path
 
 
 # ---------------------------------------------------------------------------
@@ -186,20 +200,20 @@ async def test_git_worktree_add_called(
 
 @pytest.mark.anyio
 async def test_post_empty_dump_returns_422(async_client: AsyncClient) -> None:
-    """POST with an empty dump string must return 422."""
+    """POST with empty text must return 422."""
     response = await async_client.post(
         "/api/plan/draft",
-        json={"dump": ""},
+        json={"text": ""},
     )
     assert response.status_code == 422
 
 
 @pytest.mark.anyio
 async def test_post_whitespace_dump_returns_422(async_client: AsyncClient) -> None:
-    """POST with a whitespace-only dump string must return 422."""
+    """POST with whitespace-only text must return 422."""
     response = await async_client.post(
         "/api/plan/draft",
-        json={"dump": "   \t\n  "},
+        json={"text": "   \t\n  "},
     )
     assert response.status_code == 422
 
