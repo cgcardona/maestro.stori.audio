@@ -254,5 +254,9 @@ stori_tourdeforce/*.db
 .session-id
 .coord-*
 
+# Cursor role-versions index — runtime artifact updated on every agent spawn,
+# not source code; tracking it causes noisy diffs and merge conflicts.
+.cursor/role-versions.json
+
 # CSS source maps (generated build artifacts)
 **/*.css.map

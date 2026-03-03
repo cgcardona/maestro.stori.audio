@@ -30,6 +30,13 @@
   <nav class="topnav" role="navigation" aria-label="Main navigation">
     <a href="/" class="brand" title="The Singularity Is Here">⚡ Agentception</a>
 
+    {# ── Primary nav: Plan → Build → Ship ───────────────────────────────── #}
+    <a href="/brain-dump" class="nav-cta {% if request.url.path.startswith('/brain-dump') %}active{% endif %}">Plan</a>
+    <a href="/org-chart"  class="{% if request.url.path.startswith('/org-chart') %}active{% endif %}">Build</a>
+    <a href="/controls"   class="{% if request.url.path.startswith('/controls') %}active{% endif %}">Ship</a>
+
+    {# ── Secondary pages — temporarily hidden while 1-2-3 flow is primary ─ #}
+    {#
     <a href="/brain-dump" class="nav-cta {% if request.url.path.startswith('/brain-dump') %}active{% endif %}">Brain Dump</a>
     <a href="/agents"   class="{% if request.url.path.startswith('/agents') %}active{% endif %}">Agents</a>
     <a href="/telemetry" class="{% if request.url.path.startswith('/telemetry') %}active{% endif %}">Telemetry</a>
@@ -46,6 +53,7 @@
     <a href="/settings" class="{% if request.url.path.startswith('/settings') %}active{% endif %}">Settings</a>
     <a href="/api" class="{% if request.url.path == '/api' %}active{% endif %}">API</a>
     <a href="/docs"     class="{% if request.url.path.startswith('/docs') %}active{% endif %}">Docs</a>
+    #}
 
     {#
       Project switcher — only rendered when pipeline-config.json defines
@@ -87,17 +95,17 @@
          hx-swap="outerHTML">
       <a href="/brain-dump" class="wizard-step wizard-step--active">
         <span class="wizard-step__number">1</span>
-        <span class="wizard-step__label">Brain Dump</span>
+        <span class="wizard-step__label">Plan</span>
       </a>
       <span class="wizard-stepper__arrow" aria-hidden="true">→</span>
       <a href="/org-chart" class="wizard-step wizard-step--future">
         <span class="wizard-step__number">2</span>
-        <span class="wizard-step__label">Org Chart</span>
+        <span class="wizard-step__label">Build</span>
       </a>
       <span class="wizard-stepper__arrow" aria-hidden="true">→</span>
       <a href="/controls" class="wizard-step wizard-step--future">
         <span class="wizard-step__number">3</span>
-        <span class="wizard-step__label">Launch Wave</span>
+        <span class="wizard-step__label">Ship</span>
       </a>
     </nav>
   {% endif %}
