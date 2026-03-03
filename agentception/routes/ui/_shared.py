@@ -24,26 +24,47 @@ _TEMPLATES = Jinja2Templates(directory=str(_HERE.parent.parent / "templates"))
 
 # Ordered category map for the spawn Mission Control role picker.
 # Each entry: slug → (category_name, sort_position_within_category)
+# Roles not listed here fall into the "Other" catch-all category, which
+# appears last so newly-added taxonomy roles are always visible in the form.
 _ROLE_CATEGORY_MAP: dict[str, tuple[str, int]] = {
-    "python-developer":     ("Backend", 0),
-    "api-developer":        ("Backend", 1),
-    "database-architect":   ("Backend", 2),
-    "systems-programmer":   ("Backend", 3),
-    "frontend-developer":   ("Frontend", 0),
-    "mobile-developer":     ("Frontend", 1),
-    "full-stack-developer": ("Frontend", 2),
-    "test-engineer":        ("Quality", 0),
-    "pr-reviewer":          ("Quality", 1),
-    "technical-writer":     ("Quality", 2),
-    "devops-engineer":      ("Infrastructure", 0),
-    "security-engineer":    ("Infrastructure", 1),
-    "ml-engineer":          ("Data / AI", 0),
-    "data-engineer":        ("Data / AI", 1),
-    "architect":            ("Architecture", 0),
+    # Backend
+    "python-developer":         ("Backend", 0),
+    "api-developer":            ("Backend", 1),
+    "database-architect":       ("Backend", 2),
+    "systems-programmer":       ("Backend", 3),
+    "go-developer":             ("Backend", 4),
+    "rails-developer":          ("Backend", 5),
+    # Frontend
+    "frontend-developer":       ("Frontend", 0),
+    "mobile-developer":         ("Frontend", 1),
+    "full-stack-developer":     ("Frontend", 2),
+    "typescript-developer":     ("Frontend", 3),
+    "react-developer":          ("Frontend", 4),
+    # Mobile
+    "ios-developer":            ("Mobile", 0),
+    "android-developer":        ("Mobile", 1),
+    # Quality
+    "test-engineer":            ("Quality", 0),
+    "pr-reviewer":              ("Quality", 1),
+    "technical-writer":         ("Quality", 2),
+    # Infrastructure
+    "devops-engineer":          ("Infrastructure", 0),
+    "security-engineer":        ("Infrastructure", 1),
+    "site-reliability-engineer": ("Infrastructure", 2),
+    # Data / AI
+    "ml-engineer":              ("Data / AI", 0),
+    "data-engineer":            ("Data / AI", 1),
+    "ml-researcher":            ("Data / AI", 2),
+    "data-scientist":           ("Data / AI", 3),
+    # Systems
+    "rust-developer":           ("Systems", 0),
+    # Architecture
+    "architect":                ("Architecture", 0),
 }
 
 _CATEGORY_ORDER: list[str] = [
-    "Backend", "Frontend", "Quality", "Infrastructure", "Data / AI", "Architecture",
+    "Backend", "Frontend", "Mobile", "Quality", "Infrastructure",
+    "Data / AI", "Systems", "Architecture", "Other",
 ]
 
 
