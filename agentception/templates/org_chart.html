@@ -2,13 +2,29 @@
 
 {% block title %}Org Chart — Agentception{% endblock %}
 
+{% block head %}
+  {# D3 must load before org_chart_tree.js initialises #}
+  <script src="https://cdn.jsdelivr.net/npm/d3@7.9.0/dist/d3.min.js"
+          integrity="sha256-1rA8rCEWBqUBbBkMcNZKQgMoJJLtVAVVJD4/4CVblsQ="
+          crossorigin="anonymous"></script>
+  <script type="module">
+    import { initOrgChartTree } from '/static/js/org_chart_tree.js';
+    document.addEventListener('DOMContentLoaded', () => initOrgChartTree());
+    {# Re-render tree whenever the active preset changes (HTMX swaps the left panel) #}
+    document.addEventListener('htmx:afterSwap', (ev) => {
+      if (ev.detail.target && ev.detail.target.id === 'org-preset-list') {
+        initOrgChartTree();
+      }
+    });
+  </script>
+{% endblock %}
+
 {% block content %}
 <div class="page-header">
   <h1 class="page-title">Org Chart</h1>
   <p class="page-subtitle text-muted">
     Choose a preset org topology. The active org governs which agent roles the
-    pipeline spawns.  Issues #829 and #830 will add an interactive builder and
-    D3 tree to the right panel.
+    pipeline spawns.
   </p>
 </div>
 
@@ -20,21 +36,23 @@
     {% include "_org_preset_list.html" %}
   </section>
 
-  {# ── Right panel: builder shell — reserved for #829 (builder) and #830 (D3) #}
-  <section class="org-chart-right" aria-label="Org chart builder">
+  {# ── Right panel: D3 tree + builder shell (#829) ────────────────────────── #}
+  <section class="org-chart-right" aria-label="Org chart tree">
     <div id="org-right-panel" class="org-right-panel">
-      <div class="org-right-panel__placeholder">
-        <span class="org-right-panel__icon" aria-hidden="true">🌳</span>
-        <p class="org-right-panel__message text-muted">
-          Interactive builder coming in <strong>#829</strong>.
-          D3 org tree coming in <strong>#830</strong>.
-        </p>
-        {% if active_org_id %}
-        <p class="text-muted">
-          Active preset: <code>{{ active_org_id }}</code>
-        </p>
-        {% endif %}
+
+      {# D3 tree panel — populated by org_chart_tree.js (issue #830) #}
+      <div id="org-tree-panel" class="org-tree-panel">
+        <p class="org-tree-placeholder">Loading org tree…</p>
       </div>
+
+      {# Tooltip overlay for role nodes #}
+      <div id="org-tree-tooltip" class="org-tree-tooltip" role="tooltip"></div>
+
+      {# Builder shell — reserved for issue #829 #}
+      <div id="org-builder-panel" class="org-builder-panel">
+        {# Populated by org_chart.js from issue #829 #}
+      </div>
+
     </div>
   </section>
 

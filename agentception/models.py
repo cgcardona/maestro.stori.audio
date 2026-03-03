@@ -698,3 +698,37 @@ class TemplateListEntry(BaseModel):
     created_at: str
     gh_repo: str
     size_bytes: int
+
+
+class OrgTreeRole(BaseModel):
+    """A single role entry in the org tree returned by ``GET /api/org/tree``.
+
+    ``figures`` holds the first two compatible figures from the taxonomy so the
+    D3 tree can render avatar chips without a second round-trip.
+    ``assigned_phases`` is reserved for future phase-assignment features and
+    is always an empty list in the current implementation.
+    """
+
+    slug: str
+    name: str
+    tier: str
+    assigned_phases: list[str]
+    figures: list[str]
+
+
+class OrgTreeNode(BaseModel):
+    """One node in the org hierarchy tree returned by ``GET /api/org/tree``.
+
+    The root node represents the active preset; its children are the
+    leadership and workers tiers; each tier's ``roles`` list holds the
+    individual role cards rendered by the D3 tree.
+    """
+
+    name: str
+    id: str
+    tier: str
+    roles: list[OrgTreeRole]
+    children: list["OrgTreeNode"]
+
+
+OrgTreeNode.model_rebuild()

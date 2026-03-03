@@ -1,4 +1,4 @@
-"""UI routes: Org Chart page with preset org picker.
+"""UI routes: Org Chart page with preset org picker and D3 tree endpoint.
 
 Provides:
 - ``GET /org-chart`` — full-page render of the org chart with a left-panel
@@ -7,6 +7,8 @@ Provides:
 - ``POST /api/org/select-preset`` — HTMX endpoint that persists the chosen
   preset to ``pipeline-config.json`` under the ``active_org`` key and returns
   a refreshed left-panel partial so the active card updates in-place.
+- ``GET /api/org/tree`` — returns the active preset as a hierarchical JSON
+  tree consumed by the D3 tree visualization in ``org_chart_tree.js``.
 
 Preset definitions are loaded from ``org-presets.yaml`` at the repo root.
 The file is read once per request (fast — ~1 KB) so hot-editing the YAML
@@ -21,10 +23,11 @@ from typing import Any
 
 import yaml  # type: ignore[import-untyped]
 from fastapi import APIRouter, Form, HTTPException
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 from starlette.requests import Request
 
 from agentception.config import settings
+from agentception.models import OrgTreeNode, OrgTreeRole
 from ._shared import _TEMPLATES
 
 logger = logging.getLogger(__name__)
@@ -102,6 +105,120 @@ async def org_chart_page(request: Request) -> HTMLResponse:
             "active_org_id": active_org_id,
         },
     )
+
+
+# Path to role-taxonomy.yaml — used by /api/org/tree to enrich role nodes.
+_TAXONOMY_PATH = Path(__file__).parent.parent.parent.parent / "scripts" / "gen_prompts" / "role-taxonomy.yaml"
+
+# Tier label mapping from taxonomy level ids to display strings.
+_TIER_LABELS: dict[str, str] = {
+    "c_suite": "C-Suite",
+    "vp_level": "VP",
+    "workers": "Worker",
+}
+
+
+def _load_taxonomy_role_index() -> dict[str, dict[str, Any]]:
+    """Build a flat slug → role-metadata dict from role-taxonomy.yaml.
+
+    Returns an empty dict if the taxonomy file is missing or malformed so the
+    tree endpoint degrades gracefully.  Each value includes ``tier`` (display
+    string) and ``compatible_figures`` (list of strings).
+    """
+    try:
+        raw: object = yaml.safe_load(_TAXONOMY_PATH.read_text(encoding="utf-8"))
+        if not isinstance(raw, dict):
+            return {}
+        index: dict[str, dict[str, Any]] = {}
+        for level in raw.get("levels", []):
+            if not isinstance(level, dict):
+                continue
+            level_id = str(level.get("id", ""))
+            tier_label = _TIER_LABELS.get(level_id, level_id)
+            for role in level.get("roles", []):
+                if not isinstance(role, dict):
+                    continue
+                slug = str(role.get("slug", ""))
+                if slug:
+                    figures: object = role.get("compatible_figures", [])
+                    index[slug] = {
+                        "tier": tier_label,
+                        "compatible_figures": [str(f) for f in figures] if isinstance(figures, list) else [],
+                        "label": str(role.get("label", slug)),
+                        "title": str(role.get("title", slug)),
+                    }
+        return index
+    except Exception as exc:
+        logger.warning("⚠️ Could not load role-taxonomy.yaml: %s", exc)
+        return {}
+
+
+@router.get("/api/org/tree", response_class=JSONResponse)
+async def org_tree() -> JSONResponse:
+    """Return the active preset org as a hierarchical JSON tree for the D3 visualization.
+
+    Reads the active preset from pipeline-config.json, enriches each role with
+    tier and compatible-figure data from role-taxonomy.yaml, and returns a nested
+    ``OrgTreeNode`` tree.  The root node is the preset itself; children are the
+    tier groups (leadership / workers); each tier's ``roles`` list holds the role
+    cards rendered by ``org_chart_tree.js``.
+
+    Returns HTTP 404 when no preset is selected or the active preset id is unknown.
+    """
+    config = _read_pipeline_config()
+    active_org: object = config.get("active_org")
+    if not isinstance(active_org, str) or not active_org:
+        raise HTTPException(status_code=404, detail="No active org selected. Choose a preset first.")
+
+    presets = _load_presets()
+    preset: dict[str, Any] | None = next((p for p in presets if p.get("id") == active_org), None)
+    if preset is None:
+        raise HTTPException(status_code=404, detail=f"Active preset {active_org!r} not found in org-presets.yaml")
+
+    role_index = _load_taxonomy_role_index()
+
+    def _make_role(slug: str) -> OrgTreeRole:
+        meta = role_index.get(slug, {})
+        figures: list[str] = meta.get("compatible_figures", [])
+        return OrgTreeRole(
+            slug=slug,
+            name=meta.get("label", slug),
+            tier=meta.get("tier", "Worker"),
+            assigned_phases=[],
+            figures=figures[:2],
+        )
+
+    tiers_raw: object = preset.get("tiers", {})
+    if not isinstance(tiers_raw, dict):
+        tiers_raw = {}
+
+    tier_children: list[OrgTreeNode] = []
+    tier_display = {"leadership": "Leadership", "workers": "Workers"}
+    for tier_key in ("leadership", "workers"):
+        slugs: object = tiers_raw.get(tier_key, [])
+        if not isinstance(slugs, list):
+            continue
+        roles = [_make_role(str(s)) for s in slugs]
+        tier_children.append(
+            OrgTreeNode(
+                name=tier_display.get(tier_key, tier_key.title()),
+                id=tier_key,
+                tier=tier_key,
+                roles=roles,
+                children=[],
+            )
+        )
+
+    root = OrgTreeNode(
+        name=str(preset.get("name", active_org)),
+        id=active_org,
+        tier="org",
+        roles=[],
+        children=tier_children,
+    )
+
+    logger.info("✅ /api/org/tree built for preset %r (%d tiers)", active_org, len(tier_children))
+    return JSONResponse(content=root.model_dump())
 
 
 @router.post("/api/org/select-preset", response_class=HTMLResponse)

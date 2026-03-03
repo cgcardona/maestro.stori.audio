@@ -1,9 +1,11 @@
-"""Tests for the /org-chart page and POST /api/org/select-preset endpoint.
+"""Tests for the /org-chart page, POST /api/org/select-preset, and GET /api/org/tree.
 
 Covers:
-- GET /org-chart renders the page with preset cards
+- GET /org-chart renders the page with preset cards and D3 tree panel
 - POST /api/org/select-preset persists the selection and returns a refreshed partial
 - POST /api/org/select-preset rejects unknown preset IDs with HTTP 422
+- GET /api/org/tree returns a hierarchical JSON tree for the active preset
+- GET /api/org/tree returns 404 when no active preset is selected
 
 Run targeted:
     docker compose exec agentception pytest agentception/tests/test_agentception_org_chart.py -v
@@ -215,3 +217,186 @@ class TestSelectPreset:
 
         assert resp.status_code == 200
         assert "org-preset-card--active" in resp.text
+
+
+class TestOrgTree:
+    """GET /api/org/tree — D3 tree data endpoint."""
+
+    def test_org_tree_returns_404_when_no_active_org(
+        self,
+        client: TestClient,
+        sample_presets: list[dict[str, object]],
+    ) -> None:
+        """When no active org is set, the endpoint should return HTTP 404."""
+        with (
+            patch("agentception.routes.ui.org_chart._load_presets", return_value=sample_presets),
+            patch("agentception.routes.ui.org_chart._read_pipeline_config", return_value={}),
+        ):
+            resp = client.get("/api/org/tree")
+
+        assert resp.status_code == 404
+
+    def test_org_tree_returns_200_for_active_preset(
+        self,
+        client: TestClient,
+        sample_presets: list[dict[str, object]],
+    ) -> None:
+        """When an active preset is set, the endpoint should return HTTP 200."""
+        with (
+            patch("agentception.routes.ui.org_chart._load_presets", return_value=sample_presets),
+            patch(
+                "agentception.routes.ui.org_chart._read_pipeline_config",
+                return_value={"active_org": "solo-cto"},
+            ),
+            patch(
+                "agentception.routes.ui.org_chart._load_taxonomy_role_index",
+                return_value={},
+            ),
+        ):
+            resp = client.get("/api/org/tree")
+
+        assert resp.status_code == 200
+        assert resp.headers["content-type"].startswith("application/json")
+
+    def test_org_tree_root_name_matches_preset(
+        self,
+        client: TestClient,
+        sample_presets: list[dict[str, object]],
+    ) -> None:
+        """The root node name should match the selected preset's display name."""
+        with (
+            patch("agentception.routes.ui.org_chart._load_presets", return_value=sample_presets),
+            patch(
+                "agentception.routes.ui.org_chart._read_pipeline_config",
+                return_value={"active_org": "solo-cto"},
+            ),
+            patch(
+                "agentception.routes.ui.org_chart._load_taxonomy_role_index",
+                return_value={},
+            ),
+        ):
+            resp = client.get("/api/org/tree")
+
+        data = resp.json()
+        assert data["name"] == "Solo CTO"
+        assert data["id"] == "solo-cto"
+        assert data["tier"] == "org"
+
+    def test_org_tree_contains_tier_children(
+        self,
+        client: TestClient,
+        sample_presets: list[dict[str, object]],
+    ) -> None:
+        """The tree should contain leadership and workers tier children."""
+        with (
+            patch("agentception.routes.ui.org_chart._load_presets", return_value=sample_presets),
+            patch(
+                "agentception.routes.ui.org_chart._read_pipeline_config",
+                return_value={"active_org": "solo-cto"},
+            ),
+            patch(
+                "agentception.routes.ui.org_chart._load_taxonomy_role_index",
+                return_value={},
+            ),
+        ):
+            resp = client.get("/api/org/tree")
+
+        data = resp.json()
+        tier_ids = {child["id"] for child in data["children"]}
+        assert "leadership" in tier_ids
+        assert "workers" in tier_ids
+
+    def test_org_tree_roles_include_slug_and_tier(
+        self,
+        client: TestClient,
+        sample_presets: list[dict[str, object]],
+    ) -> None:
+        """Each role node must include slug, name, tier, assigned_phases, and figures fields."""
+        with (
+            patch("agentception.routes.ui.org_chart._load_presets", return_value=sample_presets),
+            patch(
+                "agentception.routes.ui.org_chart._read_pipeline_config",
+                return_value={"active_org": "small-team"},
+            ),
+            patch(
+                "agentception.routes.ui.org_chart._load_taxonomy_role_index",
+                return_value={
+                    "cto": {"tier": "C-Suite", "label": "CTO", "title": "Chief Technology Officer", "compatible_figures": ["turing", "shannon"]},
+                    "vp-engineering": {"tier": "VP", "label": "VP Engineering", "title": "VP of Engineering", "compatible_figures": ["dijkstra"]},
+                    "python-developer": {"tier": "Worker", "label": "Python Developer", "title": "Python Developer", "compatible_figures": []},
+                },
+            ),
+        ):
+            resp = client.get("/api/org/tree")
+
+        data = resp.json()
+        leadership = next(c for c in data["children"] if c["id"] == "leadership")
+        cto_role = next((r for r in leadership["roles"] if r["slug"] == "cto"), None)
+        assert cto_role is not None
+        assert cto_role["tier"] == "C-Suite"
+        assert cto_role["name"] == "CTO"
+        assert "assigned_phases" in cto_role
+        assert isinstance(cto_role["assigned_phases"], list)
+        assert "figures" in cto_role
+        assert cto_role["figures"] == ["turing", "shannon"]
+
+    def test_org_tree_figures_capped_at_two(
+        self,
+        client: TestClient,
+        sample_presets: list[dict[str, object]],
+    ) -> None:
+        """Even if a role has many compatible figures, the endpoint returns at most 2."""
+        many_figures = ["fig1", "fig2", "fig3", "fig4", "fig5"]
+        with (
+            patch("agentception.routes.ui.org_chart._load_presets", return_value=sample_presets),
+            patch(
+                "agentception.routes.ui.org_chart._read_pipeline_config",
+                return_value={"active_org": "solo-cto"},
+            ),
+            patch(
+                "agentception.routes.ui.org_chart._load_taxonomy_role_index",
+                return_value={
+                    "cto": {"tier": "C-Suite", "label": "CTO", "title": "CTO", "compatible_figures": many_figures},
+                    "python-developer": {"tier": "Worker", "label": "Python Dev", "title": "Python Dev", "compatible_figures": []},
+                    "pr-reviewer": {"tier": "Worker", "label": "PR Reviewer", "title": "PR Reviewer", "compatible_figures": []},
+                },
+            ),
+        ):
+            resp = client.get("/api/org/tree")
+
+        data = resp.json()
+        leadership = next(c for c in data["children"] if c["id"] == "leadership")
+        cto_role = next(r for r in leadership["roles"] if r["slug"] == "cto")
+        assert len(cto_role["figures"]) <= 2
+
+    def test_org_tree_returns_404_for_unknown_active_org(
+        self,
+        client: TestClient,
+        sample_presets: list[dict[str, object]],
+    ) -> None:
+        """If active_org references a preset not in the presets list, return HTTP 404."""
+        with (
+            patch("agentception.routes.ui.org_chart._load_presets", return_value=sample_presets),
+            patch(
+                "agentception.routes.ui.org_chart._read_pipeline_config",
+                return_value={"active_org": "does-not-exist"},
+            ),
+        ):
+            resp = client.get("/api/org/tree")
+
+        assert resp.status_code == 404
+
+    def test_org_tree_org_tree_panel_present_in_page(
+        self,
+        client: TestClient,
+        sample_presets: list[dict[str, object]],
+    ) -> None:
+        """The org-chart page HTML must contain the #org-tree-panel div."""
+        with (
+            patch("agentception.routes.ui.org_chart._load_presets", return_value=sample_presets),
+            patch("agentception.routes.ui.org_chart._read_pipeline_config", return_value={}),
+        ):
+            resp = client.get("/org-chart")
+
+        assert resp.status_code == 200
+        assert 'id="org-tree-panel"' in resp.text
