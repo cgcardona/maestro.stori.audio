@@ -19,7 +19,7 @@ from __future__ import annotations
 import json
 import logging
 from pathlib import Path
-from typing import Any
+from typing import Any, TypedDict
 
 import yaml  # type: ignore[import-untyped]
 from fastapi import APIRouter, Form, HTTPException
@@ -118,7 +118,17 @@ _TIER_LABELS: dict[str, str] = {
 }
 
 
-def _load_taxonomy_role_index() -> dict[str, dict[str, Any]]:
+class _RoleIndexEntry(TypedDict):
+    """Enriched metadata for a single role slug from role-taxonomy.yaml."""
+
+    tier: str
+    compatible_figures: list[str]
+    label: str
+    title: str
+
+
+
+def _load_taxonomy_role_index() -> dict[str, _RoleIndexEntry]:
     """Build a flat slug → role-metadata dict from role-taxonomy.yaml.
 
     Returns an empty dict if the taxonomy file is missing or malformed so the
@@ -129,7 +139,7 @@ def _load_taxonomy_role_index() -> dict[str, dict[str, Any]]:
         raw: object = yaml.safe_load(_TAXONOMY_PATH.read_text(encoding="utf-8"))
         if not isinstance(raw, dict):
             return {}
-        index: dict[str, dict[str, Any]] = {}
+        index: dict[str, _RoleIndexEntry] = {}
         for level in raw.get("levels", []):
             if not isinstance(level, dict):
                 continue
@@ -171,14 +181,14 @@ async def org_tree() -> JSONResponse:
         raise HTTPException(status_code=404, detail="No active org selected. Choose a preset first.")
 
     presets = _load_presets()
-    preset: dict[str, Any] | None = next((p for p in presets if p.get("id") == active_org), None)
+    preset = next((p for p in presets if p.get("id") == active_org), None)
     if preset is None:
         raise HTTPException(status_code=404, detail=f"Active preset {active_org!r} not found in org-presets.yaml")
 
     role_index = _load_taxonomy_role_index()
 
     def _make_role(slug: str) -> OrgTreeRole:
-        meta = role_index.get(slug, {})
+        meta: _RoleIndexEntry = role_index.get(slug, _RoleIndexEntry(tier="Worker", compatible_figures=[], label=slug, title=slug))
         figures: list[str] = meta.get("compatible_figures", [])
         return OrgTreeRole(
             slug=slug,
